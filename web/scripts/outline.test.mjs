@@ -56,12 +56,12 @@ test("Douglas–Peucker keeps the corners of a staircase-straight line", () => {
 
 test("a frame comes back from its bytes, raw and deflated", async () => {
   const t = trace(picture(), W, H);
-  const f = { w: W, h: H, lines: t.lines };
+  const f = { w: W, h: H, lines: t.lines, classes: t.lines.map((_, i) => i % 3) };
   assert.deepEqual(unpack(pack(f)), f);
   const wire = await encodeFrame(f);
   assert.ok(wire.length <= pack(f).length + 1);
   assert.deepEqual(await decodeFrame(wire), f);
-  const tiny = { w: 4, h: 4, lines: [[0, 0, 3, 3]] };
+  const tiny = { w: 4, h: 4, lines: [[0, 0, 3, 3]], classes: [32] };
   const w2 = await encodeFrame(tiny);
   assert.equal(w2[0], 0, "a tiny frame stays raw");
   assert.deepEqual(await decodeFrame(w2), tiny);
@@ -70,6 +70,32 @@ test("a frame comes back from its bytes, raw and deflated", async () => {
 });
 
 test("a big negative delta survives", () => {
-  const f = { w: 255, h: 255, lines: [[254, 254, 0, 0, 200, 3]] };
+  const f = { w: 255, h: 255, lines: [[254, 254, 0, 0, 200, 3]], classes: [0] };
   assert.deepEqual(unpack(pack(f)), f);
+});
+
+test("a version 1 frame (no classes) still reads", () => {
+  // v1: version, w, h, count 1, points 2, x0 y0, dx dy (zigzag 2 = +1)
+  assert.deepEqual(unpack(Uint8Array.from([1, 8, 8, 1, 2, 1, 1, 2, 2])), { w: 8, h: 8, lines: [[1, 1, 2, 2]], classes: [0] });
+});
+
+test("labels colour a line by what it runs along, and split it where that changes", () => {
+  // The disc is a person (15), the desk a chair (9).
+  const labels = new Uint8Array(W * H);
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      if ((x - 80) ** 2 + (y - 50) ** 2 < 29 ** 2) labels[y * W + x] = 15;
+      else if (y > 93 && x > 18 && x < 142) labels[y * W + x] = 9;
+    }
+  }
+  const t = trace(picture(), W, H, { labels, detail: 1 });
+  assert.equal(t.classes.length, t.lines.length);
+  const seen = new Set(t.classes);
+  assert.ok(seen.has(15) && seen.has(9), `classes: ${[...seen]}`);
+  t.lines.forEach((l, i) => {
+    const ys = l.filter((_, k) => k % 2 === 1);
+    if (t.classes[i] === 15) assert.ok(Math.max(...ys) < 85, "a person line stays on the disc");
+    if (t.classes[i] === 9) assert.ok(Math.min(...ys) > 88, "a chair line stays on the desk");
+  });
+  assert.ok(trace(picture(), W, H).classes.every((c) => c === 0), "no labels, no classes");
 });

@@ -38,6 +38,11 @@ class OutlineStore {
   private starting = false;
   fps = 4;
   detail = 0.7;
+  /** Colour lines by what they trace (./labels). */
+  label = true;
+  /** Labelling's state, and why it stopped if it did. */
+  labelState: "loading" | "on" | "off" = "off";
+  labelError = "";
   mine: Mine | null = null;
   /** The stream's state, for the block to say. */
   live: "off" | "connecting" | "on" | "refused" = "off";
@@ -73,6 +78,12 @@ class OutlineStore {
       this.camera = await startCamera({
         fps: this.fps,
         detail: this.detail,
+        label: this.label,
+        onLabelState: (state, error) => {
+          this.labelState = state;
+          this.labelError = error ?? "";
+          this.emit();
+        },
         onFrame: (frame, stats) => {
           if (!this.mine) return;
           this.mine.frame = frame;
@@ -111,6 +122,12 @@ class OutlineStore {
   setRate(fps: number) {
     this.fps = fps;
     this.camera?.setRate(fps);
+    this.emit();
+  }
+
+  setLabel(on: boolean) {
+    this.label = on;
+    this.camera?.setLabel(on);
     this.emit();
   }
 

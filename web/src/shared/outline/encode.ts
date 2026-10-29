@@ -20,6 +20,8 @@ export interface Traced {
   w: number;
   h: number;
   lines: Polyline[];
+  /** Each line's class (`labels`' value along it); all 0 without labels. */
+  classes: number[];
   /** This frame's edge pixels, for the next frame's `prev`. */
   edges: Uint8Array;
   /** How much of the edge map changed since `prev` (0–1; 1 without one). */
@@ -38,6 +40,9 @@ export interface TraceOptions {
   maxPoints?: number;
   /** The last frame's `edges`. */
   prev?: Uint8Array;
+  /** A class per cell (./labels: what's there). A line takes the class of
+   * the cells it runs along, and splits where that changes. */
+  labels?: Uint8Array;
 }
 
 const DIRS = [1, 0, 1, 1, 0, 1, -1, 1, -1, 0, -1, -1, 0, -1, 1, -1];
@@ -119,14 +124,66 @@ export function trace(rgba: ArrayLike<number>, w: number, h: number, o: TraceOpt
   // More detail keeps shorter strokes too (hair, creases).
   const chains = chainsOf(edges, w, h, o.minLength ?? Math.round(7 - 4 * detail));
   const eps = o.epsilon ?? 0.8;
-  let lines = chains.map((c) => simplify(c, eps)).filter((l) => l.length >= 4);
-  const max = o.maxPoints ?? 2500;
-  let points = lines.reduce((s, l) => s + l.length / 2, 0);
-  if (points > max) {
-    lines.sort((a, b) => length(b) - length(a));
-    while (points > max && lines.length) points -= lines.pop()!.length / 2;
+  let runs: { line: Polyline; cls: number }[] = [];
+  for (const c of chains) {
+    for (const r of o.labels ? byClass(c, o.labels, w, h) : [{ line: c, cls: 0 }]) {
+      const line = simplify(r.line, eps);
+      if (line.length >= 4) runs.push({ line, cls: r.cls });
+    }
   }
-  return { w, h, lines, edges, changed };
+  const max = o.maxPoints ?? 2500;
+  let points = runs.reduce((s, r) => s + r.line.length / 2, 0);
+  if (points > max) {
+    runs.sort((a, b) => length(b.line) - length(a.line));
+    while (points > max && runs.length) points -= runs.pop()!.line.length / 2;
+  }
+  return { w, h, lines: runs.map((r) => r.line), classes: runs.map((r) => r.cls), edges, changed };
+}
+
+/** A chain cut where the class under it changes. An edge sits between
+ * two things (you and the wall behind you), so a cell's class is the
+ * commonest labelled one (not background) around it; a run of fewer than
+ * RUN cells takes its neighbour's, so a line doesn't flicker between two. */
+function byClass(chain: Polyline, labels: Uint8Array, w: number, h: number): { line: Polyline; cls: number }[] {
+  const RUN = 4;
+  const m = chain.length / 2;
+  const cls = new Array<number>(m);
+  const count = new Map<number, number>();
+  for (let i = 0; i < m; i++) {
+    const x = chain[i * 2], y = chain[i * 2 + 1];
+    count.clear();
+    for (let dy = -1; dy <= 1; dy++) {
+      for (let dx = -1; dx <= 1; dx++) {
+        const nx = x + dx, ny = y + dy;
+        if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
+        const c = labels[ny * w + nx];
+        if (c) count.set(c, (count.get(c) ?? 0) + 1);
+      }
+    }
+    let best = 0, n = 0;
+    for (const [c, k] of count) if (k > n) [best, n] = [c, k];
+    cls[i] = best;
+  }
+  // Short runs take the class before them (or after, at the start).
+  for (let i = 0; i < m; ) {
+    let j = i;
+    while (j < m && cls[j] === cls[i]) j++;
+    if (j - i < RUN && (i > 0 || j < m)) {
+      const to = i > 0 ? cls[i - 1] : cls[j];
+      for (let k = i; k < j; k++) cls[k] = to;
+    }
+    i = j;
+  }
+  const out: { line: Polyline; cls: number }[] = [];
+  for (let i = 0; i < m; ) {
+    let j = i;
+    while (j < m && cls[j] === cls[i]) j++;
+    // Each run starts where the last ended, so the drawing stays joined.
+    const from = i > 0 ? i - 1 : i;
+    out.push({ line: chain.slice(from * 2, j * 2), cls: cls[i] });
+    i = j;
+  }
+  return out;
 }
 
 /** A 5-tap Gaussian, across then down. */

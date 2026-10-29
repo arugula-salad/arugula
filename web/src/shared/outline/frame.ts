@@ -2,15 +2,18 @@
 // sends the people who may see it, opaque to control.
 //
 //   frame   = encoding:u8 body          0 raw, 1 deflate-raw of raw
-//   raw     = version:u8 (1) w:u8 h:u8 count:varint line*
-//   line    = points:varint x0:u8 y0:u8 (dx:zigzag-varint dy:zigzag-varint)*
+//   raw     = version:u8 (2) w:u8 h:u8 count:varint line*
+//   line    = points:varint class:u8 x0:u8 y0:u8 (dx:zigzag-varint dy:zigzag-varint)*
+//
+// A line's class says what it traces (./labels: a Pascal VOC class, or
+// the face landmarker's); 0 is unknown. Version 1 had no class.
 //
 // A grid is at most 255 cells a side. Deltas are small (a simplified
 // edge moves a few cells a step), so most take a byte each.
 
 import type { Polyline } from "./encode";
 
-export const VERSION = 1;
+export const VERSION = 2;
 const RAW = 0;
 const DEFLATE = 1;
 
@@ -18,20 +21,22 @@ export interface Frame {
   w: number;
   h: number;
   lines: Polyline[];
+  /** Each line's class; none is all 0. */
+  classes?: number[];
 }
 
 /** `f` as raw bytes. */
 export function pack(f: Frame): Uint8Array {
   const out: number[] = [VERSION, f.w, f.h];
   varint(out, f.lines.length);
-  for (const l of f.lines) {
+  f.lines.forEach((l, n) => {
     varint(out, l.length / 2);
-    out.push(l[0], l[1]);
+    out.push(f.classes?.[n] ?? 0, l[0], l[1]);
     for (let i = 2; i < l.length; i += 2) {
       varint(out, zigzag(l[i] - l[i - 2]));
       varint(out, zigzag(l[i + 1] - l[i - 1]));
     }
-  }
+  });
   return Uint8Array.from(out);
 }
 
@@ -51,17 +56,20 @@ export function unpack(b: Uint8Array): Frame {
     } while (c & 0x80 && s < 35);
     return v;
   };
-  if (byte() !== VERSION) throw new Error("outline frame: not a version this page reads");
+  const version = byte();
+  if (version !== 1 && version !== 2) throw new Error("outline frame: not a version this page reads");
   const w = byte(), h = byte();
   const count = read();
   const lines: Polyline[] = [];
+  const classes: number[] = [];
   for (let n = 0; n < count; n++) {
     const m = read();
+    classes.push(version === 2 ? byte() : 0);
     const l: Polyline = [byte(), byte()];
     for (let i = 1; i < m; i++) l.push(l[l.length - 2] + unzigzag(read()), l[l.length - 1] + unzigzag(read()));
     lines.push(l);
   }
-  return { w, h, lines };
+  return { w, h, lines, classes };
 }
 
 /** `f` as it goes on the wire: deflated when that's smaller. */

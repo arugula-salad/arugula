@@ -38,6 +38,9 @@ importers:
       '@lezer/highlight':
         specifier: ^1.2.5
         version: 1.2.5
+      '@mediapipe/tasks-vision':
+        specifier: 1.2.0
+        version: 1.2.0
       '@xterm/addon-fit':
         specifier: ^0.11.0
         version: 0.11.0
@@ -143,6 +146,9 @@ packages:
 
   '@marijn/find-cluster-break@1.0.4':
     resolution: {integrity: sha512-Wy0V7+SGUjnF9/TkiM1hKVDPj7jKXduPNboMVtHTA8dySMURWqfg/JZ9E2Sq8JgSJmkl7k7Qe9FLeMSrSraWmQ==}
+
+  '@mediapipe/tasks-vision@1.2.0':
+    resolution: {integrity: sha512-7+dr9GbGyTtcuLh11wE5TOn4dNFRncIT9oAWs72620WX99KW5FfzF6rFJ/ChTgXG9vJ6dCiE9FrEEY4CnwPWKQ==}
 
   '@oxc-project/types@0.154.0':
     resolution: {integrity: sha512-KYOUGQFlLWR+s4QMV2Q9ko38TZm7EdO87Qm7rvZLqk/webse/cDjtyxKhg/47l0byCbs/k46LT8qc4PKjAikzA==}
@@ -853,6 +859,8 @@ snapshots:
       '@lezer/lr': 1.4.10
 
   '@marijn/find-cluster-break@1.0.4': {}
+
+  '@mediapipe/tasks-vision@1.2.0': {}
 
   '@oxc-project/types@0.154.0': {}
 

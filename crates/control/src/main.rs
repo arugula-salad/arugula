@@ -845,11 +845,13 @@ async fn control_json(
 /// shows: a block is a frame on its own site (a daemon's block domain, or a
 /// web page a browser block opened), so frames may come from any https site,
 /// and from control's own block origins (M50) on whatever scheme control's
-/// page is on (http only for a local control).
+/// page is on (http only for a local control). Scripts are control's own,
+/// and may compile WebAssembly (`'wasm-unsafe-eval'`, not JS `eval`): S43's
+/// People block labels a camera frame with MediaPipe, served from here.
 async fn headers(axum::extract::State(app): axum::extract::State<Arc<App>>, mut res: Response) -> Response {
     let csp = |frames: &str| {
         format!(
-            "default-src 'self'; connect-src 'self' wss: ws: https:; img-src 'self' data: https:; style-src 'self' 'unsafe-inline'; frame-src 'self' https:{frames}; frame-ancestors 'none'"
+            "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; connect-src 'self' wss: ws: https:; img-src 'self' data: https:; style-src 'self' 'unsafe-inline'; frame-src 'self' https:{frames}; frame-ancestors 'none'"
         )
     };
     let csp = match &app.cfg.block_domain {

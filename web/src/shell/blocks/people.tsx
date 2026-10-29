@@ -17,6 +17,7 @@ import { presence } from "../../shared/chat/presence";
 import { outlines } from "../../shared/outline/store";
 import { draw } from "../../shared/outline/render";
 import type { Frame } from "../../shared/outline/frame";
+import { GROUPS, groupOf } from "../../shared/outline/classes";
 import { useSubscribe } from "../../shared/ui/hooks";
 import { getControlSession } from "../ui/people";
 import { registerBlock, type BlockView } from "./view";
@@ -43,13 +44,26 @@ function everyone(): Person[] {
   return [...out.values()];
 }
 
+/** A frame's colours from the theme: each group's, and for the rest the
+ * accent (a frame nobody labelled) or dim (labelled, but not one we
+ * colour). */
+function palette(el: Element, labelled: boolean): (cls: number) => string {
+  const css = getComputedStyle(el);
+  const of = (v: string) => css.getPropertyValue(v).trim() || css.color;
+  const groups = GROUPS.map((g) => of(g.css));
+  const rest = labelled ? of("--dim") : of("--accent");
+  return (cls) => {
+    const g = groupOf(cls);
+    return g < 0 ? rest : groups[g];
+  };
+}
+
 function OutlineCanvas({ frame, mirror }: { frame: Frame; mirror?: boolean }) {
   const ref = useRef<HTMLCanvasElement>(null);
   useEffect(() => {
     const c = ref.current;
     if (!c) return;
-    const color = getComputedStyle(c).color || "#c9a57a";
-    draw(c, frame, { color, mirror });
+    draw(c, frame, { color: palette(c, !!frame.classes?.some((x) => x)), mirror });
   });
   return <canvas ref={ref} class="people-canvas" aria-hidden="true" />;
 }
@@ -103,6 +117,11 @@ function Controls() {
           ))}
         </select>
       </label>
+      <label class="people-label" title="Colour each line by what it traces: you, your chair, your screen (MediaPipe, in this page)">
+        <input type="checkbox" checked={outlines.label} onChange={(e) => outlines.setLabel((e.target as HTMLInputElement).checked)} />
+        <span>colour by what it is</span>
+        {on && outlines.labelState === "loading" && <span class="dim">(loading…)</span>}
+      </label>
       <label class="people-detail">
         <span class="dim">detail</span>
         <input
@@ -118,9 +137,19 @@ function Controls() {
         <span class="people-stats dim" data-people-stats>
           {st.lines} lines · {st.points} pts · {(st.raw / 1024).toFixed(1)} KB raw
           {st.sent ? ` → ${(st.bytes / 1024).toFixed(1)} KB` : " · still, held"} · {outlines.kbps().toFixed(1)} kbps · {st.ms.toFixed(0)} ms
+          {st.labelMs !== null && ` + ${st.labelMs.toFixed(0)} ms labels`}
         </span>
       )}
       {err && <span class="people-error">{err}</span>}
+      {outlines.labelError && <span class="people-error">{outlines.labelError}</span>}
+      <span class="people-legend" aria-label="What the colours mean">
+        {GROUPS.map((g) => (
+          <span class="people-key">
+            <i style={{ background: `var(${g.css})` }} />
+            {g.name}
+          </span>
+        ))}
+      </span>
     </div>
   );
 }

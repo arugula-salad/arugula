@@ -139,3 +139,23 @@
   font-family: var(--f-mono);
   font-size: 10px;
 }
+
+.people-legend {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  font-size: 11px;
+  color: var(--dim);
+}
+
+.people-key {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.people-key i {
+  width: 10px;
+  height: 3px;
+  border-radius: 2px;
+}

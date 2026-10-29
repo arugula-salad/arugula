@@ -6,3 +6,4 @@ dist.modules.json
 test-results/
 playwright-report/
 journey-reports/
+public/mediapipe/

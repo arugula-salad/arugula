@@ -1,11 +1,12 @@
-// An outline frame on a canvas (S43): its lines stroked in one colour,
-// the grid fitted inside the canvas and centred, round joins so a few
-// hundred short segments read as a drawing.
+// An outline frame on a canvas (S43): its lines stroked in their class's
+// colour, the grid fitted inside the canvas and centred, round joins so a
+// few hundred short segments read as a drawing.
 
 import type { Frame } from "./frame";
 
 export interface DrawOptions {
-  color: string;
+  /** A line's colour by its class (./labels); `color(0)` for unknown. */
+  color: (cls: number) => string;
   /** Flip left to right: your own tile, as a mirror shows you. */
   mirror?: boolean;
   /** Stroke width in CSS pixels. */
@@ -28,14 +29,26 @@ export function draw(canvas: HTMLCanvasElement, f: Frame, o: DrawOptions) {
   const ox = (canvas.width - f.w * s) / 2, oy = (canvas.height - f.h * s) / 2;
   if (o.mirror) g.setTransform(-s, 0, 0, s, canvas.width - ox, oy);
   else g.setTransform(s, 0, 0, s, ox, oy);
-  g.strokeStyle = o.color;
   g.lineWidth = ((o.width ?? 1.6) * dpr) / s;
   g.lineJoin = "round";
   g.lineCap = "round";
-  g.beginPath();
-  for (const l of f.lines) {
-    g.moveTo(l[0] + 0.5, l[1] + 0.5);
-    for (let i = 2; i < l.length; i += 2) g.lineTo(l[i] + 0.5, l[i + 1] + 0.5);
+  // One path a colour, the unknown first so what's labelled draws on top.
+  const by = new Map<string, number[]>();
+  const order = f.lines.map((_, i) => i).sort((a, b) => (f.classes?.[a] ?? 0) - (f.classes?.[b] ?? 0));
+  for (const i of order) {
+    const c = o.color(f.classes?.[i] ?? 0);
+    let list = by.get(c);
+    if (!list) by.set(c, (list = []));
+    list.push(i);
   }
-  g.stroke();
+  for (const [color, idx] of by) {
+    g.strokeStyle = color;
+    g.beginPath();
+    for (const i of idx) {
+      const l = f.lines[i];
+      g.moveTo(l[0] + 0.5, l[1] + 0.5);
+      for (let k = 2; k < l.length; k += 2) g.lineTo(l[k] + 0.5, l[k + 1] + 0.5);
+    }
+    g.stroke();
+  }
 }
