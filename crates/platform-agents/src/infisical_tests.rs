@@ -146,7 +146,7 @@ fn platform(mode: Mode, writer: Option<Writer>) -> Platform {
         reqwest::Client::new(),
         Default::default(),
     );
-    p.projection = Projection::new(mode, writer);
+    p.slots.put(Projection::new(mode, writer));
     p
 }
 

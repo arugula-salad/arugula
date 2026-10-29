@@ -3,6 +3,10 @@
 //! unlinking, and the purge. Runs on SQLite and, with
 //! `ARUGULA_TEST_POSTGRES_URL` (`just test-platform-postgres`), Postgres.
 
+// Also the feature crates' test harness (#314, the `testing` feature): its
+// helpers are `pub`, and only its own tests use the rest.
+#![cfg_attr(not(test), allow(dead_code, unused_imports))]
+
 use std::{
     collections::BTreeMap,
     sync::{Arc, Mutex},
@@ -30,18 +34,18 @@ use crate::{
     },
 };
 
-pub(crate) const SECRET: &str = "whsec-test";
+pub const SECRET: &str = "whsec-test";
 
 /// What the fake GitHub knows: where the App is installed (repo →
 /// installation, account id, login), each repo's id and privacy, and
 /// each person's role on a repo (repo, login → role, user id).
 #[derive(Default)]
-pub(crate) struct Gh {
-    pub(crate) installed: BTreeMap<String, (u64, u64, String)>,
-    pub(crate) repos: BTreeMap<String, (u64, bool)>,
-    pub(crate) roles: BTreeMap<(String, String), (String, u64)>,
+pub struct Gh {
+    pub installed: BTreeMap<String, (u64, u64, String)>,
+    pub repos: BTreeMap<String, (u64, bool)>,
+    pub roles: BTreeMap<(String, String), (String, u64)>,
     /// How many times a person's permission was asked.
-    pub(crate) asked: usize,
+    pub asked: usize,
     /// User tokens, and whose GitHub id each is (M168).
     pub(super) users: BTreeMap<String, u64>,
     /// What was posted as a person: the path, the `Authorization` header
@@ -51,32 +55,32 @@ pub(crate) struct Gh {
     pub(super) refuse: Option<u16>,
     /// What an installation grants the App, by repo, when not the real
     /// App's today ([`granted`]).
-    pub(crate) grants: BTreeMap<String, Value>,
+    pub grants: BTreeMap<String, Value>,
     /// Commits with a `ci/green/<sha>` tag, a `ci/revoked/<sha>` one, and
     /// those on main (M221's release checks them).
-    pub(crate) green: std::collections::BTreeSet<String>,
-    pub(crate) revoked: std::collections::BTreeSet<String>,
-    pub(crate) on_main: std::collections::BTreeSet<String>,
+    pub green: std::collections::BTreeSet<String>,
+    pub revoked: std::collections::BTreeSet<String>,
+    pub on_main: std::collections::BTreeSet<String>,
     /// Logins whose installations are a user's, not an organization's
     /// (M232).
-    pub(crate) user_accounts: std::collections::BTreeSet<String>,
+    pub user_accounts: std::collections::BTreeSet<String>,
     /// Files on a repo's default branch, by `owner/name:path` (M259's PR
     /// template).
-    pub(crate) files: BTreeMap<String, String>,
+    pub files: BTreeMap<String, String>,
     /// The permissions of each installation token minted, in order.
-    pub(crate) minted: Vec<Value>,
+    pub minted: Vec<Value>,
     /// A branch's rules, by `owner/name:branch`, as `rules/branches`
     /// answers (none when not here), and its classic protection, as
     /// `branches/{branch}` has it (`protection`; none when not here).
-    pub(crate) rules: BTreeMap<String, Value>,
-    pub(crate) protection: BTreeMap<String, Value>,
+    pub rules: BTreeMap<String, Value>,
+    pub protection: BTreeMap<String, Value>,
     /// An Actions job's log, by its id (404 when not here).
-    pub(crate) logs: BTreeMap<u64, String>,
+    pub logs: BTreeMap<u64, String>,
 }
 
 /// What the platform's real App (`arugula-io`) is granted today: it reads
 /// contents and writes issues and pull requests (to send).
-pub(crate) fn granted() -> Value {
+pub fn granted() -> Value {
     let mut g = read_grant();
     g["issues"] = "write".into();
     g["pull_requests"] = "write".into();
@@ -111,7 +115,7 @@ pub(super) fn not_granted() -> Response {
     (StatusCode::UNPROCESSABLE_ENTITY, Json(json!({ "message": m }))).into_response()
 }
 
-pub(crate) type Shared = Arc<Mutex<Gh>>;
+pub type Shared = Arc<Mutex<Gh>>;
 
 async fn installation(State(h): State<Shared>, Path((o, r)): Path<(String, String)>) -> Response {
     let h = h.lock().unwrap();
@@ -328,7 +332,7 @@ async fn log_blob(State(h): State<Shared>, Path(job): Path<u64>) -> Response {
     }
 }
 
-pub(crate) async fn fake_github(h: Shared) -> String {
+pub async fn fake_github(h: Shared) -> String {
     let r = Router::new()
         .route("/user", get(user))
         .route("/repos/{o}/{r}/issues/{n}/comments", post(post_as))
@@ -353,7 +357,7 @@ pub(crate) async fn fake_github(h: Shared) -> String {
     base
 }
 
-pub(crate) fn throwaway_key() -> aws_lc_rs::rsa::KeyPair {
+pub fn throwaway_key() -> aws_lc_rs::rsa::KeyPair {
     let k = aws_lc_rs::rsa::KeyPair::generate(KeySize::Rsa2048).unwrap();
     let der = AsDer::<aws_lc_rs::encoding::Pkcs8V1Der>::as_der(&k).unwrap();
     aws_lc_rs::rsa::KeyPair::from_pkcs8(der.as_ref()).unwrap()

@@ -13,6 +13,8 @@ exclude = [
     "crates/control",
     "crates/control-common",
     "crates/platform",
+    "crates/platform-agents",
+    "crates/platform-all",
 ]
 
 # libghostty-vt-sys with Ghostty patched at build time (M9): see

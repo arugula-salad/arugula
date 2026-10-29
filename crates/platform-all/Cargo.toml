@@ -1,0 +1,21 @@
+[package]
+name = "arugula-platform-all"
+description = "Arugula control's platform: every feature crate, registered on the base"
+# The hosted server's own workspace (server/Cargo.toml), not the root's.
+workspace = "../../server"
+# Not the workspace's version: a release bump would rebuild this crate and
+# everything on it. The binaries carry the release.
+version = "0.0.0"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+# Every platform feature crate (#314), side by side on arugula-platform-base:
+# both binaries register them all here, so the platform is the same in the
+# hub's process and as its own.
+[dependencies]
+arugula-platform-agents = { workspace = true }
+
+[lints]
+workspace = true

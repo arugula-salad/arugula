@@ -656,7 +656,7 @@ mod tests {
         let n = paths.len();
         paths.dedup();
         assert_eq!(paths.len(), n, "a path once");
-        let mut platform: Vec<&str> = arugula_platform::paths();
+        let mut platform: Vec<&str> = crate::platform_paths();
         platform.sort();
         paths.sort();
         assert_eq!(paths, platform, "routes.toml's platform paths are the platform's router's");

@@ -106,6 +106,8 @@ pub(crate) async fn split_github(
     wrap: impl FnOnce(Arc<dyn arugula_platform::HubPort>) -> Arc<dyn arugula_platform::HubPort>,
     github: Option<arugula_platform::forge::GithubApp>,
 ) -> Split {
+    // The platform binary's feature crates (#314).
+    arugula_platform_all::register();
     let (internal_l, internal) = listener().await;
     let (platform_l, platform_base) = listener().await;
     let mut p = Platform::new(

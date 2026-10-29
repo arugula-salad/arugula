@@ -244,10 +244,11 @@ static PLANTER_GO_LIVE: planter::GoLive = planter::GoLive;
 static PLANTER_SHIP: planter::Ship = planter::Ship;
 static PLANTER_PROMOTE: planter::Promote = planter::Promote;
 
-/// Whether environments here may name the fake driver: tests, and a
-/// platform started with `ARUGULA_PLATFORM_FAKE_DRIVER=1` (testnet).
+/// Whether environments here may name the fake driver: tests (the feature
+/// crates' too, #314), and a platform started with
+/// `ARUGULA_PLATFORM_FAKE_DRIVER=1` (testnet).
 pub fn fake_allowed() -> bool {
-    cfg!(test) || std::env::var("ARUGULA_PLATFORM_FAKE_DRIVER").is_ok_and(|v| v == "1")
+    cfg!(any(test, feature = "testing")) || std::env::var("ARUGULA_PLATFORM_FAKE_DRIVER").is_ok_and(|v| v == "1")
 }
 
 /// The driver called `name`, if there is one here.

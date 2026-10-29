@@ -20,6 +20,8 @@ path = "src/main.rs"
 [dependencies]
 anyhow = { workspace = true }
 arugula-control-base = { workspace = true }
+# The platform's feature crates, for the platform in this process.
+arugula-platform-all = { workspace = true }
 
 [features]
 # Embed web/dist and web/dist-platform even in a debug build: the hub's

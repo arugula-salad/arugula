@@ -4,6 +4,10 @@
 //! more than the owner reads, and what an agent posts labelled and
 //! disclosed to everyone in the room.
 
+// Also the feature crates' test harness (#314, the `testing` feature): its
+// helpers are `pub`, and only its own tests use the rest.
+#![cfg_attr(not(test), allow(dead_code, unused_imports))]
+
 use std::sync::Arc;
 
 use arugula_control_wire::chat::ChatPost;
@@ -39,18 +43,18 @@ fn room(id: &str, kind: &str) -> Room {
     }
 }
 
-pub(crate) fn post(text: &str) -> ChatPost {
+pub fn post(text: &str) -> ChatPost {
     ChatPost { text: text.into(), ..Default::default() }
 }
 
-pub(crate) fn give(machine: &str, power: &str, scope: Value) -> Option<Value> {
+pub fn give(machine: &str, power: &str, scope: Value) -> Option<Value> {
     Some(json!({ "daemon": machine, "power": power, "scope": scope }))
 }
 
 /// a owns team t (b and x in it too) and the machine geek; c alone is in
 /// team u. #general is t's, and there's a DM between a and b and one
 /// between b and x. Chat is on for t. t's and u's default projects.
-pub(crate) async fn seeded() -> (Arc<TestHub>, Arc<crate::Platform>, String, String, String) {
+pub async fn seeded() -> (Arc<TestHub>, Arc<crate::Platform>, String, String, String) {
     let hub = Arc::new(TestHub::default());
     let (app, base) = serve(hub.clone()).await;
     hub.team("t", &[("a", TeamRole::Owner), ("b", TeamRole::Editor), ("x", TeamRole::Viewer)]);
@@ -67,7 +71,7 @@ pub(crate) async fn seeded() -> (Arc<TestHub>, Arc<crate::Platform>, String, Str
     (hub, app, base, t, u)
 }
 
-pub(crate) fn geek() -> Machine {
+pub fn geek() -> Machine {
     Machine { account: "a".into(), daemon: "geek".into() }
 }
 

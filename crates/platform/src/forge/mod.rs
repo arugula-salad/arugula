@@ -73,8 +73,8 @@ pub mod ingest;
 mod ingest_tests;
 pub mod items;
 pub mod links;
-#[cfg(test)]
-pub(crate) mod links_tests;
+#[cfg(any(test, feature = "testing"))]
+pub mod links_tests;
 #[cfg(test)]
 mod mentions_tests;
 pub mod ops;

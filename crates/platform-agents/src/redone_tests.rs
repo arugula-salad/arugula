@@ -67,7 +67,7 @@ async fn platform_with(projection: crate::infisical::Projection) -> (Arc<TestHub
     let cfg = crate::Config { public_url: "https://control.example".into(), ..Default::default() };
     let mut p = Platform::new(cfg, Db::test(), hub.clone(), reqwest::Client::new(), Default::default());
     p.secret_key = Some(Arc::new(crate::secrets::SecretCipher::new(&"07".repeat(32)).unwrap()));
-    p.projection = projection;
+    p.slots.put(projection);
     // planter's drivers apply on hosted boxes: these accounts may use them.
     p.hosted = crate::hosted::Config { accounts: vec!["a".into(), "b".into()], ..Default::default() };
     p.deploy_app = Some(crate::forge::GithubApp::new(

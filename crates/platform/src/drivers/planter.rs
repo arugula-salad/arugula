@@ -50,14 +50,14 @@ use crate::{
 pub use arugula_e2e::deploy::planter::PROJECTS_VAR;
 
 /// Projects tests name, as `PLANTER_PROJECTS` would.
-#[cfg(test)]
+#[cfg(any(test, feature = "testing"))]
 pub static TEST_PROJECTS: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
 
 /// Whether `project` may use planter's drivers: one `PLANTER_PROJECTS`
 /// names (`*`, every project, only where the fake driver is allowed: tests
 /// and testnet).
 pub fn project_allowed(project: &str) -> Result<(), String> {
-    #[cfg(test)]
+    #[cfg(any(test, feature = "testing"))]
     if TEST_PROJECTS.lock().unwrap_or_else(|e| e.into_inner()).iter().any(|p| p == project || p == "*") {
         return Ok(());
     }

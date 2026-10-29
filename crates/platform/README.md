@@ -52,8 +52,6 @@ Start with `src/lib.rs`, then:
 - `src/projects.rs`: projects and team members, and the feed follower that
   keeps them and grants (from where it got to, in `hub_feed`).
 - `src/router.rs`: its routes, which the hub mounts in process.
-- `src/links.rs`: the platform page's "Linked products" (M229), which the
-  hub keeps beside its issuer's clients and answers through `HubPort`.
 - `src/boxes.rs`: hud boxes as clients (M237): a bound box's project's
   members and its reviews posted into object threads (kept `via` the box),
   which the hub asks for through `PlatformPort`.
@@ -83,10 +81,19 @@ Start with `src/lib.rs`, then:
   the hub's `arugula-control platform drop-copies` (#1196), which drops
   the first window's leftover copies from `control.db` once they still
   match the window's output.
-- `src/agent_mcp.rs` and `src/agent_tokens.rs`: the MCP endpoint for
-  agents with no machine (M230, `POST /api/mcp`), and the bearer agent
-  grant tokens that open it, which only it reads. Each tool calls the
-  route a machine's agents call, with the token in the machine's place.
+- `src/features.rs`: the feature crates (#314, `crates/platform-*`), side
+  by side on this base: each registers its routes and background work
+  (`Feature`) and keeps what it holds in memory in `Platform::slots`. Both
+  binaries register them all (`crates/platform-all`). A feature crate names
+  this crate's modules as the platform did before the split (`use
+  arugula_platform::*`), and its tests use the harness this crate exports
+  with its `testing` feature (`testing`, `chat_tests::TestHub`,
+  `deploys_tests`, `forge::links_tests`, `agents_tests`).
+- `../platform-agents` (`arugula-platform-agents`): the MCP endpoint for
+  agents with no machine (M230, `POST /api/mcp`) and the bearer agent
+  grant tokens that open it; redone's import and the Infisical projection
+  (M235); studio as a client (M236); the platform page's "Linked products"
+  (M229).
 - `src/contract.rs` (feature `contract`): the tests every `HubPort` passes.
   Control runs them against its in-process port and against `HttpHub`
   over its internal API (`hub_port.rs`).

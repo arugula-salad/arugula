@@ -508,10 +508,20 @@ fn platform(
     (gateway::PlatformAt::InProcess(Arc::new(p)), hub)
 }
 
+/// Every path the platform answers, with every feature crate registered
+/// as the binary registers them (#314).
+#[cfg(test)]
+pub(crate) fn platform_paths() -> Vec<&'static str> {
+    arugula_platform_all::register();
+    arugula_platform::paths()
+}
+
 #[cfg(test)]
 impl App {
-    /// An app for tests: an in-memory database, nothing configured.
+    /// An app for tests: an in-memory database, nothing configured. Its
+    /// platform has every feature crate, as the binary's has.
     pub fn for_tests(public_url: &str) -> Self {
+        arugula_platform_all::register();
         let db = db::Db::memory();
         let vapid = push::Vapid::load(&db).unwrap();
         let hosted_key = hosted::load_key(&db).unwrap();
@@ -1232,7 +1242,6 @@ async fn run() -> anyhow::Result<()> {
     if let Some(p) = app.platform.local() {
         arugula_platform::hosted::start(p);
         arugula_platform::keys::start(p);
-        arugula_platform::clients::start(p);
         // The job worker: runs' dispatch (M212) and schedules (M214).
         arugula_platform::work::start(p);
         // Runs' logs past their days (M213).
@@ -1243,6 +1252,9 @@ async fn run() -> anyhow::Result<()> {
         arugula_platform::projects::start(p);
         arugula_platform::billing::start(p);
         arugula_platform::forge::start(p);
+        // The feature crates' (#314): clients' secret events past their
+        // days (M236).
+        arugula_platform::features::start(p);
     }
     // Shared Docs' open counts reach the database.
     {
