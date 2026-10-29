@@ -13,7 +13,7 @@ jake-air ("this is okay"); the defaults went to 4 fps and more detail after that
 a product decision**: no Labs flag, the relay works on one platform machine, and the shells' camera
 access is untested.
 
-![The People block with the fake camera: you, and sam and riley echoing you](people-block.png)
+![The People block with the fake camera: you, and sam and riley echoing you](https://share.files.inevitable.fyi/2026-10-29/s43-people-block.png)
 
 ## What's on the branch
 
@@ -39,7 +39,7 @@ labelling or depth starts; their Wasm and models (~65 MB in all, fetched by
 `web/scripts/outline-assets.sh`) are served by control. transformers.js runs with its Wasm cache
 off: the cache makes a `blob:` script, which the CSP refuses.
 
-![Live avatars in #general: the people whose cameras are on show as outlines](live-avatars.png)
+![Live avatars in #general: the people whose cameras are on show as outlines](https://share.files.inevitable.fyi/2026-10-29/s43-live-avatars.png)
 
 ## Numbers
 

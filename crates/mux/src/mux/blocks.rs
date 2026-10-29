@@ -374,7 +374,10 @@ impl Daemon {
     pub(super) fn only_shown(&self, client: ClientId, pane: PaneId) -> bool {
         self.patched.contains_key(&client)
             && self.blocks.get(&pane).is_some_and(|b| {
-                matches!(b.kind(), BlockType::Agent | BlockType::Chat | BlockType::Doc | BlockType::Board | BlockType::People)
+                matches!(
+                    b.kind(),
+                    BlockType::Agent | BlockType::Chat | BlockType::Doc | BlockType::Board | BlockType::People
+                )
             })
     }
 
