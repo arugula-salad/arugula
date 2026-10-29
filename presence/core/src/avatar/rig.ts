@@ -257,3 +257,18 @@ export function withElbows(r: Rig): Rig {
   if (!r.elbowR && r.wristR) out.elbowR = elbowFor(r.shoulderR ?? SHOULDER_R, r.wristR, -1);
   return out;
 }
+
+/** How long a wave (PROTOCOL.md's `wave`) shows on the waver's avatar. */
+export const WAVE_MS = 3000;
+
+/** `r` (or a neutral rig) with its left hand up and waving at `t` seconds:
+ * what a page draws on someone's avatar while their wave is fresh. */
+export function waving(r: Rig | null, t: number): Rig {
+  const out: Rig = { ...(r ?? neutral()) };
+  const swing = Math.sin(t * 7);
+  out.wristL = [0.95 + swing * 0.08, -0.5];
+  out.elbowL = null;
+  out.handL = { angle: -Math.PI / 2 + swing * 0.35 };
+  out.smile = Math.max(out.smile, 0.6);
+  return out;
+}

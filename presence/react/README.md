@@ -10,11 +10,11 @@ dependency. The surface: `../sdk/API.md`.
   <People />
   <Avatar user={id} size="head" />
 </PresenceRoom>
-const { members, knock, camera } = usePresence();
+const { members, wave, camera } = usePresence();
 ```
 
 - `PresenceRoom`: `room`, `token` (a room token your server signed, or an async function returning a fresh one), `relay`, `mode`, `look`.
 - `People`: `size` (`bust`|`head`), `self` (`first`|`hide`). `Avatar`: `user`, `size`; 36×36 unless styled. `CameraControls`: `controls` (`full`|`button`).
-- `usePresence()`: `{ room, members, live, error, me, knocks, knock, answer, setLook, camera: { on, start, stop } }`.
+- `usePresence()`: `{ room, members, live, error, me, waves, wave, answer, setLook, camera: { on, start, stop } }`.
 
 `pnpm typecheck` checks it against React's types.

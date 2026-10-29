@@ -83,7 +83,7 @@ export function Docs() {
             </tbody>
           </table>
           <p>
-            Events bubble from the room element: <code>arugula:members</code>, <code>arugula:knock</code>, <code>arugula:answer</code>,{" "}
+            Events bubble from the room element: <code>arugula:members</code>, <code>arugula:wave</code>, <code>arugula:answer</code>,{" "}
             <code>arugula:live</code>. Theme with custom properties on any ancestor:
           </p>
           <Code code={theming} label="Theming" />
@@ -124,12 +124,12 @@ export function Docs() {
             <li>Tracking runs in the browser (MediaPipe; WebGPU for depth). The camera's picture never leaves the page.</li>
             <li>What's sent: a rig (21–40 bytes, ~12 a second) or line outlines (a few KB, ~4 a second). The relay keeps each person's newest frame in memory for someone joining, and nothing else.</li>
             <li>64 people a room, 32 KiB a frame, a frame per 70 ms per person.</li>
-            <li>Calls (voice and video after a knock) are next; knocking works today.</li>
+            <li>Calls (voice and video after a wave) are next; waving works today.</li>
           </ul>
 
           <h2 id="protocol">Protocol</h2>
           <p>
-            Phoenix channels over a WebSocket: join <code>room:&lt;room&gt;</code> with a token, frames as binary pushes, presence, knock and answer.
+            Phoenix channels over a WebSocket: join <code>room:&lt;room&gt;</code> with a token, frames as binary pushes, presence, wave and answer.
             The whole thing is one page: <a href={`${SOURCE}/PROTOCOL.md`}>PROTOCOL.md</a>.
           </p>
         </article>

@@ -83,8 +83,8 @@ export function Landing() {
             <span>Nobody's on camera. You can tell who's at their desk, who's laughing, who stepped away, and they can tell the same about you.</span>
           </div>
           <div class="point">
-            <b>Knock to talk</b>
-            <span>Presence is the way in: knock on someone's tile and they answer. Voice and video calls build on that next.</span>
+            <b>Wave to talk</b>
+            <span>Presence is the way in: wave at someone, they wave back, and you're talking. Voice and video calls build on that next.</span>
           </div>
           <div class="point">
             <b>Small and open</b>

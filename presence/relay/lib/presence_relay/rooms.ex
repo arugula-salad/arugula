@@ -10,7 +10,7 @@ defmodule PresenceRelay.Rooms do
   when their newest frame goes stale, and when their last connection
   leaves. Internal topics carry the app, so two apps' rooms of one name
   never meet: `r:<app>:<room>` (frames and `off`), `m:<app>:<room>:<sub>`
-  (knocks and answers for one member), `p:<app>:<room>` (presence).
+  (waves and answers for one member), `p:<app>:<room>` (presence).
   """
   use GenServer
 

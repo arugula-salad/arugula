@@ -6,6 +6,7 @@
 import type { Member } from "@arugula/presence";
 import { characterOf } from "@arugula/presence-core/avatar/characters/index";
 import { animate, type Source } from "@arugula/presence-core/avatar/stage";
+import { waving, type Rig } from "@arugula/presence-core/avatar/rig";
 import { draw } from "@arugula/presence-core/outline/render";
 import { palette } from "@arugula/presence-core/outline/classes";
 import type { Frame } from "@arugula/presence-core/outline/frame";
@@ -30,12 +31,14 @@ function what(room: Room, m: Member): { kind: Kind; frame: Frame | null; source:
   const me = m.sub === room.me;
   const seen = c.of(m.sub);
   const frame = (me ? c.mine?.frame : null) ?? seen?.frame ?? null;
+  // A fresh wave (theirs at you, yours at someone) waves on their avatar.
+  const hand = (rig: Rig | null) => (c.waving(m.sub, me) ? waving(rig, performance.now() / 1000) : rig);
   const source = (): Source | null => {
-    if (me) return { rig: c.mine?.rig ?? null, look: c.look, away: false };
+    if (me) return { rig: hand(c.mine?.rig ?? null), look: c.look, away: false };
     const s = c.of(m.sub);
     const now = c.members.find((x) => x.sub === m.sub) ?? m;
     const look = s?.look ?? c.lookOf(m.sub) ?? now.look;
-    return look ? { rig: s?.rig ?? null, look, away: now.away } : null;
+    return look ? { rig: hand(s?.rig ?? null), look, away: now.away } : null;
   };
   const kind: Kind = frame ? "outline" : (me ? c.mode === "avatar" : !!source()) ? "avatar" : "initial";
   return { kind, frame, source };

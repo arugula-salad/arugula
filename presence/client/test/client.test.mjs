@@ -91,14 +91,14 @@ test("an outline frame lands decoded, and an unreadable frame is skipped", async
   stop();
 });
 
-test("knocks are kept until answered, and the look goes to the transport", () => {
+test("waves are kept until answered, and the look goes to the transport", () => {
   const t = fake();
   const c = new PresenceClient({ transport: t.transport, storage: "test." });
   const stop = c.watch();
-  t.on.knock("sam");
-  assert.deepEqual(c.knocks.map((k) => k.from), ["sam"]);
+  t.on.wave("sam");
+  assert.deepEqual(c.waves.map((k) => k.from), ["sam"]);
   c.answer("sam", true);
-  assert.deepEqual(c.knocks, []);
+  assert.deepEqual(c.waves, []);
   c.setLook({ character: 1, colour: 4 });
   assert.deepEqual(t.states.at(-1), { look: { character: 1, colour: 4 } });
   stop();

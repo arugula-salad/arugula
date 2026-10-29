@@ -40,8 +40,8 @@ export function usePresence(): {
   live: "connecting" | "on" | "refused" | "off";
   error: Error | null;
   me: string;
-  knocks: { from: string; at: number }[];
-  knock(sub: string): void;
+  waves: { from: string; at: number }[];
+  wave(sub: string): void;
   answer(sub: string, yes: boolean): void;
   setLook(look: Look): void;
   camera: { on: boolean; start(o?: { mode?: "avatar" | "outline" }): Promise<void> | void; stop(): void };

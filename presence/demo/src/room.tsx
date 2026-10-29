@@ -1,11 +1,12 @@
 // arugula.stream's rooms: join by link (/r/<room> or ?room=), a demo token
 // from the relay, the Phoenix transport (@arugula/presence), and everyone
-// here as live avatars or outlines (@arugula/presence-core). Knock to talk.
+// here as live avatars or outlines (@arugula/presence-core). Wave to talk.
 
 import { useEffect, useRef, useState } from "preact/hooks";
 import { PresenceClient, phoenixTransport, type Member } from "@arugula/presence";
 import { CHARACTERS, characterOf } from "@arugula/presence-core/avatar/characters/index";
 import { animate, COLOURS, type Source } from "@arugula/presence-core/avatar/stage";
+import { waving, type Rig } from "@arugula/presence-core/avatar/rig";
 import { draw } from "@arugula/presence-core/outline/render";
 import { palette } from "@arugula/presence-core/outline/classes";
 import type { Frame } from "@arugula/presence-core/outline/frame";
@@ -84,12 +85,14 @@ function Tile({ client, m, me }: { client: PresenceClient; m: Member; me: boolea
   const look = me ? client.look : (seen?.look ?? client.lookOf(m.sub) ?? m.look);
   const avatar = me ? client.mode === "avatar" : !!look && !frame;
   const live = !!frame || !!seen?.rig || (me && !!client.mine?.rig);
-  const knocked = client.answers.find((a) => a.from === m.sub);
+  const waved = client.answers.find((a) => a.from === m.sub);
+  // A fresh wave (theirs at you, yours at someone) waves on their avatar.
+  const hand = (rig: Rig | null) => (client.waving(m.sub, me) ? waving(rig, performance.now() / 1000) : rig);
   const source = (): Source | null => {
-    if (me) return { rig: client.mine?.rig ?? null, look: client.look, away: false };
+    if (me) return { rig: hand(client.mine?.rig ?? null), look: client.look, away: false };
     const s = client.of(m.sub);
     const l = s?.look ?? client.lookOf(m.sub) ?? m.look;
-    return l ? { rig: s?.rig ?? null, look: l, away: m.away } : null;
+    return l ? { rig: hand(s?.rig ?? null), look: l, away: m.away } : null;
   };
   return (
     <figure class={live ? "tile live" : "tile"} data-sub={m.sub}>
@@ -101,8 +104,8 @@ function Tile({ client, m, me }: { client: PresenceClient; m: Member; me: boolea
         {live && <span class="tag">live</span>}
         {!live && m.away && <span class="tag" style={{ color: "var(--dim)" }}>away</span>}
         {!me && (
-          <button class="btn knock" onClick={() => client.knock(m.sub)} title={`Ask ${m.name} to talk`}>
-            {knocked ? (knocked.yes ? "said yes" : "not now") : "Knock"}
+          <button class="btn wave" onClick={() => client.wave(m.sub)} title={`Wave at ${m.name}`}>
+            {waved ? (waved.yes ? "waved back" : "not now") : "Wave"}
           </button>
         )}
       </figcaption>
@@ -200,11 +203,11 @@ export function Room({ room, name }: { room: string; name: string }) {
   const me = state.me();
   const mine: Member = client.members.find((m) => m.sub === me) ?? { sub: me || "me", name, look: client.look, mode: "none", away: false, watching: true };
   const others = client.members.filter((m) => m.sub !== me);
-  // Names of everyone seen here, so a knock from someone who's since left
+  // Names of everyone seen here, so a wave from someone who's since left
   // still says who.
   const names = useRef(new Map<string, string>()).current;
   for (const m of client.members) names.set(m.sub, m.name);
-  const knock = client.knocks[client.knocks.length - 1];
+  const wave = client.waves[client.waves.length - 1];
   const share = () => {
     void navigator.clipboard?.writeText(location.href).then(() => {
       setCopied(true);
@@ -231,16 +234,16 @@ export function Room({ room, name }: { room: string; name: string }) {
         ))}
       </div>
       {!others.length && <p class="empty">Nobody else here yet. Send someone the room link.</p>}
-      {knock && (
+      {wave && (
         <div class="toast" role="alert">
           <span>
-            <b>{names.get(knock.from) ?? "Someone"}</b> wants to talk.
+            <b>{names.get(wave.from) ?? "Someone"}</b> waved at you.
           </span>
           <div class="row">
-            <button class="btn primary" onClick={() => client.answer(knock.from, true)}>
-              Sure
+            <button class="btn primary" onClick={() => client.answer(wave.from, true)}>
+              Wave back
             </button>
-            <button class="btn" onClick={() => client.answer(knock.from, false)}>
+            <button class="btn" onClick={() => client.answer(wave.from, false)}>
               Not now
             </button>
           </div>

@@ -1,6 +1,6 @@
 // connect(): a room on arugula.stream (or any presence relay) for a page
 // to show (../../sdk/API.md). A Room is a PresenceClient over the Phoenix
-// transport, its changes as events (members, knock, answer, live), and
+// transport, its changes as events (members, wave, answer, live), and
 // mount/avatar to draw people into an element. Who's in which room is the
 // token's business: your server signs it (or, to prototype, the relay's
 // demo tokens).
@@ -35,7 +35,7 @@ export interface ConnectOptions {
 
 export interface RoomEvents {
   members: (members: Member[]) => void;
-  knock: (from: string) => void;
+  wave: (from: string) => void;
   answer: (from: string, yes: boolean) => void;
   live: (state: "connecting" | "on" | "refused" | "off") => void;
 }
@@ -63,10 +63,10 @@ export class Room {
   readonly room: string;
   /** Your own sub, once a token has been read. */
   me = "";
-  private handlers: { [K in keyof RoomEvents]: Set<RoomEvents[K]> } = { members: new Set(), knock: new Set(), answer: new Set(), live: new Set() };
+  private handlers: { [K in keyof RoomEvents]: Set<RoomEvents[K]> } = { members: new Set(), wave: new Set(), answer: new Set(), live: new Set() };
   private stop: () => void;
   private unsub: () => void;
-  private seen = { members: [] as Member[], knocks: 0, answers: 0, live: "off" as string };
+  private seen = { members: [] as Member[], waves: 0, answers: 0, live: "off" as string };
 
   constructor(o: ConnectOptions) {
     this.room = o.room;
@@ -122,8 +122,8 @@ export class Room {
     this.client.setLook(look);
   }
 
-  knock(sub: string) {
-    this.client.knock(sub);
+  wave(sub: string) {
+    this.client.wave(sub);
   }
 
   answer(sub: string, yes: boolean) {
@@ -157,8 +157,8 @@ export class Room {
       this.seen.members = c.members;
       this.emit("members", c.members);
     }
-    if (c.knocks.length > this.seen.knocks) for (const k of c.knocks.slice(this.seen.knocks)) this.emit("knock", k.from);
-    this.seen.knocks = c.knocks.length;
+    if (c.waves.length > this.seen.waves) for (const k of c.waves.slice(this.seen.waves)) this.emit("wave", k.from);
+    this.seen.waves = c.waves.length;
     if (c.answers.length > this.seen.answers) for (const a of c.answers.slice(this.seen.answers)) this.emit("answer", a.from, a.yes);
     this.seen.answers = c.answers.length;
     if (c.live !== this.seen.live) {

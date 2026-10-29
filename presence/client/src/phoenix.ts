@@ -1,7 +1,7 @@
 // arugula.video's relay as a transport (../../PROTOCOL.md): a Phoenix
 // socket with a room token, the room's channel, binary frames both ways
 // (the relay puts the sender's sub in front of each: `len:u8 sub frame`),
-// Phoenix.Presence for who's there, and knocks. The channel is joined while
+// Phoenix.Presence for who's there, and waves. The channel is joined while
 // this page listens or publishes, and left when it does neither.
 
 import { Presence, Socket, type Channel } from "phoenix";
@@ -78,7 +78,7 @@ export function phoenixTransport(o: PhoenixTransportOptions): Transport {
     ch.on("off", ({ sub }: { sub: string }) => {
       if (listening) on?.off(sub);
     });
-    ch.on("knock", ({ from }: { from: string }) => on?.knock?.(from));
+    ch.on("wave", ({ from }: { from: string }) => on?.wave?.(from));
     ch.on("answer", ({ from, yes }: { from: string; yes: boolean }) => on?.answer?.(from, yes));
     const presence = new Presence(ch);
     presence.onSync(() => on?.members?.(presence.list((sub, { metas }: { metas: Meta[] }) => memberOf(sub, metas))));
@@ -136,8 +136,8 @@ export function phoenixTransport(o: PhoenixTransportOptions): Transport {
       settle();
     },
     state: push,
-    knock(to) {
-      channel?.push("knock", { to });
+    wave(to) {
+      channel?.push("wave", { to });
     },
     answer(to, yes) {
       channel?.push("answer", { to, yes });

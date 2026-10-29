@@ -15,7 +15,7 @@
 
 import { startCamera, type Camera, type FrameStats } from "@arugula/presence-core/outline/camera";
 import { decodeFrame, type Frame } from "@arugula/presence-core/outline/frame";
-import { RIG, unpackRig, type Look, type Rig } from "@arugula/presence-core/avatar/rig";
+import { RIG, WAVE_MS, unpackRig, type Look, type Rig } from "@arugula/presence-core/avatar/rig";
 import type { AvatarCamera } from "@arugula/presence-core/avatar/cam";
 import type { Member, Mode, Transport, TransportEvents } from "./transport.ts";
 
@@ -101,9 +101,10 @@ export class PresenceClient {
   live: "off" | "connecting" | "on" | "refused" = "off";
   /** Who's in the room, where the transport knows (the relay's presence). */
   members: Member[] = [];
-  /** Who knocked, newest last, until answered. */
-  knocks: { from: string; at: number }[] = [];
-  /** Answers to your knocks, newest last, until dismissed. */
+  /** Who waved, newest last, until answered. */
+  waves: { from: string; at: number }[] = [];
+  private wavedAt = 0;
+  /** Answers to your waves, newest last, until dismissed. */
   answers: { from: string; yes: boolean; at: number }[] = [];
 
   constructor(o: PresenceClientOptions) {
@@ -152,17 +153,27 @@ export class PresenceClient {
   }
 
   /** Ask `to` to talk, or answer someone who asked. */
-  knock(to: string) {
-    this.transport.knock?.(to);
+  wave(to: string) {
+    this.wavedAt = Date.now();
+    this.transport.wave?.(to);
+  }
+
+  /** Whether `sub`'s avatar is waving now: their wave (or wave back) came
+   * in the last WAVE_MS, or it's you and you just waved. */
+  waving(sub: string, me = false): boolean {
+    const fresh = (at: number) => Date.now() - at < WAVE_MS;
+    if (me) return fresh(this.wavedAt);
+    return this.waves.some((w) => w.from === sub && fresh(w.at)) || this.answers.some((a) => a.from === sub && a.yes && fresh(a.at));
   }
 
   answer(from: string, yes: boolean) {
-    this.knocks = this.knocks.filter((k) => k.from !== from);
+    if (yes) this.wavedAt = Date.now();
+    this.waves = this.waves.filter((k) => k.from !== from);
     this.transport.answer?.(from, yes);
     this.emit();
   }
 
-  /** Forget an answer to your knock (it's been seen). */
+  /** Forget an answer to your wave (it's been seen). */
   dismiss(from: string) {
     this.answers = this.answers.filter((a) => a.from !== from);
     this.emit();
@@ -337,8 +348,8 @@ export class PresenceClient {
       this.members = members;
       this.emit();
     },
-    knock: (from) => {
-      this.knocks = [...this.knocks.filter((k) => k.from !== from), { from, at: Date.now() }];
+    wave: (from) => {
+      this.waves = [...this.waves.filter((k) => k.from !== from), { from, at: Date.now() }];
       this.emit();
     },
     answer: (from, yes) => {

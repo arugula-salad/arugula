@@ -2,7 +2,7 @@ defmodule PresenceRelayWeb.RoomChannel do
   @moduledoc """
   A room (PROTOCOL.md, "The room channel"): the token's room only. On
   join: presence, then every member's newest frame. Frames go to the rest
-  of the room; `state` updates this connection's presence; knocks and
+  of the room; `state` updates this connection's presence; waves and
   answers go to one member.
   """
   use Phoenix.Channel
@@ -52,8 +52,8 @@ defmodule PresenceRelayWeb.RoomChannel do
     {:noreply, socket}
   end
 
-  def handle_info({:relay_knock, from}, socket) do
-    push(socket, "knock", %{from: from})
+  def handle_info({:relay_wave, from}, socket) do
+    push(socket, "wave", %{from: from})
     {:noreply, socket}
   end
 
@@ -88,11 +88,11 @@ defmodule PresenceRelayWeb.RoomChannel do
     {:noreply, socket}
   end
 
-  def handle_in("knock", %{"to" => to}, %{assigns: a} = socket) when is_binary(to) do
+  def handle_in("wave", %{"to" => to}, %{assigns: a} = socket) when is_binary(to) do
     PubSub.broadcast(
       PresenceRelay.PubSub,
       Rooms.member_topic(a.app, a.room, to),
-      {:relay_knock, a.sub}
+      {:relay_wave, a.sub}
     )
 
     {:noreply, socket}

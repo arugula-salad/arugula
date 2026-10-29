@@ -96,15 +96,15 @@ defmodule PresenceRelay.RoomTest do
     refute_receive {:pushed, :b, "off", %{sub: "alice"}}, 150
   end
 
-  test "knocks and answers reach only the member they're for" do
+  test "waves and answers reach only the member they're for" do
     r = room()
     {:ok, a, _} = client(:a, r, "alice")
     {:ok, b, _} = client(:b, r, "bob")
     {:ok, _c, _} = client(:c, r, "carol")
-    send_as(a, "knock", %{"to" => "bob"})
-    assert_receive {:pushed, :b, "knock", %{from: "alice"}}
-    refute_receive {:pushed, :c, "knock", _}, 100
-    refute_receive {:pushed, :a, "knock", _}, 10
+    send_as(a, "wave", %{"to" => "bob"})
+    assert_receive {:pushed, :b, "wave", %{from: "alice"}}
+    refute_receive {:pushed, :c, "wave", _}, 100
+    refute_receive {:pushed, :a, "wave", _}, 10
     send_as(b, "answer", %{"to" => "alice", "yes" => true})
     assert_receive {:pushed, :a, "answer", %{from: "bob", yes: true}}
     refute_receive {:pushed, :c, "answer", _}, 100

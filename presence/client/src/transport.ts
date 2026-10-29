@@ -37,7 +37,7 @@ export interface TransportEvents {
   /** Everyone in the room, whenever that changes. */
   members?(members: Member[]): void;
   /** Someone asks to talk. */
-  knock?(from: string): void;
+  wave?(from: string): void;
   answer?(from: string, yes: boolean): void;
 }
 
@@ -53,6 +53,6 @@ export interface Transport {
   /** The page is closing: say so if it can (a beacon). */
   leaving?(): void;
   state?(s: State): void;
-  knock?(to: string): void;
+  wave?(to: string): void;
   answer?(to: string, yes: boolean): void;
 }

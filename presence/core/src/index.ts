@@ -14,7 +14,7 @@ export { draw, type DrawOptions } from "./outline/render.ts";
 export { startCamera, GRID_W, GRID_H, type Camera, type CameraOptions, type FrameStats } from "./outline/camera.ts";
 export { VOC, FACE, GROUPS, groupOf, palette } from "./outline/classes.ts";
 export {
-  RIG, packRig, unpackRig, neutral, idle, approach, wrap, elbowFor, withElbows, SHOULDER_L, SHOULDER_R,
+  RIG, packRig, unpackRig, neutral, idle, approach, wrap, elbowFor, withElbows, waving, WAVE_MS, SHOULDER_L, SHOULDER_R,
   type Rig, type Look, type Hand, type Point,
 } from "./avatar/rig.ts";
 export { solve, handOf, OneEuro, RigFilter, type Seen, type Mark, type Shapes, type Calib } from "./avatar/solve.ts";

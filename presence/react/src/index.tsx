@@ -63,7 +63,7 @@ export function PresenceRoom({ room: id, token, relay, mode, look, children }: P
 /** The room, its members and what you can do in it. */
 export function usePresence() {
   const { room, members, live, error } = useContext(Presence);
-  // Re-render on the room's changes (camera state, knocks).
+  // Re-render on the room's changes (camera state, waves).
   const [, tick] = useState(0);
   useEffect(() => room?.client.subscribe(() => tick((n) => n + 1)), [room]);
   return {
@@ -72,8 +72,8 @@ export function usePresence() {
     live,
     error,
     me: room?.me ?? "",
-    knocks: room?.client.knocks ?? [],
-    knock: (sub: string) => room?.knock(sub),
+    waves: room?.client.waves ?? [],
+    wave: (sub: string) => room?.wave(sub),
     answer: (sub: string, yes: boolean) => room?.answer(sub, yes),
     setLook: (look: Look) => room?.setLook(look),
     camera: {

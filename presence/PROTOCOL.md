@@ -64,8 +64,8 @@ watching can drop to a frame every few seconds).
 |---|---|---|
 | `frame` | binary, ≤ 32 KiB | the member's newest frame (below). Frames closer than 70 ms to the member's last are dropped. |
 | `state` | `{mode?, look?, away?, watching?}` | updates the member's presence meta |
-| `knock` | `{to: <sub>}` | ask someone to talk (calls come later) |
-| `answer` | `{to: <sub>, yes: bool}` | answer a knock |
+| `wave` | `{to: <sub>}` | wave at someone: a hello that asks to talk (calls come later) |
+| `answer` | `{to: <sub>, yes: bool}` | answer a wave |
 
 ### Relay → client
 
@@ -73,8 +73,8 @@ watching can drop to a frame every few seconds).
 |---|---|---|
 | `frame` | binary: `len:u8 sub:utf8[len] frame` | someone's frame, to everyone else in the room; on join, every member's newest frame younger than 10 s |
 | `off` | `{sub}` | someone's camera went off, or their frame went stale (10 s) |
-| `knock` | `{from: <sub>}` | to the knocked member only |
-| `answer` | `{from: <sub>, yes}` | to the knocker only |
+| `wave` | `{from: <sub>}` | to the waved member only |
+| `answer` | `{from: <sub>, yes}` | to the waver only |
 
 Limits: 32 KiB a frame, 70 ms between a member's frames, 64 members a room,
 8 connections a member. Over a limit, the frame is dropped (no error);

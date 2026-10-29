@@ -23,7 +23,7 @@ elements. The same module, bundled, is served at
 - `<arugula-room>`: `room` (required); `token-url` (the element POSTs `{room}` with the page's cookies and expects `{token}`, a room token your server signed: `../sdk`); or `demo` + `name` to prototype with arugula.stream's public demo tokens; `relay` (default `wss://arugula.stream/socket`); `mode` (`avatar`|`outline`), `character`, `colour` as starting choices.
 - `<arugula-people>`: `size` (`bust`|`head`), `self` (`first`|`hide`). `<arugula-camera>`: `controls` (`full`|`button`). `<arugula-avatar>`: `user`, `size` (`head`|`bust`); size the element with CSS.
 - Theme with `--arugula-accent`, `--arugula-bg`, `--arugula-fg`, `--arugula-dim`, `--arugula-radius` on any ancestor.
-- Events on the room element (bubbling): `arugula:members` (`detail.members`), `arugula:knock` (`detail.from`), `arugula:answer` (`detail.from`, `detail.yes`), `arugula:live` (`detail.state`).
+- Events on the room element (bubbling): `arugula:members` (`detail.members`), `arugula:wave` (`detail.from`), `arugula:answer` (`detail.from`, `detail.yes`), `arugula:live` (`detail.state`).
 
 `example.html` is a page with nothing but the script tag, in demo mode.
 
@@ -38,11 +38,11 @@ const room = await connect({
   // relay: "wss://arugula.stream/socket",
 });
 room.members;                        // [{ sub, name, look, mode, away, watching }]
-room.on("members", (members) => {}); // also "knock", "answer", "live"
+room.on("members", (members) => {}); // also "wave", "answer", "live"
 await room.camera.start({ mode: "avatar" });   // or "outline"
 room.camera.stop();
 room.setLook({ character: 2, colour: 0 });
-room.knock(sub); room.answer(sub, true);
+room.wave(sub); room.answer(sub, true);
 room.mount(element, { size: "bust" });          // draw everyone into an element
 room.avatar(element, sub, { size: "head" });    // draw one person
 room.leave();

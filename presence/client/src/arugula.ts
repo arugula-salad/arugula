@@ -2,7 +2,7 @@
 // `/api/people/outline` (and `/outline/off`), and a page hears the people
 // it shares a team with over Server-Sent Events from `/api/people/outlines`,
 // whose `frame` events carry `{account, at, data}` (data in base64). Who
-// sees whom is control's (team rosters); there are no members or knocks.
+// sees whom is control's (team rosters); there are no members or waves.
 
 import type { Transport, TransportEvents } from "./transport.ts";
 

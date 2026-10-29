@@ -366,7 +366,7 @@ a.btn.primary {
   color: var(--dim);
 }
 
-.fake-knock {
+.fake-wave {
   position: absolute;
   right: 8px;
   bottom: 6px;
@@ -379,13 +379,13 @@ a.btn.primary {
   transition: transform 0.12s, background 0.12s;
 }
 
-.fake-knock.pressed {
+.fake-wave.pressed {
   transform: scale(0.92);
   background: var(--accent);
   color: var(--void);
 }
 
-/* The cursor glides to Sam's Knock (the fourth tile: row 2, column 1). */
+/* The cursor glides to Ravi's Wave (the fifth tile: row 2, column 2). */
 .fake-cursor {
   position: absolute;
   width: 18px;
@@ -399,12 +399,12 @@ a.btn.primary {
 }
 
 .fake-cursor.aim,
-.fake-cursor.knock {
-  left: 27%;
+.fake-cursor.wave {
+  left: 60%;
   top: 88%;
 }
 
-.fake-cursor.knock {
+.fake-cursor.wave {
   transform: scale(0.85);
 }
 
@@ -784,7 +784,7 @@ a.btn.primary {
   color: var(--accent);
 }
 
-.knock {
+.wave {
   font-size: 12px;
   padding: 3px 10px;
 }

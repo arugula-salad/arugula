@@ -51,7 +51,7 @@ export class ArugulaRoom extends HTMLElement {
         this.room = r;
         const fire = (type: string, detail: unknown) => this.dispatchEvent(new CustomEvent(`arugula:${type}`, { detail, bubbles: true, composed: true }));
         r.on("members", (members) => fire("members", { members }));
-        r.on("knock", (from) => fire("knock", { from }));
+        r.on("wave", (from) => fire("wave", { from }));
         r.on("answer", (from, yes) => fire("answer", { from, yes }));
         r.on("live", (state) => fire("live", { state }));
         fire("members", { members: r.members });

@@ -2,13 +2,13 @@
 // in it. Chat with live faces beside each message, and a room of people:
 // some as characters (scripted rigs through the real stage), some as line
 // drawings of a face (a little generator, through the real outline
-// renderer). A cursor knocks on someone, they say yes, and the tile turns
+// renderer). A cursor waves at someone, they wave back, and the tile turns
 // into a call. Nothing here touches a camera.
 
 import { useEffect, useRef, useState } from "preact/hooks";
 import { characterOf } from "@arugula/presence-core/avatar/characters/index";
 import { animate } from "@arugula/presence-core/avatar/stage";
-import { neutral, type Rig } from "@arugula/presence-core/avatar/rig";
+import { neutral, waving, type Rig } from "@arugula/presence-core/avatar/rig";
 import { draw } from "@arugula/presence-core/outline/render";
 import { palette } from "@arugula/presence-core/outline/classes";
 import type { Frame } from "@arugula/presence-core/outline/frame";
@@ -61,14 +61,20 @@ const SCRIPTS: Record<string, Script> = {
     }),
 };
 
-function Character({ character, colour, script, size, away = false }: { character: number; colour: number; script?: string; size: "bust" | "head"; away?: boolean }) {
+function Character({ character, colour, script, size, away = false, wave = false }: { character: number; colour: number; script?: string; size: "bust" | "head"; away?: boolean; wave?: boolean }) {
   const ref = useRef<HTMLCanvasElement>(null);
+  const waveRef = useRef(wave);
+  waveRef.current = wave;
   useEffect(
     () =>
       animate(ref.current!, {
         size,
         character: characterOf,
-        source: () => ({ rig: script && !away ? SCRIPTS[script](performance.now() / 1000) : null, look: { character, colour }, away }),
+        source: () => {
+          const t = performance.now() / 1000;
+          const rig = script && !away ? SCRIPTS[script](t) : null;
+          return { rig: waveRef.current ? waving(rig, t) : rig, look: { character, colour }, away };
+        },
       }),
     [character, colour, script, size, away],
   );
@@ -156,17 +162,21 @@ interface Person {
 const PEOPLE: Person[] = [
   { name: "Maya", kind: "avatar", character: 2, colour: 0, script: "talker" },
   { name: "Theo", kind: "lines", seed: 3, look: { hair: "short", glasses: true } },
-  { name: "Ines", kind: "avatar", character: 3, colour: 2, script: "waver" },
+  { name: "Ines", kind: "avatar", character: 3, colour: 2, script: "laugher" },
   { name: "Sam", kind: "lines", seed: 7, look: { hair: "curly" } },
   { name: "Ravi", kind: "avatar", character: 1, colour: 4, script: "typer" },
   { name: "June", kind: "avatar", character: 2, colour: 3, away: true },
 ];
 
-/** Who the cursor knocks on (Sam, a line drawing). */
-const KNOCKED = 3;
+/** Who the cursor waves at (Ravi, a character, who waves back). */
+const WAVED = 4;
 
-function Face({ p, size }: { p: Person; size: "bust" | "head" }) {
-  return p.kind === "lines" ? <LineFace seed={p.seed!} look={p.look!} /> : <Character character={p.character!} colour={p.colour!} script={p.script} size={size} away={p.away} />;
+function Face({ p, size, wave = false }: { p: Person; size: "bust" | "head"; wave?: boolean }) {
+  return p.kind === "lines" ? (
+    <LineFace seed={p.seed!} look={p.look!} />
+  ) : (
+    <Character character={p.character!} colour={p.colour!} script={p.script} size={size} away={p.away} wave={wave} />
+  );
 }
 
 const CHAT: { who: number; text: string }[] = [
@@ -176,13 +186,13 @@ const CHAT: { who: number; text: string }[] = [
 ];
 
 /** The story, in seconds of a 12 s loop. */
-function phase(t: number): "idle" | "aim" | "knock" | "ask" | "yes" | "call" {
+function phase(t: number): "idle" | "aim" | "wave" | "ask" | "yes" | "call" {
   const s = t % 12;
   if (s < 2) return "idle";
   if (s < 3.4) return "aim";
-  if (s < 4.2) return "knock";
-  if (s < 6.4) return "ask";
-  if (s < 7.2) return "yes";
+  if (s < 4.2) return "wave";
+  if (s < 5.4) return "ask";
+  if (s < 7.6) return "yes";
   return "call";
 }
 
@@ -194,7 +204,7 @@ export function FakeRoom() {
     return () => clearInterval(id);
   }, []);
   const ph = phase(t);
-  const callSecs = Math.max(0, Math.floor((t % 12) - 7.2));
+  const callSecs = Math.max(0, Math.floor((t % 12) - 7.6));
   return (
     <div class="fake" aria-label="An example: a team app with live presence in it" role="img">
       <div class="fake-chrome">
@@ -220,13 +230,13 @@ export function FakeRoom() {
         </div>
         <div class="fake-people">
           {PEOPLE.map((p, i) => (
-            <div class={`fake-tile${i === KNOCKED && ph === "call" ? " calling" : ""}${p.away ? " away" : ""}`}>
-              <Face p={p} size="bust" />
+            <div class={`fake-tile${i === WAVED && ph === "call" ? " calling" : ""}${p.away ? " away" : ""}`}>
+              <Face p={p} size="bust" wave={i === WAVED && ph === "yes"} />
               <span class="fake-name">
                 {p.name}
-                {i === KNOCKED && ph === "call" ? <em>talking · 0:0{callSecs}</em> : p.away ? <em class="dim">away</em> : null}
+                {i === WAVED && ph === "call" ? <em>talking · 0:0{callSecs}</em> : p.away ? <em class="dim">away</em> : null}
               </span>
-              {i === KNOCKED && (ph === "aim" || ph === "knock" || ph === "ask") && <span class={ph === "knock" ? "fake-knock pressed" : "fake-knock"}>Knock</span>}
+              {i === WAVED && (ph === "aim" || ph === "wave" || ph === "ask") && <span class={ph === "wave" ? "fake-wave pressed" : "fake-wave"}>Wave</span>}
             </div>
           ))}
           <span class={`fake-cursor ${ph}`} aria-hidden="true" />
@@ -236,11 +246,11 @@ export function FakeRoom() {
         <div class="fake-toast">
           {ph === "ask" ? (
             <span>
-              Knocking on <b>Sam</b>…
+              Waving at <b>Ravi</b>…
             </span>
           ) : (
             <span>
-              <b>Sam</b> said yes. Joining the call…
+              <b>Ravi</b> waved back. Joining the call…
             </span>
           )}
         </div>

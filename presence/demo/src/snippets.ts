@@ -30,7 +30,7 @@ const room = await connect({
 
 room.mount(document.querySelector("#people"));
 await room.camera.start({ mode: "avatar" });
-room.on("knock", (from) => console.log(from, "wants to talk"));`,
+room.on("wave", (from) => console.log(from, "waved at you"));`,
   React: `import { PresenceRoom, CameraControls, People, Avatar } from "@arugula/presence-react";
 
 export function Team({ me }) {
@@ -111,11 +111,11 @@ end`,
 export const jsApi = `const room = await connect({ room, token, relay? });
 
 room.members                  // [{ sub, name, look, mode, away, watching }]
-room.on("members", (members) => {})   // also "knock", "answer", "live"
+room.on("members", (members) => {})   // also "wave", "answer", "live"
 await room.camera.start({ mode: "avatar" | "outline" })
 room.camera.stop()
 room.setLook({ character, colour })
-room.knock(sub)  ·  room.answer(sub, true)
+room.wave(sub)  ·  room.answer(sub, true)
 room.mount(el, { size: "bust" })      // everyone, drawn into el
 room.avatar(el, sub, { size: "head" })  // one person
 room.leave()`;
@@ -128,4 +128,4 @@ export const theming = `arugula-room {
   --arugula-radius: 12px;
 }`;
 
-export const reactHook = `const { members, knock, camera } = usePresence();`;
+export const reactHook = `const { members, wave, camera } = usePresence();`;

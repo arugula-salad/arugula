@@ -9,7 +9,7 @@ everyone else's newest frame, for any view to subscribe to and draw with
 
 - `phoenixTransport` (`src/phoenix.ts`): arugula.video's Phoenix relay, as
   `../PROTOCOL.md` says: a room token, the room's channel, binary frames,
-  Phoenix.Presence for members, knocks.
+  Phoenix.Presence for members, waves.
 - `arugulaTransport` (`src/arugula.ts`): Arugula control's relay (POSTs and
   Server-Sent Events, team rosters on control's side).
 
