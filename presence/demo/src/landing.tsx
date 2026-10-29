@@ -21,6 +21,9 @@ export function Nav() {
       <a href="/developers">Developers</a>
       <a href="/docs">Docs</a>
       <a href={SOURCE}>Source</a>
+      <a class="dash" href="/dashboard">
+        Dashboard
+      </a>
       <a class="btn" href={`/r/${newRoom()}`}>
         Try a room
       </a>

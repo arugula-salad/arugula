@@ -25,8 +25,10 @@ defmodule PresenceRelayWeb.PageController do
   def index(conn, %{"path" => [top | _]}) when top in ~w(api sdk mediapipe depth npm py go gems),
     do: send_resp(conn, 404, "")
 
-  # Likewise meet's built files: a missing one isn't meet's HTML.
-  def index(conn, %{"path" => ["meet", "assets" | _]}), do: send_resp(conn, 404, "")
+  # Likewise meet's and the dashboard's built files: a missing one isn't
+  # their HTML.
+  def index(conn, %{"path" => [app, "assets" | _]}) when app in ~w(meet dashboard),
+    do: send_resp(conn, 404, "")
 
   # `go get arugula.stream/presence`: the module is served by the module
   # proxy protocol from /go (presence/sdk/host.sh), so the import path
@@ -42,16 +44,22 @@ defmodule PresenceRelayWeb.PageController do
   end
 
   def index(conn, _) do
-    # The demo's build, or meet's (git ignores both); tests point at
-    # fixtures instead.
+    # The demo's build, meet's or the dashboard's (git ignores them all);
+    # tests point at fixtures instead.
     path =
-      if meet?(conn),
-        do:
+      cond do
+        meet?(conn) ->
           Application.get_env(:presence_relay, :meet_index_html) ||
-            Application.app_dir(:presence_relay, "priv/static/meet/index.html"),
-        else:
+            Application.app_dir(:presence_relay, "priv/static/meet/index.html")
+
+        dashboard?(conn) ->
+          Application.get_env(:presence_relay, :dashboard_index_html) ||
+            Application.app_dir(:presence_relay, "priv/static/dashboard/index.html")
+
+        true ->
           Application.get_env(:presence_relay, :index_html) ||
             Application.app_dir(:presence_relay, "priv/static/index.html")
+      end
 
     if File.exists?(path) do
       conn |> put_resp_content_type("text/html") |> send_file(200, path)
@@ -69,4 +77,11 @@ defmodule PresenceRelayWeb.PageController do
   def meet?(%Plug.Conn{host: "meet." <> _}), do: true
   def meet?(%Plug.Conn{path_info: ["meet" | _]}), do: true
   def meet?(_), do: false
+
+  @doc """
+  Whether a page is the dashboard's (#318 P10): under `/dashboard`, on any
+  host but meet's (staging too). Its build is priv/static/dashboard.
+  """
+  def dashboard?(%Plug.Conn{path_info: ["dashboard" | _]} = conn), do: not meet?(conn)
+  def dashboard?(_), do: false
 end
