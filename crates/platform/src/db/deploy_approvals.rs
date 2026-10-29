@@ -226,7 +226,7 @@ impl Db {
 /// caller's transaction: `true` when there was one to use. Deploys whose
 /// approvals were recorded without a row (M217's tests, which stand in for
 /// M218's verifier) have nothing to use up, and go by their log alone.
-pub(crate) fn consume(c: &impl Sql, deploy: &str, run: &str, at: u64) -> Result<bool> {
+pub fn consume(c: &impl Sql, deploy: &str, run: &str, at: u64) -> Result<bool> {
     let rows: u64 = c.query_row(
         "SELECT count(*) FROM deploy_approvals WHERE deploy_id = ?1 AND decision = 'once'",
         params![deploy],

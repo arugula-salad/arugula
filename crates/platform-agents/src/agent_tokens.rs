@@ -40,12 +40,11 @@ use serde_json::{Value, json};
 
 use crate::{
     Platform,
-    auth::Person,
+    auth::{BrowserPerson, Person},
     db::{
         agent_tokens::{AgentToken, MAX_LIVE, NewToken, hash, new_token},
         projects::Grant,
     },
-    deploys::BrowserPerson,
     grants::{AgentScope, is_token_power, owner_reads},
 };
 
@@ -248,7 +247,7 @@ pub async fn calls(
 
 /// The project's owner, or 403/404.
 async fn owner_of(app: &Platform, account: &str, project: &str) -> Result<(), ApiError> {
-    let (_, role) = crate::deploys::project_as(app, account, project, false).await?;
+    let (_, role) = crate::project_roles::project_as(app, account, project, false).await?;
     if role != arugula_e2e::team::TeamRole::Owner {
         return Err(err(StatusCode::FORBIDDEN, "only the project's owners see and revoke the agent tokens over it"));
     }

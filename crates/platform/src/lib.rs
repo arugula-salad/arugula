@@ -69,12 +69,7 @@ pub mod compute;
 #[cfg(feature = "contract")]
 pub mod contract;
 pub mod db;
-pub mod deploys;
-#[cfg(any(test, feature = "testing"))]
-pub mod deploys_tests;
 pub mod drivers;
-#[cfg(test)]
-mod failure_tests;
 pub mod features;
 pub mod forge;
 pub mod grants;

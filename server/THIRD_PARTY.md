@@ -8,7 +8,7 @@ software below. The daemon's and the CLI's are in the root THIRD_PARTY.md.
   It also carries the swarm's fonts, Big Shoulders Display, Instrument Sans and JetBrains Mono (Fontsource's builds, SIL Open Font License 1.1, below).
 - **Rust crates**, by license:
 
-- Apache License 2.0 (249)
+- Apache License 2.0 (250)
 - MIT License (65)
 - Unicode License v3 (20)
 - BSD 3-Clause "New" or "Revised" License (6)
@@ -5048,6 +5048,7 @@ Used by:
 - [arugula-platform-base 0.65.0](https://github.com/arugula-salad/arugula)
 - [arugula-platform-agents 0.0.0](https://github.com/arugula-salad/arugula)
 - [arugula-platform-all 0.0.0](https://github.com/arugula-salad/arugula)
+- [arugula-platform-deploys 0.0.0](https://github.com/arugula-salad/arugula)
 - [arugula-proto 0.0.0](https://github.com/arugula-salad/arugula)
 - [anyhow 1.0.104](https://github.com/dtolnay/anyhow)
 - [async-trait 0.1.92](https://github.com/dtolnay/async-trait)

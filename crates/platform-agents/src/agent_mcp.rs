@@ -69,7 +69,7 @@ use crate::{
         agent_tokens::{AgentCall, AgentToken, TOKEN_PREFIX, hash, new_call},
         projects::{DEPLOYS_PLAN, SECRETS_WRITE},
     },
-    deploys,
+    features::deploys,
     grants::{AgentScope, agent_may, owner_reads, token_label},
     issues,
     triggers::agent as runs,
@@ -945,12 +945,12 @@ impl Agent {
         roll_back: bool,
         keep: Option<&[u8]>,
     ) -> Out {
-        let plan: deploys::Plan = args(&json!({
+        let plan = json!({
             "environment": environment,
             "source": source,
             "roll_back": roll_back,
-        }))?;
-        let d = deploys::agent::plan(self.state(), self.me(), Path(p.clone()), Json(plan)).await?.0;
+        });
+        let d = deploys().agent_plan(self.app.clone(), self.me(), p.clone(), plan).await?;
         let id = d["id"].as_str().unwrap_or_default().to_owned();
         if let (Some(bytes), Some(digest)) = (keep, source["ref"].as_str()) {
             let quota = arugula_e2e::deploy::planter::MAX_PROJECT_ARTIFACTS;
@@ -958,8 +958,8 @@ impl Agent {
                 return Err(failed(format!("planned {id}, but its source wasn't kept ({e:#}), so it isn't asked")));
             }
         }
-        let d = match deploys::agent::request(self.state(), self.me(), Path(id.clone())).await {
-            Ok(d) => d.0,
+        let d = match deploys().agent_request(self.app.clone(), self.me(), id.clone()).await {
+            Ok(d) => d,
             Err(e) => {
                 return Err(failed(format!(
                     "planned {id}, but asking for its approval was refused: {}. read_deploy reads it",
@@ -979,7 +979,7 @@ impl Agent {
     }
 
     async fn read_deploy(&self, a: ReadDeploy) -> Out {
-        let d = deploys::agent::get(self.state(), self.me(), Path(a.id.trim().to_owned())).await?.0;
+        let d = deploys().agent_get(self.app.clone(), self.me(), a.id.trim().to_owned()).await?;
         let project = d["project"].as_str().or(d["environment"]["project"].as_str()).map(str::to_owned);
         Ok(Done { text: format!("{d}"), value: json!({ "deploy": d }), project, note: format!("read {}", a.id.trim()) })
     }
@@ -1013,12 +1013,13 @@ impl Agent {
     async fn seal(&self, p: &str, stored: &str, value: &str) -> Result<(), Failure> {
         self.app.limits.check_daemon(SECRET_WRITES, &self.token.id)?;
         let me = self.me();
-        let (_, role) = deploys::project_as(&self.app, &me.account, p, true).await.map_err(|e| match e.0 {
-            StatusCode::FORBIDDEN => {
-                Failure::Refused("a viewer doesn't set a project's secrets: its owner is a viewer there".into())
-            }
-            _ => e.into(),
-        })?;
+        let (_, role) =
+            crate::project_roles::project_as(&self.app, &me.account, p, true).await.map_err(|e| match e.0 {
+                StatusCode::FORBIDDEN => {
+                    Failure::Refused("a viewer doesn't set a project's secrets: its owner is a viewer there".into())
+                }
+                _ => e.into(),
+            })?;
         debug_assert!(role != TeamRole::Viewer);
         if value.is_empty() || value.len() > MAX_SECRET || value.contains('\0') {
             return Err(failed("a secret's value is 1 to 16384 bytes, with no NUL"));
@@ -1437,7 +1438,7 @@ pub async fn upload(
         app.limits.check_account(ACCOUNT_DEPLOY_ASKS, &agent.token.account)?;
         let p = agent.project(q.project.as_deref()).await?;
         agent_may(&app, &agent.me(), DEPLOYS_PLAN, &AgentScope::Project(p.clone())).await?;
-        let (_, role) = deploys::project_as(&app, &agent.token.account, &p, true).await?;
+        let (_, role) = crate::project_roles::project_as(&app, &agent.token.account, &p, true).await?;
         if role == TeamRole::Viewer {
             return Err(Failure::Refused("a viewer doesn't ship: its owner is a viewer there".into()));
         }

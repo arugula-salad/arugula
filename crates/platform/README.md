@@ -94,6 +94,12 @@ Start with `src/lib.rs`, then:
   grant tokens that open it; redone's import and the Infisical projection
   (M235); studio as a client (M236); the platform page's "Linked products"
   (M229).
+- `../platform-deploys` (`arugula-platform-deploys`): environments,
+  deploys and their approval, and applying them (M217–M219). The drivers
+  and the deploys' tables stay here; the runs engine, a deploy box's asks
+  and the agents reach deploys through `features::Deploys`.
+- `src/project_roles.rs`: someone's role in a project, the project as they
+  see it and its owners (deploys', agents' and hosted workspaces').
 - `src/contract.rs` (feature `contract`): the tests every `HubPort` passes.
   Control runs them against its in-process port and against `HttpHub`
   over its internal API (`hub_port.rs`).

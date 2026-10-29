@@ -35,6 +35,8 @@ url = { workspace = true }
 # The platform's test harness: a hub of the test's own, the fake GitHub,
 # deploys' signed approvals.
 arugula-platform-base = { workspace = true, features = ["testing"] }
+# Deploys, for the tools that plan them, and their test helpers.
+arugula-platform-deploys = { workspace = true, features = ["testing"] }
 
 [lints]
 workspace = true

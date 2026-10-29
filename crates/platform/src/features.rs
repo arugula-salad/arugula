@@ -112,7 +112,12 @@ pub trait Deploys: Send + Sync + 'static {
         Box::pin(async { Err(no_deploys()) })
     }
     /// A machine's agent asks for a deploy's approval.
-    fn agent_request(&self, _app: Arc<Platform>, _me: Machine, _id: String) -> BoxFuture<'static, Result<Value, ApiError>> {
+    fn agent_request(
+        &self,
+        _app: Arc<Platform>,
+        _me: Machine,
+        _id: String,
+    ) -> BoxFuture<'static, Result<Value, ApiError>> {
         Box::pin(async { Err(no_deploys()) })
     }
     /// A deploy, as a machine's agent may read it.

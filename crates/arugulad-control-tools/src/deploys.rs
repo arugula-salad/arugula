@@ -10,7 +10,7 @@
 //! - **Through the owner's grant.** Each call is a machine-signed route on
 //!   the platform (`/api/daemon/projects/{project}/deploys`,
 //!   `/api/daemon/deploys/{id}` and its `request`,
-//!   `crates/platform/src/deploys/agent.rs`), which asks for this machine's
+//!   `crates/platform-deploys/src/deploys/agent.rs`), which asks for this machine's
 //!   `deploys.plan` grant over the project every time, given by its owner
 //!   (`arugula grants add <machine> deploys.plan --project <name>`, or the
 //!   platform page). A plan is the owner's, labelled as their agent on this

@@ -158,8 +158,8 @@ impl Db {
 impl Db {
     /// Link `run` to `deploy` as its run, with nothing else: tests that
     /// start a deploy without making a run.
-    #[cfg(test)]
-    pub(crate) fn link_deploy_run_for_tests(&self, deploy: &str, run: &str) {
+    #[cfg(any(test, feature = "testing"))]
+    pub fn link_deploy_run_for_tests(&self, deploy: &str, run: &str) {
         self.c()
             .execute(
                 "INSERT INTO deploy_runs (deploy_id, run_id, approval_id, workspace_id, driver, created_at)

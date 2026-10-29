@@ -377,6 +377,6 @@ pub fn start(app: &Arc<Platform>) {
     crate::jobs::start(app.clone(), crate::features::jobs(app, worker));
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "testing"))]
 #[path = "work_tests.rs"]
-pub(crate) mod tests;
+pub mod tests;

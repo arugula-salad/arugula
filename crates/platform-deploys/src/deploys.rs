@@ -78,7 +78,7 @@ pub mod catalog;
 
 use std::sync::Arc;
 
-use arugula_control_common::{ApiError, Principal, err, refusal};
+use arugula_control_common::{ApiError, err, refusal};
 use arugula_e2e::{
     Trust,
     deploy::{Approval, Decision, MAX_LIFE_MS},
@@ -87,8 +87,8 @@ use arugula_e2e::{
 };
 use axum::{
     Json,
-    extract::{FromRequestParts, Path, Query, State},
-    http::{StatusCode, request::Parts},
+    extract::{Path, Query, State},
+    http::StatusCode,
 };
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -96,7 +96,7 @@ use tracing::warn;
 
 use crate::{
     Platform,
-    auth::{Asked, Person},
+    auth::Person,
     db::{
         deploys::{
             Actor, Deploy, Environment, EventKind, NewDeploy, PasskeyProof, Refusal, Source, SourceKind,
@@ -105,6 +105,12 @@ use crate::{
         issues::IssueProject,
     },
     hub::{PasskeyAssertion, PushOptions},
+};
+/// The base's since #314: what deploys asked first, which agents and
+/// hosted workspaces ask too.
+pub use crate::{
+    auth::BrowserPerson,
+    project_roles::{owners, project_as, role},
 };
 
 pub const ENVIRONMENTS: &str = "/api/projects/{project}/environments";
@@ -144,10 +150,6 @@ fn asker(project: &str, by: &Actor) -> String {
 }
 
 type J = Result<Json<Value>, ApiError>;
-
-fn no_project() -> ApiError {
-    err(StatusCode::NOT_FOUND, "no such project")
-}
 
 fn no_deploy() -> ApiError {
     err(StatusCode::NOT_FOUND, "no such deploy")

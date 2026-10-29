@@ -777,13 +777,14 @@ pub struct PasskeyProof {
 }
 
 impl VerifiedApproval {
-    /// M218's verifier (`crate::deploys::verify`) makes one this way, and
-    /// nothing else does: once the approving device is one of the
-    /// account's that counts (a browser's, chained to its root, not
-    /// revoked), its signature checks out over `approval`'s bytes, and
-    /// `op` (the deploy's operation as the log has it now) hashes to what
-    /// it signed.
-    pub(crate) fn from_checked(
+    /// M218's verifier (`arugula_platform_deploys::deploys::verify`) makes
+    /// one this way, and nothing else does: once the approving device is one
+    /// of the account's that counts (a browser's, chained to its root, not
+    /// revoked), its signature checks out over `approval`'s bytes, and `op`
+    /// (the deploy's operation as the log has it now) hashes to what it
+    /// signed. `pub` only because the verifier is a crate of its own
+    /// (#314): no other caller may make one.
+    pub fn from_checked(
         approval: &arugula_e2e::deploy::Approval,
         op: &arugula_e2e::deploy::Operation,
         passkey: PasskeyProof,
@@ -819,9 +820,9 @@ impl VerifiedApproval {
 
     /// One made without checking anything: tests only. M218's verifier is
     /// the only other constructor.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "testing"))]
     #[allow(clippy::too_many_arguments)]
-    pub(crate) fn unchecked_for_tests(
+    pub fn unchecked_for_tests(
         deploy: &str,
         plan_digest: &str,
         planned_hash: &str,
