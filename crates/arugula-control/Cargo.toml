@@ -1,0 +1,30 @@
+[package]
+name = "arugula-control"
+# The hosted server's own workspace (server/Cargo.toml), not the root's.
+workspace = "../../server"
+# The workspace's version, as the binary's: `scripts/release` reads it.
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Arugula control: accounts, devices, the directory and the relay"
+
+# The binary alone (#314): the hub is arugula-control-base (crates/control),
+# and the platform it runs in process is arugula-platform-base and the
+# feature crates on it, which this binary registers. A platform feature
+# crate's edit then rebuilds this, not the hub's 38k lines.
+[[bin]]
+name = "arugula-control"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = { workspace = true }
+arugula-control-base = { workspace = true }
+
+[features]
+# Embed web/dist and web/dist-platform even in a debug build: the hub's
+# `debug-embed` (CI's e2e shards run binaries another job built).
+debug-embed = ["arugula-control-base/debug-embed"]
+
+[lints]
+workspace = true

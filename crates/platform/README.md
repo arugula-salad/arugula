@@ -6,7 +6,10 @@ grants. It deploys as often as it likes without dropping a relayed terminal,
 because the relay stays in the hub (`arugula-control`), which is also the
 gateway for every platform path.
 It builds in the server's own Cargo workspace (`server/Cargo.toml`) with
-the hub: `scripts/server-cargo test -p arugula-platform`.
+the hub: `scripts/server-cargo test -p arugula-platform-base`. This crate
+is the platform's base library (`arugula-platform-base`, still
+`arugula_platform` in code and logs); the `arugula-platform` binary is
+`crates/arugula-platform` (#314).
 
 Billing has moved in (M139:
 `src/billing.rs`, its tables in `src/db/billing.rs`), and so have Cloud
@@ -20,7 +23,7 @@ and `src/grants.rs`, their tables in `src/db/projects.rs`), and the GitHub
 App's webhook, key, access checks and tokens (M161: `src/forge/`, its flags
 in `forge::Args`, the forge mirror's tables in `src/db/forge.rs`). It runs inside
 the hub's process (`--platform in-process`, the default) or as its own,
-the `arugula-platform` binary (`src/main.rs`, M140), behind the hub's
+the `arugula-platform` binary (`crates/arugula-platform`, M140), behind the hub's
 gateway ([docs/control-ops.md](../../docs/control-ops.md#the-platform)).
 
 Start with `src/lib.rs`, then:
@@ -69,7 +72,7 @@ Start with `src/lib.rs`, then:
   `serve_platform`), each call signed with the shared key; and `vouched`,
   the check of the principal header every forwarded call carries. The
   calls' arguments and answers are `arugula_control_wire::internal`'s.
-- `src/main.rs`: the `arugula-platform` binary: its database, `HttpHub`,
+- `../arugula-platform/src/main.rs`: the `arugula-platform` binary: its database, `HttpHub`,
   the background work (the job worker, hosted workspaces' worker, chat's
   and grants' feed followers, usage reports), and the routes behind `vouched`.
 - `src/window.rs`: a window's tools (M141), in both binaries

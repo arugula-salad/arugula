@@ -51,7 +51,7 @@
       "name": "control",
       "dir": "crates/control",
       "kind": "other",
-      "because": "a Rust crate, arugula-control: accounts, devices, the directory and the relay, serving the web client",
+      "because": "the hub's Rust crates, arugula-control-base here with its binary (crates/arugula-control), which runs the platform (crates/platform, crates/arugula-platform) in process: accounts, devices, the directory and the relay, serving the web client",
       "outputs": ["arugula-control"],
       "links": [
         { "member": "web", "output": "dist" },

@@ -164,13 +164,21 @@ dependencies = [
 name = "arugula-control"
 version = "0.65.0"
 dependencies = [
+ "anyhow",
+ "arugula-control-base",
+]
+
+[[package]]
+name = "arugula-control-base"
+version = "0.65.0"
+dependencies = [
  "aes-gcm 0.11.1",
  "anyhow",
  "arugula-control-common",
  "arugula-control-wire",
  "arugula-core",
  "arugula-e2e",
- "arugula-platform",
+ "arugula-platform-base",
  "aws-lc-rs",
  "axum",
  "base64 0.23.1",
@@ -273,6 +281,22 @@ dependencies = [
 
 [[package]]
 name = "arugula-platform"
+version = "0.65.0"
+dependencies = [
+ "anyhow",
+ "arugula-control-common",
+ "arugula-platform-base",
+ "axum",
+ "clap",
+ "serde_json",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "url",
+]
+
+[[package]]
+name = "arugula-platform-base"
 version = "0.65.0"
 dependencies = [
  "anyhow",

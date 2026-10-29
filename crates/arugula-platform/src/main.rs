@@ -10,6 +10,9 @@
 //!
 //! `arugula-control --platform in-process` (the default) runs the same
 //! code inside the hub instead; that's the rollback (docs/control-ops.md).
+//!
+//! The platform itself is `arugula-platform-base` (crates/platform) and the
+//! feature crates on it (#314); this binary is its flags and its start.
 
 use std::{net::SocketAddr, path::PathBuf, sync::Arc};
 

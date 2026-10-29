@@ -1,0 +1,36 @@
+[package]
+name = "arugula-platform"
+# The hosted server's own workspace (server/Cargo.toml), not the root's.
+workspace = "../../server"
+# The workspace's version, as the binary's (M140): `/platform.json` and
+# `--version` say it.
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Arugula control's platform as its own process: chat, hosted workspaces and billing, behind the hub"
+
+# The binary alone (#314): the platform is arugula-platform-base
+# (crates/platform) and the feature crates on it.
+[[bin]]
+name = "arugula-platform"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = { workspace = true }
+arugula-control-common = { workspace = true }
+arugula-platform-base = { workspace = true }
+axum = { workspace = true }
+clap = { workspace = true, features = ["derive", "env"] }
+serde_json = { workspace = true }
+tokio = { workspace = true, features = ["full"] }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true, features = ["env-filter"] }
+url = { workspace = true }
+
+[features]
+# Embed web/dist-platform even in a debug build: the base's `debug-embed`.
+debug-embed = ["arugula-platform-base/debug-embed"]
+
+[lints]
+workspace = true

@@ -7,8 +7,11 @@ Docs, billing). Terminal bytes travel end to end between a device and a
 daemon ([docs/control-e2e.md](../../docs/control-e2e.md), [docs.arugula.io/control](https://docs.arugula.io/control/)). Running
 and operating it: [docs/control-ops.md](../../docs/control-ops.md).
 It builds in the server's own Cargo workspace (`server/Cargo.toml`), not
-the root's: `scripts/server-cargo test -p arugula-control`, or `cargo` in
-`server/`.
+the root's: `scripts/server-cargo test -p arugula-control-base`, or
+`cargo` in `server/`. This crate is the hub's library
+(`arugula-control-base`, still `arugula_control` in code and logs); the
+`arugula-control` binary is `crates/arugula-control` (#314), which registers
+the platform's feature crates and calls `arugula_control::main`.
 
 Control is two processes (#1150): this crate is the hub, and
 `crates/platform` the platform, which runs in this process
@@ -38,7 +41,7 @@ Depends on `arugula-e2e`, `arugula-control-wire` (the messages it shares
 with daemons and the CLI), `arugula-control-common` (what it shares with the
 platform) and `arugula-platform`.
 
-Start with `src/main.rs`, then `src/api.rs` (devices, approvals, daemons
+Start with `src/lib.rs` (`main`, the flags and `App`), then `src/api.rs` (devices, approvals, daemons
 joining, the directory) and `src/relay.rs` (the relay). `src/blocks.rs`
 serves blocks' own origins under `--block-domain` (M50), with their
 scripts from `web/src/shell/block/`. `src/issuer.rs` is the hub as an issuer (M228): OIDC-shaped

@@ -924,7 +924,7 @@ Three tests cover M49, from fastest to most faithful:
   they're still running (#254: a streamed answer, in parts), and `attach`
   with a pipe for stdin types a command, sees its answer and detaches on
   Ctrl-]. `arugula-control`'s own `routing_wire` test checks the join
-  and the signed requests (`scripts/server-cargo test -p arugula-control the_cli_joins`).
+  and the signed requests (`scripts/server-cargo test -p arugula-control-base the_cli_joins`).
 - `web/e2e/host-menu-control.spec.ts` (`just e2e`): a daemon joined by
   code (approved by the device) has *All your machines…* in its host menu,
   opening control's page; one that isn't joined doesn't.
