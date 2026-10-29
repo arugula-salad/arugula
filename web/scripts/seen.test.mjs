@@ -5,7 +5,7 @@
 // `node --experimental-strip-types`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { accountBackend, loadSeen, localBackend, markSeen, pref, seen, seenReady, setPref, setSeenBackend, setTips, tipsOn } from "../src/shared/seen.ts";
+import { accountBackend, bigTipsOn, loadSeen, localBackend, markSeen, pref, seen, seenReady, setBigTips, setPref, setSeenBackend, setTips, tipsOn } from "../src/shared/seen.ts";
 
 /** A Storage of our own. */
 function storage(init = {}) {
@@ -98,6 +98,22 @@ test("Tips are on until turned off, and on again takes the pref back", async () 
   assert.deepEqual(stored(s), { tips: false });
   setTips(true);
   assert.equal(tipsOn(), true);
+  await settle();
+  assert.deepEqual(stored(s), {});
+});
+
+test("Big tips are on until a pane modal's opt-out, apart from Tips", async () => {
+  const s = storage();
+  setSeenBackend(localBackend(s));
+  await loadSeen();
+  assert.equal(bigTipsOn(), true);
+  setBigTips(false);
+  assert.equal(bigTipsOn(), false);
+  assert.equal(tipsOn(), true, "chips and toasts carry on");
+  await settle();
+  assert.deepEqual(stored(s), { "tips.modal": "off" });
+  setBigTips(true);
+  assert.equal(bigTipsOn(), true);
   await settle();
   assert.deepEqual(stored(s), {});
 });

@@ -4376,6 +4376,12 @@ button.att {
   color: var(--danger);
   font-style: normal;
 }
+/* #1732: the same edit, as a vimdiff in the session's nvim. */
+.diff-nvim {
+  margin: 2px 0 4px;
+  font-size: 12px;
+  color: var(--dim);
+}
 .diff-edit {
   display: block;
   box-sizing: border-box;
@@ -4604,6 +4610,12 @@ button.att {
 
 .diff-file-head:disabled {
   opacity: 1;
+}
+
+/* #1731: Open in editor, under an open file's row. */
+.diff-file-acts {
+  padding: 0 8px 4px;
+  font-size: 12px;
 }
 
 .diff-file.open > .diff-file-head {

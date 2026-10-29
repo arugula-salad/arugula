@@ -6,7 +6,9 @@
 # kernel's binfmt_misc, so it would wipe the host's emulators (Docker
 # Desktop's amd64 qemu, which `just desktop-linux x86_64` needs) and
 # register python3's in their place.
-FROM debian:bookworm-slim
+# Docker Hub's image, from CI's mirror (docs/testing.md, "CI's images").
+ARG ARUGULA_IMAGES=ghcr.io/arugula-salad/ci
+FROM ${ARUGULA_IMAGES}/debian:bookworm-slim
 RUN apt-get update \
  && apt-get install -y --no-install-recommends systemd systemd-sysv dbus dbus-user-session libpam-systemd polkitd openssh-server openssh-client git python3 procps \
  && rm -rf /var/lib/apt/lists/* /etc/ssh/ssh_host_* \

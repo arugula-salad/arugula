@@ -13,7 +13,7 @@
 //! - **What it keeps of control's enrollment, checked** ([`trust`]), at
 //!   enrollment and at each refresh (`control.rs`).
 //! - **Takes runs** from the platform under the project's standing grant
-//!   ([`runs`]) and runs each at most once (`crate::work`, M212).
+//!   ([`runs`]) and runs each at most once (`arugulad-work`, M212).
 //! - **Archives closed agent blocks' transcripts** to its project
 //!   ([`archive`], M184).
 //!

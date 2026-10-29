@@ -20,9 +20,9 @@ use arugula_proto::{
     op::ops::{
         AdapterInstall, AdaptersList, AgentsGet, AgentsRefresh, ClosePane, FlagSet, FlagsList, ListPanes, MachineReset,
         MachinesList, NotifyGet, NotifySet, PaneAsk, PaneAskWithdraw, PaneAttention, PaneDetection, PaneDiffOf,
-        PaneDrivers, PaneFollowUp, PaneInbox, PaneKeys, PaneMouse, PanePermit, PanePorts, PaneProcess, PanePrompt,
-        PaneSend, PaneWait, PushKeyGet, PushSubscribe, PushTest, RuleForget, RulesForgetAll, RulesList, SharingGet,
-        SharingSet, ShellEnvGet, ShellEnvRefresh, TelemetryGet, TelemetryNote, TelemetrySet,
+        PaneDrivers, PaneFollowUp, PaneInbox, PaneKeys, PaneMouse, PaneNvimOpen, PanePermit, PanePorts, PaneProcess,
+        PanePrompt, PaneSend, PaneWait, PushKeyGet, PushSubscribe, PushTest, RuleForget, RulesForgetAll, RulesList,
+        SharingGet, SharingSet, ShellEnvGet, ShellEnvRefresh, TelemetryGet, TelemetryNote, TelemetrySet,
     },
 };
 use axum::{
@@ -77,6 +77,7 @@ pub fn routes() -> Router<Arc<App>> {
         .route("/api/panes/{id}/export.cast", get(export))
         .op::<PaneDrivers>()
         .op::<PaneDiffOf>()
+        .op::<PaneNvimOpen>()
         .op::<RulesList>()
         .op::<RulesForgetAll>()
         .op::<RuleForget>()
@@ -1150,7 +1151,7 @@ pub(crate) async fn wait_for(app: &App, id: PaneId, p: PaneHandle, q: &WaitReque
 
 /// `wait` for MCP (M16): the same waits, with no limit of their own (the
 /// caller has one) and the error as a sentence.
-pub(crate) async fn wait_until(app: &App, id: PaneId, until: &str, re: Option<String>) -> Result<WaitResult, String> {
+pub async fn wait_until(app: &App, id: PaneId, until: &str, re: Option<String>) -> Result<WaitResult, String> {
     if until == "idle" || until == "needs-input" {
         return wait_attention(app, id, until == "needs-input").await.map_err(|e| e.1);
     }
@@ -1161,12 +1162,7 @@ pub(crate) async fn wait_until(app: &App, id: PaneId, until: &str, re: Option<St
 
 /// Allow, deny, answer or skip what a pane asks, as `by` (MCP's
 /// `agent_respond`, M16).
-pub(crate) async fn act_as(
-    app: &App,
-    pane: PaneId,
-    req: &arugula_proto::api::ActRequest,
-    by: Driver,
-) -> Result<(), String> {
+pub async fn act_as(app: &App, pane: PaneId, req: &arugula_proto::api::ActRequest, by: Driver) -> Result<(), String> {
     act_one(app, pane, req, Some(by)).await
 }
 

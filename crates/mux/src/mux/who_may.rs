@@ -2,10 +2,10 @@
 //! follows whom, control operations and trust.
 
 use super::{Cmd, Daemon, SAVE_DEBOUNCE};
-use crate::{acl::Principal, pane::ToClient, store::now_ms};
+use crate::{acl::Principal, block::EditorLink, pane::ToClient, store::now_ms};
 use arugula_core::Role;
-use arugula_proto::{ClientId, Driver, PaneId, PaneOp, ServerMsg, SessionId};
-use std::time::Duration;
+use arugula_proto::{Attention, ClientId, Driver, PaneId, PaneOp, ReasonKind, ServerMsg, SessionId};
+use std::{sync::Arc, time::Duration};
 use tokio::time::Instant;
 use tracing::info;
 
@@ -43,12 +43,32 @@ impl Daemon {
         if who.is_owner() { Some(Role::Owner) } else { self.config.acl.team_role(who) }
     }
 
+    /// The editor a block is, or that runs in a terminal (#1730).
+    pub(super) fn editor_link(&self, pane: PaneId) -> Option<Arc<dyn EditorLink>> {
+        self.blocks.get(&pane).and_then(|b| b.link()).or_else(|| self.editors.get(&pane).cloned())
+    }
+
+    /// The editor in terminal `pane` went (#1730): nobody follows it, and
+    /// the reasons it raised there go with it.
+    pub(super) fn editor_gone(&mut self, pane: PaneId) {
+        self.follows.remove(&pane);
+        let raised = self
+            .reasons
+            .get(&pane)
+            .is_some_and(|r| matches!(r.kind, ReasonKind::Paused | ReasonKind::Errors | ReasonKind::Conflict));
+        if raised && !self.asks.contains_key(&pane) {
+            self.set_attention(pane, Attention::Idle, "its editor left");
+        }
+        info!(pane, "its editor left");
+        self.touch(pane);
+    }
+
     /// Follow an editor (M28), or stop (`pane: None`: every one).
     pub(super) fn follow(&mut self, client: ClientId, pane: PaneId, on: bool) {
         if !on {
             return self.unfollow(client, Some(pane));
         }
-        let Some(link) = self.blocks.get(&pane).and_then(|b| b.link()) else {
+        let Some(link) = self.editor_link(pane).filter(|l| !l.info().no_follow) else {
             return self.tell_once(client, format!("%{pane} isn't an editor that can be followed"));
         };
         let Some(sub) = self.clients.get(&client) else { return };
@@ -80,7 +100,7 @@ impl Daemon {
             if n == 0 {
                 self.follows.remove(&id);
             }
-            if let Some(link) = self.blocks.get(&id).and_then(|b| b.link()) {
+            if let Some(link) = self.editor_link(id) {
                 link.followers(n, false);
             }
         }

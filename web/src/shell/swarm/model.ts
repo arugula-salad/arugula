@@ -113,10 +113,18 @@ export function isPresence(p: FleetPane): boolean {
   return p.info.type === "editor" && !!p.info.editor && p.session === null;
 }
 
-/** An editor whose cursor can be followed: one that joined, or an editor
- * block whose window is connected. */
+/** An editor whose cursor can be followed: one that joined, an editor
+ * block whose window is connected, or nvim in a pane with arugula.nvim
+ * (without it, the daemon reads nvim's file and cursor but has no follow
+ * stream: `no_follow`, #1730). */
 export function followable(p: FleetPane): boolean {
-  return !!p.info.editor && !p.stale;
+  return !!p.info.editor && !p.info.editor.no_follow && !p.stale;
+}
+
+/** Where an editor's cursor is, for a card or a preview: `src/a.rs:12`. */
+export function editorAt(p: FleetPane): string | null {
+  if (!p.info.editor || !p.info.file) return null;
+  return p.info.editor.line ? `${p.info.file}:${p.info.editor.line}` : p.info.file;
 }
 
 export function kindOf(p: FleetPane): WorkKind {

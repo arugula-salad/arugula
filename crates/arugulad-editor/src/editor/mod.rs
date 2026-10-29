@@ -24,6 +24,7 @@
 //! block shows the file it was opened on and doesn't follow the cursor.
 
 pub mod link;
+pub mod nvim;
 pub mod presence;
 pub mod server;
 mod theme;

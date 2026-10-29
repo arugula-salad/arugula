@@ -26,7 +26,8 @@ own errors:
   `crates/core/src/rename.rs`, read by `invite::agent`).
 - **The MCP tool** is a `Def` (or a `Kind` row of a grouped tool) in
   `crates/daemon/src/mcp/tools.rs`, an argument struct with
-  `Deserialize + JsonSchema`, a result in `mcp/results.rs` (#448), an arm in
+  `Deserialize + JsonSchema`, a result in `mcp/results.rs` (#448; the ones
+  only MCP's server answers with are in `crates/arugulad-mcp/src/results.rs`), an arm in
   `dispatch`, and a method on `Call`. MCP has its own idea of who may call:
   a token's `Scope` (`Full`, `Read`, or an agent block's `Block(id)`, which
   reads its own tab and drives what it started). MCP doesn't call the HTTP

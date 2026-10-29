@@ -1511,7 +1511,7 @@ claim_studio() {
     -e PORT=8080 -e STUDIO_PUBLIC_URL="$url" -e STUDIO_EGRESS_INSECURE=1 -e STUDIO_GRACE_ENDS=2099-01-01T00:00:00Z \
     -e ARUGULA_ISSUER="$CONTROL_URL" -e ARUGULA_CLIENT_ID=studio -e ARUGULA_CLIENT_SECRET="$secret" \
     -e ARUGULA_PLATFORM_CREDENTIAL=testnet-studio-client-credential \
-    node:22-slim node /run/studio-run.mjs >/dev/null || { note "studio: the lobby's container didn't start"; return 1; }
+    "${ARUGULA_IMAGES:-ghcr.io/arugula-salad/ci}/node:22-slim" node /run/studio-run.mjs >/dev/null || { note "studio: the lobby's container didn't start"; return 1; }
   docker network connect "$TESTNET-inner" "$name" || { note "studio: not on the inner network"; docker rm -f "$name" >/dev/null; return 1; }
   for _ in $(seq 1 60); do
     if docker logs "$name" 2>&1 | grep -q 'listening'; then ok=1; break; fi

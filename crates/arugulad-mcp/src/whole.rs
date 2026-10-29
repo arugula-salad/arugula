@@ -166,7 +166,7 @@ pub fn unlisted_tools_are_not_listed_without_labs_but_are_there() {
 /// (#114). docs.arugula.io shows the same snippet, and the site repo's
 /// check-code holds it to this file.
 pub fn permissions_snippet_is_every_tool() {
-    const SNIPPET: &str = include_str!("../../../../docs/mcp-permissions.json");
+    const SNIPPET: &str = include_str!("../../../docs/mcp-permissions.json");
     let list = |key: &str| -> Vec<&str> {
         let at = SNIPPET
             .find(&format!("\"{key}\": ["))

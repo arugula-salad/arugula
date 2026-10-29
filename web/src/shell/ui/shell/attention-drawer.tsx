@@ -20,6 +20,7 @@ import { agentDisplay, cardTitle, kindOf, reasonOf, shortHost, whatItDoes } from
 import { AskCard, type Ask } from "../../../shared/ask";
 import { PermissionBody, PermissionButtons, permissionTarget, VIEWER_NOTE } from "../answer-card";
 import { DiffCard } from "../diff-card";
+import { editDiff } from "../term-ask";
 import { useSubscribe } from "../../../shared/ui/hooks";
 import { getFleet } from "../hosts";
 import { openMenu, type MenuItem } from "../../../shared/ui/menu";
@@ -427,6 +428,7 @@ function Detail({ client, item }: { client: Client; item: AttentionItem }) {
               const res = await request(OPS["pane.diff"].method, opPath("pane.diff", { id: p.id }));
               return res.ok ? (await res.json<{ new: string }>()).new : null;
             }}
+            edit={item.here && !client.state?.roles ? () => void editDiff(client, p.id, diff) : undefined}
             more={go}
           />
         ) : ask?.kind === "permission" ? (

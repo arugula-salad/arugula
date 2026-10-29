@@ -42,7 +42,7 @@ pub type ChatReaders = Vec<(ChatTarget, Vec<(String, u64, bool)>)>;
 
 use self::attention::{TermAsk, Waiter};
 use crate::{
-    block::{Block, BlockCtx},
+    block::{Block, BlockCtx, EditorLink},
     osc::Signal,
     pane::{self, ExecRecord, Kept, Notice, NoticeSink, PaneHandle, Setup, Spawn, Start, Subscriber, ToClient, What},
     provider::Provider,
@@ -271,6 +271,17 @@ pub enum Api {
     EditorJoin(Arc<dyn Block>, oneshot::Sender<PaneId>),
     /// ...and left.
     EditorLeave(PaneId),
+    /// The editor running in a terminal (#1730) says it's there: the pane
+    /// shows what it reports, and following the pane follows it. With
+    /// `replace`, it takes the place of one already there (arugula.nvim
+    /// over what the daemon reads from nvim's own socket); without, it's
+    /// refused then. `Err`: no such terminal here, or one is there.
+    EditorAttach(PaneId, Arc<dyn EditorLink>, bool, oneshot::Sender<Result<(), String>>),
+    /// ...and it went away (only if it's still the one there).
+    EditorDetach(PaneId, Arc<dyn EditorLink>),
+    /// Every terminal on this host and its process's pid, for what looks
+    /// for programs in them (an editor, #1730). Not those on a machine.
+    Terminals(oneshot::Sender<Vec<(PaneId, Option<u32>)>>),
     /// A call on the cards that make terminals wait (#699), run on the mux
     /// task with what they may do to it. It carries its own reply, if it
     /// has one, and isn't run if there are no cards.
@@ -534,6 +545,10 @@ struct Daemon {
     procs: std::cell::RefCell<HashMap<PaneId, ProcSeen>>,
     /// Who follows each editor (M28).
     follows: HashMap<PaneId, std::collections::HashSet<ClientId>>,
+    /// The editor running in each terminal that has one (#1730): its file,
+    /// cursor and diagnostics go on the pane, and following the pane
+    /// follows it.
+    editors: HashMap<PaneId, Arc<dyn EditorLink>>,
     /// What makes terminals wait on you besides the mux itself (#699), and
     /// the card each pane shows from it (set through [`CardsCx::card`]).
     /// `None` while a call on it runs.
@@ -679,6 +694,7 @@ pub fn start(
         last_tick: Instant::now(),
         procs: Default::default(),
         follows: HashMap::new(),
+        editors: HashMap::new(),
         cards,
         card_of: HashMap::new(),
     };
@@ -1141,6 +1157,10 @@ impl Daemon {
             What::BlockChanged => {
                 // Its summary (an editor's file) goes at the next tick.
                 self.mark(pane);
+                // A terminal's editor (#1730) changes only the summary.
+                if self.panes.contains_key(&pane) {
+                    return;
+                }
                 // An editor that joined has no renderer: its summary is all.
                 if self.blocks.get(&pane).is_some_and(|b| b.detached()) {
                     return;

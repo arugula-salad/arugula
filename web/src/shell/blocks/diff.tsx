@@ -15,6 +15,8 @@ import { registerBlock, type BlockView } from "./view";
 import { askText } from "../../shared/ui/menu";
 import { BlockEmpty, BlockError, BlockLoading } from "./block-states";
 import type { Span } from "../swarm/code";
+import { clientTarget, openInEditor } from "../open-in-editor";
+import { openEditor } from "./editor";
 
 type Line = [" " | "+" | "-" | "\\", number, number, string];
 
@@ -94,6 +96,20 @@ export async function openFile(client: Client, from: PaneId, path: string, line:
   }
   const block = await client.openBlock({ type: "file", config: { path, line }, from_pane: from, split: from }, "couldn't open that file");
   if (block !== null) lastFile.set(from, block);
+}
+
+/** Open in editor (#1731) from a review block, the diff's or a file's: the
+ * file at its line in the nvim of the block's tab or VS Code, as the Editor
+ * preference says. */
+export function editFile(client: Client, from: PaneId, path: string, line: number | null) {
+  void openInEditor(clientTarget(client, from, () => openEditor(client, from, path, line), path, line));
+}
+
+/** A file's first added line (else its first shown), for Open in editor. */
+function firstChanged(f: DiffFile): number | null {
+  const lines = f.hunks?.flatMap((h) => h.lines) ?? [];
+  const at = lines.find((l) => l[0] === "+") ?? lines.find((l) => l[0] === " ");
+  return at && at[2] > 0 ? at[2] : null;
 }
 
 const LETTER: Record<DiffFile["status"], string> = { modified: "M", added: "A", deleted: "D", renamed: "R", untracked: "?", mode: "m" };
@@ -226,6 +242,8 @@ function DiffBlock({ client, id, s }: { client: Client; id: PaneId; s: DiffState
   const call = (method: string, args: unknown = {}) => void client.api(`/api/blocks/${id}/call/${method}`, args);
   const machine = client.machine(id);
   const where = (p: string) => (s.repo ? `${s.repo.replace(/\/$/, "")}/${p}` : p);
+  // Editors are the machine owner's, as Open in editor is.
+  const owner = !client.state?.roles;
   return (
     <div class="review" data-diff={id}>
       <div class="review-bar">
@@ -307,6 +325,13 @@ function DiffBlock({ client, id, s }: { client: Client; id: PaneId; s: DiffState
                     </>
                   )}
                 </button>
+                {f.open && owner && f.status !== "deleted" && (
+                  <div class="diff-file-acts">
+                    <button class="link" data-open-editor title={`Open ${f.path} in your editor (Settings › Editor)`} onClick={() => editFile(client, id, where(f.path), firstChanged(f))}>
+                      Open in editor
+                    </button>
+                  </div>
+                )}
                 {f.open && (
                   <Hunks
                     f={f}

@@ -10,6 +10,8 @@ anyhow = { workspace = true }
 arugulad-base = { workspace = true }
 # The agent and chat blocks and the conversations, in every build.
 arugulad-agent = { workspace = true }
+# MCP's server, in every build.
+arugulad-mcp = { workspace = true }
 # MCP's tools for what lives in control, in every build.
 arugulad-control-tools = { workspace = true }
 # Docs, in every build.
@@ -22,6 +24,9 @@ arugulad-review = { workspace = true }
 arugulad-invite = { workspace = true }
 # A hosted workspace's box (`--hosted`), in every build.
 arugulad-hosted = { workspace = true }
+# The runs engine: a hosted machine's runs, deploys and agent sessions, in
+# every build.
+arugulad-work = { workspace = true }
 # The editor server and Claude Code's IDE, for the `editor` feature.
 arugulad-editor = { workspace = true, optional = true }
 # The GitHub forge, for the `forge` feature.
@@ -36,6 +41,7 @@ workspace = true
 [dev-dependencies]
 # The checks of the whole daemon (src/whole_tests.rs).
 arugulad-base = { workspace = true, features = ["whole-tests"] }
+arugulad-mcp = { workspace = true, features = ["whole-tests"] }
 aes-gcm = { workspace = true }
 arugula-control-wire = { workspace = true }
 arugula-e2e = { workspace = true }

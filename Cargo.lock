@@ -319,7 +319,9 @@ dependencies = [
  "arugulad-hosted",
  "arugulad-invite",
  "arugulad-labs",
+ "arugulad-mcp",
  "arugulad-review",
+ "arugulad-work",
  "axum",
  "base64 0.23.1",
  "futures-util",
@@ -488,6 +490,7 @@ dependencies = [
  "hex",
  "hyper",
  "hyper-util",
+ "rmpv",
  "serde",
  "serde_json",
  "sha2 0.11.0",
@@ -595,6 +598,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "arugulad-mcp"
+version = "0.0.0"
+dependencies = [
+ "anyhow",
+ "arugula-control-wire",
+ "arugula-core",
+ "arugula-mux",
+ "arugula-proto",
+ "arugula-testkit",
+ "arugulad-base",
+ "axum",
+ "base64 0.23.1",
+ "nix",
+ "regex",
+ "rmcp",
+ "schemars",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "arugulad-review"
 version = "0.0.0"
 dependencies = [
@@ -605,6 +631,27 @@ dependencies = [
  "serde",
  "serde_json",
  "tokio",
+]
+
+[[package]]
+name = "arugulad-work"
+version = "0.0.0"
+dependencies = [
+ "anyhow",
+ "arugula-control-wire",
+ "arugula-e2e",
+ "arugula-mux",
+ "arugula-proto",
+ "arugulad-base",
+ "base64 0.23.1",
+ "hex",
+ "nix",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+ "tokio",
+ "tracing",
 ]
 
 [[package]]
@@ -3066,6 +3113,24 @@ dependencies = [
  "tower-service",
  "tracing",
  "uuid",
+]
+
+[[package]]
+name = "rmp"
+version = "0.8.15"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4ba8be72d372b2c9b35542551678538b562e7cf86c3315773cae48dfbfe7790c"
+dependencies = [
+ "num-traits",
+]
+
+[[package]]
+name = "rmpv"
+version = "1.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7a4e1d4b9b938a26d2996af33229f0ca0956c652c1375067f0b45291c1df8417"
+dependencies = [
+ "rmp",
 ]
 
 [[package]]

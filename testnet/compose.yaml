@@ -40,8 +40,13 @@ x-sshd-ready: &sshd-ready
   <<: *ready
   test: [CMD, bash, -c, 'exec 3<>/dev/tcp/127.0.0.1/22 && read -r -t 5 l <&3 && [[ $$l == SSH-* ]]']
 
+# The images' base, Docker Hub's debian from CI's mirror: ARUGULA_IMAGES
+# (docs/testing.md, "CI's images"), as the services' images below.
+x-images: &images
+  ARUGULA_IMAGES: ${ARUGULA_IMAGES:-ghcr.io/arugula-salad/ci}
+
 x-sshd: &sshd
-  build: ./sshd
+  build: { context: ./sshd, args: *images }
   image: ${COMPOSE_PROJECT_NAME:-arugula-testnet}-sshd
   volumes:
     - ${ARUGULA_TESTNET_STATE:-./.state}:/keys:ro
@@ -70,7 +75,7 @@ services:
   # privileged container with its own cgroup namespace.
   box-systemd:
     profiles: [ssh]
-    build: ./sshd-systemd
+    build: { context: ./sshd-systemd, args: *images }
     image: ${COMPOSE_PROJECT_NAME:-arugula-testnet}-sshd-systemd
     container_name: ${COMPOSE_PROJECT_NAME:-arugula-testnet}-box-systemd
     hostname: box-systemd
@@ -97,7 +102,7 @@ services:
   # `arugulad --hosted` in it.
   hosted-box:
     profiles: [control]
-    build: ./hosted
+    build: { context: ./hosted, args: *images }
     image: ${COMPOSE_PROJECT_NAME:-arugula-testnet}-hosted
     container_name: ${COMPOSE_PROJECT_NAME:-arugula-testnet}-hosted-box
     hostname: hosted-box
@@ -112,7 +117,7 @@ services:
   # pane with the agent forwarded through `arugula --ssh`. git@git:repo.git.
   git:
     profiles: [ssh]
-    build: ./git
+    build: { context: ./git, args: *images }
     image: ${COMPOSE_PROJECT_NAME:-arugula-testnet}-git
     container_name: ${COMPOSE_PROJECT_NAME:-arugula-testnet}-git
     hostname: git
@@ -130,7 +135,7 @@ services:
   # reach it on the published port (web/fixtures/device.ts `via`).
   control:
     profiles: [control]
-    image: debian:bookworm-slim
+    image: ${ARUGULA_IMAGES:-ghcr.io/arugula-salad/ci}/debian:bookworm-slim
     container_name: ${COMPOSE_PROJECT_NAME:-arugula-testnet}-control
     hostname: control
     depends_on:
@@ -238,7 +243,7 @@ services:
   # claim); `down` removes it.
   platform:
     profiles: [platform]
-    image: debian:bookworm-slim
+    image: ${ARUGULA_IMAGES:-ghcr.io/arugula-salad/ci}/debian:bookworm-slim
     container_name: ${COMPOSE_PROJECT_NAME:-arugula-testnet}-platform
     hostname: platform
     depends_on:
@@ -313,7 +318,7 @@ services:
   # it, on the outer network; its data is in memory, so `down` forgets it.
   postgres:
     profiles: [control]
-    image: postgres:17-alpine
+    image: ${ARUGULA_IMAGES:-ghcr.io/arugula-salad/ci}/postgres:17-alpine
     container_name: ${COMPOSE_PROJECT_NAME:-arugula-testnet}-postgres
     hostname: postgres
     environment:
@@ -334,7 +339,7 @@ services:
   # and the platform talk to them, over the outer network.
   fakes:
     profiles: [control]
-    image: node:22-slim
+    image: ${ARUGULA_IMAGES:-ghcr.io/arugula-salad/ci}/node:22-slim
     container_name: ${COMPOSE_PROJECT_NAME:-arugula-testnet}-fakes
     hostname: fakes
     command: [node, --experimental-strip-types, --no-warnings, /fixtures/fakes-serve.ts]
@@ -373,7 +378,7 @@ services:
 
   ts-box:
     profiles: [tailnet]
-    build: ./tailnet
+    build: { context: ./tailnet, args: *images }
     image: ${COMPOSE_PROJECT_NAME:-arugula-testnet}-tailnet
     container_name: ${COMPOSE_PROJECT_NAME:-arugula-testnet}-ts-box
     hostname: ts-box
@@ -384,7 +389,7 @@ services:
 
   ts-client:
     profiles: [tailnet]
-    build: ./tailnet
+    build: { context: ./tailnet, args: *images }
     image: ${COMPOSE_PROJECT_NAME:-arugula-testnet}-tailnet
     container_name: ${COMPOSE_PROJECT_NAME:-arugula-testnet}-ts-client
     hostname: ts-client

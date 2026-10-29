@@ -14,11 +14,20 @@ import { openMenu } from "../../shared/ui/menu";
 import type { Client } from "../client";
 import type { DiffInfo, PaneId } from "../../shared/proto";
 import { DiffCard } from "./diff-card";
+import { openEditor } from "../blocks/editor";
+import { clientTarget, diffLine, openInEditor, wholePath } from "../open-in-editor";
 import { AskCard, type Answered, type Ask } from "../../shared/ask";
 import { ANSWERED_MS, answeredLine, FollowUpBox, PermissionBody, PermissionButtons, VIEWER_NOTE } from "./answer-card";
 import { Avatar } from "./people";
 
 export { answeredLine, clock } from "./answer-card";
+
+/** Open in editor on a diff card (#1731): the file, where the diff changes
+ * it, in the nvim by pane `id` or VS Code, as the preference says. */
+export function editDiff(client: Client, id: PaneId, diff: DiffInfo) {
+  const line = diffLine(diff.text);
+  return openInEditor(clientTarget(client, id, () => openEditor(client, id, wholePath(diff.file, client.cwd(id)), line), diff.file, line));
+}
 
 /** Whether this client's person may answer in a pane's session. */
 export function mayAnswer(client: Client, id: PaneId): boolean {
@@ -169,6 +178,7 @@ export function TermDiff({ client, id, diff }: { client: Client; id: PaneId; dif
           const res = await client.request(OPS["pane.diff"].method, opPath("pane.diff", { id }));
           return res.ok ? (await res.json<{ new: string }>()).new : null;
         }}
+        edit={client.state?.roles ? undefined : () => void editDiff(client, id, diff)}
       />
     </div>
   );

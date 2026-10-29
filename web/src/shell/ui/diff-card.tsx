@@ -29,6 +29,7 @@ export function DiffCard({
   act,
   full,
   more,
+  edit,
 }: {
   diff: DiffInfo;
   can: boolean;
@@ -37,6 +38,9 @@ export function DiffCard({
   full: () => Promise<string | null>;
   /** The place's own buttons, at the end of the row (UI audit #194). */
   more?: ComponentChildren;
+  /** Open in editor (#1731): the file, where the diff changes it, in the
+   * editor the preference says. The owner's. */
+  edit?: () => void;
 }) {
   const [editing, setEditing] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -55,7 +59,20 @@ export function DiffCard({
         <span class="diff-counts">
           <i class="add">+{diff.added}</i> <i class="del">−{diff.removed}</i>
         </span>
+        {edit && !diff.new && (
+          <>
+            {" "}
+            <button class="link" data-open-editor title={`Open ${diff.file} where it changes, in your editor (Settings › Editor)`} onClick={edit}>
+              Open in editor
+            </button>
+          </>
+        )}
       </div>
+      {diff.nvim != null && (
+        <p class="diff-nvim" data-diff-nvim={diff.nvim}>
+          Also open in nvim (pane %{diff.nvim})
+        </p>
+      )}
       {editing === null ? (
         <DiffText text={diff.text} />
       ) : (

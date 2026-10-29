@@ -575,9 +575,10 @@ test-quarantined: web e2e-build
     exit "$status"
 
 # The platform's suite on Postgres (M143), as hosted control runs it: a
-# postgres:17 container of its own on a free port, removed after. The same
-# tests as on SQLite (`Db::test`); check.yml runs it in a job of its own
-# (test-postgres), beside test and test-2.
+# postgres:17 container of its own on a free port, removed after (from
+# CI's mirror: docs/testing.md, "CI's images"). The same tests as on SQLite
+# (`Db::test`); check.yml runs it in a job of its own (test-postgres),
+# beside test and test-2.
 test-platform-postgres:
     #!/usr/bin/env bash
     set -euo pipefail
@@ -586,7 +587,7 @@ test-platform-postgres:
     # commit waited on the disk. In a job of its own beside test and
     # test-2 the suite took 23-27 min instead of 2.
     docker run -d --rm --name "$name" -e POSTGRES_PASSWORD=platform -p 127.0.0.1::5432 \
-        postgres:17 -c max_connections=500 -c fsync=off -c synchronous_commit=off \
+        "${ARUGULA_IMAGES:-ghcr.io/arugula-salad/ci}/postgres:17" -c max_connections=500 -c fsync=off -c synchronous_commit=off \
         -c full_page_writes=off >/dev/null
     trap 'docker rm -f "$name" >/dev/null' EXIT
     port=$(docker port "$name" 5432/tcp | head -1 | sed 's/.*://')
@@ -834,7 +835,8 @@ macos cmd="tools" *args:
 # per workspace size (M266); its tools for session users (Arugula #215);
 # and the flaky tests' quarantine (.config/quarantine.toml): its script,
 # and last the manifest itself, which fails when an entry has no issue or
-# is past its `until`.
+# is past its `until`. Also the nvim key tips' `:help` tags, against a real
+# nvim when there is one (`just nvim-tips-check`).
 test-scripts:
     scripts/tests/ci-red.sh
     scripts/tests/ci-nightly-red.sh
@@ -850,6 +852,12 @@ test-scripts:
     scripts/tests/hosted-template.sh
     scripts/tests/hosted-tools.sh
     node scripts/quarantine.mjs check
+    scripts/check-nvim-tips
+
+# Every nvim key tip (web/src/shell/hints/nvim-tips.ts) names a `:help` tag
+# that a real nvim (0.10 or later) opens. Skips, saying so, without one.
+nvim-tips-check:
+    scripts/check-nvim-tips
 
 # The two workspaces stay apart: the root's has no server crate, and the
 # server's (server/Cargo.toml) builds none of the daemon's, the mux or
@@ -1025,7 +1033,7 @@ rollup-check:
 # The daemon's crates (#232): the binary, arugulad, the library it's built
 # on and the feature crates on that, whose tests are the unit tests.
 # `--features arugulad/…` reaches them all.
-daemon_crates := "-p arugulad -p arugulad-agent -p arugulad-base -p arugulad-control-tools -p arugulad-docs -p arugulad-drivers -p arugulad-editor -p arugulad-forge -p arugulad-hosted -p arugulad-invite -p arugulad-review"
+daemon_crates := "-p arugulad -p arugulad-agent -p arugulad-base -p arugulad-control-tools -p arugulad-docs -p arugulad-drivers -p arugulad-editor -p arugulad-forge -p arugulad-hosted -p arugulad-invite -p arugulad-mcp -p arugulad-review -p arugulad-work"
 
 # The daemon and the CLI without Labs (#452): clippy and the tests with the
 # `labs` feature off, which CI runs as the `core` job. Run it after touching

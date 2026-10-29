@@ -30,7 +30,8 @@ import { sessionThreadItems, threadItems } from "./threads";
 import { docShareItems } from "./doc-share";
 import { focusItems } from "./panes/layout";
 import { watchingNote } from "./shell/live";
-import { setTips, tipsOn } from "../../shared/seen";
+import { bigTipsOn, setBigTips, setTips, tipsOn } from "../../shared/seen";
+import { clientTarget, EDITORS, editorShown, openInEditor, setEditorPref } from "../open-in-editor";
 import { openWhatsNew } from "./whats-new";
 import { openPanel } from "../trust/common";
 
@@ -139,9 +140,9 @@ export function paneItems(client: Client, id: PaneId, phone: boolean, workspace:
     ...(owner ? [{ label: "Open pull request…", run: () => void openPr(client, { split: id, dir: cwd }) } as MenuItem] : []),
     // M37: an issue beside it (N: in its repository).
     ...(owner ? [{ label: "Open issue…", run: () => void openIssue(client, { split: id, dir: cwd }) } as MenuItem] : []),
-    // M27: VS Code where this pane runs, in its directory. The owner's,
-    // like ports.
-    ...(entry && owner ? [{ label: "Open in editor", run: () => openEditor(client, id) } as MenuItem] : []),
+    // M27: VS Code where this pane runs, in its directory, or (#1731) its
+    // nvim, as the Editor preference says. The owner's, like ports.
+    ...(entry && owner ? [{ label: "Open in editor", run: () => void openInEditor(clientTarget(client, id, () => openEditor(client, id))) } as MenuItem] : []),
     // M11: what changed in its repository, where it runs.
     ...(owner ? [{ id: "changes", label: "Changes", run: () => openChanges(client, id) } as MenuItem] : []),
     ...(workspace ? [{ label: "Open as workspace", run: () => openWorkspace(client, workspace, id) } as MenuItem] : []),
@@ -336,6 +337,19 @@ export function settingsItems(client: Client | null, opts: { machine?: boolean }
       hint: "A one-time mention when something you can use turns up, like a port listening in a pane",
       checked: tipsOn(),
       run: () => setTips(!tipsOn()),
+    },
+    // A pane modal's "Don't show tips like this again" turns these off;
+    // this says so, and turns them back on. Tips off hides them too.
+    {
+      label: "Big tips",
+      hint: "Tips that cover a pane until you close them, like a feature's help card",
+      checked: bigTipsOn(),
+      run: () => setBigTips(!bigTipsOn()),
+    },
+    // #1731: what Open in editor opens, everywhere. The account's, as Tips.
+    {
+      label: "Editor",
+      submenu: EDITORS.map(([e, label]) => ({ label, hint: "What Open in editor opens", checked: editorShown() === e, run: () => setEditorPref(e) })),
     },
     ...(client?.state
       ? [

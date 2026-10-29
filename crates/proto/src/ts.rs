@@ -61,6 +61,8 @@ fn generate() -> String {
     c.visit::<crate::api::DocOpenRequest>();
     c.visit::<crate::api::DocOpened>();
     c.visit::<crate::api::Ports>();
+    c.visit::<crate::api::NvimOpenRequest>();
+    c.visit::<crate::api::NvimOpened>();
     c.visit::<FlagSetRequest>();
     c.visit::<crate::flags::Source>();
     c.visit::<crate::telemetry::TelemetryInfo>();

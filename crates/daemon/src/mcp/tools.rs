@@ -2,7 +2,7 @@
 //! tell them it's still going), a tool's row in the list ([`Def`], a
 //! grouped tool's [`Kind`]) and its line on the person's card ([`Human`]),
 //! and an answer ([`done`]). The operations' half (`ops.rs`), the feature
-//! crates' tools (`registry.rs`) and MCP's server (`mcp_server`, the table
+//! crates' tools (`registry.rs`) and MCP's server (`arugulad-mcp`, the table
 //! and the tools' calls) are each made of these.
 
 use std::{future::Future, sync::Arc, time::Duration};

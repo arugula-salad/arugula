@@ -6,8 +6,9 @@
 //! Under Remote-SSH that's the remote machine's daemon, since the extension
 //! runs there. What it says follows S17's schema:
 //!
-//! - **`hello`** first: which editor, its remote, its workspace, and the
-//!   editor block it is if it's one (M27).
+//! - **`hello`** first: which editor, its remote, its workspace, the
+//!   editor block it is if it's one (M27), and the terminal it runs in if
+//!   it runs in one (`pane`, from `$ARUGULA_PANE`, with its `pid`; #1730).
 //! - **`summary`**: what M23's summaries carry (the file, diagnostic counts,
 //!   unsaved buffers, the debugger, a conflict), at most once a second and
 //!   at once when something wants attention. A debugger stopping, errors
@@ -23,9 +24,37 @@
 //! The daemon sends `welcome` (the id it got), `followers`, `resend` (a new
 //! follower needs the whole file again) and `continue` (the debugger).
 //!
-//! An editor that isn't an editor block becomes a presence of its own
-//! (`presence.rs`): an entry beside the panes, with no tab and no PTY, which
-//! goes when the editor disconnects.
+//! Claude Code's proposed edits (#1732, `ide/nvim.rs`), to an editor in a
+//! terminal whose hello says `diffs: true` (arugula.nvim), when Claude Code
+//! runs in the same session:
+//!
+//! - **`diff`** (daemon to editor): a proposal to show. `id` names it in
+//!   every answer; `file` is its whole path and `name` the one the card
+//!   shows; `agent` (`Claude Code`) and `pane` (the terminal it runs in)
+//!   say whose it is; `old` is the file as it is (empty, with `new_file`,
+//!   for a file it creates) and `new` the proposed text. Several may wait;
+//!   they come in the order Claude Code proposed them.
+//! - **`diff_accept`** (editor to daemon): `id` accepted as proposed, or,
+//!   with `text`, accepted with that text instead (edited first).
+//! - **`diff_reject`** (editor to daemon): `id` rejected.
+//! - **`diff_close`** (daemon to editor): `id` was answered (`how`:
+//!   `accepted`, `accepted with changes`, `rejected`, `answered` in Claude
+//!   Code's terminal, or `gone`), here or anywhere else: stop showing it.
+//!
+//! The daemon owns the answer: the card on the pane and the rail, and the
+//! editor, show one proposal, and whichever answers first closes the others.
+//!
+//! An editor that says it runs in a terminal (arugula.nvim in an Arugula
+//! pane) is that pane: what it reports goes on the pane, following the pane
+//! follows it, and its reasons are the pane's. It takes the place of what
+//! the daemon reads from nvim's own socket (`nvim.rs`), and when it leaves
+//! the pane is a terminal again (or read over the socket, while nvim runs).
+//! Its `pid` must be a process under that pane's, or it isn't that pane
+//! (an `$ARUGULA_PANE` carried over ssh, or another daemon's).
+//!
+//! Any other editor that isn't an editor block becomes a presence of its
+//! own (`presence.rs`): an entry beside the panes, with no tab and no PTY,
+//! which goes when the editor disconnects.
 
 use std::sync::{Arc, Mutex};
 
@@ -81,6 +110,15 @@ pub struct Hello {
     /// The editor block it is (M27), if it's one.
     #[serde(default)]
     pub block: Option<PaneId>,
+    /// The terminal it runs in (#1730: `$ARUGULA_PANE`), if it runs in one.
+    #[serde(default)]
+    pub pane: Option<PaneId>,
+    /// Its process, which runs under that terminal's.
+    #[serde(default)]
+    pub pid: Option<u32>,
+    /// It shows Claude Code's proposed edits (`diff`; #1732).
+    #[serde(default)]
+    pub diffs: bool,
 }
 
 /// One connected editor.
@@ -122,6 +160,10 @@ impl EditorLink for Link {
         Link::info(self)
     }
 
+    fn file(&self) -> Option<String> {
+        Link::file(self)
+    }
+
     fn on_peek(&self, f: Box<dyn Fn(&Peek) + Send + Sync>) {
         Link::on_peek(self, f)
     }
@@ -155,6 +197,11 @@ impl Link {
     pub fn bind(&self, id: PaneId, sink: NoticeSink) {
         self.st.lock().unwrap().bound = Some((id, sink));
         self.send(json!({ "t": "welcome", "id": id }));
+    }
+
+    /// It sends no follow stream (nvim read over its socket, #1730).
+    pub fn no_follow(&self) {
+        self.st.lock().unwrap().info.no_follow = true;
     }
 
     pub fn on_peek(&self, f: impl Fn(&Peek) + Send + Sync + 'static) {
@@ -354,6 +401,7 @@ impl Link {
                 st.file = peek.file.clone();
             }
             st.info.dirty = peek.dirty;
+            st.info.line = peek.line;
         }
         if let Some(f) = &*self.on_peek.lock().unwrap() {
             f(&peek);
@@ -362,7 +410,7 @@ impl Link {
     }
 
     /// It went away: anyone following hears so.
-    fn gone(&self) {
+    pub fn gone(&self) {
         self.notice(What::Follow(json!({ "gone": true })));
     }
 }
@@ -484,19 +532,49 @@ where
         Some(id) => app.mux.api(|r| Api::Block(id, r)).await.flatten().filter(|b| b.attach(handle.clone())),
         None => None,
     };
-    let id = match &block {
-        Some(_) => link.id(),
-        None => {
+    // The terminal it runs in (#1730), if it's this daemon's.
+    let pane = match hello.pane {
+        Some(p) if block.is_none() && super::nvim::runs_in(&app.mux, p, hello.pid).await => {
+            super::nvim::plugin_attached(p);
+            match app.mux.api(|r| Api::EditorAttach(p, handle.clone(), true, r)).await {
+                Some(Ok(())) => Some(p),
+                r => {
+                    super::nvim::plugin_left(p);
+                    debug!(pane = p, error = ?r, "an editor in a terminal joins as itself");
+                    None
+                }
+            }
+        }
+        _ => None,
+    };
+    let id = match (&block, pane) {
+        (Some(_), _) => link.id(),
+        (None, Some(p)) => Some(p),
+        (None, None) => {
             let presence = super::presence::Presence::make(link.clone());
             app.mux.api(|r| Api::EditorJoin(presence, r)).await
         }
     };
     let Some(id) = id else { return };
-    info!(pane = id, editor = hello.editor, remote = hello.remote.as_deref().unwrap_or(""), "editor joined");
+    // Claude Code's proposed edits show in it too (#1732).
+    let diffs = pane.filter(|_| hello.diffs);
+    if let Some(p) = diffs {
+        crate::ide::nvim::joined(&app.mux, p, link.clone());
+    }
+    info!(
+        pane = id,
+        editor = hello.editor,
+        remote = hello.remote.as_deref().unwrap_or(""),
+        terminal = pane.is_some(),
+        "editor joined"
+    );
     loop {
         tokio::select! {
             line = read_line(&mut lines) => match line {
-                Some(v) => link.handle(v),
+                Some(v) => match (v["t"].as_str(), diffs) {
+                    (Some("diff_accept" | "diff_reject"), Some(p)) => crate::ide::nvim::answered(&app.mux, p, &v),
+                    _ => link.handle(v),
+                },
                 None => break,
             },
             Some(out) = rx.recv() => {
@@ -507,9 +585,16 @@ where
         }
     }
     link.gone();
-    match block {
-        Some(b) => b.detach(&handle),
-        None => app.mux.send(crate::mux::Cmd::Api(Api::EditorLeave(id))),
+    if let Some(p) = diffs {
+        crate::ide::nvim::left(&app.mux, p, link.clone());
+    }
+    match (block, pane) {
+        (Some(b), _) => b.detach(&handle),
+        (None, Some(p)) => {
+            app.mux.send(crate::mux::Cmd::Api(Api::EditorDetach(p, handle)));
+            super::nvim::plugin_left(p);
+        }
+        (None, None) => app.mux.send(crate::mux::Cmd::Api(Api::EditorLeave(id))),
     }
     info!(pane = id, "editor left");
 }

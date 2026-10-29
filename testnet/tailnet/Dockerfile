@@ -4,7 +4,9 @@
 # tailscaled's mode: userspace-networking (a box: its netstack forwards
 # tailnet connections to loopback) or tailscale0 (the client, which needs a
 # real interface to dial the tailnet). See testnet/README.md.
-FROM debian:bookworm-slim
+# Docker Hub's image, from CI's mirror (docs/testing.md, "CI's images").
+ARG ARUGULA_IMAGES=ghcr.io/arugula-salad/ci
+FROM ${ARUGULA_IMAGES}/debian:bookworm-slim
 ARG TARGETARCH
 ARG TAILSCALE=1.102.4
 RUN apt-get update \

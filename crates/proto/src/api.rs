@@ -1530,6 +1530,45 @@ pub struct IdeMentioned {
     pub sent: usize,
 }
 
+/// `POST /api/panes/N/nvim` (#1731): Open in editor, with the Editor
+/// preference nvim. A file at its line in the nvim already running in pane
+/// N, else in another pane of its tab, else in a new pane beside N running
+/// `nvim +LINE FILE` in the file's directory, on N's machine. No file: the
+/// nvim already there, else a new one in N's directory.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[cfg_attr(feature = "ts", ts(optional_fields = nullable))]
+pub struct NvimOpenRequest {
+    /// The file: whole, or relative to the pane's directory.
+    #[serde(default)]
+    pub file: Option<String>,
+    /// Its line, from 1.
+    #[serde(default)]
+    pub line: Option<u32>,
+}
+
+/// Where Open in editor put the file, for the page to show that pane.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct NvimOpened {
+    /// The pane whose nvim has it.
+    pub pane: PaneId,
+    pub how: NvimWhere,
+}
+
+/// Which nvim [`NvimOpened`] went to.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[serde(rename_all = "snake_case")]
+pub enum NvimWhere {
+    /// The one running in the pane it was asked for.
+    Pane,
+    /// One running in another pane of its tab.
+    Tab,
+    /// None ran there: a new pane beside it runs one.
+    New,
+}
+
 /// `GET /api/rules` (#166): the standing permission rules agent blocks
 /// answer from, in order.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -2113,6 +2152,7 @@ mod wire {
             new: false,
             at_ms: 5,
             ide: "arugula".into(),
+            nvim: None,
         };
         same(
             &PaneDiff { diff: info.clone(), old: "a".into(), new: "b".into() },

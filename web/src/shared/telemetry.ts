@@ -21,7 +21,13 @@ export type View =
   // Every hint's together (shell/hints.ts).
   | "hint-shown"
   | "hint-acted"
-  | "hint-dismissed";
+  | "hint-dismissed"
+  // Every pane modal's together; each counted on its own adds its own
+  // (`Hint.views`, shell/hints).
+  | "pane-tip-shown"
+  | "pane-tip-acted"
+  | "pane-tip-closed"
+  | "pane-tip-opted-out";
 
 /** What was counted since the last send. */
 export interface PageCounts {

@@ -1307,7 +1307,12 @@ new?: boolean, at_ms: number,
 /**
  * Which IDE shows it: `arugula`, or the one diffs go to.
  */
-ide: string, };
+ide: string, 
+/**
+ * The terminal whose nvim shows it too, as a vimdiff (#1732): the card
+ * says "Also open in nvim (pane %N)".
+ */
+nvim?: number, };
 
 export type Dir = "row" | "column";
 
@@ -1407,8 +1412,9 @@ export type Edge = "left" | "right" | "top" | "bottom" | "center";
 
 /**
  * What an editor says about itself in summaries (M28, S17's schema):
- * what changes about once in ten seconds. The cursor and the file's text
- * are content and go only to followers ([`ServerMsg::Follow`]).
+ * what changes about once in ten seconds, and the cursor's line. The
+ * file's text and the cursor's moves are content and go only to followers
+ * ([`ServerMsg::Follow`]).
  */
 export type EditorInfo = { 
 /**
@@ -1443,7 +1449,17 @@ conflict?: string | null,
 /**
  * How many people follow it now: the editor says so.
  */
-followers: number, };
+followers: number, 
+/**
+ * The cursor's line in its file (from 1), for its card.
+ */
+line?: number | null, 
+/**
+ * It can't be followed: an nvim the daemon found in a pane and reads
+ * over its RPC socket, without arugula.nvim to send a follow stream
+ * (#1730).
+ */
+no_follow?: boolean, };
 
 export type Event = { 
 /**
@@ -2678,6 +2694,37 @@ export type NotifySet = { channels?: NotifyLevel, dms?: NotifyLevel, threads?: N
  * Snooze until this time (ms); 0 ends a snooze.
  */
 snooze_until?: number, tz?: string, quiet?: Array<QuietHours>, all_notices?: boolean, };
+
+/**
+ * `POST /api/panes/N/nvim` (#1731): Open in editor, with the Editor
+ * preference nvim. A file at its line in the nvim already running in pane
+ * N, else in another pane of its tab, else in a new pane beside N running
+ * `nvim +LINE FILE` in the file's directory, on N's machine. No file: the
+ * nvim already there, else a new one in N's directory.
+ */
+export type NvimOpenRequest = { 
+/**
+ * The file: whole, or relative to the pane's directory.
+ */
+file?: string | null, 
+/**
+ * Its line, from 1.
+ */
+line?: number | null, };
+
+/**
+ * Where Open in editor put the file, for the page to show that pane.
+ */
+export type NvimOpened = { 
+/**
+ * The pane whose nvim has it.
+ */
+pane: number, how: NvimWhere, };
+
+/**
+ * Which nvim [`NvimOpened`] went to.
+ */
+export type NvimWhere = "pane" | "tab" | "new";
 
 /**
  * `POST /api/conversations/open` (M33): a Claude Code conversation as an
@@ -4364,6 +4411,7 @@ export const OPS = {
   "pane.inbox": { method: "POST", path: "/api/panes/{id}/inbox" },
   "pane.keys": { method: "POST", path: "/api/panes/{id}/keys" },
   "pane.mouse": { method: "POST", path: "/api/panes/{id}/mouse" },
+  "pane.nvim_open": { method: "POST", path: "/api/panes/{id}/nvim" },
   "pane.permit": { method: "POST", path: "/api/panes/{id}/permit" },
   "pane.ports": { method: "GET", path: "/api/panes/{id}/ports" },
   "pane.process": { method: "GET", path: "/api/panes/{id}/process" },

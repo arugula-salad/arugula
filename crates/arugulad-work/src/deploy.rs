@@ -69,7 +69,7 @@ echo "fake driver: done""#;
 /// with `node`, as the plan the owner approved says
 /// (`arugula_e2e::drivers::plan_text`). It says what it did on fd 3
 /// ([`RESULT_FD`]).
-pub const CHANT_FLY: &str = include_str!("work_deploy_chant_fly.mjs");
+pub const CHANT_FLY: &str = include_str!("deploy_chant_fly.mjs");
 
 /// The fd a driver says what its apply did on (M220): a pipe only it is
 /// given (not its standard output, which what it runs shares), whose JSON
@@ -1266,7 +1266,7 @@ pub fn result_of(said: &[u8]) -> Option<serde_json::Value> {
 
 // A deploy's box is Linux: the driver's result on fd 3, node and bash.
 #[cfg(all(test, unix))]
-#[path = "work_deploy_chant_fly_tests.rs"]
+#[path = "deploy_chant_fly_tests.rs"]
 mod chant_fly_tests;
 
 #[cfg(test)]

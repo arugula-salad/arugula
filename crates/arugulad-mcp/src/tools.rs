@@ -31,7 +31,6 @@ use crate::{
     history::{self, Filter},
     mcp::{
         Scope,
-        results::{self, RunState},
         tools::{
             Args, Call, Def, DelegateArgs, Human, Kind, ListTeamAgentsArgs, Needs, NoArgs, OpenAppArgs, Out, PAGE,
             PAGE_MAX, PaneArg, PaneOnly, Schema, ago, confine, done, entry, line, one_line, output_schema, parse,
@@ -42,6 +41,7 @@ use crate::{
     ops::{Cx, Handle, Via},
     osc::strip,
     pane::{CaptureFormat, CaptureScope},
+    results::{self, RunState},
     store::{PaneLog, now_ms},
 };
 

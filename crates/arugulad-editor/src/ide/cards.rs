@@ -18,17 +18,20 @@ use crate::{
 
 /// An edit Claude Code proposes through its IDE connection (M28).
 #[derive(Debug)]
-struct PendingDiff {
+pub(super) struct PendingDiff {
     /// Its pane, once its Claude Code's process is found in one.
-    pane: Option<PaneId>,
+    pub(super) pane: Option<PaneId>,
     /// The relay's connection, and the call's id there.
     conn: u64,
     call: Value,
     tab: String,
     /// The file as it is, and as it would be.
-    old: String,
-    new: String,
-    info: DiffInfo,
+    pub(super) old: String,
+    pub(super) new: String,
+    /// The whole path.
+    pub(super) path: String,
+    /// `info.nvim`: the terminal whose nvim shows it too (#1732).
+    pub(super) info: DiffInfo,
 }
 
 /// How much of a file a diff card keeps.
@@ -62,9 +65,10 @@ fn new_diff(pane: Option<PaneId>, conn: u64, call: Value, args: &Value, cwd: Opt
         conn,
         call,
         tab: args["tab_name"].as_str().unwrap_or("").to_owned(),
-        info: DiffInfo { id, file, added, removed, text, new: !exists, at_ms: now_ms(), ide: NAME.into() },
+        info: DiffInfo { id, file, added, removed, text, new: !exists, at_ms: now_ms(), ide: NAME.into(), nvim: None },
         old,
         new,
+        path,
     }
 }
 
@@ -73,13 +77,16 @@ fn new_diff(pane: Option<PaneId>, conn: u64, call: Value, args: &Value, cwd: Opt
 #[derive(Debug)]
 pub struct Cards {
     ide: std::sync::Arc<Ide>,
-    diffs: Vec<PendingDiff>,
+    pub(super) diffs: Vec<PendingDiff>,
     conns: HashMap<u64, (Option<u32>, Option<PaneId>)>,
+    /// arugula.nvim in a terminal, by that terminal (#1732): where diffs
+    /// show as a vimdiff too.
+    pub(super) nvims: HashMap<PaneId, super::nvim::Nvim>,
 }
 
 impl Cards {
     pub fn new(ide: std::sync::Arc<Ide>) -> Self {
-        Self { ide, diffs: Vec::new(), conns: HashMap::new() }
+        Self { ide, diffs: Vec::new(), conns: HashMap::new(), nvims: HashMap::new() }
     }
 
     /// The cards a call was given, if they are these.
@@ -109,7 +116,7 @@ impl Cards {
     }
 
     /// A pane's diffs changed: its card and its attention follow.
-    fn changed(&self, cx: &mut dyn CardsCx, pane: PaneId) {
+    pub(super) fn changed(&self, cx: &mut dyn CardsCx, pane: PaneId) {
         cx.card(pane, self.card(pane));
     }
 
@@ -132,7 +139,11 @@ impl Cards {
         match ev {
             Event::Hello => {
                 // The relay says again what's open; start from nothing.
-                let panes: Vec<PaneId> = self.diffs.drain(..).filter_map(|d| d.pane).collect();
+                let gone = std::mem::take(&mut self.diffs);
+                let panes: Vec<PaneId> = gone.iter().filter_map(|d| d.pane).collect();
+                for d in &gone {
+                    self.unshow(d, "gone");
+                }
                 self.conns.clear();
                 for p in panes {
                     self.changed(cx, p);
@@ -151,10 +162,14 @@ impl Cards {
                 if let Some((_, Some(p))) = self.conns.remove(&conn) {
                     cx.touch(p);
                 }
-                let gone: Vec<PaneId> = self.diffs.iter().filter(|d| d.conn == conn).filter_map(|d| d.pane).collect();
-                self.diffs.retain(|d| d.conn != conn);
-                for p in gone {
-                    self.changed(cx, p);
+                let (gone, keep): (Vec<PendingDiff>, Vec<PendingDiff>) =
+                    self.diffs.drain(..).partition(|d| d.conn == conn);
+                self.diffs = keep;
+                for d in gone {
+                    self.unshow(&d, "gone");
+                    if let Some(p) = d.pane {
+                        self.changed(cx, p);
+                    }
                 }
             }
             Event::Call { conn, id, tool, args } => match tool.as_str() {
@@ -167,8 +182,13 @@ impl Cards {
                     let cwd = pane.and_then(|p| cx.pane_cwd(p));
                     let d = new_diff(pane, conn, id, &args, cwd.as_deref());
                     info!(conn, ?pane, file = d.info.file, "an edit waits as a diff");
-                    self.diffs.retain(|x| !(x.conn == d.conn && x.call == d.call));
+                    if let Some(at) = self.diffs.iter().position(|x| x.conn == d.conn && x.call == d.call) {
+                        let old = self.diffs.remove(at);
+                        self.unshow(&old, "gone");
+                    }
                     self.diffs.push(d);
+                    // In nvim too, when one with arugula.nvim is near.
+                    self.show(cx, self.diffs.len() - 1);
                     if let Some(p) = pane {
                         self.changed(cx, p);
                     }
@@ -182,6 +202,7 @@ impl Cards {
                     self.diffs.drain(..).partition(|d| d.conn == conn && ids.contains(&d.call));
                 self.diffs = keep;
                 for d in gone {
+                    self.unshow(&d, "answered");
                     let Some(p) = d.pane else { continue };
                     // The terminal answered it (M29's "Allowed, 14:02").
                     cx.answered(
@@ -204,12 +225,15 @@ impl Cards {
     /// The pane an IDE connection's diffs belong to is known now.
     fn rehome(&mut self, cx: &mut dyn CardsCx, conn: u64, pane: Option<PaneId>) {
         let Some(p) = pane else { return };
-        let mut found = false;
-        for d in self.diffs.iter_mut().filter(|d| d.conn == conn && d.pane.is_none()) {
+        let mut found = vec![];
+        for (i, d) in self.diffs.iter_mut().enumerate().filter(|(_, d)| d.conn == conn && d.pane.is_none()) {
             d.pane = Some(p);
-            found = true;
+            found.push(i);
         }
-        if found {
+        for &i in &found {
+            self.show(cx, i);
+        }
+        if !found.is_empty() {
             self.changed(cx, p);
         }
     }
@@ -239,6 +263,7 @@ impl Cards {
             (true, true) => "accepted with changes",
             (false, _) => "rejected",
         };
+        self.unshow(&d, how);
         cx.record_answer(pane, &by, &d.info.id, how, &diff_headline(&d.info));
         self.changed(cx, pane);
         Ok(())

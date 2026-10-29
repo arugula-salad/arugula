@@ -1,4 +1,7 @@
 use super::*;
+use arugula_control_wire::work::MAX_HELD_SESSIONS_PER_BOX;
+
+use crate::work::sessions::default_users;
 
 #[test]
 fn a_session_names_only_its_own_branch() {

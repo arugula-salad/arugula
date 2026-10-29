@@ -110,7 +110,7 @@ pub async fn open_config(c: &Value, state_dir: &Path) -> Result<Value, String> {
 
 /// Whether `gh` has a login for `host` now (asked afresh, not a block's
 /// cached answer), for MCP's `capabilities` (#229). `Err`: why not.
-pub(crate) async fn gh_signed_in(runner: &Runner, host: &str) -> Result<(), String> {
+pub async fn gh_signed_in(runner: &Runner, host: &str) -> Result<(), String> {
     match forges() {
         Some(f) => f.gh_signed_in(runner, host).await,
         None => Err(not_built("GitHub")),

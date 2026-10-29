@@ -67,6 +67,21 @@ impl editors::Editors for Editors {
         editor::server::install(s);
     }
 
+    fn watch(&self, mux: MuxHandle) {
+        editor::nvim::watch(mux);
+    }
+
+    fn open_in_pane(
+        &self,
+        mux: &MuxHandle,
+        pane: PaneId,
+        file: &Path,
+        line: Option<u32>,
+    ) -> BoxFuture<'static, Result<(), String>> {
+        let (mux, file) = (mux.clone(), file.to_owned());
+        Box::pin(async move { editor::nvim::open_in_pane(&mux, pane, &file, line).await })
+    }
+
     fn start_ide(
         &self,
         state_dir: &Path,

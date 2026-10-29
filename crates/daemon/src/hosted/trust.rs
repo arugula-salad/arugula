@@ -305,7 +305,7 @@ mod tests {
             source_where: "acme/app".into(),
             planned: "ef".repeat(32),
         };
-        // As `work_deploy::check` does: none pinned is an empty set.
+        // As `arugulad-work`'s `deploy::check` does: none pinned is an empty set.
         let check = |s: &Saved, by: &DeviceKeys| {
             let a = Approval::new(by, "dep_1", &op, "acct1", Decision::Once, 2_000);
             let (cd, ad) = {

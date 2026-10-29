@@ -49,6 +49,12 @@ Each has a `README.md` with where to start reading.
   operations. The daemon reaches it through `features.rs` (`KindsCx`),
   `mcp/registry.rs` and `agent/`'s `Agents`; the base keeps `agent/` (the
   agents and adapters, the hosted gate, pictures, the transcript, `Worn`).
+- `crates/arugulad-mcp`: `arugulad-mcp`, MCP's server: `/mcp` and the VM
+  pipe, the tool table and the tools' calls, `capabilities`, a cloud
+  workspace's `POST /api/mcp/call` and a hosted session's server. The
+  daemon reaches it through `mcp/`'s `Mcp`; the base keeps what the
+  operations and the other crates share (`Call`, a tool's row, the
+  registry), so none of them is built on this one.
 - `crates/arugulad-control-tools`: `arugulad-control-tools`, MCP's tools for
   what lives in control (Cloud workspaces, linked repos, conversations,
   native issues, boards, runs, deploys, agent sessions), through
@@ -79,6 +85,11 @@ Each has a `README.md` with where to start reading.
   owner-only words, the `Hook` a card runs through).
 - `crates/arugulad-review`: `arugulad-review`, the diff and file blocks;
   what they share (`Runner`, `Live`) stays in the base's `review/`.
+- `crates/arugulad-work`: `arugulad-work`, the runs engine: a hosted
+  machine's runs, deploys and agent sessions, their ledger, signed reports
+  and logs. The daemon reaches it through `work.rs`' `Work`; the base's
+  `work` keeps what others read without it (`printable`, the fenced ports,
+  the session users and the sessions' ledger as it's read).
 - `crates/arugulad-labs`: `arugulad-labs`, Labs (studio apps, chant
   workspaces, VMs and resident daemons, guest ssh, agent recipes and
   delegating, the Forgejo and GitLab forges). The daemon reaches it only
@@ -129,7 +140,7 @@ Paths are under `crates/daemon/src/`, except those marked `mux:`, which are in
 nothing marked `mux:` names the edge or the block kinds.
 
 - **Edge:** the embedded web client and `/ws` (`server.rs`), the HTTP API
-  (`api.rs`), MCP (`mcp/`, what everything shares, and `mcp_server/`, the
+  (`api.rs`), MCP (`mcp/`, what everything shares, and `arugulad-mcp`, the
   server, the table and the tools' calls, reached through `mcp/`'s `Mcp`; its tools for what lives in control, such as
   Cloud workspaces, conversations, native issues, runs and deploys, are
   in `arugulad-control-tools`, registered through `mcp/registry.rs`), share links (`share.rs`), file uploads (`upload.rs`), the dial-out transport

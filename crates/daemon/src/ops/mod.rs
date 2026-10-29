@@ -17,6 +17,7 @@ mod hosts;
 mod input;
 mod inspect;
 mod notify;
+mod nvim;
 mod panes;
 pub mod prompt;
 mod rules;
@@ -438,7 +439,7 @@ const ROUTERS: &[(&str, &str)] = &[
     ("../arugulad-hosted/src/lib.rs", "    fn routes(&self"),
     ("src/mcp/tokens.rs", "pub fn api_routes()"),
     // MCP's server's: the card *What your agent can do here*.
-    ("src/mcp_server/mod.rs", "    fn routes(&self, r: Router"),
+    ("../arugulad-mcp/src/lib.rs", "    fn routes(&self, r: Router"),
     ("../arugulad-labs/src/guest_ssh.rs", "pub fn routes()"),
     // The editor's: the IDE's operations here, and from its own crate the
     // extension's download and the socket's route editors join on.

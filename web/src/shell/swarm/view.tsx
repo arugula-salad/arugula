@@ -22,10 +22,11 @@ import { usePhone, useSubscribe } from "../../shared/ui/hooks";
 import { Field, type FieldHooks, type FieldPane, type HistoryRun, type SwarmScene } from "./field";
 import { FollowView, appName } from "./follow";
 import { DiffCard } from "../ui/diff-card";
+import { diffLine, fleetTarget, openInEditor, wholePath } from "../open-in-editor";
 import { GateWhy } from "../ui/gate-why";
 import { PointChoices, pointOf, proposalLine } from "../ui/point-choices";
 import { finished, needsYou, NEEDS_YOU } from "../../shared/needs-you";
-import { activityOf, bundleOf, cardTitle, headlineOf, holdStill, shortHost, whatItDoes, shortPaths, shownNow, wantsYou, followable, GROUPING_LABEL, GROUPINGS, groupOf, isPresence, kindOf, KIND_LABEL, KINDS, REASON_COL, reasonOf, type GroupBy } from "./model";
+import { activityOf, bundleOf, cardTitle, headlineOf, holdStill, shortHost, whatItDoes, shortPaths, shownNow, wantsYou, followable, editorAt, GROUPING_LABEL, GROUPINGS, groupOf, isPresence, kindOf, KIND_LABEL, KINDS, REASON_COL, reasonOf, type GroupBy } from "./model";
 
 const BY_KEY = "arugula.swarm.by";
 const THEME_KEY = "arugula.swarm.theme";
@@ -376,7 +377,8 @@ export function SwarmView({
     openMenu(e, [
       ...(isPresence(p) ? [] : [{ label: "Open", run: () => openKey(key) }]),
       ...(followable(p) ? [{ label: "Follow", run: () => setFollowing(key) }] : []),
-      ...(canEdit(fleet, p) ? [{ label: "Open in editor", run: () => void editIn(fleet, p, back) }] : []),
+      // #1731: or its nvim, as the Editor preference says.
+      ...(canEdit(fleet, p) ? [{ label: "Open in editor", run: () => void openInEditor(fleetTarget(fleet, p.host, p.id, back, () => void editIn(fleet, p, back))) }] : []),
       // M11: what changed in its project, beside it.
       ...(p.info.project && fleet.role(p) === "owner" && !p.stale && !isPresence(p) ? [{ label: "Changes", run: () => void changesOf(fleet, p, back) }] : []),
     ]);
@@ -505,6 +507,7 @@ export function SwarmView({
               share={() => shareKey(b.panes[0].key)}
               follow={() => setFollowing(b.panes[0].key)}
               acted={() => acted.current.add(b.key)}
+              back={back}
             />
           ))}
           {answered.map((d) => (
@@ -547,7 +550,7 @@ export function SwarmView({
       {peek && (
         <div class="swarm-peek" style={{ left: `${Math.min(peek.x + 16, innerWidth - 700)}px`, top: `${Math.min(peek.y + 16, innerHeight - 160)}px` }}>
           <div class="ph">
-            <b>{byKey(peek.key) ? `%${byKey(peek.key)!.id}  ${byKey(peek.key)!.info.current?.text ?? byKey(peek.key)!.info.command ?? ""}` : ""}</b>
+            <b>{byKey(peek.key) ? `%${byKey(peek.key)!.id}  ${editorAt(byKey(peek.key)!) ?? byKey(peek.key)!.info.current?.text ?? byKey(peek.key)!.info.command ?? ""}` : ""}</b>
             <span>{byKey(peek.key) ? `${byKey(peek.key)!.host} · ${groupOf(byKey(peek.key)!, by)}` : ""}</span>
           </div>
           <pre>{peek.text}</pre>
@@ -670,10 +673,12 @@ function canEdit(fleet: Fleet, p: FleetPane) {
   return (p.info.type ?? "terminal") === "terminal" && fleet.role(p) === "owner" && !p.stale;
 }
 
-/** Open VS Code in a pane's directory, on its machine, and show it. */
-async function editIn(fleet: Fleet, p: FleetPane, back: () => void): Promise<string | null> {
+/** Open VS Code in a pane's directory (or on a file there, at its line),
+ * on its machine, and show it. */
+async function editIn(fleet: Fleet, p: FleetPane, back: () => void, file?: string, line?: number | null): Promise<string | null> {
   try {
-    const res = await fleet.request(p.host, "POST", "/api/blocks", { type: "editor", config: {}, from_pane: p.id } satisfies OpenRequest);
+    const config = file ? { path: wholePath(file, p.info.cwd), ...(line ? { line } : {}) } : {};
+    const res = await fleet.request(p.host, "POST", "/api/blocks", { type: "editor", config, from_pane: p.id } satisfies OpenRequest);
     const v = await res.json<Partial<OpenResponse> & { error?: string }>().catch(() => null);
     if (!res.ok || v?.block === undefined) return v?.error ?? `couldn't (${res.status})`;
     back();
@@ -749,6 +754,7 @@ function Card({
   share,
   follow,
   acted,
+  back,
 }: {
   b: Bundle;
   fleet: Fleet;
@@ -760,6 +766,8 @@ function Card({
   follow: () => void;
   /** Says this card was acted on here. */
   acted: () => void;
+  /** Leaves the swarm, for a pane shown. */
+  back: () => void;
 }) {
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -840,6 +848,14 @@ function Card({
             const res = await fleet.request(first.host, OPS["pane.diff"].method, opPath("pane.diff", { id: first.id }));
             return res.ok ? (await res.json<{ new: string }>()).new : null;
           }}
+          edit={
+            fleet.role(first) === "owner" && !first.stale
+              ? () => {
+                  const line = diffLine(diff.text);
+                  void openInEditor(fleetTarget(fleet, first.host, first.id, back, () => void editIn(fleet, first, back, diff.file, line), diff.file, line));
+                }
+              : undefined
+          }
         />
       ) : !can ? (
         <p class="ask-viewer">{VIEWER_NOTE}</p>

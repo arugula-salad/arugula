@@ -39,7 +39,7 @@ services:
 
   e2b-control:
     profiles: [control]
-    image: node:22-slim
+    image: ${ARUGULA_IMAGES:-ghcr.io/arugula-salad/ci}/node:22-slim
     container_name: ${COMPOSE_PROJECT_NAME:-arugula-testnet}-e2b-control
     network_mode: service:control
     command:

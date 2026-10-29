@@ -5,7 +5,9 @@
 # claim starts the daemon with the stack's static binaries (/opt/arugula)
 # and a ticket from control. node is the planter drivers' renderer's (M233),
 # as the real template has it.
-FROM debian:bookworm-slim
+# Docker Hub's image, from CI's mirror (docs/testing.md, "CI's images").
+ARG ARUGULA_IMAGES=ghcr.io/arugula-salad/ci
+FROM ${ARUGULA_IMAGES}/debian:bookworm-slim
 RUN apt-get update -qq && apt-get install -y -qq --no-install-recommends bash ca-certificates git iptables nodejs procps sudo \
  && rm -rf /var/lib/apt/lists/*
 RUN useradd -m -u 1000 -s /bin/bash user \
