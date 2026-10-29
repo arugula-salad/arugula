@@ -74,6 +74,8 @@ export function usePresence() {
     me: room?.me ?? "",
     waves: room?.client.waves ?? [],
     wave: (sub: string) => room?.wave(sub),
+    react: (emoji: string) => room?.react(emoji),
+    reactions: room?.client.reactions ?? [],
     answer: (sub: string, yes: boolean) => room?.answer(sub, yes),
     setLook: (look: Look) => room?.setLook(look),
     camera: {

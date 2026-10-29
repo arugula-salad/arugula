@@ -37,6 +37,7 @@ export interface RoomEvents {
   members: (members: Member[]) => void;
   wave: (from: string) => void;
   answer: (from: string, yes: boolean) => void;
+  react: (from: string, emoji: string) => void;
   live: (state: "connecting" | "on" | "refused" | "off") => void;
 }
 
@@ -63,10 +64,10 @@ export class Room {
   readonly room: string;
   /** Your own sub, once a token has been read. */
   me = "";
-  private handlers: { [K in keyof RoomEvents]: Set<RoomEvents[K]> } = { members: new Set(), wave: new Set(), answer: new Set(), live: new Set() };
+  private handlers: { [K in keyof RoomEvents]: Set<RoomEvents[K]> } = { members: new Set(), wave: new Set(), answer: new Set(), react: new Set(), live: new Set() };
   private stop: () => void;
   private unsub: () => void;
-  private seen = { members: [] as Member[], waves: 0, answers: 0, live: "off" as string };
+  private seen = { members: [] as Member[], waves: 0, answers: 0, live: "off" as string, reactedAt: 0 };
 
   constructor(o: ConnectOptions) {
     this.room = o.room;
@@ -126,6 +127,11 @@ export class Room {
     this.client.wave(sub);
   }
 
+  /** An emoji for the room; it floats over your tile for everyone. */
+  react(emoji: string) {
+    this.client.react(emoji, this.me);
+  }
+
   answer(sub: string, yes: boolean) {
     this.client.answer(sub, yes);
   }
@@ -161,6 +167,8 @@ export class Room {
     this.seen.waves = c.waves.length;
     if (c.answers.length > this.seen.answers) for (const a of c.answers.slice(this.seen.answers)) this.emit("answer", a.from, a.yes);
     this.seen.answers = c.answers.length;
+    for (const r of c.reactions) if (r.at > this.seen.reactedAt) this.emit("react", r.from, r.emoji);
+    this.seen.reactedAt = Math.max(this.seen.reactedAt, ...c.reactions.map((r) => r.at));
     if (c.live !== this.seen.live) {
       this.seen.live = c.live;
       this.emit("live", c.live);

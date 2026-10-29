@@ -66,6 +66,7 @@ watching can drop to a frame every few seconds).
 | `state` | `{mode?, look?, away?, watching?}` | updates the member's presence meta |
 | `wave` | `{to: <sub>}` | wave at someone: a hello that asks to talk (calls come later) |
 | `answer` | `{to: <sub>, yes: bool}` | answer a wave |
+| `react` | `{emoji}` | an emoji for the room (a 👍, a 🎉): one grapheme, no ASCII, ≤ 32 bytes, at most one per 250 ms per connection, else dropped |
 
 ### Relay → client
 
@@ -75,6 +76,7 @@ watching can drop to a frame every few seconds).
 | `off` | `{sub}` | someone's camera went off, or their frame went stale (10 s) |
 | `wave` | `{from: <sub>}` | to the waved member only |
 | `answer` | `{from: <sub>, yes}` | to the waver only |
+| `react` | `{from: <sub>, emoji}` | someone's reaction, to everyone else in the room (not stored: a joiner doesn't get old ones) |
 
 Limits: 32 KiB a frame, 70 ms between a member's frames, 64 members a room,
 8 connections a member. Over a limit, the frame is dropped (no error);

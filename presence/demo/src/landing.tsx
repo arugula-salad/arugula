@@ -16,6 +16,7 @@ export function Nav() {
       <a class="mark" href="/">
         arugula<span>.</span>stream
       </a>
+      <a href="/hosted">Hosted</a>
       <a href="/docs">Docs</a>
       <a href={`${SOURCE}/PROTOCOL.md`}>Protocol</a>
       <a href={SOURCE}>Source</a>

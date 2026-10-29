@@ -11,6 +11,7 @@ import { draw } from "@arugula/presence-core/outline/render";
 import { palette } from "@arugula/presence-core/outline/classes";
 import type { Frame } from "@arugula/presence-core/outline/frame";
 import type { Room } from "./room.ts";
+import { REACT_MS } from "@arugula/presence/client";
 
 export interface PeopleOptions {
   /** A bust each (default) or a compact strip of heads. */
@@ -95,6 +96,26 @@ interface Tile {
   face: Face;
   name: HTMLElement;
   tag: HTMLElement;
+  /** Where reactions float, and which (by time) are already floating. */
+  reacts: HTMLElement;
+  shown: Set<number>;
+}
+
+/** Float `sub`'s new reactions up over their tile (each removes itself). */
+function float(room: Room, sub: string, into: HTMLElement, shown: Set<number>) {
+  for (const r of room.client.reactionsOf(sub)) {
+    if (shown.has(r.at)) continue;
+    shown.add(r.at);
+    const e = document.createElement("span");
+    e.className = "react";
+    e.textContent = r.emoji;
+    e.style.left = `${35 + ((r.at / 7) % 30)}%`;
+    into.append(e);
+    setTimeout(() => {
+      e.remove();
+      shown.delete(r.at);
+    }, REACT_MS);
+  }
 }
 
 export function mountPeople(room: Room, el: Element | ShadowRoot, o: PeopleOptions = {}): () => void {
@@ -129,6 +150,9 @@ export function mountPeople(room: Room, el: Element | ShadowRoot, o: PeopleOptio
         fig.dataset.sub = m.sub;
         const view = document.createElement("div");
         view.className = "view";
+        const reacts = document.createElement("div");
+        reacts.className = "reacts";
+        view.append(reacts);
         const cap = document.createElement("figcaption");
         const name = document.createElement("span");
         name.className = "name";
@@ -136,7 +160,7 @@ export function mountPeople(room: Room, el: Element | ShadowRoot, o: PeopleOptio
         tag.className = "tag";
         cap.append(name, tag);
         fig.append(view, cap);
-        t = { fig, face: new Face(view, size), name, tag };
+        t = { fig, face: new Face(view, size), name, tag, reacts, shown: new Set() };
         tiles.set(m.sub, t);
       }
       if (grid.children[i] !== t.fig) grid.insertBefore(t.fig, grid.children[i] ?? null);
@@ -148,6 +172,7 @@ export function mountPeople(room: Room, el: Element | ShadowRoot, o: PeopleOptio
       t.fig.classList.toggle("away", m.away && !live);
       t.tag.textContent = live ? "live" : m.away ? "away" : "";
       t.face.update(room, m);
+      float(room, m.sub, t.reacts, t.shown);
     });
   };
   const unsub = room.client.subscribe(render);

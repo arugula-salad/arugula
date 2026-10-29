@@ -185,6 +185,14 @@ const CHAT: { who: number; text: string }[] = [
   { who: 4, text: "the checkout test is green again" },
 ];
 
+/** Reactions people send during the loop: who, what, when (seconds). */
+const REACTS: { who: number; emoji: string; at: number }[] = [
+  { who: 0, emoji: "🎉", at: 0.6 },
+  { who: 2, emoji: "😂", at: 2.2 },
+  { who: 1, emoji: "👍", at: 9.2 },
+  { who: 3, emoji: "☕", at: 10.4 },
+];
+
 /** The story, in seconds of a 12 s loop. */
 function phase(t: number): "idle" | "aim" | "wave" | "ask" | "yes" | "call" {
   const s = t % 12;
@@ -232,6 +240,11 @@ export function FakeRoom() {
           {PEOPLE.map((p, i) => (
             <div class={`fake-tile${i === WAVED && ph === "call" ? " calling" : ""}${p.away ? " away" : ""}`}>
               <Face p={p} size="bust" wave={i === WAVED && ph === "yes"} />
+              {REACTS.filter((r) => r.who === i && (t % 12) - r.at >= 0 && (t % 12) - r.at < 2.4).map((r) => (
+                <span key={`${Math.floor(t / 12)}-${r.at}`} class="react">
+                  {r.emoji}
+                </span>
+              ))}
               <span class="fake-name">
                 {p.name}
                 {i === WAVED && ph === "call" ? <em>talking · 0:0{callSecs}</em> : p.away ? <em class="dim">away</em> : null}

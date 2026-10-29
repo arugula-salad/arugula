@@ -79,6 +79,7 @@ export function phoenixTransport(o: PhoenixTransportOptions): Transport {
       if (listening) on?.off(sub);
     });
     ch.on("wave", ({ from }: { from: string }) => on?.wave?.(from));
+    ch.on("react", ({ from, emoji }: { from: string; emoji: string }) => on?.react?.(from, emoji));
     ch.on("answer", ({ from, yes }: { from: string; yes: boolean }) => on?.answer?.(from, yes));
     const presence = new Presence(ch);
     presence.onSync(() => on?.members?.(presence.list((sub, { metas }: { metas: Meta[] }) => memberOf(sub, metas))));
@@ -136,6 +137,9 @@ export function phoenixTransport(o: PhoenixTransportOptions): Transport {
       settle();
     },
     state: push,
+    react(emoji) {
+      channel?.push("react", { emoji });
+    },
     wave(to) {
       channel?.push("wave", { to });
     },

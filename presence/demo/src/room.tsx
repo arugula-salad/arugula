@@ -3,7 +3,7 @@
 // here as live avatars or outlines (@arugula/presence-core). Wave to talk.
 
 import { useEffect, useRef, useState } from "preact/hooks";
-import { PresenceClient, phoenixTransport, type Member } from "@arugula/presence";
+import { PresenceClient, phoenixTransport, REACTIONS, type Member } from "@arugula/presence";
 import { CHARACTERS, characterOf } from "@arugula/presence-core/avatar/characters/index";
 import { animate, COLOURS, type Source } from "@arugula/presence-core/avatar/stage";
 import { waving, type Rig } from "@arugula/presence-core/avatar/rig";
@@ -97,6 +97,13 @@ function Tile({ client, m, me }: { client: PresenceClient; m: Member; me: boolea
   return (
     <figure class={live ? "tile live" : "tile"} data-sub={m.sub}>
       <div class="view">
+        <div class="reacts" aria-live="polite">
+          {client.reactionsOf(m.sub).map((r) => (
+            <span key={r.at} class="react" style={{ left: `${35 + ((r.at / 7) % 30)}%` }}>
+              {r.emoji}
+            </span>
+          ))}
+        </div>
         {frame ? <OutlineCanvas frame={frame} mirror={me} /> : avatar ? <AvatarCanvas source={source} mirror={me} /> : <div class="still">{m.name.slice(0, 1).toUpperCase()}</div>}
       </div>
       <figcaption>
@@ -113,7 +120,7 @@ function Tile({ client, m, me }: { client: PresenceClient; m: Member; me: boolea
   );
 }
 
-function Controls({ client }: { client: PresenceClient }) {
+function Controls({ client, me }: { client: PresenceClient; me: string }) {
   const on = client.cameraOn;
   const sent = client.mine?.sent ?? [];
   const last = sent[sent.length - 1];
@@ -153,6 +160,13 @@ function Controls({ client }: { client: PresenceClient }) {
           </span>
         </>
       )}
+      <span class="seg reacts-bar" aria-label="React">
+        {REACTIONS.map((e) => (
+          <button class="btn emoji" onClick={() => client.react(e, me)} aria-label={`React ${e}`}>
+            {e}
+          </button>
+        ))}
+      </span>
       {on && client.mode === "avatar" && last && (
         <span class="stats">
           rig {last.bytes} B · {client.kbps().toFixed(1)} kbps · tracking {client.mine?.trackMs.toFixed(0)} ms
@@ -226,7 +240,7 @@ export function Room({ room, name }: { room: string; name: string }) {
           {copied ? "Link copied" : "Copy the room link"}
         </button>
       </div>
-      <Controls client={client} />
+      <Controls client={client} me={mine.sub} />
       <div class="grid">
         <Tile client={client} m={mine} me />
         {others.map((m) => (

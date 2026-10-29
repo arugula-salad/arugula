@@ -5,6 +5,7 @@
 import { CHARACTERS } from "@arugula/presence-core/avatar/characters/index";
 import { COLOURS } from "@arugula/presence-core/avatar/stage";
 import type { Room } from "./room.ts";
+import { REACTIONS } from "@arugula/presence/client";
 
 export interface CameraOptions {
   /** Everything (default), or the on/off button alone. */
@@ -51,6 +52,17 @@ export function mountCamera(room: Room, el: Element | ShadowRoot, o: CameraOptio
         );
         parts.push(chars, colours);
       }
+      // Reactions: an emoji over your tile, for the room.
+      const reacts = document.createElement("span");
+      reacts.className = "seg reacts-bar";
+      reacts.append(
+        ...REACTIONS.map((e) => {
+          const b = button(e, false, () => room.react(e), "emoji");
+          b.setAttribute("aria-label", `React ${e}`);
+          return b;
+        }),
+      );
+      parts.push(reacts);
       if (c.mine?.error) {
         const err = document.createElement("span");
         err.className = "error";

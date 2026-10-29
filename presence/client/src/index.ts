@@ -3,7 +3,7 @@
 // transport: arugula.video's Phoenix relay (../../PROTOCOL.md), or Arugula
 // control's.
 
-export { PresenceClient, type PresenceClientOptions, type Seen, type Mine } from "./client.ts";
+export { PresenceClient, REACT_MS, REACTIONS, type PresenceClientOptions, type Seen, type Mine } from "./client.ts";
 export type { Transport, TransportEvents, Member, Mode, State } from "./transport.ts";
 export { arugulaTransport, type ArugulaTransportOptions } from "./arugula.ts";
 export { phoenixTransport, unprefix, memberOf, type PhoenixTransportOptions } from "./phoenix.ts";

@@ -3,7 +3,7 @@ defmodule PresenceRelayWeb.RoomChannel do
   A room (PROTOCOL.md, "The room channel"): the token's room only. On
   join: presence, then every member's newest frame. Frames go to the rest
   of the room; `state` updates this connection's presence; waves and
-  answers go to one member.
+  answers go to one member; reactions (an emoji) to the rest of the room.
   """
   use Phoenix.Channel
 
@@ -11,6 +11,10 @@ defmodule PresenceRelayWeb.RoomChannel do
   alias Phoenix.PubSub
 
   @modes ~w(avatar outline none)
+  # A reaction: one emoji (a grapheme, no ASCII), at most this many bytes,
+  # and at most one this often per connection.
+  @react_bytes 32
+  @react_ms 250
 
   @impl true
   def join("room:" <> room, _payload, %{assigns: %{room: room} = a} = socket) do
@@ -54,6 +58,11 @@ defmodule PresenceRelayWeb.RoomChannel do
 
   def handle_info({:relay_wave, from}, socket) do
     push(socket, "wave", %{from: from})
+    {:noreply, socket}
+  end
+
+  def handle_info({:relay_react, from, emoji}, socket) do
+    push(socket, "react", %{from: from, emoji: emoji})
     {:noreply, socket}
   end
 
@@ -109,7 +118,31 @@ defmodule PresenceRelayWeb.RoomChannel do
     {:noreply, socket}
   end
 
+  def handle_in("react", %{"emoji" => emoji}, %{assigns: a} = socket) when is_binary(emoji) do
+    now = System.monotonic_time(:millisecond)
+    last = Map.get(a, :reacted_at)
+
+    if emoji?(emoji) and (is_nil(last) or now - last >= @react_ms) do
+      PubSub.broadcast_from(
+        PresenceRelay.PubSub,
+        self(),
+        Rooms.room_topic(a.app, a.room),
+        {:relay_react, a.sub, emoji}
+      )
+
+      {:noreply, assign(socket, :reacted_at, now)}
+    else
+      # Not an emoji, or too soon: dropped without a word.
+      {:noreply, socket}
+    end
+  end
+
   def handle_in(_event, _payload, socket), do: {:noreply, socket}
+
+  defp emoji?(e) do
+    byte_size(e) <= @react_bytes and String.valid?(e) and length(String.graphemes(e)) == 1 and
+      e |> String.to_charlist() |> Enum.all?(&(&1 > 0x7F))
+  end
 
   defp presence_topic(%{assigns: a}), do: Rooms.presence_topic(a.app, a.room)
 

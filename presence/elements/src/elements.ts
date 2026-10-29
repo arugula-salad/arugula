@@ -53,6 +53,7 @@ export class ArugulaRoom extends HTMLElement {
         r.on("members", (members) => fire("members", { members }));
         r.on("wave", (from) => fire("wave", { from }));
         r.on("answer", (from, yes) => fire("answer", { from, yes }));
+        r.on("react", (from, emoji) => fire("react", { from, emoji }));
         r.on("live", (state) => fire("live", { state }));
         fire("members", { members: r.members });
         for (const ok of this.waiting.splice(0)) ok(r);

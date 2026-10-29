@@ -38,6 +38,8 @@ export interface TransportEvents {
   members?(members: Member[]): void;
   /** Someone asks to talk. */
   wave?(from: string): void;
+  /** Someone's reaction: an emoji for the room. */
+  react?(from: string, emoji: string): void;
   answer?(from: string, yes: boolean): void;
 }
 
@@ -54,5 +56,6 @@ export interface Transport {
   leaving?(): void;
   state?(s: State): void;
   wave?(to: string): void;
+  react?(emoji: string): void;
   answer?(to: string, yes: boolean): void;
 }

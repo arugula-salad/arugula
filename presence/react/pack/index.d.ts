@@ -42,6 +42,9 @@ export function usePresence(): {
   me: string;
   waves: { from: string; at: number }[];
   wave(sub: string): void;
+  /** An emoji for the room; it floats over your tile for everyone. */
+  react(emoji: string): void;
+  reactions: { from: string; emoji: string; at: number }[];
   answer(sub: string, yes: boolean): void;
   setLook(look: Look): void;
   camera: { on: boolean; start(o?: { mode?: "avatar" | "outline" }): Promise<void> | void; stop(): void };

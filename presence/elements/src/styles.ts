@@ -49,4 +49,9 @@ button.primary { background: var(--accent); border-color: var(--accent); color: 
 button.swatch { width: 20px; height: 20px; padding: 0; border-radius: 50%; border: 2px solid transparent; }
 button.swatch.on { border-color: var(--fg); }
 .error { color: var(--danger); }
+.reacts { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+.react { position: absolute; bottom: 8%; font-size: 28px; line-height: 1; animation: arugula-float 2.4s ease-out forwards; }
+.head .react { font-size: 16px; }
+@keyframes arugula-float { 0% { transform: translateY(0) scale(0.6); opacity: 0; } 12% { transform: translateY(-8%) scale(1.1); opacity: 1; } 75% { opacity: 1; } 100% { transform: translateY(-160%) scale(1); opacity: 0; } }
+button.emoji { padding: 4px 7px; font-size: 16px; line-height: 1; background: transparent; }
 `;

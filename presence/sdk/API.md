@@ -24,7 +24,7 @@ this; the site's docs show exactly this. PROTOCOL.md is underneath.
 
 `<arugula-people>`: attributes `size` (`bust`, default; `head` for a compact strip), `self` (`first`|`hide`). `<arugula-camera>`: attribute `controls` (`full`, default; `button` for just the toggle). `<arugula-avatar>`: `user`, `size` (`head`|`bust`). Theming: CSS custom properties on any ancestor: `--arugula-accent`, `--arugula-bg`, `--arugula-fg`, `--arugula-dim`, `--arugula-radius`.
 
-Events (bubbling, on the room element): `arugula:members` (`detail.members`), `arugula:wave` (`detail.from`), `arugula:answer` (`detail.from, detail.yes`), `arugula:live` (`detail.state`).
+Events (bubbling, on the room element): `arugula:members` (`detail.members`), `arugula:wave` (`detail.from`), `arugula:answer` (`detail.from, detail.yes`), `arugula:react` (`detail.from, detail.emoji`), `arugula:live` (`detail.state`). `<arugula-camera>` also has a row of reactions.
 
 ## Browser: JS API (same bundle, or npm `@arugula/presence`)
 
@@ -41,6 +41,7 @@ Events (bubbling, on the room element): `arugula:members` (`detail.members`), `a
     room.camera.stop();
     room.setLook({ character: 2, colour: 0 });
     room.wave(sub); room.answer(sub, true);
+    room.react("👍");                              // an emoji for the room
     room.mount(element, { size: "bust" });          // draw everyone into an element
     room.avatar(element, sub, { size: "head" });    // draw one person
     room.leave();

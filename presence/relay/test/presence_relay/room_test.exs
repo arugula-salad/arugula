@@ -154,4 +154,26 @@ defmodule PresenceRelay.RoomTest do
       Application.delete_env(:presence_relay, :max_members)
     end
   end
+
+  test "a reaction goes to the rest of the room; text, two emoji and a flood are dropped" do
+    r = room()
+    {:ok, a, _} = client(:a, r, "alice")
+    {:ok, _b, _} = client(:b, r, "bob")
+    send_as(a, "react", %{"emoji" => "👍🏽"})
+    assert_receive {:pushed, :b, "react", %{from: "alice", emoji: "👍🏽"}}
+    refute_receive {:pushed, :a, "react", _}, 50
+    # Within 250 ms of the last: dropped.
+    send_as(a, "react", %{"emoji" => "🎉"})
+    refute_receive {:pushed, :b, "react", %{emoji: "🎉"}}, 100
+    Process.sleep(260)
+
+    for bad <- ["hi", "👍👍", "a👍", String.duplicate("x", 40), 7] do
+      send_as(a, "react", %{"emoji" => bad})
+    end
+
+    refute_receive {:pushed, :b, "react", _}, 100
+    Process.sleep(260)
+    send_as(a, "react", %{"emoji" => "❤️"})
+    assert_receive {:pushed, :b, "react", %{from: "alice", emoji: "❤️"}}
+  end
 end

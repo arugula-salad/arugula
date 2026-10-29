@@ -19,6 +19,12 @@ import { RIG, WAVE_MS, unpackRig, type Look, type Rig } from "@arugula/presence-
 import type { AvatarCamera } from "@arugula/presence-core/avatar/cam";
 import type { Member, Mode, Transport, TransportEvents } from "./transport.ts";
 
+/** How long a reaction floats over its sender's tile. */
+export const REACT_MS = 2400;
+
+/** The reactions a page offers (any single emoji goes on the wire). */
+export const REACTIONS = ["👍", "👏", "😂", "🎉", "❤️", "👋", "☕"] as const;
+
 /** A frame older than this is someone whose camera went away. */
 const STALE = 12_000;
 
@@ -104,6 +110,9 @@ export class PresenceClient {
   /** Who waved, newest last, until answered. */
   waves: { from: string; at: number }[] = [];
   private wavedAt = 0;
+  /** Reactions in the last REACT_MS, yours included, oldest first: an
+   * emoji floating over someone's tile. */
+  reactions: { from: string; emoji: string; at: number }[] = [];
   /** Answers to your waves, newest last, until dismissed. */
   answers: { from: string; yes: boolean; at: number }[] = [];
 
@@ -158,12 +167,37 @@ export class PresenceClient {
     this.transport.wave?.(to);
   }
 
+  /** Send an emoji to the room (`me` is your sub, for your own tile). A
+   * 👋 waves on your avatar too. */
+  react(emoji: string, me = "") {
+    this.transport.react?.(emoji);
+    this.reacted(me, emoji);
+    if (emoji === "👋") this.wavedAt = Date.now();
+  }
+
+  /** The reactions over `sub`'s tile now. */
+  reactionsOf(sub: string): { emoji: string; at: number }[] {
+    return this.reactions.filter((r) => r.from === sub && Date.now() - r.at < REACT_MS);
+  }
+
+  private reacted(from: string, emoji: string) {
+    const now = Date.now();
+    this.reactions = [...this.reactions.filter((r) => now - r.at < REACT_MS), { from, emoji, at: now }];
+    this.emit();
+    // Gone from view once it's floated away.
+    setTimeout(() => this.emit(), REACT_MS + 50);
+  }
+
   /** Whether `sub`'s avatar is waving now: their wave (or wave back) came
    * in the last WAVE_MS, or it's you and you just waved. */
   waving(sub: string, me = false): boolean {
     const fresh = (at: number) => Date.now() - at < WAVE_MS;
     if (me) return fresh(this.wavedAt);
-    return this.waves.some((w) => w.from === sub && fresh(w.at)) || this.answers.some((a) => a.from === sub && a.yes && fresh(a.at));
+    return (
+      this.waves.some((w) => w.from === sub && fresh(w.at)) ||
+      this.answers.some((a) => a.from === sub && a.yes && fresh(a.at)) ||
+      this.reactions.some((r) => r.from === sub && r.emoji === "👋" && fresh(r.at))
+    );
   }
 
   answer(from: string, yes: boolean) {
@@ -352,6 +386,7 @@ export class PresenceClient {
       this.waves = [...this.waves.filter((k) => k.from !== from), { from, at: Date.now() }];
       this.emit();
     },
+    react: (from, emoji) => this.reacted(from, emoji),
     answer: (from, yes) => {
       this.answers = [...this.answers.filter((a) => a.from !== from), { from, yes, at: Date.now() }];
       this.emit();
