@@ -55,9 +55,9 @@ pub mod chat;
 #[cfg(test)]
 mod chat_files_tests;
 #[cfg(test)]
-mod chat_people_tests;
-#[cfg(test)]
 mod chat_outlines_tests;
+#[cfg(test)]
+mod chat_people_tests;
 #[cfg(test)]
 mod chat_pins_tests;
 #[cfg(test)]
