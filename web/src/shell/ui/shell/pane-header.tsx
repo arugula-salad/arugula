@@ -222,6 +222,8 @@ const GLYPHS: Record<string, string> = {
   app: "M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM16.5 13v7M13 16.5h7",
   invite: "M9 5a3 3 0 1 0 0 6a3 3 0 1 0 0-6M3 20c0-3.3 2.7-5.5 6-5.5s6 2.2 6 5.5M19 8v6M16 11h6",
   agents: "M3 10h8v8H3zM13 10h8v8h-8zM7 10V6M17 10V6M6 14h.5M8.5 14h.5M16 14h.5M18.5 14h.5",
+  // Two people: who's around (a People block).
+  people: "M9 5a3 3 0 1 0 0 6a3 3 0 1 0 0-6M3 20c0-3.3 2.7-5.5 6-5.5s6 2.2 6 5.5M16 5.5a2.75 2.75 0 0 1 0 5.5M17.5 14.7c2.1.5 3.5 2.5 3.5 5.3",
 };
 
 function PaneTypeIcon({ type }: { type: string }) {
