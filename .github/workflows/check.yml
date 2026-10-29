@@ -45,23 +45,26 @@
 # merge queues a pull request, so its code reaches our machines no sooner
 # than a merge would bring it.
 name: check
+# Written by chant ci workflow from ci.green's build (#4169); edit ci.green and run it again.
 on:
   push:
-    branches: [main]
-  workflow_dispatch:
+    branches:
+      - main
+  workflow_dispatch: {}
   merge_group:
-    types: [checks_requested]
+    types:
+      - checks_requested
 
-# A new run by hand on a branch cancels its run in progress; main's runs
-# all start and finish. Each merge group has a ref of its own
-# (gh-readonly-queue/main/pr-…), so a group the queue drops and builds again
-# is a new run. Each of main's runs has a group of its own: GitHub
-# keeps one pending run per group and cancels the one before, even without
-# cancel-in-progress, so pushes close together left runs that never started
-# and commits chant ci never decided (#524).
+# One run at a time per ref, never cancelled once it starts (#1675): GitHub
+# keeps one pending run per group, so of the pushes that land while main
+# runs only the newest waits, and chant's tick (`"build": "newest"`) counts
+# the ones it cancelled as unbuilt rather than red, and bisects through them
+# if main's newest goes red. Each merge group has a ref of its own
+# (gh-readonly-queue/main/pr-…), so it's a group of its own too.
+# Written by chant ci workflow from ci.green's build (#4169); edit ci.green and run it again.
 concurrency:
-  group: check-${{ github.ref == 'refs/heads/main' && github.run_id || github.ref }}
-  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+  group: chant-build-lint-build-test-e2e-claims-macos-${{ github.ref }}
+  cancel-in-progress: false
 
 env:
   NEXTEST_PROFILE: ci
@@ -568,7 +571,8 @@ jobs:
             exit 1
           fi
 
-  # What the push changed (#868): suite, the suites' inputs
+  # What changed since main's newest green commit (#868, #1675; on a
+  # branch, since it left main): suite, the suites' inputs
   # (scripts/suite-changed); app, the desktop app's (scripts/app-changed);
   # macos, what runs on macOS (scripts/macos-changed: main's always do, a
   # branch's only when it changes that); testnet, the test stack's claims

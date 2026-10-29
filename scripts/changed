@@ -6,24 +6,33 @@
 #   scripts/changed WHAT BEFORE PATH...
 #
 # WHAT names the job in the message. BEFORE is the push's previous commit
-# (github.event.before). On main it's the base; on another branch the base
-# is where it left main. Exits 0 (yes, run it) when anything listed changed,
-# and whenever it can't tell: a new branch with no base found, a manual run,
-# a failed fetch.
+# (github.event.before), no longer the base (#1675). On main the base is
+# the newest commit before this one that passed CI (a ci/green tag and no
+# ci/revoked one, as `chant ci last-green` reads them): chant builds only
+# the newest commit of a burst, so the push's previous commit may never
+# have been built, and a docs-only push on top of it mustn't skip what it
+# changed. On another branch the base is where it left main. Exits 0 (yes,
+# run it) when anything listed changed, and whenever it can't tell: a new
+# branch with no base found, a manual run, a failed fetch, no green commit
+# among main's last 200.
 set -euo pipefail
-what=$1 before=$2
+what=$1
 shift 2
 paths=("$@")
 ref=${GITHUB_REF:-}
 yes() { echo "$what may have changed ($1): running it"; exit 0; }
 [ "${GITHUB_EVENT_NAME:-push}" = push ] || yes "a ${GITHUB_EVENT_NAME} run"
 if [ "$ref" = refs/heads/main ]; then
-  [ -n "$before" ] && [ "$before" != 0000000000000000000000000000000000000000 ] || yes "no previous commit"
-  depth=()
-  [ "$(git rev-parse --is-shallow-repository)" = true ] && depth=(--depth=1)
-  git cat-file -e "$before^{commit}" 2>/dev/null || git fetch -q --no-tags "${depth[@]}" origin "$before" 2>/dev/null ||
-    yes "can't fetch $before"
-  base=$before
+  # Enough of main to reach a green commit. (Never --depth in a full clone.)
+  if [ "$(git rev-parse --is-shallow-repository)" = true ]; then
+    git fetch -q --no-tags --depth=201 origin "+refs/heads/main:refs/remotes/origin/main" 2>/dev/null || yes "can't fetch main"
+  fi
+  ci=$(git ls-remote origin 'refs/tags/ci/*' 2>/dev/null) || yes "can't read the ci/ tags"
+  base=''
+  for c in $(git rev-list --first-parent --max-count 200 HEAD^ 2>/dev/null); do
+    case "$ci" in *"refs/tags/ci/revoked/$c"*) continue ;; *"refs/tags/ci/green/$c"*) base=$c; break ;; esac
+  done
+  [ -n "$base" ] || yes "no green commit among main's last 200"
 else
   # CI's checkout is shallow: fetch enough of this branch and of main to
   # meet. (Never --depth in a full clone: that would make it shallow.)
