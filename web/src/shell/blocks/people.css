@@ -23,7 +23,9 @@
   max-width: 40em;
 }
 
-.people-room arugula-camera {
+.people-room arugula-camera,
+.people-room arugula-voice,
+.people-room arugula-call {
   display: block;
   margin-bottom: 12px;
 }

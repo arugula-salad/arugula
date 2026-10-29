@@ -1,7 +1,9 @@
 // Who's around, live (People): a team's room on arugula.stream, drawn by
 // its own elements (<arugula-room>, <arugula-people>, <arugula-camera>):
 // a tile per member in the room, their avatar or outline while their camera
-// is on, waves and calls. The daemon keeps nothing but which team it is
+// is on, waves, the room's voice channel (<arugula-voice>: join muted,
+// unmute, video) and a wave's private call (<arugula-call>), where real
+// video stands in for the avatar on the tile. The daemon keeps nothing but which team it is
 // (crates/daemon/src/people_block.rs, config `{team}`); the room is the
 // relay's, joined with a token control signs for the person looking
 // (`POST /api/chat/presence/token`, members only).
@@ -75,7 +77,8 @@ function Room({ team, relay }: { team: string; relay: string }) {
         room.setAttribute("room", `team:${team}`);
         room.setAttribute("token-url", TOKEN_URL);
         room.setAttribute("relay", relay);
-        room.append(document.createElement("arugula-camera"), document.createElement("arugula-people"));
+        const el = (name: string) => document.createElement(name);
+        room.append(el("arugula-camera"), el("arugula-voice"), el("arugula-call"), el("arugula-people"));
         host.replaceChildren(room);
       })
       .catch(() => !gone && setFailed(`arugula.stream's elements didn't load from ${httpOrigin(relay)}`));

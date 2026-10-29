@@ -1,9 +1,9 @@
 //! Who's around, live, as a block: a team's room on arugula.stream, with a
 //! tile per member there (their avatar or outline while their camera is
-//! on), waves and calls. The page joins it with a room token Arugula
-//! control signs for the person looking
-//! (`web/src/shell/blocks/people.tsx`), so this daemon never sees who's in
-//! it. What it keeps is the layout entry: `{team}`.
+//! on, their video in a call or the room's voice), waves, voice and calls.
+//! The page joins it with a room token Arugula control signs for the
+//! person looking (`web/src/shell/blocks/people.tsx`), so this daemon never
+//! sees who's in it. What it keeps is the layout entry: `{team}`.
 //!
 //! No Labs flag: control says it's off when it has no arugula.stream app.
 //! Methods: `state`.
