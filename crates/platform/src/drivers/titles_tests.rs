@@ -2,7 +2,7 @@
 
 use arugula_e2e::drivers::arugula_release::Lane;
 
-use super::titles::{SUBJECT_MAX, expected_version, subject_of, title};
+use super::titles::{Facts, SUBJECT_MAX, expected_version, fetch, subject_of, title};
 use crate::db::deploys::{Environment, Source, SourceKind};
 
 fn env(driver: &str) -> Environment {
@@ -52,6 +52,23 @@ fn the_expected_version_is_what_release_bump_makes() {
     // The app's lane reads the desktop crate's [package].
     assert_eq!(expected_version(Lane::App, &toml("0.1.0"), &toml("0.1.0"), "patch").as_deref(), Some("9.9.10"));
     assert_eq!(expected_version(Lane::Daemon, "no version", &toml("0.63.9"), "patch"), None);
+}
+
+/// A ref that isn't a commit id never reaches a URL: no fetch (this app has
+/// no GitHub, so a fetch would be an error, not the defaults).
+#[tokio::test]
+async fn a_ref_that_is_not_a_commit_id_is_not_fetched() {
+    let app = crate::Platform::new(
+        crate::Config::default(),
+        crate::db::Db::test(),
+        std::sync::Arc::new(crate::chat_tests::TestHub::default()),
+        reqwest::Client::new(),
+        Default::default(),
+    );
+    for bad in ["dead", "../../x", &"g".repeat(40)] {
+        let src = Source { kind: SourceKind::Commit, reference: bad.into(), place: "a/b".into() };
+        assert_eq!(fetch(&app, &env("chant-fly"), &src).await.unwrap(), Facts::default(), "{bad}");
+    }
 }
 
 #[test]

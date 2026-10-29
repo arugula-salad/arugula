@@ -54,7 +54,7 @@ pub async fn read(app: &Platform, env: &Environment, source: &Source) -> Facts {
     }
 }
 
-async fn fetch(app: &Platform, env: &Environment, source: &Source) -> anyhow::Result<Facts> {
+pub(super) async fn fetch(app: &Platform, env: &Environment, source: &Source) -> anyhow::Result<Facts> {
     use anyhow::Context as _;
     let sha = source.reference.as_str();
     // Goes into a URL: a full or abbreviated commit id, nothing else.

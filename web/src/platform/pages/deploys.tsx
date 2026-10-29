@@ -14,7 +14,7 @@ import { useSubscribe } from "../../shared/ui/hooks";
 import { names } from "../links";
 import { follow, pathOf } from "../router";
 import { session } from "../session";
-import { historyPath, lastMoved, shortRef, type DeployHistory, type DeploySummary, type Environment } from "../deploys-text";
+import { historyPath, lastMoved, rowNote, shortRef, type DeployHistory, type DeploySummary, type Environment } from "../deploys-text";
 import { deployTone, toneClass } from "../swarm";
 import { roleIn } from "../settings/environments";
 import { DeployState, planner } from "./deploy";
@@ -168,6 +168,11 @@ function Row({ d }: { d: DeploySummary }) {
           <span class="deploy-roll-back" data-deploy-roll-back>
             {" "}
             rollback
+          </span>
+        ) : null}
+        {rowNote(d) ? (
+          <span class="deploy-row-note dim" title={rowNote(d)} data-deploy-row-note>
+            {rowNote(d)}
           </span>
         ) : null}
       </td>
