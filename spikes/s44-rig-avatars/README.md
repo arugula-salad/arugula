@@ -11,8 +11,8 @@ character from it, eased to the screen's rate, in the People tiles and live in c
 the camera off, an avatar idles (breathes, blinks, glances about) and dozes while you're away.
 No picture of you leaves the page.
 
-![Every character in every pose, bust and chat size](sheet.png)
-![Avatar mode: you, and sam and riley echoing you, in People and in chat](people-avatars.png)
+![Every character in every pose, bust and chat size](https://share.files.inevitable.fyi/2026-10-29/s44-sheet.png)
+![Avatar mode: you, and sam and riley echoing you, in People and in chat](https://share.files.inevitable.fyi/2026-10-29/s44-people-avatars.png)
 
 > Since #315 the code is in `presence/core` (and the client in `presence/client`); paths below are updated.
 
