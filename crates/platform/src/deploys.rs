@@ -145,77 +145,12 @@ fn asker(project: &str, by: &Actor) -> String {
 
 type J = Result<Json<Value>, ApiError>;
 
-/// A signed-in person in a browser: the approve and deny routes' caller.
-/// A machine's signature (an agent's, on any machine, the owner's own
-/// included) and a CLI device's login are refused, each saying why.
-pub struct BrowserPerson {
-    pub account: String,
-}
-
-impl<S: Send + Sync> FromRequestParts<S> for BrowserPerson {
-    type Rejection = ApiError;
-
-    async fn from_request_parts(parts: &mut Parts, _: &S) -> Result<Self, ApiError> {
-        match parts.extensions.get::<Asked>() {
-            Some(Asked::Principal(Principal::Person { account })) => Ok(BrowserPerson { account: account.clone() }),
-            Some(Asked::Principal(Principal::Daemon { .. })) => Err(refusal(
-                StatusCode::FORBIDDEN,
-                AGENT,
-                "agents never approve or deny a deploy: they plan one and ask, and an owner approves it on their phone \
-                 or in a browser",
-            )),
-            Some(Asked::Principal(Principal::Cli { .. })) => Err(refusal(
-                StatusCode::FORBIDDEN,
-                NOT_A_DEVICE,
-                "a CLI's login doesn't approve a deploy: approve it on your phone or in a browser, with a passkey",
-            )),
-            Some(Asked::Refused { status, error, .. }) => Err(err(*status, error)),
-            None => Err(err(StatusCode::UNAUTHORIZED, "sign in first")),
-        }
-    }
-}
-
 fn no_project() -> ApiError {
     err(StatusCode::NOT_FOUND, "no such project")
 }
 
 fn no_deploy() -> ApiError {
     err(StatusCode::NOT_FOUND, "no such deploy")
-}
-
-/// `account`'s role in `project`, or `None` when they aren't in it.
-/// `fresh`: the team's roster is asked of the hub, not the cache (before a
-/// change, and always before an approval).
-pub(crate) async fn role(
-    app: &Platform,
-    account: &str,
-    project: &IssueProject,
-    fresh: bool,
-) -> Result<Option<TeamRole>, ApiError> {
-    Ok(match (&project.account, &project.team) {
-        (Some(a), _) => (a == account).then_some(TeamRole::Owner),
-        (None, Some(t)) => {
-            let t = if fresh { app.cache.team_now(&*app.hub, t).await? } else { app.cache.team(&*app.hub, t).await? };
-            t.and_then(|t| t.role(account))
-        }
-        (None, None) => None,
-    })
-}
-
-/// The project as `account` sees it, with their role: 404 unless they're
-/// in it, 403 for a viewer when `write`.
-pub async fn project_as(
-    app: &Platform,
-    account: &str,
-    project: &str,
-    write: bool,
-) -> Result<(IssueProject, TeamRole), ApiError> {
-    let p = app.db.issue_project(project)?.ok_or_else(no_project)?;
-    let role = role(app, account, &p, write).await?.ok_or_else(no_project)?;
-    if write && role == TeamRole::Viewer {
-        return Err(err(StatusCode::FORBIDDEN, "a viewer reads deploys, and doesn't plan or ask for them"));
-    }
-    Ok((p, role))
 }
 
 /// A deploy, its environment and its project, as `account` sees them.
@@ -681,26 +616,6 @@ pub(crate) async fn request(app: &Platform, by: &Actor, id: &str) -> J {
 pub async fn request_route(State(app): State<Arc<Platform>>, s: Person, Path(id): Path<String>) -> J {
     app.limits.check_account(DEPLOY_WRITES, &s.account)?;
     request(&app, &Actor::person(&s.account), &id).await
-}
-
-/// The project's owners, now.
-pub(crate) async fn owners(app: &Platform, p: &IssueProject) -> anyhow::Result<Vec<String>> {
-    Ok(match (&p.account, &p.team) {
-        (Some(a), _) => vec![a.clone()],
-        (None, Some(t)) => app
-            .cache
-            .team_now(&*app.hub, t)
-            .await?
-            .map(|t| {
-                t.members
-                    .iter()
-                    .filter(|m| t.role(&m.account) == Some(TeamRole::Owner))
-                    .map(|m| m.account.clone())
-                    .collect()
-            })
-            .unwrap_or_default(),
-        (None, None) => vec![],
-    })
 }
 
 /// Push each owner a card for the deploy waiting on them: not a person who

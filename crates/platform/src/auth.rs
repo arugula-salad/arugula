@@ -99,6 +99,42 @@ impl<S: Send + Sync> FromRequestParts<S> for Machine {
     }
 }
 
+/// Why an approval was refused, for clients to act on: an agent's machine
+/// asked (deploys' approvals, M218).
+pub const AGENT: &str = "agent";
+/// A CLI's login asked.
+pub const NOT_A_DEVICE: &str = "not_a_device";
+
+/// A signed-in person in a browser: the approve and deny routes' caller.
+/// A machine's signature (an agent's, on any machine, the owner's own
+/// included) and a CLI device's login are refused, each saying why.
+pub struct BrowserPerson {
+    pub account: String,
+}
+
+impl<S: Send + Sync> FromRequestParts<S> for BrowserPerson {
+    type Rejection = ApiError;
+
+    async fn from_request_parts(parts: &mut Parts, _: &S) -> Result<Self, ApiError> {
+        match parts.extensions.get::<Asked>() {
+            Some(Asked::Principal(Principal::Person { account })) => Ok(BrowserPerson { account: account.clone() }),
+            Some(Asked::Principal(Principal::Daemon { .. })) => Err(arugula_control_common::refusal(
+                StatusCode::FORBIDDEN,
+                AGENT,
+                "agents never approve or deny a deploy: they plan one and ask, and an owner approves it on their phone \
+                 or in a browser",
+            )),
+            Some(Asked::Principal(Principal::Cli { .. })) => Err(arugula_control_common::refusal(
+                StatusCode::FORBIDDEN,
+                NOT_A_DEVICE,
+                "a CLI's login doesn't approve a deploy: approve it on your phone or in a browser, with a passkey",
+            )),
+            Some(Asked::Refused { status, error, .. }) => Err(err(*status, error)),
+            None => Err(err(StatusCode::UNAUTHORIZED, "sign in first")),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

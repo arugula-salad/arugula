@@ -14,7 +14,7 @@ use axum::{
 use arugula_control_wire::{boards, issues, project_docs, runs as wire_runs};
 
 use crate::{
-    Platform, billing, chat, deploys,
+    Platform, billing, chat,
     features::{self, Routes},
     forge, grants, hosted, projects, run_grant, run_logs,
     triggers::{agent as run_agents, routes as runs},
@@ -170,20 +170,6 @@ fn routes() -> Routes {
                 .put(crate::project_docs::put_route)
                 .delete(crate::project_docs::delete_route),
         )
-        // Deploys and their approval (M218).
-        .route(deploys::ENVIRONMENTS, get(deploys::environments).post(deploys::create_environment))
-        .route(deploys::PROJECT_DEPLOYS, get(deploys::list).post(deploys::plan_route))
-        .route(deploys::WAITING, get(deploys::waiting))
-        .route(deploys::DEPLOY, get(deploys::get))
-        .route(deploys::DEPLOY_REQUEST, post(deploys::request_route))
-        .route(deploys::DEPLOY_APPROVE, post(deploys::approve))
-        .route(deploys::DEPLOY_DENY, post(deploys::deny))
-        .route(deploys::ENVIRONMENT_SECRET, post(deploys::set_secret))
-        .route(deploys::catalog::PROJECT_DRIVERS, get(deploys::catalog::drivers))
-        // A machine's agents plan and ask; never approve.
-        .route(deploys::agent::AGENT_PROJECT_DEPLOYS, post(deploys::agent::plan))
-        .route(deploys::agent::AGENT_DEPLOY, get(deploys::agent::get))
-        .route(deploys::agent::AGENT_DEPLOY_REQUEST, post(deploys::agent::request))
         .route("/github/webhook", post(forge::webhook))
         .route("/api/projects/{project}/workspaces", get(hosted::routes::list).post(hosted::routes::create))
         .route("/api/projects/{project}/workspaces/{id}", get(hosted::routes::open).delete(hosted::routes::delete))

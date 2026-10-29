@@ -521,7 +521,7 @@ impl PlatformPort for Platform {
         machine: &'a HostedMachine,
         ask: &'a SecretsAsk,
     ) -> BoxFuture<'a, anyhow::Result<SecretsGiven>> {
-        Box::pin(crate::deploys::apply::secrets(self, machine, ask))
+        crate::features::deploys().secrets(self, machine, ask)
     }
 
     fn hosted_artifact<'a>(
@@ -529,7 +529,7 @@ impl PlatformPort for Platform {
         machine: &'a HostedMachine,
         ask: &'a SecretsAsk,
     ) -> BoxFuture<'a, anyhow::Result<ArtifactGiven>> {
-        Box::pin(crate::deploys::apply::artifact(self, machine, ask))
+        crate::features::deploys().artifact(self, machine, ask)
     }
 
     fn hosted_plan<'a>(

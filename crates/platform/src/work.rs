@@ -114,7 +114,7 @@ impl Dispatch {
         let Some(run) = db.run(&job.id)? else { return Ok(Step::Done) };
         if run.state.terminal() {
             // A deploy's run whose deploy's job gave up: its owners hear.
-            crate::deploys::apply::page_unpaged(&self.app, &run.id).await?;
+            crate::features::deploys().page_unpaged(&self.app, &run.id).await?;
             return Ok(Step::Done);
         }
         let waiting = matches!(run.state, State::Pending | State::Approved);
@@ -269,7 +269,7 @@ pub async fn work(app: &Platform, m: &HostedMachine, takes: &[String]) -> Result
     for id in ready {
         // A deploy's run (M219) goes only to a machine that applies them,
         // with what it checks before it does.
-        let deploy = crate::deploys::apply::deploy_work(&app.db, &id)?;
+        let deploy = crate::features::deploys().deploy_work(&app.db, &id)?;
         if deploy.is_some() && !takes_deploys {
             continue;
         }
@@ -336,7 +336,7 @@ pub async fn report(app: &Platform, m: &HostedMachine, r: &Report) -> Result<Rep
             }
             // A deploy's run (M219) moves its deploy: refused, the run
             // fails and the machine is told before it applies anything.
-            Ok(crate::deploys::apply::reported(app, &run).await?.unwrap_or(Reported::Taken))
+            Ok(crate::features::deploys().reported(app, &run).await?.unwrap_or(Reported::Taken))
         }
         Err(why) => {
             // The same event, kept before: a retry whose answer was lost.
@@ -346,7 +346,7 @@ pub async fn report(app: &Platform, m: &HostedMachine, r: &Report) -> Result<Rep
                 // start the platform kept but didn't finish handling is
                 // started (or refused) now, before the box applies anything.
                 if let Some(run) = app.db.run(&r.run)?
-                    && let Some(said) = crate::deploys::apply::reported(app, &run).await?
+                    && let Some(said) = crate::features::deploys().reported(app, &run).await?
                 {
                     return Ok(said);
                 }
@@ -364,21 +364,17 @@ pub async fn report(app: &Platform, m: &HostedMachine, r: &Report) -> Result<Rep
 }
 
 /// The job worker with every kind's handler this platform has: runs'
-/// dispatch (M212), schedules' ticks (M214), deploys' applies (M219) and
-/// thread sessions' follow (M256). Other kinds join it here
-/// as they land: one worker claims every kind.
+/// dispatch (M212), schedules' ticks (M214), thread sessions' follow
+/// (M256), and the feature crates' (#314): deploys' applies (M219). Other
+/// kinds join it here, or through `Feature::jobs`, as they land: one worker
+/// claims every kind.
 pub fn start(app: &Arc<Platform>) {
     let ticks = crate::triggers::schedule::Ticks { gate: Arc::new(crate::triggers::Members(app.clone())) };
-    let deploys = crate::deploys::apply::Apply { app: app.clone() };
-    crate::deploys::apply::start_reaper(app.clone());
-    crate::jobs::start(
-        app.clone(),
-        crate::jobs::Worker::new()
-            .with(Dispatch { app: app.clone() })
-            .with(ticks)
-            .with(deploys)
-            .with(crate::sessions::job::Follow { app: app.clone() }),
-    );
+    let worker = crate::jobs::Worker::new()
+        .with(Dispatch { app: app.clone() })
+        .with(ticks)
+        .with(crate::sessions::job::Follow { app: app.clone() });
+    crate::jobs::start(app.clone(), crate::features::jobs(app, worker));
 }
 
 #[cfg(test)]

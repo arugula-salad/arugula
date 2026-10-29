@@ -93,6 +93,7 @@ pub mod page;
 pub mod planter;
 mod port;
 pub mod project_docs;
+pub mod project_roles;
 pub mod projects;
 pub mod remote;
 #[cfg(test)]
