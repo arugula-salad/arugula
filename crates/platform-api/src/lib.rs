@@ -42,6 +42,35 @@ pub struct Config {
     pub page_url: String,
     /// Free relay traffic per account per month, with billing on.
     pub relay_free_bytes: u64,
+    /// The arugula.stream app whose room tokens chat signs for People
+    /// blocks, when control has one (`ARUGULA_PRESENCE_APP`).
+    pub presence: Option<Presence>,
+}
+
+/// An arugula.stream app (its id and server secret) and the relay its rooms
+/// are on: People blocks join a team's room there with a token control signs.
+#[derive(Clone, Default)]
+pub struct Presence {
+    pub app: String,
+    pub secret: String,
+    /// The relay's socket, `wss://arugula.stream/socket`.
+    pub relay: String,
+}
+
+impl std::fmt::Debug for Presence {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Presence").field("app", &self.app).field("relay", &self.relay).finish_non_exhaustive()
+    }
+}
+
+impl Presence {
+    /// From the app id, its secret and the relay, as control and the
+    /// platform take them: none without both an id and a secret.
+    pub fn from_args(app: Option<String>, secret: Option<String>, relay: &str) -> Option<Self> {
+        let app = app.filter(|s| !s.is_empty())?;
+        let secret = secret.filter(|s| !s.is_empty())?;
+        Some(Self { app, secret, relay: relay.trim_end_matches('/').to_owned() })
+    }
 }
 
 impl Config {

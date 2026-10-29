@@ -1161,6 +1161,14 @@ auth = "session"
 clients = ["page"]
 
 [[route]]
+method = "POST"
+path = "/api/chat/presence/token"
+process = "platform"
+auth = "session"
+clients = ["page"]
+note = "a People block's room token for arugula.stream (team members only)"
+
+[[route]]
 method = "GET"
 path = "/api/chat/avatar/{account}"
 process = "platform"

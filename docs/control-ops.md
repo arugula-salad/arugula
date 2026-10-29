@@ -157,6 +157,23 @@ arugula-control --public-url https://control.example.com --listen 127.0.0.1:7690
     the URLs. Without it there, nothing can be made public.
   - Abuse and takedown: "Public previews" under "Operating the hosted
     one".
+- **People blocks** (optional): `ARUGULA_PRESENCE_APP` (an arugula.stream
+  app's `app_…` id) and `ARUGULA_PRESENCE_SECRET` (its server secret) on
+  the platform let a team's members open a People block: who's around in
+  the team, live, in the team's room (`team:<id>`) on arugula.stream's
+  relay (`ARUGULA_PRESENCE_RELAY`, `wss://arugula.stream/socket` by
+  default). The platform signs each member's room token
+  (`POST /api/chat/presence/token`, behind chat's gate); the room, its
+  avatars, voice and calls are the relay's.
+  - Set `ARUGULA_PRESENCE_APP` (and the relay, if it isn't the default) on
+    the hub too: with it, the hub's CSP lets the page load scripts from the
+    relay's origin and compile WebAssembly (`'wasm-unsafe-eval'`) for the
+    camera's trackers. Without an app, the CSP doesn't change and a People
+    block says control has no arugula.stream app.
+  - Make the app with arugula.stream's `create_app` (its MCP or dashboard):
+    the secret is shown once. No origins or sign-in provider are needed,
+    since control signs the tokens.
+  - What arugula.stream gets: [control-e2e.md](control-e2e.md#who-else-sees-it).
 - **Shared Docs** (#1064): always on, and idle until a machine calls. With
   a block domain, anyone opens a link at `docs.<domain>` (a fixed label,
   so the wildcard DNS name and certificate cover it); without one, at

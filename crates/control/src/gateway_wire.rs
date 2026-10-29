@@ -116,6 +116,7 @@ pub(crate) async fn split_github(
             sites: vec!["http://control.test".into()],
             page_url: String::new(),
             relay_free_bytes: 0,
+            presence: None,
         },
         db,
         wrap(Arc::new(HttpHub::new(&internal, key()).unwrap())),

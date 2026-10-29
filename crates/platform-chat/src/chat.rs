@@ -112,6 +112,7 @@ pub(crate) mod members;
 pub(crate) mod objects;
 pub(crate) mod people;
 pub(crate) mod pins;
+pub(crate) mod presence_room;
 pub mod previews;
 pub(crate) mod reactions;
 pub(crate) mod saved;

@@ -52,6 +52,7 @@ listed is at the end.
 | `ARUGULA_PLATFORM_KEY` | the platform; Infisical `/illogical/control` | Operator |
 | `POSTHOG_API_KEY` (a public project key) | the platform | Operator |
 | `ARUGULA_PLATFORM`, `ARUGULA_PLATFORM_HOST`, `ARUGULA_PREVIEW_DOMAIN` (*config*) | | Operator |
+| `ARUGULA_PRESENCE_APP`, `ARUGULA_PRESENCE_RELAY` (*config*; People blocks, **not set yet**) | the platform | Operator. The hub uses them for its CSP alone |
 | The hub database's `settings`: VAPID key pair, hosted-machine signing key | Litestream only | Operator. M228's issuer keys will sit beside them; no escrow today |
 
 Unset from the hub on 2026-10-24 with the platform's old copies (Arugula #71):
@@ -74,6 +75,7 @@ their token, passkeys and devices keep public keys. They stay the hub's.
 | `GITHUB_APP_ID`, `GITHUB_APP_SLUG` (*config*), `GITHUB_APP_PRIVATE_KEY`, `GITHUB_APP_WEBHOOK_SECRET` | the hub; Infisical (the key only) | Operator |
 | `ARUGULA_RUN_LOGS_ACCESS_KEY_ID`, `ARUGULA_RUN_LOGS_SECRET_ACCESS_KEY` | Infisical `/illogical/run-logs` | Operator |
 | `ARUGULA_RUN_LOGS_BUCKET`, `ARUGULA_RUN_LOGS_ENDPOINT` (*config*) | | Operator |
+| `ARUGULA_PRESENCE_SECRET` (People blocks: the arugula.stream app's server secret, which signs room tokens; **not set yet**), `ARUGULA_PRESENCE_APP`, `ARUGULA_PRESENCE_RELAY` (*config*) | Infisical, when set | Operator. arugula.stream shows a secret once: `rotate_secret` makes a new one |
 | `ARUGULA_E2B_API_KEY` | Infisical `/illogical/control` (and `E2B_API_KEY` there) | Operator |
 | `PLANTER_APP_ID`, `PLANTER_APP_SLUG` (*config*), `PLANTER_APP_PRIVATE_KEY` (M233: planter's App, the deploy App; **not set yet**) | Infisical project `planter` (as planter's `GITHUB_APP_ID`, `GITHUB_PRIVATE_KEY`) | Operator. Mints planter's drivers' tokens; planter's own copy goes with planter (M234) |
 | `POSTHOG_API_KEY` | the hub | Operator |

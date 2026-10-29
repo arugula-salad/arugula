@@ -1,0 +1,69 @@
+/* A People block (people.tsx): arugula.stream's elements, in our colours. */
+.people-block {
+  --arugula-accent: var(--accent);
+  --arugula-bg: var(--bg);
+  --arugula-fg: var(--fg);
+  --arugula-dim: var(--dim);
+  --arugula-radius: var(--radius, 6px);
+  height: 100%;
+  overflow: auto;
+  padding: 12px;
+  box-sizing: border-box;
+  background: var(--bg);
+  color: var(--fg);
+}
+
+.people-head {
+  font-size: 12px;
+  margin-bottom: 8px;
+}
+
+.people-none {
+  margin: 0;
+  max-width: 40em;
+}
+
+.people-room arugula-camera,
+.people-room arugula-voice,
+.people-room arugula-call {
+  display: block;
+  margin-bottom: 12px;
+}
+
+.people-layout {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+  font-size: 12px;
+}
+
+.people-seg {
+  display: inline-flex;
+  border: 1px solid var(--line);
+  border-radius: var(--field-radius, 6px);
+  overflow: hidden;
+}
+
+.people-seg button {
+  padding: 4px 12px;
+  border: 0;
+  border-radius: 0;
+  background: var(--bg);
+  color: var(--dim);
+}
+
+.people-seg button[aria-checked="true"] {
+  background: color-mix(in srgb, var(--accent) 12%, var(--bg));
+  color: var(--fg);
+}
+
+.people-room arugula-spotlight {
+  display: block;
+  margin-bottom: 12px;
+}
+
+.people-rest {
+  margin: 0 0 6px;
+  font-size: 12px;
+}

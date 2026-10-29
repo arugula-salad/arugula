@@ -297,6 +297,22 @@ says what is stored.
   (idle, or chosen) and offline (no page, or chosen: *Appear offline* in the
   account menu). A closed app is offline within a minute. Only the times and
   the chosen mode are stored. A machine's agents show their machine's dot.
+- **People blocks:** right-click a pane, then *Open beside → People*: who's
+  around in one of your teams, live, as a block beside it. It's the team's
+  room on arugula.stream (`team:<id>`), drawn by arugula.stream's own
+  elements: a tile per person in the room, their avatar (a character that
+  follows your face) or outline while their camera is on, reactions and
+  waves; the room's voice channel (join muted, unmute, start video); and a
+  wave's private call. In voice or a call, *Speaker* shows whoever's
+  talking big and everyone else in it in a strip (click someone to pin
+  them); *Grid* is a tile each, and the block remembers which. Control signs your room token as you
+  (`POST /api/chat/presence/token`: a team's members only, named as its
+  roster names them), and keeps nothing of the room. The camera is off
+  until you turn it on, and an avatar or an outline is lines and numbers
+  made in your browser, never a picture; video, in voice or a call, is
+  your camera's real picture, for the people in it. The block joins only
+  while it's shown. It needs an arugula.stream app on control
+  ([control-ops.md](control-ops.md)); without one it says so.
 - **Typing:** the composer pings while the text changes (at most every 3 s,
   never when empty). Others with the room open see up to three names, then
   "Several people are typing…", for 6 s. It is a short-lived row in

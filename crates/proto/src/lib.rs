@@ -963,6 +963,10 @@ pub enum BlockType {
     /// and zones, read through Arugula control as the person looking, and
     /// drawn only while shown. Config `{board}`; the daemon keeps no row.
     Board,
+    /// Who's around, live: a team's room on arugula.stream, joined with a
+    /// room token Arugula control signs for the person looking, drawn only
+    /// while shown. Config `{team}`; the daemon keeps nobody.
+    People,
     /// A type a newer daemon has and this build doesn't know: its state
     /// still parses. Nothing opens one, and the web client's types leave
     /// it out.

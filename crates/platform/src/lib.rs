@@ -84,7 +84,7 @@ pub mod work;
 
 /// What the platform is told when it starts: `arugula-platform-api`'s, which
 /// the hub makes it with.
-pub use arugula_platform_api::Config;
+pub use arugula_platform_api::{Config, Presence};
 pub use hub::HubPort;
 pub use port::{Archived, Deleted, PlatformPort, PublicPreview, TurnAnswer};
 pub use router::{paths, router};
