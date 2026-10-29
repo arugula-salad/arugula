@@ -1,0 +1,1 @@
+{"control":true,"url":"https://control.example","github":true,"passkeys":true,"vapid":"BKey","github_app":null,"daemon_auth":2,"cli_join":1,"join_secret":1,"device_secret":1,"guest_ssh":{"host":"jump.example","port":22,"known_hosts":"jump.example ssh-ed25519 AAAA","fingerprint":"SHA256:x"},"platform":"https://app.example"}

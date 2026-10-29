@@ -1,0 +1,1 @@
+{"root":"dev_r1","certs":[{"v":1,"account":"acc_a1","device":"dev_r1","kind":"browser","name":"laptop","noise":"00","sign":"22","created":1790000000000,"approver":"dev_r1","sig":"cd"}],"revocations":[{"v":1,"account":"acc_a1","device":"dev_d9","at":1790000000001,"by":"dev_r1","sig":"ef"}],"legacy_app_children":["dev_p1"]}

@@ -1,0 +1,1 @@
+{"install":"0123456789abcdef","version":"0.42.0","os":"linux","arch":"x86_64","channel":"homebrew","control":"hosted","events":[{"event":"started","service":true},{"event":"daily","panes_opened":3,"panes_peak":2,"agents_started":{"claude":2},"blocks_opened":{},"clients":{},"views":{"swarm":4},"flags_on":[],"web_errors":0}],"crashes":[]}

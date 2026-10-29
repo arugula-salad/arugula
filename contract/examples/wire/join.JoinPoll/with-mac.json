@@ -1,0 +1,1 @@
+{"approved":true,"cert":{"v":1,"account":"acc_a1","device":"dev_d1","kind":"daemon","name":"box","noise":"00","sign":"11","created":1790000000000,"approver":"dev_r1","sig":"ab"},"trust":{"account":"acc_a1","root":"dev_r1"},"certs":[],"revocations":[],"team":null,"mac":"ab12"}

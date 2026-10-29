@@ -61,6 +61,8 @@ pub mod boards;
 pub mod chat;
 pub mod chat_sidebar;
 pub mod deploys;
+#[cfg(test)]
+mod examples;
 pub mod forge;
 pub mod forge_ops;
 pub mod hosted;

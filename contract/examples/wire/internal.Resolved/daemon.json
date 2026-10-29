@@ -1,0 +1,1 @@
+{"principal":{"kind":"daemon","account":"acc_a1","daemon":"dmn_d1"},"account":{"id":"acc_a1","login":"octocat","name":"Octo Cat"},"daemon":{"id":"dmn_d1","account":"acc_a1","team":"team_t1","name":"geek"}}
