@@ -159,3 +159,29 @@
   height: 3px;
   border-radius: 2px;
 }
+
+.people-mode,
+.people-chars,
+.people-colours {
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+}
+
+.people-mode-on {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.people-swatch {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  padding: 0;
+  cursor: pointer;
+}
+
+.people-swatch.on {
+  border-color: var(--fg);
+}

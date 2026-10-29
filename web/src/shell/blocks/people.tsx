@@ -18,6 +18,9 @@ import { outlines } from "../../shared/outline/store";
 import { draw } from "../../shared/outline/render";
 import type { Frame } from "../../shared/outline/frame";
 import { GROUPS, palette } from "../../shared/outline/classes";
+import { AvatarCanvas, hasAvatar } from "../../shared/avatar/view";
+import { CHARACTERS } from "../../shared/avatar/characters";
+import { COLOURS } from "../../shared/avatar/stage";
 import { useSubscribe } from "../../shared/ui/hooks";
 import { getControlSession } from "../ui/people";
 import { registerBlock, type BlockView } from "./view";
@@ -59,12 +62,14 @@ function Tile({ p, me }: { p: Person; me: boolean }) {
   const seen = outlines.of(p.account);
   const frame = mine?.frame ?? seen?.frame ?? null;
   const state = presence.of(p.account) ?? (me ? "active" : "offline");
-  const live = !!frame;
+  const live = !!frame || !!seen?.rig || (me && !!mine?.rig);
   return (
     <figure class={`people-tile people-${state}${live ? " people-live" : ""}`} data-people-tile={p.account} data-live={live || undefined}>
       <div class="people-view">
         {frame ? (
           <OutlineCanvas frame={frame} mirror={me} />
+        ) : hasAvatar(p.account, me) ? (
+          <AvatarCanvas account={p.account} me={me} size="bust" class="people-canvas" />
         ) : (
           <div class="people-still">
             <MsgAvatar who={p.account} name={p.name} account={p.account} dot />
@@ -75,9 +80,64 @@ function Tile({ p, me }: { p: Person; me: boolean }) {
         <span class={`presence-dot presence-${state}`} aria-hidden="true" />
         <span class="people-name">{p.name}</span>
         {live && <span class="people-on">live</span>}
-        {!me && seen && <span class="people-bytes dim">{(seen.bytes / 1024).toFixed(1)} KB</span>}
+        {!me && seen && <span class="people-bytes dim">{seen.bytes < 1024 ? `${seen.bytes} B` : `${(seen.bytes / 1024).toFixed(1)} KB`}</span>}
       </figcaption>
     </figure>
+  );
+}
+
+/** Outline or avatar (S44), and in avatar mode your character and colour. */
+function ModeControls() {
+  const avatar = outlines.mode === "avatar";
+  const look = outlines.look;
+  return (
+    <div class="people-controls">
+      <span class="people-mode" role="radiogroup" aria-label="What your camera sends">
+        {(["outline", "avatar"] as const).map((m) => (
+          <button
+            type="button"
+            role="radio"
+            aria-checked={outlines.mode === m}
+            class={outlines.mode === m ? "btn people-mode-on" : "btn"}
+            data-people-mode={m}
+            onClick={() => outlines.setMode(m)}
+          >
+            {m === "outline" ? "Outline" : "Avatar"}
+          </button>
+        ))}
+      </span>
+      {avatar && (
+        <>
+          <span class="people-chars" role="radiogroup" aria-label="Your character">
+            {CHARACTERS.map((c) => (
+              <button
+                type="button"
+                role="radio"
+                aria-checked={look.character === c.id}
+                class={look.character === c.id ? "btn people-mode-on" : "btn"}
+                data-people-character={c.name}
+                onClick={() => outlines.setLook({ ...look, character: c.id })}
+              >
+                {c.name}
+              </button>
+            ))}
+          </span>
+          <span class="people-colours" role="radiogroup" aria-label="Your colour">
+            {COLOURS.map((v, i) => (
+              <button
+                type="button"
+                role="radio"
+                aria-checked={look.colour === i}
+                aria-label={v.slice(2)}
+                class={look.colour === i ? "people-swatch on" : "people-swatch"}
+                style={{ background: `var(${v})` }}
+                onClick={() => outlines.setLook({ ...look, colour: i })}
+              />
+            ))}
+          </span>
+        </>
+      )}
+    </div>
   );
 }
 
@@ -85,16 +145,36 @@ function Controls() {
   const on = outlines.cameraOn;
   const st = outlines.mine?.stats;
   const err = outlines.mine?.error;
+  const avatar = outlines.mode === "avatar";
+  const camera = (
+    <button
+      type="button"
+      class={on ? "btn people-cam on" : "btn primary people-cam"}
+      data-people-camera={on ? "on" : "off"}
+      onClick={() => (on ? outlines.stopCamera() : void outlines.startCamera())}
+    >
+      {on ? "Turn off my camera" : "Turn on my camera"}
+    </button>
+  );
+  if (avatar) {
+    const sent = outlines.mine?.sent ?? [];
+    const last = sent[sent.length - 1];
+    return (
+      <div class="people-controls">
+        {camera}
+        {on && last && (
+          <span class="people-stats dim" data-people-stats>
+            rig {last.bytes} B · {outlines.kbps().toFixed(1)} kbps · {outlines.rigFps} fps · tracking {outlines.mine?.trackMs.toFixed(0)} ms
+          </span>
+        )}
+        {on && !last && !err && <span class="dim">loading the trackers…</span>}
+        {err && <span class="people-error">{err}</span>}
+      </div>
+    );
+  }
   return (
     <div class="people-controls">
-      <button
-        type="button"
-        class={on ? "btn people-cam on" : "btn primary people-cam"}
-        data-people-camera={on ? "on" : "off"}
-        onClick={() => (on ? outlines.stopCamera() : void outlines.startCamera())}
-      >
-        {on ? "Turn off my outline" : "Turn on my outline"}
-      </button>
+      {camera}
       <label class="people-rate">
         <span class="dim">fps</span>
         <select value={String(outlines.fps)} onChange={(e) => outlines.setRate(Number((e.target as HTMLSelectElement).value))}>
@@ -177,6 +257,7 @@ function PeopleBlock({ shown }: { shown: boolean }) {
   });
   return (
     <div class="people-block" data-people-live={outlines.live}>
+      <ModeControls />
       <Controls />
       {outlines.live === "refused" && <p class="people-error">Control refused the outlines stream: chat has to be on for one of your teams.</p>}
       <div class="people-grid">

@@ -5,7 +5,8 @@
 # their outline on.
 #   public/mediapipe/  MediaPipe's vision Wasm (node_modules) and two models
 #                      from Google's MediaPipe bucket (Apache-2.0): DeepLab
-#                      v3 (21 Pascal VOC classes) and the face landmarker.
+#                      v3 (21 Pascal VOC classes), the face landmarker, and
+#                      (S44) the pose landmarker, lite.
 #   public/depth/      ONNX Runtime Web's asyncify build (node_modules, what
 #                      transformers.js runs WebGPU on) and Depth Anything V2
 #                      Small at 4 bits (Apache-2.0) from Hugging Face, its
@@ -21,6 +22,8 @@ get() {
 }
 get deeplab_v3.tflite https://storage.googleapis.com/mediapipe-models/image_segmenter/deeplab_v3/float32/1/deeplab_v3.tflite
 get face_landmarker.task https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task
+# S44's rigged avatars: shoulders, elbows and wrists.
+get pose_landmarker_lite.task https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task
 ls -l "$out"
 
 depth=public/depth

@@ -10,6 +10,7 @@ import { presence } from "./presence";
 import { outlines } from "../outline/store";
 import { draw } from "../outline/render";
 import { palette } from "../outline/classes";
+import { AvatarCanvas, hasAvatar } from "../avatar/view";
 
 /** A steady colour per person. */
 export function colorOf(who: string): string {
@@ -47,7 +48,8 @@ function Dot({ account, machine }: { account?: string; machine?: string }) {
 
 /** The account's live outline (S43), over its picture while their camera
  * is on: yours from your own camera, mirrored, anyone else's from
- * control's stream, which runs while any avatar is shown. */
+ * control's stream, which runs while any avatar is shown. Or (S44) their
+ * rigged character, live, or idling in the look they last sent. */
 function LiveFace({ account }: { account: string }) {
   useSubscribe((fn) => outlines.subscribe(fn));
   useEffect(() => outlines.watch(), []);
@@ -58,6 +60,8 @@ function LiveFace({ account }: { account: string }) {
     const c = ref.current;
     if (c && frame) draw(c, frame, { color: palette(c, !!frame.classes?.some((x) => x)), mirror: me, width: 1, fit: "cover" });
   });
+  // S44: their character, live or idling, where they picked the avatar.
+  if (!frame && hasAvatar(account, me)) return <AvatarCanvas account={account} me={me} size="head" class="avatar-live" />;
   if (!frame) return null;
   return <canvas ref={ref} class="avatar-live" data-avatar-live={account} aria-hidden="true" />;
 }
