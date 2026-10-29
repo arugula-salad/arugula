@@ -2148,8 +2148,18 @@ export class ControlSession {
    * where it asked from, and whether that's this browser's network. An
    * app from #758 on sends its device keys; one from before has a code. */
   async showAppLogin(id: string): Promise<AppLogin> {
-    return api(`/api/app-login/${encodeURIComponent(id)}`);
+    // One lookup per page load: the prompt mounts afresh when the page
+    // picks a machine (`ControlRoot` is keyed by the client's base), and
+    // asking again would put "Looking it up…" back under the person's eyes.
+    let p = this.appLogins.get(id);
+    if (!p) {
+      p = api<AppLogin>(`/api/app-login/${encodeURIComponent(id)}`);
+      this.appLogins.set(id, p);
+      p.catch(() => this.appLogins.delete(id));
+    }
+    return p;
   }
+  private appLogins = new Map<string, Promise<AppLogin>>();
 
   /** Whether allowing `a` also makes the app one of the account's devices
    * (#758): it sent keys, and this browser is a device that can sign one. */
