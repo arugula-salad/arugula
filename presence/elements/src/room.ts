@@ -5,11 +5,12 @@
 // token's business: your server signs it (or, to prototype, the relay's
 // demo tokens).
 
-import { PresenceClient, phoenixTransport, type Member, type Transport } from "@arugula/presence";
+import { PresenceClient, phoenixTransport, type Member, type Transport, type Message } from "@arugula/presence";
 import { setAssetBase } from "@arugula/presence-core/assets";
 import type { Look } from "@arugula/presence-core/avatar/rig";
 import { mountAvatar, mountPeople, type AvatarOptions, type PeopleOptions } from "./view.ts";
 import { CSS } from "./styles.ts";
+import { mountChat, type ChatOptions } from "./chat.ts";
 
 export const RELAY = "wss://arugula.stream/socket";
 
@@ -38,6 +39,8 @@ export interface RoomEvents {
   wave: (from: string) => void;
   answer: (from: string, yes: boolean) => void;
   react: (from: string, emoji: string) => void;
+  /** A message, yours included, once (history on joining counts). */
+  message: (m: Message) => void;
   live: (state: "connecting" | "on" | "refused" | "off") => void;
 }
 
@@ -64,10 +67,10 @@ export class Room {
   readonly room: string;
   /** Your own sub, once a token has been read. */
   me = "";
-  private handlers: { [K in keyof RoomEvents]: Set<RoomEvents[K]> } = { members: new Set(), wave: new Set(), answer: new Set(), react: new Set(), live: new Set() };
+  private handlers: { [K in keyof RoomEvents]: Set<RoomEvents[K]> } = { members: new Set(), wave: new Set(), answer: new Set(), react: new Set(), message: new Set(), live: new Set() };
   private stop: () => void;
   private unsub: () => void;
-  private seen = { members: [] as Member[], waves: 0, answers: 0, live: "off" as string, reactedAt: 0 };
+  private seen = { members: [] as Member[], waves: 0, answers: 0, live: "off" as string, reactedAt: 0, messageId: 0 };
 
   constructor(o: ConnectOptions) {
     this.room = o.room;
@@ -127,6 +130,21 @@ export class Room {
     this.client.wave(sub);
   }
 
+  /** The room's text messages, oldest first. */
+  get messages(): Message[] {
+    return this.client.messages;
+  }
+
+  /** Send a text message; resolves with it as kept, rejects with why. */
+  say(text: string): Promise<Message> {
+    return this.client.say(text);
+  }
+
+  /** The page of messages before the first one here. */
+  loadEarlier(): Promise<void> {
+    return this.client.loadEarlier();
+  }
+
   /** An emoji for the room; it floats over your tile for everyone. */
   react(emoji: string) {
     this.client.react(emoji, this.me);
@@ -140,6 +158,11 @@ export class Room {
    * with the elements' styles); returns a function to stop. */
   mount(el: Element, o: PeopleOptions = {}): () => void {
     return styled(el, (root) => mountPeople(this, root, o));
+  }
+
+  /** The room's chat (messages and an input) into `el`, likewise. */
+  chat(el: Element, o: ChatOptions = {}): () => void {
+    return styled(el, (root) => mountChat(this, root, o), true);
   }
 
   /** Draw one person into `el`, likewise. */
@@ -169,6 +192,8 @@ export class Room {
     this.seen.answers = c.answers.length;
     for (const r of c.reactions) if (r.at > this.seen.reactedAt) this.emit("react", r.from, r.emoji);
     this.seen.reactedAt = Math.max(this.seen.reactedAt, ...c.reactions.map((r) => r.at));
+    for (const m of c.messages) if (m.id > this.seen.messageId) this.emit("message", m);
+    this.seen.messageId = Math.max(this.seen.messageId, ...c.messages.map((m) => m.id));
     if (c.live !== this.seen.live) {
       this.seen.live = c.live;
       this.emit("live", c.live);

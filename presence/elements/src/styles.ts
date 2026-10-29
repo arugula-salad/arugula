@@ -53,5 +53,18 @@ button.swatch.on { border-color: var(--fg); }
 .react { position: absolute; bottom: 8%; font-size: 28px; line-height: 1; animation: arugula-float 2.4s ease-out forwards; }
 .head .react { font-size: 16px; }
 @keyframes arugula-float { 0% { transform: translateY(0) scale(0.6); opacity: 0; } 12% { transform: translateY(-8%) scale(1.1); opacity: 1; } 75% { opacity: 1; } 100% { transform: translateY(-160%) scale(1); opacity: 0; } }
+.arugula-chat { display: flex; flex-direction: column; height: 100%; min-height: 220px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
+.messages { flex: 1; overflow-y: auto; padding: 10px 12px; display: flex; flex-direction: column; gap: 10px; }
+.msg { display: grid; gap: 2px; }
+.msg .who { font-size: 12px; font-weight: 600; color: var(--fg); }
+.msg.mine .who { color: var(--accent); }
+.msg time { font: 10px ui-monospace, monospace; color: var(--dim); font-weight: 400; }
+.msg .text { white-space: pre-wrap; overflow-wrap: anywhere; color: var(--fg); }
+button.earlier { align-self: center; font-size: 12px; padding: 3px 10px; color: var(--dim); }
+form.say { display: grid; gap: 4px; padding: 8px; border-top: 1px solid var(--line); }
+form.say textarea { font: inherit; color: var(--fg); background: var(--void); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; resize: none; max-height: 120px; }
+form.say textarea:focus { outline: none; border-color: var(--accent); }
+form.say .error { font-size: 12px; color: var(--danger); }
+form.say .error:empty { display: none; }
 button.emoji { padding: 4px 7px; font-size: 16px; line-height: 1; background: transparent; }
 `;

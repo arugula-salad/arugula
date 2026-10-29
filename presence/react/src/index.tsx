@@ -8,7 +8,8 @@ import { createContext, useContext, useEffect, useRef, useState, type CSSPropert
 import { connect, styled, type ConnectOptions, type Room } from "@arugula/presence-elements/room";
 import { mountCamera, type CameraOptions } from "@arugula/presence-elements/controls";
 import type { AvatarOptions, PeopleOptions } from "@arugula/presence-elements/view";
-import type { Member } from "@arugula/presence";
+import type { Member, Message } from "@arugula/presence";
+import type { ChatOptions } from "@arugula/presence-elements/chat";
 import type { Look } from "@arugula/presence-core/avatar/rig";
 
 interface Ctx {
@@ -75,6 +76,9 @@ export function usePresence() {
     waves: room?.client.waves ?? [],
     wave: (sub: string) => room?.wave(sub),
     react: (emoji: string) => room?.react(emoji),
+    messages: room?.client.messages ?? ([] as Message[]),
+    say: (text: string) => (room ? room.say(text) : Promise.reject(new Error("not in the room yet"))),
+    loadEarlier: () => room?.loadEarlier(),
     reactions: room?.client.reactions ?? [],
     answer: (sub: string, yes: boolean) => room?.answer(sub, yes),
     setLook: (look: Look) => room?.setLook(look),
@@ -113,4 +117,10 @@ export function CameraControls({ controls, className }: CameraOptions & { classN
   return <div ref={ref} className={className} />;
 }
 
-export type { Member, Look, Room };
+/** The room's text: messages, earlier ones a click away, and an input. */
+export function Chat({ placeholder, className, style }: ChatOptions & { className?: string; style?: CSSProperties }) {
+  const ref = useDrawn((room, el) => room.chat(el, { placeholder }), [placeholder]);
+  return <div ref={ref} className={className} style={{ height: 360, ...style }} />;
+}
+
+export type { Member, Message, Look, Room };

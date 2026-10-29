@@ -54,3 +54,19 @@ test("connect resolves when the relay lets you in, and rejects when it refuses",
   u.on.live("refused");
   await assert.rejects(q, /refused/);
 });
+
+test("a room's messages: history and said fire message once each, and say sends", async () => {
+  const t = fake();
+  t.say = async (text) => ({ id: 9, sub: "me", name: "Me", text, at: 3 });
+  const room = new Room({ room: "r", token: token({ sub: "me" }), relay: "wss://relay.example/socket", transport: t });
+  const got = [];
+  room.on("message", (m) => got.push(m.text));
+  t.on.live("on");
+  t.on.history([{ id: 1, sub: "b", name: "B", text: "hi", at: 1 }]);
+  t.on.history([{ id: 1, sub: "b", name: "B", text: "hi", at: 1 }]);
+  t.on.said({ id: 2, sub: "b", name: "B", text: "you there?", at: 2 });
+  await room.say("yes");
+  assert.deepEqual(got, ["hi", "you there?", "yes"]);
+  assert.deepEqual(room.messages.map((m) => m.id), [1, 2, 9]);
+  room.leave();
+});

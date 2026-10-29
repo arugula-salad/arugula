@@ -20,6 +20,7 @@ defmodule PresenceRelay.Application do
           %{id: :pg, start: {:pg, :start_link, [PresenceRelay.Rooms.scope()]}},
           PresenceRelay.Presence,
           PresenceRelay.Rooms,
+          PresenceRelay.Chat.Memory,
           PresenceRelayWeb.Endpoint
         ]
 

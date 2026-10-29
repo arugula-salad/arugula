@@ -120,3 +120,32 @@ test("the relay's frames say who sent them; a member is on camera if any page is
   ]);
   assert.deepEqual(m, { sub: "jake", name: "Jake", look: { character: 2, colour: 0 }, mode: "avatar", away: false, watching: true });
 });
+
+test("messages: history and said merge by id in order, say adds yours, loadEarlier pages back", async () => {
+  const t = fake();
+  const kept = [];
+  let next = 100;
+  t.transport.say = async (text) => {
+    if (text.length > 5) throw new Error("too long");
+    const m = { id: next++, sub: "me", name: "Me", text, at: 1 };
+    kept.push(m);
+    return m;
+  };
+  t.transport.history = async (before) => Array.from({ length: 3 }, (_, i) => ({ id: before - 3 + i, sub: "x", name: "X", text: `old${i}`, at: 0 }));
+  const c = new PresenceClient({ transport: t.transport, storage: "t5." });
+  const stop = c.watch();
+  const page = Array.from({ length: 50 }, (_, i) => ({ id: 40 + i, sub: "x", name: "X", text: `m${i}`, at: 0 }));
+  t.on.history(page);
+  t.on.said({ id: 95, sub: "y", name: "Y", text: "hey", at: 0 });
+  t.on.history(page); // a reconnect: no duplicates
+  assert.equal(c.messages.length, 51);
+  assert.deepEqual(c.messages.at(-1).text, "hey");
+  const mine = await c.say("hi");
+  assert.equal(c.messages.at(-1).id, mine.id);
+  await assert.rejects(c.say("way too long"), /too long/);
+  assert.equal(c.hasEarlier, true);
+  await c.loadEarlier();
+  assert.deepEqual(c.messages.slice(0, 3).map((m) => m.text), ["old0", "old1", "old2"]);
+  assert.equal(c.hasEarlier, false, "a short page means that's all");
+  stop();
+});

@@ -3,11 +3,13 @@ defmodule PresenceRelayWeb.RoomChannel do
   A room (PROTOCOL.md, "The room channel"): the token's room only. On
   join: presence, then every member's newest frame. Frames go to the rest
   of the room; `state` updates this connection's presence; waves and
-  answers go to one member; reactions (an emoji) to the rest of the room.
+  answers go to one member; reactions (an emoji) to the rest of the room;
+  text (`say`) is kept (`PresenceRelay.Chat`) and goes to everyone, with
+  the last page as `history` on join.
   """
   use Phoenix.Channel
 
-  alias PresenceRelay.{Presence, Rooms}
+  alias PresenceRelay.{Chat, Presence, Rooms}
   alias Phoenix.PubSub
 
   @modes ~w(avatar outline none)
@@ -15,6 +17,9 @@ defmodule PresenceRelayWeb.RoomChannel do
   # and at most one this often per connection.
   @react_bytes 32
   @react_ms 250
+  # Text: at most this many messages per window per connection.
+  @say_burst 5
+  @say_window_ms 5_000
 
   @impl true
   def join("room:" <> room, _payload, %{assigns: %{room: room} = a} = socket) do
@@ -43,6 +48,12 @@ defmodule PresenceRelayWeb.RoomChannel do
     {:ok, _} = Presence.track(self(), presence_topic(socket), a.sub, meta)
     push(socket, "presence_state", Presence.list(presence_topic(socket)))
     for frame <- Rooms.fresh(a.app, a.room), do: push(socket, "frame", {:binary, frame})
+    push(socket, "history", %{messages: Chat.history(a.app, a.room)})
+    {:noreply, socket}
+  end
+
+  def handle_info({:relay_said, msg}, socket) do
+    push(socket, "said", msg)
     {:noreply, socket}
   end
 
@@ -137,7 +148,45 @@ defmodule PresenceRelayWeb.RoomChannel do
     end
   end
 
+  def handle_in("say", %{"text" => text}, %{assigns: a} = socket) do
+    now = System.monotonic_time(:millisecond)
+    recent = Enum.filter(Map.get(a, :said_at, []), &(now - &1 < @say_window_ms))
+
+    if length(recent) >= @say_burst do
+      {:reply, {:error, %{reason: "too fast"}}, assign(socket, :said_at, recent)}
+    else
+      case Chat.say(a.app, a.room, a.sub, a.name, text) do
+        {:ok, msg} ->
+          # Everyone else, the sender's other connections included; this
+          # connection hears it in the reply.
+          PubSub.broadcast_from(
+            PresenceRelay.PubSub,
+            self(),
+            Rooms.room_topic(a.app, a.room),
+            {:relay_said, msg}
+          )
+
+          {:reply, {:ok, msg}, assign(socket, :said_at, [now | recent])}
+
+        {:error, why} ->
+          {:reply, {:error, %{reason: reason(why)}}, assign(socket, :said_at, recent)}
+      end
+    end
+  end
+
+  def handle_in("say", _payload, socket), do: {:reply, {:error, %{reason: "empty"}}, socket}
+
+  def handle_in("history", payload, %{assigns: a} = socket) do
+    before = if is_map(payload) and is_integer(payload["before"]), do: payload["before"]
+    {:reply, {:ok, %{messages: Chat.history(a.app, a.room, before)}}, socket}
+  end
+
   def handle_in(_event, _payload, socket), do: {:noreply, socket}
+
+  defp reason(:empty), do: "empty"
+  defp reason(:too_long), do: "too long"
+  defp reason(:control), do: "control characters"
+  defp reason(_), do: "not kept"
 
   defp emoji?(e) do
     byte_size(e) <= @react_bytes and String.valid?(e) and length(String.graphemes(e)) == 1 and

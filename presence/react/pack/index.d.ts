@@ -35,6 +35,17 @@ export function Avatar(props: { user: string; size?: "head" | "bust"; className?
 
 export function CameraControls(props: { controls?: "full" | "button"; className?: string }): JSX.Element;
 
+export interface Message {
+  id: number;
+  sub: string;
+  name: string;
+  text: string;
+  at: number;
+}
+
+/** The room's text: messages, earlier ones a click away, and an input. */
+export function Chat(props: { placeholder?: string; className?: string; style?: CSSProperties }): JSX.Element;
+
 export function usePresence(): {
   members: Member[];
   live: "connecting" | "on" | "refused" | "off";
@@ -45,6 +56,12 @@ export function usePresence(): {
   /** An emoji for the room; it floats over your tile for everyone. */
   react(emoji: string): void;
   reactions: { from: string; emoji: string; at: number }[];
+  /** The room's text messages, oldest first. */
+  messages: Message[];
+  /** Send a message; resolves with it as kept, rejects with why. */
+  say(text: string): Promise<Message>;
+  /** The page of messages before the first one here. */
+  loadEarlier(): Promise<void> | void;
   answer(sub: string, yes: boolean): void;
   setLook(look: Look): void;
   camera: { on: boolean; start(o?: { mode?: "avatar" | "outline" }): Promise<void> | void; stop(): void };
