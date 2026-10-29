@@ -80,3 +80,12 @@ room.push("frame", frameBytes.buffer); // an ArrayBuffer
 
 `Dockerfile` builds a release; `fly.toml` is for app `arugula-video`, not
 created yet.
+
+## The demo (arugula.video)
+
+`presence/demo` builds into `priv/static` (git ignores it): `cd ../demo &&
+pnpm install && pnpm assets && pnpm build`, then `DEMO=1 mix phx.server`.
+`BIND=<address>` listens somewhere other than loopback in dev (a tailnet
+address, for a browser on another machine; that browser needs a secure
+context for the camera: https, or Chrome's
+`--unsafely-treat-insecure-origin-as-secure=http://<address>:<port>`).

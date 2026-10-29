@@ -1,0 +1,331 @@
+/* arugula.video: Arugula's swarm look (the void, teal ink, Big Shoulders
+   for the name, Instrument Sans for the rest), calm, one thing moving. */
+
+:root {
+  --void: #06080d;
+  --bg: #0a0d14;
+  --surface: #0f131c;
+  --line: #1d2433;
+  --fg: #e6e9ef;
+  --dim: #7a8496;
+  --accent: #4fd1c5;
+  --teal: #2dd4bf;
+  --ok: #86efac;
+  --warn: #f5b74e;
+  --info: #7cb4ff;
+  --danger: #f87171;
+  --f-display: "Big Shoulders Display", system-ui, sans-serif;
+  --f-ui: "Instrument Sans", system-ui, sans-serif;
+  --f-mono: "JetBrains Mono", ui-monospace, monospace;
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background: var(--void);
+  color: var(--fg);
+  font: 15px/1.5 var(--f-ui);
+}
+
+button {
+  font: inherit;
+  color: inherit;
+}
+
+.btn {
+  border: 1px solid var(--line);
+  background: var(--surface);
+  border-radius: 8px;
+  padding: 7px 14px;
+  cursor: pointer;
+}
+
+.btn:hover {
+  border-color: var(--dim);
+}
+
+.btn.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--void);
+  font-weight: 600;
+}
+
+.btn.on {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+input[type="text"] {
+  font: inherit;
+  color: var(--fg);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 8px 12px;
+}
+
+/* The landing */
+
+.landing {
+  max-width: 880px;
+  margin: 0 auto;
+  padding: 72px 16px 48px;
+}
+
+.wordmark {
+  font: 800 clamp(44px, 8vw, 84px) / 0.95 var(--f-display);
+  letter-spacing: 0.01em;
+  margin: 0;
+}
+
+.wordmark span {
+  color: var(--accent);
+}
+
+.lede {
+  font-size: clamp(18px, 2.4vw, 22px);
+  color: var(--fg);
+  max-width: 40ch;
+  margin: 18px 0 8px;
+}
+
+.sub {
+  color: var(--dim);
+  max-width: 56ch;
+  margin: 0 0 28px;
+}
+
+.start {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+
+.points {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  margin-top: 56px;
+}
+
+.point {
+  border-top: 1px solid var(--line);
+  padding-top: 12px;
+}
+
+.point b {
+  display: block;
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+.point span {
+  color: var(--dim);
+  font-size: 14px;
+}
+
+.cast {
+  display: flex;
+  gap: 12px;
+  margin: 40px 0 0;
+}
+
+.cast canvas {
+  width: 120px;
+  height: 134px;
+  background: var(--bg);
+  border-radius: 12px;
+}
+
+/* The room */
+
+.room {
+  padding: 16px;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 16px;
+  margin-bottom: 16px;
+}
+
+.bar .name {
+  font: 800 28px/1 var(--f-display);
+  margin-right: auto;
+}
+
+.bar .name a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.bar .name small {
+  font: 400 13px var(--f-mono);
+  color: var(--dim);
+  margin-left: 10px;
+}
+
+.controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 14px;
+  margin-bottom: 16px;
+  font-size: 13px;
+}
+
+.seg {
+  display: inline-flex;
+  gap: 4px;
+}
+
+.swatch {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  padding: 0;
+  cursor: pointer;
+}
+
+.swatch.on {
+  border-color: var(--fg);
+}
+
+.stats {
+  font: 12px var(--f-mono);
+  color: var(--dim);
+}
+
+.error {
+  color: var(--danger);
+  font-size: 13px;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 12px;
+}
+
+.tile {
+  margin: 0;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.tile.live {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--line));
+}
+
+.tile .view {
+  position: relative;
+  aspect-ratio: 4 / 3;
+  background: var(--bg);
+  color: var(--accent);
+}
+
+.tile canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.tile .still {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: var(--dim);
+  font: 800 40px var(--f-display);
+}
+
+.tile figcaption {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-top: 1px solid var(--line);
+  font-size: 14px;
+}
+
+.tile figcaption .who {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tile .tag {
+  font: 10px var(--f-mono);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--accent);
+}
+
+.knock {
+  font-size: 12px;
+  padding: 3px 10px;
+}
+
+.toast {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  max-width: 340px;
+  background: var(--surface);
+  border: 1px solid var(--accent);
+  border-radius: 12px;
+  padding: 14px 16px;
+  display: grid;
+  gap: 10px;
+}
+
+.toast .row {
+  display: flex;
+  gap: 8px;
+}
+
+.join {
+  max-width: 420px;
+  margin: 18vh auto 0;
+  padding: 0 16px;
+  display: grid;
+  gap: 12px;
+}
+
+.join h2 {
+  font: 800 34px/1 var(--f-display);
+  margin: 0;
+}
+
+.empty {
+  color: var(--dim);
+  font-size: 14px;
+  margin-top: 12px;
+}
+
+@media (max-width: 520px) {
+  .grid {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .points {
+    grid-template-columns: 1fr;
+  }
+}

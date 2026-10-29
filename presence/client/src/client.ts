@@ -103,6 +103,8 @@ export class PresenceClient {
   members: Member[] = [];
   /** Who knocked, newest last, until answered. */
   knocks: { from: string; at: number }[] = [];
+  /** Answers to your knocks, newest last, until dismissed. */
+  answers: { from: string; yes: boolean; at: number }[] = [];
 
   constructor(o: PresenceClientOptions) {
     this.transport = o.transport;
@@ -157,6 +159,12 @@ export class PresenceClient {
   answer(from: string, yes: boolean) {
     this.knocks = this.knocks.filter((k) => k.from !== from);
     this.transport.answer?.(from, yes);
+    this.emit();
+  }
+
+  /** Forget an answer to your knock (it's been seen). */
+  dismiss(from: string) {
+    this.answers = this.answers.filter((a) => a.from !== from);
     this.emit();
   }
 
@@ -333,7 +341,10 @@ export class PresenceClient {
       this.knocks = [...this.knocks.filter((k) => k.from !== from), { from, at: Date.now() }];
       this.emit();
     },
-    answer: () => this.emit(),
+    answer: (from, yes) => {
+      this.answers = [...this.answers.filter((a) => a.from !== from), { from, yes, at: Date.now() }];
+      this.emit();
+    },
   };
 
   private open() {

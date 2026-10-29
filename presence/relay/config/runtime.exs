@@ -35,7 +35,11 @@ if config_env() == :prod do
     server: true
 end
 
-if config_env() == :dev and System.get_env("PORT") do
+# Dev: PORT moves it; BIND listens on another address (a tailnet one, for
+# a browser on another machine) instead of loopback.
+if config_env() == :dev and (System.get_env("PORT") || System.get_env("BIND")) do
+  {:ok, ip} = :inet.parse_address(String.to_charlist(System.get_env("BIND") || "127.0.0.1"))
+
   config :presence_relay, PresenceRelayWeb.Endpoint,
-    http: [ip: {127, 0, 0, 1}, port: String.to_integer(System.get_env("PORT"))]
+    http: [ip: ip, port: String.to_integer(System.get_env("PORT") || "4000")]
 end

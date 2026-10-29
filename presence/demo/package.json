@@ -1,0 +1,22 @@
+{
+  "name": "arugula-video-demo",
+  "version": "0.0.0",
+  "private": true,
+  "description": "arugula.video: share a room link, see who's there as a live avatar or outline. Built into ../relay/priv/static, which the relay serves.",
+  "license": "MIT OR Apache-2.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "assets": "sh ../core/scripts/assets.sh public"
+  },
+  "dependencies": {
+    "@arugula/presence": "link:../client",
+    "@arugula/presence-core": "link:../core",
+    "preact": "10.27.2"
+  },
+  "devDependencies": {
+    "typescript": "^7.0.2",
+    "vite": "8.3.4"
+  }
+}
