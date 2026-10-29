@@ -1,0 +1,63 @@
+{
+  "schema": 1,
+  "commit": "b3e988f42a342088517d5d2aec009d573ba4fa91",
+  "branch": "main",
+  "state": "pending",
+  "at": "2026-10-29T22:26:00Z",
+  "phases": {
+    "lint": {
+      "verdict": "unbuilt",
+      "build": "newest",
+      "runs": [],
+      "reason": "superseded",
+      "coveredBy": "d79dd0a6a0312eb849d4a9758b203fd3a0712ffe"
+    },
+    "build": {
+      "verdict": "unbuilt",
+      "build": "newest",
+      "runs": [],
+      "reason": "superseded",
+      "coveredBy": "d79dd0a6a0312eb849d4a9758b203fd3a0712ffe"
+    },
+    "test": {
+      "verdict": "unbuilt",
+      "build": "newest",
+      "runs": [],
+      "reason": "superseded",
+      "coveredBy": "d79dd0a6a0312eb849d4a9758b203fd3a0712ffe"
+    },
+    "e2e": {
+      "verdict": "unbuilt",
+      "build": "newest",
+      "runs": [],
+      "reason": "superseded",
+      "coveredBy": "d79dd0a6a0312eb849d4a9758b203fd3a0712ffe"
+    },
+    "claims": {
+      "verdict": "pending",
+      "build": "newest",
+      "runs": [
+        {
+          "name": "desktop-xvfb",
+          "id": 123718876513,
+          "conclusion": "skipped",
+          "url": "https://github.com/arugula-salad/arugula/actions/runs/40951027204/job/123718876513"
+        }
+      ]
+    },
+    "macos": {
+      "verdict": "unbuilt",
+      "build": "newest",
+      "runs": [],
+      "reason": "superseded",
+      "coveredBy": "d79dd0a6a0312eb849d4a9758b203fd3a0712ffe"
+    },
+    "windows": {
+      "verdict": "unbuilt",
+      "build": "newest",
+      "runs": [],
+      "reason": "superseded",
+      "coveredBy": "d79dd0a6a0312eb849d4a9758b203fd3a0712ffe"
+    }
+  }
+}
