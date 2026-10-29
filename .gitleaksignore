@@ -23,3 +23,5 @@ d8a5873faca467daa189019deee9419afeed88f3:crates/control/src/blocks_wire.rs:gener
 3631df1a35d4785fe284775c267f4eb399ea0f6d:crates/platform/fixtures/planter-backup/boxes.json:generic-api-key:3
 # Discovery 11 hints, batch 2 (another session's branch): a made-up ghp_0123456789… token the Share dialog test prints, not a real one. Its gitleaks:allow sat on the line above. CI's lint scans every pushed branch.
 c9ea508fd726e6a3f56d924ff9a2050c0dfda56b:web/e2e/hints-panes.spec.ts:github-pat:101
+# P12: a made-up pk_live_ key in the log redaction test (split since), not a real one.
+32c7a3c8630713630a0172486ea6b94d8b1ad425:presence/relay/test/presence_relay/log_formatter_test.exs:generic-api-key:14
