@@ -144,6 +144,7 @@ mod tests {
         PaneSummary { session: 1, session_name: "s".into(), tab: 1, tab_name: None, info }
     }
 
+    #[cfg(unix)]
     #[test]
     fn a_relative_file_is_under_the_panes_directory() {
         assert_eq!(whole("src/a.rs", Some("/p")), Some(PathBuf::from("/p/src/a.rs")));
