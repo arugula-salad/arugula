@@ -9,9 +9,12 @@ and operating it: [docs/control-ops.md](../../docs/control-ops.md).
 It builds in the server's own Cargo workspace (`server/Cargo.toml`), not
 the root's: `scripts/server-cargo test -p arugula-control-base`, or
 `cargo` in `server/`. This crate is the hub's library
-(`arugula-control-base`, still `arugula_control` in code and logs); the
-`arugula-control` binary is `crates/arugula-control` (#314), which registers
-the platform's feature crates and calls `arugula_control::main`.
+(`arugula-control-base`, still `arugula_control` in code and logs). It builds
+against `arugula-platform-api` (crates/platform-api), never the platform's
+base; the `arugula-control` binary is `crates/arugula-control` (#314), which
+registers the platform's feature crates and hands `arugula_control::main` the
+platform it runs in process (`HubPlatforms`). Its tests use the platform
+itself (a dev-dependency).
 
 Control is two processes (#1150): this crate is the hub, and
 `crates/platform` the platform, which runs in this process
@@ -58,7 +61,7 @@ numeric GitHub id) and its reviews as object threads, tested in
 `src/hud_box_wire.rs`.
 `src/platform_host.rs` serves the
 platform page's own host, `--platform-host` (M151: `app.arugula.io`), with
-only the platform's routes and its page (`crates/platform/src/page.rs`). Chat (M122: a team's channels, DMs and
+only the platform's routes and its page (`crates/platform-api/src/page.rs`). Chat (M122: a team's channels, DMs and
 threads about panes, which control holds in plain text) is the platform's
 since M138 (`crates/platform/src/chat.rs`); `src/chat_wire.rs` tests it
 through this hub's gate and `hub_port::InProcess`, and `src/chat_bench.rs`

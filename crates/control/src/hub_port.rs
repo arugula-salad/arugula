@@ -4,7 +4,7 @@
 //!
 //! The platform calls these and nothing else of the hub's. Out of process
 //! (M140) the hub serves the same calls over the private network
-//! (`internal`, `arugula_platform::remote::serve_hub` over [`InProcess`]),
+//! (`internal`, `arugula_platform_api::remote::serve_hub` over [`InProcess`]),
 //! and its gateway signs [`who`]'s asking into a header
 //! (`arugula_control_common::principal`) where [`gate`] puts it in the
 //! request's extensions. `arugula_platform::contract` checks that both
@@ -18,7 +18,7 @@ use std::{
 use arugula_control_common::Principal;
 use arugula_control_wire::forge::Poke;
 use arugula_e2e::Kind;
-use arugula_platform::{
+use arugula_platform_api::{
     auth::{Asked, Credential},
     hub::{Account, ChangePage, Daemon, Flags, HubPort, HubResult, Member, Meter, PushOptions, Pushed, Resolved, Team},
 };
@@ -253,21 +253,21 @@ impl HubPort for InProcess {
     fn personal_project<'a>(&'a self, account: &'a str) -> BoxFuture<'a, HubResult<Option<String>>> {
         Box::pin(async move {
             let app = self.app()?;
-            arugula_platform::projects::personal_project(local(&app)?, account).await
+            local(&app)?.personal_project(account).await
         })
     }
 
     fn can_drive_cloud<'a>(&'a self, daemon: &'a str, account: &'a str) -> BoxFuture<'a, HubResult<bool>> {
         Box::pin(async move {
             let app = self.app()?;
-            arugula_platform::grants::can_drive_cloud(local(&app)?, daemon, account).await
+            local(&app)?.machine_drives(daemon, account).await
         })
     }
 
     fn team_project<'a>(&'a self, team: &'a str) -> BoxFuture<'a, HubResult<Option<String>>> {
         Box::pin(async move {
             let app = self.app()?;
-            arugula_platform::projects::team_project(local(&app)?, team).await
+            local(&app)?.team_project(team).await
         })
     }
 
@@ -278,7 +278,7 @@ impl HubPort for InProcess {
     fn github_user<'a>(
         &'a self,
         account: &'a str,
-    ) -> BoxFuture<'a, HubResult<Option<arugula_platform::forge::GithubUser>>> {
+    ) -> BoxFuture<'a, HubResult<Option<arugula_control_wire::internal::GithubUser>>> {
         Box::pin(async move { crate::forge::github_user(&*self.app()?, account) })
     }
 
@@ -306,12 +306,12 @@ impl HubPort for InProcess {
     fn device_trust<'a>(
         &'a self,
         account: &'a str,
-    ) -> BoxFuture<'a, HubResult<Option<arugula_platform::hub::DeviceTrust>>> {
+    ) -> BoxFuture<'a, HubResult<Option<arugula_platform_api::hub::DeviceTrust>>> {
         Box::pin(async move {
             let app = self.app()?;
             let Some(root) = app.db.account(account)?.and_then(|a| a.root) else { return Ok(None) };
             let (certs, _) = app.db.devices(account)?;
-            Ok(Some(arugula_platform::hub::DeviceTrust {
+            Ok(Some(arugula_platform_api::hub::DeviceTrust {
                 root,
                 certs,
                 revocations: app.db.revocations(account)?,
@@ -331,13 +331,13 @@ impl HubPort for InProcess {
         &'a self,
         account: &'a str,
         challenge: &'a str,
-        assertion: &'a arugula_platform::hub::PasskeyAssertion,
-    ) -> BoxFuture<'a, HubResult<arugula_platform::hub::PasskeyVerdict>> {
+        assertion: &'a arugula_platform_api::hub::PasskeyAssertion,
+    ) -> BoxFuture<'a, HubResult<arugula_platform_api::hub::PasskeyVerdict>> {
         Box::pin(async move {
             let app = self.app()?;
             Ok(match crate::passkey::verify_for(&app, account, challenge, assertion)? {
-                Ok(()) => arugula_platform::hub::PasskeyVerdict { ok: true, why: String::new() },
-                Err(why) => arugula_platform::hub::PasskeyVerdict { ok: false, why },
+                Ok(()) => arugula_platform_api::hub::PasskeyVerdict { ok: true, why: String::new() },
+                Err(why) => arugula_platform_api::hub::PasskeyVerdict { ok: false, why },
             })
         })
     }
@@ -345,14 +345,14 @@ impl HubPort for InProcess {
     fn product_links<'a>(
         &'a self,
         account: &'a str,
-    ) -> BoxFuture<'a, HubResult<Vec<arugula_platform::hub::ProductLink>>> {
+    ) -> BoxFuture<'a, HubResult<Vec<arugula_platform_api::hub::ProductLink>>> {
         Box::pin(async move {
             Ok(self
                 .app()?
                 .db
                 .account_products(account)?
                 .into_iter()
-                .map(|p| arugula_platform::hub::ProductLink {
+                .map(|p| arugula_platform_api::hub::ProductLink {
                     client: p.client,
                     product: p.name,
                     granted: p.granted,
@@ -382,13 +382,13 @@ impl HubPort for InProcess {
         &'a self,
         client: &'a str,
         user: &'a str,
-    ) -> BoxFuture<'a, HubResult<Option<arugula_platform::hub::LinkedAccount>>> {
+    ) -> BoxFuture<'a, HubResult<Option<arugula_platform_api::hub::LinkedAccount>>> {
         Box::pin(async move {
             Ok(self
                 .app()?
                 .db
                 .account_link(client, user)?
-                .map(|l| arugula_platform::hub::LinkedAccount { account: l.account, github_id: l.github_id }))
+                .map(|l| arugula_platform_api::hub::LinkedAccount { account: l.account, github_id: l.github_id }))
         })
     }
 
@@ -416,7 +416,7 @@ impl HubPort for InProcess {
     fn activity<'a>(
         &'a self,
         machines: &'a [String],
-    ) -> BoxFuture<'a, HubResult<Vec<arugula_platform::hub::MachineActivity>>> {
+    ) -> BoxFuture<'a, HubResult<Vec<arugula_platform_api::hub::MachineActivity>>> {
         Box::pin(async move { Ok(self.app()?.relay.activity.of(machines)) })
     }
 
@@ -457,7 +457,7 @@ impl HubPort for InProcess {
 
 /// The platform, when it's in this process: what the three calls above
 /// answer from.
-fn local(app: &App) -> HubResult<&Arc<arugula_platform::Platform>> {
+fn local(app: &App) -> HubResult<&Arc<dyn arugula_platform_api::in_process::InProcess>> {
     app.platform.local().ok_or_else(|| anyhow::anyhow!("the platform is out of process: it answers this itself"))
 }
 
@@ -507,13 +507,13 @@ pub async fn gate(State(app): State<Arc<App>>, req: Request, next: Next) -> Resp
 }
 
 /// The hub's newest change on a call it passes to the platform, in place of
-/// any a client sent (`arugula_platform::cache::SEQ_HEADER`): a call after
+/// any a client sent (`arugula_platform_api::SEQ_HEADER`): a call after
 /// a write reads it, without waiting for the platform's feed tick.
 pub fn seq_header(app: &App, headers: &mut axum::http::HeaderMap) {
-    headers.remove(arugula_platform::cache::SEQ_HEADER);
+    headers.remove(arugula_platform_api::SEQ_HEADER);
     match app.db.last_change() {
         Ok(seq) => {
-            headers.insert(arugula_platform::cache::SEQ_HEADER, seq.into());
+            headers.insert(arugula_platform_api::SEQ_HEADER, seq.into());
         }
         Err(e) => tracing::warn!(error = %e, "can't read the newest change for the platform"),
     }
@@ -590,7 +590,7 @@ mod tests {
             let base = format!("http://{}", l.local_addr().unwrap());
             let router = crate::internal::router(&f.app, key.clone());
             tokio::spawn(async move { axum::serve(l, router).await });
-            f.port = Some(Arc::new(arugula_platform::remote::HttpHub::new(&base, key).unwrap()));
+            f.port = Some(Arc::new(arugula_platform_api::remote::HttpHub::new(&base, key).unwrap()));
             f
         }
 
@@ -898,7 +898,10 @@ mod tests {
             };
             assert_eq!(f.app.db.link_account(&link, now / 1000).unwrap(), Ok(true));
             let got = f.hub().linked_account("planter", "77").await.unwrap();
-            assert_eq!(got, Some(arugula_platform::hub::LinkedAccount { account: "acct-pl".into(), github_id: 77 }));
+            assert_eq!(
+                got,
+                Some(arugula_platform_api::hub::LinkedAccount { account: "acct-pl".into(), github_id: 77 })
+            );
             assert_eq!(f.hub().linked_account("studio", "77").await.unwrap(), None, "per product");
         }
     }
@@ -957,7 +960,7 @@ mod tests {
         let base = format!("http://{}", l.local_addr().unwrap());
         let router = crate::internal::router(&f.app, key.clone());
         tokio::spawn(async move { axum::serve(l, router).await });
-        let path = format!("{}/changes", arugula_platform::remote::HUB_PREFIX);
+        let path = format!("{}/changes", arugula_platform_api::remote::HUB_PREFIX);
         let body = br#"{"after":0,"limit":1}"#;
         let http = reqwest::Client::new();
         let signed = || {

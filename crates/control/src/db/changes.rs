@@ -20,7 +20,7 @@
 
 use std::collections::HashSet;
 
-use arugula_platform::hub::{Change, ChangeKind, ChangePage};
+use arugula_platform_api::hub::{Change, ChangeKind, ChangePage};
 use rusqlite::{Connection, params};
 
 use super::Db;
@@ -83,7 +83,7 @@ impl Db {
     }
 
     /// The newest change written (0 for none): what the hub tells the
-    /// platform with each call (`arugula_platform::cache::SEQ_HEADER`), so
+    /// platform with each call (`arugula_platform_api::SEQ_HEADER`), so
     /// a call after a write reads it.
     pub fn last_change(&self) -> anyhow::Result<u64> {
         Ok(self.c().query_row(
@@ -108,7 +108,7 @@ impl Db {
 
 #[cfg(test)]
 mod tests {
-    use arugula_platform::hub::ChangeKind;
+    use arugula_platform_api::hub::ChangeKind;
 
     use super::super::Db;
 

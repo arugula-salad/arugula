@@ -51,7 +51,7 @@ async fn control(tweak: impl FnOnce(&mut App)) -> Control {
     let mut app = App::for_tests(CONTROL);
     app.cfg.static_dir = Some(shell.0.clone());
     app.cfg.platform_host = crate::platform_host::parse(APP, CONTROL, &app.cfg.sites, None).unwrap();
-    app.cfg.platform_page = arugula_platform::page::Page::new(Some(platform.0.clone()));
+    app.cfg.platform_page = arugula_platform_api::page::Page::new(Some(platform.0.clone()));
     tweak(&mut app);
     let app = app.start();
     let now = now_ms();
@@ -99,7 +99,7 @@ impl Answer {
 
     /// The platform page's headers, and no cookie set.
     pub(crate) fn is_the_platforms(&self) -> bool {
-        self.header("content-security-policy") == arugula_platform::page::CSP
+        self.header("content-security-policy") == arugula_platform_api::page::CSP
             && self.header("x-frame-options") == "DENY"
             && self.header("x-content-type-options") == "nosniff"
             && self.header("referrer-policy") == "no-referrer"

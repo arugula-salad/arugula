@@ -698,7 +698,7 @@ async fn real_app_reads() {
     let owner = repo.split('/').next().unwrap();
     println!(
         "may {owner} hear {repo}: {:?}",
-        app.may(&c, &arugula_platform::forge::GithubUser { id: install.account_id, login: owner.into() }, &repo)
+        app.may(&c, &arugula_control_wire::internal::GithubUser { id: install.account_id, login: owner.into() }, &repo)
             .await
             .map(|i| i.id)
     );

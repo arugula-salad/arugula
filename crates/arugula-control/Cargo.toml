@@ -20,6 +20,8 @@ path = "src/main.rs"
 [dependencies]
 anyhow = { workspace = true }
 arugula-control-base = { workspace = true }
+# The platform the hub runs in process (its base makes it from its flags).
+arugula-platform-base = { workspace = true }
 # The platform's feature crates, for the platform in this process.
 arugula-platform-all = { workspace = true }
 

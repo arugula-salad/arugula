@@ -5,7 +5,7 @@
 //! (`usage`, which the relay writes).
 
 use arugula_e2e::now_ms;
-use arugula_platform::PlatformPort;
+use arugula_platform_api::PlatformPort;
 
 use crate::App;
 

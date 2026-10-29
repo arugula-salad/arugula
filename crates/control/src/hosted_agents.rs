@@ -13,7 +13,7 @@
 use std::sync::Arc;
 
 use arugula_control_wire::transcripts::{TranscriptArchived, TranscriptPost};
-use arugula_platform::{Archived, PlatformPort as _};
+use arugula_platform_api::{Archived, PlatformPort as _};
 use axum::{Json, extract::State, http::StatusCode};
 use serde_json::Value;
 

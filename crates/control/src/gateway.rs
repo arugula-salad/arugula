@@ -16,7 +16,7 @@
 //!    the cookie, the signature, any principal or internal header;
 //! 4. forwards the call with what it found signed into the principal
 //!    header (`arugula_control_common::principal`), the hub's newest change
-//!    (`arugula_platform::cache::SEQ_HEADER`, so a call after a write reads
+//!    (`arugula_platform_api::SEQ_HEADER`, so a call after a write reads
 //!    it), the method, path,
 //!    query and body untouched (a daemon's signature covers the body), the
 //!    Host header too (billing's checkout goes back to the site it came
@@ -43,12 +43,8 @@ use arugula_control_common::{
     principal::{self, NotVouched, PrincipalKey, Vouch},
 };
 use arugula_control_wire::forge::Standing;
-use arugula_platform::{
-    Deleted, Platform, PlatformPort,
-    auth::Asked,
-    forge::{GithubUser, TokenAnswer},
-    remote::HttpPlatform,
-};
+use arugula_control_wire::internal::{GithubUser, TokenAnswer};
+use arugula_platform_api::{Deleted, PlatformPort, auth::Asked, in_process::InProcess, remote::HttpPlatform};
 use axum::{
     Router,
     body::Body,
@@ -66,14 +62,14 @@ use crate::App;
 /// Where the platform runs.
 pub enum PlatformAt {
     /// In this process: its router is mounted here, behind `hub_port::gate`.
-    InProcess(Arc<Platform>),
+    InProcess(Arc<dyn InProcess>),
     /// Its own process on the private network, which this hub forwards to.
     Remote(Remote),
 }
 
 impl PlatformAt {
     /// The platform, when it's in this process.
-    pub fn local(&self) -> Option<&Arc<Platform>> {
+    pub fn local(&self) -> Option<&Arc<dyn InProcess>> {
         match self {
             PlatformAt::InProcess(p) => Some(p),
             PlatformAt::Remote(_) => None,
@@ -91,14 +87,26 @@ impl PlatformAt {
 #[cfg(test)]
 impl PlatformAt {
     /// The platform in this process, for a test that reaches into it.
-    pub fn inner(&self) -> &Arc<Platform> {
-        self.local().expect("the platform is in this process")
+    pub fn inner(&self) -> &arugula_platform::Platform {
+        self.local().expect("the platform is in this process").as_any().downcast_ref().expect("the base's platform")
+    }
+
+    /// The same, shared.
+    pub fn inner_arc(&self) -> Arc<arugula_platform::Platform> {
+        self.local()
+            .expect("the platform is in this process")
+            .clone()
+            .into_any()
+            .downcast()
+            .expect("the base's platform")
     }
 
     /// The same, to change before the app starts.
-    pub fn inner_mut(&mut self) -> &mut Platform {
+    pub fn inner_mut(&mut self) -> &mut arugula_platform::Platform {
         match self {
-            PlatformAt::InProcess(p) => Arc::get_mut(p).expect("not started yet"),
+            PlatformAt::InProcess(p) => {
+                Arc::get_mut(p).expect("not started yet").as_any_mut().downcast_mut().expect("the base's platform")
+            }
             PlatformAt::Remote(_) => panic!("the platform is in this process"),
         }
     }
@@ -149,8 +157,8 @@ impl PlatformPort for PlatformAt {
         &'a self,
         account: &'a str,
         draft: &'a str,
-        token: Option<arugula_platform::forge::send::UserToken>,
-    ) -> BoxFuture<'a, anyhow::Result<arugula_platform::forge::send::Outcome>> {
+        token: Option<arugula_control_wire::internal::UserToken>,
+    ) -> BoxFuture<'a, anyhow::Result<arugula_control_wire::internal::Outcome>> {
         self.port().send_draft(account, draft, token)
     }
 
@@ -168,7 +176,7 @@ impl PlatformPort for PlatformAt {
         machine: &'a str,
         agent: &'a str,
         session: Option<&'a str>,
-    ) -> BoxFuture<'a, anyhow::Result<arugula_platform::TurnAnswer>> {
+    ) -> BoxFuture<'a, anyhow::Result<arugula_platform_api::TurnAnswer>> {
         self.port().hosted_turn(workspace, machine, agent, session)
     }
 
@@ -183,7 +191,7 @@ impl PlatformPort for PlatformAt {
 
     fn hosted_work<'a>(
         &'a self,
-        machine: &'a arugula_platform::work::HostedMachine,
+        machine: &'a arugula_control_wire::internal::HostedMachine,
         takes: &'a [String],
     ) -> BoxFuture<'a, anyhow::Result<arugula_control_wire::work::Work>> {
         self.port().hosted_work(machine, takes)
@@ -191,7 +199,7 @@ impl PlatformPort for PlatformAt {
 
     fn hosted_report<'a>(
         &'a self,
-        machine: &'a arugula_platform::work::HostedMachine,
+        machine: &'a arugula_control_wire::internal::HostedMachine,
         report: &'a arugula_control_wire::work::Report,
     ) -> BoxFuture<'a, anyhow::Result<arugula_control_wire::work::Reported>> {
         self.port().hosted_report(machine, report)
@@ -199,7 +207,7 @@ impl PlatformPort for PlatformAt {
 
     fn hosted_session_report<'a>(
         &'a self,
-        machine: &'a arugula_platform::work::HostedMachine,
+        machine: &'a arugula_control_wire::internal::HostedMachine,
         report: &'a arugula_control_wire::work::SessionReport,
     ) -> BoxFuture<'a, anyhow::Result<arugula_control_wire::work::Reported>> {
         self.port().hosted_session_report(machine, report)
@@ -207,7 +215,7 @@ impl PlatformPort for PlatformAt {
 
     fn hosted_session_push<'a>(
         &'a self,
-        machine: &'a arugula_platform::work::HostedMachine,
+        machine: &'a arugula_control_wire::internal::HostedMachine,
         ask: &'a arugula_control_wire::work::PushAsk,
     ) -> BoxFuture<'a, anyhow::Result<arugula_control_wire::work::PushGiven>> {
         self.port().hosted_session_push(machine, ask)
@@ -215,7 +223,7 @@ impl PlatformPort for PlatformAt {
 
     fn hosted_session_issues<'a>(
         &'a self,
-        machine: &'a arugula_platform::work::HostedMachine,
+        machine: &'a arugula_control_wire::internal::HostedMachine,
         ask: &'a arugula_control_wire::work::SessionIssuesAsk,
     ) -> BoxFuture<'a, anyhow::Result<arugula_control_wire::work::SessionIssuesGiven>> {
         self.port().hosted_session_issues(machine, ask)
@@ -223,7 +231,7 @@ impl PlatformPort for PlatformAt {
 
     fn hosted_secrets<'a>(
         &'a self,
-        machine: &'a arugula_platform::work::HostedMachine,
+        machine: &'a arugula_control_wire::internal::HostedMachine,
         ask: &'a arugula_control_wire::work::SecretsAsk,
     ) -> BoxFuture<'a, anyhow::Result<arugula_control_wire::work::SecretsGiven>> {
         self.port().hosted_secrets(machine, ask)
@@ -231,7 +239,7 @@ impl PlatformPort for PlatformAt {
 
     fn hosted_artifact<'a>(
         &'a self,
-        machine: &'a arugula_platform::work::HostedMachine,
+        machine: &'a arugula_control_wire::internal::HostedMachine,
         ask: &'a arugula_control_wire::work::SecretsAsk,
     ) -> BoxFuture<'a, anyhow::Result<arugula_control_wire::work::ArtifactGiven>> {
         self.port().hosted_artifact(machine, ask)
@@ -265,14 +273,14 @@ impl PlatformPort for PlatformAt {
         workspace: &'a str,
         machine: &'a str,
         transcript: &'a arugula_control_wire::transcripts::TranscriptPost,
-    ) -> BoxFuture<'a, anyhow::Result<arugula_platform::Archived>> {
+    ) -> BoxFuture<'a, anyhow::Result<arugula_platform_api::Archived>> {
         self.port().hosted_transcript(workspace, machine, transcript)
     }
 
     fn public_preview<'a>(
         &'a self,
         id: &'a str,
-    ) -> BoxFuture<'a, anyhow::Result<Option<arugula_platform::PublicPreview>>> {
+    ) -> BoxFuture<'a, anyhow::Result<Option<arugula_platform_api::PublicPreview>>> {
         self.port().public_preview(id)
     }
 
@@ -282,7 +290,7 @@ impl PlatformPort for PlatformAt {
 
     fn hosted_upload<'a>(
         &'a self,
-        machine: &'a arugula_platform::work::HostedMachine,
+        machine: &'a arugula_control_wire::internal::HostedMachine,
         upload: &'a arugula_control_wire::run_logs::Upload,
     ) -> BoxFuture<'a, anyhow::Result<arugula_control_wire::run_logs::UploadGiven>> {
         self.port().hosted_upload(machine, upload)
@@ -290,7 +298,7 @@ impl PlatformPort for PlatformAt {
 
     fn hosted_uploaded<'a>(
         &'a self,
-        machine: &'a arugula_platform::work::HostedMachine,
+        machine: &'a arugula_control_wire::internal::HostedMachine,
         upload: &'a arugula_control_wire::run_logs::Upload,
     ) -> BoxFuture<'a, anyhow::Result<arugula_control_wire::run_logs::Uploaded>> {
         self.port().hosted_uploaded(machine, upload)
@@ -299,14 +307,14 @@ impl PlatformPort for PlatformAt {
     fn box_members<'a>(
         &'a self,
         project: &'a str,
-    ) -> BoxFuture<'a, anyhow::Result<Option<Vec<arugula_platform::boxes::BoxMember>>>> {
+    ) -> BoxFuture<'a, anyhow::Result<Option<Vec<arugula_control_wire::internal::BoxMember>>>> {
         self.port().box_members(project)
     }
 
     fn box_post<'a>(
         &'a self,
-        post: &'a arugula_platform::boxes::BoxPost,
-    ) -> BoxFuture<'a, anyhow::Result<arugula_platform::boxes::BoxPosted>> {
+        post: &'a arugula_control_wire::internal::BoxPost,
+    ) -> BoxFuture<'a, anyhow::Result<arugula_control_wire::internal::BoxPosted>> {
         self.port().box_post(post)
     }
 }
@@ -388,8 +396,11 @@ pub fn platform_routes() -> Vec<(String, Option<MethodFilter>)> {
 /// the maintenance switch.
 pub fn router(app: &Arc<App>) -> Router<Arc<App>> {
     let routes = match &app.platform {
-        PlatformAt::InProcess(p) => arugula_platform::router(p.clone())
-            .layer(axum::middleware::from_fn_with_state(app.clone(), crate::hub_port::gate)),
+        PlatformAt::InProcess(p) => p
+            .clone()
+            .router()
+            .layer(axum::middleware::from_fn_with_state(app.clone(), crate::hub_port::gate))
+            .with_state(()),
         PlatformAt::Remote(_) => {
             let mut r = Router::new();
             for (path, methods) in platform_routes() {
@@ -514,7 +525,7 @@ fn parts_method(m: &axum::http::Method) -> reqwest::Method {
 /// Where a forwarded call's time went (`docs/control-ops.md`, "Where a
 /// request's time goes"): the platform's own `Server-Timing` entries
 /// (`arugula_platform::timing`), then the gateway's.
-const SERVER_TIMING: &str = arugula_platform::timing::HEADER;
+const SERVER_TIMING: &str = arugula_platform_api::TIMING_HEADER;
 
 fn ms(d: Duration) -> f64 {
     d.as_secs_f64() * 1e3

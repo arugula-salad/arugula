@@ -247,21 +247,8 @@ async fn run() -> anyhow::Result<()> {
     if a.paused {
         info!("paused: no job worker, hosted worker, usage reports or grant follower until restarted without it");
     }
-    arugula_platform::hosted::start(&p);
-    arugula_platform::keys::start(&p);
-    // The job worker: runs' dispatch (M212) and schedules (M214).
-    arugula_platform::work::start(&p);
-    // Runs' logs past their days (M213).
-    arugula_platform::run_logs::start(&p);
-    // Chat follows the hub's change feed, and so do projects and grants (a
-    // machine that joins gets its `cloud.drive` grant from it).
-    arugula_platform::chat::start(&p);
-    arugula_platform::projects::start(&p);
-    arugula_platform::billing::start(&p);
-    arugula_platform::forge::start(&p);
-    // The feature crates' (#314): clients' secret events past their days
-    // (M236).
-    arugula_platform::features::start(&p);
+    // The base's background work and every feature crate's.
+    arugula_platform::in_process::start(&p);
 
     let port: Arc<dyn PlatformPort> = p.clone();
     let app = Router::new()

@@ -31,10 +31,8 @@ use std::{
 use arugula_control_wire::forge::{
     ForgePoke, ForgeWatch, ForgeWatching, GithubToken, GithubTokenRequest, Poke, Standing,
 };
-use arugula_platform::{
-    PlatformPort as _,
-    forge::{GithubUser, NO_APP, TokenAnswer, good_repo},
-};
+use arugula_control_wire::internal::{GithubUser, TokenAnswer};
+use arugula_platform_api::{NO_APP, PlatformPort as _, good_repo};
 use axum::{Json, extract::State, http::StatusCode};
 use tracing::{info, warn};
 

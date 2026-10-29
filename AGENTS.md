@@ -112,8 +112,10 @@ never compiles the daemon, the mux or Ghostty: build them with
 - `crates/control`: Arugula control's hub (`arugula-control-base`, a
   library): accounts, devices, the directory and the relay. It runs the
   platform in process, or is its gateway when the platform runs as its own
-  (`arugula-platform`, M140). Its binary is `crates/arugula-control`
-  (#314), which registers the platform's feature crates.
+  (`arugula-platform`, M140). It builds against `crates/platform-api`
+  (`arugula-platform-api`: the ports, the page, the platform in process),
+  never the platform's base; its binary is `crates/arugula-control` (#314),
+  which registers the platform's feature crates and makes the platform.
 - `crates/platform`: control's platform (#1150, `arugula-platform-base`, a
   library): billing, Cloud, chat, projects and grants are here; its binary
   is `crates/arugula-platform` (#314), and its feature crates are

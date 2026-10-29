@@ -27,10 +27,14 @@ the `arugula-platform` binary (`crates/arugula-platform`, M140), behind the hub'
 gateway ([docs/control-ops.md](../../docs/control-ops.md#the-platform)).
 
 Start with `src/lib.rs`, then:
-- `src/hub.rs`: `HubPort`, everything the platform asks the hub, and the
+- `../platform-api/src/hub.rs` (`arugula-platform-api`, #314: the hub's side of
+  the seam, which the hub builds against instead of this crate): `HubPort`, everything the platform asks the hub, and the
   change feed's kinds. The platform never reads a hub table.
-- `src/port.rs`: `PlatformPort`, everything the hub asks the platform.
-- `src/auth.rs`: who's asking, as the hub found out, and the extractors
+- `../platform-api/src/port.rs`: `PlatformPort`, everything the hub asks the
+  platform; `src/port.rs` answers it. `src/in_process.rs`: the platform's
+  flags on the hub and how the hub's binary makes it in process
+  (`HubPlatforms`), and `Platform` as the hub holds it (`InProcess`).
+- `../platform-api/src/auth.rs`: who's asking, as the hub found out, and the extractors
   that answer as control's `Session` and `DaemonAuth` do.
 - `src/db.rs`: its own database handle (in process, a second connection to
   the hub's file; on Postgres with `ARUGULA_PLATFORM_DATABASE_URL`, M143).
@@ -60,11 +64,11 @@ Start with `src/lib.rs`, then:
   were planted from to projects and reports each box
   (`docs/control-ops.md`, "Importing planter"). Its fixture backup is
   `fixtures/planter-backup`.
-- `src/page.rs`: the platform page (M150's build, `web/dist-platform`),
+- `../platform-api/src/page.rs`: the platform page (M150's build, `web/dist-platform`),
   embedded, its CSP, and how it's served on `app.arugula.io` (M151): by
   the hub in process, by the binary for the hub's forwarded GETs out of
   process.
-- `src/remote.rs`: the seam over the private network (M140): `HubPort` and
+- `../platform-api/src/remote.rs`: the seam over the private network (M140): `HubPort` and
   `PlatformPort` over HTTP (`HttpHub`, `HttpPlatform`) and their servers
   (`serve_hub`, which the hub mounts on its internal listener, and
   `serve_platform`), each call signed with the shared key; and `vouched`,

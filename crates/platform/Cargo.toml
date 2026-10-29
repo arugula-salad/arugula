@@ -19,6 +19,8 @@ name = "arugula_platform"
 [dependencies]
 anyhow = { workspace = true }
 arugula-control-common = { workspace = true }
+# The hub's side of the seam (#314): the ports, the page, who's asking.
+arugula-platform-api = { workspace = true }
 # Chat's wire types (M138), which daemons and the page share.
 arugula-control-wire = { workspace = true }
 arugula-e2e = { workspace = true }
@@ -46,8 +48,6 @@ hmac = { workspace = true }
 jiff = { version = "0.2.37", default-features = false, features = ["std", "tzdb-bundle-always"] }
 reqwest = { workspace = true, features = ["rustls", "http2", "json"] }
 rusqlite = { version = "0.40.2", features = ["bundled", "fallible_uint"] }
-# The platform page's build (web/dist-platform, M151), embedded.
-rust-embed = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 sha2 = { workspace = true }
@@ -66,7 +66,7 @@ ed25519-dalek = { workspace = true, optional = true }
 # Embed web/dist-platform even in a debug build (rust-embed reads it from
 # the source tree at run time otherwise), as control's `debug-embed` does
 # web/dist; control's turns this on too.
-debug-embed = ["rust-embed/debug-embed"]
+debug-embed = ["arugula-platform-api/debug-embed"]
 # The contract tests every `HubPort` keeps (`contract`): control runs them
 # against its in-process port, and M140 against the HTTP one.
 contract = []

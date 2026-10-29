@@ -24,7 +24,7 @@ use arugula_e2e::{
     Cert, Revocation, Trust,
     team::{AccountCerts, AskInvite, Invite, Roster, TeamPin, TeamRole},
 };
-use arugula_platform::PlatformPort;
+use arugula_platform_api::PlatformPort;
 use axum::{
     Json,
     extract::{Path, Query, State},

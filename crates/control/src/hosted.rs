@@ -34,7 +34,7 @@ use arugula_e2e::{
     now_ms,
     team::{AccountCerts, Roster, TeamPin, TeamRole},
 };
-use arugula_platform::PlatformPort as _;
+use arugula_platform_api::PlatformPort as _;
 use axum::{
     Json,
     extract::{ConnectInfo, Path, State},
@@ -432,10 +432,10 @@ pub async fn turn(State(app): State<Arc<App>>, h: HostedAuth, Json(b): Json<Valu
     let agent = b["agent"].as_str().unwrap_or_default();
     let session = b["session"].as_str();
     match app.platform.hosted_turn(&h.0.cert.workspace, &h.0.cert.device, agent, session).await? {
-        arugula_platform::TurnAnswer::Given { turn, pays, auth } => {
+        arugula_platform_api::TurnAnswer::Given { turn, pays, auth } => {
             Ok(Json(json!({ "turn": turn, "pays": pays, "auth": auth.as_deref().unwrap_or("key") })))
         }
-        arugula_platform::TurnAnswer::Refused { status, reason, error } => {
+        arugula_platform_api::TurnAnswer::Refused { status, reason, error } => {
             let status = StatusCode::from_u16(status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
             Err(match reason.as_deref() {
                 Some("no_key") => crate::refusal(status, "no_key", &error),

@@ -27,7 +27,7 @@ use std::{fmt::Write as _, path::PathBuf};
 
 use anyhow::{Context as _, bail};
 use arugula_e2e::now_ms;
-use arugula_platform::planter::{Backup, CLIENT};
+use arugula_platform_api::planter_backup::{Backup, CLIENT};
 use rusqlite::{Connection, TransactionBehavior};
 use serde::Serialize;
 

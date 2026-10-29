@@ -63,7 +63,7 @@
 
 /** The first path segments the routes above start with (and `/`). The
  * platform server answers any other with this page as a 404 (UI audit
- * #193): its copy is `PAGES` in crates/platform/src/page.rs, which a test
+ * #193): its copy is `PAGES` in crates/platform-api/src/page.rs, which a test
  * there checks against this list and `parse`. A new top-level route goes
  * in both. */
 export const TOP = ["p", "chat", "dm", "issues", "runs", "installed", "inbox", "settings", "deploys"] as const;

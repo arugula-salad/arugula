@@ -276,7 +276,7 @@ async fn a_new_share_offer_pushes_the_person_offered_once() {
 async fn pushes_go_only_for_what_someone_chose() {
     use crate::push::{Kind as PushKind, daemon_send, daemon_subs, prefs, push_account, set_prefs};
     use arugula_control_wire::PushRequest;
-    use arugula_platform::hub::PushOptions;
+    use arugula_platform_api::hub::PushOptions;
 
     let mut app = App::for_tests("http://control.test");
     let jake = person(&app, "github", "1", "jhgaylor", "a1jake");

@@ -34,7 +34,7 @@ use arugula_e2e::{
     now_ms,
     team::{Roster, TeamRole},
 };
-use arugula_platform::PlatformPort;
+use arugula_platform_api::PlatformPort;
 use axum::{
     Json,
     extract::{Path, State},
@@ -374,7 +374,7 @@ pub async fn delete_account(app: &Arc<App>, account: &str, typed: &str) -> Resul
     // Then the platform's rows of it: billing's (M139), chat's (M138: its
     // DMs, its machines' threads, the disbanded teams' rooms, and its name
     // on the rest, which open pages hear of) and Cloud's (M137).
-    let deleted = arugula_platform::Deleted {
+    let deleted = arugula_platform_api::Deleted {
         account: account.to_owned(),
         machines: daemons.clone(),
         disbanded: disband.clone(),
@@ -412,7 +412,7 @@ pub async fn delete_account(app: &Arc<App>, account: &str, typed: &str) -> Resul
 /// Tell the platform an account is gone; once it says it erased its part,
 /// the hub forgets the deletion. If it can't be told now (out of process
 /// and away), [`start_telling`] tries again.
-async fn tell_platform(app: &App, deleted: &arugula_platform::Deleted) -> bool {
+async fn tell_platform(app: &App, deleted: &arugula_platform_api::Deleted) -> bool {
     match app.platform.account_deleted(deleted).await {
         Ok(()) => match app.db.told_deletion(&deleted.account) {
             Ok(()) => true,

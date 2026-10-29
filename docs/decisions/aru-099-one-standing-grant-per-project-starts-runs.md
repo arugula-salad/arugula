@@ -52,7 +52,7 @@ decided_on: "2026-10-21"
 reviews: []
 constrains:
   - "path:crates/platform/src/grants.rs"
-  - "path:crates/platform/src/auth.rs"
+  - "path:crates/platform-api/src/auth.rs"
 ---
 
 # One standing grant per project starts runs

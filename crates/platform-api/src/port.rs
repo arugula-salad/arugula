@@ -1,0 +1,326 @@
+//! `PlatformPort`: what the hub asks the platform. The other direction from
+//! [`HubPort`](crate::HubPort), and kept apart from it: the hub holds an
+//! `Arc<dyn PlatformPort>`. In process it's the [`Platform`] itself, a
+//! direct call; once the platform is its own process (M140) it's the same
+//! calls over the private network. The hub's gateway, which forwards the
+//! platform's routes, is M140's too.
+//!
+//! Like `HubPort` it only grows, and its types are
+//! `arugula_control_wire::internal`'s, with that crate's two rules.
+
+use futures_util::future::BoxFuture;
+
+use arugula_control_wire::{
+    forge::Standing,
+    hosted::{SetupPlan, SetupReport},
+    run_logs::{Upload, UploadGiven, Uploaded},
+    transcripts::TranscriptPost,
+    work::{
+        ArtifactGiven, PushAsk, PushGiven, Report, Reported, SecretsAsk, SecretsGiven, SessionIssuesAsk,
+        SessionIssuesGiven, SessionReport, Work,
+    },
+};
+
+pub use arugula_control_wire::internal::{Archived, PublicPreview, TurnAnswer};
+use arugula_control_wire::internal::{
+    BoxMember, BoxPost, BoxPosted, GithubUser, HostedMachine, Outcome, TokenAnswer, UserToken,
+};
+
+pub trait PlatformPort: Send + Sync {
+    /// What stands in the way of deleting an account, as sentences for its
+    /// person. With `start`, it also asks for what takes time to go. Empty:
+    /// go ahead. Nothing does now: Managoat-backed Cloud workspaces and runs
+    /// did until M189 and M190 removed them, and a hosted workspace is
+    /// deleted with the account (`account_deleted`).
+    fn delete_blockers<'a>(&'a self, account: &'a str, start: bool) -> BoxFuture<'a, anyhow::Result<Vec<String>>>;
+
+    /// An account is gone from the hub: erase what the platform holds of
+    /// it, and tell open pages. Taking it twice changes nothing.
+    fn account_deleted<'a>(&'a self, deleted: &'a Deleted) -> BoxFuture<'a, anyhow::Result<()>>;
+
+    /// Of these billing owners (`account:ID`, `team:ID`), the ones with an
+    /// active plan: whether someone pays, for the relay's and hosted
+    /// sandboxes' limits, and what an account must cancel before it goes.
+    fn active_plans<'a>(&'a self, owners: &'a [String]) -> BoxFuture<'a, anyhow::Result<Vec<String>>>;
+
+    /// Whether chat is on for an account, for the page (`/api/me`).
+    fn chat_on<'a>(&'a self, account: &'a str) -> BoxFuture<'a, anyhow::Result<bool>>;
+
+    /// A team's roster changed (the hub just took a new version): what the
+    /// platform kept of the team goes, and billing's seats follow it. Waits
+    /// for Stripe, as the roster's route always has.
+    fn roster_changed<'a>(&'a self, team: &'a str) -> BoxFuture<'a, anyhow::Result<()>>;
+
+    /// Where each repository a daemon watches stands (M161: the App's
+    /// `may()` is the platform's): live, so its pokes come, or why not.
+    /// `github` is the account's GitHub identity, if it signed in with
+    /// GitHub; `fresh`, that a daemon just asked, not the heartbeat. One
+    /// per repository, in the order asked.
+    fn forge_standing<'a>(
+        &'a self,
+        account: &'a str,
+        github: Option<&'a GithubUser>,
+        repos: &'a [String],
+        fresh: bool,
+    ) -> BoxFuture<'a, anyhow::Result<Vec<Standing>>>;
+
+    /// A read-only installation token for one repository, for a hosted
+    /// box's `POST /api/daemon/github/token` (M161: the App's key is the
+    /// platform's), or why not.
+    fn github_token<'a>(
+        &'a self,
+        account: &'a str,
+        github: Option<&'a GithubUser>,
+        repo: &'a str,
+    ) -> BoxFuture<'a, anyhow::Result<TokenAnswer>>;
+
+    /// Send a person's draft as them (M168), for the hub's GitHub callback:
+    /// with the one-use user token GitHub just gave it, or, with `None` (the
+    /// authorization failed), through one of their machines. The hub
+    /// revokes the token once this answers. A platform from before M168
+    /// doesn't have it.
+    fn send_draft<'a>(
+        &'a self,
+        account: &'a str,
+        draft: &'a str,
+        token: Option<UserToken>,
+    ) -> BoxFuture<'a, anyhow::Result<Outcome>> {
+        let _ = (account, draft, token);
+        Box::pin(async { anyhow::bail!("this platform doesn't send drafts") })
+    }
+
+    /// Wake a hosted workspace's box (M182): someone opened its machine
+    /// and its daemon isn't connected. Opens at once share one resume,
+    /// which the workspace's worker does. Answers once the box runs (its
+    /// daemon dials in a moment later) or didn't wake, and why. A platform
+    /// from before M182 doesn't have it.
+    fn hosted_wake<'a>(
+        &'a self,
+        project: &'a str,
+        workspace: &'a str,
+    ) -> BoxFuture<'a, anyhow::Result<arugula_control_wire::hosted::WakeAnswer>> {
+        let _ = (project, workspace);
+        Box::pin(async { anyhow::bail!("this platform doesn't wake hosted workspaces") })
+    }
+
+    /// A hosted box asks to start an agent turn of `agent` (M185), signed
+    /// as its hosted machine, whose certificate names its workspace: whose
+    /// inference key pays, or why it can't run. `session` is the thread
+    /// session (M254) the turn is for, if it's one's. A platform from before
+    /// M185 doesn't have it.
+    fn hosted_turn<'a>(
+        &'a self,
+        workspace: &'a str,
+        machine: &'a str,
+        agent: &'a str,
+        session: Option<&'a str>,
+    ) -> BoxFuture<'a, anyhow::Result<TurnAnswer>> {
+        let _ = (workspace, machine, agent, session);
+        Box::pin(async { anyhow::bail!("this platform doesn't run hosted agents") })
+    }
+
+    /// The turn ended: whether it was that box's, open.
+    fn hosted_turn_end<'a>(
+        &'a self,
+        workspace: &'a str,
+        machine: &'a str,
+        turn: &'a str,
+    ) -> BoxFuture<'a, anyhow::Result<bool>> {
+        let _ = (workspace, machine, turn);
+        Box::pin(async { anyhow::bail!("this platform doesn't run hosted agents") })
+    }
+
+    /// A hosted machine's work (M212), for the hub's `GET
+    /// /api/hosted/work`: the runs ready for it, of the kinds it `takes`.
+    /// The hub checked its signature, and says who it is. A platform from
+    /// before M212 has none to give.
+    fn hosted_work<'a>(
+        &'a self,
+        machine: &'a HostedMachine,
+        takes: &'a [String],
+    ) -> BoxFuture<'a, anyhow::Result<Work>> {
+        let _ = (machine, takes);
+        Box::pin(async { Ok(Work::default()) })
+    }
+
+    /// A hosted machine's signed report of a run's state change (M212), for
+    /// the hub's `POST /api/hosted/work/report`. A platform from before
+    /// M212 can't take it.
+    fn hosted_report<'a>(
+        &'a self,
+        machine: &'a HostedMachine,
+        report: &'a Report,
+    ) -> BoxFuture<'a, anyhow::Result<Reported>> {
+        let _ = (machine, report);
+        Box::pin(async { anyhow::bail!("this platform doesn't take runs' reports") })
+    }
+
+    /// A hosted machine's signed report on one of its agent sessions
+    /// (M257), for the hub's `POST /api/hosted/work/session`. A platform
+    /// from before M257 can't take it.
+    fn hosted_session_report<'a>(
+        &'a self,
+        machine: &'a HostedMachine,
+        report: &'a SessionReport,
+    ) -> BoxFuture<'a, anyhow::Result<Reported>> {
+        let _ = (machine, report);
+        Box::pin(async { anyhow::bail!("this platform doesn't take sessions' reports") })
+    }
+
+    /// A token for a hosted machine's push of one of its sessions' branch
+    /// (M259), for the hub's `POST /api/hosted/work/session/push`. A
+    /// platform from before M259 gives none.
+    fn hosted_session_push<'a>(
+        &'a self,
+        machine: &'a HostedMachine,
+        ask: &'a PushAsk,
+    ) -> BoxFuture<'a, anyhow::Result<PushGiven>> {
+        let _ = (machine, ask);
+        Box::pin(async { Ok(PushGiven::Refused { why: "this platform doesn't push sessions' branches".into() }) })
+    }
+
+    /// A hosted machine's session's agent reading and commenting on its
+    /// project's native issues, for the hub's `POST
+    /// /api/hosted/work/session/issues`. A platform from before that
+    /// refuses.
+    fn hosted_session_issues<'a>(
+        &'a self,
+        machine: &'a HostedMachine,
+        ask: &'a SessionIssuesAsk,
+    ) -> BoxFuture<'a, anyhow::Result<SessionIssuesGiven>> {
+        let _ = (machine, ask);
+        Box::pin(async {
+            Ok(SessionIssuesGiven::Refused { why: "this platform doesn't let sessions read issues".into() })
+        })
+    }
+
+    /// A hosted machine's deploy run's secrets (M219), for the hub's `POST
+    /// /api/hosted/work/secrets`: once, while the run runs. A platform from
+    /// before M219 has none to give.
+    fn hosted_secrets<'a>(
+        &'a self,
+        machine: &'a HostedMachine,
+        ask: &'a SecretsAsk,
+    ) -> BoxFuture<'a, anyhow::Result<SecretsGiven>> {
+        let _ = (machine, ask);
+        Box::pin(async { Ok(SecretsGiven::Refused { why: "this platform doesn't apply deploys".into() }) })
+    }
+
+    /// A hosted machine's deploy run's artifact (M233: planter's Ship), for
+    /// the hub's `POST /api/hosted/work/artifact`, while the run runs. A
+    /// platform from before M233 has none to give.
+    fn hosted_artifact<'a>(
+        &'a self,
+        machine: &'a HostedMachine,
+        ask: &'a SecretsAsk,
+    ) -> BoxFuture<'a, anyhow::Result<ArtifactGiven>> {
+        let _ = (machine, ask);
+        Box::pin(async { Ok(ArtifactGiven::Refused { why: "this platform keeps no artifacts".into() }) })
+    }
+
+    /// What a hosted machine sets up on its box's first boot (M183), for the
+    /// hub's `GET /api/hosted/spec`: its workspace's spec, with what to clone
+    /// each repo with. `None` when the workspace is gone, or `machine` isn't
+    /// its box. A platform from before M183 doesn't have it.
+    fn hosted_plan<'a>(
+        &'a self,
+        project: &'a str,
+        workspace: &'a str,
+        machine: &'a str,
+    ) -> BoxFuture<'a, anyhow::Result<Option<SetupPlan>>> {
+        let _ = (project, workspace, machine);
+        Box::pin(async { anyhow::bail!("this platform doesn't set up hosted workspaces") })
+    }
+
+    /// How a hosted machine's setup goes (M183), for the hub's
+    /// `POST /api/hosted/setup`: whether it was kept.
+    fn hosted_setup<'a>(
+        &'a self,
+        project: &'a str,
+        workspace: &'a str,
+        machine: &'a str,
+        report: &'a SetupReport,
+    ) -> BoxFuture<'a, anyhow::Result<bool>> {
+        let _ = (project, workspace, machine, report);
+        Box::pin(async { anyhow::bail!("this platform doesn't set up hosted workspaces") })
+    }
+
+    /// Whether `daemon` holds a live `cloud.drive` grant for `account`
+    /// (M184): the relay routes a machine to a hosted workspace's machine
+    /// only then, as the hosted workspace routes check it ("Grants,
+    /// not impersonation"). A platform from before M184 doesn't say: refused.
+    fn machine_drives<'a>(&'a self, daemon: &'a str, account: &'a str) -> BoxFuture<'a, anyhow::Result<bool>> {
+        let _ = (daemon, account);
+        Box::pin(async { anyhow::bail!("this platform doesn't route machines to hosted workspaces") })
+    }
+
+    /// A closed agent block's transcript from the hosted machine `machine`,
+    /// whose certificate names `workspace` (M184): kept read only under its
+    /// project, or why not. A platform from before M184 doesn't have it.
+    fn hosted_transcript<'a>(
+        &'a self,
+        workspace: &'a str,
+        machine: &'a str,
+        transcript: &'a TranscriptPost,
+    ) -> BoxFuture<'a, anyhow::Result<Archived>> {
+        let _ = (workspace, machine, transcript);
+        Box::pin(async { anyhow::bail!("this platform doesn't archive hosted transcripts") })
+    }
+
+    /// The public preview with this id (M187), if it's public now: which
+    /// workspace, machine and port the hub serves it from. A platform from
+    /// before M187 has none.
+    fn public_preview<'a>(&'a self, id: &'a str) -> BoxFuture<'a, anyhow::Result<Option<PublicPreview>>> {
+        let _ = id;
+        Box::pin(async { Ok(None) })
+    }
+
+    /// A hosted machine asks which of its workspace's ports are public now
+    /// (M187), and under which ids, before it serves one. A platform from
+    /// before M187 has none.
+    fn public_ports<'a>(&'a self, workspace: &'a str) -> BoxFuture<'a, anyhow::Result<Vec<(u16, String)>>> {
+        let _ = workspace;
+        Box::pin(async { Ok(vec![]) })
+    }
+
+    /// A URL for a hosted machine to put one of its run's log chunks or
+    /// artifacts at (M213), for the hub's `POST /api/hosted/work/upload`. A
+    /// platform from before M213 keeps no run logs.
+    fn hosted_upload<'a>(
+        &'a self,
+        machine: &'a HostedMachine,
+        upload: &'a Upload,
+    ) -> BoxFuture<'a, anyhow::Result<UploadGiven>> {
+        let _ = (machine, upload);
+        Box::pin(async { Ok(UploadGiven::Off) })
+    }
+
+    /// A hosted machine says it put `upload` (M213), for the hub's `POST
+    /// /api/hosted/work/uploaded`: recorded once the bucket has it.
+    fn hosted_uploaded<'a>(
+        &'a self,
+        machine: &'a HostedMachine,
+        upload: &'a Upload,
+    ) -> BoxFuture<'a, anyhow::Result<Uploaded>> {
+        let _ = (machine, upload);
+        Box::pin(async { Ok(Uploaded::Refused { why: "this platform keeps no run logs".into() }) })
+    }
+
+    /// A bound hud box's project's members now (M237, `boxes::members`),
+    /// for the hub's `GET /oauth/hud/members`; `None`: no such project. A
+    /// platform from before M237 can't say.
+    fn box_members<'a>(&'a self, project: &'a str) -> BoxFuture<'a, anyhow::Result<Option<Vec<BoxMember>>>> {
+        let _ = project;
+        Box::pin(async { anyhow::bail!("this platform doesn't answer hud boxes") })
+    }
+
+    /// A bound hud box's review, into an object's thread in its project for
+    /// its author (M237, `boxes::post`), for the hub's `POST
+    /// /oauth/hud/threads`. A platform from before M237 can't.
+    fn box_post<'a>(&'a self, post: &'a BoxPost) -> BoxFuture<'a, anyhow::Result<BoxPosted>> {
+        let _ = post;
+        Box::pin(async { anyhow::bail!("this platform doesn't answer hud boxes") })
+    }
+}
+
+pub use arugula_control_wire::internal::Deleted;

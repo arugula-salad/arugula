@@ -686,7 +686,7 @@ pub async fn client(
             Ok(true) => {}
             Ok(false) => {
                 let name = app.db.daemon_row(daemon).ok().flatten().map_or_else(|| daemon.clone(), |(_, d)| d.name);
-                let why = arugula_platform::cloud::no_cloud_drive(&name);
+                let why = arugula_platform_api::no_cloud_drive(&name);
                 return err(StatusCode::FORBIDDEN, &why).into_response();
             }
             Err(e) => return crate::ApiError::from(e).into_response(),

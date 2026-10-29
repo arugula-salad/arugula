@@ -52,7 +52,7 @@ use arugula_e2e::{
     now_ms,
     preview::{PublicGrant, PublicHello},
 };
-use arugula_platform::{PlatformPort as _, PublicPreview};
+use arugula_platform_api::{PlatformPort as _, PublicPreview};
 use axum::{
     body::{Body, Bytes},
     extract::{
@@ -90,7 +90,7 @@ pub fn domain(
     block_domain: Option<&str>,
     platform_host: Option<&str>,
 ) -> anyhow::Result<Option<String>> {
-    let Some(d) = arugula_platform::hosted::previews::domain(raw)? else { return Ok(None) };
+    let Some(d) = arugula_platform_api::preview_domain(raw)? else { return Ok(None) };
     let related = |h: &str| h == d || h.ends_with(&format!(".{d}")) || d.ends_with(&format!(".{h}"));
     for h in sites.iter().map(|s| s.host().to_ascii_lowercase()).chain(block_domain.map(str::to_owned)) {
         if related(&h) {

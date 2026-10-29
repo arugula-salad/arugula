@@ -562,7 +562,7 @@ async fn leaving_the_team_and_deleting_the_account_take_its_chat() {
 async fn a_roster_change_reaches_chat_within_the_documented_delay() {
     use arugula_platform::cache::{CACHE_TICK, DELAY};
     let r = rig().await;
-    arugula_platform::chat::start(r.c.app.platform.inner());
+    arugula_platform::chat::start(&r.c.app.platform.inner_arc());
     let general = r.channel(&r.jake, "general").await;
     // Chat stays on for alex out of acme; he has #general, and chat keeps
     // what the hub said of acme.

@@ -6,7 +6,7 @@
 //! (the box's `HUD_FORGE_SIGNIN_AUDIENCE`) and that secret.
 //!
 //! - `GET /oauth/hud/members`: its roster, the project's members now
-//!   (`arugula_platform::boxes::members`), each with their numeric GitHub id,
+//!   (`arugula_control_wire::internal::members`), each with their numeric GitHub id,
 //!   which hud matches people on, and their login for display only.
 //! - `POST /oauth/hud/posts`: `{ target, author, text }`, a comment-mode
 //!   review the box asks its author to post into the thread on an object in
@@ -20,7 +20,7 @@
 //!   *Post* for them.
 //! - `POST /oauth/hud/post`: the answer, from that page only (the consent
 //!   screen's same-origin check, `issuer::own_page_form`), once. *Post*
-//!   posts it (`arugula_platform::boxes::post`): kept as posted via the box,
+//!   posts it (`arugula_control_wire::internal::post`): kept as posted via the box,
 //!   and only if the author may post in that thread now, as when they post
 //!   themselves.
 //!
@@ -33,11 +33,9 @@
 
 use std::{collections::HashMap, net::SocketAddr, sync::Arc, sync::Mutex};
 
+use arugula_control_wire::internal::{BoxPost, BoxPosted};
 use arugula_e2e::now_ms;
-use arugula_platform::{
-    PlatformPort as _,
-    boxes::{BoxPost, BoxPosted},
-};
+use arugula_platform_api::PlatformPort as _;
 use axum::{
     Form, Json,
     body::Bytes,

@@ -58,7 +58,7 @@ decided_on: "2026-10-21"
 reviews: []
 constrains:
   - "path:crates/platform/src/grants.rs"
-  - "path:crates/platform/src/auth.rs"
+  - "path:crates/platform-api/src/auth.rs"
   - "path:crates/daemon/src/mcp/tools.rs"
 ---
 
@@ -89,5 +89,5 @@ step 7, #1317, kept from the roadmap).
 
 The standing grant never covers a deploy ("One standing grant per project
 starts runs").
-Where: the deploy approval (Arugula #14, M218, native), `crates/platform/src/grants.rs`, `crates/platform/src/auth.rs`, `crates/daemon/src/mcp/tools.rs`.
+Where: the deploy approval (Arugula #14, M218, native), `crates/platform/src/grants.rs`, `crates/platform-api/src/auth.rs`, `crates/daemon/src/mcp/tools.rs`.
 From: #1317 (platform step 7), the plan in #1290, S37 (q3), M89 (#971, parked in #1002).

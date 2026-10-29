@@ -81,14 +81,9 @@ impl Args {
 /// drafts); the rest stay a person's ([`Person`]).
 pub struct CloudDriver(pub Person);
 
-/// What a machine without a live `cloud.drive` grant is told: which
-/// machine, and how its owner gives the power back.
-pub fn no_cloud_drive(name: &str) -> String {
-    format!(
-        "{name} can't drive this account's Cloud workspaces: its cloud.drive grant was revoked. \
-         To restore it, run `arugula grants restore {name}` on a device logged in to the account (`arugula login`)"
-    )
-}
+/// What a machine without a live `cloud.drive` grant is told (the hub's
+/// relay says it too, so it's `arugula-platform-api`'s).
+pub use arugula_platform_api::no_cloud_drive;
 
 impl FromRequestParts<Arc<Platform>> for CloudDriver {
     type Rejection = ApiError;

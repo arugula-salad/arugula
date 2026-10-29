@@ -145,7 +145,7 @@ const SOON: Duration = Duration::from_secs(5);
 #[tokio::test]
 async fn a_live_stream_hears_its_own_account_alone() {
     use crate::push::push_account;
-    use arugula_platform::hub::PushOptions;
+    use arugula_platform_api::hub::PushOptions;
 
     let c = control(|_| {}).await;
     let jake = person(&c.app, "jake", "a1jake");
@@ -204,7 +204,7 @@ async fn a_live_stream_hears_its_own_account_alone() {
 #[tokio::test]
 async fn a_live_stream_hears_what_was_chosen_from_machines_too() {
     use crate::push::push_account;
-    use arugula_platform::hub::PushOptions;
+    use arugula_platform_api::hub::PushOptions;
 
     let c = control(|_| {}).await;
     let jake = person(&c.app, "jake", "a1jake");
@@ -289,7 +289,7 @@ async fn a_live_stream_hears_what_was_chosen_from_machines_too() {
 #[tokio::test]
 async fn nobody_else_takes_a_live_endpoint_over() {
     use crate::push::push_account;
-    use arugula_platform::hub::PushOptions;
+    use arugula_platform_api::hub::PushOptions;
 
     let c = control(|_| {}).await;
     let jake = person(&c.app, "jake", "a1jake");
@@ -348,7 +348,7 @@ async fn subscribes_at_once_each_get_a_token_that_works() {
 #[tokio::test]
 async fn subscriptions_and_pushes_are_bounded() {
     use crate::push::push_account;
-    use arugula_platform::hub::PushOptions;
+    use arugula_platform_api::hub::PushOptions;
 
     let c = control(|_| {}).await;
     let jake = person(&c.app, "jake", "a1jake");

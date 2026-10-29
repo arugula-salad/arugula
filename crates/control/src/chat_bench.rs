@@ -47,7 +47,7 @@ async fn stack(out_of_process: bool) -> Stack {
         Stack { app: s.hub, base: s.base, http: reqwest::Client::new(), platform: s.platform }
     } else {
         let c = control(|_| {}).await;
-        let platform = c.app.platform.inner().clone();
+        let platform = c.app.platform.inner_arc();
         Stack { app: c.app, base: c.base, http: c.http, platform }
     }
 }
