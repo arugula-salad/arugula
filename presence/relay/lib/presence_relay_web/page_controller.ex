@@ -1,6 +1,22 @@
 defmodule PresenceRelayWeb.PageController do
   use Phoenix.Controller, formats: [:html, :json]
 
+  # `?db=1` also asks Postgres (`select 1`): "ok db", or 503 when it doesn't
+  # answer; "ok no-db" for a relay without one. The machine check uses the
+  # plain form, so a database blip doesn't take the relay out.
+  def healthz(conn, %{"db" => _}) do
+    cond do
+      not Application.get_env(:presence_relay, :database, true) ->
+        text(conn, "ok no-db")
+
+      match?({:ok, _}, Ecto.Adapters.SQL.query(PresenceRelay.Repo, "select 1", [])) ->
+        text(conn, "ok db")
+
+      true ->
+        conn |> put_status(503) |> text("db down")
+    end
+  end
+
   def healthz(conn, _), do: text(conn, "ok")
 
   # Files are Plug.Static's; a path that isn't one is the demo's route,
@@ -23,7 +39,10 @@ defmodule PresenceRelayWeb.PageController do
   end
 
   def index(conn, _) do
-    path = Application.app_dir(:presence_relay, "priv/static/index.html")
+    # The demo's build (git ignores it); tests point at a fixture instead.
+    path =
+      Application.get_env(:presence_relay, :index_html) ||
+        Application.app_dir(:presence_relay, "priv/static/index.html")
 
     if File.exists?(path) do
       conn |> put_resp_content_type("text/html") |> send_file(200, path)

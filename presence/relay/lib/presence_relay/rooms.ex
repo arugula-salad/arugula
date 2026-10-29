@@ -11,12 +11,34 @@ defmodule PresenceRelay.Rooms do
   leaves. Internal topics carry the app, so two apps' rooms of one name
   never meet: `r:<app>:<room>` (frames and `off`), `m:<app>:<room>:<sub>`
   (waves and answers for one member), `p:<app>:<room>` (presence).
+
+  ## In a cluster (#318's P2)
+
+  Members of one room may be connected to different nodes. PubSub and
+  Presence already span the cluster, so frames, waves, answers, reactions
+  and presence reach everyone wherever they're connected. What this module
+  keeps is made cluster-wide like so:
+
+  - **Connections** are an OTP `:pg` group per member, `{app, room, sub}`,
+    in the `:presence_relay` scope: every node sees every connection, so
+    the caps (64 members a room, 8 connections a member) count the whole
+    cluster, and a member's camera is off only when their last connection
+    anywhere is gone. (`:pg` is eventually consistent: two nodes admitting
+    the 65th member at the same instant could both succeed. A soft cap.)
+  - **Newest frames** stay in the ETS table of the node the member sent
+    them through, and that node alone sweeps them, so a stale frame says
+    `off` once. A joiner asks every node for its fresh frames (`fresh/2`);
+    forgetting a frame (`camera_off`) forgets it on every node.
+  - **Rate limits** stay where they are: per connection, on its node.
   """
   use GenServer
 
   alias Phoenix.PubSub
 
   @table :presence_relay_frames
+  @scope :presence_relay
+  @doc "The `:pg` scope connections are grouped in (started by the application)."
+  def scope, do: @scope
   @max_frame 32 * 1024
   @gap_ms 70
 
@@ -65,8 +87,25 @@ defmodule PresenceRelay.Rooms do
     end
   end
 
-  @doc "Every member's newest frame younger than the stale age, prefixed."
+  @doc """
+  Every member's newest frame younger than the stale age, prefixed, from
+  every node in the cluster (each keeps the frames sent through it).
+  """
   def fresh(app, room) do
+    others =
+      Node.list()
+      |> :erpc.multicall(__MODULE__, :local_fresh, [app, room], 1_000)
+      |> Enum.flat_map(fn
+        {:ok, frames} -> frames
+        _ -> []
+      end)
+
+    local_fresh(app, room) ++ others
+  end
+
+  @doc false
+  # This node's fresh frames for the room (fresh/2 asks every node).
+  def local_fresh(app, room) do
     cutoff = System.monotonic_time(:millisecond) - stale_ms()
 
     for {{_, _, sub}, at, frame} <- :ets.match_object(@table, {{app, room, :_}, :_, :_}),
@@ -74,10 +113,26 @@ defmodule PresenceRelay.Rooms do
         do: prefixed(sub, frame)
   end
 
-  @doc "`sub`'s camera went off: forget their frame and tell the room (but `from`)."
+  @doc "`sub`'s camera went off: forget their frame (on every node) and tell the room (but `from`)."
   def camera_off(app, room, sub, from \\ self()) do
-    :ets.delete(@table, {app, room, sub})
+    key = {app, room, sub}
+    :ets.delete(@table, key)
+    :erpc.multicast(Node.list(), __MODULE__, :forget, [key])
     PubSub.broadcast_from(PresenceRelay.PubSub, from, room_topic(app, room), {:relay_off, sub})
+  end
+
+  @doc false
+  # Another node's camera_off: drop this node's copy of the member's frame.
+  def forget(key), do: :ets.delete(@table, key)
+
+  @doc "How many members the room has, and `sub`'s connections, across the cluster."
+  def count(app, room, sub) do
+    members =
+      @scope
+      |> :pg.which_groups()
+      |> Enum.count(&match?({^app, ^room, _}, &1))
+
+    {members, length(:pg.get_members(@scope, {app, room, sub}))}
   end
 
   defp prefixed(sub, frame), do: <<byte_size(sub)::8, sub::binary, frame::binary>>
@@ -98,33 +153,25 @@ defmodule PresenceRelay.Rooms do
     ])
 
     Process.send_after(self(), :sweep, sweep_ms())
-    # conns: {app, room} => %{sub => count}; refs: monitor => {app, room, sub}
-    {:ok, %{conns: %{}, refs: %{}}}
+    # refs: monitor => {app, room, sub, pid}, for this node's connections.
+    {:ok, %{refs: %{}}}
   end
 
   @impl true
-  def handle_call({:join, room, sub, pid}, _from, s) do
-    members = Map.get(s.conns, room, %{})
-    n = Map.get(members, sub, 0)
+  def handle_call({:join, {app, r}, sub, pid}, _from, s) do
+    {members, n} = count(app, r, sub)
 
     cond do
-      n == 0 and map_size(members) >= max_members() ->
+      n == 0 and members >= max_members() ->
         {:reply, {:error, "room full"}, s}
 
       n >= max_conns() ->
         {:reply, {:error, "too many connections"}, s}
 
       true ->
+        :ok = :pg.join(@scope, {app, r, sub}, pid)
         ref = Process.monitor(pid)
-        {app, r} = room
-
-        s = %{
-          s
-          | conns: Map.put(s.conns, room, Map.put(members, sub, n + 1)),
-            refs: Map.put(s.refs, ref, {app, r, sub})
-        }
-
-        {:reply, :ok, s}
+        {:reply, :ok, %{s | refs: Map.put(s.refs, ref, {app, r, sub, pid})}}
     end
   end
 
@@ -134,25 +181,14 @@ defmodule PresenceRelay.Rooms do
       {nil, _} ->
         {:noreply, s}
 
-      {{app, r, sub}, refs} ->
-        room = {app, r}
-        members = Map.get(s.conns, room, %{})
+      {{app, r, sub, pid}, refs} ->
+        # :pg drops a dead process by itself, but maybe not yet: leave
+        # it out here. Their last connection anywhere: camera off.
+        if :pg.get_members(@scope, {app, r, sub}) -- [pid] == [] do
+          camera_off(app, r, sub, self())
+        end
 
-        members =
-          case Map.get(members, sub, 1) - 1 do
-            0 ->
-              # Their last connection: their camera's off for the room.
-              camera_off(app, r, sub, self())
-              Map.delete(members, sub)
-
-            n ->
-              Map.put(members, sub, n)
-          end
-
-        conns =
-          if members == %{}, do: Map.delete(s.conns, room), else: Map.put(s.conns, room, members)
-
-        {:noreply, %{s | conns: conns, refs: refs}}
+        {:noreply, %{s | refs: refs}}
     end
   end
 
