@@ -1,0 +1,333 @@
+/* meet.arugula.stream: the swarm look and the room, as arugula.stream's
+   pages have them (../../demo/src), and meet's own home and doors. */
+
+@import "../../demo/src/swarm.css";
+@import "../../demo/src/room.css";
+
+a {
+  color: var(--accent);
+}
+
+input[type="email"] {
+  font: inherit;
+  color: var(--fg);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 8px 12px;
+}
+
+input:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+a.btn {
+  display: inline-block;
+  color: inherit;
+  text-decoration: none;
+}
+
+.link {
+  justify-self: start;
+  background: none;
+  border: 0;
+  padding: 0;
+  color: var(--dim);
+  font-size: 13px;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.link:hover {
+  color: var(--fg);
+}
+
+.sub {
+  color: var(--body);
+  font-size: 14px;
+  margin: 0;
+}
+
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.row input {
+  flex: 1 1 200px;
+  min-width: 0;
+}
+
+/* meet's name: Big Shoulders, the swarm's lit dot. */
+
+.mark {
+  font: 800 28px/1 var(--f-display);
+  text-transform: uppercase;
+  letter-spacing: 0.01em;
+  color: var(--fg);
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.mark span {
+  color: var(--accent);
+  text-shadow: 0 0 14px color-mix(in srgb, var(--accent) 60%, transparent);
+}
+
+.mark small {
+  font: 400 12px var(--f-mono);
+  text-transform: none;
+  color: var(--dim);
+  margin-left: 8px;
+  letter-spacing: 0;
+}
+
+/* Home */
+
+.home {
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: 0 16px 64px;
+  /* The stage's floor and glow run past the page's edges. */
+  overflow-x: clip;
+}
+
+.top .btn {
+  white-space: nowrap;
+}
+
+.top {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 18px 0;
+}
+
+.top .who {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.top .who .stats {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr);
+  gap: 32px;
+  align-items: center;
+  padding: 24px 0 40px;
+}
+
+.headline {
+  font: 800 clamp(52px, 9vw, 112px) / 0.88 var(--f-display);
+  text-transform: uppercase;
+  letter-spacing: 0.005em;
+  margin: 0 0 18px;
+}
+
+.headline span {
+  color: var(--accent);
+  text-shadow: 0 0 34px color-mix(in srgb, var(--accent) 45%, transparent);
+}
+
+.lede {
+  color: var(--body);
+  font-size: 17px;
+  max-width: 44ch;
+  margin: 0;
+}
+
+/* The cast on the stage: every character, idling. */
+.cast {
+  display: flex;
+  justify-content: center;
+  gap: 4px;
+  padding: 18px 0 56px;
+}
+
+.cast canvas {
+  width: 120px;
+  height: 136px;
+  filter: drop-shadow(0 0 12px color-mix(in srgb, var(--k-agent) 25%, transparent));
+}
+
+.panel {
+  border-radius: 12px;
+  padding: 20px 22px;
+  display: grid;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.panel h2,
+.rooms h2,
+.lobby h2 {
+  font: 800 26px/1 var(--f-display);
+  text-transform: uppercase;
+  letter-spacing: 0.01em;
+  margin: 0;
+}
+
+.ways {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+.ways .panel {
+  margin-bottom: 0;
+  align-content: start;
+}
+
+.signin {
+  display: grid;
+  gap: 10px;
+}
+
+.btn.google {
+  justify-self: start;
+}
+
+.sent {
+  margin: 0;
+  color: var(--ok);
+  font-size: 14px;
+}
+
+.sent b {
+  color: var(--fg);
+  overflow-wrap: anywhere;
+}
+
+.lists {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+  margin-top: 24px;
+}
+
+.rooms ul {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.room-card {
+  display: grid;
+  gap: 2px;
+  padding: 12px 16px 12px 18px;
+  border-radius: 10px;
+  color: var(--fg);
+  text-decoration: none;
+  transition: border-color 0.15s;
+}
+
+.room-card:hover {
+  border-color: var(--c);
+}
+
+.room-card b {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* A room's door, and the not-found and loading pages */
+
+.lobby {
+  max-width: 480px;
+  margin: 12vh auto 0;
+  padding: 0 16px;
+  display: grid;
+  gap: 18px;
+}
+
+.lobby .panel {
+  margin: 0;
+}
+
+/* In a room */
+
+.room .bar .name {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  min-width: 0;
+  flex-wrap: wrap;
+}
+
+.room .bar .name .mark {
+  font-size: 22px;
+}
+
+.room .bar .name .mark small {
+  display: none;
+}
+
+.room-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+/* Where #318's P7 puts the call's button and controls. */
+.call-slot:empty {
+  display: none;
+}
+
+.call-slot {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+@media (max-width: 860px) {
+  .hero {
+    grid-template-columns: 1fr;
+    gap: 8px;
+    padding-bottom: 16px;
+  }
+
+  .ways,
+  .lists {
+    grid-template-columns: 1fr;
+  }
+
+  .cast canvas {
+    width: 76px;
+    height: 88px;
+  }
+}
+
+@media (max-width: 520px) {
+  .top .mark small {
+    display: none;
+  }
+
+  .room .bar .name {
+    font-size: 22px;
+  }
+
+  .controls .seg[aria-label="Your character"] {
+    flex-wrap: wrap;
+  }
+}

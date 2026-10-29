@@ -10,6 +10,7 @@ config :presence_relay,
   demo: true,
   # The demo's index without building the demo.
   index_html: Path.expand("../test/support/index.html", __DIR__),
+  meet_index_html: Path.expand("../test/support/meet.html", __DIR__),
   # Quick sweeps so the stale-frame test doesn't wait 10 s.
   sweep_ms: 50,
   stale_ms: 300,

@@ -36,6 +36,9 @@ export type PhoenixTransportOptions = {
   url: string;
   /** The room, as the token names it. */
   room: string;
+  /** Called with your sub whenever the relay lets you in (its join reply):
+   * a guest's sub is the relay's to make, so this is how a page learns it. */
+  onJoin?: (you: string) => void;
 } & (TokenAuth | KeyAuth);
 
 /** The socket's params: the token, or the key, room and guest's name. */
@@ -120,7 +123,8 @@ export function phoenixTransport(o: PhoenixTransportOptions): Transport {
     const presence = new Presence(ch);
     presence.onSync(() => on?.members?.(presence.list((sub, { metas }: { metas: Meta[] }) => memberOf(sub, metas))));
     ch.join()
-      .receive("ok", (reply: { calls?: boolean }) => {
+      .receive("ok", (reply: { you?: string; calls?: boolean } | undefined) => {
+        if (reply?.you) o.onJoin?.(reply.you);
         on?.calls?.(!!reply?.calls);
         on?.live("on");
         ch.push("state", { ...state, watching: listening });

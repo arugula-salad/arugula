@@ -1,0 +1,23 @@
+{
+  "name": "arugula-meet",
+  "version": "0.0.0",
+  "private": true,
+  "description": "meet.arugula.stream: rooms to hang out in, on arugula.stream's presence protocol. Built into ../relay/priv/static/meet, which the relay serves on a meet. host and under /meet.",
+  "license": "MIT OR Apache-2.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "e2e": "node e2e/proof.mjs"
+  },
+  "dependencies": {
+    "@arugula/presence": "link:../client",
+    "@arugula/presence-core": "link:../core",
+    "preact": "10.27.2"
+  },
+  "devDependencies": {
+    "playwright": "1.63.0",
+    "typescript": "^7.0.2",
+    "vite": "8.3.4"
+  }
+}

@@ -18,7 +18,9 @@ defmodule PresenceRelayWeb.Endpoint do
   plug Plug.Static, at: "/", from: :presence_relay, gzip: false
 
   plug Plug.RequestId
-  plug Plug.Parsers, parsers: [:json], pass: ["*/*"], json_decoder: Jason
+  # JSON for the API; a form's encoding for the sign-in page's button
+  # (its CSRF token comes in the body).
+  plug Plug.Parsers, parsers: [:urlencoded, :json], pass: ["*/*"], json_decoder: Jason
   plug Plug.Session, @session
   plug PresenceRelayWeb.Router
 end

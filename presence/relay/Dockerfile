@@ -1,6 +1,7 @@
-# arugula.stream (presence/relay with presence/demo, the script-tag SDK and
-# the hosted SDK installs in priv/static). Built from presence/ (fly.toml
-# there): the demo, with its models and Wasm fetched, the SDK, the React
+# arugula.stream (presence/relay with presence/demo, meet.arugula.stream
+# (presence/meet), the script-tag SDK and the hosted SDK installs in
+# priv/static). Built from presence/ (fly.toml there): the demo, with its
+# models and Wasm fetched, meet into priv/static/meet, the SDK, the React
 # package and the server SDKs' npm/pip/Go files (sdk/host.sh), the gem
 # index on Ruby, then the relay's release on the official Elixir image, run
 # on a slim Debian.
@@ -14,16 +15,20 @@ WORKDIR /src
 COPY core core
 COPY client client
 COPY demo demo
+COPY meet meet
 COPY elements elements
 COPY react react
 COPY sdk sdk
-# The demo first (it empties priv/static), then the script-tag SDK into
-# priv/static/sdk/v0, then the installs (npm, py, go) beside it.
+# The demo first (it empties priv/static), then meet into
+# priv/static/meet, then the script-tag SDK into priv/static/sdk/v0, then
+# the installs (npm, py, go) beside it.
 RUN cd core && pnpm install --frozen-lockfile \
   && cd ../client && pnpm install --frozen-lockfile \
   && cd ../demo && pnpm install --frozen-lockfile \
   && sh ../core/scripts/assets.sh public \
   && mkdir -p ../relay/priv/static \
+  && pnpm exec vite build \
+  && cd ../meet && pnpm install --frozen-lockfile \
   && pnpm exec vite build \
   && cd ../elements && pnpm install --frozen-lockfile \
   && pnpm exec vite build \
