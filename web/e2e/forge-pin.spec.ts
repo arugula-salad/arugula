@@ -76,7 +76,7 @@ test("a pinned PR looks as GitHub's does, read through Arugula control", async (
   await reset(page);
   const block = await open(page, "pr", 1);
   const el = page.locator(`[data-forge-block="${block}"]`);
-  await expect(el.locator(".review-path")).toContainText("acme/app#1 Fix the parser");
+  await expect(el.locator(".review-path")).toContainText("Fix the parser #1 acme/app");
   await expect(el.locator("[data-pr-state]")).toHaveText("open");
   await expect(el.locator("[data-forge-pin]")).toHaveAttribute("data-forge-pin", ITEM);
   await expect(el.locator(".forge-meta")).toContainText("jake-gh wants to merge fix-parser into main · as jake-gh on GitHub");
@@ -105,7 +105,7 @@ test("a pinned issue, and a pin whose platform can't be reached shows what it sa
   const block = await open(page, "issue", 2);
   const el = page.locator(`[data-forge-block="${block}"]`);
   await expect(el).toHaveAttribute("data-forge-kind", "issue");
-  await expect(el.locator(".review-path")).toContainText("acme/app#2 The parser drops tabs");
+  await expect(el.locator(".review-path")).toContainText("The parser drops tabs #2 acme/app");
   await expect(el.locator("[data-forge-pin]")).toBeVisible();
   await expect(el.locator(".forge-meta")).toContainText("assigned to jake-gh");
   await expect(el.locator("[data-forge-pin-body]")).toBeVisible();

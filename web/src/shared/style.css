@@ -4548,6 +4548,10 @@ button.att {
   color: var(--fg);
 }
 
+.review-path .forge-ref {
+  font-size: 12px;
+}
+
 .review-live {
   color: var(--dim);
   font-size: 12px;
@@ -6058,6 +6062,10 @@ html[data-scheme="light"] .doc {
 
 .forge-want {
   margin: 0 0 4px;
+}
+
+.forge-done {
+  color: var(--ok);
 }
 
 /* ---- getting started (#110) */

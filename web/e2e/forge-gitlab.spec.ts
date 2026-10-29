@@ -98,7 +98,7 @@ test("a merge request's failed pipeline is rerun from the block", async ({ page 
   writeFileSync(glabHost(), origin.replace("http://", ""));
   const block = await openMr(page);
   const el = page.locator(`[data-forge-block="${block}"]`);
-  await expect(el.locator(".review-path")).toContainText(`${REPO}#3941 fix(issue): reject invalid list output flags`);
+  await expect(el.locator(".review-path")).toContainText(`fix(issue): reject invalid list output flags #3941 ${REPO}`);
   await expect(el.locator("[data-pr-state]")).toHaveText("open");
   await expect(el.locator("[data-check]")).toHaveCount(23);
   await expect(el.locator('[data-check="manual"]')).toHaveCount(3);
@@ -118,7 +118,7 @@ test("with no glab login it reads anonymously and offers no writes", async ({ pa
   rmSync(glabHost(), { force: true });
   const block = await openMr(page);
   const el = page.locator(`[data-forge-block="${block}"]`);
-  await expect(el.locator(".review-path")).toContainText(`${REPO}#3941`);
+  await expect(el.locator(".review-path")).toContainText(`#3941 ${REPO}`);
   await expect(el.locator("[data-forge-read-only]")).toContainText("read-only: no glab login for 127.0.0.1:");
   await expect(el.locator(".forge-meta")).toContainText("anonymously, read-only");
   await expect(el.locator("[data-check]")).toHaveCount(23);

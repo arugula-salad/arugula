@@ -130,7 +130,7 @@ test("an issue opens from the menu, given to you; an agent's new issue is a draf
   const block = await page.evaluate(() => window.__arugula.client.state!.panes.find((p) => p.type === "forge")!.id);
   const el = page.locator(`[data-forge-block="${block}"]`);
   await expect(el).toHaveAttribute("data-forge-kind", "issue");
-  await expect(el.locator(".review-path")).toContainText(`${REPO}#${N} Add a frobnicator to the CLI`);
+  await expect(el.locator(".review-path")).toContainText(`Add a frobnicator to the CLI #${N} ${REPO}`);
   await expect(el.locator("[data-issue-state]")).toHaveText("open");
   // Looking at it, what's there is seen; then sam gives it to you.
   await expect(el.locator('[data-want="assigned"]')).toHaveCount(0);
@@ -230,6 +230,6 @@ test("Agent on this: the issue and its agent in a tab, on a branch of their own,
   );
   expect(prBlock).not.toBeNull();
   expect(await tabOf(page, prBlock!)).toBe(await tabOf(page, block));
-  await expect(page.locator(`[data-forge-block="${prBlock}"] .review-path`)).toContainText(`${REPO}#91 Add a frobnicator`);
+  await expect(page.locator(`[data-forge-block="${prBlock}"] .review-path`)).toContainText(`#91 ${REPO}`);
   expect(writes).toEqual([]);
 });

@@ -9,7 +9,7 @@
 // the card says who did, and offers to send the agent a follow-up.
 
 import { OPS, opPath } from "../ops";
-import { useEffect, useState } from "preact/hooks";
+import { useEffect, useRef, useState } from "preact/hooks";
 import { openMenu } from "../../shared/ui/menu";
 import type { Client } from "../client";
 import type { DiffInfo, PaneId } from "../../shared/proto";
@@ -55,8 +55,27 @@ function Watching({ client, id }: { client: Client; id: PaneId }) {
  * card still shows where attention goes (the swarm, the phone). */
 export const drawsItsOwn = (ask: Ask) => ask.source === "forge" && ask.id === "new";
 
+/** #317: a forge block holds its actions at the foot of its body (`.forge-foot`); the card sits above them, not over them. The height in px, kept as the block redraws. */
+function useFootLift(on: boolean) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [lift, setLift] = useState(0);
+  useEffect(() => {
+    const pane = ref.current?.closest(".pane");
+    if (!on || !pane) return;
+    const measure = () => setLift(pane.querySelector<HTMLElement>(".forge-foot")?.offsetHeight ?? 0);
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(pane);
+    const mo = new MutationObserver(measure);
+    mo.observe(pane, { childList: true, subtree: true });
+    return () => (ro.disconnect(), mo.disconnect());
+  }, [on]);
+  return { ref, style: lift ? { bottom: `${lift + 8}px` } : undefined };
+}
+
 export function TermAsk({ client, id, ask }: { client: Client; id: PaneId; ask: Ask }) {
   const [hidden, setHidden] = useState(false);
+  const foot = useFootLift(ask.source === "forge");
   const call = (method: string, args: unknown) => void client.api(`/api/blocks/${id}/call/${method}`, args, `couldn't ${method}`);
   // #234: an agent's invite is the owner's alone to send or decline. M79:
   // so is a task from another person's agent (and the daemon checks it's
@@ -73,13 +92,13 @@ export function TermAsk({ client, id, ask }: { client: Client; id: PaneId; ask: 
   const terminal = ask.source === "hook";
   if (hidden) {
     return (
-      <button class="pane-ask-pill" onPointerDown={(e) => e.stopPropagation()} onClick={() => setHidden(false)}>
+      <button class="pane-ask-pill" ref={foot.ref as any} style={foot.style} onPointerDown={(e) => e.stopPropagation()} onClick={() => setHidden(false)}>
         {what}…
       </button>
     );
   }
   return (
-    <div class="pane-ask" onPointerDown={(e) => e.stopPropagation()} onContextMenu={(e) => e.stopPropagation()}>
+    <div class="pane-ask" ref={foot.ref} style={foot.style} onPointerDown={(e) => e.stopPropagation()} onContextMenu={(e) => e.stopPropagation()}>
       <div class="pane-ask-bar">
         <span>{what}</span>
         <Watching client={client} id={id} />

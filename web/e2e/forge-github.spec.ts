@@ -89,7 +89,7 @@ test("red check runs on your GitHub PR rerun from the block", async ({ page }) =
     [origin, REPO, N] as const,
   );
   const el = page.locator(`[data-forge-block="${block}"]`);
-  await expect(el.locator(".review-path")).toContainText(`${REPO}#${N} fix: preserve percent-encoded path`);
+  await expect(el.locator(".review-path")).toContainText(`fix: preserve percent-encoded path in DisplayURL #${N} ${REPO}`);
   await expect(el.locator("[data-check]")).toHaveCount(11);
   await expect(el.locator('[data-want="failed"]')).toContainText("3 checks failed: build (ubuntu-latest)");
   await expect(el.locator(".forge-meta")).toContainText("as jhgaylor (gh on");
