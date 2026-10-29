@@ -1,0 +1,304 @@
+{
+  "about": "A box's check before it applies a deploy: whether the operation the owner signed holds this driver's plan for it, with these settings and this roll back (its plan is plan_text's digest over the operation's environment name and source). Another driver, a changed setting, a roll back for an apply or the other way round, a renamed environment or another source each make another plan, so the box refuses.",
+  "cases": [
+    {
+      "about": "chant-fly's apply, as planned",
+      "input": {
+        "driver": "chant-fly",
+        "op": "chant-fly-apply",
+        "roll_back": null,
+        "settings": {
+          "chant_digest": "plan",
+          "chant_dir": "ops",
+          "chant_env": "github",
+          "chant_op": "release",
+          "fly_app": "acme-web"
+        }
+      },
+      "output": {"ok": true}
+    },
+    {
+      "about": "checked as another driver's",
+      "input": {
+        "driver": "fake",
+        "op": "chant-fly-apply",
+        "roll_back": null,
+        "settings": {}
+      },
+      "output": {"ok": false}
+    },
+    {
+      "about": "checked with another Fly app",
+      "input": {
+        "driver": "chant-fly",
+        "op": "chant-fly-apply",
+        "roll_back": null,
+        "settings": {
+          "chant_digest": "plan",
+          "chant_dir": "ops",
+          "chant_env": "github",
+          "chant_op": "release",
+          "fly_app": "acme-other"
+        }
+      },
+      "output": {"ok": false}
+    },
+    {
+      "about": "checked with install scripts on",
+      "input": {
+        "driver": "chant-fly",
+        "op": "chant-fly-apply",
+        "roll_back": null,
+        "settings": {
+          "chant_digest": "plan",
+          "chant_dir": "ops",
+          "chant_env": "github",
+          "chant_op": "release",
+          "fly_app": "acme-web",
+          "npm_scripts": "true"
+        }
+      },
+      "output": {"ok": false}
+    },
+    {
+      "about": "checked as a roll back",
+      "input": {
+        "driver": "chant-fly",
+        "op": "chant-fly-apply",
+        "roll_back": {
+          "deploy": "dep_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "to": {
+            "chant_component": "arugula",
+            "chant_digest": "sha256:11",
+            "chant_env": "github",
+            "image": "registry.fly.io/acme-web:deployment-1@sha256:0000000000000000000000000000000000000000000000000000000000000000"
+          }
+        },
+        "settings": {
+          "chant_digest": "plan",
+          "chant_dir": "ops",
+          "chant_env": "github",
+          "chant_op": "release",
+          "fly_app": "acme-web"
+        }
+      },
+      "output": {"ok": false}
+    },
+    {
+      "about": "chant-fly's roll back, as planned",
+      "input": {
+        "driver": "chant-fly",
+        "op": "chant-fly-roll-back",
+        "roll_back": {
+          "deploy": "dep_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "to": {
+            "chant_component": "arugula",
+            "chant_digest": "sha256:11",
+            "chant_env": "github",
+            "image": "registry.fly.io/acme-web:deployment-1@sha256:0000000000000000000000000000000000000000000000000000000000000000"
+          }
+        },
+        "settings": {
+          "chant_digest": "plan",
+          "chant_dir": "ops",
+          "chant_env": "github",
+          "chant_op": "release",
+          "fly_app": "acme-web"
+        }
+      },
+      "output": {"ok": true}
+    },
+    {
+      "about": "the roll back checked as an apply",
+      "input": {
+        "driver": "chant-fly",
+        "op": "chant-fly-roll-back",
+        "roll_back": null,
+        "settings": {
+          "chant_digest": "plan",
+          "chant_dir": "ops",
+          "chant_env": "github",
+          "chant_op": "release",
+          "fly_app": "acme-web"
+        }
+      },
+      "output": {"ok": false}
+    },
+    {
+      "about": "the roll back checked going back to another image",
+      "input": {
+        "driver": "chant-fly",
+        "op": "chant-fly-roll-back",
+        "roll_back": {
+          "deploy": "dep_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "to": {
+            "chant_component": "arugula",
+            "chant_digest": "sha256:11",
+            "chant_env": "github",
+            "image": "registry.fly.io/acme-web:deployment-1@sha256:9999999999999999999999999999999999999999999999999999999999999999"
+          }
+        },
+        "settings": {
+          "chant_digest": "plan",
+          "chant_dir": "ops",
+          "chant_env": "github",
+          "chant_op": "release",
+          "fly_app": "acme-web"
+        }
+      },
+      "output": {"ok": false}
+    },
+    {
+      "about": "the environment renamed after it was planned",
+      "input": {
+        "driver": "chant-fly",
+        "op": "chant-fly-apply-renamed",
+        "roll_back": null,
+        "settings": {
+          "chant_digest": "plan",
+          "chant_dir": "ops",
+          "chant_env": "github",
+          "chant_op": "release",
+          "fly_app": "acme-web"
+        }
+      },
+      "output": {"ok": false}
+    },
+    {
+      "about": "planter-ship's, as planned",
+      "input": {
+        "driver": "planter-ship",
+        "op": "ship",
+        "roll_back": null,
+        "settings": {"app": "hello", "health": "/health", "port": "8080", "port_env": "PORT"}
+      },
+      "output": {"ok": true}
+    },
+    {
+      "about": "checked for another app",
+      "input": {
+        "driver": "planter-ship",
+        "op": "ship",
+        "roll_back": null,
+        "settings": {"app": "other", "health": "/health", "port": "8080", "port_env": "PORT"}
+      },
+      "output": {"ok": false}
+    },
+    {
+      "about": "checked with another port",
+      "input": {
+        "driver": "planter-ship",
+        "op": "ship",
+        "roll_back": null,
+        "settings": {"app": "hello", "health": "/health", "port": "3000", "port_env": "PORT"}
+      },
+      "output": {"ok": false}
+    },
+    {
+      "about": "checked as Promote's",
+      "input": {
+        "driver": "planter-promote",
+        "op": "ship",
+        "roll_back": null,
+        "settings": {"app": "hello", "health": "/health", "port": "8080", "port_env": "PORT"}
+      },
+      "output": {"ok": false}
+    },
+    {
+      "about": "another artifact than planned",
+      "input": {
+        "driver": "planter-ship",
+        "op": "ship-other-artifact",
+        "roll_back": null,
+        "settings": {"app": "hello", "health": "/health", "port": "8080", "port_env": "PORT"}
+      },
+      "output": {"ok": false}
+    },
+    {
+      "about": "fake's, as planned",
+      "input": {
+        "driver": "fake",
+        "op": "fake",
+        "roll_back": null,
+        "settings": {}
+      },
+      "output": {"ok": true}
+    },
+    {
+      "about": "fake's checked with a setting",
+      "input": {
+        "driver": "fake",
+        "op": "fake",
+        "roll_back": null,
+        "settings": {"x": "y"}
+      },
+      "output": {"ok": false}
+    }
+  ],
+  "checks": ["arugula_e2e::drivers::planned"],
+  "input": "driver; op: an operation's label; settings: { name: value }; roll_back: { deploy, to } or null",
+  "keys": {},
+  "objects": {
+    "chant-fly-apply": {
+      "environment": "env_1",
+      "environment_name": "production",
+      "plan": "246ea1e6e235b0e894a86f4c0cd4ff4533fb83ce3deda25983f84a1a7b3192e9",
+      "planned": "abababababababababababababababababababababababababababababababab",
+      "project": "prj_1",
+      "source_kind": "commit",
+      "source_ref": "0123456789abcdef0123456789abcdef01234567",
+      "source_where": "acme/app"
+    },
+    "chant-fly-apply-renamed": {
+      "environment": "env_1",
+      "environment_name": "prod",
+      "plan": "246ea1e6e235b0e894a86f4c0cd4ff4533fb83ce3deda25983f84a1a7b3192e9",
+      "planned": "abababababababababababababababababababababababababababababababab",
+      "project": "prj_1",
+      "source_kind": "commit",
+      "source_ref": "0123456789abcdef0123456789abcdef01234567",
+      "source_where": "acme/app"
+    },
+    "chant-fly-roll-back": {
+      "environment": "env_1",
+      "environment_name": "production",
+      "plan": "797ec52aa6cf4e2e8650af79a710dc77304200b4e979aca6acddbc51ac29b98a",
+      "planned": "abababababababababababababababababababababababababababababababab",
+      "project": "prj_1",
+      "source_kind": "commit",
+      "source_ref": "0123456789abcdef0123456789abcdef01234567",
+      "source_where": "acme/app"
+    },
+    "fake": {
+      "environment": "env_1",
+      "environment_name": "production",
+      "plan": "c7e7b898d8d3ee343df35b3aabbc9c84ff43189e99a8cabf99a107327d8fadb8",
+      "planned": "abababababababababababababababababababababababababababababababab",
+      "project": "prj_1",
+      "source_kind": "commit",
+      "source_ref": "0123456789abcdef0123456789abcdef01234567",
+      "source_where": "acme/app"
+    },
+    "ship": {
+      "environment": "env_1",
+      "environment_name": "loam",
+      "plan": "7396882d620429b39bda48153db3b41874705efdb03b382d7380c42ba2c7cae9",
+      "planned": "abababababababababababababababababababababababababababababababab",
+      "project": "prj_1",
+      "source_kind": "artifact",
+      "source_ref": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+      "source_where": "platform"
+    },
+    "ship-other-artifact": {
+      "environment": "env_1",
+      "environment_name": "loam",
+      "plan": "7396882d620429b39bda48153db3b41874705efdb03b382d7380c42ba2c7cae9",
+      "planned": "abababababababababababababababababababababababababababababababab",
+      "project": "prj_1",
+      "source_kind": "artifact",
+      "source_ref": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "source_where": "platform"
+    }
+  },
+  "output": "ok: whether the operation's plan is that one"
+}

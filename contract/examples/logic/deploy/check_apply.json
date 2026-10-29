@@ -1,0 +1,1799 @@
+{
+  "about": "What a machine checks before it applies a deploy (M219), from what it pinned rather than the platform's word, in this order, the first failure being the refusal: the approval is well formed (approval_form); for this deploy (approval_deploy); over exactly this operation's hash (approval_operation); once, not a deny (approval_denied); not expired, expires > now (approval_expired); its account an owner of the project, as the machine knows them, its team's roster or its own account (approval_not_an_owner); its device trusted now from that owner's root, and a browser's or a phone's own device certified by browsers (or recovery codes) back to a root that is a browser, never a CLI's or the app's (approval_device; a grandfathered app window counts only just above a browser the hub says it approved, `children`); the signature that device's (approval_signature); and a passkey assertion with it: client data of type webauthn.get whose challenge is the approval's, authenticator data of at least 37 bytes with user presence and verification (flags & 0x05), base64url with or without padding (approval_passkey). The passkey's own signature is the hub's to check.",
+  "cases": [
+    {
+      "about": "alice, owner of her account's project, approves from her root browser",
+      "input": {
+        "approval": "by-alice",
+        "children": {},
+        "deploy": "dep_1",
+        "now": 50000,
+        "op": "op",
+        "owners": {
+          "account": {
+            "account": "alice",
+            "certs": [
+              "alice",
+              "alice-cli",
+              "alice-app",
+              "alice-old-app",
+              "alice-recovery",
+              "alice-recovered-laptop",
+              "alice-phone",
+              "alice-phone-by-old-app",
+              "alice-browser-by-cli",
+              "alice-revoked-tablet"
+            ],
+            "revocations": ["alice-tablet-revoked"],
+            "root": "37f29b7074cf8b52"
+          }
+        },
+        "passkey": {
+          "authenticator_data": "kQAtjEyZDOP8WMoaUDRN8v3RcZuuR_4iDoKMepqkeL0FAAAABw",
+          "client_data_json": "eyJjaGFsbGVuZ2UiOiJJN3lOZF9ZQndUNlVXM215WDFsUEZUMmxsZnJhZkowSnd2OXdxQ0tPY01VIiwib3JpZ2luIjoiaHR0cHM6Ly9hcHAuZXhhbXBsZS5pbnZhbGlkIiwidHlwZSI6IndlYmF1dGhuLmdldCJ9"
+        }
+      },
+      "output": {"ok": true}
+    },
+    {
+      "about": "alice, owner of the team's project, approves",
+      "input": {
+        "approval": "by-alice",
+        "children": {},
+        "deploy": "dep_1",
+        "now": 50000,
+        "op": "op",
+        "owners": {
+          "team": {
+            "certs": {
+              "alice": {
+                "certs": [
+                  "alice",
+                  "alice-cli",
+                  "alice-app",
+                  "alice-old-app",
+                  "alice-recovery",
+                  "alice-recovered-laptop",
+                  "alice-phone",
+                  "alice-phone-by-old-app",
+                  "alice-browser-by-cli",
+                  "alice-revoked-tablet"
+                ],
+                "revocations": ["alice-tablet-revoked"]
+              },
+              "bob": {
+                "certs": ["bob"]
+              }
+            },
+            "roster": "team-roster"
+          }
+        },
+        "passkey": {
+          "authenticator_data": "kQAtjEyZDOP8WMoaUDRN8v3RcZuuR_4iDoKMepqkeL0FAAAABw",
+          "client_data_json": "eyJjaGFsbGVuZ2UiOiJJN3lOZF9ZQndUNlVXM215WDFsUEZUMmxsZnJhZkowSnd2OXdxQ0tPY01VIiwib3JpZ2luIjoiaHR0cHM6Ly9hcHAuZXhhbXBsZS5pbnZhbGlkIiwidHlwZSI6IndlYmF1dGhuLmdldCJ9"
+        }
+      },
+      "output": {"ok": true}
+    },
+    {
+      "about": "checked for another deploy",
+      "input": {
+        "approval": "by-alice",
+        "children": {},
+        "deploy": "dep_2",
+        "now": 50000,
+        "op": "op",
+        "owners": {
+          "account": {
+            "account": "alice",
+            "certs": [
+              "alice",
+              "alice-cli",
+              "alice-app",
+              "alice-old-app",
+              "alice-recovery",
+              "alice-recovered-laptop",
+              "alice-phone",
+              "alice-phone-by-old-app",
+              "alice-browser-by-cli",
+              "alice-revoked-tablet"
+            ],
+            "revocations": ["alice-tablet-revoked"],
+            "root": "37f29b7074cf8b52"
+          }
+        },
+        "passkey": {
+          "authenticator_data": "kQAtjEyZDOP8WMoaUDRN8v3RcZuuR_4iDoKMepqkeL0FAAAABw",
+          "client_data_json": "eyJjaGFsbGVuZ2UiOiJJN3lOZF9ZQndUNlVXM215WDFsUEZUMmxsZnJhZkowSnd2OXdxQ0tPY01VIiwib3JpZ2luIjoiaHR0cHM6Ly9hcHAuZXhhbXBsZS5pbnZhbGlkIiwidHlwZSI6IndlYmF1dGhuLmdldCJ9"
+        }
+      },
+      "output": {"refused": "approval_deploy"}
+    },
+    {
+      "about": "checked against another plan",
+      "input": {
+        "approval": "by-alice",
+        "children": {},
+        "deploy": "dep_1",
+        "now": 50000,
+        "op": "op-other-plan",
+        "owners": {
+          "account": {
+            "account": "alice",
+            "certs": [
+              "alice",
+              "alice-cli",
+              "alice-app",
+              "alice-old-app",
+              "alice-recovery",
+              "alice-recovered-laptop",
+              "alice-phone",
+              "alice-phone-by-old-app",
+              "alice-browser-by-cli",
+              "alice-revoked-tablet"
+            ],
+            "revocations": ["alice-tablet-revoked"],
+            "root": "37f29b7074cf8b52"
+          }
+        },
+        "passkey": {
+          "authenticator_data": "kQAtjEyZDOP8WMoaUDRN8v3RcZuuR_4iDoKMepqkeL0FAAAABw",
+          "client_data_json": "eyJjaGFsbGVuZ2UiOiJJN3lOZF9ZQndUNlVXM215WDFsUEZUMmxsZnJhZkowSnd2OXdxQ0tPY01VIiwib3JpZ2luIjoiaHR0cHM6Ly9hcHAuZXhhbXBsZS5pbnZhbGlkIiwidHlwZSI6IndlYmF1dGhuLmdldCJ9"
+        }
+      },
+      "output": {"refused": "approval_operation"}
+    },
+    {
+      "about": "checked against the environment renamed",
+      "input": {
+        "approval": "by-alice",
+        "children": {},
+        "deploy": "dep_1",
+        "now": 50000,
+        "op": "op-renamed",
+        "owners": {
+          "account": {
+            "account": "alice",
+            "certs": [
+              "alice",
+              "alice-cli",
+              "alice-app",
+              "alice-old-app",
+              "alice-recovery",
+              "alice-recovered-laptop",
+              "alice-phone",
+              "alice-phone-by-old-app",
+              "alice-browser-by-cli",
+              "alice-revoked-tablet"
+            ],
+            "revocations": ["alice-tablet-revoked"],
+            "root": "37f29b7074cf8b52"
+          }
+        },
+        "passkey": {
+          "authenticator_data": "kQAtjEyZDOP8WMoaUDRN8v3RcZuuR_4iDoKMepqkeL0FAAAABw",
+          "client_data_json": "eyJjaGFsbGVuZ2UiOiJJN3lOZF9ZQndUNlVXM215WDFsUEZUMmxsZnJhZkowSnd2OXdxQ0tPY01VIiwib3JpZ2luIjoiaHR0cHM6Ly9hcHAuZXhhbXBsZS5pbnZhbGlkIiwidHlwZSI6IndlYmF1dGhuLmdldCJ9"
+        }
+      },
+      "output": {"refused": "approval_operation"}
+    },
+    {
+      "about": "checked against another project's operation",
+      "input": {
+        "approval": "by-alice",
+        "children": {},
+        "deploy": "dep_1",
+        "now": 50000,
+        "op": "op-other-project",
+        "owners": {
+          "account": {
+            "account": "alice",
+            "certs": [
+              "alice",
+              "alice-cli",
+              "alice-app",
+              "alice-old-app",
+              "alice-recovery",
+              "alice-recovered-laptop",
+              "alice-phone",
+              "alice-phone-by-old-app",
+              "alice-browser-by-cli",
+              "alice-revoked-tablet"
+            ],
+            "revocations": ["alice-tablet-revoked"],
+            "root": "37f29b7074cf8b52"
+          }
+        },
+        "passkey": {
+          "authenticator_data": "kQAtjEyZDOP8WMoaUDRN8v3RcZuuR_4iDoKMepqkeL0FAAAABw",
+          "client_data_json": "eyJjaGFsbGVuZ2UiOiJJN3lOZF9ZQndUNlVXM215WDFsUEZUMmxsZnJhZkowSnd2OXdxQ0tPY01VIiwib3JpZ2luIjoiaHR0cHM6Ly9hcHAuZXhhbXBsZS5pbnZhbGlkIiwidHlwZSI6IndlYmF1dGhuLmdldCJ9"
+        }
+      },
+      "output": {"refused": "approval_operation"}
+    },
+    {
+      "about": "a deny",
+      "input": {
+        "approval": "deny-by-alice",
+        "children": {},
+        "deploy": "dep_1",
+        "now": 50000,
+        "op": "op",
+        "owners": {
+          "account": {
+            "account": "alice",
+            "certs": [
+              "alice",
+              "alice-cli",
+              "alice-app",
+              "alice-old-app",
+              "alice-recovery",
+              "alice-recovered-laptop",
+              "alice-phone",
+              "alice-phone-by-old-app",
+              "alice-browser-by-cli",
+              "alice-revoked-tablet"
+            ],
+            "revocations": ["alice-tablet-revoked"],
+            "root": "37f29b7074cf8b52"
+          }
+        },
+        "passkey": {
+          "authenticator_data": "kQAtjEyZDOP8WMoaUDRN8v3RcZuuR_4iDoKMepqkeL0FAAAABw",
+          "client_data_json": "eyJjaGFsbGVuZ2UiOiJGM2VXVGJtWmZCaElGRk5keDhSUzVKSFlEUlJpekV6UklYNEU4Qk9SX3dBIiwib3JpZ2luIjoiaHR0cHM6Ly9hcHAuZXhhbXBsZS5pbnZhbGlkIiwidHlwZSI6IndlYmF1dGhuLmdldCJ9"
+        }
+      },
+      "output": {"refused": "approval_denied"}
+    },
+    {
+      "about": "its expiry is now",
+      "input": {
+        "approval": "by-alice",
+        "children": {},
+        "deploy": "dep_1",
+        "now": 90000,
+        "op": "op",
+        "owners": {
+          "account": {
+            "account": "alice",
+            "certs": [
+              "alice",
+              "alice-cli",
+              "alice-app",
+              "alice-old-app",
+              "alice-recovery",
+              "alice-recovered-laptop",
+              "alice-phone",
+              "alice-phone-by-old-app",
+              "alice-browser-by-cli",
+              "alice-revoked-tablet"
+            ],
+            "revocations": ["alice-tablet-revoked"],
+            "root": "37f29b7074cf8b52"
+          }
+        },
+        "passkey": {
+          "authenticator_data": "kQAtjEyZDOP8WMoaUDRN8v3RcZuuR_4iDoKMepqkeL0FAAAABw",
+          "client_data_json": "eyJjaGFsbGVuZ2UiOiJJN3lOZF9ZQndUNlVXM215WDFsUEZUMmxsZnJhZkowSnd2OXdxQ0tPY01VIiwib3JpZ2luIjoiaHR0cHM6Ly9hcHAuZXhhbXBsZS5pbnZhbGlkIiwidHlwZSI6IndlYmF1dGhuLmdldCJ9"
+        }
+      },
+      "output": {"refused": "approval_expired"}
+    },
+    {
+      "about": "1 ms before its expiry",
+      "input": {
+        "approval": "by-alice",
+        "children": {},
+        "deploy": "dep_1",
+        "now": 89999,
+        "op": "op",
+        "owners": {
+          "account": {
+            "account": "alice",
+            "certs": [
+              "alice",
+              "alice-cli",
+              "alice-app",
+              "alice-old-app",
+              "alice-recovery",
+              "alice-recovered-laptop",
+              "alice-phone",
+              "alice-phone-by-old-app",
+              "alice-browser-by-cli",
+              "alice-revoked-tablet"
+            ],
+            "revocations": ["alice-tablet-revoked"],
+            "root": "37f29b7074cf8b52"
+          }
+        },
+        "passkey": {
+          "authenticator_data": "kQAtjEyZDOP8WMoaUDRN8v3RcZuuR_4iDoKMepqkeL0FAAAABw",
+          "client_data_json": "eyJjaGFsbGVuZ2UiOiJJN3lOZF9ZQndUNlVXM215WDFsUEZUMmxsZnJhZkowSnd2OXdxQ0tPY01VIiwib3JpZ2luIjoiaHR0cHM6Ly9hcHAuZXhhbXBsZS5pbnZhbGlkIiwidHlwZSI6IndlYmF1dGhuLmdldCJ9"
+        }
+      },
+      "output": {"ok": true}
+    },
+    {
+      "about": "bob, an editor of the team, approves",
+      "input": {
+        "approval": "by-bob",
+        "children": {},
+        "deploy": "dep_1",
+        "now": 50000,
+        "op": "op",
+        "owners": {
+          "team": {
+            "certs": {
+              "alice": {
+                "certs": [
+                  "alice",
+                  "alice-cli",
+                  "alice-app",
+                  "alice-old-app",
+                  "alice-recovery",
+                  "alice-recovered-laptop",
+                  "alice-phone",
+                  "alice-phone-by-old-app",
+                  "alice-browser-by-cli",
+                  "alice-revoked-tablet"
+                ],
+                "revocations": ["alice-tablet-revoked"]
+              },
+              "bob": {
+                "certs": ["bob"]
+              }
+            },
+            "roster": "team-roster"
+          }
+        },
+        "passkey": {
+          "authenticator_data": "kQAtjEyZDOP8WMoaUDRN8v3RcZuuR_4iDoKMepqkeL0FAAAABw",
+          "client_data_json": "eyJjaGFsbGVuZ2UiOiJ4M1FVUUFvZ0FQVzZlV2U2TGFadXlscWtpUUhoTkF0dlNIZE04cGd1emxRIiwib3JpZ2luIjoiaHR0cHM6Ly9hcHAuZXhhbXBsZS5pbnZhbGlkIiwidHlwZSI6IndlYmF1dGhuLmdldCJ9"
+        }
+      },
+      "output": {"refused": "approval_not_an_owner"}
+    },
+    {
+      "about": "bob approves alice's own project",
+      "input": {
+        "approval": "by-bob",
+        "children": {},
+        "deploy": "dep_1",
+        "now": 50000,
+        "op": "op",
+        "owners": {
+          "account": {
+            "account": "alice",
+            "certs": [
+              "alice",
+              "alice-cli",
+              "alice-app",
+              "alice-old-app",
+              "alice-recovery",
+              "alice-recovered-laptop",
+              "alice-phone",
+              "alice-phone-by-old-app",
+              "alice-browser-by-cli",
+              "alice-revoked-tablet"
+            ],
+            "revocations": ["alice-tablet-revoked"],
+            "root": "37f29b7074cf8b52"
+          }
+        },
+        "passkey": {
+          "authenticator_data": "kQAtjEyZDOP8WMoaUDRN8v3RcZuuR_4iDoKMepqkeL0FAAAABw",
+          "client_data_json": "eyJjaGFsbGVuZ2UiOiJ4M1FVUUFvZ0FQVzZlV2U2TGFadXlscWtpUUhoTkF0dlNIZE04cGd1emxRIiwib3JpZ2luIjoiaHR0cHM6Ly9hcHAuZXhhbXBsZS5pbnZhbGlkIiwidHlwZSI6IndlYmF1dGhuLmdldCJ9"
+        }
+      },
+      "output": {"refused": "approval_not_an_owner"}
+    },
+    {
+      "about": "bob's device signs as alice",
+      "input": {
+        "approval": "mallory-as-alice-by-bob",
+        "children": {},
+        "deploy": "dep_1",
+        "now": 50000,
+        "op": "op",
+        "owners": {
+          "account": {
+            "account": "alice",
+            "certs": [
+              "alice",
+              "alice-cli",
+              "alice-app",
+              "alice-old-app",
+              "alice-recovery",
+              "alice-recovered-laptop",
+              "alice-phone",
+              "alice-phone-by-old-app",
+              "alice-browser-by-cli",
+              "alice-revoked-tablet"
+            ],
+            "revocations": ["alice-tablet-revoked"],
+            "root": "37f29b7074cf8b52"
+          }
+        },
+        "passkey": {
+          "authenticator_data": "kQAtjEyZDOP8WMoaUDRN8v3RcZuuR_4iDoKMepqkeL0FAAAABw",
+          "client_data_json": "eyJjaGFsbGVuZ2UiOiJzd2ZRa1BuWnRTRThmYjcwdUlrM0Z5NGo3NUx5d2stWk92QzFCaTdtMWRnIiwib3JpZ2luIjoiaHR0cHM6Ly9hcHAuZXhhbXBsZS5pbnZhbGlkIiwidHlwZSI6IndlYmF1dGhuLmdldCJ9"
+        }
+      },
+      "output": {"refused": "approval_device"}
+    },
+    {
+      "about": "from alice's CLI",
+      "input": {
+        "approval": "by-alice-cli",
+        "children": {},
+        "deploy": "dep_1",
+        "now": 50000,
+        "op": "op",
+        "owners": {
+          "account": {
+            "account": "alice",
+            "certs": [
+              "alice",
+              "alice-cli",
+              "alice-app",
+              "alice-old-app",
+              "alice-recovery",
+              "alice-recovered-laptop",
+              "alice-phone",
+              "alice-phone-by-old-app",
+              "alice-browser-by-cli",
+              "alice-revoked-tablet"
+            ],
+            "revocations": ["alice-tablet-revoked"],
+            "root": "37f29b7074cf8b52"
+          }
+        },
+        "passkey": {
+          "authenticator_data": "kQAtjEyZDOP8WMoaUDRN8v3RcZuuR_4iDoKMepqkeL0FAAAABw",
+          "client_data_json": "eyJjaGFsbGVuZ2UiOiJvd2phUEYyODdYQUZENmljV1hqQURBR1RCdjVVSHo0a2hiMnh2blhpZGIwIiwib3JpZ2luIjoiaHR0cHM6Ly9hcHAuZXhhbXBsZS5pbnZhbGlkIiwidHlwZSI6IndlYmF1dGhuLmdldCJ9"
+        }
+      },
+      "output": {"refused": "approval_device"}
+    },
+    {
+      "about": "from alice's app",
+      "input": {
+        "approval": "by-alice-app",
+        "children": {},
+        "deploy": "dep_1",
+        "now": 50000,
+        "op": "op",
+        "owners": {
+          "account": {
+            "account": "alice",
+            "certs": [
+              "alice",
+              "alice-cli",
+              "alice-app",
+              "alice-old-app",
+              "alice-recovery",
+              "alice-recovered-laptop",
+              "alice-phone",
+              "alice-phone-by-old-app",
+              "alice-browser-by-cli",
+              "alice-revoked-tablet"
+            ],
+            "revocations": ["alice-tablet-revoked"],
+            "root": "37f29b7074cf8b52"
+          }
+        },
+        "passkey": {
+          "authenticator_data": "kQAtjEyZDOP8WMoaUDRN8v3RcZuuR_4iDoKMepqkeL0FAAAABw",
+          "client_data_json": "eyJjaGFsbGVuZ2UiOiJnaTlvWUlTNFdFa29lTUtKMTdGU1dJMjczb2lzeHlLOVpRUmVrUnZzY0NJIiwib3JpZ2luIjoiaHR0cHM6Ly9hcHAuZXhhbXBsZS5pbnZhbGlkIiwidHlwZSI6IndlYmF1dGhuLmdldCJ9"
+        }
+      },
+      "output": {"refused": "approval_device"}
+    },
+    {
+      "about": "from the app's browser certificate from before it had a kind",
+      "input": {
+        "approval": "by-alice-old-app",
+        "children": {},
+        "deploy": "dep_1",
+        "now": 50000,
+        "op": "op",
+        "owners": {
+          "account": {
+            "account": "alice",
+            "certs": [
+              "alice",
+              "alice-cli",
+              "alice-app",
+              "alice-old-app",
+              "alice-recovery",
+              "alice-recovered-laptop",
+              "alice-phone",
+              "alice-phone-by-old-app",
+              "alice-browser-by-cli",
+              "alice-revoked-tablet"
+            ],
+            "revocations": ["alice-tablet-revoked"],
+            "root": "37f29b7074cf8b52"
+          }
+        },
+        "passkey": {
+          "authenticator_data": "kQAtjEyZDOP8WMoaUDRN8v3RcZuuR_4iDoKMepqkeL0FAAAABw",
+          "client_data_json": "eyJjaGFsbGVuZ2UiOiJickE0Yy1vbEVWWnZJSjhnWk12cTBWUUR6bXItQVJNYzR1V3hqLWw0X0tNIiwib3JpZ2luIjoiaHR0cHM6Ly9hcHAuZXhhbXBsZS5pbnZhbGlkIiwidHlwZSI6IndlYmF1dGhuLmdldCJ9"
+        }
+      },
+      "output": {"refused": "approval_device"}
+    },
+    {
+      "about": "from alice's recovery code",
+      "input": {
+        "approval": "by-alice-recovery",
+        "children": {},
+        "deploy": "dep_1",
+        "now": 50000,
+        "op": "op",
+        "owners": {
+          "account": {
+            "account": "alice",
+            "certs": [
+              "alice",
+              "alice-cli",
+              "alice-app",
+              "alice-old-app",
+              "alice-recovery",
+              "alice-recovered-laptop",
+              "alice-phone",
+              "alice-phone-by-old-app",
+              "alice-browser-by-cli",
+              "alice-revoked-tablet"
+            ],
+            "revocations": ["alice-tablet-revoked"],
+            "root": "37f29b7074cf8b52"
+          }
+        },
+        "passkey": {
+          "authenticator_data": "kQAtjEyZDOP8WMoaUDRN8v3RcZuuR_4iDoKMepqkeL0FAAAABw",
+          "client_data_json": "eyJjaGFsbGVuZ2UiOiJ1UUVod3Fub3hXeFR1clpOT3ZUbnQ0OEw5NzFDdU1mM0NBV05RUTliRTJFIiwib3JpZ2luIjoiaHR0cHM6Ly9hcHAuZXhhbXBsZS5pbnZhbGlkIiwidHlwZSI6IndlYmF1dGhuLmdldCJ9"
+        }
+      },
+      "output": {"refused": "approval_device"}
+    },
+    {
+      "about": "from a browser her recovery code let in",
+      "input": {
+        "approval": "by-alice-recovered",
+        "children": {},
+        "deploy": "dep_1",
+        "now": 50000,
+        "op": "op",
+        "owners": {
+          "account": {
+            "account": "alice",
+            "certs": [
+              "alice",
+              "alice-cli",
+              "alice-app",
+              "alice-old-app",
+              "alice-recovery",
+              "alice-recovered-laptop",
+              "alice-phone",
+              "alice-phone-by-old-app",
+              "alice-browser-by-cli",
+              "alice-revoked-tablet"
+            ],
+            "revocations": ["alice-tablet-revoked"],
+            "root": "37f29b7074cf8b52"
+          }
+        },
+        "passkey": {
+          "authenticator_data": "kQAtjEyZDOP8WMoaUDRN8v3RcZuuR_4iDoKMepqkeL0FAAAABw",
+          "client_data_json": "eyJjaGFsbGVuZ2UiOiJsTndtWnN3b080dnJubGc1dzQ0Zm81dkVZRFBqYVFLWU05WFpQYXV5X0xFIiwib3JpZ2luIjoiaHR0cHM6Ly9hcHAuZXhhbXBsZS5pbnZhbGlkIiwidHlwZSI6IndlYmF1dGhuLmdldCJ9"
+        }
+      },
+      "output": {"ok": true}
+    },
+    {
+      "about": "from a phone her root approved",
+      "input": {
+        "approval": "by-alice-phone",
+        "children": {},
+        "deploy": "dep_1",
+        "now": 50000,
+        "op": "op",
+        "owners": {
+          "account": {
+            "account": "alice",
+            "certs": [
+              "alice",
+              "alice-cli",
+              "alice-app",
+              "alice-old-app",
+              "alice-recovery",
+              "alice-recovered-laptop",
+              "alice-phone",
+              "alice-phone-by-old-app",
+              "alice-browser-by-cli",
+              "alice-revoked-tablet"
+            ],
+            "revocations": ["alice-tablet-revoked"],
+            "root": "37f29b7074cf8b52"
+          }
+        },
+        "passkey": {
+          "authenticator_data": "kQAtjEyZDOP8WMoaUDRN8v3RcZuuR_4iDoKMepqkeL0FAAAABw",
+          "client_data_json": "eyJjaGFsbGVuZ2UiOiJYb25VYXJ5S2YtSXJXaDZsbnRNNFlnMEtoQ1pDaWFoOUtYWWZKSWdSRTJzIiwib3JpZ2luIjoiaHR0cHM6Ly9hcHAuZXhhbXBsZS5pbnZhbGlkIiwidHlwZSI6IndlYmF1dGhuLmdldCJ9"
+        }
+      },
+      "output": {"ok": true}
+    },
+    {
+      "about": "from a phone the old app window approved, with no children pinned",
+      "input": {
+        "approval": "by-alice-phone-by-old-app",
+        "children": {},
+        "deploy": "dep_1",
+        "now": 50000,
+        "op": "op",
+        "owners": {
+          "account": {
+            "account": "alice",
+            "certs": [
+              "alice",
+              "alice-cli",
+              "alice-app",
+              "alice-old-app",
+              "alice-recovery",
+              "alice-recovered-laptop",
+              "alice-phone",
+              "alice-phone-by-old-app",
+              "alice-browser-by-cli",
+              "alice-revoked-tablet"
+            ],
+            "revocations": ["alice-tablet-revoked"],
+            "root": "37f29b7074cf8b52"
+          }
+        },
+        "passkey": {
+          "authenticator_data": "kQAtjEyZDOP8WMoaUDRN8v3RcZuuR_4iDoKMepqkeL0FAAAABw",
+          "client_data_json": "eyJjaGFsbGVuZ2UiOiIzbkE4WTlyQW9PbkQwWFZNdU9aVl9MOUd5RFE3WVZaSjZINXVfV0Etc0hRIiwib3JpZ2luIjoiaHR0cHM6Ly9hcHAuZXhhbXBsZS5pbnZhbGlkIiwidHlwZSI6IndlYmF1dGhuLmdldCJ9"
+        }
+      },
+      "output": {"refused": "approval_device"}
+    },
+    {
+      "about": "from a browser her CLI made (never trusted)",
+      "input": {
+        "approval": "by-alice-browser-by-cli",
+        "children": {},
+        "deploy": "dep_1",
+        "now": 50000,
+        "op": "op",
+        "owners": {
+          "account": {
+            "account": "alice",
+            "certs": [
+              "alice",
+              "alice-cli",
+              "alice-app",
+              "alice-old-app",
+              "alice-recovery",
+              "alice-recovered-laptop",
+              "alice-phone",
+              "alice-phone-by-old-app",
+              "alice-browser-by-cli",
+              "alice-revoked-tablet"
+            ],
+            "revocations": ["alice-tablet-revoked"],
+            "root": "37f29b7074cf8b52"
+          }
+        },
+        "passkey": {
+          "authenticator_data": "kQAtjEyZDOP8WMoaUDRN8v3RcZuuR_4iDoKMepqkeL0FAAAABw",
+          "client_data_json": "eyJjaGFsbGVuZ2UiOiJoem9jR0JIS1NmQkdOYjkyZllOWjZNUTB6dUIwR1ZiUHJwYmxjTkd4ck0wIiwib3JpZ2luIjoiaHR0cHM6Ly9hcHAuZXhhbXBsZS5pbnZhbGlkIiwidHlwZSI6IndlYmF1dGhuLmdldCJ9"
+        }
+      },
+      "output": {"refused": "approval_device"}
+    },
+    {
+      "about": "from a tablet she revoked",
+      "input": {
+        "approval": "by-alice-revoked-tablet",
+        "children": {},
+        "deploy": "dep_1",
+        "now": 50000,
+        "op": "op",
+        "owners": {
+          "account": {
+            "account": "alice",
+            "certs": [
+              "alice",
+              "alice-cli",
+              "alice-app",
+              "alice-old-app",
+              "alice-recovery",
+              "alice-recovered-laptop",
+              "alice-phone",
+              "alice-phone-by-old-app",
+              "alice-browser-by-cli",
+              "alice-revoked-tablet"
+            ],
+            "revocations": ["alice-tablet-revoked"],
+            "root": "37f29b7074cf8b52"
+          }
+        },
+        "passkey": {
+          "authenticator_data": "kQAtjEyZDOP8WMoaUDRN8v3RcZuuR_4iDoKMepqkeL0FAAAABw",
+          "client_data_json": "eyJjaGFsbGVuZ2UiOiJtbWtWMWdCSG54bW1jeTVuRk9pdHMwYkM2NEJBUnZkRW1Da3RGWkFqWGo0Iiwib3JpZ2luIjoiaHR0cHM6Ly9hcHAuZXhhbXBsZS5pbnZhbGlkIiwidHlwZSI6IndlYmF1dGhuLmdldCJ9"
+        }
+      },
+      "output": {"refused": "approval_device"}
+    },
+    {
+      "about": "from a phone the old app window approved, the hub naming it among the window's children",
+      "input": {
+        "approval": "by-alice-phone-by-old-app",
+        "children": {
+          "alice": ["cef3d2db6a69bf81"]
+        },
+        "deploy": "dep_1",
+        "now": 50000,
+        "op": "op",
+        "owners": {
+          "account": {
+            "account": "alice",
+            "certs": [
+              "alice",
+              "alice-cli",
+              "alice-app",
+              "alice-old-app",
+              "alice-recovery",
+              "alice-recovered-laptop",
+              "alice-phone",
+              "alice-phone-by-old-app",
+              "alice-browser-by-cli",
+              "alice-revoked-tablet"
+            ],
+            "revocations": ["alice-tablet-revoked"],
+            "root": "37f29b7074cf8b52"
+          }
+        },
+        "passkey": {
+          "authenticator_data": "kQAtjEyZDOP8WMoaUDRN8v3RcZuuR_4iDoKMepqkeL0FAAAABw",
+          "client_data_json": "eyJjaGFsbGVuZ2UiOiIzbkE4WTlyQW9PbkQwWFZNdU9aVl9MOUd5RFE3WVZaSjZINXVfV0Etc0hRIiwib3JpZ2luIjoiaHR0cHM6Ly9hcHAuZXhhbXBsZS5pbnZhbGlkIiwidHlwZSI6IndlYmF1dGhuLmdldCJ9"
+        }
+      },
+      "output": {"ok": true}
+    },
+    {
+      "about": "the same, as alice's team's owner",
+      "input": {
+        "approval": "by-alice-phone-by-old-app",
+        "children": {
+          "alice": ["cef3d2db6a69bf81"]
+        },
+        "deploy": "dep_1",
+        "now": 50000,
+        "op": "op",
+        "owners": {
+          "team": {
+            "certs": {
+              "alice": {
+                "certs": [
+                  "alice",
+                  "alice-cli",
+                  "alice-app",
+                  "alice-old-app",
+                  "alice-recovery",
+                  "alice-recovered-laptop",
+                  "alice-phone",
+                  "alice-phone-by-old-app",
+                  "alice-browser-by-cli",
+                  "alice-revoked-tablet"
+                ],
+                "revocations": ["alice-tablet-revoked"]
+              },
+              "bob": {
+                "certs": ["bob"]
+              }
+            },
+            "roster": "team-roster"
+          }
+        },
+        "passkey": {
+          "authenticator_data": "kQAtjEyZDOP8WMoaUDRN8v3RcZuuR_4iDoKMepqkeL0FAAAABw",
+          "client_data_json": "eyJjaGFsbGVuZ2UiOiIzbkE4WTlyQW9PbkQwWFZNdU9aVl9MOUd5RFE3WVZaSjZINXVfV0Etc0hRIiwib3JpZ2luIjoiaHR0cHM6Ly9hcHAuZXhhbXBsZS5pbnZhbGlkIiwidHlwZSI6IndlYmF1dGhuLmdldCJ9"
+        }
+      },
+      "output": {"ok": true}
+    },
+    {
+      "about": "from the old app window itself, the hub naming it among its own children",
+      "input": {
+        "approval": "by-alice-old-app-as-child",
+        "children": {
+          "alice": ["a255a6fc4c7f915d"]
+        },
+        "deploy": "dep_1",
+        "now": 50000,
+        "op": "op",
+        "owners": {
+          "account": {
+            "account": "alice",
+            "certs": [
+              "alice",
+              "alice-cli",
+              "alice-app",
+              "alice-old-app",
+              "alice-recovery",
+              "alice-recovered-laptop",
+              "alice-phone",
+              "alice-phone-by-old-app",
+              "alice-browser-by-cli",
+              "alice-revoked-tablet"
+            ],
+            "revocations": ["alice-tablet-revoked"],
+            "root": "37f29b7074cf8b52"
+          }
+        },
+        "passkey": {
+          "authenticator_data": "kQAtjEyZDOP8WMoaUDRN8v3RcZuuR_4iDoKMepqkeL0FAAAABw",
+          "client_data_json": "eyJjaGFsbGVuZ2UiOiJickE0Yy1vbEVWWnZJSjhnWk12cTBWUUR6bXItQVJNYzR1V3hqLWw0X0tNIiwib3JpZ2luIjoiaHR0cHM6Ly9hcHAuZXhhbXBsZS5pbnZhbGlkIiwidHlwZSI6IndlYmF1dGhuLmdldCJ9"
+        }
+      },
+      "output": {"refused": "approval_device"}
+    },
+    {
+      "about": "carol's account is rooted at a CLI: its root approves nothing",
+      "input": {
+        "approval": "by-carol-cli-root",
+        "children": {},
+        "deploy": "dep_1",
+        "now": 50000,
+        "op": "op",
+        "owners": {
+          "account": {
+            "account": "carol",
+            "certs": ["carol-cli-root"],
+            "root": "8c13188975e1a5ae"
+          }
+        },
+        "passkey": {
+          "authenticator_data": "kQAtjEyZDOP8WMoaUDRN8v3RcZuuR_4iDoKMepqkeL0FAAAABw",
+          "client_data_json": "eyJjaGFsbGVuZ2UiOiItMHl6RmxOOWZ4cUlmNVpzQ2dQRzkyVG5FeGpnLVlQLXJJblpoc0pBLTZnIiwib3JpZ2luIjoiaHR0cHM6Ly9hcHAuZXhhbXBsZS5pbnZhbGlkIiwidHlwZSI6IndlYmF1dGhuLmdldCJ9"
+        }
+      },
+      "output": {"refused": "approval_device"}
+    },
+    {
+      "about": "its expiry pushed out after she signed",
+      "input": {
+        "approval": "by-alice-expiry-pushed",
+        "children": {},
+        "deploy": "dep_1",
+        "now": 50000,
+        "op": "op",
+        "owners": {
+          "account": {
+            "account": "alice",
+            "certs": [
+              "alice",
+              "alice-cli",
+              "alice-app",
+              "alice-old-app",
+              "alice-recovery",
+              "alice-recovered-laptop",
+              "alice-phone",
+              "alice-phone-by-old-app",
+              "alice-browser-by-cli",
+              "alice-revoked-tablet"
+            ],
+            "revocations": ["alice-tablet-revoked"],
+            "root": "37f29b7074cf8b52"
+          }
+        },
+        "passkey": {
+          "authenticator_data": "kQAtjEyZDOP8WMoaUDRN8v3RcZuuR_4iDoKMepqkeL0FAAAABw",
+          "client_data_json": "eyJjaGFsbGVuZ2UiOiJ2VU5LUEJoamlaQkhGVUtQNHZJWXpzWTg2eHZ1LURwYlpza1IyT09yTDJJIiwib3JpZ2luIjoiaHR0cHM6Ly9hcHAuZXhhbXBsZS5pbnZhbGlkIiwidHlwZSI6IndlYmF1dGhuLmdldCJ9"
+        }
+      },
+      "output": {"refused": "approval_signature"}
+    },
+    {
+      "about": "said to be by alice's device, signed by bob's",
+      "input": {
+        "approval": "by-alice-signed-by-bob",
+        "children": {},
+        "deploy": "dep_1",
+        "now": 50000,
+        "op": "op",
+        "owners": {
+          "account": {
+            "account": "alice",
+            "certs": [
+              "alice",
+              "alice-cli",
+              "alice-app",
+              "alice-old-app",
+              "alice-recovery",
+              "alice-recovered-laptop",
+              "alice-phone",
+              "alice-phone-by-old-app",
+              "alice-browser-by-cli",
+              "alice-revoked-tablet"
+            ],
+            "revocations": ["alice-tablet-revoked"],
+            "root": "37f29b7074cf8b52"
+          }
+        },
+        "passkey": {
+          "authenticator_data": "kQAtjEyZDOP8WMoaUDRN8v3RcZuuR_4iDoKMepqkeL0FAAAABw",
+          "client_data_json": "eyJjaGFsbGVuZ2UiOiJJN3lOZF9ZQndUNlVXM215WDFsUEZUMmxsZnJhZkowSnd2OXdxQ0tPY01VIiwib3JpZ2luIjoiaHR0cHM6Ly9hcHAuZXhhbXBsZS5pbnZhbGlkIiwidHlwZSI6IndlYmF1dGhuLmdldCJ9"
+        }
+      },
+      "output": {"refused": "approval_signature"}
+    },
+    {
+      "about": "a space in its deploy",
+      "input": {
+        "approval": "space-in-deploy",
+        "children": {},
+        "deploy": "dep_1 dep_2",
+        "now": 50000,
+        "op": "op",
+        "owners": {
+          "account": {
+            "account": "alice",
+            "certs": [
+              "alice",
+              "alice-cli",
+              "alice-app",
+              "alice-old-app",
+              "alice-recovery",
+              "alice-recovered-laptop",
+              "alice-phone",
+              "alice-phone-by-old-app",
+              "alice-browser-by-cli",
+              "alice-revoked-tablet"
+            ],
+            "revocations": ["alice-tablet-revoked"],
+            "root": "37f29b7074cf8b52"
+          }
+        },
+        "passkey": {
+          "authenticator_data": "kQAtjEyZDOP8WMoaUDRN8v3RcZuuR_4iDoKMepqkeL0FAAAABw",
+          "client_data_json": "eyJjaGFsbGVuZ2UiOiJJN3lOZF9ZQndUNlVXM215WDFsUEZUMmxsZnJhZkowSnd2OXdxQ0tPY01VIiwib3JpZ2luIjoiaHR0cHM6Ly9hcHAuZXhhbXBsZS5pbnZhbGlkIiwidHlwZSI6IndlYmF1dGhuLmdldCJ9"
+        }
+      },
+      "output": {"refused": "approval_form"}
+    },
+    {
+      "about": "no signature",
+      "input": {
+        "approval": "no-signature",
+        "children": {},
+        "deploy": "dep_1",
+        "now": 50000,
+        "op": "op",
+        "owners": {
+          "account": {
+            "account": "alice",
+            "certs": [
+              "alice",
+              "alice-cli",
+              "alice-app",
+              "alice-old-app",
+              "alice-recovery",
+              "alice-recovered-laptop",
+              "alice-phone",
+              "alice-phone-by-old-app",
+              "alice-browser-by-cli",
+              "alice-revoked-tablet"
+            ],
+            "revocations": ["alice-tablet-revoked"],
+            "root": "37f29b7074cf8b52"
+          }
+        },
+        "passkey": {
+          "authenticator_data": "kQAtjEyZDOP8WMoaUDRN8v3RcZuuR_4iDoKMepqkeL0FAAAABw",
+          "client_data_json": "eyJjaGFsbGVuZ2UiOiJJN3lOZF9ZQndUNlVXM215WDFsUEZUMmxsZnJhZkowSnd2OXdxQ0tPY01VIiwib3JpZ2luIjoiaHR0cHM6Ly9hcHAuZXhhbXBsZS5pbnZhbGlkIiwidHlwZSI6IndlYmF1dGhuLmdldCJ9"
+        }
+      },
+      "output": {"refused": "approval_form"}
+    },
+    {
+      "about": "no passkey assertion",
+      "input": {
+        "approval": "by-alice",
+        "children": {},
+        "deploy": "dep_1",
+        "now": 50000,
+        "op": "op",
+        "owners": {
+          "account": {
+            "account": "alice",
+            "certs": [
+              "alice",
+              "alice-cli",
+              "alice-app",
+              "alice-old-app",
+              "alice-recovery",
+              "alice-recovered-laptop",
+              "alice-phone",
+              "alice-phone-by-old-app",
+              "alice-browser-by-cli",
+              "alice-revoked-tablet"
+            ],
+            "revocations": ["alice-tablet-revoked"],
+            "root": "37f29b7074cf8b52"
+          }
+        },
+        "passkey": null
+      },
+      "output": {"refused": "approval_passkey"}
+    },
+    {
+      "about": "a passkey made for a registration (webauthn.create)",
+      "input": {
+        "approval": "by-alice",
+        "children": {},
+        "deploy": "dep_1",
+        "now": 50000,
+        "op": "op",
+        "owners": {
+          "account": {
+            "account": "alice",
+            "certs": [
+              "alice",
+              "alice-cli",
+              "alice-app",
+              "alice-old-app",
+              "alice-recovery",
+              "alice-recovered-laptop",
+              "alice-phone",
+              "alice-phone-by-old-app",
+              "alice-browser-by-cli",
+              "alice-revoked-tablet"
+            ],
+            "revocations": ["alice-tablet-revoked"],
+            "root": "37f29b7074cf8b52"
+          }
+        },
+        "passkey": {
+          "authenticator_data": "kQAtjEyZDOP8WMoaUDRN8v3RcZuuR_4iDoKMepqkeL0FAAAABw",
+          "client_data_json": "eyJjaGFsbGVuZ2UiOiJJN3lOZF9ZQndUNlVXM215WDFsUEZUMmxsZnJhZkowSnd2OXdxQ0tPY01VIiwib3JpZ2luIjoiaHR0cHM6Ly9hcHAuZXhhbXBsZS5pbnZhbGlkIiwidHlwZSI6IndlYmF1dGhuLmNyZWF0ZSJ9"
+        }
+      },
+      "output": {"refused": "approval_passkey"}
+    },
+    {
+      "about": "a passkey over another approval's challenge",
+      "input": {
+        "approval": "by-alice",
+        "children": {},
+        "deploy": "dep_1",
+        "now": 50000,
+        "op": "op",
+        "owners": {
+          "account": {
+            "account": "alice",
+            "certs": [
+              "alice",
+              "alice-cli",
+              "alice-app",
+              "alice-old-app",
+              "alice-recovery",
+              "alice-recovered-laptop",
+              "alice-phone",
+              "alice-phone-by-old-app",
+              "alice-browser-by-cli",
+              "alice-revoked-tablet"
+            ],
+            "revocations": ["alice-tablet-revoked"],
+            "root": "37f29b7074cf8b52"
+          }
+        },
+        "passkey": {
+          "authenticator_data": "kQAtjEyZDOP8WMoaUDRN8v3RcZuuR_4iDoKMepqkeL0FAAAABw",
+          "client_data_json": "eyJjaGFsbGVuZ2UiOiJQSzgweEQxWU9qaGhCcG1MNWYyX1NSS24xbjRKVGdWbUtQQzdoLWladzBzIiwib3JpZ2luIjoiaHR0cHM6Ly9hcHAuZXhhbXBsZS5pbnZhbGlkIiwidHlwZSI6IndlYmF1dGhuLmdldCJ9"
+        }
+      },
+      "output": {"refused": "approval_passkey"}
+    },
+    {
+      "about": "a passkey with user presence only",
+      "input": {
+        "approval": "by-alice",
+        "children": {},
+        "deploy": "dep_1",
+        "now": 50000,
+        "op": "op",
+        "owners": {
+          "account": {
+            "account": "alice",
+            "certs": [
+              "alice",
+              "alice-cli",
+              "alice-app",
+              "alice-old-app",
+              "alice-recovery",
+              "alice-recovered-laptop",
+              "alice-phone",
+              "alice-phone-by-old-app",
+              "alice-browser-by-cli",
+              "alice-revoked-tablet"
+            ],
+            "revocations": ["alice-tablet-revoked"],
+            "root": "37f29b7074cf8b52"
+          }
+        },
+        "passkey": {
+          "authenticator_data": "kQAtjEyZDOP8WMoaUDRN8v3RcZuuR_4iDoKMepqkeL0BAAAABw",
+          "client_data_json": "eyJjaGFsbGVuZ2UiOiJJN3lOZF9ZQndUNlVXM215WDFsUEZUMmxsZnJhZkowSnd2OXdxQ0tPY01VIiwib3JpZ2luIjoiaHR0cHM6Ly9hcHAuZXhhbXBsZS5pbnZhbGlkIiwidHlwZSI6IndlYmF1dGhuLmdldCJ9"
+        }
+      },
+      "output": {"refused": "approval_passkey"}
+    },
+    {
+      "about": "a passkey with user verification only",
+      "input": {
+        "approval": "by-alice",
+        "children": {},
+        "deploy": "dep_1",
+        "now": 50000,
+        "op": "op",
+        "owners": {
+          "account": {
+            "account": "alice",
+            "certs": [
+              "alice",
+              "alice-cli",
+              "alice-app",
+              "alice-old-app",
+              "alice-recovery",
+              "alice-recovered-laptop",
+              "alice-phone",
+              "alice-phone-by-old-app",
+              "alice-browser-by-cli",
+              "alice-revoked-tablet"
+            ],
+            "revocations": ["alice-tablet-revoked"],
+            "root": "37f29b7074cf8b52"
+          }
+        },
+        "passkey": {
+          "authenticator_data": "kQAtjEyZDOP8WMoaUDRN8v3RcZuuR_4iDoKMepqkeL0EAAAABw",
+          "client_data_json": "eyJjaGFsbGVuZ2UiOiJJN3lOZF9ZQndUNlVXM215WDFsUEZUMmxsZnJhZkowSnd2OXdxQ0tPY01VIiwib3JpZ2luIjoiaHR0cHM6Ly9hcHAuZXhhbXBsZS5pbnZhbGlkIiwidHlwZSI6IndlYmF1dGhuLmdldCJ9"
+        }
+      },
+      "output": {"refused": "approval_passkey"}
+    },
+    {
+      "about": "a passkey with more flags set: fine",
+      "input": {
+        "approval": "by-alice",
+        "children": {},
+        "deploy": "dep_1",
+        "now": 50000,
+        "op": "op",
+        "owners": {
+          "account": {
+            "account": "alice",
+            "certs": [
+              "alice",
+              "alice-cli",
+              "alice-app",
+              "alice-old-app",
+              "alice-recovery",
+              "alice-recovered-laptop",
+              "alice-phone",
+              "alice-phone-by-old-app",
+              "alice-browser-by-cli",
+              "alice-revoked-tablet"
+            ],
+            "revocations": ["alice-tablet-revoked"],
+            "root": "37f29b7074cf8b52"
+          }
+        },
+        "passkey": {
+          "authenticator_data": "kQAtjEyZDOP8WMoaUDRN8v3RcZuuR_4iDoKMepqkeL1FAAAABw",
+          "client_data_json": "eyJjaGFsbGVuZ2UiOiJJN3lOZF9ZQndUNlVXM215WDFsUEZUMmxsZnJhZkowSnd2OXdxQ0tPY01VIiwib3JpZ2luIjoiaHR0cHM6Ly9hcHAuZXhhbXBsZS5pbnZhbGlkIiwidHlwZSI6IndlYmF1dGhuLmdldCJ9"
+        }
+      },
+      "output": {"ok": true}
+    },
+    {
+      "about": "authenticator data of 36 bytes",
+      "input": {
+        "approval": "by-alice",
+        "children": {},
+        "deploy": "dep_1",
+        "now": 50000,
+        "op": "op",
+        "owners": {
+          "account": {
+            "account": "alice",
+            "certs": [
+              "alice",
+              "alice-cli",
+              "alice-app",
+              "alice-old-app",
+              "alice-recovery",
+              "alice-recovered-laptop",
+              "alice-phone",
+              "alice-phone-by-old-app",
+              "alice-browser-by-cli",
+              "alice-revoked-tablet"
+            ],
+            "revocations": ["alice-tablet-revoked"],
+            "root": "37f29b7074cf8b52"
+          }
+        },
+        "passkey": {
+          "authenticator_data": "kQAtjEyZDOP8WMoaUDRN8v3RcZuuR_4iDoKMepqkeL0FAAAA",
+          "client_data_json": "eyJjaGFsbGVuZ2UiOiJJN3lOZF9ZQndUNlVXM215WDFsUEZUMmxsZnJhZkowSnd2OXdxQ0tPY01VIiwib3JpZ2luIjoiaHR0cHM6Ly9hcHAuZXhhbXBsZS5pbnZhbGlkIiwidHlwZSI6IndlYmF1dGhuLmdldCJ9"
+        }
+      },
+      "output": {"refused": "approval_passkey"}
+    },
+    {
+      "about": "its client data base64url with padding: fine",
+      "input": {
+        "approval": "by-alice",
+        "children": {},
+        "deploy": "dep_1",
+        "now": 50000,
+        "op": "op",
+        "owners": {
+          "account": {
+            "account": "alice",
+            "certs": [
+              "alice",
+              "alice-cli",
+              "alice-app",
+              "alice-old-app",
+              "alice-recovery",
+              "alice-recovered-laptop",
+              "alice-phone",
+              "alice-phone-by-old-app",
+              "alice-browser-by-cli",
+              "alice-revoked-tablet"
+            ],
+            "revocations": ["alice-tablet-revoked"],
+            "root": "37f29b7074cf8b52"
+          }
+        },
+        "passkey": {
+          "authenticator_data": "kQAtjEyZDOP8WMoaUDRN8v3RcZuuR_4iDoKMepqkeL0FAAAABw",
+          "client_data_json": "eyJjaGFsbGVuZ2UiOiJJN3lOZF9ZQndUNlVXM215WDFsUEZUMmxsZnJhZkowSnd2OXdxQ0tPY01VIiwib3JpZ2luIjoiaHR0cHM6Ly9hcHAuZXhhbXBsZS5pbnZhbGlkIiwidHlwZSI6IndlYmF1dGhuLmdldCJ9=="
+        }
+      },
+      "output": {"ok": true}
+    },
+    {
+      "about": "client data that isn't JSON",
+      "input": {
+        "approval": "by-alice",
+        "children": {},
+        "deploy": "dep_1",
+        "now": 50000,
+        "op": "op",
+        "owners": {
+          "account": {
+            "account": "alice",
+            "certs": [
+              "alice",
+              "alice-cli",
+              "alice-app",
+              "alice-old-app",
+              "alice-recovery",
+              "alice-recovered-laptop",
+              "alice-phone",
+              "alice-phone-by-old-app",
+              "alice-browser-by-cli",
+              "alice-revoked-tablet"
+            ],
+            "revocations": ["alice-tablet-revoked"],
+            "root": "37f29b7074cf8b52"
+          }
+        },
+        "passkey": {
+          "authenticator_data": "kQAtjEyZDOP8WMoaUDRN8v3RcZuuR_4iDoKMepqkeL0FAAAABw",
+          "client_data_json": "bm90IGpzb24"
+        }
+      },
+      "output": {"refused": "approval_passkey"}
+    },
+    {
+      "about": "authenticator data that isn't base64url",
+      "input": {
+        "approval": "by-alice",
+        "children": {},
+        "deploy": "dep_1",
+        "now": 50000,
+        "op": "op",
+        "owners": {
+          "account": {
+            "account": "alice",
+            "certs": [
+              "alice",
+              "alice-cli",
+              "alice-app",
+              "alice-old-app",
+              "alice-recovery",
+              "alice-recovered-laptop",
+              "alice-phone",
+              "alice-phone-by-old-app",
+              "alice-browser-by-cli",
+              "alice-revoked-tablet"
+            ],
+            "revocations": ["alice-tablet-revoked"],
+            "root": "37f29b7074cf8b52"
+          }
+        },
+        "passkey": {
+          "authenticator_data": "!!!",
+          "client_data_json": "eyJjaGFsbGVuZ2UiOiJJN3lOZF9ZQndUNlVXM215WDFsUEZUMmxsZnJhZkowSnd2OXdxQ0tPY01VIiwib3JpZ2luIjoiaHR0cHM6Ly9hcHAuZXhhbXBsZS5pbnZhbGlkIiwidHlwZSI6IndlYmF1dGhuLmdldCJ9"
+        }
+      },
+      "output": {"refused": "approval_passkey"}
+    }
+  ],
+  "checks": [
+    "arugula_e2e::deploy::check_apply",
+    "arugula_e2e::deploy::approver_chained",
+    "arugula_e2e::deploy::passkey_binds"
+  ],
+  "input": "approval and op: labels; deploy: the deploy the run applies; owners: who may sign for the project, as the checking side pinned them: { team: { roster: a label, certs: { account: { certs, revocations } } } } for a team's project, or { account: { account, root, certs: [labels], revocations: [labels] } } for one account's; children: the browsers grandfathered app windows approved, by account ({ account: [device ids] }); passkey: { client_data_json, authenticator_data }, each base64url, or null; now: the machine's clock, ms",
+  "keys": {
+    "alice": {
+      "device": "37f29b7074cf8b52",
+      "noise": "0101010101010101010101010101010101010101010101010101010101010101",
+      "seed": "0101010101010101010101010101010101010101010101010101010101010101",
+      "sign": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c"
+    },
+    "alice-app": {
+      "device": "422c26dbf1e40b7b",
+      "noise": "0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b",
+      "seed": "0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b",
+      "sign": "66be7e332c7a453332bd9d0a7f7db055f5c5ef1a06ada66d98b39fb6810c473a"
+    },
+    "alice-browser-by-cli": {
+      "device": "dd319f4e60ca6def",
+      "noise": "1111111111111111111111111111111111111111111111111111111111111111",
+      "seed": "1111111111111111111111111111111111111111111111111111111111111111",
+      "sign": "d04ab232742bb4ab3a1368bd4615e4e6d0224ab71a016baf8520a332c9778737"
+    },
+    "alice-cli": {
+      "device": "6ec4cb2579ac7165",
+      "noise": "0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a",
+      "seed": "0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a",
+      "sign": "43a72e714401762df66b68c26dfbdf2682aaec9f2474eca4613e424a0fbafd3c"
+    },
+    "alice-old-app": {
+      "device": "a255a6fc4c7f915d",
+      "noise": "0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c",
+      "seed": "0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c",
+      "sign": "0b513ad9b4924015ca0902ed079044d3ac5dbec2306f06948c10da8eb6e39f2d"
+    },
+    "alice-phone": {
+      "device": "9e28ac7946d95bb3",
+      "noise": "0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f",
+      "seed": "0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f",
+      "sign": "d9bf2148748a85c89da5aad8ee0b0fc2d105fd39d41a4c796536354f0ae2900c"
+    },
+    "alice-phone-by-old-app": {
+      "device": "cef3d2db6a69bf81",
+      "noise": "1010101010101010101010101010101010101010101010101010101010101010",
+      "seed": "1010101010101010101010101010101010101010101010101010101010101010",
+      "sign": "5c9c6df261c9cb840475776aaefcd944b405328fab28f9b3a95ef40490d3de84"
+    },
+    "alice-recovered-laptop": {
+      "device": "7b992b4bd67000bc",
+      "noise": "0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e",
+      "seed": "0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e",
+      "sign": "0beef5a9e679e6a3e134fe27837bff32c7cb5f5d44ea09bcb0e542bad6a4c0cc"
+    },
+    "alice-recovery": {
+      "device": "41c57baf1e6b91a9",
+      "noise": "0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d",
+      "seed": "0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d",
+      "sign": "91a28a0b74381593a4d9469579208926afc8ad82c8839b7644359b9eba9a4b3a"
+    },
+    "alice-revoked-tablet": {
+      "device": "ed7d38231fac0201",
+      "noise": "1212121212121212121212121212121212121212121212121212121212121212",
+      "seed": "1212121212121212121212121212121212121212121212121212121212121212",
+      "sign": "204040e364c10f2bec9c1fe500a1cd4c247c89d650a01ed7e82caba867877c21"
+    },
+    "bob": {
+      "device": "c242667535a3d34f",
+      "noise": "0202020202020202020202020202020202020202020202020202020202020202",
+      "seed": "0202020202020202020202020202020202020202020202020202020202020202",
+      "sign": "8139770ea87d175f56a35466c34c7ecccb8d8a91b4ee37a25df60f5b8fc9b394"
+    },
+    "carol-cli-root": {
+      "device": "8c13188975e1a5ae",
+      "noise": "1414141414141414141414141414141414141414141414141414141414141414",
+      "seed": "1414141414141414141414141414141414141414141414141414141414141414",
+      "sign": "20828bf5c5bdcacb684863336c202fb5599da48be5596615742170705beca9f7"
+    }
+  },
+  "objects": {
+    "alice": {
+      "account": "alice",
+      "approver": "37f29b7074cf8b52",
+      "created": 1000,
+      "device": "37f29b7074cf8b52",
+      "kind": "browser",
+      "name": "alice's laptop",
+      "noise": "0101010101010101010101010101010101010101010101010101010101010101",
+      "sig": "4c7a182921697a35256fd95c0c9e8d2e91f60e6f7601e02d600196dda65ed26cd9aff836cd15e6e6d62cdfbb144fe575d921d5035ee13248a8565973ed0fda0d",
+      "sign": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
+      "v": 1
+    },
+    "alice-app": {
+      "account": "alice",
+      "approver": "37f29b7074cf8b52",
+      "created": 1100,
+      "device": "422c26dbf1e40b7b",
+      "kind": "app",
+      "name": "Arugula app",
+      "noise": "0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b",
+      "sig": "80b7ab2f5ab638215ae521536b08009c5a56bf35c17fa83717af40fd498fbd8fb196472558c3b7afe99db5af21ef2d1e2228497f4555f058aae59b0ad19ece09",
+      "sign": "66be7e332c7a453332bd9d0a7f7db055f5c5ef1a06ada66d98b39fb6810c473a",
+      "v": 1
+    },
+    "alice-browser-by-cli": {
+      "account": "alice",
+      "approver": "6ec4cb2579ac7165",
+      "created": 1200,
+      "device": "dd319f4e60ca6def",
+      "kind": "browser",
+      "name": "laundered",
+      "noise": "1111111111111111111111111111111111111111111111111111111111111111",
+      "sig": "ed7fd334c0806959eecdd72cab96f1d5b2cd3e3585799bba4c8d2eb82f524c1dfda36fb641b9dae9f32a5430ff7789dd2b184bd25eceda97f81a2cd579b44803",
+      "sign": "d04ab232742bb4ab3a1368bd4615e4e6d0224ab71a016baf8520a332c9778737",
+      "v": 1
+    },
+    "alice-cli": {
+      "account": "alice",
+      "approver": "37f29b7074cf8b52",
+      "created": 1100,
+      "device": "6ec4cb2579ac7165",
+      "kind": "cli",
+      "name": "terminal",
+      "noise": "0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a",
+      "sig": "db0e5eefe7803803b4d874de6895f93d4c1058071c5aabc948635744d4ebc95ab052cabde3c88fa9e139da394c50c2b94223c57272540b863f4a4c386972e40c",
+      "sign": "43a72e714401762df66b68c26dfbdf2682aaec9f2474eca4613e424a0fbafd3c",
+      "v": 1
+    },
+    "alice-old-app": {
+      "account": "alice",
+      "approver": "37f29b7074cf8b52",
+      "created": 1100,
+      "device": "a255a6fc4c7f915d",
+      "kind": "browser",
+      "name": "Arugula app on jake-air",
+      "noise": "0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c",
+      "sig": "8eed3bac4459315f7f516a35be1d4a7911a145848e9d2018e7953d7dd48e41b8ac5edcc3e93424776554b36e6d2d3a23e1ae77cf07f1d3f39a439c8b4c0d5204",
+      "sign": "0b513ad9b4924015ca0902ed079044d3ac5dbec2306f06948c10da8eb6e39f2d",
+      "v": 1
+    },
+    "alice-phone": {
+      "account": "alice",
+      "approver": "37f29b7074cf8b52",
+      "created": 1100,
+      "device": "9e28ac7946d95bb3",
+      "kind": "browser",
+      "name": "phone",
+      "noise": "0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f",
+      "sig": "aa8cab190389d2ad8cc830a2a7d848eeee8b263a0bc221a5dfa095657d05fec3fc018a4e0bf12f3d0fc8ca913846b5bd5d4450d05697ca05dabea8dcd3ffc10a",
+      "sign": "d9bf2148748a85c89da5aad8ee0b0fc2d105fd39d41a4c796536354f0ae2900c",
+      "v": 1
+    },
+    "alice-phone-by-old-app": {
+      "account": "alice",
+      "approver": "a255a6fc4c7f915d",
+      "created": 1200,
+      "device": "cef3d2db6a69bf81",
+      "kind": "browser",
+      "name": "Safari on iPhone",
+      "noise": "1010101010101010101010101010101010101010101010101010101010101010",
+      "sig": "2a1ac548a8cc4779b33e07ac66b88d90957854c480f005f5c938131ad5d26059e62c6a450aea294a199bb03151f356ed8b5630b7db5f87559e955f1470a19400",
+      "sign": "5c9c6df261c9cb840475776aaefcd944b405328fab28f9b3a95ef40490d3de84",
+      "v": 1
+    },
+    "alice-recovered-laptop": {
+      "account": "alice",
+      "approver": "41c57baf1e6b91a9",
+      "created": 1200,
+      "device": "7b992b4bd67000bc",
+      "kind": "browser",
+      "name": "new laptop",
+      "noise": "0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e",
+      "sig": "02af4d005193732f2de26b7c90a12b0533d7f0ed0d29806efa09d01139584bdbd5fba92fd93cb5f6980921dcec41373805564abe43a2d0674f0cd49ea7d06205",
+      "sign": "0beef5a9e679e6a3e134fe27837bff32c7cb5f5d44ea09bcb0e542bad6a4c0cc",
+      "v": 1
+    },
+    "alice-recovery": {
+      "account": "alice",
+      "approver": "37f29b7074cf8b52",
+      "created": 1100,
+      "device": "41c57baf1e6b91a9",
+      "kind": "recovery",
+      "name": "recovery 1",
+      "noise": "0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d",
+      "sig": "b48357ebcb2d025631b015d151912bf48e8c4f9f1c31cbe2d897908ad19c9d7cf07e36b470cc4c2dac5a5eacc932c25be0966a7ac1f5c4595aa6fcb0a2adb904",
+      "sign": "91a28a0b74381593a4d9469579208926afc8ad82c8839b7644359b9eba9a4b3a",
+      "v": 1
+    },
+    "alice-revoked-tablet": {
+      "account": "alice",
+      "approver": "37f29b7074cf8b52",
+      "created": 1100,
+      "device": "ed7d38231fac0201",
+      "kind": "browser",
+      "name": "tablet",
+      "noise": "1212121212121212121212121212121212121212121212121212121212121212",
+      "sig": "de75d35f24249ba40cf1f45916eabac4aa11729a483f47d1b5c3a537582f4ae07e325e421b00ff8bebf25ad56bed5400bc01dd5ebc2ab9ddc6308d678f1e4304",
+      "sign": "204040e364c10f2bec9c1fe500a1cd4c247c89d650a01ed7e82caba867877c21",
+      "v": 1
+    },
+    "alice-tablet-revoked": {
+      "account": "alice",
+      "at": 5000,
+      "by": "37f29b7074cf8b52",
+      "device": "ed7d38231fac0201",
+      "sig": "7bbd1db8802d8f950b82f8d259058f3957caee6635be022da8912516f3349d1fb5d31b5241c6bae66d6228bebafa26bd8c68c279b0d08e92d71f197cf6e8a308",
+      "v": 1
+    },
+    "bob": {
+      "account": "bob",
+      "approver": "c242667535a3d34f",
+      "created": 1000,
+      "device": "c242667535a3d34f",
+      "kind": "browser",
+      "name": "bob's laptop",
+      "noise": "0202020202020202020202020202020202020202020202020202020202020202",
+      "sig": "07e9418076d6edaf8c72fa5be449eeea02b612b5cd17ec9c6654519b853288b6d7a08c29100e96a0b5af3b13fb593ddb25335e0418d10dc2692d44cd3ed48103",
+      "sign": "8139770ea87d175f56a35466c34c7ecccb8d8a91b4ee37a25df60f5b8fc9b394",
+      "v": 1
+    },
+    "by-alice": {
+      "account": "alice",
+      "by": "37f29b7074cf8b52",
+      "decision": "once",
+      "deploy": "dep_1",
+      "expires": 90000,
+      "op": "1589972dbfdd1a89f71a32f0eabde06d9bdedbd7bdd3fcf6f19080ee5a1b0c99",
+      "sig": "89e0ba3caf0ff93728b455d3aa344590fc8d47213061ecf86de6324b8acad15480f0d8865e578fd01dd0b0db6d34898b8ac8d8cbd5d1aa0b063be33f1c5cad0c"
+    },
+    "by-alice-app": {
+      "account": "alice",
+      "by": "422c26dbf1e40b7b",
+      "decision": "once",
+      "deploy": "dep_1",
+      "expires": 90000,
+      "op": "1589972dbfdd1a89f71a32f0eabde06d9bdedbd7bdd3fcf6f19080ee5a1b0c99",
+      "sig": "5e36e928aa00494d2f6a9e118609ee6f5db29216a0dfbbc70a79218f3e25418b164dfbcac30049c39df88c402a33af05c656a88d6746977bc6a9e460bec72307"
+    },
+    "by-alice-browser-by-cli": {
+      "account": "alice",
+      "by": "dd319f4e60ca6def",
+      "decision": "once",
+      "deploy": "dep_1",
+      "expires": 90000,
+      "op": "1589972dbfdd1a89f71a32f0eabde06d9bdedbd7bdd3fcf6f19080ee5a1b0c99",
+      "sig": "931500b6cb93c504faa9766ac8b368d1a3d79cab071b3ea69ec969528ba4119fbbfcaf2d19ccf8c201d5f5383cce921255c79d08424d6df23cc330fd08cf7008"
+    },
+    "by-alice-cli": {
+      "account": "alice",
+      "by": "6ec4cb2579ac7165",
+      "decision": "once",
+      "deploy": "dep_1",
+      "expires": 90000,
+      "op": "1589972dbfdd1a89f71a32f0eabde06d9bdedbd7bdd3fcf6f19080ee5a1b0c99",
+      "sig": "d0b5c1ecaee646eb9717aa528134d61c7f373944bbeb610149046d299108ffd4749b39dbfc67342e104d1bf366387768befa9df1a3289d276f8a0302ea433c0f"
+    },
+    "by-alice-expiry-pushed": {
+      "account": "alice",
+      "by": "37f29b7074cf8b52",
+      "decision": "once",
+      "deploy": "dep_1",
+      "expires": 99000,
+      "op": "1589972dbfdd1a89f71a32f0eabde06d9bdedbd7bdd3fcf6f19080ee5a1b0c99",
+      "sig": "89e0ba3caf0ff93728b455d3aa344590fc8d47213061ecf86de6324b8acad15480f0d8865e578fd01dd0b0db6d34898b8ac8d8cbd5d1aa0b063be33f1c5cad0c"
+    },
+    "by-alice-old-app": {
+      "account": "alice",
+      "by": "a255a6fc4c7f915d",
+      "decision": "once",
+      "deploy": "dep_1",
+      "expires": 90000,
+      "op": "1589972dbfdd1a89f71a32f0eabde06d9bdedbd7bdd3fcf6f19080ee5a1b0c99",
+      "sig": "bea93a986b24a6fb75ba7961a41c6bcde101980e3b04d3221611d06645bd45e14f371b61d8f5059c140a6e463a3cd2d949efa28b8327faa1280faa05d82a9206"
+    },
+    "by-alice-old-app-as-child": {
+      "account": "alice",
+      "by": "a255a6fc4c7f915d",
+      "decision": "once",
+      "deploy": "dep_1",
+      "expires": 90000,
+      "op": "1589972dbfdd1a89f71a32f0eabde06d9bdedbd7bdd3fcf6f19080ee5a1b0c99",
+      "sig": "bea93a986b24a6fb75ba7961a41c6bcde101980e3b04d3221611d06645bd45e14f371b61d8f5059c140a6e463a3cd2d949efa28b8327faa1280faa05d82a9206"
+    },
+    "by-alice-phone": {
+      "account": "alice",
+      "by": "9e28ac7946d95bb3",
+      "decision": "once",
+      "deploy": "dep_1",
+      "expires": 90000,
+      "op": "1589972dbfdd1a89f71a32f0eabde06d9bdedbd7bdd3fcf6f19080ee5a1b0c99",
+      "sig": "32828d7da37761baf28531f13619ee6d40654a82090ab95c99416cfda41a9b6f6cc9bbd74c81eb91b7fbb3ea2e0865a6dd7314c28a1b9a1ca76e4b2296026700"
+    },
+    "by-alice-phone-by-old-app": {
+      "account": "alice",
+      "by": "cef3d2db6a69bf81",
+      "decision": "once",
+      "deploy": "dep_1",
+      "expires": 90000,
+      "op": "1589972dbfdd1a89f71a32f0eabde06d9bdedbd7bdd3fcf6f19080ee5a1b0c99",
+      "sig": "d3a769ffbe79658b0ad33c2d4aaf28055fa98172f62ca9747619bf21edf041a9d83274866c0abfdde80485f2abe6a2746b8f30c32354f18848cb3d3d9e08fa08"
+    },
+    "by-alice-recovered": {
+      "account": "alice",
+      "by": "7b992b4bd67000bc",
+      "decision": "once",
+      "deploy": "dep_1",
+      "expires": 90000,
+      "op": "1589972dbfdd1a89f71a32f0eabde06d9bdedbd7bdd3fcf6f19080ee5a1b0c99",
+      "sig": "a5dc759881254d261b16e071a30cd4d003f92f1f48f49e59f2faf45ee952e73eb3fe65aa4bb502b392b6c1f90d0c9374e7b45252ab83c64f9f5588e05fcc0201"
+    },
+    "by-alice-recovery": {
+      "account": "alice",
+      "by": "41c57baf1e6b91a9",
+      "decision": "once",
+      "deploy": "dep_1",
+      "expires": 90000,
+      "op": "1589972dbfdd1a89f71a32f0eabde06d9bdedbd7bdd3fcf6f19080ee5a1b0c99",
+      "sig": "d2911229ed1f0390c79fb44190937f560fc8c3c46c1093b7c902e177af2daccac4d8d8b412307f75b12157f184ceb5f61e0610d7920f8469e04172aa16f8cf03"
+    },
+    "by-alice-revoked-tablet": {
+      "account": "alice",
+      "by": "ed7d38231fac0201",
+      "decision": "once",
+      "deploy": "dep_1",
+      "expires": 90000,
+      "op": "1589972dbfdd1a89f71a32f0eabde06d9bdedbd7bdd3fcf6f19080ee5a1b0c99",
+      "sig": "dc265d2f8a0c9a580e9442968acea63ab2f99b4679a5c66049a66911fbf41efb8b2a559f2cf8f05cc5a34ce32dfb0d0dbf5ba2aed65878174b1e04adfca4c702"
+    },
+    "by-alice-signed-by-bob": {
+      "account": "alice",
+      "by": "37f29b7074cf8b52",
+      "decision": "once",
+      "deploy": "dep_1",
+      "expires": 90000,
+      "op": "1589972dbfdd1a89f71a32f0eabde06d9bdedbd7bdd3fcf6f19080ee5a1b0c99",
+      "sig": "e77d9ee930e527ea50b67b57ce1ab59403f802ea5407f99ba699c4167893b0656689085e80abf1b4dac4f9d07134512ac527931992f1b573ceea60186b5e8905"
+    },
+    "by-bob": {
+      "account": "bob",
+      "by": "c242667535a3d34f",
+      "decision": "once",
+      "deploy": "dep_1",
+      "expires": 90000,
+      "op": "1589972dbfdd1a89f71a32f0eabde06d9bdedbd7bdd3fcf6f19080ee5a1b0c99",
+      "sig": "26bbb920ea6976f2c18541d4537ef3b17e6ced1df3e12bcc8f680d2d8af252591547b01fef9f2da7c93600a185dcdc2aa76f8b5f57036edc4713c30707cccb00"
+    },
+    "by-carol-cli-root": {
+      "account": "carol",
+      "by": "8c13188975e1a5ae",
+      "decision": "once",
+      "deploy": "dep_1",
+      "expires": 90000,
+      "op": "1589972dbfdd1a89f71a32f0eabde06d9bdedbd7bdd3fcf6f19080ee5a1b0c99",
+      "sig": "8fbd2723da42c767c39c0a34d8243def35033bcc9aba05d406b22971931671cc12b138f4af97e328a7fc29454d1b3258f989d23a020b075fc93b49fc20239905"
+    },
+    "carol-cli-root": {
+      "account": "carol",
+      "approver": "8c13188975e1a5ae",
+      "created": 1000,
+      "device": "8c13188975e1a5ae",
+      "kind": "cli",
+      "name": "terminal",
+      "noise": "1414141414141414141414141414141414141414141414141414141414141414",
+      "sig": "fc35fec46f28f6e9c3c2de62ddb5d2217ee88b45b6a0cb705fd05d5151aa5a8b26b90a4b7c94ff7463aeb0cdaac403a895e5ac964088832a79cd37d0cf915808",
+      "sign": "20828bf5c5bdcacb684863336c202fb5599da48be5596615742170705beca9f7",
+      "v": 1
+    },
+    "deny-by-alice": {
+      "account": "alice",
+      "by": "37f29b7074cf8b52",
+      "decision": "deny",
+      "deploy": "dep_1",
+      "expires": 90000,
+      "op": "1589972dbfdd1a89f71a32f0eabde06d9bdedbd7bdd3fcf6f19080ee5a1b0c99",
+      "sig": "7691c7aa0d8660525793c7c5e0e7da76d892f6c73813410df0fb66d28bfb4e6861184677c9ec4b069d1ffc9a5a39ba32cb9b6023438e987e38df3c2743e74a00"
+    },
+    "mallory-as-alice-by-bob": {
+      "account": "alice",
+      "by": "c242667535a3d34f",
+      "decision": "once",
+      "deploy": "dep_1",
+      "expires": 90000,
+      "op": "1589972dbfdd1a89f71a32f0eabde06d9bdedbd7bdd3fcf6f19080ee5a1b0c99",
+      "sig": "d3e8945969bc9cded07f9fcf86cc0ad49ccf958ca2602e76280476f881c362d3604d359f46b0c1eedae76767c7a091bc19261a160b9304d286987e161c92c808"
+    },
+    "no-signature": {
+      "account": "alice",
+      "by": "37f29b7074cf8b52",
+      "decision": "once",
+      "deploy": "dep_1",
+      "expires": 90000,
+      "op": "1589972dbfdd1a89f71a32f0eabde06d9bdedbd7bdd3fcf6f19080ee5a1b0c99",
+      "sig": ""
+    },
+    "op": {
+      "environment": "env_1",
+      "environment_name": "production",
+      "plan": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "planned": "abababababababababababababababababababababababababababababababab",
+      "project": "prj_1",
+      "source_kind": "commit",
+      "source_ref": "0123456789abcdef0123456789abcdef01234567",
+      "source_where": "acme/app"
+    },
+    "op-other-plan": {
+      "environment": "env_1",
+      "environment_name": "production",
+      "plan": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "planned": "abababababababababababababababababababababababababababababababab",
+      "project": "prj_1",
+      "source_kind": "commit",
+      "source_ref": "0123456789abcdef0123456789abcdef01234567",
+      "source_where": "acme/app"
+    },
+    "op-other-project": {
+      "environment": "env_1",
+      "environment_name": "production",
+      "plan": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "planned": "abababababababababababababababababababababababababababababababab",
+      "project": "prj_2",
+      "source_kind": "commit",
+      "source_ref": "0123456789abcdef0123456789abcdef01234567",
+      "source_where": "acme/app"
+    },
+    "op-renamed": {
+      "environment": "env_1",
+      "environment_name": "prod",
+      "plan": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "planned": "abababababababababababababababababababababababababababababababab",
+      "project": "prj_1",
+      "source_kind": "commit",
+      "source_ref": "0123456789abcdef0123456789abcdef01234567",
+      "source_where": "acme/app"
+    },
+    "space-in-deploy": {
+      "account": "alice",
+      "by": "37f29b7074cf8b52",
+      "decision": "once",
+      "deploy": "dep_1 dep_2",
+      "expires": 90000,
+      "op": "1589972dbfdd1a89f71a32f0eabde06d9bdedbd7bdd3fcf6f19080ee5a1b0c99",
+      "sig": "89e0ba3caf0ff93728b455d3aa344590fc8d47213061ecf86de6324b8acad15480f0d8865e578fd01dd0b0db6d34898b8ac8d8cbd5d1aa0b063be33f1c5cad0c"
+    },
+    "team-roster": {
+      "at": 1000,
+      "by": "37f29b7074cf8b52",
+      "members": [
+        {"account": "alice", "name": "alice-login", "role": "owner", "root": "37f29b7074cf8b52"},
+        {"account": "bob", "name": "bob-login", "role": "editor", "root": "c242667535a3d34f"}
+      ],
+      "name": "Acme",
+      "sig": "d9149e21fb7e917759dc736018c46656ee8bc525e109d33ab2adc153af38885e5725777794d972ff7a901e2301ee9f3a11d0cfeb88e817935a4a2986a130cd0f",
+      "team": "t1",
+      "v": 1,
+      "version": 1
+    }
+  },
+  "output": "ok: true, or refused: the check's code"
+}

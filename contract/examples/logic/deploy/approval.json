@@ -1,0 +1,174 @@
+{
+  "about": "A deploy's approval, or its deny, as an owner's device signs it: the deploy, the operation's hash, the approver's account, the decision (once or deny), when the apply must start by (ms), and the signing device, as a fixed text. Its sig is that device's Ed25519 signature over the body. well_formed: no field is empty, longer than 200 bytes, or holds anything but printable ASCII without spaces, so the body reads one way only. signed_by: well formed, and the signature is the given key's. Its passkey assertion's WebAuthn challenge is SHA-256 of the body, base64url without padding.",
+  "cases": [
+    {
+      "about": "alice approves the deploy once",
+      "input": {
+        "approval": "once",
+        "sign": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c"
+      },
+      "output": {
+        "body": "arugula deploy approval v1\ndeploy dep_1\nop 1589972dbfdd1a89f71a32f0eabde06d9bdedbd7bdd3fcf6f19080ee5a1b0c99\naccount alice\ndecision once\nexpires 90000\nby 37f29b7074cf8b52\n",
+        "passkey_challenge": "I7yNd_YBwT6UW3myX1lPFT2llfrafJ0Jwv9wqCKOcMU",
+        "signed_by": true,
+        "well_formed": true
+      }
+    },
+    {
+      "about": "alice denies it: a deny is signed too",
+      "input": {
+        "approval": "deny",
+        "sign": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c"
+      },
+      "output": {
+        "body": "arugula deploy approval v1\ndeploy dep_1\nop 1589972dbfdd1a89f71a32f0eabde06d9bdedbd7bdd3fcf6f19080ee5a1b0c99\naccount alice\ndecision deny\nexpires 90000\nby 37f29b7074cf8b52\n",
+        "passkey_challenge": "F3eWTbmZfBhIFFNdx8RS5JHYDRRizEzRIX4E8BOR_wA",
+        "signed_by": true,
+        "well_formed": true
+      }
+    },
+    {
+      "about": "checked against another key",
+      "input": {
+        "approval": "once",
+        "sign": "8139770ea87d175f56a35466c34c7ecccb8d8a91b4ee37a25df60f5b8fc9b394"
+      },
+      "output": {
+        "body": "arugula deploy approval v1\ndeploy dep_1\nop 1589972dbfdd1a89f71a32f0eabde06d9bdedbd7bdd3fcf6f19080ee5a1b0c99\naccount alice\ndecision once\nexpires 90000\nby 37f29b7074cf8b52\n",
+        "passkey_challenge": "I7yNd_YBwT6UW3myX1lPFT2llfrafJ0Jwv9wqCKOcMU",
+        "signed_by": false,
+        "well_formed": true
+      }
+    },
+    {
+      "about": "its expiry pushed out after she signed",
+      "input": {
+        "approval": "expires-changed",
+        "sign": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c"
+      },
+      "output": {
+        "body": "arugula deploy approval v1\ndeploy dep_1\nop 1589972dbfdd1a89f71a32f0eabde06d9bdedbd7bdd3fcf6f19080ee5a1b0c99\naccount alice\ndecision once\nexpires 99000\nby 37f29b7074cf8b52\n",
+        "passkey_challenge": "vUNKPBhjiZBHFUKP4vIYzsY86xvu-DpbZskR2OOrL2I",
+        "signed_by": false,
+        "well_formed": true
+      }
+    },
+    {
+      "about": "moved to another deploy after she signed",
+      "input": {
+        "approval": "other-deploy",
+        "sign": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c"
+      },
+      "output": {
+        "body": "arugula deploy approval v1\ndeploy dep_2\nop 1589972dbfdd1a89f71a32f0eabde06d9bdedbd7bdd3fcf6f19080ee5a1b0c99\naccount alice\ndecision once\nexpires 90000\nby 37f29b7074cf8b52\n",
+        "passkey_challenge": "Tj8wB8cDcW0AmhcaMAhkhGECjCVK3pM4u65ZrQpALmE",
+        "signed_by": false,
+        "well_formed": true
+      }
+    },
+    {
+      "about": "a space in a field: not well formed, so never signed_by, whoever signed it",
+      "input": {
+        "approval": "space-in-deploy",
+        "sign": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c"
+      },
+      "output": {
+        "body": "arugula deploy approval v1\ndeploy dep_1 dep_2\nop 1589972dbfdd1a89f71a32f0eabde06d9bdedbd7bdd3fcf6f19080ee5a1b0c99\naccount alice\ndecision once\nexpires 90000\nby 37f29b7074cf8b52\n",
+        "passkey_challenge": "0OFX_Vy0J8NOHUOOyD0lY6gEpLEFcY2WnuUYyJi-RZ8",
+        "signed_by": false,
+        "well_formed": false
+      }
+    }
+  ],
+  "checks": [
+    "arugula_e2e::deploy::Approval::body",
+    "arugula_e2e::deploy::Approval::well_formed",
+    "arugula_e2e::deploy::Approval::signed_by",
+    "arugula_e2e::deploy::Approval::passkey_challenge"
+  ],
+  "input": "approval: an approval's label; sign: an Ed25519 public key, hex, to check its signature against",
+  "keys": {
+    "alice": {
+      "device": "37f29b7074cf8b52",
+      "noise": "0101010101010101010101010101010101010101010101010101010101010101",
+      "seed": "0101010101010101010101010101010101010101010101010101010101010101",
+      "sign": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c"
+    },
+    "someone-else": {
+      "device": "c242667535a3d34f",
+      "noise": "0202020202020202020202020202020202020202020202020202020202020202",
+      "seed": "0202020202020202020202020202020202020202020202020202020202020202",
+      "sign": "8139770ea87d175f56a35466c34c7ecccb8d8a91b4ee37a25df60f5b8fc9b394"
+    }
+  },
+  "objects": {
+    "alice": {
+      "account": "alice",
+      "approver": "37f29b7074cf8b52",
+      "created": 1000,
+      "device": "37f29b7074cf8b52",
+      "kind": "browser",
+      "name": "alice's laptop",
+      "noise": "0101010101010101010101010101010101010101010101010101010101010101",
+      "sig": "4c7a182921697a35256fd95c0c9e8d2e91f60e6f7601e02d600196dda65ed26cd9aff836cd15e6e6d62cdfbb144fe575d921d5035ee13248a8565973ed0fda0d",
+      "sign": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
+      "v": 1
+    },
+    "deny": {
+      "account": "alice",
+      "by": "37f29b7074cf8b52",
+      "decision": "deny",
+      "deploy": "dep_1",
+      "expires": 90000,
+      "op": "1589972dbfdd1a89f71a32f0eabde06d9bdedbd7bdd3fcf6f19080ee5a1b0c99",
+      "sig": "7691c7aa0d8660525793c7c5e0e7da76d892f6c73813410df0fb66d28bfb4e6861184677c9ec4b069d1ffc9a5a39ba32cb9b6023438e987e38df3c2743e74a00"
+    },
+    "expires-changed": {
+      "account": "alice",
+      "by": "37f29b7074cf8b52",
+      "decision": "once",
+      "deploy": "dep_1",
+      "expires": 99000,
+      "op": "1589972dbfdd1a89f71a32f0eabde06d9bdedbd7bdd3fcf6f19080ee5a1b0c99",
+      "sig": "89e0ba3caf0ff93728b455d3aa344590fc8d47213061ecf86de6324b8acad15480f0d8865e578fd01dd0b0db6d34898b8ac8d8cbd5d1aa0b063be33f1c5cad0c"
+    },
+    "once": {
+      "account": "alice",
+      "by": "37f29b7074cf8b52",
+      "decision": "once",
+      "deploy": "dep_1",
+      "expires": 90000,
+      "op": "1589972dbfdd1a89f71a32f0eabde06d9bdedbd7bdd3fcf6f19080ee5a1b0c99",
+      "sig": "89e0ba3caf0ff93728b455d3aa344590fc8d47213061ecf86de6324b8acad15480f0d8865e578fd01dd0b0db6d34898b8ac8d8cbd5d1aa0b063be33f1c5cad0c"
+    },
+    "op": {
+      "environment": "env_1",
+      "environment_name": "production",
+      "plan": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "planned": "abababababababababababababababababababababababababababababababab",
+      "project": "prj_1",
+      "source_kind": "commit",
+      "source_ref": "0123456789abcdef0123456789abcdef01234567",
+      "source_where": "acme/app"
+    },
+    "other-deploy": {
+      "account": "alice",
+      "by": "37f29b7074cf8b52",
+      "decision": "once",
+      "deploy": "dep_2",
+      "expires": 90000,
+      "op": "1589972dbfdd1a89f71a32f0eabde06d9bdedbd7bdd3fcf6f19080ee5a1b0c99",
+      "sig": "89e0ba3caf0ff93728b455d3aa344590fc8d47213061ecf86de6324b8acad15480f0d8865e578fd01dd0b0db6d34898b8ac8d8cbd5d1aa0b063be33f1c5cad0c"
+    },
+    "space-in-deploy": {
+      "account": "alice",
+      "by": "37f29b7074cf8b52",
+      "decision": "once",
+      "deploy": "dep_1 dep_2",
+      "expires": 90000,
+      "op": "1589972dbfdd1a89f71a32f0eabde06d9bdedbd7bdd3fcf6f19080ee5a1b0c99",
+      "sig": "48e741dce3134a87f5cd7a4592a1d312f547cbaa89977ff61ec7d25fb8dda576fa8d362a6051e29f5f12cf7daed014ee321aef0500b07ec3474012aa17536406"
+    }
+  },
+  "output": "body; well_formed; signed_by: whether sign signed it; passkey_challenge"
+}

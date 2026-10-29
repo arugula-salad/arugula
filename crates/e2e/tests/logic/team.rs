@@ -7,13 +7,15 @@
 use std::collections::BTreeMap;
 
 use arugula_e2e::{
-    Cert, DeviceKeys, Kind, Revocation,
-    team::{AccountCerts, AskInvite, Invite, Member, Move, Redeem, Roster, Spent, TeamPin, TeamRole, raise_ok},
+    Cert, DeviceKeys, Kind,
+    team::{AskInvite, Invite, Member, Move, Redeem, Roster, Spent, TeamPin, TeamRole, raise_ok},
 };
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use crate::harness::{Ctx, Example, Spec, cert, input, revoke};
+use crate::harness::{
+    Account, CERTS_SHAPE, Ctx, Example, Person, Spec, account_certs, cert, input, member, person, revoke,
+};
 
 pub const FILES: &[Spec] = &[
     Spec { module: "team", name: "raise_ok", run: run_raise_ok, make: raise_ok_table },
@@ -26,7 +28,7 @@ pub const FILES: &[Spec] = &[
     Spec { module: "team", name: "devices", run: run_devices, make: devices },
 ];
 
-const TEAM: &str = "t1";
+pub const TEAM: &str = "t1";
 
 fn role(r: Option<TeamRole>) -> Value {
     json!(r.map(TeamRole::as_str))
@@ -36,45 +38,9 @@ fn parse_role(s: &str) -> anyhow::Result<TeamRole> {
     Ok(serde_json::from_value(json!(s))?)
 }
 
-/// An account's certificates and revocations, by label, as an input lists them.
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct Account {
-    certs: Vec<String>,
-    #[serde(default)]
-    revocations: Vec<String>,
-}
-
-fn account_certs(ctx: &Ctx, a: &BTreeMap<String, Account>) -> anyhow::Result<AccountCerts> {
-    a.iter()
-        .map(|(k, v)| Ok((k.clone(), (ctx.all::<Cert>(&v.certs)?, ctx.all::<Revocation>(&v.revocations)?))))
-        .collect()
-}
-
-const CERTS_SHAPE: &str = "certs: every member account's certificates and revocations, as control hands them \
-                           out: { account: { certs: [labels], revocations: [labels] } }";
-
 // ---- people ----
 
-/// Someone with a browser as their account's root.
-struct Person {
-    account: &'static str,
-    keys: DeviceKeys,
-    cert: Cert,
-}
-
-fn person(ex: &mut Example, account: &'static str, n: u8) -> Person {
-    let keys = ex.key(account, n);
-    let cert = cert(&keys, account, Kind::Browser, &format!("{account}'s laptop"), 1_000, &keys);
-    ex.object(account, &cert);
-    Person { account, keys, cert }
-}
-
-fn member(p: &Person, role: TeamRole) -> Member {
-    Member { account: p.account.into(), root: p.cert.device.clone(), role, name: format!("{}-login", p.account) }
-}
-
-fn roster(version: u64, at: u64, members: Vec<Member>, by: &DeviceKeys) -> Roster {
+pub fn roster(version: u64, at: u64, members: Vec<Member>, by: &DeviceKeys) -> Roster {
     let mut r = Roster {
         v: 1,
         team: TEAM.into(),

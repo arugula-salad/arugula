@@ -1,0 +1,101 @@
+{
+  "about": "What a deploy's owner approves (M218): the project, the environment (its id and its name, so the name a person reads is in the hashed bytes), the plan's SHA-256, the source, and the hash of the deploy's planned event in its environment's log, as a fixed text. Its hash is SHA-256 over exactly that text, hex: change any byte (another plan, commit, environment or log) and the approval no longer names it.",
+  "cases": [
+    {
+      "about": "a commit, to production",
+      "input": {"op": "commit"},
+      "output": {
+        "body": "arugula deploy op v1\nproject prj_1\nenvironment env_1\nname production\nplan aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nsource commit 0123456789abcdef0123456789abcdef01234567\nwhere acme/app\nplanned abababababababababababababababababababababababababababababababab\n",
+        "hash": "1589972dbfdd1a89f71a32f0eabde06d9bdedbd7bdd3fcf6f19080ee5a1b0c99"
+      }
+    },
+    {
+      "about": "an artifact, by digest, from the platform's store",
+      "input": {"op": "artifact"},
+      "output": {
+        "body": "arugula deploy op v1\nproject prj_1\nenvironment env_1\nname production\nplan aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nsource artifact sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\nwhere platform\nplanned abababababababababababababababababababababababababababababababab\n",
+        "hash": "0604ff8baac12c74c091e65ea3ed19b21664b383119cb2eb246832661aee874c"
+      }
+    },
+    {
+      "about": "the same, its environment renamed",
+      "input": {"op": "renamed"},
+      "output": {
+        "body": "arugula deploy op v1\nproject prj_1\nenvironment env_1\nname prod\nplan aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nsource commit 0123456789abcdef0123456789abcdef01234567\nwhere acme/app\nplanned abababababababababababababababababababababababababababababababab\n",
+        "hash": "933d9a66163f44939a4e45dd22ca0ef4bd07a25acb7437ae18611a5ffa9c5d74"
+      }
+    },
+    {
+      "about": "the same, another plan",
+      "input": {"op": "other-plan"},
+      "output": {
+        "body": "arugula deploy op v1\nproject prj_1\nenvironment env_1\nname production\nplan bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\nsource commit 0123456789abcdef0123456789abcdef01234567\nwhere acme/app\nplanned abababababababababababababababababababababababababababababababab\n",
+        "hash": "6106bd97555dc8d0f572311a8b11d1875038fdb38f7cec21c92be85c6c44bb4a"
+      }
+    },
+    {
+      "about": "the same, another planned event",
+      "input": {"op": "other-log"},
+      "output": {
+        "body": "arugula deploy op v1\nproject prj_1\nenvironment env_1\nname production\nplan aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nsource commit 0123456789abcdef0123456789abcdef01234567\nwhere acme/app\nplanned cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd\n",
+        "hash": "a56ab32547a720e5b5f1680fa0017de061cdd03ad8459dfe149fb6ab61bbdaab"
+      }
+    }
+  ],
+  "checks": ["arugula_e2e::deploy::Operation::body", "arugula_e2e::deploy::Operation::hash"],
+  "input": "op: an operation's label",
+  "keys": {},
+  "objects": {
+    "artifact": {
+      "environment": "env_1",
+      "environment_name": "production",
+      "plan": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "planned": "abababababababababababababababababababababababababababababababab",
+      "project": "prj_1",
+      "source_kind": "artifact",
+      "source_ref": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "source_where": "platform"
+    },
+    "commit": {
+      "environment": "env_1",
+      "environment_name": "production",
+      "plan": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "planned": "abababababababababababababababababababababababababababababababab",
+      "project": "prj_1",
+      "source_kind": "commit",
+      "source_ref": "0123456789abcdef0123456789abcdef01234567",
+      "source_where": "acme/app"
+    },
+    "other-log": {
+      "environment": "env_1",
+      "environment_name": "production",
+      "plan": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "planned": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
+      "project": "prj_1",
+      "source_kind": "commit",
+      "source_ref": "0123456789abcdef0123456789abcdef01234567",
+      "source_where": "acme/app"
+    },
+    "other-plan": {
+      "environment": "env_1",
+      "environment_name": "production",
+      "plan": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "planned": "abababababababababababababababababababababababababababababababab",
+      "project": "prj_1",
+      "source_kind": "commit",
+      "source_ref": "0123456789abcdef0123456789abcdef01234567",
+      "source_where": "acme/app"
+    },
+    "renamed": {
+      "environment": "env_1",
+      "environment_name": "prod",
+      "plan": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "planned": "abababababababababababababababababababababababababababababababab",
+      "project": "prj_1",
+      "source_kind": "commit",
+      "source_ref": "0123456789abcdef0123456789abcdef01234567",
+      "source_where": "acme/app"
+    }
+  },
+  "output": "body: the hashed text; hash: its SHA-256, hex"
+}
