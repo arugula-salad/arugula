@@ -876,7 +876,9 @@ workspace-guard:
     names() { awk '{print $1}' | sort -u; }
     root=$({{cargo}} tree --workspace -e all --prefix none --target all | names)
     server=$({{server_cargo}} tree --workspace -e all --prefix none --target all | names)
-    for crate in arugula-control arugula-control-base arugula-platform arugula-platform-base arugula-control-common; do
+    # The hub's crates, and every arugula-platform* (the platform's base, its
+    # feature crates and its binary, #314).
+    for crate in arugula-control arugula-control-base arugula-control-common $(grep -x 'arugula-platform.*' <<<"$root" || true); do
       if grep -qx "$crate" <<<"$root"; then echo "workspace-guard: the root workspace builds $crate: it belongs to server/Cargo.toml" >&2; status=1; fi
     done
     for crate in arugulad arugula arugula-mux arugula-vt libghostty-vt-sys arugula-testkit; do

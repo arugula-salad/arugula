@@ -159,6 +159,13 @@ impl Projection {
     }
 }
 
+/// The platform's projection: the one the platform binary put in its
+/// [`slots`](Platform::slots), else off.
+pub fn projection(app: &Platform) -> &Projection {
+    static OFF: Projection = Projection { mode: Mode::Off, writer: None };
+    app.slots.get().unwrap_or(&OFF)
+}
+
 /// Infisical as one machine identity, writing only.
 pub struct Writer {
     http: reqwest::Client,
@@ -363,7 +370,7 @@ pub struct Ask<'a> {
 /// it's off. The caller has sealed the value as the project's (the truth)
 /// and checked that the app is the project's.
 pub async fn project(app: &Platform, ask: &Ask<'_>) -> anyhow::Result<Option<Logged>> {
-    let p = &app.projection;
+    let p = projection(app);
     if p.mode == Mode::Off {
         return Ok(None);
     }
@@ -441,7 +448,7 @@ async fn decide(app: &Platform, ask: &Ask<'_>) -> Result<bool, Decided> {
     if app.db.projects_folder(ask.project, ask.app).map_err(failed)? {
         return Ok(true);
     }
-    let Some(w) = &app.projection.writer else { return Ok(false) };
+    let Some(w) = &projection(app).writer else { return Ok(false) };
     match w.folder_exists(ask.app).await {
         Ok(true) => Err(Decided::Refused(format!(
             "Infisical's /{}/ is there already and isn't this project's (a cluster app's): its secrets stay the \

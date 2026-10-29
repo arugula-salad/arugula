@@ -371,7 +371,7 @@ pub fn secrets_open(path: &Path, key: &str, previous: Option<&str>) -> anyhow::R
 /// it in its environment: on a Fly machine, `fly ssh console` doesn't
 /// always carry the app's secrets, and the server's are the ones that
 /// matter. `None` off Linux, or when there's no such process.
-pub(crate) fn running_env(var: &str) -> Option<(u32, String)> {
+pub fn running_env(var: &str) -> Option<(u32, String)> {
     let (pid, environ) = running_server()?;
     let value = env_value(&environ, var)?;
     Some((pid, value))

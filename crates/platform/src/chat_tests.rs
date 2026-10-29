@@ -4,6 +4,10 @@
 //! `chat_wire` runs chat end to end through the hub's gate and in-process
 //! port.
 
+// Also the feature crates' test harness (#314, the `testing` feature): its
+// helpers are `pub`, and only its own tests use the rest.
+#![cfg_attr(not(test), allow(dead_code, unused_imports))]
+
 use std::{
     collections::{BTreeMap, BTreeSet},
     sync::{
@@ -33,7 +37,7 @@ use crate::{
 /// set by the test, its change feed, the pushes it was asked for, and
 /// how many times each method was called.
 #[derive(Default)]
-pub(crate) struct TestHub {
+pub struct TestHub {
     state: Mutex<State>,
     calls: Mutex<BTreeMap<&'static str, usize>>,
     /// Its change feed fails while set.
@@ -41,13 +45,13 @@ pub(crate) struct TestHub {
     /// Its next feed page says changes were pruned unread.
     gap_next: AtomicBool,
     /// Its change feed takes 5 s to answer while set.
-    pub(crate) feed_slow: AtomicBool,
+    pub feed_slow: AtomicBool,
 }
 
 /// What a machine does when it's asked an op, in place of an answer set
 /// with [`TestHub::answers_ops`] (Arugula #209: a box archives its
 /// transcripts through the platform, then answers).
-pub(crate) type OpHook = Arc<
+pub type OpHook = Arc<
     dyn Fn(String, arugula_control_wire::forge::DaemonOp) -> BoxFuture<'static, arugula_control_wire::forge::OpAnswer>
         + Send
         + Sync,
@@ -121,27 +125,27 @@ impl TestHub {
     }
 
     /// Calls of every method so far.
-    pub(crate) fn calls(&self) -> usize {
+    pub fn calls(&self) -> usize {
         self.calls.lock().unwrap().values().sum()
     }
 
     /// Calls of each method so far.
-    pub(crate) fn calls_by_method(&self) -> BTreeMap<&'static str, usize> {
+    pub fn calls_by_method(&self) -> BTreeMap<&'static str, usize> {
         self.calls.lock().unwrap().clone()
     }
 
-    pub(crate) fn calls_of(&self, method: &str) -> usize {
+    pub fn calls_of(&self, method: &str) -> usize {
         self.calls.lock().unwrap().get(method).copied().unwrap_or(0)
     }
 
-    pub(crate) fn change(&self, kind: ChangeKind, subject: &str) {
+    pub fn change(&self, kind: ChangeKind, subject: &str) {
         let mut s = self.state.lock().unwrap();
         let seq = s.changes.len() as u64 + 1;
         s.changes.push(Change { seq, at: now_ms(), kind, subject: subject.into() });
     }
 
     /// A team's roster now (making the team, and its members' accounts).
-    pub(crate) fn team(&self, id: &str, members: &[(&str, TeamRole)]) {
+    pub fn team(&self, id: &str, members: &[(&str, TeamRole)]) {
         {
             let mut s = self.state.lock().unwrap();
             s.accounts.extend(members.iter().map(|(a, _)| (*a).to_owned()));
@@ -158,7 +162,7 @@ impl TestHub {
     }
 
     /// `account` let `client` sign it in, and links its user `user` (M229).
-    pub(crate) fn product(&self, account: &str, client: &str, user: &str) {
+    pub fn product(&self, account: &str, client: &str, user: &str) {
         let link = crate::hub::ProductLink {
             client: client.into(),
             product: client.into(),
@@ -171,13 +175,13 @@ impl TestHub {
     }
 
     /// An issuer access token for `account`, issued to `client`.
-    pub(crate) fn access_token(&self, account: &str, client: &str) -> String {
+    pub fn access_token(&self, account: &str, client: &str) -> String {
         let t = format!("aat_{account}_{client}");
         self.state.lock().unwrap().access.insert(t.clone(), (account.into(), client.into()));
         t
     }
 
-    pub(crate) fn daemon(&self, id: &str, account: &str, team: Option<&str>) {
+    pub fn daemon(&self, id: &str, account: &str, team: Option<&str>) {
         self.state.lock().unwrap().daemons.insert(
             id.into(),
             Daemon { id: id.into(), account: account.into(), team: team.map(Into::into), name: format!("{id}-box") },
@@ -186,17 +190,17 @@ impl TestHub {
     }
 
     /// An owner's device delegated `project` to control (M178).
-    pub(crate) fn delegate(&self, project: &str) {
+    pub fn delegate(&self, project: &str) {
         self.state.lock().unwrap().delegated.insert(project.into());
     }
 
     /// `project`'s live delegation is now `id` (M211), or it has none.
     /// `device` isn't a browser owner's, for grants and their revokes.
-    pub(crate) fn not_a_browser(&self, device: &str) {
+    pub fn not_a_browser(&self, device: &str) {
         self.state.lock().unwrap().not_browsers.insert(device.into());
     }
 
-    pub(crate) fn set_delegation(&self, project: &str, id: Option<&str>) {
+    pub fn set_delegation(&self, project: &str, id: Option<&str>) {
         let mut s = self.state.lock().unwrap();
         match id {
             Some(id) => s.delegation_ids.insert(project.into(), id.into()),
@@ -206,7 +210,7 @@ impl TestHub {
 
     /// What `machine` says on its relay socket (M180): busy, idle, or
     /// nothing (`None`: it's off the relay).
-    pub(crate) fn say_busy(&self, machine: &str, busy: Option<bool>) {
+    pub fn say_busy(&self, machine: &str, busy: Option<bool>) {
         let mut s = self.state.lock().unwrap();
         s.activity_down = false;
         match busy {
@@ -216,7 +220,7 @@ impl TestHub {
     }
 
     /// `machine` is (or is no longer) connected to the relay.
-    pub(crate) fn set_online(&self, machine: &str, on: bool) {
+    pub fn set_online(&self, machine: &str, on: bool) {
         let mut s = self.state.lock().unwrap();
         if on {
             s.online.insert(machine.into());
@@ -226,101 +230,101 @@ impl TestHub {
     }
 
     /// Whether the hub can say which machines are on the relay.
-    pub(crate) fn online_down(&self, down: bool) {
+    pub fn online_down(&self, down: bool) {
         self.state.lock().unwrap().online_down = down;
     }
 
     /// The hub can't say which machines are working until one says again.
-    pub(crate) fn activity_down(&self) {
+    pub fn activity_down(&self) {
         self.state.lock().unwrap().activity_down = true;
     }
 
     /// The box of `workspace` enrolled, as `machine`, and its daemon is on
     /// the relay (`set_online` takes it off).
-    pub(crate) fn enroll(&self, workspace: &str, machine: &str) {
+    pub fn enroll(&self, workspace: &str, machine: &str) {
         let mut s = self.state.lock().unwrap();
         s.enrolled.insert(workspace.into(), machine.into());
         s.online.insert(machine.into());
     }
 
     /// Someone tried the enrollment of `workspace`'s box again.
-    pub(crate) fn take(&self, workspace: &str) {
+    pub fn take(&self, workspace: &str) {
         let mut s = self.state.lock().unwrap();
         s.enrolled.remove(workspace);
         s.taken.insert(workspace.into());
     }
 
     /// The enrollments the platform asked for, in order.
-    pub(crate) fn enrollments(&self) -> Vec<crate::hosted::enroll::EnrollAsk> {
+    pub fn enrollments(&self) -> Vec<crate::hosted::enroll::EnrollAsk> {
         self.state.lock().unwrap().enrollments.clone()
     }
 
     /// The workspaces the platform said are gone, in order.
-    pub(crate) fn gone(&self) -> Vec<String> {
+    pub fn gone(&self) -> Vec<String> {
         self.state.lock().unwrap().gone.clone()
     }
 
     /// The account signed in with GitHub as `login`, GitHub's user `id`.
     /// The forge pokes it was handed.
-    pub(crate) fn pokes(&self) -> Vec<arugula_control_wire::forge::Poke> {
+    pub fn pokes(&self) -> Vec<arugula_control_wire::forge::Poke> {
         self.state.lock().unwrap().pokes.clone()
     }
 
     /// A product's user linked to an account by GitHub id (M229).
-    pub(crate) fn link_product(&self, client: &str, user: &str, account: &str, github_id: u64) {
+    pub fn link_product(&self, client: &str, user: &str, account: &str, github_id: u64) {
         let mut s = self.state.lock().unwrap();
         s.product_links.insert((client.into(), user.into()), (account.into(), github_id));
     }
 
-    pub(crate) fn github(&self, account: &str, id: u64, login: &str) {
+    pub fn github(&self, account: &str, id: u64, login: &str) {
         let mut s = self.state.lock().unwrap();
         s.accounts.insert(account.into());
         s.github.insert(account.into(), crate::forge::GithubUser { id, login: login.into() });
     }
 
     /// How a machine answers ops from now on (M168).
-    pub(crate) fn answers_ops(&self, daemon: &str, a: arugula_control_wire::forge::OpAnswer) {
+    pub fn answers_ops(&self, daemon: &str, a: arugula_control_wire::forge::OpAnswer) {
         self.state.lock().unwrap().op_answers.insert(daemon.into(), a);
     }
 
     /// What every machine does when it's asked an op from now on.
-    pub(crate) fn on_ops(&self, hook: OpHook) {
+    pub fn on_ops(&self, hook: OpHook) {
         self.state.lock().unwrap().op_hook = Some(hook);
     }
 
     /// The ops asked of machines, in order.
-    pub(crate) fn ops_asked(&self) -> Vec<(String, arugula_control_wire::forge::DaemonOp)> {
+    pub fn ops_asked(&self) -> Vec<(String, arugula_control_wire::forge::DaemonOp)> {
         self.state.lock().unwrap().ops.clone()
     }
 
     /// Whether it runs GitHub's authorization for a send.
     /// A team's signed rosters, oldest first, as the hub keeps them (M218).
-    pub(crate) fn rosters(&self, team: &str, rosters: Vec<arugula_e2e::team::Roster>) {
+    pub fn rosters(&self, team: &str, rosters: Vec<arugula_e2e::team::Roster>) {
         self.state.lock().unwrap().rosters.insert(team.into(), rosters);
     }
 
     /// A passkey of an account's, Ed25519, as the hub keeps it (M218).
-    pub(crate) fn passkey(&self, id: &str, account: &str, public: [u8; 32]) {
+    pub fn passkey(&self, id: &str, account: &str, public: [u8; 32]) {
         self.state.lock().unwrap().passkeys.insert(id.into(), (account.into(), public));
     }
 
     /// An account's devices as the hub keeps them (M218).
-    pub(crate) fn devices(&self, account: &str, trust: crate::hub::DeviceTrust) {
+    pub fn devices(&self, account: &str, trust: crate::hub::DeviceTrust) {
         self.state.lock().unwrap().devices.insert(account.into(), trust);
     }
 
-    pub(crate) fn authorizes(&self, on: bool) {
+    pub fn authorizes(&self, on: bool) {
         self.state.lock().unwrap().authorizes = on;
     }
 
     /// A machine leaves its account.
-    pub(crate) fn leave(&self, id: &str) {
+    pub fn leave(&self, id: &str) {
         self.state.lock().unwrap().daemons.remove(id);
         self.change(ChangeKind::DaemonLeft, id);
     }
 
     /// Share a machine with an account, or stop.
-    pub(crate) fn share(&self, machine: &str, account: &str, on: bool) {
+    pub fn share(&self, machine: &str, account: &str, on: bool) {
         {
             let mut s = self.state.lock().unwrap();
             let k = (machine.to_owned(), account.to_owned());
@@ -334,26 +338,26 @@ impl TestHub {
     }
 
     /// Its change feed fails from now on, or works again.
-    pub(crate) fn feed_down(&self, down: bool) {
+    pub fn feed_down(&self, down: bool) {
         self.feed_down.store(down, Ordering::SeqCst);
     }
 
     /// Its next feed page says changes were pruned before they were read.
-    pub(crate) fn gap(&self) {
+    pub fn gap(&self) {
         self.gap_next.store(true, Ordering::SeqCst);
     }
 
-    pub(crate) fn flag(&self, owner: &str, on: bool) {
+    pub fn flag(&self, owner: &str, on: bool) {
         self.flag_named(owner, FLAG, on);
     }
 
     /// The Labs flag `name`, set for `owner`.
-    pub(crate) fn flag_named(&self, owner: &str, name: &str, on: bool) {
+    pub fn flag_named(&self, owner: &str, name: &str, on: bool) {
         self.state.lock().unwrap().flags.entry(owner.into()).or_default().insert(name.into(), on);
         self.change(ChangeKind::LabsFlag, owner);
     }
 
-    pub(crate) fn pushes(&self) -> Vec<(String, Value, PushOptions)> {
+    pub fn pushes(&self) -> Vec<(String, Value, PushOptions)> {
         self.state.lock().unwrap().pushes.clone()
     }
 
@@ -718,7 +722,7 @@ impl HubPort for TestHub {
 
 /// The platform over `hub`, its chat routes behind a test gate
 /// (`ilg_session=session-<account>`), and its address.
-pub(crate) async fn serve(hub: Arc<TestHub>) -> (Arc<Platform>, String) {
+pub async fn serve(hub: Arc<TestHub>) -> (Arc<Platform>, String) {
     serve_on(hub, crate::db::Db::test()).await
 }
 
@@ -733,7 +737,7 @@ async fn serve_on(hub: Arc<TestHub>, db: crate::db::Db) -> (Arc<Platform>, Strin
     (app, base)
 }
 
-pub(crate) async fn call(base: &str, who: &str, method: &str, path: &str, body: Option<Value>) -> (u16, Value) {
+pub async fn call(base: &str, who: &str, method: &str, path: &str, body: Option<Value>) -> (u16, Value) {
     let mut req = reqwest::Client::new()
         .request(method.parse().unwrap(), format!("{base}{path}"))
         .header("cookie", format!("ilg_session=session-{who}"));
@@ -761,7 +765,7 @@ fn room(id: &str, scope: &str, kind: &str, machine: Option<&str>, target: Option
 
 /// a owns team t and its machines m0..m4, with six pane threads each;
 /// b, an editor, reads the even ones. Chat is on for t.
-pub(crate) fn seed(app: &Platform, hub: &TestHub) {
+pub fn seed(app: &Platform, hub: &TestHub) {
     hub.team("t", &[("a", TeamRole::Owner), ("b", TeamRole::Editor)]);
     hub.flag("team:t", true);
     app.db.add_chat_room(&room("ch_general", "team:t", "channel", None, None), &["a", "b"], Some("prj_t")).unwrap();
@@ -862,7 +866,7 @@ fn listen(mut r: reqwest::Response) -> Arc<Mutex<String>> {
     heard
 }
 
-pub(crate) async fn open_live(base: &str, who: &str, last: Option<&str>) -> Arc<Mutex<String>> {
+pub async fn open_live(base: &str, who: &str, last: Option<&str>) -> Arc<Mutex<String>> {
     let mut req = reqwest::Client::new()
         .get(format!("{base}/api/chat/live"))
         .header("cookie", format!("ilg_session=session-{who}"));
@@ -875,7 +879,7 @@ pub(crate) async fn open_live(base: &str, who: &str, last: Option<&str>) -> Arc<
 }
 
 /// Until `heard` has `what`, at most `within`; how long it took.
-pub(crate) async fn hears(heard: &Mutex<String>, what: &str, within: Duration) -> Duration {
+pub async fn hears(heard: &Mutex<String>, what: &str, within: Duration) -> Duration {
     let started = std::time::Instant::now();
     while !heard.lock().unwrap().contains(what) {
         assert!(started.elapsed() < within, "never heard {what}: {}", heard.lock().unwrap());

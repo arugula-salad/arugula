@@ -1,0 +1,40 @@
+[package]
+name = "arugula-platform-agents"
+description = "Arugula control's platform: agents with no machine (their MCP endpoint and grant tokens), redone's import and the Infisical projection, and studio as a client"
+# The hosted server's own workspace (server/Cargo.toml), not the root's.
+workspace = "../../server"
+# Not the workspace's version: a release bump would rebuild this crate and
+# everything on it. The binaries carry the release.
+version = "0.0.0"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[dependencies]
+anyhow = { workspace = true }
+arugula-control-common = { workspace = true }
+arugula-control-wire = { workspace = true }
+arugula-e2e = { workspace = true }
+arugula-platform-base = { workspace = true }
+axum = { workspace = true }
+base64 = { workspace = true }
+# The Infisical projection's flags and redone's import (`arugula-platform
+# import redone`).
+clap = { workspace = true, features = ["derive", "env"] }
+hex = { workspace = true }
+reqwest = { workspace = true, features = ["rustls", "http2", "json"] }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
+tokio = { workspace = true, features = ["full"] }
+tracing = { workspace = true }
+url = { workspace = true }
+
+[dev-dependencies]
+# The platform's test harness: a hub of the test's own, the fake GitHub,
+# deploys' signed approvals.
+arugula-platform-base = { workspace = true, features = ["testing"] }
+
+[lints]
+workspace = true

@@ -112,12 +112,15 @@ macro_rules! int_params {
 }
 int_params!(i64, i32, u32, u64, usize);
 
-/// A query's parameters, in order: `params![a, b]`.
+/// A query's parameters, in order: `params![a, b]`. Exported for the
+/// feature crates' queries (#314); `db::sql::params` is where it's named.
+#[macro_export]
+#[doc(hidden)]
 macro_rules! params {
     () => { &[] as &[&dyn $crate::db::sql::Param] };
     ($($x:expr),+ $(,)?) => { &[$(&$x as &dyn $crate::db::sql::Param),+] as &[&dyn $crate::db::sql::Param] };
 }
-pub(crate) use params;
+pub use crate::params;
 
 /// A list's items as parameters, for a query whose number of them varies
 /// (`IN (?, ?, ...)`).

@@ -1,6 +1,6 @@
 # Infisical's answers, for the projection's fakes (M235)
 
-`answers.json` is what the fake Infisical in `crates/platform/src/infisical_tests.rs`
+`answers.json` is what the fake Infisical in `crates/platform-agents/src/infisical_tests.rs`
 and the testnet's (`testnet/infisical-fake.mjs`) answer. Nothing in it is invented:
 
 - **The requests** the platform sends are redone's (`backends.mjs` `infisicalClient`,

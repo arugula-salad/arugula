@@ -1,6 +1,10 @@
 //! What the platform's tests share: its routes behind a gate that says
 //! who's asking as the hub's would ([`router`]).
 
+// Also the feature crates' test harness (#314, the `testing` feature): its
+// helpers are `pub`, and only its own tests use the rest.
+#![cfg_attr(not(test), allow(dead_code, unused_imports))]
+
 use std::sync::Arc;
 
 use arugula_control_common::Principal;
@@ -15,7 +19,7 @@ use crate::{
 /// hub's would: `ilg_session=session-<account>` is that account's
 /// session (with the same-origin check), and `x-test-daemon: <account>
 /// <machine>` that machine's checked signature.
-pub(crate) fn router(app: Arc<Platform>) -> axum::Router {
+pub fn router(app: Arc<Platform>) -> axum::Router {
     crate::router(app).layer(axum::middleware::from_fn(gate))
 }
 

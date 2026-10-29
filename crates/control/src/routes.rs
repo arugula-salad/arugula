@@ -108,7 +108,7 @@ fn probe_path(path: &str) -> String {
 async fn registered() -> BTreeSet<(String, String)> {
     // The hub's, and the platform's it mounts (#1153).
     let mut paths = crate::routes().paths;
-    paths.extend(arugula_platform::paths());
+    paths.extend(crate::platform_paths());
     let mut once = BTreeSet::new();
     for p in &paths {
         assert!(once.insert(*p), "{p} is registered by two `.route` calls: make it one");
@@ -167,7 +167,7 @@ async fn the_gateway_answers_what_routes_toml_lists() {
     let router = crate::router(app).into_make_service_with_connect_info::<std::net::SocketAddr>();
     tokio::spawn(async move { axum::serve(l, router).await });
     let mut paths = crate::routes().paths;
-    paths.extend(arugula_platform::paths());
+    paths.extend(crate::platform_paths());
     let got = allowed(&reqwest::Client::new(), &base, &paths).await;
     assert_eq!(got, listed(), "the gateway's routes are routes.toml's");
 }
@@ -178,7 +178,7 @@ async fn the_gateway_answers_what_routes_toml_lists() {
 fn the_platform_answers_platform_routes() {
     let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("routes.toml");
     let list: List = toml::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
-    let platform = arugula_platform::paths();
+    let platform = crate::platform_paths();
     assert!(platform.contains(&"/api/stripe/webhook"), "Stripe's webhook is the platform's");
     for r in list.route.iter().filter(|r| platform.contains(&r.path.as_str())) {
         assert!(

@@ -104,12 +104,7 @@ pub struct AgentPrincipal {
 /// ("your DMs"), their personal project, or a project of a team they're in
 /// (a locked team's owners only). `now`: ask the hub, not the cache (to
 /// write a grant on the hub's word).
-pub(crate) async fn owner_reads(
-    app: &Platform,
-    owner: &str,
-    scope: &AgentScope,
-    now: bool,
-) -> HubResult<Option<String>> {
+pub async fn owner_reads(app: &Platform, owner: &str, scope: &AgentScope, now: bool) -> HubResult<Option<String>> {
     match scope {
         AgentScope::Account(a) => Ok((a == owner).then(|| "your DMs".to_owned())),
         AgentScope::Project(p) => {

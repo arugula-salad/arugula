@@ -399,12 +399,12 @@ impl From<anyhow::Error> for Refused {
     }
 }
 
-pub(crate) fn header_of<'a>(headers: &'a HeaderMap, name: &str) -> Option<&'a str> {
+pub fn header_of<'a>(headers: &'a HeaderMap, name: &str) -> Option<&'a str> {
     headers.get(name).and_then(|v| v.to_str().ok()).map(str::trim).filter(|v| !v.is_empty())
 }
 
 /// The bearer a request carries, if any.
-pub(crate) fn bearer(headers: &HeaderMap) -> Option<&str> {
+pub fn bearer(headers: &HeaderMap) -> Option<&str> {
     let v = header_of(headers, "authorization")?;
     let (scheme, token) = v.split_once(' ')?;
     scheme.eq_ignore_ascii_case("bearer").then_some(token.trim()).filter(|t| !t.is_empty())

@@ -4,6 +4,10 @@
 //! checks, and a stale deploy is refused. The hub is chat's [`TestHub`],
 //! which keeps each account's devices and passkeys as the test says.
 
+// Also the feature crates' test harness (#314, the `testing` feature): its
+// helpers are `pub`, and only its own tests use the rest.
+#![cfg_attr(not(test), allow(dead_code, unused_imports))]
+
 use std::sync::Arc;
 
 use arugula_control_common::Principal;
@@ -32,13 +36,13 @@ use crate::{
 
 /// An account's devices: a phone (its root), a CLI on its machine, and a
 /// browser it removed.
-pub(crate) struct Devices {
-    pub(crate) phone: DeviceKeys,
+pub struct Devices {
+    pub phone: DeviceKeys,
     cli: DeviceKeys,
     removed: DeviceKeys,
 }
 
-pub(crate) fn devices(hub: &TestHub, account: &str) -> Devices {
+pub fn devices(hub: &TestHub, account: &str) -> Devices {
     let phone = DeviceKeys::generate();
     let mut root = Cert::new(&phone, account, Kind::Browser, "Pixel");
     root.sign_with(&phone);
@@ -97,7 +101,7 @@ fn roster(version: u64, members: &[(&str, &str, TeamRole)], by: &DeviceKeys) -> 
 
 /// The platform over the same app, behind a gate that also vouches for a
 /// CLI device (`x-test-cli: <account> <device>`), as the hub's does.
-pub(crate) async fn serve_with_cli(app: Arc<crate::Platform>) -> String {
+pub async fn serve_with_cli(app: Arc<crate::Platform>) -> String {
     fn asked(headers: &axum::http::HeaderMap) -> Option<Principal> {
         let h = |n: &str| headers.get(n).and_then(|v| v.to_str().ok()).map(str::to_owned);
         if let Some(c) = h("x-test-cli") {
@@ -158,7 +162,7 @@ fn driver_plan(sha: &str) -> String {
     hex::encode(Sha256::digest(text.as_bytes()))
 }
 
-pub(crate) fn digest(s: &str) -> String {
+pub fn digest(s: &str) -> String {
     hex::encode(Sha256::digest(s.as_bytes()))
 }
 
@@ -168,7 +172,7 @@ fn plan_body(env: &str, sha: &str) -> Option<Value> {
 
 /// A short hex id as a full commit id (chant-fly deploys only those,
 /// M220): padded with zeros to 40.
-pub(crate) fn full(sha: &str) -> String {
+pub fn full(sha: &str) -> String {
     format!("{sha:0<40}")
 }
 
@@ -211,11 +215,11 @@ fn assertion(body: &str, pk: &Pk) -> Value {
 /// `who`'s `keys` signing `decision` on deploy `d` whose operation hash is
 /// `op`, good for an hour, confirmed with `who`'s passkey: the body the
 /// approve and deny routes take.
-pub(crate) fn signed(keys: &DeviceKeys, who: &str, d: &str, op: &str, decision: Decision) -> Value {
+pub fn signed(keys: &DeviceKeys, who: &str, d: &str, op: &str, decision: Decision) -> Value {
     signed_until(keys, who, d, op, decision, now_ms() + 3_600_000)
 }
 
-pub(crate) fn signed_until(keys: &DeviceKeys, who: &str, d: &str, op: &str, decision: Decision, expires: u64) -> Value {
+pub fn signed_until(keys: &DeviceKeys, who: &str, d: &str, op: &str, decision: Decision, expires: u64) -> Value {
     signed_with(keys, who, d, op, decision, expires, Some(&Pk { of: who, challenge: None, flags: 0x05 }))
 }
 
@@ -263,7 +267,7 @@ async fn production(base: &str, t: &str) -> String {
 }
 
 /// Planned by `who` (a person) and asked for: its id and operation hash.
-pub(crate) async fn asked(base: &str, who: &str, t: &str, env: &str, sha: &str) -> (String, String) {
+pub async fn asked(base: &str, who: &str, t: &str, env: &str, sha: &str) -> (String, String) {
     let (st, d) = call(base, who, "POST", &format!("/api/projects/{t}/deploys"), plan_body(env, sha)).await;
     assert_eq!((st, &d["state"]), (200, &json!("planned")), "{d}");
     let id = d["id"].as_str().unwrap().to_owned();

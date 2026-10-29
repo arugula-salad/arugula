@@ -34,16 +34,12 @@ use arugula_control_common::{analytics::Analytics, limit::Limits};
 
 #[cfg(test)]
 mod agent_issues_tests;
-pub mod agent_mcp;
-#[cfg(test)]
-mod agent_mcp_tests;
 #[cfg(test)]
 mod agent_sessions_tests;
 #[cfg(test)]
 mod agent_threads_tests;
-pub mod agent_tokens;
-#[cfg(test)]
-mod agents_tests;
+#[cfg(any(test, feature = "testing"))]
+pub mod agents_tests;
 pub mod auth;
 pub mod billing;
 pub mod boards;
@@ -64,24 +60,22 @@ mod chat_previews_tests;
 mod chat_reactions_tests;
 #[cfg(test)]
 mod chat_rooms_tests;
-#[cfg(test)]
-mod chat_tests;
+#[cfg(any(test, feature = "testing"))]
+pub mod chat_tests;
 #[cfg(test)]
 mod chat_threads_tests;
-pub mod clients;
-#[cfg(test)]
-mod clients_tests;
 pub mod cloud;
 pub mod compute;
 #[cfg(feature = "contract")]
 pub mod contract;
 pub mod db;
 pub mod deploys;
-#[cfg(test)]
-mod deploys_tests;
+#[cfg(any(test, feature = "testing"))]
+pub mod deploys_tests;
 pub mod drivers;
 #[cfg(test)]
 mod failure_tests;
+pub mod features;
 pub mod forge;
 pub mod grants;
 pub mod hosted;
@@ -89,11 +83,9 @@ pub mod hub;
 #[cfg(test)]
 mod hub_calls_tests;
 pub mod inbox;
-pub mod infisical;
 pub mod issues;
 pub mod jobs;
 pub mod keys;
-pub mod links;
 pub mod notify;
 #[cfg(test)]
 mod object_threads_tests;
@@ -102,7 +94,6 @@ pub mod planter;
 mod port;
 pub mod project_docs;
 pub mod projects;
-pub mod redone;
 pub mod remote;
 #[cfg(test)]
 mod restart_tests;
@@ -130,8 +121,8 @@ mod sessions_pool_tests;
 #[cfg(test)]
 mod sessions_tries_tests;
 pub mod stuck;
-#[cfg(test)]
-pub(crate) mod testing;
+#[cfg(any(test, feature = "testing"))]
+pub mod testing;
 pub mod timing;
 pub mod triggers;
 pub mod window;
@@ -247,9 +238,9 @@ pub struct Platform {
     /// Short-lived tokens minted for deploys' runs (M219), revoked when
     /// each run ends: this machine's, in memory only.
     pub deploy_tokens: drivers::Held,
-    /// The Infisical projection (M235): off unless the platform binary is
-    /// told otherwise (`ARUGULA_INFISICAL_PROJECTION`).
-    pub projection: infisical::Projection,
+    /// What feature crates keep here (#314): the agents' Infisical
+    /// projection (M235), set by the platform binary.
+    pub slots: features::Slots,
 }
 
 impl Platform {
@@ -321,7 +312,7 @@ impl Platform {
             inbox: Default::default(),
             run_logs: None,
             deploy_tokens: Default::default(),
-            projection: Default::default(),
+            slots: Default::default(),
         }
     }
 }

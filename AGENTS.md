@@ -116,8 +116,11 @@ never compiles the daemon, the mux or Ghostty: build them with
   (#314), which registers the platform's feature crates.
 - `crates/platform`: control's platform (#1150, `arugula-platform-base`, a
   library): billing, Cloud, chat, projects and grants are here; its binary
-  is `crates/arugula-platform` (#314). Its tests are under
-  `-p arugula-platform-base` (`-p arugula-platform` is the binary). It
+  is `crates/arugula-platform` (#314), and its feature crates are
+  `crates/platform-*` (`arugula-platform-<area>`, side by side on the base,
+  registered by `crates/platform-all`). Its tests are under
+  `-p arugula-platform-base` and each feature crate's (`-p
+  arugula-platform` is the binary). It
   reaches the hub only through `HubPort`, and the hub reaches it through
   `PlatformPort`, in process or over the private network (`remote`).
 - `crates/control-common`: what the hub and the platform both use: the SQLite

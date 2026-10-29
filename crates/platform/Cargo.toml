@@ -58,6 +58,9 @@ tokio = { workspace = true, features = ["full"] }
 tokio-postgres = "0.7.18"
 tracing = { workspace = true }
 url = { workspace = true }
+# The test harness's passkeys (`testing`): the test hub checks an Ed25519
+# assertion as the hub does.
+ed25519-dalek = { workspace = true, optional = true }
 
 [features]
 # Embed web/dist-platform even in a debug build (rust-embed reads it from
@@ -67,6 +70,10 @@ debug-embed = ["rust-embed/debug-embed"]
 # The contract tests every `HubPort` keeps (`contract`): control runs them
 # against its in-process port, and M140 against the HTTP one.
 contract = []
+# The test harness, for the feature crates' tests (#314): a hub of the
+# test's own (`chat_tests::TestHub`), the fake GitHub, deploys' signed
+# approvals. Only ever a dev-dependency's feature.
+testing = ["contract", "dep:ed25519-dalek"]
 
 [lints]
 workspace = true

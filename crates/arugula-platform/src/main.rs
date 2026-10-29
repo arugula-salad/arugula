@@ -116,7 +116,7 @@ struct Args {
     /// the writer identity's address, project, environment and
     /// credentials.
     #[command(flatten)]
-    infisical: arugula_platform::infisical::Args,
+    infisical: arugula_platform_agents::infisical::Args,
 
     /// The GitHub App (M161): its id, slug, private key and webhook secret,
     /// with the names they had on the hub.
@@ -147,11 +147,12 @@ struct Args {
 }
 
 fn main() -> anyhow::Result<()> {
+    arugula_platform_all::register();
     // `import redone`: redone's tenants, tokens and apps (M235). Any other
     // `import` falls through to `import planter` below.
     let args: Vec<String> = std::env::args().skip(1).collect();
     if args.first().is_some_and(|a| a == "import") && args.get(1).is_some_and(|w| w == "redone") {
-        return arugula_platform::redone::run("arugula-platform import", args.into_iter().skip(1));
+        return arugula_platform_agents::redone::run("arugula-platform import", args.into_iter().skip(1));
     }
     // `copy`, `checksums`, `secrets-check`, `migrations`: a window's tools
     // (window.rs, M141, M145), run on the platform's machine beside the
@@ -236,10 +237,11 @@ async fn run() -> anyhow::Result<()> {
     p.github = a.github_app.app(&a.github_api)?;
     p.deploy_app = a.github_app.deploy_app(&a.github_api)?;
     p.run_logs = a.run_logs.bucket()?;
-    p.projection = a.infisical.projection(&p.http)?;
-    if p.projection.mode != arugula_platform::infisical::Mode::Off {
-        info!(mode = ?p.projection.mode, "the Infisical projection");
+    let projection = a.infisical.projection(&p.http)?;
+    if projection.mode != arugula_platform_agents::infisical::Mode::Off {
+        info!(mode = ?projection.mode, "the Infisical projection");
     }
+    p.slots.put(projection);
     p.paused = a.paused.into();
     let p = Arc::new(p);
     if a.paused {
@@ -247,8 +249,6 @@ async fn run() -> anyhow::Result<()> {
     }
     arugula_platform::hosted::start(&p);
     arugula_platform::keys::start(&p);
-    // Clients' secret events past their days (M236).
-    arugula_platform::clients::start(&p);
     // The job worker: runs' dispatch (M212) and schedules (M214).
     arugula_platform::work::start(&p);
     // Runs' logs past their days (M213).
@@ -259,6 +259,9 @@ async fn run() -> anyhow::Result<()> {
     arugula_platform::projects::start(&p);
     arugula_platform::billing::start(&p);
     arugula_platform::forge::start(&p);
+    // The feature crates' (#314): clients' secret events past their days
+    // (M236).
+    arugula_platform::features::start(&p);
 
     let port: Arc<dyn PlatformPort> = p.clone();
     let app = Router::new()

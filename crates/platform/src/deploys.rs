@@ -204,7 +204,7 @@ pub(crate) async fn role(
 
 /// The project as `account` sees it, with their role: 404 unless they're
 /// in it, 403 for a viewer when `write`.
-pub(crate) async fn project_as(
+pub async fn project_as(
     app: &Platform,
     account: &str,
     project: &str,

@@ -59,6 +59,9 @@ workspace = true
 aes-gcm = { workspace = true }
 # The contract every HubPort keeps (hub_port.rs's tests).
 arugula-platform-base = { workspace = true, features = ["contract"] }
+# Every platform feature crate, registered, for the platform in the tests'
+# hub (`App::for_tests`) and routes.toml's checks.
+arugula-platform-all = { workspace = true }
 hkdf = { workspace = true }
 # tables.toml, the table manifest (src/db/tables.rs).
 

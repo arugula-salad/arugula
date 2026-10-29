@@ -108,7 +108,7 @@ use crate::{
 
 pub(crate) mod agent_notice;
 pub(crate) mod agent_sessions;
-pub(crate) mod agent_threads;
+pub mod agent_threads;
 pub(crate) mod alerts;
 pub(crate) mod files;
 mod link_fetch;
@@ -553,7 +553,7 @@ async fn room_for(app: &Platform, account: &str, id: &str) -> Result<(Room, u64,
 }
 
 /// An account's name: the one it chose, else its login, else "".
-pub(crate) async fn name_of(app: &Platform, account: &str) -> anyhow::Result<String> {
+pub async fn name_of(app: &Platform, account: &str) -> anyhow::Result<String> {
     Ok(app.cache.accounts(&*app.hub, &[account.to_owned()]).await?.remove(account).map(|a| a.name).unwrap_or_default())
 }
 

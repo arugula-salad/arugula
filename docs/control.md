@@ -568,7 +568,7 @@ project's members, its egress secrets' values can come from the project's
 own secrets, and its boxes' Claude calls go through the broker above. A
 registered client (the broker's, by its credential) has routes of its own
 under `/api/client/`, the only other platform routes a bearer reaches
-(`crates/platform/src/clients.rs`):
+(`crates/platform-agents/src/clients.rs`):
 
 - **For an account it names** (`arugula-account`), only once that account
   lets it see its projects (a switch beside the product under Settings,
@@ -1421,7 +1421,7 @@ aru-038): machines' agents still use their daemon's.
 
 For Claude Code: `claude mcp add --transport http arugula
 https://control.arugula.io/api/mcp --header "Authorization: Bearer
-aru_agent_…"`. The code is `crates/platform/src/agent_mcp.rs` and
+aru_agent_…"`. The code is `crates/platform-agents/src/agent_mcp.rs` and
 `agent_tokens.rs`.
 
 **redone's agents (M235, platform step 8).** redone's tenants, tokens and
@@ -1439,5 +1439,5 @@ on their phone. An agent never claims an app's name: a call naming an app
 the project has no environment of is refused. An app's secret is the
 project's (`app/<app>/<KEY>`), and the platform projects it into the
 operator's Infisical when the projection is on
-(`crates/platform/src/infisical.rs`). The code is
-`crates/platform/src/redone.rs` and `agent_mcp_redone.rs`.
+(`crates/platform-agents/src/infisical.rs`). The code is
+`crates/platform-agents/src/redone.rs` and `agent_mcp_redone.rs`.

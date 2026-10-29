@@ -20,6 +20,10 @@ path = "src/main.rs"
 anyhow = { workspace = true }
 arugula-control-common = { workspace = true }
 arugula-platform-base = { workspace = true }
+# The Infisical projection's flags and redone's import.
+arugula-platform-agents = { workspace = true }
+# Every feature crate, registered.
+arugula-platform-all = { workspace = true }
 axum = { workspace = true }
 clap = { workspace = true, features = ["derive", "env"] }
 serde_json = { workspace = true }

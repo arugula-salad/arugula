@@ -8,14 +8,15 @@ use std::sync::Arc;
 
 use axum::{
     Router,
-    routing::{MethodRouter, get, post, put},
+    routing::{get, post, put},
 };
 
 use arugula_control_wire::{boards, issues, project_docs, runs as wire_runs};
 
 use crate::{
-    Platform, agent_mcp, agent_tokens, billing, chat, clients, deploys, forge, grants, hosted, links, projects,
-    run_grant, run_logs,
+    Platform, billing, chat, deploys,
+    features::{self, Routes},
+    forge, grants, hosted, projects, run_grant, run_logs,
     triggers::{agent as run_agents, routes as runs},
 };
 
@@ -110,28 +111,6 @@ fn routes() -> Routes {
         .route(arugula_control_wire::chat::AGENT_SEARCH, get(chat::agent_threads::search))
         .route("/api/grants", get(grants::list).post(grants::give))
         .route("/api/grants/{id}/revoke", post(grants::revoke))
-        // Agents with no machine (M230): their grant tokens, and the MCP
-        // endpoint only those tokens open.
-        .route(agent_tokens::AGENT_TOKENS, get(agent_tokens::list).post(agent_tokens::mint))
-        .route(agent_tokens::AGENT_TOKEN_REVOKE, post(agent_tokens::revoke))
-        .route(agent_tokens::AGENT_TOKEN_CALLS, get(agent_tokens::calls))
-        .route(
-            agent_mcp::MCP,
-            post(agent_mcp::endpoint).layer(axum::extract::DefaultBodyLimit::max(agent_mcp::MAX_BODY)),
-        )
-        // A source to ship, as redone's agents upload one (M235).
-        .route(
-            agent_mcp::UPLOADS,
-            put(agent_mcp::upload)
-                .post(agent_mcp::upload)
-                .layer(axum::extract::DefaultBodyLimit::max(arugula_e2e::deploy::planter::MAX_TARBALL + 1)),
-        )
-        .route("/api/projects/{project}/agent-tokens", get(agent_tokens::over))
-        .route("/api/projects/{project}/agent-tokens/{id}/revoke", post(agent_tokens::revoke_over))
-        .route("/api/projects/{project}/secrets", get(agent_tokens::secrets))
-        // Linked products (M229): the hub keeps the links.
-        .route(links::LINKED_PRODUCTS, get(links::list))
-        .route(links::UNLINK_PRODUCT, post(links::unlink))
         .route(arugula_control_wire::projects::PROJECTS, get(projects::list))
         .route(arugula_control_wire::projects::PROJECT_REPOS, get(forge::links::list).post(forge::links::link))
         .route(
@@ -224,19 +203,6 @@ fn routes() -> Routes {
             "/api/inference/clients/{client}/consent",
             axum::routing::put(hosted::broker::set_consent).delete(hosted::broker::set_consent),
         )
-        // studio as a client (M236): its apps by project, the projects of
-        // the people who let it, and the secrets project owners let it read.
-        .route(clients::PROJECTS, get(clients::projects))
-        .route(clients::APPS, get(clients::apps))
-        .route(clients::APP, get(clients::show).put(clients::put).delete(clients::remove))
-        .route(clients::APP_SECRET, get(clients::secret).put(clients::ask_secret))
-        .route(clients::CONSENT, axum::routing::put(clients::set_consent).delete(clients::set_consent))
-        .route(clients::PROJECT_CLIENTS, get(clients::project_clients))
-        .route(clients::PROJECT_GRANT, axum::routing::put(clients::set_grant).delete(clients::set_grant))
-        .route(
-            clients::PROJECT_SECRET,
-            axum::routing::put(clients::set_project_secret).delete(clients::set_project_secret),
-        )
         .route("/api/projects/{project}/inference-keys", get(hosted::inference::list_keys))
         .route(
             "/api/projects/{project}/inference-keys/{provider}",
@@ -314,12 +280,18 @@ fn routes() -> Routes {
         .route("/api/projects/{project}/runs/{run}/artifacts/{name}", get(run_logs::routes::artifact))
 }
 
+/// The base's routes and every registered feature crate's
+/// ([`features::Feature::routes`]).
+fn all_routes() -> Routes {
+    features::all().into_iter().fold(routes(), |r, f| f.routes(r))
+}
+
 /// The platform's router, for any state the hub's router has (the
 /// platform's own is applied here).
 pub fn router<S: Clone + Send + Sync + 'static>(platform: Arc<Platform>) -> Router<S> {
     // A call after a write in the hub reads the feed first (read your
     // writes: `cache::fresh`).
-    routes()
+    all_routes()
         .router
         .layer(axum::middleware::from_fn_with_state(platform.clone(), crate::cache::fresh))
         // Outermost: the catch-up above is in the request's Server-Timing.
@@ -327,22 +299,8 @@ pub fn router<S: Clone + Send + Sync + 'static>(platform: Arc<Platform>) -> Rout
         .with_state(platform)
 }
 
-/// The paths [`router`] registers, for routes.toml's test.
+/// The paths [`router`] registers, for routes.toml's test: the base's and
+/// every registered feature crate's.
 pub fn paths() -> Vec<&'static str> {
-    routes().paths
-}
-
-/// A router that notes its paths too.
-#[derive(Default)]
-struct Routes {
-    router: Router<Arc<Platform>>,
-    paths: Vec<&'static str>,
-}
-
-impl Routes {
-    fn route(mut self, path: &'static str, methods: MethodRouter<Arc<Platform>>) -> Self {
-        self.paths.push(path);
-        self.router = self.router.route(path, methods);
-        self
-    }
+    all_routes().paths
 }

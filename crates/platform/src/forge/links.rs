@@ -77,12 +77,7 @@ pub(super) fn wire(r: &rows::LinkedRepo) -> LinkedRepo {
 /// role in it: its own is an owner's. One it isn't a member of is no
 /// project at all to it. `now`: ask the hub for the team's roster, not the
 /// cache, as for a write.
-pub(crate) async fn membership(
-    app: &Platform,
-    account: &str,
-    asked: &str,
-    now: bool,
-) -> Result<(String, TeamRole), ApiError> {
+pub async fn membership(app: &Platform, account: &str, asked: &str, now: bool) -> Result<(String, TeamRole), ApiError> {
     let none = || err(StatusCode::NOT_FOUND, "no such project");
     if asked == PERSONAL {
         let id = crate::projects::personal_project(app, account).await?.ok_or_else(none)?;

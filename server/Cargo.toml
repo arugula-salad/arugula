@@ -25,6 +25,8 @@ members = [
     "../crates/control",
     "../crates/control-common",
     "../crates/platform",
+    "../crates/platform-agents",
+    "../crates/platform-all",
 ]
 
 # The root's [workspace.package]: one version for everything a release
@@ -46,6 +48,10 @@ arugula-forge-github = { path = "../crates/forge-github" }
 # crates/arugula-control and crates/arugula-platform.
 arugula-control-base = { path = "../crates/control" }
 arugula-platform-base = { path = "../crates/platform" }
+# The platform's feature crates (#314), side by side on its base.
+arugula-platform-agents = { path = "../crates/platform-agents" }
+# Every feature crate, registered: what both binaries call.
+arugula-platform-all = { path = "../crates/platform-all" }
 aes-gcm = "0.11.1"
 anyhow = "1.0.104"
 axum = "0.8.9"
