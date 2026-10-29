@@ -15,6 +15,9 @@ use crate::{
     auth::{Asked, Credential},
 };
 
+pub mod hub;
+pub use hub::*;
+
 /// The platform's routes behind a gate that says who's asking as the
 /// hub's would: `ilg_session=session-<account>` is that account's
 /// session (with the same-origin check), and `x-test-daemon: <account>
