@@ -89,9 +89,14 @@ function paint(v: View, t: number, dt: number) {
   // Bust space to pixels: the bust fits the canvas; the head fills it.
   let s: number, ox: number, oy: number;
   if (v.size === "bust") {
-    s = Math.min(c.width / 2.2, c.height / 2.3);
-    ox = c.width / 2;
-    oy = c.height - 0.9 * s;
+    // Moved about the tile as the person moves about the frame, and
+    // bigger leaning in; never so far that the head leaves the tile.
+    s = Math.min(c.width / 2.2, c.height / 2.3) * v.cur.scale;
+    ox = c.width / 2 + v.cur.bodyX * c.width * 0.3;
+    oy = c.height - 0.9 * s + v.cur.bodyY * c.height * 0.2;
+    const hx = ox + v.cur.x * s;
+    ox += Math.max(0, c.width * 0.15 - hx) - Math.max(0, hx - c.width * 0.85);
+    oy = Math.max(oy, -(HEAD_Y - HEAD_R * 1.15) * s);
   } else {
     const r = HEAD_R * 1.25;
     s = Math.max(c.width, c.height) / (2 * r);

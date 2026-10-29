@@ -43,6 +43,8 @@ const POSES = [
   ),
   pose("lean", (r) => Object.assign(r, { face: true, roll: 0.2, x: 0.1, shoulderL: [0.48, -0.12], shoulderR: [-0.48, 0.12] })),
   pose("turn body", (r) => Object.assign(r, { face: true, yaw: 0.5, x: 0.05, shoulderL: [0.3, 0.02], shoulderR: [-0.42, 0] })),
+  pose("rolled over", (r, t) => Object.assign(r, { face: true, smile: 0.4, bodyX: Math.sin(t * 0.8) * 0.7, scale: 0.9 })),
+  pose("leaning in", (r) => Object.assign(r, { face: true, browUp: 0.4, bodyY: 0.3, scale: 1.35 })),
   pose("away", () => {}),
 ];
 

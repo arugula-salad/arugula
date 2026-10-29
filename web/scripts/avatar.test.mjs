@@ -163,3 +163,25 @@ test("an elbow the camera missed goes where the arm bends: outward and down, bon
   const r = withElbows(Object.assign(neutral(), { wristL: [0.9, -0.5] }));
   assert.ok(r.elbowL && !r.elbowR);
 });
+
+test("the body's place in the frame: across is absolute, height and nearness from the usual", () => {
+  const body = (x, y, w) => {
+    const pose = [];
+    pose[11] = { x: x + w / 2, y, visibility: 1 };
+    pose[12] = { x: x - w / 2, y, visibility: 1 };
+    return pose;
+  };
+  const calib = {};
+  const rest = solve({ matrix: null, shapes: null, face: null, pose: body(0.5, 0.85, 0.3), aspect: 1 }, calib);
+  near(rest.bodyX, 0);
+  near(rest.bodyY, 0);
+  near(rest.scale, 1);
+  // Rolled to the image's right (the person's left: the viewer's right), and leaning in.
+  const moved = solve({ matrix: null, shapes: null, face: null, pose: body(0.75, 0.85, 0.39), aspect: 1 }, calib);
+  near(moved.bodyX, 0.5);
+  assert.ok(moved.scale > 1.2, `scale ${moved.scale}`);
+  const back = unpackRig(packRig(moved, { character: 1, colour: 0 })).rig;
+  near(back.bodyX, moved.bodyX, 0.02);
+  near(back.scale, moved.scale, 0.02);
+  assert.equal(packRig(neutral(), { character: 1, colour: 0 }).length, 21, "at rest, no body bytes");
+});

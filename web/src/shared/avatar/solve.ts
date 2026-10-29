@@ -54,6 +54,9 @@ export interface Calib {
   gapR?: number;
   /** How far above the shoulders the nose usually is: the head's rest. */
   nose?: number;
+  /** The shoulders' usual height in the frame and width (for how near). */
+  shouldersY?: number;
+  width?: number;
 }
 
 const learn = (base: number | undefined, v: number) => (base === undefined ? v : base + (v - base) * (v > base ? 0.3 : 0.003));
@@ -134,6 +137,14 @@ export function solve(s: Seen, calib: Calib = {}): Rig {
       return clamp((base - gap) / 0.3, 0, 1) * 0.22;
     };
     const liftL = lift(sl, p[EAR_L], "gapL"), liftR = lift(sr, p[EAR_R], "gapR");
+    // Where in the frame, and how near: across is absolute (the middle of
+    // the frame is the middle of the tile); height and size from where you
+    // usually are, learnt slowly, since cameras sit at every height.
+    const restY = (calib.shouldersY = calib.shouldersY === undefined ? my : calib.shouldersY + (my - calib.shouldersY) * 0.002);
+    const restW = (calib.width = calib.width === undefined ? unit : calib.width + (unit - calib.width) * 0.002);
+    r.bodyX = clamp((mx - 0.5) * 2, -1, 1);
+    r.bodyY = clamp((my - restY) * 2.5, -1, 1);
+    r.scale = clamp(unit / restW, 0.7, 1.4);
     const bl = toBust(sl), br = toBust(sr);
     r.shoulderL = [bl[0], bl[1] - liftL];
     r.shoulderR = [br[0], br[1] - liftR];
