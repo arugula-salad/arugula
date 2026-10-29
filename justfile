@@ -108,6 +108,11 @@ build: web
 # brings musl; for aarch64 it links too.
 static arch="x86_64": web (_static arch "daemon") (_static arch "server")
 
+# Only the daemon's and the CLI's static binaries (arugulad and arugula), with
+# the web client they embed: no server. binaries.yml's desktop-xvfb builds
+# these for the app's tests.
+static-daemon arch="x86_64": web (_static arch "daemon")
+
 # Only the server's static binaries (arugula-control and arugula-platform),
 # as `just static` builds them: no daemon, no Ghostty.
 static-server arch="x86_64": web (_static arch "server")

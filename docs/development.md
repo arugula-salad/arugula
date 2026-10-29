@@ -182,9 +182,11 @@ job is the group's verdict: every job passed or was skipped. On a pull
 request, binaries.yml's job of the same name stands in for it, once
 `binaries` and `quick` have passed. binaries.yml has no `merge_group`
 trigger, because its `queue`, skipped on a group, would count as
-passed. Only someone who may merge can queue a pull request, so a
-group's code reaches the home cloud's runners no sooner than a merge
-would bring it.
+passed. On a pull request that changes the desktop app, binaries.yml
+also runs `just desktop-xvfb`, and `queue` waits for it. The `full-check`
+label on a pull request runs check.yml on its branch (full-check.yml).
+Only someone who may merge can queue a pull request, so a group's code
+reaches the home cloud's runners no sooner than a merge would bring it.
 
 The queue is off until Jake turns it on. In the repository's
 **Settings → Rules → Rulesets**, in the ruleset on the default branch
