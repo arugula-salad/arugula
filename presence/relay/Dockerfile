@@ -48,6 +48,8 @@ RUN mix deps.get --only prod && mix deps.compile
 COPY relay/config config
 COPY relay/lib lib
 COPY relay/priv priv
+# The release's environment: node names and clustering on Fly (P2).
+COPY relay/rel rel
 COPY --from=demo /src/relay/priv/static priv/static
 COPY --from=gems /out/gems priv/static/gems
 RUN mix compile && mix release

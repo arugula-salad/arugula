@@ -6,7 +6,7 @@ defmodule PresenceRelay.Cluster do
   Fly.
   """
 
-  @apps [:logger, :phoenix, :presence_relay]
+  @apps [:logger, :phoenix, :swoosh, :presence_relay]
 
   def ensure_distributed! do
     unless Node.alive?() do
@@ -27,7 +27,10 @@ defmodule PresenceRelay.Cluster do
     {:ok, peer, node} =
       :peer.start_link(%{name: name, host: ~c"127.0.0.1", longnames: true, args: args})
 
+    # Loaded first, so an app's own defaults (swoosh's hackney client)
+    # don't replace this node's config when it starts.
     for app <- @apps do
+      _ = :erpc.call(node, Application, :load, [app])
       :ok = :erpc.call(node, Application, :put_all_env, [[{app, Application.get_all_env(app)}]])
     end
 

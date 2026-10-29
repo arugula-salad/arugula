@@ -16,3 +16,6 @@ config :presence_relay, PresenceRelay.Repo,
     System.get_env("DATABASE_URL") || "postgres://postgres:postgres@127.0.0.1:55432/presence_dev",
   show_sensitive_data_on_connection_error: true,
   pool_size: 10
+
+# meet.arugula.stream in dev, on this relay's port.
+config :presence_relay, meet_origins: ["https://meet.arugula.stream", "http://localhost:4203"]

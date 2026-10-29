@@ -68,6 +68,19 @@ Events (bubbling, on the room element): `arugula:members` (`detail.members`), `a
     </PresenceRoom>
     const { members, messages, say, wave, camera, calls, rings, inCall, call, answerCall, leaveCall, setMuted } = usePresence();
 
+## Publishable keys (hosted, no server of yours)
+
+On arugula.stream an app also has publishable keys (`pk_live_…` for its
+allowed origins, `pk_test_…` for those and localhost), safe in a page.
+With a key, people join as guests by name; the relay makes their ids:
+
+    connect({ room: "design-team", key: "pk_live_…", guest: "Ada" })
+
+The key only works from the origins you list for the app, and only if
+the app allows guests. Keys are revocable; signing in with your own auth
+provider comes next. Where your server decides who's in which room, sign
+room tokens instead:
+
 ## Server: sign a room token (every language, same shape)
 
     createRoomToken({ app, secret, room, user: { id, name }, look?, ttl = 3600 }) -> string
