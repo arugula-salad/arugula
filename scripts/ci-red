@@ -10,19 +10,29 @@
 #                                   first commit)
 #   a ci/revoked tag from the last two days the issue doesn't name yet
 #                                   the same, naming it
-#   main's newest green commit is newer than every revocation the issue
-#   names, and main isn't too long red
+#   main's newest decided commit is red after chant's one retry (#1678)
+#                                   the same, at once, naming the failed
+#                                   phase, the commit and the run; and once
+#                                   the bisect names the culprit, one more
+#                                   comment naming it
+#   main's newest green commit is newer than every revocation and red commit
+#   the issue names, and main isn't too long red
 #                                   comment that it's green and close it
 #
 # It reads main and the ci/ tags from this checkout (fetch them all first:
 # the workflow's checkout has fetch-depth 0) and writes with gh (GH_TOKEN,
-# issues: write). The ci/ tags come from chant-ci-green.yml (#503).
+# issues: write). The ci/ tags come from chant-ci-green.yml (#503). The red
+# after a retry comes from chant's per-commit records (`chant ci list`, and
+# the commit's _ci/<sha>.json on chant/lifecycle); when that read fails the
+# script logs it and goes on with the tags alone.
 set -euo pipefail
 
 repo=${GITHUB_REPOSITORY:-arugula-salad/arugula}
 hours=${ARUGULA_RED_HOURS:-6}
 mention=${ARUGULA_RED_MENTION:-}
 now=${ARUGULA_RED_NOW:-$(date +%s)}
+# Pinned like chant-ci-green.yml's (#1675). Tests put a fake in its place.
+chant=${ARUGULA_RED_CHANT:-npx --yes @intentius/chant@0.124.52}
 title="main is red"
 main=$(git rev-parse --verify "${ARUGULA_RED_MAIN:-origin/main}^{commit}")
 short() { git rev-parse --short=12 "$1"; }
@@ -56,12 +66,60 @@ if [ -n "$issue" ]; then
   said=$(gh issue view "$issue" -R "$repo" --json body,comments --jq '.body, .comments[].body')
 fi
 
+# Chant's records (#1678): is main's newest decided commit red after the one
+# retry, and has the bisect named a culprit? Sets fast_reds (lines of
+# "SHA<TAB>text") and fast_culprits (lines of "SHA<TAB>CULPRIT"), or fails
+# with the reason in fast_err.
+fast_reds='' fast_culprits=''
+fast_err=""
+fast_read() {
+  local list rec sha state culprit phase job url newest=1
+  export GITHUB_TOKEN=${GITHUB_TOKEN:-${GH_TOKEN:-}}
+  # shellcheck disable=SC2086
+  list=$($chant ci list --json --forge github --limit 30) || { fast_err="chant ci list failed"; return 1; }
+  jq -e '.commits | type == "array"' <<<"$list" >/dev/null 2>&1 || { fast_err="chant ci list printed no commits"; return 1; }
+  while IFS=$'\t' read -r sha state culprit; do
+    if [ -n "$culprit" ]; then fast_culprits+="$sha"$'\t'"$culprit"$'\n'; fi
+    [ "$newest" = 1 ] || continue
+    case "$state" in green|revoked|red) newest=0 ;; *) continue ;; esac
+    [ "$state" = red ] || continue
+    rec=$(git show "refs/heads/chant/lifecycle:_ci/$sha.json" 2>/dev/null \
+      || git show "refs/remotes/origin/chant/lifecycle:_ci/$sha.json" 2>/dev/null) \
+      || { fast_err="no _ci/$sha.json on chant/lifecycle"; return 1; }
+    jq -e '(.retried // {}) | length > 0' <<<"$rec" >/dev/null 2>&1 || continue
+    IFS=$'\t' read -r phase job url < <(jq -r '[.failure.phase // "unknown", .failure.run.name // "unknown", .failure.run.url // "no link"] | @tsv' <<<"$rec")
+    fast_reds+="$sha"$'\t'"- main's newest decided commit $(short "$sha") ($(subject "$sha")) is red after one retry: $sha. Failed phase: $phase, job \"$job\", run $url"$'\n'
+  done < <(jq -r '.commits[] | [.sha, (if .state == "revoked" then "revoked" else (.record.state // .state) end), (.record.culprit // "")] | @tsv' <<<"$list")
+}
+fast_err=""
+if ! fast_read; then
+  echo "ci-red: chant's records not read ($fast_err); using the ci/ tags alone"
+  fast_reds='' fast_culprits=''
+fi
+
 news=''
 if [ "$too_long" = 1 ] && [[ "$said" != *"red since $red_since"* ]]; then
   if [ -n "$green" ]; then last="the newest green one is $(short "$green") ($(subject "$green"))"
   else last="none of main's last 200 is green"; fi
   news+="- No commit on main has passed CI for ${age} hours: red since $red_since ($(subject "$red_since")); $last."$'\n'
 fi
+red_named=''
+if [ "$state" = OPEN ]; then
+  red_named=$(grep -oE 'red after one retry: [0-9a-f]{40}' <<<"$said" | sed 's/.*: //' || true)
+fi
+while IFS=$'\t' read -r sha line; do
+  [ -n "$sha" ] || continue
+  [[ "$said" != *"red after one retry: $sha"* ]] || continue
+  news+="$line"$'\n'
+  red_named+=$'\n'"$sha"
+done <<<"$fast_reds"
+# The culprit of a red commit the open issue names (or names now), once.
+while IFS=$'\t' read -r sha culprit; do
+  [ -n "$sha" ] || continue
+  grep -qx "$sha" <<<"$red_named" || continue
+  [[ "$said$news" != *"culprit: $culprit"* ]] || continue
+  news+="- The bisect found the commit that broke $(short "$sha"). culprit: $culprit ($(subject "$culprit" 2>/dev/null || echo unknown))."$'\n'
+done <<<"$fast_culprits"
 while read -r sha when; do
   [ -n "$sha" ] || continue
   [ $((now - when)) -lt $((2 * 86400)) ] || continue
@@ -69,7 +127,7 @@ while read -r sha when; do
   news+="- $(short "$sha") ($(subject "$sha")) passed CI and then failed a re-run: ci/revoked/$sha. Don't release from it."$'\n'
 done < <(git for-each-ref refs/tags/ci/revoked --format='%(refname:lstrip=4) %(creatordate:unix)')
 
-footer="main is at $(short "$main"). The ci/ tags come from chant-ci-green.yml; this is scripts/ci-red, every hour (#524)."
+footer="main is at $(short "$main"). The ci/ tags come from chant-ci-green.yml; this is scripts/ci-red (#524, #1678)."
 if [ -n "$news" ]; then
   if [ "$state" = OPEN ]; then
     gh issue comment "$issue" -R "$repo" --body "$news"$'\n'"$footer"
@@ -91,7 +149,8 @@ if [ "$state" = OPEN ]; then
     if [ -z "$green" ] || ! git merge-base --is-ancestor "$sha" "$green" 2>/dev/null; then
       echo "#$issue stays open: no green commit after $(short "$sha") yet"; exit 0
     fi
-  done < <(grep -oE 'ci/revoked/[0-9a-f]{40}' <<<"$said" | sed 's|ci/revoked/||' | sort -u)
+  done < <({ grep -oE 'ci/revoked/[0-9a-f]{40}' <<<"$said" | sed 's|ci/revoked/||' || true
+             grep -oE 'red after one retry: [0-9a-f]{40}' <<<"$said" | sed 's/.*: //' || true; } | sort -u)
   gh issue comment "$issue" -R "$repo" --body "Green again: $(short "$green") ($(subject "$green")) passed CI. $footer"
   gh issue close "$issue" -R "$repo" >/dev/null
   echo "closed #$issue"

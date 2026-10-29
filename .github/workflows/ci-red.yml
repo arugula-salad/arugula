@@ -1,7 +1,8 @@
 # Tells people when main stays red, or a green commit is revoked (#524),
 # and when a scheduled workflow's newest run failed (scripts/ci-nightly-red):
 # scripts/ci-red opens, comments on or closes one issue, "main is red", and
-# GitHub notifies the repo's watchers. Every hour, with the job token (no
+# GitHub notifies the repo's watchers. Every hour and after each chant-ci-green
+# run (which writes chant's per-commit records, #1678), with the job token (no
 # secret). Repository variables: ARUGULA_RED_HOURS (how long main may go
 # without a green commit, 6 by default) and ARUGULA_RED_MENTION (people to
 # @-mention when the issue opens, e.g. "@jhgaylor @lex00").
@@ -9,6 +10,12 @@ name: ci-red
 on:
   schedule:
     - cron: "23 * * * *"
+  # The tick that records a commit red after its retry, or names the bisect's
+  # culprit, is a chant-ci-green run: look right after it (#1678).
+  workflow_run:
+    workflows: [chant-ci-green]
+    types: [completed]
+    branches: [main]
   workflow_dispatch: {}
 
 concurrency:
@@ -33,6 +40,10 @@ jobs:
           ref: main
           # All of main and every tag, the ci/ ones among them.
           fetch-depth: 0
+      # scripts/ci-red reads chant's records with `chant ci list`.
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: "24"
       - run: scripts/ci-red
         env:
           GH_TOKEN: ${{ github.token }}
