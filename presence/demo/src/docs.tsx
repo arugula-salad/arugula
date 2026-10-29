@@ -59,7 +59,7 @@ export function Docs() {
           </p>
           <Tabs tabs={server} label="Sign a token" install={install} />
           <p class="note">
-            App ids and secrets for the hosted relay are issued by hand while it's in preview. You can also run the relay yourself (
+            Make an app in <a href="/dashboard">the dashboard</a> for its id, secret and publishable keys. You can also run the relay yourself (
             <a href={`${SOURCE}/relay`}>presence/relay</a>, Phoenix) with your own <code>PRESENCE_APPS</code>.
           </p>
 

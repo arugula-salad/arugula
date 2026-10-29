@@ -1,0 +1,21 @@
+{
+  "name": "arugula-dashboard",
+  "version": "0.0.0",
+  "private": true,
+  "description": "arugula.stream's hosted dashboard: sign in, make apps, copy keys, set origins, the sign-in provider and room rules, see usage. Built into ../relay/priv/static/dashboard, which the relay serves under /dashboard.",
+  "license": "MIT OR Apache-2.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "e2e": "node e2e/proof.mjs"
+  },
+  "dependencies": {
+    "preact": "10.27.2"
+  },
+  "devDependencies": {
+    "playwright": "1.63.0",
+    "typescript": "^7.0.2",
+    "vite": "8.3.4"
+  }
+}
