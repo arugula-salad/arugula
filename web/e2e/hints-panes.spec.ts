@@ -2,8 +2,9 @@
 // account"; hints.spec.ts has the first): the chips in a pane's header, one
 // test each, driving the fact and taking the action. A command's mark (its
 // menu), a pane the Share dialog warned may show secrets (Private), a
-// commit or a checkout (Changes), vim or `code` (the editor beside it),
-// and, last, another machine in the host menu (Split right on it).
+// commit or a checkout (Changes), `code` (the editor beside it, never for
+// vim or nvim, #1735), and, last, another machine in the host menu (Split
+// right on it).
 //
 // Every test but the mark's has seen the mark's hint already: any command
 // makes one. Hints keep quiet under a test runner unless a spec asks
@@ -140,35 +141,40 @@ test("a commit in a pane: See what changed beside it, Changes", async ({ page })
   await expect(page.locator("[data-hint]")).toHaveCount(0);
 });
 
-test("vim in a pane: Open the editor beside it", async ({ page }) => {
-  // No vim here: `sleep` under nvim's name is the foreground command.
+test("vim or nvim in a pane: never VS Code beside it", async ({ page }) => {
+  // No vim here: `sleep` under vim's and nvim's names is the foreground
+  // command. nvim's own hints (hints-nvim.spec.ts) were said already.
   const bin = temp("bin");
   symlinkSync(SLEEP, join(bin, "nvim"));
-  // The editor's VS Code fails here by design, so its pane needs you,
-  // which is the push hint's fact; whether that toast is up by the count
-  // below is timing (#300). This test is about the editor's chip.
-  await seenAlready(page, ["command-mark", "push-device"]);
+  symlinkSync(SLEEP, join(bin, "vim"));
+  await seenAlready(page, ["command-mark", "push-device", "claude-conversations", "nvim-help", "nvim-open-here"]);
   await reset(page);
   const [term] = await panes(page);
-  await type(page, term, `${join(bin, "nvim")} 60\n`);
-  const chip = chipOf(page, term, "editor-beside");
-  await expect(chip).toContainText("Open the editor beside it");
-  await chip.locator("[data-hint-act]").click();
-  await expect.poll(() => blockOf(page, "editor")).not.toBeNull();
-  await expect(page.locator("[data-hint]")).toHaveCount(0);
-  // Stopped, so the next page doesn't find it running.
-  await page.evaluate((p) => window.__arugula.client.input(p, new TextEncoder().encode("\x03")), term);
-  await expect.poll(() => page.evaluate((p) => window.__arugula.client.info(p)?.command ?? null, term)).toBeNull();
+  for (const prog of ["vim", "nvim"]) {
+    await type(page, term, `${join(bin, prog)} 60\n`);
+    await expect.poll(() => page.evaluate((p) => window.__arugula.client.info(p)?.command ?? null, term)).toContain(prog);
+    await page.waitForTimeout(2000);
+    await expect(chipOf(page, term, "editor-beside")).toHaveCount(0);
+    await page.evaluate((p) => window.__arugula.client.input(p, new TextEncoder().encode("\x03")), term);
+    await expect.poll(() => page.evaluate((p) => window.__arugula.client.info(p)?.command ?? null, term)).toBeNull();
+  }
 });
 
-test("`code` typed in a pane is the same fact", async ({ page }) => {
-  await seenAlready(page, ["command-mark"]);
+test("`code` typed in a pane: Open the editor beside it", async ({ page }) => {
+  // This machine's Claude Code conversations would take the place first.
+  await seenAlready(page, ["command-mark", "push-device", "claude-conversations"]);
   await reset(page);
   const [term] = await panes(page);
   // VS Code's command line, as a shell function: nothing to install.
   await run(page, term, "code() { echo opened-$((4+4)); }", "code()");
   await run(page, term, "code .", "opened-8");
-  await expect(chipOf(page, term, "editor-beside")).toContainText("Open the editor beside it");
+  const chip = chipOf(page, term, "editor-beside");
+  await expect(chip).toContainText("Open the editor beside it");
+  // The editor's VS Code fails here by design, so its pane needs you,
+  // which is the push hint's fact (said already above).
+  await chip.locator("[data-hint-act]").click();
+  await expect.poll(() => blockOf(page, "editor")).not.toBeNull();
+  await expect(page.locator("[data-hint]")).toHaveCount(0);
 });
 
 test("another machine in the host menu: Split right on it", async ({ page }) => {

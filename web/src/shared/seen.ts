@@ -1,5 +1,6 @@
 // What this person has seen (DECISIONS.md "Hints come from facts, once per
-// account"): the hints already mentioned (`seen:<id>`), whether they want
+// account"): the hints already mentioned (`seen:<id>`; a repeating hint's,
+// the keys of the facts it said, as a list), whether they want
 // tips at all (`tips`) and big ones (`tips.modal`), the last version What's
 // new showed. Per account
 // on control's page (an account pref on the hub, `/api/me/prefs`), else
@@ -108,6 +109,30 @@ export function seen(id: string): boolean {
 
 export function markSeen(id: string, at = Date.now()) {
   setPref(`seen:${id}`, at);
+}
+
+/** How many facts a repeating hint remembers having said (its last ones):
+ * enough for every pane that could hold its fact at once, and short
+ * enough for a pref's 512 bytes. */
+export const FACTS_KEPT = 16;
+
+/** The facts a repeating hint (`repeat: "per-fact"`) has said, newest last:
+ * `seen:<id>` holds their keys. */
+function factsSaid(id: string): string[] {
+  const v = prefs[`seen:${id}`];
+  return Array.isArray(v) ? v.filter((k): k is string => typeof k === "string") : [];
+}
+
+/** Repeating hint `id` was said for the fact `key` already, or we don't
+ * know yet. */
+export function seenFact(id: string, key: string): boolean {
+  return !loaded || factsSaid(id).includes(key);
+}
+
+export function markSeenFact(id: string, key: string) {
+  const keys = factsSaid(id).filter((k) => k !== key);
+  keys.push(key);
+  setPref(`seen:${id}`, keys.slice(-FACTS_KEPT));
 }
 
 /** Tips are on unless this person turned them off. */

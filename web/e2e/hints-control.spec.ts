@@ -4,11 +4,16 @@
 // account chooses what it's told about (chat, machines, projects), and a
 // GitHub-only account on a device that can make a passkey is told it can
 // add one. Control is on localhost, where WebAuthn makes passkeys. Seen is
-// the account's here (control's /api/me/prefs).
+// the account's here (control's /api/me/prefs): nvim's chips (#1735),
+// answered on one device, are never said on another, a key tip answered
+// for one nvim neither.
 // Hints keep quiet under a test runner unless a spec asks: this one does.
 
 import { expect, test, type Page } from "@playwright/test";
-import { closeContexts, menuItem } from "./helpers";
+import { mkdirSync, mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { closeContexts, menuItem, panes } from "./helpers";
 import { FakePush } from "./phones";
 import { TeamControl, home, show } from "./team-fixture";
 
@@ -80,4 +85,46 @@ test("a GitHub-only account on a device that makes passkeys: Add a passkey", asy
   await expect(bob.getByRole("heading", { name: "Sign-in and account" })).toBeVisible();
   await expect(bob.locator("[data-add-passkey]").first()).toBeVisible();
   await expect(bob.locator("[data-hint]")).toHaveCount(0);
+});
+
+test("nvim's chips are the account's: answered on one device, never on another", async ({ browser }) => {
+  test.setTimeout(180_000);
+  const said = ["getting-started", "command-mark", "add-passkey", "push-device", "claude-conversations", "nvim-help", "nvim-connect"];
+  const one = await t.person(browser, "carol");
+  await hints(one, said);
+  await t.addMachine(one, "vimbox");
+  await home(one);
+  await show(one, "vimbox");
+  await expect.poll(async () => (await panes(one)).length, { timeout: 30_000 }).toBeGreaterThan(0);
+  const [term] = await panes(one);
+  // nvim with directories of its own, not this machine's config.
+  const own = mkdtempSync(join(tmpdir(), "arugula-e2e-hints-control-nvim-"));
+  for (const d of ["data", "config", "state"]) mkdirSync(join(own, d));
+  const cmd = `XDG_DATA_HOME=${own}/data XDG_CONFIG_HOME=${own}/config XDG_STATE_HOME=${own}/state nvim -n -i NONE\r`;
+  await one.evaluate(({ p, cmd }) => window.__arugula.client.input(p, new TextEncoder().encode(cmd)), { p: term, cmd });
+  await expect.poll(() => one.evaluate((p) => window.__arugula.client.info(p)?.editor?.pid ?? null, term), { timeout: 30_000 }).not.toBeNull();
+
+  const header = one.locator(`[data-pane-header="${term}"]`);
+  await expect(header.locator('[data-hint="nvim-open-here"]')).toBeVisible({ timeout: 15_000 });
+  await header.locator('[data-hint="nvim-open-here"] [data-hint-dismiss]').click();
+  // Then this nvim's key tip: answered too.
+  await expect(header.locator('[data-hint="nvim-key-tip"]')).toBeVisible({ timeout: 15_000 });
+  await header.locator('[data-hint="nvim-key-tip"] [data-hint-dismiss]').click();
+  await expect(one.locator("[data-hint]")).toHaveCount(0);
+
+  // Another page of the account, nothing of this browser's own kept (a
+  // device's seen would be in localStorage), the same nvim still running:
+  // neither, since control's page keeps seen on the account.
+  await one.evaluate(() => localStorage.removeItem("arugula.seen"));
+  const two = await one.context().newPage();
+  await two.addInitScript(() => Object.assign(window, { __arugulaHints: true }));
+  await home(two);
+  await show(two, "vimbox");
+  await expect.poll(() => two.evaluate((p) => window.__arugula.client.info(p)?.editor?.pid ?? null, term), { timeout: 30_000 }).not.toBeNull();
+  await two.evaluate((p) => window.__arugula.client.setActive(p), term);
+  await two.waitForTimeout(2500);
+  await expect(two.locator('[data-hint^="nvim-"]')).toHaveCount(0);
+  const prefs = await two.evaluate(() => fetch("/api/me/prefs").then((r) => r.json()));
+  expect(prefs).toHaveProperty("seen:nvim-open-here");
+  expect(prefs["seen:nvim-key-tip"]).toHaveLength(1);
 });

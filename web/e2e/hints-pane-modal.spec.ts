@@ -8,8 +8,8 @@
 // Over a terminal, an agent block and a browser block. Never on a phone,
 // while someone types, over a pane someone else drives, or with Tips off.
 //
-// No feature has one yet (nvim's help card, #1735, will be the first), so
-// this spec brings its own: `window.__arugulaTestHints`, which the hints
+// The place is tested apart from any feature's (nvim's help card, #1735,
+// has its own spec, hints-nvim.spec.ts), so this spec brings its own: `window.__arugulaTestHints`, which the hints
 // read only under a test runner (hints/index.ts). Each holds while
 // `window.__tipOn[kind]` names a pane.
 

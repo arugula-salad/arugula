@@ -1467,7 +1467,19 @@ no_follow?: boolean,
  * arugula.nvim" tip (#1735) shows on it and calls
  * `nvim_plugin.install` for the pane.
  */
-offer_plugin?: boolean, };
+offer_plugin?: boolean, 
+/**
+ * The editor's process, when it runs in a terminal pane: nvim's
+ * server pid (`vim.fn.getpid()`), the same over its socket (#1730) and
+ * from arugula.nvim. A new one is a new nvim, which is what nvim's key
+ * tip (#1735) shows on.
+ */
+pid?: number | null, 
+/**
+ * Its version, when it says (nvim's `0.11.6`): nvim's key tips that
+ * need a newer nvim aren't shown to an older one (#1735).
+ */
+version?: string | null, };
 
 export type Event = { 
 /**
@@ -2702,6 +2714,12 @@ export type NotifySet = { channels?: NotifyLevel, dms?: NotifyLevel, threads?: N
  * Snooze until this time (ms); 0 ends a snooze.
  */
 snooze_until?: number, tz?: string, quiet?: Array<QuietHours>, all_notices?: boolean, };
+
+/**
+ * `POST /api/panes/N/nvim/help` (#1735): the `:help` tag to open in the
+ * pane's nvim, exactly as `:help` takes it (`gv`, `CTRL-O`, `]<Space>`).
+ */
+export type NvimHelpRequest = { tag: string, };
 
 /**
  * `POST /api/panes/N/nvim` (#1731): Open in editor, with the Editor
@@ -4468,6 +4486,7 @@ export const OPS = {
   "pane.inbox": { method: "POST", path: "/api/panes/{id}/inbox" },
   "pane.keys": { method: "POST", path: "/api/panes/{id}/keys" },
   "pane.mouse": { method: "POST", path: "/api/panes/{id}/mouse" },
+  "pane.nvim_help": { method: "POST", path: "/api/panes/{id}/nvim/help" },
   "pane.nvim_open": { method: "POST", path: "/api/panes/{id}/nvim" },
   "pane.permit": { method: "POST", path: "/api/panes/{id}/permit" },
   "pane.ports": { method: "GET", path: "/api/panes/{id}/ports" },

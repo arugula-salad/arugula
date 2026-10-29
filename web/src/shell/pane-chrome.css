@@ -245,6 +245,11 @@ html[data-corners="square"] .grid.pane-chrome :is(.pane-header, .pane-frame, .pa
   margin: 0 32px 8px 0;
   font-size: 15px;
 }
+.pane-tip h3 {
+  margin: 12px 0 4px;
+  font-size: 13px;
+  scroll-margin-top: 8px;
+}
 .pane-tip p,
 .pane-tip ul { margin: 0 0 8px; }
 .pane-tip ul { padding-left: 18px; }

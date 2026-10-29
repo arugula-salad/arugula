@@ -256,6 +256,25 @@ pub enum View {
     PaneTipActed,
     PaneTipClosed,
     PaneTipOptedOut,
+    /// nvim's help card (#1735), counted on its own as well.
+    NvimHelpShown,
+    NvimHelpActed,
+    NvimHelpClosed,
+    NvimHelpOptedOut,
+    /// nvim's chips (#1735), each counted on its own as well as among
+    /// every hint's: shown, acted on, dismissed.
+    NvimConnectShown,
+    NvimConnectActed,
+    NvimConnectDismissed,
+    NvimOpenHereShown,
+    NvimOpenHereActed,
+    NvimOpenHereDismissed,
+    NvimDiffShown,
+    NvimDiffActed,
+    NvimDiffDismissed,
+    NvimKeyTipShown,
+    NvimKeyTipActed,
+    NvimKeyTipDismissed,
     #[serde(other)]
     Other,
 }
@@ -366,12 +385,15 @@ mod tests {
     }
 
     #[test]
-    fn pane_tip_views_are_spelled_as_the_page_sends_them() {
+    fn tip_views_are_spelled_as_the_page_sends_them() {
         for (name, v) in [
             ("pane-tip-shown", View::PaneTipShown),
             ("pane-tip-acted", View::PaneTipActed),
             ("pane-tip-closed", View::PaneTipClosed),
             ("pane-tip-opted-out", View::PaneTipOptedOut),
+            ("nvim-help-opted-out", View::NvimHelpOptedOut),
+            ("nvim-open-here-dismissed", View::NvimOpenHereDismissed),
+            ("nvim-key-tip-shown", View::NvimKeyTipShown),
         ] {
             assert_eq!(serde_json::from_value::<View>(json!(name)).unwrap(), v);
             assert_eq!(serde_json::to_value(v).unwrap(), json!(name));

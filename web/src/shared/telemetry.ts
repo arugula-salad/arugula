@@ -27,7 +27,24 @@ export type View =
   | "pane-tip-shown"
   | "pane-tip-acted"
   | "pane-tip-closed"
-  | "pane-tip-opted-out";
+  | "pane-tip-opted-out"
+  // nvim's own (#1735, shell/hints/nvim): its help card's, and its chips'.
+  | "nvim-help-shown"
+  | "nvim-help-acted"
+  | "nvim-help-closed"
+  | "nvim-help-opted-out"
+  | "nvim-connect-shown"
+  | "nvim-connect-acted"
+  | "nvim-connect-dismissed"
+  | "nvim-open-here-shown"
+  | "nvim-open-here-acted"
+  | "nvim-open-here-dismissed"
+  | "nvim-diff-shown"
+  | "nvim-diff-acted"
+  | "nvim-diff-dismissed"
+  | "nvim-key-tip-shown"
+  | "nvim-key-tip-acted"
+  | "nvim-key-tip-dismissed";
 
 /** What was counted since the last send. */
 export interface PageCounts {
