@@ -478,7 +478,7 @@ shellcheck:
 # Release without waiting for a version bump to pass CI (#524): commit the
 # bump on top of the newest commit on main with a ci/green tag, tag it, and
 # push the tag with main, the bump merged in (docs/development.md).
-# just release [patch|minor|major] [--app] [COMMIT] [--dry-run]
+# just release [patch|minor|major] [--app] [COMMIT|--older] [--dry-run]
 release *args:
     scripts/release bump {{args}}
 

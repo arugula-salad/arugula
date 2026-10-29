@@ -301,8 +301,11 @@ daemon's update check read it.
    (below), copies the client fixtures to
    `crates/proto/fixtures/releases/X.Y.Z` (for later daemons to replay,
    #200; the release fails without them), tags it `vX.Y.Z` and pushes the
-   tag with main, the bump merged in. `just release --dry-run` shows the
-   commit, the version and the bump, and stops. By hand instead: set the
+   tag with main, the bump merged in. If main has newer commits that
+   aren't green yet, it lists them (the release would leave them out) and
+   stops: wait for them, or `just release --older` releases without them
+   (#1679). `just release --dry-run` shows the commit, the version, the
+   bump and any commits left out, and stops. By hand instead: set the
    version in the workspace `Cargo.toml` and in `server/Cargo.toml`, run `just release-fixtures` and
    commit (`just notices` if dependencies changed; CI fails if
    THIRD_PARTY.md is stale), push it to main, wait for CI to pass on it, and
