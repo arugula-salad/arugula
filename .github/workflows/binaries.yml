@@ -122,9 +122,10 @@ jobs:
   # skipped on a group, would count as passed there.
   queue:
     # desktop-xvfb is skipped on most pull requests: a skipped job doesn't stop
-    # this, only a failed or cancelled one.
-    if: github.event_name == 'pull_request' && !cancelled() && !contains(needs.*.result, 'failure')
-    needs: [binaries, quick, desktop-xvfb]
+    # this, only a failed or cancelled one. desktop-changes is here too, so
+    # its failing can't pass as desktop-xvfb skipped.
+    if: github.event_name == 'pull_request' && !cancelled() && !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled')
+    needs: [binaries, quick, desktop-changes, desktop-xvfb]
     runs-on: ubuntu-latest
     steps:
       - run: echo "binaries and quick passed (and desktop-xvfb, when it ran); the merge queue runs check.yml on the group"
