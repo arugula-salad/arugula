@@ -6,6 +6,8 @@ const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v
 
 // A continuous casing around the two links, with a soft elbow bend.
 function arm(g: CanvasRenderingContext2D, side: 1 | -1, shoulder: NonNullable<Point>, lift: number, elbow: Point, wrist: Point, hand: Hand | null, s: Stage) {
+  // An arm the camera doesn't see isn't drawn: a bust, until a hand shows.
+  if (!wrist) return;
   const sx = shoulder[0], sy = shoulder[1] - lift;
   const dx = sx - side * 0.5;
   const ex = elbow ? clamp(elbow[0], -0.82, 0.82) : side * 0.62 + dx;

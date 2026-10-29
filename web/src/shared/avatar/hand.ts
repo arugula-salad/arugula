@@ -1,8 +1,10 @@
 // A cartoon hand for any character (S44): a mitten at the wrist, pointing
 // the way the hand points, with a thumb on the side toward the body's
 // middle, as a raised palm shows it. No fingers: at tile size a hand
-// being there, and where, is what reads. With no hand seen, it rests
-// pointing down. Drawn in bust space with the caller's stroke and colours.
+// being there, and where, is what reads. Characters draw an arm and its
+// hand only where the camera saw the wrist; a hand whose direction wasn't
+// seen points down. Drawn in bust space with the caller's stroke and
+// colours.
 
 import type { Hand } from "./rig";
 

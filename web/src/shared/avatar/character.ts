@@ -8,6 +8,8 @@
 // HEAD_R or so of it, turned by rig.roll, with yaw and pitch shown by
 // sliding the face across the head (2.5D). The stage crops to the head
 // alone for a chat avatar (36 px), so a face has to read at that size.
+// An arm is drawn only where the rig has its wrist (the stage fills in a
+// missing elbow): no wrist, no arm, a bust.
 
 import type { Rig } from "./rig";
 

@@ -193,6 +193,8 @@ export const sprout: Character = {
       const sy = shoulder[1] + lift;
       const elbow = side === 1 ? rig.elbowL : rig.elbowR;
       const wrist = side === 1 ? rig.wristL : rig.wristR;
+      // An arm the camera doesn't see isn't drawn: a bust, until a hand shows.
+      if (!wrist) continue;
       const hand = side === 1 ? rig.handL : rig.handR;
       const angle = hand ? hand.angle : Math.PI / 2;
       // Reserve room for the fingers even when tracking reaches off tile.

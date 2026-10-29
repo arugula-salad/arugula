@@ -154,6 +154,8 @@ export const wisp: Character = {
       const sx = shoulder[0], sy = shoulder[1] - lift;
       const elbow = side === 1 ? rig.elbowL : rig.elbowR;
       const wrist = side === 1 ? rig.wristL : rig.wristR;
+      // An arm the camera doesn't see isn't drawn: a bust, until a hand shows.
+      if (!wrist) continue;
       const hand = side === 1 ? rig.handL : rig.handR;
       const angle = hand ? hand.angle : Math.PI / 2;
       const reach = 0.16 * (1.9 * Math.abs(Math.cos(angle)) + 0.75 * Math.abs(Math.sin(angle)));
