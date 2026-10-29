@@ -108,6 +108,18 @@ also the desktop app's), gitleaks over the pull request's own commits
 sources, no build; pnpm reads web's `node_modules`). Main still runs them
 all (lint and clippy), for anything pushed without a pull request.
 
+A pull request that changes `crates/desktop/`, `packaging/desktop/` (the
+Xvfb scripts are in `xvfb/`) or binaries.yml itself also runs
+**desktop-xvfb** there (`just desktop-xvfb`, #1677). A small
+`desktop-changes` job asks the API for the pull request's files, so other
+pull requests skip it. It builds the musl daemon and CLI itself
+(`just static-daemon`; check.yml gets them from `static`), cold, and
+pulls the test image from GHCR. Adding the `full-check` label to a pull
+request from a branch of this repository dispatches check.yml on that
+branch (`.github/workflows/full-check.yml`, the same as `gh workflow run
+check.yml --ref BRANCH`); a fork's pull request can't. To run it again,
+remove the label and add it back.
+
 A commit on main whose required checks all passed gets a `ci/green/<sha>`
 tag, and one that passed and then failed a re-run gets `ci/revoked/<sha>`
 (chant's `ci.green`, #503). `chant.workspace.json` names the checks:

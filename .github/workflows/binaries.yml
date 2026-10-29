@@ -7,6 +7,8 @@ name: binaries
 # merge: check.yml's lint (.github/actions/lint: shellcheck, rustfmt, the
 # release scripts' tests, the generated files), gitleaks and THIRD_PARTY.md,
 # by the recipes check.yml runs.
+# desktop-xvfb: `just desktop-xvfb`, only for a pull request that changes
+# the desktop app or its Xvfb tests (#1677; #1616 broke it unseen).
 on:
   pull_request:
   push:
@@ -53,6 +55,65 @@ jobs:
       - name: THIRD_PARTY.md is current
         run: just notices-check
 
+  # Whether the pull request touches the desktop app or its Xvfb tests: the
+  # files list from the API, so no checkout. A pull request that doesn't
+  # skips desktop-xvfb and pays for this job alone. This workflow's own
+  # file counts, so a change to the job runs it.
+  desktop-changes:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: read
+    outputs:
+      run: ${{ steps.ask.outputs.run }}
+    steps:
+      - id: ask
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          files=$(gh api --paginate "repos/$REPO/pulls/$PR/files" --jq '.[].filename')
+          if echo "$files" | grep -qE '^(crates/desktop/|packaging/desktop/|\.github/workflows/binaries\.yml$)'; then
+            echo "the desktop app or its tests changed: running desktop-xvfb"
+            echo run=true >> "$GITHUB_OUTPUT"
+          else
+            echo "the desktop app and its tests are untouched: skipping desktop-xvfb"
+            echo run=false >> "$GITHUB_OUTPUT"
+          fi
+
+  # The Linux desktop app under Xvfb in a container, as check.yml's job of
+  # the same name runs it on main, but on GitHub's runners. check.yml gets
+  # the musl daemon and CLI from its static job; here they're built in the
+  # job (`just static-daemon`: no server workspace), cold, since only main
+  # saves the build caches. The test image is pulled from GHCR (main pushes
+  # it); when that fails, the recipe builds it (~6 min).
+  desktop-xvfb:
+    needs: desktop-changes
+    if: needs.desktop-changes.outputs.run == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+        with:
+          cache-key: static
+      - run: just bootstrap
+      # opt-level 1 as check.yml's static job: these only run the tests.
+      - run: just static-daemon x86_64
+        env:
+          CARGO_PROFILE_RELEASE_OPT_LEVEL: "1"
+      # A fork's token can't read packages: the pull fails and the image builds.
+      - name: GHCR, for the test image
+        continue-on-error: true
+        run: echo "$GITHUB_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+      - name: The desktop app under Xvfb (join, app, stale, platform)
+        run: ARUGULA_DESKTOP_BINARIES="$CARGO_TARGET_DIR/x86_64-unknown-linux-musl/release" just desktop-xvfb
+        env:
+          ARUGULA_DESKTOP_IMAGE_REPO: ghcr.io/arugula-salad/arugula-desktop-xvfb
+
   # The merge queue's check on a pull request (docs/development.md,
   # "Merging through the queue"): its ruleset requires `queue` by name, on
   # the pull request before it's queued and on its merge group after.
@@ -60,8 +121,10 @@ jobs:
   # suite. So this workflow has no merge_group trigger: its `queue`,
   # skipped on a group, would count as passed there.
   queue:
-    if: github.event_name == 'pull_request'
-    needs: [binaries, quick]
+    # desktop-xvfb is skipped on most pull requests: a skipped job doesn't stop
+    # this, only a failed or cancelled one.
+    if: github.event_name == 'pull_request' && !cancelled() && !contains(needs.*.result, 'failure')
+    needs: [binaries, quick, desktop-xvfb]
     runs-on: ubuntu-latest
     steps:
-      - run: echo "binaries and quick passed; the merge queue runs check.yml on the group"
+      - run: echo "binaries and quick passed (and desktop-xvfb, when it ran); the merge queue runs check.yml on the group"
