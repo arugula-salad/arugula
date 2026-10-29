@@ -1,4 +1,4 @@
-// arugula.stream/hosted: the hosted service, written for the person who'd
+// arugula.stream's front page (and /hosted): the hosted service, written for the person who'd
 // buy it (a founder or PM whose shared product still feels empty), not
 // for their developers: the feeling first, privacy as the reason it's
 // welcome, what they don't have to run, then the price and the honest
@@ -157,7 +157,8 @@ export function Hosted() {
             other; we keep the rooms running.
           </p>
           <p class="devline">
-            <b>For your developers:</b> a few lines of frontend code and the sign-in you already have. <a href="/docs">The docs</a> have the rest.
+            <b>For your developers:</b> a few lines of frontend code and the sign-in you already have. <a href="/developers">The setup guide</a> walks them
+            through it, and <a href="/dashboard">the dashboard</a> has your keys.
           </p>
         </section>
 
@@ -219,14 +220,18 @@ export function Hosted() {
             <a class="btn primary" href={`/r/${newRoom()}`}>
               Try it with a friend
             </a>
-            <a class="btn" href="/docs">
+            <a class="btn" href="/dashboard">
+              Set up an app
+            </a>
+            <a class="btn" href="/developers">
               Show my developers
             </a>
           </div>
         </section>
       </main>
       <footer class="foot">
-        <a href="/">Home</a> · <a href="/docs">Docs</a> · <a href={SOURCE}>Open source</a>
+        <a href="/developers">Developers</a> · <a href="/docs">Docs</a> · <a href="/dashboard">Dashboard</a> · <a href={SOURCE}>Open source</a> ·{" "}
+        <a href="/privacy">Privacy</a> · <a href="/terms">Terms</a>
       </footer>
     </>
   );

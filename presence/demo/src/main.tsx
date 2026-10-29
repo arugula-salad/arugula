@@ -1,12 +1,14 @@
 // arugula.stream: presence for your app, upgrading to a call. The front
-// page and the docs are for developers; /r/<room> (or ?room=) is a room
-// to try it in, served by the relay that carries it.
+// page is the hosted pitch, /developers the setup, /docs the reference;
+// /r/<room> (or ?room=) is a room to try it in, served by the relay that
+// carries it.
 
 import { render } from "preact";
 import { useState } from "preact/hooks";
-import { Landing } from "./landing";
+import { Developers } from "./landing";
 import { Docs } from "./docs";
 import { Hosted } from "./hosted";
+import { Privacy, Terms } from "./legal";
 import { Join, NAME, Room, cleanRoom, keep, kept } from "./room";
 import "./style.css";
 
@@ -20,8 +22,15 @@ function App() {
   const [name, setName] = useState(kept(NAME));
   const [joined, setJoined] = useState(false);
   if (location.pathname.startsWith("/docs")) return <Docs />;
-  if (location.pathname.startsWith("/hosted")) return <Hosted />;
-  if (!room) return <Landing />;
+  // The hosted pitch is the front page now; old links still land on it.
+  if (location.pathname.startsWith("/hosted")) {
+    history.replaceState(null, "", "/" + location.hash);
+    return <Hosted />;
+  }
+  if (location.pathname.startsWith("/developers")) return <Developers />;
+  if (location.pathname.startsWith("/privacy")) return <Privacy />;
+  if (location.pathname.startsWith("/terms")) return <Terms />;
+  if (!room) return <Hosted />;
   if (!joined || !name)
     return (
       <Join

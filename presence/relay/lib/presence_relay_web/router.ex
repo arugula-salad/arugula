@@ -75,6 +75,7 @@ defmodule PresenceRelayWeb.Router do
   end
 
   # Anything else is a single-page app's: meet's on a meet. host or under
-  # /meet, else the demo site's (PageController.index).
+  # /meet, the dashboard's under /dashboard, else the demo site's
+  # (PageController.index).
   get "/*path", PresenceRelayWeb.PageController, :index
 end

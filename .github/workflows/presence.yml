@@ -76,7 +76,7 @@ jobs:
       # Each package has its own lockfile (no workspace); they link each
       # other (link:../core), so core and client install first.
       - name: Install
-        run: for p in core client elements react demo meet; do (cd "presence/$p" && pnpm install --frozen-lockfile); done
+        run: for p in core client elements react demo meet dashboard; do (cd "presence/$p" && pnpm install --frozen-lockfile); done
       - name: core
         working-directory: presence/core
         run: pnpm exec tsc --noEmit && pnpm test
@@ -94,6 +94,9 @@ jobs:
         run: pnpm exec tsc --noEmit && pnpm exec vite build
       - name: meet
         working-directory: presence/meet
+        run: pnpm exec tsc --noEmit && pnpm exec vite build
+      - name: dashboard
+        working-directory: presence/dashboard
         run: pnpm exec tsc --noEmit && pnpm exec vite build
 
   # The server SDKs: byte-identical tokens against presence/sdk/vectors.json.
