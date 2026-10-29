@@ -7,6 +7,7 @@ import { useState } from "preact/hooks";
 import { Landing } from "./landing";
 import { Docs } from "./docs";
 import { Hosted } from "./hosted";
+import { Privacy, Terms } from "./legal";
 import { Join, NAME, Room, cleanRoom, keep, kept } from "./room";
 import "./style.css";
 
@@ -21,6 +22,8 @@ function App() {
   const [joined, setJoined] = useState(false);
   if (location.pathname.startsWith("/docs")) return <Docs />;
   if (location.pathname.startsWith("/hosted")) return <Hosted />;
+  if (location.pathname.startsWith("/privacy")) return <Privacy />;
+  if (location.pathname.startsWith("/terms")) return <Terms />;
   if (!room) return <Landing />;
   if (!joined || !name)
     return (

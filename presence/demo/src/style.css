@@ -1095,3 +1095,51 @@ a.btn.primary {
     height: 104px;
   }
 }
+
+/* /privacy and /terms */
+
+.legal {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 16px 16px 64px;
+}
+
+.legal h1 {
+  font: 800 44px/1.05 var(--f-display);
+  text-transform: uppercase;
+  margin: 24px 0 6px;
+}
+
+.legal h2 {
+  font: 800 24px/1.1 var(--f-display);
+  text-transform: uppercase;
+  margin: 32px 0 8px;
+}
+
+.legal .updated {
+  font: 12px var(--f-mono);
+  color: var(--dim);
+}
+
+.legal .lede-small {
+  font-size: 18px;
+  color: var(--fg);
+}
+
+.legal p,
+.legal li {
+  color: #c4cad6;
+  line-height: 1.6;
+}
+
+.legal ul {
+  padding-left: 20px;
+}
+
+.legal li + li {
+  margin-top: 6px;
+}
+
+.legal a {
+  color: var(--accent);
+}
