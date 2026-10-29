@@ -98,7 +98,7 @@ export function Docs() {
               <Attr name="<arugula-people>">a tile per person; size="head" for a compact strip, self="hide" to leave yourself out</Attr>
               <Attr name="<arugula-chat>">the room's text: messages (kept, with history) and an input; Enter sends, Shift+Enter is a new line</Attr>
               <Attr name="<arugula-avatar>">one person's live face: user="…" size="head|bust", e.g. beside their name in your UI</Attr>
-              <Attr name="<arugula-call>">the call bar: a ring to answer, who you're calling, mute and leave; empty without a call. People's tiles get a Call button where the relay has calls (calls="off" on {"<arugula-people>"} hides it)</Attr>
+              <Attr name="<arugula-call>">the call bar: a ring to answer, who you're calling, mute, video and leave; empty without a call. People's tiles get a Call button where the relay has calls (calls="off" on {"<arugula-people>"} hides it)</Attr>
             </tbody>
           </table>
           <p>
@@ -145,7 +145,11 @@ export function Docs() {
             <li>64 people a room, 32 KiB a frame, a frame per 70 ms per person.</li>
             <li>Text: 1–2000 characters a message, at most 5 per 5 seconds each; kept, the last 50 on joining and earlier pages on request.</li>
             <li>Reactions: any single emoji, for the room, at most four a second each; they float over the sender's tile and aren't kept.</li>
-            <li>Calls: a wave they say yes to is a voice call (LiveKit; audio only for now, video next). The relay rings, at most 3 rings per 30 seconds each, and hands each person a 10-minute token for that call's room alone; audio never passes through it.</li>
+            <li>Calls: a wave they say yes to is a voice call (LiveKit). The relay rings, at most 3 rings per 30 seconds each, and hands each person a 10-minute token for that call's room alone; audio and video never pass through it.</li>
+            <li>
+              Video in a call is real video: the camera's actual picture, to the people in that call, while its owner has it on. Presence never sends a
+              picture. It shares the presence camera, 640×360 at 24 fps with a 320×180 simulcast layer, and each tile gets only the size it shows.
+            </li>
           </ul>
 
           <h2 id="protocol">Protocol</h2>

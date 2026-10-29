@@ -116,8 +116,8 @@ export function Developers() {
         <Step n={4} title="Wave, then talk">
           <p class="sub">
             Calls come with it. When someone waves and the other says Talk, they're in a voice call, in the same room, with presence carrying on
-            underneath. Add <code>&lt;arugula-call&gt;</code> for the call bar (mute, leave), or use <code>room.call(sub)</code>. Calls are real audio
-            and video; presence never sends a picture.
+            underneath. Add <code>&lt;arugula-call&gt;</code> for the call bar (mute, video, leave), or use <code>room.call(sub)</code>; anyone in the
+            call can start video from the same camera (<code>room.setVideo(true)</code>). Calls are real audio and video; presence never sends a picture.
           </p>
         </Step>
 

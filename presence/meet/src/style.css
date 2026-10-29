@@ -289,7 +289,8 @@ a.btn {
   min-width: 0;
 }
 
-/* Where #318's P7 puts the call's button and controls. */
+/* The call's bar (#318's P7, P8): its own row under the room's name
+   while there's a call. */
 .call-slot:empty {
   display: none;
 }
@@ -298,6 +299,12 @@ a.btn {
   display: flex;
   gap: 8px;
   align-items: center;
+  flex-basis: 100%;
+}
+
+.call-slot .callbar {
+  flex: 1;
+  margin: 0;
 }
 
 @media (max-width: 860px) {

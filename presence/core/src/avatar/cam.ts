@@ -1,11 +1,15 @@
 // Your camera as rig frames (S44): video only, tracked (./track, loaded
 // now) at a steady rate, each rig packed (./rig) with your look and sent.
-// The video stays in this page. A hidden page sends nothing.
+// The video stays in this page (a call's video, when you turn it on, is
+// the client's to send). A hidden page sends nothing.
 
 import { packRig, type Look, type Rig } from "./rig.ts";
 import type { Tracker } from "./track.ts";
 
 export interface AvatarCamera {
+  /** The camera's stream, so a call's video can share the device (a clone
+   * of its track) instead of opening it twice. Stopped by stop(). */
+  readonly stream: MediaStream;
   setRate(fps: number): void;
   setLook(l: Look): void;
   stop(): void;
@@ -56,6 +60,7 @@ export async function startAvatarCamera(o: AvatarCameraOptions): Promise<AvatarC
   };
   tick();
   return {
+    stream,
     setRate(f) {
       fps = f;
     },

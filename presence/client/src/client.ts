@@ -12,6 +12,12 @@
 // you picked. A rig comes a dozen times a second and avatars read it every
 // animation frame, so a rig only tells listeners when someone starts or
 // stops.
+//
+// In a call (PROTOCOL.md "Calls"), your video is off until you turn it on
+// (setVideo), and it's real video, for the people in the call alone. It
+// comes from the same camera as your character or outline (one device,
+// opened once; ./call publishes a clone of the camera's track), so
+// presence carries on for everyone in the room while it's on.
 
 import { startCamera, type Camera, type FrameStats } from "@arugula/presence-core/outline/camera";
 import { decodeFrame, type Frame } from "@arugula/presence-core/outline/frame";
@@ -50,6 +56,8 @@ export interface Call {
   /** Who's in it, you included, as LiveKit says (once joined). */
   people: CallPerson[];
   muted: boolean;
+  /** Your camera's video is on in the call (setVideo). */
+  video: boolean;
   /** The browser blocked the call's audio until a click (`startAudio`). */
   blocked: boolean;
   error: string;
@@ -166,6 +174,10 @@ export class PresenceClient {
   private joinCall: JoinCall;
   private alone: number | undefined;
   private rejoined = false;
+  /** The camera track your call's video is a clone of now, if any. */
+  private videoFrom: MediaStreamTrack | null = null;
+  /** setVideo turned the camera on: off again with the video. */
+  private cameraForVideo = false;
 
   constructor(o: PresenceClientOptions) {
     this.transport = o.transport;
@@ -193,10 +205,11 @@ export class PresenceClient {
   setMode(mode: "outline" | "avatar") {
     if (mode === this.mode) return;
     const was = this.cameraOn;
-    if (was) this.stopCamera();
+    if (was) this.closeCamera();
     this.mode = mode;
     keep(`${this.storage}mode`, mode);
     this.emit();
+    // A call's video carries on, from the restarted camera's stream.
     if (was) void this.startCamera();
   }
 
@@ -289,7 +302,7 @@ export class PresenceClient {
     this.emit();
     const { id } = await this.transport.call(to);
     const c = this.inCall;
-    this.inCall = c && c.id === id ? { ...c, ringing: [...c.ringing.filter((s) => s !== to), to] } : { id, state: "ringing", ringing: [to], people: [], muted: false, blocked: false, error: "" };
+    this.inCall = c && c.id === id ? { ...c, ringing: [...c.ringing.filter((s) => s !== to), to] } : { id, state: "ringing", ringing: [to], people: [], muted: false, video: false, blocked: false, error: "" };
     this.emit();
     return id;
   }
@@ -317,6 +330,67 @@ export class PresenceClient {
     await this.live_?.setMuted(muted);
   }
 
+  /** Turn your video on or off in the call you're in. It's your camera's
+   * real picture, for the people in the call alone (presence never sends
+   * one); your character or outline carries on for everyone in the room.
+   * A camera that's off turns on for it, and off again with it. */
+  async setVideo(on: boolean) {
+    const c = this.inCall;
+    if (!c || c.state === "ringing" || c.video === on) return;
+    this.inCall = { ...c, video: on, error: "" };
+    this.emit();
+    if (on && !this.cameraOn) {
+      this.cameraForVideo = true;
+      // Once it's on, startCamera publishes it (syncVideo).
+      await this.startCamera();
+      if (!this.cameraOn) {
+        this.cameraForVideo = false;
+        this.patchCall(c.id, { video: false, error: this.mine?.error ?? "" });
+      }
+      return;
+    }
+    if (!on && this.cameraForVideo) {
+      this.cameraForVideo = false;
+      return this.stopCamera();
+    }
+    await this.syncVideo();
+  }
+
+  /** Whether `sub`'s tile shows their call video now: they're in your call
+   * with their camera on (you too, while yours is). */
+  videoOf(sub: string): boolean {
+    return !!this.inCall?.people.find((p) => p.sub === sub)?.video;
+  }
+
+  /** Show `sub`'s call video in `el` (a muted, playsinline <video>): only
+   * while it's visible does LiveKit send it, at the size it's shown.
+   * Returns a function to stop. */
+  attachVideo(sub: string, el: HTMLVideoElement): () => void {
+    return this.live_?.attach(sub, el) ?? (() => {});
+  }
+
+  /** Your call's video, from the camera's stream now: published, swapped
+   * for a restarted camera's, or taken down. */
+  private async syncVideo() {
+    const c = this.inCall;
+    const live = this.live_;
+    if (!c || !live) return;
+    const track = c.video ? this.cameraTrack() : null;
+    if (track === this.videoFrom) return;
+    this.videoFrom = track;
+    try {
+      await live.setVideo(track);
+    } catch (e) {
+      this.videoFrom = null;
+      this.patchCall(c.id, { video: false, error: `Your video didn't start: ${(e as Error).message}` });
+    }
+  }
+
+  private cameraTrack(): MediaStreamTrack | null {
+    const s = this.camera?.stream ?? this.avatarCam?.stream;
+    return s?.getVideoTracks().find((t) => t.readyState === "live") ?? null;
+  }
+
   /** From a click: play a call the browser wouldn't play by itself. */
   async startAudio() {
     await this.live_?.startAudio();
@@ -337,9 +411,15 @@ export class PresenceClient {
   private endCall() {
     const live = this.live_;
     this.live_ = null;
+    this.videoFrom = null;
     this.inCall = null;
     clearTimeout(this.alone);
     void live?.leave();
+    // A camera turned on for the call's video goes off with the call.
+    if (this.cameraForVideo) {
+      this.cameraForVideo = false;
+      this.stopCamera();
+    }
     this.emit();
   }
 
@@ -355,8 +435,9 @@ export class PresenceClient {
       void this.live_?.leave();
       this.live_ = null;
     }
+    this.videoFrom = null;
     const was = this.inCall?.id === j.id ? this.inCall : null;
-    this.inCall = { id: j.id, state: "joining", ringing: was?.ringing ?? [], people: [], muted: was?.muted ?? false, blocked: false, error: "" };
+    this.inCall = { id: j.id, state: "joining", ringing: was?.ringing ?? [], people: [], muted: was?.muted ?? false, video: was?.video ?? false, blocked: false, error: "" };
     this.emit();
     // Nobody else turns up: it ends.
     const lonely = (people: CallPerson[]) => {
@@ -385,6 +466,8 @@ export class PresenceClient {
       this.rejoined = false;
       if (this.inCall.muted) await live.setMuted(true);
       lonely(this.inCall.people);
+      // Back in after a drop with your video on: it goes up again.
+      await this.syncVideo();
     } catch (e) {
       this.patchCall(j.id, { error: `The call didn't connect: ${(e as Error).message}` });
     }
@@ -460,9 +543,11 @@ export class PresenceClient {
         },
       });
       addEventListener("pagehide", this.leave);
+      void this.syncVideo();
     } catch (e) {
       this.mine = { frame: null, stats: null, rig: null, trackMs: 0, sent: [], error: cameraRefusal(e as Error) };
       this.transport.state?.({ mode: "none" });
+      this.videoGone();
     } finally {
       this.starting = false;
       this.emit();
@@ -498,9 +583,11 @@ export class PresenceClient {
         },
       });
       addEventListener("pagehide", this.leave);
+      void this.syncVideo();
     } catch (e) {
       this.mine = { frame: null, stats: null, rig: null, trackMs: 0, sent: [], error: cameraRefusal(e as Error) };
       this.transport.state?.({ mode: "none" });
+      this.videoGone();
     } finally {
       this.starting = false;
       this.emit();
@@ -509,6 +596,19 @@ export class PresenceClient {
 
   stopCamera() {
     if (!this.camera && !this.avatarCam) return;
+    this.closeCamera();
+    this.cameraForVideo = false;
+    this.videoGone();
+    this.emit();
+  }
+
+  /** No camera (off, or it didn't start), no video: a call's goes down. */
+  private videoGone() {
+    if (this.inCall?.video) this.inCall = { ...this.inCall, video: false };
+    void this.syncVideo();
+  }
+
+  private closeCamera() {
     this.camera?.stop();
     this.camera = null;
     this.avatarCam?.stop();

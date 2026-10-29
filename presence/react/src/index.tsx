@@ -104,6 +104,9 @@ export function usePresence() {
     answerCall: (id: string, yes: boolean) => room?.answerCall(id, yes),
     leaveCall: () => room?.leaveCall(),
     setMuted: (muted: boolean) => room?.setMuted(muted),
+    /** Your video in the call: your camera's real picture, for the people
+     * in it (presence never sends one). */
+    setVideo: (on: boolean) => room?.setVideo(on),
     setLook: (look: Look) => room?.setLook(look),
     camera: {
       on: room?.camera.on ?? false,
@@ -140,8 +143,8 @@ export function CameraControls({ controls, className }: CameraOptions & { classN
   return <div ref={ref} className={className} />;
 }
 
-/** The call bar: a ring to answer, who you're calling, mute and leave
- * (nothing while there's no call). */
+/** The call bar: a ring to answer, who you're calling, mute, video and
+ * leave (nothing while there's no call). */
 export function CallControls({ className }: { className?: string }) {
   const ref = useDrawn((room, el) => styled(el, (root) => mountCall(room, root)), []);
   return <div ref={ref} className={className} />;

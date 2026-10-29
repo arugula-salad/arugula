@@ -1,8 +1,9 @@
 // Drawing a room's people into an element (connect()'s mount and avatar,
 // and the elements): a tile each, their outline while their camera sends
 // one, their character (live, or idling in their look) otherwise, their
-// initial when they have neither; who's in a call, and a button to call
-// someone where the relay has calls. Plain DOM and canvases, no framework.
+// initial when they have neither, and their video while it's on in your
+// call; who's in a call, and a button to call someone where the relay has
+// calls. Plain DOM, canvases and video elements, no framework.
 
 import type { Member } from "@arugula/presence";
 import { characterOf } from "@arugula/presence-core/avatar/characters/index";
@@ -28,7 +29,7 @@ export interface AvatarOptions {
   size?: "head" | "bust";
 }
 
-type Kind = "outline" | "avatar" | "initial";
+type Kind = "outline" | "avatar" | "initial" | "video";
 
 /** What one person's view draws from now. */
 function what(room: Room, m: Member): { kind: Kind; frame: Frame | null; source: () => Source | null } {
@@ -45,7 +46,8 @@ function what(room: Room, m: Member): { kind: Kind; frame: Frame | null; source:
     const look = s?.look ?? c.lookOf(m.sub) ?? now.look;
     return look ? { rig: hand(s?.rig ?? null), look, away: now.away } : null;
   };
-  const kind: Kind = frame ? "outline" : (me ? c.mode === "avatar" : !!source()) ? "avatar" : "initial";
+  // In your call with their camera on, their video stands in for the rest.
+  const kind: Kind = c.videoOf(m.sub) ? "video" : frame ? "outline" : (me ? c.mode === "avatar" : !!source()) ? "avatar" : "initial";
   return { kind, frame, source };
 }
 
@@ -53,8 +55,11 @@ function what(room: Room, m: Member): { kind: Kind; frame: Frame | null; source:
 class Face {
   private kind: Kind | null = null;
   private stopAnim: (() => void) | null = null;
+  private stopVideo: (() => void) | null = null;
   private canvas: HTMLCanvasElement | null = null;
   private frame: Frame | null = null;
+  /** What it put in the view (the view also holds the tile's reactions). */
+  private el: Element | null = null;
   private view: HTMLElement;
   private size: "bust" | "head";
   constructor(view: HTMLElement, size: "bust" | "head") {
@@ -72,12 +77,23 @@ class Face {
         const i = document.createElement("span");
         i.className = "initial";
         i.textContent = (m.name || "?").slice(0, 1).toUpperCase();
-        this.view.append(i);
+        this.el = i;
+      } else if (w.kind === "video") {
+        // Muted (the call's audio plays elsewhere); LiveKit sends it only
+        // while it's in view, at the size it's shown.
+        const v = document.createElement("video");
+        v.muted = true;
+        v.autoplay = true;
+        v.playsInline = true;
+        if (me) v.className = "mirror";
+        this.el = v;
+        this.stopVideo = room.client.attachVideo(m.sub, v);
       } else {
-        this.canvas = document.createElement("canvas");
-        this.view.append(this.canvas);
+        this.el = this.canvas = document.createElement("canvas");
         if (w.kind === "avatar") this.stopAnim = animate(this.canvas, { size: this.size, mirror: me, character: characterOf, source: w.source });
       }
+      // Under the reactions, which float over it.
+      this.view.prepend(this.el);
     }
     if (w.kind === "outline" && this.canvas && w.frame && w.frame !== this.frame) {
       this.frame = w.frame;
@@ -86,12 +102,21 @@ class Face {
     }
   }
 
+  /** Whether it's showing video now. */
+  get video(): boolean {
+    return this.kind === "video";
+  }
+
   clear() {
     this.stopAnim?.();
     this.stopAnim = null;
+    this.stopVideo?.();
+    this.stopVideo = null;
+    this.kind = null;
     this.canvas = null;
     this.frame = null;
-    this.view.replaceChildren();
+    this.el?.remove();
+    this.el = null;
   }
 }
 
@@ -194,6 +219,7 @@ export function mountPeople(room: Room, el: Element | ShadowRoot, o: PeopleOptio
       t.callButton.textContent = ringing ? "Calling…" : c.inCall && c.inCall.state !== "ringing" ? "Add to call" : "Call";
       t.callButton.setAttribute("aria-label", `Call ${m.name}`);
       t.face.update(room, m);
+      t.fig.classList.toggle("video", t.face.video);
       float(room, m.sub, t.reacts, t.shown);
     });
   };

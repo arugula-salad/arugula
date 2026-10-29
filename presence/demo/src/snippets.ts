@@ -210,9 +210,10 @@ room.chat(el)                        // the messages and an input, drawn into el
 room.calls                           // whether this relay has calls
 await room.call(sub)                 // ask to talk: a voice call once they say yes
 room.on("ring", (from, id) => room.answerCall(id, true))
-room.inCall                          // { id, state, people: [{ sub, muted, speaking }], muted }
+room.inCall                          // { id, state, people: [{ sub, muted, speaking, video }], muted, video }
 room.setMuted(true)  ·  room.leaveCall()
-room.callBar(el)                     // a ring to answer, mute and leave, drawn into el
+await room.setVideo(true)            // real camera video, to the people in the call
+room.callBar(el)                     // a ring to answer, mute, video and leave, drawn into el
 room.mount(el, { size: "bust" })      // everyone, drawn into el
 room.avatar(el, sub, { size: "head" })  // one person
 room.leave()`;
@@ -225,4 +226,4 @@ export const theming = `arugula-room {
   --arugula-radius: 12px;
 }`;
 
-export const reactHook = `const { members, messages, say, wave, react, camera, calls, call, inCall, leaveCall } = usePresence();`;
+export const reactHook = `const { members, messages, say, wave, react, camera, calls, call, inCall, leaveCall, setVideo } = usePresence();`;

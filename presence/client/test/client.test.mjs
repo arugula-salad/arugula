@@ -259,3 +259,78 @@ test("a member's call comes from their metas", () => {
   assert.equal(memberOf("a", [{ name: "A", call: null }, { name: "A", call: "c1" }]).call, "c1");
   assert.equal(memberOf("a", [{ name: "A" }]).call, null);
 });
+
+test("video in a call: off until turned on, from the camera's own track; a tile shows it while they're on; the camera off takes it down", async () => {
+  const t = fake();
+  t.transport.call = async () => ({ id: "v1" });
+  t.transport.callAnswer = async () => {};
+  t.transport.callLeave = () => {};
+  const lk = { video: [], attached: [] };
+  const joinCall = async (j, on) => {
+    lk.on = on;
+    return {
+      setMuted: async () => {},
+      setVideo: async (track) => void lk.video.push(track),
+      attach: (sub, el) => (lk.attached.push([sub, el]), () => lk.attached.push(["gone", sub])),
+      startAudio: async () => {},
+      leave: async () => {},
+    };
+  };
+  const c = new PresenceClient({ transport: t.transport, storage: "t8.", joinCall });
+  const stop = c.watch();
+  t.on.calls(true);
+  await c.call("bob");
+  await c.setVideo(true);
+  assert.equal(c.inCall.video, false, "not while it's only ringing");
+  t.on.callAnswer("v1", "bob", true);
+  t.on.callJoin({ id: "v1", url: "ws://lk", room: "acme:r:v1", token: "tok" });
+  await new Promise((r) => setTimeout(r, 0));
+  lk.on.state("on");
+  assert.equal(c.inCall.video, false, "off until you turn it on");
+  assert.deepEqual(lk.video, []);
+
+  // The presence camera's on: the call's video is its track (one device).
+  const track = { readyState: "live", id: "cam" };
+  let stopped = 0;
+  // stopCamera forgets its pagehide listener: Node has no window.
+  globalThis.removeEventListener ??= () => {};
+  c.camera = { stream: { getVideoTracks: () => [track] }, stop: () => stopped++ };
+  await c.setVideo(true);
+  assert.equal(c.inCall.video, true);
+  assert.deepEqual(lk.video, [track]);
+  await c.setVideo(true);
+  assert.equal(lk.video.length, 1, "already on: nothing new");
+
+  // Bob's video reaches this page: his tile shows it, and a view attaches.
+  lk.on.people([
+    { sub: "me", name: "Me", muted: false, speaking: false, audio: true, video: true },
+    { sub: "bob", name: "Bob", muted: false, speaking: false, audio: true, video: true },
+  ]);
+  assert.equal(c.videoOf("bob"), true);
+  assert.equal(c.videoOf("sam"), false, "not in the call");
+  const el = {};
+  const detach = c.attachVideo("bob", el);
+  assert.deepEqual(lk.attached, [["bob", el]]);
+  detach();
+  assert.deepEqual(lk.attached.at(-1), ["gone", "bob"]);
+  lk.on.people([
+    { sub: "me", name: "Me", muted: false, speaking: false, audio: true, video: true },
+    { sub: "bob", name: "Bob", muted: false, speaking: false, audio: true, video: false },
+  ]);
+  assert.equal(c.videoOf("bob"), false, "his video off: his character again");
+
+  // Video off, then back on, then the camera off takes it down.
+  await c.setVideo(false);
+  assert.deepEqual([c.inCall.video, lk.video.at(-1), stopped], [false, null, 0], "the camera stays on: you turned it on");
+  await c.setVideo(true);
+  assert.equal(lk.video.at(-1), track);
+  c.stopCamera();
+  await new Promise((r) => setTimeout(r, 0));
+  assert.deepEqual([c.inCall.video, lk.video.at(-1), stopped], [false, null, 1]);
+
+  // No camera to be had (no browser here): the video says why, and stays off.
+  await c.setVideo(true);
+  assert.equal(c.inCall.video, false);
+  assert.match(c.inCall.error, /camera/i);
+  stop();
+});

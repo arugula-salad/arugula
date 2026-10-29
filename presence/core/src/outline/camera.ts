@@ -46,6 +46,9 @@ export interface FrameStats {
 }
 
 export interface Camera {
+  /** The camera's stream, so a call's video can share the device (a clone
+   * of its track) instead of opening it twice. Stopped by stop(). */
+  readonly stream: MediaStream;
   /** Frames a second. */
   setRate(fps: number): void;
   setDetail(d: number): void;
@@ -242,6 +245,7 @@ export async function startCamera(o: CameraOptions): Promise<Camera> {
   if (o.depth) setDepth(true);
 
   return {
+    stream,
     setRate(f) {
       fps = f;
     },

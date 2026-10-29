@@ -1,6 +1,9 @@
 // A meet room (/r/<slug>): a name to go by, then everyone here as live
 // characters or outlines (@arugula/presence-core), the room's chat beside
 // them, waves and reactions, over the Phoenix transport (@arugula/presence).
+// Where the relay has calls (#318's P7, P8), a wave rings: a yes is a voice
+// call on LiveKit, with mute, video and leave in the room's bar, and a
+// person's video on their tile while they have it on.
 //
 // Into the socket: signed in, with a room token meet's server signs for
 // you (api.roomToken, which also puts the room in your list); a guest,
@@ -116,13 +119,36 @@ function AvatarCanvas({ source, mirror }: { source: () => Source | null; mirror:
   return <canvas ref={ref} />;
 }
 
-function Tile({ client, m, me }: { client: PresenceClient; m: Member; me: boolean }) {
+/** Someone's call video (yours mirrored): LiveKit sends it only while
+ * it's in view, at the size it's shown. */
+function VideoView({ client, sub, mirror }: { client: PresenceClient; sub: string; mirror: boolean }) {
+  const ref = useRef<HTMLVideoElement>(null);
+  useEffect(() => client.attachVideo(sub, ref.current!), [sub]);
+  return <video ref={ref} class={mirror ? "mirror" : undefined} autoPlay playsInline muted />;
+}
+
+function Tile({ client, m, me, onError }: { client: PresenceClient; m: Member; me: boolean; onError: (e: string) => void }) {
   const seen = client.of(m.sub);
   const frame = (me ? client.mine?.frame : null) ?? seen?.frame ?? null;
   const look = me ? client.look : (seen?.look ?? client.lookOf(m.sub) ?? m.look);
   const avatar = me ? client.mode === "avatar" : !!look && !frame;
   const live = !!frame || !!seen?.rig || (me && !!client.mine?.rig);
   const waved = client.answers.find((a) => a.from === m.sub);
+  // Calls: who's in one (presence), and in yours, muted, speaking or on
+  // video (LiveKit).
+  const person = client.inCall?.people.find((p) => p.sub === m.sub);
+  const ringing = !!client.inCall?.ringing.includes(m.sub);
+  const inMine = client.inMyCall(m.sub);
+  const video = client.videoOf(m.sub);
+  const adding = client.callsOn && !!client.inCall && client.inCall.state !== "ringing";
+  // A wave rings where the relay has calls; it's a hello where it hasn't.
+  const waveAt = () => {
+    if (!client.callsOn) return client.wave(m.sub);
+    client.call(m.sub).then(
+      () => onError(""),
+      (e: Error) => onError(callError(e.message)),
+    );
+  };
   // A fresh wave (theirs at you, yours at someone) waves on their avatar.
   const hand = (rig: Rig | null) => (client.waving(m.sub, me) ? waving(rig, performance.now() / 1000) : rig);
   const source = (): Source | null => {
@@ -132,7 +158,7 @@ function Tile({ client, m, me }: { client: PresenceClient; m: Member; me: boolea
     return l ? { rig: hand(s?.rig ?? null), look: l, away: m.away } : null;
   };
   return (
-    <figure class={live ? "tile live" : "tile"} data-sub={m.sub} data-name={m.name}>
+    <figure class={["tile", live && "live", m.call && "in-call", video && "video", person?.speaking && "speaking"].filter(Boolean).join(" ")} data-sub={m.sub} data-name={m.name}>
       <div class="view">
         <div class="reacts" aria-live="polite">
           {client.reactionsOf(m.sub).map((r) => (
@@ -141,19 +167,27 @@ function Tile({ client, m, me }: { client: PresenceClient; m: Member; me: boolea
             </span>
           ))}
         </div>
-        {frame ? <OutlineCanvas frame={frame} mirror={me} /> : avatar ? <AvatarCanvas source={source} mirror={me} /> : <div class="still">{m.name.slice(0, 1).toUpperCase()}</div>}
+        {video ? (
+          <VideoView client={client} sub={m.sub} mirror={me} />
+        ) : frame ? (
+          <OutlineCanvas frame={frame} mirror={me} />
+        ) : avatar ? (
+          <AvatarCanvas source={source} mirror={me} />
+        ) : (
+          <div class="still">{m.name.slice(0, 1).toUpperCase()}</div>
+        )}
       </div>
       <figcaption>
         <span class="who">{me ? `${m.name} (you)` : m.name}</span>
-        {live && <span class="tag">live</span>}
-        {!live && m.away && (
+        {person?.muted ? <span class="tag call">muted</span> : m.call ? <span class="tag call">in a call</span> : live && <span class="tag">live</span>}
+        {!live && !m.call && m.away && (
           <span class="tag" style={{ color: "var(--dim)" }}>
             away
           </span>
         )}
-        {!me && (
-          <button class="btn wave" onClick={() => client.wave(m.sub)} title={`Wave at ${m.name}`}>
-            {waved ? (waved.yes ? "waved back" : "not now") : "Wave"}
+        {!me && !inMine && (
+          <button class="btn wave" onClick={waveAt} disabled={ringing} title={client.callsOn ? `Wave at ${m.name} to talk` : `Wave at ${m.name}`}>
+            {ringing ? "Calling…" : adding ? "Add to call" : waved && !client.callsOn ? (waved.yes ? "waved back" : "not now") : waved && !waved.yes ? "not now" : "Wave"}
           </button>
         )}
       </figcaption>
@@ -277,6 +311,60 @@ function ChatPanel({ client, me }: { client: PresenceClient; me: string }) {
   );
 }
 
+/** Your call, in the room's bar: who's in it, mute, video and leave (or
+ * who you're calling, and cancel). */
+function CallBar({ client, me, names, error }: { client: PresenceClient; me: string; names: Map<string, string>; error: string }) {
+  const c = client.inCall;
+  if (!c) return error ? <div class="callbar"><span class="error">{error}</span></div> : null;
+  const others = c.people.filter((p) => p.sub !== me).map((p) => p.name);
+  const ringing = c.ringing.map((s) => names.get(s) ?? "someone");
+  const what =
+    c.state === "ringing"
+      ? `Calling ${ringing.join(", ")}…`
+      : c.state === "joining"
+        ? "Joining the call…"
+        : c.state === "reconnecting"
+          ? "Reconnecting…"
+          : others.length
+            ? `In a call with ${others.join(", ")}${ringing.length ? ` · calling ${ringing.join(", ")}…` : ""}`
+            : "Waiting for the others…";
+  return (
+    <div class="callbar on" role="status">
+      <span class="what">{what}</span>
+      {c.state !== "ringing" && (
+        <>
+          <button class={c.muted ? "btn on" : "btn"} onClick={() => void client.setMuted(!c.muted)} aria-pressed={c.muted}>
+            {c.muted ? "Unmute" : "Mute"}
+          </button>
+          <button class={c.video ? "btn on" : "btn"} onClick={() => void client.setVideo(!c.video)} aria-pressed={c.video} title="Video is your camera's real picture, for the people in this call">
+            {c.video ? "Stop video" : "Start video"}
+          </button>
+        </>
+      )}
+      {c.blocked && (
+        <button class="btn primary" onClick={() => void client.startAudio()}>
+          Play the call
+        </button>
+      )}
+      <button class="btn danger" onClick={() => client.leaveCall()}>
+        {c.state === "ringing" ? "Cancel" : "Leave"}
+      </button>
+      {(c.error || error) && <span class="error">{c.error || error}</span>}
+    </div>
+  );
+}
+
+/** The relay's reasons for not ringing someone, in words. */
+function callError(reason: string): string {
+  return (
+    {
+      "too fast": "That's a lot of ringing: wait a few seconds and try again.",
+      "not in the room": "They've left the room.",
+      "already in the call": "They're in the call already.",
+    }[reason] ?? reason
+  );
+}
+
 /** The relay's reasons for not keeping a message, in words. */
 function sayError(reason: string): string {
   return (
@@ -324,6 +412,8 @@ function Room({ info, me, name }: { info: RoomInfo; me: Session; name: string })
   const names = useRef(new Map<string, string>()).current;
   for (const m of client.members) names.set(m.sub, m.name);
   const wave = client.waves[client.waves.length - 1];
+  const ring = client.rings[client.rings.length - 1];
+  const [callErr, setCallErr] = useState("");
   const link = `${location.origin}${path(`/r/${info.slug}`)}`;
   const share = () => {
     void navigator.clipboard?.writeText(link).then(() => {
@@ -345,24 +435,40 @@ function Room({ info, me, name }: { info: RoomInfo; me: Session; name: string })
         <button class="btn" onClick={share} title={link}>
           {copied ? "Link copied" : "Copy the link"}
         </button>
-        {/* #318's P7 puts the call's button and controls here ("a wave
-            becomes a call"). */}
-        <div class="call-slot" data-slot="call" />
+        <div class="call-slot" data-slot="call">
+          <CallBar client={client} me={mine.sub} names={names} error={callErr} />
+        </div>
       </div>
       <Controls client={client} me={mine.sub} />
       <div class="room-body">
         <div>
           <div class="grid">
-            <Tile client={client} m={mine} me />
+            <Tile client={client} m={mine} me onError={setCallErr} />
             {others.map((m) => (
-              <Tile key={m.sub} client={client} m={m} me={false} />
+              <Tile key={m.sub} client={client} m={m} me={false} onError={setCallErr} />
             ))}
           </div>
           {!others.length && <p class="empty">Nobody else here yet. Copy the link and send it to someone.</p>}
         </div>
         <ChatPanel client={client} me={mine.sub} />
       </div>
-      {wave && (
+      {ring && (
+        <div class="toast" role="alert">
+          <span>
+            <b>{names.get(ring.from) ?? "Someone"}</b> waved at you: they'd like to talk.
+          </span>
+          <div class="row">
+            <button class="btn primary" onClick={() => void client.answerCall(ring.id, true)}>
+              Talk
+            </button>
+            <button class="btn" onClick={() => void client.answerCall(ring.id, false)}>
+              Not now
+            </button>
+          </div>
+          <span class="stats">A voice call: your microphone. Video only if you start it, and then it's your real camera picture.</span>
+        </div>
+      )}
+      {!ring && wave && (
         <div class="toast" role="alert">
           <span>
             <b>{names.get(wave.from) ?? "Someone"}</b> waved at you.
