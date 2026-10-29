@@ -28,7 +28,7 @@ use std::sync::Arc;
 
 use arugula_control_wire::{PushAnswer, PushRequest, PushSubs};
 use arugula_e2e::{now_ms, push::PushSub};
-use arugula_platform::hub::{PushOptions, Pushed};
+use arugula_platform_api::hub::{PushOptions, Pushed};
 use axum::{Json, extract::State, http::StatusCode};
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD as B64};
 use p256::{

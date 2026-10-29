@@ -93,7 +93,7 @@ pub fn refresh(app: &App) -> anyhow::Result<()> {
     let now = app.db.maintenance()?;
     let was = app.maintenance.set(now);
     if let Some(p) = app.platform.local() {
-        p.paused.store(now.is_some_and(|m| m.pause), std::sync::atomic::Ordering::Relaxed);
+        p.set_paused(now.is_some_and(|m| m.pause));
     }
     match (was, now) {
         (None, Some(m)) => {

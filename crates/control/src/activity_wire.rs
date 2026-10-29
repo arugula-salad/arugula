@@ -4,7 +4,7 @@
 
 use std::time::Duration;
 
-use arugula_platform::hub::HubPort;
+use arugula_platform_api::hub::HubPort;
 use futures_util::SinkExt;
 use serde_json::json;
 use tokio_tungstenite::tungstenite::Message;

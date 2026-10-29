@@ -30,7 +30,7 @@ async fn control() -> Control {
     let platform = Files::page("platform");
     let mut app = App::for_tests(CONTROL);
     app.cfg.platform_host = crate::platform_host::parse(APP, CONTROL, &app.cfg.sites, None).unwrap();
-    app.cfg.platform_page = arugula_platform::page::Page::new(Some(platform.0.clone()));
+    app.cfg.platform_page = arugula_platform_api::page::Page::new(Some(platform.0.clone()));
     let app = app.start();
     let now = now_ms();
     app.db.account_for("test", "a", "a", "a", now).unwrap();

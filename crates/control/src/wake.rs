@@ -27,7 +27,7 @@ use std::{
 
 use arugula_control_wire::hosted::{WakeAnswer, WakeCode};
 use arugula_e2e::mux::Mux;
-use arugula_platform::PlatformPort as _;
+use arugula_platform_api::PlatformPort as _;
 use tokio::sync::watch;
 use tracing::{info, warn};
 

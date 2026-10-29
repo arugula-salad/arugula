@@ -27,6 +27,7 @@ members = [
     "../crates/platform",
     "../crates/platform-agents",
     "../crates/platform-all",
+    "../crates/platform-api",
     "../crates/platform-deploys",
 ]
 
@@ -52,6 +53,8 @@ arugula-platform-base = { path = "../crates/platform" }
 # The platform's feature crates (#314), side by side on its base.
 arugula-platform-agents = { path = "../crates/platform-agents" }
 arugula-platform-deploys = { path = "../crates/platform-deploys" }
+# The hub's side of the seam: all the hub builds against (#314).
+arugula-platform-api = { path = "../crates/platform-api" }
 # Every feature crate, registered: what both binaries call.
 arugula-platform-all = { path = "../crates/platform-all" }
 aes-gcm = "0.11.1"

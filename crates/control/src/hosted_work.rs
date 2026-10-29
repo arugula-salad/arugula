@@ -10,6 +10,7 @@
 
 use std::sync::Arc;
 
+use arugula_control_wire::internal::HostedMachine;
 use arugula_control_wire::{
     run_logs::{Upload, UploadGiven, Uploaded},
     work::{
@@ -17,7 +18,7 @@ use arugula_control_wire::{
         SessionIssuesGiven, SessionReport, Work,
     },
 };
-use arugula_platform::{PlatformPort as _, work::HostedMachine};
+use arugula_platform_api::PlatformPort as _;
 use axum::{
     Json,
     extract::{Query, State},
@@ -172,7 +173,7 @@ mod tests {
         let c = control(|_| {}).await;
         let me = person(&c.app, "me", "m1");
         let me_s = session(&c.app, "m1");
-        let p = c.app.platform.inner().clone();
+        let p = c.app.platform.inner_arc();
         let project = p.db.personal_project("m1", now_ms()).unwrap();
         let mut d = Delegation {
             project: project.clone(),

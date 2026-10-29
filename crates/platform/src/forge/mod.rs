@@ -105,7 +105,7 @@ pub const FORGE_LOOKUPS: (&str, usize) = ("forge-lookup", 600);
 
 /// What the platform says when it has no App: the hub, which knows
 /// whether control should have one, logs it as a misconfiguration.
-pub const NO_APP: &str = "this control has no GitHub App";
+pub use arugula_platform_api::NO_APP;
 
 /// How often old webhook deliveries are pruned.
 const PRUNE_EVERY: std::time::Duration = std::time::Duration::from_secs(3600);
@@ -234,19 +234,8 @@ impl Args {
     }
 }
 
-/// `OWNER/NAME`, as GitHub spells them.
-pub fn good_repo(r: &str) -> bool {
-    let mut p = r.split('/');
-    let ok = |s: Option<&str>| {
-        s.is_some_and(|s| {
-            !s.is_empty()
-                && !s.starts_with('.')
-                && s.len() <= 100
-                && s.chars().all(|c| c.is_ascii_alphanumeric() || "-_.".contains(c))
-        })
-    };
-    ok(p.next()) && ok(p.next()) && p.next().is_none()
-}
+/// `OWNER/NAME`, as GitHub spells them (the hub checks them too).
+pub use arugula_platform_api::good_repo;
 
 /// Where each repository stands for an account's daemon: live (pokes come)
 /// or why not. `github`: the account's GitHub identity, if it signed in

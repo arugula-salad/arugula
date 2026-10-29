@@ -9,7 +9,7 @@
 //!   share a transaction, and the change feed names nobody (#173), so this
 //!   is how a deletion survives the platform being away.
 
-use arugula_platform::Deleted;
+use arugula_platform_api::Deleted;
 use rusqlite::{Connection, OptionalExtension, params};
 
 use super::Db;

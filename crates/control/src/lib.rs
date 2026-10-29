@@ -112,6 +112,7 @@ use std::{net::SocketAddr, path::PathBuf, sync::Arc};
 
 use anyhow::Context as _;
 use arugula_control_wire as wire;
+use arugula_platform_api::in_process::Platforms;
 use axum::{
     Json, Router,
     body::Body,
@@ -187,12 +188,6 @@ struct Args {
     #[arg(long, default_value = "https://api.github.com", hide = true)]
     github_api: String,
 
-    /// The GitHub App (M40): its flags are the platform's (M161), with the
-    /// names they always had. In process the hub hands the App to the
-    /// platform; out of process it needs only the id and slug, and the
-    /// platform holds the key and webhook secret (docs/control-ops.md).
-    #[command(flatten)]
-    github_app: arugula_platform::forge::Args,
     /// The App's client id and secret sign people in when
     /// GITHUB_CLIENT_ID/SECRET aren't set: the hub's ("The hub stays the
     /// identity provider").
@@ -203,36 +198,6 @@ struct Args {
     /// How often subscribed daemons hear the webhook path is up (tests).
     #[arg(long, default_value_t = 60, hide = true)]
     forge_heartbeat_secs: u64,
-
-    /// The master key and the beta allowlist: the platform's flags and env
-    /// vars (M137), with the names they always had.
-    #[command(flatten)]
-    cloud: arugula_platform::cloud::Args,
-
-    /// Hosted workspaces' boxes (M176): the platform's flags, used when
-    /// it runs in process.
-    #[command(flatten)]
-    compute: arugula_platform::compute::Args,
-
-    /// Hosted workspaces (M179): the platform's flags, used when it runs
-    /// in process.
-    #[command(flatten)]
-    hosted: arugula_platform::hosted::Args,
-
-    /// The run-log bucket (M213): the platform's flags, used when it runs
-    /// in process.
-    #[command(flatten)]
-    run_logs: arugula_platform::run_logs::Args,
-
-    /// The platform's own database (M143): `postgres://` puts it on
-    /// Postgres. Without it, a second connection to `--db`, as always.
-    #[command(flatten)]
-    platform_db: arugula_platform::db::Args,
-
-    /// Billing (M22): its flags and env vars are the platform's (M140),
-    /// with the names they always had. The hub only needs to know it's on.
-    #[command(flatten)]
-    billing: arugula_platform::billing::Args,
 
     /// Where the platform runs (#1150): `in-process`, inside this hub (the
     /// default, and the rollback), or the URL of an `arugula-platform` on
@@ -362,7 +327,7 @@ pub struct Config {
     /// The platform page's host (M151, `platform_host.rs`), and where its
     /// files come from when the platform is in process.
     pub platform_host: Option<platform_host::PlatformHost>,
-    pub platform_page: arugula_platform::page::Page,
+    pub platform_page: arugula_platform_api::page::Page,
     pub github: Option<Github>,
     /// The GitHub App's own OAuth client (`GITHUB_APP_CLIENT_ID`/`SECRET`):
     /// a person's send runs its user authorization (M168), whichever
@@ -480,32 +445,10 @@ impl App {
     }
 }
 
-/// The platform in process, on its own connection to `db` (memory for
-/// tests), and the `HubPort` it reaches the hub through, attached by
-/// [`App::start`].
-#[allow(clippy::too_many_arguments)]
-fn platform(
-    db: arugula_platform::db::Db,
-    cfg: arugula_platform::Config,
-    stripe: Option<arugula_platform::billing::Stripe>,
-    github: (Option<arugula_platform::forge::GithubApp>, Option<arugula_platform::forge::GithubApp>),
-    compute: Option<Arc<dyn arugula_platform::compute::Substrate>>,
-    hosted: arugula_platform::hosted::Config,
-    run_logs: Option<arugula_platform::run_logs::Bucket>,
-    http: &reqwest::Client,
-    analytics: &analytics::Analytics,
-) -> (gateway::PlatformAt, Arc<hub_port::InProcess>) {
-    let hub = Arc::new(hub_port::InProcess::default());
-    let mut p = arugula_platform::Platform::new(cfg, db, hub.clone(), http.clone(), analytics.clone());
-    p.stripe = stripe;
-    // The platform's own App, and planter's, the deploy App (M233).
-    (p.github, p.deploy_app) = github;
-    p.compute = compute;
-    // The master key (M209), which the hosted config was given.
-    p.secret_key = hosted.cipher.clone();
-    p.hosted = hosted;
-    p.run_logs = run_logs;
-    (gateway::PlatformAt::InProcess(Arc::new(p)), hub)
+/// The `HubPort` an in-process platform reaches the hub through, attached
+/// by [`App::start`].
+fn in_process_hub() -> Arc<hub_port::InProcess> {
+    Arc::new(hub_port::InProcess::default())
 }
 
 /// Every path the platform answers, with every feature crate registered
@@ -526,23 +469,21 @@ impl App {
         let vapid = push::Vapid::load(&db).unwrap();
         let hosted_key = hosted::load_key(&db).unwrap();
         let http = reqwest::Client::new();
-        let cfg = arugula_platform::Config {
+        let cfg = arugula_platform_api::Config {
             public_url: public_url.into(),
             sites: vec![public_url.into()],
             page_url: String::new(),
             relay_free_bytes: 0,
         };
-        let (platform, hub_port) = platform(
-            arugula_platform::db::Db::memory(),
+        let hub_port = in_process_hub();
+        let platform: Arc<dyn arugula_platform_api::in_process::InProcess> = Arc::new(arugula_platform::Platform::new(
             cfg,
-            None,
-            (None, None),
-            None,
-            Default::default(),
-            None,
-            &http,
-            &analytics::Analytics::default(),
-        );
+            arugula_platform::db::Db::memory(),
+            hub_port.clone(),
+            http.clone(),
+            analytics::Analytics::default(),
+        ));
+        let platform = gateway::PlatformAt::InProcess(platform);
         App {
             cfg: Config {
                 push_hosts: vec![],
@@ -930,8 +871,10 @@ pub fn origin_of(url: &str) -> anyhow::Result<String> {
 }
 
 /// The hub, as the `arugula-control` binary (crates/arugula-control) runs
-/// it: its subcommands, or the server.
-pub fn main() -> anyhow::Result<()> {
+/// it: its subcommands, or the server. `platforms` is the platform's side
+/// of the command line and how the platform is made in this process (#314:
+/// the binary's, so this library never builds the platform).
+pub fn main(platforms: Box<dyn Platforms>) -> anyhow::Result<()> {
     // `arugula-control census`: an operator's read-only look at the
     // database (census.rs), with no server; `device-review` another
     // (device_review.rs). `account-reset`: support's reset of an account's
@@ -968,18 +911,26 @@ pub fn main() -> anyhow::Result<()> {
         return notice::run(argv.skip(1));
     }
     if argv.peek().is_some_and(|a| a == "platform") {
-        return arugula_platform::window::run("arugula-control platform", argv.skip(1));
+        return platforms.window("arugula-control platform", argv.skip(1).collect());
     }
-    tokio::runtime::Builder::new_multi_thread().enable_all().build()?.block_on(run())
+    tokio::runtime::Builder::new_multi_thread().enable_all().build()?.block_on(run(platforms))
 }
 
-async fn run() -> anyhow::Result<()> {
+/// The hub's command line: its own flags and the platform's (#314).
+pub fn command(platforms: &dyn Platforms) -> clap::Command {
+    platforms.augment(<Args as clap::CommandFactory>::command())
+}
+
+async fn run(platforms: Box<dyn Platforms>) -> anyhow::Result<()> {
     tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "arugula_control=info".into()),
         )
         .init();
-    let a = Args::parse();
+    // The hub's flags and the platform's, on one command line.
+    let matches = command(&*platforms).get_matches();
+    let a = <Args as clap::FromArgMatches>::from_arg_matches(&matches)?;
+    let pa = platforms.args(&matches)?;
     raise_open_files();
     // Bound first, so port 0 is known before the URL is (#67).
     let l = tokio::net::TcpListener::bind(a.listen).await?;
@@ -1005,7 +956,7 @@ async fn run() -> anyhow::Result<()> {
     public_url = port_of(&public_url);
     let also_urls: Vec<String> = a.also_url.iter().filter(|u| !u.is_empty()).map(|u| port_of(u)).collect();
     let set = |v: Option<String>| v.filter(|s| !s.is_empty());
-    let github_app = a.github_app.id().map(|_| a.github_app.github_app_slug.clone());
+    let github_app = pa.github_app_id().map(|_| pa.github_app_slug().to_owned());
     // Sign-in: an OAuth app's (or another App's) credentials, else the
     // GitHub App's own.
     let (client_id, client_secret) = match (set(a.github_client_id.clone()), set(a.github_client_secret.clone())) {
@@ -1057,7 +1008,7 @@ async fn run() -> anyhow::Result<()> {
     if issuer.is_none() {
         info!("no ARUGULA_ISSUER_KEY: the issuer is off");
     }
-    let stripe = a.billing.stripe()?;
+    let billing = pa.billing()?;
     // The guests' jump host: bound now, so its port is known.
     let guest_ssh = match a.guest_ssh {
         Some(addr) => {
@@ -1099,7 +1050,7 @@ async fn run() -> anyhow::Result<()> {
         None => info!("no ARUGULA_PLATFORM_HOST: the platform page isn't served"),
     }
     let preview_domain = previews::domain(
-        a.hosted.preview_domain.as_deref().unwrap_or(""),
+        pa.preview_domain().unwrap_or(""),
         &sites,
         block_domain.as_deref(),
         platform_host.as_ref().map(|p| p.host.as_str()),
@@ -1113,16 +1064,12 @@ async fn run() -> anyhow::Result<()> {
         Some(t) => info!(team = %t, "the macOS app may use control's passkeys"),
         None => info!("no ARUGULA_CONTROL_APPLE_TEAM_ID: the macOS app's window can't use passkeys"),
     }
-    let billing = stripe.is_some();
     let platform_key = set(a.platform_key.clone())
         .map(|k| arugula_control_common::principal::PrincipalKey::from_hex(&k))
         .transpose()
         .context("ARUGULA_PLATFORM_KEY")?;
     let (platform, hub_port) = if a.platform == "in-process" {
-        // A second connection to the same file: the platform never reads
-        // the hub's tables (#1153).
-        let hosted = a.hosted.clone().config(&a.cloud)?;
-        let cfg = arugula_platform::Config {
+        let cfg = arugula_platform_api::Config {
             public_url: public_url.clone(),
             // The platform page's own origin too: a link to it is one of
             // ours (chat's previews, #108).
@@ -1131,15 +1078,20 @@ async fn run() -> anyhow::Result<()> {
             relay_free_bytes: a.relay_free_mb * 1_000_000,
         };
         info!("the platform runs in process");
-        let github = (a.github_app.app(&a.github_api)?, a.github_app.deploy_app(&a.github_api)?);
-        let compute = a.compute.clone().substrate()?;
-        let run_logs = a.run_logs.bucket()?;
-        platform(a.platform_db.open(&a.db)?, cfg, stripe, github, compute, hosted, run_logs, &http, &analytics)
+        let hub = in_process_hub();
+        let inputs = arugula_platform_api::in_process::Inputs {
+            cfg,
+            db: a.db.clone(),
+            hub: hub.clone(),
+            http: http.clone(),
+            analytics: analytics.clone(),
+        };
+        (gateway::PlatformAt::InProcess(pa.make(inputs)?), hub)
     } else {
         // The platform is its own process: this hub is its gateway (M140).
         let key = platform_key.clone().context("--platform is a URL, so ARUGULA_PLATFORM_KEY is needed")?;
         info!(at = %a.platform, "the platform runs out of process, behind this hub's gateway");
-        if a.github_app.has_secrets() {
+        if pa.github_app_has_secrets() {
             info!(
                 "GITHUB_APP_PRIVATE_KEY and GITHUB_APP_WEBHOOK_SECRET are the platform's (M161): unused here, \
                  kept only for a rollback"
@@ -1178,7 +1130,7 @@ async fn run() -> anyhow::Result<()> {
             block_domain,
             preview_domain,
             platform_host,
-            platform_page: arugula_platform::page::Page::new(a.platform_static_dir),
+            platform_page: arugula_platform_api::page::Page::new(a.platform_static_dir),
             public_url,
             github,
             github_app_client,
@@ -1240,21 +1192,7 @@ async fn run() -> anyhow::Result<()> {
     // The platform's background work, when it's in process; out of
     // process its own binary runs it.
     if let Some(p) = app.platform.local() {
-        arugula_platform::hosted::start(p);
-        arugula_platform::keys::start(p);
-        // The job worker: runs' dispatch (M212) and schedules (M214).
-        arugula_platform::work::start(p);
-        // Runs' logs past their days (M213).
-        arugula_platform::run_logs::start(p);
-        // Chat follows the hub's change feed (M138), and so do projects and
-        // grants: a machine that joins gets its `cloud.drive` grant from it.
-        arugula_platform::chat::start(p);
-        arugula_platform::projects::start(p);
-        arugula_platform::billing::start(p);
-        arugula_platform::forge::start(p);
-        // The feature crates' (#314): clients' secret events past their
-        // days (M236).
-        arugula_platform::features::start(p);
+        p.clone().start();
     }
     // Shared Docs' open counts reach the database.
     {

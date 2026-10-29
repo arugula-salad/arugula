@@ -65,7 +65,7 @@ decided_on: "2026-10-21"
 reviews: []
 constrains:
   - "path:crates/platform/src/grants.rs"
-  - "path:crates/platform/src/auth.rs"
+  - "path:crates/platform-api/src/auth.rs"
   - "path:crates/platform/src/chat.rs"
   - "path:crates/daemon/src/mcp/tools.rs"
 ---
@@ -130,5 +130,5 @@ approves a deploy, whatever grant it holds, the owner's own machine
 included. Only a project owner's device signature over the deploy's bytes
 does ("A deploy needs an owner device's approval, and agents never
 approve").
-Where: `crates/platform/src/grants.rs`, `crates/platform/src/auth.rs` (`Machine`), `crates/platform/src/chat.rs`, `crates/daemon/src/mcp/tools.rs` (M198, M200).
+Where: `crates/platform/src/grants.rs`, `crates/platform-api/src/auth.rs` (`Machine`), `crates/platform/src/chat.rs`, `crates/daemon/src/mcp/tools.rs` (M198, M200).
 From: #1263 (platform roadmap, step 6), M193 (#1264), M197 (#1268), M198 (#1269), M200 (#1271), M202 (#1273), #959 and #1002 (agent grants in teams), M121 and M125 (#1095), #1317 (platform step 7).

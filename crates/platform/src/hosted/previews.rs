@@ -37,14 +37,7 @@ use crate::{Platform, auth::Person, cloud::CloudDriver, forge::links::membership
 /// A preview domain as `ARUGULA_PREVIEW_DOMAIN` takes it: lower case, no
 /// dots at the ends. The hub checks it's a site of its own.
 pub fn domain(raw: &str) -> anyhow::Result<Option<String>> {
-    let d = raw.trim().trim_matches('.').to_ascii_lowercase();
-    if d.is_empty() {
-        return Ok(None);
-    }
-    if d.contains(['/', ':', ' ']) || !d.contains('.') {
-        anyhow::bail!("ARUGULA_PREVIEW_DOMAIN {raw:?}: a domain name, like arugula.site");
-    }
-    Ok(Some(d))
+    arugula_platform_api::preview_domain(raw)
 }
 
 /// A new preview's id: a DNS label nobody can guess.

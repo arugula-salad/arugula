@@ -20,7 +20,7 @@ use arugula_e2e::{
     now_ms,
     preview::PublicHello,
 };
-use arugula_platform::PlatformPort as _;
+use arugula_platform_api::PlatformPort as _;
 use futures_util::{SinkExt, StreamExt};
 use reqwest::{StatusCode, header};
 use serde_json::Value;
@@ -216,7 +216,7 @@ fn host(id: &str) -> String {
 async fn a_stranger_opens_a_public_port() {
     let c = control().await;
     let keys = c.machine("hw_1");
-    let p = c.app.platform.inner().clone();
+    let p = c.app.platform.inner_arc();
     p.db.make_port_public("hw_1", 5173, "alice", ID, now_ms() + 60_000, now_ms()).unwrap();
     fake_machine(&c, keys.clone(), "hw_1").await;
 
@@ -292,7 +292,7 @@ async fn a_stranger_opens_a_public_port() {
 async fn a_paused_box_says_asleep() {
     let c = control().await;
     let _keys = c.machine("hw_2");
-    let p = c.app.platform.inner().clone();
+    let p = c.app.platform.inner_arc();
     p.db.make_port_public("hw_2", 3000, "alice", ID, now_ms() + 60_000, now_ms()).unwrap();
     let r = c.get(&host(ID), "/").send().await.unwrap();
     assert_eq!(r.status(), StatusCode::SERVICE_UNAVAILABLE);
@@ -305,7 +305,7 @@ async fn a_paused_box_says_asleep() {
 async fn a_websocket_crosses() {
     let c = control().await;
     let keys = c.machine("hw_3");
-    let p = c.app.platform.inner().clone();
+    let p = c.app.platform.inner_arc();
     p.db.make_port_public("hw_3", 5173, "alice", ID, now_ms() + 60_000, now_ms()).unwrap();
     fake_machine(&c, keys, "hw_3").await;
     let mut req = format!("{}/ws", c.base.replace("http://", "ws://")).into_client_request().unwrap();

@@ -167,6 +167,7 @@ dependencies = [
  "anyhow",
  "arugula-control-base",
  "arugula-platform-all",
+ "arugula-platform-base",
 ]
 
 [[package]]
@@ -180,6 +181,7 @@ dependencies = [
  "arugula-core",
  "arugula-e2e",
  "arugula-platform-all",
+ "arugula-platform-api",
  "arugula-platform-base",
  "aws-lc-rs",
  "axum",
@@ -331,6 +333,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "arugula-platform-api"
+version = "0.0.0"
+dependencies = [
+ "anyhow",
+ "arugula-control-common",
+ "arugula-control-wire",
+ "arugula-e2e",
+ "axum",
+ "clap",
+ "futures-util",
+ "hex",
+ "reqwest",
+ "rust-embed",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+ "url",
+]
+
+[[package]]
 name = "arugula-platform-base"
 version = "0.65.0"
 dependencies = [
@@ -339,6 +362,7 @@ dependencies = [
  "arugula-control-wire",
  "arugula-e2e",
  "arugula-forge-github",
+ "arugula-platform-api",
  "aws-lc-rs",
  "axum",
  "base64 0.23.1",
@@ -354,7 +378,6 @@ dependencies = [
  "jiff",
  "reqwest",
  "rusqlite",
- "rust-embed",
  "serde",
  "serde_json",
  "sha2 0.11.0",

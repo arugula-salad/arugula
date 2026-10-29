@@ -117,7 +117,7 @@ async fn rig() -> Rig {
     let k = DeviceKeys::generate();
     assert_eq!(c.post("/api/hosted/enroll", &enroll_body(&k, Some(&t), None)).await.0, 200);
     // The platform's row for it: ready, its box `sbx1`.
-    let p = c.app.platform.inner().clone();
+    let p = c.app.platform.inner_arc();
     let spec = arugula_platform::hosted::Spec::default();
     p.db.add_hosted_workspace("hw_1", PROJECT, "dev", &spec, "m1", 10, now_ms()).unwrap();
     let mut job = p.db.claim_hosted(now_ms()).unwrap().unwrap();

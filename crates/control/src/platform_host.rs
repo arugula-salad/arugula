@@ -33,7 +33,7 @@
 
 use std::sync::{Arc, LazyLock};
 
-use arugula_platform::page;
+use arugula_platform_api::page;
 use axum::{
     extract::{Request, State},
     http::{HeaderMap, HeaderValue, Method, StatusCode, header},

@@ -1,0 +1,40 @@
+[package]
+name = "arugula-platform-api"
+description = "Arugula control: the hub's side of the seam with its platform (HubPort, PlatformPort, the platform page, the platform in process)"
+# The hosted server's own workspace (server/Cargo.toml), not the root's.
+workspace = "../../server"
+# Not the workspace's version: a release bump would rebuild this crate and
+# everything on it. The binaries carry the release.
+version = "0.0.0"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[dependencies]
+anyhow = { workspace = true }
+arugula-control-common = { workspace = true }
+arugula-control-wire = { workspace = true }
+arugula-e2e = { workspace = true }
+axum = { workspace = true }
+# The platform's flags on the hub's command line (`in_process::Platforms`).
+clap = { workspace = true }
+futures-util = { workspace = true }
+hex = { workspace = true }
+reqwest = { workspace = true, features = ["rustls", "http2", "json"] }
+# The platform page's build (web/dist-platform, M151), embedded.
+rust-embed = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+tokio = { workspace = true, features = ["full"] }
+tracing = { workspace = true }
+url = { workspace = true }
+
+[features]
+# Embed web/dist-platform even in a debug build (rust-embed reads it from
+# the source tree at run time otherwise), as control's `debug-embed` does
+# web/dist; control's and the platform's turn this on.
+debug-embed = ["rust-embed/debug-embed"]
+
+[lints]
+workspace = true

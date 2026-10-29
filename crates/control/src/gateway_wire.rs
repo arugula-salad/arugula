@@ -85,7 +85,7 @@ pub(crate) async fn split() -> Split {
 /// [`split`], with the platform's `HttpHub` wrapped (`hub_latency_bench`
 /// adds a delay to every hub call, as between two regions).
 pub(crate) async fn split_with(
-    wrap: impl FnOnce(Arc<dyn arugula_platform::HubPort>) -> Arc<dyn arugula_platform::HubPort>,
+    wrap: impl FnOnce(Arc<dyn arugula_platform_api::HubPort>) -> Arc<dyn arugula_platform_api::HubPort>,
 ) -> Split {
     split_on(arugula_platform::db::Db::memory(), wrap).await
 }
@@ -94,7 +94,7 @@ pub(crate) async fn split_with(
 /// Postgres).
 pub(crate) async fn split_on(
     db: arugula_platform::db::Db,
-    wrap: impl FnOnce(Arc<dyn arugula_platform::HubPort>) -> Arc<dyn arugula_platform::HubPort>,
+    wrap: impl FnOnce(Arc<dyn arugula_platform_api::HubPort>) -> Arc<dyn arugula_platform_api::HubPort>,
 ) -> Split {
     split_github(db, wrap, None).await
 }
@@ -103,7 +103,7 @@ pub(crate) async fn split_on(
 /// hub (M161, `forge_wire`).
 pub(crate) async fn split_github(
     db: arugula_platform::db::Db,
-    wrap: impl FnOnce(Arc<dyn arugula_platform::HubPort>) -> Arc<dyn arugula_platform::HubPort>,
+    wrap: impl FnOnce(Arc<dyn arugula_platform_api::HubPort>) -> Arc<dyn arugula_platform_api::HubPort>,
     github: Option<arugula_platform::forge::GithubApp>,
 ) -> Split {
     // The platform binary's feature crates (#314).
@@ -111,7 +111,7 @@ pub(crate) async fn split_github(
     let (internal_l, internal) = listener().await;
     let (platform_l, platform_base) = listener().await;
     let mut p = Platform::new(
-        arugula_platform::Config {
+        arugula_platform_api::Config {
             public_url: "http://control.test".into(),
             sites: vec!["http://control.test".into()],
             page_url: String::new(),

@@ -1,5 +1,5 @@
 //! The hub's internal API (M140): `HubPort` over HTTP for an
-//! out-of-process platform, served by `arugula_platform::remote::serve_hub`
+//! out-of-process platform, served by `arugula_platform_api::remote::serve_hub`
 //! over the hub's own `hub_port::InProcess`, on a listener of its own
 //! (`--internal-listen`, `[::]:7691` by default with an out-of-process
 //! platform).
@@ -17,7 +17,7 @@
 use std::sync::Arc;
 
 use arugula_control_common::principal::PrincipalKey;
-use arugula_platform::HubPort;
+use arugula_platform_api::HubPort;
 use axum::{
     extract::Request,
     http::StatusCode,
@@ -34,7 +34,7 @@ const PROXIED: [&str; 2] = ["fly-forwarded-port", "fly-client-ip"];
 /// The internal API's router.
 pub fn router(app: &Arc<App>, key: PrincipalKey) -> axum::Router {
     let hub: Arc<dyn HubPort> = app.hub_port.clone();
-    arugula_platform::remote::serve_hub(hub, key).layer(axum::middleware::from_fn(not_proxied))
+    arugula_platform_api::remote::serve_hub(hub, key).layer(axum::middleware::from_fn(not_proxied))
 }
 
 /// Serve it on `l` until control stops.

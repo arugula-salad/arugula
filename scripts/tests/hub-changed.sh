@@ -52,8 +52,8 @@ put crates/control/routes.toml '[[route]]'
 put crates/control/src/main.rs 'fn main() {}'
 put crates/control/src/main_tests.rs '#[test] fn t() {}'
 put crates/platform/Cargo.toml $'[package]\nname = "arugula-platform"\nversion.workspace = true'
-put crates/platform/src/lib.rs 'pub mod hub;'
-put crates/platform/src/hub.rs 'pub trait HubPort {}'
+put crates/platform/src/lib.rs 'pub mod more;'
+put crates/platform-api/src/hub.rs 'pub trait HubPort {}'
 put crates/daemon/Cargo.toml $'[package]\nname = "arugulad"\nversion.workspace = true'
 put crates/daemon/src/main.rs 'fn main() {}'
 put crates/proto/fixtures/attach.jsonl '{}'
@@ -80,7 +80,7 @@ printf '%s: %s %s %s %s %s %s\n' "$tmp/target/release/arugula-control" \
   "$tmp/target/release/build/arugula-x/out/gen.rs" >"$dep"
 scripts/ci-hub-changed inputs "$dep" >"$tmp/inputs"
 for want in crates/control/src/main.rs crates/control/Cargo.toml crates/control/routes.toml crates/platform/src/lib.rs \
-  crates/platform/src/hub.rs web ':(exclude)web/e2e' Cargo.lock recipe:static packaging/control; do
+  crates/platform-api web ':(exclude)web/e2e' Cargo.lock recipe:static packaging/control; do
   check "inputs has $want" grep -qxF -- "$want" "$tmp/inputs"
 done
 for not in crates/daemon/src/main.rs crates/control/src/main_tests.rs web/dist/index.html serde gen.rs; do
@@ -113,8 +113,8 @@ expect 1 "a test of the hub's" 'put crates/control/src/main_tests.rs "#[test] fn
 expect 1 "another recipe" 'subst "s/nextest run/nextest run --all/" justfile'
 expect 0 "the hub's code" 'put crates/control/src/main.rs "fn main() { serve() }"'
 expect 0 "its routes" 'put crates/control/routes.toml "[[route]] # more"'
-expect 0 "the platform it links" 'put crates/platform/src/lib.rs "pub mod hub; pub mod more;"'
-expect 0 "the platform's contract" 'put crates/platform/src/hub.rs "pub trait HubPort { fn more(); }"'
+expect 0 "the platform it links" 'put crates/platform/src/lib.rs "pub mod more; pub mod most;"'
+expect 0 "the platform's contract" 'put crates/platform-api/src/hub.rs "pub trait HubPort { fn more(); }"'
 expect 0 "its pages" 'put web/src/app.ts "export const a = 1;"'
 expect 0 "a registry crate" 'lock 1.0.0 1.0.1'
 # shellcheck disable=SC2016 # expanded by expect's eval

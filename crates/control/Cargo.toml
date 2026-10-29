@@ -32,7 +32,9 @@ arugula-core = { workspace = true }
 arugula-control-common = { workspace = true }
 arugula-control-wire = { workspace = true }
 arugula-e2e = { workspace = true }
-arugula-platform-base = { workspace = true }
+# The platform's side of the seam, and nothing else of it (#314): a
+# platform edit doesn't rebuild the hub. The binary makes the platform.
+arugula-platform-api = { workspace = true }
 libc = "0.2.189"
 p256 = { workspace = true, features = ["ecdh", "ecdsa"] }
 reqwest = { workspace = true, features = ["rustls", "http2", "json", "stream"] }
@@ -71,4 +73,4 @@ hkdf = { workspace = true }
 # job's checkout.
 # The platform page's build too (web/dist-platform, M151), which an
 # in-process platform serves.
-debug-embed = ["rust-embed/debug-embed", "arugula-platform-base/debug-embed"]
+debug-embed = ["rust-embed/debug-embed", "arugula-platform-api/debug-embed"]

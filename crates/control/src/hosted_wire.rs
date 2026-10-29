@@ -12,7 +12,7 @@ use arugula_e2e::{
     now_ms,
     team::{Roster, TeamRole},
 };
-use arugula_platform::HubPort;
+use arugula_platform_api::HubPort;
 use serde_json::{Value, json};
 use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 
@@ -152,7 +152,7 @@ async fn an_owner_delegates_control_enrolls_a_box_and_only_the_project_reaches_i
     // through its own view of the hub.
     assert_eq!(c.app.hub_port.live_delegation(PROJECT, &owner).await.unwrap(), Some(d.id()));
     assert_eq!(c.app.hub_port.live_delegation(PROJECT, "team:0000000000000000").await.unwrap(), None);
-    let crate::gateway::PlatformAt::InProcess(p) = &c.app.platform else { panic!("in process") };
+    let p = c.app.platform.inner();
     assert_eq!(p.hub.live_delegation(PROJECT, &owner).await.unwrap(), Some(d.id()));
     let (_, list) = c.as_person(&ox_s, "GET", "/api/hosted/delegations", None).await;
     assert_eq!(list["delegations"], json!([]));
@@ -288,7 +288,7 @@ async fn a_snapshot_box_enrolls_once_by_its_sandbox_id() {
     assert_eq!(enrolled, vec![Enrolled { workspace: "hw_9".into(), machine: k.id(), taken: false }]);
     // The same through the platform's own view of the hub (its timing
     // wrapper forwards each call).
-    let crate::gateway::PlatformAt::InProcess(p) = &c.app.platform else { panic!("in process") };
+    let p = c.app.platform.inner();
     assert_eq!(p.hub.hosted_enrolled(&ws).await.unwrap(), enrolled);
 
     // Mine to reach (routed: it isn't on the relay, so 503), and nobody
@@ -423,7 +423,7 @@ async fn the_hub_says_whether_a_browser_owner_signed() {
     let old_app = device(arugula_e2e::Kind::Browser, "Arugula app on geek");
     let body = "arugula project grant v1\n...";
     let sig = |k: &DeviceKeys| hex::encode(k.signature(body.as_bytes()));
-    let crate::gateway::PlatformAt::InProcess(p) = &c.app.platform else { panic!("in process") };
+    let p = c.app.platform.inner();
     for (k, want) in [(&fran, true), (&cli, false), (&app, false), (&old_app, false), (&cy, false)] {
         let here = c.app.hub_port.owner_browser_signed(&owner, &k.id(), body, &sig(k)).await.unwrap();
         let there = p.hub.owner_browser_signed(&owner, &k.id(), body, &sig(k)).await.unwrap();

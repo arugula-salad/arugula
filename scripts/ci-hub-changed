@@ -48,12 +48,13 @@
 set -euo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
 
-# The platform's contract with the hub: the seam's traits and their wire,
-# the signed calls between the two processes, the hub's route table.
+# The platform's contract with the hub: the seam's traits and their wire
+# (crates/platform-api, #314: HubPort, PlatformPort, the signed calls
+# between the two processes, the platform in process), the platform's side
+# of PlatformPort, the hub's route table.
 contract=(
-  crates/platform/src/hub.rs
+  crates/platform-api
   crates/platform/src/port.rs
-  crates/platform/src/remote.rs
   crates/platform/src/contract.rs
   crates/control-common/src/internal.rs
   crates/control-common/src/principal.rs

@@ -47,7 +47,7 @@ use futures_util::future::BoxFuture;
 use crate::hub::{Account, ChangePage, Daemon, Flags, HubPort, HubResult, Meter, PushOptions, Pushed, Resolved, Team};
 
 /// The header's name.
-pub const HEADER: &str = "server-timing";
+pub use arugula_platform_api::TIMING_HEADER as HEADER;
 
 /// One request's counts, in µs where they're times.
 #[derive(Default, Debug)]

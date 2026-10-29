@@ -30,8 +30,9 @@
 
 use std::{collections::HashMap, sync::Mutex};
 
+use arugula_control_wire::internal::UserToken;
 use arugula_e2e::now_ms;
-use arugula_platform::{PlatformPort as _, forge::send::UserToken};
+use arugula_platform_api::PlatformPort as _;
 use axum::{
     http::{HeaderMap, StatusCode, header},
     response::{IntoResponse, Redirect, Response},

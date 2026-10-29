@@ -781,7 +781,7 @@ pub fn verify_for(
     app: &App,
     account: &str,
     challenge: &str,
-    a: &arugula_platform::hub::PasskeyAssertion,
+    a: &arugula_platform_api::hub::PasskeyAssertion,
 ) -> anyhow::Result<Result<(), String>> {
     let no = |why: &str| Ok(Err(why.to_owned()));
     let Some(pk) = app.db.passkey(&a.id)? else { return no("that passkey isn't registered here") };
@@ -864,7 +864,7 @@ mod tests {
             data.extend_from_slice(&0u32.to_be_bytes());
             let mut msg = data.clone();
             msg.extend_from_slice(&Sha256::digest(client.as_bytes()));
-            arugula_platform::hub::PasskeyAssertion {
+            arugula_platform_api::hub::PasskeyAssertion {
                 id: id.into(),
                 client_data_json: B64.encode(client.as_bytes()),
                 authenticator_data: B64.encode(&data),

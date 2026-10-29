@@ -41,7 +41,7 @@ mod agent_threads_tests;
 #[cfg(any(test, feature = "testing"))]
 pub mod agents_tests;
 pub mod approvals;
-pub mod auth;
+pub use arugula_platform_api::auth;
 pub mod billing;
 pub mod boards;
 pub mod boxes;
@@ -75,9 +75,10 @@ pub mod features;
 pub mod forge;
 pub mod grants;
 pub mod hosted;
-pub mod hub;
+pub use arugula_platform_api::hub;
 #[cfg(test)]
 mod hub_calls_tests;
+pub mod in_process;
 pub mod inbox;
 pub mod issues;
 pub mod jobs;
@@ -85,13 +86,13 @@ pub mod keys;
 pub mod notify;
 #[cfg(test)]
 mod object_threads_tests;
-pub mod page;
+pub use arugula_platform_api::page;
 pub mod planter;
 mod port;
 pub mod project_docs;
 pub mod project_roles;
 pub mod projects;
-pub mod remote;
+pub use arugula_platform_api::remote;
 #[cfg(test)]
 mod restart_tests;
 mod router;
@@ -125,49 +126,12 @@ pub mod triggers;
 pub mod window;
 pub mod work;
 
+/// What the platform is told when it starts: `arugula-platform-api`'s, which
+/// the hub makes it with.
+pub use arugula_platform_api::Config;
 pub use hub::HubPort;
 pub use port::{Archived, Deleted, PlatformPort, PublicPreview, TurnAnswer};
 pub use router::{paths, router};
-
-/// What the platform is told when it starts.
-#[derive(Debug, Clone, Default)]
-pub struct Config {
-    /// The URL people reach control at (the hub's first site), without a
-    /// trailing slash.
-    pub public_url: String,
-    /// Every URL control answers at, `public_url` first (#507), without a
-    /// trailing slash.
-    pub sites: Vec<String>,
-    /// The platform page's origin (`https://app.arugula.io`, M151), where
-    /// its issues, threads and sessions are: empty when it has none, and
-    /// links to the page are on `public_url` then ([`Config::page`]).
-    pub page_url: String,
-    /// Free relay traffic per account per month, with billing on.
-    pub relay_free_bytes: u64,
-}
-
-impl Config {
-    /// Where a link to the platform page starts (`https://app.arugula.io`
-    /// for `/issues/iss_…`), without a trailing slash: its own origin, else
-    /// control's public URL.
-    pub fn page(&self) -> &str {
-        let page = self.page_url.trim_end_matches('/');
-        if page.is_empty() { self.public_url.trim_end_matches('/') } else { page }
-    }
-
-    /// The site a request came in on, by its Host header; the first when
-    /// it's none of them.
-    pub fn site(&self, headers: &axum::http::HeaderMap) -> &str {
-        let host = headers.get(axum::http::header::HOST).and_then(|h| h.to_str().ok()).map(str::to_ascii_lowercase);
-        let authority = |s: &str| {
-            let u = url::Url::parse(s).ok()?;
-            let host = u.host_str()?.to_ascii_lowercase();
-            Some(u.port().map_or(host.clone(), |p| format!("{host}:{p}")))
-        };
-        host.and_then(|h| self.sites.iter().find(|s| authority(s).as_deref() == Some(h.as_str())))
-            .map_or(&self.public_url, |s| s)
-    }
-}
 
 /// The platform: its own database, its view of the hub, and what it keeps
 /// in memory (on each of its machines, M144: what's kept here is that

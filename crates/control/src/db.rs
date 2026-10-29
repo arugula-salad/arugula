@@ -25,7 +25,7 @@ mod tables;
 use std::{path::Path, sync::Mutex};
 
 use arugula_e2e::{Cert, Kind, Revocation};
-use arugula_platform::hub::ChangeKind;
+use arugula_platform_api::hub::ChangeKind;
 use changes::changed;
 use rusqlite::{Connection, OptionalExtension, params};
 use serde::Serialize;
@@ -2724,7 +2724,7 @@ impl Db {
             tx.execute(sql, params![a])?;
         }
         // Until the platform says it erased its part (M140).
-        let deleted = arugula_platform::Deleted {
+        let deleted = arugula_platform_api::Deleted {
             account: a.to_owned(),
             machines: daemons.clone(),
             disbanded: e.disband.to_vec(),

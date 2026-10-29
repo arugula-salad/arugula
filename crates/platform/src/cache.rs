@@ -97,7 +97,7 @@ const PAGE: u32 = 500;
 /// that comes after a write of its own, or anyone's, reads the feed first
 /// when the cache is behind it ([`fresh`]): the platform reads its writes
 /// without waiting for a feed tick.
-pub const SEQ_HEADER: &str = "x-arugula-hub-seq";
+pub use arugula_platform_api::SEQ_HEADER;
 
 /// Whether the feed covers a map's answers.
 #[derive(Clone, Copy, PartialEq, Eq)]
