@@ -320,3 +320,103 @@ pub fn revoke(account: &str, device: &str, at: u64, by: &DeviceKeys) -> arugula_
 pub fn labels(l: &[&str]) -> Value {
     json!(l)
 }
+
+/// An account's certificates and revocations, by label, as an input lists them.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Account {
+    pub certs: Vec<String>,
+    #[serde(default)]
+    pub revocations: Vec<String>,
+}
+
+pub fn account_certs(ctx: &Ctx, a: &BTreeMap<String, Account>) -> anyhow::Result<arugula_e2e::team::AccountCerts> {
+    a.iter()
+        .map(|(k, v)| {
+            Ok((
+                k.clone(),
+                (ctx.all::<arugula_e2e::Cert>(&v.certs)?, ctx.all::<arugula_e2e::Revocation>(&v.revocations)?),
+            ))
+        })
+        .collect()
+}
+
+pub const CERTS_SHAPE: &str = "certs: every member account's certificates and revocations, as control hands them \
+                               out: { account: { certs: [labels], revocations: [labels] } }";
+
+pub const OWNERS_SHAPE: &str = "owners: who may sign for the project, as the checking side pinned them: { team: { \
+                                roster: a label, certs: { account: { certs, revocations } } } } for a team's \
+                                project, or { account: { account, root, certs: [labels], revocations: [labels] } } \
+                                for one account's";
+
+/// A project's owners, as an input names them.
+#[derive(Deserialize)]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
+pub enum OwnersIn {
+    Team {
+        roster: String,
+        certs: BTreeMap<String, Account>,
+    },
+    Account {
+        account: String,
+        root: String,
+        certs: Vec<String>,
+        #[serde(default)]
+        revocations: Vec<String>,
+    },
+}
+
+/// What [`arugula_e2e::hosted::Owners`] borrows.
+#[allow(clippy::large_enum_variant)]
+pub enum OwnedOwners {
+    Team(arugula_e2e::team::Roster, arugula_e2e::team::AccountCerts),
+    Account(arugula_e2e::Trust, Vec<arugula_e2e::Cert>, Vec<arugula_e2e::Revocation>),
+}
+
+impl OwnersIn {
+    pub fn load(&self, ctx: &Ctx) -> anyhow::Result<OwnedOwners> {
+        Ok(match self {
+            OwnersIn::Team { roster, certs } => OwnedOwners::Team(ctx.get(roster)?, account_certs(ctx, certs)?),
+            OwnersIn::Account { account, root, certs, revocations } => OwnedOwners::Account(
+                arugula_e2e::Trust { account: account.clone(), root: root.clone() },
+                ctx.all(certs)?,
+                ctx.all(revocations)?,
+            ),
+        })
+    }
+}
+
+impl OwnedOwners {
+    pub fn owners(&self) -> arugula_e2e::hosted::Owners<'_> {
+        match self {
+            OwnedOwners::Team(roster, certs) => arugula_e2e::hosted::Owners::Team { roster, certs },
+            OwnedOwners::Account(trust, certs, revocations) => {
+                arugula_e2e::hosted::Owners::Account { trust, certs, revocations }
+            }
+        }
+    }
+}
+
+/// Someone with a browser as their account's root (made at 1000), kept
+/// under their account's name as a key and as an object.
+pub struct Person {
+    pub account: &'static str,
+    pub keys: DeviceKeys,
+    pub cert: arugula_e2e::Cert,
+}
+
+pub fn person(ex: &mut Example, account: &'static str, n: u8) -> Person {
+    let keys = ex.key(account, n);
+    let cert = cert(&keys, account, arugula_e2e::Kind::Browser, &format!("{account}'s laptop"), 1_000, &keys);
+    ex.object(account, &cert);
+    Person { account, keys, cert }
+}
+
+pub fn member(p: &Person, role: arugula_e2e::team::TeamRole) -> arugula_e2e::team::Member {
+    arugula_e2e::team::Member {
+        account: p.account.into(),
+        root: p.cert.device.clone(),
+        role,
+        name: format!("{}-login", p.account),
+    }
+}

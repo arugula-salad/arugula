@@ -1,0 +1,99 @@
+{
+  "about": "The apps-platform driver (M222) deploys a commit of an app's repository by pinning its pointer in arugula-salad/planter-apps: the app a source's where names is <list owner>/<name>, a name of 1 to 50 lowercase letters, digits and dashes (not first or last) that the list doesn't keep for itself. It pins a full commit id only.",
+  "cases": [
+    {
+      "about": "the app of \"arugula-salad/hello\"",
+      "input": {"check": "app_name", "where": "arugula-salad/hello"},
+      "output": {"app": "hello"}
+    },
+    {
+      "about": "the app of \"arugula-salad/planter-apps\"",
+      "input": {"check": "app_name", "where": "arugula-salad/planter-apps"},
+      "output": {"app": null}
+    },
+    {
+      "about": "the app of \"arugula-salad/flux-system\"",
+      "input": {"check": "app_name", "where": "arugula-salad/flux-system"},
+      "output": {"app": null}
+    },
+    {
+      "about": "the app of \"arugula-salad/fleet\"",
+      "input": {"check": "app_name", "where": "arugula-salad/fleet"},
+      "output": {"app": null}
+    },
+    {
+      "about": "the app of \"acme/hello\"",
+      "input": {"check": "app_name", "where": "acme/hello"},
+      "output": {"app": null}
+    },
+    {
+      "about": "the app of \"arugula-salad/Hello\"",
+      "input": {"check": "app_name", "where": "arugula-salad/Hello"},
+      "output": {"app": null}
+    },
+    {
+      "about": "the app of \"arugula-salad/-x\"",
+      "input": {"check": "app_name", "where": "arugula-salad/-x"},
+      "output": {"app": null}
+    },
+    {
+      "about": "the app of \"arugula-salad/a/b\"",
+      "input": {"check": "app_name", "where": "arugula-salad/a/b"},
+      "output": {"app": null}
+    },
+    {
+      "about": "deploying commit 0123456789abcdef0123456789abcdef01234567 of arugula-salad/hello",
+      "input": {
+        "check": "refuses",
+        "kind": "commit",
+        "reference": "0123456789abcdef0123456789abcdef01234567",
+        "where": "arugula-salad/hello"
+      },
+      "output": {"refused": null}
+    },
+    {
+      "about": "deploying artifact 0123456789abcdef0123456789abcdef01234567 of arugula-salad/hello",
+      "input": {
+        "check": "refuses",
+        "kind": "artifact",
+        "reference": "0123456789abcdef0123456789abcdef01234567",
+        "where": "arugula-salad/hello"
+      },
+      "output": {
+        "refused": "the apps-platform driver deploys a commit of the app's repository, not an artifact"
+      }
+    },
+    {
+      "about": "deploying commit main of arugula-salad/hello",
+      "input": {"check": "refuses", "kind": "commit", "reference": "main", "where": "arugula-salad/hello"},
+      "output": {"refused": "the apps-platform driver pins a full commit sha (40 lowercase hex)"}
+    },
+    {
+      "about": "deploying commit 0123456789ABCDEF0123456789ABCDEF01234567 of arugula-salad/hello",
+      "input": {
+        "check": "refuses",
+        "kind": "commit",
+        "reference": "0123456789ABCDEF0123456789ABCDEF01234567",
+        "where": "arugula-salad/hello"
+      },
+      "output": {"refused": "the apps-platform driver pins a full commit sha (40 lowercase hex)"}
+    },
+    {
+      "about": "deploying commit 0123456789abcdef0123456789abcdef01234567 of acme/hello",
+      "input": {
+        "check": "refuses",
+        "kind": "commit",
+        "reference": "0123456789abcdef0123456789abcdef01234567",
+        "where": "acme/hello"
+      },
+      "output": {
+        "refused": "the apps-platform driver deploys arugula-salad/<app> repositories, named as an app is (lowercase letters, digits and dashes)"
+      }
+    }
+  ],
+  "checks": ["arugula_e2e::deploy::apps_platform::app_name", "arugula_e2e::deploy::apps_platform::refuses"],
+  "input": "check: app_name (where) or refuses (kind, reference, where)",
+  "keys": {},
+  "objects": {},
+  "output": "app: the name or null; refused: why, or null"
+}

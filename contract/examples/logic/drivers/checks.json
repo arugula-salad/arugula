@@ -1,0 +1,448 @@
+{
+  "about": "The shapes a driver's source and evidence must have. source_ok: chant-fly and arugula-release deploy a commit by its full 40 lowercase hex (never a branch, a tag or a short id the box resolves), planter's as deploy/planter says, any other driver anything. fly_image_ok: one of Fly's registry's images for the app, by digest (registry.fly.io/<app>[:<tag>]@sha256:<64 hex>). ledger_link_ok: a line of chant's ledger in the repository on GitHub, at a commit. roll_back_ok: the deploy's id (dep_ and 32 hex), each value one printable word starting with a letter or digit, and for chant-fly exactly image, chant_component, chant_env and chant_digest, the image the app's and chant_env the settings'; for any other driver nothing more.",
+  "cases": [
+    {
+      "about": "chant-fly deploying commit 0123456789abcdef0123456789abcdef01234567",
+      "input": {
+        "check": "source_ok",
+        "driver": "chant-fly",
+        "kind": "commit",
+        "reference": "0123456789abcdef0123456789abcdef01234567"
+      },
+      "output": {"ok": true}
+    },
+    {
+      "about": "chant-fly deploying commit main",
+      "input": {"check": "source_ok", "driver": "chant-fly", "kind": "commit", "reference": "main"},
+      "output": {"ok": false}
+    },
+    {
+      "about": "chant-fly deploying commit 0123456789ab",
+      "input": {"check": "source_ok", "driver": "chant-fly", "kind": "commit", "reference": "0123456789ab"},
+      "output": {"ok": false}
+    },
+    {
+      "about": "chant-fly deploying commit 0123456789ABCDEF0123456789ABCDEF01234567",
+      "input": {
+        "check": "source_ok",
+        "driver": "chant-fly",
+        "kind": "commit",
+        "reference": "0123456789ABCDEF0123456789ABCDEF01234567"
+      },
+      "output": {"ok": false}
+    },
+    {
+      "about": "chant-fly deploying artifact 0123456789abcdef0123456789abcdef01234567",
+      "input": {
+        "check": "source_ok",
+        "driver": "chant-fly",
+        "kind": "artifact",
+        "reference": "0123456789abcdef0123456789abcdef01234567"
+      },
+      "output": {"ok": false}
+    },
+    {
+      "about": "arugula-release deploying commit 0123456789abcdef0123456789abcdef01234567",
+      "input": {
+        "check": "source_ok",
+        "driver": "arugula-release",
+        "kind": "commit",
+        "reference": "0123456789abcdef0123456789abcdef01234567"
+      },
+      "output": {"ok": true}
+    },
+    {
+      "about": "arugula-release deploying commit v1.2.3",
+      "input": {"check": "source_ok", "driver": "arugula-release", "kind": "commit", "reference": "v1.2.3"},
+      "output": {"ok": false}
+    },
+    {
+      "about": "planter-ship deploying artifact sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "input": {
+        "check": "source_ok",
+        "driver": "planter-ship",
+        "kind": "artifact",
+        "reference": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      },
+      "output": {"ok": true}
+    },
+    {
+      "about": "planter-ship deploying commit 0123456789abcdef0123456789abcdef01234567",
+      "input": {
+        "check": "source_ok",
+        "driver": "planter-ship",
+        "kind": "commit",
+        "reference": "0123456789abcdef0123456789abcdef01234567"
+      },
+      "output": {"ok": false}
+    },
+    {
+      "about": "planter-go-live deploying commit 0123456789abcdef0123456789abcdef01234567",
+      "input": {
+        "check": "source_ok",
+        "driver": "planter-go-live",
+        "kind": "commit",
+        "reference": "0123456789abcdef0123456789abcdef01234567"
+      },
+      "output": {"ok": true}
+    },
+    {
+      "about": "fake deploying commit abc",
+      "input": {"check": "source_ok", "driver": "fake", "kind": "commit", "reference": "abc"},
+      "output": {"ok": true}
+    },
+    {
+      "about": "apps-platform deploying artifact anything",
+      "input": {"check": "source_ok", "driver": "apps-platform", "kind": "artifact", "reference": "anything"},
+      "output": {"ok": true}
+    },
+    {
+      "about": "fly image: the app's image, tagged, by digest",
+      "input": {
+        "app": "acme-web",
+        "check": "fly_image_ok",
+        "image": "registry.fly.io/acme-web:deployment-1@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "output": {"ok": true}
+    },
+    {
+      "about": "fly image: untagged",
+      "input": {
+        "app": "acme-web",
+        "check": "fly_image_ok",
+        "image": "registry.fly.io/acme-web@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      },
+      "output": {"ok": true}
+    },
+    {
+      "about": "fly image: another app's, by a longer name",
+      "input": {
+        "app": "acme-web",
+        "check": "fly_image_ok",
+        "image": "registry.fly.io/acme-webx:deployment-1@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "output": {"ok": false}
+    },
+    {
+      "about": "fly image: another registry",
+      "input": {
+        "app": "acme-web",
+        "check": "fly_image_ok",
+        "image": "evil.io/acme-web:deployment-1@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "output": {"ok": false}
+    },
+    {
+      "about": "fly image: by tag only",
+      "input": {
+        "app": "acme-web",
+        "check": "fly_image_ok",
+        "image": "registry.fly.io/acme-web:deployment-1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "output": {"ok": false}
+    },
+    {
+      "about": "fly image: a digest a digit too long",
+      "input": {
+        "app": "acme-web",
+        "check": "fly_image_ok",
+        "image": "registry.fly.io/acme-web:deployment-1@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa0"
+      },
+      "output": {"ok": false}
+    },
+    {
+      "about": "fly image: a space in the tag",
+      "input": {
+        "app": "acme-web",
+        "check": "fly_image_ok",
+        "image": "registry.fly.io/acme-web:a b@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "output": {"ok": false}
+    },
+    {
+      "about": "fly image: an upper-case digest",
+      "input": {
+        "app": "acme-web",
+        "check": "fly_image_ok",
+        "image": "registry.fly.io/acme-web:deployment-1@sha256:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+      },
+      "output": {"ok": false}
+    },
+    {
+      "about": "ledger link: a line of the ledger at a commit",
+      "input": {
+        "check": "ledger_link_ok",
+        "link": "https://github.com/acme/app/blob/0123456789abcdef0123456789abcdef01234567/github/releases.jsonl#L3",
+        "place": "acme/app"
+      },
+      "output": {"ok": true}
+    },
+    {
+      "about": "ledger link: another scheme",
+      "input": {
+        "check": "ledger_link_ok",
+        "link": "javascript://github.com/acme/app/blob/0123456789abcdef0123456789abcdef01234567/github/releases.jsonl#L3",
+        "place": "acme/app"
+      },
+      "output": {"ok": false}
+    },
+    {
+      "about": "ledger link: another repository",
+      "input": {
+        "check": "ledger_link_ok",
+        "link": "https://github.com/acme/other/blob/0123456789abcdef0123456789abcdef01234567/github/releases.jsonl#L3",
+        "place": "acme/app"
+      },
+      "output": {"ok": false}
+    },
+    {
+      "about": "ledger link: at a branch",
+      "input": {
+        "check": "ledger_link_ok",
+        "link": "https://github.com/acme/app/blob/main/github/releases.jsonl#L3",
+        "place": "acme/app"
+      },
+      "output": {"ok": false}
+    },
+    {
+      "about": "ledger link: up a directory",
+      "input": {
+        "check": "ledger_link_ok",
+        "link": "https://github.com/acme/app/blob/0123456789abcdef0123456789abcdef01234567/../releases.jsonl#L3",
+        "place": "acme/app"
+      },
+      "output": {"ok": false}
+    },
+    {
+      "about": "ledger link: line 0",
+      "input": {
+        "check": "ledger_link_ok",
+        "link": "https://github.com/acme/app/blob/0123456789abcdef0123456789abcdef01234567/github/releases.jsonl#L0",
+        "place": "acme/app"
+      },
+      "output": {"ok": false}
+    },
+    {
+      "about": "ledger link: line x",
+      "input": {
+        "check": "ledger_link_ok",
+        "link": "https://github.com/acme/app/blob/0123456789abcdef0123456789abcdef01234567/github/releases.jsonl#Lx",
+        "place": "acme/app"
+      },
+      "output": {"ok": false}
+    },
+    {
+      "about": "ledger link: not a .jsonl",
+      "input": {
+        "check": "ledger_link_ok",
+        "link": "https://github.com/acme/app/blob/0123456789abcdef0123456789abcdef01234567/github/releases.html#L3",
+        "place": "acme/app"
+      },
+      "output": {"ok": false}
+    },
+    {
+      "about": "ledger link: a space in the path",
+      "input": {
+        "check": "ledger_link_ok",
+        "link": "https://github.com/acme/app/blob/0123456789abcdef0123456789abcdef01234567/git hub/releases.jsonl#L3",
+        "place": "acme/app"
+      },
+      "output": {"ok": false}
+    },
+    {
+      "about": "ledger link: markup after it",
+      "input": {
+        "check": "ledger_link_ok",
+        "link": "https://github.com/acme/app/blob/0123456789abcdef0123456789abcdef01234567/github/releases.jsonl#L3\"><script>",
+        "place": "acme/app"
+      },
+      "output": {"ok": false}
+    },
+    {
+      "about": "roll back: chant-fly back to the app's image",
+      "input": {
+        "check": "roll_back_ok",
+        "driver": "chant-fly",
+        "roll_back": {
+          "deploy": "dep_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "to": {
+            "chant_component": "arugula",
+            "chant_digest": "sha256:11",
+            "chant_env": "github",
+            "image": "registry.fly.io/acme-web:deployment-1@sha256:0000000000000000000000000000000000000000000000000000000000000000"
+          }
+        },
+        "settings": {
+          "chant_digest": "plan",
+          "chant_dir": ".",
+          "chant_env": "github",
+          "chant_op": "release",
+          "fly_app": "acme-web"
+        }
+      },
+      "output": {"ok": true}
+    },
+    {
+      "about": "roll back: chant-fly back to another app's image",
+      "input": {
+        "check": "roll_back_ok",
+        "driver": "chant-fly",
+        "roll_back": {
+          "deploy": "dep_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "to": {
+            "chant_component": "arugula",
+            "chant_digest": "sha256:11",
+            "chant_env": "github",
+            "image": "registry.fly.io/acme-other:deployment-1@sha256:0000000000000000000000000000000000000000000000000000000000000000"
+          }
+        },
+        "settings": {
+          "chant_digest": "plan",
+          "chant_dir": ".",
+          "chant_env": "github",
+          "chant_op": "release",
+          "fly_app": "acme-web"
+        }
+      },
+      "output": {"ok": false}
+    },
+    {
+      "about": "roll back: chant-fly back to another ledger environment",
+      "input": {
+        "check": "roll_back_ok",
+        "driver": "chant-fly",
+        "roll_back": {
+          "deploy": "dep_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "to": {
+            "chant_component": "arugula",
+            "chant_digest": "sha256:11",
+            "chant_env": "staging",
+            "image": "registry.fly.io/acme-web:deployment-1@sha256:0000000000000000000000000000000000000000000000000000000000000000"
+          }
+        },
+        "settings": {
+          "chant_digest": "plan",
+          "chant_dir": ".",
+          "chant_env": "github",
+          "chant_op": "release",
+          "fly_app": "acme-web"
+        }
+      },
+      "output": {"ok": false}
+    },
+    {
+      "about": "roll back: chant-fly with a value more",
+      "input": {
+        "check": "roll_back_ok",
+        "driver": "chant-fly",
+        "roll_back": {
+          "deploy": "dep_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "to": {
+            "chant_component": "arugula",
+            "chant_digest": "sha256:11",
+            "chant_env": "github",
+            "extra": "x",
+            "image": "registry.fly.io/acme-web:deployment-1@sha256:0000000000000000000000000000000000000000000000000000000000000000"
+          }
+        },
+        "settings": {
+          "chant_digest": "plan",
+          "chant_dir": ".",
+          "chant_env": "github",
+          "chant_op": "release",
+          "fly_app": "acme-web"
+        }
+      },
+      "output": {"ok": false}
+    },
+    {
+      "about": "roll back: chant-fly to a deploy id too short",
+      "input": {
+        "check": "roll_back_ok",
+        "driver": "chant-fly",
+        "roll_back": {
+          "deploy": "dep_abc",
+          "to": {
+            "chant_component": "arugula",
+            "chant_digest": "sha256:11",
+            "chant_env": "github",
+            "image": "registry.fly.io/acme-web:deployment-1@sha256:0000000000000000000000000000000000000000000000000000000000000000"
+          }
+        },
+        "settings": {
+          "chant_digest": "plan",
+          "chant_dir": ".",
+          "chant_env": "github",
+          "chant_op": "release",
+          "fly_app": "acme-web"
+        }
+      },
+      "output": {"ok": false}
+    },
+    {
+      "about": "roll back: chant-fly with a value reading as a flag",
+      "input": {
+        "check": "roll_back_ok",
+        "driver": "chant-fly",
+        "roll_back": {
+          "deploy": "dep_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "to": {
+            "chant_component": "-rf",
+            "chant_digest": "sha256:11",
+            "chant_env": "github",
+            "image": "registry.fly.io/acme-web:deployment-1@sha256:0000000000000000000000000000000000000000000000000000000000000000"
+          }
+        },
+        "settings": {
+          "chant_digest": "plan",
+          "chant_dir": ".",
+          "chant_env": "github",
+          "chant_op": "release",
+          "fly_app": "acme-web"
+        }
+      },
+      "output": {"ok": false}
+    },
+    {
+      "about": "roll back: fake with chant-fly's values",
+      "input": {
+        "check": "roll_back_ok",
+        "driver": "fake",
+        "roll_back": {
+          "deploy": "dep_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "to": {
+            "chant_component": "arugula",
+            "chant_digest": "sha256:11",
+            "chant_env": "github",
+            "image": "registry.fly.io/acme-web:deployment-1@sha256:0000000000000000000000000000000000000000000000000000000000000000"
+          }
+        },
+        "settings": {}
+      },
+      "output": {"ok": false}
+    },
+    {
+      "about": "roll back: fake with none",
+      "input": {
+        "check": "roll_back_ok",
+        "driver": "fake",
+        "roll_back": {
+          "deploy": "dep_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "to": {}
+        },
+        "settings": {}
+      },
+      "output": {"ok": true}
+    }
+  ],
+  "checks": [
+    "arugula_e2e::drivers::source_ok",
+    "arugula_e2e::drivers::fly_image_ok",
+    "arugula_e2e::drivers::ledger_link_ok",
+    "arugula_e2e::drivers::roll_back_ok"
+  ],
+  "input": "check: source_ok (driver, kind, reference), fly_image_ok (app, image), ledger_link_ok (place, link) or roll_back_ok (driver, settings, roll_back)",
+  "keys": {},
+  "objects": {},
+  "output": "ok"
+}

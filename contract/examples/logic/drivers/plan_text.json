@@ -1,0 +1,662 @@
+{
+  "about": "The plan a driver makes for a deploy (or, with roll_back, for rolling back to an earlier one): the text an owner reads before they approve, and its SHA-256, hex, which is the deploy's plan and so in the operation they sign. The daemon (a box recomputes it before it applies) and the server must make it byte for byte the same. It starts arugula deploy plan v1, the driver, the environment's name and the source; apps-platform adds what it pins where; then a line per setting (sorted by name), the roll back and what it goes back to, and what the driver does, in words: chant-fly always, arugula-release unless it's a roll back (it never rolls back), planter's unless it's a roll back of one other than Go live. A source a driver can't deploy is planned with its refusal in the text. Settings here are as settings fills them (drivers/settings).",
+  "cases": [
+    {
+      "about": "fake: a commit",
+      "input": {
+        "driver": "fake",
+        "environment_name": "production",
+        "roll_back": null,
+        "settings": {},
+        "source_kind": "commit",
+        "source_ref": "0123456789abcdef0123456789abcdef01234567",
+        "source_where": "acme/app"
+      },
+      "output": {
+        "digest": "c7e7b898d8d3ee343df35b3aabbc9c84ff43189e99a8cabf99a107327d8fadb8",
+        "text": "arugula deploy plan v1\ndriver fake\nenvironment production\nsource commit 0123456789abcdef0123456789abcdef01234567\nwhere acme/app\n"
+      }
+    },
+    {
+      "about": "fake: an artifact",
+      "input": {
+        "driver": "fake",
+        "environment_name": "staging",
+        "roll_back": null,
+        "settings": {},
+        "source_kind": "artifact",
+        "source_ref": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "source_where": "registry.example.com/acme"
+      },
+      "output": {
+        "digest": "37e0dc4a04d5fd4c5d079b1c039ae06ff833b6485226436b023a038ee38424d2",
+        "text": "arugula deploy plan v1\ndriver fake\nenvironment staging\nsource artifact sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nwhere registry.example.com/acme\n"
+      }
+    },
+    {
+      "about": "fake: a roll back",
+      "input": {
+        "driver": "fake",
+        "environment_name": "production",
+        "roll_back": {
+          "deploy": "dep_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "to": {}
+        },
+        "settings": {},
+        "source_kind": "commit",
+        "source_ref": "0123456789abcdef0123456789abcdef01234567",
+        "source_where": "acme/app"
+      },
+      "output": {
+        "digest": "9881ba00ae5610e307063b90789ac41e0ab4b3ae7fda8738260e331d17cb3ea2",
+        "text": "arugula deploy plan v1\ndriver fake\nenvironment production\nsource commit 0123456789abcdef0123456789abcdef01234567\nwhere acme/app\nroll back to dep_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\n"
+      }
+    },
+    {
+      "about": "nope: a driver no one has: planned as a bare one",
+      "input": {
+        "driver": "nope",
+        "environment_name": "production",
+        "roll_back": null,
+        "settings": {},
+        "source_kind": "commit",
+        "source_ref": "0123456789abcdef0123456789abcdef01234567",
+        "source_where": "acme/app"
+      },
+      "output": {
+        "digest": "e278f03ade44b90cbca694b6ac9d11dd4f46cef2faaa0848a33edde618adbe08",
+        "text": "arugula deploy plan v1\ndriver nope\nenvironment production\nsource commit 0123456789abcdef0123456789abcdef01234567\nwhere acme/app\n"
+      }
+    },
+    {
+      "about": "apps-platform: an app's commit",
+      "input": {
+        "driver": "apps-platform",
+        "environment_name": "production",
+        "roll_back": null,
+        "settings": {},
+        "source_kind": "commit",
+        "source_ref": "0123456789abcdef0123456789abcdef01234567",
+        "source_where": "arugula-salad/hello"
+      },
+      "output": {
+        "digest": "43f60e8156a311e5606e2c06141e29888634f852ce48c9cd53a3e5f07b50d7d9",
+        "text": "arugula deploy plan v1\ndriver apps-platform\nenvironment production\nsource commit 0123456789abcdef0123456789abcdef01234567\nwhere arugula-salad/hello\nrepo arugula-salad/planter-apps (branch main)\npath apps/hello.yaml\nchange pin the GitRepository hello (https://github.com/arugula-salad/hello) at commit 0123456789abcdef0123456789abcdef01234567; a new pointer if there's none; a revert commit when it rolls back the last deploy\nverify https://hello.apps.arugula.io answers 200 at its app.yaml's health path; when the answer reports a revision (JSON `revision`, `commit`, `version` or `sha`, or an `X-Revision` header), it must be this commit's or its pinned image's; an app that reports none is ready when it answers, which an old version still serving also does\n"
+      }
+    },
+    {
+      "about": "apps-platform: a roll back",
+      "input": {
+        "driver": "apps-platform",
+        "environment_name": "production",
+        "roll_back": {
+          "deploy": "dep_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "to": {}
+        },
+        "settings": {},
+        "source_kind": "commit",
+        "source_ref": "0123456789abcdef0123456789abcdef01234567",
+        "source_where": "arugula-salad/hello"
+      },
+      "output": {
+        "digest": "2be35686af478727363a8b2328be5f97032ef65d34ee96afb03222d7ae820fc6",
+        "text": "arugula deploy plan v1\ndriver apps-platform\nenvironment production\nsource commit 0123456789abcdef0123456789abcdef01234567\nwhere arugula-salad/hello\nrepo arugula-salad/planter-apps (branch main)\npath apps/hello.yaml\nchange pin the GitRepository hello (https://github.com/arugula-salad/hello) at commit 0123456789abcdef0123456789abcdef01234567; a new pointer if there's none; a revert commit when it rolls back the last deploy\nverify https://hello.apps.arugula.io answers 200 at its app.yaml's health path; when the answer reports a revision (JSON `revision`, `commit`, `version` or `sha`, or an `X-Revision` header), it must be this commit's or its pinned image's; an app that reports none is ready when it answers, which an old version still serving also does\nroll back to dep_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\n"
+      }
+    },
+    {
+      "about": "apps-platform: refused: an artifact",
+      "input": {
+        "driver": "apps-platform",
+        "environment_name": "production",
+        "roll_back": null,
+        "settings": {},
+        "source_kind": "artifact",
+        "source_ref": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "source_where": "arugula-salad/hello"
+      },
+      "output": {
+        "digest": "693ce5fa2da0bdf0cb4d90ac0fa74c776a77562e76718d328a2e6cd3e2eb792c",
+        "text": "arugula deploy plan v1\ndriver apps-platform\nenvironment production\nsource artifact sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nwhere arugula-salad/hello\nrepo arugula-salad/planter-apps\nrefused the apps-platform driver deploys a commit of the app's repository, not an artifact\n"
+      }
+    },
+    {
+      "about": "apps-platform: refused: a short commit",
+      "input": {
+        "driver": "apps-platform",
+        "environment_name": "production",
+        "roll_back": null,
+        "settings": {},
+        "source_kind": "commit",
+        "source_ref": "0123456789ab",
+        "source_where": "arugula-salad/hello"
+      },
+      "output": {
+        "digest": "46a0431c2549eaf1b14c106df4e674e7eed88f9f1ef9938be9408ef226b23df6",
+        "text": "arugula deploy plan v1\ndriver apps-platform\nenvironment production\nsource commit 0123456789ab\nwhere arugula-salad/hello\nrepo arugula-salad/planter-apps\nrefused the apps-platform driver pins a full commit sha (40 lowercase hex)\n"
+      }
+    },
+    {
+      "about": "apps-platform: refused: another org's repository",
+      "input": {
+        "driver": "apps-platform",
+        "environment_name": "production",
+        "roll_back": null,
+        "settings": {},
+        "source_kind": "commit",
+        "source_ref": "0123456789abcdef0123456789abcdef01234567",
+        "source_where": "acme/hello"
+      },
+      "output": {
+        "digest": "5bbfd75c7bd427823234d95e009cd3d7199384d5c89f5ee08c863095ee2b3ae2",
+        "text": "arugula deploy plan v1\ndriver apps-platform\nenvironment production\nsource commit 0123456789abcdef0123456789abcdef01234567\nwhere acme/hello\nrepo arugula-salad/planter-apps\nrefused the apps-platform driver deploys arugula-salad/<app> repositories, named as an app is (lowercase letters, digits and dashes)\n"
+      }
+    },
+    {
+      "about": "chant-fly: the settings it needs",
+      "input": {
+        "driver": "chant-fly",
+        "environment_name": "production",
+        "roll_back": null,
+        "settings": {
+          "chant_digest": "plan",
+          "chant_dir": ".",
+          "chant_env": "github",
+          "chant_op": "release",
+          "fly_app": "acme-web"
+        },
+        "source_kind": "commit",
+        "source_ref": "0123456789abcdef0123456789abcdef01234567",
+        "source_where": "acme/app"
+      },
+      "output": {
+        "digest": "f49d418e0210bae34e674122acdc03d54300fa523b3af3cb3abdafe3feb9ec6e",
+        "text": "arugula deploy plan v1\ndriver chant-fly\nenvironment production\nsource commit 0123456789abcdef0123456789abcdef01234567\nwhere acme/app\nsetting chant_digest plan\nsetting chant_dir .\nsetting chant_env github\nsetting chant_op release\nsetting fly_app acme-web\ndoes: check out commit 0123456789abcdef0123456789abcdef01234567 from acme/app, exactly, on a box made for this deploy\ndoes: check FLY_API_TOKEN is a Fly deploy token for one app that expires within 30 days (flyctl tokens debug), or stop\ndoes: in ., npm ci --ignore-scripts (without the tokens), then chant run release\ndoes: the repo's chant op release runs with FLY_API_TOKEN in its environment\ndoes: the repo's chant op runs without GITHUB_TOKEN (only the driver's own git fetch and push use it)\ndoes: approve each gate of the op it stops at with chant approve, as the approver (relayed by arugula, noting this approval), then chant run release again\ndoes: link chant's new release record for this commit in ledger environment github (chant/lifecycle, as origin has it), and Fly running another image than before\ndoes: check Fly app acme-web is healthy (flyctl status: every started machine's checks passing, on one image), and keep the image it runs\nwith: the environment's FLY_API_TOKEN (fly tokens create deploy -a acme-web -x 720h), and GITHUB_TOKEN: the environment's own, or else one the platform's GitHub App mints for this run that writes acme/app's contents only, revoked when the run ends; each for this run only\n"
+      }
+    },
+    {
+      "about": "chant-fly: every setting",
+      "input": {
+        "driver": "chant-fly",
+        "environment_name": "production",
+        "roll_back": null,
+        "settings": {
+          "chant_digest": "image",
+          "chant_dir": "ops",
+          "chant_env": "github",
+          "chant_gates": "approve-release,ship",
+          "chant_github": "true",
+          "chant_op": "ship",
+          "fly_app": "acme-web",
+          "fly_config": "ops/fly.toml",
+          "npm_scripts": "true"
+        },
+        "source_kind": "commit",
+        "source_ref": "0123456789abcdef0123456789abcdef01234567",
+        "source_where": "acme/app"
+      },
+      "output": {
+        "digest": "0e9462ddad27cc6a6ac2db0c77b86393b4d70d84884c06506105e82c3e918ea9",
+        "text": "arugula deploy plan v1\ndriver chant-fly\nenvironment production\nsource commit 0123456789abcdef0123456789abcdef01234567\nwhere acme/app\nsetting chant_digest image\nsetting chant_dir ops\nsetting chant_env github\nsetting chant_gates approve-release,ship\nsetting chant_github true\nsetting chant_op ship\nsetting fly_app acme-web\nsetting fly_config ops/fly.toml\nsetting npm_scripts true\ndoes: check out commit 0123456789abcdef0123456789abcdef01234567 from acme/app, exactly, on a box made for this deploy\ndoes: check FLY_API_TOKEN is a Fly deploy token for one app that expires within 30 days (flyctl tokens debug), or stop\ndoes: in ops, npm ci (its packages' install scripts run, without the tokens), then chant run ship\ndoes: the repo's chant op ship runs with FLY_API_TOKEN in its environment\ndoes: the repo's chant op runs with GITHUB_TOKEN in its environment too\ndoes: approve only gates approve-release, ship; any other gate stops the deploy with chant approve, as the approver (relayed by arugula, noting this approval), then chant run ship again\ndoes: link chant's new release record for this commit in ledger environment github (chant/lifecycle, as origin has it), its digest the digest of the image Fly runs after\ndoes: check Fly app acme-web is healthy (flyctl status: every started machine's checks passing, on one image), and keep the image it runs\nwith: the environment's FLY_API_TOKEN (fly tokens create deploy -a acme-web -x 720h), and GITHUB_TOKEN: the environment's own, or else one the platform's GitHub App mints for this run that writes acme/app's contents only, revoked when the run ends; each for this run only\n"
+      }
+    },
+    {
+      "about": "chant-fly: one gate",
+      "input": {
+        "driver": "chant-fly",
+        "environment_name": "production",
+        "roll_back": null,
+        "settings": {
+          "chant_digest": "plan",
+          "chant_dir": ".",
+          "chant_env": "github",
+          "chant_gates": "ship",
+          "chant_op": "release",
+          "fly_app": "acme-web"
+        },
+        "source_kind": "commit",
+        "source_ref": "0123456789abcdef0123456789abcdef01234567",
+        "source_where": "acme/app"
+      },
+      "output": {
+        "digest": "4d30a3266d7a4f1b32a7556bb55c8cb430317e38f1cec328ca89e4f00eace349",
+        "text": "arugula deploy plan v1\ndriver chant-fly\nenvironment production\nsource commit 0123456789abcdef0123456789abcdef01234567\nwhere acme/app\nsetting chant_digest plan\nsetting chant_dir .\nsetting chant_env github\nsetting chant_gates ship\nsetting chant_op release\nsetting fly_app acme-web\ndoes: check out commit 0123456789abcdef0123456789abcdef01234567 from acme/app, exactly, on a box made for this deploy\ndoes: check FLY_API_TOKEN is a Fly deploy token for one app that expires within 30 days (flyctl tokens debug), or stop\ndoes: in ., npm ci --ignore-scripts (without the tokens), then chant run release\ndoes: the repo's chant op release runs with FLY_API_TOKEN in its environment\ndoes: the repo's chant op runs without GITHUB_TOKEN (only the driver's own git fetch and push use it)\ndoes: approve only gate ship; any other gate stops the deploy with chant approve, as the approver (relayed by arugula, noting this approval), then chant run release again\ndoes: link chant's new release record for this commit in ledger environment github (chant/lifecycle, as origin has it), and Fly running another image than before\ndoes: check Fly app acme-web is healthy (flyctl status: every started machine's checks passing, on one image), and keep the image it runs\nwith: the environment's FLY_API_TOKEN (fly tokens create deploy -a acme-web -x 720h), and GITHUB_TOKEN: the environment's own, or else one the platform's GitHub App mints for this run that writes acme/app's contents only, revoked when the run ends; each for this run only\n"
+      }
+    },
+    {
+      "about": "chant-fly: a roll back",
+      "input": {
+        "driver": "chant-fly",
+        "environment_name": "production",
+        "roll_back": {
+          "deploy": "dep_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "to": {
+            "chant_component": "arugula",
+            "chant_digest": "sha256:11",
+            "chant_env": "github",
+            "image": "registry.fly.io/acme-web:deployment-1@sha256:0000000000000000000000000000000000000000000000000000000000000000"
+          }
+        },
+        "settings": {
+          "chant_digest": "plan",
+          "chant_dir": ".",
+          "chant_env": "github",
+          "chant_op": "release",
+          "fly_app": "acme-web"
+        },
+        "source_kind": "commit",
+        "source_ref": "0123456789abcdef0123456789abcdef01234567",
+        "source_where": "acme/app"
+      },
+      "output": {
+        "digest": "07039d0f2e1d655b284e50c0f95bf4c8116135b3136fe0fdcdbedec4db4331bf",
+        "text": "arugula deploy plan v1\ndriver chant-fly\nenvironment production\nsource commit 0123456789abcdef0123456789abcdef01234567\nwhere acme/app\nsetting chant_digest plan\nsetting chant_dir .\nsetting chant_env github\nsetting chant_op release\nsetting fly_app acme-web\nroll back to dep_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nback chant_component arugula\nback chant_digest sha256:11\nback chant_env github\nback image registry.fly.io/acme-web:deployment-1@sha256:0000000000000000000000000000000000000000000000000000000000000000\ndoes: check out commit 0123456789abcdef0123456789abcdef01234567 from acme/app, exactly, on a box made for this deploy\ndoes: check FLY_API_TOKEN is a Fly deploy token for one app that expires within 30 days (flyctl tokens debug), or stop\ndoes: flyctl deploy --app acme-web --image registry.fly.io/acme-web:deployment-1@sha256:0000000000000000000000000000000000000000000000000000000000000000 (Fly's own roll back to the image dep_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa ran)\ndoes: in ., npm ci --ignore-scripts (without the tokens), then chant components release github --component arugula --digest sha256:11 --git-sha 0123456789abcdef0123456789abcdef01234567, as the approver, without the tokens: chant's ledger says it runs again, and the run links that entry\ndoes: check Fly app acme-web is healthy (flyctl status: every started machine's checks passing, on one image), and keep the image it runs\nwith: the environment's FLY_API_TOKEN (fly tokens create deploy -a acme-web -x 720h), and GITHUB_TOKEN: the environment's own, or else one the platform's GitHub App mints for this run that writes acme/app's contents only, revoked when the run ends; each for this run only\n"
+      }
+    },
+    {
+      "about": "chant-fly: a roll back with its fly.toml",
+      "input": {
+        "driver": "chant-fly",
+        "environment_name": "production",
+        "roll_back": {
+          "deploy": "dep_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "to": {
+            "chant_component": "arugula",
+            "chant_digest": "sha256:11",
+            "chant_env": "github",
+            "image": "registry.fly.io/acme-web:deployment-1@sha256:0000000000000000000000000000000000000000000000000000000000000000"
+          }
+        },
+        "settings": {
+          "chant_digest": "image",
+          "chant_dir": "ops",
+          "chant_env": "github",
+          "chant_gates": "approve-release,ship",
+          "chant_github": "true",
+          "chant_op": "ship",
+          "fly_app": "acme-web",
+          "fly_config": "ops/fly.toml",
+          "npm_scripts": "true"
+        },
+        "source_kind": "commit",
+        "source_ref": "0123456789abcdef0123456789abcdef01234567",
+        "source_where": "acme/app"
+      },
+      "output": {
+        "digest": "5514221278fea93936236d4a15fed705524eefd4f45ab8e6fba1985d4bc3961e",
+        "text": "arugula deploy plan v1\ndriver chant-fly\nenvironment production\nsource commit 0123456789abcdef0123456789abcdef01234567\nwhere acme/app\nsetting chant_digest image\nsetting chant_dir ops\nsetting chant_env github\nsetting chant_gates approve-release,ship\nsetting chant_github true\nsetting chant_op ship\nsetting fly_app acme-web\nsetting fly_config ops/fly.toml\nsetting npm_scripts true\nroll back to dep_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nback chant_component arugula\nback chant_digest sha256:11\nback chant_env github\nback image registry.fly.io/acme-web:deployment-1@sha256:0000000000000000000000000000000000000000000000000000000000000000\ndoes: check out commit 0123456789abcdef0123456789abcdef01234567 from acme/app, exactly, on a box made for this deploy\ndoes: check FLY_API_TOKEN is a Fly deploy token for one app that expires within 30 days (flyctl tokens debug), or stop\ndoes: flyctl deploy --app acme-web --image registry.fly.io/acme-web:deployment-1@sha256:0000000000000000000000000000000000000000000000000000000000000000 --config ops/fly.toml (Fly's own roll back to the image dep_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa ran)\ndoes: in ops, npm ci (its packages' install scripts run, without the tokens), then chant components release github --component arugula --digest sha256:11 --git-sha 0123456789abcdef0123456789abcdef01234567, as the approver, without the tokens: chant's ledger says it runs again, and the run links that entry\ndoes: check Fly app acme-web is healthy (flyctl status: every started machine's checks passing, on one image), and keep the image it runs\nwith: the environment's FLY_API_TOKEN (fly tokens create deploy -a acme-web -x 720h), and GITHUB_TOKEN: the environment's own, or else one the platform's GitHub App mints for this run that writes acme/app's contents only, revoked when the run ends; each for this run only\n"
+      }
+    },
+    {
+      "about": "arugula-release: a patch release of the daemon",
+      "input": {
+        "driver": "arugula-release",
+        "environment_name": "release",
+        "roll_back": null,
+        "settings": {"bump": "patch", "lane": "daemon"},
+        "source_kind": "commit",
+        "source_ref": "0123456789abcdef0123456789abcdef01234567",
+        "source_where": "arugula-salad/arugula"
+      },
+      "output": {
+        "digest": "c3166d28dcdf4be24ae20561cfca343b90ea151443d3c4a774684127e004de5d",
+        "text": "arugula deploy plan v1\ndriver arugula-release\nenvironment release\nsource commit 0123456789abcdef0123456789abcdef01234567\nwhere arugula-salad/arugula\nsetting bump patch\nsetting lane daemon\ndoes: check commit 0123456789abcdef0123456789abcdef01234567 is on arugula-salad/arugula's main and passed CI (its ci/green tag, and no ci/revoked one), on a box made for this deploy, or stop\ndoes: run scripts/release bump patch 0123456789abcdef0123456789abcdef01234567, as that commit has it (what just release runs): a patch bump of the daemon's version (every arugula crate but the app), from the higher of the commit's version and main's; the run's log and the deploy's name the script's blob id\ndoes: stop if main has no docs/releases/X.Y.Z.md for the new version, the tag is there already, or the commit is in a release already\ndoes: commit the bump on top of the commit, tag it vX.Y.Z, and push the tag and main (the bump merged into it) in one atomic push over https\ndoes: follow the tag's release workflow (.github/workflows/release.yml) for at most 45 minutes; the release is out once its publish job succeeded. Its own secrets (the updater key, Apple's, the marketplaces') stay in GitHub Actions\nwith: an installation token of the platform's GitHub App that writes arugula-salad/arugula's contents and nothing else, minted for this run, and revoked right after the push; and one that only reads its Actions runs and contents, to follow the workflow, revoked when that ends\ncheck: before either token is minted, the platform checks with GitHub that commit 0123456789abcdef0123456789abcdef01234567 is on main and passed CI\nno roll back: a release is never taken back; a bad release is fixed by a new patch release, deployed the same way\n"
+      }
+    },
+    {
+      "about": "arugula-release: a minor release of the app",
+      "input": {
+        "driver": "arugula-release",
+        "environment_name": "release",
+        "roll_back": null,
+        "settings": {"bump": "minor", "lane": "app"},
+        "source_kind": "commit",
+        "source_ref": "0123456789abcdef0123456789abcdef01234567",
+        "source_where": "arugula-salad/arugula"
+      },
+      "output": {
+        "digest": "d5d805faa0a2eb2c2f67a8c0a0c168c0ae1bf30167cb02365386756648c9e40d",
+        "text": "arugula deploy plan v1\ndriver arugula-release\nenvironment release\nsource commit 0123456789abcdef0123456789abcdef01234567\nwhere arugula-salad/arugula\nsetting bump minor\nsetting lane app\ndoes: check commit 0123456789abcdef0123456789abcdef01234567 is on arugula-salad/arugula's main and passed CI (its ci/green tag, and no ci/revoked one), on a box made for this deploy, or stop\ndoes: run scripts/release bump minor --app 0123456789abcdef0123456789abcdef01234567, as that commit has it (what just release runs): a minor bump of the desktop app's version (crates/desktop), from the higher of the commit's version and main's; the run's log and the deploy's name the script's blob id\ndoes: stop if main has no docs/releases/app-X.Y.Z.md for the new version, the tag is there already, or the commit is in a release already\ndoes: commit the bump on top of the commit, tag it app-vX.Y.Z, and push the tag and main (the bump merged into it) in one atomic push over https\ndoes: follow the tag's release workflow (.github/workflows/app-release.yml) for at most 45 minutes; the release is out once its publish job succeeded. Its own secrets (the updater key, Apple's, the marketplaces') stay in GitHub Actions\nwith: an installation token of the platform's GitHub App that writes arugula-salad/arugula's contents and nothing else, minted for this run, and revoked right after the push; and one that only reads its Actions runs and contents, to follow the workflow, revoked when that ends\ncheck: before either token is minted, the platform checks with GitHub that commit 0123456789abcdef0123456789abcdef01234567 is on main and passed CI\nno roll back: a release is never taken back; a bad release is fixed by a new patch release, deployed the same way\n"
+      }
+    },
+    {
+      "about": "arugula-release: a roll back: it does nothing",
+      "input": {
+        "driver": "arugula-release",
+        "environment_name": "release",
+        "roll_back": {
+          "deploy": "dep_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "to": {}
+        },
+        "settings": {"bump": "patch", "lane": "daemon"},
+        "source_kind": "commit",
+        "source_ref": "0123456789abcdef0123456789abcdef01234567",
+        "source_where": "arugula-salad/arugula"
+      },
+      "output": {
+        "digest": "88ca599b136a03cf00c2d71555dd6b94431f6487086ddaf8c9b89b186d8ec3f4",
+        "text": "arugula deploy plan v1\ndriver arugula-release\nenvironment release\nsource commit 0123456789abcdef0123456789abcdef01234567\nwhere arugula-salad/arugula\nsetting bump patch\nsetting lane daemon\nroll back to dep_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\n"
+      }
+    },
+    {
+      "about": "arugula-release: refused: an artifact",
+      "input": {
+        "driver": "arugula-release",
+        "environment_name": "release",
+        "roll_back": null,
+        "settings": {"bump": "patch", "lane": "daemon"},
+        "source_kind": "artifact",
+        "source_ref": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "source_where": "arugula-salad/arugula"
+      },
+      "output": {
+        "digest": "235df82a050102a5975497d00ff2fa65a3b588741558f12c188e323800454c1d",
+        "text": "arugula deploy plan v1\ndriver arugula-release\nenvironment release\nsource artifact sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nwhere arugula-salad/arugula\nsetting bump patch\nsetting lane daemon\nrefused the arugula-release driver releases a commit, not an artifact\n"
+      }
+    },
+    {
+      "about": "arugula-release: refused: a short commit",
+      "input": {
+        "driver": "arugula-release",
+        "environment_name": "release",
+        "roll_back": null,
+        "settings": {"bump": "patch", "lane": "daemon"},
+        "source_kind": "commit",
+        "source_ref": "0123456789ab",
+        "source_where": "arugula-salad/arugula"
+      },
+      "output": {
+        "digest": "376c04766d945c850d738edcdb6799ec535f5cb8cd27c3c643fbdf785d4dcf53",
+        "text": "arugula deploy plan v1\ndriver arugula-release\nenvironment release\nsource commit 0123456789ab\nwhere arugula-salad/arugula\nsetting bump patch\nsetting lane daemon\nrefused the arugula-release driver releases a commit by its full id (40 lowercase hex)\n"
+      }
+    },
+    {
+      "about": "arugula-release: refused: another repository",
+      "input": {
+        "driver": "arugula-release",
+        "environment_name": "release",
+        "roll_back": null,
+        "settings": {"bump": "patch", "lane": "daemon"},
+        "source_kind": "commit",
+        "source_ref": "0123456789abcdef0123456789abcdef01234567",
+        "source_where": "acme/arugula"
+      },
+      "output": {
+        "digest": "daef58028cc95db2ae214b19ae492023ecbd5ffda77b62087d9d2857f94f30c2",
+        "text": "arugula deploy plan v1\ndriver arugula-release\nenvironment release\nsource commit 0123456789abcdef0123456789abcdef01234567\nwhere acme/arugula\nsetting bump patch\nsetting lane daemon\nrefused the arugula-release driver releases arugula-salad/arugula only\n"
+      }
+    },
+    {
+      "about": "planter-prod: no settings but the default",
+      "input": {
+        "driver": "planter-prod",
+        "environment_name": "production",
+        "roll_back": null,
+        "settings": {"app_dir": "app"},
+        "source_kind": "commit",
+        "source_ref": "0123456789abcdef0123456789abcdef01234567",
+        "source_where": "arugula-salad/ocarina"
+      },
+      "output": {
+        "digest": "32a69b29a9bf34ef6bbd1b982106d8be3a7d67381339422489cf6f69f77154d0",
+        "text": "arugula deploy plan v1\ndriver planter-prod\nenvironment production\nsource commit 0123456789abcdef0123456789abcdef01234567\nwhere arugula-salad/ocarina\nsetting app_dir app\nrenderer planter's platform-app/render.mjs and prod-scaffold.mjs from arugula-salad/planter@90d6e772213c78301b92e89c01377197973b54fc, run with node on the box (sha256 2956172ed57548035cae448efb977b8394c1ff638088a4743896f4fd8ca020cf)\ndoes: read arugula-salad/ocarina at commit 0123456789abcdef0123456789abcdef01234567, on its default branch: app/package.json (its start, test and migrate scripts and node's version) and whether app/package-lock.json is there; stop if the repository has k8s/kustomization.yaml already\ndoes: write planter's Prod scaffold for https://ocarina.apps.arugula.io: Dockerfile, Dockerfile.dockerignore, .github/workflows/build.yml, app.yaml, k8s/kustomization.yaml and k8s/platform/\ndoes: commit them on branch planter/prod from that commit, push it, and open the pull request “Deploy ocarina to prod” into the default branch (or find the one open); a person merges it, its first build pins the image, and a planter-go-live deploy puts it live\nwith: an installation token of planter's GitHub App (the deploy App; not the platform's), minted for this run, that writes arugula-salad/ocarina's contents, pull requests and workflows only, revoked right after\n"
+      }
+    },
+    {
+      "about": "planter-prod: with secrets and a volume",
+      "input": {
+        "driver": "planter-prod",
+        "environment_name": "production",
+        "roll_back": null,
+        "settings": {"app_dir": "app", "secrets": "true", "volume": "1Gi"},
+        "source_kind": "commit",
+        "source_ref": "0123456789abcdef0123456789abcdef01234567",
+        "source_where": "arugula-salad/ocarina"
+      },
+      "output": {
+        "digest": "4383a47c2574bb835df033ecb21311c8da9f75a2da5d4a6b0049aec3e7949497",
+        "text": "arugula deploy plan v1\ndriver planter-prod\nenvironment production\nsource commit 0123456789abcdef0123456789abcdef01234567\nwhere arugula-salad/ocarina\nsetting app_dir app\nsetting secrets true\nsetting volume 1Gi\nrenderer planter's platform-app/render.mjs and prod-scaffold.mjs from arugula-salad/planter@90d6e772213c78301b92e89c01377197973b54fc, run with node on the box (sha256 2956172ed57548035cae448efb977b8394c1ff638088a4743896f4fd8ca020cf)\ndoes: read arugula-salad/ocarina at commit 0123456789abcdef0123456789abcdef01234567, on its default branch: app/package.json (its start, test and migrate scripts and node's version) and whether app/package-lock.json is there; stop if the repository has k8s/kustomization.yaml already\ndoes: write planter's Prod scaffold for https://ocarina.apps.arugula.io (volume 1Gi, its secrets from Infisical): Dockerfile, Dockerfile.dockerignore, .github/workflows/build.yml, app.yaml, k8s/kustomization.yaml and k8s/platform/\ndoes: commit them on branch planter/prod from that commit, push it, and open the pull request “Deploy ocarina to prod” into the default branch (or find the one open); a person merges it, its first build pins the image, and a planter-go-live deploy puts it live\nwith: an installation token of planter's GitHub App (the deploy App; not the platform's), minted for this run, that writes arugula-salad/ocarina's contents, pull requests and workflows only, revoked right after\n"
+      }
+    },
+    {
+      "about": "planter-prod: every setting",
+      "input": {
+        "driver": "planter-prod",
+        "environment_name": "production",
+        "roll_back": null,
+        "settings": {
+          "app_dir": "web/app",
+          "data_env": "STATE",
+          "health": "/healthz",
+          "metrics": "/metrics",
+          "port_env": "APP_PORT",
+          "postgres": "true",
+          "secrets": "true",
+          "volume": "none"
+        },
+        "source_kind": "commit",
+        "source_ref": "0123456789abcdef0123456789abcdef01234567",
+        "source_where": "arugula-salad/ocarina"
+      },
+      "output": {
+        "digest": "157b932045aa9c22e8878a609d473b652765d56173d995586fb17afb0237c188",
+        "text": "arugula deploy plan v1\ndriver planter-prod\nenvironment production\nsource commit 0123456789abcdef0123456789abcdef01234567\nwhere arugula-salad/ocarina\nsetting app_dir web/app\nsetting data_env STATE\nsetting health /healthz\nsetting metrics /metrics\nsetting port_env APP_PORT\nsetting postgres true\nsetting secrets true\nsetting volume none\nrenderer planter's platform-app/render.mjs and prod-scaffold.mjs from arugula-salad/planter@90d6e772213c78301b92e89c01377197973b54fc, run with node on the box (sha256 2956172ed57548035cae448efb977b8394c1ff638088a4743896f4fd8ca020cf)\ndoes: read arugula-salad/ocarina at commit 0123456789abcdef0123456789abcdef01234567, on its default branch: web/app/package.json (its start, test and migrate scripts and node's version) and whether web/app/package-lock.json is there; stop if the repository has k8s/kustomization.yaml already\ndoes: write planter's Prod scaffold for https://ocarina.apps.arugula.io (health /healthz, port from APP_PORT, data directory from STATE, metrics at /metrics, volume none, its secrets from Infisical, a database on apps-pg): Dockerfile, Dockerfile.dockerignore, .github/workflows/build.yml, app.yaml, k8s/kustomization.yaml and k8s/platform/\ndoes: commit them on branch planter/prod from that commit, push it, and open the pull request “Deploy ocarina to prod” into the default branch (or find the one open); a person merges it, its first build pins the image, and a planter-go-live deploy puts it live\nwith: an installation token of planter's GitHub App (the deploy App; not the platform's), minted for this run, that writes arugula-salad/ocarina's contents, pull requests and workflows only, revoked right after\n"
+      }
+    },
+    {
+      "about": "planter-prod: a roll back: what it does is left out",
+      "input": {
+        "driver": "planter-prod",
+        "environment_name": "production",
+        "roll_back": {
+          "deploy": "dep_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "to": {}
+        },
+        "settings": {"app_dir": "app"},
+        "source_kind": "commit",
+        "source_ref": "0123456789abcdef0123456789abcdef01234567",
+        "source_where": "arugula-salad/ocarina"
+      },
+      "output": {
+        "digest": "c0e71e6785a74f07b02376262009dce447fca1f61657f3874540095e318881bf",
+        "text": "arugula deploy plan v1\ndriver planter-prod\nenvironment production\nsource commit 0123456789abcdef0123456789abcdef01234567\nwhere arugula-salad/ocarina\nsetting app_dir app\nroll back to dep_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\n"
+      }
+    },
+    {
+      "about": "planter-prod: refused: another org's repository",
+      "input": {
+        "driver": "planter-prod",
+        "environment_name": "production",
+        "roll_back": null,
+        "settings": {"app_dir": "app"},
+        "source_kind": "commit",
+        "source_ref": "0123456789abcdef0123456789abcdef01234567",
+        "source_where": "acme/ocarina"
+      },
+      "output": {
+        "digest": "902f6ad2159474c5ae4f85f18aee319aaebf321f466e8b929ad4c683bd16a306",
+        "text": "arugula deploy plan v1\ndriver planter-prod\nenvironment production\nsource commit 0123456789abcdef0123456789abcdef01234567\nwhere acme/ocarina\nsetting app_dir app\nrefused the planter-prod driver deploys arugula-salad/<app> repositories, named as an app in prod is (lowercase letters, digits and dashes, at most 42)\n"
+      }
+    },
+    {
+      "about": "planter-go-live: no custom domains",
+      "input": {
+        "driver": "planter-go-live",
+        "environment_name": "production",
+        "roll_back": null,
+        "settings": {},
+        "source_kind": "commit",
+        "source_ref": "0123456789abcdef0123456789abcdef01234567",
+        "source_where": "arugula-salad/ocarina"
+      },
+      "output": {
+        "digest": "d2efeed993cb99c3187c7670b71cc58b87d363231e137d3d7a95299daa2165b4",
+        "text": "arugula deploy plan v1\ndriver planter-go-live\nenvironment production\nsource commit 0123456789abcdef0123456789abcdef01234567\nwhere arugula-salad/ocarina\nrenderer planter's platform-app/render.mjs and prod-scaffold.mjs from arugula-salad/planter@90d6e772213c78301b92e89c01377197973b54fc, run with node on the box (sha256 2956172ed57548035cae448efb977b8394c1ff638088a4743896f4fd8ca020cf)\nrepo arugula-salad/planter-apps (branch main)\npath apps/ocarina.yaml\nchange pin the GitRepository ocarina (https://github.com/arugula-salad/ocarina) at commit 0123456789abcdef0123456789abcdef01234567; with no pointer, a new one as planter's Go live writes it; a revert commit when it rolls back the last deploy\ncustom domains a new pointer asks for (platform.arugula.io/domains): none; that commit's app.yaml must route exactly these beyond its own two hosts (sorted by planter's validate()), or nothing is pushed. An existing pointer's are left as they are\ncheck the commit is on arugula-salad/ocarina's default branch, its app.yaml names ocarina and runtime k8s, and no other app holds the name\nverify https://ocarina.apps.arugula.io answers 200 at its app.yaml's health path; when the answer reports a revision (JSON `revision`, `commit`, `version` or `sha`, or an `X-Revision` header), it must be this commit's or its pinned image's\nwith: an installation token of planter's GitHub App (the deploy App; not the platform's), minted for this run, that writes arugula-salad/planter-apps's contents only, and one that reads arugula-salad/ocarina's contents only; both revoked right after the push\n"
+      }
+    },
+    {
+      "about": "planter-go-live: two custom domains",
+      "input": {
+        "driver": "planter-go-live",
+        "environment_name": "production",
+        "roll_back": null,
+        "settings": {"domains": "shop.example.com www.example.com"},
+        "source_kind": "commit",
+        "source_ref": "0123456789abcdef0123456789abcdef01234567",
+        "source_where": "arugula-salad/ocarina"
+      },
+      "output": {
+        "digest": "85627b639c04161a9b57e70de5d6fa0502dd42dedddbc5665eb8a459d28a3664",
+        "text": "arugula deploy plan v1\ndriver planter-go-live\nenvironment production\nsource commit 0123456789abcdef0123456789abcdef01234567\nwhere arugula-salad/ocarina\nsetting domains shop.example.com www.example.com\nrenderer planter's platform-app/render.mjs and prod-scaffold.mjs from arugula-salad/planter@90d6e772213c78301b92e89c01377197973b54fc, run with node on the box (sha256 2956172ed57548035cae448efb977b8394c1ff638088a4743896f4fd8ca020cf)\nrepo arugula-salad/planter-apps (branch main)\npath apps/ocarina.yaml\nchange pin the GitRepository ocarina (https://github.com/arugula-salad/ocarina) at commit 0123456789abcdef0123456789abcdef01234567; with no pointer, a new one as planter's Go live writes it; a revert commit when it rolls back the last deploy\ncustom domains a new pointer asks for (platform.arugula.io/domains): shop.example.com, www.example.com; that commit's app.yaml must route exactly these beyond its own two hosts (sorted by planter's validate()), or nothing is pushed. An existing pointer's are left as they are\ncheck the commit is on arugula-salad/ocarina's default branch, its app.yaml names ocarina and runtime k8s, and no other app holds the name\nverify https://ocarina.apps.arugula.io answers 200 at its app.yaml's health path; when the answer reports a revision (JSON `revision`, `commit`, `version` or `sha`, or an `X-Revision` header), it must be this commit's or its pinned image's\nwith: an installation token of planter's GitHub App (the deploy App; not the platform's), minted for this run, that writes arugula-salad/planter-apps's contents only, and one that reads arugula-salad/ocarina's contents only; both revoked right after the push\n"
+      }
+    },
+    {
+      "about": "planter-go-live: a roll back: Go live says what it does",
+      "input": {
+        "driver": "planter-go-live",
+        "environment_name": "production",
+        "roll_back": {
+          "deploy": "dep_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "to": {}
+        },
+        "settings": {},
+        "source_kind": "commit",
+        "source_ref": "0123456789abcdef0123456789abcdef01234567",
+        "source_where": "arugula-salad/ocarina"
+      },
+      "output": {
+        "digest": "4c164e9c9fcdce48e52ef88b62616dbbfd362ecff873598c02e9044f791b77a6",
+        "text": "arugula deploy plan v1\ndriver planter-go-live\nenvironment production\nsource commit 0123456789abcdef0123456789abcdef01234567\nwhere arugula-salad/ocarina\nroll back to dep_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\nrenderer planter's platform-app/render.mjs and prod-scaffold.mjs from arugula-salad/planter@90d6e772213c78301b92e89c01377197973b54fc, run with node on the box (sha256 2956172ed57548035cae448efb977b8394c1ff638088a4743896f4fd8ca020cf)\nrepo arugula-salad/planter-apps (branch main)\npath apps/ocarina.yaml\nchange pin the GitRepository ocarina (https://github.com/arugula-salad/ocarina) at commit 0123456789abcdef0123456789abcdef01234567; with no pointer, a new one as planter's Go live writes it; a revert commit when it rolls back the last deploy\ncustom domains a new pointer asks for (platform.arugula.io/domains): none; that commit's app.yaml must route exactly these beyond its own two hosts (sorted by planter's validate()), or nothing is pushed. An existing pointer's are left as they are\ncheck the commit is on arugula-salad/ocarina's default branch, its app.yaml names ocarina and runtime k8s, and no other app holds the name\nverify https://ocarina.apps.arugula.io answers 200 at its app.yaml's health path; when the answer reports a revision (JSON `revision`, `commit`, `version` or `sha`, or an `X-Revision` header), it must be this commit's or its pinned image's\nwith: an installation token of planter's GitHub App (the deploy App; not the platform's), minted for this run, that writes arugula-salad/planter-apps's contents only, and one that reads arugula-salad/ocarina's contents only; both revoked right after the push\n"
+      }
+    },
+    {
+      "about": "planter-go-live: refused: the list's own repository",
+      "input": {
+        "driver": "planter-go-live",
+        "environment_name": "production",
+        "roll_back": null,
+        "settings": {},
+        "source_kind": "commit",
+        "source_ref": "0123456789abcdef0123456789abcdef01234567",
+        "source_where": "arugula-salad/planter-apps"
+      },
+      "output": {
+        "digest": "043d30658c06597d618827487b5fbfe8f68c763a3755fbabcac3cde9ae08435d",
+        "text": "arugula deploy plan v1\ndriver planter-go-live\nenvironment production\nsource commit 0123456789abcdef0123456789abcdef01234567\nwhere arugula-salad/planter-apps\nrefused the planter-go-live driver deploys arugula-salad/<app> repositories, named as an app in prod is (lowercase letters, digits and dashes, at most 42)\n"
+      }
+    },
+    {
+      "about": "planter-ship: an agent's artifact",
+      "input": {
+        "driver": "planter-ship",
+        "environment_name": "loam",
+        "roll_back": null,
+        "settings": {"app": "hello", "health": "/health", "port": "8080", "port_env": "PORT"},
+        "source_kind": "artifact",
+        "source_ref": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "source_where": "platform"
+      },
+      "output": {
+        "digest": "b13b75e166b42104ecbc9a633ea5cc990d3d29ecb92bfa2bc40b97cf7b616081",
+        "text": "arugula deploy plan v1\ndriver planter-ship\nenvironment loam\nsource artifact sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\nwhere platform\nsetting app hello\nsetting health /health\nsetting port 8080\nsetting port_env PORT\nrenderer planter's platform-app/render.mjs and prod-scaffold.mjs from arugula-salad/planter@90d6e772213c78301b92e89c01377197973b54fc, run with node on the box (sha256 2956172ed57548035cae448efb977b8394c1ff638088a4743896f4fd8ca020cf)\ndoes: take artifact sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc from the platform's store (what an agent shipped), check its digest and unpack it: a gzipped tar, regular files only, at most 2000 files and 64 MiB, with a Dockerfile at its root\ndoes: write arugula-salad/shipped's hello/ in one commit on main: src/ (the files), app.yaml for runtime loam as planter's ship writes it (the port, health path, port variable and secrets in the settings), k8s/platform/ rendered from it, and k8s/kustomization.yaml if there's none; stop if hello/app.yaml says another runtime (a promoted app changes by pull request only)\ndoes: the first time, point arugula-salad/planter-apps's apps/hello.yaml at arugula-salad/shipped's hello/k8s (branch main), as planter did; stop if another app holds the name, it's a repository of arugula-salad's (asked of GitHub), or (with secrets) anyone else ever shipped or pointed at hello\nverify arugula-salad/shipped's build pins hello's image by digest after this commit, then https://hello.run.inevitable.fyi answers 200 at /health, within 20 minutes\nwith: an installation token of planter's GitHub App (the deploy App; not the platform's), minted for this run, that writes arugula-salad/shipped's contents only, and one that writes arugula-salad/planter-apps's contents only; both revoked right after the push\nno roll back: ship the source to go back to again\n"
+      }
+    },
+    {
+      "about": "planter-ship: with its secrets and port",
+      "input": {
+        "driver": "planter-ship",
+        "environment_name": "loam",
+        "roll_back": null,
+        "settings": {
+          "app": "hello",
+          "health": "/up",
+          "port": "3000",
+          "port_env": "PORT",
+          "secrets": "STRIPE_KEY"
+        },
+        "source_kind": "artifact",
+        "source_ref": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "source_where": "platform"
+      },
+      "output": {
+        "digest": "0e7f3aac86928f9a005bd0c56e60deb0d9756e7258f9a870d151557f5e5a8bc0",
+        "text": "arugula deploy plan v1\ndriver planter-ship\nenvironment loam\nsource artifact sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\nwhere platform\nsetting app hello\nsetting health /up\nsetting port 3000\nsetting port_env PORT\nsetting secrets STRIPE_KEY\nrenderer planter's platform-app/render.mjs and prod-scaffold.mjs from arugula-salad/planter@90d6e772213c78301b92e89c01377197973b54fc, run with node on the box (sha256 2956172ed57548035cae448efb977b8394c1ff638088a4743896f4fd8ca020cf)\ndoes: take artifact sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc from the platform's store (what an agent shipped), check its digest and unpack it: a gzipped tar, regular files only, at most 2000 files and 64 MiB, with a Dockerfile at its root\ndoes: write arugula-salad/shipped's hello/ in one commit on main: src/ (the files), app.yaml for runtime loam as planter's ship writes it (the port, health path, port variable and secrets in the settings), k8s/platform/ rendered from it, and k8s/kustomization.yaml if there's none; stop if hello/app.yaml says another runtime (a promoted app changes by pull request only)\ndoes: the first time, point arugula-salad/planter-apps's apps/hello.yaml at arugula-salad/shipped's hello/k8s (branch main), as planter did; stop if another app holds the name, it's a repository of arugula-salad's (asked of GitHub), or (with secrets) anyone else ever shipped or pointed at hello\nverify arugula-salad/shipped's build pins hello's image by digest after this commit, then https://hello.run.inevitable.fyi answers 200 at /up, within 20 minutes\nwith: an installation token of planter's GitHub App (the deploy App; not the platform's), minted for this run, that writes arugula-salad/shipped's contents only, and one that writes arugula-salad/planter-apps's contents only; both revoked right after the push\nno roll back: ship the source to go back to again\n"
+      }
+    },
+    {
+      "about": "planter-ship: refused: a commit",
+      "input": {
+        "driver": "planter-ship",
+        "environment_name": "loam",
+        "roll_back": null,
+        "settings": {"app": "hello", "health": "/health", "port": "8080", "port_env": "PORT"},
+        "source_kind": "commit",
+        "source_ref": "0123456789abcdef0123456789abcdef01234567",
+        "source_where": "platform"
+      },
+      "output": {
+        "digest": "3582cc87fe375ce948cd25a1b7010d0ce9548d4e4929bf1a5be5f04c450845c3",
+        "text": "arugula deploy plan v1\ndriver planter-ship\nenvironment loam\nsource commit 0123456789abcdef0123456789abcdef01234567\nwhere platform\nsetting app hello\nsetting health /health\nsetting port 8080\nsetting port_env PORT\nrefused the planter-ship driver deploys what an agent shipped: an artifact, sha256:<64 hex>\n"
+      }
+    },
+    {
+      "about": "planter-ship: refused: not from the platform's store",
+      "input": {
+        "driver": "planter-ship",
+        "environment_name": "loam",
+        "roll_back": null,
+        "settings": {"app": "hello", "health": "/health", "port": "8080", "port_env": "PORT"},
+        "source_kind": "artifact",
+        "source_ref": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "source_where": "arugula-salad/shipped"
+      },
+      "output": {
+        "digest": "2453164b488ac76bf348466d6cdc08a02c5d41d19c06bf70ab1737f1f6f51a21",
+        "text": "arugula deploy plan v1\ndriver planter-ship\nenvironment loam\nsource artifact sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\nwhere arugula-salad/shipped\nsetting app hello\nsetting health /health\nsetting port 8080\nsetting port_env PORT\nrefused the planter-ship driver ships an artifact the platform keeps (where: platform)\n"
+      }
+    },
+    {
+      "about": "planter-promote: a shipped app",
+      "input": {
+        "driver": "planter-promote",
+        "environment_name": "cluster",
+        "roll_back": null,
+        "settings": {"app": "hello"},
+        "source_kind": "commit",
+        "source_ref": "0123456789abcdef0123456789abcdef01234567",
+        "source_where": "arugula-salad/shipped"
+      },
+      "output": {
+        "digest": "99534f40be0729c4e8985140e5357ac9e0966d6ff72ce55e64451ae0b828d8a1",
+        "text": "arugula deploy plan v1\ndriver planter-promote\nenvironment cluster\nsource commit 0123456789abcdef0123456789abcdef01234567\nwhere arugula-salad/shipped\nsetting app hello\nrenderer planter's platform-app/render.mjs and prod-scaffold.mjs from arugula-salad/planter@90d6e772213c78301b92e89c01377197973b54fc, run with node on the box (sha256 2956172ed57548035cae448efb977b8394c1ff638088a4743896f4fd8ca020cf)\ndoes: read arugula-salad/shipped at commit 0123456789abcdef0123456789abcdef01234567, on its main: hello/app.yaml must say runtime loam\ndoes: write hello/app.yaml for runtime k8s at https://hello.apps.inevitable.fyi and hello/k8s/platform/ rendered from it, as planter's promote does, on branch promote/hello from that commit, and open the pull request “Promote hello from loam to the cluster” (or find the one open); a person merging it is the review, and moves the app\nwith: an installation token of planter's GitHub App (the deploy App; not the platform's), minted for this run, that writes arugula-salad/shipped's contents and pull requests only, revoked right after\nno roll back: close the pull request\n"
+      }
+    },
+    {
+      "about": "planter-promote: refused: another repository",
+      "input": {
+        "driver": "planter-promote",
+        "environment_name": "cluster",
+        "roll_back": null,
+        "settings": {"app": "hello"},
+        "source_kind": "commit",
+        "source_ref": "0123456789abcdef0123456789abcdef01234567",
+        "source_where": "arugula-salad/ocarina"
+      },
+      "output": {
+        "digest": "6d8865db5223d17d4e1f2a377bf725f62dabd994e991a3dfcd51dfa7e1455122",
+        "text": "arugula deploy plan v1\ndriver planter-promote\nenvironment cluster\nsource commit 0123456789abcdef0123456789abcdef01234567\nwhere arugula-salad/ocarina\nsetting app hello\nrefused the planter-promote driver promotes a commit of arugula-salad/shipped\n"
+      }
+    }
+  ],
+  "checks": [
+    "arugula_e2e::drivers::plan_text",
+    "arugula_e2e::drivers::plan_digest",
+    "arugula_e2e::deploy::plan_text",
+    "arugula_e2e::deploy::apps_platform::plan_lines",
+    "arugula_e2e::drivers::arugula_release::plan_lines",
+    "arugula_e2e::deploy::planter::plan_lines"
+  ],
+  "input": "driver, environment_name, source_kind (commit or artifact), source_ref, source_where; settings: { name: value }, filled; roll_back: { deploy, to: { name: value } } or null",
+  "keys": {},
+  "objects": {},
+  "output": "text: the plan; digest: its SHA-256, hex"
+}

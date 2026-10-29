@@ -1,0 +1,261 @@
+{
+  "about": "The settings a driver takes, as a page asks for them when an environment is made (M252), in order: the name, whether it must be given, the default settings fills in, the only values it takes when it's a choice, and what it is, in words.",
+  "cases": [
+    {
+      "about": "fake's",
+      "input": {"driver": "fake"},
+      "output": {
+        "fields": []
+      }
+    },
+    {
+      "about": "chant-fly's",
+      "input": {"driver": "chant-fly"},
+      "output": {
+        "fields": [
+          {
+            "about": "The Fly app it deploys.",
+            "choices": [],
+            "default": null,
+            "name": "fly_app",
+            "required": true
+          },
+          {
+            "about": "The environment chant's release ledger records its releases under.",
+            "choices": [],
+            "default": null,
+            "name": "chant_env",
+            "required": true
+          },
+          {
+            "about": "The chant member, from the repository's root.",
+            "choices": [],
+            "default": ".",
+            "name": "chant_dir",
+            "required": false
+          },
+          {
+            "about": "The chant op it runs.",
+            "choices": [],
+            "default": "release",
+            "name": "chant_op",
+            "required": false
+          },
+          {
+            "about": "The fly.toml a roll back deploys with.",
+            "choices": [],
+            "default": null,
+            "name": "fly_config",
+            "required": false
+          },
+          {
+            "about": "The only gates it approves, comma separated: any other stops the deploy.",
+            "choices": [],
+            "default": null,
+            "name": "chant_gates",
+            "required": false
+          },
+          {
+            "about": "npm ci runs the packages' install scripts.",
+            "choices": ["true"],
+            "default": null,
+            "name": "npm_scripts",
+            "required": false
+          },
+          {
+            "about": "chant's op gets GITHUB_TOKEN too (an op that pushes).",
+            "choices": ["true"],
+            "default": null,
+            "name": "chant_github",
+            "required": false
+          },
+          {
+            "about": "What the release record's digest is: the plan's, or the image Fly runs after.",
+            "choices": ["plan", "image"],
+            "default": "plan",
+            "name": "chant_digest",
+            "required": false
+          }
+        ]
+      }
+    },
+    {
+      "about": "apps-platform's",
+      "input": {"driver": "apps-platform"},
+      "output": {
+        "fields": []
+      }
+    },
+    {
+      "about": "arugula-release's",
+      "input": {"driver": "arugula-release"},
+      "output": {
+        "fields": [
+          {
+            "about": "The version it bumps.",
+            "choices": ["patch", "minor", "major"],
+            "default": "patch",
+            "name": "bump",
+            "required": false
+          },
+          {
+            "about": "daemon (a v* tag) or app (an app-v* tag).",
+            "choices": ["daemon", "app"],
+            "default": "daemon",
+            "name": "lane",
+            "required": false
+          }
+        ]
+      }
+    },
+    {
+      "about": "planter-prod's",
+      "input": {"driver": "planter-prod"},
+      "output": {
+        "fields": [
+          {
+            "about": "The app member's directory: the image's build context.",
+            "choices": [],
+            "default": "app",
+            "name": "app_dir",
+            "required": false
+          },
+          {
+            "about": "Its health path, when it isn't /health.",
+            "choices": [],
+            "default": null,
+            "name": "health",
+            "required": false
+          },
+          {
+            "about": "The variable it reads its port from, when it isn't PORT.",
+            "choices": [],
+            "default": null,
+            "name": "port_env",
+            "required": false
+          },
+          {
+            "about": "The variable it reads its data directory from, when it isn't APP_DATA.",
+            "choices": [],
+            "default": null,
+            "name": "data_env",
+            "required": false
+          },
+          {
+            "about": "Load its secrets from Infisical as env.",
+            "choices": ["true"],
+            "default": null,
+            "name": "secrets",
+            "required": false
+          },
+          {
+            "about": "A database of its own on apps-pg, as DATABASE_URL.",
+            "choices": ["true"],
+            "default": null,
+            "name": "postgres",
+            "required": false
+          },
+          {
+            "about": "Its Prometheus metrics path, scraped.",
+            "choices": [],
+            "default": null,
+            "name": "metrics",
+            "required": false
+          },
+          {
+            "about": "A volume at /data of this size (1Gi), or none; one if it migrates, else none.",
+            "choices": [],
+            "default": null,
+            "name": "volume",
+            "required": false
+          }
+        ]
+      }
+    },
+    {
+      "about": "planter-go-live's",
+      "input": {"driver": "planter-go-live"},
+      "output": {
+        "fields": [
+          {
+            "about": "Custom domains a new pointer asks for, space separated: exactly those its app.yaml routes beyond its own two.",
+            "choices": [],
+            "default": null,
+            "name": "domains",
+            "required": false
+          }
+        ]
+      }
+    },
+    {
+      "about": "planter-ship's",
+      "input": {"driver": "planter-ship"},
+      "output": {
+        "fields": [
+          {
+            "about": "The app's name: https://<app>.run.inevitable.fyi.",
+            "choices": [],
+            "default": null,
+            "name": "app",
+            "required": true
+          },
+          {
+            "about": "The port it listens on.",
+            "choices": [],
+            "default": "8080",
+            "name": "port",
+            "required": false
+          },
+          {
+            "about": "The path that answers 200 once it's up.",
+            "choices": [],
+            "default": "/health",
+            "name": "health",
+            "required": false
+          },
+          {
+            "about": "The variable it reads its port from.",
+            "choices": [],
+            "default": "PORT",
+            "name": "port_env",
+            "required": false
+          },
+          {
+            "about": "The secrets it's given as env, by name, comma separated.",
+            "choices": [],
+            "default": null,
+            "name": "secrets",
+            "required": false
+          }
+        ]
+      }
+    },
+    {
+      "about": "planter-promote's",
+      "input": {"driver": "planter-promote"},
+      "output": {
+        "fields": [
+          {
+            "about": "The shipped app it moves from loam into the cluster.",
+            "choices": [],
+            "default": null,
+            "name": "app",
+            "required": true
+          }
+        ]
+      }
+    },
+    {
+      "about": "nope's",
+      "input": {"driver": "nope"},
+      "output": {
+        "fields": []
+      }
+    }
+  ],
+  "checks": ["arugula_e2e::drivers::setting_fields"],
+  "input": "driver",
+  "keys": {},
+  "objects": {},
+  "output": "fields: [{ name, required, default, choices, about }]"
+}

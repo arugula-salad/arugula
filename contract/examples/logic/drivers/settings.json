@@ -1,0 +1,670 @@
+{
+  "about": "A driver's settings on an environment, as the environment keeps them: checked, with defaults filled in, or why not (the error text is what the platform answers). A driver without settings (fake, apps-platform, and a name no driver has) takes none. The filled settings are what plan_text writes, so the plan, and the approval over it, bind every one.",
+  "cases": [
+    {
+      "about": "fake: none",
+      "input": {
+        "driver": "fake",
+        "given": {}
+      },
+      "output": {
+        "settings": {}
+      }
+    },
+    {
+      "about": "fake: one it doesn't take",
+      "input": {
+        "driver": "fake",
+        "given": {"x": "y"}
+      },
+      "output": {"error": "the fake driver takes no settings (x)"}
+    },
+    {
+      "about": "apps-platform: none",
+      "input": {
+        "driver": "apps-platform",
+        "given": {}
+      },
+      "output": {
+        "settings": {}
+      }
+    },
+    {
+      "about": "apps-platform: one it doesn't take",
+      "input": {
+        "driver": "apps-platform",
+        "given": {"x": "y"}
+      },
+      "output": {"error": "the apps-platform driver takes no settings (x)"}
+    },
+    {
+      "about": "nope: none",
+      "input": {
+        "driver": "nope",
+        "given": {}
+      },
+      "output": {
+        "settings": {}
+      }
+    },
+    {
+      "about": "nope: one it doesn't take",
+      "input": {
+        "driver": "nope",
+        "given": {"x": "y"}
+      },
+      "output": {"error": "the nope driver takes no settings (x)"}
+    },
+    {
+      "about": "chant-fly: none: it needs fly_app",
+      "input": {
+        "driver": "chant-fly",
+        "given": {}
+      },
+      "output": {"error": "chant-fly needs fly_app: the Fly app it deploys"}
+    },
+    {
+      "about": "chant-fly: fly_app alone: it needs chant_env",
+      "input": {
+        "driver": "chant-fly",
+        "given": {"fly_app": "acme-web"}
+      },
+      "output": {
+        "error": "chant-fly needs chant_env: the environment chant's ledger records its releases under"
+      }
+    },
+    {
+      "about": "chant-fly: the two it needs: the rest filled in",
+      "input": {
+        "driver": "chant-fly",
+        "given": {"chant_env": "github", "fly_app": "acme-web"}
+      },
+      "output": {
+        "settings": {
+          "chant_digest": "plan",
+          "chant_dir": ".",
+          "chant_env": "github",
+          "chant_op": "release",
+          "fly_app": "acme-web"
+        }
+      }
+    },
+    {
+      "about": "chant-fly: every setting",
+      "input": {
+        "driver": "chant-fly",
+        "given": {
+          "chant_digest": "image",
+          "chant_dir": "ops",
+          "chant_env": "github",
+          "chant_gates": "approve-release,ship",
+          "chant_github": "true",
+          "chant_op": "ship",
+          "fly_app": "acme-web",
+          "fly_config": "ops/fly.toml",
+          "npm_scripts": "true"
+        }
+      },
+      "output": {
+        "settings": {
+          "chant_digest": "image",
+          "chant_dir": "ops",
+          "chant_env": "github",
+          "chant_gates": "approve-release,ship",
+          "chant_github": "true",
+          "chant_op": "ship",
+          "fly_app": "acme-web",
+          "fly_config": "ops/fly.toml",
+          "npm_scripts": "true"
+        }
+      }
+    },
+    {
+      "about": "chant-fly: the repository's root as chant_dir",
+      "input": {
+        "driver": "chant-fly",
+        "given": {"chant_dir": ".", "chant_env": "github", "fly_app": "acme-web"}
+      },
+      "output": {
+        "settings": {
+          "chant_digest": "plan",
+          "chant_dir": ".",
+          "chant_env": "github",
+          "chant_op": "release",
+          "fly_app": "acme-web"
+        }
+      }
+    },
+    {
+      "about": "chant-fly: a Fly app's name in capitals",
+      "input": {
+        "driver": "chant-fly",
+        "given": {"chant_env": "github", "fly_app": "Acme"}
+      },
+      "output": {"error": "fly_app is a Fly app's name: a-z, 0-9 and -"}
+    },
+    {
+      "about": "chant-fly: chant_dir out of the repository",
+      "input": {
+        "driver": "chant-fly",
+        "given": {"chant_dir": "../x", "chant_env": "github", "fly_app": "acme-web"}
+      },
+      "output": {"error": "chant_dir starts with a letter or a digit"}
+    },
+    {
+      "about": "chant-fly: chant_dir absolute",
+      "input": {
+        "driver": "chant-fly",
+        "given": {"chant_dir": "/etc", "chant_env": "github", "fly_app": "acme-web"}
+      },
+      "output": {"error": "chant_dir starts with a letter or a digit"}
+    },
+    {
+      "about": "chant-fly: chant_dir reading as a flag",
+      "input": {
+        "driver": "chant-fly",
+        "given": {"chant_dir": "-x", "chant_env": "github", "fly_app": "acme-web"}
+      },
+      "output": {"error": "chant_dir starts with a letter or a digit"}
+    },
+    {
+      "about": "chant-fly: a space in fly_config",
+      "input": {
+        "driver": "chant-fly",
+        "given": {"chant_env": "github", "fly_app": "acme-web", "fly_config": "a b"}
+      },
+      "output": {"error": "chant_dir and fly_config are paths in the repository: relative, no .."}
+    },
+    {
+      "about": "chant-fly: a semicolon in chant_op",
+      "input": {
+        "driver": "chant-fly",
+        "given": {"chant_env": "github", "chant_op": "re;lease", "fly_app": "acme-web"}
+      },
+      "output": {"error": "chant_op is a chant op's name"}
+    },
+    {
+      "about": "chant-fly: chant_op reading as a flag",
+      "input": {
+        "driver": "chant-fly",
+        "given": {"chant_env": "github", "chant_op": "-release", "fly_app": "acme-web"}
+      },
+      "output": {"error": "chant_op starts with a letter or a digit"}
+    },
+    {
+      "about": "chant-fly: a setting it doesn't take",
+      "input": {
+        "driver": "chant-fly",
+        "given": {"chant_env": "github", "fly_app": "acme-web", "token": "x"}
+      },
+      "output": {
+        "error": "chant-fly has no setting token: it takes fly_app, chant_env, chant_dir, chant_op, fly_config, chant_gates, npm_scripts, chant_github, chant_digest"
+      }
+    },
+    {
+      "about": "chant-fly: an empty gate",
+      "input": {
+        "driver": "chant-fly",
+        "given": {"chant_env": "github", "chant_gates": "a,,b", "fly_app": "acme-web"}
+      },
+      "output": {"error": "chant_gates is gates' names, comma separated"}
+    },
+    {
+      "about": "chant-fly: npm_scripts other than true",
+      "input": {
+        "driver": "chant-fly",
+        "given": {"chant_env": "github", "fly_app": "acme-web", "npm_scripts": "yes"}
+      },
+      "output": {"error": "npm_scripts is true, or left out"}
+    },
+    {
+      "about": "chant-fly: chant_github other than true",
+      "input": {
+        "driver": "chant-fly",
+        "given": {"chant_env": "github", "chant_github": "false", "fly_app": "acme-web"}
+      },
+      "output": {"error": "chant_github is true, or left out"}
+    },
+    {
+      "about": "chant-fly: chant_digest neither plan nor image",
+      "input": {
+        "driver": "chant-fly",
+        "given": {"chant_digest": "both", "chant_env": "github", "fly_app": "acme-web"}
+      },
+      "output": {"error": "chant_digest is plan or image"}
+    },
+    {
+      "about": "chant-fly: chant_env starting with _",
+      "input": {
+        "driver": "chant-fly",
+        "given": {"chant_env": "_x", "fly_app": "a"}
+      },
+      "output": {"error": "chant_env starts with a letter or a digit"}
+    },
+    {
+      "about": "arugula-release: none: patch, daemon",
+      "input": {
+        "driver": "arugula-release",
+        "given": {}
+      },
+      "output": {
+        "settings": {"bump": "patch", "lane": "daemon"}
+      }
+    },
+    {
+      "about": "arugula-release: a minor bump of the app",
+      "input": {
+        "driver": "arugula-release",
+        "given": {"bump": "minor", "lane": "app"}
+      },
+      "output": {
+        "settings": {"bump": "minor", "lane": "app"}
+      }
+    },
+    {
+      "about": "arugula-release: a major bump",
+      "input": {
+        "driver": "arugula-release",
+        "given": {"bump": "major"}
+      },
+      "output": {
+        "settings": {"bump": "major", "lane": "daemon"}
+      }
+    },
+    {
+      "about": "arugula-release: a bump it doesn't know",
+      "input": {
+        "driver": "arugula-release",
+        "given": {"bump": "huge"}
+      },
+      "output": {"error": "bump is patch, minor or major"}
+    },
+    {
+      "about": "arugula-release: a lane it doesn't know",
+      "input": {
+        "driver": "arugula-release",
+        "given": {"lane": "web"}
+      },
+      "output": {"error": "lane is daemon (a v* tag) or app (an app-v* tag)"}
+    },
+    {
+      "about": "arugula-release: a setting it doesn't take",
+      "input": {
+        "driver": "arugula-release",
+        "given": {"tag": "v1"}
+      },
+      "output": {"error": "arugula-release has no setting tag: it takes bump, lane"}
+    },
+    {
+      "about": "planter-prod: none: app_dir filled in",
+      "input": {
+        "driver": "planter-prod",
+        "given": {}
+      },
+      "output": {
+        "settings": {"app_dir": "app"}
+      }
+    },
+    {
+      "about": "planter-prod: secrets and a database",
+      "input": {
+        "driver": "planter-prod",
+        "given": {"app_dir": "web/app", "health": "/healthz", "postgres": "true", "secrets": "true"}
+      },
+      "output": {
+        "settings": {"app_dir": "web/app", "health": "/healthz", "postgres": "true", "secrets": "true"}
+      }
+    },
+    {
+      "about": "planter-prod: a volume, metrics and variables",
+      "input": {
+        "driver": "planter-prod",
+        "given": {"data_env": "STATE", "metrics": "/metrics", "port_env": "APP_PORT", "volume": "2Gi"}
+      },
+      "output": {
+        "settings": {
+          "app_dir": "app",
+          "data_env": "STATE",
+          "metrics": "/metrics",
+          "port_env": "APP_PORT",
+          "volume": "2Gi"
+        }
+      }
+    },
+    {
+      "about": "planter-prod: no volume",
+      "input": {
+        "driver": "planter-prod",
+        "given": {"volume": "none"}
+      },
+      "output": {
+        "settings": {"app_dir": "app", "volume": "none"}
+      }
+    },
+    {
+      "about": "planter-prod: app_dir out of the repository",
+      "input": {
+        "driver": "planter-prod",
+        "given": {"app_dir": "../x"}
+      },
+      "output": {"error": "app_dir is the app member's directory, from the repository's root"}
+    },
+    {
+      "about": "planter-prod: app_dir absolute",
+      "input": {
+        "driver": "planter-prod",
+        "given": {"app_dir": "/etc"}
+      },
+      "output": {"error": "app_dir is the app member's directory, from the repository's root"}
+    },
+    {
+      "about": "planter-prod: app_dir reading as a flag",
+      "input": {
+        "driver": "planter-prod",
+        "given": {"app_dir": "-x"}
+      },
+      "output": {"error": "app_dir is empty, too long, or starts with -"}
+    },
+    {
+      "about": "planter-prod: a health path without its slash",
+      "input": {
+        "driver": "planter-prod",
+        "given": {"health": "health"}
+      },
+      "output": {"error": "health and metrics are paths the app answers, such as /health"}
+    },
+    {
+      "about": "planter-prod: secrets other than true",
+      "input": {
+        "driver": "planter-prod",
+        "given": {"secrets": "yes"}
+      },
+      "output": {"error": "secrets is true, or left out"}
+    },
+    {
+      "about": "planter-prod: a volume in GB",
+      "input": {
+        "driver": "planter-prod",
+        "given": {"volume": "2GB"}
+      },
+      "output": {"error": "volume is a size such as 1Gi, or none"}
+    },
+    {
+      "about": "planter-prod: a volume of 0Gi",
+      "input": {
+        "driver": "planter-prod",
+        "given": {"volume": "0Gi"}
+      },
+      "output": {"error": "volume is a size such as 1Gi, or none"}
+    },
+    {
+      "about": "planter-prod: port_env starting with a digit",
+      "input": {
+        "driver": "planter-prod",
+        "given": {"port_env": "1PORT"}
+      },
+      "output": {"error": "port_env is an environment variable's name"}
+    },
+    {
+      "about": "planter-prod: a setting of Ship's",
+      "input": {
+        "driver": "planter-prod",
+        "given": {"app": "x"}
+      },
+      "output": {
+        "error": "planter-prod has no setting app: it takes app_dir, health, port_env, data_env, secrets, postgres, metrics, volume"
+      }
+    },
+    {
+      "about": "planter-prod: an empty value",
+      "input": {
+        "driver": "planter-prod",
+        "given": {"health": ""}
+      },
+      "output": {"error": "health is empty, too long, or starts with -"}
+    },
+    {
+      "about": "planter-go-live: none",
+      "input": {
+        "driver": "planter-go-live",
+        "given": {}
+      },
+      "output": {
+        "settings": {}
+      }
+    },
+    {
+      "about": "planter-go-live: two custom domains",
+      "input": {
+        "driver": "planter-go-live",
+        "given": {"domains": "shop.example.com www.example.com"}
+      },
+      "output": {
+        "settings": {"domains": "shop.example.com www.example.com"}
+      }
+    },
+    {
+      "about": "planter-go-live: a domain without a dot",
+      "input": {
+        "driver": "planter-go-live",
+        "given": {"domains": "shop"}
+      },
+      "output": {"error": "domains is up to 10 host names, space separated, each once"}
+    },
+    {
+      "about": "planter-go-live: a domain in capitals",
+      "input": {
+        "driver": "planter-go-live",
+        "given": {"domains": "Shop.example.com"}
+      },
+      "output": {"error": "domains is up to 10 host names, space separated, each once"}
+    },
+    {
+      "about": "planter-go-live: a domain twice",
+      "input": {
+        "driver": "planter-go-live",
+        "given": {"domains": "a.com a.com"}
+      },
+      "output": {"error": "domains is up to 10 host names, space separated, each once"}
+    },
+    {
+      "about": "planter-go-live: a domain starting with -",
+      "input": {
+        "driver": "planter-go-live",
+        "given": {"domains": "-a.com"}
+      },
+      "output": {"error": "domains is empty, too long, or starts with -"}
+    },
+    {
+      "about": "planter-go-live: domains comma separated",
+      "input": {
+        "driver": "planter-go-live",
+        "given": {"domains": "a.com,b.com"}
+      },
+      "output": {"error": "domains is up to 10 host names, space separated, each once"}
+    },
+    {
+      "about": "planter-go-live: eleven domains",
+      "input": {
+        "driver": "planter-go-live",
+        "given": {"domains": "a.com b.com c.com d.com e.com f.com g.com h.com i.com j.com k.com"}
+      },
+      "output": {"error": "domains is up to 10 host names, space separated, each once"}
+    },
+    {
+      "about": "planter-go-live: a setting of Ship's",
+      "input": {
+        "driver": "planter-go-live",
+        "given": {"app": "x"}
+      },
+      "output": {"error": "planter-go-live has no setting app: it takes domains"}
+    },
+    {
+      "about": "planter-ship: none: it needs app",
+      "input": {
+        "driver": "planter-ship",
+        "given": {}
+      },
+      "output": {"error": "planter-ship needs app: the shipped app's name, its host's"}
+    },
+    {
+      "about": "planter-ship: the app alone: port, health and port_env filled in",
+      "input": {
+        "driver": "planter-ship",
+        "given": {"app": "hello"}
+      },
+      "output": {
+        "settings": {"app": "hello", "health": "/health", "port": "8080", "port_env": "PORT"}
+      }
+    },
+    {
+      "about": "planter-ship: with its secrets",
+      "input": {
+        "driver": "planter-ship",
+        "given": {"app": "hello", "secrets": "STRIPE_KEY,DATABASE_URL"}
+      },
+      "output": {
+        "settings": {
+          "app": "hello",
+          "health": "/health",
+          "port": "8080",
+          "port_env": "PORT",
+          "secrets": "STRIPE_KEY,DATABASE_URL"
+        }
+      }
+    },
+    {
+      "about": "planter-ship: an app in capitals",
+      "input": {
+        "driver": "planter-ship",
+        "given": {"app": "Hello"}
+      },
+      "output": {
+        "error": "app Hello: lowercase letters, digits and dashes, at most 32 (its sandbox's name), and not one the platform keeps"
+      }
+    },
+    {
+      "about": "planter-ship: an app of 33",
+      "input": {
+        "driver": "planter-ship",
+        "given": {"app": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}
+      },
+      "output": {
+        "error": "app aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa: lowercase letters, digits and dashes, at most 32 (its sandbox's name), and not one the platform keeps"
+      }
+    },
+    {
+      "about": "planter-ship: a reserved app",
+      "input": {
+        "driver": "planter-ship",
+        "given": {"app": "platform"}
+      },
+      "output": {
+        "error": "app platform: lowercase letters, digits and dashes, at most 32 (its sandbox's name), and not one the platform keeps"
+      }
+    },
+    {
+      "about": "planter-ship: planter's",
+      "input": {
+        "driver": "planter-ship",
+        "given": {"app": "planter-x"}
+      },
+      "output": {
+        "error": "app planter-x: lowercase letters, digits and dashes, at most 32 (its sandbox's name), and not one the platform keeps"
+      }
+    },
+    {
+      "about": "planter-ship: Flux's",
+      "input": {
+        "driver": "planter-ship",
+        "given": {"app": "flux-system"}
+      },
+      "output": {
+        "error": "app flux-system: lowercase letters, digits and dashes, at most 32 (its sandbox's name), and not one the platform keeps"
+      }
+    },
+    {
+      "about": "planter-ship: a port under 1024",
+      "input": {
+        "driver": "planter-ship",
+        "given": {"app": "hello", "port": "80"}
+      },
+      "output": {"error": "port is the port the app listens on, 1024 to 65535"}
+    },
+    {
+      "about": "planter-ship: a port with a leading zero",
+      "input": {
+        "driver": "planter-ship",
+        "given": {"app": "hello", "port": "08080"}
+      },
+      "output": {"error": "port is the port the app listens on, 1024 to 65535"}
+    },
+    {
+      "about": "planter-ship: a port over 65535",
+      "input": {
+        "driver": "planter-ship",
+        "given": {"app": "hello", "port": "65536"}
+      },
+      "output": {"error": "port is the port the app listens on, 1024 to 65535"}
+    },
+    {
+      "about": "planter-ship: an empty secret",
+      "input": {
+        "driver": "planter-ship",
+        "given": {"app": "hello", "secrets": "A,,B"}
+      },
+      "output": {"error": "secrets is environment variables' names, comma separated"}
+    },
+    {
+      "about": "planter-ship: a secret twice",
+      "input": {
+        "driver": "planter-ship",
+        "given": {"app": "hello", "secrets": "A,A"}
+      },
+      "output": {"error": "secrets names a secret more than once"}
+    },
+    {
+      "about": "planter-ship: a setting of Prod's",
+      "input": {
+        "driver": "planter-ship",
+        "given": {"app": "hello", "volume": "1Gi"}
+      },
+      "output": {"error": "planter-ship has no setting volume: it takes app, port, health, port_env, secrets"}
+    },
+    {
+      "about": "planter-promote: its app",
+      "input": {
+        "driver": "planter-promote",
+        "given": {"app": "hello"}
+      },
+      "output": {
+        "settings": {"app": "hello"}
+      }
+    },
+    {
+      "about": "planter-promote: none: it needs app",
+      "input": {
+        "driver": "planter-promote",
+        "given": {}
+      },
+      "output": {"error": "planter-promote needs app: the shipped app it promotes"}
+    },
+    {
+      "about": "planter-promote: a reserved app",
+      "input": {
+        "driver": "planter-promote",
+        "given": {"app": "arugula"}
+      },
+      "output": {"error": "planter-promote needs app: the shipped app it promotes"}
+    }
+  ],
+  "checks": [
+    "arugula_e2e::drivers::settings",
+    "arugula_e2e::drivers::arugula_release::settings",
+    "arugula_e2e::deploy::planter::settings"
+  ],
+  "input": "driver; given: the settings as given, { name: value }",
+  "keys": {},
+  "objects": {},
+  "output": "settings: the filled settings, or error: why not"
+}

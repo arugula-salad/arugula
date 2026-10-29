@@ -64,3 +64,13 @@ check its signatures byte for byte.
   invites and every way to bend one included), the papers' `bodies`, *Ask me
   first* invites (`ask_invite`), a daemon's team `join`, a machine's `move`,
   and a member's `devices`.
+- `deploy/`: a deploy's `operation` (its bytes and hash) and `approval` (its
+  signed bytes, form and passkey challenge), what a machine checks before it
+  applies one (`check_apply`: every refusal, in order, including CLI, app,
+  laundered, revoked and grandfathered-app devices, and bad passkeys), which
+  `secrets` a driver takes, and `planter`'s and `apps_platform`'s names and
+  sources.
+- `drivers/`: every driver's `settings` and `setting_fields`, the
+  `plan_text` an owner approves (every driver: apply, roll back and
+  refused), `planned` (the box's check that the signed operation holds this
+  plan), and the source and evidence `checks`.

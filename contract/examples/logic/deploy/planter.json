@@ -1,0 +1,417 @@
+{
+  "about": "planter's flows as deploy drivers (M233): planter-prod (the pull request that readies an app for prod), planter-go-live (its pointer, live at <name>.apps.arugula.io), planter-ship (an agent's tarball onto loam) and planter-promote (the pull request that moves a shipped app into the cluster). Names: a prod name is a host label of at most 42 (lowercase letters, digits, dashes, not first or last); a shipped app's at most 32 and not reserved (the platform's, planter's, Flux's and the org's own names). Sources: Ship an artifact by its digest (sha256:<64 lowercase hex>) from the platform's store, the others a commit by its full id; Prod and Go live of arugula-salad/<app>, Promote of arugula-salad/shipped. The renderer's digest, named in every plan, is SHA-256 over each vendored file's path, a zero byte, its bytes and a zero byte, in the order platform-app/render.mjs, prod-scaffold.mjs, renderer.mjs (the files are crates/e2e/src/planter/). Settings and plans are in drivers/.",
+  "cases": [
+    {
+      "about": "prod name \"ocarina\"",
+      "input": {"check": "prod_name_ok", "name": "ocarina"},
+      "output": {"ok": true}
+    },
+    {
+      "about": "prod name \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"",
+      "input": {"check": "prod_name_ok", "name": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
+      "output": {"ok": true}
+    },
+    {
+      "about": "prod name \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"",
+      "input": {"check": "prod_name_ok", "name": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
+      "output": {"ok": false}
+    },
+    {
+      "about": "prod name \"Caps\"",
+      "input": {"check": "prod_name_ok", "name": "Caps"},
+      "output": {"ok": false}
+    },
+    {
+      "about": "prod name \"-x\"",
+      "input": {"check": "prod_name_ok", "name": "-x"},
+      "output": {"ok": false}
+    },
+    {
+      "about": "prod name \"x-\"",
+      "input": {"check": "prod_name_ok", "name": "x-"},
+      "output": {"ok": false}
+    },
+    {
+      "about": "prod name \"a_b\"",
+      "input": {"check": "prod_name_ok", "name": "a_b"},
+      "output": {"ok": false}
+    },
+    {
+      "about": "prod name \"\"",
+      "input": {"check": "prod_name_ok", "name": ""},
+      "output": {"ok": false}
+    },
+    {
+      "about": "shipped app name \"hello\"",
+      "input": {"check": "ship_name_ok", "name": "hello"},
+      "output": {"ok": true}
+    },
+    {
+      "about": "shipped app name \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"",
+      "input": {"check": "ship_name_ok", "name": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
+      "output": {"ok": true}
+    },
+    {
+      "about": "shipped app name \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"",
+      "input": {"check": "ship_name_ok", "name": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
+      "output": {"ok": false}
+    },
+    {
+      "about": "shipped app name \"arugula\"",
+      "input": {"check": "ship_name_ok", "name": "arugula"},
+      "output": {"ok": false}
+    },
+    {
+      "about": "shipped app name \"studio\"",
+      "input": {"check": "ship_name_ok", "name": "studio"},
+      "output": {"ok": false}
+    },
+    {
+      "about": "shipped app name \"platform\"",
+      "input": {"check": "ship_name_ok", "name": "platform"},
+      "output": {"ok": false}
+    },
+    {
+      "about": "shipped app name \"platform-x\"",
+      "input": {"check": "ship_name_ok", "name": "platform-x"},
+      "output": {"ok": false}
+    },
+    {
+      "about": "shipped app name \"platformx\"",
+      "input": {"check": "ship_name_ok", "name": "platformx"},
+      "output": {"ok": true}
+    },
+    {
+      "about": "shipped app name \"planter\"",
+      "input": {"check": "ship_name_ok", "name": "planter"},
+      "output": {"ok": false}
+    },
+    {
+      "about": "shipped app name \"planterx\"",
+      "input": {"check": "ship_name_ok", "name": "planterx"},
+      "output": {"ok": false}
+    },
+    {
+      "about": "shipped app name \"shipped\"",
+      "input": {"check": "ship_name_ok", "name": "shipped"},
+      "output": {"ok": false}
+    },
+    {
+      "about": "shipped app name \"app\"",
+      "input": {"check": "ship_name_ok", "name": "app"},
+      "output": {"ok": false}
+    },
+    {
+      "about": "shipped app name \"apps\"",
+      "input": {"check": "ship_name_ok", "name": "apps"},
+      "output": {"ok": false}
+    },
+    {
+      "about": "shipped app name \"flux-system\"",
+      "input": {"check": "ship_name_ok", "name": "flux-system"},
+      "output": {"ok": false}
+    },
+    {
+      "about": "shipped app name \"planter-apps\"",
+      "input": {"check": "ship_name_ok", "name": "planter-apps"},
+      "output": {"ok": false}
+    },
+    {
+      "about": "shipped app name \"www\"",
+      "input": {"check": "ship_name_ok", "name": "www"},
+      "output": {"ok": false}
+    },
+    {
+      "about": "shipped app name \"ghcr\"",
+      "input": {"check": "ship_name_ok", "name": "ghcr"},
+      "output": {"ok": false}
+    },
+    {
+      "about": "host \"shop.example.com\"",
+      "input": {"check": "host_ok", "host": "shop.example.com"},
+      "output": {"ok": true}
+    },
+    {
+      "about": "host \"shop\"",
+      "input": {"check": "host_ok", "host": "shop"},
+      "output": {"ok": false}
+    },
+    {
+      "about": "host \"Shop.example.com\"",
+      "input": {"check": "host_ok", "host": "Shop.example.com"},
+      "output": {"ok": false}
+    },
+    {
+      "about": "host \"-a.com\"",
+      "input": {"check": "host_ok", "host": "-a.com"},
+      "output": {"ok": false}
+    },
+    {
+      "about": "host \"a-.com\"",
+      "input": {"check": "host_ok", "host": "a-.com"},
+      "output": {"ok": false}
+    },
+    {
+      "about": "host \"a..com\"",
+      "input": {"check": "host_ok", "host": "a..com"},
+      "output": {"ok": false}
+    },
+    {
+      "about": "host \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.com\"",
+      "input": {
+        "check": "host_ok",
+        "host": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.com"
+      },
+      "output": {"ok": false}
+    },
+    {
+      "about": "path \"/health\"",
+      "input": {"check": "path_ok", "path": "/health"},
+      "output": {"ok": true}
+    },
+    {
+      "about": "path \"/a/b.c_d~e-f\"",
+      "input": {"check": "path_ok", "path": "/a/b.c_d~e-f"},
+      "output": {"ok": true}
+    },
+    {
+      "about": "path \"health\"",
+      "input": {"check": "path_ok", "path": "health"},
+      "output": {"ok": false}
+    },
+    {
+      "about": "path \"/a b\"",
+      "input": {"check": "path_ok", "path": "/a b"},
+      "output": {"ok": false}
+    },
+    {
+      "about": "path \"/a?b\"",
+      "input": {"check": "path_ok", "path": "/a?b"},
+      "output": {"ok": false}
+    },
+    {
+      "about": "the app of \"arugula-salad/ocarina\"",
+      "input": {"check": "app_of", "where": "arugula-salad/ocarina"},
+      "output": {"app": "ocarina"}
+    },
+    {
+      "about": "the app of \"acme/ocarina\"",
+      "input": {"check": "app_of", "where": "acme/ocarina"},
+      "output": {"app": null}
+    },
+    {
+      "about": "the app of \"arugula-salad/planter-apps\"",
+      "input": {"check": "app_of", "where": "arugula-salad/planter-apps"},
+      "output": {"app": null}
+    },
+    {
+      "about": "the app of \"arugula-salad/shipped\"",
+      "input": {"check": "app_of", "where": "arugula-salad/shipped"},
+      "output": {"app": null}
+    },
+    {
+      "about": "the app of \"arugula-salad/Caps\"",
+      "input": {"check": "app_of", "where": "arugula-salad/Caps"},
+      "output": {"app": null}
+    },
+    {
+      "about": "the app of \"arugula-salad\"",
+      "input": {"check": "app_of", "where": "arugula-salad"},
+      "output": {"app": null}
+    },
+    {
+      "about": "artifact \"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"",
+      "input": {
+        "check": "artifact_ok",
+        "reference": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "output": {"ok": true}
+    },
+    {
+      "about": "artifact \"SHA256:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\"",
+      "input": {
+        "check": "artifact_ok",
+        "reference": "SHA256:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+      },
+      "output": {"ok": false}
+    },
+    {
+      "about": "artifact \"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"",
+      "input": {"check": "artifact_ok", "reference": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
+      "output": {"ok": false}
+    },
+    {
+      "about": "artifact \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"",
+      "input": {
+        "check": "artifact_ok",
+        "reference": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "output": {"ok": false}
+    },
+    {
+      "about": "planter-go-live deploying commit 0123456789abcdef0123456789abcdef01234567 of arugula-salad/ocarina",
+      "input": {
+        "check": "refuses",
+        "driver": "planter-go-live",
+        "kind": "commit",
+        "reference": "0123456789abcdef0123456789abcdef01234567",
+        "where": "arugula-salad/ocarina"
+      },
+      "output": {"refused": null}
+    },
+    {
+      "about": "planter-prod deploying commit 0123456789abcdef0123456789abcdef01234567 of arugula-salad/ocarina",
+      "input": {
+        "check": "refuses",
+        "driver": "planter-prod",
+        "kind": "commit",
+        "reference": "0123456789abcdef0123456789abcdef01234567",
+        "where": "arugula-salad/ocarina"
+      },
+      "output": {"refused": null}
+    },
+    {
+      "about": "planter-promote deploying commit 0123456789abcdef0123456789abcdef01234567 of arugula-salad/shipped",
+      "input": {
+        "check": "refuses",
+        "driver": "planter-promote",
+        "kind": "commit",
+        "reference": "0123456789abcdef0123456789abcdef01234567",
+        "where": "arugula-salad/shipped"
+      },
+      "output": {"refused": null}
+    },
+    {
+      "about": "planter-ship deploying artifact sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa of platform",
+      "input": {
+        "check": "refuses",
+        "driver": "planter-ship",
+        "kind": "artifact",
+        "reference": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "where": "platform"
+      },
+      "output": {"refused": null}
+    },
+    {
+      "about": "planter-go-live deploying commit 0123456789ab of arugula-salad/ocarina",
+      "input": {
+        "check": "refuses",
+        "driver": "planter-go-live",
+        "kind": "commit",
+        "reference": "0123456789ab",
+        "where": "arugula-salad/ocarina"
+      },
+      "output": {"refused": "the planter-go-live driver deploys a commit, by its full id (40 lowercase hex)"}
+    },
+    {
+      "about": "planter-go-live deploying artifact 0123456789abcdef0123456789abcdef01234567 of arugula-salad/ocarina",
+      "input": {
+        "check": "refuses",
+        "driver": "planter-go-live",
+        "kind": "artifact",
+        "reference": "0123456789abcdef0123456789abcdef01234567",
+        "where": "arugula-salad/ocarina"
+      },
+      "output": {"refused": "the planter-go-live driver deploys a commit, by its full id (40 lowercase hex)"}
+    },
+    {
+      "about": "planter-go-live deploying commit 0123456789abcdef0123456789abcdef01234567 of acme/ocarina",
+      "input": {
+        "check": "refuses",
+        "driver": "planter-go-live",
+        "kind": "commit",
+        "reference": "0123456789abcdef0123456789abcdef01234567",
+        "where": "acme/ocarina"
+      },
+      "output": {
+        "refused": "the planter-go-live driver deploys arugula-salad/<app> repositories, named as an app in prod is (lowercase letters, digits and dashes, at most 42)"
+      }
+    },
+    {
+      "about": "planter-go-live deploying commit 0123456789abcdef0123456789abcdef01234567 of arugula-salad/planter-apps",
+      "input": {
+        "check": "refuses",
+        "driver": "planter-go-live",
+        "kind": "commit",
+        "reference": "0123456789abcdef0123456789abcdef01234567",
+        "where": "arugula-salad/planter-apps"
+      },
+      "output": {
+        "refused": "the planter-go-live driver deploys arugula-salad/<app> repositories, named as an app in prod is (lowercase letters, digits and dashes, at most 42)"
+      }
+    },
+    {
+      "about": "planter-prod deploying commit 0123456789abcdef0123456789abcdef01234567 of arugula-salad/Caps",
+      "input": {
+        "check": "refuses",
+        "driver": "planter-prod",
+        "kind": "commit",
+        "reference": "0123456789abcdef0123456789abcdef01234567",
+        "where": "arugula-salad/Caps"
+      },
+      "output": {
+        "refused": "the planter-prod driver deploys arugula-salad/<app> repositories, named as an app in prod is (lowercase letters, digits and dashes, at most 42)"
+      }
+    },
+    {
+      "about": "planter-promote deploying commit 0123456789abcdef0123456789abcdef01234567 of arugula-salad/ocarina",
+      "input": {
+        "check": "refuses",
+        "driver": "planter-promote",
+        "kind": "commit",
+        "reference": "0123456789abcdef0123456789abcdef01234567",
+        "where": "arugula-salad/ocarina"
+      },
+      "output": {"refused": "the planter-promote driver promotes a commit of arugula-salad/shipped"}
+    },
+    {
+      "about": "planter-ship deploying commit 0123456789abcdef0123456789abcdef01234567 of platform",
+      "input": {
+        "check": "refuses",
+        "driver": "planter-ship",
+        "kind": "commit",
+        "reference": "0123456789abcdef0123456789abcdef01234567",
+        "where": "platform"
+      },
+      "output": {
+        "refused": "the planter-ship driver deploys what an agent shipped: an artifact, sha256:<64 hex>"
+      }
+    },
+    {
+      "about": "planter-ship deploying artifact sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa of arugula-salad/shipped",
+      "input": {
+        "check": "refuses",
+        "driver": "planter-ship",
+        "kind": "artifact",
+        "reference": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "where": "arugula-salad/shipped"
+      },
+      "output": {"refused": "the planter-ship driver ships an artifact the platform keeps (where: platform)"}
+    },
+    {
+      "about": "the vendored renderer's digest",
+      "input": {"check": "renderer_digest"},
+      "output": {"digest": "2956172ed57548035cae448efb977b8394c1ff638088a4743896f4fd8ca020cf"}
+    },
+    {
+      "about": "a promotion's branch",
+      "input": {"app": "hello", "check": "promote_branch"},
+      "output": {"branch": "promote/hello"}
+    }
+  ],
+  "checks": [
+    "arugula_e2e::deploy::planter::prod_name_ok",
+    "arugula_e2e::deploy::planter::ship_name_ok",
+    "arugula_e2e::deploy::planter::host_ok",
+    "arugula_e2e::deploy::planter::path_ok",
+    "arugula_e2e::deploy::planter::app_of",
+    "arugula_e2e::deploy::planter::artifact_ok",
+    "arugula_e2e::deploy::planter::refuses",
+    "arugula_e2e::deploy::planter::renderer_digest",
+    "arugula_e2e::deploy::planter::promote_branch"
+  ],
+  "input": "check: prod_name_ok (name), ship_name_ok (name), host_ok (host), path_ok (path), app_of (where), artifact_ok (reference), refuses (driver, kind, reference, where), renderer_digest, or promote_branch (app)",
+  "keys": {},
+  "objects": {},
+  "output": "ok; app: the app's name or null; refused: why, or null when it can; digest; branch"
+}
