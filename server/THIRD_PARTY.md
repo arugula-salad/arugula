@@ -8,7 +8,7 @@ software below. The daemon's and the CLI's are in the root THIRD_PARTY.md.
   It also carries the swarm's fonts, Big Shoulders Display, Instrument Sans and JetBrains Mono (Fontsource's builds, SIL Open Font License 1.1, below).
 - **Rust crates**, by license:
 
-- Apache License 2.0 (245)
+- Apache License 2.0 (247)
 - MIT License (65)
 - Unicode License v3 (20)
 - BSD 3-Clause "New" or "Revised" License (6)
@@ -5038,12 +5038,14 @@ limitations under the License.
 
 Used by:
 - [arugula-control 0.65.0](https://github.com/arugula-salad/arugula)
+- [arugula-platform 0.65.0](https://github.com/arugula-salad/arugula)
+- [arugula-control-base 0.65.0](https://github.com/arugula-salad/arugula)
 - [arugula-control-common 0.65.0](https://github.com/arugula-salad/arugula)
 - [arugula-control-wire 0.0.0](https://github.com/arugula-salad/arugula)
 - [arugula-core 0.0.0](https://github.com/arugula-salad/arugula)
 - [arugula-e2e 0.0.0](https://github.com/arugula-salad/arugula)
 - [arugula-forge-github 0.0.0](https://github.com/arugula-salad/arugula)
-- [arugula-platform 0.65.0](https://github.com/arugula-salad/arugula)
+- [arugula-platform-base 0.65.0](https://github.com/arugula-salad/arugula)
 - [arugula-proto 0.0.0](https://github.com/arugula-salad/arugula)
 - [anyhow 1.0.104](https://github.com/dtolnay/anyhow)
 - [async-trait 0.1.92](https://github.com/dtolnay/async-trait)

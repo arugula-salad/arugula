@@ -102,17 +102,22 @@ Each has a `README.md` with where to start reading.
 - `crates/cli`: `arugula`, the CLI. It doesn't link `arugula-vt`, so it
   builds without libghostty and Zig.
 The server crates (`crates/control`, `crates/platform`,
-`crates/control-common`) are a Cargo workspace of their own,
+`crates/control-common`, and the binaries `crates/arugula-control` and
+`crates/arugula-platform`) are a Cargo workspace of their own,
 `server/Cargo.toml`, so daemon work never compiles them and server work
 never compiles the daemon, the mux or Ghostty: build them with
 `scripts/server-cargo` (or `cargo` in `server/`), as the justfile does
 ([docs/development.md](docs/development.md), "Build from source").
 
-- `crates/control`: Arugula control's hub: accounts, devices, the directory
-  and the relay. It runs the platform in process, or is its gateway when
-  the platform runs as its own (`arugula-platform`, M140).
-- `crates/platform`: control's platform (#1150): billing, Cloud, chat,
-  projects and grants are here, and the `arugula-platform` binary. It
+- `crates/control`: Arugula control's hub (`arugula-control-base`, a
+  library): accounts, devices, the directory and the relay. It runs the
+  platform in process, or is its gateway when the platform runs as its own
+  (`arugula-platform`, M140). Its binary is `crates/arugula-control`
+  (#314), which registers the platform's feature crates.
+- `crates/platform`: control's platform (#1150, `arugula-platform-base`, a
+  library): billing, Cloud, chat, projects and grants are here; its binary
+  is `crates/arugula-platform` (#314). Its tests are under
+  `-p arugula-platform-base` (`-p arugula-platform` is the binary). It
   reaches the hub only through `HubPort`, and the hub reaches it through
   `PlatformPort`, in process or over the private network (`remote`).
 - `crates/control-common`: what the hub and the platform both use: the SQLite

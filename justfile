@@ -88,7 +88,7 @@ whats-new:
 # current, and that the manifest lists every table control has: the same
 # tests `just test` runs, so CI runs them too.
 control-tables mode="write":
-    {{ if mode == "write" { "ARUGULA_WRITE_DOCS=1" } else { "" } }} {{server_cargo}} test -q -p arugula-control tables::
+    {{ if mode == "write" { "ARUGULA_WRITE_DOCS=1" } else { "" } }} {{server_cargo}} test -q -p arugula-control-base tables::
 
 # Release build of the daemon and the CLI (the root workspace; control and
 # its platform: `just static`).
@@ -578,7 +578,8 @@ test-quarantined: web e2e-build
 # postgres:17 container of its own on a free port, removed after (from
 # CI's mirror: docs/testing.md, "CI's images"). The same tests as on SQLite
 # (`Db::test`); check.yml runs it in a job of its own (test-postgres),
-# beside test and test-2.
+# beside test and test-2. Every arugula-platform* package: the base, its
+# feature crates and the binary (#314).
 test-platform-postgres:
     #!/usr/bin/env bash
     set -euo pipefail
@@ -595,7 +596,7 @@ test-platform-postgres:
     # sets itself up.
     for _ in $(seq 120); do docker exec "$name" pg_isready -h 127.0.0.1 -U postgres -q && break; sleep 0.5; done
     ARUGULA_TEST_POSTGRES_URL="postgres://postgres:platform@127.0.0.1:$port/postgres" \
-        {{server_cargo}} nextest run --workspace -E 'package(arugula-platform)'
+        {{server_cargo}} nextest run --workspace -E 'package(/^arugula-platform/)'
 
 # Control end to end without a browser: sign in (fake GitHub), enroll,
 # join a daemon, reach it through the relay and directly.
@@ -869,7 +870,7 @@ workspace-guard:
     names() { awk '{print $1}' | sort -u; }
     root=$({{cargo}} tree --workspace -e all --prefix none --target all | names)
     server=$({{server_cargo}} tree --workspace -e all --prefix none --target all | names)
-    for crate in arugula-control arugula-platform arugula-control-common; do
+    for crate in arugula-control arugula-control-base arugula-platform arugula-platform-base arugula-control-common; do
       if grep -qx "$crate" <<<"$root"; then echo "workspace-guard: the root workspace builds $crate: it belongs to server/Cargo.toml" >&2; status=1; fi
     done
     for crate in arugulad arugula arugula-mux arugula-vt libghostty-vt-sys arugula-testkit; do

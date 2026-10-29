@@ -8,6 +8,8 @@ members = ["crates/*"]
 exclude = [
     "vendor/libghostty-vt-sys",
     "crates/desktop",
+    "crates/arugula-control",
+    "crates/arugula-platform",
     "crates/control",
     "crates/control-common",
     "crates/platform",

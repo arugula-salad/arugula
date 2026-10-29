@@ -1,5 +1,9 @@
 [package]
-name = "arugula-control"
+# The hub's library (#314): all of control but its binary, which is
+# crates/arugula-control. It keeps its name, `arugula_control`, so its log
+# targets are what they were before the split, and platform feature crates
+# never sit under it.
+name = "arugula-control-base"
 # The hosted server's own workspace (server/Cargo.toml), not the root's.
 workspace = "../../server"
 version.workspace = true
@@ -8,9 +12,8 @@ license.workspace = true
 repository.workspace = true
 description = "Arugula control: accounts, devices, the directory and the relay"
 
-[[bin]]
-name = "arugula-control"
-path = "src/main.rs"
+[lib]
+name = "arugula_control"
 
 [dependencies]
 aes-gcm = { workspace = true }
@@ -29,7 +32,7 @@ arugula-core = { workspace = true }
 arugula-control-common = { workspace = true }
 arugula-control-wire = { workspace = true }
 arugula-e2e = { workspace = true }
-arugula-platform = { workspace = true }
+arugula-platform-base = { workspace = true }
 libc = "0.2.189"
 p256 = { workspace = true, features = ["ecdh", "ecdsa"] }
 reqwest = { workspace = true, features = ["rustls", "http2", "json", "stream"] }
@@ -55,7 +58,7 @@ workspace = true
 [dev-dependencies]
 aes-gcm = { workspace = true }
 # The contract every HubPort keeps (hub_port.rs's tests).
-arugula-platform = { workspace = true, features = ["contract"] }
+arugula-platform-base = { workspace = true, features = ["contract"] }
 hkdf = { workspace = true }
 # tables.toml, the table manifest (src/db/tables.rs).
 
@@ -65,4 +68,4 @@ hkdf = { workspace = true }
 # job's checkout.
 # The platform page's build too (web/dist-platform, M151), which an
 # in-process platform serves.
-debug-embed = ["rust-embed/debug-embed", "arugula-platform/debug-embed"]
+debug-embed = ["rust-embed/debug-embed", "arugula-platform-base/debug-embed"]

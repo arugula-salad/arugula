@@ -919,7 +919,9 @@ pub fn origin_of(url: &str) -> anyhow::Result<String> {
     Ok(u.origin().ascii_serialization())
 }
 
-fn main() -> anyhow::Result<()> {
+/// The hub, as the `arugula-control` binary (crates/arugula-control) runs
+/// it: its subcommands, or the server.
+pub fn main() -> anyhow::Result<()> {
     // `arugula-control census`: an operator's read-only look at the
     // database (census.rs), with no server; `device-review` another
     // (device_review.rs). `account-reset`: support's reset of an account's

@@ -1,6 +1,9 @@
 # The hosted server's workspace: Arugula control's hub (arugula-control),
 # its platform (arugula-platform) and what only they share
-# (arugula-control-common). Apart from the root workspace so that daemon and
+# (arugula-control-common). Each binary is a thin crate of its own over a
+# library (#314): arugula-control over arugula-control-base
+# (crates/control), arugula-platform over arugula-platform-base
+# (crates/platform) and the platform's feature crates. Apart from the root workspace so that daemon and
 # CLI work never compiles the server, and server work never compiles the
 # daemon, the mux or Ghostty. The crates stay in crates/; each names this
 # file as its workspace (`package.workspace`), and the root's excludes them.
@@ -17,6 +20,8 @@
 [workspace]
 resolver = "3"
 members = [
+    "../crates/arugula-control",
+    "../crates/arugula-platform",
     "../crates/control",
     "../crates/control-common",
     "../crates/platform",
@@ -37,7 +42,10 @@ arugula-control-wire = { path = "../crates/control-wire" }
 arugula-core = { path = "../crates/core" }
 arugula-e2e = { path = "../crates/e2e" }
 arugula-forge-github = { path = "../crates/forge-github" }
-arugula-platform = { path = "../crates/platform" }
+# The hub's and the platform's libraries (#314); the binaries are
+# crates/arugula-control and crates/arugula-platform.
+arugula-control-base = { path = "../crates/control" }
+arugula-platform-base = { path = "../crates/platform" }
 aes-gcm = "0.11.1"
 anyhow = "1.0.104"
 axum = "0.8.9"
