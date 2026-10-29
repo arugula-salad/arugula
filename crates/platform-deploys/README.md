@@ -4,8 +4,9 @@ Deploys (#314), on the platform's base (`arugula-platform-base`,
 [crates/platform](../platform/README.md)):
 
 - `src/deploys.rs`: a project's environments, the deploys planned into
-  them, and their approval with an owner's passkey (M217, M218, the
-  verifier `verify`). `src/deploys/agent.rs` is a machine's agents'
+  them, and their approval with an owner's passkey (M217, M218). The
+  verifier, the only maker of a `VerifiedApproval`, is the base's
+  (`approvals.rs`), beside the type, so the compiler keeps it the only one. `src/deploys/agent.rs` is a machine's agents'
   routes (plan and ask, never approve), `src/deploys/catalog.rs` the
   drivers a project may name.
 - `src/deploys/apply.rs`: applying an approved deploy on a box of its own
