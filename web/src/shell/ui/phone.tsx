@@ -11,7 +11,7 @@ import { useSubscribe } from "../../shared/ui/hooks";
 import { AttentionBadge } from "./attention";
 import { HostCrumb, HostSection } from "./hosts";
 import { openSwarm } from "../swarm/route";
-import { hasChat, openChat } from "./places";
+import { hasBoards, hasChat, openBoards, openChat } from "./places";
 import { ChatTabBadge, openChanges, openIssue, openPort, openPr } from "../blocks";
 import { startAgent } from "./agent-dialog";
 import { pickConversation } from "./conversations";
@@ -303,14 +303,19 @@ function Sheet({ client, close }: { client: Client; close: () => void }) {
                       Issue
                     </button>
                   )}
-                  {owner && client.flag("agent-delegation") && (
-                    <button data-open-agents onClick={act(() => openAgentsPage())}>
-                      Agents
+                  {hasBoards(client) && (
+                    <button data-open-boards onClick={act(() => openBoards())}>
+                      Boards
                     </button>
                   )}
                   {owner && (
                     <button data-open-docs onClick={act(() => openDocsPage())}>
                       Docs
+                    </button>
+                  )}
+                  {owner && client.flag("agent-delegation") && (
+                    <button data-open-agents onClick={act(() => openAgentsPage())}>
+                      Agents
                     </button>
                   )}
                   {active !== undefined && owner && (
