@@ -310,6 +310,7 @@ dependencies = [
  "arugula-control-wire",
  "arugula-e2e",
  "arugula-platform-base",
+ "arugula-platform-chat",
  "arugula-platform-deploys",
  "axum",
  "base64 0.23.1",
@@ -329,6 +330,7 @@ name = "arugula-platform-all"
 version = "0.0.0"
 dependencies = [
  "arugula-platform-agents",
+ "arugula-platform-chat",
  "arugula-platform-deploys",
 ]
 
@@ -385,6 +387,27 @@ dependencies = [
  "tokio-postgres",
  "tracing",
  "tracing-subscriber",
+ "url",
+]
+
+[[package]]
+name = "arugula-platform-chat"
+version = "0.0.0"
+dependencies = [
+ "anyhow",
+ "arugula-control-common",
+ "arugula-control-wire",
+ "arugula-e2e",
+ "arugula-platform-base",
+ "axum",
+ "base64 0.23.1",
+ "futures-util",
+ "hex",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
  "url",
 ]
 

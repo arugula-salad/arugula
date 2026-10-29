@@ -306,7 +306,7 @@ pub async fn mine(
 }
 
 /// The readable repos of a draft's repo, if the viewer may read it.
-pub(crate) async fn readable(app: &Platform, v: &Viewer, repo_id: u64) -> Result<Option<viewer::Readable>, ApiError> {
+pub async fn readable(app: &Platform, v: &Viewer, repo_id: u64) -> Result<Option<viewer::Readable>, ApiError> {
     let Some(repo) = app.db.linked_repo(repo_id)? else { return Ok(None) };
     let c = viewer::check(app, v, std::slice::from_ref(&repo)).await?;
     Ok(c.readable.has(repo_id).then_some(c.readable))

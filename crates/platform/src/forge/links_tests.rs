@@ -47,10 +47,10 @@ pub struct Gh {
     /// How many times a person's permission was asked.
     pub asked: usize,
     /// User tokens, and whose GitHub id each is (M168).
-    pub(super) users: BTreeMap<String, u64>,
+    pub users: BTreeMap<String, u64>,
     /// What was posted as a person: the path, the `Authorization` header
     /// and the body.
-    pub(super) posted: Vec<(String, String, Value)>,
+    pub posted: Vec<(String, String, Value)>,
     /// A status every post is refused with, while set.
     pub(super) refuse: Option<u16>,
     /// What an installation grants the App, by repo, when not the real
@@ -365,7 +365,7 @@ pub fn throwaway_key() -> aws_lc_rs::rsa::KeyPair {
 
 /// The platform with the App, over `hub`, against a fake GitHub: its
 /// state, the platform, and the platform's address.
-pub(super) async fn serve(hub: &Arc<TestHub>) -> (Shared, Arc<Platform>, String) {
+pub async fn serve(hub: &Arc<TestHub>) -> (Shared, Arc<Platform>, String) {
     let gh: Shared = Arc::default();
     let api = fake_github(gh.clone()).await;
     let cfg = crate::Config {
@@ -397,7 +397,7 @@ async fn link(base: &str, who: &str, project: &str, repo: &str) -> (u16, Value) 
     call(base, who, "POST", &format!("/api/projects/{project}/repos"), Some(json!({ "repo": repo }))).await
 }
 
-pub(super) async fn hook(base: &str, event: &str, delivery: &str, body: &Value) -> u16 {
+pub async fn hook(base: &str, event: &str, delivery: &str, body: &Value) -> u16 {
     use hmac::{KeyInit, Mac};
     let body = body.to_string();
     let mut mac = hmac::Hmac::<sha2::Sha256>::new_from_slice(SECRET.as_bytes()).unwrap();

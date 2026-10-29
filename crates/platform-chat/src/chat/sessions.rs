@@ -105,7 +105,7 @@ use crate::{
 };
 
 /// The reserved word: `@arugula`.
-pub const MENTION: &str = "arugula";
+pub const MENTION: &str = arugula_platform::chat::SESSION_MENTION;
 
 /// Where `@arugula` works, said where it doesn't.
 pub const NOT_HERE: &str =

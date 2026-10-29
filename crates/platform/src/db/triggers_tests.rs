@@ -4,6 +4,10 @@
 //! account takes what went with its projects. On SQLite and, with
 //! `ARUGULA_TEST_POSTGRES_URL`, on Postgres.
 
+// Also the chat crate's tests' (#314, the `testing` feature): its helpers
+// are `pub`, and only its own tests use the rest.
+#![cfg_attr(not(test), allow(dead_code, unused_imports))]
+
 use base64::Engine as _;
 use serde_json::json;
 
@@ -16,7 +20,7 @@ use crate::db::{
 
 /// Project `prj_a` (a team's) with hosted workspace `hw_a`, enrolled as
 /// machine `dev_a`, and `hw_b`, not enrolled yet.
-pub(crate) fn seed(db: &Db) {
+pub fn seed(db: &Db) {
     db.c()
         .execute_batch(
             "INSERT INTO projects (id, team_id, name, is_default, created_at) VALUES ('prj_a', 't', 'a', FALSE, 1);
@@ -27,18 +31,18 @@ pub(crate) fn seed(db: &Db) {
         .unwrap();
 }
 
-pub(crate) fn cmd(argv: &[&str]) -> Operation {
+pub fn cmd(argv: &[&str]) -> Operation {
     Operation { argv: argv.iter().map(|a| a.to_string()).collect(), ..Default::default() }
 }
 
 /// `run` jobs queued for `run`.
-pub(crate) fn run_jobs(db: &Db, run: &str) -> u64 {
+pub fn run_jobs(db: &Db, run: &str) -> u64 {
     db.c()
         .query_row("SELECT count(*) FROM platform_jobs WHERE kind = 'run' AND id = ?1", params![run], |r| r.get(0))
         .unwrap()
 }
 
-pub(crate) fn runs_in(db: &Db, project: &str) -> Vec<Run> {
+pub fn runs_in(db: &Db, project: &str) -> Vec<Run> {
     db.project_runs(project, 100).unwrap()
 }
 
@@ -215,7 +219,7 @@ fn a_changed_schedule_requeues_its_job() {
     assert_eq!(db.run_schedule(&s.id).unwrap().unwrap().cron, "0 4 * * *");
 }
 
-pub(crate) fn link(db: &Db, repo: u64, name: &str, project: &str) {
+pub fn link(db: &Db, repo: u64, name: &str, project: &str) {
     let l = LinkedRepo {
         repo_id: repo,
         full_name: name.into(),

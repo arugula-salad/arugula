@@ -282,13 +282,13 @@ pub async fn fire(
 /// happening twice).
 pub async fn webhook(p: &std::sync::Arc<Platform>, event: &str, delivery: &str, v: &Value) -> bool {
     let now = arugula_e2e::now_ms();
-    if let Err(e) = crate::sessions::feedback::suite_done(p, event, v, now) {
+    if let Err(e) = crate::features::chat().suite_done(p, event, v, now) {
         tracing::warn!(event, delivery, error = format!("{e:#}"), "a check suite on a session's branch");
         return false;
     }
     let Some(seen) = seen(event, v) else { return true };
-    match crate::sessions::feedback::route(p, &seen, v, now) {
-        Ok(crate::sessions::feedback::Routed::Elsewhere) => {}
+    match crate::features::chat().route_feedback(p, &seen, v, now) {
+        Ok(crate::features::Routed::Elsewhere) => {}
         Ok(routed) => {
             tracing::info!(event, delivery, ?routed, "a webhook's event went to a session");
             return true;

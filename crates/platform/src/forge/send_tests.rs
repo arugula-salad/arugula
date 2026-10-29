@@ -7,6 +7,10 @@
 //! hub's half (the callback, the state, revoking) is control's
 //! `forge_send` tests; the machine's is the daemon's `forge_send_op`.
 
+// Also the chat crate's tests' (#314, the `testing` feature): its helpers
+// are `pub`, and only its own tests use the rest.
+#![cfg_attr(not(test), allow(dead_code, unused_imports))]
+
 use std::sync::{Arc, Mutex};
 
 use arugula_control_wire::forge::{DaemonOp, OpAnswer};
@@ -27,7 +31,7 @@ const TOKEN: &str = "ghu_alices_one_use_token";
 
 /// What the platform logged while a test ran, to look for a token in.
 #[derive(Clone, Default)]
-struct Logs(Arc<Mutex<Vec<u8>>>);
+pub struct Logs(Arc<Mutex<Vec<u8>>>);
 
 impl std::io::Write for Logs {
     fn write(&mut self, b: &[u8]) -> std::io::Result<usize> {
@@ -41,7 +45,7 @@ impl std::io::Write for Logs {
 
 impl Logs {
     /// Everything logged from now on this thread, at every level.
-    fn capture() -> (Self, tracing::subscriber::DefaultGuard) {
+    pub fn capture() -> (Self, tracing::subscriber::DefaultGuard) {
         let logs = Logs::default();
         let w = logs.clone();
         let sub = tracing_subscriber::fmt()
@@ -52,7 +56,7 @@ impl Logs {
         (logs, tracing::subscriber::set_default(sub))
     }
 
-    fn text(&self) -> String {
+    pub fn text(&self) -> String {
         String::from_utf8_lossy(&self.0.lock().unwrap()).into_owned()
     }
 }
@@ -84,7 +88,7 @@ async fn send(base: &str, who: &str, id: &str, body: Value) -> (u16, Value) {
 }
 
 /// Every text in the drafts and the token log.
-fn rows(app: &Platform) -> String {
+pub fn rows(app: &Platform) -> String {
     let c = app.db.c();
     let mints: Vec<String> = c
         .query_map(
@@ -103,7 +107,7 @@ fn rows(app: &Platform) -> String {
     format!("{mints:?} {drafts:?}")
 }
 
-fn user_mints(app: &Platform) -> Vec<(String, Option<u64>, String)> {
+pub fn user_mints(app: &Platform) -> Vec<(String, Option<u64>, String)> {
     app.db
         .c()
         .query_map(
@@ -114,7 +118,7 @@ fn user_mints(app: &Platform) -> Vec<(String, Option<u64>, String)> {
         .unwrap()
 }
 
-fn posted(gh: &Shared) -> Vec<(String, String, Value)> {
+pub fn posted(gh: &Shared) -> Vec<(String, String, Value)> {
     gh.lock().unwrap().posted.clone()
 }
 
@@ -431,144 +435,4 @@ async fn the_cli_sends_through_the_typed_ops() {
         })
         .collect();
     assert_eq!(kinds, ["comment from the terminal", "issue b"]);
-}
-
-/// A session's PR (M259), opened as its asker: the browser hop first, then
-/// the hub hands the one-use user token back (`send_draft` knows a PR
-/// draft by its `pdr_`); `GET /user` is alice's GitHub id; the one call is
-/// `POST repos/acme/app/pulls` as her, from the session's branch into
-/// main, as a draft. The session links the PR, and once the mirror has
-/// it, the PR's thread says where it came from, once. The token is in no
-/// row and no log line.
-#[tokio::test]
-async fn a_sessions_pr_is_opened_as_its_asker() {
-    let (logs, _guard) = Logs::capture();
-    let hub = Arc::new(TestHub::default());
-    let (gh, app, base) = serve(&hub).await;
-    let (team, _) = world(&hub, &gh, &app).await;
-    hub.authorizes(true);
-    gh.lock().unwrap().users.insert(TOKEN.into(), 1001);
-    let ses = super::drafts_tests::pushed_session(&app, &gh, &team).await;
-    let branch = app.db.session(&ses).unwrap().unwrap().branch;
-
-    // Kept and sent in one: GitHub's page, nothing sent yet.
-    let edit = json!({ "title": "Add notes", "body": "Adds NOTES.md." });
-    let (s, v) = call(
-        &base,
-        "alice",
-        "POST",
-        &format!("/api/sessions/{ses}/pr/send"),
-        Some(json!({ "edit": edit, "via": "browser", "back": "/p/t1/sessions/x" })),
-    )
-    .await;
-    assert_eq!(s, 200, "{v}");
-    let id = v["pr"]["id"].as_str().unwrap().to_owned();
-    assert!(id.starts_with("pdr_"));
-    assert!(v["authorize"].as_str().unwrap().contains(&format!("send.alice.{id}&back=/p/t1/sessions/x")), "{v}");
-    assert_eq!(v["pr"]["state"], "waiting");
-    assert!(posted(&gh).is_empty());
-
-    // GitHub came back to the hub, which hands the token over.
-    let o = app.send_draft("alice", &id, Some(UserToken::new(TOKEN.into()))).await.unwrap();
-    let url = "https://github.com/repos/acme/app/pulls#posted";
-    assert_eq!((o.pr.as_deref(), o.refused.as_deref()), (Some(url), None), "{o:?}");
-    let body = json!({ "title": "Add notes", "body": "Adds NOTES.md.", "head": branch, "base": "main", "draft": true });
-    assert_eq!(posted(&gh), [("/repos/acme/app/pulls".into(), format!("Bearer {TOKEN}"), body)]);
-    assert_eq!(user_mints(&app), [("alice".into(), Some(77), "send:pr".into())]);
-    let d = app.db.pr_draft(&id).unwrap().unwrap();
-    assert_eq!((d.state.as_str(), d.number, d.sent_url.as_deref()), ("sent", Some(12), Some(url)));
-    assert_eq!(app.db.session(&ses).unwrap().unwrap().pr.as_deref(), Some(url), "the card shows the PR");
-    let (_, card) = call(&base, "alice", "GET", &format!("/api/sessions/{ses}"), None).await;
-    assert_eq!((card["card"]["pr"].as_str(), card["card"]["pushed"].as_bool()), (Some(url), Some(true)), "{card}");
-    assert_eq!(card["asked"], true);
-
-    // Sent is sent: again is refused, and nothing goes to GitHub.
-    let o = app.send_draft("alice", &id, Some(UserToken::new(TOKEN.into()))).await.unwrap();
-    assert!(o.refused.unwrap().contains("sent already"));
-    assert_eq!(posted(&gh).len(), 1);
-
-    // The mirror has no PR 12 yet: no thread line. When its webhook's row
-    // lands, the PR's thread (made now) gets one, by alice, naming the
-    // session; and only one.
-    assert_eq!(d.item, None);
-    app.db
-        .c()
-        .execute(
-            "INSERT INTO forge_items (id, repo_id, number, kind, state, title, created_at, updated_at, synced_at)
-             VALUES ('fi_pr12', 77, 12, 'pr', 'open', 'Add notes', 1, 1, 1)",
-            params![],
-        )
-        .unwrap();
-    crate::sessions::pr::noted(&app, 77);
-    crate::sessions::pr::noted(&app, 77);
-    let room = app.db.chat_room_on(&format!("project:{team}"), "fi_pr12").unwrap().expect("the PR's thread");
-    let (said, _) = app.db.chat_messages(&room.id, crate::db::chat::Page::Newest, 50).unwrap();
-    assert_eq!(said.len(), 1, "{said:?}");
-    assert_eq!((said[0].author.as_str(), said[0].text.as_str()), ("alice", ses.as_str()));
-    let system = app.db.chat_system(&room.id, said[0].seq, said[0].seq).unwrap();
-    assert_eq!(system[&said[0].seq].kind, "session_pr");
-
-    // Never in a row, never in a log line.
-    let rows: Vec<String> = app
-        .db
-        .c()
-        .query_map("SELECT title || body || coalesce(error, '') FROM pr_drafts", params![], |r| r.get(0))
-        .unwrap();
-    assert!(!format!("{rows:?} {}", self::rows(&app)).contains(TOKEN));
-    let logged = logs.text();
-    assert!(logged.contains("a session's PR opened as its asker"), "the capture works");
-    assert!(!logged.contains(TOKEN), "{logged}");
-}
-
-/// A machine can't send a session's PR, grant or not, nor can anyone but
-/// its asker; nor can its asker before a turn pushed the branch. With no
-/// browser hop, one of the asker's own machines opens it with their `gh`.
-#[tokio::test]
-async fn a_machine_cant_send_a_sessions_pr() {
-    let hub = Arc::new(TestHub::default());
-    let (gh, app, base) = serve(&hub).await;
-    let (team, _) = world(&hub, &gh, &app).await;
-    hub.daemon("geek", "alice", None);
-    hub.answers_ops("geek", OpAnswer::Done { url: Some("https://github.com/acme/app/pull/7".into()) });
-    let ses = super::drafts_tests::pushed_session(&app, &gh, &team).await;
-    let path = format!("/api/sessions/{ses}/pr/send");
-    let edit = json!({ "edit": { "title": "Add notes", "body": "b" } });
-
-    let r = reqwest::Client::new()
-        .post(format!("{base}{path}"))
-        .header("x-test-daemon", "alice geek")
-        .json(&edit)
-        .send()
-        .await
-        .unwrap();
-    assert_eq!(r.status(), 403);
-    let v: Value = r.json().await.unwrap();
-    assert_eq!(v["reason"], "agents_draft", "{v}");
-    assert!(app.db.pr_draft_of(&ses).unwrap().is_none(), "nothing kept");
-    assert!(hub.ops_asked().is_empty());
-    let (s, v) = call(&base, "bob", "POST", &path, Some(edit.clone())).await;
-    assert_eq!(s, 403, "{v}");
-    assert_eq!(call(&base, "eve", "POST", &path, Some(edit.clone())).await.0, 404);
-
-    // A session whose turns pushed nothing: no PR yet.
-    let unpushed = super::drafts_tests::session_on(&app, &gh, &team, "hw_pr2", false).await;
-    let (s, v) = call(&base, "alice", "POST", &format!("/api/sessions/{unpushed}/pr/send"), Some(edit.clone())).await;
-    assert_eq!(s, 409, "{v}");
-    assert!(v["error"].as_str().unwrap().contains("isn't on GitHub yet"), "{v}");
-
-    // Its asker, with no browser hop: her machine opens it as her.
-    let (s, v) = call(&base, "alice", "POST", &path, Some(edit)).await;
-    assert_eq!(s, 200, "{v}");
-    assert_eq!(
-        (v["via"].as_str(), v["pr"]["state"].as_str(), v["pr"]["number"].as_u64()),
-        (Some("machine"), Some("sent"), Some(7))
-    );
-    let asked = hub.ops_asked();
-    let DaemonOp::ForgeSend(op) = &asked[0].1 else { panic!("{asked:?}") };
-    assert_eq!((asked[0].0.as_str(), op.kind.as_str(), op.account.as_str()), ("geek", "pr", "alice"));
-    assert_eq!(
-        (op.head.as_deref(), op.base.as_deref(), op.draft_pr),
-        (Some(app.db.session(&ses).unwrap().unwrap().branch.as_str()), Some("main"), true)
-    );
-    assert!(posted(&gh).is_empty(), "nothing as the App");
 }

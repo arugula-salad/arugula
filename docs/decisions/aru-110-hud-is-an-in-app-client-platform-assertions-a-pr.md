@@ -42,7 +42,7 @@ decided_on: "2026-10-22"
 reviews: []
 constrains:
   - "path:crates/platform/src/projects.rs"
-  - "path:crates/platform/src/chat.rs"
+  - "path:crates/platform-chat/src/chat.rs"
 ---
 
 # hud is an in-app client: platform assertions, a project roster
@@ -60,5 +60,5 @@ hud is Aaron's repo. **Jake decided this on Aaron's behalf,** pending Aaron's
 review of this record. The code there is proposed as PRs that Aaron reviews
 and merges. If Aaron pushes back in review, step 8's hud work stops and goes
 to Jake as a choice.
-Where: hud (Arugula #35, M237, native), `crates/platform/src/projects.rs` (members), `crates/platform/src/chat.rs` (object threads).
+Where: hud (Arugula #35, M237, native), `crates/platform/src/projects.rs` (members), `crates/platform-chat/src/chat.rs` (object threads).
 From: #1337 (platform step 8, tracked natively in Arugula #22).

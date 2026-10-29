@@ -85,8 +85,9 @@ pub mod tests;
 pub mod transcripts;
 pub mod usage;
 pub mod wake;
-#[cfg(test)]
-mod wake_tests;
+// Also the chat crate's tests' (#314, the `testing` feature): a ready box.
+#[cfg(any(test, feature = "testing"))]
+pub mod wake_tests;
 pub mod worker;
 
 pub use crate::{compute::template::Size, db::hosted::HostedWorkspace};
@@ -553,7 +554,7 @@ pub async fn sessions_on_box_changed(app: &Platform, workspace: &str, new_machin
             _ if s.role == crate::db::sessions::Role::Review => {
                 (app.db.session_prompts(&s.id)?.into_iter().next().map(|p| p.text).unwrap_or_default(), false)
             }
-            _ => match crate::sessions::hydrate::after_rebuild(app, &s).await {
+            _ => match crate::features::chat().after_rebuild(app, &s).await {
                 Ok(r) => (r.text, r.lost),
                 Err(e) => {
                     tracing::warn!(
@@ -576,7 +577,7 @@ pub async fn sessions_on_box_changed(app: &Platform, workspace: &str, new_machin
                     machine = new_machine,
                     "a session moved to its workspace's new box"
                 );
-                crate::session_live::told(app, std::slice::from_ref(&s.id))?;
+                crate::features::chat().told(app, std::slice::from_ref(&s.id))?;
                 app.db.nudge_session(&s.id, now)?;
             }
             // It moved meanwhile (it ended, say): its job sees to it.

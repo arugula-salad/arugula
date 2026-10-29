@@ -229,14 +229,8 @@ async fn a_board_from_creation_to_a_stale_write() {
     assert_eq!(live(3)["state"], json!("other"));
     assert_eq!(v["zones"][1]["rows"][4].get("live"), None, "a run of a project the reader isn't in");
     assert_eq!(v["zones"][1]["rows"][4]["pointer"]["id"], json!(hidden));
-
-    // The board's thread is an object thread, as an issue's is (with chat on).
-    let open = |who: &'static str| {
-        call(&base, who, "POST", "/api/chat/targets", Some(json!({ "kind": "object", "target": id })))
-    };
-    let (st, room) = open("a").await;
-    assert_eq!((st, &room["name"]), (200, &json!("board Launch")), "{room}");
-    assert_eq!(open("c").await.0, 404, "a stranger doesn't find it");
+    // Its thread (an object thread, as an issue's is) is chat's:
+    // `arugula-platform-chat`'s `boards_tests`.
 }
 
 /// A row whose pointer a newer build wrote (a kind this one doesn't know,

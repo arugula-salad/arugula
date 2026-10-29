@@ -37,6 +37,8 @@ url = { workspace = true }
 arugula-platform-base = { workspace = true, features = ["testing"] }
 # Deploys, for the tools that plan them, and their test helpers.
 arugula-platform-deploys = { workspace = true, features = ["testing"] }
+# Chat, for the tools that read and post in threads.
+arugula-platform-chat = { workspace = true }
 
 [lints]
 workspace = true

@@ -15,6 +15,7 @@ exclude = [
     "crates/platform",
     "crates/platform-agents",
     "crates/platform-all",
+    "crates/platform-chat",
     "crates/platform-api",
     "crates/platform-deploys",
 ]

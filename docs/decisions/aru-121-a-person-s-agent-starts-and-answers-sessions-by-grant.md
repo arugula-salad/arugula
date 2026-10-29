@@ -45,8 +45,8 @@ constrains:
   - "aru-115"
   - "path:crates/platform/src/grants.rs"
   - "path:crates/platform/src/db/projects.rs"
-  - "path:crates/platform/src/chat/sessions.rs"
-  - "path:crates/platform/src/chat/agent_sessions.rs"
+  - "path:crates/platform-chat/src/chat/sessions.rs"
+  - "path:crates/platform-chat/src/chat/agent_sessions.rs"
   - "path:crates/daemon/src/mcp/agent_sessions.rs"
   - "path:web/src/platform/settings/agents.tsx"
 ---
@@ -98,5 +98,5 @@ What doesn't change: a person's own `@arugula` and replies work as before;
 an agent with no session grant is ignored in a session's thread, as
 before; agents on personal machines are still never woken by other
 people's mentions.
-Where: `crates/platform/src/grants.rs`, `crates/platform/src/db/projects.rs` (`SESSIONS_START`, `SESSIONS_REPLY`), `crates/platform/src/chat/sessions.rs` (what an agent's message does), `crates/platform/src/chat/agent_sessions.rs` (the daemon's routes), migration `0065_session_asker_agent`, `crates/daemon/src/mcp/agent_sessions.rs` (`session_start`, `session_reply`), `web/src/platform/settings/agents.tsx`.
+Where: `crates/platform/src/grants.rs`, `crates/platform/src/db/projects.rs` (`SESSIONS_START`, `SESSIONS_REPLY`), `crates/platform-chat/src/chat/sessions.rs` (what an agent's message does), `crates/platform-chat/src/chat/agent_sessions.rs` (the daemon's routes), migration `0065_session_asker_agent`, `crates/daemon/src/mcp/agent_sessions.rs` (`session_start`, `session_reply`), `web/src/platform/settings/agents.tsx`.
 From: Arugula #265 (Fleet 3), tracker #262, rough edges #250 (edges 1, 2, 9, 18).

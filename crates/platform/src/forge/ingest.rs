@@ -416,8 +416,8 @@ pub fn webhook(p: &Platform, event: &str, delivery: &str, v: &Value, came: Insta
                 }
                 super::inbox::written(p, repo, rows);
                 if !rows.items.is_empty() {
-                    crate::sessions::pr::noted(p, repo);
-                    crate::sessions::merged::seen(p, repo, &rows.items.iter().collect::<Vec<_>>());
+                    crate::features::chat().pr_noted(p, repo);
+                    crate::features::chat().merged_seen(p, repo, &rows.items.iter().collect::<Vec<_>>());
                 }
                 let numbers: Vec<u64> =
                     rows.items.iter().map(|i| i.number).chain(rows.events.iter().map(|e| e.number)).collect();

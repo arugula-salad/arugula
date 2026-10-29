@@ -49,7 +49,7 @@ use crate::{
 };
 
 /// The reserved word: `@codex`.
-pub const MENTION: &str = "codex";
+pub const MENTION: &str = arugula_platform::chat::REVIEW_MENTION;
 
 /// What a review's `stopped` says once its review is posted, first the
 /// code (the card knows it).

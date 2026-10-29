@@ -16,9 +16,9 @@ Billing has moved in (M139:
 (M137, Managoat-backed until M189 and M190 removed it: what's left in
 `src/cloud/` is the `cloud.drive` check and `cloud::Args`, the master key
 and beta allowlist; Cloud workspaces are hosted workspaces, `src/hosted/`)
-and chat (M138:
-`src/chat.rs`, its tables in `src/db/chat.rs`, its API types in
-`arugula-control-wire`), and then projects and grants (`src/projects.rs`
+and chat (M138: its tables in `src/db/chat.rs`, its core in `src/chat.rs`,
+its routes and agent sessions in `arugula-platform-chat` since #314, its
+API types in `arugula-control-wire`), and then projects and grants (`src/projects.rs`
 and `src/grants.rs`, their tables in `src/db/projects.rs`), and the GitHub
 App's webhook, key, access checks and tokens (M161: `src/forge/`, its flags
 in `forge::Args`, the forge mirror's tables in `src/db/forge.rs`). It runs inside
@@ -91,13 +91,20 @@ Start with `src/lib.rs`, then:
   binaries register them all (`crates/platform-all`). A feature crate names
   this crate's modules as the platform did before the split (`use
   arugula_platform::*`), and its tests use the harness this crate exports
-  with its `testing` feature (`testing`, `chat_tests::TestHub`,
+  with its `testing` feature (`testing`, `testing::hub::TestHub`, also
+  `chat_tests::TestHub`,
   `deploys_tests`, `forge::links_tests`, `agents_tests`).
 - `../platform-agents` (`arugula-platform-agents`): the MCP endpoint for
   agents with no machine (M230, `POST /api/mcp`) and the bearer agent
   grant tokens that open it; redone's import and the Infisical projection
   (M235); studio as a client (M236); the platform page's "Linked products"
   (M229).
+- `../platform-chat` (`arugula-platform-chat`): chat's routes, rooms and
+  messages, and the agent sessions in its threads (M122, M138, M256 on).
+  Chat's core stays here (`src/chat.rs`: the live bus on
+  `Platform::chat`, whether chat is on, names and mentions), and so do its
+  tables; the rest of the platform reaches the crate through
+  `features::Chat`.
 - `../platform-deploys` (`arugula-platform-deploys`): environments,
   deploys and their approval, and applying them (M217–M219). The drivers
   and the deploys' tables stay here; the runs engine, a deploy box's asks

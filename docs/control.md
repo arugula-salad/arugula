@@ -1197,7 +1197,7 @@ wakes an agent: they read their mentions when they look. `capabilities`
 says whether the thread tools are live and what they reach. The routes are
 `/api/daemon/chat/rooms`, `/api/daemon/chat/rooms/{id}/messages` (`GET`,
 `POST`), `/api/daemon/chat/search`
-(`crates/platform/src/chat/agent_threads.rs`), and, for what a message can
+(`crates/platform-chat/src/chat/agent_threads.rs`), and, for what a message can
 carry: `.../files` (`POST` an upload, `GET .../files/{file}`),
 `.../messages/{seq}/reactions` (`POST`, `DELETE`) and
 `.../messages/{seq}/pin` (`PUT`, `DELETE`). Posting, files, reactions and
@@ -1308,7 +1308,7 @@ person allows or denies. The MCP tools are `session_start` (`issue` or
 behind is refused. They need no `threads.post`: each posts only its ask or
 its reply, labelled as the agent's. The routes are `POST
 /api/daemon/sessions` and `POST /api/daemon/sessions/{ses}/reply`
-(`crates/platform/src/chat/agent_sessions.rs`). An agent's message posted
+(`crates/platform-chat/src/chat/agent_sessions.rs`). An agent's message posted
 with `post_thread` (with `threads.post`) counts the same way when the
 machine holds the grant.
 

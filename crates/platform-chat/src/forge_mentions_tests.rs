@@ -2,7 +2,8 @@
 //! world (`viewer_tests::world`), with chat on for team t1: each reason on
 //! a native issue, a mention in a mirrored item's thread, who may see
 //! them, one push for a thread's mention (never chat's too), agents'
-//! mentions left out, and Seen and Done. Runs on SQLite and, with
+//! mentions left out, and Seen and Done. Here with chat since #314: its
+//! threads are where the mentions are. Runs on SQLite and, with
 //! `ARUGULA_TEST_POSTGRES_URL` (`just test-platform-postgres`), Postgres.
 
 use std::{sync::Arc, time::Duration};
@@ -10,12 +11,13 @@ use std::{sync::Arc, time::Duration};
 use arugula_e2e::team::TeamRole;
 use serde_json::{Value, json};
 
-use super::{links_tests::serve, viewer_tests::world};
 use crate::{
     Platform,
     chat_tests::{TestHub, call},
     db::sql::{Sql as _, params},
+    forge::viewer_tests::world,
     hub::PushOptions,
+    testing::forge_serve as serve,
 };
 
 /// Every entry, as `account item reason`, sorted.
@@ -195,7 +197,7 @@ async fn a_mention_in_a_mirrored_items_thread() {
         (1, &json!("thread_mention"), &json!(room), &Value::Null)
     );
     // Working out the item's GitHub reasons leaves it.
-    super::inbox::recompute(&app, 88, &[2], true).await.unwrap();
+    crate::forge::inbox::recompute(&app, 88, &[2], true).await.unwrap();
     assert_eq!(rows(&app), ["alice fi_a2 thread_mention"]);
 
     // acme/app is private: carol didn't sign in with GitHub, so isn't

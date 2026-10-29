@@ -75,19 +75,20 @@ pub mod items;
 pub mod links;
 #[cfg(any(test, feature = "testing"))]
 pub mod links_tests;
-#[cfg(test)]
-mod mentions_tests;
 pub mod ops;
 #[cfg(test)]
 mod ops_tests;
 pub mod poller;
 pub mod send;
-#[cfg(test)]
-mod send_tests;
+// Also the chat crate's tests' (#314, the `testing` feature): `Logs`,
+// what was minted and posted.
+#[cfg(any(test, feature = "testing"))]
+pub mod send_tests;
 pub mod stats;
 pub mod viewer;
-#[cfg(test)]
-mod viewer_tests;
+// Also the chat crate's tests' (#314, the `testing` feature): `world`.
+#[cfg(any(test, feature = "testing"))]
+pub mod viewer_tests;
 mod webhook;
 #[cfg(test)]
 mod work_tests;

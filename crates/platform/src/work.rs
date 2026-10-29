@@ -364,16 +364,13 @@ pub async fn report(app: &Platform, m: &HostedMachine, r: &Report) -> Result<Rep
 }
 
 /// The job worker with every kind's handler this platform has: runs'
-/// dispatch (M212), schedules' ticks (M214), thread sessions' follow
-/// (M256), and the feature crates' (#314): deploys' applies (M219). Other
+/// dispatch (M212), schedules' ticks (M214), and the feature crates'
+/// (#314): thread sessions' follow (M256), deploys' applies (M219). Other
 /// kinds join it here, or through `Feature::jobs`, as they land: one worker
 /// claims every kind.
 pub fn start(app: &Arc<Platform>) {
     let ticks = crate::triggers::schedule::Ticks { gate: Arc::new(crate::triggers::Members(app.clone())) };
-    let worker = crate::jobs::Worker::new()
-        .with(Dispatch { app: app.clone() })
-        .with(ticks)
-        .with(crate::sessions::job::Follow { app: app.clone() });
+    let worker = crate::jobs::Worker::new().with(Dispatch { app: app.clone() }).with(ticks);
     crate::jobs::start(app.clone(), crate::features::jobs(app, worker));
 }
 

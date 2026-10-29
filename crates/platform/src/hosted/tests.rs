@@ -42,7 +42,7 @@ pub struct Fake {
     n: AtomicU32,
     lose_next: AtomicBool,
     refuse_next: AtomicBool,
-    pub(super) resumes: AtomicU32,
+    pub resumes: AtomicU32,
     pub(super) resume_ms: AtomicU32,
     pub(super) resume_error: Mutex<Option<compute::Error>>,
     pub calls: Mutex<Vec<String>>,
@@ -66,7 +66,7 @@ impl Fake {
     }
 
     /// Its timeout passed: the box paused itself.
-    pub(super) fn pause_all(&self) {
+    pub fn pause_all(&self) {
         for b in self.boxes.lock().unwrap().values_mut() {
             b.state = State::Paused;
         }

@@ -189,7 +189,7 @@ everyone in a team whose owners turned it on (*Chat* under Teams on
 control's page, kept as the team's `chat` beside its Labs flags,
 `POST /api/flags`; an account's own word, set before, still beats its
 teams'); the API is under `/api/chat`
-(`crates/platform/src/chat.rs`, control's platform since M138), and the
+(`crates/platform-chat/src/chat.rs`, control's platform since M138), and the
 pages read it in
 `web/src/shared/chat-store.ts`, `web/src/shared/chat/rooms.tsx` and
 `web/src/shared/chat/room.tsx`. The Chat page is the platform page's
@@ -244,7 +244,7 @@ Control holds the messages; the machine decides who reads them.
 
 Everything here is the platform page's (and the phone's), one implementation
 in `web/src/shared/chat/`, served by the platform in control
-(`crates/platform/src/chat.rs` and `chat/`). Control holds the text, so all
+(`crates/platform-chat/src/chat.rs` and `chat/`). Control holds the text, so all
 of it works with every machine asleep. [control-e2e.md](control-e2e.md#chat)
 says what is stored.
 

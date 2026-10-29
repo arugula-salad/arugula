@@ -7,7 +7,7 @@
 //! Like the thread tools, they live on control's platform, never here: each
 //! is a `/api/daemon/sessions…` route signed with this machine's key, and
 //! the platform asks the grant every time
-//! (`crates/platform/src/chat/agent_sessions.rs`). The ask or the reply is
+//! (`crates/platform-chat/src/chat/agent_sessions.rs`). The ask or the reply is
 //! a message in the session's thread, labelled "<owner>'s agent on
 //! <machine>"; the owner is the session's asker, and its bill is theirs.
 //! Neither approves anything: a session's permission waits on a person.

@@ -13,7 +13,15 @@ use std::{
 };
 
 use arugula_control_common::{ApiError, err};
-use arugula_control_wire::work::{ArtifactGiven, DeployWork, Reported, SecretsAsk, SecretsGiven};
+use arugula_control_wire::{
+    chat::{
+        AgentMessages, AgentMessagesQuery, AgentRooms, ChatFound, ChatMessage, ChatPost, ChatPosted, ChatSearchQuery,
+    },
+    work::{
+        ArtifactGiven, DeployWork, PushAsk, PushGiven, Reported, SecretsAsk, SecretsGiven, SessionIssuesAsk,
+        SessionIssuesGiven, SessionReport,
+    },
+};
 use axum::{Router, http::StatusCode, routing::MethodRouter};
 use futures_util::future::BoxFuture;
 use serde_json::Value;
@@ -21,8 +29,10 @@ use serde_json::Value;
 use crate::{
     Platform,
     auth::Machine,
-    db::{Db, runs::Run},
+    db::{Db, mirror::ItemRow, runs::Run, sessions::Session},
+    forge::send::{How, Outcome},
     jobs::Worker,
+    triggers::events::Seen,
     work::HostedMachine,
 };
 
@@ -144,6 +154,221 @@ pub fn install_deploys(d: Box<dyn Deploys>) {
 /// Deploys, as registered; refusing everything when they aren't.
 pub fn deploys() -> &'static dyn Deploys {
     DEPLOYS.get().map_or(&NoDeploys, |d| d.as_ref())
+}
+
+/// Chat and agent sessions (`arugula-platform-chat`), as the rest of the
+/// platform asks them: the hub's port for a session's PR and a hosted box's
+/// session calls, the forge mirror and GitHub's webhook for what a
+/// session hears, hosted workspaces for a rebuilt box's sessions, boxes for
+/// a review, grants for the notice a room gets, and agents with no machine
+/// for their threads. Chat's core (the live bus, whether chat is on, names
+/// and mentions) is the base's ([`crate::chat`]). Without the crate there's
+/// no session and no thread: each ask is refused, and what a session would
+/// hear is nobody's.
+pub trait Chat: Send + Sync + 'static {
+    /// Whether `draft` is a session's PR (M259), which the hub's
+    /// `send_draft` callback sends through [`Chat::send_pr`], not a forge
+    /// draft.
+    fn is_pr(&self, _draft: &str) -> bool {
+        false
+    }
+    /// Sends a session's PR, as its asker.
+    fn send_pr<'a>(
+        &'a self,
+        _app: &'a Platform,
+        _account: &'a str,
+        _draft: &'a str,
+        _how: How,
+    ) -> BoxFuture<'a, Outcome> {
+        Box::pin(async { Outcome { refused: Some("no sessions here".into()), ..Default::default() } })
+    }
+    /// What a hosted box says of one of its sessions
+    /// (`PlatformPort::hosted_session_report`).
+    fn session_report<'a>(
+        &'a self,
+        _app: &'a Platform,
+        _m: &'a HostedMachine,
+        _report: &'a SessionReport,
+    ) -> BoxFuture<'a, anyhow::Result<Reported>> {
+        Box::pin(async { Ok(Reported::Refused { why: "no sessions here".into(), now: None, next: None }) })
+    }
+    /// A session's push token (`PlatformPort::hosted_session_push`).
+    fn session_push<'a>(
+        &'a self,
+        _app: &'a Platform,
+        _m: &'a HostedMachine,
+        _ask: &'a PushAsk,
+    ) -> BoxFuture<'a, anyhow::Result<PushGiven>> {
+        Box::pin(async { Ok(PushGiven::Refused { why: "no sessions here".into() }) })
+    }
+    /// A session's issues call (`PlatformPort::hosted_session_issues`).
+    fn session_issues<'a>(
+        &'a self,
+        _app: &'a Platform,
+        _m: &'a HostedMachine,
+        _ask: &'a SessionIssuesAsk,
+    ) -> BoxFuture<'a, anyhow::Result<SessionIssuesGiven>> {
+        Box::pin(async { Ok(SessionIssuesGiven::Refused { why: "no sessions here".into() }) })
+    }
+    /// The forge mirror wrote new items of `repo`: a session's PR among them
+    /// says where it came from (M259).
+    fn pr_noted(&self, _app: &Platform, _repo: u64) {}
+    /// The forge mirror saw `items` of `repo` change: a session's PR merged
+    /// ends the session (M265).
+    fn merged_seen(&self, _app: &Platform, _repo: u64, _items: &[&ItemRow]) {}
+    /// A session's prompt on its workspace's new box, and whether its
+    /// conversation was lost with the old one (Arugula #209).
+    fn after_rebuild<'a>(&'a self, _app: &'a Platform, _s: &'a Session) -> BoxFuture<'a, anyhow::Result<Rebuilt>> {
+        Box::pin(async { anyhow::bail!("no sessions here") })
+    }
+    /// Sessions `ids` changed: their cards and their asks hear it.
+    fn told(&self, _app: &Platform, _ids: &[String]) -> anyhow::Result<()> {
+        Ok(())
+    }
+    /// A check suite finished: on a session's branch, its session hears.
+    fn suite_done(&self, _app: &Platform, _event: &str, _v: &Value, _now: u64) -> anyhow::Result<()> {
+        Ok(())
+    }
+    /// GitHub's event `seen`, if it's on a session's branch: what came of it.
+    fn route_feedback(&self, _app: &Platform, _seen: &Seen, _v: &Value, _now: u64) -> anyhow::Result<Routed> {
+        Ok(Routed::Elsewhere)
+    }
+    /// A box's review (`boxes::post`), into the thread on `target` in
+    /// `project` for `author`: the room and the message's number.
+    fn box_post<'a>(
+        &'a self,
+        _app: &'a Platform,
+        _author: &'a str,
+        _project: &'a str,
+        _target: &'a str,
+        _via: &'a str,
+        _text: String,
+    ) -> BoxFuture<'a, Result<(String, i64), ApiError>> {
+        Box::pin(async { Err(no_chat()) })
+    }
+    /// Before a grant of `power` over `scope` is given (#122): the rooms
+    /// it lets agents into, and who reaches them now. `None` when it lets
+    /// agents into none.
+    fn grant_notice<'a>(
+        &'a self,
+        _app: &'a Platform,
+        _power: &'a str,
+        _scope: (&'a str, &'a str),
+    ) -> BoxFuture<'a, Option<GrantNotice>> {
+        Box::pin(async { None })
+    }
+    /// After it was given: those rooms say whose agents reach them now.
+    fn announce<'a>(&'a self, _app: &'a Platform, _notice: GrantNotice) -> BoxFuture<'a, ()> {
+        Box::pin(async {})
+    }
+    /// A machine's agents' rooms (`AGENT_ROOMS`), for agents with no machine
+    /// too.
+    fn agent_rooms(&self, _app: Arc<Platform>, _me: Machine) -> BoxFuture<'static, Result<AgentRooms, ApiError>> {
+        Box::pin(async { Err(no_chat()) })
+    }
+    /// A room's messages, as a machine's agents read them.
+    fn agent_messages(
+        &self,
+        _app: Arc<Platform>,
+        _me: Machine,
+        _room: String,
+        _q: AgentMessagesQuery,
+    ) -> BoxFuture<'static, Result<AgentMessages, ApiError>> {
+        Box::pin(async { Err(no_chat()) })
+    }
+    /// A machine's agents post in a room.
+    fn agent_post(
+        &self,
+        _app: Arc<Platform>,
+        _me: Machine,
+        _room: String,
+        _b: ChatPost,
+    ) -> BoxFuture<'static, Result<ChatPosted, ApiError>> {
+        Box::pin(async { Err(no_chat()) })
+    }
+    /// A machine's agents react to message `seq` (`on`), or take it back.
+    fn agent_react(
+        &self,
+        _app: Arc<Platform>,
+        _me: Machine,
+        _room: String,
+        _seq: i64,
+        _emoji: String,
+        _on: bool,
+    ) -> BoxFuture<'static, Result<ChatMessage, ApiError>> {
+        Box::pin(async { Err(no_chat()) })
+    }
+    /// A machine's agents pin message `seq` (`on`), or unpin it.
+    fn agent_pin(
+        &self,
+        _app: Arc<Platform>,
+        _me: Machine,
+        _room: String,
+        _seq: i64,
+        _on: bool,
+    ) -> BoxFuture<'static, Result<ChatMessage, ApiError>> {
+        Box::pin(async { Err(no_chat()) })
+    }
+    /// A machine's agents search the rooms they reach.
+    fn agent_search(
+        &self,
+        _app: Arc<Platform>,
+        _me: Machine,
+        _q: ChatSearchQuery,
+    ) -> BoxFuture<'static, Result<ChatFound, ApiError>> {
+        Box::pin(async { Err(no_chat()) })
+    }
+}
+
+/// What came of an event on a session's branch ([`Chat::route_feedback`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Routed {
+    /// Not a session's: the rules'.
+    Elsewhere,
+    /// A session's, from outside the repo: nothing comes of it.
+    Outsider { session: String },
+    /// Gathered into a batch; `new: false` when it was there already (a
+    /// redelivery).
+    Gathered { session: String, new: bool },
+    /// Its batch was sent already: kept out.
+    Late { session: String },
+    /// Its session ended: dropped, and the thread told (once).
+    Ended { session: String },
+}
+
+/// A session's prompt on its workspace's new box ([`Chat::after_rebuild`]),
+/// and whether its conversation was lost: the old box archived no
+/// transcript of it (Arugula #209), which its card says.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Rebuilt {
+    pub text: String,
+    pub lost: bool,
+}
+
+/// What [`Chat::grant_notice`] found before a grant, for [`Chat::announce`]
+/// after it: chat's own.
+pub struct GrantNotice(pub Box<dyn Any + Send + Sync>);
+
+fn no_chat() -> ApiError {
+    err(StatusCode::NOT_FOUND, "no chat here")
+}
+
+struct NoChat;
+
+impl Chat for NoChat {}
+
+static CHAT: std::sync::OnceLock<Box<dyn Chat>> = std::sync::OnceLock::new();
+
+/// Puts chat and its sessions in this platform (`arugula-platform-chat`'s
+/// `register`).
+pub fn install_chat(c: Box<dyn Chat>) {
+    let _ = CHAT.set(c);
+}
+
+/// Chat and its sessions, as registered; refusing everything when they
+/// aren't.
+pub fn chat() -> &'static dyn Chat {
+    CHAT.get().map_or(&NoChat, |c| c.as_ref())
 }
 
 /// A router that notes its paths too: routes.toml's test reads them.

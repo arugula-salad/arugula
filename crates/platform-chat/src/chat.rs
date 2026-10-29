@@ -65,10 +65,7 @@
 use std::{
     collections::{HashMap, HashSet, VecDeque},
     convert::Infallible,
-    sync::{
-        Arc, Mutex,
-        atomic::{AtomicU64, Ordering},
-    },
+    sync::Arc,
     time::{Duration, Instant},
 };
 
@@ -93,17 +90,16 @@ use tokio::sync::broadcast;
 use crate::{
     Platform,
     auth::{Machine, Person},
-    cache,
     db::{
         Db, Taken,
-        chat::{Message, NewChatEvent, NewMessage, Page, Room, RoomMeta, Search, UnreadAsk, Word},
+        chat::{Message, NewMessage, Page, Room, RoomMeta, Search, UnreadAsk, Word},
         chat_files::ChatFileRow,
         chat_reactions::Reaction,
         objects::Holder,
         projects::{ISSUES_WRITE, THREADS_POST, THREADS_READ},
     },
     grants::{AGENT_UNGRANTED, AgentPrincipal, AgentScope, agent_may},
-    hub::{Account, Daemon, Flags, PushOptions, Team},
+    hub::{Account, Daemon, PushOptions, Team},
 };
 
 pub(crate) mod agent_notice;
@@ -125,16 +121,12 @@ pub(crate) mod sidebar;
 pub(crate) mod threads;
 pub(crate) mod typing;
 
+// Chat's core stays in the base (#314): the live bus, whether chat is on,
+// names and mentions.
+pub use arugula_platform::chat::*;
+
 type J<T> = Result<Json<T>, ApiError>;
 
-/// Control's chat setting, kept beside an account's and a team's Labs
-/// flags under this name (chat left Labs, native #203: no machine has a
-/// flag for it).
-pub const FLAG: &str = "chat";
-/// The reason a refusal gives when chat isn't on for the account.
-pub const CHAT_OFF: &str = "chat_off";
-/// ...and when a viewer posts in a session's or pane's thread.
-pub const WATCHING: &str = "watching";
 /// At most this many channels per team, rooms per machine, and bytes of
 /// text and quotes per team (or machine).
 const MAX_CHANNELS: u64 = 200;
@@ -144,15 +136,8 @@ const MAX_SCOPE_BYTES: u64 = 1 << 30;
 const PAGE: u32 = 50;
 const MAX_PAGE: u32 = 200;
 const SEARCH_HITS: u32 = 50;
-/// Live streams: open at once, per account and in all (per machine); the
-/// most events one is sent again when it resumes, and its channel's
-/// backlog; how often each re-reads what it may see anyway.
-const STREAMS_PER_ACCOUNT: usize = 20;
-const STREAMS: usize = 5_000;
-const RING: usize = 1_024;
+/// How often a live stream re-reads what it may see anyway.
 const REFRESH: Duration = Duration::from_secs(60);
-/// At most one push per room per person in this long.
-const PUSH_GAP_MS: u64 = 60_000;
 
 /// Chat's rate limits (M122), counted by the platform alone. Posts are
 /// counted per minute: one account's, and everyone's together, a brake on
@@ -167,37 +152,6 @@ const CHAT_SEARCHES: (&str, usize) = ("chat-search", 600);
 const CHAT_READERS: (&str, usize) = ("chat-readers", 600);
 
 // ---------------------------------------------------------------- who
-
-fn account_owner(account: &str) -> String {
-    format!("account:{account}")
-}
-
-fn team_owner(team: &str) -> String {
-    format!("team:{team}")
-}
-
-fn flag_of(flags: &HashMap<String, Flags>, owner: &str, flag: &str) -> Option<bool> {
-    flags.get(owner).and_then(|f| f.get(flag)).copied()
-}
-
-/// Whether chat is on for an account: its own flag if it set one, else on
-/// when any team it's in turned it on.
-pub async fn chat_on(app: &Platform, account: &str) -> anyhow::Result<bool> {
-    flag_on(app, account, FLAG).await
-}
-
-/// Whether the Labs flag `flag` is on for an account, by the rule chat's
-/// is: its own if it set one, else on when any team it's in turned it on.
-pub async fn flag_on(app: &Platform, account: &str, flag: &str) -> anyhow::Result<bool> {
-    let teams = app.cache.teams_of(&*app.hub, account).await?;
-    let mut owners = vec![account_owner(account)];
-    owners.extend(teams.iter().map(|t| team_owner(t)));
-    let flags = app.cache.flags(&*app.hub, &owners).await?;
-    if let Some(on) = flag_of(&flags, &account_owner(account), flag) {
-        return Ok(on);
-    }
-    Ok(teams.iter().any(|t| flag_of(&flags, &team_owner(t), flag) == Some(true)))
-}
 
 async fn gate(app: &Platform, account: &str) -> Result<(), ApiError> {
     if chat_on(app, account).await? {
@@ -552,11 +506,6 @@ async fn room_for(app: &Platform, account: &str, id: &str) -> Result<(Room, u64,
     Ok((room, from, facts))
 }
 
-/// An account's name: the one it chose, else its login, else "".
-pub async fn name_of(app: &Platform, account: &str) -> anyhow::Result<String> {
-    Ok(app.cache.accounts(&*app.hub, &[account.to_owned()]).await?.remove(account).map(|a| a.name).unwrap_or_default())
-}
-
 fn kind_of(kind: &str) -> ChatKind {
     match kind {
         "channel" => ChatKind::Channel,
@@ -901,89 +850,6 @@ fn reactions_of(db: &Db, ms: &[&Message]) -> anyhow::Result<HashMap<(String, i64
 
 // ---------------------------------------------------------------- mentions
 
-/// The `@words` in a text, lowercased: an `@` at the start or after
-/// anything but a letter or digit (not an email address), then letters,
-/// digits, `_`, `-` and `.` (not a trailing one).
-pub(crate) fn at_words(text: &str) -> Vec<String> {
-    let mut out = Vec::new();
-    let mut prev: Option<char> = None;
-    for (i, c) in text.char_indices() {
-        if c == '@' && !prev.is_some_and(char::is_alphanumeric) {
-            let rest = &text[i + 1..];
-            let end = rest
-                .char_indices()
-                .find(|(_, ch)| !(ch.is_alphanumeric() || matches!(ch, '_' | '-' | '.')))
-                .map_or(rest.len(), |(j, _)| j);
-            let w = rest[..end].trim_end_matches(['.', '-']).to_lowercase();
-            if !w.is_empty() && !out.contains(&w) {
-                out.push(w);
-            }
-        }
-        prev = Some(c);
-    }
-    out
-}
-
-/// The one word a roster calls a person (control's `teams::member_name`):
-/// the name they chose, its words joined by `-`, else `account-` and the
-/// start of their id.
-fn member_name(id: &str, chosen: &str) -> String {
-    let words: Vec<&str> =
-        chosen.split(|c: char| c.is_whitespace() || c.is_control()).filter(|w| !w.is_empty()).collect();
-    let name: String = words.join("-").chars().take(120).collect();
-    if name.is_empty() { format!("account-{}", &id[..6.min(id.len())]) } else { name }
-}
-
-/// What an `@word` may name an account by: its login, its name, and the one
-/// word a roster calls it. With no name of its own an account goes by its
-/// login (`Account::name`), and the roster's word for it is its id's.
-fn names_of(a: &Account) -> Vec<String> {
-    let mut v = vec![a.login.to_lowercase(), a.name.to_lowercase(), member_name(&a.id, &a.name).to_lowercase()];
-    if a.name == a.login {
-        v.push(member_name(&a.id, "").to_lowercase());
-    }
-    v
-}
-
-/// Whom a text mentions among `audience` (by login, name, or the one word
-/// a roster calls them), leaving out the author, and the `@words` that
-/// named nobody there.
-pub(crate) async fn mentions(
-    app: &Platform,
-    text: &str,
-    audience: &[String],
-    author: &str,
-) -> anyhow::Result<(Vec<String>, Vec<String>)> {
-    // `@arugula` is reserved (M256): it names nobody, and starts work; so
-    // is `@codex`, which reviews (M264).
-    let words: Vec<String> = at_words(text)
-        .into_iter()
-        .filter(|w| w != sessions::MENTION && w != crate::sessions::review::MENTION)
-        .collect();
-    if words.is_empty() {
-        return Ok((vec![], vec![]));
-    }
-    let accounts = app.cache.accounts(&*app.hub, audience).await?;
-    let mut hit: HashSet<&str> = HashSet::new();
-    let mut named = Vec::new();
-    for a in audience {
-        let Some(acc) = accounts.get(a) else { continue };
-        let names = names_of(acc);
-        let mut found = false;
-        for w in &words {
-            if names.iter().any(|n| !n.is_empty() && n == w) {
-                hit.insert(w);
-                found = true;
-            }
-        }
-        if found && a != author {
-            named.push(a.clone());
-        }
-    }
-    let unreached = words.iter().filter(|w| !hit.contains(w.as_str())).cloned().collect();
-    Ok((named, unreached))
-}
-
 /// The agents a text mentions (M198): an `@word` that named nobody, but
 /// names a machine whose live `threads.read` grant reaches `room` (one
 /// that can read the mention; [`room_agents`]), by its name: `@geek`, or
@@ -1018,237 +884,6 @@ async fn agent_mentions(
 
 // ---------------------------------------------------------------- live
 
-/// One event for open pages, numbered; `to` limits it to one account (its
-/// read marks).
-pub struct Out {
-    n: u64,
-    ev: ChatLive,
-    to: Option<String>,
-}
-
-/// What's open on this machine, in memory: the live streams, and when each
-/// person was last pushed for each room.
-///
-/// **The events aren't kept here (M144).** Each is a row of `chat_events`,
-/// numbered across every machine the platform runs on ([`Hub::publish`]).
-/// A machine sends its streams the rows after the last one it sent
-/// ([`Hub::catch_up`]): when it publishes one itself, when another machine
-/// wakes it (`pg_notify`, heard by [`start`]), and every
-/// [`CATCH_UP`] besides. So a stream hears what was posted through any
-/// machine, and a page that dropped resumes on whichever machine it
-/// reaches next (`Last-Event-ID` is `c-<seq>`), from the database, as long
-/// as the rows it missed are still kept
-/// ([`CHAT_EVENTS_KEPT`](crate::db::chat::CHAT_EVENTS_KEPT)); otherwise it
-/// resyncs.
-pub struct Hub {
-    /// The newest event sent to this machine's streams.
-    last: AtomicU64,
-    /// Held while events are read in, so each goes out once, in order.
-    reading: Mutex<()>,
-    tx: broadcast::Sender<Arc<Out>>,
-    streams: Mutex<HashMap<String, StreamInfo>>,
-    /// Moves when who sees what may have changed (a roster, a reader list,
-    /// a flag, read from the hub's change feed): each stream re-reads its
-    /// rooms.
-    generation: AtomicU64,
-    pushed: Mutex<HashMap<(String, String), u64>>,
-    /// When each person last pinged typing in each room ([`typing`]).
-    typed: Mutex<HashMap<(String, String), u64>>,
-}
-
-/// Event ids are `c-<seq>`, `seq` being the event's row in `chat_events`
-/// (M144), the same on every machine and across restarts. An id from
-/// before (`<epoch>-<n>`, numbered by one process) resyncs.
-const EPOCH: &str = "c";
-
-/// How often a machine reads events in even when nothing woke it: what a
-/// lost notification can cost.
-pub const CATCH_UP: Duration = Duration::from_secs(5);
-
-/// Events read in at a time.
-const EVENTS_PAGE: u32 = 500;
-
-struct StreamInfo {
-    account: String,
-    /// The rooms its page shows (more than one with several chat blocks).
-    open: Vec<String>,
-    /// The thread open beside it (#106).
-    thread: Option<i64>,
-}
-
-impl Default for Hub {
-    fn default() -> Self {
-        Self {
-            last: AtomicU64::new(0),
-            reading: Mutex::new(()),
-            tx: broadcast::channel(RING).0,
-            streams: Mutex::new(HashMap::new()),
-            generation: AtomicU64::new(0),
-            pushed: Mutex::new(HashMap::new()),
-            typed: Mutex::new(HashMap::new()),
-        }
-    }
-}
-
-impl Hub {
-    /// Start after the newest event the database has: a machine that
-    /// starts sends its streams only what comes after.
-    pub fn start_at(&self, db: &Db) {
-        match db.chat_event_bounds() {
-            Ok((_, newest)) => self.last.store(newest, Ordering::SeqCst),
-            Err(e) => tracing::warn!(error = %e, "chat: reading the newest live event"),
-        }
-    }
-
-    /// Keep `ev` (for `to` only, if it's someone's) for every machine's
-    /// streams, then send this machine's what's new.
-    pub(crate) fn publish(&self, db: &Db, ev: ChatLive, to: Option<String>) {
-        let body = data(&ev);
-        let e = NewChatEvent { kind: "live", body: &body, to: to.as_deref(), at: now_ms() };
-        if let Err(e) = db.add_chat_event(&e) {
-            tracing::warn!(error = %e, "chat: keeping a live event");
-        }
-        self.catch_up(db);
-    }
-
-    /// Send this machine's streams every event after the last one sent,
-    /// in order: what any machine published since.
-    pub fn catch_up(&self, db: &Db) {
-        let _one = self.reading.lock().unwrap();
-        loop {
-            let page = match db.chat_events_after(self.last.load(Ordering::SeqCst), EVENTS_PAGE) {
-                Ok(p) => p,
-                Err(e) => return tracing::warn!(error = %e, "chat: reading live events"),
-            };
-            for e in &page {
-                match e.kind.as_str() {
-                    "live" => match serde_json::from_str::<ChatLive>(&e.body) {
-                        Ok(ev) => {
-                            if matches!(ev, ChatLive::Room { .. }) {
-                                self.changed();
-                            }
-                            let _ = self.tx.send(Arc::new(Out { n: e.seq, ev, to: e.to.clone() }));
-                        }
-                        Err(err) => {
-                            tracing::warn!(seq = e.seq, error = %err, "chat: a live event this build can't read")
-                        }
-                    },
-                    // A ping of #111: sent while it's fresh, not replayed
-                    // after (a machine that was away, a stream that resumes).
-                    "typing" => {
-                        if now_ms().saturating_sub(e.at) <= wire::TYPING_MS
-                            && let Ok(ev) = serde_json::from_str::<ChatLive>(&e.body)
-                        {
-                            // `n: 0`: not numbered, so no stream keeps its place by it.
-                            let _ = self.tx.send(Arc::new(Out { n: 0, ev, to: None }));
-                        }
-                    }
-                    // A project's warm mark (M262): nothing to send.
-                    "warm" => {}
-                    _ => self.changed(),
-                }
-                self.last.store(e.seq, Ordering::SeqCst);
-            }
-            if page.len() < EVENTS_PAGE as usize {
-                return;
-            }
-        }
-    }
-
-    /// Who sees what may have changed, here: streams re-read their rooms.
-    /// The hub's change feed moves it on every machine, each following it.
-    pub fn changed(&self) {
-        self.generation.fetch_add(1, Ordering::SeqCst);
-    }
-
-    /// Who sees what may have changed, through this machine (a reader list,
-    /// an import): every machine's streams re-read their rooms.
-    pub fn changed_everywhere(&self, db: &Db) {
-        self.changed();
-        let e = NewChatEvent { kind: "changed", body: "", to: None, at: now_ms() };
-        if let Err(e) = db.add_chat_event(&e) {
-            tracing::warn!(error = %e, "chat: keeping a live event");
-        }
-        self.catch_up(db);
-    }
-
-    /// A room appeared, changed or went.
-    pub fn room(&self, db: &Db, room: &str) {
-        self.changed();
-        self.publish(db, ChatLive::Room { room: room.to_owned() }, None);
-    }
-
-    /// The object `target`'s thread is on changed (M203): pages showing
-    /// it read it again. Nothing when nobody has made its thread.
-    pub fn object_changed(&self, db: &Db, scope: &str, target: &str) {
-        match db.chat_room_on(scope, target) {
-            Ok(Some(room)) => {
-                self.publish(db, ChatLive::Object { room: room.id, target: target.to_owned() }, None);
-            }
-            Ok(None) => {}
-            Err(e) => tracing::warn!(error = %e, "chat: finding an object's thread"),
-        }
-    }
-
-    fn id(&self, n: u64) -> String {
-        format!("{EPOCH}-{n}")
-    }
-
-    /// The events a page that last had `id` missed, from the database, to
-    /// send again; `None` when they can't all be: an id from before M144
-    /// or from another database, or more missed than are kept or than
-    /// [`RING`].
-    fn missed(&self, db: &Db, id: &str) -> Option<(u64, Vec<Arc<Out>>)> {
-        let n: u64 = id.strip_prefix(EPOCH)?.strip_prefix('-')?.parse().ok()?;
-        self.catch_up(db);
-        if n > self.last.load(Ordering::SeqCst) {
-            return None;
-        }
-        // Pruned past it: what it missed may be gone.
-        let (oldest, _) = db.chat_event_bounds().ok()?;
-        if oldest > n + 1 {
-            return None;
-        }
-        let rows = db.chat_events_after(n, RING as u32 + 1).ok()?;
-        if rows.len() > RING {
-            return None;
-        }
-        let outs = rows
-            .into_iter()
-            .filter(|r| r.kind == "live")
-            .filter_map(|r| Some(Arc::new(Out { n: r.seq, ev: serde_json::from_str(&r.body).ok()?, to: r.to })))
-            .collect();
-        Some((n, outs))
-    }
-
-    fn has_open(&self, account: &str, room: &str) -> bool {
-        self.streams.lock().unwrap().values().any(|s| s.account == account && s.open.iter().any(|r| r == room))
-    }
-
-    /// Whether `account` has the thread `parent` of `room` open (#106).
-    fn has_open_thread(&self, account: &str, room: &str, parent: i64) -> bool {
-        self.streams.lock().unwrap().values().any(|s| {
-            s.account == account && s.open.first().map(String::as_str) == Some(room) && s.thread == Some(parent)
-        })
-    }
-
-    /// Whether `account` may be pushed for `room` now (and note it). Per
-    /// machine (M144): with two, a room's pushes are at most one a
-    /// [`PUSH_GAP_MS`] from each.
-    fn may_push(&self, account: &str, room: &str, now: u64) -> bool {
-        let mut p = self.pushed.lock().unwrap();
-        if p.len() > 50_000 {
-            p.retain(|_, at| now.saturating_sub(*at) < PUSH_GAP_MS);
-        }
-        let key = (account.to_owned(), room.to_owned());
-        if p.get(&key).is_some_and(|at| now.saturating_sub(*at) < PUSH_GAP_MS) {
-            return false;
-        }
-        p.insert(key, now);
-        true
-    }
-}
-
 /// Takes a stream out of the hub's list when it ends.
 struct Registered {
     app: Arc<Platform>,
@@ -1257,11 +892,7 @@ struct Registered {
 
 impl Drop for Registered {
     fn drop(&mut self) {
-        let last = {
-            let mut streams = self.app.chat.streams.lock().unwrap();
-            let account = streams.remove(&self.id).map(|s| s.account);
-            account.filter(|a| !streams.values().any(|s| s.account == *a))
-        };
+        let last = { self.app.chat.drop_stream(&self.id) };
         // The person's last open page here closed: they're gone now, not
         // when the beat goes stale (a page on another machine's streams
         // says so again within [`people::STREAM_BEAT`]).
@@ -1289,10 +920,6 @@ struct Live {
     beat: tokio::time::Interval,
 }
 
-fn data(ev: &ChatLive) -> String {
-    serde_json::to_string(ev).unwrap_or_default()
-}
-
 impl Live {
     fn app(&self) -> &Platform {
         &self.reg.app
@@ -1300,7 +927,7 @@ impl Live {
 
     async fn refresh(&mut self) {
         let app = self.reg.app.clone();
-        let generation = app.chat.generation.load(Ordering::SeqCst);
+        let generation = app.chat.generation();
         let rooms = match chat_on(&app, &self.account).await {
             Ok(true) => rooms_seen(&app, &self.account).await.map(|(v, _)| v.into_iter().map(|(r, _)| r.id).collect()),
             Ok(false) => Ok(HashSet::new()),
@@ -1332,7 +959,7 @@ impl Live {
         if out.to.as_ref().is_some_and(|to| *to != self.account) {
             return None;
         }
-        if self.app().chat.generation.load(Ordering::SeqCst) != self.generation || self.read_at.elapsed() > REFRESH {
+        if self.app().chat.generation() != self.generation || self.read_at.elapsed() > REFRESH {
             self.refresh().await;
         }
         let ok = match &out.ev {
@@ -1361,7 +988,7 @@ impl Live {
     }
 
     async fn resync(&mut self) -> Event {
-        self.seen = self.app().chat.last.load(Ordering::SeqCst);
+        self.seen = self.app().chat.last();
         self.refresh().await;
         Event::default().id(self.app().chat.id(self.seen)).data(data(&ChatLive::Resync {}))
     }
@@ -1377,16 +1004,7 @@ pub async fn live(
 ) -> Result<Sse<impl futures_util::Stream<Item = Result<Event, Infallible>>>, ApiError> {
     gate(&app, &s.account).await?;
     let id = hex::encode(arugula_e2e::random::<12>());
-    {
-        let mut streams = app.chat.streams.lock().unwrap();
-        if streams.len() >= STREAMS {
-            return Err(err(StatusCode::SERVICE_UNAVAILABLE, "too many open pages here right now; try again soon"));
-        }
-        if streams.values().filter(|x| x.account == s.account).count() >= STREAMS_PER_ACCOUNT {
-            return Err(err(StatusCode::TOO_MANY_REQUESTS, "too many open chat pages; close some"));
-        }
-        streams.insert(id.clone(), StreamInfo { account: s.account.clone(), open: Vec::new(), thread: None });
-    }
+    app.chat.add_stream(&id, &s.account)?;
     // A page that opened is a person who's here: seen now, active at the
     // page's first beat (it says whether it's in use).
     if let Err(e) = app.db.chat_beat(&s.account, now_ms(), false, false) {
@@ -1396,8 +1014,7 @@ pub async fn live(
     // Subscribe first, then read what was missed from the database: what's
     // published in between is in both, and `seen` drops the second copy. A
     // new stream starts at what was sent before it subscribed.
-    let start = app.chat.last.load(Ordering::SeqCst);
-    let rx = app.chat.tx.subscribe();
+    let (start, rx) = app.chat.subscribe();
     let mut live = Live {
         reg: Registered { app: app.clone(), id: id.clone() },
         account: s.account,
@@ -1459,13 +1076,10 @@ pub async fn live(
 
 /// `POST /api/chat/live/open`: the room a stream's page has open.
 pub async fn open(State(app): State<Arc<Platform>>, s: Person, Json(b): Json<ChatOpen>) -> J<wire::ChatOpen> {
-    let mut streams = app.chat.streams.lock().unwrap();
-    let st = streams
-        .get_mut(&b.stream)
-        .filter(|x| x.account == s.account)
-        .ok_or_else(|| err(StatusCode::NOT_FOUND, "no such stream"))?;
-    st.open = b.room.iter().chain(b.more.iter().flatten()).cloned().collect();
-    st.thread = b.room.as_ref().and(b.thread);
+    let open = b.room.iter().chain(b.more.iter().flatten()).cloned().collect();
+    if !app.chat.open_in(&b.stream, &s.account, open, b.room.as_ref().and(b.thread)) {
+        return Err(err(StatusCode::NOT_FOUND, "no such stream"));
+    }
     Ok(Json(b))
 }
 
@@ -2678,65 +2292,21 @@ pub async fn daemon_readers(
 
 // ---------------------------------------------------------------- accounts
 
-/// What deleting an account takes from chat, in the platform's
-/// transaction (`PlatformPort::account_deleted`): its DMs (both sides),
-/// the threads on its machines, the rooms of the teams it disbanded, and
-/// its name on everything else. The rooms that go, for open pages.
-pub(crate) fn erase_account(tx: &impl crate::db::Sql, deleted: &crate::Deleted) -> anyhow::Result<Vec<String>> {
-    let dms: Vec<String> = tx.query_map(
-        "SELECT room FROM chat_members WHERE account = ?1",
-        crate::db::sql::params![deleted.account],
-        |r| r.get(0),
-    )?;
-    crate::db::chat::erase_account(tx, &deleted.account, &deleted.machines, &deleted.disbanded)?;
-    Ok(dms)
-}
-
-/// After an account went: open pages hear of its rooms, and nothing kept of
-/// the hub's answers outlives it.
-pub(crate) fn account_gone(app: &Platform, rooms: &[String]) {
-    app.cache.drop_all();
-    for r in rooms {
-        app.chat.room(&app.db, r);
-    }
-    app.chat.changed_everywhere(&app.db);
-}
-
-/// Chat's background work: following the hub's change feed
-/// ([`cache::start`]), which moves who sees what; sending this machine's
-/// streams the events other machines published (M144: woken by their
-/// `pg_notify`, else every [`CATCH_UP`]); and pruning the oldest events
-/// kept, every minute unless paused (any machine: it's the same delete).
-pub fn start(app: &Arc<Platform>) {
-    cache::start(app);
+/// Chat's background work beside the base's (`arugula_platform::chat::start`,
+/// which follows the hub's change feed and sends this machine's streams
+/// what other machines published): reminders of saved messages that are
+/// due, every [`CATCH_UP`] unless paused.
+pub fn start_reminders(app: &Arc<Platform>) {
     let app = Arc::downgrade(app);
     tokio::spawn(async move {
-        let mut pruned = Instant::now();
         loop {
             let Some(p) = app.upgrade() else { return };
-            p.chat.catch_up(&p.db);
-            if let Err(e) = p.db.prune_typing(now_ms()) {
-                tracing::warn!(error = %e, "chat: pruning typing");
-            }
             // Held with the rest of the background work for a window.
             if !p.is_paused() {
                 saved::remind(&p).await;
             }
-            if pruned.elapsed() >= Duration::from_secs(60) && !p.is_paused() {
-                if let Err(e) = p.db.prune_chat_events() {
-                    tracing::warn!(error = %e, "chat: pruning live events");
-                }
-                if let Err(e) = p.db.sweep_chat_files(now_ms()) {
-                    tracing::warn!(error = %e, "chat: sweeping files nobody posted");
-                }
-                pruned = Instant::now();
-            }
-            let heard = p.listening.as_ref().map(|l| l.heard.clone());
             drop(p);
-            match heard {
-                Some(h) => drop(tokio::time::timeout(CATCH_UP, h.notified()).await),
-                None => tokio::time::sleep(CATCH_UP).await,
-            }
+            tokio::time::sleep(CATCH_UP).await;
         }
     });
 }
@@ -2744,14 +2314,6 @@ pub fn start(app: &Arc<Platform>) {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn at_words_are_names_not_emails() {
-        assert_eq!(at_words("@alex the mean test fails, cc @Sam-Stranger."), ["alex", "sam-stranger"]);
-        assert_eq!(at_words("mail jake@example.com"), Vec::<String>::new());
-        assert_eq!(at_words("(@jhgaylor) and @jhgaylor again, @"), ["jhgaylor"]);
-        assert_eq!(at_words("@ünïcode @a.b."), ["ünïcode", "a.b"]);
-    }
 
     #[test]
     fn search_words_are_phrases_and_filters_come_apart() {
@@ -2785,14 +2347,5 @@ mod tests {
         for bad in ["", "#", "two words", "a/b", &"x".repeat(81)] {
             assert!(channel_name(bad).is_err(), "{bad}");
         }
-    }
-
-    #[test]
-    fn an_account_is_named_by_its_login_name_or_roster_word() {
-        let a = |id: &str, login: &str, name: &str| Account { id: id.into(), login: login.into(), name: name.into() };
-        assert_eq!(names_of(&a("a1jake", "jhgaylor", "Jake Gaylor")), ["jhgaylor", "jake gaylor", "jake-gaylor"]);
-        // With no name of its own: its login, and the roster's word for it.
-        assert_eq!(names_of(&a("a2alex", "alex", "alex")), ["alex", "alex", "alex", "account-a2alex"]);
-        assert_eq!(names_of(&a("a3pass", "", "")), ["", "", "account-a3pass", "account-a3pass"]);
     }
 }
