@@ -17,12 +17,16 @@ access is untested.
 
 ## What's on the branch
 
+> Since #315 the presence code is in packages: `presence/core` (encoder, rig, renderers, characters) and
+> `presence/client` (the room client over a transport); the web client keeps the People block, chat
+> avatars and a thin `web/src/shared/outline/store.ts`. Paths below are updated.
+
 | Piece | Where |
 |---|---|
-| Encoder: blur, Sobel, thinning, hysteresis (thresholds from the frame, steadied by the last frame), chains, Douglas–Peucker, a varint frame (v2: a class byte per line), deflate-raw when smaller | `web/src/shared/outline/encode.ts`, `frame.ts`, `render.ts`, `camera.ts` |
-| Depth: Depth Anything V2 Small (4-bit, Apache-2.0) through transformers.js on WebGPU, input cut to 266 px, run beside the frames about twice a second. Depth jumps count as edges, far lines draw fainter and thinner (frame v3: a nearness byte per line), and a label well behind you is dropped (a poster isn't you, a chair across the room isn't yours). No WebGPU, no depth: the block says so | `web/src/shared/outline/depth.ts`, `encode.ts` (`byDepth`) |
+| Encoder: blur, Sobel, thinning, hysteresis (thresholds from the frame, steadied by the last frame), chains, Douglas–Peucker, a varint frame (v2: a class byte per line), deflate-raw when smaller | `presence/core/src/outline/encode.ts`, `frame.ts`, `render.ts`, `camera.ts` |
+| Depth: Depth Anything V2 Small (4-bit, Apache-2.0) through transformers.js on WebGPU, input cut to 266 px, run beside the frames about twice a second. Depth jumps count as edges, far lines draw fainter and thinner (frame v3: a nearness byte per line), and a label well behind you is dropped (a poster isn't you, a chair across the room isn't yours). No WebGPU, no depth: the block says so | `presence/core/src/outline/depth.ts`, `encode.ts` (`byDepth`) |
 | Live avatars: while someone's camera is on, their outline replaces their picture wherever chat shows it (messages, DMs, members), yours mirrored | `web/src/shared/chat/avatar.tsx` (`LiveFace`) |
-| Labelling: DeepLab v3 (21 Pascal VOC classes, a class per grid cell; a line takes the class it runs along and splits where it changes) and the face landmarker (eyes, brows, irises, lips) | `web/src/shared/outline/labels.ts`, `classes.ts`; assets by `web/scripts/mediapipe-assets.sh` |
+| Labelling: DeepLab v3 (21 Pascal VOC classes, a class per grid cell; a line takes the class it runs along and splits where it changes) and the face landmarker (eyes, brows, irises, lips) | `presence/core/src/outline/labels.ts`, `classes.ts`; assets by `presence/core/scripts/assets.sh` |
 | People block (`BlockType::People`, config `{}`, drawn only while shown); *⋯ → Open beside → People* | `web/src/shell/blocks/people.tsx`, `crates/daemon/src/people_block.rs` |
 | Relay: `POST /api/people/outline` (≤32 KiB, ≥70 ms apart), `POST …/outline/off`, `GET /api/people/outlines` (SSE); latest frame per person in memory only, visibility as presence's, behind chat's gate | `crates/platform/src/chat/outlines.rs`, `crates/control/routes.toml` |
 | Trying it alone: `DEV_CONTROL_OUTLINES=1` (sam and riley echo your frames, and beat presence); `dev-browser --camera [FILE]` | `web/dev-control.ts`, `web/dev-browser.ts` |

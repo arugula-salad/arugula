@@ -1,0 +1,24 @@
+<!doctype html>
+<!-- S44: every rigged-avatar character in a set of poses, bust and head,
+     animating (idle breath and blinks, the arm wave). A dev page: `pnpm
+     sheet` in presence/core serves it. -->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Avatar sheet</title>
+    <style>
+      :root { --void: #06080d; --bg: #0b0e14; --fg: #e6e9ef; --dim: #6b7280; --accent: #4fd1c5; --teal: #2dd4bf; --ok: #86efac; --warn: #f59e0b; --info: #60a5fa; --danger: #f87171; }
+      body { margin: 0; padding: 16px; background: var(--bg); color: var(--fg); font: 12px system-ui, sans-serif; }
+      table { border-collapse: collapse; }
+      th { font-weight: 600; padding: 4px 8px; text-align: left; color: var(--dim); }
+      td { padding: 6px; vertical-align: top; }
+      canvas.bust { width: 150px; height: 168px; background: var(--void); border-radius: 8px; display: block; }
+      canvas.head { width: 36px; height: 36px; background: var(--void); border-radius: 8px; display: block; margin-top: 6px; }
+    </style>
+  </head>
+  <body>
+    <table id="sheet"></table>
+    <script type="module" src="./sheet.ts"></script>
+  </body>
+</html>

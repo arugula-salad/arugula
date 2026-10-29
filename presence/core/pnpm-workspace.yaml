@@ -1,0 +1,5 @@
+# Dependencies' install scripts: none needed in a browser (onnxruntime-node
+# and protobufjs come with transformers.js, for node).
+allowBuilds:
+  onnxruntime-node: false
+  protobufjs: false

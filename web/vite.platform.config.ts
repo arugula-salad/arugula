@@ -56,6 +56,8 @@ export default defineConfig({
     host: "127.0.0.1",
     port: Number(process.env.DEV_PLATFORM_PORT ?? 7691),
     strictPort: true,
+    // The presence packages (chat avatars) are source beside web/.
+    fs: { allow: [".", "../presence"] },
     proxy: {
       // Control checks a session's Origin is its own.
       "/api": { target: control, changeOrigin: true, headers: { origin: control } },

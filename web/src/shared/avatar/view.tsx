@@ -6,8 +6,8 @@
 import { useEffect, useRef } from "preact/hooks";
 import { presence } from "../chat/presence";
 import { outlines } from "../outline/store";
-import { characterOf } from "./characters";
-import { animate, type Source } from "./stage";
+import { characterOf } from "@arugula/presence-core/avatar/characters/index";
+import { animate, type Source } from "@arugula/presence-core/avatar/stage";
 
 /** What `account`'s avatar draws from now, or null when they have none
  * here (never sent a rig, and aren't you in avatar mode). */

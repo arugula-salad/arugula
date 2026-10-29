@@ -1,0 +1,26 @@
+{
+  "name": "@arugula/presence-core",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Who's around, without a picture leaving the page: a camera as line outlines or as a rig that drives a drawn character, and the renderers for both (Arugula S43/S44).",
+  "license": "MIT OR Apache-2.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./*": "./src/*.ts"
+  },
+  "scripts": {
+    "test": "node --experimental-strip-types --no-warnings --test --test-reporter=dot test/outline.test.mjs test/avatar.test.mjs",
+    "typecheck": "tsc --noEmit",
+    "sheet": "vite --config sheet/vite.config.ts",
+    "assets": "sh scripts/assets.sh"
+  },
+  "dependencies": {
+    "@huggingface/transformers": "4.3.2",
+    "@mediapipe/tasks-vision": "1.2.0"
+  },
+  "devDependencies": {
+    "typescript": "^7.0.2",
+    "vite": "^8.3.4"
+  }
+}

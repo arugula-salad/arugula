@@ -1,0 +1,24 @@
+{
+  "name": "@arugula/presence",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Join a room and see who's around as live avatars or outlines: the client over a transport (arugula.video's Phoenix relay, or Arugula control's).",
+  "license": "MIT OR Apache-2.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./*": "./src/*.ts"
+  },
+  "scripts": {
+    "test": "node --experimental-strip-types --no-warnings --test --test-reporter=dot test/*.test.mjs",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@arugula/presence-core": "link:../core",
+    "@types/phoenix": "1.6.8",
+    "phoenix": "1.8.16"
+  },
+  "devDependencies": {
+    "typescript": "^7.0.2"
+  }
+}

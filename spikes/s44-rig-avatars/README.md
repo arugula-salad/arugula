@@ -14,18 +14,20 @@ No picture of you leaves the page.
 ![Every character in every pose, bust and chat size](sheet.png)
 ![Avatar mode: you, and sam and riley echoing you, in People and in chat](people-avatars.png)
 
+> Since #315 the code is in `presence/core` (and the client in `presence/client`); paths below are updated.
+
 | Piece | Where |
 |---|---|
-| Rig: fields, bust space, wire format (kind 0x40 inside S43's frames), idle, easing | `web/src/shared/avatar/rig.ts` |
-| Solver: head angles from the face transform, ARKit blendshapes to the rig, pose to arms; One-Euro smoothing | `web/src/shared/avatar/solve.ts` |
-| Trackers: MediaPipe face landmarker (blendshapes + transform) and pose landmarker lite | `web/src/shared/avatar/track.ts`, `cam.ts` |
-| Characters: Codex drafts to `character.ts`'s contract, then a final-art pass (Codex at high effort, briefed with the contact sheet and a style bar), proportions and hand size tuned | `web/src/shared/avatar/characters/` |
+| Rig: fields, bust space, wire format (kind 0x40 inside S43's frames), idle, easing | `presence/core/src/avatar/rig.ts` |
+| Solver: head angles from the face transform, ARKit blendshapes to the rig, pose to arms; One-Euro smoothing | `presence/core/src/avatar/solve.ts` |
+| Trackers: MediaPipe face landmarker (blendshapes + transform) and pose landmarker lite | `presence/core/src/avatar/track.ts`, `cam.ts` |
+| Characters: Codex drafts to `character.ts`'s contract, then a final-art pass (Codex at high effort, briefed with the contact sheet and a style bar), proportions and hand size tuned | `presence/core/src/avatar/characters/` |
 | Shoulders: a point each, where they really are: tilted with the shoulder line, closer together as the body turns (measured in their true width from the pose's world landmarks, so the rest of the body doesn't grow), lifted by a shrug (each shoulder nearer its ear than its learnt rest); 4 bytes. Characters hang their arms, collar and neck from them | `solve.ts` (`Calib`), `rig.ts` |
-| Hands: the hand landmarker gives where each hand is and which way it points (1 byte a hand, no fingers: at tile size a hand being there is what reads); given to the nearer pose wrist, standing in for a wrist the pose lost; drawn as a shared mitten; an arm and hand the camera doesn't see aren't drawn at all (a bust) | `solve.ts` (`handOf`), `web/src/shared/avatar/hand.ts` |
+| Hands: the hand landmarker gives where each hand is and which way it points (1 byte a hand, no fingers: at tile size a hand being there is what reads); given to the nearer pose wrist, standing in for a wrist the pose lost; drawn as a shared mitten; an arm and hand the camera doesn't see aren't drawn at all (a bust) | `solve.ts` (`handOf`), `presence/core/src/avatar/hand.ts` |
 | Place in the frame: where the shoulders are across the camera's frame (absolute), how high and how near (from where you usually are, learnt slowly); the stage moves and scales the whole bust in its tile, keeping the head inside; 3 bytes | `solve.ts`, `stage.ts` |
 | Elbows: a desk camera rarely sees them, so a wrist counts without one and the stage puts the elbow where a two-bone arm bends, outward and down (`withElbows`) | `rig.ts` (`elbowFor`) |
-| Stage: bust space on a canvas, the head-only crop, one animation loop for every avatar | `web/src/shared/avatar/stage.ts`, `view.tsx` |
-| Contact sheet, for tuning characters by eye (`pnpm exec vite`, /avatar-sheet.html) | `web/avatar-sheet.html`, `web/src/shared/avatar/sheet.ts` |
+| Stage: bust space on a canvas, the head-only crop, one animation loop for every avatar | `presence/core/src/avatar/stage.ts`; `web/src/shared/avatar/view.tsx` |
+| Contact sheet, for tuning characters by eye (`pnpm sheet` in presence/core) | `presence/core/sheet/` |
 
 The relay is S43's, unchanged: a rig is opaque bytes to control, and dev-control's echo (sam and
 riley) re-posts it. `web/scripts/outline-assets.sh` also fetches the pose model (5.8 MB).

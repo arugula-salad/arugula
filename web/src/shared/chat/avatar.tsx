@@ -8,8 +8,8 @@ import { useSubscribe } from "../ui/hooks";
 import { chat } from "../chat-store";
 import { presence } from "./presence";
 import { outlines } from "../outline/store";
-import { draw } from "../outline/render";
-import { palette } from "../outline/classes";
+import { draw } from "@arugula/presence-core/outline/render";
+import { palette } from "@arugula/presence-core/outline/classes";
 import { AvatarCanvas, hasAvatar } from "../avatar/view";
 
 /** A steady colour per person. */

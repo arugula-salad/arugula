@@ -62,9 +62,15 @@ contract=(
 )
 
 # web/'s sources for the pages the hub embeds: all of web/ but the specs,
-# their fixtures and the dev and test servers.
+# their fixtures and the dev and test servers; and the presence packages
+# it bundles (#315), but their tests and contact sheet.
 web=(
   web
+  presence/core
+  presence/client
+  ':(exclude)presence/core/test'
+  ':(exclude)presence/core/sheet'
+  ':(exclude)presence/client/test'
   ':(exclude)web/e2e'
   ':(exclude)web/fixtures'
   ':(exclude)web/screenshots'
