@@ -5037,15 +5037,15 @@ limitations under the License.
 ## Apache License 2.0
 
 Used by:
-- [arugula-control 0.65.1](https://github.com/arugula-salad/arugula)
-- [arugula-platform 0.65.1](https://github.com/arugula-salad/arugula)
-- [arugula-control-base 0.65.1](https://github.com/arugula-salad/arugula)
-- [arugula-control-common 0.65.1](https://github.com/arugula-salad/arugula)
+- [arugula-control 0.65.2](https://github.com/arugula-salad/arugula)
+- [arugula-platform 0.65.2](https://github.com/arugula-salad/arugula)
+- [arugula-control-base 0.65.2](https://github.com/arugula-salad/arugula)
+- [arugula-control-common 0.65.2](https://github.com/arugula-salad/arugula)
 - [arugula-control-wire 0.0.0](https://github.com/arugula-salad/arugula)
 - [arugula-core 0.0.0](https://github.com/arugula-salad/arugula)
 - [arugula-e2e 0.0.0](https://github.com/arugula-salad/arugula)
 - [arugula-forge-github 0.0.0](https://github.com/arugula-salad/arugula)
-- [arugula-platform-base 0.65.1](https://github.com/arugula-salad/arugula)
+- [arugula-platform-base 0.65.2](https://github.com/arugula-salad/arugula)
 - [arugula-platform-agents 0.0.0](https://github.com/arugula-salad/arugula)
 - [arugula-platform-all 0.0.0](https://github.com/arugula-salad/arugula)
 - [arugula-platform-api 0.0.0](https://github.com/arugula-salad/arugula)
