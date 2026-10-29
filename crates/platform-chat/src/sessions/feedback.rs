@@ -99,21 +99,9 @@ const LOG_MOST: usize = 64 << 20;
 /// Who a check's prompt is by.
 pub const CHECKS_AUTHOR: &str = "github:GitHub";
 
-/// What came of an event on a session's branch.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Routed {
-    /// Not a session's: the rules'.
-    Elsewhere,
-    /// A session's, from outside the repo: nothing comes of it.
-    Outsider { session: String },
-    /// Gathered into a batch; `new: false` when it was there already (a
-    /// redelivery).
-    Gathered { session: String, new: bool },
-    /// Its batch was sent already: kept out.
-    Late { session: String },
-    /// Its session ended: dropped, and the thread told (once).
-    Ended { session: String },
-}
+/// What came of an event on a session's branch: the base's, which GitHub's
+/// webhook reads through `features::Chat`.
+pub use arugula_platform::features::Routed;
 
 /// The batch an event's item goes in.
 struct Batch {

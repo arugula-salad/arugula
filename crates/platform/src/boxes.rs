@@ -18,10 +18,9 @@
 //! box's project answers as one that isn't there.
 
 use arugula_control_common::ApiError;
-use arugula_control_wire::chat::ChatPost;
 use axum::http::StatusCode;
 
-use crate::{Platform, chat};
+use crate::Platform;
 
 pub use arugula_control_wire::internal::{BoxMember, BoxPost, BoxPosted};
 
@@ -61,14 +60,8 @@ pub async fn post(app: &Platform, p: &BoxPost) -> anyhow::Result<BoxPosted> {
     if p.text.trim().is_empty() {
         return Ok(BoxPosted::Refused { status: 400, error: "say something".into() });
     }
-    let room = match chat::box_object_room(app, &p.author, &p.project, &p.target).await {
-        Ok(r) => r,
-        Err(e) if e.0 == StatusCode::INTERNAL_SERVER_ERROR => anyhow::bail!("{}", e.1),
-        Err(e) => return Ok(refused(e)),
-    };
-    let b = ChatPost { text: p.text.clone(), ..Default::default() };
-    match chat::post_full(app, &p.author, None, Some(&p.via), &room, b).await {
-        Ok(posted) => Ok(BoxPosted::Posted { room, seq: posted.seq }),
+    match crate::features::chat().box_post(app, &p.author, &p.project, &p.target, &p.via, p.text.clone()).await {
+        Ok((room, seq)) => Ok(BoxPosted::Posted { room, seq }),
         Err(e) if e.0 == StatusCode::INTERNAL_SERVER_ERROR => anyhow::bail!("{}", e.1),
         Err(e) => Ok(refused(e)),
     }

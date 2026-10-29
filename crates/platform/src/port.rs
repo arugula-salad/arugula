@@ -134,11 +134,8 @@ impl PlatformPort for Platform {
                 None => forge::send::How::Machine,
             };
             // A session's PR (M259) comes back through the same callback.
-            if draft.starts_with(crate::sessions::pr::PREFIX) {
-                return Ok(match crate::sessions::pr::send(self, account, draft, how).await {
-                    Ok(s) => forge::send::Outcome { pr: s.pr.url, ..Default::default() },
-                    Err(e) => forge::send::Outcome { refused: Some(e.1), ..Default::default() },
-                });
+            if crate::features::chat().is_pr(draft) {
+                return Ok(crate::features::chat().send_pr(self, account, draft, how).await);
             }
             Ok(forge::send::outcome(forge::send::send(self, account, draft, how).await))
         })
@@ -192,7 +189,7 @@ impl PlatformPort for Platform {
         machine: &'a HostedMachine,
         report: &'a SessionReport,
     ) -> BoxFuture<'a, anyhow::Result<Reported>> {
-        Box::pin(crate::session_live::report(self, machine, report))
+        crate::features::chat().session_report(self, machine, report)
     }
 
     fn hosted_session_push<'a>(
@@ -200,7 +197,7 @@ impl PlatformPort for Platform {
         machine: &'a HostedMachine,
         ask: &'a PushAsk,
     ) -> BoxFuture<'a, anyhow::Result<PushGiven>> {
-        Box::pin(crate::sessions::push::token(self, machine, ask))
+        crate::features::chat().session_push(self, machine, ask)
     }
 
     fn hosted_session_issues<'a>(
@@ -208,7 +205,7 @@ impl PlatformPort for Platform {
         machine: &'a HostedMachine,
         ask: &'a SessionIssuesAsk,
     ) -> BoxFuture<'a, anyhow::Result<SessionIssuesGiven>> {
-        Box::pin(crate::sessions::issues::answer(self, machine, ask))
+        crate::features::chat().session_issues(self, machine, ask)
     }
 
     fn hosted_secrets<'a>(

@@ -25,11 +25,10 @@
 use arugula_control_wire::{chat::ChatLive, sessions::card_via};
 use arugula_e2e::now_ms;
 
-use super::Hub;
 use crate::{
     Platform,
     db::{
-        Db, Taken,
+        Taken,
         chat::{NewMessage, Room},
         pr_drafts::PrDraft,
         sessions::{Role, Session},
@@ -129,46 +128,4 @@ pub fn note_pr(app: &Platform, d: &PrDraft) -> anyhow::Result<Option<(String, i6
     let Some(seq) = app.db.note_pr(d, &room.id, now_ms())? else { return Ok(None) };
     app.chat.publish(&app.db, ChatLive::Message { room: room.id.clone(), seq }, None);
     Ok(Some((room.id, seq)))
-}
-
-impl Hub {
-    /// Session `s` changed: pages showing its card read it again, on every
-    /// machine (through `chat_events`). A Try 3's sibling's parent card
-    /// shows it in its compare view (M264), so it's told too.
-    pub fn session(&self, db: &Db, s: &Session) {
-        self.publish(db, ChatLive::Session { room: s.room.clone(), ses: s.id.clone() }, None);
-        if let (Role::Try, Some(parent)) = (s.role, &s.parent_session) {
-            self.publish(db, ChatLive::Session { room: s.room.clone(), ses: parent.clone() }, None);
-        }
-    }
-
-    /// Hear sessions change on this machine's streams, from now: what a
-    /// wait on them wakes on (Fleet 5, `crate::sessions::wave`).
-    pub(crate) fn session_moves(&self) -> SessionMoves {
-        SessionMoves(self.tx.subscribe())
-    }
-}
-
-/// [`Hub::session_moves`].
-pub(crate) struct SessionMoves(tokio::sync::broadcast::Receiver<std::sync::Arc<super::Out>>);
-
-impl SessionMoves {
-    /// Once one of `ids` changed, or this missed some events (so it may
-    /// have).
-    pub(crate) async fn changed(&mut self, ids: &[String]) {
-        use tokio::sync::broadcast::error::RecvError;
-        loop {
-            match self.0.recv().await {
-                Ok(o) => {
-                    if let ChatLive::Session { ses, .. } = &o.ev
-                        && ids.contains(ses)
-                    {
-                        return;
-                    }
-                }
-                Err(RecvError::Lagged(_)) => return,
-                Err(RecvError::Closed) => std::future::pending().await,
-            }
-        }
-    }
 }

@@ -63,7 +63,7 @@ numeric GitHub id) and its reviews as object threads, tested in
 platform page's own host, `--platform-host` (M151: `app.arugula.io`), with
 only the platform's routes and its page (`crates/platform-api/src/page.rs`). Chat (M122: a team's channels, DMs and
 threads about panes, which control holds in plain text) is the platform's
-since M138 (`crates/platform/src/chat.rs`); `src/chat_wire.rs` tests it
+since M138 (`crates/platform-chat/src/chat.rs`); `src/chat_wire.rs` tests it
 through this hub's gate and `hub_port::InProcess`, and `src/chat_bench.rs`
 times `GET /api/chat` by hand. `src/hub_latency_bench.rs` times platform
 routes out of process with a delay on every hub call, as between regions.

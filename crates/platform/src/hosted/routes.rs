@@ -180,7 +180,7 @@ pub async fn delete(
     super::ask(&app, &w.id, Ask::Delete)?;
     // Its thread sessions end now (M256), not when their jobs next look.
     let stopped = app.db.stop_workspace_sessions(&w.id, now_ms())?;
-    crate::session_live::told(&app, &stopped)?;
+    crate::features::chat().told(&app, &stopped)?;
     info!(%account, %project, workspace = %w.id, "asked to delete a hosted workspace");
     app.analytics.capture(&account, "hosted workspace deleted", json!({}));
     Ok(Json(found(app.db.hosted_workspace(&project, &w.id)?)?))

@@ -202,7 +202,7 @@ fn purpose(kind: &str) -> &'static str {
 
 /// The token's GitHub user id (`GET /user`), or why not. The answer's
 /// error never carries the token.
-pub(crate) async fn user_of(app: &Platform, api: &str, t: &UserToken) -> Result<u64, String> {
+pub async fn user_of(app: &Platform, api: &str, t: &UserToken) -> Result<u64, String> {
     let r = github(app, reqwest::Method::GET, api, "user", t)
         .send()
         .await
@@ -215,7 +215,7 @@ pub(crate) async fn user_of(app: &Platform, api: &str, t: &UserToken) -> Result<
     }
 }
 
-pub(crate) fn github(
+pub fn github(
     app: &Platform,
     method: reqwest::Method,
     api: &str,

@@ -63,7 +63,7 @@ pub(crate) const WAITS: (&str, usize) = ("run-wait", 2_000);
 static OPEN: LazyLock<Mutex<HashMap<String, usize>>> = LazyLock::new(Default::default);
 
 /// Waiting reads held open ([`hold`]): let go when dropped.
-pub(crate) struct Held(Vec<String>);
+pub struct Held(Vec<String>);
 
 impl Drop for Held {
     fn drop(&mut self) {
@@ -81,7 +81,7 @@ impl Drop for Held {
 
 /// One more waiting read for each of `who`, if none of them has
 /// [`OPEN_WAITS`] open already.
-pub(crate) fn hold(who: &[String]) -> Result<Held, ApiError> {
+pub fn hold(who: &[String]) -> Result<Held, ApiError> {
     let mut open = OPEN.lock().unwrap();
     if who.iter().any(|k| open.get(k).is_some_and(|n| *n >= OPEN_WAITS)) {
         return Err(err(

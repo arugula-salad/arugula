@@ -93,8 +93,9 @@ pub fn register() {
 mod testing {
     pub fn router(app: std::sync::Arc<crate::Platform>) -> axum::Router {
         crate::register();
-        // Its tests plan deploys.
+        // Its tests plan deploys, and read and post in threads.
         arugula_platform_deploys::register();
+        arugula_platform_chat::register();
         arugula_platform::testing::router(app)
     }
 }

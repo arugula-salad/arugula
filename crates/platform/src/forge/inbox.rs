@@ -144,9 +144,9 @@ impl Queue {
         self.wake.notify_one();
     }
 
-    /// Forget whom it pushed (tests: a minute on).
-    #[cfg(test)]
-    pub(crate) fn forget_pushes(&self) {
+    /// Forget whom it pushed (tests: a minute on; the chat crate's too).
+    #[cfg(any(test, feature = "testing"))]
+    pub fn forget_pushes(&self) {
         self.pushed.lock().unwrap().clear();
     }
 

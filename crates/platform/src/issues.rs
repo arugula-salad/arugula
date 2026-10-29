@@ -1,8 +1,8 @@
 //! Native issues over the platform's routes (M195, platform step 6): a
 //! project's own issues ([`db::issues`], M194), who may do what with them,
 //! their export, and a project's issue home. An issue's comments are its
-//! object thread's messages (M196, [`crate::chat::objects`]), posted
-//! through chat's routes.
+//! object thread's messages (M196, `arugula-platform-chat`'s
+//! `chat::objects`), posted through chat's routes.
 //!
 //! **Who may do what,** by membership of the issue's project:
 //! - a personal project's account does everything;
@@ -381,7 +381,7 @@ pub async fn create(
 /// `session`'s own (aru-115): no author, the session as its agent, and its
 /// labels from those the project's issues have. Nobody is told: its body's
 /// mentions are text, and it has no assignees.
-pub(crate) async fn create_as_session(
+pub async fn create_as_session(
     app: &Platform,
     asker: &str,
     session: &str,
@@ -830,5 +830,12 @@ pub fn markdown(x: &wire::IssueExport) -> String {
 }
 
 #[cfg(test)]
-#[path = "issues_tests.rs"]
-mod tests;
+mod tests {
+    use super::*;
+
+    #[test]
+    fn times_read_as_utc() {
+        assert_eq!(when(0), "1970-01-01 00:00 UTC");
+        assert_eq!(when(1_792_591_380_000), "2026-10-21 14:03 UTC");
+    }
+}

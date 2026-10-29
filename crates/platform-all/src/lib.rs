@@ -10,6 +10,9 @@ pub fn register() {
         // Agents with no machine, redone's import and the Infisical
         // projection, studio as a client (crates/platform-agents).
         arugula_platform_agents::register();
+        // Chat, and the agent sessions in its threads
+        // (crates/platform-chat).
+        arugula_platform_chat::register();
         // Environments, deploys and their approval, and applying them
         // (crates/platform-deploys).
         arugula_platform_deploys::register();

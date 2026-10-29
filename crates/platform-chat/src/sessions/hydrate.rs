@@ -526,13 +526,8 @@ async fn after(app: &Platform, s: &crate::db::sessions::Session, note: &str, wha
 }
 
 /// [`after_rebuild`]'s prompt, and whether the conversation was lost: the
-/// old box archived no transcript of it (Arugula #209), which its card
-/// says.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Rebuilt {
-    pub text: String,
-    pub lost: bool,
-}
+/// base's, which hosted workspaces read through `features::Chat`.
+pub use arugula_platform::features::Rebuilt;
 
 /// [`after_rebuild`]'s text, from the thread's prompt and the transcript.
 #[cfg(test)]

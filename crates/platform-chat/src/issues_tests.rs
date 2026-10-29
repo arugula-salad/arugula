@@ -1,17 +1,22 @@
 //! Native issues through the platform's routes (M195), with the hub of
 //! chat's tests: each role on a team's project and on a personal one,
-//! patches, lists, export and the issue home.
+//! patches, lists, export and the issue home. Here, not beside
+//! `issues.rs` in the base, because an issue comes with its thread
+//! (`/api/chat/targets`) and is heard live by its readers (#314).
 
 use std::sync::Arc;
 
-use arugula_control_wire::issues::IssueExport;
+use arugula_control_wire::issues::{self as wire, IssueExport};
 use arugula_e2e::team::TeamRole;
+use axum::http::StatusCode;
 use serde_json::{Value, json};
 
-use super::*;
 use crate::{
+    Platform,
     chat_tests::{TestHub, call, serve},
+    db::issues::Actor,
     db::sql::{Sql as _, params},
+    issues::{change, create, export, list, markdown, read},
 };
 
 /// Team t: a owns it, e edits, v views. c is in team u, not t. Chat (and
@@ -352,12 +357,6 @@ async fn a_projects_issue_home() {
         (&json!("native"), &json!(false), &json!([])),
         "GitHub chosen, and its repo unlinked since, isn't a home: {h}"
     );
-}
-
-#[test]
-fn times_read_as_utc() {
-    assert_eq!(when(0), "1970-01-01 00:00 UTC");
-    assert_eq!(when(1_792_591_380_000), "2026-10-21 14:03 UTC");
 }
 
 /// An agent (M197) acts on issues for its owner through the functions

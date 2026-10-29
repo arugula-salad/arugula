@@ -49,7 +49,7 @@ decided_by: "jhgaylor"
 decided_on: "2026-10-21"
 reviews: []
 constrains:
-  - "path:crates/platform/src/chat.rs"
+  - "path:crates/platform-chat/src/chat.rs"
   - "path:crates/platform/src/db/chat.rs"
   - "path:crates/control-wire/src/chat.rs"
   - "path:crates/platform/migrations"
@@ -88,5 +88,5 @@ conversations").
 their threads in #1318), not `cw_…`. A `cw_…` is an old Cloud workspace: it
 stays visible to its account only, so its thread answers `not_yet`, and
 those workspaces are retired in M189.
-Where: `crates/platform/src/chat.rs`, `crates/platform/src/db/chat.rs` (`chat_room_for`), `crates/control-wire/src/chat.rs`, `crates/platform/migrations/` (M196).
+Where: `crates/platform-chat/src/chat.rs`, `crates/platform/src/db/chat.rs` (`chat_room_for`), `crates/control-wire/src/chat.rs`, `crates/platform/migrations/` (M196).
 From: #1263 (platform roadmap, step 6), M193 (#1264), M196 (#1267, #1318), M201 (#1272), M202 (#1273), M179 (#1305).

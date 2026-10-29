@@ -61,6 +61,8 @@ url = { workspace = true }
 # The test harness's passkeys (`testing`): the test hub checks an Ed25519
 # assertion as the hub does.
 ed25519-dalek = { workspace = true, optional = true }
+# The test harness's log capture (`testing`, `forge::send_tests::Logs`).
+tracing-subscriber = { workspace = true, optional = true }
 
 [features]
 # Embed web/dist-platform even in a debug build (rust-embed reads it from
@@ -73,7 +75,7 @@ contract = []
 # The test harness, for the feature crates' tests (#314): a hub of the
 # test's own (`chat_tests::TestHub`), the fake GitHub, deploys' signed
 # approvals. Only ever a dev-dependency's feature.
-testing = ["contract", "dep:ed25519-dalek"]
+testing = ["contract", "dep:ed25519-dalek", "dep:tracing-subscriber"]
 
 [lints]
 workspace = true

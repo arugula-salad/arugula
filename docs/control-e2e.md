@@ -820,7 +820,7 @@ follow.
   written to disk (the repo's contents and workflows: aru-115, amended). The PR is a draft its asker sends, with their one-use
   user token.
 
-**Who starts one** (M256, `crates/platform/src/chat/sessions.rs`): an owner
+**Who starts one** (M256, `crates/platform-chat/src/chat/sessions.rs`): an owner
 or editor of the project, on the hosted beta's list, by writing `@arugula`
 in one of its channels or in the thread on one of its issues or PRs. A
 viewer, or anyone else, gets a line in the thread saying why, and nothing
@@ -828,7 +828,7 @@ runs. Replies in the thread from the asker or another owner or editor are
 the session's next prompts, credited to whoever wrote them; a viewer's are
 only chat. The first prompt is the thread itself, with each link the asker
 can read resolved to what control holds of it
-(`crates/platform/src/sessions/hydrate.rs`). A session stops when its
+(`crates/platform-chat/src/sessions/hydrate.rs`). A session stops when its
 workspace is deleted or its asker leaves the project, and when it's been
 done a day with no prompt (`ARUGULA_SESSION_IDLE_END`, in seconds): a done
 session holds one of its box's three slots, which this frees, and the box
@@ -842,12 +842,12 @@ named for the issue (`i<number>-<title's words>`). A workspace's finish step (it
 box after each turn, as the session's user; a turn whose finish step fails
 twice isn't pushed. Each turn's report carries the agent's last message,
 which control posts in the session's thread as its asker's, `via` the
-session (`crates/platform/src/sessions/answer.rs`): once per report it
+session (`crates/platform-chat/src/sessions/answer.rs`): once per report it
 keeps, with no mentions, never through chat's post, so it wakes nobody
 and prompts nothing.
 
 **Which box, and what it asks** (Arugula #214,
-`crates/platform/src/sessions/pool.rs`, `asks.rs` and `moves.rs`). A
+`crates/platform-chat/src/sessions/pool.rs`, `asks.rs` and `moves.rs`). A
 session runs on the workspace the project's agents run on, if someone
 chose one, else its only one. With several and none chosen, it picks one
 itself: of those whose spec has the repo, one that's awake (ready and
@@ -876,7 +876,7 @@ conversation when its old box archives the session's block first
 (`hosted.archive_blocks`: that block only, since the box's other
 sessions go on).
 
-**Try 3 and reviews** (M264, `crates/platform/src/sessions/tries.rs` and
+**Try 3 and reviews** (M264, `crates/platform-chat/src/sessions/tries.rs` and
 `review.rs`). From a session's card, an owner or editor on the beta's list
 can run it two more ways at once: two sibling sessions re-run its first
 prompt on the same box, each in a slot of its own and on its own branch,

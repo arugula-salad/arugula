@@ -59,10 +59,9 @@ use serde_json::{Value, json};
 use crate::{
     Platform,
     auth::{Machine, Person},
-    chat,
     db::projects::{
         AGENT_POWERS, BOARD_POWERS, CLOUD_DRIVE, DEPLOYS_PLAN, Grant, ISSUES_WRITE, RUN_POWERS, SECRETS_WRITE,
-        SESSION_POWERS, THREADS_POST, THREADS_READ, subject_kind,
+        SESSION_POWERS, subject_kind,
     },
     hub::{Daemon, HubResult},
 };
@@ -461,15 +460,10 @@ pub async fn give(State(app): State<Arc<Platform>>, s: Person, Json(b): Json<Giv
                 return Err(err(StatusCode::FORBIDDEN, "you can only give your machine what you can read yourself"));
             }
             // A grant that lets agents into a room says so there (#122).
-            let rooms = if b.power == THREADS_READ || b.power == THREADS_POST {
-                chat::agent_notice::rooms(&app, scope.row()).unwrap_or_default()
-            } else {
-                vec![]
-            };
-            let before = chat::agent_notice::reach(&app, &rooms).await.ok();
+            let notice = crate::features::chat().grant_notice(&app, &b.power, scope.row()).await;
             let g = app.db.give_grant(&b.daemon, &b.power, scope.row(), &s.account, now_ms())?;
-            if let Some(before) = before {
-                chat::agent_notice::announce(&app, &rooms, &before).await;
+            if let Some(notice) = notice {
+                crate::features::chat().announce(&app, notice).await;
             }
             g
         }

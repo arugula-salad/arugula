@@ -32,12 +32,6 @@ use std::sync::Arc;
 
 use arugula_control_common::{analytics::Analytics, limit::Limits};
 
-#[cfg(test)]
-mod agent_issues_tests;
-#[cfg(test)]
-mod agent_sessions_tests;
-#[cfg(test)]
-mod agent_threads_tests;
 #[cfg(any(test, feature = "testing"))]
 pub mod agents_tests;
 pub mod approvals;
@@ -45,26 +39,10 @@ pub use arugula_platform_api::auth;
 pub mod billing;
 pub mod boards;
 pub mod boxes;
-#[cfg(test)]
-mod boxes_tests;
 pub mod cache;
 pub mod chat;
-#[cfg(test)]
-mod chat_files_tests;
-#[cfg(test)]
-mod chat_people_tests;
-#[cfg(test)]
-mod chat_pins_tests;
-#[cfg(test)]
-mod chat_previews_tests;
-#[cfg(test)]
-mod chat_reactions_tests;
-#[cfg(test)]
-mod chat_rooms_tests;
 #[cfg(any(test, feature = "testing"))]
 pub mod chat_tests;
-#[cfg(test)]
-mod chat_threads_tests;
 pub mod cloud;
 pub mod compute;
 #[cfg(feature = "contract")]
@@ -76,16 +54,12 @@ pub mod forge;
 pub mod grants;
 pub mod hosted;
 pub use arugula_platform_api::hub;
-#[cfg(test)]
-mod hub_calls_tests;
 pub mod in_process;
 pub mod inbox;
 pub mod issues;
 pub mod jobs;
 pub mod keys;
 pub mod notify;
-#[cfg(test)]
-mod object_threads_tests;
 pub use arugula_platform_api::page;
 pub mod planter;
 mod port;
@@ -93,31 +67,13 @@ pub mod project_docs;
 pub mod project_roles;
 pub mod projects;
 pub use arugula_platform_api::remote;
-#[cfg(test)]
-mod restart_tests;
 mod router;
 pub mod run_grant;
 #[cfg(test)]
 mod run_grant_tests;
 pub mod run_log;
 pub mod run_logs;
-#[cfg(test)]
-mod runs_page_tests;
 pub mod secrets;
-#[cfg(test)]
-mod session_issues_tests;
-pub mod session_live;
-#[cfg(test)]
-mod session_merged_tests;
-#[cfg(test)]
-mod session_wave_tests;
-pub mod sessions;
-#[cfg(test)]
-mod sessions_hydrate_tests;
-#[cfg(test)]
-mod sessions_pool_tests;
-#[cfg(test)]
-mod sessions_tries_tests;
 pub mod stuck;
 #[cfg(any(test, feature = "testing"))]
 pub mod testing;

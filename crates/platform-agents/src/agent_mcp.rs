@@ -44,8 +44,7 @@ use std::{
 use arugula_control_common::ApiError;
 use arugula_control_wire::{
     chat::{
-        AgentMessagesQuery, ChatPost, ChatReact, ChatReactQuery, ChatReaction, ChatSearchQuery, ChatSystem, pins_line,
-        reactions_line, system_text,
+        AgentMessagesQuery, ChatPost, ChatReaction, ChatSearchQuery, ChatSystem, pins_line, reactions_line, system_text,
     },
     issues::{IssueListEdit, IssuePatch, IssueQuery, NewIssue},
     runs::{AgentRunStart, RUN_WAIT_MAX, RunListQuery, RunLogQuery, RunQuery},
@@ -64,12 +63,11 @@ use serde_json::{Value, json};
 use crate::{
     Platform,
     auth::Machine,
-    chat::agent_threads,
     db::{
         agent_tokens::{AgentCall, AgentToken, TOKEN_PREFIX, hash, new_call},
         projects::{DEPLOYS_PLAN, SECRETS_WRITE},
     },
-    features::deploys,
+    features::{chat as chat_hooks, deploys},
     grants::{AgentScope, agent_may, owner_reads, token_label},
     issues,
     triggers::agent as runs,
@@ -503,7 +501,7 @@ impl Agent {
     async fn list(&self, a: &Value) -> Out {
         match a.get("kind").and_then(Value::as_str) {
             Some("threads") => {
-                let r = agent_threads::rooms(self.state(), self.me()).await?.0;
+                let r = chat_hooks().agent_rooms(self.state().0, self.me()).await?;
                 let v = to_value(&r);
                 let text = format!("{} room(s) this token's grants reach.\n{v}", r.rooms.len());
                 Ok(Done { text, value: v, project: None, note: format!("listed {} room(s)", r.rooms.len()) })
@@ -520,7 +518,7 @@ impl Agent {
             mentions: a.mentions_only,
             thread: a.thread,
         };
-        let r = agent_threads::messages(self.state(), self.me(), Path(a.room.clone()), Query(q)).await?.0;
+        let r = chat_hooks().agent_messages(self.state().0, self.me(), a.room.clone(), q).await?;
         let lines: Vec<String> = r
             .messages
             .iter()
@@ -578,13 +576,9 @@ impl Agent {
                 .clone()
                 .filter(|e| !e.trim().is_empty())
                 .ok_or_else(|| failed("react_to_seq needs an emoji"))?;
-            let path = Path((a.room.clone(), seq));
-            let m = if a.remove {
-                let q = Query(ChatReactQuery { emoji: emoji.clone() });
-                agent_threads::unreact(self.state(), self.me(), path, q).await?.0
-            } else {
-                agent_threads::react(self.state(), self.me(), path, Json(ChatReact { emoji: emoji.clone() })).await?.0
-            };
+            let m = chat_hooks()
+                .agent_react(self.state().0, self.me(), a.room.clone(), seq, emoji.clone(), !a.remove)
+                .await?;
             let what = if a.remove { "Took back" } else { "Reacted with" };
             let text = format!(
                 "{what} {emoji} on seq {seq} in {} as {}'s agent on {}",
@@ -595,12 +589,7 @@ impl Agent {
             return Ok(Done { text, value: to_value(&m), project: None, note: format!("reacted in {}", a.room) });
         }
         if let Some(seq) = a.pin_seq {
-            let path = Path((a.room.clone(), seq));
-            let m = if a.remove {
-                agent_threads::unpin(self.state(), self.me(), path).await?.0
-            } else {
-                agent_threads::pin(self.state(), self.me(), path).await?.0
-            };
+            let m = chat_hooks().agent_pin(self.state().0, self.me(), a.room.clone(), seq, !a.remove).await?;
             let what = if a.remove { "Unpinned" } else { "Pinned" };
             let text = format!(
                 "{what} seq {seq} in {} as {}'s agent on {}",
@@ -611,7 +600,7 @@ impl Agent {
             return Ok(Done { text, value: to_value(&m), project: None, note: format!("pinned in {}", a.room) });
         }
         let b = ChatPost { text: a.text, parent: a.parent, also: a.also.then_some(true), ..Default::default() };
-        let r = agent_threads::post(self.state(), self.me(), Path(a.room.clone()), Json(b)).await?.0;
+        let r = chat_hooks().agent_post(self.state().0, self.me(), a.room.clone(), b).await?;
         let v = to_value(&r);
         let text = format!("Posted in {} as {}'s agent on {}: {v}", a.room, self.owner, token_label(&self.token.name));
         Ok(Done { text, value: v, project: None, note: format!("posted in {}", a.room) })
@@ -619,7 +608,7 @@ impl Agent {
 
     async fn search_threads(&self, a: SearchThreads) -> Out {
         let q = ChatSearchQuery { q: a.q, team: a.team };
-        let r = agent_threads::search(self.state(), self.me(), Query(q)).await?.0;
+        let r = chat_hooks().agent_search(self.state().0, self.me(), q).await?;
         let v = to_value(&r);
         let n = v["found"].as_array().map_or(0, Vec::len);
         Ok(Done { text: format!("{n} found.\n{v}"), value: v, project: None, note: format!("searched, {n} found") })
@@ -645,7 +634,7 @@ impl Agent {
 
     async fn comment(&self, id: &str, text: String) -> Result<Value, Failure> {
         let b = ChatPost { text, ..Default::default() };
-        Ok(to_value(agent_threads::post(self.state(), self.me(), Path(id.to_owned()), Json(b)).await?.0))
+        Ok(to_value(chat_hooks().agent_post(self.state().0, self.me(), id.to_owned(), b).await?))
     }
 
     /// `issue_write`: `kind` create, comment, edit, label, assign, close or

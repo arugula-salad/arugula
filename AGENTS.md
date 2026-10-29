@@ -117,7 +117,8 @@ never compiles the daemon, the mux or Ghostty: build them with
   never the platform's base; its binary is `crates/arugula-control` (#314),
   which registers the platform's feature crates and makes the platform.
 - `crates/platform`: control's platform (#1150, `arugula-platform-base`, a
-  library): billing, Cloud, chat, projects and grants are here; its binary
+  library): billing, Cloud, chat's core, projects and grants are here
+  (chat's routes and its agent sessions are `crates/platform-chat`); its binary
   is `crates/arugula-platform` (#314), and its feature crates are
   `crates/platform-*` (`arugula-platform-<area>`, side by side on the base,
   registered by `crates/platform-all`). Its tests are under

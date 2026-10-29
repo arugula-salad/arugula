@@ -890,6 +890,8 @@ pub(crate) fn erase_account(c: &impl Sql, d: &Deleted) -> Result<()> {
     Ok(())
 }
 
-#[cfg(test)]
+// Also the chat crate's tests' (#314, the `testing` feature): a seeded
+// project, a linked repo, its runs.
+#[cfg(any(test, feature = "testing"))]
 #[path = "triggers_tests.rs"]
-pub(crate) mod tests;
+pub mod tests;

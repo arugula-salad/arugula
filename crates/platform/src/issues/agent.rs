@@ -28,7 +28,7 @@ use crate::{Platform, auth::Machine, db::issues::Actor};
 const AGENT_ISSUE_READS: (&str, usize) = ("issue-agent-read", 3_600);
 /// Writes a machine's agents make, per hour (a new issue, a change). Each
 /// lands at once and may push people, so fewer than reads.
-pub(crate) const AGENT_ISSUE_WRITES: (&str, usize) = ("issue-agent-write", 300);
+pub const AGENT_ISSUE_WRITES: (&str, usize) = ("issue-agent-write", 300);
 
 fn actor(d: &Machine) -> Actor<'_> {
     Actor { account: &d.account, agent: Some(&d.daemon) }

@@ -88,6 +88,6 @@ stay end-to-end encrypted, and nothing copies one into a project yet.
 Where: `crates/control-wire/src/project_docs.rs` (the wire),
 `crates/platform/src/project_docs.rs` (who may do what, the routes),
 `crates/platform/src/db/project_docs.rs` and migration `0064_project_docs`
-(storage and the caps), `crates/platform/src/sessions/issues.rs` and
+(storage and the caps), `crates/platform-chat/src/sessions/issues.rs` and
 `crates/daemon/src/mcp/session.rs` (a session's tools), and
 `web/src/platform/pages/docs.tsx` (the page).

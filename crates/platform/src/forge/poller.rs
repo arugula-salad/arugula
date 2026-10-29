@@ -307,12 +307,12 @@ impl<'p> Poll<'p> {
         })?;
         // A session's PR the mirror has now says where it came from (M259).
         if wrote.iter().any(|(w, _, _, kind, _)| *kind == "item" && matches!(w, Wrote::New)) {
-            crate::sessions::pr::noted(self.p, self.job.repo_id);
+            crate::features::chat().pr_noted(self.p, self.job.repo_id);
         }
         // A session's PR it saw merged ends the session (M265).
         let changed: Vec<&ItemRow> =
             items.iter().zip(&wrote).filter(|(_, (w, ..))| w.fixed()).map(|(it, _)| it).collect();
-        crate::sessions::merged::seen(self.p, self.job.repo_id, &changed);
+        crate::features::chat().merged_seen(self.p, self.job.repo_id, &changed);
         let before = now.saturating_sub(GRACE_MS);
         for (wrote, at, which, kind, started) in wrote {
             if !wrote.fixed() {

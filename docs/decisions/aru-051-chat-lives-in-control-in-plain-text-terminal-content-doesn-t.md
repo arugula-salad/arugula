@@ -46,7 +46,7 @@ decided_by: "jhgaylor"
 decided_on: "2026-10-19"
 reviews: []
 constrains:
-  - "path:crates/platform/src/chat.rs"
+  - "path:crates/platform-chat/src/chat.rs"
   - "path:crates/platform/src/db/chat.rs"
   - "path:crates/control-wire/src/chat.rs"
   - "path:crates/daemon/src/chat_readers.rs"
@@ -92,7 +92,7 @@ Agents were out of chat from M121 until step 6 (below); a machine with no contro
 platform page's (M153); since M155 a page without it (a machine's own page,
 a control with no platform page, or control's flag off) offers no Chat,
 where it used to show a page that said chat needs control.
-Where: `crates/platform/src/chat.rs`, `crates/platform/src/db/chat.rs`, `crates/platform/src/cache.rs`, `crates/control-wire/src/chat.rs`.
+Where: `crates/platform-chat/src/chat.rs`, `crates/platform/src/db/chat.rs`, `crates/platform/src/cache.rs`, `crates/control-wire/src/chat.rs`.
 From: [S41](spikes/s41-chat-in-control/README.md) (decisions 1–10, all as recommended), M122 (#1096).
 
 **Since step 6 (#1263) chat stores text agents wrote, under grants**
