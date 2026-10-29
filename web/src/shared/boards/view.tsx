@@ -13,16 +13,17 @@
 // to make again.
 
 import { useEffect, useId, useRef, useState } from "preact/hooks";
-import type { BoardPointer, BoardRow, BoardView, BoardWorkItem, BoardZone } from "../proto";
+import type { BoardPointer, ProjectBoard, BoardRow, BoardView, BoardWorkItem, BoardZone } from "../proto";
 import { chat } from "../chat-store";
 import { usePlatformApi } from "../platform-api";
 import { Markdown } from "../ui/markdown";
 import { useSubscribe } from "../ui/hooks";
 import { askText, openMenu, type MenuItem } from "../ui/menu";
 import { issues } from "../issues/store";
+import { day } from "../time";
 import { BoardError, STALE_REV, boards } from "./store";
 import "./boards.css";
-import { BLOCK_LABEL, GLYPH, LIVE_LABEL, PICK_DELAY_MS, PICK_LIMIT, STATUSES, STATUS_LABEL, assigneesLine, blockClass, blockFacts, debounced, isCard, liveClass, pointerHref, pointerLabel, pointerText, pointerToSend, progress, proven, stepActive, stepBefore, workLabel } from "./text";
+import { BLOCK_LABEL, GLYPH, LIVE_LABEL, PICK_DELAY_MS, PICK_LIMIT, STATUSES, STATUS_LABEL, assigneesLine, blockClass, GOAL_MAX, blockFacts, debounced, epicLine, isCard, liveClass, pointerHref, pointerLabel, pointerText, pointerToSend, progress, proven, stepActive, stepBefore, workLabel } from "./text";
 
 const STALE_SAID = "That changed while you were editing, so the board is read again. Make your change again if it still applies.";
 
@@ -36,6 +37,7 @@ export function BoardPanel({
   shown = true,
   platform,
   back,
+  write = true,
 }: {
   id: string;
   /** False for a block that isn't on screen: it reads nothing then. */
@@ -44,6 +46,8 @@ export function BoardPanel({
   platform: (path: string) => string | undefined;
   /** Over the title: the way back to a list. */
   back?: preact.ComponentChildren;
+  /** Whether to offer the board's own edits (title, goal, closing). False for a viewer; a block can't tell, so it offers them and the platform's 403 comes back as a toast. */
+  write?: boolean;
 }) {
   const { toast } = usePlatformApi();
   const [view, setView] = useState<BoardView | null>(null);
@@ -114,13 +118,25 @@ export function BoardPanel({
     if (!ok) toast(`Made #${made.number} but couldn't add it to the board`);
   };
 
+  const rename = async () => {
+    const t = await askText("Rename the board", view.board.title);
+    if (t?.trim() && t.trim() !== view.board.title) await act(() => boards.edit(id, { title: t.trim() }));
+  };
+
   const zoneIds = view.zones.map((z) => z.id);
   return (
     <div class="board" data-board={id}>
       {back}
       <h1 class="board-title" data-board-title>
-        {view.board.title}
+        {write ? (
+          <span role="button" tabIndex={0} class="board-rename" title="Rename the board" data-board-rename onClick={() => void rename()} onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && (e.preventDefault(), void rename())}>
+            {view.board.title}
+          </span>
+        ) : (
+          view.board.title
+        )}
       </h1>
+      <Epic b={view.board} act={act} id={id} write={write} />
       {stale && (
         <p class="board-stale" role="status" data-board-stale>
           {STALE_SAID}
@@ -140,6 +156,99 @@ export function BoardPanel({
           </button>
         )}
       </p>
+    </div>
+  );
+}
+
+/** A board's goal, progress and closing, under its title. The panel doesn't know whether the person may write (the pin block has no project), so without `write` the controls still show and the platform's refusal comes back as `act`'s toast. */
+function Epic({ b, act, id, write }: { b: ProjectBoard; act: Act; id: string; write: boolean }) {
+  const [goalOpen, setGoalOpen] = useState(false);
+  const [goal, setGoal] = useState("");
+  const [closing, setClosing] = useState(false);
+  const [note, setNote] = useState("");
+  const e = epicLine(b.progress);
+  const saveGoal = async () => {
+    if (await act(() => boards.edit(id, { goal: goal.trim() }))) setGoalOpen(false);
+  };
+  const close = async () => {
+    if (await act(() => boards.close(id, note.trim()))) setClosing(false);
+  };
+  return (
+    <div class="board-epic">
+      {goalOpen ? (
+        <div class="board-form" data-board-goal-form>
+          <textarea value={goal} rows={4} maxLength={GOAL_MAX} aria-label="Goal" data-board-goal-input autoFocus onInput={(ev) => setGoal(ev.currentTarget.value)} />
+          <span class="board-form-buttons">
+            <button type="button" class="primary" data-board-goal-save onClick={() => void saveGoal()}>
+              Save
+            </button>
+            <button type="button" onClick={() => setGoalOpen(false)}>
+              Cancel
+            </button>
+          </span>
+        </div>
+      ) : (
+        <>
+          {b.goal && (
+            <p class="board-goal" data-board-goal>
+              {b.goal}
+            </p>
+          )}
+          {write && (
+            <p class="board-epic-actions">
+              <button type="button" data-board-goal-edit onClick={() => (setGoal(b.goal), setGoalOpen(true))}>
+                {b.goal ? "Edit goal" : "Add a goal"}
+              </button>
+            </p>
+          )}
+        </>
+      )}
+      <div class="board-progress" data-board-progress>
+        {b.progress.total > 0 && (
+          <div class="board-bar" role="progressbar" aria-valuemin={0} aria-valuemax={b.progress.total} aria-valuenow={b.progress.done} aria-label={e.words}>
+            <i style={{ width: `${e.pct}%` }} />
+          </div>
+        )}
+        <span class="dim">{e.words}</span>
+      </div>
+      {b.closed_at != null ? (
+        <div class="board-done" data-board-done>
+          <p>
+            <span class="ws-tag board-done-tag">Done</span> <span class="dim">{day(b.closed_at)}</span>
+          </p>
+          <p class="board-goal" data-board-done-note>
+            {b.done_note}
+          </p>
+          {write && (
+            <p class="board-epic-actions">
+              <button type="button" data-board-reopen onClick={() => void act(() => boards.reopen(id))}>
+                Reopen
+              </button>
+            </p>
+          )}
+        </div>
+      ) : closing ? (
+        <div class="board-form" data-board-close-form>
+          <label>
+            What can a person now do?
+            <textarea value={note} rows={3} aria-label="What can a person now do?" data-board-close-note autoFocus onInput={(ev) => setNote(ev.currentTarget.value)} />
+          </label>
+          <span class="board-form-buttons">
+            <button type="button" class="primary" data-board-close-save disabled={!note.trim()} onClick={() => void close()}>
+              Close epic
+            </button>
+            <button type="button" onClick={() => setClosing(false)}>
+              Cancel
+            </button>
+          </span>
+        </div>
+      ) : write ? (
+        <p class="board-epic-actions">
+          <button type="button" data-board-close onClick={() => (setNote(""), setClosing(true))}>
+            Close epic…
+          </button>
+        </p>
+      ) : null}
     </div>
   );
 }

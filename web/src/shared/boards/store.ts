@@ -66,6 +66,11 @@ export const boards = {
     const full: BoardMoveEntry = { rev: null, zone: null, before: null, ...m };
     return call<BoardView>("POST", `/api/boards/${enc(id)}/entries/${enc(entry)}/move`, full);
   },
+  /** Rename the board, or change its goal (empty clears it). */
+  edit: (id: string, e: { title?: string; goal?: string }) => call<BoardView>("PATCH", `/api/boards/${enc(id)}`, e),
+  /** Close the board as an epic, with what a person can now do. */
+  close: (id: string, done_note: string) => call<BoardView>("POST", `/api/boards/${enc(id)}/close`, { done_note }),
+  reopen: (id: string) => call<BoardView>("POST", `/api/boards/${enc(id)}/reopen`, {}),
   remove: (id: string, entry: string) => call<BoardView>("DELETE", `/api/boards/${enc(id)}/entries/${enc(entry)}`),
   /** A project's work items matching `q`, newest first: what a row may point at. */
   work(project: string, q: string, limit: number): Promise<BoardWorkItems> {

@@ -2,7 +2,7 @@
 // progress, a pointer's label and the id a person typed as a pointer.
 // Plain functions, for the view and its tests (scripts/boards.test.mjs).
 
-import type { BoardBlockState, BoardBlockWord, BoardLive, BoardLiveState, BoardPointer, BoardRow, BoardStatus, BoardWorkItem, BoardZone } from "../proto";
+import type { BoardBlockState, BoardBlockWord, BoardProgress, BoardLive, BoardLiveState, BoardPointer, BoardRow, BoardStatus, BoardWorkItem, BoardZone } from "../proto";
 
 /** A row's status as its glyph: ○ open (or none), ◐ working, ? needs
  * input, ● done, ✕ failed. */
@@ -97,6 +97,20 @@ export function progress(z: Pick<BoardZone, "rows">): { done: number; total: num
   const total = z.rows.length;
   const done = z.rows.filter((r) => r.status === "done").length;
   return { done, total, pct: total ? Math.round((done / total) * 100) : 0 };
+}
+
+/** The longest goal the platform takes (`GOAL_MAX`, control-wire). */
+export const GOAL_MAX = 2000;
+
+/** A text's first line that says something: a goal or a done note on a list. */
+export function firstLine(text: string): string {
+  return text.split("\n").map((l) => l.trim()).find(Boolean) ?? "";
+}
+
+/** A board's issues that are closed, in words; `pct` is for its bar. */
+export function epicLine(p: Pick<BoardProgress, "done" | "total">): { words: string; pct: number } {
+  if (!p.total) return { words: "No issues yet", pct: 0 };
+  return { words: `${p.done} of ${p.total} issue${p.total === 1 ? "" : "s"} done`, pct: Math.round((p.done / p.total) * 100) };
 }
 
 /** The last characters of an id, for a row that says nothing better. */

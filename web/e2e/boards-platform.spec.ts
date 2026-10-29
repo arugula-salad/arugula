@@ -8,6 +8,10 @@
 // Bob, a viewer on a phone, sees what's still untriaged, no Add to board…,
 // and the board's cards with no sideways scroll. A local control
 // (team-fixture.ts, `--platform-host app.localhost`), as issues-platform.spec.ts.
+// Phase 2 (#302), epics: Alice sets Launch's goal, closes one of its issues
+// and sees the progress move, closes the board with a two-line note (Done
+// and the note show, the Boards page folds it under "Done (1)") and reopens
+// it; Bob sees the goal, progress and the Done banner and none of the buttons.
 
 import { expect, test, type Locator, type Page } from "@playwright/test";
 import { closeContexts } from "./helpers";
@@ -37,6 +41,9 @@ async function platform(p: Page, path = "/") {
   await p.goto(`${app}${path}`);
   await expect(p.locator("[data-platform-bar], [data-chat]").first()).toBeVisible({ timeout: 15_000 });
 }
+
+const GOAL = "People can launch Acme in one click.\nThen invite their team.";
+const NOTE = "A person can install Acme and invite a team.\nThe changelog is current.";
 
 /** The platform's API as whoever `p` is signed in as. */
 async function api(p: Page, method: string, path: string, body?: unknown) {
@@ -202,4 +209,98 @@ test("a viewer on a phone sees what is untriaged and the board's cards, with no 
   for (const title of [FIRST, SECOND, NEW]) await expect(row(bob, title)).toHaveCount(1, { timeout: 15_000 });
   const wide = await bob.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
   expect(wide).toBeLessThanOrEqual(0);
+});
+
+test("Alice sets the board's goal, and it shows under the title with the issues' progress", async () => {
+  test.setTimeout(90_000);
+  await platform(alice, boardPath);
+  const page = alice.locator("[data-board-page]");
+  await expect(page.locator("[data-board-progress]")).toHaveText("0 of 3 issues done", { timeout: 15_000 });
+  await expect(page.locator("[data-board-goal]")).toHaveCount(0);
+  await expect(page.locator("[data-board-progress] [role=progressbar]")).toHaveAttribute("aria-valuemax", "3");
+  await page.locator("[data-board-goal-edit]").click();
+  await page.locator("[data-board-goal-input]").fill(GOAL);
+  await page.locator("[data-board-goal-save]").click();
+  await expect(page.locator("[data-board-goal]")).toHaveText(GOAL, { timeout: 15_000 });
+  // Plain text keeping its line break.
+  await expect(page.locator("[data-board-goal]")).toHaveCSS("white-space", "pre-wrap");
+
+  // Renaming is the title's click.
+  await page.locator("[data-board-rename]").click();
+  await alice.locator(".prompt input").fill("Launch 1.0");
+  await alice.locator(".prompt input").press("Enter");
+  await expect(page.locator("h1[data-board-title]")).toHaveText("Launch 1.0", { timeout: 15_000 });
+  await page.locator("[data-board-rename]").click();
+  await alice.locator(".prompt input").fill("Launch");
+  await alice.locator(".prompt input").press("Enter");
+  await expect(page.locator("h1[data-board-title]")).toHaveText("Launch", { timeout: 15_000 });
+});
+
+test("closing one of the board's issues moves its progress by one", async () => {
+  test.setTimeout(90_000);
+  const id = /brd_[0-9a-f]+/.exec(boardPath)![0];
+  const view = (await api(alice, "GET", `/api/boards/${id}`)).body!;
+  const first = view.zones.flatMap((z: any) => z.rows).find((r: any) => r.live?.title === FIRST);
+  const closed = await api(alice, "PATCH", `/api/issues/${first.pointer.id}`, { state: "closed", reason: "completed" });
+  expect(closed.status).toBe(200);
+  await platform(alice, boardPath);
+  await expect(alice.locator("[data-board-page] [data-board-progress]")).toHaveText("1 of 3 issues done", { timeout: 15_000 });
+  await expect(alice.locator("[data-board-page] [data-board-progress] [role=progressbar]")).toHaveAttribute("aria-valuenow", "1");
+});
+
+test("Alice closes the board with a note, finds it under Done, and reopens it", async () => {
+  test.setTimeout(90_000);
+  const page = alice.locator("[data-board-page]");
+  await page.locator("[data-board-close]").click();
+  const save = page.locator("[data-board-close-save]");
+  await expect(save).toBeDisabled();
+  await page.locator("[data-board-close-note]").fill(NOTE);
+  await expect(save).toBeEnabled();
+  await save.click();
+  await expect(page.locator("[data-board-done]")).toContainText("Done", { timeout: 15_000 });
+  await expect(page.locator("[data-board-done-note]")).toHaveText(NOTE);
+  await expect(page.locator("[data-board-close]")).toHaveCount(0);
+  // Rows stay editable on a closed board.
+  await expect(row(alice, SECOND).locator("[data-board-row-menu]")).toBeEnabled();
+
+  await alice.locator("[data-platform-boards]").click();
+  const done = alice.locator("[data-boards-done]");
+  await expect(done.locator("summary")).toHaveText("Done (1)", { timeout: 15_000 });
+  await expect(done).not.toHaveAttribute("open", "");
+  await expect(alice.locator("[data-boards] [data-board-link]")).toHaveCount(0);
+  await done.locator("summary").click();
+  await expect(done.locator("[data-board-link]")).toContainText("Launch");
+  await expect(done).toContainText("A person can install Acme and invite a team.");
+  await expect(done).not.toContainText("The changelog is current.");
+
+  await done.locator("[data-board-link]").click();
+  await alice.locator("[data-board-reopen]").click();
+  await expect(alice.locator("[data-board-done]")).toHaveCount(0, { timeout: 15_000 });
+  await expect(alice.locator("[data-board-close]")).toBeVisible();
+  await alice.locator("[data-platform-boards]").click();
+  await expect(alice.locator("[data-boards] [data-board-link]", { hasText: "Launch" })).toHaveCount(1, { timeout: 15_000 });
+  await expect(alice.locator("[data-boards] [data-board-progress]")).toHaveText("1 of 3 issues done");
+  await expect(alice.locator("[data-boards-done]")).toHaveCount(0);
+  // The note is kept when the board is open again.
+  const id = /brd_[0-9a-f]+/.exec(boardPath)![0];
+  const kept = (await api(alice, "GET", `/api/boards/${id}`)).body!;
+  expect(kept.board.done_note).toBe(NOTE);
+  expect(kept.board.closed_at ?? null).toBeNull();
+});
+
+test("a viewer on a phone sees the goal, progress and Done, with no buttons and no sideways scroll", async () => {
+  test.setTimeout(90_000);
+  const id = /brd_[0-9a-f]+/.exec(boardPath)![0];
+  expect((await api(alice, "POST", `/api/boards/${id}/close`, { done_note: NOTE })).status).toBe(200);
+  await platform(bob, boardPath);
+  const page = bob.locator("[data-board-page]");
+  await expect(page.locator("[data-board-goal]")).toHaveText(GOAL, { timeout: 15_000 });
+  await expect(page.locator("[data-board-progress]")).toHaveText("1 of 3 issues done");
+  await expect(page.locator("[data-board-done]")).toContainText("Done");
+  for (const hook of ["close", "reopen", "goal-edit", "rename"]) await expect(page.locator(`[data-board-${hook}]`)).toHaveCount(0);
+  expect(await bob.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
+
+  await platform(bob, boardPath.replace(/\/boards\/.*/, "/boards"));
+  await expect(bob.locator("[data-boards-done] summary")).toHaveText("Done (1)", { timeout: 15_000 });
+  expect(await bob.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
 });
