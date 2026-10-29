@@ -2,16 +2,19 @@
 # generic rule: "libcrux-secrets" in a Cargo.lock, and they hold no secrets)
 # and the Doc link test vector (#1066), whose key is the bytes 0 to 31 and
 # opens nothing but that fixture, and the hosted-machine fixture (M178),
-# whose keys are made-up test keys the Rust and web verifiers share.
+# whose keys are made-up test keys the Rust and web verifiers share, and the
+# logic's example files (#220), whose keys come from fixed one-byte seeds
+# (crates/e2e/tests/logic writes them).
 [extend]
 useDefault = true
 
 [allowlist]
-description = "lock files, the Doc link test vector, and the hosted-machine fixture"
+description = "lock files, the Doc link test vector, the hosted-machine fixture, and the logic's examples"
 paths = [
   '''(^|/)Cargo\.lock$''',
   '''(^|/)pnpm-lock\.yaml$''',
   '''(^|/)crates/daemon/tests/fixtures/docs/link-vector\.json$''',
   '''(^|/)web/scripts/hosted\.fixture\.json$''',
   '''(^|/)web/scripts/run-grant\.fixture\.json$''',
+  '''(^|/)contract/examples/logic/[a-z_]+/[a-z_]+\.json$''',
 ]

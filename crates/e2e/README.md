@@ -9,3 +9,8 @@ Depends on no other workspace crate.
 Start with `src/channel.rs` (Noise IK between a device and a daemon), then
 `src/keys.rs` (a device's X25519 and Ed25519 keys). The browser's side is in
 `web/src/shell/e2e`; `just e2e-interop` checks the two against each other.
+
+The logic the hosted server shares with the daemon (certificates, teams,
+deploys, drivers' plans, runs, hosted machines) is pinned by example files in
+[contract/examples/logic](../../contract/examples/logic/README.md), which
+`tests/logic` writes and checks.

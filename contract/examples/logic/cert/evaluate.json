@@ -1,0 +1,2586 @@
+{
+  "about": "Which of the certificates control hands out an account trusts now, from the root device a daemon pinned: each must chain back to that root (self-signed, of a kind that roots), every link signed by a device valid when the link was made, of a kind that certifies the next. A revocation counts when its signer is valid then (checked twice, so a revoked device's own revocations stop counting); a browser or a recovery code is taken off only by a device that's a browser all the way to the root. A device revoked at T no longer counts, nor what it approved after T; what it approved before T stays. Certificates don't expire: time matters only against revocations. Anything that doesn't check out is ignored, never an error: control may send junk, and it can only shrink the set.",
+  "cases": [
+    {
+      "about": "the root alone",
+      "input": {
+        "account": "acct",
+        "certs": ["laptop"],
+        "revocations": [],
+        "root": "37f29b7074cf8b52"
+      },
+      "output": {
+        "trusted": [
+          {"approver": "37f29b7074cf8b52", "device": "37f29b7074cf8b52", "name": "laptop"}
+        ]
+      }
+    },
+    {
+      "about": "a chain: the root, a phone it approved, a machine the phone approved",
+      "input": {
+        "account": "acct",
+        "certs": ["laptop", "phone", "geek"],
+        "revocations": [],
+        "root": "37f29b7074cf8b52"
+      },
+      "output": {
+        "trusted": [
+          {"approver": "37f29b7074cf8b52", "device": "37f29b7074cf8b52", "name": "laptop"},
+          {"approver": "c242667535a3d34f", "device": "9b64bd87042f22a7", "name": "geek"},
+          {"approver": "37f29b7074cf8b52", "device": "c242667535a3d34f", "name": "phone"}
+        ]
+      }
+    },
+    {
+      "about": "a machine whose approver control left out",
+      "input": {
+        "account": "acct",
+        "certs": ["laptop", "geek"],
+        "revocations": [],
+        "root": "37f29b7074cf8b52"
+      },
+      "output": {
+        "trusted": [
+          {"approver": "37f29b7074cf8b52", "device": "37f29b7074cf8b52", "name": "laptop"}
+        ]
+      }
+    },
+    {
+      "about": "control's own root and a device under it: not counted",
+      "input": {
+        "account": "acct",
+        "certs": ["laptop", "control-root", "control-device"],
+        "revocations": [],
+        "root": "37f29b7074cf8b52"
+      },
+      "output": {
+        "trusted": [
+          {"approver": "37f29b7074cf8b52", "device": "37f29b7074cf8b52", "name": "laptop"}
+        ]
+      }
+    },
+    {
+      "about": "a device control says the root approved, signed with another key",
+      "input": {
+        "account": "acct",
+        "certs": ["laptop", "control-device-claims-root"],
+        "revocations": [],
+        "root": "37f29b7074cf8b52"
+      },
+      "output": {
+        "trusted": [
+          {"approver": "37f29b7074cf8b52", "device": "37f29b7074cf8b52", "name": "laptop"}
+        ]
+      }
+    },
+    {
+      "about": "a certificate renamed after it was signed",
+      "input": {
+        "account": "acct",
+        "certs": ["laptop", "phone-renamed"],
+        "revocations": [],
+        "root": "37f29b7074cf8b52"
+      },
+      "output": {
+        "trusted": [
+          {"approver": "37f29b7074cf8b52", "device": "37f29b7074cf8b52", "name": "laptop"}
+        ]
+      }
+    },
+    {
+      "about": "the renamed copy beside the real one: the real one counts",
+      "input": {
+        "account": "acct",
+        "certs": ["laptop", "phone-renamed", "phone"],
+        "revocations": [],
+        "root": "37f29b7074cf8b52"
+      },
+      "output": {
+        "trusted": [
+          {"approver": "37f29b7074cf8b52", "device": "37f29b7074cf8b52", "name": "laptop"},
+          {"approver": "37f29b7074cf8b52", "device": "c242667535a3d34f", "name": "phone"}
+        ]
+      }
+    },
+    {
+      "about": "another account's certificate",
+      "input": {
+        "account": "acct",
+        "certs": ["laptop", "phone-other-account"],
+        "revocations": [],
+        "root": "37f29b7074cf8b52"
+      },
+      "output": {
+        "trusted": [
+          {"approver": "37f29b7074cf8b52", "device": "37f29b7074cf8b52", "name": "laptop"}
+        ]
+      }
+    },
+    {
+      "about": "the wrong root pinned (control's): only its own chain",
+      "input": {
+        "account": "acct",
+        "certs": ["laptop", "phone", "control-root", "control-device"],
+        "revocations": [],
+        "root": "6ec4cb2579ac7165"
+      },
+      "output": {
+        "trusted": [
+          {"approver": "6ec4cb2579ac7165", "device": "422c26dbf1e40b7b", "name": "control"},
+          {"approver": "6ec4cb2579ac7165", "device": "6ec4cb2579ac7165", "name": "laptop"}
+        ]
+      }
+    },
+    {
+      "about": "a root pinned that isn't self-signed (the tablet): nothing",
+      "input": {
+        "account": "acct",
+        "certs": ["laptop", "phone", "tablet", "geek"],
+        "revocations": [],
+        "root": "e0a128f98e5582a3"
+      },
+      "output": {
+        "trusted": []
+      }
+    },
+    {
+      "about": "a root pinned that control never sent: nothing",
+      "input": {
+        "account": "acct",
+        "certs": ["laptop", "phone", "tablet", "geek"],
+        "revocations": [],
+        "root": "0000000000000000"
+      },
+      "output": {
+        "trusted": []
+      }
+    },
+    {
+      "about": "the app as a root: it can't be one",
+      "input": {
+        "account": "acct",
+        "certs": ["app-root"],
+        "revocations": [],
+        "root": "fb6cf9aa12a8c6be"
+      },
+      "output": {
+        "trusted": []
+      }
+    },
+    {
+      "about": "a machine as a root: it can't be one",
+      "input": {
+        "account": "acct",
+        "certs": ["daemon-root"],
+        "revocations": [],
+        "root": "51f1873d22af29c6"
+      },
+      "output": {
+        "trusted": []
+      }
+    },
+    {
+      "about": "a CLI as a root: it may be",
+      "input": {
+        "account": "acct",
+        "certs": ["cli-root"],
+        "revocations": [],
+        "root": "6123768d6bbdfcdf"
+      },
+      "output": {
+        "trusted": [
+          {"approver": "6123768d6bbdfcdf", "device": "6123768d6bbdfcdf", "name": "terminal"}
+        ]
+      }
+    },
+    {
+      "about": "what a CLI approves: CLIs and machines, never a browser or a recovery code",
+      "input": {
+        "account": "acct",
+        "certs": [
+          "laptop",
+          "phone",
+          "geek",
+          "terminal",
+          "app",
+          "recovery",
+          "browser-by-terminal",
+          "cli-by-terminal",
+          "daemon-by-terminal",
+          "recovery-by-terminal",
+          "app-by-terminal"
+        ],
+        "revocations": [],
+        "root": "37f29b7074cf8b52"
+      },
+      "output": {
+        "trusted": [
+          {"approver": "37f29b7074cf8b52", "device": "37f29b7074cf8b52", "name": "laptop"},
+          {"approver": "ed0089709d11f9a5", "device": "7aff12795a43eb9b", "name": "cli by terminal"},
+          {"approver": "c242667535a3d34f", "device": "9b64bd87042f22a7", "name": "geek"},
+          {"approver": "37f29b7074cf8b52", "device": "bb6cc568875e9006", "name": "recovery 1"},
+          {"approver": "37f29b7074cf8b52", "device": "c242667535a3d34f", "name": "phone"},
+          {
+            "approver": "37f29b7074cf8b52",
+            "device": "c8f088038888fcd4",
+            "name": "Arugula app on box"
+          },
+          {
+            "approver": "ed0089709d11f9a5",
+            "device": "e7c4e86640e86a68",
+            "name": "daemon by terminal"
+          },
+          {"approver": "37f29b7074cf8b52", "device": "ed0089709d11f9a5", "name": "terminal"}
+        ]
+      }
+    },
+    {
+      "about": "what the app approves: apps, CLIs and machines, never a browser or a recovery code",
+      "input": {
+        "account": "acct",
+        "certs": [
+          "laptop",
+          "phone",
+          "geek",
+          "terminal",
+          "app",
+          "recovery",
+          "browser-by-app",
+          "cli-by-app",
+          "daemon-by-app",
+          "recovery-by-app",
+          "app-by-app"
+        ],
+        "revocations": [],
+        "root": "37f29b7074cf8b52"
+      },
+      "output": {
+        "trusted": [
+          {"approver": "c8f088038888fcd4", "device": "0dec43cb172fa9dc", "name": "app by app"},
+          {"approver": "37f29b7074cf8b52", "device": "37f29b7074cf8b52", "name": "laptop"},
+          {"approver": "c8f088038888fcd4", "device": "7ee5d21cf4c4021d", "name": "cli by app"},
+          {"approver": "c242667535a3d34f", "device": "9b64bd87042f22a7", "name": "geek"},
+          {"approver": "37f29b7074cf8b52", "device": "bb6cc568875e9006", "name": "recovery 1"},
+          {"approver": "c8f088038888fcd4", "device": "c0b7fee2312b6474", "name": "daemon by app"},
+          {"approver": "37f29b7074cf8b52", "device": "c242667535a3d34f", "name": "phone"},
+          {
+            "approver": "37f29b7074cf8b52",
+            "device": "c8f088038888fcd4",
+            "name": "Arugula app on box"
+          },
+          {"approver": "37f29b7074cf8b52", "device": "ed0089709d11f9a5", "name": "terminal"}
+        ]
+      }
+    },
+    {
+      "about": "what a recovery code approves: people's devices, not machines",
+      "input": {
+        "account": "acct",
+        "certs": [
+          "laptop",
+          "phone",
+          "geek",
+          "terminal",
+          "app",
+          "recovery",
+          "browser-by-recovery",
+          "cli-by-recovery",
+          "daemon-by-recovery",
+          "recovery-by-recovery",
+          "app-by-recovery"
+        ],
+        "revocations": [],
+        "root": "37f29b7074cf8b52"
+      },
+      "output": {
+        "trusted": [
+          {"approver": "37f29b7074cf8b52", "device": "37f29b7074cf8b52", "name": "laptop"},
+          {
+            "approver": "bb6cc568875e9006",
+            "device": "44d6bd4d1b5c8d53",
+            "name": "recovery by recovery"
+          },
+          {"approver": "bb6cc568875e9006", "device": "71cbff5e626bb735", "name": "cli by recovery"},
+          {"approver": "c242667535a3d34f", "device": "9b64bd87042f22a7", "name": "geek"},
+          {
+            "approver": "bb6cc568875e9006",
+            "device": "9be5533cf593e92e",
+            "name": "browser by recovery"
+          },
+          {"approver": "37f29b7074cf8b52", "device": "bb6cc568875e9006", "name": "recovery 1"},
+          {"approver": "37f29b7074cf8b52", "device": "c242667535a3d34f", "name": "phone"},
+          {
+            "approver": "37f29b7074cf8b52",
+            "device": "c8f088038888fcd4",
+            "name": "Arugula app on box"
+          },
+          {"approver": "37f29b7074cf8b52", "device": "ed0089709d11f9a5", "name": "terminal"},
+          {"approver": "bb6cc568875e9006", "device": "f7f2b8cfe31621dc", "name": "app by recovery"}
+        ]
+      }
+    },
+    {
+      "about": "what a machine approves: nothing",
+      "input": {
+        "account": "acct",
+        "certs": [
+          "laptop",
+          "phone",
+          "geek",
+          "terminal",
+          "app",
+          "recovery",
+          "browser-by-geek",
+          "cli-by-geek",
+          "daemon-by-geek",
+          "recovery-by-geek",
+          "app-by-geek"
+        ],
+        "revocations": [],
+        "root": "37f29b7074cf8b52"
+      },
+      "output": {
+        "trusted": [
+          {"approver": "37f29b7074cf8b52", "device": "37f29b7074cf8b52", "name": "laptop"},
+          {"approver": "c242667535a3d34f", "device": "9b64bd87042f22a7", "name": "geek"},
+          {"approver": "37f29b7074cf8b52", "device": "bb6cc568875e9006", "name": "recovery 1"},
+          {"approver": "37f29b7074cf8b52", "device": "c242667535a3d34f", "name": "phone"},
+          {
+            "approver": "37f29b7074cf8b52",
+            "device": "c8f088038888fcd4",
+            "name": "Arugula app on box"
+          },
+          {"approver": "37f29b7074cf8b52", "device": "ed0089709d11f9a5", "name": "terminal"}
+        ]
+      }
+    },
+    {
+      "about": "the phone revoked at 20000: what it approved at 10000 stays, at 30000 goes",
+      "input": {
+        "account": "acct",
+        "certs": ["laptop", "phone", "before", "after"],
+        "revocations": ["phone-revoked-20000"],
+        "root": "37f29b7074cf8b52"
+      },
+      "output": {
+        "trusted": [
+          {"approver": "37f29b7074cf8b52", "device": "37f29b7074cf8b52", "name": "laptop"},
+          {"approver": "c242667535a3d34f", "device": "d410038fa85523e7", "name": "before"}
+        ]
+      }
+    },
+    {
+      "about": "revoked at 5000: both go",
+      "input": {
+        "account": "acct",
+        "certs": ["laptop", "phone", "before", "after"],
+        "revocations": ["phone-revoked-5000"],
+        "root": "37f29b7074cf8b52"
+      },
+      "output": {
+        "trusted": [
+          {"approver": "37f29b7074cf8b52", "device": "37f29b7074cf8b52", "name": "laptop"}
+        ]
+      }
+    },
+    {
+      "about": "revoked at 50000: both stay, the phone goes",
+      "input": {
+        "account": "acct",
+        "certs": ["laptop", "phone", "before", "after"],
+        "revocations": ["phone-revoked-50000"],
+        "root": "37f29b7074cf8b52"
+      },
+      "output": {
+        "trusted": [
+          {"approver": "37f29b7074cf8b52", "device": "37f29b7074cf8b52", "name": "laptop"},
+          {"approver": "c242667535a3d34f", "device": "d410038fa85523e7", "name": "before"},
+          {"approver": "c242667535a3d34f", "device": "ef436a75a794ec11", "name": "after"}
+        ]
+      }
+    },
+    {
+      "about": "revoked twice, at 50000 and 5000: the earlier counts",
+      "input": {
+        "account": "acct",
+        "certs": ["laptop", "phone", "before", "after"],
+        "revocations": ["phone-revoked-50000", "phone-revoked-5000"],
+        "root": "37f29b7074cf8b52"
+      },
+      "output": {
+        "trusted": [
+          {"approver": "37f29b7074cf8b52", "device": "37f29b7074cf8b52", "name": "laptop"}
+        ]
+      }
+    },
+    {
+      "about": "the revoked phone revoking the tablet: a revoked device's revocations don't count",
+      "input": {
+        "account": "acct",
+        "certs": ["laptop", "phone", "tablet"],
+        "revocations": ["phone-revoked-5000", "tablet-revoked-by-phone"],
+        "root": "37f29b7074cf8b52"
+      },
+      "output": {
+        "trusted": [
+          {"approver": "37f29b7074cf8b52", "device": "37f29b7074cf8b52", "name": "laptop"},
+          {"approver": "37f29b7074cf8b52", "device": "e0a128f98e5582a3", "name": "tablet"}
+        ]
+      }
+    },
+    {
+      "about": "a CLI revoking the phone: doesn't count",
+      "input": {
+        "account": "acct",
+        "certs": ["laptop", "phone", "geek", "terminal", "app", "terminal-2"],
+        "revocations": ["phone-revoked-by-terminal"],
+        "root": "37f29b7074cf8b52"
+      },
+      "output": {
+        "trusted": [
+          {"approver": "37f29b7074cf8b52", "device": "37f29b7074cf8b52", "name": "laptop"},
+          {"approver": "37f29b7074cf8b52", "device": "43777db1d4d61408", "name": "terminal 2"},
+          {"approver": "c242667535a3d34f", "device": "9b64bd87042f22a7", "name": "geek"},
+          {"approver": "37f29b7074cf8b52", "device": "c242667535a3d34f", "name": "phone"},
+          {
+            "approver": "37f29b7074cf8b52",
+            "device": "c8f088038888fcd4",
+            "name": "Arugula app on box"
+          },
+          {"approver": "37f29b7074cf8b52", "device": "ed0089709d11f9a5", "name": "terminal"}
+        ]
+      }
+    },
+    {
+      "about": "a CLI revoking the root: doesn't count",
+      "input": {
+        "account": "acct",
+        "certs": ["laptop", "phone", "geek", "terminal", "app", "terminal-2"],
+        "revocations": ["laptop-revoked-by-terminal"],
+        "root": "37f29b7074cf8b52"
+      },
+      "output": {
+        "trusted": [
+          {"approver": "37f29b7074cf8b52", "device": "37f29b7074cf8b52", "name": "laptop"},
+          {"approver": "37f29b7074cf8b52", "device": "43777db1d4d61408", "name": "terminal 2"},
+          {"approver": "c242667535a3d34f", "device": "9b64bd87042f22a7", "name": "geek"},
+          {"approver": "37f29b7074cf8b52", "device": "c242667535a3d34f", "name": "phone"},
+          {
+            "approver": "37f29b7074cf8b52",
+            "device": "c8f088038888fcd4",
+            "name": "Arugula app on box"
+          },
+          {"approver": "37f29b7074cf8b52", "device": "ed0089709d11f9a5", "name": "terminal"}
+        ]
+      }
+    },
+    {
+      "about": "a CLI revoking a machine: counts",
+      "input": {
+        "account": "acct",
+        "certs": ["laptop", "phone", "geek", "terminal", "app", "terminal-2"],
+        "revocations": ["geek-revoked-by-terminal"],
+        "root": "37f29b7074cf8b52"
+      },
+      "output": {
+        "trusted": [
+          {"approver": "37f29b7074cf8b52", "device": "37f29b7074cf8b52", "name": "laptop"},
+          {"approver": "37f29b7074cf8b52", "device": "43777db1d4d61408", "name": "terminal 2"},
+          {"approver": "37f29b7074cf8b52", "device": "c242667535a3d34f", "name": "phone"},
+          {
+            "approver": "37f29b7074cf8b52",
+            "device": "c8f088038888fcd4",
+            "name": "Arugula app on box"
+          },
+          {"approver": "37f29b7074cf8b52", "device": "ed0089709d11f9a5", "name": "terminal"}
+        ]
+      }
+    },
+    {
+      "about": "the app revoking the phone: doesn't count",
+      "input": {
+        "account": "acct",
+        "certs": ["laptop", "phone", "geek", "terminal", "app", "terminal-2"],
+        "revocations": ["phone-revoked-by-app"],
+        "root": "37f29b7074cf8b52"
+      },
+      "output": {
+        "trusted": [
+          {"approver": "37f29b7074cf8b52", "device": "37f29b7074cf8b52", "name": "laptop"},
+          {"approver": "37f29b7074cf8b52", "device": "43777db1d4d61408", "name": "terminal 2"},
+          {"approver": "c242667535a3d34f", "device": "9b64bd87042f22a7", "name": "geek"},
+          {"approver": "37f29b7074cf8b52", "device": "c242667535a3d34f", "name": "phone"},
+          {
+            "approver": "37f29b7074cf8b52",
+            "device": "c8f088038888fcd4",
+            "name": "Arugula app on box"
+          },
+          {"approver": "37f29b7074cf8b52", "device": "ed0089709d11f9a5", "name": "terminal"}
+        ]
+      }
+    },
+    {
+      "about": "the app revoking the root: doesn't count",
+      "input": {
+        "account": "acct",
+        "certs": ["laptop", "phone", "geek", "terminal", "app", "terminal-2"],
+        "revocations": ["laptop-revoked-by-app"],
+        "root": "37f29b7074cf8b52"
+      },
+      "output": {
+        "trusted": [
+          {"approver": "37f29b7074cf8b52", "device": "37f29b7074cf8b52", "name": "laptop"},
+          {"approver": "37f29b7074cf8b52", "device": "43777db1d4d61408", "name": "terminal 2"},
+          {"approver": "c242667535a3d34f", "device": "9b64bd87042f22a7", "name": "geek"},
+          {"approver": "37f29b7074cf8b52", "device": "c242667535a3d34f", "name": "phone"},
+          {
+            "approver": "37f29b7074cf8b52",
+            "device": "c8f088038888fcd4",
+            "name": "Arugula app on box"
+          },
+          {"approver": "37f29b7074cf8b52", "device": "ed0089709d11f9a5", "name": "terminal"}
+        ]
+      }
+    },
+    {
+      "about": "the app revoking a machine: counts",
+      "input": {
+        "account": "acct",
+        "certs": ["laptop", "phone", "geek", "terminal", "app", "terminal-2"],
+        "revocations": ["geek-revoked-by-app"],
+        "root": "37f29b7074cf8b52"
+      },
+      "output": {
+        "trusted": [
+          {"approver": "37f29b7074cf8b52", "device": "37f29b7074cf8b52", "name": "laptop"},
+          {"approver": "37f29b7074cf8b52", "device": "43777db1d4d61408", "name": "terminal 2"},
+          {"approver": "37f29b7074cf8b52", "device": "c242667535a3d34f", "name": "phone"},
+          {
+            "approver": "37f29b7074cf8b52",
+            "device": "c8f088038888fcd4",
+            "name": "Arugula app on box"
+          },
+          {"approver": "37f29b7074cf8b52", "device": "ed0089709d11f9a5", "name": "terminal"}
+        ]
+      }
+    },
+    {
+      "about": "a CLI revoking another CLI: counts",
+      "input": {
+        "account": "acct",
+        "certs": ["laptop", "phone", "geek", "terminal", "app", "terminal-2"],
+        "revocations": ["terminal-2-revoked-by-terminal"],
+        "root": "37f29b7074cf8b52"
+      },
+      "output": {
+        "trusted": [
+          {"approver": "37f29b7074cf8b52", "device": "37f29b7074cf8b52", "name": "laptop"},
+          {"approver": "c242667535a3d34f", "device": "9b64bd87042f22a7", "name": "geek"},
+          {"approver": "37f29b7074cf8b52", "device": "c242667535a3d34f", "name": "phone"},
+          {
+            "approver": "37f29b7074cf8b52",
+            "device": "c8f088038888fcd4",
+            "name": "Arugula app on box"
+          },
+          {"approver": "37f29b7074cf8b52", "device": "ed0089709d11f9a5", "name": "terminal"}
+        ]
+      }
+    },
+    {
+      "about": "a revocation whose signature doesn't check: ignored",
+      "input": {
+        "account": "acct",
+        "certs": ["laptop", "phone", "tablet", "geek"],
+        "revocations": ["phone-revoked-bad-signature"],
+        "root": "37f29b7074cf8b52"
+      },
+      "output": {
+        "trusted": [
+          {"approver": "37f29b7074cf8b52", "device": "37f29b7074cf8b52", "name": "laptop"},
+          {"approver": "c242667535a3d34f", "device": "9b64bd87042f22a7", "name": "geek"},
+          {"approver": "37f29b7074cf8b52", "device": "c242667535a3d34f", "name": "phone"},
+          {"approver": "37f29b7074cf8b52", "device": "e0a128f98e5582a3", "name": "tablet"}
+        ]
+      }
+    },
+    {
+      "about": "a revocation of version 2: ignored",
+      "input": {
+        "account": "acct",
+        "certs": ["laptop", "phone", "tablet", "geek"],
+        "revocations": ["phone-revoked-v2"],
+        "root": "37f29b7074cf8b52"
+      },
+      "output": {
+        "trusted": [
+          {"approver": "37f29b7074cf8b52", "device": "37f29b7074cf8b52", "name": "laptop"},
+          {"approver": "c242667535a3d34f", "device": "9b64bd87042f22a7", "name": "geek"},
+          {"approver": "37f29b7074cf8b52", "device": "c242667535a3d34f", "name": "phone"},
+          {"approver": "37f29b7074cf8b52", "device": "e0a128f98e5582a3", "name": "tablet"}
+        ]
+      }
+    },
+    {
+      "about": "a revocation in another account: ignored",
+      "input": {
+        "account": "acct",
+        "certs": ["laptop", "phone", "tablet", "geek"],
+        "revocations": ["phone-revoked-in-another-account"],
+        "root": "37f29b7074cf8b52"
+      },
+      "output": {
+        "trusted": [
+          {"approver": "37f29b7074cf8b52", "device": "37f29b7074cf8b52", "name": "laptop"},
+          {"approver": "c242667535a3d34f", "device": "9b64bd87042f22a7", "name": "geek"},
+          {"approver": "37f29b7074cf8b52", "device": "c242667535a3d34f", "name": "phone"},
+          {"approver": "37f29b7074cf8b52", "device": "e0a128f98e5582a3", "name": "tablet"}
+        ]
+      }
+    },
+    {
+      "about": "a revocation control signed: ignored",
+      "input": {
+        "account": "acct",
+        "certs": ["laptop", "phone", "control-root"],
+        "revocations": ["phone-revoked-by-control"],
+        "root": "37f29b7074cf8b52"
+      },
+      "output": {
+        "trusted": [
+          {"approver": "37f29b7074cf8b52", "device": "37f29b7074cf8b52", "name": "laptop"},
+          {"approver": "37f29b7074cf8b52", "device": "c242667535a3d34f", "name": "phone"}
+        ]
+      }
+    },
+    {
+      "about": "a browser a recovery code let in",
+      "input": {
+        "account": "acct",
+        "certs": ["laptop", "terminal", "app", "recovery", "new-laptop", "phone"],
+        "revocations": [],
+        "root": "37f29b7074cf8b52"
+      },
+      "output": {
+        "trusted": [
+          {"approver": "37f29b7074cf8b52", "device": "37f29b7074cf8b52", "name": "laptop"},
+          {"approver": "bb6cc568875e9006", "device": "73f78456621ef247", "name": "new laptop"},
+          {"approver": "37f29b7074cf8b52", "device": "bb6cc568875e9006", "name": "recovery 1"},
+          {"approver": "37f29b7074cf8b52", "device": "c242667535a3d34f", "name": "phone"},
+          {
+            "approver": "37f29b7074cf8b52",
+            "device": "c8f088038888fcd4",
+            "name": "Arugula app on box"
+          },
+          {"approver": "37f29b7074cf8b52", "device": "ed0089709d11f9a5", "name": "terminal"}
+        ]
+      }
+    },
+    {
+      "about": "the recovered browser revokes the lost phone",
+      "input": {
+        "account": "acct",
+        "certs": ["laptop", "terminal", "app", "recovery", "new-laptop", "phone"],
+        "revocations": ["phone-revoked-by-new-laptop"],
+        "root": "37f29b7074cf8b52"
+      },
+      "output": {
+        "trusted": [
+          {"approver": "37f29b7074cf8b52", "device": "37f29b7074cf8b52", "name": "laptop"},
+          {"approver": "bb6cc568875e9006", "device": "73f78456621ef247", "name": "new laptop"},
+          {"approver": "37f29b7074cf8b52", "device": "bb6cc568875e9006", "name": "recovery 1"},
+          {
+            "approver": "37f29b7074cf8b52",
+            "device": "c8f088038888fcd4",
+            "name": "Arugula app on box"
+          },
+          {"approver": "37f29b7074cf8b52", "device": "ed0089709d11f9a5", "name": "terminal"}
+        ]
+      }
+    },
+    {
+      "about": "the recovery code revoked backdated by a CLI: doesn't count",
+      "input": {
+        "account": "acct",
+        "certs": ["laptop", "terminal", "app", "recovery", "new-laptop", "phone"],
+        "revocations": ["recovery-revoked-at-1-by-terminal"],
+        "root": "37f29b7074cf8b52"
+      },
+      "output": {
+        "trusted": [
+          {"approver": "37f29b7074cf8b52", "device": "37f29b7074cf8b52", "name": "laptop"},
+          {"approver": "bb6cc568875e9006", "device": "73f78456621ef247", "name": "new laptop"},
+          {"approver": "37f29b7074cf8b52", "device": "bb6cc568875e9006", "name": "recovery 1"},
+          {"approver": "37f29b7074cf8b52", "device": "c242667535a3d34f", "name": "phone"},
+          {
+            "approver": "37f29b7074cf8b52",
+            "device": "c8f088038888fcd4",
+            "name": "Arugula app on box"
+          },
+          {"approver": "37f29b7074cf8b52", "device": "ed0089709d11f9a5", "name": "terminal"}
+        ]
+      }
+    },
+    {
+      "about": "the recovery code revoked backdated by the app: doesn't count",
+      "input": {
+        "account": "acct",
+        "certs": ["laptop", "terminal", "app", "recovery", "new-laptop", "phone"],
+        "revocations": ["recovery-revoked-at-1-by-app"],
+        "root": "37f29b7074cf8b52"
+      },
+      "output": {
+        "trusted": [
+          {"approver": "37f29b7074cf8b52", "device": "37f29b7074cf8b52", "name": "laptop"},
+          {"approver": "bb6cc568875e9006", "device": "73f78456621ef247", "name": "new laptop"},
+          {"approver": "37f29b7074cf8b52", "device": "bb6cc568875e9006", "name": "recovery 1"},
+          {"approver": "37f29b7074cf8b52", "device": "c242667535a3d34f", "name": "phone"},
+          {
+            "approver": "37f29b7074cf8b52",
+            "device": "c8f088038888fcd4",
+            "name": "Arugula app on box"
+          },
+          {"approver": "37f29b7074cf8b52", "device": "ed0089709d11f9a5", "name": "terminal"}
+        ]
+      }
+    },
+    {
+      "about": "the recovery code revoked backdated by the root: it and the browser it let in go",
+      "input": {
+        "account": "acct",
+        "certs": ["laptop", "terminal", "app", "recovery", "new-laptop", "phone"],
+        "revocations": ["recovery-revoked-at-1-by-laptop"],
+        "root": "37f29b7074cf8b52"
+      },
+      "output": {
+        "trusted": [
+          {"approver": "37f29b7074cf8b52", "device": "37f29b7074cf8b52", "name": "laptop"},
+          {"approver": "37f29b7074cf8b52", "device": "c242667535a3d34f", "name": "phone"},
+          {
+            "approver": "37f29b7074cf8b52",
+            "device": "c8f088038888fcd4",
+            "name": "Arugula app on box"
+          },
+          {"approver": "37f29b7074cf8b52", "device": "ed0089709d11f9a5", "name": "terminal"}
+        ]
+      }
+    },
+    {
+      "about": "a chain of 65 browsers below the root: 64 links deep is as far as it goes (chain-64 is refused)",
+      "input": {
+        "account": "acct",
+        "certs": [
+          "laptop",
+          "chain-0",
+          "chain-1",
+          "chain-2",
+          "chain-3",
+          "chain-4",
+          "chain-5",
+          "chain-6",
+          "chain-7",
+          "chain-8",
+          "chain-9",
+          "chain-10",
+          "chain-11",
+          "chain-12",
+          "chain-13",
+          "chain-14",
+          "chain-15",
+          "chain-16",
+          "chain-17",
+          "chain-18",
+          "chain-19",
+          "chain-20",
+          "chain-21",
+          "chain-22",
+          "chain-23",
+          "chain-24",
+          "chain-25",
+          "chain-26",
+          "chain-27",
+          "chain-28",
+          "chain-29",
+          "chain-30",
+          "chain-31",
+          "chain-32",
+          "chain-33",
+          "chain-34",
+          "chain-35",
+          "chain-36",
+          "chain-37",
+          "chain-38",
+          "chain-39",
+          "chain-40",
+          "chain-41",
+          "chain-42",
+          "chain-43",
+          "chain-44",
+          "chain-45",
+          "chain-46",
+          "chain-47",
+          "chain-48",
+          "chain-49",
+          "chain-50",
+          "chain-51",
+          "chain-52",
+          "chain-53",
+          "chain-54",
+          "chain-55",
+          "chain-56",
+          "chain-57",
+          "chain-58",
+          "chain-59",
+          "chain-60",
+          "chain-61",
+          "chain-62",
+          "chain-63",
+          "chain-64"
+        ],
+        "revocations": [],
+        "root": "37f29b7074cf8b52"
+      },
+      "output": {
+        "trusted": [
+          {"approver": "c1d56e1da96a23f7", "device": "02d05e9b145c5ee6", "name": "chain-45"},
+          {"approver": "8c5d9144b239b077", "device": "052c34aca631b75d", "name": "chain-34"},
+          {"approver": "74f00aec961f22fb", "device": "08e528f61e9f13ff", "name": "chain-62"},
+          {"approver": "e2f3e72e7b2c3860", "device": "0c2efffe24177a3f", "name": "chain-20"},
+          {"approver": "a5ecefdb4dc0b03e", "device": "0cbcb00d382989ed", "name": "chain-18"},
+          {"approver": "02d05e9b145c5ee6", "device": "0dbec688588970ee", "name": "chain-46"},
+          {"approver": "0dbec688588970ee", "device": "19a098641fa5d5ba", "name": "chain-47"},
+          {"approver": "725d5c94b6a6d8ff", "device": "1fbc44a990f26939", "name": "chain-40"},
+          {"approver": "66d778456b22915a", "device": "285b2b0e2d178dd8", "name": "chain-5"},
+          {"approver": "ee9e2138811a3929", "device": "307e419852bbcf9d", "name": "chain-12"},
+          {"approver": "e7708272c4f6e8d2", "device": "370b86979b0f5c20", "name": "chain-32"},
+          {"approver": "37f29b7074cf8b52", "device": "37f29b7074cf8b52", "name": "laptop"},
+          {"approver": "5d65ed6e8462a14c", "device": "39d8b3da58601b61", "name": "chain-51"},
+          {"approver": "f7cc85f95fe5fced", "device": "3a1595d304c262f5", "name": "chain-58"},
+          {"approver": "995dceebc6c8290e", "device": "40af3653012a24d0", "name": "chain-7"},
+          {"approver": "307e419852bbcf9d", "device": "4b4d5d6daae73df3", "name": "chain-13"},
+          {"approver": "72103588af9ac476", "device": "4ca2f73b09938978", "name": "chain-3"},
+          {"approver": "37f29b7074cf8b52", "device": "4cb2dadedbdd6631", "name": "chain-0"},
+          {"approver": "40af3653012a24d0", "device": "51661385b1dbe658", "name": "chain-8"},
+          {"approver": "b9751425ce66bf31", "device": "5536fcced4ecc2c3", "name": "chain-54"},
+          {"approver": "f0704c29ffac8439", "device": "5d65ed6e8462a14c", "name": "chain-50"},
+          {"approver": "e4ec559e1c01a5ae", "device": "62c56336607ebec8", "name": "chain-27"},
+          {"approver": "db838b031cda9611", "device": "6358f6c154048515", "name": "chain-22"},
+          {"approver": "9ed64a0e9b83e4ec", "device": "640ed699ca7248bc", "name": "chain-16"},
+          {"approver": "8e602243a9f3f20e", "device": "64f3bfcfd2efba25", "name": "chain-37"},
+          {"approver": "4ca2f73b09938978", "device": "66d778456b22915a", "name": "chain-4"},
+          {"approver": "19a098641fa5d5ba", "device": "68bc62e273224924", "name": "chain-48"},
+          {"approver": "5536fcced4ecc2c3", "device": "6da553221e71dfdb", "name": "chain-55"},
+          {"approver": "77374cc377f63a54", "device": "6f232eea65627bf6", "name": "chain-43"},
+          {"approver": "4cb2dadedbdd6631", "device": "7068d0dd6c21745b", "name": "chain-1"},
+          {"approver": "7068d0dd6c21745b", "device": "72103588af9ac476", "name": "chain-2"},
+          {"approver": "935bd5ad95e09735", "device": "725d5c94b6a6d8ff", "name": "chain-39"},
+          {"approver": "51661385b1dbe658", "device": "7460ccf8662b03e0", "name": "chain-9"},
+          {"approver": "a29c4097b62624a8", "device": "74f00aec961f22fb", "name": "chain-61"},
+          {"approver": "a094fa0abc5aad06", "device": "77374cc377f63a54", "name": "chain-42"},
+          {"approver": "6358f6c154048515", "device": "82fe9ef1618308a7", "name": "chain-23"},
+          {"approver": "d8223613be4ce107", "device": "86e365185ef8753d", "name": "chain-25"},
+          {"approver": "4b4d5d6daae73df3", "device": "8b81582ae027a8b8", "name": "chain-14"},
+          {"approver": "370b86979b0f5c20", "device": "8c5d9144b239b077", "name": "chain-33"},
+          {"approver": "906791350be5d333", "device": "8e602243a9f3f20e", "name": "chain-36"},
+          {"approver": "39d8b3da58601b61", "device": "8ffb040fca5d1d7d", "name": "chain-52"},
+          {"approver": "052c34aca631b75d", "device": "906791350be5d333", "name": "chain-35"},
+          {"approver": "3a1595d304c262f5", "device": "927c3bb7d4ee7a61", "name": "chain-59"},
+          {"approver": "64f3bfcfd2efba25", "device": "935bd5ad95e09735", "name": "chain-38"},
+          {"approver": "e1b50982954ffdaa", "device": "9380a7ea81311dc3", "name": "chain-30"},
+          {"approver": "285b2b0e2d178dd8", "device": "995dceebc6c8290e", "name": "chain-6"},
+          {"approver": "7460ccf8662b03e0", "device": "99cc25f0b91441b8", "name": "chain-10"},
+          {"approver": "8b81582ae027a8b8", "device": "9ed64a0e9b83e4ec", "name": "chain-15"},
+          {"approver": "1fbc44a990f26939", "device": "a094fa0abc5aad06", "name": "chain-41"},
+          {"approver": "927c3bb7d4ee7a61", "device": "a29c4097b62624a8", "name": "chain-60"},
+          {"approver": "640ed699ca7248bc", "device": "a5ecefdb4dc0b03e", "name": "chain-17"},
+          {"approver": "6da553221e71dfdb", "device": "aaf671a00557c9de", "name": "chain-56"},
+          {"approver": "8ffb040fca5d1d7d", "device": "b9751425ce66bf31", "name": "chain-53"},
+          {"approver": "6f232eea65627bf6", "device": "c1d56e1da96a23f7", "name": "chain-44"},
+          {"approver": "08e528f61e9f13ff", "device": "c33437efc0835b31", "name": "chain-63"},
+          {"approver": "82fe9ef1618308a7", "device": "d8223613be4ce107", "name": "chain-24"},
+          {"approver": "0c2efffe24177a3f", "device": "db838b031cda9611", "name": "chain-21"},
+          {"approver": "62c56336607ebec8", "device": "dfa77dc5b4388e2c", "name": "chain-28"},
+          {"approver": "dfa77dc5b4388e2c", "device": "e1b50982954ffdaa", "name": "chain-29"},
+          {"approver": "0cbcb00d382989ed", "device": "e2f3e72e7b2c3860", "name": "chain-19"},
+          {"approver": "86e365185ef8753d", "device": "e4ec559e1c01a5ae", "name": "chain-26"},
+          {"approver": "9380a7ea81311dc3", "device": "e7708272c4f6e8d2", "name": "chain-31"},
+          {"approver": "99cc25f0b91441b8", "device": "ee9e2138811a3929", "name": "chain-11"},
+          {"approver": "68bc62e273224924", "device": "f0704c29ffac8439", "name": "chain-49"},
+          {"approver": "aaf671a00557c9de", "device": "f7cc85f95fe5fced", "name": "chain-57"}
+        ]
+      }
+    },
+    {
+      "about": "two devices approving each other, neither the root",
+      "input": {
+        "account": "acct",
+        "certs": ["laptop", "loop-a", "loop-b"],
+        "revocations": [],
+        "root": "37f29b7074cf8b52"
+      },
+      "output": {
+        "trusted": [
+          {"approver": "37f29b7074cf8b52", "device": "37f29b7074cf8b52", "name": "laptop"}
+        ]
+      }
+    }
+  ],
+  "checks": ["arugula_e2e::Trust::evaluate"],
+  "input": "account and root: what's pinned (the account, its root device's id); certs and revocations: labels of objects, in the order control sent them",
+  "keys": {
+    "after": {
+      "device": "ef436a75a794ec11",
+      "noise": "4747474747474747474747474747474747474747474747474747474747474747",
+      "seed": "4747474747474747474747474747474747474747474747474747474747474747",
+      "sign": "e28a8970753332bd72fef413e6b0b2ef1b4aadda7aa2c141f233712a6876b351"
+    },
+    "app": {
+      "device": "c8f088038888fcd4",
+      "noise": "0606060606060606060606060606060606060606060606060606060606060606",
+      "seed": "0606060606060606060606060606060606060606060606060606060606060606",
+      "sign": "8a875fff1eb38451577acd5afee405456568dd7c89e090863a0557bc7af49f17"
+    },
+    "app-by-app": {
+      "device": "0dec43cb172fa9dc",
+      "noise": "2222222222222222222222222222222222222222222222222222222222222222",
+      "seed": "2222222222222222222222222222222222222222222222222222222222222222",
+      "sign": "a09aa5f47a6759802ff955f8dc2d2a14a5c99d23be97f864127ff9383455a4f0"
+    },
+    "app-by-geek": {
+      "device": "c6a9a3e4feb39d70",
+      "noise": "3636363636363636363636363636363636363636363636363636363636363636",
+      "seed": "3636363636363636363636363636363636363636363636363636363636363636",
+      "sign": "68f4b6017d0f876a55c80a82b8388a54aad264d367269e2de8be079c935b5f96"
+    },
+    "app-by-recovery": {
+      "device": "f7f2b8cfe31621dc",
+      "noise": "2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c",
+      "seed": "2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c",
+      "sign": "9475c6cf0eda34057528d8694781ecc92ad639d7e2bd27761ed3ef74924beb07"
+    },
+    "app-by-terminal": {
+      "device": "77e017f8cd2123e9",
+      "noise": "1818181818181818181818181818181818181818181818181818181818181818",
+      "seed": "1818181818181818181818181818181818181818181818181818181818181818",
+      "sign": "53470962558a6e0839022ae65c6b2723b32772e5c0c5f4776cb8e6a3e10ba2f3"
+    },
+    "app-root": {
+      "device": "fb6cf9aa12a8c6be",
+      "noise": "3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c",
+      "seed": "3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c",
+      "sign": "5526f742941711b3bc530ba44ff6f6dab0f0ab71af832f41a7fe3b9fdaed9c60"
+    },
+    "before": {
+      "device": "d410038fa85523e7",
+      "noise": "4646464646464646464646464646464646464646464646464646464646464646",
+      "seed": "4646464646464646464646464646464646464646464646464646464646464646",
+      "sign": "ee93a4f66f8d16b819bb9beb9ffccdfcdc1412e87fee6a324c2a99a1e0e67148"
+    },
+    "browser-by-app": {
+      "device": "dc40eea8a52499ce",
+      "noise": "1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e",
+      "seed": "1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e",
+      "sign": "acdb0e29743f0ccb8686d0a104cb96e05abefec1538765e7595869f7dc8c49aa"
+    },
+    "browser-by-geek": {
+      "device": "0d69d896cb0422d3",
+      "noise": "3232323232323232323232323232323232323232323232323232323232323232",
+      "seed": "3232323232323232323232323232323232323232323232323232323232323232",
+      "sign": "5e212c0980e4b39fc09721134aa02109374edfd260c0d3d03cb501c8d65457a9"
+    },
+    "browser-by-recovery": {
+      "device": "9be5533cf593e92e",
+      "noise": "2828282828282828282828282828282828282828282828282828282828282828",
+      "seed": "2828282828282828282828282828282828282828282828282828282828282828",
+      "sign": "e92eb6054fe9bc682a1bcf3b759f65ab38a4cfbd81c4d1f3342e4cc9cded8b0b"
+    },
+    "browser-by-terminal": {
+      "device": "8c13188975e1a5ae",
+      "noise": "1414141414141414141414141414141414141414141414141414141414141414",
+      "seed": "1414141414141414141414141414141414141414141414141414141414141414",
+      "sign": "20828bf5c5bdcacb684863336c202fb5599da48be5596615742170705beca9f7"
+    },
+    "cli-by-app": {
+      "device": "7ee5d21cf4c4021d",
+      "noise": "1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f",
+      "seed": "1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f",
+      "sign": "43046bfe4092b3e94994eada15dcc20d8aaa07b658fd3954eb8e0efb8bdca5de"
+    },
+    "cli-by-geek": {
+      "device": "6831e57a1fa7776a",
+      "noise": "3333333333333333333333333333333333333333333333333333333333333333",
+      "seed": "3333333333333333333333333333333333333333333333333333333333333333",
+      "sign": "17cb79fb2b4120f2b1ec65e4198d6e08b28e813feb01e4a400839b85e18080ce"
+    },
+    "cli-by-recovery": {
+      "device": "71cbff5e626bb735",
+      "noise": "2929292929292929292929292929292929292929292929292929292929292929",
+      "seed": "2929292929292929292929292929292929292929292929292929292929292929",
+      "sign": "fa4834147f6e690c3693eff61336046403cd8ae2a14f31b3c407358569239565"
+    },
+    "cli-by-terminal": {
+      "device": "7aff12795a43eb9b",
+      "noise": "1515151515151515151515151515151515151515151515151515151515151515",
+      "seed": "1515151515151515151515151515151515151515151515151515151515151515",
+      "sign": "d54207da194977dcf46adbfec2bc2e75b52d5a8a42184fedfdc00024f0e3e8da"
+    },
+    "cli-root": {
+      "device": "6123768d6bbdfcdf",
+      "noise": "3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d",
+      "seed": "3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d",
+      "sign": "70df9e2279adbec6d12bf2921184c9222eb24ed852005bf640139f52e59cd9ae"
+    },
+    "control-device": {
+      "device": "422c26dbf1e40b7b",
+      "noise": "0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b",
+      "seed": "0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b",
+      "sign": "66be7e332c7a453332bd9d0a7f7db055f5c5ef1a06ada66d98b39fb6810c473a"
+    },
+    "control-root": {
+      "device": "6ec4cb2579ac7165",
+      "noise": "0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a",
+      "seed": "0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a",
+      "sign": "43a72e714401762df66b68c26dfbdf2682aaec9f2474eca4613e424a0fbafd3c"
+    },
+    "daemon-by-app": {
+      "device": "c0b7fee2312b6474",
+      "noise": "2020202020202020202020202020202020202020202020202020202020202020",
+      "seed": "2020202020202020202020202020202020202020202020202020202020202020",
+      "sign": "4ed32f63bf35f0eeefcb25f28a2e1fbdc873ae2835671b0c9460f5f12e4556a8"
+    },
+    "daemon-by-geek": {
+      "device": "a2546180148b75f0",
+      "noise": "3434343434343434343434343434343434343434343434343434343434343434",
+      "seed": "3434343434343434343434343434343434343434343434343434343434343434",
+      "sign": "eb2cf13bf7ae3a5f614168a1fb09272d39771ec4b8523727815e466caf8ee163"
+    },
+    "daemon-by-recovery": {
+      "device": "5c6ac30ca9ec4294",
+      "noise": "2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a",
+      "seed": "2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a",
+      "sign": "197f6b23e16c8532c6abc838facd5ea789be0c76b2920334039bfa8b3d368d61"
+    },
+    "daemon-by-terminal": {
+      "device": "e7c4e86640e86a68",
+      "noise": "1616161616161616161616161616161616161616161616161616161616161616",
+      "seed": "1616161616161616161616161616161616161616161616161616161616161616",
+      "sign": "511c34a1a2cb521df16bb246b8de8e7997ce235c7e76b22a3d7503a24819dd8a"
+    },
+    "daemon-root": {
+      "device": "51f1873d22af29c6",
+      "noise": "3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e",
+      "seed": "3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e",
+      "sign": "f95c6a5dff031fac7b1a6a54b6610caeb83b39f7e8a66be16ff5faa4a511ed2d"
+    },
+    "geek": {
+      "device": "9b64bd87042f22a7",
+      "noise": "0404040404040404040404040404040404040404040404040404040404040404",
+      "seed": "0404040404040404040404040404040404040404040404040404040404040404",
+      "sign": "ca93ac1705187071d67b83c7ff0efe8108e8ec4530575d7726879333dbdabe7c"
+    },
+    "laptop": {
+      "device": "37f29b7074cf8b52",
+      "noise": "0101010101010101010101010101010101010101010101010101010101010101",
+      "seed": "0101010101010101010101010101010101010101010101010101010101010101",
+      "sign": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c"
+    },
+    "loop-a": {
+      "device": "5bfc7b806771de6a",
+      "noise": "b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4",
+      "seed": "b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4",
+      "sign": "52bcd4c68a8a09d98cd9d18d8a6fa3e8e9355954ecb01e2adfbfba5cefae4e79"
+    },
+    "loop-b": {
+      "device": "a56af8f902a7e6c8",
+      "noise": "b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5",
+      "seed": "b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5",
+      "sign": "91ea2db8260039049bd3b16db0f42755861e7d238f4c78d064d9a2201a2e1350"
+    },
+    "new-laptop": {
+      "device": "73f78456621ef247",
+      "noise": "0808080808080808080808080808080808080808080808080808080808080808",
+      "seed": "0808080808080808080808080808080808080808080808080808080808080808",
+      "sign": "1398f62c6d1a457c51ba6a4b5f3dbd2f69fca93216218dc8997e416bd17d93ca"
+    },
+    "phone": {
+      "device": "c242667535a3d34f",
+      "noise": "0202020202020202020202020202020202020202020202020202020202020202",
+      "seed": "0202020202020202020202020202020202020202020202020202020202020202",
+      "sign": "8139770ea87d175f56a35466c34c7ecccb8d8a91b4ee37a25df60f5b8fc9b394"
+    },
+    "recovery": {
+      "device": "bb6cc568875e9006",
+      "noise": "0707070707070707070707070707070707070707070707070707070707070707",
+      "seed": "0707070707070707070707070707070707070707070707070707070707070707",
+      "sign": "ea4a6c63e29c520abef5507b132ec5f9954776aebebe7b92421eea691446d22c"
+    },
+    "recovery-by-app": {
+      "device": "d9e4fbf563f24eee",
+      "noise": "2121212121212121212121212121212121212121212121212121212121212121",
+      "seed": "2121212121212121212121212121212121212121212121212121212121212121",
+      "sign": "884b8857f4eaa1613c61504db34d4beaf346517a0e31de3cddd4d9b4201d9d0b"
+    },
+    "recovery-by-geek": {
+      "device": "bb96d4d8db713657",
+      "noise": "3535353535353535353535353535353535353535353535353535353535353535",
+      "seed": "3535353535353535353535353535353535353535353535353535353535353535",
+      "sign": "a6d2455ea3a5771aba9fcb037924114c92f9f325049f6b4269e739d9048bb869"
+    },
+    "recovery-by-recovery": {
+      "device": "44d6bd4d1b5c8d53",
+      "noise": "2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b",
+      "seed": "2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b",
+      "sign": "4508a07aa941707f3eb2db94c8897a80b2c1197476b6de213ac273df7d86c4ff"
+    },
+    "recovery-by-terminal": {
+      "device": "e969ffb0ec8bd6d6",
+      "noise": "1717171717171717171717171717171717171717171717171717171717171717",
+      "seed": "1717171717171717171717171717171717171717171717171717171717171717",
+      "sign": "31debe55d37c722768b137131caa6087080b2e0b60b94bd785d14575cfa498bc"
+    },
+    "tablet": {
+      "device": "e0a128f98e5582a3",
+      "noise": "0303030303030303030303030303030303030303030303030303030303030303",
+      "seed": "0303030303030303030303030303030303030303030303030303030303030303",
+      "sign": "ed4928c628d1c2c6eae90338905995612959273a5c63f93636c14614ac8737d1"
+    },
+    "terminal": {
+      "device": "ed0089709d11f9a5",
+      "noise": "0505050505050505050505050505050505050505050505050505050505050505",
+      "seed": "0505050505050505050505050505050505050505050505050505050505050505",
+      "sign": "6e7a1cdd29b0b78fd13af4c5598feff4ef2a97166e3ca6f2e4fbfccd80505bf1"
+    },
+    "terminal-2": {
+      "device": "43777db1d4d61408",
+      "noise": "4848484848484848484848484848484848484848484848484848484848484848",
+      "seed": "4848484848484848484848484848484848484848484848484848484848484848",
+      "sign": "d4eec1869fb1b8a4e817516ad5a931557cb56805c3eb16e8f3a803d647df7869"
+    }
+  },
+  "objects": {
+    "after": {
+      "account": "acct",
+      "approver": "c242667535a3d34f",
+      "created": 30000,
+      "device": "ef436a75a794ec11",
+      "kind": "daemon",
+      "name": "after",
+      "noise": "4747474747474747474747474747474747474747474747474747474747474747",
+      "sig": "ed5fcda60741bafe321c9fe7eac5d844b74a463e6c4e2beffe476986ed00853d55d07e0ad10649511b15f82db7415e6b4c7b3a4b6ed60eb053056d4e843f1004",
+      "sign": "e28a8970753332bd72fef413e6b0b2ef1b4aadda7aa2c141f233712a6876b351",
+      "v": 1
+    },
+    "app": {
+      "account": "acct",
+      "approver": "37f29b7074cf8b52",
+      "created": 1500,
+      "device": "c8f088038888fcd4",
+      "kind": "app",
+      "name": "Arugula app on box",
+      "noise": "0606060606060606060606060606060606060606060606060606060606060606",
+      "sig": "9da09d58237e5796d9095db58370b3d21c07868ecda7dc5c9d8e3c66bd0a1701510f313179b58b9687cb978b62a91e687bf0c57fe7241aa0a149af298d127e06",
+      "sign": "8a875fff1eb38451577acd5afee405456568dd7c89e090863a0557bc7af49f17",
+      "v": 1
+    },
+    "app-by-app": {
+      "account": "acct",
+      "approver": "c8f088038888fcd4",
+      "created": 2000,
+      "device": "0dec43cb172fa9dc",
+      "kind": "app",
+      "name": "app by app",
+      "noise": "2222222222222222222222222222222222222222222222222222222222222222",
+      "sig": "5c3a692062b9afacb92e6ca242e746fae5b98b2b28e8a323b614f75d8a319477b90cbe49b458d0d8d22be21e1a0c12da50aae64e72ca47977418d66c23d07b06",
+      "sign": "a09aa5f47a6759802ff955f8dc2d2a14a5c99d23be97f864127ff9383455a4f0",
+      "v": 1
+    },
+    "app-by-geek": {
+      "account": "acct",
+      "approver": "9b64bd87042f22a7",
+      "created": 2000,
+      "device": "c6a9a3e4feb39d70",
+      "kind": "app",
+      "name": "app by geek",
+      "noise": "3636363636363636363636363636363636363636363636363636363636363636",
+      "sig": "0f1bbbb9dfd49f3d9d3cda06d5601bcc6b2b99024dbed952d45993317643d36164f750f129d8baaa9f0eed0742ac0909ae30e6bbe76d4e996f93df4975908201",
+      "sign": "68f4b6017d0f876a55c80a82b8388a54aad264d367269e2de8be079c935b5f96",
+      "v": 1
+    },
+    "app-by-recovery": {
+      "account": "acct",
+      "approver": "bb6cc568875e9006",
+      "created": 2000,
+      "device": "f7f2b8cfe31621dc",
+      "kind": "app",
+      "name": "app by recovery",
+      "noise": "2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c",
+      "sig": "8d8c6f6ba302a0a4f3677369a19cafdb445a7a8b916f2ab9cece627dbdc54c3f14c88c7f57aed164f23e8cec64837ddb2b9e9e27e3fb7c4e8d22a0934ea34b0a",
+      "sign": "9475c6cf0eda34057528d8694781ecc92ad639d7e2bd27761ed3ef74924beb07",
+      "v": 1
+    },
+    "app-by-terminal": {
+      "account": "acct",
+      "approver": "ed0089709d11f9a5",
+      "created": 2000,
+      "device": "77e017f8cd2123e9",
+      "kind": "app",
+      "name": "app by terminal",
+      "noise": "1818181818181818181818181818181818181818181818181818181818181818",
+      "sig": "6b47fe11947007af19078411fcdc9504f34a1489eac1f1af378b68a9e802345229707e05b7a2bc8f31e13a52ad21eb12c09cfa1b791fe08b691455c0c6a07b0f",
+      "sign": "53470962558a6e0839022ae65c6b2723b32772e5c0c5f4776cb8e6a3e10ba2f3",
+      "v": 1
+    },
+    "app-root": {
+      "account": "acct",
+      "approver": "fb6cf9aa12a8c6be",
+      "created": 1000,
+      "device": "fb6cf9aa12a8c6be",
+      "kind": "app",
+      "name": "Arugula app",
+      "noise": "3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c",
+      "sig": "0cb2c90d8e0b2f0b6c32497c6bed4035920a23d617f2b027cde85bdf664c64f3a809a00dfe3e26deb858b87d151988a53b3afe02fc49b2167544f2fafd516306",
+      "sign": "5526f742941711b3bc530ba44ff6f6dab0f0ab71af832f41a7fe3b9fdaed9c60",
+      "v": 1
+    },
+    "before": {
+      "account": "acct",
+      "approver": "c242667535a3d34f",
+      "created": 10000,
+      "device": "d410038fa85523e7",
+      "kind": "daemon",
+      "name": "before",
+      "noise": "4646464646464646464646464646464646464646464646464646464646464646",
+      "sig": "82c39fb3646301b45a1a2ffac3a38b1c4b25fdf465c452e4ecd358309101278c0b9e2a4c9c75d6ffdcc2bd67cb2e71a911a25aeaa5e0742e6f323bb9992a9606",
+      "sign": "ee93a4f66f8d16b819bb9beb9ffccdfcdc1412e87fee6a324c2a99a1e0e67148",
+      "v": 1
+    },
+    "browser-by-app": {
+      "account": "acct",
+      "approver": "c8f088038888fcd4",
+      "created": 2000,
+      "device": "dc40eea8a52499ce",
+      "kind": "browser",
+      "name": "browser by app",
+      "noise": "1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e",
+      "sig": "6e124c1fcd381c0af3ea16b8fc8ce131fe5308dc1b588654c64dfe76413b02b56de89189ed11b6e62b34181161eb84c08531cb854a6ab5ea483be0eb77edb90c",
+      "sign": "acdb0e29743f0ccb8686d0a104cb96e05abefec1538765e7595869f7dc8c49aa",
+      "v": 1
+    },
+    "browser-by-geek": {
+      "account": "acct",
+      "approver": "9b64bd87042f22a7",
+      "created": 2000,
+      "device": "0d69d896cb0422d3",
+      "kind": "browser",
+      "name": "browser by geek",
+      "noise": "3232323232323232323232323232323232323232323232323232323232323232",
+      "sig": "bdad987bf584b8085ee57f136bac3387db603fc9462c61e3031a0999ec06bc5afdb796f24b299c8fe28fff31333bd7b97b3913c8ac017da81efcc1656b7edb05",
+      "sign": "5e212c0980e4b39fc09721134aa02109374edfd260c0d3d03cb501c8d65457a9",
+      "v": 1
+    },
+    "browser-by-recovery": {
+      "account": "acct",
+      "approver": "bb6cc568875e9006",
+      "created": 2000,
+      "device": "9be5533cf593e92e",
+      "kind": "browser",
+      "name": "browser by recovery",
+      "noise": "2828282828282828282828282828282828282828282828282828282828282828",
+      "sig": "7ab75a6a0eeb227e3daeaeb5865397f81842a359b64514c460100c837b3c2d72ce56603ef4fce42450aee5175591b1204076ddc190d7d0928ef389c29c79f805",
+      "sign": "e92eb6054fe9bc682a1bcf3b759f65ab38a4cfbd81c4d1f3342e4cc9cded8b0b",
+      "v": 1
+    },
+    "browser-by-terminal": {
+      "account": "acct",
+      "approver": "ed0089709d11f9a5",
+      "created": 2000,
+      "device": "8c13188975e1a5ae",
+      "kind": "browser",
+      "name": "browser by terminal",
+      "noise": "1414141414141414141414141414141414141414141414141414141414141414",
+      "sig": "8c47ce5f2dcc0538f5a64384ece74330bca9c396293d6e51ffc3757705749d6f479b07cc02e63962d844624fe3c8630e3948b00d4737096a9d207648478f8406",
+      "sign": "20828bf5c5bdcacb684863336c202fb5599da48be5596615742170705beca9f7",
+      "v": 1
+    },
+    "chain-0": {
+      "account": "acct",
+      "approver": "37f29b7074cf8b52",
+      "created": 3000,
+      "device": "4cb2dadedbdd6631",
+      "kind": "browser",
+      "name": "chain-0",
+      "noise": "6464646464646464646464646464646464646464646464646464646464646464",
+      "sig": "2a8d5d8fb66b246836abfe938647b0d0506b896f9596698692ee6b972740b01b8421ef75b33ed49739df4a1feeb4bb6a85e544a787713e912d525000b6f4dd0a",
+      "sign": "2bc2800b3316e009209ffd757dab19ccf0ae84bc7ae90654e1e81712d270f653",
+      "v": 1
+    },
+    "chain-1": {
+      "account": "acct",
+      "approver": "4cb2dadedbdd6631",
+      "created": 3001,
+      "device": "7068d0dd6c21745b",
+      "kind": "browser",
+      "name": "chain-1",
+      "noise": "6565656565656565656565656565656565656565656565656565656565656565",
+      "sig": "508def85a44f22d93e7ec6c676cc6b213f54505c047d02bb5368a657f9f50b3281885dc84e60b9aab87fccaaeb8ea95428090b4d62c9e0f48cc116aafaf48005",
+      "sign": "d62f016a1efd1e4fdf793eb42cd84471e1ba9f0cf04d1287b5cc71f616287cb8",
+      "v": 1
+    },
+    "chain-10": {
+      "account": "acct",
+      "approver": "7460ccf8662b03e0",
+      "created": 3010,
+      "device": "99cc25f0b91441b8",
+      "kind": "browser",
+      "name": "chain-10",
+      "noise": "6e6e6e6e6e6e6e6e6e6e6e6e6e6e6e6e6e6e6e6e6e6e6e6e6e6e6e6e6e6e6e6e",
+      "sig": "01caf2c2f149b9fdf0c4f19bfe24b6b1e251f7d6d0f386016b060b0fe25fc95befcd5f7996bc6dfab9ca20147a9d753280713bd78a58526115247f56e4a0fb0c",
+      "sign": "014e4d922c596a380adfc9eed722e835822f1236761693e4babb61e1afbb04f1",
+      "v": 1
+    },
+    "chain-11": {
+      "account": "acct",
+      "approver": "99cc25f0b91441b8",
+      "created": 3011,
+      "device": "ee9e2138811a3929",
+      "kind": "browser",
+      "name": "chain-11",
+      "noise": "6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f",
+      "sig": "fff753aeda7a6dea6a4687151ffe2bd4b9382f8bb6fcb7fbae6615bd8b7bafa33331347c6eae643a11712bbf6a14d71927dcecf2263b9686e1ded45aae2f2c00",
+      "sign": "c86d01ad8b2fb694b22ff60e3c9d9e7ed90db5604772b74450d40913b9a9cbaf",
+      "v": 1
+    },
+    "chain-12": {
+      "account": "acct",
+      "approver": "ee9e2138811a3929",
+      "created": 3012,
+      "device": "307e419852bbcf9d",
+      "kind": "browser",
+      "name": "chain-12",
+      "noise": "7070707070707070707070707070707070707070707070707070707070707070",
+      "sig": "e42ee08b0383086a26571bf6ef1a333e64238394d9ae386d956224ca23d63d83e86d3025a1735fc73b5e9b0692ea5b03154ee5220aca9bcabe9c44dffe406d0a",
+      "sign": "19204c8c3ba85ba059cd18ac9017bd02a18da5d10c68fb779a34be43ef067791",
+      "v": 1
+    },
+    "chain-13": {
+      "account": "acct",
+      "approver": "307e419852bbcf9d",
+      "created": 3013,
+      "device": "4b4d5d6daae73df3",
+      "kind": "browser",
+      "name": "chain-13",
+      "noise": "7171717171717171717171717171717171717171717171717171717171717171",
+      "sig": "f35d35eea786633811c5bb69c0aac8d87127fb1226098f6975b07784bf8c5c760e550ee74c524a49db7709971fd61b70234644ba96cc6de5896044e282e4d90b",
+      "sign": "e2fe2a39b7326642827d6d82d497622cd6c297fe78270eaa436b01f086b6f3cb",
+      "v": 1
+    },
+    "chain-14": {
+      "account": "acct",
+      "approver": "4b4d5d6daae73df3",
+      "created": 3014,
+      "device": "8b81582ae027a8b8",
+      "kind": "browser",
+      "name": "chain-14",
+      "noise": "7272727272727272727272727272727272727272727272727272727272727272",
+      "sig": "33ba0f673cd7c457b11f364844653815b726e197042c99481d86dd99dcacec8114c5fc94f50ca4f004a2a8f8576e79ddf6ab5f98a7218825c2eb78cb675f2400",
+      "sign": "5b6489c9c7fd0dcf50545e7c164886ef40491ec06c7f1b123041797e8117535e",
+      "v": 1
+    },
+    "chain-15": {
+      "account": "acct",
+      "approver": "8b81582ae027a8b8",
+      "created": 3015,
+      "device": "9ed64a0e9b83e4ec",
+      "kind": "browser",
+      "name": "chain-15",
+      "noise": "7373737373737373737373737373737373737373737373737373737373737373",
+      "sig": "3277ac132fdd904e1606e00983a1500616785f5ad1a49f0e02de0bf2f47980607b40343731426fc06e2becb5c8ac653faf673dc92c0c2c71306487dc77b48309",
+      "sign": "fec1428673f6afe89264b3807344ae8b269d125a503855202687db5a7128579f",
+      "v": 1
+    },
+    "chain-16": {
+      "account": "acct",
+      "approver": "9ed64a0e9b83e4ec",
+      "created": 3016,
+      "device": "640ed699ca7248bc",
+      "kind": "browser",
+      "name": "chain-16",
+      "noise": "7474747474747474747474747474747474747474747474747474747474747474",
+      "sig": "dd3c723691f071a47e1e545187a166e228a88d88b9ad106ff6da32bb8b4227c12768b429f42f187c78a814277560a972dd2f549ab37a92d6218a45fff496f40f",
+      "sign": "555f469c22188e90015bdd85b889678d459f86bdf8f7bd34971b10b9b3858609",
+      "v": 1
+    },
+    "chain-17": {
+      "account": "acct",
+      "approver": "640ed699ca7248bc",
+      "created": 3017,
+      "device": "a5ecefdb4dc0b03e",
+      "kind": "browser",
+      "name": "chain-17",
+      "noise": "7575757575757575757575757575757575757575757575757575757575757575",
+      "sig": "72d5cf6aef1416b949fb0b082427328fffd4d4033c061461a94e2ce1db0b467276438ef28a796523ff098006f34da052893d8086c4b938944f97e76d5593d607",
+      "sign": "2c9b9a42d57adffd50e6eb1da543de93ad97d36d976d2a2b9735e7142f3fb859",
+      "v": 1
+    },
+    "chain-18": {
+      "account": "acct",
+      "approver": "a5ecefdb4dc0b03e",
+      "created": 3018,
+      "device": "0cbcb00d382989ed",
+      "kind": "browser",
+      "name": "chain-18",
+      "noise": "7676767676767676767676767676767676767676767676767676767676767676",
+      "sig": "39269ad625b11e8036bf04a5cb2e66069ccc966c8073edbfc138a3017e9438e7022e990e29489460a512bc7cef9bef57a572c96e24e17ab46151002e38ac4a0c",
+      "sign": "b5f90095318f3f044cd8e40b584253d86777be62bf07221334e5fd2199cfa7f7",
+      "v": 1
+    },
+    "chain-19": {
+      "account": "acct",
+      "approver": "0cbcb00d382989ed",
+      "created": 3019,
+      "device": "e2f3e72e7b2c3860",
+      "kind": "browser",
+      "name": "chain-19",
+      "noise": "7777777777777777777777777777777777777777777777777777777777777777",
+      "sig": "fc7a4afcc0df721c69bbbcf9151c45498fadd84ca3f995c0d8169a3fb808b5428889c79cdb83071dc184883860672e223b30dec8d11a977fe595ade99f905b0b",
+      "sign": "c853ad0f0cd2b619aea92ceec4fd56a24d6499d584ce79257e45cfd8139b60a7",
+      "v": 1
+    },
+    "chain-2": {
+      "account": "acct",
+      "approver": "7068d0dd6c21745b",
+      "created": 3002,
+      "device": "72103588af9ac476",
+      "kind": "browser",
+      "name": "chain-2",
+      "noise": "6666666666666666666666666666666666666666666666666666666666666666",
+      "sig": "3c1065f753d4653b73030f6cf8411db6ed415413da4a110c2567dd8b88199476de7d4d47633d69d48c7592d37cafceb03c6fa6f1fd93d66c8f12f702f0364702",
+      "sign": "34b4d9043156cb6dcf0beb0a2949b7559c940d2bcb6dbe8c53a9b30278e3a746",
+      "v": 1
+    },
+    "chain-20": {
+      "account": "acct",
+      "approver": "e2f3e72e7b2c3860",
+      "created": 3020,
+      "device": "0c2efffe24177a3f",
+      "kind": "browser",
+      "name": "chain-20",
+      "noise": "7878787878787878787878787878787878787878787878787878787878787878",
+      "sig": "f417d687b299266b5cb965e3e176ef15a9a1e8e0360bee520c56365786c7eb474eb089c4b201b6a340faf9f82ddf2194a216bd9c676abd08242a741e5e4da505",
+      "sign": "ee31f83c88a71219a6fcf9bee0da9bc22620588f5a15a6145553504df9649e5c",
+      "v": 1
+    },
+    "chain-21": {
+      "account": "acct",
+      "approver": "0c2efffe24177a3f",
+      "created": 3021,
+      "device": "db838b031cda9611",
+      "kind": "browser",
+      "name": "chain-21",
+      "noise": "7979797979797979797979797979797979797979797979797979797979797979",
+      "sig": "56c4db0f3e981cc39b4c6de0ac60058f3615942e5c4b5a51351bf256c671a96ba38b72ab52939fd33abc89383bea53af92156d68dbaa235b0f755ca6dbcea00b",
+      "sign": "4745d19c66ec9179fa25097056409ef16967b6a1a74bfd8f7afd528f59630615",
+      "v": 1
+    },
+    "chain-22": {
+      "account": "acct",
+      "approver": "db838b031cda9611",
+      "created": 3022,
+      "device": "6358f6c154048515",
+      "kind": "browser",
+      "name": "chain-22",
+      "noise": "7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a",
+      "sig": "86e222b7783d82c424765c221df7e2ea288c3c75c01fed79969e6343ebf0a1fa1d95bd6811435049411b3865df1890d18211275999fd84a36564114653462500",
+      "sign": "ba42458e83ba7926ba8b8f3e9ab9caaf0f1c4918dda8c551084f7aeb1065b74b",
+      "v": 1
+    },
+    "chain-23": {
+      "account": "acct",
+      "approver": "6358f6c154048515",
+      "created": 3023,
+      "device": "82fe9ef1618308a7",
+      "kind": "browser",
+      "name": "chain-23",
+      "noise": "7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b",
+      "sig": "fb2be2cdc5f5c420b009c6affe7f5639be9e8ea3840f793ae01a3a2dadb65d4a05e9c84016d2b60fd2c487e9de62c294069b884c371b666bfea8e50c85b69008",
+      "sign": "7f747b67bd3fe63c2a736739dfe40156d622347346e70f68f51c178a75ce5537",
+      "v": 1
+    },
+    "chain-24": {
+      "account": "acct",
+      "approver": "82fe9ef1618308a7",
+      "created": 3024,
+      "device": "d8223613be4ce107",
+      "kind": "browser",
+      "name": "chain-24",
+      "noise": "7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c",
+      "sig": "39d006eb9c843f1d34305d850d152d9656ad44028c9e270673721f4a54dfe011844269636bdc01d0d6abcf8a12c4bb0f37af2d2b5160485c330ddeea4437ec07",
+      "sign": "f78b1da9b3dfb3fa3a3e54c43e79389d2f04d6bccb62984f28bd6f91798a750d",
+      "v": 1
+    },
+    "chain-25": {
+      "account": "acct",
+      "approver": "d8223613be4ce107",
+      "created": 3025,
+      "device": "86e365185ef8753d",
+      "kind": "browser",
+      "name": "chain-25",
+      "noise": "7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d",
+      "sig": "7d83e42fc693da0d82ac878f7fad9b6ba6aecf286f0574e30532e375546fcd54832af5a316a6a2a5bbde4e9f49b758eb775b2407de9db3fa68a938d26b4b7904",
+      "sign": "a386c3e9c8eb3f00ac670d6a5bbe5ef0d074dcc7ef0e0c8eb102a95dce43bd6a",
+      "v": 1
+    },
+    "chain-26": {
+      "account": "acct",
+      "approver": "86e365185ef8753d",
+      "created": 3026,
+      "device": "e4ec559e1c01a5ae",
+      "kind": "browser",
+      "name": "chain-26",
+      "noise": "7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e",
+      "sig": "e6c36c10ff71b5fcbf904db3d91cfa448d479b97b13b05da73dbcacff265464bc706bfd6afe9b1efd2590ab7a602a6e3ee18fb4a942b2417e01a7dfe1c55ee01",
+      "sign": "51bfae7fa92c515512cd3ad442760e41612e59dfec3913f670b721c04255b068",
+      "v": 1
+    },
+    "chain-27": {
+      "account": "acct",
+      "approver": "e4ec559e1c01a5ae",
+      "created": 3027,
+      "device": "62c56336607ebec8",
+      "kind": "browser",
+      "name": "chain-27",
+      "noise": "7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f",
+      "sig": "7d0713e75636f09474694b67b784faa0cafa1ae1e91eef36fb3590566cb56d0d786d004f641bdeea7ce85888cae2c23001f13491e32dde02a89ad7a1166b6e03",
+      "sign": "b2a942ff4c98718bed76e255987f6d59b1a72d3b2cd2510003e6170ac63a9ffb",
+      "v": 1
+    },
+    "chain-28": {
+      "account": "acct",
+      "approver": "62c56336607ebec8",
+      "created": 3028,
+      "device": "dfa77dc5b4388e2c",
+      "kind": "browser",
+      "name": "chain-28",
+      "noise": "8080808080808080808080808080808080808080808080808080808080808080",
+      "sig": "39531cae66c876984be7fc288bdae311f003c968eebacf9565f07ec78f114a0c674dea6a271420c8ac1e76de1f1a8b7929a130d6e5581bcc3c2f84336613e20b",
+      "sign": "e5687b6d11ccfb632abbafe844f8f1693d160aa582156ed66eea38ab5e7d1e12",
+      "v": 1
+    },
+    "chain-29": {
+      "account": "acct",
+      "approver": "dfa77dc5b4388e2c",
+      "created": 3029,
+      "device": "e1b50982954ffdaa",
+      "kind": "browser",
+      "name": "chain-29",
+      "noise": "8181818181818181818181818181818181818181818181818181818181818181",
+      "sig": "8d1143975caad02342e76da8e68d1ff1120e09b3c8868ae73a4e06d24695161f19dc3c8b9fe49820ea54e1d7a1caaa0e0f89fe662c657595c3705e7d1fd3ee0d",
+      "sign": "93db9f2ee0f7e39e942fb59441190bf20b9c43cfcc8a051a152499cf392b7a37",
+      "v": 1
+    },
+    "chain-3": {
+      "account": "acct",
+      "approver": "72103588af9ac476",
+      "created": 3003,
+      "device": "4ca2f73b09938978",
+      "kind": "browser",
+      "name": "chain-3",
+      "noise": "6767676767676767676767676767676767676767676767676767676767676767",
+      "sig": "f9c49cd7ace512eaa2494f56605b0d8d6d7c22806f931598933ce4332aa7426a7422a5dbfdfd16ea9275e5b7cfa79e385c5af96eed302b4d0641a57927f5d806",
+      "sign": "12a41592c8b7c17d4059e7b29b61e8ff96c7415f2f803348f2f017e05b9ea1da",
+      "v": 1
+    },
+    "chain-30": {
+      "account": "acct",
+      "approver": "e1b50982954ffdaa",
+      "created": 3030,
+      "device": "9380a7ea81311dc3",
+      "kind": "browser",
+      "name": "chain-30",
+      "noise": "8282828282828282828282828282828282828282828282828282828282828282",
+      "sig": "4e1209857d31d0d576565c421836c4296ebeb257bd37b2c0a2b481614676b3f19b060a0575f93cbf6983cdb41cdf09799b9ff5da3db50aefeb94cc0cc705c804",
+      "sign": "fa01347a991e04ae0f1a6d81db29a5ea4eeb5965f577ac9efb44e7b1f2fbb028",
+      "v": 1
+    },
+    "chain-31": {
+      "account": "acct",
+      "approver": "9380a7ea81311dc3",
+      "created": 3031,
+      "device": "e7708272c4f6e8d2",
+      "kind": "browser",
+      "name": "chain-31",
+      "noise": "8383838383838383838383838383838383838383838383838383838383838383",
+      "sig": "de02e99b39931c07f0495b52aeca5c3fd62ed66837422182f79b156754979531259d2f6049553c01e402e3d4825a4494fe79d1aa94464f87d01be7dbcc7c6301",
+      "sign": "d76dfc6e3d5e78f46c54e9421c979dcdc0d9d03981b61a865ab202b1808dce90",
+      "v": 1
+    },
+    "chain-32": {
+      "account": "acct",
+      "approver": "e7708272c4f6e8d2",
+      "created": 3032,
+      "device": "370b86979b0f5c20",
+      "kind": "browser",
+      "name": "chain-32",
+      "noise": "8484848484848484848484848484848484848484848484848484848484848484",
+      "sig": "ae921e5623ab3fd234f27ba201010b2b3ae92ca82550581a369a0ed710fb2cfc1c55facb740b1e47ac593099c68fa30bd36058b95f219e7321c0a23ee19ed10f",
+      "sign": "3e6ea7acba59568c5f36acb41816fb16ab2b27ab13abd38b0924ca2691ad6599",
+      "v": 1
+    },
+    "chain-33": {
+      "account": "acct",
+      "approver": "370b86979b0f5c20",
+      "created": 3033,
+      "device": "8c5d9144b239b077",
+      "kind": "browser",
+      "name": "chain-33",
+      "noise": "8585858585858585858585858585858585858585858585858585858585858585",
+      "sig": "f004c1ff4d2e8fe7c5b615f27553e5ea01b90b5c18f9c391961f0b82b7d0aa755dc3edfecd960ffc8093d97781fd1ffa66151939473fe07a7739aba6ec52b204",
+      "sign": "100ba90b553ccb23ff13d508c1fa2b33c82b2bd68589a04039fa052f1a702e6b",
+      "v": 1
+    },
+    "chain-34": {
+      "account": "acct",
+      "approver": "8c5d9144b239b077",
+      "created": 3034,
+      "device": "052c34aca631b75d",
+      "kind": "browser",
+      "name": "chain-34",
+      "noise": "8686868686868686868686868686868686868686868686868686868686868686",
+      "sig": "2339124154d9165e39655f1d4eb82859d86fb7d93006b39a8318ebcb9db513bb9af529e38cbb3d118992a701bdc3a9e6c048a1a14a921b8a8151a293d13e2e08",
+      "sign": "673d6ba2fa48ce76ecf181090cda607940c5052044a0377f159c59ccfa54ad24",
+      "v": 1
+    },
+    "chain-35": {
+      "account": "acct",
+      "approver": "052c34aca631b75d",
+      "created": 3035,
+      "device": "906791350be5d333",
+      "kind": "browser",
+      "name": "chain-35",
+      "noise": "8787878787878787878787878787878787878787878787878787878787878787",
+      "sig": "41b13603facb42592359a01fbb3976a1afa98bd1aeb1461d1f062c8231ab7e66cbfdb5d66729a4643295677f9153574508c76bc5828287044abdd014eb8a3b02",
+      "sign": "f5eacab77517c5b4b3b4373811c6f874fffb3dd4657da908b42fa2c7fe0ac0d8",
+      "v": 1
+    },
+    "chain-36": {
+      "account": "acct",
+      "approver": "906791350be5d333",
+      "created": 3036,
+      "device": "8e602243a9f3f20e",
+      "kind": "browser",
+      "name": "chain-36",
+      "noise": "8888888888888888888888888888888888888888888888888888888888888888",
+      "sig": "8d8577a37374d29496ed7309300bacb939fa548ae093e55d4d8bd052953c027cfea3d97f9961464211bb61c1d3ae2bde59f8aefcf4826e0c47f72381eb73640d",
+      "sign": "b2491d9502ae28630a2bacb2e0c74510ffcdd328c334ff3e1393e75b2d31e7dc",
+      "v": 1
+    },
+    "chain-37": {
+      "account": "acct",
+      "approver": "8e602243a9f3f20e",
+      "created": 3037,
+      "device": "64f3bfcfd2efba25",
+      "kind": "browser",
+      "name": "chain-37",
+      "noise": "8989898989898989898989898989898989898989898989898989898989898989",
+      "sig": "e5d5d8dd554c5524033789631e039456ffa07e8ddcd84eaea4acd647b3078df24df8271fd48da5ee3090582d04ce2b27f368e6ff4cec639518149c69b7ac1b01",
+      "sign": "a11dbe28d6b2c2d80c4f6cb2b0bca67baa2f8c9ceb81c0c94ac47e3cf0697035",
+      "v": 1
+    },
+    "chain-38": {
+      "account": "acct",
+      "approver": "64f3bfcfd2efba25",
+      "created": 3038,
+      "device": "935bd5ad95e09735",
+      "kind": "browser",
+      "name": "chain-38",
+      "noise": "8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a",
+      "sig": "f4153ce9dffa8a82bea552493042f391083b2b242866718d163d65077cf55a3540b4276b74e945ab6806e40b3fb62e48bdc8fd68b1fc2c3321291bc81d93d404",
+      "sign": "fd1503f19f59731c16f1dfcee91d27a416ff024b3cac4ae319362d5e3df7dbca",
+      "v": 1
+    },
+    "chain-39": {
+      "account": "acct",
+      "approver": "935bd5ad95e09735",
+      "created": 3039,
+      "device": "725d5c94b6a6d8ff",
+      "kind": "browser",
+      "name": "chain-39",
+      "noise": "8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b",
+      "sig": "83549cabf0278fcf450cc06db334f0998a1861cbfb7d9fb5df79336e5a1d3f5cc05b524ae7e0009c54064ec7b223e5ce024b71af2c023c16754c31a3d645050b",
+      "sign": "46dc9b9f5684e05b620dea5120e74165be149b10133879c5566e3be7fb536894",
+      "v": 1
+    },
+    "chain-4": {
+      "account": "acct",
+      "approver": "4ca2f73b09938978",
+      "created": 3004,
+      "device": "66d778456b22915a",
+      "kind": "browser",
+      "name": "chain-4",
+      "noise": "6868686868686868686868686868686868686868686868686868686868686868",
+      "sig": "2909dcf29b8effaa99c650aba41578c0d911440d1d1e568ad763cdff2d18af306bf1d8acae4d17b009cb8fc07cb1f18342b02a8c87e7986bbd9c86ca6942470c",
+      "sign": "54b0d81d0fa7d00e4a7d600dfaba6f2b22035b22fe335e17edf5f9aa5bb05074",
+      "v": 1
+    },
+    "chain-40": {
+      "account": "acct",
+      "approver": "725d5c94b6a6d8ff",
+      "created": 3040,
+      "device": "1fbc44a990f26939",
+      "kind": "browser",
+      "name": "chain-40",
+      "noise": "8c8c8c8c8c8c8c8c8c8c8c8c8c8c8c8c8c8c8c8c8c8c8c8c8c8c8c8c8c8c8c8c",
+      "sig": "2360d0aeefa319dba9b5fbeb26aca57c685f96b9ba16c103dae7e83ccbf7195f56b4492e40039c64d14cc651658469768c2f8a09be850b1b917f77102a9ea708",
+      "sign": "fcbe38632417bb5b875d49a3c02270633917c6093fd01ebb59ff6416e37afe0c",
+      "v": 1
+    },
+    "chain-41": {
+      "account": "acct",
+      "approver": "1fbc44a990f26939",
+      "created": 3041,
+      "device": "a094fa0abc5aad06",
+      "kind": "browser",
+      "name": "chain-41",
+      "noise": "8d8d8d8d8d8d8d8d8d8d8d8d8d8d8d8d8d8d8d8d8d8d8d8d8d8d8d8d8d8d8d8d",
+      "sig": "39d8923b617845f7f8c1c5c3de1f3dde413ca0a48d5f33c19faed37987603a941c6235f4f277ae999a0a9c4f2db8fe53c08130e4f1dd687f7f6aafabf055f00c",
+      "sign": "8c3da879bd09c821b6356d9524de7386e422416aec74139a46f0301197d1b2db",
+      "v": 1
+    },
+    "chain-42": {
+      "account": "acct",
+      "approver": "a094fa0abc5aad06",
+      "created": 3042,
+      "device": "77374cc377f63a54",
+      "kind": "browser",
+      "name": "chain-42",
+      "noise": "8e8e8e8e8e8e8e8e8e8e8e8e8e8e8e8e8e8e8e8e8e8e8e8e8e8e8e8e8e8e8e8e",
+      "sig": "23ff87dc78b2000149062e0c575b1f766605c4c28e6b4d8f2e06c3a46491a38b384331ccf6dc18c44bd5ec1b0d1c16c4badf10f8aeb6d713748e9f07b08fb70d",
+      "sign": "ab3fa2fdab77f98706c76697b42bc99d7b5f967cadcd59c19633ea502fd1dcf3",
+      "v": 1
+    },
+    "chain-43": {
+      "account": "acct",
+      "approver": "77374cc377f63a54",
+      "created": 3043,
+      "device": "6f232eea65627bf6",
+      "kind": "browser",
+      "name": "chain-43",
+      "noise": "8f8f8f8f8f8f8f8f8f8f8f8f8f8f8f8f8f8f8f8f8f8f8f8f8f8f8f8f8f8f8f8f",
+      "sig": "1105b03d09937c2e5e53c84f65d74d52712a4badd46a30bb41505e139fcb0689d9e2f0b12f8907fb66afd50ef75d4a706a7fd1eeb5bcf64f129cf2e12395ee02",
+      "sign": "a8eebe0df1d72f384ba6d6172b1ade07d02a13b8e55a39a1c7e70676a86d5a07",
+      "v": 1
+    },
+    "chain-44": {
+      "account": "acct",
+      "approver": "6f232eea65627bf6",
+      "created": 3044,
+      "device": "c1d56e1da96a23f7",
+      "kind": "browser",
+      "name": "chain-44",
+      "noise": "9090909090909090909090909090909090909090909090909090909090909090",
+      "sig": "8e864b86e5530cc31fd2a53b396d82507ad5fd7473e06383fd1446f3fd42089ad3902fbaff66cf7ef66bbbcfb002629b8966fab0782439e25906c38b55b8560e",
+      "sign": "1a381879f8a8dc97361d012e3b472207cc7313ed1a81c918eebfa872b93414d9",
+      "v": 1
+    },
+    "chain-45": {
+      "account": "acct",
+      "approver": "c1d56e1da96a23f7",
+      "created": 3045,
+      "device": "02d05e9b145c5ee6",
+      "kind": "browser",
+      "name": "chain-45",
+      "noise": "9191919191919191919191919191919191919191919191919191919191919191",
+      "sig": "2492c7ca8e51171a413ac27635aa9e343660b4a38ddaad43c0629a57acdf1e824eb9681f5b204c2948c4e4119c116f0c1e3b2651ff6a1e5250719d8ed3a4000d",
+      "sign": "8ca63145907a2e6c5fb3dc0791c0189b8252da3e4143704b3b2ca4e526f25dd1",
+      "v": 1
+    },
+    "chain-46": {
+      "account": "acct",
+      "approver": "02d05e9b145c5ee6",
+      "created": 3046,
+      "device": "0dbec688588970ee",
+      "kind": "browser",
+      "name": "chain-46",
+      "noise": "9292929292929292929292929292929292929292929292929292929292929292",
+      "sig": "dbe9f1714127cd7c5eb08145c7fc6452d756fce94e2d73a85a0712b9a332359b5cd6665497e9097441cc35fdb7673df60c259f7735fe745697aa853f09a5d20c",
+      "sign": "c6d0c796bb4c3c923615f8dc85e6fc35149eb6b1317de523d3a5085584f5c109",
+      "v": 1
+    },
+    "chain-47": {
+      "account": "acct",
+      "approver": "0dbec688588970ee",
+      "created": 3047,
+      "device": "19a098641fa5d5ba",
+      "kind": "browser",
+      "name": "chain-47",
+      "noise": "9393939393939393939393939393939393939393939393939393939393939393",
+      "sig": "73baf60c43f0b32e4b6b7d9322cec6c884568a4a1628d3f09eb6ac2ea9b412a842e4aca33024df07006a255c958df76155ecb2ec0ae911ea5cd5ea3c2fa60501",
+      "sign": "11fd45714f88a20def29308b6fc2bb3f997717c74c059dbaf3bf5dadc6cf960a",
+      "v": 1
+    },
+    "chain-48": {
+      "account": "acct",
+      "approver": "19a098641fa5d5ba",
+      "created": 3048,
+      "device": "68bc62e273224924",
+      "kind": "browser",
+      "name": "chain-48",
+      "noise": "9494949494949494949494949494949494949494949494949494949494949494",
+      "sig": "f9d4143518b4abfd547bac5254a535a46bfb30055926a440f4a4c53cc533d1f30886e1358ab3a4358a2af953683047b837b2b5e277ee99e7b7f00167e4b0210d",
+      "sign": "0e34c045c22372f70828069cdc3df899c02d55ccc932a5470c2d152023a644aa",
+      "v": 1
+    },
+    "chain-49": {
+      "account": "acct",
+      "approver": "68bc62e273224924",
+      "created": 3049,
+      "device": "f0704c29ffac8439",
+      "kind": "browser",
+      "name": "chain-49",
+      "noise": "9595959595959595959595959595959595959595959595959595959595959595",
+      "sig": "675625f85fb8e189d599151089c3733346e12276e75d35fa28aaefb82a7d647407f133fbab9e7ae6cfb403168e7e2c6d239c13129aac62e3874379a747fc3c07",
+      "sign": "4c71b3dc27513f994bd3391fdfcc6300b2e7daf180979468b34e432cf14e5e35",
+      "v": 1
+    },
+    "chain-5": {
+      "account": "acct",
+      "approver": "66d778456b22915a",
+      "created": 3005,
+      "device": "285b2b0e2d178dd8",
+      "kind": "browser",
+      "name": "chain-5",
+      "noise": "6969696969696969696969696969696969696969696969696969696969696969",
+      "sig": "549da7b1aa94ac897d7e51ca3e7e0a41ae032555e0fbda9aee740fd9ec5340bb56209a80e96f31407c606022303538c2ce2b50e614b2595c9a4e1e8a5163d30d",
+      "sign": "e34d3a01b6112e1429ead61668405f4ef4be4f8853abee5079d28ac6c13ffdd0",
+      "v": 1
+    },
+    "chain-50": {
+      "account": "acct",
+      "approver": "f0704c29ffac8439",
+      "created": 3050,
+      "device": "5d65ed6e8462a14c",
+      "kind": "browser",
+      "name": "chain-50",
+      "noise": "9696969696969696969696969696969696969696969696969696969696969696",
+      "sig": "bfb410ccdc8bbabcd93a2685fa5c35eebf4434bc91c7cc2705342dfec2a1e3fb36de7d0e1ac57d1c6b53e2732a01db4b377c0a2415df0104c6280fd38cb5b803",
+      "sign": "7dbebbdfb06cb2aefd5d856b69c37426a7abc2530e7dc876e2d80853c6fe29d6",
+      "v": 1
+    },
+    "chain-51": {
+      "account": "acct",
+      "approver": "5d65ed6e8462a14c",
+      "created": 3051,
+      "device": "39d8b3da58601b61",
+      "kind": "browser",
+      "name": "chain-51",
+      "noise": "9797979797979797979797979797979797979797979797979797979797979797",
+      "sig": "69e7297a34be2938deb381e3b654e3d8fe447ddc31e79e70b038e6662c16a0d0bd98b893ca9e23d389bde455b4cf25f770a6f08941cf51828e911b83e1ec5606",
+      "sign": "e1b71abfd3232804261e423f36556f6b4185bed41fdfd00d769ce15a394f43ce",
+      "v": 1
+    },
+    "chain-52": {
+      "account": "acct",
+      "approver": "39d8b3da58601b61",
+      "created": 3052,
+      "device": "8ffb040fca5d1d7d",
+      "kind": "browser",
+      "name": "chain-52",
+      "noise": "9898989898989898989898989898989898989898989898989898989898989898",
+      "sig": "9089643cab491f9c4859e020faa9bc3beac7685a261cf45a0b4241104111e70294429dfb9fc3d265cfefde50b2a06d8f714c510f269292516b4804086ff8eb06",
+      "sign": "7be29b98ba0937eadfa1fc1b47931f05dfce49faeee896c0f40c24a78d649fe6",
+      "v": 1
+    },
+    "chain-53": {
+      "account": "acct",
+      "approver": "8ffb040fca5d1d7d",
+      "created": 3053,
+      "device": "b9751425ce66bf31",
+      "kind": "browser",
+      "name": "chain-53",
+      "noise": "9999999999999999999999999999999999999999999999999999999999999999",
+      "sig": "3da80970bba207101d879c2e3482a159d3d03f9490c4645dfb050eade71e39588079529d201322f890e4a81e762bd0bbeb4c789b46e2a0e73cac29e0f6cd4f07",
+      "sign": "332ebe8d27cb7323b3a401c1c13b5dd64bccc0e10ecda1c2b5d11a03779a85e5",
+      "v": 1
+    },
+    "chain-54": {
+      "account": "acct",
+      "approver": "b9751425ce66bf31",
+      "created": 3054,
+      "device": "5536fcced4ecc2c3",
+      "kind": "browser",
+      "name": "chain-54",
+      "noise": "9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a",
+      "sig": "45e5222bc6b5e4ce32664bfedfb32c414ef4ec5281ad5fa1b33715ea0a7ee8ad1afb7a87aa20067d625636f1d950068c7146e44aeb7ea47bc71404c38fa73203",
+      "sign": "1bee74bb8f513f1b5357bc477c886ad96949d04740ccd13a22f912edf00dfe27",
+      "v": 1
+    },
+    "chain-55": {
+      "account": "acct",
+      "approver": "5536fcced4ecc2c3",
+      "created": 3055,
+      "device": "6da553221e71dfdb",
+      "kind": "browser",
+      "name": "chain-55",
+      "noise": "9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b",
+      "sig": "9e5a0ff3b0aae2a5de84d915d9f47ee9523fa85cf4f9f9f137a1db1e586371c09dd710b23cb97dadb8df13c05fe1373172341185f18c9e5a1cbe53abfa48350f",
+      "sign": "e5145a37d984d244ce11e69388cb36dedc828c1a277ca347d50f5076a60959e8",
+      "v": 1
+    },
+    "chain-56": {
+      "account": "acct",
+      "approver": "6da553221e71dfdb",
+      "created": 3056,
+      "device": "aaf671a00557c9de",
+      "kind": "browser",
+      "name": "chain-56",
+      "noise": "9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c",
+      "sig": "04bc8d1945c74d5c1734e3614d1689c1ad0d5dd5add52f369a1a06d00c9855e652beda8cc54641785bd4d1a15c8b585009ee7bc47e0bee5957e2ada239301900",
+      "sign": "23b631709df22832a04b29a1677ab761058ecb42329e14fd484269e63fe55c60",
+      "v": 1
+    },
+    "chain-57": {
+      "account": "acct",
+      "approver": "aaf671a00557c9de",
+      "created": 3057,
+      "device": "f7cc85f95fe5fced",
+      "kind": "browser",
+      "name": "chain-57",
+      "noise": "9d9d9d9d9d9d9d9d9d9d9d9d9d9d9d9d9d9d9d9d9d9d9d9d9d9d9d9d9d9d9d9d",
+      "sig": "e4337c1635f1f58468b0633f44c3aa8737c3110e99a7c440cfa07ddf4af28658f4ec904696a37115ecaa24eed251e754a4658e6a81661a09f11f24f2ece8bc07",
+      "sign": "40b0f498a16f2b943d74dc4f9d4acc05d0de9c935dd569ae831cf8fcdd4e3feb",
+      "v": 1
+    },
+    "chain-58": {
+      "account": "acct",
+      "approver": "f7cc85f95fe5fced",
+      "created": 3058,
+      "device": "3a1595d304c262f5",
+      "kind": "browser",
+      "name": "chain-58",
+      "noise": "9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e",
+      "sig": "bc82ab6e3c2c52fcbffe759e9fbcfefcb66b26d57bc496cf1f2eb495ec201a02c70353d97645b991496f090c6694003c27ce6c3e692f6f9d68dcf2cbdce0b400",
+      "sign": "bcd6e7fd1a5abcaef41648889771e179e0066867ce44e027a883e07d75e362b8",
+      "v": 1
+    },
+    "chain-59": {
+      "account": "acct",
+      "approver": "3a1595d304c262f5",
+      "created": 3059,
+      "device": "927c3bb7d4ee7a61",
+      "kind": "browser",
+      "name": "chain-59",
+      "noise": "9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f",
+      "sig": "cb2a832d350e68506a3869dab6edbb8e00d8904af42c24f6c7c1981171eb2dbf021751e0f38fc9ca70f21a08b37ded0045cb25e212cb5bc5fa13cbd6591df80d",
+      "sign": "ebc198b8b8bfae7723278c3b31629f29de72829797ccc8c2ccce6d9436a4cff2",
+      "v": 1
+    },
+    "chain-6": {
+      "account": "acct",
+      "approver": "285b2b0e2d178dd8",
+      "created": 3006,
+      "device": "995dceebc6c8290e",
+      "kind": "browser",
+      "name": "chain-6",
+      "noise": "6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a",
+      "sig": "14cbff09e5786da487d8f4a19c3b8bfdff78bf89ada607b782ab8e61c220ccffcf6c1c03a756f5c76413d23030cfd740170bbc139fdd934c0c8c6960a04b930d",
+      "sign": "750826c281a4f691a41ffb03ef1b4287568ebfc52ec5cca89d953e5a0093abd5",
+      "v": 1
+    },
+    "chain-60": {
+      "account": "acct",
+      "approver": "927c3bb7d4ee7a61",
+      "created": 3060,
+      "device": "a29c4097b62624a8",
+      "kind": "browser",
+      "name": "chain-60",
+      "noise": "a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0",
+      "sig": "ab5049624d07021c3e845cde77b9cefe00e73e357edaadd44bd005789183eeffd5e1963a0ec917f7682d3c4829d55789eed83411c82330bca0a9003dbc27500c",
+      "sign": "b533d8ad9fcfbdde0b481c1b334ddc3c53412fd614564e7e5afd020368d382c3",
+      "v": 1
+    },
+    "chain-61": {
+      "account": "acct",
+      "approver": "a29c4097b62624a8",
+      "created": 3061,
+      "device": "74f00aec961f22fb",
+      "kind": "browser",
+      "name": "chain-61",
+      "noise": "a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1",
+      "sig": "afc917797798742bd4385aa70660b10a9e0803d396e7df5cef98b93ab1900e5fa329a66b9e636b67fbac4ddd658fa1bbd03563ecac58601d533fb358cca6150e",
+      "sign": "bc7cbcb5636375fa1d82434d466724d92377f53b980695dd49d26d0ce12205a5",
+      "v": 1
+    },
+    "chain-62": {
+      "account": "acct",
+      "approver": "74f00aec961f22fb",
+      "created": 3062,
+      "device": "08e528f61e9f13ff",
+      "kind": "browser",
+      "name": "chain-62",
+      "noise": "a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2",
+      "sig": "2644216ad92df217cd0bfafee88697ec49fdf49b593667aa9593adac4f15292d846c12a32ffbd0c83110d44e80f2d381afc128e24f885a3bb9fbb3a8f7844100",
+      "sign": "65e8f9b0bc6eae124169f0576f97362d295a8cf5f770b45e14357ce647d33eec",
+      "v": 1
+    },
+    "chain-63": {
+      "account": "acct",
+      "approver": "08e528f61e9f13ff",
+      "created": 3063,
+      "device": "c33437efc0835b31",
+      "kind": "browser",
+      "name": "chain-63",
+      "noise": "a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3",
+      "sig": "5d7730f683ef73068354aabd5331c53b5636857807c6fe1907ff93457a720322d61f26d78319dd7cf4da06538a5286352e3ea47e34d72a8b1d616a6b44b61d00",
+      "sign": "acf12b4acc1c660a8326aed34039efb728a5e496488240f50a932ab7aba51751",
+      "v": 1
+    },
+    "chain-64": {
+      "account": "acct",
+      "approver": "c33437efc0835b31",
+      "created": 3064,
+      "device": "bdf46e6abbee4698",
+      "kind": "browser",
+      "name": "chain-64",
+      "noise": "a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4",
+      "sig": "88f86020d095a8ed3152042fb48ba8b2b6ba78d56f0e56827f152d771a942700459738650fce856dd45565858059f13537e3bc35b02d62557972b3cb9ba2d200",
+      "sign": "a0a0c227d8a1254393590789c18060efeaa0937196a6b7bdb7061841907975a7",
+      "v": 1
+    },
+    "chain-7": {
+      "account": "acct",
+      "approver": "995dceebc6c8290e",
+      "created": 3007,
+      "device": "40af3653012a24d0",
+      "kind": "browser",
+      "name": "chain-7",
+      "noise": "6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b",
+      "sig": "5d763f25a3e86951cf2f54b1a3c38d4745a936857b0ef3065b4959c69a224dfd01869747fe923c0628e001805f6a50c651dd6a6045d4dedc476af361ba0a5901",
+      "sign": "8320a51977d8c38ca8a4927c670df5821e449761945e15e9efb26a1509d230ea",
+      "v": 1
+    },
+    "chain-8": {
+      "account": "acct",
+      "approver": "40af3653012a24d0",
+      "created": 3008,
+      "device": "51661385b1dbe658",
+      "kind": "browser",
+      "name": "chain-8",
+      "noise": "6c6c6c6c6c6c6c6c6c6c6c6c6c6c6c6c6c6c6c6c6c6c6c6c6c6c6c6c6c6c6c6c",
+      "sig": "e1d8bfbe72bdd7cd27504dd354d31a321e762766d3686c62a114eb970ac6fd4bd272a70dcc219f171d639abfec85b163558a15578436c8da3cdf561c77448805",
+      "sign": "6d44f939f829d43598bcdedda90de01db69faa50caa33e8c6c328a4b900d4dac",
+      "v": 1
+    },
+    "chain-9": {
+      "account": "acct",
+      "approver": "51661385b1dbe658",
+      "created": 3009,
+      "device": "7460ccf8662b03e0",
+      "kind": "browser",
+      "name": "chain-9",
+      "noise": "6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d",
+      "sig": "1e5b3b3aac7489e8c48d7aa071da0a0e7ec651cabb418dd38d85e7b12b3291745b94d44b010a93b0eaf5cf3af95d2a34ffd87c6d79036dad51c73b19236eb20b",
+      "sign": "8b237d788e8eaaef550c6d125823fa45f1fd5fc29b2c88bdf871119471fc1312",
+      "v": 1
+    },
+    "cli-by-app": {
+      "account": "acct",
+      "approver": "c8f088038888fcd4",
+      "created": 2000,
+      "device": "7ee5d21cf4c4021d",
+      "kind": "cli",
+      "name": "cli by app",
+      "noise": "1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f",
+      "sig": "486ffbeafbfa24071519f09e6a69f2eceaaf6fd83628bb17b8fddf523d761c7d0ec10587a50aa7a168f16e1e3e705c09fefbdad896511e244aed2447c4645504",
+      "sign": "43046bfe4092b3e94994eada15dcc20d8aaa07b658fd3954eb8e0efb8bdca5de",
+      "v": 1
+    },
+    "cli-by-geek": {
+      "account": "acct",
+      "approver": "9b64bd87042f22a7",
+      "created": 2000,
+      "device": "6831e57a1fa7776a",
+      "kind": "cli",
+      "name": "cli by geek",
+      "noise": "3333333333333333333333333333333333333333333333333333333333333333",
+      "sig": "8531710b37836388aa02282e53574ee8aa4a336dd6218b9474c6919a0d912c215bc3aee1bbc37a44dd1f147d6917987f695d56a38614a75b55c220ea625de903",
+      "sign": "17cb79fb2b4120f2b1ec65e4198d6e08b28e813feb01e4a400839b85e18080ce",
+      "v": 1
+    },
+    "cli-by-recovery": {
+      "account": "acct",
+      "approver": "bb6cc568875e9006",
+      "created": 2000,
+      "device": "71cbff5e626bb735",
+      "kind": "cli",
+      "name": "cli by recovery",
+      "noise": "2929292929292929292929292929292929292929292929292929292929292929",
+      "sig": "e49e023116d75f099f3427ac1b60e33b402fd71ec96f16f8a7c51cc3f7b75de4ebae1824b9fe3867746895104861ede3cfe3f462d2294bc2beea7243ded78a09",
+      "sign": "fa4834147f6e690c3693eff61336046403cd8ae2a14f31b3c407358569239565",
+      "v": 1
+    },
+    "cli-by-terminal": {
+      "account": "acct",
+      "approver": "ed0089709d11f9a5",
+      "created": 2000,
+      "device": "7aff12795a43eb9b",
+      "kind": "cli",
+      "name": "cli by terminal",
+      "noise": "1515151515151515151515151515151515151515151515151515151515151515",
+      "sig": "614723bb87dd5bfe793d89f2832f77aafabfdfc6b3a994ca55b5214b9073f05d89e0f8ad06cdb89b6c40fb68a4e8d22d0d7d71e0f1a3b32625e67dc7aff04b02",
+      "sign": "d54207da194977dcf46adbfec2bc2e75b52d5a8a42184fedfdc00024f0e3e8da",
+      "v": 1
+    },
+    "cli-root": {
+      "account": "acct",
+      "approver": "6123768d6bbdfcdf",
+      "created": 1000,
+      "device": "6123768d6bbdfcdf",
+      "kind": "cli",
+      "name": "terminal",
+      "noise": "3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d",
+      "sig": "8c650d61621db6a2a3afdeb2dcf770120987274db9bcef21a6aa9d50c6c2f374ffc8491839b4d7a9980b77fa6e87a3f0ca6aa868719e4125ca23077f9523c002",
+      "sign": "70df9e2279adbec6d12bf2921184c9222eb24ed852005bf640139f52e59cd9ae",
+      "v": 1
+    },
+    "control-device": {
+      "account": "acct",
+      "approver": "6ec4cb2579ac7165",
+      "created": 1800,
+      "device": "422c26dbf1e40b7b",
+      "kind": "browser",
+      "name": "control",
+      "noise": "0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b",
+      "sig": "f9a7d23ef01970a3724677827b5045f92a791d8b6a0a92e0f64859fefe5fc799e39464814e12034df96dddd9eec090f6b0afa096b581e924d98aa309855aff0b",
+      "sign": "66be7e332c7a453332bd9d0a7f7db055f5c5ef1a06ada66d98b39fb6810c473a",
+      "v": 1
+    },
+    "control-device-claims-root": {
+      "account": "acct",
+      "approver": "37f29b7074cf8b52",
+      "created": 1800,
+      "device": "422c26dbf1e40b7b",
+      "kind": "browser",
+      "name": "control",
+      "noise": "0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b",
+      "sig": "f9a7d23ef01970a3724677827b5045f92a791d8b6a0a92e0f64859fefe5fc799e39464814e12034df96dddd9eec090f6b0afa096b581e924d98aa309855aff0b",
+      "sign": "66be7e332c7a453332bd9d0a7f7db055f5c5ef1a06ada66d98b39fb6810c473a",
+      "v": 1
+    },
+    "control-root": {
+      "account": "acct",
+      "approver": "6ec4cb2579ac7165",
+      "created": 1000,
+      "device": "6ec4cb2579ac7165",
+      "kind": "browser",
+      "name": "laptop",
+      "noise": "0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a",
+      "sig": "23863ad324e12cebbf95c613d678b4ed67d3aaddebc27474aad50a0ab7399d6bfe499b1a8c6a72ebebea1fd72438d50c8ff8c5d07ec2dc64c7b0b3b522ce6c08",
+      "sign": "43a72e714401762df66b68c26dfbdf2682aaec9f2474eca4613e424a0fbafd3c",
+      "v": 1
+    },
+    "daemon-by-app": {
+      "account": "acct",
+      "approver": "c8f088038888fcd4",
+      "created": 2000,
+      "device": "c0b7fee2312b6474",
+      "kind": "daemon",
+      "name": "daemon by app",
+      "noise": "2020202020202020202020202020202020202020202020202020202020202020",
+      "sig": "6fa7b4cad7ae88b7559e860f089165079b0da90837237b0dd7bd2bb4f28464a06ca7221015de36b36364c8432ec62a593b1a726326864178c85149298146340a",
+      "sign": "4ed32f63bf35f0eeefcb25f28a2e1fbdc873ae2835671b0c9460f5f12e4556a8",
+      "v": 1
+    },
+    "daemon-by-geek": {
+      "account": "acct",
+      "approver": "9b64bd87042f22a7",
+      "created": 2000,
+      "device": "a2546180148b75f0",
+      "kind": "daemon",
+      "name": "daemon by geek",
+      "noise": "3434343434343434343434343434343434343434343434343434343434343434",
+      "sig": "543e1a47672f711b930c1a7e3fedbe15dba78e64746f5493c91a3f6581cf0db6895d9c08196c79fe7c7aec732be623e712b9e95798cb7a9602718d401ceca501",
+      "sign": "eb2cf13bf7ae3a5f614168a1fb09272d39771ec4b8523727815e466caf8ee163",
+      "v": 1
+    },
+    "daemon-by-recovery": {
+      "account": "acct",
+      "approver": "bb6cc568875e9006",
+      "created": 2000,
+      "device": "5c6ac30ca9ec4294",
+      "kind": "daemon",
+      "name": "daemon by recovery",
+      "noise": "2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a",
+      "sig": "0ad7f99e1a0b321135240dd480611a765655228252bcf8492f18a17ed6705f3f53aceca1c20d96eef0d659d9b7f7f8dbd852c3be7d4b2464a0955c6402cf3a0c",
+      "sign": "197f6b23e16c8532c6abc838facd5ea789be0c76b2920334039bfa8b3d368d61",
+      "v": 1
+    },
+    "daemon-by-terminal": {
+      "account": "acct",
+      "approver": "ed0089709d11f9a5",
+      "created": 2000,
+      "device": "e7c4e86640e86a68",
+      "kind": "daemon",
+      "name": "daemon by terminal",
+      "noise": "1616161616161616161616161616161616161616161616161616161616161616",
+      "sig": "fd4ccc35503aa3c3ae4416f31efdcbd174a70a0e79a4c6dd6baa369a7dac9108049a45797a9bbb9ce965323f23934f3a67c62faa0973c8ad4ac84845b19b230a",
+      "sign": "511c34a1a2cb521df16bb246b8de8e7997ce235c7e76b22a3d7503a24819dd8a",
+      "v": 1
+    },
+    "daemon-root": {
+      "account": "acct",
+      "approver": "51f1873d22af29c6",
+      "created": 1000,
+      "device": "51f1873d22af29c6",
+      "kind": "daemon",
+      "name": "geek",
+      "noise": "3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e",
+      "sig": "34af14a9b73457aaf59303bc373479ee4d6778ca901c1aefa06e291cd1c4ad41808807ed468b04a76194129eb69e7ba89ecf0f28b61fe975ae6df139bf92820c",
+      "sign": "f95c6a5dff031fac7b1a6a54b6610caeb83b39f7e8a66be16ff5faa4a511ed2d",
+      "v": 1
+    },
+    "geek": {
+      "account": "acct",
+      "approver": "c242667535a3d34f",
+      "created": 1300,
+      "device": "9b64bd87042f22a7",
+      "kind": "daemon",
+      "name": "geek",
+      "noise": "0404040404040404040404040404040404040404040404040404040404040404",
+      "sig": "c4d92083c34b460d3a3c2f9d217b22770a2275494fbab003657868813285c95b3efccc98b803bb8e625351510a7ccd8f97ad90e32d3e63f8e2e13abbd0b25b02",
+      "sign": "ca93ac1705187071d67b83c7ff0efe8108e8ec4530575d7726879333dbdabe7c",
+      "v": 1
+    },
+    "geek-revoked-by-app": {
+      "account": "acct",
+      "at": 40000,
+      "by": "c8f088038888fcd4",
+      "device": "9b64bd87042f22a7",
+      "sig": "7f919b7765b7364ef7e8d11608007f04813749feb836d5527120f7c37d9ccc449e8e8cefdbd4a5d0ccfd63608746de4f66dac0fe6641cd8740ea2b4d3d12b908",
+      "v": 1
+    },
+    "geek-revoked-by-terminal": {
+      "account": "acct",
+      "at": 40000,
+      "by": "ed0089709d11f9a5",
+      "device": "9b64bd87042f22a7",
+      "sig": "75953e36a6ba00cf1551a9774f95fc7e8443bd43772b58ebe86fe7f27d8863ef52a0c80848b7ef92434759e4a02378f58bf86b3ea41d4706282c2848bcf0b202",
+      "v": 1
+    },
+    "laptop": {
+      "account": "acct",
+      "approver": "37f29b7074cf8b52",
+      "created": 1000,
+      "device": "37f29b7074cf8b52",
+      "kind": "browser",
+      "name": "laptop",
+      "noise": "0101010101010101010101010101010101010101010101010101010101010101",
+      "sig": "96e9560508a1cbdcc8c7a31633348ac77145f54bd181df1432c8c15d46ad00af18891326a8351489faba0de0077cba9f0c7a4f3ff9d60d66cf8e192dc6e1870e",
+      "sign": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
+      "v": 1
+    },
+    "laptop-revoked-by-app": {
+      "account": "acct",
+      "at": 40000,
+      "by": "c8f088038888fcd4",
+      "device": "37f29b7074cf8b52",
+      "sig": "947d04bdc44696ec8be2401c04a40163628fa85e29403d2a38bcde00df895501892239f7025e71cec020e2aa1bff810e41664a9a843f2c954154749a42bd440b",
+      "v": 1
+    },
+    "laptop-revoked-by-terminal": {
+      "account": "acct",
+      "at": 40000,
+      "by": "ed0089709d11f9a5",
+      "device": "37f29b7074cf8b52",
+      "sig": "3a7020df469f6300900accbb3834f017c549af39879cbc353535b7f76fa1eed3cf232bf4d486b24aa8ae166c46ad49ce2beb880eb4bd82d7e4a4c3d1853a6f05",
+      "v": 1
+    },
+    "loop-a": {
+      "account": "acct",
+      "approver": "a56af8f902a7e6c8",
+      "created": 2000,
+      "device": "5bfc7b806771de6a",
+      "kind": "browser",
+      "name": "loop a",
+      "noise": "b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4",
+      "sig": "f4b5d1e163a695bf0db45929faa61fa9cf668b781da5522b26e0b6ce3885346418185221ad7ea700509b17f96077c2c30e89df4eba6cd635066f45a5b1931101",
+      "sign": "52bcd4c68a8a09d98cd9d18d8a6fa3e8e9355954ecb01e2adfbfba5cefae4e79",
+      "v": 1
+    },
+    "loop-b": {
+      "account": "acct",
+      "approver": "5bfc7b806771de6a",
+      "created": 2000,
+      "device": "a56af8f902a7e6c8",
+      "kind": "browser",
+      "name": "loop b",
+      "noise": "b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5",
+      "sig": "55aa82c881ee9d270032266e93497ed2a05a9e2d9a7927567245b93d8a6ccfb549cf6a83a647c721b9f5fd69a03eeb9c43558ec42d52de51c541bf0a5952470a",
+      "sign": "91ea2db8260039049bd3b16db0f42755861e7d238f4c78d064d9a2201a2e1350",
+      "v": 1
+    },
+    "new-laptop": {
+      "account": "acct",
+      "approver": "bb6cc568875e9006",
+      "created": 1700,
+      "device": "73f78456621ef247",
+      "kind": "browser",
+      "name": "new laptop",
+      "noise": "0808080808080808080808080808080808080808080808080808080808080808",
+      "sig": "6071fb84509a04b2c0cb629d5c722ebb8580016b853bbb36367730f387cb357f901a74aa83018179941f0edfbae820e93579c5cb86dd560358c9aae14232e10a",
+      "sign": "1398f62c6d1a457c51ba6a4b5f3dbd2f69fca93216218dc8997e416bd17d93ca",
+      "v": 1
+    },
+    "phone": {
+      "account": "acct",
+      "approver": "37f29b7074cf8b52",
+      "created": 1100,
+      "device": "c242667535a3d34f",
+      "kind": "browser",
+      "name": "phone",
+      "noise": "0202020202020202020202020202020202020202020202020202020202020202",
+      "sig": "010002ce206c65b432a35d081d6c2183541a00f7b6cb60996661c82a88f4c342b85447c923d8e3ccbfa1be987a988df867756d515a953cbd34a8cb0a78a7090f",
+      "sign": "8139770ea87d175f56a35466c34c7ecccb8d8a91b4ee37a25df60f5b8fc9b394",
+      "v": 1
+    },
+    "phone-other-account": {
+      "account": "elsewhere",
+      "approver": "37f29b7074cf8b52",
+      "created": 1100,
+      "device": "c242667535a3d34f",
+      "kind": "browser",
+      "name": "phone",
+      "noise": "0202020202020202020202020202020202020202020202020202020202020202",
+      "sig": "4c5476b8ec2b99714a8b8c5772bcc69453404922a4201d9f4b0cf12ac77c45fbd099f4455f5f43dae546d9ab644df6b5936714f6e177d34dbbc2638cedbc550d",
+      "sign": "8139770ea87d175f56a35466c34c7ecccb8d8a91b4ee37a25df60f5b8fc9b394",
+      "v": 1
+    },
+    "phone-renamed": {
+      "account": "acct",
+      "approver": "37f29b7074cf8b52",
+      "created": 1100,
+      "device": "c242667535a3d34f",
+      "kind": "browser",
+      "name": "laptop",
+      "noise": "0202020202020202020202020202020202020202020202020202020202020202",
+      "sig": "010002ce206c65b432a35d081d6c2183541a00f7b6cb60996661c82a88f4c342b85447c923d8e3ccbfa1be987a988df867756d515a953cbd34a8cb0a78a7090f",
+      "sign": "8139770ea87d175f56a35466c34c7ecccb8d8a91b4ee37a25df60f5b8fc9b394",
+      "v": 1
+    },
+    "phone-revoked-20000": {
+      "account": "acct",
+      "at": 20000,
+      "by": "37f29b7074cf8b52",
+      "device": "c242667535a3d34f",
+      "sig": "8618fcae37842d6da360c236ff538b2bdc230ae679003c0f1facfbb9fc309784664a6727ef7cc7c10af438539dcddbb685ea9185b18310a23d2e29ab7a269f0c",
+      "v": 1
+    },
+    "phone-revoked-5000": {
+      "account": "acct",
+      "at": 5000,
+      "by": "37f29b7074cf8b52",
+      "device": "c242667535a3d34f",
+      "sig": "278d103a8ec4113668185bca7b22d8dbcdd4fe7d21285c5b0573d46e92b102fd3de6a59c751b408d63852e2d76d0e0f4561a6d229d54b9c1677c4f9053484a0b",
+      "v": 1
+    },
+    "phone-revoked-50000": {
+      "account": "acct",
+      "at": 50000,
+      "by": "37f29b7074cf8b52",
+      "device": "c242667535a3d34f",
+      "sig": "52f6d118f0da6883776104cf9d53ddc9d1e92a33973489a00b9f0224b036043259def29acbc570ef2eb809f5d8fcb1b8c694e241361062a8481e01fbd3fa6b07",
+      "v": 1
+    },
+    "phone-revoked-bad-signature": {
+      "account": "acct",
+      "at": 40001,
+      "by": "37f29b7074cf8b52",
+      "device": "c242667535a3d34f",
+      "sig": "a9d9ab828a6f47eefc9216a6742c6064978c0417e426ddda3fc5b2ed4db7d38f24d6f158bb083133229cb0a966544e52d380d983b5002d8186892ffa4ca51b04",
+      "v": 1
+    },
+    "phone-revoked-by-app": {
+      "account": "acct",
+      "at": 40000,
+      "by": "c8f088038888fcd4",
+      "device": "c242667535a3d34f",
+      "sig": "d951e57cb86d94de8553cdc0a0df8791b02cdf535ee299200d9fd127809f235de5de23abfb018023dc14fc7bc794dde6505d46a8156015bb14c9d7af0b7d520d",
+      "v": 1
+    },
+    "phone-revoked-by-control": {
+      "account": "acct",
+      "at": 40000,
+      "by": "6ec4cb2579ac7165",
+      "device": "c242667535a3d34f",
+      "sig": "ae993349fd35024c3ed9f3af2534ddcec2c18000dc01e55751b9bb3c762515c9daae2f7a7d39762771ccdd4f1419ba38ab4b6a06a2c31f7b3e526206076fa60e",
+      "v": 1
+    },
+    "phone-revoked-by-new-laptop": {
+      "account": "acct",
+      "at": 40000,
+      "by": "73f78456621ef247",
+      "device": "c242667535a3d34f",
+      "sig": "136e1dc6b6e7a98c5b9f312f1e872dc010429a0b1ca827afc7e4aba926a4f6c6bfdca8c5b161a61f61cf198ff02296114ca8c18ef0c2b29abdea6eb285196504",
+      "v": 1
+    },
+    "phone-revoked-by-terminal": {
+      "account": "acct",
+      "at": 40000,
+      "by": "ed0089709d11f9a5",
+      "device": "c242667535a3d34f",
+      "sig": "28be564ea20367c0e9a74a1e279fbc03a71de269e49b593c5b81d715d36941244fc7a688eb646313248753557d16ca9dff67c022b37f0cb6a63576383b174406",
+      "v": 1
+    },
+    "phone-revoked-in-another-account": {
+      "account": "elsewhere",
+      "at": 40000,
+      "by": "37f29b7074cf8b52",
+      "device": "c242667535a3d34f",
+      "sig": "dc2d43c9b54e33a5087f22239ed496b2c047d44891d02b831424ee9c60ae6a7df206d0292c65f33d5788636101303452dddd5d943b387d9f7a933b5bd733ee08",
+      "v": 1
+    },
+    "phone-revoked-v2": {
+      "account": "acct",
+      "at": 40000,
+      "by": "37f29b7074cf8b52",
+      "device": "c242667535a3d34f",
+      "sig": "a9d9ab828a6f47eefc9216a6742c6064978c0417e426ddda3fc5b2ed4db7d38f24d6f158bb083133229cb0a966544e52d380d983b5002d8186892ffa4ca51b04",
+      "v": 2
+    },
+    "recovery": {
+      "account": "acct",
+      "approver": "37f29b7074cf8b52",
+      "created": 1600,
+      "device": "bb6cc568875e9006",
+      "kind": "recovery",
+      "name": "recovery 1",
+      "noise": "0707070707070707070707070707070707070707070707070707070707070707",
+      "sig": "ed3bd914f7d3bb035a0536a384f47eabe72770042939f8c460138c07ad9fab10c03d12e9e2d9981a746e46bf3cf8afea26734570e06d8e285b8ac96b87d6280e",
+      "sign": "ea4a6c63e29c520abef5507b132ec5f9954776aebebe7b92421eea691446d22c",
+      "v": 1
+    },
+    "recovery-by-app": {
+      "account": "acct",
+      "approver": "c8f088038888fcd4",
+      "created": 2000,
+      "device": "d9e4fbf563f24eee",
+      "kind": "recovery",
+      "name": "recovery by app",
+      "noise": "2121212121212121212121212121212121212121212121212121212121212121",
+      "sig": "5d4ee0ba62375f405dd4bf78b98b121635285c235bad4818b5b76c33afcb9de36976e600dc862b57d983f6d32f1f8f9def1f30fd258a753db2530cf37d820a0f",
+      "sign": "884b8857f4eaa1613c61504db34d4beaf346517a0e31de3cddd4d9b4201d9d0b",
+      "v": 1
+    },
+    "recovery-by-geek": {
+      "account": "acct",
+      "approver": "9b64bd87042f22a7",
+      "created": 2000,
+      "device": "bb96d4d8db713657",
+      "kind": "recovery",
+      "name": "recovery by geek",
+      "noise": "3535353535353535353535353535353535353535353535353535353535353535",
+      "sig": "955396f93c5b1dd9d1fad6fba7543b235ded6f993feed0bcf9aee231f041847574b6465794b1c8550875e7526811f465237216f41ddaa366d25b7340e333730b",
+      "sign": "a6d2455ea3a5771aba9fcb037924114c92f9f325049f6b4269e739d9048bb869",
+      "v": 1
+    },
+    "recovery-by-recovery": {
+      "account": "acct",
+      "approver": "bb6cc568875e9006",
+      "created": 2000,
+      "device": "44d6bd4d1b5c8d53",
+      "kind": "recovery",
+      "name": "recovery by recovery",
+      "noise": "2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b",
+      "sig": "165194e89c5333bc5ed2fa392c574ec6b1d14a958309acebee0ae608dbac5767f559deb007aa634e20a4715ff7815704b5b384e0bdf98e5f999eae5f6d38b307",
+      "sign": "4508a07aa941707f3eb2db94c8897a80b2c1197476b6de213ac273df7d86c4ff",
+      "v": 1
+    },
+    "recovery-by-terminal": {
+      "account": "acct",
+      "approver": "ed0089709d11f9a5",
+      "created": 2000,
+      "device": "e969ffb0ec8bd6d6",
+      "kind": "recovery",
+      "name": "recovery by terminal",
+      "noise": "1717171717171717171717171717171717171717171717171717171717171717",
+      "sig": "6e71eeab8730cb3a71c92275d55b8eb49a189cfd1c0a518c890f31ed9e0844ae2a6320052db3850d1b2db9a75ae4f65b224a466d5a05ddfac5557c9c6837f80c",
+      "sign": "31debe55d37c722768b137131caa6087080b2e0b60b94bd785d14575cfa498bc",
+      "v": 1
+    },
+    "recovery-revoked-at-1-by-app": {
+      "account": "acct",
+      "at": 1,
+      "by": "c8f088038888fcd4",
+      "device": "bb6cc568875e9006",
+      "sig": "c772e44f5f511e67dec2d59903217762cdc0ff9442297fde8ea53c63e914747b32f126ebff3500a5387ff15583359a70661cd8dc2171d389295650e5ac35b30e",
+      "v": 1
+    },
+    "recovery-revoked-at-1-by-laptop": {
+      "account": "acct",
+      "at": 1,
+      "by": "37f29b7074cf8b52",
+      "device": "bb6cc568875e9006",
+      "sig": "d9b83f8b22fab0308cdd5c103644c8e9cc5b9a8cbd1dc3243cdf60b96482d24d4b244f2efc366052dc9de9605b270da977eef4d938f1f33e7b1cda6be5a94e0e",
+      "v": 1
+    },
+    "recovery-revoked-at-1-by-terminal": {
+      "account": "acct",
+      "at": 1,
+      "by": "ed0089709d11f9a5",
+      "device": "bb6cc568875e9006",
+      "sig": "dbf63e30b1aaaab353fd36beaa69174630b7e8cf7f501e9079c8a4755048222224daf92fceaaaf38672c942383504676b02d2088b8acff5ca64213ec76c6cc09",
+      "v": 1
+    },
+    "tablet": {
+      "account": "acct",
+      "approver": "37f29b7074cf8b52",
+      "created": 1200,
+      "device": "e0a128f98e5582a3",
+      "kind": "browser",
+      "name": "tablet",
+      "noise": "0303030303030303030303030303030303030303030303030303030303030303",
+      "sig": "cd0a8653c4072c051e6e06012dd31fd4632072d5ea1c004b0bf81e2211d4425e999beb65bece4ac320883fa8a19f13906287af263653afa2764b8fb061242401",
+      "sign": "ed4928c628d1c2c6eae90338905995612959273a5c63f93636c14614ac8737d1",
+      "v": 1
+    },
+    "tablet-revoked-by-phone": {
+      "account": "acct",
+      "at": 40000,
+      "by": "c242667535a3d34f",
+      "device": "e0a128f98e5582a3",
+      "sig": "235d64a6da32982f382c55740a3e91d824a5891412038866b57bda0935e9823847816dd9ea8ada0e9df589f551651e4c12446191573735539f10df337b217804",
+      "v": 1
+    },
+    "terminal": {
+      "account": "acct",
+      "approver": "37f29b7074cf8b52",
+      "created": 1400,
+      "device": "ed0089709d11f9a5",
+      "kind": "cli",
+      "name": "terminal",
+      "noise": "0505050505050505050505050505050505050505050505050505050505050505",
+      "sig": "d57967cd5389ed24ffc8ab0e1383b6428ef0d2e438676b4db9e1cd49dea01c4ecc531c538171838e6f73966e676b12d521e66c62bb3e9309c51b328a83d8610d",
+      "sign": "6e7a1cdd29b0b78fd13af4c5598feff4ef2a97166e3ca6f2e4fbfccd80505bf1",
+      "v": 1
+    },
+    "terminal-2": {
+      "account": "acct",
+      "approver": "37f29b7074cf8b52",
+      "created": 1450,
+      "device": "43777db1d4d61408",
+      "kind": "cli",
+      "name": "terminal 2",
+      "noise": "4848484848484848484848484848484848484848484848484848484848484848",
+      "sig": "1a14728fe9cc11d7fc22aa0787531893a89d89c114fc318284217c8dfa65a37683358bc30bf405d50e3f80049717f9780dd7f30e736069b111faf0c14f1cfe03",
+      "sign": "d4eec1869fb1b8a4e817516ad5a931557cb56805c3eb16e8f3a803d647df7869",
+      "v": 1
+    },
+    "terminal-2-revoked-by-terminal": {
+      "account": "acct",
+      "at": 40000,
+      "by": "ed0089709d11f9a5",
+      "device": "43777db1d4d61408",
+      "sig": "9864bf3c2e2ffc965dfdbaaf00f677ee998640876c9a177f9650455eade041c6beede4c7fd39e0f4376a652d424de774f7e2af216248163ccb3bf26e251ebe04",
+      "v": 1
+    }
+  },
+  "output": "trusted: the devices trusted now, sorted by id: each one's device id, name and approver (which of its certificates counted)"
+}

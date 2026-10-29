@@ -1,0 +1,198 @@
+{
+  "about": "The exact bytes each team paper's signature is over. A roster's sig is its by's over its body (by is a device id, or for a redeeming version the one-time key, hex); an invite's, the owner's device's; a redeem's proof, the one-time key's over the redeem body; an Ask me first invite's, the owner's device's, and its proof, the one-time key's over the ask body; a join's, the approving device's; a move's, a device of the machine's own account. v1 rosters carry no spent or redeem lines, so older daemons check them. The first lines are frozen (#504).",
+  "cases": [
+    {
+      "about": "a v1 roster",
+      "input": {"of": "roster", "roster": "v1"},
+      "output": {
+        "body": "illogical team v1\nteam t1\nname Acme\nversion 1\nat 1000\nmember alice 37f29b7074cf8b52 owner alice-login\nby 37f29b7074cf8b52\n"
+      }
+    },
+    {
+      "about": "a v2 roster an invitee wrote: spent and redeem lines, by the one-time key",
+      "input": {"of": "roster", "roster": "v2-redeemed"},
+      "output": {
+        "body": "illogical team v2\nteam t1\nname Acme\nversion 2\nat 2000\nmember alice 37f29b7074cf8b52 owner alice-login\nmember bob c242667535a3d34f editor bob-login\nspent acdb0e29743f0ccb8686d0a104cb96e05abefec1538765e7595869f7dc8c49aa 10000\nredeem acdb0e29743f0ccb8686d0a104cb96e05abefec1538765e7595869f7dc8c49aa a8ed75b157703a186e8c8c8dcf95b4bf9a199203275e61e81b4209839cc093752591161ff26ef1b05ce40e77c86debc5955f48ca5601a4a39c46ec7d3f60ed05\nby acdb0e29743f0ccb8686d0a104cb96e05abefec1538765e7595869f7dc8c49aa\n"
+      }
+    },
+    {
+      "about": "a presigned invite",
+      "input": {"invite": "invite", "of": "invite"},
+      "output": {
+        "body": "illogical team invite v1\nteam t1\nrole editor\nexpires 10000\nkey acdb0e29743f0ccb8686d0a104cb96e05abefec1538765e7595869f7dc8c49aa\nby 37f29b7074cf8b52\n"
+      }
+    },
+    {
+      "about": "what the one-time key signs for bob at version 2",
+      "input": {
+        "invite": "invite",
+        "member": {"account": "bob", "name": "bob-login", "role": "editor", "root": "c242667535a3d34f"},
+        "of": "redeem",
+        "version": 2
+      },
+      "output": {
+        "body": "illogical team redeem v1\nteam t1\nversion 2\nmember bob c242667535a3d34f editor bob-login\nkey acdb0e29743f0ccb8686d0a104cb96e05abefec1538765e7595869f7dc8c49aa\n"
+      }
+    },
+    {
+      "about": "an Ask me first invite",
+      "input": {"invite": "ask-invite", "of": "ask_invite"},
+      "output": {
+        "body": "arugula team ask invite v1\nteam t1\nrole owner\nmade 1000\nexpires 2000\nkey acdb0e29743f0ccb8686d0a104cb96e05abefec1538765e7595869f7dc8c49aa\nby 37f29b7074cf8b52\n"
+      }
+    },
+    {
+      "about": "what its one-time key signs for bob",
+      "input": {"account": "bob", "invite": "ask-invite", "of": "ask", "root": "c242667535a3d34f"},
+      "output": {
+        "body": "arugula team ask v1\nteam t1\naccount bob\nroot c242667535a3d34f\nkey acdb0e29743f0ccb8686d0a104cb96e05abefec1538765e7595869f7dc8c49aa\n"
+      }
+    },
+    {
+      "about": "a daemon's join into the team",
+      "input": {
+        "daemon": "d30b9802b6365451",
+        "of": "join",
+        "pin": {"founder": "alice", "founder_root": "37f29b7074cf8b52", "team": "t1"}
+      },
+      "output": {
+        "body": "illogical team join v1\ndaemon d30b9802b6365451\nteam t1\nfounder alice\nfounder_root 37f29b7074cf8b52\n"
+      }
+    },
+    {
+      "about": "a machine moved into the team",
+      "input": {
+        "at": 5000,
+        "daemon": "d30b9802b6365451",
+        "of": "move",
+        "team": {"founder": "alice", "founder_root": "37f29b7074cf8b52", "team": "t1"}
+      },
+      "output": {
+        "body": "illogical machine move v1\ndaemon d30b9802b6365451\nteam t1\nfounder alice\nfounder_root 37f29b7074cf8b52\nat 5000\n"
+      }
+    },
+    {
+      "about": "a machine moved back to its account",
+      "input": {"at": 6000, "daemon": "d30b9802b6365451", "of": "move", "team": null},
+      "output": {
+        "body": "illogical machine move v1\ndaemon d30b9802b6365451\nteam -\nfounder -\nfounder_root -\nat 6000\n"
+      }
+    }
+  ],
+  "checks": [
+    "arugula_e2e::team::Roster::body",
+    "arugula_e2e::team::Invite::body",
+    "arugula_e2e::team::Invite::redeem_body",
+    "arugula_e2e::team::AskInvite::body",
+    "arugula_e2e::team::AskInvite::ask_body",
+    "arugula_e2e::team::TeamPin::join_body",
+    "arugula_e2e::team::Move::body"
+  ],
+  "input": "of: which paper (roster, invite, redeem, ask_invite, ask, join, move), and what it needs: a roster's or an invite's label; redeem: the invite, the version and the member; ask: the invite, the account and its root; join: the pin and the daemon's id; move: the daemon's id, the team it moves into (a pin, or null for its own account) and at",
+  "keys": {
+    "alice": {
+      "device": "37f29b7074cf8b52",
+      "noise": "0101010101010101010101010101010101010101010101010101010101010101",
+      "seed": "0101010101010101010101010101010101010101010101010101010101010101",
+      "sign": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c"
+    },
+    "bob": {
+      "device": "c242667535a3d34f",
+      "noise": "0202020202020202020202020202020202020202020202020202020202020202",
+      "seed": "0202020202020202020202020202020202020202020202020202020202020202",
+      "sign": "8139770ea87d175f56a35466c34c7ecccb8d8a91b4ee37a25df60f5b8fc9b394"
+    },
+    "one-time": {
+      "device": "dc40eea8a52499ce",
+      "noise": "1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e",
+      "seed": "1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e",
+      "sign": "acdb0e29743f0ccb8686d0a104cb96e05abefec1538765e7595869f7dc8c49aa"
+    }
+  },
+  "objects": {
+    "alice": {
+      "account": "alice",
+      "approver": "37f29b7074cf8b52",
+      "created": 1000,
+      "device": "37f29b7074cf8b52",
+      "kind": "browser",
+      "name": "alice's laptop",
+      "noise": "0101010101010101010101010101010101010101010101010101010101010101",
+      "sig": "4c7a182921697a35256fd95c0c9e8d2e91f60e6f7601e02d600196dda65ed26cd9aff836cd15e6e6d62cdfbb144fe575d921d5035ee13248a8565973ed0fda0d",
+      "sign": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
+      "v": 1
+    },
+    "ask-invite": {
+      "by": "37f29b7074cf8b52",
+      "expires": 2000,
+      "key": "acdb0e29743f0ccb8686d0a104cb96e05abefec1538765e7595869f7dc8c49aa",
+      "made": 1000,
+      "role": "owner",
+      "sig": "ec8edc60f8cddb02869f992428d2101258352be8f6167d49a43bd5dbad440b0d42f128f67345fc41857a463016e6d13018d9711ff65df4d6fc101ac3fe53d40a",
+      "team": "t1"
+    },
+    "bob": {
+      "account": "bob",
+      "approver": "c242667535a3d34f",
+      "created": 1000,
+      "device": "c242667535a3d34f",
+      "kind": "browser",
+      "name": "bob's laptop",
+      "noise": "0202020202020202020202020202020202020202020202020202020202020202",
+      "sig": "07e9418076d6edaf8c72fa5be449eeea02b612b5cd17ec9c6654519b853288b6d7a08c29100e96a0b5af3b13fb593ddb25335e0418d10dc2692d44cd3ed48103",
+      "sign": "8139770ea87d175f56a35466c34c7ecccb8d8a91b4ee37a25df60f5b8fc9b394",
+      "v": 1
+    },
+    "invite": {
+      "by": "37f29b7074cf8b52",
+      "expires": 10000,
+      "key": "acdb0e29743f0ccb8686d0a104cb96e05abefec1538765e7595869f7dc8c49aa",
+      "role": "editor",
+      "sig": "a1297f9b48791fcb2b4dc6f4b8f7b9e560745628fca8a3853a397e4672ef302c17fc5b42fc416291085220ea3a8016a6fdefac7dfa774ef5008b48e7e1899709",
+      "team": "t1"
+    },
+    "v1": {
+      "at": 1000,
+      "by": "37f29b7074cf8b52",
+      "members": [
+        {"account": "alice", "name": "alice-login", "role": "owner", "root": "37f29b7074cf8b52"}
+      ],
+      "name": "Acme",
+      "sig": "44bc63feacd79c5491b58191f6fe923dbad50933cfde955cef8676a6923eebc2c70dfb0495a85cbeca47379aebf6c7d6252d16a97e79c312cac27598de307209",
+      "team": "t1",
+      "v": 1,
+      "version": 1
+    },
+    "v2-redeemed": {
+      "at": 2000,
+      "by": "acdb0e29743f0ccb8686d0a104cb96e05abefec1538765e7595869f7dc8c49aa",
+      "members": [
+        {"account": "alice", "name": "alice-login", "role": "owner", "root": "37f29b7074cf8b52"},
+        {"account": "bob", "name": "bob-login", "role": "editor", "root": "c242667535a3d34f"}
+      ],
+      "name": "Acme",
+      "redeem": {
+        "invite": {
+          "by": "37f29b7074cf8b52",
+          "expires": 10000,
+          "key": "acdb0e29743f0ccb8686d0a104cb96e05abefec1538765e7595869f7dc8c49aa",
+          "role": "editor",
+          "sig": "a1297f9b48791fcb2b4dc6f4b8f7b9e560745628fca8a3853a397e4672ef302c17fc5b42fc416291085220ea3a8016a6fdefac7dfa774ef5008b48e7e1899709",
+          "team": "t1"
+        },
+        "proof": "a8ed75b157703a186e8c8c8dcf95b4bf9a199203275e61e81b4209839cc093752591161ff26ef1b05ce40e77c86debc5955f48ca5601a4a39c46ec7d3f60ed05"
+      },
+      "sig": "faf9d0599d1b6ec2382cebabc7c730866bd7b3d296ac14884233d8fb75dc038ca0c525fec20f3eab2e04dfe0e89ab2eaf002a8d2bc66e9ae7f0de830a0330505",
+      "spent": [
+        {
+          "expires": 10000,
+          "key": "acdb0e29743f0ccb8686d0a104cb96e05abefec1538765e7595869f7dc8c49aa"
+        }
+      ],
+      "team": "t1",
+      "v": 2,
+      "version": 2
+    }
+  },
+  "output": "body: the signed text"
+}
