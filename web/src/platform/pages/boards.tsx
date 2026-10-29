@@ -38,9 +38,7 @@ function readBoards(project: string): Promise<ProjectBoard[]> {
 /** The project's boards, `null` while they load, or `"off"` when the
  * `boards` flag isn't on for the reader (the routes answer 404). Asked of
  * no project (`undefined`), it reads nothing. */
-export function useBoards(
-  project: string | undefined,
-): ProjectBoard[] | null | "off" {
+export function useBoards(project: string | undefined): ProjectBoard[] | null | "off" {
   const [list, setList] = useState<ProjectBoard[] | null | "off">(null);
   useEffect(() => {
     setList(null);
@@ -48,9 +46,7 @@ export function useBoards(
     let live = true;
     readBoards(project).then(
       (l) => live && setList(l),
-      (e: Error) =>
-        live &&
-        setList(e instanceof BoardError && e.status === 404 ? "off" : []),
+      (e: Error) => live && setList(e instanceof BoardError && e.status === 404 ? "off" : []),
     );
     return () => void (live = false);
   }, [project]);
@@ -61,10 +57,7 @@ function BoardsOff() {
   return (
     <section class="platform-section" data-boards-off>
       <h1>Boards</h1>
-      <p class="dim">
-        Boards are a Labs feature, and they're off for you. A team owner turns
-        them on in the team's Labs, on control's page.
-      </p>
+      <p class="dim">Boards are a Labs feature, and they're off for you. A team owner turns them on in the team's Labs, on control's page.</p>
     </section>
   );
 }
@@ -72,8 +65,7 @@ function BoardsOff() {
 export function BoardsPage({ project }: { project: string }) {
   useSubscribe((fn) => session.subscribe(fn));
   const p = session.project(project);
-  if (!p)
-    return <Missing what="That project isn't one of yours (or it's gone)." />;
+  if (!p) return <Missing what="That project isn't one of yours (or it's gone)." />;
   return <BoardList p={p} />;
 }
 
@@ -99,22 +91,9 @@ function BoardList({ p }: { p: PlatformProject }) {
       {list && <BoardItems p={p} list={list} data="data-boards" />}
       {mayWrite(p) && (
         <form class="board-form" onSubmit={(e) => void make(e)}>
-          <input
-            type="text"
-            value={title}
-            maxLength={120}
-            placeholder="a new board's title"
-            aria-label="New board's title"
-            data-board-new-title
-            onInput={(e) => setTitle(e.currentTarget.value)}
-          />
+          <input type="text" value={title} maxLength={120} placeholder="a new board's title" aria-label="New board's title" data-board-new-title onInput={(e) => setTitle(e.currentTarget.value)} />
           <span class="board-form-buttons">
-            <button
-              type="submit"
-              class="primary"
-              data-board-new
-              disabled={!title.trim()}
-            >
+            <button type="submit" class="primary" data-board-new disabled={!title.trim()}>
               Make a board
             </button>
           </span>
@@ -124,18 +103,11 @@ function BoardList({ p }: { p: PlatformProject }) {
   );
 }
 
-export function BoardPage({
-  project,
-  board,
-}: {
-  project: string;
-  board: string;
-}) {
+export function BoardPage({ project, board }: { project: string; board: string }) {
   useSubscribe((fn) => session.subscribe(fn));
   const p = session.project(project);
   const list = useBoards(project);
-  if (!p)
-    return <Missing what="That project isn't one of yours (or it's gone)." />;
+  if (!p) return <Missing what="That project isn't one of yours (or it's gone)." />;
   if (list === "off") return <BoardsOff />;
   const all = pathOf({ page: "boards", project }, names);
   return (
@@ -158,13 +130,7 @@ export function BoardPage({
 
 /** The project home's list of boards (`list`, from `useBoards`): nothing
  * while the flag is off. */
-export function ProjectBoards({
-  p,
-  list,
-}: {
-  p: PlatformProject;
-  list: ProjectBoard[] | null | "off";
-}) {
+export function ProjectBoards({ p, list }: { p: PlatformProject; list: ProjectBoard[] | null | "off" }) {
   if (list === null || list === "off") return null;
   const all = pathOf({ page: "boards", project: p.id }, names);
   return (
@@ -176,8 +142,7 @@ export function ProjectBoards({
   );
 }
 
-/** One board in a list: its title, the goal's first line and its progress
- * (a closed board has the done note's first line instead). */
+/** One board in a list: its title, the goal's first line and its progress (a closed board has the done note's first line instead). */
 function BoardItem({ p, b }: { p: PlatformProject; b: ProjectBoard }) {
   const to = pathOf({ page: "board", project: p.id, board: b.id }, names);
   const closed = b.closed_at != null;
@@ -198,17 +163,8 @@ function BoardItem({ p, b }: { p: PlatformProject; b: ProjectBoard }) {
   );
 }
 
-/** A project's boards, open ones first and the closed ones folded under
- * "Done (N)". `data` is the attribute the open list carries. */
-function BoardItems({
-  p,
-  list,
-  data,
-}: {
-  p: PlatformProject;
-  list: ProjectBoard[];
-  data: "data-boards" | "data-project-boards";
-}) {
+/** A project's boards, open ones first and the closed ones folded under "Done (N)". `data` is the attribute the open list carries. */
+function BoardItems({ p, list, data }: { p: PlatformProject; list: ProjectBoard[]; data: "data-boards" | "data-project-boards" }) {
   const open = list.filter((b) => b.closed_at == null);
   const done = list.filter((b) => b.closed_at != null);
   return (

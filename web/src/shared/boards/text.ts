@@ -2,18 +2,7 @@
 // progress, a pointer's label and the id a person typed as a pointer.
 // Plain functions, for the view and its tests (scripts/boards.test.mjs).
 
-import type {
-  BoardBlockState,
-  BoardBlockWord,
-  BoardProgress,
-  BoardLive,
-  BoardLiveState,
-  BoardPointer,
-  BoardRow,
-  BoardStatus,
-  BoardWorkItem,
-  BoardZone,
-} from "../proto";
+import type { BoardBlockState, BoardBlockWord, BoardProgress, BoardLive, BoardLiveState, BoardPointer, BoardRow, BoardStatus, BoardWorkItem, BoardZone } from "../proto";
 
 /** A row's status as its glyph: ○ open (or none), ◐ working, ? needs
  * input, ● done, ✕ failed. */
@@ -36,14 +25,7 @@ export const STATUS_LABEL: Record<BoardStatus, string> = {
   failed: "Failed",
 };
 
-export const STATUSES: BoardStatus[] = [
-  "none",
-  "open",
-  "working",
-  "needs_input",
-  "done",
-  "failed",
-];
+export const STATUSES: BoardStatus[] = ["none", "open", "working", "needs_input", "done", "failed"];
 
 /** What a pointer's live state says, as a tag. */
 export const LIVE_LABEL: Record<BoardLiveState, string> = {
@@ -106,19 +88,12 @@ export function blockFacts(b: BoardBlockState): string[] {
   if (b.pushed != null) out.push(b.pushed ? "pushed" : "unpushed");
   if (b.uncommitted) out.push(`${b.uncommitted} uncommitted`);
   const d = b.diffstat;
-  if (d)
-    out.push(
-      `${d.files} file${d.files === 1 ? "" : "s"}, +${d.added} −${d.removed}`,
-    );
+  if (d) out.push(`${d.files} file${d.files === 1 ? "" : "s"}, +${d.added} −${d.removed}`);
   return out;
 }
 
 /** A zone's rows that are done, of all its rows. */
-export function progress(z: Pick<BoardZone, "rows">): {
-  done: number;
-  total: number;
-  pct: number;
-} {
+export function progress(z: Pick<BoardZone, "rows">): { done: number; total: number; pct: number } {
   const total = z.rows.length;
   const done = z.rows.filter((r) => r.status === "done").length;
   return { done, total, pct: total ? Math.round((done / total) * 100) : 0 };
@@ -129,24 +104,13 @@ export const GOAL_MAX = 2000;
 
 /** A text's first line that says something: a goal or a done note on a list. */
 export function firstLine(text: string): string {
-  return (
-    text
-      .split("\n")
-      .map((l) => l.trim())
-      .find(Boolean) ?? ""
-  );
+  return text.split("\n").map((l) => l.trim()).find(Boolean) ?? "";
 }
 
 /** A board's issues that are closed, in words; `pct` is for its bar. */
-export function epicLine(p: Pick<BoardProgress, "done" | "total">): {
-  words: string;
-  pct: number;
-} {
+export function epicLine(p: Pick<BoardProgress, "done" | "total">): { words: string; pct: number } {
   if (!p.total) return { words: "No issues yet", pct: 0 };
-  return {
-    words: `${p.done} of ${p.total} issue${p.total === 1 ? "" : "s"} done`,
-    pct: Math.round((p.done / p.total) * 100),
-  };
+  return { words: `${p.done} of ${p.total} issue${p.total === 1 ? "" : "s"} done`, pct: Math.round((p.done / p.total) * 100) };
 }
 
 /** The last characters of an id, for a row that says nothing better. */
@@ -160,11 +124,8 @@ export function pointerLabel(p: BoardPointer, live?: BoardLive | null): string {
       return "";
     case "forge_item":
     case "issue":
-      if (live)
-        return live.repo ? `${live.repo}#${live.number}` : `#${live.number}`;
-      return p.kind === "issue"
-        ? `issue ${short(p.id)}`
-        : `PR or issue ${short(p.id)}`;
+      if (live) return live.repo ? `${live.repo}#${live.number}` : `#${live.number}`;
+      return p.kind === "issue" ? `issue ${short(p.id)}` : `PR or issue ${short(p.id)}`;
     case "run":
       return `run ${short(p.id)}`;
     case "workspace":
@@ -191,11 +152,7 @@ export function assigneesLine(who?: string[] | null): string {
 
 /** The pointer as the id a person edits: none for a block's, which isn't typed. */
 export function pointerText(p: BoardPointer): string {
-  return p.kind === "none" || p.kind === "block"
-    ? ""
-    : p.kind === "link"
-      ? p.url
-      : p.id;
+  return p.kind === "none" || p.kind === "block" ? "" : p.kind === "link" ? p.url : p.id;
 }
 
 /** An id a person typed as a pointer (`fi_…`, `iss_…`, `run_…`, `hw_…`) or
@@ -203,8 +160,7 @@ export function pointerText(p: BoardPointer): string {
 export function parsePointer(text: string): BoardPointer | null {
   const t = text.trim();
   if (!t) return { kind: "none" };
-  if (/^https:\/\/[^\s\u0000-\u001f\u007f]+$/.test(t))
-    return { kind: "link", url: t };
+  if (/^https:\/\/[^\s\u0000-\u001f\u007f]+$/.test(t)) return { kind: "link", url: t };
   const m = /^(fi|iss|run|hw)_[0-9A-Za-z]{1,64}$/.exec(t);
   if (!m) return null;
   switch (m[1]) {
@@ -227,18 +183,13 @@ export const PICK_DELAY_MS = 250;
 
 /** A result's source label: `OWNER/NAME#N` for a mirrored item, `#N` for a
  * native issue, the run's own title for a run. */
-export function workLabel(
-  w: Pick<BoardWorkItem, "source" | "repo" | "number" | "title">,
-): string {
+export function workLabel(w: Pick<BoardWorkItem, "source" | "repo" | "number" | "title">): string {
   if (w.source === "run" || w.number == null) return w.title;
   return w.repo ? `${w.repo}#${w.number}` : `#${w.number}`;
 }
 
 /** Call `fn` once, `ms` after the last call. `cancel` drops a pending one. */
-export function debounced<A extends unknown[]>(
-  fn: (...a: A) => void,
-  ms: number,
-): ((...a: A) => void) & { cancel: () => void } {
+export function debounced<A extends unknown[]>(fn: (...a: A) => void, ms: number): ((...a: A) => void) & { cancel: () => void } {
   let t: ReturnType<typeof setTimeout> | undefined;
   const run = (...a: A) => {
     clearTimeout(t);
@@ -250,11 +201,7 @@ export function debounced<A extends unknown[]>(
 
 /** The active result after an arrow key: down and up wrap round, and -1 is
  * none (the field itself). */
-export function stepActive(
-  active: number,
-  count: number,
-  down: boolean,
-): number {
+export function stepActive(active: number, count: number, down: boolean): number {
   if (count <= 0) return -1;
   if (down) return active + 1 >= count ? 0 : active + 1;
   return active <= 0 ? count - 1 : active - 1;
@@ -264,11 +211,7 @@ export function stepActive(
  * text's when it differs from `start` (the row's own), else none, so a note
  * edit leaves a link or an agent block's pointer alone. Null when the typed
  * text isn't a pointer. */
-export function pointerToSend(
-  text: string,
-  start: string,
-  picked: BoardPointer | null,
-): { pointer?: BoardPointer } | null {
+export function pointerToSend(text: string, start: string, picked: BoardPointer | null): { pointer?: BoardPointer } | null {
   if (picked) return { pointer: picked };
   const pointer = parsePointer(text);
   if (!pointer) return null;
@@ -277,16 +220,11 @@ export function pointerToSend(
 
 /** Where a row's link goes: an item on its forge, a native issue or a run on
  * the platform page (`platform`, the paths of ids a host knows how to open). */
-export function pointerHref(
-  r: Pick<BoardRow, "pointer" | "live">,
-  platform: (path: string) => string | undefined,
-): string | undefined {
+export function pointerHref(r: Pick<BoardRow, "pointer" | "live">, platform: (path: string) => string | undefined): string | undefined {
   const p = r.pointer;
   if (p.kind === "forge_item") {
     const l = r.live;
-    return l?.repo
-      ? `https://github.com/${l.repo}/${l.kind === "issue" ? "issues" : "pull"}/${l.number}`
-      : undefined;
+    return l?.repo ? `https://github.com/${l.repo}/${l.kind === "issue" ? "issues" : "pull"}/${l.number}` : undefined;
   }
   if (p.kind === "issue") return platform(`/issues/${p.id}`);
   if (p.kind === "run") return platform(`/runs/${p.id}`);
@@ -296,11 +234,7 @@ export function pointerHref(
 
 /** The `before` that moves entry `i` of `ids` one place `up` or down: the
  * sibling it goes before (none: last), or null when it can't move. */
-export function stepBefore(
-  ids: string[],
-  i: number,
-  up: boolean,
-): { before: string | null } | null {
+export function stepBefore(ids: string[], i: number, up: boolean): { before: string | null } | null {
   if (up) return i > 0 ? { before: ids[i - 1] } : null;
   if (i >= ids.length - 1) return null;
   return { before: ids[i + 2] ?? null };

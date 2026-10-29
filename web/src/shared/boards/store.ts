@@ -5,13 +5,7 @@
 // and the shell's board block read through it. A write that names a stale
 // `rev` is refused with 409 (`stale_rev`): the view reads the board again.
 
-import type {
-  BoardList,
-  BoardMoveEntry,
-  BoardPutEntry,
-  BoardView,
-  BoardWorkItems,
-} from "../proto";
+import type { BoardList, BoardMoveEntry, BoardPutEntry, BoardView, BoardWorkItems } from "../proto";
 import { chat } from "../chat-store";
 import { platformFetch, refusalOf } from "../maintenance";
 
@@ -29,27 +23,15 @@ export class BoardError extends Error {
 
 export const STALE_REV = "stale_rev";
 
-async function call<T>(
-  method: string,
-  path: string,
-  body?: unknown,
-): Promise<T> {
+async function call<T>(method: string, path: string, body?: unknown): Promise<T> {
   const res = await platformFetch(path, {
     method,
     headers: body === undefined ? {} : { "Content-Type": "application/json" },
     body: body === undefined ? undefined : JSON.stringify(body),
     credentials: "same-origin",
   });
-  const j = (await res.json().catch(() => ({}))) as T & {
-    error?: string;
-    reason?: string;
-  };
-  if (!res.ok)
-    throw new BoardError(
-      res.status,
-      refusalOf(res.status, j, `HTTP ${res.status}`),
-      j.reason,
-    );
+  const j = (await res.json().catch(() => ({}))) as T & { error?: string; reason?: string };
+  if (!res.ok) throw new BoardError(res.status, refusalOf(res.status, j, `HTTP ${res.status}`), j.reason);
   return j;
 }
 
@@ -61,19 +43,12 @@ const titles = new Map<string, string>();
 export const boards = {
   title: (id: string): string | undefined => titles.get(id),
   async list(project: string): Promise<BoardList> {
-    const l = await call<BoardList>(
-      "GET",
-      `/api/projects/${enc(project)}/boards`,
-    );
+    const l = await call<BoardList>("GET", `/api/projects/${enc(project)}/boards`);
     for (const b of l.boards) titles.set(b.id, b.title);
     return l;
   },
   async create(project: string, title: string): Promise<BoardView> {
-    const v = await call<BoardView>(
-      "POST",
-      `/api/projects/${enc(project)}/boards`,
-      { title },
-    );
+    const v = await call<BoardView>("POST", `/api/projects/${enc(project)}/boards`, { title });
     titles.set(v.board.id, v.board.title);
     return v;
   },
@@ -84,44 +59,22 @@ export const boards = {
   },
   /** Make or change an entry: what isn't given is left as it is. */
   put(id: string, p: Partial<BoardPutEntry>) {
-    const full: BoardPutEntry = {
-      id: null,
-      rev: null,
-      entry: null,
-      zone: null,
-      title: null,
-      kind: null,
-      pointer: null,
-      note: null,
-      status: null,
-      ...p,
-    };
+    const full: BoardPutEntry = { id: null, rev: null, entry: null, zone: null, title: null, kind: null, pointer: null, note: null, status: null, ...p };
     return call<BoardView>("PUT", `/api/boards/${enc(id)}/entries`, full);
   },
   move(id: string, entry: string, m: Partial<BoardMoveEntry>) {
     const full: BoardMoveEntry = { rev: null, zone: null, before: null, ...m };
-    return call<BoardView>(
-      "POST",
-      `/api/boards/${enc(id)}/entries/${enc(entry)}/move`,
-      full,
-    );
+    return call<BoardView>("POST", `/api/boards/${enc(id)}/entries/${enc(entry)}/move`, full);
   },
   /** Rename the board, or change its goal (empty clears it). */
-  edit: (id: string, e: { title?: string; goal?: string }) =>
-    call<BoardView>("PATCH", `/api/boards/${enc(id)}`, e),
+  edit: (id: string, e: { title?: string; goal?: string }) => call<BoardView>("PATCH", `/api/boards/${enc(id)}`, e),
   /** Close the board as an epic, with what a person can now do. */
-  close: (id: string, done_note: string) =>
-    call<BoardView>("POST", `/api/boards/${enc(id)}/close`, { done_note }),
-  reopen: (id: string) =>
-    call<BoardView>("POST", `/api/boards/${enc(id)}/reopen`, {}),
-  remove: (id: string, entry: string) =>
-    call<BoardView>("DELETE", `/api/boards/${enc(id)}/entries/${enc(entry)}`),
+  close: (id: string, done_note: string) => call<BoardView>("POST", `/api/boards/${enc(id)}/close`, { done_note }),
+  reopen: (id: string) => call<BoardView>("POST", `/api/boards/${enc(id)}/reopen`, {}),
+  remove: (id: string, entry: string) => call<BoardView>("DELETE", `/api/boards/${enc(id)}/entries/${enc(entry)}`),
   /** A project's work items matching `q`, newest first: what a row may point at. */
   work(project: string, q: string, limit: number): Promise<BoardWorkItems> {
-    return call<BoardWorkItems>(
-      "GET",
-      `/api/projects/${enc(project)}/work?q=${enc(q)}&limit=${limit}`,
-    );
+    return call<BoardWorkItems>("GET", `/api/projects/${enc(project)}/work?q=${enc(q)}&limit=${limit}`);
   },
   /** The board's thread (made the first time someone opens it): the room
    * the platform pushes a change on, so a view hears of it live. */
