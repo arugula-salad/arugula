@@ -37,9 +37,15 @@ jobs:
         ports: ["5432:5432"]
         options: >-
           --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 10
+      # Stripe's API as its OpenAPI spec has it, for billing's request
+      # shapes (stripe_mock_test.exs, #318's P11).
+      stripe-mock:
+        image: stripe/stripe-mock:v0.206.0
+        ports: ["12111:12111"]
     env:
       MIX_ENV: test
       TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/presence_test
+      STRIPE_MOCK_URL: http://localhost:12111
     defaults:
       run:
         working-directory: presence/relay

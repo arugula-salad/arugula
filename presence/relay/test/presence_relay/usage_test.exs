@@ -222,7 +222,8 @@ defmodule PresenceRelay.UsageTest do
              "call_minutes" => 2
            }
 
-    assert body["cap"] == %{"active_users" => nil}
+    # With billing off, the cap enforced is the owner's (none here).
+    assert body["cap"] == %{"active_users" => nil, "limit" => nil}
     assert body["this_month"] == %{"active_users" => 1, "call_minutes" => 2}
 
     body = as(owner) |> get("/api/v1/apps/#{app.id}/usage?months=1") |> json_response(200)
