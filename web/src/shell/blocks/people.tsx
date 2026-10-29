@@ -17,7 +17,7 @@ import { presence } from "../../shared/chat/presence";
 import { outlines } from "../../shared/outline/store";
 import { draw } from "../../shared/outline/render";
 import type { Frame } from "../../shared/outline/frame";
-import { GROUPS, groupOf } from "../../shared/outline/classes";
+import { GROUPS, palette } from "../../shared/outline/classes";
 import { useSubscribe } from "../../shared/ui/hooks";
 import { getControlSession } from "../ui/people";
 import { registerBlock, type BlockView } from "./view";
@@ -42,20 +42,6 @@ function everyone(): Person[] {
     for (const m of t.roster.members) if (!out.has(m.account)) out.set(m.account, { account: m.account, name: t.names?.[m.account] ?? m.name });
   }
   return [...out.values()];
-}
-
-/** A frame's colours from the theme: each group's, and for the rest the
- * accent (a frame nobody labelled) or dim (labelled, but not one we
- * colour). */
-function palette(el: Element, labelled: boolean): (cls: number) => string {
-  const css = getComputedStyle(el);
-  const of = (v: string) => css.getPropertyValue(v).trim() || css.color;
-  const groups = GROUPS.map((g) => of(g.css));
-  const rest = labelled ? of("--dim") : of("--accent");
-  return (cls) => {
-    const g = groupOf(cls);
-    return g < 0 ? rest : groups[g];
-  };
 }
 
 function OutlineCanvas({ frame, mirror }: { frame: Frame; mirror?: boolean }) {
@@ -122,6 +108,11 @@ function Controls() {
         <span>colour by what it is</span>
         {on && outlines.labelState === "loading" && <span class="dim">(loading…)</span>}
       </label>
+      <label class="people-label" title="Estimate how far each line is (Depth Anything, on WebGPU, in this page): far lines draw fainter, and a label well behind you is dropped">
+        <input type="checkbox" checked={outlines.depth} onChange={(e) => outlines.setDepth((e.target as HTMLInputElement).checked)} />
+        <span>depth</span>
+        {on && outlines.depthState === "loading" && <span class="dim">(loading…)</span>}
+      </label>
       <label class="people-detail">
         <span class="dim">detail</span>
         <input
@@ -138,10 +129,12 @@ function Controls() {
           {st.lines} lines · {st.points} pts · {(st.raw / 1024).toFixed(1)} KB raw
           {st.sent ? ` → ${(st.bytes / 1024).toFixed(1)} KB` : " · still, held"} · {outlines.kbps().toFixed(1)} kbps · {st.ms.toFixed(0)} ms
           {st.labelMs !== null && ` + ${st.labelMs.toFixed(0)} ms labels`}
+          {st.depthMs !== null && ` · depth ${st.depthMs.toFixed(0)} ms`}
         </span>
       )}
       {err && <span class="people-error">{err}</span>}
       {outlines.labelError && <span class="people-error">{outlines.labelError}</span>}
+      {outlines.depthError && <span class="people-error">{outlines.depthError}</span>}
       <span class="people-legend" aria-label="What the colours mean">
         {GROUPS.map((g) => (
           <span class="people-key">

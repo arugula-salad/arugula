@@ -11,6 +11,9 @@ export interface DrawOptions {
   mirror?: boolean;
   /** Stroke width in CSS pixels. */
   width?: number;
+  /** Fit the whole grid (contain, the default) or fill the canvas and
+   * crop (cover: an avatar). */
+  fit?: "contain" | "cover";
 }
 
 export function draw(canvas: HTMLCanvasElement, f: Frame, o: DrawOptions) {
@@ -25,24 +28,33 @@ export function draw(canvas: HTMLCanvasElement, f: Frame, o: DrawOptions) {
   if (!g) return;
   g.setTransform(1, 0, 0, 1, 0, 0);
   g.clearRect(0, 0, canvas.width, canvas.height);
-  const s = Math.min(canvas.width / f.w, canvas.height / f.h);
+  const s = (o.fit === "cover" ? Math.max : Math.min)(canvas.width / f.w, canvas.height / f.h);
   const ox = (canvas.width - f.w * s) / 2, oy = (canvas.height - f.h * s) / 2;
   if (o.mirror) g.setTransform(-s, 0, 0, s, canvas.width - ox, oy);
   else g.setTransform(s, 0, 0, s, ox, oy);
   g.lineWidth = ((o.width ?? 1.6) * dpr) / s;
   g.lineJoin = "round";
   g.lineCap = "round";
-  // One path a colour, the unknown first so what's labelled draws on top.
-  const by = new Map<string, number[]>();
-  const order = f.lines.map((_, i) => i).sort((a, b) => (f.classes?.[a] ?? 0) - (f.classes?.[b] ?? 0));
+  // One path a colour and distance: the far and the unknown first, so
+  // what's near and labelled draws on top. Far lines are fainter and
+  // thinner, four steps from near to far.
+  const width = g.lineWidth;
+  const step = (i: number) => (f.depths?.[i] ?? 255) >> 6;
+  const by = new Map<string, { color: string; step: number; idx: number[] }>();
+  const order = f.lines
+    .map((_, i) => i)
+    .sort((a, b) => step(a) - step(b) || (f.classes?.[a] ?? 0) - (f.classes?.[b] ?? 0));
   for (const i of order) {
-    const c = o.color(f.classes?.[i] ?? 0);
-    let list = by.get(c);
-    if (!list) by.set(c, (list = []));
-    list.push(i);
+    const color = o.color(f.classes?.[i] ?? 0);
+    const key = `${step(i)} ${color}`;
+    let group = by.get(key);
+    if (!group) by.set(key, (group = { color, step: step(i), idx: [] }));
+    group.idx.push(i);
   }
-  for (const [color, idx] of by) {
+  for (const { color, step: near, idx } of by.values()) {
     g.strokeStyle = color;
+    g.globalAlpha = [0.3, 0.5, 0.75, 1][near];
+    g.lineWidth = width * [0.55, 0.7, 0.85, 1][near];
     g.beginPath();
     for (const i of idx) {
       const l = f.lines[i];
@@ -51,4 +63,5 @@ export function draw(canvas: HTMLCanvasElement, f: Frame, o: DrawOptions) {
     }
     g.stroke();
   }
+  g.globalAlpha = 1;
 }

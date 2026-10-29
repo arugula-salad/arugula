@@ -906,7 +906,8 @@ async fn asset(axum::extract::State(app): axum::extract::State<Arc<App>>, uri: U
 fn mime(path: &str) -> &'static str {
     match path.rsplit('.').next() {
         Some("html") => "text/html; charset=utf-8",
-        Some("js") => "text/javascript",
+        Some("js" | "mjs") => "text/javascript",
+        Some("wasm") => "application/wasm",
         Some("css") => "text/css",
         Some("svg") => "image/svg+xml",
         Some("png") => "image/png",

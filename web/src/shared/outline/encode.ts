@@ -22,6 +22,9 @@ export interface Traced {
   lines: Polyline[];
   /** Each line's class (`labels`' value along it); all 0 without labels. */
   classes: number[];
+  /** Each line's nearness (`depth` along it, 255 nearest); all 255
+   * without depth. */
+  depths: number[];
   /** This frame's edge pixels, for the next frame's `prev`. */
   edges: Uint8Array;
   /** How much of the edge map changed since `prev` (0–1; 1 without one). */
@@ -43,6 +46,9 @@ export interface TraceOptions {
   /** A class per cell (./labels: what's there). A line takes the class of
    * the cells it runs along, and splits where that changes. */
   labels?: Uint8Array;
+  /** Nearness per cell (./depth: 255 nearest). A jump in depth is an
+   * object's edge, so it counts toward the edges as much as brightness. */
+  depth?: Uint8Array;
 }
 
 const DIRS = [1, 0, 1, 1, 0, 1, -1, 1, -1, 0, -1, -1, 0, -1, 1, -1];
@@ -67,8 +73,14 @@ export function trace(rgba: ArrayLike<number>, w: number, h: number, o: TraceOpt
       const g = soft[i + w - 1], k = soft[i + w], l = soft[i + w + 1];
       const gx = c + 2 * f + l - a - 2 * d - g;
       const gy = g + 2 * k + l - a - 2 * b - c;
-      mag[i] = Math.hypot(gx, gy);
-      const t = Math.atan2(gy, gx);
+      let ex = gx, ey = gy;
+      if (o.depth) {
+        const z = o.depth;
+        ex += z[i - w + 1] + 2 * z[i + 1] + z[i + w + 1] - z[i - w - 1] - 2 * z[i - 1] - z[i + w - 1];
+        ey += z[i + w - 1] + 2 * z[i + w] + z[i + w + 1] - z[i - w - 1] - 2 * z[i - w] - z[i - w + 1];
+      }
+      mag[i] = Math.hypot(ex, ey);
+      const t = Math.atan2(ey, ex);
       dir[i] = (Math.round((t < 0 ? t + Math.PI : t) / (Math.PI / 4)) % 4) as number;
     }
   }
@@ -137,7 +149,36 @@ export function trace(rgba: ArrayLike<number>, w: number, h: number, o: TraceOpt
     runs.sort((a, b) => length(b.line) - length(a.line));
     while (points > max && runs.length) points -= runs.pop()!.line.length / 2;
   }
-  return { w, h, lines: runs.map((r) => r.line), classes: runs.map((r) => r.cls), edges, changed };
+  const depths = runs.map((r) => (o.depth ? nearness(r.line, o.depth, w) : 255));
+  return { w, h, lines: runs.map((r) => r.line), classes: runs.map((r) => r.cls), depths, edges, changed };
+}
+
+/** How near a line is: the mean of `depth` under its points. */
+function nearness(line: Polyline, depth: Uint8Array, w: number): number {
+  let sum = 0;
+  for (let i = 0; i < line.length; i += 2) sum += depth[line[i + 1] * w + line[i]];
+  return Math.round(sum / (line.length / 2));
+}
+
+/** `labels` checked against depth: a person well behind the nearest
+ * person (a poster, a screen, someone across the room) isn't you, and a
+ * labelled thing well behind you is the room's, not yours: both become
+ * unlabelled. Without a person in frame, as they were. */
+export function byDepth(labels: Uint8Array, depth: Uint8Array, person = 15): Uint8Array {
+  const near: number[] = [];
+  for (let i = 0; i < labels.length; i++) if (labels[i] === person) near.push(depth[i]);
+  if (near.length < labels.length * 0.02) return labels;
+  near.sort((a, b) => b - a);
+  // You: the nearest fifth of the person cells, so a far person doesn't
+  // drag it down.
+  const you = near[Math.floor(near.length * 0.2)];
+  const out = labels.slice();
+  for (let i = 0; i < out.length; i++) {
+    if (!out[i]) continue;
+    const behind = you - depth[i];
+    if ((out[i] === person && behind > 70) || (out[i] !== person && behind > 100)) out[i] = 0;
+  }
+  return out;
 }
 
 /** A chain cut where the class under it changes. An edge sits between

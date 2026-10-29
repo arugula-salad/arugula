@@ -3,10 +3,13 @@
 // loads and when they have none. An agent shows its owner's, with a small
 // machine badge. A dot says who's around (#110).
 
-import { useState } from "preact/hooks";
+import { useEffect, useRef, useState } from "preact/hooks";
 import { useSubscribe } from "../ui/hooks";
 import { chat } from "../chat-store";
 import { presence } from "./presence";
+import { outlines } from "../outline/store";
+import { draw } from "../outline/render";
+import { palette } from "../outline/classes";
 
 /** A steady colour per person. */
 export function colorOf(who: string): string {
@@ -40,6 +43,23 @@ function Dot({ account, machine }: { account?: string; machine?: string }) {
   const state = machine ? (presence.machine(machine) ? "online" : "offline") : account ? presence.of(account) : null;
   if (!state) return null;
   return <span class={`presence-dot presence-${state}`} data-presence={state} title={state} role="img" aria-label={state} />;
+}
+
+/** The account's live outline (S43), over its picture while their camera
+ * is on: yours from your own camera, mirrored, anyone else's from
+ * control's stream, which runs while any avatar is shown. */
+function LiveFace({ account }: { account: string }) {
+  useSubscribe((fn) => outlines.subscribe(fn));
+  useEffect(() => outlines.watch(), []);
+  const ref = useRef<HTMLCanvasElement>(null);
+  const me = account === chat.me;
+  const frame = (me ? outlines.mine?.frame : null) ?? outlines.of(account)?.frame ?? null;
+  useEffect(() => {
+    const c = ref.current;
+    if (c && frame) draw(c, frame, { color: palette(c, !!frame.classes?.some((x) => x)), mirror: me, width: 1, fit: "cover" });
+  });
+  if (!frame) return null;
+  return <canvas ref={ref} class="avatar-live" data-avatar-live={account} aria-hidden="true" />;
 }
 
 /** A message's picture: the account's (`account`; none for a deleted one),
@@ -83,6 +103,7 @@ export function MsgAvatar({
           }}
         />
       )}
+      {account && !agent && <LiveFace account={account} />}
     </span>
   );
   if (!dot && !agent) return face;

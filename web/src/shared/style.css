@@ -12639,6 +12639,15 @@ html[data-workspace="new"] .thread-panel {
   opacity: 1;
 }
 
+/* A live outline (S43) over the picture while their camera is on. */
+.msg-avatar .avatar-live {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  background: var(--void, var(--bg));
+}
+
 .avatar-wrap {
   position: relative;
   display: inline-flex;

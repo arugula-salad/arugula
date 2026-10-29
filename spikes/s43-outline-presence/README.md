@@ -20,20 +20,29 @@ access is untested.
 | Piece | Where |
 |---|---|
 | Encoder: blur, Sobel, thinning, hysteresis (thresholds from the frame, steadied by the last frame), chains, Douglas–Peucker, a varint frame (v2: a class byte per line), deflate-raw when smaller | `web/src/shared/outline/encode.ts`, `frame.ts`, `render.ts`, `camera.ts` |
+| Depth: Depth Anything V2 Small (4-bit, Apache-2.0) through transformers.js on WebGPU, input cut to 266 px, run beside the frames about twice a second. Depth jumps count as edges, far lines draw fainter and thinner (frame v3: a nearness byte per line), and a label well behind you is dropped (a poster isn't you, a chair across the room isn't yours). No WebGPU, no depth: the block says so | `web/src/shared/outline/depth.ts`, `encode.ts` (`byDepth`) |
+| Live avatars: while someone's camera is on, their outline replaces their picture wherever chat shows it (messages, DMs, members), yours mirrored | `web/src/shared/chat/avatar.tsx` (`LiveFace`) |
 | Labelling: DeepLab v3 (21 Pascal VOC classes, a class per grid cell; a line takes the class it runs along and splits where it changes) and the face landmarker (eyes, brows, irises, lips) | `web/src/shared/outline/labels.ts`, `classes.ts`; assets by `web/scripts/mediapipe-assets.sh` |
 | People block (`BlockType::People`, config `{}`, drawn only while shown); *⋯ → Open beside → People* | `web/src/shell/blocks/people.tsx`, `crates/daemon/src/people_block.rs` |
 | Relay: `POST /api/people/outline` (≤32 KiB, ≥70 ms apart), `POST …/outline/off`, `GET /api/people/outlines` (SSE); latest frame per person in memory only, visibility as presence's, behind chat's gate | `crates/platform/src/chat/outlines.rs`, `crates/control/routes.toml` |
 | Trying it alone: `DEV_CONTROL_OUTLINES=1` (sam and riley echo your frames, and beat presence); `dev-browser --camera [FILE]` | `web/dev-control.ts`, `web/dev-browser.ts` |
 | Load probe | `web/scripts/outline-load.ts` |
 
-Control's page CSP gains `script-src 'self' 'wasm-unsafe-eval'` for MediaPipe's Wasm.
-`@mediapipe/tasks-vision` 1.2.0 (Apache-2.0) is loaded only when labelling starts.
+Control's page CSP gains `script-src 'self' 'wasm-unsafe-eval'` for MediaPipe's and ONNX Runtime's
+Wasm, and control serves `.mjs` as JavaScript and `.wasm` as `application/wasm`.
+`@mediapipe/tasks-vision` 1.2.0 and `@huggingface/transformers` 4.3.2 (both Apache-2.0) load only when
+labelling or depth starts; their Wasm and models (~65 MB in all, fetched by
+`web/scripts/outline-assets.sh`) are served by control. transformers.js runs with its Wasm cache
+off: the cache makes a `blob:` script, which the CSP refuses.
+
+![Live avatars in #general: the people whose cameras are on show as outlines](live-avatars.png)
 
 ## Numbers
 
 Encoding: 2–8 ms a frame on the main thread (192×144); 1.7 ms for a busy synthetic room in node.
 Labelling: 171 ms a frame in headless Chrome without a GPU (throttled to a third of the frame
-interval, reusing its last answer between); a real GPU wasn't measured.
+interval, reusing its last answer between); a real GPU wasn't measured. Depth needs WebGPU, which
+headless Chrome on geek doesn't have, so its speed is unmeasured here too.
 
 Load probe, local debug-build control, jake posting incompressible frames to 8 streams:
 
@@ -55,14 +64,15 @@ and frames held on one machine. Sweet spot: ≤ 4 KB a frame at ≤ 10 fps.
 1. The relay on the Elixir server: a channel per team, PubSub, Presence; a WebSocket upstream.
 2. A Labs flag, the encoder and labelling in a worker, a privacy-page line (off by default, only
    lines leave the page, control keeps nothing).
-3. Outlines as avatars wherever the presence dot shows.
+3. Outlines as avatars wherever the presence dot shows (done in chat on the branch; the stream
+   then runs whenever chat is open, which is the cost to watch).
 4. The shells: the macOS camera entitlement and usage string, a WebKitGTK `getUserMedia` check, the
    phone.
 
 ## Reproduce
 
-In the worktree, with `CARGO_TARGET_DIR=$PWD/target`: `web/scripts/mediapipe-assets.sh`, then
-`DEV_CONTROL_CHAT=1 DEV_CONTROL_LOGINS=sam,riley DEV_CONTROL_OUTLINES=1 DEV_CONTROL_PLATFORM_HOST= just dev-control`
+In the worktree, with `CARGO_TARGET_DIR=$PWD/target`: `web/scripts/outline-assets.sh`, then
+`DEV_CONTROL_CHAT=1 DEV_CONTROL_LOGINS=sam,riley DEV_CONTROL_OUTLINES=1 just dev-control`
 (add `DEV_CONTROL_HOST=<tailnet address>` and open it from another machine with the Chrome command
 dev-control prints, for a real camera). Give each instance a state dir that isn't a prefix of
 another's: dev-control's `pkill -f <dir>` takes both down.

@@ -43,6 +43,10 @@ class OutlineStore {
   /** Labelling's state, and why it stopped if it did. */
   labelState: "loading" | "on" | "off" = "off";
   labelError = "";
+  /** Estimate depth (./depth): far lines fainter, labels checked. */
+  depth = true;
+  depthState: "loading" | "on" | "off" = "off";
+  depthError = "";
   mine: Mine | null = null;
   /** The stream's state, for the block to say. */
   live: "off" | "connecting" | "on" | "refused" = "off";
@@ -82,6 +86,12 @@ class OutlineStore {
         onLabelState: (state, error) => {
           this.labelState = state;
           this.labelError = error ?? "";
+          this.emit();
+        },
+        depth: this.depth,
+        onDepthState: (state, error) => {
+          this.depthState = state;
+          this.depthError = error ?? "";
           this.emit();
         },
         onFrame: (frame, stats) => {
@@ -128,6 +138,12 @@ class OutlineStore {
   setLabel(on: boolean) {
     this.label = on;
     this.camera?.setLabel(on);
+    this.emit();
+  }
+
+  setDepth(on: boolean) {
+    this.depth = on;
+    this.camera?.setDepth(on);
     this.emit();
   }
 

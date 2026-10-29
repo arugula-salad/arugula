@@ -25,3 +25,17 @@ export const GROUPS = [
 export function groupOf(cls: number): number {
   return GROUPS.findIndex((g) => (g.classes as readonly number[]).includes(cls));
 }
+
+/** A frame's colours from the theme where `el` is: each group's, and for
+ * the rest the accent (a frame nobody labelled) or dim (labelled, but not
+ * one we colour). */
+export function palette(el: Element, labelled: boolean): (cls: number) => string {
+  const css = getComputedStyle(el);
+  const of = (v: string) => css.getPropertyValue(v).trim() || css.color;
+  const groups = GROUPS.map((g) => of(g.css));
+  const rest = labelled ? of("--dim") : of("--accent");
+  return (cls) => {
+    const g = groupOf(cls);
+    return g < 0 ? rest : groups[g];
+  };
+}
