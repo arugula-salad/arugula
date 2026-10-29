@@ -21,6 +21,19 @@ if config_env() != :test do
 end
 
 if config_env() == :prod do
+  # Postgres when DATABASE_URL is set (fly mpg attach sets it); a relay
+  # without one still relays.
+  case System.get_env("DATABASE_URL") do
+    nil ->
+      config :presence_relay, database: false
+
+    url ->
+      config :presence_relay, PresenceRelay.Repo,
+        url: url,
+        pool_size: String.to_integer(System.get_env("POOL_SIZE") || "10"),
+        socket_options: if(System.get_env("ECTO_IPV6") in ~w(true 1), do: [:inet6], else: [])
+  end
+
   secret_key_base =
     System.get_env("SECRET_KEY_BASE") ||
       raise "SECRET_KEY_BASE is missing: mix phx.gen.secret makes one"

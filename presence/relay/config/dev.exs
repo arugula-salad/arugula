@@ -8,3 +8,11 @@ config :presence_relay, PresenceRelayWeb.Endpoint,
 
 config :phoenix, :stacktrace_depth, 20
 config :phoenix, :plug_init_mode, :runtime
+
+# A local Postgres (docker run -p 127.0.0.1:55432:5432 postgres:17), or
+# DATABASE_URL.
+config :presence_relay, PresenceRelay.Repo,
+  url:
+    System.get_env("DATABASE_URL") || "postgres://postgres:postgres@127.0.0.1:55432/presence_dev",
+  show_sensitive_data_on_connection_error: true,
+  pool_size: 10

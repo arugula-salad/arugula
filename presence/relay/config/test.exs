@@ -12,5 +12,12 @@ config :presence_relay,
   sweep_ms: 50,
   stale_ms: 300
 
+config :presence_relay, PresenceRelay.Repo,
+  url:
+    System.get_env("TEST_DATABASE_URL") ||
+      "postgres://postgres:postgres@127.0.0.1:55432/presence_test#{System.get_env("MIX_TEST_PARTITION")}",
+  pool: Ecto.Adapters.SQL.Sandbox,
+  pool_size: System.schedulers_online() * 2
+
 config :logger, level: :warning
 config :phoenix, :plug_init_mode, :runtime

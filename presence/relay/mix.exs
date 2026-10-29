@@ -9,6 +9,7 @@ defmodule PresenceRelay.MixProject do
       elixirc_paths: elixirc_paths(Mix.env()),
       start_permanent: Mix.env() == :prod,
       deps: deps(),
+      aliases: aliases(),
       releases: [presence_relay: [include_executables_for: [:unix]]]
     ]
   end
@@ -24,7 +25,17 @@ defmodule PresenceRelay.MixProject do
     [
       {:phoenix, "~> 1.8"},
       {:bandit, "~> 1.6"},
-      {:jason, "~> 1.4"}
+      {:jason, "~> 1.4"},
+      {:ecto_sql, "~> 3.12"},
+      {:postgrex, "~> 0.19"}
+    ]
+  end
+
+  defp aliases do
+    [
+      "ecto.setup": ["ecto.create", "ecto.migrate"],
+      "ecto.reset": ["ecto.drop", "ecto.setup"],
+      test: ["ecto.create --quiet", "ecto.migrate --quiet", "test"]
     ]
   end
 end

@@ -6,12 +6,17 @@ defmodule PresenceRelay.Application do
   def start(_type, _args) do
     PresenceRelay.Apps.load()
 
-    children = [
-      {Phoenix.PubSub, name: PresenceRelay.PubSub},
-      PresenceRelay.Presence,
-      PresenceRelay.Rooms,
-      PresenceRelayWeb.Endpoint
-    ]
+    repo =
+      if Application.get_env(:presence_relay, :database, true), do: [PresenceRelay.Repo], else: []
+
+    children =
+      repo ++
+        [
+          {Phoenix.PubSub, name: PresenceRelay.PubSub},
+          PresenceRelay.Presence,
+          PresenceRelay.Rooms,
+          PresenceRelayWeb.Endpoint
+        ]
 
     Supervisor.start_link(children, strategy: :one_for_one, name: PresenceRelay.Supervisor)
   end
