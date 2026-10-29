@@ -20,6 +20,7 @@ import { Markdown } from "../ui/markdown";
 import { useSubscribe } from "../ui/hooks";
 import { askText, openMenu, type MenuItem } from "../ui/menu";
 import { issues } from "../issues/store";
+import { whoLabel } from "../issues/text";
 import { day } from "../time";
 import { BoardError, STALE_REV, boards } from "./store";
 import "./boards.css";
@@ -167,6 +168,8 @@ function Epic({ b, act, id, write }: { b: ProjectBoard; act: Act; id: string; wr
   const [closing, setClosing] = useState(false);
   const [note, setNote] = useState("");
   const e = epicLine(b.progress);
+  const { teams } = usePlatformApi();
+  const nameOf = (account: string) => teams().flatMap((t) => t.roster.members).find((m) => m.account === account)?.name;
   const saveGoal = async () => {
     if (await act(() => boards.edit(id, { goal: goal.trim() }))) setGoalOpen(false);
   };
@@ -203,6 +206,11 @@ function Epic({ b, act, id, write }: { b: ProjectBoard; act: Act; id: string; wr
           )}
         </>
       )}
+      {b.created_by_agent && (
+        <p class="dim" data-board-made-by>
+          Made by {whoLabel(b.created_by, b.created_by_agent, nameOf)}
+        </p>
+      )}
       <div class="board-progress" data-board-progress>
         {b.progress.total > 0 && (
           <div class="board-bar" role="progressbar" aria-valuemin={0} aria-valuemax={b.progress.total} aria-valuenow={b.progress.done} aria-label={e.words}>
@@ -215,6 +223,7 @@ function Epic({ b, act, id, write }: { b: ProjectBoard; act: Act; id: string; wr
         <div class="board-done" data-board-done>
           <p>
             <span class="ws-tag board-done-tag">Done</span> <span class="dim">{day(b.closed_at)}</span>
+            {b.closed_by_agent && <span class="dim" data-board-done-by> by {whoLabel(b.closed_by, b.closed_by_agent, nameOf)}</span>}
           </p>
           <p class="board-goal" data-board-done-note>
             {b.done_note}

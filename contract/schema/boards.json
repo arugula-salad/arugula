@@ -75,8 +75,19 @@
         },
         "closed_by": {
           "default": "",
-          "description": "The account that closed it; empty once that account is deleted.",
+          "description": "The account that closed it; empty once that account is deleted. When\nan agent closed it, the account it acted for.",
           "type": "string"
+        },
+        "closed_by_agent": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ChatAgent"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The machine whose agent closed it, if one did."
         },
         "created_at": {
           "format": "uint64",
@@ -84,8 +95,19 @@
           "type": "integer"
         },
         "created_by": {
-          "description": "The account that made it; empty once that account is deleted.",
+          "description": "The account that made it; empty once that account is deleted. When an\nagent made it, the account it acted for.",
           "type": "string"
+        },
+        "created_by_agent": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ChatAgent"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The machine whose agent made it, if one did."
         },
         "done_note": {
           "default": "",
@@ -391,6 +413,13 @@
     },
     "NewBoard": {
       "properties": {
+        "goal": {
+          "description": "What the board is for; left out: none.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "title": {
           "type": "string"
         }
