@@ -95,13 +95,22 @@ run 0 "dry run" bump --dry-run
 has "dry run: the newest green commit" "v0.1.1: 0.1.0 -> 0.1.1 on ${two:0:12}"
 has "dry run: what it would change" "Cargo.toml"
 has "dry run: says so" "Dry run: nothing committed, tagged or pushed."
+has "dry run: the merges it would leave out" "  ${three:0:7} "
 if [ -z "$(remote refs/tags/v0.1.1)" ] && [ "$(remote refs/heads/main)" = "$notes" ]; then ok "dry run: nothing pushed"
 else bad "dry run pushed something"; fi
 if [ "$(git worktree list | wc -l | tr -d ' ')" = 1 ]; then ok "dry run: its worktree is gone"
 else bad "dry run left a worktree: $(git worktree list)"; fi
 
+# main's newer commits aren't green: it lists them and stops (#1679),
+# unless --older says to release without them.
+run 1 "newer commits not green: stops" bump
+has "newer commits not green: lists them" "  ${four:0:7} "
+has "newer commits not green: says how" "just release --older"
+if [ -z "$(remote refs/tags/v0.1.1)" ]; then ok "newer commits not green: nothing tagged"; else bad "it tagged v0.1.1 anyway"; fi
+run 2 "--older with a COMMIT" bump --older "$two"
+
 # Without notes on main, no release.
-run 1 "minor: no notes on main" bump minor
+run 1 "minor: no notes on main" bump minor --older
 has "minor: says which" "main has no docs/releases/0.2.0.md"
 run 0 "minor: a dry run shows the rest" bump minor --dry-run
 has "minor: the dry run says so too" "main has no docs/releases/0.2.0.md"
@@ -109,7 +118,7 @@ run 1 "a commit that isn't green" bump "$four" --dry-run
 run 2 "an unknown flag" bump --force
 
 # The app first: only crates/desktop moves, and main merges it.
-run 0 "release app-v0.2.0" bump minor --app
+run 0 "release app-v0.2.0" bump minor --app --older
 tag=$(git rev-parse "app-v0.2.0^{commit}")
 if [ "$(git rev-parse "$tag^")" = "$two" ]; then ok "app-v0.2.0 is a bump on two"; else bad "app-v0.2.0's parent isn't two"; fi
 if [ "$(remote refs/tags/app-v0.2.0)" = "$(git rev-parse app-v0.2.0)" ]; then ok "app-v0.2.0 pushed"; else bad "app-v0.2.0 isn't on the forge"; fi
@@ -137,7 +146,7 @@ ARUGULA_RELEASE_TRAILER=$'two\nlines' run 2 "a trailer of two lines" bump --dry-
 ARUGULA_RELEASE_TRAILER="no colon" run 2 "a trailer that isn't Key: value" bump --dry-run
 # As the arugula-release deploy driver runs it (M221): its trailer on the
 # bump, the tag and the merge.
-ARUGULA_RELEASE_TRAILER="Arugula-Deploy: dep_m221" run 0 "release v0.1.2 over main's 0.1.1" bump
+ARUGULA_RELEASE_TRAILER="Arugula-Deploy: dep_m221" run 0 "release v0.1.2 over main's 0.1.1" bump --older
 has "v0.1.2: from main's version" "v0.1.2: 0.1.0 -> 0.1.2 on ${two:0:12}"
 has "v0.1.2: the line the deploy driver reads" "pushed v0.1.2 ("
 tag=$(git rev-parse "v0.1.2^{commit}")
