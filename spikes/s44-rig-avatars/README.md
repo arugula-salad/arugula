@@ -19,7 +19,8 @@ No picture of you leaves the page.
 | Rig: fields, bust space, wire format (kind 0x40 inside S43's frames), idle, easing | `web/src/shared/avatar/rig.ts` |
 | Solver: head angles from the face transform, ARKit blendshapes to the rig, pose to arms; One-Euro smoothing | `web/src/shared/avatar/solve.ts` |
 | Trackers: MediaPipe face landmarker (blendshapes + transform) and pose landmarker lite | `web/src/shared/avatar/track.ts`, `cam.ts` |
-| Characters (Codex drafts to `character.ts`'s contract, proportions tuned) | `web/src/shared/avatar/characters/` |
+| Characters: Codex drafts to `character.ts`'s contract, then a final-art pass (Codex at high effort, briefed with the contact sheet and a style bar), proportions and hand size tuned | `web/src/shared/avatar/characters/` |
+| Hands: the hand landmarker (21 points a hand) → which way each points and each finger's curl, 6 bytes a hand; given to the nearer pose wrist, and standing in for a wrist the pose lost; drawn by a shared cartoon hand | `solve.ts` (`handOf`), `web/src/shared/avatar/hand.ts` |
 | Stage: bust space on a canvas, the head-only crop, one animation loop for every avatar | `web/src/shared/avatar/stage.ts`, `view.tsx` |
 | Contact sheet, for tuning characters by eye (`pnpm exec vite`, /avatar-sheet.html) | `web/avatar-sheet.html`, `web/src/shared/avatar/sheet.ts` |
 
@@ -32,4 +33,5 @@ there); on jake-air's GPU it's unmeasured. The fake camera has no face, so wheth
 signs, the blink thresholds and the arm mapping feel right is Jake's first test.
 
 **Not done:** the choice is per browser (localStorage), not kept in control, so someone you've
-never seen send a rig shows their picture until they do; hands; final character art; a Labs flag.
+never seen send a rig shows their picture until they do; a Labs flag. Hands and the final art
+pass landed after the first commit (models: +7.8 MB for hands).

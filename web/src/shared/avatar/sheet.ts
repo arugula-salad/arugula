@@ -22,6 +22,22 @@ const POSES = [
     Object.assign(r, { face: true, smile: 0.7, elbowL: [0.85, 0.05], wristL: [0.95 + Math.sin(t * 6) * 0.15, -0.55], elbowR: null, wristR: null }),
   ),
   pose("chin", (r) => Object.assign(r, { face: true, elbowR: [-0.45, 0.55], wristR: [-0.08, -0.45], pitch: -0.1 })),
+  pose("hi ✋", (r, t) =>
+    Object.assign(r, {
+      face: true, smile: 0.8, elbowL: [0.85, 0.1], wristL: [0.95, -0.45],
+      handL: { angle: -Math.PI / 2 + Math.sin(t * 6) * 0.35, curl: [0, 0, 0, 0, 0] },
+    }),
+  ),
+  pose("👍", (r) => Object.assign(r, { face: true, smile: 0.6, elbowR: [-0.75, 0.35], wristR: [-0.55, -0.15], handR: { angle: Math.PI, curl: [0, 1, 1, 1, 1] } })),
+  pose("✌️", (r) => Object.assign(r, { face: true, smile: 0.5, elbowL: [0.8, 0.1], wristL: [0.75, -0.55], handL: { angle: -Math.PI / 2, curl: [0.9, 0, 0, 1, 1] } })),
+  pose("point", (r) => Object.assign(r, { face: true, browUp: 0.5, elbowL: [0.85, 0.15], wristL: [1.2, -0.1], handL: { angle: -0.2, curl: [0.8, 0, 1, 1, 1] } })),
+  pose("fists", (r) =>
+    Object.assign(r, {
+      face: true, browDown: 0.8, jawOpen: 0.3,
+      elbowL: [0.7, 0.4], wristL: [0.45, -0.1], handL: { angle: -Math.PI / 2, curl: [0.7, 1, 1, 1, 1] },
+      elbowR: [-0.7, 0.4], wristR: [-0.45, -0.1], handR: { angle: -Math.PI / 2, curl: [0.7, 1, 1, 1, 1] },
+    }),
+  ),
   pose("away", () => {}),
 ];
 

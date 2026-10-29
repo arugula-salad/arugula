@@ -16,13 +16,26 @@
 //   arms    = 4 points (elbowL, elbowR, wristL, wristR) × x:i8 y:i8 (1/25
 //             shoulder), sent when flags & ARMS; a point at (−128, −128)
 //             wasn't seen
-// flags: FACE (a face was found), ARMS.
+//   hand    = angle:i8 (π/127) curl:5 × u8 (thumb … pinky), for the left
+//             hand when flags & HAND_L, then the right when flags & HAND_R
+// flags: FACE (a face was found), ARMS, HAND_L, HAND_R.
 
 export const RIG = 0x40;
 const FACE = 1;
 const ARMS = 2;
+const HAND_L = 4;
+const HAND_R = 8;
 
 export type Point = [number, number] | null;
+
+/** A hand, as a character draws it at the wrist. */
+export interface Hand {
+  /** Which way the hand points, wrist to knuckles: radians in bust space
+   * (0 toward +x, the viewer's right; −π/2 straight up). */
+  angle: number;
+  /** Each finger's curl, thumb to pinky: 0 straight out, 1 folded in. */
+  curl: [number, number, number, number, number];
+}
 
 export interface Rig {
   /** A face was found this frame (else the head is a guess). */
@@ -56,6 +69,10 @@ export interface Rig {
   elbowR: Point;
   wristL: Point;
   wristR: Point;
+  /** Hands, where the hand landmarker saw them (else null: a resting
+   * hand, as the character likes). */
+  handL: Hand | null;
+  handR: Hand | null;
 }
 
 /** Which character, in which colour (./characters). */
@@ -70,7 +87,7 @@ export function neutral(): Rig {
     face: false, yaw: 0, pitch: 0, roll: 0, x: 0, y: 0,
     blinkL: 0, blinkR: 0, lookX: 0, lookY: 0,
     browUp: 0, browDown: 0, browInnerUp: 0, jawOpen: 0, smile: 0, funnel: 0, pucker: 0, cheekPuff: 0,
-    elbowL: null, elbowR: null, wristL: null, wristR: null,
+    elbowL: null, elbowR: null, wristL: null, wristR: null, handL: null, handR: null,
   };
 }
 
@@ -85,7 +102,8 @@ const u8 = (v: number) => Math.max(0, Math.min(255, Math.round(v * 255)));
 
 export function packRig(r: Rig, look: Look): Uint8Array {
   const arms = ARM_KEYS.some((k) => r[k]);
-  const out = [RIG, (r.face ? FACE : 0) | (arms ? ARMS : 0), look.character & 0xff, look.colour & 0xff];
+  const flags = (r.face ? FACE : 0) | (arms ? ARMS : 0) | (r.handL ? HAND_L : 0) | (r.handR ? HAND_R : 0);
+  const out = [RIG, flags, look.character & 0xff, look.colour & 0xff];
   out.push(i8(r.yaw * DEG), i8(r.pitch * DEG), i8(r.roll * DEG), i8(r.x * 50), i8(r.y * 50));
   for (const k of FACE_KEYS) out.push(SIGNED.has(k) ? i8(r[k] * 127) : u8(r[k]));
   if (arms) {
@@ -94,6 +112,7 @@ export function packRig(r: Rig, look: Look): Uint8Array {
       out.push(...(p ? [i8(p[0] * 25), i8(p[1] * 25)] : [0x80, 0x80]));
     }
   }
+  for (const h of [r.handL, r.handR]) if (h) out.push(i8((wrap(h.angle) * 127) / Math.PI), ...h.curl.map(u8));
   return Uint8Array.from(out);
 }
 
@@ -116,6 +135,14 @@ export function unpackRig(b: Uint8Array): { rig: Rig; look: Look } {
       r[k] = x === 0x80 && y === 0x80 ? null : [s8(x) / 25, s8(y) / 25];
     }
   }
+  const hand = (): Hand => {
+    if (b.length < p + 6) throw new Error("rig frame: cut short");
+    const angle = (s8(b[p++]) * Math.PI) / 127;
+    const curl = [0, 0, 0, 0, 0].map(() => b[p++] / 255) as Hand["curl"];
+    return { angle, curl };
+  };
+  if (flags & HAND_L) r.handL = hand();
+  if (flags & HAND_R) r.handR = hand();
   return { rig: r, look: { character: b[2], colour: b[3] } };
 }
 
@@ -144,8 +171,12 @@ export function idle(t: number, away: boolean, seed = 0): { rig: Rig; breathe: n
   return { rig: r, breathe: Math.sin(s * 2.1) * 0.5 + 0.5 };
 }
 
+/** An angle in −π…π. */
+export const wrap = (a: number) => Math.atan2(Math.sin(a), Math.cos(a));
+
 /** `cur` moved toward `want` over `dt` seconds, critically damped, so a
- * 12 fps stream draws smoothly at 60. Arms snap in and out of view. */
+ * 12 fps stream draws smoothly at 60. Arms and hands snap in and out of
+ * view. */
 export function approach(cur: Rig, want: Rig, dt: number, rate = 14): Rig {
   const k = 1 - Math.exp(-dt * rate);
   const out = { ...want };
@@ -153,6 +184,10 @@ export function approach(cur: Rig, want: Rig, dt: number, rate = 14): Rig {
   for (const key of ARM_KEYS) {
     const a = cur[key], b = want[key];
     out[key] = a && b ? [a[0] + (b[0] - a[0]) * k, a[1] + (b[1] - a[1]) * k] : b;
+  }
+  for (const key of ["handL", "handR"] as const) {
+    const a = cur[key], b = want[key];
+    out[key] = a && b ? { angle: a.angle + wrap(b.angle - a.angle) * k, curl: a.curl.map((c, i) => c + (b.curl[i] - c) * k) as Hand["curl"] } : b;
   }
   return out;
 }

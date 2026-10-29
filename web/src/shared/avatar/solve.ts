@@ -1,9 +1,10 @@
 // From what the landmarkers see to a rig (S44): the face landmarker's
-// ARKit blendshapes and head transform, and the pose landmarker's
-// shoulders, elbows and wrists, as ./rig's numbers. Pure, so node tests
+// ARKit blendshapes and head transform, the pose landmarker's shoulders,
+// elbows and wrists, and the hand landmarker's hands (which way each
+// points, how curled each finger is), as ./rig's numbers. Pure, so node tests
 // it (web/scripts/avatar.test.mjs); ./track runs the models.
 
-import { neutral, type Point, type Rig } from "./rig.ts";
+import { neutral, type Hand, type Point, type Rig } from "./rig.ts";
 
 /** A blendshape's name to its score (0–1), as MediaPipe names them
  * (ARKit's names; Left and Right are the person's own). */
@@ -33,6 +34,34 @@ export interface Seen {
   face: Mark[] | null;
   /** The body (33 BlazePose points), or null. */
   pose: Mark[] | null;
+  /** Hands (21 points each), any number, or null. */
+  hands?: Mark[][] | null;
+  /** The image's width over its height (landmarks are 0–1 on each). */
+  aspect?: number;
+}
+
+/** A hand's knuckles, then each finger's joints out to the tip (the hand
+ * landmarker's numbering): thumb, index, middle, ring, pinky. */
+const TIPS = [4, 8, 12, 16, 20];
+const BASES = [2, 5, 9, 13, 17];
+
+/** Which way `h` points and how curled each finger is, in bust space
+ * (`ax` scales x for the image's aspect). */
+export function handOf(h: Mark[], ax: number): Hand {
+  const d = (a: Mark, b: Mark) => Math.hypot((a.x - b.x) * ax, a.y - b.y);
+  const w = h[0];
+  const angle = Math.atan2(h[9].y - w.y, (h[9].x - w.x) * ax);
+  const palm = d(w, h[9]) || 1e-6;
+  const curl = TIPS.map((tip, i) => {
+    if (i === 0) {
+      // The thumb: out from the index knuckle when open, tucked to it when not.
+      return clamp((0.85 - d(h[tip], h[5]) / palm) / 0.5, 0, 1);
+    }
+    // A straight finger's tip is about twice as far from the wrist as its
+    // knuckle; a folded one's about as far.
+    return clamp((1.85 - d(w, h[tip]) / (d(w, h[BASES[i]]) || 1e-6)) / 0.8, 0, 1);
+  }) as Hand["curl"];
+  return { angle, curl };
 }
 
 /** The rig for what was seen; `null`s leave the rig neutral there. */
@@ -65,16 +94,23 @@ export function solve(s: Seen): Rig {
     r.pucker = v("mouthPucker");
     r.cheekPuff = v("cheekPuff");
   }
+  // Landmarks are 0–1 across and 0–1 down: x stretched by the aspect is
+  // the same scale as y.
+  const ax = s.aspect ?? 4 / 3;
   const p = s.pose;
   const sl = p?.[POSE.shoulderL], sr = p?.[POSE.shoulderR];
+  let toBust: ((q: Mark) => [number, number]) | null = null;
+  let mid = 0.5;
   if (p && sl && sr && seen(sl) && seen(sr)) {
     const mx = (sl.x + sr.x) / 2, my = (sl.y + sr.y) / 2;
-    const unit = Math.hypot(sl.x - sr.x, sl.y - sr.y) || 1;
+    mid = mx;
+    const unit = Math.hypot((sl.x - sr.x) * ax, sl.y - sr.y) || 1;
     // The image unmirrored: the person's left is the image's right, which
     // is bust space's +x already.
+    toBust = (q) => [((q.x - mx) * ax) / unit, (q.y - my) / unit];
     const at = (k: keyof typeof POSE): Point => {
       const q = p[POSE[k]];
-      return q && seen(q) ? [(q.x - mx) / unit, (q.y - my) / unit] : null;
+      return q && seen(q) ? toBust!(q) : null;
     };
     r.elbowL = at("elbowL");
     r.elbowR = at("elbowR");
@@ -83,11 +119,30 @@ export function solve(s: Seen): Rig {
     const nose = s.face?.[NOSE];
     if (nose) {
       // An upright head's nose sits about 0.9 shoulder widths above them.
-      r.x = clamp((nose.x - mx) / unit, -0.4, 0.4);
+      r.x = clamp(((nose.x - mx) * ax) / unit, -0.4, 0.4);
       r.y = clamp(((nose.y - my) / unit + 0.9) * 0.6, -0.3, 0.3);
     }
   } else if (s.face?.[NOSE]) {
     r.x = clamp((s.face[NOSE].x - 0.5) * 0.6, -0.3, 0.3);
+  }
+  for (const h of s.hands ?? []) {
+    if (!h || h.length < 21) continue;
+    // Whose hand: the nearer of the pose's wrists, else which side of the
+    // shoulders it's on (the person's left is the image's right).
+    const wl = p?.[POSE.wristL], wr = p?.[POSE.wristR];
+    const dist = (q: Mark | undefined) => (q ? Math.hypot((q.x - h[0].x) * ax, q.y - h[0].y) : Infinity);
+    const left = wl || wr ? dist(wl) < dist(wr) : h[0].x > mid;
+    const side = left ? "L" : "R";
+    if (r[`hand${side}`]) continue;
+    r[`hand${side}`] = handOf(h, ax);
+    // A hand seen where the pose lost the wrist: the wrist is the hand's,
+    // and the elbow a guess between it and the shoulder, sagging.
+    if (toBust && !r[`wrist${side}`]) {
+      const w = toBust(h[0]);
+      const sx = left ? 0.5 : -0.5;
+      r[`wrist${side}`] = w;
+      r[`elbow${side}`] ??= [(sx + w[0]) / 2 + (left ? 0.18 : -0.18), w[1] / 2 + 0.3];
+    }
   }
   return r;
 }
@@ -128,6 +183,7 @@ export class OneEuro {
  * filtered while seen and forgotten when not. */
 export class RigFilter {
   private f = new Map<string, OneEuro>();
+  private angles = new Map<string, number>();
   apply(r: Rig, t: number): Rig {
     const out = { ...r };
     const run = (k: string, v: number) => {
@@ -139,9 +195,16 @@ export class RigFilter {
       const v = r[k];
       if (typeof v === "number") (out as Record<string, unknown>)[k] = run(k, v);
       else if (Array.isArray(v)) (out as Record<string, unknown>)[k] = [run(`${k}.x`, v[0]), run(`${k}.y`, v[1])];
-      else if (v === null) {
-        this.f.delete(`${k}.x`);
-        this.f.delete(`${k}.y`);
+      else if (v && typeof v === "object") {
+        // A hand: its angle (unwrapped so it doesn't spin at ±π) and curls.
+        const prev = this.angles.get(k);
+        const a = prev === undefined ? v.angle : prev + Math.atan2(Math.sin(v.angle - prev), Math.cos(v.angle - prev));
+        const angle = run(`${k}.a`, a);
+        this.angles.set(k, angle);
+        (out as Record<string, unknown>)[k] = { angle, curl: v.curl.map((c, i) => run(`${k}.${i}`, c)) };
+      } else if (v === null) {
+        for (const key of [...this.f.keys()]) if (key.startsWith(`${k}.`)) this.f.delete(key);
+        this.angles.delete(k);
       }
     }
     return out;

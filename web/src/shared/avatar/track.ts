@@ -1,10 +1,10 @@
 // Your camera as a rig (S44): the face landmarker (with its blendshapes
-// and head transform) and the pose landmarker, lite, on each video frame,
-// solved (./solve) and smoothed. Loaded only when someone picks the avatar
-// and turns their camera on; the models are control's own files
-// (web/scripts/outline-assets.sh), beside S43's.
+// and head transform), the pose landmarker, lite, and the hand landmarker
+// on each video frame, solved (./solve) and smoothed. Loaded only when
+// someone picks the avatar and turns their camera on; the models are
+// control's own files (web/scripts/outline-assets.sh), beside S43's.
 
-import { FaceLandmarker, PoseLandmarker } from "@mediapipe/tasks-vision";
+import { FaceLandmarker, HandLandmarker, PoseLandmarker } from "@mediapipe/tasks-vision";
 import { RigFilter, solve, type Shapes } from "./solve";
 import type { Rig } from "./rig";
 
@@ -31,8 +31,13 @@ export async function startTracker(): Promise<Tracker> {
         runningMode: "VIDEO",
         numPoses: 1,
       }),
+      HandLandmarker.createFromOptions(files, {
+        baseOptions: { modelAssetPath: `${BASE}hand_landmarker.task`, delegate },
+        runningMode: "VIDEO",
+        numHands: 2,
+      }),
     ]);
-  const [face, pose] = await make("GPU").catch(() => make("CPU"));
+  const [face, pose, hands] = await make("GPU").catch(() => make("CPU"));
   const filter = new RigFilter();
   let last = 0;
   return {
@@ -41,6 +46,7 @@ export async function startTracker(): Promise<Tracker> {
       last = now;
       const f = face.detectForVideo(video, now);
       const p = pose.detectForVideo(video, now);
+      const h = hands.detectForVideo(video, now);
       const shapes: Shapes | null = f.faceBlendshapes?.[0]
         ? Object.fromEntries(f.faceBlendshapes[0].categories.map((c) => [c.categoryName, c.score]))
         : null;
@@ -49,6 +55,8 @@ export async function startTracker(): Promise<Tracker> {
         shapes,
         face: f.faceLandmarks?.[0] ?? null,
         pose: p.landmarks?.[0] ?? null,
+        hands: h.landmarks ?? null,
+        aspect: video.videoWidth / (video.videoHeight || 1) || 4 / 3,
       });
       p.close();
       return filter.apply(rig, now / 1000);
@@ -56,6 +64,7 @@ export async function startTracker(): Promise<Tracker> {
     close() {
       face.close();
       pose.close();
+      hands.close();
     },
   };
 }
