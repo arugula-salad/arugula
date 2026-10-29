@@ -9,6 +9,7 @@
 // Claude Code's hooks where they're missing, and this device's
 // notifications where they're off (Discovery 5).
 
+import { Fragment } from "preact";
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 import { type Client } from "../../client";
 import type { FleetPane } from "../../fleet";
@@ -21,6 +22,7 @@ import { AskCard, type Ask } from "../../../shared/ask";
 import { PermissionBody, PermissionButtons, permissionTarget, VIEWER_NOTE } from "../answer-card";
 import { DiffCard } from "../diff-card";
 import { editDiff } from "../term-ask";
+import { BellIcon } from "../../../shared/ui/bell";
 import { useSubscribe } from "../../../shared/ui/hooks";
 import { getFleet } from "../hosts";
 import { openMenu, type MenuItem } from "../../../shared/ui/menu";
@@ -149,13 +151,6 @@ export function useAttentionOpen(): boolean {
 
 // ---- the bell
 
-const BellIcon = () => (
-  <svg class="icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-    <path d="M6 16.5V11a6 6 0 0 1 12 0v5.5l1.5 2h-15z" />
-    <path d="M10 20.5a2 2 0 0 0 4 0" />
-  </svg>
-);
-
 /** The header's bell: how many wait on you, on every machine. */
 export function AttentionBell({ client }: { client: Client }) {
   useAttentionTick(client);
@@ -240,7 +235,8 @@ export function AttentionDrawer({ client }: { client: Client }) {
       e.preventDefault();
       e.stopPropagation();
       closeAttention();
-    } else if ((e.key === "ArrowDown" || e.key === "ArrowUp") && (e.target as HTMLElement).closest(".ws-att-list")) {
+    } else if ((e.key === "ArrowDown" || e.key === "ArrowUp") && (e.target as HTMLElement).matches(".ws-att-list, .ws-att-item")) {
+      // On the rows only: the open one's answer, under its row, keeps its keys.
       e.preventDefault();
       if (!items.length) return;
       const at = Math.max(0, items.findIndex((i) => i === chosen));
@@ -275,29 +271,30 @@ export function AttentionDrawer({ client }: { client: Client }) {
           <Empty client={client} />
         )}
         {items.map((i) => (
-          <button
-            key={i.p.key}
-            role="option"
-            aria-selected={i === chosen}
-            class={`ws-att-item${i === chosen ? " selected" : ""}`}
-            data-att-key={i.p.key}
-            data-att-pane={i.p.id}
-            tabIndex={i === chosen ? 0 : -1}
-            onClick={() => setSel(i.p.key)}
-          >
-            <span class={`ws-dot ${i.waiting ? "needs_input" : "failed"}`} aria-hidden="true" />
-            {/* What it's about as the title, why and where under it (UI
-                audit #172): every title was "Needs you" before. */}
-            <span class="ws-att-item-text">
-              <span class="ws-att-item-title">{whatItDoes(i.p)}</span>
-              <span class="ws-att-item-sub">
-                {[titleOf(i), shortHost(i.p.host), i.p.session?.name].filter(Boolean).join(" · ")}
+          <Fragment key={i.p.key}>
+            <button
+              role="option"
+              aria-selected={i === chosen}
+              class={`ws-att-item${i === chosen ? " selected" : ""}`}
+              data-att-key={i.p.key}
+              data-att-pane={i.p.id}
+              tabIndex={i === chosen ? 0 : -1}
+              onClick={() => setSel(i.p.key)}
+            >
+              <span class={`ws-dot ${i.waiting ? "needs_input" : "failed"}`} aria-hidden="true" />
+              {/* What it's about as the title, why and where under it (UI
+                  audit #172): every title was "Needs you" before. */}
+              <span class="ws-att-item-text">
+                <span class="ws-att-item-title">{whatItDoes(i.p)}</span>
+                <span class="ws-att-item-sub">
+                  {[titleOf(i), shortHost(i.p.host), i.p.session?.name].filter(Boolean).join(" · ")}
+                </span>
               </span>
-            </span>
-          </button>
+            </button>
+            {i === chosen && <Detail key={i.p.key} client={client} item={i} />}
+          </Fragment>
         ))}
       </div>
-      {chosen && <Detail key={chosen.p.key} client={client} item={chosen} />}
       <footer class="ws-att-foot">
         <span>Looking here answers nothing.</span>
         <button class="link" data-attention-prefs onClick={prefs}>
@@ -355,6 +352,9 @@ function Empty({ client }: { client: Client }) {
 
 function Detail({ client, item }: { client: Client; item: AttentionItem }) {
   const [busy, setBusy] = useState(false);
+  const at = useRef<HTMLElement>(null);
+  // It opens under its row: bring as much of it into view as fits.
+  useLayoutEffect(() => at.current?.scrollIntoView({ block: "nearest" }), []);
   const p = item.p;
   const r = reasonOf(p);
   const ask: Ask | null = p.info.ask ?? null;
@@ -393,7 +393,7 @@ function Detail({ client, item }: { client: Client; item: AttentionItem }) {
   // Go to pane ends the item's own row of buttons, whatever kind it is,
   // or is the row when it has none (UI audit #172, #194).
   return (
-    <section class="ws-att-detail" aria-label={titleOf(item)} data-attention-detail={p.key}>
+    <section class="ws-att-detail" ref={at} aria-label={titleOf(item)} data-attention-detail={p.key}>
       <h3>{titleOf(item)}</h3>
       {r && r.kind !== "ask" && <p class="ws-att-headline">{r.headline}</p>}
       <dl class="ws-att-facts">

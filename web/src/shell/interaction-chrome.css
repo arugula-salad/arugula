@@ -67,12 +67,12 @@
    detail's heading under it is the lighter one (UI audit #172). */
 .ws-att-head h2 { font: 800 24px/1 var(--f-display, "Big Shoulders Display", "Arial Narrow", "Roboto Condensed", sans-serif); text-transform: uppercase; letter-spacing: 0.01em; }
 .ws-att-count { color: var(--warn); }
-.ws-att-list { padding: 10px 12px; border-bottom: 1px solid var(--line); }
+.ws-att-list { padding: 10px 12px; }
 .ws-att-item { padding: 12px; border: 1px solid transparent; border-radius: var(--field-radius); margin-bottom: 6px; }
-.ws-att-item.selected { border-color: color-mix(in srgb, var(--warn) 50%, var(--line)); background: color-mix(in srgb, var(--warn) 7%, var(--surface)); }
+.ws-att-item.selected { border-color: color-mix(in srgb, var(--warn) 50%, var(--line)); background: color-mix(in srgb, var(--warn) 7%, var(--surface)); margin-bottom: 0; }
 .ws-att-item-title { font-size: 13px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ws-att-item-sub { margin-top: 6px; line-height: 1.5; }
-.ws-att-detail { padding: 20px; }
+.ws-att-detail { padding: 20px; border-color: color-mix(in srgb, var(--warn) 50%, var(--line)); border-radius: 0 0 var(--field-radius) var(--field-radius); margin-bottom: 6px; }
 .ws-att-detail h3 { font-size: 14px; font-weight: 600; line-height: 1.5; }
 .ws-att-facts { padding: 12px; border: 1px solid var(--line); border-radius: var(--field-radius); background: var(--bg); }
 .ws-att-facts > div { padding: 6px 0; }
