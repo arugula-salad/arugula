@@ -303,7 +303,9 @@ says what is stored.
   elements: a tile per person in the room, their avatar (a character that
   follows your face) or outline while their camera is on, reactions and
   waves; the room's voice channel (join muted, unmute, start video); and a
-  wave's private call. Control signs your room token as you
+  wave's private call. In voice or a call, *Speaker* shows whoever's
+  talking big and everyone else in it in a strip (click someone to pin
+  them); *Grid* is a tile each, and the block remembers which. Control signs your room token as you
   (`POST /api/chat/presence/token`: a team's members only, named as its
   roster names them), and keeps nothing of the room. The camera is off
   until you turn it on, and an avatar or an outline is lines and numbers

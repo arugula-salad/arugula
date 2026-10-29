@@ -29,3 +29,41 @@
   display: block;
   margin-bottom: 12px;
 }
+
+.people-layout {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+  font-size: 12px;
+}
+
+.people-seg {
+  display: inline-flex;
+  border: 1px solid var(--line);
+  border-radius: var(--field-radius, 6px);
+  overflow: hidden;
+}
+
+.people-seg button {
+  padding: 4px 12px;
+  border: 0;
+  border-radius: 0;
+  background: var(--bg);
+  color: var(--dim);
+}
+
+.people-seg button[aria-checked="true"] {
+  background: color-mix(in srgb, var(--accent) 12%, var(--bg));
+  color: var(--fg);
+}
+
+.people-room arugula-spotlight {
+  display: block;
+  margin-bottom: 12px;
+}
+
+.people-rest {
+  margin: 0 0 6px;
+  font-size: 12px;
+}
