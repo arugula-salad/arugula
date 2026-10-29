@@ -9,15 +9,16 @@
 //! | `push` | `push` to a branch (not a tag, not a delete) | the branch |
 //!
 //! Two more go to an agent session, never a rule (M260,
-//! [`crate::sessions::feedback`]): a `pull_request_review` submitted and a
-//! `pull_request_review_comment` made, on a PR from the repo's own branch
+//! `arugula-platform-chat`'s `sessions::feedback`): a `pull_request_review`
+//! submitted and a `pull_request_review_comment` made, on a PR from the
+//! repo's own branch
 //! (`RuleEvent::Review`). Both count from insiders only, by the
 //! review's or comment's `author_association`, as a PR's does.
 //!
 //! **A session's first.** Before any rule, an event on a session's branch
 //! (a check that failed on its head, a review on its PR) goes back to that
-//! session ([`crate::sessions::feedback::route`]), and to no rule: rules
-//! see the rest as before.
+//! session (`features::Chat::route_feedback`), and to no rule: rules see
+//! the rest as before.
 //!
 //! A rule fires for a repo linked to its project (and the repo it names,
 //! if it names one), on a branch it names (`*` any run of characters) or

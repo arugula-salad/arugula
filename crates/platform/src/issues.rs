@@ -1,8 +1,8 @@
 //! Native issues over the platform's routes (M195, platform step 6): a
 //! project's own issues ([`db::issues`], M194), who may do what with them,
 //! their export, and a project's issue home. An issue's comments are its
-//! object thread's messages (M196, [`crate::chat::objects`]), posted
-//! through chat's routes.
+//! object thread's messages (M196, `arugula-platform-chat`'s
+//! `chat::objects`), posted through chat's routes.
 //!
 //! **Who may do what,** by membership of the issue's project:
 //! - a personal project's account does everything;
