@@ -186,7 +186,7 @@ export function Home({ me, onSignedOut }: { me: Session; onSignedOut: () => void
             <h1 class="headline">
               Hang out <span>here.</span>
             </h1>
-            <p class="lede">A room for your people. Everyone shows up as a little character that moves when they do. Wave, react, talk in the chat. No picture of you leaves your computer.</p>
+            <p class="lede">A room for your people. Everyone shows up as a little character that moves when they do. Wave, react, talk in the chat or on a call. No picture of you leaves your computer unless you start video in a call.</p>
           </div>
           <div class="stage cast" aria-hidden="true">
             {CHARACTERS.map((c, i) => (

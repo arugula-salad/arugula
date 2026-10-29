@@ -223,7 +223,15 @@ export class Room {
     return this.client.setMuted(muted);
   }
 
-  /** The call bar (a ring to answer, who you're calling, mute and leave)
+  /** Your video in the call: your camera's real picture, for the people in
+   * it alone (presence never sends one). Tiles in the call show it in place
+   * of your character; your camera turns on for it if it's off. */
+  setVideo(on: boolean): Promise<void> {
+    return this.client.setVideo(on);
+  }
+
+  /** The call bar (a ring to answer, who you're calling, mute, video and
+   * leave)
    * into `el`, likewise. Empty while there's no call, or no calls here. */
   callBar(el: Element): () => void {
     return styled(el, (root) => mountCall(this, root));

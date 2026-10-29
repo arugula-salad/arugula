@@ -11,7 +11,7 @@ this; the site's docs show exactly this. PROTOCOL.md is underneath.
       <arugula-camera></arugula-camera>   <!-- camera on/off, avatar|outline, character, colour -->
       <arugula-people></arugula-people>   <!-- a tile per person in the room -->
       <arugula-chat></arugula-chat>       <!-- the room's text: messages and an input -->
-      <arugula-call></arugula-call>       <!-- the call bar: a ring to answer, mute, leave -->
+      <arugula-call></arugula-call>       <!-- the call bar: a ring to answer, mute, video, leave -->
     </arugula-room>
 
     <!-- anywhere inside a room: one person's live face, e.g. beside their name -->
@@ -54,8 +54,9 @@ Events (bubbling, on the room element): `arugula:members` (`detail.members`), `a
     room.calls;                                    // whether the relay has calls (LiveKit keys)
     await room.call(sub);                          // ask to talk: a voice call once they say yes
     room.on("ring", (from, id) => room.answerCall(id, true));
-    room.inCall;                                   // { id, state, ringing, people: [{ sub, name, muted, speaking }], muted }
+    room.inCall;                                   // { id, state, ringing, people: [{ sub, name, muted, speaking, video }], muted, video }
     room.setMuted(true); room.leaveCall();
+    await room.setVideo(true);                     // your camera's real video, to the people in the call
     room.callBar(element);                         // draw the call bar into an element
     room.mount(element, { size: "bust" });          // draw everyone into an element
     room.avatar(element, sub, { size: "head" });    // draw one person
@@ -69,7 +70,14 @@ Events (bubbling, on the room element): `arugula:members` (`detail.members`), `a
       <Avatar user={id} size="head" />
       <CallControls />
     </PresenceRoom>
-    const { members, messages, say, wave, camera, calls, rings, inCall, call, answerCall, leaveCall, setMuted } = usePresence();
+    const { members, messages, say, wave, camera, calls, rings, inCall, call, answerCall, leaveCall, setMuted, setVideo } = usePresence();
+
+**Video in a call is real video.** Presence sends a rig or an outline,
+never a picture. A call's video (`setVideo(true)`, or the call bar's Start
+video) is the camera's actual picture, sent to the people in that call
+while it's on; tiles in the call show it in place of the character. It
+shares the presence camera (no second camera prompt), with simulcast and
+adaptive stream so each tile gets only the size it shows.
 
 ## Publishable keys (hosted, no server of yours)
 

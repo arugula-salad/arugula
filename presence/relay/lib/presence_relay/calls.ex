@@ -1,7 +1,7 @@
 defmodule PresenceRelay.Calls do
   @moduledoc """
-  Voice calls on LiveKit (PROTOCOL.md, "Calls"; #318's P7). The relay
-  never carries audio: it rings, hears the answer, and hands each party a
+  Calls on LiveKit (PROTOCOL.md, "Calls"; #318's P7 voice, P8 video). The
+  relay never carries audio or video: it rings, hears the answer, and hands each party a
   short-lived LiveKit access token for one LiveKit room, named for the
   app, the room and the call (`<app>:<room>:<id>`), so two apps' calls (or
   two rooms') never meet.
@@ -59,8 +59,9 @@ defmodule PresenceRelay.Calls do
 
   @doc """
   What a page needs to join call `id` as `sub`: LiveKit's URL, a token
-  and the LiveKit room's name. Audio only (P7): the token lets it publish
-  its microphone and nothing else.
+  and the LiveKit room's name. The token lets it publish its microphone
+  and its camera (P8's video, which the page turns on), and nothing else:
+  no screen, no data.
   """
   def join_info(app, room, id, sub, name, now \\ System.system_time(:second)) do
     %{url: url} = c = config()
@@ -84,7 +85,7 @@ defmodule PresenceRelay.Calls do
         "room" => lk_room,
         "roomJoin" => true,
         "canPublish" => true,
-        "canPublishSources" => ["microphone"],
+        "canPublishSources" => ["microphone", "camera"],
         "canPublishData" => false,
         "canSubscribe" => true
       }

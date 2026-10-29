@@ -2,7 +2,9 @@
 // from the relay, the Phoenix transport (@arugula/presence), and everyone
 // here as live avatars or outlines (@arugula/presence-core). Wave to talk:
 // where the relay has calls, a wave they say yes to is a voice call
-// (LiveKit), and presence carries on under it.
+// (LiveKit), and presence carries on under it. In a call, anyone can start
+// video: real video, on their tile for the others in the call, in place
+// of their character until they stop it.
 
 import { useEffect, useRef, useState } from "preact/hooks";
 import { PresenceClient, phoenixTransport, REACTIONS, type Member } from "@arugula/presence";
@@ -81,6 +83,14 @@ function AvatarCanvas({ source, mirror }: { source: () => Source | null; mirror:
   return <canvas ref={ref} />;
 }
 
+/** Someone's call video (yours mirrored): LiveKit sends it only while
+ * it's in view, at the size it's shown. */
+function VideoView({ client, sub, mirror }: { client: PresenceClient; sub: string; mirror: boolean }) {
+  const ref = useRef<HTMLVideoElement>(null);
+  useEffect(() => client.attachVideo(sub, ref.current!), [sub]);
+  return <video ref={ref} class={mirror ? "mirror" : undefined} autoPlay playsInline muted />;
+}
+
 function Tile({ client, m, me, onError }: { client: PresenceClient; m: Member; me: boolean; onError: (e: string) => void }) {
   const seen = client.of(m.sub);
   const frame = (me ? client.mine?.frame : null) ?? seen?.frame ?? null;
@@ -92,6 +102,7 @@ function Tile({ client, m, me, onError }: { client: PresenceClient; m: Member; m
   const person = client.inCall?.people.find((p) => p.sub === m.sub);
   const ringing = !!client.inCall?.ringing.includes(m.sub);
   const inMine = client.inMyCall(m.sub);
+  const video = client.videoOf(m.sub);
   const waveAt = () => {
     if (!client.callsOn) return client.wave(m.sub);
     client.call(m.sub).then(
@@ -108,7 +119,7 @@ function Tile({ client, m, me, onError }: { client: PresenceClient; m: Member; m
     return l ? { rig: hand(s?.rig ?? null), look: l, away: m.away } : null;
   };
   return (
-    <figure class={["tile", live && "live", m.call && "in-call", person?.speaking && "speaking"].filter(Boolean).join(" ")} data-sub={m.sub}>
+    <figure class={["tile", live && "live", m.call && "in-call", video && "video", person?.speaking && "speaking"].filter(Boolean).join(" ")} data-sub={m.sub}>
       <div class="view">
         <div class="reacts" aria-live="polite">
           {client.reactionsOf(m.sub).map((r) => (
@@ -117,7 +128,15 @@ function Tile({ client, m, me, onError }: { client: PresenceClient; m: Member; m
             </span>
           ))}
         </div>
-        {frame ? <OutlineCanvas frame={frame} mirror={me} /> : avatar ? <AvatarCanvas source={source} mirror={me} /> : <div class="still">{m.name.slice(0, 1).toUpperCase()}</div>}
+        {video ? (
+          <VideoView client={client} sub={m.sub} mirror={me} />
+        ) : frame ? (
+          <OutlineCanvas frame={frame} mirror={me} />
+        ) : avatar ? (
+          <AvatarCanvas source={source} mirror={me} />
+        ) : (
+          <div class="still">{m.name.slice(0, 1).toUpperCase()}</div>
+        )}
       </div>
       <figcaption>
         <span class="who">{me ? `${m.name} (you)` : m.name}</span>
@@ -196,7 +215,7 @@ function Controls({ client, me }: { client: PresenceClient; me: string }) {
   );
 }
 
-/** Your call: who's in it, mute and leave (or who you're calling). */
+/** Your call: who's in it, mute, video and leave (or who you're calling). */
 function CallBar({ client, me, names, error }: { client: PresenceClient; me: string; names: Map<string, string>; error: string }) {
   const c = client.inCall;
   if (!c) return error ? <div class="callbar"><span class="error">{error}</span></div> : null;
@@ -218,6 +237,11 @@ function CallBar({ client, me, names, error }: { client: PresenceClient; me: str
       {c.state !== "ringing" && (
         <button class={c.muted ? "btn on" : "btn"} onClick={() => void client.setMuted(!c.muted)} aria-pressed={c.muted}>
           {c.muted ? "Unmute" : "Mute"}
+        </button>
+      )}
+      {c.state !== "ringing" && (
+        <button class={c.video ? "btn on" : "btn"} onClick={() => void client.setVideo(!c.video)} aria-pressed={c.video} title="Video is your camera's real picture, for the people in this call">
+          {c.video ? "Stop video" : "Start video"}
         </button>
       )}
       {c.blocked && (
@@ -385,7 +409,7 @@ export function Room({ room, name }: { room: string; name: string }) {
               Not now
             </button>
           </div>
-          <span class="stats">A voice call: your microphone, no camera picture.</span>
+          <span class="stats">A voice call: your microphone. Video only if you start it, and then it's your real camera picture.</span>
         </div>
       )}
       {!ring && wave && (

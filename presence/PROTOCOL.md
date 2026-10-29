@@ -180,7 +180,13 @@ month with `{reason: "this app is at its monthly limit"}` ("Usage and caps").
 A wave that's answered yes becomes a voice call (#318's P7), on LiveKit.
 The relay rings, hears the answer, and hands each party a LiveKit access
 token for one LiveKit room; audio goes between the browsers and LiveKit,
-never through the relay. Audio only for now (video later).
+never through the relay. In a call, anyone may turn their camera's video
+on (#318's P8), and it goes the same way.
+
+**Video is real video.** Presence never sends a picture of anyone (a rig
+or an outline, drawn by each page). A call's video is the camera's actual
+picture, sent to the people in that call, and only while its owner has it
+on.
 
 A relay has calls when it has LiveKit's URL and an API key and secret
 (`LIVEKIT_URL`, `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET`). Without them,
@@ -245,7 +251,28 @@ secret:
 | `sub` | the member's `sub` (their LiveKit identity) |
 | `name` | the member's name |
 | `nbf`, `exp` | now, and now + 10 minutes. LiveKit checks it on connecting only, and refreshes a connected page's token itself; a page that drops out asks `call_token` |
-| `video` | `{room, roomJoin: true, canPublish: true, canPublishSources: ["microphone"], canPublishData: false, canSubscribe: true}`: this room only, the microphone only |
+| `video` | `{room, roomJoin: true, canPublish: true, canPublishSources: ["microphone", "camera"], canPublishData: false, canSubscribe: true}`: this room only, the microphone and the camera (no screen, no data) |
+
+### Video
+
+Nothing on the relay's side: the token lets a page publish its camera, and
+LiveKit carries it. What the client (`@arugula/presence`) does:
+
+- Video is off until the person turns it on, in a call that's started
+  (not while it's ringing). It ends with the call, or when they turn
+  their camera off.
+- It comes from the presence camera, not a second one: the page publishes
+  a clone of the camera's track (one device, opened once), cropped and
+  scaled by the browser to 640×360 at 24 fps, while the rig or outline
+  keeps reading the original. A camera that was off turns on for it, and
+  off again with it.
+- Simulcast: a 320×180 layer beside the 640×360 one, at most 500 kbps for
+  the top. LiveKit's adaptive stream sends each viewer's `<video>` only the
+  layer its size needs, and nothing while it's hidden or out of view;
+  dynacast stops encoding a layer nobody's watching.
+- A tile in the call shows the person's video in place of their character
+  or outline while it's on (their own tile too, mirrored). Everyone in the
+  room but not in the call still sees their character or outline.
 
 ### Metering
 

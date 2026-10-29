@@ -31,6 +31,15 @@ defmodule PresenceRelay.CallTest do
     assert_receive {:pushed, :a, "presence_state", %{"alice" => %{metas: [%{call: nil}]}}}
   end
 
+  test "a call's token publishes the microphone and the camera (P8's video), never a screen or data" do
+    t = PresenceRelay.Calls.join_info("acme", "r", "c1", "alice", "Alice").token
+    grant = claims(t)["video"]
+    assert grant["canPublishSources"] == ["microphone", "camera"]
+    refute "screen_share" in grant["canPublishSources"]
+    assert grant["canPublishData"] == false
+    assert grant["room"] == "acme:r:c1"
+  end
+
   test "a yes gives both connections a token for one LiveKit room, scoped by app, room and call" do
     r = room()
     {:ok, a, _} = client(:a, r, "alice", %{"name" => "Alice"})
@@ -57,7 +66,7 @@ defmodule PresenceRelay.CallTest do
              "room" => lk_room,
              "roomJoin" => true,
              "canPublish" => true,
-             "canPublishSources" => ["microphone"],
+             "canPublishSources" => ["microphone", "camera"],
              "canPublishData" => false,
              "canSubscribe" => true
            }

@@ -98,6 +98,10 @@ test("a room's calls: whether the relay has them, rings and the call as events, 
   t.on.call("b", "c7");
   assert.equal(await room.call("b"), "c1");
   assert.deepEqual(rung, ["b"]);
+  // Video waits for the call to start: a ring has none.
+  await room.setVideo(true);
+  assert.equal(room.inCall.video, false);
+  assert.equal(room.client.videoOf("b"), false);
   room.leaveCall();
   assert.deepEqual(rung, ["b", "left c1"]);
   assert.deepEqual(seen, [["ring", "b", "c7"], ["call", "ringing"], ["call", null]]);

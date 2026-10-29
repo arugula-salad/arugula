@@ -1,7 +1,7 @@
 // Your camera's controls (<arugula-camera>, and the React CameraControls):
 // on/off, then avatar or outline, your character and your colour. And the
 // call bar (<arugula-call>, the React CallControls): a ring to answer, who
-// you're calling, mute and leave. Redrawn from the room's state whenever
+// you're calling, mute, video and leave. Redrawn from the room's state whenever
 // it changes; nothing kept here.
 
 import { CHARACTERS } from "@arugula/presence-core/avatar/characters/index";
@@ -133,7 +133,12 @@ export function mountCall(room: Room, el: Element | ShadowRoot): () => void {
                   ? `In a call with ${others.join(", ")}${ringing.length ? ` · calling ${ringing.join(", ")}…` : ""}`
                   : "Waiting for the others…";
         const buttons = [];
-        if (call.state !== "ringing") buttons.push(button(call.muted ? "Unmute" : "Mute", () => void room.setMuted(!call.muted), call.muted ? "on" : ""));
+        if (call.state !== "ringing") {
+          buttons.push(button(call.muted ? "Unmute" : "Mute", () => void room.setMuted(!call.muted), call.muted ? "on" : ""));
+          const video = button(call.video ? "Stop video" : "Start video", () => void room.setVideo(!call.video), call.video ? "on" : "");
+          video.title = "Video is your camera's real picture, for the people in this call";
+          buttons.push(video);
+        }
         if (call.blocked) buttons.push(button("Play the call", () => void c.startAudio(), "primary"));
         buttons.push(button(call.state === "ringing" ? "Cancel" : "Leave", () => room.leaveCall(), "danger"));
         const row = line(what, ...buttons);

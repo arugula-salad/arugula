@@ -9,7 +9,8 @@
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "assets": "sh ../core/scripts/assets.sh public",
-    "e2e:call": "node e2e/call.mjs"
+    "e2e:call": "node e2e/call.mjs",
+    "e2e:video": "node e2e/video.mjs"
   },
   "dependencies": {
     "@arugula/presence": "link:../client",

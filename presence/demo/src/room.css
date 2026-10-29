@@ -200,6 +200,24 @@
   height: 100%;
 }
 
+/* A call's video, on the tile in place of the character while it's on. */
+.tile video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  background: var(--bg);
+}
+
+.tile video.mirror {
+  transform: scaleX(-1);
+}
+
+.tile.video {
+  border-color: color-mix(in srgb, var(--ok) 50%, var(--line));
+}
+
 .tile .still {
   position: absolute;
   inset: 0;

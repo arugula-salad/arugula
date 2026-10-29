@@ -32,6 +32,9 @@ export const CSS = `
 .view { position: relative; aspect-ratio: 4 / 3; background: var(--void); color: var(--accent); }
 .head .view { aspect-ratio: 1; }
 .view canvas, .arugula-avatar canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.view video, .arugula-avatar video { position: absolute; inset: 0; width: 100%; height: 100%; display: block; object-fit: cover; background: var(--void); }
+video.mirror { transform: scaleX(-1); }
+.tile.video .tag { color: var(--ok); }
 .initial { position: absolute; inset: 0; display: grid; place-items: center; color: var(--dim); font-weight: 700; font-size: 2em; }
 figcaption { display: flex; align-items: center; gap: 6px; padding: 6px 10px; border-top: 1px solid var(--line); font-size: 13px; }
 .head figcaption { padding: 4px 6px; font-size: 11px; }

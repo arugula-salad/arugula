@@ -132,6 +132,7 @@ export function Hosted() {
                 to show a single pixel of anyone's room.
               </p>
               <p>Others see the character, or a line drawing of a face. That's it. That's the feature.</p>
+              <p>Start video in a call and that's different: the people in the call see your real camera picture, as on any video call.</p>
             </div>
             <div class="bytes" aria-hidden="true">
               <span class="cam card">
