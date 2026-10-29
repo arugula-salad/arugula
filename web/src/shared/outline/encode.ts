@@ -4,7 +4,7 @@
 // RGBA bytes (an ImageData's) and gives polylines, so a page, a worker and
 // node (web/scripts/outline.test.mjs) all run the same code.
 //
-// The steps are Canny's, cut down for a 160×120 grid: blur, Sobel,
+// The steps are Canny's, cut down for a small grid (192×144): blur, Sobel,
 // thin to one pixel (non-max suppression), keep strong edges and the weak
 // ones touching them (hysteresis); then walk the edge pixels into chains,
 // drop the short ones and simplify the rest (Douglas–Peucker). The
@@ -81,7 +81,8 @@ export function trace(rgba: ArrayLike<number>, w: number, h: number, o: TraceOpt
     }
   }
 
-  const high = percentile(thin, 1 - 0.25 * detail - 0.05);
+  // detail 0 keeps the strongest 10% of ridges, 1 the strongest 60%.
+  const high = percentile(thin, 0.9 - 0.5 * detail);
   const low = high * 0.45;
   const edges = new Uint8Array(n);
   const stack: number[] = [];
@@ -115,10 +116,11 @@ export function trace(rgba: ArrayLike<number>, w: number, h: number, o: TraceOpt
     changed = on ? diff / on : 0;
   }
 
-  const chains = chainsOf(edges, w, h, o.minLength ?? 6);
+  // More detail keeps shorter strokes too (hair, creases).
+  const chains = chainsOf(edges, w, h, o.minLength ?? Math.round(7 - 4 * detail));
   const eps = o.epsilon ?? 0.8;
   let lines = chains.map((c) => simplify(c, eps)).filter((l) => l.length >= 4);
-  const max = o.maxPoints ?? 1500;
+  const max = o.maxPoints ?? 2500;
   let points = lines.reduce((s, l) => s + l.length / 2, 0);
   if (points > max) {
     lines.sort((a, b) => length(b) - length(a));

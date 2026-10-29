@@ -36,8 +36,8 @@ class OutlineStore {
   private sweep: number | undefined;
   private camera: Camera | null = null;
   private starting = false;
-  fps = 2;
-  detail = 0.5;
+  fps = 4;
+  detail = 0.7;
   mine: Mine | null = null;
   /** The stream's state, for the block to say. */
   live: "off" | "connecting" | "on" | "refused" = "off";

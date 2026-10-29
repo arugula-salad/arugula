@@ -10,10 +10,10 @@ import { trace } from "./encode";
 import { encodeFrame, pack, type Frame } from "./frame";
 
 /** The grid: 4:3, small enough that a frame is a few KB. */
-export const GRID_W = 160;
-export const GRID_H = 120;
+export const GRID_W = 192;
+export const GRID_H = 144;
 /** Below this much of the edge map changing, a frame is the same frame. */
-const STILL = 0.04;
+const STILL = 0.02;
 /** The longest a still camera goes without a frame. */
 const KEEP = 4_000;
 

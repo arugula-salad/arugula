@@ -22,7 +22,7 @@ import { getControlSession } from "../ui/people";
 import { registerBlock, type BlockView } from "./view";
 import "../../shared/outline/people.css";
 
-const RATES = [1, 2, 5, 10];
+const RATES = [2, 4, 8, 15];
 const ORDER = { active: 0, away: 1, offline: 2 } as const;
 
 interface Person {
