@@ -15,6 +15,7 @@ defmodule PresenceRelay.Application do
           {Phoenix.PubSub, name: PresenceRelay.PubSub},
           PresenceRelay.Presence,
           PresenceRelay.Rooms,
+          PresenceRelay.Chat.Memory,
           PresenceRelayWeb.Endpoint
         ]
 

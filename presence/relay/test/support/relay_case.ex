@@ -16,6 +16,14 @@ defmodule PresenceRelay.RelayCase do
 
   alias PresenceRelay.Token
 
+  # Joins read a room's history (PresenceRelay.Chat): the channel processes
+  # share this test's sandboxed connection.
+  setup tags do
+    pid = Ecto.Adapters.SQL.Sandbox.start_owner!(PresenceRelay.Repo, shared: not tags[:async])
+    on_exit(fn -> Ecto.Adapters.SQL.Sandbox.stop_owner(pid) end)
+    :ok
+  end
+
   def token(claims \\ %{}, app \\ "acme") do
     base = %{
       "room" => "lobby",
@@ -81,6 +89,10 @@ defmodule PresenceRelay.RelayCase do
 
       %Phoenix.Socket.Message{event: event, payload: payload} ->
         send(test, {:pushed, name, event, payload})
+        loop(test, name, socket)
+
+      %Phoenix.Socket.Reply{status: status, payload: payload} ->
+        send(test, {:replied, name, status, payload})
         loop(test, name, socket)
 
       _ ->

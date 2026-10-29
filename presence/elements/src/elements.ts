@@ -1,12 +1,13 @@
 // The custom elements (../../sdk/API.md): <arugula-room> joins a room (a
 // token from your endpoint, or the relay's demo tokens to prototype) and
-// re-dispatches its events; <arugula-camera>, <arugula-people> and
-// <arugula-avatar> inside it draw from it, each in a shadow root styled
+// re-dispatches its events; <arugula-camera>, <arugula-people>,
+// <arugula-avatar> and <arugula-chat> inside it draw from it, each in a shadow root styled
 // from --arugula-* custom properties.
 
 import { connect, httpOrigin, RELAY, type Room } from "./room.ts";
 import { mountPeople, mountAvatar } from "./view.ts";
 import { mountCamera } from "./controls.ts";
+import { mountChat } from "./chat.ts";
 import { CSS } from "./styles.ts";
 
 type Look = { character: number; colour: number };
@@ -54,6 +55,7 @@ export class ArugulaRoom extends HTMLElement {
         r.on("wave", (from) => fire("wave", { from }));
         r.on("answer", (from, yes) => fire("answer", { from, yes }));
         r.on("react", (from, emoji) => fire("react", { from, emoji }));
+        r.on("message", (message) => fire("message", { message }));
         r.on("live", (state) => fire("live", { state }));
         fire("members", { members: r.members });
         for (const ok of this.waiting.splice(0)) ok(r);
@@ -125,6 +127,12 @@ export class ArugulaAvatar extends InRoom {
   }
 }
 
+export class ArugulaChat extends InRoom {
+  protected draw(room: Room) {
+    return mountChat(room, this.root, { placeholder: this.getAttribute("placeholder") ?? undefined });
+  }
+}
+
 /** Define the elements (once; safe to call again). */
 export function defineElements() {
   if (typeof customElements === "undefined") return;
@@ -133,6 +141,7 @@ export function defineElements() {
     ["arugula-people", ArugulaPeople],
     ["arugula-camera", ArugulaCamera],
     ["arugula-avatar", ArugulaAvatar],
+    ["arugula-chat", ArugulaChat],
   ];
   for (const [name, el] of all) if (!customElements.get(name)) customElements.define(name, el);
 }

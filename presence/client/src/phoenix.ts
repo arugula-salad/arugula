@@ -6,7 +6,7 @@
 
 import { Presence, Socket, type Channel } from "phoenix";
 import type { Look } from "@arugula/presence-core/avatar/rig";
-import type { Member, Mode, State, Transport, TransportEvents } from "./transport.ts";
+import type { Member, Mode, State, Transport, TransportEvents, Message } from "./transport.ts";
 
 export interface PhoenixTransportOptions {
   /** The relay's socket, e.g. `wss://arugula.video/socket`. */
@@ -81,6 +81,8 @@ export function phoenixTransport(o: PhoenixTransportOptions): Transport {
     ch.on("wave", ({ from }: { from: string }) => on?.wave?.(from));
     ch.on("react", ({ from, emoji }: { from: string; emoji: string }) => on?.react?.(from, emoji));
     ch.on("answer", ({ from, yes }: { from: string; yes: boolean }) => on?.answer?.(from, yes));
+    ch.on("said", (m: Message) => on?.said?.(m));
+    ch.on("history", ({ messages }: { messages: Message[] }) => on?.history?.(messages));
     const presence = new Presence(ch);
     presence.onSync(() => on?.members?.(presence.list((sub, { metas }: { metas: Meta[] }) => memberOf(sub, metas))));
     ch.join()
@@ -146,5 +148,23 @@ export function phoenixTransport(o: PhoenixTransportOptions): Transport {
     answer(to, yes) {
       channel?.push("answer", { to, yes });
     },
+    say(text) {
+      return ask<Message>("say", { text });
+    },
+    history(before) {
+      return ask<{ messages: Message[] }>("history", { before }).then((r) => r.messages);
+    },
   };
+
+  /** A push the relay answers: its `ok` payload, or its `error` reason. */
+  function ask<T>(event: string, payload: object): Promise<T> {
+    return new Promise((resolve, reject) => {
+      if (!channel) return reject(new Error("not in the room yet"));
+      channel
+        .push(event, payload)
+        .receive("ok", (r: T) => resolve(r))
+        .receive("error", (e: { reason?: string }) => reject(new Error(e?.reason ?? "refused")))
+        .receive("timeout", () => reject(new Error("the relay didn't answer")));
+    });
+  }
 }

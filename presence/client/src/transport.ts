@@ -27,6 +27,16 @@ export interface State {
   watching?: boolean;
 }
 
+/** A kept text message (PROTOCOL.md `said`): `id` only goes up in a room,
+ * `at` is Unix ms. */
+export interface Message {
+  id: number;
+  sub: string;
+  name: string;
+  text: string;
+  at: number;
+}
+
 export interface TransportEvents {
   /** `sub`'s newest frame. */
   frame(sub: string, bytes: Uint8Array): void;
@@ -41,6 +51,10 @@ export interface TransportEvents {
   /** Someone's reaction: an emoji for the room. */
   react?(from: string, emoji: string): void;
   answer?(from: string, yes: boolean): void;
+  /** Someone's message (not this connection's: that's `say`'s answer). */
+  said?(m: Message): void;
+  /** The room's last messages, on (re)joining. */
+  history?(messages: Message[]): void;
 }
 
 export interface Transport {
@@ -58,4 +72,8 @@ export interface Transport {
   wave?(to: string): void;
   react?(emoji: string): void;
   answer?(to: string, yes: boolean): void;
+  /** Send a message; resolves with it as kept, rejects with the reason. */
+  say?(text: string): Promise<Message>;
+  /** The messages before `before`, oldest first. */
+  history?(before: number): Promise<Message[]>;
 }

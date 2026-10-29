@@ -183,6 +183,72 @@ function Controls({ client, me }: { client: PresenceClient; me: string }) {
   );
 }
 
+/** The room's text: messages, earlier ones a click away, and an input
+ * (Enter sends, Shift+Enter is a new line). */
+function ChatPanel({ client, me }: { client: PresenceClient; me: string }) {
+  const [text, setText] = useState("");
+  const [err, setErr] = useState("");
+  const list = useRef<HTMLDivElement>(null);
+  const last = client.messages[client.messages.length - 1]?.id;
+  useEffect(() => {
+    const el = list.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [last]);
+  const send = async () => {
+    const t = text.trim();
+    if (!t) return;
+    try {
+      await client.say(t);
+      setText("");
+      setErr("");
+    } catch (e) {
+      setErr((e as Error).message);
+    }
+  };
+  return (
+    <aside class="chat" aria-label="Chat">
+      <div class="chat-list" ref={list} role="log" aria-live="polite">
+        {client.hasEarlier && client.messages.length > 0 && (
+          <button class="btn earlier" onClick={() => void client.loadEarlier()}>
+            Earlier messages
+          </button>
+        )}
+        {!client.messages.length && <p class="empty">No messages yet. Say hi.</p>}
+        {client.messages.map((m) => (
+          <div key={m.id} class={m.sub === me ? "chat-msg mine" : "chat-msg"}>
+            <span class="who">
+              {m.sub === me ? "You" : m.name} <time>{new Date(m.at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</time>
+            </span>
+            <span class="text">{m.text}</span>
+          </div>
+        ))}
+      </div>
+      <form
+        class="chat-say"
+        onSubmit={(e) => {
+          e.preventDefault();
+          void send();
+        }}
+      >
+        <textarea
+          rows={1}
+          placeholder="Say something"
+          aria-label="Message"
+          value={text}
+          onInput={(e) => setText((e.target as HTMLTextAreaElement).value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && !e.shiftKey) {
+              e.preventDefault();
+              void send();
+            }
+          }}
+        />
+        {err && <span class="error">{err}</span>}
+      </form>
+    </aside>
+  );
+}
+
 export function Room({ room, name }: { room: string; name: string }) {
   const [state] = useState(() => {
     let sub = "";
@@ -241,13 +307,18 @@ export function Room({ room, name }: { room: string; name: string }) {
         </button>
       </div>
       <Controls client={client} me={mine.sub} />
-      <div class="grid">
-        <Tile client={client} m={mine} me />
-        {others.map((m) => (
-          <Tile key={m.sub} client={client} m={m} me={false} />
-        ))}
+      <div class="room-body">
+        <div>
+          <div class="grid">
+            <Tile client={client} m={mine} me />
+            {others.map((m) => (
+              <Tile key={m.sub} client={client} m={m} me={false} />
+            ))}
+          </div>
+          {!others.length && <p class="empty">Nobody else here yet. Send someone the room link.</p>}
+        </div>
+        <ChatPanel client={client} me={mine.sub} />
       </div>
-      {!others.length && <p class="empty">Nobody else here yet. Send someone the room link.</p>}
       {wave && (
         <div class="toast" role="alert">
           <span>
@@ -261,7 +332,7 @@ export function Room({ room, name }: { room: string; name: string }) {
               Not now
             </button>
           </div>
-          <span class="stats">Calls come next: for now, say hi in your room.</span>
+          <span class="stats">Calls come next: for now, say hi in the chat.</span>
         </div>
       )}
     </main>
