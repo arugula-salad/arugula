@@ -238,8 +238,12 @@ export function FakeRoom() {
         </div>
         <div class="fake-people">
           {PEOPLE.map((p, i) => (
-            <div class={`fake-tile${i === WAVED && ph === "call" ? " calling" : ""}${p.away ? " away" : ""}`}>
+            <div class={`fake-tile ${p.kind}${i === WAVED && ph === "call" ? " calling" : ""}${p.away ? " away" : ""}`}>
               <Face p={p} size="bust" wave={i === WAVED && ph === "yes"} />
+              {/* The swarm's identity line: what the tile is, and what it costs on the wire. */}
+              <span class="fake-meta">
+                %{12 + i} · {i === WAVED && ph === "call" ? "call" : p.away ? "idle" : p.kind === "lines" ? "outline · 1.4 KB" : "avatar · 22 B"}
+              </span>
               {REACTS.filter((r) => r.who === i && (t % 12) - r.at >= 0 && (t % 12) - r.at < 2.4).map((r) => (
                 <span key={`${Math.floor(t / 12)}-${r.at}`} class="react">
                   {r.emoji}

@@ -50,7 +50,9 @@ export function Landing() {
               </a>
             </div>
           </div>
-          <FakeRoom />
+          <div class="stage">
+            <FakeRoom />
+          </div>
         </section>
 
         <section class="dev">

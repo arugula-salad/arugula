@@ -14,6 +14,13 @@
   --warn: #f5b74e;
   --info: #7cb4ff;
   --danger: #f87171;
+  /* The swarm's kinds (Arugula's arugula.io and web/src/shell/swarm). */
+  --k-agent: rgb(185, 140, 255);
+  --k-server: rgb(80, 205, 200);
+  --k-build: rgb(242, 176, 70);
+  --k-test: rgb(110, 210, 140);
+  --k-editor: rgb(240, 130, 165);
+  --body: #aab3c5;
   --f-display: "Big Shoulders Display", system-ui, sans-serif;
   --f-ui: "Instrument Sans", system-ui, sans-serif;
   --f-mono: "JetBrains Mono", ui-monospace, monospace;
@@ -760,6 +767,282 @@ a.btn.primary {
   .uses,
   .plans.three {
     grid-template-columns: 1fr;
+  }
+}
+
+/* The swarm look, turned up: glass over a grid, light for lines. */
+
+.card {
+  --c: var(--k-agent);
+  position: relative;
+  border: 1px solid color-mix(in srgb, var(--c) 40%, transparent);
+  background: color-mix(in srgb, var(--c) 6%, #0b0e16);
+}
+
+.card::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 10px;
+  bottom: 10px;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: var(--c);
+  box-shadow: 0 0 10px var(--c);
+}
+
+.hosted .headline {
+  font: 800 clamp(48px, 8.5vw, 104px) / 0.88 var(--f-display);
+  text-transform: uppercase;
+  letter-spacing: 0.005em;
+  max-width: 13ch;
+}
+
+.hosted .headline span {
+  color: var(--accent);
+  text-shadow: 0 0 34px color-mix(in srgb, var(--accent) 45%, transparent);
+}
+
+.hosted .eyebrow {
+  color: var(--k-agent);
+}
+
+.hosted .eyebrow::before {
+  content: "";
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  margin-right: 9px;
+  background: var(--k-agent);
+  box-shadow: 0 0 10px var(--k-agent);
+  vertical-align: 1px;
+}
+
+.hosted h2 {
+  text-transform: uppercase;
+}
+
+.hosted .btn.primary {
+  background: var(--fg);
+  border-color: var(--fg);
+  color: var(--void);
+  box-shadow: 0 0 28px color-mix(in srgb, var(--k-agent) 40%, transparent);
+  transition: box-shadow 0.2s, transform 0.2s;
+}
+
+.hosted .btn.primary:hover {
+  box-shadow: 0 0 42px color-mix(in srgb, var(--k-agent) 60%, transparent);
+  transform: translateY(-1px);
+}
+
+/* The stage: the room as a lit glass panel over a grid floor. */
+.stage {
+  position: relative;
+  padding: 18px 0 64px;
+  perspective: 1600px;
+}
+
+.stage::before {
+  content: "";
+  position: absolute;
+  left: -12%;
+  right: -12%;
+  bottom: -6%;
+  height: 62%;
+  pointer-events: none;
+  background-image:
+    linear-gradient(color-mix(in srgb, var(--k-server) 22%, transparent) 1px, transparent 1px),
+    linear-gradient(90deg, color-mix(in srgb, var(--k-server) 22%, transparent) 1px, transparent 1px);
+  background-size: 54px 54px;
+  transform: perspective(520px) rotateX(64deg);
+  transform-origin: 50% 100%;
+  mask-image: linear-gradient(to top, black 10%, transparent 85%);
+  -webkit-mask-image: linear-gradient(to top, black 10%, transparent 85%);
+}
+
+.stage::after {
+  content: "";
+  position: absolute;
+  inset: -10% -14%;
+  pointer-events: none;
+  background: radial-gradient(ellipse 60% 55% at 50% 45%, color-mix(in srgb, var(--k-agent) 10%, transparent), transparent 70%);
+  z-index: -1;
+}
+
+.stage .fake {
+  transform: rotateX(7deg);
+  transform-origin: 50% 0;
+  background: rgba(10, 13, 20, 0.82);
+  backdrop-filter: blur(6px);
+  border-color: color-mix(in srgb, var(--k-server) 40%, var(--line));
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--k-server) 12%, transparent),
+    0 0 60px -10px color-mix(in srgb, var(--k-server) 45%, transparent),
+    0 50px 120px -30px rgba(0, 0, 0, 0.8);
+}
+
+/* Lines drawn as light. */
+.stage .fake canvas {
+  filter: drop-shadow(0 0 3px rgba(120, 225, 235, 0.45));
+}
+
+.fake-tile.avatar {
+  --c: var(--k-agent);
+}
+
+.fake-tile.lines {
+  --c: var(--k-server);
+}
+
+.fake-meta {
+  position: absolute;
+  z-index: 1;
+  top: 5px;
+  left: 6px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: rgba(6, 8, 13, 0.72);
+  font: 9.5px var(--f-mono);
+  color: color-mix(in srgb, var(--c, var(--dim)) 75%, var(--dim));
+  letter-spacing: 0.02em;
+  pointer-events: none;
+}
+
+.stage .fake-tile {
+  border-color: color-mix(in srgb, var(--c) 22%, var(--line));
+}
+
+.stage .fake-tile.calling {
+  --c: var(--k-test);
+  border-color: var(--c);
+  box-shadow: 0 0 22px color-mix(in srgb, var(--c) 45%, transparent);
+}
+
+.hosted .moment,
+.hosted .plan {
+  background: color-mix(in srgb, var(--c) 6%, #0b0e16);
+}
+
+.hosted .moment b {
+  font: 700 21px/1.05 var(--f-display);
+  text-transform: uppercase;
+  color: var(--c);
+}
+
+.hosted .plan {
+  --c: var(--line);
+}
+
+.hosted .plan.best {
+  --c: var(--k-agent);
+  border-color: color-mix(in srgb, var(--k-agent) 60%, transparent);
+  box-shadow: 0 0 34px -6px color-mix(in srgb, var(--k-agent) 50%, transparent);
+}
+
+.hosted .plan-name {
+  text-transform: uppercase;
+  color: var(--c);
+}
+
+.hosted .plan:not(.best) .plan-name {
+  color: var(--body);
+}
+
+.hosted .uses .card {
+  border-radius: 10px;
+  padding: 14px 16px 14px 18px;
+}
+
+.hosted .uses .card b {
+  color: var(--c);
+}
+
+.hosted .bytes span.card {
+  display: grid;
+  gap: 2px;
+  padding-left: 16px;
+}
+
+.hosted .bytes small {
+  font: 10px var(--f-mono);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--dim);
+}
+
+.hosted .bytes .cam {
+  --c: var(--dim);
+  text-decoration: none;
+  color: var(--dim);
+}
+
+.hosted .bytes .cam::after {
+  content: "";
+  position: absolute;
+  left: 14px;
+  right: 14px;
+  top: 62%;
+  height: 1px;
+  background: var(--danger);
+  opacity: 0.6;
+}
+
+.hosted .bytes .pose {
+  --c: var(--k-server);
+  color: var(--k-server);
+}
+
+.hosted .bytes .char {
+  --c: var(--k-agent);
+  color: var(--k-agent);
+  box-shadow: 0 0 26px -6px color-mix(in srgb, var(--k-agent) 55%, transparent);
+}
+
+.hosted .story h2 span,
+.hosted .story .turn {
+  color: var(--k-agent);
+}
+
+.hosted .next .eyebrow {
+  color: var(--k-build);
+}
+
+.hosted .next .eyebrow::before {
+  background: var(--k-build);
+  box-shadow: 0 0 10px var(--k-build);
+}
+
+.hosted .faq summary {
+  list-style: none;
+  font: 700 20px/1.2 var(--f-display);
+  text-transform: uppercase;
+  letter-spacing: 0.01em;
+}
+
+.hosted .faq summary::-webkit-details-marker {
+  display: none;
+}
+
+.hosted .faq summary::before {
+  content: "+";
+  display: inline-block;
+  width: 22px;
+  font-family: var(--f-mono);
+  color: var(--k-agent);
+}
+
+.hosted .faq details[open] summary::before {
+  content: "−";
+}
+
+.hosted .try h2 {
+  font-size: clamp(36px, 6vw, 64px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .stage .fake {
+    transform: none;
   }
 }
 

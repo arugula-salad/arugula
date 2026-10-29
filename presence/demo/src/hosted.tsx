@@ -80,7 +80,9 @@ export function Hosted() {
         <section class="hero">
           <div>
             <p class="eyebrow">Live presence for your product · early access</p>
-            <h1 class="headline">Make your app feel like someone's here.</h1>
+            <h1 class="headline">
+              Make your app feel like <span>someone's here.</span>
+            </h1>
             <p class="lede">
               Live characters that nod, blink and wave with the people behind them. Your users notice each other and say hello, and their webcam
               pictures never leave their browsers.
@@ -94,7 +96,9 @@ export function Hosted() {
               </a>
             </div>
           </div>
-          <FakeRoom />
+          <div class="stage">
+            <FakeRoom />
+          </div>
           <p class="demo-note">A demo, drawn live in your browser. These people are made up.</p>
         </section>
 
@@ -109,8 +113,8 @@ export function Hosted() {
         <section class="dev" id="feel">
           <h2>Small signs of life, right where people already are.</h2>
           <div class="moments">
-            {MOMENTS.map((m) => (
-              <div class="moment">
+            {MOMENTS.map((m, i) => (
+              <div class="moment card" style={{ "--c": ["var(--k-agent)", "var(--k-server)", "var(--k-build)"][i] }}>
                 <b>{m.title}</b>
                 <span>{m.text}</span>
               </div>
@@ -130,11 +134,18 @@ export function Hosted() {
               <p>Others see the character, or a line drawing of a face. That's it. That's the feature.</p>
             </div>
             <div class="bytes" aria-hidden="true">
-              <span class="cam">camera picture</span>
-              <span class="arrow">stays here</span>
-              <span class="pose">{"{ yaw: 0.2, blink: 0, smile: 0.8 … }"}</span>
-              <span class="arrow">≈ 20 bytes →</span>
-              <span class="char">a character that smiles</span>
+              <span class="cam card">
+                <small>your browser</small>camera picture
+              </span>
+              <span class="arrow">stays here ⟂</span>
+              <span class="pose card">
+                <small>the wire · ≈ 20 bytes / frame</small>
+                {"{ yaw: 0.2, blink: 0, smile: 0.8 … }"}
+              </span>
+              <span class="arrow">↓</span>
+              <span class="char card">
+                <small>their screen</small>a character that smiles
+              </span>
             </div>
           </div>
         </section>
@@ -162,8 +173,8 @@ export function Hosted() {
         <section class="dev">
           <h2>Wherever people have a reason to be together.</h2>
           <div class="uses">
-            {USES.map(([t, d]) => (
-              <div class="point">
+            {USES.map(([t, d], i) => (
+              <div class="point card" style={{ "--c": ["var(--k-agent)", "var(--k-server)", "var(--k-test)", "var(--k-editor)"][i] }}>
                 <b>{t}</b>
                 <span>{d}</span>
               </div>
@@ -179,7 +190,7 @@ export function Hosted() {
           </p>
           <div class="plans three">
             {PLANS.map((p) => (
-              <div class={p.best ? "plan best" : "plan"}>
+              <div class={p.best ? "plan card best" : "plan card"}>
                 <b class="plan-name">{p.name}</b>
                 <span class="plan-price">
                   {p.price} <small>{p.per}</small>
