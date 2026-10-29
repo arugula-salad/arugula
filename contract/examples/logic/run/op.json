@@ -1,0 +1,368 @@
+{
+  "about": "What a run does (S37 q3): a command (kind run, its arguments base64, in order), an instruction to an agent (kind agent, from a recipe or -), or a deploy's apply (kind deploy, M219: which deploy, its driver and the hash of the operation its owner approved, and nothing else), for one daemon, in a directory (base64) or -. Its bytes are what a run's hash, its standing grant and any approval name, so the daemon reads them back only from exactly the bytes encode makes: an extra line, one out of place, another version, bad base64, or a deploy with a command each refuse.",
+  "cases": [
+    {
+      "about": "encode a command in a directory",
+      "input": {
+        "encode": {
+          "daemon": "d1",
+          "op": {
+            "agent": null,
+            "argv": ["make", "it's"],
+            "deploy": null,
+            "directory": "/w",
+            "instruction": null
+          }
+        }
+      },
+      "output": {
+        "bytes": "arugula op v1\ndaemon d1\nkind run\nsession -\npane - -\ncwd L3c=\nargv bWFrZQ==\nargv aXQncw==\n",
+        "kind": "run"
+      }
+    },
+    {
+      "about": "encode an instruction to a recipe's agent",
+      "input": {
+        "encode": {
+          "daemon": "d1",
+          "op": {
+            "agent": "claude",
+            "argv": [],
+            "deploy": null,
+            "directory": null,
+            "instruction": "fix it"
+          }
+        }
+      },
+      "output": {
+        "bytes": "arugula op v1\ndaemon d1\nkind agent\nsession -\npane - -\ncwd -\ntext Zml4IGl0\nagent claude\n",
+        "kind": "agent"
+      }
+    },
+    {
+      "about": "encode an instruction to the default agent, with a newline, in a directory",
+      "input": {
+        "encode": {
+          "daemon": "d1",
+          "op": {
+            "agent": null,
+            "argv": [],
+            "deploy": null,
+            "directory": "/work/repo",
+            "instruction": "fix it\nand say so"
+          }
+        }
+      },
+      "output": {
+        "bytes": "arugula op v1\ndaemon d1\nkind agent\nsession -\npane - -\ncwd L3dvcmsvcmVwbw==\ntext Zml4IGl0CmFuZCBzYXkgc28=\nagent -\n",
+        "kind": "agent"
+      }
+    },
+    {
+      "about": "encode a command in the workspace's home",
+      "input": {
+        "encode": {
+          "daemon": "d1",
+          "op": {
+            "agent": null,
+            "argv": ["ls"],
+            "deploy": null,
+            "directory": null,
+            "instruction": null
+          }
+        }
+      },
+      "output": {
+        "bytes": "arugula op v1\ndaemon d1\nkind run\nsession -\npane - -\ncwd -\nargv bHM=\n",
+        "kind": "run"
+      }
+    },
+    {
+      "about": "encode a deploy's apply",
+      "input": {
+        "encode": {
+          "daemon": "d1",
+          "op": {
+            "agent": null,
+            "argv": [],
+            "deploy": {
+              "deploy": "dep_1",
+              "driver": "fake",
+              "op": "abababababababababababababababababababababababababababababababab"
+            },
+            "directory": null,
+            "instruction": null
+          }
+        }
+      },
+      "output": {
+        "bytes": "arugula op v1\ndaemon d1\nkind deploy\nsession -\npane - -\ncwd -\ndeploy dep_1\ndriver fake\napply abababababababababababababababababababababababababababababababab\n",
+        "kind": "deploy"
+      }
+    },
+    {
+      "about": "decode a command in a directory",
+      "input": {
+        "decode": {
+          "bytes": "arugula op v1\ndaemon d1\nkind run\nsession -\npane - -\ncwd L3c=\nargv bWFrZQ==\nargv aXQncw==\n"
+        }
+      },
+      "output": {
+        "daemon": "d1",
+        "op": {
+          "agent": null,
+          "argv": ["make", "it's"],
+          "deploy": null,
+          "directory": "/w",
+          "instruction": null
+        }
+      }
+    },
+    {
+      "about": "decode a command in the workspace's home",
+      "input": {
+        "decode": {"bytes": "arugula op v1\ndaemon d1\nkind run\nsession -\npane - -\ncwd -\nargv bHM=\n"}
+      },
+      "output": {
+        "daemon": "d1",
+        "op": {
+          "agent": null,
+          "argv": ["ls"],
+          "deploy": null,
+          "directory": null,
+          "instruction": null
+        }
+      }
+    },
+    {
+      "about": "decode a deploy's apply",
+      "input": {
+        "decode": {
+          "bytes": "arugula op v1\ndaemon d1\nkind deploy\nsession -\npane - -\ncwd -\ndeploy dep_1\ndriver fake\napply abababababababababababababababababababababababababababababababab\n"
+        }
+      },
+      "output": {
+        "daemon": "d1",
+        "op": {
+          "agent": null,
+          "argv": [],
+          "deploy": {
+            "deploy": "dep_1",
+            "driver": "fake",
+            "op": "abababababababababababababababababababababababababababababababab"
+          },
+          "directory": null,
+          "instruction": null
+        }
+      }
+    },
+    {
+      "about": "decode an instruction to a recipe's agent",
+      "input": {
+        "decode": {
+          "bytes": "arugula op v1\ndaemon d1\nkind agent\nsession -\npane - -\ncwd -\ntext Zml4IGl0\nagent claude\n"
+        }
+      },
+      "output": {
+        "daemon": "d1",
+        "op": {
+          "agent": "claude",
+          "argv": [],
+          "deploy": null,
+          "directory": null,
+          "instruction": "fix it"
+        }
+      }
+    },
+    {
+      "about": "decode an instruction to the default agent, with a newline, in a directory",
+      "input": {
+        "decode": {
+          "bytes": "arugula op v1\ndaemon d1\nkind agent\nsession -\npane - -\ncwd L3dvcmsvcmVwbw==\ntext Zml4IGl0CmFuZCBzYXkgc28=\nagent -\n"
+        }
+      },
+      "output": {
+        "daemon": "d1",
+        "op": {
+          "agent": null,
+          "argv": [],
+          "deploy": null,
+          "directory": "/work/repo",
+          "instruction": "fix it\nand say so"
+        }
+      }
+    },
+    {
+      "about": "decode the arguments in the other order: another command",
+      "input": {
+        "decode": {
+          "bytes": "arugula op v1\ndaemon d1\nkind run\nsession -\npane - -\ncwd L3c=\nargv aXQncw==\nargv bWFrZQ==\n"
+        }
+      },
+      "output": {
+        "daemon": "d1",
+        "op": {
+          "agent": null,
+          "argv": ["it's", "make"],
+          "deploy": null,
+          "directory": "/w",
+          "instruction": null
+        }
+      }
+    },
+    {
+      "about": "decode the kind changed",
+      "input": {
+        "decode": {
+          "bytes": "arugula op v1\ndaemon d1\nkind agent\nsession -\npane - -\ncwd L3c=\nargv bWFrZQ==\nargv aXQncw==\n"
+        }
+      },
+      "output": {"refused": true}
+    },
+    {
+      "about": "decode a session named",
+      "input": {
+        "decode": {
+          "bytes": "arugula op v1\ndaemon d1\nkind run\nsession s1\npane - -\ncwd L3c=\nargv bWFrZQ==\nargv aXQncw==\n"
+        }
+      },
+      "output": {"refused": true}
+    },
+    {
+      "about": "decode a pane named",
+      "input": {
+        "decode": {
+          "bytes": "arugula op v1\ndaemon d1\nkind run\nsession -\npane 3 1\ncwd L3c=\nargv bWFrZQ==\nargv aXQncw==\n"
+        }
+      },
+      "output": {"refused": true}
+    },
+    {
+      "about": "decode a line more",
+      "input": {
+        "decode": {
+          "bytes": "arugula op v1\ndaemon d1\nkind run\nsession -\npane - -\ncwd L3c=\nargv bWFrZQ==\nargv aXQncw==\nenv HOME\n"
+        }
+      },
+      "output": {"refused": true}
+    },
+    {
+      "about": "decode no arguments",
+      "input": {
+        "decode": {"bytes": "arugula op v1\ndaemon d1\nkind run\nsession -\npane - -\ncwd L3c=\n"}
+      },
+      "output": {"refused": true}
+    },
+    {
+      "about": "decode no last newline",
+      "input": {
+        "decode": {
+          "bytes": "arugula op v1\ndaemon d1\nkind run\nsession -\npane - -\ncwd L3c=\nargv bWFrZQ==\nargv aXQncw=="
+        }
+      },
+      "output": {"refused": true}
+    },
+    {
+      "about": "decode version 2",
+      "input": {
+        "decode": {
+          "bytes": "arugula op v2\ndaemon d1\nkind run\nsession -\npane - -\ncwd L3c=\nargv bWFrZQ==\nargv aXQncw==\n"
+        }
+      },
+      "output": {"refused": true}
+    },
+    {
+      "about": "decode an argument that isn't base64",
+      "input": {
+        "decode": {
+          "bytes": "arugula op v1\ndaemon d1\nkind run\nsession -\npane - -\ncwd L3c=\nargv !!\nargv aXQncw==\n"
+        }
+      },
+      "output": {"refused": true}
+    },
+    {
+      "about": "decode the directory's line moved after the arguments",
+      "input": {
+        "decode": {
+          "bytes": "arugula op v1\ndaemon d1\nkind run\nsession -\npane - -\nargv bWFrZQ==\nargv aXQncw==\ncwd L3c=\n"
+        }
+      },
+      "output": {"refused": true}
+    },
+    {
+      "about": "decode no daemon",
+      "input": {
+        "decode": {
+          "bytes": "arugula op v1\ndaemon \nkind run\nsession -\npane - -\ncwd L3c=\nargv bWFrZQ==\nargv aXQncw==\n"
+        }
+      },
+      "output": {"refused": true}
+    },
+    {
+      "about": "decode a deploy's kind changed to run",
+      "input": {
+        "decode": {
+          "bytes": "arugula op v1\ndaemon d1\nkind run\nsession -\npane - -\ncwd -\ndeploy dep_1\ndriver fake\napply abababababababababababababababababababababababababababababababab\n"
+        }
+      },
+      "output": {"refused": true}
+    },
+    {
+      "about": "decode a deploy in a directory",
+      "input": {
+        "decode": {
+          "bytes": "arugula op v1\ndaemon d1\nkind deploy\nsession -\npane - -\ncwd L3c=\ndeploy dep_1\ndriver fake\napply abababababababababababababababababababababababababababababababab\n"
+        }
+      },
+      "output": {"refused": true}
+    },
+    {
+      "about": "decode a deploy with a command",
+      "input": {
+        "decode": {
+          "bytes": "arugula op v1\ndaemon d1\nkind deploy\nsession -\npane - -\ncwd -\ndeploy dep_1\ndriver fake\napply abababababababababababababababababababababababababababababababab\nargv bWFrZQ==\n"
+        }
+      },
+      "output": {"refused": true}
+    },
+    {
+      "about": "decode a deploy with no driver",
+      "input": {
+        "decode": {
+          "bytes": "arugula op v1\ndaemon d1\nkind deploy\nsession -\npane - -\ncwd -\ndeploy dep_1\napply abababababababababababababababababababababababababababababababab\n"
+        }
+      },
+      "output": {"refused": true}
+    },
+    {
+      "about": "decode a deploy with no deploy",
+      "input": {
+        "decode": {
+          "bytes": "arugula op v1\ndaemon d1\nkind deploy\nsession -\npane - -\ncwd -\ndriver fake\napply abababababababababababababababababababababababababababababababab\n"
+        }
+      },
+      "output": {"refused": true}
+    },
+    {
+      "about": "decode a deploy's hash after two spaces",
+      "input": {
+        "decode": {
+          "bytes": "arugula op v1\ndaemon d1\nkind deploy\nsession -\npane - -\ncwd -\ndeploy dep_1\ndriver fake\napply  abababababababababababababababababababababababababababababababab\n"
+        }
+      },
+      "output": {"refused": true}
+    },
+    {
+      "about": "decode nothing to do",
+      "input": {
+        "decode": {"bytes": "arugula op v1\ndaemon d1\nkind run\nsession -\npane - -\ncwd -\n"}
+      },
+      "output": {"refused": true}
+    }
+  ],
+  "checks": ["arugula_e2e::run::Op::encode", "arugula_e2e::run::Op::decode", "arugula_e2e::run::Op::kind"],
+  "input": "encode: { op: { argv, instruction, agent, directory, deploy: { deploy, driver, op } or null }, daemon }, or decode: { bytes }",
+  "keys": {},
+  "objects": {},
+  "output": "encode: kind and bytes; decode: the daemon and the op, or refused"
+}

@@ -164,7 +164,6 @@ impl Example {
     }
 
     /// Note any other key material by label (a hosted key's seed and public half).
-    #[allow(dead_code)]
     pub fn key_value(&mut self, label: &str, v: Value) {
         self.keys.insert(label.into(), v);
     }

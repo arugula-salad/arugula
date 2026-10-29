@@ -74,3 +74,15 @@ check its signatures byte for byte.
   `plan_text` an owner approves (every driver: apply, roll back and
   refused), `planned` (the box's check that the signed operation holds this
   plan), and the source and evidence `checks`.
+- `run/`: the eight states and their moves (`state`), the `event` a daemon
+  signs (each field bound, ids that would read as another event's), the
+  operation's bytes (`op`: encode, and decode only from exactly those
+  bytes), and whole runs replayed event by event (`replay`). The replay
+  covers grants, approvals, seq replays, another run's or daemon's
+  reports, reporters out of their lane, and dead ends. Its rules are the
+  platform's `move_run_in` over these types, minus the detail's own rules.
+- `hosted/`: the papers' `bodies` and the delegation id, what the hub
+  `sign`s (a machine's certificate with control's hosted key, from its
+  seed), which client `accept`s a machine (every refusal: form, wrong
+  project, not in it, unsigned by an owner's device, a bad signature,
+  revoked by time or by another owner), `live`, and project `owner` names.

@@ -1,0 +1,2006 @@
+{
+  "about": "Whether a client accepts a hosted machine, for that project only: the client's account (me) and what it knows of the project's owners from its own checks (a team's roster and members' certificates, or its account's chain), never control's word for the machine. In this order: the certificate and delegation well formed and naming each other (form); the owners the client knows are the delegation's (wrong_project); me in the project (not_in_project); the delegation signed by a device, trusted now, of one of the project's owners, a browser, a CLI or the app (not a machine or a recovery code) (unsigned); the certificate signed with the key the delegation names (bad_signature); made no earlier than the delegation and before any revoke that checks out (by any owner, of this delegation) (revoked). Revokes that don't check out are ignored. Accepted, it gives the client's role in the project.",
+  "cases": [
+    {
+      "about": "alice's own project's box",
+      "input": {
+        "cert": "box",
+        "delegation": "d",
+        "me": "alice",
+        "owners": {
+          "account": {
+            "account": "alice",
+            "certs": [
+              "alice",
+              "alice-cli",
+              "alice-app",
+              "alice-recovery",
+              "alice-machine",
+              "alice-revoked-tablet"
+            ],
+            "revocations": ["alice-tablet-revoked"],
+            "root": "37f29b7074cf8b52"
+          }
+        },
+        "revokes": []
+      },
+      "output": {
+        "accepted": {"owner": "account:alice", "project": "prj_1", "role": "owner", "workspace": "hw_1"}
+      }
+    },
+    {
+      "about": "the team's box, to alice",
+      "input": {
+        "cert": "team-box",
+        "delegation": "team-d",
+        "me": "alice",
+        "owners": {
+          "team": {
+            "certs": {
+              "alice": {
+                "certs": [
+                  "alice",
+                  "alice-cli",
+                  "alice-app",
+                  "alice-recovery",
+                  "alice-machine",
+                  "alice-revoked-tablet"
+                ],
+                "revocations": ["alice-tablet-revoked"]
+              },
+              "bob": {
+                "certs": ["bob"]
+              },
+              "carol": {
+                "certs": ["carol"]
+              },
+              "vic": {
+                "certs": ["vic"]
+              }
+            },
+            "roster": "roster"
+          }
+        },
+        "revokes": []
+      },
+      "output": {
+        "accepted": {"owner": "team:t1", "project": "prj_2", "role": "owner", "workspace": "hw_2"}
+      }
+    },
+    {
+      "about": "the team's box, to carol",
+      "input": {
+        "cert": "team-box",
+        "delegation": "team-d",
+        "me": "carol",
+        "owners": {
+          "team": {
+            "certs": {
+              "alice": {
+                "certs": [
+                  "alice",
+                  "alice-cli",
+                  "alice-app",
+                  "alice-recovery",
+                  "alice-machine",
+                  "alice-revoked-tablet"
+                ],
+                "revocations": ["alice-tablet-revoked"]
+              },
+              "bob": {
+                "certs": ["bob"]
+              },
+              "carol": {
+                "certs": ["carol"]
+              },
+              "vic": {
+                "certs": ["vic"]
+              }
+            },
+            "roster": "roster"
+          }
+        },
+        "revokes": []
+      },
+      "output": {
+        "accepted": {"owner": "team:t1", "project": "prj_2", "role": "owner", "workspace": "hw_2"}
+      }
+    },
+    {
+      "about": "the team's box, to bob",
+      "input": {
+        "cert": "team-box",
+        "delegation": "team-d",
+        "me": "bob",
+        "owners": {
+          "team": {
+            "certs": {
+              "alice": {
+                "certs": [
+                  "alice",
+                  "alice-cli",
+                  "alice-app",
+                  "alice-recovery",
+                  "alice-machine",
+                  "alice-revoked-tablet"
+                ],
+                "revocations": ["alice-tablet-revoked"]
+              },
+              "bob": {
+                "certs": ["bob"]
+              },
+              "carol": {
+                "certs": ["carol"]
+              },
+              "vic": {
+                "certs": ["vic"]
+              }
+            },
+            "roster": "roster"
+          }
+        },
+        "revokes": []
+      },
+      "output": {
+        "accepted": {"owner": "team:t1", "project": "prj_2", "role": "editor", "workspace": "hw_2"}
+      }
+    },
+    {
+      "about": "the team's box, to vic",
+      "input": {
+        "cert": "team-box",
+        "delegation": "team-d",
+        "me": "vic",
+        "owners": {
+          "team": {
+            "certs": {
+              "alice": {
+                "certs": [
+                  "alice",
+                  "alice-cli",
+                  "alice-app",
+                  "alice-recovery",
+                  "alice-machine",
+                  "alice-revoked-tablet"
+                ],
+                "revocations": ["alice-tablet-revoked"]
+              },
+              "bob": {
+                "certs": ["bob"]
+              },
+              "carol": {
+                "certs": ["carol"]
+              },
+              "vic": {
+                "certs": ["vic"]
+              }
+            },
+            "roster": "roster"
+          }
+        },
+        "revokes": []
+      },
+      "output": {
+        "accepted": {"owner": "team:t1", "project": "prj_2", "role": "viewer", "workspace": "hw_2"}
+      }
+    },
+    {
+      "about": "the team's box, to mallory, who isn't in the team",
+      "input": {
+        "cert": "team-box",
+        "delegation": "team-d",
+        "me": "mallory",
+        "owners": {
+          "team": {
+            "certs": {
+              "alice": {
+                "certs": [
+                  "alice",
+                  "alice-cli",
+                  "alice-app",
+                  "alice-recovery",
+                  "alice-machine",
+                  "alice-revoked-tablet"
+                ],
+                "revocations": ["alice-tablet-revoked"]
+              },
+              "bob": {
+                "certs": ["bob"]
+              },
+              "carol": {
+                "certs": ["carol"]
+              },
+              "vic": {
+                "certs": ["vic"]
+              }
+            },
+            "roster": "roster"
+          }
+        },
+        "revokes": []
+      },
+      "output": {"refused": "not_in_project"}
+    },
+    {
+      "about": "alice's box, to bob",
+      "input": {
+        "cert": "box",
+        "delegation": "d",
+        "me": "bob",
+        "owners": {
+          "account": {
+            "account": "alice",
+            "certs": [
+              "alice",
+              "alice-cli",
+              "alice-app",
+              "alice-recovery",
+              "alice-machine",
+              "alice-revoked-tablet"
+            ],
+            "revocations": ["alice-tablet-revoked"],
+            "root": "37f29b7074cf8b52"
+          }
+        },
+        "revokes": []
+      },
+      "output": {"refused": "not_in_project"}
+    },
+    {
+      "about": "a box whose certificate names another project",
+      "input": {
+        "cert": "box-of-another-project",
+        "delegation": "d",
+        "me": "alice",
+        "owners": {
+          "account": {
+            "account": "alice",
+            "certs": [
+              "alice",
+              "alice-cli",
+              "alice-app",
+              "alice-recovery",
+              "alice-machine",
+              "alice-revoked-tablet"
+            ],
+            "revocations": ["alice-tablet-revoked"],
+            "root": "37f29b7074cf8b52"
+          }
+        },
+        "revokes": []
+      },
+      "output": {"refused": "form"}
+    },
+    {
+      "about": "a box whose certificate names another owner",
+      "input": {
+        "cert": "box-of-another-owner",
+        "delegation": "d",
+        "me": "alice",
+        "owners": {
+          "account": {
+            "account": "alice",
+            "certs": [
+              "alice",
+              "alice-cli",
+              "alice-app",
+              "alice-recovery",
+              "alice-machine",
+              "alice-revoked-tablet"
+            ],
+            "revocations": ["alice-tablet-revoked"],
+            "root": "37f29b7074cf8b52"
+          }
+        },
+        "revokes": []
+      },
+      "output": {"refused": "form"}
+    },
+    {
+      "about": "a box made under another delegation",
+      "input": {
+        "cert": "team-box",
+        "delegation": "d",
+        "me": "alice",
+        "owners": {
+          "account": {
+            "account": "alice",
+            "certs": [
+              "alice",
+              "alice-cli",
+              "alice-app",
+              "alice-recovery",
+              "alice-machine",
+              "alice-revoked-tablet"
+            ],
+            "revocations": ["alice-tablet-revoked"],
+            "root": "37f29b7074cf8b52"
+          }
+        },
+        "revokes": []
+      },
+      "output": {"refused": "form"}
+    },
+    {
+      "about": "a box whose device id isn't its keys'",
+      "input": {
+        "cert": "box-with-another-id",
+        "delegation": "d",
+        "me": "alice",
+        "owners": {
+          "account": {
+            "account": "alice",
+            "certs": [
+              "alice",
+              "alice-cli",
+              "alice-app",
+              "alice-recovery",
+              "alice-machine",
+              "alice-revoked-tablet"
+            ],
+            "revocations": ["alice-tablet-revoked"],
+            "root": "37f29b7074cf8b52"
+          }
+        },
+        "revokes": []
+      },
+      "output": {"refused": "form"}
+    },
+    {
+      "about": "a newline in the box's name",
+      "input": {
+        "cert": "box-newline-in-name",
+        "delegation": "d",
+        "me": "alice",
+        "owners": {
+          "account": {
+            "account": "alice",
+            "certs": [
+              "alice",
+              "alice-cli",
+              "alice-app",
+              "alice-recovery",
+              "alice-machine",
+              "alice-revoked-tablet"
+            ],
+            "revocations": ["alice-tablet-revoked"],
+            "root": "37f29b7074cf8b52"
+          }
+        },
+        "revokes": []
+      },
+      "output": {"refused": "form"}
+    },
+    {
+      "about": "a delegation whose owner is neither a team nor an account",
+      "input": {
+        "cert": "box-org-owner",
+        "delegation": "d-org-owner",
+        "me": "alice",
+        "owners": {
+          "account": {
+            "account": "alice",
+            "certs": [
+              "alice",
+              "alice-cli",
+              "alice-app",
+              "alice-recovery",
+              "alice-machine",
+              "alice-revoked-tablet"
+            ],
+            "revocations": ["alice-tablet-revoked"],
+            "root": "37f29b7074cf8b52"
+          }
+        },
+        "revokes": []
+      },
+      "output": {"refused": "form"}
+    },
+    {
+      "about": "a delegation whose key isn't hex",
+      "input": {
+        "cert": "box-under-d-key-not-hex",
+        "delegation": "d-key-not-hex",
+        "me": "alice",
+        "owners": {
+          "account": {
+            "account": "alice",
+            "certs": [
+              "alice",
+              "alice-cli",
+              "alice-app",
+              "alice-recovery",
+              "alice-machine",
+              "alice-revoked-tablet"
+            ],
+            "revocations": ["alice-tablet-revoked"],
+            "root": "37f29b7074cf8b52"
+          }
+        },
+        "revokes": []
+      },
+      "output": {"refused": "form"}
+    },
+    {
+      "about": "the team's box, checked against alice's own account",
+      "input": {
+        "cert": "team-box",
+        "delegation": "team-d",
+        "me": "alice",
+        "owners": {
+          "account": {
+            "account": "alice",
+            "certs": [
+              "alice",
+              "alice-cli",
+              "alice-app",
+              "alice-recovery",
+              "alice-machine",
+              "alice-revoked-tablet"
+            ],
+            "revocations": ["alice-tablet-revoked"],
+            "root": "37f29b7074cf8b52"
+          }
+        },
+        "revokes": []
+      },
+      "output": {"refused": "wrong_project"}
+    },
+    {
+      "about": "alice's box, checked against the team",
+      "input": {
+        "cert": "box",
+        "delegation": "d",
+        "me": "alice",
+        "owners": {
+          "team": {
+            "certs": {
+              "alice": {
+                "certs": [
+                  "alice",
+                  "alice-cli",
+                  "alice-app",
+                  "alice-recovery",
+                  "alice-machine",
+                  "alice-revoked-tablet"
+                ],
+                "revocations": ["alice-tablet-revoked"]
+              },
+              "bob": {
+                "certs": ["bob"]
+              },
+              "carol": {
+                "certs": ["carol"]
+              },
+              "vic": {
+                "certs": ["vic"]
+              }
+            },
+            "roster": "roster"
+          }
+        },
+        "revokes": []
+      },
+      "output": {"refused": "wrong_project"}
+    },
+    {
+      "about": "alice's box, checked against bob's account",
+      "input": {
+        "cert": "box",
+        "delegation": "d",
+        "me": "bob",
+        "owners": {
+          "account": {
+            "account": "bob",
+            "certs": ["bob"],
+            "root": "c242667535a3d34f"
+          }
+        },
+        "revokes": []
+      },
+      "output": {"refused": "wrong_project"}
+    },
+    {
+      "about": "a delegation alice's CLI signed",
+      "input": {
+        "cert": "box-under-d-by-cli",
+        "delegation": "d-by-cli",
+        "me": "alice",
+        "owners": {
+          "account": {
+            "account": "alice",
+            "certs": [
+              "alice",
+              "alice-cli",
+              "alice-app",
+              "alice-recovery",
+              "alice-machine",
+              "alice-revoked-tablet"
+            ],
+            "revocations": ["alice-tablet-revoked"],
+            "root": "37f29b7074cf8b52"
+          }
+        },
+        "revokes": []
+      },
+      "output": {
+        "accepted": {"owner": "account:alice", "project": "prj_1", "role": "owner", "workspace": "hw_1"}
+      }
+    },
+    {
+      "about": "a delegation alice's app signed",
+      "input": {
+        "cert": "box-under-d-by-app",
+        "delegation": "d-by-app",
+        "me": "alice",
+        "owners": {
+          "account": {
+            "account": "alice",
+            "certs": [
+              "alice",
+              "alice-cli",
+              "alice-app",
+              "alice-recovery",
+              "alice-machine",
+              "alice-revoked-tablet"
+            ],
+            "revocations": ["alice-tablet-revoked"],
+            "root": "37f29b7074cf8b52"
+          }
+        },
+        "revokes": []
+      },
+      "output": {
+        "accepted": {"owner": "account:alice", "project": "prj_1", "role": "owner", "workspace": "hw_1"}
+      }
+    },
+    {
+      "about": "a delegation alice's recovery code signed",
+      "input": {
+        "cert": "box-under-d-by-recovery",
+        "delegation": "d-by-recovery",
+        "me": "alice",
+        "owners": {
+          "account": {
+            "account": "alice",
+            "certs": [
+              "alice",
+              "alice-cli",
+              "alice-app",
+              "alice-recovery",
+              "alice-machine",
+              "alice-revoked-tablet"
+            ],
+            "revocations": ["alice-tablet-revoked"],
+            "root": "37f29b7074cf8b52"
+          }
+        },
+        "revokes": []
+      },
+      "output": {"refused": "unsigned"}
+    },
+    {
+      "about": "a delegation a machine of alice's signed",
+      "input": {
+        "cert": "box-under-d-by-machine",
+        "delegation": "d-by-machine",
+        "me": "alice",
+        "owners": {
+          "account": {
+            "account": "alice",
+            "certs": [
+              "alice",
+              "alice-cli",
+              "alice-app",
+              "alice-recovery",
+              "alice-machine",
+              "alice-revoked-tablet"
+            ],
+            "revocations": ["alice-tablet-revoked"],
+            "root": "37f29b7074cf8b52"
+          }
+        },
+        "revokes": []
+      },
+      "output": {"refused": "unsigned"}
+    },
+    {
+      "about": "a delegation a tablet she revoked signed",
+      "input": {
+        "cert": "box-under-d-by-revoked-tablet",
+        "delegation": "d-by-revoked-tablet",
+        "me": "alice",
+        "owners": {
+          "account": {
+            "account": "alice",
+            "certs": [
+              "alice",
+              "alice-cli",
+              "alice-app",
+              "alice-recovery",
+              "alice-machine",
+              "alice-revoked-tablet"
+            ],
+            "revocations": ["alice-tablet-revoked"],
+            "root": "37f29b7074cf8b52"
+          }
+        },
+        "revokes": []
+      },
+      "output": {"refused": "unsigned"}
+    },
+    {
+      "about": "a delegation for alice's project that bob signed",
+      "input": {
+        "cert": "box-under-d-by-bob",
+        "delegation": "d-by-bob",
+        "me": "alice",
+        "owners": {
+          "account": {
+            "account": "alice",
+            "certs": [
+              "alice",
+              "alice-cli",
+              "alice-app",
+              "alice-recovery",
+              "alice-machine",
+              "alice-revoked-tablet"
+            ],
+            "revocations": ["alice-tablet-revoked"],
+            "root": "37f29b7074cf8b52"
+          }
+        },
+        "revokes": []
+      },
+      "output": {"refused": "unsigned"}
+    },
+    {
+      "about": "a delegation for alice's project that mallory signed",
+      "input": {
+        "cert": "box-under-d-by-mallory",
+        "delegation": "d-by-mallory",
+        "me": "alice",
+        "owners": {
+          "account": {
+            "account": "alice",
+            "certs": [
+              "alice",
+              "alice-cli",
+              "alice-app",
+              "alice-recovery",
+              "alice-machine",
+              "alice-revoked-tablet"
+            ],
+            "revocations": ["alice-tablet-revoked"],
+            "root": "37f29b7074cf8b52"
+          }
+        },
+        "revokes": []
+      },
+      "output": {"refused": "unsigned"}
+    },
+    {
+      "about": "a team delegation the team's other owner signed",
+      "input": {
+        "cert": "box-under-team-d-by-carol",
+        "delegation": "team-d-by-carol",
+        "me": "vic",
+        "owners": {
+          "team": {
+            "certs": {
+              "alice": {
+                "certs": [
+                  "alice",
+                  "alice-cli",
+                  "alice-app",
+                  "alice-recovery",
+                  "alice-machine",
+                  "alice-revoked-tablet"
+                ],
+                "revocations": ["alice-tablet-revoked"]
+              },
+              "bob": {
+                "certs": ["bob"]
+              },
+              "carol": {
+                "certs": ["carol"]
+              },
+              "vic": {
+                "certs": ["vic"]
+              }
+            },
+            "roster": "roster"
+          }
+        },
+        "revokes": []
+      },
+      "output": {
+        "accepted": {"owner": "team:t1", "project": "prj_2", "role": "viewer", "workspace": "hw_2"}
+      }
+    },
+    {
+      "about": "a team delegation an editor signed",
+      "input": {
+        "cert": "box-under-team-d-by-bob",
+        "delegation": "team-d-by-bob",
+        "me": "vic",
+        "owners": {
+          "team": {
+            "certs": {
+              "alice": {
+                "certs": [
+                  "alice",
+                  "alice-cli",
+                  "alice-app",
+                  "alice-recovery",
+                  "alice-machine",
+                  "alice-revoked-tablet"
+                ],
+                "revocations": ["alice-tablet-revoked"]
+              },
+              "bob": {
+                "certs": ["bob"]
+              },
+              "carol": {
+                "certs": ["carol"]
+              },
+              "vic": {
+                "certs": ["vic"]
+              }
+            },
+            "roster": "roster"
+          }
+        },
+        "revokes": []
+      },
+      "output": {"refused": "unsigned"}
+    },
+    {
+      "about": "a team delegation a viewer signed",
+      "input": {
+        "cert": "box-under-team-d-by-vic",
+        "delegation": "team-d-by-vic",
+        "me": "vic",
+        "owners": {
+          "team": {
+            "certs": {
+              "alice": {
+                "certs": [
+                  "alice",
+                  "alice-cli",
+                  "alice-app",
+                  "alice-recovery",
+                  "alice-machine",
+                  "alice-revoked-tablet"
+                ],
+                "revocations": ["alice-tablet-revoked"]
+              },
+              "bob": {
+                "certs": ["bob"]
+              },
+              "carol": {
+                "certs": ["carol"]
+              },
+              "vic": {
+                "certs": ["vic"]
+              }
+            },
+            "roster": "roster"
+          }
+        },
+        "revokes": []
+      },
+      "output": {"refused": "unsigned"}
+    },
+    {
+      "about": "control swaps its own key into alice's delegation",
+      "input": {
+        "cert": "box-under-d-key-swapped",
+        "delegation": "d-key-swapped",
+        "me": "alice",
+        "owners": {
+          "account": {
+            "account": "alice",
+            "certs": [
+              "alice",
+              "alice-cli",
+              "alice-app",
+              "alice-recovery",
+              "alice-machine",
+              "alice-revoked-tablet"
+            ],
+            "revocations": ["alice-tablet-revoked"],
+            "root": "37f29b7074cf8b52"
+          }
+        },
+        "revokes": []
+      },
+      "output": {"refused": "unsigned"}
+    },
+    {
+      "about": "control backdates alice's delegation",
+      "input": {
+        "cert": "box-under-d-backdated",
+        "delegation": "d-backdated",
+        "me": "alice",
+        "owners": {
+          "account": {
+            "account": "alice",
+            "certs": [
+              "alice",
+              "alice-cli",
+              "alice-app",
+              "alice-recovery",
+              "alice-machine",
+              "alice-revoked-tablet"
+            ],
+            "revocations": ["alice-tablet-revoked"],
+            "root": "37f29b7074cf8b52"
+          }
+        },
+        "revokes": []
+      },
+      "output": {"refused": "unsigned"}
+    },
+    {
+      "about": "a box signed with a key the delegation doesn't name",
+      "input": {
+        "cert": "box-signed-with-another-key",
+        "delegation": "d",
+        "me": "alice",
+        "owners": {
+          "account": {
+            "account": "alice",
+            "certs": [
+              "alice",
+              "alice-cli",
+              "alice-app",
+              "alice-recovery",
+              "alice-machine",
+              "alice-revoked-tablet"
+            ],
+            "revocations": ["alice-tablet-revoked"],
+            "root": "37f29b7074cf8b52"
+          }
+        },
+        "revokes": []
+      },
+      "output": {"refused": "bad_signature"}
+    },
+    {
+      "about": "a box moved to another workspace after it was signed",
+      "input": {
+        "cert": "box-workspace-changed",
+        "delegation": "d",
+        "me": "alice",
+        "owners": {
+          "account": {
+            "account": "alice",
+            "certs": [
+              "alice",
+              "alice-cli",
+              "alice-app",
+              "alice-recovery",
+              "alice-machine",
+              "alice-revoked-tablet"
+            ],
+            "revocations": ["alice-tablet-revoked"],
+            "root": "37f29b7074cf8b52"
+          }
+        },
+        "revokes": []
+      },
+      "output": {"refused": "bad_signature"}
+    },
+    {
+      "about": "a box's keys swapped for another machine's after it was signed",
+      "input": {
+        "cert": "box-keys-swapped",
+        "delegation": "d",
+        "me": "alice",
+        "owners": {
+          "account": {
+            "account": "alice",
+            "certs": [
+              "alice",
+              "alice-cli",
+              "alice-app",
+              "alice-recovery",
+              "alice-machine",
+              "alice-revoked-tablet"
+            ],
+            "revocations": ["alice-tablet-revoked"],
+            "root": "37f29b7074cf8b52"
+          }
+        },
+        "revokes": []
+      },
+      "output": {"refused": "bad_signature"}
+    },
+    {
+      "about": "a box made before its delegation",
+      "input": {
+        "cert": "box-before-d",
+        "delegation": "d",
+        "me": "alice",
+        "owners": {
+          "account": {
+            "account": "alice",
+            "certs": [
+              "alice",
+              "alice-cli",
+              "alice-app",
+              "alice-recovery",
+              "alice-machine",
+              "alice-revoked-tablet"
+            ],
+            "revocations": ["alice-tablet-revoked"],
+            "root": "37f29b7074cf8b52"
+          }
+        },
+        "revokes": []
+      },
+      "output": {"refused": "revoked"}
+    },
+    {
+      "about": "a box made the very ms of its delegation",
+      "input": {
+        "cert": "box-at-d",
+        "delegation": "d",
+        "me": "alice",
+        "owners": {
+          "account": {
+            "account": "alice",
+            "certs": [
+              "alice",
+              "alice-cli",
+              "alice-app",
+              "alice-recovery",
+              "alice-machine",
+              "alice-revoked-tablet"
+            ],
+            "revocations": ["alice-tablet-revoked"],
+            "root": "37f29b7074cf8b52"
+          }
+        },
+        "revokes": []
+      },
+      "output": {
+        "accepted": {"owner": "account:alice", "project": "prj_1", "role": "owner", "workspace": "hw_1"}
+      }
+    },
+    {
+      "about": "revoked after the box was made: the box stays",
+      "input": {
+        "cert": "box",
+        "delegation": "d",
+        "me": "alice",
+        "owners": {
+          "account": {
+            "account": "alice",
+            "certs": [
+              "alice",
+              "alice-cli",
+              "alice-app",
+              "alice-recovery",
+              "alice-machine",
+              "alice-revoked-tablet"
+            ],
+            "revocations": ["alice-tablet-revoked"],
+            "root": "37f29b7074cf8b52"
+          }
+        },
+        "revokes": ["revoke-at-4000"]
+      },
+      "output": {
+        "accepted": {"owner": "account:alice", "project": "prj_1", "role": "owner", "workspace": "hw_1"}
+      }
+    },
+    {
+      "about": "revoked the very ms the box was made",
+      "input": {
+        "cert": "box",
+        "delegation": "d",
+        "me": "alice",
+        "owners": {
+          "account": {
+            "account": "alice",
+            "certs": [
+              "alice",
+              "alice-cli",
+              "alice-app",
+              "alice-recovery",
+              "alice-machine",
+              "alice-revoked-tablet"
+            ],
+            "revocations": ["alice-tablet-revoked"],
+            "root": "37f29b7074cf8b52"
+          }
+        },
+        "revokes": ["revoke-at-3000"]
+      },
+      "output": {"refused": "revoked"}
+    },
+    {
+      "about": "revoked before the box was made",
+      "input": {
+        "cert": "box",
+        "delegation": "d",
+        "me": "alice",
+        "owners": {
+          "account": {
+            "account": "alice",
+            "certs": [
+              "alice",
+              "alice-cli",
+              "alice-app",
+              "alice-recovery",
+              "alice-machine",
+              "alice-revoked-tablet"
+            ],
+            "revocations": ["alice-tablet-revoked"],
+            "root": "37f29b7074cf8b52"
+          }
+        },
+        "revokes": ["revoke-at-2500"]
+      },
+      "output": {"refused": "revoked"}
+    },
+    {
+      "about": "two revokes: the earlier counts",
+      "input": {
+        "cert": "box",
+        "delegation": "d",
+        "me": "alice",
+        "owners": {
+          "account": {
+            "account": "alice",
+            "certs": [
+              "alice",
+              "alice-cli",
+              "alice-app",
+              "alice-recovery",
+              "alice-machine",
+              "alice-revoked-tablet"
+            ],
+            "revocations": ["alice-tablet-revoked"],
+            "root": "37f29b7074cf8b52"
+          }
+        },
+        "revokes": ["revoke-at-4000", "revoke-at-2500"]
+      },
+      "output": {"refused": "revoked"}
+    },
+    {
+      "about": "revoked by alice's CLI: it signs for projects",
+      "input": {
+        "cert": "box",
+        "delegation": "d",
+        "me": "alice",
+        "owners": {
+          "account": {
+            "account": "alice",
+            "certs": [
+              "alice",
+              "alice-cli",
+              "alice-app",
+              "alice-recovery",
+              "alice-machine",
+              "alice-revoked-tablet"
+            ],
+            "revocations": ["alice-tablet-revoked"],
+            "root": "37f29b7074cf8b52"
+          }
+        },
+        "revokes": ["revoke-by-cli"]
+      },
+      "output": {"refused": "revoked"}
+    },
+    {
+      "about": "a revoke her recovery code signed: ignored",
+      "input": {
+        "cert": "box",
+        "delegation": "d",
+        "me": "alice",
+        "owners": {
+          "account": {
+            "account": "alice",
+            "certs": [
+              "alice",
+              "alice-cli",
+              "alice-app",
+              "alice-recovery",
+              "alice-machine",
+              "alice-revoked-tablet"
+            ],
+            "revocations": ["alice-tablet-revoked"],
+            "root": "37f29b7074cf8b52"
+          }
+        },
+        "revokes": ["revoke-by-recovery"]
+      },
+      "output": {
+        "accepted": {"owner": "account:alice", "project": "prj_1", "role": "owner", "workspace": "hw_1"}
+      }
+    },
+    {
+      "about": "a revoke bob signed: ignored",
+      "input": {
+        "cert": "box",
+        "delegation": "d",
+        "me": "alice",
+        "owners": {
+          "account": {
+            "account": "alice",
+            "certs": [
+              "alice",
+              "alice-cli",
+              "alice-app",
+              "alice-recovery",
+              "alice-machine",
+              "alice-revoked-tablet"
+            ],
+            "revocations": ["alice-tablet-revoked"],
+            "root": "37f29b7074cf8b52"
+          }
+        },
+        "revokes": ["revoke-by-bob"]
+      },
+      "output": {
+        "accepted": {"owner": "account:alice", "project": "prj_1", "role": "owner", "workspace": "hw_1"}
+      }
+    },
+    {
+      "about": "a revoke whose signature doesn't check: ignored",
+      "input": {
+        "cert": "box",
+        "delegation": "d",
+        "me": "alice",
+        "owners": {
+          "account": {
+            "account": "alice",
+            "certs": [
+              "alice",
+              "alice-cli",
+              "alice-app",
+              "alice-recovery",
+              "alice-machine",
+              "alice-revoked-tablet"
+            ],
+            "revocations": ["alice-tablet-revoked"],
+            "root": "37f29b7074cf8b52"
+          }
+        },
+        "revokes": ["revoke-bad-signature"]
+      },
+      "output": {
+        "accepted": {"owner": "account:alice", "project": "prj_1", "role": "owner", "workspace": "hw_1"}
+      }
+    },
+    {
+      "about": "a revoke of another delegation: ignored",
+      "input": {
+        "cert": "box",
+        "delegation": "d",
+        "me": "alice",
+        "owners": {
+          "account": {
+            "account": "alice",
+            "certs": [
+              "alice",
+              "alice-cli",
+              "alice-app",
+              "alice-recovery",
+              "alice-machine",
+              "alice-revoked-tablet"
+            ],
+            "revocations": ["alice-tablet-revoked"],
+            "root": "37f29b7074cf8b52"
+          }
+        },
+        "revokes": ["revoke-of-another-delegation"]
+      },
+      "output": {
+        "accepted": {"owner": "account:alice", "project": "prj_1", "role": "owner", "workspace": "hw_1"}
+      }
+    },
+    {
+      "about": "the team's delegation revoked by its other owner (not the one who delegated)",
+      "input": {
+        "cert": "team-box",
+        "delegation": "team-d",
+        "me": "vic",
+        "owners": {
+          "team": {
+            "certs": {
+              "alice": {
+                "certs": [
+                  "alice",
+                  "alice-cli",
+                  "alice-app",
+                  "alice-recovery",
+                  "alice-machine",
+                  "alice-revoked-tablet"
+                ],
+                "revocations": ["alice-tablet-revoked"]
+              },
+              "bob": {
+                "certs": ["bob"]
+              },
+              "carol": {
+                "certs": ["carol"]
+              },
+              "vic": {
+                "certs": ["vic"]
+              }
+            },
+            "roster": "roster"
+          }
+        },
+        "revokes": ["team-revoke-by-carol"]
+      },
+      "output": {"refused": "revoked"}
+    },
+    {
+      "about": "the team's delegation revoked by an editor: ignored",
+      "input": {
+        "cert": "team-box",
+        "delegation": "team-d",
+        "me": "vic",
+        "owners": {
+          "team": {
+            "certs": {
+              "alice": {
+                "certs": [
+                  "alice",
+                  "alice-cli",
+                  "alice-app",
+                  "alice-recovery",
+                  "alice-machine",
+                  "alice-revoked-tablet"
+                ],
+                "revocations": ["alice-tablet-revoked"]
+              },
+              "bob": {
+                "certs": ["bob"]
+              },
+              "carol": {
+                "certs": ["carol"]
+              },
+              "vic": {
+                "certs": ["vic"]
+              }
+            },
+            "roster": "roster"
+          }
+        },
+        "revokes": ["team-revoke-by-bob"]
+      },
+      "output": {
+        "accepted": {"owner": "team:t1", "project": "prj_2", "role": "viewer", "workspace": "hw_2"}
+      }
+    }
+  ],
+  "checks": ["arugula_e2e::hosted::accept", "arugula_e2e::hosted::HostedRefusal::code"],
+  "input": "me: the client's account; cert, delegation: labels; revokes: labels; owners: who may sign for the project, as the checking side pinned them: { team: { roster: a label, certs: { account: { certs, revocations } } } } for a team's project, or { account: { account, root, certs: [labels], revocations: [labels] } } for one account's",
+  "keys": {
+    "alice": {
+      "device": "37f29b7074cf8b52",
+      "noise": "0101010101010101010101010101010101010101010101010101010101010101",
+      "seed": "0101010101010101010101010101010101010101010101010101010101010101",
+      "sign": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c"
+    },
+    "alice-app": {
+      "device": "422c26dbf1e40b7b",
+      "noise": "0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b",
+      "seed": "0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b",
+      "sign": "66be7e332c7a453332bd9d0a7f7db055f5c5ef1a06ada66d98b39fb6810c473a"
+    },
+    "alice-cli": {
+      "device": "6ec4cb2579ac7165",
+      "noise": "0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a",
+      "seed": "0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a",
+      "sign": "43a72e714401762df66b68c26dfbdf2682aaec9f2474eca4613e424a0fbafd3c"
+    },
+    "alice-machine": {
+      "device": "41c57baf1e6b91a9",
+      "noise": "0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d",
+      "seed": "0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d",
+      "sign": "91a28a0b74381593a4d9469579208926afc8ad82c8839b7644359b9eba9a4b3a"
+    },
+    "alice-recovery": {
+      "device": "a255a6fc4c7f915d",
+      "noise": "0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c",
+      "seed": "0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c",
+      "sign": "0b513ad9b4924015ca0902ed079044d3ac5dbec2306f06948c10da8eb6e39f2d"
+    },
+    "alice-revoked-tablet": {
+      "device": "7b992b4bd67000bc",
+      "noise": "0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e",
+      "seed": "0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e",
+      "sign": "0beef5a9e679e6a3e134fe27837bff32c7cb5f5d44ea09bcb0e542bad6a4c0cc"
+    },
+    "another-hosted-key": {
+      "seed": "3333333333333333333333333333333333333333333333333333333333333333",
+      "sign": "17cb79fb2b4120f2b1ec65e4198d6e08b28e813feb01e4a400839b85e18080ce"
+    },
+    "bob": {
+      "device": "c242667535a3d34f",
+      "noise": "0202020202020202020202020202020202020202020202020202020202020202",
+      "seed": "0202020202020202020202020202020202020202020202020202020202020202",
+      "sign": "8139770ea87d175f56a35466c34c7ecccb8d8a91b4ee37a25df60f5b8fc9b394"
+    },
+    "box": {
+      "device": "c8f088038888fcd4",
+      "noise": "0606060606060606060606060606060606060606060606060606060606060606",
+      "seed": "0606060606060606060606060606060606060606060606060606060606060606",
+      "sign": "8a875fff1eb38451577acd5afee405456568dd7c89e090863a0557bc7af49f17"
+    },
+    "carol": {
+      "device": "e0a128f98e5582a3",
+      "noise": "0303030303030303030303030303030303030303030303030303030303030303",
+      "seed": "0303030303030303030303030303030303030303030303030303030303030303",
+      "sign": "ed4928c628d1c2c6eae90338905995612959273a5c63f93636c14614ac8737d1"
+    },
+    "control-hosted-key": {
+      "seed": "3232323232323232323232323232323232323232323232323232323232323232",
+      "sign": "5e212c0980e4b39fc09721134aa02109374edfd260c0d3d03cb501c8d65457a9"
+    },
+    "mallory": {
+      "device": "ed0089709d11f9a5",
+      "noise": "0505050505050505050505050505050505050505050505050505050505050505",
+      "seed": "0505050505050505050505050505050505050505050505050505050505050505",
+      "sign": "6e7a1cdd29b0b78fd13af4c5598feff4ef2a97166e3ca6f2e4fbfccd80505bf1"
+    },
+    "vic": {
+      "device": "9b64bd87042f22a7",
+      "noise": "0404040404040404040404040404040404040404040404040404040404040404",
+      "seed": "0404040404040404040404040404040404040404040404040404040404040404",
+      "sign": "ca93ac1705187071d67b83c7ff0efe8108e8ec4530575d7726879333dbdabe7c"
+    }
+  },
+  "objects": {
+    "alice": {
+      "account": "alice",
+      "approver": "37f29b7074cf8b52",
+      "created": 1000,
+      "device": "37f29b7074cf8b52",
+      "kind": "browser",
+      "name": "alice's laptop",
+      "noise": "0101010101010101010101010101010101010101010101010101010101010101",
+      "sig": "4c7a182921697a35256fd95c0c9e8d2e91f60e6f7601e02d600196dda65ed26cd9aff836cd15e6e6d62cdfbb144fe575d921d5035ee13248a8565973ed0fda0d",
+      "sign": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
+      "v": 1
+    },
+    "alice-app": {
+      "account": "alice",
+      "approver": "37f29b7074cf8b52",
+      "created": 1100,
+      "device": "422c26dbf1e40b7b",
+      "kind": "app",
+      "name": "Arugula app",
+      "noise": "0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b",
+      "sig": "80b7ab2f5ab638215ae521536b08009c5a56bf35c17fa83717af40fd498fbd8fb196472558c3b7afe99db5af21ef2d1e2228497f4555f058aae59b0ad19ece09",
+      "sign": "66be7e332c7a453332bd9d0a7f7db055f5c5ef1a06ada66d98b39fb6810c473a",
+      "v": 1
+    },
+    "alice-cli": {
+      "account": "alice",
+      "approver": "37f29b7074cf8b52",
+      "created": 1100,
+      "device": "6ec4cb2579ac7165",
+      "kind": "cli",
+      "name": "terminal",
+      "noise": "0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a",
+      "sig": "db0e5eefe7803803b4d874de6895f93d4c1058071c5aabc948635744d4ebc95ab052cabde3c88fa9e139da394c50c2b94223c57272540b863f4a4c386972e40c",
+      "sign": "43a72e714401762df66b68c26dfbdf2682aaec9f2474eca4613e424a0fbafd3c",
+      "v": 1
+    },
+    "alice-machine": {
+      "account": "alice",
+      "approver": "37f29b7074cf8b52",
+      "created": 1100,
+      "device": "41c57baf1e6b91a9",
+      "kind": "daemon",
+      "name": "geek",
+      "noise": "0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d",
+      "sig": "27b14423dced4974f0d6d8db112e360b527f793c60ebff0c31722a655764ce48e1c90f158ef4772b5e8747215a6ca96e5f4c47cf35d6d1f69a49d07234a1b00f",
+      "sign": "91a28a0b74381593a4d9469579208926afc8ad82c8839b7644359b9eba9a4b3a",
+      "v": 1
+    },
+    "alice-recovery": {
+      "account": "alice",
+      "approver": "37f29b7074cf8b52",
+      "created": 1100,
+      "device": "a255a6fc4c7f915d",
+      "kind": "recovery",
+      "name": "recovery 1",
+      "noise": "0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c",
+      "sig": "15addd383b505f9ea12057a0d81737fe9866b115d7c4ca833896bfe85958070879b47ce2f90f38c38b34f56b3e9379f9d34232dd269b5af166452c678aee6302",
+      "sign": "0b513ad9b4924015ca0902ed079044d3ac5dbec2306f06948c10da8eb6e39f2d",
+      "v": 1
+    },
+    "alice-revoked-tablet": {
+      "account": "alice",
+      "approver": "37f29b7074cf8b52",
+      "created": 1100,
+      "device": "7b992b4bd67000bc",
+      "kind": "browser",
+      "name": "tablet",
+      "noise": "0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e",
+      "sig": "6d27656ceced0bdf1a7209015e18a039bf54dabd001ec1eb4b8da11d40f726985d6c829f9412371a6a2416079868dcc074ce9241d6527290df6967174803da04",
+      "sign": "0beef5a9e679e6a3e134fe27837bff32c7cb5f5d44ea09bcb0e542bad6a4c0cc",
+      "v": 1
+    },
+    "alice-tablet-revoked": {
+      "account": "alice",
+      "at": 1500,
+      "by": "37f29b7074cf8b52",
+      "device": "7b992b4bd67000bc",
+      "sig": "8fb7ace7f49bf184fc1cd76a3814df7562aadbc5a4735e72d04c8dcf8e7b9e0e3bf3369e17728d324bbf6c41b2f37135e6a864c661ca5352e0e351f84e178204",
+      "v": 1
+    },
+    "bob": {
+      "account": "bob",
+      "approver": "c242667535a3d34f",
+      "created": 1000,
+      "device": "c242667535a3d34f",
+      "kind": "browser",
+      "name": "bob's laptop",
+      "noise": "0202020202020202020202020202020202020202020202020202020202020202",
+      "sig": "07e9418076d6edaf8c72fa5be449eeea02b612b5cd17ec9c6654519b853288b6d7a08c29100e96a0b5af3b13fb593ddb25335e0418d10dc2692d44cd3ed48103",
+      "sign": "8139770ea87d175f56a35466c34c7ecccb8d8a91b4ee37a25df60f5b8fc9b394",
+      "v": 1
+    },
+    "box": {
+      "created": 3000,
+      "delegation": "bf1386ae275f33c87c0d6cc4f2ec58ed",
+      "device": "c8f088038888fcd4",
+      "name": "box",
+      "noise": "0606060606060606060606060606060606060606060606060606060606060606",
+      "owner": "account:alice",
+      "project": "prj_1",
+      "sig": "c40d7bbe06d53ac75c1f8864eb43041cef6dc13614e85c311ea43fa6d9eccb96cef6702b49095c5d91dfba047cebad625fd2b03a7076cf06b12eace08e75bb02",
+      "sign": "8a875fff1eb38451577acd5afee405456568dd7c89e090863a0557bc7af49f17",
+      "workspace": "hw_1"
+    },
+    "box-at-d": {
+      "created": 2000,
+      "delegation": "bf1386ae275f33c87c0d6cc4f2ec58ed",
+      "device": "c8f088038888fcd4",
+      "name": "box",
+      "noise": "0606060606060606060606060606060606060606060606060606060606060606",
+      "owner": "account:alice",
+      "project": "prj_1",
+      "sig": "324b45d7f3359a98e9a70615315aa9184fd72710552cf329a0f00276636a0912f4905f390e7593e6ae352dd9565d8605f5543ad324d39be0c43668f71c587d0a",
+      "sign": "8a875fff1eb38451577acd5afee405456568dd7c89e090863a0557bc7af49f17",
+      "workspace": "hw_1"
+    },
+    "box-before-d": {
+      "created": 1999,
+      "delegation": "bf1386ae275f33c87c0d6cc4f2ec58ed",
+      "device": "c8f088038888fcd4",
+      "name": "box",
+      "noise": "0606060606060606060606060606060606060606060606060606060606060606",
+      "owner": "account:alice",
+      "project": "prj_1",
+      "sig": "44828e48b096bccf46240e0a785bd85ac4060ae7cc97fd11440dafd55f0774510ff84f4262256778e1c411cdb9d039e669e6ccc5bc8b1d1768b8392a8ce4cf0f",
+      "sign": "8a875fff1eb38451577acd5afee405456568dd7c89e090863a0557bc7af49f17",
+      "workspace": "hw_1"
+    },
+    "box-keys-swapped": {
+      "created": 3000,
+      "delegation": "bf1386ae275f33c87c0d6cc4f2ec58ed",
+      "device": "73f78456621ef247",
+      "name": "box",
+      "noise": "0808080808080808080808080808080808080808080808080808080808080808",
+      "owner": "account:alice",
+      "project": "prj_1",
+      "sig": "c40d7bbe06d53ac75c1f8864eb43041cef6dc13614e85c311ea43fa6d9eccb96cef6702b49095c5d91dfba047cebad625fd2b03a7076cf06b12eace08e75bb02",
+      "sign": "1398f62c6d1a457c51ba6a4b5f3dbd2f69fca93216218dc8997e416bd17d93ca",
+      "workspace": "hw_1"
+    },
+    "box-newline-in-name": {
+      "created": 3000,
+      "delegation": "bf1386ae275f33c87c0d6cc4f2ec58ed",
+      "device": "c8f088038888fcd4",
+      "name": "box\nproject prj_9",
+      "noise": "0606060606060606060606060606060606060606060606060606060606060606",
+      "owner": "account:alice",
+      "project": "prj_1",
+      "sig": "91b5f9677022c3eae33d17e2151223065acc36e5541bfa80f1efcdce6b24d555dc42bab957c8bb0f5fbc0ea8475da4478fef0410dc660f020c22f78817cabc02",
+      "sign": "8a875fff1eb38451577acd5afee405456568dd7c89e090863a0557bc7af49f17",
+      "workspace": "hw_1"
+    },
+    "box-of-another-owner": {
+      "created": 3000,
+      "delegation": "bf1386ae275f33c87c0d6cc4f2ec58ed",
+      "device": "c8f088038888fcd4",
+      "name": "box",
+      "noise": "0606060606060606060606060606060606060606060606060606060606060606",
+      "owner": "account:bob",
+      "project": "prj_1",
+      "sig": "2c6e16ef834748c8e739f8ea441c1296b6d5a7cb52c83539856f819a765e0805d800ae6c318f50fa84b8517c4407a787fcb96ba6909e49625840df835f0cae0a",
+      "sign": "8a875fff1eb38451577acd5afee405456568dd7c89e090863a0557bc7af49f17",
+      "workspace": "hw_1"
+    },
+    "box-of-another-project": {
+      "created": 3000,
+      "delegation": "bf1386ae275f33c87c0d6cc4f2ec58ed",
+      "device": "c8f088038888fcd4",
+      "name": "box",
+      "noise": "0606060606060606060606060606060606060606060606060606060606060606",
+      "owner": "account:alice",
+      "project": "prj_9",
+      "sig": "1a60fcec917bb13e477b6769492d11e87ca4dd8f02e3c8c2559bb2290413349a992ed5007819455b9f65806d9e5971a06714d4ba1be1f5f98f02cbd6ca431e03",
+      "sign": "8a875fff1eb38451577acd5afee405456568dd7c89e090863a0557bc7af49f17",
+      "workspace": "hw_1"
+    },
+    "box-org-owner": {
+      "created": 3000,
+      "delegation": "262e8b45977c9bf1ebb356fe380b30a3",
+      "device": "c8f088038888fcd4",
+      "name": "box",
+      "noise": "0606060606060606060606060606060606060606060606060606060606060606",
+      "owner": "org:acme",
+      "project": "prj_1",
+      "sig": "af4aa33b331f735aacf117eacd78597953732976d35e6bab97b1948d53942878b893fc1207a59c8f475d458a2e198ed9ded1665775b4fd64ed1139c1c2133a00",
+      "sign": "8a875fff1eb38451577acd5afee405456568dd7c89e090863a0557bc7af49f17",
+      "workspace": "hw_1"
+    },
+    "box-signed-with-another-key": {
+      "created": 3000,
+      "delegation": "bf1386ae275f33c87c0d6cc4f2ec58ed",
+      "device": "c8f088038888fcd4",
+      "name": "box",
+      "noise": "0606060606060606060606060606060606060606060606060606060606060606",
+      "owner": "account:alice",
+      "project": "prj_1",
+      "sig": "a08a82a1d8bfc7147605c3adc9ec058224087b34b53d0c0477d615d8479c5a39cd18506f6222cb5a621e06159901e926faaa1e44276f924ba8bfaaf57c323905",
+      "sign": "8a875fff1eb38451577acd5afee405456568dd7c89e090863a0557bc7af49f17",
+      "workspace": "hw_1"
+    },
+    "box-under-d-backdated": {
+      "created": 3000,
+      "delegation": "fae861798ffaf289523436ef2d514d57",
+      "device": "c8f088038888fcd4",
+      "name": "box",
+      "noise": "0606060606060606060606060606060606060606060606060606060606060606",
+      "owner": "account:alice",
+      "project": "prj_1",
+      "sig": "7f9f8eb412a0f1fdf6db6706da6b893e4e7f2179843e46eaa85a6845e3dedd2de5f0a542b3e3c9d075ad5e5b08b89ffbf90d0a52ac195d4d8c3138d824b52802",
+      "sign": "8a875fff1eb38451577acd5afee405456568dd7c89e090863a0557bc7af49f17",
+      "workspace": "hw_1"
+    },
+    "box-under-d-by-app": {
+      "created": 3000,
+      "delegation": "e8a8c0fb09f5cac3292ef4de4b08c5a7",
+      "device": "c8f088038888fcd4",
+      "name": "box",
+      "noise": "0606060606060606060606060606060606060606060606060606060606060606",
+      "owner": "account:alice",
+      "project": "prj_1",
+      "sig": "5fb968ed07000fd36565a84ce865c199c3c7b07250632fd0cc0f513d77777ccf2439af874288284f5f17412e7a741bf19f694f29018725ed60e4fb5ae1fde00c",
+      "sign": "8a875fff1eb38451577acd5afee405456568dd7c89e090863a0557bc7af49f17",
+      "workspace": "hw_1"
+    },
+    "box-under-d-by-bob": {
+      "created": 3000,
+      "delegation": "99026028e3b4765d5b3428d89c221295",
+      "device": "c8f088038888fcd4",
+      "name": "box",
+      "noise": "0606060606060606060606060606060606060606060606060606060606060606",
+      "owner": "account:alice",
+      "project": "prj_1",
+      "sig": "e2d870ee69e6083d1bb87508cc306cf8bb1d9913c453ece773f2c6e1f4470eef6357681de7f68aa0c50ee850373d3f9b94a41786eedf6502648715fabc31cf06",
+      "sign": "8a875fff1eb38451577acd5afee405456568dd7c89e090863a0557bc7af49f17",
+      "workspace": "hw_1"
+    },
+    "box-under-d-by-cli": {
+      "created": 3000,
+      "delegation": "dfcc82b2660e73d13042f0733718c22b",
+      "device": "c8f088038888fcd4",
+      "name": "box",
+      "noise": "0606060606060606060606060606060606060606060606060606060606060606",
+      "owner": "account:alice",
+      "project": "prj_1",
+      "sig": "c333225f43cfba7f9b63c1e1fac266077a59755cd0560a5eb4b511afc124bd6b4c13202c2366aaa11b8d2b76ff3441e892928dd221cd95577b73465a8d8d8b0c",
+      "sign": "8a875fff1eb38451577acd5afee405456568dd7c89e090863a0557bc7af49f17",
+      "workspace": "hw_1"
+    },
+    "box-under-d-by-machine": {
+      "created": 3000,
+      "delegation": "8d4a3ef136a0feab0b7c3d519f32ca19",
+      "device": "c8f088038888fcd4",
+      "name": "box",
+      "noise": "0606060606060606060606060606060606060606060606060606060606060606",
+      "owner": "account:alice",
+      "project": "prj_1",
+      "sig": "bcf51d6469dd4f7517769415e498db7e56aad89f6bdceef957ad22aa9ea77d13daf6d7400a4647e23cf98f329d48449b8bd7c86ca72549e2e055f7be0ff36f05",
+      "sign": "8a875fff1eb38451577acd5afee405456568dd7c89e090863a0557bc7af49f17",
+      "workspace": "hw_1"
+    },
+    "box-under-d-by-mallory": {
+      "created": 3000,
+      "delegation": "6a727055475d2ba1066a6e18c6a2f79a",
+      "device": "c8f088038888fcd4",
+      "name": "box",
+      "noise": "0606060606060606060606060606060606060606060606060606060606060606",
+      "owner": "account:alice",
+      "project": "prj_1",
+      "sig": "f20f65c1af5c0edd0bcee35497fa7ebcbae91bb269dcaf8a91f18292b63d93df37de5ca64601e7db8c297be333f3b343a4c7aa47025b9c47d02e9a54b150ad0b",
+      "sign": "8a875fff1eb38451577acd5afee405456568dd7c89e090863a0557bc7af49f17",
+      "workspace": "hw_1"
+    },
+    "box-under-d-by-recovery": {
+      "created": 3000,
+      "delegation": "0eb8c0294dec3c8132d890793733cc69",
+      "device": "c8f088038888fcd4",
+      "name": "box",
+      "noise": "0606060606060606060606060606060606060606060606060606060606060606",
+      "owner": "account:alice",
+      "project": "prj_1",
+      "sig": "90d6c76898f9a9e6292f475071bfd126d513ec5e3ad2f43cfcafd808491c1bf67f008c3bcba883afb7995275c374ffa5f81b1aed680b90fd2ae47c30b97dd309",
+      "sign": "8a875fff1eb38451577acd5afee405456568dd7c89e090863a0557bc7af49f17",
+      "workspace": "hw_1"
+    },
+    "box-under-d-by-revoked-tablet": {
+      "created": 3000,
+      "delegation": "9896c143142b39f51dce216c60ead2ce",
+      "device": "c8f088038888fcd4",
+      "name": "box",
+      "noise": "0606060606060606060606060606060606060606060606060606060606060606",
+      "owner": "account:alice",
+      "project": "prj_1",
+      "sig": "e03d60253a8d70a8814319591b3cd4646c1648eb28e4d666066231d37106d655b5981fae1447de045fd802340402023766ca26a7813b748440001ae2ff13e60f",
+      "sign": "8a875fff1eb38451577acd5afee405456568dd7c89e090863a0557bc7af49f17",
+      "workspace": "hw_1"
+    },
+    "box-under-d-key-not-hex": {
+      "created": 3000,
+      "delegation": "2cce54b8be8c8241754569f810e5a3bd",
+      "device": "c8f088038888fcd4",
+      "name": "box",
+      "noise": "0606060606060606060606060606060606060606060606060606060606060606",
+      "owner": "account:alice",
+      "project": "prj_1",
+      "sig": "c01b1144dd3c4389f6df4e75bc6f710e50285e61a11ee549f47e3c1d5b18ab0ed878846614134631ca2ac5bc3968a2acb8a7a2099ebf4b818adb4eb566de140d",
+      "sign": "8a875fff1eb38451577acd5afee405456568dd7c89e090863a0557bc7af49f17",
+      "workspace": "hw_1"
+    },
+    "box-under-d-key-swapped": {
+      "created": 3000,
+      "delegation": "73b17c3310a792f7a0acbb59347fc6ac",
+      "device": "c8f088038888fcd4",
+      "name": "box",
+      "noise": "0606060606060606060606060606060606060606060606060606060606060606",
+      "owner": "account:alice",
+      "project": "prj_1",
+      "sig": "9c48cad0067d4af2b277c8dec7a48cf5d33bfcd154d87ce0bfcb1fe22436131af94f9de8566e77a220a0397311387b1664e87585882f3f30a462e5fa6c01080b",
+      "sign": "8a875fff1eb38451577acd5afee405456568dd7c89e090863a0557bc7af49f17",
+      "workspace": "hw_1"
+    },
+    "box-under-team-d-by-bob": {
+      "created": 3000,
+      "delegation": "17f78edac2389151356285e34bac96a3",
+      "device": "c8f088038888fcd4",
+      "name": "box",
+      "noise": "0606060606060606060606060606060606060606060606060606060606060606",
+      "owner": "team:t1",
+      "project": "prj_2",
+      "sig": "9d7f231e37ff9ca9415aedba8cc7c5e65128e38bc167b9ae7b5d97c09f1516a19120e986e1dab9968c12125ddaff0f4524093cdfb040c1a5ac184db7ee13520d",
+      "sign": "8a875fff1eb38451577acd5afee405456568dd7c89e090863a0557bc7af49f17",
+      "workspace": "hw_2"
+    },
+    "box-under-team-d-by-carol": {
+      "created": 3000,
+      "delegation": "8391d9d0b65c89bda0115d82a914b4fc",
+      "device": "c8f088038888fcd4",
+      "name": "box",
+      "noise": "0606060606060606060606060606060606060606060606060606060606060606",
+      "owner": "team:t1",
+      "project": "prj_2",
+      "sig": "61e8d55fdd3bf2cc386a9922f8509b0e406058b478be3c8ad63e76556c8961029fba87967b3fbfa72f6691acc9672e1fa579b5872f3641391852d3adbd5ad60f",
+      "sign": "8a875fff1eb38451577acd5afee405456568dd7c89e090863a0557bc7af49f17",
+      "workspace": "hw_2"
+    },
+    "box-under-team-d-by-vic": {
+      "created": 3000,
+      "delegation": "a5e7595475cfab285bf5ae937db96703",
+      "device": "c8f088038888fcd4",
+      "name": "box",
+      "noise": "0606060606060606060606060606060606060606060606060606060606060606",
+      "owner": "team:t1",
+      "project": "prj_2",
+      "sig": "f1469889d8ee908e840417e245424ca716476fb2a88401893dfc4d49fda93b073d18f6f6a5e48c89de892367352b0338acec89d4b682af6938bf9aa787cc2702",
+      "sign": "8a875fff1eb38451577acd5afee405456568dd7c89e090863a0557bc7af49f17",
+      "workspace": "hw_2"
+    },
+    "box-with-another-id": {
+      "created": 3000,
+      "delegation": "bf1386ae275f33c87c0d6cc4f2ec58ed",
+      "device": "bb6cc568875e9006",
+      "name": "box",
+      "noise": "0606060606060606060606060606060606060606060606060606060606060606",
+      "owner": "account:alice",
+      "project": "prj_1",
+      "sig": "9bd0a84280192a7cb4b8eb4c61dac62b7a8aa23cee794fc98a04c70b3617a2d1e1eb083ff31a0a9ea2d1b83cbe932dd1dc14070b8176981a372b9fbbb2ebcb0b",
+      "sign": "8a875fff1eb38451577acd5afee405456568dd7c89e090863a0557bc7af49f17",
+      "workspace": "hw_1"
+    },
+    "box-workspace-changed": {
+      "created": 3000,
+      "delegation": "bf1386ae275f33c87c0d6cc4f2ec58ed",
+      "device": "c8f088038888fcd4",
+      "name": "box",
+      "noise": "0606060606060606060606060606060606060606060606060606060606060606",
+      "owner": "account:alice",
+      "project": "prj_1",
+      "sig": "c40d7bbe06d53ac75c1f8864eb43041cef6dc13614e85c311ea43fa6d9eccb96cef6702b49095c5d91dfba047cebad625fd2b03a7076cf06b12eace08e75bb02",
+      "sign": "8a875fff1eb38451577acd5afee405456568dd7c89e090863a0557bc7af49f17",
+      "workspace": "hw_9"
+    },
+    "carol": {
+      "account": "carol",
+      "approver": "e0a128f98e5582a3",
+      "created": 1000,
+      "device": "e0a128f98e5582a3",
+      "kind": "browser",
+      "name": "carol's laptop",
+      "noise": "0303030303030303030303030303030303030303030303030303030303030303",
+      "sig": "aee83eb914ca2c52a2f38c8ce603540000692464333c3b427303f4e1441c40a070f7557a330fb6f408412456f5aa774ef088484ab04bc328e8307914b8b2dc09",
+      "sign": "ed4928c628d1c2c6eae90338905995612959273a5c63f93636c14614ac8737d1",
+      "v": 1
+    },
+    "d": {
+      "at": 2000,
+      "by": "37f29b7074cf8b52",
+      "key": "5e212c0980e4b39fc09721134aa02109374edfd260c0d3d03cb501c8d65457a9",
+      "owner": "account:alice",
+      "project": "prj_1",
+      "sig": "6770488ba0972996faa18539230b56d999cae9d7acc098591287c94b5ca95fcf64e48ca6c5ac0fc1b27fe9af5492a94a0e484bd0a5efa30be1004681b2fedd05"
+    },
+    "d-backdated": {
+      "at": 1000,
+      "by": "37f29b7074cf8b52",
+      "key": "5e212c0980e4b39fc09721134aa02109374edfd260c0d3d03cb501c8d65457a9",
+      "owner": "account:alice",
+      "project": "prj_1",
+      "sig": "6770488ba0972996faa18539230b56d999cae9d7acc098591287c94b5ca95fcf64e48ca6c5ac0fc1b27fe9af5492a94a0e484bd0a5efa30be1004681b2fedd05"
+    },
+    "d-by-app": {
+      "at": 2000,
+      "by": "422c26dbf1e40b7b",
+      "key": "5e212c0980e4b39fc09721134aa02109374edfd260c0d3d03cb501c8d65457a9",
+      "owner": "account:alice",
+      "project": "prj_1",
+      "sig": "711986ce2b2c14e23cce6ec2edc646b8c283731008d38296906046464ade238661ab6ef517b607a4eb2eff2306882875cce4567d36a3f2b170ca0ba1bb868f0b"
+    },
+    "d-by-bob": {
+      "at": 2000,
+      "by": "c242667535a3d34f",
+      "key": "5e212c0980e4b39fc09721134aa02109374edfd260c0d3d03cb501c8d65457a9",
+      "owner": "account:alice",
+      "project": "prj_1",
+      "sig": "333c1df1a3ac6ea6ccd36f1ec3be8d6219e6336505b5f726777a1866beee605759091ce8d2aaf12fd41edb979f6926f0357de0db89c4ee0ba82f7fe66b39b709"
+    },
+    "d-by-cli": {
+      "at": 2000,
+      "by": "6ec4cb2579ac7165",
+      "key": "5e212c0980e4b39fc09721134aa02109374edfd260c0d3d03cb501c8d65457a9",
+      "owner": "account:alice",
+      "project": "prj_1",
+      "sig": "247e6a79b6c697038af2ef6b02b85dc1ceefa79f0a1aea29c388d3455bf3206440db146c2779cc4ff53574572cca784b5839ce0f9a261957529175866220ba0b"
+    },
+    "d-by-machine": {
+      "at": 2000,
+      "by": "41c57baf1e6b91a9",
+      "key": "5e212c0980e4b39fc09721134aa02109374edfd260c0d3d03cb501c8d65457a9",
+      "owner": "account:alice",
+      "project": "prj_1",
+      "sig": "d65080f3372a63292dbabca75fc0635d3a70dfdcf7277ccb5800d0c741d36450ccdee96129d6a1190accfad1e6215fab2f07daa53d269186de40275c4b1b1a03"
+    },
+    "d-by-mallory": {
+      "at": 2000,
+      "by": "ed0089709d11f9a5",
+      "key": "5e212c0980e4b39fc09721134aa02109374edfd260c0d3d03cb501c8d65457a9",
+      "owner": "account:alice",
+      "project": "prj_1",
+      "sig": "403cc861cd55d0e6231e5cd023c536445d97996eaa2dfbce60e5d91bfdfb57d232e855c2df2abbf4d9268cb5cb1a6a2013e23f44d6ff720c7f1fdab1fa089208"
+    },
+    "d-by-recovery": {
+      "at": 2000,
+      "by": "a255a6fc4c7f915d",
+      "key": "5e212c0980e4b39fc09721134aa02109374edfd260c0d3d03cb501c8d65457a9",
+      "owner": "account:alice",
+      "project": "prj_1",
+      "sig": "5a5f1f6bd4f287db6aa59dfa303aac4c97eecc0c216cc8d96883348c8ba0c0429d253454bc5017be3144c3a2b7c60b1968633aa917f2f16d0239c1f86fa0ee0f"
+    },
+    "d-by-revoked-tablet": {
+      "at": 2000,
+      "by": "7b992b4bd67000bc",
+      "key": "5e212c0980e4b39fc09721134aa02109374edfd260c0d3d03cb501c8d65457a9",
+      "owner": "account:alice",
+      "project": "prj_1",
+      "sig": "ec099b1c25c8ab7db994af1c4e6ed970f7785bc521fa6074eb1619195005acf7662c1883789536abb5077839a17f148388c9219d19daefe85f33ff4415eb3508"
+    },
+    "d-key-not-hex": {
+      "at": 2000,
+      "by": "37f29b7074cf8b52",
+      "key": "zz",
+      "owner": "account:alice",
+      "project": "prj_1",
+      "sig": "cf335a6e1ed93fcad1d01dc1204da11f96f305205e841eac3c31a644428291fee3b7dbbfb46149b0babcacbfab4c60c079d7660205091c744912665db893b806"
+    },
+    "d-key-swapped": {
+      "at": 2000,
+      "by": "37f29b7074cf8b52",
+      "key": "17cb79fb2b4120f2b1ec65e4198d6e08b28e813feb01e4a400839b85e18080ce",
+      "owner": "account:alice",
+      "project": "prj_1",
+      "sig": "6770488ba0972996faa18539230b56d999cae9d7acc098591287c94b5ca95fcf64e48ca6c5ac0fc1b27fe9af5492a94a0e484bd0a5efa30be1004681b2fedd05"
+    },
+    "d-org-owner": {
+      "at": 2000,
+      "by": "37f29b7074cf8b52",
+      "key": "5e212c0980e4b39fc09721134aa02109374edfd260c0d3d03cb501c8d65457a9",
+      "owner": "org:acme",
+      "project": "prj_1",
+      "sig": "a813a8655045488966aa76fabdcace44c35d03c8768a1a286b7f414fd8acc3e1521e5c4451b07758e65ac9c41ffd1a05946dbf3e51bc1f063073bac50f439c07"
+    },
+    "mallory": {
+      "account": "mallory",
+      "approver": "ed0089709d11f9a5",
+      "created": 1000,
+      "device": "ed0089709d11f9a5",
+      "kind": "browser",
+      "name": "mallory's laptop",
+      "noise": "0505050505050505050505050505050505050505050505050505050505050505",
+      "sig": "8f28899eba1f42fa66bac69bfea588bc211e06c019337d74ad095be6f80b91318fef28bbbc09b81d4d854dda19b63b1113b6d02302d96e75fbdf3e98d6456c00",
+      "sign": "6e7a1cdd29b0b78fd13af4c5598feff4ef2a97166e3ca6f2e4fbfccd80505bf1",
+      "v": 1
+    },
+    "revoke-at-2500": {
+      "at": 2500,
+      "by": "37f29b7074cf8b52",
+      "delegation": "bf1386ae275f33c87c0d6cc4f2ec58ed",
+      "project": "prj_1",
+      "sig": "41c71baba0365f3a2517e92122addaf5e295a24fd4d111ce6f630bb267296bdc4a8fa24bbdae4e7a10cfce8ccdc681eb384608dd40543c339e677c59f0180706"
+    },
+    "revoke-at-3000": {
+      "at": 3000,
+      "by": "37f29b7074cf8b52",
+      "delegation": "bf1386ae275f33c87c0d6cc4f2ec58ed",
+      "project": "prj_1",
+      "sig": "03ab1234f814374e27b16e573153e6483334eb2627627214270d7423ab8f2a4615ac086953fe731a8b64abb217e2fa261658d068dae2542c2cb2a43155ce8e07"
+    },
+    "revoke-at-4000": {
+      "at": 4000,
+      "by": "37f29b7074cf8b52",
+      "delegation": "bf1386ae275f33c87c0d6cc4f2ec58ed",
+      "project": "prj_1",
+      "sig": "9c2ce1194c7e46a3518f0d643d0138a541e1e77d629387c4f966b0e052f70eaf54b1a569c27a621fe903a6697fbbcef4676ab9e5c11362a02575b98d3d4bcb02"
+    },
+    "revoke-bad-signature": {
+      "at": 2400,
+      "by": "37f29b7074cf8b52",
+      "delegation": "bf1386ae275f33c87c0d6cc4f2ec58ed",
+      "project": "prj_1",
+      "sig": "41c71baba0365f3a2517e92122addaf5e295a24fd4d111ce6f630bb267296bdc4a8fa24bbdae4e7a10cfce8ccdc681eb384608dd40543c339e677c59f0180706"
+    },
+    "revoke-by-bob": {
+      "at": 2500,
+      "by": "c242667535a3d34f",
+      "delegation": "bf1386ae275f33c87c0d6cc4f2ec58ed",
+      "project": "prj_1",
+      "sig": "d000e6a4c26285583eac086aab4147568923827a59e03a7e73ee021c43dcd9fc369b9ae8c808e7b71bdaf26b1e4fc52e5363109ec96dde98a8088d895e829d0d"
+    },
+    "revoke-by-cli": {
+      "at": 2500,
+      "by": "6ec4cb2579ac7165",
+      "delegation": "bf1386ae275f33c87c0d6cc4f2ec58ed",
+      "project": "prj_1",
+      "sig": "dfeef9ca36670d865c488ff1324138dc2969be5d8f88fb9804001cf69a3d97812abf16fa3d494eb1e0c0257b693144ffd7daac81065901e9df6513c1f6c5500b"
+    },
+    "revoke-by-recovery": {
+      "at": 2500,
+      "by": "a255a6fc4c7f915d",
+      "delegation": "bf1386ae275f33c87c0d6cc4f2ec58ed",
+      "project": "prj_1",
+      "sig": "f70fbf9367b0bcd9f348c849883e1f50826e1c7f0ae9fcec4a12ad36da29e5e2adf402f17ace57af1974fc04f52755c220076a82e2681a48c231757191a43804"
+    },
+    "revoke-of-another-delegation": {
+      "at": 2500,
+      "by": "37f29b7074cf8b52",
+      "delegation": "00b8e09b7c8913fa08b7feb426235a04",
+      "project": "prj_2",
+      "sig": "d7227e8abc9e304e280a621300198ca5b653b72ac122e7a91306191bc04989da89a83fe936d2af93b1393b489aa6b2ff648f756c8bcf25efc26761a56f061f06"
+    },
+    "roster": {
+      "at": 1000,
+      "by": "37f29b7074cf8b52",
+      "members": [
+        {"account": "alice", "name": "alice-login", "role": "owner", "root": "37f29b7074cf8b52"},
+        {"account": "carol", "name": "carol-login", "role": "owner", "root": "e0a128f98e5582a3"},
+        {"account": "bob", "name": "bob-login", "role": "editor", "root": "c242667535a3d34f"},
+        {"account": "vic", "name": "vic-login", "role": "viewer", "root": "9b64bd87042f22a7"}
+      ],
+      "name": "Acme",
+      "sig": "90a173dd700c7569fabc532061cd980170ae03b792a3165453c4cdd5e519e43b9c97d19c801c319f62ded9c80ee7e39de7d13fa3ed571b5564222fcd97b9da0a",
+      "team": "t1",
+      "v": 1,
+      "version": 1
+    },
+    "team-box": {
+      "created": 3000,
+      "delegation": "00b8e09b7c8913fa08b7feb426235a04",
+      "device": "c8f088038888fcd4",
+      "name": "box",
+      "noise": "0606060606060606060606060606060606060606060606060606060606060606",
+      "owner": "team:t1",
+      "project": "prj_2",
+      "sig": "b367b339c7dd831d7502aedd372577e241ab107d1208f459f78bb1c46753fd9722f7653ab81aad53edb82943e458b3ba73f1abbb74b589921a1f717988dd750e",
+      "sign": "8a875fff1eb38451577acd5afee405456568dd7c89e090863a0557bc7af49f17",
+      "workspace": "hw_2"
+    },
+    "team-d": {
+      "at": 2000,
+      "by": "37f29b7074cf8b52",
+      "key": "5e212c0980e4b39fc09721134aa02109374edfd260c0d3d03cb501c8d65457a9",
+      "owner": "team:t1",
+      "project": "prj_2",
+      "sig": "e39ab5a0897c9cf629266283bc7a72ffdca779c8dd10baa6ce9ad4bbdb8cae7dcfd100f384bbf761d85c3ffd3a97e6804c44ff1dfb3d08c2a26f1e820f6f6501"
+    },
+    "team-d-by-bob": {
+      "at": 2000,
+      "by": "c242667535a3d34f",
+      "key": "5e212c0980e4b39fc09721134aa02109374edfd260c0d3d03cb501c8d65457a9",
+      "owner": "team:t1",
+      "project": "prj_2",
+      "sig": "3fd5f84cbca8df099e86f4e951e16c6df3142e036a73e139eb4cbdf2fbdde71652ffbf28b561f9b83d87c1278a0597d68adca95172cfffcf2a342dda6ec7d80c"
+    },
+    "team-d-by-carol": {
+      "at": 2000,
+      "by": "e0a128f98e5582a3",
+      "key": "5e212c0980e4b39fc09721134aa02109374edfd260c0d3d03cb501c8d65457a9",
+      "owner": "team:t1",
+      "project": "prj_2",
+      "sig": "97650254387e26f0d070d891357ba389336d7b9f4495d63a6901c88d8dc393cc93b24d58ded87c3c030a3c475feb950df67893d635d7d117d537be6dd38ed709"
+    },
+    "team-d-by-vic": {
+      "at": 2000,
+      "by": "9b64bd87042f22a7",
+      "key": "5e212c0980e4b39fc09721134aa02109374edfd260c0d3d03cb501c8d65457a9",
+      "owner": "team:t1",
+      "project": "prj_2",
+      "sig": "292d1665e9ddc410d21229bcbb84d0445f072d615df955ba9a77e64908ba2460238bf41283471531d6575d638de7f29b096f5b64ab5bc97a71b72f347655a70c"
+    },
+    "team-revoke-by-bob": {
+      "at": 2500,
+      "by": "c242667535a3d34f",
+      "delegation": "00b8e09b7c8913fa08b7feb426235a04",
+      "project": "prj_2",
+      "sig": "efa95700f679150ee145a745c5d4ee0137c69742c6b0d275bf16d93cc90fbc332ae5092a62d2138a398c489e752d82402b64753e42ce4f8a0f866319028eff09"
+    },
+    "team-revoke-by-carol": {
+      "at": 2500,
+      "by": "e0a128f98e5582a3",
+      "delegation": "00b8e09b7c8913fa08b7feb426235a04",
+      "project": "prj_2",
+      "sig": "f2e1f69f8b0c5842c8b5b07dbd6d35aae7eda9a6129979e930d73421feb9fb772a4e8acccb7ee3ff87e53371cd161264f3fd2c3d969d74c89804370d5330d10f"
+    },
+    "vic": {
+      "account": "vic",
+      "approver": "9b64bd87042f22a7",
+      "created": 1000,
+      "device": "9b64bd87042f22a7",
+      "kind": "browser",
+      "name": "vic's laptop",
+      "noise": "0404040404040404040404040404040404040404040404040404040404040404",
+      "sig": "583ec6018d4a99e8cd791664a4e6b2c114b9b570be303964f22ede9a96d7031f029283a9dbb2cf4683dd77038af1ec51a50dec3062f399f336658c1de40e420b",
+      "sign": "ca93ac1705187071d67b83c7ff0efe8108e8ec4530575d7726879333dbdabe7c",
+      "v": 1
+    }
+  },
+  "output": "accepted: { project, owner, workspace, role }, or refused: the check's code"
+}

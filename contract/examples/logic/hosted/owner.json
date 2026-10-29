@@ -1,0 +1,60 @@
+{
+  "about": "Who a project belongs to, as delegations and hosted certificates sign it: team:<id> or account:<id>, the id 1 to 64 of a-z, A-Z, 0-9, - and _.",
+  "cases": [
+    {
+      "about": "\"team:t1\"",
+      "input": {"owner": "team:t1"},
+      "output": {"owner": "team:t1"}
+    },
+    {
+      "about": "\"account:acct_1-x\"",
+      "input": {"owner": "account:acct_1-x"},
+      "output": {"owner": "account:acct_1-x"}
+    },
+    {
+      "about": "\"org:acme\"",
+      "input": {"owner": "org:acme"},
+      "output": {"owner": null}
+    },
+    {
+      "about": "\"team:\"",
+      "input": {"owner": "team:"},
+      "output": {"owner": null}
+    },
+    {
+      "about": "\"team:a b\"",
+      "input": {"owner": "team:a b"},
+      "output": {"owner": null}
+    },
+    {
+      "about": "\"team:t1:x\"",
+      "input": {"owner": "team:t1:x"},
+      "output": {"owner": null}
+    },
+    {
+      "about": "\"team\"",
+      "input": {"owner": "team"},
+      "output": {"owner": null}
+    },
+    {
+      "about": "\"Team:t1\"",
+      "input": {"owner": "Team:t1"},
+      "output": {"owner": null}
+    },
+    {
+      "about": "\"account:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"",
+      "input": {"owner": "account:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
+      "output": {"owner": "account:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}
+    },
+    {
+      "about": "\"account:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"",
+      "input": {"owner": "account:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
+      "output": {"owner": null}
+    }
+  ],
+  "checks": ["arugula_e2e::hosted::Owner::parse", "arugula_e2e::hosted::Owner::as_string"],
+  "input": "owner: the text",
+  "keys": {},
+  "objects": {},
+  "output": "owner: it again, or null when it isn't one"
+}

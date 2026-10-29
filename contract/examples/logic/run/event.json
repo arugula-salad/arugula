@@ -1,0 +1,342 @@
+{
+  "about": "The line a run's daemon signs when it reports a move (M210): the run, the event's number in the run (from 1; so a signature is good for one place in one run's history, and can't be replayed onto another run or later in the same one), the move (from - for a run's first event), when, the SHA-256 of the event's detail exactly as stored (a JSON object's text), and the daemon. verified: well formed (the run and daemon ids 1 to 128 bytes, no space or control character, so one event's body can't read as another's) and the daemon's Ed25519 signature over the body.",
+  "cases": [
+    {
+      "about": "the daemon's report that the run started",
+      "input": {
+        "event": {
+          "at": 10000,
+          "daemon": "37f29b7074cf8b52",
+          "detail": "{}",
+          "from": "pending",
+          "run": "run_1",
+          "seq": 2,
+          "to": "running"
+        },
+        "sig": "741dd7b9cb97588e67051c9e80d5bb33659ec7258e3c3eea2d47eea764f7fc8e33a4497fc8bc15fd500bcea75177cef39738038121475bf6ad341690704d2d04",
+        "sign": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c"
+      },
+      "output": {
+        "body": "arugula run event v1\nrun run_1\nseq 2\nfrom pending\nto running\nat 10000\ndetail 44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a\ndaemon 37f29b7074cf8b52\n",
+        "verified": true,
+        "well_formed": true
+      }
+    },
+    {
+      "about": "the same signature, another seq",
+      "input": {
+        "event": {
+          "at": 10000,
+          "daemon": "37f29b7074cf8b52",
+          "detail": "{}",
+          "from": "pending",
+          "run": "run_1",
+          "seq": 3,
+          "to": "running"
+        },
+        "sig": "741dd7b9cb97588e67051c9e80d5bb33659ec7258e3c3eea2d47eea764f7fc8e33a4497fc8bc15fd500bcea75177cef39738038121475bf6ad341690704d2d04",
+        "sign": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c"
+      },
+      "output": {
+        "body": "arugula run event v1\nrun run_1\nseq 3\nfrom pending\nto running\nat 10000\ndetail 44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a\ndaemon 37f29b7074cf8b52\n",
+        "verified": false,
+        "well_formed": true
+      }
+    },
+    {
+      "about": "another run",
+      "input": {
+        "event": {
+          "at": 10000,
+          "daemon": "37f29b7074cf8b52",
+          "detail": "{}",
+          "from": "pending",
+          "run": "run_2",
+          "seq": 2,
+          "to": "running"
+        },
+        "sig": "741dd7b9cb97588e67051c9e80d5bb33659ec7258e3c3eea2d47eea764f7fc8e33a4497fc8bc15fd500bcea75177cef39738038121475bf6ad341690704d2d04",
+        "sign": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c"
+      },
+      "output": {
+        "body": "arugula run event v1\nrun run_2\nseq 2\nfrom pending\nto running\nat 10000\ndetail 44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a\ndaemon 37f29b7074cf8b52\n",
+        "verified": false,
+        "well_formed": true
+      }
+    },
+    {
+      "about": "from another state",
+      "input": {
+        "event": {
+          "at": 10000,
+          "daemon": "37f29b7074cf8b52",
+          "detail": "{}",
+          "from": "approved",
+          "run": "run_1",
+          "seq": 2,
+          "to": "running"
+        },
+        "sig": "741dd7b9cb97588e67051c9e80d5bb33659ec7258e3c3eea2d47eea764f7fc8e33a4497fc8bc15fd500bcea75177cef39738038121475bf6ad341690704d2d04",
+        "sign": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c"
+      },
+      "output": {
+        "body": "arugula run event v1\nrun run_1\nseq 2\nfrom approved\nto running\nat 10000\ndetail 44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a\ndaemon 37f29b7074cf8b52\n",
+        "verified": false,
+        "well_formed": true
+      }
+    },
+    {
+      "about": "to another state",
+      "input": {
+        "event": {
+          "at": 10000,
+          "daemon": "37f29b7074cf8b52",
+          "detail": "{}",
+          "from": "pending",
+          "run": "run_1",
+          "seq": 2,
+          "to": "failed"
+        },
+        "sig": "741dd7b9cb97588e67051c9e80d5bb33659ec7258e3c3eea2d47eea764f7fc8e33a4497fc8bc15fd500bcea75177cef39738038121475bf6ad341690704d2d04",
+        "sign": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c"
+      },
+      "output": {
+        "body": "arugula run event v1\nrun run_1\nseq 2\nfrom pending\nto failed\nat 10000\ndetail 44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a\ndaemon 37f29b7074cf8b52\n",
+        "verified": false,
+        "well_formed": true
+      }
+    },
+    {
+      "about": "another time",
+      "input": {
+        "event": {
+          "at": 10001,
+          "daemon": "37f29b7074cf8b52",
+          "detail": "{}",
+          "from": "pending",
+          "run": "run_1",
+          "seq": 2,
+          "to": "running"
+        },
+        "sig": "741dd7b9cb97588e67051c9e80d5bb33659ec7258e3c3eea2d47eea764f7fc8e33a4497fc8bc15fd500bcea75177cef39738038121475bf6ad341690704d2d04",
+        "sign": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c"
+      },
+      "output": {
+        "body": "arugula run event v1\nrun run_1\nseq 2\nfrom pending\nto running\nat 10001\ndetail 44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a\ndaemon 37f29b7074cf8b52\n",
+        "verified": false,
+        "well_formed": true
+      }
+    },
+    {
+      "about": "another detail",
+      "input": {
+        "event": {
+          "at": 10000,
+          "daemon": "37f29b7074cf8b52",
+          "detail": "{\"exit\":0}",
+          "from": "pending",
+          "run": "run_1",
+          "seq": 2,
+          "to": "running"
+        },
+        "sig": "741dd7b9cb97588e67051c9e80d5bb33659ec7258e3c3eea2d47eea764f7fc8e33a4497fc8bc15fd500bcea75177cef39738038121475bf6ad341690704d2d04",
+        "sign": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c"
+      },
+      "output": {
+        "body": "arugula run event v1\nrun run_1\nseq 2\nfrom pending\nto running\nat 10000\ndetail afcb5de449167a45dca0d930bd8c789bc4bf6fb7f0075e11f4aec0923fbe4439\ndaemon 37f29b7074cf8b52\n",
+        "verified": false,
+        "well_formed": true
+      }
+    },
+    {
+      "about": "the detail with a space more: its exact text is hashed",
+      "input": {
+        "event": {
+          "at": 10000,
+          "daemon": "37f29b7074cf8b52",
+          "detail": "{ }",
+          "from": "pending",
+          "run": "run_1",
+          "seq": 2,
+          "to": "running"
+        },
+        "sig": "741dd7b9cb97588e67051c9e80d5bb33659ec7258e3c3eea2d47eea764f7fc8e33a4497fc8bc15fd500bcea75177cef39738038121475bf6ad341690704d2d04",
+        "sign": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c"
+      },
+      "output": {
+        "body": "arugula run event v1\nrun run_1\nseq 2\nfrom pending\nto running\nat 10000\ndetail 257c1be96ae69f4b01c2c69bdb6d78605f59175819fb007d0bf245bf48444c4a\ndaemon 37f29b7074cf8b52\n",
+        "verified": false,
+        "well_formed": true
+      }
+    },
+    {
+      "about": "said to be another daemon's",
+      "input": {
+        "event": {
+          "at": 10000,
+          "daemon": "c242667535a3d34f",
+          "detail": "{}",
+          "from": "pending",
+          "run": "run_1",
+          "seq": 2,
+          "to": "running"
+        },
+        "sig": "741dd7b9cb97588e67051c9e80d5bb33659ec7258e3c3eea2d47eea764f7fc8e33a4497fc8bc15fd500bcea75177cef39738038121475bf6ad341690704d2d04",
+        "sign": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c"
+      },
+      "output": {
+        "body": "arugula run event v1\nrun run_1\nseq 2\nfrom pending\nto running\nat 10000\ndetail 44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a\ndaemon c242667535a3d34f\n",
+        "verified": false,
+        "well_formed": true
+      }
+    },
+    {
+      "about": "checked against another key",
+      "input": {
+        "event": {
+          "at": 10000,
+          "daemon": "37f29b7074cf8b52",
+          "detail": "{}",
+          "from": "pending",
+          "run": "run_1",
+          "seq": 2,
+          "to": "running"
+        },
+        "sig": "741dd7b9cb97588e67051c9e80d5bb33659ec7258e3c3eea2d47eea764f7fc8e33a4497fc8bc15fd500bcea75177cef39738038121475bf6ad341690704d2d04",
+        "sign": "8139770ea87d175f56a35466c34c7ecccb8d8a91b4ee37a25df60f5b8fc9b394"
+      },
+      "output": {
+        "body": "arugula run event v1\nrun run_1\nseq 2\nfrom pending\nto running\nat 10000\ndetail 44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a\ndaemon 37f29b7074cf8b52\n",
+        "verified": false,
+        "well_formed": true
+      }
+    },
+    {
+      "about": "a first event: from -",
+      "input": {
+        "event": {
+          "at": 9000,
+          "daemon": "37f29b7074cf8b52",
+          "detail": "{}",
+          "from": null,
+          "run": "run_1",
+          "seq": 1,
+          "to": "pending"
+        },
+        "sig": "4785d3168f22fe29e4d32a2006d54aa6c01ef0964b034719523b999fe1b75661fbbf5a7ff4eae704b2fce5a07d7d2a7ab38c4b76c511e8d14213e7f15f47400a",
+        "sign": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c"
+      },
+      "output": {
+        "body": "arugula run event v1\nrun run_1\nseq 1\nfrom -\nto pending\nat 9000\ndetail 44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a\ndaemon 37f29b7074cf8b52\n",
+        "verified": true,
+        "well_formed": true
+      }
+    },
+    {
+      "about": "the run succeeded, exit 0",
+      "input": {
+        "event": {
+          "at": 20000,
+          "daemon": "37f29b7074cf8b52",
+          "detail": "{\"exit\":0}",
+          "from": "running",
+          "run": "run_1",
+          "seq": 3,
+          "to": "succeeded"
+        },
+        "sig": "f99b0d0dd459bf2ccb4a4b23038db71cf3430bfb71ba4af2f1f84ab34538aaa4497ef08594689704123878e4c81cb2d346518a2ff5771b3aafd4971691f2b605",
+        "sign": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c"
+      },
+      "output": {
+        "body": "arugula run event v1\nrun run_1\nseq 3\nfrom running\nto succeeded\nat 20000\ndetail afcb5de449167a45dca0d930bd8c789bc4bf6fb7f0075e11f4aec0923fbe4439\ndaemon 37f29b7074cf8b52\n",
+        "verified": true,
+        "well_formed": true
+      }
+    },
+    {
+      "about": "a newline in the run's id, signed: not well formed, so not verified",
+      "input": {
+        "event": {
+          "at": 10000,
+          "daemon": "37f29b7074cf8b52",
+          "detail": "{}",
+          "from": "pending",
+          "run": "run_1\nseq 9",
+          "seq": 2,
+          "to": "running"
+        },
+        "sig": "ab3bf376be4beae984fcb52eb229cacce3b48da63157a9ce9836111bfec0f75ab6f4c740bd89cf4c7409481fe59ac2e7cb1d0d2bd7c5cd267b850c80eaac9e04",
+        "sign": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c"
+      },
+      "output": {
+        "body": "arugula run event v1\nrun run_1\nseq 9\nseq 2\nfrom pending\nto running\nat 10000\ndetail 44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a\ndaemon 37f29b7074cf8b52\n",
+        "verified": false,
+        "well_formed": false
+      }
+    },
+    {
+      "about": "a space in the run's id, signed",
+      "input": {
+        "event": {
+          "at": 10000,
+          "daemon": "37f29b7074cf8b52",
+          "detail": "{}",
+          "from": "pending",
+          "run": "run 1",
+          "seq": 2,
+          "to": "running"
+        },
+        "sig": "d5ed2ca0428d8e2797752ce614a81620822b58f66cc25c44c853d150be49b83755730ba34e9150e40a229a0d700d102597cbbbb08bd15f81b7e37b037c2e3703",
+        "sign": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c"
+      },
+      "output": {
+        "body": "arugula run event v1\nrun run 1\nseq 2\nfrom pending\nto running\nat 10000\ndetail 44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a\ndaemon 37f29b7074cf8b52\n",
+        "verified": false,
+        "well_formed": false
+      }
+    },
+    {
+      "about": "a run id of 129 bytes, signed",
+      "input": {
+        "event": {
+          "at": 10000,
+          "daemon": "37f29b7074cf8b52",
+          "detail": "{}",
+          "from": "pending",
+          "run": "rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr",
+          "seq": 2,
+          "to": "running"
+        },
+        "sig": "94bb41cc1d6ae9a896977e3958e9641d4a7246099f055b56ec64338a4fc2a4ef2b5a3362c4fdefc6cba1d001ef6234585e12f04239f9646dc89dd5a7168cdf01",
+        "sign": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c"
+      },
+      "output": {
+        "body": "arugula run event v1\nrun rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr\nseq 2\nfrom pending\nto running\nat 10000\ndetail 44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a\ndaemon 37f29b7074cf8b52\n",
+        "verified": false,
+        "well_formed": false
+      }
+    }
+  ],
+  "checks": [
+    "arugula_e2e::run::Event::body",
+    "arugula_e2e::run::Event::well_formed",
+    "arugula_e2e::run::Event::verify"
+  ],
+  "input": "event: { run, seq, from (a state or null), to, at, detail, daemon }; sign: the daemon's Ed25519 key, hex; sig: the signature, hex",
+  "keys": {
+    "another-daemon": {
+      "device": "c242667535a3d34f",
+      "noise": "0202020202020202020202020202020202020202020202020202020202020202",
+      "seed": "0202020202020202020202020202020202020202020202020202020202020202",
+      "sign": "8139770ea87d175f56a35466c34c7ecccb8d8a91b4ee37a25df60f5b8fc9b394"
+    },
+    "daemon": {
+      "device": "37f29b7074cf8b52",
+      "noise": "0101010101010101010101010101010101010101010101010101010101010101",
+      "seed": "0101010101010101010101010101010101010101010101010101010101010101",
+      "sign": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c"
+    }
+  },
+  "objects": {},
+  "output": "body: the signed text; well_formed; verified"
+}
