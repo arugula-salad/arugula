@@ -3,6 +3,10 @@ import Config
 # PRESENCE_APPS="id:secret,id2:secret2": each host app's id and the HS256
 # secret its server signs room tokens with. DEMO=1 adds app "demo" (a
 # random secret at boot) and POST /api/demo/token.
+# DNS_CLUSTER_QUERY (e.g. "arugula-stream.internal" on Fly, set by
+# rel/env.sh.eex) lets the nodes find each other; unset, a lone node.
+config :presence_relay, dns_cluster_query: System.get_env("DNS_CLUSTER_QUERY")
+
 # Sign in with Google: on when both are set. The callback is
 # /auth/google/callback on whichever host the browser is on.
 if config_env() != :test do
@@ -62,6 +66,9 @@ if config_env() == :prod do
       config :presence_relay, PresenceRelay.Repo,
         url: url,
         pool_size: String.to_integer(System.get_env("POOL_SIZE") || "10"),
+        # Fly's Managed Postgres pools through PgBouncer in transaction
+        # mode: no named prepared statements.
+        prepare: :unnamed,
         socket_options: if(System.get_env("ECTO_IPV6") in ~w(true 1), do: [:inet6], else: [])
   end
 

@@ -10,6 +10,7 @@ this; the site's docs show exactly this. PROTOCOL.md is underneath.
     <arugula-room room="design-team" token-url="/api/presence-token">
       <arugula-camera></arugula-camera>   <!-- camera on/off, avatar|outline, character, colour -->
       <arugula-people></arugula-people>   <!-- a tile per person in the room -->
+      <arugula-chat></arugula-chat>       <!-- the room's text: messages and an input -->
     </arugula-room>
 
     <!-- anywhere inside a room: one person's live face, e.g. beside their name -->
@@ -24,7 +25,7 @@ this; the site's docs show exactly this. PROTOCOL.md is underneath.
 
 `<arugula-people>`: attributes `size` (`bust`, default; `head` for a compact strip), `self` (`first`|`hide`). `<arugula-camera>`: attribute `controls` (`full`, default; `button` for just the toggle). `<arugula-avatar>`: `user`, `size` (`head`|`bust`). Theming: CSS custom properties on any ancestor: `--arugula-accent`, `--arugula-bg`, `--arugula-fg`, `--arugula-dim`, `--arugula-radius`.
 
-Events (bubbling, on the room element): `arugula:members` (`detail.members`), `arugula:wave` (`detail.from`), `arugula:answer` (`detail.from, detail.yes`), `arugula:react` (`detail.from, detail.emoji`), `arugula:live` (`detail.state`). `<arugula-camera>` also has a row of reactions.
+Events (bubbling, on the room element): `arugula:members` (`detail.members`), `arugula:wave` (`detail.from`), `arugula:answer` (`detail.from, detail.yes`), `arugula:react` (`detail.from, detail.emoji`), `arugula:message` (`detail.message`), `arugula:live` (`detail.state`). `<arugula-camera>` also has a row of reactions.
 
 ## Browser: JS API (same bundle, or npm `@arugula/presence`)
 
@@ -42,6 +43,10 @@ Events (bubbling, on the room element): `arugula:members` (`detail.members`), `a
     room.setLook({ character: 2, colour: 0 });
     room.wave(sub); room.answer(sub, true);
     room.react("👍");                              // an emoji for the room
+    await room.say("hi");                          // a kept text message
+    room.messages;                                 // [{ id, sub, name, text, at }], oldest first
+    await room.loadEarlier();                      // the 50 before the first one here
+    room.chat(element);                            // draw the chat into an element
     room.mount(element, { size: "bust" });          // draw everyone into an element
     room.avatar(element, sub, { size: "head" });    // draw one person
     room.leave();
@@ -53,7 +58,7 @@ Events (bubbling, on the room element): `arugula:members` (`detail.members`), `a
       <People />
       <Avatar user={id} size="head" />
     </PresenceRoom>
-    const { members, wave, camera } = usePresence();
+    const { members, messages, say, wave, camera } = usePresence();
 
 ## Publishable keys (hosted, no server of yours)
 

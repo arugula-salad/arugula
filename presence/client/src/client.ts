@@ -17,7 +17,20 @@ import { startCamera, type Camera, type FrameStats } from "@arugula/presence-cor
 import { decodeFrame, type Frame } from "@arugula/presence-core/outline/frame";
 import { RIG, WAVE_MS, unpackRig, type Look, type Rig } from "@arugula/presence-core/avatar/rig";
 import type { AvatarCamera } from "@arugula/presence-core/avatar/cam";
-import type { Member, Mode, Transport, TransportEvents } from "./transport.ts";
+import type { Member, Message, Mode, Transport, TransportEvents } from "./transport.ts";
+
+/** The most messages a page keeps (older ones are a loadEarlier() away). */
+export const MESSAGES_KEPT = 500;
+/** A history page from the relay (PROTOCOL.md). */
+const PAGE = 50;
+
+/** `into` with `more` merged in: by id, oldest first, the newest
+ * MESSAGES_KEPT. */
+export function mergeMessages(into: Message[], more: Message[]): Message[] {
+  const byId = new Map(into.map((m) => [m.id, m]));
+  for (const m of more) byId.set(m.id, m);
+  return [...byId.values()].sort((a, b) => a.id - b.id).slice(-MESSAGES_KEPT);
+}
 
 /** How long a reaction floats over its sender's tile. */
 export const REACT_MS = 2400;
@@ -110,6 +123,10 @@ export class PresenceClient {
   /** Who waved, newest last, until answered. */
   waves: { from: string; at: number }[] = [];
   private wavedAt = 0;
+  /** The room's text messages, oldest first (PROTOCOL.md `say`). */
+  messages: Message[] = [];
+  /** Whether there may be messages before the first one here. */
+  hasEarlier = true;
   /** Reactions in the last REACT_MS, yours included, oldest first: an
    * emoji floating over someone's tile. */
   reactions: { from: string; emoji: string; at: number }[] = [];
@@ -165,6 +182,26 @@ export class PresenceClient {
   wave(to: string) {
     this.wavedAt = Date.now();
     this.transport.wave?.(to);
+  }
+
+  /** Send a text message to the room; resolves with it as kept, rejects
+   * with the relay's reason (too long, too fast…). */
+  async say(text: string): Promise<Message> {
+    if (!this.transport.say) throw new Error("this room has no text");
+    const m = await this.transport.say(text);
+    this.messages = mergeMessages(this.messages, [m]);
+    this.emit();
+    return m;
+  }
+
+  /** The page of messages before the first one here. */
+  async loadEarlier(): Promise<void> {
+    const first = this.messages[0];
+    if (!first || !this.transport.history || !this.hasEarlier) return;
+    const earlier = await this.transport.history(first.id);
+    this.hasEarlier = earlier.length >= PAGE;
+    this.messages = mergeMessages(earlier, this.messages);
+    this.emit();
   }
 
   /** Send an emoji to the room (`me` is your sub, for your own tile). A
@@ -387,6 +424,15 @@ export class PresenceClient {
       this.emit();
     },
     react: (from, emoji) => this.reacted(from, emoji),
+    said: (m) => {
+      this.messages = mergeMessages(this.messages, [m]);
+      this.emit();
+    },
+    history: (messages) => {
+      if (!this.messages.length) this.hasEarlier = messages.length >= PAGE;
+      this.messages = mergeMessages(this.messages, messages);
+      this.emit();
+    },
     answer: (from, yes) => {
       this.answers = [...this.answers.filter((a) => a.from !== from), { from, yes, at: Date.now() }];
       this.emit();

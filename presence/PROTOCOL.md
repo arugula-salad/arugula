@@ -91,6 +91,8 @@ watching can drop to a frame every few seconds).
 | `state` | `{mode?, look?, away?, watching?}` | updates the member's presence meta |
 | `wave` | `{to: <sub>}` | wave at someone: a hello that asks to talk (calls come later) |
 | `answer` | `{to: <sub>, yes: bool}` | answer a wave |
+| `say` | `{text}` | a text message for the room: 1–2000 characters after trimming, no control characters but newlines; at most 5 per 5 s per connection. Replies `ok` with the kept message, or `error` `{reason: "empty" \| "too long" \| "control characters" \| "too fast"}` (and it goes nowhere) |
+| `history` | `{before: <id>}` | the 50 messages before that one; replies `ok` `{messages: [...]}`, oldest first |
 | `react` | `{emoji}` | an emoji for the room (a 👍, a 🎉): one grapheme, no ASCII, ≤ 32 bytes, at most one per 250 ms per connection, else dropped |
 
 ### Relay → client
@@ -101,6 +103,8 @@ watching can drop to a frame every few seconds).
 | `off` | `{sub}` | someone's camera went off, or their frame went stale (10 s) |
 | `wave` | `{from: <sub>}` | to the waved member only |
 | `answer` | `{from: <sub>, yes}` | to the waver only |
+| `said` | `{id, sub, name, text, at}` | a message, to everyone in the room but the connection that said it (which has it in its reply); `id` only goes up in a room, `at` is Unix ms |
+| `history` | `{messages: [...]}` | on join: the room's last 50 messages, oldest first |
 | `react` | `{from: <sub>, emoji}` | someone's reaction, to everyone else in the room (not stored: a joiner doesn't get old ones) |
 
 Limits: 32 KiB a frame, 70 ms between a member's frames, 64 members a room,

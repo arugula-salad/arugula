@@ -79,11 +79,12 @@ export function Docs() {
             <tbody>
               <Attr name="<arugula-camera>">camera on/off, avatar or outline, character and colour; controls="button" for just the toggle</Attr>
               <Attr name="<arugula-people>">a tile per person; size="head" for a compact strip, self="hide" to leave yourself out</Attr>
+              <Attr name="<arugula-chat>">the room's text: messages (kept, with history) and an input; Enter sends, Shift+Enter is a new line</Attr>
               <Attr name="<arugula-avatar>">one person's live face: user="…" size="head|bust", e.g. beside their name in your UI</Attr>
             </tbody>
           </table>
           <p>
-            Events bubble from the room element: <code>arugula:members</code>, <code>arugula:wave</code>, <code>arugula:answer</code>, <code>arugula:react</code>,{" "}
+            Events bubble from the room element: <code>arugula:members</code>, <code>arugula:wave</code>, <code>arugula:answer</code>, <code>arugula:react</code>, <code>arugula:message</code>,{" "}
             <code>arugula:live</code>. Theme with custom properties on any ancestor:
           </p>
           <Code code={theming} label="Theming" />
@@ -95,7 +96,7 @@ export function Docs() {
           <h2 id="react">React</h2>
           <p>
             <code>@arugula/presence-react</code> wraps the API: <code>PresenceRoom</code>, <code>People</code>, <code>CameraControls</code>,{" "}
-            <code>Avatar</code>, and a hook:
+            <code>Avatar</code>, <code>Chat</code>, and a hook:
           </p>
           <Code code={browser.React} label="React" />
           <Code code={reactHook} label="The hook" />
@@ -124,6 +125,7 @@ export function Docs() {
             <li>Tracking runs in the browser (MediaPipe; WebGPU for depth). The camera's picture never leaves the page.</li>
             <li>What's sent: a rig (21–40 bytes, ~12 a second) or line outlines (a few KB, ~4 a second). The relay keeps each person's newest frame in memory for someone joining, and nothing else.</li>
             <li>64 people a room, 32 KiB a frame, a frame per 70 ms per person.</li>
+            <li>Text: 1–2000 characters a message, at most 5 per 5 seconds each; kept, the last 50 on joining and earlier pages on request.</li>
             <li>Reactions: any single emoji, for the room, at most four a second each; they float over the sender's tile and aren't kept.</li>
             <li>Calls (voice and video after a wave) are next; waving works today.</li>
           </ul>

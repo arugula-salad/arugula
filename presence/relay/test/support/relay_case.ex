@@ -16,6 +16,14 @@ defmodule PresenceRelay.RelayCase do
 
   alias PresenceRelay.Token
 
+  # Joins read a room's history (PresenceRelay.Chat): the channel processes
+  # share this test's sandboxed connection.
+  setup tags do
+    pid = Ecto.Adapters.SQL.Sandbox.start_owner!(PresenceRelay.Repo, shared: not tags[:async])
+    on_exit(fn -> Ecto.Adapters.SQL.Sandbox.stop_owner(pid) end)
+    :ok
+  end
+
   def token(claims \\ %{}, app \\ "acme") do
     base = %{
       "room" => "lobby",
@@ -30,11 +38,22 @@ defmodule PresenceRelay.RelayCase do
   def room, do: "r" <> Integer.to_string(System.unique_integer([:positive]))
 
   @doc "A client named `name`, joined to `room` as `sub`: `{:ok, pid}` or the join's error."
-  def client(name, room, sub, opts \\ []) do
+  def client(name, room, sub, opts \\ []), do: client_on(node(), name, room, sub, opts)
+
+  @doc "`client/4` on `node` (a cluster test's peer): its channel runs there."
+  def client_on(node, name, room, sub, opts \\ []) do
     test = self()
 
     pid =
-      spawn(fn ->
+      Node.spawn(node, fn ->
+        # On a cluster test's peer there's no ExUnit run: register this
+        # process with ExUnit's on-exit handler there, which is all
+        # Phoenix.ChannelTest asks of a "test process".
+        if node != node(test) do
+          {:ok, _} = Application.ensure_all_started(:ex_unit)
+          ExUnit.OnExitHandler.register(self())
+        end
+
         tok =
           token(
             Map.merge(%{"room" => room, "sub" => sub, "name" => to_string(name)}, Map.new(opts))
@@ -45,7 +64,7 @@ defmodule PresenceRelay.RelayCase do
             PresenceRelayWeb.Endpoint,
             PresenceRelayWeb.Socket,
             %{"token" => tok},
-            test_process: test
+            test_process: if(node == node(test), do: test, else: self())
           )
 
         case Phoenix.ChannelTest.join(socket, PresenceRelayWeb.RoomChannel, "room:" <> room, %{}) do
@@ -81,6 +100,10 @@ defmodule PresenceRelay.RelayCase do
 
       %Phoenix.Socket.Message{event: event, payload: payload} ->
         send(test, {:pushed, name, event, payload})
+        loop(test, name, socket)
+
+      %Phoenix.Socket.Reply{status: status, payload: payload} ->
+        send(test, {:replied, name, status, payload})
         loop(test, name, socket)
 
       _ ->

@@ -19,6 +19,7 @@ export const browser = {
 <arugula-room room="design-team" token-url="/api/presence-token">
   <arugula-camera></arugula-camera>
   <arugula-people></arugula-people>
+  <arugula-chat></arugula-chat>
 </arugula-room>`,
   JavaScript: `import { connect } from "${SDK}";
 
@@ -31,14 +32,16 @@ const room = await connect({
 room.mount(document.querySelector("#people"));
 await room.camera.start({ mode: "avatar" });
 room.on("wave", (from) => console.log(from, "waved at you"));
-room.react("🎉");`,
-  React: `import { PresenceRoom, CameraControls, People, Avatar } from "@arugula/presence-react";
+room.react("🎉");
+await room.say("morning all");`,
+  React: `import { PresenceRoom, CameraControls, People, Chat, Avatar } from "@arugula/presence-react";
 
 export function Team({ me }) {
   return (
     <PresenceRoom room="design-team" token={getToken}>
       <CameraControls />
       <People />
+      <Chat />
       <Avatar user={me.id} size="head" />
     </PresenceRoom>
   );
@@ -112,12 +115,16 @@ end`,
 export const jsApi = `const room = await connect({ room, token, relay? });
 
 room.members                  // [{ sub, name, look, mode, away, watching }]
-room.on("members", (members) => {})   // also "wave", "answer", "react", "live"
+room.on("members", (members) => {})   // also "wave", "answer", "react", "message", "live"
 await room.camera.start({ mode: "avatar" | "outline" })
 room.camera.stop()
 room.setLook({ character, colour })
 room.wave(sub)  ·  room.answer(sub, true)
 room.react("👍")                     // floats over your tile for everyone
+await room.say("hi")                 // kept; everyone gets it as "message"
+room.messages                        // [{ id, sub, name, text, at }], oldest first
+await room.loadEarlier()             // the 50 before the first one here
+room.chat(el)                        // the messages and an input, drawn into el
 room.mount(el, { size: "bust" })      // everyone, drawn into el
 room.avatar(el, sub, { size: "head" })  // one person
 room.leave()`;
@@ -130,4 +137,4 @@ export const theming = `arugula-room {
   --arugula-radius: 12px;
 }`;
 
-export const reactHook = `const { members, wave, react, camera } = usePresence();`;
+export const reactHook = `const { members, messages, say, wave, react, camera } = usePresence();`;
