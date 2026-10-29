@@ -34,6 +34,11 @@
 //!
 //! [`open_in_pane`] opens a file at a line in a pane's nvim (#1731's Open
 //! in editor), over the same socket, with or without the plugin.
+//!
+//! A session also asks nvim whether it has arugula.nvim anywhere
+//! (`nvim_plugin.rs`, #1733): when it has none, the pane's editor says
+//! Arugula can add it (`offer_plugin`); a copy Arugula installed that's
+//! older than this daemon's is refreshed on disk.
 
 use std::{
     collections::HashMap,
@@ -501,6 +506,11 @@ pub fn plugin_attached(pane: PaneId) {
     seen(|s| s.insert(pane, Seen::Plugin));
 }
 
+/// Whether arugula.nvim is attached to `pane` now.
+pub fn plugin_on(pane: PaneId) -> bool {
+    seen(|s| matches!(s.get(&pane), Some(Seen::Plugin)))
+}
+
 /// ...and it left: the next look may read nvim here again.
 pub fn plugin_left(pane: PaneId) {
     seen(|s| {
@@ -590,9 +600,14 @@ async fn session(mux: &MuxHandle, pane: PaneId, tui: u32, mut stop: oneshot::Rec
     if v < OLDEST {
         return End::Not(format!("nvim {}.{} is older than 0.10", v.0, v.1));
     }
+    let offer = super::nvim_plugin::on_connect(&rpc).await;
     let (tx, _) = mpsc::unbounded_channel();
     let link = Link::new(Hello { editor: "nvim".into(), ..Hello::default() }, tx);
     link.no_follow();
+    if offer {
+        link.offer_plugin(true);
+        super::nvim_plugin::offered(pane, &link);
+    }
     let handle: Arc<dyn EditorLink> = link.clone();
     match mux.api(|r| Api::EditorAttach(pane, handle.clone(), false, r)).await {
         Some(Ok(())) => {}
@@ -674,20 +689,45 @@ fn apply(link: &Link, s: &Value, last: &mut Value) {
 /// has no socket we can find (older than 0.10, or its server stopped), or
 /// nvim refused.
 pub async fn open_in_pane(mux: &MuxHandle, pane: PaneId, file: &Path, line: Option<u32>) -> Result<(), String> {
-    let terminals = mux.api(Api::Terminals).await.ok_or("the daemon is stopping")?;
+    let socket = pane_socket(mux, pane).await.map_err(|e| e.to_string())?;
+    open_at(&socket, file, line).await
+}
+
+/// Why a pane's nvim can't be reached.
+#[derive(Debug)]
+pub enum NoNvim {
+    /// No terminal with that id here.
+    NoPane(PaneId),
+    /// It's here, but this says why not.
+    Why(String),
+}
+
+impl std::fmt::Display for NoNvim {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            NoNvim::NoPane(pane) => write!(f, "no terminal %{pane} here"),
+            NoNvim::Why(why) => f.write_str(why),
+        }
+    }
+}
+
+/// The RPC socket of the nvim terminal `pane` runs in its foreground.
+pub async fn pane_socket(mux: &MuxHandle, pane: PaneId) -> Result<PathBuf, NoNvim> {
+    let terminals = mux.api(Api::Terminals).await.ok_or_else(|| NoNvim::Why("the daemon is stopping".into()))?;
     let pid = terminals
         .into_iter()
         .find(|(id, _)| *id == pane)
-        .ok_or_else(|| format!("no terminal %{pane} here"))?
+        .ok_or(NoNvim::NoPane(pane))?
         .1
-        .ok_or_else(|| format!("%{pane} runs nothing"))?;
+        .ok_or_else(|| NoNvim::Why(format!("%{pane} runs nothing")))?;
     let nvim = tokio::task::spawn_blocking(move || nvim_in(pid))
         .await
         .ok()
         .flatten()
-        .ok_or_else(|| format!("%{pane} doesn't run nvim"))?;
-    let socket = find_socket(nvim, Places::of(nvim)).await.ok_or("its nvim has no RPC socket (0.10 or later has)")?;
-    open_at(&socket, file, line).await
+        .ok_or_else(|| NoNvim::Why(format!("%{pane} doesn't run nvim")))?;
+    find_socket(nvim, Places::of(nvim))
+        .await
+        .ok_or_else(|| NoNvim::Why("its nvim has no RPC socket (0.10 or later has)".into()))
 }
 
 /// Opens `file` at `line` in the nvim listening on `socket`.

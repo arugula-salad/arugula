@@ -684,6 +684,95 @@ async fn nvim_with_the_plugin_in_a_pane_is_that_pane() {
     let _ = std::fs::remove_dir_all(&run);
 }
 
+/// #1733: nvim in a pane, with an empty data directory and no plugin. The
+/// pane says Arugula can add arugula.nvim; the install operation (what the
+/// tip's "Add arugula.nvim" calls, #1735) writes it into nvim's own package
+/// directory and nowhere else (no `init.lua`), loads it into the running
+/// nvim, and it joins as the pane without a restart: following works at
+/// once. `:checkhealth arugula` then names the socket, the daemon and the
+/// pane. The next nvim loads it by itself; remove deletes it, and the
+/// offer comes back.
+#[tokio::test(flavor = "multi_thread")]
+async fn arugula_nvim_installs_into_a_running_nvim_and_joins() {
+    if !nvim_for_panes() {
+        return;
+    }
+    let d = Daemon::child();
+    let root = repo(&d);
+    let file = format!("{root}/src/a.txt");
+    std::fs::write(&file, "one\ntwo\nthree\n").unwrap();
+    let home = d.sessions.join("nvim-1733");
+    let (data, config, state) = (home.join("data"), home.join("config"), home.join("state"));
+    for dir in [&data, &config, &state] {
+        std::fs::create_dir_all(dir).unwrap();
+    }
+    let nvim = format!(
+        "XDG_DATA_HOME={} XDG_CONFIG_HOME={} XDG_STATE_HOME={} nvim {file}\r",
+        data.display(),
+        config.display(),
+        state.display()
+    );
+    let pane = shell_pane(&d, &root);
+    let mut web = Client::connect(&d).await;
+    type_in(&d, pane, &nvim);
+    web.until("the offer", pane, |p| p.and_then(|p| p.editor.as_ref()).is_some_and(|e| e.no_follow && e.offer_plugin))
+        .await;
+    assert_eq!(d.get("/api/nvim-plugin")["copies"], json!([]));
+    // One click.
+    let (status, body) = d.raw("POST", &format!("/api/panes/{pane}/nvim-plugin"), None);
+    assert_eq!(status, 200, "{body}");
+    let done: Value = serde_json::from_str(&body).unwrap();
+    assert_eq!(done["joined"], true, "{done}");
+    let dir = std::path::PathBuf::from(done["dir"].as_str().unwrap());
+    assert_eq!(
+        std::fs::canonicalize(&dir).unwrap(),
+        std::fs::canonicalize(data.join("nvim/site/pack/arugula/start/arugula.nvim")).unwrap()
+    );
+    assert!(dir.join("ARUGULA_INSTALLED").is_file() && dir.join("plugin/arugula.lua").is_file());
+    assert_eq!(std::fs::read_dir(&config).unwrap().count(), 0, "nothing in nvim's config: no init.lua");
+    // It's the plugin on the pane now: followable, no offer, one entry.
+    web.until("the plugin joined", pane, |p| {
+        p.and_then(|p| p.editor.as_ref()).is_some_and(|e| !e.no_follow && !e.offer_plugin)
+    })
+    .await;
+    assert_eq!(editors_in(&web), vec![pane]);
+    web.send(ClientMsg::Follow { pane, on: true }).await;
+    let open = web.followed("the file", |v| v.get("open").is_some()).await;
+    assert_eq!(open["open"]["text"], "one\ntwo\nthree");
+    web.send(ClientMsg::Follow { pane, on: false }).await;
+    // :checkhealth arugula, written out.
+    let report = home.join("health.txt");
+    type_in(&d, pane, ":checkhealth arugula\r");
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    type_in(&d, pane, &format!(":w! {}\r", report.display()));
+    d.wait_for("the health report", || report.is_file());
+    let text = std::fs::read_to_string(&report).unwrap();
+    assert!(text.contains(&format!("Socket: {}", d.sock().display())), "{text}");
+    assert!(text.contains("Daemon: arugulad "), "{text}");
+    assert!(text.contains(&format!("Tied to pane %{pane}")), "{text}");
+    assert!(text.contains("Installed by Arugula"), "{text}");
+    assert!(!text.contains("ERROR"), "{text}");
+    // The next nvim has it from the start.
+    type_in(&d, pane, ":qa!\r");
+    web.until("nvim gone", pane, |p| p.is_some_and(|p| p.editor.is_none())).await;
+    type_in(&d, pane, &nvim);
+    web.until("the plugin, by itself", pane, |p| p.and_then(|p| p.editor.as_ref()).is_some_and(|e| !e.no_follow)).await;
+    type_in(&d, pane, ":qa!\r");
+    web.until("nvim gone again", pane, |p| p.is_some_and(|p| p.editor.is_none())).await;
+    // Settings' list, and Remove.
+    let copies = d.get("/api/nvim-plugin");
+    assert_eq!(copies["copies"].as_array().map(Vec::len), Some(1), "{copies}");
+    assert_eq!(copies["copies"][0]["dir"], done["dir"]);
+    let (status, body) = d.raw("DELETE", "/api/nvim-plugin", None);
+    assert_eq!(status, 200, "{body}");
+    assert_eq!(serde_json::from_str::<Value>(&body).unwrap()["removed"], json!([done["dir"]]));
+    assert!(!dir.exists());
+    type_in(&d, pane, &nvim);
+    web.until("the offer again", pane, |p| p.and_then(|p| p.editor.as_ref()).is_some_and(|e| e.offer_plugin)).await;
+    type_in(&d, pane, ":qa!\r");
+    web.until("nvim gone at last", pane, |p| p.is_some_and(|p| p.editor.is_none())).await;
+}
+
 /// An editor isn't in any session: someone a session was shared with
 /// doesn't see it, its preview, or its stream (the owner's, and a team's
 /// members' on a team daemon).

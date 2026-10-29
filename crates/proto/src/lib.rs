@@ -1199,6 +1199,13 @@ pub struct EditorInfo {
     /// (#1730).
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub no_follow: bool,
+    /// Arugula can add arugula.nvim to this nvim (#1733): the daemon reads
+    /// it over its socket and found no copy of the plugin anywhere it
+    /// would load from, so nothing (a plugin manager) owns one. The "Add
+    /// arugula.nvim" tip (#1735) shows on it and calls
+    /// `nvim_plugin.install` for the pane.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub offer_plugin: bool,
 }
 
 /// Diagnostic counts: errors, warnings, information.

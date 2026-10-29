@@ -41,8 +41,9 @@ pub fn register() {
 
 struct Editors;
 
-/// Whose the IDE's operations are (`impl Handle<Editor> for IdeGet`): this
-/// crate's, so it may handle `arugula-proto`'s operation types (#232).
+/// Whose the IDE's and arugula.nvim's operations are (`impl Handle<Editor>
+/// for IdeGet`): this crate's, so it may handle `arugula-proto`'s operation
+/// types (#232).
 pub struct Editor;
 
 impl editors::Editors for Editors {
@@ -51,12 +52,15 @@ impl editors::Editors for Editors {
     }
 
     fn routes(&self, r: Router<Arc<App>>) -> Router<Arc<App>> {
-        use arugula_proto::op::ops::{IdeGet, IdeMention, IdeSet};
+        use arugula_proto::op::ops::{IdeGet, IdeMention, IdeSet, NvimPluginGet, NvimPluginInstall, NvimPluginRemove};
         use arugulad_base::ops::OpRoutes;
         r.route("/api/editors/vsix", axum::routing::get(editor::vsix::download))
             .op_of::<IdeGet, Editor>()
             .op_of::<IdeSet, Editor>()
             .op_of::<IdeMention, Editor>()
+            .op_of::<NvimPluginInstall, Editor>()
+            .op_of::<NvimPluginGet, Editor>()
+            .op_of::<NvimPluginRemove, Editor>()
     }
 
     fn local_routes(&self, r: Router<Arc<App>>) -> Router<Arc<App>> {
@@ -69,6 +73,7 @@ impl editors::Editors for Editors {
 
     fn watch(&self, mux: MuxHandle) {
         editor::nvim::watch(mux);
+        editor::nvim_plugin::refresh_at_start();
     }
 
     fn open_in_pane(

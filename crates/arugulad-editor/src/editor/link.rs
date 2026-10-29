@@ -21,7 +21,8 @@
 //!   `followers`). It's content, so it goes only to the clients following,
 //!   on their own (end-to-end) connections.
 //!
-//! The daemon sends `welcome` (the id it got), `followers`, `resend` (a new
+//! The daemon sends `welcome` (the id it got, its release, and the pane
+//! when it's a terminal's editor), `followers`, `resend` (a new
 //! follower needs the whole file again) and `continue` (the debugger).
 //!
 //! Claude Code's proposed edits (#1732, `ide/nvim.rs`), to an editor in a
@@ -149,6 +150,8 @@ struct St {
     stale: bool,
     /// The reason it raised, while it stands.
     raised: Option<ReasonKind>,
+    /// It's the terminal pane it said it runs in.
+    terminal: bool,
 }
 
 impl EditorLink for Link {
@@ -195,13 +198,39 @@ impl Link {
 
     /// It's pane `id` now: notices about it go to `sink`.
     pub fn bind(&self, id: PaneId, sink: NoticeSink) {
-        self.st.lock().unwrap().bound = Some((id, sink));
-        self.send(json!({ "t": "welcome", "id": id }));
+        let pane = {
+            let mut st = self.st.lock().unwrap();
+            st.bound = Some((id, sink));
+            (st.terminal && self.hello.pane == Some(id)).then_some(id)
+        };
+        // The daemon's release and the pane it's tied to, for
+        // `:checkhealth arugula` (#1733).
+        let mut welcome = json!({ "t": "welcome", "id": id, "version": arugula_core::version::get() });
+        if let Some(p) = pane {
+            welcome["pane"] = p.into();
+        }
+        self.send(welcome);
     }
 
     /// It sends no follow stream (nvim read over its socket, #1730).
     pub fn no_follow(&self) {
         self.st.lock().unwrap().info.no_follow = true;
+    }
+
+    /// Arugula can add arugula.nvim to it (#1733), or no longer.
+    pub fn offer_plugin(&self, on: bool) {
+        let changed = {
+            let mut st = self.st.lock().unwrap();
+            std::mem::replace(&mut st.info.offer_plugin, on) != on
+        };
+        if changed {
+            self.notice(What::BlockChanged);
+        }
+    }
+
+    /// It's the terminal it said it runs in (#1730): its welcome says so.
+    pub fn in_terminal(&self) {
+        self.st.lock().unwrap().terminal = true;
     }
 
     pub fn on_peek(&self, f: impl Fn(&Peek) + Send + Sync + 'static) {
@@ -536,6 +565,7 @@ where
     let pane = match hello.pane {
         Some(p) if block.is_none() && super::nvim::runs_in(&app.mux, p, hello.pid).await => {
             super::nvim::plugin_attached(p);
+            link.in_terminal();
             match app.mux.api(|r| Api::EditorAttach(p, handle.clone(), true, r)).await {
                 Some(Ok(())) => Some(p),
                 r => {
