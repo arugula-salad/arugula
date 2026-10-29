@@ -215,10 +215,17 @@ export async function firstRun(j: Journey, app: App, actor: string, machine: str
     tab,
     (p) => p.getByRole("heading", { name: "Sign in the app?" }),
     async (p) => {
-      await expect(p.getByText(/Allowing also makes it one of your devices/)).toBeVisible();
+      // The line comes with control's answer about the sign-in, which two
+      // setups at once can hold up past the default 10 s (#1674).
+      await expect(p.getByText(/Allowing also makes it one of your devices/)).toBeVisible({ timeout: 30_000 });
       await p.getByRole("button", { name: "Allow" }).click();
-      await expect(p.getByText(/the app is one of your devices now/)).toBeVisible({ timeout: 20_000 });
+      // The page after says so for 6 s, and only once it's loaded with
+      // nothing else to approve, so it can pass unseen under load. What
+      // lasts is the app's window being a device: it reaches the machine
+      // with no "New device?" to approve.
+      await expect(win().getByRole("button", { name: new RegExp(machine) }).first()).toBeVisible({ timeout: 30_000 });
       await expect(win().getByText("Approve this app as a device")).toBeHidden();
+      await expect(p.getByText(/Next the app's window asks to be approved/)).toBeHidden();
     },
   );
 
