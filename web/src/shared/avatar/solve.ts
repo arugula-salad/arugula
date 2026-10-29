@@ -1,7 +1,9 @@
 // From what the landmarkers see to a rig (S44): the face landmarker's
 // ARKit blendshapes and head transform, the pose landmarker's shoulders,
-// elbows and wrists, and the hand landmarker's hands (which way each
-// points, how curled each finger is), as ./rig's numbers. Pure, so node tests
+// elbows and wrists, and the hand landmarker's hands (where each is and
+// which way it points), as ./rig's numbers. An elbow the camera doesn't
+// see is left out: the drawing puts it where the arm bends (rig's
+// withElbows). Pure, so node tests
 // it (web/scripts/avatar.test.mjs); ./track runs the models.
 
 import { neutral, type Hand, type Point, type Rig } from "./rig.ts";
@@ -54,28 +56,10 @@ export interface Calib {
 
 const learn = (base: number | undefined, v: number) => (base === undefined ? v : base + (v - base) * (v > base ? 0.3 : 0.003));
 
-/** A hand's knuckles, then each finger's joints out to the tip (the hand
- * landmarker's numbering): thumb, index, middle, ring, pinky. */
-const TIPS = [4, 8, 12, 16, 20];
-const BASES = [2, 5, 9, 13, 17];
-
-/** Which way `h` points and how curled each finger is, in bust space
- * (`ax` scales x for the image's aspect). */
+/** Which way `h` points, wrist to middle knuckle, in bust space (`ax`
+ * scales x for the image's aspect). */
 export function handOf(h: Mark[], ax: number): Hand {
-  const d = (a: Mark, b: Mark) => Math.hypot((a.x - b.x) * ax, a.y - b.y);
-  const w = h[0];
-  const angle = Math.atan2(h[9].y - w.y, (h[9].x - w.x) * ax);
-  const palm = d(w, h[9]) || 1e-6;
-  const curl = TIPS.map((tip, i) => {
-    if (i === 0) {
-      // The thumb: out from the index knuckle when open, tucked to it when not.
-      return clamp((0.85 - d(h[tip], h[5]) / palm) / 0.5, 0, 1);
-    }
-    // A straight finger's tip is about twice as far from the wrist as its
-    // knuckle; a folded one's about as far.
-    return clamp((1.85 - d(w, h[tip]) / (d(w, h[BASES[i]]) || 1e-6)) / 0.8, 0, 1);
-  }) as Hand["curl"];
-  return { angle, curl };
+  return { angle: Math.atan2(h[9].y - h[0].y, (h[9].x - h[0].x) * ax) };
 }
 
 /** The rig for what was seen; `null`s leave the rig neutral there. */
@@ -133,8 +117,10 @@ export function solve(s: Seen, calib: Calib = {}): Rig {
     };
     r.elbowL = at("elbowL");
     r.elbowR = at("elbowR");
-    r.wristL = r.elbowL && at("wristL");
-    r.wristR = r.elbowR && at("wristR");
+    // A wrist counts without its elbow: at a desk the elbows are mostly
+    // out of frame and the hands in it.
+    r.wristL = at("wristL");
+    r.wristR = at("wristR");
     // The shoulders themselves: tilt and turn come with where they are; a
     // shrug is a shoulder nearer its ear than usual.
     const lift = (sh: Mark, ear: Mark | undefined, key: "gapL" | "gapR") => {
@@ -167,14 +153,8 @@ export function solve(s: Seen, calib: Calib = {}): Rig {
     const side = left ? "L" : "R";
     if (r[`hand${side}`]) continue;
     r[`hand${side}`] = handOf(h, ax);
-    // A hand seen where the pose lost the wrist: the wrist is the hand's,
-    // and the elbow a guess between it and the shoulder, sagging.
-    if (toBust && !r[`wrist${side}`]) {
-      const w = toBust(h[0]);
-      const sx = left ? 0.5 : -0.5;
-      r[`wrist${side}`] = w;
-      r[`elbow${side}`] ??= [(sx + w[0]) / 2 + (left ? 0.18 : -0.18), w[1] / 2 + 0.3];
-    }
+    // A hand seen where the pose lost the wrist: the wrist is the hand's.
+    if (toBust && !r[`wrist${side}`]) r[`wrist${side}`] = toBust(h[0]);
   }
   return r;
 }
@@ -228,12 +208,12 @@ export class RigFilter {
       if (typeof v === "number") (out as Record<string, unknown>)[k] = run(k, v);
       else if (Array.isArray(v)) (out as Record<string, unknown>)[k] = [run(`${k}.x`, v[0]), run(`${k}.y`, v[1])];
       else if (v && typeof v === "object") {
-        // A hand: its angle (unwrapped so it doesn't spin at ±π) and curls.
+        // A hand: its angle, unwrapped so it doesn't spin at ±π.
         const prev = this.angles.get(k);
         const a = prev === undefined ? v.angle : prev + Math.atan2(Math.sin(v.angle - prev), Math.cos(v.angle - prev));
         const angle = run(`${k}.a`, a);
         this.angles.set(k, angle);
-        (out as Record<string, unknown>)[k] = { angle, curl: v.curl.map((c, i) => run(`${k}.${i}`, c)) };
+        (out as Record<string, unknown>)[k] = { angle };
       } else if (v === null) {
         for (const key of [...this.f.keys()]) if (key.startsWith(`${k}.`)) this.f.delete(key);
         this.angles.delete(k);

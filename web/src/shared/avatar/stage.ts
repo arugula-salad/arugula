@@ -6,7 +6,7 @@
 // and dozes while its person is away.
 
 import { HEAD_R, HEAD_Y, type Character } from "./character";
-import { approach, idle, neutral, type Look, type Rig } from "./rig";
+import { approach, idle, neutral, withElbows, type Look, type Rig } from "./rig";
 
 /** The colours a person picks from, as theme variables. */
 export const COLOURS = ["--accent", "--teal", "--ok", "--warn", "--info", "--danger", "--fg"] as const;
@@ -104,7 +104,7 @@ function paint(v: View, t: number, dt: number) {
   g.lineJoin = "round";
   g.lineCap = "round";
   const look = src.look;
-  v.character(look.character).draw(g, v.cur, {
+  v.character(look.character).draw(g, withElbows(v.cur), {
     size: v.size,
     colour: of(COLOURS[look.colour % COLOURS.length]),
     ink: of("--fg"),

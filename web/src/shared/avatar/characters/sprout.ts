@@ -210,7 +210,7 @@ export const sprout: Character = {
       g.quadraticCurveTo(ex, ey, ex * 0.8 + wx * 0.2, ey * 0.8 + wy * 0.2);
       g.lineTo(wx, wy);
       g.stroke();
-      drawHand(g, [wx, wy], hand, side, { size: 0.16, kind: "fingers", fill: s.fill, stroke: s.colour });
+      drawHand(g, [wx, wy], hand, side, { size: 0.16, fill: s.fill, stroke: s.colour });
     }
 
     if (s.away) {

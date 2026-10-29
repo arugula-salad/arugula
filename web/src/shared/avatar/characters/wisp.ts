@@ -176,7 +176,7 @@ export const wisp: Character = {
       g.quadraticCurveTo(ex, ey, (ex + wx) / 2, (ey + wy) / 2);
       g.quadraticCurveTo(wx - Math.cos(angle) * 0.08, wy - Math.sin(angle) * 0.08, wx, wy);
       g.stroke();
-      drawHand(g, [wx, wy], hand, side as 1 | -1, { size: 0.16, kind: "fingers", fill: s.fill, stroke: s.colour });
+      drawHand(g, [wx, wy], hand, side as 1 | -1, { size: 0.16, fill: s.fill, stroke: s.colour });
     }
 
     if (s.away) {

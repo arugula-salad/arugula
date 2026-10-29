@@ -15,9 +15,10 @@
 //   face    = 12 × u8 (0–255 for 0–1; lookX, lookY as i8 for −1–1)
 //   arms    = 4 points (elbowL, elbowR, wristL, wristR) × x:i8 y:i8 (1/25
 //             shoulder), sent when flags & ARMS; a point at (−128, −128)
-//             wasn't seen
-//   hand    = angle:i8 (π/127) curl:5 × u8 (thumb … pinky), for the left
-//             hand when flags & HAND_L, then the right when flags & HAND_R
+//             wasn't seen (an elbow mostly isn't, at a desk: `withElbows`
+//             puts it where the arm would bend)
+//   hand    = angle:i8 (π/127), for the left hand when flags & HAND_L,
+//             then the right when flags & HAND_R
 //   shoulders = shoulderL, shoulderR × x:i8 y:i8 (1/25 shoulder), when
 //             flags & SHOULDERS
 // flags: FACE (a face was found), ARMS, HAND_L, HAND_R, SHOULDERS.
@@ -31,13 +32,12 @@ const SHOULDERS = 16;
 
 export type Point = [number, number] | null;
 
-/** A hand, as a character draws it at the wrist. */
+/** A hand, as a character draws it at the wrist: no fingers, just which
+ * way it points. */
 export interface Hand {
-  /** Which way the hand points, wrist to knuckles: radians in bust space
-   * (0 toward +x, the viewer's right; −π/2 straight up). */
+  /** Wrist to knuckles: radians in bust space (0 toward +x, the viewer's
+   * right; −π/2 straight up). */
   angle: number;
-  /** Each finger's curl, thumb to pinky: 0 straight out, 1 folded in. */
-  curl: [number, number, number, number, number];
 }
 
 export interface Rig {
@@ -127,7 +127,7 @@ export function packRig(r: Rig, look: Look): Uint8Array {
       out.push(...(p ? [i8(p[0] * 25), i8(p[1] * 25)] : [0x80, 0x80]));
     }
   }
-  for (const h of [r.handL, r.handR]) if (h) out.push(i8((wrap(h.angle) * 127) / Math.PI), ...h.curl.map(u8));
+  for (const h of [r.handL, r.handR]) if (h) out.push(i8((wrap(h.angle) * 127) / Math.PI));
   if (shoulders) for (const p of [r.shoulderL!, r.shoulderR!]) out.push(i8(p[0] * 25), i8(p[1] * 25));
   return Uint8Array.from(out);
 }
@@ -152,10 +152,8 @@ export function unpackRig(b: Uint8Array): { rig: Rig; look: Look } {
     }
   }
   const hand = (): Hand => {
-    if (b.length < p + 6) throw new Error("rig frame: cut short");
-    const angle = (s8(b[p++]) * Math.PI) / 127;
-    const curl = [0, 0, 0, 0, 0].map(() => b[p++] / 255) as Hand["curl"];
-    return { angle, curl };
+    if (b.length < p + 1) throw new Error("rig frame: cut short");
+    return { angle: (s8(b[p++]) * Math.PI) / 127 };
   };
   if (flags & HAND_L) r.handL = hand();
   if (flags & HAND_R) r.handR = hand();
@@ -208,7 +206,36 @@ export function approach(cur: Rig, want: Rig, dt: number, rate = 14): Rig {
   }
   for (const key of ["handL", "handR"] as const) {
     const a = cur[key], b = want[key];
-    out[key] = a && b ? { angle: a.angle + wrap(b.angle - a.angle) * k, curl: a.curl.map((c, i) => c + (b.curl[i] - c) * k) as Hand["curl"] } : b;
+    out[key] = a && b ? { angle: a.angle + wrap(b.angle - a.angle) * k } : b;
   }
+  return out;
+}
+
+/** An arm's upper and lower lengths, in shoulder widths. */
+const UPPER = 0.55, LOWER = 0.5;
+
+/** Where an elbow goes for a shoulder and a wrist: two bones of fixed
+ * length, bent outward and down as an arm bends (`side` +1 for the
+ * person's left, on +x). A wrist out of reach straightens the arm toward
+ * it. */
+export function elbowFor(shoulder: [number, number], wrist: [number, number], side: 1 | -1): [number, number] {
+  const dx = wrist[0] - shoulder[0], dy = wrist[1] - shoulder[1];
+  const d = Math.min(UPPER + LOWER - 1e-3, Math.max(Math.abs(UPPER - LOWER) + 1e-3, Math.hypot(dx, dy) || 1e-3));
+  const base = Math.atan2(dy, dx);
+  const bend = Math.acos((UPPER * UPPER + d * d - LOWER * LOWER) / (2 * UPPER * d));
+  const at = (a: number): [number, number] => [shoulder[0] + Math.cos(a) * UPPER, shoulder[1] + Math.sin(a) * UPPER];
+  const a = at(base + bend), b = at(base - bend);
+  // Outward first, then down.
+  const score = (e: [number, number]) => side * (e[0] - shoulder[0]) + 0.6 * (e[1] - shoulder[1]);
+  return score(a) >= score(b) ? a : b;
+}
+
+/** `r` with an elbow wherever there's a wrist but no elbow: the camera
+ * at a desk sees hands far more often than elbows. */
+export function withElbows(r: Rig): Rig {
+  if ((r.elbowL || !r.wristL) && (r.elbowR || !r.wristR)) return r;
+  const out = { ...r };
+  if (!r.elbowL && r.wristL) out.elbowL = elbowFor(r.shoulderL ?? SHOULDER_L, r.wristL, 1);
+  if (!r.elbowR && r.wristR) out.elbowR = elbowFor(r.shoulderR ?? SHOULDER_R, r.wristR, -1);
   return out;
 }

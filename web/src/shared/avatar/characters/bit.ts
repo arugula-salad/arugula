@@ -36,7 +36,7 @@ function arm(g: CanvasRenderingContext2D, side: 1 | -1, shoulder: NonNullable<Po
   g.arc(ex, ey, 0.028, 0, Math.PI * 2);
   g.stroke();
   g.lineWidth = s.stroke;
-  drawHand(g, [wx, wy], hand, side, { size: 0.15, kind: "fingers", fill: s.fill, stroke: s.colour });
+  drawHand(g, [wx, wy], hand, side, { size: 0.15, fill: s.fill, stroke: s.colour });
 }
 
 export const bit: Character = {
