@@ -609,6 +609,160 @@ a.btn.primary {
   }
 }
 
+/* /hosted: the buyer's page */
+
+.demo-note {
+  margin: -16px 0 0;
+  font-size: 12px;
+  color: var(--dim);
+  text-align: right;
+}
+
+.story {
+  padding: 40px 0;
+  border-top: 1px solid var(--line);
+  max-width: 640px;
+}
+
+.story h2,
+.privacy h2,
+.next h2 {
+  font: 800 clamp(28px, 4vw, 40px) / 1.05 var(--f-display);
+  margin: 0 0 16px;
+}
+
+.story p {
+  font-size: 19px;
+  color: #c4cad6;
+  margin: 0 0 10px;
+}
+
+.story .turn {
+  color: var(--accent);
+  margin-top: 18px;
+}
+
+.moments {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+  margin-top: 12px;
+}
+
+.moment {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+  padding: 18px;
+  display: grid;
+  gap: 8px;
+  align-content: start;
+}
+
+.moment b {
+  font-size: 16px;
+}
+
+.moment span {
+  color: #c4cad6;
+  font-size: 14px;
+}
+
+.split {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
+  gap: 32px;
+  align-items: center;
+}
+
+.split p {
+  color: #c4cad6;
+  font-size: 16px;
+}
+
+.bytes {
+  display: grid;
+  gap: 8px;
+  font: 13px var(--f-mono);
+  font-variant-ligatures: none;
+}
+
+.bytes span {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 10px 14px;
+  background: var(--surface);
+}
+
+.bytes .arrow {
+  border: none;
+  background: none;
+  padding: 0 14px;
+  color: var(--dim);
+}
+
+.bytes .cam {
+  color: var(--dim);
+  text-decoration: line-through;
+}
+
+.bytes .char {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.sub.wide {
+  max-width: 72ch;
+  font-size: 16px;
+}
+
+.devline {
+  font-size: 14px;
+  color: var(--dim);
+  border-left: 2px solid var(--line);
+  padding-left: 12px;
+}
+
+.devline a {
+  color: var(--accent);
+}
+
+.uses {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px 28px;
+  margin-top: 12px;
+}
+
+.uses span {
+  color: var(--dim);
+  font-size: 14px;
+}
+
+.plans.three {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.plan-fit {
+  color: #c4cad6;
+  font-size: 14px;
+}
+
+.note-line {
+  font-size: 13px;
+  color: var(--dim);
+  margin-top: 12px;
+}
+
+@media (max-width: 860px) {
+  .moments,
+  .split,
+  .uses,
+  .plans.three {
+    grid-template-columns: 1fr;
+  }
+}
+
 /* Code */
 
 .install {
