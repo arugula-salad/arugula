@@ -268,31 +268,11 @@ pub fn rules_for(app: &Platform, project: &str, maker: Option<&str>) -> anyhow::
     Ok(plan(app, project, maker)?.rules)
 }
 
-/// What a hosted box's turn is told ([`turn`]): its turn id, whose key
-/// pays (`project` or `platform`) and what kind it is ([`Auth::as_str`];
-/// absent from an older platform, a key), or why it can't run, as the hub
-/// answers the box: an HTTP status, a reason (`no_key`, `cap`) and a
-/// sentence for the person. It crosses `PlatformPort`.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "snake_case")]
-pub enum TurnAnswer {
-    Given {
-        turn: String,
-        pays: String,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        auth: Option<String>,
-    },
-    Refused {
-        status: u16,
-        reason: Option<String>,
-        error: String,
-    },
-}
+pub use arugula_control_wire::internal::TurnAnswer;
 
-impl TurnAnswer {
-    fn refused(status: StatusCode, reason: Option<&str>, error: &str) -> TurnAnswer {
-        TurnAnswer::Refused { status: status.as_u16(), reason: reason.map(str::to_owned), error: error.to_owned() }
-    }
+/// A turn refused: its status, a reason, and a sentence for the person.
+fn refused_turn(status: StatusCode, reason: Option<&str>, error: &str) -> TurnAnswer {
+    TurnAnswer::Refused { status: status.as_u16(), reason: reason.map(str::to_owned), error: error.to_owned() }
 }
 
 /// The workspace `workspace` whose box enrolled as `machine`, as the
@@ -378,10 +358,10 @@ pub async fn turn(
     session: Option<&str>,
 ) -> anyhow::Result<TurnAnswer> {
     let Some(p) = Provider::of_agent(agent) else {
-        return Ok(TurnAnswer::refused(StatusCode::BAD_REQUEST, None, "agent: claude or codex"));
+        return Ok(refused_turn(StatusCode::BAD_REQUEST, None, "agent: claude or codex"));
     };
     let Some(b) = the_box(app, workspace, machine)? else {
-        return Ok(TurnAnswer::refused(StatusCode::NOT_FOUND, None, "this machine isn't a live cloud workspace"));
+        return Ok(refused_turn(StatusCode::NOT_FOUND, None, "this machine isn't a live cloud workspace"));
     };
     // A thread session's turn is its asker's (aru-115): on the project's
     // key it's kept as theirs; on the platform's it counts against their
@@ -390,18 +370,18 @@ pub async fn turn(
         None => None,
         Some(id) => match app.db.session(id)? {
             Some(s) if s.workspace == b.workspace && !s.state.terminal() => Some(s.asker),
-            _ => return Ok(TurnAnswer::refused(StatusCode::NOT_FOUND, None, "no such session on this workspace")),
+            _ => return Ok(refused_turn(StatusCode::NOT_FOUND, None, "no such session on this workspace")),
         },
     };
     let Plan { payers, auth, rules } = plan(app, &b.project, b.created_by.as_deref())?;
     let synced = sync_rules(app, &b, &rules).await?;
     let Some(pays) = payers.get(&p) else {
         info!(workspace = %b.workspace, provider = p.as_str(), "a hosted agent turn has no key");
-        return Ok(TurnAnswer::refused(StatusCode::FORBIDDEN, Some("no_key"), &no_key(&b, p)));
+        return Ok(refused_turn(StatusCode::FORBIDDEN, Some("no_key"), &no_key(&b, p)));
     };
     if !synced {
         let why = "couldn't set up this workspace's key: try again in a moment";
-        return Ok(TurnAnswer::refused(StatusCode::SERVICE_UNAVAILABLE, None, why));
+        return Ok(refused_turn(StatusCode::SERVICE_UNAVAILABLE, None, why));
     }
     let pays = &match (pays, &asker) {
         (Pays::Platform { .. }, Some(a)) => Pays::Platform { account: a.clone() },
@@ -420,7 +400,7 @@ pub async fn turn(
         Started::Capped(cap) => {
             let Pays::Platform { account } = pays else { unreachable!("a project's key has no cap") };
             info!(workspace = %b.workspace, %account, ?cap, "a hosted agent turn is at a cap");
-            TurnAnswer::refused(StatusCode::TOO_MANY_REQUESTS, Some("cap"), &capped(app, account, cap, &b, p))
+            refused_turn(StatusCode::TOO_MANY_REQUESTS, Some("cap"), &capped(app, account, cap, &b, p))
         }
     })
 }

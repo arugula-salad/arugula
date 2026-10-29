@@ -50,7 +50,6 @@ use std::sync::Arc;
 
 use arugula_control_wire::forge::{GithubToken, Standing};
 use axum::http::StatusCode;
-use serde::{Deserialize, Serialize};
 use tracing::info;
 
 use crate::Platform;
@@ -283,15 +282,7 @@ pub async fn standing(
     out
 }
 
-/// What the platform answers a hosted box's ask for a token: one, or why
-/// not, as the hub's route answers it. No `Debug`: a token is never
-/// printed.
-#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum TokenAnswer {
-    Token(GithubToken),
-    Refused { status: u16, error: String },
-}
+pub use arugula_control_wire::internal::TokenAnswer;
 
 /// A read-only installation token for `repo`, for an account GitHub gives
 /// access to it ([`viewer::access`]: kept answers every machine drops).

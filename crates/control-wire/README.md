@@ -11,4 +11,7 @@ serde. Not on `arugula-proto`: control shouldn't pull in the client wire types.
 Start with `src/lib.rs`: its header says what must stay true of every type
 (the bytes on the wire don't change; deployed daemons and control upgrade
 separately). `src/join.rs` is enrolment, `src/team.rs` the certificates,
-`src/forge.rs` the GitHub App's relay messages and tokens.
+`src/forge.rs` the GitHub App's relay messages and tokens. `src/internal/`
+is what the hub and the platform say to each other over the private network
+(`HubPort`/`PlatformPort`'s arguments and answers, and the principal header's
+JSON): the traits and their HTTP stay in `arugula-platform`.

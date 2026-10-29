@@ -20,50 +20,14 @@
 use arugula_control_common::ApiError;
 use arugula_control_wire::chat::ChatPost;
 use axum::http::StatusCode;
-use serde::{Deserialize, Serialize};
 
 use crate::{Platform, chat};
 
-/// A member of a box's project (M237), as the platform knows them.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct BoxMember {
-    pub account: String,
-    /// `owner` for a personal project's account; else their team role
-    /// (`owner`, `editor`, `viewer`, ...).
-    pub role: String,
-    /// What the roster calls them (a personal project: the account's name).
-    pub name: String,
-}
+pub use arugula_control_wire::internal::{BoxMember, BoxPost, BoxPosted};
 
-/// A review a box posts into an object's thread (M237).
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct BoxPost {
-    /// The project the box is bound to: the object has to be in it.
-    pub project: String,
-    /// The box's name, kept beside the author.
-    pub via: String,
-    /// The object's global id (`iss_…`, `fi_…`, `hw_…`, `run_…`).
-    pub target: String,
-    /// Whose review it is: a member who signed in to the box.
-    pub author: String,
-    pub text: String,
-}
-
-/// What became of a [`BoxPost`].
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "snake_case")]
-pub enum BoxPosted {
-    /// In the thread `room` as message `seq`.
-    Posted { room: String, seq: i64 },
-    /// Refused, as the author posting themselves would be: the status and
-    /// why.
-    Refused { status: u16, error: String },
-}
-
-impl From<ApiError> for BoxPosted {
-    fn from(e: ApiError) -> Self {
-        BoxPosted::Refused { status: e.0.as_u16(), error: e.1 }
-    }
+/// A refusal, as the author posting themselves would get it.
+fn refused(e: ApiError) -> BoxPosted {
+    BoxPosted::Refused { status: e.0.as_u16(), error: e.1 }
 }
 
 /// A box's project's members now, or `None` when there's no such project.
@@ -100,12 +64,12 @@ pub async fn post(app: &Platform, p: &BoxPost) -> anyhow::Result<BoxPosted> {
     let room = match chat::box_object_room(app, &p.author, &p.project, &p.target).await {
         Ok(r) => r,
         Err(e) if e.0 == StatusCode::INTERNAL_SERVER_ERROR => anyhow::bail!("{}", e.1),
-        Err(e) => return Ok(e.into()),
+        Err(e) => return Ok(refused(e)),
     };
     let b = ChatPost { text: p.text.clone(), ..Default::default() };
     match chat::post_full(app, &p.author, None, Some(&p.via), &room, b).await {
         Ok(posted) => Ok(BoxPosted::Posted { room, seq: posted.seq }),
         Err(e) if e.0 == StatusCode::INTERNAL_SERVER_ERROR => anyhow::bail!("{}", e.1),
-        Err(e) => Ok(e.into()),
+        Err(e) => Ok(refused(e)),
     }
 }

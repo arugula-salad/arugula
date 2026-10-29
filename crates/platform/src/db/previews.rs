@@ -3,7 +3,6 @@
 //! ahead; nothing needs to run when it passes.
 
 use anyhow::Result;
-use serde::{Deserialize, Serialize};
 
 use super::{
     Db,
@@ -13,23 +12,7 @@ use super::{
 /// How long a port stays public after it's made public or renewed.
 pub const PUBLIC_FOR_MS: u64 = 7 * 86_400_000;
 
-/// A port that's public now.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct PublicPreview {
-    /// Its host label under the preview domain.
-    pub id: String,
-    pub workspace: String,
-    pub project: String,
-    /// The hosted machine its workspace's box enrolled as.
-    pub machine: Option<String>,
-    pub port: u16,
-    /// Its workspace's state (`ready`, `paused`, …).
-    pub state: String,
-    /// Who made it public or last renewed it (`None` once that account
-    /// is deleted).
-    pub by: Option<String>,
-    pub until: u64,
-}
+pub use arugula_control_wire::internal::PublicPreview;
 
 const COLUMNS: &str =
     "p.public_id, p.workspace_id, w.project_id, w.machine, p.port, w.state, p.public_by, p.public_until";

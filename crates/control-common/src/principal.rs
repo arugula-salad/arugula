@@ -22,9 +22,9 @@
 //! (and how it would have answered) or that there were none, and the
 //! platform refuses a call with no valid header at all.
 
+pub use arugula_control_wire::internal::{Credential, NotVouched, Principal, Vouch};
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD as B64};
 use hmac::{KeyInit as _, Mac as _};
-use serde::{Deserialize, Serialize};
 
 type HmacSha256 = hmac::Hmac<sha2::Sha256>;
 
@@ -38,38 +38,6 @@ pub const SKEW_MS: u64 = 60_000;
 /// A request id: what the hub logs the request as, so both sides' logs
 /// line up. At most this long, of `[A-Za-z0-9_-]`.
 pub const MAX_REQUEST_ID: usize = 64;
-
-/// Who is asking.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "snake_case")]
-pub enum Principal {
-    /// A signed-in person, by their session cookie.
-    Person { account: String },
-    /// A CLI device, by its signature: a session for its account (M49).
-    Cli { account: String, device: String },
-    /// An enrolled daemon, by its signature: it acts as its account.
-    Daemon { account: String, daemon: String },
-}
-
-impl Principal {
-    /// The account it acts as.
-    pub fn account(&self) -> &str {
-        match self {
-            Principal::Person { account } | Principal::Cli { account, .. } | Principal::Daemon { account, .. } => {
-                account
-            }
-        }
-    }
-
-    /// The device or machine that signed, if one did.
-    pub fn device(&self) -> Option<&str> {
-        match self {
-            Principal::Person { .. } => None,
-            Principal::Cli { device, .. } => Some(device),
-            Principal::Daemon { daemon, .. } => Some(daemon),
-        }
-    }
-}
 
 /// The key the hub signs principals with and the platform checks them
 /// with: a secret both processes are given (a Fly secret on both apps).
@@ -191,42 +159,6 @@ impl PrincipalKey {
         }
         Ok((json, (*request_id).to_owned(), ms))
     }
-}
-
-/// What the hub vouches for when its gateway forwards a call to the
-/// platform (M140): every forwarded call carries one, so the platform
-/// refuses anything without it. Its JSON is the principal's for a
-/// principal (so [`PrincipalKey::verify`] reads it too), else
-/// `{"kind": "refused", ...}` or `{"kind": "nobody"}`.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(untagged)]
-pub enum Vouch {
-    /// Who's asking.
-    Principal(Principal),
-    /// No credentials, or credentials the hub refused.
-    Not(NotVouched),
-}
-
-/// A call the hub forwards without a principal.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "snake_case")]
-pub enum NotVouched {
-    /// The request's credentials were refused: the status and the error
-    /// the hub would have answered with, and which credentials they were.
-    /// The platform's extractors answer with them, as the hub's do.
-    Refused { status: u16, error: String, by: Credential },
-    /// No session and no signature (a webhook, or a page signed out).
-    Nobody,
-}
-
-/// What a request proved who it was with.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum Credential {
-    /// A session cookie.
-    Session,
-    /// A device's or daemon's signature (`x-arugula-auth`).
-    Signature,
 }
 
 /// What the MAC covers.

@@ -39,13 +39,7 @@ use crate::{
 /// Transcripts a project keeps: its newest.
 pub const MAX_PER_PROJECT: usize = 1000;
 
-/// What the platform answers a box's transcript, through the hub.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "snake_case")]
-pub enum Archived {
-    Kept { id: String },
-    Refused { status: u16, error: String },
-}
+pub use arugula_control_wire::internal::Archived;
 
 fn refused(status: StatusCode, error: &str) -> Archived {
     Archived::Refused { status: status.as_u16(), error: error.to_owned() }

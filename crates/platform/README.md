@@ -67,7 +67,8 @@ Start with `src/lib.rs`, then:
   `PlatformPort` over HTTP (`HttpHub`, `HttpPlatform`) and their servers
   (`serve_hub`, which the hub mounts on its internal listener, and
   `serve_platform`), each call signed with the shared key; and `vouched`,
-  the check of the principal header every forwarded call carries.
+  the check of the principal header every forwarded call carries. The
+  calls' arguments and answers are `arugula_control_wire::internal`'s.
 - `src/main.rs`: the `arugula-platform` binary: its database, `HttpHub`,
   the background work (the job worker, hosted workspaces' worker, chat's
   and grants' feed followers, usage reports), and the routes behind `vouched`.
