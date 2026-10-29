@@ -612,7 +612,7 @@ pub async fn create(
     let goal = new.goal.as_deref().map(|g| text_ok(g, "a goal")).transpose()?.unwrap_or("");
     let board = app
         .db
-        .create_board(&id, title, goal, by.account, by.agent, now_ms(), wire::BOARDS_MAX)?
+        .create_board(&id, title, goal, by, now_ms(), wire::BOARDS_MAX)?
         .ok_or_else(|| bad(&format!("a project has at most {} boards", wire::BOARDS_MAX)))?;
     read(app, by.account, &board.id).await
 }
@@ -646,7 +646,7 @@ pub async fn close(app: &Platform, by: Actor<'_>, id: &str, c: &wire::CloseBoard
     if note.is_empty() {
         return Err(bad("say what was done: a board closes with a note"));
     }
-    if !app.db.close_board(id, note, by.account, by.agent, now_ms())? {
+    if !app.db.close_board(id, note, by, now_ms())? {
         return Err(no_board());
     }
     changed(app, &board.project, id);

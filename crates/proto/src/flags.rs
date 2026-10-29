@@ -115,7 +115,7 @@ pub const ISSUES_STEERING: &str = "In Arugula, a new issue (a bug, a follow-up, 
 /// Labs flag per account, so it is conditional on purpose and says nothing
 /// useful, and does no harm, where they're off. `arugula hook` doesn't give
 /// it. The plugin's skill says the same in its voice.
-pub const BOARDS_STEERING: &str = "When your work is a row on one of a project's boards (board_read lists them), keep that row current with board_write as you go: its status, and a row for the PR or the proof when there is one. People make boards and set or close an epic; you read those.";
+pub const BOARDS_STEERING: &str = "When you plan work of more than one ticket in a project, run it on a board: make one with board_write (an epic, with a goal) unless a fitting one is there (board_read lists them), put each ticket on it as a row, and keep the rows current as you and your agents go: status, and a row for each PR and proof. When the goal is met, close the board with a note saying what a person can now do.";
 
 /// One flag.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -10,7 +10,7 @@ use super::{links_tests::serve, viewer_tests::world};
 use crate::{
     boards::FLAG,
     chat_tests::{TestHub, call},
-    db::{Sql as _, sql::params},
+    db::{Sql as _, issues::Actor, sql::params},
 };
 
 const CLOSE: &str = "UPDATE issues SET state = 'closed', close_reason = 'completed', closed_at = 5 WHERE id = ?1";
@@ -215,8 +215,8 @@ async fn a_deleted_accounts_boards_keep_no_creator_or_closer() {
     let hub = Arc::new(TestHub::default());
     let (gh, app, _base) = serve(&hub).await;
     let (team, _) = world(&hub, &gh, &app).await;
-    let b = app.db.create_board(&team, "E", "", "gone", None, 1, 10).unwrap().unwrap();
-    assert!(app.db.close_board(&b.id, "Shipped.", "gone", None, 2).unwrap());
+    let b = app.db.create_board(&team, "E", "", Actor::person("gone"), 1, 10).unwrap().unwrap();
+    assert!(app.db.close_board(&b.id, "Shipped.", Actor::person("gone"), 2).unwrap());
     let d = crate::Deleted { account: "gone".into(), machines: vec![], disbanded: vec![] };
     crate::db::boards::erase_account(&app.db.c(), &d).unwrap();
     let b = app.db.board(&b.id).unwrap().unwrap();

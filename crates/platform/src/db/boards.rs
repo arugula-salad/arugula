@@ -28,6 +28,7 @@ use arugula_control_wire::{
 use super::{
     Db,
     chat::{in_json, json_list},
+    issues::Actor,
     sql::{Optional as _, Row, Sql, params},
 };
 use crate::Deleted;
@@ -315,16 +316,15 @@ pub struct IssueState {
 }
 
 impl Db {
-    /// Make a board in `project` as `by`, with `goal`, if any, for a person
-    /// or for the person's agent on `agent`'s machine. `None`: the project
+    /// Make a board in `project` as `by` (a person, or their agent on a
+    /// machine), with `goal` if any. `None`: the project
     /// already has `max` boards. The project is the caller's to have checked.
     pub fn create_board(
         &self,
         project: &str,
         title: &str,
         goal: &str,
-        by: &str,
-        agent: Option<&str>,
+        by: Actor<'_>,
         at: u64,
         max: u64,
     ) -> Result<Option<Board>> {
@@ -350,7 +350,7 @@ impl Db {
                 "INSERT INTO boards (id, project_id, title, goal, created_by, created_by_agent, created_at, updated_at)
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?7) RETURNING {BOARD_COLS}"
             ),
-            params![new_board_id(), project, title, goal, by, agent, at],
+            params![new_board_id(), project, title, goal, by.account, by.agent, at],
             board_row,
         )?;
         tx.commit()?;
@@ -422,11 +422,11 @@ impl Db {
         Ok(true)
     }
 
-    /// Close a board with `note` by `by`, or by the person's agent on
-    /// `agent`'s machine. A board closed already takes the new note and keeps
+    /// Close a board with `note` as `by` (a person, or their agent on a
+    /// machine). A board closed already takes the new note and keeps
     /// its first `closed_at`, `closed_by` and `closed_by_agent`. `false`: no
     /// such board.
-    pub fn close_board(&self, id: &str, note: &str, by: &str, agent: Option<&str>, at: u64) -> Result<bool> {
+    pub fn close_board(&self, id: &str, note: &str, by: Actor<'_>, at: u64) -> Result<bool> {
         let mut c = self.c();
         let tx = c.immediate()?;
         if !lock(&tx, id)? {
@@ -438,7 +438,7 @@ impl Db {
                  closed_by_agent = CASE WHEN closed_at IS NULL THEN ?4 ELSE closed_by_agent END,
                  closed_at = COALESCE(closed_at, ?5)
              WHERE id = ?1",
-            params![id, note, by, agent, at],
+            params![id, note, by.account, by.agent, at],
         )?;
         touch(&tx, id, at)?;
         tx.commit()?;

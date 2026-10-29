@@ -453,14 +453,19 @@ everything.
 
 **Agents.** `board_read` lists a project's boards and reads one (zones, rows,
 ids and revs). `board_write` lands at once, labelled as the person's agent on
-that machine, never as them. It may add rows to the zones there are, set any
-row's note and status (a PROOFS row's too), move rows, and remove a row it
-added. It may not make boards or zones, rename, move or delete a zone,
-repoint a row, or remove a row someone else added; editing an epic's goal or
-closing it is a person's. A note names the `rev` that `board_read` showed,
-and a row that moved on asks to read again. Agents are told to keep their
-own row current (`BOARDS_STEERING`, `crates/proto/src/flags.rs`); the tools
-are in `crates/arugulad-control-tools/src/boards.rs`.
+that machine, never as them: a board it makes or closes says so, as a row it
+adds does. It may make a board (an epic, with a goal and its zones), set its
+title and goal, close it with a done note and open it again; make, rename,
+move and delete zones (PROOFS too); add rows, set any row's note and status,
+move rows, and remove or repoint a row it added. It may not delete a zone that
+holds a row someone else added, or remove or repoint such a row. The person's
+role is still the ceiling: a viewer's machine makes nothing, whatever it was
+granted. A note, a pointer or a zone's title names the `rev` that `board_read`
+showed, and one that moved on asks to read again. Agents are told to run work
+of more than one ticket on a board, keep its rows current and close it with a
+note (`BOARDS_STEERING`, `crates/proto/src/flags.rs`); the tools are in
+`crates/arugulad-control-tools/src/boards.rs`, the rules in
+`crates/platform/src/boards.rs` (aru-123).
 
 ## Chant workspaces
 

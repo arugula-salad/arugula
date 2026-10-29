@@ -11,7 +11,10 @@ use serde_json::{Value, json};
 use super::FLAG;
 use crate::{
     chat_tests::{TestHub, call, serve},
-    db::sql::{Sql as _, params},
+    db::{
+        issues::Actor,
+        sql::{Sql as _, params},
+    },
 };
 
 /// Team t: a owns it, v views. Chat is on for it, and boards when `boards`
@@ -291,7 +294,7 @@ async fn with_the_flag_off_there_are_no_boards() {
     let hub = Arc::new(TestHub::default());
     let (app, base) = serve(hub.clone()).await;
     let p = seed(&app, &hub, false);
-    let id = app.db.create_board(&p, "Launch", "", "a", None, 1, 10).unwrap().unwrap().id;
+    let id = app.db.create_board(&p, "Launch", "", Actor::person("a"), 1, 10).unwrap().unwrap().id;
 
     for (method, path, body) in [
         ("GET", format!("/api/projects/{p}/boards"), None),
@@ -556,7 +559,7 @@ async fn a_viewers_machine_with_boards_write_makes_no_board() {
     hub.flag_named("team:t", FLAG, true);
     hub.daemon("xbox", "x", Some("t"));
     grant_write(&base, "x", "xbox", &t).await;
-    let id = app.db.create_board(&t, "Launch", "", "a", None, 1, 10).unwrap().unwrap().id;
+    let id = app.db.create_board(&t, "Launch", "", Actor::person("a"), 1, 10).unwrap().unwrap().id;
 
     let (st, v) = xbox(&base, "POST", &agent_project_boards(&t), Some(json!({ "title": "Mine" }))).await;
     assert_eq!(st, 403, "make a board: {v}");
