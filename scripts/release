@@ -35,12 +35,15 @@
 #                                  (#503), or it only bumps versions on top of
 #                                  a commit that did (`bump`).
 #                                  ARUGULA_RELEASE_SKIP_GREEN=1 skips it.
-#   release bump [patch|minor|major] [--app] [COMMIT] [--dry-run]
+#   release bump [patch|minor|major] [--app] [COMMIT|--older] [--dry-run]
 #                                  (`just release`) commit a version bump on
 #                                  top of the newest green commit on main (or
 #                                  COMMIT), tag it vX.Y.Z (--app: app-vX.Y.Z),
 #                                  and push the tag with main, the bump merged
-#                                  into it (#524). --dry-run makes the bump in a
+#                                  into it (#524). When main has newer commits
+#                                  that aren't green, it lists them and stops;
+#                                  --older releases without them (#1679).
+#                                  --dry-run makes the bump in a
 #                                  throwaway worktree, shows it, and stops.
 #                                  ARUGULA_RELEASE_TRAILER, when set (one line,
 #                                  `Key: value`), ends the bump's, the tag's and
@@ -329,12 +332,13 @@ case "${1:-}" in
     # release`. The tag's commit only bumps versions, which check-green lets
     # through on its parent's ci/green tag. main gets the bump merged in.
     shift
-    part=patch lane=daemon commit='' dry=0
+    part=patch lane=daemon commit='' dry=0 older=0
     for a in "$@"; do
       case "$a" in
         major|minor|patch) part=$a ;;
         --app) lane=app ;;
         --dry-run|-n) dry=1 ;;
+        --older) older=1 ;;
         -*) echo "release bump: unknown flag $a" >&2; exit 2 ;;
         *) if [ -n "$commit" ]; then echo "release bump: two commits ($commit, $a)" >&2; exit 2; fi; commit=$a ;;
       esac
@@ -354,6 +358,7 @@ case "${1:-}" in
     is_green() {
       case "$ci" in *"refs/tags/ci/revoked/$1"*) return 1 ;; *"refs/tags/ci/green/$1"*) return 0 ;; *) return 1 ;; esac
     }
+    if [ -n "$commit" ] && [ "$older" = 1 ]; then echo "release bump: COMMIT or --older, not both" >&2; exit 2; fi
     if [ -n "$commit" ]; then
       sha=$(git rev-parse --verify -q "$commit^{commit}") || { echo "$commit isn't a commit here" >&2; exit 1; }
       git merge-base --is-ancestor "$sha" "$main" || { echo "${sha:0:12} isn't on main" >&2; exit 1; }
@@ -365,7 +370,16 @@ case "${1:-}" in
         skipped=$((skipped + 1))
       done
       [ -n "$sha" ] || { echo "no commit among main's last 200 has a ci/green tag without a ci/revoked one" >&2; exit 1; }
-      [ "$skipped" = 0 ] || echo "$skipped newer commit(s) on main aren't green yet"
+      # A release from an older commit leaves these out (#1679): say which,
+      # and stop unless asked for it. A dry run lists them and goes on.
+      if [ "$skipped" != 0 ]; then
+        echo "$skipped newer commit(s) on main aren't green yet, so the release would leave out:"
+        git log --first-parent --format='  %h %s' "$sha..$main"
+        if [ "$older" = 0 ] && [ "$dry" = 0 ]; then
+          echo "Wait for them to go green, or release ${sha:0:12} without them: \`just release --older\` (or name a COMMIT)." >&2
+          exit 1
+        fi
+      fi
     fi
     # From the higher of the green commit's version and main's: main may
     # already carry a bump that hasn't gone green.
