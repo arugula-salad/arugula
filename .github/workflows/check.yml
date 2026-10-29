@@ -236,8 +236,9 @@ jobs:
   #
   # Half the Rust tests each, on a pod each (`just test-run PART`): on one
   # pod the run took 9-10 min, the run's longest path with the e2e shards
-  # (2026-10-23). test runs the first half, the doctests and
-  # control-smoke; test-2 the second half. The platform on Postgres had
+  # (2026-10-23). test runs the first half; test-2 the second half,
+  # the doctests and control-smoke (the first half drew the slower tests,
+  # #1680). The platform on Postgres had
   # run after test-2's half, 2 min on the run's longest path: it's
   # test-postgres now, a job of its own (#259).
   # Two jobs, not a matrix: a skipped matrix job's check run is named
@@ -382,16 +383,24 @@ jobs:
   # ssh profile has, so the ssh claims run on it first, and building and
   # starting it once saves a second round.
   testnet:
-    needs: [changes, build, static]
+    # Not after static: it sets up and starts the stack's tools while static
+    # builds, and waits for static's musl binaries before it needs them
+    # (#1680). build's skip (no suite change) skips it as static's did.
+    needs: [changes, build]
     runs-on: arugula-amd64
     # 8-13 min when it works; a hung claim held a pod for 45 min.
     timeout-minutes: 30
+    permissions:
+      # scripts/ci-wait-job reads the run's jobs; the rest is the default's.
+      actions: read
+      contents: read
+      packages: read
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/setup
         with:
           rust: "false"
-          fetch: run-debug run-static
+          fetch: run-debug
       - run: scripts/ci-env testnet
       - run: just bootstrap
       # The relay claim's phones (web/fixtures/m52-phones.ts): a Pixel in
@@ -401,6 +410,15 @@ jobs:
         run: just browsers
       - name: Google Chrome
         run: command -v google-chrome >/dev/null || (cd web && pnpm exec playwright install --with-deps chrome)
+      - name: Wait for static
+        run: scripts/ci-wait-job static
+      - name: static's binaries
+        uses: actions/download-artifact@v4
+        with:
+          name: run-static
+          path: ${{ runner.temp }}/artifacts
+      - name: Into the run directory
+        run: mkdir -p "$CI_RUN" && tar -xf "$RUNNER_TEMP/artifacts/run-static.tar" -C "$CI_RUN"
       - name: Its binaries, this run's
         run: |
           echo "ARUGULA_TESTNET_BINARIES=$CI_RUN/x86_64-unknown-linux-musl/release" >> "$GITHUB_ENV"
@@ -527,10 +545,12 @@ jobs:
   # pod built it for 6 min each run); main pushes it when it's new. Not
   # named desktop: that's the Windows job chant.workspace.json requires.
   desktop-xvfb:
-    needs: [changes, static]
+    needs: changes
     if: needs.changes.outputs.suite == 'true' || needs.changes.outputs.app == 'true'
     runs-on: arugula-amd64
     permissions:
+      # scripts/ci-wait-job reads the run's jobs.
+      actions: read
       contents: read
       packages: write
     steps:
@@ -540,9 +560,18 @@ jobs:
       - uses: ./.github/actions/setup
         with:
           rust: "false"
-          fetch: run-static
       - name: GHCR, for the test image
         run: echo "$GITHUB_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+      # Starts beside static and waits for its binaries here (#1680).
+      - name: Wait for static
+        run: scripts/ci-wait-job static
+      - name: static's binaries
+        uses: actions/download-artifact@v4
+        with:
+          name: run-static
+          path: ${{ runner.temp }}/artifacts
+      - name: Into the run directory
+        run: mkdir -p "$CI_RUNS/$GITHUB_RUN_ID" && tar -xf "$RUNNER_TEMP/artifacts/run-static.tar" -C "$CI_RUNS/$GITHUB_RUN_ID"
       - name: The desktop app under Xvfb (join, app, stale)
         run: ARUGULA_DESKTOP_BINARIES="$CI_RUNS/$GITHUB_RUN_ID/x86_64-unknown-linux-musl/release" just desktop-xvfb
         env:

@@ -526,8 +526,10 @@ test_bins := cargo + " build --workspace --bins --example interop"
 server_test_bins := server_cargo + " build --workspace --bins --tests"
 
 # PART (check.yml's test and test-2, 1 or 2) runs half the Rust tests of
-# each workspace, nextest's count:PART/2; only the first half runs the
-# doctests and control-smoke after them. WHICH splits a run in two:
+# each workspace, nextest's count:PART/2; only the second half runs the
+# doctests and control-smoke after them (the first half's tests are the
+# slower ones: 826 vs 511 test-seconds in the server workspace, 480 vs 349
+# in the root, #1680). WHICH splits a run in two:
 # `server`, only the server workspace's suite, which needs none of
 # static's binaries (ARUGULA_SSH_BINARIES), so check.yml runs it while
 # static builds them; `rest`, everything else (#259).
@@ -551,7 +553,7 @@ test-run part="" which="":
     if [ "{{which}}" != server ]; then {{cargo}} nextest run --workspace ${part[@]+"${part[@]}"}; fi
     if [ "{{which}}" != rest ]; then {{server_cargo}} nextest run --workspace ${part[@]+"${part[@]}"}; fi
     [ "{{which}}" != server ] || exit 0
-    [ "{{part}}" != 2 ] || exit 0
+    [ "{{part}}" != 1 ] || exit 0
     {{cargo}} test --workspace --doc
     {{server_cargo}} test --workspace --doc
     just e2e-interop control-smoke
