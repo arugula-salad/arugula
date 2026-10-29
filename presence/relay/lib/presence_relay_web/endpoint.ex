@@ -18,6 +18,9 @@ defmodule PresenceRelayWeb.Endpoint do
   plug Plug.Static, at: "/", from: :presence_relay, gzip: false
 
   plug Plug.RequestId
+  # Stripe's webhooks (POST /stripe/webhook): signed over the raw body, so
+  # before the parsers.
+  plug PresenceRelayWeb.StripeWebhook
   # JSON for the API; a form's encoding for the sign-in page's button
   # (its CSRF token comes in the body).
   plug Plug.Parsers, parsers: [:urlencoded, :json], pass: ["*/*"], json_decoder: Jason

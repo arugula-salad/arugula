@@ -1,6 +1,6 @@
 // One app: its keys (live and test), a snippet to paste with its own key,
 // the origins its keys work from, how its people sign in (and the room
-// rule), whether guests may come, its usage, and the server secret, which
+// rule), whether guests may come, its usage, its plan, and the server secret, which
 // most apps never need.
 
 import { useEffect, useState } from "preact/hooks";
@@ -10,6 +10,7 @@ import { fresh } from "./apps";
 import { ProviderSection, RoomRuleSection } from "./provider";
 import { Quickstart } from "./quickstart";
 import { UsageSection } from "./usage";
+import { BillingSection } from "./billing";
 import { Confirm, CopyButton, Section, value } from "./ui";
 
 const SECTIONS = [
@@ -20,6 +21,7 @@ const SECTIONS = [
   ["room-rule", "Room rule"],
   ["guests", "Guests"],
   ["usage", "Usage"],
+  ["billing", "Plan"],
   ["secret", "Server secret"],
 ] as const;
 
@@ -278,6 +280,7 @@ export function AppPage({ id }: { id: string }) {
         <RoomRuleSection app={app} issuer={issuer} onChange={setIssuer} />
         <GuestsSection app={app} onChange={setApp} />
         <UsageSection app={app} />
+        <BillingSection app={app} />
         <SecretSection app={app} />
       </div>
     </main>

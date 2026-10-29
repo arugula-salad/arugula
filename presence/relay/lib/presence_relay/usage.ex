@@ -51,9 +51,11 @@ defmodule PresenceRelay.Usage do
 
   ## Caps
 
-  An app's `mau_cap` (nil, none): once the month's count reaches it, a
-  person not yet counted this month is refused at join with "this app is
-  at its monthly limit"; anyone already counted gets in.
+  An app's cap (nil, none): the owner's `mau_cap`, or its plan's if
+  that's lower (#318's P11, `PresenceRelay.Billing.cap/1`). Once the
+  month's count reaches it, a person not yet counted this month is
+  refused at join with "this app is at its monthly limit"; anyone
+  already counted gets in.
 
   Each node caches every app's cap, and for a capped app its month's
   count (reloaded every `usage_cache_ms`, 30 s, and recounted after a
@@ -72,7 +74,7 @@ defmodule PresenceRelay.Usage do
   require Logger
   import Ecto.Query
 
-  alias PresenceRelay.{Apps, Repo}
+  alias PresenceRelay.{Apps, Billing, Repo}
   alias PresenceRelay.Apps.App
   alias PresenceRelay.Usage.{Day, Member}
 
@@ -163,13 +165,22 @@ defmodule PresenceRelay.Usage do
   def put_cap(%App{} = app, cap)
       when is_nil(cap) or (is_integer(cap) and cap >= 0 and cap <= @max_cap) do
     with {:ok, app} <- app |> Ecto.Changeset.change(mau_cap: cap) |> Repo.update() do
-      forget(app.id)
-      :erpc.multicast(Node.list(), __MODULE__, :forget, [app.id])
+      forget_everywhere(app.id)
       {:ok, app}
     end
   end
 
   def put_cap(_, _), do: {:error, "a cap is a whole number of active users, or null"}
+
+  @doc """
+  Every node forgets `app`'s cached cap: its cap changed (the owner's,
+  or its plan's: `PresenceRelay.Billing`).
+  """
+  def forget_everywhere(app) do
+    forget(app)
+    :erpc.multicast(Node.list(), __MODULE__, :forget, [app])
+    :ok
+  end
 
   @doc false
   # Another node's put_cap: drop this node's cached cap and count.
@@ -242,7 +253,9 @@ defmodule PresenceRelay.Usage do
           {users, secs} = Map.get(days, d, {0, 0})
           %{day: Date.to_iso8601(d), active_users: users, call_minutes: minutes(secs)}
         end,
-      cap: %{active_users: a.mau_cap},
+      # The owner's own cap, and the one enforced (the lower of it and
+      # the plan's: PresenceRelay.Billing).
+      cap: %{active_users: a.mau_cap, limit: Billing.cap(app)},
       this_month: Map.delete(List.last(months), :month)
     }
   end
@@ -288,8 +301,9 @@ defmodule PresenceRelay.Usage do
     end
   end
 
+  # The cap at join is the plan's and the owner's (PresenceRelay.Billing).
   defp load(app, m, now) do
-    cap = Repo.one(from(a in App, where: a.id == ^app, select: a.mau_cap))
+    cap = Billing.cap(app)
     count = if cap, do: count(app, m), else: 0
     :ets.insert(@caps, {app, cap, m, count, now})
     {cap, count}

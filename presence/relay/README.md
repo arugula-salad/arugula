@@ -125,6 +125,106 @@ let in within about one flush. The load test runs two nodes over three
 apps and three days and checks every number:
 `mix test test/presence_relay/usage_load_test.exs`.
 
+## Billing (Stripe, test mode)
+
+#318's P11 (`PresenceRelay.Billing`; the numbers in
+`PresenceRelay.Billing.Plans`, **placeholders until Jake sets them**):
+
+| plan | price | cap |
+|---|---|---|
+| Starter | free | 100 monthly active users (or the owner's cap, if lower) |
+| Team | $29 a month including 500 monthly active users; then $0.05 each more, and $0.004 a call minute | the owner's cap, if any |
+| Enterprise | `mailto:hello@arugula.stream` | by agreement |
+
+- **Per app.** Each app has its own plan, and a Team app its own Stripe
+  customer (Stripe's meters count per customer, so one app's usage can't
+  land on another's subscription).
+- **Checkout and the portal.** Upgrade is a Stripe Checkout Session
+  (Managed Payments on: Stripe is merchant of record, so tax, receipts
+  and payment support come from Stripe and Link), its periods anchored to
+  calendar months (UTC) like P9's, the first part month prorated. Manage
+  is Stripe's Customer Portal.
+- **Webhooks** at `POST /stripe/webhook`: signature checked with
+  `STRIPE_WEBHOOK_SECRET` (5 minutes' tolerance), handled once per event
+  id (`stripe_events`), and each refetches its subscription, so order
+  doesn't matter. Events used: `checkout.session.completed`,
+  `customer.subscription.created|updated|deleted`, `invoice.paid`,
+  `invoice.payment_failed`.
+- **Usage to Stripe** (`PresenceRelay.Billing.Reporter`, every 15
+  minutes on each node): each Team app's extra monthly active users and
+  call minutes, as Billing Meter events of the difference since the last
+  report. The difference is queued into `billing_meter_events` in the
+  same transaction that moves `billing_reports.reported` (under the
+  app's advisory lock and row locks), then sent with a fixed identifier
+  (`<app>:<yyyy-mm>:<meter>:<quantity>`) that Stripe dedups; so a restart
+  or a second node never reports anything twice. The first two days of a
+  month also finish the last.
+- **Grace.** A Team app whose payments stop (`past_due`, `unpaid`) keeps
+  Team's caps for 7 days, then gets Starter's until it's paid.
+- **Billing off** (no `STRIPE_SECRET_KEY`): no plans, caps are the
+  owners' own (as before), and the dashboard says billing isn't set up.
+
+| variable | |
+|---|---|
+| `STRIPE_SECRET_KEY` | a **test** key (`sk_test_…`, or a restricted `rk_test_…`). A live key stops the boot unless `STRIPE_LIVE=1` |
+| `STRIPE_LIVE=1` | Jake sets this when billing goes live; nothing else does |
+| `STRIPE_WEBHOOK_SECRET` | `whsec_…`, from the webhook endpoint (or `stripe listen`) |
+| `STRIPE_PRICE_TEAM_BASE`, `STRIPE_PRICE_TEAM_MAU`, `STRIPE_PRICE_TEAM_MINUTES` | the three Team prices; `scripts/stripe_setup.exs` makes them and prints these lines |
+| `STRIPE_MANAGED_PAYMENTS=0` | Checkout without Managed Payments (on by default) |
+| `STRIPE_API_VERSION` | pin another API version (default `2026-09-30.endive`) |
+| `STRIPE_API_BASE` | another Stripe (stripe-mock in tests) |
+| `BILLING_REPORT_MS` | how often each node reports usage (default 900000) |
+
+### Set up a Stripe account
+
+`scripts/stripe_setup.exs` makes the two meters (`presence_extra_active_users`,
+`presence_call_minutes`, summing `value` per `stripe_customer_id`), the
+three prices (each product with tax code `txcd_10103001`, SaaS for
+business, as Managed Payments needs) and a Customer Portal configuration
+if the account has no default one; then it makes and expires a Team
+Checkout Session as the relay would, Managed Payments on, to prove Stripe
+takes the metered prices that way. Safe to run again; it refuses a live
+account unless `STRIPE_LIVE=1`.
+
+```sh
+export STRIPE_SECRET_KEY=…   # from Infisical, never typed on a command line
+mise exec -- mix run --no-start scripts/stripe_setup.exs > prices.env
+```
+
+### The test-mode check (runbook)
+
+Proves a test-mode subscription bills real usage, end to end, against a
+Stripe sandbox. You need: the sandbox's `sk_test_…` key in your shell's
+environment, the Stripe CLI, a local Postgres, and Chrome or Playwright.
+
+1. **Prices:** run the setup script (above) into `prices.env`.
+2. **Webhooks:** `export STRIPE_WEBHOOK_SECRET="$(stripe listen --api-key "$STRIPE_SECRET_KEY" --print-secret)"`,
+   then leave `stripe listen --api-key "$STRIPE_SECRET_KEY" --forward-to http://127.0.0.1:4212/stripe/webhook`
+   running.
+3. **Relay:** with `prices.env` loaded, `PORT=4212 BILLING_REPORT_MS=60000`
+   and any `LIVEKIT_URL`/`LIVEKIT_API_KEY`/`LIVEKIT_API_SECRET` (calls
+   need them set; nothing connects to them), `mix phx.server`. The log says
+   "billing on, in Stripe test mode".
+4. **Subscribe:** at http://localhost:4212/dashboard sign in (dev logs
+   the magic link), make an app and keep its server secret, open **Plan
+   and billing**, **Upgrade to Team**, and pay with 4242 4242 4242 4242,
+   any future date and CVC, and a US address. Back on the dashboard the
+   plan is Team, and `stripe listen` shows the events answered 200.
+5. **Usage:** `APP_SECRET=… node scripts/billing_usage.mjs --relay http://127.0.0.1:4212 --app <app id> --people 520 --call-seconds 125`:
+   522 people (past the 500 included) and a two-person call.
+6. **Meters:** within a minute `billing_meter_events` has both events
+   sent; in Stripe, the meters' event summaries
+   (`GET /v1/billing/meters/<id>/event_summaries?customer=…&start_time=…&end_time=…`)
+   say 22 and 5, and the subscription's upcoming invoice (the Stripe
+   dashboard, or `POST /v1/invoices/create_preview` with `subscription`)
+   has 22 extra active users ($1.10) and 5 call minutes ($0.02) beside
+   the next month's $29. The dashboard's estimate says the same.
+7. **Manage:** the dashboard's **Manage billing** opens the portal with
+   the subscription, the card, cancel and the first invoice.
+
+Run on 2026-10-29 against the sandbox `acct_1UVmYiDiuwinNYxN`: every
+step as above (Managed Payments on).
+
 ## Deploying
 
 `relay/Dockerfile` builds the demo, the SDK and the hosted installs, then

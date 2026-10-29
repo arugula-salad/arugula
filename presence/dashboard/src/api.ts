@@ -76,8 +76,45 @@ export interface Usage {
   months: { month: string; active_users: number; call_minutes: number }[];
   /** The last 31 days, oldest first. */
   days: { day: string; active_users: number; call_minutes: number }[];
-  cap: { active_users: number | null };
+  /** The owner's own cap, and (P11) the one enforced: the lower of it
+   * and the plan's. */
+  cap: { active_users: number | null; limit?: number | null };
   this_month: { active_users: number; call_minutes: number };
+}
+
+/** An app's plan and billing (#318's P11): money as dollar strings. */
+export interface Billing {
+  enabled: boolean;
+  test_mode: boolean;
+  managed_payments: boolean;
+  plan: "starter" | "team";
+  subscription: {
+    status: string | null;
+    cancel_at_period_end: boolean;
+    current_period_end: string | null;
+    grace_until: string | null;
+  } | null;
+  /** The cap enforced: the plan's or the owner's, whichever is lower. */
+  cap: { active_users: number | null };
+  plans: {
+    starter: { price: string; active_users_cap: number };
+    team: { base: string; included_active_users: number; per_extra_active_user: string; per_call_minute: string; currency: string };
+    enterprise: { contact: string };
+    grace_days: number;
+  };
+  estimate: {
+    month: string;
+    base: string;
+    active_users: number;
+    included_active_users: number | null;
+    extra_active_users: number;
+    extra_active_users_cost: string;
+    call_minutes: number;
+    call_minutes_cost: string;
+    total: string;
+  };
+  can_upgrade: boolean;
+  can_manage: boolean;
 }
 
 export class ApiError extends Error {
@@ -156,6 +193,20 @@ export const usage = (id: string, months = 6) =>
   });
 
 export const setCap = (id: string, activeUsers: number | null) => call<unknown>("PUT", app(id, "/cap"), { active_users: activeUsers });
+
+/** The app's plan and billing, or null where the relay has no billing
+ * yet (a 404: #318's P11 adds it). */
+export const billing = (id: string) =>
+  call<Billing>("GET", app(id, "/billing")).catch((e: ApiError) => {
+    if (e.status === 404 && e.message !== "no such app") return null;
+    throw e;
+  });
+
+/** A Stripe Checkout page subscribing the app to Team. */
+export const checkout = (id: string) => call<{ url: string }>("POST", app(id, "/billing/checkout"), {}).then((r) => r.url);
+
+/** Stripe's Customer Portal for the app's subscription. */
+export const portal = (id: string) => call<{ url: string }>("POST", app(id, "/billing/portal"), {}).then((r) => r.url);
 
 /** What to call a signed-in person: their name, or their address's first
  * part (without a +tag). */
