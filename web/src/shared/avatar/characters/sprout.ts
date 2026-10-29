@@ -1,5 +1,6 @@
 import { HEAD_R, HEAD_Y, type Character } from "../character";
 import { drawHand } from "../hand";
+import { SHOULDER_L, SHOULDER_R } from "../rig";
 
 export const sprout: Character = {
   id: 2,
@@ -7,6 +8,21 @@ export const sprout: Character = {
   draw(g, rig, s) {
     const stroke = g.lineWidth;
     const lift = -0.018 * s.breathe;
+    const shoulderL = rig.shoulderL ?? SHOULDER_L;
+    const shoulderR = rig.shoulderR ?? SHOULDER_R;
+    const shoulderX = (shoulderL[0] + shoulderR[0]) / 2;
+    const shoulderY = (shoulderL[1] + shoulderR[1]) / 2;
+    const span = shoulderL[0] - shoulderR[0];
+    const tilt = shoulderL[1] - shoulderR[1];
+    // Follow the shoulder line at the top, easing its lift out at the hem.
+    const bust = (x: number, y: number): [number, number] => [
+      shoulderX + x * span,
+      y + (shoulderY + x * tilt) * Math.max(0, Math.min(1, 1 - y / 0.83)) + lift,
+    ];
+    const turn = Math.sign(shoulderX) * Math.max(0, 1 - span) * 0.12;
+    // Slide the collar's centre on a body turn, keeping its tips attached.
+    const collar = (x: number, y: number): [number, number] =>
+      bust(x + turn * Math.max(0, 1 - Math.abs(x) / 0.49), y);
     const r = HEAD_R;
     const yaw = Math.sin(rig.yaw);
     const pitch = Math.sin(rig.pitch);
@@ -28,33 +44,33 @@ export const sprout: Character = {
     // A short, flexible stem inside a compact seed-shaped bust.
     g.beginPath();
     g.moveTo(neckX - 0.105, neckY);
-    g.quadraticCurveTo(neckX - 0.12, -0.16, -0.16, lift);
-    g.lineTo(0.16, lift);
-    g.quadraticCurveTo(neckX + 0.12, -0.16, neckX + 0.105, neckY);
+    g.quadraticCurveTo(neckX - 0.12, -0.16 + shoulderY, ...bust(-0.16, 0));
+    g.lineTo(...bust(0.16, 0));
+    g.quadraticCurveTo(neckX + 0.12, -0.16 + shoulderY, neckX + 0.105, neckY);
     g.closePath();
     g.fill();
     g.stroke();
     g.beginPath();
-    g.moveTo(-0.16, -0.13 + lift);
-    g.bezierCurveTo(-0.39, -0.14 + lift, -0.53, -0.015 + lift, -0.56, 0.19 + lift);
-    g.bezierCurveTo(-0.6, 0.42 + lift, -0.57, 0.66 + lift, -0.43, 0.76 + lift);
-    g.quadraticCurveTo(0, 0.83 + lift, 0.43, 0.76 + lift);
-    g.bezierCurveTo(0.57, 0.66 + lift, 0.6, 0.42 + lift, 0.56, 0.19 + lift);
-    g.bezierCurveTo(0.53, -0.015 + lift, 0.39, -0.14 + lift, 0.16, -0.13 + lift);
+    g.moveTo(...bust(-0.16, -0.13));
+    g.bezierCurveTo(...bust(-0.39, -0.14), ...bust(-0.53, -0.015), ...bust(-0.56, 0.19));
+    g.bezierCurveTo(...bust(-0.6, 0.42), ...bust(-0.57, 0.66), ...bust(-0.43, 0.76));
+    g.quadraticCurveTo(...bust(0, 0.83), ...bust(0.43, 0.76));
+    g.bezierCurveTo(...bust(0.57, 0.66), ...bust(0.6, 0.42), ...bust(0.56, 0.19));
+    g.bezierCurveTo(...bust(0.53, -0.015), ...bust(0.39, -0.14), ...bust(0.16, -0.13));
     g.closePath();
     g.fill();
     g.stroke();
 
     // Two broad collar leaves: a quiet echo of the crown, no serrations.
     g.beginPath();
-    g.moveTo(-0.49, 0.015 + lift);
-    g.quadraticCurveTo(-0.24, -0.205 + lift, 0, -0.105 + lift);
-    g.quadraticCurveTo(-0.12, 0.14 + lift, -0.35, 0.18 + lift);
-    g.quadraticCurveTo(-0.34, 0.11 + lift, -0.49, 0.015 + lift);
-    g.moveTo(0.49, 0.015 + lift);
-    g.quadraticCurveTo(0.24, -0.205 + lift, 0, -0.105 + lift);
-    g.quadraticCurveTo(0.12, 0.14 + lift, 0.35, 0.18 + lift);
-    g.quadraticCurveTo(0.34, 0.11 + lift, 0.49, 0.015 + lift);
+    g.moveTo(...collar(-0.49, 0.015));
+    g.quadraticCurveTo(...collar(-0.24, -0.205), ...collar(0, -0.105));
+    g.quadraticCurveTo(...collar(-0.12, 0.14), ...collar(-0.35, 0.18));
+    g.quadraticCurveTo(...collar(-0.34, 0.11), ...collar(-0.49, 0.015));
+    g.moveTo(...collar(0.49, 0.015));
+    g.quadraticCurveTo(...collar(0.24, -0.205), ...collar(0, -0.105));
+    g.quadraticCurveTo(...collar(0.12, 0.14), ...collar(0.35, 0.18));
+    g.quadraticCurveTo(...collar(0.34, 0.11), ...collar(0.49, 0.015));
     g.fill();
     g.stroke();
 
@@ -172,22 +188,25 @@ export const sprout: Character = {
     // Draw arms last so a hand on the chin and raised fists sit in front.
     for (let i = 0; s.size === "bust" && i < 2; i++) {
       const side = i === 0 ? -1 : 1;
+      const shoulder = side === 1 ? shoulderL : shoulderR;
+      const sx = shoulder[0];
+      const sy = shoulder[1] + lift;
       const elbow = side === 1 ? rig.elbowL : rig.elbowR;
       const wrist = side === 1 ? rig.wristL : rig.wristR;
       const hand = side === 1 ? rig.handL : rig.handR;
       const angle = hand ? hand.angle : Math.PI / 2;
       // Reserve room for the fingers even when tracking reaches off tile.
       const margin = 0.3 * Math.abs(Math.cos(angle)) + 0.13 * Math.abs(Math.sin(angle));
-      const wx = wrist ? Math.max(-0.98 + margin, Math.min(0.98 - margin, wrist[0])) : side * 0.66;
-      const wy = wrist ? Math.max(-1.02, Math.min(0.54, wrist[1])) : 0.53 + lift;
-      const ex = elbow ? Math.max(-0.86, Math.min(0.86, elbow[0])) : side * 0.65;
-      const ey = elbow ? elbow[1] : 0.29 + lift;
+      const wx = wrist ? Math.max(-0.98 + margin, Math.min(0.98 - margin, wrist[0])) : sx + side * 0.16;
+      const wy = wrist ? Math.max(-1.02, Math.min(0.54, wrist[1])) : 0.53 + sy;
+      const ex = elbow ? Math.max(-0.86, Math.min(0.86, elbow[0])) : sx + side * 0.15;
+      const ey = elbow ? elbow[1] : 0.29 + sy;
       g.strokeStyle = s.colour;
       g.fillStyle = s.fill;
       g.beginPath();
-      g.moveTo(side * 0.5, lift);
+      g.moveTo(sx, sy);
       // Round the elbow, retaining the two limb directions.
-      g.lineTo(ex * 0.8 + side * 0.5 * 0.2, ey * 0.8 + lift * 0.2);
+      g.lineTo(ex * 0.8 + sx * 0.2, ey * 0.8 + sy * 0.2);
       g.quadraticCurveTo(ex, ey, ex * 0.8 + wx * 0.2, ey * 0.8 + wy * 0.2);
       g.lineTo(wx, wy);
       g.stroke();

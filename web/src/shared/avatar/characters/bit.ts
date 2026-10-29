@@ -1,19 +1,20 @@
 import { HEAD_R, HEAD_Y, type Character, type Stage } from "../character";
 import { drawHand } from "../hand";
-import type { Hand, Point } from "../rig";
+import { SHOULDER_L, SHOULDER_R, type Hand, type Point } from "../rig";
 
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
 
 // A continuous casing around the two links, with a soft elbow bend.
-function arm(g: CanvasRenderingContext2D, side: 1 | -1, lift: number, elbow: Point, wrist: Point, hand: Hand | null, s: Stage) {
-  const sx = side * 0.5, sy = -lift;
-  const ex = elbow ? clamp(elbow[0], -0.82, 0.82) : side * 0.62;
-  const ey = elbow ? clamp(elbow[1], -0.65, 0.55) : 0.27 - lift;
+function arm(g: CanvasRenderingContext2D, side: 1 | -1, shoulder: NonNullable<Point>, lift: number, elbow: Point, wrist: Point, hand: Hand | null, s: Stage) {
+  const sx = shoulder[0], sy = shoulder[1] - lift;
+  const dx = sx - side * 0.5;
+  const ex = elbow ? clamp(elbow[0], -0.82, 0.82) : side * 0.62 + dx;
+  const ey = elbow ? clamp(elbow[1], -0.65, 0.55) : 0.27 + sy;
   // Retarget the reach to Bit's compact proportions, reserving room for
   // extended fingers even when the tracked wrist is outside the tile.
   const reach = 0.85 - (hand ? Math.abs(Math.cos(hand.angle)) * 0.15 : 0);
-  const wx = wrist ? clamp(wrist[0], -reach, reach) : side * 0.64;
-  const wy = wrist ? clamp(wrist[1], -0.92, 0.5) : 0.49 - lift;
+  const wx = wrist ? clamp(wrist[0], -reach, reach) : side * 0.64 + dx;
+  const wy = wrist ? clamp(wrist[1], -0.92, 0.5) : 0.49 + sy;
   const upper = Math.atan2(ey - sy, ex - sx);
   const lower = Math.atan2(wy - ey, wx - ex);
   const ux = -Math.sin(upper) * 0.055, uy = Math.cos(upper) * 0.055;
@@ -44,6 +45,8 @@ export const bit: Character = {
   draw(g, rig, s) {
     const stroke = g.lineWidth;
     const lift = s.breathe * 0.018;
+    const shoulderL = rig.shoulderL ?? SHOULDER_L;
+    const shoulderR = rig.shoulderR ?? SHOULDER_R;
     const r = HEAD_R;
     const turn = Math.sin(rig.yaw);
     const pitch = Math.sin(rig.pitch);
@@ -55,21 +58,29 @@ export const bit: Character = {
     g.fillStyle = s.fill;
 
     if (s.size === "bust") {
+      const cx = (shoulderL[0] + shoulderR[0]) / 2;
+      const cy = (shoulderL[1] + shoulderR[1]) / 2;
+      const span = shoulderL[0] - shoulderR[0];
+      const slope = shoulderL[1] - shoulderR[1];
       // The flexible neck meets the rotated head's underside, not its
       // unrotated centre, so a leaning head stays seated on the shoulders.
       const nx = rig.x + Math.sin(rig.roll) * height;
       const ny = HEAD_Y + rig.y + Math.cos(rig.roll) * height;
       g.beginPath();
-      g.moveTo(-0.105, 0.02 - lift);
-      g.quadraticCurveTo(nx - 0.11, -0.14, nx - 0.10, ny - 0.035);
+      g.moveTo(cx - 0.105 * span, cy - 0.105 * slope + 0.02 - lift);
+      g.quadraticCurveTo(nx - 0.11, cy - 0.14, nx - 0.10, ny - 0.035);
       g.lineTo(nx + 0.10, ny - 0.035);
-      g.quadraticCurveTo(nx + 0.11, -0.14, 0.105, 0.02 - lift);
+      g.quadraticCurveTo(nx + 0.11, cy - 0.14, cx + 0.105 * span, cy + 0.105 * slope + 0.02 - lift);
       g.closePath();
       g.fill();
       g.stroke();
 
       // Rounded shoulders and a lightly tapered chassis, with breathing
       // room underneath the bust and its relaxed hands.
+      // Map the original shoulder line onto the rig's; at rest this is
+      // the identity, preserving the finished casing and its breathing.
+      g.save();
+      g.transform(span, slope, 0, 1, cx, cy);
       g.beginPath();
       g.moveTo(-0.29, -0.12 - lift);
       g.quadraticCurveTo(-0.50, -0.12 - lift, -0.51, 0.09 - lift);
@@ -83,13 +94,16 @@ export const bit: Character = {
       g.fill();
       g.stroke();
       // One small terminal slot is the chassis's only ornament.
+      // A narrower, asymmetric shoulder span turns the chest details
+      // toward the nearer side, in addition to narrowing the casing.
+      g.translate(clamp(cx * 2, -0.2, 0.2) * clamp(1 - span, 0, 1), 0);
       g.lineWidth = stroke * 0.6;
       g.beginPath();
       g.roundRect(-0.21, 0.19 - lift, 0.42, 0.16, 0.045);
       g.moveTo(-0.12, 0.27 - lift);
       g.lineTo(0.025, 0.27 - lift);
       g.stroke();
-      g.lineWidth = stroke;
+      g.restore();
     }
 
     g.save();
@@ -217,8 +231,8 @@ export const bit: Character = {
     if (s.size === "bust") {
       g.lineWidth = stroke;
       g.strokeStyle = s.colour;
-      arm(g, -1, lift, rig.elbowR, rig.wristR, rig.handR, s);
-      arm(g, 1, lift, rig.elbowL, rig.wristL, rig.handL, s);
+      arm(g, -1, shoulderR, lift, rig.elbowR, rig.wristR, rig.handR, s);
+      arm(g, 1, shoulderL, lift, rig.elbowL, rig.wristL, rig.handL, s);
     }
     g.restore();
   },

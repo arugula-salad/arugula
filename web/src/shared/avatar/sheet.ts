@@ -38,6 +38,15 @@ const POSES = [
       elbowR: [-0.7, 0.4], wristR: [-0.45, -0.1], handR: { angle: -Math.PI / 2, curl: [0.7, 1, 1, 1, 1] },
     }),
   ),
+  pose("shrug", (r) =>
+    Object.assign(r, {
+      face: true, browUp: 0.8, browInnerUp: 0.6, smile: 0.2, shoulderL: [0.5, -0.2], shoulderR: [-0.5, -0.2],
+      elbowL: [0.85, 0.15], wristL: [1.05, -0.15], handL: { angle: -0.6, curl: [0, 0, 0, 0, 0] },
+      elbowR: [-0.85, 0.15], wristR: [-1.05, -0.15], handR: { angle: -Math.PI + 0.6, curl: [0, 0, 0, 0, 0] },
+    }),
+  ),
+  pose("lean", (r) => Object.assign(r, { face: true, roll: 0.2, x: 0.1, shoulderL: [0.48, -0.12], shoulderR: [-0.48, 0.12] })),
+  pose("turn body", (r) => Object.assign(r, { face: true, yaw: 0.5, x: 0.05, shoulderL: [0.3, 0.02], shoulderR: [-0.42, 0] })),
   pose("away", () => {}),
 ];
 

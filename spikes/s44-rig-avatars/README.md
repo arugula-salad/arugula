@@ -20,6 +20,7 @@ No picture of you leaves the page.
 | Solver: head angles from the face transform, ARKit blendshapes to the rig, pose to arms; One-Euro smoothing | `web/src/shared/avatar/solve.ts` |
 | Trackers: MediaPipe face landmarker (blendshapes + transform) and pose landmarker lite | `web/src/shared/avatar/track.ts`, `cam.ts` |
 | Characters: Codex drafts to `character.ts`'s contract, then a final-art pass (Codex at high effort, briefed with the contact sheet and a style bar), proportions and hand size tuned | `web/src/shared/avatar/characters/` |
+| Shoulders: a point each, where they really are: tilted with the shoulder line, closer together as the body turns (measured in their true width from the pose's world landmarks, so the rest of the body doesn't grow), lifted by a shrug (each shoulder nearer its ear than its learnt rest); 4 bytes. Characters hang their arms, collar and neck from them | `solve.ts` (`Calib`), `rig.ts` |
 | Hands: the hand landmarker (21 points a hand) → which way each points and each finger's curl, 6 bytes a hand; given to the nearer pose wrist, and standing in for a wrist the pose lost; drawn by a shared cartoon hand | `solve.ts` (`handOf`), `web/src/shared/avatar/hand.ts` |
 | Stage: bust space on a canvas, the head-only crop, one animation loop for every avatar | `web/src/shared/avatar/stage.ts`, `view.tsx` |
 | Contact sheet, for tuning characters by eye (`pnpm exec vite`, /avatar-sheet.html) | `web/avatar-sheet.html`, `web/src/shared/avatar/sheet.ts` |

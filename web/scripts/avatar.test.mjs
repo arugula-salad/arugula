@@ -138,3 +138,29 @@ test("hands survive the wire", () => {
   back.handL.curl.forEach((c, i) => near(c, r.handL.curl[i], 0.01));
   assert.equal(back.handR, null);
 });
+
+test("shoulders: a tilt and a turn come with where they are, a shrug lifts them, and they survive the wire", () => {
+  const body = (shY) => {
+    const pose = [];
+    pose[7] = { x: 0.56, y: 0.42, visibility: 1 }; // left ear
+    pose[8] = { x: 0.44, y: 0.42, visibility: 1 };
+    pose[11] = { x: 0.6, y: shY, visibility: 1 };
+    pose[12] = { x: 0.4, y: shY, visibility: 1 };
+    return pose;
+  };
+  const calib = {};
+  const rest = solve({ matrix: null, shapes: null, face: null, pose: body(0.7), aspect: 1 }, calib);
+  near(rest.shoulderL[0], 0.5);
+  near(rest.shoulderL[1], 0);
+  const shrug = solve({ matrix: null, shapes: null, face: null, pose: body(0.62), aspect: 1 }, calib);
+  assert.ok(shrug.shoulderL[1] < -0.1 && shrug.shoulderR[1] < -0.1, `shrug ${shrug.shoulderL}`);
+  // Turned: the world landmarks put the left shoulder further back.
+  const world = [];
+  world[11] = { x: 0.15, y: 0, z: 0.1 };
+  world[12] = { x: -0.15, y: 0, z: -0.1 };
+  const turned = solve({ matrix: null, shapes: null, face: null, pose: body(0.7), poseWorld: world, aspect: 1 }, {});
+  assert.ok(turned.shoulderL[0] < 0.45, `turned span ${turned.shoulderL}`);
+  const back = unpackRig(packRig(shrug, { character: 1, colour: 0 })).rig;
+  near(back.shoulderL[1], shrug.shoulderL[1], 0.05);
+  near(back.shoulderR[0], shrug.shoulderR[0], 0.05);
+});

@@ -39,6 +39,7 @@ export async function startTracker(): Promise<Tracker> {
     ]);
   const [face, pose, hands] = await make("GPU").catch(() => make("CPU"));
   const filter = new RigFilter();
+  const calib = {};
   let last = 0;
   return {
     track(video) {
@@ -57,7 +58,8 @@ export async function startTracker(): Promise<Tracker> {
         pose: p.landmarks?.[0] ?? null,
         hands: h.landmarks ?? null,
         aspect: video.videoWidth / (video.videoHeight || 1) || 4 / 3,
-      });
+        poseWorld: p.worldLandmarks?.[0] ?? null,
+      }, calib);
       p.close();
       return filter.apply(rig, now / 1000);
     },

@@ -18,13 +18,16 @@
 //             wasn't seen
 //   hand    = angle:i8 (π/127) curl:5 × u8 (thumb … pinky), for the left
 //             hand when flags & HAND_L, then the right when flags & HAND_R
-// flags: FACE (a face was found), ARMS, HAND_L, HAND_R.
+//   shoulders = shoulderL, shoulderR × x:i8 y:i8 (1/25 shoulder), when
+//             flags & SHOULDERS
+// flags: FACE (a face was found), ARMS, HAND_L, HAND_R, SHOULDERS.
 
 export const RIG = 0x40;
 const FACE = 1;
 const ARMS = 2;
 const HAND_L = 4;
 const HAND_R = 8;
+const SHOULDERS = 16;
 
 export type Point = [number, number] | null;
 
@@ -73,7 +76,16 @@ export interface Rig {
    * hand, as the character likes). */
   handL: Hand | null;
   handR: Hand | null;
+  /** Where each shoulder is: about (±0.5, 0) at rest, closer together as
+   * the body turns, one above the other as it tilts, both up in a shrug.
+   * Null where the pose wasn't seen: draw them at rest (SHOULDER_L/R). */
+  shoulderL: Point;
+  shoulderR: Point;
 }
+
+/** Shoulders at rest, for a rig without them. */
+export const SHOULDER_L: [number, number] = [0.5, 0];
+export const SHOULDER_R: [number, number] = [-0.5, 0];
 
 /** Which character, in which colour (./characters). */
 export interface Look {
@@ -88,12 +100,14 @@ export function neutral(): Rig {
     blinkL: 0, blinkR: 0, lookX: 0, lookY: 0,
     browUp: 0, browDown: 0, browInnerUp: 0, jawOpen: 0, smile: 0, funnel: 0, pucker: 0, cheekPuff: 0,
     elbowL: null, elbowR: null, wristL: null, wristR: null, handL: null, handR: null,
+    shoulderL: null, shoulderR: null,
   };
 }
 
 const FACE_KEYS = ["blinkL", "blinkR", "lookX", "lookY", "browUp", "browDown", "browInnerUp", "jawOpen", "smile", "funnel", "pucker", "cheekPuff"] as const;
 const SIGNED = new Set(["lookX", "lookY"]);
 const ARM_KEYS = ["elbowL", "elbowR", "wristL", "wristR"] as const;
+const POINT_KEYS = [...ARM_KEYS, "shoulderL", "shoulderR"] as const;
 const DEG = 180 / Math.PI;
 
 const i8 = (v: number) => Math.max(-127, Math.min(127, Math.round(v))) & 0xff;
@@ -102,7 +116,8 @@ const u8 = (v: number) => Math.max(0, Math.min(255, Math.round(v * 255)));
 
 export function packRig(r: Rig, look: Look): Uint8Array {
   const arms = ARM_KEYS.some((k) => r[k]);
-  const flags = (r.face ? FACE : 0) | (arms ? ARMS : 0) | (r.handL ? HAND_L : 0) | (r.handR ? HAND_R : 0);
+  const shoulders = !!(r.shoulderL && r.shoulderR);
+  const flags = (r.face ? FACE : 0) | (arms ? ARMS : 0) | (r.handL ? HAND_L : 0) | (r.handR ? HAND_R : 0) | (shoulders ? SHOULDERS : 0);
   const out = [RIG, flags, look.character & 0xff, look.colour & 0xff];
   out.push(i8(r.yaw * DEG), i8(r.pitch * DEG), i8(r.roll * DEG), i8(r.x * 50), i8(r.y * 50));
   for (const k of FACE_KEYS) out.push(SIGNED.has(k) ? i8(r[k] * 127) : u8(r[k]));
@@ -113,6 +128,7 @@ export function packRig(r: Rig, look: Look): Uint8Array {
     }
   }
   for (const h of [r.handL, r.handR]) if (h) out.push(i8((wrap(h.angle) * 127) / Math.PI), ...h.curl.map(u8));
+  if (shoulders) for (const p of [r.shoulderL!, r.shoulderR!]) out.push(i8(p[0] * 25), i8(p[1] * 25));
   return Uint8Array.from(out);
 }
 
@@ -143,6 +159,11 @@ export function unpackRig(b: Uint8Array): { rig: Rig; look: Look } {
   };
   if (flags & HAND_L) r.handL = hand();
   if (flags & HAND_R) r.handR = hand();
+  if (flags & SHOULDERS) {
+    if (b.length < p + 4) throw new Error("rig frame: cut short");
+    r.shoulderL = [s8(b[p++]) / 25, s8(b[p++]) / 25];
+    r.shoulderR = [s8(b[p++]) / 25, s8(b[p++]) / 25];
+  }
   return { rig: r, look: { character: b[2], colour: b[3] } };
 }
 
@@ -181,7 +202,7 @@ export function approach(cur: Rig, want: Rig, dt: number, rate = 14): Rig {
   const k = 1 - Math.exp(-dt * rate);
   const out = { ...want };
   for (const key of ["yaw", "pitch", "roll", "x", "y", ...FACE_KEYS] as const) out[key] = cur[key] + (want[key] - cur[key]) * k;
-  for (const key of ARM_KEYS) {
+  for (const key of POINT_KEYS) {
     const a = cur[key], b = want[key];
     out[key] = a && b ? [a[0] + (b[0] - a[0]) * k, a[1] + (b[1] - a[1]) * k] : b;
   }

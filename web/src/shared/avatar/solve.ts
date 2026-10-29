@@ -19,6 +19,7 @@ export interface Mark {
 
 /** Pose landmarks: shoulders, elbows, wrists (BlazePose's numbering). */
 const POSE = { shoulderL: 11, shoulderR: 12, elbowL: 13, elbowR: 14, wristL: 15, wristR: 16 } as const;
+const EAR_L = 7, EAR_R = 8;
 /** The face mesh's nose tip. */
 const NOSE = 1;
 
@@ -38,7 +39,20 @@ export interface Seen {
   hands?: Mark[][] | null;
   /** The image's width over its height (landmarks are 0–1 on each). */
   aspect?: number;
+  /** The body in metres around the hips (the pose's world landmarks):
+   * which way the shoulders face. */
+  poseWorld?: { x: number; y: number; z: number }[] | null;
 }
+
+/** What a shrug is measured against: each shoulder's usual drop below
+ * its ear, learnt as it goes (quick to rise, slow to fall, so a shrug
+ * doesn't become the new rest but a slouch does, in half a minute). */
+export interface Calib {
+  gapL?: number;
+  gapR?: number;
+}
+
+const learn = (base: number | undefined, v: number) => (base === undefined ? v : base + (v - base) * (v > base ? 0.3 : 0.003));
 
 /** A hand's knuckles, then each finger's joints out to the tip (the hand
  * landmarker's numbering): thumb, index, middle, ring, pinky. */
@@ -65,7 +79,7 @@ export function handOf(h: Mark[], ax: number): Hand {
 }
 
 /** The rig for what was seen; `null`s leave the rig neutral there. */
-export function solve(s: Seen): Rig {
+export function solve(s: Seen, calib: Calib = {}): Rig {
   const r = neutral();
   const m = s.matrix;
   if (m && m.length >= 16) {
@@ -104,7 +118,12 @@ export function solve(s: Seen): Rig {
   if (p && sl && sr && seen(sl) && seen(sr)) {
     const mx = (sl.x + sr.x) / 2, my = (sl.y + sr.y) / 2;
     mid = mx;
-    const unit = Math.hypot((sl.x - sr.x) * ax, sl.y - sr.y) || 1;
+    // Turned, the shoulders look closer together: measure in their real
+    // width (the world landmarks say how far round they face), so the rest
+    // of the body doesn't grow as you turn.
+    const w = s.poseWorld;
+    const turn = w?.[POSE.shoulderL] && w[POSE.shoulderR] ? Math.atan2(w[POSE.shoulderL].z - w[POSE.shoulderR].z, w[POSE.shoulderL].x - w[POSE.shoulderR].x) : 0;
+    const unit = (Math.hypot((sl.x - sr.x) * ax, sl.y - sr.y) || 1) / Math.max(0.5, Math.cos(turn));
     // The image unmirrored: the person's left is the image's right, which
     // is bust space's +x already.
     toBust = (q) => [((q.x - mx) * ax) / unit, (q.y - my) / unit];
@@ -116,11 +135,24 @@ export function solve(s: Seen): Rig {
     r.elbowR = at("elbowR");
     r.wristL = r.elbowL && at("wristL");
     r.wristR = r.elbowR && at("wristR");
+    // The shoulders themselves: tilt and turn come with where they are; a
+    // shrug is a shoulder nearer its ear than usual.
+    const lift = (sh: Mark, ear: Mark | undefined, key: "gapL" | "gapR") => {
+      if (!ear || !seen(ear)) return 0;
+      const gap = (sh.y - ear.y) / unit;
+      const base = (calib[key] = learn(calib[key], gap));
+      return clamp((base - gap) / 0.3, 0, 1) * 0.22;
+    };
+    const liftL = lift(sl, p[EAR_L], "gapL"), liftR = lift(sr, p[EAR_R], "gapR");
+    const bl = toBust(sl), br = toBust(sr);
+    r.shoulderL = [bl[0], bl[1] - liftL];
+    r.shoulderR = [br[0], br[1] - liftR];
     const nose = s.face?.[NOSE];
     if (nose) {
-      // An upright head's nose sits about 0.9 shoulder widths above them.
+      // An upright head's nose sits about 0.9 shoulder widths above them;
+      // a shrug brings the shoulders up, not the head down.
       r.x = clamp(((nose.x - mx) * ax) / unit, -0.4, 0.4);
-      r.y = clamp(((nose.y - my) / unit + 0.9) * 0.6, -0.3, 0.3);
+      r.y = clamp(((nose.y - my) / unit + 0.9) * 0.6 - ((liftL + liftR) / 2) * 0.6, -0.3, 0.3);
     }
   } else if (s.face?.[NOSE]) {
     r.x = clamp((s.face[NOSE].x - 0.5) * 0.6, -0.3, 0.3);

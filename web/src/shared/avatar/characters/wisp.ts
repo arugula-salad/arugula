@@ -1,5 +1,6 @@
 import { HEAD_R, HEAD_Y, type Character } from "../character";
 import { drawHand } from "../hand";
+import { SHOULDER_L, SHOULDER_R } from "../rig";
 
 export const wisp: Character = {
   id: 3,
@@ -8,6 +9,15 @@ export const wisp: Character = {
     const stroke = g.lineWidth;
     const r = HEAD_R;
     const lift = s.breathe * 0.018;
+    const shoulderL = rig.shoulderL ?? SHOULDER_L;
+    const shoulderR = rig.shoulderR ?? SHOULDER_R;
+    const mx = (shoulderL[0] + shoulderR[0]) / 2;
+    const myShoulders = (shoulderL[1] + shoulderR[1]) / 2 - lift;
+    const span = shoulderL[0] - shoulderR[0];
+    const tilt = shoulderL[1] - shoulderR[1];
+    // The centre hem lobe is the cloak's only chest detail: let it drift
+    // toward the nearer side as the shoulders turn away from a full span.
+    const chest = mx * Math.max(0, 1 - span) * 0.8;
     const hx = rig.x, hy = HEAD_Y + rig.y - lift;
     const turn = Math.sin(rig.yaw), pitch = Math.sin(rig.pitch);
     const rx = r * (1 - 0.16 * Math.abs(turn));
@@ -31,8 +41,8 @@ export const wisp: Character = {
     g.fillStyle = s.fill;
     g.lineWidth = stroke;
 
-    // One continuous hood: the tilted dome flows back to fixed shoulders,
-    // so leaning never opens a seam between the head and the little cloak.
+    // One continuous hood joins the head to the moving shoulder line,
+    // keeping the covered neck attached through a lean or shrug.
     g.beginPath();
     g.save();
     g.translate(hx, hy);
@@ -41,14 +51,17 @@ export const wisp: Character = {
     g.bezierCurveTo(-edge - 0.015, -ry * 0.63, crown - rx * 0.62, -ry, crown, -ry);
     g.bezierCurveTo(crown + rx * 0.64, -ry, edge + 0.015, -ry * 0.63, edge, joinY);
     g.restore();
-    g.bezierCurveTo(dx - sn * 0.2, dy + c * 0.2, 0.46, -0.23 - lift, 0.5, -lift);
-    g.bezierCurveTo(0.53, 0.26 - lift, 0.59, 0.51 - lift, 0.64, 0.69 - lift);
+    g.bezierCurveTo(dx - sn * 0.2, dy + c * 0.2, mx + 0.46 * span, myShoulders + 0.46 * tilt - 0.23, shoulderL[0], shoulderL[1] - lift);
+    g.save();
+    g.transform(span, tilt, 0, 1, mx, myShoulders);
+    g.bezierCurveTo(0.53, 0.26, 0.59, 0.51, 0.64, 0.69);
     // Three soft lobes, with just the centre tip moving in the idle breeze.
-    g.bezierCurveTo(0.51, 0.8 - lift, 0.41, 0.8 - lift, 0.3, 0.69 - lift);
-    g.bezierCurveTo(0.16, 0.85 - lift + flutter, -0.16, 0.85 - lift + flutter, -0.3, 0.69 - lift);
-    g.bezierCurveTo(-0.41, 0.8 - lift, -0.51, 0.8 - lift, -0.64, 0.69 - lift);
-    g.bezierCurveTo(-0.59, 0.51 - lift, -0.53, 0.26 - lift, -0.5, -lift);
-    g.bezierCurveTo(-0.46, -0.23 - lift, lx - sn * 0.2, ly + c * 0.2, lx, ly);
+    g.bezierCurveTo(0.51, 0.8, 0.41 + chest, 0.8, 0.3 + chest, 0.69);
+    g.bezierCurveTo(0.16 + chest, 0.85 + flutter, -0.16 + chest, 0.85 + flutter, -0.3 + chest, 0.69);
+    g.bezierCurveTo(-0.41 + chest, 0.8, -0.51, 0.8, -0.64, 0.69);
+    g.bezierCurveTo(-0.59, 0.51, -0.53, 0.26, -0.5, 0);
+    g.restore();
+    g.bezierCurveTo(mx - 0.46 * span, myShoulders - 0.46 * tilt - 0.23, lx - sn * 0.2, ly + c * 0.2, lx, ly);
     g.closePath();
     g.fill();
     g.stroke();
@@ -137,27 +150,29 @@ export const wisp: Character = {
     // Hands sit in front of the cloak (and face for the thinking pose).
     // Fit the whole hand inside the tile, including an extended index.
     for (let side = -1; side <= 1; side += 2) {
+      const shoulder = side === 1 ? shoulderL : shoulderR;
+      const sx = shoulder[0], sy = shoulder[1] - lift;
       const elbow = side === 1 ? rig.elbowL : rig.elbowR;
       const wrist = side === 1 ? rig.wristL : rig.wristR;
       const hand = side === 1 ? rig.handL : rig.handR;
       const angle = hand ? hand.angle : Math.PI / 2;
       const reach = 0.16 * (1.9 * Math.abs(Math.cos(angle)) + 0.75 * Math.abs(Math.sin(angle)));
       const limit = 0.99 - reach;
-      const rawX = wrist ? wrist[0] : side * 0.67;
+      const rawX = wrist ? wrist[0] : sx + side * 0.17;
       const wx = Math.max(-limit, Math.min(limit, rawX));
-      const wy = wrist ? Math.max(-0.85, Math.min(0.51, wrist[1])) : 0.42 - lift;
-      let ex = elbow ? elbow[0] : side * 0.63;
-      const ey = elbow ? elbow[1] : 0.22 - lift;
+      const wy = wrist ? Math.max(-0.85, Math.min(0.51, wrist[1])) : sy + 0.42;
+      let ex = elbow ? elbow[0] : sx + side * 0.13;
+      const ey = elbow ? elbow[1] : sy + 0.22;
       // Keep the elbow's relation to its shoulder as the reach is shortened.
-      if (wx !== rawX && Math.abs(rawX - side * 0.5) > 0.01) {
-        ex = side * 0.5 + (ex - side * 0.5) * (wx - side * 0.5) / (rawX - side * 0.5);
+      if (wx !== rawX && Math.abs(rawX - sx) > 0.01) {
+        ex = sx + (ex - sx) * (wx - sx) / (rawX - sx);
       }
       ex = Math.max(-0.92, Math.min(0.92, ex));
       g.strokeStyle = s.colour;
       g.lineWidth = stroke;
       g.beginPath();
-      g.moveTo(side * 0.5, -lift);
-      g.quadraticCurveTo(side * 0.5 + (ex - side * 0.5) * 0.65, -lift, (side * 0.5 + ex) / 2, (ey - lift) / 2);
+      g.moveTo(sx, sy);
+      g.quadraticCurveTo(sx + (ex - sx) * 0.65, sy, (sx + ex) / 2, (ey + sy) / 2);
       g.quadraticCurveTo(ex, ey, (ex + wx) / 2, (ey + wy) / 2);
       g.quadraticCurveTo(wx - Math.cos(angle) * 0.08, wy - Math.sin(angle) * 0.08, wx, wy);
       g.stroke();
