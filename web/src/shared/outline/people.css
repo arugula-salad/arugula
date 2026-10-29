@@ -1,0 +1,141 @@
+/* The People block (S43): who's around, as live outlines. */
+
+.block-people {
+  overflow: auto;
+  background: var(--bg);
+}
+
+.people-block {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3, 12px);
+  padding: var(--space-3, 12px);
+  min-height: 100%;
+  box-sizing: border-box;
+}
+
+.people-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 14px;
+  font-size: 12px;
+}
+
+.people-controls label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.people-cam.on {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.people-stats {
+  font-family: var(--f-mono);
+  font-size: 11px;
+}
+
+.people-error {
+  color: var(--danger);
+  font-size: 12px;
+  margin: 0;
+}
+
+.people-none {
+  padding: var(--space-4, 16px);
+  margin: 0;
+}
+
+.people-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 10px;
+}
+
+.people-tile {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--line);
+  border-radius: var(--card-radius, 8px);
+  background: var(--surface);
+  overflow: hidden;
+}
+
+.people-tile.people-live {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--line));
+}
+
+.people-tile.people-offline {
+  opacity: 0.55;
+}
+
+.people-view {
+  position: relative;
+  aspect-ratio: 4 / 3;
+  background: var(--void, var(--bg));
+  color: var(--accent);
+}
+
+.people-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.people-away .people-canvas {
+  opacity: 0.5;
+}
+
+.people-still {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+}
+
+.people-still .msg-avatar {
+  width: 56px;
+  height: 56px;
+  font-size: 20px;
+}
+
+.people-tile figcaption {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  font-size: 12px;
+  border-top: 1px solid var(--line);
+}
+
+.people-tile figcaption .presence-dot {
+  position: static;
+  flex: none;
+}
+
+.people-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.people-on {
+  font-family: var(--f-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--accent);
+}
+
+.people-bytes {
+  font-family: var(--f-mono);
+  font-size: 10px;
+}

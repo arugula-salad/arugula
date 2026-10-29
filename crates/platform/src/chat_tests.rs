@@ -851,7 +851,7 @@ async fn a_mention_pushes_through_the_hub_as_chat_always_did() {
 }
 
 /// A live stream's text so far, read in the background.
-fn listen(mut r: reqwest::Response) -> Arc<Mutex<String>> {
+pub(crate) fn listen(mut r: reqwest::Response) -> Arc<Mutex<String>> {
     let heard = Arc::new(Mutex::new(String::new()));
     let into = heard.clone();
     tokio::spawn(async move {

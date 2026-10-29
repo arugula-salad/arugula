@@ -31,6 +31,9 @@
 //   --phone          a phone: touch, a mobile viewport (as an iPhone; with
 //                    --size 390x844 --scale 3 for one)
 //   --headed         show the window
+//   --camera [FILE]  a fake camera, allowed without asking: Chrome's test
+//                    pattern, or FILE (a .y4m or .mjpeg) on a loop (S43's
+//                    People block, say)
 //   --init JS        run JS in each page before its own scripts: say,
 //                    `window.__arugulaTelemetry = true`, so the usage
 //                    question asks here as it does for a person (M103)
@@ -60,9 +63,9 @@ import { dirname, join, resolve } from "node:path";
 import { createInterface } from "node:readline";
 import { chromium, type BrowserContext, type CDPSession, type Locator, type Page } from "@playwright/test";
 
-const usage = "usage: dev-browser [--passkey] [--login NAME] [--profile DIR] [--size WxH] [--scale N] [--phone] [--headed] [--init JS] URL [STEPS]";
+const usage = "usage: dev-browser [--passkey] [--login NAME] [--profile DIR] [--size WxH] [--scale N] [--phone] [--headed] [--camera [FILE]] [--init JS] URL [STEPS]";
 const args = process.argv.slice(2);
-const opt: { passkey: boolean; login?: string; profile?: string; size: string; scale: number; phone: boolean; headed: boolean; init?: string } = {
+const opt: { passkey: boolean; login?: string; profile?: string; size: string; scale: number; phone: boolean; headed: boolean; camera?: string; init?: string } = {
   passkey: false,
   size: "1280x800",
   scale: 1,
@@ -80,6 +83,7 @@ for (let i = 0; i < args.length; i++) {
   else if (a === "--scale") opt.scale = Number(val());
   else if (a === "--phone") opt.phone = true;
   else if (a === "--headed") opt.headed = true;
+  else if (a === "--camera") opt.camera = args[i + 1] && !args[i + 1].startsWith("--") && /\.(y4m|mjpeg)$/.test(args[i + 1]) ? resolve(args[++i]) : "";
   else if (a === "--init") opt.init = val();
   else if (a === "-h" || a === "--help") die(usage, 0);
   else if (a.startsWith("--")) die(`unknown option ${a}\n${usage}`);
@@ -95,7 +99,11 @@ function die(msg: string, code = 1): never {
 }
 
 // The system Chrome, as the e2e specs use; Playwright's own if there's none.
-const launch = { headless: !opt.headed, channel: "chrome" };
+const camera =
+  opt.camera === undefined
+    ? []
+    : ["--use-fake-device-for-media-stream", "--use-fake-ui-for-media-stream", ...(opt.camera ? [`--use-file-for-fake-video-capture=${opt.camera}`] : [])];
+const launch = { headless: !opt.headed, channel: "chrome", args: camera };
 const viewport = { width, height };
 const mobile = opt.phone ? { hasTouch: true, isMobile: true } : {};
 let ctx: BrowserContext;
@@ -104,7 +112,7 @@ try {
 } catch {
   ctx = await open({ ...launch, channel: undefined });
 }
-async function open(l: { headless: boolean; channel?: string }): Promise<BrowserContext> {
+async function open(l: { headless: boolean; channel?: string; args: string[] }): Promise<BrowserContext> {
   if (opt.profile) {
     mkdirSync(opt.profile, { recursive: true });
     return chromium.launchPersistentContext(join(opt.profile, "chrome"), { ...l, viewport, deviceScaleFactor: opt.scale, ...mobile });

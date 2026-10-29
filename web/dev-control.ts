@@ -62,6 +62,12 @@
 //                      browsers approved by headless devices of their own),
 //                      the team's `chat` and `boards` flags on, and #general and a DM
 //                      seeded on the first run.
+//   DEV_CONTROL_OUTLINES=1
+//                      outline presence (S43), with DEV_CONTROL_CHAT=1 and
+//                      DEV_CONTROL_LOGINS: each other login's device echoes
+//                      $DEV_CONTROL_LOGIN's camera outline back as its own,
+//                      the first 1.5 s behind, the next 4 s, then 7 s…, so
+//                      a People block fills with one camera.
 //   DEV_CONTROL_HOSTED=1
 //                      hosted workspaces on for everyone (M179), against an
 //                      E2B nobody answers: no box is made, so a hosted
@@ -126,6 +132,7 @@ const logins = (process.env.DEV_CONTROL_LOGINS ?? "").split(",").map((l) => l.tr
 const labs = process.env.DEV_CONTROL_LABS !== "0";
 const approveAll = process.env.DEV_CONTROL_APPROVE_BROWSERS !== "0";
 const chatOn = process.env.DEV_CONTROL_CHAT === "1";
+const outlinesOn = process.env.DEV_CONTROL_OUTLINES === "1";
 const machines = process.argv.slice(2).length ? process.argv.slice(2) : ["workstation", "laptop"];
 const machineNames = machines.map((m) => m.split("@")[0]);
 const cloud = (process.env.DEV_CONTROL_CLOUD ?? "").split(",").map((l) => l.trim()).filter(Boolean);
@@ -313,15 +320,49 @@ async function seedChat(d: Device): Promise<Device[]> {
   await d.api("/api/flags", { name: "chat", on: true, team });
   await d.api("/api/flags", { name: "boards", on: true, team });
   const general = await d.api<{ id: string }>(`/api/chat/teams/${team}/channels`, { name: "general" });
-  await d.api(`/api/chat/rooms/${general.id}/messages`, { text: "Morning! The deploy went out green." });
-  for (const o of others) {
-    await o.api(`/api/chat/rooms/${general.id}/messages`, { text: `@${login} nice. I'll look at the flaky upload test next.` });
-    const dm = await o.api<{ id: string }>(`/api/chat/teams/${team}/dms`, { with: d.account });
-    await o.api(`/api/chat/rooms/${dm.id}/messages`, { text: "got a minute after standup?" });
+  // The team is made and everyone's in it: a seed message that fails
+  // shouldn't cost the others their devices (the outlines echo needs them).
+  try {
+    await d.api(`/api/chat/rooms/${general.id}/messages`, { text: "Morning! The deploy went out green." });
+    for (const o of others) {
+      // A teammate posts in #general once they've joined it.
+      await o.api(`/api/chat/rooms/${general.id}/join`, {});
+      await o.api(`/api/chat/rooms/${general.id}/messages`, { text: `@${login} nice. I'll look at the flaky upload test next.` });
+      const dm = await o.api<{ id: string }>(`/api/chat/teams/${team}/dms`, { with: d.account });
+      await o.api(`/api/chat/rooms/${dm.id}/messages`, { text: "got a minute after standup?" });
+    }
+  } catch (e) {
+    log(`chat: seeding messages: ${String(e)}`);
   }
   writeFileSync(file, JSON.stringify({ team, general: general.id }));
   log("chat: team Acme, #general");
   return others;
+}
+
+/** DEV_CONTROL_OUTLINES=1 (S43): `o` re-posts `owner`'s outline frames as
+ * its own, `delay` ms behind, and turns its outline off when theirs goes
+ * off. Frames are opaque here. Reconnects when the stream drops. */
+async function echoOutlines(o: Device, owner: string, delay: number): Promise<void> {
+  const later = (f: () => Promise<void>) => setTimeout(() => void f().catch(() => {}), delay);
+  // Around, as a page beating would say: active, so their tiles aren't dimmed.
+  const beat = () => void o.api("/api/chat/presence", { idle: false, gone: false, mode: null, machines: [] }).catch(() => {});
+  beat();
+  setInterval(beat, 15_000);
+  for (;;) {
+    try {
+      await o.events("/api/people/outlines", (event, data) => {
+        const ev = JSON.parse(data) as { account: string; data?: string };
+        if (ev.account !== owner) return;
+        if (event === "frame" && ev.data) {
+          const bytes = Uint8Array.from(Buffer.from(ev.data, "base64"));
+          later(() => o.postBytes("/api/people/outline", bytes));
+        } else if (event === "off") later(() => o.postBytes("/api/people/outline/off", new Uint8Array()));
+      });
+    } catch (e) {
+      log(`outlines: ${o.login}'s echo: ${String(e)}`);
+    }
+    await new Promise((r) => setTimeout(r, 3000));
+  }
 }
 
 /** The team of yours called `name`: made, you its owner, if there's none. */
@@ -459,6 +500,10 @@ const d = await device();
 await startMachines(d);
 if (cloud.length) await startCloud(d);
 const chatPeople = chatOn ? await seedChat(d).catch((e) => (log(`chat: ${String(e)}`), [] as Device[])) : [];
+if (outlinesOn) {
+  if (!chatPeople.length) log("outlines: DEV_CONTROL_OUTLINES=1 needs DEV_CONTROL_CHAT=1 and DEV_CONTROL_LOGINS (someone to echo you)");
+  chatPeople.forEach((o, i) => void echoOutlines(o, d.account, i === 0 ? 1500 : 4000 + (i - 1) * 3000));
+}
 console.log(`
 dev-control: ${base}${host === "127.0.0.1" ? " (no passkeys on an IP address: DEV_CONTROL_HOST=localhost)" : ""}
   Sign in with GitHub (the fake one signs you in as ${login}${logins.length ? `, or asks: ${[login, ...logins].join(", ")}` : ""});
@@ -466,7 +511,7 @@ dev-control: ${base}${host === "127.0.0.1" ? " (no passkeys on an IP address: DE
   ${platformHost ? `The platform page (M151): http://${platformHost}:${port} (${loopback ? "Chrome sends *.localhost to loopback; " : ""}nobody's signed in there until M152).` : "No platform page (DEV_CONTROL_PLATFORM_HOST is empty)."}
   ${blockDomain ? `Ports and editors open on b-<key>.${blockDomain} (Chrome; DEV_CONTROL_BLOCK_DOMAIN= for none; the block scripts aren't rebuilt on change).` : "No block domain: ports and editors are off on the machines."}${loopback ? "" : `\n${remoteChrome()}`}
   ${chatOn ? `Chat is on: team Acme (${[login, ...chatPeople.map((o) => o.login)].join(", ")}) with #general${chatPeople.length ? " and a DM" : ""}; ${chatPeople.length ? `${chatPeople.map((o) => o.login).join(", ")}'s browsers are approved by their own devices.` : "DEV_CONTROL_LOGINS=sam for a second person."}` : "No chat in control (DEV_CONTROL_CHAT=1: team Acme with chat on)."}
-  Edit web/src, wait for "web rebuilt", reload. State: ${dir}. Ctrl-C stops.
+  ${outlinesOn && chatPeople.length ? `Outlines: ${chatPeople.map((o) => o.login).join(", ")} echo your camera outline back as theirs (open a People block, turn your outline on).\n  ` : ""}Edit web/src, wait for "web rebuilt", reload. State: ${dir}. Ctrl-C stops.
 `);
 // Leaving browsers alone: stay up for the web build and the machines.
 if (approveAll) await Promise.all([approveBrowsers(d), ...chatPeople.map((o) => approveBrowsers(o, o.login))]);

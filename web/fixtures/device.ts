@@ -203,6 +203,47 @@ export class Device {
     return j as T;
   }
 
+  /** POST raw bytes to control's API as this device's session. Throws on
+   * anything but 2xx. */
+  async postBytes(path: string, body: Uint8Array): Promise<void> {
+    const res = await fetch(this.reach(this.control + path), {
+      method: "POST",
+      headers: { cookie: this.cookie, origin: this.control, "content-type": "application/octet-stream" },
+      body,
+    });
+    if (!res.ok) throw new Error(`${path}: ${res.status} ${(await res.text()).slice(0, 200)}`);
+  }
+
+  /** Read a Server-Sent Events stream of control's as this device's
+   * session, calling `on` with each event's name (`message` when it has
+   * none) and data, until it ends or `signal` aborts. */
+  async events(path: string, on: (event: string, data: string) => void, signal?: AbortSignal): Promise<void> {
+    const res = await fetch(this.reach(this.control + path), {
+      headers: { cookie: this.cookie, origin: this.control, accept: "text/event-stream" },
+      signal,
+    });
+    if (!res.ok || !res.body) throw new Error(`${path}: ${res.status} ${(await res.text()).slice(0, 200)}`);
+    const reader = res.body.pipeThrough(new TextDecoderStream()).getReader();
+    let buf = "";
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) return;
+      buf += value;
+      let end;
+      while ((end = buf.indexOf("\n\n")) >= 0) {
+        const block = buf.slice(0, end);
+        buf = buf.slice(end + 2);
+        let event = "message";
+        const data: string[] = [];
+        for (const line of block.split("\n")) {
+          if (line.startsWith("event:")) event = line.slice(6).trim();
+          else if (line.startsWith("data:")) data.push(line.slice(5).replace(/^ /, ""));
+        }
+        if (data.length) on(event, data.join("\n"));
+      }
+    }
+  }
+
   /** A certificate for `k`, signed by `by` (this device unless given). */
   async sign(k: DeviceKeys, kind: Cert["kind"], name: string, by: DeviceKeys = this.keys): Promise<Cert> {
     const c: Cert = { v: 1, account: this.account, device: k.id, kind, name, noise: k.noisePub, sign: k.signPub, created: Date.now(), approver: by.id, sig: "" };

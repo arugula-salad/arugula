@@ -43,6 +43,12 @@ fn routes() -> Routes {
         .route("/api/chat/search", get(chat::search))
         .route("/api/chat/presence", post(chat::people::beat))
         .route("/api/chat/avatar/{account}", get(chat::people::avatar))
+        .route(
+            "/api/people/outline",
+            post(chat::outlines::put).layer(axum::extract::DefaultBodyLimit::max(chat::outlines::MAX_FRAME + 1)),
+        )
+        .route("/api/people/outline/off", post(chat::outlines::off))
+        .route("/api/people/outlines", get(chat::outlines::stream))
         .route("/api/chat/sidebar", get(chat::sidebar::get).put(chat::sidebar::put))
         .route("/api/chat/targets", post(chat::open_target))
         .route("/api/chat/teams/{team}/channels", get(chat::members::channels).post(chat::new_channel))

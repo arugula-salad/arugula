@@ -114,6 +114,7 @@ pub(crate) mod files;
 mod link_fetch;
 pub(crate) mod members;
 pub(crate) mod objects;
+pub(crate) mod outlines;
 pub(crate) mod people;
 pub(crate) mod pins;
 pub mod previews;
@@ -1054,6 +1055,8 @@ pub struct Hub {
     pushed: Mutex<HashMap<(String, String), u64>>,
     /// When each person last pinged typing in each room ([`typing`]).
     typed: Mutex<HashMap<(String, String), u64>>,
+    /// Outline presence's newest frames and their streams (S43).
+    pub(crate) outlines: outlines::Outlines,
 }
 
 /// Event ids are `c-<seq>`, `seq` being the event's row in `chat_events`
@@ -1086,6 +1089,7 @@ impl Default for Hub {
             generation: AtomicU64::new(0),
             pushed: Mutex::new(HashMap::new()),
             typed: Mutex::new(HashMap::new()),
+            outlines: Default::default(),
         }
     }
 }

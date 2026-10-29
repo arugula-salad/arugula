@@ -238,6 +238,7 @@ fn block_kind(kind: BlockType, config: &Value) -> BlockKind {
         | BlockType::Doc
         | BlockType::TeamChat
         | BlockType::Board
+        | BlockType::People
         | BlockType::Unknown => BlockKind::Other,
     }
 }

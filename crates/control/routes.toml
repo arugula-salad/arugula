@@ -1169,6 +1169,29 @@ clients = ["page"]
 
 [[route]]
 method = "POST"
+path = "/api/people/outline"
+process = "platform"
+auth = "session"
+clients = ["page"]
+note = "Outline presence (S43, spike): the person's newest camera outline frame, at most 32 KiB, kept in memory only and passed on to the streams of those who share a team with them."
+
+[[route]]
+method = "POST"
+path = "/api/people/outline/off"
+process = "platform"
+auth = "session"
+clients = ["page"]
+
+[[route]]
+method = "GET"
+path = "/api/people/outlines"
+process = "platform"
+auth = "session"
+clients = ["page"]
+note = "Outline presence (S43, spike): Server-Sent Events of the fresh outline frames of those the person shares a team with."
+
+[[route]]
+method = "POST"
 path = "/api/chat/targets"
 process = "platform"
 auth = "session"

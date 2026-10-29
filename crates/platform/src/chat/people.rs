@@ -87,7 +87,7 @@ fn mode_name(m: PresenceMode) -> &'static str {
 
 /// Whom `account` sees: itself, and everyone in a team it's in now, and
 /// the teams it is in (for machines).
-async fn visible(app: &Platform, account: &str) -> anyhow::Result<(HashSet<String>, HashSet<String>)> {
+pub(crate) async fn visible(app: &Platform, account: &str) -> anyhow::Result<(HashSet<String>, HashSet<String>)> {
     let hub = &*app.hub;
     let ids = app.cache.teams_of(hub, account).await?;
     let teams = app.cache.teams(hub, &ids).await?;
