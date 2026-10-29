@@ -273,7 +273,9 @@ Run each `arugula ...` command on its own, not in a pipeline or an `&&` chain, s
 /// The server's instructions, with the Doc sentence (`flags::DOCS_STEERING`,
 /// which `arugula hook` also gives on `SessionStart`, #1486; everyone's since
 /// Docs left Labs, native #204) and the issues sentence
-/// (`flags::ISSUES_STEERING`). Chat isn't an agent's (#1095): nothing of it
+/// (`flags::ISSUES_STEERING`), then the boards sentence
+/// (`flags::BOARDS_STEERING`, conditional: it says nothing to do where boards
+/// are off). Chat isn't an agent's (#1095): nothing of it
 /// is here.
 pub fn instructions() -> String {
     let at = INSTRUCTIONS_BASE.find("Claude Code hooks put").expect("the instructions name the hooks");
@@ -281,6 +283,8 @@ pub fn instructions() -> String {
     out.push_str(flags::DOCS_STEERING);
     out.push(' ');
     out.push_str(flags::ISSUES_STEERING);
+    out.push(' ');
+    out.push_str(flags::BOARDS_STEERING);
     out.push(' ');
     out.push_str(&INSTRUCTIONS_BASE[at..]);
     out
