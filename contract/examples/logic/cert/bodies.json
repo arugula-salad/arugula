@@ -1,0 +1,84 @@
+{
+  "about": "The exact bytes a certificate's and a revocation's signature is over, and what a daemon signs when it asks to join. Each first line is a domain of its own, frozen (#504: the rename to Arugula kept \"illogical\"). A certificate's sig is its approver's signature over its body; a revocation's, its by's.",
+  "cases": [
+    {
+      "about": "the root's certificate (self-signed: its approver is itself)",
+      "input": {"cert": "laptop"},
+      "output": {
+        "body": "illogical device v1\naccount acct\ndevice 37f29b7074cf8b52\nkind browser\nname laptop\nnoise 0101010101010101010101010101010101010101010101010101010101010101\nsign 8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c\ncreated 1000\napprover 37f29b7074cf8b52\n"
+      }
+    },
+    {
+      "about": "a machine's, approved by the root",
+      "input": {"cert": "geek"},
+      "output": {
+        "body": "illogical device v1\naccount acct\ndevice c242667535a3d34f\nkind daemon\nname geek\nnoise 0202020202020202020202020202020202020202020202020202020202020202\nsign 8139770ea87d175f56a35466c34c7ecccb8d8a91b4ee37a25df60f5b8fc9b394\ncreated 2000\napprover 37f29b7074cf8b52\n"
+      }
+    },
+    {
+      "about": "the machine taken off the account",
+      "input": {"revocation": "geek-revoked"},
+      "output": {
+        "body": "illogical revoke v1\naccount acct\ndevice c242667535a3d34f\nat 3000\nby 37f29b7074cf8b52\n"
+      }
+    },
+    {
+      "about": "the machine's join proof at 2500 ms",
+      "input": {"cert": "geek", "join_proof_at": 2500},
+      "output": {
+        "body": "illogical join proof v1\n2500\nillogical device v1\naccount acct\ndevice c242667535a3d34f\nkind daemon\nname geek\nnoise 0202020202020202020202020202020202020202020202020202020202020202\nsign 8139770ea87d175f56a35466c34c7ecccb8d8a91b4ee37a25df60f5b8fc9b394\ncreated 2000\napprover 37f29b7074cf8b52\n"
+      }
+    }
+  ],
+  "checks": ["arugula_e2e::Cert::body", "arugula_e2e::Revocation::body", "arugula_e2e::cert::join_proof_body"],
+  "input": "cert: a certificate's label (with join_proof_at: the ms the daemon signs at, for its join proof), or revocation: a revocation's label",
+  "keys": {
+    "geek": {
+      "device": "c242667535a3d34f",
+      "noise": "0202020202020202020202020202020202020202020202020202020202020202",
+      "seed": "0202020202020202020202020202020202020202020202020202020202020202",
+      "sign": "8139770ea87d175f56a35466c34c7ecccb8d8a91b4ee37a25df60f5b8fc9b394"
+    },
+    "laptop": {
+      "device": "37f29b7074cf8b52",
+      "noise": "0101010101010101010101010101010101010101010101010101010101010101",
+      "seed": "0101010101010101010101010101010101010101010101010101010101010101",
+      "sign": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c"
+    }
+  },
+  "objects": {
+    "geek": {
+      "account": "acct",
+      "approver": "37f29b7074cf8b52",
+      "created": 2000,
+      "device": "c242667535a3d34f",
+      "kind": "daemon",
+      "name": "geek",
+      "noise": "0202020202020202020202020202020202020202020202020202020202020202",
+      "sig": "eaeef48ad6f8df9d62d2f9f78f8bd27e72fafe0ffe8b5f5a04dcddc203f2ff2a8f2203e8e0859a94333aefb4060ec216e059215bc8432a4e09d15f6074c30e0a",
+      "sign": "8139770ea87d175f56a35466c34c7ecccb8d8a91b4ee37a25df60f5b8fc9b394",
+      "v": 1
+    },
+    "geek-revoked": {
+      "account": "acct",
+      "at": 3000,
+      "by": "37f29b7074cf8b52",
+      "device": "c242667535a3d34f",
+      "sig": "b68a7901e7159700a85e922b5f24d31757195d4a8857a3f6e9014b06524ee12cb71226fa4911dda6ab9aa7d34e8ba3cfbc2c17ca0c8eef2ce1d751e73f008407",
+      "v": 1
+    },
+    "laptop": {
+      "account": "acct",
+      "approver": "37f29b7074cf8b52",
+      "created": 1000,
+      "device": "37f29b7074cf8b52",
+      "kind": "browser",
+      "name": "laptop",
+      "noise": "0101010101010101010101010101010101010101010101010101010101010101",
+      "sig": "96e9560508a1cbdcc8c7a31633348ac77145f54bd181df1432c8c15d46ad00af18891326a8351489faba0de0077cba9f0c7a4f3ff9d60d66cf8e192dc6e1870e",
+      "sign": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
+      "v": 1
+    }
+  },
+  "output": "body: the signed text"
+}

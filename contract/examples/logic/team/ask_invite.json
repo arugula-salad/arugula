@@ -1,0 +1,232 @@
+{
+  "about": "An Ask me first invite (#762): an owner's device signs it, naming a one-time key whose private half is only in the link; whoever uses the link proves they hold it by signing their account and root with that key, and an owner then admits them with the next roster. signed_by: by its by, a device that approves (one that raises also needs a browser all the way to the root, as raise_ok says: that's checked beside it). proves: the one-time key's signature over exactly that account and root, so control can't move a proof to an account of its own. Its domain is its own, so it never reads as a presigned invite.",
+  "cases": [
+    {
+      "about": "alice's invite, by her device",
+      "input": {"by": "alice", "check": "signed_by", "invite": "owner-invite"},
+      "output": {"ok": true}
+    },
+    {
+      "about": "alice's invite, said to be by bob's device",
+      "input": {"by": "bob", "check": "signed_by", "invite": "owner-invite"},
+      "output": {"ok": false}
+    },
+    {
+      "about": "its expiry changed after she signed",
+      "input": {"by": "alice", "check": "signed_by", "invite": "owner-invite-expiry-changed"},
+      "output": {"ok": false}
+    },
+    {
+      "about": "its role changed after she signed",
+      "input": {"by": "alice", "check": "signed_by", "invite": "owner-invite-role-changed"},
+      "output": {"ok": false}
+    },
+    {
+      "about": "signed by a machine of hers: a machine approves nothing",
+      "input": {"by": "alice-box", "check": "signed_by", "invite": "invite-by-box"},
+      "output": {"ok": false}
+    },
+    {
+      "about": "bob's proof, for bob and his root",
+      "input": {
+        "account": "bob",
+        "check": "proves",
+        "invite": "owner-invite",
+        "proof": "a54d6ab7ce824bf8eec02578f8456e6f68e6c648de983d4b4824b991b8f862f5400f23305dfa5dce743562157c3fac4334367c7b8588aa4dfacdd16e4b1f9006",
+        "root": "c242667535a3d34f"
+      },
+      "output": {"ok": true}
+    },
+    {
+      "about": "bob's proof, moved to mallory",
+      "input": {
+        "account": "mallory",
+        "check": "proves",
+        "invite": "owner-invite",
+        "proof": "a54d6ab7ce824bf8eec02578f8456e6f68e6c648de983d4b4824b991b8f862f5400f23305dfa5dce743562157c3fac4334367c7b8588aa4dfacdd16e4b1f9006",
+        "root": "e0a128f98e5582a3"
+      },
+      "output": {"ok": false}
+    },
+    {
+      "about": "bob's proof, moved to another root of bob's",
+      "input": {
+        "account": "bob",
+        "check": "proves",
+        "invite": "owner-invite",
+        "proof": "a54d6ab7ce824bf8eec02578f8456e6f68e6c648de983d4b4824b991b8f862f5400f23305dfa5dce743562157c3fac4334367c7b8588aa4dfacdd16e4b1f9006",
+        "root": "e0a128f98e5582a3"
+      },
+      "output": {"ok": false}
+    },
+    {
+      "about": "mallory's proof signed without the link's key",
+      "input": {
+        "account": "mallory",
+        "check": "proves",
+        "invite": "owner-invite",
+        "proof": "ade4f04719fbc6476f8c7db3a40087b769b2586248a02c66430115a0cff8f6a29030dca8de3304a43a801098c9e1603c800e1ede0bd39b596da831ba954bb50a",
+        "root": "e0a128f98e5582a3"
+      },
+      "output": {"ok": false}
+    },
+    {
+      "about": "what owner-invite raises to",
+      "input": {"check": "raised", "invite": "owner-invite"},
+      "output": {"raised": "owner"}
+    },
+    {
+      "about": "what editor-invite raises to",
+      "input": {"check": "raised", "invite": "editor-invite"},
+      "output": {"raised": "editor"}
+    },
+    {
+      "about": "what viewer-invite raises to",
+      "input": {"check": "raised", "invite": "viewer-invite"},
+      "output": {"raised": null}
+    }
+  ],
+  "checks": [
+    "arugula_e2e::team::AskInvite::signed_by",
+    "arugula_e2e::team::AskInvite::proves",
+    "arugula_e2e::team::AskInvite::raised"
+  ],
+  "input": "check: signed_by (invite, by: a certificate's label), proves (invite, account, root, proof) or raised (invite)",
+  "keys": {
+    "alice": {
+      "device": "37f29b7074cf8b52",
+      "noise": "0101010101010101010101010101010101010101010101010101010101010101",
+      "seed": "0101010101010101010101010101010101010101010101010101010101010101",
+      "sign": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c"
+    },
+    "alice-box": {
+      "device": "9b64bd87042f22a7",
+      "noise": "0404040404040404040404040404040404040404040404040404040404040404",
+      "seed": "0404040404040404040404040404040404040404040404040404040404040404",
+      "sign": "ca93ac1705187071d67b83c7ff0efe8108e8ec4530575d7726879333dbdabe7c"
+    },
+    "bob": {
+      "device": "c242667535a3d34f",
+      "noise": "0202020202020202020202020202020202020202020202020202020202020202",
+      "seed": "0202020202020202020202020202020202020202020202020202020202020202",
+      "sign": "8139770ea87d175f56a35466c34c7ecccb8d8a91b4ee37a25df60f5b8fc9b394"
+    },
+    "mallory": {
+      "device": "e0a128f98e5582a3",
+      "noise": "0303030303030303030303030303030303030303030303030303030303030303",
+      "seed": "0303030303030303030303030303030303030303030303030303030303030303",
+      "sign": "ed4928c628d1c2c6eae90338905995612959273a5c63f93636c14614ac8737d1"
+    },
+    "one-time": {
+      "device": "dc40eea8a52499ce",
+      "noise": "1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e",
+      "seed": "1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e",
+      "sign": "acdb0e29743f0ccb8686d0a104cb96e05abefec1538765e7595869f7dc8c49aa"
+    }
+  },
+  "objects": {
+    "alice": {
+      "account": "alice",
+      "approver": "37f29b7074cf8b52",
+      "created": 1000,
+      "device": "37f29b7074cf8b52",
+      "kind": "browser",
+      "name": "alice's laptop",
+      "noise": "0101010101010101010101010101010101010101010101010101010101010101",
+      "sig": "4c7a182921697a35256fd95c0c9e8d2e91f60e6f7601e02d600196dda65ed26cd9aff836cd15e6e6d62cdfbb144fe575d921d5035ee13248a8565973ed0fda0d",
+      "sign": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
+      "v": 1
+    },
+    "alice-box": {
+      "account": "alice",
+      "approver": "37f29b7074cf8b52",
+      "created": 1100,
+      "device": "9b64bd87042f22a7",
+      "kind": "daemon",
+      "name": "box",
+      "noise": "0404040404040404040404040404040404040404040404040404040404040404",
+      "sig": "9f0f312c464d5c575b438a6aab9b532d013441b077fe2d12d4e6afcca88402b8aff486fe70e04b81b54c361fc3d1fc09b87678e68ab727f53299c60e8b513002",
+      "sign": "ca93ac1705187071d67b83c7ff0efe8108e8ec4530575d7726879333dbdabe7c",
+      "v": 1
+    },
+    "bob": {
+      "account": "bob",
+      "approver": "c242667535a3d34f",
+      "created": 1000,
+      "device": "c242667535a3d34f",
+      "kind": "browser",
+      "name": "bob's laptop",
+      "noise": "0202020202020202020202020202020202020202020202020202020202020202",
+      "sig": "07e9418076d6edaf8c72fa5be449eeea02b612b5cd17ec9c6654519b853288b6d7a08c29100e96a0b5af3b13fb593ddb25335e0418d10dc2692d44cd3ed48103",
+      "sign": "8139770ea87d175f56a35466c34c7ecccb8d8a91b4ee37a25df60f5b8fc9b394",
+      "v": 1
+    },
+    "editor-invite": {
+      "by": "37f29b7074cf8b52",
+      "expires": 2000,
+      "key": "acdb0e29743f0ccb8686d0a104cb96e05abefec1538765e7595869f7dc8c49aa",
+      "made": 1000,
+      "role": "editor",
+      "sig": "4a17ac680cfff6d2a9d50eecc5498d847030006fe2aa3fd656581369be191c3996692b304339b86466f0d2bc78d4b880e1a8d4ec6dac3de1d43d422c7b958f04",
+      "team": "t1"
+    },
+    "invite-by-box": {
+      "by": "9b64bd87042f22a7",
+      "expires": 2000,
+      "key": "acdb0e29743f0ccb8686d0a104cb96e05abefec1538765e7595869f7dc8c49aa",
+      "made": 1000,
+      "role": "viewer",
+      "sig": "5151f7211260f1a33ebd9df167af0e2af9c8f5d108afa1049df13be6fd74465d267a57f7ce820c3721af682738bb41de1ed5338195a4032e0a65705513e0f60d",
+      "team": "t1"
+    },
+    "mallory": {
+      "account": "mallory",
+      "approver": "e0a128f98e5582a3",
+      "created": 1000,
+      "device": "e0a128f98e5582a3",
+      "kind": "browser",
+      "name": "mallory's laptop",
+      "noise": "0303030303030303030303030303030303030303030303030303030303030303",
+      "sig": "0335151b39728073d8d790462273dd3f4eb65467dba6099e554fd86808d0ae18c23c0057e9819afdb465bfd4e6ffd5866416a421d837041ae5cdb5c850bfd002",
+      "sign": "ed4928c628d1c2c6eae90338905995612959273a5c63f93636c14614ac8737d1",
+      "v": 1
+    },
+    "owner-invite": {
+      "by": "37f29b7074cf8b52",
+      "expires": 2000,
+      "key": "acdb0e29743f0ccb8686d0a104cb96e05abefec1538765e7595869f7dc8c49aa",
+      "made": 1000,
+      "role": "owner",
+      "sig": "ec8edc60f8cddb02869f992428d2101258352be8f6167d49a43bd5dbad440b0d42f128f67345fc41857a463016e6d13018d9711ff65df4d6fc101ac3fe53d40a",
+      "team": "t1"
+    },
+    "owner-invite-expiry-changed": {
+      "by": "37f29b7074cf8b52",
+      "expires": 99000,
+      "key": "acdb0e29743f0ccb8686d0a104cb96e05abefec1538765e7595869f7dc8c49aa",
+      "made": 1000,
+      "role": "owner",
+      "sig": "ec8edc60f8cddb02869f992428d2101258352be8f6167d49a43bd5dbad440b0d42f128f67345fc41857a463016e6d13018d9711ff65df4d6fc101ac3fe53d40a",
+      "team": "t1"
+    },
+    "owner-invite-role-changed": {
+      "by": "37f29b7074cf8b52",
+      "expires": 2000,
+      "key": "acdb0e29743f0ccb8686d0a104cb96e05abefec1538765e7595869f7dc8c49aa",
+      "made": 1000,
+      "role": "editor",
+      "sig": "ec8edc60f8cddb02869f992428d2101258352be8f6167d49a43bd5dbad440b0d42f128f67345fc41857a463016e6d13018d9711ff65df4d6fc101ac3fe53d40a",
+      "team": "t1"
+    },
+    "viewer-invite": {
+      "by": "37f29b7074cf8b52",
+      "expires": 2000,
+      "key": "acdb0e29743f0ccb8686d0a104cb96e05abefec1538765e7595869f7dc8c49aa",
+      "made": 1000,
+      "role": "viewer",
+      "sig": "dfc12260fa1193792509d9190230c3026b704bdccff043951a8b2d2e3163964af7d44976df8a943cd55e0a53de042af8bac68fd7c0408caa75b06574e1abe301",
+      "team": "t1"
+    }
+  },
+  "output": "signed_by and proves: ok; raised: the role it raises someone to, or null for a viewer's"
+}

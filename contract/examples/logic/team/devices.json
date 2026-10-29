@@ -1,0 +1,177 @@
+{
+  "about": "The devices a member account trusts now, from the root the roster lists for it (Trust::evaluate, cert/evaluate): another root's certificates from control count for nothing, and an account that isn't a member has none.",
+  "cases": [
+    {
+      "about": "bob's root and his phone",
+      "input": {
+        "account": "bob",
+        "certs": {
+          "bob": {
+            "certs": ["bob", "bob-phone"]
+          }
+        },
+        "roster": "roster"
+      },
+      "output": {
+        "devices": ["9b64bd87042f22a7", "c242667535a3d34f"]
+      }
+    },
+    {
+      "about": "his phone revoked",
+      "input": {
+        "account": "bob",
+        "certs": {
+          "bob": {
+            "certs": ["bob", "bob-phone"],
+            "revocations": ["bob-phone-revoked"]
+          }
+        },
+        "roster": "roster"
+      },
+      "output": {
+        "devices": ["c242667535a3d34f"]
+      }
+    },
+    {
+      "about": "another root's certificates for bob",
+      "input": {
+        "account": "bob",
+        "certs": {
+          "bob": {
+            "certs": ["another-bob"]
+          }
+        },
+        "roster": "roster"
+      },
+      "output": {
+        "devices": []
+      }
+    },
+    {
+      "about": "an account not in the roster",
+      "input": {
+        "account": "mallory",
+        "certs": {
+          "mallory": {
+            "certs": ["alice"]
+          }
+        },
+        "roster": "roster"
+      },
+      "output": {
+        "devices": []
+      }
+    },
+    {
+      "about": "a member control sent nothing for",
+      "input": {
+        "account": "alice",
+        "certs": {},
+        "roster": "roster"
+      },
+      "output": {
+        "devices": []
+      }
+    }
+  ],
+  "checks": ["arugula_e2e::team::Roster::devices"],
+  "input": "roster: a label; account; certs: every member account's certificates and revocations, as control hands them out: { account: { certs: [labels], revocations: [labels] } }",
+  "keys": {
+    "alice": {
+      "device": "37f29b7074cf8b52",
+      "noise": "0101010101010101010101010101010101010101010101010101010101010101",
+      "seed": "0101010101010101010101010101010101010101010101010101010101010101",
+      "sign": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c"
+    },
+    "another-bob": {
+      "device": "e0a128f98e5582a3",
+      "noise": "0303030303030303030303030303030303030303030303030303030303030303",
+      "seed": "0303030303030303030303030303030303030303030303030303030303030303",
+      "sign": "ed4928c628d1c2c6eae90338905995612959273a5c63f93636c14614ac8737d1"
+    },
+    "bob": {
+      "device": "c242667535a3d34f",
+      "noise": "0202020202020202020202020202020202020202020202020202020202020202",
+      "seed": "0202020202020202020202020202020202020202020202020202020202020202",
+      "sign": "8139770ea87d175f56a35466c34c7ecccb8d8a91b4ee37a25df60f5b8fc9b394"
+    },
+    "bob-phone": {
+      "device": "9b64bd87042f22a7",
+      "noise": "0404040404040404040404040404040404040404040404040404040404040404",
+      "seed": "0404040404040404040404040404040404040404040404040404040404040404",
+      "sign": "ca93ac1705187071d67b83c7ff0efe8108e8ec4530575d7726879333dbdabe7c"
+    }
+  },
+  "objects": {
+    "alice": {
+      "account": "alice",
+      "approver": "37f29b7074cf8b52",
+      "created": 1000,
+      "device": "37f29b7074cf8b52",
+      "kind": "browser",
+      "name": "alice's laptop",
+      "noise": "0101010101010101010101010101010101010101010101010101010101010101",
+      "sig": "4c7a182921697a35256fd95c0c9e8d2e91f60e6f7601e02d600196dda65ed26cd9aff836cd15e6e6d62cdfbb144fe575d921d5035ee13248a8565973ed0fda0d",
+      "sign": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
+      "v": 1
+    },
+    "another-bob": {
+      "account": "bob",
+      "approver": "e0a128f98e5582a3",
+      "created": 1000,
+      "device": "e0a128f98e5582a3",
+      "kind": "browser",
+      "name": "bob's laptop",
+      "noise": "0303030303030303030303030303030303030303030303030303030303030303",
+      "sig": "09d15f9786fab26201d878e2e503fbc7afed9b76b162b344b94351b3d26c4d0dca7d43cf86a545dbc653261cef25a9be5a128595a351e21e99c48afe85ac3e0f",
+      "sign": "ed4928c628d1c2c6eae90338905995612959273a5c63f93636c14614ac8737d1",
+      "v": 1
+    },
+    "bob": {
+      "account": "bob",
+      "approver": "c242667535a3d34f",
+      "created": 1000,
+      "device": "c242667535a3d34f",
+      "kind": "browser",
+      "name": "bob's laptop",
+      "noise": "0202020202020202020202020202020202020202020202020202020202020202",
+      "sig": "07e9418076d6edaf8c72fa5be449eeea02b612b5cd17ec9c6654519b853288b6d7a08c29100e96a0b5af3b13fb593ddb25335e0418d10dc2692d44cd3ed48103",
+      "sign": "8139770ea87d175f56a35466c34c7ecccb8d8a91b4ee37a25df60f5b8fc9b394",
+      "v": 1
+    },
+    "bob-phone": {
+      "account": "bob",
+      "approver": "c242667535a3d34f",
+      "created": 1100,
+      "device": "9b64bd87042f22a7",
+      "kind": "browser",
+      "name": "bob's phone",
+      "noise": "0404040404040404040404040404040404040404040404040404040404040404",
+      "sig": "1ce17e2a323512076b8f9c6f67f0258cbf3f1ea323e8f68377bb35e7fe25135470c94ffc0ac085f3134ef142ac0454b659ea69ce3ae73eccb39c04379e2bcc0c",
+      "sign": "ca93ac1705187071d67b83c7ff0efe8108e8ec4530575d7726879333dbdabe7c",
+      "v": 1
+    },
+    "bob-phone-revoked": {
+      "account": "bob",
+      "at": 2000,
+      "by": "c242667535a3d34f",
+      "device": "9b64bd87042f22a7",
+      "sig": "c5def2b56cfda2b2e0b468cbc932fbdc1aa9e4899ba617054b6038ae45c3924ad518d7c2528b7967bd2c725a5d4cf68e8356abeed0732e6e883cc889b4d13000",
+      "v": 1
+    },
+    "roster": {
+      "at": 1000,
+      "by": "37f29b7074cf8b52",
+      "members": [
+        {"account": "alice", "name": "alice-login", "role": "owner", "root": "37f29b7074cf8b52"},
+        {"account": "bob", "name": "bob-login", "role": "viewer", "root": "c242667535a3d34f"}
+      ],
+      "name": "Acme",
+      "sig": "2331391ef8ae354524c0f8e2f5c360443cdb608735c8937b82f4b6d643637c25cd4f65c657f6e6ab00c89341291d5ecf6b397a4522f1aa7c800efb5c50dc3603",
+      "team": "t1",
+      "v": 1,
+      "version": 1
+    }
+  },
+  "output": "devices: their ids, sorted"
+}

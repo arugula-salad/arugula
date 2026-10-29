@@ -1,0 +1,185 @@
+{
+  "about": "Whether a signature is an Ed25519 public key's over a message: what every signed object here (a certificate, a revocation, a roster, an approval, a run's event) is checked with. Strict Ed25519 (RFC 8032 with ed25519-dalek's verify_strict): a non-canonical s, and a small-order (weak) public key, are refused, even where a lax check would pass. Hex is read in either case; anything that isn't 32 bytes of key and 64 of signature is refused, never an error.",
+  "cases": [
+    {
+      "about": "the signer's signature over the message",
+      "input": {
+        "message": "arugula example message v1\nline two\n",
+        "sig": "3ba2ed9a7019310595f8ecffb79de2304faf1dc43673dfb45d306a4f16919be43a1fe4bbfbca3cfb9c70c8da8aba39a4ad41568e1565fd2b02d9f7c557e58907",
+        "sign": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c"
+      },
+      "output": {"ok": true}
+    },
+    {
+      "about": "the same signature in upper-case hex: hex is read in either case",
+      "input": {
+        "message": "arugula example message v1\nline two\n",
+        "sig": "3BA2ED9A7019310595F8ECFFB79DE2304FAF1DC43673DFB45D306A4F16919BE43A1FE4BBFBCA3CFB9C70C8DA8ABA39A4AD41568E1565FD2B02D9F7C557E58907",
+        "sign": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c"
+      },
+      "output": {"ok": true}
+    },
+    {
+      "about": "the key in upper-case hex",
+      "input": {
+        "message": "arugula example message v1\nline two\n",
+        "sig": "3ba2ed9a7019310595f8ecffb79de2304faf1dc43673dfb45d306a4f16919be43a1fe4bbfbca3cfb9c70c8da8aba39a4ad41568e1565fd2b02d9f7c557e58907",
+        "sign": "8A88E3DD7409F195FD52DB2D3CBA5D72CA6709BF1D94121BF3748801B40F6F5C"
+      },
+      "output": {"ok": true}
+    },
+    {
+      "about": "one character of the message changed",
+      "input": {
+        "message": "arugula example message v1\nline twO\n",
+        "sig": "3ba2ed9a7019310595f8ecffb79de2304faf1dc43673dfb45d306a4f16919be43a1fe4bbfbca3cfb9c70c8da8aba39a4ad41568e1565fd2b02d9f7c557e58907",
+        "sign": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c"
+      },
+      "output": {"ok": false}
+    },
+    {
+      "about": "the message without its last newline",
+      "input": {
+        "message": "arugula example message v1\nline two",
+        "sig": "3ba2ed9a7019310595f8ecffb79de2304faf1dc43673dfb45d306a4f16919be43a1fe4bbfbca3cfb9c70c8da8aba39a4ad41568e1565fd2b02d9f7c557e58907",
+        "sign": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c"
+      },
+      "output": {"ok": false}
+    },
+    {
+      "about": "the message with a newline more",
+      "input": {
+        "message": "arugula example message v1\nline two\n\n",
+        "sig": "3ba2ed9a7019310595f8ecffb79de2304faf1dc43673dfb45d306a4f16919be43a1fe4bbfbca3cfb9c70c8da8aba39a4ad41568e1565fd2b02d9f7c557e58907",
+        "sign": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c"
+      },
+      "output": {"ok": false}
+    },
+    {
+      "about": "another key",
+      "input": {
+        "message": "arugula example message v1\nline two\n",
+        "sig": "3ba2ed9a7019310595f8ecffb79de2304faf1dc43673dfb45d306a4f16919be43a1fe4bbfbca3cfb9c70c8da8aba39a4ad41568e1565fd2b02d9f7c557e58907",
+        "sign": "8139770ea87d175f56a35466c34c7ecccb8d8a91b4ee37a25df60f5b8fc9b394"
+      },
+      "output": {"ok": false}
+    },
+    {
+      "about": "another key's signature over the same message",
+      "input": {
+        "message": "arugula example message v1\nline two\n",
+        "sig": "bb0fad338f002c3cae06a171a9b11b0b794bf8d322bd70fd7323179d67db1904135c72aca12ed0ca866ba963ced9be07bba4e72ee1a25323b919322add0a6704",
+        "sign": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c"
+      },
+      "output": {"ok": false}
+    },
+    {
+      "about": "the signature cut to 63 bytes",
+      "input": {
+        "message": "arugula example message v1\nline two\n",
+        "sig": "3ba2ed9a7019310595f8ecffb79de2304faf1dc43673dfb45d306a4f16919be43a1fe4bbfbca3cfb9c70c8da8aba39a4ad41568e1565fd2b02d9f7c557e589",
+        "sign": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c"
+      },
+      "output": {"ok": false}
+    },
+    {
+      "about": "the signature with a byte more",
+      "input": {
+        "message": "arugula example message v1\nline two\n",
+        "sig": "3ba2ed9a7019310595f8ecffb79de2304faf1dc43673dfb45d306a4f16919be43a1fe4bbfbca3cfb9c70c8da8aba39a4ad41568e1565fd2b02d9f7c557e5890700",
+        "sign": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c"
+      },
+      "output": {"ok": false}
+    },
+    {
+      "about": "an odd number of hex digits",
+      "input": {
+        "message": "arugula example message v1\nline two\n",
+        "sig": "3ba2ed9a7019310595f8ecffb79de2304faf1dc43673dfb45d306a4f16919be43a1fe4bbfbca3cfb9c70c8da8aba39a4ad41568e1565fd2b02d9f7c557e5890",
+        "sign": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c"
+      },
+      "output": {"ok": false}
+    },
+    {
+      "about": "a signature that isn't hex",
+      "input": {
+        "message": "arugula example message v1\nline two\n",
+        "sig": "zza2ed9a7019310595f8ecffb79de2304faf1dc43673dfb45d306a4f16919be43a1fe4bbfbca3cfb9c70c8da8aba39a4ad41568e1565fd2b02d9f7c557e58907",
+        "sign": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c"
+      },
+      "output": {"ok": false}
+    },
+    {
+      "about": "no signature",
+      "input": {
+        "message": "arugula example message v1\nline two\n",
+        "sig": "",
+        "sign": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c"
+      },
+      "output": {"ok": false}
+    },
+    {
+      "about": "a key of 31 bytes",
+      "input": {
+        "message": "arugula example message v1\nline two\n",
+        "sig": "3ba2ed9a7019310595f8ecffb79de2304faf1dc43673dfb45d306a4f16919be43a1fe4bbfbca3cfb9c70c8da8aba39a4ad41568e1565fd2b02d9f7c557e58907",
+        "sign": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f"
+      },
+      "output": {"ok": false}
+    },
+    {
+      "about": "no key",
+      "input": {
+        "message": "arugula example message v1\nline two\n",
+        "sig": "3ba2ed9a7019310595f8ecffb79de2304faf1dc43673dfb45d306a4f16919be43a1fe4bbfbca3cfb9c70c8da8aba39a4ad41568e1565fd2b02d9f7c557e58907",
+        "sign": ""
+      },
+      "output": {"ok": false}
+    },
+    {
+      "about": "a key that isn't a point on the curve",
+      "input": {
+        "message": "arugula example message v1\nline two\n",
+        "sig": "3ba2ed9a7019310595f8ecffb79de2304faf1dc43673dfb45d306a4f16919be43a1fe4bbfbca3cfb9c70c8da8aba39a4ad41568e1565fd2b02d9f7c557e58907",
+        "sign": "0202020202020202020202020202020202020202020202020202020202020202"
+      },
+      "output": {"ok": false}
+    },
+    {
+      "about": "the identity as the key (small order), with R the identity and s zero: a lax check passes it for any message; refused",
+      "input": {
+        "message": "arugula example message v1\nline two\n",
+        "sig": "01000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+        "sign": "0100000000000000000000000000000000000000000000000000000000000000"
+      },
+      "output": {"ok": false}
+    },
+    {
+      "about": "the signature malleated (s + L, so s isn't canonical)",
+      "input": {
+        "message": "arugula example message v1\nline two\n",
+        "sig": "3ba2ed9a7019310595f8ecffb79de2304faf1dc43673dfb45d306a4f16919be427f3d918162e4f53730dc07d69b418b9ad41568e1565fd2b02d9f7c557e58917",
+        "sign": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c"
+      },
+      "output": {"ok": false}
+    }
+  ],
+  "checks": ["arugula_e2e::cert::verify_hex"],
+  "input": "sign: the Ed25519 public key, hex; message: the signed bytes, as UTF-8 text; sig: the signature, hex",
+  "keys": {
+    "signer": {
+      "device": "37f29b7074cf8b52",
+      "noise": "0101010101010101010101010101010101010101010101010101010101010101",
+      "seed": "0101010101010101010101010101010101010101010101010101010101010101",
+      "sign": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c"
+    },
+    "someone-else": {
+      "device": "c242667535a3d34f",
+      "noise": "0202020202020202020202020202020202020202020202020202020202020202",
+      "seed": "0202020202020202020202020202020202020202020202020202020202020202",
+      "sign": "8139770ea87d175f56a35466c34c7ecccb8d8a91b4ee37a25df60f5b8fc9b394"
+    }
+  },
+  "objects": {},
+  "output": "ok: whether it verifies"
+}

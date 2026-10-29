@@ -1,0 +1,410 @@
+{
+  "about": "The decision table for who may sign a paper (a roster, a presigned invite, an Ask me first invite) that raises someone to a role: making no one more than a viewer, any device that approves; an editor, a browser all the way back to its root (browser_chained) or the desktop app's device (from_app: an app certificate, or a browser one the app named); an owner, only such a browser. Never a CLI's key, which an agent on its machine can read. browser_chained is Trust::browser_chained for the signer (cert/browser_chained); this table takes it as given.",
+  "cases": [
+    {
+      "about": "raising to nothing, signed by browser \"Chrome on Mac\", chained as a browser all the way to its root",
+      "input": {
+        "browser_chained": true,
+        "raised": null,
+        "signer_kind": "browser",
+        "signer_name": "Chrome on Mac"
+      },
+      "output": {"ok": true}
+    },
+    {
+      "about": "raising to nothing, signed by browser \"Chrome on Mac\", not a browser all the way to its root",
+      "input": {
+        "browser_chained": false,
+        "raised": null,
+        "signer_kind": "browser",
+        "signer_name": "Chrome on Mac"
+      },
+      "output": {"ok": true}
+    },
+    {
+      "about": "raising to nothing, signed by app \"Arugula app\", chained as a browser all the way to its root",
+      "input": {"browser_chained": true, "raised": null, "signer_kind": "app", "signer_name": "Arugula app"},
+      "output": {"ok": true}
+    },
+    {
+      "about": "raising to nothing, signed by app \"Arugula app\", not a browser all the way to its root",
+      "input": {"browser_chained": false, "raised": null, "signer_kind": "app", "signer_name": "Arugula app"},
+      "output": {"ok": true}
+    },
+    {
+      "about": "raising to nothing, signed by browser \"Arugula app on jake-air\", chained as a browser all the way to its root",
+      "input": {
+        "browser_chained": true,
+        "raised": null,
+        "signer_kind": "browser",
+        "signer_name": "Arugula app on jake-air"
+      },
+      "output": {"ok": true}
+    },
+    {
+      "about": "raising to nothing, signed by browser \"Arugula app on jake-air\", not a browser all the way to its root",
+      "input": {
+        "browser_chained": false,
+        "raised": null,
+        "signer_kind": "browser",
+        "signer_name": "Arugula app on jake-air"
+      },
+      "output": {"ok": true}
+    },
+    {
+      "about": "raising to nothing, signed by cli \"terminal\", chained as a browser all the way to its root",
+      "input": {"browser_chained": true, "raised": null, "signer_kind": "cli", "signer_name": "terminal"},
+      "output": {"ok": true}
+    },
+    {
+      "about": "raising to nothing, signed by cli \"terminal\", not a browser all the way to its root",
+      "input": {"browser_chained": false, "raised": null, "signer_kind": "cli", "signer_name": "terminal"},
+      "output": {"ok": true}
+    },
+    {
+      "about": "raising to nothing, signed by recovery \"recovery 1\", chained as a browser all the way to its root",
+      "input": {
+        "browser_chained": true,
+        "raised": null,
+        "signer_kind": "recovery",
+        "signer_name": "recovery 1"
+      },
+      "output": {"ok": true}
+    },
+    {
+      "about": "raising to nothing, signed by recovery \"recovery 1\", not a browser all the way to its root",
+      "input": {
+        "browser_chained": false,
+        "raised": null,
+        "signer_kind": "recovery",
+        "signer_name": "recovery 1"
+      },
+      "output": {"ok": true}
+    },
+    {
+      "about": "raising to nothing, signed by daemon \"geek\", chained as a browser all the way to its root",
+      "input": {"browser_chained": true, "raised": null, "signer_kind": "daemon", "signer_name": "geek"},
+      "output": {"ok": true}
+    },
+    {
+      "about": "raising to nothing, signed by daemon \"geek\", not a browser all the way to its root",
+      "input": {"browser_chained": false, "raised": null, "signer_kind": "daemon", "signer_name": "geek"},
+      "output": {"ok": true}
+    },
+    {
+      "about": "raising to viewer, signed by browser \"Chrome on Mac\", chained as a browser all the way to its root",
+      "input": {
+        "browser_chained": true,
+        "raised": "viewer",
+        "signer_kind": "browser",
+        "signer_name": "Chrome on Mac"
+      },
+      "output": {"ok": true}
+    },
+    {
+      "about": "raising to viewer, signed by browser \"Chrome on Mac\", not a browser all the way to its root",
+      "input": {
+        "browser_chained": false,
+        "raised": "viewer",
+        "signer_kind": "browser",
+        "signer_name": "Chrome on Mac"
+      },
+      "output": {"ok": true}
+    },
+    {
+      "about": "raising to viewer, signed by app \"Arugula app\", chained as a browser all the way to its root",
+      "input": {
+        "browser_chained": true,
+        "raised": "viewer",
+        "signer_kind": "app",
+        "signer_name": "Arugula app"
+      },
+      "output": {"ok": true}
+    },
+    {
+      "about": "raising to viewer, signed by app \"Arugula app\", not a browser all the way to its root",
+      "input": {
+        "browser_chained": false,
+        "raised": "viewer",
+        "signer_kind": "app",
+        "signer_name": "Arugula app"
+      },
+      "output": {"ok": true}
+    },
+    {
+      "about": "raising to viewer, signed by browser \"Arugula app on jake-air\", chained as a browser all the way to its root",
+      "input": {
+        "browser_chained": true,
+        "raised": "viewer",
+        "signer_kind": "browser",
+        "signer_name": "Arugula app on jake-air"
+      },
+      "output": {"ok": true}
+    },
+    {
+      "about": "raising to viewer, signed by browser \"Arugula app on jake-air\", not a browser all the way to its root",
+      "input": {
+        "browser_chained": false,
+        "raised": "viewer",
+        "signer_kind": "browser",
+        "signer_name": "Arugula app on jake-air"
+      },
+      "output": {"ok": true}
+    },
+    {
+      "about": "raising to viewer, signed by cli \"terminal\", chained as a browser all the way to its root",
+      "input": {"browser_chained": true, "raised": "viewer", "signer_kind": "cli", "signer_name": "terminal"},
+      "output": {"ok": true}
+    },
+    {
+      "about": "raising to viewer, signed by cli \"terminal\", not a browser all the way to its root",
+      "input": {
+        "browser_chained": false,
+        "raised": "viewer",
+        "signer_kind": "cli",
+        "signer_name": "terminal"
+      },
+      "output": {"ok": true}
+    },
+    {
+      "about": "raising to viewer, signed by recovery \"recovery 1\", chained as a browser all the way to its root",
+      "input": {
+        "browser_chained": true,
+        "raised": "viewer",
+        "signer_kind": "recovery",
+        "signer_name": "recovery 1"
+      },
+      "output": {"ok": true}
+    },
+    {
+      "about": "raising to viewer, signed by recovery \"recovery 1\", not a browser all the way to its root",
+      "input": {
+        "browser_chained": false,
+        "raised": "viewer",
+        "signer_kind": "recovery",
+        "signer_name": "recovery 1"
+      },
+      "output": {"ok": true}
+    },
+    {
+      "about": "raising to viewer, signed by daemon \"geek\", chained as a browser all the way to its root",
+      "input": {"browser_chained": true, "raised": "viewer", "signer_kind": "daemon", "signer_name": "geek"},
+      "output": {"ok": true}
+    },
+    {
+      "about": "raising to viewer, signed by daemon \"geek\", not a browser all the way to its root",
+      "input": {"browser_chained": false, "raised": "viewer", "signer_kind": "daemon", "signer_name": "geek"},
+      "output": {"ok": true}
+    },
+    {
+      "about": "raising to editor, signed by browser \"Chrome on Mac\", chained as a browser all the way to its root",
+      "input": {
+        "browser_chained": true,
+        "raised": "editor",
+        "signer_kind": "browser",
+        "signer_name": "Chrome on Mac"
+      },
+      "output": {"ok": true}
+    },
+    {
+      "about": "raising to editor, signed by browser \"Chrome on Mac\", not a browser all the way to its root",
+      "input": {
+        "browser_chained": false,
+        "raised": "editor",
+        "signer_kind": "browser",
+        "signer_name": "Chrome on Mac"
+      },
+      "output": {"ok": false}
+    },
+    {
+      "about": "raising to editor, signed by app \"Arugula app\", chained as a browser all the way to its root",
+      "input": {
+        "browser_chained": true,
+        "raised": "editor",
+        "signer_kind": "app",
+        "signer_name": "Arugula app"
+      },
+      "output": {"ok": true}
+    },
+    {
+      "about": "raising to editor, signed by app \"Arugula app\", not a browser all the way to its root",
+      "input": {
+        "browser_chained": false,
+        "raised": "editor",
+        "signer_kind": "app",
+        "signer_name": "Arugula app"
+      },
+      "output": {"ok": true}
+    },
+    {
+      "about": "raising to editor, signed by browser \"Arugula app on jake-air\", chained as a browser all the way to its root",
+      "input": {
+        "browser_chained": true,
+        "raised": "editor",
+        "signer_kind": "browser",
+        "signer_name": "Arugula app on jake-air"
+      },
+      "output": {"ok": true}
+    },
+    {
+      "about": "raising to editor, signed by browser \"Arugula app on jake-air\", not a browser all the way to its root",
+      "input": {
+        "browser_chained": false,
+        "raised": "editor",
+        "signer_kind": "browser",
+        "signer_name": "Arugula app on jake-air"
+      },
+      "output": {"ok": true}
+    },
+    {
+      "about": "raising to editor, signed by cli \"terminal\", chained as a browser all the way to its root",
+      "input": {"browser_chained": true, "raised": "editor", "signer_kind": "cli", "signer_name": "terminal"},
+      "output": {"ok": true}
+    },
+    {
+      "about": "raising to editor, signed by cli \"terminal\", not a browser all the way to its root",
+      "input": {
+        "browser_chained": false,
+        "raised": "editor",
+        "signer_kind": "cli",
+        "signer_name": "terminal"
+      },
+      "output": {"ok": false}
+    },
+    {
+      "about": "raising to editor, signed by recovery \"recovery 1\", chained as a browser all the way to its root",
+      "input": {
+        "browser_chained": true,
+        "raised": "editor",
+        "signer_kind": "recovery",
+        "signer_name": "recovery 1"
+      },
+      "output": {"ok": true}
+    },
+    {
+      "about": "raising to editor, signed by recovery \"recovery 1\", not a browser all the way to its root",
+      "input": {
+        "browser_chained": false,
+        "raised": "editor",
+        "signer_kind": "recovery",
+        "signer_name": "recovery 1"
+      },
+      "output": {"ok": false}
+    },
+    {
+      "about": "raising to editor, signed by daemon \"geek\", chained as a browser all the way to its root",
+      "input": {"browser_chained": true, "raised": "editor", "signer_kind": "daemon", "signer_name": "geek"},
+      "output": {"ok": true}
+    },
+    {
+      "about": "raising to editor, signed by daemon \"geek\", not a browser all the way to its root",
+      "input": {"browser_chained": false, "raised": "editor", "signer_kind": "daemon", "signer_name": "geek"},
+      "output": {"ok": false}
+    },
+    {
+      "about": "raising to owner, signed by browser \"Chrome on Mac\", chained as a browser all the way to its root",
+      "input": {
+        "browser_chained": true,
+        "raised": "owner",
+        "signer_kind": "browser",
+        "signer_name": "Chrome on Mac"
+      },
+      "output": {"ok": true}
+    },
+    {
+      "about": "raising to owner, signed by browser \"Chrome on Mac\", not a browser all the way to its root",
+      "input": {
+        "browser_chained": false,
+        "raised": "owner",
+        "signer_kind": "browser",
+        "signer_name": "Chrome on Mac"
+      },
+      "output": {"ok": false}
+    },
+    {
+      "about": "raising to owner, signed by app \"Arugula app\", chained as a browser all the way to its root",
+      "input": {
+        "browser_chained": true,
+        "raised": "owner",
+        "signer_kind": "app",
+        "signer_name": "Arugula app"
+      },
+      "output": {"ok": true}
+    },
+    {
+      "about": "raising to owner, signed by app \"Arugula app\", not a browser all the way to its root",
+      "input": {
+        "browser_chained": false,
+        "raised": "owner",
+        "signer_kind": "app",
+        "signer_name": "Arugula app"
+      },
+      "output": {"ok": false}
+    },
+    {
+      "about": "raising to owner, signed by browser \"Arugula app on jake-air\", chained as a browser all the way to its root",
+      "input": {
+        "browser_chained": true,
+        "raised": "owner",
+        "signer_kind": "browser",
+        "signer_name": "Arugula app on jake-air"
+      },
+      "output": {"ok": true}
+    },
+    {
+      "about": "raising to owner, signed by browser \"Arugula app on jake-air\", not a browser all the way to its root",
+      "input": {
+        "browser_chained": false,
+        "raised": "owner",
+        "signer_kind": "browser",
+        "signer_name": "Arugula app on jake-air"
+      },
+      "output": {"ok": false}
+    },
+    {
+      "about": "raising to owner, signed by cli \"terminal\", chained as a browser all the way to its root",
+      "input": {"browser_chained": true, "raised": "owner", "signer_kind": "cli", "signer_name": "terminal"},
+      "output": {"ok": true}
+    },
+    {
+      "about": "raising to owner, signed by cli \"terminal\", not a browser all the way to its root",
+      "input": {"browser_chained": false, "raised": "owner", "signer_kind": "cli", "signer_name": "terminal"},
+      "output": {"ok": false}
+    },
+    {
+      "about": "raising to owner, signed by recovery \"recovery 1\", chained as a browser all the way to its root",
+      "input": {
+        "browser_chained": true,
+        "raised": "owner",
+        "signer_kind": "recovery",
+        "signer_name": "recovery 1"
+      },
+      "output": {"ok": true}
+    },
+    {
+      "about": "raising to owner, signed by recovery \"recovery 1\", not a browser all the way to its root",
+      "input": {
+        "browser_chained": false,
+        "raised": "owner",
+        "signer_kind": "recovery",
+        "signer_name": "recovery 1"
+      },
+      "output": {"ok": false}
+    },
+    {
+      "about": "raising to owner, signed by daemon \"geek\", chained as a browser all the way to its root",
+      "input": {"browser_chained": true, "raised": "owner", "signer_kind": "daemon", "signer_name": "geek"},
+      "output": {"ok": true}
+    },
+    {
+      "about": "raising to owner, signed by daemon \"geek\", not a browser all the way to its root",
+      "input": {"browser_chained": false, "raised": "owner", "signer_kind": "daemon", "signer_name": "geek"},
+      "output": {"ok": false}
+    }
+  ],
+  "checks": ["arugula_e2e::team::raise_ok"],
+  "input": "raised: the highest role the paper makes anyone (viewer, editor, owner) or null; signer_kind and signer_name: the signing device's certificate's; browser_chained: whether that device is a browser all the way to its root",
+  "keys": {},
+  "objects": {},
+  "output": "ok: whether that device may sign it"
+}

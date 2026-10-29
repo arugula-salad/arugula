@@ -1,0 +1,116 @@
+{
+  "about": "A daemon joining straight into a team (#100): the approving device signs which team and founder it pins, so a daemon pins only a team a device of the approving account chose, never one control adds. Checked against the approver's certificate (that it's trusted is the daemon's other check): a device that approves, whose key signed the join body for this daemon.",
+  "cases": [
+    {
+      "about": "alice puts the daemon in her team",
+      "input": {
+        "approver": "alice",
+        "daemon": "d30b9802b6365451",
+        "pin": {"founder": "alice", "founder_root": "37f29b7074cf8b52", "team": "t1"},
+        "sig": "7df276ce8f314f4a51d21f318129ec50a5f9648c5794bdc1e62aef5be4145abe8c074fb08eccd888c62cfd594be4a2579121b79b255c3eff3250ff1be451ae08"
+      },
+      "output": {"ok": true}
+    },
+    {
+      "about": "the same signature for another daemon",
+      "input": {
+        "approver": "alice",
+        "daemon": "0123456789abcdef",
+        "pin": {"founder": "alice", "founder_root": "37f29b7074cf8b52", "team": "t1"},
+        "sig": "7df276ce8f314f4a51d21f318129ec50a5f9648c5794bdc1e62aef5be4145abe8c074fb08eccd888c62cfd594be4a2579121b79b255c3eff3250ff1be451ae08"
+      },
+      "output": {"ok": false}
+    },
+    {
+      "about": "with the founder's root swapped",
+      "input": {
+        "approver": "alice",
+        "daemon": "d30b9802b6365451",
+        "pin": {"founder": "alice", "founder_root": "c242667535a3d34f", "team": "t1"},
+        "sig": "7df276ce8f314f4a51d21f318129ec50a5f9648c5794bdc1e62aef5be4145abe8c074fb08eccd888c62cfd594be4a2579121b79b255c3eff3250ff1be451ae08"
+      },
+      "output": {"ok": false}
+    },
+    {
+      "about": "said to be by mallory",
+      "input": {
+        "approver": "mallory",
+        "daemon": "d30b9802b6365451",
+        "pin": {"founder": "alice", "founder_root": "37f29b7074cf8b52", "team": "t1"},
+        "sig": "7df276ce8f314f4a51d21f318129ec50a5f9648c5794bdc1e62aef5be4145abe8c074fb08eccd888c62cfd594be4a2579121b79b255c3eff3250ff1be451ae08"
+      },
+      "output": {"ok": false}
+    },
+    {
+      "about": "signed by a machine: it approves nothing",
+      "input": {
+        "approver": "alice-box",
+        "daemon": "d30b9802b6365451",
+        "pin": {"founder": "alice", "founder_root": "37f29b7074cf8b52", "team": "t1"},
+        "sig": "5a3ed86c8b5dc1aed36474dbee5ffb281aa91c0e6f2d65ce6273eba4940508075e6de79ac8aacfd9b512097419d4466bf48a2a8e20894926d1d202152087d90c"
+      },
+      "output": {"ok": false}
+    }
+  ],
+  "checks": ["arugula_e2e::team::TeamPin::join_signed_by"],
+  "input": "pin: { team, founder, founder_root }; daemon: its id; approver: a certificate's label; sig: hex",
+  "keys": {
+    "alice": {
+      "device": "37f29b7074cf8b52",
+      "noise": "0101010101010101010101010101010101010101010101010101010101010101",
+      "seed": "0101010101010101010101010101010101010101010101010101010101010101",
+      "sign": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c"
+    },
+    "alice-box": {
+      "device": "e0a128f98e5582a3",
+      "noise": "0303030303030303030303030303030303030303030303030303030303030303",
+      "seed": "0303030303030303030303030303030303030303030303030303030303030303",
+      "sign": "ed4928c628d1c2c6eae90338905995612959273a5c63f93636c14614ac8737d1"
+    },
+    "mallory": {
+      "device": "c242667535a3d34f",
+      "noise": "0202020202020202020202020202020202020202020202020202020202020202",
+      "seed": "0202020202020202020202020202020202020202020202020202020202020202",
+      "sign": "8139770ea87d175f56a35466c34c7ecccb8d8a91b4ee37a25df60f5b8fc9b394"
+    }
+  },
+  "objects": {
+    "alice": {
+      "account": "alice",
+      "approver": "37f29b7074cf8b52",
+      "created": 1000,
+      "device": "37f29b7074cf8b52",
+      "kind": "browser",
+      "name": "alice's laptop",
+      "noise": "0101010101010101010101010101010101010101010101010101010101010101",
+      "sig": "4c7a182921697a35256fd95c0c9e8d2e91f60e6f7601e02d600196dda65ed26cd9aff836cd15e6e6d62cdfbb144fe575d921d5035ee13248a8565973ed0fda0d",
+      "sign": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
+      "v": 1
+    },
+    "alice-box": {
+      "account": "alice",
+      "approver": "37f29b7074cf8b52",
+      "created": 1100,
+      "device": "e0a128f98e5582a3",
+      "kind": "daemon",
+      "name": "box",
+      "noise": "0303030303030303030303030303030303030303030303030303030303030303",
+      "sig": "f33c3ce8fc59ccfa249d45c9974a9d36c96379f43d0aa8958e8ef900cee8dcf1d785f92e1aa2cd2099b35a38462befaed702795264670f6d72d6d0a5b155b408",
+      "sign": "ed4928c628d1c2c6eae90338905995612959273a5c63f93636c14614ac8737d1",
+      "v": 1
+    },
+    "mallory": {
+      "account": "mallory",
+      "approver": "c242667535a3d34f",
+      "created": 1000,
+      "device": "c242667535a3d34f",
+      "kind": "browser",
+      "name": "mallory's laptop",
+      "noise": "0202020202020202020202020202020202020202020202020202020202020202",
+      "sig": "ca2b2d207b7ad99bbb9dbb0471216f186e332a94f43f3f6685de43e70438ca8af49f3d7cc900ce19acd5fdbc459e0461272dc679fa7cddad05bad4a366cb6302",
+      "sign": "8139770ea87d175f56a35466c34c7ecccb8d8a91b4ee37a25df60f5b8fc9b394",
+      "v": 1
+    }
+  },
+  "output": "ok"
+}

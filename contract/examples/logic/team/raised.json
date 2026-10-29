@@ -1,0 +1,344 @@
+{
+  "about": "The highest role a roster version makes anyone since the one before (from nothing, for a first version), as raise_ok takes it: a member who wasn't there with that account and root and at least that role is raised to their role (a viewer raises nothing); the signer's own entry is raised only when it names another root, which counts as an owner (another identity for that account). Removing and demoting raise nothing.",
+  "cases": [
+    {
+      "about": "a first version with only its founder",
+      "input": {"prev": null, "roster": "v1-alone", "signer": "alice"},
+      "output": {"raised": null}
+    },
+    {
+      "about": "a first version with a viewer",
+      "input": {"prev": null, "roster": "v1", "signer": "alice"},
+      "output": {"raised": null}
+    },
+    {
+      "about": "a first version with an editor",
+      "input": {"prev": null, "roster": "v1-with-bob-editor", "signer": "alice"},
+      "output": {"raised": "editor"}
+    },
+    {
+      "about": "a first version with a second owner",
+      "input": {"prev": null, "roster": "v1-with-bob-owner", "signer": "alice"},
+      "output": {"raised": "owner"}
+    },
+    {
+      "about": "a viewer made an editor",
+      "input": {"prev": "v1", "roster": "v2-bob-editor", "signer": "alice"},
+      "output": {"raised": "editor"}
+    },
+    {
+      "about": "a viewer made an owner",
+      "input": {"prev": "v1", "roster": "v2-bob-owner", "signer": "alice"},
+      "output": {"raised": "owner"}
+    },
+    {
+      "about": "an editor made an editor again: nothing",
+      "input": {"prev": "v2-bob-editor", "roster": "v2-bob-editor", "signer": "alice"},
+      "output": {"raised": null}
+    },
+    {
+      "about": "an owner made an editor: a demotion raises nothing",
+      "input": {"prev": "v2-bob-owner", "roster": "v2-bob-editor", "signer": "alice"},
+      "output": {"raised": null}
+    },
+    {
+      "about": "a viewer added",
+      "input": {"prev": "v1", "roster": "v2-mallory-viewer", "signer": "alice"},
+      "output": {"raised": null}
+    },
+    {
+      "about": "an editor added",
+      "input": {"prev": "v1", "roster": "v2-mallory-editor", "signer": "alice"},
+      "output": {"raised": "editor"}
+    },
+    {
+      "about": "an owner and an editor at once: the higher",
+      "input": {"prev": "v1", "roster": "v2-mallory-owner-bob-editor", "signer": "alice"},
+      "output": {"raised": "owner"}
+    },
+    {
+      "about": "someone removed",
+      "input": {"prev": "v1", "roster": "v2-bob-removed", "signer": "alice"},
+      "output": {"raised": null}
+    },
+    {
+      "about": "a viewer's account moved to another root: still a viewer",
+      "input": {"prev": "v1", "roster": "v2-bob-viewer-elsewhere", "signer": "alice"},
+      "output": {"raised": null}
+    },
+    {
+      "about": "an editor's account moved to another root: an editor's raise",
+      "input": {"prev": "v1-with-bob-editor", "roster": "v2-bob-editor-elsewhere", "signer": "alice"},
+      "output": {"raised": "editor"}
+    },
+    {
+      "about": "the signer's own entry moved to another root: an owner's raise",
+      "input": {"prev": "v1", "roster": "v2-alice-elsewhere", "signer": "alice"},
+      "output": {"raised": "owner"}
+    },
+    {
+      "about": "the signer's own entry demoted, another made owner",
+      "input": {"prev": "v1", "roster": "v2-alice-editor", "signer": "alice"},
+      "output": {"raised": "owner"}
+    },
+    {
+      "about": "signed by bob, his own entry made an owner: his own entry isn't a raise",
+      "input": {"prev": "v1", "roster": "v2-bob-owner", "signer": "bob"},
+      "output": {"raised": null}
+    }
+  ],
+  "checks": ["arugula_e2e::team::Roster::raised"],
+  "input": "prev: the version before's label, or null for a first version; roster: the new version's label; signer: the account whose device signs it",
+  "keys": {
+    "alice": {
+      "device": "37f29b7074cf8b52",
+      "noise": "0101010101010101010101010101010101010101010101010101010101010101",
+      "seed": "0101010101010101010101010101010101010101010101010101010101010101",
+      "sign": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c"
+    },
+    "bob": {
+      "device": "c242667535a3d34f",
+      "noise": "0202020202020202020202020202020202020202020202020202020202020202",
+      "seed": "0202020202020202020202020202020202020202020202020202020202020202",
+      "sign": "8139770ea87d175f56a35466c34c7ecccb8d8a91b4ee37a25df60f5b8fc9b394"
+    },
+    "mallory": {
+      "device": "e0a128f98e5582a3",
+      "noise": "0303030303030303030303030303030303030303030303030303030303030303",
+      "seed": "0303030303030303030303030303030303030303030303030303030303030303",
+      "sign": "ed4928c628d1c2c6eae90338905995612959273a5c63f93636c14614ac8737d1"
+    }
+  },
+  "objects": {
+    "alice": {
+      "account": "alice",
+      "approver": "37f29b7074cf8b52",
+      "created": 1000,
+      "device": "37f29b7074cf8b52",
+      "kind": "browser",
+      "name": "alice's laptop",
+      "noise": "0101010101010101010101010101010101010101010101010101010101010101",
+      "sig": "4c7a182921697a35256fd95c0c9e8d2e91f60e6f7601e02d600196dda65ed26cd9aff836cd15e6e6d62cdfbb144fe575d921d5035ee13248a8565973ed0fda0d",
+      "sign": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
+      "v": 1
+    },
+    "bob": {
+      "account": "bob",
+      "approver": "c242667535a3d34f",
+      "created": 1000,
+      "device": "c242667535a3d34f",
+      "kind": "browser",
+      "name": "bob's laptop",
+      "noise": "0202020202020202020202020202020202020202020202020202020202020202",
+      "sig": "07e9418076d6edaf8c72fa5be449eeea02b612b5cd17ec9c6654519b853288b6d7a08c29100e96a0b5af3b13fb593ddb25335e0418d10dc2692d44cd3ed48103",
+      "sign": "8139770ea87d175f56a35466c34c7ecccb8d8a91b4ee37a25df60f5b8fc9b394",
+      "v": 1
+    },
+    "mallory": {
+      "account": "mallory",
+      "approver": "e0a128f98e5582a3",
+      "created": 1000,
+      "device": "e0a128f98e5582a3",
+      "kind": "browser",
+      "name": "mallory's laptop",
+      "noise": "0303030303030303030303030303030303030303030303030303030303030303",
+      "sig": "0335151b39728073d8d790462273dd3f4eb65467dba6099e554fd86808d0ae18c23c0057e9819afdb465bfd4e6ffd5866416a421d837041ae5cdb5c850bfd002",
+      "sign": "ed4928c628d1c2c6eae90338905995612959273a5c63f93636c14614ac8737d1",
+      "v": 1
+    },
+    "v1": {
+      "at": 1000,
+      "by": "37f29b7074cf8b52",
+      "members": [
+        {"account": "alice", "name": "alice-login", "role": "owner", "root": "37f29b7074cf8b52"},
+        {"account": "bob", "name": "bob-login", "role": "viewer", "root": "c242667535a3d34f"}
+      ],
+      "name": "Acme",
+      "sig": "2331391ef8ae354524c0f8e2f5c360443cdb608735c8937b82f4b6d643637c25cd4f65c657f6e6ab00c89341291d5ecf6b397a4522f1aa7c800efb5c50dc3603",
+      "team": "t1",
+      "v": 1,
+      "version": 1
+    },
+    "v1-alone": {
+      "at": 1000,
+      "by": "37f29b7074cf8b52",
+      "members": [
+        {"account": "alice", "name": "alice-login", "role": "owner", "root": "37f29b7074cf8b52"}
+      ],
+      "name": "Acme",
+      "sig": "44bc63feacd79c5491b58191f6fe923dbad50933cfde955cef8676a6923eebc2c70dfb0495a85cbeca47379aebf6c7d6252d16a97e79c312cac27598de307209",
+      "team": "t1",
+      "v": 1,
+      "version": 1
+    },
+    "v1-with-bob-editor": {
+      "at": 1000,
+      "by": "37f29b7074cf8b52",
+      "members": [
+        {"account": "alice", "name": "alice-login", "role": "owner", "root": "37f29b7074cf8b52"},
+        {"account": "bob", "name": "bob-login", "role": "editor", "root": "c242667535a3d34f"}
+      ],
+      "name": "Acme",
+      "sig": "d9149e21fb7e917759dc736018c46656ee8bc525e109d33ab2adc153af38885e5725777794d972ff7a901e2301ee9f3a11d0cfeb88e817935a4a2986a130cd0f",
+      "team": "t1",
+      "v": 1,
+      "version": 1
+    },
+    "v1-with-bob-owner": {
+      "at": 1000,
+      "by": "37f29b7074cf8b52",
+      "members": [
+        {"account": "alice", "name": "alice-login", "role": "owner", "root": "37f29b7074cf8b52"},
+        {"account": "bob", "name": "bob-login", "role": "owner", "root": "c242667535a3d34f"}
+      ],
+      "name": "Acme",
+      "sig": "5b28790437e273050394d433d6ff2c74b0fb41967d889ef529ccdc8d53d6065a4193b4f0e277c541c05d5c8562b7aa8c0f6eb0fbcf4525bb91a7d3e1bda7b407",
+      "team": "t1",
+      "v": 1,
+      "version": 1
+    },
+    "v2-alice-editor": {
+      "at": 2000,
+      "by": "37f29b7074cf8b52",
+      "members": [
+        {"account": "alice", "name": "alice-login", "role": "editor", "root": "37f29b7074cf8b52"},
+        {"account": "bob", "name": "bob-login", "role": "owner", "root": "c242667535a3d34f"}
+      ],
+      "name": "Acme",
+      "sig": "141aadb006a0a0c330ba6abad12024b7a38373cd073285c622bce8a1a78b2d1d1bea185fecfb7e0991eeb3a6fc96a0503b3ec8664341ab2117534cee6b4cfe00",
+      "team": "t1",
+      "v": 1,
+      "version": 2
+    },
+    "v2-alice-elsewhere": {
+      "at": 2000,
+      "by": "37f29b7074cf8b52",
+      "members": [
+        {"account": "alice", "name": "alice-login", "role": "owner", "root": "e0a128f98e5582a3"},
+        {"account": "bob", "name": "bob-login", "role": "viewer", "root": "c242667535a3d34f"}
+      ],
+      "name": "Acme",
+      "sig": "24c174721bf9b1fd6ceeaad5f5114f7e0acd34fb2cab4783b86df925d1c58ac4ac648523238d6f84558fa94a0655d49d533c8f6d0f8f2a291799a4b5fa447c01",
+      "team": "t1",
+      "v": 1,
+      "version": 2
+    },
+    "v2-bob-editor": {
+      "at": 2000,
+      "by": "37f29b7074cf8b52",
+      "members": [
+        {"account": "alice", "name": "alice-login", "role": "owner", "root": "37f29b7074cf8b52"},
+        {"account": "bob", "name": "bob-login", "role": "editor", "root": "c242667535a3d34f"}
+      ],
+      "name": "Acme",
+      "sig": "c06315d90eca5b99f9402ddc52759bc888cf6e2117ec0b9bec758e29f8e2c06e7f9bca547dcc26ffe29c475394ddbbd48b83da7505c69688b9ccb6872cb4ce08",
+      "team": "t1",
+      "v": 1,
+      "version": 2
+    },
+    "v2-bob-editor-elsewhere": {
+      "at": 2000,
+      "by": "37f29b7074cf8b52",
+      "members": [
+        {"account": "alice", "name": "alice-login", "role": "owner", "root": "37f29b7074cf8b52"},
+        {"account": "bob", "name": "bob-login", "role": "editor", "root": "e0a128f98e5582a3"}
+      ],
+      "name": "Acme",
+      "sig": "5670c28bde64fbdf7185a7355f05eab1d81f1d1b71b7f633c4c64781490529ded71c3afae7536510bedadb7ff8044b3d9afcc7c803087ede52335a1edcc7e10f",
+      "team": "t1",
+      "v": 1,
+      "version": 2
+    },
+    "v2-bob-owner": {
+      "at": 2000,
+      "by": "37f29b7074cf8b52",
+      "members": [
+        {"account": "alice", "name": "alice-login", "role": "owner", "root": "37f29b7074cf8b52"},
+        {"account": "bob", "name": "bob-login", "role": "owner", "root": "c242667535a3d34f"}
+      ],
+      "name": "Acme",
+      "sig": "3c7688260e29385f04aa7f3d98868e0822e500cbd67f65a2b0702a56c39d3d90618267272fc2c7a847c77936b6e274e92985a5855bac28f8f49be1b89a6acf09",
+      "team": "t1",
+      "v": 1,
+      "version": 2
+    },
+    "v2-bob-removed": {
+      "at": 2000,
+      "by": "37f29b7074cf8b52",
+      "members": [
+        {"account": "alice", "name": "alice-login", "role": "owner", "root": "37f29b7074cf8b52"}
+      ],
+      "name": "Acme",
+      "sig": "60328d36cf1cb3a4fec75d62f8c97b629ddc787dbaf631c6bcd8f432dc080ae124b5c5fe2bfaa670f6b770f61cd307ad8343f8417e5e003819cf1135f532f007",
+      "team": "t1",
+      "v": 1,
+      "version": 2
+    },
+    "v2-bob-viewer-elsewhere": {
+      "at": 2000,
+      "by": "37f29b7074cf8b52",
+      "members": [
+        {"account": "alice", "name": "alice-login", "role": "owner", "root": "37f29b7074cf8b52"},
+        {"account": "bob", "name": "bob-login", "role": "viewer", "root": "e0a128f98e5582a3"}
+      ],
+      "name": "Acme",
+      "sig": "ae55e06bb9bc9690a91dcf81be9a27f9ebe2e52c5af304f347227c5551153fbf845281fbe1523a3ac576355bca5501a70afd7b12ec4d3542545d830805ddfb08",
+      "team": "t1",
+      "v": 1,
+      "version": 2
+    },
+    "v2-mallory-editor": {
+      "at": 2000,
+      "by": "37f29b7074cf8b52",
+      "members": [
+        {"account": "alice", "name": "alice-login", "role": "owner", "root": "37f29b7074cf8b52"},
+        {"account": "bob", "name": "bob-login", "role": "viewer", "root": "c242667535a3d34f"},
+        {
+          "account": "mallory",
+          "name": "mallory-login",
+          "role": "editor",
+          "root": "e0a128f98e5582a3"
+        }
+      ],
+      "name": "Acme",
+      "sig": "99ce8705aa6bb1e3ec42dfe6201abadd8c1a79f2dd0edc83100d1e009763f9bff290971f32f78d8772854febf0f87ff4ab29ac61fd677b1169ac309425900206",
+      "team": "t1",
+      "v": 1,
+      "version": 2
+    },
+    "v2-mallory-owner-bob-editor": {
+      "at": 2000,
+      "by": "37f29b7074cf8b52",
+      "members": [
+        {"account": "alice", "name": "alice-login", "role": "owner", "root": "37f29b7074cf8b52"},
+        {"account": "bob", "name": "bob-login", "role": "editor", "root": "c242667535a3d34f"},
+        {"account": "mallory", "name": "mallory-login", "role": "owner", "root": "e0a128f98e5582a3"}
+      ],
+      "name": "Acme",
+      "sig": "fd56af109fbcf624f3480f50e757a3362cc13ed1c616910be201289f1593f29e2e3c3b707682ce81fbf589914501692e6951dd0ef5447d89ff3e09b42f9aae00",
+      "team": "t1",
+      "v": 1,
+      "version": 2
+    },
+    "v2-mallory-viewer": {
+      "at": 2000,
+      "by": "37f29b7074cf8b52",
+      "members": [
+        {"account": "alice", "name": "alice-login", "role": "owner", "root": "37f29b7074cf8b52"},
+        {"account": "bob", "name": "bob-login", "role": "viewer", "root": "c242667535a3d34f"},
+        {
+          "account": "mallory",
+          "name": "mallory-login",
+          "role": "viewer",
+          "root": "e0a128f98e5582a3"
+        }
+      ],
+      "name": "Acme",
+      "sig": "3eca9792ad7a07ad0dfa0e558d49e0dfc00f70174263d630720eee1b4ff2f0864a02115c2b7eaab475e22f5e878fb1570c8354be156b9edbc92a312576983c0d",
+      "team": "t1",
+      "v": 1,
+      "version": 2
+    }
+  },
+  "output": "raised: owner, editor or null"
+}

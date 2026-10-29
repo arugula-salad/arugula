@@ -1,0 +1,4115 @@
+{
+  "about": "Whether a roster version may follow the one a team daemon has (or, with none, start the team as its pin says). It must be well formed (v1 without spent or redeem, or v2; ids one word of at most 120 bytes; a name of 1 to 80 bytes, no control character; at least one owner), of the pinned team, newer, and signed by a device trusted now of an owner of the version before (the founder for a first), one that approves and may raise what this version raises (raise_ok). Or, for someone who isn't an owner, it redeems a presigned invite: exactly the version before plus the invitee at the end, the invite marked spent and never spent before, one version on, no earlier than the version before and no later than the invite expires; the invite of this team, not for an owner, signed by an owner then who may raise to its role; the one-time key's proof over exactly this member at this version; and the version signed by that key. Control holds no owner's key and no one-time key, so it can add no one.",
+  "cases": [
+    {
+      "about": "a first version, signed by the founder",
+      "input": {
+        "certs": {
+          "alice": {
+            "certs": ["alice", "alice-cli", "alice-app", "alice-browser-by-cli"],
+            "revocations": []
+          },
+          "bob": {
+            "certs": ["bob"],
+            "revocations": []
+          },
+          "carol": {
+            "certs": ["carol"],
+            "revocations": []
+          },
+          "mallory": {
+            "certs": ["mallory"],
+            "revocations": []
+          }
+        },
+        "pin": {"founder": "alice", "founder_root": "37f29b7074cf8b52", "team": "t1"},
+        "prev": null,
+        "roster": "v1"
+      },
+      "output": {"ok": true}
+    },
+    {
+      "about": "an owner adds an editor",
+      "input": {
+        "certs": {
+          "alice": {
+            "certs": ["alice", "alice-cli", "alice-app", "alice-browser-by-cli"],
+            "revocations": []
+          },
+          "bob": {
+            "certs": ["bob"],
+            "revocations": []
+          },
+          "carol": {
+            "certs": ["carol"],
+            "revocations": []
+          },
+          "mallory": {
+            "certs": ["mallory"],
+            "revocations": []
+          }
+        },
+        "pin": {"founder": "alice", "founder_root": "37f29b7074cf8b52", "team": "t1"},
+        "prev": "v1",
+        "roster": "v2"
+      },
+      "output": {"ok": true}
+    },
+    {
+      "about": "an editor makes himself an owner",
+      "input": {
+        "certs": {
+          "alice": {
+            "certs": ["alice", "alice-cli", "alice-app", "alice-browser-by-cli"],
+            "revocations": []
+          },
+          "bob": {
+            "certs": ["bob"],
+            "revocations": []
+          },
+          "carol": {
+            "certs": ["carol"],
+            "revocations": []
+          },
+          "mallory": {
+            "certs": ["mallory"],
+            "revocations": []
+          }
+        },
+        "pin": {"founder": "alice", "founder_root": "37f29b7074cf8b52", "team": "t1"},
+        "prev": "v2",
+        "roster": "v3-by-bob"
+      },
+      "output": {"ok": false}
+    },
+    {
+      "about": "an outsider writes the next version",
+      "input": {
+        "certs": {
+          "alice": {
+            "certs": ["alice", "alice-cli", "alice-app", "alice-browser-by-cli"],
+            "revocations": []
+          },
+          "bob": {
+            "certs": ["bob"],
+            "revocations": []
+          },
+          "carol": {
+            "certs": ["carol"],
+            "revocations": []
+          },
+          "mallory": {
+            "certs": ["mallory"],
+            "revocations": []
+          }
+        },
+        "pin": {"founder": "alice", "founder_root": "37f29b7074cf8b52", "team": "t1"},
+        "prev": "v2",
+        "roster": "v3-by-mallory"
+      },
+      "output": {"ok": false}
+    },
+    {
+      "about": "an outsider (or control) starts the team over",
+      "input": {
+        "certs": {
+          "alice": {
+            "certs": ["alice", "alice-cli", "alice-app", "alice-browser-by-cli"],
+            "revocations": []
+          },
+          "bob": {
+            "certs": ["bob"],
+            "revocations": []
+          },
+          "carol": {
+            "certs": ["carol"],
+            "revocations": []
+          },
+          "mallory": {
+            "certs": ["mallory"],
+            "revocations": []
+          }
+        },
+        "pin": {"founder": "alice", "founder_root": "37f29b7074cf8b52", "team": "t1"},
+        "prev": null,
+        "roster": "v1-by-mallory"
+      },
+      "output": {"ok": false}
+    },
+    {
+      "about": "an older version after a newer one",
+      "input": {
+        "certs": {
+          "alice": {
+            "certs": ["alice", "alice-cli", "alice-app", "alice-browser-by-cli"],
+            "revocations": []
+          },
+          "bob": {
+            "certs": ["bob"],
+            "revocations": []
+          },
+          "carol": {
+            "certs": ["carol"],
+            "revocations": []
+          },
+          "mallory": {
+            "certs": ["mallory"],
+            "revocations": []
+          }
+        },
+        "pin": {"founder": "alice", "founder_root": "37f29b7074cf8b52", "team": "t1"},
+        "prev": "v2",
+        "roster": "v1"
+      },
+      "output": {"ok": false}
+    },
+    {
+      "about": "another version with the same number",
+      "input": {
+        "certs": {
+          "alice": {
+            "certs": ["alice", "alice-cli", "alice-app", "alice-browser-by-cli"],
+            "revocations": []
+          },
+          "bob": {
+            "certs": ["bob"],
+            "revocations": []
+          },
+          "carol": {
+            "certs": ["carol"],
+            "revocations": []
+          },
+          "mallory": {
+            "certs": ["mallory"],
+            "revocations": []
+          }
+        },
+        "pin": {"founder": "alice", "founder_root": "37f29b7074cf8b52", "team": "t1"},
+        "prev": "v2",
+        "roster": "v2-again"
+      },
+      "output": {"ok": false}
+    },
+    {
+      "about": "the same version again",
+      "input": {
+        "certs": {
+          "alice": {
+            "certs": ["alice", "alice-cli", "alice-app", "alice-browser-by-cli"],
+            "revocations": []
+          },
+          "bob": {
+            "certs": ["bob"],
+            "revocations": []
+          },
+          "carol": {
+            "certs": ["carol"],
+            "revocations": []
+          },
+          "mallory": {
+            "certs": ["mallory"],
+            "revocations": []
+          }
+        },
+        "pin": {"founder": "alice", "founder_root": "37f29b7074cf8b52", "team": "t1"},
+        "prev": "v2",
+        "roster": "v2"
+      },
+      "output": {"ok": false}
+    },
+    {
+      "about": "ownership passes on: alice makes bob an owner, herself an editor",
+      "input": {
+        "certs": {
+          "alice": {
+            "certs": ["alice", "alice-cli", "alice-app", "alice-browser-by-cli"],
+            "revocations": []
+          },
+          "bob": {
+            "certs": ["bob"],
+            "revocations": []
+          },
+          "carol": {
+            "certs": ["carol"],
+            "revocations": []
+          },
+          "mallory": {
+            "certs": ["mallory"],
+            "revocations": []
+          }
+        },
+        "pin": {"founder": "alice", "founder_root": "37f29b7074cf8b52", "team": "t1"},
+        "prev": "v2",
+        "roster": "v3-bob-owner"
+      },
+      "output": {"ok": true}
+    },
+    {
+      "about": "then bob, now an owner, signs the next",
+      "input": {
+        "certs": {
+          "alice": {
+            "certs": ["alice", "alice-cli", "alice-app", "alice-browser-by-cli"],
+            "revocations": []
+          },
+          "bob": {
+            "certs": ["bob"],
+            "revocations": []
+          },
+          "carol": {
+            "certs": ["carol"],
+            "revocations": []
+          },
+          "mallory": {
+            "certs": ["mallory"],
+            "revocations": []
+          }
+        },
+        "pin": {"founder": "alice", "founder_root": "37f29b7074cf8b52", "team": "t1"},
+        "prev": "v3-bob-owner",
+        "roster": "v4-by-bob"
+      },
+      "output": {"ok": true}
+    },
+    {
+      "about": "and alice, now an editor, can't",
+      "input": {
+        "certs": {
+          "alice": {
+            "certs": ["alice", "alice-cli", "alice-app", "alice-browser-by-cli"],
+            "revocations": []
+          },
+          "bob": {
+            "certs": ["bob"],
+            "revocations": []
+          },
+          "carol": {
+            "certs": ["carol"],
+            "revocations": []
+          },
+          "mallory": {
+            "certs": ["mallory"],
+            "revocations": []
+          }
+        },
+        "pin": {"founder": "alice", "founder_root": "37f29b7074cf8b52", "team": "t1"},
+        "prev": "v3-bob-owner",
+        "roster": "v4-by-alice-now-editor"
+      },
+      "output": {"ok": false}
+    },
+    {
+      "about": "a version may skip numbers",
+      "input": {
+        "certs": {
+          "alice": {
+            "certs": ["alice", "alice-cli", "alice-app", "alice-browser-by-cli"],
+            "revocations": []
+          },
+          "bob": {
+            "certs": ["bob"],
+            "revocations": []
+          },
+          "carol": {
+            "certs": ["carol"],
+            "revocations": []
+          },
+          "mallory": {
+            "certs": ["mallory"],
+            "revocations": []
+          }
+        },
+        "pin": {"founder": "alice", "founder_root": "37f29b7074cf8b52", "team": "t1"},
+        "prev": "v2",
+        "roster": "v5-skips"
+      },
+      "output": {"ok": true}
+    },
+    {
+      "about": "a role changed after the founder signed",
+      "input": {
+        "certs": {
+          "alice": {
+            "certs": ["alice", "alice-cli", "alice-app", "alice-browser-by-cli"],
+            "revocations": []
+          },
+          "bob": {
+            "certs": ["bob"],
+            "revocations": []
+          },
+          "carol": {
+            "certs": ["carol"],
+            "revocations": []
+          },
+          "mallory": {
+            "certs": ["mallory"],
+            "revocations": []
+          }
+        },
+        "pin": {"founder": "alice", "founder_root": "37f29b7074cf8b52", "team": "t1"},
+        "prev": null,
+        "roster": "v1-promoted-after-signing"
+      },
+      "output": {"ok": false}
+    },
+    {
+      "about": "another team's roster",
+      "input": {
+        "certs": {
+          "alice": {
+            "certs": ["alice", "alice-cli", "alice-app", "alice-browser-by-cli"],
+            "revocations": []
+          },
+          "bob": {
+            "certs": ["bob"],
+            "revocations": []
+          },
+          "carol": {
+            "certs": ["carol"],
+            "revocations": []
+          },
+          "mallory": {
+            "certs": ["mallory"],
+            "revocations": []
+          }
+        },
+        "pin": {"founder": "alice", "founder_root": "37f29b7074cf8b52", "team": "t1"},
+        "prev": null,
+        "roster": "v1-of-team-t2"
+      },
+      "output": {"ok": false}
+    },
+    {
+      "about": "a version with no owner",
+      "input": {
+        "certs": {
+          "alice": {
+            "certs": ["alice", "alice-cli", "alice-app", "alice-browser-by-cli"],
+            "revocations": []
+          },
+          "bob": {
+            "certs": ["bob"],
+            "revocations": []
+          },
+          "carol": {
+            "certs": ["carol"],
+            "revocations": []
+          },
+          "mallory": {
+            "certs": ["mallory"],
+            "revocations": []
+          }
+        },
+        "pin": {"founder": "alice", "founder_root": "37f29b7074cf8b52", "team": "t1"},
+        "prev": "v1",
+        "roster": "v2-no-owner"
+      },
+      "output": {"ok": false}
+    },
+    {
+      "about": "a newline in the team's name",
+      "input": {
+        "certs": {
+          "alice": {
+            "certs": ["alice", "alice-cli", "alice-app", "alice-browser-by-cli"],
+            "revocations": []
+          },
+          "bob": {
+            "certs": ["bob"],
+            "revocations": []
+          },
+          "carol": {
+            "certs": ["carol"],
+            "revocations": []
+          },
+          "mallory": {
+            "certs": ["mallory"],
+            "revocations": []
+          }
+        },
+        "pin": {"founder": "alice", "founder_root": "37f29b7074cf8b52", "team": "t1"},
+        "prev": "v1",
+        "roster": "v2-newline-in-name"
+      },
+      "output": {"ok": false}
+    },
+    {
+      "about": "a team name of 81 bytes",
+      "input": {
+        "certs": {
+          "alice": {
+            "certs": ["alice", "alice-cli", "alice-app", "alice-browser-by-cli"],
+            "revocations": []
+          },
+          "bob": {
+            "certs": ["bob"],
+            "revocations": []
+          },
+          "carol": {
+            "certs": ["carol"],
+            "revocations": []
+          },
+          "mallory": {
+            "certs": ["mallory"],
+            "revocations": []
+          }
+        },
+        "pin": {"founder": "alice", "founder_root": "37f29b7074cf8b52", "team": "t1"},
+        "prev": "v1",
+        "roster": "v2-name-81"
+      },
+      "output": {"ok": false}
+    },
+    {
+      "about": "a roster of format 3",
+      "input": {
+        "certs": {
+          "alice": {
+            "certs": ["alice", "alice-cli", "alice-app", "alice-browser-by-cli"],
+            "revocations": []
+          },
+          "bob": {
+            "certs": ["bob"],
+            "revocations": []
+          },
+          "carol": {
+            "certs": ["carol"],
+            "revocations": []
+          },
+          "mallory": {
+            "certs": ["mallory"],
+            "revocations": []
+          }
+        },
+        "pin": {"founder": "alice", "founder_root": "37f29b7074cf8b52", "team": "t1"},
+        "prev": "v1",
+        "roster": "v2-format-v3"
+      },
+      "output": {"ok": false}
+    },
+    {
+      "about": "a v1 roster carrying spent invites (v2's)",
+      "input": {
+        "certs": {
+          "alice": {
+            "certs": ["alice", "alice-cli", "alice-app", "alice-browser-by-cli"],
+            "revocations": []
+          },
+          "bob": {
+            "certs": ["bob"],
+            "revocations": []
+          },
+          "carol": {
+            "certs": ["carol"],
+            "revocations": []
+          },
+          "mallory": {
+            "certs": ["mallory"],
+            "revocations": []
+          }
+        },
+        "pin": {"founder": "alice", "founder_root": "37f29b7074cf8b52", "team": "t1"},
+        "prev": "v1",
+        "roster": "v2-format-v1-with-spent"
+      },
+      "output": {"ok": false}
+    },
+    {
+      "about": "a v2 roster an owner signs, carrying spent invites",
+      "input": {
+        "certs": {
+          "alice": {
+            "certs": ["alice", "alice-cli", "alice-app", "alice-browser-by-cli"],
+            "revocations": []
+          },
+          "bob": {
+            "certs": ["bob"],
+            "revocations": []
+          },
+          "carol": {
+            "certs": ["carol"],
+            "revocations": []
+          },
+          "mallory": {
+            "certs": ["mallory"],
+            "revocations": []
+          }
+        },
+        "pin": {"founder": "alice", "founder_root": "37f29b7074cf8b52", "team": "t1"},
+        "prev": "v1",
+        "roster": "v2-format-v2-with-spent"
+      },
+      "output": {"ok": true}
+    },
+    {
+      "about": "a space in a member's name",
+      "input": {
+        "certs": {
+          "alice": {
+            "certs": ["alice", "alice-cli", "alice-app", "alice-browser-by-cli"],
+            "revocations": []
+          },
+          "bob": {
+            "certs": ["bob"],
+            "revocations": []
+          },
+          "carol": {
+            "certs": ["carol"],
+            "revocations": []
+          },
+          "mallory": {
+            "certs": ["mallory"],
+            "revocations": []
+          }
+        },
+        "pin": {"founder": "alice", "founder_root": "37f29b7074cf8b52", "team": "t1"},
+        "prev": "v1",
+        "roster": "v2-space-in-member-name"
+      },
+      "output": {"ok": false}
+    },
+    {
+      "about": "control hands out another root's certificates for the founder",
+      "input": {
+        "certs": {
+          "alice": {
+            "certs": ["mallory"],
+            "revocations": []
+          },
+          "bob": {
+            "certs": ["bob"],
+            "revocations": []
+          },
+          "carol": {
+            "certs": ["carol"],
+            "revocations": []
+          },
+          "mallory": {
+            "certs": ["mallory"],
+            "revocations": []
+          }
+        },
+        "pin": {"founder": "alice", "founder_root": "37f29b7074cf8b52", "team": "t1"},
+        "prev": null,
+        "roster": "v1"
+      },
+      "output": {"ok": false}
+    },
+    {
+      "about": "alice's browser makes mallory an owner",
+      "input": {
+        "certs": {
+          "alice": {
+            "certs": ["alice", "alice-cli", "alice-app", "alice-browser-by-cli"],
+            "revocations": []
+          },
+          "bob": {
+            "certs": ["bob"],
+            "revocations": []
+          },
+          "carol": {
+            "certs": ["carol"],
+            "revocations": []
+          },
+          "mallory": {
+            "certs": ["mallory"],
+            "revocations": []
+          }
+        },
+        "pin": {"founder": "alice", "founder_root": "37f29b7074cf8b52", "team": "t1"},
+        "prev": "v1-bob-viewer",
+        "roster": "v2-makes-mallory-an-owner-by-alices-browser"
+      },
+      "output": {"ok": true}
+    },
+    {
+      "about": "alice's CLI makes mallory an owner",
+      "input": {
+        "certs": {
+          "alice": {
+            "certs": ["alice", "alice-cli", "alice-app", "alice-browser-by-cli"],
+            "revocations": []
+          },
+          "bob": {
+            "certs": ["bob"],
+            "revocations": []
+          },
+          "carol": {
+            "certs": ["carol"],
+            "revocations": []
+          },
+          "mallory": {
+            "certs": ["mallory"],
+            "revocations": []
+          }
+        },
+        "pin": {"founder": "alice", "founder_root": "37f29b7074cf8b52", "team": "t1"},
+        "prev": "v1-bob-viewer",
+        "roster": "v2-makes-mallory-an-owner-by-alices-CLI"
+      },
+      "output": {"ok": false}
+    },
+    {
+      "about": "alice's app makes mallory an owner",
+      "input": {
+        "certs": {
+          "alice": {
+            "certs": ["alice", "alice-cli", "alice-app", "alice-browser-by-cli"],
+            "revocations": []
+          },
+          "bob": {
+            "certs": ["bob"],
+            "revocations": []
+          },
+          "carol": {
+            "certs": ["carol"],
+            "revocations": []
+          },
+          "mallory": {
+            "certs": ["mallory"],
+            "revocations": []
+          }
+        },
+        "pin": {"founder": "alice", "founder_root": "37f29b7074cf8b52", "team": "t1"},
+        "prev": "v1-bob-viewer",
+        "roster": "v2-makes-mallory-an-owner-by-alices-app"
+      },
+      "output": {"ok": false}
+    },
+    {
+      "about": "a browser alice's CLI made: never trusted makes mallory an owner",
+      "input": {
+        "certs": {
+          "alice": {
+            "certs": ["alice", "alice-cli", "alice-app", "alice-browser-by-cli"],
+            "revocations": []
+          },
+          "bob": {
+            "certs": ["bob"],
+            "revocations": []
+          },
+          "carol": {
+            "certs": ["carol"],
+            "revocations": []
+          },
+          "mallory": {
+            "certs": ["mallory"],
+            "revocations": []
+          }
+        },
+        "pin": {"founder": "alice", "founder_root": "37f29b7074cf8b52", "team": "t1"},
+        "prev": "v1-bob-viewer",
+        "roster": "v2-makes-mallory-an-owner-by-a-browser-alices-CLI-made:-never-trusted"
+      },
+      "output": {"ok": false}
+    },
+    {
+      "about": "alice's browser makes mallory an editor",
+      "input": {
+        "certs": {
+          "alice": {
+            "certs": ["alice", "alice-cli", "alice-app", "alice-browser-by-cli"],
+            "revocations": []
+          },
+          "bob": {
+            "certs": ["bob"],
+            "revocations": []
+          },
+          "carol": {
+            "certs": ["carol"],
+            "revocations": []
+          },
+          "mallory": {
+            "certs": ["mallory"],
+            "revocations": []
+          }
+        },
+        "pin": {"founder": "alice", "founder_root": "37f29b7074cf8b52", "team": "t1"},
+        "prev": "v1-bob-viewer",
+        "roster": "v2-makes-mallory-an-editor-by-alices-browser"
+      },
+      "output": {"ok": true}
+    },
+    {
+      "about": "alice's CLI makes mallory an editor",
+      "input": {
+        "certs": {
+          "alice": {
+            "certs": ["alice", "alice-cli", "alice-app", "alice-browser-by-cli"],
+            "revocations": []
+          },
+          "bob": {
+            "certs": ["bob"],
+            "revocations": []
+          },
+          "carol": {
+            "certs": ["carol"],
+            "revocations": []
+          },
+          "mallory": {
+            "certs": ["mallory"],
+            "revocations": []
+          }
+        },
+        "pin": {"founder": "alice", "founder_root": "37f29b7074cf8b52", "team": "t1"},
+        "prev": "v1-bob-viewer",
+        "roster": "v2-makes-mallory-an-editor-by-alices-CLI"
+      },
+      "output": {"ok": false}
+    },
+    {
+      "about": "alice's app makes mallory an editor",
+      "input": {
+        "certs": {
+          "alice": {
+            "certs": ["alice", "alice-cli", "alice-app", "alice-browser-by-cli"],
+            "revocations": []
+          },
+          "bob": {
+            "certs": ["bob"],
+            "revocations": []
+          },
+          "carol": {
+            "certs": ["carol"],
+            "revocations": []
+          },
+          "mallory": {
+            "certs": ["mallory"],
+            "revocations": []
+          }
+        },
+        "pin": {"founder": "alice", "founder_root": "37f29b7074cf8b52", "team": "t1"},
+        "prev": "v1-bob-viewer",
+        "roster": "v2-makes-mallory-an-editor-by-alices-app"
+      },
+      "output": {"ok": true}
+    },
+    {
+      "about": "a browser alice's CLI made: never trusted makes mallory an editor",
+      "input": {
+        "certs": {
+          "alice": {
+            "certs": ["alice", "alice-cli", "alice-app", "alice-browser-by-cli"],
+            "revocations": []
+          },
+          "bob": {
+            "certs": ["bob"],
+            "revocations": []
+          },
+          "carol": {
+            "certs": ["carol"],
+            "revocations": []
+          },
+          "mallory": {
+            "certs": ["mallory"],
+            "revocations": []
+          }
+        },
+        "pin": {"founder": "alice", "founder_root": "37f29b7074cf8b52", "team": "t1"},
+        "prev": "v1-bob-viewer",
+        "roster": "v2-makes-mallory-an-editor-by-a-browser-alices-CLI-made:-never-trusted"
+      },
+      "output": {"ok": false}
+    },
+    {
+      "about": "alice's browser makes bob an editor",
+      "input": {
+        "certs": {
+          "alice": {
+            "certs": ["alice", "alice-cli", "alice-app", "alice-browser-by-cli"],
+            "revocations": []
+          },
+          "bob": {
+            "certs": ["bob"],
+            "revocations": []
+          },
+          "carol": {
+            "certs": ["carol"],
+            "revocations": []
+          },
+          "mallory": {
+            "certs": ["mallory"],
+            "revocations": []
+          }
+        },
+        "pin": {"founder": "alice", "founder_root": "37f29b7074cf8b52", "team": "t1"},
+        "prev": "v1-bob-viewer",
+        "roster": "v2-makes-bob-an-editor-by-alices-browser"
+      },
+      "output": {"ok": true}
+    },
+    {
+      "about": "alice's CLI makes bob an editor",
+      "input": {
+        "certs": {
+          "alice": {
+            "certs": ["alice", "alice-cli", "alice-app", "alice-browser-by-cli"],
+            "revocations": []
+          },
+          "bob": {
+            "certs": ["bob"],
+            "revocations": []
+          },
+          "carol": {
+            "certs": ["carol"],
+            "revocations": []
+          },
+          "mallory": {
+            "certs": ["mallory"],
+            "revocations": []
+          }
+        },
+        "pin": {"founder": "alice", "founder_root": "37f29b7074cf8b52", "team": "t1"},
+        "prev": "v1-bob-viewer",
+        "roster": "v2-makes-bob-an-editor-by-alices-CLI"
+      },
+      "output": {"ok": false}
+    },
+    {
+      "about": "alice's app makes bob an editor",
+      "input": {
+        "certs": {
+          "alice": {
+            "certs": ["alice", "alice-cli", "alice-app", "alice-browser-by-cli"],
+            "revocations": []
+          },
+          "bob": {
+            "certs": ["bob"],
+            "revocations": []
+          },
+          "carol": {
+            "certs": ["carol"],
+            "revocations": []
+          },
+          "mallory": {
+            "certs": ["mallory"],
+            "revocations": []
+          }
+        },
+        "pin": {"founder": "alice", "founder_root": "37f29b7074cf8b52", "team": "t1"},
+        "prev": "v1-bob-viewer",
+        "roster": "v2-makes-bob-an-editor-by-alices-app"
+      },
+      "output": {"ok": true}
+    },
+    {
+      "about": "a browser alice's CLI made: never trusted makes bob an editor",
+      "input": {
+        "certs": {
+          "alice": {
+            "certs": ["alice", "alice-cli", "alice-app", "alice-browser-by-cli"],
+            "revocations": []
+          },
+          "bob": {
+            "certs": ["bob"],
+            "revocations": []
+          },
+          "carol": {
+            "certs": ["carol"],
+            "revocations": []
+          },
+          "mallory": {
+            "certs": ["mallory"],
+            "revocations": []
+          }
+        },
+        "pin": {"founder": "alice", "founder_root": "37f29b7074cf8b52", "team": "t1"},
+        "prev": "v1-bob-viewer",
+        "roster": "v2-makes-bob-an-editor-by-a-browser-alices-CLI-made:-never-trusted"
+      },
+      "output": {"ok": false}
+    },
+    {
+      "about": "alice's browser adds mallory as a viewer",
+      "input": {
+        "certs": {
+          "alice": {
+            "certs": ["alice", "alice-cli", "alice-app", "alice-browser-by-cli"],
+            "revocations": []
+          },
+          "bob": {
+            "certs": ["bob"],
+            "revocations": []
+          },
+          "carol": {
+            "certs": ["carol"],
+            "revocations": []
+          },
+          "mallory": {
+            "certs": ["mallory"],
+            "revocations": []
+          }
+        },
+        "pin": {"founder": "alice", "founder_root": "37f29b7074cf8b52", "team": "t1"},
+        "prev": "v1-bob-viewer",
+        "roster": "v2-adds-mallory-as-a-viewer-by-alices-browser"
+      },
+      "output": {"ok": true}
+    },
+    {
+      "about": "alice's CLI adds mallory as a viewer",
+      "input": {
+        "certs": {
+          "alice": {
+            "certs": ["alice", "alice-cli", "alice-app", "alice-browser-by-cli"],
+            "revocations": []
+          },
+          "bob": {
+            "certs": ["bob"],
+            "revocations": []
+          },
+          "carol": {
+            "certs": ["carol"],
+            "revocations": []
+          },
+          "mallory": {
+            "certs": ["mallory"],
+            "revocations": []
+          }
+        },
+        "pin": {"founder": "alice", "founder_root": "37f29b7074cf8b52", "team": "t1"},
+        "prev": "v1-bob-viewer",
+        "roster": "v2-adds-mallory-as-a-viewer-by-alices-CLI"
+      },
+      "output": {"ok": true}
+    },
+    {
+      "about": "alice's app adds mallory as a viewer",
+      "input": {
+        "certs": {
+          "alice": {
+            "certs": ["alice", "alice-cli", "alice-app", "alice-browser-by-cli"],
+            "revocations": []
+          },
+          "bob": {
+            "certs": ["bob"],
+            "revocations": []
+          },
+          "carol": {
+            "certs": ["carol"],
+            "revocations": []
+          },
+          "mallory": {
+            "certs": ["mallory"],
+            "revocations": []
+          }
+        },
+        "pin": {"founder": "alice", "founder_root": "37f29b7074cf8b52", "team": "t1"},
+        "prev": "v1-bob-viewer",
+        "roster": "v2-adds-mallory-as-a-viewer-by-alices-app"
+      },
+      "output": {"ok": true}
+    },
+    {
+      "about": "a browser alice's CLI made: never trusted adds mallory as a viewer",
+      "input": {
+        "certs": {
+          "alice": {
+            "certs": ["alice", "alice-cli", "alice-app", "alice-browser-by-cli"],
+            "revocations": []
+          },
+          "bob": {
+            "certs": ["bob"],
+            "revocations": []
+          },
+          "carol": {
+            "certs": ["carol"],
+            "revocations": []
+          },
+          "mallory": {
+            "certs": ["mallory"],
+            "revocations": []
+          }
+        },
+        "pin": {"founder": "alice", "founder_root": "37f29b7074cf8b52", "team": "t1"},
+        "prev": "v1-bob-viewer",
+        "roster": "v2-adds-mallory-as-a-viewer-by-a-browser-alices-CLI-made:-never-trusted"
+      },
+      "output": {"ok": false}
+    },
+    {
+      "about": "alice's browser takes bob out",
+      "input": {
+        "certs": {
+          "alice": {
+            "certs": ["alice", "alice-cli", "alice-app", "alice-browser-by-cli"],
+            "revocations": []
+          },
+          "bob": {
+            "certs": ["bob"],
+            "revocations": []
+          },
+          "carol": {
+            "certs": ["carol"],
+            "revocations": []
+          },
+          "mallory": {
+            "certs": ["mallory"],
+            "revocations": []
+          }
+        },
+        "pin": {"founder": "alice", "founder_root": "37f29b7074cf8b52", "team": "t1"},
+        "prev": "v1-bob-viewer",
+        "roster": "v2-takes-bob-out-by-alices-browser"
+      },
+      "output": {"ok": true}
+    },
+    {
+      "about": "alice's CLI takes bob out",
+      "input": {
+        "certs": {
+          "alice": {
+            "certs": ["alice", "alice-cli", "alice-app", "alice-browser-by-cli"],
+            "revocations": []
+          },
+          "bob": {
+            "certs": ["bob"],
+            "revocations": []
+          },
+          "carol": {
+            "certs": ["carol"],
+            "revocations": []
+          },
+          "mallory": {
+            "certs": ["mallory"],
+            "revocations": []
+          }
+        },
+        "pin": {"founder": "alice", "founder_root": "37f29b7074cf8b52", "team": "t1"},
+        "prev": "v1-bob-viewer",
+        "roster": "v2-takes-bob-out-by-alices-CLI"
+      },
+      "output": {"ok": true}
+    },
+    {
+      "about": "alice's app takes bob out",
+      "input": {
+        "certs": {
+          "alice": {
+            "certs": ["alice", "alice-cli", "alice-app", "alice-browser-by-cli"],
+            "revocations": []
+          },
+          "bob": {
+            "certs": ["bob"],
+            "revocations": []
+          },
+          "carol": {
+            "certs": ["carol"],
+            "revocations": []
+          },
+          "mallory": {
+            "certs": ["mallory"],
+            "revocations": []
+          }
+        },
+        "pin": {"founder": "alice", "founder_root": "37f29b7074cf8b52", "team": "t1"},
+        "prev": "v1-bob-viewer",
+        "roster": "v2-takes-bob-out-by-alices-app"
+      },
+      "output": {"ok": true}
+    },
+    {
+      "about": "a browser alice's CLI made: never trusted takes bob out",
+      "input": {
+        "certs": {
+          "alice": {
+            "certs": ["alice", "alice-cli", "alice-app", "alice-browser-by-cli"],
+            "revocations": []
+          },
+          "bob": {
+            "certs": ["bob"],
+            "revocations": []
+          },
+          "carol": {
+            "certs": ["carol"],
+            "revocations": []
+          },
+          "mallory": {
+            "certs": ["mallory"],
+            "revocations": []
+          }
+        },
+        "pin": {"founder": "alice", "founder_root": "37f29b7074cf8b52", "team": "t1"},
+        "prev": "v1-bob-viewer",
+        "roster": "v2-takes-bob-out-by-a-browser-alices-CLI-made:-never-trusted"
+      },
+      "output": {"ok": false}
+    },
+    {
+      "about": "alice's browser moves alice's own entry to another root",
+      "input": {
+        "certs": {
+          "alice": {
+            "certs": ["alice", "alice-cli", "alice-app", "alice-browser-by-cli"],
+            "revocations": []
+          },
+          "bob": {
+            "certs": ["bob"],
+            "revocations": []
+          },
+          "carol": {
+            "certs": ["carol"],
+            "revocations": []
+          },
+          "mallory": {
+            "certs": ["mallory"],
+            "revocations": []
+          }
+        },
+        "pin": {"founder": "alice", "founder_root": "37f29b7074cf8b52", "team": "t1"},
+        "prev": "v1-bob-viewer",
+        "roster": "v2-moves-alices-own-entry-to-another-root-by-alices-browser"
+      },
+      "output": {"ok": true}
+    },
+    {
+      "about": "alice's CLI moves alice's own entry to another root",
+      "input": {
+        "certs": {
+          "alice": {
+            "certs": ["alice", "alice-cli", "alice-app", "alice-browser-by-cli"],
+            "revocations": []
+          },
+          "bob": {
+            "certs": ["bob"],
+            "revocations": []
+          },
+          "carol": {
+            "certs": ["carol"],
+            "revocations": []
+          },
+          "mallory": {
+            "certs": ["mallory"],
+            "revocations": []
+          }
+        },
+        "pin": {"founder": "alice", "founder_root": "37f29b7074cf8b52", "team": "t1"},
+        "prev": "v1-bob-viewer",
+        "roster": "v2-moves-alices-own-entry-to-another-root-by-alices-CLI"
+      },
+      "output": {"ok": false}
+    },
+    {
+      "about": "alice's app moves alice's own entry to another root",
+      "input": {
+        "certs": {
+          "alice": {
+            "certs": ["alice", "alice-cli", "alice-app", "alice-browser-by-cli"],
+            "revocations": []
+          },
+          "bob": {
+            "certs": ["bob"],
+            "revocations": []
+          },
+          "carol": {
+            "certs": ["carol"],
+            "revocations": []
+          },
+          "mallory": {
+            "certs": ["mallory"],
+            "revocations": []
+          }
+        },
+        "pin": {"founder": "alice", "founder_root": "37f29b7074cf8b52", "team": "t1"},
+        "prev": "v1-bob-viewer",
+        "roster": "v2-moves-alices-own-entry-to-another-root-by-alices-app"
+      },
+      "output": {"ok": false}
+    },
+    {
+      "about": "a browser alice's CLI made: never trusted moves alice's own entry to another root",
+      "input": {
+        "certs": {
+          "alice": {
+            "certs": ["alice", "alice-cli", "alice-app", "alice-browser-by-cli"],
+            "revocations": []
+          },
+          "bob": {
+            "certs": ["bob"],
+            "revocations": []
+          },
+          "carol": {
+            "certs": ["carol"],
+            "revocations": []
+          },
+          "mallory": {
+            "certs": ["mallory"],
+            "revocations": []
+          }
+        },
+        "pin": {"founder": "alice", "founder_root": "37f29b7074cf8b52", "team": "t1"},
+        "prev": "v1-bob-viewer",
+        "roster": "v2-moves-alices-own-entry-to-another-root-by-a-browser-alices-CLI-made:-never-trusted"
+      },
+      "output": {"ok": false}
+    },
+    {
+      "about": "the app founds a team with only its owner",
+      "input": {
+        "certs": {
+          "alice": {
+            "certs": ["alice", "alice-cli", "alice-app", "alice-browser-by-cli"],
+            "revocations": []
+          },
+          "bob": {
+            "certs": ["bob"],
+            "revocations": []
+          },
+          "carol": {
+            "certs": ["carol"],
+            "revocations": []
+          },
+          "mallory": {
+            "certs": ["mallory"],
+            "revocations": []
+          }
+        },
+        "pin": {"founder": "alice", "founder_root": "37f29b7074cf8b52", "team": "t1"},
+        "prev": null,
+        "roster": "v1-founded-by-app"
+      },
+      "output": {"ok": true}
+    },
+    {
+      "about": "a CLI founds a team with only its owner",
+      "input": {
+        "certs": {
+          "alice": {
+            "certs": ["alice", "alice-cli", "alice-app", "alice-browser-by-cli"],
+            "revocations": []
+          },
+          "bob": {
+            "certs": ["bob"],
+            "revocations": []
+          },
+          "carol": {
+            "certs": ["carol"],
+            "revocations": []
+          },
+          "mallory": {
+            "certs": ["mallory"],
+            "revocations": []
+          }
+        },
+        "pin": {"founder": "alice", "founder_root": "37f29b7074cf8b52", "team": "t1"},
+        "prev": null,
+        "roster": "v1-founded-by-cli"
+      },
+      "output": {"ok": true}
+    },
+    {
+      "about": "a CLI founds a team with an editor in it",
+      "input": {
+        "certs": {
+          "alice": {
+            "certs": ["alice", "alice-cli", "alice-app", "alice-browser-by-cli"],
+            "revocations": []
+          },
+          "bob": {
+            "certs": ["bob"],
+            "revocations": []
+          },
+          "carol": {
+            "certs": ["carol"],
+            "revocations": []
+          },
+          "mallory": {
+            "certs": ["mallory"],
+            "revocations": []
+          }
+        },
+        "pin": {"founder": "alice", "founder_root": "37f29b7074cf8b52", "team": "t1"},
+        "prev": null,
+        "roster": "v1-founded-by-cli-with-editor"
+      },
+      "output": {"ok": false}
+    },
+    {
+      "about": "the app founds a team with an editor in it",
+      "input": {
+        "certs": {
+          "alice": {
+            "certs": ["alice", "alice-cli", "alice-app", "alice-browser-by-cli"],
+            "revocations": []
+          },
+          "bob": {
+            "certs": ["bob"],
+            "revocations": []
+          },
+          "carol": {
+            "certs": ["carol"],
+            "revocations": []
+          },
+          "mallory": {
+            "certs": ["mallory"],
+            "revocations": []
+          }
+        },
+        "pin": {"founder": "alice", "founder_root": "37f29b7074cf8b52", "team": "t1"},
+        "prev": null,
+        "roster": "v1-founded-by-app-with-editor"
+      },
+      "output": {"ok": true}
+    },
+    {
+      "about": "the app founds a team with a second owner",
+      "input": {
+        "certs": {
+          "alice": {
+            "certs": ["alice", "alice-cli", "alice-app", "alice-browser-by-cli"],
+            "revocations": []
+          },
+          "bob": {
+            "certs": ["bob"],
+            "revocations": []
+          },
+          "carol": {
+            "certs": ["carol"],
+            "revocations": []
+          },
+          "mallory": {
+            "certs": ["mallory"],
+            "revocations": []
+          }
+        },
+        "pin": {"founder": "alice", "founder_root": "37f29b7074cf8b52", "team": "t1"},
+        "prev": null,
+        "roster": "v1-founded-by-app-with-owner"
+      },
+      "output": {"ok": false}
+    },
+    {
+      "about": "a CLI swaps an editor's account for another root",
+      "input": {
+        "certs": {
+          "alice": {
+            "certs": ["alice", "alice-cli", "alice-app", "alice-browser-by-cli"],
+            "revocations": []
+          },
+          "bob": {
+            "certs": ["bob"],
+            "revocations": []
+          },
+          "carol": {
+            "certs": ["carol"],
+            "revocations": []
+          },
+          "mallory": {
+            "certs": ["mallory"],
+            "revocations": []
+          }
+        },
+        "pin": {"founder": "alice", "founder_root": "37f29b7074cf8b52", "team": "t1"},
+        "prev": "v1-bob-editor",
+        "roster": "v2-bob-editor-elsewhere-by-cli"
+      },
+      "output": {"ok": false}
+    },
+    {
+      "about": "a viewer added by alice's CLI, after she revoked it",
+      "input": {
+        "certs": {
+          "alice": {
+            "certs": ["alice", "alice-cli", "alice-app", "alice-browser-by-cli"],
+            "revocations": ["alice-cli-revoked"]
+          },
+          "bob": {
+            "certs": ["bob"],
+            "revocations": []
+          },
+          "carol": {
+            "certs": ["carol"],
+            "revocations": []
+          },
+          "mallory": {
+            "certs": ["mallory"],
+            "revocations": []
+          }
+        },
+        "pin": {"founder": "alice", "founder_root": "37f29b7074cf8b52", "team": "t1"},
+        "prev": "v1-bob-viewer",
+        "roster": "v2-adds-mallory-as-a-viewer-by-alices-CLI"
+      },
+      "output": {"ok": false}
+    },
+    {
+      "about": "bob adds himself with alice's presigned invite",
+      "input": {
+        "certs": {
+          "alice": {
+            "certs": ["alice", "alice-cli", "alice-app", "alice-browser-by-cli"],
+            "revocations": []
+          },
+          "bob": {
+            "certs": ["bob"],
+            "revocations": []
+          },
+          "carol": {
+            "certs": ["carol"],
+            "revocations": []
+          },
+          "mallory": {
+            "certs": ["mallory"],
+            "revocations": []
+          }
+        },
+        "pin": {"founder": "alice", "founder_root": "37f29b7074cf8b52", "team": "t1"},
+        "prev": "v1",
+        "roster": "v2-bob-redeems"
+      },
+      "output": {"ok": true}
+    },
+    {
+      "about": "carol uses the same invite after him",
+      "input": {
+        "certs": {
+          "alice": {
+            "certs": ["alice", "alice-cli", "alice-app", "alice-browser-by-cli"],
+            "revocations": []
+          },
+          "bob": {
+            "certs": ["bob"],
+            "revocations": []
+          },
+          "carol": {
+            "certs": ["carol"],
+            "revocations": []
+          },
+          "mallory": {
+            "certs": ["mallory"],
+            "revocations": []
+          }
+        },
+        "pin": {"founder": "alice", "founder_root": "37f29b7074cf8b52", "team": "t1"},
+        "prev": "v2-bob-redeems",
+        "roster": "v3-carol-redeems-the-same-invite"
+      },
+      "output": {"ok": false}
+    },
+    {
+      "about": "alice's next version carries the spent invite on",
+      "input": {
+        "certs": {
+          "alice": {
+            "certs": ["alice", "alice-cli", "alice-app", "alice-browser-by-cli"],
+            "revocations": []
+          },
+          "bob": {
+            "certs": ["bob"],
+            "revocations": []
+          },
+          "carol": {
+            "certs": ["carol"],
+            "revocations": []
+          },
+          "mallory": {
+            "certs": ["mallory"],
+            "revocations": []
+          }
+        },
+        "pin": {"founder": "alice", "founder_root": "37f29b7074cf8b52", "team": "t1"},
+        "prev": "v2-bob-redeems",
+        "roster": "v3-by-alice-after-redeem"
+      },
+      "output": {"ok": true}
+    },
+    {
+      "about": "a second invite works the same way",
+      "input": {
+        "certs": {
+          "alice": {
+            "certs": ["alice", "alice-cli", "alice-app", "alice-browser-by-cli"],
+            "revocations": []
+          },
+          "bob": {
+            "certs": ["bob"],
+            "revocations": []
+          },
+          "carol": {
+            "certs": ["carol"],
+            "revocations": []
+          },
+          "mallory": {
+            "certs": ["mallory"],
+            "revocations": []
+          }
+        },
+        "pin": {"founder": "alice", "founder_root": "37f29b7074cf8b52", "team": "t1"},
+        "prev": "v3-by-alice-after-redeem",
+        "roster": "v4-carol-redeems-a-second-invite"
+      },
+      "output": {"ok": true}
+    },
+    {
+      "about": "bob redeems a viewer's invite",
+      "input": {
+        "certs": {
+          "alice": {
+            "certs": ["alice", "alice-cli", "alice-app", "alice-browser-by-cli"],
+            "revocations": []
+          },
+          "bob": {
+            "certs": ["bob"],
+            "revocations": []
+          },
+          "carol": {
+            "certs": ["carol"],
+            "revocations": []
+          },
+          "mallory": {
+            "certs": ["mallory"],
+            "revocations": []
+          }
+        },
+        "pin": {"founder": "alice", "founder_root": "37f29b7074cf8b52", "team": "t1"},
+        "prev": "v1",
+        "roster": "v2-bob-redeems-viewer"
+      },
+      "output": {"ok": true}
+    },
+    {
+      "about": "control moves bob's proof to mallory",
+      "input": {
+        "certs": {
+          "alice": {
+            "certs": ["alice", "alice-cli", "alice-app", "alice-browser-by-cli"],
+            "revocations": []
+          },
+          "bob": {
+            "certs": ["bob"],
+            "revocations": []
+          },
+          "carol": {
+            "certs": ["carol"],
+            "revocations": []
+          },
+          "mallory": {
+            "certs": ["mallory"],
+            "revocations": []
+          }
+        },
+        "pin": {"founder": "alice", "founder_root": "37f29b7074cf8b52", "team": "t1"},
+        "prev": "v1",
+        "roster": "v2-bobs-proof-moved-to-mallory"
+      },
+      "output": {"ok": false}
+    },
+    {
+      "about": "bob's proof, with mallory in his place, the version signed with the one-time key",
+      "input": {
+        "certs": {
+          "alice": {
+            "certs": ["alice", "alice-cli", "alice-app", "alice-browser-by-cli"],
+            "revocations": []
+          },
+          "bob": {
+            "certs": ["bob"],
+            "revocations": []
+          },
+          "carol": {
+            "certs": ["carol"],
+            "revocations": []
+          },
+          "mallory": {
+            "certs": ["mallory"],
+            "revocations": []
+          }
+        },
+        "pin": {"founder": "alice", "founder_root": "37f29b7074cf8b52", "team": "t1"},
+        "prev": "v1",
+        "roster": "v2-bobs-proof-for-mallory-signed-by-the-key"
+      },
+      "output": {"ok": false}
+    },
+    {
+      "about": "a proof without the one-time key",
+      "input": {
+        "certs": {
+          "alice": {
+            "certs": ["alice", "alice-cli", "alice-app", "alice-browser-by-cli"],
+            "revocations": []
+          },
+          "bob": {
+            "certs": ["bob"],
+            "revocations": []
+          },
+          "carol": {
+            "certs": ["carol"],
+            "revocations": []
+          },
+          "mallory": {
+            "certs": ["mallory"],
+            "revocations": []
+          }
+        },
+        "pin": {"founder": "alice", "founder_root": "37f29b7074cf8b52", "team": "t1"},
+        "prev": "v1",
+        "roster": "v2-forged-proof"
+      },
+      "output": {"ok": false}
+    },
+    {
+      "about": "a higher role than the invite's",
+      "input": {
+        "certs": {
+          "alice": {
+            "certs": ["alice", "alice-cli", "alice-app", "alice-browser-by-cli"],
+            "revocations": []
+          },
+          "bob": {
+            "certs": ["bob"],
+            "revocations": []
+          },
+          "carol": {
+            "certs": ["carol"],
+            "revocations": []
+          },
+          "mallory": {
+            "certs": ["mallory"],
+            "revocations": []
+          }
+        },
+        "pin": {"founder": "alice", "founder_root": "37f29b7074cf8b52", "team": "t1"},
+        "prev": "v1",
+        "roster": "v2-redeem-higher-role"
+      },
+      "output": {"ok": false}
+    },
+    {
+      "about": "a redeem that also promotes another member",
+      "input": {
+        "certs": {
+          "alice": {
+            "certs": ["alice", "alice-cli", "alice-app", "alice-browser-by-cli"],
+            "revocations": []
+          },
+          "bob": {
+            "certs": ["bob"],
+            "revocations": []
+          },
+          "carol": {
+            "certs": ["carol"],
+            "revocations": []
+          },
+          "mallory": {
+            "certs": ["mallory"],
+            "revocations": []
+          }
+        },
+        "pin": {"founder": "alice", "founder_root": "37f29b7074cf8b52", "team": "t1"},
+        "prev": "v2-mallory-viewer",
+        "roster": "v3-redeem-promotes-another-member"
+      },
+      "output": {"ok": false}
+    },
+    {
+      "about": "the same redeem with nothing else changed",
+      "input": {
+        "certs": {
+          "alice": {
+            "certs": ["alice", "alice-cli", "alice-app", "alice-browser-by-cli"],
+            "revocations": []
+          },
+          "bob": {
+            "certs": ["bob"],
+            "revocations": []
+          },
+          "carol": {
+            "certs": ["carol"],
+            "revocations": []
+          },
+          "mallory": {
+            "certs": ["mallory"],
+            "revocations": []
+          }
+        },
+        "pin": {"founder": "alice", "founder_root": "37f29b7074cf8b52", "team": "t1"},
+        "prev": "v2-mallory-viewer",
+        "roster": "v3-redeem-unchanged"
+      },
+      "output": {"ok": true}
+    },
+    {
+      "about": "redeemed 1 ms after the invite expires",
+      "input": {
+        "certs": {
+          "alice": {
+            "certs": ["alice", "alice-cli", "alice-app", "alice-browser-by-cli"],
+            "revocations": []
+          },
+          "bob": {
+            "certs": ["bob"],
+            "revocations": []
+          },
+          "carol": {
+            "certs": ["carol"],
+            "revocations": []
+          },
+          "mallory": {
+            "certs": ["mallory"],
+            "revocations": []
+          }
+        },
+        "pin": {"founder": "alice", "founder_root": "37f29b7074cf8b52", "team": "t1"},
+        "prev": "v1",
+        "roster": "v2-redeem-after-expiry"
+      },
+      "output": {"ok": false}
+    },
+    {
+      "about": "redeemed the very ms the invite expires",
+      "input": {
+        "certs": {
+          "alice": {
+            "certs": ["alice", "alice-cli", "alice-app", "alice-browser-by-cli"],
+            "revocations": []
+          },
+          "bob": {
+            "certs": ["bob"],
+            "revocations": []
+          },
+          "carol": {
+            "certs": ["carol"],
+            "revocations": []
+          },
+          "mallory": {
+            "certs": ["mallory"],
+            "revocations": []
+          }
+        },
+        "pin": {"founder": "alice", "founder_root": "37f29b7074cf8b52", "team": "t1"},
+        "prev": "v1",
+        "roster": "v2-redeem-at-expiry"
+      },
+      "output": {"ok": true}
+    },
+    {
+      "about": "redeemed backdated, before the version it follows",
+      "input": {
+        "certs": {
+          "alice": {
+            "certs": ["alice", "alice-cli", "alice-app", "alice-browser-by-cli"],
+            "revocations": []
+          },
+          "bob": {
+            "certs": ["bob"],
+            "revocations": []
+          },
+          "carol": {
+            "certs": ["carol"],
+            "revocations": []
+          },
+          "mallory": {
+            "certs": ["mallory"],
+            "revocations": []
+          }
+        },
+        "pin": {"founder": "alice", "founder_root": "37f29b7074cf8b52", "team": "t1"},
+        "prev": "v1-at-5000",
+        "roster": "v2-redeem-backdated"
+      },
+      "output": {"ok": false}
+    },
+    {
+      "about": "the redeeming version signed by bob's device, not the one-time key",
+      "input": {
+        "certs": {
+          "alice": {
+            "certs": ["alice", "alice-cli", "alice-app", "alice-browser-by-cli"],
+            "revocations": []
+          },
+          "bob": {
+            "certs": ["bob"],
+            "revocations": []
+          },
+          "carol": {
+            "certs": ["carol"],
+            "revocations": []
+          },
+          "mallory": {
+            "certs": ["mallory"],
+            "revocations": []
+          }
+        },
+        "pin": {"founder": "alice", "founder_root": "37f29b7074cf8b52", "team": "t1"},
+        "prev": "v1",
+        "roster": "v2-redeem-signed-by-bobs-device"
+      },
+      "output": {"ok": false}
+    },
+    {
+      "about": "an invite an editor signed",
+      "input": {
+        "certs": {
+          "alice": {
+            "certs": ["alice", "alice-cli", "alice-app", "alice-browser-by-cli"],
+            "revocations": []
+          },
+          "bob": {
+            "certs": ["bob"],
+            "revocations": []
+          },
+          "carol": {
+            "certs": ["carol"],
+            "revocations": []
+          },
+          "mallory": {
+            "certs": ["mallory"],
+            "revocations": []
+          }
+        },
+        "pin": {"founder": "alice", "founder_root": "37f29b7074cf8b52", "team": "t1"},
+        "prev": "v2",
+        "roster": "v3-redeem-invite-by-an-editor"
+      },
+      "output": {"ok": false}
+    },
+    {
+      "about": "an invite to be an owner: never presigned",
+      "input": {
+        "certs": {
+          "alice": {
+            "certs": ["alice", "alice-cli", "alice-app", "alice-browser-by-cli"],
+            "revocations": []
+          },
+          "bob": {
+            "certs": ["bob"],
+            "revocations": []
+          },
+          "carol": {
+            "certs": ["carol"],
+            "revocations": []
+          },
+          "mallory": {
+            "certs": ["mallory"],
+            "revocations": []
+          }
+        },
+        "pin": {"founder": "alice", "founder_root": "37f29b7074cf8b52", "team": "t1"},
+        "prev": "v1",
+        "roster": "v2-redeem-owner-invite"
+      },
+      "output": {"ok": false}
+    },
+    {
+      "about": "a redeem that doesn't mark its invite spent",
+      "input": {
+        "certs": {
+          "alice": {
+            "certs": ["alice", "alice-cli", "alice-app", "alice-browser-by-cli"],
+            "revocations": []
+          },
+          "bob": {
+            "certs": ["bob"],
+            "revocations": []
+          },
+          "carol": {
+            "certs": ["carol"],
+            "revocations": []
+          },
+          "mallory": {
+            "certs": ["mallory"],
+            "revocations": []
+          }
+        },
+        "pin": {"founder": "alice", "founder_root": "37f29b7074cf8b52", "team": "t1"},
+        "prev": "v1",
+        "roster": "v2-redeem-not-marked-spent"
+      },
+      "output": {"ok": false}
+    },
+    {
+      "about": "an owner's version carrying a redeem",
+      "input": {
+        "certs": {
+          "alice": {
+            "certs": ["alice", "alice-cli", "alice-app", "alice-browser-by-cli"],
+            "revocations": []
+          },
+          "bob": {
+            "certs": ["bob"],
+            "revocations": []
+          },
+          "carol": {
+            "certs": ["carol"],
+            "revocations": []
+          },
+          "mallory": {
+            "certs": ["mallory"],
+            "revocations": []
+          }
+        },
+        "pin": {"founder": "alice", "founder_root": "37f29b7074cf8b52", "team": "t1"},
+        "prev": "v1",
+        "roster": "v2-redeem-signed-by-an-owner"
+      },
+      "output": {"ok": false}
+    },
+    {
+      "about": "a v1 roster carrying a redeem",
+      "input": {
+        "certs": {
+          "alice": {
+            "certs": ["alice", "alice-cli", "alice-app", "alice-browser-by-cli"],
+            "revocations": []
+          },
+          "bob": {
+            "certs": ["bob"],
+            "revocations": []
+          },
+          "carol": {
+            "certs": ["carol"],
+            "revocations": []
+          },
+          "mallory": {
+            "certs": ["mallory"],
+            "revocations": []
+          }
+        },
+        "pin": {"founder": "alice", "founder_root": "37f29b7074cf8b52", "team": "t1"},
+        "prev": "v1",
+        "roster": "v2-redeem-in-format-v1"
+      },
+      "output": {"ok": false}
+    },
+    {
+      "about": "another team's invite",
+      "input": {
+        "certs": {
+          "alice": {
+            "certs": ["alice", "alice-cli", "alice-app", "alice-browser-by-cli"],
+            "revocations": []
+          },
+          "bob": {
+            "certs": ["bob"],
+            "revocations": []
+          },
+          "carol": {
+            "certs": ["carol"],
+            "revocations": []
+          },
+          "mallory": {
+            "certs": ["mallory"],
+            "revocations": []
+          }
+        },
+        "pin": {"founder": "alice", "founder_root": "37f29b7074cf8b52", "team": "t1"},
+        "prev": "v1",
+        "roster": "v2-redeem-another-teams-invite"
+      },
+      "output": {"ok": false}
+    },
+    {
+      "about": "a redeem two versions on",
+      "input": {
+        "certs": {
+          "alice": {
+            "certs": ["alice", "alice-cli", "alice-app", "alice-browser-by-cli"],
+            "revocations": []
+          },
+          "bob": {
+            "certs": ["bob"],
+            "revocations": []
+          },
+          "carol": {
+            "certs": ["carol"],
+            "revocations": []
+          },
+          "mallory": {
+            "certs": ["mallory"],
+            "revocations": []
+          }
+        },
+        "pin": {"founder": "alice", "founder_root": "37f29b7074cf8b52", "team": "t1"},
+        "prev": "v1",
+        "roster": "v3-redeem-skips-a-version"
+      },
+      "output": {"ok": false}
+    },
+    {
+      "about": "a redeem adding someone already in the team",
+      "input": {
+        "certs": {
+          "alice": {
+            "certs": ["alice", "alice-cli", "alice-app", "alice-browser-by-cli"],
+            "revocations": []
+          },
+          "bob": {
+            "certs": ["bob"],
+            "revocations": []
+          },
+          "carol": {
+            "certs": ["carol"],
+            "revocations": []
+          },
+          "mallory": {
+            "certs": ["mallory"],
+            "revocations": []
+          }
+        },
+        "pin": {"founder": "alice", "founder_root": "37f29b7074cf8b52", "team": "t1"},
+        "prev": "v1",
+        "roster": "v2-redeem-alice-again"
+      },
+      "output": {"ok": false}
+    },
+    {
+      "about": "a redeem that renames the team",
+      "input": {
+        "certs": {
+          "alice": {
+            "certs": ["alice", "alice-cli", "alice-app", "alice-browser-by-cli"],
+            "revocations": []
+          },
+          "bob": {
+            "certs": ["bob"],
+            "revocations": []
+          },
+          "carol": {
+            "certs": ["carol"],
+            "revocations": []
+          },
+          "mallory": {
+            "certs": ["mallory"],
+            "revocations": []
+          }
+        },
+        "pin": {"founder": "alice", "founder_root": "37f29b7074cf8b52", "team": "t1"},
+        "prev": "v1",
+        "roster": "v2-redeem-renames-the-team"
+      },
+      "output": {"ok": false}
+    },
+    {
+      "about": "an editor's invite alice's CLI signed",
+      "input": {
+        "certs": {
+          "alice": {
+            "certs": ["alice", "alice-cli", "alice-app", "alice-browser-by-cli"],
+            "revocations": []
+          },
+          "bob": {
+            "certs": ["bob"],
+            "revocations": []
+          },
+          "carol": {
+            "certs": ["carol"],
+            "revocations": []
+          },
+          "mallory": {
+            "certs": ["mallory"],
+            "revocations": []
+          }
+        },
+        "pin": {"founder": "alice", "founder_root": "37f29b7074cf8b52", "team": "t1"},
+        "prev": "v1",
+        "roster": "v2-redeem-one-time-cli-editor"
+      },
+      "output": {"ok": false}
+    },
+    {
+      "about": "a viewer's invite alice's CLI signed",
+      "input": {
+        "certs": {
+          "alice": {
+            "certs": ["alice", "alice-cli", "alice-app", "alice-browser-by-cli"],
+            "revocations": []
+          },
+          "bob": {
+            "certs": ["bob"],
+            "revocations": []
+          },
+          "carol": {
+            "certs": ["carol"],
+            "revocations": []
+          },
+          "mallory": {
+            "certs": ["mallory"],
+            "revocations": []
+          }
+        },
+        "pin": {"founder": "alice", "founder_root": "37f29b7074cf8b52", "team": "t1"},
+        "prev": "v1",
+        "roster": "v2-redeem-one-time-cli-viewer"
+      },
+      "output": {"ok": true}
+    },
+    {
+      "about": "an editor's invite alice's app signed",
+      "input": {
+        "certs": {
+          "alice": {
+            "certs": ["alice", "alice-cli", "alice-app", "alice-browser-by-cli"],
+            "revocations": []
+          },
+          "bob": {
+            "certs": ["bob"],
+            "revocations": []
+          },
+          "carol": {
+            "certs": ["carol"],
+            "revocations": []
+          },
+          "mallory": {
+            "certs": ["mallory"],
+            "revocations": []
+          }
+        },
+        "pin": {"founder": "alice", "founder_root": "37f29b7074cf8b52", "team": "t1"},
+        "prev": "v1",
+        "roster": "v2-redeem-one-time-app-editor"
+      },
+      "output": {"ok": true}
+    },
+    {
+      "about": "an editor's invite a browser alice's CLI made signed",
+      "input": {
+        "certs": {
+          "alice": {
+            "certs": ["alice", "alice-cli", "alice-app", "alice-browser-by-cli"],
+            "revocations": []
+          },
+          "bob": {
+            "certs": ["bob"],
+            "revocations": []
+          },
+          "carol": {
+            "certs": ["carol"],
+            "revocations": []
+          },
+          "mallory": {
+            "certs": ["mallory"],
+            "revocations": []
+          }
+        },
+        "pin": {"founder": "alice", "founder_root": "37f29b7074cf8b52", "team": "t1"},
+        "prev": "v1",
+        "roster": "v2-redeem-one-time-laundered-editor"
+      },
+      "output": {"ok": false}
+    },
+    {
+      "about": "after bob revokes the phone he joined from: his redeem still checks",
+      "input": {
+        "certs": {
+          "alice": {
+            "certs": ["alice", "alice-cli", "alice-app", "alice-browser-by-cli"],
+            "revocations": []
+          },
+          "bob": {
+            "certs": ["bob", "bob-phone"],
+            "revocations": ["bob-phone-revoked"]
+          },
+          "carol": {
+            "certs": ["carol"],
+            "revocations": []
+          },
+          "mallory": {
+            "certs": ["mallory"],
+            "revocations": []
+          }
+        },
+        "pin": {"founder": "alice", "founder_root": "37f29b7074cf8b52", "team": "t1"},
+        "prev": "v1",
+        "roster": "v2-bob-redeems"
+      },
+      "output": {"ok": true}
+    },
+    {
+      "about": "and so does his removal",
+      "input": {
+        "certs": {
+          "alice": {
+            "certs": ["alice", "alice-cli", "alice-app", "alice-browser-by-cli"],
+            "revocations": []
+          },
+          "bob": {
+            "certs": ["bob", "bob-phone"],
+            "revocations": ["bob-phone-revoked"]
+          },
+          "carol": {
+            "certs": ["carol"],
+            "revocations": []
+          },
+          "mallory": {
+            "certs": ["mallory"],
+            "revocations": []
+          }
+        },
+        "pin": {"founder": "alice", "founder_root": "37f29b7074cf8b52", "team": "t1"},
+        "prev": "v2-bob-redeems",
+        "roster": "v3-bob-removed"
+      },
+      "output": {"ok": true}
+    }
+  ],
+  "checks": ["arugula_e2e::team::Roster::follows", "arugula_e2e::team::Roster::well_formed"],
+  "input": "pin: the team and its founder, as the daemon pinned them ({ team, founder, founder_root }); certs: every member account's certificates and revocations, as control hands them out: { account: { certs: [labels], revocations: [labels] } }; prev: the version the daemon has, by label, or null; roster: the new version, by label",
+  "keys": {
+    "alice": {
+      "device": "37f29b7074cf8b52",
+      "noise": "0101010101010101010101010101010101010101010101010101010101010101",
+      "seed": "0101010101010101010101010101010101010101010101010101010101010101",
+      "sign": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c"
+    },
+    "alice-app": {
+      "device": "422c26dbf1e40b7b",
+      "noise": "0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b",
+      "seed": "0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b",
+      "sign": "66be7e332c7a453332bd9d0a7f7db055f5c5ef1a06ada66d98b39fb6810c473a"
+    },
+    "alice-browser-by-cli": {
+      "device": "a255a6fc4c7f915d",
+      "noise": "0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c",
+      "seed": "0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c",
+      "sign": "0b513ad9b4924015ca0902ed079044d3ac5dbec2306f06948c10da8eb6e39f2d"
+    },
+    "alice-cli": {
+      "device": "6ec4cb2579ac7165",
+      "noise": "0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a",
+      "seed": "0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a",
+      "sign": "43a72e714401762df66b68c26dfbdf2682aaec9f2474eca4613e424a0fbafd3c"
+    },
+    "bob": {
+      "device": "c242667535a3d34f",
+      "noise": "0202020202020202020202020202020202020202020202020202020202020202",
+      "seed": "0202020202020202020202020202020202020202020202020202020202020202",
+      "sign": "8139770ea87d175f56a35466c34c7ecccb8d8a91b4ee37a25df60f5b8fc9b394"
+    },
+    "bob-phone": {
+      "device": "8c13188975e1a5ae",
+      "noise": "1414141414141414141414141414141414141414141414141414141414141414",
+      "seed": "1414141414141414141414141414141414141414141414141414141414141414",
+      "sign": "20828bf5c5bdcacb684863336c202fb5599da48be5596615742170705beca9f7"
+    },
+    "carol": {
+      "device": "e0a128f98e5582a3",
+      "noise": "0303030303030303030303030303030303030303030303030303030303030303",
+      "seed": "0303030303030303030303030303030303030303030303030303030303030303",
+      "sign": "ed4928c628d1c2c6eae90338905995612959273a5c63f93636c14614ac8737d1"
+    },
+    "forger": {
+      "device": "9be5533cf593e92e",
+      "noise": "2828282828282828282828282828282828282828282828282828282828282828",
+      "seed": "2828282828282828282828282828282828282828282828282828282828282828",
+      "sign": "e92eb6054fe9bc682a1bcf3b759f65ab38a4cfbd81c4d1f3342e4cc9cded8b0b"
+    },
+    "mallory": {
+      "device": "9b64bd87042f22a7",
+      "noise": "0404040404040404040404040404040404040404040404040404040404040404",
+      "seed": "0404040404040404040404040404040404040404040404040404040404040404",
+      "sign": "ca93ac1705187071d67b83c7ff0efe8108e8ec4530575d7726879333dbdabe7c"
+    },
+    "one-time-1": {
+      "device": "dc40eea8a52499ce",
+      "noise": "1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e",
+      "seed": "1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e",
+      "sign": "acdb0e29743f0ccb8686d0a104cb96e05abefec1538765e7595869f7dc8c49aa"
+    },
+    "one-time-2": {
+      "device": "7ee5d21cf4c4021d",
+      "noise": "1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f",
+      "seed": "1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f",
+      "sign": "43046bfe4092b3e94994eada15dcc20d8aaa07b658fd3954eb8e0efb8bdca5de"
+    },
+    "one-time-3": {
+      "device": "c0b7fee2312b6474",
+      "noise": "2020202020202020202020202020202020202020202020202020202020202020",
+      "seed": "2020202020202020202020202020202020202020202020202020202020202020",
+      "sign": "4ed32f63bf35f0eeefcb25f28a2e1fbdc873ae2835671b0c9460f5f12e4556a8"
+    },
+    "one-time-4": {
+      "device": "d9e4fbf563f24eee",
+      "noise": "2121212121212121212121212121212121212121212121212121212121212121",
+      "seed": "2121212121212121212121212121212121212121212121212121212121212121",
+      "sign": "884b8857f4eaa1613c61504db34d4beaf346517a0e31de3cddd4d9b4201d9d0b"
+    },
+    "one-time-5": {
+      "device": "0dec43cb172fa9dc",
+      "noise": "2222222222222222222222222222222222222222222222222222222222222222",
+      "seed": "2222222222222222222222222222222222222222222222222222222222222222",
+      "sign": "a09aa5f47a6759802ff955f8dc2d2a14a5c99d23be97f864127ff9383455a4f0"
+    },
+    "one-time-6": {
+      "device": "2c9fbb420258fadd",
+      "noise": "2323232323232323232323232323232323232323232323232323232323232323",
+      "seed": "2323232323232323232323232323232323232323232323232323232323232323",
+      "sign": "74f85cda34d1c27c4621484731e91579c3d9c6cfc0d94b281aa11e9162058aa9"
+    },
+    "one-time-app-editor": {
+      "device": "ee209550cda761f9",
+      "noise": "2626262626262626262626262626262626262626262626262626262626262626",
+      "seed": "2626262626262626262626262626262626262626262626262626262626262626",
+      "sign": "9109db55f79797a396462fb895c2adcea7e8683c2f3056c07a5475155537b73e"
+    },
+    "one-time-cli-editor": {
+      "device": "fa67d271e21d2d73",
+      "noise": "2424242424242424242424242424242424242424242424242424242424242424",
+      "seed": "2424242424242424242424242424242424242424242424242424242424242424",
+      "sign": "58936604abda112bc94933569c82f8d0cc0ddf92a3f8329f2f448f7f484a594c"
+    },
+    "one-time-cli-viewer": {
+      "device": "d948744b416e35fe",
+      "noise": "2525252525252525252525252525252525252525252525252525252525252525",
+      "seed": "2525252525252525252525252525252525252525252525252525252525252525",
+      "sign": "bed7d2ab668da3efad613998f06f7abf7875f3a6b7677a9f3ce947d77d7760a6"
+    },
+    "one-time-laundered-editor": {
+      "device": "3cfe0edf94847f25",
+      "noise": "2727272727272727272727272727272727272727272727272727272727272727",
+      "seed": "2727272727272727272727272727272727272727272727272727272727272727",
+      "sign": "ee45ecb9aca01a0abd83ef56dd985c8c874e6e7f4aebcedf20bd8d88c2a0add7"
+    }
+  },
+  "objects": {
+    "alice": {
+      "account": "alice",
+      "approver": "37f29b7074cf8b52",
+      "created": 1000,
+      "device": "37f29b7074cf8b52",
+      "kind": "browser",
+      "name": "alice's laptop",
+      "noise": "0101010101010101010101010101010101010101010101010101010101010101",
+      "sig": "4c7a182921697a35256fd95c0c9e8d2e91f60e6f7601e02d600196dda65ed26cd9aff836cd15e6e6d62cdfbb144fe575d921d5035ee13248a8565973ed0fda0d",
+      "sign": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
+      "v": 1
+    },
+    "alice-app": {
+      "account": "alice",
+      "approver": "37f29b7074cf8b52",
+      "created": 1200,
+      "device": "422c26dbf1e40b7b",
+      "kind": "app",
+      "name": "Arugula app",
+      "noise": "0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b",
+      "sig": "6ef84386522f7a429ffbd1012b874987f06191e634a190245b9d59f11588ec7d1363805195f7424a234038b346547b3b373abf751f6db49b994d4f8e07ea7b05",
+      "sign": "66be7e332c7a453332bd9d0a7f7db055f5c5ef1a06ada66d98b39fb6810c473a",
+      "v": 1
+    },
+    "alice-browser-by-cli": {
+      "account": "alice",
+      "approver": "6ec4cb2579ac7165",
+      "created": 1300,
+      "device": "a255a6fc4c7f915d",
+      "kind": "browser",
+      "name": "laundered",
+      "noise": "0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c",
+      "sig": "631acacdcf8085a45ebc66d8522ae1eeb2cf71f3827b4e0b19649a6fa54410d13c16ab08c0c05e7a12efe08ac02f678c7ea027c76f9bb1e76cd1cf0e9c62fe01",
+      "sign": "0b513ad9b4924015ca0902ed079044d3ac5dbec2306f06948c10da8eb6e39f2d",
+      "v": 1
+    },
+    "alice-cli": {
+      "account": "alice",
+      "approver": "37f29b7074cf8b52",
+      "created": 1100,
+      "device": "6ec4cb2579ac7165",
+      "kind": "cli",
+      "name": "terminal",
+      "noise": "0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a",
+      "sig": "db0e5eefe7803803b4d874de6895f93d4c1058071c5aabc948635744d4ebc95ab052cabde3c88fa9e139da394c50c2b94223c57272540b863f4a4c386972e40c",
+      "sign": "43a72e714401762df66b68c26dfbdf2682aaec9f2474eca4613e424a0fbafd3c",
+      "v": 1
+    },
+    "alice-cli-revoked": {
+      "account": "alice",
+      "at": 1500,
+      "by": "37f29b7074cf8b52",
+      "device": "6ec4cb2579ac7165",
+      "sig": "e624484369e56c8638a127a439135ce26545e91cccf54a6c5bef7261ba0d26a19dc68106a0f81834e74918f6779ac80be1c72707f6647b087a521239d423590e",
+      "v": 1
+    },
+    "bob": {
+      "account": "bob",
+      "approver": "c242667535a3d34f",
+      "created": 1000,
+      "device": "c242667535a3d34f",
+      "kind": "browser",
+      "name": "bob's laptop",
+      "noise": "0202020202020202020202020202020202020202020202020202020202020202",
+      "sig": "07e9418076d6edaf8c72fa5be449eeea02b612b5cd17ec9c6654519b853288b6d7a08c29100e96a0b5af3b13fb593ddb25335e0418d10dc2692d44cd3ed48103",
+      "sign": "8139770ea87d175f56a35466c34c7ecccb8d8a91b4ee37a25df60f5b8fc9b394",
+      "v": 1
+    },
+    "bob-phone": {
+      "account": "bob",
+      "approver": "c242667535a3d34f",
+      "created": 1100,
+      "device": "8c13188975e1a5ae",
+      "kind": "browser",
+      "name": "bob's phone",
+      "noise": "1414141414141414141414141414141414141414141414141414141414141414",
+      "sig": "5964781574f87c5343fb5677d521d41129643f379120c5996e2b1abe173f5877fa36d9190100ea8e22035cd804719b088d6f15176f040c848b6a2b0d92f77b07",
+      "sign": "20828bf5c5bdcacb684863336c202fb5599da48be5596615742170705beca9f7",
+      "v": 1
+    },
+    "bob-phone-revoked": {
+      "account": "bob",
+      "at": 9000,
+      "by": "c242667535a3d34f",
+      "device": "8c13188975e1a5ae",
+      "sig": "98d23024f388d50ad4db060a1f0bcba55619f23295a45a02aec506b0a67a4a9b5738c23ecbc4cc59bf749dfa10f5338263e1b555e0c1c69d394d3d93396f4e07",
+      "v": 1
+    },
+    "carol": {
+      "account": "carol",
+      "approver": "e0a128f98e5582a3",
+      "created": 1000,
+      "device": "e0a128f98e5582a3",
+      "kind": "browser",
+      "name": "carol's laptop",
+      "noise": "0303030303030303030303030303030303030303030303030303030303030303",
+      "sig": "aee83eb914ca2c52a2f38c8ce603540000692464333c3b427303f4e1441c40a070f7557a330fb6f408412456f5aa774ef088484ab04bc328e8307914b8b2dc09",
+      "sign": "ed4928c628d1c2c6eae90338905995612959273a5c63f93636c14614ac8737d1",
+      "v": 1
+    },
+    "mallory": {
+      "account": "mallory",
+      "approver": "9b64bd87042f22a7",
+      "created": 1000,
+      "device": "9b64bd87042f22a7",
+      "kind": "browser",
+      "name": "mallory's laptop",
+      "noise": "0404040404040404040404040404040404040404040404040404040404040404",
+      "sig": "0bd3bdc083ae3dba11b22c59e42c7e5f50f0ca78ac7cb924d4b6c619d8bb5ace53ecc6f249eb82adaf6df6f64ec61fdd2d4862954f77aa684f700919fb3acc06",
+      "sign": "ca93ac1705187071d67b83c7ff0efe8108e8ec4530575d7726879333dbdabe7c",
+      "v": 1
+    },
+    "v1": {
+      "at": 1000,
+      "by": "37f29b7074cf8b52",
+      "members": [
+        {"account": "alice", "name": "alice-login", "role": "owner", "root": "37f29b7074cf8b52"}
+      ],
+      "name": "Acme",
+      "sig": "44bc63feacd79c5491b58191f6fe923dbad50933cfde955cef8676a6923eebc2c70dfb0495a85cbeca47379aebf6c7d6252d16a97e79c312cac27598de307209",
+      "team": "t1",
+      "v": 1,
+      "version": 1
+    },
+    "v1-at-5000": {
+      "at": 5000,
+      "by": "37f29b7074cf8b52",
+      "members": [
+        {"account": "alice", "name": "alice-login", "role": "owner", "root": "37f29b7074cf8b52"}
+      ],
+      "name": "Acme",
+      "sig": "8c5675906fa2ea76e1e1fbb9c9cc60cbc1b56dc657e53a3b0c62c0a91644fb8c07782c793cc3cd9db96507dffa997e3c2aed271b0c45387957cd630394ad170f",
+      "team": "t1",
+      "v": 1,
+      "version": 1
+    },
+    "v1-bob-editor": {
+      "at": 1000,
+      "by": "37f29b7074cf8b52",
+      "members": [
+        {"account": "alice", "name": "alice-login", "role": "owner", "root": "37f29b7074cf8b52"},
+        {"account": "bob", "name": "bob-login", "role": "editor", "root": "c242667535a3d34f"}
+      ],
+      "name": "Acme",
+      "sig": "d9149e21fb7e917759dc736018c46656ee8bc525e109d33ab2adc153af38885e5725777794d972ff7a901e2301ee9f3a11d0cfeb88e817935a4a2986a130cd0f",
+      "team": "t1",
+      "v": 1,
+      "version": 1
+    },
+    "v1-bob-viewer": {
+      "at": 1000,
+      "by": "37f29b7074cf8b52",
+      "members": [
+        {"account": "alice", "name": "alice-login", "role": "owner", "root": "37f29b7074cf8b52"},
+        {"account": "bob", "name": "bob-login", "role": "viewer", "root": "c242667535a3d34f"}
+      ],
+      "name": "Acme",
+      "sig": "2331391ef8ae354524c0f8e2f5c360443cdb608735c8937b82f4b6d643637c25cd4f65c657f6e6ab00c89341291d5ecf6b397a4522f1aa7c800efb5c50dc3603",
+      "team": "t1",
+      "v": 1,
+      "version": 1
+    },
+    "v1-by-mallory": {
+      "at": 1000,
+      "by": "9b64bd87042f22a7",
+      "members": [
+        {"account": "mallory", "name": "mallory-login", "role": "owner", "root": "9b64bd87042f22a7"}
+      ],
+      "name": "Acme",
+      "sig": "3a89e0e9387c994ca400f2fbab1a91b2bafd1cef3a56f3c8a35c9072c7853956a0eb0521713bde81b0020ec83d2d3449962a9fa48b32f5f521dc542f016b4b0d",
+      "team": "t1",
+      "v": 1,
+      "version": 1
+    },
+    "v1-founded-by-app": {
+      "at": 1000,
+      "by": "422c26dbf1e40b7b",
+      "members": [
+        {"account": "alice", "name": "alice-login", "role": "owner", "root": "37f29b7074cf8b52"}
+      ],
+      "name": "Acme",
+      "sig": "e98f0805d1b85195be38f3e04d51139fef3c3f75bd5b03f6886968259d6688b7e62870ee5d6e66241dc0244115e5ca997ae6a131efbecc6f2a1e6d6c9b3bee02",
+      "team": "t1",
+      "v": 1,
+      "version": 1
+    },
+    "v1-founded-by-app-with-editor": {
+      "at": 1000,
+      "by": "422c26dbf1e40b7b",
+      "members": [
+        {"account": "alice", "name": "alice-login", "role": "owner", "root": "37f29b7074cf8b52"},
+        {"account": "bob", "name": "bob-login", "role": "editor", "root": "c242667535a3d34f"}
+      ],
+      "name": "Acme",
+      "sig": "bf3915d834c2d64e4977e5c7afcb8b664a19f4e191107cbbaa703fa06294fbb72861649854735a806237cc2a209c87ee0728cf2097a6536df6c07ed9327d9504",
+      "team": "t1",
+      "v": 1,
+      "version": 1
+    },
+    "v1-founded-by-app-with-owner": {
+      "at": 1000,
+      "by": "422c26dbf1e40b7b",
+      "members": [
+        {"account": "alice", "name": "alice-login", "role": "owner", "root": "37f29b7074cf8b52"},
+        {"account": "bob", "name": "bob-login", "role": "owner", "root": "c242667535a3d34f"}
+      ],
+      "name": "Acme",
+      "sig": "8bd47ab786ba826b84330296dbef3cd394030af112d2ca5c14206f721def8fbf32ed82eff4717034495a9466f51a5b5ccbd3e28cf4b98ddf31e904bac55eb900",
+      "team": "t1",
+      "v": 1,
+      "version": 1
+    },
+    "v1-founded-by-cli": {
+      "at": 1000,
+      "by": "6ec4cb2579ac7165",
+      "members": [
+        {"account": "alice", "name": "alice-login", "role": "owner", "root": "37f29b7074cf8b52"}
+      ],
+      "name": "Acme",
+      "sig": "cc51116d67ca6ac067f78548cbcaa99934ce73d28f267b37abb173a2b6bfb0dadf664bcaa9ae13d230f21794b8c2f7a9989287685b2473cc0b2fb1bf26cf4b0a",
+      "team": "t1",
+      "v": 1,
+      "version": 1
+    },
+    "v1-founded-by-cli-with-editor": {
+      "at": 1000,
+      "by": "6ec4cb2579ac7165",
+      "members": [
+        {"account": "alice", "name": "alice-login", "role": "owner", "root": "37f29b7074cf8b52"},
+        {"account": "bob", "name": "bob-login", "role": "editor", "root": "c242667535a3d34f"}
+      ],
+      "name": "Acme",
+      "sig": "ff0f165af541e62e05bc9161effb4105fe30ad6166cbd66f236a49ea9073771845938d484cc7db6921b6660d67bfd06a2572da3a2d013201de2b2aa5f671d00b",
+      "team": "t1",
+      "v": 1,
+      "version": 1
+    },
+    "v1-of-team-t2": {
+      "at": 1000,
+      "by": "37f29b7074cf8b52",
+      "members": [
+        {"account": "alice", "name": "alice-login", "role": "owner", "root": "37f29b7074cf8b52"}
+      ],
+      "name": "Acme",
+      "sig": "20dface4b1deac3654724bfd795fd708571fb7687946b0aef5d6ad998f46f0dafd693773f06e4b9bff5ad4264272e774cb543e7a501ee3807ed5217f7e8d5e09",
+      "team": "t2",
+      "v": 1,
+      "version": 1
+    },
+    "v1-promoted-after-signing": {
+      "at": 1000,
+      "by": "37f29b7074cf8b52",
+      "members": [
+        {"account": "alice", "name": "alice-login", "role": "owner", "root": "37f29b7074cf8b52"},
+        {"account": "bob", "name": "bob-login", "role": "owner", "root": "c242667535a3d34f"}
+      ],
+      "name": "Acme",
+      "sig": "2331391ef8ae354524c0f8e2f5c360443cdb608735c8937b82f4b6d643637c25cd4f65c657f6e6ab00c89341291d5ecf6b397a4522f1aa7c800efb5c50dc3603",
+      "team": "t1",
+      "v": 1,
+      "version": 1
+    },
+    "v2": {
+      "at": 2000,
+      "by": "37f29b7074cf8b52",
+      "members": [
+        {"account": "alice", "name": "alice-login", "role": "owner", "root": "37f29b7074cf8b52"},
+        {"account": "bob", "name": "bob-login", "role": "editor", "root": "c242667535a3d34f"}
+      ],
+      "name": "Acme",
+      "sig": "c06315d90eca5b99f9402ddc52759bc888cf6e2117ec0b9bec758e29f8e2c06e7f9bca547dcc26ffe29c475394ddbbd48b83da7505c69688b9ccb6872cb4ce08",
+      "team": "t1",
+      "v": 1,
+      "version": 2
+    },
+    "v2-adds-mallory-as-a-viewer-by-a-browser-alices-CLI-made:-never-trusted": {
+      "at": 2000,
+      "by": "a255a6fc4c7f915d",
+      "members": [
+        {"account": "alice", "name": "alice-login", "role": "owner", "root": "37f29b7074cf8b52"},
+        {"account": "bob", "name": "bob-login", "role": "viewer", "root": "c242667535a3d34f"},
+        {
+          "account": "mallory",
+          "name": "mallory-login",
+          "role": "viewer",
+          "root": "9b64bd87042f22a7"
+        }
+      ],
+      "name": "Acme",
+      "sig": "a84638b9c937418334e3c821030fbb71945528ca595ef1857040c2034968d8b57eb308704242d197da7bcf64a0843ff44f8e2cb3bb9677e61db2c87dca449705",
+      "team": "t1",
+      "v": 1,
+      "version": 2
+    },
+    "v2-adds-mallory-as-a-viewer-by-alices-CLI": {
+      "at": 2000,
+      "by": "6ec4cb2579ac7165",
+      "members": [
+        {"account": "alice", "name": "alice-login", "role": "owner", "root": "37f29b7074cf8b52"},
+        {"account": "bob", "name": "bob-login", "role": "viewer", "root": "c242667535a3d34f"},
+        {
+          "account": "mallory",
+          "name": "mallory-login",
+          "role": "viewer",
+          "root": "9b64bd87042f22a7"
+        }
+      ],
+      "name": "Acme",
+      "sig": "1194d808aa3e499ff821123bf63f8172b9e47636d2f33748d6c45415dfc473f2d39ecb4a2def46214fa2413cc1d2e8eb66f839aaffce22120aa8149bcec99f02",
+      "team": "t1",
+      "v": 1,
+      "version": 2
+    },
+    "v2-adds-mallory-as-a-viewer-by-alices-app": {
+      "at": 2000,
+      "by": "422c26dbf1e40b7b",
+      "members": [
+        {"account": "alice", "name": "alice-login", "role": "owner", "root": "37f29b7074cf8b52"},
+        {"account": "bob", "name": "bob-login", "role": "viewer", "root": "c242667535a3d34f"},
+        {
+          "account": "mallory",
+          "name": "mallory-login",
+          "role": "viewer",
+          "root": "9b64bd87042f22a7"
+        }
+      ],
+      "name": "Acme",
+      "sig": "c5c27a16ac1b4b9014447dae765a4d338c67204593cdab0478f36ec42ff22b2d7879c162bdc2034a4355005e3c55947ad780de05dddd25ed7ed78ce30978fe03",
+      "team": "t1",
+      "v": 1,
+      "version": 2
+    },
+    "v2-adds-mallory-as-a-viewer-by-alices-browser": {
+      "at": 2000,
+      "by": "37f29b7074cf8b52",
+      "members": [
+        {"account": "alice", "name": "alice-login", "role": "owner", "root": "37f29b7074cf8b52"},
+        {"account": "bob", "name": "bob-login", "role": "viewer", "root": "c242667535a3d34f"},
+        {
+          "account": "mallory",
+          "name": "mallory-login",
+          "role": "viewer",
+          "root": "9b64bd87042f22a7"
+        }
+      ],
+      "name": "Acme",
+      "sig": "3e0d1977418dbc6dc8feedc20ccaf863d84e4240779085c1ff56695ba7e78488ebea06fc4978fa4bac3dd1f91bc3cfef66da11e3057e66fca89d8789e9b4d20f",
+      "team": "t1",
+      "v": 1,
+      "version": 2
+    },
+    "v2-again": {
+      "at": 2500,
+      "by": "37f29b7074cf8b52",
+      "members": [
+        {"account": "alice", "name": "alice-login", "role": "owner", "root": "37f29b7074cf8b52"}
+      ],
+      "name": "Acme",
+      "sig": "e48295693014dda0815b9d1446589230a41ac51f0764be9b54f4909cb75ac4e5aad0f9114de18bdf25e1a1b11a279d95efa8c6b04914a990af6bc07e441f3801",
+      "team": "t1",
+      "v": 1,
+      "version": 2
+    },
+    "v2-bob-editor-elsewhere-by-cli": {
+      "at": 2000,
+      "by": "6ec4cb2579ac7165",
+      "members": [
+        {"account": "alice", "name": "alice-login", "role": "owner", "root": "37f29b7074cf8b52"},
+        {"account": "bob", "name": "bob-login", "role": "editor", "root": "9b64bd87042f22a7"}
+      ],
+      "name": "Acme",
+      "sig": "c91410b16cf8ef75d1a689fbb28498f92ad5d376c07e79a904ff99841787861b30544523de5867c203ee804c2cc36ee4e0372a5105f021afc19b4d4b4571830b",
+      "team": "t1",
+      "v": 1,
+      "version": 2
+    },
+    "v2-bob-redeems": {
+      "at": 2000,
+      "by": "acdb0e29743f0ccb8686d0a104cb96e05abefec1538765e7595869f7dc8c49aa",
+      "members": [
+        {"account": "alice", "name": "alice-login", "role": "owner", "root": "37f29b7074cf8b52"},
+        {"account": "bob", "name": "bob-login", "role": "editor", "root": "c242667535a3d34f"}
+      ],
+      "name": "Acme",
+      "redeem": {
+        "invite": {
+          "by": "37f29b7074cf8b52",
+          "expires": 10000,
+          "key": "acdb0e29743f0ccb8686d0a104cb96e05abefec1538765e7595869f7dc8c49aa",
+          "role": "editor",
+          "sig": "a1297f9b48791fcb2b4dc6f4b8f7b9e560745628fca8a3853a397e4672ef302c17fc5b42fc416291085220ea3a8016a6fdefac7dfa774ef5008b48e7e1899709",
+          "team": "t1"
+        },
+        "proof": "a8ed75b157703a186e8c8c8dcf95b4bf9a199203275e61e81b4209839cc093752591161ff26ef1b05ce40e77c86debc5955f48ca5601a4a39c46ec7d3f60ed05"
+      },
+      "sig": "faf9d0599d1b6ec2382cebabc7c730866bd7b3d296ac14884233d8fb75dc038ca0c525fec20f3eab2e04dfe0e89ab2eaf002a8d2bc66e9ae7f0de830a0330505",
+      "spent": [
+        {
+          "expires": 10000,
+          "key": "acdb0e29743f0ccb8686d0a104cb96e05abefec1538765e7595869f7dc8c49aa"
+        }
+      ],
+      "team": "t1",
+      "v": 2,
+      "version": 2
+    },
+    "v2-bob-redeems-viewer": {
+      "at": 2000,
+      "by": "4ed32f63bf35f0eeefcb25f28a2e1fbdc873ae2835671b0c9460f5f12e4556a8",
+      "members": [
+        {"account": "alice", "name": "alice-login", "role": "owner", "root": "37f29b7074cf8b52"},
+        {"account": "bob", "name": "bob-login", "role": "viewer", "root": "c242667535a3d34f"}
+      ],
+      "name": "Acme",
+      "redeem": {
+        "invite": {
+          "by": "37f29b7074cf8b52",
+          "expires": 10000,
+          "key": "4ed32f63bf35f0eeefcb25f28a2e1fbdc873ae2835671b0c9460f5f12e4556a8",
+          "role": "viewer",
+          "sig": "4b05d9a93ee2ffc4f97bce7ab765afb4a8e847a2096648e2f001b5114bcb905bba93e04b86d5ef5a0e4ae464720d197a0d01848e7c289059cb8811f6891ed100",
+          "team": "t1"
+        },
+        "proof": "538bc750908d9a6f051d047f6018f236e8fb5f66f62d8707d25b4247f40b174d0b66cdc9994dbb15d0f2d4ff144148eb64ab036fca43a75aab7e3d180196ed04"
+      },
+      "sig": "3de067ca79630c0f5111b048fb1f923dbf11f91c0aa14bcdc8a442b0e310f060f54e4f0bded0ec840f91ce44f9abe0663ef5181091db20a6a35831712001840a",
+      "spent": [
+        {
+          "expires": 10000,
+          "key": "4ed32f63bf35f0eeefcb25f28a2e1fbdc873ae2835671b0c9460f5f12e4556a8"
+        }
+      ],
+      "team": "t1",
+      "v": 2,
+      "version": 2
+    },
+    "v2-bobs-proof-for-mallory-signed-by-the-key": {
+      "at": 2000,
+      "by": "4ed32f63bf35f0eeefcb25f28a2e1fbdc873ae2835671b0c9460f5f12e4556a8",
+      "members": [
+        {"account": "alice", "name": "alice-login", "role": "owner", "root": "37f29b7074cf8b52"},
+        {
+          "account": "mallory",
+          "name": "mallory-login",
+          "role": "viewer",
+          "root": "9b64bd87042f22a7"
+        }
+      ],
+      "name": "Acme",
+      "redeem": {
+        "invite": {
+          "by": "37f29b7074cf8b52",
+          "expires": 10000,
+          "key": "4ed32f63bf35f0eeefcb25f28a2e1fbdc873ae2835671b0c9460f5f12e4556a8",
+          "role": "viewer",
+          "sig": "4b05d9a93ee2ffc4f97bce7ab765afb4a8e847a2096648e2f001b5114bcb905bba93e04b86d5ef5a0e4ae464720d197a0d01848e7c289059cb8811f6891ed100",
+          "team": "t1"
+        },
+        "proof": "538bc750908d9a6f051d047f6018f236e8fb5f66f62d8707d25b4247f40b174d0b66cdc9994dbb15d0f2d4ff144148eb64ab036fca43a75aab7e3d180196ed04"
+      },
+      "sig": "e5a7a468188733e958694874e7eda1c4a631a83c17f4d8e60ec0ba1d1b1b756f2a2ebadeb87c6535c66616667fea1fb67c1d1ae022243d4adc7a6e0be10c5901",
+      "spent": [
+        {
+          "expires": 10000,
+          "key": "4ed32f63bf35f0eeefcb25f28a2e1fbdc873ae2835671b0c9460f5f12e4556a8"
+        }
+      ],
+      "team": "t1",
+      "v": 2,
+      "version": 2
+    },
+    "v2-bobs-proof-moved-to-mallory": {
+      "at": 2000,
+      "by": "9b64bd87042f22a7",
+      "members": [
+        {"account": "alice", "name": "alice-login", "role": "owner", "root": "37f29b7074cf8b52"},
+        {
+          "account": "mallory",
+          "name": "mallory-login",
+          "role": "viewer",
+          "root": "9b64bd87042f22a7"
+        }
+      ],
+      "name": "Acme",
+      "redeem": {
+        "invite": {
+          "by": "37f29b7074cf8b52",
+          "expires": 10000,
+          "key": "4ed32f63bf35f0eeefcb25f28a2e1fbdc873ae2835671b0c9460f5f12e4556a8",
+          "role": "viewer",
+          "sig": "4b05d9a93ee2ffc4f97bce7ab765afb4a8e847a2096648e2f001b5114bcb905bba93e04b86d5ef5a0e4ae464720d197a0d01848e7c289059cb8811f6891ed100",
+          "team": "t1"
+        },
+        "proof": "538bc750908d9a6f051d047f6018f236e8fb5f66f62d8707d25b4247f40b174d0b66cdc9994dbb15d0f2d4ff144148eb64ab036fca43a75aab7e3d180196ed04"
+      },
+      "sig": "39d1cb946adefb8392eb743e7e7d4df45b73fa37f1cf914a3183d9f1dff3859c1520d2eec04ff1c1b562f3c8086d4cd3b4ae8a1e79704e52bf60be768e692e0e",
+      "spent": [
+        {
+          "expires": 10000,
+          "key": "4ed32f63bf35f0eeefcb25f28a2e1fbdc873ae2835671b0c9460f5f12e4556a8"
+        }
+      ],
+      "team": "t1",
+      "v": 2,
+      "version": 2
+    },
+    "v2-forged-proof": {
+      "at": 2000,
+      "by": "e92eb6054fe9bc682a1bcf3b759f65ab38a4cfbd81c4d1f3342e4cc9cded8b0b",
+      "members": [
+        {"account": "alice", "name": "alice-login", "role": "owner", "root": "37f29b7074cf8b52"},
+        {
+          "account": "mallory",
+          "name": "mallory-login",
+          "role": "viewer",
+          "root": "9b64bd87042f22a7"
+        }
+      ],
+      "name": "Acme",
+      "redeem": {
+        "invite": {
+          "by": "37f29b7074cf8b52",
+          "expires": 10000,
+          "key": "4ed32f63bf35f0eeefcb25f28a2e1fbdc873ae2835671b0c9460f5f12e4556a8",
+          "role": "viewer",
+          "sig": "4b05d9a93ee2ffc4f97bce7ab765afb4a8e847a2096648e2f001b5114bcb905bba93e04b86d5ef5a0e4ae464720d197a0d01848e7c289059cb8811f6891ed100",
+          "team": "t1"
+        },
+        "proof": "53e58cb062a9b1ecc28c4b37b3e116486b5b486afd138380e868a909c8b40b1c33513ec7ed4f321793fefdac9350752e043af881233063e8e2c1d43074674a0b"
+      },
+      "sig": "e54041d65beaa6703ba8255637560680aecea41c93aa2a64846983f8ca18cbb56245a7c3212d46479311ba6b7d80b28bef232c97301fa5ca3165c6d91a03ba04",
+      "spent": [
+        {
+          "expires": 10000,
+          "key": "4ed32f63bf35f0eeefcb25f28a2e1fbdc873ae2835671b0c9460f5f12e4556a8"
+        }
+      ],
+      "team": "t1",
+      "v": 2,
+      "version": 2
+    },
+    "v2-format-v1-with-spent": {
+      "at": 2000,
+      "by": "37f29b7074cf8b52",
+      "members": [
+        {"account": "alice", "name": "alice-login", "role": "owner", "root": "37f29b7074cf8b52"}
+      ],
+      "name": "Acme",
+      "sig": "7bce0cc53c6022cbd745f44ed1ccf1300661fdc87df04d1dd1cfb8de572fd551edf128d324ef66cb96f2fd9c758e06a4fa27030238b571bc52255369806f8a0b",
+      "spent": [
+        {"expires": 9, "key": "abababababababababababababababababababababababababababababababab"}
+      ],
+      "team": "t1",
+      "v": 1,
+      "version": 2
+    },
+    "v2-format-v2-with-spent": {
+      "at": 2000,
+      "by": "37f29b7074cf8b52",
+      "members": [
+        {"account": "alice", "name": "alice-login", "role": "owner", "root": "37f29b7074cf8b52"}
+      ],
+      "name": "Acme",
+      "sig": "32092ff2f327b5bec15d56091516c2a5bf276e1450377ecb80d31cac50d5cae1dbcc4baa4adc3d6e4c4e67950728d969325eb39687254789b94b6bee9227fe0a",
+      "spent": [
+        {"expires": 9, "key": "abababababababababababababababababababababababababababababababab"}
+      ],
+      "team": "t1",
+      "v": 2,
+      "version": 2
+    },
+    "v2-format-v3": {
+      "at": 2000,
+      "by": "37f29b7074cf8b52",
+      "members": [
+        {"account": "alice", "name": "alice-login", "role": "owner", "root": "37f29b7074cf8b52"}
+      ],
+      "name": "Acme",
+      "sig": "e117cab64255b374895381ff21a46ddfe3b296afcf8cd8d51b9e93547b05b0bc19b4bf39a28c66c58e14aa120c55c6060e2fe538e86bf96a6a1d5ed05019df03",
+      "team": "t1",
+      "v": 3,
+      "version": 2
+    },
+    "v2-makes-bob-an-editor-by-a-browser-alices-CLI-made:-never-trusted": {
+      "at": 2000,
+      "by": "a255a6fc4c7f915d",
+      "members": [
+        {"account": "alice", "name": "alice-login", "role": "owner", "root": "37f29b7074cf8b52"},
+        {"account": "bob", "name": "bob-login", "role": "editor", "root": "c242667535a3d34f"}
+      ],
+      "name": "Acme",
+      "sig": "7ea9c672ad9285ee66d59ea774734d9b7a738b5bac21a20c30d57c53b71f8b6f6708711012ff71ecde62bdbf2a8466d7c5444362da54720cc05366f63b0c950f",
+      "team": "t1",
+      "v": 1,
+      "version": 2
+    },
+    "v2-makes-bob-an-editor-by-alices-CLI": {
+      "at": 2000,
+      "by": "6ec4cb2579ac7165",
+      "members": [
+        {"account": "alice", "name": "alice-login", "role": "owner", "root": "37f29b7074cf8b52"},
+        {"account": "bob", "name": "bob-login", "role": "editor", "root": "c242667535a3d34f"}
+      ],
+      "name": "Acme",
+      "sig": "5145d2b43012b1887563706c6e840be59ffb9132d80131775992a77093ab1ebd3ad46354b4f8f6956d335828e76cfe390c0f08ff49dc4864827f18d028961309",
+      "team": "t1",
+      "v": 1,
+      "version": 2
+    },
+    "v2-makes-bob-an-editor-by-alices-app": {
+      "at": 2000,
+      "by": "422c26dbf1e40b7b",
+      "members": [
+        {"account": "alice", "name": "alice-login", "role": "owner", "root": "37f29b7074cf8b52"},
+        {"account": "bob", "name": "bob-login", "role": "editor", "root": "c242667535a3d34f"}
+      ],
+      "name": "Acme",
+      "sig": "07c1b37b626a28638d05592c0d2a5d3c61ae9fede5533fe56203ed0cc9cdc38a29e934cef99180c3d9c10ae0e1ca22e9e4d033efbbde0d703ecddd9f42ae110b",
+      "team": "t1",
+      "v": 1,
+      "version": 2
+    },
+    "v2-makes-bob-an-editor-by-alices-browser": {
+      "at": 2000,
+      "by": "37f29b7074cf8b52",
+      "members": [
+        {"account": "alice", "name": "alice-login", "role": "owner", "root": "37f29b7074cf8b52"},
+        {"account": "bob", "name": "bob-login", "role": "editor", "root": "c242667535a3d34f"}
+      ],
+      "name": "Acme",
+      "sig": "c06315d90eca5b99f9402ddc52759bc888cf6e2117ec0b9bec758e29f8e2c06e7f9bca547dcc26ffe29c475394ddbbd48b83da7505c69688b9ccb6872cb4ce08",
+      "team": "t1",
+      "v": 1,
+      "version": 2
+    },
+    "v2-makes-mallory-an-editor-by-a-browser-alices-CLI-made:-never-trusted": {
+      "at": 2000,
+      "by": "a255a6fc4c7f915d",
+      "members": [
+        {"account": "alice", "name": "alice-login", "role": "owner", "root": "37f29b7074cf8b52"},
+        {"account": "bob", "name": "bob-login", "role": "viewer", "root": "c242667535a3d34f"},
+        {
+          "account": "mallory",
+          "name": "mallory-login",
+          "role": "editor",
+          "root": "9b64bd87042f22a7"
+        }
+      ],
+      "name": "Acme",
+      "sig": "0c7a15bd1dc72d6339eebbf67a56e9461a6ec2a03deb2152062f91e520945e292682db8f4b580f2ef6bc054bb438272ce996de1cf04aa9cf1b3d9f54a7092a08",
+      "team": "t1",
+      "v": 1,
+      "version": 2
+    },
+    "v2-makes-mallory-an-editor-by-alices-CLI": {
+      "at": 2000,
+      "by": "6ec4cb2579ac7165",
+      "members": [
+        {"account": "alice", "name": "alice-login", "role": "owner", "root": "37f29b7074cf8b52"},
+        {"account": "bob", "name": "bob-login", "role": "viewer", "root": "c242667535a3d34f"},
+        {
+          "account": "mallory",
+          "name": "mallory-login",
+          "role": "editor",
+          "root": "9b64bd87042f22a7"
+        }
+      ],
+      "name": "Acme",
+      "sig": "70e724367da9a37fd4195e45b1114cbdc803a260eae4b6d0192a3434d969bc786d90de291c009cced19e04f4796547802d9dd4e11a772ad2c7f9a2d54534e90a",
+      "team": "t1",
+      "v": 1,
+      "version": 2
+    },
+    "v2-makes-mallory-an-editor-by-alices-app": {
+      "at": 2000,
+      "by": "422c26dbf1e40b7b",
+      "members": [
+        {"account": "alice", "name": "alice-login", "role": "owner", "root": "37f29b7074cf8b52"},
+        {"account": "bob", "name": "bob-login", "role": "viewer", "root": "c242667535a3d34f"},
+        {
+          "account": "mallory",
+          "name": "mallory-login",
+          "role": "editor",
+          "root": "9b64bd87042f22a7"
+        }
+      ],
+      "name": "Acme",
+      "sig": "8c09fec08f8f6f0bb89652246755565b029fde1dd7175d6e4764772fc8ee51b3d9faf6aa727d72437956780f42ec267e65bdaec68ea4d1f5918fb89f281ba40b",
+      "team": "t1",
+      "v": 1,
+      "version": 2
+    },
+    "v2-makes-mallory-an-editor-by-alices-browser": {
+      "at": 2000,
+      "by": "37f29b7074cf8b52",
+      "members": [
+        {"account": "alice", "name": "alice-login", "role": "owner", "root": "37f29b7074cf8b52"},
+        {"account": "bob", "name": "bob-login", "role": "viewer", "root": "c242667535a3d34f"},
+        {
+          "account": "mallory",
+          "name": "mallory-login",
+          "role": "editor",
+          "root": "9b64bd87042f22a7"
+        }
+      ],
+      "name": "Acme",
+      "sig": "80bd9e54888d17b8485644f16f3bdf0e791c7eb239637f7605e8a2845ccb4b58ed2d8874c4cf318fb3e74a06fc1431d1f0ba57d17b798f06b2788c5c383a0208",
+      "team": "t1",
+      "v": 1,
+      "version": 2
+    },
+    "v2-makes-mallory-an-owner-by-a-browser-alices-CLI-made:-never-trusted": {
+      "at": 2000,
+      "by": "a255a6fc4c7f915d",
+      "members": [
+        {"account": "alice", "name": "alice-login", "role": "owner", "root": "37f29b7074cf8b52"},
+        {"account": "bob", "name": "bob-login", "role": "viewer", "root": "c242667535a3d34f"},
+        {"account": "mallory", "name": "mallory-login", "role": "owner", "root": "9b64bd87042f22a7"}
+      ],
+      "name": "Acme",
+      "sig": "d47194ca39e574e76f2961f9ff345ca9e7f5b3614f4bc3872694ea8a3f2409d83b9d34d22e06ab0c8530195f8a5827179969832907c3cda84c424474c78c9507",
+      "team": "t1",
+      "v": 1,
+      "version": 2
+    },
+    "v2-makes-mallory-an-owner-by-alices-CLI": {
+      "at": 2000,
+      "by": "6ec4cb2579ac7165",
+      "members": [
+        {"account": "alice", "name": "alice-login", "role": "owner", "root": "37f29b7074cf8b52"},
+        {"account": "bob", "name": "bob-login", "role": "viewer", "root": "c242667535a3d34f"},
+        {"account": "mallory", "name": "mallory-login", "role": "owner", "root": "9b64bd87042f22a7"}
+      ],
+      "name": "Acme",
+      "sig": "581c66094b4d60a70950c1c31448e1a414c0f0c42905e648ba67d744c2043953cba3049d91806936b89eb49c43cfad869d05614c5b0feb6b70bc57d0e8718a0c",
+      "team": "t1",
+      "v": 1,
+      "version": 2
+    },
+    "v2-makes-mallory-an-owner-by-alices-app": {
+      "at": 2000,
+      "by": "422c26dbf1e40b7b",
+      "members": [
+        {"account": "alice", "name": "alice-login", "role": "owner", "root": "37f29b7074cf8b52"},
+        {"account": "bob", "name": "bob-login", "role": "viewer", "root": "c242667535a3d34f"},
+        {"account": "mallory", "name": "mallory-login", "role": "owner", "root": "9b64bd87042f22a7"}
+      ],
+      "name": "Acme",
+      "sig": "bbe0255d2383d138f65cba4c7f8e9adeb2aef43d4ac8fcb16911b9a495c46f81c423b77c94c94118e5c27bc9180849c1203f299f3418b2bc4ab25c62c6a43509",
+      "team": "t1",
+      "v": 1,
+      "version": 2
+    },
+    "v2-makes-mallory-an-owner-by-alices-browser": {
+      "at": 2000,
+      "by": "37f29b7074cf8b52",
+      "members": [
+        {"account": "alice", "name": "alice-login", "role": "owner", "root": "37f29b7074cf8b52"},
+        {"account": "bob", "name": "bob-login", "role": "viewer", "root": "c242667535a3d34f"},
+        {"account": "mallory", "name": "mallory-login", "role": "owner", "root": "9b64bd87042f22a7"}
+      ],
+      "name": "Acme",
+      "sig": "6f90372ebaa9aca12bcdaa9c2c2293b6da3568a133c5469ba6ca77b64b974c716c8f59608ec451b03a6781cb783f80dfcdf46b583396ce879e1e0630df0bf500",
+      "team": "t1",
+      "v": 1,
+      "version": 2
+    },
+    "v2-mallory-viewer": {
+      "at": 2000,
+      "by": "37f29b7074cf8b52",
+      "members": [
+        {"account": "alice", "name": "alice-login", "role": "owner", "root": "37f29b7074cf8b52"},
+        {
+          "account": "mallory",
+          "name": "mallory-login",
+          "role": "viewer",
+          "root": "9b64bd87042f22a7"
+        }
+      ],
+      "name": "Acme",
+      "sig": "1cc8c35dc8a68f02af41e0d85f232a87e2a16e4b7bf054e83ecb4bab8c8e6d8503077bc34fc3543ca5a106a777a2ddc7ab5971e9578af003d891b5c49fd0d008",
+      "team": "t1",
+      "v": 1,
+      "version": 2
+    },
+    "v2-moves-alices-own-entry-to-another-root-by-a-browser-alices-CLI-made:-never-trusted": {
+      "at": 2000,
+      "by": "a255a6fc4c7f915d",
+      "members": [
+        {"account": "alice", "name": "alice-login", "role": "owner", "root": "9b64bd87042f22a7"},
+        {"account": "bob", "name": "bob-login", "role": "viewer", "root": "c242667535a3d34f"}
+      ],
+      "name": "Acme",
+      "sig": "c7141273301ab9a89f0b8b46666885969ff7ec1104d4406cd29059465b16c8b40939375b21a9a515e054c685661fd719f550fa91955c16d7ab6835e7a9e90500",
+      "team": "t1",
+      "v": 1,
+      "version": 2
+    },
+    "v2-moves-alices-own-entry-to-another-root-by-alices-CLI": {
+      "at": 2000,
+      "by": "6ec4cb2579ac7165",
+      "members": [
+        {"account": "alice", "name": "alice-login", "role": "owner", "root": "9b64bd87042f22a7"},
+        {"account": "bob", "name": "bob-login", "role": "viewer", "root": "c242667535a3d34f"}
+      ],
+      "name": "Acme",
+      "sig": "ca7e92ddb7bc1c78a8d6976a2fe3801dd454d9223b2be1ed8e601b20894c9ed7168152cc706758b5ad51f12e3a33dab24a6e576239569f8631c4c265b8e9f004",
+      "team": "t1",
+      "v": 1,
+      "version": 2
+    },
+    "v2-moves-alices-own-entry-to-another-root-by-alices-app": {
+      "at": 2000,
+      "by": "422c26dbf1e40b7b",
+      "members": [
+        {"account": "alice", "name": "alice-login", "role": "owner", "root": "9b64bd87042f22a7"},
+        {"account": "bob", "name": "bob-login", "role": "viewer", "root": "c242667535a3d34f"}
+      ],
+      "name": "Acme",
+      "sig": "062d2b572cf9e3ad862708ba49ffbdf98046170ed2bdb3559e14ccb026f00e62ba4c4f6f5f976de3c8581d2cf53967ce837ab12fd739bd4a0733477eccd4310f",
+      "team": "t1",
+      "v": 1,
+      "version": 2
+    },
+    "v2-moves-alices-own-entry-to-another-root-by-alices-browser": {
+      "at": 2000,
+      "by": "37f29b7074cf8b52",
+      "members": [
+        {"account": "alice", "name": "alice-login", "role": "owner", "root": "9b64bd87042f22a7"},
+        {"account": "bob", "name": "bob-login", "role": "viewer", "root": "c242667535a3d34f"}
+      ],
+      "name": "Acme",
+      "sig": "1791530604dd94025256260451d86a5d30d612e674dc458f8b7c94f902c7c0b16f81afd800b06a91b1c5de32f33bb29d2b1e687f58e6689d5c11165dc820e800",
+      "team": "t1",
+      "v": 1,
+      "version": 2
+    },
+    "v2-name-81": {
+      "at": 2000,
+      "by": "37f29b7074cf8b52",
+      "members": [
+        {"account": "alice", "name": "alice-login", "role": "owner", "root": "37f29b7074cf8b52"}
+      ],
+      "name": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "sig": "c221eb11a614686d13b0dac6d2d76373f59216eb40d3b47896475b4a59c3f8ff34e12ca0e23a818daa24bc58025be286e53d34d2641d43f911bc5804451b5d02",
+      "team": "t1",
+      "v": 1,
+      "version": 2
+    },
+    "v2-newline-in-name": {
+      "at": 2000,
+      "by": "37f29b7074cf8b52",
+      "members": [
+        {"account": "alice", "name": "alice-login", "role": "owner", "root": "37f29b7074cf8b52"}
+      ],
+      "name": "Acme\nversion 99",
+      "sig": "20a30541d904c2f00ea5277333e21671b4cfb14e3e8d8229820ba0dd19a2271963961b2ce7fcb3fdb3798cb138ea9d629ad0bc3673e951e672459c93b5b1910c",
+      "team": "t1",
+      "v": 1,
+      "version": 2
+    },
+    "v2-no-owner": {
+      "at": 2000,
+      "by": "37f29b7074cf8b52",
+      "members": [
+        {"account": "alice", "name": "alice-login", "role": "editor", "root": "37f29b7074cf8b52"}
+      ],
+      "name": "Acme",
+      "sig": "705eb61092667a324a5d80c9fd1bf3e497f7677f584f7b619b2f1c0fc875977f5f209700fb9cde074c57b3191f4cb0b8767644b9ee0de18230a876eb8372e607",
+      "team": "t1",
+      "v": 1,
+      "version": 2
+    },
+    "v2-redeem-after-expiry": {
+      "at": 10001,
+      "by": "4ed32f63bf35f0eeefcb25f28a2e1fbdc873ae2835671b0c9460f5f12e4556a8",
+      "members": [
+        {"account": "alice", "name": "alice-login", "role": "owner", "root": "37f29b7074cf8b52"},
+        {"account": "bob", "name": "bob-login", "role": "viewer", "root": "c242667535a3d34f"}
+      ],
+      "name": "Acme",
+      "redeem": {
+        "invite": {
+          "by": "37f29b7074cf8b52",
+          "expires": 10000,
+          "key": "4ed32f63bf35f0eeefcb25f28a2e1fbdc873ae2835671b0c9460f5f12e4556a8",
+          "role": "viewer",
+          "sig": "4b05d9a93ee2ffc4f97bce7ab765afb4a8e847a2096648e2f001b5114bcb905bba93e04b86d5ef5a0e4ae464720d197a0d01848e7c289059cb8811f6891ed100",
+          "team": "t1"
+        },
+        "proof": "538bc750908d9a6f051d047f6018f236e8fb5f66f62d8707d25b4247f40b174d0b66cdc9994dbb15d0f2d4ff144148eb64ab036fca43a75aab7e3d180196ed04"
+      },
+      "sig": "1d0c000bcfcc2c81ff987905da7eb38c5109cdb2eeae3bf48f6d2e3810be7f609e5e7c2c9317b0164b4f5ea3804703463053a6d27641e8ef736c0a20e14fe603",
+      "spent": [
+        {
+          "expires": 10000,
+          "key": "4ed32f63bf35f0eeefcb25f28a2e1fbdc873ae2835671b0c9460f5f12e4556a8"
+        }
+      ],
+      "team": "t1",
+      "v": 2,
+      "version": 2
+    },
+    "v2-redeem-alice-again": {
+      "at": 2000,
+      "by": "4ed32f63bf35f0eeefcb25f28a2e1fbdc873ae2835671b0c9460f5f12e4556a8",
+      "members": [
+        {"account": "alice", "name": "alice-login", "role": "owner", "root": "37f29b7074cf8b52"},
+        {"account": "alice", "name": "alice2", "role": "viewer", "root": "37f29b7074cf8b52"}
+      ],
+      "name": "Acme",
+      "redeem": {
+        "invite": {
+          "by": "37f29b7074cf8b52",
+          "expires": 10000,
+          "key": "4ed32f63bf35f0eeefcb25f28a2e1fbdc873ae2835671b0c9460f5f12e4556a8",
+          "role": "viewer",
+          "sig": "4b05d9a93ee2ffc4f97bce7ab765afb4a8e847a2096648e2f001b5114bcb905bba93e04b86d5ef5a0e4ae464720d197a0d01848e7c289059cb8811f6891ed100",
+          "team": "t1"
+        },
+        "proof": "cefd41b5b06f2d8cc3df5f0f45d211b57f24fda23d1063e8e3cf5b08b2271517cb50587aed59266ff7f066cef238c439ac0a0a1b0bef25fb4e1f859f1dc54700"
+      },
+      "sig": "ff011962288c0fd9bd743c2602ac6a7b9b36d4335e22befc4cc106d6cccbe58a2e70c88781e4617017d6bd5cfbc65fb08b5e3270bf92aa82ba556393f7456b01",
+      "spent": [
+        {
+          "expires": 10000,
+          "key": "4ed32f63bf35f0eeefcb25f28a2e1fbdc873ae2835671b0c9460f5f12e4556a8"
+        }
+      ],
+      "team": "t1",
+      "v": 2,
+      "version": 2
+    },
+    "v2-redeem-another-teams-invite": {
+      "at": 2000,
+      "by": "74f85cda34d1c27c4621484731e91579c3d9c6cfc0d94b281aa11e9162058aa9",
+      "members": [
+        {"account": "alice", "name": "alice-login", "role": "owner", "root": "37f29b7074cf8b52"},
+        {"account": "bob", "name": "bob-login", "role": "viewer", "root": "c242667535a3d34f"}
+      ],
+      "name": "Acme",
+      "redeem": {
+        "invite": {
+          "by": "37f29b7074cf8b52",
+          "expires": 10000,
+          "key": "74f85cda34d1c27c4621484731e91579c3d9c6cfc0d94b281aa11e9162058aa9",
+          "role": "viewer",
+          "sig": "51876d2926146c3b92f0aeff64a463453ad8a0b3169dc6857c718cbc88da3d88dc6fa2ddf6b761aeb8cec02dffd694b6ebd8ad240d124401c7bb128db1fa7405",
+          "team": "t2"
+        },
+        "proof": "48344f66aba1e6c814c44e6f265c00492b12d4c2e855e9b24856b27bacb7ad1d02b36acb85d7f103fc8310fd1aaa34a9cddcfc4c6e5406f563ab736b83927106"
+      },
+      "sig": "1b6bb3bc137b10f4ec2393cbb3f9f2387d327fc671deece632bf562ab9b65b5e1b9a2d06f0500f28dd01191cfb7e6018517e2577b97ddbb0c0646fd434725e0f",
+      "spent": [
+        {
+          "expires": 10000,
+          "key": "74f85cda34d1c27c4621484731e91579c3d9c6cfc0d94b281aa11e9162058aa9"
+        }
+      ],
+      "team": "t1",
+      "v": 2,
+      "version": 2
+    },
+    "v2-redeem-at-expiry": {
+      "at": 10000,
+      "by": "4ed32f63bf35f0eeefcb25f28a2e1fbdc873ae2835671b0c9460f5f12e4556a8",
+      "members": [
+        {"account": "alice", "name": "alice-login", "role": "owner", "root": "37f29b7074cf8b52"},
+        {"account": "bob", "name": "bob-login", "role": "viewer", "root": "c242667535a3d34f"}
+      ],
+      "name": "Acme",
+      "redeem": {
+        "invite": {
+          "by": "37f29b7074cf8b52",
+          "expires": 10000,
+          "key": "4ed32f63bf35f0eeefcb25f28a2e1fbdc873ae2835671b0c9460f5f12e4556a8",
+          "role": "viewer",
+          "sig": "4b05d9a93ee2ffc4f97bce7ab765afb4a8e847a2096648e2f001b5114bcb905bba93e04b86d5ef5a0e4ae464720d197a0d01848e7c289059cb8811f6891ed100",
+          "team": "t1"
+        },
+        "proof": "538bc750908d9a6f051d047f6018f236e8fb5f66f62d8707d25b4247f40b174d0b66cdc9994dbb15d0f2d4ff144148eb64ab036fca43a75aab7e3d180196ed04"
+      },
+      "sig": "b9720c5a137779442f4f0eac12696147e12c9fc694497d599985fb01af4212f6479659d74bf6e7a031a64baadae15c97b2977c3c3a132ef0bb425416a00c6c0e",
+      "spent": [
+        {
+          "expires": 10000,
+          "key": "4ed32f63bf35f0eeefcb25f28a2e1fbdc873ae2835671b0c9460f5f12e4556a8"
+        }
+      ],
+      "team": "t1",
+      "v": 2,
+      "version": 2
+    },
+    "v2-redeem-backdated": {
+      "at": 4999,
+      "by": "4ed32f63bf35f0eeefcb25f28a2e1fbdc873ae2835671b0c9460f5f12e4556a8",
+      "members": [
+        {"account": "alice", "name": "alice-login", "role": "owner", "root": "37f29b7074cf8b52"},
+        {"account": "bob", "name": "bob-login", "role": "viewer", "root": "c242667535a3d34f"}
+      ],
+      "name": "Acme",
+      "redeem": {
+        "invite": {
+          "by": "37f29b7074cf8b52",
+          "expires": 10000,
+          "key": "4ed32f63bf35f0eeefcb25f28a2e1fbdc873ae2835671b0c9460f5f12e4556a8",
+          "role": "viewer",
+          "sig": "4b05d9a93ee2ffc4f97bce7ab765afb4a8e847a2096648e2f001b5114bcb905bba93e04b86d5ef5a0e4ae464720d197a0d01848e7c289059cb8811f6891ed100",
+          "team": "t1"
+        },
+        "proof": "538bc750908d9a6f051d047f6018f236e8fb5f66f62d8707d25b4247f40b174d0b66cdc9994dbb15d0f2d4ff144148eb64ab036fca43a75aab7e3d180196ed04"
+      },
+      "sig": "66c5ea779370ede51f369f51d1f665463f00b0268a129d8ce2d384ea8477069d681d1710582081fb63991fad7428a8172f0219f90e351bb2df68cbfbcd695a05",
+      "spent": [
+        {
+          "expires": 10000,
+          "key": "4ed32f63bf35f0eeefcb25f28a2e1fbdc873ae2835671b0c9460f5f12e4556a8"
+        }
+      ],
+      "team": "t1",
+      "v": 2,
+      "version": 2
+    },
+    "v2-redeem-higher-role": {
+      "at": 2000,
+      "by": "4ed32f63bf35f0eeefcb25f28a2e1fbdc873ae2835671b0c9460f5f12e4556a8",
+      "members": [
+        {"account": "alice", "name": "alice-login", "role": "owner", "root": "37f29b7074cf8b52"},
+        {"account": "bob", "name": "bob-login", "role": "editor", "root": "c242667535a3d34f"}
+      ],
+      "name": "Acme",
+      "redeem": {
+        "invite": {
+          "by": "37f29b7074cf8b52",
+          "expires": 10000,
+          "key": "4ed32f63bf35f0eeefcb25f28a2e1fbdc873ae2835671b0c9460f5f12e4556a8",
+          "role": "viewer",
+          "sig": "4b05d9a93ee2ffc4f97bce7ab765afb4a8e847a2096648e2f001b5114bcb905bba93e04b86d5ef5a0e4ae464720d197a0d01848e7c289059cb8811f6891ed100",
+          "team": "t1"
+        },
+        "proof": "538bc750908d9a6f051d047f6018f236e8fb5f66f62d8707d25b4247f40b174d0b66cdc9994dbb15d0f2d4ff144148eb64ab036fca43a75aab7e3d180196ed04"
+      },
+      "sig": "4ddc47d615ee4c5ac6deee48c8e9783cfe98d75df3f570fb367a4e821334cbaec69285969ffc4ebdcf4d60e3cf84b1a4b55d1206e7c5e9993381247ece3b6708",
+      "spent": [
+        {
+          "expires": 10000,
+          "key": "4ed32f63bf35f0eeefcb25f28a2e1fbdc873ae2835671b0c9460f5f12e4556a8"
+        }
+      ],
+      "team": "t1",
+      "v": 2,
+      "version": 2
+    },
+    "v2-redeem-in-format-v1": {
+      "at": 2000,
+      "by": "4ed32f63bf35f0eeefcb25f28a2e1fbdc873ae2835671b0c9460f5f12e4556a8",
+      "members": [
+        {"account": "alice", "name": "alice-login", "role": "owner", "root": "37f29b7074cf8b52"},
+        {"account": "bob", "name": "bob-login", "role": "viewer", "root": "c242667535a3d34f"}
+      ],
+      "name": "Acme",
+      "redeem": {
+        "invite": {
+          "by": "37f29b7074cf8b52",
+          "expires": 10000,
+          "key": "4ed32f63bf35f0eeefcb25f28a2e1fbdc873ae2835671b0c9460f5f12e4556a8",
+          "role": "viewer",
+          "sig": "4b05d9a93ee2ffc4f97bce7ab765afb4a8e847a2096648e2f001b5114bcb905bba93e04b86d5ef5a0e4ae464720d197a0d01848e7c289059cb8811f6891ed100",
+          "team": "t1"
+        },
+        "proof": "538bc750908d9a6f051d047f6018f236e8fb5f66f62d8707d25b4247f40b174d0b66cdc9994dbb15d0f2d4ff144148eb64ab036fca43a75aab7e3d180196ed04"
+      },
+      "sig": "38e19699438233b520cae9425c5f37eb7cbc8762f709fa41d2da8509b02379d28cff5253f6811da99bd6d87aecc29f7000fced7acacbed2671421b224929ab05",
+      "spent": [
+        {
+          "expires": 10000,
+          "key": "4ed32f63bf35f0eeefcb25f28a2e1fbdc873ae2835671b0c9460f5f12e4556a8"
+        }
+      ],
+      "team": "t1",
+      "v": 1,
+      "version": 2
+    },
+    "v2-redeem-not-marked-spent": {
+      "at": 2000,
+      "by": "4ed32f63bf35f0eeefcb25f28a2e1fbdc873ae2835671b0c9460f5f12e4556a8",
+      "members": [
+        {"account": "alice", "name": "alice-login", "role": "owner", "root": "37f29b7074cf8b52"},
+        {"account": "bob", "name": "bob-login", "role": "viewer", "root": "c242667535a3d34f"}
+      ],
+      "name": "Acme",
+      "redeem": {
+        "invite": {
+          "by": "37f29b7074cf8b52",
+          "expires": 10000,
+          "key": "4ed32f63bf35f0eeefcb25f28a2e1fbdc873ae2835671b0c9460f5f12e4556a8",
+          "role": "viewer",
+          "sig": "4b05d9a93ee2ffc4f97bce7ab765afb4a8e847a2096648e2f001b5114bcb905bba93e04b86d5ef5a0e4ae464720d197a0d01848e7c289059cb8811f6891ed100",
+          "team": "t1"
+        },
+        "proof": "538bc750908d9a6f051d047f6018f236e8fb5f66f62d8707d25b4247f40b174d0b66cdc9994dbb15d0f2d4ff144148eb64ab036fca43a75aab7e3d180196ed04"
+      },
+      "sig": "f8574f3c338b5f66dc90b2d4292ae93b0ef80f4e5daac4c530d8f377f890b729b8e46f50f2db09b48f2c6ec6068566cf8c229286028ac7bb8b9ffd7a5f602d0e",
+      "team": "t1",
+      "v": 2,
+      "version": 2
+    },
+    "v2-redeem-one-time-app-editor": {
+      "at": 2000,
+      "by": "9109db55f79797a396462fb895c2adcea7e8683c2f3056c07a5475155537b73e",
+      "members": [
+        {"account": "alice", "name": "alice-login", "role": "owner", "root": "37f29b7074cf8b52"},
+        {
+          "account": "mallory",
+          "name": "mallory-login",
+          "role": "editor",
+          "root": "9b64bd87042f22a7"
+        }
+      ],
+      "name": "Acme",
+      "redeem": {
+        "invite": {
+          "by": "422c26dbf1e40b7b",
+          "expires": 10000,
+          "key": "9109db55f79797a396462fb895c2adcea7e8683c2f3056c07a5475155537b73e",
+          "role": "editor",
+          "sig": "272a28fc23b7877ad322304f7c2f635cd85510caba3bce9e32a52de86581a0848691f1852749828b015ae0572f28222eb397f0d1938381b552c851a0492d860a",
+          "team": "t1"
+        },
+        "proof": "de5aafe61fe11e55a16848b005edfe416de2e9be2af532a321d044b722de6461cf1f8296c053e1b1c8ac4b06ee426dcc8ef7c5d59acb3900856e1c46e200ed04"
+      },
+      "sig": "75271fd558a16f53edd2aa29d3b77ab0c4d0d80724e68f229d6e34b54c94278fe30a67fb437ef47f3fd09618168bb9109b875f9ace612df909bd1e0f09afb90b",
+      "spent": [
+        {
+          "expires": 10000,
+          "key": "9109db55f79797a396462fb895c2adcea7e8683c2f3056c07a5475155537b73e"
+        }
+      ],
+      "team": "t1",
+      "v": 2,
+      "version": 2
+    },
+    "v2-redeem-one-time-cli-editor": {
+      "at": 2000,
+      "by": "58936604abda112bc94933569c82f8d0cc0ddf92a3f8329f2f448f7f484a594c",
+      "members": [
+        {"account": "alice", "name": "alice-login", "role": "owner", "root": "37f29b7074cf8b52"},
+        {
+          "account": "mallory",
+          "name": "mallory-login",
+          "role": "editor",
+          "root": "9b64bd87042f22a7"
+        }
+      ],
+      "name": "Acme",
+      "redeem": {
+        "invite": {
+          "by": "6ec4cb2579ac7165",
+          "expires": 10000,
+          "key": "58936604abda112bc94933569c82f8d0cc0ddf92a3f8329f2f448f7f484a594c",
+          "role": "editor",
+          "sig": "c66a32b62fa9c56f7f4eace889612c503b0f2058b684364cd2225664a842c6112866224394093401a592318ea45fdd5c8a7f73621e7d2cb2207d6f67d64eb801",
+          "team": "t1"
+        },
+        "proof": "e819e679d0f2d9378f39272cfedab73c12887a294c3f86a119a1f1ec869552a82ea6bd2a4469a2256ba33ab354b6b46f731d8093dda0ea5d2cf0dfaf9db8860e"
+      },
+      "sig": "9dd7b461c209fc19c832854ac243fa48590b91bbe4bbf0bdcdd6d14e59490c1b8b8fc0f7f8dba127c25536d179da48cbfd5d8b96e681d0a06819f14236b35d09",
+      "spent": [
+        {
+          "expires": 10000,
+          "key": "58936604abda112bc94933569c82f8d0cc0ddf92a3f8329f2f448f7f484a594c"
+        }
+      ],
+      "team": "t1",
+      "v": 2,
+      "version": 2
+    },
+    "v2-redeem-one-time-cli-viewer": {
+      "at": 2000,
+      "by": "bed7d2ab668da3efad613998f06f7abf7875f3a6b7677a9f3ce947d77d7760a6",
+      "members": [
+        {"account": "alice", "name": "alice-login", "role": "owner", "root": "37f29b7074cf8b52"},
+        {
+          "account": "mallory",
+          "name": "mallory-login",
+          "role": "viewer",
+          "root": "9b64bd87042f22a7"
+        }
+      ],
+      "name": "Acme",
+      "redeem": {
+        "invite": {
+          "by": "6ec4cb2579ac7165",
+          "expires": 10000,
+          "key": "bed7d2ab668da3efad613998f06f7abf7875f3a6b7677a9f3ce947d77d7760a6",
+          "role": "viewer",
+          "sig": "b462e7b074f618f1c170b000e735811274b89ec0f2a64a3deea474043476b88b6ced8ffb8bc437f0e1f9f368e16fb6754c01f5fb0cd7dc71417f8470746bcd06",
+          "team": "t1"
+        },
+        "proof": "73ef87fbc551504df782aa0190981c1c93d8ccf0d10a659c538b1f2ba0a8221a0977d41ff6cf82b30c390a2668f4a078d608b769c0ed69adf271b32ccdea1c00"
+      },
+      "sig": "1917b44f89756a535eb18b8b91f65d63256713c90357dbe9073fdfc190a151678d2e34efe46163b4dca995d7bf8cc003a75ce5b1127b1f4cb7b9f8a99cf24905",
+      "spent": [
+        {
+          "expires": 10000,
+          "key": "bed7d2ab668da3efad613998f06f7abf7875f3a6b7677a9f3ce947d77d7760a6"
+        }
+      ],
+      "team": "t1",
+      "v": 2,
+      "version": 2
+    },
+    "v2-redeem-one-time-laundered-editor": {
+      "at": 2000,
+      "by": "ee45ecb9aca01a0abd83ef56dd985c8c874e6e7f4aebcedf20bd8d88c2a0add7",
+      "members": [
+        {"account": "alice", "name": "alice-login", "role": "owner", "root": "37f29b7074cf8b52"},
+        {
+          "account": "mallory",
+          "name": "mallory-login",
+          "role": "editor",
+          "root": "9b64bd87042f22a7"
+        }
+      ],
+      "name": "Acme",
+      "redeem": {
+        "invite": {
+          "by": "a255a6fc4c7f915d",
+          "expires": 10000,
+          "key": "ee45ecb9aca01a0abd83ef56dd985c8c874e6e7f4aebcedf20bd8d88c2a0add7",
+          "role": "editor",
+          "sig": "87cb5bc87954ae6f993a7aba82f1b095a319f769669914ff3c06b23c44169ed94890a94356246ca61e21d005b972f86613ce074ef4439d3672953d05fc570608",
+          "team": "t1"
+        },
+        "proof": "212b69af3413cdf925be1afeffd51710e1d3e2183f9f85a9704f527bee3bb5d9d9a2b20e50dc8fd3a6c144537d09eb0e772d788b339b228361fe62665b7f900d"
+      },
+      "sig": "fcac453c39808f49ac5c507a79cf08280b27b0278a5c86f68d7a6a61093005b5fad4746f7dd32a71689b8b6659f48fa770effcbd07c5a025d0b87dadc1cd6905",
+      "spent": [
+        {
+          "expires": 10000,
+          "key": "ee45ecb9aca01a0abd83ef56dd985c8c874e6e7f4aebcedf20bd8d88c2a0add7"
+        }
+      ],
+      "team": "t1",
+      "v": 2,
+      "version": 2
+    },
+    "v2-redeem-owner-invite": {
+      "at": 2000,
+      "by": "a09aa5f47a6759802ff955f8dc2d2a14a5c99d23be97f864127ff9383455a4f0",
+      "members": [
+        {"account": "alice", "name": "alice-login", "role": "owner", "root": "37f29b7074cf8b52"},
+        {"account": "bob", "name": "bob-login", "role": "owner", "root": "c242667535a3d34f"}
+      ],
+      "name": "Acme",
+      "redeem": {
+        "invite": {
+          "by": "37f29b7074cf8b52",
+          "expires": 10000,
+          "key": "a09aa5f47a6759802ff955f8dc2d2a14a5c99d23be97f864127ff9383455a4f0",
+          "role": "owner",
+          "sig": "25ddecc1e8b541411ba696c519f748d1c453a26ebfd7b812008811b79776870dafb7714da228f88e58e3d948059da95eca19a92aa2202b782de9802c72674009",
+          "team": "t1"
+        },
+        "proof": "104ceee98925cfec7321b8dff0bc22f70e30b40927f4a5e3da2091d29508fd8accc76ce94df2996cc573406c80cd56a88916d24cc5fc94c2b3ab3af22176070d"
+      },
+      "sig": "8634ec888b81f64cc344bb69cdc59f12239ced0838b9a3b3a91d5220d8a1788db7307b7b0fd0cdc8f61cffb73bd258201008deab7253cfa85810aff1684d820c",
+      "spent": [
+        {
+          "expires": 10000,
+          "key": "a09aa5f47a6759802ff955f8dc2d2a14a5c99d23be97f864127ff9383455a4f0"
+        }
+      ],
+      "team": "t1",
+      "v": 2,
+      "version": 2
+    },
+    "v2-redeem-renames-the-team": {
+      "at": 2000,
+      "by": "4ed32f63bf35f0eeefcb25f28a2e1fbdc873ae2835671b0c9460f5f12e4556a8",
+      "members": [
+        {"account": "alice", "name": "alice-login", "role": "owner", "root": "37f29b7074cf8b52"},
+        {"account": "bob", "name": "bob-login", "role": "viewer", "root": "c242667535a3d34f"}
+      ],
+      "name": "Evil Corp",
+      "redeem": {
+        "invite": {
+          "by": "37f29b7074cf8b52",
+          "expires": 10000,
+          "key": "4ed32f63bf35f0eeefcb25f28a2e1fbdc873ae2835671b0c9460f5f12e4556a8",
+          "role": "viewer",
+          "sig": "4b05d9a93ee2ffc4f97bce7ab765afb4a8e847a2096648e2f001b5114bcb905bba93e04b86d5ef5a0e4ae464720d197a0d01848e7c289059cb8811f6891ed100",
+          "team": "t1"
+        },
+        "proof": "538bc750908d9a6f051d047f6018f236e8fb5f66f62d8707d25b4247f40b174d0b66cdc9994dbb15d0f2d4ff144148eb64ab036fca43a75aab7e3d180196ed04"
+      },
+      "sig": "b3a198cba83e09a98f75a7e1bb09c6013718ddcf9dc6fab2670495f7b1c090ebf974d312884264304b463971627e40a92a62cf811c009e9074b9230541dfb70f",
+      "spent": [
+        {
+          "expires": 10000,
+          "key": "4ed32f63bf35f0eeefcb25f28a2e1fbdc873ae2835671b0c9460f5f12e4556a8"
+        }
+      ],
+      "team": "t1",
+      "v": 2,
+      "version": 2
+    },
+    "v2-redeem-signed-by-an-owner": {
+      "at": 2000,
+      "by": "37f29b7074cf8b52",
+      "members": [
+        {"account": "alice", "name": "alice-login", "role": "owner", "root": "37f29b7074cf8b52"},
+        {"account": "bob", "name": "bob-login", "role": "viewer", "root": "c242667535a3d34f"}
+      ],
+      "name": "Acme",
+      "redeem": {
+        "invite": {
+          "by": "37f29b7074cf8b52",
+          "expires": 10000,
+          "key": "4ed32f63bf35f0eeefcb25f28a2e1fbdc873ae2835671b0c9460f5f12e4556a8",
+          "role": "viewer",
+          "sig": "4b05d9a93ee2ffc4f97bce7ab765afb4a8e847a2096648e2f001b5114bcb905bba93e04b86d5ef5a0e4ae464720d197a0d01848e7c289059cb8811f6891ed100",
+          "team": "t1"
+        },
+        "proof": "538bc750908d9a6f051d047f6018f236e8fb5f66f62d8707d25b4247f40b174d0b66cdc9994dbb15d0f2d4ff144148eb64ab036fca43a75aab7e3d180196ed04"
+      },
+      "sig": "dd08eafde339d37eba0db30840c8c9268f849f20b08f4f8cde55d7bc5e49582e540c193c8ddc641b394779f463a3e7f7268176daf6fe5b31497a6f78481b8b0a",
+      "spent": [
+        {
+          "expires": 10000,
+          "key": "4ed32f63bf35f0eeefcb25f28a2e1fbdc873ae2835671b0c9460f5f12e4556a8"
+        }
+      ],
+      "team": "t1",
+      "v": 2,
+      "version": 2
+    },
+    "v2-redeem-signed-by-bobs-device": {
+      "at": 2000,
+      "by": "c242667535a3d34f",
+      "members": [
+        {"account": "alice", "name": "alice-login", "role": "owner", "root": "37f29b7074cf8b52"},
+        {"account": "bob", "name": "bob-login", "role": "viewer", "root": "c242667535a3d34f"}
+      ],
+      "name": "Acme",
+      "redeem": {
+        "invite": {
+          "by": "37f29b7074cf8b52",
+          "expires": 10000,
+          "key": "4ed32f63bf35f0eeefcb25f28a2e1fbdc873ae2835671b0c9460f5f12e4556a8",
+          "role": "viewer",
+          "sig": "4b05d9a93ee2ffc4f97bce7ab765afb4a8e847a2096648e2f001b5114bcb905bba93e04b86d5ef5a0e4ae464720d197a0d01848e7c289059cb8811f6891ed100",
+          "team": "t1"
+        },
+        "proof": "538bc750908d9a6f051d047f6018f236e8fb5f66f62d8707d25b4247f40b174d0b66cdc9994dbb15d0f2d4ff144148eb64ab036fca43a75aab7e3d180196ed04"
+      },
+      "sig": "2e3be62c701759f4dae73260d798a36545bc464a97f8b7a550ee1190eccca934b6ee22e7c775af881dce208fb7264b74d306d029e4ee2af9e969c2402b7b4c07",
+      "spent": [
+        {
+          "expires": 10000,
+          "key": "4ed32f63bf35f0eeefcb25f28a2e1fbdc873ae2835671b0c9460f5f12e4556a8"
+        }
+      ],
+      "team": "t1",
+      "v": 2,
+      "version": 2
+    },
+    "v2-space-in-member-name": {
+      "at": 2000,
+      "by": "37f29b7074cf8b52",
+      "members": [
+        {"account": "alice", "name": "alice-login", "role": "owner", "root": "37f29b7074cf8b52"},
+        {"account": "bob", "name": "bob login", "role": "viewer", "root": "c242667535a3d34f"}
+      ],
+      "name": "Acme",
+      "sig": "4fcb8790c5b484da097ff3b50b4b358905c88d0b1dabc4bbd2475051033b201720454f64fb8b3faec841da5114e85ed285f6ea7c819b38698dd43dd62b42ee0f",
+      "team": "t1",
+      "v": 1,
+      "version": 2
+    },
+    "v2-takes-bob-out-by-a-browser-alices-CLI-made:-never-trusted": {
+      "at": 2000,
+      "by": "a255a6fc4c7f915d",
+      "members": [
+        {"account": "alice", "name": "alice-login", "role": "owner", "root": "37f29b7074cf8b52"}
+      ],
+      "name": "Acme",
+      "sig": "edc01b3a517978bd78beea845d32c9a8ff871c9b1ff26b8acfccbd554c6e90b8501970461a2f7588077ca65dc6741c87bc4c813d280c4534963c8f2e5b0de40f",
+      "team": "t1",
+      "v": 1,
+      "version": 2
+    },
+    "v2-takes-bob-out-by-alices-CLI": {
+      "at": 2000,
+      "by": "6ec4cb2579ac7165",
+      "members": [
+        {"account": "alice", "name": "alice-login", "role": "owner", "root": "37f29b7074cf8b52"}
+      ],
+      "name": "Acme",
+      "sig": "76fef44d89467254a04fbd716aa1457c3ebe4f8d0c8fa0676a5a8709068cb0e0cc09d2b86c24003d1b463e5e3c5b43eca829151d57fd9af6879e3a92d4048a05",
+      "team": "t1",
+      "v": 1,
+      "version": 2
+    },
+    "v2-takes-bob-out-by-alices-app": {
+      "at": 2000,
+      "by": "422c26dbf1e40b7b",
+      "members": [
+        {"account": "alice", "name": "alice-login", "role": "owner", "root": "37f29b7074cf8b52"}
+      ],
+      "name": "Acme",
+      "sig": "ab7e6be420d7e01c1833030a8e2511e2d9b8965a428ef388394969b597f9d6438657274f6fa267c4a2f7e288c13685f69d1b18cef34a226e32771741b4cfd70d",
+      "team": "t1",
+      "v": 1,
+      "version": 2
+    },
+    "v2-takes-bob-out-by-alices-browser": {
+      "at": 2000,
+      "by": "37f29b7074cf8b52",
+      "members": [
+        {"account": "alice", "name": "alice-login", "role": "owner", "root": "37f29b7074cf8b52"}
+      ],
+      "name": "Acme",
+      "sig": "60328d36cf1cb3a4fec75d62f8c97b629ddc787dbaf631c6bcd8f432dc080ae124b5c5fe2bfaa670f6b770f61cd307ad8343f8417e5e003819cf1135f532f007",
+      "team": "t1",
+      "v": 1,
+      "version": 2
+    },
+    "v3-bob-owner": {
+      "at": 3000,
+      "by": "37f29b7074cf8b52",
+      "members": [
+        {"account": "alice", "name": "alice-login", "role": "editor", "root": "37f29b7074cf8b52"},
+        {"account": "bob", "name": "bob-login", "role": "owner", "root": "c242667535a3d34f"}
+      ],
+      "name": "Acme",
+      "sig": "5b68c3eff37642b3a54d3d9bc11c1e32b9478a10225b98a8d1cb0558d670bbfa2b38af3fd88b38d3baef363812bb4a3769c19c6be349c6a5b5ff54ffbd9bc304",
+      "team": "t1",
+      "v": 1,
+      "version": 3
+    },
+    "v3-bob-removed": {
+      "at": 3000,
+      "by": "37f29b7074cf8b52",
+      "members": [
+        {"account": "alice", "name": "alice-login", "role": "owner", "root": "37f29b7074cf8b52"}
+      ],
+      "name": "Acme",
+      "sig": "a664547bde08c10785d6f83f12dc6db16ca651d4ae849bb9d051da6c7d4cd295ade5ea79a7b8eb8ba69884df5222e7ae6c4b900b6afcefd41e127d68de70670a",
+      "spent": [
+        {
+          "expires": 10000,
+          "key": "acdb0e29743f0ccb8686d0a104cb96e05abefec1538765e7595869f7dc8c49aa"
+        }
+      ],
+      "team": "t1",
+      "v": 2,
+      "version": 3
+    },
+    "v3-by-alice-after-redeem": {
+      "at": 3000,
+      "by": "37f29b7074cf8b52",
+      "members": [
+        {"account": "alice", "name": "alice-login", "role": "owner", "root": "37f29b7074cf8b52"},
+        {"account": "bob", "name": "bob-login", "role": "editor", "root": "c242667535a3d34f"}
+      ],
+      "name": "Acme",
+      "sig": "79816b358c70a010afab554ef8cd6dec260ed04d4dbb6af8d75d8194733163d8628fe0f25a0ff08e13985daa5fa15b52b5620624dfa297a967f7de37c7d5650f",
+      "spent": [
+        {
+          "expires": 10000,
+          "key": "acdb0e29743f0ccb8686d0a104cb96e05abefec1538765e7595869f7dc8c49aa"
+        }
+      ],
+      "team": "t1",
+      "v": 2,
+      "version": 3
+    },
+    "v3-by-bob": {
+      "at": 3000,
+      "by": "c242667535a3d34f",
+      "members": [
+        {"account": "alice", "name": "alice-login", "role": "owner", "root": "37f29b7074cf8b52"},
+        {"account": "bob", "name": "bob-login", "role": "owner", "root": "c242667535a3d34f"}
+      ],
+      "name": "Acme",
+      "sig": "3873d68da16b3ef325cde87418a298c82afc46a6939147445cf37aa4d9c821f51a9c1bd872b4a76476c7d3958f563b38b70e07ca48ac16f22b206069f1669507",
+      "team": "t1",
+      "v": 1,
+      "version": 3
+    },
+    "v3-by-mallory": {
+      "at": 3000,
+      "by": "9b64bd87042f22a7",
+      "members": [
+        {"account": "mallory", "name": "mallory-login", "role": "owner", "root": "9b64bd87042f22a7"}
+      ],
+      "name": "Acme",
+      "sig": "6188e105893ddf21861f2f3fbb8bd2bae534a66bb08eec587bf6e6438313af6a2405da324526a985d1ab101258607ef6954c3fbee1fbb813a1929546384ea405",
+      "team": "t1",
+      "v": 1,
+      "version": 3
+    },
+    "v3-carol-redeems-the-same-invite": {
+      "at": 3000,
+      "by": "acdb0e29743f0ccb8686d0a104cb96e05abefec1538765e7595869f7dc8c49aa",
+      "members": [
+        {"account": "alice", "name": "alice-login", "role": "owner", "root": "37f29b7074cf8b52"},
+        {"account": "bob", "name": "bob-login", "role": "editor", "root": "c242667535a3d34f"},
+        {"account": "carol", "name": "carol-login", "role": "editor", "root": "e0a128f98e5582a3"}
+      ],
+      "name": "Acme",
+      "redeem": {
+        "invite": {
+          "by": "37f29b7074cf8b52",
+          "expires": 10000,
+          "key": "acdb0e29743f0ccb8686d0a104cb96e05abefec1538765e7595869f7dc8c49aa",
+          "role": "editor",
+          "sig": "a1297f9b48791fcb2b4dc6f4b8f7b9e560745628fca8a3853a397e4672ef302c17fc5b42fc416291085220ea3a8016a6fdefac7dfa774ef5008b48e7e1899709",
+          "team": "t1"
+        },
+        "proof": "ff41c00355a7807a92042b159071908569f3d8e5d6560a25535552ed89d10302c0c682d8e8273affd188e3d974932051dae7f76f67343e89bcada397c6b54902"
+      },
+      "sig": "e77988ec292df9ad716e6a0d94e76cefa0fcb6d9a8aa1a4c0298131566610f60b5275adbf2a1bba16d9641dbd765049b53a490c2a7be387a78d7ee2370edf902",
+      "spent": [
+        {
+          "expires": 10000,
+          "key": "acdb0e29743f0ccb8686d0a104cb96e05abefec1538765e7595869f7dc8c49aa"
+        },
+        {
+          "expires": 10000,
+          "key": "acdb0e29743f0ccb8686d0a104cb96e05abefec1538765e7595869f7dc8c49aa"
+        }
+      ],
+      "team": "t1",
+      "v": 2,
+      "version": 3
+    },
+    "v3-redeem-invite-by-an-editor": {
+      "at": 3000,
+      "by": "884b8857f4eaa1613c61504db34d4beaf346517a0e31de3cddd4d9b4201d9d0b",
+      "members": [
+        {"account": "alice", "name": "alice-login", "role": "owner", "root": "37f29b7074cf8b52"},
+        {"account": "bob", "name": "bob-login", "role": "editor", "root": "c242667535a3d34f"},
+        {
+          "account": "mallory",
+          "name": "mallory-login",
+          "role": "viewer",
+          "root": "9b64bd87042f22a7"
+        }
+      ],
+      "name": "Acme",
+      "redeem": {
+        "invite": {
+          "by": "c242667535a3d34f",
+          "expires": 10000,
+          "key": "884b8857f4eaa1613c61504db34d4beaf346517a0e31de3cddd4d9b4201d9d0b",
+          "role": "viewer",
+          "sig": "76a83bd97ee3dcc2d26ab8022de86328489c658ffad2c8512dca3742eb7fdbe038a72c89df818e400ed58c23a0c53d57c12c0df3ae4fc51761709a1d90f4370b",
+          "team": "t1"
+        },
+        "proof": "141a0f86883b67b288ca651ee2f9ad0aaa6c354011352bd83438cdd1ea6f3f85ab4346b9da3792e0c8b63d6908bfa93a55749bcf116543f8b7682199b1348705"
+      },
+      "sig": "6a5ecc93c4d85eb8f2c7c1dae21b043a437e2cf00981743dc5adc517bb0946157ced9d72d76182a46b859ab0636ee78714f59d58970d86ab249ac3533236a207",
+      "spent": [
+        {
+          "expires": 10000,
+          "key": "884b8857f4eaa1613c61504db34d4beaf346517a0e31de3cddd4d9b4201d9d0b"
+        }
+      ],
+      "team": "t1",
+      "v": 2,
+      "version": 3
+    },
+    "v3-redeem-promotes-another-member": {
+      "at": 3000,
+      "by": "4ed32f63bf35f0eeefcb25f28a2e1fbdc873ae2835671b0c9460f5f12e4556a8",
+      "members": [
+        {"account": "alice", "name": "alice-login", "role": "owner", "root": "37f29b7074cf8b52"},
+        {
+          "account": "mallory",
+          "name": "mallory-login",
+          "role": "editor",
+          "root": "9b64bd87042f22a7"
+        },
+        {"account": "bob", "name": "bob-login", "role": "viewer", "root": "c242667535a3d34f"}
+      ],
+      "name": "Acme",
+      "redeem": {
+        "invite": {
+          "by": "37f29b7074cf8b52",
+          "expires": 10000,
+          "key": "4ed32f63bf35f0eeefcb25f28a2e1fbdc873ae2835671b0c9460f5f12e4556a8",
+          "role": "viewer",
+          "sig": "4b05d9a93ee2ffc4f97bce7ab765afb4a8e847a2096648e2f001b5114bcb905bba93e04b86d5ef5a0e4ae464720d197a0d01848e7c289059cb8811f6891ed100",
+          "team": "t1"
+        },
+        "proof": "066a80a1ce6cf16f030d736f9f64dbd9685fcabca370831f7c08269b040b9034fe737a86fb2e1336469ada9597c303276a3d317f7a2e2b3b0176384b7bb23e05"
+      },
+      "sig": "f68ffec308ca34bfa13cf9f8eb20cdc7dc5f496179ce899cf546f16f87c15b08a601a6b97fc354732b5debff48294371ad7c8a72f6074301087d22ce2c24640c",
+      "spent": [
+        {
+          "expires": 10000,
+          "key": "4ed32f63bf35f0eeefcb25f28a2e1fbdc873ae2835671b0c9460f5f12e4556a8"
+        }
+      ],
+      "team": "t1",
+      "v": 2,
+      "version": 3
+    },
+    "v3-redeem-skips-a-version": {
+      "at": 2000,
+      "by": "4ed32f63bf35f0eeefcb25f28a2e1fbdc873ae2835671b0c9460f5f12e4556a8",
+      "members": [
+        {"account": "alice", "name": "alice-login", "role": "owner", "root": "37f29b7074cf8b52"},
+        {"account": "bob", "name": "bob-login", "role": "viewer", "root": "c242667535a3d34f"}
+      ],
+      "name": "Acme",
+      "redeem": {
+        "invite": {
+          "by": "37f29b7074cf8b52",
+          "expires": 10000,
+          "key": "4ed32f63bf35f0eeefcb25f28a2e1fbdc873ae2835671b0c9460f5f12e4556a8",
+          "role": "viewer",
+          "sig": "4b05d9a93ee2ffc4f97bce7ab765afb4a8e847a2096648e2f001b5114bcb905bba93e04b86d5ef5a0e4ae464720d197a0d01848e7c289059cb8811f6891ed100",
+          "team": "t1"
+        },
+        "proof": "066a80a1ce6cf16f030d736f9f64dbd9685fcabca370831f7c08269b040b9034fe737a86fb2e1336469ada9597c303276a3d317f7a2e2b3b0176384b7bb23e05"
+      },
+      "sig": "3a408ac13e23d256fc1b081d136eef65fea0297faecbe83b6e6c9ad28ccb8127775ababac51e25424b443c1c293d08c4218aa4858036e67763cdd80d6dbc9400",
+      "spent": [
+        {
+          "expires": 10000,
+          "key": "4ed32f63bf35f0eeefcb25f28a2e1fbdc873ae2835671b0c9460f5f12e4556a8"
+        }
+      ],
+      "team": "t1",
+      "v": 2,
+      "version": 3
+    },
+    "v3-redeem-unchanged": {
+      "at": 3000,
+      "by": "4ed32f63bf35f0eeefcb25f28a2e1fbdc873ae2835671b0c9460f5f12e4556a8",
+      "members": [
+        {"account": "alice", "name": "alice-login", "role": "owner", "root": "37f29b7074cf8b52"},
+        {
+          "account": "mallory",
+          "name": "mallory-login",
+          "role": "viewer",
+          "root": "9b64bd87042f22a7"
+        },
+        {"account": "bob", "name": "bob-login", "role": "viewer", "root": "c242667535a3d34f"}
+      ],
+      "name": "Acme",
+      "redeem": {
+        "invite": {
+          "by": "37f29b7074cf8b52",
+          "expires": 10000,
+          "key": "4ed32f63bf35f0eeefcb25f28a2e1fbdc873ae2835671b0c9460f5f12e4556a8",
+          "role": "viewer",
+          "sig": "4b05d9a93ee2ffc4f97bce7ab765afb4a8e847a2096648e2f001b5114bcb905bba93e04b86d5ef5a0e4ae464720d197a0d01848e7c289059cb8811f6891ed100",
+          "team": "t1"
+        },
+        "proof": "066a80a1ce6cf16f030d736f9f64dbd9685fcabca370831f7c08269b040b9034fe737a86fb2e1336469ada9597c303276a3d317f7a2e2b3b0176384b7bb23e05"
+      },
+      "sig": "bd1ebf4209674b4ee55ec6d304dd9a475fe0923bd3a2ee5bfc1d11ea94692f57dd89e62972373b991ec45528ae10d91619f76247158fde22503974aa37e0820b",
+      "spent": [
+        {
+          "expires": 10000,
+          "key": "4ed32f63bf35f0eeefcb25f28a2e1fbdc873ae2835671b0c9460f5f12e4556a8"
+        }
+      ],
+      "team": "t1",
+      "v": 2,
+      "version": 3
+    },
+    "v4-by-alice-now-editor": {
+      "at": 4000,
+      "by": "37f29b7074cf8b52",
+      "members": [
+        {"account": "alice", "name": "alice-login", "role": "owner", "root": "37f29b7074cf8b52"}
+      ],
+      "name": "Acme",
+      "sig": "f3c12fb55a8d65232f7368f2f3db7224197088505b3bbaf17023142c95e2cf02fe1741885ff8c67ba6caa1232ef2cf789a494759f0d3ea08efab19aab89e8d00",
+      "team": "t1",
+      "v": 1,
+      "version": 4
+    },
+    "v4-by-bob": {
+      "at": 4000,
+      "by": "c242667535a3d34f",
+      "members": [
+        {"account": "bob", "name": "bob-login", "role": "owner", "root": "c242667535a3d34f"}
+      ],
+      "name": "Acme",
+      "sig": "cf3884e58adac6bf9a2943021bd7c5f2eb717435ce882e6e5894f6f181ed7d74c2b366563988b10b410b7dfa1235a8213202eec0c680e9897d941a829c804400",
+      "team": "t1",
+      "v": 1,
+      "version": 4
+    },
+    "v4-carol-redeems-a-second-invite": {
+      "at": 4000,
+      "by": "43046bfe4092b3e94994eada15dcc20d8aaa07b658fd3954eb8e0efb8bdca5de",
+      "members": [
+        {"account": "alice", "name": "alice-login", "role": "owner", "root": "37f29b7074cf8b52"},
+        {"account": "bob", "name": "bob-login", "role": "editor", "root": "c242667535a3d34f"},
+        {"account": "carol", "name": "carol-login", "role": "viewer", "root": "e0a128f98e5582a3"}
+      ],
+      "name": "Acme",
+      "redeem": {
+        "invite": {
+          "by": "37f29b7074cf8b52",
+          "expires": 10000,
+          "key": "43046bfe4092b3e94994eada15dcc20d8aaa07b658fd3954eb8e0efb8bdca5de",
+          "role": "viewer",
+          "sig": "263fab1f4d74a0055651d1c333b1c1fb937aaf9ea591b79c00f89a115e390916ea8fe2313adf64d8af874102da4963bece451d1fd8aa08d5a980ab88d1f1ec0e",
+          "team": "t1"
+        },
+        "proof": "4563b27f4c75cd53aaca12a022642932717cfb3b8b3dd142fd9368ad8899faf687743cb32046dd4488485f1e777092ed6c80d269bad82473fb7bf6861c630105"
+      },
+      "sig": "3174f72b718f6ba5afba139bed0c5a4719e6af235f63594aaefdee97866f606c5a4fe31dd562f1a0ace674f847d1c46348ab4f5c7db5a1d7d34ea58e67b91d0b",
+      "spent": [
+        {
+          "expires": 10000,
+          "key": "acdb0e29743f0ccb8686d0a104cb96e05abefec1538765e7595869f7dc8c49aa"
+        },
+        {
+          "expires": 10000,
+          "key": "43046bfe4092b3e94994eada15dcc20d8aaa07b658fd3954eb8e0efb8bdca5de"
+        }
+      ],
+      "team": "t1",
+      "v": 2,
+      "version": 4
+    },
+    "v5-skips": {
+      "at": 5000,
+      "by": "37f29b7074cf8b52",
+      "members": [
+        {"account": "alice", "name": "alice-login", "role": "owner", "root": "37f29b7074cf8b52"},
+        {"account": "bob", "name": "bob-login", "role": "editor", "root": "c242667535a3d34f"}
+      ],
+      "name": "Acme",
+      "sig": "2ab79c37a55396c02d90271b13427f1968a372e3f4d8b8c6ef1450e71f2d83938ba08bdabeba014afb5c0a6fda0a2e7aa36bc0756e0dda3724e6867245970209",
+      "team": "t1",
+      "v": 1,
+      "version": 5
+    }
+  },
+  "output": "ok: whether the daemon takes it"
+}

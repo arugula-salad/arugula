@@ -1,0 +1,536 @@
+{
+  "about": "Why a new certificate wouldn't count beside the account's (#327), which control says before it stores one, so a client can say which check failed: revoked (its device was taken off: it needs a new key), approver_untrusted, bad_signature, cant_approve (a machine approving), recovery_for_machine, needs_browser (a CLI or the app approving a browser, a phone or a recovery code), no_chain (anything else: its form, its kind, its time). None when it counts.",
+  "cases": [
+    {
+      "about": "a browser the root approved: it counts",
+      "input": {
+        "account": "acct",
+        "cert": "browser-by-root",
+        "certs": ["laptop", "recovery", "box", "terminal", "app"],
+        "revocations": [],
+        "root": "37f29b7074cf8b52"
+      },
+      "output": {"refusal": null}
+    },
+    {
+      "about": "approved by a device the account doesn't have",
+      "input": {
+        "account": "acct",
+        "cert": "browser-by-stranger",
+        "certs": ["laptop", "recovery", "box", "terminal", "app"],
+        "revocations": [],
+        "root": "37f29b7074cf8b52"
+      },
+      "output": {"refusal": "approver_untrusted"}
+    },
+    {
+      "about": "approved by a machine",
+      "input": {
+        "account": "acct",
+        "cert": "browser-by-box",
+        "certs": ["laptop", "recovery", "box", "terminal", "app"],
+        "revocations": [],
+        "root": "37f29b7074cf8b52"
+      },
+      "output": {"refusal": "cant_approve"}
+    },
+    {
+      "about": "a machine a recovery code approved",
+      "input": {
+        "account": "acct",
+        "cert": "daemon-by-recovery",
+        "certs": ["laptop", "recovery", "box", "terminal", "app"],
+        "revocations": [],
+        "root": "37f29b7074cf8b52"
+      },
+      "output": {"refusal": "recovery_for_machine"}
+    },
+    {
+      "about": "a browser a recovery code approved: it counts",
+      "input": {
+        "account": "acct",
+        "cert": "browser-by-recovery",
+        "certs": ["laptop", "recovery", "box", "terminal", "app"],
+        "revocations": [],
+        "root": "37f29b7074cf8b52"
+      },
+      "output": {"refusal": null}
+    },
+    {
+      "about": "a browser a CLI approved",
+      "input": {
+        "account": "acct",
+        "cert": "browser-by-terminal",
+        "certs": ["laptop", "recovery", "box", "terminal", "app"],
+        "revocations": [],
+        "root": "37f29b7074cf8b52"
+      },
+      "output": {"refusal": "needs_browser"}
+    },
+    {
+      "about": "a cli a CLI approved",
+      "input": {
+        "account": "acct",
+        "cert": "cli-by-terminal",
+        "certs": ["laptop", "recovery", "box", "terminal", "app"],
+        "revocations": [],
+        "root": "37f29b7074cf8b52"
+      },
+      "output": {"refusal": null}
+    },
+    {
+      "about": "a daemon a CLI approved",
+      "input": {
+        "account": "acct",
+        "cert": "daemon-by-terminal",
+        "certs": ["laptop", "recovery", "box", "terminal", "app"],
+        "revocations": [],
+        "root": "37f29b7074cf8b52"
+      },
+      "output": {"refusal": null}
+    },
+    {
+      "about": "a recovery a CLI approved",
+      "input": {
+        "account": "acct",
+        "cert": "recovery-by-terminal",
+        "certs": ["laptop", "recovery", "box", "terminal", "app"],
+        "revocations": [],
+        "root": "37f29b7074cf8b52"
+      },
+      "output": {"refusal": "needs_browser"}
+    },
+    {
+      "about": "a app a CLI approved",
+      "input": {
+        "account": "acct",
+        "cert": "app-by-terminal",
+        "certs": ["laptop", "recovery", "box", "terminal", "app"],
+        "revocations": [],
+        "root": "37f29b7074cf8b52"
+      },
+      "output": {"refusal": "needs_browser"}
+    },
+    {
+      "about": "a browser the app approved",
+      "input": {
+        "account": "acct",
+        "cert": "browser-by-app",
+        "certs": ["laptop", "recovery", "box", "terminal", "app"],
+        "revocations": [],
+        "root": "37f29b7074cf8b52"
+      },
+      "output": {"refusal": "needs_browser"}
+    },
+    {
+      "about": "a cli the app approved",
+      "input": {
+        "account": "acct",
+        "cert": "cli-by-app",
+        "certs": ["laptop", "recovery", "box", "terminal", "app"],
+        "revocations": [],
+        "root": "37f29b7074cf8b52"
+      },
+      "output": {"refusal": null}
+    },
+    {
+      "about": "a daemon the app approved",
+      "input": {
+        "account": "acct",
+        "cert": "daemon-by-app",
+        "certs": ["laptop", "recovery", "box", "terminal", "app"],
+        "revocations": [],
+        "root": "37f29b7074cf8b52"
+      },
+      "output": {"refusal": null}
+    },
+    {
+      "about": "a recovery the app approved",
+      "input": {
+        "account": "acct",
+        "cert": "recovery-by-app",
+        "certs": ["laptop", "recovery", "box", "terminal", "app"],
+        "revocations": [],
+        "root": "37f29b7074cf8b52"
+      },
+      "output": {"refusal": "needs_browser"}
+    },
+    {
+      "about": "a app the app approved",
+      "input": {
+        "account": "acct",
+        "cert": "app-by-app",
+        "certs": ["laptop", "recovery", "box", "terminal", "app"],
+        "revocations": [],
+        "root": "37f29b7074cf8b52"
+      },
+      "output": {"refusal": null}
+    },
+    {
+      "about": "renamed after the root signed it",
+      "input": {
+        "account": "acct",
+        "cert": "browser-renamed-after-signing",
+        "certs": ["laptop", "recovery", "box", "terminal", "app"],
+        "revocations": [],
+        "root": "37f29b7074cf8b52"
+      },
+      "output": {"refusal": "bad_signature"}
+    },
+    {
+      "about": "in another account",
+      "input": {
+        "account": "acct",
+        "cert": "browser-in-another-account",
+        "certs": ["laptop", "recovery", "box", "terminal", "app"],
+        "revocations": [],
+        "root": "37f29b7074cf8b52"
+      },
+      "output": {"refusal": "no_chain"}
+    },
+    {
+      "about": "a removed machine approved again with its old key",
+      "input": {
+        "account": "acct",
+        "cert": "box-again",
+        "certs": ["laptop", "recovery", "box", "terminal", "app"],
+        "revocations": ["box-revoked"],
+        "root": "37f29b7074cf8b52"
+      },
+      "output": {"refusal": "revoked"}
+    }
+  ],
+  "checks": ["arugula_e2e::Trust::refusal", "arugula_e2e::Refusal::code"],
+  "input": "account, root: what's pinned; certs, revocations: the account's, by label; cert: the new one, by label",
+  "keys": {
+    "app": {
+      "device": "ed0089709d11f9a5",
+      "noise": "0505050505050505050505050505050505050505050505050505050505050505",
+      "seed": "0505050505050505050505050505050505050505050505050505050505050505",
+      "sign": "6e7a1cdd29b0b78fd13af4c5598feff4ef2a97166e3ca6f2e4fbfccd80505bf1"
+    },
+    "box": {
+      "device": "e0a128f98e5582a3",
+      "noise": "0303030303030303030303030303030303030303030303030303030303030303",
+      "seed": "0303030303030303030303030303030303030303030303030303030303030303",
+      "sign": "ed4928c628d1c2c6eae90338905995612959273a5c63f93636c14614ac8737d1"
+    },
+    "laptop": {
+      "device": "37f29b7074cf8b52",
+      "noise": "0101010101010101010101010101010101010101010101010101010101010101",
+      "seed": "0101010101010101010101010101010101010101010101010101010101010101",
+      "sign": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c"
+    },
+    "new": {
+      "device": "bb6cc568875e9006",
+      "noise": "0707070707070707070707070707070707070707070707070707070707070707",
+      "seed": "0707070707070707070707070707070707070707070707070707070707070707",
+      "sign": "ea4a6c63e29c520abef5507b132ec5f9954776aebebe7b92421eea691446d22c"
+    },
+    "recovery": {
+      "device": "c242667535a3d34f",
+      "noise": "0202020202020202020202020202020202020202020202020202020202020202",
+      "seed": "0202020202020202020202020202020202020202020202020202020202020202",
+      "sign": "8139770ea87d175f56a35466c34c7ecccb8d8a91b4ee37a25df60f5b8fc9b394"
+    },
+    "stranger": {
+      "device": "c8f088038888fcd4",
+      "noise": "0606060606060606060606060606060606060606060606060606060606060606",
+      "seed": "0606060606060606060606060606060606060606060606060606060606060606",
+      "sign": "8a875fff1eb38451577acd5afee405456568dd7c89e090863a0557bc7af49f17"
+    },
+    "terminal": {
+      "device": "9b64bd87042f22a7",
+      "noise": "0404040404040404040404040404040404040404040404040404040404040404",
+      "seed": "0404040404040404040404040404040404040404040404040404040404040404",
+      "sign": "ca93ac1705187071d67b83c7ff0efe8108e8ec4530575d7726879333dbdabe7c"
+    }
+  },
+  "objects": {
+    "app": {
+      "account": "acct",
+      "approver": "37f29b7074cf8b52",
+      "created": 1400,
+      "device": "ed0089709d11f9a5",
+      "kind": "app",
+      "name": "Arugula app on box",
+      "noise": "0505050505050505050505050505050505050505050505050505050505050505",
+      "sig": "198a2285510b3668e13d641b788c7585390e548646cbe78c87b30484cc21989794043236b4bcec58d7a520d9f14df9e7cc074130a25eb884a939217eabe5ef04",
+      "sign": "6e7a1cdd29b0b78fd13af4c5598feff4ef2a97166e3ca6f2e4fbfccd80505bf1",
+      "v": 1
+    },
+    "app-by-app": {
+      "account": "acct",
+      "approver": "ed0089709d11f9a5",
+      "created": 2000,
+      "device": "bb6cc568875e9006",
+      "kind": "app",
+      "name": "new",
+      "noise": "0707070707070707070707070707070707070707070707070707070707070707",
+      "sig": "cb06ea7d188949cd3ff22dd8cc245290e738d929b93df0872a72488824bca3afb438c4838a39ae298a2d715cb18ead23dd288290655976dc4b52acfef5bbad00",
+      "sign": "ea4a6c63e29c520abef5507b132ec5f9954776aebebe7b92421eea691446d22c",
+      "v": 1
+    },
+    "app-by-terminal": {
+      "account": "acct",
+      "approver": "9b64bd87042f22a7",
+      "created": 2000,
+      "device": "bb6cc568875e9006",
+      "kind": "app",
+      "name": "new",
+      "noise": "0707070707070707070707070707070707070707070707070707070707070707",
+      "sig": "8226b98c8775b4b5ed598c93038f4b1abfcaec0491072d6a062c8ecbb92251b30f59b8ca4e0fdfac070951c82b0af4759372ae82231ab7cc2d0a0378ed7caa0f",
+      "sign": "ea4a6c63e29c520abef5507b132ec5f9954776aebebe7b92421eea691446d22c",
+      "v": 1
+    },
+    "box": {
+      "account": "acct",
+      "approver": "37f29b7074cf8b52",
+      "created": 1200,
+      "device": "e0a128f98e5582a3",
+      "kind": "daemon",
+      "name": "box",
+      "noise": "0303030303030303030303030303030303030303030303030303030303030303",
+      "sig": "837ab13eb92a3eb196e2c7e5b5200420e328092718a26c116fc7384afb4b2d435eb86c34710b9c40198fc7e541f28098c924e034bae49fb46b50e7b7fed72803",
+      "sign": "ed4928c628d1c2c6eae90338905995612959273a5c63f93636c14614ac8737d1",
+      "v": 1
+    },
+    "box-again": {
+      "account": "acct",
+      "approver": "37f29b7074cf8b52",
+      "created": 6000,
+      "device": "e0a128f98e5582a3",
+      "kind": "daemon",
+      "name": "box",
+      "noise": "0303030303030303030303030303030303030303030303030303030303030303",
+      "sig": "530ae9a9848720cee30a70f1db5628574a71ae20bd6cd4fd75b37d95ae64e37910208095b3d3ceb6c28c04a5cca7c447856e60b46cc1c7099bdaa4f5cd7f4002",
+      "sign": "ed4928c628d1c2c6eae90338905995612959273a5c63f93636c14614ac8737d1",
+      "v": 1
+    },
+    "box-revoked": {
+      "account": "acct",
+      "at": 5000,
+      "by": "37f29b7074cf8b52",
+      "device": "e0a128f98e5582a3",
+      "sig": "d290017bd6f67dea595f8e0456896d70da2b2c6cc888bcf980d027c32688086f730f668aa67e94d91f4c261a1b18d75367e0185fafc53d482911ff2a4372120a",
+      "v": 1
+    },
+    "browser-by-app": {
+      "account": "acct",
+      "approver": "ed0089709d11f9a5",
+      "created": 2000,
+      "device": "bb6cc568875e9006",
+      "kind": "browser",
+      "name": "new",
+      "noise": "0707070707070707070707070707070707070707070707070707070707070707",
+      "sig": "d3914f4503ea2f32170f7115ed9b857ba248243871e6d7e7fa7a5b80f0638e7a8684dc32344ac9071df9387ceccb98573405a88129e61cfa858bae118bd07503",
+      "sign": "ea4a6c63e29c520abef5507b132ec5f9954776aebebe7b92421eea691446d22c",
+      "v": 1
+    },
+    "browser-by-box": {
+      "account": "acct",
+      "approver": "e0a128f98e5582a3",
+      "created": 2000,
+      "device": "bb6cc568875e9006",
+      "kind": "browser",
+      "name": "new",
+      "noise": "0707070707070707070707070707070707070707070707070707070707070707",
+      "sig": "9efd68ec67567bed7d3dd3bba810e7dd8dc727280a2c90b376ec03532651bfc39cd465df38a54c0e349540374df31fb98f22e37e170d822cff8874320285fd08",
+      "sign": "ea4a6c63e29c520abef5507b132ec5f9954776aebebe7b92421eea691446d22c",
+      "v": 1
+    },
+    "browser-by-recovery": {
+      "account": "acct",
+      "approver": "c242667535a3d34f",
+      "created": 2000,
+      "device": "bb6cc568875e9006",
+      "kind": "browser",
+      "name": "new",
+      "noise": "0707070707070707070707070707070707070707070707070707070707070707",
+      "sig": "c00c68da48c7ccd6e3d1af96a0bb6549cf894eb279477a1ad0f8a3568c452b5ef91114802d39869740068d4aa2a3a22df77b65ac853a0ffac98e373050f64c0a",
+      "sign": "ea4a6c63e29c520abef5507b132ec5f9954776aebebe7b92421eea691446d22c",
+      "v": 1
+    },
+    "browser-by-root": {
+      "account": "acct",
+      "approver": "37f29b7074cf8b52",
+      "created": 2000,
+      "device": "bb6cc568875e9006",
+      "kind": "browser",
+      "name": "new",
+      "noise": "0707070707070707070707070707070707070707070707070707070707070707",
+      "sig": "081e750047108cda32921a39520ea7c219db43dfa7990ab85dec18dc031f1bbb21037d96b4a9d5173917702add07c94937a3561695539e04745f2852c2fb7001",
+      "sign": "ea4a6c63e29c520abef5507b132ec5f9954776aebebe7b92421eea691446d22c",
+      "v": 1
+    },
+    "browser-by-stranger": {
+      "account": "acct",
+      "approver": "c8f088038888fcd4",
+      "created": 2000,
+      "device": "bb6cc568875e9006",
+      "kind": "browser",
+      "name": "new",
+      "noise": "0707070707070707070707070707070707070707070707070707070707070707",
+      "sig": "40e4d5a839071cd812497ecf5f5c9de2cba8ab095b657b7037a3a65c1a5e05dbb18b5d5236cc905ba42f1b60e0184b6f01f8926a20e3ed6a9f751d18fadc150b",
+      "sign": "ea4a6c63e29c520abef5507b132ec5f9954776aebebe7b92421eea691446d22c",
+      "v": 1
+    },
+    "browser-by-terminal": {
+      "account": "acct",
+      "approver": "9b64bd87042f22a7",
+      "created": 2000,
+      "device": "bb6cc568875e9006",
+      "kind": "browser",
+      "name": "new",
+      "noise": "0707070707070707070707070707070707070707070707070707070707070707",
+      "sig": "601722e6c310d2bf363522d71ca1954a9e5b0db049bdaf2c68f2174d1efdd01ff4e5a603c848e48e09ea9e2fe58c3cc50eb7f35a54a44ee0c17b08ad34d12a0d",
+      "sign": "ea4a6c63e29c520abef5507b132ec5f9954776aebebe7b92421eea691446d22c",
+      "v": 1
+    },
+    "browser-in-another-account": {
+      "account": "elsewhere",
+      "approver": "37f29b7074cf8b52",
+      "created": 2000,
+      "device": "bb6cc568875e9006",
+      "kind": "browser",
+      "name": "new",
+      "noise": "0707070707070707070707070707070707070707070707070707070707070707",
+      "sig": "361c38065cea71130ce84ec659b6b497fe141da44de9f4d362d8e6ece86e12045212ccc8ba118b2b94d73d9eec144dd87073d2a0f359854f2831653ff3deab0d",
+      "sign": "ea4a6c63e29c520abef5507b132ec5f9954776aebebe7b92421eea691446d22c",
+      "v": 1
+    },
+    "browser-renamed-after-signing": {
+      "account": "acct",
+      "approver": "37f29b7074cf8b52",
+      "created": 2000,
+      "device": "bb6cc568875e9006",
+      "kind": "browser",
+      "name": "renamed",
+      "noise": "0707070707070707070707070707070707070707070707070707070707070707",
+      "sig": "081e750047108cda32921a39520ea7c219db43dfa7990ab85dec18dc031f1bbb21037d96b4a9d5173917702add07c94937a3561695539e04745f2852c2fb7001",
+      "sign": "ea4a6c63e29c520abef5507b132ec5f9954776aebebe7b92421eea691446d22c",
+      "v": 1
+    },
+    "cli-by-app": {
+      "account": "acct",
+      "approver": "ed0089709d11f9a5",
+      "created": 2000,
+      "device": "bb6cc568875e9006",
+      "kind": "cli",
+      "name": "new",
+      "noise": "0707070707070707070707070707070707070707070707070707070707070707",
+      "sig": "9ed67875cd58293f7e22e25ab251ce635cf464137f7e447b739136997ba74088cc865e2aa2c1e76ea2e18eded12f629ab0daccb5186bffb603f82842e95b6807",
+      "sign": "ea4a6c63e29c520abef5507b132ec5f9954776aebebe7b92421eea691446d22c",
+      "v": 1
+    },
+    "cli-by-terminal": {
+      "account": "acct",
+      "approver": "9b64bd87042f22a7",
+      "created": 2000,
+      "device": "bb6cc568875e9006",
+      "kind": "cli",
+      "name": "new",
+      "noise": "0707070707070707070707070707070707070707070707070707070707070707",
+      "sig": "cd1b008e40e34e39cbf98718e7d81a8f053fb064d7e0e98c2ab945599ddd188a155548b029e34c96f00981d850c2cf219846e5a421cdaad4f71c1d621a1c3e07",
+      "sign": "ea4a6c63e29c520abef5507b132ec5f9954776aebebe7b92421eea691446d22c",
+      "v": 1
+    },
+    "daemon-by-app": {
+      "account": "acct",
+      "approver": "ed0089709d11f9a5",
+      "created": 2000,
+      "device": "bb6cc568875e9006",
+      "kind": "daemon",
+      "name": "new",
+      "noise": "0707070707070707070707070707070707070707070707070707070707070707",
+      "sig": "a46b3c548536b950c03df500867df3fee651f6df928a3fcc8a14d73fac1f0b6debc7d757545dfa2661fbff0da36a0aa4d3b909c855f53be070c2bbf226635104",
+      "sign": "ea4a6c63e29c520abef5507b132ec5f9954776aebebe7b92421eea691446d22c",
+      "v": 1
+    },
+    "daemon-by-recovery": {
+      "account": "acct",
+      "approver": "c242667535a3d34f",
+      "created": 2000,
+      "device": "bb6cc568875e9006",
+      "kind": "daemon",
+      "name": "new",
+      "noise": "0707070707070707070707070707070707070707070707070707070707070707",
+      "sig": "b0b7bd6ec78cbc248e7efbfb6e24c54cb14239257f9399f1f461a1f91ed62ef5baa56d3788e65e8c6ad6f322225483868ec11a5800c92f5bc880c3aa149d3609",
+      "sign": "ea4a6c63e29c520abef5507b132ec5f9954776aebebe7b92421eea691446d22c",
+      "v": 1
+    },
+    "daemon-by-terminal": {
+      "account": "acct",
+      "approver": "9b64bd87042f22a7",
+      "created": 2000,
+      "device": "bb6cc568875e9006",
+      "kind": "daemon",
+      "name": "new",
+      "noise": "0707070707070707070707070707070707070707070707070707070707070707",
+      "sig": "1a09b67cfbea1faa87f2a7a50033af36a7e23a47ca4fdd51d94a673322510bce6946ed2d449f67d3bc6c0b8ab7618f41d11693bb7121391dc86ec61826b8410d",
+      "sign": "ea4a6c63e29c520abef5507b132ec5f9954776aebebe7b92421eea691446d22c",
+      "v": 1
+    },
+    "laptop": {
+      "account": "acct",
+      "approver": "37f29b7074cf8b52",
+      "created": 1000,
+      "device": "37f29b7074cf8b52",
+      "kind": "browser",
+      "name": "laptop",
+      "noise": "0101010101010101010101010101010101010101010101010101010101010101",
+      "sig": "96e9560508a1cbdcc8c7a31633348ac77145f54bd181df1432c8c15d46ad00af18891326a8351489faba0de0077cba9f0c7a4f3ff9d60d66cf8e192dc6e1870e",
+      "sign": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
+      "v": 1
+    },
+    "recovery": {
+      "account": "acct",
+      "approver": "37f29b7074cf8b52",
+      "created": 1100,
+      "device": "c242667535a3d34f",
+      "kind": "recovery",
+      "name": "recovery 1",
+      "noise": "0202020202020202020202020202020202020202020202020202020202020202",
+      "sig": "08fe29a54cdcae626eff49ab7a2f895b347539971973969259c82fae4366689574da578a865693cf23798bf9ac8e08c3c013b617438976cd6ecc9d8d20353802",
+      "sign": "8139770ea87d175f56a35466c34c7ecccb8d8a91b4ee37a25df60f5b8fc9b394",
+      "v": 1
+    },
+    "recovery-by-app": {
+      "account": "acct",
+      "approver": "ed0089709d11f9a5",
+      "created": 2000,
+      "device": "bb6cc568875e9006",
+      "kind": "recovery",
+      "name": "new",
+      "noise": "0707070707070707070707070707070707070707070707070707070707070707",
+      "sig": "30ae0aa5c1917c7b8c77a8460ce259ff7ca5fdefe4302af73a131eb6a6b2f7f01e4aea3d9f00731542235e9096cba38174131b55a2f8eb42d7894a92aa4d5701",
+      "sign": "ea4a6c63e29c520abef5507b132ec5f9954776aebebe7b92421eea691446d22c",
+      "v": 1
+    },
+    "recovery-by-terminal": {
+      "account": "acct",
+      "approver": "9b64bd87042f22a7",
+      "created": 2000,
+      "device": "bb6cc568875e9006",
+      "kind": "recovery",
+      "name": "new",
+      "noise": "0707070707070707070707070707070707070707070707070707070707070707",
+      "sig": "82241499e8b9a9c2af35ecdc460192699d00a571686ffaeb069749730db713d4956e12a11e5480289e9383e1d66c02792056993d29762359fd1ec24b77e17d02",
+      "sign": "ea4a6c63e29c520abef5507b132ec5f9954776aebebe7b92421eea691446d22c",
+      "v": 1
+    },
+    "terminal": {
+      "account": "acct",
+      "approver": "37f29b7074cf8b52",
+      "created": 1300,
+      "device": "9b64bd87042f22a7",
+      "kind": "cli",
+      "name": "terminal",
+      "noise": "0404040404040404040404040404040404040404040404040404040404040404",
+      "sig": "3b732fcb67d6b6c8b98248bd118a633d469d2bbcaf69314f5a0c9d87d1ee82f00048cc91d5026bb23bf19a272cded45d2c4e89ecb812d90452d637031499c40c",
+      "sign": "ca93ac1705187071d67b83c7ff0efe8108e8ec4530575d7726879333dbdabe7c",
+      "v": 1
+    }
+  },
+  "output": "refusal: the failed check's code, or null when it counts"
+}

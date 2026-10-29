@@ -1,0 +1,364 @@
+{
+  "about": "Whether a certificate is well formed, which says nothing of its signature: version 1; account and approver 1 to 64 of a-z, A-Z, 0-9, - and _; a name of 1 to 64 characters (not bytes), none a control character; noise and sign 32 bytes of hex each; and a device id that is hex(SHA-256(\"illogical device id\" || noise || sign))[..16], so control can't give one device another's id. Trust::evaluate ignores a certificate that isn't.",
+  "cases": [
+    {
+      "about": "a root's certificate",
+      "input": {"cert": "good"},
+      "output": {"ok": true}
+    },
+    {
+      "about": "version 2",
+      "input": {"cert": "v2"},
+      "output": {"ok": false}
+    },
+    {
+      "about": "an account with a space",
+      "input": {"cert": "account-space"},
+      "output": {"ok": false}
+    },
+    {
+      "about": "no account",
+      "input": {"cert": "account-empty"},
+      "output": {"ok": false}
+    },
+    {
+      "about": "an account of 64 characters",
+      "input": {"cert": "account-64"},
+      "output": {"ok": true}
+    },
+    {
+      "about": "an account of 65 characters",
+      "input": {"cert": "account-65"},
+      "output": {"ok": false}
+    },
+    {
+      "about": "an account with a dot",
+      "input": {"cert": "account-dot"},
+      "output": {"ok": false}
+    },
+    {
+      "about": "no approver",
+      "input": {"cert": "approver-empty"},
+      "output": {"ok": false}
+    },
+    {
+      "about": "no name",
+      "input": {"cert": "name-empty"},
+      "output": {"ok": false}
+    },
+    {
+      "about": "a newline in the name",
+      "input": {"cert": "name-newline"},
+      "output": {"ok": false}
+    },
+    {
+      "about": "a tab in the name",
+      "input": {"cert": "name-tab"},
+      "output": {"ok": false}
+    },
+    {
+      "about": "a name of 64 characters, 128 bytes",
+      "input": {"cert": "name-64-chars"},
+      "output": {"ok": true}
+    },
+    {
+      "about": "a name of 65 characters",
+      "input": {"cert": "name-65-chars"},
+      "output": {"ok": false}
+    },
+    {
+      "about": "a space in the name",
+      "input": {"cert": "name-space"},
+      "output": {"ok": true}
+    },
+    {
+      "about": "a noise key of 31 bytes",
+      "input": {"cert": "noise-short"},
+      "output": {"ok": false}
+    },
+    {
+      "about": "a noise key that isn't hex",
+      "input": {"cert": "noise-not-hex"},
+      "output": {"ok": false}
+    },
+    {
+      "about": "another device's signing key, under this id",
+      "input": {"cert": "sign-other"},
+      "output": {"ok": false}
+    },
+    {
+      "about": "another device's id",
+      "input": {"cert": "device-other"},
+      "output": {"ok": false}
+    },
+    {
+      "about": "the id in upper case",
+      "input": {"cert": "device-upper"},
+      "output": {"ok": false}
+    },
+    {
+      "about": "no signature: the form says nothing of it",
+      "input": {"cert": "sig-empty"},
+      "output": {"ok": true}
+    }
+  ],
+  "checks": ["arugula_e2e::Cert::check_form", "arugula_e2e::keys::device_id"],
+  "input": "cert: a certificate's label",
+  "keys": {
+    "laptop": {
+      "device": "37f29b7074cf8b52",
+      "noise": "0101010101010101010101010101010101010101010101010101010101010101",
+      "seed": "0101010101010101010101010101010101010101010101010101010101010101",
+      "sign": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c"
+    },
+    "other": {
+      "device": "c242667535a3d34f",
+      "noise": "0202020202020202020202020202020202020202020202020202020202020202",
+      "seed": "0202020202020202020202020202020202020202020202020202020202020202",
+      "sign": "8139770ea87d175f56a35466c34c7ecccb8d8a91b4ee37a25df60f5b8fc9b394"
+    }
+  },
+  "objects": {
+    "account-64": {
+      "account": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "approver": "37f29b7074cf8b52",
+      "created": 1000,
+      "device": "37f29b7074cf8b52",
+      "kind": "browser",
+      "name": "laptop",
+      "noise": "0101010101010101010101010101010101010101010101010101010101010101",
+      "sig": "96e9560508a1cbdcc8c7a31633348ac77145f54bd181df1432c8c15d46ad00af18891326a8351489faba0de0077cba9f0c7a4f3ff9d60d66cf8e192dc6e1870e",
+      "sign": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
+      "v": 1
+    },
+    "account-65": {
+      "account": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "approver": "37f29b7074cf8b52",
+      "created": 1000,
+      "device": "37f29b7074cf8b52",
+      "kind": "browser",
+      "name": "laptop",
+      "noise": "0101010101010101010101010101010101010101010101010101010101010101",
+      "sig": "96e9560508a1cbdcc8c7a31633348ac77145f54bd181df1432c8c15d46ad00af18891326a8351489faba0de0077cba9f0c7a4f3ff9d60d66cf8e192dc6e1870e",
+      "sign": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
+      "v": 1
+    },
+    "account-dot": {
+      "account": "a.b",
+      "approver": "37f29b7074cf8b52",
+      "created": 1000,
+      "device": "37f29b7074cf8b52",
+      "kind": "browser",
+      "name": "laptop",
+      "noise": "0101010101010101010101010101010101010101010101010101010101010101",
+      "sig": "96e9560508a1cbdcc8c7a31633348ac77145f54bd181df1432c8c15d46ad00af18891326a8351489faba0de0077cba9f0c7a4f3ff9d60d66cf8e192dc6e1870e",
+      "sign": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
+      "v": 1
+    },
+    "account-empty": {
+      "account": "",
+      "approver": "37f29b7074cf8b52",
+      "created": 1000,
+      "device": "37f29b7074cf8b52",
+      "kind": "browser",
+      "name": "laptop",
+      "noise": "0101010101010101010101010101010101010101010101010101010101010101",
+      "sig": "96e9560508a1cbdcc8c7a31633348ac77145f54bd181df1432c8c15d46ad00af18891326a8351489faba0de0077cba9f0c7a4f3ff9d60d66cf8e192dc6e1870e",
+      "sign": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
+      "v": 1
+    },
+    "account-space": {
+      "account": "ac ct",
+      "approver": "37f29b7074cf8b52",
+      "created": 1000,
+      "device": "37f29b7074cf8b52",
+      "kind": "browser",
+      "name": "laptop",
+      "noise": "0101010101010101010101010101010101010101010101010101010101010101",
+      "sig": "96e9560508a1cbdcc8c7a31633348ac77145f54bd181df1432c8c15d46ad00af18891326a8351489faba0de0077cba9f0c7a4f3ff9d60d66cf8e192dc6e1870e",
+      "sign": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
+      "v": 1
+    },
+    "approver-empty": {
+      "account": "acct",
+      "approver": "",
+      "created": 1000,
+      "device": "37f29b7074cf8b52",
+      "kind": "browser",
+      "name": "laptop",
+      "noise": "0101010101010101010101010101010101010101010101010101010101010101",
+      "sig": "96e9560508a1cbdcc8c7a31633348ac77145f54bd181df1432c8c15d46ad00af18891326a8351489faba0de0077cba9f0c7a4f3ff9d60d66cf8e192dc6e1870e",
+      "sign": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
+      "v": 1
+    },
+    "device-other": {
+      "account": "acct",
+      "approver": "37f29b7074cf8b52",
+      "created": 1000,
+      "device": "c242667535a3d34f",
+      "kind": "browser",
+      "name": "laptop",
+      "noise": "0101010101010101010101010101010101010101010101010101010101010101",
+      "sig": "96e9560508a1cbdcc8c7a31633348ac77145f54bd181df1432c8c15d46ad00af18891326a8351489faba0de0077cba9f0c7a4f3ff9d60d66cf8e192dc6e1870e",
+      "sign": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
+      "v": 1
+    },
+    "device-upper": {
+      "account": "acct",
+      "approver": "37f29b7074cf8b52",
+      "created": 1000,
+      "device": "37F29B7074CF8B52",
+      "kind": "browser",
+      "name": "laptop",
+      "noise": "0101010101010101010101010101010101010101010101010101010101010101",
+      "sig": "96e9560508a1cbdcc8c7a31633348ac77145f54bd181df1432c8c15d46ad00af18891326a8351489faba0de0077cba9f0c7a4f3ff9d60d66cf8e192dc6e1870e",
+      "sign": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
+      "v": 1
+    },
+    "good": {
+      "account": "acct",
+      "approver": "37f29b7074cf8b52",
+      "created": 1000,
+      "device": "37f29b7074cf8b52",
+      "kind": "browser",
+      "name": "laptop",
+      "noise": "0101010101010101010101010101010101010101010101010101010101010101",
+      "sig": "96e9560508a1cbdcc8c7a31633348ac77145f54bd181df1432c8c15d46ad00af18891326a8351489faba0de0077cba9f0c7a4f3ff9d60d66cf8e192dc6e1870e",
+      "sign": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
+      "v": 1
+    },
+    "name-64-chars": {
+      "account": "acct",
+      "approver": "37f29b7074cf8b52",
+      "created": 1000,
+      "device": "37f29b7074cf8b52",
+      "kind": "browser",
+      "name": "éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé",
+      "noise": "0101010101010101010101010101010101010101010101010101010101010101",
+      "sig": "96e9560508a1cbdcc8c7a31633348ac77145f54bd181df1432c8c15d46ad00af18891326a8351489faba0de0077cba9f0c7a4f3ff9d60d66cf8e192dc6e1870e",
+      "sign": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
+      "v": 1
+    },
+    "name-65-chars": {
+      "account": "acct",
+      "approver": "37f29b7074cf8b52",
+      "created": 1000,
+      "device": "37f29b7074cf8b52",
+      "kind": "browser",
+      "name": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "noise": "0101010101010101010101010101010101010101010101010101010101010101",
+      "sig": "96e9560508a1cbdcc8c7a31633348ac77145f54bd181df1432c8c15d46ad00af18891326a8351489faba0de0077cba9f0c7a4f3ff9d60d66cf8e192dc6e1870e",
+      "sign": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
+      "v": 1
+    },
+    "name-empty": {
+      "account": "acct",
+      "approver": "37f29b7074cf8b52",
+      "created": 1000,
+      "device": "37f29b7074cf8b52",
+      "kind": "browser",
+      "name": "",
+      "noise": "0101010101010101010101010101010101010101010101010101010101010101",
+      "sig": "96e9560508a1cbdcc8c7a31633348ac77145f54bd181df1432c8c15d46ad00af18891326a8351489faba0de0077cba9f0c7a4f3ff9d60d66cf8e192dc6e1870e",
+      "sign": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
+      "v": 1
+    },
+    "name-newline": {
+      "account": "acct",
+      "approver": "37f29b7074cf8b52",
+      "created": 1000,
+      "device": "37f29b7074cf8b52",
+      "kind": "browser",
+      "name": "lap\ntop",
+      "noise": "0101010101010101010101010101010101010101010101010101010101010101",
+      "sig": "96e9560508a1cbdcc8c7a31633348ac77145f54bd181df1432c8c15d46ad00af18891326a8351489faba0de0077cba9f0c7a4f3ff9d60d66cf8e192dc6e1870e",
+      "sign": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
+      "v": 1
+    },
+    "name-space": {
+      "account": "acct",
+      "approver": "37f29b7074cf8b52",
+      "created": 1000,
+      "device": "37f29b7074cf8b52",
+      "kind": "browser",
+      "name": "my laptop",
+      "noise": "0101010101010101010101010101010101010101010101010101010101010101",
+      "sig": "96e9560508a1cbdcc8c7a31633348ac77145f54bd181df1432c8c15d46ad00af18891326a8351489faba0de0077cba9f0c7a4f3ff9d60d66cf8e192dc6e1870e",
+      "sign": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
+      "v": 1
+    },
+    "name-tab": {
+      "account": "acct",
+      "approver": "37f29b7074cf8b52",
+      "created": 1000,
+      "device": "37f29b7074cf8b52",
+      "kind": "browser",
+      "name": "lap\ttop",
+      "noise": "0101010101010101010101010101010101010101010101010101010101010101",
+      "sig": "96e9560508a1cbdcc8c7a31633348ac77145f54bd181df1432c8c15d46ad00af18891326a8351489faba0de0077cba9f0c7a4f3ff9d60d66cf8e192dc6e1870e",
+      "sign": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
+      "v": 1
+    },
+    "noise-not-hex": {
+      "account": "acct",
+      "approver": "37f29b7074cf8b52",
+      "created": 1000,
+      "device": "37f29b7074cf8b52",
+      "kind": "browser",
+      "name": "laptop",
+      "noise": "zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz",
+      "sig": "96e9560508a1cbdcc8c7a31633348ac77145f54bd181df1432c8c15d46ad00af18891326a8351489faba0de0077cba9f0c7a4f3ff9d60d66cf8e192dc6e1870e",
+      "sign": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
+      "v": 1
+    },
+    "noise-short": {
+      "account": "acct",
+      "approver": "37f29b7074cf8b52",
+      "created": 1000,
+      "device": "37f29b7074cf8b52",
+      "kind": "browser",
+      "name": "laptop",
+      "noise": "01010101010101010101010101010101010101010101010101010101010101",
+      "sig": "96e9560508a1cbdcc8c7a31633348ac77145f54bd181df1432c8c15d46ad00af18891326a8351489faba0de0077cba9f0c7a4f3ff9d60d66cf8e192dc6e1870e",
+      "sign": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
+      "v": 1
+    },
+    "sig-empty": {
+      "account": "acct",
+      "approver": "37f29b7074cf8b52",
+      "created": 1000,
+      "device": "37f29b7074cf8b52",
+      "kind": "browser",
+      "name": "laptop",
+      "noise": "0101010101010101010101010101010101010101010101010101010101010101",
+      "sig": "",
+      "sign": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
+      "v": 1
+    },
+    "sign-other": {
+      "account": "acct",
+      "approver": "37f29b7074cf8b52",
+      "created": 1000,
+      "device": "37f29b7074cf8b52",
+      "kind": "browser",
+      "name": "laptop",
+      "noise": "0101010101010101010101010101010101010101010101010101010101010101",
+      "sig": "96e9560508a1cbdcc8c7a31633348ac77145f54bd181df1432c8c15d46ad00af18891326a8351489faba0de0077cba9f0c7a4f3ff9d60d66cf8e192dc6e1870e",
+      "sign": "8139770ea87d175f56a35466c34c7ecccb8d8a91b4ee37a25df60f5b8fc9b394",
+      "v": 1
+    },
+    "v2": {
+      "account": "acct",
+      "approver": "37f29b7074cf8b52",
+      "created": 1000,
+      "device": "37f29b7074cf8b52",
+      "kind": "browser",
+      "name": "laptop",
+      "noise": "0101010101010101010101010101010101010101010101010101010101010101",
+      "sig": "96e9560508a1cbdcc8c7a31633348ac77145f54bd181df1432c8c15d46ad00af18891326a8351489faba0de0077cba9f0c7a4f3ff9d60d66cf8e192dc6e1870e",
+      "sign": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
+      "v": 2
+    }
+  },
+  "output": "ok: whether it's well formed"
+}

@@ -1,0 +1,65 @@
+{
+  "about": "What each kind of device may do: approve (sign others' certificates, revocations and team papers), which kinds it certifies, whether it may be an account's first device (the root, self-signed), and whether it opens channels to daemons. A CLI's and the desktop app's keys may be a program's on their computer, so neither makes a browser or a recovery code; a machine approves nothing.",
+  "cases": [
+    {
+      "about": "a browser device",
+      "input": {"kind": "browser"},
+      "output": {
+        "approves": true,
+        "certifies": ["browser", "cli", "daemon", "recovery", "app"],
+        "connects": true,
+        "roots": true
+      }
+    },
+    {
+      "about": "a cli device",
+      "input": {"kind": "cli"},
+      "output": {
+        "approves": true,
+        "certifies": ["cli", "daemon"],
+        "connects": true,
+        "roots": true
+      }
+    },
+    {
+      "about": "a daemon device",
+      "input": {"kind": "daemon"},
+      "output": {
+        "approves": false,
+        "certifies": [],
+        "connects": false,
+        "roots": false
+      }
+    },
+    {
+      "about": "a recovery device",
+      "input": {"kind": "recovery"},
+      "output": {
+        "approves": true,
+        "certifies": ["browser", "cli", "recovery", "app"],
+        "connects": false,
+        "roots": false
+      }
+    },
+    {
+      "about": "a app device",
+      "input": {"kind": "app"},
+      "output": {
+        "approves": true,
+        "certifies": ["cli", "daemon", "app"],
+        "connects": true,
+        "roots": false
+      }
+    }
+  ],
+  "checks": [
+    "arugula_e2e::Kind::approves",
+    "arugula_e2e::Kind::certifies",
+    "arugula_e2e::Kind::roots",
+    "arugula_e2e::Kind::connects"
+  ],
+  "input": "kind: browser, cli, daemon, recovery or app",
+  "keys": {},
+  "objects": {},
+  "output": "approves, roots, connects: booleans; certifies: the kinds it may sign a certificate of, in the order browser, cli, daemon, recovery, app"
+}

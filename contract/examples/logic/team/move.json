@@ -1,0 +1,259 @@
+{
+  "about": "A joined machine moved into a team, between teams, or back to its account: signed for that daemon and that time by a device that approves, so control can neither make one up nor replay an old one (the daemon takes only a move newer than its last). signed_for: by the certificate named (trusted is the daemon's other check). owner_takes_out (#332): one of the team's owners, by a device trusted now from the root the roster lists, taking a machine out of the team back to its own account; never into a team.",
+  "cases": [
+    {
+      "about": "alice moves her machine into the team",
+      "input": {"by": "alice", "check": "signed_for", "daemon": "d30b9802b6365451", "move": "into-by-alice"},
+      "output": {"ok": true}
+    },
+    {
+      "about": "the same move for another daemon",
+      "input": {"by": "alice", "check": "signed_for", "daemon": "0123456789abcdef", "move": "into-by-alice"},
+      "output": {"ok": false}
+    },
+    {
+      "about": "said to be by mallory",
+      "input": {
+        "by": "mallory",
+        "check": "signed_for",
+        "daemon": "d30b9802b6365451",
+        "move": "into-by-alice"
+      },
+      "output": {"ok": false}
+    },
+    {
+      "about": "control drops the team from it",
+      "input": {
+        "by": "alice",
+        "check": "signed_for",
+        "daemon": "d30b9802b6365451",
+        "move": "into-team-dropped"
+      },
+      "output": {"ok": false}
+    },
+    {
+      "about": "control changes its time",
+      "input": {
+        "by": "alice",
+        "check": "signed_for",
+        "daemon": "d30b9802b6365451",
+        "move": "into-time-changed"
+      },
+      "output": {"ok": false}
+    },
+    {
+      "about": "alice moves it back to her account",
+      "input": {"by": "alice", "check": "signed_for", "daemon": "d30b9802b6365451", "move": "out-by-alice"},
+      "output": {"ok": true}
+    },
+    {
+      "about": "the team's owner takes bob's machine out",
+      "input": {
+        "certs": {
+          "alice": {
+            "certs": ["alice"]
+          },
+          "bob": {
+            "certs": ["bob"]
+          },
+          "mallory": {
+            "certs": ["mallory"]
+          }
+        },
+        "check": "owner_takes_out",
+        "daemon": "d30b9802b6365451",
+        "move": "out-by-alice",
+        "roster": "roster"
+      },
+      "output": {"ok": true}
+    },
+    {
+      "about": "an editor can't",
+      "input": {
+        "certs": {
+          "alice": {
+            "certs": ["alice"]
+          },
+          "bob": {
+            "certs": ["bob"]
+          },
+          "mallory": {
+            "certs": ["mallory"]
+          }
+        },
+        "check": "owner_takes_out",
+        "daemon": "d30b9802b6365451",
+        "move": "out-by-bob",
+        "roster": "roster"
+      },
+      "output": {"ok": false}
+    },
+    {
+      "about": "nor an outsider",
+      "input": {
+        "certs": {
+          "alice": {
+            "certs": ["alice"]
+          },
+          "bob": {
+            "certs": ["bob"]
+          },
+          "mallory": {
+            "certs": ["mallory"]
+          }
+        },
+        "check": "owner_takes_out",
+        "daemon": "d30b9802b6365451",
+        "move": "out-by-mallory",
+        "roster": "roster"
+      },
+      "output": {"ok": false}
+    },
+    {
+      "about": "nor may the owner move it into a team this way",
+      "input": {
+        "certs": {
+          "alice": {
+            "certs": ["alice"]
+          },
+          "bob": {
+            "certs": ["bob"]
+          },
+          "mallory": {
+            "certs": ["mallory"]
+          }
+        },
+        "check": "owner_takes_out",
+        "daemon": "d30b9802b6365451",
+        "move": "into-by-alice",
+        "roster": "roster"
+      },
+      "output": {"ok": false}
+    },
+    {
+      "about": "the owner's move, with control handing out another root's certificates for her",
+      "input": {
+        "certs": {
+          "alice": {
+            "certs": ["mallory"]
+          }
+        },
+        "check": "owner_takes_out",
+        "daemon": "d30b9802b6365451",
+        "move": "out-by-alice",
+        "roster": "roster"
+      },
+      "output": {"ok": false}
+    }
+  ],
+  "checks": ["arugula_e2e::team::Move::signed_for", "arugula_e2e::team::Move::owner_takes_out"],
+  "input": "check: signed_for (move, daemon, by: a certificate's label) or owner_takes_out (move, daemon, roster: a label, certs: every member account's certificates and revocations, as control hands them out: { account: { certs: [labels], revocations: [labels] } })",
+  "keys": {
+    "alice": {
+      "device": "37f29b7074cf8b52",
+      "noise": "0101010101010101010101010101010101010101010101010101010101010101",
+      "seed": "0101010101010101010101010101010101010101010101010101010101010101",
+      "sign": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c"
+    },
+    "bob": {
+      "device": "c242667535a3d34f",
+      "noise": "0202020202020202020202020202020202020202020202020202020202020202",
+      "seed": "0202020202020202020202020202020202020202020202020202020202020202",
+      "sign": "8139770ea87d175f56a35466c34c7ecccb8d8a91b4ee37a25df60f5b8fc9b394"
+    },
+    "mallory": {
+      "device": "e0a128f98e5582a3",
+      "noise": "0303030303030303030303030303030303030303030303030303030303030303",
+      "seed": "0303030303030303030303030303030303030303030303030303030303030303",
+      "sign": "ed4928c628d1c2c6eae90338905995612959273a5c63f93636c14614ac8737d1"
+    }
+  },
+  "objects": {
+    "alice": {
+      "account": "alice",
+      "approver": "37f29b7074cf8b52",
+      "created": 1000,
+      "device": "37f29b7074cf8b52",
+      "kind": "browser",
+      "name": "alice's laptop",
+      "noise": "0101010101010101010101010101010101010101010101010101010101010101",
+      "sig": "4c7a182921697a35256fd95c0c9e8d2e91f60e6f7601e02d600196dda65ed26cd9aff836cd15e6e6d62cdfbb144fe575d921d5035ee13248a8565973ed0fda0d",
+      "sign": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
+      "v": 1
+    },
+    "bob": {
+      "account": "bob",
+      "approver": "c242667535a3d34f",
+      "created": 1000,
+      "device": "c242667535a3d34f",
+      "kind": "browser",
+      "name": "bob's laptop",
+      "noise": "0202020202020202020202020202020202020202020202020202020202020202",
+      "sig": "07e9418076d6edaf8c72fa5be449eeea02b612b5cd17ec9c6654519b853288b6d7a08c29100e96a0b5af3b13fb593ddb25335e0418d10dc2692d44cd3ed48103",
+      "sign": "8139770ea87d175f56a35466c34c7ecccb8d8a91b4ee37a25df60f5b8fc9b394",
+      "v": 1
+    },
+    "into-by-alice": {
+      "at": 5000,
+      "by": "37f29b7074cf8b52",
+      "sig": "64ad4f0cb292d22d41fc95de2ebc0f58cbd633494e25634a787c3f2acdb1d6ad5702c9ba9c673a2114c551ae990f5b14f9cdf69a1bae56888601ea7043ff860e",
+      "team": {"founder": "alice", "founder_root": "37f29b7074cf8b52", "team": "t1"}
+    },
+    "into-team-dropped": {
+      "at": 5000,
+      "by": "37f29b7074cf8b52",
+      "sig": "64ad4f0cb292d22d41fc95de2ebc0f58cbd633494e25634a787c3f2acdb1d6ad5702c9ba9c673a2114c551ae990f5b14f9cdf69a1bae56888601ea7043ff860e",
+      "team": null
+    },
+    "into-time-changed": {
+      "at": 5001,
+      "by": "37f29b7074cf8b52",
+      "sig": "64ad4f0cb292d22d41fc95de2ebc0f58cbd633494e25634a787c3f2acdb1d6ad5702c9ba9c673a2114c551ae990f5b14f9cdf69a1bae56888601ea7043ff860e",
+      "team": {"founder": "alice", "founder_root": "37f29b7074cf8b52", "team": "t1"}
+    },
+    "mallory": {
+      "account": "mallory",
+      "approver": "e0a128f98e5582a3",
+      "created": 1000,
+      "device": "e0a128f98e5582a3",
+      "kind": "browser",
+      "name": "mallory's laptop",
+      "noise": "0303030303030303030303030303030303030303030303030303030303030303",
+      "sig": "0335151b39728073d8d790462273dd3f4eb65467dba6099e554fd86808d0ae18c23c0057e9819afdb465bfd4e6ffd5866416a421d837041ae5cdb5c850bfd002",
+      "sign": "ed4928c628d1c2c6eae90338905995612959273a5c63f93636c14614ac8737d1",
+      "v": 1
+    },
+    "out-by-alice": {
+      "at": 7000,
+      "by": "37f29b7074cf8b52",
+      "sig": "f5a4f2da3f9a95c8147355259c91182654062c9074f1cf2deeb255abc71abf0cebd9fd5a4123b3f4965109f350b562a045bb375315185f2dfa0f33aa53114b00",
+      "team": null
+    },
+    "out-by-bob": {
+      "at": 7000,
+      "by": "c242667535a3d34f",
+      "sig": "9cc0924743795dc04aad394b9d85c1be62881a501a7bfabdde8d12972c1f507d3c5a1d7c07acc86af523ac06d97a029d60095b53e56a74e4fc5e33b3d0e86100",
+      "team": null
+    },
+    "out-by-mallory": {
+      "at": 7000,
+      "by": "e0a128f98e5582a3",
+      "sig": "cbb52dca1f8231bfe4eb75ad8d9d82803ebd2f1413c196e40de42ca4d7b89bfd261bfe36b2fc27186d5e52090f4fbcb6f64d8af1ccfd864a334e6611cfa5e501",
+      "team": null
+    },
+    "roster": {
+      "at": 1000,
+      "by": "37f29b7074cf8b52",
+      "members": [
+        {"account": "alice", "name": "alice-login", "role": "owner", "root": "37f29b7074cf8b52"},
+        {"account": "bob", "name": "bob-login", "role": "editor", "root": "c242667535a3d34f"}
+      ],
+      "name": "Acme",
+      "sig": "d9149e21fb7e917759dc736018c46656ee8bc525e109d33ab2adc153af38885e5725777794d972ff7a901e2301ee9f3a11d0cfeb88e817935a4a2986a130cd0f",
+      "team": "t1",
+      "v": 1,
+      "version": 1
+    }
+  },
+  "output": "ok"
+}

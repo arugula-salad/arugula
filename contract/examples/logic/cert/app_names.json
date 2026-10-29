@@ -1,0 +1,55 @@
+{
+  "about": "Which certificates are the desktop app's: an app one, or a browser one from before the app had a kind of its own, which the app named \"Arugula app ...\" (\"illogical app ...\" before the rename), in any case. Those don't approve browsers or deploys. A browser's or a phone's own device is a browser certificate that isn't the app's.",
+  "cases": [
+    {
+      "about": "an app certificate, whatever its name",
+      "input": {"kind": "app", "name": "Chrome on Mac"},
+      "output": {"from_app": true, "is_browser": false}
+    },
+    {
+      "about": "a browser certificate the app named",
+      "input": {"kind": "browser", "name": "Arugula app on jake-air"},
+      "output": {"from_app": true, "is_browser": false}
+    },
+    {
+      "about": "one the app named in another case",
+      "input": {"kind": "browser", "name": "ARUGULA APP (AppImage) on geek"},
+      "output": {"from_app": true, "is_browser": false}
+    },
+    {
+      "about": "one the app named before the rename",
+      "input": {"kind": "browser", "name": "illogical app on geek"},
+      "output": {"from_app": true, "is_browser": false}
+    },
+    {
+      "about": "a browser's own",
+      "input": {"kind": "browser", "name": "Safari on iPhone"},
+      "output": {"from_app": false, "is_browser": true}
+    },
+    {
+      "about": "a browser whose name has the words later on",
+      "input": {"kind": "browser", "name": "Chrome, not the Arugula app"},
+      "output": {"from_app": false, "is_browser": true}
+    },
+    {
+      "about": "a CLI named like the app: only a browser's name counts",
+      "input": {"kind": "cli", "name": "Arugula app"},
+      "output": {"from_app": false, "is_browser": false}
+    },
+    {
+      "about": "a machine",
+      "input": {"kind": "daemon", "name": "geek"},
+      "output": {"from_app": false, "is_browser": false}
+    },
+    {
+      "about": "a recovery code",
+      "input": {"kind": "recovery", "name": "recovery 1"},
+      "output": {"from_app": false, "is_browser": false}
+    }
+  ],
+  "checks": ["arugula_e2e::Cert::from_app", "arugula_e2e::Cert::is_browser"],
+  "input": "kind: the certificate's kind; name: its name",
+  "keys": {},
+  "objects": {},
+  "output": "from_app, is_browser: booleans"
+}
