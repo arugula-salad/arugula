@@ -2,8 +2,8 @@
   "schema": 1,
   "commit": "2d4794f46dfc47d87e90015906e70d478a45f93e",
   "branch": "main",
-  "state": "pending",
-  "at": "2026-10-30T13:58:44Z",
+  "state": "green",
+  "at": "2026-10-30T14:01:10Z",
   "phases": {
     "lint": {
       "verdict": "pass",
@@ -54,7 +54,7 @@
       ]
     },
     "test": {
-      "verdict": "pending",
+      "verdict": "pass",
       "build": "newest",
       "runs": [
         {
@@ -66,7 +66,7 @@
         {
           "name": "test-2",
           "id": 124099087858,
-          "conclusion": null,
+          "conclusion": "success",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/41066453433/job/124099087858"
         },
         {
@@ -84,13 +84,13 @@
       ]
     },
     "e2e": {
-      "verdict": "pending",
+      "verdict": "pass",
       "build": "newest",
       "runs": [
         {
           "name": "e2e (1)",
           "id": 124100701775,
-          "conclusion": null,
+          "conclusion": "success",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/41066453433/job/124100701775"
         },
         {
@@ -126,7 +126,7 @@
         {
           "name": "e2e (4)",
           "id": 124100702236,
-          "conclusion": null,
+          "conclusion": "success",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/41066453433/job/124100702236"
         },
         {
@@ -144,7 +144,7 @@
         {
           "name": "e2e (7)",
           "id": 124100702030,
-          "conclusion": null,
+          "conclusion": "success",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/41066453433/job/124100702030"
         },
         {
@@ -186,13 +186,13 @@
       ]
     },
     "macos": {
-      "verdict": "pending",
+      "verdict": "pass",
       "build": "newest",
       "runs": [
         {
           "name": "macos (test)",
           "id": 124099088052,
-          "conclusion": null,
+          "conclusion": "success",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/41066453433/job/124099088052"
         },
         {
