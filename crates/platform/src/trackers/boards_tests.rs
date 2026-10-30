@@ -18,7 +18,7 @@ use crate::{
     boards::FLAG,
     forge::viewer,
     chat_tests::{TestHub, call},
-    db::{Sql as _, sql::params},
+    db::{Sql as _, sql::params, trackers::NewConnection},
 };
 
 async fn board(base: &str, who: &str, project: &str, pointers: &[Value]) -> String {
@@ -118,6 +118,18 @@ async fn a_plane_item_is_on_a_board_and_closing_it_moves_the_progress() {
     let live = &v["zones"][0]["rows"][0]["live"];
     assert_eq!((live["state"].as_str(), live["state_name"].as_str(), live["number"].as_u64()), (Some("closed"), Some("Done"), Some(2)), "{live}");
     assert_eq!(progress(&v), (1, 1));
+
+    // erin's project has a connection of its own, so the check isn't empty for her: it still isn't this one.
+    let theirs_conn = NewConnection {
+        id: "tc_theirs".into(),
+        project_id: other.clone(),
+        workspace_slug: "other".into(),
+        source_project_id: "pl-proj-9".into(),
+        identifier: "OTH".into(),
+        name: "Other".into(),
+        linked_by: "erin".into(),
+    };
+    app.db.connect_tracker(&theirs_conn, 1).unwrap().unwrap();
 
     // Another project's board that points at this item, and at a native issue of its own.
     let (_, native) =
