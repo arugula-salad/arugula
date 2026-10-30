@@ -426,3 +426,51 @@
   cursor: pointer;
   margin: 8px 0;
 }
+
+/* A board on a list is a swarm card (platform/swarm.css): the title and its
+   state on one line, the goal's first line, then the bar and its words. */
+.board-card-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.platform-section a.board-card-title {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--fg);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.platform-section a.board-card-title:hover {
+  color: var(--accent);
+}
+
+.board-card-line {
+  margin: 4px 0 0;
+  overflow-wrap: anywhere;
+}
+
+.board-card-progress {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  font-size: 12px;
+}
+
+.board-card-progress .board-bar {
+  flex: 1;
+  min-width: 0;
+}
+
+.board-card-progress span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.board-done-list .board-list {
+  margin-top: 8px;
+}
