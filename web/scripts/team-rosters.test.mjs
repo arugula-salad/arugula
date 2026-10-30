@@ -9,6 +9,7 @@ import { certBody, revocationBody } from "../src/shell/e2e/cert.ts";
 import { generateKeys, signText } from "../src/shell/e2e/keys.ts";
 import { ownersAsHeld, signLock, signRoster } from "../src/shell/e2e/team.ts";
 import { checkRoster, RosterStore, takeLock, TrustStore, withTimeout } from "../src/shell/team-rosters.ts";
+import { refreshAccount } from "../src/shell/e2e/checkpoint.ts";
 
 const cert = async (k, account, by, name = account, created = 1) => {
   const c = { v: 1, account, device: k.id, kind: "browser", name, noise: k.noisePub, sign: k.signPub, created, approver: by.id, sig: "" };
@@ -349,4 +350,27 @@ test("a fetch the page's trust waits on is given up after its time", async () =>
   // One that answers in time is let through.
   const quick = async () => new Response("{}");
   assert.equal((await withTimeout(quick, 50)("/x")).status, 200);
+});
+
+test("a device approved after its approver's first removal stays out when control leaves out that removal's signer", async () => {
+  // Root approves S and A; A approves B (made at 150); S removes A at 100
+  // and root removes A at 200. Without S's certificate, A's removal moves
+  // to 200 and B would count.
+  const [r, sK, aK, bK] = await Promise.all([generateKeys(), generateKeys(), generateKeys(), generateKeys()]);
+  const rc = await cert(r, "x", r, "root", 1);
+  const sc = await cert(sK, "x", r, "s", 2);
+  const ac = await cert(aK, "x", r, "a", 3);
+  const bc = await cert(bK, "x", aK, "b", 150);
+  const bySigner = async (by, at) => {
+    const v = { v: 1, account: "x", device: ac.device, at, by: by.id, sig: "" };
+    v.sig = await signText(by, revocationBody(v));
+    return v;
+  };
+  const revs = [await bySigner(sK, 100), await bySigner(r, 200)];
+  const trust = { account: "x", root: r.id };
+  const held = { certs: [rc, sc, ac, bc], revocations: revs };
+  assert.equal((await evaluate(trust, held.certs, held.revocations)).has(bc.device), false, "B is out of the held view");
+  const got = await refreshAccount(trust, { certs: [rc, ac, bc], revocations: revs }, held, { round: 0, at: {} }, 1);
+  assert.equal(got.refused, true, "the certificates that let B in are taken");
+  assert.equal((await evaluate(trust, got.certs, got.revocations)).has(bc.device), false, "B is let back in");
 });

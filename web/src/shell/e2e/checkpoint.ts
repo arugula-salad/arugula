@@ -98,12 +98,19 @@ export async function refreshAccount(
   if (revocations.length === old.revocations.length && fresh.certs.length === old.certs.length && fresh.certs.every((c) => sigs.has(c.sig)))
     return { certs: old.certs, revocations, refused: false };
   const certs = await dropLate(trust, fresh.certs, revocations, seen);
-  // Only a device a held removal names can be one `old` held removed: if
-  // none of them counts now, nothing came back.
-  const named = new Set(old.revocations.filter((r) => r.account === trust.account).map((r) => r.device));
-  if (!named.size) return { certs, revocations, refused: false };
+  // The devices `old` held removed are each named by a held removal, or
+  // approved (by a certificate held or sent) by one of those, or by one
+  // approved so (`removed`). If none of these suspects counts now, none of
+  // those does, and the old view needn't be walked; if one does, it is.
+  const suspects = new Set(old.revocations.filter((r) => r.account === trust.account).map((r) => r.device));
+  if (!suspects.size) return { certs, revocations, refused: false };
+  for (;;) {
+    const before = suspects.size;
+    for (const c of [...old.certs, ...certs]) if (c.account === trust.account && suspects.has(c.approver)) suspects.add(c.device);
+    if (suspects.size === before) break;
+  }
   const after = await evaluate(trust, certs, revocations);
-  if (![...named].some((id) => after.has(id))) return { certs, revocations, refused: false };
+  if (![...suspects].some((id) => after.has(id))) return { certs, revocations, refused: false };
   const gone = await removed(trust, old.certs, old.revocations);
   if ([...gone].some((id) => after.has(id))) return { certs: await dropLate(trust, old.certs, revocations, seen), revocations, refused: true };
   return { certs, revocations, refused: false };

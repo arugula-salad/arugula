@@ -228,6 +228,24 @@ check("Rust trusts what we signed", JSON.stringify(rust) === JSON.stringify([roo
     const byLaptop = { certs: [rc, lc, pc], revocations: [phoneGone] };
     const r2 = await both("certificates that would bring a removed device back are refused", { certs: [rc, pc], revocations: [phoneGone] }, byLaptop, { round: 1, at: { [rc.sig]: 1, [lc.sig]: 1, [pc.sig]: 1, [phoneGone.sig]: 1 } }, 2);
     check("…and Rust refuses them", r2.refused === true);
+    // A device approved after its approver's first removal: control
+    // leaves out that removal's signer, so the approver's removal moves
+    // later. Root approves S and A; A approves B (made at 150); S removes
+    // A at 100, root at 200.
+    const sK = await generateKeys();
+    const aK = await generateKeys();
+    const bK = await generateKeys();
+    const sc = await signed(sK, root, "s", 4);
+    const ac = await signed(aK, root, "a", 5);
+    const bc = await signed(bK, aK, "b", 150);
+    const aBy = async (by: typeof root, at: number): Promise<Revocation> => {
+      const r: Revocation = { v: 1, account: "acct", device: ac.device, at, by: by.id, sig: "" };
+      r.sig = await signText(by, revocationBody(r));
+      return r;
+    };
+    const aGone = [await aBy(sK, 100), await aBy(root, 200)];
+    const r3 = await both("leaving out a removal's signer doesn't let in what its approver approved after", { certs: [rc, ac, bc], revocations: aGone }, { certs: [rc, sc, ac, bc], revocations: aGone }, { round: 0, at: {} }, 1);
+    check("…and Rust refuses them", r3.refused === true);
   }
 
   // Nor does a CLI remove a browser; it removes a machine.

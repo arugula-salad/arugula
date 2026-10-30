@@ -162,14 +162,29 @@ pub fn refresh_account(
         return (old.0.to_vec(), revocations, false);
     }
     let certs = drop_late(trust, new.0, &revocations, seen);
-    // Only a device a held removal names can be one `old` held removed:
-    // if none of them counts now, nothing came back.
-    let named: HashSet<&str> = old.1.iter().filter(|r| r.account == trust.account).map(|r| r.device.as_str()).collect();
-    if named.is_empty() {
+    // The devices `old` held removed are each named by a held removal, or
+    // approved (by a certificate held or sent) by one of those, or by one
+    // approved so ([`removed`]). If none of these suspects counts now,
+    // none of those does, and the old view needn't be walked; if one
+    // does, it is, to see.
+    let mut suspects: HashSet<&str> =
+        old.1.iter().filter(|r| r.account == trust.account).map(|r| r.device.as_str()).collect();
+    if suspects.is_empty() {
         return (certs, revocations, false);
     }
+    loop {
+        let before = suspects.len();
+        for c in old.0.iter().chain(&certs).filter(|c| c.account == trust.account) {
+            if suspects.contains(c.approver.as_str()) {
+                suspects.insert(c.device.as_str());
+            }
+        }
+        if suspects.len() == before {
+            break;
+        }
+    }
     let after = trust.evaluate(&certs, &revocations);
-    if !named.iter().any(|id| after.devices.contains_key(*id)) {
+    if !suspects.iter().any(|id| after.devices.contains_key(*id)) {
         return (certs, revocations, false);
     }
     let gone = removed(trust, old.0, old.1);
@@ -381,6 +396,39 @@ mod tests {
         partial.at.insert(seen_key(&late.sig), 5);
         let kept_certs = drop_late(&trust, more.clone(), std::slice::from_ref(&rev), &partial);
         assert!(!kept_certs.iter().any(|c| c.sig == late.sig));
+    }
+
+    /// A device the held view kept out because it was approved after its
+    /// approver's earliest removal stays out when control leaves out that
+    /// removal's signer, though the device a held removal names is still
+    /// out by a later one: root approves S and A; A approves B (made at
+    /// 150); S removes A at 100 and root removes A at 200. Leaving out S's
+    /// certificate would move A's removal to 200 and let B in.
+    #[test]
+    fn a_device_approved_after_its_approvers_first_removal_stays_out() {
+        let (rk, rc) = root("a");
+        let (sk, sc) = approved("a", &rk, "s");
+        let (ak, ac) = approved("a", &rk, "a");
+        let bk = DeviceKeys::generate();
+        let mut bc = Cert::new(&bk, "a", Kind::Browser, "b");
+        bc.created = 150;
+        bc.sign_with(&ak);
+        let removal = |by: &DeviceKeys, at: u64| {
+            let mut r = Revocation::new("a", &ac.device, by);
+            r.at = at;
+            r.sig = hex::encode(by.signature(r.body().as_bytes()));
+            r
+        };
+        let (by_s, by_root) = (removal(&sk, 100), removal(&rk, 200));
+        let trust = Trust { account: "a".into(), root: rc.device.clone() };
+        let held = (vec![rc.clone(), sc.clone(), ac.clone(), bc.clone()], vec![by_s.clone(), by_root.clone()]);
+        let trusted = |c: &[Cert], r: &[Revocation], id: &str| trust.evaluate(c, r).get(id).is_some();
+        assert!(!trusted(&held.0, &held.1, &bc.device), "B is out of the held view");
+        let mut seen = Seen::default();
+        let (c, r, refused) =
+            refresh_account(&trust, (vec![rc, ac, bc.clone()], held.1.clone()), (&held.0, &held.1), &mut seen, 1);
+        assert!(refused, "the certificates that let B in are taken");
+        assert!(!trusted(&c, &r, &bc.device), "B is let back in");
     }
 
     /// A lock counts only from an owner in the roster held, newer than the
