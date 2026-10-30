@@ -154,15 +154,35 @@ export function PlaneConnections({ p }: { p: PlatformProject }) {
         ) : null}
       </div>
       {changes ? (
-        <form class="platform-link-repo" aria-label="Connect a Plane project" data-plane-form onSubmit={submit}>
+        <form class="plane-connect" aria-label="Connect a Plane project" data-plane-form onSubmit={submit}>
           <h3>Connect a Plane project</h3>
-          <input required aria-label="Workspace" placeholder="Workspace slug" autocomplete="off" value={workspace} data-plane-workspace onInput={(e) => setWorkspace(e.currentTarget.value)} />
-          <input required aria-label="Project" placeholder="Project id or identifier" autocomplete="off" value={project} data-plane-project onInput={(e) => setProject(e.currentTarget.value)} />
-          <input required type="password" autocomplete="off" aria-label="API key" placeholder="Plane API key" value={key} data-plane-key onInput={(e) => setKey(e.currentTarget.value)} />
-          <input type="password" autocomplete="off" aria-label="Webhook secret (optional)" placeholder="Webhook secret (optional)" value={hook} data-plane-hook onInput={(e) => setHook(e.currentTarget.value)} />
-          <button class="primary" disabled={busy}>
-            Connect
-          </button>
+          <label class="plane-connect-field">
+            <span class="plane-connect-label">Workspace</span>
+            <input class="field" required placeholder="my-team" autocomplete="off" value={workspace} data-plane-workspace onInput={(e) => setWorkspace(e.currentTarget.value)} />
+            <span class="dim">The slug in your Plane address: app.plane.so/<b>my-team</b>/…</span>
+          </label>
+          <label class="plane-connect-field">
+            <span class="plane-connect-label">Project</span>
+            <input class="field" required placeholder="ABC" autocomplete="off" value={project} data-plane-project onInput={(e) => setProject(e.currentTarget.value)} />
+            <span class="dim">Its identifier (the ABC in ABC-12), or its id from the project's address.</span>
+          </label>
+          <label class="plane-connect-field">
+            <span class="plane-connect-label">API key</span>
+            <input class="field" required type="password" autocomplete="off" value={key} data-plane-key onInput={(e) => setKey(e.currentTarget.value)} />
+            <span class="dim">From Plane's Profile settings, under API tokens. It's sealed here and never shown again.</span>
+          </label>
+          <label class="plane-connect-field">
+            <span class="plane-connect-label">
+              Webhook secret <span class="dim">(optional)</span>
+            </span>
+            <input class="field" type="password" autocomplete="off" value={hook} data-plane-hook onInput={(e) => setHook(e.currentTarget.value)} />
+            <span class="dim">Leave it empty to start: changes arrive within 5 minutes without one. A webhook makes them instant.</span>
+          </label>
+          <span class="plane-connect-buttons">
+            <button class="primary" disabled={busy}>
+              Connect
+            </button>
+          </span>
         </form>
       ) : (
         <p class="dim">A team's owners and editors connect Plane projects.</p>
