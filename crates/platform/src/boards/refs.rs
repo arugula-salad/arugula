@@ -157,12 +157,12 @@ fn plane(text: &str, r: &mut Refs) {
             continue;
         }
         let key_end = (i..b.len()).find(|&j| !(b[j].is_ascii_uppercase() || b[j].is_ascii_digit())).unwrap_or(b.len());
-        if key_end < b.len() && b[key_end] == b'-' {
-            if let Some((n, rest)) = number(&text[key_end + 1..])
-                && rest.chars().next().is_none_or(|c| !c.is_alphanumeric())
-            {
-                r.add_plane(&text[i..key_end], n);
-            }
+        if key_end < b.len()
+            && b[key_end] == b'-'
+            && let Some((n, rest)) = number(&text[key_end + 1..])
+            && rest.chars().next().is_none_or(|c| !c.is_alphanumeric())
+        {
+            r.add_plane(&text[i..key_end], n);
         }
         i = key_end.max(i + 1);
     }

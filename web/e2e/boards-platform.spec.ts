@@ -1,15 +1,18 @@
 // Issues on boards, phase 1 (#289-#292), as a person meets them. Alice owns
 // team Acme, with chat's and boards' Labs flags on, and three native issues,
 // one hers. The bar says Triage (not Issues) and Boards, and Triage lists the
-// three. She makes the board Launch with a zone Now; Add to board… on the
-// first issue leaves it off Triage and draws it as a card on the board. She
-// adds a row through the "points at" picker (type, ArrowDown, Enter), edits
-// only its note, and makes an issue from the zone's menu with New issue….
-// Bob, a viewer on a phone, sees what's still untriaged, no Add to board…,
-// and the board's cards with no sideways scroll. A local control
+// three. She makes the board Launch, which has the four lanes (Next, Doing,
+// Review, Done) and no way to make a zone; Add to board… on the first issue
+// leaves it off Triage and draws it as a card in Next. She adds a row
+// through the item picker (type, ArrowDown, Enter), edits only its note, and
+// makes an issue with New issue…. Bob, a viewer on a phone, sees what's
+// still untriaged, no Add to board…, and the board's cards with no sideways
+// scroll. A local control
 // (team-fixture.ts, `--platform-host app.localhost`), as issues-platform.spec.ts.
 // Phase 2 (#302), epics: Alice sets Launch's goal, closes one of its issues
-// and sees the progress move, closes the board with a two-line note (Done
+// and sees its row move to Done, not yet proven, and proven once evidence is
+// attached (aru-125: lanes follow the work, and Done has no PROOFS fold),
+// closes the board with a two-line note (Done
 // and the note show, the Boards page folds it under "Done (1)") and reopens
 // it; Bob sees the goal, progress and the Done banner and none of the buttons.
 // #339: `/boards` lists every project's boards, by project, folded the same.
@@ -107,7 +110,7 @@ test("with boards on, the bar says Triage and Boards, and Triage lists the untri
   await expect(alice.locator("[data-issue-row]")).toHaveCount(3);
 });
 
-test("a board Launch with a zone Now takes the first issue from Triage as a card", async () => {
+test("a board Launch has the four lanes and takes the first issue from Triage as a card in Next", async () => {
   test.setTimeout(90_000);
   await alice.locator("[data-platform-boards]").click();
   await expect(alice).toHaveURL(/\/p\/prj_[0-9a-f]+-acme\/boards$/);
@@ -116,27 +119,21 @@ test("a board Launch with a zone Now takes the first issue from Triage as a card
   await expect(alice.locator("[data-board-page] [data-board-title]")).toHaveText("Launch", { timeout: 15_000 });
   boardPath = new URL(alice.url()).pathname;
 
-  await alice.locator("[data-board-add-zone]").click();
-  await alice.locator(".prompt input").fill("Now");
-  await alice.locator(".prompt input").press("Enter");
-  await expect(zone(alice, "Now")).toBeVisible();
-  // A new board has no Proofs zone; + Add PROOFS makes it, and the button goes.
-  await alice.locator("[data-board-add-proofs]").click();
-  await expect(alice.locator('[data-board-zone][data-zone-kind="proofs"]')).toBeVisible();
-  await expect(alice.locator("[data-board-add-proofs]")).toHaveCount(0);
+  // Always the four lanes, in order, and no way to make, rename or move a zone.
+  await expect(alice.locator("[data-board-zone] h2")).toHaveText(["Next", "Doing", "Review", "Done"]);
+  await expect(alice.locator("[data-board-add-zone], [data-board-add-proofs], [data-board-zone-menu]")).toHaveCount(0);
 
   await alice.locator("[data-platform-triage]").click();
   await expect(alice.locator("[data-triage-row]")).toHaveCount(3, { timeout: 15_000 });
   await triaged(alice, FIRST).locator("[data-triage-add]").click();
   await alice.getByRole("menuitem", { name: "Launch" }).click();
-  await alice.getByRole("menuitem", { name: "Now" }).click();
   await expect(triaged(alice, FIRST)).toHaveCount(0);
   await expect(alice.locator("[data-triage-row]")).toHaveCount(2);
 
   await alice.locator("[data-platform-boards]").click();
   await alice.locator("[data-board-link]", { hasText: "Launch" }).click();
   const card = row(alice, FIRST);
-  await expect(zone(alice, "Now").locator(card)).toHaveCount(1, { timeout: 15_000 });
+  await expect(zone(alice, "Next").locator(card)).toHaveCount(1, { timeout: 15_000 });
   await expect(card.locator(".board-card-title .board-title")).toHaveText(FIRST);
   await expect(card.locator("[data-board-ptr]")).toHaveText(/^#\d+$/);
   await expect(card.locator("[data-board-live]")).toHaveAttribute("data-board-live", "open");
@@ -145,9 +142,8 @@ test("a board Launch with a zone Now takes the first issue from Triage as a card
 
 test("a row is added through the picker, and editing its note keeps what it points at", async () => {
   test.setTimeout(90_000);
-  const now = zone(alice, "Now");
-  await now.locator("[data-board-add-row]").click();
-  const form = now.locator("[data-board-form]");
+  await alice.locator("[data-board-add-row]").click();
+  const form = alice.locator("[data-board-form]");
   await form.locator("[data-board-ptr-input]").fill("changelog");
   const pick = form.locator("[data-board-pick]");
   await expect(pick).toHaveCount(1, { timeout: 10_000 });
@@ -178,11 +174,10 @@ test("a row is added through the picker, and editing its note keeps what it poin
   await expect(edited.locator("[data-board-live]")).toHaveAttribute("data-board-live", "open");
 });
 
-test("New issue… in a zone's menu makes a native issue and a card row for it", async () => {
+test("New issue… makes a native issue and a card row for it in Next", async () => {
   test.setTimeout(90_000);
-  const now = zone(alice, "Now");
-  await now.locator("[data-board-zone-menu]").click();
-  await alice.getByRole("menuitem", { name: "New issue…" }).click();
+  const now = zone(alice, "Next");
+  await alice.locator("[data-board-new-issue]").click();
   await alice.locator(".prompt input").fill(NEW);
   await alice.locator(".prompt input").press("Enter");
 
@@ -216,7 +211,7 @@ test("Alice sets the board's goal, and it shows under the title with the issues'
   test.setTimeout(90_000);
   await platform(alice, boardPath);
   const page = alice.locator("[data-board-page]");
-  await expect(page.locator("[data-board-progress]")).toHaveText("0 of 3 issues done", { timeout: 15_000 });
+  await expect(page.locator("[data-board-progress]")).toHaveText("0 of 3 done", { timeout: 15_000 });
   await expect(page.locator("[data-board-goal]")).toHaveCount(0);
   await expect(page.locator("[data-board-progress] [role=progressbar]")).toHaveAttribute("aria-valuemax", "3");
   await page.locator("[data-board-goal-edit]").click();
@@ -237,7 +232,7 @@ test("Alice sets the board's goal, and it shows under the title with the issues'
   await expect(page.locator("h1[data-board-title]")).toHaveText("Launch", { timeout: 15_000 });
 });
 
-test("closing one of the board's issues moves its progress by one", async () => {
+test("closing one of the board's issues moves its row to Done, not yet proven, until evidence is attached", async () => {
   test.setTimeout(90_000);
   const id = /brd_[0-9a-f]+/.exec(boardPath)![0];
   const view = (await api(alice, "GET", `/api/boards/${id}`)).body!;
@@ -245,8 +240,31 @@ test("closing one of the board's issues moves its progress by one", async () => 
   const closed = await api(alice, "PATCH", `/api/issues/${first.pointer.id}`, { state: "closed", reason: "completed" });
   expect(closed.status).toBe(200);
   await platform(alice, boardPath);
-  await expect(alice.locator("[data-board-page] [data-board-progress]")).toHaveText("1 of 3 issues done", { timeout: 15_000 });
-  await expect(alice.locator("[data-board-page] [data-board-progress] [role=progressbar]")).toHaveAttribute("aria-valuenow", "1");
+  const page = alice.locator("[data-board-page]");
+  await expect(page.locator("[data-board-progress]")).toHaveText("1 of 3 done, 0 proven", { timeout: 15_000 });
+  await expect(page.locator("[data-board-progress] [role=progressbar]")).toHaveAttribute("aria-valuenow", "1");
+  // Nobody moved it: the closed issue is in Done, and the others stay in Next.
+  await expect(zone(alice, "Done").locator(row(alice, FIRST))).toHaveCount(1);
+  await expect(zone(alice, "Next").locator(row(alice, FIRST))).toHaveCount(0);
+  await expect(zone(alice, "Next").locator("[data-board-row]")).toHaveCount(2);
+  await expect(row(alice, FIRST).locator("[data-board-proof]")).toHaveAttribute("data-board-proof", "not-proven");
+  await expect(row(alice, FIRST).locator("[data-board-proof]")).toHaveText("not proven yet");
+  // There is no PROOFS zone to fold, and a row has no menu to move it.
+  await expect(alice.locator('[data-zone-kind="proofs"]')).toHaveCount(0);
+  await row(alice, FIRST).locator("[data-board-row-menu]").click();
+  await expect(alice.getByRole("menuitem", { name: /^Move/ })).toHaveCount(0);
+  await alice.keyboard.press("Escape");
+
+  // Evidence attached to the Done row is the mark that proves it.
+  const att = await api(alice, "POST", `/api/boards/${id}/attachments`, {
+    row: first.id,
+    role: "proof",
+    pointer: { kind: "link", url: "https://ci.example.com/runs/1" },
+  });
+  expect(att.status).toBe(200);
+  await expect(page.locator("[data-board-progress]")).toHaveText("1 of 3 done, 1 proven", { timeout: 15_000 });
+  await expect(row(alice, FIRST).locator("[data-board-proof]")).toHaveAttribute("data-board-proof", "evidence");
+  await expect(row(alice, FIRST).locator("[data-board-attachment]")).toContainText("ci.example.com/runs/1");
 });
 
 test("Alice closes the board with a note, finds it under Done, and reopens it", async () => {
@@ -280,7 +298,7 @@ test("Alice closes the board with a note, finds it under Done, and reopens it", 
   await expect(alice.locator("[data-board-close]")).toBeVisible();
   await alice.locator("[data-platform-boards]").click();
   await expect(alice.locator("[data-boards] [data-board-link]", { hasText: "Launch" })).toHaveCount(1, { timeout: 15_000 });
-  await expect(alice.locator("[data-boards] [data-board-progress]")).toHaveText("1 of 3 issues done");
+  await expect(alice.locator("[data-boards] [data-board-progress]")).toHaveText("1 of 3 done, 1 proven");
   await expect(alice.locator("[data-boards-done]")).toHaveCount(0);
   // The note is kept when the board is open again.
   const id = /brd_[0-9a-f]+/.exec(boardPath)![0];
@@ -296,7 +314,7 @@ test("a viewer on a phone sees the goal, progress and Done, with no buttons and 
   await platform(bob, boardPath);
   const page = bob.locator("[data-board-page]");
   await expect(page.locator("[data-board-goal]")).toHaveText(GOAL, { timeout: 15_000 });
-  await expect(page.locator("[data-board-progress]")).toHaveText("1 of 3 issues done");
+  await expect(page.locator("[data-board-progress]")).toHaveText("1 of 3 done, 1 proven");
   await expect(page.locator("[data-board-done]")).toContainText("Done");
   for (const hook of ["close", "reopen", "goal-edit", "rename"]) await expect(page.locator(`[data-board-${hook}]`)).toHaveCount(0);
   expect(await bob.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);

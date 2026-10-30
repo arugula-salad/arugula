@@ -36,7 +36,34 @@
   background: var(--surface);
 }
 
-.board-zone[data-zone-kind="proofs"] {
+.board-zone[data-board-zone="lane_done"] {
+  border-style: dashed;
+}
+
+.board-said {
+  margin: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--divider);
+  border-radius: 6px;
+  background: var(--surface);
+}
+
+.board-chips {
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.board-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 6px;
+  border: 1px solid var(--divider);
+  border-radius: 999px;
+  font-size: 0.85em;
+}
+
+.board-chip.proof {
   border-style: dashed;
 }
 

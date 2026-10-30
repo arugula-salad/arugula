@@ -57,8 +57,6 @@ use crate::Platform;
 mod app;
 #[cfg(test)]
 mod boards_live_tests;
-#[cfg(test)]
-mod lanes_tests;
 pub mod content;
 #[cfg(test)]
 mod content_tests;
@@ -74,6 +72,8 @@ pub mod ingest;
 #[cfg(test)]
 mod ingest_tests;
 pub mod items;
+#[cfg(test)]
+mod lanes_tests;
 pub mod links;
 #[cfg(any(test, feature = "testing"))]
 pub mod links_tests;

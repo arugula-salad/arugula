@@ -950,7 +950,9 @@ mod tests {
     }
 
     fn lanes(mut by: Vec<(Lane, Vec<Row>)>) -> Vec<Zone> {
-        Lane::ALL.map(|l| lane(l, by.iter_mut().find(|(k, _)| *k == l).map(|(_, r)| std::mem::take(r)).unwrap_or_default())).into()
+        Lane::ALL
+            .map(|l| lane(l, by.iter_mut().find(|(k, _)| *k == l).map(|(_, r)| std::mem::take(r)).unwrap_or_default()))
+            .into()
     }
 
     fn board() -> Board {
@@ -982,7 +984,8 @@ mod tests {
         let long = "Wiring the new tokenizer through every caller, then the benchmarks, then the docs";
         let mut ci = row(Pointer::ForgeItem { id: "fi_aa22".into() }, Lane::Done, "Release build");
         ci.proof = Some(Proof { by: ProofBy::Ci, pointer: Some(Pointer::ForgeItem { id: "fi_aa22".into() }) });
-        let mut by_hand = row(Pointer::Issue { id: "iss_1a2b3c4d5e6f7a8b".into() }, Lane::Done, "Parser rewrite landed");
+        let mut by_hand =
+            row(Pointer::Issue { id: "iss_1a2b3c4d5e6f7a8b".into() }, Lane::Done, "Parser rewrite landed");
         by_hand.proof = Some(Proof { by: ProofBy::Evidence, pointer: None });
         let mut doing = row(Pointer::Issue { id: "iss_bb11".into() }, Lane::Doing, long);
         doing.attachments = vec![Attachment {
@@ -1134,7 +1137,9 @@ Done: People can sign up.
         let run = Pointer::Run { id: "run_1".into() };
         let link = Pointer::Link { url: "https://x.example/1".into() };
         assert!([&fi, &block, &run].iter().all(|p| AttachRole::Work.takes(p)));
-        assert!(![&link, &Pointer::Issue { id: "iss_1".into() }, &Pointer::None].iter().any(|p| AttachRole::Work.takes(p)));
+        assert!(
+            ![&link, &Pointer::Issue { id: "iss_1".into() }, &Pointer::None].iter().any(|p| AttachRole::Work.takes(p))
+        );
         assert!([&run, &link].iter().all(|p| AttachRole::Proof.takes(p)));
         assert!(![&fi, &block].iter().any(|p| AttachRole::Proof.takes(p)));
     }

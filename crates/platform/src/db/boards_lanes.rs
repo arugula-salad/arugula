@@ -164,7 +164,9 @@ impl Db {
                     let refs = references_in(&format!("{} {}", o.row.note, branch.unwrap_or_default()));
                     issues.iter().find(|(_, k)| refs.name_any(k)).map(|(r, _)| (r, AttachRole::Work))
                 }
-                Pointer::Run { .. } | Pointer::Link { .. } if o.proofs || matches!(o.row.pointer, Pointer::Run { .. }) => {
+                Pointer::Run { .. } | Pointer::Link { .. }
+                    if o.proofs || matches!(o.row.pointer, Pointer::Run { .. }) =>
+                {
                     let role = if o.proofs { AttachRole::Proof } else { AttachRole::Work };
                     let refs = references_in(&o.row.note);
                     issues.iter().find(|(_, k)| refs.name_any(k)).map(|(r, _)| (r, role))
@@ -303,10 +305,14 @@ mod tests {
             )
             .unwrap();
         }
-        for (n, (id, title, kind)) in
-            [("zon_n", "Next", None), ("zon_d", "Doing", None), ("zon_r", "Review", None), ("zon_p", "PROOFS", Some("proofs"))]
-                .into_iter()
-                .enumerate()
+        for (n, (id, title, kind)) in [
+            ("zon_n", "Next", None),
+            ("zon_d", "Doing", None),
+            ("zon_r", "Review", None),
+            ("zon_p", "PROOFS", Some("proofs")),
+        ]
+        .into_iter()
+        .enumerate()
         {
             c.execute(
                 "INSERT INTO board_entries (id, board_id, kind, position, title, zone_kind, created_at, updated_at)
@@ -315,7 +321,8 @@ mod tests {
             )
             .unwrap();
         }
-        let rows: [(&str, &str, &str, &str, Option<&str>, Option<&str>, Option<&str>); 10] = [
+        type Fixture<'a> = (&'a str, &'a str, &'a str, &'a str, Option<&'a str>, Option<&'a str>, Option<&'a str>);
+        let rows: [Fixture; 10] = [
             ("zon_n", "row_i5", "", "forge_item", Some("fi_i5"), None, Some("working")),
             ("zon_n", "row_i6", "", "forge_item", Some("fi_i6"), None, None),
             ("zon_n", "row_note", "decide naming", "", None, None, None),
@@ -353,8 +360,11 @@ mod tests {
         assert_eq!(moved, Moved { boards: 1, attached: 3, proofs: 1 });
 
         let c = db.c();
-        let zones: u64 = c.query_row("SELECT count(*) FROM board_entries WHERE kind = 'zone'", params![], |r| r.get(0)).unwrap();
-        let zoned: u64 = c.query_row("SELECT count(*) FROM board_entries WHERE zone_id IS NOT NULL", params![], |r| r.get(0)).unwrap();
+        let zones: u64 =
+            c.query_row("SELECT count(*) FROM board_entries WHERE kind = 'zone'", params![], |r| r.get(0)).unwrap();
+        let zoned: u64 = c
+            .query_row("SELECT count(*) FROM board_entries WHERE zone_id IS NOT NULL", params![], |r| r.get(0))
+            .unwrap();
         assert_eq!((zones, zoned), (0, 0));
         drop(c);
         let stored = db.board_stored("brd_1").unwrap().unwrap();

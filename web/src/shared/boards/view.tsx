@@ -1,10 +1,12 @@
-// One board (boards, step 2), wherever it's drawn: the platform
-// page's `/p/:project/boards/:board`, and a board block in a daemon
-// workspace (a pin onto it, `shell/blocks/board.tsx`). Zones in order, each
-// with a progress bar and its rows: a glyph for the row's own status, a
-// link to what it points at with that item's state now (`live`), and a
-// note. Owners and editors add, edit and reorder zones and rows; a viewer's
-// writes are refused and say so.
+// One board (boards, step 2; lanes, aru-125), wherever it's drawn: the
+// platform page's `/p/:project/boards/:board`, and a board block in a daemon
+// workspace (a pin onto it, `shell/blocks/board.tsx`). The four lanes in
+// order (Next, Doing, Review, Done: nobody makes or moves them, the work
+// does), each with its rows: a glyph for the row's lane, a link to what it
+// points at with that item's state now (`live`), chips for what is attached
+// to it, on a Done row the mark that says it is proven or not yet, and a
+// note. Owners and editors add, edit and delete rows; a viewer's writes are
+// refused and say so. (The real page is B5's.)
 //
 // It reads the board as the person looking: now, again when the platform
 // says it changed (the board's thread, chat's live stream), and when the
@@ -13,7 +15,7 @@
 // to make again.
 
 import { useEffect, useId, useRef, useState } from "preact/hooks";
-import type { BoardPointer, ProjectBoard, BoardRow, BoardView, BoardWorkItem, BoardZone } from "../proto";
+import type { BoardAttachment, BoardPointer, ProjectBoard, BoardRow, BoardView, BoardWorkItem, BoardZone } from "../proto";
 import { chat } from "../chat-store";
 import { usePlatformApi } from "../platform-api";
 import { Markdown } from "../ui/markdown";
@@ -25,7 +27,7 @@ import { agentShort } from "../agent-label";
 import { day } from "../time";
 import { BoardError, STALE_REV, boards } from "./store";
 import "./boards.css";
-import { BLOCK_LABEL, GLYPH, PICK_DELAY_MS, PICK_LIMIT, STATUSES, STATUS_LABEL, assigneesLine, blockClass, GOAL_MAX, blockFacts, debounced, epicLine, isCard, liveClass, liveWord, pointerHref, pointerLabel, pointerText, pointerToSend, progress, proven, stepActive, stepBefore, workLabel } from "./text";
+import { BLOCK_LABEL, PICK_DELAY_MS, PICK_LIMIT, assigneesLine, blockClass, GOAL_MAX, blockFacts, chipOf, debounced, epicLine, isCard, laneCount, liveClass, liveWord, pointerHref, pointerLabel, pointerText, pointerToSend, proofMark, rowGlyph, stepActive, workLabel } from "./text";
 
 const STALE_SAID = "That changed while you were editing, so the board is read again. Make your change again if it still applies.";
 
@@ -100,13 +102,8 @@ export function BoardPanel({
     }
   };
 
-  const addZone = async (kind?: "proofs") => {
-    const title = kind ? "PROOFS" : await askText("New zone", "", "its title, like Now");
-    if (title?.trim()) await act(() => boards.put(id, { entry: "zone", title: title.trim(), kind: kind ?? null }));
-  };
-
-  /** A native issue in the board's project, and a row pointing at it in the zone. */
-  const newIssue = async (zone: string) => {
+  /** A native issue in the board's project, and a row pointing at it. */
+  const newIssue = async () => {
     const title = await askText("New issue", "", "its title");
     if (!title?.trim()) return;
     let made;
@@ -116,7 +113,7 @@ export function BoardPanel({
       toast(`Couldn't make the issue: ${(e as Error).message}`);
       return;
     }
-    const ok = await act(() => boards.put(id, { entry: "row", zone, pointer: { kind: "issue", id: made.id } }));
+    const ok = await act(() => boards.put(id, { entry: "row", pointer: { kind: "issue", id: made.id } }));
     if (!ok) toast(`Made #${made.number} but couldn't add it to the board`);
   };
 
@@ -125,7 +122,6 @@ export function BoardPanel({
     if (t?.trim() && t.trim() !== view.board.title) await act(() => boards.edit(id, { title: t.trim() }));
   };
 
-  const zoneIds = view.zones.map((z) => z.id);
   return (
     <div class="board" data-board={id}>
       {back}
@@ -144,20 +140,26 @@ export function BoardPanel({
           {STALE_SAID}
         </p>
       )}
-      {view.zones.length === 0 && <p class="dim">No zones yet.</p>}
-      {view.zones.map((z, i) => (
-        <Zone key={z.id} z={z} view={view} index={i} zoneIds={zoneIds} editing={editing} setEditing={setEditing} act={act} id={id} platform={platform} newIssue={newIssue} />
+      {view.zones.map((z) => (
+        <Lane key={z.id} z={z} project={view.board.project} editing={editing} setEditing={setEditing} act={act} id={id} platform={platform} />
       ))}
-      <p class="board-foot">
-        <button type="button" data-board-add-zone onClick={() => void addZone()}>
-          + Add zone
-        </button>
-        {!view.zones.some((z) => z.kind === "proofs") && (
-          <button type="button" data-board-add-proofs onClick={() => void addZone("proofs")}>
-            + Add PROOFS
+      {view.said && (
+        <p class="board-said" role="status" data-board-said>
+          {view.said}
+        </p>
+      )}
+      {editing === "new" ? (
+        <RowForm project={view.board.project} row={null} save={(f) => act(() => boards.put(id, { entry: "row", note: f.note, pointer: f.pointer ?? null }))} done={() => setEditing(null)} />
+      ) : (
+        <p class="board-foot">
+          <button type="button" class="board-add" data-board-add-row onClick={() => setEditing("new")}>
+            + Add row
           </button>
-        )}
-      </p>
+          <button type="button" class="board-add" data-board-new-issue onClick={() => void newIssue()}>
+            + New issue
+          </button>
+        </p>
+      )}
     </div>
   );
 }
@@ -265,104 +267,63 @@ function Epic({ b, act, id, write }: { b: ProjectBoard; act: Act; id: string; wr
 
 type Act = (write: () => Promise<BoardView>) => Promise<boolean>;
 
-function Zone({
+function Lane({
   z,
-  view,
-  index,
-  zoneIds,
+  project,
   editing,
   setEditing,
   act,
   id,
   platform,
-  newIssue,
 }: {
   z: BoardZone;
-  view: BoardView;
-  index: number;
-  zoneIds: string[];
+  project: string;
   editing: string | null;
   setEditing: (e: string | null) => void;
   act: Act;
   id: string;
   platform: (path: string) => string | undefined;
-  newIssue: (zone: string) => Promise<void>;
 }) {
-  const [gone, setGone] = useState(false);
-  const p = progress(z);
-  const proofs = z.kind === "proofs";
-  const rowIds = z.rows.map((r) => r.id);
-  const menu = (e: MouseEvent) => {
-    const up = stepBefore(zoneIds, index, true);
-    const down = stepBefore(zoneIds, index, false);
-    menuAt(e, [
-      {
-        label: "Rename…",
-        disabled: proofs,
-        run: async () => {
-          const t = await askText("Rename the zone", z.title);
-          if (t?.trim() && t.trim() !== z.title) await act(() => boards.put(id, { id: z.id, rev: z.rev, title: t.trim() }));
-        },
-      },
-      { label: "Move up", disabled: !up || proofs, run: () => void act(() => boards.move(id, z.id, { before: up!.before })) },
-      { label: "Move down", disabled: !down || proofs || zoneIds[index + 1] === view.zones.find((x) => x.kind === "proofs")?.id, run: () => void act(() => boards.move(id, z.id, { before: down!.before })) },
-      { label: "New issue…", disabled: proofs, run: () => void newIssue(z.id) },
-      "separator",
-      { label: "Delete the zone and its rows", danger: true, run: () => setGone(true) },
-    ]);
-  };
+  const n = laneCount(z);
   return (
     <section class="board-zone" data-board-zone={z.id} data-zone-kind={z.kind ?? undefined}>
       <header class="board-zone-head">
         <h2>{z.title}</h2>
         <span class="board-count dim" data-board-count>
-          {p.done}/{p.total}
+          {n.total}
+          {n.proven > 0 && ` · ${n.proven} proven`}
         </span>
-        <button type="button" class="board-more" aria-label={`Actions for ${z.title}`} data-board-zone-menu onClick={menu}>
-          ⋯
-        </button>
       </header>
-      <div class="board-bar" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={p.pct} aria-label={`${z.title}: ${p.done} of ${p.total} done`}>
-        <i style={{ width: `${p.pct}%` }} />
-      </div>
       <ul class="board-rows">
-        {z.rows.map((r, i) => (
-          <Row key={r.id} r={r} zone={z} view={view} index={i} rowIds={rowIds} editing={editing === r.id} setEditing={setEditing} act={act} id={id} platform={platform} />
+        {z.rows.map((r) => (
+          <Row key={r.id} r={r} editing={editing === r.id} setEditing={setEditing} act={act} id={id} project={project} platform={platform} />
         ))}
       </ul>
-      {editing === `new:${z.id}` ? (
-        <RowForm
-          project={view.board.project}
-          row={null}
-          save={(f) => act(() => boards.put(id, { entry: "row", zone: z.id, note: f.note, pointer: f.pointer ?? null }))}
-          done={() => setEditing(null)}
-        />
-      ) : (
-        <button type="button" class="board-add" data-board-add-row onClick={() => setEditing(`new:${z.id}`)}>
-          + Add row
-        </button>
-      )}
-      {gone && (
-        <p class="board-confirm" data-board-confirm>
-          Delete “{z.title}” and its {z.rows.length} rows?{" "}
-          <button type="button" class="danger" data-board-confirm-delete onClick={() => void act(() => boards.remove(id, z.id))}>
-            Delete
-          </button>{" "}
-          <button type="button" onClick={() => setGone(false)}>
-            Keep
-          </button>
-        </p>
-      )}
     </section>
+  );
+}
+
+function Chip({ a, platform }: { a: BoardAttachment; platform: (path: string) => string | undefined }) {
+  const c = chipOf(a);
+  const href = pointerHref({ pointer: a.pointer, live: a.live }, platform);
+  return (
+    <span class={`board-chip ${a.role}`} data-board-attachment={a.id} data-attach-role={a.role}>
+      {a.role === "proof" && <span class="dim">proof </span>}
+      {href ? (
+        <a class="board-ptr" href={href} target={a.pointer.kind === "forge_item" || a.pointer.kind === "link" ? "_blank" : undefined} rel="noopener noreferrer">
+          {c.label}
+        </a>
+      ) : (
+        <span class="board-ptr">{c.label}</span>
+      )}
+      {c.state && <span class={`ws-tag board-live ${a.live ? liveClass(a.live.state) : a.block ? blockClass(a.block.state) : ""}`}>{c.state}</span>}
+    </span>
   );
 }
 
 function Row({
   r,
-  zone,
-  view,
-  index,
-  rowIds,
+  project,
   editing,
   setEditing,
   act,
@@ -370,51 +331,37 @@ function Row({
   platform,
 }: {
   r: BoardRow;
-  zone: BoardZone;
-  view: BoardView;
-  index: number;
-  rowIds: string[];
   editing: boolean;
   setEditing: (e: string | null) => void;
   act: Act;
   id: string;
+  project: string;
   platform: (path: string) => string | undefined;
 }) {
   const label = pointerLabel(r.pointer, r.live);
   const href = pointerHref(r, platform);
   const card = isCard(r.live);
   const who = card ? assigneesLine(r.live!.assignees) : "";
-  const proofTag = zone.kind === "proofs" && (
-    <span class={`ws-tag board-proof ${proven(r) ? "proven" : "unproven"}`} data-board-proof={proven(r) ? "proven" : "not-proven"}>
-      {proven(r) ? "proven" : "not proven yet"}
+  const mark = proofMark(r);
+  const proofTag = mark && (
+    <span class={`ws-tag board-proof ${mark.proven ? "proven" : "unproven"}`} data-board-proof={mark.proven ? (r.proof?.by ?? "proven") : "not-proven"}>
+      {mark.words}
     </span>
   );
-  const statusMenu = (e: MouseEvent) =>
-    menuAt(
-      e,
-      STATUSES.map((s) => ({ label: STATUS_LABEL[s], checked: r.status === s, run: () => void act(() => boards.put(id, { id: r.id, status: s })) })),
-    );
-  const more = (e: MouseEvent) => {
-    const up = stepBefore(rowIds, index, true);
-    const down = stepBefore(rowIds, index, false);
-    const others = view.zones.filter((z) => z.id !== zone.id);
+  const more = (e: MouseEvent) =>
     menuAt(e, [
       { label: "Edit…", run: () => setEditing(r.id) },
-      { label: "Move up", disabled: !up, run: () => void act(() => boards.move(id, r.id, { before: up!.before })) },
-      { label: "Move down", disabled: !down, run: () => void act(() => boards.move(id, r.id, { before: down!.before })) },
-      ...others.map((z) => ({ label: `Move to ${z.title}`, run: () => void act(() => boards.move(id, r.id, { zone: z.id })) })),
       "separator",
       { label: "Delete the row", danger: true, run: () => void act(() => boards.remove(id, r.id)) },
     ]);
-  };
   return (
-    <li class="board-row" data-board-row={r.id} data-status={r.status}>
-      <button type="button" class={`board-glyph s-${r.status}`} title={STATUS_LABEL[r.status]} aria-label={`Status: ${STATUS_LABEL[r.status]}`} data-board-glyph onClick={statusMenu}>
-        {GLYPH[r.status]}
-      </button>
+    <li class="board-row" data-board-row={r.id} data-lane={r.lane} data-status={r.status}>
+      <span class={`board-glyph s-${r.status}`} title={r.status === "needs_input" ? "Needs input" : r.lane} data-board-glyph>
+        {rowGlyph(r)}
+      </span>
       {editing ? (
         <RowForm
-          project={view.board.project}
+          project={project}
           row={r}
           save={(f) => act(() => boards.put(id, { id: r.id, rev: r.rev, note: f.note, ...(f.pointer ? { pointer: f.pointer } : {}) }))}
           done={() => setEditing(null)}
@@ -447,13 +394,22 @@ function Row({
             {r.live && !card && <span class="board-item dim">{r.live.title}</span>}
             {!card && proofTag}
           </div>
-          {r.block && (
-            <div class="board-line board-block" data-board-block={r.block.state}>
-              <span class={`ws-tag ${blockClass(r.block.state)}`}>{BLOCK_LABEL[r.block.state]}</span>
-              {blockFacts(r.block).map((f) => (
-                <span class="board-fact dim" key={f}>{f}</span>
+          {r.attachments.length > 0 && (
+            <div class="board-line board-chips" data-board-attachments>
+              {r.attachments.map((a) => (
+                <Chip key={a.id} a={a} platform={platform} />
               ))}
             </div>
+          )}
+          {r.attachments.map((a) =>
+            a.block ? (
+              <div class="board-line board-block" key={a.id} data-board-block={a.block.state}>
+                <span class={`ws-tag ${blockClass(a.block.state)}`}>{BLOCK_LABEL[a.block.state]}</span>
+                {blockFacts(a.block).map((f) => (
+                  <span class="board-fact dim" key={f}>{f}</span>
+                ))}
+              </div>
+            ) : null,
           )}
           {r.note && (
             <div class="board-note" data-board-note>
@@ -548,8 +504,8 @@ function RowForm({ project, row, save, done }: { project: string; row: BoardRow 
           aria-activedescendant={active >= 0 ? optionId(active) : undefined}
           autocomplete="off"
           value={ptr}
-          placeholder="points at: search, or iss_…, fi_…, run_…, hw_… or https://…"
-          aria-label="Points at"
+          placeholder="item: search issues and PRs, or iss_…, fi_… or https://…"
+          aria-label="Item"
           aria-invalid={bad}
           data-board-ptr-input
           onInput={(e) => type(e.currentTarget.value)}
@@ -565,7 +521,7 @@ function RowForm({ project, row, save, done }: { project: string; row: BoardRow 
           ))}
         </ul>
       </div>
-      {bad && <span class="board-bad">Expected an id that starts iss_, fi_, run_ or hw_, or an https:// link.</span>}
+      {bad && <span class="board-bad">Expected an id that starts iss_ or fi_, or an https:// link. A run or an agent block is attached to a row.</span>}
       <span class="board-form-buttons">
         <button type="submit" class="primary" data-board-save>
           Save

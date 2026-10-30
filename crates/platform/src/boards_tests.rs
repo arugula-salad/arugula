@@ -121,7 +121,8 @@ async fn a_board_from_creation_to_a_stale_write() {
     assert!(id.starts_with("brd_"), "{id}");
     // Always the four lanes, in order, with ids of their own and rev 0.
     let zones = b["zones"].as_array().unwrap();
-    let got: Vec<_> = zones.iter().map(|z| (z["id"].as_str().unwrap(), z["kind"].as_str().unwrap(), &z["rev"])).collect();
+    let got: Vec<_> =
+        zones.iter().map(|z| (z["id"].as_str().unwrap(), z["kind"].as_str().unwrap(), &z["rev"])).collect();
     assert_eq!(
         got,
         [
@@ -153,7 +154,10 @@ async fn a_board_from_creation_to_a_stale_write() {
     let plan = v["zones"][0]["rows"][0]["id"].as_str().unwrap().to_owned();
     let fix = v["zones"][0]["rows"][1]["id"].as_str().unwrap().to_owned();
     assert_eq!(v["zones"][0]["rows"][0]["pointer"], json!({ "kind": "none" }));
-    assert_eq!((v["zones"][0]["rows"][1]["pointer"]["id"].as_str(), v["zones"][0]["rows"][1]["lane"].as_str()), (Some(login.as_str()), Some("next")));
+    assert_eq!(
+        (v["zones"][0]["rows"][1]["pointer"]["id"].as_str(), v["zones"][0]["rows"][1]["lane"].as_str()),
+        (Some(login.as_str()), Some("next"))
+    );
     assert_eq!(v["board"]["progress"], json!({ "done": 0, "total": 1, "proven": 0 }), "a note is never counted");
     // A run, an agent block or a workspace is attached, not a row's item.
     for ptr in [
@@ -177,7 +181,17 @@ async fn a_board_from_creation_to_a_stale_write() {
     assert_eq!(call(&base, "v", "GET", &format!("/api/boards/{id}"), None).await.0, 200);
     assert_eq!(put(&base, "v", &id, json!({ "id": fix, "rev": 2, "note": "x" })).await.0, 403);
     assert_eq!(mv(&base, "v", &id, &fix, json!({})).await.0, 403);
-    assert_eq!(attach(&base, "v", &id, json!({ "row": fix, "role": "proof", "pointer": { "kind": "link", "url": "https://x.example/1" } })).await.0, 403);
+    assert_eq!(
+        attach(
+            &base,
+            "v",
+            &id,
+            json!({ "row": fix, "role": "proof", "pointer": { "kind": "link", "url": "https://x.example/1" } })
+        )
+        .await
+        .0,
+        403
+    );
     assert_eq!(call(&base, "v", "DELETE", &format!("/api/boards/{id}/entries/{fix}"), None).await.0, 403);
     assert_eq!(call(&base, "c", "GET", &format!("/api/boards/{id}"), None).await.0, 404);
 
@@ -219,7 +233,11 @@ async fn lanes_follow_the_work_and_refuse_the_rest() {
         follows(&put(&base, "a", &id, json!({ "id": plan, "status": s })).await);
     }
     let (st, v) = put(&base, "a", &id, json!({ "id": plan, "status": "needs_input" })).await;
-    assert_eq!((st, &row_in(&v, &plan)["status"], &row_in(&v, &plan)["rev"]), (200, &json!("needs_input"), &json!(1)), "{v}");
+    assert_eq!(
+        (st, &row_in(&v, &plan)["status"], &row_in(&v, &plan)["rev"]),
+        (200, &json!("needs_input"), &json!(1)),
+        "{v}"
+    );
     let (st, v) = put(&base, "a", &id, json!({ "id": plan, "status": "none" })).await;
     assert_eq!((st, &row_in(&v, &plan)["status"]), (200, &json!("none")), "{v}");
     // A new row with a status is refused the same way.
@@ -240,7 +258,8 @@ async fn work_and_proof_attach_to_a_row() {
     let id = b["board"]["id"].as_str().unwrap().to_owned();
     let login = issue(&base, "a", &p, "Fix login").await;
     let (_, v) =
-        put(&base, "a", &id, json!({ "entry": "row", "note": "fix", "pointer": { "kind": "issue", "id": login } })).await;
+        put(&base, "a", &id, json!({ "entry": "row", "note": "fix", "pointer": { "kind": "issue", "id": login } }))
+            .await;
     let fix = v["zones"][0]["rows"][0]["id"].as_str().unwrap().to_owned();
     let (_, v) = put(&base, "a", &id, json!({ "entry": "row", "note": "just a note" })).await;
     let note = v["zones"][0]["rows"][1]["id"].as_str().unwrap().to_owned();
@@ -250,11 +269,7 @@ async fn work_and_proof_attach_to_a_row() {
     let url = "https://ci.example.com/runs/42?x=1#top";
     let (st, v) = attach(&base, "a", &id, link(url)).await;
     assert_eq!(st, 200, "{v}");
-    assert_eq!(
-        row_in(&v, &fix)["attachments"][0]["pointer"],
-        json!({ "kind": "link", "url": url }),
-        "{v}"
-    );
+    assert_eq!(row_in(&v, &fix)["attachments"][0]["pointer"], json!({ "kind": "link", "url": url }), "{v}");
     assert!(row_in(&v, &fix)["attachments"][0]["id"].as_str().unwrap().starts_with("att_"));
     assert_eq!(row_in(&v, &fix)["attachments"][0].get("live"), None, "a link has no live state");
     let long = format!("https://example.com/{}", "a".repeat(2048));
@@ -273,11 +288,24 @@ async fn work_and_proof_attach_to_a_row() {
         assert!(v.to_string().contains("https"), "{bad}: {v}");
     }
     // The roles take their own pointers.
-    let (st, v) = attach(&base, "a", &id, json!({ "row": fix, "role": "work", "pointer": { "kind": "link", "url": url } })).await;
+    let (st, v) =
+        attach(&base, "a", &id, json!({ "row": fix, "role": "work", "pointer": { "kind": "link", "url": url } })).await;
     assert_eq!(st, 400, "a link isn't work: {v}");
-    let (st, v) = attach(&base, "a", &id, json!({ "row": fix, "role": "proof", "pointer": { "kind": "block", "machine": "m", "pane": "1" } })).await;
+    let (st, v) = attach(
+        &base,
+        "a",
+        &id,
+        json!({ "row": fix, "role": "proof", "pointer": { "kind": "block", "machine": "m", "pane": "1" } }),
+    )
+    .await;
     assert_eq!(st, 400, "a block isn't proof: {v}");
-    let (st, v) = attach(&base, "a", &id, json!({ "row": "row_0123", "role": "proof", "pointer": { "kind": "link", "url": url } })).await;
+    let (st, v) = attach(
+        &base,
+        "a",
+        &id,
+        json!({ "row": "row_0123", "role": "proof", "pointer": { "kind": "link", "url": url } }),
+    )
+    .await;
     assert_eq!(st, 404, "no such row: {v}");
     // The same link again changes nothing, and says where it is.
     let (st, v) = attach(&base, "a", &id, link(url)).await;
@@ -294,7 +322,8 @@ async fn work_and_proof_attach_to_a_row() {
         run_in(&app, &theirs, "running"),
     );
     for r in [&ok, &running, &canceled, &hidden] {
-        let (st, v) = attach(&base, "a", &id, json!({ "row": fix, "role": "work", "pointer": { "kind": "run", "id": r } })).await;
+        let (st, v) =
+            attach(&base, "a", &id, json!({ "row": fix, "role": "work", "pointer": { "kind": "run", "id": r } })).await;
         assert_eq!(st, 200, "{v}");
     }
     let (_, v) = call(&base, "a", "GET", &format!("/api/boards/{id}"), None).await;
@@ -308,11 +337,18 @@ async fn work_and_proof_attach_to_a_row() {
     assert_eq!(lane(&v, &note), "next", "a note is never moved");
 
     // A run on a note row doesn't move it.
-    let (st, v) = attach(&base, "a", &id, json!({ "row": note, "role": "work", "pointer": { "kind": "run", "id": running } })).await;
+    let (st, v) =
+        attach(&base, "a", &id, json!({ "row": note, "role": "work", "pointer": { "kind": "run", "id": running } }))
+            .await;
     assert_eq!(st, 200, "{v}");
-    assert_eq!(row_in(&v, &note)["attachments"].as_array().unwrap().len(), 0, "an item on the board is not attached again: {v}");
+    assert_eq!(
+        row_in(&v, &note)["attachments"].as_array().unwrap().len(),
+        0,
+        "an item on the board is not attached again: {v}"
+    );
     let nrun = run_in(&app, &p, "running");
-    let (st, v) = attach(&base, "a", &id, json!({ "row": note, "role": "work", "pointer": { "kind": "run", "id": nrun } })).await;
+    let (st, v) =
+        attach(&base, "a", &id, json!({ "row": note, "role": "work", "pointer": { "kind": "run", "id": nrun } })).await;
     assert_eq!((st, lane(&v, &note)), (200, "next".to_owned()), "{v}");
 
     // Taking one off.
@@ -324,7 +360,11 @@ async fn work_and_proof_attach_to_a_row() {
     // Deleting the row takes what was attached to it.
     let (st, _) = call(&base, "a", "DELETE", &format!("/api/boards/{id}/entries/{fix}"), None).await;
     assert_eq!(st, 200);
-    let left: u64 = app.db.c().query_row("SELECT count(*) FROM board_attachments WHERE row_id = ?1", params![fix], |r| r.get(0)).unwrap();
+    let left: u64 = app
+        .db
+        .c()
+        .query_row("SELECT count(*) FROM board_attachments WHERE row_id = ?1", params![fix], |r| r.get(0))
+        .unwrap();
     assert_eq!(left, 0);
 }
 
@@ -396,7 +436,9 @@ async fn with_the_flag_off_there_are_no_boards() {
         (
             "POST",
             format!("/api/boards/{id}/attachments"),
-            Some(json!({ "row": "row_0123", "role": "proof", "pointer": { "kind": "link", "url": "https://x.example/1" } })),
+            Some(
+                json!({ "row": "row_0123", "role": "proof", "pointer": { "kind": "link", "url": "https://x.example/1" } }),
+            ),
         ),
         ("DELETE", format!("/api/boards/{id}/attachments/att_0123"), None),
     ] {
@@ -502,9 +544,15 @@ async fn an_agent_with_boards_write_works_the_rows() {
         assert_eq!(r.0, 400, "{what}: {}", r.1);
         assert!(r.1["error"].as_str().unwrap().starts_with("lanes follow the work: "), "{what}: {}", r.1);
     };
-    follows("a status", geek(&base, "PUT", &agent_board_entries(&id), Some(json!({ "id": green, "status": "done" }))).await);
+    follows(
+        "a status",
+        geek(&base, "PUT", &agent_board_entries(&id), Some(json!({ "id": green, "status": "done" }))).await,
+    );
     follows("a zone", geek_put(&base, &id, json!({ "entry": "zone", "title": "Now" })).await);
-    follows("a move", geek(&base, "POST", &agent_board_entry_move(&id, &mine_id), Some(json!({ "zone": "lane_done" }))).await);
+    follows(
+        "a move",
+        geek(&base, "POST", &agent_board_entry_move(&id, &mine_id), Some(json!({ "zone": "lane_done" }))).await,
+    );
     let (st, v) = geek_put(&base, &id, json!({ "id": green, "status": "needs_input" })).await;
     assert_eq!(st, 200, "needs_input stays: {v}");
 
@@ -525,7 +573,9 @@ async fn an_agent_with_boards_write_works_the_rows() {
         "a",
         "POST",
         &format!("/api/boards/{id}/attachments"),
-        Some(json!({ "row": green, "role": "proof", "pointer": { "kind": "link", "url": "https://ci.example.com/2" } })),
+        Some(
+            json!({ "row": green, "role": "proof", "pointer": { "kind": "link", "url": "https://ci.example.com/2" } }),
+        ),
     )
     .await;
     assert_eq!(st, 200, "{v}");
@@ -673,7 +723,8 @@ async fn a_viewers_machine_with_boards_write_makes_no_board() {
     assert_eq!(st, 403, "close: {v}");
     let (st, v) = xbox(&base, "PUT", &agent_board_entries(&id), Some(json!({ "entry": "row", "note": "x" }))).await;
     assert_eq!(st, 403, "add a row: {v}");
-    let link = json!({ "row": "row_0123", "role": "proof", "pointer": { "kind": "link", "url": "https://x.example/1" } });
+    let link =
+        json!({ "row": "row_0123", "role": "proof", "pointer": { "kind": "link", "url": "https://x.example/1" } });
     let (st, v) = xbox(&base, "POST", &agent_board_attachments(&id), Some(link)).await;
     assert_eq!(st, 403, "attach: {v}");
     assert_eq!(xbox(&base, "GET", &agent_board(&id), None).await.0, 200, "it reads");
@@ -693,8 +744,7 @@ async fn an_agent_repoints_only_its_own_rows() {
     let id = b["board"]["id"].as_str().unwrap().to_owned();
     let (_, v) = put(&base, "a", &id, json!({ "entry": "row", "note": "theirs" })).await;
     let theirs = v["zones"][0]["rows"][0]["id"].as_str().unwrap().to_owned();
-    let (_, v) =
-        geek(&base, "PUT", &agent_board_entries(&id), Some(json!({ "entry": "row", "note": "mine" }))).await;
+    let (_, v) = geek(&base, "PUT", &agent_board_entries(&id), Some(json!({ "entry": "row", "note": "mine" }))).await;
     let mine = v["zones"][0]["rows"][1]["id"].as_str().unwrap().to_owned();
 
     let pointer = json!({ "kind": "issue", "id": "iss_ab12" });
@@ -742,13 +792,9 @@ async fn a_machine_reports_its_blocks_and_the_row_shows_it() {
         call(&base, "a", "POST", &format!("/api/projects/{t}/boards"), Some(json!({ "title": "Launch" }))).await;
     let id = b["board"]["id"].as_str().unwrap().to_owned();
     let parser = issue(&base, "a", &t, "Parser").await;
-    let (_, v) = put(
-        &base,
-        "a",
-        &id,
-        json!({ "entry": "row", "note": "parser", "pointer": { "kind": "issue", "id": parser } }),
-    )
-    .await;
+    let (_, v) =
+        put(&base, "a", &id, json!({ "entry": "row", "note": "parser", "pointer": { "kind": "issue", "id": parser } }))
+            .await;
     let row_id = v["zones"][0]["rows"][0]["id"].as_str().unwrap().to_owned();
     let pointer = json!({ "kind": "block", "machine": "geek", "pane": "7" });
     let (st, v) = attach(&base, "a", &id, json!({ "row": row_id, "role": "work", "pointer": pointer })).await;
@@ -789,7 +835,11 @@ async fn a_machine_reports_its_blocks_and_the_row_shows_it() {
     let (st, v) = signed(&base, "a other", "PUT", AGENT_BLOCK_STATE, Some(idle)).await;
     assert_eq!(st, 200, "{v}");
     let (_, v) = call(&base, "a", "GET", &format!("/api/boards/{id}"), None).await;
-    assert_eq!(row_in(&v, &row_id)["attachments"][0]["block"]["state"], json!("needs_input"), "geek's block is geek's: {v}");
+    assert_eq!(
+        row_in(&v, &row_id)["attachments"][0]["block"]["state"],
+        json!("needs_input"),
+        "geek's block is geek's: {v}"
+    );
     let spoof = json!({ "pane": "7", "machine": "geek", "block": { "state": "idle" } });
     let (st, _) = signed(&base, "a other", "PUT", AGENT_BLOCK_STATE, Some(spoof)).await;
     assert!(st == 400 || st == 422, "no machine in the body: {st}");

@@ -81,12 +81,23 @@ fn fi(id: &str) -> Value {
 }
 
 async fn native(base: &str, team: &str, title: &str) -> (String, u64) {
-    let (s, i) = call(base, "bob", "POST", &format!("/api/projects/{team}/issues"), Some(json!({ "title": title }))).await;
+    let (s, i) =
+        call(base, "bob", "POST", &format!("/api/projects/{team}/issues"), Some(json!({ "title": title }))).await;
     assert_eq!(s, 200, "{i}");
     (i["id"].as_str().unwrap().to_owned(), i["number"].as_u64().unwrap())
 }
 
-fn item(app: &crate::Platform, id: &str, repo: u64, number: u64, kind: &str, state: &str, title: &str, head: (&str, &str)) {
+#[allow(clippy::too_many_arguments)]
+fn item(
+    app: &crate::Platform,
+    id: &str,
+    repo: u64,
+    number: u64,
+    kind: &str,
+    state: &str,
+    title: &str,
+    head: (&str, &str),
+) {
     app.db
         .c()
         .execute(
@@ -124,7 +135,11 @@ async fn a_reader_without_access_sees_the_lane_and_not_the_pr() {
     // bob reads acme/app: the chip is there.
     let v = read(&base, "bob", &id).await;
     let att = &on(&v, &login).1["attachments"][0];
-    assert_eq!((att["live"]["title"].as_str(), att["live"]["repo"].as_str()), (Some("secret plan"), Some("acme/app")), "{att}");
+    assert_eq!(
+        (att["live"]["title"].as_str(), att["live"]["repo"].as_str()),
+        (Some("secret plan"), Some("acme/app")),
+        "{att}"
+    );
 
     // carol (a viewer, without GitHub) doesn't: the row is in Review all the
     // same, the attachment is there, and nothing of the PR is.
@@ -159,7 +174,9 @@ async fn a_row_on_a_private_pr_is_in_review_for_everyone() {
 #[tokio::test]
 async fn done_is_proven_by_ci_or_evidence_or_not() {
     let (base, app, team, id) = start().await;
-    for (fid, number, sha) in [("fi_ok", 20u64, "h_ok"), ("fi_red", 21, "h_red"), ("fi_run", 22, "h_run"), ("fi_none", 23, "h_none")] {
+    for (fid, number, sha) in
+        [("fi_ok", 20u64, "h_ok"), ("fi_red", 21, "h_red"), ("fi_run", 22, "h_run"), ("fi_none", 23, "h_none")]
+    {
         item(&app, fid, 88, number, "pr", "merged", fid, ("", sha));
     }
     check(&app, 88, "h_ok", "build", "completed", Some("success"));
@@ -189,7 +206,10 @@ async fn done_is_proven_by_ci_or_evidence_or_not() {
     let (open, _) = native(&base, &team, "Open").await;
     app.db
         .c()
-        .execute("UPDATE issues SET state = 'closed', close_reason = 'completed', closed_at = 5 WHERE id IN (?1, ?2)", params![shut, bare])
+        .execute(
+            "UPDATE issues SET state = 'closed', close_reason = 'completed', closed_at = 5 WHERE id IN (?1, ?2)",
+            params![shut, bare],
+        )
         .unwrap();
     let link = json!({ "kind": "link", "url": "https://ci.example.com/1" });
     let mut rows_of = std::collections::HashMap::new();
@@ -198,7 +218,8 @@ async fn done_is_proven_by_ci_or_evidence_or_not() {
         rows_of.insert(i.clone(), on(&v, i).1["id"].as_str().unwrap().to_owned());
     }
     attach(&base, &id, &rows_of[&shut], "proof", link.clone()).await;
-    let v = attach(&base, &id, &rows_of[&open], "proof", json!({ "kind": "link", "url": "https://ci.example.com/2" })).await;
+    let v = attach(&base, &id, &rows_of[&open], "proof", json!({ "kind": "link", "url": "https://ci.example.com/2" }))
+        .await;
     assert_eq!(on(&v, &shut).0, "lane_done");
     assert_eq!(on(&v, &shut).1["proof"], json!({ "by": "evidence", "pointer": link }), "{v}");
     assert!(on(&v, &bare).1.get("proof").is_none(), "closed with nothing to show: not proven");
@@ -229,7 +250,10 @@ async fn one_row_is_one_piece_of_work() {
     let v = add(&base, &id, fi("fi_t")).await;
     assert_eq!(rows(&v).len(), 1, "attached, not added: {v}");
     assert!(v["said"].as_str().unwrap().contains(&row), "the answer says so: {v}");
-    assert_eq!(on(&v, &issue).1["attachments"][0], json!({ "id": on(&v, &issue).1["attachments"][0]["id"], "role": "work", "pointer": fi("fi_t"), "live": on(&v, &issue).1["attachments"][0]["live"] }));
+    assert_eq!(
+        on(&v, &issue).1["attachments"][0],
+        json!({ "id": on(&v, &issue).1["attachments"][0]["id"], "role": "work", "pointer": fi("fi_t"), "live": on(&v, &issue).1["attachments"][0]["live"] })
+    );
     assert_eq!(on(&v, &issue).0, "lane_review", "its PR is open");
     // By its branch.
     let v = add(&base, &id, fi("fi_b")).await;

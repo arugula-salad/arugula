@@ -27,7 +27,9 @@ pub enum Pr {
     Open,
     /// `green`: every check on its head completed, none red (and there is
     /// at least one).
-    Merged { green: bool },
+    Merged {
+        green: bool,
+    },
     /// Closed unmerged.
     Closed,
 }
@@ -35,11 +37,17 @@ pub enum Pr {
 /// What an item is now, as far as a lane cares.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Fact {
-    Issue { closed: bool },
+    Issue {
+        closed: bool,
+    },
     Pr(Pr),
     /// An agent block, as its machine last reported it.
-    Block { closed: bool },
-    Run { running: bool },
+    Block {
+        closed: bool,
+    },
+    Run {
+        running: bool,
+    },
 }
 
 /// A row's primary item.
@@ -55,9 +63,8 @@ pub enum Primary<'a> {
 /// The row's lane.
 pub fn lane(primary: Primary<'_>, attached: &[Fact]) -> Lane {
     let Primary::Item(item) = primary else { return Lane::Next };
-    match item {
-        Some(Fact::Issue { closed: true } | Fact::Pr(Pr::Merged { .. } | Pr::Closed)) => return Lane::Done,
-        _ => {}
+    if let Some(Fact::Issue { closed: true } | Fact::Pr(Pr::Merged { .. } | Pr::Closed)) = item {
+        return Lane::Done;
     }
     let open = |f: &Fact| matches!(f, Fact::Pr(Pr::Open));
     if item.is_some_and(open) || attached.iter().any(open) {

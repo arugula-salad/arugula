@@ -1,31 +1,28 @@
-// What a board says (boards, step 2): a row's glyph, a zone's
-// progress, a pointer's label and the id a person typed as a pointer.
-// Plain functions, for the view and its tests (scripts/boards.test.mjs).
+// What a board says (boards, step 2; lanes, aru-125): a row's glyph, a
+// lane's count, an attachment's chip, a pointer's label and the id a person
+// typed as a pointer. Plain functions, for the view and its tests
+// (scripts/boards.test.mjs).
 
-import type { BoardBlockState, BoardBlockWord, BoardProgress, BoardLive, BoardLiveState, BoardPointer, BoardRow, BoardStatus, BoardWorkItem, BoardZone } from "../proto";
+import type { BoardAttachment, BoardBlockState, BoardBlockWord, BoardLane, BoardProgress, BoardLive, BoardLiveState, BoardPointer, BoardProof, BoardRow, BoardWorkItem, BoardZone } from "../proto";
 
-/** A row's status as its glyph: ○ open (or none), ◐ working, ? needs
- * input, ● done, ✕ failed. */
-export const GLYPH: Record<BoardStatus, string> = {
-  none: "○",
-  open: "○",
-  working: "◐",
-  needs_input: "?",
+/** A row's lane as its glyph. A row asking for input shows `?` instead. */
+export const LANE_GLYPH: Record<BoardLane, string> = {
+  next: "○",
+  doing: "◐",
+  review: "◑",
   done: "●",
-  failed: "✕",
 };
 
-/** A status as words. */
-export const STATUS_LABEL: Record<BoardStatus, string> = {
-  none: "No status",
-  open: "Open",
-  working: "Working",
-  needs_input: "Needs input",
-  done: "Done",
-  failed: "Failed",
-};
+/** The glyph a row shows: its lane's, or `?` when it asks for input. */
+export function rowGlyph(r: Pick<BoardRow, "lane" | "status">): string {
+  return r.status === "needs_input" ? "?" : LANE_GLYPH[r.lane];
+}
 
-export const STATUSES: BoardStatus[] = ["none", "open", "working", "needs_input", "done", "failed"];
+/** Whether a row has an issue or a PR as its item: only those rows are
+ * counted, and only they are proven or not (a note is neither). */
+export function counted(r: Pick<BoardRow, "pointer">): boolean {
+  return r.pointer.kind === "issue" || r.pointer.kind === "forge_item";
+}
 
 /** What a pointer's live state says, as a tag. */
 export const LIVE_LABEL: Record<BoardLiveState, string> = {
@@ -50,20 +47,13 @@ export function liveClass(s: BoardLiveState): string {
   return `forge-state ${s}`;
 }
 
-/** Whether a row proves what it says (it matters in a `proofs` zone): a
- * link, a run that succeeded, or a PR that is merged. Derived from what the
- * platform read, never stored over the row's status. */
-export function proven(r: Pick<BoardRow, "pointer" | "live">): boolean {
-  switch (r.pointer.kind) {
-    case "link":
-      return true;
-    case "run":
-      return r.live?.state === "succeeded";
-    case "forge_item":
-      return r.live?.state === "merged";
-    default:
-      return false;
-  }
+/** The mark on a Done row: how it is proven, or that it isn't yet. Null for a
+ * row that isn't Done, and for a note, which has nothing to prove. */
+export function proofMark(r: Pick<BoardRow, "lane" | "pointer" | "proof">): { proven: boolean; words: string } | null {
+  if (r.lane !== "done" || !counted(r)) return null;
+  const p: BoardProof | undefined = r.proof;
+  if (!p) return { proven: false, words: "not proven yet" };
+  return { proven: true, words: p.by === "ci" ? "proven by CI" : "proven" };
 }
 
 /** What a machine reported of an agent block, as a tag. */
@@ -92,11 +82,19 @@ export function blockFacts(b: BoardBlockState): string[] {
   return out;
 }
 
-/** A zone's rows that are done, of all its rows. */
-export function progress(z: Pick<BoardZone, "rows">): { done: number; total: number; pct: number } {
-  const total = z.rows.length;
-  const done = z.rows.filter((r) => r.status === "done").length;
-  return { done, total, pct: total ? Math.round((done / total) * 100) : 0 };
+/** A lane's rows, and how many of them are proven (only the Done lane has
+ * any). */
+export function laneCount(z: Pick<BoardZone, "rows">): { total: number; proven: number } {
+  return { total: z.rows.length, proven: z.rows.filter((r) => r.proof).length };
+}
+
+/** An attachment's chip: what it points at, and its state when the reader
+ * may see it (an item they can't read says nothing but what it is). */
+export function chipOf(a: Pick<BoardAttachment, "pointer" | "live" | "block" | "role">): { label: string; state: string | null } {
+  const label = pointerLabel(a.pointer, a.live);
+  if (a.block) return { label, state: BLOCK_LABEL[a.block.state] };
+  if (a.live) return { label, state: liveWord(a.live) };
+  return { label, state: null };
 }
 
 /** The longest goal the platform takes (`GOAL_MAX`, control-wire). */
@@ -107,10 +105,12 @@ export function firstLine(text: string): string {
   return text.split("\n").map((l) => l.trim()).find(Boolean) ?? "";
 }
 
-/** A board's issues that are closed, in words; `pct` is for its bar. */
-export function epicLine(p: Pick<BoardProgress, "done" | "total">): { words: string; pct: number } {
-  if (!p.total) return { words: "No issues yet", pct: 0 };
-  return { words: `${p.done} of ${p.total} issue${p.total === 1 ? "" : "s"} done`, pct: Math.round((p.done / p.total) * 100) };
+/** A board's work that is done, in words, and how much of that is proven;
+ * `pct` is for its bar. */
+export function epicLine(p: Pick<BoardProgress, "done" | "total" | "proven">): { words: string; pct: number } {
+  if (!p.total) return { words: "No work yet", pct: 0 };
+  const proven = p.done ? `, ${p.proven} proven` : "";
+  return { words: `${p.done} of ${p.total} done${proven}`, pct: Math.round((p.done / p.total) * 100) };
 }
 
 /** The last characters of an id, for a row that says nothing better. */
@@ -156,24 +156,16 @@ export function pointerText(p: BoardPointer): string {
   return p.kind === "none" || p.kind === "block" ? "" : p.kind === "link" ? p.url : p.id;
 }
 
-/** An id a person typed as a pointer (`fi_…`, `iss_…`, `run_…`, `hw_…`) or
- * an `https://` link, or null when it isn't one; empty is no pointer. */
+/** An id a person typed as a row's item (`fi_…`, `iss_…`) or an `https://`
+ * link (a note's), or null when it isn't one; empty is no pointer. A run or
+ * an agent block isn't a row's item: it is attached. */
 export function parsePointer(text: string): BoardPointer | null {
   const t = text.trim();
   if (!t) return { kind: "none" };
   if (/^https:\/\/[^\s\u0000-\u001f\u007f]+$/.test(t)) return { kind: "link", url: t };
-  const m = /^(fi|iss|run|hw)_[0-9A-Za-z]{1,64}$/.exec(t);
+  const m = /^(fi|iss)_[0-9A-Za-z]{1,64}$/.exec(t);
   if (!m) return null;
-  switch (m[1]) {
-    case "fi":
-      return { kind: "forge_item", id: t };
-    case "iss":
-      return { kind: "issue", id: t };
-    case "run":
-      return { kind: "run", id: t };
-    default:
-      return { kind: "workspace", id: t };
-  }
+  return m[1] === "fi" ? { kind: "forge_item", id: t } : { kind: "issue", id: t };
 }
 
 /** How many results the "points at" picker lists. */
@@ -239,12 +231,4 @@ export function pointerHref(r: Pick<BoardRow, "pointer" | "live">, platform: (pa
   if (p.kind === "run") return platform(`/runs/${p.id}`);
   if (p.kind === "link") return /^https:\/\//.test(p.url) ? p.url : undefined;
   return undefined;
-}
-
-/** The `before` that moves entry `i` of `ids` one place `up` or down: the
- * sibling it goes before (none: last), or null when it can't move. */
-export function stepBefore(ids: string[], i: number, up: boolean): { before: string | null } | null {
-  if (up) return i > 0 ? { before: ids[i - 1] } : null;
-  if (i >= ids.length - 1) return null;
-  return { before: ids[i + 2] ?? null };
 }

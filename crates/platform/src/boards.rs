@@ -444,7 +444,12 @@ async fn machine_writes(app: &Platform, machine: &str, project: &str) -> bool {
 /// project's linked repos they may read (the viewer check), its tracker
 /// items, its issues, and runs of a project they are a member of. What they
 /// may not read is not in the answer, and says nothing.
-async fn chips(app: &Platform, account: &str, project: &str, ids: &Ids) -> Result<HashMap<String, wire::Live>, ApiError> {
+async fn chips(
+    app: &Platform,
+    account: &str,
+    project: &str,
+    ids: &Ids,
+) -> Result<HashMap<String, wire::Live>, ApiError> {
     let mut live: HashMap<String, wire::Live> = HashMap::new();
     if !ids.items.is_empty() {
         let repos = app.db.linked_repos(project)?;
@@ -733,10 +738,10 @@ async fn read(app: &Platform, account: &str, id: &str) -> Result<wire::BoardView
             proof,
             live: row_live,
             block: row_block,
-            agent: e.agent.clone().map(|m| ChatAgent {
-                machine_name: names.get(&m).cloned().unwrap_or_default(),
-                machine: m,
-            }),
+            agent: e
+                .agent
+                .clone()
+                .map(|m| ChatAgent { machine_name: names.get(&m).cloned().unwrap_or_default(), machine: m }),
             created_at: e.created_at,
             updated_at: e.updated_at,
         });
@@ -928,7 +933,12 @@ async fn known(
     for i in app.db.issue_states(project, issues)? {
         out.insert(
             i.id,
-            Known { pr: false, repo: None, key: Some(IssueKey { source: Source::Native, number: i.number }), refs: Refs::default() },
+            Known {
+                pr: false,
+                repo: None,
+                key: Some(IssueKey { source: Source::Native, number: i.number }),
+                refs: Refs::default(),
+            },
         );
     }
     if items.is_empty() {
@@ -977,9 +987,11 @@ fn already(stored: &db::Stored, pointer: &wire::Pointer) -> Option<String> {
     if let Some(r) = stored.rows.iter().find(|r| &r.pointer == pointer) {
         return Some(format!("that is row {} on this board already: it was not added again", r.id));
     }
-    stored.attachments.iter().find(|a| &a.pointer == pointer).map(|a| {
-        format!("that is attached to row {} as {} already: it was not attached again", a.row, a.role.as_str())
-    })
+    stored
+        .attachments
+        .iter()
+        .find(|a| &a.pointer == pointer)
+        .map(|a| format!("that is attached to row {} as {} already: it was not attached again", a.row, a.role.as_str()))
 }
 
 /// The id a pointer to an issue or a mirrored item holds.
@@ -1000,12 +1012,17 @@ async fn plan_add(
         return Ok(Plan::Already(said));
     }
     let Some(mine) = item_id(pointer) else { return Ok(Plan::Add { absorb: vec![], said: None }) };
-    let rows: Vec<(&str, &str)> = stored.rows.iter().filter_map(|r| item_id(&r.pointer).map(|id| (r.id.as_str(), id))).collect();
+    let rows: Vec<(&str, &str)> =
+        stored.rows.iter().filter_map(|r| item_id(&r.pointer).map(|id| (r.id.as_str(), id))).collect();
     let (mut items, mut issues): (Vec<&str>, Vec<&str>) = (vec![], vec![]);
     for (_, id) in &rows {
         if id.starts_with("iss_") { issues.push(id) } else { items.push(id) }
     }
-    if mine.starts_with("iss_") { issues.push(mine) } else { items.push(mine) }
+    if mine.starts_with("iss_") {
+        issues.push(mine)
+    } else {
+        items.push(mine)
+    }
     let found = known(app, account, &stored.board.project, &items, &issues).await?;
     let Some(me) = found.get(mine) else { return Ok(Plan::Add { absorb: vec![], said: None }) };
     if me.pr {
@@ -1062,7 +1079,8 @@ pub async fn put(app: &Platform, by: Actor<'_>, id: &str, p: &wire::PutEntry) ->
     }
     let mut said = None;
     let mut change = true;
-    let put = Put { id: p.id.as_deref(), rev: p.rev, pointer: p.pointer.as_ref(), note, status: p.status, agent: by.agent };
+    let put =
+        Put { id: p.id.as_deref(), rev: p.rev, pointer: p.pointer.as_ref(), note, status: p.status, agent: by.agent };
     if p.id.is_some() {
         app.db.put_entry(id, &put, &[], now_ms(), wire::ROWS_MAX)?.map_err(refused)?;
     } else {

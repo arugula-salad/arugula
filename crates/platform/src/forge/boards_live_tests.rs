@@ -29,7 +29,9 @@ async fn live(base: &str, who: &str, board: &str) -> std::collections::HashMap<S
         .unwrap()
         .iter()
         .flat_map(|z| z["rows"].as_array().unwrap().iter().map(|r| (z["id"].as_str().unwrap(), r)))
-        .map(|(lane, r)| (r["pointer"]["id"].as_str().unwrap_or("note").to_owned(), (r["live"].clone(), lane.to_owned())))
+        .map(|(lane, r)| {
+            (r["pointer"]["id"].as_str().unwrap_or("note").to_owned(), (r["live"].clone(), lane.to_owned()))
+        })
         .collect()
 }
 
@@ -56,8 +58,7 @@ async fn a_row_reports_what_it_points_at_now() {
         json!({ "kind": "issue", "id": issue }),
         json!({ "kind": "none" }),
     ] {
-        let (s, v) =
-            put(&base, &id, json!({ "entry": "row", "note": "n", "pointer": ptr })).await;
+        let (s, v) = put(&base, &id, json!({ "entry": "row", "note": "n", "pointer": ptr })).await;
         assert_eq!(s, 200, "{v}");
     }
 

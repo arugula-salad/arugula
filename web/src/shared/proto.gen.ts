@@ -171,6 +171,29 @@ export type Attention = "idle" | "working" | "needs_input" | "done";
 export type BlockType = "terminal" | "browser" | "agent" | "editor" | "diff" | "file" | "remote" | "workspace" | "app" | "forge" | "invite" | "agents" | "doc" | "chat" | "team_chat" | "board" | "people";
 
 /**
+ * What an attachment is for.
+ */
+export type BoardAttachRole = "work" | "proof";
+
+/**
+ * Something attached to a row.
+ */
+export type BoardAttachment = { 
+/**
+ * `att_` and 32 hex characters.
+ */
+id: string, role: BoardAttachRole, pointer: BoardPointer, 
+/**
+ * The item's state now, when the reader may see it: an item they can't
+ * read says nothing, as an unreadable row does.
+ */
+live?: BoardLive | null, 
+/**
+ * A `Block` pointer's block as its machine last reported it.
+ */
+block?: BoardBlockState | null, };
+
+/**
  * What a daemon says of one of its own agent blocks, and all it says
  * (aru-116's second ruling): the state word, the branch, the short HEAD,
  * whether it is pushed, how many files are uncommitted and the diffstat.
@@ -201,6 +224,13 @@ export type BoardDiffstat = { files: number, added: number, removed: number, };
  * Zone or row.
  */
 export type BoardEntryKind = "zone" | "row";
+
+/**
+ * Where a row is, worked out on every read from the live state of its
+ * items and never stored (aru-125). Each is the furthest that applies, in
+ * the order `done`, `review`, `doing`, `next`.
+ */
+export type BoardLane = "next" | "doing" | "review" | "done";
 
 export type BoardList = { project: string, boards: Array<ProjectBoard>, };
 
@@ -249,16 +279,15 @@ state_name?: string | null,
 url?: string | null, };
 
 /**
- * What a row's `fi_`, `iss_` or `run_` pointer is now, from data control
+ * What a pointer to an item, an issue or a run is now, from data control
  * already has (the forge mirror, the issues and runs tables): a separate fact, never written
  * over the row's stored `status`.
  */
 export type BoardLiveState = "open" | "checks_running" | "checks_failed" | "merged" | "closed" | "running" | "succeeded" | "run_failed" | "other";
 
 /**
- * [`BOARD_ENTRY_MOVE`]'s body: put the entry just before `before` (a
- * sibling), or last when there is none. A row may go to another `zone`
- * (its own, if absent); a zone moves among zones, never past `proofs`.
+ * [`BOARD_ENTRY_MOVE`]'s body. Every move is refused (aru-125): lanes
+ * follow the work.
  */
 export type BoardMoveEntry = { rev: number | null, zone: string | null, before: string | null, };
 
@@ -269,28 +298,43 @@ export type BoardMoveEntry = { rev: number | null, zone: string | null, before: 
 export type BoardPointer = { "kind": "none" } | { "kind": "forge_item", id: string, } | { "kind": "issue", id: string, } | { "kind": "run", id: string, } | { "kind": "workspace", id: string, } | { "kind": "block", machine: string, pane: string, } | { "kind": "link", url: string, };
 
 /**
- * A board's issues, counted: the rows on a native issue or a mirrored
- * GitHub issue (not a PR, a run or a link), each issue once, and the ones
- * closed at their source. A row the reader can't read counts toward
- * neither; a row's own status counts for nothing.
+ * A board's work, counted: the rows with a primary item (an issue or a
+ * PR; a note row is never counted). `done` is those in the Done lane, and
+ * `proven` those of them with a proof.
  */
-export type BoardProgress = { done: number, total: number, };
+export type BoardProgress = { done: number, total: number, proven: number, };
 
 /**
- * [`BOARD_ENTRIES`]' body. Without `id` it makes an entry: `entry` says
- * which. A zone is added before the `proofs` zone (a `proofs` one goes
- * last, and a board has one); a row is added last in `zone`. With `id` it
- * changes that entry: what is absent is left as it is. A change to
- * `title`, `pointer` or `note` names `rev`; a change to `status` alone
- * doesn't.
+ * The mark on a Done row that is proven. A Done row without one is not
+ * proven yet.
+ */
+export type BoardProof = { by: BoardProofBy, 
+/**
+ * What proves it: the merged PR, or the evidence attached.
+ */
+pointer?: BoardPointer, };
+
+/**
+ * How a Done row is proven.
+ */
+export type BoardProofBy = "ci" | "evidence";
+
+/**
+ * [`BOARD_ENTRIES`]' body. Without `id` it adds a row, last (`entry` is
+ * `row` or absent); with `id` it changes that row: what is absent is left
+ * as it is, and a change to `pointer` or `note` names `rev`. `zone`, `title`,
+ * `kind`, `entry: zone` and `status` are refused (aru-125: lanes follow the
+ * work), except `status: needs_input` on a row, which stays until asks
+ * replace it. The row's `pointer` is an issue or a PR (or a link, for a
+ * note).
  */
 export type BoardPutEntry = { id: string | null, rev: number | null, entry: BoardEntryKind | null, 
 /**
- * A new row's zone.
+ * Refused: rows have no zone.
  */
 zone: string | null, title: string | null, 
 /**
- * A new zone's kind.
+ * Refused: no one makes a zone.
  */
 kind: BoardZoneKind | null, 
 /**
@@ -298,11 +342,27 @@ kind: BoardZoneKind | null,
  */
 pointer: BoardPointer | null, note: string | null, 
 /**
- * A row's status; `"none"` clears it.
+ * Refused, except `"needs_input"`.
  */
 status: BoardStatus | null, };
 
-export type BoardRow = { id: string, rev: number, pointer: BoardPointer, note: string, status: BoardStatus, 
+export type BoardRow = { id: string, rev: number, pointer: BoardPointer, note: string, 
+/**
+ * Kept for old clients; nothing writes it any more (aru-125).
+ */
+status: BoardStatus, 
+/**
+ * Where the row is, from the live state of its items.
+ */
+lane: BoardLane, 
+/**
+ * Work and proof attached to the row, oldest first.
+ */
+attachments: Array<BoardAttachment>, 
+/**
+ * Set only on a Done row that is proven.
+ */
+proof?: BoardProof, 
 /**
  * A `fi_`, `iss_` or `run_` pointer's state now, when the reader may see the
  * item ([`BoardView`] is read with it; a write's answer has it too).
@@ -325,9 +385,15 @@ agent?: ChatAgent | null, created_at: number, updated_at: number, };
 export type BoardStatus = "none" | "open" | "working" | "needs_input" | "done" | "failed";
 
 /**
- * A board with its zones and rows, in order.
+ * A board with its four lanes, in order (`lane_next`, `lane_doing`,
+ * `lane_review`, `lane_done`), each with its rows.
  */
-export type BoardView = { board: ProjectBoard, zones: Array<BoardZone>, };
+export type BoardView = { board: ProjectBoard, zones: Array<BoardZone>, 
+/**
+ * What a write did that the board alone doesn't say: a PR attached to
+ * the row of the issue it closes, an item that was there already.
+ */
+said?: string, };
 
 /**
  * One thing a row may point at.
@@ -405,9 +471,10 @@ limit: number | null, };
 export type BoardZone = { id: string, rev: number, title: string, kind?: BoardZoneKind | null, rows: Array<BoardRow>, };
 
 /**
- * A zone's kind: `proofs` is the board's last zone. Absent: a plain one.
+ * A zone's kind: every zone a read answers is a `lane`, one of the four
+ * ([`Lane`]). No one makes a zone.
  */
-export type BoardZoneKind = "proofs";
+export type BoardZoneKind = "lane";
 
 /**
  * A side of a PR: which repository (a fork's, for its head), branch and

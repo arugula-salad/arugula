@@ -800,7 +800,9 @@ impl Db {
                     in_json(&c, "head_sha", 1)
                 ),
                 params![json_list(&heads)?],
-                |r| Ok(CheckState { repo_id: r.get(0)?, head_sha: r.get(1)?, status: r.get(2)?, conclusion: r.get(3)? }),
+                |r| {
+                    Ok(CheckState { repo_id: r.get(0)?, head_sha: r.get(1)?, status: r.get(2)?, conclusion: r.get(3)? })
+                },
             )?
         };
         Ok((items, checks))

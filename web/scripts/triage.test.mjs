@@ -30,13 +30,12 @@ test("a native issue links to its page, a GitHub one to github.com", () => {
   assert.equal(itemHref({ source: "github", pointer: { kind: "forge_item", id: "fi_1" }, repo: "not a repo", number: 7 }, path), undefined);
 });
 
-test("the menu is each board's zones but Proofs, and a board with none is out", () => {
-  const zone = (id, kind) => ({ id, title: id.toUpperCase(), kind, rows: [] });
-  const views = [
-    { board: { id: "brd_a", title: "Ship" }, zones: [zone("z1"), zone("z2", null), zone("zp", "proofs")] },
-    { board: { id: "brd_b", title: "Empty" }, zones: [zone("zq", "proofs")] },
+test("the menu is each open board, and a closed one is out", () => {
+  const boards = [
+    { id: "brd_a", title: "Ship", closed_at: null },
+    { id: "brd_b", title: "Done", closed_at: 5 },
   ];
-  assert.deepEqual(targets(views), [{ board: "brd_a", title: "Ship", zones: [{ id: "z1", title: "Z1" }, { id: "z2", title: "Z2" }] }]);
+  assert.deepEqual(targets(boards), [{ board: "brd_a", title: "Ship" }]);
 });
 
 test("an item put on a board leaves the list", () => {
