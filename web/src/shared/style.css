@@ -10197,7 +10197,8 @@ html[data-desktop="macos"]:not([data-native-tabs]) .ws-rail {
   padding-top: 34px;
 }
 
-.ws-rail button {
+.ws-rail button,
+.ws-rail a {
   app-region: no-drag;
   -webkit-app-region: no-drag;
 }
@@ -10224,6 +10225,7 @@ html[data-desktop="macos"]:not([data-native-tabs]) .ws-rail {
   padding: 7px 0 5px;
   border-radius: var(--btn-radius);
   color: var(--dim);
+  text-decoration: none;
 }
 
 .ws-rail-button:hover {
