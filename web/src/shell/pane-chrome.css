@@ -314,6 +314,18 @@ html[data-corners="square"] .grid.pane-chrome :is(.pane-header, .pane-frame, .pa
     padding: 6px 0 8px;
     background: var(--raised);
   }
+  /* A fade over the text's last line, so text cut off under the buttons
+     reads as scrolled away rather than broken. */
+  .pane-tip-foot::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 100%;
+    height: 14px;
+    background: linear-gradient(transparent, var(--raised));
+    pointer-events: none;
+  }
   .pane-tip-buttons { gap: 4px; margin-top: 0; }
   .pane-tip-buttons button { padding: 3px 8px; font-size: 12px; }
   .pane-tip-never { margin-top: 6px; font-size: 11px; }
