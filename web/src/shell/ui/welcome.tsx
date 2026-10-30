@@ -48,6 +48,7 @@ import type { ControlState, HostInfo } from "../../shared/proto";
 import { placeOf, refreshControlState } from "./control-state";
 import { desktopApp } from "../../shared/desktop";
 import { countView } from "../../shared/telemetry";
+import { EditInNvim } from "./edit-in-nvim";
 import { AdapterHelp, adapterLine, adapterReady, installAdapter, type Adapter } from "./adapter";
 
 const DOCS = "https://docs.arugula.io";
@@ -447,6 +448,13 @@ function Welcome({ name, client, setup, manual, refresh }: { name: string; clien
             <p>
               <kbd>Ctrl</kbd> <kbd>Shift</kbd> <kbd>P</kbd> finds a pane, a tab or a command.
             </p>
+          </div>
+        </li>
+        <li>
+          <span class="start-glyph">✎</span>
+          <div>
+            <h3>Edit in nvim</h3>
+            <EditInNvim />
           </div>
         </li>
         <li>

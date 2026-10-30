@@ -43,6 +43,22 @@ export const editorShown = (): Editor => editorPref() ?? "vscode";
 
 export const setEditorPref = (e: Editor) => setPref(KEY, e);
 
+/** What the Editor preference was before nvim was ticked: unticking goes back. */
+const BEFORE = "editor:before";
+
+/** The "Edit in nvim" checkbox's state: the Editor preference is nvim. */
+export const editsInNvim = () => editorPref() === "nvim";
+
+/** Tick or untick "Edit in nvim": the Editor preference nvim, or back to
+ * what it was (VS Code, or Ask each time). */
+export function setEditInNvim(on: boolean) {
+  if (on) {
+    const now = editorPref();
+    if (now && now !== "nvim") setPref(BEFORE, now);
+    setEditorPref("nvim");
+  } else setEditorPref(pref(BEFORE) === "ask" ? "ask" : "vscode");
+}
+
 /** Whether a pane runs nvim, by what its daemon says: the editor it found
  * there (#1730), or the foreground command. */
 export function runsNvim(info: PaneInfo | undefined | null): boolean {
