@@ -586,6 +586,22 @@ fn open_outside(url: &tauri::Url) {
     open_with_system(url);
 }
 
+/// For a page's "Finish in your browser" (#364): control's page and the
+/// platform page ask for `url` in the person's browser, which `window.open`
+/// can't do for control's own pages (`on_new_window` keeps them in a window).
+mod page_open {
+    /// Web pages only, as for any link.
+    #[tauri::command]
+    pub fn open_outside(url: String) -> Result<(), String> {
+        let url: tauri::Url = url.parse().map_err(|e| format!("not a URL: {e}"))?;
+        if !matches!(url.scheme(), "http" | "https") {
+            return Err(format!("only http and https links open outside the app, not {}:", url.scheme()));
+        }
+        super::open_outside(&url);
+        Ok(())
+    }
+}
+
 /// A file of the app's own choosing (the daemon's log), in the system's
 /// viewer for it.
 fn open_file(url: &tauri::Url) {
@@ -638,6 +654,8 @@ fn allow_control(app: &AppHandle) {
             .permission("core:window:allow-internal-toggle-maximize")
             .permission("core:window:allow-close")
             .permission("core:window:allow-start-dragging");
+        // Both pages ask for a step in the person's browser (#364).
+        cap = cap.permission("allow-open-outside");
         // Control's page turns the app's notifications on and off
         // (`notices.rs`); the platform page doesn't.
         if control.as_deref() == Some(origin.as_str()) {
@@ -1250,7 +1268,8 @@ fn main() {
         notices::notices_keys,
         notices::notices_start,
         notices::notices_stop,
-        notices::notices_state
+        notices::notices_state,
+        page_open::open_outside
     ]);
     builder
         .menu(|app| {
