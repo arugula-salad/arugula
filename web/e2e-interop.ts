@@ -212,13 +212,14 @@ check("Rust trusts what we signed", JSON.stringify(rust) === JSON.stringify([roo
     }
   }
 
-  // A recovery code lets in one device: the first it signed.
+  // A recovery code lets in one device: the first in the list it signed,
+  // even when a later one claims an earlier time.
   const second = await generateKeys();
-  const secondCert: Cert = { v: 1, account: "alice", device: second.id, kind: "browser", name: "another laptop", noise: second.noisePub, sign: second.signPub, created: 7, approver: code.id, sig: "" };
+  const secondCert: Cert = { v: 1, account: "alice", device: second.id, kind: "browser", name: "another laptop", noise: second.noisePub, sign: second.signPub, created: 4, approver: code.id, sig: "" };
   secondCert.sig = await signText(code, certBody(secondCert));
   for (const list of [
     [...withCode, secondCert],
-    [secondCert, ...withCode],
+    [recoveredCert, ...certs, codeCert, secondCert],
   ]) {
     const { ours, theirs } = await verdicts(list, []);
     const ok = (ids: string[]) => ids.includes(recovered.id) && !ids.includes(second.id);

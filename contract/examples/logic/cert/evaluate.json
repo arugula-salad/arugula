@@ -1,5 +1,5 @@
 {
-  "about": "Which of the certificates control hands out an account trusts now, from the root device a daemon pinned: each must chain back to that root (self-signed, of a kind that roots), every link signed by a device valid when the link was made, of a kind that certifies the next. A certificate not signed by the key of the device it names as approver is set aside before anything else. A recovery code lets in one device: the first it signed, by created time, then by device id. A revocation counts when its signer is valid then (checked twice, so a revoked device's own revocations stop counting); a browser or a recovery code is taken off only by a device that's a browser all the way to the root, along certificates that count (each a browser's, or a recovery code's above one). A device revoked at T no longer counts, nor what it approved after T; what it approved before T stays. Certificates don't expire: time matters only against revocations. Anything that doesn't check out is ignored, never an error: control may send junk, and it can only shrink the set.",
+  "about": "Which of the certificates control hands out an account trusts now, from the root device a daemon pinned: each must chain back to that root (self-signed, of a kind that roots), every link signed by a device valid when the link was made, of a kind that certifies the next. A certificate not signed by the key of the device it names as approver is set aside before anything else. A recovery code lets in one device: the first it signed in the order the certificates came (control sends them in the order it approved them), never by the time a certificate claims. A revocation counts when its signer is valid then (checked twice, so a revoked device's own revocations stop counting); a browser or a recovery code is taken off only by a device that's a browser all the way to the root, along certificates that count (each a browser's, or a recovery code's above one). A device revoked at T no longer counts, nor what it approved after T; what it approved before T stays. Certificates don't expire: time matters only against revocations. Anything that doesn't check out is ignored, never an error: control may send junk, and it can only shrink the set.",
   "cases": [
     {
       "about": "the root alone",
@@ -435,7 +435,7 @@
       }
     },
     {
-      "about": "a recovery code lets in one device: the first it signed (by time, then id)",
+      "about": "a recovery code lets in one device: the first in the list it signed",
       "input": {
         "account": "acct",
         "certs": [
@@ -457,12 +457,12 @@
       "output": {
         "trusted": [
           {"approver": "37f29b7074cf8b52", "device": "37f29b7074cf8b52", "name": "laptop"},
+          {"approver": "c242667535a3d34f", "device": "9b64bd87042f22a7", "name": "geek"},
           {
             "approver": "bb6cc568875e9006",
-            "device": "44d6bd4d1b5c8d53",
-            "name": "recovery by recovery"
+            "device": "9be5533cf593e92e",
+            "name": "browser by recovery"
           },
-          {"approver": "c242667535a3d34f", "device": "9b64bd87042f22a7", "name": "geek"},
           {"approver": "37f29b7074cf8b52", "device": "bb6cc568875e9006", "name": "recovery 1"},
           {"approver": "37f29b7074cf8b52", "device": "c242667535a3d34f", "name": "phone"},
           {
@@ -471,6 +471,22 @@
             "name": "Arugula app on box"
           },
           {"approver": "37f29b7074cf8b52", "device": "ed0089709d11f9a5", "name": "terminal"}
+        ]
+      }
+    },
+    {
+      "about": "a recovery code's second device, listed later but dated earlier: the first stays, the second doesn't count",
+      "input": {
+        "account": "acct",
+        "certs": ["laptop", "recovery", "recovered-first", "recovered-later-dated-earlier"],
+        "revocations": [],
+        "root": "37f29b7074cf8b52"
+      },
+      "output": {
+        "trusted": [
+          {"approver": "37f29b7074cf8b52", "device": "37f29b7074cf8b52", "name": "laptop"},
+          {"approver": "37f29b7074cf8b52", "device": "bb6cc568875e9006", "name": "recovery 1"},
+          {"approver": "bb6cc568875e9006", "device": "d410038fa85523e7", "name": "recovered first"}
         ]
       }
     },
@@ -1286,6 +1302,18 @@
       "noise": "0202020202020202020202020202020202020202020202020202020202020202",
       "seed": "0202020202020202020202020202020202020202020202020202020202020202",
       "sign": "8139770ea87d175f56a35466c34c7ecccb8d8a91b4ee37a25df60f5b8fc9b394"
+    },
+    "recovered-first": {
+      "device": "d410038fa85523e7",
+      "noise": "4646464646464646464646464646464646464646464646464646464646464646",
+      "seed": "4646464646464646464646464646464646464646464646464646464646464646",
+      "sign": "ee93a4f66f8d16b819bb9beb9ffccdfcdc1412e87fee6a324c2a99a1e0e67148"
+    },
+    "recovered-later-dated-earlier": {
+      "device": "ef436a75a794ec11",
+      "noise": "4747474747474747474747474747474747474747474747474747474747474747",
+      "seed": "4747474747474747474747474747474747474747474747474747474747474747",
+      "sign": "e28a8970753332bd72fef413e6b0b2ef1b4aadda7aa2c141f233712a6876b351"
     },
     "recovery": {
       "device": "bb6cc568875e9006",
@@ -2648,6 +2676,30 @@
       "device": "c242667535a3d34f",
       "sig": "a9d9ab828a6f47eefc9216a6742c6064978c0417e426ddda3fc5b2ed4db7d38f24d6f158bb083133229cb0a966544e52d380d983b5002d8186892ffa4ca51b04",
       "v": 2
+    },
+    "recovered-first": {
+      "account": "acct",
+      "approver": "bb6cc568875e9006",
+      "created": 2000,
+      "device": "d410038fa85523e7",
+      "kind": "browser",
+      "name": "recovered first",
+      "noise": "4646464646464646464646464646464646464646464646464646464646464646",
+      "sig": "4ee88eff16e4eb049f234bb0627ed2b0dcda6f43f926357105984da5c1dae8c28edcc529c2470bc00882cbe45dd351e2f7ec52c46130daad40c9b34a2f2cec08",
+      "sign": "ee93a4f66f8d16b819bb9beb9ffccdfcdc1412e87fee6a324c2a99a1e0e67148",
+      "v": 1
+    },
+    "recovered-later-dated-earlier": {
+      "account": "acct",
+      "approver": "bb6cc568875e9006",
+      "created": 1650,
+      "device": "ef436a75a794ec11",
+      "kind": "browser",
+      "name": "recovered later",
+      "noise": "4747474747474747474747474747474747474747474747474747474747474747",
+      "sig": "c60caa2edcccf9bcdf7bfc40dd00becb8d6102061602b497652fcb96163f025af773809ffa2fbbfda46d184e493897c80f2c2a420915aee9301832f50b318905",
+      "sign": "e28a8970753332bd72fef413e6b0b2ef1b4aadda7aa2c141f233712a6876b351",
+      "v": 1
     },
     "recovery": {
       "account": "acct",

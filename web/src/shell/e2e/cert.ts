@@ -140,16 +140,15 @@ export async function evaluate(
     }
     if (ok.length) byId.set(id, ok);
   }
-  // The device each recovery code signed for first (by `created`, then
-  // id): a code lets in one device (`Graph::recovered`).
+  // The device each recovery code signed for first, in the order the
+  // certificates came (control sends them in the order it approved them),
+  // never by the time one claims: a code lets in one device
+  // (`Graph::recovered`).
   const first = new Map<string, Cert>();
-  for (const cs of byId.values()) {
-    for (const c of cs) {
-      const ofCode = c.approver !== c.device && certifies("recovery", c.kind) && (byId.get(c.approver) ?? []).some((a) => a.kind === "recovery");
-      if (!ofCode) continue;
-      const f = first.get(c.approver);
-      if (!f || c.created < f.created || (c.created === f.created && c.device < f.device)) first.set(c.approver, c);
-    }
+  for (const c of certs) {
+    const kept = (byId.get(c.device) ?? []).includes(c);
+    const ofCode = kept && c.approver !== c.device && certifies("recovery", c.kind) && (byId.get(c.approver) ?? []).some((a) => a.kind === "recovery");
+    if (ofCode && !first.has(c.approver)) first.set(c.approver, c);
   }
   const any = () => true;
   const valid = async (revoked: Map<string, number>, id: string, at: number, depth: number, link: (c: Cert) => boolean = any): Promise<Cert | undefined> => {

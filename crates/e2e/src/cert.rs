@@ -443,6 +443,15 @@ impl Trust {
     /// Why `cert` wouldn't count with the account's `certs` (#327), or
     /// `None` when it does.
     pub fn refusal(&self, certs: &[Cert], revocations: &[Revocation], cert: &Cert) -> Option<Refusal> {
+        // A recovery code that let another device in already approves no
+        // other, asked before anything else: the new certificate never
+        // takes its place.
+        if let Some(a) = self.evaluate(certs, revocations).get(&cert.approver)
+            && a.kind == Kind::Recovery
+            && certs.iter().any(|o| o.approver == a.device && o.device != cert.device && o.signed_by(a))
+        {
+            return Some(Refusal::RecoverySpent);
+        }
         let mut all = certs.to_vec();
         all.push(cert.clone());
         if self.evaluate(&all, revocations).get(&cert.device) == Some(cert) {
@@ -461,12 +470,6 @@ impl Trust {
             Some(a) if !a.kind.approves() => Refusal::CantApprove,
             Some(a) if a.kind == Kind::Recovery && cert.kind == Kind::Daemon => Refusal::RecoveryForMachine,
             Some(a) if !a.kind.certifies(cert.kind) => Refusal::NeedsBrowser,
-            Some(a)
-                if a.kind == Kind::Recovery
-                    && certs.iter().any(|o| o.approver == a.device && o.device != cert.device && o.signed_by(a)) =>
-            {
-                Refusal::RecoverySpent
-            }
             Some(_) => Refusal::NoChain,
         })
     }
@@ -480,8 +483,10 @@ impl Trust {
 struct Graph<'a> {
     trust: &'a Trust,
     by_id: HashMap<&'a str, Vec<&'a Cert>>,
-    /// The device each recovery code signed for first (by `created`, then
-    /// id): a code lets in one device, and the others it signed don't count.
+    /// The device each recovery code signed for first, in the order the
+    /// certificates came (control sends them in the order it approved
+    /// them), never by the time a certificate claims: a code lets in one
+    /// device, and the others it signed don't count.
     recovered: HashMap<&'a str, &'a str>,
 }
 
@@ -508,17 +513,19 @@ impl<'a> Graph<'a> {
                 by_id.insert(id, ok);
             }
         }
-        let mut first: HashMap<&str, (u64, &str)> = HashMap::new();
-        for c in by_id.values().flatten() {
-            let of_code = c.approver != c.device
+        // In the order control sent them, which is the order it approved
+        // them: a code's first stays first, whatever time a later one claims.
+        let mut recovered: HashMap<&str, &str> = HashMap::new();
+        for c in certs {
+            let kept = by_id.get(c.device.as_str()).is_some_and(|v| v.iter().any(|x| std::ptr::eq(*x, c)));
+            let of_code = kept
+                && c.approver != c.device
                 && Kind::Recovery.certifies(c.kind)
                 && by_id.get(c.approver.as_str()).is_some_and(|a| a.iter().any(|a| a.kind == Kind::Recovery));
             if of_code {
-                let e = first.entry(c.approver.as_str()).or_insert((c.created, c.device.as_str()));
-                *e = (*e).min((c.created, c.device.as_str()));
+                recovered.entry(c.approver.as_str()).or_insert(c.device.as_str());
             }
         }
-        let recovered = first.into_iter().map(|(code, (_, device))| (code, device)).collect();
         Self { trust, by_id, recovered }
     }
 
@@ -1069,11 +1076,19 @@ mod tests {
         let t = trust(&rc);
         for all in [
             vec![rc.clone(), code.clone(), first.clone(), second.clone()],
-            vec![second.clone(), first.clone(), code.clone(), rc.clone()],
+            vec![first.clone(), code.clone(), second.clone(), rc.clone()],
         ] {
             let now = t.evaluate(&all, &[]);
             assert!(now.get(&first.device).is_some() && now.get(&second.device).is_none());
         }
+        // The order control sent them in decides, not the time a later
+        // one claims: dated before the first, it still doesn't count.
+        let mut earlier = Cert::new(&DeviceKeys::generate(), "acct", Kind::Browser, "another laptop");
+        earlier.created = code.created + 1;
+        earlier.sign_with(&ck);
+        let now = t.evaluate(&[rc.clone(), code.clone(), first.clone(), earlier.clone()], &[]);
+        assert!(now.get(&first.device).is_some() && now.get(&earlier.device).is_none());
+        assert_eq!(t.refusal(&[rc.clone(), code.clone(), first.clone()], &[], &earlier), Some(Refusal::RecoverySpent));
         // A certificate signed again for the same device still counts.
         let mut again = first.clone();
         again.created += 5;

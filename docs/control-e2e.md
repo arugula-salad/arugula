@@ -261,10 +261,13 @@ device nobody trusted. Now:
 - Any of the account's devices can make new ones. It signs their
   certificates and revokes every code still good, in one request; control
   refuses new codes that don't retire the old.
-- A recovery code lets in exactly one device (a new first device), and
-  daemons and pages then treat it as spent: of the devices it signed for,
-  only the first counts (by `created`, then id), and control refuses a
-  second (`recovery_spent`). The page that used it also revokes it.
+- A recovery code lets in exactly one device (a new first device).
+  Control records which, once, when it first takes an approval by the
+  code (`recovery_uses`), and refuses any other device by that code on
+  every path from then on (`recovery_spent`). It serves an account's
+  certificates in the order it approved them, and daemons and pages count
+  only the first device a code signed in that order, whatever time a
+  later certificate claims. The page that used it also revokes it.
 - Control never sees the seed.
 
 ### PRF: re-deriving a browser's keys
@@ -1665,9 +1668,9 @@ sleeps, and control pushes and searches them itself.
 
 <!-- Written by `just control-tables` from crates/control/tables.toml. Edit that, not this. -->
 
-Control's database has 150 tables in two planes ("Two planes, two trust rules"):
+Control's database has 151 tables in two planes ("Two planes, two trust rules"):
 
-- **The machine plane** (50 tables) is what control needs to route and check: ids, names, addresses, public keys and signed statements. What moves between a client and a machine stays end to end, and control can't read it.
+- **The machine plane** (51 tables) is what control needs to route and check: ids, names, addresses, public keys and signed statements. What moves between a client and a machine stays end to end, and control can't read it.
 - **The platform plane** (100 tables) is what has to exist while every machine is asleep: billing and usage, chat and the threads on objects, Shared Docs, Cloud workspaces, linked repos' PRs and issues, and projects' native issues, runs and deploys. Control reads most of it, and says so here.
 
 Every table is listed in `crates/control/tables.toml`, and a test fails when one isn't. **Holds** is what's in it: metadata (ids, names, addresses, times, counts, public keys, signed statements), ciphertext (encrypted to keys control never holds), or plaintext (what people or their agents wrote, or a secret control can read). **Gone with the account** is what deleting an account does to its rows.
@@ -1697,6 +1700,7 @@ Every table is listed in `crates/control/tables.toml`, and a test fails when one
 | `email_tokens` | **plaintext** | A typed address waiting for its verify link (#1609): the link's token by its hash, the address, and when it expires (a day). | yes | The email provider |
 | `email_sends` | metadata | That control emailed an account (#1609): which kind of notice and when, never its body. Kept 90 days, for the daily limit. | yes |  |
 | `revocations` | metadata | A signed revocation of a device's or machine's key. | yes |  |
+| `recovery_uses` | metadata | Which device each recovery code let in (their ids), recorded once, when control first takes an approval by the code. | yes |  |
 | `joins` | metadata | A machine asking to join: its certificate, a hash of its poll token, its addresses, the approval. | yes |  |
 | `daemons` | metadata | The directory: a joined machine's id, name, addresses, team, last seen, and the version, OS and arch it runs. | yes | PostHog |
 | `daemon_access` | metadata | The accounts a machine says it lets in, for routing (the machine checks for itself). | yes |  |

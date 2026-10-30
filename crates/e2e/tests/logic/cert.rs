@@ -425,7 +425,8 @@ fn evaluate() -> Example {
          each must chain back to that root (self-signed, of a kind that roots), every link signed by a device \
          valid when the link was made, of a kind that certifies the next. A certificate not signed by the key of \
          the device it names as approver is set aside before anything else. A recovery code lets in one device: \
-         the first it signed, by created time, then by device id. A revocation counts when its signer is \
+         the first it signed in the order the certificates came (control sends them in the order it approved \
+         them), never by the time a certificate claims. A revocation counts when its signer is \
          valid then (checked twice, so a revoked device's own revocations stop counting); a browser or a recovery \
          code is taken off only by a device that's a browser all the way to the root, along certificates that \
          count (each a browser's, or a recovery code's above one). A device revoked at T no \
@@ -659,21 +660,25 @@ fn evaluate() -> Example {
     let mut every: Vec<&str> = ["laptop", "phone", "geek", "terminal", "app", "recovery"].to_vec();
     let mut want = vec!["laptop", "phone", "geek", "terminal", "Arugula app on box", "recovery 1"];
     every.extend(made.iter().filter(|(b, _, _)| *b == "recovery").map(|(_, _, l)| l.as_str()));
-    // All made at the same time: the first by id counts.
+    // The first in the list counts.
     let first = made
         .iter()
-        .filter(|(b, k, _)| *b == "recovery" && Kind::Recovery.certifies(*k))
-        .min_by_key(|(_, k, _)| keys(40 + KINDS.iter().position(|x| x == k).unwrap_or_default() as u8).id())
+        .find(|(b, k, _)| *b == "recovery" && Kind::Recovery.certifies(*k))
         .map(|(_, k, _)| format!("{} by recovery", k.as_str()))
         .unwrap();
     want.push(&first);
+    case(&mut ex, "a recovery code lets in one device: the first in the list it signed", &rid, &every, &[], &want);
+    // Listed after it, one dated before it doesn't take its place.
+    let (k1, k2) = (ex.key("recovered-first", 70), ex.key("recovered-later-dated-earlier", 71));
+    ex.object("recovered-first", &ac(&k1, Kind::Browser, "recovered first", 2_000, &code));
+    ex.object("recovered-later-dated-earlier", &ac(&k2, Kind::Browser, "recovered later", 1_650, &code));
     case(
         &mut ex,
-        "a recovery code lets in one device: the first it signed (by time, then id)",
+        "a recovery code's second device, listed later but dated earlier: the first stays, the second doesn't count",
         &rid,
-        &every,
+        &["laptop", "recovery", "recovered-first", "recovered-later-dated-earlier"],
         &[],
-        &want,
+        &["laptop", "recovery 1", "recovered first"],
     );
     let timed = ["laptop", "phone", "before", "after"];
     case(

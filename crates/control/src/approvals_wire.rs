@@ -124,3 +124,29 @@ async fn a_recovery_code_lets_in_one_device() {
     let (st, v) = c.approve(&cookie, &a, &cert).await;
     assert_eq!((st, v["reason"].as_str()), (403, Some("approver_untrusted")), "{v}");
 }
+
+/// The device a recovery code let in is recorded for good: a second one
+/// dated before it doesn't take its place, and the record holds even when
+/// the first's certificate is gone from control.
+#[tokio::test]
+async fn a_recovery_codes_device_is_recorded_for_good() {
+    let c = control(|_| {}).await;
+    let root = person(&c.app, "jake", "a1");
+    let code = device(&c, &root, Kind::Recovery, "recovery 1");
+    let cookie = session(&c.app, "a1");
+    let (a, cert) = ask(&code, Kind::Browser, "new laptop", now_ms());
+    let (st, v) = c.approve(&cookie, &a, &cert).await;
+    assert_eq!(st, 200, "{v}");
+    let first = cert.device.clone();
+
+    let (a, cert) = ask(&code, Kind::Browser, "another laptop", now_ms() - 4 * 60_000);
+    let (st, v) = c.approve(&cookie, &a, &cert).await;
+    assert_eq!((st, v["reason"].as_str()), (403, Some("recovery_spent")), "dated before the first: {v}");
+    let (_, cert) = ask(&code, Kind::Browser, "a presigned laptop", now_ms() - 4 * 60_000);
+    assert!(!c.presigned(&cookie, &cert).await);
+
+    c.app.db.conn().execute("DELETE FROM devices WHERE account = 'a1' AND id = ?1", [&first]).unwrap();
+    let (a, cert) = ask(&code, Kind::Browser, "a third laptop", now_ms());
+    let (st, v) = c.approve(&cookie, &a, &cert).await;
+    assert_eq!((st, v["reason"].as_str()), (403, Some("recovery_spent")), "the first's certificate gone: {v}");
+}

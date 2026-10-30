@@ -185,6 +185,14 @@ fn approval_ok(app: &App, account: &str, cert: &Cert, what: &str) -> Result<(), 
             return Err(refusal(StatusCode::FORBIDDEN, r.code(), refused_say(r)));
         }
     }
+    // Last, once everything else checks out: a recovery code lets in one
+    // device, the first control takes an approval by it for, recorded for
+    // good. Asked again for the same device, it's that one still.
+    if by.kind == Kind::Recovery && !app.db.claim_recovery(account, &by.device, &cert.device, now_ms())? {
+        let r = Refusal::RecoverySpent;
+        refused(what, account, cert, r.check());
+        return Err(refusal(StatusCode::FORBIDDEN, r.code(), refused_say(r)));
+    }
     Ok(())
 }
 
