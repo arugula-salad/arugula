@@ -81,6 +81,9 @@ jobs:
       SCCACHE_WEBDAV_PASSWORD: ${{ secrets.SCCACHE_WEBDAV_PASSWORD }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          # just static builds control here too: as the linux job's (#1748).
+          fetch-depth: 0
       - uses: ./.github/actions/setup
         with:
           cache-key: release-static-aarch64

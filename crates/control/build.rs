@@ -84,8 +84,8 @@ fn release_trees(root: &std::path::Path, dir: &str, version: (u64, u64, u64)) ->
 /// A release build (a `v*` tag's push, `GITHUB_REF_TYPE` and
 /// `GITHUB_REF_NAME` as release.yml has them) fails unless the tags are
 /// all here, so two instances never serve different ids: git, a checkout
-/// that isn't shallow (release.yml's `linux` job has `fetch-depth: 0`),
-/// and the workspace version's own tag. Any other build with no tags in
+/// that isn't shallow (release.yml's `linux` and `linux-arm64` jobs have
+/// `fetch-depth: 0`), and the workspace version's own tag. Any other build with no tags in
 /// reach serves the folder as it is, as the one release `v<version>`, and
 /// says so.
 fn git_folders() {
@@ -174,7 +174,7 @@ fn git_folders() {
             let shallow = git_text(&root, &["rev-parse", "--is-shallow-repository"]);
             if shallow.as_deref() != Some("false") {
                 panic!(
-                    "a release build serves {dir} as git from every release tag, and this checkout is shallow or not git's: check out with fetch-depth: 0 (release.yml's linux job)"
+                    "a release build serves {dir} as git from every release tag, and this checkout is shallow or not git's: check out with fetch-depth: 0 (release.yml's linux and linux-arm64 jobs)"
                 );
             }
             if rels.last().map(|r| r.tag.as_str()) != Some(&format!("v{version_text}")) {
