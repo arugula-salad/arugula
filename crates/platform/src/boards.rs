@@ -111,8 +111,9 @@ fn bad(msg: &str) -> ApiError {
     err(StatusCode::BAD_REQUEST, msg)
 }
 
-/// 404 unless boards are on for `account`.
-async fn gate(app: &Platform, account: &str) -> Result<(), ApiError> {
+/// 404 unless boards are on for `account`. Plane connections (Arugula
+/// #356) are behind the same flag: issues on boards are Labs.
+pub(crate) async fn gate(app: &Platform, account: &str) -> Result<(), ApiError> {
     if flag_on(app, account, FLAG).await? { Ok(()) } else { Err(nothing()) }
 }
 

@@ -73,6 +73,7 @@ pub mod session_merged;
 pub mod session_threads;
 pub mod sessions;
 pub mod sql;
+pub mod trackers;
 pub mod triggers;
 
 pub use pg::Listening;

@@ -153,6 +153,10 @@ fn generate() -> String {
     // A project's linked repos (M163).
     c.visit::<arugula_control_wire::projects::LinkedRepos>();
     c.visit::<arugula_control_wire::projects::LinkRepo>();
+    // A project's connected Plane projects (Arugula #356).
+    c.visit::<arugula_control_wire::projects::TrackerConnections>();
+    c.visit::<arugula_control_wire::projects::ConnectTracker>();
+    c.visit::<arugula_control_wire::projects::TrackerSettings>();
     // Content mirroring, and bodies on read (M166).
     c.visit::<arugula_control_wire::projects::RepoSettings>();
     c.visit::<arugula_control_wire::projects::ForgeContent>();

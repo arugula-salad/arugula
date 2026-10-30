@@ -93,7 +93,7 @@ fn skip_locked(c: &impl Sql) -> &'static str {
 /// Every row the mirror holds of a repo, but its link: its items and
 /// what's on them, its drafts, inbox rows of its items, and the threads on
 /// its items (M196).
-fn purge_rows(c: &impl Sql, repo_id: u64) -> anyhow::Result<()> {
+pub(super) fn purge_rows(c: &impl Sql, repo_id: impl super::sql::Param + Copy) -> anyhow::Result<()> {
     super::objects::drop_item_threads(c, repo_id)?;
     c.execute(
         "DELETE FROM inbox_items WHERE item IN (SELECT id FROM forge_items WHERE repo_id = ?1)",
@@ -597,9 +597,12 @@ pub enum AccessScope {
 /// for a person.
 impl Db {
     /// The repo an item is in, and nothing else of it: what the viewer
-    /// check needs to decide on it.
+    /// check needs to decide on it. A tracker's item (a negative
+    /// `repo_id`, `0071_tracker_connections`) isn't a repo's: not found.
     pub fn forge_item_repo(&self, id: &str) -> anyhow::Result<Option<u64>> {
-        self.c().query_row("SELECT repo_id FROM forge_items WHERE id = ?1", params![id], |r| r.get(0)).optional()
+        self.c()
+            .query_row("SELECT repo_id FROM forge_items WHERE id = ?1 AND repo_id > 0", params![id], |r| r.get(0))
+            .optional()
     }
 
     /// The items of the readable repos that match, last updated first.
@@ -1212,6 +1215,7 @@ pub(crate) fn erase_account(c: &impl Sql, d: &Deleted, now: u64) -> anyhow::Resu
          WHERE unlinked_at IS NULL AND project_id NOT IN (SELECT id FROM projects)",
         params![now],
     )?;
+    super::trackers::erase_account(c, account, now)?;
     Ok(())
 }
 

@@ -655,3 +655,92 @@ pub struct MachineSending {
     #[serde(default)]
     pub error: Option<String>,
 }
+
+/// `GET /api/projects/{project}/trackers`: the Plane projects connected to
+/// a project, and those waiting for the purge, for its members. `POST`
+/// connects one ([`ConnectTracker`]); `PATCH` and `DELETE` on
+/// [`PROJECT_TRACKER`] change its settings and disconnect it.
+pub const PROJECT_TRACKERS: &str = "/api/projects/{project}/trackers";
+
+/// `PATCH /api/projects/{project}/trackers/{connection}` ([`TrackerSettings`])
+/// and `DELETE` (disconnect).
+pub const PROJECT_TRACKER: &str = "/api/projects/{project}/trackers/{connection}";
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct TrackerConnections {
+    /// The project's id (`personal` asked is answered with the real one).
+    pub project: String,
+    pub connections: Vec<TrackerConnection>,
+}
+
+/// A tracker project connected to a project, or disconnected and waiting
+/// for the purge. Never the key or the webhook secret.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct TrackerConnection {
+    /// `tc_` and hex.
+    pub id: String,
+    /// `plane`.
+    pub provider: String,
+    pub workspace_slug: String,
+    /// The tracker's own id for the project (Plane's uuid).
+    pub source_project_id: String,
+    /// The project's short key, such as `ARUGU`.
+    pub identifier: String,
+    pub name: String,
+    /// `approve` (each agent write waits for a person) or `allow`.
+    pub agent_writes: String,
+    /// A webhook secret is kept for it.
+    pub has_webhook_secret: bool,
+    /// Who connected it (an account id), when that account is still there.
+    pub linked_by: Option<String>,
+    pub created_at: u64,
+    /// When it was disconnected: nothing is read from the tracker for it since.
+    pub unlinked_at: Option<u64>,
+    /// When its rows go, unless it's connected again first.
+    pub purge_after: Option<u64>,
+    /// When the first read of its items finished.
+    pub backfilled_at: Option<u64>,
+    /// How many of its items the platform holds.
+    pub items: u64,
+}
+
+/// `POST /api/projects/{project}/trackers`: connect a Plane project. A
+/// project's owner or editor may. `project` is Plane's project id or its
+/// identifier. Control reads the project with the key first: a key Plane
+/// refuses or a project it doesn't know is a 422 and nothing is kept. The
+/// key and the webhook secret are sealed and never come back.
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct ConnectTracker {
+    pub workspace_slug: String,
+    pub project: String,
+    pub api_key: String,
+    #[serde(default)]
+    pub webhook_secret: Option<String>,
+}
+
+impl std::fmt::Debug for ConnectTracker {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ConnectTracker")
+            .field("workspace_slug", &self.workspace_slug)
+            .field("project", &self.project)
+            .field("api_key", &"<redacted>")
+            .field("webhook_secret", &self.webhook_secret.as_ref().map(|_| "<redacted>"))
+            .finish()
+    }
+}
+
+/// `PATCH /api/projects/{project}/trackers/{connection}`: whether agents'
+/// writes to the tracker wait for a person (`approve`) or go (`allow`);
+/// the answer is its [`TrackerConnection`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct TrackerSettings {
+    pub agent_writes: String,
+}

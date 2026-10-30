@@ -502,6 +502,20 @@ note (`BOARDS_STEERING`, `crates/proto/src/flags.rs`); the tools are in
 `crates/arugulad-control-tools/src/boards.rs`, the rules in
 `crates/platform/src/boards.rs` (aru-123).
 
+**Plane.** A project's owner or editor connects a Plane project in project
+settings (*Plane*, after *Linked repos*): its workspace slug, the project's id
+or identifier, and an API key, with an optional webhook secret. Control asks
+Plane for the project with the key first, and keeps nothing if Plane refuses
+it. The key and the secret are sealed in `project_secrets` and never read
+back; no machine or agent route touches them. A Plane project is connected to
+one project at a time. Its work items are read into the mirror (`forge_items`,
+`provider = 'plane'`), a completed or cancelled state as closed. The
+connection's *agent writes* is *Approve each write* (the default) or *Allow
+all writes*. *Disconnect* removes the secrets at once and the items after the
+grace period, as unlinking a repo does
+([aru-124](decisions/aru-124-plane-is-a-source-of-a-project-s-issues.md);
+`crates/platform/src/trackers/`).
+
 ## Chant workspaces
 
 A workspace block shows a chant workspace beside your terminals: the gates
