@@ -3,16 +3,16 @@
   "commit": "1ba001e9fb1ab21d58894cdbba91067ab9403faa",
   "branch": "main",
   "state": "pending",
-  "at": "2026-10-30T23:16:15Z",
+  "at": "2026-10-30T23:18:58Z",
   "phases": {
     "lint": {
-      "verdict": "pending",
+      "verdict": "pass",
       "build": "newest",
       "runs": [
         {
           "name": "lint",
           "id": 124362780328,
-          "conclusion": null,
+          "conclusion": "success",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/41141854712/job/124362780328"
         },
         {
@@ -23,9 +23,9 @@
         },
         {
           "name": "suite-changed",
-          "id": 124358512122,
+          "id": 124363687215,
           "conclusion": "success",
-          "url": "https://github.com/arugula-salad/arugula/actions/runs/41141854753/job/124358512122"
+          "url": "https://github.com/arugula-salad/arugula/actions/runs/41141854753/job/124363687215"
         }
       ]
     },
@@ -124,15 +124,15 @@
       "runs": [
         {
           "name": "workspace",
-          "id": 124358607241,
-          "conclusion": "failure",
-          "url": "https://github.com/arugula-salad/arugula/actions/runs/41141854753/job/124358607241"
+          "id": 124363685937,
+          "conclusion": null,
+          "url": "https://github.com/arugula-salad/arugula/actions/runs/41141854753/job/124363685937"
         },
         {
           "name": "workspace-clippy",
-          "id": 124358607126,
+          "id": 124363741333,
           "conclusion": "success",
-          "url": "https://github.com/arugula-salad/arugula/actions/runs/41141854753/job/124358607126"
+          "url": "https://github.com/arugula-salad/arugula/actions/runs/41141854753/job/124363741333"
         },
         {
           "name": "desktop",
@@ -141,7 +141,7 @@
           "url": "https://github.com/arugula-salad/arugula/actions/runs/41141854714/job/124357844909"
         }
       ],
-      "reason": "retrying"
+      "culprit": "1e00c112eba29f15cf5d08e1ea699c2786a1ff44"
     }
   },
   "retried": {
