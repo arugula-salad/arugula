@@ -48,6 +48,7 @@ function sectionOf(r: Route): Section | null {
       return "issues";
     case "boards":
     case "board":
+    case "all-boards":
       return "boards";
     case "runs":
     case "run":

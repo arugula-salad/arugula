@@ -57,7 +57,8 @@ pub fn csp(presence: Option<&str>) -> Cow<'static, str> {
 /// has routes under: a page path that starts with any other is answered
 /// as a 404 (UI audit #193). This is a copy of `TOP` there; keep the two
 /// in step (a test below reads it).
-pub const PAGES: &[&str] = &["p", "chat", "dm", "issues", "runs", "installed", "inbox", "settings", "deploys"];
+pub const PAGES: &[&str] =
+    &["p", "chat", "dm", "issues", "runs", "installed", "inbox", "settings", "deploys", "boards"];
 
 /// Where the page's files come from: the build embedded in this binary, or
 /// a directory (development: `vite build --watch` writes there).

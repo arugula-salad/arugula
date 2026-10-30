@@ -66,7 +66,7 @@
  * #193): its copy is `PAGES` in crates/platform-api/src/page.rs, which a test
  * there checks against this list and `parse`. A new top-level route goes
  * in both. */
-export const TOP = ["p", "chat", "dm", "issues", "runs", "installed", "inbox", "settings", "deploys"] as const;
+export const TOP = ["p", "chat", "dm", "issues", "runs", "installed", "inbox", "settings", "deploys", "boards"] as const;
 
 export type Route =
   | { page: "home" }
@@ -92,6 +92,7 @@ export type Route =
   | { page: "new-deploy"; project: string; env?: string }
   | { page: "installed"; project?: string; repo?: string }
   | { page: "inbox" }
+  | { page: "all-boards" }
   | { page: "settings" }
   | { page: "deploy"; deploy: string }
   /** An id-only address, to be put where it belongs (`resolve`). */
@@ -168,6 +169,7 @@ export function parse(path: string, search = ""): Route {
   const missing: Route = { page: "missing", path };
   if (parts.length === 0) return { page: "home" };
   if (parts.length === 1 && parts[0] === "inbox") return { page: "inbox" };
+  if (parts.length === 1 && parts[0] === "boards") return { page: "all-boards" };
   if (parts.length === 1 && parts[0] === "settings") return { page: "settings" };
   if (parts[0] === "chat" && parts.length <= 2) {
     if (parts.length === 1) return { page: "find", what: "chat" };
@@ -364,6 +366,8 @@ export function pathOf(r: Route, names: Names = () => null): string {
       return r.project && r.repo ? `/installed?state=${encodeURIComponent(`${r.project}:${r.repo}`)}` : "/installed";
     case "inbox":
       return "/inbox";
+    case "all-boards":
+      return "/boards";
     case "settings":
       return "/settings";
     case "deploy":

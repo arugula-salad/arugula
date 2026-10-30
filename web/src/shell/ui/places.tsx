@@ -31,12 +31,11 @@ export function openChat() {
   openPlatform("/chat");
 }
 
-/** Boards, on the platform page. The shell knows no session's linked
- * project, and the platform has no boards page across projects, so it
- * opens the projects, each with its Boards. */
+/** Boards, on the platform page: every project's (#339). The shell knows
+ * no session's linked project, so it can't open one project's. */
 export function openBoards() {
   closeThread();
-  openPlatform("/");
+  openPlatform("/boards");
 }
 
 /** M123: a room in control's chat, at message `msg`, on the platform page. */

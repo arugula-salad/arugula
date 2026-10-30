@@ -1,5 +1,6 @@
 // `/p/:project/boards` and `/p/:project/boards/:board` (boards,
-// step 2): a project's boards, and one. A board is the platform's object
+// step 2): a project's boards, and one. `/boards` (#339): every project's,
+// grouped by project, where the rail's Boards goes. A board is the platform's object
 // (crates/platform/src/boards.rs): zones of rows, each pointing at an issue,
 // a PR, a run, a workspace or an agent block, with a note and a status.
 // The view is shared with the board block (../../shared/boards/view). The
@@ -58,6 +59,56 @@ function BoardsOff() {
     <section class="platform-section" data-boards-off>
       <h1>Boards</h1>
       <p class="dim">Boards are a Labs feature, and they're off for you. A team owner turns them on in the team's Labs, on control's page.</p>
+    </section>
+  );
+}
+
+/** `/boards`: the boards of every project the reader belongs to, by
+ * project. A project with none, or with boards off, isn't listed. */
+export function AllBoardsPage() {
+  useSubscribe((fn) => session.subscribe(fn));
+  const projects = session.projects;
+  const key = projects.map((p) => p.id).join(",");
+  const [lists, setLists] = useState<Map<string, ProjectBoard[] | "off"> | null>(null);
+  useEffect(() => {
+    setLists(null);
+    let live = true;
+    void Promise.all(
+      projects.map((p) =>
+        readBoards(p.id).then(
+          (l): [string, ProjectBoard[] | "off"] => [p.id, l],
+          (e: Error): [string, ProjectBoard[] | "off"] => [p.id, e instanceof BoardError && e.status === 404 ? "off" : []],
+        ),
+      ),
+    ).then((all) => live && setLists(new Map(all)));
+    return () => void (live = false);
+  }, [key]);
+  if (lists && projects.length > 0 && [...lists.values()].every((l) => l === "off")) return <BoardsOff />;
+  const shown = projects.flatMap((p) => {
+    const l = lists?.get(p.id);
+    return Array.isArray(l) && l.length > 0 ? [{ p, list: l }] : [];
+  });
+  return (
+    <section class="platform-section" data-all-boards-page>
+      <h1>Boards</h1>
+      {lists === null && <p class="dim">Loading…</p>}
+      {lists && shown.length === 0 && <p class="dim">No boards yet. Make one on a project's Boards page.</p>}
+      {shown.map(({ p, list }) => {
+        const all = pathOf({ page: "boards", project: p.id }, names);
+        return (
+          <div key={p.id} data-all-boards-project={p.id}>
+            <SectionHead
+              title={p.name}
+              action={
+                <a class="sw-all" href={all} aria-label={`${p.name}'s boards`} onClick={(e) => follow(e, all)} data-all-boards-project-link>
+                  All ›
+                </a>
+              }
+            />
+            <BoardItems p={p} list={list} data="data-project-boards" />
+          </div>
+        );
+      })}
     </section>
   );
 }

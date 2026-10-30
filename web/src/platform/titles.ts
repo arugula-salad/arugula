@@ -83,6 +83,8 @@ export function titleOf(r: Route, k: Known): string {
       return parts("GitHub App installed", p);
     case "inbox":
       return parts("Inbox");
+    case "all-boards":
+      return parts("Boards");
     case "settings":
       return parts("Account settings");
     case "missing":

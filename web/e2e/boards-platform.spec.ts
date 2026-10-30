@@ -12,6 +12,7 @@
 // and sees the progress move, closes the board with a two-line note (Done
 // and the note show, the Boards page folds it under "Done (1)") and reopens
 // it; Bob sees the goal, progress and the Done banner and none of the buttons.
+// #339: `/boards` lists every project's boards, by project, folded the same.
 
 import { expect, test, type Locator, type Page } from "@playwright/test";
 import { closeContexts } from "./helpers";
@@ -303,4 +304,22 @@ test("a viewer on a phone sees the goal, progress and Done, with no buttons and 
   await platform(bob, boardPath.replace(/\/boards\/.*/, "/boards"));
   await expect(bob.locator("[data-boards-done] summary")).toHaveText("Done (1)", { timeout: 15_000 });
   expect(await bob.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
+});
+
+test("/boards lists every project's boards by project, folded under Done the same", async () => {
+  test.setTimeout(60_000);
+  for (const p of [alice, bob]) {
+    await platform(p, "/boards");
+    const page = p.locator("[data-all-boards-page]");
+    const acme = page.locator(`[data-all-boards-project="${project}"]`);
+    await expect(acme.locator("h2")).toHaveText("Acme", { timeout: 15_000 });
+    // Only Acme has boards: Alice's own project isn't listed.
+    await expect(page.locator("[data-all-boards-project]")).toHaveCount(1);
+    await expect(acme.locator("[data-boards-done] summary")).toHaveText("Done (1)");
+    await acme.locator("[data-boards-done] summary").click();
+    await expect(acme.locator("[data-board-link]")).toContainText("Launch");
+    expect(await p.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
+  }
+  await alice.locator("[data-all-boards-project-link]").click();
+  await expect(alice.locator("[data-boards-page]")).toBeVisible({ timeout: 15_000 });
 });
