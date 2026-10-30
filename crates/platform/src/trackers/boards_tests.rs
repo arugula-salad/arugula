@@ -16,9 +16,9 @@ use super::{
 };
 use crate::{
     boards::FLAG,
-    forge::viewer,
     chat_tests::{TestHub, call},
     db::{Sql as _, sql::params, trackers::NewConnection},
+    forge::viewer,
 };
 
 async fn board(base: &str, who: &str, project: &str, pointers: &[Value]) -> String {
@@ -50,7 +50,9 @@ fn progress(v: &Value) -> (u64, u64) {
 fn mirrored_id(app: &crate::Platform, mirror: i64, number: u64) -> String {
     app.db
         .c()
-        .query_row("SELECT id FROM forge_items WHERE repo_id = ?1 AND number = ?2", params![mirror, number], |r| r.get(0))
+        .query_row("SELECT id FROM forge_items WHERE repo_id = ?1 AND number = ?2", params![mirror, number], |r| {
+            r.get(0)
+        })
         .unwrap()
 }
 
@@ -86,10 +88,16 @@ async fn a_plane_item_is_on_a_board_and_closing_it_moves_the_progress() {
 
     // Before it's on a board, Triage has the open items (newest first: 1, then 2), not the completed one.
     let triage = work(&base, "carol", &team, "?untriaged=true").await;
-    let seen: Vec<_> = triage.iter().map(|i| (i["source"].as_str().unwrap(), i["identifier"].as_str(), i["number"].as_u64())).collect();
+    let seen: Vec<_> = triage
+        .iter()
+        .map(|i| (i["source"].as_str().unwrap(), i["identifier"].as_str(), i["number"].as_u64()))
+        .collect();
     assert_eq!(seen, [("plane", Some("ARUGU"), Some(1)), ("plane", Some("ARUGU"), Some(2))], "{triage:?}");
     assert_eq!(triage[0]["url"], "https://app.plane.so/acme/browse/ARUGU-1/");
-    assert_eq!((triage[1]["kind"].as_str(), triage[1]["repo"].as_str(), triage[1]["state"].as_str()), (Some("issue"), Some("Arugula"), Some("open")));
+    assert_eq!(
+        (triage[1]["kind"].as_str(), triage[1]["repo"].as_str(), triage[1]["state"].as_str()),
+        (Some("issue"), Some("Arugula"), Some("open"))
+    );
     // The picker has all three, and a search and the kind filter apply.
     assert_eq!(work(&base, "bob", &team, "").await.len(), 3);
     assert_eq!(work(&base, "bob", &team, "?q=thir").await.len(), 1);
@@ -103,7 +111,10 @@ async fn a_plane_item_is_on_a_board_and_closing_it_moves_the_progress() {
         (Some("ARUGU"), Some(2), Some("started"), Some("open")),
         "{live}"
     );
-    assert_eq!((live["provider"].as_str(), live["kind"].as_str(), live["repo"].as_str()), (Some("plane"), Some("issue"), Some("Arugula")));
+    assert_eq!(
+        (live["provider"].as_str(), live["kind"].as_str(), live["repo"].as_str()),
+        (Some("plane"), Some("issue"), Some("Arugula"))
+    );
     assert_eq!(live["url"], "https://app.plane.so/acme/browse/ARUGU-2/");
     assert_eq!(progress(&v), (0, 1));
     // It's on a board now: out of Triage.
@@ -116,7 +127,11 @@ async fn a_plane_item_is_on_a_board_and_closing_it_moves_the_progress() {
     assert_eq!(connect::ingest_page(&app, &conn, mirror, None, &[done], 6_000).unwrap(), Some(1));
     let v = read(&base, "carol", &id).await;
     let live = &v["zones"][0]["rows"][0]["live"];
-    assert_eq!((live["state"].as_str(), live["state_name"].as_str(), live["number"].as_u64()), (Some("closed"), Some("Done"), Some(2)), "{live}");
+    assert_eq!(
+        (live["state"].as_str(), live["state_name"].as_str(), live["number"].as_u64()),
+        (Some("closed"), Some("Done"), Some(2)),
+        "{live}"
+    );
     assert_eq!(progress(&v), (1, 1));
 
     // erin's project has a connection of its own, so the check isn't empty for her: it still isn't this one.
@@ -135,7 +150,13 @@ async fn a_plane_item_is_on_a_board_and_closing_it_moves_the_progress() {
     let (_, native) =
         call(&base, "erin", "POST", &format!("/api/projects/{other}/issues"), Some(json!({ "title": "Mine" }))).await;
     let native = native["id"].as_str().unwrap().to_owned();
-    let theirs = board(&base, "erin", &other, &[json!({ "kind": "forge_item", "id": third }), json!({ "kind": "issue", "id": native })]).await;
+    let theirs = board(
+        &base,
+        "erin",
+        &other,
+        &[json!({ "kind": "forge_item", "id": third }), json!({ "kind": "issue", "id": native })],
+    )
+    .await;
     let v = read(&base, "erin", &theirs).await;
     let rows = &v["zones"][0]["rows"];
     assert!(rows[0]["live"].is_null(), "{rows}");

@@ -24,11 +24,11 @@
 
 use std::{future::Future, pin::Pin, sync::Arc};
 
+#[cfg(test)]
+mod boards_tests;
 pub mod connect;
 #[cfg(any(test, feature = "testing"))]
 pub mod connect_tests;
-#[cfg(test)]
-mod boards_tests;
 #[cfg(any(test, feature = "testing"))]
 pub mod fake;
 pub mod plane;

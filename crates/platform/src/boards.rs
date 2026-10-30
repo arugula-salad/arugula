@@ -360,7 +360,10 @@ fn live_item(i: &ForgeItem, repo: &str, checks: &[&CheckState]) -> wire::Live {
         number: i.number,
         title: i.title.clone(),
         assignees,
-        provider: None, identifier: None, state_name: None, url: None,
+        provider: None,
+        identifier: None,
+        state_name: None,
+        url: None,
     }
 }
 
@@ -396,7 +399,10 @@ fn live_run(run: &Run) -> wire::Live {
         number: 0,
         title: format!("{} run", run.trigger.as_str()),
         assignees: vec![],
-        provider: None, identifier: None, state_name: None, url: None,
+        provider: None,
+        identifier: None,
+        state_name: None,
+        url: None,
     }
 }
 
@@ -461,7 +467,10 @@ async fn resolve(app: &Platform, account: &str, v: &mut wire::BoardView) -> Resu
                     number,
                     title,
                     assignees,
-                    provider: None, identifier: None, state_name: None, url: None,
+                    provider: None,
+                    identifier: None,
+                    state_name: None,
+                    url: None,
                 },
             );
         }
