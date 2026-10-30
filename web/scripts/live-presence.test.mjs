@@ -3,7 +3,8 @@
 // Watching or Live and in none at Off; live() follows members' cameras;
 // a refused token and an unreachable relay say so, and Try again rejoins;
 // Live's camera goes to one room (the working team's) and stops while the
-// window is hidden; a held room (a People block) stays at Off. Run with
+// window is hidden; your call or voice video keeps its camera, and a
+// camera Live didn't start is left alone; a held room (a People block) stays at Off. Run with
 // `node --experimental-strip-types`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -25,12 +26,14 @@ function fakeSdk() {
       sdk.joins++;
       const t = await token();
       if (t === "bad") throw new Refused("refused");
-      const handlers = { members: new Set(), live: new Set() };
+      const handlers = { members: new Set(), live: new Set(), voice: new Set(), call: new Set() };
       const r = {
         name: room,
         token: t,
         left: false,
         members: [],
+        voice: { joined: null },
+        inCall: null,
         on(ev, fn) {
           handlers[ev].add(fn);
           return () => handlers[ev].delete(fn);
@@ -42,6 +45,9 @@ function fakeSdk() {
           },
           stop() {
             this.on = false;
+            // As arugula.stream does: no camera, no video.
+            if (r.voice.joined) r.voice = { joined: { ...r.voice.joined, video: false } };
+            if (r.inCall) r.inCall = { ...r.inCall, video: false };
           },
         },
         avatar: () => () => {},
@@ -54,6 +60,12 @@ function fakeSdk() {
         },
         say(s) {
           for (const f of handlers.live) f(s);
+        },
+        /** You in voice with video (its camera on), or out of it. */
+        video(on) {
+          r.voice = { joined: on ? { video: true } : null };
+          if (on) r.camera.on = true;
+          for (const f of handlers.voice) f([], r.voice.joined);
         },
       };
       rooms.set(room, r);
@@ -163,4 +175,60 @@ test("a held room stays open at Off, and goes when its last hold does", async ()
   b();
   assert.deepEqual(store.states(), {});
   assert.ok(sdk.rooms.get("team:t1").left);
+});
+
+test("video in voice keeps its camera whatever Live, the window or the working team do", async () => {
+  const { sdk, store, set } = rig({ state: "live" });
+  store.setTeams(["t1", "t2"]);
+  await until(() => store.states().t1 === "on" && store.states().t2 === "on");
+  const t1 = sdk.rooms.get("team:t1");
+  const t2 = sdk.rooms.get("team:t2");
+  t1.video(true);
+  for (const go of [() => store.setHidden(true), () => store.setWorking("t2"), () => set("watching")]) {
+    go();
+    assert.ok(t1.camera.on && t1.voice.joined.video, "still on video");
+    assert.equal(t2.camera.on, false, "one camera: none for Live elsewhere");
+  }
+});
+
+test("video in another room takes Live's camera there off, and Live comes back after", async () => {
+  const { sdk, store } = rig({ state: "live" });
+  store.setTeams(["t1", "t2"]);
+  await until(() => store.states().t1 === "on" && store.states().t2 === "on");
+  const t1 = sdk.rooms.get("team:t1");
+  const t2 = sdk.rooms.get("team:t2");
+  assert.deepEqual([t1.camera.on, t2.camera.on], [true, false]);
+  t2.video(true);
+  assert.deepEqual([t1.camera.on, t2.camera.on], [false, true]);
+  t2.camera.on = false;
+  t2.video(false);
+  assert.deepEqual([t1.camera.on, t2.camera.on], [true, false]);
+});
+
+test("a camera the store didn't start (a People block's picker) stays on at Off and Watching", async () => {
+  const { sdk, store, set } = rig({ state: "watching" });
+  store.setTeams(["t1"]);
+  store.hold("t1");
+  await until(() => store.states().t1 === "on");
+  const t1 = sdk.rooms.get("team:t1");
+  t1.camera.on = true;
+  store.setHidden(true);
+  store.setWorking("t1");
+  set("off");
+  assert.equal(t1.camera.on, true);
+});
+
+test("Live's camera still starting when Live moves goes off once it's on", async () => {
+  const { sdk, store } = rig({ state: "live" });
+  store.setHidden(true);
+  store.setTeams(["t1"]);
+  await until(() => store.states().t1 === "on");
+  const t1 = sdk.rooms.get("team:t1");
+  let go;
+  t1.camera.start = () => new Promise((r) => (go = () => ((t1.camera.on = true), r())));
+  store.setHidden(false);
+  store.setHidden(true);
+  go();
+  await settle();
+  assert.equal(t1.camera.on, false);
 });
