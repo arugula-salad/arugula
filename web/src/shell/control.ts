@@ -56,6 +56,7 @@ import {
   type TeamPin,
   type TeamRole,
 } from "./e2e/team.ts";
+import { checkRoster, type RootChange, type RosterProblem } from "./team-rosters.ts";
 
 export interface ControlInfo {
   control: true;
@@ -143,8 +144,15 @@ export interface Team {
   /** Members' names as they set them, by account (#208): the roster's
    * one-word form ("Sam-Stranger") is only what's signed. */
   names?: Record<string, string>;
-  /** The founder is the one this browser pinned on first sight. */
+  /** The founder is the one this browser pinned on first sight, and the
+   * roster follows the last one this browser checked. */
   verified: boolean;
+  /** Why control's roster wasn't taken: `roster` is then the last one
+   * this browser checked, and changes wait until control's follows it. */
+  rosterProblem?: RosterProblem;
+  /** Members' roots that changed since this browser last looked, until
+   * dismissed. */
+  rootChanges?: RootChange[];
 }
 
 /** A one-click invite link control still holds (#134). */
@@ -157,6 +165,30 @@ export interface PresignedInvite {
 }
 
 const PINS_KEY = "arugula.control.pins";
+
+/** The last roster this browser checked for each team (`team-rosters.ts`),
+ * and members' roots that changed since it looked, until dismissed. */
+const ROSTERS_KEY = "arugula.control.rosters";
+const ROOT_CHANGES_KEY = "arugula.control.root-changes";
+
+function readKey<T>(key: string, empty: T): T {
+  try {
+    return (JSON.parse(localStorage.getItem(key) ?? "null") as T | null) ?? empty;
+  } catch {
+    return empty;
+  }
+}
+
+function writeKey(key: string, v: unknown) {
+  try {
+    localStorage.setItem(key, JSON.stringify(v));
+  } catch {
+    // not remembered
+  }
+}
+
+const heldRosters = () => readKey<Record<string, Roster>>(ROSTERS_KEY, {});
+const rootChangesKept = () => readKey<Record<string, RootChange[]>>(ROOT_CHANGES_KEY, {});
 
 /** #761: the secret this browser shows while it waits, kept with its key
  * id so a reload shows the same code (one already scanned still works). */
@@ -1616,19 +1648,38 @@ export class ControlSession {
     this.teamsLoaded = loaded;
     this.notices = r.notices ?? [];
     const out: Team[] = [];
+    const held = heldRosters();
+    const kept = rootChangesKept();
     for (const t of r.teams) {
       // The founder pinned on first sight. The team's daemons check each
       // roster version against it; this browser checks the ones it signs.
       const ok = pin(`team:${t.team}`, `${t.pin.founder}.${t.pin.founder_root}`);
+      // And each version from the last this browser checked: an owner's
+      // change is signed on top of the one shown, so that one must be a
+      // version owners wrote, not just what control says is latest.
+      const c = await checkRoster(held[t.team] ?? null, t.roster, t.pin, t.certs, (since) =>
+        api<{ rosters: Roster[]; certs: AccountCerts }>(`/api/teams/${encodeURIComponent(t.team)}/rosters?since=${since}`),
+      );
+      if (ok && c.roster.version > (held[t.team]?.version ?? 0)) held[t.team] = c.roster;
+      if (ok && c.changes.length) kept[t.team] = [...(kept[t.team] ?? []), ...c.changes];
       // #762: only someone who held an owner's link; anything else control
       // says waits is refused here, never shown.
       const requests: Team["requests"] = [];
       for (const q of t.requests ?? []) {
-        const by = await askOk(t.roster, t.certs, q);
+        const by = await askOk(c.roster, t.certs, q);
         if (by) requests.push({ ...q, role: q.invite.role, by });
       }
-      out.push({ ...t, requests, verified: ok });
+      out.push({
+        ...t,
+        roster: c.roster,
+        requests,
+        verified: ok && !c.problem,
+        ...(c.problem ? { rosterProblem: c.problem } : {}),
+        ...(kept[t.team]?.length ? { rootChanges: kept[t.team] } : {}),
+      });
     }
+    writeKey(ROSTERS_KEY, held);
+    writeKey(ROOT_CHANGES_KEY, kept);
     const now = r.asked ?? [];
     const yes = this.asked.find((a) => !now.some((x) => x.team === a.team) && out.some((t) => t.team === a.team));
     if (yes) this.joined = { team: yes.team, name: yes.name };
@@ -1815,6 +1866,7 @@ export class ControlSession {
   async changeTeam(team: string, change: (members: Roster["members"]) => Roster["members"], name?: string) {
     const t = this.teams.find((x) => x.team === team);
     if (!t) throw new Error("no such team");
+    if (t.rosterProblem) throw new Error("control's list of this team's members doesn't follow the one this browser last checked; changes wait until it does");
     const prev = t.roster;
     // Used presigned invites stay listed until they'd have expired anyway,
     // so none works twice.
@@ -1835,6 +1887,15 @@ export class ControlSession {
     if (!(await follows(next, prev, t.pin, t.certs))) throw new Error("that change doesn't check out (are you an owner here?)");
     await api(`/api/teams/${team}/roster`, { roster: next });
     await this.refresh();
+  }
+
+  /** The root changes shown for `team` were seen: don't show them again. */
+  dismissRootChanges(team: string) {
+    const kept = rootChangesKept();
+    delete kept[team];
+    writeKey(ROOT_CHANGES_KEY, kept);
+    this.teams = this.teams.map((t) => (t.team === team ? { ...t, rootChanges: undefined } : t));
+    this.emit();
   }
 
   async admit(team: string, req: Team["requests"][number]) {

@@ -325,3 +325,37 @@ export async function follows(r: Roster, prev: Roster | null, pin: TeamPin, cert
   for (const o of prev.members.filter((x) => x.role === "owner")) byOwner ||= await signedBy(o.account, o.root, inv.by, inviteBody(inv), inv.sig, inv.role === "viewer" ? null : inv.role);
   return byOwner && (await verify(inv.key, redeemBody(inv, r.version, m), r.redeem.proof)) && (await verify(inv.key, body, r.sig));
 }
+
+/** Whether two rosters are the same version, signed alike. */
+export const sameRoster = (a: Roster, b: Roster) => rosterBody(a) === rosterBody(b) && a.sig === b.sig;
+
+/** Where a team's roster stands after `history` (oldest first), from
+ * `held`: the version this browser last checked, or none for a first look
+ * (`checkpoint::advance`). Older versions are passed over; one at
+ * `held`'s version must be `held`; each newer one must be the very next
+ * (from 1 on a first look) and follow the one before. The first that
+ * doesn't stops the walk: where it stood, and that version. */
+export async function advance(held: Roster | null, history: Roster[], pin: TeamPin, certs: AccountCerts): Promise<[Roster | null, number | null]> {
+  let cur = held;
+  for (const r of history) {
+    if (cur && r.version < cur.version) continue;
+    if (cur && r.version === cur.version) {
+      if (sameRoster(r, cur)) continue;
+      return [cur, r.version];
+    }
+    if (r.version !== (cur ? cur.version + 1 : 1) || !(await follows(r, cur, pin, certs))) return [cur, r.version];
+    cur = r;
+  }
+  return [cur, null];
+}
+
+/** The members whose root `to` names differently from `from`: another
+ * key for that account, which a person may want to check. */
+export function rootChanges(from: Roster, to: Roster): { account: string; name: string; from: string; to: string }[] {
+  const out: { account: string; name: string; from: string; to: string }[] = [];
+  for (const m of to.members) {
+    const was = from.members.find((x) => x.account === m.account);
+    if (was && was.root !== m.root) out.push({ account: m.account, name: m.name, from: was.root, to: m.root });
+  }
+  return out;
+}

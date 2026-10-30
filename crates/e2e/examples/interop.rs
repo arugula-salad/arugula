@@ -84,6 +84,19 @@ async fn main() -> anyhow::Result<()> {
             let certs: AccountCerts = serde_json::from_value(v["certs"].clone())?;
             println!("{}", roster.is_some_and(|r| r.follows(prev.as_ref(), &pin, &certs)));
         }
+        Some("advance") => {
+            // `checkpoint::advance`: where a roster stands after a history,
+            // from the one held, and the version that stopped it.
+            let mut s = String::new();
+            std::io::stdin().read_to_string(&mut s)?;
+            let v: serde_json::Value = serde_json::from_str(&s)?;
+            let pin: TeamPin = serde_json::from_value(v["pin"].clone())?;
+            let held: Option<Roster> = serde_json::from_value(v["held"].clone())?;
+            let history: Vec<Roster> = serde_json::from_value(v["history"].clone())?;
+            let certs: AccountCerts = serde_json::from_value(v["certs"].clone())?;
+            let (cur, stopped) = arugula_e2e::checkpoint::advance(held.as_ref(), history, &pin, &certs);
+            println!("{}", serde_json::json!({ "version": cur.map(|r| r.version), "stopped": stopped }));
+        }
         Some("grant") => {
             let mut s = String::new();
             std::io::stdin().read_to_string(&mut s)?;

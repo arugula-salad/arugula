@@ -10,6 +10,7 @@ import { ConfirmRemove } from "../../shared/ui/confirm";
 import { CopyText } from "../../shared/ui/copy";
 import { Modal } from "../../shared/ui/modal";
 import type { ControlSession, LabsFlags, PresignedInvite, Team } from "../control";
+import { fingerprint } from "../e2e/cert.ts";
 import type { TeamRole } from "../e2e/team.ts";
 import { machineState } from "../ui/hosts";
 import { ROLE_HELP, roleAs, roleLabel } from "../ui/roles";
@@ -233,6 +234,31 @@ function TeamSection({
           <TeamJoin s={s} t={t} here />
         </>
       )}
+      {t.rosterProblem ? (
+        <p class="control-error" data-team-roster-problem={t.rosterProblem}>
+          Control sent a list of this team's members that doesn't follow the one this browser last checked (version {t.roster.version}). That one shows here, and changes wait until control sends one that follows it.
+        </p>
+      ) : null}
+      {t.rootChanges?.length ? (
+        <div class="control-explain" data-team-root-changes={t.team}>
+          <p>Account keys that changed in this team since you last looked. If you didn't expect one, check it with them:</p>
+          <ul class="control-devices">
+            {t.rootChanges.map((c) => (
+              <li key={`${c.account}.${c.to}`} data-root-change={c.account}>
+                <span>
+                  {t.names?.[c.account] ?? c.name} <span class="dim">· version {c.version}</span>
+                  <span class="control-device-label">
+                    <span class="fingerprint-inline">{fingerprint(c.from)}</span> → <span class="fingerprint-inline">{fingerprint(c.to)}</span>
+                  </span>
+                </span>
+              </li>
+            ))}
+          </ul>
+          <button class="secondary small" data-root-changes-seen onClick={() => s.dismissRootChanges(t.team)}>
+            Got it
+          </button>
+        </div>
+      ) : null}
       <h4 class="control-subgroup" data-team-members-head>
         Members <span class="dim">· {t.roster.members.length}</span>
       </h4>

@@ -640,6 +640,7 @@ fn routes() -> Routes {
         .route("/api/flags", get(labs_flags::list).post(labs_flags::set))
         .route("/api/teams", get(teams::list).post(teams::create))
         .route("/api/teams/{id}/roster", post(teams::set_roster))
+        .route("/api/teams/{id}/rosters", get(teams::rosters))
         .route("/api/teams/{id}/invites", post(teams::invite))
         .route("/api/teams/{id}/presigned", get(teams::list_presigned))
         .route("/api/teams/{id}/presigned/{key}", axum::routing::delete(teams::cancel_presigned))

@@ -192,6 +192,28 @@ device nobody trusted. Now:
     every trust refresh). A daemon that was only shared a session with the
     team gets nothing for the team until it's updated: its members lose
     that session there, rather than members who were removed keeping it.
+- **Rosters only move forward** (`arugula_e2e::checkpoint::advance`):
+  - Every machine that checks a team's roster (the team's own machines,
+    a machine a session was shared with, a hosted machine) keeps the last
+    version it checked in `control.json`. It takes a newer version only as
+    the very next one, following the one it holds. An older version,
+    another version with the same number, or a history with a version
+    left out is ignored, and the machine keeps what it had. A team control
+    stops answering for keeps its last roster too, but nobody gets in
+    through it until control answers for it again.
+  - An owner's page does the same in the browser (`team-rosters.ts`): it
+    keeps the last roster it checked for each team, checks control's
+    latest against it (fetching the versions in between), and signs a
+    change only on top of a version that follows. If control's latest
+    doesn't follow, the page shows the last one it checked and holds
+    changes until control's does.
+  - The page takes a team's roster as control serves it the first time it
+    sees that team, as it pins the founder on first sight. A browser that
+    has never opened the team relies on the team's machines, which check
+    the whole chain from the founder.
+  - When a member's root changes between the version the page held and
+    the one it takes, Teams shows the old and new fingerprints until you
+    dismiss them, so you can check another key for that account with them.
 - An ***Ask me first* invite** carries a one-time key too (#762), so
   admitting someone needs no fingerprint:
   - The owner's device signs `arugula team ask invite v1` (team, role,
@@ -220,7 +242,8 @@ device nobody trusted. Now:
 **Verification on the daemon:**
 
 - The daemon keeps its account's chain (the certificates back to the
-  first device) and caches it on disk.
+  first device) and caches it on disk, with every revocation it has seen,
+  its team members' and the people it shares with too.
 - A client's Noise static key must belong to a certificate that chains to
   that root, isn't revoked, and has a role on the session it touches
   (the multiplayer principals; role grants are signed the same way).
@@ -232,11 +255,24 @@ device nobody trusted. Now:
 - A revocation is a signed `{revoke: <device id>, at}` from any device of
   the account, or from a team owner's device for team grants.
 - Control distributes revocations to daemons as it does certificates.
-  Approving devices also push them straight to every daemon they can reach.
+  Devices don't send them to daemons themselves: a daemon learns of a
+  revocation on its next refresh from control.
+- **Revocations only add up** (`arugula_e2e::checkpoint::refresh_account`):
+  a daemon keeps every revocation it has seen, for its own account, its
+  team's members and the people it shares with, and a later answer from
+  control can't take one away. A device a daemon holds as removed (and
+  what that device approved after) can't count again: if control's
+  certificates would let it back in, for instance by leaving out the
+  certificate a revocation rests on, the daemon keeps the certificates
+  it had.
 - **Accepted risk:** a malicious control can *withhold* a revocation from a
-  daemon that no trusted device can reach directly. Control can't add
-  readers, but it can delay removing one. As with Tailnet Lock, this is
-  written down rather than solved.
+  daemon that hasn't seen it yet. Control can't add readers, but it can
+  delay removing one. As with Tailnet Lock, this is written down rather
+  than solved.
+- **Accepted risk:** whether a team is locked is control's word. A locked
+  team lets only its owners in; control can unlock it on a daemon, which
+  lets its editors and viewers back in with the roles the signed roster
+  gives them. It can't add anyone the roster doesn't list.
 
 **Recovery:**
 
@@ -904,7 +940,7 @@ or whoever runs yours) does:
 |---|---|
 | relays and stores honestly | only your devices and the people you share with read them |
 | has its database or relay copied, or logs everything it sees | still unreadable: it holds certificates and ciphertext, never a private key |
-| turns malicious **after** your machines and devices are set up, without changing the page it serves | can't add a reader: daemons check every device against the root they pinned. It can withhold revocations and refuse service |
+| turns malicious **after** your machines and devices are set up, without changing the page it serves | can't add a reader: daemons check every device against the root they pinned and every roster against the last one they checked, and keep every revocation they've seen. It can withhold revocations a machine hasn't seen yet, unlock a locked team, and refuse service |
 | lies at **join** about which account a machine joins | refused by the machine: the approving device's answer to the secret in its link doesn't match (an older daemon or CLI: caught by the account fingerprint, if you compare it) |
 | lies about which account a **new browser or phone** is approved into | refused by that device: the approving device's answer to the code it showed doesn't match (approved from a page from before codes: it shows the account fingerprint to check) |
 | lies about who **@name** is when you share with them | believed on the first share unless you verify them; after that the share stops, saying their key changed |

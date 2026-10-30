@@ -8,6 +8,7 @@ use arugula_control_wire::hosted;
 use arugula_e2e::{
     Cert, DeviceKeys, Kind, Trust,
     cert::verify_hex,
+    checkpoint::{kept, refresh_account},
     hosted::{Owner, Owners},
 };
 use tracing::warn;
@@ -59,7 +60,8 @@ pub fn saved_from(got: hosted::Enrollment, keys: &DeviceKeys, prev: Option<&Save
     }
     // Removals once seen stay (a refresh adds, never takes away): control
     // leaving one out mustn't let a removed device count again.
-    let revocations = kept(revocations, prev.and_then(|p| p.hosted.as_ref()).map(|h| h.revocations.as_slice()));
+    let revocations =
+        kept(revocations, prev.and_then(|p| p.hosted.as_ref()).map_or(&[][..], |h| h.revocations.as_slice()));
     let (account, trust, own_certs, own_revocations, team, roster, team_certs) = match delegation.owner() {
         Some(Owner::Team(id)) => {
             let pin = team.context("a team's project came without its team")?;
@@ -80,14 +82,30 @@ pub fn saved_from(got: hosted::Enrollment, keys: &DeviceKeys, prev: Option<&Save
             }
             ensure!(r.team == pin.team && r.well_formed(), "the team's roster isn't well formed");
             // Each member's removed devices, as the box last held them, stay
-            // removed; a member control leaves out keeps them for later.
+            // removed, checked from the root the roster held names; a member
+            // control leaves out keeps them for later.
             let mut certs = certs;
-            for (a, (_, revs)) in prev.iter().flat_map(|p| &p.team_certs) {
+            let held_roster = prev.and_then(|p| p.roster.as_ref());
+            for (a, (old_certs, old_revs)) in prev.iter().flat_map(|p| &p.team_certs) {
                 if r.member(a).is_none() {
                     continue;
                 }
                 let e = certs.entry(a.clone()).or_default();
-                e.1 = kept(std::mem::take(&mut e.1), Some(revs));
+                let new = (std::mem::take(&mut e.0), std::mem::take(&mut e.1));
+                *e = match held_roster.and_then(|h| h.member(a)) {
+                    Some(m) => {
+                        let trust = Trust { account: a.clone(), root: m.root.clone() };
+                        let (c, revs, refused) = refresh_account(&trust, new, (old_certs, old_revs));
+                        if refused {
+                            warn!(
+                                account = a,
+                                "hosted: a member's certificates would let a removed device back in; keeping the last"
+                            );
+                        }
+                        (c, revs)
+                    }
+                    None => (new.0, kept(new.1, old_revs)),
+                };
             }
             ensure!(
                 delegation.signed_for(&Owners::Team { roster: &r, certs: &certs }),
@@ -103,7 +121,19 @@ pub fn saved_from(got: hosted::Enrollment, keys: &DeviceKeys, prev: Option<&Save
             if let Some(p) = prev {
                 ensure!(p.trust.root == t.root, "control changed the account's root");
             }
-            let account_revocations = kept(account_revocations, prev.map(|p| p.revocations.as_slice()));
+            let (account_certs, account_revocations) = match prev {
+                Some(p) => {
+                    let (c, r, refused) =
+                        refresh_account(&t, (account_certs, account_revocations), (&p.certs, &p.revocations));
+                    if refused {
+                        warn!(
+                            "hosted: the account's certificates would let a removed device back in; keeping the last"
+                        );
+                    }
+                    (c, r)
+                }
+                None => (account_certs, account_revocations),
+            };
             ensure!(
                 delegation.signed_for(&Owners::Account {
                     trust: &t,
@@ -168,6 +198,8 @@ pub fn saved_from(got: hosted::Enrollment, keys: &DeviceKeys, prev: Option<&Save
         locked: false,
         peers: Default::default(),
         shared_teams: Default::default(),
+        held_teams: Default::default(),
+        held_peers: Default::default(),
         login: String::new(),
         moved_at: 0,
         // A deploy's box (M219) stays one: a refresh that leaves it out
@@ -183,17 +215,6 @@ pub fn saved_from(got: hosted::Enrollment, keys: &DeviceKeys, prev: Option<&Save
             legacy_app_children,
         }),
     })
-}
-
-/// `new` and every one of `old` it leaves out: what a refresh says was
-/// removed is added to what the box held, never taken from it.
-fn kept<T: PartialEq + Clone>(mut new: Vec<T>, old: Option<&[T]>) -> Vec<T> {
-    for o in old.unwrap_or_default() {
-        if !new.contains(o) {
-            new.push(o.clone());
-        }
-    }
-    new
 }
 
 #[cfg(test)]
@@ -263,6 +284,24 @@ mod tests {
         let third = saved_from(got, &keys, Some(&second)).unwrap();
         assert!(!held(&third), "a removal dropped by control counts again");
         assert_eq!(third.revocations.len(), 1);
+    }
+
+    /// A removal stays when control leaves out the certificate it rests
+    /// on (its signer's), not only the removal itself.
+    #[test]
+    fn an_account_devices_removal_stays_when_control_leaves_its_signer_out() {
+        let keys = DeviceKeys::generate();
+        let (mut got, root) = enrollment(&keys);
+        let (laptop, laptop_cert) = approved("acct1", &root);
+        let (_, phone) = approved("acct1", &root);
+        got.account_certs.extend([laptop_cert.clone(), phone.clone()]);
+        got.account_revocations.push(arugula_e2e::Revocation::new("acct1", &phone.device, &laptop));
+        let held = |s: &Saved| s.trust.evaluate(&s.certs, &s.revocations).get(&phone.device).is_some();
+        let first = saved_from(got.clone(), &keys, None).unwrap();
+        assert!(!held(&first));
+        got.account_certs.retain(|c| c.device != laptop_cert.device);
+        let second = saved_from(got, &keys, Some(&first)).unwrap();
+        assert!(!held(&second), "the phone counts again");
     }
 
     /// What grandfathered app windows approved, as control sends it, is

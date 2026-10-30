@@ -11,7 +11,7 @@ import { daemonNow, E2ESocket, readWelcome } from "./src/shell/e2e/channel.ts";
 import { blockRoutesLabel } from "./src/shell/blocks/block-route.ts";
 import { blockOrigin, blockSrc, credsFor, frameAllow, grantExpiry, heard, isWebKit, MAX_LIFE_MS, mint, type Framed } from "./src/shell/blocks/through-control.ts";
 import { workerDirectBlocked } from "./src/shell/block/lna.ts";
-import { follows, newInviteKey, redeemInvite, signInvite, signRedeem, signRoster, type Roster, type TeamPin } from "./src/shell/e2e/team.ts";
+import { advance, follows, newInviteKey, redeemInvite, signInvite, signRedeem, signRoster, type Roster, type TeamPin } from "./src/shell/e2e/team.ts";
 
 const bin = process.env.INTEROP_BIN ?? "../target/debug/examples/interop";
 let failed = 0;
@@ -142,6 +142,28 @@ check("Rust trusts what we signed", JSON.stringify(rust) === JSON.stringify([roo
   await both("a CLI's presigned editor invite doesn't admit", v1, await redeemInvite(v1, fromCli, seed, { account: "bob", root: bob.id, name: "bob" }), false);
   const fromApp = await signInvite({ team: pin.team, role: "editor", expires: Date.now() + 86_400_000, key }, aliceApp);
   await both("the app's presigned editor invite admits", v1, await redeemInvite(v1, fromApp, seed, { account: "bob", root: bob.id, name: "bob" }), true);
+
+  // A roster moves forward only from the one held (`checkpoint::advance`):
+  // Rust and this code stop at the same place.
+  {
+    const w2 = await signRoster({ ...withBob("viewer") }, alice);
+    const w3 = await signRoster({ ...v1, version: 3 }, alice);
+    const other3 = await signRoster({ ...v1, version: 3, name: "Other" }, alice);
+    const stranger = await generateKeys();
+    const bad4 = await signRoster({ ...v1, version: 4, members: [...v1.members, { account: "bob", root: bob.id, role: "owner", name: "bob" }] }, stranger);
+    const step = async (what: string, held: Roster | null, history: Roster[], want: [number | null, number | null]) => {
+      const rs = JSON.parse(execFileSync(bin, ["advance"], { input: JSON.stringify({ pin, held, history, certs: tc }) }).toString());
+      const [cur, stopped] = await advance(held, history, pin, tc);
+      const ts = [cur?.version ?? null, stopped];
+      const ok = rs.version === want[0] && rs.stopped === want[1] && ts[0] === want[0] && ts[1] === want[1];
+      check(what, ok, `rust ${JSON.stringify(rs)}, ts ${JSON.stringify(ts)}`);
+    };
+    await step("a first look checks from the founder", null, [v1, w2, w3], [3, null]);
+    await step("an older history leaves the one held", w3, [v1, w2], [3, null]);
+    await step("another version at the one held is refused", w3, [v1, w2, other3], [3, 3]);
+    await step("a version nobody in the team signed is refused", w3, [bad4], [3, 4]);
+    await step("a version left out in between stops the walk", v1, [w2, await signRoster({ ...v1, version: 4 }, alice)], [2, 4]);
+  }
 
   // Nor does a CLI remove a browser; it removes a machine.
   const machine = await generateKeys();
