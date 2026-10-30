@@ -8,7 +8,7 @@ import assert from "node:assert/strict";
 import { certBody, revocationBody } from "../src/shell/e2e/cert.ts";
 import { generateKeys, signText } from "../src/shell/e2e/keys.ts";
 import { ownersAsHeld, signLock, signRoster } from "../src/shell/e2e/team.ts";
-import { checkRoster, RosterStore, takeLock, TrustStore } from "../src/shell/team-rosters.ts";
+import { checkRoster, RosterStore, takeLock, TrustStore, withTimeout } from "../src/shell/team-rosters.ts";
 
 const cert = async (k, account, by, name = account, created = 1) => {
   const c = { v: 1, account, device: k.id, kind: "browser", name, noise: k.noisePub, sign: k.signPub, created, approver: by.id, sig: "" };
@@ -337,4 +337,16 @@ test("a team's lock is taken from an owner in the roster checked, newer than the
     assert.deepEqual(await takeLock(l, pin.team, l2, v2, certs, now), l2);
   });
   assert.deepEqual(s.lock(pin.team), l2, "kept");
+});
+
+test("a fetch the page's trust waits on is given up after its time", async () => {
+  // A control that never answers (until the request is aborted).
+  const stalls = (_path, init) =>
+    new Promise((_, reject) => init.signal.addEventListener("abort", () => reject(init.signal.reason)));
+  const t0 = Date.now();
+  await assert.rejects(withTimeout(stalls, 50)("/api/teams/t/rosters?since=0"), /no answer/);
+  assert.ok(Date.now() - t0 < 2000);
+  // One that answers in time is let through.
+  const quick = async () => new Response("{}");
+  assert.equal((await withTimeout(quick, 50)("/x")).status, 200);
 });

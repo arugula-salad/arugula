@@ -286,3 +286,15 @@ export async function takeLock(store: Pick<Look, "lock" | "holdLock">, team: str
   if (got && got.team === team && Number.isSafeInteger(got.at) && got.at <= now + LOCK_SKEW_MS && (await lockSignedIn(got, roster, certs))) store.holdLock(team, got);
   return store.lock(team);
 }
+
+/** How long a fetch the page's trust waits on may take. */
+export const FETCH_TIMEOUT_MS = 15_000;
+
+/** `send`, given up on (aborted) after `ms`. */
+export function withTimeout(send: (path: string, init: RequestInit) => Promise<Response>, ms = FETCH_TIMEOUT_MS) {
+  return (path: string, init: RequestInit = {}) => {
+    const ctl = new AbortController();
+    const timer = setTimeout(() => ctl.abort(new Error(`no answer in ${ms / 1000} s`)), ms);
+    return send(path, { ...init, signal: ctl.signal }).finally(() => clearTimeout(timer));
+  };
+}

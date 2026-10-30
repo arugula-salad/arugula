@@ -237,7 +237,9 @@ device nobody trusted. Now:
     transaction under a browser-wide lock (the Web Locks API): it reads the
     store afresh, counts its round after the stored one and writes back
     before another tab may look, so tabs never share a round or split a
-    removal from the certificate it rests on. If the browser has no such
+    removal from the certificate it rests on. What a look needs from
+    control is fetched before it takes the lock, each fetch given up after
+    15 seconds, so a slow answer doesn't hold up other tabs. If the browser has no such
     lock, can't read or store what it checked, or finds it gone after this
     browser kept it, the page keeps nothing from that look: it goes on with
     what it held before (control's answer only on a first look), signs no

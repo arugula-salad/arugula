@@ -59,7 +59,7 @@ import {
   type TeamPin,
   type TeamRole,
 } from "./e2e/team.ts";
-import { checkRoster, RosterStore, takeLock, TrustStore, type RootChange, type RosterProblem } from "./team-rosters.ts";
+import { checkRoster, RosterStore, takeLock, TrustStore, withTimeout, type RootChange, type RosterProblem } from "./team-rosters.ts";
 
 export interface ControlInfo {
   control: true;
@@ -1694,6 +1694,21 @@ export class ControlSession {
     const held = this.rosters.held();
     const kept = rootChangesKept();
     const lateKept = rosterLateKept();
+    // What the look needs from control, fetched before it takes the
+    // browser-wide lock (an answer that's slow to come mustn't hold up
+    // every tab's look), each given up after FETCH_TIMEOUT_MS: the versions
+    // after the one held, for each team control has a newer one of.
+    const fetched = new Map<string, { since: number; got: { rosters: Roster[]; certs: AccountCerts } | null }>();
+    await Promise.all(
+      r.teams
+        .filter((t) => t.roster.version > (held[t.team]?.version ?? 0))
+        .map(async (t) => {
+          const since = held[t.team]?.version ?? 0;
+          const path = `/api/teams/${encodeURIComponent(t.team)}/rosters?since=${since}`;
+          const got = await api<{ rosters: Roster[]; certs: AccountCerts }>(path, undefined, withTimeout(fetch)).catch(() => null);
+          fetched.set(t.team, { since, got });
+        }),
+    );
     // One look at what this page holds, for every team.
     const looked = await this.held.look(async (l) => {
       // An account's certificates as this page holds them, from `root`.
@@ -1717,7 +1732,13 @@ export class ControlSession {
           t.roster,
           t.pin,
           t.certs,
-          (since) => api<{ rosters: Roster[]; certs: AccountCerts }>(`/api/teams/${encodeURIComponent(t.team)}/rosters?since=${since}`),
+          // Only what was fetched before the look: nothing from control
+          // while it holds the lock.
+          async (since) => {
+            const f = fetched.get(t.team);
+            if (!f?.got || f.since !== since) throw new Error("the team's history wasn't fetched");
+            return f.got;
+          },
           {
             vet: (prev, certs) => ownersAsHeld(prev, t.pin, certs, take),
             lateOk: (account, root, device) => !l.removedBefore(account, root, device),
