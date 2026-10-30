@@ -49,6 +49,19 @@ pub enum Rule {
     Personal,
 }
 
+impl Rule {
+    /// The rule that chooses with `asked` (the call's `project`) and the
+    /// clone's GitHub repo, if it has one: a named project wins, then the
+    /// repo's link.
+    fn of(asked: Option<&str>, repo: Option<&str>) -> Self {
+        match (asked, repo) {
+            (Some(_), _) => Rule::Asked,
+            (None, Some(repo)) => Rule::Linked(repo.to_owned()),
+            (None, None) => Rule::Personal,
+        }
+    }
+}
+
 impl Chosen {
     /// One line for a result: which project, and which rule.
     pub fn says(&self) -> String {
@@ -232,19 +245,17 @@ impl Call<'_> {
 
     /// The current project, and the rule that chose it (module docs).
     pub async fn chosen_project(&self, project: Option<&str>) -> Result<Chosen, String> {
+        let asked = project.map(str::trim).filter(|p| !p.is_empty());
+        let repo = match asked {
+            Some(_) => None,
+            None => self.my_github_repo().await,
+        };
+        let rule = Rule::of(asked, repo.as_deref());
         let mut q = vec![];
-        let mut rule = Rule::Personal;
-        match project.map(str::trim).filter(|p| !p.is_empty()) {
-            Some(p) => {
-                q.push(("project", p.to_owned()));
-                rule = Rule::Asked;
-            }
-            None => {
-                if let Some(repo) = self.my_github_repo().await {
-                    q.push(("repo", repo.clone()));
-                    rule = Rule::Linked(repo);
-                }
-            }
+        match (&rule, asked) {
+            (Rule::Asked, Some(p)) => q.push(("project", p.to_owned())),
+            (Rule::Linked(repo), _) => q.push(("repo", repo.clone())),
+            _ => {}
         }
         let path = if q.is_empty() { AGENT_ISSUE_HOME.to_owned() } else { format!("{AGENT_ISSUE_HOME}?{}", query(&q)) };
         let v = self.issues_call(Method::GET, &path, None).await?;
@@ -321,6 +332,13 @@ async fn github_repo_of(dir: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_named_project_wins_then_the_repos_link_then_personal() {
+        assert_eq!(Rule::of(Some("prj_1"), Some("acme/app")), Rule::Asked);
+        assert_eq!(Rule::of(None, Some("acme/app")), Rule::Linked("acme/app".into()));
+        assert_eq!(Rule::of(None, None), Rule::Personal);
+    }
 
     #[test]
     fn the_chosen_project_says_which_rule_chose_it() {
