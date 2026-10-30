@@ -19,6 +19,7 @@ import { useEscape } from "./keys";
 import { colorOf } from "../../shared/chat/avatar";
 import { ShareLinks } from "./share-links";
 import { secretsWarned, shareOpen } from "../hints/private";
+import { LiveFace, accountOf } from "../../shared/live/face";
 
 /** Control mode (M19): people are accounts there, and links go through it. */
 let control: ControlSession | null = null;
@@ -37,9 +38,12 @@ function initials(name: string): string {
 }
 
 export function Avatar({ p, onClick, title }: { p: Pick<Presence, "who" | "name" | "pic">; onClick?: () => void; title?: string }) {
+  const live = accountOf(p.who);
   return (
     <span class="avatar" style={{ "--who": colorOf(p.who) }} title={title ?? p.name} data-who={p.who} onClick={onClick}>
       {p.pic ? <img src={p.pic} alt="" referrerpolicy="no-referrer" /> : initials(p.name)}
+      {/* #344: their live face, for someone here through control. */}
+      {live && <LiveFace account={live} />}
     </span>
   );
 }

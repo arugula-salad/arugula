@@ -1,0 +1,24 @@
+/* A live face (face.tsx) over an avatar's picture: the avatar's own shape. */
+.live-face {
+  position: absolute;
+  inset: 0;
+  display: none;
+  border-radius: inherit;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.live-face.on {
+  display: block;
+}
+
+/* Something to observe while it's waiting to come on screen. */
+.live-face[data-live-face]:not(.on) {
+  display: block;
+  visibility: hidden;
+}
+
+/* The shell's avatar (a session's people) isn't positioned on its own. */
+.avatar:has(> .live-face) {
+  position: relative;
+}
