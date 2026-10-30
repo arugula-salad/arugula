@@ -1093,6 +1093,24 @@ can cancel (`reset.rs`, docs/design/self-service-reset.md). It's the same
 step when it's done, logged as `by = self-service`. Support's is for
 someone who can't wait or lost GitHub too.
 
+### Deleting an account
+
+For an account that can't delete itself from Settings: a test bot's, or
+someone who asked support (check who's asking first). It's the same delete
+as Settings → *Delete account*. Read what it would do first:
+
+```
+fly ssh console -a illogical-control -C "/arugula-control account-delete --account ACCOUNT --db /data/control.db"
+```
+
+It lists the account's machines and the teams it would disband or leave,
+and changes nothing. Add `--yes` to do it. What Settings refuses, this
+refuses too: an owner leaves its teams first. Billing is the platform's,
+so check the account pays for no plan first. The hub's rows go in one
+transaction, and teammates Settings would tell get a notice in the app (no
+push). The running hub tells the platform within 30 s, and the platform
+erases its part.
+
 ### Deploys
 
 Each release tag deploys control (M133, #1129). It's automatic, with no

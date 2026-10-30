@@ -718,7 +718,7 @@ mod tests {
         }
 
         fn delete(&self, account: &str) -> anyhow::Result<()> {
-            let p = crate::account::plan(&self.app, account)?;
+            let p = crate::account::plan(&self.app.db, account)?;
             let disband: Vec<String> = p.disband.iter().map(|(t, _, _)| t.clone()).collect();
             self.app.db.delete_account(&crate::db::Erase { account, disband: &disband, retain_for: &p.retain_for })?;
             // The hub's part only: nothing tells the platform here.

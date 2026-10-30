@@ -12,6 +12,7 @@
 //! (`arugula_platform::chat`, M138), behind this hub's gate.
 
 mod account;
+mod account_delete;
 mod account_email;
 mod account_reset;
 mod activity;
@@ -908,7 +909,8 @@ pub fn main(platforms: Box<dyn Platforms>) -> anyhow::Result<()> {
     // `arugula-control census`: an operator's read-only look at the
     // database (census.rs), with no server; `device-review` another
     // (device_review.rs). `account-reset`: support's reset of an account's
-    // devices (account_reset.rs, aru-119). `maintenance`: the switch
+    // devices (account_reset.rs, aru-119). `account-delete`: an operator's
+    // delete of an account, as Settings' (account_delete.rs). `maintenance`: the switch
     // (maintenance.rs), set in the database the running hub reads.
     // `notice`: a notice for every account (notice.rs). `issuer`: the
     // issuer's keys and clients (issuer.rs). `import planter`: planter's
@@ -924,6 +926,9 @@ pub fn main(platforms: Box<dyn Platforms>) -> anyhow::Result<()> {
     }
     if argv.peek().is_some_and(|a| a == "account-reset") {
         return account_reset::run(argv.skip(1));
+    }
+    if argv.peek().is_some_and(|a| a == "account-delete") {
+        return account_delete::run(argv.skip(1));
     }
     if argv.peek().is_some_and(|a| a == "maintenance") {
         return maintenance::run(argv.skip(1));
