@@ -1,46 +1,67 @@
 # Arugula
 
-Keep track of your agents without checking every session. See which agents
-need input and what your teammates are working on. Leave unfinished work
-open, come back later, or join a teammate's session to help.
+Every agent on every machine in one view. Answer them from your phone.
+The workspace comes back after a reboot.
 
-Arugula is a terminal multiplexer whose sessions outlive the window, the
-daemon and the reboot. A daemon owns your terminals; the browser (desktop or
-phone) draws tabs and splits you drive with the mouse.
+Arugula is a terminal multiplexer for coding agents. A daemon owns your
+terminals; the browser, the desktop app and your phone draw them. Claude
+Code, Codex and plain shells sit side by side as panes, on every machine
+you've connected.
 
-![Tabs and splits in the browser](https://arugula.io/img/desktop.png)
+![A recording: Claude Code asks to run cargo test, the request appears on the swarm's Needs you rail in the browser and on a phone, and it's allowed from the phone](https://arugula.io/img/arugula-loop-10s.gif)
 
-- **The swarm.** Every pane on every machine you and your team can see, in
-  one live view, clustered by project, machine, kind or person. Whatever
-  needs someone (an agent asking, a build failing) lifts out to a rail of
-  cards, where anyone on the team who may answer allows, answers or sends
-  the agent its next instruction, and everyone sees who did.
-- **Agents as blocks.** Claude Code, Codex or any
-  [ACP](https://agentclientprotocol.com) agent as a UI beside your
-  terminals: tool calls with their output, approvals and questions as
-  cards big enough for a thumb.
+- **Every agent on every connected machine.** The swarm is every
+  Arugula pane on the machines you've connected, in one live view,
+  clustered by project, machine, kind or person. Detected requests for
+  input, and failed commands it recognizes, appear on the *Needs you*
+  rail. Claude Code, Codex or any [ACP](https://agentclientprotocol.com)
+  agent also runs as a block beside your terminals (macOS and Linux):
+  tool calls with their output, approvals and questions as cards.
+- **Answer them from your phone.** Screen detection flags a waiting
+  Claude Code or Codex pane. Claude Code's hooks and agent blocks turn
+  requests into cards: large buttons for approvals and choices, or type
+  the next instruction. Turn on notifications and a push opens the card
+  on your phone. Other agents are detected too; their hooks or the bell
+  say when they need you
+  ([limitations](https://docs.arugula.io/limitations/)).
+- **The workspace comes back after a reboot.** Close the window or
+  disconnect: programs keep running on the host. Restart or update the
+  daemon: programs keep running. Reboot: processes stop, and Arugula
+  restores the layout, working directories and scrollback, then
+  restarts each pane per its setting: a shell where it was (the
+  default), re-run its command (asking first unless you choose
+  otherwise), or resume Claude Code's conversation (`claude --resume`,
+  the default for a Claude pane).
+- **Open source, on your machines.** MIT or Apache-2.0. Run the daemon
+  on your own machines or servers you manage, on Linux, macOS and
+  Windows. Reach it over your own [Tailscale](https://tailscale.com)
+  tailnet, or through [Arugula control](https://docs.arugula.io/control/)
+  from a browser or phone without a VPN. Connections to your machines
+  are end-to-end encrypted; control relays them and can't read them.
+  Control serves the web client, so you trust that client not to read
+  or alter your session
+  ([what it can and can't see](https://docs.arugula.io/control/#what-it-can-and-cant-see)).
+  Self-hosting control isn't supported yet.
+- **Scriptable.** Any MCP client can run commands in panes you watch
+  (`arugula mcp`); after installing Arugula, the Claude Code plugin
+  configures its MCP tools and hooks; there's a VS Code / Cursor
+  extension and a CLI for scripts.
 - **Mouse first.** Click, drag and right-click for tabs and splits. No
   chords to learn, no prefix key.
-- **Durable.** Close the window, lose the connection, restart the daemon or
-  reboot: the layout, working directories and scrollback come back, and
-  each pane does what you told it to (a shell where it was, re-run its
-  command, `claude --resume`). A daemon restart doesn't even touch running
-  programs.
-- **Anywhere on your tailnet.** The same live layout on every window and
-  your phone, over [Tailscale](https://tailscale.com). Push notifications
-  when a pane rings, a long command finishes, or an agent needs you.
 - **VS Code and dev servers beside your terminals** (opt-in). *Open in
   editor* (or `arugula edit src/main.rs:42`) opens VS Code on the pane's
   machine, in its directory, as a block, back with its file after a
   restart; *Open a port…* shows a dev server beside its terminal. Both are
   off until the daemon gets a listener for them (one flag for this
-  computer's browser; a domain of yours for the phone): see
+  computer's browser; a domain of yours for the phone), and they're shown
+  by a device that can reach the machine directly; not relayed through
+  control. See
   [Blocks](https://docs.arugula.io/blocks/#browser-blocks-on-ports).
-- **What did the agent change?** *Changes* on a pane (or `arugula diff`)
-  lists the files changed in its repository, on its machine, with +/−; tap
-  a file for its hunks and a line to see the file there, both updating
-  while the agent works. Phone first, and a failed build is a *Rerun* tap
-  away.
+- **The live diff, from your phone.** *Changes* on a pane (or
+  `arugula diff`) shows the live diff in the pane's repository, on its
+  machine, with +/−; tap a file for its hunks and a line to see the file
+  there, both updating as the edits land. Phone first, and a recognized
+  failed command is a *Rerun* tap away.
 - **Your editor in the swarm.** VS Code, Cursor or nvim (over Remote-SSH
   too) shows up beside your panes once you ask it to. Follow its cursor
   from your phone; a debugger stopping, or Claude Code wanting to edit a
@@ -48,19 +69,17 @@ phone) draws tabs and splits you drive with the mouse.
   `arugula.arugula-editor` on the Visual Studio Marketplace and Open VSX
   (`code --install-extension arugula.arugula-editor`), or `arugula editors
   install` puts in the daemon's own copy.
-- **Scriptable.** `arugula`, a CLI for scripts and agents: run, send,
-  wait for a command or a match, tail, search every pane's history.
+
+With Arugula control, authorized teammates can share a session or a
+whole machine, with roles and presence
+([teams](https://docs.arugula.io/teams/),
+[sharing](https://docs.arugula.io/sharing/)): anyone allowed can answer
+an agent's card, and everyone sees who did.
 
 [![A tour of the swarm: every pane clustered by project, then one project's panes up close, then an agent's request on the Needs You rail, then that agent's session opened](https://arugula.io/img/dive.gif)](https://arugula.io)
 
 Linux (x86_64, arm64), macOS (Apple silicon and Intel) and Windows 10 and 11
-(x86_64). Share a session with
-someone, or a whole machine with a team, with roles and presence
-([teams](https://docs.arugula.io/teams/), [sharing](https://docs.arugula.io/sharing/)). Remote access is over your tailnet, or
-through [Arugula control](https://docs.arugula.io/control/) for devices without one: end
-to end encrypted, so what the service relays it can't read, and it can't
-add a reader to your machines. You do trust it for the web client it
-serves ([what holds](docs/control-e2e.md#what-holds-against-control)).
+(x86_64).
 
 ## Install
 
