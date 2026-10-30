@@ -232,10 +232,16 @@ device nobody trusted. Now:
     change only on top of a version that follows. If control's latest
     doesn't follow, the page shows the last one it checked and holds
     changes until control's does. The page keeps what it checked in
-    memory for as long as it's open, and merges in what another tab of
-    the same browser checked. If the browser can't read or store it, or
-    it's gone when this browser kept it before, the page still checks
-    rosters but signs no team change and lists no one else's machines.
+    memory for as long as it's open. Certificates, removals and locks are
+    kept as one store per browser, and each look at them is one
+    transaction under a browser-wide lock (the Web Locks API): it reads the
+    store afresh, counts its round after the stored one and writes back
+    before another tab may look, so tabs never share a round or split a
+    removal from the certificate it rests on. If the browser has no such
+    lock, can't read or store what it checked, or finds it gone after this
+    browser kept it, the page keeps nothing from that look: it goes on with
+    what it held before (control's answer only on a first look), signs no
+    team change, and lists no one else's machines.
   - The first time a page sees a team, it checks the whole signed history
     from version 1, which the founder it pinned signs. A version before
     the latest may have been signed by a device removed since: the page
@@ -328,7 +334,9 @@ device nobody trusted. Now:
   never unlock it. Control writes a lock only if it's newer than the one
   it holds, checked as it writes, and refuses one dated more than ten
   minutes ahead of its clock. The owner's page shows and signs after the
-  lock it checked the same way, never control's word for it.
+  lock it checked the same way, never control's word for it; with no
+  signed lock held, it says control claims the team is locked, not that
+  it is.
 
 **Recovery:**
 

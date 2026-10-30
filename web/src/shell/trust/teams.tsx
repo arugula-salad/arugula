@@ -220,7 +220,7 @@ function TeamSection({
   return (
     <section class="team" data-team={t.team}>
       <h3>
-        {t.roster.name} {t.locked ? <span class="control-error">· locked</span> : null}
+        {t.roster.name} {t.locked ? <span class="control-error">· locked</span> : t.lockClaimed ? <span class="dim" data-team-lock-claimed>· control says it's locked (not signed by an owner)</span> : null}
       </h3>
       {t.locked && !owner ? (
         <p class="dim" data-team-add-locked>

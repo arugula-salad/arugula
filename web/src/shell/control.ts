@@ -139,6 +139,9 @@ export interface Team {
   locked: boolean;
   /** The owner's signed word that set `locked` (none from before). */
   lock?: TeamLock | null;
+  /** Control says it's locked, with no owner's signed word this page
+   * holds: its claim only (`locked` is then false). */
+  lockClaimed?: boolean;
   roster: Roster;
   role: TeamRole | null;
   /** Who used an invite link and waits for an owner (owners only). Only
@@ -1548,8 +1551,21 @@ export class ControlSession {
       this.rootMismatch = !!devs.trust && devs.trust.root !== e.root;
       // As this page last held them: removals only add up, and a
       // certificate first seen after its approver's removal doesn't count.
-      this.held.begin();
-      const own = await this.held.take({ account: e.account, root: e.root }, devs);
+      // One look, with the people whose machines the directory lists (by
+      // the roots this browser pinned for them on first sight).
+      const ownTrust = { account: e.account, root: e.root };
+      const looked = await this.held.look(async (l) => {
+        const own = await l.take(ownTrust, devs);
+        const theirs = new Map<string, { certs: Cert[]; revocations: Revocation[] }>();
+        for (const d of dir.daemons) {
+          const t = d.chain?.trust;
+          if (!d.hosted && d.account && t && !theirs.has(`${t.account}.${t.root}`) && pin(d.account, t.root)) theirs.set(`${t.account}.${t.root}`, await l.take(t, d.chain!));
+        }
+        return { own, theirs };
+      });
+      // Not kept: the view this page held before, not control's answer
+      // (control's, on a first look with nothing held).
+      const own = looked.kept ? looked.value.own : (this.held.view(ownTrust) ?? looked.value.own);
       devs.certs = own.certs;
       devs.revocations = own.revocations;
       this.trusted = await evaluate({ account: e.account, root: e.root }, devs.certs, devs.revocations);
@@ -1584,11 +1600,9 @@ export class ControlSession {
         let cert = this.trusted.get(d.id);
         // Someone else's machine: by their account's certificates, from
         // the root this browser pinned for them on first sight.
-        // Not when this browser can't keep what it checked of them.
-        if (!cert && d.account && chain?.trust && this.held.kept && pin(d.account, chain.trust.root)) {
-          const theirs = await this.held.take(chain.trust, chain);
-          cert = (await evaluate(chain.trust, theirs.certs, theirs.revocations)).get(d.id);
-        }
+        // Only once what this browser checked of them is kept.
+        const theirs = chain?.trust && looked.value.theirs.get(`${chain.trust.account}.${chain.trust.root}`);
+        if (!cert && looked.kept && theirs && chain?.trust) cert = (await evaluate(chain.trust, theirs.certs, theirs.revocations)).get(d.id);
         if (cert?.kind === "daemon") daemons.push({ ...entry, cert });
       }
       this.offers = dir.offers ?? [];
@@ -1680,68 +1694,74 @@ export class ControlSession {
     const held = this.rosters.held();
     const kept = rootChangesKept();
     const lateKept = rosterLateKept();
-    this.held.begin();
-    // An account's certificates as this page holds them, from `root`.
-    const take = async (account: string, root: string, [certs, revocations]: [Cert[], Revocation[]]): Promise<[Cert[], Revocation[]]> => {
-      const got = await this.held.take({ account, root }, { certs, revocations });
-      return [got.certs, got.revocations];
-    };
-    for (const t of r.teams) {
-      // The founder pinned on first sight. The team's daemons check each
-      // roster version against it; this browser checks the ones it signs.
-      const ok = pin(`team:${t.team}`, `${t.pin.founder}.${t.pin.founder_root}`);
-      // And each version from the last this browser checked: an owner's
-      // change is signed on top of the one shown, so that one must be a
-      // version owners wrote, not just what control says is latest.
-      // Each step is checked with the certificates this page holds for
-      // that version's owners, from the roots it names (history's too);
-      // a version a device removed since had signed stands only if this
-      // page hadn't seen that removal before.
-      const c = await checkRoster(
-        held[t.team] ?? null,
-        t.roster,
-        t.pin,
-        t.certs,
-        (since) => api<{ rosters: Roster[]; certs: AccountCerts }>(`/api/teams/${encodeURIComponent(t.team)}/rosters?since=${since}`),
-        {
-          vet: (prev, certs) => ownersAsHeld(prev, t.pin, certs, take),
-          lateOk: (account, root, device) => !this.held.removedBefore(account, root, device),
-        },
-      );
-      // Members' certificates as this page holds them, from the roots the
-      // roster it checked names.
-      for (const m of c.roster.members) if (t.certs[m.account]) t.certs[m.account] = await take(m.account, m.root, t.certs[m.account]);
-      for (const a of Object.keys(t.certs)) if (!c.roster.members.some((m) => m.account === a)) delete t.certs[a];
-      // The team's lock as an owner signed it: only from an owner in the
-      // roster checked, for this team, not dated far ahead, and newer than
-      // the one held. Without one, control's plain word (from before).
-      const lock = ok && !c.problem ? await takeLock(this.held, t.team, t.lock, c.roster, t.certs) : this.held.lock(t.team);
-      t.lock = lock ?? null;
-      if (lock) t.locked = lock.locked;
-      if (ok && c.keep && c.keep.version > (held[t.team]?.version ?? 0)) held[t.team] = c.keep;
-      if (ok && c.changes.length) kept[t.team] = [...(kept[t.team] ?? []), ...c.changes];
-      if (ok && c.late.length) lateKept[t.team] = [...new Set([...(lateKept[t.team] ?? []), ...c.late])].sort((a, b) => a - b);
-      // #762: only someone who held an owner's link; anything else control
-      // says waits is refused here, never shown.
-      const requests: Team["requests"] = [];
-      for (const q of t.requests ?? []) {
-        const by = await askOk(c.roster, t.certs, q);
-        if (by) requests.push({ ...q, role: q.invite.role, by });
+    // One look at what this page holds, for every team.
+    const looked = await this.held.look(async (l) => {
+      // An account's certificates as this page holds them, from `root`.
+      const take = async (account: string, root: string, [certs, revocations]: [Cert[], Revocation[]]): Promise<[Cert[], Revocation[]]> => {
+        const got = await l.take({ account, root }, { certs, revocations });
+        return [got.certs, got.revocations];
+      };
+      for (const t of r.teams) {
+        // The founder pinned on first sight. The team's daemons check each
+        // roster version against it; this browser checks the ones it signs.
+        const ok = pin(`team:${t.team}`, `${t.pin.founder}.${t.pin.founder_root}`);
+        // And each version from the last this browser checked: an owner's
+        // change is signed on top of the one shown, so that one must be a
+        // version owners wrote, not just what control says is latest.
+        // Each step is checked with the certificates this page holds for
+        // that version's owners, from the roots it names (history's too);
+        // a version a device removed since had signed stands only if this
+        // page hadn't seen that removal before.
+        const c = await checkRoster(
+          held[t.team] ?? null,
+          t.roster,
+          t.pin,
+          t.certs,
+          (since) => api<{ rosters: Roster[]; certs: AccountCerts }>(`/api/teams/${encodeURIComponent(t.team)}/rosters?since=${since}`),
+          {
+            vet: (prev, certs) => ownersAsHeld(prev, t.pin, certs, take),
+            lateOk: (account, root, device) => !l.removedBefore(account, root, device),
+          },
+        );
+        // Members' certificates as this page holds them, from the roots the
+        // roster it checked names.
+        for (const m of c.roster.members) if (t.certs[m.account]) t.certs[m.account] = await take(m.account, m.root, t.certs[m.account]);
+        for (const a of Object.keys(t.certs)) if (!c.roster.members.some((m) => m.account === a)) delete t.certs[a];
+        // The team's lock as an owner signed it: only from an owner in the
+        // roster checked, for this team, not dated far ahead, and newer than
+        // the one held. Without one, control's plain word is only its claim,
+        // not the owners' state.
+        const lock = ok && !c.problem ? await takeLock(l, t.team, t.lock, c.roster, t.certs) : l.lock(t.team);
+        t.lock = lock ?? null;
+        if (lock) t.locked = lock.locked;
+        else {
+          t.lockClaimed = t.locked;
+          t.locked = false;
+        }
+        if (ok && c.keep && c.keep.version > (held[t.team]?.version ?? 0)) held[t.team] = c.keep;
+        if (ok && c.changes.length) kept[t.team] = [...(kept[t.team] ?? []), ...c.changes];
+        if (ok && c.late.length) lateKept[t.team] = [...new Set([...(lateKept[t.team] ?? []), ...c.late])].sort((a, b) => a - b);
+        // #762: only someone who held an owner's link; anything else control
+        // says waits is refused here, never shown.
+        const requests: Team["requests"] = [];
+        for (const q of t.requests ?? []) {
+          const by = await askOk(c.roster, t.certs, q);
+          if (by) requests.push({ ...q, role: q.invite.role, by });
+        }
+        out.push({
+          ...t,
+          roster: c.roster,
+          requests,
+          verified: ok && !c.problem,
+          ...(c.problem ? { rosterProblem: c.problem } : {}),
+          ...(kept[t.team]?.length ? { rootChanges: kept[t.team] } : {}),
+          ...(lateKept[t.team]?.length ? { rosterLate: lateKept[t.team] } : c.late.length ? { rosterLate: c.late } : {}),
+        });
       }
-      out.push({
-        ...t,
-        roster: c.roster,
-        requests,
-        verified: ok && !c.problem,
-        ...(c.problem ? { rosterProblem: c.problem } : {}),
-        ...(kept[t.team]?.length ? { rootChanges: kept[t.team] } : {}),
-        ...(lateKept[t.team]?.length ? { rosterLate: lateKept[t.team] } : c.late.length ? { rosterLate: c.late } : {}),
-      });
-    }
+    });
     this.rosters.save();
-    this.held.save();
     // From now on, storage found empty was cleared, not never kept.
-    if (this.enrollment && !this.enrollment.held && this.rosters.kept && this.held.kept) {
+    if (this.enrollment && !this.enrollment.held && this.rosters.kept && looked.kept) {
       this.enrollment = { ...this.enrollment, held: true };
       await saveEnrollment(this.enrollment).catch(() => {});
     }
@@ -1749,7 +1769,7 @@ export class ControlSession {
     writeKey(ROSTER_LATE_KEY, lateKept);
     // Checked, but not kept: no change is signed on what this browser
     // would forget.
-    if (!this.rosters.kept || !this.held.kept) for (const t of out) t.rosterProblem ??= "unsaved";
+    if (!this.rosters.kept || !looked.kept) for (const t of out) t.rosterProblem ??= "unsaved";
     const now = r.asked ?? [];
     const yes = this.asked.find((a) => !now.some((x) => x.team === a.team) && out.some((t) => t.team === a.team));
     if (yes) this.joined = { team: yes.team, name: yes.name };

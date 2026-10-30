@@ -115,46 +115,16 @@ test("the checked rosters are read once and kept in memory; storage that fails s
   assert.deepEqual([off.held(), off.kept], [{}, false]);
 });
 
-test("an account's removals add up across loads, and a removed device's late certificate doesn't count", async () => {
-  const { evaluate } = await import("../src/shell/e2e/cert.ts");
-  const box = { v: null };
-  const storage = { getItem: () => box.v, setItem: (_, v) => (box.v = v) };
-  const root = await generateKeys();
-  const laptop = await generateKeys();
-  const phone = await generateKeys();
-  const rc = await cert(root, "acct", root);
-  const lc = await cert(laptop, "acct", root, "laptop", 2);
-  const pc = await cert(phone, "acct", root, "phone", 3);
-  const r = { v: 1, account: "acct", device: lc.device, at: 100, by: root.id, sig: "" };
-  r.sig = await signText(root, revocationBody(r));
-  const trust = { account: "acct", root: root.id };
-  // Load 1: the laptop's removal.
-  const one = new TrustStore(() => storage, "k");
-  one.begin();
-  await one.take(trust, { certs: [rc, lc, pc], revocations: [r] });
-  one.save();
-  // Load 2 (a new page): control leaves the removal out, and sends a
-  // certificate the removed laptop signed, dated before its removal.
-  const stranger = await generateKeys();
-  const late = await cert(stranger, "acct", laptop, "stranger", 50);
-  const two = new TrustStore(() => storage, "k");
-  two.begin();
-  const got = await two.take(trust, { certs: [rc, lc, pc, late], revocations: [] });
-  const trusted = await evaluate(trust, got.certs, got.revocations);
-  assert.equal(trusted.has(lc.device), false, "a removal control left out counts no more");
-  assert.equal(trusted.has(late.device), false, "a removed device's late certificate counts");
-  assert.equal(trusted.has(pc.device), true);
-  assert.equal(two.kept, true);
-  // Storage that can't be read or written: not kept.
-  const off = new TrustStore(() => ({ getItem: () => "{", setItem: () => {} }), "k");
-  await off.take(trust, { certs: [rc], revocations: [] });
-  assert.equal(off.kept, false);
-  const full = new TrustStore(() => ({ getItem: () => null, setItem: () => { throw new Error("quota"); } }), "k");
-  await full.take(trust, { certs: [rc], revocations: [] });
-  full.save();
-  assert.equal(full.kept, false);
-});
-
+// One browser-wide lock, shared by the "tabs" below (the Web Locks API's
+// part): each look runs alone.
+const mutex = () => {
+  let tail = Promise.resolve();
+  return (_name, fn) => {
+    const run = tail.then(fn);
+    tail = run.catch(() => {});
+    return run;
+  };
+};
 const memory = () => {
   const box = { v: null };
   return { box, storage: { getItem: () => box.v, setItem: (_, v) => (box.v = v) } };
@@ -164,33 +134,152 @@ const revoke = async (account, device, by, at) => {
   r.sig = await signText(by, revocationBody(r));
   return r;
 };
+const { evaluate } = await import("../src/shell/e2e/cert.ts");
+// An account: root approves a laptop and a phone; a stranger's
+// certificate the laptop signs dated early.
+const acct = await (async () => {
+  const root = await generateKeys();
+  const laptop = await generateKeys();
+  const phone = await generateKeys();
+  const stranger = await generateKeys();
+  return {
+    trust: { account: "acct", root: root.id },
+    root,
+    laptop,
+    rc: await cert(root, "acct", root),
+    lc: await cert(laptop, "acct", root, "laptop", 2),
+    pc: await cert(phone, "acct", root, "phone", 3),
+    late: await cert(stranger, "acct", laptop, "stranger", 50),
+  };
+})();
+const trustedIn = async (got, id) => (await evaluate(acct.trust, got.certs, got.revocations)).has(id);
+
+test("an account's removals add up across loads, and a removed device's late certificate doesn't count", async () => {
+  const { storage } = memory();
+  const locks = mutex();
+  const { trust, rc, lc, pc, late } = acct;
+  const r = await revoke("acct", lc.device, acct.root, 100);
+  // Load 1: the laptop's removal.
+  const one = new TrustStore(() => storage, "k", () => false, locks);
+  assert.equal((await one.look((l) => l.take(trust, { certs: [rc, lc, pc], revocations: [r] }))).kept, true);
+  // Load 2 (a new page): control leaves the removal out, and sends a
+  // certificate the removed laptop signed, dated before its removal.
+  const two = new TrustStore(() => storage, "k", () => false, locks);
+  const { value: got, kept } = await two.look((l) => l.take(trust, { certs: [rc, lc, pc, late], revocations: [] }));
+  assert.equal(kept, true);
+  assert.equal(await trustedIn(got, lc.device), false, "a removal control left out counts no more");
+  assert.equal(await trustedIn(got, late.device), false, "a removed device's late certificate counts");
+  assert.equal(await trustedIn(got, pc.device), true);
+});
+
+test("two tabs looking at once: one tab's removal and its round hold against the other's late certificate", async () => {
+  const { box, storage } = memory();
+  const locks = mutex();
+  const { trust, rc, lc, pc, late } = acct;
+  const a = new TrustStore(() => storage, "k", () => false, locks);
+  const b = new TrustStore(() => storage, "k", () => false, locks);
+  await b.look((l) => l.take(trust, { certs: [rc, lc, pc], revocations: [] }));
+  const gone = await revoke("acct", lc.device, acct.root, 100);
+  // A takes the laptop's removal and waits mid-look; B starts meanwhile,
+  // with control leaving the removal out and adding the late certificate.
+  let release;
+  const held = new Promise((r) => (release = r));
+  const lookA = a.look(async (l) => {
+    const got = await l.take(trust, { certs: [rc, lc, pc], revocations: [gone] });
+    await held;
+    return got;
+  });
+  const lookB = b.look((l) => l.take(trust, { certs: [rc, lc, pc, late], revocations: [] }));
+  await new Promise((r) => setTimeout(r, 10));
+  release();
+  await lookA;
+  const { value: got } = await lookB;
+  assert.equal(await trustedIn(got, late.device), false, "the late certificate counts in the other tab");
+  assert.equal(await trustedIn(got, lc.device), false, "the removal was lost");
+  const stored = JSON.parse(box.v);
+  assert.equal(await trustedIn(stored.accounts[`acct.${acct.trust.root}`], lc.device), false, "the stored view lost the removal");
+  // No two looks shared a round.
+  assert.notEqual(stored.seen.at[gone.sig], stored.seen.at[late.sig]);
+});
+
+test("two tabs: a removal stays with the certificate it rests on", async () => {
+  const { box, storage } = memory();
+  const locks = mutex();
+  const { trust, rc, lc, pc, laptop } = acct;
+  const a = new TrustStore(() => storage, "k", () => false, locks);
+  const b = new TrustStore(() => storage, "k", () => false, locks);
+  await b.look((l) => l.take(trust, { certs: [rc, lc, pc], revocations: [] }));
+  // A: the laptop removes the phone. B, after: control leaves out the
+  // laptop's certificate and the removal.
+  // B's look starts while A's is under way.
+  const phoneGone = await revoke("acct", pc.device, laptop, 10);
+  let release;
+  const held = new Promise((r) => (release = r));
+  const lookA = a.look(async (l) => {
+    await l.take(trust, { certs: [rc, lc, pc], revocations: [phoneGone] });
+    await held;
+  });
+  const lookB = b.look((l) => l.take(trust, { certs: [rc, pc], revocations: [] }));
+  await new Promise((r) => setTimeout(r, 10));
+  release();
+  await lookA;
+  const { value: got } = await lookB;
+  assert.equal(await trustedIn(got, pc.device), false, "the removed phone is back");
+  const stored = JSON.parse(box.v).accounts[`acct.${acct.trust.root}`];
+  assert.equal(await trustedIn(stored, pc.device), false, "the stored view has the removed phone back");
+});
+
+test("a look that can't be kept changes nothing held; the page goes on with what it held", async () => {
+  const { trust, rc, lc, pc } = acct;
+  const r = await revoke("acct", lc.device, acct.root, 100);
+  const box = { v: null, full: false };
+  const storage = {
+    getItem: () => box.v,
+    setItem: (_, v) => {
+      if (box.full) throw new Error("quota");
+      box.v = v;
+    },
+  };
+  const s = new TrustStore(() => storage, "k", () => false, mutex());
+  await s.look((l) => l.take(trust, { certs: [rc, lc, pc], revocations: [r] }));
+  box.full = true;
+  const { kept } = await s.look((l) => l.take(trust, { certs: [rc, lc, pc], revocations: [] }));
+  assert.equal(kept, false);
+  assert.equal(s.kept, false);
+  assert.equal(await trustedIn(s.view(trust), lc.device), false, "what it held before");
+  // Nothing to lock with: not kept either.
+  const nolock = new TrustStore(() => memory().storage, "k", () => false, null);
+  assert.equal((await nolock.look((l) => l.take(trust, { certs: [rc], revocations: [] }))).kept, false);
+  // Unreadable: not kept.
+  const odd = new TrustStore(() => ({ getItem: () => "{", setItem: () => {} }), "k", () => false, mutex());
+  assert.equal((await odd.look((l) => l.take(trust, { certs: [rc], revocations: [] }))).kept, false);
+});
 
 test("history's certificates go through what the page holds: a removal it saw stops a version the removed device signed", async () => {
   const { storage } = memory();
-  const s = new TrustStore(() => storage, "k");
-  const take = async (account, root, [c, r]) => {
-    const got = await s.take({ account, root }, { certs: c, revocations: r });
-    return [got.certs, got.revocations];
-  };
+  const s = new TrustStore(() => storage, "k", () => false, mutex());
   // Look 1: alice's laptop (alice2) is removed.
   const gone = await revoke("alice", alice2.id, alice, 10);
-  s.begin();
-  await s.take({ account: "alice", root: alice.id }, { certs: certs.alice[0], revocations: [gone] });
-  s.save();
+  await s.look((l) => l.take({ account: "alice", root: alice.id }, { certs: certs.alice[0], revocations: [gone] }));
   // Look 2: control offers v2 signed by the removed laptop, and leaves the
   // removal out of history's certificates.
   const byLaptop = await signRoster({ ...base, version: 2, at: 20, members: v2.members }, alice2);
   const history = async (since) => ({ rosters: [v1, byLaptop].filter((r) => r.version > since), certs: { alice: [certs.alice[0], []] } });
-  s.begin();
-  const vet = (prev, c) => ownersAsHeld(prev, pin, c, take);
-  const got = await checkRoster(v1, byLaptop, pin, { bob: certs.bob }, history, { vet });
+  const { value: got } = await s.look(async (l) => {
+    const take = async (account, root, [c, r]) => {
+      const out = await l.take({ account, root }, { certs: c, revocations: r });
+      return [out.certs, out.revocations];
+    };
+    return checkRoster(v1, byLaptop, pin, { bob: certs.bob }, history, { vet: (prev, c) => ownersAsHeld(prev, pin, c, take) });
+  });
   assert.deepEqual([got.roster, got.problem], [v1, "unchecked"]);
   // Taken as control sends them (no vet), it would stand.
   assert.equal((await checkRoster(v1, byLaptop, pin, { bob: certs.bob }, history)).problem, null);
 });
 
-test("stored stamps are checked strictly, and storage found empty when it was kept is a failure", () => {
-  const bad = (v) => new TrustStore(() => ({ getItem: () => JSON.stringify(v), setItem: () => {} }), "k");
+test("stored stamps are checked strictly, and storage found empty when it was kept is a failure", async () => {
+  const look = (s) => s.look(async () => {});
+  const bad = (v) => new TrustStore(() => ({ getItem: () => JSON.stringify(v), setItem: () => {} }), "k", () => false, mutex());
   for (const v of [
     { accounts: {}, seen: { round: 1, at: { x: "1" } } },
     { accounts: {}, seen: { round: 1, at: { x: -1 } } },
@@ -198,20 +287,14 @@ test("stored stamps are checked strictly, and storage found empty when it was ke
     { accounts: { a: { certs: [] } }, seen: { round: 0, at: {} } },
     { accounts: {}, seen: { round: 0, at: {} }, locks: { t: { at: "x" } } },
   ]) {
-    const s = bad(v);
-    s.begin();
-    assert.equal(s.kept, false, JSON.stringify(v));
+    assert.equal((await look(bad(v))).kept, false, JSON.stringify(v));
   }
-  const good = bad({ accounts: {}, seen: { round: 2, at: { x: 1 } } });
-  good.begin();
-  assert.equal(good.kept, true);
+  assert.equal((await look(bad({ accounts: {}, seen: { round: 2, at: { x: 1 } } }))).kept, true);
   // Nothing stored: fresh, unless this browser kept one before.
-  const fresh = new TrustStore(() => ({ getItem: () => null, setItem: () => {} }), "k");
-  fresh.begin();
-  assert.equal(fresh.kept, true);
-  const cleared = new TrustStore(() => ({ getItem: () => null, setItem: () => {} }), "k", () => true);
-  cleared.begin();
-  assert.equal(cleared.kept, false);
+  const fresh = new TrustStore(() => ({ getItem: () => null, setItem: () => {} }), "k", () => false, mutex());
+  assert.equal((await look(fresh)).kept, true);
+  const cleared = new TrustStore(() => ({ getItem: () => null, setItem: () => {} }), "k", () => true, mutex());
+  assert.equal((await look(cleared)).kept, false);
   const roster = new RosterStore(() => ({ getItem: () => null, setItem: () => {} }), "k", () => true);
   roster.held();
   assert.equal(roster.kept, false);
@@ -220,21 +303,7 @@ test("stored stamps are checked strictly, and storage found empty when it was ke
   assert.equal(odd.kept, false);
 });
 
-test("two tabs: what one kept isn't lost when the other saves", async () => {
-  const { box, storage } = memory();
-  const a = new TrustStore(() => storage, "k");
-  const b = new TrustStore(() => storage, "k");
-  const trust = { account: "alice", root: alice.id };
-  a.begin();
-  b.begin();
-  await b.take(trust, { certs: certs.alice[0], revocations: [] });
-  const gone = await revoke("alice", alice2.id, alice, 10);
-  await a.take(trust, { certs: certs.alice[0], revocations: [gone] });
-  a.save();
-  b.save(); // b loaded before a saved
-  const stored = JSON.parse(box.v);
-  assert.deepEqual(stored.accounts[`alice.${alice.id}`].revocations.map((r) => r.sig), [gone.sig], "a's removal was lost");
-  // Rosters too: the newer version of a team stays.
+test("two tabs' rosters: the newer version of a team stays", () => {
   const r = memory();
   const ra = new RosterStore(() => r.storage, "r");
   const rb = new RosterStore(() => r.storage, "r");
@@ -247,20 +316,25 @@ test("two tabs: what one kept isn't lost when the other saves", async () => {
 
 test("a team's lock is taken from an owner in the roster checked, newer than the one held, and not dated far ahead", async () => {
   const { storage } = memory();
-  const s = new TrustStore(() => storage, "k");
-  s.begin();
+  const s = new TrustStore(() => storage, "k", () => false, mutex());
   const lock = (locked, at, by, team = pin.team, version = 2) => signLock({ team, locked, version, at }, by);
   const now = 1_000_000;
   const l1 = await lock(true, 900_000, alice);
-  assert.deepEqual(await takeLock(s, pin.team, l1, v2, certs, now), l1);
-  // Signed by a member who isn't an owner, bent, for another team,
-  // against a newer version, older than the one held, dated far ahead.
-  assert.deepEqual(await takeLock(s, pin.team, await lock(false, 950_000, bob), v2, certs, now), l1);
-  assert.deepEqual(await takeLock(s, pin.team, { ...(await lock(false, 950_000, alice)), at: 950_001 }, v2, certs, now), l1);
-  assert.deepEqual(await takeLock(s, pin.team, await lock(false, 950_000, alice, "ffffffffffffffff"), v2, certs, now), l1);
-  assert.deepEqual(await takeLock(s, pin.team, await lock(false, 950_000, alice, pin.team, 3), v2, certs, now), l1);
-  assert.deepEqual(await takeLock(s, pin.team, await lock(false, 800_000, alice), v2, certs, now), l1);
-  assert.deepEqual(await takeLock(s, pin.team, await lock(false, now + 86_400_000, alice), v2, certs, now), l1);
   const l2 = await lock(false, 950_000, alice);
-  assert.deepEqual(await takeLock(s, pin.team, l2, v2, certs, now), l2);
+  const refused = [
+    await lock(false, 950_000, bob),
+    { ...(await lock(false, 950_000, alice)), at: 950_001 },
+    await lock(false, 950_000, alice, "ffffffffffffffff"),
+    await lock(false, 950_000, alice, pin.team, 3),
+    await lock(false, 800_000, alice),
+    await lock(false, now + 86_400_000, alice),
+  ];
+  await s.look(async (l) => {
+    assert.deepEqual(await takeLock(l, pin.team, l1, v2, certs, now), l1);
+    // Signed by a member who isn't an owner, bent, for another team,
+    // against a newer version, older than the one held, dated far ahead.
+    for (const x of refused) assert.deepEqual(await takeLock(l, pin.team, x, v2, certs, now), l1, JSON.stringify(x));
+    assert.deepEqual(await takeLock(l, pin.team, l2, v2, certs, now), l2);
+  });
+  assert.deepEqual(s.lock(pin.team), l2, "kept");
 });

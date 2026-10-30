@@ -5,7 +5,7 @@
 // checked: control can't hand it a roster no owner wrote.
 
 import type { Cert, Revocation } from "./e2e/cert.ts";
-import { isSeen, kept, nextRound, refreshAccount, settle, type Seen } from "./e2e/checkpoint.ts";
+import { isSeen, nextRound, refreshAccount, settle, type Seen } from "./e2e/checkpoint.ts";
 import { advance, follows, lockSignedIn, rootChanges, sameRoster, type AccountCerts, type Roster, type TeamLock, type TeamPin } from "./e2e/team.ts";
 
 /** Why the roster control sent isn't taken: an older version than the one
@@ -151,31 +151,59 @@ interface Held {
   locks: Record<string, TeamLock>;
 }
 
-const sameRev = (a: Revocation, b: Revocation) => a.sig === b.sig;
+/** Runs `fn` holding the browser-wide lock `name` (the Web Locks API), so
+ * no other tab of this browser runs one at the same time. `null` where
+ * there's none: the page then keeps nothing across loads. */
+export type Locks = (<T>(name: string, fn: () => Promise<T>) => Promise<T>) | null;
+
+export const webLocks: Locks = (() => {
+  const l = (globalThis as { navigator?: { locks?: { request: (name: string, fn: () => Promise<unknown>) => Promise<unknown> } } }).navigator?.locks;
+  return l ? <T,>(name: string, fn: () => Promise<T>) => l.request(name, fn) as Promise<T> : null;
+})();
+
+/** One look at what's held, inside [`TrustStore::look`]. */
+export interface Look {
+  /** `trust`'s account as control sends it now (`fresh`), over what's held. */
+  take(trust: { account: string; root: string }, fresh: { certs: Cert[]; revocations: Revocation[] }): Promise<{ certs: Cert[]; revocations: Revocation[]; refused: boolean }>;
+  /** Whether `device`'s removal, for `account` from `root`, was seen before this look. */
+  removedBefore(account: string, root: string, device: string): boolean;
+  /** The lock held for `team`. */
+  lock(team: string): TeamLock | undefined;
+  /** Hold `l` for `team` if it's newer than the one held. */
+  holdLock(team: string, l: TeamLock): void;
+}
+
+const emptyHeld = (): Held => ({ accounts: {}, seen: { round: 0, at: {} }, locks: {} });
 
 /** Each account's certificates and removals as this page last held them,
  * by account and the root they're checked from, in which round it first
  * saw each (`checkpoint::Seen`), and each team's signed lock: removals
  * only add up across loads, and a certificate first seen after its
- * approver's removal doesn't count (`refreshAccount`). Read once and kept
- * in memory for the page's life, as `RosterStore`; each look (`begin`)
- * and each save merge in what another tab of this browser holds (more
- * removals, earlier stamps, newer locks), never less. If it can't be read
- * or written, is malformed, or is missing when `expected` says this
- * browser kept one, `kept` goes false for good: the page then signs no
- * team change and lists no one else's machines. */
+ * approver's removal doesn't count (`refreshAccount`).
+ *
+ * Each look (`look`) is one transaction across this browser's tabs: it
+ * takes the browser-wide lock, reads what's stored afresh (another tab
+ * may have looked since), counts its round after the stored one, and
+ * writes back before letting go. So no two tabs share a round, and
+ * nothing is merged: what's stored is always one tab's whole view. If the
+ * store can't be read or written, is malformed, is missing when
+ * `expected` says this browser kept one, or there's no browser-wide lock,
+ * `kept` goes false for good: the look runs on a copy of what this page
+ * last held and keeps nothing, and the page signs no team change and
+ * lists no one else's machines. */
 export class TrustStore {
   private data: Held | null = null;
   private storage: Store;
   private key: string;
   private expected: () => boolean;
-  private round = 1;
+  private locks: Locks;
   kept = true;
 
-  constructor(storage: Store, key: string, expected: () => boolean = () => false) {
+  constructor(storage: Store, key: string, expected: () => boolean = () => false, locks: Locks = webLocks) {
     this.storage = storage;
     this.key = key;
     this.expected = expected;
+    this.locks = locks;
   }
 
   private static ok(v: unknown): v is Held {
@@ -186,82 +214,63 @@ export class TrustStore {
     return accounts && isSeen(h.seen) && locks;
   }
 
-  private read(): Held | null | undefined {
+  /** What's stored now, or `undefined` if it can't be trusted. */
+  private read(): Held | undefined {
     const got = readStored(this.storage, this.key, TrustStore.ok);
-    if (got === undefined || (got === null && this.expected())) this.kept = false;
+    if (got === undefined || (got === null && (this.expected() || this.data))) return undefined;
     if (got) got.locks ??= {};
-    return got;
+    return got ?? emptyHeld();
   }
 
-  private load(): Held {
-    if (!this.data) this.data = this.read() ?? { accounts: {}, seen: { round: 0, at: {} }, locks: {} };
-    return this.data;
-  }
-
-  /** Merge in what's stored now (another tab's): more removals, earlier
-   * stamps, a later round, newer locks. */
-  private merge() {
-    const d = this.load();
-    const theirs = this.read();
-    if (!theirs) return;
-    for (const [k, a] of Object.entries(theirs.accounts)) {
-      const mine = d.accounts[k];
-      if (!mine) d.accounts[k] = a;
-      else mine.revocations = kept(mine.revocations, a.revocations, sameRev);
-    }
-    for (const [sig, r] of Object.entries(theirs.seen.at)) d.seen.at[sig] = Math.min(d.seen.at[sig] ?? r, r);
-    d.seen.round = Math.max(d.seen.round, theirs.seen.round);
-    for (const [t, l] of Object.entries(theirs.locks)) if (!d.locks[t] || l.at > d.locks[t].at) d.locks[t] = l;
-  }
-
-  /** Start a fresh look: what's new in it is stamped with the next round. */
-  begin() {
-    this.merge();
-    this.round = nextRound(this.load().seen);
-  }
-
-  /** `trust`'s account as control sends it now (`fresh`), over what's held. */
-  async take(trust: { account: string; root: string }, fresh: { certs: Cert[]; revocations: Revocation[] }) {
-    const d = this.load();
-    const k = `${trust.account}.${trust.root}`;
-    const got = await refreshAccount(trust, fresh, d.accounts[k] ?? { certs: [], revocations: [] }, d.seen, this.round);
-    d.accounts[k] = { certs: got.certs, revocations: got.revocations };
-    return got;
-  }
-
-  /** Whether this page saw `device`'s removal, for `account` from `root`,
-   * before the look under way. */
-  removedBefore(account: string, root: string, device: string): boolean {
-    const d = this.load();
-    const revs = d.accounts[`${account}.${root}`]?.revocations ?? [];
-    return revs.some((r) => r.device === device && Object.hasOwn(d.seen.at, r.sig) && d.seen.at[r.sig] < this.round);
+  /** What this page last held (or kept), for `trust`'s account: its view
+   * when a look can't be kept. */
+  view(trust: { account: string; root: string }): { certs: Cert[]; revocations: Revocation[] } | undefined {
+    return this.data?.accounts[`${trust.account}.${trust.root}`];
   }
 
   /** The lock this page holds for `team`. */
   lock(team: string): TeamLock | undefined {
-    return this.load().locks[team];
+    return this.data?.locks[team];
   }
 
-  /** Hold `l` for `team` if it's newer than the one held. */
-  holdLock(team: string, l: TeamLock) {
-    const d = this.load();
-    if (!d.locks[team] || l.at > d.locks[team].at) d.locks[team] = l;
-  }
-
-  /** Write it back, merged with what another tab wrote, forgetting stamps
-   * of what's no longer held. */
-  save() {
-    this.merge();
-    const d = this.load();
-    settle(d.seen, this.round);
-    const held = new Set<string>();
-    for (const a of Object.values(d.accounts)) for (const x of [...a.certs, ...a.revocations]) held.add(x.sig);
-    for (const sig of Object.keys(d.seen.at)) if (!held.has(sig)) delete d.seen.at[sig];
-    try {
-      this.storage().setItem(this.key, JSON.stringify(d));
-    } catch {
-      this.kept = false;
-    }
+  /** Run one look: `fn` takes accounts, asks about removals and holds
+   * locks through what it's given. True if what it found was kept. */
+  async look<T>(fn: (l: Look) => Promise<T>): Promise<{ value: T; kept: boolean }> {
+    const run = async () => {
+      const fresh = this.kept && this.locks ? this.read() : undefined;
+      if (!fresh) this.kept = false;
+      // Kept: the stored view. Not: a copy of this page's, thrown away.
+      const d: Held = fresh ?? structuredClone(this.data ?? emptyHeld());
+      const round = nextRound(d.seen);
+      const value = await fn({
+        take: async (trust, got) => {
+          const k = `${trust.account}.${trust.root}`;
+          const out = await refreshAccount(trust, got, d.accounts[k] ?? { certs: [], revocations: [] }, d.seen, round);
+          d.accounts[k] = { certs: out.certs, revocations: out.revocations };
+          return out;
+        },
+        removedBefore: (account, root, device) =>
+          (d.accounts[`${account}.${root}`]?.revocations ?? []).some((r) => r.device === device && Object.hasOwn(d.seen.at, r.sig) && d.seen.at[r.sig] < round),
+        lock: (team) => d.locks[team],
+        holdLock: (team, l) => {
+          if (!d.locks[team] || l.at > d.locks[team].at) d.locks[team] = l;
+        },
+      });
+      if (!fresh) return { value, kept: false };
+      settle(d.seen, round);
+      const held = new Set<string>();
+      for (const a of Object.values(d.accounts)) for (const x of [...a.certs, ...a.revocations]) held.add(x.sig);
+      for (const sig of Object.keys(d.seen.at)) if (!held.has(sig)) delete d.seen.at[sig];
+      try {
+        this.storage().setItem(this.key, JSON.stringify(d));
+      } catch {
+        this.kept = false;
+        return { value, kept: false };
+      }
+      this.data = d;
+      return { value, kept: true };
+    };
+    return this.locks && this.kept ? this.locks("arugula-trust", run) : run();
   }
 }
 
@@ -273,7 +282,7 @@ export const LOCK_SKEW_MS = 10 * 60 * 1000;
  * an owner in `roster` (the roster checked) signed it for this team, it
  * isn't dated far ahead of `now`, and it's newer than the one held
  * (`checkpoint::take_lock`). */
-export async function takeLock(store: TrustStore, team: string, got: TeamLock | null | undefined, roster: Roster, certs: AccountCerts, now = Date.now()): Promise<TeamLock | undefined> {
+export async function takeLock(store: Pick<Look, "lock" | "holdLock">, team: string, got: TeamLock | null | undefined, roster: Roster, certs: AccountCerts, now = Date.now()): Promise<TeamLock | undefined> {
   if (got && got.team === team && Number.isSafeInteger(got.at) && got.at <= now + LOCK_SKEW_MS && (await lockSignedIn(got, roster, certs))) store.holdLock(team, got);
   return store.lock(team);
 }
