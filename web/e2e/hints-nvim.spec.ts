@@ -350,13 +350,20 @@ test("the help card in a narrow split: inside its pane, its content scrolls in t
   expect(box!.x + box!.width).toBeLessThanOrEqual(slot!.x + slot!.width);
   expect(box!.y + box!.height).toBeLessThanOrEqual(slot!.y + slot!.height);
   if (process.env.SHOT_DIR) await page.screenshot({ path: join(process.env.SHOT_DIR, "card-narrow.png") });
-  // The buttons are reachable: the scroller can bring each into view.
-  const close = card(page, term).getByRole("button", { name: "Close", exact: true });
-  await close.scrollIntoViewIfNeeded();
-  await expect(close).toBeInViewport();
-  const never = card(page, term).getByLabel("Don't show tips like this again");
-  await never.scrollIntoViewIfNeeded();
-  await expect(never).toBeInViewport();
+  // The buttons stay in the panel's box without any scrolling: the text
+  // scrolls, they're pinned at the bottom.
+  for (const el of [
+    card(page, term).locator(".primary"),
+    card(page, term).getByRole("button", { name: "Close", exact: true }),
+    card(page, term).getByLabel("Don't show tips like this again"),
+  ]) {
+    await expect(el).toBeVisible();
+    const b = await el.boundingBox();
+    expect(b!.y).toBeGreaterThanOrEqual(box!.y);
+    expect(b!.y + b!.height).toBeLessThanOrEqual(box!.y + box!.height);
+    expect(b!.x).toBeGreaterThanOrEqual(box!.x);
+    expect(b!.x + b!.width).toBeLessThanOrEqual(box!.x + box!.width);
+  }
   await page.keyboard.press("Escape");
   await expect(card(page, term)).toHaveCount(0);
   await quit(page, term);

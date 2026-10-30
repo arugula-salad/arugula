@@ -163,23 +163,25 @@ function PaneModal({ client, pane, hint, fact, asked }: { client: Client; pane: 
                 </p>
               ),
             )}
-            <div class="pane-tip-buttons">
-              {buttons.map(({ b, which, primary }) => (
-                <button
-                  class={primary ? "pane-tip-act primary" : "pane-tip-second"}
-                  {...(primary ? { "data-hint-act": "" } : {})}
-                  {...(which === "second" || "close" in b ? { "data-hint-second": "" } : {})}
-                  data-hint-button={b.label}
-                  onClick={() => act(client, which, never)}
-                >
-                  {b.label}
-                </button>
-              ))}
+            <div class="pane-tip-foot">
+              <div class="pane-tip-buttons">
+                {buttons.map(({ b, which, primary }) => (
+                  <button
+                    class={primary ? "pane-tip-act primary" : "pane-tip-second"}
+                    {...(primary ? { "data-hint-act": "" } : {})}
+                    {...(which === "second" || "close" in b ? { "data-hint-second": "" } : {})}
+                    data-hint-button={b.label}
+                    onClick={() => act(client, which, never)}
+                  >
+                    {b.label}
+                  </button>
+                ))}
+              </div>
+              <label class="pane-tip-never">
+                <input type="checkbox" data-pane-tip-never checked={never} onChange={(e) => setNever(e.currentTarget.checked)} />
+                Don't show tips like this again
+              </label>
             </div>
-            <label class="pane-tip-never">
-              <input type="checkbox" data-pane-tip-never checked={never} onChange={(e) => setNever(e.currentTarget.checked)} />
-              Don't show tips like this again
-            </label>
           </div>
         </div>
       </div>
