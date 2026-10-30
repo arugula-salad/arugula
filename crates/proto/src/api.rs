@@ -1590,8 +1590,7 @@ pub struct NvimPluginInstalled {
 }
 
 /// `GET /api/nvim-plugin` (#1733): the copies of arugula.nvim this daemon
-/// installed, and the version it carries now, for Settings > Editor >
-/// nvim.
+/// installed, and the version it carries now.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct NvimPluginCopies {
