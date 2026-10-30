@@ -82,6 +82,12 @@ async function browserOf(browser: Browser, from?: { ip: string; login: string })
     ...(from ? { extraHTTPHeaders: { "tailscale-user-login": from.login, "x-forwarded-for": from.ip } } : {}),
   });
   await ctx.addInitScript(asPerson);
+  // What's new, which a person's browser gets after an update, seen past
+  // every release: it isn't this journey's, and it would cover the pane.
+  await ctx.addInitScript(() => {
+    const seen = JSON.parse(localStorage.getItem("arugula.seen") ?? "{}") as Record<string, unknown>;
+    localStorage.setItem("arugula.seen", JSON.stringify({ ...seen, "whats-new": "999.0.0" }));
+  });
   return ctx.newPage();
 }
 
