@@ -15,7 +15,8 @@ import type { Renaming } from "./rename-input";
 import { SessionButton } from "./session-sidebar";
 import { AttentionBell } from "./attention-drawer";
 import { offlineWhy } from "./live";
-import { useSidebar } from "./prefs";
+import { setSidebarOpen, useSidebar } from "./prefs";
+import { usePlace } from "./rail";
 import { openOverview } from "../places";
 
 export type Connection = "direct" | "relayed" | "reconnecting" | "offline" | "waking" | "asleep";
@@ -60,6 +61,29 @@ export function ConnectionChip({ client }: { client: Client }) {
   );
 }
 
+/** Shows and hides the sessions sidebar (#378). It's in the header, not the
+ * sidebar, so it stays when the sidebar is closed. The panes only: the other
+ * places cover the sidebar. */
+function SidebarToggle({ client }: { client: Client }) {
+  const at = usePlace(client);
+  const { open } = useSidebar();
+  if (at !== "panes") return null;
+  const label = `${open ? "Hide" : "Show"} sessions sidebar`;
+  return (
+    <button
+      class="ws-sidebar-toggle"
+      data-open-sessions
+      aria-label={label}
+      aria-controls="ws-session-sidebar"
+      aria-expanded={open}
+      title={`${label} on ${directory.current || "this machine"}`}
+      onClick={() => setSidebarOpen(!open)}
+    >
+      <span aria-hidden="true">{open ? "‹" : "›"}</span>
+    </button>
+  );
+}
+
 /** The workspace's header. */
 export function ContextHeader({
   client,
@@ -87,6 +111,7 @@ export function ContextHeader({
         </a>
       )}
       <nav class="ws-crumbs" aria-label="Where you are" data-tauri-drag-region>
+        <SidebarToggle client={client} />
         {/* The machine's name even where there's no menu of others (a
             daemon's own page alone): HostButton draws nothing then. */}
         {hostMenuShown() ? (

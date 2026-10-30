@@ -13,16 +13,11 @@ export type RailItem = {
   aria?: string;
   /** The `data-…` attribute that names it, for tests and the page's hooks. */
   hook: string;
-  /** Lit: the place you're in (or, for a `toggle`, that it's on). */
+  /** Lit: the place you're in. */
   here: boolean;
   icon: ComponentChildren;
   /** An unread count drawn on the corner. */
   count?: { n: number; mention: boolean };
-  /** A switch (the sidebar), not a place: drawn as on, not as here, and in
-   * the group under the mark. */
-  toggle?: boolean;
-  /** The id of what a `toggle` shows and hides. */
-  controls?: string;
   /** What a click does. With an `href`, a plain click only: a modified
    * one is the browser's (a new tab). */
   onClick?: (e: MouseEvent) => void;
@@ -35,7 +30,7 @@ export function Rail({ brand, items, bottom, label = "Places" }: { brand: Compon
   return (
     <nav class="ws-rail" aria-label={label}>
       {brand}
-      {items.map((item) => (item.toggle ? <div class="ws-rail-utility" key={item.hook}><RailButton item={item} /></div> : <RailButton key={item.hook} item={item} />))}
+      {items.map((item) => <RailButton key={item.hook} item={item} />)}
       <div class="ws-rail-fill" />
       {bottom.map((item) => (
         <RailButton key={item.hook} item={item} />
@@ -45,21 +40,20 @@ export function Rail({ brand, items, bottom, label = "Places" }: { brand: Compon
 }
 
 export function RailButton({ item }: { item: RailItem }) {
-  const { label, aria, tip, here, toggle, controls, hook, count, onClick, href, target, icon } = item;
+  const { label, aria, tip, here, hook, count, onClick, href, target, icon } = item;
   const inner = (
     <>
       {icon}
       {count && count.n > 0 && <span class={count.mention ? "ws-rail-count mention" : "ws-rail-count"}>{count.mention ? `@${count.n}` : count.n}</span>}
-      {toggle && <span class="ws-sidebar-chevron" aria-hidden="true">{here ? "‹" : "›"}</span>}
       <span class="ws-rail-label" aria-hidden="true">
         {label}
       </span>
     </>
   );
   const props = {
-    class: `ws-rail-button${here ? (toggle ? " on" : " here") : ""}`,
+    class: `ws-rail-button${here ? " here" : ""}`,
     "aria-label": aria ?? label,
-    "aria-current": !toggle && here ? ("page" as const) : undefined,
+    "aria-current": here ? ("page" as const) : undefined,
     title: tip,
     [hook]: "",
   };
@@ -79,7 +73,7 @@ export function RailButton({ item }: { item: RailItem }) {
       </a>
     );
   return (
-    <button {...props} aria-expanded={toggle ? here : undefined} aria-controls={toggle ? controls : undefined} onClick={onClick}>
+    <button {...props} onClick={onClick}>
       {inner}
     </button>
   );

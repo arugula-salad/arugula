@@ -119,17 +119,19 @@ test.describe("on a computer", () => {
     expect((await tab(page)).id).toBe(t);
     expect(await active(page)).toBe(pane);
 
-    // Sessions is a disclosure, distinct from destination selection.
-    await expect(rail.locator("[data-open-sessions]")).toHaveAttribute("aria-expanded", "true");
-    await expect(rail.locator("[data-open-sessions]")).not.toHaveAttribute("aria-pressed");
-    // Sessions hides and shows the sidebar, and the device remembers.
-    await rail.locator("[data-open-sessions]").click();
+    // The header's caret is a disclosure (#378), not a place: the rail has no Sessions.
+    const caret = page.locator(".ws-head [data-open-sessions]");
+    await expect(rail.locator("[data-open-sessions]")).toHaveCount(0);
+    await expect(caret).toHaveAttribute("aria-expanded", "true");
+    await expect(caret).not.toHaveAttribute("aria-pressed");
+    // It hides and shows the sidebar, and the device remembers.
+    await caret.click();
     await expect(page.locator("[data-session-sidebar]")).toHaveCount(0);
-    await expect(rail.locator("[data-open-sessions]")).toHaveAttribute("aria-expanded", "false");
+    await expect(caret).toHaveAttribute("aria-expanded", "false");
     await page.reload();
     await expect(page.locator(".ws-rail")).toBeVisible();
     await expect(page.locator("[data-session-sidebar]")).toHaveCount(0);
-    await rail.locator("[data-open-sessions]").click();
+    await caret.click();
     await expect(page.locator("[data-session-sidebar]")).toBeVisible();
 
     // Settings opens this device's settings.
@@ -512,7 +514,7 @@ test.describe("on a narrow window", () => {
     await expect(page.locator("[data-session-sidebar]")).toHaveCount(0);
     const before = await page.locator(".main").boundingBox();
     const beta = await session(page, "narrow-beta");
-    await page.locator(".ws-rail [data-open-sessions]").click();
+    await page.locator(".ws-head [data-open-sessions]").click();
     await expect(page.locator("[data-session-sidebar].overlay")).toBeVisible();
     // Over the panes: they keep their room.
     expect((await page.locator(".main").boundingBox())?.width).toBe(before?.width);

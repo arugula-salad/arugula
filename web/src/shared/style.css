@@ -11582,11 +11582,6 @@ html[data-workspace="new"] #status {
   }
 }
 
-.ws-rail-button.on {
-  color: var(--fg);
-  background: var(--raised);
-}
-
 .ws-session-counts > span {
   display: inline-flex;
   align-items: center;
