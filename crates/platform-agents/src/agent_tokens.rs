@@ -155,7 +155,7 @@ pub async fn mint(State(app): State<Arc<Platform>>, s: BrowserPerson, headers: H
             StatusCode::BAD_REQUEST,
             &format!(
                 "a token can't hold {p}: its powers are threads.read, threads.post, issues.write, deploys.plan, \
-                 runs.read, runs.start, runs.command, boards.read, boards.write and secrets.write (none approves anything)"
+                 runs.read, runs.start, runs.command, boards.read, boards.write, trackers.write and secrets.write (none approves anything)"
             ),
         ));
     }

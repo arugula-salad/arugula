@@ -89,6 +89,7 @@ fn wire(app: &Platform, c: &Connection) -> Result<TrackerConnection, ApiError> {
         purge_after: c.purge_after,
         backfilled_at: c.backfilled_at,
         items: app.db.tracker_item_count(c.mirror_id)?,
+        waiting_writes: app.db.tracker_writes_waiting_count(&c.id)?,
     })
 }
 

@@ -208,6 +208,10 @@ impl Db {
         if n == 0 {
             return Ok(None);
         }
+        c.execute(
+            "UPDATE tracker_writes SET state = 'dropped', decided_at = ?1 WHERE connection_id = ?2 AND state = 'waiting'",
+            params![now, id],
+        )?;
         c.query_row(&format!("SELECT {COLUMNS} FROM tracker_connections c WHERE c.id = ?1"), params![id], row)
             .optional()
     }
@@ -445,6 +449,7 @@ impl Db {
         for name in [key_name(&id), webhook_name(&id)] {
             tx.execute("DELETE FROM project_secrets WHERE project_id = ?1 AND name = ?2", params![project, name])?;
         }
+        tx.execute("DELETE FROM tracker_writes WHERE connection_id = ?1", params![id])?;
         tx.execute("DELETE FROM tracker_connections WHERE id = ?1", params![id])?;
         tx.commit()?;
         Ok(Some(id))
@@ -607,5 +612,169 @@ impl Db {
             &super::sql::list(&args),
             item_row,
         )
+    }
+}
+
+// ---- writes (#359)
+
+/// A write an agent asked for, kept until a person decides.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PendingWrite {
+    pub id: String,
+    pub project_id: String,
+    pub connection_id: String,
+    pub kind: String,
+    /// The write as JSON, without the footer.
+    pub request: String,
+    pub agent_machine: String,
+    pub for_account: String,
+    pub state: String,
+    pub error: Option<String>,
+    pub item_id: Option<String>,
+    pub created_at: u64,
+}
+
+const WRITE_COLUMNS: &str = "id, project_id, connection_id, kind, request, agent_machine, for_account, state, error, \
+     item_id, created_at";
+
+fn write_row(r: &Row) -> Result<PendingWrite> {
+    Ok(PendingWrite {
+        id: r.get(0)?,
+        project_id: r.get(1)?,
+        connection_id: r.get(2)?,
+        kind: r.get(3)?,
+        request: r.get(4)?,
+        agent_machine: r.get(5)?,
+        for_account: r.get(6)?,
+        state: r.get(7)?,
+        error: r.get(8)?,
+        item_id: r.get(9)?,
+        created_at: r.get(10)?,
+    })
+}
+
+/// A mirrored tracker item, found for a write: where it is in the tracker.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Target {
+    /// The `fi_` id.
+    pub id: String,
+    pub connection_id: String,
+    /// The tracker's own id for the item.
+    pub source_item_id: String,
+    pub number: u64,
+    pub identifier: String,
+}
+
+impl Db {
+    /// Keep a write that waits for a person.
+    pub fn add_tracker_write(&self, w: &PendingWrite) -> Result<()> {
+        self.c().execute(
+            "INSERT INTO tracker_writes (id, project_id, connection_id, kind, request, agent_machine, for_account,
+                 state, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 'waiting', ?8)",
+            params![w.id, w.project_id, w.connection_id, w.kind, w.request, w.agent_machine, w.for_account, w.created_at],
+        )?;
+        Ok(())
+    }
+
+    /// A project's writes waiting for a person, oldest first.
+    pub fn tracker_writes_waiting(&self, project: &str) -> Result<Vec<PendingWrite>> {
+        self.c().query_map(
+            &format!(
+                "SELECT {WRITE_COLUMNS} FROM tracker_writes WHERE project_id = ?1 AND state = 'waiting'
+                 ORDER BY created_at, id"
+            ),
+            params![project],
+            write_row,
+        )
+    }
+
+    pub fn tracker_writes_waiting_count(&self, connection: &str) -> Result<u64> {
+        self.c().query_row(
+            "SELECT count(*) FROM tracker_writes WHERE connection_id = ?1 AND state = 'waiting'",
+            params![connection],
+            |r| r.get(0),
+        )
+    }
+
+    pub fn tracker_write(&self, project: &str, id: &str) -> Result<Option<PendingWrite>> {
+        self.c()
+            .query_row(
+                &format!("SELECT {WRITE_COLUMNS} FROM tracker_writes WHERE project_id = ?1 AND id = ?2"),
+                params![project, id],
+                write_row,
+            )
+            .optional()
+    }
+
+    /// Replace a waiting write's request: whether it was still waiting.
+    pub fn set_tracker_write_request(&self, project: &str, id: &str, request: &str) -> Result<bool> {
+        let n = self.c().execute(
+            "UPDATE tracker_writes SET request = ?1 WHERE project_id = ?2 AND id = ?3 AND state = 'waiting'",
+            params![request, project, id],
+        )?;
+        Ok(n == 1)
+    }
+
+    /// Take a waiting write for `state` (`sent`, before it is sent, or
+    /// `dropped`): the write, or `None` when it isn't waiting any more, so
+    /// two people approving it send it once.
+    pub fn take_tracker_write(&self, project: &str, id: &str, state: &str, by: &str, now: u64) -> Result<Option<PendingWrite>> {
+        let c = self.c();
+        let n = c.execute(
+            "UPDATE tracker_writes SET state = ?1, decided_by = ?2, decided_at = ?3
+             WHERE project_id = ?4 AND id = ?5 AND state = 'waiting'",
+            params![state, by, now, project, id],
+        )?;
+        if n == 0 {
+            return Ok(None);
+        }
+        c.query_row(
+            &format!("SELECT {WRITE_COLUMNS} FROM tracker_writes WHERE id = ?1"),
+            params![id],
+            write_row,
+        )
+        .optional()
+    }
+
+    /// A taken write ended: the item it reached, or why it failed.
+    pub fn finish_tracker_write(&self, id: &str, item: Option<&str>, error: Option<&str>) -> Result<()> {
+        let state = if error.is_some() { "failed" } else { "sent" };
+        self.c().execute(
+            "UPDATE tracker_writes SET state = ?1, item_id = ?2, error = ?3 WHERE id = ?4",
+            params![state, item, error, id],
+        )?;
+        Ok(())
+    }
+
+    /// The mirrored item a write names in a project: its `fi_` id, or
+    /// `IDENT-N`, on a live connection.
+    pub fn tracker_target(&self, project: &str, item: &str) -> Result<Option<Target>> {
+        const SELECT: &str = "SELECT i.id, i.connection_id, i.source_item_id, i.number, c.identifier
+             FROM forge_items i JOIN tracker_connections c ON c.id = i.connection_id
+             WHERE c.project_id = ?1 AND c.unlinked_at IS NULL AND i.provider = 'plane'";
+        let t = |r: &Row| {
+            Ok(Target {
+                id: r.get(0)?,
+                connection_id: r.get(1)?,
+                source_item_id: r.get(2)?,
+                number: r.get(3)?,
+                identifier: r.get(4)?,
+            })
+        };
+        if let Some((ident, n)) = item.rsplit_once('-')
+            && let Ok(n) = n.parse::<u64>()
+            && !item.starts_with("fi_")
+        {
+            return self
+                .c()
+                .query_row(
+                    &format!("{SELECT} AND i.number = ?2 AND UPPER(c.identifier) = ?3"),
+                    params![project, n, ident.to_uppercase()],
+                    t,
+                )
+                .optional();
+        }
+        self.c().query_row(&format!("{SELECT} AND i.id = ?2"), params![project, item], t).optional()
     }
 }

@@ -522,6 +522,12 @@ const SQLITE: &[Migration] = &[
         sql: include_str!("../../migrations/sqlite/0071_tracker_connections.sql"),
         additive: true,
     },
+    Migration {
+        version: 72,
+        name: "tracker_writes",
+        sql: include_str!("../../migrations/sqlite/0072_tracker_writes.sql"),
+        additive: true,
+    },
 ];
 
 /// Postgres's (M143): the same versions, names and `additive` flags as
@@ -952,6 +958,12 @@ const POSTGRES: &[Migration] = &[
         version: 71,
         name: "tracker_connections",
         sql: include_str!("../../migrations/postgres/0071_tracker_connections.sql"),
+        additive: true,
+    },
+    Migration {
+        version: 72,
+        name: "tracker_writes",
+        sql: include_str!("../../migrations/postgres/0072_tracker_writes.sql"),
         additive: true,
     },
 ];

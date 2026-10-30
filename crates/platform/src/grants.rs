@@ -61,7 +61,7 @@ use crate::{
     auth::{Machine, Person},
     db::projects::{
         AGENT_POWERS, BOARD_POWERS, CLOUD_DRIVE, DEPLOYS_PLAN, Grant, ISSUES_WRITE, RUN_POWERS, SECRETS_WRITE,
-        SESSION_POWERS, subject_kind,
+        SESSION_POWERS, TRACKERS_WRITE, subject_kind,
     },
     hub::{Daemon, HubResult},
 };
@@ -126,6 +126,7 @@ pub fn is_agent_power(power: &str) -> bool {
         || RUN_POWERS.contains(&power)
         || BOARD_POWERS.contains(&power)
         || SESSION_POWERS.contains(&power)
+        || power == TRACKERS_WRITE
 }
 
 /// Whether an agent's `power` is over a project only, never the owner's
@@ -137,6 +138,7 @@ fn project_only(power: &str) -> bool {
         || RUN_POWERS.contains(&power)
         || BOARD_POWERS.contains(&power)
         || SESSION_POWERS.contains(&power)
+        || power == TRACKERS_WRITE
 }
 
 /// Whether `power` is one an agent grant token may hold (M230): the agent
@@ -201,6 +203,12 @@ fn how_to_grant(machine_name: &str, power: &str, scope: &AgentScope, scope_name:
         return format!(
             "its owner gives it with `arugula grants add {machine_name} {power} {flag}`, or sets {machine_name}'s \
              Boards for {scope_name} under Settings → Agents on the platform page"
+        );
+    }
+    if power == TRACKERS_WRITE {
+        return format!(
+            "its owner gives it with `arugula grants add {machine_name} {power} {flag}`, or sets {machine_name}'s \
+             Plane writes for {scope_name} under Settings → Agents on the platform page"
         );
     }
     let switch = if RUN_POWERS.contains(&power) {
@@ -438,7 +446,7 @@ pub async fn give(State(app): State<Arc<Platform>>, s: Person, Json(b): Json<Giv
             return Err(err(
                 StatusCode::BAD_REQUEST,
                 "the powers there are to give are cloud.drive, threads.read, threads.post, issues.write, deploys.plan, \
-                 runs.read, runs.start, runs.command, boards.read, boards.write, sessions.start and sessions.reply",
+                 runs.read, runs.start, runs.command, boards.read, boards.write, trackers.write, sessions.start and sessions.reply",
             ));
         }
     };
