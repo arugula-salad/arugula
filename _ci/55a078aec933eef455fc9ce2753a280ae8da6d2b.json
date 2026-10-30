@@ -3,7 +3,7 @@
   "commit": "55a078aec933eef455fc9ce2753a280ae8da6d2b",
   "branch": "main",
   "state": "pending",
-  "at": "2026-10-30T19:21:46Z",
+  "at": "2026-10-30T19:24:27Z",
   "phases": {
     "lint": {
       "verdict": "pass",
@@ -72,7 +72,7 @@
         {
           "name": "test-postgres",
           "id": 124257233245,
-          "conclusion": null,
+          "conclusion": "success",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/41112237451/job/124257233245"
         },
         {
@@ -180,7 +180,7 @@
         {
           "name": "desktop-xvfb",
           "id": 124257233089,
-          "conclusion": null,
+          "conclusion": "success",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/41112237451/job/124257233089"
         }
       ]
