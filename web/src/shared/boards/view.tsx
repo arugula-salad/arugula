@@ -61,6 +61,12 @@ export function BoardPanel({
   // Chat says when the thread's object changed; it's on while chat is.
   useSubscribe((fn) => chat.subscribe(fn));
   const seen = useRef(0);
+  // The project's Plane connections, once the board says its project (#359): New issue… may make the item in Plane.
+  const [plane, setPlane] = useState<{ id: string; identifier: string }[]>([]);
+  const project = view?.board.project;
+  useEffect(() => {
+    if (shown && project) void boards.plane(project).then(setPlane);
+  }, [project, shown]);
 
   const again = () => {
     const n = ++seen.current;
@@ -117,6 +123,21 @@ export function BoardPanel({
     if (!ok) toast(`Made #${made.number} but couldn't add it to the board`);
   };
 
+  /** A work item in a Plane connection of the board's project, and a row pointing at it in the zone. */
+  const newPlaneIssue = async (c: { id: string; identifier: string }) => {
+    const title = await askText(`New issue in Plane (${c.identifier})`, "", "its title");
+    if (!title?.trim()) return;
+    let made;
+    try {
+      made = await boards.planeCreate(view.board.project, c.id, title.trim());
+    } catch (e) {
+      toast(`Couldn't make the issue in Plane: ${(e as Error).message}`);
+      return;
+    }
+    const ok = await act(() => boards.put(id, { entry: "row", pointer: { kind: "forge_item", id: made.item ?? "" } }));
+    if (!ok) toast(`Made ${made.reference ?? "the item"} in Plane but couldn't add it to the board`);
+  };
+
   const rename = async () => {
     const t = await askText("Rename the board", view.board.title);
     if (t?.trim() && t.trim() !== view.board.title) await act(() => boards.edit(id, { title: t.trim() }));
@@ -158,6 +179,11 @@ export function BoardPanel({
           <button type="button" class="board-add" data-board-new-issue onClick={() => void newIssue()}>
             + New issue
           </button>
+          {plane.map((c) => (
+            <button key={c.id} type="button" class="board-add" data-board-new-plane-issue={c.identifier} onClick={() => void newPlaneIssue(c)}>
+              + New issue in Plane ({c.identifier})
+            </button>
+          ))}
         </p>
       )}
     </div>

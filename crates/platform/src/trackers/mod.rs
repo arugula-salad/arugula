@@ -3,9 +3,9 @@
 //! `forge_items`, beside GitHub's.
 //!
 //! - **[`TrackerProvider`]** is what a tracker answers, one object per API
-//!   key: the project, its items (paged), one item, and the writes. Plane's
-//!   client ([`plane`]) reads for real and answers "not yet" to the writes
-//!   (#359); [`fake::FakeTracker`] keeps items in memory for tests.
+//!   key: the project, its items (paged), one item, and the writes (#359).
+//!   Plane's client is [`plane`]; [`fake::FakeTracker`] keeps items in
+//!   memory for tests, and what it was sent.
 //! - **[`Trackers`]** makes a provider from a key. The platform holds one
 //!   (`Platform::trackers`), so a test swaps in the fake.
 //! - **Connecting** ([`connect`]): an owner or editor gives the workspace,
@@ -35,6 +35,9 @@ pub mod plane;
 pub mod webhook;
 #[cfg(any(test, feature = "testing"))]
 pub mod webhook_tests;
+pub mod writes;
+#[cfg(test)]
+mod writes_tests;
 
 pub type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 
@@ -119,7 +122,11 @@ pub struct Page {
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct NewItem {
     pub title: String,
+    /// HTML, already escaped.
     pub body: Option<String>,
+    /// The state group it starts in (`backlog`, `unstarted`, …): the first
+    /// state of it; none: the project's default.
+    pub state_group: Option<String>,
     pub item_type: Option<String>,
     pub parent_id: Option<String>,
 }
@@ -128,11 +135,15 @@ pub struct NewItem {
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct Edit {
     pub title: Option<String>,
+    /// HTML, already escaped.
     pub body: Option<String>,
 }
 
 /// A tracker's API, for one key. Object-safe and async, as the platform's
-/// other providers are. `project_id` is the tracker's own id, as
+/// other providers are. The writes take bodies and comments as HTML the
+/// caller has escaped, a title as plain text, and `set_state` a state
+/// *group*, for which the provider picks the first state. Each write
+/// answers with the item as the tracker has it now. `project_id` is the tracker's own id, as
 /// [`ProjectInfo::id`] gives it.
 pub trait TrackerProvider: Send + Sync {
     /// The project `reference` names: its id, or its identifier.

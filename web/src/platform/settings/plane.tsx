@@ -10,6 +10,8 @@ import type { TrackerConnection, TrackerConnections } from "../../shared/proto.g
 import { platformFetch } from "../../shared/maintenance";
 import { ConfirmRemove } from "../../shared/ui/confirm";
 import type { PlatformProject } from "../session";
+import { names } from "../links";
+import { follow, pathOf } from "../router";
 import { Section } from "./section";
 
 /** A call to the platform: its JSON, or its `{error}` thrown. */
@@ -68,6 +70,8 @@ export function PlaneConnections({ p }: { p: PlatformProject }) {
     });
   };
   const connected = (conns ?? []).filter((c) => c.purge_after === null).length;
+  const waiting = (conns ?? []).reduce((n, c) => n + (c.purge_after === null ? c.waiting_writes : 0), 0);
+  const triage = pathOf({ page: "triage", project: p.id }, names);
   return (
     <Section
       id="plane"
@@ -85,6 +89,15 @@ export function PlaneConnections({ p }: { p: PlatformProject }) {
         </>
       }
     >
+      {waiting > 0 && (
+        <p data-plane-waiting>
+          {waiting} agent {waiting === 1 ? "write is" : "writes are"} waiting for approval in{" "}
+          <a href={triage} onClick={(e) => follow(e, triage)}>
+            Triage
+          </a>
+          .
+        </p>
+      )}
       <div data-plane-connections>
         {conns?.length === 0 && (
           <p class="dim" data-plane-none>

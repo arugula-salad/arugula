@@ -706,6 +706,8 @@ pub struct TrackerConnection {
     pub backfilled_at: Option<u64>,
     /// How many of its items the platform holds.
     pub items: u64,
+    /// Agents' writes waiting for a person to approve.
+    pub waiting_writes: u64,
 }
 
 /// `POST /api/projects/{project}/trackers`: connect a Plane project. A
@@ -743,4 +745,151 @@ impl std::fmt::Debug for ConnectTracker {
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct TrackerSettings {
     pub agent_writes: String,
+}
+
+/// `POST /api/projects/{project}/trackers/{connection}/writes`
+/// ([`TrackerWrite`], answered with a [`TrackerWriteDone`]): a person's
+/// write to a tracker, which lands at once. An owner or editor may.
+pub const TRACKER_WRITES: &str = "/api/projects/{project}/trackers/{connection}/writes";
+
+/// `GET /api/projects/{project}/tracker-writes`: the agents' writes waiting
+/// for a person to approve ([`TrackerPendingWrites`]), for an owner or editor.
+pub const PROJECT_TRACKER_WRITES: &str = "/api/projects/{project}/tracker-writes";
+
+/// `PATCH /api/projects/{project}/tracker-writes/{write}` (a [`TrackerWrite`]
+/// of the same kind and target: its new text), `POST …/approve` (send it)
+/// and `POST …/drop`, each answered with a [`TrackerPendingWrite`]. A person's
+/// alone: no machine or agent route reaches them.
+pub const PROJECT_TRACKER_WRITE: &str = "/api/projects/{project}/tracker-writes/{write}";
+pub const PROJECT_TRACKER_WRITE_APPROVE: &str = "/api/projects/{project}/tracker-writes/{write}/approve";
+pub const PROJECT_TRACKER_WRITE_DROP: &str = "/api/projects/{project}/tracker-writes/{write}/drop";
+
+/// `POST /api/daemon/projects/{project}/tracker-writes` ([`TrackerWrite`], answered with a
+/// [`TrackerWriteDone`]): a machine's agent writes to a tracker, with `trackers.write` over the
+/// project. It lands at once or waits for a person, as the connection says.
+pub const AGENT_TRACKER_WRITES: &str = "/api/daemon/projects/{project}/tracker-writes";
+
+/// `GET /api/daemon/trackers/reach`: the projects the machine holds
+/// `trackers.write` over ([`TrackerReach`]).
+pub const AGENT_TRACKER_REACH: &str = "/api/daemon/trackers/reach";
+
+/// [`AGENT_TRACKER_WRITES`] for `project`.
+pub fn agent_tracker_writes(project: &str) -> String {
+    AGENT_TRACKER_WRITES.replace("{project}", project)
+}
+
+/// How a tracker item is closed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[serde(rename_all = "snake_case")]
+pub enum TrackerClose {
+    Completed,
+    Cancelled,
+}
+
+/// A write to a tracker's work item, the same for people and agents. `item`
+/// is the mirror's `fi_` id, or `IDENT-N` (the connection's identifier and
+/// the item's number). Assignees are not here: a tracker's members aren't
+/// Arugula's people.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum TrackerWrite {
+    /// A new item. `connection` is needed on an agent's route and, on a
+    /// person's, is the path's. `state` is a state group (`backlog`,
+    /// `unstarted`, `started`).
+    Create {
+        #[serde(default)]
+        connection: Option<String>,
+        title: String,
+        #[serde(default)]
+        body: Option<String>,
+        #[serde(default)]
+        state: Option<String>,
+    },
+    Comment {
+        item: String,
+        text: String,
+    },
+    Close {
+        item: String,
+        #[serde(rename = "as")]
+        close_as: TrackerClose,
+    },
+    Reopen {
+        item: String,
+    },
+    Edit {
+        item: String,
+        #[serde(default)]
+        title: Option<String>,
+        #[serde(default)]
+        body: Option<String>,
+    },
+}
+
+/// What a write came to: it landed (`sent`, with the item's `fi_` id), or
+/// it waits for a person (`waiting`, with its `tw_` id).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct TrackerWriteDone {
+    /// `sent` or `waiting`.
+    pub state: String,
+    /// The waiting write's id (`tw_` and hex).
+    pub write: Option<String>,
+    /// The mirror row the write reached or made (`fi_` and hex), and its
+    /// `IDENT-N`.
+    pub item: Option<String>,
+    pub reference: Option<String>,
+    /// A sentence for whoever asked.
+    pub text: String,
+}
+
+/// A write waiting for a person, as the Triage page shows it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct TrackerPendingWrite {
+    /// `tw_` and hex.
+    pub id: String,
+    pub connection: String,
+    /// `waiting`, `sent`, `dropped` or `failed`.
+    pub state: String,
+    /// The write, as it will be sent (without the footer).
+    pub write: TrackerWrite,
+    /// `IDENT-N` of the item it targets, or none for a new item.
+    pub target: Option<String>,
+    /// Whose agent, and on which machine.
+    pub person: String,
+    pub machine: String,
+    pub machine_name: String,
+    /// Why it failed, in a sentence.
+    pub error: Option<String>,
+    pub created_at: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct TrackerPendingWrites {
+    pub project: String,
+    pub writes: Vec<TrackerPendingWrite>,
+}
+
+/// The projects a machine holds `trackers.write` over, as its owner reads
+/// them now.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+pub struct TrackerReach {
+    pub projects: Vec<TrackerReachProject>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+pub struct TrackerReachProject {
+    pub id: String,
+    pub name: String,
 }

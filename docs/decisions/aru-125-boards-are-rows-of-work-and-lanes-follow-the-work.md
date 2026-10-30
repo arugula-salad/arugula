@@ -41,7 +41,7 @@ constrains:
   - "path:crates/platform/src/boards.rs"
   - "path:crates/platform/src/boards/lanes.rs"
   - "path:crates/platform/src/db/boards_lanes.rs"
-  - "path:crates/platform/migrations/postgres/0072_board_lanes.sql"
+  - "path:crates/platform/migrations/postgres/0073_board_lanes.sql"
 ---
 
 # Boards are rows of work, and lanes follow the work

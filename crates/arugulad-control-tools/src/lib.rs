@@ -29,6 +29,7 @@ mod issues;
 mod repos;
 mod runs;
 mod threads;
+mod trackers;
 
 use std::time::Duration;
 
@@ -45,7 +46,7 @@ use arugulad_base::{control, fs, lab_flags, mcp, server};
 use crate::{
     mcp::{
         registry::{self, ControlTools},
-        results::{BoardsReach, CloudReach, RunsReach, ThreadsReach},
+        results::{BoardsReach, CloudReach, RunsReach, ThreadsReach, TrackersReach},
         tools::{Args, Call, Def, Human, Needs, NoArgs, Out, line, parse, table},
     },
     server::App,
@@ -57,7 +58,7 @@ use crate::{
 pub fn register() {
     /// What a tool is listed after, its row and its call.
     type Listed = (&'static str, fn() -> Def, registry::Run);
-    let tools: [Listed; 18] = [
+    let tools: [Listed; 19] = [
         ("draft", forge_read_def, run_forge_read),
         ("forge_read", forge_draft_def, run_forge_draft),
         ("device_call", read_cloud_def, run_read_cloud),
@@ -76,6 +77,7 @@ pub fn register() {
         (deploys::READ_TOOL, session_start_def, run_session_start),
         (agent_sessions::START_TOOL, session_reply_def, run_session_reply),
         (agent_sessions::REPLY_TOOL, read_session_def, run_read_session),
+        (agent_sessions::READ_TOOL, tracker_write_def, run_tracker_write),
     ];
     for (after, def, run) in tools {
         registry::tool(registry::Tool { after: Some(after), def, run });
@@ -107,6 +109,10 @@ impl ControlTools for Reach {
 
     fn runs_reach<'a>(&'a self, app: &'a App) -> BoxFuture<'a, RunsReach> {
         Box::pin(runs::runs_reach(app))
+    }
+
+    fn trackers_reach<'a>(&'a self, app: &'a App) -> BoxFuture<'a, TrackersReach> {
+        Box::pin(trackers::trackers_reach(app))
     }
 
     fn boards_reach<'a>(&'a self, app: &'a App) -> BoxFuture<'a, BoardsReach> {
@@ -175,6 +181,7 @@ one!(run_post_thread, threads::post_thread);
 grouped!(run_issue_write, issues::WRITE_TOOL, |c, kind, args| issues::issue_write(c, kind, args));
 one!(run_board_read, boards::board_read);
 grouped!(run_board_write, boards::WRITE_TOOL, |c, kind, args| boards::board_write(c, kind, args));
+grouped!(run_tracker_write, trackers::WRITE_TOOL, |c, kind, args| trackers::tracker_write(c, kind, args));
 one!(run_start_run, runs::start_run);
 one!(run_read_run, runs::read_run);
 one!(run_plan_deploy, deploys::plan_deploy);
@@ -387,6 +394,28 @@ fn board_write_def() -> Def {
         flag: Some(flags::BOARDS),
         output: None,
         human: Human::In(boards::READ_TOOL),
+    }
+}
+
+// #359: a project's connected Plane project, through the owner's grants,
+// behind the `boards` flag.
+fn tracker_write_def() -> Def {
+    Def {
+        name: trackers::WRITE_TOOL,
+        title: "Write to Plane",
+        description: trackers::WRITE_DESCRIPTION,
+        args: Args::Kinds { kinds: table(trackers::WRITE), default: None },
+        read_only: false,
+        destructive: true,
+        idempotent: false,
+        open_world: true,
+        flag: Some(flags::BOARDS),
+        output: None,
+        human: line(
+            "write to your project's Plane work items, with your approval where you ask for it",
+            "Comment on ARUGU-7 that the fix is in.",
+            Needs::Control,
+        ),
     }
 }
 

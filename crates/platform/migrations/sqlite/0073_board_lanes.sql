@@ -1,4 +1,4 @@
--- 0072: boards, one row is one piece of work (Arugula #365, aru-125). A
+-- 0073: boards, one row is one piece of work (Arugula #365, aru-125). A
 -- row's lane follows the live state of its items and is never stored, so
 -- nobody places a row in a zone: a row has no `zone_id` any more, and
 -- `board_entries` holds rows (`db::boards` deletes the zone entries and

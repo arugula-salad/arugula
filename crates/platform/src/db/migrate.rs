@@ -524,8 +524,14 @@ const SQLITE: &[Migration] = &[
     },
     Migration {
         version: 72,
+        name: "tracker_writes",
+        sql: include_str!("../../migrations/sqlite/0072_tracker_writes.sql"),
+        additive: true,
+    },
+    Migration {
+        version: 73,
         name: "board_lanes",
-        sql: include_str!("../../migrations/sqlite/0072_board_lanes.sql"),
+        sql: include_str!("../../migrations/sqlite/0073_board_lanes.sql"),
         additive: false,
     },
 ];
@@ -962,8 +968,14 @@ const POSTGRES: &[Migration] = &[
     },
     Migration {
         version: 72,
+        name: "tracker_writes",
+        sql: include_str!("../../migrations/postgres/0072_tracker_writes.sql"),
+        additive: true,
+    },
+    Migration {
+        version: 73,
         name: "board_lanes",
-        sql: include_str!("../../migrations/postgres/0072_board_lanes.sql"),
+        sql: include_str!("../../migrations/postgres/0073_board_lanes.sql"),
         additive: false,
     },
 ];

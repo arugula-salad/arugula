@@ -1229,6 +1229,14 @@
       ],
       "type": "object"
     },
+    "TrackerClose": {
+      "description": "How a tracker item is closed.",
+      "enum": [
+        "completed",
+        "cancelled"
+      ],
+      "type": "string"
+    },
     "TrackerConnection": {
       "description": "A tracker project connected to a project, or disconnected and waiting\nfor the purge. Never the key or the webhook secret.",
       "properties": {
@@ -1304,6 +1312,12 @@
             "null"
           ]
         },
+        "waiting_writes": {
+          "description": "Agents' writes waiting for a person to approve.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
         "workspace_slug": {
           "type": "string"
         }
@@ -1318,7 +1332,8 @@
         "agent_writes",
         "has_webhook_secret",
         "created_at",
-        "items"
+        "items",
+        "waiting_writes"
       ],
       "type": "object"
     },
@@ -1341,6 +1356,114 @@
       ],
       "type": "object"
     },
+    "TrackerPendingWrite": {
+      "description": "A write waiting for a person, as the Triage page shows it.",
+      "properties": {
+        "connection": {
+          "type": "string"
+        },
+        "created_at": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "error": {
+          "description": "Why it failed, in a sentence.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "id": {
+          "description": "`tw_` and hex.",
+          "type": "string"
+        },
+        "machine": {
+          "type": "string"
+        },
+        "machine_name": {
+          "type": "string"
+        },
+        "person": {
+          "description": "Whose agent, and on which machine.",
+          "type": "string"
+        },
+        "state": {
+          "description": "`waiting`, `sent`, `dropped` or `failed`.",
+          "type": "string"
+        },
+        "target": {
+          "description": "`IDENT-N` of the item it targets, or none for a new item.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "write": {
+          "$ref": "#/$defs/TrackerWrite",
+          "description": "The write, as it will be sent (without the footer)."
+        }
+      },
+      "required": [
+        "id",
+        "connection",
+        "state",
+        "write",
+        "person",
+        "machine",
+        "machine_name",
+        "created_at"
+      ],
+      "type": "object"
+    },
+    "TrackerPendingWrites": {
+      "properties": {
+        "project": {
+          "type": "string"
+        },
+        "writes": {
+          "items": {
+            "$ref": "#/$defs/TrackerPendingWrite"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "project",
+        "writes"
+      ],
+      "type": "object"
+    },
+    "TrackerReach": {
+      "description": "The projects a machine holds `trackers.write` over, as its owner reads\nthem now.",
+      "properties": {
+        "projects": {
+          "items": {
+            "$ref": "#/$defs/TrackerReachProject"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "projects"
+      ],
+      "type": "object"
+    },
+    "TrackerReachProject": {
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "name"
+      ],
+      "type": "object"
+    },
     "TrackerSettings": {
       "description": "`PATCH /api/projects/{project}/trackers/{connection}`: whether agents'\nwrites to the tracker wait for a person (`approve`) or go (`allow`);\nthe answer is its [`TrackerConnection`].",
       "properties": {
@@ -1350,6 +1473,173 @@
       },
       "required": [
         "agent_writes"
+      ],
+      "type": "object"
+    },
+    "TrackerWrite": {
+      "description": "A write to a tracker's work item, the same for people and agents. `item`\nis the mirror's `fi_` id, or `IDENT-N` (the connection's identifier and\nthe item's number). Assignees are not here: a tracker's members aren't\nArugula's people.",
+      "oneOf": [
+        {
+          "description": "A new item. `connection` is needed on an agent's route and, on a\nperson's, is the path's. `state` is a state group (`backlog`,\n`unstarted`, `started`).",
+          "properties": {
+            "body": {
+              "default": null,
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "connection": {
+              "default": null,
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "kind": {
+              "const": "create",
+              "type": "string"
+            },
+            "state": {
+              "default": null,
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "title": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "title"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "item": {
+              "type": "string"
+            },
+            "kind": {
+              "const": "comment",
+              "type": "string"
+            },
+            "text": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "item",
+            "text"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "as": {
+              "$ref": "#/$defs/TrackerClose"
+            },
+            "item": {
+              "type": "string"
+            },
+            "kind": {
+              "const": "close",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "item",
+            "as"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "item": {
+              "type": "string"
+            },
+            "kind": {
+              "const": "reopen",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "item"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "body": {
+              "default": null,
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "item": {
+              "type": "string"
+            },
+            "kind": {
+              "const": "edit",
+              "type": "string"
+            },
+            "title": {
+              "default": null,
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "kind",
+            "item"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "TrackerWriteDone": {
+      "description": "What a write came to: it landed (`sent`, with the item's `fi_` id), or\nit waits for a person (`waiting`, with its `tw_` id).",
+      "properties": {
+        "item": {
+          "description": "The mirror row the write reached or made (`fi_` and hex), and its\n`IDENT-N`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "reference": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "state": {
+          "description": "`sent` or `waiting`.",
+          "type": "string"
+        },
+        "text": {
+          "description": "A sentence for whoever asked.",
+          "type": "string"
+        },
+        "write": {
+          "description": "The waiting write's id (`tw_` and hex).",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "state",
+        "text"
       ],
       "type": "object"
     },

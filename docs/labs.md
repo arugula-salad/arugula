@@ -516,6 +516,18 @@ grace period, as unlinking a repo does
 ([aru-124](decisions/aru-124-plane-is-a-source-of-a-project-s-issues.md);
 `crates/platform/src/trackers/`).
 
+People and agents write back: create an item, comment, close (completed or
+cancelled), reopen, and edit its title or body. An owner's or editor's own
+write lands at once; *New issue in Plane…* in a zone's menu makes one there.
+An agent's needs `trackers.write` over the project (its `tracker_write` tool)
+and never goes past what its owner may do by hand. Under *Approve each write*
+it waits at the top of the project's Triage, where a person approves, edits or
+drops it; under *Allow all writes* it lands at once. Each body and comment ends
+with a line saying who it was for ("via Arugula, by ‹person›'s agent on
+‹machine›"), added as it's sent, so an edit can't take it off. Bodies and
+comments go to Plane as escaped HTML; titles as plain text
+(`crates/platform/src/trackers/writes.rs`).
+
 ## Chant workspaces
 
 A workspace block shows a chant workspace beside your terminals: the gates

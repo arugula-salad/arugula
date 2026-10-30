@@ -997,6 +997,16 @@ note = "It stops naming the account as who connected it. A connection of a proje
 seen_by = ["litestream"]
 
 [[table]]
+name = "tracker_writes"
+plane = "platform"
+process = "platform"
+holds = "plaintext"
+what = "An agent's write to a connected Plane project that waits for a person: its connection, its kind (create, comment, close, reopen, edit), the request as JSON without the footer, the machine whose agent asked and the person it acts for, its state (waiting, sent, dropped, failed), the error sentence if it failed, the mirror row it reached and when it was asked and decided. Never a key."
+why_asleep = "A write waits on a person, not on a machine: the agent's machine may be asleep when it is approved."
+with_account = "deleted"
+seen_by = ["litestream"]
+
+[[table]]
 name = "forge_items"
 plane = "platform"
 process = "platform"

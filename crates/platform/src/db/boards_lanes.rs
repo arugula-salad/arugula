@@ -1,4 +1,4 @@
-//! The one-time move of boards to lanes (aru-125, `0072_board_lanes`): run
+//! The one-time move of boards to lanes (aru-125, `0073_board_lanes`): run
 //! on start, per board that still has zones, and a no-op once none has.
 //!
 //! A board made before lanes is an ordered list of zones of rows. A board

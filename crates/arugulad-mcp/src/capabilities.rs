@@ -11,7 +11,7 @@ use arugula_proto::{api::AgentCan, flags::On};
 
 use super::tools::{self, ToolCall};
 use crate::mcp::{
-    results::{BoardsReach, CloudReach, ForgeSignIn, RunsReach, ThreadsReach},
+    results::{BoardsReach, CloudReach, ForgeSignIn, RunsReach, ThreadsReach, TrackersReach},
     tools::{Needs, Out, done},
 };
 use crate::results::{Capabilities, ControlJoined, HooksLive, ToolState, ToolStatus};
@@ -36,9 +36,9 @@ impl ToolCall<'_, '_> {
                 false => None,
             }
         };
-        let ((cloud, threads, runs), boards) = tokio::join!(crate::mcp::registry::reach(app), boards);
+        let ((cloud, threads, runs, trackers), boards) = tokio::join!(crate::mcp::registry::reach(app), boards);
         let tool_status = self.tool_status(&offered, &threads, &runs, boards.as_ref());
-        let control = control(app, cloud, threads, runs);
+        let control = control(app, cloud, threads, runs, trackers);
         let tools = tools::list(self.scope(), on).into_iter().map(|t| t.name.to_string()).collect();
         let signed: Vec<&str> = forges.iter().filter(|f| f.signed_in).map(|f| f.forge.as_str()).collect();
         let summary = format!(
@@ -245,7 +245,7 @@ async fn forges(app: &App, on: On) -> Vec<ForgeSignIn> {
 /// grants there.
 pub(crate) async fn can_do(app: &App) -> Vec<AgentCan> {
     let on = crate::lab_flags::flags(app.control.state_dir());
-    let (forges, (cloud, threads, runs)) = tokio::join!(forges(app, on), crate::mcp::registry::reach(app));
+    let (forges, (cloud, threads, runs, _)) = tokio::join!(forges(app, on), crate::mcp::registry::reach(app));
     let signed = forges.iter().any(|f| f.signed_in);
     let joined = app.control.enrolled().is_some();
     let issues = threads.scopes.iter().any(|s| s.powers.iter().any(|p| p == "issues.write"));
@@ -263,7 +263,13 @@ pub(crate) async fn can_do(app: &App) -> Vec<AgentCan> {
 /// This machine's standing with control, the teams it holds rosters of,
 /// and whether its agents reach the owner's Cloud workspaces (#1094),
 /// conversations (M198) and runs (M216).
-fn control(app: &App, cloud: CloudReach, threads: ThreadsReach, runs: RunsReach) -> ControlJoined {
+fn control(
+    app: &App,
+    cloud: CloudReach,
+    threads: ThreadsReach,
+    runs: RunsReach,
+    trackers: TrackersReach,
+) -> ControlJoined {
     let st = app.control.state();
     let teams = app
         .control
@@ -287,6 +293,7 @@ fn control(app: &App, cloud: CloudReach, threads: ThreadsReach, runs: RunsReach)
         cloud,
         threads,
         runs,
+        trackers,
     }
 }
 

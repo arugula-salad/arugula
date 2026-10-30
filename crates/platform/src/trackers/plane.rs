@@ -1,5 +1,5 @@
 //! Plane's REST API (v1), `https://developers.plane.so/api-reference`, with
-//! the person's API key in `X-API-Key`. Reads only (#356): what's used is
+//! the person's API key in `X-API-Key`. What's used is
 //!
 //! - `GET /api/v1/workspaces/{slug}/projects/` (paged, `results`, `id`,
 //!   `identifier`, `name`), read through to find the project by id or
@@ -11,13 +11,25 @@
 //!   `parent`, `created_at`, `updated_at`;
 //! - `GET …/work-items/{item}/` with the same `expand`.
 //!
-//! The writes are #359's. An answer's body is never put in an error: Plane
-//! may echo what it was sent, and what it was sent is the key.
+//! The writes (#359), each followed by a read of the item, since Plane's
+//! answer to a write doesn't expand the state:
+//!
+//! - `POST …/work-items/` (`name`, `description_html`, `state`, `parent`,
+//!   `type`);
+//! - `POST …/work-items/{item}/comments/` (`comment_html`);
+//! - `PATCH …/work-items/{item}/` (`name`, `description_html`, `state`);
+//! - `GET /api/v1/workspaces/{slug}/projects/{project}/states/` (paged,
+//!   `results`, each `id`, `group`, `sequence`), to turn a state group into
+//!   the first state in it.
+//!
+//! Bodies and comments are HTML, already escaped by the caller; a title is
+//! plain text. An answer's body is never put in an error: Plane may echo
+//! what it was sent, and what it was sent is the key.
 
 use std::time::Duration;
 
 use reqwest::header::{HeaderMap, HeaderValue};
-use serde_json::Value;
+use serde_json::{Value, json};
 
 use super::{BoxFuture, Edit, Item, NewItem, Page, ProjectInfo, Result, TrackerError, TrackerProvider};
 
@@ -25,6 +37,8 @@ use super::{BoxFuture, Edit, Item, NewItem, Page, ProjectInfo, Result, TrackerEr
 const PER_PAGE: u32 = 100;
 /// Most pages read looking for a project.
 const PROJECT_PAGES: usize = 20;
+/// Most pages of states read looking for a group's.
+const STATE_PAGES: usize = 5;
 /// How long Plane has to answer one request.
 const TIMEOUT: Duration = Duration::from_secs(30);
 
@@ -79,23 +93,85 @@ impl Plane {
     }
 
     async fn get(&self, path: &str, query: &[(&str, String)]) -> Result<Value> {
+        self.send(reqwest::Method::GET, path, query, None).await
+    }
+
+    async fn send(
+        &self,
+        method: reqwest::Method,
+        path: &str,
+        query: &[(&str, String)],
+        body: Option<Value>,
+    ) -> Result<Value> {
         let mut headers = HeaderMap::new();
         headers.insert("x-api-key", self.key.clone());
         let mut url = url::Url::parse(&format!("{}{path}", self.base))
             .map_err(|_| TrackerError::Unavailable("the tracker's address isn't one".into()))?;
         url.query_pairs_mut().extend_pairs(query.iter().map(|(k, v)| (*k, v.as_str())));
-        let r = self.http.get(url).headers(headers).timeout(TIMEOUT).send().await.map_err(|e| {
+        let mut req = self.http.request(method, url).headers(headers).timeout(TIMEOUT);
+        if let Some(b) = &body {
+            req = req.json(b);
+        }
+        let r = req.send().await.map_err(|e| {
             let why = if e.is_timeout() { "it didn't answer in time" } else { "the connection failed" };
             TrackerError::Unavailable(why.into())
         })?;
         match r.status().as_u16() {
-            200 => {
+            200 | 201 => {
                 r.json().await.map_err(|_| TrackerError::Unavailable("it answered with something unexpected".into()))
             }
             401 | 403 => Err(TrackerError::Unauthorized),
             404 => Err(TrackerError::NotFound),
             s => Err(TrackerError::Unavailable(format!("it answered {s}"))),
         }
+    }
+
+    /// The work item `id`, state expanded.
+    async fn read(&self, workspace: &str, project_id: &str, id: &str) -> Result<Item> {
+        let path = format!(
+            "/api/v1/workspaces/{}/projects/{}/work-items/{}/",
+            segment(workspace)?,
+            segment(project_id)?,
+            segment(id)?
+        );
+        item(&self.get(&path, &[("expand", "state,type".into())]).await?)
+    }
+
+    /// Change a work item, then read it.
+    async fn patch(&self, workspace: &str, project_id: &str, id: &str, body: Value) -> Result<Item> {
+        let path = format!(
+            "/api/v1/workspaces/{}/projects/{}/work-items/{}/",
+            segment(workspace)?,
+            segment(project_id)?,
+            segment(id)?
+        );
+        self.send(reqwest::Method::PATCH, &path, &[], Some(body)).await?;
+        self.read(workspace, project_id, id).await
+    }
+
+    /// The id of the first state of `group` in the project (the lowest
+    /// `sequence`).
+    async fn state_in(&self, workspace: &str, project_id: &str, group: &str) -> Result<String> {
+        let path = format!("/api/v1/workspaces/{}/projects/{}/states/", segment(workspace)?, segment(project_id)?);
+        let mut cursor: Option<String> = None;
+        let mut best: Option<(f64, String)> = None;
+        for _ in 0..STATE_PAGES {
+            let mut q = vec![("per_page", PER_PAGE.to_string())];
+            q.extend(cursor.take().map(|c| ("cursor", c)));
+            let v = self.get(&path, &q).await?;
+            for s in v["results"].as_array().into_iter().flatten() {
+                let (Some(id), Some(g)) = (s["id"].as_str(), s["group"].as_str()) else { continue };
+                let seq = s["sequence"].as_f64().unwrap_or(f64::MAX);
+                if g == group && best.as_ref().is_none_or(|(b, _)| seq < *b) {
+                    best = Some((seq, id.to_owned()));
+                }
+            }
+            cursor = next(&v);
+            if cursor.is_none() {
+                break;
+            }
+        }
+        best.map(|(_, id)| id).ok_or_else(|| TrackerError::Unavailable(format!("the project has no {group} state")))
     }
 }
 
@@ -162,31 +238,79 @@ impl TrackerProvider for Plane {
     }
 
     fn get<'a>(&'a self, workspace: &'a str, project_id: &'a str, id: &'a str) -> BoxFuture<'a, Result<Item>> {
+        Box::pin(self.read(workspace, project_id, id))
+    }
+
+    fn create<'a>(&'a self, workspace: &'a str, project_id: &'a str, new: &'a NewItem) -> BoxFuture<'a, Result<Item>> {
+        Box::pin(async move {
+            let path =
+                format!("/api/v1/workspaces/{}/projects/{}/work-items/", segment(workspace)?, segment(project_id)?);
+            let mut body = json!({ "name": new.title });
+            if let Some(h) = &new.body {
+                body["description_html"] = json!(h);
+            }
+            if let Some(g) = &new.state_group {
+                body["state"] = json!(self.state_in(workspace, project_id, g).await?);
+            }
+            if let Some(p) = &new.parent_id {
+                body["parent"] = json!(segment(p)?);
+            }
+            let made = self.send(reqwest::Method::POST, &path, &[], Some(body)).await?;
+            let id = made["id"]
+                .as_str()
+                .ok_or_else(|| TrackerError::Unavailable("it answered with something unexpected".into()))?;
+            self.read(workspace, project_id, id).await
+        })
+    }
+
+    fn comment<'a>(
+        &'a self,
+        workspace: &'a str,
+        project_id: &'a str,
+        id: &'a str,
+        html: &'a str,
+    ) -> BoxFuture<'a, Result<()>> {
         Box::pin(async move {
             let path = format!(
-                "/api/v1/workspaces/{}/projects/{}/work-items/{}/",
+                "/api/v1/workspaces/{}/projects/{}/work-items/{}/comments/",
                 segment(workspace)?,
                 segment(project_id)?,
                 segment(id)?
             );
-            item(&self.get(&path, &[("expand", "state,type".into())]).await?)
+            self.send(reqwest::Method::POST, &path, &[], Some(json!({ "comment_html": html }))).await.map(|_| ())
         })
     }
 
-    fn create<'a>(&'a self, _: &'a str, _: &'a str, _: &'a NewItem) -> BoxFuture<'a, Result<Item>> {
-        Box::pin(async { Err(TrackerError::NotYet("creating a Plane work item")) })
+    fn set_state<'a>(
+        &'a self,
+        workspace: &'a str,
+        project_id: &'a str,
+        id: &'a str,
+        group: &'a str,
+    ) -> BoxFuture<'a, Result<Item>> {
+        Box::pin(async move {
+            let state = self.state_in(workspace, project_id, group).await?;
+            self.patch(workspace, project_id, id, json!({ "state": state })).await
+        })
     }
 
-    fn comment<'a>(&'a self, _: &'a str, _: &'a str, _: &'a str, _: &'a str) -> BoxFuture<'a, Result<()>> {
-        Box::pin(async { Err(TrackerError::NotYet("commenting on a Plane work item")) })
-    }
-
-    fn set_state<'a>(&'a self, _: &'a str, _: &'a str, _: &'a str, _: &'a str) -> BoxFuture<'a, Result<Item>> {
-        Box::pin(async { Err(TrackerError::NotYet("changing a Plane work item's state")) })
-    }
-
-    fn edit<'a>(&'a self, _: &'a str, _: &'a str, _: &'a str, _: &'a Edit) -> BoxFuture<'a, Result<Item>> {
-        Box::pin(async { Err(TrackerError::NotYet("editing a Plane work item")) })
+    fn edit<'a>(
+        &'a self,
+        workspace: &'a str,
+        project_id: &'a str,
+        id: &'a str,
+        edit: &'a Edit,
+    ) -> BoxFuture<'a, Result<Item>> {
+        Box::pin(async move {
+            let mut body = json!({});
+            if let Some(t) = &edit.title {
+                body["name"] = json!(t);
+            }
+            if let Some(h) = &edit.body {
+                body["description_html"] = json!(h);
+            }
+            self.patch(workspace, project_id, id, body).await
+        })
     }
 
     fn children<'a>(&'a self, _: &'a str, _: &'a str, _: &'a str) -> BoxFuture<'a, Result<Vec<Item>>> {

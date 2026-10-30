@@ -1,7 +1,7 @@
 //! Boards (boards, step 1; aru-125): a project's boards, each an ordered
 //! list of rows, a row being one piece of work. Who may do what is decided
 //! by the routes (`crate::boards`); this is storage. The tables, with notes
-//! on their columns, are made by `0058_boards` and `0072_board_lanes`.
+//! on their columns, are made by `0058_boards` and `0073_board_lanes`.
 //!
 //! - Every change to a board takes its row first (`FOR UPDATE` on
 //!   Postgres, the write lock on SQLite), so a board's changes run one at a

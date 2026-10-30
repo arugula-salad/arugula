@@ -35,6 +35,7 @@ const POWERS: Record<string, string> = {
   "runs.command": "Start commands and instructions as runs",
   "boards.read": "Read boards",
   "boards.write": "Make and change boards",
+  "trackers.write": "Write to your connected Plane projects",
   "sessions.start": "Start agent sessions as you",
   "sessions.reply": "Answer and prompt agent sessions",
 };
