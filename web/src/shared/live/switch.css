@@ -1,0 +1,39 @@
+/* Live presence's header control (switch.tsx), beside the bell, in its shape. */
+.ws-live {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 28px;
+  border-radius: var(--btn-radius);
+  color: var(--dim);
+}
+
+.ws-live:hover,
+.ws-live.on {
+  color: var(--fg);
+  background: var(--raised);
+}
+
+.ws-live-off {
+  opacity: 0.6;
+}
+
+.ws-live-watching {
+  color: var(--fg);
+}
+
+.ws-live-live {
+  color: var(--accent);
+}
+
+.ws-live-dot {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--danger, #e5484d);
+  box-shadow: 0 0 0 2px var(--bg);
+}

@@ -25,6 +25,8 @@ pub struct Seen {
     pub seen: u64,
     pub active: u64,
     pub mode: String,
+    /// Live presence (#341): `off` or `watching`.
+    pub live: String,
 }
 
 impl Db {
@@ -69,6 +71,16 @@ impl Db {
         Ok(())
     }
 
+    /// `account`'s live presence choice (#341): `off` or `watching`.
+    pub fn set_chat_live(&self, account: &str, live: &str) -> Result<()> {
+        self.c().execute(
+            "INSERT INTO chat_presence (account, live) VALUES (?1, ?2)
+             ON CONFLICT (account) DO UPDATE SET live = excluded.live",
+            params![account, live],
+        )?;
+        Ok(())
+    }
+
     /// What presence kept of these accounts (those never heard from are
     /// left out).
     pub fn chat_seen(&self, accounts: &[String]) -> Result<HashMap<String, Seen>> {
@@ -77,9 +89,11 @@ impl Db {
         }
         let c = self.c();
         let rows = c.query_map(
-            &format!("SELECT account, seen, active, mode FROM chat_presence WHERE {}", in_json(&c, "account", 1)),
+            &format!("SELECT account, seen, active, mode, live FROM chat_presence WHERE {}", in_json(&c, "account", 1)),
             params![json_list(accounts)?],
-            |r| Ok((r.get::<String>(0)?, Seen { seen: r.get(1)?, active: r.get(2)?, mode: r.get(3)? })),
+            |r| {
+                Ok((r.get::<String>(0)?, Seen { seen: r.get(1)?, active: r.get(2)?, mode: r.get(3)?, live: r.get(4)? }))
+            },
         )?;
         Ok(rows.into_iter().collect())
     }
