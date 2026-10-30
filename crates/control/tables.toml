@@ -82,7 +82,7 @@ sees = "Stripe bills, when control has a key for it: it holds the customers and 
 
 [parties.arugula_stream]
 name = "arugula.stream"
-sees = "When control has an arugula.stream app (People blocks), arugula.stream's relay gets, for each person with a People block open, their account id, the name their team's roster gives them, and the team's id (the room is `team:<id>`), and for as long as they're there, who else is. With their camera on, their avatar's movements or their outline go through it to the others in the room (lines and numbers made in the browser, never a picture); voice, and video in voice or a call, go through LiveKit Cloud, arugula.stream's media service. Control keeps nothing of it. Off when control has no app."
+sees = "When control has an arugula.stream app (People blocks, live presence), arugula.stream's relay gets, for each person with a People block open, their account id, the name their team's roster gives them, and the team's id (the room is `team:<id>`), and for as long as they're there, who else is. With live presence (the `live-presence` Labs flag) on Watching or Live, it gets the same for every one of their teams for as long as any of their pages is open, with no People block open. With their camera on (a People block's, or live presence's Live), their avatar's movements or their outline go through it to the others in the room (lines and numbers made in the browser, never a picture); voice, and video in voice or a call, go through LiveKit Cloud, arugula.stream's media service. Control keeps nothing of it. Off when control has no app."
 
 # ---- the machine plane: accounts, devices, the directory, teams
 
