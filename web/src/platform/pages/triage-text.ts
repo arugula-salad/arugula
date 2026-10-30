@@ -14,17 +14,19 @@ export function issuesPlace(boards: readonly unknown[] | null | "off"): "issues"
   return boards === null || boards === "off" ? "issues" : "triage";
 }
 
-/** `OWNER/NAME#N` of a mirrored issue, `#N` of a native one. */
-export function sourceLabel(i: Pick<BoardWorkItem, "repo" | "number">): string {
+/** `OWNER/NAME#N` of a mirrored issue, `ARUGU-12` of a tracker's, `#N` of a native one. */
+export function sourceLabel(i: Pick<BoardWorkItem, "repo" | "identifier" | "number">): string {
   if (i.number == null) return "";
+  if (i.identifier) return `${i.identifier}-${i.number}`;
   return i.repo ? `${i.repo}#${i.number}` : `#${i.number}`;
 }
 
 /** Where an item's label goes: a native issue to its page on the platform
  * (`issuePath`), a GitHub one to github.com. Undefined when it can't say. */
-export function itemHref(i: Pick<BoardWorkItem, "pointer" | "source" | "repo" | "number">, issuePath: (id: string) => string): string | undefined {
+export function itemHref(i: Pick<BoardWorkItem, "pointer" | "source" | "repo" | "number" | "url">, issuePath: (id: string) => string): string | undefined {
   if (i.source === "native" && i.pointer.kind === "issue") return issuePath(i.pointer.id);
   if (i.source === "github" && i.repo && i.number != null && /^[\w.-]+\/[\w.-]+$/.test(i.repo)) return `https://github.com/${i.repo}/issues/${i.number}`;
+  if (i.source === "plane" && i.url && /^https:\/\//.test(i.url)) return i.url;
   return undefined;
 }
 

@@ -230,7 +230,23 @@ title: string,
  * Who an issue or PR is assigned to: a mirrored item's logins, a native
  * issue's names. A run has none.
  */
-assignees?: Array<string>, };
+assignees?: Array<string>, 
+/**
+ * `plane` for a tracker's item; absent for GitHub, native issues and runs.
+ */
+provider?: string | null, 
+/**
+ * A tracker item's project key (`ARUGU`: the card reads `ARUGU-12`).
+ */
+identifier?: string | null, 
+/**
+ * A tracker item's own state (`In Progress`).
+ */
+state_name?: string | null, 
+/**
+ * Where a tracker item is, in the tracker.
+ */
+url?: string | null, };
 
 /**
  * What a row's `fi_`, `iss_` or `run_` pointer is now, from data control
@@ -322,7 +338,7 @@ export type BoardWorkItem = {
  */
 pointer: BoardPointer, 
 /**
- * `native`, `github` or `run`.
+ * `native`, `github`, `plane` or `run`.
  */
 source: string, 
 /**
@@ -330,13 +346,21 @@ source: string,
  */
 kind: string, 
 /**
- * `OWNER/NAME` of a mirrored item.
+ * `OWNER/NAME` of a mirrored item; a tracker project's name.
  */
 repo?: string | null, 
+/**
+ * A tracker item's project key (`ARUGU`).
+ */
+identifier?: string | null, 
 /**
  * A run has none.
  */
 number?: number | null, 
+/**
+ * Where a tracker item is, in the tracker.
+ */
+url?: string | null, 
 /**
  * A run's: how it started (`manual run`).
  */

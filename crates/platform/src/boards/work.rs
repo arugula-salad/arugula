@@ -6,6 +6,8 @@
 //!
 //! **Per viewer:** a mirrored item shows only from a linked repo the reader
 //! may read now ([`viewer::check`], as the project's items list does).
+//! A connected Plane project's items (`source: "plane"`) are read the same
+//! way, by any member ([`viewer::check_connections`]).
 //! **Untriaged** is per project: an open issue that no row of any board of
 //! this project points at; another project's board doesn't triage it.
 
@@ -26,12 +28,14 @@ use crate::{
         forge::ItemFilter,
         issues::{Actor, Filter},
         runs::{Run, RunFilter},
+        trackers::TrackerFilter,
     },
     forge::{
         items::names,
         viewer::{self, Viewer},
     },
     issues::{ISSUE_SEARCHES, words},
+    trackers,
 };
 
 const DEFAULT: u32 = 30;
@@ -55,6 +59,8 @@ fn run_item(r: &Run) -> wire::WorkItem {
         source: "run".to_owned(),
         kind: "run".to_owned(),
         repo: None,
+        identifier: None,
+        url: None,
         number: None,
         title: format!("{} run", r.trigger.as_str()),
         state: r.state.as_str().to_owned(),
@@ -111,6 +117,8 @@ pub async fn list(
                 source: "native".to_owned(),
                 kind: "issue".to_owned(),
                 repo: None,
+                identifier: None,
+                url: None,
                 number: Some(i.number),
                 title: i.title,
                 state: i.state.as_str().to_owned(),
@@ -144,10 +152,38 @@ pub async fn list(
                 source: "github".to_owned(),
                 kind: i.kind,
                 repo,
+                identifier: None,
+                url: None,
                 number: Some(i.number),
                 title: i.title,
                 state: i.state,
                 assignees: names(&i.assignees),
+                updated_at: i.updated_at,
+            });
+        }
+    }
+
+    if issues {
+        // A connection's open items, by the same rule: any member of the project reads them.
+        let viewer = Viewer::of(app, account).await?;
+        let conns = viewer::check_connections(app, &viewer, &app.db.tracker_connections(&project)?).await?;
+        let f = TrackerFilter { open: q.untriaged, text, limit: read };
+        for i in app.db.tracker_items(&conns, &f)? {
+            if on_boards.contains(&i.id) {
+                continue;
+            }
+            let Some(c) = conns.get(i.mirror_id) else { continue };
+            out.push(wire::WorkItem {
+                pointer: wire::Pointer::ForgeItem { id: i.id },
+                source: "plane".to_owned(),
+                kind: "issue".to_owned(),
+                repo: Some(c.name.clone()),
+                identifier: Some(c.identifier.clone()),
+                url: Some(trackers::item_url(&c.workspace_slug, &c.identifier, i.number)),
+                number: Some(i.number),
+                title: i.title,
+                state: i.state,
+                assignees: vec![],
                 updated_at: i.updated_at,
             });
         }

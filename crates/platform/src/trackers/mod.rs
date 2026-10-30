@@ -24,6 +24,8 @@
 
 use std::{future::Future, pin::Pin, sync::Arc};
 
+#[cfg(test)]
+mod boards_tests;
 pub mod connect;
 #[cfg(any(test, feature = "testing"))]
 pub mod connect_tests;
@@ -202,3 +204,11 @@ impl Trackers for Live {
 
 /// Plane's own API.
 pub const PLANE_BASE: &str = "https://api.plane.so";
+
+/// Plane's web app, where an item's link goes.
+pub const PLANE_APP: &str = "https://app.plane.so";
+
+/// An item's link in Plane's web app.
+pub fn item_url(workspace: &str, identifier: &str, sequence: u64) -> String {
+    format!("{PLANE_APP}/{workspace}/browse/{identifier}-{sequence}/")
+}

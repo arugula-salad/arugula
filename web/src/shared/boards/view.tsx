@@ -25,7 +25,7 @@ import { agentShort } from "../agent-label";
 import { day } from "../time";
 import { BoardError, STALE_REV, boards } from "./store";
 import "./boards.css";
-import { BLOCK_LABEL, GLYPH, LIVE_LABEL, PICK_DELAY_MS, PICK_LIMIT, STATUSES, STATUS_LABEL, assigneesLine, blockClass, GOAL_MAX, blockFacts, debounced, epicLine, isCard, liveClass, pointerHref, pointerLabel, pointerText, pointerToSend, progress, proven, stepActive, stepBefore, workLabel } from "./text";
+import { BLOCK_LABEL, GLYPH, PICK_DELAY_MS, PICK_LIMIT, STATUSES, STATUS_LABEL, assigneesLine, blockClass, GOAL_MAX, blockFacts, debounced, epicLine, isCard, liveClass, liveWord, pointerHref, pointerLabel, pointerText, pointerToSend, progress, proven, stepActive, stepBefore, workLabel } from "./text";
 
 const STALE_SAID = "That changed while you were editing, so the board is read again. Make your change again if it still applies.";
 
@@ -431,7 +431,7 @@ function Row({
             {label && (href ? <a class="board-ptr" href={href} target={r.pointer.kind === "forge_item" || r.pointer.kind === "link" ? "_blank" : undefined} rel="noopener noreferrer" data-board-ptr>{label}</a> : <span class="board-ptr" data-board-ptr>{label}</span>)}
             {r.live && (
               <span class={`ws-tag board-live ${liveClass(r.live.state)}`} data-board-live={r.live.state}>
-                {LIVE_LABEL[r.live.state]}
+                {liveWord(r.live)}
               </span>
             )}
             {card && who && (
