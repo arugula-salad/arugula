@@ -2,7 +2,7 @@
 // `node --experimental-strip-types`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { openOutside } from "../src/shared/desktop.ts";
+import { openOutside, openOutsideAsync } from "../src/shared/desktop.ts";
 
 const URL_ = "https://control.test/#account";
 
@@ -37,4 +37,26 @@ test("in a plain browser it does nothing, for the caller's window.open", async (
   assert.equal(openOutside(URL_), false);
   await settle();
   assert.deepEqual(opened, []);
+});
+
+test("openOutsideAsync says whether the app took it, and never opens the page's own window (#381)", async () => {
+  const calls = [];
+  const opened = page({ app: true, invoke: async (...a) => calls.push(a) });
+  assert.equal(await openOutsideAsync(URL_), true);
+  assert.deepEqual(calls, [["open_outside", { url: URL_ }]]);
+
+  page({ app: true, invoke: async () => Promise.reject("command open_outside not found") });
+  const old = globalThis.window.open;
+  const fell = [];
+  globalThis.window.open = (...a) => fell.push(a);
+  assert.equal(await openOutsideAsync(URL_), false);
+  assert.deepEqual(fell, []);
+  globalThis.window.open = old;
+
+  assert.deepEqual(opened, []);
+  page({ app: false, invoke: null });
+  assert.equal(await openOutsideAsync(URL_), false);
+  // An app page without the bridge is not the app's command either.
+  page({ app: true, invoke: null });
+  assert.equal(await openOutsideAsync(URL_), false);
 });
