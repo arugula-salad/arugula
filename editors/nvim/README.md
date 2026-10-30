@@ -18,6 +18,8 @@ When Claude Code runs in an Arugula pane in the same session (the same tab first
 
 An nvim editor block (Add a pane > Editor > nvim, or Open in editor with nothing open when your Editor preference is nvim) is a pane running nvim with this plugin loaded from the daemon's own copy, ahead of any other, even if you never installed it; your config still loads. The block also takes the page's colors: the plugin applies them as the colorscheme `arugula` and again whenever the page's palette changes. `vim.g.arugula = { theme = false }` keeps your colorscheme instead, and picking another with `:colorscheme` keeps that one for the rest of that nvim.
 
+If you have no nvim config at all (no `init.lua` or `init.vim` in `stdpath("config")`, no `$VIMINIT`, no `-u`), the block also applies a few starter settings: mouse, system clipboard, line numbers, smart-case search, persistent undo, sensible splits, a netrw file tree on `<leader>e` (space), and Esc to clear search highlight. Built-in options only, and it says so once when nvim starts. Creating any `init.lua` turns them off; `:help arugula-starter` lists them all.
+
 - `:ArugulaJoin` shows the current folder in the swarm and remembers it: nvim joins by itself next time it starts there.
 - `:ArugulaLeave` takes it out at once, and forgets it. In a pane, the pane stays, read without the plugin.
 - `:ArugulaStatus` says whether it's in, and how many follow it. `require("arugula").status()` is the same for a statusline.

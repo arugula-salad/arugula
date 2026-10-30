@@ -6,6 +6,7 @@ CONTENTS                                                      *arugula*
   1. Joining the swarm .................... |arugula-join|
   2. Claude Code's proposed edits ......... |arugula-diff|
   3. Options .............................. |arugula-options|
+  4. Starter settings ..................... |arugula-starter|
 
 arugula.nvim connects nvim to the Arugula daemon on this machine
 ($ARUGULA_SOCK, else ~/.local/state/arugula/sock). Core nvim 0.10 or later,
@@ -70,4 +71,32 @@ Set `vim.g.arugula` before the plugin loads, or call setup() yourself: >lua
       },
     })
 <
+==============================================================================
+4. Starter settings                                           *arugula-starter*
+
+An nvim editor block with no nvim config of its own gets a small set of
+settings instead of bare defaults. They use built-in options and netrw only,
+and are set before your config would load. Each nvim start says so once.
+
+There is no config when stdpath("config") has neither init.lua nor init.vim, $VIMINIT is unset, and nvim wasn't started with
+-u or --clean. Creating any init.lua turns the starter settings off for good
+(an empty one will do); nothing else changes. Outside an editor block they
+are never applied. The colors of the block are not touched.
+
+  leader        <Space>
+  mouse         "a": click, drag and scroll with the mouse
+  clipboard     "unnamedplus": yank and paste use the system clipboard
+                (when nvim has a clipboard provider)
+  number        line numbers
+  signcolumn    "yes": always shown, so the text doesn't shift
+  ignorecase    search ignores case ...
+  smartcase     ... until the pattern has a capital
+  undofile      undo history is kept across sessions
+  splitright    |:vsplit| opens on the right
+  splitbelow    |:split| opens below
+  scrolloff     5 lines of context around the cursor
+  netrw         file tree: g:netrw_banner = 0, g:netrw_liststyle = 3
+  <leader>e     toggle the file tree (|:Lexplore|)
+  <Esc>         clear search highlight (|:nohlsearch|)
+
  vim:tw=78:ts=8:ft=help:norl:
