@@ -1895,6 +1895,38 @@ note = "A linked repo's settings (M166): content mirroring on (a member who main
 
 [[route]]
 method = "GET"
+path = "/api/projects/{project}/trackers"  # wire::projects::PROJECT_TRACKERS
+process = "platform"
+auth = "cloud_driver"
+clients = ["page", "cli", "daemon"]
+note = "A project's connected Plane projects (Arugula #356), for its members, behind the boards Labs flag: metadata only, never a key."
+
+[[route]]
+method = "POST"
+path = "/api/projects/{project}/trackers"  # wire::projects::PROJECT_TRACKERS
+process = "platform"
+auth = "session"
+clients = ["page", "cli"]
+note = "Connects a Plane project (Arugula #356): an owner or editor, behind the boards Labs flag. Plane is asked with the key first; the key and webhook secret are sealed here and never read back."
+
+[[route]]
+method = "PATCH"
+path = "/api/projects/{project}/trackers/{connection}"  # wire::projects::PROJECT_TRACKER
+process = "platform"
+auth = "session"
+clients = ["page", "cli"]
+note = "A Plane connection's agent writes, approve or allow (Arugula #356): an owner or editor."
+
+[[route]]
+method = "DELETE"
+path = "/api/projects/{project}/trackers/{connection}"  # wire::projects::PROJECT_TRACKER
+process = "platform"
+auth = "session"
+clients = ["page", "cli"]
+note = "Disconnects a Plane project (Arugula #356): its secrets go at once, its mirrored items after the grace period."
+
+[[route]]
+method = "GET"
 path = "/api/projects/{project}/workspaces"
 process = "platform"
 auth = "cloud_driver"
