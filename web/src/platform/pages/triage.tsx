@@ -18,6 +18,7 @@ import { toast } from "../toast";
 import { useBoards } from "./boards";
 import { mayWrite } from "./issues";
 import { Missing } from "./project";
+import { WaitingWrites } from "./tracker-writes";
 import { TRIAGE_LEDE, TRIAGE_NONE, TRIAGE_OFF, itemHref, sourceLabel, targets, without, type Target } from "./triage-text";
 
 /** The project's open issues on no board: the newest first, at most 100. */
@@ -92,6 +93,7 @@ function Triage({ p }: { p: PlatformProject }) {
           </>
         }
       />
+      {!off && mayWrite(p) && <WaitingWrites project={p.id} />}
       {off && (
         <p class="dim" data-triage-off>
           {TRIAGE_OFF}

@@ -4442,6 +4442,11 @@ export type TelemetrySetRequest = { on: boolean, via?: string, };
 export type TelemetryWhy = "yes" | "not_asked" | "no" | "do_not_track" | "env" | "ci" | "test";
 
 /**
+ * How a tracker item is closed.
+ */
+export type TrackerClose = "completed" | "cancelled";
+
+/**
  * A tracker project connected to a project, or disconnected and waiting
  * for the purge. Never the key or the webhook secret.
  */
@@ -4489,7 +4494,11 @@ backfilled_at: number | null,
 /**
  * How many of its items the platform holds.
  */
-items: number, };
+items: number, 
+/**
+ * Agents' writes waiting for a person to approve.
+ */
+waiting_writes: number, };
 
 export type TrackerConnections = { 
 /**
@@ -4498,11 +4507,73 @@ export type TrackerConnections = {
 project: string, connections: Array<TrackerConnection>, };
 
 /**
+ * A write waiting for a person, as the Triage page shows it.
+ */
+export type TrackerPendingWrite = { 
+/**
+ * `tw_` and hex.
+ */
+id: string, connection: string, 
+/**
+ * `waiting`, `sent`, `dropped` or `failed`.
+ */
+state: string, 
+/**
+ * The write, as it will be sent (without the footer).
+ */
+write: TrackerWrite, 
+/**
+ * `IDENT-N` of the item it targets, or none for a new item.
+ */
+target: string | null, 
+/**
+ * Whose agent, and on which machine.
+ */
+person: string, machine: string, machine_name: string, 
+/**
+ * Why it failed, in a sentence.
+ */
+error: string | null, created_at: number, };
+
+export type TrackerPendingWrites = { project: string, writes: Array<TrackerPendingWrite>, };
+
+/**
  * `PATCH /api/projects/{project}/trackers/{connection}`: whether agents'
  * writes to the tracker wait for a person (`approve`) or go (`allow`);
  * the answer is its [`TrackerConnection`].
  */
 export type TrackerSettings = { agent_writes: string, };
+
+/**
+ * A write to a tracker's work item, the same for people and agents. `item`
+ * is the mirror's `fi_` id, or `IDENT-N` (the connection's identifier and
+ * the item's number). Assignees are not here: a tracker's members aren't
+ * Arugula's people.
+ */
+export type TrackerWrite = { "kind": "create", connection: string | null, title: string, body: string | null, state: string | null, } | { "kind": "comment", item: string, text: string, } | { "kind": "close", item: string, as: TrackerClose, } | { "kind": "reopen", item: string, } | { "kind": "edit", item: string, title: string | null, body: string | null, };
+
+/**
+ * What a write came to: it landed (`sent`, with the item's `fi_` id), or
+ * it waits for a person (`waiting`, with its `tw_` id).
+ */
+export type TrackerWriteDone = { 
+/**
+ * `sent` or `waiting`.
+ */
+state: string, 
+/**
+ * The waiting write's id (`tw_` and hex).
+ */
+write: string | null, 
+/**
+ * The mirror row the write reached or made (`fi_` and hex), and its
+ * `IDENT-N`.
+ */
+item: string | null, reference: string | null, 
+/**
+ * A sentence for whoever asked.
+ */
+text: string, };
 
 /**
  * What a pane is busy with (M23), for drawing and grouping it without

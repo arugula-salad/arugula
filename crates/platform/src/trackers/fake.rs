@@ -15,6 +15,22 @@ struct State {
     page: usize,
     /// How many times a key was refused.
     refused: usize,
+    /// What writes were sent, in order.
+    sent: Vec<Sent>,
+}
+
+/// A write the fake was sent, as it arrived: a body or comment is the HTML
+/// the platform sent, a title the plain text.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct Sent {
+    /// `create`, `comment`, `state` or `edit`.
+    pub kind: String,
+    /// The tracker's id of the item written to; none for a create.
+    pub item: Option<String>,
+    pub title: Option<String>,
+    pub html: Option<String>,
+    /// The state group, for a create or a state.
+    pub group: Option<String>,
 }
 
 /// The fake tracker's world; clones share it.
@@ -34,12 +50,23 @@ struct Keyed {
 
 impl FakeTracker {
     pub fn new(key: &str, workspace: &str, project: ProjectInfo, items: Vec<Item>) -> Self {
-        let state = State { key: key.into(), workspace: workspace.into(), project, items, page: 2, refused: 0 };
+        let state =
+            State { key: key.into(), workspace: workspace.into(), project, items, page: 2, refused: 0, sent: vec![] };
         FakeTracker { state: Arc::new(Mutex::new(state)) }
     }
 
     pub fn set_items(&self, items: Vec<Item>) {
         self.state.lock().unwrap().items = items;
+    }
+
+    /// The writes sent so far.
+    pub fn sent(&self) -> Vec<Sent> {
+        self.state.lock().unwrap().sent.clone()
+    }
+
+    /// The one key the fake accepts from now on.
+    pub fn set_key(&self, key: &str) {
+        self.state.lock().unwrap().key = key.into();
     }
 
     /// Keys refused so far.
@@ -125,20 +152,85 @@ impl TrackerProvider for Keyed {
         })
     }
 
-    fn create<'a>(&'a self, _: &'a str, _: &'a str, _: &'a NewItem) -> BoxFuture<'a, Result<Item>> {
-        Box::pin(async { Err(TrackerError::NotYet("creating a fake work item")) })
+    fn create<'a>(&'a self, workspace: &'a str, _: &'a str, new: &'a NewItem) -> BoxFuture<'a, Result<Item>> {
+        Box::pin(async move {
+            let mut s = self.check(workspace)?;
+            let n = s.items.iter().map(|i| i.sequence_id).max().unwrap_or(0) + 1;
+            let group = new.state_group.clone().unwrap_or_else(|| "backlog".into());
+            let mut made = item(n, &new.title, &group, 5_000_000_000_000);
+            made.parent_id = new.parent_id.clone();
+            s.items.push(made.clone());
+            s.sent.push(Sent {
+                kind: "create".into(),
+                title: Some(new.title.clone()),
+                html: new.body.clone(),
+                group: new.state_group.clone(),
+                ..Default::default()
+            });
+            Ok(made)
+        })
     }
 
-    fn comment<'a>(&'a self, _: &'a str, _: &'a str, _: &'a str, _: &'a str) -> BoxFuture<'a, Result<()>> {
-        Box::pin(async { Err(TrackerError::NotYet("commenting on a fake work item")) })
+    fn comment<'a>(&'a self, workspace: &'a str, _: &'a str, id: &'a str, html: &'a str) -> BoxFuture<'a, Result<()>> {
+        Box::pin(async move {
+            let mut s = self.check(workspace)?;
+            if !s.items.iter().any(|i| i.id == id) {
+                return Err(TrackerError::NotFound);
+            }
+            s.sent.push(Sent {
+                kind: "comment".into(),
+                item: Some(id.into()),
+                html: Some(html.into()),
+                ..Default::default()
+            });
+            Ok(())
+        })
     }
 
-    fn set_state<'a>(&'a self, _: &'a str, _: &'a str, _: &'a str, _: &'a str) -> BoxFuture<'a, Result<Item>> {
-        Box::pin(async { Err(TrackerError::NotYet("changing a fake work item's state")) })
+    fn set_state<'a>(
+        &'a self,
+        workspace: &'a str,
+        _: &'a str,
+        id: &'a str,
+        group: &'a str,
+    ) -> BoxFuture<'a, Result<Item>> {
+        Box::pin(async move {
+            let mut s = self.check(workspace)?;
+            let at = s.items.iter().map(|i| i.updated_at).max().unwrap_or(0) + 1;
+            let it = s.items.iter_mut().find(|i| i.id == id).ok_or(TrackerError::NotFound)?;
+            it.state_group = group.into();
+            it.state_name = group.into();
+            it.updated_at = at;
+            let out = it.clone();
+            s.sent.push(Sent {
+                kind: "state".into(),
+                item: Some(id.into()),
+                group: Some(group.into()),
+                ..Default::default()
+            });
+            Ok(out)
+        })
     }
 
-    fn edit<'a>(&'a self, _: &'a str, _: &'a str, _: &'a str, _: &'a Edit) -> BoxFuture<'a, Result<Item>> {
-        Box::pin(async { Err(TrackerError::NotYet("editing a fake work item")) })
+    fn edit<'a>(&'a self, workspace: &'a str, _: &'a str, id: &'a str, edit: &'a Edit) -> BoxFuture<'a, Result<Item>> {
+        Box::pin(async move {
+            let mut s = self.check(workspace)?;
+            let at = s.items.iter().map(|i| i.updated_at).max().unwrap_or(0) + 1;
+            let it = s.items.iter_mut().find(|i| i.id == id).ok_or(TrackerError::NotFound)?;
+            if let Some(t) = &edit.title {
+                it.title = t.clone();
+            }
+            it.updated_at = at;
+            let out = it.clone();
+            s.sent.push(Sent {
+                kind: "edit".into(),
+                item: Some(id.into()),
+                title: edit.title.clone(),
+                html: edit.body.clone(),
+                ..Default::default()
+            });
+            Ok(out)
+        })
     }
 
     fn children<'a>(&'a self, workspace: &'a str, _: &'a str, epic: &'a str) -> BoxFuture<'a, Result<Vec<Item>>> {

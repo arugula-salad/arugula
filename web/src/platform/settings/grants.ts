@@ -41,6 +41,11 @@ export const COMMAND_POWERS = ["runs.command"];
 export const SESSIONS_START = "sessions.start";
 export const SESSIONS_REPLY = "sessions.reply";
 
+/** #359: its agents write to the project's connected Plane project (the
+ * connection says whether each write waits for a person). A switch of its
+ * own, never given with the conversation ones. */
+export const TRACKERS_WRITE = "trackers.write";
+
 /** The boards powers (#293): `boards.write` reads too, so the boards column
  * is one control with three levels, not two switches. */
 export const BOARDS_READ = "boards.read";
@@ -72,6 +77,7 @@ export const SINGLE: Partial<Record<Column, string>> = {
   deploys: DEPLOYS_PLAN,
   start: SESSIONS_START,
   reply: SESSIONS_REPLY,
+  plane: TRACKERS_WRITE,
 };
 
 /** A machine's live agent grants over a scope: of `powers`, or (without)
@@ -84,7 +90,7 @@ export function liveOver(grants: Grant[], machine: string, s: AgentScope, powers
       g.power !== "cloud.drive" &&
       (powers
         ? powers.includes(g.power)
-        : !g.power.startsWith("runs.") && !g.power.startsWith("boards.") && !g.power.startsWith("sessions.") && g.power !== DEPLOYS_PLAN) &&
+        : !g.power.startsWith("runs.") && !g.power.startsWith("boards.") && !g.power.startsWith("sessions.") && !g.power.startsWith("trackers.") && g.power !== DEPLOYS_PLAN) &&
       g.scope.kind === s.kind &&
       (s.kind === "account" || g.scope.id === s.id),
   );
@@ -112,10 +118,10 @@ export function singleGrant(grants: Grant[], machine: string, project: string, p
  * machine. Threads & issues is the conversation one (`powersFor`), runs and
  * commands are M216's, deploys M218's, start and reply (sessions) aru-121's, boards (#293) three levels.
  * Your DMs have only the first. */
-export type Column = "threads" | "runs" | "commands" | "deploys" | "start" | "reply" | "boards";
+export type Column = "threads" | "runs" | "commands" | "deploys" | "start" | "reply" | "boards" | "plane";
 
 /** A project's columns, in the matrix's order. */
-export const COLUMNS: Column[] = ["threads", "runs", "commands", "deploys", "start", "reply", "boards"];
+export const COLUMNS: Column[] = ["threads", "runs", "commands", "deploys", "start", "reply", "boards", "plane"];
 
 /** One switch: on while any of its grants is live, and `only` the powers it
  * holds when that's some but not all of what it gives (a partial grant,

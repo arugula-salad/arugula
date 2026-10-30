@@ -155,10 +155,10 @@ pub fn unlisted_tools_are_not_listed_without_labs_but_are_there() {
     for name in THREAD_TOOLS {
         assert!(defs(fl(false)).iter().any(|d| d.name == name), "{name} is everyone's");
     }
-    assert_eq!(every.len(), 39);
+    assert_eq!(every.len(), 40);
     assert_eq!(defs(fl(false)).len(), 36 - no_forge());
-    assert_eq!(defs(fl(true)).len(), 39 - no_forge());
-    assert_eq!(every.len(), defs(fl(false)).len() + 3 + no_forge(), "and delegate and the board tools");
+    assert_eq!(defs(fl(true)).len(), 40 - no_forge());
+    assert_eq!(every.len(), defs(fl(false)).len() + 4 + no_forge(), "and delegate, the board tools and tracker_write");
 }
 
 /// docs/mcp-permissions.json allows the read-only tools and asks for the

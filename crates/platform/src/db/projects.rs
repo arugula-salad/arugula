@@ -84,6 +84,13 @@ pub const BOARDS_READ: &str = "boards.read";
 pub const BOARDS_WRITE: &str = "boards.write";
 pub const BOARD_POWERS: [&str; 2] = [BOARDS_READ, BOARDS_WRITE];
 
+/// An agent's power to write to a project's connected trackers
+/// (`trackers.write`, #359): its machine's agents create, comment on, close,
+/// reopen and edit a Plane project's work items. Whether each write waits
+/// for a person is the connection's `agent_writes`. Over a project only,
+/// never given on join; the owner gives it.
+pub const TRACKERS_WRITE: &str = "trackers.write";
+
 /// An agent's powers over a project's agent sessions (Fleet 3, aru-121): its
 /// machine's agents start one as their owner (`sessions.start`: their
 /// `@arugula` in the project's threads, or MCP's `session_start`), and

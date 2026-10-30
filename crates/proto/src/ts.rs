@@ -157,6 +157,10 @@ fn generate() -> String {
     c.visit::<arugula_control_wire::projects::TrackerConnections>();
     c.visit::<arugula_control_wire::projects::ConnectTracker>();
     c.visit::<arugula_control_wire::projects::TrackerSettings>();
+    c.visit::<arugula_control_wire::projects::TrackerWrite>();
+    c.visit::<arugula_control_wire::projects::TrackerWriteDone>();
+    c.visit::<arugula_control_wire::projects::TrackerPendingWrites>();
+    c.visit::<arugula_control_wire::projects::TrackerPendingWrite>();
     // Content mirroring, and bodies on read (M166).
     c.visit::<arugula_control_wire::projects::RepoSettings>();
     c.visit::<arugula_control_wire::projects::ForgeContent>();

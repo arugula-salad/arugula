@@ -57,6 +57,11 @@ fn routes() -> Routes {
             arugula_control_wire::projects::PROJECT_TRACKER,
             axum::routing::patch(trackers::connect::settings).delete(trackers::connect::disconnect),
         )
+        .route(arugula_control_wire::projects::TRACKER_WRITES, post(trackers::writes::person))
+        .route(arugula_control_wire::projects::PROJECT_TRACKER_WRITES, get(trackers::writes::waiting))
+        .route(arugula_control_wire::projects::PROJECT_TRACKER_WRITE, axum::routing::patch(trackers::writes::edit))
+        .route(arugula_control_wire::projects::PROJECT_TRACKER_WRITE_APPROVE, post(trackers::writes::approve))
+        .route(arugula_control_wire::projects::PROJECT_TRACKER_WRITE_DROP, post(trackers::writes::drop_write))
         .route(arugula_control_wire::projects::PROJECT_ITEMS, get(forge::items::list))
         .route(arugula_control_wire::projects::FORGE_ITEM, get(forge::items::get))
         .route(arugula_control_wire::projects::FORGE_ITEM_CHECKS, get(forge::items::checks))
@@ -159,6 +164,8 @@ fn routes() -> Routes {
         // Reading runs, and a machine's agents' runs (M216).
         .route(wire_runs::RUN, get(crate::triggers::read::show))
         .route(wire_runs::RUN_LOG, get(crate::triggers::read::log))
+        .route(arugula_control_wire::projects::AGENT_TRACKER_WRITES, post(trackers::writes::agent))
+        .route(arugula_control_wire::projects::AGENT_TRACKER_REACH, get(trackers::writes::reach))
         .route(wire_runs::AGENT_RUN_REACH, get(run_agents::reach))
         .route(wire_runs::AGENT_PROJECT_RUNS, get(run_agents::list).post(run_agents::start))
         .route(wire_runs::AGENT_RUN, get(run_agents::show))

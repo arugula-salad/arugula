@@ -840,6 +840,10 @@
               "threads": {
                 "$ref": "#/$defs/ThreadsReach",
                 "description": "Whether you can read and post in the user's conversations from here\n(M198)."
+              },
+              "trackers": {
+                "$ref": "#/$defs/TrackersReach",
+                "description": "Whether you can write to a project's connected Plane project from\nhere (#359)."
               }
             },
             "required": [
@@ -848,7 +852,8 @@
               "teams",
               "cloud",
               "threads",
-              "runs"
+              "runs",
+              "trackers"
             ],
             "type": "object"
           },
@@ -1062,6 +1067,48 @@
             "required": [
               "tool",
               "status",
+              "note"
+            ],
+            "type": "object"
+          },
+          "TrackerReachProject": {
+            "description": "A project a machine's `trackers.write` reaches.",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "name"
+            ],
+            "type": "object"
+          },
+          "TrackersReach": {
+            "description": "The projects in control whose connected Plane projects agents here may\nwrite to (#359): through `trackers.write` grants this machine's owner gave it.",
+            "properties": {
+              "live": {
+                "description": "This machine is joined to control and holds a live `trackers.write`\ngrant over a project its owner reads.",
+                "type": "boolean"
+              },
+              "note": {
+                "description": "What to use, or why not.",
+                "type": "string"
+              },
+              "projects": {
+                "description": "What its grants reach.",
+                "items": {
+                  "$ref": "#/$defs/TrackerReachProject"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "live",
+              "projects",
               "note"
             ],
             "type": "object"
@@ -4907,6 +4954,10 @@
               "threads": {
                 "$ref": "#/$defs/ThreadsReach",
                 "description": "Whether you can read and post in the user's conversations from here\n(M198)."
+              },
+              "trackers": {
+                "$ref": "#/$defs/TrackersReach",
+                "description": "Whether you can write to a project's connected Plane project from\nhere (#359)."
               }
             },
             "required": [
@@ -4915,7 +4966,8 @@
               "teams",
               "cloud",
               "threads",
-              "runs"
+              "runs",
+              "trackers"
             ],
             "type": "object"
           },
@@ -5129,6 +5181,48 @@
             "required": [
               "tool",
               "status",
+              "note"
+            ],
+            "type": "object"
+          },
+          "TrackerReachProject": {
+            "description": "A project a machine's `trackers.write` reaches.",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "name"
+            ],
+            "type": "object"
+          },
+          "TrackersReach": {
+            "description": "The projects in control whose connected Plane projects agents here may\nwrite to (#359): through `trackers.write` grants this machine's owner gave it.",
+            "properties": {
+              "live": {
+                "description": "This machine is joined to control and holds a live `trackers.write`\ngrant over a project its owner reads.",
+                "type": "boolean"
+              },
+              "note": {
+                "description": "What to use, or why not.",
+                "type": "string"
+              },
+              "projects": {
+                "description": "What its grants reach.",
+                "items": {
+                  "$ref": "#/$defs/TrackerReachProject"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "live",
+              "projects",
               "note"
             ],
             "type": "object"
@@ -8385,6 +8479,93 @@
       },
       "name": "read_session",
       "title": "Read an agent session"
+    },
+    {
+      "annotations": {
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true,
+        "readOnlyHint": false,
+        "title": "Write to Plane"
+      },
+      "description": "Write to the Plane project connected to a project in Arugula control: create a work item, comment on one, close it (completed or cancelled), reopen it, or edit its title or body. Your person's trackers.write grant over the project says you may, never more than their role. A write may wait: when the connection is set to approve each agent write (the default) it is kept for a person to approve, edit or drop in the project's Triage, and this says \"waiting for a person to approve it\" with its id; nothing has reached Plane yet, and you can't approve it yourself. When the connection allows agent writes it lands at once. What is sent ends with a line saying it was sent via Arugula by your person's agent on this machine. Items are named by their fi_ id (forge_read lists them) or IDENT-N, like ARUGU-7. Assignees are not supported.\n- create {connection, title, body?, project?, state?}: Create a work item in a connected Plane project (may wait for a person).\n- comment {item, text, project?}: Comment on a work item (may wait for a person).\n- close {as, item, project?}: Close a work item as completed or cancelled (may wait for a person).\n- reopen {item, project?}: Open a closed work item again (may wait for a person).\n- edit {item, body?, project?, title?}: Change a work item's title or body (may wait for a person).",
+      "inputSchema": {
+        "$defs": {
+          "CloseAs": {
+            "enum": [
+              "completed",
+              "cancelled"
+            ],
+            "type": "string"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "as": {
+            "$ref": "#/$defs/CloseAs",
+            "description": "close: completed or cancelled."
+          },
+          "body": {
+            "default": null,
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "connection": {
+            "description": "create: The Plane connection to create the item in (tc_…, from\nthe project's settings or forge_read).",
+            "type": "string"
+          },
+          "item": {
+            "description": "comment: The work item: its fi_ id, or IDENT-N.",
+            "type": "string"
+          },
+          "kind": {
+            "description": "Which one (see the tool's description).",
+            "enum": [
+              "create",
+              "comment",
+              "close",
+              "reopen",
+              "edit"
+            ],
+            "type": "string"
+          },
+          "project": {
+            "default": null,
+            "description": "create: The project's id (prj_…) or personal. Default: the current project.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "state": {
+            "default": null,
+            "description": "create: The state group it starts in: backlog, unstarted or started.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "text": {
+            "type": "string"
+          },
+          "title": {
+            "default": null,
+            "description": "create: One line, at most 255 characters.",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "kind"
+        ],
+        "type": "object"
+      },
+      "name": "tracker_write",
+      "title": "Write to Plane"
     }
   ],
   "full, labs false": [
@@ -9228,6 +9409,10 @@
               "threads": {
                 "$ref": "#/$defs/ThreadsReach",
                 "description": "Whether you can read and post in the user's conversations from here\n(M198)."
+              },
+              "trackers": {
+                "$ref": "#/$defs/TrackersReach",
+                "description": "Whether you can write to a project's connected Plane project from\nhere (#359)."
               }
             },
             "required": [
@@ -9236,7 +9421,8 @@
               "teams",
               "cloud",
               "threads",
-              "runs"
+              "runs",
+              "trackers"
             ],
             "type": "object"
           },
@@ -9450,6 +9636,48 @@
             "required": [
               "tool",
               "status",
+              "note"
+            ],
+            "type": "object"
+          },
+          "TrackerReachProject": {
+            "description": "A project a machine's `trackers.write` reaches.",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "name"
+            ],
+            "type": "object"
+          },
+          "TrackersReach": {
+            "description": "The projects in control whose connected Plane projects agents here may\nwrite to (#359): through `trackers.write` grants this machine's owner gave it.",
+            "properties": {
+              "live": {
+                "description": "This machine is joined to control and holds a live `trackers.write`\ngrant over a project its owner reads.",
+                "type": "boolean"
+              },
+              "note": {
+                "description": "What to use, or why not.",
+                "type": "string"
+              },
+              "projects": {
+                "description": "What its grants reach.",
+                "items": {
+                  "$ref": "#/$defs/TrackerReachProject"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "live",
+              "projects",
               "note"
             ],
             "type": "object"
@@ -13295,6 +13523,10 @@
               "threads": {
                 "$ref": "#/$defs/ThreadsReach",
                 "description": "Whether you can read and post in the user's conversations from here\n(M198)."
+              },
+              "trackers": {
+                "$ref": "#/$defs/TrackersReach",
+                "description": "Whether you can write to a project's connected Plane project from\nhere (#359)."
               }
             },
             "required": [
@@ -13303,7 +13535,8 @@
               "teams",
               "cloud",
               "threads",
-              "runs"
+              "runs",
+              "trackers"
             ],
             "type": "object"
           },
@@ -13517,6 +13750,48 @@
             "required": [
               "tool",
               "status",
+              "note"
+            ],
+            "type": "object"
+          },
+          "TrackerReachProject": {
+            "description": "A project a machine's `trackers.write` reaches.",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "name"
+            ],
+            "type": "object"
+          },
+          "TrackersReach": {
+            "description": "The projects in control whose connected Plane projects agents here may\nwrite to (#359): through `trackers.write` grants this machine's owner gave it.",
+            "properties": {
+              "live": {
+                "description": "This machine is joined to control and holds a live `trackers.write`\ngrant over a project its owner reads.",
+                "type": "boolean"
+              },
+              "note": {
+                "description": "What to use, or why not.",
+                "type": "string"
+              },
+              "projects": {
+                "description": "What its grants reach.",
+                "items": {
+                  "$ref": "#/$defs/TrackerReachProject"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "live",
+              "projects",
               "note"
             ],
             "type": "object"
@@ -16773,6 +17048,93 @@
       },
       "name": "read_session",
       "title": "Read an agent session"
+    },
+    {
+      "annotations": {
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true,
+        "readOnlyHint": false,
+        "title": "Write to Plane"
+      },
+      "description": "Write to the Plane project connected to a project in Arugula control: create a work item, comment on one, close it (completed or cancelled), reopen it, or edit its title or body. Your person's trackers.write grant over the project says you may, never more than their role. A write may wait: when the connection is set to approve each agent write (the default) it is kept for a person to approve, edit or drop in the project's Triage, and this says \"waiting for a person to approve it\" with its id; nothing has reached Plane yet, and you can't approve it yourself. When the connection allows agent writes it lands at once. What is sent ends with a line saying it was sent via Arugula by your person's agent on this machine. Items are named by their fi_ id (forge_read lists them) or IDENT-N, like ARUGU-7. Assignees are not supported.\n- create {connection, title, body?, project?, state?}: Create a work item in a connected Plane project (may wait for a person).\n- comment {item, text, project?}: Comment on a work item (may wait for a person).\n- close {as, item, project?}: Close a work item as completed or cancelled (may wait for a person).\n- reopen {item, project?}: Open a closed work item again (may wait for a person).\n- edit {item, body?, project?, title?}: Change a work item's title or body (may wait for a person).",
+      "inputSchema": {
+        "$defs": {
+          "CloseAs": {
+            "enum": [
+              "completed",
+              "cancelled"
+            ],
+            "type": "string"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "as": {
+            "$ref": "#/$defs/CloseAs",
+            "description": "close: completed or cancelled."
+          },
+          "body": {
+            "default": null,
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "connection": {
+            "description": "create: The Plane connection to create the item in (tc_…, from\nthe project's settings or forge_read).",
+            "type": "string"
+          },
+          "item": {
+            "description": "comment: The work item: its fi_ id, or IDENT-N.",
+            "type": "string"
+          },
+          "kind": {
+            "description": "Which one (see the tool's description).",
+            "enum": [
+              "create",
+              "comment",
+              "close",
+              "reopen",
+              "edit"
+            ],
+            "type": "string"
+          },
+          "project": {
+            "default": null,
+            "description": "create: The project's id (prj_…) or personal. Default: the current project.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "state": {
+            "default": null,
+            "description": "create: The state group it starts in: backlog, unstarted or started.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "text": {
+            "type": "string"
+          },
+          "title": {
+            "default": null,
+            "description": "create: One line, at most 255 characters.",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "kind"
+        ],
+        "type": "object"
+      },
+      "name": "tracker_write",
+      "title": "Write to Plane"
     }
   ],
   "read, labs false": [
@@ -17199,6 +17561,10 @@
               "threads": {
                 "$ref": "#/$defs/ThreadsReach",
                 "description": "Whether you can read and post in the user's conversations from here\n(M198)."
+              },
+              "trackers": {
+                "$ref": "#/$defs/TrackersReach",
+                "description": "Whether you can write to a project's connected Plane project from\nhere (#359)."
               }
             },
             "required": [
@@ -17207,7 +17573,8 @@
               "teams",
               "cloud",
               "threads",
-              "runs"
+              "runs",
+              "trackers"
             ],
             "type": "object"
           },
@@ -17421,6 +17788,48 @@
             "required": [
               "tool",
               "status",
+              "note"
+            ],
+            "type": "object"
+          },
+          "TrackerReachProject": {
+            "description": "A project a machine's `trackers.write` reaches.",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "name"
+            ],
+            "type": "object"
+          },
+          "TrackersReach": {
+            "description": "The projects in control whose connected Plane projects agents here may\nwrite to (#359): through `trackers.write` grants this machine's owner gave it.",
+            "properties": {
+              "live": {
+                "description": "This machine is joined to control and holds a live `trackers.write`\ngrant over a project its owner reads.",
+                "type": "boolean"
+              },
+              "note": {
+                "description": "What to use, or why not.",
+                "type": "string"
+              },
+              "projects": {
+                "description": "What its grants reach.",
+                "items": {
+                  "$ref": "#/$defs/TrackerReachProject"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "live",
+              "projects",
               "note"
             ],
             "type": "object"
@@ -18929,6 +19338,10 @@
               "threads": {
                 "$ref": "#/$defs/ThreadsReach",
                 "description": "Whether you can read and post in the user's conversations from here\n(M198)."
+              },
+              "trackers": {
+                "$ref": "#/$defs/TrackersReach",
+                "description": "Whether you can write to a project's connected Plane project from\nhere (#359)."
               }
             },
             "required": [
@@ -18937,7 +19350,8 @@
               "teams",
               "cloud",
               "threads",
-              "runs"
+              "runs",
+              "trackers"
             ],
             "type": "object"
           },
@@ -19151,6 +19565,48 @@
             "required": [
               "tool",
               "status",
+              "note"
+            ],
+            "type": "object"
+          },
+          "TrackerReachProject": {
+            "description": "A project a machine's `trackers.write` reaches.",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "name"
+            ],
+            "type": "object"
+          },
+          "TrackersReach": {
+            "description": "The projects in control whose connected Plane projects agents here may\nwrite to (#359): through `trackers.write` grants this machine's owner gave it.",
+            "properties": {
+              "live": {
+                "description": "This machine is joined to control and holds a live `trackers.write`\ngrant over a project its owner reads.",
+                "type": "boolean"
+              },
+              "note": {
+                "description": "What to use, or why not.",
+                "type": "string"
+              },
+              "projects": {
+                "description": "What its grants reach.",
+                "items": {
+                  "$ref": "#/$defs/TrackerReachProject"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "live",
+              "projects",
               "note"
             ],
             "type": "object"
