@@ -113,6 +113,7 @@ fn routes() -> Routes {
                 .delete(crate::project_docs::delete_route),
         )
         .route("/github/webhook", post(forge::webhook))
+        .route("/plane/webhook/{connection}", post(trackers::webhook::webhook))
         .route("/api/projects/{project}/workspaces", get(hosted::routes::list).post(hosted::routes::create))
         .route("/api/projects/{project}/workspaces/{id}", get(hosted::routes::open).delete(hosted::routes::delete))
         .route("/api/projects/{project}/workspaces/{id}/rebuild", post(hosted::routes::rebuild))

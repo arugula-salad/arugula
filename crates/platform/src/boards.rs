@@ -574,6 +574,20 @@ pub fn mirror_changed(app: &Platform, repo: u64, numbers: &[u64], shas: &[String
     }
 }
 
+/// Tracker items (`fi_` ids) were written or removed: the boards that
+/// point at them.
+pub fn items_changed(app: &Platform, ids: &[String]) {
+    match app.db.boards_on_item_ids(ids) {
+        Ok(boards) => boards_changed(app, &boards),
+        Err(e) => tracing::warn!(error = %e, "boards: finding those on a tracker's item"),
+    }
+}
+
+/// Each of these boards (id, project) changed.
+pub fn boards_changed(app: &Platform, boards: &[(String, String)]) {
+    boards.iter().for_each(|(b, p)| changed(app, p, b));
+}
+
 /// What an agent's write to a board may be: anything a person's may, but
 /// to repoint a row only one its own machine added.
 fn agent_put_allowed(app: &Platform, board: &str, machine: &str, p: &wire::PutEntry) -> Result<(), ApiError> {

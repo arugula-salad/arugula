@@ -58,8 +58,8 @@
 # - `clients`: who calls it: `page` (control's web page, in a browser or the
 #   desktop app's webview), `daemon` (arugulad), `cli` (the arugula CLI),
 #   `app` (the desktop app's own code), `browser` (a browser following a
-#   link or a redirect, with no page of control's), `github` and `stripe`
-#   (their webhooks), `operator` (by hand), `product` (another product
+#   link or a redirect, with no page of control's), `github`, `stripe` and
+#   `plane` (their webhooks), `operator` (by hand), `product` (another product
 #   that takes the hub's tokens: studio, a hud box, M228's clients), `agent`
 #   (an agent with no machine, with an agent grant token, M230), `apple`
 #   (Apple's associated-domains CDN, for the macOS app, D2). Enforced for the CLI: a CLI
@@ -1092,6 +1092,14 @@ process = "platform"
 auth = "webhook"
 clients = ["github"]
 note = "GitHub's signature, checked by the platform (M161), which hands the pokes to the hub to relay. The URL is set on the GitHub App, so the path never changes."
+
+[[route]]
+method = "POST"
+path = "/plane/webhook/{connection}"
+process = "platform"
+auth = "webhook"
+clients = ["plane"]
+note = "A Plane project's changes (Arugula #358), checked by the platform against the connection's own sealed webhook secret (`X-Plane-Signature`, hex HMAC-SHA256 of the body); a redelivery is a no-op. Behind the boards Labs flag. The URL is set in Plane's webhook settings."
 
 [[route]]
 method = "POST"
