@@ -19,7 +19,7 @@ import { StateChip } from "../../shared/ui/state-chip";
 import { Time } from "../../shared/ui/time";
 import { controlOrigin } from "../session";
 import { names } from "../links";
-import { follow, pathOf } from "../router";
+import { follow, followRow, pathOf } from "../router";
 import { lastMoved, shortRef, type DeploySummary } from "../deploys-text";
 import { deployTone, toneClass } from "../swarm";
 import { where } from "../where";
@@ -198,13 +198,13 @@ export function DeployPage({ id }: { id: string }) {
   useEffect(() => void (d && where.deployIn(d.id, d.project.id)), [d]);
   if (error) return <section class="platform-section"><p class="control-error">{error}</p></section>;
   if (!d) return <p class="platform-section dim">Loading…</p>;
-  const settings = pathOf({ page: "project-settings", project: d.project.id }, names);
+  const deploys = pathOf({ page: "deploys", project: d.project.id }, names);
   return (
     <section class="platform-section sw-page deploy-page" data-deploy-page={d.id}>
       <PageHeader
         title={deployTitle(d)}
         named
-        back={{ href: settings, label: "Project settings", onClick: (e) => follow(e, settings) }}
+        back={{ href: deploys, label: "Deploys", onClick: (e) => follow(e, deploys) }}
         state={<DeployState state={d.state} />}
       />
       <DeployCard d={d} headless />
@@ -278,7 +278,7 @@ export function DeployRow({ d }: { d: DeploySummary }) {
   const path = `/deploys/${d.id}`;
   const at = lastMoved(d);
   return (
-    <tr class={`deploy-row ${toneClass(deployTone(d.state))}`} data-deploy-row={d.id} data-deploy-state={d.state}>
+    <tr class={`deploy-row ${toneClass(deployTone(d.state))}`} data-deploy-row={d.id} data-deploy-state={d.state} onClick={(e) => followRow(e, path)}>
       <td>
         <DeployState state={d.state} />
       </td>
