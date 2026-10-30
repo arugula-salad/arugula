@@ -51,6 +51,9 @@ export type TipBlock = Line | { list: Line[] } | { heading: string; id?: string 
  * values. */
 export type Action = { label: string | ((f: Fact) => string) } & ({ command: string } | { route: string });
 
+/** One of a pane modal's `buttons`: a `second`, and when it shows. */
+export type ModalButton = { label: string; when?: (client: Client, f: Fact) => boolean } & ({ command: string } | { route: string } | { close: true });
+
 export interface Hint {
   /** Its name for good: what "seen" remembers (`seen:<id>`). */
   id: string;
@@ -67,6 +70,11 @@ export interface Hint {
    * closes it when it has no command or route. */
   body?: (f: Fact) => TipBlock[];
   second?: { label: string } & ({ command: string } | { route: string } | { close: true });
+  /** A pane modal's buttons, instead of `action` and `second`: a short
+   * list, each shown only while its `when` holds (asked on every draw, so
+   * a button follows what the client knows now). The first one shown that
+   * isn't a close is the primary; keep a close last. */
+  buttons?: ModalButton[];
   /** When it's seen: as it shows (a chip's, a toast's), or once it's
    * answered (a pane modal's): one hidden before that (a tab switch, the
    * fact gone) comes back the next time its fact holds. */
@@ -235,9 +243,9 @@ function run(client: Client, s: { fact: Fact }, a: { command: string } | { route
 
 /** Its button (`second`: a pane modal's other one). `optOut`: the pane
  * modal's "Don't show tips like this again" is ticked. */
-export function act(client: Client, which: "action" | "second" = "action", optOut = false) {
+export function act(client: Client, which: "action" | "second" | number = "action", optOut = false) {
   const s = shown;
-  const a = which === "action" ? s?.hint.action : s?.hint.second;
+  const a = typeof which === "number" ? s?.hint.buttons?.[which] : which === "action" ? s?.hint.action : s?.hint.second;
   if (!s || !a) return;
   answer(s, "close" in a ? "closed" : "acted", optOut);
   run(client, s, a);

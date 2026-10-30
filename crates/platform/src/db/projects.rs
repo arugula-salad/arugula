@@ -517,6 +517,20 @@ impl Db {
         )
     }
 
+    /// A machine's live board grants that `by`, its owner, gave: the
+    /// projects whose boards its agents reach.
+    pub fn board_grants_of(&self, daemon: &str, by: &str) -> anyhow::Result<Vec<Grant>> {
+        self.c().query_map(
+            &format!(
+                "SELECT {GRANT_COLUMNS} FROM grants WHERE subject_kind = ?5 AND subject_id = ?1
+                 AND granted_by = ?2 AND revoked_at IS NULL AND scope_kind = 'project' AND power IN (?3, ?4)
+                 ORDER BY scope_id, power"
+            ),
+            params![daemon, by, BOARD_POWERS[0], BOARD_POWERS[1], subject_kind(daemon)],
+            grant_row,
+        )
+    }
+
     /// The last hub change applied here; `None` before the first read.
     pub fn feed_after(&self) -> anyhow::Result<Option<u64>> {
         self.c().query_row("SELECT seq FROM hub_feed WHERE reader = ?1", params![READER], |r| r.get(0)).optional()

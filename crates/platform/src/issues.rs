@@ -500,6 +500,7 @@ fn home_of(app: &Platform, p: &db::IssueProject) -> Result<wire::IssueHome, ApiE
     };
     Ok(wire::IssueHome {
         project: p.id.clone(),
+        name: p.name.clone(),
         home: home.into(),
         chosen: p.home.as_deref() == Some(home),
         both: native_issues > 0 && !repos.is_empty(),

@@ -2943,6 +2943,14 @@ clients = ["daemon"]
 
 [[route]]
 method = "GET"
+path = "/api/daemon/boards/reach"  # wire::boards::AGENT_BOARD_REACH
+process = "platform"
+auth = "daemon"
+clients = ["daemon"]
+note = "The projects the machine's board grants reach, with its powers and their boards: for capabilities."
+
+[[route]]
+method = "GET"
 path = "/api/daemon/projects/{project}/boards"  # wire::boards::AGENT_PROJECT_BOARDS
 process = "platform"
 auth = "daemon"

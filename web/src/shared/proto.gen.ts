@@ -2385,6 +2385,10 @@ repo: string, number: number, };
  */
 export type IssueHome = { project: string, 
 /**
+ * The project's name (an older control sends none).
+ */
+name: string, 
+/**
  * `native` (the platform's own issues) or `github` (its linked repo).
  */
 home: string, 

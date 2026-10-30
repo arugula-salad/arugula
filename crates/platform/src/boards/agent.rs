@@ -31,7 +31,7 @@ use crate::{
     Platform,
     auth::Machine,
     db::{issues::Actor, projects::BOARDS_WRITE},
-    grants::{AGENT_UNGRANTED, AgentScope, agent_may},
+    grants::{AGENT_UNGRANTED, AgentScope, agent_may, owner_reads},
 };
 use arugula_control_common::{ApiError, err, refusal};
 use axum::http::StatusCode;
@@ -47,6 +47,27 @@ const AGENT_BLOCK_REPORTS: (&str, usize) = ("board-block-state", 2_400);
 
 fn actor(d: &Machine) -> Actor<'_> {
     Actor { account: &d.account, agent: Some(&d.daemon) }
+}
+
+/// `GET /api/daemon/boards/reach`: the projects the machine's board grants
+/// reach, as its owner reads them now (none is a 200: `capabilities` says
+/// the tools aren't granted).
+pub async fn reach(State(app): State<Arc<Platform>>, d: Machine) -> J<wire::BoardReach> {
+    app.limits.check_daemon(AGENT_BOARD_READS, &d.daemon)?;
+    super::gate(&app, &d.account).await?;
+    let mut by: std::collections::BTreeMap<String, Vec<String>> = Default::default();
+    for g in app.db.board_grants_of(&d.daemon, &d.account)? {
+        by.entry(g.scope_id).or_default().push(g.power);
+    }
+    let mut projects = vec![];
+    for (id, powers) in by {
+        if let Some(name) = owner_reads(&app, &d.account, &AgentScope::Project(id.clone()), false).await? {
+            let boards = app.db.boards(&id)?.len() as u64;
+            projects.push(wire::BoardReachProject { id, name, powers, boards });
+        }
+    }
+    projects.sort_by(|a, b| (&a.name, &a.id).cmp(&(&b.name, &b.id)));
+    Ok(Json(wire::BoardReach { projects }))
 }
 
 /// `GET /api/daemon/projects/{project}/boards`.

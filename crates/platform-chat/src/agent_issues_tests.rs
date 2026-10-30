@@ -164,6 +164,7 @@ async fn an_agents_current_project() {
     assert_eq!((st, &h["project"], &h["home"]), (200, &json!(t), &json!("github")), "{h}");
     let (st, h) = geek(&base, "GET", AGENT_ISSUE_HOME, None).await;
     assert_eq!((st, &h["project"], &h["home"]), (200, &json!(personal), &json!("native")), "{h}");
+    assert!(h["name"].as_str().is_some_and(|n| !n.is_empty()), "the project's name comes with its id: {h}");
     let (_, h) = geek(&base, "GET", &format!("{AGENT_ISSUE_HOME}?project={t}&repo=nobody/here"), None).await;
     assert_eq!(h["project"], json!(t), "a named project wins");
     for repo in ["other/thing", "nobody/here"] {

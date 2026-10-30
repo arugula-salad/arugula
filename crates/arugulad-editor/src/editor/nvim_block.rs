@@ -79,6 +79,8 @@ fn bootstrap(dir: &Path) -> String {
 -- arugula.nvim first on the runtimepath, whatever the config does to it.
 local dir = [==[{}]==]
 vim.opt.runtimepath:prepend(dir)
+-- Starter settings, only when this nvim has no config of its own.
+pcall(function() require("arugula.starter").apply() end)
 vim.api.nvim_create_autocmd("VimEnter", {{
   once = true,
   callback = function()
@@ -599,6 +601,73 @@ mod tests {
         // Its help is found (doc/tags), as an installed copy's is.
         let help = "vim.cmd('help arugula'); return { vim.bo.filetype, vim.fn.expand('%:t') }";
         assert_eq!(headless(&boot, "", help).unwrap(), r#"["help","arugula.txt"]"#);
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    /// nvim, headless, started by the block's bootstrap with `config` as
+    /// XDG_CONFIG_HOME (no `-u`); prints what `lua` returns after startup.
+    fn headless_in(boot: &Path, config: &Path, lua: &str) -> String {
+        let probe = config.join("starter-probe.lua");
+        std::fs::write(
+            &probe,
+            format!(
+                "vim.api.nvim_create_autocmd('VimEnter', {{ once = true, nested = true, callback = function()\n\
+                 local ok, v = pcall(function() {lua} end)\n\
+                 io.stdout:write(vim.json.encode(ok and v or {{ 'error', tostring(v) }}))\n\
+                 vim.cmd('qa!')\nend }})\n"
+            ),
+        )
+        .unwrap();
+        let out = std::process::Command::new("nvim")
+            .args(["--headless", "--cmd"])
+            .arg(format!("lua dofile([==[{}]==])", boot.display()))
+            .arg("-c")
+            .arg(format!("luafile {}", probe.display()))
+            .env_remove("ARUGULA_PANE")
+            .env_remove("VIMINIT")
+            .env("XDG_CONFIG_HOME", config)
+            .env("XDG_DATA_HOME", config.join("data"))
+            .env("XDG_STATE_HOME", config.join("state"))
+            .stdin(std::process::Stdio::null())
+            .output()
+            .unwrap();
+        String::from_utf8_lossy(&out.stdout).into_owned()
+    }
+
+    #[test]
+    fn the_starter_settings_apply_only_when_there_is_no_nvim_config() {
+        let v = std::process::Command::new("nvim").arg("--version").output();
+        let Some(v) = v.ok().map(|o| String::from_utf8_lossy(&o.stdout).into_owned()) else {
+            eprintln!("SKIPPED: no nvim here");
+            return;
+        };
+        if v.starts_with("NVIM v0.")
+            && v[8..].split('.').next().and_then(|m| m.parse::<u32>().ok()).is_some_and(|m| m < 10)
+        {
+            eprintln!("SKIPPED: {} is older than 0.10", v.lines().next().unwrap_or(""));
+            return;
+        }
+        let home = std::env::temp_dir().join(format!("ilg-nvs-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&home);
+        let boot = runtime_at(&home).unwrap();
+        let probe = "return { vim.o.mouse, vim.o.number, vim.o.ignorecase and vim.o.smartcase, vim.o.undofile, \
+                     vim.g.mapleader or '', vim.fn.maparg('<leader>e', 'n') ~= '', vim.g.netrw_liststyle or 0 }";
+        let set = r#"["a",true,true,true," ",true,3]"#;
+        let unset = r#"["nvi",false,false,false,"",false,0]"#;
+
+        // No config: the starter settings.
+        let none = home.join("none");
+        std::fs::create_dir_all(&none).unwrap();
+        assert_eq!(headless_in(&boot, &none, probe), set);
+        // An empty init.lua, or an init.vim: none of them.
+        let lua = home.join("lua");
+        std::fs::create_dir_all(lua.join("nvim")).unwrap();
+        std::fs::write(lua.join("nvim/init.lua"), "").unwrap();
+        assert_eq!(headless_in(&boot, &lua, probe), unset);
+        let vim = home.join("vim");
+        std::fs::create_dir_all(vim.join("nvim")).unwrap();
+        std::fs::write(vim.join("nvim/init.vim"), "").unwrap();
+        assert_eq!(headless_in(&boot, &vim, probe), unset);
         let _ = std::fs::remove_dir_all(&home);
     }
 

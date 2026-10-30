@@ -772,6 +772,33 @@ async fn an_agent_finds_no_boards_with_the_flag_off() {
     assert_eq!(st, 200);
     let (st, v) = geek(&base, "GET", &agent_project_boards(&t), None).await;
     assert_eq!(st, 404, "{v}");
+    let (st, v) = geek(&base, "GET", arugula_control_wire::boards::AGENT_BOARD_REACH, None).await;
+    assert_eq!(st, 404, "{v}");
+}
+
+/// A machine asks which projects its board grants reach: none is an empty
+/// list (not an error), and a grant names the project with its powers and
+/// its boards.
+#[tokio::test]
+async fn an_agent_asks_which_boards_its_grants_reach() {
+    use crate::agents_tests::give;
+    use arugula_control_wire::boards::AGENT_BOARD_REACH;
+
+    let (hub, _app, base, t, _u) = crate::agents_tests::seeded().await;
+    hub.flag_named("team:t", FLAG, true);
+    let (st, v) = geek(&base, "GET", AGENT_BOARD_REACH, None).await;
+    assert_eq!((st, &v["projects"]), (200, &json!([])), "{v}");
+
+    call(&base, "a", "POST", &format!("/api/projects/{t}/boards"), Some(json!({ "title": "Launch" }))).await;
+    let (st, g) =
+        call(&base, "a", "POST", "/api/grants", give("geek", "boards.write", json!({ "kind": "project", "id": t })))
+            .await;
+    assert_eq!(st, 200, "{g}");
+    let (st, v) = geek(&base, "GET", AGENT_BOARD_REACH, None).await;
+    assert_eq!(st, 200, "{v}");
+    let p = &v["projects"][0];
+    assert_eq!((&p["id"], &p["powers"], &p["boards"]), (&json!(t), &json!(["boards.write"]), &json!(1)), "{v}");
+    assert!(p["name"].as_str().is_some_and(|n| !n.is_empty()), "{v}");
 }
 
 /// A machine with `boards.write` reports its block's state and a board row

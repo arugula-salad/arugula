@@ -276,6 +276,52 @@
       ],
       "type": "object"
     },
+    "BoardReach": {
+      "description": "[`AGENT_BOARD_REACH`]'s answer.",
+      "properties": {
+        "projects": {
+          "items": {
+            "$ref": "#/$defs/BoardReachProject"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "projects"
+      ],
+      "type": "object"
+    },
+    "BoardReachProject": {
+      "description": "A project a machine's board grants reach, as its owner reads it now.",
+      "properties": {
+        "boards": {
+          "description": "How many boards it has.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "powers": {
+          "description": "`boards.read`, `boards.write`.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "powers",
+        "boards"
+      ],
+      "type": "object"
+    },
     "BoardView": {
       "description": "A board with its four lanes, in order (`lane_next`, `lane_doing`,\n`lane_review`, `lane_done`), each with its rows.",
       "properties": {

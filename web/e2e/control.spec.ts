@@ -6,7 +6,7 @@
 
 import { spawn, type ChildProcess } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, openSync, readFileSync, rmSync } from "node:fs";
 import { createServer, type Server } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -26,6 +26,15 @@ const states: Record<string, string> = {};
 
 test.describe.configure({ mode: "serial" });
 test.use({ baseURL: async ({}, use) => use(base) });
+
+// Control's and the daemons' logs, where CI keeps a failed shard's results
+// (#363: the phone's cut-off flakes on CI and never here).
+const LOGS = join("test-results", "control-spec-logs");
+mkdirSync(LOGS, { recursive: true });
+const logTo = (what: string) => {
+  const fd = openSync(join(LOGS, `${Date.now()}-${what}.log`), "a");
+  return ["ignore", fd, fd] as ["ignore", number, number];
+};
 
 function temp(what: string) {
   const d = mkdtempSync(join(tmpdir(), `arugula-e2e-control-${what}-`));
@@ -69,7 +78,7 @@ test.beforeAll(async () => {
         ...["--github-client-id", "id", "--github-client-secret", "s", "--static-dir", "dist"],
         ...["--github-url", github, "--github-api", github],
       ],
-      { stdio: "ignore" },
+      { stdio: logTo("control") },
     ),
   );
   base = `http://127.0.0.1:${await controlPort(db, procs.at(-1))}`;
@@ -140,7 +149,7 @@ async function addMachine(page: Page, name: string, direct: boolean, older = fal
         ...["--shell", "bash --norc --noprofile", "--no-manager-env", "--tailscale-socket", "/nonexistent/sock"],
         ...(direct ? ["--direct-url", "http://127.0.0.1:0"] : []),
       ],
-      { stdio: "ignore" },
+      { stdio: logTo(name) },
     ),
   );
 }
@@ -788,6 +797,9 @@ test("devices and machines, grouped; new recovery codes retire the old", async (
 });
 
 test("removing the phone cuts it off, once confirmed in a dialog", async () => {
+  // #363: what the phone's page says and where it goes, timed, beside the daemons' logs.
+  phone.on("console", (m) => console.log(`#363 phone ${new Date().toISOString()} ${m.text()}`));
+  phone.on("framenavigated", (f) => f === phone.mainFrame() && console.log(`#363 phone navigated ${new Date().toISOString()} ${f.url()}`));
   const id = await phone.evaluate(() => window.__arugula.control!.keys.id);
   await controlPanel(laptop, "devices");
   // A double-click on Remove opens the dialog and removes nothing.
@@ -797,12 +809,14 @@ test("removing the phone cuts it off, once confirmed in a dialog", async () => {
   expect(await connected(phone)).toBe(true);
   const ask = laptop.locator("[data-confirm-dialog]");
   await expect(ask).toContainText("loses access to your machines at once");
+  console.log(`#363 removing phone device ${id} at ${new Date().toISOString()}`);
   await ask.locator("[data-confirm-remove]").click();
   await expect(ask).toHaveCount(0);
   await expect(laptop.locator(`[data-browsers] [data-remove="${id}"]`)).toHaveCount(0);
   await laptop.getByRole("button", { name: "Done" }).click();
   // Control nudges the daemons, which refresh, close its channel and
   // refuse it from then on.
+  console.log(`#363 polling from ${new Date().toISOString()}`);
   await expect.poll(() => connected(phone), { timeout: 5_000, intervals: [200] }).toBe(false);
   await new Promise((r) => setTimeout(r, 3000));
   expect(await connected(phone)).toBe(false);

@@ -77,6 +77,10 @@ pub const AGENT_BOARD_ATTACHMENTS: &str = "/api/daemon/boards/{id}/attachments";
 /// `DELETE`: take off an attachment this machine's agents made.
 pub const AGENT_BOARD_ATTACHMENT: &str = "/api/daemon/boards/{id}/attachments/{attachment}";
 
+/// `GET`: the projects whose boards this machine's agents reach, and with
+/// which powers, [`BoardReach`].
+pub const AGENT_BOARD_REACH: &str = "/api/daemon/boards/reach";
+
 /// [`AGENT_PROJECT_BOARDS`] for `project`.
 pub fn agent_project_boards(project: &str) -> String {
     format!("/api/daemon/projects/{project}/boards")
@@ -428,6 +432,25 @@ pub struct CloseBoard {
 pub struct BoardList {
     pub project: String,
     pub boards: Vec<Board>,
+}
+
+/// [`AGENT_BOARD_REACH`]'s answer.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+pub struct BoardReach {
+    pub projects: Vec<BoardReachProject>,
+}
+
+/// A project a machine's board grants reach, as its owner reads it now.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+pub struct BoardReachProject {
+    pub id: String,
+    pub name: String,
+    /// `boards.read`, `boards.write`.
+    pub powers: Vec<String>,
+    /// How many boards it has.
+    pub boards: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

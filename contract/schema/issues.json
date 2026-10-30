@@ -410,6 +410,11 @@
           },
           "type": "array"
         },
+        "name": {
+          "default": "",
+          "description": "The project's name (an older control sends none).",
+          "type": "string"
+        },
         "native_issues": {
           "description": "How many native issues it has.",
           "format": "uint64",
