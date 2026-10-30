@@ -24,6 +24,8 @@ test("a source label is OWNER/NAME#N, or #N for a native issue", () => {
 test("a native issue links to its page, a GitHub one to github.com", () => {
   const path = (id) => `/p/x/issues/${id}`;
   assert.equal(itemHref({ source: "native", pointer: { kind: "issue", id: I }, number: 3 }, path), `/p/x/issues/${I}`);
+  assert.equal(itemHref({ source: "plane", pointer: { kind: "forge_item", id: "fi_2" }, identifier: "ARUGU", number: 12, url: "https://app.plane.so/acme/browse/ARUGU-12/" }, path), "https://app.plane.so/acme/browse/ARUGU-12/");
+  assert.equal(itemHref({ source: "plane", pointer: { kind: "forge_item", id: "fi_2" }, number: 12, url: "javascript:alert(1)" }, path), undefined);
   assert.equal(itemHref({ source: "github", pointer: { kind: "forge_item", id: "fi_1" }, repo: "acme/app", number: 7 }, path), "https://github.com/acme/app/issues/7");
   assert.equal(itemHref({ source: "github", pointer: { kind: "forge_item", id: "fi_1" }, repo: "not a repo", number: 7 }, path), undefined);
 });

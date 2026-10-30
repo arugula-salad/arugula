@@ -730,6 +730,9 @@ pub struct WorkItem {
     /// A run has none.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub number: Option<u64>,
+    /// Where a tracker item is, in the tracker.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub url: Option<String>,
     /// A run's: how it started (`manual run`).
     pub title: String,
     /// `open`, `closed` or `merged` for an issue or a PR; a run's own state.

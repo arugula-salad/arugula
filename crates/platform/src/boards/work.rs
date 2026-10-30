@@ -35,6 +35,7 @@ use crate::{
         viewer::{self, Viewer},
     },
     issues::{ISSUE_SEARCHES, words},
+    trackers,
 };
 
 const DEFAULT: u32 = 30;
@@ -59,6 +60,7 @@ fn run_item(r: &Run) -> wire::WorkItem {
         kind: "run".to_owned(),
         repo: None,
         identifier: None,
+        url: None,
         number: None,
         title: format!("{} run", r.trigger.as_str()),
         state: r.state.as_str().to_owned(),
@@ -116,6 +118,7 @@ pub async fn list(
                 kind: "issue".to_owned(),
                 repo: None,
                 identifier: None,
+                url: None,
                 number: Some(i.number),
                 title: i.title,
                 state: i.state.as_str().to_owned(),
@@ -150,6 +153,7 @@ pub async fn list(
                 kind: i.kind,
                 repo,
                 identifier: None,
+                url: None,
                 number: Some(i.number),
                 title: i.title,
                 state: i.state,
@@ -175,6 +179,7 @@ pub async fn list(
                 kind: "issue".to_owned(),
                 repo: Some(c.name.clone()),
                 identifier: Some(c.identifier.clone()),
+                url: Some(trackers::item_url(&c.workspace_slug, &c.identifier, i.number)),
                 number: Some(i.number),
                 title: i.title,
                 state: i.state,

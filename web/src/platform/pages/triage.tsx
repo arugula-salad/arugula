@@ -107,7 +107,7 @@ function Triage({ p }: { p: PlatformProject }) {
       <ul class="platform-list triage-list" data-triage-list>
         {items?.map((i) => {
           const href = itemHref(i, (id) => pathOf({ page: "issue", project: p.id, issue: id }, names));
-          const github = i.source === "github";
+          const github = i.source === "github" || i.source === "plane";
           return (
             <li key={JSON.stringify(i.pointer)} class="triage-row" data-triage-row={sourceLabel(i)}>
               {href ? (

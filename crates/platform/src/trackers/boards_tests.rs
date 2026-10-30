@@ -88,6 +88,7 @@ async fn a_plane_item_is_on_a_board_and_closing_it_moves_the_progress() {
     let triage = work(&base, "carol", &team, "?untriaged=true").await;
     let seen: Vec<_> = triage.iter().map(|i| (i["source"].as_str().unwrap(), i["identifier"].as_str(), i["number"].as_u64())).collect();
     assert_eq!(seen, [("plane", Some("ARUGU"), Some(1)), ("plane", Some("ARUGU"), Some(2))], "{triage:?}");
+    assert_eq!(triage[0]["url"], "https://app.plane.so/acme/browse/ARUGU-1/");
     assert_eq!((triage[1]["kind"].as_str(), triage[1]["repo"].as_str(), triage[1]["state"].as_str()), (Some("issue"), Some("Arugula"), Some("open")));
     // The picker has all three, and a search and the kind filter apply.
     assert_eq!(work(&base, "bob", &team, "").await.len(), 3);

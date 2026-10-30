@@ -827,6 +827,13 @@
           "format": "uint64",
           "minimum": 0,
           "type": "integer"
+        },
+        "url": {
+          "description": "Where a tracker item is, in the tracker.",
+          "type": [
+            "string",
+            "null"
+          ]
         }
       },
       "required": [
