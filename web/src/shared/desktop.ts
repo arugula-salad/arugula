@@ -43,6 +43,20 @@ export function tauriInvoke(): (<T>(cmd: string, args?: Record<string, unknown>)
   return desktopApp() && t?.core?.invoke ? t.core.invoke : null;
 }
 
+/** Open `url` in the person's browser, from control's page or the platform
+ * page in the app (#364): `window.open` keeps control's own pages in an app
+ * window. Returns whether the app took it; false outside the app, for the
+ * caller's own `window.open`. An app without the command rejects, and then
+ * this opens it the old way. Call it in the click, for the gesture. */
+export function openOutside(url: string): boolean {
+  const invoke = tauriInvoke();
+  if (!invoke) return false;
+  invoke("open_outside", { url }).catch(() => {
+    window.open(url, "_blank", "noopener");
+  });
+  return true;
+}
+
 /** A new window of the app, showing `pane` (or the same layout). */
 export function openInNewWindow(pane?: number) {
   window.open(pane === undefined ? "/" : `/#pane=${pane}`, "_blank");

@@ -9,6 +9,9 @@
        call NAME  the Tauri window's NAME() (minimize, toggleMaximize,
                   close), as the client's titlebar calls them
                   (web/src/shared/desktop.ts's tauriWindow)
+       invoke NAME URL
+                  the app's command NAME({ url: URL }) (open_outside, #364),
+                  as web/src/shared/desktop.ts's openOutside calls it
        ping       reports pong -->
 <meta charset="utf-8">
 <title>stand-in</title>
@@ -35,6 +38,15 @@
       }
       a.href = a.textContent = arg;
       say("link", { to: arg });
+    }
+    else if (cmd === "invoke") {
+      const [, , url] = line.trim().split(/\s+/);
+      try {
+        await window.__TAURI__.core.invoke(arg, { url });
+        say("invoke-ok", { cmd: arg });
+      } catch (e) {
+        say("invoke-err", { cmd: arg, err: String(e).replace(/\s+/g, "_") });
+      }
     }
     else if (cmd === "ping") say("pong");
     else if (cmd === "call") {
