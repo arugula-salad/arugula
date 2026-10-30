@@ -201,3 +201,98 @@ fn lifecycle_events_replay_with_the_follow_streams_ids_and_a_closed_panes_sessio
     let again = ndjson(&d.raw("GET", &format!("/api/events?{TYPES}"), None).1);
     assert_eq!(of(again.as_array().unwrap(), pane, "closed"), streamed_close, "{again}");
 }
+
+/// Follow a pane's tail over TCP as the friend.
+fn follow_as_friend(d: &Daemon, pane: u64) -> std::net::TcpStream {
+    use std::io::Write;
+    let mut s = std::net::TcpStream::connect(("127.0.0.1", d.port)).unwrap();
+    write!(
+        s,
+        "GET /api/panes/{pane}/tail?follow=1 HTTP/1.1\r\nHost: 127.0.0.1:{}\r\nConnection: close\r\ntailscale-user-login: {FRIEND}\r\n\r\n",
+        d.port
+    )
+    .unwrap();
+    s.set_read_timeout(Some(std::time::Duration::from_millis(200))).unwrap();
+    s
+}
+
+/// Read from a follow for up to `secs`: what came, and whether the daemon
+/// ended it (the last chunk, or the connection closed) in that time.
+fn read_follow(s: &mut std::net::TcpStream, secs: u64, mut enough: impl FnMut(&str) -> bool) -> (String, bool) {
+    use std::io::Read;
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(secs);
+    let mut seen = String::new();
+    let mut buf = [0u8; 4096];
+    while std::time::Instant::now() < deadline {
+        match s.read(&mut buf) {
+            Ok(0) => return (seen, true),
+            Ok(n) => seen.push_str(&String::from_utf8_lossy(&buf[..n])),
+            Err(e) if matches!(e.kind(), std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut) => {}
+            Err(_) => return (seen, true),
+        }
+        if seen.ends_with("\r\n0\r\n\r\n") {
+            return (seen, true);
+        }
+        if enough(&seen) {
+            return (seen, false);
+        }
+    }
+    (seen, false)
+}
+
+/// The owner makes `pane` private (or not), as the pane menu does.
+fn set_private(d: &Daemon, pane: u64, on: bool) {
+    use tokio_tungstenite::tungstenite::{self, Message};
+    let stream = std::net::TcpStream::connect(("127.0.0.1", d.port)).unwrap();
+    let (mut ws, _) = tungstenite::client(d.ws("/ws"), stream).expect("the WebSocket");
+    let op = json!({ "type": "pane", "pane": pane, "op": { "op": "set_private", "on": on } });
+    ws.send(Message::Text(op.to_string().into())).unwrap();
+    let _ = ws.close(None);
+    while ws.read().is_ok() {}
+}
+
+/// A guest's follow of a pane lasts as long as they may read it: making the
+/// pane private ends it, and so does taking their grant away. A tail of
+/// another host's synced history is the owner's, as `/api/history` is,
+/// whichever local pane it names.
+#[test]
+fn a_guests_follow_ends_when_they_may_no_longer_read_the_pane() {
+    let d = start();
+    let ticker =
+        d.post("/api/run", json!({"command": "while :; do echo tick; sleep 0.2; done", "session": "alpha"}))["pane"]
+            .as_u64()
+            .unwrap();
+    let panes = d.get("/api/panes");
+    let session = panes.as_array().unwrap().iter().find(|p| p["id"] == ticker).unwrap()["session"].as_u64().unwrap();
+    let grant = |role: Value| {
+        d.post(
+            "/api/acl",
+            json!({ "session": session, "principal": format!("tailnet:{FRIEND}"), "role": role, "history": true }),
+        );
+    };
+    grant(json!("viewer"));
+    let ticks = |s: &str| s.matches("tick").count() >= 3;
+
+    // Another host's history, by way of a pane they may read here.
+    let (s, body) = as_friend(&d, &format!("/api/panes/{ticker}/tail?host=elsewhere"));
+    assert_eq!(s, 403, "{body}");
+    assert_ne!(d.raw("GET", &format!("/api/panes/{ticker}/tail?host=elsewhere"), None).0, 403, "the owner's");
+
+    // Made private: the follow ends.
+    let mut f = follow_as_friend(&d, ticker);
+    let (seen, ended) = read_follow(&mut f, 10, ticks);
+    assert!(!ended && ticks(&seen), "the follow streams: {seen}");
+    set_private(&d, ticker, true);
+    let (seen, ended) = read_follow(&mut f, 10, |_| false);
+    assert!(ended, "still streaming after the pane went private: {seen}");
+    assert_eq!(as_friend(&d, &format!("/api/panes/{ticker}/tail")).0, 404);
+    set_private(&d, ticker, false);
+
+    // Their grant taken away: the follow ends.
+    let mut f = follow_as_friend(&d, ticker);
+    let (seen, ended) = read_follow(&mut f, 10, ticks);
+    assert!(!ended && ticks(&seen), "the follow streams again: {seen}");
+    grant(Value::Null);
+    let (seen, ended) = read_follow(&mut f, 10, |_| false);
+    assert!(ended, "still streaming after the grant went: {seen}");
+}
