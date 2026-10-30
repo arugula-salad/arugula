@@ -56,7 +56,7 @@ import {
   type TeamPin,
   type TeamRole,
 } from "./e2e/team.ts";
-import { checkRoster, type RootChange, type RosterProblem } from "./team-rosters.ts";
+import { checkRoster, RosterStore, type RootChange, type RosterProblem } from "./team-rosters.ts";
 
 export interface ControlInfo {
   control: true;
@@ -153,6 +153,9 @@ export interface Team {
   /** Members' roots that changed since this browser last looked, until
    * dismissed. */
   rootChanges?: RootChange[];
+  /** Versions of its roster that a device removed since had signed, while
+   * it still counted: taken, and shown. */
+  rosterLate?: number[];
 }
 
 /** A one-click invite link control still holds (#134). */
@@ -187,8 +190,11 @@ function writeKey(key: string, v: unknown) {
   }
 }
 
-const heldRosters = () => readKey<Record<string, Roster>>(ROSTERS_KEY, {});
 const rootChangesKept = () => readKey<Record<string, RootChange[]>>(ROOT_CHANGES_KEY, {});
+/** Versions taken that a device removed since had signed, by team, until
+ * dismissed with the root changes. */
+const ROSTER_LATE_KEY = "arugula.control.roster-late";
+const rosterLateKept = () => readKey<Record<string, number[]>>(ROSTER_LATE_KEY, {});
 
 /** #761: the secret this browser shows while it waits, kept with its key
  * id so a reload shows the same code (one already scanned still works). */
@@ -1637,6 +1643,9 @@ export class ControlSession {
    * this account's, not a failure. */
   teamsLoaded = false;
 
+  /** The last roster this page checked for each team (`RosterStore`). */
+  private rosters = new RosterStore(() => localStorage, ROSTERS_KEY);
+
   async loadTeams() {
     let loaded = true;
     const r = await api<{ teams: Omit<Team, "verified">[]; asked?: ControlSession["asked"]; notices?: ControlSession["notices"] }>(
@@ -1648,8 +1657,9 @@ export class ControlSession {
     this.teamsLoaded = loaded;
     this.notices = r.notices ?? [];
     const out: Team[] = [];
-    const held = heldRosters();
+    const held = this.rosters.held();
     const kept = rootChangesKept();
+    const lateKept = rosterLateKept();
     for (const t of r.teams) {
       // The founder pinned on first sight. The team's daemons check each
       // roster version against it; this browser checks the ones it signs.
@@ -1660,8 +1670,9 @@ export class ControlSession {
       const c = await checkRoster(held[t.team] ?? null, t.roster, t.pin, t.certs, (since) =>
         api<{ rosters: Roster[]; certs: AccountCerts }>(`/api/teams/${encodeURIComponent(t.team)}/rosters?since=${since}`),
       );
-      if (ok && c.roster.version > (held[t.team]?.version ?? 0)) held[t.team] = c.roster;
+      if (ok && c.keep && c.keep.version > (held[t.team]?.version ?? 0)) held[t.team] = c.keep;
       if (ok && c.changes.length) kept[t.team] = [...(kept[t.team] ?? []), ...c.changes];
+      if (ok && c.late.length) lateKept[t.team] = [...new Set([...(lateKept[t.team] ?? []), ...c.late])].sort((a, b) => a - b);
       // #762: only someone who held an owner's link; anything else control
       // says waits is refused here, never shown.
       const requests: Team["requests"] = [];
@@ -1676,10 +1687,15 @@ export class ControlSession {
         verified: ok && !c.problem,
         ...(c.problem ? { rosterProblem: c.problem } : {}),
         ...(kept[t.team]?.length ? { rootChanges: kept[t.team] } : {}),
+        ...(lateKept[t.team]?.length ? { rosterLate: lateKept[t.team] } : c.late.length ? { rosterLate: c.late } : {}),
       });
     }
-    writeKey(ROSTERS_KEY, held);
+    this.rosters.save();
     writeKey(ROOT_CHANGES_KEY, kept);
+    writeKey(ROSTER_LATE_KEY, lateKept);
+    // Checked, but not kept: no change is signed on what this browser
+    // would forget.
+    if (!this.rosters.kept) for (const t of out) t.rosterProblem ??= "unsaved";
     const now = r.asked ?? [];
     const yes = this.asked.find((a) => !now.some((x) => x.team === a.team) && out.some((t) => t.team === a.team));
     if (yes) this.joined = { team: yes.team, name: yes.name };
@@ -1889,12 +1905,16 @@ export class ControlSession {
     await this.refresh();
   }
 
-  /** The root changes shown for `team` were seen: don't show them again. */
+  /** The root changes and removed signers shown for `team` were seen:
+   * don't show them again. */
   dismissRootChanges(team: string) {
     const kept = rootChangesKept();
     delete kept[team];
     writeKey(ROOT_CHANGES_KEY, kept);
-    this.teams = this.teams.map((t) => (t.team === team ? { ...t, rootChanges: undefined } : t));
+    const late = rosterLateKept();
+    delete late[team];
+    writeKey(ROSTER_LATE_KEY, late);
+    this.teams = this.teams.map((t) => (t.team === team ? { ...t, rootChanges: undefined, rosterLate: undefined } : t));
     this.emit();
   }
 

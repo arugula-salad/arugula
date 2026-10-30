@@ -234,9 +234,23 @@ function TeamSection({
           <TeamJoin s={s} t={t} here />
         </>
       )}
-      {t.rosterProblem ? (
+      {t.rosterProblem === "unsaved" ? (
+        <p class="control-error" data-team-roster-problem="unsaved">
+          This browser can't keep the list of this team's members it checked (its storage is off, full or unreadable), so changes to the team wait. Open Arugula in a window that keeps site data to change it.
+        </p>
+      ) : t.rosterProblem ? (
         <p class="control-error" data-team-roster-problem={t.rosterProblem}>
           Control sent a list of this team's members that doesn't follow the one this browser last checked (version {t.roster.version}). That one shows here, and changes wait until control sends one that follows it.
+        </p>
+      ) : null}
+      {t.rosterLate?.length ? (
+        <p class="dim control-explain" data-team-roster-late={t.rosterLate.join(",")}>
+          {t.rosterLate.length === 1 ? `Version ${t.rosterLate[0]}` : `Versions ${t.rosterLate.join(", ")}`} of this team's members {t.rosterLate.length === 1 ? "was" : "were"} signed by a device that has been removed since. It counted when it signed; if you don't recognise the change, ask the team's owners.{" "}
+          {t.rootChanges?.length ? null : (
+            <button class="secondary small" data-roster-late-seen onClick={() => s.dismissRootChanges(t.team)}>
+              Got it
+            </button>
+          )}
         </p>
       ) : null}
       {t.rootChanges?.length ? (

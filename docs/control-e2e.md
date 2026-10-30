@@ -206,11 +206,16 @@ device nobody trusted. Now:
     latest against it (fetching the versions in between), and signs a
     change only on top of a version that follows. If control's latest
     doesn't follow, the page shows the last one it checked and holds
-    changes until control's does.
-  - The page takes a team's roster as control serves it the first time it
-    sees that team, as it pins the founder on first sight. A browser that
-    has never opened the team relies on the team's machines, which check
-    the whole chain from the founder.
+    changes until control's does. The page keeps what it checked in
+    memory for as long as it's open; if the browser can't store it, the
+    page still checks rosters but signs no team change.
+  - The first time a page sees a team, it checks the whole signed history
+    from version 1, which the founder it pinned signs. A version before
+    the latest may have been signed by a device removed since: the page
+    takes it if that device counted as of the version's date, and says so
+    in Teams. The latest version must be signed by a device that counts
+    now. Machines make no such allowance: a version signed by a device
+    removed since stops a machine's first look at that team.
   - When a member's root changes between the version the page held and
     the one it takes, Teams shows the old and new fingerprints until you
     dismiss them, so you can check another key for that account with them.
@@ -260,7 +265,8 @@ device nobody trusted. Now:
 - **Revocations only add up** (`arugula_e2e::checkpoint::refresh_account`):
   a daemon keeps every revocation it has seen, for its own account, its
   team's members and the people it shares with, and a later answer from
-  control can't take one away. A device a daemon holds as removed (and
+  control can't take one away. A member's removals outlive their
+  membership: if they're let back into the team, those still count. A device a daemon holds as removed (and
   what that device approved after) can't count again: if control's
   certificates would let it back in, for instance by leaving out the
   certificate a revocation rests on, the daemon keeps the certificates

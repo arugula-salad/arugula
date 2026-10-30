@@ -70,7 +70,7 @@ use arugula_e2e::{
 };
 use serde::{Deserialize, Serialize};
 use tokio::sync::{mpsc, watch};
-use tracing::{info, warn};
+use tracing::{error, info, warn};
 
 use crate::{
     acl::{Acl, Principal},
@@ -140,6 +140,10 @@ pub struct Saved {
     pub roster: Option<Roster>,
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
     pub team_certs: AccountCerts,
+    /// Members taken out of the team: their certificates and removals as
+    /// last held, so letting one back in takes up from there.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub former_members: BTreeMap<String, Former>,
     /// The team's members' names as they set them (#208); the roster has
     /// one word each ("Sam-Stranger").
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
@@ -222,6 +226,21 @@ pub struct SharedTeam {
     /// from before it was kept): a later grant pinning another starts over.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pin: Option<TeamPin>,
+    /// Members taken out of the team, as [`Saved::former_members`].
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub former: BTreeMap<String, Former>,
+}
+
+/// A member taken out of a team: the root they had, and their
+/// certificates and removals as last held. Their removals outlive their
+/// membership: if they're let back in, control can't leave one out.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Former {
+    pub root: String,
+    #[serde(default)]
+    pub certs: Vec<Cert>,
+    #[serde(default)]
+    pub revocations: Vec<Revocation>,
 }
 
 /// Take a move (#100) if a device of this machine's own account signed
@@ -250,6 +269,7 @@ fn take_move(saved: &mut Saved, m: Move) {
         saved.team = m.team;
         saved.roster = None;
         saved.team_certs = Default::default();
+        saved.former_members = Default::default();
         saved.team_names = Default::default();
         saved.locked = false;
     }
@@ -273,13 +293,23 @@ fn take_own(saved: &mut Saved, certs: Vec<Cert>, revocations: Vec<Revocation>) {
 /// Members' certificates as a refresh takes them: `got` over `held`. A
 /// member control leaves out keeps what was held; one it sends keeps
 /// every removal held, checked from the root the roster held (`roster`)
-/// names for them.
-fn take_members(held: &AccountCerts, roster: Option<&Roster>, got: AccountCerts) -> AccountCerts {
+/// names for them, or, for someone taken out before (`former`), the root
+/// they had then.
+pub(crate) fn take_members(
+    held: &AccountCerts,
+    roster: Option<&Roster>,
+    former: &BTreeMap<String, Former>,
+    got: AccountCerts,
+) -> AccountCerts {
     let mut out = held.clone();
     for (a, (certs, revocations)) in got {
-        let entry = match (held.get(&a), roster.and_then(|r| r.member(&a))) {
-            (Some((old_certs, old_revs)), Some(m)) => {
-                let trust = Trust { account: a.clone(), root: m.root.clone() };
+        let last = match (held.get(&a), roster.and_then(|r| r.member(&a))) {
+            (Some((c, r)), Some(m)) => Some((m.root.as_str(), c.as_slice(), r.as_slice())),
+            _ => former.get(&a).map(|f| (f.root.as_str(), f.certs.as_slice(), f.revocations.as_slice())),
+        };
+        let entry = match (last, held.get(&a)) {
+            (Some((root, old_certs, old_revs)), _) => {
+                let trust = Trust { account: a.clone(), root: root.to_owned() };
                 let (c, r, refused) = checkpoint::refresh_account(&trust, (certs, revocations), (old_certs, old_revs));
                 if refused {
                     warn!(
@@ -289,27 +319,48 @@ fn take_members(held: &AccountCerts, roster: Option<&Roster>, got: AccountCerts)
                 }
                 (c, r)
             }
-            (Some((_, old_revs)), None) => (certs, checkpoint::kept(revocations, old_revs)),
-            (None, _) => (certs, revocations),
+            (None, Some((_, old_revs))) => (certs, checkpoint::kept(revocations, old_revs)),
+            (None, None) => (certs, revocations),
         };
         out.insert(a, entry);
     }
     out
 }
 
+/// Keep only `cur`'s members in `certs`: anyone `prev` had that `cur`
+/// doesn't moves to `former`, with what was held for them, and someone
+/// back in whose certificates were taken leaves it.
+pub(crate) fn retire_members(
+    prev: Option<&Roster>,
+    cur: Option<&Roster>,
+    certs: &mut AccountCerts,
+    former: &mut BTreeMap<String, Former>,
+) {
+    let Some(cur) = cur else { return };
+    for m in prev.iter().flat_map(|p| &p.members) {
+        if cur.member(&m.account).is_none() {
+            let (c, r) = certs.get(&m.account).cloned().unwrap_or_default();
+            let was = former.remove(&m.account);
+            let revocations = checkpoint::kept(r, was.as_ref().map_or(&[][..], |f| f.revocations.as_slice()));
+            former.insert(m.account.clone(), Former { root: m.root.clone(), certs: c, revocations });
+        }
+    }
+    certs.retain(|a, _| cur.member(a).is_some());
+    former.retain(|a, _| !certs.contains_key(a));
+}
+
 /// The team's roster, members' certificates and names, as a refresh
 /// takes control's answer: rosters from the one held, each following the
 /// one before ([`checkpoint::advance`]); members' removals only add up.
 fn take_team(saved: &mut Saved, pin: &TeamPin, t: wire::TeamAnswer) {
-    let mut certs = take_members(&saved.team_certs, saved.roster.as_ref(), t.certs);
+    let mut certs = take_members(&saved.team_certs, saved.roster.as_ref(), &saved.former_members, t.certs);
     let (cur, stopped) = checkpoint::advance(saved.roster.as_ref(), t.rosters, pin, &certs);
     if let Some(version) = stopped {
         warn!(version, "a team roster from control doesn't follow the one held; ignoring it");
     }
-    // Keep only the current members' certificates.
-    if let Some(r) = &cur {
-        certs.retain(|a, _| r.member(a).is_some());
-    }
+    // Keep only the current members' certificates; those taken out are
+    // kept apart, removals and all.
+    retire_members(saved.roster.as_ref(), cur.as_ref(), &mut certs, &mut saved.former_members);
     let mut names = t.names;
     names.retain(|a, _| cur.as_ref().is_some_and(|r| r.member(a).is_some()));
     saved.roster = cur;
@@ -382,16 +433,18 @@ fn take_shared(
             continue;
         };
         let none = AccountCerts::default();
-        let mut certs = take_members(last.map_or(&none, |h| &h.certs), last.map(|h| &h.roster), g.certs);
+        let mut former = last.map(|h| h.former.clone()).unwrap_or_default();
+        let mut certs = take_members(last.map_or(&none, |h| &h.certs), last.map(|h| &h.roster), &former, g.certs);
         let (cur, stopped) = checkpoint::advance(last.map(|h| &h.roster), g.rosters, pin, &certs);
         if let Some(version) = stopped {
             warn!(team, version, "a shared team's roster doesn't follow the one held; stopping there");
         }
         let Some(roster) = cur else { continue };
-        certs.retain(|a, _| roster.member(a).is_some());
+        retire_members(last.map(|h| &h.roster), Some(&roster), &mut certs, &mut former);
         let mut names = g.names;
         names.retain(|a, _| roster.member(a).is_some());
-        out.insert(team.clone(), SharedTeam { roster, certs, names, locked: g.locked, pin: Some(pin.clone()) });
+        let locked = g.locked;
+        out.insert(team.clone(), SharedTeam { roster, certs, names, locked, pin: Some(pin.clone()), former });
     }
     (out, still_held)
 }
@@ -1681,12 +1734,27 @@ impl Control {
             self.get(e, arugula_control_wire::hosted::HOSTED_TRUST).await?;
         let saved = crate::hosted::trust::saved_from(got, &e.keys, Some(&e.saved))?;
         let changed = serde_json::to_value(&saved).ok() != serde_json::to_value(&e.saved).ok();
-        let wrote = changed && self.save_refreshed(&saved)?;
+        let wrote = changed && self.save_or_say(&saved);
         let next = Enrolled::build(saved, e.keys.clone(), &self.acl, self.open_agents());
         info!(devices = next.trusted.devices.len(), others = next.others.len(), changed, "hosted: project refreshed");
         self.install(Some(next));
         self.refreshed.send_modify(|n| *n = (*n).max(number));
         Ok(wrote)
+    }
+
+    /// [`Control::save_refreshed`], for a refresh: what it found is taken
+    /// in memory either way (new removals count at once, and later
+    /// refreshes build on them), so a failure to save is said loudly
+    /// rather than leaving the older trust in place. True if it saved.
+    fn save_or_say(&self, saved: &Saved) -> bool {
+        self.save_refreshed(saved).unwrap_or_else(|e| {
+            error!(
+                error = %e,
+                dir = %self.state_dir.display(),
+                "can't save what control's refresh found; it counts until this daemon restarts, and removals learned since the last save are lost then"
+            );
+            false
+        })
     }
 
     /// Save what a refresh found, unless the machine left while it was
@@ -1809,8 +1877,9 @@ impl Control {
                 e.saved.peers.clone(),
             )
             || saved.team_certs != e.saved.team_certs
+            || saved.former_members != e.saved.former_members
             || saved.team_names != e.saved.team_names;
-        let wrote = changed && self.save_refreshed(&saved)?;
+        let wrote = changed && self.save_or_say(&saved);
         let mut next = Enrolled::build(saved, e.keys.clone(), &self.acl, self.open_agents());
         if next.trusted.get(&next.saved.cert.device).is_none() {
             warn!("this daemon's own certificate no longer checks out (revoked?)");
@@ -3015,6 +3084,7 @@ pub async fn join_finish(p: JoinPending) -> anyhow::Result<Approved> {
         team: pin.clone(),
         roster: None,
         team_certs: Default::default(),
+        former_members: Default::default(),
         team_names: Default::default(),
         locked: false,
         peers: Default::default(),
@@ -3359,6 +3429,7 @@ pub(crate) mod tests {
             team: Some(TeamPin { team: "t1".into(), founder: "a1".into(), founder_root: "r".into() }),
             roster: None,
             team_certs: Default::default(),
+            former_members: Default::default(),
             team_names: Default::default(),
             locked: false,
             peers: Default::default(),
@@ -3594,6 +3665,8 @@ pub(crate) mod tests {
         /// The trust answer's Labs flags (#347); `None` leaves them out,
         /// as a control from before them did.
         flags: Option<serde_json::Value>,
+        /// The trust answer's revocations.
+        revocations: Vec<Revocation>,
     }
 
     struct Rig {
@@ -3606,6 +3679,8 @@ pub(crate) mod tests {
         acl: Arc<Acl>,
         bea: DeviceKeys,
         phone: p256::SecretKey,
+        /// The account's root device's keys.
+        root: DeviceKeys,
     }
 
     /// Enrolled in account `a1` at a [`Fake`]; `b1` (Bea) has an account,
@@ -3656,7 +3731,7 @@ pub(crate) mod tests {
                 "/api/daemon/trust",
                 get(|State((f, _, _)): State<St>| async move {
                     let f = f.lock().unwrap();
-                    let mut v = serde_json::json!({ "certs": f.own, "revocations": [] });
+                    let mut v = serde_json::json!({ "certs": f.own, "revocations": f.revocations });
                     if let Some(flags) = &f.flags {
                         v["flags"] = flags.clone();
                     }
@@ -3733,6 +3808,7 @@ pub(crate) mod tests {
             team: None,
             roster: None,
             team_certs: Default::default(),
+            former_members: Default::default(),
             team_names: Default::default(),
             locked: false,
             peers: Default::default(),
@@ -3745,7 +3821,7 @@ pub(crate) mod tests {
         };
         write_saved(&dir, &saved).unwrap();
         let acl = Arc::new(Acl::open(&dir));
-        Rig { dir, fake, hold, at_peers, acl, bea, phone }
+        Rig { dir, fake, hold, at_peers, acl, bea, phone, root: akeys }
     }
 
     impl Rig {
@@ -4014,6 +4090,30 @@ pub(crate) mod tests {
         let _ = std::fs::remove_dir_all(&r.dir);
     }
 
+    /// A removal a refresh learns counts at once, even when `control.json`
+    /// can't be written: the daemon doesn't keep the older trust.
+    #[tokio::test]
+    async fn a_removal_counts_though_saving_it_fails() {
+        let r = rig("save-fails").await;
+        let (_, phone) = {
+            let k = DeviceKeys::generate();
+            let mut c = Cert::new(&k, "a1", Kind::Browser, "phone");
+            c.sign_with(&r.root);
+            (k, c)
+        };
+        r.fake.lock().unwrap().own.push(phone.clone());
+        let c = Control::new(&r.dir, vec![], String::new(), r.acl.clone(), false);
+        c.refresh().await.unwrap();
+        assert!(c.enrolled().unwrap().trusted.get(&phone.device).is_some());
+        // control.json can't be replaced now (a directory stands in its way).
+        std::fs::remove_file(r.dir.join(FILE)).unwrap();
+        std::fs::create_dir(r.dir.join(FILE)).unwrap();
+        r.fake.lock().unwrap().revocations.push(Revocation::new("a1", &phone.device, &r.root));
+        let _ = c.refresh().await;
+        assert!(c.enrolled().unwrap().trusted.get(&phone.device).is_none(), "the removed phone still counts");
+        let _ = std::fs::remove_dir_all(&r.dir);
+    }
+
     /// Only a refresh that went through counts (#232): not a reload or a
     /// change of trust (`changed`), and not one that failed. With control
     /// unreachable, `refresh_now` gives up after the timeout.
@@ -4117,6 +4217,7 @@ pub(crate) mod tests {
             team: None,
             roster: None,
             team_certs: Default::default(),
+            former_members: Default::default(),
             team_names: Default::default(),
             locked: false,
             peers: Default::default(),
@@ -4273,6 +4374,7 @@ pub(crate) mod tests {
             team: None,
             roster: None,
             team_certs: Default::default(),
+            former_members: Default::default(),
             team_names: Default::default(),
             locked: false,
             peers: Default::default(),
@@ -4346,6 +4448,7 @@ pub(crate) mod tests {
             ]
             .into_iter()
             .collect(),
+            former_members: Default::default(),
             team_names: Default::default(),
             locked: false,
             peers: Default::default(),
@@ -4414,6 +4517,7 @@ pub(crate) mod tests {
                 .into_iter()
                 .map(|(a, c)| (a.to_owned(), (vec![c.clone()], vec![])))
                 .collect(),
+            former_members: Default::default(),
             team_names: Default::default(),
             locked: false,
             peers: Default::default(),
@@ -4539,6 +4643,7 @@ pub(crate) mod tests {
                 .into_iter()
                 .map(|(a, c, m)| (a.to_owned(), (vec![c.clone(), m.clone()], vec![])))
                 .collect(),
+            former_members: Default::default(),
             team_names: Default::default(),
             locked: false,
             peers: Default::default(),
@@ -4624,6 +4729,7 @@ pub(crate) mod tests {
             names: Default::default(),
             locked: false,
             pin: None,
+            former: Default::default(),
         };
         let saved = Saved {
             url: String::new(),
@@ -4637,6 +4743,7 @@ pub(crate) mod tests {
                 vec![member("m", &m_root, TeamRole::Owner), member("o", &o_root, TeamRole::Owner)],
             )),
             team_certs: [("o".to_owned(), (vec![o_root.clone(), o_box.clone()], vec![]))].into_iter().collect(),
+            former_members: Default::default(),
             team_names: Default::default(),
             locked: false,
             peers: Default::default(),
@@ -4718,6 +4825,7 @@ pub(crate) mod tests {
             ]
             .into_iter()
             .collect(),
+            former_members: Default::default(),
             team_names: [("o".to_owned(), "Olive".to_owned())].into_iter().collect(),
             locked: false,
             peers: Default::default(),
@@ -4809,6 +4917,7 @@ pub(crate) mod tests {
             team: None,
             roster: Some(roster),
             team_certs: [("s".to_owned(), (vec![sam], vec![]))].into_iter().collect(),
+            former_members: Default::default(),
             team_names: Default::default(),
             locked: false,
             peers: Default::default(),
@@ -4845,6 +4954,7 @@ pub(crate) mod tests {
             team: None,
             roster: None,
             team_certs: Default::default(),
+            former_members: Default::default(),
             team_names: Default::default(),
             locked: false,
             peers: Default::default(),
@@ -5032,6 +5142,70 @@ pub(crate) mod tests {
         assert!(!has_phone(&s));
         take_team(&mut s, &pin, answer(vec![], vec![]));
         assert!(!has_phone(&s), "a removal control left out");
+    }
+
+    /// A member taken out and let back in under the same root: a removal
+    /// held from before they left stays, though control leaves it out.
+    #[test]
+    fn a_removal_outlives_the_members_removal_from_the_team() {
+        let (ok, oc) = device("o", Kind::Browser);
+        let (ek, ec) = device("e", Kind::Browser);
+        let (_, phone) = approved_by("e", &ek, "phone");
+        let pin = TeamPin { team: "t1".into(), founder: "o".into(), founder_root: oc.device.clone() };
+        let mut s = saved_for("https://c.example", "o");
+        s.team = Some(pin.clone());
+        let with_e =
+            |v| signed_roster(v, vec![member("o", &oc, TeamRole::Owner), member("e", &ec, TeamRole::Editor)], &ok);
+        let answer = |revs: Vec<arugula_e2e::Revocation>, rosters: Vec<Roster>, e_in: bool| {
+            let mut certs: AccountCerts = [("o".to_owned(), (vec![oc.clone()], vec![]))].into();
+            if e_in {
+                certs.insert("e".to_owned(), (vec![ec.clone(), phone.clone()], revs));
+            }
+            wire::TeamAnswer { team: Some(pin.clone()), locked: false, rosters, certs, names: Default::default() }
+        };
+        let has_phone = |s: &Saved| s.roster.as_ref().unwrap().devices("e", &s.team_certs).get(&phone.device).is_some();
+        let removal = arugula_e2e::Revocation::new("e", &phone.device, &ek);
+        take_team(&mut s, &pin, answer(vec![removal], vec![with_e(1)], true));
+        assert!(!has_phone(&s));
+        // e taken out, then let back in; control leaves the removal out.
+        take_team(
+            &mut s,
+            &pin,
+            answer(vec![], vec![signed_roster(2, vec![member("o", &oc, TeamRole::Owner)], &ok)], false),
+        );
+        assert!(s.roster.as_ref().unwrap().member("e").is_none());
+        take_team(&mut s, &pin, answer(vec![], vec![with_e(3)], true));
+        assert!(s.roster.as_ref().unwrap().member("e").is_some());
+        assert!(!has_phone(&s), "a removal from before e left counts again");
+
+        // The same for a team a session was shared with.
+        let pins: BTreeMap<String, TeamPin> = [("t1".to_owned(), pin.clone())].into();
+        let shared = |revs, rosters, e_in| -> BTreeMap<String, wire::SharedTeamAnswer> {
+            let t = answer(revs, rosters, e_in);
+            [(
+                "t1".to_owned(),
+                wire::SharedTeamAnswer {
+                    team: t.team,
+                    name: "Acme".into(),
+                    locked: false,
+                    rosters: t.rosters,
+                    certs: t.certs,
+                    names: Default::default(),
+                },
+            )]
+            .into()
+        };
+        let none = BTreeMap::new();
+        let removal = arugula_e2e::Revocation::new("e", &phone.device, &ek);
+        let v2 = signed_roster(2, vec![member("o", &oc, TeamRole::Owner)], &ok);
+        let a = take_shared(&none, &none, &pins, shared(vec![removal], vec![with_e(1)], true)).0;
+        let b = take_shared(&a, &none, &pins, shared(vec![], vec![with_e(1), v2.clone()], false)).0;
+        let c = take_shared(&b, &none, &pins, shared(vec![], vec![with_e(1), v2, with_e(3)], true)).0;
+        assert_eq!(c["t1"].roster.version, 3);
+        assert!(
+            c["t1"].roster.devices("e", &c["t1"].certs).get(&phone.device).is_none(),
+            "a removal from before e left counts again"
+        );
     }
 
     /// A team's people's removals stay too (`peers`), checked from the
