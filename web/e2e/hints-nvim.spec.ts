@@ -16,7 +16,7 @@
 // machine's, which may hold conversations).
 
 import { spawn, type ChildProcess } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { expect, test, type Page } from "@playwright/test";
@@ -255,6 +255,19 @@ test("nvim-connect: Add arugula.nvim installs it into that nvim, which joins; hi
   await expect.poll(async () => { const e = await editor(page, term); return e && (e.no_follow ? "read over its socket" : "the plugin"); }, { timeout: 15_000 }).toBe("the plugin");
   expect((await editor(page, term))?.offer_plugin ?? false).toBe(false);
   expect(readFileSync(join(home, "data/nvim/site/pack/arugula/start/arugula.nvim/ARUGULA_INSTALLED"), "utf8")).toBeTruthy();
+
+  // Settings > Editor > Remove arugula.nvim (the owner's) deletes that copy
+  // and says so; asked again, it says there is none.
+  const copy = join(home, "data/nvim/site/pack/arugula/start/arugula.nvim");
+  const remove = async () => {
+    await page.locator("[data-account-menu]").click();
+    await (await menuItem(page, "Remove arugula.nvim", { exact: true })).click();
+  };
+  await remove();
+  await expect(page.getByText(/^Removed arugula\.nvim from /)).toBeVisible();
+  expect(existsSync(copy)).toBe(false);
+  await remove();
+  await expect(page.getByText("No copy of arugula.nvim that Arugula installed is on this machine")).toBeVisible();
 
   // Another nvim without it, after a reload: answered, it never returns.
   await quit(page, term);

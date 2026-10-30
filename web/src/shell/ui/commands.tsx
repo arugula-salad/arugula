@@ -34,7 +34,7 @@ import { bigTipsOn, setBigTips, setTips, tipsOn } from "../../shared/seen";
 import { clientTarget, EDITORS, editorShown, openInEditor, setEditorPref } from "../open-in-editor";
 import { openWhatsNew } from "./whats-new";
 import { openPanel } from "../trust/common";
-import { addPlugin, NVIM_DOCS, openHelp, openHelpCard, runsNvim, useNvim } from "../hints/nvim";
+import { addPlugin, NVIM_DOCS, openHelp, openHelpCard, removePlugin, runsNvim, useNvim } from "../hints/nvim";
 
 
 /** A pane's right-click menu. `workspace` is the directory it's in when
@@ -355,7 +355,22 @@ export function settingsItems(client: Client | null, opts: { machine?: boolean }
     // #1731: what Open in editor opens, everywhere. The account's, as Tips.
     {
       label: "Editor",
-      submenu: EDITORS.map(([e, label]) => ({ label, hint: "What Open in editor opens", checked: editorShown() === e, run: () => setEditorPref(e) })),
+      submenu: [
+        ...EDITORS.map(([e, label]) => ({ label, hint: "What Open in editor opens", checked: editorShown() === e, run: () => setEditorPref(e) }) as MenuItem),
+        // The machine's, so the owner's. The menu is built when it opens,
+        // so it can't wait on the daemon's list of copies: Remove always
+        // runs, and says when there was none.
+        ...(client && !client.state?.roles
+          ? [
+              "separator" as const,
+              {
+                label: "Remove arugula.nvim",
+                hint: "Deletes the copies of arugula.nvim that Arugula installed on this machine; one your plugin manager installed stays",
+                run: () => void removePlugin(client),
+              } as MenuItem,
+            ]
+          : []),
+      ],
     },
     ...(client?.state
       ? [
