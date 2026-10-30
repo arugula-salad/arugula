@@ -65,7 +65,7 @@ impl Rule {
 impl Rule {
     /// What `issue-home` is asked, for this rule: the project named, or
     /// the repo to find one by (nothing: personal).
-    fn query<'a>(&self, asked: Option<&'a str>) -> Vec<(&'static str, String)> {
+    fn query(&self, asked: Option<&str>) -> Vec<(&'static str, String)> {
         match (self, asked) {
             (Rule::Asked, Some(p)) => vec![("project", p.to_owned())],
             (Rule::Linked(repo), _) => vec![("repo", repo.clone())],
