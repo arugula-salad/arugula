@@ -63,7 +63,7 @@ use std::{
     time::Duration,
 };
 use tokio::{
-    sync::{broadcast, mpsc, oneshot},
+    sync::{broadcast, mpsc, oneshot, watch},
     time::{Instant, sleep_until},
 };
 use tracing::{info, warn};
@@ -367,6 +367,8 @@ pub enum InboxReply {
 pub struct MuxHandle {
     tx: mpsc::UnboundedSender<Cmd>,
     events: broadcast::Sender<Event>,
+    /// Bumped whenever who may read what could have changed (`Daemon::access`).
+    access: watch::Sender<u64>,
     pub store: StateDir,
     pub provider: Option<Arc<dyn Provider>>,
     /// Tags execs on machines (`ARUGULA_EXEC`; see `mux::exec_tag`).
@@ -394,6 +396,13 @@ impl MuxHandle {
 
     pub fn events(&self) -> broadcast::Receiver<Event> {
         self.events.subscribe()
+    }
+
+    /// Changes whenever who may read what could have changed: grants, a
+    /// pane made private, the layout. A stream the mux doesn't track (an
+    /// HTTP follow) asks again for its reader's role when it does.
+    pub fn access_changes(&self) -> watch::Receiver<u64> {
+        self.access.subscribe()
     }
 
     pub async fn api<T>(&self, make: impl FnOnce(oneshot::Sender<T>) -> Api) -> Option<T> {
@@ -525,6 +534,8 @@ struct Daemon {
     /// ...and starts its shell here (a directory on its host).
     next_cwd: Option<PathBuf>,
     /// To ourselves, for work finished in the background.
+    /// Bumped when grants, privacy or the layout change (`access_moved`).
+    access: watch::Sender<u64>,
     tx: mpsc::UnboundedSender<Cmd>,
     machines: BTreeMap<MachineId, Machine>,
     next_machine: MachineId,
@@ -612,6 +623,7 @@ pub fn start(
     let (tx, rx) = mpsc::unbounded_channel();
     let (notices, notices_rx) = mpsc::unbounded_channel();
     let (events, _) = broadcast::channel(1024);
+    let (access, _) = watch::channel(0u64);
     let mut private = config.private.clone();
     private.push(store.root().to_path_buf());
     let fs = Arc::new(crate::fs::Scope::new(config.home.clone(), private));
@@ -686,6 +698,7 @@ pub fn start(
         next_owner_tab: false,
         next_cwd: None,
         tx: tx.clone(),
+        access: access.clone(),
         machines: BTreeMap::new(),
         next_machine: 1,
         save_due: None,
@@ -714,7 +727,7 @@ pub fn start(
     d.sweep_machines();
     let (provider, daemon_id) = (d.config.provider.clone(), d.config.daemon_id.clone());
     tokio::spawn(d.run(rx, notices_rx));
-    MuxHandle { tx, events, store, provider, daemon_id, fs, shell_env, kinds, inventory }
+    MuxHandle { tx, events, access, store, provider, daemon_id, fs, shell_env, kinds, inventory }
 }
 
 /// Whether `data` is nothing but focus reports (`ESC [ I` in, `ESC [ O`

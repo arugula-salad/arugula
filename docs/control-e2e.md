@@ -19,7 +19,10 @@ stores](#what-control-stores) lists every table of both.
   Browsers run it on WebCrypto alone; daemons and the CLI use `snow`.
 - **Every viewer gets its own channel, including on shared sessions.**
   Sessions have no shared key. Revoking someone closes their channel; there
-  is no key to rotate. Fanning out one ciphertext at the relay waits until
+  is no key to rotate. Changing their role (a team owner made a viewer)
+  closes it too, and their client opens a new one in the new role. What a
+  channel was streaming (a follow) ends with it, and a follow over any path
+  ends once its reader may no longer read that pane. Fanning out one ciphertext at the relay waits until
   a measured need (see [Fan-out](#fan-out-later-if-ever)).
 - **Device keys:**
   - a browser keeps a non-extractable X25519 key (for Noise) and an Ed25519

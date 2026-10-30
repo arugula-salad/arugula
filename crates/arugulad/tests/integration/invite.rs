@@ -798,3 +798,72 @@ async fn a_teams_other_owner_cant_answer_a_docs_share_card() {
     let r = via_mcp(json!({ "kind": "share", "block": doc }));
     assert_eq!(r["status"], "waiting", "still pending: {r}");
 }
+
+/// An open channel is as whoever its device is now: a team owner made a
+/// viewer while theirs is open has it closed (their client opens a new one,
+/// as a viewer), and a follow it was streaming stops with it rather than
+/// going on through the socket.
+#[cfg(feature = "labs")]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_channel_closes_when_its_owner_is_made_a_viewer_and_its_follow_stops() {
+    let w = world_where(TeamRole::Owner);
+    w.fake.lock().unwrap().team = Some(w.t1.clone());
+    let d = w.daemon(true);
+    let (_, session) = first(&d);
+    let ticker =
+        d.post("/api/run", json!({ "command": "while :; do echo tick; sleep 0.2; done" }))["pane"].as_u64().unwrap();
+    let (mut dee, ch) = channel(&d, &w.daemon, &w.dee.keys).await;
+
+    // Dee follows the pane through the channel.
+    let head = RequestHead {
+        method: "GET".into(),
+        path: format!("/api/panes/{ticker}/tail?follow=1"),
+        content_type: None,
+        stream: true,
+        headers: Default::default(),
+    };
+    for m in ch.seal(&Msg::Request { id: 7, head, body: vec![] }).unwrap() {
+        dee.send(Message::Binary(m.into())).await.unwrap();
+    }
+    // What the follow streams, until the socket ends or `secs` pass:
+    // whether it ended.
+    async fn follow(ws: &mut Ws, ch: &Channel, secs: u64, mut seen: impl FnMut(&[u8]) -> bool) -> bool {
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(secs);
+        loop {
+            match tokio::time::timeout_at(deadline, ws.next()).await {
+                Err(_) => return false,
+                Ok(None | Some(Err(_)) | Some(Ok(Message::Close(_)))) => return true,
+                Ok(Some(Ok(Message::Binary(w)))) => {
+                    if let Ok(Some(Msg::Response { id: 7, body, .. })) = ch.open(&w)
+                        && seen(&body)
+                    {
+                        return false;
+                    }
+                }
+                Ok(Some(Ok(_))) => {}
+            }
+        }
+    }
+    let mut ticks = 0;
+    let ended = follow(&mut dee, &ch, 15, |b| {
+        ticks += String::from_utf8_lossy(b).matches("tick").count();
+        ticks >= 3
+    })
+    .await;
+    assert!(!ended && ticks >= 3, "the follow streams ({ticks} ticks)");
+
+    // Alex makes Dee a viewer.
+    {
+        let (mut rosters, certs) = w.t1.clone();
+        let mut next = rosters[0].clone();
+        next.version = 2;
+        next.at = 2;
+        next.members.iter_mut().find(|m| m.account == w.dee.account).unwrap().role = TeamRole::Viewer;
+        next.sign_with(&w.alex);
+        rosters.push(next);
+        w.fake.lock().unwrap().team = Some((rosters, certs));
+    }
+    poke(&d, session);
+    let ended = follow(&mut dee, &ch, 20, |_| false).await;
+    assert!(ended, "the channel stayed open, still following, after Dee was made a viewer");
+}
