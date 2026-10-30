@@ -20,7 +20,10 @@
 //!   file. The link's page stores the key and moves on to the app, so the
 //!   token leaves the address bar at once. A browser still holding an
 //!   older link's cookie (the token) is signed in the same way from it,
-//!   once, and the cookie is removed.
+//!   once, and the cookie is removed: only for [`LEGACY_DAYS`] after the
+//!   first start that found a token made before (an older daemon's,
+//!   whose links set that cookie). Then, and on a new install, a cookie
+//!   counts for nothing anywhere.
 //! - **The app's own files** (`/`, `/assets/…`) need neither: they're the
 //!   same for everyone, and a page load can't carry a header.
 //! - **`tailscale serve`'s identity header** is only believed from
@@ -52,6 +55,30 @@ pub fn path(state_dir: &Path) -> PathBuf {
         Some(p) => PathBuf::from(p),
         None => state_dir.join(FILE),
     }
+}
+
+/// How long after an upgrade a browser holding an older sign-in link's
+/// cookie is signed in from it once (`server::signin`).
+pub const LEGACY_DAYS: u64 = 14;
+/// When that ends, as Unix seconds (0: never began), in the state directory.
+const LEGACY_FILE: &str = "legacy-signin-until";
+
+/// Until when (Unix seconds) an older sign-in link's cookie may sign a
+/// browser in once: [`LEGACY_DAYS`] from the first start that found a token
+/// made before (`token_existed`), kept in the state directory so restarts
+/// don't extend it. None for a token this version made, and once it's past.
+pub fn legacy_until(state_dir: &Path, token_existed: bool) -> Option<u64> {
+    let file = state_dir.join(LEGACY_FILE);
+    let until = match std::fs::read_to_string(&file) {
+        Ok(s) => s.trim().parse().unwrap_or(0),
+        Err(_) => {
+            let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs());
+            let until = if token_existed { now + LEGACY_DAYS * 86_400 } else { 0 };
+            let _ = std::fs::write(&file, until.to_string());
+            until
+        }
+    };
+    (until > 0).then_some(until)
 }
 
 /// The page key for `token`: what this daemon's page shows instead of the
@@ -333,6 +360,23 @@ mod tests {
         assert!(load_or_create(&link).is_err());
         std::fs::write(&p, "short").unwrap();
         assert!(load_or_create(&p).is_err());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn an_older_links_cookie_counts_only_after_an_upgrade_and_not_for_long() {
+        let dir = std::env::temp_dir().join(format!("ilg-legacy-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        // A new install: never, and not on a later start either.
+        assert_eq!(legacy_until(&dir, false), None);
+        assert_eq!(legacy_until(&dir, true), None);
+        // An upgrade: from the first start, kept across restarts.
+        std::fs::remove_file(dir.join(LEGACY_FILE)).unwrap();
+        let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
+        let until = legacy_until(&dir, true).unwrap();
+        assert!(until >= now + LEGACY_DAYS * 86_400 && until <= now + LEGACY_DAYS * 86_400 + 5);
+        assert_eq!(legacy_until(&dir, true), Some(until));
         let _ = std::fs::remove_dir_all(&dir);
     }
 

@@ -274,6 +274,7 @@ async fn guard(
         Class::Shell => Class::Owner,
         c => c,
     };
+    let signin = matches!(class, Class::SignIn);
     let checked = app.access.check_host(req.headers()).and_then(|()| match class {
         Class::Shell => Ok(()),
         Class::Owner => {
@@ -333,8 +334,11 @@ async fn guard(
     if let Some(f) = forwarded {
         app.identify.saw_forwarded(&f).await;
     }
-    // Checked: nothing past here (a handler, a dial-out host's proxy) sees it.
-    req.headers_mut().remove(crate::access::PAGE_KEY_HEADER);
+    // Checked: nothing past here (a handler, a dial-out host's proxy) sees
+    // it, but the sign-in link's page, which hands it back.
+    if !signin {
+        req.headers_mut().remove(crate::access::PAGE_KEY_HEADER);
+    }
     let mut res = match checked {
         Ok(()) => next.run(req).await,
         Err((status, why)) => {
@@ -401,8 +405,9 @@ fn page_key_from_query(req: &mut Request) {
     if let Ok(uri) = Uri::from_parts(parts) {
         *req.uri_mut() = uri;
     }
+    // The page's own key wins over a header something else added.
     if let Ok(v) = HeaderValue::from_str(&key) {
-        req.headers_mut().entry(crate::access::PAGE_KEY_HEADER).or_insert(v);
+        req.headers_mut().insert(crate::access::PAGE_KEY_HEADER, v);
     }
 }
 
@@ -499,9 +504,12 @@ async fn signin(
     headers: HeaderMap,
     axum::extract::Query(q): axum::extract::Query<SignInQuery>,
 ) -> Response {
+    // Without a token: an older link's cookie (for a while after an
+    // upgrade), or the page key itself (a browser that sends it on every
+    // request, as the specs' do), which gets nothing it hasn't got.
     let ok = match &q.token {
         Some(t) => app.access.is_local_token(t),
-        None => app.access.legacy_cookie(&headers),
+        None => app.access.legacy_cookie(&headers) || app.access.is_page_key(&headers),
     };
     let key = app.access.page_key().filter(|_| ok);
     let Some(key) = key else {
@@ -726,8 +734,10 @@ mod tests {
         assert_eq!(r.uri().to_string(), "/ws?surface=web");
         assert_eq!(r.headers()["x-arugula-key"], "ilp_abc");
         let mut r = req("/h/box/ws?arugula_key=ilp_abc", true);
+        r.headers_mut().insert("x-arugula-key", HeaderValue::from_static("ilp_other"));
         page_key_from_query(&mut r);
         assert_eq!(r.uri().to_string(), "/h/box/ws");
+        assert_eq!(r.headers()["x-arugula-key"], "ilp_abc", "the page's own key wins");
         // Only for a WebSocket: elsewhere it stays put and counts for nothing.
         let mut r = req("/api/panes?arugula_key=ilp_abc", false);
         page_key_from_query(&mut r);

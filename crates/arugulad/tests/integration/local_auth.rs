@@ -105,17 +105,19 @@ fn a_signin_link_gives_the_page_its_key_and_goes_to_the_page() {
         assert_eq!(status, 200);
         assert!(page.contains(r#"location.replace("/")"#), "{next}: {page}");
     }
-    // Without a token: a browser with an older link's cookie is signed in
-    // from it, once; one without is told how to sign in.
+    // Without a token, on a new install: told how to sign in, whatever
+    // cookie it has (no older link ever set one here).
     let old = format!("arugula_{}={token}", d.port);
-    let (status, head, page) = tcp(&d, "GET", "/auth?next=/y", &[("cookie", &old)]);
-    assert_eq!(status, 200, "{head}");
-    assert!(page.contains(&key) && page.contains(r#"location.replace("/y")"#), "{page}");
-    assert!(head.contains(&clear), "{head}");
-    let (status, _, page) = tcp(&d, "GET", "/auth?next=/y", &[("cookie", &format!("arugula_{}={key}", d.port))]);
-    assert_eq!(status, 401);
-    assert!(page.contains("arugula web"), "{page}");
-    assert_eq!(tcp(&d, "GET", "/auth", &[]).0, 401);
+    for cookie in [old.as_str(), &format!("arugula_{}={key}", d.port), ""] {
+        let (status, _, page) = tcp(&d, "GET", "/auth?next=/y", &[("cookie", cookie)]);
+        assert_eq!(status, 401, "{cookie}");
+        assert!(page.contains("arugula web") && !page.contains(&key), "{page}");
+    }
+    // A browser that already sends the key on every request gets it back.
+    let (status, _, page) = tcp(&d, "GET", "/auth?next=/y", &[("x-arugula-key", &key)]);
+    assert_eq!(status, 200);
+    assert!(page.contains(&key), "{page}");
+    assert_eq!(tcp(&d, "GET", "/auth?next=/y", &[("x-arugula-key", "ilp_wrong")]).0, 401);
 
     // `arugula web`'s link: over the socket only.
     let (status, _, body) = socket(&d, "/api/signin-link");
@@ -124,6 +126,53 @@ fn a_signin_link_gives_the_page_its_key_and_goes_to_the_page() {
     assert_eq!(v["url"], format!("http://127.0.0.1:{}/auth?token={token}", d.port));
     let bearer = format!("Bearer {token}");
     assert_eq!(tcp(&d, "GET", "/api/signin-link", &[("authorization", &bearer)]).0, 404);
+}
+
+/// Upgraded from a daemon whose sign-in links set the token as a cookie: a
+/// browser with that cookie is signed in from it once (the page gets the
+/// key, the cookie is removed), for `LEGACY_DAYS`; it's never let in to
+/// anything else.
+#[test]
+fn after_an_upgrade_an_older_links_cookie_signs_a_browser_in_once() {
+    let state = std::env::temp_dir().join(format!("ilg-lauth-upgrade-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&state);
+    std::fs::create_dir_all(&state).unwrap();
+    std::fs::set_permissions(&state, std::fs::Permissions::from_mode(0o700)).unwrap();
+    let token = format!("ilt_{}", "ab".repeat(32));
+    std::fs::write(state.join("local-token"), &token).unwrap();
+    std::fs::set_permissions(state.join("local-token"), std::fs::Permissions::from_mode(0o600)).unwrap();
+    let d =
+        arugulad!("lauth").no_wisp().no_tailscale().env_remove("ARUGULA_LOCAL_TOKEN_FILE").state_dir(&state).start();
+    assert_eq!(d.token(), token);
+    let old = format!("arugula_{}={token}", d.port);
+    // Not a credential: the API refuses it.
+    assert_eq!(tcp(&d, "GET", "/api/panes", &[("cookie", &old), ("sec-fetch-site", "same-origin")]).0, 401);
+    // The sign-in link's page, from it.
+    let (status, head, page) = tcp(&d, "GET", "/auth?next=/y", &[("cookie", &old)]);
+    assert_eq!(status, 200, "{head}");
+    let key = page_key(&d);
+    assert!(page.contains(&key) && page.contains(r#"location.replace("/y")"#), "{page}");
+    assert!(
+        head.contains(&format!("set-cookie: arugula_{}=; path=/; httponly; samesite=lax; max-age=0", d.port)),
+        "{head}"
+    );
+    // Until when, kept for the next start.
+    let until: u64 = std::fs::read_to_string(state.join("legacy-signin-until")).unwrap().trim().parse().unwrap();
+    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
+    assert!(until > now + 13 * 86_400 && until <= now + 14 * 86_400 + 60, "{until}");
+    drop(d);
+    // Past it: nothing.
+    std::fs::create_dir_all(&state).unwrap();
+    std::fs::set_permissions(&state, std::fs::Permissions::from_mode(0o700)).unwrap();
+    std::fs::write(state.join("local-token"), &token).unwrap();
+    std::fs::set_permissions(state.join("local-token"), std::fs::Permissions::from_mode(0o600)).unwrap();
+    std::fs::write(state.join("legacy-signin-until"), (now - 1).to_string()).unwrap();
+    let d =
+        arugulad!("lauth").no_wisp().no_tailscale().env_remove("ARUGULA_LOCAL_TOKEN_FILE").state_dir(&state).start();
+    let old = format!("arugula_{}={token}", d.port);
+    let (status, _, page) = tcp(&d, "GET", "/auth?next=/y", &[("cookie", &old)]);
+    assert_eq!(status, 401);
+    assert!(page.contains("arugula web"), "{page}");
 }
 
 #[tokio::test]

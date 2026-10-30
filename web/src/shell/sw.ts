@@ -18,7 +18,7 @@
 // Built by itself into dist/sw.js as a classic worker (vite.sw.config.ts).
 
 import { E2ESocket } from "./e2e/channel.ts";
-import { KEY_CACHE } from "./local-key.ts";
+import { KEY_CACHE } from "./local-key-cache.ts";
 import type { ActRequest } from "../shared/proto";
 import { existingKeys, loadWorkerDirectory } from "./e2e/keys.ts";
 import { chatTap, platformOf, platformTap, shareUrl, tapUrl, withShare } from "./tap.ts";
@@ -177,6 +177,7 @@ async function act(daemon: string | undefined, body: ActRequest): Promise<boolea
         method: "POST",
         headers: { "Content-Type": "application/json", ...(key ? { "x-arugula-key": key } : {}) },
         body: JSON.stringify(body),
+        redirect: "manual",
       });
       return res.ok;
     }

@@ -11,8 +11,12 @@ await f.machine("workstation", 7730);
 await f.machine("build-01", 7731);
 await f.machine("build-02", 7732);
 await f.populate();
-// Its daemons share a token: the link signs the browser in to all three.
+// The link signs a browser in to workstation's daemon only: a page's key
+// goes to its own daemon, so build-01 and build-02 show as unreachable by
+// hand. The specs' browsers (and `just screenshots`) carry the shared key on
+// every request and see all three.
 console.log(`swarm: ${signIn("http://127.0.0.1:7730", "/#swarm")}\n   (t trouble, a ask, q question, d done, x quit)`);
+console.log("   (by hand only workstation answers: several daemons on one machine share a page in tests only)");
 const bye = () => {
   f.stop();
   process.exit(0);

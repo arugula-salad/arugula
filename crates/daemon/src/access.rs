@@ -15,7 +15,11 @@
 //!   name, which serve terminates TLS for), or one given with
 //!   `--allow-origin`. That is how another daemon's page (the home daemon,
 //!   whose host list this daemon is on) may connect here: by exact origin,
-//!   scheme and port included, never a pattern. This stops any other page
+//!   scheme and port included, never a pattern. Its identity is the
+//!   tailnet's; a page from another daemon on this machine has nothing to
+//!   sign in here with (its page key is its own daemon's), so several
+//!   daemons on one machine sharing one page works in tests only, where
+//!   every request carries the key. This stops any other page
 //!   in a browser from opening a WebSocket to us (cross-site WebSocket
 //!   hijacking) or posting to the API.
 //! - **Identity**: a connection tailscaled knows about must come from the
@@ -81,6 +85,9 @@ pub struct Access {
     port: u16,
     /// The local token, when loopback callers need it (`localauth.rs`).
     local: Option<LocalToken>,
+    /// Until when (Unix seconds) an older sign-in link's cookie may sign a
+    /// browser in once (`localauth::legacy_until`).
+    legacy_until: Option<u64>,
 }
 
 #[derive(Clone)]
@@ -134,6 +141,7 @@ impl Access {
             tailnet: None,
             port,
             local: None,
+            legacy_until: None,
         }
     }
 
@@ -208,9 +216,22 @@ impl Access {
         format!("arugula_{}", self.port)
     }
 
-    /// A cookie from an older sign-in link carries the local token.
+    /// Until when (Unix seconds) an older sign-in link's cookie may sign a
+    /// browser in once; None: never.
+    pub fn with_legacy_cookie_until(mut self, until: Option<u64>) -> Self {
+        self.legacy_until = until;
+        self
+    }
+
+    /// A cookie from an older sign-in link carries the local token, while
+    /// such a cookie may still sign a browser in (`localauth::LEGACY_DAYS`
+    /// after an upgrade). It is never a credential for anything else.
     pub fn legacy_cookie(&self, headers: &HeaderMap) -> bool {
         let Some(l) = &self.local else { return false };
+        let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(u64::MAX, |d| d.as_secs());
+        if self.legacy_until.is_none_or(|until| now > until) {
+            return false;
+        }
         headers
             .get_all(header::COOKIE)
             .iter()
@@ -218,6 +239,13 @@ impl Access {
             .flat_map(|v| v.split(';'))
             .filter_map(|c| c.split_once('=').map(|(_, v)| v.trim()))
             .any(|v| same(&l.digest, v))
+    }
+
+    /// The request carries the page key in its header.
+    pub fn is_page_key(&self, headers: &HeaderMap) -> bool {
+        self.local
+            .as_ref()
+            .is_some_and(|l| header_str(headers, PAGE_KEY_HEADER).is_some_and(|k| same(&l.page_digest, k)))
     }
 
     /// The page key, for the sign-in link to hand the page.
@@ -716,10 +744,15 @@ mod tests {
             let home = [host, ("cookie", &cookie), ("origin", "http://localhost:5173")];
             assert!(check(&a, &home).is_err());
         }
-        // An older sign-in link's cookie is still recognized, to sign that
-        // browser in again (`server::signin`).
-        assert!(a.legacy_cookie(&headers(&[("cookie", &format!("x=1; arugula_7681={token}"))])));
-        assert!(!a.legacy_cookie(&headers(&[("cookie", &format!("arugula_7681={key}"))])));
+        // An older sign-in link's cookie signs that browser in once
+        // (`server::signin`), only for a while after an upgrade.
+        let old = headers(&[("cookie", &format!("x=1; arugula_7681={token}"))]);
+        assert!(!a.legacy_cookie(&old), "not on a new install");
+        let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
+        let upgraded = a.clone().with_legacy_cookie_until(Some(now + 60));
+        assert!(upgraded.legacy_cookie(&old));
+        assert!(!upgraded.legacy_cookie(&headers(&[("cookie", &format!("arugula_7681={key}"))])));
+        assert!(!a.clone().with_legacy_cookie_until(Some(now - 1)).legacy_cookie(&old), "not once it's past");
         // The tailnet's identity is still the tailnet's.
         let served = [("host", "geek.example.ts.net"), ("tailscale-user-login", "me@x.com")];
         assert!(check(&a, &served).is_ok());
