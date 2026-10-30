@@ -352,7 +352,7 @@ async fn a_reconcile_after_a_long_outage_takes_every_page() {
     let mut all = vec![far];
     all.extend((11..41).map(|n| item(n, &format!("Changed {n}"), "started", 1_000_000 + n)));
     w.fake.set_items(all);
-    assert!(30 / 2 > connect::PAGES);
+    const { assert!(30 / 2 > connect::PAGES) };
     let due = now_ms() + RECONCILE_MS + 1;
     assert_eq!(
         connect::reconcile(&w.app, due).await.unwrap(),
