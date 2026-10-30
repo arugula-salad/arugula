@@ -87,9 +87,31 @@ device-keys board, Arugula native #382 to #390).
   valid until they expire (90 days at most); new grants and approvals are
   passkey-signed. Approvals already in a deploy's log keep verifying as
   they were made.
-- **Where it's approved.** The RP ID that lets one passkey approve on both
-  control's page and the platform's (related origins, or `arugula.io`)
-  follows from S46 (#382) and amends aru-078 then.
+- **Where it's approved: related origins** (S46, #382; Jake, 2026-10-30).
+  Passkeys stay bound to control's host (aru-078). Control serves
+  `/.well-known/webauthn` listing the platform page's origin, so the same
+  passkey approves on either page. Where a browser or provider can't use a
+  related origin (the 1Password extension, Firefox before 152, the Linux
+  app window, which has no WebAuthn), the approval goes to control's page as
+  before. Not `arugula.io` as the RP: any app on `<name>.apps.arugula.io`
+  could then raise a person's passkey sheet.
+- **Every provider counts** (Jake, 2026-10-30). An approval takes any
+  passkey registered to the account, and its user-verification flag is
+  taken at its word. The cost, written down: S46 found that the 1Password,
+  Bitwarden, Proton Pass, KeePassXC and Okta browser extensions, and Proton
+  Pass and Strongbox natively, set it without checking anyone, so with
+  those a program driving an unlocked browser could approve. Refusing them
+  by AAGUID, or allowing only iCloud Keychain, Google Password Manager,
+  Windows Hello and security keys, was offered and not taken. The log keeps
+  each passkey's AAGUID, so a policy can be added later.
+- **A passkey can't be taken away, or added back, by a session alone**
+  (S46 q5; Jake, 2026-10-30). Removing a passkey takes an assertion from
+  another of the account's passkeys over the removal. An account that has
+  ever had a passkey gets a new "first" one only through aru-119's reset,
+  with its 48-hour wait that any device can cancel. A fresh GitHub sign-in
+  (#1386) adds a first passkey at once only to an account that never had
+  one. Without this, holding the GitHub account would be enough to approve
+  a deploy.
 
 Where: `crates/platform/src/approvals.rs`, `crates/e2e/src/deploy.rs`,
 `crates/e2e/src/cert.rs`, `crates/control/src/passkey.rs`.
