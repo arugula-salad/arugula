@@ -29,7 +29,7 @@ import { SettingsPage } from "./pages/settings";
 import { HostedWorkspacePage, HostedWorkspaces } from "./pages/hosted-workspace";
 import { RunPage, RunsPage } from "./pages/runs";
 import { SessionsPage } from "./pages/sessions";
-import { BoardPage, BoardsPage } from "./pages/boards";
+import { AllBoardsPage, BoardPage, BoardsPage } from "./pages/boards";
 import { TriagePage } from "./pages/triage";
 import { DocPage, DocsPage } from "./pages/docs";
 import { projectDocs } from "../shared/docs/store";
@@ -106,6 +106,8 @@ function body(r: Route, lost: string | null) {
       return <HostedWorkspacePage project={r.project} workspace={r.workspace} />;
     case "inbox":
       return <InboxPage />;
+    case "all-boards":
+      return <AllBoardsPage />;
     case "settings":
       return <SettingsPage />;
     case "deploy":

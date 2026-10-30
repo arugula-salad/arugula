@@ -19,6 +19,8 @@ test("each route parses", () => {
   assert.equal(parse("/agents").page, "missing", "the cloud agent library is gone");
   assert.deepEqual(parse("/inbox"), { page: "inbox" });
   assert.equal(pathOf({ page: "inbox" }), "/inbox");
+  assert.deepEqual(parse("/boards"), { page: "all-boards" });
+  assert.equal(pathOf({ page: "all-boards" }), "/boards");
   assert.deepEqual(parse("/settings"), { page: "settings" });
   assert.deepEqual(parse(`/p/${P}-x/chat`), { page: "chat", project: P });
   assert.deepEqual(parse(`/p/${P}/chat/ch_0123456789abcdef-general`, "?msg=12"), { page: "chat", project: P, room: "ch_0123456789abcdef", msg: 12 });
@@ -82,6 +84,7 @@ test("every route starts with a segment in TOP, the server's 404 list (UI audit 
     { page: "runs", project: P },
     { page: "installed" },
     { page: "inbox" },
+    { page: "all-boards" },
     { page: "settings" },
     { page: "deploy", deploy: `dep_${"0a".repeat(16)}` },
     { page: "find", what: "chat" },
