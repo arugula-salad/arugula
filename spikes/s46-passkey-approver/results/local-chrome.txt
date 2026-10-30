@@ -1,0 +1,26 @@
+
+## with /.well-known/webauthn listing app.s46.test (153.0.8010.52)
+- rp.s46.test       register rp              ok  flags UP,UV,AT; origin https://rp.s46.test; (Chromium virtual authenticator)
+- rp.s46.test       sign rp on rp            ok  flags UP,UV; origin https://rp.s46.test; verified
+- app.s46.test      sign rp on app           ok  flags UP,UV; origin https://app.s46.test; verified
+- stranger.s46.test sign rp on stranger      NO  SecurityError: The relying party ID is not a registrable domain suffix of, nor equal to the current domain. Subsequently, fetching the .well-known/webauthn resource of the claimed RP ID was successful, but no listed origin matched the caller.
+- app.s46.test      register parent          ok  flags UP,UV,AT; origin https://app.s46.test; (Chromium virtual authenticator)
+- rp.s46.test       sign parent on rp        ok  flags UP,UV; origin https://rp.s46.test; verified
+- stranger.s46.test sign parent on stranger  ok  flags UP,UV; origin https://stranger.s46.test; verified
+- clientCapabilities: {"conditionalCreate":true,"conditionalGet":true,"extension:appid":true,"extension:appidExclude":true,"extension:cmtgKey":false,"extension:credBlob":true,"extension:credProps":true,"extension:credentialProtectionPolicy":true,"extension:crossDeviceFallbackUrl":false,"extension:enforceCredentialProtectionPolicy":true,"extension:getCredBlob":true,"extension:hmacCreateSecret":true,"extension:largeBlob":true,"extension:minPinLength":true,"extension:payment":false,"extension:prf":true,"hybridTransport":true,"immediateGet":true,"passkeyPlatformAuthenticator":true,"relatedOrigins":true,"signalAllAcceptedCredentials":true,"signalCurrentUserDetails":true,"signalUnknownCredential":true,"userVerifyingPlatformAuthenticator":true}
+- the page's fetch of the RP's well-known: 200 application/json {"origins":["https://app.s46.test"]}
+- well-known fetch: origin=- mode=cors dest=empty site=same-origin cookie=no
+- well-known fetch: origin=https://app.s46.test mode=cors dest=empty site=same-site cookie=no
+- well-known fetch: origin=- mode=no-cors dest=empty site=none cookie=no
+- well-known fetch: origin=https://stranger.s46.test mode=cors dest=empty site=same-site cookie=no
+- well-known fetch: origin=- mode=no-cors dest=empty site=none cookie=no
+- well-known fetch: origin=https://app.s46.test mode=cors dest=empty site=same-site cookie=no
+- well-known fetch: origin=- mode=cors dest=empty site=same-origin cookie=no
+- well-known fetch: origin=https://stranger.s46.test mode=cors dest=empty site=same-site cookie=no
+
+## without it (rp.s46.test answers 404) (153.0.8010.52)
+- rp.s46.test       register rp              ok  flags UP,UV,AT; origin https://rp.s46.test; (Chromium virtual authenticator)
+- app.s46.test      sign rp on app           NO  SecurityError: The relying party ID is not a registrable domain suffix of, nor equal to the current domain. Subsequently, an attempt to fetch the .well-known/webauthn resource of the claimed RP ID failed.
+- clientCapabilities: {"conditionalCreate":true,"conditionalGet":true,"extension:appid":true,"extension:appidExclude":true,"extension:cmtgKey":false,"extension:credBlob":true,"extension:credProps":true,"extension:credentialProtectionPolicy":true,"extension:crossDeviceFallbackUrl":false,"extension:enforceCredentialProtectionPolicy":true,"extension:getCredBlob":true,"extension:hmacCreateSecret":true,"extension:largeBlob":true,"extension:minPinLength":true,"extension:payment":false,"extension:prf":true,"hybridTransport":true,"immediateGet":true,"passkeyPlatformAuthenticator":true,"relatedOrigins":true,"signalAllAcceptedCredentials":true,"signalCurrentUserDetails":true,"signalUnknownCredential":true,"userVerifyingPlatformAuthenticator":true}
+- the page's fetch of the RP's well-known: 404 text/plain not here
+
