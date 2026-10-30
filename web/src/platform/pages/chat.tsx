@@ -15,6 +15,7 @@ import type { ChatRoute } from "../../shared/chat/route";
 import { ChatApp } from "../../shared/chat/app";
 import type { ChatScope } from "../../shared/chat/sidebar";
 import { useSubscribe } from "../../shared/ui/hooks";
+import { WithRail } from "../rail";
 import { session } from "../session";
 
 export function ChatPage({ project, route, children }: { project: string; route: ChatRoute; children?: ComponentChildren }) {
@@ -23,7 +24,9 @@ export function ChatPage({ project, route, children }: { project: string; route:
   const scope: ChatScope | undefined = p ? { team: p.team?.id ?? null, name: p.name } : undefined;
   return (
     <div class="platform platform-chat" data-platform-chat>
-      <ChatApp route={route} scope={scope} />
+      <WithRail>
+        <ChatApp route={route} scope={scope} />
+      </WithRail>
       {children}
     </div>
   );

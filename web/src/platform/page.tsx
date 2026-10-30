@@ -9,6 +9,7 @@ import { useSubscribe } from "../shared/ui/hooks";
 import { MaintenanceNote } from "../shared/ui/maintenance-note";
 import { PageHeader } from "../shared/ui/page-header";
 import { PlatformBar } from "./bar";
+import { WithRail } from "./rail";
 import { names, resolve, roomElsewhere } from "./links";
 import { go, pathOf, useRoute, type Route } from "./router";
 import { controlOrigin, session } from "./session";
@@ -120,9 +121,11 @@ function body(r: Route, lost: string | null) {
 function Shell({ children }: { children: preact.ComponentChildren }) {
   return (
     <div class="platform" data-platform>
-      <PlatformBar />
-      <MaintenanceNote />
-      <main class="platform-main">{children}</main>
+      <WithRail>
+        <PlatformBar />
+        <MaintenanceNote />
+        <main class="platform-main">{children}</main>
+      </WithRail>
       <Toast />
     </div>
   );

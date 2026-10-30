@@ -1,8 +1,8 @@
 /* The frame both pages sit in (#1018): the shell's workspace (`.app.ws`)
    and the platform page (its #root) carry `.frame`. Its head bar, the
    wordmark at the head's left end, the chrome's lines and the selected
-   place's look. The shell's own chrome (rail, sidebar, tabs, panes) stays
-   in shell/shell-chrome.css. All colors come from the chosen palette. */
+   place's look, and the rail (#377). The shell's own chrome (sidebar, tabs,
+   panes) stays in shell/shell-chrome.css. All colors come from the chosen palette. */
 .frame {
   /* The shell's `.app.ws` says the same in style.css. */
   --head-h: 44px;
@@ -73,4 +73,78 @@
 .bar a {
   app-region: no-drag;
   -webkit-app-region: no-drag;
+}
+
+/* The rail, as both pages draw it (#377): shell-chrome.css had these for the
+   shell alone, and the platform page doesn't load that file. After
+   style.css's rail, as they were. */
+.ws-rail {
+  padding-top: 0;
+  gap: 6px;
+  border-right-color: var(--line-strong);
+}
+
+.ws-brand {
+  height: var(--head-h);
+  margin-bottom: 2px;
+  border-bottom: 1px solid var(--line-strong);
+}
+
+.ws-rail-button {
+  min-height: 48px;
+  box-sizing: border-box;
+  justify-content: center;
+  gap: 6px;
+  margin-inline: 4px;
+  padding: 6px 0;
+  border: 1px solid transparent;
+  border-radius: var(--btn-radius);
+}
+
+.ws-rail-button.here::before {
+  display: none;
+}
+
+/* The platform page's icons don't shrink (`.app.ws .icon`'s job on the
+   shell, which the platform page has no `.app.ws` for). */
+.ws-rail .icon {
+  flex: none;
+}
+
+/* The platform page's brand is a link (to control's page), drawn as the
+   shell's button is. */
+a.ws-brand {
+  box-sizing: border-box;
+  padding: 1px 6px;
+  color: var(--fg);
+  text-align: center;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.ws-rail-button.on {
+  background: var(--surface);
+  border-color: var(--line-strong);
+  color: var(--fg);
+}
+
+html[data-desktop="macos"]:not([data-native-tabs]) .ws-rail {
+  padding-top: 0;
+}
+
+/* Sessions changes the sidebar, not the current destination. */
+.ws-rail-utility {
+  padding-bottom: 8px;
+  margin-bottom: 2px;
+  border-bottom: 1px solid var(--line-strong);
+}
+.ws-rail-utility .ws-rail-button.on {
+  background: none;
+  border-color: transparent;
+  color: var(--fg);
+}
+.ws-rail-utility .ws-rail-button:hover { background: var(--raised); }
+
+.ws-rail {
+  background: var(--surface);
 }

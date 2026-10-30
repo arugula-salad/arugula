@@ -54,6 +54,30 @@ export function useBoards(project: string | undefined): ProjectBoard[] | null | 
   return list;
 }
 
+/** Whether boards are on for the reader in any of their projects: the
+ * rail's Boards shows only then (#377). The flag is a team's, so it asks
+ * each project (the list says 404 for one that's off), and keeps what it
+ * learnt for the next page. */
+const boardsOn = new Map<string, boolean>();
+export function useBoardsOn(): boolean {
+  useSubscribe((fn) => session.subscribe(fn));
+  const ids = session.projects.map((p) => p.id);
+  const key = ids.join(",");
+  const [, tick] = useState(0);
+  useEffect(() => {
+    let live = true;
+    for (const id of ids) {
+      if (boardsOn.has(id)) continue;
+      readBoards(id).then(
+        () => boardsOn.set(id, true),
+        (e: Error) => boardsOn.set(id, !(e instanceof BoardError && e.status === 404)),
+      ).then(() => live && tick((t) => t + 1));
+    }
+    return () => void (live = false);
+  }, [key]);
+  return ids.some((id) => boardsOn.get(id));
+}
+
 function BoardsOff() {
   return (
     <section class="platform-section" data-boards-off>
