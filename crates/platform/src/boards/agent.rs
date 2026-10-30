@@ -13,9 +13,10 @@
 //! least one project of its owner's.
 //!
 //! An agent makes and runs boards too (aru-123): it makes one, sets its title
-//! and goal, closes and reopens it, and works its zones and rows, and the
-//! board says it was an agent's. What it may not do is destroy or rewrite
-//! another hand's work (see [`super`]).
+//! and goal, closes and reopens it, adds rows, and attaches work and proof
+//! to them, and the board says it was an agent's. What it may not do is
+//! destroy or rewrite another hand's work (see [`super`]), or move a row:
+//! lanes follow the work (aru-125).
 
 use std::sync::Arc;
 
@@ -99,9 +100,8 @@ pub async fn reopen(State(app): State<Arc<Platform>>, d: Machine, Path(id): Path
     Ok(Json(super::reopen(&app, actor(&d), &id).await?))
 }
 
-/// `PUT /api/daemon/boards/{id}/entries`: make or change a zone, add a row,
-/// or set a row's note, status or (its own machine's) pointer; 409
-/// `stale_rev` when the entry moved on.
+/// `PUT /api/daemon/boards/{id}/entries`: add a row, or set a row's note or
+/// (its own machine's) pointer; 409 `stale_rev` when the row moved on.
 pub async fn put(
     State(app): State<Arc<Platform>>,
     d: Machine,
@@ -112,7 +112,8 @@ pub async fn put(
     Ok(Json(super::put(&app, actor(&d), &id, &p).await?))
 }
 
-/// `POST /api/daemon/boards/{id}/entries/{entry}/move`: move a row or a zone.
+/// `POST /api/daemon/boards/{id}/entries/{entry}/move`: refused, 400: lanes
+/// follow the work.
 pub async fn move_entry(
     State(app): State<Arc<Platform>>,
     d: Machine,
@@ -124,7 +125,7 @@ pub async fn move_entry(
 }
 
 /// `DELETE /api/daemon/boards/{id}/entries/{entry}`: a row this machine's
-/// agents added, or a zone with no row of another hand's in it.
+/// agents added.
 pub async fn delete(
     State(app): State<Arc<Platform>>,
     d: Machine,
@@ -132,6 +133,28 @@ pub async fn delete(
 ) -> J<wire::BoardView> {
     app.limits.check_daemon(AGENT_BOARD_WRITES, &d.daemon)?;
     Ok(Json(super::delete(&app, actor(&d), &id, &entry).await?))
+}
+
+/// `POST /api/daemon/boards/{id}/attachments`: attach work or proof to a row.
+pub async fn attach(
+    State(app): State<Arc<Platform>>,
+    d: Machine,
+    Path(id): Path<String>,
+    Json(a): Json<wire::AttachRow>,
+) -> J<wire::BoardView> {
+    app.limits.check_daemon(AGENT_BOARD_WRITES, &d.daemon)?;
+    Ok(Json(super::attach(&app, actor(&d), &id, &a).await?))
+}
+
+/// `DELETE /api/daemon/boards/{id}/attachments/{attachment}`: an attachment
+/// this machine's agents made.
+pub async fn detach(
+    State(app): State<Arc<Platform>>,
+    d: Machine,
+    Path((id, attachment)): Path<(String, String)>,
+) -> J<wire::BoardView> {
+    app.limits.check_daemon(AGENT_BOARD_WRITES, &d.daemon)?;
+    Ok(Json(super::detach(&app, actor(&d), &id, &attachment).await?))
 }
 
 /// `PUT /api/daemon/block-state`: the state of one of the signing machine's

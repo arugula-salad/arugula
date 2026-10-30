@@ -27,14 +27,17 @@ async fn board(base: &str, who: &str, project: &str, pointers: &[Value]) -> Stri
     assert_eq!(s, 200, "{b}");
     let id = b["board"]["id"].as_str().unwrap().to_owned();
     let path = format!("/api/boards/{id}/entries");
-    let (_, v) = call(base, who, "PUT", &path, Some(json!({ "entry": "zone", "title": "Now" }))).await;
-    let zone = v["zones"][0]["id"].as_str().unwrap().to_owned();
     for ptr in pointers {
-        let body = json!({ "entry": "row", "zone": zone, "note": "n", "pointer": ptr, "status": "working" });
+        let body = json!({ "entry": "row", "note": "n", "pointer": ptr });
         let (s, v) = call(base, who, "PUT", &path, Some(body)).await;
         assert_eq!(s, 200, "{v}");
     }
     id
+}
+
+/// Every row of a board, lane by lane.
+fn lane_rows(v: &Value) -> Vec<&Value> {
+    v["zones"].as_array().unwrap().iter().flat_map(|z| z["rows"].as_array().unwrap()).collect()
 }
 
 async fn read(base: &str, who: &str, id: &str) -> Value {
@@ -105,7 +108,7 @@ async fn a_plane_item_is_on_a_board_and_closing_it_moves_the_progress() {
 
     let id = board(&base, "bob", &team, &[json!({ "kind": "forge_item", "id": second })]).await;
     let v = read(&base, "bob", &id).await;
-    let live = &v["zones"][0]["rows"][0]["live"];
+    let live = &lane_rows(&v)[0]["live"];
     assert_eq!(
         (live["identifier"].as_str(), live["number"].as_u64(), live["state_name"].as_str(), live["state"].as_str()),
         (Some("ARUGU"), Some(2), Some("started"), Some("open")),
@@ -126,7 +129,7 @@ async fn a_plane_item_is_on_a_board_and_closing_it_moves_the_progress() {
     done.state_name = "Done".into();
     assert_eq!(connect::ingest_page(&app, &conn, mirror, None, &[done], 6_000).unwrap().map(|ids| ids.len()), Some(1));
     let v = read(&base, "carol", &id).await;
-    let live = &v["zones"][0]["rows"][0]["live"];
+    let live = &lane_rows(&v)[0]["live"];
     assert_eq!(
         (live["state"].as_str(), live["state_name"].as_str(), live["number"].as_u64()),
         (Some("closed"), Some("Done"), Some(2)),
@@ -158,9 +161,9 @@ async fn a_plane_item_is_on_a_board_and_closing_it_moves_the_progress() {
     )
     .await;
     let v = read(&base, "erin", &theirs).await;
-    let rows = &v["zones"][0]["rows"];
-    assert!(rows[0]["live"].is_null(), "{rows}");
-    assert_eq!(progress(&v), (0, 1), "only the native issue counts");
+    let rows = lane_rows(&v);
+    assert!(rows[0]["live"].is_null(), "{rows:?}");
+    assert_eq!(progress(&v), (0, 2), "both rows count; the other project's item says nothing, not even closed");
     let native_live = rows[1]["live"].as_object().unwrap();
     for key in ["provider", "identifier", "state_name", "url"] {
         assert!(!native_live.contains_key(key), "{key} on a native card: {native_live:?}");
@@ -176,11 +179,11 @@ async fn a_plane_item_is_on_a_board_and_closing_it_moves_the_progress() {
     assert_eq!(viewer::check_connections(&app, &who("carol"), &conns).await.unwrap().mirror_ids(), [mirror]);
     assert!(viewer::check_connections(&app, &who("erin"), &conns).await.unwrap().is_empty());
 
-    // Disconnected: the card reads nothing and counts nothing, and the work search has none of it.
+    // Disconnected: the card reads nothing and its lane stops following the item, and the work search has none of it.
     let (s, _) = call(&base, "bob", "DELETE", &format!("/api/projects/{team}/trackers/{conn}"), None).await;
     assert_eq!(s, 200);
     let v = read(&base, "bob", &id).await;
-    assert!(v["zones"][0]["rows"][0]["live"].is_null());
-    assert_eq!(progress(&v), (0, 0));
+    assert!(lane_rows(&v)[0]["live"].is_null());
+    assert_eq!(progress(&v), (0, 1));
     assert!(work(&base, "bob", &team, "").await.iter().all(|i| i["source"] != "plane"));
 }

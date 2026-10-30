@@ -1,33 +1,38 @@
-//! Boards (boards, step 1): a project's boards, each an ordered
-//! list of zones that each hold an ordered list of rows. Who may do what is
-//! decided by the routes (`crate::boards`); this is storage. The tables,
-//! with notes on their columns, are made by `0058_boards`.
+//! Boards (boards, step 1; aru-125): a project's boards, each an ordered
+//! list of rows, a row being one piece of work. Who may do what is decided
+//! by the routes (`crate::boards`); this is storage. The tables, with notes
+//! on their columns, are made by `0058_boards` and `0072_board_lanes`.
 //!
 //! - Every change to a board takes its row first (`FOR UPDATE` on
 //!   Postgres, the write lock on SQLite), so a board's changes run one at a
 //!   time: positions are renumbered whole and revs are checked against what
 //!   is there.
-//! - An entry's `rev` counts changes to its title, pointer and note. A
-//!   write that changes those names the rev it read and is refused as
-//!   [`Refused::Stale`] if the entry moved on. A status change leaves the
-//!   rev alone and needs none, and so does a move (which may name one).
-//! - The PROOFS zone (`kind: proofs`) is the board's last, and there is one.
+//! - A row's `rev` counts changes to its pointer and note. A write that
+//!   changes those names the rev it read and is refused as
+//!   [`Refused::Stale`] if the row moved on.
+//! - A row has no zone: its lane is worked out on every read from the live
+//!   state of its items ([`crate::boards`]) and is never stored. Zone
+//!   entries exist only in a database made before 0072, until
+//!   [`Db::lanes_move`] clears them on start.
+//! - Work and proof are attached to a row (`board_attachments`,
+//!   [`Attached`]); deleting a row takes its attachments.
 //! - A pointer is stored, not resolved. A row's `note` and `status` are
 //!   separate columns.
 //! - Deleting a project (or its account) takes its boards.
 //! - A machine's report of one of its own agent blocks (`board_block_states`,
 //!   [`BlockState`]) is kept apart from the rows that point at it: one per
-//!   (machine, pane), set by the machine and read through a row's pointer.
+//!   (machine, pane), set by the machine and read through a pointer.
 
-use anyhow::{Context as _, Result, bail};
+use anyhow::{Result, bail};
 use arugula_control_wire::{
-    boards::{BlockState, BlockWord, Board, Diffstat, EntryKind, Pointer, Status, ZoneKind},
+    boards::{AttachRole, BlockState, BlockWord, Board, Diffstat, Pointer, Status},
     chat::ChatAgent,
 };
 
 use super::{
     Db,
     chat::{in_json, json_list},
+    forge::CheckState,
     issues::Actor,
     sql::{Optional as _, Row, Sql, params},
 };
@@ -38,13 +43,14 @@ fn new_board_id() -> String {
     format!("brd_{}", hex::encode(arugula_e2e::random::<16>()))
 }
 
-/// A new entry's id: `zon_` or `row_` and 32 hex characters.
-fn new_entry_id(kind: EntryKind) -> String {
-    let p = match kind {
-        EntryKind::Zone => "zon",
-        EntryKind::Row => "row",
-    };
-    format!("{p}_{}", hex::encode(arugula_e2e::random::<16>()))
+/// A new row's id: `row_` and 32 hex characters.
+fn new_row_id() -> String {
+    format!("row_{}", hex::encode(arugula_e2e::random::<16>()))
+}
+
+/// A new attachment's id: `att_` and 32 hex characters.
+fn new_attachment_id() -> String {
+    format!("att_{}", hex::encode(arugula_e2e::random::<16>()))
 }
 
 /// Why a change to a board wasn't made.
@@ -64,16 +70,11 @@ fn bad<T>(why: impl Into<String>) -> Result<std::result::Result<T, Refused>> {
     Ok(Err(Refused::Bad(why.into())))
 }
 
-/// One zone or row as stored.
+/// One row as stored.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Entry {
     pub id: String,
-    pub kind: EntryKind,
-    /// A row's zone.
-    pub zone: Option<String>,
     pub rev: u64,
-    pub title: String,
-    pub zone_kind: Option<ZoneKind>,
     pub note: String,
     pub status: Status,
     pub pointer: Pointer,
@@ -83,46 +84,44 @@ pub struct Entry {
     pub updated_at: u64,
 }
 
-/// A board and its entries: zones in order, then each zone's rows in order
-/// (a row follows the zone it is in).
+/// One thing attached to a row, as stored.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Attached {
+    pub id: String,
+    pub row: String,
+    pub role: AttachRole,
+    pub pointer: Pointer,
+    /// The machine whose agent attached it; none: a person.
+    pub agent: Option<String>,
+    pub created_at: u64,
+}
+
+/// A board and its rows in order, with what is attached to them (oldest
+/// first).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Stored {
     pub board: Board,
-    pub entries: Vec<Entry>,
+    pub rows: Vec<Entry>,
+    pub attachments: Vec<Attached>,
 }
 
-/// What a new entry, or a change to one, says. Absent: left as it is.
+/// What a new row, or a change to one, says. Absent: left as it is.
 #[derive(Debug, Default, Clone)]
 pub struct Put<'a> {
-    /// The entry changed; none: make one, of kind `entry`.
+    /// The row changed; none: add one, last.
     pub id: Option<&'a str>,
     pub rev: Option<u64>,
-    pub entry: Option<EntryKind>,
-    pub zone: Option<&'a str>,
-    pub title: Option<&'a str>,
-    pub kind: Option<ZoneKind>,
     pub pointer: Option<&'a Pointer>,
     pub note: Option<&'a str>,
     pub status: Option<Status>,
-    /// The machine whose agent makes a new row; none: a person.
+    /// The machine whose agent adds a new row; none: a person.
     pub agent: Option<&'a str>,
-}
-
-/// Where [`Db::move_entry`] puts an entry.
-#[derive(Debug, Default, Clone, Copy)]
-pub struct Move<'a> {
-    /// A row's new zone; none: its own.
-    pub zone: Option<&'a str>,
-    /// The sibling it goes before; none: last.
-    pub before: Option<&'a str>,
-    /// The rev it must still have.
-    pub rev: Option<u64>,
 }
 
 const BOARD_COLS: &str = "id, project_id, title, created_by, created_at, updated_at, goal, done_note, closed_at, \
                           closed_by, created_by_agent, closed_by_agent";
-const ENTRY_COLS: &str = "id, kind, zone_id, rev, title, zone_kind, note, status, target_kind, target, pane, \
-                          created_at, updated_at, agent";
+const ENTRY_COLS: &str = "id, rev, note, status, target_kind, target, pane, created_at, updated_at, agent";
+const ATTACHED_COLS: &str = "id, row_id, role, target_kind, target, pane, agent, created_at";
 
 fn board_row(r: &Row) -> Result<Board> {
     Ok(Board {
@@ -178,7 +177,7 @@ fn word_of(s: &str) -> Result<BlockWord> {
     })
 }
 
-fn status_of(s: Option<String>) -> Result<Status> {
+pub(super) fn status_of(s: Option<String>) -> Result<Status> {
     Ok(match s.as_deref() {
         None => Status::None,
         Some("open") => Status::Open,
@@ -191,7 +190,7 @@ fn status_of(s: Option<String>) -> Result<Status> {
 }
 
 /// A pointer as its three columns: kind, target and pane.
-fn pointer_cols(p: &Pointer) -> (Option<&'static str>, Option<&str>, Option<&str>) {
+pub(super) fn pointer_cols(p: &Pointer) -> (Option<&'static str>, Option<&str>, Option<&str>) {
     match p {
         Pointer::None => (None, None, None),
         Pointer::ForgeItem { id } => (Some("forge_item"), Some(id), None),
@@ -206,7 +205,7 @@ fn pointer_cols(p: &Pointer) -> (Option<&'static str>, Option<&str>, Option<&str
 /// A kind this build doesn't know (one a newer build wrote, before a
 /// rollback) reads as no pointer, so the board still reads; its row keeps
 /// the stored columns, which a status change or a move leaves alone.
-fn pointer_of(kind: Option<String>, target: Option<String>, pane: Option<String>) -> Result<Pointer> {
+pub(super) fn pointer_of(kind: Option<String>, target: Option<String>, pane: Option<String>) -> Result<Pointer> {
     Ok(match (kind.as_deref(), target, pane) {
         (None, ..) => Pointer::None,
         (Some("forge_item"), Some(id), _) => Pointer::ForgeItem { id },
@@ -223,29 +222,31 @@ fn pointer_of(kind: Option<String>, target: Option<String>, pane: Option<String>
 }
 
 fn entry_row(r: &Row) -> Result<Entry> {
-    let kind = match r.get::<String>(1)?.as_str() {
-        "zone" => EntryKind::Zone,
-        "row" => EntryKind::Row,
-        k => bail!("a board entry of kind {k:?}"),
-    };
-    let zone_kind = match r.get::<Option<String>>(5)?.as_deref() {
-        None => None,
-        Some("proofs") => Some(ZoneKind::Proofs),
-        Some(k) => bail!("a board zone of kind {k:?}"),
-    };
     Ok(Entry {
         id: r.get(0)?,
-        kind,
-        zone: r.get(2)?,
-        rev: r.get(3)?,
-        title: r.get(4)?,
-        zone_kind,
-        note: r.get(6)?,
-        status: status_of(r.get(7)?)?,
-        pointer: pointer_of(r.get(8)?, r.get(9)?, r.get(10)?)?,
-        created_at: r.get(11)?,
-        updated_at: r.get(12)?,
-        agent: r.get(13)?,
+        rev: r.get(1)?,
+        note: r.get(2)?,
+        status: status_of(r.get(3)?)?,
+        pointer: pointer_of(r.get(4)?, r.get(5)?, r.get(6)?)?,
+        created_at: r.get(7)?,
+        updated_at: r.get(8)?,
+        agent: r.get(9)?,
+    })
+}
+
+fn attached_row(r: &Row) -> Result<Attached> {
+    let role = match r.get::<String>(2)?.as_str() {
+        "work" => AttachRole::Work,
+        "proof" => AttachRole::Proof,
+        k => bail!("a board attachment of role {k:?}"),
+    };
+    Ok(Attached {
+        id: r.get(0)?,
+        row: r.get(1)?,
+        role,
+        pointer: pointer_of(r.get(3)?, r.get(4)?, r.get(5)?)?,
+        agent: r.get(6)?,
+        created_at: r.get(7)?,
     })
 }
 
@@ -260,27 +261,20 @@ fn lock(c: &impl Sql, board: &str) -> Result<bool> {
 
 fn entry(c: &impl Sql, board: &str, id: &str) -> Result<Option<Entry>> {
     c.query_row(
-        &format!("SELECT {ENTRY_COLS} FROM board_entries WHERE board_id = ?1 AND id = ?2"),
+        &format!("SELECT {ENTRY_COLS} FROM board_entries WHERE board_id = ?1 AND id = ?2 AND kind = 'row'"),
         params![board, id],
         entry_row,
     )
     .optional()
 }
 
-/// The ids of a board's zones, or of a zone's rows, in order.
-fn siblings(c: &impl Sql, board: &str, zone: Option<&str>) -> Result<Vec<String>> {
-    match zone {
-        None => c.query_map(
-            "SELECT id FROM board_entries WHERE board_id = ?1 AND kind = 'zone' ORDER BY position, id",
-            params![board],
-            |r| r.get(0),
-        ),
-        Some(z) => c.query_map(
-            "SELECT id FROM board_entries WHERE board_id = ?1 AND zone_id = ?2 ORDER BY position, id",
-            params![board, z],
-            |r| r.get(0),
-        ),
-    }
+/// The ids of a board's rows, in order.
+fn siblings(c: &impl Sql, board: &str) -> Result<Vec<String>> {
+    c.query_map(
+        "SELECT id FROM board_entries WHERE board_id = ?1 AND kind = 'row' ORDER BY position, id",
+        params![board],
+        |r| r.get(0),
+    )
 }
 
 /// Number `ids` 0, 1, 2... as the order of their siblings.
@@ -296,13 +290,34 @@ fn touch(c: &impl Sql, board: &str, at: u64) -> Result<()> {
     Ok(())
 }
 
-/// A zone of `board`: its entry, or why not.
-fn zone_of(c: &impl Sql, board: &str, id: &str) -> Result<Option<Entry>> {
-    Ok(entry(c, board, id)?.filter(|e| e.kind == EntryKind::Zone))
+/// Every row's pointer and every attachment's, as one table: what a change
+/// to an item, a block or a run tells the boards of.
+const POINTED: &str = "(SELECT board_id, target_kind, target, pane FROM board_entries WHERE kind = 'row'
+     UNION ALL SELECT board_id, target_kind, target, pane FROM board_attachments)";
+
+/// A row's primary pointer, or an attachment's (`role`), on a board: one
+/// thing that [`Db::project_things`] counts progress from.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Thing {
+    pub board: String,
+    pub row: String,
+    /// `None`: the row's own pointer.
+    pub role: Option<AttachRole>,
+    pub pointer: Pointer,
 }
 
-fn is_proofs(e: &Entry) -> bool {
-    e.zone_kind == Some(ZoneKind::Proofs)
+/// What a lane needs of a mirrored item, and nothing a reader couldn't be
+/// told once they may not read it: no title, no author.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ItemFact {
+    pub id: String,
+    /// `pr` or `issue`.
+    pub kind: String,
+    /// `open`, `closed` or `merged`.
+    pub state: String,
+    /// A tracker's items have a negative one.
+    pub repo_id: i64,
+    pub head_sha: Option<String>,
 }
 
 /// A native issue as a board row reads it.
@@ -357,7 +372,7 @@ impl Db {
         Ok(Some(board))
     }
 
-    /// One entry of a board (a zone or a row), as stored.
+    /// One row of a board, as stored.
     pub fn board_entry(&self, board: &str, id: &str) -> Result<Option<Entry>> {
         entry(&self.c(), board, id)
     }
@@ -378,7 +393,7 @@ impl Db {
         )
     }
 
-    /// A board with its entries in order, from one read.
+    /// A board with its rows in order and their attachments, from one read.
     pub fn board_stored(&self, id: &str) -> Result<Option<Stored>> {
         let c = self.c();
         let Some(board) = c
@@ -388,19 +403,18 @@ impl Db {
             return Ok(None);
         };
         let all = c.query_map(
-            &format!("SELECT {ENTRY_COLS}, position FROM board_entries WHERE board_id = ?1"),
+            &format!("SELECT {ENTRY_COLS}, position FROM board_entries WHERE board_id = ?1 AND kind = 'row'"),
             params![id],
-            |r| Ok((entry_row(r)?, r.get::<u64>(14)?)),
+            |r| Ok((entry_row(r)?, r.get::<u64>(10)?)),
         )?;
-        let (mut zones, mut rows): (Vec<_>, Vec<_>) = all.into_iter().partition(|(e, _)| e.kind == EntryKind::Zone);
-        zones.sort_by(|a, b| (a.1, &a.0.id).cmp(&(b.1, &b.0.id)));
+        let mut rows = all;
         rows.sort_by(|a, b| (a.1, &a.0.id).cmp(&(b.1, &b.0.id)));
-        let mut entries = Vec::with_capacity(zones.len() + rows.len());
-        for (z, _) in zones {
-            entries.push(z.clone());
-            entries.extend(rows.iter().filter(|(r, _)| r.zone.as_deref() == Some(&z.id)).map(|(r, _)| r.clone()));
-        }
-        Ok(Some(Stored { board, entries }))
+        let attachments = c.query_map(
+            &format!("SELECT {ATTACHED_COLS} FROM board_attachments WHERE board_id = ?1 ORDER BY created_at, id"),
+            params![id],
+            attached_row,
+        )?;
+        Ok(Some(Stored { board, rows: rows.into_iter().map(|(e, _)| e).collect(), attachments }))
     }
 
     /// Set a board's title and goal (each only when given). `false`: no such
@@ -461,48 +475,62 @@ impl Db {
         Ok(true)
     }
 
-    /// The `fi_` and `iss_` ids that the rows of `project`'s boards point at,
-    /// as (board, kind, id) with `kind` `forge_item` or `issue`: one read
-    /// for every board of the project.
-    pub fn board_issue_targets(&self, project: &str) -> Result<Vec<(String, String, String)>> {
-        self.c().query_map(
-            "SELECT e.board_id, e.target_kind, e.target FROM board_entries e JOIN boards b ON b.id = e.board_id
-             WHERE b.project_id = ?1 AND e.target_kind IN ('forge_item', 'issue')",
+    /// Every row of `project`'s boards that has a pointer, and every
+    /// attachment: what progress is counted from, in one read.
+    pub fn project_things(&self, project: &str) -> Result<Vec<Thing>> {
+        let c = self.c();
+        let mut out: Vec<Thing> = c.query_map(
+            "SELECT e.board_id, e.id, e.target_kind, e.target, e.pane FROM board_entries e
+             JOIN boards b ON b.id = e.board_id
+             WHERE b.project_id = ?1 AND e.kind = 'row' AND e.target_kind IS NOT NULL",
             params![project],
-            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
-        )
+            |r| {
+                Ok(Thing {
+                    board: r.get(0)?,
+                    row: r.get(1)?,
+                    role: None,
+                    pointer: pointer_of(r.get(2)?, r.get(3)?, r.get(4)?)?,
+                })
+            },
+        )?;
+        out.extend(c.query_map(
+            "SELECT a.board_id, a.row_id, a.role, a.target_kind, a.target, a.pane FROM board_attachments a
+             JOIN boards b ON b.id = a.board_id WHERE b.project_id = ?1",
+            params![project],
+            |r| {
+                let role = if r.get::<String>(2)? == "proof" { AttachRole::Proof } else { AttachRole::Work };
+                Ok(Thing {
+                    board: r.get(0)?,
+                    row: r.get(1)?,
+                    role: Some(role),
+                    pointer: pointer_of(r.get(3)?, r.get(4)?, r.get(5)?)?,
+                })
+            },
+        )?);
+        Ok(out)
     }
 
-    /// Make or change a zone or a row (see [`Put`]).
+    /// Add a row last, or change one (see [`Put`]); the id of the row.
+    /// `absorb`: rows of the board that the new one takes in, in the same
+    /// transaction: each becomes a `work` attachment of it (a PR row of the
+    /// issue it closes), with the attachments it had, and its place is gone.
     pub fn put_entry(
         &self,
         board: &str,
         p: &Put,
+        absorb: &[String],
         at: u64,
-        max_zones: u64,
         max_rows: u64,
-    ) -> Result<std::result::Result<(), Refused>> {
+    ) -> Result<std::result::Result<String, Refused>> {
         let mut c = self.c();
         let tx = c.immediate()?;
         if !lock(&tx, board)? {
             return Ok(Err(Refused::Missing("no such board")));
         }
-        match p.id {
+        let row = match p.id {
             Some(id) => {
-                let Some(old) = entry(&tx, board, id)? else { return Ok(Err(Refused::Missing("no such entry"))) };
-                let text = p.title.is_some() || p.pointer.is_some() || p.note.is_some();
-                if old.kind == EntryKind::Zone && (p.pointer.is_some() || p.note.is_some() || p.status.is_some()) {
-                    return bad("a zone has a title, and nothing else to change");
-                }
-                if old.kind == EntryKind::Row && p.title.is_some() {
-                    return bad("a row has a note, not a title");
-                }
-                if p.kind.is_some_and(|k| Some(k) != old.zone_kind) || p.entry.is_some_and(|e| e != old.kind) {
-                    return bad("an entry's kind can't change");
-                }
-                if p.zone.is_some_and(|z| Some(z) != old.zone.as_deref()) {
-                    return bad("a row changes zone by a move");
-                }
+                let Some(old) = entry(&tx, board, id)? else { return Ok(Err(Refused::Missing("no such row"))) };
+                let text = p.pointer.is_some() || p.note.is_some();
                 if !text && p.status.is_none() {
                     return bad("nothing to change");
                 }
@@ -511,19 +539,19 @@ impl Db {
                     if rev != old.rev {
                         return Ok(Err(Refused::Stale { rev: old.rev }));
                     }
-                    let (title, note) = (p.title.unwrap_or(&old.title), p.note.unwrap_or(&old.note));
+                    let note = p.note.unwrap_or(&old.note);
                     // Without a new pointer, the stored one is left as it is
                     // (one this build can't read included).
                     if let Some((kind, target, pane)) = p.pointer.map(pointer_cols) {
                         tx.execute(
-                            "UPDATE board_entries SET rev = rev + 1, title = ?2, note = ?3, target_kind = ?4, target = ?5, pane = ?6,
-                                 updated_at = ?7 WHERE id = ?1",
-                            params![id, title, note, kind, target, pane, at],
+                            "UPDATE board_entries SET rev = rev + 1, note = ?2, target_kind = ?3, target = ?4, pane = ?5,
+                                 updated_at = ?6 WHERE id = ?1",
+                            params![id, note, kind, target, pane, at],
                         )?;
                     } else {
                         tx.execute(
-                            "UPDATE board_entries SET rev = rev + 1, title = ?2, note = ?3, updated_at = ?4 WHERE id = ?1",
-                            params![id, title, note, at],
+                            "UPDATE board_entries SET rev = rev + 1, note = ?2, updated_at = ?3 WHERE id = ?1",
+                            params![id, note, at],
                         )?;
                     }
                 }
@@ -533,240 +561,131 @@ impl Db {
                         params![id, status_str(s), at],
                     )?;
                 }
+                id.to_owned()
             }
-            None => match p.entry {
-                Some(EntryKind::Zone) => {
-                    let Some(title) = p.title else { return bad("a zone needs a title") };
-                    if p.zone.is_some() || p.pointer.is_some() || p.note.is_some() || p.status.is_some() {
-                        return bad("a zone has a title, and nothing else");
-                    }
-                    let mut ids = siblings(&tx, board, None)?;
-                    if ids.len() as u64 >= max_zones {
-                        return bad(format!("a board has at most {max_zones} zones"));
-                    }
-                    let last_is_proofs = match ids.last() {
-                        Some(l) => entry(&tx, board, l)?.is_some_and(|e| is_proofs(&e)),
-                        None => false,
-                    };
-                    if p.kind == Some(ZoneKind::Proofs) && last_is_proofs {
-                        return bad("a board has one proofs zone");
-                    }
-                    let id = new_entry_id(EntryKind::Zone);
-                    tx.execute(
-                        "INSERT INTO board_entries (id, board_id, kind, position, title, zone_kind, created_at, updated_at)
-                         VALUES (?1, ?2, 'zone', 0, ?3, ?4, ?5, ?5)",
-                        params![id, board, title, p.kind.map(|_| "proofs"), at],
-                    )?;
-                    // Before the proofs zone, which stays last; a new proofs
-                    // zone goes last.
-                    let at_index = if last_is_proofs && p.kind.is_none() { ids.len() - 1 } else { ids.len() };
-                    ids.insert(at_index, id);
-                    renumber(&tx, &ids)?;
+            None => {
+                let n: u64 = tx.query_row(
+                    "SELECT count(*) FROM board_entries WHERE board_id = ?1 AND kind = 'row'",
+                    params![board],
+                    |r| r.get(0),
+                )?;
+                if n >= max_rows {
+                    return bad(format!("a board has at most {max_rows} rows"));
                 }
-                Some(EntryKind::Row) => {
-                    let Some(zone) = p.zone else { return bad("a row needs its zone (\"zone\")") };
-                    if p.title.is_some() || p.kind.is_some() {
-                        return bad("a row has a note, not a title");
+                let (kind, target, pane) = p.pointer.map(pointer_cols).unwrap_or((None, None, None));
+                let id = new_row_id();
+                tx.execute(
+                    "INSERT INTO board_entries (id, board_id, kind, zone_id, position, note, status, target_kind, target,
+                         pane, created_at, updated_at, agent)
+                     VALUES (?1, ?2, 'row', NULL, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?9, ?10)",
+                    params![id, board, n, p.note.unwrap_or(""), p.status.and_then(status_str), kind, target, pane, at, p.agent],
+                )?;
+                for from in absorb {
+                    let Some(taken) = entry(&tx, board, from)? else { continue };
+                    let (kind, target, pane) = pointer_cols(&taken.pointer);
+                    if let (Some(kind), Some(target)) = (kind, target) {
+                        tx.execute(
+                            "INSERT INTO board_attachments (id, board_id, row_id, role, target_kind, target, pane, agent,
+                                 created_at)
+                             VALUES (?1, ?2, ?3, 'work', ?4, ?5, ?6, ?7, ?8)",
+                            params![new_attachment_id(), board, id, kind, target, pane, taken.agent, at],
+                        )?;
                     }
-                    if zone_of(&tx, board, zone)?.is_none() {
-                        return Ok(Err(Refused::Missing("no such zone")));
-                    }
-                    let n: u64 = tx.query_row(
-                        "SELECT count(*) FROM board_entries WHERE board_id = ?1 AND zone_id = ?2",
-                        params![board, zone],
-                        |r| r.get(0),
-                    )?;
-                    if n >= max_rows {
-                        return bad(format!("a zone has at most {max_rows} rows"));
-                    }
-                    let (kind, target, pane) = p.pointer.map(pointer_cols).unwrap_or((None, None, None));
-                    tx.execute(
-                        "INSERT INTO board_entries (id, board_id, kind, zone_id, position, note, status, target_kind, target,
-                             pane, created_at, updated_at, agent)
-                         VALUES (?1, ?2, 'row', ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?10, ?11)",
-                        params![
-                            new_entry_id(EntryKind::Row),
-                            board,
-                            zone,
-                            n,
-                            p.note.unwrap_or(""),
-                            p.status.and_then(status_str),
-                            kind,
-                            target,
-                            pane,
-                            at,
-                            p.agent
-                        ],
-                    )?;
+                    tx.execute("UPDATE board_attachments SET row_id = ?2 WHERE row_id = ?1", params![from, id])?;
+                    tx.execute("DELETE FROM board_entries WHERE id = ?1", params![from])?;
                 }
-                None => return bad("say what to make (\"entry\": zone or row), or which entry to change (\"id\")"),
-            },
-        }
+                renumber(&tx, &siblings(&tx, board)?)?;
+                id
+            }
+        };
         touch(&tx, board, at)?;
         tx.commit()?;
-        Ok(Ok(()))
+        Ok(Ok(row))
     }
 
-    /// Put `id` just before `before` among its siblings (last without one),
-    /// a row in `zone` (its own without one). A zone stays before the
-    /// proofs zone, which stays last. `rev`, if named, must be the entry's.
-    pub fn move_entry(
-        &self,
-        board: &str,
-        id: &str,
-        m: &Move,
-        at: u64,
-        max_rows: u64,
-    ) -> Result<std::result::Result<(), Refused>> {
-        let Move { zone, before, rev } = *m;
+    /// Delete a row and what is attached to it.
+    pub fn delete_entry(&self, board: &str, id: &str, at: u64) -> Result<std::result::Result<(), Refused>> {
         let mut c = self.c();
         let tx = c.immediate()?;
         if !lock(&tx, board)? {
             return Ok(Err(Refused::Missing("no such board")));
         }
-        let Some(e) = entry(&tx, board, id)? else { return Ok(Err(Refused::Missing("no such entry"))) };
-        if let Some(r) = rev
-            && r != e.rev
-        {
-            return Ok(Err(Refused::Stale { rev: e.rev }));
+        if entry(&tx, board, id)?.is_none() {
+            return Ok(Err(Refused::Missing("no such row")));
         }
-        if before == Some(id) {
-            return bad("an entry can't go before itself");
-        }
-        match e.kind {
-            EntryKind::Zone => {
-                if zone.is_some() {
-                    return bad("a zone moves among zones; \"zone\" is for rows");
-                }
-                if is_proofs(&e) {
-                    return bad("the proofs zone stays last");
-                }
-                let mut ids = siblings(&tx, board, None)?;
-                ids.retain(|i| i != id);
-                let last_is_proofs = match ids.last() {
-                    Some(l) => entry(&tx, board, l)?.is_some_and(|z| is_proofs(&z)),
-                    None => false,
-                };
-                let index = match before {
-                    Some(b) => match ids.iter().position(|i| i == b) {
-                        Some(i) => i,
-                        None => return bad("\"before\" is a zone of this board"),
-                    },
-                    None if last_is_proofs => ids.len() - 1,
-                    None => ids.len(),
-                };
-                ids.insert(index, id.to_owned());
-                renumber(&tx, &ids)?;
-            }
-            EntryKind::Row => {
-                let from = e.zone.clone().context("a row without a zone")?;
-                let to = zone.unwrap_or(&from);
-                if zone_of(&tx, board, to)?.is_none() {
-                    return Ok(Err(Refused::Missing("no such zone")));
-                }
-                let mut ids = siblings(&tx, board, Some(to))?;
-                ids.retain(|i| i != id);
-                if to != from && ids.len() as u64 >= max_rows {
-                    return bad(format!("a zone has at most {max_rows} rows"));
-                }
-                let index = match before {
-                    Some(b) => match ids.iter().position(|i| i == b) {
-                        Some(i) => i,
-                        None => return bad("\"before\" is a row of the zone it goes to"),
-                    },
-                    None => ids.len(),
-                };
-                if to != from {
-                    tx.execute("UPDATE board_entries SET zone_id = ?2 WHERE id = ?1", params![id, to])?;
-                }
-                ids.insert(index, id.to_owned());
-                renumber(&tx, &ids)?;
-                if to != from {
-                    let mut old = siblings(&tx, board, Some(&from))?;
-                    old.retain(|i| i != id);
-                    renumber(&tx, &old)?;
-                }
-            }
-        }
-        tx.execute("UPDATE board_entries SET updated_at = ?2 WHERE id = ?1", params![id, at])?;
+        tx.execute("DELETE FROM board_attachments WHERE row_id = ?1", params![id])?;
+        tx.execute("DELETE FROM board_entries WHERE id = ?1", params![id])?;
+        renumber(&tx, &siblings(&tx, board)?)?;
         touch(&tx, board, at)?;
         tx.commit()?;
         Ok(Ok(()))
     }
 
-    /// Delete a row, or a zone and its rows. With `agent` (a machine whose
-    /// agent deletes), a zone that holds a row some other hand added is
-    /// refused, read in the same transaction as the delete.
-    pub fn delete_entry(
+    /// Attach `pointer` to `row` as `role`, by `agent` (a machine) or a
+    /// person; the attachment's id. The pointer's shape for the role is the
+    /// caller's to have checked.
+    #[allow(clippy::too_many_arguments)]
+    pub fn attach(
         &self,
         board: &str,
-        id: &str,
+        row: &str,
+        role: AttachRole,
+        pointer: &Pointer,
         agent: Option<&str>,
         at: u64,
-    ) -> Result<std::result::Result<(), Refused>> {
+        max: u64,
+    ) -> Result<std::result::Result<String, Refused>> {
         let mut c = self.c();
         let tx = c.immediate()?;
         if !lock(&tx, board)? {
             return Ok(Err(Refused::Missing("no such board")));
         }
-        let Some(e) = entry(&tx, board, id)? else { return Ok(Err(Refused::Missing("no such entry"))) };
-        match e.kind {
-            EntryKind::Zone => {
-                if let Some(machine) = agent {
-                    let others: u64 = tx.query_row(
-                        "SELECT count(*) FROM board_entries
-                         WHERE board_id = ?1 AND zone_id = ?2 AND (agent IS NULL OR agent != ?3)",
-                        params![board, id, machine],
-                        |r| r.get(0),
-                    )?;
-                    if others > 0 {
-                        return Ok(Err(Refused::Forbidden(
-                            "an agent removes a zone only when every row in it was added by its own machine: this one \
-                             holds someone else's"
-                                .to_owned(),
-                        )));
-                    }
-                }
-                tx.execute("DELETE FROM board_entries WHERE board_id = ?1 AND zone_id = ?2", params![board, id])?;
-                tx.execute("DELETE FROM board_entries WHERE id = ?1", params![id])?;
-                renumber(&tx, &siblings(&tx, board, None)?)?;
-            }
-            EntryKind::Row => {
-                tx.execute("DELETE FROM board_entries WHERE id = ?1", params![id])?;
-                let zone = e.zone.context("a row without a zone")?;
-                renumber(&tx, &siblings(&tx, board, Some(&zone))?)?;
-            }
+        if entry(&tx, board, row)?.is_none() {
+            return Ok(Err(Refused::Missing("no such row")));
+        }
+        let n: u64 =
+            tx.query_row("SELECT count(*) FROM board_attachments WHERE row_id = ?1", params![row], |r| r.get(0))?;
+        if n >= max {
+            return bad(format!("a row has at most {max} attachments"));
+        }
+        let (Some(kind), Some(target), pane) = pointer_cols(pointer) else {
+            return bad("an attachment points at something");
+        };
+        let id = new_attachment_id();
+        tx.execute(
+            "INSERT INTO board_attachments (id, board_id, row_id, role, target_kind, target, pane, agent, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+            params![id, board, row, role.as_str(), kind, target, pane, agent, at],
+        )?;
+        touch(&tx, board, at)?;
+        tx.commit()?;
+        Ok(Ok(id))
+    }
+
+    /// One attachment of a board, as stored.
+    pub fn attachment(&self, board: &str, id: &str) -> Result<Option<Attached>> {
+        self.c()
+            .query_row(
+                &format!("SELECT {ATTACHED_COLS} FROM board_attachments WHERE board_id = ?1 AND id = ?2"),
+                params![board, id],
+                attached_row,
+            )
+            .optional()
+    }
+
+    /// Take an attachment off its row.
+    pub fn detach(&self, board: &str, id: &str, at: u64) -> Result<std::result::Result<(), Refused>> {
+        let mut c = self.c();
+        let tx = c.immediate()?;
+        if !lock(&tx, board)? {
+            return Ok(Err(Refused::Missing("no such board")));
+        }
+        if tx.execute("DELETE FROM board_attachments WHERE board_id = ?1 AND id = ?2", params![board, id])? == 0 {
+            return Ok(Err(Refused::Missing("no such attachment")));
         }
         touch(&tx, board, at)?;
         tx.commit()?;
         Ok(Ok(()))
-    }
-
-    /// The boards with these ids (`brd_…`): each one's id, project and
-    /// title. One statement; an id that isn't there isn't in the list.
-    /// The `fi_` and `iss_` ids that the rows of `board` point at, by kind
-    /// (forge items, then issues): what a read resolves in one query each.
-    pub fn board_targets(&self, board: &str) -> Result<(Vec<String>, Vec<String>)> {
-        let rows: Vec<(String, String)> = self.c().query_map(
-            "SELECT target_kind, target FROM board_entries
-             WHERE board_id = ?1 AND target_kind IN ('forge_item', 'issue')",
-            params![board],
-            |r| Ok((r.get(0)?, r.get(1)?)),
-        )?;
-        let (mut items, mut issues) = (vec![], vec![]);
-        for (k, t) in rows {
-            if k == "issue" { issues.push(t) } else { items.push(t) }
-        }
-        Ok((items, issues))
-    }
-
-    /// The `run_` ids that the rows of `board` point at.
-    pub fn board_run_targets(&self, board: &str) -> Result<Vec<String>> {
-        self.c().query_map(
-            "SELECT DISTINCT target FROM board_entries WHERE board_id = ?1 AND target_kind = 'run'",
-            params![board],
-            |r| r.get(0),
-        )
     }
 
     /// The boards (id, project) with a row that points at an item of `repo`
@@ -787,7 +706,7 @@ impl Db {
         let heads = in_json(&c, "i.head_sha", 2);
         c.query_map(
             &format!(
-                "SELECT DISTINCT b.id, b.project_id FROM board_entries e
+                "SELECT DISTINCT b.id, b.project_id FROM {POINTED} e
                  JOIN boards b ON b.id = e.board_id
                  JOIN forge_items i ON i.id = e.target
                  WHERE e.target_kind = 'forge_item' AND i.repo_id = ?1 AND ({nums} OR {heads})"
@@ -806,7 +725,7 @@ impl Db {
         let c = self.c();
         c.query_map(
             &format!(
-                "SELECT DISTINCT b.id, b.project_id FROM board_entries e JOIN boards b ON b.id = e.board_id
+                "SELECT DISTINCT b.id, b.project_id FROM {POINTED} e JOIN boards b ON b.id = e.board_id
                  WHERE e.target_kind = 'forge_item' AND {}",
                 in_json(&c, "e.target", 1)
             ),
@@ -840,11 +759,58 @@ impl Db {
         )
     }
 
+    /// The state of the mirrored items among `ids` (GitHub's and a tracker's)
+    /// with every check on their heads, whoever may read them. This is how a
+    /// lane is worked out for a reader who may not read an item: it holds
+    /// what a lane and a proof are made of, and the reader's own chips still
+    /// go through the viewer check ([`crate::forge::viewer`]).
+    /// Only items of `project`'s linked repos and connected trackers.
+    pub fn item_facts(&self, project: &str, ids: &[&str]) -> Result<(Vec<ItemFact>, Vec<CheckState>)> {
+        if ids.is_empty() {
+            return Ok((vec![], vec![]));
+        }
+        let c = self.c();
+        let items = c.query_map(
+            &format!(
+                "SELECT i.id, i.kind, i.state, i.repo_id, i.head_sha FROM forge_items i
+                 WHERE (i.repo_id IN (SELECT repo_id FROM linked_repos WHERE project_id = ?2 AND unlinked_at IS NULL)
+                        OR i.connection_id IN
+                           (SELECT id FROM tracker_connections WHERE project_id = ?2 AND unlinked_at IS NULL))
+                   AND {}",
+                in_json(&c, "i.id", 1)
+            ),
+            params![json_list(ids)?, project],
+            |r| {
+                Ok(ItemFact {
+                    id: r.get(0)?,
+                    kind: r.get(1)?,
+                    state: r.get(2)?,
+                    repo_id: r.get(3)?,
+                    head_sha: r.get(4)?,
+                })
+            },
+        )?;
+        let heads: Vec<&str> = items.iter().filter_map(|i| i.head_sha.as_deref()).collect();
+        let checks = if heads.is_empty() {
+            vec![]
+        } else {
+            c.query_map(
+                &format!(
+                    "SELECT repo_id, head_sha, status, conclusion FROM forge_checks WHERE {}",
+                    in_json(&c, "head_sha", 1)
+                ),
+                params![json_list(&heads)?],
+                |r| Ok(CheckState { repo_id: r.get(0)?, head_sha: r.get(1)?, status: r.get(2)?, conclusion: r.get(3)? }),
+            )?
+        };
+        Ok((items, checks))
+    }
+
     /// The boards (id, project) with a row that points at native issue `id`.
     pub fn boards_on_issue(&self, id: &str) -> Result<Vec<(String, String)>> {
         self.c().query_map(
             "SELECT DISTINCT b.id, b.project_id FROM board_entries e JOIN boards b ON b.id = e.board_id
-             WHERE e.target_kind = 'issue' AND e.target = ?1",
+             WHERE e.kind = 'row' AND e.target_kind = 'issue' AND e.target = ?1",
             params![id],
             |r| Ok((r.get(0)?, r.get(1)?)),
         )
@@ -927,8 +893,10 @@ impl Db {
     /// `pane`: who to tell that it changed.
     pub fn boards_on_block(&self, machine: &str, pane: &str) -> Result<Vec<(String, String)>> {
         self.c().query_map(
-            "SELECT DISTINCT b.id, b.project_id FROM board_entries e JOIN boards b ON b.id = e.board_id
-             WHERE e.target_kind = 'block' AND e.target = ?1 AND e.pane = ?2",
+            &format!(
+                "SELECT DISTINCT b.id, b.project_id FROM {POINTED} e JOIN boards b ON b.id = e.board_id
+                 WHERE e.target_kind = 'block' AND e.target = ?1 AND e.pane = ?2"
+            ),
             params![machine, pane],
             |r| Ok((r.get(0)?, r.get(1)?)),
         )
@@ -953,6 +921,11 @@ impl Db {
 /// elsewhere its boards stay, with no creator.
 pub(crate) fn erase_account(c: &impl Sql, d: &Deleted) -> Result<()> {
     c.execute(
+        "DELETE FROM board_attachments WHERE board_id IN
+             (SELECT id FROM boards WHERE project_id NOT IN (SELECT id FROM projects))",
+        params![],
+    )?;
+    c.execute(
         "DELETE FROM board_entries WHERE board_id IN
              (SELECT id FROM boards WHERE project_id NOT IN (SELECT id FROM projects))",
         params![],
@@ -969,8 +942,10 @@ impl Db {
     /// at: what makes an issue triaged.
     pub fn project_board_targets(&self, project: &str) -> Result<std::collections::HashSet<String>> {
         let rows: Vec<String> = self.c().query_map(
-            "SELECT DISTINCT e.target FROM board_entries e JOIN boards b ON b.id = e.board_id
-             WHERE b.project_id = ?1 AND e.target_kind IN ('forge_item', 'issue')",
+            &format!(
+                "SELECT DISTINCT e.target FROM {POINTED} e JOIN boards b ON b.id = e.board_id
+                 WHERE b.project_id = ?1 AND e.target_kind IN ('forge_item', 'issue')"
+            ),
             params![project],
             |r| r.get(0),
         )?;

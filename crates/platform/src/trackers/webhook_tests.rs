@@ -115,16 +115,6 @@ async fn board_on(w: &World, source: &str) -> tokio::sync::broadcast::Receiver<A
             .await;
     assert_eq!(s, 200, "{b}");
     let board = b["board"]["id"].as_str().unwrap().to_owned();
-    let (s, z) = call(
-        &w.base,
-        "alice",
-        "PUT",
-        &format!("/api/boards/{board}/entries"),
-        Some(json!({ "entry": "zone", "title": "Now" })),
-    )
-    .await;
-    assert_eq!(s, 200, "{z}");
-    let zone = z["zones"][0]["id"].as_str().unwrap().to_owned();
     let fi: String = w
         .app
         .db
@@ -135,7 +125,7 @@ async fn board_on(w: &World, source: &str) -> tokio::sync::broadcast::Receiver<A
             |r| r.get(0),
         )
         .unwrap();
-    let body = json!({ "entry": "row", "zone": zone, "pointer": { "kind": "forge_item", "id": fi } });
+    let body = json!({ "entry": "row", "pointer": { "kind": "forge_item", "id": fi } });
     let (s, r) = call(&w.base, "alice", "PUT", &format!("/api/boards/{board}/entries"), Some(body)).await;
     assert_eq!(s, 200, "{r}");
     let room = Room {

@@ -30,6 +30,7 @@ use rusqlite::Connection;
 pub mod agent_tokens;
 pub mod billing;
 pub mod boards;
+pub mod boards_lanes;
 pub mod chat;
 pub mod chat_files;
 pub mod chat_people;
@@ -131,7 +132,9 @@ impl Db {
         if report != migrate::Report::default() {
             tracing::info!(adopted = report.adopted, upgraded = report.upgraded, ran = ?report.ran, "the platform's schema");
         }
-        Ok(Self { backend: Backend::Sqlite(Mutex::new(conn)) })
+        let db = Self { backend: Backend::Sqlite(Mutex::new(conn)) };
+        db.lanes_moved()?;
+        Ok(db)
     }
 
     /// Postgres at `url` (`postgres://` or `postgresql://`), else the
@@ -149,6 +152,7 @@ impl Db {
         if !ran.is_empty() {
             tracing::info!(?ran, "the platform's schema, on Postgres");
         }
+        db.lanes_moved()?;
         Ok(db)
     }
 
@@ -185,6 +189,16 @@ impl Db {
     pub fn test_on(url: &str) -> Self {
         let schema = format!("t_{}", hex::encode(arugula_e2e::random::<8>()));
         Self::postgres(url, Some(schema)).expect("a test schema on the test Postgres")
+    }
+
+    /// Boards made before lanes, moved to them ([`Db::lanes_move`]), once,
+    /// after the migrations.
+    fn lanes_moved(&self) -> anyhow::Result<()> {
+        let moved = self.lanes_move().context("moving boards to lanes")?;
+        if moved.boards > 0 {
+            tracing::info!(?moved, "boards moved to lanes");
+        }
+        Ok(())
     }
 
     pub fn dialect(&self) -> migrate::Dialect {
