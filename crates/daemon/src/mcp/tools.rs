@@ -328,17 +328,60 @@ pub struct Call<'a> {
     /// for a cloud workspace (M184, `hosted.rs`) has none, so no progress
     /// and no headers.
     pub ctx: Option<RequestContext<RoleServer>>,
+    /// The tools this MCP session was last listed (`capabilities` compares
+    /// them with what a new session would get), when there is a session.
+    pub listed: Option<Arc<Listed>>,
+}
+
+/// What an MCP session was last told it has: the tools it listed, and the
+/// kinds of the grouped ones (`show:board`), sorted. `None` until its
+/// client has listed.
+#[derive(Default)]
+pub struct Listed {
+    names: std::sync::Mutex<Option<Vec<String>>>,
+    /// A `notifications/tools/list_changed` went to the client since it
+    /// last listed.
+    told: std::sync::atomic::AtomicBool,
+}
+
+impl Listed {
+    /// The client listed `names`.
+    pub fn listed(&self, names: Vec<String>) {
+        *self.names.lock().unwrap() = Some(names);
+        self.told.store(false, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    /// The client was told the list changed.
+    pub fn tell(&self) {
+        self.told.store(true, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    /// What the client last listed; `None`: it hasn't.
+    pub fn names(&self) -> Option<Vec<String>> {
+        self.names.lock().unwrap().clone()
+    }
+
+    /// Whether the client was told since it last listed.
+    pub fn was_told(&self) -> bool {
+        self.told.load(std::sync::atomic::Ordering::Relaxed)
+    }
 }
 
 impl<'a> Call<'a> {
     pub fn new(app: &'a Arc<App>, caller: Caller, client: String, ctx: &RequestContext<RoleServer>) -> Self {
-        Self { app, caller, client, progress: ctx.meta.get_progress_token(), ctx: Some(ctx.clone()) }
+        Self { app, caller, client, progress: ctx.meta.get_progress_token(), ctx: Some(ctx.clone()), listed: None }
+    }
+
+    /// The same call, from the session that last listed `listed`.
+    pub fn in_session(mut self, listed: Arc<Listed>) -> Self {
+        self.listed = Some(listed);
+        self
     }
 
     /// A call with no MCP request behind it (M184: another machine's, for
     /// this hosted one).
     pub fn detached(app: &'a Arc<App>, caller: Caller, client: String) -> Self {
-        Self { app, caller, client, progress: None, ctx: None }
+        Self { app, caller, client, progress: None, ctx: None, listed: None }
     }
 
     pub fn app(&self) -> &'a Arc<App> {

@@ -15,6 +15,7 @@
 
 mod capabilities;
 mod hosted;
+mod listing;
 mod results;
 mod session;
 pub mod tools;
@@ -113,9 +114,11 @@ impl Handle<Server> for AgentCanGet {
 /// `/mcp`, for one of the daemon's routers.
 pub fn routes(app: &Arc<App>) -> Router<Arc<App>> {
     let config = StreamableHttpServerConfig::default().disable_allowed_hosts();
-    let server = McpServer { app: app.clone(), fallback: None };
+    let served = app.clone();
+    // A server of its own for each MCP session: it keeps what that session
+    // was last told it has.
     let service: StreamableHttpService<McpServer, LocalSessionManager> =
-        StreamableHttpService::new(move || Ok(server.clone()), Default::default(), config);
+        StreamableHttpService::new(move || Ok(McpServer::new(served.clone(), None)), Default::default(), config);
     Router::new()
         .nest_service(PATH, service)
         .layer(middleware::from_fn_with_state(app.clone(), authenticate))
@@ -130,7 +133,7 @@ pub fn pipe_server(app: &Arc<App>) -> relay::Serve {
     Arc::new(move |id, io| {
         let Some(app) = app.upgrade() else { return };
         let caller = Caller::new(Scope::Block(id), Some(format!("%{id}")), None);
-        let server = McpServer { app, fallback: Some(caller) };
+        let server = McpServer::new(app, Some(caller));
         crate::task::spawn(async move {
             match rmcp::ServiceExt::serve(server, tokio::io::split(io)).await {
                 Ok(running) => {
@@ -194,9 +197,16 @@ pub struct McpServer {
     app: Arc<App>,
     /// Who it serves when there's no HTTP request to say (a pipe).
     fallback: Option<Caller>,
+    /// What this session was last told it has (#370).
+    session: Arc<listing::Session>,
 }
 
 impl McpServer {
+    fn new(app: Arc<App>, fallback: Option<Caller>) -> Self {
+        let session = listing::Session::open(app.control.state_dir().to_owned());
+        Self { app, fallback, session }
+    }
+
     /// This machine's Labs flags: read on each call, so a change needs no
     /// restart.
     fn flags(&self) -> On {
@@ -297,9 +307,11 @@ impl ServerHandler for McpServer {
     }
 
     fn get_info(&self) -> ServerConfig {
-        ServerConfig::new(ServerCapabilities::builder().enable_tools().enable_resources().build())
-            .with_server_info(Implementation::new("arugula", arugula_core::version::get()))
-            .with_instructions(instructions())
+        ServerConfig::new(
+            ServerCapabilities::builder().enable_tools().enable_tool_list_changed().enable_resources().build(),
+        )
+        .with_server_info(Implementation::new("arugula", arugula_core::version::get()))
+        .with_instructions(instructions())
     }
 
     async fn list_tools(
@@ -308,7 +320,9 @@ impl ServerHandler for McpServer {
         ctx: RequestContext<RoleServer>,
     ) -> Result<ListToolsResult, McpError> {
         let scope = self.caller(&ctx).scope;
-        Ok(fresh(ListToolsResult::with_all_items(tools::list(scope, self.flags()))))
+        let on = self.flags();
+        self.session.listing(ctx.peer.clone(), scope, tools::listed_names(scope, on));
+        Ok(fresh(ListToolsResult::with_all_items(tools::list(scope, on))))
     }
 
     async fn call_tool(
@@ -331,7 +345,7 @@ impl ServerHandler for McpServer {
             "mcp call"
         );
         let args = request.arguments.map(serde_json::Value::Object).unwrap_or_else(|| serde_json::json!({}));
-        let call = Call::new(&self.app, caller, client, &ctx);
+        let call = Call::new(&self.app, caller, client, &ctx).in_session(self.session.listed.clone());
         Ok(ToolCall(&call).dispatch(&request.name, args).await.into())
     }
 

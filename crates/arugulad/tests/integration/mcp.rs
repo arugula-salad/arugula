@@ -53,11 +53,13 @@ fn cli_bin() -> PathBuf {
 struct Client {
     name: &'static str,
     progress: Arc<AtomicUsize>,
+    /// `notifications/tools/list_changed` received.
+    list_changed: Arc<AtomicUsize>,
 }
 
 impl Client {
     fn named(name: &'static str) -> Self {
-        Self { name, progress: Default::default() }
+        Self { name, progress: Default::default(), list_changed: Default::default() }
     }
 }
 
@@ -68,6 +70,10 @@ impl ClientHandler for Client {
 
     async fn on_progress(&self, _p: ProgressNotificationParam, _c: NotificationContext<RoleClient>) {
         self.progress.fetch_add(1, Ordering::Relaxed);
+    }
+
+    async fn on_tool_list_changed(&self, _c: NotificationContext<RoleClient>) {
+        self.list_changed.fetch_add(1, Ordering::Relaxed);
     }
 }
 
@@ -1095,6 +1101,46 @@ async fn labs_lists_all_the_tools() {
         assert!(!instructions(&s).contains("read_thread"), "{}", instructions(&s));
         arugula_testkit::labs(&d.state, false);
     }
+    s.cancel().await.unwrap();
+}
+
+/// #370: a Labs flag turned on after a session started reaches it with no
+/// restart. The daemon says it declares `listChanged`, tells the open
+/// session once (the bridge carries it), `capabilities` says the tool is
+/// allowed but not in the list the session has until it lists again, and
+/// then says nothing of it.
+#[cfg(feature = "labs")]
+#[tokio::test(flavor = "multi_thread")]
+async fn a_flag_turned_on_later_reaches_the_open_session() {
+    let d = Daemon::child();
+    let client = Client::named("claude-code");
+    let s = bridge(&d, client.clone()).await;
+    let declared = s.peer_info().and_then(|i| i.capabilities.tools.as_ref().and_then(|t| t.list_changed));
+    assert_eq!(declared, Some(true), "the server declares tools.listChanged");
+    let caps = call(&s, "capabilities", json!({})).await;
+    assert!(caps.get("tool_status").is_none(), "everything is loaded at first: {caps}");
+    let has = |tools: &[rmcp::model::Tool], name: &str| tools.iter().any(|t| t.name == name);
+    assert!(!has(&s.list_all_tools().await.unwrap(), "board_read"));
+    assert_eq!(client.list_changed.load(Ordering::Relaxed), 0);
+
+    arugula_testkit::labs(&d.state, true);
+    let waited = std::time::Instant::now();
+    while client.list_changed.load(Ordering::Relaxed) == 0 {
+        assert!(waited.elapsed() < Duration::from_secs(20), "the session was never told the list changed");
+        tokio::time::sleep(Duration::from_millis(200)).await;
+    }
+    let caps = call(&s, "capabilities", json!({})).await;
+    let status = caps["tool_status"].as_array().expect("tool_status").iter().find(|t| t["tool"] == "board_read");
+    let status = status.unwrap_or_else(|| panic!("board_read isn't said to be missing: {caps}"));
+    assert_eq!(status["status"], "reconnect", "{status}");
+    assert!(status["note"].as_str().unwrap().contains("will pick it up"), "{status}");
+
+    assert!(has(&s.list_all_tools().await.unwrap(), "board_read"), "the next tools/list has the board tools");
+    let caps = call(&s, "capabilities", json!({})).await;
+    assert!(caps.get("tool_status").is_none(), "listed again, so loaded: {caps}");
+    // Read again with the same flags, it is not told twice.
+    tokio::time::sleep(Duration::from_secs(5)).await;
+    assert_eq!(client.list_changed.load(Ordering::Relaxed), 1, "one change, one notification");
     s.cancel().await.unwrap();
 }
 
