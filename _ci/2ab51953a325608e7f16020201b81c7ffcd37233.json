@@ -2,8 +2,8 @@
   "schema": 1,
   "commit": "2ab51953a325608e7f16020201b81c7ffcd37233",
   "branch": "main",
-  "state": "pending",
-  "at": "2026-10-30T23:34:15Z",
+  "state": "red",
+  "at": "2026-10-30T23:45:53Z",
   "phases": {
     "lint": {
       "verdict": "pending",
@@ -11,9 +11,9 @@
       "runs": [
         {
           "name": "suite-changed",
-          "id": 124366720875,
+          "id": 124368860475,
           "conclusion": "success",
-          "url": "https://github.com/arugula-salad/arugula/actions/runs/41144061775/job/124366720875"
+          "url": "https://github.com/arugula-salad/arugula/actions/runs/41144061775/job/124368860475"
         }
       ]
     },
@@ -43,20 +43,20 @@
       "runs": []
     },
     "windows": {
-      "verdict": "pending",
+      "verdict": "fail",
       "build": "newest",
       "runs": [
         {
           "name": "workspace",
-          "id": 124366785257,
+          "id": 124368859337,
           "conclusion": "failure",
-          "url": "https://github.com/arugula-salad/arugula/actions/runs/41144061775/job/124366785257"
+          "url": "https://github.com/arugula-salad/arugula/actions/runs/41144061775/job/124368859337"
         },
         {
           "name": "workspace-clippy",
-          "id": 124366785337,
+          "id": 124368861333,
           "conclusion": "success",
-          "url": "https://github.com/arugula-salad/arugula/actions/runs/41144061775/job/124366785337"
+          "url": "https://github.com/arugula-salad/arugula/actions/runs/41144061775/job/124368861333"
         },
         {
           "name": "desktop",
@@ -65,8 +65,16 @@
           "url": "https://github.com/arugula-salad/arugula/actions/runs/41144061751/job/124364944634"
         }
       ],
-      "reason": "retrying",
       "culprit": "1e00c112eba29f15cf5d08e1ea699c2786a1ff44"
+    }
+  },
+  "failure": {
+    "phase": "windows",
+    "run": {
+      "name": "workspace",
+      "id": 124368859337,
+      "conclusion": "failure",
+      "url": "https://github.com/arugula-salad/arugula/actions/runs/41144061775/job/124368859337"
     }
   },
   "retried": {
