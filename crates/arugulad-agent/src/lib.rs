@@ -1379,7 +1379,9 @@ impl Inner {
         };
         if p["mode"] == "url" {
             ask.kind = AskKind::Url;
-            ask.url = p["url"].as_str().map(str::to_owned);
+            // A web page to open, never another scheme (the card's button
+            // opens it, and in the desktop app the system does).
+            ask.url = p["url"].as_str().filter(|u| web_link(u)).map(str::to_owned);
             let elicitation_id = p["elicitationId"].as_str().map(str::to_owned);
             return Elicit { ask, rpc: rpc.clone(), elicitation_id };
         }
@@ -3528,4 +3530,10 @@ pub fn transcript_of(dir: &Path) -> Option<String> {
         inner.rebuild_line(line);
     }
     Some(inner.t.markdown())
+}
+
+/// `url` is an `http:` or `https:` address.
+fn web_link(url: &str) -> bool {
+    let head = url.get(..8).unwrap_or(url).to_ascii_lowercase();
+    head.starts_with("https://") || head.starts_with("http://")
 }

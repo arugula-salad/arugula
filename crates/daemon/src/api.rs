@@ -627,6 +627,9 @@ struct CaptureQuery {
     scope: Option<String>,
 }
 
+/// The HTML capture's policy: a sandboxed document with nothing to load.
+const HTML_CAPTURE_CSP: &str = "sandbox; default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'none'";
+
 async fn capture(State(app): AppState, Path(id): Path<PaneId>, Query(q): Query<CaptureQuery>) -> Res<Response> {
     // Any block has a text rendering; terminals have more.
     if let Some(b) = app.mux.api(|r| Api::Block(id, r)).await.flatten() {
@@ -650,8 +653,16 @@ async fn capture(State(app): AppState, Path(id): Path<PaneId>, Query(q): Query<C
         .ok()
         .flatten()
         .ok_or_else(|| ApiError(StatusCode::GATEWAY_TIMEOUT, "the pane didn't answer".into()))?;
-    let ctype = if format == CaptureFormat::Html { "text/html; charset=utf-8" } else { "text/plain; charset=utf-8" };
-    Ok(([(header::CONTENT_TYPE, ctype)], text).into_response())
+    if format == CaptureFormat::Html {
+        // A rendering of what programs printed, to save or show: opened in
+        // a browser it runs nothing and loads nothing.
+        return Ok((
+            [(header::CONTENT_TYPE, "text/html; charset=utf-8"), (header::CONTENT_SECURITY_POLICY, HTML_CAPTURE_CSP)],
+            text,
+        )
+            .into_response());
+    }
+    Ok(([(header::CONTENT_TYPE, "text/plain; charset=utf-8")], text).into_response())
 }
 
 async fn open_block(
