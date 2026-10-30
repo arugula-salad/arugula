@@ -1,0 +1,70 @@
+{
+  "schema": 1,
+  "commit": "464fe0ef05b7fc9e0601a8e9f645ff42a12d5249",
+  "branch": "main",
+  "state": "pending",
+  "at": "2026-10-30T07:43:11Z",
+  "phases": {
+    "lint": {
+      "verdict": "pending",
+      "build": "newest",
+      "runs": [
+        {
+          "name": "suite-changed",
+          "id": 123950538798,
+          "conclusion": "success",
+          "url": "https://github.com/arugula-salad/arugula/actions/runs/41021782566/job/123950538798"
+        }
+      ]
+    },
+    "build": {
+      "verdict": "pending",
+      "build": "newest",
+      "runs": []
+    },
+    "test": {
+      "verdict": "pending",
+      "build": "newest",
+      "runs": []
+    },
+    "e2e": {
+      "verdict": "pending",
+      "build": "newest",
+      "runs": []
+    },
+    "claims": {
+      "verdict": "pending",
+      "build": "newest",
+      "runs": []
+    },
+    "macos": {
+      "verdict": "pending",
+      "build": "newest",
+      "runs": []
+    },
+    "windows": {
+      "verdict": "pending",
+      "build": "newest",
+      "runs": [
+        {
+          "name": "workspace",
+          "id": 123950593600,
+          "conclusion": null,
+          "url": "https://github.com/arugula-salad/arugula/actions/runs/41021782566/job/123950593600"
+        },
+        {
+          "name": "workspace-clippy",
+          "id": 123950593526,
+          "conclusion": null,
+          "url": "https://github.com/arugula-salad/arugula/actions/runs/41021782566/job/123950593526"
+        },
+        {
+          "name": "desktop",
+          "id": 123950589335,
+          "conclusion": null,
+          "url": "https://github.com/arugula-salad/arugula/actions/runs/41021782514/job/123950589335"
+        }
+      ]
+    }
+  }
+}
