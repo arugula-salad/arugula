@@ -202,9 +202,18 @@ struct Reader {
 }
 
 impl Reader {
-    fn new(app: &Arc<App>, who: Option<crate::acl::Principal>) -> Option<Self> {
-        let who = who.filter(|w| !w.is_owner())?;
-        Some(Self { app: app.clone(), who, changes: app.mux.access_changes(), recheck: false })
+    /// Watching for changes first, then asking again whether they may read
+    /// `pane` from `from`, as authz did at the door: a change that landed
+    /// in between is in that answer, and one after it wakes the stream.
+    /// None for the owner.
+    async fn start(app: &Arc<App>, who: Option<crate::acl::Principal>, pane: PaneId, from: u64) -> Res<Option<Self>> {
+        let Some(who) = who.filter(|w| !w.is_owner()) else { return Ok(None) };
+        let mut r = Self { app: app.clone(), who, changes: app.mux.access_changes(), recheck: true };
+        if !r.reads(pane, Some(from)).await {
+            return Err(ApiError(StatusCode::NOT_FOUND, "no such pane".into()));
+        }
+        r.recheck = false;
+        Ok(Some(r))
     }
 
     /// Whether they may still read `pane` (from `at`, under a "from now"
@@ -235,6 +244,18 @@ impl Reader {
             }
             r.recheck = false;
         }
+    }
+}
+
+/// In a debug build, `ARUGULA_TAIL_START_PAUSE_MS` holds a guest's tail
+/// between authz's check and the handler's own start (for tests: access
+/// changing in between).
+async fn after_authz_pause() {
+    if !cfg!(debug_assertions) {
+        return;
+    }
+    if let Some(ms) = std::env::var("ARUGULA_TAIL_START_PAUSE_MS").ok().and_then(|v| v.parse::<u64>().ok()) {
+        tokio::time::sleep(Duration::from_millis(ms)).await;
     }
 }
 
@@ -1098,11 +1119,18 @@ async fn tail(
     Query(q): Query<TailQuery>,
 ) -> Res<Response> {
     let who = who.map(|axum::Extension(w)| w).filter(|w| !w.is_owner());
+    if who.is_some() {
+        after_authz_pause().await;
+    }
     if let Some(host) = q.host.clone() {
         return tail_synced(&app, who.as_ref(), id, host, &q).await;
     }
+    // Under a "from now" share authz let in only an offset at or after
+    // where it began; anything else reads from before any start.
+    let asked = q.from.as_deref().and_then(|f| f.parse::<u64>().ok()).unwrap_or(0);
+    let reader = Reader::start(&app, who, id, asked).await?;
     if let Some(b) = app.mux.api(|r| Api::Block(id, r)).await.flatten() {
-        return Ok(tail_block(app.clone(), id, b, q.follow == Some(1), Reader::new(&app, who)));
+        return Ok(tail_block(app.clone(), id, b, q.follow == Some(1), reader));
     }
     let p = match pane(&app, id).await {
         Ok(p) => p,
@@ -1139,7 +1167,6 @@ async fn tail(
         return Ok(first.into_response());
     }
     let tap = tap(p, resume);
-    let reader = Reader::new(&app, who);
     let live = stream::unfold((tap, reader, resume), move |(mut tap, mut reader, mut at)| async move {
         let data = tokio::select! {
             next = tap.next() => {

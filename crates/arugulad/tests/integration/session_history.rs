@@ -296,3 +296,38 @@ fn a_guests_follow_ends_when_they_may_no_longer_read_the_pane() {
     let (seen, ended) = read_follow(&mut f, 10, |_| false);
     assert!(ended, "still streaming after the grant went: {seen}");
 }
+
+/// Access that changes between the check at the door and the follow's start
+/// still counts: a grant taken away while the request waits there (held by
+/// `ARUGULA_TAIL_START_PAUSE_MS`) means no follow at all.
+#[test]
+fn a_grant_taken_away_while_a_follow_starts_still_ends_it() {
+    let d = arugulad!("session-history-start")
+        .no_tailscale()
+        .args(["--owner", OWNER])
+        .env("PS1", "$ ")
+        .env("ARUGULA_TAIL_START_PAUSE_MS", "1500")
+        .wait_secs(10)
+        .start();
+    let ticker =
+        d.post("/api/run", json!({"command": "while :; do echo tick; sleep 0.2; done", "session": "alpha"}))["pane"]
+            .as_u64()
+            .unwrap();
+    let panes = d.get("/api/panes");
+    let session = panes.as_array().unwrap().iter().find(|p| p["id"] == ticker).unwrap()["session"].as_u64().unwrap();
+    let grant = |role: Value| {
+        d.post(
+            "/api/acl",
+            json!({ "session": session, "principal": format!("tailnet:{FRIEND}"), "role": role, "history": true }),
+        );
+    };
+    grant(json!("viewer"));
+    d.wait_for("ticks", || d.raw("GET", &format!("/api/panes/{ticker}/tail"), None).1.contains("tick"));
+
+    // Past the door, then the grant goes while the handler hasn't started.
+    let mut f = follow_as_friend(&d, ticker);
+    std::thread::sleep(std::time::Duration::from_millis(500));
+    grant(Value::Null);
+    let (seen, ended) = read_follow(&mut f, 10, |s| s.contains("tick"));
+    assert!(ended && !seen.contains("tick"), "the follow went on after the grant went: {seen}");
+}
