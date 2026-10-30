@@ -46,7 +46,7 @@ use arugulad_base::{control, fs, lab_flags, mcp, server};
 use crate::{
     mcp::{
         registry::{self, ControlTools},
-        results::{CloudReach, RunsReach, ThreadsReach, TrackersReach},
+        results::{BoardsReach, CloudReach, RunsReach, ThreadsReach, TrackersReach},
         tools::{Args, Call, Def, Human, Needs, NoArgs, Out, line, parse, table},
     },
     server::App,
@@ -113,6 +113,10 @@ impl ControlTools for Reach {
 
     fn trackers_reach<'a>(&'a self, app: &'a App) -> BoxFuture<'a, TrackersReach> {
         Box::pin(trackers::trackers_reach(app))
+    }
+
+    fn boards_reach<'a>(&'a self, app: &'a App) -> BoxFuture<'a, BoardsReach> {
+        Box::pin(boards::boards_reach(app))
     }
 
     fn wait_run<'a>(&'a self, call: &'a Call<'a>, run: &'a str, limit: Duration) -> BoxFuture<'a, Out> {

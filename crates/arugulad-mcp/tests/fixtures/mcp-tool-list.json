@@ -1035,6 +1035,42 @@
             ],
             "type": "object"
           },
+          "ToolState": {
+            "description": "Why a tool isn't usable yet. (`loaded` is every tool not listed here.)",
+            "oneOf": [
+              {
+                "const": "reconnect",
+                "description": "Allowed now, but not in the list this session got: a flag came on\nafter it started.",
+                "type": "string"
+              },
+              {
+                "const": "not_granted",
+                "description": "Needs a grant over a project that this machine's owner hasn't given.",
+                "type": "string"
+              }
+            ]
+          },
+          "ToolStatus": {
+            "description": "A tool (`board_read`) or a kind of one (`show {kind: board}`) that isn't\nusable in this session (#370).",
+            "properties": {
+              "note": {
+                "description": "Why, and what to do.",
+                "type": "string"
+              },
+              "status": {
+                "$ref": "#/$defs/ToolState"
+              },
+              "tool": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "tool",
+              "status",
+              "note"
+            ],
+            "type": "object"
+          },
           "TrackerReachProject": {
             "description": "A project a machine's `trackers.write` reaches.",
             "properties": {
@@ -1111,6 +1147,13 @@
           },
           "summary": {
             "type": "string"
+          },
+          "tool_status": {
+            "description": "A line for each tool (or `show` kind) the daemon offers that you\ncan't use yet, and why; left out when every one works.",
+            "items": {
+              "$ref": "#/$defs/ToolStatus"
+            },
+            "type": "array"
           },
           "tools": {
             "description": "The tools listed for you.",
@@ -5106,6 +5149,42 @@
             ],
             "type": "object"
           },
+          "ToolState": {
+            "description": "Why a tool isn't usable yet. (`loaded` is every tool not listed here.)",
+            "oneOf": [
+              {
+                "const": "reconnect",
+                "description": "Allowed now, but not in the list this session got: a flag came on\nafter it started.",
+                "type": "string"
+              },
+              {
+                "const": "not_granted",
+                "description": "Needs a grant over a project that this machine's owner hasn't given.",
+                "type": "string"
+              }
+            ]
+          },
+          "ToolStatus": {
+            "description": "A tool (`board_read`) or a kind of one (`show {kind: board}`) that isn't\nusable in this session (#370).",
+            "properties": {
+              "note": {
+                "description": "Why, and what to do.",
+                "type": "string"
+              },
+              "status": {
+                "$ref": "#/$defs/ToolState"
+              },
+              "tool": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "tool",
+              "status",
+              "note"
+            ],
+            "type": "object"
+          },
           "TrackerReachProject": {
             "description": "A project a machine's `trackers.write` reaches.",
             "properties": {
@@ -5182,6 +5261,13 @@
           },
           "summary": {
             "type": "string"
+          },
+          "tool_status": {
+            "description": "A line for each tool (or `show` kind) the daemon offers that you\ncan't use yet, and why; left out when every one works.",
+            "items": {
+              "$ref": "#/$defs/ToolStatus"
+            },
+            "type": "array"
           },
           "tools": {
             "description": "The tools listed for you.",
@@ -9518,6 +9604,42 @@
             ],
             "type": "object"
           },
+          "ToolState": {
+            "description": "Why a tool isn't usable yet. (`loaded` is every tool not listed here.)",
+            "oneOf": [
+              {
+                "const": "reconnect",
+                "description": "Allowed now, but not in the list this session got: a flag came on\nafter it started.",
+                "type": "string"
+              },
+              {
+                "const": "not_granted",
+                "description": "Needs a grant over a project that this machine's owner hasn't given.",
+                "type": "string"
+              }
+            ]
+          },
+          "ToolStatus": {
+            "description": "A tool (`board_read`) or a kind of one (`show {kind: board}`) that isn't\nusable in this session (#370).",
+            "properties": {
+              "note": {
+                "description": "Why, and what to do.",
+                "type": "string"
+              },
+              "status": {
+                "$ref": "#/$defs/ToolState"
+              },
+              "tool": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "tool",
+              "status",
+              "note"
+            ],
+            "type": "object"
+          },
           "TrackerReachProject": {
             "description": "A project a machine's `trackers.write` reaches.",
             "properties": {
@@ -9594,6 +9716,13 @@
           },
           "summary": {
             "type": "string"
+          },
+          "tool_status": {
+            "description": "A line for each tool (or `show` kind) the daemon offers that you\ncan't use yet, and why; left out when every one works.",
+            "items": {
+              "$ref": "#/$defs/ToolStatus"
+            },
+            "type": "array"
           },
           "tools": {
             "description": "The tools listed for you.",
@@ -13589,6 +13718,42 @@
             ],
             "type": "object"
           },
+          "ToolState": {
+            "description": "Why a tool isn't usable yet. (`loaded` is every tool not listed here.)",
+            "oneOf": [
+              {
+                "const": "reconnect",
+                "description": "Allowed now, but not in the list this session got: a flag came on\nafter it started.",
+                "type": "string"
+              },
+              {
+                "const": "not_granted",
+                "description": "Needs a grant over a project that this machine's owner hasn't given.",
+                "type": "string"
+              }
+            ]
+          },
+          "ToolStatus": {
+            "description": "A tool (`board_read`) or a kind of one (`show {kind: board}`) that isn't\nusable in this session (#370).",
+            "properties": {
+              "note": {
+                "description": "Why, and what to do.",
+                "type": "string"
+              },
+              "status": {
+                "$ref": "#/$defs/ToolState"
+              },
+              "tool": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "tool",
+              "status",
+              "note"
+            ],
+            "type": "object"
+          },
           "TrackerReachProject": {
             "description": "A project a machine's `trackers.write` reaches.",
             "properties": {
@@ -13665,6 +13830,13 @@
           },
           "summary": {
             "type": "string"
+          },
+          "tool_status": {
+            "description": "A line for each tool (or `show` kind) the daemon offers that you\ncan't use yet, and why; left out when every one works.",
+            "items": {
+              "$ref": "#/$defs/ToolStatus"
+            },
+            "type": "array"
           },
           "tools": {
             "description": "The tools listed for you.",
@@ -17584,6 +17756,42 @@
             ],
             "type": "object"
           },
+          "ToolState": {
+            "description": "Why a tool isn't usable yet. (`loaded` is every tool not listed here.)",
+            "oneOf": [
+              {
+                "const": "reconnect",
+                "description": "Allowed now, but not in the list this session got: a flag came on\nafter it started.",
+                "type": "string"
+              },
+              {
+                "const": "not_granted",
+                "description": "Needs a grant over a project that this machine's owner hasn't given.",
+                "type": "string"
+              }
+            ]
+          },
+          "ToolStatus": {
+            "description": "A tool (`board_read`) or a kind of one (`show {kind: board}`) that isn't\nusable in this session (#370).",
+            "properties": {
+              "note": {
+                "description": "Why, and what to do.",
+                "type": "string"
+              },
+              "status": {
+                "$ref": "#/$defs/ToolState"
+              },
+              "tool": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "tool",
+              "status",
+              "note"
+            ],
+            "type": "object"
+          },
           "TrackerReachProject": {
             "description": "A project a machine's `trackers.write` reaches.",
             "properties": {
@@ -17660,6 +17868,13 @@
           },
           "summary": {
             "type": "string"
+          },
+          "tool_status": {
+            "description": "A line for each tool (or `show` kind) the daemon offers that you\ncan't use yet, and why; left out when every one works.",
+            "items": {
+              "$ref": "#/$defs/ToolStatus"
+            },
+            "type": "array"
           },
           "tools": {
             "description": "The tools listed for you.",
@@ -19318,6 +19533,42 @@
             ],
             "type": "object"
           },
+          "ToolState": {
+            "description": "Why a tool isn't usable yet. (`loaded` is every tool not listed here.)",
+            "oneOf": [
+              {
+                "const": "reconnect",
+                "description": "Allowed now, but not in the list this session got: a flag came on\nafter it started.",
+                "type": "string"
+              },
+              {
+                "const": "not_granted",
+                "description": "Needs a grant over a project that this machine's owner hasn't given.",
+                "type": "string"
+              }
+            ]
+          },
+          "ToolStatus": {
+            "description": "A tool (`board_read`) or a kind of one (`show {kind: board}`) that isn't\nusable in this session (#370).",
+            "properties": {
+              "note": {
+                "description": "Why, and what to do.",
+                "type": "string"
+              },
+              "status": {
+                "$ref": "#/$defs/ToolState"
+              },
+              "tool": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "tool",
+              "status",
+              "note"
+            ],
+            "type": "object"
+          },
           "TrackerReachProject": {
             "description": "A project a machine's `trackers.write` reaches.",
             "properties": {
@@ -19394,6 +19645,13 @@
           },
           "summary": {
             "type": "string"
+          },
+          "tool_status": {
+            "description": "A line for each tool (or `show` kind) the daemon offers that you\ncan't use yet, and why; left out when every one works.",
+            "items": {
+              "$ref": "#/$defs/ToolStatus"
+            },
+            "type": "array"
           },
           "tools": {
             "description": "The tools listed for you.",

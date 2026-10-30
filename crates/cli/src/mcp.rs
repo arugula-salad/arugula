@@ -13,6 +13,13 @@
 //! are gone: 404), it opens a new session with the client's own
 //! `initialize` and sends the request again, so the client never notices.
 //!
+//! The daemon sends what it says on its own (`notifications/tools/list_changed`,
+//! when a Labs flag turns a tool on or off, #370) on the session's GET
+//! stream: once the client says it is initialized, the bridge keeps one
+//! open and writes what comes on it to stdout. If the stream drops, it
+//! opens it again and tells the client the tool list may have changed,
+//! since it can't know what it missed.
+//!
 //! In a pane, it says which (`$ARUGULA_PANE`, as `X-Arugula-Pane`): a
 //! default for tools that act where the client works (#234's
 //! `invite_person`), not a credential.
@@ -76,6 +83,7 @@ pub fn run(target: Target, token: Option<String>) -> anyhow::Result<i32> {
         out: Mutex::new(std::io::stdout()),
     });
     let stdin = std::io::stdin();
+    let mut listening = false;
     for line in stdin.lock().lines() {
         let line = line.context("reading stdin")?;
         let line = line.trim().to_owned();
@@ -100,8 +108,14 @@ pub fn run(target: Target, token: Option<String>) -> anyhow::Result<i32> {
         let wait = if msg["method"] == "initialize" { Duration::from_secs(30) } else { Duration::from_secs(2) };
         let (sent, under_way) = mpsc::channel();
         let b = bridge.clone();
+        let method = msg["method"].as_str().map(str::to_owned);
         std::thread::spawn(move || b.forward(&line, &msg, sent));
         let _ = under_way.recv_timeout(wait);
+        if method.as_deref() == Some("notifications/initialized") && !listening {
+            listening = true;
+            let b = bridge.clone();
+            std::thread::spawn(move || b.listen());
+        }
     }
     // The client went away: end its session, if it had one.
     let id = bridge.session.lock().unwrap().id.clone();
@@ -260,6 +274,58 @@ impl Bridge {
             self.write(&v);
         }
         Ok(status)
+    }
+
+    /// The session's GET stream: what the daemon says unasked, written to
+    /// the client as it comes. It ends with the process; if the daemon
+    /// doesn't offer a stream (405), it stops.
+    fn listen(&self) {
+        let mut before = false;
+        loop {
+            let (session, version) = {
+                let s = self.session.lock().unwrap();
+                (s.id.clone(), s.version.clone())
+            };
+            let Some(session) = session else {
+                std::thread::sleep(Duration::from_secs(1));
+                continue;
+            };
+            let auth = self.token.as_ref().map(|t| format!("Bearer {t}"));
+            let mut headers: Vec<(&str, &str)> = vec![("Accept", "text/event-stream"), ("Mcp-Session-Id", &session)];
+            if let Some(v) = &version {
+                headers.push(("MCP-Protocol-Version", v));
+            }
+            if let Some(a) = &auth {
+                headers.push(("Authorization", a));
+            }
+            if let Some(p) = &self.pane {
+                headers.push(("x-arugula-pane", p));
+            }
+            match http::send(&self.target, "GET", PATH, &headers, b"") {
+                Ok(res) if res.status == 405 => return,
+                Ok(res) if (200..300).contains(&res.status) => {
+                    if before {
+                        // What came while it was down is lost: have the client look again.
+                        self.write(&json!({ "jsonrpc": "2.0", "method": "notifications/tools/list_changed" }));
+                    }
+                    before = true;
+                    let mut data = String::new();
+                    for l in BufReader::new(res).lines() {
+                        let Ok(l) = l else { break };
+                        if let Some(d) = l.strip_prefix("data:") {
+                            data.push_str(d.strip_prefix(' ').unwrap_or(d));
+                        } else if l.is_empty() && !data.is_empty() {
+                            if let Ok(v) = serde_json::from_str::<Value>(&data) {
+                                self.write(&v);
+                            }
+                            data.clear();
+                        }
+                    }
+                }
+                _ => {}
+            }
+            std::thread::sleep(Duration::from_secs(2));
+        }
     }
 
     /// Note the version an `initialize` agreed on.

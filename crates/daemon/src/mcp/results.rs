@@ -124,6 +124,28 @@ pub struct TrackerReachProject {
     pub name: String,
 }
 
+/// The projects in control whose boards agents here reach: through grants
+/// this machine's owner gave it.
+#[derive(Debug, Default)]
+pub struct BoardsReach {
+    /// What its grants reach.
+    pub projects: Vec<BoardsProject>,
+    /// Why not, when control couldn't say.
+    pub note: String,
+}
+
+/// A project a machine's board grants reach.
+#[derive(Debug, Deserialize)]
+pub struct BoardsProject {
+    pub id: String,
+    pub name: String,
+    /// boards.read, boards.write.
+    pub powers: Vec<String>,
+    /// How many boards it has.
+    #[serde(default)]
+    pub boards: u64,
+}
+
 /// The conversations in control that agents here reach (M198): through
 /// grants this machine's owner gave it.
 #[derive(Debug, Serialize, JsonSchema)]

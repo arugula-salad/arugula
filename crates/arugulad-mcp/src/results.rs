@@ -268,6 +268,10 @@ pub struct Capabilities {
     pub blocks: Vec<BlockOffer>,
     /// The tools listed for you.
     pub tools: Vec<String>,
+    /// A line for each tool (or `show` kind) the daemon offers that you
+    /// can't use yet, and why; left out when every one works.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tool_status: Vec<ToolStatus>,
     /// The forges PR and issue blocks reach, and whether the user is
     /// signed in to each here (what they send from a `draft` goes with
     /// that login).
@@ -276,6 +280,27 @@ pub struct Capabilities {
     pub hooks: HooksLive,
     /// This machine's standing with Arugula control, and its teams.
     pub control: ControlJoined,
+}
+
+/// A tool (`board_read`) or a kind of one (`show {kind: board}`) that isn't
+/// usable in this session (#370).
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct ToolStatus {
+    pub tool: String,
+    pub status: ToolState,
+    /// Why, and what to do.
+    pub note: String,
+}
+
+/// Why a tool isn't usable yet. (`loaded` is every tool not listed here.)
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ToolState {
+    /// Allowed now, but not in the list this session got: a flag came on
+    /// after it started.
+    Reconnect,
+    /// Needs a grant over a project that this machine's owner hasn't given.
+    NotGranted,
 }
 
 /// One kind of block.

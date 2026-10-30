@@ -17,7 +17,7 @@ use futures_util::future::BoxFuture;
 use serde_json::Value;
 
 use super::{
-    results::{CloudReach, RunsReach, ThreadsReach, TrackersReach},
+    results::{BoardsReach, CloudReach, RunsReach, ThreadsReach, TrackersReach},
     tools::{Args, Call, Def, Kind, Out},
 };
 use crate::server::App;
@@ -34,6 +34,8 @@ pub trait ControlTools: Send + Sync + 'static {
     fn runs_reach<'a>(&'a self, app: &'a App) -> BoxFuture<'a, RunsReach>;
     /// Whether `tracker_write` is live here (#359).
     fn trackers_reach<'a>(&'a self, app: &'a App) -> BoxFuture<'a, TrackersReach>;
+    /// The projects whose boards the machine's grants reach.
+    fn boards_reach<'a>(&'a self, app: &'a App) -> BoxFuture<'a, BoardsReach>;
     /// `wait` with `run`: until it ends, or `limit`.
     fn wait_run<'a>(&'a self, call: &'a Call<'a>, run: &'a str, limit: Duration) -> BoxFuture<'a, Out>;
     /// `wait` with `session`: until any of them settles, or `limit`.
@@ -63,6 +65,15 @@ pub async fn reach(app: &App) -> (CloudReach, ThreadsReach, RunsReach, TrackersR
             RunsReach { live: false, projects: vec![], note: NO_CONTROL_TOOLS.into() },
             TrackersReach { live: false, projects: vec![], note: NO_CONTROL_TOOLS.into() },
         ),
+    }
+}
+
+/// What [`ControlTools`] says of boards from here: asked once, and only
+/// where boards are listed.
+pub async fn boards_reach(app: &App) -> BoardsReach {
+    match CONTROL_TOOLS.get() {
+        Some(c) => c.boards_reach(app).await,
+        None => BoardsReach { projects: vec![], note: NO_CONTROL_TOOLS.into() },
     }
 }
 

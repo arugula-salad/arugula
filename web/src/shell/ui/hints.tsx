@@ -9,7 +9,7 @@ import type { Client } from "../client";
 import type { PaneId } from "../../shared/proto";
 import { useSubscribe } from "../../shared/ui/hooks";
 import { useModal } from "../../shared/ui/modal";
-import { act, dismiss, mountPlace, shownHint, subscribeHints, watchHints, type Fact, type Hint, type Line, type Place } from "../hints";
+import { act, dismiss, mountPlace, shownHint, subscribeHints, watchHints, type Fact, type Hint, type Line, type ModalButton, type Place } from "../hints";
 
 /** Watches the shown machine for facts; once, in the workspace. */
 export function HintsWatch({ client }: { client: Client }) {
@@ -87,6 +87,8 @@ function Text({ line }: { line: Line }) {
 
 function PaneModal({ client, pane, hint, fact, asked }: { client: Client; pane: PaneId; hint: Hint; fact: Fact; asked: boolean }) {
   const ref = useRef<HTMLDivElement>(null);
+  // A button's `when` reads what the client knows (a pane's nvim, its plugin).
+  useSubscribe((fn) => client.subscribe(fn));
   const [never, setNever] = useState(false);
   const optOut = useRef(never);
   optOut.current = never;
@@ -113,6 +115,16 @@ function PaneModal({ client, pane, hint, fact, asked }: { client: Client; pane: 
     if (asked) ref.current?.focus({ preventScroll: true });
   }, [section]);
   const title = `pane-tip-title-${pane}`;
+  // `buttons` (each with its `when`, asked on every draw), or the old pair:
+  // the second one, then the action, the primary.
+  const buttons: { b: ModalButton; which: "action" | "second" | number; primary: boolean }[] = hint.buttons
+    ? hint.buttons.flatMap((b, i) => (!b.when || b.when(client, fact) ? [{ b, which: i, primary: false }] : []))
+    : [
+        ...(hint.second ? [{ b: hint.second, which: "second" as const, primary: false }] : []),
+        ...(hint.action ? [{ b: { ...hint.action, label: label(hint.action, fact) }, which: "action" as const, primary: true }] : []),
+      ];
+  const first = hint.buttons && buttons.find(({ b }) => !("close" in b));
+  if (first) first.primary = true;
   return (
     <div
       class="pane-tip-backdrop"
@@ -131,40 +143,44 @@ function PaneModal({ client, pane, hint, fact, asked }: { client: Client; pane: 
         <button class="modal-close" data-hint-dismiss aria-label="Close this tip" title="Close" onClick={() => dismiss(never)}>
           ×
         </button>
-        <h2 id={title}>{hint.copy(fact)}</h2>
-        {hint.body?.(fact).map((b) =>
-          typeof b === "object" && !Array.isArray(b) && "heading" in b ? (
-            <h3 data-tip-section={b.id}>{b.heading}</h3>
-          ) : typeof b === "object" && !Array.isArray(b) ? (
-            <ul>
-              {b.list.map((l) => (
-                <li>
-                  <Text line={l} />
-                </li>
+        <div class="pane-tip-scroll">
+          <div class="pane-tip-inner">
+            <h2 id={title}>{hint.copy(fact)}</h2>
+            {hint.body?.(fact).map((b) =>
+              typeof b === "object" && !Array.isArray(b) && "heading" in b ? (
+                <h3 data-tip-section={b.id}>{b.heading}</h3>
+              ) : typeof b === "object" && !Array.isArray(b) ? (
+                <ul>
+                  {b.list.map((l) => (
+                    <li>
+                      <Text line={l} />
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p>
+                  <Text line={b} />
+                </p>
+              ),
+            )}
+            <div class="pane-tip-buttons">
+              {buttons.map(({ b, which, primary }) => (
+                <button
+                  class={primary ? "pane-tip-act primary" : "pane-tip-second"}
+                  {...(primary ? { "data-hint-act": "" } : {})}
+                  {...(which === "second" || "close" in b ? { "data-hint-second": "" } : {})}
+                  data-hint-button={b.label}
+                  onClick={() => act(client, which, never)}
+                >
+                  {b.label}
+                </button>
               ))}
-            </ul>
-          ) : (
-            <p>
-              <Text line={b} />
-            </p>
-          ),
-        )}
-        <div class="pane-tip-foot">
-          <label class="pane-tip-never">
-            <input type="checkbox" data-pane-tip-never checked={never} onChange={(e) => setNever(e.currentTarget.checked)} />
-            Don't show tips like this again
-          </label>
-          <span class="pane-tip-fill" />
-          {hint.second && (
-            <button class="pane-tip-second" data-hint-second onClick={() => act(client, "second", never)}>
-              {hint.second.label}
-            </button>
-          )}
-          {hint.action && (
-            <button class="pane-tip-act primary" data-hint-act onClick={() => act(client, "action", never)}>
-              {label(hint.action, fact)}
-            </button>
-          )}
+            </div>
+            <label class="pane-tip-never">
+              <input type="checkbox" data-pane-tip-never checked={never} onChange={(e) => setNever(e.currentTarget.checked)} />
+              Don't show tips like this again
+            </label>
+          </div>
         </div>
       </div>
     </div>

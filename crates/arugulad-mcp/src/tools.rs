@@ -1343,6 +1343,21 @@ pub fn list(scope: Scope, on: On) -> Vec<Tool> {
         .collect()
 }
 
+/// What `tools/list` shows `scope` with the flags in `on`, by name: each
+/// tool, and `tool:kind` for each kind of a grouped one, sorted. A session
+/// is up to date while this is what it was last given (#370).
+pub fn listed_names(scope: Scope, on: On) -> Vec<String> {
+    let mut out = Vec::new();
+    for d in defs(on).into_iter().filter(|d| scope != Scope::Read || d.read_only) {
+        out.push(d.name.to_owned());
+        if let Args::Kinds { kinds, .. } = &d.args {
+            out.extend(kinds.iter().map(|k| format!("{}:{}", d.name, k.name)));
+        }
+    }
+    out.sort();
+    out
+}
+
 /// What a call reaches: its tool, the kind it picks for a grouped one, and
 /// its arguments without the kind.
 /// Every kind answers, listed or not; `on` only says which ones an error

@@ -152,6 +152,16 @@ test("over a terminal: only its pane, drawing underneath, deaf until Escape; Esc
   expect(box!.x).toBeGreaterThanOrEqual(slot!.x - 1);
   expect(box!.y).toBeGreaterThanOrEqual(slot!.y - 1);
   expect(box!.x + box!.width).toBeLessThanOrEqual(slot!.x + slot!.width + 1);
+  // The panel covers about 90% of the pane (5% margin each side), thin border, content centred.
+  const panel = (await tip(page, term).boundingBox())!;
+  expect(Math.abs(panel.width / slot!.width - 0.9)).toBeLessThan(0.02);
+  expect(Math.abs(panel.height / slot!.height - 0.9)).toBeLessThan(0.02);
+  expect(Math.abs(panel.x - slot!.x - slot!.width * 0.05)).toBeLessThan(2);
+  expect(Math.abs(panel.y - slot!.y - slot!.height * 0.05)).toBeLessThan(2);
+  expect(await tip(page, term).evaluate((e) => getComputedStyle(e).borderTopWidth)).toBe("1px");
+  const inner = (await tip(page, term).locator(".pane-tip-inner").boundingBox())!;
+  expect(Math.abs(inner.x + inner.width / 2 - (panel.x + panel.width / 2))).toBeLessThan(2);
+  expect(Math.abs(inner.y + inner.height / 2 - (panel.y + panel.height / 2))).toBeLessThan(3);
   await expect(page.locator(`[data-pane-header="${term}"]`)).toBeVisible();
   // Seen on answer, not on show.
   expect(await seenHere(page)).not.toHaveProperty("seen:test-tip-term");
