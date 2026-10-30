@@ -93,7 +93,18 @@ async fn an_editor_connects_and_the_items_are_mirrored() {
     let hub = Arc::new(TestHub::default());
     let (fake, app, base) = serve(&hub).await;
     hub.team("t1", &[("alice", TeamRole::Owner), ("bob", TeamRole::Editor), ("carol", TeamRole::Viewer)]);
+    hub.flag_named("team:t1", crate::boards::FLAG, true);
     let team = crate::projects::team_project(&app, "t1").await.unwrap().unwrap();
+
+    // Boards are Labs, and so is this: on for t1, off for t0, where every
+    // route is a 404.
+    hub.team("t0", &[("dave", TeamRole::Owner)]);
+    let off = crate::projects::team_project(&app, "t0").await.unwrap().unwrap();
+    let (s, _) = connect_as(&base, "dave", &off, KEY, "ARUGU").await;
+    assert_eq!(s, 404);
+    let (s, _) = call(&base, "dave", "GET", &format!("/api/projects/{off}/trackers"), None).await;
+    assert_eq!(s, 404);
+    assert_eq!(count(&app, "tracker_connections", "TRUE", params![]), 0);
 
     let (s, v) = connect_as(&base, "carol", &team, KEY, "ARUGU").await;
     assert_eq!(s, 403, "{v}");

@@ -15,7 +15,7 @@
 // (../settings/section), as /settings's are: a heading, one line, the rest
 // behind More, and on a wide screen an index of them beside the column.
 // The repos are a table, a row each with its switch. After them, the Plane
-// projects connected to it (#356, ../settings/plane).
+// projects connected to it (#356, ../settings/plane), with boards on.
 
 import { useEffect, useRef, useState } from "preact/hooks";
 import type { LinkedRepo, LinkedRepos } from "../../shared/proto.gen";
@@ -28,6 +28,7 @@ import { PageHeader } from "../../shared/ui/page-header";
 import { names } from "../links";
 import { follow, go, pathOf, REPO } from "../router";
 import { session } from "../session";
+import { useBoards } from "./boards";
 import { Missing, REPOS_MEAN } from "./project";
 import { IssueHomeSetting } from "./issues";
 import { RunGrant } from "../settings/runs";
@@ -65,6 +66,8 @@ const KEEP =
 export function ProjectSettings({ id, link }: { id: string; link?: string }) {
   useSubscribe((fn) => session.subscribe(fn));
   const p = session.project(id);
+  // Plane is Labs with boards (#356): shown once the boards flag is known on.
+  const boards = useBoards(id);
   const [repos, setRepos] = useState<LinkedRepo[] | null>(null);
   const [repo, setRepo] = useState(link ?? "");
   const [err, setErr] = useState("");
@@ -270,7 +273,7 @@ export function ProjectSettings({ id, link }: { id: string; link?: string }) {
               </ConfirmRemove>
             )}
           </Section>
-          <PlaneConnections p={p} />
+          {boards !== null && boards !== "off" && <PlaneConnections p={p} />}
           <IssueHomeSetting key={linked} p={p} />
           <Environments p={p} />
           <RunGrant project={p.id} />
