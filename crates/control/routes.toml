@@ -1095,6 +1095,14 @@ note = "GitHub's signature, checked by the platform (M161), which hands the poke
 
 [[route]]
 method = "POST"
+path = "/plane/webhook/{connection}"
+process = "platform"
+auth = "webhook"
+clients = ["plane"]
+note = "A Plane project's changes (Arugula #358), checked by the platform against the connection's own sealed webhook secret (`X-Plane-Signature`, hex HMAC-SHA256 of the body); a redelivery is a no-op. Behind the boards Labs flag. The URL is set in Plane's webhook settings."
+
+[[route]]
+method = "POST"
 path = "/api/daemon/github/token"
 process = "hub"
 auth = "daemon"

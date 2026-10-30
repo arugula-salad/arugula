@@ -17,7 +17,11 @@
 //!   LOCKED` on Postgres), reads at most [`PAGES`] pages of the project's
 //!   items a turn, keeps a cursor when there are more, and renews the lease
 //!   between reads. A turn that fails waits [`BACKOFF_MS`], doubled for each
-//!   failure in a row. The reconcile and the webhooks are #358's.
+//!   failure in a row.
+//! - **The reconcile** ([`reconcile`]) is the same lease once a connection
+//!   is backfilled: every [`rows::RECONCILE_MS`] it reads the items updated since
+//!   the newest it holds (less a minute) and writes what a webhook missed.
+//!   The webhooks ([`super::webhook`]) write through [`ingest_page`] too.
 //! - **Disconnecting** sets `unlinked_at` and `purge_after` (ingest stops
 //!   at the next write) and removes the sealed secrets at once; the purge
 //!   ([`start`]) takes the rows after [`PURGE_GRACE_MS`].
@@ -50,6 +54,8 @@ use crate::{
 pub const PAGES: usize = 10;
 /// How long a connection waits after its first failure.
 pub const BACKOFF_MS: u64 = 60_000;
+/// How far a reconcile reads back from the newest item it holds.
+const OVERLAP_MS: u64 = 60_000;
 /// How often each machine looks for a connection to backfill.
 const TICK: Duration = Duration::from_secs(5);
 
@@ -235,10 +241,10 @@ pub async fn disconnect(
 }
 
 /// Write a page of items as `connection`'s rows, in one transaction, if the
-/// connection is live and (`lease`) the backfill still holds its claim: how
-/// many rows changed, or `None` when it doesn't. The one place a tracker's
-/// items become mirror rows: the reconcile and the webhooks (#358) call it
-/// too, with no lease.
+/// connection is live and (`lease`) the claim still holds: the `fi_` ids of
+/// the rows that changed, or `None` when it doesn't. The one place a
+/// tracker's items become mirror rows: the reconcile and the webhooks call
+/// it too, the webhooks with no lease.
 pub fn ingest_page(
     app: &Platform,
     connection: &str,
@@ -246,13 +252,13 @@ pub fn ingest_page(
     lease: Option<&str>,
     items: &[super::Item],
     now: u64,
-) -> anyhow::Result<Option<usize>> {
+) -> anyhow::Result<Option<Vec<String>>> {
     app.db.tracker_mirror(connection, lease, |tx| {
-        let mut n = 0;
+        let mut changed = vec![];
         for it in items {
-            n += usize::from(rows::upsert_item(tx, connection, mirror_id, it, now)?);
+            changed.extend(rows::upsert_item(tx, connection, mirror_id, it, now)?);
         }
-        Ok(n)
+        Ok(changed)
     })
 }
 
@@ -307,9 +313,10 @@ async fn turn(app: &Platform, job: &Backfill, now: u64) -> anyhow::Result<Option
             return Ok(None);
         }
         let page = provider.list(&job.workspace_slug, &job.source_project_id, None, cursor.as_deref()).await?;
-        if ingest_page(app, &job.id, job.mirror_id, Some(&job.lease), &page.items, now)?.is_none() {
+        let Some(changed) = ingest_page(app, &job.id, job.mirror_id, Some(&job.lease), &page.items, now)? else {
             return Ok(None);
-        }
+        };
+        crate::boards::items_changed(app, &changed);
         cursor = page.next;
         if cursor.is_none() {
             let done = app.db.finish_backfill(job, &Finish::Done, now_ms())?;
@@ -320,8 +327,23 @@ async fn turn(app: &Platform, job: &Backfill, now: u64) -> anyhow::Result<Option
     Ok(app.db.finish_backfill(job, &more, now_ms())?.then_some(more))
 }
 
-/// Run turns until none is due, or one fails.
+/// Run backfill turns until none is due, or one fails, then the reconciles
+/// that are due.
 async fn drain(app: &Platform) {
+    backfill(app).await;
+    while !app.is_paused() && !app.is_stopping() {
+        match reconcile(app, now_ms()).await {
+            Ok(Some(Reconciled::Failed { .. })) | Ok(None) => break,
+            Ok(Some(_)) => continue,
+            Err(e) => {
+                warn!(error = format!("{e:#}"), "a Plane reconcile couldn't start");
+                break;
+            }
+        }
+    }
+}
+
+async fn backfill(app: &Platform) {
     while !app.is_paused() && !app.is_stopping() {
         match tick(app, now_ms()).await {
             Ok(Some(Turn::Failed { .. })) | Ok(None) => break,
@@ -332,6 +354,72 @@ async fn drain(app: &Platform) {
             }
         }
     }
+}
+
+/// What one reconcile turn did.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Reconciled {
+    /// Read: this many rows changed.
+    Done { connection: String, changed: usize },
+    /// Failed, and waits its back-off.
+    Failed { connection: String },
+    /// The connection was disconnected or the claim lost mid-turn.
+    Lost { connection: String },
+}
+
+/// Claim a backfilled connection whose reconcile is due and run it. `None`
+/// when none is due.
+pub async fn reconcile(app: &Platform, now: u64) -> anyhow::Result<Option<Reconciled>> {
+    let Some(job) = app.db.claim_reconcile(now)? else { return Ok(None) };
+    let connection = job.id.clone();
+    match reconcile_turn(app, &job, now).await {
+        Ok(Some(changed)) => Ok(Some(Reconciled::Done { connection, changed })),
+        Ok(None) => Ok(Some(Reconciled::Lost { connection })),
+        Err(e) => {
+            let wait = app.db.fail_backfill(&job, BACKOFF_MS, now)?;
+            // Once per back-off. Never the key, and never Plane's answer.
+            if matches!(e.downcast_ref::<TrackerError>(), Some(TrackerError::Unauthorized)) {
+                warn!(connection = %job.id, wait_ms = wait, "Plane refused a connection's key; its reconcile waits");
+            } else {
+                warn!(connection = %job.id, wait_ms = wait, error = format!("{e:#}"), "a Plane reconcile failed");
+            }
+            Ok(Some(Reconciled::Failed { connection }))
+        }
+    }
+}
+
+/// Read what changed since the newest item held, up to [`PAGES`] pages, and
+/// write it. How many rows changed, or `None` when the claim was lost.
+async fn reconcile_turn(app: &Platform, job: &Backfill, now: u64) -> anyhow::Result<Option<usize>> {
+    let master = app.secret_key.as_deref().ok_or_else(|| anyhow::anyhow!("this platform keeps no secrets"))?;
+    let key = keys::open(&app.db, master, &job.project_id, &key_name(&job.id))?
+        .ok_or_else(|| anyhow::anyhow!("the connection's key isn't kept"))?;
+    let provider = app.trackers.plane(&key);
+    let since = app.db.tracker_newest(job.mirror_id)?.map(|t| t.saturating_sub(OVERLAP_MS));
+    let (mut cursor, mut total) = (None::<String>, 0);
+    for _ in 0..PAGES {
+        if !app.db.renew_backfill(job, now_ms())? {
+            return Ok(None);
+        }
+        let page = provider.list(&job.workspace_slug, &job.source_project_id, since, cursor.as_deref()).await?;
+        let Some(changed) = ingest_page(app, &job.id, job.mirror_id, Some(&job.lease), &page.items, now)? else {
+            return Ok(None);
+        };
+        crate::boards::items_changed(app, &changed);
+        total += changed.len();
+        // A page with nothing newer than `since` is the end of what changed.
+        let newer = since.is_none_or(|t| page.items.iter().any(|i| i.updated_at > t));
+        cursor = page.next.filter(|_| newer);
+        if cursor.is_none() {
+            break;
+        }
+    }
+    if cursor.is_some() {
+        // The newest are in; the older of this change set wait for a
+        // backfill's kind of cursor, which a reconcile doesn't keep.
+        warn!(connection = %job.id, pages = PAGES, "a Plane reconcile ran out of pages with more changed");
+    }
+    Ok(app.db.finish_reconcile(job, now_ms())?.then_some(total))
 }
 
 /// Purge every disconnected connection that's due: how many went.

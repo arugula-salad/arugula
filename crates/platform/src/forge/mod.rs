@@ -97,7 +97,7 @@ pub use app::{
     Caller, DeployScope, GithubApp, GithubUser, Install, Purpose, ReadToken, Repo, RepoRole, WriteToken, Writes,
     epoch_of, parse_pem,
 };
-pub use webhook::{pokes, signed, webhook};
+pub use webhook::{pokes, signed, signed_hex, webhook};
 
 /// Repositories looked up at GitHub for the first time in a while (not
 /// the heartbeat's re-checks), per account per hour: what a burst of

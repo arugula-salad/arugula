@@ -36,9 +36,15 @@ type HmacSha256 = hmac::Hmac<Sha256>;
 
 /// `X-Hub-Signature-256: sha256=<hex>` over the body, in constant time.
 pub fn signed(secret: &str, header: Option<&str>, body: &[u8]) -> bool {
+    signed_hex(secret, header.and_then(|h| h.trim().strip_prefix("sha256=")), body)
+}
+
+/// A bare hex HMAC-SHA256 of the body (Plane's `X-Plane-Signature`), in
+/// constant time. An empty secret refuses.
+pub fn signed_hex(secret: &str, hex_sig: Option<&str>, body: &[u8]) -> bool {
     use hmac::{KeyInit, Mac};
-    let Some(hex_sig) = header.and_then(|h| h.trim().strip_prefix("sha256=")) else { return false };
-    let Ok(sig) = hex::decode(hex_sig) else { return false };
+    let Some(hex_sig) = hex_sig else { return false };
+    let Ok(sig) = hex::decode(hex_sig.trim()) else { return false };
     if secret.is_empty() {
         return false;
     }
