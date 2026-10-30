@@ -21,7 +21,7 @@ use crate::util::print_json;
 
 /// The powers an agent gets over a scope (M197, M218's deploys.plan,
 /// M216's over runs, and aru-121's over sessions).
-const AGENT_POWERS: [&str; 11] = [
+const AGENT_POWERS: [&str; 12] = [
     "threads.read",
     "threads.post",
     "issues.write",
@@ -31,12 +31,13 @@ const AGENT_POWERS: [&str; 11] = [
     "runs.command",
     "boards.read",
     "boards.write",
+    "trackers.write",
     "sessions.start",
     "sessions.reply",
 ];
 
 /// Those over a project only.
-const PROJECT_ONLY: [&str; 9] = [
+const PROJECT_ONLY: [&str; 10] = [
     "issues.write",
     "deploys.plan",
     "runs.read",
@@ -44,6 +45,7 @@ const PROJECT_ONLY: [&str; 9] = [
     "runs.command",
     "boards.read",
     "boards.write",
+    "trackers.write",
     "sessions.start",
     "sessions.reply",
 ];
@@ -72,7 +74,9 @@ pub enum GrantsCmd {
     /// runs.read, runs.start (its run specs) or runs.command (its own
     /// commands) over a project, boards.read (a project's boards) or
     /// boards.write (add rows, set notes and statuses, move rows; never
-    /// make or delete a zone) over a project, sessions.start (start agent
+    /// make or delete a zone) over a project, trackers.write (create,
+    /// comment on, close, reopen and edit a connected Plane project's work
+    /// items; each may wait for a person to approve it) over a project, sessions.start (start agent
     /// sessions as you: you're the asker, and you pay) or sessions.reply
     /// (answer a session's question, or prompt it) over a project, or
     /// cloud.drive again.
@@ -83,7 +87,7 @@ pub enum GrantsCmd {
         machine: String,
         /// One or more of threads.read, threads.post, issues.write,
         /// deploys.plan, runs.read, runs.start, runs.command, boards.read,
-        /// boards.write, sessions.start, sessions.reply (or cloud.drive,
+        /// boards.write, trackers.write, sessions.start, sessions.reply (or cloud.drive,
         /// with no scope).
         #[arg(required = true)]
         powers: Vec<String>,
@@ -177,7 +181,7 @@ fn give(daemon: &str, power: &str, scope: Option<&Value>) -> anyhow::Result<Valu
         }
         (p, _) => bail!(
             "there's no power called {p}: threads.read, threads.post, issues.write, deploys.plan, runs.read, \
-             runs.start, runs.command, boards.read, boards.write, sessions.start, sessions.reply or cloud.drive"
+             runs.start, runs.command, boards.read, boards.write, trackers.write, sessions.start, sessions.reply or cloud.drive"
         ),
     }
 }

@@ -27,7 +27,7 @@ use schemars::JsonSchema;
 use serde::Serialize;
 use serde_json::Value;
 
-use crate::mcp::results::{CloudReach, ForgeSignIn, PaneEntry, RunsReach, ThreadsReach};
+use crate::mcp::results::{CloudReach, ForgeSignIn, PaneEntry, RunsReach, ThreadsReach, TrackersReach};
 
 /// Only the pane: closed, answered, or sent a prompt.
 #[derive(Debug, Serialize, JsonSchema)]
@@ -327,6 +327,9 @@ pub struct ControlJoined {
     /// Whether you can start and read runs on the user's projects from
     /// here (M216).
     pub runs: RunsReach,
+    /// Whether you can write to a project's connected Plane project from
+    /// here (#359).
+    pub trackers: TrackersReach,
 }
 
 /// `read_forge`.

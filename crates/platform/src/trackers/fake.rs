@@ -50,7 +50,8 @@ struct Keyed {
 
 impl FakeTracker {
     pub fn new(key: &str, workspace: &str, project: ProjectInfo, items: Vec<Item>) -> Self {
-        let state = State { key: key.into(), workspace: workspace.into(), project, items, page: 2, refused: 0, sent: vec![] };
+        let state =
+            State { key: key.into(), workspace: workspace.into(), project, items, page: 2, refused: 0, sent: vec![] };
         FakeTracker { state: Arc::new(Mutex::new(state)) }
     }
 
@@ -176,12 +177,23 @@ impl TrackerProvider for Keyed {
             if !s.items.iter().any(|i| i.id == id) {
                 return Err(TrackerError::NotFound);
             }
-            s.sent.push(Sent { kind: "comment".into(), item: Some(id.into()), html: Some(html.into()), ..Default::default() });
+            s.sent.push(Sent {
+                kind: "comment".into(),
+                item: Some(id.into()),
+                html: Some(html.into()),
+                ..Default::default()
+            });
             Ok(())
         })
     }
 
-    fn set_state<'a>(&'a self, workspace: &'a str, _: &'a str, id: &'a str, group: &'a str) -> BoxFuture<'a, Result<Item>> {
+    fn set_state<'a>(
+        &'a self,
+        workspace: &'a str,
+        _: &'a str,
+        id: &'a str,
+        group: &'a str,
+    ) -> BoxFuture<'a, Result<Item>> {
         Box::pin(async move {
             let mut s = self.check(workspace)?;
             let at = s.items.iter().map(|i| i.updated_at).max().unwrap_or(0) + 1;
@@ -190,7 +202,12 @@ impl TrackerProvider for Keyed {
             it.state_name = group.into();
             it.updated_at = at;
             let out = it.clone();
-            s.sent.push(Sent { kind: "state".into(), item: Some(id.into()), group: Some(group.into()), ..Default::default() });
+            s.sent.push(Sent {
+                kind: "state".into(),
+                item: Some(id.into()),
+                group: Some(group.into()),
+                ..Default::default()
+            });
             Ok(out)
         })
     }

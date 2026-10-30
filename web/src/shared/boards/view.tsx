@@ -59,6 +59,12 @@ export function BoardPanel({
   // Chat says when the thread's object changed; it's on while chat is.
   useSubscribe((fn) => chat.subscribe(fn));
   const seen = useRef(0);
+  // The project's Plane connections, once the board says its project (#359): New issue… may make the item in Plane.
+  const [plane, setPlane] = useState<{ id: string; identifier: string }[]>([]);
+  const project = view?.board.project;
+  useEffect(() => {
+    if (shown && project) void boards.plane(project).then(setPlane);
+  }, [project, shown]);
 
   const again = () => {
     const n = ++seen.current;
@@ -120,6 +126,21 @@ export function BoardPanel({
     if (!ok) toast(`Made #${made.number} but couldn't add it to the board`);
   };
 
+  /** A work item in a Plane connection of the board's project, and a row pointing at it in the zone. */
+  const newPlaneIssue = async (zone: string, c: { id: string; identifier: string }) => {
+    const title = await askText(`New issue in Plane (${c.identifier})`, "", "its title");
+    if (!title?.trim()) return;
+    let made;
+    try {
+      made = await boards.planeCreate(view.board.project, c.id, title.trim());
+    } catch (e) {
+      toast(`Couldn't make the issue in Plane: ${(e as Error).message}`);
+      return;
+    }
+    const ok = await act(() => boards.put(id, { entry: "row", zone, pointer: { kind: "forge_item", id: made.item ?? "" } }));
+    if (!ok) toast(`Made ${made.reference ?? "the item"} in Plane but couldn't add it to the board`);
+  };
+
   const rename = async () => {
     const t = await askText("Rename the board", view.board.title);
     if (t?.trim() && t.trim() !== view.board.title) await act(() => boards.edit(id, { title: t.trim() }));
@@ -146,7 +167,7 @@ export function BoardPanel({
       )}
       {view.zones.length === 0 && <p class="dim">No zones yet.</p>}
       {view.zones.map((z, i) => (
-        <Zone key={z.id} z={z} view={view} index={i} zoneIds={zoneIds} editing={editing} setEditing={setEditing} act={act} id={id} platform={platform} newIssue={newIssue} />
+        <Zone key={z.id} z={z} view={view} index={i} zoneIds={zoneIds} editing={editing} setEditing={setEditing} act={act} id={id} platform={platform} newIssue={newIssue} plane={plane} newPlaneIssue={newPlaneIssue} />
       ))}
       <p class="board-foot">
         <button type="button" data-board-add-zone onClick={() => void addZone()}>
@@ -276,6 +297,8 @@ function Zone({
   id,
   platform,
   newIssue,
+  plane,
+  newPlaneIssue,
 }: {
   z: BoardZone;
   view: BoardView;
@@ -287,6 +310,8 @@ function Zone({
   id: string;
   platform: (path: string) => string | undefined;
   newIssue: (zone: string) => Promise<void>;
+  plane: { id: string; identifier: string }[];
+  newPlaneIssue: (zone: string, c: { id: string; identifier: string }) => Promise<void>;
 }) {
   const [gone, setGone] = useState(false);
   const p = progress(z);
@@ -307,6 +332,7 @@ function Zone({
       { label: "Move up", disabled: !up || proofs, run: () => void act(() => boards.move(id, z.id, { before: up!.before })) },
       { label: "Move down", disabled: !down || proofs || zoneIds[index + 1] === view.zones.find((x) => x.kind === "proofs")?.id, run: () => void act(() => boards.move(id, z.id, { before: down!.before })) },
       { label: "New issue…", disabled: proofs, run: () => void newIssue(z.id) },
+      ...plane.map((c) => ({ label: `New issue in Plane (${c.identifier})…`, disabled: proofs, run: () => void newPlaneIssue(z.id, c) })),
       "separator",
       { label: "Delete the zone and its rows", danger: true, run: () => setGone(true) },
     ]);

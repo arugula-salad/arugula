@@ -40,6 +40,7 @@ export const TOKEN_POWERS: [string, string][] = [
   ["deploys.plan", "plan deploys and ask for approval"],
   ["boards.read", "read boards"],
   ["boards.write", "read boards, set their notes and statuses and move rows"],
+  ["trackers.write", "create, comment on, close, reopen and edit Plane work items (each may wait for a person)"],
   ["secrets.write", "set project secrets by name (never read them)"],
 ];
 
@@ -67,6 +68,7 @@ const POWER_WORDS: Record<string, string> = {
   "deploys.plan": "plan deploys",
   "boards.read": "read boards",
   "boards.write": "write boards",
+  "trackers.write": "write to Plane",
   "secrets.write": "set secrets",
 };
 

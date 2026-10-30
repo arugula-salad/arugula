@@ -460,6 +460,7 @@ impl Db {
 /// platform's `account_deleted` transaction: its name as who connected, and
 /// the connections of a project that went with it are disconnected now.
 pub(crate) fn erase_account(c: &impl Sql, account: &str, now: u64) -> Result<()> {
+    c.execute("DELETE FROM tracker_writes WHERE for_account = ?1", params![account])?;
     c.execute("UPDATE tracker_connections SET linked_by = NULL WHERE linked_by = ?1", params![account])?;
     c.execute(
         "UPDATE tracker_connections SET unlinked_at = ?1, purge_after = ?1
@@ -672,7 +673,16 @@ impl Db {
             "INSERT INTO tracker_writes (id, project_id, connection_id, kind, request, agent_machine, for_account,
                  state, created_at)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 'waiting', ?8)",
-            params![w.id, w.project_id, w.connection_id, w.kind, w.request, w.agent_machine, w.for_account, w.created_at],
+            params![
+                w.id,
+                w.project_id,
+                w.connection_id,
+                w.kind,
+                w.request,
+                w.agent_machine,
+                w.for_account,
+                w.created_at
+            ],
         )?;
         Ok(())
     }
@@ -719,7 +729,14 @@ impl Db {
     /// Take a waiting write for `state` (`sent`, before it is sent, or
     /// `dropped`): the write, or `None` when it isn't waiting any more, so
     /// two people approving it send it once.
-    pub fn take_tracker_write(&self, project: &str, id: &str, state: &str, by: &str, now: u64) -> Result<Option<PendingWrite>> {
+    pub fn take_tracker_write(
+        &self,
+        project: &str,
+        id: &str,
+        state: &str,
+        by: &str,
+        now: u64,
+    ) -> Result<Option<PendingWrite>> {
         let c = self.c();
         let n = c.execute(
             "UPDATE tracker_writes SET state = ?1, decided_by = ?2, decided_at = ?3
@@ -729,12 +746,8 @@ impl Db {
         if n == 0 {
             return Ok(None);
         }
-        c.query_row(
-            &format!("SELECT {WRITE_COLUMNS} FROM tracker_writes WHERE id = ?1"),
-            params![id],
-            write_row,
-        )
-        .optional()
+        c.query_row(&format!("SELECT {WRITE_COLUMNS} FROM tracker_writes WHERE id = ?1"), params![id], write_row)
+            .optional()
     }
 
     /// A taken write ended: the item it reached, or why it failed.

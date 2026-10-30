@@ -5,7 +5,7 @@
 
 use std::sync::Arc;
 
-use arugula_control_wire::projects::{agent_tracker_writes, TrackerWrite};
+use arugula_control_wire::projects::{TrackerWrite, agent_tracker_writes};
 use arugula_e2e::team::TeamRole;
 use serde_json::{Value, json};
 
@@ -23,8 +23,9 @@ use crate::{
 
 /// A call signed by alice's machine geek.
 async fn geek(base: &str, method: &str, path: &str, body: Option<Value>) -> (u16, Value) {
-    let mut req =
-        reqwest::Client::new().request(method.parse().unwrap(), format!("{base}{path}")).header("x-test-daemon", "alice geek");
+    let mut req = reqwest::Client::new()
+        .request(method.parse().unwrap(), format!("{base}{path}"))
+        .header("x-test-daemon", "alice geek");
     if let Some(b) = body {
         req = req.json(&b);
     }
@@ -106,7 +107,8 @@ fn footer_of(s: &Sent) -> &str {
 #[tokio::test]
 async fn an_agents_create_waits_and_a_person_approves_it() {
     let w = world().await;
-    let create = json!({ "kind": "create", "connection": w.connection, "title": "Add retries", "body": "Plane times out." });
+    let create =
+        json!({ "kind": "create", "connection": w.connection, "title": "Add retries", "body": "Plane times out." });
 
     // No grant: refused, saying how to give one. Nothing waits.
     let (s, v) = w.agent(create.clone()).await;
@@ -125,7 +127,10 @@ async fn an_agents_create_waits_and_a_person_approves_it() {
     let (s, listed) = w.waiting("bob").await;
     assert_eq!(s, 200, "{listed}");
     let first = &listed["writes"][0];
-    assert_eq!((first["id"].as_str(), first["target"].is_null(), first["machine"].as_str()), (Some(id.as_str()), true, Some("geek")));
+    assert_eq!(
+        (first["id"].as_str(), first["target"].is_null(), first["machine"].as_str()),
+        (Some(id.as_str()), true, Some("geek"))
+    );
     assert_eq!(first["write"]["title"], "Add retries");
     assert_eq!(w.waiting("carol").await.0, 403);
     assert_eq!(w.decide("carol", &id, "approve").await.0, 403);
@@ -138,9 +143,13 @@ async fn an_agents_create_waits_and_a_person_approves_it() {
         let (s, v) = geek(&w.base, "POST", &path, None).await;
         assert!(s == 401 || s == 403 || s == 404 || s == 405, "an agent got {s}: {v}");
     }
-    let (s, _) =
-        geek(&w.base, "PATCH", &format!("/api/projects/{}/tracker-writes/{id}", w.project), Some(json!({ "kind": "create", "title": "x" })))
-            .await;
+    let (s, _) = geek(
+        &w.base,
+        "PATCH",
+        &format!("/api/projects/{}/tracker-writes/{id}", w.project),
+        Some(json!({ "kind": "create", "title": "x" })),
+    )
+    .await;
     assert!(s == 401 || s == 403 || s == 404 || s == 405, "an agent edited: {s}");
     assert!(w.fake.sent().is_empty(), "nothing was sent by a machine's approval");
 
@@ -184,7 +193,8 @@ async fn in_allow_mode_an_agents_writes_land_at_once() {
     assert!(w.fake.sent().is_empty());
 
     w.grant().await;
-    let (s, v) = w.agent(json!({ "kind": "create", "connection": w.connection, "title": "Now", "state": "started" })).await;
+    let (s, v) =
+        w.agent(json!({ "kind": "create", "connection": w.connection, "title": "Now", "state": "started" })).await;
     assert_eq!((s, v["state"].as_str(), v["reference"].as_str()), (200, Some("sent"), Some("ARUGU-4")), "{v}");
     assert_eq!(w.items(), 4);
     let (s, v) = w.agent(json!({ "kind": "comment", "item": "arugu-2", "text": "looks fine" })).await;
@@ -195,9 +205,11 @@ async fn in_allow_mode_an_agents_writes_land_at_once() {
         w.app
             .db
             .c()
-            .query_row("SELECT state, state_group FROM forge_items WHERE number = ?1 AND provider = 'plane'", params![n], |r| {
-                Ok((r.get(0)?, r.get(1)?))
-            })
+            .query_row(
+                "SELECT state, state_group FROM forge_items WHERE number = ?1 AND provider = 'plane'",
+                params![n],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
             .unwrap()
     };
     assert_eq!(state(2), ("closed".into(), "cancelled".into()));
@@ -249,7 +261,11 @@ async fn markup_reaches_plane_escaped() {
     let sent = w.fake.sent();
     for html in [sent[0].html.as_deref().unwrap(), sent[1].html.as_deref().unwrap()] {
         assert!(!html.contains("<script>") && !html.contains("<img"), "{html}");
-        assert!(html.contains("&lt;script&gt;alert(1)&lt;/script&gt;") && html.contains("&lt;img src=x onerror=alert(2)&gt;"), "{html}");
+        assert!(
+            html.contains("&lt;script&gt;alert(1)&lt;/script&gt;")
+                && html.contains("&lt;img src=x onerror=alert(2)&gt;"),
+            "{html}"
+        );
         assert!(html.contains("&amp;") && html.contains("&quot;q&quot;"), "{html}");
     }
     // The title is a plain string, not a place for HTML.
@@ -270,13 +286,15 @@ async fn an_edited_write_keeps_its_footer_and_a_drop_sends_nothing() {
     let path = format!("/api/projects/{}/tracker-writes/{id}", w.project);
 
     // Another item, another kind: refused.
-    let (s, _) = call(&w.base, "bob", "PATCH", &path, Some(json!({ "kind": "comment", "item": "ARUGU-2", "text": "x" }))).await;
+    let (s, _) =
+        call(&w.base, "bob", "PATCH", &path, Some(json!({ "kind": "comment", "item": "ARUGU-2", "text": "x" }))).await;
     assert_eq!(s, 422);
     let (s, _) = call(&w.base, "bob", "PATCH", &path, Some(json!({ "kind": "reopen", "item": "ARUGU-1" }))).await;
     assert_eq!(s, 422);
     // The text, with a footer of its own making: ours is still last.
     let said = "reworded\n\n— via Arugula, by nobody in particular";
-    let (s, v) = call(&w.base, "bob", "PATCH", &path, Some(json!({ "kind": "comment", "item": "ARUGU-1", "text": said }))).await;
+    let (s, v) =
+        call(&w.base, "bob", "PATCH", &path, Some(json!({ "kind": "comment", "item": "ARUGU-1", "text": said }))).await;
     assert_eq!((s, v["write"]["text"].as_str()), (200, Some(said)), "{v}");
     assert_eq!(w.decide("bob", &id, "approve").await.0, 200);
     let sent = w.fake.sent();
@@ -293,7 +311,8 @@ async fn an_edited_write_keeps_its_footer_and_a_drop_sends_nothing() {
     let id3 = v3["write"].as_str().unwrap().to_owned();
     let (s, c) = call(&w.base, "alice", "GET", &format!("/api/projects/{}/trackers", w.project), None).await;
     assert_eq!((s, c["connections"][0]["waiting_writes"].as_u64()), (200, Some(1)), "{c}");
-    let (s, _) = call(&w.base, "alice", "DELETE", &format!("/api/projects/{}/trackers/{}", w.project, w.connection), None).await;
+    let (s, _) =
+        call(&w.base, "alice", "DELETE", &format!("/api/projects/{}/trackers/{}", w.project, w.connection), None).await;
     assert_eq!(s, 200);
     assert_eq!(w.decide("alice", &id3, "approve").await.0, 409);
     assert_eq!(count(&w.app, "tracker_writes", "state = 'dropped'", params![]), 2);

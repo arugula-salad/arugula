@@ -67,7 +67,12 @@ pub fn html(text: &str) -> String {
         .map(str::trim)
         .filter(|p| !p.is_empty())
         .map(|p| {
-            let esc = p.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;").replace('\'', "&#39;");
+            let esc = p
+                .replace('&', "&amp;")
+                .replace('<', "&lt;")
+                .replace('>', "&gt;")
+                .replace('"', "&quot;")
+                .replace('\'', "&#39;");
             format!("<p>{}</p>", esc.replace('\n', "<br>"))
         })
         .collect()
@@ -132,9 +137,10 @@ fn text_ok(what: &str, t: &str, may_be_empty: bool) -> Result<String, ApiError> 
 
 fn tracker_error(e: TrackerError) -> ApiError {
     match e {
-        TrackerError::Unauthorized => {
-            err(StatusCode::BAD_GATEWAY, "Plane refused this connection's API key: connect the project again with a new one")
-        }
+        TrackerError::Unauthorized => err(
+            StatusCode::BAD_GATEWAY,
+            "Plane refused this connection's API key: connect the project again with a new one",
+        ),
         TrackerError::NotFound => err(StatusCode::NOT_FOUND, "Plane has no such work item or project any more"),
         e => err(StatusCode::BAD_GATEWAY, &format!("couldn't write to Plane: {e}")),
     }
@@ -247,7 +253,8 @@ pub async fn send(
     let (ws, pid) = (c.workspace_slug.as_str(), c.source_project_id.as_str());
     let footer = who.footer();
     let source = |fi: &str| -> Result<String, ApiError> {
-        let t = app.db.tracker_target(project, fi)?.ok_or_else(|| err(StatusCode::NOT_FOUND, "no such Plane work item"))?;
+        let t =
+            app.db.tracker_target(project, fi)?.ok_or_else(|| err(StatusCode::NOT_FOUND, "no such Plane work item"))?;
         Ok(t.source_item_id)
     };
     let done = match w {
@@ -274,10 +281,7 @@ pub async fn send(
         }
         TrackerWrite::Reopen { item } => provider.set_state(ws, pid, &source(item)?, "unstarted").await,
         TrackerWrite::Edit { item, title, body } => {
-            let edit = Edit {
-                title: title.clone(),
-                body: body.as_deref().map(|b| html(&with_footer(b, &footer))),
-            };
+            let edit = Edit { title: title.clone(), body: body.as_deref().map(|b| html(&with_footer(b, &footer))) };
             provider.edit(ws, pid, &source(item)?, &edit).await
         }
     }
@@ -303,7 +307,13 @@ fn sent_text(w: &TrackerWrite, reference: &str) -> String {
     }
 }
 
-async fn land(app: &Platform, project: &str, c: &Connection, w: &TrackerWrite, who: &Who) -> Result<TrackerWriteDone, ApiError> {
+async fn land(
+    app: &Platform,
+    project: &str,
+    c: &Connection,
+    w: &TrackerWrite,
+    who: &Who,
+) -> Result<TrackerWriteDone, ApiError> {
     let (fi, reference) = send(app, project, c, w, who).await?;
     Ok(TrackerWriteDone {
         state: "sent".into(),
@@ -405,7 +415,8 @@ pub async fn reach(State(app): State<Arc<Platform>>, d: Machine) -> Result<Json<
 // ---- waiting writes: a person's
 
 async fn view(app: &Platform, p: &PendingWrite) -> Result<TrackerPendingWrite, ApiError> {
-    let write: TrackerWrite = serde_json::from_str(&p.request).map_err(|_| err(StatusCode::INTERNAL_SERVER_ERROR, "a kept write is unreadable"))?;
+    let write: TrackerWrite = serde_json::from_str(&p.request)
+        .map_err(|_| err(StatusCode::INTERNAL_SERVER_ERROR, "a kept write is unreadable"))?;
     let target = match item_of(&write) {
         Some(fi) => app.db.tracker_target(&p.project_id, fi)?.map(|t| format!("{}-{}", t.identifier, t.number)),
         None => None,
@@ -455,7 +466,8 @@ pub async fn edit(
     crate::boards::gate(&app, &account).await?;
     let project = writer(&app, &account, &project).await?;
     let p = app.db.tracker_write(&project, &id)?.filter(|p| p.state == "waiting").ok_or_else(none_waiting)?;
-    let old: TrackerWrite = serde_json::from_str(&p.request).map_err(|_| err(StatusCode::INTERNAL_SERVER_ERROR, "a kept write is unreadable"))?;
+    let old: TrackerWrite = serde_json::from_str(&p.request)
+        .map_err(|_| err(StatusCode::INTERNAL_SERVER_ERROR, "a kept write is unreadable"))?;
     let (c, new) = resolve(&app, &project, Some(&p.connection_id), &w).await?;
     if kind(&new) != kind(&old) || item_of(&new) != item_of(&old) || c.id != p.connection_id {
         return Err(bad("an edit changes a waiting write's text, not what it is or where it goes"));

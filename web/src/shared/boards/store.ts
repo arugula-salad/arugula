@@ -5,7 +5,7 @@
 // and the shell's board block read through it. A write that names a stale
 // `rev` is refused with 409 (`stale_rev`): the view reads the board again.
 
-import type { BoardList, BoardMoveEntry, BoardPutEntry, BoardView, BoardWorkItems } from "../proto";
+import type { BoardList, BoardMoveEntry, BoardPutEntry, BoardView, BoardWorkItems, TrackerConnections, TrackerWriteDone } from "../proto";
 import { chat } from "../chat-store";
 import { platformFetch, refusalOf } from "../maintenance";
 
@@ -76,6 +76,18 @@ export const boards = {
   work(project: string, q: string, limit: number): Promise<BoardWorkItems> {
     return call<BoardWorkItems>("GET", `/api/projects/${enc(project)}/work?q=${enc(q)}&limit=${limit}`);
   },
+  /** The project's live Plane connections (#359), for a zone's New issue…: none when there are none, or boards are off. */
+  async plane(project: string): Promise<{ id: string; identifier: string }[]> {
+    try {
+      const v = await call<TrackerConnections>("GET", `/api/projects/${enc(project)}/trackers`);
+      return v.connections.filter((c) => c.purge_after === null).map((c) => ({ id: c.id, identifier: c.identifier }));
+    } catch {
+      return [];
+    }
+  },
+  /** A person's new item in a Plane connection: lands at once; its `fi_` id is `item`. */
+  planeCreate: (project: string, connection: string, title: string) =>
+    call<TrackerWriteDone>("POST", `/api/projects/${enc(project)}/trackers/${enc(connection)}/writes`, { kind: "create", connection: null, title, body: null, state: null }),
   /** The board's thread (made the first time someone opens it): the room
    * the platform pushes a change on, so a view hears of it live. */
   thread: (id: string) => chat.openObject(id),

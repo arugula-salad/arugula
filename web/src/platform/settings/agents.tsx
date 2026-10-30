@@ -72,6 +72,12 @@ const HEADS: Record<Column, Head> = {
     name: "answer sessions",
     gives: "answer its agent sessions' questions and prompt them, as you (never approve a permission)",
   },
+  plane: {
+    head: "Plane writes",
+    short: "Plane",
+    name: "Plane writes",
+    gives: "create, comment on, close, reopen and edit the work items of its connected Plane project, as you; whether each waits for your approval is set per Plane connection. Plane is in Labs: this does nothing until boards are on for your account",
+  },
   boards: {
     head: "Boards",
     name: "boards",

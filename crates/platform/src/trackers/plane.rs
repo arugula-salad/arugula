@@ -243,7 +243,8 @@ impl TrackerProvider for Plane {
 
     fn create<'a>(&'a self, workspace: &'a str, project_id: &'a str, new: &'a NewItem) -> BoxFuture<'a, Result<Item>> {
         Box::pin(async move {
-            let path = format!("/api/v1/workspaces/{}/projects/{}/work-items/", segment(workspace)?, segment(project_id)?);
+            let path =
+                format!("/api/v1/workspaces/{}/projects/{}/work-items/", segment(workspace)?, segment(project_id)?);
             let mut body = json!({ "name": new.title });
             if let Some(h) = &new.body {
                 body["description_html"] = json!(h);
@@ -255,7 +256,9 @@ impl TrackerProvider for Plane {
                 body["parent"] = json!(segment(p)?);
             }
             let made = self.send(reqwest::Method::POST, &path, &[], Some(body)).await?;
-            let id = made["id"].as_str().ok_or_else(|| TrackerError::Unavailable("it answered with something unexpected".into()))?;
+            let id = made["id"]
+                .as_str()
+                .ok_or_else(|| TrackerError::Unavailable("it answered with something unexpected".into()))?;
             self.read(workspace, project_id, id).await
         })
     }

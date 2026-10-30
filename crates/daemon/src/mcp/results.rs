@@ -104,6 +104,26 @@ pub struct RunsProject {
     pub powers: Vec<String>,
 }
 
+/// The projects in control whose connected Plane projects agents here may
+/// write to (#359): through `trackers.write` grants this machine's owner gave it.
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct TrackersReach {
+    /// This machine is joined to control and holds a live `trackers.write`
+    /// grant over a project its owner reads.
+    pub live: bool,
+    /// What its grants reach.
+    pub projects: Vec<TrackerReachProject>,
+    /// What to use, or why not.
+    pub note: String,
+}
+
+/// A project a machine's `trackers.write` reaches.
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+pub struct TrackerReachProject {
+    pub id: String,
+    pub name: String,
+}
+
 /// The conversations in control that agents here reach (M198): through
 /// grants this machine's owner gave it.
 #[derive(Debug, Serialize, JsonSchema)]

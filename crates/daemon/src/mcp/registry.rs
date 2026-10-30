@@ -17,7 +17,7 @@ use futures_util::future::BoxFuture;
 use serde_json::Value;
 
 use super::{
-    results::{CloudReach, RunsReach, ThreadsReach},
+    results::{CloudReach, RunsReach, ThreadsReach, TrackersReach},
     tools::{Args, Call, Def, Kind, Out},
 };
 use crate::server::App;
@@ -32,6 +32,8 @@ pub trait ControlTools: Send + Sync + 'static {
     fn threads_reach<'a>(&'a self, app: &'a App) -> BoxFuture<'a, ThreadsReach>;
     /// Whether run tools are live here (M216).
     fn runs_reach<'a>(&'a self, app: &'a App) -> BoxFuture<'a, RunsReach>;
+    /// Whether `tracker_write` is live here (#359).
+    fn trackers_reach<'a>(&'a self, app: &'a App) -> BoxFuture<'a, TrackersReach>;
     /// `wait` with `run`: until it ends, or `limit`.
     fn wait_run<'a>(&'a self, call: &'a Call<'a>, run: &'a str, limit: Duration) -> BoxFuture<'a, Out>;
     /// `wait` with `session`: until any of them settles, or `limit`.
@@ -52,13 +54,14 @@ const NO_CONTROL_TOOLS: &str = "This build of Arugula has no control tools";
 
 /// What [`ControlTools`] says of Cloud workspaces, conversations and
 /// runs from here; none reached without them.
-pub async fn reach(app: &App) -> (CloudReach, ThreadsReach, RunsReach) {
+pub async fn reach(app: &App) -> (CloudReach, ThreadsReach, RunsReach, TrackersReach) {
     match CONTROL_TOOLS.get() {
-        Some(c) => tokio::join!(c.cloud_reach(app), c.threads_reach(app), c.runs_reach(app)),
+        Some(c) => tokio::join!(c.cloud_reach(app), c.threads_reach(app), c.runs_reach(app), c.trackers_reach(app)),
         None => (
             CloudReach { reachable: false, note: NO_CONTROL_TOOLS.into() },
             ThreadsReach { live: false, scopes: vec![], note: NO_CONTROL_TOOLS.into() },
             RunsReach { live: false, projects: vec![], note: NO_CONTROL_TOOLS.into() },
+            TrackersReach { live: false, projects: vec![], note: NO_CONTROL_TOOLS.into() },
         ),
     }
 }

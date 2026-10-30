@@ -1958,6 +1958,62 @@ clients = ["page", "cli"]
 note = "Disconnects a Plane project (Arugula #356): its secrets go at once, its mirrored items after the grace period."
 
 [[route]]
+method = "POST"
+path = "/api/projects/{project}/trackers/{connection}/writes"  # wire::projects::TRACKER_WRITES
+process = "platform"
+auth = "session"
+clients = ["page", "cli"]
+note = "A person's write to a connected Plane project (Arugula #359): create, comment, close, reopen or edit a work item. An owner or editor, behind the boards Labs flag; it lands at once, with a footer naming them. The key is never in the answer."
+
+[[route]]
+method = "GET"
+path = "/api/projects/{project}/tracker-writes"  # wire::projects::PROJECT_TRACKER_WRITES
+process = "platform"
+auth = "session"
+clients = ["page"]
+note = "The agents' writes to Plane waiting for a person to approve (Arugula #359), for an owner or editor."
+
+[[route]]
+method = "PATCH"
+path = "/api/projects/{project}/tracker-writes/{write}"  # wire::projects::PROJECT_TRACKER_WRITE
+process = "platform"
+auth = "session"
+clients = ["page"]
+note = "Changes the text of a waiting agent write to Plane, never its kind, its target or its footer: an owner or editor."
+
+[[route]]
+method = "POST"
+path = "/api/projects/{project}/tracker-writes/{write}/approve"  # wire::projects::PROJECT_TRACKER_WRITE_APPROVE
+process = "platform"
+auth = "session"
+clients = ["page"]
+note = "Approves a waiting agent write to Plane: it is sent now, as that agent's, with the footer. A person's alone; no machine route approves."
+
+[[route]]
+method = "POST"
+path = "/api/projects/{project}/tracker-writes/{write}/drop"  # wire::projects::PROJECT_TRACKER_WRITE_DROP
+process = "platform"
+auth = "session"
+clients = ["page"]
+note = "Drops a waiting agent write to Plane: nothing is sent."
+
+[[route]]
+method = "POST"
+path = "/api/daemon/projects/{project}/tracker-writes"  # wire::projects::AGENT_TRACKER_WRITES
+process = "platform"
+auth = "daemon"
+clients = ["daemon"]
+note = "A machine's agent writes to a project's connected Plane project (Arugula #359), with `trackers.write` over the project, asked on every call and never past its owner's role. Lands at once or waits for a person, as the connection's agent writes say."
+
+[[route]]
+method = "GET"
+path = "/api/daemon/trackers/reach"  # wire::projects::AGENT_TRACKER_REACH
+process = "platform"
+auth = "daemon"
+clients = ["daemon"]
+note = "The projects the machine holds `trackers.write` over, as its owner reads them now: for capabilities."
+
+[[route]]
 method = "GET"
 path = "/api/projects/{project}/workspaces"
 process = "platform"
