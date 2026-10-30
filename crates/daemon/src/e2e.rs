@@ -80,8 +80,15 @@ async fn serve_ws(app: Arc<App>, socket: WebSocket) {
         r = serve(app, in_rx, out_tx) => log_end(r),
         _ = reader => {}
     }
-    // Whatever was queued still goes out.
-    let _ = tokio::time::timeout(std::time::Duration::from_secs(2), w).await;
+    drain(w).await;
+}
+
+/// The channel ended: whatever was queued still goes out, for a moment,
+/// and then the socket's writer stops whatever still holds its queue.
+async fn drain(mut w: tokio::task::JoinHandle<()>) {
+    if tokio::time::timeout(std::time::Duration::from_secs(2), &mut w).await.is_err() {
+        w.abort();
+    }
 }
 
 /// A stream from control's relay: `len (u32 BE) ‖ Noise message` frames.
@@ -118,7 +125,7 @@ pub async fn serve_stream(app: Arc<App>, stream: DuplexStream) {
         r = serve(app, in_rx, out_tx) => log_end(r),
         _ = reader => {}
     }
-    let _ = tokio::time::timeout(std::time::Duration::from_secs(2), w).await;
+    drain(w).await;
 }
 
 fn log_end(r: anyhow::Result<()>) {
@@ -215,8 +222,12 @@ async fn serve(app: Arc<App>, mut inbound: mpsc::Receiver<Vec<u8>>, out: mpsc::S
     let _left = Leave { app: app.clone(), client, device: device.device.clone(), opened: std::time::Instant::now() };
     let router = crate::server::channel_router(app.clone());
     let mut changed = app.control.changed.subscribe();
+    // Its requests (a follow can run for as long as the channel does) end
+    // with it: dropping the set aborts them.
+    let mut requests = tokio::task::JoinSet::new();
     loop {
         tokio::select! {
+            Some(_) = requests.join_next(), if !requests.is_empty() => {}
             w = inbound.recv() => {
                 let Some(w) = w else { break Ok(()) };
                 match ch.open(&w) {
@@ -232,7 +243,7 @@ async fn serve(app: Arc<App>, mut inbound: mpsc::Receiver<Vec<u8>>, out: mpsc::S
                         }
                     }
                     Ok(Some(Msg::Request { id, head, body })) => {
-                        crate::task::spawn(answer(router.clone(), out.clone(), id, head, body, principal.clone(), caller.clone()));
+                        requests.spawn(answer(router.clone(), out.clone(), id, head, body, principal.clone(), caller.clone()));
                     }
                     Ok(Some(Msg::Response { .. })) => break Err(anyhow::anyhow!("a client doesn't answer requests")),
                     Err(e) => break Err(e),
@@ -257,13 +268,16 @@ async fn serve(app: Arc<App>, mut inbound: mpsc::Receiver<Vec<u8>>, out: mpsc::S
                 if let Err(e) = out.put(&m).await { break Err(e) }
             }
             Ok(()) = changed.changed() => {
-                if app.control.device(&who).is_none() {
-                    info!(device = device.device, "device no longer trusted: closing its channel");
+                if let Some(why) = no_longer(app.control.device(&who).map(|(_, p)| p), &principal) {
+                    info!(device = device.device, "{why}: closing its channel");
                     // Say why, as the mux does when a grant goes (M30): the
                     // page drops what it showed instead of keeping it greyed.
-                    let message = "your access was removed".to_owned();
-                    let m = Msg::Text(serde_json::to_string(&arugula_proto::ServerMsg::Error { id: None, message }).expect("serialize"));
-                    let _ = out.put(&m).await;
+                    // Someone whose standing changed just reconnects.
+                    if why == UNTRUSTED {
+                        let message = "your access was removed".to_owned();
+                        let m = Msg::Text(serde_json::to_string(&arugula_proto::ServerMsg::Error { id: None, message }).expect("serialize"));
+                        let _ = out.put(&m).await;
+                    }
                     break Ok(());
                 }
             }
@@ -324,14 +338,16 @@ async fn serve_machine(
     let router = crate::server::channel_router(app.clone());
     let ch = out.ch.clone();
     let mut changed = app.control.changed.subscribe();
+    let mut requests = tokio::task::JoinSet::new();
     let r = loop {
         tokio::select! {
+            Some(_) = requests.join_next(), if !requests.is_empty() => {}
             w = inbound.recv() => {
                 let Some(w) = w else { break Ok(()) };
                 match ch.open(&w) {
                     Ok(None) => {}
                     Ok(Some(Msg::Request { id, head, body })) if full || agents_only(&head.path) => {
-                        crate::task::spawn(answer(router.clone(), out.clone(), id, head, body, principal.clone(), caller.clone()));
+                        requests.spawn(answer(router.clone(), out.clone(), id, head, body, principal.clone(), caller.clone()));
                     }
                     Ok(Some(Msg::Request { id, .. })) => {
                         let body = serde_json::to_vec(&serde_json::json!({ "error": "a machine reaches only the agents here (/api/a2a/)" })).unwrap();
@@ -343,7 +359,8 @@ async fn serve_machine(
                 }
             }
             Ok(()) = changed.changed() => {
-                if app.control.device(&who).is_none() || (full && !app.control.drives(&who)) {
+                let gone = no_longer(app.control.device(&who).map(|(_, p)| p), &principal);
+                if gone.is_some() || (full && !app.control.drives(&who)) {
                     info!(device = device.device, "machine no longer let in: closing its {what}");
                     break Ok(());
                 }
@@ -352,6 +369,20 @@ async fn serve_machine(
     };
     info!(device = device.device, "{what} closed");
     r
+}
+
+const UNTRUSTED: &str = "device no longer trusted";
+
+/// Why a channel opened as `was` closes now that its device resolves to
+/// `now` (None: no longer trusted): it's gone, or it's someone else or has
+/// another standing here (an owner made a viewer, say). The client opens a
+/// new one as whoever it is now. None: it carries on.
+fn no_longer(now: Option<crate::acl::Principal>, was: &crate::acl::Principal) -> Option<&'static str> {
+    match now {
+        None => Some(UNTRUSTED),
+        Some(p) if p.id() != was.id() || p.is_owner() != was.is_owner() => Some("device's standing changed"),
+        Some(_) => None,
+    }
 }
 
 /// A channel's client leaving the mux and the hands, however the channel ends.
@@ -467,7 +498,22 @@ async fn call(
 
 #[cfg(test)]
 mod tests {
-    use super::agents_only;
+    use super::{UNTRUSTED, agents_only, no_longer};
+    use crate::acl::Principal;
+
+    /// A channel is as whoever its device is now: gone, someone else, or
+    /// an owner no longer (or newly) one closes it; a new name doesn't.
+    #[test]
+    fn a_channel_closes_when_its_device_stands_differently() {
+        let user = |id: &str, name: &str| Principal::User { id: id.into(), name: name.into(), pic: None };
+        let dee = user("account:d1", "dee");
+        assert_eq!(no_longer(None, &Principal::Owner), Some(UNTRUSTED));
+        assert_eq!(no_longer(Some(Principal::Owner), &Principal::Owner), None);
+        assert!(no_longer(Some(dee.clone()), &Principal::Owner).is_some(), "an owner made a viewer");
+        assert!(no_longer(Some(Principal::Owner), &dee).is_some(), "a viewer made an owner");
+        assert!(no_longer(Some(user("account:e1", "dee")), &dee).is_some());
+        assert_eq!(no_longer(Some(user("account:d1", "Dee D.")), &dee), None);
+    }
 
     #[test]
     fn a_machine_reaches_only_the_agents() {

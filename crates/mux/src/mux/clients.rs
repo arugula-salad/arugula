@@ -418,8 +418,16 @@ impl Daemon {
                 self.sizes.insert(pane, size);
             }
         }
+        // A pane may have moved to a session someone else can't read.
+        self.access_moved();
         self.broadcast();
         self.save_due.get_or_insert_with(|| Instant::now() + SAVE_DEBOUNCE);
+    }
+
+    /// Who may read what could have changed: streams the mux doesn't track
+    /// (`MuxHandle::access_changes`) check again.
+    pub(super) fn access_moved(&self) {
+        self.access.send_modify(|g| *g = g.wrapping_add(1));
     }
 
     /// Something changed: every client hears what, shortly (M23). Layout
@@ -829,6 +837,7 @@ impl Daemon {
             }
             self.mux.release(id);
         }
+        self.access_moved();
         let hidden: Vec<(ClientId, PaneId)> = self
             .clients
             .values()
