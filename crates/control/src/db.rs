@@ -1996,17 +1996,28 @@ impl Db {
         Ok(())
     }
 
-    /// A team's lock as an owner signed it (`TeamLock`, JSON), and
-    /// whether it's locked from now on.
-    pub fn set_lock(&self, team: &str, locked: bool, lock: &str) -> anyhow::Result<()> {
+    /// A team's lock as an owner signed it (`TeamLock`, JSON, made at
+    /// `at`), and whether it's locked from now on: only if it's newer than
+    /// the one stored, checked and written in one transaction, so of two
+    /// at once the older can't land after the newer. False if it isn't.
+    pub fn set_lock(&self, team: &str, locked: bool, lock: &str, at: u64) -> anyhow::Result<bool> {
         let mut c = self.c();
         let tx = c.transaction()?;
+        let held: Option<String> = tx
+            .query_row("SELECT lock FROM teams WHERE id = ?1", params![team], |r| r.get::<_, Option<String>>(0))
+            .optional()?
+            .flatten();
+        let held_at =
+            held.and_then(|b| serde_json::from_str::<serde_json::Value>(&b).ok()).and_then(|v| v["at"].as_u64());
+        if held_at.is_some_and(|h| at <= h) {
+            return Ok(false);
+        }
         tx.execute("UPDATE teams SET lock = ?2 WHERE id = ?1", params![team, lock])?;
         if tx.execute("UPDATE teams SET locked = ?2 WHERE id = ?1 AND locked IS NOT ?2", params![team, locked])? > 0 {
             changed(&tx, ChangeKind::TeamLocked, team)?;
         }
         tx.commit()?;
-        Ok(())
+        Ok(true)
     }
 
     /// The latest lock an owner signed for `team` (`TeamLock`, JSON).

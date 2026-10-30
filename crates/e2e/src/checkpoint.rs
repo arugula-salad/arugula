@@ -17,14 +17,44 @@
 
 use std::collections::{BTreeMap, HashSet};
 
+use serde::{Deserialize, Serialize};
+
 use crate::{
     Cert, Revocation, Trust,
     team::{AccountCerts, Roster, TeamLock, TeamPin},
 };
 
-/// When this machine first saw each certificate and removal (ms), by its
-/// signature ([`seen_key`]).
-pub type Seen = BTreeMap<String, u64>;
+/// In which round of looking this machine first saw each certificate and
+/// removal, by its signature ([`seen_key`]). Rounds are counted here, one
+/// per refresh that brings something new, so a clock set back can't
+/// reorder what was seen. Round 0 is what was held before stamps were
+/// kept.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Seen {
+    /// The last round that brought something new.
+    #[serde(default)]
+    pub round: u64,
+    #[serde(default)]
+    pub at: BTreeMap<String, u64>,
+}
+
+impl Seen {
+    /// The round a refresh stamps what's new with.
+    pub fn next(&self) -> u64 {
+        self.round + 1
+    }
+
+    /// After a refresh in `round`: count it if it stamped anything.
+    pub fn settle(&mut self, round: u64) {
+        if self.at.values().any(|&r| r == round) {
+            self.round = self.round.max(round);
+        }
+    }
+
+    pub fn get(&self, sig: &str) -> Option<u64> {
+        self.at.get(&seen_key(sig)).copied()
+    }
+}
 
 /// What a certificate or removal is stamped under: its signature, which
 /// no other signed thing has.
@@ -32,10 +62,10 @@ pub fn seen_key(sig: &str) -> String {
     sig.to_owned()
 }
 
-/// Stamp each of `certs` and `revocations` not stamped yet with `now`.
-pub fn stamp(seen: &mut Seen, certs: &[Cert], revocations: &[Revocation], now: u64) {
+/// Stamp each of `certs` and `revocations` not stamped yet with `round`.
+pub fn stamp(seen: &mut Seen, certs: &[Cert], revocations: &[Revocation], round: u64) {
     for sig in certs.iter().map(|c| &c.sig).chain(revocations.iter().map(|r| &r.sig)) {
-        seen.entry(seen_key(sig)).or_insert(now);
+        seen.at.entry(seen_key(sig)).or_insert(round);
     }
 }
 
@@ -43,17 +73,23 @@ pub fn stamp(seen: &mut Seen, certs: &[Cert], revocations: &[Revocation], now: u
 /// approved them was first seen. A device approved before its approver
 /// was removed was seen no later than the removal, by a machine that
 /// held both; one dated before the removal but first seen after it was
-/// made with a removed device's key. Certificates or removals never
-/// stamped count as seen now, so nothing is dropped for want of a stamp.
+/// made with a removed device's key. A removal never stamped counts as
+/// seen first, and a certificate never stamped as seen last: a missing
+/// stamp never lets one in.
 pub fn drop_late(trust: &Trust, certs: Vec<Cert>, revocations: &[Revocation], seen: &Seen) -> Vec<Cert> {
     let gone = removed(trust, &certs, revocations);
     if gone.is_empty() {
         return certs;
     }
-    let at = |sig: &str| seen.get(&seen_key(sig)).copied().unwrap_or(u64::MAX);
+    let cert_at = |sig: &str| seen.get(sig).unwrap_or(u64::MAX);
     let removed_at = |device: &str| {
-        revocations.iter().filter(|r| r.account == trust.account && r.device == device).map(|r| at(&r.sig)).min()
+        revocations
+            .iter()
+            .filter(|r| r.account == trust.account && r.device == device)
+            .map(|r| seen.get(&r.sig).unwrap_or(0))
+            .min()
     };
+    let at = cert_at;
     certs
         .into_iter()
         .filter(|c| {
@@ -103,9 +139,11 @@ pub fn removed(trust: &Trust, certs: &[Cert], revocations: &[Revocation]) -> Has
 
 /// An account's certificates and removals after a refresh: `new` as
 /// control sends them now, over `old` as last held. Every removal held is
-/// kept, and everything is stamped in `seen` when first seen (`now`); a
-/// certificate first seen after its approver's removal is dropped
-/// ([`drop_late`]). And no device `old` held removed may count again: if
+/// kept, and everything is stamped in `seen` when first seen (in
+/// `round`; what `old` held unstamped, from before stamps were kept, in
+/// round 0); a certificate first seen after its approver's removal is
+/// dropped ([`drop_late`]). Only what was held is let off: a certificate
+/// first supplied in the refresh that first stamps is judged like any. And no device `old` held removed may count again: if
 /// `new`'s certificates would let one back in (by leaving out the
 /// certificate a removal rested on, say), they're refused and `old`'s
 /// stay, with every removal. The flag says they were refused.
@@ -114,11 +152,11 @@ pub fn refresh_account(
     new: (Vec<Cert>, Vec<Revocation>),
     old: (&[Cert], &[Revocation]),
     seen: &mut Seen,
-    now: u64,
+    round: u64,
 ) -> (Vec<Cert>, Vec<Revocation>, bool) {
+    stamp(seen, old.0, old.1, 0);
     let revocations = kept(new.1, old.1);
-    stamp(seen, old.0, &revocations, now);
-    stamp(seen, &new.0, &[], now);
+    stamp(seen, &new.0, &revocations, round);
     let certs = drop_late(trust, new.0, &revocations, seen);
     let gone = removed(trust, old.0, old.1);
     if gone.is_empty() {
@@ -229,7 +267,8 @@ mod tests {
         assert!(trust.evaluate(&held.0, &held.1).get(&pc.device).is_none());
 
         // The removal left out.
-        let (c, r, refused) = refresh_account(&trust, (certs.clone(), vec![]), (&held.0, &held.1), &mut Seen::new(), 1);
+        let (c, r, refused) =
+            refresh_account(&trust, (certs.clone(), vec![]), (&held.0, &held.1), &mut Seen::default(), 1);
         assert!(!refused);
         assert_eq!(r, vec![rev.clone()]);
         assert!(trust.evaluate(&c, &r).get(&pc.device).is_none(), "the phone counts again");
@@ -237,7 +276,7 @@ mod tests {
         // The laptop's certificate left out: the removal wouldn't count.
         let without_signer = vec![rc.clone(), pc.clone()];
         let (c, r, refused) =
-            refresh_account(&trust, (without_signer, vec![rev.clone()]), (&held.0, &held.1), &mut Seen::new(), 1);
+            refresh_account(&trust, (without_signer, vec![rev.clone()]), (&held.0, &held.1), &mut Seen::default(), 1);
         assert!(refused);
         assert!(trust.evaluate(&c, &r).get(&pc.device).is_none(), "the phone counts again");
         assert!(trust.evaluate(&c, &r).get(&lc.device).is_some());
@@ -252,7 +291,7 @@ mod tests {
             &trust,
             (vec![rc.clone(), pc.clone(), tc.clone()], vec![]),
             (&held2.0, &held2.1),
-            &mut Seen::new(),
+            &mut Seen::default(),
             1,
         );
         assert!(refused);
@@ -262,7 +301,7 @@ mod tests {
         let (_, nc) = approved("a", &rk, "new");
         let mut more = certs.clone();
         more.push(nc.clone());
-        let (c, r, refused) = refresh_account(&trust, (more, vec![rev]), (&held.0, &held.1), &mut Seen::new(), 1);
+        let (c, r, refused) = refresh_account(&trust, (more, vec![rev]), (&held.0, &held.1), &mut Seen::default(), 1);
         assert!(!refused);
         assert!(trust.evaluate(&c, &r).get(&nc.device).is_some());
     }
@@ -291,24 +330,47 @@ mod tests {
         // Its date alone lets it in.
         assert!(trusted(&[rc.clone(), lc.clone(), late.clone()], std::slice::from_ref(&rev), &late.device));
 
-        let mut seen = Seen::new();
+        let mut seen = Seen::default();
         // Refresh 1: the laptop, the tablet it approved, and its removal.
         let held = vec![rc.clone(), lc.clone(), early.clone()];
-        let (c1, r1, _) = refresh_account(&trust, (held.clone(), vec![rev.clone()]), (&[], &[]), &mut seen, 10);
+        let round = seen.next();
+        let (c1, r1, _) = refresh_account(&trust, (held.clone(), vec![rev.clone()]), (&[], &[]), &mut seen, round);
+        seen.settle(round);
         assert!(trusted(&c1, &r1, &early.device), "what it approved before, seen with the removal");
+        // A refresh that brings nothing new doesn't count as a round.
+        let round = seen.next();
+        refresh_account(&trust, (held.clone(), vec![rev.clone()]), (&c1, &r1), &mut seen, round);
+        seen.settle(round);
+        assert_eq!(seen.round, 1);
         // Refresh 2: a certificate from the removed laptop, dated before.
+        // Rounds are counted, not read off a clock: whatever the clock
+        // says, it's a later round.
         let mut more = held.clone();
         more.push(late.clone());
-        let (c2, r2, _) = refresh_account(&trust, (more.clone(), vec![]), (&c1, &r1), &mut seen, 20);
+        let round = seen.next();
+        let (c2, r2, _) = refresh_account(&trust, (more.clone(), vec![]), (&c1, &r1), &mut seen, round);
         assert!(!trusted(&c2, &r2, &late.device), "a removed device's late certificate counts");
         assert!(trusted(&c2, &r2, &early.device));
 
-        // From before stamps: nothing held is stamped; the first refresh
-        // stamps it all at once and drops nothing it held.
-        let mut fresh = Seen::new();
-        let (c3, r3, _) = refresh_account(&trust, (more.clone(), vec![]), (&more, &r1), &mut fresh, 30);
-        assert!(trusted(&c3, &r3, &late.device) && trusted(&c3, &r3, &early.device));
-        assert_eq!(fresh.get(&seen_key(&late.sig)), Some(&30));
+        // From before stamps: what was held (the laptop, the tablet, the
+        // removal) is let off in round 0; a certificate first supplied in
+        // that refresh is judged like any, and dropped.
+        let mut fresh = Seen::default();
+        let round = fresh.next();
+        let (c3, r3, _) = refresh_account(&trust, (more.clone(), vec![]), (&held, &r1), &mut fresh, round);
+        assert!(trusted(&c3, &r3, &early.device), "what was held from before");
+        assert!(!trusted(&c3, &r3, &late.device), "a certificate first supplied as stamps begin counts");
+        assert_eq!((fresh.get(&early.sig), fresh.get(&rev.sig), fresh.get(&late.sig)), (Some(0), Some(0), Some(1)));
+        // Held from before, the late one too: let off.
+        let mut fresh = Seen::default();
+        let (c4, r4, _) = refresh_account(&trust, (more.clone(), vec![]), (&more, &r1), &mut fresh, 1);
+        assert!(trusted(&c4, &r4, &late.device));
+        // A removal with no stamp at all counts as seen first: it never
+        // lets a stamped certificate in.
+        let mut partial = Seen::default();
+        partial.at.insert(seen_key(&late.sig), 5);
+        let kept_certs = drop_late(&trust, more.clone(), std::slice::from_ref(&rev), &partial);
+        assert!(!kept_certs.iter().any(|c| c.sig == late.sig));
     }
 
     /// A lock counts only from an owner in the roster held, newer than the

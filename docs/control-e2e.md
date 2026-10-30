@@ -122,15 +122,19 @@ device nobody trusted. Now:
   minutes of control's clock (`approval_ok`), on every path: a presigned
   enrollment, an approval, a machine's or the CLI's join, recovery codes.
 - Daemons and pages don't take `created` alone: each stamps every
-  certificate and revocation with when it first saw it
-  (`arugula_e2e::checkpoint::drop_late`; `control.json` on a daemon, the
-  browser's storage on a page). A certificate first seen after the
+  certificate and revocation with the round of looking it first saw it
+  in (`arugula_e2e::checkpoint::drop_late`; rounds are counted in
+  `control.json` on a daemon and in the browser's storage on a page, not
+  read off a clock). A certificate first seen in a later round than the
   revocation of the device that approved it doesn't count, whatever
   `created` says. So once a machine or page has seen a device's removal,
   that device's key can't approve anything new there by dating it
   earlier. What a device approved before its removal arrives with the
-  removal or before it, and stays. Certificates held from before stamps
-  were kept are stamped when first refreshed.
+  removal or before it, and stays. This holds only where the removal was
+  seen first: a machine or page that receives a backdated certificate
+  together with the removal, or before it, judges it by `created`. What
+  was held before stamps were kept is let off once; a certificate first
+  supplied after that is judged like any.
 - Daemons and pages read only certificates signed by the key of the
   device they name as approver; any other is set aside before anything
   else, so it can't count against one that is. Since #761 a new browser is
@@ -228,14 +232,18 @@ device nobody trusted. Now:
     change only on top of a version that follows. If control's latest
     doesn't follow, the page shows the last one it checked and holds
     changes until control's does. The page keeps what it checked in
-    memory for as long as it's open; if the browser can't store it, the
-    page still checks rosters but signs no team change.
+    memory for as long as it's open, and merges in what another tab of
+    the same browser checked. If the browser can't read or store it, or
+    it's gone when this browser kept it before, the page still checks
+    rosters but signs no team change and lists no one else's machines.
   - The first time a page sees a team, it checks the whole signed history
     from version 1, which the founder it pinned signs. A version before
     the latest may have been signed by a device removed since: the page
-    takes it if that device counted as of the version's date, and says so
-    in Teams. The latest version must be signed by a device that counts
-    now. Machines make no such allowance: a version signed by a device
+    takes it if that device counted as of the version's date and the page
+    hadn't seen its removal before this look, and says so in Teams. The
+    latest version must be signed by a device that counts now. Every
+    version is checked with the certificates the page holds for its
+    owners, the ones it fetched for history included. Machines make no such allowance: a version signed by a device
     removed since stops a machine's first look at that team.
   - When a member's root changes between the version the page held and
     the one it takes, Teams shows the old and new fingerprints until you
@@ -301,7 +309,9 @@ device nobody trusted. Now:
   what that device approved after) can't count again: if control's
   certificates would let it back in, for instance by leaving out the
   certificate a revocation rests on, the daemon keeps the certificates
-  it had.
+  it had. If `control.json` can't be written, what a refresh found still
+  counts in memory, and every refresh tries to save it again until it
+  can.
 - **Accepted risk:** a malicious control can *withhold* a revocation from a
   daemon that hasn't seen it yet. Control can't add readers, but it can
   delay removing one. As with Tailnet Lock, this is written down rather
@@ -312,9 +322,13 @@ device nobody trusted. Now:
   `locked` older machines read, and refuses one an owner didn't sign.
   A machine takes a lock record only if a device of an owner in the roster
   it holds signed it, against a version it has, and it's newer than the
-  record it holds (`arugula_e2e::checkpoint::take_lock`). Without one the
-  team stays as the machine holds it: control's plain word can lock a
-  team (it can refuse service anyway), never unlock it.
+  record it holds (`arugula_e2e::checkpoint::take_lock`); a team's hosted
+  machines hold it too. Without one the team stays as the machine holds
+  it: control's plain word can lock a team (it can refuse service anyway),
+  never unlock it. Control writes a lock only if it's newer than the one
+  it holds, checked as it writes, and refuses one dated more than ten
+  minutes ahead of its clock. The owner's page shows and signs after the
+  lock it checked the same way, never control's word for it.
 
 **Recovery:**
 

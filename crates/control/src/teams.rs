@@ -786,8 +786,11 @@ pub struct Lock {
     lock: Option<TeamLock>,
 }
 
+/// How far ahead of control's clock a signed lock may be dated.
+const LOCK_SKEW_MS: u64 = 10 * 60 * 1000;
+
 /// The latest lock an owner signed for `team`, if any.
-fn lock_of(app: &App, team: &str) -> anyhow::Result<Option<TeamLock>> {
+pub(crate) fn lock_of(app: &App, team: &str) -> anyhow::Result<Option<TeamLock>> {
     Ok(app.db.team_lock(team)?.and_then(|b| serde_json::from_str(&b).ok()))
 }
 
@@ -810,13 +813,17 @@ pub async fn lock(State(app): State<Arc<App>>, s: Session, Path(team): Path<Stri
     if l.team != team || l.locked != b.locked || !l.signed_in(&r, &certs) {
         return Err(err(StatusCode::BAD_REQUEST, "the lock isn't signed by one of the team's owners' devices"));
     }
-    if lock_of(&app, &team)?.is_some_and(|h| l.at <= h.at) {
+    // Made by the signing device's clock: not far ahead of control's, so
+    // no lock can stop later ones (they must be newer).
+    if l.at > arugula_e2e::now_ms() + LOCK_SKEW_MS {
+        return Err(err(StatusCode::BAD_REQUEST, "the lock is dated in the future; check this device's clock"));
+    }
+    if !app.db.set_lock(&team, b.locked, &serde_json::to_string(&l).map_err(anyhow::Error::from)?, l.at)? {
         return Err(err(
             StatusCode::CONFLICT,
             "the team's lock changed since; check this device's clock and try again",
         ));
     }
-    app.db.set_lock(&team, b.locked, &serde_json::to_string(&l).map_err(anyhow::Error::from)?)?;
     if b.locked {
         app.db.drop_invites(&team)?;
     }

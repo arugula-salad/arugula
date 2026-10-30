@@ -5,8 +5,8 @@
 // checked: control can't hand it a roster no owner wrote.
 
 import type { Cert, Revocation } from "./e2e/cert.ts";
-import { refreshAccount, type Seen } from "./e2e/checkpoint.ts";
-import { advance, follows, rootChanges, sameRoster, type AccountCerts, type Roster, type TeamPin } from "./e2e/team.ts";
+import { isSeen, kept, nextRound, refreshAccount, settle, type Seen } from "./e2e/checkpoint.ts";
+import { advance, follows, lockSignedIn, rootChanges, sameRoster, type AccountCerts, type Roster, type TeamLock, type TeamPin } from "./e2e/team.ts";
 
 /** Why the roster control sent isn't taken: an older version than the one
  * held, another version at one held, or one that doesn't follow it (or
@@ -39,12 +39,22 @@ export interface Checked {
 
 type History = (since: number) => Promise<{ rosters: Roster[]; certs: AccountCerts }>;
 
+/** How the page checks a step: `vet` gives the certificates it holds for
+ * a roster's owners, and `lateOk` says whether a version signed by a
+ * device removed since may stand (`advance`). The defaults take control's
+ * certificates as they come and allow none. */
+export interface CheckWith {
+  vet?: (prev: Roster | null, certs: AccountCerts) => Promise<AccountCerts>;
+  lateOk?: (account: string, root: string, device: string) => boolean;
+}
+
 /** `offered` (control's latest for the team) checked against `held`. On
  * first sight (no `held`) the whole signed history is checked, from
  * version 1 and the founder `pin` names. `history(since)` fetches the
  * versions after `since`, with their signers' certificates; with `held`,
- * it's asked only when `offered` isn't the very next version. */
-export async function checkRoster(held: Roster | null, offered: Roster, pin: TeamPin, certs: AccountCerts, history: History): Promise<Checked> {
+ * it's asked only when `offered` isn't the very next version. Every step
+ * is checked with the certificates `vet` gives, history's included. */
+export async function checkRoster(held: Roster | null, offered: Roster, pin: TeamPin, certs: AccountCerts, history: History, opts: CheckWith = {}): Promise<Checked> {
   const no = (roster: Roster, problem: RosterProblem, changes: RootChange[] = [], late: number[] = [], keep: Roster | null = held): Checked => ({
     roster,
     problem,
@@ -54,14 +64,15 @@ export async function checkRoster(held: Roster | null, offered: Roster, pin: Tea
   });
   if (held && offered.version < held.version) return no(held, "older");
   if (held && offered.version === held.version) return sameRoster(offered, held) ? { roster: held, problem: null, changes: [], late: [], keep: held } : no(held, "another");
+  const vet = opts.vet ?? (async (_: Roster | null, c: AccountCerts) => c);
   let cur: Roster | null = held;
   let stopped: number | null = null;
   let late: number[] = [];
-  if (held && offered.version === held.version + 1 && (await follows(offered, held, pin, certs))) cur = offered;
+  if (held && offered.version === held.version + 1 && (await follows(offered, held, pin, await vet(held, certs)))) cur = offered;
   else {
     const h = await history(held?.version ?? 0).catch(() => null);
     if (!h) return no(held ?? offered, "unchecked");
-    [cur, stopped, late] = await advance(held, h.rosters, pin, { ...certs, ...h.certs }, true);
+    [cur, stopped, late] = await advance(held, h.rosters, pin, { ...certs, ...h.certs }, { vet, lateOk: opts.lateOk });
   }
   if (!cur) return no(offered, "unchecked");
   const changes = held ? rootChanges(held, cur).map((c) => ({ ...c, version: cur.version })) : [];
@@ -69,96 +80,200 @@ export async function checkRoster(held: Roster | null, offered: Roster, pin: Tea
   return { roster: cur, problem: null, changes, late, keep: cur };
 }
 
+type Store = () => Pick<Storage, "getItem" | "setItem">;
+
+const isRoster = (v: unknown): v is Roster =>
+  !!v && typeof v === "object" && typeof (v as Roster).team === "string" && Number.isSafeInteger((v as Roster).version) && Array.isArray((v as Roster).members);
+
+/** Read `key` from `storage` as JSON that `ok` accepts: `null` when there's
+ * none, `undefined` when it can't be read or isn't well formed. */
+function readStored<T>(storage: Store, key: string, ok: (v: unknown) => v is T): T | null | undefined {
+  try {
+    const raw = storage().getItem(key);
+    if (raw === null) return null;
+    const v: unknown = JSON.parse(raw);
+    return ok(v) ? v : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 /** The last roster this page checked for each team: read from `storage`
  * once, then kept in memory for the page's life, so storage cleared or
- * changed under it doesn't take the page back to a first look. If it
- * can't be read or written, `kept` goes false for good: the page still
- * checks rosters, but signs no team change on what it would forget. */
+ * changed under it doesn't take the page back to a first look; on each
+ * save, what another tab of this browser checked since is merged in (the
+ * newer version of each team). If it can't be read or written, or is
+ * missing when `expected` says this browser kept one, `kept` goes false
+ * for good: the page still checks rosters, but signs no team change on
+ * what it would forget. */
 export class RosterStore {
   private map: Record<string, Roster> | null = null;
-  private storage: () => Pick<Storage, "getItem" | "setItem">;
+  private storage: Store;
   private key: string;
+  private expected: () => boolean;
   kept = true;
 
-  constructor(storage: () => Pick<Storage, "getItem" | "setItem">, key: string) {
+  constructor(storage: Store, key: string, expected: () => boolean = () => false) {
     this.storage = storage;
     this.key = key;
+    this.expected = expected;
+  }
+
+  private static ok(v: unknown): v is Record<string, Roster> {
+    return !!v && typeof v === "object" && !Array.isArray(v) && Object.values(v).every(isRoster);
   }
 
   held(): Record<string, Roster> {
     if (this.map) return this.map;
-    try {
-      const raw = this.storage().getItem(this.key);
-      const v: unknown = raw === null ? {} : JSON.parse(raw);
-      if (!v || typeof v !== "object" || Array.isArray(v)) throw new Error("not a map");
-      this.map = v as Record<string, Roster>;
-    } catch {
-      this.kept = false;
-      this.map = {};
-    }
+    const got = readStored(this.storage, this.key, RosterStore.ok);
+    if (got === undefined || (got === null && this.expected())) this.kept = false;
+    this.map = got ?? {};
     return this.map;
   }
 
   save() {
+    const mine = this.held();
+    const theirs = readStored(this.storage, this.key, RosterStore.ok);
+    if (theirs === undefined) this.kept = false;
+    for (const [t, r] of Object.entries(theirs ?? {})) if (!mine[t] || r.version > mine[t].version) mine[t] = r;
     try {
-      this.storage().setItem(this.key, JSON.stringify(this.held()));
+      this.storage().setItem(this.key, JSON.stringify(mine));
     } catch {
       this.kept = false;
     }
   }
 }
 
+interface Held {
+  accounts: Record<string, { certs: Cert[]; revocations: Revocation[] }>;
+  seen: Seen;
+  /** Each team's lock as an owner signed it, the latest this page took. */
+  locks: Record<string, TeamLock>;
+}
+
+const sameRev = (a: Revocation, b: Revocation) => a.sig === b.sig;
+
 /** Each account's certificates and removals as this page last held them,
- * by account and the root they're checked from, and when it first saw
- * each (`checkpoint::Seen`): removals only add up across loads, and a
- * certificate first seen after its approver's removal doesn't count
- * (`refreshAccount`). Read once and kept in memory for the page's life,
- * as `RosterStore`; if storage can't be read or written, `kept` goes
- * false for good and the page signs no team change. */
+ * by account and the root they're checked from, in which round it first
+ * saw each (`checkpoint::Seen`), and each team's signed lock: removals
+ * only add up across loads, and a certificate first seen after its
+ * approver's removal doesn't count (`refreshAccount`). Read once and kept
+ * in memory for the page's life, as `RosterStore`; each look (`begin`)
+ * and each save merge in what another tab of this browser holds (more
+ * removals, earlier stamps, newer locks), never less. If it can't be read
+ * or written, is malformed, or is missing when `expected` says this
+ * browser kept one, `kept` goes false for good: the page then signs no
+ * team change and lists no one else's machines. */
 export class TrustStore {
-  private data: { accounts: Record<string, { certs: Cert[]; revocations: Revocation[] }>; seen: Seen } | null = null;
-  private storage: () => Pick<Storage, "getItem" | "setItem">;
+  private data: Held | null = null;
+  private storage: Store;
   private key: string;
+  private expected: () => boolean;
+  private round = 1;
   kept = true;
 
-  constructor(storage: () => Pick<Storage, "getItem" | "setItem">, key: string) {
+  constructor(storage: Store, key: string, expected: () => boolean = () => false) {
     this.storage = storage;
     this.key = key;
+    this.expected = expected;
   }
 
-  private load() {
-    if (this.data) return this.data;
-    try {
-      const raw = this.storage().getItem(this.key);
-      const v = raw === null ? { accounts: {}, seen: {} } : JSON.parse(raw);
-      if (!v || typeof v !== "object" || typeof v.accounts !== "object" || typeof v.seen !== "object" || !v.accounts || !v.seen) throw new Error("not a store");
-      this.data = v;
-    } catch {
-      this.kept = false;
-      this.data = { accounts: {}, seen: {} };
+  private static ok(v: unknown): v is Held {
+    if (!v || typeof v !== "object" || Array.isArray(v)) return false;
+    const h = v as Held;
+    const accounts = !!h.accounts && typeof h.accounts === "object" && Object.values(h.accounts).every((a) => !!a && Array.isArray(a.certs) && Array.isArray(a.revocations));
+    const locks = h.locks === undefined || (!!h.locks && typeof h.locks === "object" && Object.values(h.locks).every((l) => !!l && typeof l.at === "number" && Number.isSafeInteger(l.at)));
+    return accounts && isSeen(h.seen) && locks;
+  }
+
+  private read(): Held | null | undefined {
+    const got = readStored(this.storage, this.key, TrustStore.ok);
+    if (got === undefined || (got === null && this.expected())) this.kept = false;
+    if (got) got.locks ??= {};
+    return got;
+  }
+
+  private load(): Held {
+    if (!this.data) this.data = this.read() ?? { accounts: {}, seen: { round: 0, at: {} }, locks: {} };
+    return this.data;
+  }
+
+  /** Merge in what's stored now (another tab's): more removals, earlier
+   * stamps, a later round, newer locks. */
+  private merge() {
+    const d = this.load();
+    const theirs = this.read();
+    if (!theirs) return;
+    for (const [k, a] of Object.entries(theirs.accounts)) {
+      const mine = d.accounts[k];
+      if (!mine) d.accounts[k] = a;
+      else mine.revocations = kept(mine.revocations, a.revocations, sameRev);
     }
-    return this.data!;
+    for (const [sig, r] of Object.entries(theirs.seen.at)) d.seen.at[sig] = Math.min(d.seen.at[sig] ?? r, r);
+    d.seen.round = Math.max(d.seen.round, theirs.seen.round);
+    for (const [t, l] of Object.entries(theirs.locks)) if (!d.locks[t] || l.at > d.locks[t].at) d.locks[t] = l;
+  }
+
+  /** Start a fresh look: what's new in it is stamped with the next round. */
+  begin() {
+    this.merge();
+    this.round = nextRound(this.load().seen);
   }
 
   /** `trust`'s account as control sends it now (`fresh`), over what's held. */
-  async take(trust: { account: string; root: string }, fresh: { certs: Cert[]; revocations: Revocation[] }, now = Date.now()) {
+  async take(trust: { account: string; root: string }, fresh: { certs: Cert[]; revocations: Revocation[] }) {
     const d = this.load();
     const k = `${trust.account}.${trust.root}`;
-    const got = await refreshAccount(trust, fresh, d.accounts[k] ?? { certs: [], revocations: [] }, d.seen, now);
+    const got = await refreshAccount(trust, fresh, d.accounts[k] ?? { certs: [], revocations: [] }, d.seen, this.round);
     d.accounts[k] = { certs: got.certs, revocations: got.revocations };
     return got;
   }
 
-  /** Write it back, forgetting stamps of what's no longer held. */
-  save() {
+  /** Whether this page saw `device`'s removal, for `account` from `root`,
+   * before the look under way. */
+  removedBefore(account: string, root: string, device: string): boolean {
     const d = this.load();
+    const revs = d.accounts[`${account}.${root}`]?.revocations ?? [];
+    return revs.some((r) => r.device === device && Object.hasOwn(d.seen.at, r.sig) && d.seen.at[r.sig] < this.round);
+  }
+
+  /** The lock this page holds for `team`. */
+  lock(team: string): TeamLock | undefined {
+    return this.load().locks[team];
+  }
+
+  /** Hold `l` for `team` if it's newer than the one held. */
+  holdLock(team: string, l: TeamLock) {
+    const d = this.load();
+    if (!d.locks[team] || l.at > d.locks[team].at) d.locks[team] = l;
+  }
+
+  /** Write it back, merged with what another tab wrote, forgetting stamps
+   * of what's no longer held. */
+  save() {
+    this.merge();
+    const d = this.load();
+    settle(d.seen, this.round);
     const held = new Set<string>();
     for (const a of Object.values(d.accounts)) for (const x of [...a.certs, ...a.revocations]) held.add(x.sig);
-    for (const s of Object.keys(d.seen)) if (!held.has(s)) delete d.seen[s];
+    for (const sig of Object.keys(d.seen.at)) if (!held.has(sig)) delete d.seen.at[sig];
     try {
       this.storage().setItem(this.key, JSON.stringify(d));
     } catch {
       this.kept = false;
     }
   }
+}
+
+/** How far ahead of this browser's clock a team's signed lock may be dated
+ * (control refuses more, by its own). */
+export const LOCK_SKEW_MS = 10 * 60 * 1000;
+
+/** The lock this page holds for `team` after control sends `got`: held if
+ * an owner in `roster` (the roster checked) signed it for this team, it
+ * isn't dated far ahead of `now`, and it's newer than the one held
+ * (`checkpoint::take_lock`). */
+export async function takeLock(store: TrustStore, team: string, got: TeamLock | null | undefined, roster: Roster, certs: AccountCerts, now = Date.now()): Promise<TeamLock | undefined> {
+  if (got && got.team === team && Number.isSafeInteger(got.at) && got.at <= now + LOCK_SKEW_MS && (await lockSignedIn(got, roster, certs))) store.holdLock(team, got);
+  return store.lock(team);
 }

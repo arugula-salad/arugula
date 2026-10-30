@@ -973,6 +973,15 @@ async fn a_teams_lock_is_signed_by_an_owner() {
     assert_eq!(send(Some(lock(false, 20, &owner_root)), false).await.0, 200);
     let (_, teams) = c.as_person(&cookie, "GET", "/api/teams", None).await;
     assert_eq!(teams["teams"][0]["locked"], false);
+    // One dated far ahead (it would stop every later one) is refused.
+    let ahead = lock(true, now_ms() + 86_400_000, &owner_root);
+    assert_eq!(send(Some(ahead), true).await.0, 400, "dated in the future");
+    // The store takes a lock only if it's newer than the one it holds,
+    // checked as it writes: an older one landing after a newer is refused.
+    let at = |at: u64| serde_json::to_string(&lock(true, at, &owner_root)).unwrap();
+    assert!(c.app.db.set_lock(team, true, &at(30), 30).unwrap());
+    assert!(!c.app.db.set_lock(team, false, &at(25), 25).unwrap(), "an older lock after a newer");
+    assert!(c.app.db.team(team).unwrap().unwrap().locked);
 }
 
 /// A member's page gets the versions after the one it holds, with their

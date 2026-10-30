@@ -8,9 +8,29 @@ import { evaluate, type Cert, type Revocation } from "./cert.ts";
 
 type Trust = { account: string; root: string };
 
-/** When this browser first saw each certificate and removal (ms), by its
- * signature (`checkpoint::Seen`). */
-export type Seen = Record<string, number>;
+/** In which round of looking this browser first saw each certificate and
+ * removal, by its signature (`checkpoint::Seen`): rounds are counted, not
+ * read off a clock. Round 0 is what was held before stamps were kept. */
+export interface Seen {
+  round: number;
+  at: Record<string, number>;
+}
+
+/** The round a fresh look stamps what's new with (`Seen::next`). */
+export const nextRound = (s: Seen) => s.round + 1;
+
+/** After a look in `round`: count it if it stamped anything. */
+export function settle(s: Seen, round: number) {
+  if (Object.values(s.at).some((r) => r === round)) s.round = Math.max(s.round, round);
+}
+
+/** Whether `v` is a well-formed `Seen`: whole, non-negative rounds. */
+export function isSeen(v: unknown): v is Seen {
+  const ok = (n: unknown) => typeof n === "number" && Number.isSafeInteger(n) && n >= 0;
+  if (!v || typeof v !== "object") return false;
+  const s = v as Seen;
+  return ok(s.round) && !!s.at && typeof s.at === "object" && !Array.isArray(s.at) && Object.values(s.at).every(ok);
+}
 
 /** `fresh`, and every one of `old` it leaves out. */
 export function kept<T>(fresh: T[], old: T[], same: (a: T, b: T) => boolean): T[] {
@@ -22,9 +42,9 @@ export function kept<T>(fresh: T[], old: T[], same: (a: T, b: T) => boolean): T[
 const sameRevocation = (a: Revocation, b: Revocation) =>
   a.v === b.v && a.account === b.account && a.device === b.device && a.at === b.at && a.by === b.by && a.sig === b.sig;
 
-/** Stamp each of `certs` and `revocations` not stamped yet with `now`. */
-export function stamp(seen: Seen, certs: Cert[], revocations: Revocation[], now: number) {
-  for (const sig of [...certs.map((c) => c.sig), ...revocations.map((r) => r.sig)]) if (!(sig in seen)) seen[sig] = now;
+/** Stamp each of `certs` and `revocations` not stamped yet with `round`. */
+export function stamp(seen: Seen, certs: Cert[], revocations: Revocation[], round: number) {
+  for (const sig of [...certs.map((c) => c.sig), ...revocations.map((r) => r.sig)]) if (!Object.hasOwn(seen.at, sig)) seen.at[sig] = round;
 }
 
 /** The devices held removed (`checkpoint::removed`). */
@@ -43,9 +63,11 @@ export async function removed(trust: Trust, certs: Cert[], revocations: Revocati
 export async function dropLate(trust: Trust, certs: Cert[], revocations: Revocation[], seen: Seen): Promise<Cert[]> {
   const gone = await removed(trust, certs, revocations);
   if (!gone.size) return certs;
-  const at = (sig: string) => seen[sig] ?? Number.MAX_SAFE_INTEGER;
+  // A removal never stamped counts as seen first; a certificate never
+  // stamped, as seen last: a missing stamp never lets one in.
+  const at = (sig: string) => (Object.hasOwn(seen.at, sig) ? seen.at[sig] : Number.MAX_SAFE_INTEGER);
   const removedAt = (device: string) => {
-    const ts = revocations.filter((r) => r.account === trust.account && r.device === device).map((r) => at(r.sig));
+    const ts = revocations.filter((r) => r.account === trust.account && r.device === device).map((r) => (Object.hasOwn(seen.at, r.sig) ? seen.at[r.sig] : 0));
     return ts.length ? Math.min(...ts) : null;
   };
   return certs.filter((c) => {
@@ -62,11 +84,11 @@ export async function refreshAccount(
   fresh: { certs: Cert[]; revocations: Revocation[] },
   old: { certs: Cert[]; revocations: Revocation[] },
   seen: Seen,
-  now: number,
+  round: number,
 ): Promise<{ certs: Cert[]; revocations: Revocation[]; refused: boolean }> {
+  stamp(seen, old.certs, old.revocations, 0);
   const revocations = kept(fresh.revocations, old.revocations, sameRevocation);
-  stamp(seen, old.certs, revocations, now);
-  stamp(seen, fresh.certs, [], now);
+  stamp(seen, fresh.certs, revocations, round);
   const certs = await dropLate(trust, fresh.certs, revocations, seen);
   const gone = await removed(trust, old.certs, old.revocations);
   if (!gone.size) return { certs, revocations, refused: false };

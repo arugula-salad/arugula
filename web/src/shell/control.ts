@@ -44,6 +44,7 @@ import {
   redeemInvite,
   askBody,
   askOk,
+  ownersAsHeld,
   signAskInvite,
   signInvite,
   signLock,
@@ -58,7 +59,7 @@ import {
   type TeamPin,
   type TeamRole,
 } from "./e2e/team.ts";
-import { checkRoster, RosterStore, TrustStore, type RootChange, type RosterProblem } from "./team-rosters.ts";
+import { checkRoster, RosterStore, takeLock, TrustStore, type RootChange, type RosterProblem } from "./team-rosters.ts";
 
 export interface ControlInfo {
   control: true;
@@ -1547,6 +1548,7 @@ export class ControlSession {
       this.rootMismatch = !!devs.trust && devs.trust.root !== e.root;
       // As this page last held them: removals only add up, and a
       // certificate first seen after its approver's removal doesn't count.
+      this.held.begin();
       const own = await this.held.take({ account: e.account, root: e.root }, devs);
       devs.certs = own.certs;
       devs.revocations = own.revocations;
@@ -1582,7 +1584,8 @@ export class ControlSession {
         let cert = this.trusted.get(d.id);
         // Someone else's machine: by their account's certificates, from
         // the root this browser pinned for them on first sight.
-        if (!cert && d.account && chain?.trust && pin(d.account, chain.trust.root)) {
+        // Not when this browser can't keep what it checked of them.
+        if (!cert && d.account && chain?.trust && this.held.kept && pin(d.account, chain.trust.root)) {
           const theirs = await this.held.take(chain.trust, chain);
           cert = (await evaluate(chain.trust, theirs.certs, theirs.revocations)).get(d.id);
         }
@@ -1659,9 +1662,9 @@ export class ControlSession {
   teamsLoaded = false;
 
   /** The last roster this page checked for each team (`RosterStore`). */
-  private rosters = new RosterStore(() => localStorage, ROSTERS_KEY);
+  private rosters = new RosterStore(() => localStorage, ROSTERS_KEY, () => !!this.enrollment?.held);
   /** Each account's certificates and removals as last held (`TrustStore`). */
-  private held = new TrustStore(() => localStorage, HELD_CERTS_KEY);
+  private held = new TrustStore(() => localStorage, HELD_CERTS_KEY, () => !!this.enrollment?.held);
 
   async loadTeams() {
     let loaded = true;
@@ -1677,24 +1680,44 @@ export class ControlSession {
     const held = this.rosters.held();
     const kept = rootChangesKept();
     const lateKept = rosterLateKept();
+    this.held.begin();
+    // An account's certificates as this page holds them, from `root`.
+    const take = async (account: string, root: string, [certs, revocations]: [Cert[], Revocation[]]): Promise<[Cert[], Revocation[]]> => {
+      const got = await this.held.take({ account, root }, { certs, revocations });
+      return [got.certs, got.revocations];
+    };
     for (const t of r.teams) {
-      // Members' certificates as this page last held them, each from the
-      // root the roster names for them.
-      for (const [a, [certs, revocations]] of Object.entries(t.certs)) {
-        const m = t.roster.members.find((x) => x.account === a);
-        if (!m) continue;
-        const got = await this.held.take({ account: a, root: m.root }, { certs, revocations });
-        t.certs[a] = [got.certs, got.revocations];
-      }
       // The founder pinned on first sight. The team's daemons check each
       // roster version against it; this browser checks the ones it signs.
       const ok = pin(`team:${t.team}`, `${t.pin.founder}.${t.pin.founder_root}`);
       // And each version from the last this browser checked: an owner's
       // change is signed on top of the one shown, so that one must be a
       // version owners wrote, not just what control says is latest.
-      const c = await checkRoster(held[t.team] ?? null, t.roster, t.pin, t.certs, (since) =>
-        api<{ rosters: Roster[]; certs: AccountCerts }>(`/api/teams/${encodeURIComponent(t.team)}/rosters?since=${since}`),
+      // Each step is checked with the certificates this page holds for
+      // that version's owners, from the roots it names (history's too);
+      // a version a device removed since had signed stands only if this
+      // page hadn't seen that removal before.
+      const c = await checkRoster(
+        held[t.team] ?? null,
+        t.roster,
+        t.pin,
+        t.certs,
+        (since) => api<{ rosters: Roster[]; certs: AccountCerts }>(`/api/teams/${encodeURIComponent(t.team)}/rosters?since=${since}`),
+        {
+          vet: (prev, certs) => ownersAsHeld(prev, t.pin, certs, take),
+          lateOk: (account, root, device) => !this.held.removedBefore(account, root, device),
+        },
       );
+      // Members' certificates as this page holds them, from the roots the
+      // roster it checked names.
+      for (const m of c.roster.members) if (t.certs[m.account]) t.certs[m.account] = await take(m.account, m.root, t.certs[m.account]);
+      for (const a of Object.keys(t.certs)) if (!c.roster.members.some((m) => m.account === a)) delete t.certs[a];
+      // The team's lock as an owner signed it: only from an owner in the
+      // roster checked, for this team, not dated far ahead, and newer than
+      // the one held. Without one, control's plain word (from before).
+      const lock = ok && !c.problem ? await takeLock(this.held, t.team, t.lock, c.roster, t.certs) : this.held.lock(t.team);
+      t.lock = lock ?? null;
+      if (lock) t.locked = lock.locked;
       if (ok && c.keep && c.keep.version > (held[t.team]?.version ?? 0)) held[t.team] = c.keep;
       if (ok && c.changes.length) kept[t.team] = [...(kept[t.team] ?? []), ...c.changes];
       if (ok && c.late.length) lateKept[t.team] = [...new Set([...(lateKept[t.team] ?? []), ...c.late])].sort((a, b) => a - b);
@@ -1717,6 +1740,11 @@ export class ControlSession {
     }
     this.rosters.save();
     this.held.save();
+    // From now on, storage found empty was cleared, not never kept.
+    if (this.enrollment && !this.enrollment.held && this.rosters.kept && this.held.kept) {
+      this.enrollment = { ...this.enrollment, held: true };
+      await saveEnrollment(this.enrollment).catch(() => {});
+    }
     writeKey(ROOT_CHANGES_KEY, kept);
     writeKey(ROSTER_LATE_KEY, lateKept);
     // Checked, but not kept: no change is signed on what this browser
@@ -2049,7 +2077,8 @@ export class ControlSession {
     const t = this.teams.find((x) => x.team === team);
     if (!t) throw new Error("no such team");
     if (!locked && t.rosterProblem) throw new Error("control's list of this team's members doesn't check out here; unlocking waits until it does");
-    const lock = await signLock({ team, locked, version: t.roster.version, at: Math.max(Date.now(), (t.lock?.at ?? 0) + 1) }, this.keys);
+    // After the lock this page checked and holds (never dated far ahead).
+    const lock = await signLock({ team, locked, version: t.roster.version, at: Math.max(Date.now(), (this.held.lock(team)?.at ?? 0) + 1) }, this.keys);
     await api(`/api/teams/${team}/lock`, { locked, lock });
     await this.refresh();
   }
