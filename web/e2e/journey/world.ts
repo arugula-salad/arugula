@@ -114,8 +114,11 @@ export class World {
    * their own browser, with nothing of Arugula's yet. */
   async person(browser: Browser, login: string): Promise<Person> {
     const home = this.temp(login);
+    // A person's browser: none of the specs' shared page key (their daemon
+    // makes its own token); its sign-in link gives the page its key.
     const ctx = await browser.newContext({
       viewport: { width: 1100, height: 720 },
+      extraHTTPHeaders: {},
     });
     await ctx.addInitScript(asPerson);
     skipControlGreeting(ctx, () => this.control);

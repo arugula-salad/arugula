@@ -55,8 +55,11 @@ export class App {
 
   /** The app's webview: storage of its own that outlives a restart. */
   static async install(person: Person, browser: import("@playwright/test").Browser): Promise<App> {
+    // As the person's browser: no shared test key; the sign-in link's page
+    // gives the window its daemon's key, as the real app's does.
     const ctx = await browser.newContext({
       viewport: { width: 1200, height: 760 },
+      extraHTTPHeaders: {},
     });
     const app = new App(person, ctx);
     await app.read();

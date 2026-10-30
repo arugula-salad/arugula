@@ -213,8 +213,8 @@ fn bearer() -> Option<String> {
     local_token().map(|t| format!("Bearer {t}"))
 }
 
-/// `path` on the daemon's page, through its sign-in link (which sets the
-/// browser's cookie and goes on to `path`).
+/// `path` on the daemon's page, through its sign-in link (whose page gives
+/// the window's storage the daemon's page key and goes on to `path`).
 fn page_at(path: &str) -> tauri::Url {
     let url = match local_token() {
         Some(t) => {
