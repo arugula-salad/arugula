@@ -25,6 +25,7 @@ base64 = { workspace = true }
 ciborium = "0.2.2"
 clap = { workspace = true, features = ["derive", "env"] }
 ed25519-dalek = { workspace = true }
+flate2 = "1.1.10"
 futures-util = { workspace = true }
 hex = { workspace = true }
 hmac = { workspace = true }
@@ -45,6 +46,7 @@ russh = { workspace = true, features = ["aws-lc-rs"] }
 rust-embed = { workspace = true, features = ["mime-guess"] }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
+sha1 = "0.11.0"
 sha2 = { workspace = true }
 tokio = { workspace = true, features = ["full"] }
 # routes.toml, which the gateway forwards the platform's routes from.

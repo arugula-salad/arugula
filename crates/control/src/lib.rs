@@ -52,6 +52,7 @@ mod forge_wire;
 mod gateway;
 #[cfg(test)]
 mod gateway_wire;
+mod git_serve;
 mod github_link;
 #[cfg(test)]
 mod grants_wire;
@@ -637,6 +638,12 @@ fn routes() -> Routes {
             wire::telemetry::PAGE,
             post(telemetry::page).layer(axum::extract::DefaultBodyLimit::max(telemetry::MAX_PAGE_BODY)),
         )
+        // An integration's folder as a git repository (#1748), for plugin managers.
+        .route("/git/{folder}/info/refs", get(git_serve::info_refs))
+        .route(
+            "/git/{folder}/git-upload-pack",
+            post(git_serve::upload_pack).layer(axum::extract::DefaultBodyLimit::max(git_serve::MAX_BODY)),
+        )
         .route("/api/directory", get(api::directory))
         .route("/api/shares/{daemon}", post(teams::answer_share))
         .route("/api/people", get(teams::person))
@@ -758,7 +765,7 @@ async fn moved(
     use axum::response::IntoResponse;
     let path = req.uri().path();
     let page = matches!(*req.method(), axum::http::Method::GET | axum::http::Method::HEAD)
-        && !["/api/", "/auth/", "/github/", "/.well-known/"].iter().any(|p| path.starts_with(p))
+        && !["/api/", "/auth/", "/github/", "/.well-known/", "/git/"].iter().any(|p| path.starts_with(p))
         && path != "/control.json"
         && !req.headers().contains_key(axum::http::header::UPGRADE);
     if app.cfg.also_redirect && page && app.cfg.site(req.headers()) != &app.cfg.sites[0] {

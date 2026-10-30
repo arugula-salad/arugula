@@ -36,6 +36,11 @@ jobs:
       SCCACHE_WEBDAV_PASSWORD: ${{ secrets.SCCACHE_WEBDAV_PASSWORD }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Every release tag and its tree: control's build.rs serves
+          # editors/nvim as a git repository with one commit for each
+          # release that changed it (#1748), and fails here without them.
+          fetch-depth: 0
       - uses: ./.github/actions/setup
         with:
           # Not check.yml's static: that builds at opt-level 1 (#868).
@@ -76,6 +81,9 @@ jobs:
       SCCACHE_WEBDAV_PASSWORD: ${{ secrets.SCCACHE_WEBDAV_PASSWORD }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          # just static builds control here too: as the linux job's (#1748).
+          fetch-depth: 0
       - uses: ./.github/actions/setup
         with:
           cache-key: release-static-aarch64

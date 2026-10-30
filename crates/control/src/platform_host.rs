@@ -150,7 +150,7 @@ pub fn platform_route(method: &Method, path: &str) -> bool {
 /// the page: answered 404 on the platform's host.
 fn not_here(path: &str) -> bool {
     let first = path.trim_start_matches('/').split('/').next().unwrap_or("");
-    matches!(first, "api" | "auth" | "github" | ".well-known" | "d" | "internal" | "signin" | "oauth")
+    matches!(first, "api" | "auth" | "github" | ".well-known" | "d" | "internal" | "signin" | "oauth" | "git")
         || matches!(path, "/control.json" | "/platform.json")
 }
 
