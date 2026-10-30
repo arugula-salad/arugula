@@ -61,8 +61,6 @@ export async function removed(trust: Trust, certs: Cert[], revocations: Revocati
 /** `certs` without those first seen after their approver's removal was
  * first seen (`checkpoint::drop_late`). */
 export async function dropLate(trust: Trust, certs: Cert[], revocations: Revocation[], seen: Seen): Promise<Cert[]> {
-  const gone = await removed(trust, certs, revocations);
-  if (!gone.size) return certs;
   // A removal never stamped counts as seen first; a certificate never
   // stamped, as seen last: a missing stamp never lets one in.
   const at = (sig: string) => (Object.hasOwn(seen.at, sig) ? seen.at[sig] : Number.MAX_SAFE_INTEGER);
@@ -70,11 +68,16 @@ export async function dropLate(trust: Trust, certs: Cert[], revocations: Revocat
     const ts = revocations.filter((r) => r.account === trust.account && r.device === device).map((r) => (Object.hasOwn(seen.at, r.sig) ? seen.at[r.sig] : 0));
     return ts.length ? Math.min(...ts) : null;
   };
-  return certs.filter((c) => {
-    if (c.account !== trust.account || !gone.has(c.approver)) return true;
+  const late = (c: Cert) => {
+    if (c.account !== trust.account) return false;
     const t = removedAt(c.approver);
-    return !(t !== null && at(c.sig) > t);
-  });
+    return t !== null && at(c.sig) > t;
+  };
+  // Only a certificate first seen after a removal naming its approver can
+  // go: none, and the chain needn't be walked at all.
+  if (!certs.some(late)) return certs;
+  const gone = await removed(trust, certs, revocations);
+  return certs.filter((c) => !(gone.has(c.approver) && late(c)));
 }
 
 /** An account's certificates and removals after a fresh look, over what
@@ -89,10 +92,19 @@ export async function refreshAccount(
   stamp(seen, old.certs, old.revocations, 0);
   const revocations = kept(fresh.revocations, old.revocations, sameRevocation);
   stamp(seen, fresh.certs, revocations, round);
+  // Nothing new: the same certificates, and no removal not held. What's
+  // held stands, as it was checked.
+  const sigs = new Set(old.certs.map((c) => c.sig));
+  if (revocations.length === old.revocations.length && fresh.certs.length === old.certs.length && fresh.certs.every((c) => sigs.has(c.sig)))
+    return { certs: old.certs, revocations, refused: false };
   const certs = await dropLate(trust, fresh.certs, revocations, seen);
-  const gone = await removed(trust, old.certs, old.revocations);
-  if (!gone.size) return { certs, revocations, refused: false };
+  // Only a device a held removal names can be one `old` held removed: if
+  // none of them counts now, nothing came back.
+  const named = new Set(old.revocations.filter((r) => r.account === trust.account).map((r) => r.device));
+  if (!named.size) return { certs, revocations, refused: false };
   const after = await evaluate(trust, certs, revocations);
+  if (![...named].some((id) => after.has(id))) return { certs, revocations, refused: false };
+  const gone = await removed(trust, old.certs, old.revocations);
   if ([...gone].some((id) => after.has(id))) return { certs: await dropLate(trust, old.certs, revocations, seen), revocations, refused: true };
   return { certs, revocations, refused: false };
 }

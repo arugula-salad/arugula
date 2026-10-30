@@ -77,11 +77,7 @@ pub fn stamp(seen: &mut Seen, certs: &[Cert], revocations: &[Revocation], round:
 /// seen first, and a certificate never stamped as seen last: a missing
 /// stamp never lets one in.
 pub fn drop_late(trust: &Trust, certs: Vec<Cert>, revocations: &[Revocation], seen: &Seen) -> Vec<Cert> {
-    let gone = removed(trust, &certs, revocations);
-    if gone.is_empty() {
-        return certs;
-    }
-    let cert_at = |sig: &str| seen.get(sig).unwrap_or(u64::MAX);
+    let at = |sig: &str| seen.get(sig).unwrap_or(u64::MAX);
     let removed_at = |device: &str| {
         revocations
             .iter()
@@ -89,15 +85,14 @@ pub fn drop_late(trust: &Trust, certs: Vec<Cert>, revocations: &[Revocation], se
             .map(|r| seen.get(&r.sig).unwrap_or(0))
             .min()
     };
-    let at = cert_at;
-    certs
-        .into_iter()
-        .filter(|c| {
-            !(c.account == trust.account
-                && gone.contains(&c.approver)
-                && removed_at(&c.approver).is_some_and(|t| at(&c.sig) > t))
-        })
-        .collect()
+    let late = |c: &Cert| c.account == trust.account && removed_at(&c.approver).is_some_and(|t| at(&c.sig) > t);
+    // Only a certificate first seen after a removal naming its approver
+    // can go: none, and the chain needn't be walked at all.
+    if !certs.iter().any(late) {
+        return certs;
+    }
+    let gone = removed(trust, &certs, revocations);
+    certs.into_iter().filter(|c| !(gone.contains(&c.approver) && late(c))).collect()
 }
 
 /// `new`, and every one of `old` it leaves out: what was held is added
@@ -157,12 +152,27 @@ pub fn refresh_account(
     stamp(seen, old.0, old.1, 0);
     let revocations = kept(new.1, old.1);
     stamp(seen, &new.0, &revocations, round);
+    // Nothing new: the same certificates, and no removal not held. What's
+    // held stands, as it was checked.
+    let held: HashSet<&str> = old.0.iter().map(|c| c.sig.as_str()).collect();
+    if revocations.len() == old.1.len()
+        && new.0.len() == old.0.len()
+        && new.0.iter().all(|c| held.contains(c.sig.as_str()))
+    {
+        return (old.0.to_vec(), revocations, false);
+    }
     let certs = drop_late(trust, new.0, &revocations, seen);
-    let gone = removed(trust, old.0, old.1);
-    if gone.is_empty() {
+    // Only a device a held removal names can be one `old` held removed:
+    // if none of them counts now, nothing came back.
+    let named: HashSet<&str> = old.1.iter().filter(|r| r.account == trust.account).map(|r| r.device.as_str()).collect();
+    if named.is_empty() {
         return (certs, revocations, false);
     }
     let after = trust.evaluate(&certs, &revocations);
+    if !named.iter().any(|id| after.devices.contains_key(*id)) {
+        return (certs, revocations, false);
+    }
+    let gone = removed(trust, old.0, old.1);
     if gone.iter().any(|id| after.devices.contains_key(id)) {
         return (drop_late(trust, old.0.to_vec(), &revocations, seen), revocations, true);
     }
