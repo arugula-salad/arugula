@@ -3,16 +3,16 @@
   "commit": "aac3ab9c64a861d02a1b50e71730a3ade435bf7c",
   "branch": "main",
   "state": "pending",
-  "at": "2026-10-30T18:49:53Z",
+  "at": "2026-10-30T19:03:34Z",
   "phases": {
     "lint": {
-      "verdict": "pending",
+      "verdict": "pass",
       "build": "newest",
       "runs": [
         {
           "name": "lint",
           "id": 124250196732,
-          "conclusion": null,
+          "conclusion": "success",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/41110159556/job/124250196732"
         },
         {
@@ -30,7 +30,7 @@
       ]
     },
     "build": {
-      "verdict": "pending",
+      "verdict": "pass",
       "build": "newest",
       "runs": [
         {
@@ -42,13 +42,13 @@
         {
           "name": "static",
           "id": 124250295751,
-          "conclusion": null,
+          "conclusion": "success",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/41110159556/job/124250295751"
         },
         {
           "name": "clippy",
           "id": 124250295762,
-          "conclusion": null,
+          "conclusion": "success",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/41110159556/job/124250295762"
         }
       ]
@@ -96,7 +96,7 @@
       ]
     },
     "claims": {
-      "verdict": "pending",
+      "verdict": "pass",
       "build": "newest",
       "runs": [
         {
@@ -106,9 +106,15 @@
           "url": "https://github.com/arugula-salad/arugula/actions/runs/41110159556/job/124250298706"
         },
         {
+          "name": "stack",
+          "id": 124253339952,
+          "conclusion": "skipped",
+          "url": "https://github.com/arugula-salad/arugula/actions/runs/41110159556/job/124253339952"
+        },
+        {
           "name": "desktop-xvfb",
           "id": 124250295961,
-          "conclusion": null,
+          "conclusion": "success",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/41110159556/job/124250295961"
         }
       ]
