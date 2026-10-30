@@ -111,6 +111,10 @@ pub enum Finish {
     Cursor(String),
 }
 
+/// How often a backfilled connection is read again for what no webhook
+/// told: the lease a finished turn leaves is this far ahead.
+pub const RECONCILE_MS: u64 = 300_000;
+
 /// What a claim's `SELECT` ends with: on Postgres it passes over a row
 /// another machine's claim holds.
 fn skip_locked(c: &impl Sql) -> &'static str {
@@ -306,9 +310,9 @@ impl Db {
         let n = match how {
             Finish::Done => c.execute(
                 "UPDATE tracker_connections SET backfilled_at = ?1, poll_cursor = NULL, poll_failures = 0,
-                     lease = NULL, lease_until = ?1
-                 WHERE id = ?2 AND lease = ?3",
-                params![now, job.id, job.lease],
+                     lease = NULL, lease_until = ?2
+                 WHERE id = ?3 AND lease = ?4",
+                params![now, now + RECONCILE_MS, job.id, job.lease],
             )?,
             Finish::Cursor(cursor) => c.execute(
                 "UPDATE tracker_connections SET poll_cursor = ?1, poll_failures = 0, lease = NULL, lease_until = ?2
@@ -330,6 +334,90 @@ impl Db {
             params![now + wait, job.id, job.lease],
         )?;
         Ok(wait)
+    }
+
+    /// Claim a live, backfilled connection whose reconcile is due: the
+    /// backfill's lease, its `lease_until` the time of the next one.
+    pub fn claim_reconcile(&self, now: u64) -> Result<Option<Backfill>> {
+        let mut c = self.c();
+        let tx = c.immediate()?;
+        let found = tx
+            .query_row(
+                &format!(
+                    "SELECT id, project_id, workspace_slug, source_project_id, mirror_id, poll_failures
+                     FROM tracker_connections
+                     WHERE unlinked_at IS NULL AND lease_until <= ?1 AND backfilled_at IS NOT NULL
+                     ORDER BY lease_until, id LIMIT 1{}",
+                    skip_locked(&tx)
+                ),
+                params![now],
+                |r| {
+                    Ok(Backfill {
+                        id: r.get(0)?,
+                        project_id: r.get(1)?,
+                        workspace_slug: r.get(2)?,
+                        source_project_id: r.get(3)?,
+                        mirror_id: r.get(4)?,
+                        cursor: None,
+                        failures: r.get(5)?,
+                        lease: String::new(),
+                    })
+                },
+            )
+            .optional()?;
+        let Some(mut job) = found else { return Ok(None) };
+        job.lease = hex::encode(arugula_e2e::random::<16>());
+        let n = tx.execute(
+            "UPDATE tracker_connections SET lease = ?1, lease_until = ?2
+             WHERE id = ?3 AND lease_until <= ?4 AND unlinked_at IS NULL",
+            params![job.lease, now + POLL_LEASE_MS, job.id, now],
+        )?;
+        if n != 1 {
+            return Ok(None);
+        }
+        tx.commit()?;
+        Ok(Some(job))
+    }
+
+    /// A reconcile is done and the claim goes; the next is [`RECONCILE_MS`]
+    /// away. False when the claim was lost.
+    pub fn finish_reconcile(&self, job: &Backfill, now: u64) -> Result<bool> {
+        let n = self.c().execute(
+            "UPDATE tracker_connections SET poll_failures = 0, lease = NULL, lease_until = ?1
+             WHERE id = ?2 AND lease = ?3",
+            params![now + RECONCILE_MS, job.id, job.lease],
+        )?;
+        Ok(n == 1)
+    }
+
+    /// The `fi_` id of a connection's row for the tracker's item.
+    pub fn tracker_item_id(&self, connection: &str, source_item: &str) -> Result<Option<String>> {
+        self.c()
+            .query_row(
+                "SELECT id FROM forge_items WHERE connection_id = ?1 AND source_item_id = ?2",
+                params![connection, source_item],
+                |r| r.get(0),
+            )
+            .optional()
+    }
+
+    /// The newest `updated_at` mirrored for a connection: where a reconcile
+    /// reads from.
+    pub fn tracker_newest(&self, mirror_id: i64) -> Result<Option<u64>> {
+        self.c()
+            .query_row("SELECT MAX(updated_at) FROM forge_items WHERE repo_id = ?1", params![mirror_id], |r| r.get(0))
+    }
+
+    /// A live connection by its id, for a webhook: the tracker's own call
+    /// names no project.
+    pub fn live_tracker_connection(&self, id: &str) -> Result<Option<Connection>> {
+        self.c()
+            .query_row(
+                &format!("SELECT {COLUMNS} FROM tracker_connections c WHERE c.id = ?1 AND c.unlinked_at IS NULL"),
+                params![id],
+                row,
+            )
+            .optional()
     }
 
     /// Purge one disconnected connection whose `purge_after` has passed and
@@ -377,10 +465,10 @@ pub(crate) fn erase_account(c: &impl Sql, account: &str, now: u64) -> Result<()>
 }
 
 /// Write a work item as `connection`'s row, keyed on the tracker's id for
-/// it: unless the row is newer. Whether a row was written.
-pub fn upsert_item(c: &impl Sql, connection: &str, mirror_id: i64, it: &Item, now: u64) -> Result<bool> {
+/// it: unless the row is newer. The row's `fi_` id when it was written.
+pub fn upsert_item(c: &impl Sql, connection: &str, mirror_id: i64, it: &Item, now: u64) -> Result<Option<String>> {
     let id = format!("fi_{}", hex::encode(arugula_e2e::random::<16>()));
-    let n = c.execute(
+    c.query_row(
         "INSERT INTO forge_items (id, repo_id, number, kind, state, title, created_at, updated_at, synced_at,
              provider, connection_id, source_item_id, item_type, state_name, state_group, parent_source_id)
          VALUES (?1, ?2, ?3, 'issue', ?4, ?5, ?6, ?7, ?8, 'plane', ?9, ?10, ?11, ?12, ?13, ?14)
@@ -388,7 +476,8 @@ pub fn upsert_item(c: &impl Sql, connection: &str, mirror_id: i64, it: &Item, no
              title = excluded.title, created_at = excluded.created_at, updated_at = excluded.updated_at,
              synced_at = excluded.synced_at, item_type = excluded.item_type, state_name = excluded.state_name,
              state_group = excluded.state_group, parent_source_id = excluded.parent_source_id
-         WHERE excluded.updated_at > forge_items.updated_at",
+         WHERE excluded.updated_at > forge_items.updated_at
+         RETURNING id",
         params![
             id,
             mirror_id,
@@ -405,8 +494,20 @@ pub fn upsert_item(c: &impl Sql, connection: &str, mirror_id: i64, it: &Item, no
             it.state_group,
             it.parent_id
         ],
-    )?;
-    Ok(n == 1)
+        |r| r.get(0),
+    )
+    .optional()
+}
+
+/// Remove a connection's row for the tracker's item `source_item`: its
+/// `fi_` id when there was one.
+pub fn delete_item(c: &impl Sql, connection: &str, source_item: &str) -> Result<Option<String>> {
+    c.query_row(
+        "DELETE FROM forge_items WHERE connection_id = ?1 AND source_item_id = ?2 RETURNING id",
+        params![connection, source_item],
+        |r| r.get(0),
+    )
+    .optional()
 }
 
 // ---- reads (#357)

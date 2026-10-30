@@ -797,6 +797,24 @@ impl Db {
         )
     }
 
+    /// The boards (id, project) with a row that points at one of these
+    /// `forge_items` ids: who to tell that a tracker's items changed.
+    pub fn boards_on_item_ids(&self, ids: &[String]) -> Result<Vec<(String, String)>> {
+        if ids.is_empty() {
+            return Ok(vec![]);
+        }
+        let c = self.c();
+        c.query_map(
+            &format!(
+                "SELECT DISTINCT b.id, b.project_id FROM board_entries e JOIN boards b ON b.id = e.board_id
+                 WHERE e.target_kind = 'forge_item' AND {}",
+                in_json(&c, "e.target", 1)
+            ),
+            params![json_list(ids)?],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+    }
+
     /// The native issues among `ids` in `project`, as (id, number, title,
     /// closed, assignees): one read for any number (a board's rows).
     pub fn issue_states(&self, project: &str, ids: &[&str]) -> Result<Vec<IssueState>> {

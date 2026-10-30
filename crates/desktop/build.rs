@@ -15,6 +15,9 @@ fn main() {
         "notices_start",
         "notices_stop",
         "notices_state",
+        // Control's page and the platform page, for a step that finishes in
+        // the person's browser (#364).
+        "open_outside",
     ])))
     .expect("tauri-build");
 }

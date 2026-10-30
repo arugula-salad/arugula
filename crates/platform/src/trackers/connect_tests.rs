@@ -28,13 +28,13 @@ use crate::{
     secrets::SecretCipher,
 };
 
-pub const KEY: &str = "plane-key-for-the-test"; // gitleaks:allow
-const WEBHOOK: &str = "plane-hook-for-the-test"; // gitleaks:allow
-const MASTER: &str = "0303030303030303030303030303030303030303030303030303030303030303"; // gitleaks:allow
+pub(super) const KEY: &str = "plane-key-for-the-test"; // gitleaks:allow
+pub(super) const WEBHOOK: &str = "plane-hook-for-the-test"; // gitleaks:allow
+pub(super) const MASTER: &str = "0303030303030303030303030303030303030303030303030303030303030303"; // gitleaks:allow
 
 /// The platform over `hub` with a fake Plane (workspace `acme`, project
 /// `ARUGU` with three items, one completed), and its address.
-pub async fn serve(hub: &Arc<TestHub>) -> (FakeTracker, Arc<Platform>, String) {
+pub(super) async fn serve(hub: &Arc<TestHub>) -> (FakeTracker, Arc<Platform>, String) {
     let project = ProjectInfo { id: "pl-proj-1".into(), identifier: "ARUGU".into(), name: "Arugula".into() };
     let items = vec![
         item(1, "First", "backlog", 3_000),
@@ -58,7 +58,7 @@ pub async fn serve(hub: &Arc<TestHub>) -> (FakeTracker, Arc<Platform>, String) {
     (fake, app, base)
 }
 
-fn count(app: &Platform, table: &str, filter: &str, p: &[&dyn Param]) -> u64 {
+pub(super) fn count(app: &Platform, table: &str, filter: &str, p: &[&dyn Param]) -> u64 {
     app.db.c().query_row(&format!("SELECT count(*) FROM {table} WHERE {filter}"), p, |r| r.get(0)).unwrap()
 }
 
@@ -66,13 +66,13 @@ fn secrets(app: &Platform) -> u64 {
     count(app, "project_secrets", "name LIKE 'tracker/plane/%'", params![])
 }
 
-pub async fn connect_as(base: &str, who: &str, project: &str, key: &str, what: &str) -> (u16, Value) {
+pub(super) async fn connect_as(base: &str, who: &str, project: &str, key: &str, what: &str) -> (u16, Value) {
     let body = json!({ "workspace_slug": "acme", "project": what, "api_key": key, "webhook_secret": WEBHOOK });
     call(base, who, "POST", &format!("/api/projects/{project}/trackers"), Some(body)).await
 }
 
 /// Until the backfill, which the connect started, has finished.
-pub async fn backfilled(app: &Platform, project: &str, id: &str) {
+pub(super) async fn backfilled(app: &Platform, project: &str, id: &str) {
     for _ in 0..200 {
         if app.db.tracker_connection(project, id).unwrap().is_some_and(|c| c.backfilled_at.is_some()) {
             return;
@@ -243,13 +243,16 @@ async fn the_backfill_takes_turns_and_stops_at_a_disconnect() {
     assert!(app.db.claim_backfill(101).unwrap().is_none(), "a lease holds it");
     // Written under the lease; not under another's.
     let items = [item(9, "Nine", "started", 5)];
-    assert_eq!(connect::ingest_page(&app, "tc_a", c.mirror_id, Some(&job.lease), &items, 100).unwrap(), Some(1));
+    assert_eq!(
+        connect::ingest_page(&app, "tc_a", c.mirror_id, Some(&job.lease), &items, 100).unwrap().map(|c| c.len()),
+        Some(1)
+    );
     assert_eq!(connect::ingest_page(&app, "tc_a", c.mirror_id, Some("not-the-lease"), &items, 100).unwrap(), None);
     // An older answer doesn't overwrite a newer row.
     let older = [item(9, "Nine, before", "started", 4)];
-    assert_eq!(connect::ingest_page(&app, "tc_a", c.mirror_id, None, &older, 101).unwrap(), Some(0));
+    assert_eq!(connect::ingest_page(&app, "tc_a", c.mirror_id, None, &older, 101).unwrap().map(|c| c.len()), Some(0));
     let newer = [item(9, "Nine, after", "completed", 6)];
-    assert_eq!(connect::ingest_page(&app, "tc_a", c.mirror_id, None, &newer, 102).unwrap(), Some(1));
+    assert_eq!(connect::ingest_page(&app, "tc_a", c.mirror_id, None, &newer, 102).unwrap().map(|c| c.len()), Some(1));
     assert_eq!(
         count(&app, "forge_items", "repo_id = ?1 AND state = 'closed' AND title = 'Nine, after'", params![c.mirror_id]),
         1

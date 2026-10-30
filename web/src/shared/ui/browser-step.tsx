@@ -6,7 +6,7 @@
 // same-tab redirect, so callers use this only when `desktopApp()`.
 
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
-import { desktopApp } from "../desktop";
+import { desktopApp, openOutside } from "../desktop";
 
 /** The label of a button that leaves for the browser: marked as such in the
  * desktop app only. */
@@ -116,7 +116,9 @@ export function BrowserStep({
             disabled={!href}
             {...browserButton(label)}
             onClick={() => {
-              window.open(href, "_blank", "noopener");
+              // The app opens it in the browser itself (#364): its
+              // `window.open` keeps control's own pages in an app window.
+              openOutside(href) || window.open(href, "_blank", "noopener");
               setOpened(true);
             }}
           />

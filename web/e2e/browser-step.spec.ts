@@ -6,6 +6,8 @@
 // Faked: GitHub's answer (the repo link's 409 `install_app`, then linked),
 // Stripe's checkout and `/api/billing`; `window.open` is recorded, not
 // followed (the app's own hand-off to the browser is crates/desktop's).
+// With the app's `open_outside` command (#364; faked here, the xvfb
+// platform test runs the real one) the page asks the app and doesn't open.
 // In a plain browser the same buttons still redirect in the tab.
 
 import { expect, test, type Page } from "@playwright/test";
@@ -28,14 +30,17 @@ let project = "";
 
 /** Alice's page on the platform, in the desktop app or not; `window.open`
  * records what it was asked to open. */
-async function visit(browser: import("@playwright/test").Browser, path: string, desktop: boolean) {
+async function visit(browser: import("@playwright/test").Browser, path: string, desktop: boolean, commands = false) {
   const ctx = await browser.newContext();
   await ctx.addCookies(await alice.context().cookies());
-  await ctx.addInitScript((d) => {
+  await ctx.addInitScript(([d, c]) => {
     if (d) Object.assign(window, { __arugulaApp: { name: "Arugula app on test-mac", platform: "macos" } });
+    const asked: unknown[][] = [];
+    (window as unknown as { asked: unknown[][] }).asked = asked;
+    if (c) Object.assign(window, { __TAURI__: { core: { invoke: async (...a: unknown[]) => void asked.push(a) } } });
     (window as unknown as { opened: unknown[][] }).opened = [];
     window.open = ((...a: unknown[]) => ((window as unknown as { opened: unknown[][] }).opened.push(a), null)) as typeof window.open;
-  }, desktop);
+  }, [desktop, commands] as const);
   // The sites that are left for aren't there; the tab's redirect still shows.
   await ctx.route(/^https:\/\/(github|stripe)\.example\//, (r) => r.fulfill({ contentType: "text/html", body: "<title>elsewhere</title>" }));
   const p = await ctx.newPage();
@@ -45,6 +50,7 @@ async function visit(browser: import("@playwright/test").Browser, path: string, 
 }
 
 const opened = (p: Page) => p.evaluate(() => (window as unknown as { opened: unknown[][] }).opened);
+const asked = (p: Page) => p.evaluate(() => (window as unknown as { asked: unknown[][] }).asked);
 const focus = (p: Page) => p.evaluate(() => window.dispatchEvent(new Event("focus")));
 
 test("setup: Alice on the platform with a project", async ({ browser }) => {
@@ -165,6 +171,21 @@ test("the app: Upgrade opens checkout in the browser, and the new plan shows whe
   await focus(p);
   await expect(p.locator("[data-plan-now]")).toHaveText("You're on a paid plan.");
   await expect(p.locator("[data-browser-step]")).toHaveCount(0);
+  await p.context().close();
+});
+
+test("the app with open_outside: Upgrade asks the app, and the page opens nothing", async ({ browser }) => {
+  const p = await visit(browser, "/settings", true, true);
+  await fakeBilling(p, { plan: "personal", checkouts: 0 });
+  await p.reload();
+  await p.locator("[data-open-plan]").click();
+  await p.getByRole("button", { name: /^Add a payment method/ }).click();
+  const open = p.locator("[data-browser-step-open]");
+  await expect(open).toBeEnabled();
+  await open.click();
+  await expect(p.locator("[data-browser-step-waiting]")).toBeVisible();
+  expect(await asked(p)).toEqual([["open_outside", { url: CHECKOUT }]]);
+  expect(await opened(p)).toEqual([]);
   await p.context().close();
 });
 

@@ -124,7 +124,7 @@ async fn a_plane_item_is_on_a_board_and_closing_it_moves_the_progress() {
     // Closed in Plane (an ingest of a completed state).
     let mut done = item(2, "Second", "completed", 5_000);
     done.state_name = "Done".into();
-    assert_eq!(connect::ingest_page(&app, &conn, mirror, None, &[done], 6_000).unwrap(), Some(1));
+    assert_eq!(connect::ingest_page(&app, &conn, mirror, None, &[done], 6_000).unwrap().map(|ids| ids.len()), Some(1));
     let v = read(&base, "carol", &id).await;
     let live = &v["zones"][0]["rows"][0]["live"];
     assert_eq!(

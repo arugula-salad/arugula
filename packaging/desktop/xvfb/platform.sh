@@ -32,6 +32,10 @@
 #    link to another host.
 # 4. A control that says no platform: the same link from control's page
 #    goes to the browser.
+# 5. "Finish in your browser" (#364): the app's open_outside command, from
+#    the platform page and from control's page, puts control's #account in
+#    the browser, where a link would keep it in a window, and opens no
+#    window; a scheme but http and https is refused.
 set -euo pipefail
 app=$1
 daemon=$2
@@ -82,6 +86,17 @@ call() {
     || { echo "the page never said what $2() did"; return 1; }
   local line; line=$(tail -n +$((n + 1)) "$work/control.log" | grep -E "$want" | head -1)
   case "$line" in *what=call-ok*) return 0 ;; *) echo "${line##*err=}"; return 1 ;; esac
+}
+# `invoke ORIGIN URL`: the page at ORIGIN calls the app's open_outside with
+# URL: prints the error and fails when the app refused.
+invoke() {
+  local n; n=$(wc -l <"$work/control.log")
+  local want="^report ${1#*://} what=invoke-(ok|err) origin=$1 path=/ cmd=open_outside( |\$)"
+  tell "$1" invoke open_outside "$2"
+  wait_for 10 logged_since "$n" "$want" \
+    || { echo "the page never said what open_outside did"; return 1; }
+  local line; line=$(tail -n +$((n + 1)) "$work/control.log" | grep -E "$want" | head -1)
+  case "$line" in *what=invoke-ok*) return 0 ;; *) echo "${line##*err=}"; return 1 ;; esac
 }
 # `click_link ORIGIN[PATH] URL [WINDOW]`: the page at ORIGIN shows a
 # target=_blank link to URL, and the mouse clicks it in WINDOW (the first
@@ -213,6 +228,16 @@ tell "$control/third" call close
 wait_for 10 windows_are 1 || fail "close() on control's second window left $(windows | wc -l) windows"
 echo "ok: close() on them closed those windows"
 
+# 5a. The platform page asks for control's #account in the browser (#364).
+: >"$work/opened"
+err=$(invoke "$platform" "$control/#account") || fail "open_outside on the platform page: $err"
+wait_for 10 opened "$control/#account" || fail "open_outside said ok, but the browser got: $(cat "$work/opened")"
+windows_are 1 || fail "open_outside made $(windows | wc -l) windows"
+echo "ok: on the platform page open_outside put control's #account in the browser, with no new window (#364)"
+err=$(invoke "$platform" "file:///etc/passwd") && fail "open_outside took a file: link"
+! grep -q "^file:" "$work/opened" || fail "a file: link reached the system: $(cat "$work/opened")"
+echo "ok: and it refused a file: link ($err)"
+
 # 3. Lookalikes.
 for look in "http://127.0.0.3:$port/" "http://127.0.0.2:$other/" "https://127.0.0.2:$port/"; do
   tell "$platform" go "$look"
@@ -241,4 +266,13 @@ sleep 1
 tell "$control" ping
 wait_for 10 reported "$control" pong || fail "the window left control's page"
 echo "ok: with no platform in /control.json, the same link from control's page went to the browser"
+
+# 5b. Control's page asks for its own #account in the browser (#364).
+: >"$work/opened"
+err=$(invoke "$control" "$control/#account") || fail "open_outside on control's page: $err"
+wait_for 10 opened "$control/#account" || fail "open_outside said ok, but the browser got: $(cat "$work/opened")"
+windows_are 1 || fail "open_outside on control's page made $(windows | wc -l) windows"
+tell "$control" ping
+wait_for 10 reported "$control" pong || fail "the window left control's page"
+echo "ok: on control's page open_outside put its own #account in the browser, with no new window (#364)"
 ok=1

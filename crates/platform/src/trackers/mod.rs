@@ -32,6 +32,9 @@ pub mod connect_tests;
 #[cfg(any(test, feature = "testing"))]
 pub mod fake;
 pub mod plane;
+pub mod webhook;
+#[cfg(any(test, feature = "testing"))]
+pub mod webhook_tests;
 
 pub type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 
