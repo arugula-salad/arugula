@@ -8,7 +8,7 @@ import assert from "node:assert/strict";
 import { certBody, revocationBody } from "../src/shell/e2e/cert.ts";
 import { generateKeys, signText } from "../src/shell/e2e/keys.ts";
 import { signRoster } from "../src/shell/e2e/team.ts";
-import { checkRoster, RosterStore } from "../src/shell/team-rosters.ts";
+import { checkRoster, RosterStore, TrustStore } from "../src/shell/team-rosters.ts";
 
 const cert = async (k, account, by, name = account, created = 1) => {
   const c = { v: 1, account, device: k.id, kind: "browser", name, noise: k.noisePub, sign: k.signPub, created, approver: by.id, sig: "" };
@@ -109,4 +109,42 @@ test("the checked rosters are read once and kept in memory; storage that fails s
   assert.equal(full.kept, false);
   const off = new RosterStore(() => { throw new Error("no storage"); }, "k");
   assert.deepEqual([off.held(), off.kept], [{}, false]);
+});
+
+test("an account's removals add up across loads, and a removed device's late certificate doesn't count", async () => {
+  const { evaluate } = await import("../src/shell/e2e/cert.ts");
+  const box = { v: null };
+  const storage = { getItem: () => box.v, setItem: (_, v) => (box.v = v) };
+  const root = await generateKeys();
+  const laptop = await generateKeys();
+  const phone = await generateKeys();
+  const rc = await cert(root, "acct", root);
+  const lc = await cert(laptop, "acct", root, "laptop", 2);
+  const pc = await cert(phone, "acct", root, "phone", 3);
+  const r = { v: 1, account: "acct", device: lc.device, at: 100, by: root.id, sig: "" };
+  r.sig = await signText(root, revocationBody(r));
+  const trust = { account: "acct", root: root.id };
+  // Load 1: the laptop's removal.
+  const one = new TrustStore(() => storage, "k");
+  await one.take(trust, { certs: [rc, lc, pc], revocations: [r] }, 10);
+  one.save();
+  // Load 2 (a new page): control leaves the removal out, and sends a
+  // certificate the removed laptop signed, dated before its removal.
+  const stranger = await generateKeys();
+  const late = await cert(stranger, "acct", laptop, "stranger", 50);
+  const two = new TrustStore(() => storage, "k");
+  const got = await two.take(trust, { certs: [rc, lc, pc, late], revocations: [] }, 20);
+  const trusted = await evaluate(trust, got.certs, got.revocations);
+  assert.equal(trusted.has(lc.device), false, "a removal control left out counts no more");
+  assert.equal(trusted.has(late.device), false, "a removed device's late certificate counts");
+  assert.equal(trusted.has(pc.device), true);
+  assert.equal(two.kept, true);
+  // Storage that can't be read or written: not kept.
+  const off = new TrustStore(() => ({ getItem: () => "{", setItem: () => {} }), "k");
+  await off.take(trust, { certs: [rc], revocations: [] });
+  assert.equal(off.kept, false);
+  const full = new TrustStore(() => ({ getItem: () => null, setItem: () => { throw new Error("quota"); } }), "k");
+  await full.take(trust, { certs: [rc], revocations: [] });
+  full.save();
+  assert.equal(full.kept, false);
 });

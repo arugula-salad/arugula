@@ -62,6 +62,9 @@ pub fn saved_from(got: hosted::Enrollment, keys: &DeviceKeys, prev: Option<&Save
     // leaving one out mustn't let a removed device count again.
     let revocations =
         kept(revocations, prev.and_then(|p| p.hosted.as_ref()).map_or(&[][..], |h| h.revocations.as_slice()));
+    // When this box first saw each certificate and removal it holds.
+    let mut seen = prev.map(|p| p.seen.clone()).unwrap_or_default();
+    let now = arugula_e2e::now_ms();
     let (account, trust, own_certs, own_revocations, team, roster, team_certs, former_members) = match delegation
         .owner()
     {
@@ -77,7 +80,8 @@ pub fn saved_from(got: hosted::Enrollment, keys: &DeviceKeys, prev: Option<&Save
             let held_roster = prev.and_then(|p| p.roster.as_ref());
             let none = Default::default();
             let mut former = prev.map(|p| p.former_members.clone()).unwrap_or_default();
-            let mut certs = take_members(prev.map_or(&none, |p| &p.team_certs), held_roster, &former, certs);
+            let mut certs =
+                take_members(prev.map_or(&none, |p| &p.team_certs), held_roster, &former, certs, &mut seen, now);
             if let Some(p) = prev {
                 ensure!(p.team.as_ref() == Some(&pin), "control changed this machine's team");
                 if let Some(last) = &p.roster
@@ -108,8 +112,13 @@ pub fn saved_from(got: hosted::Enrollment, keys: &DeviceKeys, prev: Option<&Save
             }
             let (account_certs, account_revocations) = match prev {
                 Some(p) => {
-                    let (c, r, refused) =
-                        refresh_account(&t, (account_certs, account_revocations), (&p.certs, &p.revocations));
+                    let (c, r, refused) = refresh_account(
+                        &t,
+                        (account_certs, account_revocations),
+                        (&p.certs, &p.revocations),
+                        &mut seen,
+                        now,
+                    );
                     if refused {
                         warn!(
                             "hosted: the account's certificates would let a removed device back in; keeping the last"
@@ -117,7 +126,10 @@ pub fn saved_from(got: hosted::Enrollment, keys: &DeviceKeys, prev: Option<&Save
                     }
                     (c, r)
                 }
-                None => (account_certs, account_revocations),
+                None => {
+                    arugula_e2e::checkpoint::stamp(&mut seen, &account_certs, &account_revocations, now);
+                    (account_certs, account_revocations)
+                }
             };
             ensure!(
                 delegation.signed_for(&Owners::Account {
@@ -170,7 +182,7 @@ pub fn saved_from(got: hosted::Enrollment, keys: &DeviceKeys, prev: Option<&Save
         approver: String::new(),
         sig: cert.sig.clone(),
     };
-    Ok(Saved {
+    let mut out = Saved {
         url: url.trim_end_matches('/').to_owned(),
         trust,
         cert: own,
@@ -182,6 +194,8 @@ pub fn saved_from(got: hosted::Enrollment, keys: &DeviceKeys, prev: Option<&Save
         former_members,
         team_names: Default::default(),
         locked: false,
+        lock: None,
+        seen,
         peers: Default::default(),
         shared_teams: Default::default(),
         held_teams: Default::default(),
@@ -200,7 +214,9 @@ pub fn saved_from(got: hosted::Enrollment, keys: &DeviceKeys, prev: Option<&Save
                 || prev.and_then(|p| p.hosted.as_ref()).is_some_and(|h| h.builder),
             legacy_app_children,
         }),
-    })
+    };
+    crate::control::prune_seen(&mut out);
+    Ok(out)
 }
 
 #[cfg(test)]

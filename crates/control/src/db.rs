@@ -299,6 +299,10 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
     if !has("accounts", "name")? {
         conn.execute_batch("ALTER TABLE accounts ADD COLUMN name TEXT")?;
     }
+    // A team's lock as its owner signed it (`TeamLock`), the latest.
+    if !has("teams", "lock")? {
+        conn.execute_batch("ALTER TABLE teams ADD COLUMN lock TEXT")?;
+    }
     if !has("daemons", "moved")? {
         conn.execute_batch("ALTER TABLE daemons ADD COLUMN moved TEXT")?;
     }
@@ -1990,6 +1994,28 @@ impl Db {
         }
         tx.commit()?;
         Ok(())
+    }
+
+    /// A team's lock as an owner signed it (`TeamLock`, JSON), and
+    /// whether it's locked from now on.
+    pub fn set_lock(&self, team: &str, locked: bool, lock: &str) -> anyhow::Result<()> {
+        let mut c = self.c();
+        let tx = c.transaction()?;
+        tx.execute("UPDATE teams SET lock = ?2 WHERE id = ?1", params![team, lock])?;
+        if tx.execute("UPDATE teams SET locked = ?2 WHERE id = ?1 AND locked IS NOT ?2", params![team, locked])? > 0 {
+            changed(&tx, ChangeKind::TeamLocked, team)?;
+        }
+        tx.commit()?;
+        Ok(())
+    }
+
+    /// The latest lock an owner signed for `team` (`TeamLock`, JSON).
+    pub fn team_lock(&self, team: &str) -> anyhow::Result<Option<String>> {
+        Ok(self
+            .c()
+            .query_row("SELECT lock FROM teams WHERE id = ?1", params![team], |r| r.get::<_, Option<String>>(0))
+            .optional()?
+            .flatten())
     }
 
     /// Fails with [`Taken`] when that version is already there. The

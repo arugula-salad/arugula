@@ -22,7 +22,7 @@ use std::{
 use arugula_control_wire as wire;
 use arugula_e2e::{
     Cert, Revocation, Trust,
-    team::{AccountCerts, AskInvite, Invite, Roster, TeamPin, TeamRole},
+    team::{AccountCerts, AskInvite, Invite, Roster, TeamLock, TeamPin, TeamRole},
 };
 use arugula_platform_api::PlatformPort;
 use axum::{
@@ -264,7 +264,7 @@ pub async fn list(State(app): State<Arc<App>>, s: Session) -> R {
         let certs = certs_for(&app, r.members.iter().map(|m| m.account.as_str()))?;
         let names = names_of(&app, r.members.iter().map(|m| m.account.as_str()))?;
         out.push(json!({
-            "team": t.id, "pin": pin(&t), "locked": t.locked, "roster": r, "role": mine,
+            "team": t.id, "pin": pin(&t), "locked": t.locked, "lock": lock_of(&app, &t.id)?, "roster": r, "role": mine,
             "requests": requests, "certs": certs, "names": names,
         }));
     }
@@ -781,15 +781,42 @@ pub async fn reject(State(app): State<Arc<App>>, s: Session, Path((team, account
 #[derive(Deserialize)]
 pub struct Lock {
     locked: bool,
+    /// Signed by the owner's device: what machines go by.
+    #[serde(default)]
+    lock: Option<TeamLock>,
+}
+
+/// The latest lock an owner signed for `team`, if any.
+fn lock_of(app: &App, team: &str) -> anyhow::Result<Option<TeamLock>> {
+    Ok(app.db.team_lock(team)?.and_then(|b| serde_json::from_str(&b).ok()))
 }
 
 /// The kill switch: invites and requests go, and the team's daemons let
-/// only owners in until it's unlocked.
+/// only owners in until it's unlocked. The owner's device signs it
+/// (`TeamLock`): machines take a lock or an unlock only from an owner in
+/// the roster they hold, newer than the one they hold.
 pub async fn lock(State(app): State<Arc<App>>, s: Session, Path(team): Path<String>, Json(b): Json<Lock>) -> R {
-    if role_in(&latest(&app, &team)?, &s.account) != Some(TeamRole::Owner) {
+    let r = latest(&app, &team)?;
+    if role_in(&r, &s.account) != Some(TeamRole::Owner) {
         return Err(err(StatusCode::FORBIDDEN, "owners lock"));
     }
-    app.db.set_locked(&team, b.locked)?;
+    let Some(l) = b.lock else {
+        return Err(err(
+            StatusCode::BAD_REQUEST,
+            "a lock is signed by an owner's device: reload the page and try again",
+        ));
+    };
+    let certs = certs_for(&app, r.members.iter().map(|m| m.account.as_str()))?;
+    if l.team != team || l.locked != b.locked || !l.signed_in(&r, &certs) {
+        return Err(err(StatusCode::BAD_REQUEST, "the lock isn't signed by one of the team's owners' devices"));
+    }
+    if lock_of(&app, &team)?.is_some_and(|h| l.at <= h.at) {
+        return Err(err(
+            StatusCode::CONFLICT,
+            "the team's lock changed since; check this device's clock and try again",
+        ));
+    }
+    app.db.set_lock(&team, b.locked, &serde_json::to_string(&l).map_err(anyhow::Error::from)?)?;
     if b.locked {
         app.db.drop_invites(&team)?;
     }
@@ -832,6 +859,7 @@ pub async fn daemon_team(State(app): State<Arc<App>>, d: DaemonAuth, Query(q): Q
     crate::reply(&wire::TeamAnswer {
         team: Some(pin(&t)),
         locked: t.locked,
+        lock: lock_of(&app, &team)?,
         rosters,
         certs,
         names: names.into_iter().collect(),
@@ -874,6 +902,7 @@ pub async fn daemon_teams(State(app): State<Arc<App>>, d: DaemonAuth, Query(q): 
                 team: Some(pin(&t)),
                 name: t.name,
                 locked: t.locked,
+                lock: lock_of(&app, team)?,
                 rosters,
                 certs,
                 names: names.into_iter().collect(),

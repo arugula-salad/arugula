@@ -6,14 +6,63 @@
 //! but what a machine learned stays learned: a removal it saw isn't
 //! undone by control forgetting it, and a roster isn't taken back to an
 //! older version or swapped for another history. A daemon keeps these in
-//! `control.json`; the owner's page keeps its rosters in the browser.
+//! `control.json`; the owner's page keeps its own in the browser.
+//!
+//! Each certificate and removal is stamped with when this machine first
+//! saw it ([`Seen`]): a certificate first seen after the removal of the
+//! device that approved it is dropped, whatever date it carries, so a
+//! removed device's key can't approve a new device by dating it before
+//! its removal. A team's lock is held the same way: only an owner's newer
+//! signed word changes it ([`take_lock`]).
 
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 
 use crate::{
     Cert, Revocation, Trust,
-    team::{AccountCerts, Roster, TeamPin},
+    team::{AccountCerts, Roster, TeamLock, TeamPin},
 };
+
+/// When this machine first saw each certificate and removal (ms), by its
+/// signature ([`seen_key`]).
+pub type Seen = BTreeMap<String, u64>;
+
+/// What a certificate or removal is stamped under: its signature, which
+/// no other signed thing has.
+pub fn seen_key(sig: &str) -> String {
+    sig.to_owned()
+}
+
+/// Stamp each of `certs` and `revocations` not stamped yet with `now`.
+pub fn stamp(seen: &mut Seen, certs: &[Cert], revocations: &[Revocation], now: u64) {
+    for sig in certs.iter().map(|c| &c.sig).chain(revocations.iter().map(|r| &r.sig)) {
+        seen.entry(seen_key(sig)).or_insert(now);
+    }
+}
+
+/// `certs` without those first seen after the removal of the device that
+/// approved them was first seen. A device approved before its approver
+/// was removed was seen no later than the removal, by a machine that
+/// held both; one dated before the removal but first seen after it was
+/// made with a removed device's key. Certificates or removals never
+/// stamped count as seen now, so nothing is dropped for want of a stamp.
+pub fn drop_late(trust: &Trust, certs: Vec<Cert>, revocations: &[Revocation], seen: &Seen) -> Vec<Cert> {
+    let gone = removed(trust, &certs, revocations);
+    if gone.is_empty() {
+        return certs;
+    }
+    let at = |sig: &str| seen.get(&seen_key(sig)).copied().unwrap_or(u64::MAX);
+    let removed_at = |device: &str| {
+        revocations.iter().filter(|r| r.account == trust.account && r.device == device).map(|r| at(&r.sig)).min()
+    };
+    certs
+        .into_iter()
+        .filter(|c| {
+            !(c.account == trust.account
+                && gone.contains(&c.approver)
+                && removed_at(&c.approver).is_some_and(|t| at(&c.sig) > t))
+        })
+        .collect()
+}
 
 /// `new`, and every one of `old` it leaves out: what was held is added
 /// to, never taken from.
@@ -54,25 +103,56 @@ pub fn removed(trust: &Trust, certs: &[Cert], revocations: &[Revocation]) -> Has
 
 /// An account's certificates and removals after a refresh: `new` as
 /// control sends them now, over `old` as last held. Every removal held is
-/// kept. And no device `old` held removed may count again: if `new`'s
-/// certificates would let one back in (by leaving out the certificate a
-/// removal rested on, say), they're refused and `old`'s stay, with every
-/// removal. The flag says they were refused.
+/// kept, and everything is stamped in `seen` when first seen (`now`); a
+/// certificate first seen after its approver's removal is dropped
+/// ([`drop_late`]). And no device `old` held removed may count again: if
+/// `new`'s certificates would let one back in (by leaving out the
+/// certificate a removal rested on, say), they're refused and `old`'s
+/// stay, with every removal. The flag says they were refused.
 pub fn refresh_account(
     trust: &Trust,
     new: (Vec<Cert>, Vec<Revocation>),
     old: (&[Cert], &[Revocation]),
+    seen: &mut Seen,
+    now: u64,
 ) -> (Vec<Cert>, Vec<Revocation>, bool) {
     let revocations = kept(new.1, old.1);
+    stamp(seen, old.0, &revocations, now);
+    stamp(seen, &new.0, &[], now);
+    let certs = drop_late(trust, new.0, &revocations, seen);
     let gone = removed(trust, old.0, old.1);
     if gone.is_empty() {
-        return (new.0, revocations, false);
+        return (certs, revocations, false);
     }
-    let now = trust.evaluate(&new.0, &revocations);
-    if gone.iter().any(|id| now.devices.contains_key(id)) {
-        return (old.0.to_vec(), revocations, true);
+    let after = trust.evaluate(&certs, &revocations);
+    if gone.iter().any(|id| after.devices.contains_key(id)) {
+        return (drop_late(trust, old.0.to_vec(), &revocations, seen), revocations, true);
     }
-    (new.0, revocations, false)
+    (certs, revocations, false)
+}
+
+/// Whether a team is locked after control's answer: `got` (control's
+/// signed record) over `held` (the record this machine holds, and whether
+/// it holds the team locked). A record counts only if an owner in
+/// `roster` (the roster held) signed it ([`TeamLock::signed_in`]) and
+/// it's newer than the one held. Without one, the team stays as held,
+/// locked if control's plain word (`plain`, from before records) says so:
+/// control may lock a team (it can refuse service anyway), never unlock
+/// it.
+pub fn take_lock(
+    held: (bool, Option<&TeamLock>),
+    got: Option<TeamLock>,
+    plain: bool,
+    roster: Option<&Roster>,
+    certs: &AccountCerts,
+) -> (bool, Option<TeamLock>) {
+    if let (Some(l), Some(r)) = (got, roster)
+        && l.signed_in(r, certs)
+        && held.1.is_none_or(|h| l.at > h.at)
+    {
+        return (l.locked, Some(l));
+    }
+    (held.0 || plain, held.1.cloned())
 }
 
 /// Where a team's roster stands after `history` (oldest first, as control
@@ -149,14 +229,15 @@ mod tests {
         assert!(trust.evaluate(&held.0, &held.1).get(&pc.device).is_none());
 
         // The removal left out.
-        let (c, r, refused) = refresh_account(&trust, (certs.clone(), vec![]), (&held.0, &held.1));
+        let (c, r, refused) = refresh_account(&trust, (certs.clone(), vec![]), (&held.0, &held.1), &mut Seen::new(), 1);
         assert!(!refused);
         assert_eq!(r, vec![rev.clone()]);
         assert!(trust.evaluate(&c, &r).get(&pc.device).is_none(), "the phone counts again");
 
         // The laptop's certificate left out: the removal wouldn't count.
         let without_signer = vec![rc.clone(), pc.clone()];
-        let (c, r, refused) = refresh_account(&trust, (without_signer, vec![rev.clone()]), (&held.0, &held.1));
+        let (c, r, refused) =
+            refresh_account(&trust, (without_signer, vec![rev.clone()]), (&held.0, &held.1), &mut Seen::new(), 1);
         assert!(refused);
         assert!(trust.evaluate(&c, &r).get(&pc.device).is_none(), "the phone counts again");
         assert!(trust.evaluate(&c, &r).get(&lc.device).is_some());
@@ -167,8 +248,13 @@ mod tests {
         let mut later = held.0.clone();
         later.push(tc.clone());
         let held2 = (later.clone(), held.1.clone());
-        let (c, r, refused) =
-            refresh_account(&trust, (vec![rc.clone(), pc.clone(), tc.clone()], vec![]), (&held2.0, &held2.1));
+        let (c, r, refused) = refresh_account(
+            &trust,
+            (vec![rc.clone(), pc.clone(), tc.clone()], vec![]),
+            (&held2.0, &held2.1),
+            &mut Seen::new(),
+            1,
+        );
         assert!(refused);
         assert!(trust.evaluate(&c, &r).get(&tc.device).is_none());
 
@@ -176,9 +262,96 @@ mod tests {
         let (_, nc) = approved("a", &rk, "new");
         let mut more = certs.clone();
         more.push(nc.clone());
-        let (c, r, refused) = refresh_account(&trust, (more, vec![rev]), (&held.0, &held.1));
+        let (c, r, refused) = refresh_account(&trust, (more, vec![rev]), (&held.0, &held.1), &mut Seen::new(), 1);
         assert!(!refused);
         assert!(trust.evaluate(&c, &r).get(&nc.device).is_some());
+    }
+
+    /// A certificate a removed device's key signs, dated before the
+    /// removal, is dropped when this machine saw the removal first; one
+    /// that comes with the removal (what the device approved before it
+    /// was removed) stays. A store from before stamps (none held) stamps
+    /// what it holds when it first refreshes, and drops nothing for it.
+    #[test]
+    fn a_certificate_first_seen_after_its_approvers_removal_is_dropped() {
+        let (rk, rc) = root("a");
+        let (lk, lc) = approved("a", &rk, "laptop");
+        let trust = Trust { account: "a".into(), root: rc.device.clone() };
+        let rev = Revocation::new("a", &lc.device, &rk);
+        let backdated = |name: &str| {
+            let k = DeviceKeys::generate();
+            let mut c = Cert::new(&k, "a", Kind::Browser, name);
+            c.created = rev.at.saturating_sub(1000);
+            c.sign_with(&lk);
+            c
+        };
+        let early = backdated("tablet");
+        let late = backdated("stranger");
+        let trusted = |c: &[Cert], r: &[Revocation], id: &str| trust.evaluate(c, r).get(id).is_some();
+        // Its date alone lets it in.
+        assert!(trusted(&[rc.clone(), lc.clone(), late.clone()], std::slice::from_ref(&rev), &late.device));
+
+        let mut seen = Seen::new();
+        // Refresh 1: the laptop, the tablet it approved, and its removal.
+        let held = vec![rc.clone(), lc.clone(), early.clone()];
+        let (c1, r1, _) = refresh_account(&trust, (held.clone(), vec![rev.clone()]), (&[], &[]), &mut seen, 10);
+        assert!(trusted(&c1, &r1, &early.device), "what it approved before, seen with the removal");
+        // Refresh 2: a certificate from the removed laptop, dated before.
+        let mut more = held.clone();
+        more.push(late.clone());
+        let (c2, r2, _) = refresh_account(&trust, (more.clone(), vec![]), (&c1, &r1), &mut seen, 20);
+        assert!(!trusted(&c2, &r2, &late.device), "a removed device's late certificate counts");
+        assert!(trusted(&c2, &r2, &early.device));
+
+        // From before stamps: nothing held is stamped; the first refresh
+        // stamps it all at once and drops nothing it held.
+        let mut fresh = Seen::new();
+        let (c3, r3, _) = refresh_account(&trust, (more.clone(), vec![]), (&more, &r1), &mut fresh, 30);
+        assert!(trusted(&c3, &r3, &late.device) && trusted(&c3, &r3, &early.device));
+        assert_eq!(fresh.get(&seen_key(&late.sig)), Some(&30));
+    }
+
+    /// A lock counts only from an owner in the roster held, newer than the
+    /// one held; without one the team stays as held, and control's plain
+    /// word can lock it but never unlock it.
+    #[test]
+    fn a_teams_lock_changes_only_by_an_owners_newer_word() {
+        let ((ok, oc), (ek, ec)) = (root("o"), root("e"));
+        let m = |a: &str, c: &Cert, role| Member { account: a.into(), root: c.device.clone(), role, name: a.into() };
+        let r = roster(2, vec![m("o", &oc, TeamRole::Owner), m("e", &ec, TeamRole::Editor)], &ok);
+        let certs: AccountCerts =
+            [("o".to_owned(), (vec![oc.clone()], vec![])), ("e".to_owned(), (vec![ec.clone()], vec![]))].into();
+        let lock = |locked, at, by: &DeviceKeys| {
+            let mut l = TeamLock { team: "t1".into(), locked, version: 2, at, by: String::new(), sig: String::new() };
+            l.sign_with(by);
+            l
+        };
+        let locked = lock(true, 10, &ok);
+        assert_eq!(
+            take_lock((false, None), Some(locked.clone()), false, Some(&r), &certs),
+            (true, Some(locked.clone()))
+        );
+        // Control unlocking by its plain word, or with no record: locked.
+        assert_eq!(take_lock((true, Some(&locked)), None, false, Some(&r), &certs), (true, Some(locked.clone())));
+        // An unlock an editor signed, or one older than the lock held.
+        assert!(take_lock((true, Some(&locked)), Some(lock(false, 20, &ek)), false, Some(&r), &certs).0);
+        assert!(take_lock((true, Some(&locked)), Some(lock(false, 5, &ok)), false, Some(&r), &certs).0);
+        // Bent after signing, or against a version the machine doesn't have.
+        let mut bent = lock(false, 20, &ok);
+        bent.at = 21;
+        assert!(take_lock((true, Some(&locked)), Some(bent), false, Some(&r), &certs).0);
+        let mut ahead = TeamLock { version: 3, ..lock(false, 20, &ok) };
+        ahead.sign_with(&ok);
+        assert!(take_lock((true, Some(&locked)), Some(ahead), false, Some(&r), &certs).0);
+        // An owner's newer unlock: unlocked.
+        let open = lock(false, 20, &ok);
+        assert_eq!(
+            take_lock((true, Some(&locked)), Some(open.clone()), false, Some(&r), &certs),
+            (false, Some(open.clone()))
+        );
+        // Control's plain word locks (from before records), never unlocks.
+        assert!(take_lock((false, Some(&open)), None, true, Some(&r), &certs).0);
+        assert!(!take_lock((false, Some(&open)), None, false, Some(&r), &certs).0);
     }
 
     fn roster(version: u64, members: Vec<Member>, by: &DeviceKeys) -> Roster {

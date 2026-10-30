@@ -386,3 +386,22 @@ export function rootChanges(from: Roster, to: Roster): { account: string; name: 
   }
   return out;
 }
+
+/** Whether a team is locked, signed by an owner's device (`team::TeamLock`). */
+export interface TeamLock {
+  team: string;
+  locked: boolean;
+  version: number;
+  at: number;
+  by: string;
+  sig: string;
+}
+
+export const lockBody = (l: TeamLock) =>
+  `arugula team lock v1\nteam ${l.team}\nlocked ${l.locked ? "yes" : "no"}\nversion ${l.version}\nat ${l.at}\nby ${l.by}\n`;
+
+export async function signLock(l: Omit<TeamLock, "by" | "sig">, keys: DeviceKeys): Promise<TeamLock> {
+  const out: TeamLock = { ...l, by: keys.id, sig: "" };
+  out.sig = await signText(keys, lockBody(out));
+  return out;
+}

@@ -4,6 +4,8 @@
 // version on top of the one it shows, so that one must follow the last it
 // checked: control can't hand it a roster no owner wrote.
 
+import type { Cert, Revocation } from "./e2e/cert.ts";
+import { refreshAccount, type Seen } from "./e2e/checkpoint.ts";
 import { advance, follows, rootChanges, sameRoster, type AccountCerts, type Roster, type TeamPin } from "./e2e/team.ts";
 
 /** Why the roster control sent isn't taken: an older version than the one
@@ -100,6 +102,61 @@ export class RosterStore {
   save() {
     try {
       this.storage().setItem(this.key, JSON.stringify(this.held()));
+    } catch {
+      this.kept = false;
+    }
+  }
+}
+
+/** Each account's certificates and removals as this page last held them,
+ * by account and the root they're checked from, and when it first saw
+ * each (`checkpoint::Seen`): removals only add up across loads, and a
+ * certificate first seen after its approver's removal doesn't count
+ * (`refreshAccount`). Read once and kept in memory for the page's life,
+ * as `RosterStore`; if storage can't be read or written, `kept` goes
+ * false for good and the page signs no team change. */
+export class TrustStore {
+  private data: { accounts: Record<string, { certs: Cert[]; revocations: Revocation[] }>; seen: Seen } | null = null;
+  private storage: () => Pick<Storage, "getItem" | "setItem">;
+  private key: string;
+  kept = true;
+
+  constructor(storage: () => Pick<Storage, "getItem" | "setItem">, key: string) {
+    this.storage = storage;
+    this.key = key;
+  }
+
+  private load() {
+    if (this.data) return this.data;
+    try {
+      const raw = this.storage().getItem(this.key);
+      const v = raw === null ? { accounts: {}, seen: {} } : JSON.parse(raw);
+      if (!v || typeof v !== "object" || typeof v.accounts !== "object" || typeof v.seen !== "object" || !v.accounts || !v.seen) throw new Error("not a store");
+      this.data = v;
+    } catch {
+      this.kept = false;
+      this.data = { accounts: {}, seen: {} };
+    }
+    return this.data!;
+  }
+
+  /** `trust`'s account as control sends it now (`fresh`), over what's held. */
+  async take(trust: { account: string; root: string }, fresh: { certs: Cert[]; revocations: Revocation[] }, now = Date.now()) {
+    const d = this.load();
+    const k = `${trust.account}.${trust.root}`;
+    const got = await refreshAccount(trust, fresh, d.accounts[k] ?? { certs: [], revocations: [] }, d.seen, now);
+    d.accounts[k] = { certs: got.certs, revocations: got.revocations };
+    return got;
+  }
+
+  /** Write it back, forgetting stamps of what's no longer held. */
+  save() {
+    const d = this.load();
+    const held = new Set<string>();
+    for (const a of Object.values(d.accounts)) for (const x of [...a.certs, ...a.revocations]) held.add(x.sig);
+    for (const s of Object.keys(d.seen)) if (!held.has(s)) delete d.seen[s];
+    try {
+      this.storage().setItem(this.key, JSON.stringify(d));
     } catch {
       this.kept = false;
     }

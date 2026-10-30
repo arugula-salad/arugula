@@ -121,6 +121,16 @@ device nobody trusted. Now:
   is a device the account trusts now and its `created` is within ten
   minutes of control's clock (`approval_ok`), on every path: a presigned
   enrollment, an approval, a machine's or the CLI's join, recovery codes.
+- Daemons and pages don't take `created` alone: each stamps every
+  certificate and revocation with when it first saw it
+  (`arugula_e2e::checkpoint::drop_late`; `control.json` on a daemon, the
+  browser's storage on a page). A certificate first seen after the
+  revocation of the device that approved it doesn't count, whatever
+  `created` says. So once a machine or page has seen a device's removal,
+  that device's key can't approve anything new there by dating it
+  earlier. What a device approved before its removal arrives with the
+  removal or before it, and stays. Certificates held from before stamps
+  were kept are stamped when first refreshed.
 - Daemons and pages read only certificates signed by the key of the
   device they name as approver; any other is set aside before anything
   else, so it can't count against one that is. Since #761 a new browser is
@@ -284,7 +294,10 @@ device nobody trusted. Now:
   a daemon keeps every revocation it has seen, for its own account, its
   team's members and the people it shares with, and a later answer from
   control can't take one away. A member's removals outlive their
-  membership: if they're let back into the team, those still count. A device a daemon holds as removed (and
+  membership: if they're let back into the team, those still count. An
+  owner's page keeps its own account's removals, its teams' members' and
+  those of people whose machines it lists the same way, in the browser.
+  A device a daemon holds as removed (and
   what that device approved after) can't count again: if control's
   certificates would let it back in, for instance by leaving out the
   certificate a revocation rests on, the daemon keeps the certificates
@@ -293,10 +306,15 @@ device nobody trusted. Now:
   daemon that hasn't seen it yet. Control can't add readers, but it can
   delay removing one. As with Tailnet Lock, this is written down rather
   than solved.
-- **Accepted risk:** whether a team is locked is control's word. A locked
-  team lets only its owners in; control can unlock it on a daemon, which
-  lets its editors and viewers back in with the roles the signed roster
-  gives them. It can't add anyone the roster doesn't list.
+- **A team's lock is signed** (`arugula team lock v1`: team, locked or
+  not, the roster version, when, and the signing device). An owner's page
+  signs it, control keeps the latest and hands it out with the plain
+  `locked` older machines read, and refuses one an owner didn't sign.
+  A machine takes a lock record only if a device of an owner in the roster
+  it holds signed it, against a version it has, and it's newer than the
+  record it holds (`arugula_e2e::checkpoint::take_lock`). Without one the
+  team stays as the machine holds it: control's plain word can lock a
+  team (it can refuse service anyway), never unlock it.
 
 **Recovery:**
 
@@ -969,7 +987,7 @@ or whoever runs yours) does:
 |---|---|
 | relays and stores honestly | only your devices and the people you share with read them |
 | has its database or relay copied, or logs everything it sees | still unreadable: it holds certificates and ciphertext, never a private key |
-| turns malicious **after** your machines and devices are set up, without changing the page it serves | can't add a reader: daemons check every device against the root they pinned and every roster against the last one they checked, and keep every revocation they've seen. It can withhold revocations a machine hasn't seen yet, unlock a locked team, and refuse service |
+| turns malicious **after** your machines and devices are set up, without changing the page it serves | can't add a reader: daemons check every device against the root they pinned and every roster against the last one they checked, keep every revocation they've seen, and refuse a certificate first seen after its approver's removal; a team's lock changes only by an owner's signed word. It can withhold revocations and lock changes a machine hasn't seen yet, lock a team, and refuse service |
 | lies at **join** about which account a machine joins | refused by the machine: the approving device's answer to the secret in its link doesn't match (an older daemon or CLI: caught by the account fingerprint, if you compare it) |
 | lies about which account a **new browser or phone** is approved into | refused by that device: the approving device's answer to the code it showed doesn't match (approved from a page from before codes: it shows the account fingerprint to check) |
 | lies about who **@name** is when you share with them | believed on the first share unless you verify them; after that the share stops, saying their key changed |
@@ -1763,7 +1781,7 @@ Every table is listed in `crates/control/tables.toml`, and a test fails when one
 | `settings` | **plaintext** | Control's own VAPID key pair, which signs the pushes it sends, and its hosted key (M178), which signs the hosted machines enrolled under a project's delegation. | nothing of one |  |
 | `notices` | metadata | A notice for an account with no push, made from names control holds ("Ada left Acme"). | yes |  |
 | `labs_flags` | metadata | The Labs flags an account or a team turned on for its machines. | yes: a team's go when the team does. | PostHog |
-| `teams` | metadata | A team: its id, name, founder and founder's root, and whether it's locked. | partly: the teams it founded, or that nobody else is left in, go with it; the rest stay. | PostHog |
+| `teams` | metadata | A team: its id, name, founder and founder's root, whether it's locked, and the latest lock an owner signed. | partly: the teams it founded, or that nobody else is left in, go with it; the rest stay. | PostHog |
 | `rosters` | metadata | A team's signed roster, every version: who's in it and their roles. | partly: a disbanded team's go; in a team that stays, it's in the signed roster until an owner signs a new one. |  |
 | `invites` | metadata | An Ask me first invite: a hash of its code, the team, the role, its expiry, the owner's signed invite. | yes |  |
 | `presigned_invites` | metadata | A one-time invite an owner's device signed, waiting to be used. | yes |  |
