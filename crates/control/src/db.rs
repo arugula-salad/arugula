@@ -77,6 +77,15 @@ CREATE TABLE IF NOT EXISTS revocations (
     device TEXT NOT NULL,
     body TEXT NOT NULL
 );
+-- The one device each recovery code let in, written once when control
+-- first takes an approval by it and never changed (`claim_recovery`).
+CREATE TABLE IF NOT EXISTS recovery_uses (
+    account TEXT NOT NULL,
+    code TEXT NOT NULL,
+    device TEXT NOT NULL,
+    at INTEGER NOT NULL,
+    PRIMARY KEY (account, code)
+);
 CREATE INDEX IF NOT EXISTS revocations_device ON revocations (device);
 CREATE TABLE IF NOT EXISTS joins (
     code TEXT PRIMARY KEY,
@@ -1049,6 +1058,47 @@ impl Db {
         Ok(n)
     }
 
+    /// Sign out the account's sessions that are `device`'s (the device a
+    /// sign-in enrolled or said it was), and the platform page's sessions
+    /// and tokens they made: a device taken off the account keeps none.
+    /// How many went.
+    pub fn drop_device_sessions(&self, account: &str, device: &str) -> anyhow::Result<usize> {
+        let mut c = self.c();
+        let tx = c.transaction()?;
+        for t in ["app_sessions", "issuer_tokens"] {
+            tx.execute(
+                &format!(
+                    "DELETE FROM {t} WHERE hub_session IN
+                         (SELECT token_hash FROM sessions WHERE account = ?1 AND device = ?2)"
+                ),
+                params![account, device],
+            )?;
+        }
+        let n = tx.execute("DELETE FROM sessions WHERE account = ?1 AND device = ?2", params![account, device])?;
+        tx.commit()?;
+        Ok(n)
+    }
+
+    /// `device` is the one device recovery code `code` lets in: true if
+    /// it's the first control took an approval by that code for (recorded
+    /// now, for good), or the one it took before; false if the code let
+    /// another in already.
+    pub fn claim_recovery(&self, account: &str, code: &str, device: &str, now: u64) -> anyhow::Result<bool> {
+        let mut c = self.c();
+        let tx = c.transaction()?;
+        tx.execute(
+            "INSERT OR IGNORE INTO recovery_uses (account, code, device, at) VALUES (?1, ?2, ?3, ?4)",
+            params![account, code, device, now as i64],
+        )?;
+        let have: String = tx.query_row(
+            "SELECT device FROM recovery_uses WHERE account = ?1 AND code = ?2",
+            params![account, code],
+            |r| r.get(0),
+        )?;
+        tx.commit()?;
+        Ok(have == device)
+    }
+
     /// Sign out everywhere, the platform page too.
     pub fn drop_sessions(&self, account: &str) -> anyhow::Result<usize> {
         let mut c = self.c();
@@ -1283,7 +1333,13 @@ impl Db {
     /// Every certificate of an account: (approved ones, pending ones).
     pub fn devices(&self, account: &str) -> anyhow::Result<(Vec<Cert>, Vec<Cert>)> {
         let c = self.c();
-        let mut q = c.prepare("SELECT cert, approved FROM devices WHERE account = ?1 ORDER BY created")?;
+        // In the order they were approved (a row approved before
+        // `approved_at` came, at when it was first stored): which device a
+        // recovery code let in is the first it signed in this order.
+        let mut q = c.prepare(
+            "SELECT cert, approved FROM devices WHERE account = ?1
+             ORDER BY COALESCE(approved_at, created), created, id",
+        )?;
         let rows = q.query_map(params![account], |r| Ok((cert_of(r.get(0)?)?, r.get::<_, bool>(1)?)))?;
         let (mut yes, mut no) = (Vec::new(), Vec::new());
         for row in rows {
@@ -2698,6 +2754,7 @@ impl Db {
             "DELETE FROM devices WHERE account = ?1",
             "DELETE FROM turned_down WHERE account = ?1",
             "DELETE FROM revocations WHERE account = ?1",
+            "DELETE FROM recovery_uses WHERE account = ?1",
             "DELETE FROM account_resets WHERE account = ?1",
             "DELETE FROM reset_requests WHERE account = ?1",
             "DELETE FROM account_emails WHERE account = ?1",
