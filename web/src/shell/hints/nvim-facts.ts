@@ -104,51 +104,26 @@ export function tipCopy(f: Fact): string {
 
 // ---- the help card
 
-const k = (kbd: string) => ({ kbd });
+/** This pane's nvim lacks arugula.nvim and Arugula could add it: the fact
+ * nvim-connect's chip says. */
+const canAddPlugin = (client: Client, f: Fact) => {
+  const info = f.pane === undefined ? undefined : client.info(f.pane);
+  return !!info?.editor?.offer_plugin && local(client, f.pane!, info);
+};
 
 export const NVIM_HELP: Hint = {
-  // nvim's help card, the first time nvim runs in a pane.
+  // nvim's help card, the first time nvim runs in a pane. Short: the full
+  // text is NVIM_DOCS.
   id: "nvim-help",
   place: "pane-modal",
   fact: nvimRuns,
   copy: () => "nvim in Arugula",
-  body: () => [
-    "Arugula works with the nvim you already run in a pane. Nothing to set up for most of it.",
-    { heading: "What Arugula does with nvim", id: "what" },
-    {
-      list: [
-        "Follows it: the swarm and the pane's card show the file and line nvim has open, and its errors.",
-        "Open in editor: with Settings › Editor on nvim, Open in editor (the pane menu, a diff card, a file, a link) opens the file in the nvim already running there, at its line, or in a new nvim editor block when none runs: nvim with arugula.nvim, in the page's colors. Add a pane › Editor makes one too.",
-        "Your nvim is the pane: one entry in the swarm, not two.",
-      ],
-    },
-    { heading: "Claude's edits in nvim", id: "diff" },
-    [
-      "With arugula.nvim, an edit Claude Code proposes opens as a vimdiff tab in this nvim: the file on the left, the proposed text on the right. Its card says it's also open here. ",
-      k("<leader>aa"),
-      " accepts, ",
-      k("<leader>ar"),
-      " rejects, and you can edit the proposed side first. Answering in nvim, on the card or in Claude Code's terminal answers all three.",
-    ],
-    { heading: "Keys", id: "keys" },
-    {
-      list: [
-        [k(":ArugulaAccept"), " and ", k(":ArugulaReject"), " answer the diff in front."],
-        [k(":checkhealth arugula"), " says whether the plugin reaches Arugula, and if not, why."],
-        "Each time nvim starts, the pane's header shows one nvim key tip; its button opens that :help here.",
-      ],
-    },
-    { heading: "arugula.nvim", id: "plugin" },
-    [
-      "Arugula offers to add it when nvim runs without it: Add arugula.nvim on the pane's header installs it into nvim's own package directory and loads it, with no restart and no change to your config. A copy your plugin manager loads is left alone. To remove Arugula's, delete ",
-      k("site/pack/arugula"),
-      " in nvim's data directory (",
-      k(":echo stdpath('data')"),
-      ").",
-    ],
-    [{ link: "More on docs.arugula.io", href: NVIM_DOCS }],
+  body: () => ["Arugula follows this nvim, opens files in it, and shows Claude Code's edits here as a vimdiff."],
+  buttons: [
+    { label: "Edit in nvim", command: "editor.use-nvim", when: () => editorPref() !== "nvim" },
+    { label: "Add arugula.nvim", command: "nvim.install-plugin", when: canAddPlugin },
+    { label: "Read the docs", command: "nvim.docs" },
+    { label: "Close", close: true },
   ],
-  action: { label: "Open the docs", command: "nvim.docs" },
-  second: { label: "Close", close: true },
   views: { shown: "nvim-help-shown", acted: "nvim-help-acted", closed: "nvim-help-closed", optedOut: "nvim-help-opted-out" },
 };

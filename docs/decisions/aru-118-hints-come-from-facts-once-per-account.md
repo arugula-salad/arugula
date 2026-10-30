@@ -10,7 +10,7 @@ question: "How does the app mention a feature when it becomes useful: what a hin
 options:
   - id: "a"
     label: "One registry of hints, each from a fact, said once in one of four places, seen kept as an account pref on the hub (else in the browser)"
-    how: "A hint is an id, a fact (a predicate over the client's state, or an answer the client asks for), one line of copy, an action (a command id or a route) and its place: a pane-header chip, a toast, an empty state, or a pane modal over the fact's pane (a big tip, with a short body, up to two buttons and \"Don't show tips like this again\"). One shows at a time, none new while someone types; it's seen once shown, or, for a pane modal (and any hint that says `seenOn: \"answer\"`), once answered. Seen, Tips, Big tips (`tips.modal`) and What's new's last version are prefs in one small store (web/src/shared/seen.ts): through control, `GET`/`POST /api/me/prefs` (a new `account_prefs` table on the hub); otherwise localStorage."
+    how: "A hint is an id, a fact (a predicate over the client's state, or an answer the client asks for), one line of copy, an action (a command id or a route) and its place: a pane-header chip, a toast, an empty state, or a pane modal over the fact's pane (a big tip, with a short body, a few buttons and \"Don't show tips like this again\"). One shows at a time, none new while someone types; it's seen once shown, or, for a pane modal (and any hint that says `seenOn: \"answer\"`), once answered. Seen, Tips, Big tips (`tips.modal`) and What's new's last version are prefs in one small store (web/src/shared/seen.ts): through control, `GET`/`POST /api/me/prefs` (a new `account_prefs` table on the hub); otherwise localStorage."
     tradeoff: "A new hub table and route for what is a handful of keys an account; a daemon's own page, even for a joined machine, still remembers per browser, since it has no session with control."
   - id: "b"
     label: "Keep seen in the machine's state dir"
@@ -91,9 +91,12 @@ a tour.
 - `repeat: "per-fact"`: said again for each new fact, below.
 - A pane modal's alone: `body(fact)`, paragraphs, lists and headings of
   text, key caps (`{ kbd }`) and links (`{ link, href }`), and `second`, a
-  second button (a command, a route, or only closing it). A heading with an
-  `id` is a section: a fact whose `args.section` names it opens the modal
-  scrolled to it.
+  second button (a command, a route, or only closing it); or `buttons`
+  instead of both, a short list, each a command, a route or a close, with an
+  optional `when(client, fact)` that shows it only while it holds (nvim's
+  card shows *Add arugula.nvim* only when the pane's nvim lacks the plugin
+  and Arugula could add it). A heading with an `id` is a section: a fact
+  whose `args.section` names it opens the modal scrolled to it.
 
 **Four places only:** a chip in a pane's header (`HintChip`), a toast at
 the bottom of the workspace (`HintToast`), a view's empty state
@@ -105,7 +108,8 @@ no pane headers, so a chip hint waits for a computer, and draws no pane
 modals.
 
 **A pane modal** (a big tip, #1737) covers its pane between the pane's
-header and its edges, drawn by the pane's slot
+header and its edges with a panel over 90% of it (5% margin each side, the
+dimmed pane showing around it) and a thin border, drawn by the pane's slot
 (`web/src/shell/ui/panes/pane-slot.tsx`), for any kind of pane: a
 terminal, an agent, chat or Docs block, a framed block (browser, editor,
 port), here or on another machine. The pane keeps running and drawing
@@ -115,9 +119,11 @@ while it's up, so no click, key or focus reaches it, a frame's neither;
 the focus moves in when it was on that pane (a terminal, a composer, a
 frame) or nowhere, and back to it on close; Escape and Tab are the
 modal's while the focus is in it, so Escape closes it before the terminal
-hears it. It has a title, a short body, up to two buttons (the action is
-the primary one), a × and the checkbox **Don't show tips like this
-again**. Closing it with ×, Escape or a button answers it. It never opens
+hears it. Its title, short body, buttons and the checkbox **Don't show tips
+like this again** are centred in the panel, at a reading width, and scroll
+inside it when the pane is small; a × is in its corner. The buttons are
+`buttons` that show now, or the `second` and the `action`; one is the
+primary (the action, or the first shown `buttons` entry that isn't a close). Closing it with ×, Escape or a button answers it. It never opens
 under a dialog over the window, over a pane someone else drives (pair
 mode: its `driver` isn't this person), or with Big tips off.
 
