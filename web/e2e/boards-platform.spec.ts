@@ -316,10 +316,36 @@ test("/boards lists every project's boards by project, folded under Done the sam
     // Only Acme has boards: Alice's own project isn't listed.
     await expect(page.locator("[data-all-boards-project]")).toHaveCount(1);
     await expect(acme.locator("[data-boards-done] summary")).toHaveText("Done (1)");
+    // The counts over the page, and a board a card with its state.
+    await expect(page.locator("[data-boards-stats]")).toHaveText("0 open1 done");
     await acme.locator("[data-boards-done] summary").click();
     await expect(acme.locator("[data-board-link]")).toContainText("Launch");
+    await expect(acme.locator("[data-boards-done] li.board-card.sw-card.sw-muted")).toContainText("Done");
     expect(await p.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
   }
   await alice.locator("[data-all-boards-project-link]").click();
   await expect(alice.locator("[data-boards-page]")).toBeVisible({ timeout: 15_000 });
+});
+
+test("a board with a long title and goal wraps in a card on a phone, with no sideways scroll", async () => {
+  test.setTimeout(60_000);
+  const long = "An extraordinarily long board title " + "withoutbreaks".repeat(6);
+  const made = await api(alice, "POST", `/api/projects/${project}/boards`, { title: long });
+  expect(made.status).toBe(200);
+  const edited = await api(alice, "PATCH", `/api/boards/${made.body!.board.id}`, { goal: `${long} ${long}` });
+  expect(edited.status).toBe(200);
+  for (const path of ["/boards", `/p/${project}/boards`]) {
+    await platform(bob, path);
+    const card = bob.locator("li.board-card.sw-card.sw-ok", { hasText: "extraordinarily" });
+    await expect(card).toHaveCount(1, { timeout: 15_000 });
+    await expect(card).toContainText("Open");
+    await expect(card.locator("[data-board-progress]")).toHaveText("No issues yet");
+    await expect(bob.locator("[data-boards-stats]")).toHaveText("1 open1 done");
+    expect(await bob.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
+    if (process.env.BOARDS_SHOTS) await bob.screenshot({ path: `${process.env.BOARDS_SHOTS}/${path === "/boards" ? "all-boards" : "project-boards"}.png` });
+  }
+  if (process.env.BOARDS_SHOTS) {
+    await platform(bob, `/p/${project}/issues`);
+    await bob.screenshot({ path: `${process.env.BOARDS_SHOTS}/issues.png` });
+  }
 });
