@@ -276,6 +276,15 @@ with_account = "deleted"
 seen_by = ["litestream"]
 
 [[table]]
+name = "recovery_uses"
+plane = "machine"
+process = "hub"
+holds = "metadata"
+what = "Which device each recovery code let in (their ids), recorded once, when control first takes an approval by the code."
+with_account = "deleted"
+seen_by = ["litestream"]
+
+[[table]]
 name = "joins"
 plane = "machine"
 process = "hub"

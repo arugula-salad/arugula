@@ -91,7 +91,11 @@ fn out_of(r: CallToolResult) -> Out {
 }
 
 impl Call<'_> {
+    /// Every Cloud workspace call starts here (or at [`Self::hosted_create`]),
+    /// as the owner: never for an agent a guest stands behind, which
+    /// `dispatch` refuses first too.
     async fn hosted_workspaces(&self) -> Result<Vec<Workspace>, String> {
+        self.owners_own("a Cloud workspace").await?;
         let v = self.app().control.cloud(Method::GET, "/api/workspaces", None).await.map_err(|e| e.to_string())?;
         serde_json::from_value(v["workspaces"].clone()).map_err(|e| format!("control's list of cloud workspaces: {e}"))
     }
@@ -341,6 +345,7 @@ impl Call<'_> {
 
     /// `cloud kind create` with a project: a cloud workspace in it.
     pub async fn hosted_create(&self, project: &str, args: &Value) -> Out {
+        self.owners_own("cloud kind create").await?;
         let repos: Vec<Value> =
             args["repositories"].as_array().into_iter().flatten().map(|r| r["url"].clone()).collect();
         let mut packages: Vec<Value> = args["apt"].as_array().cloned().unwrap_or_default();

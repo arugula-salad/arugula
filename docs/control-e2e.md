@@ -19,7 +19,10 @@ stores](#what-control-stores) lists every table of both.
   Browsers run it on WebCrypto alone; daemons and the CLI use `snow`.
 - **Every viewer gets its own channel, including on shared sessions.**
   Sessions have no shared key. Revoking someone closes their channel; there
-  is no key to rotate. Fanning out one ciphertext at the relay waits until
+  is no key to rotate. Changing their role (a team owner made a viewer)
+  closes it too, and their client opens a new one in the new role. What a
+  channel was streaming (a follow) ends with it, and a follow over any path
+  ends once its reader may no longer read that pane. Fanning out one ciphertext at the relay waits until
   a measured need (see [Fan-out](#fan-out-later-if-ever)).
 - **Device keys:**
   - a browser keeps a non-extractable X25519 key (for Noise) and an Ed25519
@@ -112,7 +115,15 @@ device nobody trusted. Now:
 - The **first device** of an account is self-signed. It is trusted on
   first use, like an SSH host key.
 - Every later device, daemon or recovery code is signed by an existing
-  device. That is the *New device?* prompt. Since #761 a new browser is
+  device. That is the *New device?* prompt. Daemons and pages judge the
+  approver as of the certificate's `created`, so the approving page dates
+  it as it signs. Control stores a new certificate only when its approver
+  is a device the account trusts now and its `created` is within ten
+  minutes of control's clock (`approval_ok`), on every path: a presigned
+  enrollment, an approval, a machine's or the CLI's join, recovery codes.
+- Daemons and pages read only certificates signed by the key of the
+  device they name as approver; any other is set aside before anything
+  else, so it can't count against one that is. Since #761 a new browser is
   approved with the code it shows rather than a fingerprint to compare
   (the first 8 bytes of SHA-256 of `noise‖sign`, which a page from before
   codes still shows).
@@ -259,6 +270,13 @@ device nobody trusted. Now:
 
 - A revocation is a signed `{revoke: <device id>, at}` from any device of
   the account, or from a team owner's device for team grants.
+- A browser, a phone or a recovery code is removed only by a browser all
+  the way back to the root. Daemons and pages ask that of the signer's
+  certificates that count (`Trust::evaluate`): another certificate for a
+  device on that chain neither stands in for one that counts nor sets it
+  aside.
+- Removing a device signs out control's sessions that are that device's,
+  and the platform page's sessions they made.
 - Control distributes revocations to daemons as it does certificates.
   Devices don't send them to daemons themselves: a daemon learns of a
   revocation on its next refresh from control.
@@ -288,8 +306,13 @@ device nobody trusted. Now:
 - Any of the account's devices can make new ones. It signs their
   certificates and revokes every code still good, in one request; control
   refuses new codes that don't retire the old.
-- A recovery code can sign exactly one certificate (a new first device),
-  and daemons then treat it as spent.
+- A recovery code lets in exactly one device (a new first device).
+  Control records which, once, when it first takes an approval by the
+  code (`recovery_uses`), and refuses any other device by that code on
+  every path from then on (`recovery_spent`). It serves an account's
+  certificates in the order it approved them, and daemons and pages count
+  only the first device a code signed in that order, whatever time a
+  later certificate claims. The page that used it also revokes it.
 - Control never sees the seed.
 
 ### PRF: re-deriving a browser's keys
@@ -1690,9 +1713,9 @@ sleeps, and control pushes and searches them itself.
 
 <!-- Written by `just control-tables` from crates/control/tables.toml. Edit that, not this. -->
 
-Control's database has 150 tables in two planes ("Two planes, two trust rules"):
+Control's database has 151 tables in two planes ("Two planes, two trust rules"):
 
-- **The machine plane** (50 tables) is what control needs to route and check: ids, names, addresses, public keys and signed statements. What moves between a client and a machine stays end to end, and control can't read it.
+- **The machine plane** (51 tables) is what control needs to route and check: ids, names, addresses, public keys and signed statements. What moves between a client and a machine stays end to end, and control can't read it.
 - **The platform plane** (100 tables) is what has to exist while every machine is asleep: billing and usage, chat and the threads on objects, Shared Docs, Cloud workspaces, linked repos' PRs and issues, and projects' native issues, runs and deploys. Control reads most of it, and says so here.
 
 Every table is listed in `crates/control/tables.toml`, and a test fails when one isn't. **Holds** is what's in it: metadata (ids, names, addresses, times, counts, public keys, signed statements), ciphertext (encrypted to keys control never holds), or plaintext (what people or their agents wrote, or a secret control can read). **Gone with the account** is what deleting an account does to its rows.
@@ -1722,6 +1745,7 @@ Every table is listed in `crates/control/tables.toml`, and a test fails when one
 | `email_tokens` | **plaintext** | A typed address waiting for its verify link (#1609): the link's token by its hash, the address, and when it expires (a day). | yes | The email provider |
 | `email_sends` | metadata | That control emailed an account (#1609): which kind of notice and when, never its body. Kept 90 days, for the daily limit. | yes |  |
 | `revocations` | metadata | A signed revocation of a device's or machine's key. | yes |  |
+| `recovery_uses` | metadata | Which device each recovery code let in (their ids), recorded once, when control first takes an approval by the code. | yes |  |
 | `joins` | metadata | A machine asking to join: its certificate, a hash of its poll token, its addresses, the approval. | yes |  |
 | `daemons` | metadata | The directory: a joined machine's id, name, addresses, team, last seen, and the version, OS and arch it runs. | yes | PostHog |
 | `daemon_access` | metadata | The accounts a machine says it lets in, for routing (the machine checks for itself). | yes |  |

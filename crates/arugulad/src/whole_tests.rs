@@ -55,3 +55,15 @@ fn an_output_schema_is_an_object_with_a_summary() {
     register();
     tools::an_output_schema_is_an_object_with_a_summary();
 }
+
+#[test]
+fn every_tool_and_kind_is_placed() {
+    register();
+    tools::every_tool_and_kind_is_placed();
+}
+
+#[test]
+fn a_guests_agent_is_refused_every_owners_tool() {
+    register();
+    tools::a_guests_agent_is_refused_every_owners_tool();
+}

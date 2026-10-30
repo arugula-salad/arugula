@@ -11,7 +11,11 @@ signature on their routes (list, create, open, rebuild, delete, the spec,
 secrets, previews and transcripts) and scopes it to the daemon's account,
 as it would that account's own session. The agents on that machine drive
 them through MCP (`list kind cloud_workspaces`, `cloud`, `read_cloud`:
-"Agents on hosted workspaces", below).
+"Agents on hosted workspaces", below). Those are the owner's own agents:
+an agent a guest stands behind (one a guest started in a session they edit,
+on a VM of theirs) is refused every tool that acts as the owner, a machine
+tool's `cloud_workspace` among them, by one check before any tool runs
+(`crates/arugulad-mcp/src/guests.rs`).
 **A teammate with run rights on a machine can therefore drive its owner's
 Cloud workspaces through the agents there.** That was decided, not
 overlooked (`cloud::CloudDriver` in `crates/platform/src/cloud/mod.rs`).

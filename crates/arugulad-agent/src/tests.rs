@@ -364,6 +364,23 @@ fn the_agent_withdraws_its_question_and_links_close_when_complete() {
 }
 
 #[test]
+fn a_link_question_carries_only_a_web_link() {
+    let mut g = Inner::new(Config::default(), None);
+    let link = |id: u64, url: &str| {
+        json!({ "jsonrpc": "2.0", "id": id, "method": "elicitation/create", "params": { "mode": "url",
+            "message": "Sign in", "url": url, "elicitationId": format!("e{id}") } })
+    };
+    for (id, url) in [(1, "javascript:alert(1)"), (2, "file:///etc/passwd"), (3, " https://x.test"), (4, "smb://h/s")] {
+        g.on_in(&link(id, url), id);
+        assert_eq!(g.asks.last().unwrap().ask.url, None, "{url}");
+    }
+    for (id, url) in [(5, "https://example.com/x"), (6, "HTTP://example.com/")] {
+        g.on_in(&link(id, url), id);
+        assert_eq!(g.asks.last().unwrap().ask.url.as_deref(), Some(url));
+    }
+}
+
+#[test]
 fn a_member_s_agent_runs_as_its_session_and_keeps_its_runs_in_its_config() {
     let cfg: Config = serde_json::from_value(json!({
         "agent": "claude", "cwd": "/w/app",
