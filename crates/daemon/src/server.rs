@@ -207,9 +207,10 @@ pub fn asset_file(path: &str) -> Option<Vec<u8>> {
 
 /// Cross-site requests can't read our answers, but a POST still lands: so a
 /// browser's API call must come from one of our own origins. Programs (no
-/// Origin header) are fine.
+/// Origin header) are fine. Nor does a link on another site open an API
+/// address in the browser (`check_api_navigation`).
 async fn api_origin(State(app): State<Arc<App>>, req: Request, next: Next) -> Response {
-    match app.access.check_origin(req.headers()) {
+    match crate::access::check_api_navigation(req.headers()).and_then(|()| app.access.check_origin(req.headers())) {
         Ok(()) => next.run(req).await,
         Err((status, why)) => {
             warn!(%why, uri = %req.uri(), "rejected API request");

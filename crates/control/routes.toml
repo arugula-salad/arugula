@@ -677,6 +677,14 @@ auth = "session"
 clients = ["page"]
 
 [[route]]
+method = "GET"
+path = "/api/teams/{id}/rosters"
+process = "hub"
+auth = "session"
+clients = ["page"]
+note = "the versions after the one a member's page last checked"
+
+[[route]]
 method = "POST"
 path = "/api/teams/{id}/invites"
 process = "hub"

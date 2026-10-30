@@ -11,7 +11,7 @@ import { daemonNow, E2ESocket, readWelcome } from "./src/shell/e2e/channel.ts";
 import { blockRoutesLabel } from "./src/shell/blocks/block-route.ts";
 import { blockOrigin, blockSrc, credsFor, frameAllow, grantExpiry, heard, isWebKit, MAX_LIFE_MS, mint, type Framed } from "./src/shell/blocks/through-control.ts";
 import { workerDirectBlocked } from "./src/shell/block/lna.ts";
-import { follows, newInviteKey, redeemInvite, signInvite, signRedeem, signRoster, type Roster, type TeamPin } from "./src/shell/e2e/team.ts";
+import { advance, follows, newInviteKey, redeemInvite, signInvite, signRedeem, signRoster, type Roster, type TeamPin } from "./src/shell/e2e/team.ts";
 
 const bin = process.env.INTEROP_BIN ?? "../target/debug/examples/interop";
 let failed = 0;
@@ -143,6 +143,28 @@ check("Rust trusts what we signed", JSON.stringify(rust) === JSON.stringify([roo
   const fromApp = await signInvite({ team: pin.team, role: "editor", expires: Date.now() + 86_400_000, key }, aliceApp);
   await both("the app's presigned editor invite admits", v1, await redeemInvite(v1, fromApp, seed, { account: "bob", root: bob.id, name: "bob" }), true);
 
+  // A roster moves forward only from the one held (`checkpoint::advance`):
+  // Rust and this code stop at the same place.
+  {
+    const w2 = await signRoster({ ...withBob("viewer") }, alice);
+    const w3 = await signRoster({ ...v1, version: 3 }, alice);
+    const other3 = await signRoster({ ...v1, version: 3, name: "Other" }, alice);
+    const stranger = await generateKeys();
+    const bad4 = await signRoster({ ...v1, version: 4, members: [...v1.members, { account: "bob", root: bob.id, role: "owner", name: "bob" }] }, stranger);
+    const step = async (what: string, held: Roster | null, history: Roster[], want: [number | null, number | null]) => {
+      const rs = JSON.parse(execFileSync(bin, ["advance"], { input: JSON.stringify({ pin, held, history, certs: tc }) }).toString());
+      const [cur, stopped] = await advance(held, history, pin, tc);
+      const ts = [cur?.version ?? null, stopped];
+      const ok = rs.version === want[0] && rs.stopped === want[1] && ts[0] === want[0] && ts[1] === want[1];
+      check(what, ok, `rust ${JSON.stringify(rs)}, ts ${JSON.stringify(ts)}`);
+    };
+    await step("a first look checks from the founder", null, [v1, w2, w3], [3, null]);
+    await step("an older history leaves the one held", w3, [v1, w2], [3, null]);
+    await step("another version at the one held is refused", w3, [v1, w2, other3], [3, 3]);
+    await step("a version nobody in the team signed is refused", w3, [bad4], [3, 4]);
+    await step("a version left out in between stops the walk", v1, [w2, await signRoster({ ...v1, version: 4 }, alice)], [2, 4]);
+  }
+
   // Nor does a CLI remove a browser; it removes a machine.
   const machine = await generateKeys();
   const box: Cert = { v: 1, account: "alice", device: machine.id, kind: "daemon", name: "box", noise: machine.noisePub, sign: machine.signPub, created: 3, approver: alice.id, sig: "" };
@@ -180,6 +202,50 @@ check("Rust trusts what we signed", JSON.stringify(rust) === JSON.stringify([roo
     const ours = (await evaluate(trust, withCode, [r])).has(recovered.id);
     const theirs = (JSON.parse(execFileSync(bin, ["check"], { input: JSON.stringify({ trust, certs: withCode, revocations: [r] }) }).toString()) as string[]).includes(recovered.id);
     check(what, ours === stays && theirs === stays, `ts ${ours}, rust ${theirs}`);
+  }
+
+  // Another certificate for the revoking browser's keys, unsigned or
+  // signed as a CLI, doesn't set its revocation aside, wherever it is in
+  // the list.
+  const verdicts = async (certs: Cert[], revocations: Revocation[]) => {
+    const ours = [...(await evaluate(trust, certs, revocations)).keys()].sort();
+    const theirs = JSON.parse(execFileSync(bin, ["check"], { input: JSON.stringify({ trust, certs, revocations }) }).toString()) as string[];
+    return { ours, theirs };
+  };
+  const phoneK = await generateKeys();
+  const phoneCert: Cert = { v: 1, account: "alice", device: phoneK.id, kind: "browser", name: "phone", noise: phoneK.noisePub, sign: phoneK.signPub, created: 6, approver: alice.id, sig: "" };
+  phoneCert.sig = await signText(alice, certBody(phoneCert));
+  const lost: Revocation = { v: 1, account: "alice", device: phoneK.id, at: 20, by: recovered.id, sig: "" };
+  lost.sig = await signText(recovered, revocationBody(lost));
+  const unsigned: Cert = { ...recoveredCert, kind: "cli", sig: "" };
+  const asCli: Cert = { ...recoveredCert, kind: "cli", approver: phoneK.id, sig: "" };
+  asCli.sig = await signText(phoneK, certBody(asCli));
+  for (const [what, extra] of [
+    ["unsigned", unsigned],
+    ["signed as a CLI by the phone", asCli],
+  ] as const) {
+    for (const list of [
+      [...withCode, phoneCert, extra],
+      [extra, ...withCode, phoneCert],
+    ]) {
+      const { ours, theirs } = await verdicts(list, [lost]);
+      const ok = (ids: string[]) => !ids.includes(phoneK.id) && ids.includes(recovered.id);
+      check(`a revocation stands with another certificate for its signer (${what})`, ok(ours) && ok(theirs), `ts ${ours.join(",")}, rust ${theirs.join(",")}`);
+    }
+  }
+
+  // A recovery code lets in one device: the first in the list it signed,
+  // even when a later one claims an earlier time.
+  const second = await generateKeys();
+  const secondCert: Cert = { v: 1, account: "alice", device: second.id, kind: "browser", name: "another laptop", noise: second.noisePub, sign: second.signPub, created: 4, approver: code.id, sig: "" };
+  secondCert.sig = await signText(code, certBody(secondCert));
+  for (const list of [
+    [...withCode, secondCert],
+    [recoveredCert, ...certs, codeCert, secondCert],
+  ]) {
+    const { ours, theirs } = await verdicts(list, []);
+    const ok = (ids: string[]) => ids.includes(recovered.id) && !ids.includes(second.id);
+    check("a recovery code lets in one device", ok(ours) && ok(theirs), `ts ${ours.join(",")}, rust ${theirs.join(",")}`);
   }
 }
 

@@ -669,7 +669,7 @@ fn open_log() {
         None => return,
     };
     match tauri::Url::from_file_path(&path) {
-        Ok(u) => crate::open_outside(&u),
+        Ok(u) => crate::open_file(&u),
         Err(()) => eprintln!("arugula: not a file to open: {}", path.display()),
     }
 }

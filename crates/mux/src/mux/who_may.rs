@@ -252,6 +252,7 @@ impl Daemon {
                 }
                 self.meta.entry(pane).or_default().private = *on;
                 if *on {
+                    self.access_moved();
                     // Whoever else watches it stops getting it.
                     let others: Vec<ClientId> =
                         self.clients.values().filter(|c| !c.principal.is_owner()).map(|c| c.client).collect();

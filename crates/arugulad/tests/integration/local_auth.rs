@@ -85,6 +85,36 @@ fn page_key(d: &Daemon) -> String {
 }
 
 #[test]
+fn api_addresses_open_from_our_page_and_html_captures_run_nothing() {
+    let d = start();
+    let key = page_key(&d);
+    let page_load = |site: &str| {
+        let h = [("x-arugula-key", key.as_str()), ("sec-fetch-site", site), ("sec-fetch-mode", "navigate")];
+        tcp(&d, "GET", "/api/panes", &h).0
+    };
+    // A link on another site (or another port of this machine) opens the
+    // page, not an API address.
+    assert_eq!(page_load("cross-site"), 403);
+    assert_eq!(page_load("same-site"), 403);
+    assert_eq!(page_load("same-origin"), 200);
+    assert_eq!(page_load("none"), 200);
+
+    // A link a program printed: in the HTML capture only a web link keeps
+    // its target, and the document runs nothing.
+    let cmd = r"printf '\e]8;;javascript:alert(1)\e\\one\e]8;;\e\\ \e]8;;https://e.test/\e\\two\e]8;;\e\\\n'; sleep 60";
+    let pane = d.post("/api/run", serde_json::json!({ "command": cmd }))["pane"].as_u64().unwrap();
+    d.wait_for("the links", || d.raw("GET", &format!("/api/panes/{pane}/capture"), None).1.contains("one two"));
+    let bearer = format!("Bearer {}", d.token());
+    let (status, head, html) =
+        tcp(&d, "GET", &format!("/api/panes/{pane}/capture?format=html"), &[("authorization", &bearer)]);
+    assert_eq!(status, 200, "{head}");
+    assert!(head.contains("\r\ncontent-type: text/html"), "{head}");
+    assert!(head.contains("\r\ncontent-security-policy: sandbox; default-src 'none'"), "{head}");
+    assert!(html.contains("<a>one</a>") && !html.contains("javascript:"), "{html}");
+    assert!(html.contains("<a href=\"https://e.test/\">two</a>"), "{html}");
+}
+
+#[test]
 fn a_signin_link_gives_the_page_its_key_and_goes_to_the_page() {
     let d = start();
     let token = d.token();
