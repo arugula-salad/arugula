@@ -56,7 +56,10 @@ yourself, operating the hosted one and testing it are in
 
 `just dev` runs a separate daemon on 7682 (state in
 `~/.local/state/arugula-dev`) plus Vite on 5173, leaving the real one
-alone. `just dev-fixture` fills that daemon with a workspace to look at
+alone. Sign Vite's page in once with that daemon's sign-in link on Vite's
+origin, `http://localhost:5173/auth?token=$(cat
+~/.local/state/arugula-dev/local-token)`: the link's page keeps the page
+key in that origin's storage. `just dev-fixture` fills that daemon with a workspace to look at
 and screenshot (S39): 8 sessions, one with 4 tabs, a tab of 6 panes
 (tests, a shell, an agent, an editor, a diff and a browser) and two
 panes wanting you. Its asymmetric layout puts a populated fixture agent beside

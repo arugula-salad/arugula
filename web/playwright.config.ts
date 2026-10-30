@@ -6,9 +6,9 @@ import { defineConfig } from "@playwright/test";
 // First, before any module below sets ARUGULA_* for the run (#682).
 import "./e2e/scrub-env.ts";
 // Loopback callers show the daemon's local token: every daemon of the run
-// shares one, which browsers carry as a cookie.
+// shares one, and so one page key, which browsers carry as a header.
 import { labs } from "./e2e/labs.ts";
-import { tokenCookies } from "./e2e/local-token.ts";
+import { keyHeaders } from "./e2e/local-token.ts";
 // Flaky specs CI leaves out for a while (.config/quarantine.toml).
 import { e2eGrep } from "../scripts/quarantine.mjs";
 
@@ -156,7 +156,7 @@ export default defineConfig({
   use: {
     baseURL: external ?? `http://127.0.0.1:${port}`,
     viewport: { width: 1000, height: 640 },
-    storageState: { cookies: tokenCookies, origins: [] },
+    extraHTTPHeaders: keyHeaders,
     // Only a failed spec leaves a picture, in test-results/: CI uploads it.
     screenshot: "only-on-failure",
   },

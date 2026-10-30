@@ -19,7 +19,7 @@ import { promisify } from "node:util";
 import { chromium, expect, test, type FrameLocator, type Page } from "@playwright/test";
 import { menu, menuItem, paneEl, panes, ready, reset, run, closeContexts } from "./helpers";
 import type { PaneId } from "../src/shared/proto";
-import { tokenCookies } from "./local-token";
+import { keyHeaders } from "./local-token";
 import { ANY, blockPort, daemonPort } from "./ports";
 import { iphone, launchWebkit, pixel7 } from "./phones";
 import { labs } from "./labs";
@@ -266,7 +266,7 @@ async function openFromPhone(page: Page, line: number): Promise<number> {
 // #214 section 6: from a phone context (touch, mobile, its own size), on a
 // warm server. Chrome as a Pixel 7.
 test("from a Pixel 7, a file opens once warm (timed, 3 s budget)", async ({ browser }) => {
-  const ctx = await browser.newContext({ ...pixel7, baseURL: APP, storageState: { cookies: tokenCookies, origins: [] } });
+  const ctx = await browser.newContext({ ...pixel7, baseURL: APP, extraHTTPHeaders: keyHeaders });
   const ms = await openFromPhone(await ctx.newPage(), AT);
   timing(`Pixel 7: ${AUTH} shown after opening`, ms, 3000);
   await ctx.close();
@@ -277,7 +277,7 @@ test("from a Pixel 7, a file opens once warm (timed, 3 s budget)", async ({ brow
 test("from an iPhone (WebKit), a file opens once warm (timed, 3 s budget)", async () => {
   const browser = await launchWebkit();
   try {
-    const ctx = await browser.newContext({ ...iphone, baseURL: APP, storageState: { cookies: tokenCookies, origins: [] } });
+    const ctx = await browser.newContext({ ...iphone, baseURL: APP, extraHTTPHeaders: keyHeaders });
     const ms = await openFromPhone(await ctx.newPage(), AT);
     timing(`iPhone: ${AUTH} shown after opening`, ms, 3000);
   } finally {
@@ -294,7 +294,7 @@ test("from another site, in a browser that blocks third-party cookies: the file 
   writeFileSync(join(profile, "Default/Preferences"), JSON.stringify({ profile: { cookie_controls_mode: 1, block_third_party_cookies: true } }));
   const ctx = await chromium.launchPersistentContext(profile, { channel: "chrome", baseURL: APP, viewport: { width: 1000, height: 640 } });
   // A profile of its own: signed in to the daemon as the config's contexts are.
-  await ctx.addCookies(tokenCookies);
+  await ctx.setExtraHTTPHeaders(keyHeaders);
   try {
     const page = ctx.pages()[0] ?? (await ctx.newPage());
     await page.goto("/");
