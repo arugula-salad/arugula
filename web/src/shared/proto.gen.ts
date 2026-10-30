@@ -461,7 +461,12 @@ export type ChatAskAnswer = { choice: string, };
  * sets their choice (absent: leave it). `machines`: whose online state
  * the page wants too (the machines its messages' agents are on).
  */
-export type ChatBeat = { idle: boolean, gone: boolean, mode: PresenceMode | null, machines: Array<string>, };
+export type ChatBeat = { idle: boolean, gone: boolean, mode: PresenceMode | null, 
+/**
+ * The reader's live presence choice, when they changed it (kept with
+ * `live-presence` on; ignored with it off).
+ */
+live: LivePresence | null, machines: Array<string>, };
 
 /**
  * A public channel in the browser (#118).
@@ -778,7 +783,12 @@ export type ChatPresence = {
 /**
  * The reader's own choice.
  */
-mode: PresenceMode, people: Array<ChatPresent>, machines_online: Array<string>, };
+mode: PresenceMode, 
+/**
+ * The reader's live presence choice, with the `live-presence` Labs flag
+ * on for them; absent with it off, which is how a page learns the flag.
+ */
+live?: LivePresence | null, people: Array<ChatPresent>, machines_online: Array<string>, };
 
 /**
  * One teammate's presence.
@@ -2500,6 +2510,14 @@ process?: string,
 pane?: boolean, };
 
 /**
+ * Live presence (Arugula #341, the `live-presence` Labs flag), kept on the
+ * account so every page agrees: `off` (the default), in no arugula.stream
+ * room; `watching`, in your teams' rooms, seeing their live faces. Live
+ * (your camera) isn't kept: it's per window, on top of `watching`.
+ */
+export type LivePresence = "off" | "watching";
+
+/**
  * A machine that blocks can run on instead of this host: today a
  * throwaway wisp sprite (a Firecracker microVM) owned by one pane, and
  * deleted when that pane closes.
@@ -2783,8 +2801,7 @@ pane: number, how: NvimWhere, };
 
 /**
  * `GET /api/nvim-plugin` (#1733): the copies of arugula.nvim this daemon
- * installed, and the version it carries now, for Settings > Editor >
- * nvim.
+ * installed, and the version it carries now.
  */
 export type NvimPluginCopies = { 
 /**
@@ -4622,6 +4639,7 @@ export const FLAGS = [
   { name: "additional-forges", title: "GitLab and Forgejo", about: "PR and issue blocks for GitLab and Forgejo, beside GitHub's.", default: false, local_only: false },
   { name: "agent-delegation", title: "Local agent delegation", about: "Agent recipes, offering them from this machine, your team's agent catalog and tasks between machines.", default: false, local_only: true },
   { name: "boards", title: "Boards", about: "A project's boards and epics, which need control.", default: false, local_only: false },
+  { name: "live-presence", title: "Live presence", about: "Your teammates' live faces on their avatars across Arugula, and yours when you choose Live. Needs control.", default: false, local_only: false },
 ] as const;
 
 /** Renamed Labs flags (`arugula_proto::flags::ALIASES`, aru-117): the old

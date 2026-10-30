@@ -7,7 +7,7 @@
 
 import type { ComponentChildren } from "preact";
 import { useSubscribe } from "../shared/ui/hooks";
-import { useRef } from "preact/hooks";
+import { useEffect, useRef } from "preact/hooks";
 import { openMenu, useMenuFrom, type MenuItem } from "../shared/ui/menu";
 import { openAppearance } from "../shared/ui/appearance";
 import { WindowButtons } from "../shared/ui/window-buttons";
@@ -18,6 +18,8 @@ import { names } from "./links";
 import { chat } from "../shared/chat-store";
 import { AccountPicture } from "../shared/chat/avatar";
 import { presenceItems } from "../shared/chat/presence";
+import { LiveSwitch, liveItems } from "../shared/live/switch";
+import { setWorkingTeam } from "../shared/live/live";
 import { ChatPlaceUnread, PlaceUnread } from "./thread-unread";
 import { barProject, where } from "./where";
 import { InboxCount } from "./inbox-count";
@@ -85,6 +87,9 @@ export function PlatformBar({ children }: { children?: ComponentChildren }) {
   // None on a page that's no project's: the bar says "All projects".
   const project = barProject(r);
   const p = session.project(project);
+  // Live's camera goes to the team of the project on screen (#343).
+  const working = p?.team?.id ?? null;
+  useEffect(() => setWorkingTeam(working), [working]);
   // With boards on, Triage takes Issues' place and Boards follows it (#292).
   // Until they've answered, and with them off, the bar is Issues as ever.
   const boards = useBoards(project);
@@ -116,7 +121,7 @@ export function PlatformBar({ children }: { children?: ComponentChildren }) {
       // the two pages share it.
       { label: "Appearance…", run: openAppearance },
       // Who's around (#110): chat's people see this, and only they.
-      ...presenceItems(),
+      ...presenceItems(liveItems()),
       // Control's one label (UI audit #184): it opens in this tab, so no ↗.
       { label: "Open Control", run: () => location.assign(controlOrigin()) },
       "separator",
@@ -218,6 +223,8 @@ export function PlatformBar({ children }: { children?: ComponentChildren }) {
       <a class="place platform-shell" href={controlOrigin()} title="Your machines, terminals, devices and teams, on Control" data-platform-shell>
         Control
       </a>
+      {/* #341: live presence, beside the account, with its Labs flag. */}
+      <LiveSwitch />
       {me && (
         <button
           ref={accountButton}

@@ -36,6 +36,23 @@ struct Build;
 /// `'unsafe-inline'` for styles alone.
 pub const CSP: &str = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self'; frame-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'; object-src 'none'";
 
+/// [`CSP`], or with live presence (control has an arugula.stream app, whose
+/// relay is at `presence`, an https origin): scripts also come from the
+/// relay (its SDK and chunks), may be `blob:` URLs the page made (its Krisp
+/// noise filter's audio worklet and worker) and may compile WebAssembly
+/// (`'wasm-unsafe-eval'`, not JS `eval`: the camera's trackers); and the
+/// page may connect to the relay's socket, LiveKit Cloud's (any `wss:`
+/// host, per project) and https (Krisp's models, the relay's assets).
+pub fn csp(presence: Option<&str>) -> Cow<'static, str> {
+    match presence {
+        None => Cow::Borrowed(CSP),
+        Some(o) => Cow::Owned(
+            CSP.replacen("script-src 'self';", &format!("script-src 'self' {o} blob: 'wasm-unsafe-eval';"), 1)
+                .replacen("connect-src 'self';", "connect-src 'self' wss: https:;", 1),
+        ),
+    }
+}
+
 /// The first path segments the page's router (`web/src/platform/paths.ts`)
 /// has routes under: a page path that starts with any other is answered
 /// as a 404 (UI audit #193). This is a copy of `TOP` there; keep the two

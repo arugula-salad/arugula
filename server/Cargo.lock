@@ -168,7 +168,7 @@ dependencies = [
 
 [[package]]
 name = "arugula-control"
-version = "0.65.2"
+version = "0.66.1"
 dependencies = [
  "anyhow",
  "arugula-control-base",
@@ -178,7 +178,7 @@ dependencies = [
 
 [[package]]
 name = "arugula-control-base"
-version = "0.65.2"
+version = "0.66.1"
 dependencies = [
  "aes-gcm 0.11.1",
  "anyhow",
@@ -221,7 +221,7 @@ dependencies = [
 
 [[package]]
 name = "arugula-control-common"
-version = "0.65.2"
+version = "0.66.1"
 dependencies = [
  "anyhow",
  "arugula-control-wire",
@@ -293,7 +293,7 @@ dependencies = [
 
 [[package]]
 name = "arugula-platform"
-version = "0.65.2"
+version = "0.66.1"
 dependencies = [
  "anyhow",
  "arugula-control-common",
@@ -365,7 +365,7 @@ dependencies = [
 
 [[package]]
 name = "arugula-platform-base"
-version = "0.65.2"
+version = "0.66.1"
 dependencies = [
  "anyhow",
  "arugula-control-common",

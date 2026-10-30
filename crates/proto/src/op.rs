@@ -1004,8 +1004,8 @@ pub mod ops {
         type Res = NvimPluginCopies;
     }
 
-    /// `DELETE /api/nvim-plugin` (#1733): Settings > Editor > nvim >
-    /// "Remove arugula.nvim": deletes the copies Arugula installed here,
+    /// `DELETE /api/nvim-plugin` (#1733): Settings > Editor > "Remove
+    /// arugula.nvim": deletes the copies Arugula installed here,
     /// and only those.
     pub struct NvimPluginRemove;
 

@@ -46,6 +46,7 @@ Each feature has a flag, off on a new install:
 | `additional-forges` | GitLab and Forgejo pull request and issue blocks (GitHub's are always on), until they fit platform projects and workflows |
 | `agent-delegation` | Agent recipes, offering them from this machine as A2A agents, the team's agent catalog and tasks between machines (#403); set only on the machine |
 | `boards` | A project's boards, which are control's: where its issues, PRs and runs are managed, and an epic is a board ([Boards](#boards)) |
+| `live-presence` | Live presence: your teammates' live faces on their avatars across Arugula, from arugula.stream, and yours when you choose Live (Arugula #341–#347) |
 
 A flag also lists its feature's tools, commands and options in `arugula mcp`,
 `arugula --help` and `arugulad --help`. Without it they aren't offered, and
@@ -65,6 +66,7 @@ one isn't made.
 | `additional-forges` | Forgejo and GitLab blocks and webhooks |
 | `agent-delegation` | `/api/a2a/…`, the agent catalog block, recipes, `delegate` |
 | `boards` | nothing on the daemon: control's board routes answer 404 for an account without it |
+| `live-presence` | nothing on the daemon: control keeps no live presence choice for an account without it, and its pages offer none |
 
 ```
 arugulad flags                            # the flags, and which are on
@@ -313,6 +315,23 @@ says what is stored.
   your camera's real picture, for the people in it. The block joins only
   while it's shown. It needs an arugula.stream app on control
   ([control-ops.md](control-ops.md)); without one it says so.
+- **Live presence** (the `live-presence` Labs flag, Arugula #341–#347): the
+  same rooms as a layer over the whole app, not a block. A camera button
+  beside the account button (on control's page and the platform page) and
+  *Your presence* in the account menu choose **Off** (the default),
+  **Watching** or **Live**. Off and Watching are kept on your account, so
+  every page and window follows. Watching puts your pages in every one of
+  your teams' rooms, and wherever someone's picture shows (chat's messages,
+  members, DMs and threads, issues, a session's people) it becomes their
+  live character while their camera is on. Live is Watching plus this
+  window's camera, sent to one room (the team of the project on screen),
+  and it stops while the window is hidden and when the page reloads. At
+  chat's sizes a face is always the character, even for someone who chose
+  an outline. With Watching, arugula.stream learns you're around (your
+  account, your roster name and your teams) whenever a page is open; with
+  Live, also your character's movements, never a picture (Who else sees
+  it, [control-e2e.md](control-e2e.md)). A People block still joins its
+  team's room when the switch is Off.
 - **Typing:** the composer pings while the text changes (at most every 3 s,
   never when empty). Others with the room open see up to three names, then
   "Several people are typing…", for 6 s. It is a short-lived row in

@@ -838,12 +838,16 @@ async fn run(mut args: RunArgs, mut kept: std::collections::HashMap<String, pane
     }
     // Loopback is everyone's on this machine: callers there show the local
     // token (a resident's tunnel token stands in for it).
-    let local_token_file = localauth::path(&args.state_dir.clone().unwrap_or_else(default_state_dir));
+    let state_dir = args.state_dir.clone().unwrap_or_else(default_state_dir);
+    let local_token_file = localauth::path(&state_dir);
     if !access.tunnelled() {
         let file = &local_token_file;
+        let existed = file.exists();
         let token = localauth::load_or_create(file)
             .map_err(|e| anyhow::anyhow!("the local token ({}): {e:#}", file.display()))?;
-        access = access.require_local_token(&token, args.listen);
+        access = access
+            .require_local_token(&token, args.listen)
+            .with_legacy_cookie_until(localauth::legacy_until(&state_dir, existed));
         info!(file = %file.display(), "loopback callers need the local token; `arugula web` opens the page signed in");
     }
     let identify = tailscale::Identify::new(local_api, userspace);

@@ -7,6 +7,7 @@ import { useState } from "preact/hooks";
 import { useSubscribe } from "../ui/hooks";
 import { chat } from "../chat-store";
 import { presence } from "./presence";
+import { LiveFace } from "../live/face";
 
 /** A steady colour per person. */
 export function colorOf(who: string): string {
@@ -83,6 +84,8 @@ export function MsgAvatar({
           }}
         />
       )}
+      {/* #344: their live face over the picture while they're live (a person's; an agent isn't them). */}
+      {account && !agent && <LiveFace account={account} />}
     </span>
   );
   if (!dot && !agent) return face;

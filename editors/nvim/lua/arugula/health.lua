@@ -66,7 +66,7 @@ function M.check()
   end
   local root, installed = install_info()
   if installed then
-    h.info(("Installed by Arugula at %s (version %s). The daemon refreshes it when it's upgraded; Settings > Editor > nvim > Remove arugula.nvim deletes it."):format(root, installed))
+    h.info(("Installed by Arugula at %s (version %s). The daemon refreshes it when it's upgraded; Settings > Editor > Remove arugula.nvim deletes it."):format(root, installed))
   else
     h.info("Loaded from " .. root .. " (installed by you or your plugin manager; Arugula doesn't touch it)")
   end

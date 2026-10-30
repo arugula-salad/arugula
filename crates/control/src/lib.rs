@@ -12,6 +12,7 @@
 //! (`arugula_platform::chat`, M138), behind this hub's gate.
 
 mod account;
+mod account_delete;
 mod account_email;
 mod account_reset;
 mod activity;
@@ -24,6 +25,8 @@ mod app_signin;
 #[cfg(test)]
 mod app_signin_wire;
 mod apple_site;
+#[cfg(test)]
+mod approvals_wire;
 mod auth;
 mod blocks;
 #[cfg(test)]
@@ -647,6 +650,7 @@ fn routes() -> Routes {
         .route("/api/flags", get(labs_flags::list).post(labs_flags::set))
         .route("/api/teams", get(teams::list).post(teams::create))
         .route("/api/teams/{id}/roster", post(teams::set_roster))
+        .route("/api/teams/{id}/rosters", get(teams::rosters))
         .route("/api/teams/{id}/invites", post(teams::invite))
         .route("/api/teams/{id}/presigned", get(teams::list_presigned))
         .route("/api/teams/{id}/presigned/{key}", axum::routing::delete(teams::cancel_presigned))
@@ -822,11 +826,14 @@ async fn control_json(
 /// web page a browser block opened), so frames may come from any https site,
 /// and from control's own block origins (M50) on whatever scheme control's
 /// page is on (http only for a local control). With People blocks on,
-/// scripts also come from the arugula.stream relay, and may compile
-/// WebAssembly (`'wasm-unsafe-eval'`, not JS `eval`): its trackers do.
+/// scripts also come from the arugula.stream relay, may compile
+/// WebAssembly (`'wasm-unsafe-eval'`, not JS `eval`): its trackers do, and
+/// may be `blob:` URLs the page made: its Krisp noise filter makes its
+/// audio worklet and worker so (an audio worklet is a script; a worker
+/// falls back to `script-src`).
 async fn headers(axum::extract::State(app): axum::extract::State<Arc<App>>, mut res: Response) -> Response {
     let scripts = match &app.cfg.presence_origin {
-        Some(o) => format!(" script-src 'self' {o} 'wasm-unsafe-eval';"),
+        Some(o) => format!(" script-src 'self' {o} blob: 'wasm-unsafe-eval';"),
         None => String::new(),
     };
     let csp = |frames: &str| {
@@ -909,7 +916,8 @@ pub fn main(platforms: Box<dyn Platforms>) -> anyhow::Result<()> {
     // `arugula-control census`: an operator's read-only look at the
     // database (census.rs), with no server; `device-review` another
     // (device_review.rs). `account-reset`: support's reset of an account's
-    // devices (account_reset.rs, aru-119). `maintenance`: the switch
+    // devices (account_reset.rs, aru-119). `account-delete`: an operator's
+    // delete of an account, as Settings' (account_delete.rs). `maintenance`: the switch
     // (maintenance.rs), set in the database the running hub reads.
     // `notice`: a notice for every account (notice.rs). `issuer`: the
     // issuer's keys and clients (issuer.rs). `import planter`: planter's
@@ -925,6 +933,9 @@ pub fn main(platforms: Box<dyn Platforms>) -> anyhow::Result<()> {
     }
     if argv.peek().is_some_and(|a| a == "account-reset") {
         return account_reset::run(argv.skip(1));
+    }
+    if argv.peek().is_some_and(|a| a == "account-delete") {
+        return account_delete::run(argv.skip(1));
     }
     if argv.peek().is_some_and(|a| a == "maintenance") {
         return maintenance::run(argv.skip(1));

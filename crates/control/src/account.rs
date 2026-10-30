@@ -221,20 +221,19 @@ pub struct Plan {
     pub tell: Vec<(String, String, Vec<String>)>,
 }
 
-pub fn plan(app: &App, account: &str) -> anyhow::Result<Plan> {
-    let a = app.db.account(account)?.ok_or_else(|| anyhow::anyhow!("no such account"))?;
-    let confirm = match app.db.github_identity(account)?.map(|(_, login)| login) {
+pub fn plan(db: &crate::db::Db, account: &str) -> anyhow::Result<Plan> {
+    let a = db.account(account)?.ok_or_else(|| anyhow::anyhow!("no such account"))?;
+    let confirm = match db.github_identity(account)?.map(|(_, login)| login) {
         Some(l) if !l.is_empty() => l,
         _ if !a.name.is_empty() => a.name.clone(),
         _ => a.id.clone(),
     };
-    let (approved, pending) = app.db.devices(account)?;
+    let (approved, pending) = db.devices(account)?;
     let mine: HashSet<String> = approved.iter().chain(&pending).map(|c| c.device.clone()).collect();
     let mut p = Plan { confirm, ..Default::default() };
-    for team in app.db.team_ids()? {
-        let Some(t) = app.db.team(&team)? else { continue };
-        let rosters: Vec<Roster> =
-            app.db.rosters(&team, 0)?.iter().filter_map(|b| serde_json::from_str(b).ok()).collect();
+    for team in db.team_ids()? {
+        let Some(t) = db.team(&team)? else { continue };
+        let rosters: Vec<Roster> = db.rosters(&team, 0)?.iter().filter_map(|b| serde_json::from_str(b).ok()).collect();
         let Some(latest) = rosters.last() else { continue };
         let role = latest.member(account).map(|m| m.role);
         let others: Vec<_> = latest.members.iter().filter(|m| m.account != account).collect();
@@ -288,7 +287,7 @@ pub async fn pays(app: &App, account: &str, p: &Plan) -> anyhow::Result<Vec<Stri
 
 /// `GET /api/me/delete`: what deleting this account would do.
 pub async fn preview(State(app): State<Arc<App>>, s: Session) -> R {
-    let mut p = plan(&app, &s.account)?;
+    let mut p = plan(&app.db, &s.account)?;
     p.pays = pays(&app, &s.account, &p).await?;
     p.blockers.splice(0..0, app.platform.delete_blockers(&s.account, false).await?);
     let machines = app.db.daemons(&s.account)?.len();
@@ -321,7 +320,7 @@ pub async fn delete(State(app): State<Arc<App>>, s: PageSession, Json(b): Json<C
 }
 
 pub async fn delete_account(app: &Arc<App>, account: &str, typed: &str) -> Result<(), ApiError> {
-    let mut p = plan(app, account)?;
+    let mut p = plan(&app.db, account)?;
     p.pays = pays(app, account, &p).await?;
     // The platform's first (none since Cloud's Managoat side went).
     p.blockers.splice(0..0, app.platform.delete_blockers(account, false).await?);
@@ -429,7 +428,7 @@ async fn tell_platform(app: &App, deleted: &arugula_platform_api::Deleted) -> bo
 }
 
 /// How often deletions the platform hasn't confirmed are sent again.
-const TELL_EVERY: std::time::Duration = std::time::Duration::from_secs(30);
+pub(crate) const TELL_EVERY: std::time::Duration = std::time::Duration::from_secs(30);
 
 /// Every [`TELL_EVERY`], tell the platform of each deletion it hasn't
 /// confirmed yet (`untold_deletions`, M140): taking one twice changes
@@ -606,7 +605,7 @@ mod tests {
             )
             .unwrap();
 
-        let p = plan(&app, "acct-alice").unwrap();
+        let p = plan(&app.db, "acct-alice").unwrap();
         assert_eq!(p.confirm, "alice");
         assert_eq!(p.disband.iter().map(|d| d.0.as_str()).collect::<Vec<_>>(), ["t1"]);
         assert!(p.blockers.is_empty() && p.pays.is_empty() && p.retain_for.is_empty());
@@ -734,12 +733,12 @@ mod tests {
         );
         next(&app, &v3);
         // While he's still an owner, he leaves first.
-        let p = plan(&app, "acct-bob").unwrap();
+        let p = plan(&app.db, "acct-bob").unwrap();
         assert_eq!(p.blockers.len(), 1, "{:?}", p.blockers);
         assert!(delete_account(&app, "acct-bob", "bob").await.is_err());
         next(&app, &roster("t3", 4, vec![carol(), member("acct-dave", &dc, TeamRole::Viewer)], &ck));
         // Dave, a plain member, could go any time; he stays listed.
-        let p = plan(&app, "acct-dave").unwrap();
+        let p = plan(&app.db, "acct-dave").unwrap();
         assert!(p.blockers.is_empty() && p.retain_for.is_empty() && p.disband.is_empty());
         assert_eq!(p.tell.len(), 1);
 
@@ -773,7 +772,7 @@ mod tests {
             ),
         );
         // Ben, made an owner but never signing, is an owner all the same.
-        assert!(plan(&app, "acct-ben").unwrap().blockers[0].contains("an owner of"));
+        assert!(plan(&app.db, "acct-ben").unwrap().blockers[0].contains("an owner of"));
     }
 
     #[test]

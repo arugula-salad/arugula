@@ -242,6 +242,10 @@ pub(crate) struct RunArgs {
     /// Extra origins whose pages may use this daemon (WebSocket and API),
     /// exactly as the browser sends them: the Vite dev server, or the home
     /// daemon whose host list this daemon is on (`https://home.example.ts.net`).
+    /// Through `tailscale serve` the tailnet says who is asking. Another
+    /// daemon's page on this same machine (`http://127.0.0.1:OTHER`) can't
+    /// sign in here: its page key is only for its own daemon, and no cookie
+    /// counts. That works in tests only, where every request carries the key.
     #[arg(long = "allow-origin")]
     pub(crate) allow_origins: Vec<String>,
 

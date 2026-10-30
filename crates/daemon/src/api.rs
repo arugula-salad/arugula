@@ -189,6 +189,76 @@ impl Tap {
     }
 }
 
+/// Someone other than the owner following a pane or block: authz let
+/// them in when the follow began, and the stream asks again whenever who
+/// may read what changes (a grant removed or expired, the pane made
+/// private or moved), ending once they no longer may.
+struct Reader {
+    app: Arc<App>,
+    who: crate::acl::Principal,
+    changes: tokio::sync::watch::Receiver<u64>,
+    /// A change seen and not yet checked (so a check cut short is redone).
+    recheck: bool,
+}
+
+impl Reader {
+    /// Watching for changes first, then asking again whether they may read
+    /// `pane` from `from`, as authz did at the door: a change that landed
+    /// in between is in that answer, and one after it wakes the stream.
+    /// None for the owner.
+    async fn start(app: &Arc<App>, who: Option<crate::acl::Principal>, pane: PaneId, from: u64) -> Res<Option<Self>> {
+        let Some(who) = who.filter(|w| !w.is_owner()) else { return Ok(None) };
+        let mut r = Self { app: app.clone(), who, changes: app.mux.access_changes(), recheck: true };
+        if !r.reads(pane, Some(from)).await {
+            return Err(ApiError(StatusCode::NOT_FOUND, "no such pane".into()));
+        }
+        r.recheck = false;
+        Ok(Some(r))
+    }
+
+    /// Whether they may still read `pane` (from `at`, under a "from now"
+    /// share), as authz checks it.
+    async fn reads(&self, pane: PaneId, at: Option<u64>) -> bool {
+        let who = self.who.clone();
+        match self.app.mux.api(|r| Api::RoleOn(who, pane, r)).await.flatten() {
+            Some((role, floor)) => {
+                role >= arugula_core::Role::Viewer && floor.zip(at).is_none_or(|(floor, at)| at >= floor)
+            }
+            None => false,
+        }
+    }
+
+    /// Done once they may no longer read `pane`; never for the owner
+    /// (`None`). Cancel safe.
+    async fn lost(reader: &mut Option<Self>, pane: PaneId, at: Option<u64>) {
+        let Some(r) = reader else { return std::future::pending().await };
+        loop {
+            if !r.recheck {
+                if r.changes.changed().await.is_err() {
+                    return std::future::pending().await;
+                }
+                r.recheck = true;
+            }
+            if !r.reads(pane, at).await {
+                return;
+            }
+            r.recheck = false;
+        }
+    }
+}
+
+/// In a debug build, `ARUGULA_TAIL_START_PAUSE_MS` holds a guest's tail
+/// between authz's check and the handler's own start (for tests: access
+/// changing in between).
+async fn after_authz_pause() {
+    if !cfg!(debug_assertions) {
+        return;
+    }
+    if let Some(ms) = std::env::var("ARUGULA_TAIL_START_PAUSE_MS").ok().and_then(|v| v.parse::<u64>().ok()) {
+        tokio::time::sleep(Duration::from_millis(ms)).await;
+    }
+}
+
 fn read_log(app: &App, id: PaneId, from: u64) -> (u64, Vec<u8>) {
     PaneLog::open(app.mux.store.pane_dir(id)).and_then(|l| l.read_from(from)).unwrap_or((from, vec![]))
 }
@@ -627,6 +697,9 @@ struct CaptureQuery {
     scope: Option<String>,
 }
 
+/// The HTML capture's policy: a sandboxed document with nothing to load.
+const HTML_CAPTURE_CSP: &str = "sandbox; default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'none'";
+
 async fn capture(State(app): AppState, Path(id): Path<PaneId>, Query(q): Query<CaptureQuery>) -> Res<Response> {
     // Any block has a text rendering; terminals have more.
     if let Some(b) = app.mux.api(|r| Api::Block(id, r)).await.flatten() {
@@ -650,8 +723,16 @@ async fn capture(State(app): AppState, Path(id): Path<PaneId>, Query(q): Query<C
         .ok()
         .flatten()
         .ok_or_else(|| ApiError(StatusCode::GATEWAY_TIMEOUT, "the pane didn't answer".into()))?;
-    let ctype = if format == CaptureFormat::Html { "text/html; charset=utf-8" } else { "text/plain; charset=utf-8" };
-    Ok(([(header::CONTENT_TYPE, ctype)], text).into_response())
+    if format == CaptureFormat::Html {
+        // A rendering of what programs printed, to save or show: opened in
+        // a browser it runs nothing and loads nothing.
+        return Ok((
+            [(header::CONTENT_TYPE, "text/html; charset=utf-8"), (header::CONTENT_SECURITY_POLICY, HTML_CAPTURE_CSP)],
+            text,
+        )
+            .into_response());
+    }
+    Ok(([(header::CONTENT_TYPE, "text/plain; charset=utf-8")], text).into_response())
 }
 
 async fn open_block(
@@ -966,15 +1047,24 @@ fn tail_closed(app: &App, id: PaneId, q: &TailQuery) -> Res<Response> {
 /// A block that isn't a terminal: its text, then (following) what it adds.
 /// Text that changes in place (a tool call finishing) is printed again from
 /// the first line that changed.
-fn tail_block(app: Arc<App>, id: PaneId, b: Arc<dyn crate::block::Block>, follow: bool) -> Response {
+fn tail_block(
+    app: Arc<App>,
+    id: PaneId,
+    b: Arc<dyn crate::block::Block>,
+    follow: bool,
+    reader: Option<Reader>,
+) -> Response {
     let first = b.text();
     if !follow {
         return first.into_response();
     }
     drop(b);
-    let live = stream::unfold((app, first.clone()), move |(app, mut seen)| async move {
+    let live = stream::unfold((app, first.clone(), reader), move |(app, mut seen, mut reader)| async move {
         loop {
-            tokio::time::sleep(Duration::from_millis(250)).await;
+            tokio::select! {
+                _ = tokio::time::sleep(Duration::from_millis(250)) => {}
+                _ = Reader::lost(&mut reader, id, None) => return None,
+            }
             let b = app.mux.api(|r| Api::Block(id, r)).await.flatten()?;
             let now = b.text();
             if now == seen {
@@ -985,7 +1075,7 @@ fn tail_block(app: Arc<App>, id: PaneId, b: Arc<dyn crate::block::Block>, follow
             let from = now[..same].rfind('\n').map(|i| i + 1).unwrap_or(0);
             let out = now[from..].to_owned();
             seen = now;
-            return Some((Ok::<_, Infallible>(Bytes::from(out)), (app, seen)));
+            return Some((Ok::<_, Infallible>(Bytes::from(out)), (app, seen, reader)));
         }
     });
     Body::from_stream(stream::once(async move { Ok::<_, Infallible>(Bytes::from(first)) }).chain(live)).into_response()
@@ -1033,12 +1123,25 @@ pub(crate) async fn wait_attention(app: &App, id: PaneId, needs_input: bool) -> 
     }
 }
 
-async fn tail(State(app): AppState, Path(id): Path<PaneId>, Query(q): Query<TailQuery>) -> Res<Response> {
-    if let Some(host) = q.host.clone() {
-        return tail_synced(&app, id, host, &q).await;
+async fn tail(
+    State(app): AppState,
+    who: Option<axum::Extension<crate::acl::Principal>>,
+    Path(id): Path<PaneId>,
+    Query(q): Query<TailQuery>,
+) -> Res<Response> {
+    let who = who.map(|axum::Extension(w)| w).filter(|w| !w.is_owner());
+    if who.is_some() {
+        after_authz_pause().await;
     }
+    if let Some(host) = q.host.clone() {
+        return tail_synced(&app, who.as_ref(), id, host, &q).await;
+    }
+    // Under a "from now" share authz let in only an offset at or after
+    // where it began; anything else reads from before any start.
+    let asked = q.from.as_deref().and_then(|f| f.parse::<u64>().ok()).unwrap_or(0);
+    let reader = Reader::start(&app, who, id, asked).await?;
     if let Some(b) = app.mux.api(|r| Api::Block(id, r)).await.flatten() {
-        return Ok(tail_block(app.clone(), id, b, q.follow == Some(1)));
+        return Ok(tail_block(app.clone(), id, b, q.follow == Some(1), reader));
     }
     let p = match pane(&app, id).await {
         Ok(p) => p,
@@ -1075,10 +1178,17 @@ async fn tail(State(app): AppState, Path(id): Path<PaneId>, Query(q): Query<Tail
         return Ok(first.into_response());
     }
     let tap = tap(p, resume);
-    let live = stream::unfold(tap, move |mut tap| async move {
-        let (_, data) = tap.next().await?;
+    let live = stream::unfold((tap, reader, resume), move |(mut tap, mut reader, mut at)| async move {
+        let data = tokio::select! {
+            next = tap.next() => {
+                let (offset, data) = next?;
+                at = offset;
+                data
+            }
+            _ = Reader::lost(&mut reader, id, Some(at)) => return None,
+        };
         let out = if text { strip(&data).into_bytes() } else { data };
-        Some((Ok::<_, Infallible>(Bytes::from(out)), tap))
+        Some((Ok::<_, Infallible>(Bytes::from(out)), (tap, reader, at)))
     });
     let body = stream::once(async move { Ok::<_, Infallible>(Bytes::from(first)) }).chain(live);
     Ok(Body::from_stream(body).into_response())
@@ -1525,8 +1635,19 @@ async fn search(State(app): AppState, Query(q): Query<SearchQuery>) -> Res<Respo
 }
 
 /// A pane synced from another host: its output from an offset (default the
-/// last 64 KB), no following.
-async fn tail_synced(app: &App, id: PaneId, host: String, q: &TailQuery) -> Res<Response> {
+/// last 64 KB), no following. Another host's history is the owner's alone,
+/// as with `/api/history` (authz checked `who` on this host's pane of the
+/// same number, not that one).
+async fn tail_synced(
+    app: &App,
+    who: Option<&crate::acl::Principal>,
+    id: PaneId,
+    host: String,
+    q: &TailQuery,
+) -> Res<Response> {
+    if who.is_some_and(|w| !w.is_owner()) {
+        return Err(ApiError(StatusCode::FORBIDDEN, "only the owner can do that".into()));
+    }
     let synced = app.synced.clone();
     let from = match q.from.as_deref() {
         None => None,

@@ -10,57 +10,29 @@
 // relay's, joined with a token control signs for the person looking
 // (`POST /api/chat/presence/token`, members only).
 //
-// The elements load from the relay's own site the first time a People
-// block is shown (control's CSP lets its scripts in only when control has
-// an arugula.stream app), and the room is joined only while the block is
-// shown: a People block in a tab nobody has open is in no room.
+// The room is the page's live presence connection's (shared/live, #346):
+// the block holds its team's room open while it's shown, whatever the
+// live presence switch says, and the elements draw from that room
+// (`el.room`), so live avatars elsewhere on the page and this block are
+// one member in it. A People block in a tab nobody has open holds
+// nothing. A room that's connecting, refused or out of reach says so, with
+// Try again, rather than leaving the block blank.
 
 import { render } from "preact";
 import { useEffect, useRef, useState } from "preact/hooks";
 import type { Client } from "../client";
 import type { PaneId } from "../../shared/proto";
-import { platformFetch, refusalOf } from "../../shared/maintenance";
 import { askText } from "../../shared/ui/menu";
 import { useSubscribe } from "../../shared/ui/hooks";
 import { getControlSession } from "../ui/people";
+import { live } from "../../shared/live/live";
+import type { RoomState, SdkRoom } from "../../shared/live/store";
 import { registerBlock, type BlockView } from "./view";
 import "./people.css";
-
-const TOKEN_URL = "/api/chat/presence/token";
 
 /** The block's state: its layout entry, which the daemon says whole. */
 export interface PeopleState {
   team: string;
-}
-
-/** The relay's https origin, from its socket's URL. */
-function httpOrigin(relay: string): string {
-  return new URL(relay.replace(/^ws/, "http")).origin;
-}
-
-/** arugula.stream's elements, loaded once from the relay's site. */
-let loaded: Promise<unknown> | null = null;
-function loadElements(relay: string) {
-  loaded ??= import(/* @vite-ignore */ `${httpOrigin(relay)}/sdk/v0/presence.js`).catch((e) => {
-    loaded = null;
-    throw e;
-  });
-  return loaded;
-}
-
-type Joined = { relay: string } | { error: string };
-
-/** Whether control will sign this person into `room`, and the relay it's on. */
-async function ask(room: string): Promise<Joined> {
-  const r = await platformFetch(TOKEN_URL, {
-    method: "POST",
-    credentials: "same-origin",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ room }),
-  });
-  const body = (await r.json().catch(() => ({}))) as { relay?: string; error?: string; reason?: string };
-  if (!r.ok || !body.relay) return { error: refusalOf(r.status, body, `Control said ${r.status}`) };
-  return { relay: body.relay };
 }
 
 /** Grid or Speaker view, while you're in a call or the room's voice. */
@@ -98,16 +70,14 @@ function LayoutToggle({ layout, onLayout }: { layout: Layout; onLayout: (l: Layo
   );
 }
 
-function Room({ team, relay }: { team: string; relay: string }) {
+function Room({ sdkRoom }: { sdkRoom: SdkRoom }) {
   const ref = useRef<HTMLDivElement>(null);
   const [room, setRoom] = useState<HTMLElement | null>(null);
-  const [failed, setFailed] = useState<string | null>(null);
   const [talking, setTalking] = useState(false);
   const [layout, setLayout] = useState<Layout>(keptLayout);
   useEffect(() => {
     const host = ref.current;
     if (!host) return;
-    let gone = false;
     let inCall = false;
     let inVoice = false;
     const heard = (e: Event) => {
@@ -116,34 +86,26 @@ function Room({ team, relay }: { team: string; relay: string }) {
       else inVoice = !!d.joined;
       setTalking(inCall || inVoice);
     };
-    loadElements(relay)
-      .then(() => {
-        if (gone) return;
-        // Made by hand: the room joins when it's connected, and leaves when
-        // it's taken out.
-        const r = document.createElement("arugula-room");
-        r.setAttribute("room", `team:${team}`);
-        r.setAttribute("token-url", TOKEN_URL);
-        r.setAttribute("relay", relay);
-        const bar = document.createElement("div");
-        bar.className = "people-layout-slot";
-        const el = (name: string) => document.createElement(name);
-        r.append(el("arugula-camera"), el("arugula-voice"), el("arugula-call"), bar, el("arugula-people"));
-        r.addEventListener("arugula:call", heard);
-        r.addEventListener("arugula:voice", heard);
-        host.replaceChildren(r);
-        setRoom(r);
-      })
-      .catch(() => !gone && setFailed(`arugula.stream's elements didn't load from ${httpOrigin(relay)}`));
+    // Made by hand, on the page's connected room (`room`, an SDK property):
+    // taking it out doesn't leave the room; the live presence store does,
+    // once nothing holds it.
+    const r = document.createElement("arugula-room") as HTMLElement & { room: SdkRoom | null };
+    r.room = sdkRoom;
+    const bar = document.createElement("div");
+    bar.className = "people-layout-slot";
+    const el = (name: string) => document.createElement(name);
+    r.append(el("arugula-camera"), el("arugula-voice"), el("arugula-call"), bar, el("arugula-people"));
+    r.addEventListener("arugula:call", heard);
+    r.addEventListener("arugula:voice", heard);
+    host.replaceChildren(r);
+    setRoom(r);
     return () => {
-      gone = true;
-      const bar = host.querySelector<HTMLElement>(".people-layout-slot");
-      if (bar) render(null, bar);
+      render(null, bar);
       host.replaceChildren();
       setRoom(null);
       setTalking(false);
     };
-  }, [team, relay]);
+  }, [sdkRoom]);
   // Speaker view: whoever's talking big (<arugula-spotlight>, there only
   // while it's shown, so nobody sends 720p for a hidden tile) and the rest
   // of the room as heads under it. Grid: a tile each.
@@ -177,26 +139,37 @@ function Room({ team, relay }: { team: string; relay: string }) {
       people.replaceWith(next);
     }
   }, [room, talking, layout, speaker]);
-  return failed ? <p class="people-none dim">{failed}</p> : <div ref={ref} class="people-room" />;
+  return <div ref={ref} class="people-room" />;
+}
+
+/** What the block says of its room while it isn't drawing it. */
+function RoomNote({ team, state, why }: { team: string; state: RoomState; why: string }) {
+  if (state === "connecting") return <p class="people-none dim" data-people-connecting>Joining your team's room…</p>;
+  const said = state === "refused" ? why || "arugula.stream refused this room" : "Couldn't reach arugula.stream";
+  return (
+    <p class="people-none dim" data-people-refused={state}>
+      {said}{" "}
+      <button type="button" class="link" data-people-retry onClick={() => live.retry(team)}>
+        Try again
+      </button>
+    </p>
+  );
 }
 
 function PeopleBlock({ s, shown }: { s: PeopleState | null; shown: boolean }) {
   const session = getControlSession();
   useSubscribe((fn) => session?.subscribe(fn) ?? (() => {}));
+  useSubscribe((fn) => live.subscribe(fn));
   const ready = session?.phase === "ready";
-  const [joined, setJoined] = useState<Joined | null>(null);
   const team = s?.team;
+  // The block holds its team's room open while it's shown, whatever the
+  // live presence switch says (#346).
   useEffect(() => {
-    if (!team || !ready) return;
-    let gone = false;
-    ask(`team:${team}`)
-      .then((j) => !gone && setJoined(j))
-      .catch(() => !gone && setJoined({ error: "Control didn't answer" }));
-    return () => {
-      gone = true;
-    };
-  }, [team, ready]);
+    if (!team || !ready || !shown) return;
+    return live.hold(team);
+  }, [team, ready, shown]);
   const name = session?.teams.find((t) => t.team === team)?.roster.name;
+  const at = team ? live.room(team) : null;
   let body;
   if (!s) body = <p class="people-none dim">…</p>;
   else if (!ready)
@@ -205,9 +178,11 @@ function PeopleBlock({ s, shown }: { s: PeopleState | null; shown: boolean }) {
         Who's around is your team's, on Arugula control, and you join as yourself. Open this machine through control's page, signed in, to see them here.
       </p>
     );
-  else if (!joined) body = <p class="people-none dim">…</p>;
-  else if ("error" in joined) body = <p class="people-none dim" data-people-refused>{joined.error}</p>;
-  else if (shown) body = <Room team={s.team} relay={joined.relay} />;
+  else if (!shown) body = null;
+  else if (!at) body = <p class="people-none dim">…</p>;
+  // A room that drops keeps drawing (the elements say they're reconnecting).
+  else if (at.room) body = <Room sdkRoom={at.room} />;
+  else body = <RoomNote team={s.team} state={at.state} why={at.why} />;
   return (
     <div class="people-block" data-people-block={s?.team}>
       {name && <header class="people-head dim">{name}</header>}

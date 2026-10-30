@@ -193,7 +193,7 @@ pub async fn split(State(app): State<Arc<App>>, mut req: Request, next: Next) ->
             PlatformAt::Remote(_) => crate::gateway::forward(State(app.clone()), req).await,
         }
     };
-    let mut res = secured(res, own);
+    let mut res = secured(res, own, app.cfg.presence_origin.as_deref());
     // Where the hub is, for the page's sign-in and its links back to
     // control's page (M152): the hub says it, the page never guesses.
     if let Ok(v) = HeaderValue::from_str(&app.cfg.public_url) {
@@ -210,8 +210,10 @@ fn nothing() -> Response {
 }
 
 /// The platform page's headers, on every answer on its host, whoever made
-/// it, and no cookie set but this host's own session (`own`, M152).
-fn secured(mut res: Response, own: &str) -> Response {
+/// it, and no cookie set but this host's own session (`own`, M152). The
+/// CSP lets arugula.stream's relay in when control has an app for it
+/// (`presence`, its origin: live presence, #342).
+fn secured(mut res: Response, own: &str, presence: Option<&str>) -> Response {
     let h = res.headers_mut();
     let kept: Vec<HeaderValue> = h
         .get_all(header::SET_COOKIE)
@@ -223,7 +225,9 @@ fn secured(mut res: Response, own: &str) -> Response {
     for v in kept {
         h.append(header::SET_COOKIE, v);
     }
-    set(h, header::CONTENT_SECURITY_POLICY, page::CSP);
+    if let Ok(v) = HeaderValue::from_str(&page::csp(presence)) {
+        h.insert(header::CONTENT_SECURITY_POLICY, v);
+    }
     set(h, header::X_FRAME_OPTIONS, "DENY");
     set(h, header::X_CONTENT_TYPE_OPTIONS, "nosniff");
     set(h, header::REFERRER_POLICY, "no-referrer");

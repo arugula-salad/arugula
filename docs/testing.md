@@ -140,10 +140,13 @@ push's previous one. The nightly workflows aren't required: `scripts/ci-nightly-
 opens an issue for each whose newest scheduled run failed (below). `.github/workflows/chant-ci-green.yml` runs
 `chant ci tick` when check, windows or windows-desktop finish on main, and
 every 15 minutes. It's generated: after changing `ci.green` or those
-workflows' job names, run `npx @intentius/chant@0.124.52 ci workflow --token-secret CI_GREEN_TOKEN`
-(it also writes check.yml's and windows*.yml's triggers and concurrency). A
-check run is matched by name, so no other workflow that runs on main's
-commits may have a job named like a required one. `npx
+workflows' job names, run the command its first line names (it also
+writes check.yml's and windows*.yml's triggers and concurrency). Its
+`--install` step gives git an author, without which the tick can't write
+its `_ci` records. A check run is matched by name, so no other workflow
+that runs on main's commits may have a job named like a required one, not
+even one that's skipped there (binaries.yml's PR-only desktop-xvfb is
+named `desktop-xvfb (pull request)` for that). `npx
 @intentius/chant@0.124.52 ci last-green` (after `git fetch --tags`) prints
 the newest green commit.
 
@@ -184,7 +187,9 @@ pnpm exec playwright install-deps` in `web/` once). See
 
 Not tests, but useful while working: `just dev` (a separate daemon on 7682
 and Vite on 5173), `just fake-fleet` (three throwaway daemons with
-scripted work on 7730-7732, for the swarm) and `just screenshots` (the
+scripted work on 7730-7732, for the swarm; by hand the page reaches only
+workstation's daemon, since several daemons on one machine share a page
+in tests only) and `just screenshots` (the
 site's images, from a scripted session, into a checkout of
 arugula-salad/site).
 

@@ -1056,6 +1056,20 @@ pub enum PresenceMode {
     Offline,
 }
 
+/// Live presence (Arugula #341, the `live-presence` Labs flag), kept on the
+/// account so every page agrees: `off` (the default), in no arugula.stream
+/// room; `watching`, in your teams' rooms, seeing their live faces. Live
+/// (your camera) isn't kept: it's per window, on top of `watching`.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[serde(rename_all = "lowercase")]
+pub enum LivePresence {
+    #[default]
+    Off,
+    Watching,
+}
+
 /// `POST /api/chat/presence`: a page's heartbeat, every 15 s while it's
 /// open, and the answer is what it shows. `idle`: the page hasn't been
 /// used for 10 minutes. `gone`: it's closing (sent as a beacon), so the
@@ -1072,6 +1086,10 @@ pub struct ChatBeat {
     pub gone: bool,
     #[serde(default)]
     pub mode: Option<PresenceMode>,
+    /// The reader's live presence choice, when they changed it (kept with
+    /// `live-presence` on; ignored with it off).
+    #[serde(default)]
+    pub live: Option<LivePresence>,
     #[serde(default)]
     pub machines: Vec<String>,
 }
@@ -1095,6 +1113,10 @@ pub struct ChatPresent {
 pub struct ChatPresence {
     /// The reader's own choice.
     pub mode: PresenceMode,
+    /// The reader's live presence choice, with the `live-presence` Labs flag
+    /// on for them; absent with it off, which is how a page learns the flag.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub live: Option<LivePresence>,
     pub people: Vec<ChatPresent>,
     pub machines_online: Vec<String>,
 }
