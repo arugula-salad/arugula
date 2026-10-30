@@ -91,7 +91,9 @@ impl Db {
         let rows = c.query_map(
             &format!("SELECT account, seen, active, mode, live FROM chat_presence WHERE {}", in_json(&c, "account", 1)),
             params![json_list(accounts)?],
-            |r| Ok((r.get::<String>(0)?, Seen { seen: r.get(1)?, active: r.get(2)?, mode: r.get(3)?, live: r.get(4)? })),
+            |r| {
+                Ok((r.get::<String>(0)?, Seen { seen: r.get(1)?, active: r.get(2)?, mode: r.get(3)?, live: r.get(4)? }))
+            },
         )?;
         Ok(rows.into_iter().collect())
     }
