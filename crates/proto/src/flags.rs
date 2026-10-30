@@ -94,6 +94,9 @@ pub const ADDITIONAL_FORGES: &str = "additional-forges";
 pub const AGENT_DELEGATION: &str = "agent-delegation";
 /// Boards: a project's boards and epics, which are control's.
 pub const BOARDS: &str = "boards";
+/// Live presence: teammates' live faces on their avatars across Arugula,
+/// from arugula.stream (Arugula #341), which needs control.
+pub const LIVE_PRESENCE: &str = "live-presence";
 
 /// What every agent is told about Docs (#1486), in one wording: the MCP
 /// server's instructions carry it, and so does the context `arugula hook`
@@ -164,6 +167,11 @@ pub const FLAGS: &[Flag] = &[
         "Agent recipes, offering them from this machine, your team's agent catalog and tasks between machines.",
     ),
     row(BOARDS, "Boards", "A project's boards and epics, which need control."),
+    row(
+        LIVE_PRESENCE,
+        "Live presence",
+        "Your teammates' live faces on their avatars across Arugula, and yours when you choose Live. Needs control.",
+    ),
 ];
 
 /// Flags that were, and why they aren't: a feature that left Labs. A file

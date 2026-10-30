@@ -281,6 +281,18 @@
           "default": false,
           "type": "boolean"
         },
+        "live": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/LivePresence"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The reader's live presence choice, when they changed it (kept with\n`live-presence` on; ignored with it off)."
+        },
         "machines": {
           "default": [],
           "items": {
@@ -1381,6 +1393,17 @@
     "ChatPresence": {
       "description": "Who's around, for one reader: themselves and everyone who shares a team\nwith them (nobody else is named, online or not), and the asked-for\nmachines they may see that are connected. Machines' agents show as\ntheir machine, not as a person.",
       "properties": {
+        "live": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/LivePresence"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The reader's live presence choice, with the `live-presence` Labs flag\non for them; absent with it off, which is how a page learns the flag."
+        },
         "machines_online": {
           "items": {
             "type": "string"
@@ -2220,6 +2243,14 @@
         "name"
       ],
       "type": "object"
+    },
+    "LivePresence": {
+      "description": "Live presence (Arugula #341, the `live-presence` Labs flag), kept on the\naccount so every page agrees: `off` (the default), in no arugula.stream\nroom; `watching`, in your teams' rooms, seeing their live faces. Live\n(your camera) isn't kept: it's per window, on top of `watching`.",
+      "enum": [
+        "off",
+        "watching"
+      ],
+      "type": "string"
     },
     "NotifyLevel": {
       "description": "How much of a room reaches the reader's pushes, and how its unread shows\n(#113).",

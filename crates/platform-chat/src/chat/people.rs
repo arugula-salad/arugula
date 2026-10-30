@@ -25,7 +25,7 @@ use std::{
 };
 
 use arugula_control_common::{ApiError, err};
-use arugula_control_wire::chat::{ChatBeat, ChatPresence, ChatPresent, PresenceMode, PresenceState};
+use arugula_control_wire::chat::{ChatBeat, ChatPresence, ChatPresent, LivePresence, PresenceMode, PresenceState};
 use arugula_e2e::now_ms;
 use axum::{
     Json,
@@ -85,6 +85,28 @@ fn mode_name(m: PresenceMode) -> &'static str {
     }
 }
 
+fn live_of(l: &str) -> LivePresence {
+    match l {
+        "watching" => LivePresence::Watching,
+        _ => LivePresence::Off,
+    }
+}
+
+fn live_name(l: LivePresence) -> &'static str {
+    match l {
+        LivePresence::Off => "off",
+        LivePresence::Watching => "watching",
+    }
+}
+
+/// Live presence's Labs flag (`arugula_proto::flags::LIVE_PRESENCE`, #341).
+pub const LIVE_FLAG: &str = "live-presence";
+
+/// Whether live presence's Labs flag is on for `account`.
+async fn live_on(app: &Platform, account: &str) -> anyhow::Result<bool> {
+    arugula_platform::chat::flag_on(app, account, LIVE_FLAG).await
+}
+
 /// Whom `account` sees: itself, and everyone in a team it's in now, and
 /// the teams it is in (for machines).
 async fn visible(app: &Platform, account: &str) -> anyhow::Result<(HashSet<String>, HashSet<String>)> {
@@ -108,6 +130,11 @@ pub async fn beat(State(app): State<Arc<Platform>>, s: Person, Json(b): Json<Cha
     if let Some(m) = b.mode {
         app.db.set_chat_presence_mode(&s.account, mode_name(m))?;
     }
+    if let Some(l) = b.live
+        && live_on(&app, &s.account).await?
+    {
+        app.db.set_chat_live(&s.account, live_name(l))?;
+    }
     Ok(Json(presence(&app, &s.account, &b.machines, now).await?))
 }
 
@@ -124,6 +151,10 @@ pub(crate) async fn presence(
     ids.sort();
     let kept: HashMap<String, Seen> = app.db.chat_seen(&ids)?;
     let mine = kept.get(account).map(|k| mode_of(&k.mode)).unwrap_or_default();
+    let live = match live_on(app, account).await? {
+        true => Some(kept.get(account).map(|k| live_of(&k.live)).unwrap_or_default()),
+        false => None,
+    };
     let people = ids
         .into_iter()
         .map(|a| {
@@ -144,7 +175,7 @@ pub(crate) async fn presence(
         .collect();
     // The hub not saying is offline, not an error: presence is a nicety.
     let machines_online = if may.is_empty() { vec![] } else { app.hub.machines_online(&may).await.unwrap_or_default() };
-    Ok(ChatPresence { mode: mine, people, machines_online })
+    Ok(ChatPresence { mode: mine, live, people, machines_online })
 }
 
 /// `GET /api/chat/avatar/{account}`: the account's picture, if the reader

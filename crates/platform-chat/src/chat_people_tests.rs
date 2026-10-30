@@ -53,7 +53,7 @@ fn accounts(v: &Value) -> Vec<String> {
 #[test]
 fn what_shows_is_the_beat_and_the_clock_and_the_choice() {
     let now = 10_000_000;
-    let seen = |seen, active, mode: &str| Seen { seen, active, mode: mode.into() };
+    let seen = |seen, active, mode: &str| Seen { seen, active, mode: mode.into(), live: "off".into() };
     assert_eq!(state_of(&seen(now - 5_000, now - 5_000, "auto"), now), PresenceState::Active);
     // Open but unused for over 10 minutes: away.
     assert_eq!(state_of(&seen(now - 5_000, now - 11 * 60_000, "auto"), now), PresenceState::Away);
@@ -96,6 +96,29 @@ async fn presence_is_seen_by_those_who_share_a_team_and_nobody_else() {
     let (st, v) = call(&base3, "c", "POST", "/api/chat/presence", Some(json!({}))).await;
     assert_eq!((st, v["reason"].as_str()), (403, Some("chat_off")), "{v}");
     assert!(app3.db.chat_seen(&["c".to_owned()]).unwrap().is_empty());
+}
+
+/// Live presence (#341): with its Labs flag off the answer has no `live` and
+/// a beat's is ignored; with it on, it's `off` until the person says, kept
+/// on the account, so their other pages read the same.
+#[tokio::test]
+async fn live_presence_is_kept_on_the_account_behind_its_flag() {
+    let (hub, app, base) = rig().await;
+    let v = beat(&base, "a", json!({ "live": "watching" })).await;
+    assert!(v.get("live").is_none(), "no flag, no live: {v}");
+    assert_eq!(app.db.chat_seen(&["a".to_owned()]).unwrap()["a"].live, "off", "nothing kept without the flag");
+
+    hub.flag_named("account:a", crate::chat::people::LIVE_FLAG, true);
+    crate::cache::catch_up(&app).await.unwrap();
+    assert_eq!(beat(&base, "a", json!({})).await["live"], "off", "off until they say");
+    assert_eq!(beat(&base, "a", json!({ "live": "watching" })).await["live"], "watching");
+    // Another page of theirs (any beat) reads it.
+    assert_eq!(beat(&base, "a", json!({ "idle": true })).await["live"], "watching");
+    assert_eq!(beat(&base, "a", json!({ "live": "off" })).await["live"], "off");
+    // It's theirs alone: a teammate's answer says their own.
+    assert!(beat(&base, "b", json!({})).await.get("live").is_none(), "b has no flag");
+    let (st, v) = call(&base, "a", "POST", "/api/chat/presence", Some(json!({ "live": "live" }))).await;
+    assert_eq!(st, 422, "Live isn't kept: {v}");
 }
 
 #[tokio::test]

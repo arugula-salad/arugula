@@ -19,6 +19,7 @@ import { WindowButtons } from "../../shared/ui/window-buttons";
 import { countView } from "../../shared/telemetry";
 import { AccountPicture } from "../../shared/chat/avatar";
 import { presenceItems } from "../../shared/chat/presence";
+import { LiveSwitch, liveItems } from "../../shared/live/switch";
 import { SearchIcon } from "./shell/icons";
 import { openPlatform, platformHref } from "../platform-links";
 
@@ -155,28 +156,32 @@ export function AccountButton({ client }: { client: Client | null }) {
     countView("settings");
     const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
     const mine: MenuItem[] = account ? [{ header: accountHeader(login), name: !!login }, ...account.items(), "separator"] : [];
-    const items: MenuItem[] = [...mine, ...presenceItems(), ...settingsItems(client)];
+    const items: MenuItem[] = [...mine, ...presenceItems(liveItems()), ...settingsItems(client)];
     if (account) items.push("separator", { label: "Sign out", run: () => account!.signOut() });
     // Right-aligned under the button; the menu keeps itself on screen.
     openMenu({ clientX: r.right, clientY: r.bottom + 4, preventDefault: () => e.preventDefault() }, items, e.currentTarget as HTMLElement);
   };
   return (
-    <button
-      ref={ref}
-      class="account-button"
-      aria-haspopup="menu"
-      aria-expanded={expanded}
-      title={login ? "Your account and settings" : "Settings"}
-      aria-label={login ? `Account: ${login}` : "Settings"}
-      data-account-menu
-      onClick={open}
-      onContextMenu={open}
-    >
-      <span class="account-avatar" aria-hidden="true">
-        {login ? login.slice(0, 1).toUpperCase() : "⚙"}
-        {login && <AccountPicture />}
-      </span>
-      {login && <span class="account-login" data-signed-in-as>{login}</span>} <span class="caret">▾</span>
-    </button>
+    <>
+      {/* #341: live presence, beside the account, with its Labs flag. */}
+      <LiveSwitch />
+      <button
+        ref={ref}
+        class="account-button"
+        aria-haspopup="menu"
+        aria-expanded={expanded}
+        title={login ? "Your account and settings" : "Settings"}
+        aria-label={login ? `Account: ${login}` : "Settings"}
+        data-account-menu
+        onClick={open}
+        onContextMenu={open}
+      >
+        <span class="account-avatar" aria-hidden="true">
+          {login ? login.slice(0, 1).toUpperCase() : "⚙"}
+          {login && <AccountPicture />}
+        </span>
+        {login && <span class="account-login" data-signed-in-as>{login}</span>} <span class="caret">▾</span>
+      </button>
+    </>
   );
 }

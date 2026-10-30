@@ -18,6 +18,7 @@ import { names } from "./links";
 import { chat } from "../shared/chat-store";
 import { AccountPicture } from "../shared/chat/avatar";
 import { presenceItems } from "../shared/chat/presence";
+import { LiveSwitch, liveItems } from "../shared/live/switch";
 import { ChatPlaceUnread, PlaceUnread } from "./thread-unread";
 import { barProject, where } from "./where";
 import { InboxCount } from "./inbox-count";
@@ -116,7 +117,7 @@ export function PlatformBar({ children }: { children?: ComponentChildren }) {
       // the two pages share it.
       { label: "Appearance…", run: openAppearance },
       // Who's around (#110): chat's people see this, and only they.
-      ...presenceItems(),
+      ...presenceItems(liveItems()),
       // Control's one label (UI audit #184): it opens in this tab, so no ↗.
       { label: "Open Control", run: () => location.assign(controlOrigin()) },
       "separator",
@@ -218,6 +219,8 @@ export function PlatformBar({ children }: { children?: ComponentChildren }) {
       <a class="place platform-shell" href={controlOrigin()} title="Your machines, terminals, devices and teams, on Control" data-platform-shell>
         Control
       </a>
+      {/* #341: live presence, beside the account, with its Labs flag. */}
+      <LiveSwitch />
       {me && (
         <button
           ref={accountButton}

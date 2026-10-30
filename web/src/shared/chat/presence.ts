@@ -5,7 +5,7 @@
 // beat and the poll. Nothing here knows chat's rooms: the store starts it
 // when chat is on and stops it when it isn't.
 
-import type { ChatBeat, ChatPresence, PresenceMode, PresenceState } from "../proto";
+import type { ChatBeat, ChatPresence, LivePresence, PresenceMode, PresenceState } from "../proto";
 import { platformFetch } from "../maintenance";
 import type { MenuItem } from "../ui/menu";
 
@@ -25,6 +25,9 @@ class PresenceStore {
   private running = false;
   /** The reader's own choice (auto until control says). */
   mode: PresenceMode = "auto";
+  /** Their live presence choice (#341), kept on the account: null while
+   * control says nothing of it, which is the `live-presence` flag off. */
+  live: LivePresence | null = null;
 
   subscribe(fn: () => void): () => void {
     this.listeners.add(fn);
@@ -71,6 +74,7 @@ class PresenceStore {
     removeEventListener("pagehide", this.leave);
     this.people.clear();
     this.online.clear();
+    this.live = null;
     this.emit();
   }
 
@@ -79,6 +83,14 @@ class PresenceStore {
     this.mode = mode;
     this.emit();
     await this.beat(mode);
+  }
+
+  /** Live presence off, or watching (#341): kept on the account, so the
+   * reader's other pages follow at their next beat. */
+  async setLive(live: LivePresence) {
+    this.live = live;
+    this.emit();
+    await this.beat(undefined, live);
   }
 
   private emit() {
@@ -99,7 +111,7 @@ class PresenceStore {
   /** A closing page is offline for its teammates now, not when the beat
    * goes stale. */
   private leave = () => {
-    const body: ChatBeat = { idle: true, gone: true, mode: null, machines: [] };
+    const body: ChatBeat = { idle: true, gone: true, mode: null, live: null, machines: [] };
     navigator.sendBeacon?.("/api/chat/presence", new Blob([JSON.stringify(body)], { type: "application/json" }));
   };
 
@@ -108,13 +120,14 @@ class PresenceStore {
     this.timer = window.setTimeout(() => void this.beat(), 200);
   }
 
-  private async beat(mode?: PresenceMode) {
+  private async beat(mode?: PresenceMode, live?: LivePresence) {
     clearTimeout(this.timer);
     try {
       const body: ChatBeat = {
         idle: Date.now() - this.last > IDLE,
         gone: false,
         mode: mode ?? null,
+        live: live ?? null,
         machines: [...this.asked].slice(0, 64),
       };
       const res = await platformFetch("/api/chat/presence", {
@@ -128,6 +141,7 @@ class PresenceStore {
         this.people = new Map(p.people.map((x) => [x.account, x.state]));
         this.online = new Set(p.machines_online);
         this.mode = p.mode;
+        this.live = p.live ?? null;
         this.emit();
       }
     } catch {
@@ -140,9 +154,10 @@ class PresenceStore {
 export const presence = new PresenceStore();
 
 /** The account menu's lines for the reader's own presence, when chat is
- * on: automatic, away by hand, or always appearing offline. */
-export function presenceItems(): MenuItem[] {
+ * on: automatic, away by hand, or always appearing offline; and, with the
+ * `live-presence` flag, live presence's three (`live`: ../live/switch). */
+export function presenceItems(live: MenuItem[] = []): MenuItem[] {
   if (!presence.on) return [];
   const item = (label: string, mode: PresenceMode): MenuItem => ({ label, checked: presence.mode === mode, run: () => void presence.setMode(mode) });
-  return [{ header: "Your presence" }, item("Automatic", "auto"), item("Away", "away"), item("Appear offline", "offline"), "separator"];
+  return [{ header: "Your presence" }, item("Automatic", "auto"), item("Away", "away"), item("Appear offline", "offline"), ...live, "separator"];
 }
