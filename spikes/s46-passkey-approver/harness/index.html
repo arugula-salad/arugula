@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>S46 passkey harness</title>
+<style>
+  :root { color-scheme: light dark; --fg: #1d2a1f; --bg: #f6f8f4; --muted: #5c6b5e; --ok: #1f7a3a; --bad: #b3261e; --card: #fff; --line: #d6ddd3; }
+  @media (prefers-color-scheme: dark) { :root { --fg: #e4ece2; --bg: #121812; --muted: #9aab9c; --ok: #6fd28f; --bad: #ff8a80; --card: #1b231c; --line: #2e3a2f; } }
+  body { margin: 0; padding: 16px; font: 15px/1.45 system-ui, sans-serif; color: var(--fg); background: var(--bg); }
+  main { max-width: 760px; margin: 0 auto; }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  .role { font-weight: 600; }
+  section { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 12px; margin: 12px 0; }
+  button { font: inherit; padding: 10px 14px; margin: 4px 6px 4px 0; border-radius: 6px; border: 1px solid var(--line); background: var(--bg); color: var(--fg); }
+  button:disabled { opacity: .45; }
+  .hint { color: var(--muted); font-size: 13px; }
+  pre { white-space: pre-wrap; word-break: break-all; font-size: 12px; margin: 6px 0; }
+  .ok { color: var(--ok); font-weight: 600; } .bad { color: var(--bad); font-weight: 600; }
+  .flags span { display: inline-block; min-width: 34px; margin-right: 6px; font-family: ui-monospace, monospace; }
+  textarea { width: 100%; box-sizing: border-box; font: 12px ui-monospace, monospace; min-height: 60px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>S46 passkey harness</h1>
+  <div>This page is <span class="role" id="role">…</span> at <code id="origin"></code>.</div>
+  <p class="hint">Register on the RP's page, then sign on each page. The RP's page lists the app's page in <code>/.well-known/webauthn</code>, and never the stranger's. Nothing here is Arugula; the passkeys it makes are for these test hosts only, so delete them from your password manager afterwards.</p>
+
+  <section>
+    <b>What this browser says</b>
+    <pre id="caps">…</pre>
+  </section>
+
+  <section>
+    <b>(a) Related origins: RP ID = <code id="rpid"></code></b><br>
+    <button id="reg-rp">1. Make a passkey (RP's page only)</button>
+    <button id="get-rp">2. Sign with it here</button>
+    <div class="hint">On the RP's page step 2 is the baseline. On the app's page it should work (related origins). On the stranger's page it must fail: if it works, the browser or the password manager isn't checking.</div>
+  </section>
+
+  <section id="parent-box" hidden>
+    <b>(b) Parent RP ID = <code id="parentid"></code></b><br>
+    <button id="reg-parent">3. Make a passkey for the parent</button>
+    <button id="get-parent">4. Sign with it here</button>
+    <div class="hint">Should work on every page: each is under the parent.</div>
+  </section>
+
+  <section>
+    <b>Last result</b>
+    <div id="verdict" class="hint">nothing yet</div>
+    <div class="flags" id="flags"></div>
+    <pre id="detail"></pre>
+    <label class="hint">A row for the test sheet (fill in "asked?": did it ask for Face ID, Touch ID, a PIN or a password this time?)</label>
+    <textarea id="row" readonly></textarea>
+    <button id="copy">Copy row</button>
+  </section>
+</main>
+<script type="module" src="/harness.js"></script>
+</body>
+</html>
