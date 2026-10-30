@@ -185,7 +185,7 @@ const share = (r: Rig, d: number, method = "doc_share") => r.post(`/api/blocks/$
 /** The link in a fresh context: nothing carried over, so what shows is
  * what the link gives anyone. */
 async function visitor(browser: Browser, opts: Parameters<Browser["newContext"]>[0] = {}): Promise<{ ctx: BrowserContext; page: Page; seen: string[]; violations: string[] }> {
-  const ctx = await browser.newContext({ storageState: { cookies: [], origins: [] }, ...opts });
+  const ctx = await browser.newContext({ storageState: { cookies: [], origins: [] }, extraHTTPHeaders: {}, ...opts });
   const page = await ctx.newPage();
   const seen: string[] = [];
   const violations: string[] = [];

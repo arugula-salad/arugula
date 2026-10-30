@@ -390,8 +390,9 @@ export class Client {
     }
     const res = await fetch(this.base + path, {
       method,
-      // Another daemon (on this machine, its sign-in cookie; it allows
-      // credentials only from our exact origin).
+      // Another daemon (on the tailnet, its identity comes with the
+      // request; it allows credentials only from our exact origin). This
+      // page's own daemon's page key goes only to it (local-key.ts).
       credentials: /^https?:/.test(this.base) ? "include" : "same-origin",
       ...(body === undefined
         ? {}

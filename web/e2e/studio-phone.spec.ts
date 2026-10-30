@@ -20,7 +20,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { expect, test, type Page } from "@playwright/test";
-import { tokenCookies } from "./local-token";
+import { keyHeaders } from "./local-token";
 import { daemon, iphone, launchWebkit, pixel7 } from "./phones";
 import { listen } from "./ports";
 import { closeContexts } from "./helpers";
@@ -226,7 +226,7 @@ test("the box's agent asks; Sam answers from a Pixel 7, and hud hears it was Sam
   // Sam may edit the session the app is in.
   const session = ((await (await api("/api/panes")).json()) as { id: number; session: number }[]).find((p) => p.id === block)!.session;
   expect((await api("/api/acl", "POST", { session, principal: `tailnet:${SAM}`, role: "editor" })).ok).toBe(true);
-  const ctx = await browser.newContext({ ...pixel7, baseURL: url, extraHTTPHeaders: { "tailscale-user-login": SAM }, storageState: { cookies: tokenCookies, origins: [] } });
+  const ctx = await browser.newContext({ ...pixel7, baseURL: url, extraHTTPHeaders: { ...keyHeaders, "tailscale-user-login": SAM } });
   const sam = await ctx.newPage();
   await sam.goto("/");
   await expect.poll(() => sam.evaluate(() => window.__arugula?.client.role())).toBe("editor");
@@ -265,7 +265,7 @@ test("a release waits at ship; the owner approves from an iPhone (WebKit), and h
   test.setTimeout(60_000);
   const webkit = await launchWebkit();
   try {
-    const ctx = await webkit.newContext({ ...iphone, baseURL: url, storageState: { cookies: tokenCookies, origins: [] } });
+    const ctx = await webkit.newContext({ ...iphone, baseURL: url, extraHTTPHeaders: keyHeaders });
     const me = await ctx.newPage();
     await me.goto("/");
     await expect.poll(() => me.evaluate(() => window.__arugula?.client.connected)).toBe(true);

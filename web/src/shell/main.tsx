@@ -1,3 +1,5 @@
+// First: this daemon's page key on the page's own requests (local-key.ts).
+import "./local-key";
 import { AgentDialogLayer, startAgent } from "./ui/agent-dialog";
 import { chat } from "../shared/chat-store";
 // Live presence (#343): in the reader's teams' rooms while their switch says so.

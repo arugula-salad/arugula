@@ -222,8 +222,8 @@ async fn api_origin(State(app): State<Arc<App>>, req: Request, next: Next) -> Re
 /// The home daemon's page talks to other daemons' APIs (another origin):
 /// browsers allow that only if we say so, and we say so only to origins the
 /// access checks accept, exactly. On the tailnet identity is the tailnet's;
-/// on this machine it's the sign-in cookie, so credentials are allowed (for
-/// those exact origins only).
+/// on this machine it's the page key header (`access::PAGE_KEY_HEADER`), so
+/// that header and credentials are allowed (for those exact origins only).
 async fn cors(State(app): State<Arc<App>>, req: Request, next: Next) -> Response {
     let origin = req
         .headers()
@@ -243,7 +243,7 @@ async fn cors(State(app): State<Arc<App>>, req: Request, next: Next) -> Response
     h.insert(header::ACCESS_CONTROL_ALLOW_CREDENTIALS, HeaderValue::from_static("true"));
     if preflight {
         h.insert(header::ACCESS_CONTROL_ALLOW_METHODS, HeaderValue::from_static("GET, POST, DELETE"));
-        h.insert(header::ACCESS_CONTROL_ALLOW_HEADERS, HeaderValue::from_static("content-type"));
+        h.insert(header::ACCESS_CONTROL_ALLOW_HEADERS, HeaderValue::from_static("content-type, x-arugula-key"));
         h.insert(header::ACCESS_CONTROL_MAX_AGE, HeaderValue::from_static("600"));
     }
     res
@@ -257,9 +257,27 @@ async fn guard(
 ) -> Response {
     let peer = app.identify.peer(addr).await;
     let mut req = req;
+    page_key_from_query(&mut req);
     // A request serve passed on: the tailnet address it came from (#663).
     let mut forwarded: Option<String> = None;
-    let checked = app.access.check_host(req.headers()).and_then(|()| match class(&req, &app.access) {
+    // The app's own files, for a browser on this machine: the same for
+    // everyone, and a page load can't carry the page key. Through serve
+    // (or from the tailnet), as everything else.
+    let class = match class(&req, &app.access) {
+        Class::Shell
+            if peer == crate::access::Peer::Local
+                && !app.access.tunnelled()
+                && !req.headers().contains_key("tailscale-user-login")
+                && !app.access.is_public_host(req.headers()) =>
+        {
+            Class::Shell
+        }
+        Class::Shell => Class::Owner,
+        c => c,
+    };
+    let signin = matches!(class, Class::SignIn);
+    let checked = app.access.check_host(req.headers()).and_then(|()| match class {
+        Class::Shell => Ok(()),
         Class::Owner => {
             // serve's identity header, on loopback: only from tailscaled.
             if peer == crate::access::Peer::Local
@@ -317,6 +335,11 @@ async fn guard(
     if let Some(f) = forwarded {
         app.identify.saw_forwarded(&f).await;
     }
+    // Checked: nothing past here (a handler, a dial-out host's proxy) sees
+    // it, but the sign-in link's page, which hands it back.
+    if !signin {
+        req.headers_mut().remove(crate::access::PAGE_KEY_HEADER);
+    }
     let mut res = match checked {
         Ok(()) => next.run(req).await,
         Err((status, why)) => {
@@ -327,11 +350,21 @@ async fn guard(
                 .get(header::ACCEPT)
                 .and_then(|v| v.to_str().ok())
                 .is_some_and(|a| a.contains("text/html"));
-            if page {
+            let mut res = if page {
                 (status, axum::response::Html(crate::access::refusal_page(status, &why))).into_response()
             } else {
                 (status, why).into_response()
+            };
+            // The page's cue to go to the sign-in link's page (local-key.ts),
+            // rather than any 401 an API call answers for its own reasons.
+            if status == StatusCode::UNAUTHORIZED
+                && peer == crate::access::Peer::Local
+                && !app.access.tunnelled()
+                && app.access.needs_local_token()
+            {
+                res.headers_mut().insert("x-arugula-sign-in", HeaderValue::from_static("/auth"));
             }
+            res
         }
     };
     // serve authenticates by source, so any page the owner visits could frame
@@ -341,6 +374,48 @@ async fn guard(
     h.entry(header::CONTENT_SECURITY_POLICY).or_insert(HeaderValue::from_static("frame-ancestors 'none'"));
     h.insert(header::X_FRAME_OPTIONS, HeaderValue::from_static("DENY"));
     res
+}
+
+/// A browser's WebSocket can't carry the page key as a header, so the page
+/// puts it in the URL (`?arugula_key=`): moved to the header here, and out
+/// of the URL, so it isn't logged or passed on.
+fn page_key_from_query(req: &mut Request) {
+    const PARAM: &str = "arugula_key";
+    let upgrade = req.headers().get(header::UPGRADE).and_then(|v| v.to_str().ok());
+    if !upgrade.is_some_and(|u| u.eq_ignore_ascii_case("websocket")) {
+        return;
+    }
+    let Some(query) = req.uri().query() else { return };
+    let mut key = None;
+    let rest: Vec<&str> = query
+        .split('&')
+        .filter(|kv| match kv.split_once('=') {
+            Some((PARAM, v)) => {
+                key = Some(v.to_owned());
+                false
+            }
+            _ => *kv != PARAM,
+        })
+        .collect();
+    let Some(key) = key else { return };
+    let path = req.uri().path();
+    let pq = if rest.is_empty() { path.to_owned() } else { format!("{path}?{}", rest.join("&")) };
+    let mut parts = req.uri().clone().into_parts();
+    let Ok(pq) = pq.parse() else { return };
+    parts.path_and_query = Some(pq);
+    if let Ok(uri) = Uri::from_parts(parts) {
+        *req.uri_mut() = uri;
+    }
+    // The page's own key wins over a header something else added.
+    if let Ok(v) = HeaderValue::from_str(&key) {
+        req.headers_mut().insert(crate::access::PAGE_KEY_HEADER, v);
+    }
+}
+
+/// The app's own files: the page and what Vite built for it.
+fn shell_file(path: &str) -> bool {
+    let file = path.trim_start_matches('/');
+    file.is_empty() || (!file.starts_with("api/") && !file.contains("..") && Assets::get(file).is_some())
 }
 
 /// Whose request this can be.
@@ -364,6 +439,9 @@ enum Class {
     SignIn,
     /// A CORS preflight.
     Preflight,
+    /// One of the app's own files (`shell_file`): open to a browser on
+    /// this machine, the owner's otherwise.
+    Shell,
 }
 
 /// Exactly `/share/<token>`, `/share/<token>/ws`, `/assets/<file>` or the
@@ -404,6 +482,8 @@ fn class(req: &Request, access: &Access) -> Class {
         Class::McpToken
     } else if m == Method::GET && viewer_path(path) {
         Class::Viewer
+    } else if (m == Method::GET || m == Method::HEAD) && shell_file(path) {
+        Class::Shell
     } else {
         Class::Owner
     }
@@ -411,35 +491,68 @@ fn class(req: &Request, access: &Access) -> Class {
 
 #[derive(serde::Deserialize)]
 struct SignInQuery {
-    token: String,
+    token: Option<String>,
     next: Option<String>,
 }
 
-/// A sign-in link (`/auth?token=…[&next=/path]`): the local token as a
-/// cookie for this browser, then the page. A year, so a browser stays
-/// signed in; `arugula web` signs it in again after the token changes.
-async fn signin(State(app): State<Arc<App>>, axum::extract::Query(q): axum::extract::Query<SignInQuery>) -> Response {
-    if !app.access.is_local_token(&q.token) {
-        let why = "That sign-in link isn't this daemon's (its token changed, or it's another daemon's).\n\n\
-                   Run this in a terminal here for a new one:\n\narugula web";
+/// A sign-in link (`/auth?token=…[&next=/path]`): a page that gives this
+/// browser the page key (kept in this origin's storage, which is this
+/// port's alone) and goes on to the app. Without a token, a browser that
+/// still has an older link's cookie (the token) is signed in from it; the
+/// cookie is removed either way.
+async fn signin(
+    State(app): State<Arc<App>>,
+    headers: HeaderMap,
+    axum::extract::Query(q): axum::extract::Query<SignInQuery>,
+) -> Response {
+    // Without a token: an older link's cookie (for a while after an
+    // upgrade), or the page key itself (a browser that sends it on every
+    // request, as the specs' do), which gets nothing it hasn't got.
+    let ok = match &q.token {
+        Some(t) => app.access.is_local_token(t),
+        None => app.access.legacy_cookie(&headers) || app.access.is_page_key(&headers),
+    };
+    let key = app.access.page_key().filter(|_| ok);
+    let Some(key) = key else {
+        let why = if q.token.is_some() {
+            "That sign-in link isn't this daemon's (its token changed, or it's another daemon's).\n\n\
+             Run this in a terminal here for a new one:\n\narugula web"
+        } else {
+            "This machine's Arugula needs you to sign in from it.\n\n\
+             Run this in a terminal here, which opens the page signed in:\n\narugula web"
+        };
         return (
             StatusCode::UNAUTHORIZED,
             axum::response::Html(crate::access::refusal_page(StatusCode::UNAUTHORIZED, why)),
         )
             .into_response();
-    }
+    };
     // Only a path of ours: never another site.
     let next = q.next.filter(|n| n.starts_with('/') && !n.starts_with("//") && !n.contains('\\')).unwrap_or("/".into());
-    let cookie =
-        format!("{}={}; Path=/; HttpOnly; SameSite=Lax; Max-Age=31536000", app.access.cookie_name(), q.token.trim());
-    let mut res = Response::builder().status(StatusCode::SEE_OTHER).header(header::LOCATION, next);
-    if let Ok(v) = HeaderValue::from_str(&cookie) {
+    let clear = format!("{}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0", app.access.legacy_cookie_name());
+    let mut res = Response::builder()
+        .status(StatusCode::OK)
+        .header(header::CONTENT_TYPE, "text/html; charset=utf-8")
+        .header(header::CACHE_CONTROL, "no-store")
+        .header(header::REFERRER_POLICY, "no-referrer");
+    if let Ok(v) = HeaderValue::from_str(&clear) {
         res = res.header(header::SET_COOKIE, v);
     }
-    res.header(header::CACHE_CONTROL, "no-store")
-        .header(header::REFERRER_POLICY, "no-referrer")
-        .body(Body::empty())
-        .unwrap()
+    res.body(Body::from(signin_page(key, &next))).unwrap()
+}
+
+/// The sign-in link's page: stores `key` where the app's page looks for it
+/// (`web/src/shell/local-key.ts`), then goes to `next`.
+fn signin_page(key: &str, next: &str) -> String {
+    // JSON in a script: `<` escaped, so nothing in it can close the tag.
+    let js = |v: &str| serde_json::to_string(v).unwrap_or_default().replace('<', "\\u003c");
+    format!(
+        "<!doctype html><meta charset=utf-8><meta name=referrer content=no-referrer><title>arugula</title>\
+         <script>try{{localStorage.setItem(\"arugula.key\",{})}}catch(e){{}}location.replace({})</script>\
+         <noscript>Arugula's page needs JavaScript.</noscript>",
+        js(key),
+        js(next)
+    )
 }
 
 async fn stop() -> &'static str {
@@ -606,6 +719,47 @@ async fn send(socket: &mut WebSocket, out: ToClient) -> Result<(), axum::Error> 
 mod tests {
     use super::*;
     use serde_json::json;
+
+    fn req(uri: &str, upgrade: bool) -> Request {
+        let mut b = axum::http::Request::builder().uri(uri);
+        if upgrade {
+            b = b.header(header::UPGRADE, "websocket");
+        }
+        b.body(Body::empty()).unwrap()
+    }
+
+    #[test]
+    fn a_websockets_page_key_moves_from_its_url_to_the_header() {
+        let mut r = req("/ws?arugula_key=ilp_abc&surface=web", true);
+        page_key_from_query(&mut r);
+        assert_eq!(r.uri().to_string(), "/ws?surface=web");
+        assert_eq!(r.headers()["x-arugula-key"], "ilp_abc");
+        let mut r = req("/h/box/ws?arugula_key=ilp_abc", true);
+        r.headers_mut().insert("x-arugula-key", HeaderValue::from_static("ilp_other"));
+        page_key_from_query(&mut r);
+        assert_eq!(r.uri().to_string(), "/h/box/ws");
+        assert_eq!(r.headers()["x-arugula-key"], "ilp_abc", "the page's own key wins");
+        // Only for a WebSocket: elsewhere it stays put and counts for nothing.
+        let mut r = req("/api/panes?arugula_key=ilp_abc", false);
+        page_key_from_query(&mut r);
+        assert_eq!(r.uri().to_string(), "/api/panes?arugula_key=ilp_abc");
+        assert!(!r.headers().contains_key("x-arugula-key"));
+        let mut r = req("/ws?surface=web", true);
+        page_key_from_query(&mut r);
+        assert_eq!(r.uri().to_string(), "/ws?surface=web");
+    }
+
+    #[test]
+    fn the_signin_page_stores_the_key_and_goes_on() {
+        let p = signin_page("ilp_abc", "/#pane=3");
+        assert!(p.contains(r#"localStorage.setItem("arugula.key","ilp_abc")"#), "{p}");
+        assert!(p.contains(r#"location.replace("/#pane=3")"#), "{p}");
+        // Nothing in `next` closes the script.
+        let p = signin_page("ilp_abc", "/</script><script>alert(1)//");
+        assert!(!p.contains("</script><script>alert"), "{p}");
+        assert!(!shell_file("/api/panes") && !shell_file("/ws") && !shell_file("/auth"));
+        assert!(shell_file("/"));
+    }
 
     fn state(block: u32, n: u64) -> ToClient {
         ToClient::Msg(ServerMsg::Block { block, state: json!({ "n": n }) })

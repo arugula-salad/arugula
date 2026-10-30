@@ -16,8 +16,10 @@
 //! no tunnels of its own in it.
 //!
 //! What comes back from a host is served on the home daemon's origin, so it
-//! is defanged: no cookies, no CORS, `nosniff`, and a sandboxing CSP, so a
-//! hostile host can't put a page on our origin.
+//! is defanged: no cookies, no CORS, `nosniff`, a sandboxing CSP, and no
+//! redirect to another site, so a hostile host can't put a page on our
+//! origin or send the page's own requests (which carry its page key)
+//! somewhere else.
 
 use std::{
     collections::HashMap,
@@ -235,6 +237,13 @@ async fn forward(app: Arc<App>, name: String, path: String, mut req: Request) ->
 /// A host's answer, made safe to serve on our origin.
 pub fn defang(h: &mut HeaderMap) {
     h.remove(header::SET_COOKIE);
+    // A redirect stays on our origin (a path), or isn't one: a browser keeps
+    // a request's own headers (the page key) when it follows a redirect.
+    let offsite = h.get(header::LOCATION).is_some_and(|l| !l.to_str().is_ok_and(same_origin_path));
+    if offsite {
+        h.remove(header::LOCATION);
+    }
+    h.remove(header::REFRESH);
     let cors: Vec<_> = h.keys().filter(|k| k.as_str().starts_with("access-control-")).cloned().collect();
     for k in cors {
         h.remove(k);
@@ -251,6 +260,12 @@ pub fn defang(h: &mut HeaderMap) {
         header::CONTENT_SECURITY_POLICY,
         HeaderValue::from_static("sandbox; default-src 'none'; frame-ancestors 'none'"),
     );
+}
+
+/// `/path`, never `//host`, `/\\host` or a scheme: where a redirect may go.
+fn same_origin_path(l: &str) -> bool {
+    let l = l.trim();
+    l.starts_with('/') && !l.starts_with("//") && !l.contains('\\') && !l.bytes().any(|b| b.is_ascii_control())
 }
 
 // ---------------------------------------------------------------- host end
@@ -599,6 +614,30 @@ mod tests {
         json.insert(header::CONTENT_TYPE, "application/json".parse().unwrap());
         defang(&mut json);
         assert_eq!(json[header::CONTENT_TYPE], "application/json");
+    }
+
+    #[test]
+    fn a_hosts_redirect_stays_on_our_origin() {
+        let location = |l: &str| {
+            let mut h = HeaderMap::new();
+            h.insert(header::LOCATION, l.parse().unwrap());
+            h.insert(header::REFRESH, "0; url=https://elsewhere.example/".parse().unwrap());
+            defang(&mut h);
+            assert!(!h.contains_key(header::REFRESH));
+            h.get(header::LOCATION).map(|v| v.to_str().unwrap().to_owned())
+        };
+        assert_eq!(location("/h/box/api/x").as_deref(), Some("/h/box/api/x"));
+        for off in [
+            "https://elsewhere.example/",
+            "http://127.0.0.1:9000/",
+            "//elsewhere.example/x",
+            "/\\elsewhere.example",
+            "\\\\elsewhere.example",
+            "x/y",
+            "javascript:alert(1)",
+        ] {
+            assert_eq!(location(off), None, "{off}");
+        }
     }
 
     #[tokio::test]
