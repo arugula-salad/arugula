@@ -597,9 +597,12 @@ pub enum AccessScope {
 /// for a person.
 impl Db {
     /// The repo an item is in, and nothing else of it: what the viewer
-    /// check needs to decide on it.
+    /// check needs to decide on it. A tracker's item (a negative
+    /// `repo_id`, `0071_tracker_connections`) isn't a repo's: not found.
     pub fn forge_item_repo(&self, id: &str) -> anyhow::Result<Option<u64>> {
-        self.c().query_row("SELECT repo_id FROM forge_items WHERE id = ?1", params![id], |r| r.get(0)).optional()
+        self.c()
+            .query_row("SELECT repo_id FROM forge_items WHERE id = ?1 AND repo_id > 0", params![id], |r| r.get(0))
+            .optional()
     }
 
     /// The items of the readable repos that match, last updated first.

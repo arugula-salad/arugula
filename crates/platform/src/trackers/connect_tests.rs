@@ -142,6 +142,15 @@ async fn an_editor_connects_and_the_items_are_mirrored() {
     let joined = "forge_items i JOIN linked_repos l ON l.repo_id = i.repo_id";
     assert_eq!(count(&app, joined, "TRUE", params![]), 0);
 
+    // GitHub's item route doesn't know a tracker's item: not found, not an error.
+    let item_id: String = app
+        .db
+        .c()
+        .query_row("SELECT id FROM forge_items WHERE repo_id = ?1 LIMIT 1", params![mirror], |r| r.get(0))
+        .unwrap();
+    let (s, _) = call(&base, "bob", "GET", &format!("/api/forge/items/{item_id}"), None).await;
+    assert_eq!(s, 404);
+
     // The key never comes back out, to an editor, an owner or a viewer.
     for who in ["bob", "alice", "carol"] {
         let (s, listed) = call(&base, who, "GET", &format!("/api/projects/{team}/trackers"), None).await;
