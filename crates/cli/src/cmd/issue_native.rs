@@ -1265,6 +1265,7 @@ mod tests {
     fn where_issues_go() {
         let home = |h: &str, repos: &[&str]| IssueHome {
             project: "prj_2".into(),
+            name: "Acme".into(),
             home: h.into(),
             chosen: false,
             repos: repos.iter().map(|r| (*r).to_owned()).collect(),

@@ -273,6 +273,9 @@ pub struct IssueEvents {
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct IssueHome {
     pub project: String,
+    /// The project's name (an older control sends none).
+    #[serde(default)]
+    pub name: String,
     /// `native` (the platform's own issues) or `github` (its linked repo).
     pub home: String,
     /// Someone chose it; otherwise it's the default: `github` while the

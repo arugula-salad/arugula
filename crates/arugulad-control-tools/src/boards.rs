@@ -30,9 +30,9 @@
 //! the owner.
 
 use arugula_control_wire::boards::{
-    self as wire, BoardList, BoardView, CloseBoard, EditBoard, MoveEntry, NewBoard, Pointer, PutEntry, Status,
-    ZoneKind, agent_board, agent_board_close, agent_board_entries, agent_board_entry, agent_board_entry_move,
-    agent_board_reopen, agent_project_boards,
+    self as wire, AGENT_BOARD_REACH, BoardList, BoardView, CloseBoard, EditBoard, MoveEntry, NewBoard, Pointer,
+    PutEntry, Status, ZoneKind, agent_board, agent_board_close, agent_board_entries, agent_board_entry,
+    agent_board_entry_move, agent_board_reopen, agent_project_boards,
 };
 use reqwest::Method;
 use rmcp::handler::server::common::schema_for_type;
@@ -40,7 +40,11 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::Value;
 
-use crate::mcp::tools::{Call, Kind, Out, done};
+use crate::mcp::{
+    issues::Chosen,
+    results::{BoardsProject, BoardsReach},
+    tools::{Call, Kind, Out, done},
+};
 use crate::{control::CloudRefused, mux::Api};
 
 pub(crate) const READ_TOOL: &str = "board_read";
@@ -406,6 +410,48 @@ fn board_done(what: &str, v: Value) -> Out {
     done(s, out)
 }
 
+/// The projects whose boards this machine's grants reach, for
+/// `capabilities` and for `board_read` to name where else to look. None
+/// (with a note) where control can't say.
+pub(crate) async fn boards_reach(app: &crate::server::App) -> BoardsReach {
+    let asked = tokio::time::timeout(
+        std::time::Duration::from_secs(3),
+        app.control.cloud_now(Method::GET, AGENT_BOARD_REACH, None),
+    );
+    match asked.await {
+        Ok(Ok(v)) => BoardsReach {
+            projects: serde_json::from_value::<Vec<BoardsProject>>(v["projects"].clone()).unwrap_or_default(),
+            note: String::new(),
+        },
+        Ok(Err(e)) => BoardsReach { projects: vec![], note: said(e) },
+        Err(_) => BoardsReach { projects: vec![], note: "Arugula control didn't answer in time".into() },
+    }
+}
+
+/// What a result says of the project a call meant; when that is the
+/// personal one by default, also the projects with boards this machine
+/// reaches, for the agent to pass as `project`.
+async fn chosen_line(c: &Call<'_>, chosen: &Chosen) -> String {
+    let reach = match chosen.is_personal_by_default() {
+        true => crate::mcp::registry::boards_reach(c.app()).await.projects,
+        false => vec![],
+    };
+    with_other_boards(chosen, &reach)
+}
+
+fn with_other_boards(chosen: &Chosen, reach: &[BoardsProject]) -> String {
+    let mut s = chosen.says();
+    let others: Vec<String> = reach
+        .iter()
+        .filter(|p| chosen.is_personal_by_default() && p.boards > 0 && p.id != chosen.id)
+        .map(|p| format!("{} ({})", p.name, p.id))
+        .collect();
+    if !others.is_empty() {
+        s += &format!(". Projects with boards (pass project): {}", others.join(", "));
+    }
+    s
+}
+
 /// `board_read`.
 pub(crate) async fn board_read(c: &Call<'_>, a: ReadBoardArgs) -> Out {
     owners_boards(c, READ_TOOL).await?;
@@ -419,18 +465,22 @@ pub(crate) async fn board_read(c: &Call<'_>, a: ReadBoardArgs) -> Out {
         out["text"] = Value::String(t);
         return done(s, out);
     }
-    let project = c.current_project(a.project.as_deref()).await?;
-    let v = boards_call(c, Method::GET, &agent_project_boards(&project), None).await?;
+    let chosen = c.chosen_project(a.project.as_deref()).await?;
+    let v = boards_call(c, Method::GET, &agent_project_boards(&chosen.id), None).await?;
     let list: BoardList =
         serde_json::from_value(v).map_err(|e| format!("Arugula control sent boards I can't read: {e}"))?;
-    let s = match list.boards.len() {
-        0 => format!("Project {} has no boards. board_write create_board makes one.", list.project),
-        n => format!(
-            "{n} board(s) in project {}: {}. board_read with board reads one.",
-            list.project,
-            list.boards.iter().map(|b| format!("{} ({})", b.title, b.id)).collect::<Vec<_>>().join("; ")
-        ),
-    };
+    let which = chosen_line(c, &chosen).await;
+    let s = format!(
+        "{which}. {}",
+        match list.boards.len() {
+            0 => format!("Project {} has no boards. board_write create_board makes one.", list.project),
+            n => format!(
+                "{n} board(s) in project {}: {}. board_read with board reads one.",
+                list.project,
+                list.boards.iter().map(|b| format!("{} ({})", b.title, b.id)).collect::<Vec<_>>().join("; ")
+            ),
+        }
+    );
     done(s, list)
 }
 
@@ -440,9 +490,9 @@ pub(crate) async fn board_write(c: &Call<'_>, kind: &str, a: Value) -> Out {
     match kind {
         "create_board" => {
             let a: CreateBoardArgs = args(a)?;
-            let project = c.current_project(a.project.as_deref()).await?;
+            let chosen = c.chosen_project(a.project.as_deref()).await?;
             let new = NewBoard { title: a.title, goal: a.goal };
-            let v = boards_call(c, Method::POST, &agent_project_boards(&project), Some(given(new)?)).await?;
+            let v = boards_call(c, Method::POST, &agent_project_boards(&chosen.id), Some(given(new)?)).await?;
             let mut view: Value = v;
             let board = serde_json::from_value::<BoardView>(view.clone()).map(|b| b.board.id).unwrap_or_default();
             for title in a.zones {
@@ -452,7 +502,10 @@ pub(crate) async fn board_write(c: &Call<'_>, kind: &str, a: Value) -> Out {
                     .await
                     .map_err(|e| format!("made board {board}, but not its zone {title:?}: {e}"))?;
             }
-            board_done("Made a board", view)
+            let mut out = board_done("Made a board", view)?;
+            out["summary"] =
+                format!("{}. {}", chosen_line(c, &chosen).await, out["summary"].as_str().unwrap_or_default()).into();
+            Ok(out)
         }
         "edit_board" => {
             let a: EditBoardArgs = args(a)?;
@@ -566,6 +619,29 @@ mod tests {
     use serde_json::json;
 
     use super::*;
+    use crate::mcp::issues::Rule;
+
+    /// Falling back to the personal project also names the other projects
+    /// with boards to pass; a project that was named or found says only
+    /// itself, and one with no boards isn't offered.
+    #[test]
+    fn the_personal_fallback_names_the_projects_with_boards() {
+        let project = |id: &str, name: &str, boards| BoardsProject {
+            id: id.into(),
+            name: name.into(),
+            powers: vec!["boards.read".into()],
+            boards,
+        };
+        let reach = [project("prj_1", "Arugula", 3), project("prj_2", "Empty", 0), project("prj_me", "Me", 1)];
+        let chosen = |rule| Chosen { id: "prj_me".into(), name: "Me".into(), rule };
+        let s = with_other_boards(&chosen(Rule::Personal), &reach);
+        assert!(s.starts_with("Your personal project Me"), "{s}");
+        assert!(s.ends_with("Projects with boards (pass project): Arugula (prj_1)"), "{s}");
+        for rule in [Rule::Asked, Rule::Linked("acme/app".into())] {
+            let s = with_other_boards(&chosen(rule), &reach);
+            assert!(!s.contains("pass project"), "{s}");
+        }
+    }
 
     /// A stale write comes back as a plain "read again" and a refusal keeps
     /// control's words.

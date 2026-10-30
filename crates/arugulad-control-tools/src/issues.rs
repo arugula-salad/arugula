@@ -233,12 +233,12 @@ pub(crate) async fn issue_write(c: &Call<'_>, kind: &str, a: Value) -> Out {
     let (issue, project, body) = match kind {
         "create" => {
             let a: CreateArgs = args(a)?;
-            let project = c.current_project(a.project.as_deref()).await?;
+            let chosen = c.chosen_project(a.project.as_deref()).await?;
             let new =
                 NewIssue { title: a.title, body: a.body.unwrap_or_default(), labels: a.labels, assignees: a.assignees };
             let body = serde_json::to_value(new).map_err(|e| e.to_string())?;
-            let i = c.issues_call(Method::POST, &agent_project_issues(&project), Some(body)).await?;
-            let s = format!("Filed {} in project {project}, now, as your person's agent on this machine", line(&i));
+            let i = c.issues_call(Method::POST, &agent_project_issues(&chosen.id), Some(body)).await?;
+            let s = format!("Filed {}, now, as your person's agent on this machine. {}", line(&i), chosen.says());
             return done(s, json!({ "issue": i }));
         }
         "comment" => {
