@@ -932,6 +932,39 @@ async fn rosters_add_only_people_who_asked() {
     assert_eq!(c.as_person(&cookie, "POST", &path, Some(json!({ "roster": add }))).await.0, 200);
 }
 
+/// A member's page gets the versions after the one it holds, with their
+/// signers' certificates, to check before it builds on the latest;
+/// someone outside the team doesn't.
+#[tokio::test]
+async fn a_members_page_gets_the_rosters_since_the_one_it_holds() {
+    let c = control(|_| {}).await;
+    let owner_root = person(&c.app, "owner", "own1");
+    person(&c.app, "other", "oth1");
+    let cookie = session(&c.app, "own1");
+    let team = "fedcba9876543211";
+    let one = roster(team, 1, vec![member("own1", &owner_root, TeamRole::Owner)], &owner_root);
+    assert_eq!(c.as_person(&cookie, "POST", "/api/teams", Some(json!({ "roster": one.clone() }))).await.0, 200);
+    let mut two = roster(team, 2, vec![member("own1", &owner_root, TeamRole::Owner)], &owner_root);
+    two.name = "Renamed".into();
+    two.sign_with(&owner_root);
+    assert_eq!(
+        c.as_person(&cookie, "POST", &format!("/api/teams/{team}/roster"), Some(json!({ "roster": two.clone() })))
+            .await
+            .0,
+        200
+    );
+    let path = |since: u64| format!("/api/teams/{team}/rosters?since={since}");
+    let (st, got) = c.as_person(&cookie, "GET", &path(1), None).await;
+    assert_eq!(st, 200);
+    let rosters: Vec<Roster> = serde_json::from_value(got["rosters"].clone()).unwrap();
+    assert_eq!(rosters, vec![two.clone()]);
+    assert!(got["certs"]["own1"].is_array(), "{got}");
+    let (_, all) = c.as_person(&cookie, "GET", &path(0), None).await;
+    assert_eq!(serde_json::from_value::<Vec<Roster>>(all["rosters"].clone()).unwrap(), vec![one, two]);
+    let other = session(&c.app, "oth1");
+    assert_eq!(c.as_person(&other, "GET", &path(0), None).await.0, 404);
+}
+
 /// An Ask me first link to `team` as `role`, signed by `owner`, and its
 /// one-time key (#762).
 fn ask_link(team: &str, role: TeamRole, owner: &DeviceKeys) -> (AskInvite, DeviceKeys) {

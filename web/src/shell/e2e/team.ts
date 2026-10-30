@@ -325,3 +325,64 @@ export async function follows(r: Roster, prev: Roster | null, pin: TeamPin, cert
   for (const o of prev.members.filter((x) => x.role === "owner")) byOwner ||= await signedBy(o.account, o.root, inv.by, inviteBody(inv), inv.sig, inv.role === "viewer" ? null : inv.role);
   return byOwner && (await verify(inv.key, redeemBody(inv, r.version, m), r.redeem.proof)) && (await verify(inv.key, body, r.sig));
 }
+
+/** Whether two rosters are the same version, signed alike. */
+export const sameRoster = (a: Roster, b: Roster) => rosterBody(a) === rosterBody(b) && a.sig === b.sig;
+
+/** Each account's revocations made after `at` left out: the devices as
+ * they stood when something dated `at` was signed. */
+export function asOf(certs: AccountCerts, at: number): AccountCerts {
+  const out: AccountCerts = {};
+  for (const [a, [c, r]] of Object.entries(certs)) out[a] = [c, r.filter((x) => x.at <= at)];
+  return out;
+}
+
+/** Where a team's roster stands after `history` (oldest first), from
+ * `held`: the version this browser last checked, or none for a first look
+ * (`checkpoint::advance`). Older versions are passed over; one at
+ * `held`'s version must be `held`; each newer one must be the very next
+ * (from 1 on a first look) and follow the one before. The first that
+ * doesn't stops the walk: where it stood, and that version.
+ *
+ * With `lateOk`, a version before the last one may also have been signed
+ * by a device removed since, if that device counted as of the version's
+ * `at` (which isn't before the version it follows): a real team's history
+ * isn't refused for an owner's lost laptop. Those versions come back
+ * third, to show. The last version is always checked as of now. Rust's
+ * `advance` has no such allowance. */
+export async function advance(
+  held: Roster | null,
+  history: Roster[],
+  pin: TeamPin,
+  certs: AccountCerts,
+  lateOk = false,
+): Promise<[Roster | null, number | null, number[]]> {
+  let cur = held;
+  const late: number[] = [];
+  for (const [i, r] of history.entries()) {
+    if (cur && r.version < cur.version) continue;
+    if (cur && r.version === cur.version) {
+      if (sameRoster(r, cur)) continue;
+      return [cur, r.version, late];
+    }
+    if (r.version !== (cur ? cur.version + 1 : 1)) return [cur, r.version, late];
+    if (!(await follows(r, cur, pin, certs))) {
+      const last = i === history.length - 1;
+      if (!lateOk || last || (cur && r.at < cur.at) || !(await follows(r, cur, pin, asOf(certs, r.at)))) return [cur, r.version, late];
+      late.push(r.version);
+    }
+    cur = r;
+  }
+  return [cur, null, late];
+}
+
+/** The members whose root `to` names differently from `from`: another
+ * key for that account, which a person may want to check. */
+export function rootChanges(from: Roster, to: Roster): { account: string; name: string; from: string; to: string }[] {
+  const out: { account: string; name: string; from: string; to: string }[] = [];
+  for (const m of to.members) {
+    const was = from.members.find((x) => x.account === m.account);
+    if (was && was.root !== m.root) out.push({ account: m.account, name: m.name, from: was.root, to: m.root });
+  }
+  return out;
+}

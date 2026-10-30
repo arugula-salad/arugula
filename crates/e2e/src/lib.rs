@@ -7,6 +7,8 @@
 //!   them back to an account's pinned root, which is how a daemon decides
 //!   who may connect without trusting control.
 //! - [`channel`]: the Noise IK channel and what travels inside it.
+//! - [`checkpoint`]: what a machine keeps of what it checked when control
+//!   answers again: removals only add up, rosters only move forward.
 //! - [`block`]: block channels' grants (M50): a block's frame opening a
 //!   channel to one block with a key the device signed for it.
 //! - [`deploy`]: a deploy's approval (M218), signed by a project owner's
@@ -23,6 +25,7 @@
 pub mod block;
 pub mod cert;
 pub mod channel;
+pub mod checkpoint;
 pub mod deploy;
 pub mod drivers;
 pub mod hosted;
