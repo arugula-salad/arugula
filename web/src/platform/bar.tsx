@@ -110,7 +110,7 @@ export function PlatformBar({ children }: { children?: ComponentChildren }) {
   const pick = (e: MouseEvent) => {
     const at = (e.currentTarget as HTMLElement).getBoundingClientRect();
     const items: MenuItem[] = [
-      // The way back to / where the wordmark is hidden (a phone).
+      // The way back to /, where there's no rail's Projects (a phone).
       { label: "All projects", checked: !project, run: () => go("/") },
       { header: "Projects" },
       ...session.projects.map((x) => ({ label: x.name, checked: x.id === project, run: () => go(pathOf({ page: "project", project: x.id }, names)) })),
