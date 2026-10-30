@@ -109,6 +109,13 @@ const nvimAt = async (page: Page, p: PaneId) => {
 };
 const pref = (page: Page) => page.evaluate(() => (JSON.parse(localStorage.getItem("arugula.seen") ?? "{}") as Record<string, unknown>).editor ?? null);
 
+/** Settings › Editor's row for `label` is checked (or not). */
+async function settingsShows(page: Page, label: "VS Code" | "nvim" | "Ask each time", checked: boolean) {
+  await page.locator("[data-account-menu]").first().click();
+  await expect(await menuItem(page, label, { exact: true })).toHaveAttribute("aria-checked", String(checked));
+  await page.keyboard.press("Escape");
+}
+
 /** Settings › Editor › `label`. */
 async function choose(page: Page, label: "VS Code" | "nvim" | "Ask each time") {
   await page.locator("[data-account-menu]").click();
@@ -319,4 +326,42 @@ test("from Claude Code's diff card: VS Code at the line, nvim in the tab's nvim,
   expect(await pref(page)).toBe("ask");
 
   await fetch(`${APP}/api/panes/${claude}/send`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ text: "quit", enter: true }) });
+});
+
+test("+ Pane › Editor: Edit in nvim sets the Editor preference, and unticking goes back", async ({ page }) => {
+  await reset(page);
+  await page.locator("[data-add-pane]").first().click();
+  const drawer = page.locator("[data-add-pane-drawer]");
+  await drawer.locator('[data-kind="editor"]').click();
+  const box = drawer.locator("[data-edit-in-nvim]");
+  await expect(drawer.getByText("Opens files in nvim, in a pane. Nothing to install.")).toBeVisible();
+  await expect(box).not.toBeChecked();
+  await box.check();
+  await expect(drawer.locator("[data-add-pane-destination]")).toContainText("nvim on");
+  expect(await pref(page)).toBe("nvim");
+  await page.keyboard.press("Escape");
+  await settingsShows(page, "nvim", true);
+
+  // Back to VS Code.
+  await page.locator("[data-add-pane]").first().click();
+  await drawer.locator('[data-kind="editor"]').click();
+  await expect(box).toBeChecked();
+  await box.uncheck();
+  await expect(drawer.locator("[data-add-pane-destination]")).toContainText("VS Code on");
+  expect(await pref(page)).toBe("vscode");
+  await page.keyboard.press("Escape");
+  await settingsShows(page, "VS Code", true);
+});
+
+test("Ask each time comes back after unticking Edit in nvim", async ({ page }) => {
+  await reset(page);
+  await page.locator("[data-account-menu]").first().click();
+  await (await menuItem(page, "Ask each time", { exact: true })).click();
+  await page.locator("[data-add-pane]").first().click();
+  const drawer = page.locator("[data-add-pane-drawer]");
+  await drawer.locator('[data-kind="editor"]').click();
+  await drawer.locator("[data-edit-in-nvim]").check();
+  expect(await pref(page)).toBe("nvim");
+  await drawer.locator("[data-edit-in-nvim]").uncheck();
+  expect(await pref(page)).toBe("ask");
 });

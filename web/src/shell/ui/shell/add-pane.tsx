@@ -16,6 +16,7 @@ import type { Node, NvimBlockOpened, NvimBlockRequest, OpenRequest, PaneId, TabV
 import { editorPref } from "../../open-in-editor";
 import { OPS, opPath } from "../../ops";
 import { startAgent } from "../agent-dialog";
+import { EditInNvim } from "../edit-in-nvim";
 import { pickConversation } from "../conversations";
 import { useEscape } from "../keys";
 import { openPicker } from "../picker";
@@ -327,27 +328,11 @@ export function AddPaneDrawer({ client, tab }: { client: Client; tab: TabView })
           <span class="add-pane-label" id="add-pane-editor">
             Editor
           </span>
-          <div class="add-pane-seg add-pane-editors" role="radiogroup" aria-labelledby="add-pane-editor">
-            {(
-              [
-                ["vscode", "VS Code", "In the browser, on its own site"],
-                ["nvim", "nvim", "In a terminal, with arugula.nvim"],
-              ] as const
-            ).map(([app, name, words]) => (
-              <button
-                key={app}
-                role="radio"
-                aria-checked={editorApp === app}
-                data-editor-app={app}
-                aria-label={name}
-                disabled={app === "vscode" && !client.showsBlocks()}
-                title={app === "vscode" && !client.showsBlocks() ? "This page can't show block sites" : undefined}
-                onClick={() => setEditorApp(app)}
-              >
-                <span><strong>{name}</strong><small>{words}</small></span>
-              </button>
-            ))}
-          </div>
+          <EditInNvim
+            disabled={!client.showsBlocks()}
+            title={!client.showsBlocks() ? "This page can't show VS Code, so it's nvim" : undefined}
+            onChange={(on) => setEditorApp(on ? "nvim" : "vscode")}
+          />
         </div>
       )}
       {kind === "port" && (

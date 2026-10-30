@@ -193,15 +193,14 @@ test("New editor block offers VS Code and nvim, picked by the Editor preference,
   await expect.poll(() => page.evaluate((p) => window.__arugula.client.cwd(p), term)).toBe(proj);
   // Nothing chosen: VS Code.
   let drawer = await editorDrawer(page);
-  await expect(drawer.locator('[data-editor-app="vscode"]')).toHaveAttribute("aria-checked", "true");
-  await expect(drawer.locator('[data-editor-app="nvim"]')).toHaveAttribute("aria-checked", "false");
+  await expect(drawer.locator("[data-edit-in-nvim]")).not.toBeChecked();
   await expect(drawer.locator("[data-add-pane-destination]")).toContainText("VS Code on");
   await page.keyboard.press("Escape");
   await expect(drawer).toBeHidden();
   // The preference nvim: nvim.
   await choose(page, "nvim");
   drawer = await editorDrawer(page);
-  await expect(drawer.locator('[data-editor-app="nvim"]')).toHaveAttribute("aria-checked", "true");
+  await expect(drawer.locator("[data-edit-in-nvim]")).toBeChecked();
   await expect(drawer.locator("[data-add-pane-destination]")).toContainText(`nvim on`);
   await expect(drawer.locator("[data-add-pane-destination]")).toContainText(`in ${proj}`);
   await drawer.locator("[data-add-pane-create]").click();
