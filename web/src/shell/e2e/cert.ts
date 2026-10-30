@@ -117,27 +117,53 @@ export async function signedBy(c: Cert, approver: Cert): Promise<boolean> {
 }
 
 /** Which of `certs` chain back to `root`, net of revocations: the same
- * rules as `Trust::evaluate`. */
+ * rules as `Trust::evaluate`. A certificate not signed by the key of the
+ * device it names as approver is set aside first, so it can't count
+ * against one that is; a recovery code lets in one device. */
 export async function evaluate(
   trust: { account: string; root: string },
   certs: Cert[],
   revocations: Revocation[] = [],
 ): Promise<Map<string, Cert>> {
-  const byId = new Map<string, Cert[]>();
+  const formed = new Map<string, Cert[]>();
   for (const c of certs) {
-    if (c.account === trust.account && (await checkForm(c))) byId.set(c.device, [...(byId.get(c.device) ?? []), c]);
+    if (c.account === trust.account && (await checkForm(c))) formed.set(c.device, [...(formed.get(c.device) ?? []), c]);
   }
-  const valid = async (revoked: Map<string, number>, id: string, at: number, depth: number): Promise<Cert | undefined> => {
+  // Every certificate of a device carries its keys (`checkForm`), so any
+  // one of the approver's says whose signature this must be.
+  const byId = new Map<string, Cert[]>();
+  for (const [id, cs] of formed) {
+    const ok: Cert[] = [];
+    for (const c of cs) {
+      const a = formed.get(c.approver)?.[0];
+      if (a && (await verify(a.sign, certBody(c), c.sig))) ok.push(c);
+    }
+    if (ok.length) byId.set(id, ok);
+  }
+  // The device each recovery code signed for first, in the order the
+  // certificates came (control sends them in the order it approved them),
+  // never by the time one claims: a code lets in one device
+  // (`Graph::recovered`).
+  const first = new Map<string, Cert>();
+  for (const c of certs) {
+    const kept = (byId.get(c.device) ?? []).includes(c);
+    const ofCode = kept && c.approver !== c.device && certifies("recovery", c.kind) && (byId.get(c.approver) ?? []).some((a) => a.kind === "recovery");
+    if (ofCode && !first.has(c.approver)) first.set(c.approver, c);
+  }
+  const any = () => true;
+  const valid = async (revoked: Map<string, number>, id: string, at: number, depth: number, link: (c: Cert) => boolean = any): Promise<Cert | undefined> => {
     const r = revoked.get(id);
     if (depth > 64 || (r !== undefined && r <= at)) return undefined;
     for (const c of byId.get(id) ?? []) {
+      if (!link(c)) continue;
       if (id === trust.root) {
         if (c.approver === c.device && roots(c.kind) && (await signedBy(c, c))) return c;
         continue;
       }
       if (c.approver === c.device) continue;
-      const a = await valid(revoked, c.approver, c.created, depth + 1);
+      const a = await valid(revoked, c.approver, c.created, depth + 1, link);
       if (!a || !certifies(a.kind, c.kind)) continue;
+      if (a.kind === "recovery" && first.get(a.device)?.device !== id) continue;
       if (await signedBy(c, a)) return c;
     }
     return undefined;
@@ -149,10 +175,10 @@ export async function evaluate(
       if (r.v !== 1 || r.account !== trust.account) continue;
       const s = await valid(revoked, r.by, r.at, 0);
       // A browser or a phone is removed only by a browser all the way back
-      // to the root (`Trust::evaluate`).
+      // to the root (`Trust::evaluate`), along certificates that count.
       // A recovery code too: one revoked backdated takes out the browser it let in.
       const ofBrowser = (byId.get(r.device) ?? []).some((c) => c.kind === "browser" || c.kind === "recovery");
-      if (s && approves(s.kind) && (await verify(s.sign, revocationBody(r), r.sig)) && (!ofBrowser || chainedIn(trust.root, byId, r.by, browserLink(r.by))))
+      if (s && approves(s.kind) && (await verify(s.sign, revocationBody(r), r.sig)) && (!ofBrowser || (await valid(revoked, r.by, r.at, 0, browserLink(r.by)))))
         next.set(r.device, Math.min(next.get(r.device) ?? Infinity, r.at));
     }
     revoked = next;

@@ -26,9 +26,17 @@ test("after an update: the releases since the last shown, up to this build", () 
 });
 
 test("a first run, or a long gap, shows the newest few", () => {
-  assert.deepEqual(versions(unshown(list, "0.65.0", null)), ["0.65.0", "0.64.1", "0.64.0"]);
-  assert.deepEqual(versions(unshown(list, "0.65.0", "0.1.0")).length, MAX_RELEASES);
-  assert.deepEqual(versions(unshown(list, "0.65.0", { not: "a version" })), ["0.65.0", "0.64.1", "0.64.0"]);
+  const shown = (built, last) => versions(usable(unshown(list, built, last), () => true));
+  assert.deepEqual(shown("0.65.0", null), ["0.65.0", "0.64.1", "0.64.0"]);
+  assert.deepEqual(shown("0.65.0", "0.1.0").length, MAX_RELEASES);
+  assert.deepEqual(shown("0.65.0", { not: "a version" }), ["0.65.0", "0.64.1", "0.64.0"]);
+});
+
+test("releases with nothing this person can use don't take the newest few's places", () => {
+  // As on a daemon's own page after releases that were all control's.
+  const team = (v) => rel(v, { id: v, title: v, line: v, needs: ["team"] });
+  const rs = [team("0.66.2"), team("0.66.1"), team("0.66.0"), ...list];
+  assert.deepEqual(versions(usable(unshown(rs, "0.66.2", "0.1.0"), (n) => n === "control")), ["0.65.0", "0.64.1", "0.64.0"]);
 });
 
 test("notes for a release not built yet stay out", () => {

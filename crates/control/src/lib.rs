@@ -12,6 +12,7 @@
 //! (`arugula_platform::chat`, M138), behind this hub's gate.
 
 mod account;
+mod account_delete;
 mod account_email;
 mod account_reset;
 mod activity;
@@ -24,6 +25,8 @@ mod app_signin;
 #[cfg(test)]
 mod app_signin_wire;
 mod apple_site;
+#[cfg(test)]
+mod approvals_wire;
 mod auth;
 mod blocks;
 #[cfg(test)]
@@ -49,6 +52,7 @@ mod forge_wire;
 mod gateway;
 #[cfg(test)]
 mod gateway_wire;
+mod git_serve;
 mod github_link;
 #[cfg(test)]
 mod grants_wire;
@@ -634,12 +638,19 @@ fn routes() -> Routes {
             wire::telemetry::PAGE,
             post(telemetry::page).layer(axum::extract::DefaultBodyLimit::max(telemetry::MAX_PAGE_BODY)),
         )
+        // An integration's folder as a git repository (#1748), for plugin managers.
+        .route("/git/{folder}/info/refs", get(git_serve::info_refs))
+        .route(
+            "/git/{folder}/git-upload-pack",
+            post(git_serve::upload_pack).layer(axum::extract::DefaultBodyLimit::max(git_serve::MAX_BODY)),
+        )
         .route("/api/directory", get(api::directory))
         .route("/api/shares/{daemon}", post(teams::answer_share))
         .route("/api/people", get(teams::person))
         .route("/api/flags", get(labs_flags::list).post(labs_flags::set))
         .route("/api/teams", get(teams::list).post(teams::create))
         .route("/api/teams/{id}/roster", post(teams::set_roster))
+        .route("/api/teams/{id}/rosters", get(teams::rosters))
         .route("/api/teams/{id}/invites", post(teams::invite))
         .route("/api/teams/{id}/presigned", get(teams::list_presigned))
         .route("/api/teams/{id}/presigned/{key}", axum::routing::delete(teams::cancel_presigned))
@@ -754,7 +765,7 @@ async fn moved(
     use axum::response::IntoResponse;
     let path = req.uri().path();
     let page = matches!(*req.method(), axum::http::Method::GET | axum::http::Method::HEAD)
-        && !["/api/", "/auth/", "/github/", "/.well-known/"].iter().any(|p| path.starts_with(p))
+        && !["/api/", "/auth/", "/github/", "/.well-known/", "/git/"].iter().any(|p| path.starts_with(p))
         && path != "/control.json"
         && !req.headers().contains_key(axum::http::header::UPGRADE);
     if app.cfg.also_redirect && page && app.cfg.site(req.headers()) != &app.cfg.sites[0] {
@@ -905,7 +916,8 @@ pub fn main(platforms: Box<dyn Platforms>) -> anyhow::Result<()> {
     // `arugula-control census`: an operator's read-only look at the
     // database (census.rs), with no server; `device-review` another
     // (device_review.rs). `account-reset`: support's reset of an account's
-    // devices (account_reset.rs, aru-119). `maintenance`: the switch
+    // devices (account_reset.rs, aru-119). `account-delete`: an operator's
+    // delete of an account, as Settings' (account_delete.rs). `maintenance`: the switch
     // (maintenance.rs), set in the database the running hub reads.
     // `notice`: a notice for every account (notice.rs). `issuer`: the
     // issuer's keys and clients (issuer.rs). `import planter`: planter's
@@ -921,6 +933,9 @@ pub fn main(platforms: Box<dyn Platforms>) -> anyhow::Result<()> {
     }
     if argv.peek().is_some_and(|a| a == "account-reset") {
         return account_reset::run(argv.skip(1));
+    }
+    if argv.peek().is_some_and(|a| a == "account-delete") {
+        return account_delete::run(argv.skip(1));
     }
     if argv.peek().is_some_and(|a| a == "maintenance") {
         return maintenance::run(argv.skip(1));

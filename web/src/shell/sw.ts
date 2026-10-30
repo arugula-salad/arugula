@@ -18,6 +18,7 @@
 // Built by itself into dist/sw.js as a classic worker (vite.sw.config.ts).
 
 import { E2ESocket } from "./e2e/channel.ts";
+import { KEY_CACHE } from "./local-key-cache.ts";
 import type { ActRequest } from "../shared/proto";
 import { existingKeys, loadWorkerDirectory } from "./e2e/keys.ts";
 import { chatTap, platformOf, platformTap, shareUrl, tapUrl, withShare } from "./tap.ts";
@@ -166,10 +167,17 @@ sw.addEventListener("push", (event: PushEvent) => {
 async function act(daemon: string | undefined, body: ActRequest): Promise<boolean> {
   try {
     if (!daemon) {
+      // On this machine's page, its page key (local-key.ts keeps a copy here).
+      const key = await caches
+        .open(KEY_CACHE)
+        .then((c) => c.match("/key"))
+        .then((r) => r?.text())
+        .catch(() => undefined);
       const res = await fetch("/api/attention/act", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...(key ? { "x-arugula-key": key } : {}) },
         body: JSON.stringify(body),
+        redirect: "manual",
       });
       return res.ok;
     }

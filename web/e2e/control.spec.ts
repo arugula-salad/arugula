@@ -848,9 +848,12 @@ test("with no sessions on the machine shown, control's page still has the host a
 });
 
 test("a browser the account removed says so before offering Approve, and enrolls again (#327)", async () => {
-  // The phone was removed above. Opened again (here on a machine's join
-  // link), it checks its own key first: no Approve button that would fail.
+  // The phone was removed above, and its sign-in ended with it. Opened
+  // again (here on a machine's join link), it signs in first; then it
+  // checks its own key: no Approve button that would fail.
   await phone.goto(`${base}/#join=AAAAA-AAAAA`);
+  await expect(phone.locator("[data-signin=github]")).toBeVisible({ timeout: 20_000 });
+  await phone.locator("[data-signin=github]").click();
   await expect(phone.locator('[data-untrusted="removed"]')).toBeVisible({ timeout: 20_000 });
   await expect(phone.locator("[data-approve-join]")).toHaveCount(0);
   await expect(phone.locator("[data-sign-out-forget]")).toBeVisible();

@@ -29,7 +29,8 @@ export interface WhatsNewRelease {
 
 /** The seen store's key: the last version What's new showed. */
 export const PREF = "whats-new";
-/** At most this many releases at once (a first run, or a long gap). */
+/** At most this many releases at once (a first run, or a long gap),
+ * counting only those with something this person can use (`usable`). */
 export const MAX_RELEASES = 3;
 
 /** A release's whole notes. */
@@ -49,7 +50,7 @@ export function compareVersions(a: string | null, b: string | null): number {
 /** This build's releases, newest first: none newer than `built`. */
 export function upTo(releases: WhatsNewRelease[], built: string | null): WhatsNewRelease[] {
   if (!built) return [];
-  return releases.filter((r) => compareVersions(r.version, built) <= 0).slice(0, MAX_RELEASES);
+  return releases.filter((r) => compareVersions(r.version, built) <= 0);
 }
 
 /** What opens by itself: the releases after `last` (the pref, whatever
@@ -59,11 +60,14 @@ export function unshown(releases: WhatsNewRelease[], built: string | null, last:
   return upTo(releases, built).filter((r) => compareVersions(r.version, since) > 0);
 }
 
-/** Only the items this person can use, and only releases left with some. */
+/** Only the items this person can use, and only releases left with some:
+ * the newest few of those, so releases of things they can't use (all
+ * control's, on a daemon's own page) don't take the panel's places. */
 export function usable(releases: WhatsNewRelease[], can: (need: Need) => boolean): WhatsNewRelease[] {
   return releases
     .map((r) => ({ ...r, items: r.items.filter((it) => (it.needs ?? []).every(can)) }))
-    .filter((r) => r.items.length);
+    .filter((r) => r.items.length)
+    .slice(0, MAX_RELEASES);
 }
 
 /** Whether `built` moves the pref on (never back: a page from an older

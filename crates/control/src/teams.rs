@@ -291,6 +291,33 @@ pub async fn list(State(app): State<Arc<App>>, s: Session) -> R {
     Ok(Json(json!({ "teams": out, "asked": asked, "notices": notices })))
 }
 
+#[derive(Deserialize)]
+pub struct Since {
+    #[serde(default)]
+    since: u64,
+}
+
+/// `GET /api/teams/{id}/rosters?since=`: for a member's page, the versions
+/// after the one it last checked (`since`; the whole chain for 0), so it
+/// checks each before building on the latest, as a team machine does.
+/// Certificates for everyone in those versions and the one it holds
+/// (whose owners sign the next).
+pub async fn rosters(State(app): State<Arc<App>>, s: Session, Path(team): Path<String>, Query(q): Query<Since>) -> R {
+    if role_in(&latest(&app, &team)?, &s.account).is_none() {
+        return Err(err(StatusCode::NOT_FOUND, "no such team"));
+    }
+    let rosters: Vec<Roster> =
+        app.db.rosters(&team, q.since)?.iter().map(|b| parse(b)).collect::<anyhow::Result<_>>()?;
+    let mut accounts: Vec<String> = Vec::new();
+    for b in app.db.rosters(&team, q.since.saturating_sub(1))? {
+        accounts.extend(parse(&b)?.members.into_iter().map(|m| m.account));
+    }
+    accounts.sort();
+    accounts.dedup();
+    let certs = certs_for(&app, accounts.iter().map(String::as_str))?;
+    Ok(Json(json!({ "rosters": rosters, "certs": certs })))
+}
+
 /// `POST /api/me/notices/{id}/seen`: shown; don't show it again.
 pub async fn notice_seen(State(app): State<Arc<App>>, s: Session, Path(id): Path<i64>) -> R {
     if !app.db.drop_notice(&s.account, id)? {

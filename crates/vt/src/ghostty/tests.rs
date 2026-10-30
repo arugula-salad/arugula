@@ -611,3 +611,23 @@ fn scrollback_is_capped() {
     let kept = e.terminal().scrollback_rows().unwrap();
     assert!((5_000..15_000).contains(&kept), "kept {kept} rows of 40,000");
 }
+
+#[test]
+fn html_keeps_only_web_links() {
+    // OSC 8 links become anchors in the HTML rendering; only http(s) ones
+    // keep their target, the rest stay as plain text.
+    let e = engine_fed(
+        80,
+        4,
+        b"\x1b]8;;javascript:alert(1)\x1b\\one\x1b]8;;\x1b\\ \x1b]8;;https://e.test/a?b=1&c=2\x1b\\two\x1b]8;;\x1b\\ \
+          \x1b]8;; JaVa\tscript:x\x1b\\three\x1b]8;;\x1b\\ \x1b]8;;HTTP://e.test\x1b\\four\x1b]8;;\x1b\\ \
+          \x1b]8;;file:///etc/passwd\x1b\\five\x1b]8;;\x1b\\\r\n",
+    );
+    let html = e.html();
+    assert!(!html.contains("javascript:") && !html.contains("script:x") && !html.contains("file:"), "{html}");
+    assert!(html.contains("<a href=\"https://e.test/a?b=1&amp;c=2\">two</a>"), "{html}");
+    assert!(html.contains("<a href=\"HTTP://e.test\">four</a>"), "{html}");
+    for text in ["one", "three", "five"] {
+        assert!(html.contains(&format!("<a>{text}</a>")), "{html}");
+    }
+}

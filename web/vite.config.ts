@@ -64,7 +64,12 @@ export default defineConfig({
   },
   server: {
     port: 5173,
-    proxy: { "/ws": { target: "ws://127.0.0.1:7682", ws: true, changeOrigin: true } },
+    // `/auth`: open http://localhost:5173/auth?token=… (the dev daemon's
+    // token) and the sign-in page gives this origin its page key.
+    proxy: {
+      "/ws": { target: "ws://127.0.0.1:7682", ws: true, changeOrigin: true },
+      "/auth": { target: "http://127.0.0.1:7682", changeOrigin: true },
+    },
   },
   build: {
     outDir: "dist",

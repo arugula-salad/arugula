@@ -15,7 +15,11 @@
 //!   name, which serve terminates TLS for), or one given with
 //!   `--allow-origin`. That is how another daemon's page (the home daemon,
 //!   whose host list this daemon is on) may connect here: by exact origin,
-//!   scheme and port included, never a pattern. This stops any other page
+//!   scheme and port included, never a pattern. Its identity is the
+//!   tailnet's; a page from another daemon on this machine has nothing to
+//!   sign in here with (its page key is its own daemon's), so several
+//!   daemons on one machine sharing one page works in tests only, where
+//!   every request carries the key. This stops any other page
 //!   in a browser from opening a WebSocket to us (cross-site WebSocket
 //!   hijacking) or posting to the API.
 //! - **Identity**: a connection tailscaled knows about must come from the
@@ -27,9 +31,12 @@
 //!   header is only believed from tailscaled's end of the connection
 //!   (`localauth::serve_peer_ok`, checked by the server).
 //! - **Everything else on loopback** must show the local token
-//!   (`localauth.rs`): `Authorization: Bearer …`, or the cookie its
-//!   sign-in link sets. Loopback is every account's and every program's on
-//!   the machine, so being on it proves nothing.
+//!   (`localauth.rs`) as `Authorization: Bearer …`, or this daemon's page
+//!   key (`X-Arugula-Key`), which its sign-in link gives the page. Loopback
+//!   is every account's and every program's on the machine, so being on it
+//!   proves nothing. Nothing that grants access is a cookie: cookies aren't
+//!   kept apart by port, so a browser would send one to every server on
+//!   127.0.0.1. The page's own files (`/`, `/assets/…`) need nothing.
 //! - **A resident daemon in a sandbox** (M4b) is reached through its
 //!   provider's proxy, which arrives on loopback like a local process.
 //!   There, everything not identified by tailscaled must carry the token
@@ -78,12 +85,20 @@ pub struct Access {
     port: u16,
     /// The local token, when loopback callers need it (`localauth.rs`).
     local: Option<LocalToken>,
+    /// Until when (Unix seconds) an older sign-in link's cookie may sign a
+    /// browser in once (`localauth::legacy_until`).
+    legacy_until: Option<u64>,
 }
 
 #[derive(Clone)]
 struct LocalToken {
     /// Its SHA-256: compared without early exits.
     digest: [u8; 32],
+    /// The page key's SHA-256.
+    page_digest: [u8; 32],
+    /// The page key: what this daemon's page shows instead of the token
+    /// (`localauth::page_key`).
+    page_key: String,
     /// The page the sign-in link is on (`http://127.0.0.1:PORT`).
     page: String,
     token: String,
@@ -126,6 +141,7 @@ impl Access {
             tailnet: None,
             port,
             local: None,
+            legacy_until: None,
         }
     }
 
@@ -178,7 +194,14 @@ impl Access {
         };
         let page = format!("http://{host}:{}", listen.port());
         let token = token.trim().to_owned();
-        self.local = Some(LocalToken { digest: Sha256::digest(token.as_bytes()).into(), page, token });
+        let page_key = crate::localauth::page_key(&token);
+        self.local = Some(LocalToken {
+            digest: Sha256::digest(token.as_bytes()).into(),
+            page_digest: Sha256::digest(page_key.as_bytes()).into(),
+            page_key,
+            page,
+            token,
+        });
         self
     }
 
@@ -187,10 +210,52 @@ impl Access {
         self.tunnel.is_some()
     }
 
-    /// The cookie a sign-in link sets: one per port, so daemons side by
-    /// side (each with its own token) don't sign each other out.
-    pub fn cookie_name(&self) -> String {
+    /// The cookie older sign-in links set (the token itself): read only to
+    /// sign such a browser in again, and then removed (`server::signin`).
+    pub fn legacy_cookie_name(&self) -> String {
         format!("arugula_{}", self.port)
+    }
+
+    /// Until when (Unix seconds) an older sign-in link's cookie may sign a
+    /// browser in once; None: never.
+    pub fn with_legacy_cookie_until(mut self, until: Option<u64>) -> Self {
+        self.legacy_until = until;
+        self
+    }
+
+    /// A cookie from an older sign-in link carries the local token, while
+    /// such a cookie may still sign a browser in (`localauth::LEGACY_DAYS`
+    /// after an upgrade). It is never a credential for anything else.
+    pub fn legacy_cookie(&self, headers: &HeaderMap) -> bool {
+        let Some(l) = &self.local else { return false };
+        let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(u64::MAX, |d| d.as_secs());
+        if self.legacy_until.is_none_or(|until| now > until) {
+            return false;
+        }
+        headers
+            .get_all(header::COOKIE)
+            .iter()
+            .filter_map(|v| v.to_str().ok())
+            .flat_map(|v| v.split(';'))
+            .filter_map(|c| c.split_once('=').map(|(_, v)| v.trim()))
+            .any(|v| same(&l.digest, v))
+    }
+
+    /// The request carries the page key in its header.
+    pub fn is_page_key(&self, headers: &HeaderMap) -> bool {
+        self.local
+            .as_ref()
+            .is_some_and(|l| header_str(headers, PAGE_KEY_HEADER).is_some_and(|k| same(&l.page_digest, k)))
+    }
+
+    /// The page key, for the sign-in link to hand the page.
+    pub fn page_key(&self) -> Option<&str> {
+        self.local.as_ref().map(|l| l.page_key.as_str())
+    }
+
+    /// Whether loopback callers need the local token (or the page key).
+    pub fn needs_local_token(&self) -> bool {
+        self.local.is_some()
     }
 
     /// The sign-in link for a browser on this machine.
@@ -210,27 +275,16 @@ impl Access {
         bearer(headers).is_some_and(|t| self.is_local_token(t))
     }
 
-    /// A loopback caller shows the local token: as its bearer, or as a
-    /// cookie from a browser. A browser's cookie counts on our own pages,
-    /// on page loads, and for one of our origins; not for what another
-    /// site's page embeds (an image or a script, which carry no Origin).
+    /// A loopback caller shows the local token as its bearer (programs),
+    /// or the page key in `X-Arugula-Key` (this daemon's page, which keeps
+    /// it in its own origin's storage). Never a cookie: a browser sends
+    /// those to every port on the host.
     fn check_local(&self, headers: &HeaderMap) -> Result<(), Refusal> {
         let Some(l) = &self.local else { return Ok(()) };
         if bearer(headers).is_some_and(|t| same(&l.digest, t)) {
             return Ok(());
         }
-        let site = header_str(headers, "sec-fetch-site").unwrap_or("none");
-        let ours = matches!(site, "same-origin" | "none")
-            || header_str(headers, "sec-fetch-mode") == Some("navigate")
-            || header_str(headers, header::ORIGIN.as_str()).is_some_and(|o| self.origin_allowed(o));
-        let cookie = headers
-            .get_all(header::COOKIE)
-            .iter()
-            .filter_map(|v| v.to_str().ok())
-            .flat_map(|v| v.split(';'))
-            .filter_map(|c| c.split_once('=').map(|(_, v)| v.trim()))
-            .any(|v| same(&l.digest, v));
-        if ours && cookie {
+        if header_str(headers, PAGE_KEY_HEADER).is_some_and(|k| same(&l.page_digest, k)) {
             return Ok(());
         }
         Err((
@@ -397,6 +451,20 @@ impl std::fmt::Debug for LocalToken {
     }
 }
 
+/// API addresses are for programs and our own pages. A browser opening one
+/// as a page (a link, a redirect, a form) must be on our page already, or
+/// typed or bookmarked it (`Sec-Fetch-Site: none`); a page load another
+/// site started goes to the page (`/`), never straight to the API.
+/// Browsers that send no fetch metadata aren't refused.
+pub fn check_api_navigation(headers: &HeaderMap) -> Result<(), Refusal> {
+    let mode = header_str(headers, "sec-fetch-mode");
+    let site = header_str(headers, "sec-fetch-site").unwrap_or("none");
+    if matches!(mode, Some("navigate" | "nested-navigate")) && !matches!(site, "same-origin" | "none") {
+        return Err((StatusCode::FORBIDDEN, "API addresses open only from this machine's own page".into()));
+    }
+    Ok(())
+}
+
 /// The lasting fix for the owner (#109): installed, so it survives restarts.
 pub fn owner_fix(login: &str) -> String {
     format!("arugulad install -- --owner {login}")
@@ -431,6 +499,9 @@ pub fn refusal_page(status: StatusCode, why: &str) -> String {
         status.as_u16()
     )
 }
+
+/// The header this daemon's page sends its page key in.
+pub const PAGE_KEY_HEADER: &str = "x-arugula-key";
 
 fn bearer(headers: &HeaderMap) -> Option<&str> {
     header_str(headers, header::AUTHORIZATION.as_str()).and_then(|v| v.strip_prefix("Bearer ")).map(str::trim)
@@ -664,24 +735,38 @@ mod tests {
         assert!(check(&a, &[host, ("authorization", "Bearer ilt_wrong")]).is_err());
         assert!(check(&a, &[host, ("authorization", token)]).is_err(), "not a bearer");
         assert!(a.local_bearer(&headers(&[("authorization", &bearer)])));
-        // A browser: the cookie, under any name, among others.
-        let cookie = format!("other=1; arugula_7681={token}");
-        assert!(check(&a, &[host, ("cookie", &cookie)]).is_ok());
-        assert!(check(&a, &[host, ("cookie", "arugula_7681=ilt_wrong")]).is_err());
+        // This daemon's page: its page key, which isn't the token, and
+        // isn't a bearer (nor is the token a page key).
+        let key = crate::localauth::page_key(token);
+        assert_ne!(key, token);
+        assert_eq!(a.page_key(), Some(key.as_str()));
+        assert!(check(&a, &[host, ("x-arugula-key", &key)]).is_ok());
+        assert!(check(&a, &[host, ("x-arugula-key", "ilp_wrong")]).is_err());
+        assert!(check(&a, &[host, ("x-arugula-key", token)]).is_err());
+        assert!(check(&a, &[host, ("authorization", &format!("Bearer {key}"))]).is_err());
+        assert!(!a.local_bearer(&headers(&[("authorization", &format!("Bearer {key}"))])));
+        // A cookie is sent to every port on the host, so none counts: not
+        // the token (what older sign-in links set), not the page key, not
+        // from our own page or a page load.
         let same = ("sec-fetch-site", "same-origin");
-        assert!(check(&a, &[host, ("cookie", &cookie), same]).is_ok());
-        // Typed in the address bar, or a link from elsewhere: a page load.
-        let nav = [("sec-fetch-site", "cross-site"), ("sec-fetch-mode", "navigate")];
-        assert!(check(&a, &[host, ("cookie", &cookie), nav[0], nav[1]]).is_ok());
-        // What another site's page embeds (another port of 127.0.0.1 is
-        // the same site) carries the cookie but isn't ours.
-        for site in ["same-site", "cross-site"] {
-            let embed = [host, ("cookie", &cookie), ("sec-fetch-site", site), ("sec-fetch-mode", "no-cors")];
-            assert_eq!(check(&a, &embed).unwrap_err().0, StatusCode::UNAUTHORIZED, "{site}");
+        let nav = ("sec-fetch-mode", "navigate");
+        for v in [token, key.as_str()] {
+            let cookie = format!("other=1; arugula_7681={v}");
+            assert_eq!(check(&a, &[host, ("cookie", &cookie)]).unwrap_err().0, StatusCode::UNAUTHORIZED);
+            assert!(check(&a, &[host, ("cookie", &cookie), same]).is_err());
+            assert!(check(&a, &[host, ("cookie", &cookie), same, nav]).is_err());
+            let home = [host, ("cookie", &cookie), ("origin", "http://localhost:5173")];
+            assert!(check(&a, &home).is_err());
         }
-        // One of our origins (another daemon's page, by --allow-origin).
-        let home = [host, ("cookie", &cookie), ("sec-fetch-site", "same-site"), ("origin", "http://localhost:5173")];
-        assert!(check(&a, &home).is_ok());
+        // An older sign-in link's cookie signs that browser in once
+        // (`server::signin`), only for a while after an upgrade.
+        let old = headers(&[("cookie", &format!("x=1; arugula_7681={token}"))]);
+        assert!(!a.legacy_cookie(&old), "not on a new install");
+        let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
+        let upgraded = a.clone().with_legacy_cookie_until(Some(now + 60));
+        assert!(upgraded.legacy_cookie(&old));
+        assert!(!upgraded.legacy_cookie(&headers(&[("cookie", &format!("arugula_7681={key}"))])));
+        assert!(!a.clone().with_legacy_cookie_until(Some(now - 1)).legacy_cookie(&old), "not once it's past");
         // The tailnet's identity is still the tailnet's.
         let served = [("host", "geek.example.ts.net"), ("tailscale-user-login", "me@x.com")];
         assert!(check(&a, &served).is_ok());
@@ -698,11 +783,31 @@ mod tests {
         assert_eq!(a.signin_link().unwrap(), format!("http://127.0.0.1:7681/auth?token={token}"));
         assert!(a.is_local_token(token) && !a.is_local_token("ilt_x"));
         assert!(!format!("{a:?}").contains(token));
-        assert_eq!(a.cookie_name(), "arugula_7681");
+        assert_eq!(a.legacy_cookie_name(), "arugula_7681");
         let any = Access::new(7681, &[], &[], &[], None).require_local_token(token, "0.0.0.0:7681".parse().unwrap());
         assert!(any.signin_link().unwrap().starts_with("http://127.0.0.1:7681/auth?"));
         let none = Access::new(7681, &[], &[], &[], None);
         assert!(none.signin_link().is_none() && !none.is_local_token(token));
+    }
+
+    #[test]
+    fn api_addresses_open_only_from_our_page() {
+        let ok = |h: &[(&str, &str)]| check_api_navigation(&headers(h)).is_ok();
+        // Programs, and our page's own fetches and links.
+        assert!(ok(&[]));
+        assert!(ok(&[("sec-fetch-site", "same-origin"), ("sec-fetch-mode", "cors")]));
+        assert!(ok(&[("sec-fetch-site", "same-origin"), ("sec-fetch-mode", "navigate")]));
+        // Typed in the address bar, or a bookmark.
+        assert!(ok(&[("sec-fetch-site", "none"), ("sec-fetch-mode", "navigate")]));
+        // A page load another site (or another port) started.
+        for site in ["cross-site", "same-site"] {
+            for mode in ["navigate", "nested-navigate"] {
+                let h = [("sec-fetch-site", site), ("sec-fetch-mode", mode)];
+                assert_eq!(check_api_navigation(&headers(&h)).unwrap_err().0, StatusCode::FORBIDDEN, "{site} {mode}");
+            }
+        }
+        // Another daemon's page calling us (its fetch, not a page load).
+        assert!(ok(&[("sec-fetch-site", "cross-site"), ("sec-fetch-mode", "cors")]));
     }
 
     #[test]

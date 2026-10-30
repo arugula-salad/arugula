@@ -19,7 +19,10 @@ stores](#what-control-stores) lists every table of both.
   Browsers run it on WebCrypto alone; daemons and the CLI use `snow`.
 - **Every viewer gets its own channel, including on shared sessions.**
   Sessions have no shared key. Revoking someone closes their channel; there
-  is no key to rotate. Fanning out one ciphertext at the relay waits until
+  is no key to rotate. Changing their role (a team owner made a viewer)
+  closes it too, and their client opens a new one in the new role. What a
+  channel was streaming (a follow) ends with it, and a follow over any path
+  ends once its reader may no longer read that pane. Fanning out one ciphertext at the relay waits until
   a measured need (see [Fan-out](#fan-out-later-if-ever)).
 - **Device keys:**
   - a browser keeps a non-extractable X25519 key (for Noise) and an Ed25519
@@ -112,7 +115,15 @@ device nobody trusted. Now:
 - The **first device** of an account is self-signed. It is trusted on
   first use, like an SSH host key.
 - Every later device, daemon or recovery code is signed by an existing
-  device. That is the *New device?* prompt. Since #761 a new browser is
+  device. That is the *New device?* prompt. Daemons and pages judge the
+  approver as of the certificate's `created`, so the approving page dates
+  it as it signs. Control stores a new certificate only when its approver
+  is a device the account trusts now and its `created` is within ten
+  minutes of control's clock (`approval_ok`), on every path: a presigned
+  enrollment, an approval, a machine's or the CLI's join, recovery codes.
+- Daemons and pages read only certificates signed by the key of the
+  device they name as approver; any other is set aside before anything
+  else, so it can't count against one that is. Since #761 a new browser is
   approved with the code it shows rather than a fingerprint to compare
   (the first 8 bytes of SHA-256 of `noise‖sign`, which a page from before
   codes still shows).
@@ -192,6 +203,33 @@ device nobody trusted. Now:
     every trust refresh). A daemon that was only shared a session with the
     team gets nothing for the team until it's updated: its members lose
     that session there, rather than members who were removed keeping it.
+- **Rosters only move forward** (`arugula_e2e::checkpoint::advance`):
+  - Every machine that checks a team's roster (the team's own machines,
+    a machine a session was shared with, a hosted machine) keeps the last
+    version it checked in `control.json`. It takes a newer version only as
+    the very next one, following the one it holds. An older version,
+    another version with the same number, or a history with a version
+    left out is ignored, and the machine keeps what it had. A team control
+    stops answering for keeps its last roster too, but nobody gets in
+    through it until control answers for it again.
+  - An owner's page does the same in the browser (`team-rosters.ts`): it
+    keeps the last roster it checked for each team, checks control's
+    latest against it (fetching the versions in between), and signs a
+    change only on top of a version that follows. If control's latest
+    doesn't follow, the page shows the last one it checked and holds
+    changes until control's does. The page keeps what it checked in
+    memory for as long as it's open; if the browser can't store it, the
+    page still checks rosters but signs no team change.
+  - The first time a page sees a team, it checks the whole signed history
+    from version 1, which the founder it pinned signs. A version before
+    the latest may have been signed by a device removed since: the page
+    takes it if that device counted as of the version's date, and says so
+    in Teams. The latest version must be signed by a device that counts
+    now. Machines make no such allowance: a version signed by a device
+    removed since stops a machine's first look at that team.
+  - When a member's root changes between the version the page held and
+    the one it takes, Teams shows the old and new fingerprints until you
+    dismiss them, so you can check another key for that account with them.
 - An ***Ask me first* invite** carries a one-time key too (#762), so
   admitting someone needs no fingerprint:
   - The owner's device signs `arugula team ask invite v1` (team, role,
@@ -220,7 +258,8 @@ device nobody trusted. Now:
 **Verification on the daemon:**
 
 - The daemon keeps its account's chain (the certificates back to the
-  first device) and caches it on disk.
+  first device) and caches it on disk, with every revocation it has seen,
+  its team members' and the people it shares with too.
 - A client's Noise static key must belong to a certificate that chains to
   that root, isn't revoked, and has a role on the session it touches
   (the multiplayer principals; role grants are signed the same way).
@@ -231,12 +270,33 @@ device nobody trusted. Now:
 
 - A revocation is a signed `{revoke: <device id>, at}` from any device of
   the account, or from a team owner's device for team grants.
+- A browser, a phone or a recovery code is removed only by a browser all
+  the way back to the root. Daemons and pages ask that of the signer's
+  certificates that count (`Trust::evaluate`): another certificate for a
+  device on that chain neither stands in for one that counts nor sets it
+  aside.
+- Removing a device signs out control's sessions that are that device's,
+  and the platform page's sessions they made.
 - Control distributes revocations to daemons as it does certificates.
-  Approving devices also push them straight to every daemon they can reach.
+  Devices don't send them to daemons themselves: a daemon learns of a
+  revocation on its next refresh from control.
+- **Revocations only add up** (`arugula_e2e::checkpoint::refresh_account`):
+  a daemon keeps every revocation it has seen, for its own account, its
+  team's members and the people it shares with, and a later answer from
+  control can't take one away. A member's removals outlive their
+  membership: if they're let back into the team, those still count. A device a daemon holds as removed (and
+  what that device approved after) can't count again: if control's
+  certificates would let it back in, for instance by leaving out the
+  certificate a revocation rests on, the daemon keeps the certificates
+  it had.
 - **Accepted risk:** a malicious control can *withhold* a revocation from a
-  daemon that no trusted device can reach directly. Control can't add
-  readers, but it can delay removing one. As with Tailnet Lock, this is
-  written down rather than solved.
+  daemon that hasn't seen it yet. Control can't add readers, but it can
+  delay removing one. As with Tailnet Lock, this is written down rather
+  than solved.
+- **Accepted risk:** whether a team is locked is control's word. A locked
+  team lets only its owners in; control can unlock it on a daemon, which
+  lets its editors and viewers back in with the roles the signed roster
+  gives them. It can't add anyone the roster doesn't list.
 
 **Recovery:**
 
@@ -246,8 +306,13 @@ device nobody trusted. Now:
 - Any of the account's devices can make new ones. It signs their
   certificates and revokes every code still good, in one request; control
   refuses new codes that don't retire the old.
-- A recovery code can sign exactly one certificate (a new first device),
-  and daemons then treat it as spent.
+- A recovery code lets in exactly one device (a new first device).
+  Control records which, once, when it first takes an approval by the
+  code (`recovery_uses`), and refuses any other device by that code on
+  every path from then on (`recovery_spent`). It serves an account's
+  certificates in the order it approved them, and daemons and pages count
+  only the first device a code signed in that order, whatever time a
+  later certificate claims. The page that used it also revokes it.
 - Control never sees the seed.
 
 ### PRF: re-deriving a browser's keys
@@ -904,7 +969,7 @@ or whoever runs yours) does:
 |---|---|
 | relays and stores honestly | only your devices and the people you share with read them |
 | has its database or relay copied, or logs everything it sees | still unreadable: it holds certificates and ciphertext, never a private key |
-| turns malicious **after** your machines and devices are set up, without changing the page it serves | can't add a reader: daemons check every device against the root they pinned. It can withhold revocations and refuse service |
+| turns malicious **after** your machines and devices are set up, without changing the page it serves | can't add a reader: daemons check every device against the root they pinned and every roster against the last one they checked, and keep every revocation they've seen. It can withhold revocations a machine hasn't seen yet, unlock a locked team, and refuse service |
 | lies at **join** about which account a machine joins | refused by the machine: the approving device's answer to the secret in its link doesn't match (an older daemon or CLI: caught by the account fingerprint, if you compare it) |
 | lies about which account a **new browser or phone** is approved into | refused by that device: the approving device's answer to the code it showed doesn't match (approved from a page from before codes: it shows the account fingerprint to check) |
 | lies about who **@name** is when you share with them | believed on the first share unless you verify them; after that the share stops, saying their key changed |
@@ -1648,9 +1713,9 @@ sleeps, and control pushes and searches them itself.
 
 <!-- Written by `just control-tables` from crates/control/tables.toml. Edit that, not this. -->
 
-Control's database has 151 tables in two planes ("Two planes, two trust rules"):
+Control's database has 152 tables in two planes ("Two planes, two trust rules"):
 
-- **The machine plane** (50 tables) is what control needs to route and check: ids, names, addresses, public keys and signed statements. What moves between a client and a machine stays end to end, and control can't read it.
+- **The machine plane** (51 tables) is what control needs to route and check: ids, names, addresses, public keys and signed statements. What moves between a client and a machine stays end to end, and control can't read it.
 - **The platform plane** (101 tables) is what has to exist while every machine is asleep: billing and usage, chat and the threads on objects, Shared Docs, Cloud workspaces, linked repos' PRs and issues, and projects' native issues, runs and deploys. Control reads most of it, and says so here.
 
 Every table is listed in `crates/control/tables.toml`, and a test fails when one isn't. **Holds** is what's in it: metadata (ids, names, addresses, times, counts, public keys, signed statements), ciphertext (encrypted to keys control never holds), or plaintext (what people or their agents wrote, or a secret control can read). **Gone with the account** is what deleting an account does to its rows.
@@ -1680,6 +1745,7 @@ Every table is listed in `crates/control/tables.toml`, and a test fails when one
 | `email_tokens` | **plaintext** | A typed address waiting for its verify link (#1609): the link's token by its hash, the address, and when it expires (a day). | yes | The email provider |
 | `email_sends` | metadata | That control emailed an account (#1609): which kind of notice and when, never its body. Kept 90 days, for the daily limit. | yes |  |
 | `revocations` | metadata | A signed revocation of a device's or machine's key. | yes |  |
+| `recovery_uses` | metadata | Which device each recovery code let in (their ids), recorded once, when control first takes an approval by the code. | yes |  |
 | `joins` | metadata | A machine asking to join: its certificate, a hash of its poll token, its addresses, the approval. | yes |  |
 | `daemons` | metadata | The directory: a joined machine's id, name, addresses, team, last seen, and the version, OS and arch it runs. | yes | PostHog |
 | `daemon_access` | metadata | The accounts a machine says it lets in, for routing (the machine checks for itself). | yes |  |

@@ -56,6 +56,7 @@ import {
   type TeamPin,
   type TeamRole,
 } from "./e2e/team.ts";
+import { checkRoster, RosterStore, type RootChange, type RosterProblem } from "./team-rosters.ts";
 
 export interface ControlInfo {
   control: true;
@@ -143,8 +144,18 @@ export interface Team {
   /** Members' names as they set them, by account (#208): the roster's
    * one-word form ("Sam-Stranger") is only what's signed. */
   names?: Record<string, string>;
-  /** The founder is the one this browser pinned on first sight. */
+  /** The founder is the one this browser pinned on first sight, and the
+   * roster follows the last one this browser checked. */
   verified: boolean;
+  /** Why control's roster wasn't taken: `roster` is then the last one
+   * this browser checked, and changes wait until control's follows it. */
+  rosterProblem?: RosterProblem;
+  /** Members' roots that changed since this browser last looked, until
+   * dismissed. */
+  rootChanges?: RootChange[];
+  /** Versions of its roster that a device removed since had signed, while
+   * it still counted: taken, and shown. */
+  rosterLate?: number[];
 }
 
 /** A one-click invite link control still holds (#134). */
@@ -157,6 +168,33 @@ export interface PresignedInvite {
 }
 
 const PINS_KEY = "arugula.control.pins";
+
+/** The last roster this browser checked for each team (`team-rosters.ts`),
+ * and members' roots that changed since it looked, until dismissed. */
+const ROSTERS_KEY = "arugula.control.rosters";
+const ROOT_CHANGES_KEY = "arugula.control.root-changes";
+
+function readKey<T>(key: string, empty: T): T {
+  try {
+    return (JSON.parse(localStorage.getItem(key) ?? "null") as T | null) ?? empty;
+  } catch {
+    return empty;
+  }
+}
+
+function writeKey(key: string, v: unknown) {
+  try {
+    localStorage.setItem(key, JSON.stringify(v));
+  } catch {
+    // not remembered
+  }
+}
+
+const rootChangesKept = () => readKey<Record<string, RootChange[]>>(ROOT_CHANGES_KEY, {});
+/** Versions taken that a device removed since had signed, by team, until
+ * dismissed with the root changes. */
+const ROSTER_LATE_KEY = "arugula.control.roster-late";
+const rosterLateKept = () => readKey<Record<string, number[]>>(ROSTER_LATE_KEY, {});
 
 /** #761: the secret this browser shows while it waits, kept with its key
  * id so a reload shows the same code (one already scanned still works). */
@@ -697,6 +735,8 @@ const REFUSED: Record<string, string> = {
   cant_approve: "A machine can't approve devices. Approve from a browser, phone or the Arugula CLI.",
   recovery_for_machine: "A recovery code approves browsers and phones, not machines. Approve the machine from one of your devices.",
   needs_browser: "Only a browser or a phone approves a browser, a phone or recovery codes. The desktop app and the Arugula CLI approve machines, CLIs and apps: approve this one from a browser.",
+  recovery_spent: "That recovery code let a device in already, and each one lets in one device. Use your other recovery code, or approve this browser from one of your devices.",
+  clock: "This device's clock is too far from control's for the approval to count. Check the clock, reload and approve again.",
   no_chain: "Control's records for your account don't add up from here (the approval doesn't chain to your first device). Reload and try again; if it keeps happening, approve from another device.",
   no_devices: "This account has no devices yet. Reload: this browser becomes its first.",
 };
@@ -1605,6 +1645,9 @@ export class ControlSession {
    * this account's, not a failure. */
   teamsLoaded = false;
 
+  /** The last roster this page checked for each team (`RosterStore`). */
+  private rosters = new RosterStore(() => localStorage, ROSTERS_KEY);
+
   async loadTeams() {
     let loaded = true;
     const r = await api<{ teams: Omit<Team, "verified">[]; asked?: ControlSession["asked"]; notices?: ControlSession["notices"] }>(
@@ -1616,19 +1659,45 @@ export class ControlSession {
     this.teamsLoaded = loaded;
     this.notices = r.notices ?? [];
     const out: Team[] = [];
+    const held = this.rosters.held();
+    const kept = rootChangesKept();
+    const lateKept = rosterLateKept();
     for (const t of r.teams) {
       // The founder pinned on first sight. The team's daemons check each
       // roster version against it; this browser checks the ones it signs.
       const ok = pin(`team:${t.team}`, `${t.pin.founder}.${t.pin.founder_root}`);
+      // And each version from the last this browser checked: an owner's
+      // change is signed on top of the one shown, so that one must be a
+      // version owners wrote, not just what control says is latest.
+      const c = await checkRoster(held[t.team] ?? null, t.roster, t.pin, t.certs, (since) =>
+        api<{ rosters: Roster[]; certs: AccountCerts }>(`/api/teams/${encodeURIComponent(t.team)}/rosters?since=${since}`),
+      );
+      if (ok && c.keep && c.keep.version > (held[t.team]?.version ?? 0)) held[t.team] = c.keep;
+      if (ok && c.changes.length) kept[t.team] = [...(kept[t.team] ?? []), ...c.changes];
+      if (ok && c.late.length) lateKept[t.team] = [...new Set([...(lateKept[t.team] ?? []), ...c.late])].sort((a, b) => a - b);
       // #762: only someone who held an owner's link; anything else control
       // says waits is refused here, never shown.
       const requests: Team["requests"] = [];
       for (const q of t.requests ?? []) {
-        const by = await askOk(t.roster, t.certs, q);
+        const by = await askOk(c.roster, t.certs, q);
         if (by) requests.push({ ...q, role: q.invite.role, by });
       }
-      out.push({ ...t, requests, verified: ok });
+      out.push({
+        ...t,
+        roster: c.roster,
+        requests,
+        verified: ok && !c.problem,
+        ...(c.problem ? { rosterProblem: c.problem } : {}),
+        ...(kept[t.team]?.length ? { rootChanges: kept[t.team] } : {}),
+        ...(lateKept[t.team]?.length ? { rosterLate: lateKept[t.team] } : c.late.length ? { rosterLate: c.late } : {}),
+      });
     }
+    this.rosters.save();
+    writeKey(ROOT_CHANGES_KEY, kept);
+    writeKey(ROSTER_LATE_KEY, lateKept);
+    // Checked, but not kept: no change is signed on what this browser
+    // would forget.
+    if (!this.rosters.kept) for (const t of out) t.rosterProblem ??= "unsaved";
     const now = r.asked ?? [];
     const yes = this.asked.find((a) => !now.some((x) => x.team === a.team) && out.some((t) => t.team === a.team));
     if (yes) this.joined = { team: yes.team, name: yes.name };
@@ -1815,6 +1884,7 @@ export class ControlSession {
   async changeTeam(team: string, change: (members: Roster["members"]) => Roster["members"], name?: string) {
     const t = this.teams.find((x) => x.team === team);
     if (!t) throw new Error("no such team");
+    if (t.rosterProblem) throw new Error("control's list of this team's members doesn't follow the one this browser last checked; changes wait until it does");
     const prev = t.roster;
     // Used presigned invites stay listed until they'd have expired anyway,
     // so none works twice.
@@ -1835,6 +1905,19 @@ export class ControlSession {
     if (!(await follows(next, prev, t.pin, t.certs))) throw new Error("that change doesn't check out (are you an owner here?)");
     await api(`/api/teams/${team}/roster`, { roster: next });
     await this.refresh();
+  }
+
+  /** The root changes and removed signers shown for `team` were seen:
+   * don't show them again. */
+  dismissRootChanges(team: string) {
+    const kept = rootChangesKept();
+    delete kept[team];
+    writeKey(ROOT_CHANGES_KEY, kept);
+    const late = rosterLateKept();
+    delete late[team];
+    writeKey(ROSTER_LATE_KEY, late);
+    this.teams = this.teams.map((t) => (t.team === team ? { ...t, rootChanges: undefined, rosterLate: undefined } : t));
+    this.emit();
   }
 
   async admit(team: string, req: Team["requests"][number]) {
@@ -2040,7 +2123,9 @@ export class ControlSession {
 
   private async approveDevice(c: Cert, code: DeviceCode | null = null) {
     if (this.sealed(c) && !code) throw new Error(`${c.name} shows a code: scan it or type it to approve it`);
-    const signed: Cert = { ...c, account: this.account, approver: this.keys.id, sig: "" };
+    // Dated now, as it's approved: control takes approvals made within
+    // minutes of its clock, whenever the device asked.
+    const signed: Cert = { ...c, account: this.account, created: Date.now(), approver: this.keys.id, sig: "" };
     signed.sig = await signText(this.keys, certBody(signed));
     let mac: string | null = null;
     if (code) {
@@ -2100,7 +2185,8 @@ export class ControlSession {
    * alongside that shows a code (#761) is approved with it, from
    * `deviceCodes` by its id. */
   async approveJoin(code: string, c: Cert, team: string | null = null, devices: Cert[] = [], secret: string | null = null, deviceCodes: Map<string, DeviceCode> = new Map()) {
-    const signed: Cert = { ...c, account: this.account, approver: this.keys.id, sig: "" };
+    // Dated now, as approveDevice's.
+    const signed: Cert = { ...c, account: this.account, created: Date.now(), approver: this.keys.id, sig: "" };
     signed.sig = await signText(this.keys, certBody(signed));
     let mac: string | null = null;
     if (secret) {

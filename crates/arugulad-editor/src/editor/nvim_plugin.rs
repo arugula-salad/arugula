@@ -24,7 +24,7 @@
 //!   is rewritten: at startup for each copy installed from here (they're
 //!   listed in `<state>/editor/nvim-plugin.json`), and whenever a session
 //!   finds one. A copy without the marker is never touched.
-//! - **Remove** (`DELETE /api/nvim-plugin`, Settings > Editor > nvim >
+//! - **Remove** (`DELETE /api/nvim-plugin`, Settings > Editor >
 //!   "Remove arugula.nvim") deletes the copies installed from here that
 //!   still have the marker. An nvim that has it loaded keeps it until it
 //!   quits.
@@ -141,7 +141,7 @@ pub fn stamp() -> String {
 fn marker_text() -> String {
     format!(
         "Arugula installed this copy of arugula.nvim, and replaces it when its daemon is upgraded.\n\
-         Settings > Editor > nvim > Remove arugula.nvim deletes it. Delete this file to keep\n\
+         Settings > Editor > Remove arugula.nvim deletes it. Delete this file to keep\n\
          Arugula from ever touching this folder again.\n\
          version={}\n",
         stamp()
