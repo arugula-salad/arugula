@@ -19,6 +19,8 @@ mod activity;
 mod activity_wire;
 mod analytics;
 mod api;
+#[cfg(test)]
+mod approvals_wire;
 mod app_login;
 mod app_signin;
 #[cfg(test)]

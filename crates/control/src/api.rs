@@ -116,21 +116,39 @@ fn refused_say(r: Refusal) -> &'static str {
         Refusal::NeedsBrowser => {
             "only a browser or a phone approves a browser, a phone or recovery codes: the desktop app and the CLI approve machines, CLIs and apps"
         }
+        Refusal::RecoverySpent => {
+            "that recovery code let a device in already, and each lets in one: use your other code, or approve from one of your devices"
+        }
         Refusal::NoChain => {
             "the approval doesn't chain to this account's first device (its form, kind or time): reload and try again"
         }
     }
 }
 
-/// `cert` checks out against the account's trusted devices. `what` names
-/// the request, for the log. Refused, the 403 says which check failed, as
-/// a `reason` code and a sentence (#327).
+/// How far a new certificate's `created` may be from control's clock.
+/// Daemons and pages judge its approver as of that time, so it's the time
+/// of the approval: the page sets it as it signs.
+const APPROVE_SKEW_MS: u64 = 10 * 60 * 1000;
+
+/// What a page says when an approval's time is too far from control's.
+const CLOCK: &str =
+    "the approval's time is too far from control's clock: check this device's clock, reload and approve again";
+
+/// `cert` checks out against the account's trusted devices, now: its
+/// approver is one the account trusts at this moment, and its time is
+/// control's, give or take [`APPROVE_SKEW_MS`]. `what` names the request,
+/// for the log. Refused, the 403 says which check failed, as a `reason`
+/// code and a sentence (#327).
 fn approval_ok(app: &App, account: &str, cert: &Cert, what: &str) -> Result<(), ApiError> {
     let (trust, certs, revs) = trusted(app, account)?;
     let Some(trust) = trust else {
         refused(what, account, cert, "the account has no devices yet");
         return Err(refusal(StatusCode::CONFLICT, "no_devices", "this account has no devices yet"));
     };
+    if cert.created.abs_diff(now_ms()) > APPROVE_SKEW_MS {
+        refused(what, account, cert, "its time is too far from control's clock");
+        return Err(refusal(StatusCode::FORBIDDEN, "clock", CLOCK));
+    }
     // A removed key never counts again (#330): say so, not that it
     // doesn't chain. `revoked` says so to pages (#327).
     if revs.iter().any(|r| r.device == cert.device) {
@@ -141,6 +159,14 @@ fn approval_ok(app: &App, account: &str, cert: &Cert, what: &str) -> Result<(), 
         refused(what, account, cert, r.check());
         return Err(refusal(StatusCode::FORBIDDEN, r.code(), refused_say(r)));
     }
+    // Its approver is one the account trusts now, whatever the kind: a
+    // removed device's key, or a retired recovery code, approves nothing.
+    let now = trust.evaluate(&certs, &revs);
+    let Some(by) = now.get(&cert.approver).cloned() else {
+        let r = Refusal::ApproverUntrusted;
+        refused(what, account, cert, r.check());
+        return Err(refusal(StatusCode::FORBIDDEN, r.code(), refused_say(r)));
+    };
     // A browser or a recovery code (which makes browsers) comes only from
     // a browser or a phone whose every link back to the root, the root
     // included, is one too (`Cert::is_browser`): not the desktop app's
@@ -152,13 +178,8 @@ fn approval_ok(app: &App, account: &str, cert: &Cert, what: &str) -> Result<(), 
     // the way back.
     if matches!(cert.kind, Kind::Browser | Kind::Recovery) {
         let children = crate::legacy_app::children(&app.db, account)?;
-        let by = trust.evaluate(&certs, &revs).get(&cert.approver).cloned();
-        let from = match &by {
-            Some(a) if a.kind == Kind::Recovery && cert.kind == Kind::Browser => Some(a.approver.clone()),
-            Some(a) => Some(a.device.clone()),
-            None => None,
-        };
-        if !from.is_some_and(|d| browser_all_the_way(&trust, &certs, &d, &children)) {
+        let from = if by.kind == Kind::Recovery && cert.kind == Kind::Browser { &by.approver } else { &by.device };
+        if !browser_all_the_way(&trust, &certs, from, &children) {
             let r = Refusal::NeedsBrowser;
             refused(what, account, cert, r.check());
             return Err(refusal(StatusCode::FORBIDDEN, r.code(), refused_say(r)));
@@ -543,6 +564,8 @@ pub async fn revoke(State(app): State<Arc<App>>, s: Session, Json(b): Json<Revok
         app.db.add_revocation(&r)?;
         nudge(&app, &s.account);
     }
+    // Its sign-ins end with it: a removed device keeps no session here.
+    app.db.drop_device_sessions(&s.account, &r.device)?;
     Ok(Json(json!({})))
 }
 

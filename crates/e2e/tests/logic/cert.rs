@@ -423,9 +423,12 @@ fn evaluate() -> Example {
         run_evaluate,
         "Which of the certificates control hands out an account trusts now, from the root device a daemon pinned: \
          each must chain back to that root (self-signed, of a kind that roots), every link signed by a device \
-         valid when the link was made, of a kind that certifies the next. A revocation counts when its signer is \
+         valid when the link was made, of a kind that certifies the next. A certificate not signed by the key of \
+         the device it names as approver is set aside before anything else. A recovery code lets in one device: \
+         the first it signed, by created time, then by device id. A revocation counts when its signer is \
          valid then (checked twice, so a revoked device's own revocations stop counting); a browser or a recovery \
-         code is taken off only by a device that's a browser all the way to the root. A device revoked at T no \
+         code is taken off only by a device that's a browser all the way to the root, along certificates that \
+         count (each a browser's, or a recovery code's above one). A device revoked at T no \
          longer counts, nor what it approved after T; what it approved before T stays. Certificates don't expire: \
          time matters only against revocations. Anything that doesn't check out is ignored, never an error: \
          control may send junk, and it can only shrink the set.",
@@ -531,6 +534,12 @@ fn evaluate() -> Example {
         w.r(&format!("recovery-revoked-at-1-by-{by_label}"), &revoke(ACCT, &code.id(), 1, by));
     }
     w.r("phone-revoked-by-new-laptop", &revoke(ACCT, &pid, 40_000, &newlaptop));
+    // Another certificate for the new laptop's keys, as a CLI: unsigned,
+    // and signed by the phone (before it's revoked).
+    let mut unsigned = ac(&newlaptop, Kind::Cli, "new laptop", 1_700, &code);
+    unsigned.sig = String::new();
+    put(&mut w, "new-laptop-as-cli-unsigned", unsigned);
+    put(&mut w, "new-laptop-as-cli-by-phone", ac(&newlaptop, Kind::Cli, "new laptop", 1_700, &phone));
     // A long chain: 65 browsers below the root, each approving the next
     // (chain-i's key is byte 100 + i; not listed in keys).
     let mut chain = vec!["laptop".to_owned()];
@@ -615,28 +624,57 @@ fn evaluate() -> Example {
         ("recovery", &["browser", "cli", "recovery", "app"][..]),
         ("geek", &[][..]),
     ] {
-        let mut certs: Vec<String> =
-            ["laptop", "phone", "geek", "terminal", "app", "recovery"].map(String::from).to_vec();
-        let mut want: Vec<String> =
-            ["laptop", "phone", "geek", "terminal", "Arugula app on box", "recovery 1"].map(String::from).to_vec();
-        for (b, kind, label) in &made {
-            if b == &by_label {
+        let mine: Vec<&(&str, Kind, String)> = made.iter().filter(|(b, _, _)| b == &by_label).collect();
+        // A recovery code lets in one device, so what it approves is
+        // asked one at a time.
+        let groups: Vec<Vec<&(&str, Kind, String)>> =
+            if by_label == "recovery" { mine.iter().map(|m| vec![*m]).collect() } else { vec![mine] };
+        for group in groups {
+            let mut certs: Vec<String> =
+                ["laptop", "phone", "geek", "terminal", "app", "recovery"].map(String::from).to_vec();
+            let mut want: Vec<String> =
+                ["laptop", "phone", "geek", "terminal", "Arugula app on box", "recovery 1"].map(String::from).to_vec();
+            for (_, kind, label) in &group {
                 certs.push(label.clone());
                 if ok.contains(&kind.as_str()) {
                     want.push(format!("{} by {by_label}", kind.as_str()));
                 }
             }
+            let certs: Vec<&str> = certs.iter().map(String::as_str).collect();
+            let want: Vec<&str> = want.iter().map(String::as_str).collect();
+            let what = match by_label {
+                "terminal" => "what a CLI approves: CLIs and machines, never a browser or a recovery code".to_owned(),
+                "app" => {
+                    "what the app approves: apps, CLIs and machines, never a browser or a recovery code".to_owned()
+                }
+                "recovery" => format!(
+                    "a recovery code approving a {}: people's devices, not machines",
+                    group.first().map(|(_, k, _)| k.as_str()).unwrap_or_default()
+                ),
+                _ => "what a machine approves: nothing".to_owned(),
+            };
+            case(&mut ex, &what, &rid, &certs, &[], &want);
         }
-        let certs: Vec<&str> = certs.iter().map(String::as_str).collect();
-        let want: Vec<&str> = want.iter().map(String::as_str).collect();
-        let what = match by_label {
-            "terminal" => "what a CLI approves: CLIs and machines, never a browser or a recovery code",
-            "app" => "what the app approves: apps, CLIs and machines, never a browser or a recovery code",
-            "recovery" => "what a recovery code approves: people's devices, not machines",
-            _ => "what a machine approves: nothing",
-        };
-        case(&mut ex, what, &rid, &certs, &[], &want);
     }
+    let mut every: Vec<&str> = ["laptop", "phone", "geek", "terminal", "app", "recovery"].to_vec();
+    let mut want = vec!["laptop", "phone", "geek", "terminal", "Arugula app on box", "recovery 1"];
+    every.extend(made.iter().filter(|(b, _, _)| *b == "recovery").map(|(_, _, l)| l.as_str()));
+    // All made at the same time: the first by id counts.
+    let first = made
+        .iter()
+        .filter(|(b, k, _)| *b == "recovery" && Kind::Recovery.certifies(*k))
+        .min_by_key(|(_, k, _)| keys(40 + KINDS.iter().position(|x| x == k).unwrap_or_default() as u8).id())
+        .map(|(_, k, _)| format!("{} by recovery", k.as_str()))
+        .unwrap();
+    want.push(&first);
+    case(
+        &mut ex,
+        "a recovery code lets in one device: the first it signed (by time, then id)",
+        &rid,
+        &every,
+        &[],
+        &want,
+    );
     let timed = ["laptop", "phone", "before", "after"];
     case(
         &mut ex,
@@ -752,6 +790,22 @@ fn evaluate() -> Example {
         &["phone-revoked-by-new-laptop"],
         &["laptop", "terminal", "Arugula app on box", "recovery 1", "new laptop"],
     );
+    for (extra, what) in [("new-laptop-as-cli-unsigned", "unsigned"), ("new-laptop-as-cli-by-phone", "signed as a CLI")]
+    {
+        let mut certs = vec![extra];
+        certs.extend(rec);
+        case(
+            &mut ex,
+            &format!(
+                "the recovered browser revokes the lost phone, with another certificate for it first ({what}): \
+                 the revocation stands on the chain that counts"
+            ),
+            &rid,
+            &certs,
+            &["phone-revoked-by-new-laptop"],
+            &["laptop", "terminal", "Arugula app on box", "recovery 1", "new laptop"],
+        );
+    }
     case(
         &mut ex,
         "the recovery code revoked backdated by a CLI: doesn't count",
@@ -826,7 +880,8 @@ fn refusal() -> Example {
         "Why a new certificate wouldn't count beside the account's (#327), which control says before it stores \
          one, so a client can say which check failed: revoked (its device was taken off: it needs a new key), \
          approver_untrusted, bad_signature, cant_approve (a machine approving), recovery_for_machine, needs_browser \
-         (a CLI or the app approving a browser, a phone or a recovery code), no_chain (anything else: its form, \
+         (a CLI or the app approving a browser, a phone or a recovery code), recovery_spent (a recovery code that \
+         let a device in already: each lets in one), no_chain (anything else: its form, \
          its kind, its time). None when it counts.",
         &["arugula_e2e::Trust::refusal", "arugula_e2e::Refusal::code"],
     )
@@ -923,6 +978,17 @@ fn refusal() -> Example {
     case(&mut ex, "renamed after the root signed it", "browser-renamed-after-signing", &[], Some("bad_signature"));
     case(&mut ex, "in another account", "browser-in-another-account", &[], Some("no_chain"));
     case(&mut ex, "a removed machine approved again with its old key", "box-again", &["box-revoked"], Some("revoked"));
+    // The recovery code let a browser in already (an earlier one).
+    let used = ex.key("recovered", 8);
+    ex.object("recovered", &ac(&used, Kind::Browser, "recovered", 1_500, &code));
+    ex.case(
+        "a browser a recovery code approved, after it let another in",
+        json!({
+            "account": ACCT, "root": rid, "certs": labels(&[&have[..], &["recovered"]].concat()),
+            "revocations": [], "cert": "browser-by-recovery",
+        }),
+        json!({ "refusal": "recovery_spent" }),
+    );
     ex
 }
 

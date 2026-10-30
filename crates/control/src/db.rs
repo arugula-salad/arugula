@@ -1049,6 +1049,27 @@ impl Db {
         Ok(n)
     }
 
+    /// Sign out the account's sessions that are `device`'s (the device a
+    /// sign-in enrolled or said it was), and the platform page's sessions
+    /// and tokens they made: a device taken off the account keeps none.
+    /// How many went.
+    pub fn drop_device_sessions(&self, account: &str, device: &str) -> anyhow::Result<usize> {
+        let mut c = self.c();
+        let tx = c.transaction()?;
+        for t in ["app_sessions", "issuer_tokens"] {
+            tx.execute(
+                &format!(
+                    "DELETE FROM {t} WHERE hub_session IN
+                         (SELECT token_hash FROM sessions WHERE account = ?1 AND device = ?2)"
+                ),
+                params![account, device],
+            )?;
+        }
+        let n = tx.execute("DELETE FROM sessions WHERE account = ?1 AND device = ?2", params![account, device])?;
+        tx.commit()?;
+        Ok(n)
+    }
+
     /// Sign out everywhere, the platform page too.
     pub fn drop_sessions(&self, account: &str) -> anyhow::Result<usize> {
         let mut c = self.c();

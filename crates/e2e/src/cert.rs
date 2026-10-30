@@ -303,12 +303,7 @@ impl Trust {
     /// Anything that doesn't check out is ignored, not an error: control
     /// may send junk, and it can only ever shrink the set.
     pub fn evaluate(&self, certs: &[Cert], revocations: &[Revocation]) -> Trusted {
-        let mut by_id: HashMap<&str, Vec<&Cert>> = HashMap::new();
-        for c in certs {
-            if c.account == self.account && c.check_form().is_ok() {
-                by_id.entry(c.device.as_str()).or_default().push(c);
-            }
-        }
+        let g = Graph::new(self, certs);
         // Revocations count when their signer is valid; twice, so a
         // revoked device's own revocations stop counting.
         let mut revoked: HashMap<String, u64> = HashMap::new();
@@ -318,19 +313,23 @@ impl Trust {
                 if r.v != 1 || r.account != self.account {
                     continue;
                 }
-                let signer = self.valid_cert(&by_id, &revoked, &r.by, r.at, 0);
+                let signer = g.valid(&revoked, &r.by, r.at, 0, &|_| true);
                 // A browser or a phone is removed only by a device that's
                 // a browser all the way back to the root: never by a CLI
                 // or the app, whose keys a program on their computer holds.
                 // (A recovery code too: revoking one backdated, before the
                 // browser it let in was made, would take that browser out.)
-                let of_browser = by_id
+                // The chain asked of the signer is one of certificates that
+                // count, each link a browser's (or a recovery code above
+                // one), so another certificate for a device on the way
+                // neither stands in for nor sets aside the one that counts.
+                let of_browser = g
+                    .by_id
                     .get(r.device.as_str())
                     .is_some_and(|cs| cs.iter().any(|c| matches!(c.kind, Kind::Browser | Kind::Recovery)));
+                let browser = |c: &Cert| browser_link(c, &r.by, |c| c.kind == Kind::Browser);
                 if signer.is_some_and(|s| s.kind.approves() && verify(&s.verifying_key(), r.body().as_bytes(), &r.sig))
-                    && (!of_browser
-                        || self
-                            .chained_in(&by_id, &r.by, &|c: &Cert| browser_link(c, &r.by, |c| c.kind == Kind::Browser)))
+                    && (!of_browser || g.valid(&revoked, &r.by, r.at, 0, &browser).is_some())
                 {
                     let at = next.entry(r.device.clone()).or_insert(r.at);
                     *at = (*at).min(r.at);
@@ -340,8 +339,8 @@ impl Trust {
         }
         let now = u64::MAX;
         let mut out = Trusted::default();
-        for id in by_id.keys() {
-            if let Some(c) = self.valid_cert(&by_id, &revoked, id, now, 0) {
+        for id in g.by_id.keys() {
+            if let Some(c) = g.valid(&revoked, id, now, 0, &|_| true) {
                 out.devices.insert(c.device.clone(), c.clone());
             }
         }
@@ -462,25 +461,86 @@ impl Trust {
             Some(a) if !a.kind.approves() => Refusal::CantApprove,
             Some(a) if a.kind == Kind::Recovery && cert.kind == Kind::Daemon => Refusal::RecoveryForMachine,
             Some(a) if !a.kind.certifies(cert.kind) => Refusal::NeedsBrowser,
+            Some(a)
+                if a.kind == Kind::Recovery
+                    && certs.iter().any(|o| o.approver == a.device && o.device != cert.device && o.signed_by(a)) =>
+            {
+                Refusal::RecoverySpent
+            }
             Some(_) => Refusal::NoChain,
         })
     }
+}
+
+/// An account's certificates as [`Trust::evaluate`] reads them: by device,
+/// only those of the account, well formed and signed by the key of the
+/// device they name as approver (a certificate that isn't is ignored, so
+/// it can't count against one that is). And, for each recovery code, the
+/// one device it lets in.
+struct Graph<'a> {
+    trust: &'a Trust,
+    by_id: HashMap<&'a str, Vec<&'a Cert>>,
+    /// The device each recovery code signed for first (by `created`, then
+    /// id): a code lets in one device, and the others it signed don't count.
+    recovered: HashMap<&'a str, &'a str>,
+}
+
+impl<'a> Graph<'a> {
+    fn new(trust: &'a Trust, certs: &'a [Cert]) -> Self {
+        let mut formed: HashMap<&str, Vec<&Cert>> = HashMap::new();
+        for c in certs {
+            if c.account == trust.account && c.check_form().is_ok() {
+                formed.entry(c.device.as_str()).or_default().push(c);
+            }
+        }
+        // Every certificate of a device carries its keys (`check_form`), so
+        // any one of the approver's says whose signature this must be.
+        let signed = |c: &Cert| {
+            formed
+                .get(c.approver.as_str())
+                .and_then(|a| a.first())
+                .is_some_and(|a| verify(&a.verifying_key(), c.body().as_bytes(), &c.sig))
+        };
+        let mut by_id: HashMap<&str, Vec<&Cert>> = HashMap::new();
+        for (id, cs) in &formed {
+            let ok: Vec<&Cert> = cs.iter().copied().filter(|c| signed(c)).collect();
+            if !ok.is_empty() {
+                by_id.insert(id, ok);
+            }
+        }
+        let mut first: HashMap<&str, (u64, &str)> = HashMap::new();
+        for c in by_id.values().flatten() {
+            let of_code = c.approver != c.device
+                && Kind::Recovery.certifies(c.kind)
+                && by_id.get(c.approver.as_str()).is_some_and(|a| a.iter().any(|a| a.kind == Kind::Recovery));
+            if of_code {
+                let e = first.entry(c.approver.as_str()).or_insert((c.created, c.device.as_str()));
+                *e = (*e).min((c.created, c.device.as_str()));
+            }
+        }
+        let recovered = first.into_iter().map(|(code, (_, device))| (code, device)).collect();
+        Self { trust, by_id, recovered }
+    }
 
     /// `id`'s certificate, if it was valid at time `at`: not revoked by
-    /// then, and signed by a device that was valid when this was created.
-    fn valid_cert<'a>(
+    /// then, and signed by a device that was valid when this was created,
+    /// each certificate on the way passing `link`.
+    fn valid(
         &self,
-        by_id: &HashMap<&str, Vec<&'a Cert>>,
         revoked: &HashMap<String, u64>,
         id: &str,
         at: u64,
         depth: usize,
+        link: &dyn Fn(&Cert) -> bool,
     ) -> Option<&'a Cert> {
         if depth > 64 || revoked.get(id).is_some_and(|&t| t <= at) {
             return None;
         }
-        for c in by_id.get(id)? {
-            if id == self.root {
+        for c in self.by_id.get(id)? {
+            if !link(c) {
+                continue;
+            }
+            if id == self.trust.root {
                 if c.approver == c.device && c.kind.roots() && c.signed_by(c) {
                     return Some(c);
                 }
@@ -489,9 +549,12 @@ impl Trust {
             if c.approver == c.device {
                 continue;
             }
-            let Some(approver) = self.valid_cert(by_id, revoked, &c.approver, c.created, depth + 1) else { continue };
-            // Recovery codes approve people's devices, not daemons; a CLI
-            // or the app never a browser.
+            let Some(approver) = self.valid(revoked, &c.approver, c.created, depth + 1, link) else { continue };
+            // Recovery codes approve people's devices, not daemons, and
+            // one each; a CLI or the app never a browser.
+            if approver.kind == Kind::Recovery && self.recovered.get(approver.device.as_str()) != Some(&id) {
+                continue;
+            }
             if approver.kind.certifies(c.kind) && c.signed_by(approver) {
                 return Some(c);
             }
@@ -550,6 +613,8 @@ pub enum Refusal {
     /// A CLI or the desktop app approving a browser, a phone or a recovery
     /// code: only a browser does.
     NeedsBrowser,
+    /// A recovery code that let a device in already: each lets in one.
+    RecoverySpent,
     /// Anything else: its form, its kind, or when it was made.
     NoChain,
 }
@@ -564,6 +629,7 @@ impl Refusal {
             Refusal::CantApprove => "cant_approve",
             Refusal::RecoveryForMachine => "recovery_for_machine",
             Refusal::NeedsBrowser => "needs_browser",
+            Refusal::RecoverySpent => "recovery_spent",
             Refusal::NoChain => "no_chain",
         }
     }
@@ -581,6 +647,7 @@ impl Refusal {
             Refusal::NeedsBrowser => {
                 "a CLI or the desktop app approves machines, CLIs and apps, not a browser, a phone or a recovery code"
             }
+            Refusal::RecoverySpent => "the recovery code let a device in already: each one lets in one device",
             Refusal::NoChain => "it doesn't chain to the account's first device (form, kind or time)",
         }
     }
@@ -952,6 +1019,75 @@ mod tests {
             assert!(now.get(&new.device).is_some() && now.get(&code.device).is_some(), "a CLI or the app can't");
         }
         assert!(t.evaluate(&all, &[backdated(&rk)]).get(&new.device).is_none());
+    }
+
+    /// Another certificate for the revoking browser's id, unsigned or
+    /// signed as another kind, doesn't set its revocation aside.
+    #[test]
+    fn a_revocation_stands_on_the_chain_that_counts() {
+        let (rk, rc) = root("acct");
+        let (bk, browser) = approved(&rk, "acct", Kind::Browser, "laptop 2");
+        let (pk, phone) = approved(&rk, "acct", Kind::Browser, "phone");
+        let t = trust(&rc);
+        let gone = Revocation::new("acct", &phone.device, &bk);
+        let base = [rc.clone(), browser.clone(), phone.clone()];
+        assert!(t.evaluate(&base, std::slice::from_ref(&gone)).get(&phone.device).is_none());
+        // The same keys, as a CLI, with no signature.
+        let unsigned = Cert { kind: Kind::Cli, sig: String::new(), ..browser.clone() };
+        // The same keys as a CLI, signed by the phone before it was removed.
+        let mut as_cli = Cert::new(&bk, "acct", Kind::Cli, "laptop 2");
+        as_cli.created = browser.created;
+        as_cli.sign_with(&pk);
+        for (what, extra) in [("unsigned", unsigned), ("signed as a CLI", as_cli)] {
+            for all in [[base.to_vec(), vec![extra.clone()]].concat(), [vec![extra.clone()], base.to_vec()].concat()] {
+                let now = t.evaluate(&all, std::slice::from_ref(&gone));
+                assert!(now.get(&phone.device).is_none(), "{what}: the phone stays removed");
+                assert!(now.get(&browser.device).is_some(), "{what}: the browser stays");
+            }
+        }
+        // Nor does an unsigned browser certificate for a CLI make its
+        // removal need a browser.
+        let (ck, cli) = approved(&rk, "acct", Kind::Cli, "terminal");
+        let (_, other) = approved(&rk, "acct", Kind::Cli, "terminal 2");
+        let posing = Cert { kind: Kind::Browser, sig: String::new(), ..other.clone() };
+        let all = [rc.clone(), cli, other.clone(), posing];
+        let r = Revocation::new("acct", &other.device, &ck);
+        assert!(t.evaluate(&all, &[r]).get(&other.device).is_none());
+    }
+
+    /// A recovery code lets in one device: what else it signs doesn't count.
+    #[test]
+    fn a_recovery_code_lets_in_one_device() {
+        let (rk, rc) = root("acct");
+        let (ck, code) = approved(&rk, "acct", Kind::Recovery, "recovery 1");
+        let mut first = Cert::new(&DeviceKeys::generate(), "acct", Kind::Browser, "new laptop");
+        first.created = code.created + 10;
+        first.sign_with(&ck);
+        let mut second = Cert::new(&DeviceKeys::generate(), "acct", Kind::Cli, "terminal");
+        second.created = code.created + 20;
+        second.sign_with(&ck);
+        let t = trust(&rc);
+        for all in [
+            vec![rc.clone(), code.clone(), first.clone(), second.clone()],
+            vec![second.clone(), first.clone(), code.clone(), rc.clone()],
+        ] {
+            let now = t.evaluate(&all, &[]);
+            assert!(now.get(&first.device).is_some() && now.get(&second.device).is_none());
+        }
+        // A certificate signed again for the same device still counts.
+        let mut again = first.clone();
+        again.created += 5;
+        again.sign_with(&ck);
+        let now = t.evaluate(&[rc.clone(), code.clone(), again.clone()], &[]);
+        assert!(now.get(&first.device).is_some());
+        // An unsigned one naming the code doesn't use it up.
+        let mut early = Cert::new(&DeviceKeys::generate(), "acct", Kind::Browser, "control's");
+        early.created = code.created + 1;
+        early.approver = code.device.clone();
+        early.sig = "00".repeat(64);
+        assert!(t.evaluate(&[rc.clone(), code.clone(), early, first.clone()], &[]).get(&first.device).is_some());
+        assert_eq!(t.refusal(&[rc.clone(), code.clone(), first.clone()], &[], &second), Some(Refusal::RecoverySpent));
+        assert_eq!(t.refusal(&[rc.clone(), code.clone()], &[], &second), None);
     }
 
     /// The app's devices from before it had a kind are `browser` ones it

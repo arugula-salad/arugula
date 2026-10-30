@@ -1,5 +1,5 @@
 {
-  "about": "Which of the certificates control hands out an account trusts now, from the root device a daemon pinned: each must chain back to that root (self-signed, of a kind that roots), every link signed by a device valid when the link was made, of a kind that certifies the next. A revocation counts when its signer is valid then (checked twice, so a revoked device's own revocations stop counting); a browser or a recovery code is taken off only by a device that's a browser all the way to the root. A device revoked at T no longer counts, nor what it approved after T; what it approved before T stays. Certificates don't expire: time matters only against revocations. Anything that doesn't check out is ignored, never an error: control may send junk, and it can only shrink the set.",
+  "about": "Which of the certificates control hands out an account trusts now, from the root device a daemon pinned: each must chain back to that root (self-signed, of a kind that roots), every link signed by a device valid when the link was made, of a kind that certifies the next. A certificate not signed by the key of the device it names as approver is set aside before anything else. A recovery code lets in one device: the first it signed, by created time, then by device id. A revocation counts when its signer is valid then (checked twice, so a revoked device's own revocations stop counting); a browser or a recovery code is taken off only by a device that's a browser all the way to the root, along certificates that count (each a browser's, or a recovery code's above one). A device revoked at T no longer counts, nor what it approved after T; what it approved before T stays. Certificates don't expire: time matters only against revocations. Anything that doesn't check out is ignored, never an error: control may send junk, and it can only shrink the set.",
   "cases": [
     {
       "about": "the root alone",
@@ -273,22 +273,85 @@
       }
     },
     {
-      "about": "what a recovery code approves: people's devices, not machines",
+      "about": "a recovery code approving a browser: people's devices, not machines",
       "input": {
         "account": "acct",
-        "certs": [
-          "laptop",
-          "phone",
-          "geek",
-          "terminal",
-          "app",
-          "recovery",
-          "browser-by-recovery",
-          "cli-by-recovery",
-          "daemon-by-recovery",
-          "recovery-by-recovery",
-          "app-by-recovery"
-        ],
+        "certs": ["laptop", "phone", "geek", "terminal", "app", "recovery", "browser-by-recovery"],
+        "revocations": [],
+        "root": "37f29b7074cf8b52"
+      },
+      "output": {
+        "trusted": [
+          {"approver": "37f29b7074cf8b52", "device": "37f29b7074cf8b52", "name": "laptop"},
+          {"approver": "c242667535a3d34f", "device": "9b64bd87042f22a7", "name": "geek"},
+          {
+            "approver": "bb6cc568875e9006",
+            "device": "9be5533cf593e92e",
+            "name": "browser by recovery"
+          },
+          {"approver": "37f29b7074cf8b52", "device": "bb6cc568875e9006", "name": "recovery 1"},
+          {"approver": "37f29b7074cf8b52", "device": "c242667535a3d34f", "name": "phone"},
+          {
+            "approver": "37f29b7074cf8b52",
+            "device": "c8f088038888fcd4",
+            "name": "Arugula app on box"
+          },
+          {"approver": "37f29b7074cf8b52", "device": "ed0089709d11f9a5", "name": "terminal"}
+        ]
+      }
+    },
+    {
+      "about": "a recovery code approving a cli: people's devices, not machines",
+      "input": {
+        "account": "acct",
+        "certs": ["laptop", "phone", "geek", "terminal", "app", "recovery", "cli-by-recovery"],
+        "revocations": [],
+        "root": "37f29b7074cf8b52"
+      },
+      "output": {
+        "trusted": [
+          {"approver": "37f29b7074cf8b52", "device": "37f29b7074cf8b52", "name": "laptop"},
+          {"approver": "bb6cc568875e9006", "device": "71cbff5e626bb735", "name": "cli by recovery"},
+          {"approver": "c242667535a3d34f", "device": "9b64bd87042f22a7", "name": "geek"},
+          {"approver": "37f29b7074cf8b52", "device": "bb6cc568875e9006", "name": "recovery 1"},
+          {"approver": "37f29b7074cf8b52", "device": "c242667535a3d34f", "name": "phone"},
+          {
+            "approver": "37f29b7074cf8b52",
+            "device": "c8f088038888fcd4",
+            "name": "Arugula app on box"
+          },
+          {"approver": "37f29b7074cf8b52", "device": "ed0089709d11f9a5", "name": "terminal"}
+        ]
+      }
+    },
+    {
+      "about": "a recovery code approving a daemon: people's devices, not machines",
+      "input": {
+        "account": "acct",
+        "certs": ["laptop", "phone", "geek", "terminal", "app", "recovery", "daemon-by-recovery"],
+        "revocations": [],
+        "root": "37f29b7074cf8b52"
+      },
+      "output": {
+        "trusted": [
+          {"approver": "37f29b7074cf8b52", "device": "37f29b7074cf8b52", "name": "laptop"},
+          {"approver": "c242667535a3d34f", "device": "9b64bd87042f22a7", "name": "geek"},
+          {"approver": "37f29b7074cf8b52", "device": "bb6cc568875e9006", "name": "recovery 1"},
+          {"approver": "37f29b7074cf8b52", "device": "c242667535a3d34f", "name": "phone"},
+          {
+            "approver": "37f29b7074cf8b52",
+            "device": "c8f088038888fcd4",
+            "name": "Arugula app on box"
+          },
+          {"approver": "37f29b7074cf8b52", "device": "ed0089709d11f9a5", "name": "terminal"}
+        ]
+      }
+    },
+    {
+      "about": "a recovery code approving a recovery: people's devices, not machines",
+      "input": {
+        "account": "acct",
+        "certs": ["laptop", "phone", "geek", "terminal", "app", "recovery", "recovery-by-recovery"],
         "revocations": [],
         "root": "37f29b7074cf8b52"
       },
@@ -300,13 +363,30 @@
             "device": "44d6bd4d1b5c8d53",
             "name": "recovery by recovery"
           },
-          {"approver": "bb6cc568875e9006", "device": "71cbff5e626bb735", "name": "cli by recovery"},
           {"approver": "c242667535a3d34f", "device": "9b64bd87042f22a7", "name": "geek"},
+          {"approver": "37f29b7074cf8b52", "device": "bb6cc568875e9006", "name": "recovery 1"},
+          {"approver": "37f29b7074cf8b52", "device": "c242667535a3d34f", "name": "phone"},
           {
-            "approver": "bb6cc568875e9006",
-            "device": "9be5533cf593e92e",
-            "name": "browser by recovery"
+            "approver": "37f29b7074cf8b52",
+            "device": "c8f088038888fcd4",
+            "name": "Arugula app on box"
           },
+          {"approver": "37f29b7074cf8b52", "device": "ed0089709d11f9a5", "name": "terminal"}
+        ]
+      }
+    },
+    {
+      "about": "a recovery code approving a app: people's devices, not machines",
+      "input": {
+        "account": "acct",
+        "certs": ["laptop", "phone", "geek", "terminal", "app", "recovery", "app-by-recovery"],
+        "revocations": [],
+        "root": "37f29b7074cf8b52"
+      },
+      "output": {
+        "trusted": [
+          {"approver": "37f29b7074cf8b52", "device": "37f29b7074cf8b52", "name": "laptop"},
+          {"approver": "c242667535a3d34f", "device": "9b64bd87042f22a7", "name": "geek"},
           {"approver": "37f29b7074cf8b52", "device": "bb6cc568875e9006", "name": "recovery 1"},
           {"approver": "37f29b7074cf8b52", "device": "c242667535a3d34f", "name": "phone"},
           {
@@ -342,6 +422,46 @@
       "output": {
         "trusted": [
           {"approver": "37f29b7074cf8b52", "device": "37f29b7074cf8b52", "name": "laptop"},
+          {"approver": "c242667535a3d34f", "device": "9b64bd87042f22a7", "name": "geek"},
+          {"approver": "37f29b7074cf8b52", "device": "bb6cc568875e9006", "name": "recovery 1"},
+          {"approver": "37f29b7074cf8b52", "device": "c242667535a3d34f", "name": "phone"},
+          {
+            "approver": "37f29b7074cf8b52",
+            "device": "c8f088038888fcd4",
+            "name": "Arugula app on box"
+          },
+          {"approver": "37f29b7074cf8b52", "device": "ed0089709d11f9a5", "name": "terminal"}
+        ]
+      }
+    },
+    {
+      "about": "a recovery code lets in one device: the first it signed (by time, then id)",
+      "input": {
+        "account": "acct",
+        "certs": [
+          "laptop",
+          "phone",
+          "geek",
+          "terminal",
+          "app",
+          "recovery",
+          "browser-by-recovery",
+          "cli-by-recovery",
+          "daemon-by-recovery",
+          "recovery-by-recovery",
+          "app-by-recovery"
+        ],
+        "revocations": [],
+        "root": "37f29b7074cf8b52"
+      },
+      "output": {
+        "trusted": [
+          {"approver": "37f29b7074cf8b52", "device": "37f29b7074cf8b52", "name": "laptop"},
+          {
+            "approver": "bb6cc568875e9006",
+            "device": "44d6bd4d1b5c8d53",
+            "name": "recovery by recovery"
+          },
           {"approver": "c242667535a3d34f", "device": "9b64bd87042f22a7", "name": "geek"},
           {"approver": "37f29b7074cf8b52", "device": "bb6cc568875e9006", "name": "recovery 1"},
           {"approver": "37f29b7074cf8b52", "device": "c242667535a3d34f", "name": "phone"},
@@ -687,6 +807,66 @@
         "trusted": [
           {"approver": "37f29b7074cf8b52", "device": "37f29b7074cf8b52", "name": "laptop"},
           {"approver": "bb6cc568875e9006", "device": "73f78456621ef247", "name": "new laptop"},
+          {"approver": "37f29b7074cf8b52", "device": "bb6cc568875e9006", "name": "recovery 1"},
+          {
+            "approver": "37f29b7074cf8b52",
+            "device": "c8f088038888fcd4",
+            "name": "Arugula app on box"
+          },
+          {"approver": "37f29b7074cf8b52", "device": "ed0089709d11f9a5", "name": "terminal"}
+        ]
+      }
+    },
+    {
+      "about": "the recovered browser revokes the lost phone, with another certificate for it first (unsigned): the revocation stands on the chain that counts",
+      "input": {
+        "account": "acct",
+        "certs": [
+          "new-laptop-as-cli-unsigned",
+          "laptop",
+          "terminal",
+          "app",
+          "recovery",
+          "new-laptop",
+          "phone"
+        ],
+        "revocations": ["phone-revoked-by-new-laptop"],
+        "root": "37f29b7074cf8b52"
+      },
+      "output": {
+        "trusted": [
+          {"approver": "37f29b7074cf8b52", "device": "37f29b7074cf8b52", "name": "laptop"},
+          {"approver": "bb6cc568875e9006", "device": "73f78456621ef247", "name": "new laptop"},
+          {"approver": "37f29b7074cf8b52", "device": "bb6cc568875e9006", "name": "recovery 1"},
+          {
+            "approver": "37f29b7074cf8b52",
+            "device": "c8f088038888fcd4",
+            "name": "Arugula app on box"
+          },
+          {"approver": "37f29b7074cf8b52", "device": "ed0089709d11f9a5", "name": "terminal"}
+        ]
+      }
+    },
+    {
+      "about": "the recovered browser revokes the lost phone, with another certificate for it first (signed as a CLI): the revocation stands on the chain that counts",
+      "input": {
+        "account": "acct",
+        "certs": [
+          "new-laptop-as-cli-by-phone",
+          "laptop",
+          "terminal",
+          "app",
+          "recovery",
+          "new-laptop",
+          "phone"
+        ],
+        "revocations": ["phone-revoked-by-new-laptop"],
+        "root": "37f29b7074cf8b52"
+      },
+      "output": {
+        "trusted": [
+          {"approver": "37f29b7074cf8b52", "device": "37f29b7074cf8b52", "name": "laptop"},
+          {"approver": "c242667535a3d34f", "device": "73f78456621ef247", "name": "new laptop"},
           {"approver": "37f29b7074cf8b52", "device": "bb6cc568875e9006", "name": "recovery 1"},
           {
             "approver": "37f29b7074cf8b52",
@@ -2326,6 +2506,30 @@
       "name": "new laptop",
       "noise": "0808080808080808080808080808080808080808080808080808080808080808",
       "sig": "6071fb84509a04b2c0cb629d5c722ebb8580016b853bbb36367730f387cb357f901a74aa83018179941f0edfbae820e93579c5cb86dd560358c9aae14232e10a",
+      "sign": "1398f62c6d1a457c51ba6a4b5f3dbd2f69fca93216218dc8997e416bd17d93ca",
+      "v": 1
+    },
+    "new-laptop-as-cli-by-phone": {
+      "account": "acct",
+      "approver": "c242667535a3d34f",
+      "created": 1700,
+      "device": "73f78456621ef247",
+      "kind": "cli",
+      "name": "new laptop",
+      "noise": "0808080808080808080808080808080808080808080808080808080808080808",
+      "sig": "bfee3b55b6253d46ce01f2e5205d2ec36950e8a86ada4ede2b9e96f319588b25a3a19303d74e3f25780e2b89049dff73deb256c9eb573095d495b8f42b16d90f",
+      "sign": "1398f62c6d1a457c51ba6a4b5f3dbd2f69fca93216218dc8997e416bd17d93ca",
+      "v": 1
+    },
+    "new-laptop-as-cli-unsigned": {
+      "account": "acct",
+      "approver": "bb6cc568875e9006",
+      "created": 1700,
+      "device": "73f78456621ef247",
+      "kind": "cli",
+      "name": "new laptop",
+      "noise": "0808080808080808080808080808080808080808080808080808080808080808",
+      "sig": "",
       "sign": "1398f62c6d1a457c51ba6a4b5f3dbd2f69fca93216218dc8997e416bd17d93ca",
       "v": 1
     },

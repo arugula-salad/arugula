@@ -112,7 +112,15 @@ device nobody trusted. Now:
 - The **first device** of an account is self-signed. It is trusted on
   first use, like an SSH host key.
 - Every later device, daemon or recovery code is signed by an existing
-  device. That is the *New device?* prompt. Since #761 a new browser is
+  device. That is the *New device?* prompt. Daemons and pages judge the
+  approver as of the certificate's `created`, so the approving page dates
+  it as it signs. Control stores a new certificate only when its approver
+  is a device the account trusts now and its `created` is within ten
+  minutes of control's clock (`approval_ok`), on every path: a presigned
+  enrollment, an approval, a machine's or the CLI's join, recovery codes.
+- Daemons and pages read only certificates signed by the key of the
+  device they name as approver; any other is set aside before anything
+  else, so it can't count against one that is. Since #761 a new browser is
   approved with the code it shows rather than a fingerprint to compare
   (the first 8 bytes of SHA-256 of `noise‖sign`, which a page from before
   codes still shows).
@@ -231,6 +239,13 @@ device nobody trusted. Now:
 
 - A revocation is a signed `{revoke: <device id>, at}` from any device of
   the account, or from a team owner's device for team grants.
+- A browser, a phone or a recovery code is removed only by a browser all
+  the way back to the root. Daemons and pages ask that of the signer's
+  certificates that count (`Trust::evaluate`): another certificate for a
+  device on that chain neither stands in for one that counts nor sets it
+  aside.
+- Removing a device signs out control's sessions that are that device's,
+  and the platform page's sessions they made.
 - Control distributes revocations to daemons as it does certificates.
   Approving devices also push them straight to every daemon they can reach.
 - **Accepted risk:** a malicious control can *withhold* a revocation from a
@@ -246,8 +261,10 @@ device nobody trusted. Now:
 - Any of the account's devices can make new ones. It signs their
   certificates and revokes every code still good, in one request; control
   refuses new codes that don't retire the old.
-- A recovery code can sign exactly one certificate (a new first device),
-  and daemons then treat it as spent.
+- A recovery code lets in exactly one device (a new first device), and
+  daemons and pages then treat it as spent: of the devices it signed for,
+  only the first counts (by `created`, then id), and control refuses a
+  second (`recovery_spent`). The page that used it also revokes it.
 - Control never sees the seed.
 
 ### PRF: re-deriving a browser's keys
