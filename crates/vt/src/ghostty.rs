@@ -353,7 +353,7 @@ impl VtEngine for GhosttyEngine {
     }
 
     fn html(&self) -> String {
-        String::from_utf8_lossy(&self.format(Format::Html, false, false)).into_owned()
+        web_links_only(&String::from_utf8_lossy(&self.format(Format::Html, false, false)))
     }
 
     fn content_rows(&self) -> u16 {
@@ -375,6 +375,42 @@ impl VtEngine for GhosttyEngine {
     fn pwd(&self) -> String {
         self.term.pwd().unwrap_or("").to_owned()
     }
+}
+
+/// The formatter writes `<a href="URI">` for every OSC 8 link, whatever
+/// the program put in it. Only `http:` and `https:` targets stay; any other
+/// link becomes a bare `<a>` around the same text. The URI arrives
+/// HTML-escaped and cell text can't contain a raw `<`, so every `<a href="`
+/// here is the formatter's own.
+fn web_links_only(html: &str) -> String {
+    const OPEN: &str = "<a href=\"";
+    let mut out = String::with_capacity(html.len());
+    let mut rest = html;
+    while let Some(at) = rest.find(OPEN) {
+        out.push_str(&rest[..at]);
+        let after = &rest[at + OPEN.len()..];
+        let Some(end) = after.find("\">") else {
+            // Not the formatter's shape: keep no link at all.
+            out.push_str("<a>");
+            rest = after.find('>').map_or("", |e| &after[e + 1..]);
+            continue;
+        };
+        let uri = &after[..end];
+        if is_web_link(uri) {
+            out.push_str(&rest[at..at + OPEN.len() + end + 2]);
+        } else {
+            out.push_str("<a>");
+        }
+        rest = &after[end + 2..];
+    }
+    out.push_str(rest);
+    out
+}
+
+/// `uri` (as written in the attribute) starts with `http://` or `https://`.
+fn is_web_link(uri: &str) -> bool {
+    let lower = uri.get(..8).unwrap_or(uri).to_ascii_lowercase();
+    lower.starts_with("http://") || lower.starts_with("https://")
 }
 
 mod paste;
