@@ -338,3 +338,44 @@ async fn a_reconcile_picks_up_a_change_with_no_webhook() {
     assert!(w.app.db.claim_reconcile(later + connect::BACKOFF_MS - 1).unwrap().is_none());
     assert!(w.app.db.claim_reconcile(later + connect::BACKOFF_MS).unwrap().is_some());
 }
+
+/// After an outage the change set spans more pages than a backfill turn
+/// reads: one reconcile still takes all of it, so the next one (which starts
+/// above the newest held) has nothing left behind.
+#[tokio::test]
+async fn a_reconcile_after_a_long_outage_takes_every_page() {
+    let hub = Arc::new(TestHub::default());
+    let w = world(&hub).await;
+    let far = item(9, "Nine", "started", 1_000_000);
+    connect::ingest_page(&w.app, &w.conn, w.mirror, None, std::slice::from_ref(&far), 1).unwrap().unwrap();
+    // The fake holds two items a page: thirty changed are fifteen pages.
+    let mut all = vec![far];
+    all.extend((11..41).map(|n| item(n, &format!("Changed {n}"), "started", 1_000_000 + n)));
+    w.fake.set_items(all);
+    assert!(30 / 2 > connect::PAGES);
+    let due = now_ms() + RECONCILE_MS + 1;
+    assert_eq!(
+        connect::reconcile(&w.app, due).await.unwrap(),
+        Some(Reconciled::Done { connection: w.conn.clone(), changed: 30 })
+    );
+    for n in 11..41 {
+        assert_eq!(row(&w.app, w.mirror, &format!("item-{n}")).unwrap().0, format!("Changed {n}"), "item {n}");
+    }
+}
+
+/// A backfill turn that rewrites a row a board points at tells the board.
+#[tokio::test]
+async fn a_backfill_turn_tells_the_boards() {
+    let hub = Arc::new(TestHub::default());
+    let w = world(&hub).await;
+    let mut rx = board_on(&w, "item-1").await;
+    w.fake.set_items(vec![item(1, "First, changed", "started", 9_000)]);
+    w.app
+        .db
+        .c()
+        .execute("UPDATE tracker_connections SET backfilled_at = NULL, lease_until = 0 WHERE id = ?1", params![w.conn])
+        .unwrap();
+    assert!(matches!(connect::tick(&w.app, now_ms()).await.unwrap(), Some(connect::Turn::Done { .. })));
+    assert_eq!(row(&w.app, w.mirror, "item-1").unwrap().0, "First, changed");
+    assert!(heard(&mut rx), "the board wasn't told");
+}

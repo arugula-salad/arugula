@@ -54,6 +54,9 @@ use crate::{
 pub const PAGES: usize = 10;
 /// How long a connection waits after its first failure.
 pub const BACKOFF_MS: u64 = 60_000;
+/// Most pages a reconcile reads. It stops by itself at the first page with
+/// nothing newer than where it started, so this is only a safety cap.
+const RECONCILE_PAGES: usize = 200;
 /// How far a reconcile reads back from the newest item it holds.
 const OVERLAP_MS: u64 = 60_000;
 /// How often each machine looks for a connection to backfill.
@@ -388,8 +391,9 @@ pub async fn reconcile(app: &Platform, now: u64) -> anyhow::Result<Option<Reconc
     }
 }
 
-/// Read what changed since the newest item held, up to [`PAGES`] pages, and
-/// write it. How many rows changed, or `None` when the claim was lost.
+/// Read what changed since the newest item held, to the first page with
+/// nothing newer (a turn must reach it: the next one starts above what it
+/// skipped), and write it. How many rows changed, or `None` when the claim was lost.
 async fn reconcile_turn(app: &Platform, job: &Backfill, now: u64) -> anyhow::Result<Option<usize>> {
     let master = app.secret_key.as_deref().ok_or_else(|| anyhow::anyhow!("this platform keeps no secrets"))?;
     let key = keys::open(&app.db, master, &job.project_id, &key_name(&job.id))?
@@ -397,7 +401,7 @@ async fn reconcile_turn(app: &Platform, job: &Backfill, now: u64) -> anyhow::Res
     let provider = app.trackers.plane(&key);
     let since = app.db.tracker_newest(job.mirror_id)?.map(|t| t.saturating_sub(OVERLAP_MS));
     let (mut cursor, mut total) = (None::<String>, 0);
-    for _ in 0..PAGES {
+    for _ in 0..RECONCILE_PAGES {
         if !app.db.renew_backfill(job, now_ms())? {
             return Ok(None);
         }
@@ -415,9 +419,7 @@ async fn reconcile_turn(app: &Platform, job: &Backfill, now: u64) -> anyhow::Res
         }
     }
     if cursor.is_some() {
-        // The newest are in; the older of this change set wait for a
-        // backfill's kind of cursor, which a reconcile doesn't keep.
-        warn!(connection = %job.id, pages = PAGES, "a Plane reconcile ran out of pages with more changed");
+        warn!(connection = %job.id, pages = RECONCILE_PAGES, "a Plane reconcile hit its page cap with more changed");
     }
     Ok(app.db.finish_reconcile(job, now_ms())?.then_some(total))
 }
