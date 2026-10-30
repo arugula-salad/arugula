@@ -62,6 +62,18 @@ impl Rule {
     }
 }
 
+impl Rule {
+    /// What `issue-home` is asked, for this rule: the project named, or
+    /// the repo to find one by (nothing: personal).
+    fn query<'a>(&self, asked: Option<&'a str>) -> Vec<(&'static str, String)> {
+        match (self, asked) {
+            (Rule::Asked, Some(p)) => vec![("project", p.to_owned())],
+            (Rule::Linked(repo), _) => vec![("repo", repo.clone())],
+            _ => vec![],
+        }
+    }
+}
+
 impl Chosen {
     /// One line for a result: which project, and which rule.
     pub fn says(&self) -> String {
@@ -251,12 +263,7 @@ impl Call<'_> {
             None => self.my_github_repo().await,
         };
         let rule = Rule::of(asked, repo.as_deref());
-        let mut q = vec![];
-        match (&rule, asked) {
-            (Rule::Asked, Some(p)) => q.push(("project", p.to_owned())),
-            (Rule::Linked(repo), _) => q.push(("repo", repo.clone())),
-            _ => {}
-        }
+        let q = rule.query(asked);
         let path = if q.is_empty() { AGENT_ISSUE_HOME.to_owned() } else { format!("{AGENT_ISSUE_HOME}?{}", query(&q)) };
         let v = self.issues_call(Method::GET, &path, None).await?;
         let id = v["project"].as_str().ok_or("Arugula control named no project")?;
@@ -338,6 +345,9 @@ mod tests {
         assert_eq!(Rule::of(Some("prj_1"), Some("acme/app")), Rule::Asked);
         assert_eq!(Rule::of(None, Some("acme/app")), Rule::Linked("acme/app".into()));
         assert_eq!(Rule::of(None, None), Rule::Personal);
+        assert_eq!(Rule::Asked.query(Some("prj_1")), [("project", "prj_1".to_owned())]);
+        assert_eq!(Rule::Linked("acme/app".into()).query(None), [("repo", "acme/app".to_owned())]);
+        assert!(Rule::Personal.query(None).is_empty());
     }
 
     #[test]
