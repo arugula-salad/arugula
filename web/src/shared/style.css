@@ -5267,6 +5267,11 @@ button.diff-why-run {
   color: var(--warn);
 }
 
+.forge-chips .forge-check.running,
+.forge-chips .forge-check.queued {
+  color: var(--warn);
+}
+
 /* The description takes the block; the side column opens up at 720px. */
 .forge-cols {
   display: grid;
@@ -6024,7 +6029,7 @@ html[data-scheme="light"] .doc {
 
 .forge-dot.running,
 .forge-dot.queued {
-  background: var(--accent);
+  background: var(--warn);
 }
 
 .forge-check.failure {
