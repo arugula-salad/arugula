@@ -53,6 +53,8 @@ mod gateway;
 #[cfg(test)]
 mod gateway_wire;
 mod git_serve;
+#[cfg(test)]
+mod git_serve_nvim;
 mod github_link;
 #[cfg(test)]
 mod grants_wire;
