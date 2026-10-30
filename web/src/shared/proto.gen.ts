@@ -2801,8 +2801,7 @@ pane: number, how: NvimWhere, };
 
 /**
  * `GET /api/nvim-plugin` (#1733): the copies of arugula.nvim this daemon
- * installed, and the version it carries now, for Settings > Editor >
- * nvim.
+ * installed, and the version it carries now.
  */
 export type NvimPluginCopies = { 
 /**

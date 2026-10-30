@@ -2,7 +2,7 @@
 
 Your nvim in your [Arugula](https://arugula.io) swarm. Core nvim (0.10 or later), no dependencies; nvim-dap's debugger stops show too if it's installed.
 
-In an Arugula pane, Arugula offers to add it: one click installs it into nvim's own package directory (`stdpath("data")/site/pack/arugula/start/arugula.nvim`, with an `ARUGULA_INSTALLED` marker file) and loads it into the running nvim, with no restart and nothing written to your config. The daemon refreshes that copy when it's upgraded; Settings > Editor > nvim > Remove arugula.nvim deletes it. A copy your plugin manager installed is never offered over or touched.
+In an Arugula pane, Arugula offers to add it: one click installs it into nvim's own package directory (`stdpath("data")/site/pack/arugula/start/arugula.nvim`, with an `ARUGULA_INSTALLED` marker file) and loads it into the running nvim, with no restart and nothing written to your config. The daemon refreshes that copy when it's upgraded; Settings > Editor > Remove arugula.nvim deletes it. A copy your plugin manager installed is never offered over or touched.
 
 Or install it like any plugin from this directory, e.g. with lazy.nvim:
 
