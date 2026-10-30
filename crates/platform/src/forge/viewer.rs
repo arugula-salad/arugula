@@ -30,6 +30,11 @@
 //! (`docs/control-ops.md`). Any payload with a repository marks a linked
 //! repo private when GitHub says it is.
 //!
+//! **A tracker's items** (Plane, #357) aren't a linked repo's: their rows
+//! have a negative `repo_id` that a [`Readable`] never holds. They're read
+//! through [`check_connections`] and a [`ReadableConnections`] the same way:
+//! any member of the connection's project, no GitHub sign-in.
+//!
 //! **Hard to go around.** [`check`] is the only maker of a [`Readable`]
 //! (its fields are private here), and every `Db` function that returns
 //! forge rows to a person takes one and returns rows of its repos only
@@ -62,7 +67,10 @@ use crate::{
     Platform,
     auth::Person,
     cloud::CloudDriver,
-    db::forge::{AccessScope, LinkedRepo},
+    db::{
+        forge::{AccessScope, LinkedRepo},
+        trackers::Connection,
+    },
 };
 
 /// How long GitHub's answer about a person's access is used.
@@ -216,6 +224,71 @@ pub async fn check(app: &Platform, v: &Viewer, repos: &[LinkedRepo]) -> Result<C
     readable.sort_unstable();
     readable.dedup();
     Ok(Checked { readable: Readable { repos: readable }, withheld })
+}
+
+/// A tracker connection a viewer may read, with what a card says of it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ReadableConnection {
+    pub id: String,
+    pub mirror_id: i64,
+    /// The project's key (`ARUGU`).
+    pub identifier: String,
+    /// The tracker project's name.
+    pub name: String,
+    pub workspace_slug: String,
+}
+
+/// The tracker connections a viewer may read now, as [`check_connections`]
+/// found: only it makes one, as [`check`] does a [`Readable`]. Every read of
+/// a connection's items for a person takes one.
+#[derive(Debug)]
+pub struct ReadableConnections {
+    conns: Vec<ReadableConnection>,
+}
+
+impl ReadableConnections {
+    /// The connections' negative `mirror_id`s, in order.
+    pub fn mirror_ids(&self) -> Vec<i64> {
+        self.conns.iter().map(|c| c.mirror_id).collect()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.conns.is_empty()
+    }
+
+    pub fn get(&self, mirror_id: i64) -> Option<&ReadableConnection> {
+        self.conns.binary_search_by_key(&mirror_id, |c| c.mirror_id).ok().map(|i| &self.conns[i])
+    }
+}
+
+/// Which of `conns` the viewer may read now: a connection that isn't
+/// disconnected, in a project they're a member of (any role). The key is the
+/// project's, so no GitHub sign-in is needed.
+pub async fn check_connections(
+    app: &Platform,
+    v: &Viewer,
+    conns: &[Connection],
+) -> Result<ReadableConnections, ApiError> {
+    let mut members: HashMap<&str, bool> = HashMap::new();
+    let mut kept = Vec::new();
+    for c in conns.iter().filter(|c| c.unlinked_at.is_none()) {
+        let m = match members.get(c.project_id.as_str()) {
+            Some(m) => *m,
+            None => *members.entry(&c.project_id).or_insert(member(app, &v.account, &c.project_id).await?),
+        };
+        if m {
+            kept.push(ReadableConnection {
+                id: c.id.clone(),
+                mirror_id: c.mirror_id,
+                identifier: c.identifier.clone(),
+                name: c.name.clone(),
+                workspace_slug: c.workspace_slug.clone(),
+            });
+        }
+    }
+    kept.sort_by_key(|c| c.mirror_id);
+    kept.dedup_by_key(|c| c.mirror_id);
+    Ok(ReadableConnections { conns: kept })
 }
 
 /// What GitHub says of a person's access to a repository.

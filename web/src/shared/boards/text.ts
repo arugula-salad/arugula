@@ -124,6 +124,7 @@ export function pointerLabel(p: BoardPointer, live?: BoardLive | null): string {
       return "";
     case "forge_item":
     case "issue":
+      if (live?.identifier) return `${live.identifier}-${live.number}`;
       if (live) return live.repo ? `${live.repo}#${live.number}` : `#${live.number}`;
       return p.kind === "issue" ? `issue ${short(p.id)}` : `PR or issue ${short(p.id)}`;
     case "run":
@@ -181,10 +182,11 @@ export const PICK_LIMIT = 8;
 /** How long the picker waits after a keystroke before it searches. */
 export const PICK_DELAY_MS = 250;
 
-/** A result's source label: `OWNER/NAME#N` for a mirrored item, `#N` for a
- * native issue, the run's own title for a run. */
-export function workLabel(w: Pick<BoardWorkItem, "source" | "repo" | "number" | "title">): string {
+/** A result's source label: `OWNER/NAME#N` for a mirrored item, `ARUGU-12`
+ * for a tracker's, `#N` for a native issue, the run's own title for a run. */
+export function workLabel(w: Pick<BoardWorkItem, "source" | "repo" | "identifier" | "number" | "title">): string {
   if (w.source === "run" || w.number == null) return w.title;
+  if (w.identifier) return `${w.identifier}-${w.number}`;
   return w.repo ? `${w.repo}#${w.number}` : `#${w.number}`;
 }
 
@@ -218,12 +220,19 @@ export function pointerToSend(text: string, start: string, picked: BoardPointer 
   return text.trim() !== start ? { pointer } : {};
 }
 
+/** What a card's state tag says: a tracker's own name for the state
+ * (`In Progress`), else `LIVE_LABEL`'s. */
+export function liveWord(l: Pick<BoardLive, "state" | "state_name">): string {
+  return l.state_name || LIVE_LABEL[l.state];
+}
+
 /** Where a row's link goes: an item on its forge, a native issue or a run on
  * the platform page (`platform`, the paths of ids a host knows how to open). */
 export function pointerHref(r: Pick<BoardRow, "pointer" | "live">, platform: (path: string) => string | undefined): string | undefined {
   const p = r.pointer;
   if (p.kind === "forge_item") {
     const l = r.live;
+    if (l?.provider === "plane") return l.url && /^https:\/\//.test(l.url) ? l.url : undefined;
     return l?.repo ? `https://github.com/${l.repo}/${l.kind === "issue" ? "issues" : "pull"}/${l.number}` : undefined;
   }
   if (p.kind === "issue") return platform(`/issues/${p.id}`);

@@ -76,13 +76,15 @@ use crate::{
         issues::Actor,
         projects::{BOARDS_READ, BOARDS_WRITE},
         runs::{Run, State as RunState},
+        trackers::TrackerItem,
     },
     forge::{
         links::membership,
-        viewer::{self, Viewer},
+        viewer::{self, ReadableConnection, Viewer},
     },
     grants::{AgentScope, agent_may, agent_names},
     issues::PERSONAL,
+    trackers,
 };
 
 pub mod agent;
@@ -358,6 +360,24 @@ fn live_item(i: &ForgeItem, repo: &str, checks: &[&CheckState]) -> wire::Live {
         number: i.number,
         title: i.title.clone(),
         assignees,
+        provider: None, identifier: None, state_name: None, url: None,
+    }
+}
+
+/// A Plane item as a board shows it: open or closed, with Plane's own name
+/// for the state, and its link.
+fn live_plane(i: &TrackerItem, c: &ReadableConnection) -> wire::Live {
+    wire::Live {
+        state: if i.state == "closed" { wire::LiveState::Closed } else { wire::LiveState::Open },
+        kind: "issue".to_owned(),
+        repo: Some(c.name.clone()),
+        number: i.number,
+        title: i.title.clone(),
+        assignees: vec![],
+        provider: Some("plane".to_owned()),
+        identifier: Some(c.identifier.clone()),
+        state_name: Some(i.state_name.clone()),
+        url: Some(trackers::item_url(&c.workspace_slug, &c.identifier, i.number)),
     }
 }
 
@@ -376,6 +396,7 @@ fn live_run(run: &Run) -> wire::Live {
         number: 0,
         title: format!("{} run", run.trigger.as_str()),
         assignees: vec![],
+        provider: None, identifier: None, state_name: None, url: None,
     }
 }
 
@@ -386,8 +407,16 @@ async fn resolve(app: &Platform, account: &str, v: &mut wire::BoardView) -> Resu
     let mut live: HashMap<String, wire::Live> = HashMap::new();
     if !items.is_empty() {
         let repos = app.db.linked_repos(&v.board.project)?;
-        let checked = viewer::check(app, &Viewer::of(app, account).await?, &repos).await?;
+        let viewer = Viewer::of(app, account).await?;
+        let checked = viewer::check(app, &viewer, &repos).await?;
         let ids: Vec<&str> = items.iter().map(String::as_str).collect();
+        // A Plane item is read through the connections of the project it's on a board of.
+        let conns = viewer::check_connections(app, &viewer, &app.db.tracker_connections(&v.board.project)?).await?;
+        for i in app.db.tracker_items_among(&conns, &ids)? {
+            if let Some(c) = conns.get(i.mirror_id) {
+                live.insert(i.id.clone(), live_plane(&i, c));
+            }
+        }
         let found = app.db.forge_items_among(&checked.readable, &ids)?;
         let heads: Vec<&str> = found.iter().filter_map(|i| i.head_sha.as_deref()).collect();
         let checks = app.db.forge_checks_on_heads(&checked.readable, &heads)?;
@@ -423,7 +452,18 @@ async fn resolve(app: &Platform, account: &str, v: &mut wire::BoardView) -> Resu
                     _ => "someone who left".to_owned(),
                 })
                 .collect();
-            live.insert(id, wire::Live { state, kind: "native".to_owned(), repo: None, number, title, assignees });
+            live.insert(
+                id,
+                wire::Live {
+                    state,
+                    kind: "native".to_owned(),
+                    repo: None,
+                    number,
+                    title,
+                    assignees,
+                    provider: None, identifier: None, state_name: None, url: None,
+                },
+            );
         }
     }
     let runs = app.db.board_run_targets(&v.board.id)?;
@@ -513,8 +553,13 @@ async fn progress(app: &Platform, account: &str, project: &str, boards: &mut [wi
     let mirrored = ids("forge_item");
     if !mirrored.is_empty() {
         let repos = app.db.linked_repos(project)?;
-        let checked = viewer::check(app, &Viewer::of(app, account).await?, &repos).await?;
+        let viewer = Viewer::of(app, account).await?;
+        let checked = viewer::check(app, &viewer, &repos).await?;
         for i in app.db.forge_items_among(&checked.readable, &mirrored)?.into_iter().filter(|i| i.kind == "issue") {
+            closed.insert(i.id, i.state != "open");
+        }
+        let conns = viewer::check_connections(app, &viewer, &app.db.tracker_connections(project)?).await?;
+        for i in app.db.tracker_items_among(&conns, &mirrored)? {
             closed.insert(i.id, i.state != "open");
         }
     }

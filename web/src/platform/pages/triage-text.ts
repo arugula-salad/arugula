@@ -14,9 +14,10 @@ export function issuesPlace(boards: readonly unknown[] | null | "off"): "issues"
   return boards === null || boards === "off" ? "issues" : "triage";
 }
 
-/** `OWNER/NAME#N` of a mirrored issue, `#N` of a native one. */
-export function sourceLabel(i: Pick<BoardWorkItem, "repo" | "number">): string {
+/** `OWNER/NAME#N` of a mirrored issue, `ARUGU-12` of a tracker's, `#N` of a native one. */
+export function sourceLabel(i: Pick<BoardWorkItem, "repo" | "identifier" | "number">): string {
   if (i.number == null) return "";
+  if (i.identifier) return `${i.identifier}-${i.number}`;
   return i.repo ? `${i.repo}#${i.number}` : `#${i.number}`;
 }
 

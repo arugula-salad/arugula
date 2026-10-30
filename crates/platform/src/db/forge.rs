@@ -549,7 +549,7 @@ pub(super) fn repos_in(r: &Readable) -> String {
 
 /// `%text%` for `LIKE ... ESCAPE '\'`, with the text's own `%`, `_` and `\`
 /// taken as themselves.
-fn like_anywhere(text: &str) -> String {
+pub(super) fn like_anywhere(text: &str) -> String {
     let mut s = String::from("%");
     for c in text.to_ascii_lowercase().chars() {
         if matches!(c, '%' | '_' | '\\') {
@@ -564,7 +564,7 @@ fn like_anywhere(text: &str) -> String {
 /// `expr` with ASCII letters in lower case and nothing else changed, as
 /// SQLite's `lower` does (Postgres's folds every letter), so a filter
 /// matches the same on both. Its value is folded in Rust the same way.
-fn fold(c: &impl Sql, expr: &str) -> String {
+pub(super) fn fold(c: &impl Sql, expr: &str) -> String {
     match c.dialect() {
         Dialect::Sqlite => format!("lower({expr})"),
         Dialect::Postgres => format!("translate({expr}, 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz')"),

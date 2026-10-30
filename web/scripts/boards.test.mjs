@@ -3,7 +3,7 @@
 // the board routes' paths. Run with `node --experimental-strip-types`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { GLYPH, assigneesLine, debounced, epicLine, firstLine, isCard, parsePointer, pointerHref, pointerLabel, pointerToSend, progress, proven, stepActive, stepBefore, workLabel } from "../src/shared/boards/text.ts";
+import { GLYPH, assigneesLine, debounced, epicLine, firstLine, isCard, liveWord, parsePointer, pointerHref, pointerLabel, pointerToSend, progress, proven, stepActive, stepBefore, workLabel } from "../src/shared/boards/text.ts";
 import { parse, pathOf } from "../src/platform/paths.ts";
 
 const P = "prj_8f2ec0ffee00112233445566778899aa";
@@ -29,12 +29,18 @@ test("a pointer is labelled by its item when the platform read it", () => {
   assert.equal(pointerLabel({ kind: "forge_item", id: "fi_abc123" }, live), "acme/app#7");
   assert.equal(pointerLabel({ kind: "forge_item", id: "fi_abc123" }), "PR or issue abc123");
   assert.equal(pointerLabel({ kind: "issue", id: "iss_abc123" }, { state: "open", kind: "native", number: 3, title: "x" }), "#3");
+  const plane = { state: "open", kind: "issue", repo: "Arugula", number: 12, title: "x", provider: "plane", identifier: "ARUGU", state_name: "In Progress", url: "https://app.plane.so/acme/browse/ARUGU-12/" };
+  assert.equal(pointerLabel({ kind: "forge_item", id: "fi_abc123" }, plane), "ARUGU-12");
+  assert.equal(liveWord(plane), "In Progress");
+  assert.equal(liveWord({ state: "open" }), "open");
+  assert.equal(workLabel({ source: "plane", repo: "Arugula", identifier: "ARUGU", number: 12, title: "x" }), "ARUGU-12");
   assert.equal(pointerLabel({ kind: "block", machine: "m1", pane: "p2" }), "agent p2");
   assert.equal(pointerLabel({ kind: "none" }), "");
   const here = (path) => `https://app.example${path}`;
   assert.equal(pointerHref({ pointer: { kind: "forge_item", id: "fi_abc123" }, live }, here), "https://github.com/acme/app/pull/7");
   assert.equal(pointerHref({ pointer: { kind: "issue", id: "iss_abc123" } }, here), "https://app.example/issues/iss_abc123");
   assert.equal(pointerHref({ pointer: { kind: "block", machine: "m", pane: "p" } }, here), undefined);
+  assert.equal(pointerHref({ pointer: { kind: "forge_item", id: "fi_abc123" }, live: plane }, here), "https://app.plane.so/acme/browse/ARUGU-12/");
 });
 
 test("an issue or a PR reads as a card, a run does not", () => {

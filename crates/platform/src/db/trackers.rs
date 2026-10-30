@@ -14,12 +14,12 @@ use anyhow::Result;
 
 use super::{
     Db,
-    forge::{PURGE_GRACE_MS, purge_rows},
+    forge::{PURGE_GRACE_MS, fold, like_anywhere, purge_rows},
     migrate::Dialect,
     mirror::POLL_LEASE_MS,
     sql::{Optional as _, Row, Sql, Tx, params},
 };
-use crate::trackers::Item;
+use crate::{forge::viewer::ReadableConnections, trackers::Item};
 
 /// What a connection's API key is sealed under in `project_secrets`.
 pub fn key_name(connection: &str) -> String {
@@ -407,4 +407,104 @@ pub fn upsert_item(c: &impl Sql, connection: &str, mirror_id: i64, it: &Item, no
         ],
     )?;
     Ok(n == 1)
+}
+
+// ---- reads (#357)
+
+/// A Plane work item as a board and the work search read it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TrackerItem {
+    pub id: String,
+    /// The connection's negative `mirror_id`: who it belongs to.
+    pub mirror_id: i64,
+    pub connection_id: String,
+    /// The tracker's sequence id (`ARUGU-12` is 12).
+    pub number: u64,
+    pub title: String,
+    /// `open` or `closed`.
+    pub state: String,
+    pub state_name: String,
+    pub state_group: String,
+    pub item_type: Option<String>,
+    pub updated_at: u64,
+}
+
+/// What [`Db::tracker_items`] reads.
+#[derive(Debug, Default)]
+pub struct TrackerFilter<'a> {
+    /// Only open items.
+    pub open: bool,
+    pub text: Option<&'a str>,
+    pub limit: u32,
+}
+
+const ITEM_COLUMNS: &str = "i.id, i.repo_id, i.connection_id, i.number, i.title, i.state, i.state_name, \
+     i.state_group, i.item_type, i.updated_at";
+
+fn item_row(r: &Row) -> Result<TrackerItem> {
+    Ok(TrackerItem {
+        id: r.get(0)?,
+        mirror_id: r.get(1)?,
+        connection_id: r.get(2)?,
+        number: r.get(3)?,
+        title: r.get(4)?,
+        state: r.get(5)?,
+        state_name: r.get::<Option<String>>(6)?.unwrap_or_default(),
+        state_group: r.get::<Option<String>>(7)?.unwrap_or_default(),
+        item_type: r.get(8)?,
+        updated_at: r.get(9)?,
+    })
+}
+
+/// `IN (...)` of the readable connections' mirror ids: numbers the platform
+/// keeps, so written into the statement.
+fn mirrors_in(rc: &ReadableConnections) -> String {
+    rc.mirror_ids().iter().map(i64::to_string).collect::<Vec<_>>().join(", ")
+}
+
+impl Db {
+    /// The Plane items among `ids` that belong to a readable connection: one
+    /// read for any number (a board's rows).
+    pub fn tracker_items_among(&self, rc: &ReadableConnections, ids: &[&str]) -> Result<Vec<TrackerItem>> {
+        if rc.is_empty() || ids.is_empty() {
+            return Ok(vec![]);
+        }
+        let c = self.c();
+        c.query_map(
+            &format!(
+                "SELECT {ITEM_COLUMNS} FROM forge_items i WHERE i.provider = 'plane' AND i.repo_id IN ({}) AND {}",
+                mirrors_in(rc),
+                super::chat::in_json(&c, "i.id", 1)
+            ),
+            params![super::chat::json_list(ids)?],
+            item_row,
+        )
+    }
+
+    /// The Plane items of the readable connections, most recently updated
+    /// first.
+    pub fn tracker_items(&self, rc: &ReadableConnections, f: &TrackerFilter<'_>) -> Result<Vec<TrackerItem>> {
+        if rc.is_empty() {
+            return Ok(vec![]);
+        }
+        let c = self.c();
+        let mut wh = vec!["i.provider = 'plane'".to_owned(), format!("i.repo_id IN ({})", mirrors_in(rc))];
+        let mut args: Vec<String> = Vec::new();
+        if f.open {
+            wh.push("i.state = 'open'".to_owned());
+        }
+        if let Some(t) = f.text.filter(|t| !t.trim().is_empty()) {
+            wh.push(format!(r"{} LIKE ? ESCAPE '\'", fold(&c, "i.title")));
+            args.push(like_anywhere(t.trim()));
+        }
+        c.query_map(
+            &format!(
+                "SELECT {ITEM_COLUMNS} FROM forge_items i WHERE {} ORDER BY i.updated_at DESC, i.id LIMIT {}",
+                wh.join(" AND "),
+                f.limit
+            ),
+            &super::sql::list(&args),
+            item_row,
+        )
+    }
 }

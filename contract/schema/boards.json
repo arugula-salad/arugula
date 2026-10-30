@@ -302,6 +302,13 @@
           },
           "type": "array"
         },
+        "identifier": {
+          "description": "A tracker item's project key (`ARUGU`: the card reads `ARUGU-12`).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "kind": {
           "description": "`pr` or `issue` (a mirrored one), `native` for a native issue, or\n`run`.",
           "type": "string"
@@ -311,6 +318,13 @@
           "format": "uint64",
           "minimum": 0,
           "type": "integer"
+        },
+        "provider": {
+          "description": "`plane` for a tracker's item; absent for GitHub, native issues and runs.",
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "repo": {
           "description": "`OWNER/NAME` of a mirrored item; absent for a native issue.",
@@ -322,9 +336,23 @@
         "state": {
           "$ref": "#/$defs/LiveState"
         },
+        "state_name": {
+          "description": "A tracker item's own state (`In Progress`).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "title": {
           "description": "A run's: how it started (`manual run`).",
           "type": "string"
+        },
+        "url": {
+          "description": "Where a tracker item is, in the tracker.",
+          "type": [
+            "string",
+            "null"
+          ]
         }
       },
       "required": [
@@ -752,6 +780,13 @@
           },
           "type": "array"
         },
+        "identifier": {
+          "description": "A tracker item's project key (`ARUGU`).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "kind": {
           "description": "`issue`, `pr` or `run`.",
           "type": "string"
@@ -770,14 +805,14 @@
           "description": "What a row takes as its pointer: `Issue`, `ForgeItem` or `Run`."
         },
         "repo": {
-          "description": "`OWNER/NAME` of a mirrored item.",
+          "description": "`OWNER/NAME` of a mirrored item; a tracker project's name.",
           "type": [
             "string",
             "null"
           ]
         },
         "source": {
-          "description": "`native`, `github` or `run`.",
+          "description": "`native`, `github`, `plane` or `run`.",
           "type": "string"
         },
         "state": {

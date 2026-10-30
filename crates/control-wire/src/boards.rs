@@ -323,6 +323,18 @@ pub struct Live {
     /// issue's names. A run has none.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub assignees: Vec<String>,
+    /// `plane` for a tracker's item; absent for GitHub, native issues and runs.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provider: Option<String>,
+    /// A tracker item's project key (`ARUGU`: the card reads `ARUGU-12`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub identifier: Option<String>,
+    /// A tracker item's own state (`In Progress`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub state_name: Option<String>,
+    /// Where a tracker item is, in the tracker.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub url: Option<String>,
 }
 
 /// What an agent block is doing (aru-116's second ruling).
@@ -705,13 +717,16 @@ pub struct WorkQuery {
 pub struct WorkItem {
     /// What a row takes as its pointer: `Issue`, `ForgeItem` or `Run`.
     pub pointer: Pointer,
-    /// `native`, `github` or `run`.
+    /// `native`, `github`, `plane` or `run`.
     pub source: String,
     /// `issue`, `pr` or `run`.
     pub kind: String,
-    /// `OWNER/NAME` of a mirrored item.
+    /// `OWNER/NAME` of a mirrored item; a tracker project's name.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub repo: Option<String>,
+    /// A tracker item's project key (`ARUGU`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub identifier: Option<String>,
     /// A run has none.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub number: Option<u64>,
@@ -778,6 +793,10 @@ mod tests {
             number: 0,
             title: "manual run".into(),
             assignees: vec![],
+            provider: None,
+            identifier: None,
+            state_name: None,
+            url: None,
         });
         let long = "Wiring the new tokenizer through every caller, then the benchmarks, then the docs";
         let zones = vec![
@@ -869,6 +888,10 @@ Done: People can sign up.
                 number: 4,
                 title: "Fix login".into(),
                 assignees: who.iter().map(|w| (*w).to_owned()).collect(),
+                provider: None,
+                identifier: None,
+                state_name: None,
+                url: None,
             });
             r
         };

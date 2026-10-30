@@ -28,13 +28,13 @@ use crate::{
     secrets::SecretCipher,
 };
 
-const KEY: &str = "plane-key-for-the-test"; // gitleaks:allow
+pub const KEY: &str = "plane-key-for-the-test"; // gitleaks:allow
 const WEBHOOK: &str = "plane-hook-for-the-test"; // gitleaks:allow
 const MASTER: &str = "0303030303030303030303030303030303030303030303030303030303030303"; // gitleaks:allow
 
 /// The platform over `hub` with a fake Plane (workspace `acme`, project
 /// `ARUGU` with three items, one completed), and its address.
-async fn serve(hub: &Arc<TestHub>) -> (FakeTracker, Arc<Platform>, String) {
+pub async fn serve(hub: &Arc<TestHub>) -> (FakeTracker, Arc<Platform>, String) {
     let project = ProjectInfo { id: "pl-proj-1".into(), identifier: "ARUGU".into(), name: "Arugula".into() };
     let items = vec![
         item(1, "First", "backlog", 3_000),
@@ -66,13 +66,13 @@ fn secrets(app: &Platform) -> u64 {
     count(app, "project_secrets", "name LIKE 'tracker/plane/%'", params![])
 }
 
-async fn connect_as(base: &str, who: &str, project: &str, key: &str, what: &str) -> (u16, Value) {
+pub async fn connect_as(base: &str, who: &str, project: &str, key: &str, what: &str) -> (u16, Value) {
     let body = json!({ "workspace_slug": "acme", "project": what, "api_key": key, "webhook_secret": WEBHOOK });
     call(base, who, "POST", &format!("/api/projects/{project}/trackers"), Some(body)).await
 }
 
 /// Until the backfill, which the connect started, has finished.
-async fn backfilled(app: &Platform, project: &str, id: &str) {
+pub async fn backfilled(app: &Platform, project: &str, id: &str) {
     for _ in 0..200 {
         if app.db.tracker_connection(project, id).unwrap().is_some_and(|c| c.backfilled_at.is_some()) {
             return;
