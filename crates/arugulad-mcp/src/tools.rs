@@ -1405,6 +1405,11 @@ pub(crate) fn read_only_tool(tool: &str) -> bool {
 impl ToolCall<'_, '_> {
     pub async fn dispatch(&self, name: &str, mut args: Value) -> CallToolResult {
         let fail = |e: String| CallToolResult::error(vec![ContentBlock::text(e)]);
+        // An agent a guest stands behind: its tab's tools only, before
+        // anything runs or is forwarded (`guests.rs`).
+        if let Some(why) = self.guests_refusal(name, &args).await {
+            return fail(why);
+        }
         // M184: on a hosted workspace's machine instead.
         if let Some(w) = super::hosted::take_workspace(name, &mut args) {
             return match w {
@@ -1590,6 +1595,15 @@ impl ToolCall<'_, '_> {
             Ok(v) => CallToolResult::structured(v),
             Err(e) => fail(e),
         }
+    }
+
+    /// Why this caller may not make this call, when it's an agent a guest
+    /// stands behind and the call acts as this machine's owner.
+    async fn guests_refusal(&self, name: &str, args: &Value) -> Option<String> {
+        let me = self.me()?;
+        let why = guests::refusal(name, args, flags::on(self.app.control.state_dir()))?;
+        self.app.mux.api(|r| Api::GuestBehind(me, r)).await.flatten()?;
+        Some(why)
     }
 
     fn list_devices(&self) -> Out {
@@ -3246,6 +3260,10 @@ fn may_start(caller_on_machine: bool, on_machine: bool, vm: bool, worn: bool) ->
     }
     Ok(())
 }
+
+/// What an agent a guest stands behind may call.
+#[path = "guests.rs"]
+pub mod guests;
 
 /// Checks of the whole tool list, for the binary's tests.
 #[cfg(feature = "whole-tests")]
