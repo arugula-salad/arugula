@@ -575,8 +575,26 @@ fn follow_join(app: AppHandle) {
 const JOIN_POLL: Duration = Duration::from_secs(2);
 
 /// Another site, in the person's own browser: control's approval page,
-/// Tailscale's admin console, docs.
+/// Tailscale's admin console, docs. Web pages only: a page (or a frame in
+/// one) can't have the system open another program's scheme, a file or a
+/// network share.
 fn open_outside(url: &tauri::Url) {
+    if !matches!(url.scheme(), "http" | "https") {
+        eprintln!("arugula: not opening a {}: link outside the app; only http and https ones", url.scheme());
+        return;
+    }
+    open_with_system(url);
+}
+
+/// A file of the app's own choosing (the daemon's log), in the system's
+/// viewer for it.
+fn open_file(url: &tauri::Url) {
+    debug_assert_eq!(url.scheme(), "file");
+    open_with_system(url);
+}
+
+/// What the system opens `url` with.
+fn open_with_system(url: &tauri::Url) {
     // For tests: write the URL down instead of opening a browser.
     if let Some(log) = std::env::var_os("ARUGULA_OPEN_LOG") {
         use std::io::Write;
@@ -1491,6 +1509,29 @@ mod tests {
         assert!(plist.contains(&format!("<key>Label</key>\n  <string>{APP_LABEL}</string>")), "{plist}");
         assert!(plist.contains(&format!("<string>{APP_ID}</string>")), "{plist}");
         assert_eq!(conf["plugins"]["deep-link"]["desktop"]["schemes"], serde_json::json!(["arugula"]));
+    }
+
+    /// Pages hand the browser web links only: no other program's scheme,
+    /// no file or network share.
+    #[test]
+    fn only_web_links_leave_the_app() {
+        let log = std::env::temp_dir().join(format!("arugula-opened-{}", std::process::id()));
+        let _ = std::fs::remove_file(&log);
+        // SAFETY: the only test that reads or writes this variable.
+        unsafe { std::env::set_var("ARUGULA_OPEN_LOG", &log) };
+        for url in [
+            "https://example.com/a",
+            "http://example.com/b",
+            "file:///etc/passwd",
+            "smb://host/share",
+            "x-other-app:run",
+        ] {
+            super::open_outside(&url.parse().unwrap());
+        }
+        unsafe { std::env::remove_var("ARUGULA_OPEN_LOG") };
+        let opened = std::fs::read_to_string(&log).unwrap_or_default();
+        let _ = std::fs::remove_file(&log);
+        assert_eq!(opened, "https://example.com/a\nhttp://example.com/b\n");
     }
 
     /// #505: the daemon's state under its new name, else its old one.

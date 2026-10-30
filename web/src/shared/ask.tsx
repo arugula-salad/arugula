@@ -8,6 +8,7 @@
 
 import type { ComponentChildren } from "preact";
 import { useState } from "preact/hooks";
+import { webLink } from "./web-link";
 
 export interface AskOption {
   label: string;
@@ -385,10 +386,11 @@ function FormCard({ ask, actions, more }: { ask: Ask; actions: AskActions; more?
 // ------------------------------------------------------------ sign-in link
 
 function LinkCard({ ask, actions, more }: { ask: Ask; actions: AskActions; more?: ComponentChildren }) {
+  const url = webLink(ask.url);
   return (
     <>
       <div class="ask-message">{ask.message}</div>
-      {ask.url && <div class="ask-url">{ask.url}</div>}
+      {url && <div class="ask-url">{url}</div>}
       <div class="ask-buttons">
         {ask.accepted ? (
           <span class="ask-waiting">Waiting for it to finish…</span>
@@ -396,7 +398,7 @@ function LinkCard({ ask, actions, more }: { ask: Ask; actions: AskActions; more?
           <button
             class="primary"
             onClick={() => {
-              if (ask.url) window.open(ask.url, "_blank", "noopener");
+              if (url) window.open(url, "_blank", "noopener");
               actions.answer({});
             }}
           >

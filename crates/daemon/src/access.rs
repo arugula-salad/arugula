@@ -397,6 +397,20 @@ impl std::fmt::Debug for LocalToken {
     }
 }
 
+/// API addresses are for programs and our own pages. A browser opening one
+/// as a page (a link, a redirect, a form) must be on our page already, or
+/// typed or bookmarked it (`Sec-Fetch-Site: none`); a page load another
+/// site started goes to the page (`/`), never straight to the API.
+/// Browsers that send no fetch metadata aren't refused.
+pub fn check_api_navigation(headers: &HeaderMap) -> Result<(), Refusal> {
+    let mode = header_str(headers, "sec-fetch-mode");
+    let site = header_str(headers, "sec-fetch-site").unwrap_or("none");
+    if matches!(mode, Some("navigate" | "nested-navigate")) && !matches!(site, "same-origin" | "none") {
+        return Err((StatusCode::FORBIDDEN, "API addresses open only from this machine's own page".into()));
+    }
+    Ok(())
+}
+
 /// The lasting fix for the owner (#109): installed, so it survives restarts.
 pub fn owner_fix(login: &str) -> String {
     format!("arugulad install -- --owner {login}")
@@ -703,6 +717,26 @@ mod tests {
         assert!(any.signin_link().unwrap().starts_with("http://127.0.0.1:7681/auth?"));
         let none = Access::new(7681, &[], &[], &[], None);
         assert!(none.signin_link().is_none() && !none.is_local_token(token));
+    }
+
+    #[test]
+    fn api_addresses_open_only_from_our_page() {
+        let ok = |h: &[(&str, &str)]| check_api_navigation(&headers(h)).is_ok();
+        // Programs, and our page's own fetches and links.
+        assert!(ok(&[]));
+        assert!(ok(&[("sec-fetch-site", "same-origin"), ("sec-fetch-mode", "cors")]));
+        assert!(ok(&[("sec-fetch-site", "same-origin"), ("sec-fetch-mode", "navigate")]));
+        // Typed in the address bar, or a bookmark.
+        assert!(ok(&[("sec-fetch-site", "none"), ("sec-fetch-mode", "navigate")]));
+        // A page load another site (or another port) started.
+        for site in ["cross-site", "same-site"] {
+            for mode in ["navigate", "nested-navigate"] {
+                let h = [("sec-fetch-site", site), ("sec-fetch-mode", mode)];
+                assert_eq!(check_api_navigation(&headers(&h)).unwrap_err().0, StatusCode::FORBIDDEN, "{site} {mode}");
+            }
+        }
+        // Another daemon's page calling us (its fetch, not a page load).
+        assert!(ok(&[("sec-fetch-site", "cross-site"), ("sec-fetch-mode", "cors")]));
     }
 
     #[test]
