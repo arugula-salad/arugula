@@ -20,7 +20,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { expect, test, type Page } from "@playwright/test";
-import { closeContexts, menuItem, panes, reset } from "./helpers";
+import { closeContexts, menuItem, paneEl, panes, reset } from "./helpers";
 import type { PaneId } from "../src/shared/proto";
 import { ANY, daemonPort } from "./ports";
 
@@ -158,8 +158,16 @@ test("the help card: once, over the first nvim pane, until it's closed; the pane
 
   await expect(card(page, term)).toBeVisible({ timeout: 15_000 });
   await expect(card(page, term).locator("h2")).toHaveText("nvim in Arugula");
-  await expect(card(page, term).locator("[data-tip-section]")).toHaveText(["What Arugula does with nvim", "Claude's edits in nvim", "Keys", "arugula.nvim"]);
-  await expect(card(page, term).locator('a[href="https://docs.arugula.io/nvim/"]')).toBeVisible();
+  // Short: a title and one sentence; the long text is on the docs page.
+  await expect(card(page, term).locator("p")).toHaveText("Arugula follows this nvim, opens files in it, and shows Claude Code's edits here as a vimdiff.");
+  await expect(card(page, term).locator("h3")).toHaveCount(0);
+  // Near the whole pane, with its dimmed pane around it, and centred in it.
+  const [slot, box, inner] = [await paneEl(page, term).boundingBox(), await card(page, term).boundingBox(), await card(page, term).locator(".pane-tip-inner").boundingBox()];
+  expect(box!.width / slot!.width).toBeGreaterThan(0.88);
+  expect(box!.width / slot!.width).toBeLessThan(0.92);
+  expect(box!.x - slot!.x).toBeGreaterThan(slot!.width * 0.04);
+  expect(Math.abs(inner!.x + inner!.width / 2 - (box!.x + box!.width / 2))).toBeLessThan(2);
+  if (process.env.SHOT_DIR) await page.screenshot({ path: join(process.env.SHOT_DIR, "card-normal.png") });
   await expect(card(page, term).getByLabel("Don't show tips like this again")).not.toBeChecked();
   // A pane modal is seen once answered: a tab switch doesn't use it up.
   expect(await seenHere(page)).not.toHaveProperty("seen:nvim-help");
@@ -279,6 +287,81 @@ test("nvim-connect: Add arugula.nvim installs it into that nvim, which joins; hi
   await quit(page, term);
 });
 
+test("the help card's buttons: Edit in nvim, Add arugula.nvim and Read the docs show under their conditions and do their parts", async ({ page }) => {
+  await setUp(page, []);
+  await fresh(page);
+  const [term] = await panes(page);
+  const home = join(dir, "card-buttons");
+  await nvim(page, term, home);
+  await expect.poll(async () => (await editor(page, term))?.offer_plugin ?? false).toBe(true);
+  await expect(card(page, term)).toBeVisible({ timeout: 15_000 });
+  const names = () => card(page, term).locator("[data-hint-button]").allTextContents();
+  // Preference not nvim, plugin missing: all four, the first the primary.
+  await expect.poll(names).toEqual(["Edit in nvim", "Add arugula.nvim", "Read the docs", "Close"]);
+  await expect(card(page, term).locator(".primary")).toHaveText("Edit in nvim");
+  await expect(card(page, term).locator(".primary")).toHaveCount(1);
+
+  // Read the docs opens the page, and answers the card.
+  await card(page, term).getByRole("button", { name: "Read the docs" }).click();
+  await expect(card(page, term)).toHaveCount(0);
+  expect(await opened(page)).toContain("https://docs.arugula.io/nvim/");
+  expect(await seenHere(page)).toHaveProperty("seen:nvim-help");
+
+  // Opened again (the pane menu), Add arugula.nvim installs it and the card closes.
+  const reopen = async () => {
+    await page.locator(`[data-pane-header="${term}"]`).click({ button: "right", position: { x: 6, y: 6 } });
+    await (await menuItem(page, "nvim help", { exact: true })).click();
+    await expect(card(page, term)).toBeVisible();
+  };
+  await reopen();
+  await card(page, term).getByRole("button", { name: "Add arugula.nvim" }).click();
+  await expect(card(page, term)).toHaveCount(0);
+  await expect.poll(async () => { const e = await editor(page, term); return e && (e.no_follow ? "read over its socket" : "the plugin"); }, { timeout: 15_000 }).toBe("the plugin");
+  expect(readFileSync(join(home, "data/nvim/site/pack/arugula/start/arugula.nvim/ARUGULA_INSTALLED"), "utf8")).toBeTruthy();
+
+  // The plugin is there now: no Add button. Edit in nvim sets the preference.
+  await reopen();
+  await expect.poll(names).toEqual(["Edit in nvim", "Read the docs", "Close"]);
+  await card(page, term).getByRole("button", { name: "Edit in nvim" }).click();
+  await expect(card(page, term)).toHaveCount(0);
+  expect(await seenHere(page)).toMatchObject({ editor: "nvim" });
+
+  // The preference is nvim: no Edit in nvim. Close is last.
+  await reopen();
+  await expect.poll(names).toEqual(["Read the docs", "Close"]);
+  await expect(card(page, term).locator(".primary")).toHaveText("Read the docs");
+  await card(page, term).getByRole("button", { name: "Close", exact: true }).click();
+  await expect(card(page, term)).toHaveCount(0);
+  await quit(page, term);
+});
+
+test("the help card in a narrow split: inside its pane, its content scrolls in the panel", async ({ page }) => {
+  await setUp(page, []);
+  await page.setViewportSize({ width: 900, height: 420 });
+  await fresh(page);
+  const [term] = await panes(page);
+  await nvim(page, term);
+  await page.evaluate((p) => window.__arugula.client.intent({ op: "split", pane: p, edge: "right" }), term);
+  await page.evaluate((p) => window.__arugula.client.intent({ op: "split", pane: p, edge: "right" }), term);
+  await expect.poll(async () => (await panes(page)).length).toBe(3);
+  await expect(card(page, term)).toBeVisible({ timeout: 15_000 });
+  const [slot, box] = [await paneEl(page, term).boundingBox(), await card(page, term).boundingBox()];
+  expect(box!.x).toBeGreaterThanOrEqual(slot!.x);
+  expect(box!.x + box!.width).toBeLessThanOrEqual(slot!.x + slot!.width);
+  expect(box!.y + box!.height).toBeLessThanOrEqual(slot!.y + slot!.height);
+  if (process.env.SHOT_DIR) await page.screenshot({ path: join(process.env.SHOT_DIR, "card-narrow.png") });
+  // The buttons are reachable: the scroller can bring each into view.
+  const close = card(page, term).getByRole("button", { name: "Close", exact: true });
+  await close.scrollIntoViewIfNeeded();
+  await expect(close).toBeInViewport();
+  const never = card(page, term).getByLabel("Don't show tips like this again");
+  await never.scrollIntoViewIfNeeded();
+  await expect(never).toBeInViewport();
+  await page.keyboard.press("Escape");
+  await expect(card(page, term)).toHaveCount(0);
+  await quit(page, term);
+});
+
 test("nvim-open-here: Use nvim sets the Editor preference; dismissed, it never returns", async ({ page, browser }) => {
   await setUp(page, ["nvim-help", "nvim-connect"]);
   await fresh(page);
@@ -342,8 +425,7 @@ test("nvim-diff: Claude Code's edit beside a connected nvim; Show me opens the h
   expect(await seenHere(page)).toHaveProperty("seen:nvim-diff");
   // The card, over the nvim pane, at Claude's edits.
   await expect(card(page, term)).toBeVisible();
-  const section = card(page, term).locator('[data-tip-section="diff"]');
-  await expect(section).toBeInViewport();
+  await expect(card(page, term)).toContainText("vimdiff");
   await page.keyboard.press("Escape");
   await expect(card(page, term)).toHaveCount(0);
   await send(page, claude, "quit");
