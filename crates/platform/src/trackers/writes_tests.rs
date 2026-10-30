@@ -141,7 +141,7 @@ async fn an_agents_create_waits_and_a_person_approves_it() {
         format!("/api/projects/{}/tracker-writes/{id}/drop", w.project),
     ] {
         let (s, v) = geek(&w.base, "POST", &path, None).await;
-        assert!(s == 401 || s == 403 || s == 404 || s == 405, "an agent got {s}: {v}");
+        assert_eq!(s, 401, "a machine is no person, so it gets no further: {v}");
     }
     let (s, _) = geek(
         &w.base,
@@ -150,7 +150,7 @@ async fn an_agents_create_waits_and_a_person_approves_it() {
         Some(json!({ "kind": "create", "title": "x" })),
     )
     .await;
-    assert!(s == 401 || s == 403 || s == 404 || s == 405, "an agent edited: {s}");
+    assert_eq!(s, 401, "a machine is no person: it edits nothing");
     assert!(w.fake.sent().is_empty(), "nothing was sent by a machine's approval");
 
     // A person approves: it's sent as the agent's, with the footer, and the
