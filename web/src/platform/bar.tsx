@@ -7,7 +7,7 @@
 
 import type { ComponentChildren } from "preact";
 import { useSubscribe } from "../shared/ui/hooks";
-import { useRef } from "preact/hooks";
+import { useEffect, useRef } from "preact/hooks";
 import { openMenu, useMenuFrom, type MenuItem } from "../shared/ui/menu";
 import { openAppearance } from "../shared/ui/appearance";
 import { WindowButtons } from "../shared/ui/window-buttons";
@@ -19,6 +19,7 @@ import { chat } from "../shared/chat-store";
 import { AccountPicture } from "../shared/chat/avatar";
 import { presenceItems } from "../shared/chat/presence";
 import { LiveSwitch, liveItems } from "../shared/live/switch";
+import { setWorkingTeam } from "../shared/live/live";
 import { ChatPlaceUnread, PlaceUnread } from "./thread-unread";
 import { barProject, where } from "./where";
 import { InboxCount } from "./inbox-count";
@@ -86,6 +87,9 @@ export function PlatformBar({ children }: { children?: ComponentChildren }) {
   // None on a page that's no project's: the bar says "All projects".
   const project = barProject(r);
   const p = session.project(project);
+  // Live's camera goes to the team of the project on screen (#343).
+  const working = p?.team?.id ?? null;
+  useEffect(() => setWorkingTeam(working), [working]);
   // With boards on, Triage takes Issues' place and Boards follows it (#292).
   // Until they've answered, and with them off, the bar is Issues as ever.
   const boards = useBoards(project);
