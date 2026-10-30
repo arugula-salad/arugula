@@ -338,14 +338,18 @@ test("a board with a long title and goal wraps in a card on a phone, with no sid
     await platform(bob, path);
     const card = bob.locator("li.board-card.sw-card.sw-ok", { hasText: "extraordinarily" });
     await expect(card).toHaveCount(1, { timeout: 15_000 });
+    await expect(card).toBeVisible();
     await expect(card).toContainText("Open");
+    // The card's entry animation (swarm.css) settles: it isn't left at opacity 0.
+    await expect.poll(() => card.evaluate((el) => getComputedStyle(el).opacity), { timeout: 5_000 }).toBe("1");
     await expect(card.locator("[data-board-progress]")).toHaveText("No issues yet");
     await expect(bob.locator("[data-boards-stats]")).toHaveText("1 open1 done");
     expect(await bob.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
-    if (process.env.BOARDS_SHOTS) await bob.screenshot({ path: `${process.env.BOARDS_SHOTS}/${path === "/boards" ? "all-boards" : "project-boards"}.png` });
+    if (process.env.BOARDS_SHOTS) await bob.screenshot({ path: `${process.env.BOARDS_SHOTS}/${path === "/boards" ? "all-boards" : "project-boards"}.png`, animations: "disabled" });
   }
   if (process.env.BOARDS_SHOTS) {
     await platform(bob, `/p/${project}/issues`);
-    await bob.screenshot({ path: `${process.env.BOARDS_SHOTS}/issues.png` });
+    await expect(bob.locator("[data-issue-row]").first()).toBeVisible();
+    await bob.screenshot({ path: `${process.env.BOARDS_SHOTS}/issues.png`, animations: "disabled" });
   }
 });
