@@ -697,6 +697,8 @@ const REFUSED: Record<string, string> = {
   cant_approve: "A machine can't approve devices. Approve from a browser, phone or the Arugula CLI.",
   recovery_for_machine: "A recovery code approves browsers and phones, not machines. Approve the machine from one of your devices.",
   needs_browser: "Only a browser or a phone approves a browser, a phone or recovery codes. The desktop app and the Arugula CLI approve machines, CLIs and apps: approve this one from a browser.",
+  recovery_spent: "That recovery code let a device in already, and each one lets in one device. Use your other recovery code, or approve this browser from one of your devices.",
+  clock: "This device's clock is too far from control's for the approval to count. Check the clock, reload and approve again.",
   no_chain: "Control's records for your account don't add up from here (the approval doesn't chain to your first device). Reload and try again; if it keeps happening, approve from another device.",
   no_devices: "This account has no devices yet. Reload: this browser becomes its first.",
 };
@@ -2040,7 +2042,9 @@ export class ControlSession {
 
   private async approveDevice(c: Cert, code: DeviceCode | null = null) {
     if (this.sealed(c) && !code) throw new Error(`${c.name} shows a code: scan it or type it to approve it`);
-    const signed: Cert = { ...c, account: this.account, approver: this.keys.id, sig: "" };
+    // Dated now, as it's approved: control takes approvals made within
+    // minutes of its clock, whenever the device asked.
+    const signed: Cert = { ...c, account: this.account, created: Date.now(), approver: this.keys.id, sig: "" };
     signed.sig = await signText(this.keys, certBody(signed));
     let mac: string | null = null;
     if (code) {
@@ -2100,7 +2104,8 @@ export class ControlSession {
    * alongside that shows a code (#761) is approved with it, from
    * `deviceCodes` by its id. */
   async approveJoin(code: string, c: Cert, team: string | null = null, devices: Cert[] = [], secret: string | null = null, deviceCodes: Map<string, DeviceCode> = new Map()) {
-    const signed: Cert = { ...c, account: this.account, approver: this.keys.id, sig: "" };
+    // Dated now, as approveDevice's.
+    const signed: Cert = { ...c, account: this.account, created: Date.now(), approver: this.keys.id, sig: "" };
     signed.sig = await signText(this.keys, certBody(signed));
     let mac: string | null = null;
     if (secret) {

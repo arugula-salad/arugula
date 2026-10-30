@@ -24,6 +24,8 @@ mod app_signin;
 #[cfg(test)]
 mod app_signin_wire;
 mod apple_site;
+#[cfg(test)]
+mod approvals_wire;
 mod auth;
 mod blocks;
 #[cfg(test)]

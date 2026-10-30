@@ -1,5 +1,5 @@
 {
-  "about": "Why a new certificate wouldn't count beside the account's (#327), which control says before it stores one, so a client can say which check failed: revoked (its device was taken off: it needs a new key), approver_untrusted, bad_signature, cant_approve (a machine approving), recovery_for_machine, needs_browser (a CLI or the app approving a browser, a phone or a recovery code), no_chain (anything else: its form, its kind, its time). None when it counts.",
+  "about": "Why a new certificate wouldn't count beside the account's (#327), which control says before it stores one, so a client can say which check failed: revoked (its device was taken off: it needs a new key), approver_untrusted, bad_signature, cant_approve (a machine approving), recovery_for_machine, needs_browser (a CLI or the app approving a browser, a phone or a recovery code), recovery_spent (a recovery code that let a device in already: each lets in one), no_chain (anything else: its form, its kind, its time). None when it counts.",
   "cases": [
     {
       "about": "a browser the root approved: it counts",
@@ -198,6 +198,17 @@
         "root": "37f29b7074cf8b52"
       },
       "output": {"refusal": "revoked"}
+    },
+    {
+      "about": "a browser a recovery code approved, after it let another in",
+      "input": {
+        "account": "acct",
+        "cert": "browser-by-recovery",
+        "certs": ["laptop", "recovery", "box", "terminal", "app", "recovered"],
+        "revocations": [],
+        "root": "37f29b7074cf8b52"
+      },
+      "output": {"refusal": "recovery_spent"}
     }
   ],
   "checks": ["arugula_e2e::Trust::refusal", "arugula_e2e::Refusal::code"],
@@ -226,6 +237,12 @@
       "noise": "0707070707070707070707070707070707070707070707070707070707070707",
       "seed": "0707070707070707070707070707070707070707070707070707070707070707",
       "sign": "ea4a6c63e29c520abef5507b132ec5f9954776aebebe7b92421eea691446d22c"
+    },
+    "recovered": {
+      "device": "73f78456621ef247",
+      "noise": "0808080808080808080808080808080808080808080808080808080808080808",
+      "seed": "0808080808080808080808080808080808080808080808080808080808080808",
+      "sign": "1398f62c6d1a457c51ba6a4b5f3dbd2f69fca93216218dc8997e416bd17d93ca"
     },
     "recovery": {
       "device": "c242667535a3d34f",
@@ -481,6 +498,18 @@
       "noise": "0101010101010101010101010101010101010101010101010101010101010101",
       "sig": "96e9560508a1cbdcc8c7a31633348ac77145f54bd181df1432c8c15d46ad00af18891326a8351489faba0de0077cba9f0c7a4f3ff9d60d66cf8e192dc6e1870e",
       "sign": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
+      "v": 1
+    },
+    "recovered": {
+      "account": "acct",
+      "approver": "c242667535a3d34f",
+      "created": 1500,
+      "device": "73f78456621ef247",
+      "kind": "browser",
+      "name": "recovered",
+      "noise": "0808080808080808080808080808080808080808080808080808080808080808",
+      "sig": "c03380335d0a4881dabeac92c7d22120bcd3d9924ff8f99ab1b0f63fae55b44dd90ff621b04cd7c65642a1c8084b28ebffe918c62360bf3474f2664478b9c002",
+      "sign": "1398f62c6d1a457c51ba6a4b5f3dbd2f69fca93216218dc8997e416bd17d93ca",
       "v": 1
     },
     "recovery": {

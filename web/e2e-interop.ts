@@ -181,6 +181,50 @@ check("Rust trusts what we signed", JSON.stringify(rust) === JSON.stringify([roo
     const theirs = (JSON.parse(execFileSync(bin, ["check"], { input: JSON.stringify({ trust, certs: withCode, revocations: [r] }) }).toString()) as string[]).includes(recovered.id);
     check(what, ours === stays && theirs === stays, `ts ${ours}, rust ${theirs}`);
   }
+
+  // Another certificate for the revoking browser's keys, unsigned or
+  // signed as a CLI, doesn't set its revocation aside, wherever it is in
+  // the list.
+  const verdicts = async (certs: Cert[], revocations: Revocation[]) => {
+    const ours = [...(await evaluate(trust, certs, revocations)).keys()].sort();
+    const theirs = JSON.parse(execFileSync(bin, ["check"], { input: JSON.stringify({ trust, certs, revocations }) }).toString()) as string[];
+    return { ours, theirs };
+  };
+  const phoneK = await generateKeys();
+  const phoneCert: Cert = { v: 1, account: "alice", device: phoneK.id, kind: "browser", name: "phone", noise: phoneK.noisePub, sign: phoneK.signPub, created: 6, approver: alice.id, sig: "" };
+  phoneCert.sig = await signText(alice, certBody(phoneCert));
+  const lost: Revocation = { v: 1, account: "alice", device: phoneK.id, at: 20, by: recovered.id, sig: "" };
+  lost.sig = await signText(recovered, revocationBody(lost));
+  const unsigned: Cert = { ...recoveredCert, kind: "cli", sig: "" };
+  const asCli: Cert = { ...recoveredCert, kind: "cli", approver: phoneK.id, sig: "" };
+  asCli.sig = await signText(phoneK, certBody(asCli));
+  for (const [what, extra] of [
+    ["unsigned", unsigned],
+    ["signed as a CLI by the phone", asCli],
+  ] as const) {
+    for (const list of [
+      [...withCode, phoneCert, extra],
+      [extra, ...withCode, phoneCert],
+    ]) {
+      const { ours, theirs } = await verdicts(list, [lost]);
+      const ok = (ids: string[]) => !ids.includes(phoneK.id) && ids.includes(recovered.id);
+      check(`a revocation stands with another certificate for its signer (${what})`, ok(ours) && ok(theirs), `ts ${ours.join(",")}, rust ${theirs.join(",")}`);
+    }
+  }
+
+  // A recovery code lets in one device: the first in the list it signed,
+  // even when a later one claims an earlier time.
+  const second = await generateKeys();
+  const secondCert: Cert = { v: 1, account: "alice", device: second.id, kind: "browser", name: "another laptop", noise: second.noisePub, sign: second.signPub, created: 4, approver: code.id, sig: "" };
+  secondCert.sig = await signText(code, certBody(secondCert));
+  for (const list of [
+    [...withCode, secondCert],
+    [recoveredCert, ...certs, codeCert, secondCert],
+  ]) {
+    const { ours, theirs } = await verdicts(list, []);
+    const ok = (ids: string[]) => ids.includes(recovered.id) && !ids.includes(second.id);
+    check("a recovery code lets in one device", ok(ours) && ok(theirs), `ts ${ours.join(",")}, rust ${theirs.join(",")}`);
+  }
 }
 
 // 3b. Block grants (M50): what control's page mints, Rust's Grant::check
