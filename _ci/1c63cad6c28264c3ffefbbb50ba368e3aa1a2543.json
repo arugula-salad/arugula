@@ -3,28 +3,79 @@
   "commit": "1c63cad6c28264c3ffefbbb50ba368e3aa1a2543",
   "branch": "main",
   "state": "pending",
-  "at": "2026-10-30T03:49:33Z",
+  "at": "2026-10-30T03:51:33Z",
   "phases": {
     "lint": {
-      "verdict": "unbuilt",
+      "verdict": "pending",
       "build": "newest",
-      "runs": [],
-      "reason": "superseded",
-      "coveredBy": "661890de6489ee1ea4e6d8bfe6c5e22fff7b161c"
+      "runs": [
+        {
+          "name": "lint",
+          "id": 123880468664,
+          "conclusion": null,
+          "url": "https://github.com/arugula-salad/arugula/actions/runs/40999541959/job/123880468664"
+        },
+        {
+          "name": "changes",
+          "id": 123880469125,
+          "conclusion": "success",
+          "url": "https://github.com/arugula-salad/arugula/actions/runs/40999541959/job/123880469125"
+        }
+      ]
     },
     "build": {
-      "verdict": "unbuilt",
+      "verdict": "pending",
       "build": "newest",
-      "runs": [],
-      "reason": "superseded",
-      "coveredBy": "661890de6489ee1ea4e6d8bfe6c5e22fff7b161c"
+      "runs": [
+        {
+          "name": "build",
+          "id": 123880517419,
+          "conclusion": null,
+          "url": "https://github.com/arugula-salad/arugula/actions/runs/40999541959/job/123880517419"
+        },
+        {
+          "name": "static",
+          "id": 123880517497,
+          "conclusion": null,
+          "url": "https://github.com/arugula-salad/arugula/actions/runs/40999541959/job/123880517497"
+        },
+        {
+          "name": "clippy",
+          "id": 123880517420,
+          "conclusion": null,
+          "url": "https://github.com/arugula-salad/arugula/actions/runs/40999541959/job/123880517420"
+        }
+      ]
     },
     "test": {
-      "verdict": "unbuilt",
+      "verdict": "pending",
       "build": "newest",
-      "runs": [],
-      "reason": "superseded",
-      "coveredBy": "661890de6489ee1ea4e6d8bfe6c5e22fff7b161c"
+      "runs": [
+        {
+          "name": "test",
+          "id": 123880517425,
+          "conclusion": null,
+          "url": "https://github.com/arugula-salad/arugula/actions/runs/40999541959/job/123880517425"
+        },
+        {
+          "name": "test-2",
+          "id": 123880517415,
+          "conclusion": null,
+          "url": "https://github.com/arugula-salad/arugula/actions/runs/40999541959/job/123880517415"
+        },
+        {
+          "name": "test-postgres",
+          "id": 123880517486,
+          "conclusion": null,
+          "url": "https://github.com/arugula-salad/arugula/actions/runs/40999541959/job/123880517486"
+        },
+        {
+          "name": "core",
+          "id": 123880517401,
+          "conclusion": null,
+          "url": "https://github.com/arugula-salad/arugula/actions/runs/40999541959/job/123880517401"
+        }
+      ]
     },
     "e2e": {
       "verdict": "pending",
@@ -33,18 +84,34 @@
       "reason": "requested"
     },
     "claims": {
-      "verdict": "unbuilt",
+      "verdict": "pending",
       "build": "newest",
-      "runs": [],
-      "reason": "superseded",
-      "coveredBy": "661890de6489ee1ea4e6d8bfe6c5e22fff7b161c"
+      "runs": [
+        {
+          "name": "desktop-xvfb",
+          "id": 123880517519,
+          "conclusion": null,
+          "url": "https://github.com/arugula-salad/arugula/actions/runs/40999541959/job/123880517519"
+        }
+      ]
     },
     "macos": {
-      "verdict": "unbuilt",
+      "verdict": "pending",
       "build": "newest",
-      "runs": [],
-      "reason": "superseded",
-      "coveredBy": "661890de6489ee1ea4e6d8bfe6c5e22fff7b161c"
+      "runs": [
+        {
+          "name": "macos (test)",
+          "id": 123880517452,
+          "conclusion": null,
+          "url": "https://github.com/arugula-salad/arugula/actions/runs/40999541959/job/123880517452"
+        },
+        {
+          "name": "macos (webkit)",
+          "id": 123880517443,
+          "conclusion": null,
+          "url": "https://github.com/arugula-salad/arugula/actions/runs/40999541959/job/123880517443"
+        }
+      ]
     },
     "windows": {
       "verdict": "unbuilt",
