@@ -129,7 +129,7 @@ impl Db {
 /// The threads on a repo's mirrored items, and all that's in them: the
 /// forge mirror's purge of the repo's rows (M163) takes them too, before
 /// its items.
-pub(super) fn drop_item_threads(tx: &impl Sql, repo_id: u64) -> anyhow::Result<()> {
+pub(super) fn drop_item_threads(tx: &impl Sql, repo_id: impl super::sql::Param) -> anyhow::Result<()> {
     super::chat::drop_rooms_where(
         tx,
         "kind = 'object' AND target IN (SELECT id FROM forge_items WHERE repo_id = ?1)",

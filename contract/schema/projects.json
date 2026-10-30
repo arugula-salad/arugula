@@ -1,5 +1,32 @@
 {
   "$defs": {
+    "ConnectTracker": {
+      "description": "`POST /api/projects/{project}/trackers`: connect a Plane project. A\nproject's owner or editor may. `project` is Plane's project id or its\nidentifier. Control reads the project with the key first: a key Plane\nrefuses or a project it doesn't know is a 422 and nothing is kept. The\nkey and the webhook secret are sealed and never come back.",
+      "properties": {
+        "api_key": {
+          "type": "string"
+        },
+        "project": {
+          "type": "string"
+        },
+        "webhook_secret": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "workspace_slug": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "workspace_slug",
+        "project",
+        "api_key"
+      ],
+      "type": "object"
+    },
     "DraftCreated": {
       "properties": {
         "created": {
@@ -1199,6 +1226,130 @@
         "compared",
         "agree",
         "disagree"
+      ],
+      "type": "object"
+    },
+    "TrackerConnection": {
+      "description": "A tracker project connected to a project, or disconnected and waiting\nfor the purge. Never the key or the webhook secret.",
+      "properties": {
+        "agent_writes": {
+          "description": "`approve` (each agent write waits for a person) or `allow`.",
+          "type": "string"
+        },
+        "backfilled_at": {
+          "description": "When the first read of its items finished.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "created_at": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "has_webhook_secret": {
+          "description": "A webhook secret is kept for it.",
+          "type": "boolean"
+        },
+        "id": {
+          "description": "`tc_` and hex.",
+          "type": "string"
+        },
+        "identifier": {
+          "description": "The project's short key, such as `ARUGU`.",
+          "type": "string"
+        },
+        "items": {
+          "description": "How many of its items the platform holds.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "linked_by": {
+          "description": "Who connected it (an account id), when that account is still there.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "name": {
+          "type": "string"
+        },
+        "provider": {
+          "description": "`plane`.",
+          "type": "string"
+        },
+        "purge_after": {
+          "description": "When its rows go, unless it's connected again first.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "source_project_id": {
+          "description": "The tracker's own id for the project (Plane's uuid).",
+          "type": "string"
+        },
+        "unlinked_at": {
+          "description": "When it was disconnected: nothing is read from the tracker for it since.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "workspace_slug": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "provider",
+        "workspace_slug",
+        "source_project_id",
+        "identifier",
+        "name",
+        "agent_writes",
+        "has_webhook_secret",
+        "created_at",
+        "items"
+      ],
+      "type": "object"
+    },
+    "TrackerConnections": {
+      "properties": {
+        "connections": {
+          "items": {
+            "$ref": "#/$defs/TrackerConnection"
+          },
+          "type": "array"
+        },
+        "project": {
+          "description": "The project's id (`personal` asked is answered with the real one).",
+          "type": "string"
+        }
+      },
+      "required": [
+        "project",
+        "connections"
+      ],
+      "type": "object"
+    },
+    "TrackerSettings": {
+      "description": "`PATCH /api/projects/{project}/trackers/{connection}`: whether agents'\nwrites to the tracker wait for a person (`approve`) or go (`allow`);\nthe answer is its [`TrackerConnection`].",
+      "properties": {
+        "agent_writes": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "agent_writes"
       ],
       "type": "object"
     },

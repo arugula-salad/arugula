@@ -16,7 +16,7 @@ use arugula_control_wire::{boards, issues, project_docs, runs as wire_runs};
 use crate::{
     Platform, billing,
     features::{self, Routes},
-    forge, grants, hosted, projects, run_grant, run_logs,
+    forge, grants, hosted, projects, run_grant, run_logs, trackers,
     triggers::{agent as run_agents, routes as runs},
 };
 
@@ -48,6 +48,14 @@ fn routes() -> Routes {
         .route(
             "/api/projects/{project}/repos/{owner}/{name}",
             axum::routing::delete(forge::links::unlink).patch(forge::content::settings),
+        )
+        .route(
+            arugula_control_wire::projects::PROJECT_TRACKERS,
+            get(trackers::connect::list).post(trackers::connect::connect),
+        )
+        .route(
+            arugula_control_wire::projects::PROJECT_TRACKER,
+            axum::routing::patch(trackers::connect::settings).delete(trackers::connect::disconnect),
         )
         .route(arugula_control_wire::projects::PROJECT_ITEMS, get(forge::items::list))
         .route(arugula_control_wire::projects::FORGE_ITEM, get(forge::items::get))

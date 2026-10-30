@@ -324,6 +324,7 @@ pub async fn token(
 /// year, and access answers no longer used.
 pub fn start(p: &Arc<Platform>) {
     links::start(p);
+    crate::trackers::connect::start(p);
     if p.github.is_none() {
         return;
     }

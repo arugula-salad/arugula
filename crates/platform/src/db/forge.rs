@@ -93,7 +93,7 @@ fn skip_locked(c: &impl Sql) -> &'static str {
 /// Every row the mirror holds of a repo, but its link: its items and
 /// what's on them, its drafts, inbox rows of its items, and the threads on
 /// its items (M196).
-fn purge_rows(c: &impl Sql, repo_id: u64) -> anyhow::Result<()> {
+pub(super) fn purge_rows(c: &impl Sql, repo_id: impl super::sql::Param + Copy) -> anyhow::Result<()> {
     super::objects::drop_item_threads(c, repo_id)?;
     c.execute(
         "DELETE FROM inbox_items WHERE item IN (SELECT id FROM forge_items WHERE repo_id = ?1)",
@@ -1212,6 +1212,7 @@ pub(crate) fn erase_account(c: &impl Sql, d: &Deleted, now: u64) -> anyhow::Resu
          WHERE unlinked_at IS NULL AND project_id NOT IN (SELECT id FROM projects)",
         params![now],
     )?;
+    super::trackers::erase_account(c, account, now)?;
     Ok(())
 }
 

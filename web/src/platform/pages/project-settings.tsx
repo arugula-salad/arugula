@@ -14,7 +14,8 @@
 // owners-only switches (UI audit #168). Each part is a section
 // (../settings/section), as /settings's are: a heading, one line, the rest
 // behind More, and on a wide screen an index of them beside the column.
-// The repos are a table, a row each with its switch.
+// The repos are a table, a row each with its switch. After them, the Plane
+// projects connected to it (#356, ../settings/plane).
 
 import { useEffect, useRef, useState } from "preact/hooks";
 import type { LinkedRepo, LinkedRepos } from "../../shared/proto.gen";
@@ -38,6 +39,7 @@ import { ProjectAgents } from "../settings/project-agents";
 import { ClaudeSpend } from "../settings/spend";
 import { ClientApps } from "../settings/client-apps";
 import { TeamChat } from "../settings/chat-alerts";
+import { PlaneConnections } from "../settings/plane";
 import { Section, SectionIndex } from "../settings/section";
 
 /** A call to the platform: its JSON, or the platform's `{error}` thrown
@@ -268,6 +270,7 @@ export function ProjectSettings({ id, link }: { id: string; link?: string }) {
               </ConfirmRemove>
             )}
           </Section>
+          <PlaneConnections p={p} />
           <IssueHomeSetting key={linked} p={p} />
           <Environments p={p} />
           <RunGrant project={p.id} />

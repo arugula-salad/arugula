@@ -78,6 +78,7 @@ pub mod stuck;
 #[cfg(any(test, feature = "testing"))]
 pub mod testing;
 pub mod timing;
+pub mod trackers;
 pub mod triggers;
 pub mod window;
 pub mod work;
@@ -158,6 +159,9 @@ pub struct Platform {
     /// What feature crates keep here (#314): the agents' Infisical
     /// projection (M235), set by the platform binary.
     pub slots: features::Slots,
+    /// Where connected trackers' APIs come from (Arugula #356): Plane's, or
+    /// a test's fake.
+    pub trackers: Arc<dyn trackers::Trackers>,
 }
 
 impl Platform {
@@ -204,6 +208,7 @@ impl Platform {
         let chat = chat::Hub::default();
         chat.start_at(&db);
         let listening = db.listen();
+        let trackers = Arc::new(trackers::Live::new(http.clone(), trackers::PLANE_BASE));
         Platform {
             cfg,
             db,
@@ -230,6 +235,7 @@ impl Platform {
             run_logs: None,
             deploy_tokens: Default::default(),
             slots: Default::default(),
+            trackers,
         }
     }
 }

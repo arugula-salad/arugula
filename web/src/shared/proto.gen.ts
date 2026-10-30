@@ -1192,6 +1192,15 @@ start: number, end: number | null,
 by?: string, };
 
 /**
+ * `POST /api/projects/{project}/trackers`: connect a Plane project. A
+ * project's owner or editor may. `project` is Plane's project id or its
+ * identifier. Control reads the project with the key first: a key Plane
+ * refuses or a project it doesn't know is a 422 and nothing is kept. The
+ * key and the webhook secret are sealed and never come back.
+ */
+export type ConnectTracker = { workspace_slug: string, project: string, api_key: string, webhook_secret: string | null, };
+
+/**
  * A machine's standing with Arugula control (#325): whether and where
  * it's joined, whether control is reachable, or that control dropped it.
  * The page, the tray and `arugula status` all show this.
@@ -4404,6 +4413,69 @@ export type TelemetrySetRequest = { on: boolean, via?: string, };
  * Why telemetry is on or off here.
  */
 export type TelemetryWhy = "yes" | "not_asked" | "no" | "do_not_track" | "env" | "ci" | "test";
+
+/**
+ * A tracker project connected to a project, or disconnected and waiting
+ * for the purge. Never the key or the webhook secret.
+ */
+export type TrackerConnection = { 
+/**
+ * `tc_` and hex.
+ */
+id: string, 
+/**
+ * `plane`.
+ */
+provider: string, workspace_slug: string, 
+/**
+ * The tracker's own id for the project (Plane's uuid).
+ */
+source_project_id: string, 
+/**
+ * The project's short key, such as `ARUGU`.
+ */
+identifier: string, name: string, 
+/**
+ * `approve` (each agent write waits for a person) or `allow`.
+ */
+agent_writes: string, 
+/**
+ * A webhook secret is kept for it.
+ */
+has_webhook_secret: boolean, 
+/**
+ * Who connected it (an account id), when that account is still there.
+ */
+linked_by: string | null, created_at: number, 
+/**
+ * When it was disconnected: nothing is read from the tracker for it since.
+ */
+unlinked_at: number | null, 
+/**
+ * When its rows go, unless it's connected again first.
+ */
+purge_after: number | null, 
+/**
+ * When the first read of its items finished.
+ */
+backfilled_at: number | null, 
+/**
+ * How many of its items the platform holds.
+ */
+items: number, };
+
+export type TrackerConnections = { 
+/**
+ * The project's id (`personal` asked is answered with the real one).
+ */
+project: string, connections: Array<TrackerConnection>, };
+
+/**
+ * `PATCH /api/projects/{project}/trackers/{connection}`: whether agents'
+ * writes to the tracker wait for a person (`approve`) or go (`allow`);
+ * the answer is its [`TrackerConnection`].
+ */
+export type TrackerSettings = { agent_writes: string, };
 
 /**
  * What a pane is busy with (M23), for drawing and grouping it without
