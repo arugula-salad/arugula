@@ -171,7 +171,10 @@ arugula-control --public-url https://control.example.com --listen 127.0.0.1:7690
     camera's trackers, and run the `blob:` scripts the page makes for the
     Krisp noise filter's audio worklet and worker in voice and calls
     (without them Krisp falls back to the browser's own suppression).
-    Without an app, the CSP doesn't change and a People block says control
+    The platform page's CSP (chat, on the platform's host) opens the same
+    way, and may also connect to `wss:` and `https:` (the relay's socket,
+    LiveKit Cloud's, Krisp's models), for live presence's avatars in chat.
+    Without an app, neither CSP changes and a People block says control
     has no arugula.stream app.
   - Make the app with arugula.stream's `create_app` (its MCP or dashboard):
     the secret is shown once. No origins or sign-in provider are needed,
