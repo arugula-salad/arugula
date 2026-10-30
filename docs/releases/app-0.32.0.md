@@ -9,4 +9,4 @@
   daemon's page signed in; with 0.66.0 the page keeps its own key instead
   of a cookie.
 
-Needs control 0.66.0. It carries arugulad 0.66.0.
+It carries arugulad 0.66.0.
