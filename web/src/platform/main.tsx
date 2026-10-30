@@ -21,6 +21,8 @@ import { PlatformApiContext } from "../shared/platform-api";
 import { AppearanceLayer } from "../shared/ui/appearance";
 import { MenuLayer, PromptLayer } from "../shared/ui/menu";
 import { platformApi } from "./api";
+// Live presence (#343): in the reader's teams' rooms while their switch says so.
+import "../shared/live/live";
 import { PlatformPage } from "./page";
 
 // This device's palette and finish, before anything draws: on

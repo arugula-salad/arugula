@@ -1,5 +1,7 @@
 import { AgentDialogLayer, startAgent } from "./ui/agent-dialog";
 import { chat } from "../shared/chat-store";
+// Live presence (#343): in the reader's teams' rooms while their switch says so.
+import { live } from "../shared/live/live";
 import { shellPlatformApi } from "./platform-api";
 import { platformOrigin, setPlatformOrigin } from "./platform-links";
 import { platformPath } from "./fragments";
@@ -563,6 +565,8 @@ Object.assign(window, {
     control: session,
     /** M123: control's chat (rooms, messages, the live stream). */
     chat,
+    /** #343: live presence's rooms on arugula.stream. */
+    live,
     fleet,
     /** M26: made-up panes in the swarm (frame-rate check, screenshots). */
     swarmFake: (n: number) => fakeSwarm(fleet, n),
