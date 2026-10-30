@@ -9,6 +9,7 @@ import { useEffect, useRef, useState } from "preact/hooks";
 import type { ChatFile } from "../proto";
 import { kindText, MAX_FILES, pastedName, sizeText, tooBig, type Pending } from "./files";
 import { upload } from "./files-upload";
+import { closeOnEscape } from "./escape";
 
 // ---- the composer's side
 
@@ -205,9 +206,10 @@ function FileCard({ f }: { f: ChatFile }) {
 /** A picture full size over the page; Escape or a click outside closes it. */
 function Viewer({ f, close }: { f: ChatFile; close: () => void }) {
   useEffect(() => {
-    const key = (e: KeyboardEvent) => e.key === "Escape" && close();
-    addEventListener("keydown", key);
-    return () => removeEventListener("keydown", key);
+    const key = closeOnEscape(close);
+    // Capture, so no other Escape handler on the page sees it first (#380).
+    addEventListener("keydown", key, true);
+    return () => removeEventListener("keydown", key, true);
   }, []);
   return (
     <div class="image-viewer" role="dialog" aria-modal="true" aria-label={f.name} data-image-viewer onClick={close}>
