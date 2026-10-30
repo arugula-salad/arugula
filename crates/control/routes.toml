@@ -58,8 +58,8 @@
 # - `clients`: who calls it: `page` (control's web page, in a browser or the
 #   desktop app's webview), `daemon` (arugulad), `cli` (the arugula CLI),
 #   `app` (the desktop app's own code), `browser` (a browser following a
-#   link or a redirect, with no page of control's), `github` and `stripe`
-#   (their webhooks), `operator` (by hand), `product` (another product
+#   link or a redirect, with no page of control's), `github`, `stripe` and
+#   `plane` (their webhooks), `operator` (by hand), `product` (another product
 #   that takes the hub's tokens: studio, a hud box, M228's clients), `agent`
 #   (an agent with no machine, with an agent grant token, M230), `apple`
 #   (Apple's associated-domains CDN, for the macOS app, D2). Enforced for the CLI: a CLI
