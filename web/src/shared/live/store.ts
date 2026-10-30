@@ -8,7 +8,10 @@
 // can hold one team's room open whatever the switch says (`hold`). Live is
 // this window's camera, sent to one room: the team the page says the
 // reader is working in, else the first. It stops while the window is
-// hidden. Each room says its state (connecting, on, refused, unreachable),
+// hidden. arugula.stream has one camera for your character and your call
+// or voice video, and stopping it ends that video, so the room you're on
+// video in keeps its camera untouched, and this only ever stops a camera
+// it started (not one a People block's picker did). Each room says its state (connecting, on, refused, unreachable),
 // so nothing that draws from it goes blank without saying why.
 //
 // The SDK is arugula.stream's own (`<relay>/sdk/v0/presence.js`, loaded
@@ -29,7 +32,10 @@ export interface SdkMember {
 /** What this uses of a connected room (the SDK's `Room`). */
 export interface SdkRoom {
   readonly members: SdkMember[];
-  on(event: "members" | "live", fn: (...args: never[]) => void): () => void;
+  on(event: "members" | "live" | "voice" | "call", fn: (...args: never[]) => void): () => void;
+  /** You in its voice channel, and your call: their video is the camera's. */
+  readonly voice: { readonly joined: { readonly video: boolean } | null };
+  readonly inCall: { readonly video: boolean } | null;
   readonly camera: { start(o?: { mode?: "avatar" | "outline" }): Promise<void>; stop(): void; readonly on: boolean };
   avatar(el: Element, sub: string, o?: { size?: "head" | "bust"; draw?: "live" | "character" }): () => void;
   leave(): void;
@@ -78,7 +84,8 @@ export class LiveStore {
   private rooms = new Map<string, Entry>();
   private listeners = new Set<() => void>();
   private hidden = false;
-  private camera: string | null = null;
+  /** The rooms whose camera this started (Live's). */
+  private mine = new Set<string>();
   private deps: Deps;
 
   constructor(deps: Deps) {
@@ -141,6 +148,7 @@ export class LiveStore {
   retry(team: string) {
     this.rooms.get(team)?.stop();
     this.rooms.delete(team);
+    this.mine.delete(team);
     this.sync();
   }
 
@@ -173,7 +181,7 @@ export class LiveStore {
     const want = this.wanted();
     for (const [team, e] of [...this.rooms]) {
       if (!want.has(team)) {
-        if (this.camera === team) this.camera = null;
+        this.mine.delete(team);
         e.stop();
         this.rooms.delete(team);
       }
@@ -210,6 +218,8 @@ export class LiveStore {
           if (s === "refused") e.why = "arugula.stream refused this room";
           this.emit();
         }) as (...args: never[]) => void),
+        room.on("voice", () => this.syncCamera()),
+        room.on("call", () => this.syncCamera()),
       ];
       e.stop = () => {
         for (const off of offs) off();
@@ -226,16 +236,31 @@ export class LiveStore {
   }
 
   /** Live: the camera on in one room (the working team's, else the first
-   * joined), off everywhere else, and off while the window is hidden. */
+   * joined), and off while the window is hidden. While you're on video
+   * in a room (voice or a call), that room's camera is the video's: it's
+   * left alone, and Live's goes off elsewhere (one camera). A camera this
+   * didn't start (a People block's picker) it leaves alone too. */
   private syncCamera() {
-    const live = this.deps.state() === "live" && !this.hidden;
     const on = [...this.rooms].filter(([, e]) => e.room);
+    const video = on.some(([, e]) => onVideo(e.room!));
+    const live = this.deps.state() === "live" && !this.hidden && !video;
     const target = live ? (on.find(([t]) => t === this.working) ?? on[0])?.[0] ?? null : null;
     for (const [team, e] of on) {
-      const cam = e.room!.camera;
-      if (team === target && !cam.on) void cam.start({ mode: "avatar" }).catch(() => {});
-      if (team !== target && cam.on) cam.stop();
+      const room = e.room!;
+      if (onVideo(room)) continue;
+      if (team === target && !room.camera.on) {
+        this.mine.add(team);
+        // Not wanted by the time it's on (still starting when Live moved).
+        const started = () => void (!this.mine.has(team) && !onVideo(room) && room.camera.stop());
+        void Promise.resolve(room.camera.start({ mode: "avatar" })).then(started, () => {});
+      }
+      if (team !== target && this.mine.has(team)) {
+        this.mine.delete(team);
+        if (room.camera.on) room.camera.stop();
+      }
     }
-    this.camera = target;
   }
 }
+
+/** You're on video in `room`: in its voice or your call there. */
+const onVideo = (room: SdkRoom) => !!(room.voice?.joined?.video || room.inCall?.video);
