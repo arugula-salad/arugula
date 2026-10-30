@@ -94,6 +94,9 @@ async fn an_editor_connects_and_the_items_are_mirrored() {
     let (fake, app, base) = serve(&hub).await;
     hub.team("t1", &[("alice", TeamRole::Owner), ("bob", TeamRole::Editor), ("carol", TeamRole::Viewer)]);
     hub.flag_named("team:t1", crate::boards::FLAG, true);
+    hub.team("t3", &[("erin", TeamRole::Owner)]);
+    hub.flag_named("team:t3", crate::boards::FLAG, true);
+    let erin = crate::projects::team_project(&app, "t3").await.unwrap().unwrap();
     let team = crate::projects::team_project(&app, "t1").await.unwrap().unwrap();
 
     // Boards are Labs, and so is this: on for t1, off for t0, where every
@@ -199,6 +202,19 @@ async fn an_editor_connects_and_the_items_are_mirrored() {
     assert_eq!(connect::purge(&app, due).unwrap(), 1);
     assert_eq!(count(&app, "forge_items", "repo_id = ?1", params![mirror]), 0);
     assert_eq!(count(&app, "tracker_connections", "TRUE", params![]), 0);
+    // Boards turned off after connecting: settings and disconnect are 404 too.
+    let (s, again) = connect_as(&base, "erin", &erin, KEY, "ARUGU").await;
+    assert_eq!(s, 200, "{again}");
+    let path = format!("/api/projects/{erin}/trackers/{}", again["id"].as_str().unwrap());
+    hub.flag_named("team:t3", crate::boards::FLAG, false);
+    app.cache.drop_all();
+    let (s, _) = call(&base, "erin", "PATCH", &path, Some(json!({ "agent_writes": "allow" }))).await;
+    assert_eq!(s, 404);
+    let (s, _) = call(&base, "erin", "DELETE", &path, None).await;
+    assert_eq!(s, 404);
+    assert_eq!(count(&app, "tracker_connections", "unlinked_at IS NULL", params![]), 1);
+    app.db.disconnect_tracker(&erin, again["id"].as_str().unwrap(), 1).unwrap().unwrap();
+
     // Connected again, it's a new connection under the next mirror id.
     let (s, again) = connect_as(&base, "bob", &team, KEY, "ARUGU").await;
     assert_eq!(s, 200, "{again}");
