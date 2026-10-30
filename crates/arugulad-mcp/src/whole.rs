@@ -301,3 +301,56 @@ pub fn an_output_schema_is_an_object_with_a_summary() {
     }
     assert!(with >= 8, "only {with} tools list an outputSchema");
 }
+
+/// Every tool and kind there is, with every feature crate's, is placed:
+/// an agent a guest stands behind may call it (`guests::TAB`) or only the
+/// owner's own agents may (`guests::OWNERS`). A new one fails here until
+/// it's put in one; until then, it's refused.
+pub fn every_tool_and_kind_is_placed() {
+    let mut missing = vec![];
+    for (tool, kind) in every_tool_and_kind() {
+        let in_list = |l: &[guests::Entry]| l.iter().any(|(t, k)| *t == tool && (k.is_none() || *k == kind));
+        if !in_list(guests::TAB) && !in_list(guests::OWNERS) {
+            missing.push(format!("{tool} {}", kind.unwrap_or("")));
+        }
+    }
+    assert!(missing.is_empty(), "put each in guests::TAB or guests::OWNERS: {missing:?}");
+}
+
+/// An agent a guest stands behind is refused every tool and kind that acts
+/// as the owner, and nothing else, from the one check `dispatch` makes
+/// first; and every machine tool on a Cloud workspace.
+pub fn a_guests_agent_is_refused_every_owners_tool() {
+    let mut wrong = vec![];
+    for (tool, kind) in every_tool_and_kind() {
+        let args = kind.map_or_else(|| json!({}), |k| json!({ "kind": k }));
+        let refused = guests::refusal(tool, &args, fl(true)).is_some();
+        let owners = guests::OWNERS.iter().any(|(t, k)| *t == tool && (k.is_none() || *k == kind));
+        if refused != owners {
+            wrong.push(format!("{tool} {}: refused {refused}", kind.unwrap_or("")));
+        }
+    }
+    assert!(wrong.is_empty(), "a guest's agent is refused exactly the owner's tools: {wrong:?}");
+    for (tool, kind) in every_tool_and_kind() {
+        if !crate::hosted::TOOLS.contains(&tool) {
+            continue;
+        }
+        let mut args = json!({ "cloud_workspace": "hw_abc" });
+        if let Some(k) = kind {
+            args["kind"] = json!(k);
+        }
+        assert!(guests::refusal(tool, &args, fl(true)).is_some(), "{tool} {kind:?} on a Cloud workspace");
+    }
+}
+
+/// Each tool, and each kind of a grouped one, listed or not.
+fn every_tool_and_kind() -> Vec<(&'static str, Option<&'static str>)> {
+    let mut out = vec![];
+    for d in all_defs() {
+        match &d.args {
+            Args::One(_) => out.push((d.name, None)),
+            Args::Kinds { kinds, .. } => out.extend(kinds.iter().map(|k| (d.name, Some(k.name)))),
+        }
+    }
+    out
+}
