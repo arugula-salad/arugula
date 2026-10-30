@@ -78,5 +78,12 @@ A project has one standing grant for runs (Jake, 2026-10-21, platform step
 
 The cost: while the grant stands, a platform that's been broken into can
 queue runs it covers, on that project's hosted workspaces only.
+**Amended: signed with a passkey** (Jake, 2026-10-30, aru-126, Arugula
+native #387). The grant, and its revoke, is a user-verified passkey
+assertion over its bytes from a project owner's passkey, not an owner
+device's signature, and hosted `arugulad` checks it against the account's
+published passkey keys. Grants signed by a device before the switch stay
+valid until they expire; renewing one makes a passkey-signed grant.
+
 Where: the standing project grant (Arugula #7, M211, native), `crates/platform/src/grants.rs`.
 From: #1317 (platform step 7), the plan in #1290, S37 (q3), M88 (#970, parked in #1002).
