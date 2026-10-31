@@ -263,6 +263,7 @@ fn bodies() -> Example {
 #[serde(deny_unknown_fields)]
 struct VerifyIn {
     log: String,
+    account: String,
     assertion: String,
     challenge: String,
     at: u64,
@@ -275,8 +276,8 @@ fn run_verify(ctx: &Ctx, v: &Value) -> anyhow::Result<Value> {
     let a: Assertion = ctx.get(&i.assertion)?;
     let origins: Origins = ctx.get(&i.origins)?;
     // The chain alone says the same of a broken log.
-    let chain = check_chain(&log, &origins);
-    Ok(match verify(&log, &a, &i.challenge, i.at, &origins) {
+    let chain = check_chain(&log);
+    Ok(match verify(&log, &i.account, &a, &i.challenge, i.at, &origins) {
         Ok(v) => {
             anyhow::ensure!(chain.is_ok(), "verified against a log whose chain fails");
             json!({ "ok": true, "added": v.key.seq, "rp": v.rp })
@@ -310,14 +311,16 @@ fn verifies() -> Example {
         "verify",
         run_verify,
         "A passkey's assertion checked against its account's log, trusting nothing else (DK3, aru-126). The \
-         whole log first, in order: each event is the log's account's, its seq is its place (from 0), its prev \
+         log must be the account's asked about (`account`). Then the whole log, in order: each event is the log's account's, its seq is its place (from 0), its prev \
          the hash of the one before (64 zeros first), its hash its own (SHA-256 of body and proof line), its \
          time not before the one before's, its fields fit their lines (an RP may list several sites, space \
          separated, only on a `by backfill <ms>` event), its key's format its alg's (sec1 for -7, raw for -8, \
          spki for -257), its `by` one of passkey, signup, github, device <id>, session, reset, deleted or \
          backfill <ms>, with a proof exactly when it's passkey; a passkey is added only when it isn't live and \
          removed only when it is, with its key. A proof is checked as an assertion below, by a passkey live \
-         just before the event, over SHA-256 of the event's body (base64url). The first event that fails is \
+         just before the event, over SHA-256 of the event's body (base64url), except that its origin must be \
+         its RP's own (http or https, the RP as host, any port), not one the verifier pins: whether a log holds \
+         together never depends on a verifier's configuration. The first event that fails is \
          `chain`, with its index. Then the assertion's passkey must be live at `at`: added by an event at or \
          before `at`, and not removed by one at or before it (`not_live`). Then, in order: clientDataJSON \
          base64url JSON with type, challenge and origin (`client_data`); type webauthn.get (`ceremony`); the \
@@ -326,11 +329,16 @@ fn verifies() -> Example {
          passkey's RP, or of one of them (`rp`); the origin one the verifier allows for that RP (`origin`); \
          flags with UP (0x01) and UV (0x04) (`user`); a key that reads (`key`); the signature, over \
          authenticator data then SHA-256 of clientDataJSON: ES256 DER over P-256, Ed25519 strict, RS256 PKCS#1 \
-         v1.5 with SHA-256 (`signature`). Base64url may come padded. No provider policy: any AAGUID counts.",
+         v1.5 with SHA-256 (`signature`). Base64url may come padded, but its trailing bits must be zero. The \
+         client data is read strictly: a field it reads (type, challenge, origin, crossOrigin, topOrigin) twice \
+         is `client_data`; other fields are ignored, twice or not. An ES256 signature's DER integers must be \
+         minimal and positive. No provider policy: any AAGUID counts. Ed25519 is checked strictly (Rust's \
+         verify_strict); WebCrypto may take small-order keys and non-canonical signatures it would refuse, and \
+         no case here has one.",
         &["arugula_e2e::passkey::verify", "arugula_e2e::passkey::check_chain"],
     )
     .shapes(
-        "log, assertion and origins: labels (origins: { rp: [origins] }, the verifier's pinned map); challenge: \
+        "log, assertion and origins: labels; account: whose log it should be (origins: { rp: [origins] }, the verifier's pinned map); challenge: \
          base64url; at: ms, the verifier's own record of when it arrived",
         "{ ok: true, added: the seq of the passkey's added event, rp: the RP it was for }, or { ok: false, \
          refused: a code, event: the index, for chain }",
@@ -343,7 +351,12 @@ fn verifies() -> Example {
     ex.object("control_only", &Origins::from([(RP.to_owned(), vec![CONTROL.to_owned()])]));
     let case = |ex: &mut Example, about: &str, log: &str, a: &str, a_obj: &Assertion, at: u64, o: &str, want: Value| {
         ex.object(a, a_obj);
-        ex.case(about, json!({ "log": log, "assertion": a, "challenge": ch, "at": at, "origins": o }), want);
+        let account = if log == "backfilled" { "acct_old" } else { ACCOUNT };
+        ex.case(
+            about,
+            json!({ "log": log, "account": account, "assertion": a, "challenge": ch, "at": at, "origins": o }),
+            want,
+        );
     };
 
     let es = k.es.sign(&ch, APP);
@@ -579,7 +592,8 @@ fn verifies() -> Example {
         ex.object(label, &l);
         ex.case(
             about,
-            json!({ "log": label, "assertion": "ed_app", "challenge": ch, "at": 5000, "origins": "control_and_app" }),
+            json!({ "log": label, "account": ACCOUNT, "assertion": "ed_app", "challenge": ch, "at": 5000,
+                    "origins": "control_and_app" }),
             want,
         );
     };
@@ -692,7 +706,136 @@ fn verifies() -> Example {
         },
         chain(6),
     );
+    tamper(
+        &mut ex,
+        "an add whose proof came from the platform's page, not its RP's own",
+        "proof_elsewhere",
+        &|l| {
+            let e = k.late.added(ACCOUNT, RP, NO_AAGUID, 7000, "passkey").after(None).placed_after(l.events.last());
+            let proof = k.ed.sign_with(&e.challenge(), APP, json!({}), RP, UP | UV);
+            l.events.push(e.with_proof(proof));
+        },
+        chain(6),
+    );
     // Event 6 added later than `at` still counts toward the chain: a log
     // broken after `at` fails too.
+
+    // The log's proofs came from control's page; a verifier that allows
+    // only the platform's still takes the log.
+    ex.object("app_only", &Origins::from([(RP.to_owned(), vec![APP.to_owned()])]));
+    case(
+        &mut ex,
+        "a verifier that doesn't list the origin the log's proofs came from",
+        "owner",
+        "ed_app",
+        &ed,
+        5000,
+        "app_only",
+        ok(2, RP),
+    );
+    ex.case(
+        "another account's log",
+        json!({ "log": "owner", "account": "acct_other", "assertion": "ed_app", "challenge": ch, "at": 5000,
+                "origins": "control_and_app" }),
+        refused("account"),
+    );
+
+    // Read strictly, as Rust does.
+    let mut loose = ed.clone();
+    let last = loose.authenticator_data.pop().unwrap();
+    let alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+    let i = alphabet.find(last).unwrap();
+    assert_eq!(loose.authenticator_data.len() % 4, 1, "50 characters: the last has 4 spare bits");
+    loose.authenticator_data.push(alphabet.as_bytes()[i | 1] as char);
+    case(
+        &mut ex,
+        "base64url with trailing bits set",
+        "owner",
+        "trailing_bits",
+        &loose,
+        5000,
+        "control_and_app",
+        refused("auth_data"),
+    );
+    let dup = format!(
+        r#"{{"type":"webauthn.get","challenge":"b3RoZXI","challenge":"{ch}","origin":"{APP}","crossOrigin":false}}"#
+    );
+    let dup_a = k.ed.sign_raw(dup.as_bytes(), RP, UP | UV);
+    case(
+        &mut ex,
+        "a field the check reads, twice",
+        "owner",
+        "dup_challenge",
+        &dup_a,
+        5000,
+        "control_and_app",
+        refused("client_data"),
+    );
+    let extra = format!(r#"{{"type":"webauthn.get","challenge":"{ch}","origin":"{APP}","x":1,"x":2}}"#);
+    let extra_a = k.ed.sign_raw(extra.as_bytes(), RP, UP | UV);
+    case(&mut ex, "a field it ignores, twice", "owner", "dup_other", &extra_a, 5000, "control_and_app", ok(2, RP));
+    // ES256 DER: an integer with a needless leading zero, and one read as
+    // negative (its sign byte dropped). k3 (ES256, seed 0x11) was removed
+    // at 3000, so these are checked at 2999.
+    let es_sig = |a: &Assertion| B64.decode(&a.signature).unwrap();
+    let mut long = es.clone();
+    let (r, sv) = der_ints(&es_sig(&es));
+    let padded_s = [&[0u8][..], &sv].concat();
+    long.signature = B64.encode(der(&r, &padded_s));
+    case(
+        &mut ex,
+        "an ES256 signature with a needless leading zero",
+        "owner",
+        "der_long",
+        &long,
+        2999,
+        "control_and_app",
+        refused("signature"),
+    );
+    let padded = (0..64)
+        .map(|n| k.es.sign_with(&ch, APP, json!({ "n": n }), RP, UP | UV))
+        .find(|a| der_ints(&es_sig(a)).0[0] == 0)
+        .expect("an r with a sign byte");
+    case(
+        &mut ex,
+        "ES256, its r needing a sign byte",
+        "owner",
+        "der_signed",
+        &padded,
+        2999,
+        "control_and_app",
+        ok(0, RP),
+    );
+    let mut negative = padded.clone();
+    let (r, sv) = der_ints(&es_sig(&padded));
+    negative.signature = B64.encode(der(&r[1..], &sv));
+    case(
+        &mut ex,
+        "ES256, its r's sign byte dropped (negative)",
+        "owner",
+        "der_negative",
+        &negative,
+        2999,
+        "control_and_app",
+        refused("signature"),
+    );
     ex
+}
+
+/// A DER ECDSA signature's two integers, as written.
+fn der_ints(sig: &[u8]) -> (Vec<u8>, Vec<u8>) {
+    assert_eq!(sig[0], 0x30);
+    let r_len = sig[3] as usize;
+    let r = sig[4..4 + r_len].to_vec();
+    let s_len = sig[5 + r_len] as usize;
+    (r, sig[6 + r_len..6 + r_len + s_len].to_vec())
+}
+
+/// Two integers as a DER ECDSA signature, as given.
+fn der(r: &[u8], s: &[u8]) -> Vec<u8> {
+    let mut out = vec![0x30, (4 + r.len() + s.len()) as u8, 2, r.len() as u8];
+    out.extend_from_slice(r);
+    out.extend_from_slice(&[2, s.len() as u8]);
+    out.extend_from_slice(s);
+    out
 }

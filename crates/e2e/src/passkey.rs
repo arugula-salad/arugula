@@ -382,6 +382,8 @@ impl Event {
 /// Why an assertion doesn't check out against a log.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Refusal {
+    /// The log isn't the account's the verifier asked about.
+    Account,
     /// The log doesn't hold together at this event (its index): a hash,
     /// seq, prev, account, time, field, `by` or proof that's wrong.
     Chain(u64),
@@ -414,6 +416,7 @@ impl Refusal {
     /// `refused`).
     pub fn code(self) -> &'static str {
         match self {
+            Refusal::Account => "account",
             Refusal::Chain(_) => "chain",
             Refusal::NotLive => "not_live",
             Refusal::ClientData => "client_data",
@@ -432,6 +435,7 @@ impl Refusal {
     /// In words, for a person.
     pub fn says(self) -> String {
         match self {
+            Refusal::Account => "that's another account's passkey log".into(),
             Refusal::Chain(i) => format!("the account's passkey log doesn't hold together at event {i}"),
             Refusal::NotLive => "that passkey wasn't one of the account's then".into(),
             Refusal::ClientData => "bad clientDataJSON".into(),
@@ -466,7 +470,8 @@ pub struct Verified<'a> {
     pub count: u32,
 }
 
-/// Check `assertion` against `log`, trusting nothing else:
+/// Check `assertion` against `log`, as `account`'s, trusting nothing else:
+/// - the log is `account`'s;
 /// - the whole chain holds ([`check_chain`]);
 /// - its passkey was live in the log at `at` (added at or before, not
 ///   removed at or before);
@@ -475,31 +480,44 @@ pub struct Verified<'a> {
 /// - its authenticator data is for the passkey's RP, from an origin
 ///   `origins` allows for that RP, with UP and UV;
 /// - the signature checks out with the key in the log.
+///
+/// `origins` is only for this assertion: the log's own proofs are checked
+/// against what the log says ([`check_chain`]), so which sites a verifier
+/// knows never changes whether a log holds together.
 pub fn verify<'a>(
     log: &'a Log,
+    account: &str,
     assertion: &Assertion,
     challenge: &str,
     at: u64,
     origins: &Origins,
 ) -> Result<Verified<'a>, Refusal> {
-    let then = live_at(log, at, origins)?;
+    if log.account != account {
+        return Err(Refusal::Account);
+    }
+    let then = live_at(log, at)?;
     let key = then.get(assertion.id.as_str()).ok_or(Refusal::NotLive)?;
-    check(key, assertion, challenge, origins)
+    check(key, assertion, challenge, Allowed::Pinned(origins))
 }
 
 /// Whether the whole log holds together: each event is the account's, in
 /// order (seq, prev, its hash, times that don't go back), well formed, and
 /// each `by passkey` event's proof is a passkey live just before it,
-/// signing its body ([`Event::challenge`]) with user verification from an
-/// origin `origins` allows. A passkey is added only when it isn't live,
-/// and removed only when it is, with the key it was added with.
-pub fn check_chain(log: &Log, origins: &Origins) -> Result<(), Refusal> {
-    live_at(log, u64::MAX, origins).map(|_| ())
+/// signing its body ([`Event::challenge`]) with user verification, for the
+/// signer's own RP (one of them, for a backfilled one) from that RP's own
+/// origin (`https://<rp>`, or `http://` and a port: control's page, where
+/// passkeys are added and removed). That's the log's own word, not any
+/// verifier's configuration, so a log holds together for everyone or for
+/// nobody, whichever sites a verifier knows today. A passkey is added only
+/// when it isn't live, and removed only when it is, with the key it was
+/// added with.
+pub fn check_chain(log: &Log) -> Result<(), Refusal> {
+    live_at(log, u64::MAX).map(|_| ())
 }
 
 /// The passkeys live at `at`, by credential id, having checked the whole
 /// chain.
-fn live_at<'a>(log: &'a Log, at: u64, origins: &Origins) -> Result<BTreeMap<&'a str, &'a Event>, Refusal> {
+fn live_at(log: &Log, at: u64) -> Result<BTreeMap<&str, &Event>, Refusal> {
     let mut live: BTreeMap<&str, &Event> = BTreeMap::new();
     let mut then = None;
     for (i, e) in log.events.iter().enumerate() {
@@ -518,7 +536,7 @@ fn live_at<'a>(log: &'a Log, at: u64, origins: &Origins) -> Result<BTreeMap<&'a 
         match (by, &e.proof) {
             (By::Passkey, Some(p)) => {
                 let signer = live.get(p.id.as_str()).ok_or(bad)?;
-                check(signer, p, &e.challenge(), origins).map_err(|_| bad)?;
+                check(signer, p, &e.challenge(), Allowed::OwnRp).map_err(|_| bad)?;
             }
             (By::Passkey, None) | (_, Some(_)) => return Err(bad),
             _ => {}
@@ -575,8 +593,29 @@ struct ClientData {
     top_origin: Option<String>,
 }
 
+/// Which origins an assertion may come from.
+#[derive(Clone, Copy)]
+enum Allowed<'a> {
+    /// Those the verifier pinned for the RP.
+    Pinned(&'a Origins),
+    /// The RP's own: a proof in the log ([`check_chain`]).
+    OwnRp,
+}
+
+/// Whether `origin` is `rp`'s own: `http(s)://<rp>`, with or without a port.
+fn own_origin(origin: &str, rp: &str) -> bool {
+    let Some(rest) = origin.strip_prefix("https://").or_else(|| origin.strip_prefix("http://")) else {
+        return false;
+    };
+    let host = match rest.rsplit_once(':') {
+        Some((h, p)) if !p.is_empty() && p.bytes().all(|b| b.is_ascii_digit()) => h,
+        _ => rest,
+    };
+    host == rp
+}
+
 /// `a` checked against `key` (the passkey's `added` event).
-fn check<'a>(key: &'a Event, a: &Assertion, challenge: &str, origins: &Origins) -> Result<Verified<'a>, Refusal> {
+fn check<'a>(key: &'a Event, a: &Assertion, challenge: &str, allowed: Allowed) -> Result<Verified<'a>, Refusal> {
     let raw = unb64(&a.client_data_json).ok_or(Refusal::ClientData)?;
     let cd: ClientData = serde_json::from_slice(&raw).map_err(|_| Refusal::ClientData)?;
     if cd.kind != "webauthn.get" {
@@ -593,7 +632,11 @@ fn check<'a>(key: &'a Event, a: &Assertion, challenge: &str, origins: &Origins) 
         return Err(Refusal::AuthData);
     }
     let rp = key.rp.split(' ').find(|h| Sha256::digest(h.as_bytes())[..] == data[..32]).ok_or(Refusal::Rp)?;
-    if !origins.get(rp).is_some_and(|o| o.contains(&cd.origin)) {
+    let origin_ok = match allowed {
+        Allowed::Pinned(origins) => origins.get(rp).is_some_and(|o| o.contains(&cd.origin)),
+        Allowed::OwnRp => own_origin(&cd.origin, rp),
+    };
+    if !origin_ok {
         return Err(Refusal::Origin);
     }
     let flags = data[32];
@@ -713,8 +756,8 @@ mod tests {
         let (log, k1, k2) = log();
         let o = origins();
         let ch = B64.encode(Sha256::digest(b"approval"));
-        assert_eq!(check_chain(&log, &o), Ok(()));
-        let v = |k: &Pk, at| verify(&log, &k.sign(&ch, UP | UV, RP, json!({})), &ch, at, &o).map(|v| v.key.seq);
+        assert_eq!(check_chain(&log), Ok(()));
+        let v = |k: &Pk, at| verify(&log, "acct", &k.sign(&ch, UP | UV, RP, json!({})), &ch, at, &o).map(|v| v.key.seq);
         assert_eq!(v(&k1, 999), Err(Refusal::NotLive), "before it was added");
         assert_eq!(v(&k1, 1000), Ok(0));
         assert_eq!(v(&k1, 2999), Ok(0));
@@ -728,7 +771,7 @@ mod tests {
         let (log, _, k2) = log();
         let o = origins();
         let ch = B64.encode(Sha256::digest(b"approval"));
-        let v = |a: Assertion| verify(&log, &a, &ch, 5000, &o).map(|_| ());
+        let v = |a: Assertion| verify(&log, "acct", &a, &ch, 5000, &o).map(|_| ());
         assert_eq!(v(k2.sign("other", UP | UV, RP, json!({}))), Err(Refusal::Challenge));
         assert_eq!(v(k2.sign(&ch, UP, RP, json!({}))), Err(Refusal::User));
         assert_eq!(v(k2.sign(&ch, UV, RP, json!({}))), Err(Refusal::User));
@@ -749,11 +792,10 @@ mod tests {
     #[test]
     fn a_tampered_log_fails_where_it_was_changed() {
         let (log, _, _) = log();
-        let o = origins();
         let bad = |f: &dyn Fn(&mut Log)| {
             let mut l = log.clone();
             f(&mut l);
-            check_chain(&l, &o)
+            check_chain(&l)
         };
         assert_eq!(bad(&|l| l.events[0].key = l.events[1].key.clone()), Err(Refusal::Chain(0)), "a swapped key");
         assert_eq!(
@@ -808,5 +850,42 @@ mod tests {
         assert_eq!(o["control.example.com"], ["https://control.example.com"]);
         assert_eq!(o["127.0.0.1"], ["http://127.0.0.1:7690"]);
         assert_eq!(o["old.example"], ["https://old.example"]);
+    }
+
+    /// The log's own proofs are checked against what the log says, so a
+    /// step-up made at a site the verifier doesn't list (an old URL, since
+    /// dropped) leaves the log whole for it; only the assertion being
+    /// checked must come from an origin the verifier allows.
+    #[test]
+    fn a_proof_from_another_site_keeps_the_log_whole() {
+        let (k1, k2) = (Pk::new(1), Pk::new(2));
+        let mut log = Log { account: "acct".into(), ..Default::default() };
+        let d = Draft { rp: "old.test control.test".into(), ..k1.draft(1000, "backfill 1000") };
+        push(&mut log, d.after(None));
+        let e = k2.draft(2000, "passkey").after(log.events.last());
+        let e = Event { rp: "old.test".into(), ..e }.placed_after(log.events.last());
+        let proof = k1.sign(&e.challenge(), UP | UV, "old.test", json!({ "origin": "https://old.test" }));
+        push(&mut log, e.with_proof(proof));
+        assert_eq!(check_chain(&log), Ok(()));
+        let ch = B64.encode(Sha256::digest(b"approval"));
+        let here = k1.sign(&ch, UP | UV, RP, json!({}));
+        assert!(verify(&log, "acct", &here, &ch, 5000, &origins()).is_ok(), "only control.test known");
+        assert_eq!(verify(&log, "other", &here, &ch, 5000, &origins()).err(), Some(Refusal::Account));
+        // A proof from an origin that isn't its RP's own breaks it for all.
+        let mut bad = log.clone();
+        let e = bad.events.pop().unwrap();
+        let e = Event { proof: None, ..e };
+        let proof = k1.sign(&e.challenge(), UP | UV, "old.test", json!({ "origin": "https://evil.test" }));
+        bad.events.push(e.with_proof(proof));
+        assert_eq!(check_chain(&bad), Err(Refusal::Chain(1)));
+        for (origin, rp, ok) in [
+            ("https://old.test", "old.test", true),
+            ("http://old.test:7690", "old.test", true),
+            ("https://old.test.evil", "old.test", false),
+            ("https://x.old.test", "old.test", false),
+            ("old.test", "old.test", false),
+        ] {
+            assert_eq!(own_origin(origin, rp), ok, "{origin}");
+        }
     }
 }

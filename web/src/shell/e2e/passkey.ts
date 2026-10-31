@@ -23,7 +23,10 @@
 // (`proof <credential> <clientDataJSON> <authenticatorData> <signature>`):
 // another live passkey's assertion over SHA-256 of the body. An event's hash
 // is SHA-256 of the body and the proof line. WebCrypto only, so it runs in a
-// browser and in Node.
+// browser and in Node. As strict as Rust's: canonical base64url, minimal DER,
+// no field the check reads twice. One difference: Rust checks Ed25519
+// strictly (`verify_strict`), and WebCrypto may take a small-order key or a
+// non-canonical signature it refuses.
 
 const enc = new TextEncoder();
 const subtle = globalThis.crypto.subtle;
@@ -71,6 +74,7 @@ export interface PasskeyLog {
 
 /** Why an assertion doesn't check out: the same codes as Rust's `Refusal`. */
 export type Refused =
+  | "account"
   | "chain"
   | "not_live"
   | "client_data"
@@ -94,16 +98,20 @@ export function b64u(bytes: Uint8Array): string {
   return btoa(s).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 
-/** Base64url, padded or not; null when it isn't. */
+/** Base64url, padded or not, its trailing bits zero (as Rust's `base64`
+ * reads it); null when it isn't. */
 export function unb64u(s: string): Uint8Array | null {
   const t = s.replace(/=+$/, "");
   if (!/^[A-Za-z0-9_-]*$/.test(t) || t.length % 4 === 1) return null;
+  let bytes: Uint8Array;
   try {
     const bin = atob(t.replace(/-/g, "+").replace(/_/g, "/") + "===".slice((t.length + 3) % 4));
-    return Uint8Array.from(bin, (c) => c.charCodeAt(0));
+    bytes = Uint8Array.from(bin, (c) => c.charCodeAt(0));
   } catch {
     return null;
   }
+  // Canonical: the bytes give these characters back.
+  return b64u(bytes) === t ? bytes : null;
 }
 
 const hex = (b: Uint8Array) => [...b].map((x) => x.toString(16).padStart(2, "0")).join("");
@@ -174,7 +182,7 @@ type Live = Map<string, PasskeyEvent>;
 
 /** The passkeys live at `at`, having checked the whole chain; or where
  * it breaks. */
-async function liveAt(log: PasskeyLog, at: number, origins: Origins): Promise<Live | number> {
+async function liveAt(log: PasskeyLog, at: number): Promise<Live | number> {
   const live: Live = new Map();
   let then: Live | null = null;
   for (let i = 0; i < log.events.length; i++) {
@@ -188,7 +196,7 @@ async function liveAt(log: PasskeyLog, at: number, origins: Origins): Promise<Li
     if (by.kind === "passkey") {
       const signer = e.proof && live.get(e.proof.id);
       if (!signer || !e.proof) return i;
-      if (!(await check(signer, e.proof, await eventChallenge(e), origins)).ok) return i;
+      if (!(await check(signer, e.proof, await eventChallenge(e), null)).ok) return i;
     } else if (e.proof) {
       return i;
     }
@@ -209,24 +217,28 @@ async function liveAt(log: PasskeyLog, at: number, origins: Origins): Promise<Li
 }
 
 /** Whether the whole log holds together (`arugula_e2e::passkey::check_chain`):
- * null, or the index of the first event that doesn't. */
-export async function checkChain(log: PasskeyLog, origins: Origins): Promise<number | null> {
-  const r = await liveAt(log, Number.MAX_SAFE_INTEGER, origins);
+ * null, or the index of the first event that doesn't. Its proofs come from
+ * their RP's own origin, whatever a verifier pins. */
+export async function checkChain(log: PasskeyLog): Promise<number | null> {
+  const r = await liveAt(log, Number.MAX_SAFE_INTEGER);
   return typeof r === "number" ? r : null;
 }
 
-/** Check `assertion` against `log`, trusting nothing else: the chain, the
+/** Check `assertion` against `log` as `account`'s, trusting nothing else:
+ * the log is the account's, the chain, the
  * passkey live at `at` (the verifier's own record of when it arrived), a
  * `webauthn.get` over exactly `challenge`, not framed, for the passkey's
  * RP from an origin `origins` allows for it, UP and UV, and the signature. */
 export async function verify(
   log: PasskeyLog,
+  account: string,
   assertion: Assertion,
   challenge: string,
   at: number,
   origins: Origins,
 ): Promise<Verdict> {
-  const then = await liveAt(log, at, origins);
+  if (log.account !== account) return { ok: false, refused: "account" };
+  const then = await liveAt(log, at);
   if (typeof then === "number") return { ok: false, refused: "chain", event: then };
   const key = then.get(assertion.id);
   if (!key) return { ok: false, refused: "not_live" };
@@ -235,12 +247,58 @@ export async function verify(
 
 const no = (refused: Refused): Verdict => ({ ok: false, refused });
 
-async function check(key: PasskeyEvent, a: Assertion, challenge: string, origins: Origins): Promise<Verdict> {
+/** Whether `origin` is `rp`'s own: `http(s)://<rp>`, with or without a port. */
+function ownOrigin(origin: string, rp: string): boolean {
+  const m = /^https?:\/\/(.*)$/.exec(origin);
+  if (!m) return false;
+  return m[1].replace(/:[0-9]+$/, "") === rp;
+}
+
+/** The fields the check reads: Rust's reader refuses one that's there twice. */
+const READ = new Set(["type", "challenge", "origin", "crossOrigin", "topOrigin"]);
+
+/** The top-level keys of a JSON object's text, in order (the text already
+ * parsed, so it's well formed). */
+function topKeys(text: string): string[] {
+  const keys: string[] = [];
+  let depth = 0;
+  let expectKey = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (c === '"') {
+      let j = i + 1;
+      while (text[j] !== '"') j += text[j] === "\\" ? 2 : 1;
+      if (depth === 1 && expectKey) {
+        keys.push(JSON.parse(text.slice(i, j + 1)));
+        expectKey = false;
+      }
+      i = j;
+    } else if (c === "{" || c === "[") {
+      depth++;
+      if (depth === 1) expectKey = c === "{";
+    } else if (c === "}" || c === "]") {
+      depth--;
+    } else if (c === "," && depth === 1) {
+      expectKey = true;
+    }
+  }
+  return keys;
+}
+
+/** `a` checked against `key`; `origins` null for a proof in the log, whose
+ * origin must be its RP's own. */
+async function check(key: PasskeyEvent, a: Assertion, challenge: string, origins: Origins | null): Promise<Verdict> {
   const raw = unb64u(a.clientDataJSON);
   if (!raw) return no("client_data");
   let cd: { type?: unknown; challenge?: unknown; origin?: unknown; crossOrigin?: unknown; topOrigin?: unknown };
   try {
-    cd = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(raw));
+    const text = new TextDecoder("utf-8", { fatal: true }).decode(raw);
+    cd = JSON.parse(text);
+    const seen = new Set<string>();
+    for (const k of topKeys(text)) {
+      if (READ.has(k) && seen.has(k)) return no("client_data");
+      seen.add(k);
+    }
   } catch {
     return no("client_data");
   }
@@ -265,7 +323,8 @@ async function check(key: PasskeyEvent, a: Assertion, challenge: string, origins
     }
   }
   if (rp === null) return no("rp");
-  if (!(origins[rp] ?? []).includes(cd.origin)) return no("origin");
+  const originOk = origins ? (origins[rp] ?? []).includes(cd.origin) : ownOrigin(cd.origin, rp);
+  if (!originOk) return no("origin");
   const flags = data[32];
   if (!(flags & UP) || !(flags & UV)) return no("user");
   const sig = unb64u(a.signature);
@@ -302,17 +361,21 @@ async function signed(alg: number, pub: Uint8Array, msg: Uint8Array, sig: Uint8A
   }
 }
 
-/** A DER ECDSA signature as WebCrypto's r‖s, or null. */
+/** A DER ECDSA signature as WebCrypto's r‖s, or null: each integer
+ * minimal and positive, as Rust's reader takes them. */
 function derToRaw(der: Uint8Array): Uint8Array | null {
   if (der.length < 8 || der[0] !== 0x30 || der[1] !== der.length - 2) return null;
   let i = 2;
   const int = (): Uint8Array | null => {
     if (der[i++] !== 2) return null;
     const len = der[i++];
-    if (len === undefined || len === 0 || i + len > der.length) return null;
+    if (len === undefined || len === 0 || len > 0x7f || i + len > der.length) return null;
     let v = der.slice(i, i + len);
     i += len;
-    while (v.length > 32 && v[0] === 0) v = v.slice(1);
+    // Negative, or a needless leading zero.
+    if (v[0] & 0x80) return null;
+    if (v.length > 1 && v[0] === 0 && !(v[1] & 0x80)) return null;
+    if (v[0] === 0) v = v.slice(1);
     if (v.length > 32) return null;
     const out = new Uint8Array(32);
     out.set(v, 32 - v.length);

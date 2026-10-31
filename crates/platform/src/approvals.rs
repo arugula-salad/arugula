@@ -180,16 +180,16 @@ pub async fn verify(
     // origin one of control's sites', UP and UV, the signature. The hub
     // gives the log, not a verdict.
     let log = app.hub.passkey_log(&a.account).await?;
-    if log.account != a.account {
-        return Err(no_passkey("the hub sent another account's passkey log"));
-    }
+    // The hub's signature counter isn't checked here: offline verifiers
+    // can't keep one, and synced passkeys (most of them) report 0 anyway.
+    let origins = app.cfg.passkey_origins();
     let assertion = arugula_e2e::passkey::Assertion {
         id: pk.id.clone(),
         client_data_json: pk.client_data_json.clone(),
         authenticator_data: pk.authenticator_data.clone(),
         signature: pk.signature.clone(),
     };
-    if let Err(r) = arugula_e2e::passkey::verify(&log, &assertion, &challenge_of(a), now, &app.cfg.passkey_origins()) {
+    if let Err(r) = arugula_e2e::passkey::verify(&log, &a.account, &assertion, &challenge_of(a), now, &origins) {
         return Err(no_passkey(&format!("the passkey didn't confirm this approval: {r}")));
     }
     let proof = PasskeyProof {

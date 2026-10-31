@@ -39,16 +39,34 @@ END;
 CREATE TRIGGER IF NOT EXISTS passkey_log_kept BEFORE DELETE ON passkey_log BEGIN
     SELECT RAISE(ABORT, 'passkey_log is append-only, and outlives its account');
 END;
+-- Only the account's next event goes in: its seq the count so far, its prev
+-- the hash of the one before (64 zeros first). So `INSERT OR REPLACE`,
+-- which deletes without firing the delete trigger, can't rewrite one.
+CREATE TRIGGER IF NOT EXISTS passkey_log_next BEFORE INSERT ON passkey_log
+WHEN NEW.seq != (SELECT COUNT(*) FROM passkey_log WHERE account = NEW.account)
+    OR NEW.prev != COALESCE(
+        (SELECT hash FROM passkey_log WHERE account = NEW.account AND seq = NEW.seq - 1),
+        '0000000000000000000000000000000000000000000000000000000000000000')
+BEGIN
+    SELECT RAISE(ABORT, 'passkey_log takes only its next event');
+END;
 ";
 
 /// The setting that says when this hub began keeping passkey logs: the
 /// first backfill's time. Removals before then are in no log.
 const BEGAN: &str = "passkey_log_began";
 
-/// An event made for a place in the log (a signed one) that isn't the
-/// next any more: another event came first. Ask again.
+/// Why an event didn't go in.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Moved;
+pub enum NotAppended {
+    /// It was made for a place in the log (a signed one) that isn't the
+    /// next any more: another event came first. Ask again.
+    Moved,
+    /// The log wouldn't hold together with it (`check_chain`): a proof
+    /// that isn't a live passkey's over it, say. One such event would break
+    /// every check against the log for good, so it never goes in.
+    Breaks,
+}
 
 const COLUMNS: &str =
     "account, seq, prev, kind, credential, rp, alg, key_format, public_key, aaguid, at, by_what, proof, hash";
@@ -93,12 +111,15 @@ fn events(c: &Connection, account: &str) -> anyhow::Result<Vec<Event>> {
 /// Append `e` to its account's log. `pinned`: it was made (and signed)
 /// for the place after the head it names, which must still be the head;
 /// otherwise it goes after the head there is now, no earlier than it.
-pub(super) fn append(c: &Connection, e: Event, pinned: bool) -> anyhow::Result<Result<Event, Moved>> {
+///
+/// Whatever it is, the log must hold together with it (`check_chain`, its
+/// proof checked against the log as it was), or it doesn't go in.
+pub(super) fn append(c: &Connection, e: Event, pinned: bool) -> anyhow::Result<Result<Event, NotAppended>> {
     let last = head(c, &e.account)?;
     let e = if pinned {
         let (seq, prev) = last.as_ref().map_or((0, arugula_e2e::passkey::ZERO), |l| (l.seq + 1, l.hash.as_str()));
         if e.seq != seq || e.prev != prev || last.as_ref().is_some_and(|l| e.at < l.at) {
-            return Ok(Err(Moved));
+            return Ok(Err(NotAppended::Moved));
         }
         anyhow::ensure!(e.hash == e.compute_hash(), "a passkey event whose hash isn't its own");
         e
@@ -108,6 +129,11 @@ pub(super) fn append(c: &Connection, e: Event, pinned: bool) -> anyhow::Result<R
         Event { at, ..e }.placed_after(last.as_ref())
     };
     anyhow::ensure!(arugula_e2e::passkey::By::parse(&e.by).is_some(), "a passkey event by {:?}", e.by);
+    let mut after = Log { account: e.account.clone(), events: events(c, &e.account)?, began: None };
+    after.events.push(e.clone());
+    if arugula_e2e::passkey::check_chain(&after).is_err() {
+        return Ok(Err(NotAppended::Breaks));
+    }
     let proof = e.proof.as_ref().map(serde_json::to_string).transpose()?;
     c.execute(
         &format!(
@@ -198,8 +224,13 @@ impl Db {
     /// A new passkey: its row, with its public key's bytes, and its `added`
     /// event, in one transaction. `pinned`: `e` was made and signed for its
     /// place (a step-up's), which must still be the next; else it goes
-    /// next. The event as logged, or [`Moved`].
-    pub fn add_passkey_logged(&self, public: &[u8], e: Event, pinned: bool) -> anyhow::Result<Result<Event, Moved>> {
+    /// next. The event as logged, or why not.
+    pub fn add_passkey_logged(
+        &self,
+        public: &[u8],
+        e: Event,
+        pinned: bool,
+    ) -> anyhow::Result<Result<Event, NotAppended>> {
         anyhow::ensure!(e.event == Change::Added, "a new passkey's event is an add");
         let mut c = self.c();
         let tx = c.transaction()?;
@@ -284,7 +315,7 @@ impl Db {
 
 #[cfg(test)]
 mod tests {
-    use arugula_e2e::passkey::{EDDSA, check_chain, origins_of_sites};
+    use arugula_e2e::passkey::{EDDSA, check_chain};
 
     use super::*;
 
@@ -312,6 +343,29 @@ mod tests {
             let e = c.execute(sql, []).unwrap_err().to_string();
             assert!(e.contains("append-only"), "{sql}: {e}");
         }
+        // REPLACE deletes without the delete trigger: the insert trigger
+        // takes only the next event, so it can't rewrite one.
+        let replace = format!(
+            "INSERT OR REPLACE INTO passkey_log ({COLUMNS}) SELECT account, seq, prev, kind, credential, rp, alg,
+             key_format, public_key, aaguid, 1, by_what, proof, hash FROM passkey_log WHERE seq = 0"
+        );
+        for sql in [replace.as_str(), &replace.replace("INSERT OR REPLACE", "REPLACE")] {
+            let e = c.execute(sql, []).unwrap_err().to_string();
+            assert!(e.contains("only its next event"), "{sql}: {e}");
+        }
+        // Nor skip a place, or name another prev.
+        let skip = format!(
+            "INSERT INTO passkey_log ({COLUMNS}) SELECT account, 2, prev, kind, credential, rp, alg, key_format,
+             public_key, aaguid, at, by_what, proof, hash FROM passkey_log WHERE seq = 0"
+        );
+        assert!(c.execute(&skip, []).unwrap_err().to_string().contains("only its next event"));
+        let other_prev = format!(
+            "INSERT INTO passkey_log ({COLUMNS}) SELECT account, 1, prev, kind, credential, rp, alg, key_format,
+             public_key, aaguid, at, by_what, proof, hash FROM passkey_log WHERE seq = 0"
+        );
+        assert!(c.execute(&other_prev, []).unwrap_err().to_string().contains("only its next event"));
+        let at: i64 = c.query_row("SELECT at FROM passkey_log WHERE seq = 0", [], |r| r.get(0)).unwrap();
+        assert_eq!(at, 10, "unchanged");
     }
 
     #[test]
@@ -321,13 +375,13 @@ mod tests {
         let also = db.passkey_next(draft("a1", "pk2", 11, "github")).unwrap();
         assert_eq!((first.seq, also.seq), (0, 0), "both made for seq 0");
         db.add_passkey_logged(&[7; 32], first, true).unwrap().unwrap();
-        assert_eq!(db.add_passkey_logged(&[7; 32], also, true).unwrap(), Err(Moved), "another came first");
+        assert_eq!(db.add_passkey_logged(&[7; 32], also, true).unwrap(), Err(NotAppended::Moved), "another came first");
         assert_eq!(db.passkey_count("a1").unwrap(), 1, "and its row went with it");
         // Unpinned, it goes next, not back in time.
         let late =
             db.add_passkey_logged(&[7; 32], draft("a1", "pk3", 5, "github").after(None), false).unwrap().unwrap();
         assert_eq!((late.seq, late.at), (1, 10));
-        assert_eq!(check_chain(&db.passkey_log("a1").unwrap(), &origins_of_sites(["https://control.test"])), Ok(()));
+        assert_eq!(check_chain(&db.passkey_log("a1").unwrap()), Ok(()));
     }
 
     #[test]
@@ -353,7 +407,7 @@ mod tests {
         let got: Vec<_> = log.events.iter().map(|e| (e.credential.as_str(), e.at, e.aaguid.as_str())).collect();
         assert_eq!(got, [("pk2", 20, NO_AAGUID), ("pk1", 30, "bada5566a7aa401fbd9645619a55120d")], "oldest first");
         assert!(log.events.iter().all(|e| e.by == "backfill 1000" && e.rp == "control.test old.test"));
-        assert_eq!(check_chain(&log, &origins_of_sites(["https://control.test"])), Ok(()));
+        assert_eq!(check_chain(&log), Ok(()));
         // Again: nothing new, and the log's start stays the first one's.
         assert_eq!(db.backfill_passkey_log("control.test", 2000).unwrap(), 0);
         assert_eq!(db.passkey_log("a1").unwrap().began, Some(1000));
@@ -390,10 +444,19 @@ mod tests {
             authenticator_data: B64.encode(&data),
             signature: B64.encode(k2.sign(&msg).to_bytes()),
         };
+        // A proof that isn't over this event, or isn't a live passkey's,
+        // never goes in: it would break the log for good.
+        let mut forged = proof.clone();
+        forged.signature = B64.encode([0u8; 64]);
+        assert!(db.drop_passkey_as("a1", "pk1", Some(e.clone().with_proof(forged))).unwrap().is_err());
+        let unknown = Assertion { id: "pk9".into(), ..proof.clone() };
+        assert!(db.drop_passkey_as("a1", "pk1", Some(e.clone().with_proof(unknown))).unwrap().is_err());
+        assert_eq!(db.passkey_count("a1").unwrap(), 2, "nothing removed");
+        assert_eq!(check_chain(&db.passkey_log("a1").unwrap()), Ok(()));
         db.drop_passkey_as("a1", "pk1", Some(e.with_proof(proof))).unwrap().unwrap();
         let log = db.passkey_log("a1").unwrap();
         assert_eq!(log.events.last().map(|e| (e.event, e.by.as_str())), Some((Change::Removed, "passkey")));
-        assert_eq!(check_chain(&log, &origins_of_sites(["https://control.test"])), Ok(()));
+        assert_eq!(check_chain(&log), Ok(()));
         assert_eq!(db.passkey_count("a1").unwrap(), 1);
     }
 }

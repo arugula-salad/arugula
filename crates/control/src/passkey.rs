@@ -616,7 +616,10 @@ async fn register(
         Some(_) => app.db.add_passkey_logged(&made.public, made.draft(&account, site, "github").after(None), false)?,
         None => app.db.add_passkey_logged(&made.public, made.draft(&account, site, "signup").after(None), false)?,
     };
-    if logged.is_err() {
+    if let Err(why) = logged {
+        if why == crate::db::passkey_log::NotAppended::Breaks {
+            return Err(err(StatusCode::FORBIDDEN, "the passkey that confirmed this one didn't sign it"));
+        }
         return Err(err(StatusCode::CONFLICT, "your passkeys changed while this one was being added: add it again"));
     }
     let provider = provider(&made.aaguid);
@@ -846,8 +849,8 @@ fn asserted(app: &App, site: &Site, a: &Assertion, challenge: &str) -> Result<(P
     let pk =
         app.db.passkey(&a.id)?.ok_or_else(|| err(StatusCode::UNAUTHORIZED, "this passkey isn't registered here"))?;
     let log = app.db.passkey_log(&pk.account)?;
-    let v =
-        arugula_e2e::passkey::verify(&log, &a.e2e(), challenge, now_ms(), &site_origins([site])).map_err(refused)?;
+    let v = arugula_e2e::passkey::verify(&log, &pk.account, &a.e2e(), challenge, now_ms(), &site_origins([site]))
+        .map_err(refused)?;
     counted(&pk, v.count)?;
     Ok((pk, v.count))
 }
@@ -882,7 +885,14 @@ pub fn verify_for(
         authenticator_data: a.authenticator_data.clone(),
         signature: a.signature.clone(),
     };
-    let v = match arugula_e2e::passkey::verify(&log, &assertion, challenge, now_ms(), &site_origins(&app.cfg.sites)) {
+    let v = match arugula_e2e::passkey::verify(
+        &log,
+        account,
+        &assertion,
+        challenge,
+        now_ms(),
+        &site_origins(&app.cfg.sites),
+    ) {
         Ok(v) => v,
         Err(r) => return Ok(Err(r.says())),
     };
@@ -899,11 +909,15 @@ pub fn verify_for(
 /// for anyone checking a stored assertion against it. Public: its keys are
 /// public keys, and a log anyone may read and keep a copy of is what makes
 /// a rewrite visible (aru-103, aru-126). An account that isn't has an empty
-/// one, as one with no passkeys has.
+/// one, as one with no passkeys has. Limited per client address
+/// (`limit::PASSKEY_LOGS`).
 pub async fn log(
     State(app): State<Arc<App>>,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
     axum::extract::Path(account): axum::extract::Path<String>,
 ) -> Result<Response, ApiError> {
+    app.limits.check(crate::limit::PASSKEY_LOGS, app.limits.client_ip(peer, &headers))?;
     if account.is_empty() || account.len() > 128 {
         return Err(err(StatusCode::NOT_FOUND, "no such account"));
     }
@@ -1081,6 +1095,84 @@ mod tests {
         // Another key's signature doesn't.
         let other = aws_lc_rs::rsa::KeyPair::generate(KeySize::Rsa2048).unwrap();
         assert!(sign_in(&other).is_err());
+    }
+
+    /// An Ed25519 assertion by `key` (credential `id`) over `challenge`, from
+    /// `origin` for RP `rp`.
+    fn assert_as(key: &ed25519_dalek::SigningKey, id: &str, challenge: &str, origin: &str, rp: &str) -> Assertion {
+        use ed25519_dalek::Signer as _;
+        let cd =
+            serde_json::to_vec(&json!({ "type": "webauthn.get", "challenge": challenge, "origin": origin })).unwrap();
+        let mut data = Sha256::digest(rp.as_bytes()).to_vec();
+        data.extend_from_slice(&[UP | UV, 0, 0, 0, 0]);
+        let mut msg = data.clone();
+        msg.extend_from_slice(&Sha256::digest(&cd));
+        Assertion {
+            id: id.into(),
+            client_data: B64.encode(&cd),
+            authenticator_data: B64.encode(&data),
+            signature: B64.encode(key.sign(&msg).to_bytes()),
+            prf: false,
+        }
+    }
+
+    /// A passkey added by a step-up at one of control's sites (the old
+    /// URL) leaves the account's log whole at the other: its proof is
+    /// checked against its own RP, not the sites a verifier knows. Signing
+    /// in at the new site and the platform's check work with both sites,
+    /// and after the old one is dropped from control's configuration.
+    #[tokio::test]
+    async fn a_step_up_at_one_site_leaves_the_log_whole_at_another() {
+        let old_key = ed25519_dalek::SigningKey::from_bytes(&[70; 32]);
+        let new_key = ed25519_dalek::SigningKey::from_bytes(&[71; 32]);
+        let (old_id, new_id) = (B64.encode([70u8; 16]), B64.encode([71u8; 16]));
+        for sites in [&["http://old.test"][..], &[]] {
+            let mut app = App::for_tests("http://control.test");
+            for s in sites {
+                app.cfg.sites.push(crate::Site::new(s).unwrap());
+            }
+            // A passkey from before the log, its RP either site; then one
+            // more, added at the old site with its step-up there.
+            app.db.account_for("github", "gh-acct-s", "s", "acct-s", 1).unwrap();
+            app.db
+                .conn()
+                .execute(
+                    "INSERT INTO passkeys (id, account, alg, public, sign_count, created) VALUES (?1, 'acct-s', -8, ?2, 0, 1)",
+                    rusqlite::params![old_id, old_key.verifying_key().to_bytes().to_vec()],
+                )
+                .unwrap();
+            app.db.backfill_passkey_log("control.test old.test", 5).unwrap();
+            let d = Draft {
+                account: "acct-s".into(),
+                event: Change::Added,
+                credential: new_id.clone(),
+                rp: "old.test".into(),
+                alg: EDDSA,
+                key: new_key.verifying_key().to_bytes().to_vec(),
+                aaguid: arugula_e2e::passkey::NO_AAGUID.into(),
+                at: 10,
+                by: "passkey".into(),
+            };
+            let e = app.db.passkey_next(d).unwrap();
+            let proof = assert_as(&old_key, &old_id, &e.challenge(), "http://old.test", "old.test").e2e();
+            app.db.add_passkey_logged(&new_key.verifying_key().to_bytes(), e.with_proof(proof), true).unwrap().unwrap();
+            let app = app.start();
+            let mut h = HeaderMap::new();
+            h.insert(header::HOST, "control.test".parse().unwrap());
+            h.insert(header::ORIGIN, "http://control.test".parse().unwrap());
+            let challenge = app.passkeys.issue(Purpose::Login);
+            let a = assert_as(&old_key, &old_id, &challenge, "http://control.test", "control.test");
+            assert!(login(&app, &h, a).is_ok(), "signing in at the new site, with sites {sites:?}");
+            let ch = B64.encode(Sha256::digest(b"an approval"));
+            let a = assert_as(&old_key, &old_id, &ch, "http://control.test", "control.test");
+            let pa = arugula_platform_api::hub::PasskeyAssertion {
+                id: a.id.clone(),
+                client_data_json: a.client_data.clone(),
+                authenticator_data: a.authenticator_data.clone(),
+                signature: a.signature.clone(),
+            };
+            assert_eq!(verify_for(&app, "acct-s", &ch, &pa).unwrap(), Ok(()), "the platform's check, sites {sites:?}");
+        }
     }
 
     /// #507: control at two URLs. A passkey is made for the site it's made
@@ -1371,7 +1463,7 @@ mod tests {
         assert_eq!((added.credential.as_str(), added.by.as_str()), (new.id().as_str(), "passkey"));
         assert_eq!(added.proof.as_ref().map(|p| p.id.clone()), Some(mine.id()));
         assert_eq!(added.challenge(), c, "the step-up signed the event");
-        assert_eq!(arugula_e2e::passkey::check_chain(&log, &site_origins(&app.cfg.sites)), Ok(()));
+        assert_eq!(arugula_e2e::passkey::check_chain(&log), Ok(()));
         // Its challenge works once.
         let again = Authn::new(11);
         let opts = start(&app, &h).await.unwrap();
@@ -1411,18 +1503,35 @@ mod tests {
         let approval = b.get(&ch, UP | UV, json!({}));
         app.db.delete_account(&crate::db::Erase { account: "acct-r", disband: &[], retain_for: &[] }).unwrap();
         assert!(app.db.passkey(&b.id()).unwrap().is_none());
-        let res = log(State(app.clone()), axum::extract::Path("acct-r".to_owned())).await.unwrap();
+        let res = log(
+            State(app.clone()),
+            ConnectInfo("127.0.0.1:1".parse().unwrap()),
+            HeaderMap::new(),
+            axum::extract::Path("acct-r".to_owned()),
+        )
+        .await
+        .unwrap();
         let body = axum::body::to_bytes(res.into_body(), 1 << 20).await.unwrap();
         let published: arugula_e2e::passkey::Log = serde_json::from_slice(&body).unwrap();
         let kinds: Vec<(&str, &str)> = published.events.iter().map(|e| (e.event.as_str(), e.by.as_str())).collect();
         assert_eq!(kinds, [("added", "signup"), ("added", "signup"), ("removed", "session"), ("removed", "deleted")]);
         let o = site_origins(&app.cfg.sites);
         let e2e = approval.e2e();
-        let v = arugula_e2e::passkey::verify(&published, &e2e, &ch, made - 1, &o);
+        let v = arugula_e2e::passkey::verify(&published, "acct-r", &e2e, &ch, made - 1, &o);
         assert!(v.is_ok(), "made before the account went: {v:?}");
         let gone = published.events[3].at;
-        assert_eq!(arugula_e2e::passkey::verify(&published, &e2e, &ch, gone, &o).err(), Some(Refusal::NotLive));
-        let other = log(State(app.clone()), axum::extract::Path("acct-none".to_owned())).await.unwrap();
+        assert_eq!(
+            arugula_e2e::passkey::verify(&published, "acct-r", &e2e, &ch, gone, &o).err(),
+            Some(Refusal::NotLive)
+        );
+        let other = log(
+            State(app.clone()),
+            ConnectInfo("127.0.0.1:1".parse().unwrap()),
+            HeaderMap::new(),
+            axum::extract::Path("acct-none".to_owned()),
+        )
+        .await
+        .unwrap();
         let body = axum::body::to_bytes(other.into_body(), 1 << 20).await.unwrap();
         assert_eq!(serde_json::from_slice::<serde_json::Value>(&body).unwrap()["events"], json!([]));
     }

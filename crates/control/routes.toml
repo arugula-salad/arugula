@@ -404,7 +404,7 @@ path = "/api/accounts/{id}/passkeys/log"
 process = "hub"
 auth = "public"
 clients = ["page", "daemon", "cli", "browser"]
-note = "Every passkey added to or removed from the account, with its public key, RP, AAGUID, when and by what, each event hashed into the next: what anyone checks a stored passkey assertion (a deploy's approval) against with arugula_e2e::passkey::verify, with no call to the hub. Public on purpose: a log only the hub's own callers could read would show each of them what the hub chose, and the keys in it are public keys. The same answer, an empty log, for an account that isn't, so it says nothing of which accounts exist. Kept after the account is deleted."
+note = "Rate-limited per client address (limit::PASSKEY_LOGS, 600 an hour). Every passkey added to or removed from the account, with its public key, RP, AAGUID, when and by what, each event hashed into the next: what anyone checks a stored passkey assertion (a deploy's approval) against with arugula_e2e::passkey::verify, with no call to the hub. Public on purpose: a log only the hub's own callers could read would show each of them what the hub chose, and the keys in it are public keys. The same answer, an empty log, for an account that isn't, so it says nothing of which accounts exist. Kept after the account is deleted."
 
 [[route]]
 method = "GET"

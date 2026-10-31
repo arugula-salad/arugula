@@ -25,10 +25,10 @@ test("every verdict is Rust's", async () => {
   const f = file("verify");
   assert.ok(f.cases.length > 0);
   for (const c of f.cases) {
-    const { log, assertion, challenge, at, origins } = c.input;
+    const { log, account, assertion, challenge, at, origins } = c.input;
     const l = f.objects[log];
     const o = f.objects[origins];
-    const v = await verify(l, f.objects[assertion], challenge, at, o);
+    const v = await verify(l, account, f.objects[assertion], challenge, at, o);
     const got = v.ok
       ? { ok: true, added: v.key.seq, rp: v.rp }
       : v.refused === "chain"
@@ -36,7 +36,7 @@ test("every verdict is Rust's", async () => {
         : { ok: false, refused: v.refused };
     assert.deepEqual(got, c.output, c.about);
     // The chain alone says the same of a broken log.
-    const chain = await checkChain(l, o);
+    const chain = await checkChain(l);
     assert.equal(chain, v.ok || v.refused !== "chain" ? null : v.event, c.about);
   }
 });

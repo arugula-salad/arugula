@@ -1302,8 +1302,14 @@ impl Db {
                 if e.account != account || e.credential != id || e.event != arugula_e2e::passkey::Change::Removed {
                     return Ok(Err("that removal is another passkey's"));
                 }
-                if passkey_log::append(&tx, e, true)?.is_err() {
-                    return Ok(Err("the account's passkeys changed meanwhile: remove it again"));
+                match passkey_log::append(&tx, e, true)? {
+                    Ok(_) => {}
+                    Err(passkey_log::NotAppended::Moved) => {
+                        return Ok(Err("the account's passkeys changed meanwhile: remove it again"));
+                    }
+                    Err(passkey_log::NotAppended::Breaks) => {
+                        return Ok(Err("that passkey's assertion doesn't confirm this removal"));
+                    }
                 }
             }
             None => {
