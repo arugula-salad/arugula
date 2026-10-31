@@ -379,7 +379,11 @@ zone?: string | null, before: string | null, };
  * What a row points at. `None` is free text. The ids are the platform's:
  * `fi_…` (a mirrored PR or issue), `iss_…`, `run_…`, `hw_…`.
  */
-export type BoardPointer = { "kind": "none" } | { "kind": "forge_item", id: string, } | { "kind": "issue", id: string, } | { "kind": "run", id: string, } | { "kind": "workspace", id: string, } | { "kind": "block", machine: string, pane: string, } | { "kind": "link", url: string, };
+export type BoardPointer = { "kind": "none" } | { "kind": "forge_item", id: string, } | { "kind": "issue", id: string, } | { "kind": "run", id: string, } | { "kind": "workspace", id: string, } | { "kind": "block", machine: string, 
+/**
+ * The block's pane, as `%N` or `N`; stored as `N`.
+ */
+pane: string, } | { "kind": "link", url: string, };
 
 /**
  * A board's work, counted: the rows with a primary item (an issue or a

@@ -932,6 +932,58 @@ async fn rosters_add_only_people_who_asked() {
     assert_eq!(c.as_person(&cookie, "POST", &path, Some(json!({ "roster": add }))).await.0, 200);
 }
 
+/// A team's lock is the owner's signed word: control keeps the latest and
+/// hands it out; one nobody in the team signed, one bent after signing, an
+/// unsigned one or one older than the latest is refused.
+#[tokio::test]
+async fn a_teams_lock_is_signed_by_an_owner() {
+    use arugula_e2e::team::TeamLock;
+    let c = control(|_| {}).await;
+    let owner_root = person(&c.app, "owner", "own1");
+    let other_root = person(&c.app, "other", "oth1");
+    let cookie = session(&c.app, "own1");
+    let team = "fedcba9876543212";
+    let one = roster(team, 1, vec![member("own1", &owner_root, TeamRole::Owner)], &owner_root);
+    assert_eq!(c.as_person(&cookie, "POST", "/api/teams", Some(json!({ "roster": one }))).await.0, 200);
+    let path = format!("/api/teams/{team}/lock");
+    let lock = |locked, at, by: &DeviceKeys| {
+        let mut l = TeamLock { team: team.into(), locked, version: 1, at, by: String::new(), sig: String::new() };
+        l.sign_with(by);
+        l
+    };
+    let send = |l: Option<TeamLock>, locked: bool| {
+        let body = match l {
+            Some(l) => json!({ "locked": locked, "lock": l }),
+            None => json!({ "locked": locked }),
+        };
+        c.as_person(&cookie, "POST", &path, Some(body))
+    };
+    assert_eq!(send(None, true).await.0, 400, "unsigned");
+    assert_eq!(send(Some(lock(true, 10, &other_root)), true).await.0, 400, "signed by someone outside the team");
+    let mut bent = lock(true, 10, &owner_root);
+    bent.at = 11;
+    assert_eq!(send(Some(bent), true).await.0, 400, "bent after signing");
+    assert_eq!(send(Some(lock(false, 10, &owner_root)), true).await.0, 400, "says the other thing");
+    let locked = lock(true, 10, &owner_root);
+    assert_eq!(send(Some(locked.clone()), true).await.0, 200);
+    let (_, teams) = c.as_person(&cookie, "GET", "/api/teams", None).await;
+    assert_eq!(teams["teams"][0]["locked"], true);
+    assert_eq!(serde_json::from_value::<TeamLock>(teams["teams"][0]["lock"].clone()).unwrap(), locked);
+    assert_eq!(send(Some(lock(false, 5, &owner_root)), false).await.0, 409, "older than the latest");
+    assert_eq!(send(Some(lock(false, 20, &owner_root)), false).await.0, 200);
+    let (_, teams) = c.as_person(&cookie, "GET", "/api/teams", None).await;
+    assert_eq!(teams["teams"][0]["locked"], false);
+    // One dated far ahead (it would stop every later one) is refused.
+    let ahead = lock(true, now_ms() + 86_400_000, &owner_root);
+    assert_eq!(send(Some(ahead), true).await.0, 400, "dated in the future");
+    // The store takes a lock only if it's newer than the one it holds,
+    // checked as it writes: an older one landing after a newer is refused.
+    let at = |at: u64| serde_json::to_string(&lock(true, at, &owner_root)).unwrap();
+    assert!(c.app.db.set_lock(team, true, &at(30), 30).unwrap());
+    assert!(!c.app.db.set_lock(team, false, &at(25), 25).unwrap(), "an older lock after a newer");
+    assert!(c.app.db.team(team).unwrap().unwrap().locked);
+}
+
 /// A member's page gets the versions after the one it holds, with their
 /// signers' certificates, to check before it builds on the latest;
 /// someone outside the team doesn't.

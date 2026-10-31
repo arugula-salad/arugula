@@ -87,10 +87,47 @@ values; change them here when the PRs that build it say otherwise.
 
 **Passkeys too, once they approve** (S46 q5, Jake, 2026-10-30, aru-126).
 An account that has ever had a passkey gets a new first one only through
-this reset: the fresh-GitHub first passkey (#1386) is immediate only for
-an account that never had one. Outside a reset, removing a passkey takes
-an assertion from another of the account's passkeys; a session alone
-can't.
+a reset: a first passkey, whether a fresh GitHub sign-in (#1386) or one of
+the account's browsers vouches for it, is immediate only for an account
+that never had one. Outside a reset, removing a passkey takes an assertion
+from another of the account's passkeys; a session alone can't. When this
+device reset is done it removes every passkey too, `by reset` in the
+passkey log (for an account with GitHub linked; passkeys that are its only
+way in stay).
+
+**A passkey reset** (DK10, #393, Jake, 2026-10-31). The same reset for the
+passkeys alone, because removing a passkey now takes another: a person
+whose passkeys are lost (a password manager gone, a passkey for a site
+control no longer serves) while their devices are in use could otherwise
+neither remove nor replace them, and this reset refuses to start while a
+device was used in the last two days.
+
+- **Who starts it.** A GitHub sign-in from the last ten minutes, as above,
+  from *Sign-in and account*, where the "last passkey" and "can't remove"
+  refusals point. Devices in use don't stop it.
+- **The wait.** 48 hours, announced to every device and the account's
+  email. Any device or recovery code the account trusts cancels it, and so
+  does any of its passkeys that still works (an assertion over SHA-256 of
+  `arugula passkey reset cancel v1`), as does the sign-in that started it.
+- **The reset.** Every passkey is removed, `by reset` in the passkey log,
+  and the account may add a first one again: through a fresh GitHub sign-in
+  (logged `by reset`) or one of its browsers, as for a new account.
+  Devices, machines and recovery codes stay as they are.
+- **Limits.** As the device reset: at most one done a week, three started a
+  day. Seen in the passkey log, the account's notices and *Devices and
+  machines* while it waits.
+- **Its warning must go** (security review of #1875). It needs a verified
+  address that hasn't changed in the last 48 hours (a change or removal
+  tells the old address), else it refuses and points to support. Its
+  start waits for the email to be taken, and doesn't start if it isn't.
+  Reset emails are outside the daily mail limit. After a device, recovery
+  code or passkey cancels a reset of either kind, no passkey reset starts
+  for 7 days.
+- **The device reset's passkey part** follows the same rule: it removes the
+  passkeys only when its start reached such an address, and any working
+  passkey can cancel it too.
+
+The device reset stays as it is.
 
 Where: `crates/control/src/passkey.rs` (`fresh_github`), `crates/e2e/src/cert.rs`,
 `web/src/shell/trust/`.

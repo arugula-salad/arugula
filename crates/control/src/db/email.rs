@@ -67,17 +67,31 @@ impl Db {
     }
 
     /// GitHub's primary verified address, at a sign-in: kept when the
-    /// account has none, never over one the person typed.
+    /// account has none, never over one the person typed. Whether it
+    /// changed: the same address again leaves the row, and when it last
+    /// changed, as they were (DK10 counts from that).
     pub fn email_from_github(&self, account: &str, email: &str, now: u64) -> anyhow::Result<bool> {
         let n = self.c().execute(
             "INSERT INTO account_emails (account, email, source, verified_at, updated_at)
              VALUES (?1, ?2, 'github', ?3, ?3)
              ON CONFLICT (account) DO UPDATE SET email = excluded.email, verified_at = excluded.verified_at,
                  updated_at = excluded.updated_at
-             WHERE account_emails.source = 'github'",
+             WHERE account_emails.source = 'github' AND account_emails.email != excluded.email",
             params![account, email, now as i64],
         )?;
         Ok(n > 0)
+    }
+
+    /// When the account's address was last set or changed (`updated_at`),
+    /// if it has one (DK10: no passkey reset within two days of a change).
+    pub fn email_changed_at(&self, account: &str) -> anyhow::Result<Option<u64>> {
+        Ok(self
+            .c()
+            .query_row("SELECT updated_at FROM account_emails WHERE account = ?1", params![account], |r| {
+                r.get::<_, i64>(0)
+            })
+            .optional()?
+            .map(|t| t.max(0) as u64))
     }
 
     /// A typed address waiting for its link: the link's token (by its hash)
@@ -107,9 +121,11 @@ impl Db {
     }
 
     /// A verify link used: its address becomes the account's, verified, and
-    /// the link is gone. The account and address, or none for a link that
+    /// the link is gone. The account, the address and the verified one it
+    /// replaced (when another: told, DK10), or none for a link that
     /// expired, was used, or never was.
-    pub fn verify_email(&self, token_hash: &str, now: u64) -> anyhow::Result<Option<(String, String)>> {
+    #[allow(clippy::type_complexity)]
+    pub fn verify_email(&self, token_hash: &str, now: u64) -> anyhow::Result<Option<(String, String, Option<String>)>> {
         let mut c = self.c();
         let tx = c.transaction()?;
         let found: Option<(String, String, i64)> = tx
@@ -124,6 +140,13 @@ impl Db {
             tx.commit()?;
             return Ok(None);
         };
+        let old: Option<String> = tx
+            .query_row(
+                "SELECT email FROM account_emails WHERE account = ?1 AND verified_at IS NOT NULL",
+                params![account],
+                |r| r.get(0),
+            )
+            .optional()?;
         tx.execute(
             "INSERT INTO account_emails (account, email, source, verified_at, updated_at) VALUES (?1, ?2, 'typed', ?3, ?3)
              ON CONFLICT (account) DO UPDATE SET email = excluded.email, source = 'typed',
@@ -131,7 +154,8 @@ impl Db {
             params![account, email, now as i64],
         )?;
         tx.commit()?;
-        Ok(Some((account, email)))
+        let old = old.filter(|o| *o != email);
+        Ok(Some((account, email, old)))
     }
 
     /// The account's address removed (Account settings).
@@ -141,21 +165,24 @@ impl Db {
         Ok(c.execute("DELETE FROM account_emails WHERE account = ?1", params![account])? > 0)
     }
 
-    /// A notice sent (its kind, never its body).
-    pub fn record_send(&self, account: &str, kind: &str, now: u64) -> anyhow::Result<()> {
+    /// A notice sent (its kind, never its body). `limited`: it counts
+    /// toward the daily limit; a reset's, or a changed address's, doesn't
+    /// (DK10).
+    pub fn record_send(&self, account: &str, kind: &str, now: u64, limited: bool) -> anyhow::Result<()> {
         let c = self.c();
         c.execute(
-            "INSERT INTO email_sends (account, kind, at) VALUES (?1, ?2, ?3)",
-            params![account, kind, now as i64],
+            "INSERT INTO email_sends (account, kind, at, limited) VALUES (?1, ?2, ?3, ?4)",
+            params![account, kind, now as i64, limited],
         )?;
         c.execute("DELETE FROM email_sends WHERE at < ?1", params![now.saturating_sub(SENDS_KEEP_MS) as i64])?;
         Ok(())
     }
 
-    /// How many notices the account was sent since `since`.
+    /// How many notices the account was sent since `since` that count
+    /// toward the daily limit.
     pub fn sends_since(&self, account: &str, since: u64) -> anyhow::Result<u64> {
         Ok(self.c().query_row(
-            "SELECT COUNT(*) FROM email_sends WHERE account = ?1 AND at >= ?2",
+            "SELECT COUNT(*) FROM email_sends WHERE account = ?1 AND at >= ?2 AND limited = 1",
             params![account, since as i64],
             |r| r.get::<_, i64>(0),
         )? as u64)

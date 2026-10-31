@@ -432,6 +432,12 @@ struct Inner {
     import_stamp: Option<(u64, std::time::SystemTime)>,
     /// The transcript as read so far (#80).
     follow: crate::conversations::convert::Follow,
+    /// The transcript of a session this block runs, read for its context
+    /// window only (#397), with where it is and when it was last looked for.
+    live_ctx: crate::conversations::convert::Follow,
+    live_ctx_path: Option<PathBuf>,
+    live_ctx_looked: u32,
+    live_ctx_stamp: Option<(u64, std::time::SystemTime)>,
     /// The session's `configOptions` (for choosing a model).
     config_options: Value,
     /// The model the agent says it answers with (claude-agent-acp's
@@ -697,6 +703,10 @@ impl Inner {
             held: None,
             import_stamp: None,
             follow: Default::default(),
+            live_ctx: crate::conversations::convert::Follow::context_only(),
+            live_ctx_path: None,
+            live_ctx_looked: 0,
+            live_ctx_stamp: None,
             config_options: Value::Null,
             served_model: None,
             model_settled: false,
@@ -1642,6 +1652,11 @@ impl Inner {
         let (models, model) = self.models();
         state["models"] = models;
         state["model"] = model;
+        // #397: the model, the window's fill and the compactions, from the
+        // transcript.
+        state["context"] =
+            if self.cfg.import.is_some() && !self.frozen { self.follow.context() } else { self.live_ctx.context() }
+                .unwrap_or(Value::Null);
         state["model_name"] = json!(self.model_name());
         state["served_model"] = json!(self.served_model);
         // #606: it will carry on by itself (its turn held for background
@@ -2392,6 +2407,9 @@ async fn run(agent: Agent, mut rx: mpsc::UnboundedReceiver<Msg>) {
                     if g.cfg.import.is_some() && !g.frozen && refresh_import(&ctx, &mut g) {
                         dirty = true;
                     }
+                    if (g.cfg.import.is_none() || g.frozen) && refresh_context(&mut g) {
+                        dirty = true;
+                    }
                 }
                 if retry_at.is_some_and(|t| tokio::time::Instant::now() >= t) {
                     retry_at = None;
@@ -2401,6 +2419,29 @@ async fn run(agent: Agent, mut rx: mpsc::UnboundedReceiver<Msg>) {
             }
         }
     }
+}
+
+/// How many follow ticks between looks for a session's transcript.
+const CONTEXT_LOOK_EVERY: u32 = 5;
+
+/// A session this block runs: its transcript read for the context window
+/// (#397), once it exists. True if what it says changed.
+fn refresh_context(g: &mut Inner) -> bool {
+    let Some(sid) = g.cfg.session_id.clone() else { return false };
+    if g.live_ctx_path.is_none() {
+        g.live_ctx_looked += 1;
+        if g.live_ctx_looked % CONTEXT_LOOK_EVERY != 1 {
+            return false;
+        }
+        g.live_ctx_path = crate::conversations::transcript_of(&crate::conversations::Dirs::from_env(), &sid);
+    }
+    let Some(path) = g.live_ctx_path.clone() else { return false };
+    let stamp = std::fs::metadata(&path).ok().and_then(|m| Some((m.len(), m.modified().ok()?)));
+    if stamp.is_none() || stamp == g.live_ctx_stamp {
+        return false;
+    }
+    g.live_ctx_stamp = stamp;
+    g.live_ctx.read(&path).unwrap_or(false)
 }
 
 /// An opened conversation, read again if its transcript changed; and who

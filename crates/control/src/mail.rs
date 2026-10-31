@@ -8,7 +8,10 @@
 //! Best-effort: a notice goes out after what it's about committed, in the
 //! background, tried three times; nothing waits on it. At most
 //! [`DAILY_LIMIT`] an account a day. Control keeps each send's kind and
-//! time (`email_sends`), never its body.
+//! time (`email_sends`), never its body. A reset's notices, and the one an
+//! old address gets when it's changed, are outside the limit (DK10,
+//! [`send_security`]); a passkey reset's start waits for its email to be
+//! taken ([`notice_now`]).
 
 use std::sync::{Arc, Mutex};
 
@@ -42,6 +45,9 @@ pub enum Mailer {
     Off,
     Smtp(Arc<Smtp>),
     Fake(Arc<Mutex<Vec<Sent>>>),
+    /// (Tests.) On, and every send fails, as an SMTP server that's down.
+    #[cfg(test)]
+    Failing,
 }
 
 impl Mailer {
@@ -68,6 +74,8 @@ impl Mailer {
                 sent.lock().unwrap().push(Sent { to: to.into(), subject: subject.into(), body: body.into() });
                 Ok(())
             }
+            #[cfg(test)]
+            Mailer::Failing => anyhow::bail!("the mail server is down"),
             Mailer::Smtp(s) => {
                 let m = Message::builder()
                     .from(s.from.clone())
@@ -99,7 +107,7 @@ pub fn plausible(s: &str) -> bool {
 /// Send `subject` and `body` to `to` for `account`, as `kind`, unless the
 /// mailer is off or the account had its [`DAILY_LIMIT`] today. In the
 /// background; whether it was taken.
-pub fn send(app: &Arc<App>, account: &str, to: &str, kind: &'static str, subject: String, body: String) -> bool {
+pub fn send(app: &App, account: &str, to: &str, kind: &'static str, subject: String, body: String) -> bool {
     if !app.mail.on() {
         return false;
     }
@@ -115,10 +123,68 @@ pub fn send(app: &Arc<App>, account: &str, to: &str, kind: &'static str, subject
             return false;
         }
     }
-    if let Err(e) = app.db.record_send(account, kind, now) {
+    if let Err(e) = app.db.record_send(account, kind, now, true) {
         warn!(account, kind, "not emailed: {e}");
         return false;
     }
+    spawn_send(app, account, to, kind, subject, body);
+    true
+}
+
+/// A notice that a reset, or a change of the address itself, happened
+/// (DK10, #393): neither counted against [`DAILY_LIMIT`] nor stopped by
+/// it, so a session can't use the limit up to keep one from going out.
+/// Kept (`email_sends`, unlimited). In the background; whether it was
+/// taken.
+pub fn send_security(app: &App, account: &str, to: &str, kind: &'static str, subject: String, body: String) -> bool {
+    if !app.mail.on() {
+        return false;
+    }
+    if let Err(e) = app.db.record_send(account, kind, arugula_e2e::now_ms(), false) {
+        warn!(account, kind, "not emailed: {e}");
+        return false;
+    }
+    spawn_send(app, account, to, kind, subject, body);
+    true
+}
+
+/// As [`send_security`], to the account's verified address, waiting for the
+/// server to take it (three tries): what starting a passkey reset waits on,
+/// so one never runs without its warning (DK10). Whether it went.
+pub async fn notice_now(app: &Arc<App>, account: &str, kind: &'static str, subject: String, body: String) -> bool {
+    if !app.mail.on() {
+        return false;
+    }
+    let to = match app.db.verified_email(account) {
+        Ok(Some(to)) => to,
+        Ok(None) => return false,
+        Err(e) => {
+            warn!(account, kind, "not emailed: {e}");
+            return false;
+        }
+    };
+    if let Err(e) = app.db.record_send(account, kind, arugula_e2e::now_ms(), false) {
+        warn!(account, kind, "not emailed: {e}");
+        return false;
+    }
+    for attempt in 1..=3u32 {
+        match app.mail.send(&to, &subject, &body).await {
+            Ok(()) => {
+                info!(account, kind, "emailed");
+                return true;
+            }
+            Err(e) => {
+                warn!(account, kind, attempt, "emailing failed: {e}");
+                if attempt < 3 {
+                    tokio::time::sleep(std::time::Duration::from_millis(500 * u64::from(attempt))).await;
+                }
+            }
+        }
+    }
+    false
+}
+
+fn spawn_send(app: &App, account: &str, to: &str, kind: &'static str, subject: String, body: String) {
     let (mail, to, account) = (app.mail.clone(), to.to_owned(), account.to_owned());
     tokio::spawn(async move {
         for attempt in 1..=3u32 {
@@ -134,13 +200,13 @@ pub fn send(app: &Arc<App>, account: &str, to: &str, kind: &'static str, subject
             }
         }
     });
-    true
 }
 
-/// A security notice to the account's verified address, if it has one.
-pub fn notice(app: &Arc<App>, account: &str, kind: &'static str, subject: String, body: String) -> bool {
+/// A security notice to the account's verified address, if it has one,
+/// outside the daily limit ([`send_security`]): a reset's (DK10).
+pub fn security_notice(app: &App, account: &str, kind: &'static str, subject: String, body: String) -> bool {
     match app.db.verified_email(account) {
-        Ok(Some(to)) => send(app, account, &to, kind, subject, body),
+        Ok(Some(to)) => send_security(app, account, &to, kind, subject, body),
         Ok(None) => false,
         Err(e) => {
             warn!(account, kind, "not emailed: {e}");

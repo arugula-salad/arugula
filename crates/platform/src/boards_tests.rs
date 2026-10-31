@@ -1198,3 +1198,35 @@ async fn a_block_started_on_an_issue_is_attached_to_its_rows() {
     let (_, v) = call(&base, "c", "GET", &format!("/api/boards/{other}"), None).await;
     assert_eq!(row_in(&v, &other_row)["attachments"], json!([]), "u's rows are not touched: {v}");
 }
+
+/// A block attached as `%640` is pane 640: the report for pane 640 finds it
+/// and the row moves to Doing, and the pointer is stored as `640`.
+#[tokio::test]
+async fn a_block_attached_as_percent_n_is_pane_n() {
+    use crate::agents_tests::give;
+    use arugula_control_wire::boards::AGENT_BLOCK_STATE;
+
+    let (hub, _app, base, t, _u) = crate::agents_tests::seeded().await;
+    hub.flag_named("team:t", FLAG, true);
+    let (_, b) =
+        call(&base, "a", "POST", &format!("/api/projects/{t}/boards"), Some(json!({ "title": "Launch" }))).await;
+    let id = b["board"]["id"].as_str().unwrap().to_owned();
+    let parser = issue(&base, "a", &t, "Parser").await;
+    let (_, v) =
+        put(&base, "a", &id, json!({ "entry": "row", "note": "parser", "pointer": { "kind": "issue", "id": parser } }))
+            .await;
+    let row_id = v["zones"][0]["rows"][0]["id"].as_str().unwrap().to_owned();
+    let (st, g) =
+        call(&base, "a", "POST", "/api/grants", give("geek", "boards.write", json!({ "kind": "project", "id": t })))
+            .await;
+    assert_eq!(st, 200, "{g}");
+    let pointer = json!({ "kind": "block", "machine": "geek", "pane": "%640" });
+    let (st, v) = attach(&base, "a", &id, json!({ "row": row_id, "role": "work", "pointer": pointer })).await;
+    assert_eq!(st, 200, "{v}");
+    assert_eq!(row_in(&v, &row_id)["attachments"][0]["pointer"]["pane"], "640", "stored plain: {v}");
+    let report = json!({ "pane": "640", "block": { "state": "working" } });
+    let (st, v) = geek(&base, "PUT", AGENT_BLOCK_STATE, Some(report)).await;
+    assert_eq!(st, 200, "{v}");
+    let (_, v) = call(&base, "a", "GET", &format!("/api/boards/{id}"), None).await;
+    assert_eq!(lane(&v, &row_id), "doing", "the report for pane 640 is found: {v}");
+}

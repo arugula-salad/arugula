@@ -8,6 +8,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 import { chat } from "../chat-store";
 import type { ChatMessage, ChatRoom } from "../proto";
 import { EmojiPicker } from "./emoji-picker";
+import { handled } from "./escape";
 import { QUICK, tip } from "./reactions";
 
 /** Whether `room` takes reactions on `m` (an archive's messages and a
@@ -78,7 +79,11 @@ export function useDismiss(root: { current: HTMLElement | null }, close: () => v
       const t = e.target as Element | null;
       if (!root.current?.contains(t) && !t?.closest(`${keep}, [data-emoji-picker]`)) close();
     };
-    const key = (e: KeyboardEvent) => e.key === "Escape" && close();
+    const key = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      handled(e);
+      close();
+    };
     document.addEventListener("pointerdown", away);
     document.addEventListener("keydown", key);
     return () => {

@@ -15,6 +15,7 @@ import { useSubscribe } from "../../shared/ui/hooks";
 import { Time } from "../../shared/ui/time";
 import { session } from "../session";
 import { toneClass } from "../swarm";
+import { hasWorkOnBoards, withWorkOnBoards } from "./grants";
 import { Section } from "./section";
 
 type TokenGrant = { id: string; power: string; project: { id: string; name: string | null }; live: boolean };
@@ -39,7 +40,7 @@ export const TOKEN_POWERS: [string, string][] = [
   ["runs.command", "start commands of its own"],
   ["deploys.plan", "plan deploys and ask for approval"],
   ["boards.read", "read boards"],
-  ["boards.write", "read boards, set their notes and statuses and move rows"],
+  ["boards.write", "read boards, add, attach and ask on them, note rows and group them"],
   ["trackers.write", "create, comment on, close, reopen and edit Plane work items (each may wait for a person)"],
   ["secrets.write", "set project secrets by name (never read them)"],
 ];
@@ -268,6 +269,19 @@ export function AgentTokens() {
           </fieldset>
           <fieldset class="deploy-secret-names">
             <legend>What its agent may do there</legend>
+            <label class="control-confirm">
+              <input
+                type="checkbox"
+                checked={hasWorkOnBoards(powers)}
+                data-agent-token-work
+                onChange={(e) => setPowers(withWorkOnBoards(powers, e.currentTarget.checked))}
+              />{" "}
+              <b>Work on boards</b>{" "}
+              <span class="dim">
+                <code>boards.write</code>, <code>issues.write</code> and <code>trackers.write</code> together: add, attach and ask on
+                boards, file issues and write to Plane
+              </span>
+            </label>
             {TOKEN_POWERS.map(([p, what]) => (
               <label class="control-confirm" key={p}>
                 <input

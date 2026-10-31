@@ -121,6 +121,20 @@ device nobody trusted. Now:
   is a device the account trusts now and its `created` is within ten
   minutes of control's clock (`approval_ok`), on every path: a presigned
   enrollment, an approval, a machine's or the CLI's join, recovery codes.
+- Daemons and pages don't take `created` alone: each stamps every
+  certificate and revocation with the round of looking it first saw it
+  in (`arugula_e2e::checkpoint::drop_late`; rounds are counted in
+  `control.json` on a daemon and in the browser's storage on a page, not
+  read off a clock). A certificate first seen in a later round than the
+  revocation of the device that approved it doesn't count, whatever
+  `created` says. So once a machine or page has seen a device's removal,
+  that device's key can't approve anything new there by dating it
+  earlier. What a device approved before its removal arrives with the
+  removal or before it, and stays. This holds only where the removal was
+  seen first: a machine or page that receives a backdated certificate
+  together with the removal, or before it, judges it by `created`. What
+  was held before stamps were kept is let off once; a certificate first
+  supplied after that is judged like any.
 - Daemons and pages read only certificates signed by the key of the
   device they name as approver; any other is set aside before anything
   else, so it can't count against one that is. Since #761 a new browser is
@@ -218,14 +232,26 @@ device nobody trusted. Now:
     change only on top of a version that follows. If control's latest
     doesn't follow, the page shows the last one it checked and holds
     changes until control's does. The page keeps what it checked in
-    memory for as long as it's open; if the browser can't store it, the
-    page still checks rosters but signs no team change.
+    memory for as long as it's open. Certificates, removals and locks are
+    kept as one store per browser, and each look at them is one
+    transaction under a browser-wide lock (the Web Locks API): it reads the
+    store afresh, counts its round after the stored one and writes back
+    before another tab may look, so tabs never share a round or split a
+    removal from the certificate it rests on. What a look needs from
+    control is fetched before it takes the lock, each fetch given up after
+    15 seconds, so a slow answer doesn't hold up other tabs. If the browser has no such
+    lock, can't read or store what it checked, or finds it gone after this
+    browser kept it, the page keeps nothing from that look: it goes on with
+    what it held before (control's answer only on a first look), signs no
+    team change, and lists no one else's machines.
   - The first time a page sees a team, it checks the whole signed history
     from version 1, which the founder it pinned signs. A version before
     the latest may have been signed by a device removed since: the page
-    takes it if that device counted as of the version's date, and says so
-    in Teams. The latest version must be signed by a device that counts
-    now. Machines make no such allowance: a version signed by a device
+    takes it if that device counted as of the version's date and the page
+    hadn't seen its removal before this look, and says so in Teams. The
+    latest version must be signed by a device that counts now. Every
+    version is checked with the certificates the page holds for its
+    owners, the ones it fetched for history included. Machines make no such allowance: a version signed by a device
     removed since stops a machine's first look at that team.
   - When a member's root changes between the version the page held and
     the one it takes, Teams shows the old and new fingerprints until you
@@ -284,19 +310,35 @@ device nobody trusted. Now:
   a daemon keeps every revocation it has seen, for its own account, its
   team's members and the people it shares with, and a later answer from
   control can't take one away. A member's removals outlive their
-  membership: if they're let back into the team, those still count. A device a daemon holds as removed (and
+  membership: if they're let back into the team, those still count. An
+  owner's page keeps its own account's removals, its teams' members' and
+  those of people whose machines it lists the same way, in the browser.
+  A device a daemon holds as removed (and
   what that device approved after) can't count again: if control's
   certificates would let it back in, for instance by leaving out the
   certificate a revocation rests on, the daemon keeps the certificates
-  it had.
+  it had. If `control.json` can't be written, what a refresh found still
+  counts in memory, and every refresh tries to save it again until it
+  can.
 - **Accepted risk:** a malicious control can *withhold* a revocation from a
   daemon that hasn't seen it yet. Control can't add readers, but it can
   delay removing one. As with Tailnet Lock, this is written down rather
   than solved.
-- **Accepted risk:** whether a team is locked is control's word. A locked
-  team lets only its owners in; control can unlock it on a daemon, which
-  lets its editors and viewers back in with the roles the signed roster
-  gives them. It can't add anyone the roster doesn't list.
+- **A team's lock is signed** (`arugula team lock v1`: team, locked or
+  not, the roster version, when, and the signing device). An owner's page
+  signs it, control keeps the latest and hands it out with the plain
+  `locked` older machines read, and refuses one an owner didn't sign.
+  A machine takes a lock record only if a device of an owner in the roster
+  it holds signed it, against a version it has, and it's newer than the
+  record it holds (`arugula_e2e::checkpoint::take_lock`); a team's hosted
+  machines hold it too. Without one the team stays as the machine holds
+  it: control's plain word can lock a team (it can refuse service anyway),
+  never unlock it. Control writes a lock only if it's newer than the one
+  it holds, checked as it writes, and refuses one dated more than ten
+  minutes ahead of its clock. The owner's page shows and signs after the
+  lock it checked the same way, never control's word for it; with no
+  signed lock held, it says control claims the team is locked, not that
+  it is.
 
 **Recovery:**
 
@@ -969,7 +1011,7 @@ or whoever runs yours) does:
 |---|---|
 | relays and stores honestly | only your devices and the people you share with read them |
 | has its database or relay copied, or logs everything it sees | still unreadable: it holds certificates and ciphertext, never a private key |
-| turns malicious **after** your machines and devices are set up, without changing the page it serves | can't add a reader: daemons check every device against the root they pinned and every roster against the last one they checked, and keep every revocation they've seen. It can withhold revocations a machine hasn't seen yet, unlock a locked team, and refuse service |
+| turns malicious **after** your machines and devices are set up, without changing the page it serves | can't add a reader: daemons check every device against the root they pinned and every roster against the last one they checked, keep every revocation they've seen, and refuse a certificate first seen after its approver's removal; a team's lock changes only by an owner's signed word. It can withhold revocations and lock changes a machine hasn't seen yet, lock a team, and refuse service |
 | lies at **join** about which account a machine joins | refused by the machine: the approving device's answer to the secret in its link doesn't match (an older daemon or CLI: caught by the account fingerprint, if you compare it) |
 | lies about which account a **new browser or phone** is approved into | refused by that device: the approving device's answer to the code it showed doesn't match (approved from a page from before codes: it shows the account fingerprint to check) |
 | lies about who **@name** is when you share with them | believed on the first share unless you verify them; after that the share stops, saying their key changed |
@@ -1564,7 +1606,13 @@ anyone. Never from the desktop app's window (`sessions.via = app`), and:
   the new passkey's id and the registration's challenge
   (`arugula add passkey device v1`);
 - an account with none: a browser or a phone of its signs, as above, or
-  the session is a GitHub sign-in from the last ten minutes. The page says
+  the session is a GitHub sign-in from the last ten minutes. Either is
+  enough only for an account that never had a passkey (its passkey log is
+  empty; for an account made before the log began, also no passkey
+  sign-in on record), or once a reset (the passkey reset below, or
+  aru-119's device reset) was done since it last had one: GitHub's is
+  then logged `by reset` (DK10, #393; aru-119, aru-126). Otherwise control
+  refuses with `reason: "reset"` ("start a passkey reset"). The page says
   which device it is as it starts; when that one can't sign (no browser,
   or browsers an app window approved before #1343, which don't count), the
   page sends the person through GitHub
@@ -1577,13 +1625,59 @@ anyone. Never from the desktop app's window (`sessions.via = app`), and:
   signed in and its User-Agent (what a session says its device is is a
   claim), and the passkey keeps both.
 
+**Removing a passkey takes another** (DK10, #393, aru-126). A session
+alone can't, or someone holding the GitHub account (or a stolen session)
+could remove every passkey, add their own as a "first" one, and approve.
+`POST /api/me/passkeys/{id}/remove/start` makes the removal's event in the
+account's passkey log and answers `webauthn.get` options: its challenge
+is SHA-256 of that event's body, `allowCredentials` the account's other
+passkeys. One of them signs it, with user verification, and
+`POST /api/me/passkeys/{id}/remove {assertion}` checks it against the log
+and appends the event with the assertion as its proof (`by passkey`), so
+anyone can check the removal later. Without an assertion it's 403
+`remove_with_passkey` ("use another of your passkeys to remove this
+one, or, if you've lost them, start a passkey reset"); a passkey can't
+sign its own removal. The last passkey can't be removed at all, as
+there's no other to sign: 409 `last_passkey` ("add another passkey
+first, or start a passkey reset"), and the page disables its Remove and
+says why. Never from the desktop app's window. Only a reset drops
+passkeys without another's say-so, every one of them `by reset` (for an
+account with GitHub linked; passkeys that are its only way in stay):
+
+- **The passkey reset** (aru-119 as amended, `reset.rs`), for passkeys
+  lost while devices are in use. `POST /api/me/passkeys/reset` starts it
+  from a GitHub sign-in from the last ten minutes, whether or not a device
+  was used lately; every device and the account's email are told. After
+  48 hours the next read (`GET /api/me/passkeys/reset`, the passkeys list,
+  or starting to add one) removes every passkey; devices, machines and
+  recovery codes stay. `POST /api/me/passkeys/reset/cancel` stops it: the
+  sign-in that started it, a device or recovery code the account trusts
+  signing `arugula passkey reset cancel v1\n<account>\n<started_at>`, or
+  any working passkey of the account asserting over SHA-256 of that text
+  (the status read gives the options). At most one done a week, three
+  started a day, and none for 7 days after a device, recovery code or
+  passkey cancelled a reset of either kind (409 `cancelled_recently`). It
+  needs a verified address that hasn't changed in 48 hours (409 `no_email`
+  or `email_changed`, pointing to support); its start waits for the
+  warning email to be taken, and isn't recorded if it isn't (503
+  `email_failed`). A cancel after it's due, or after it finished, is 409
+  `already_done`. The page offers it under Passkeys, and *Devices and
+  machines* shows one waiting, with a cancel this device signs.
+- **aru-119's device reset**, which removes the passkeys with the devices
+  only when its start's warning reached such an address
+  (`reset_requests.with_passkeys`); any working passkey cancels it too
+  (over SHA-256 of `arugula reset cancel v1…`).
+
+Reset emails, and the one an account's old address gets when the address
+is replaced or removed, are outside the daily mail limit.
+
 **The passkey log** (DK3, aru-126, `db/passkey_log.rs`). Every passkey
 added to or removed from an account is an event in the account's passkey
 log: its credential id, public key, RP, its authenticator's AAGUID, when,
 and what let it happen (`by`: another passkey, whose assertion over the
 event is kept as its proof; or what control vouches for: `signup`,
-`github`, `device <id>`, `session` for a removal by a signed-in page,
-`reset`, `deleted` when the account goes, and `backfill <ms>` for passkeys
+`github`, `device <id>`, `session` for a removal by a signed-in page
+before DK10, `reset`, `deleted` when the account goes, and `backfill <ms>` for passkeys
 from before the log, whose RP may name each of control's sites, since
 which one wasn't kept). Each event hashes the one before, as
 `deploy_events` do (aru-103); triggers refuse an update or a delete, and
@@ -1733,9 +1827,9 @@ sleeps, and control pushes and searches them itself.
 
 <!-- Written by `just control-tables` from crates/control/tables.toml. Edit that, not this. -->
 
-Control's database has 156 tables in two planes ("Two planes, two trust rules"):
+Control's database has 157 tables in two planes ("Two planes, two trust rules"):
 
-- **The machine plane** (51 tables) is what control needs to route and check: ids, names, addresses, public keys and signed statements. What moves between a client and a machine stays end to end, and control can't read it.
+- **The machine plane** (52 tables) is what control needs to route and check: ids, names, addresses, public keys and signed statements. What moves between a client and a machine stays end to end, and control can't read it.
 - **The platform plane** (105 tables) is what has to exist while every machine is asleep: billing and usage, chat and the threads on objects, Shared Docs, Cloud workspaces, linked repos' PRs and issues, and projects' native issues, runs and deploys. Control reads most of it, and says so here.
 
 Every table is listed in `crates/control/tables.toml`, and a test fails when one isn't. **Holds** is what's in it: metadata (ids, names, addresses, times, counts, public keys, signed statements), ciphertext (encrypted to keys control never holds), or plaintext (what people or their agents wrote, or a secret control can read). **Gone with the account** is what deleting an account does to its rows.
@@ -1757,13 +1851,14 @@ Every table is listed in `crates/control/tables.toml`, and a test fails when one
 | `account_link_tombstones` | metadata | When an account last unlinked a product (M229): the client, the account, when. An assertion issued until then never links. Kept a day, far past any assertion's life. | yes |  |
 | `link_alerts` | metadata | The ops counter of bulk link calls (M229): per product's client and kind (unlinks, lookups), how many went over the alert line, and when last. | nothing of one |  |
 | `passkeys` | metadata | A passkey's public key, its sign count, what keeps it, the browser that added it (its User-Agent, the device its sign-in said it is, and that sign-in), whether it gives PRF. | yes |  |
+| `passkey_before_log` | metadata | Accounts made before the passkey log began that signed in with a passkey then (DK10, #393): noted from the sessions still on record as the hub starts and before it prunes them, so an account whose passkeys were removed before the log still counts as having had one. The account and when it was noted. | yes |  |
 | `devices` | metadata | A device's or machine's certificate (public keys, signed by a device the account trusts), and its approval. | yes |  |
 | `turned_down` | metadata | Which device turned a waiting device down, and when. | yes |  |
 | `account_resets` | **plaintext** | An account's devices reset (aru-119): when, who ran it, the reason support wrote, and the certificates and revocations it archived. | yes |  |
-| `reset_requests` | metadata | A reset of an account's devices its person asked for (aru-119, #1582): when it started and is due, the sign-in that started it (its token's hash), and whether it was cancelled (by which device) or done. | yes |  |
+| `reset_requests` | metadata | A reset its person asked for (aru-119, #1582): of the account's devices, or (DK10, #393) of its passkeys alone (`kind`); whether a device reset takes the passkeys too (`with_passkeys`: its warning reached a settled verified address); when it started and is due, the sign-in that started it (its token's hash), and whether it was cancelled (by which device or passkey) or done. | yes |  |
 | `account_emails` | **plaintext** | An account's email address for security notices (#1609): GitHub's primary verified one, or one typed and verified by a link, and when. | yes | The email provider |
 | `email_tokens` | **plaintext** | A typed address waiting for its verify link (#1609): the link's token by its hash, the address, and when it expires (a day). | yes | The email provider |
-| `email_sends` | metadata | That control emailed an account (#1609): which kind of notice and when, never its body. Kept 90 days, for the daily limit. | yes |  |
+| `email_sends` | metadata | That control emailed an account (#1609): which kind of notice and when, never its body, and whether it counts toward the daily limit (a reset's, or a changed address's, doesn't: DK10). Kept 90 days, for the daily limit. | yes |  |
 | `revocations` | metadata | A signed revocation of a device's or machine's key. | yes |  |
 | `recovery_uses` | metadata | Which device each recovery code let in (their ids), recorded once, when control first takes an approval by the code. | yes |  |
 | `joins` | metadata | A machine asking to join: its certificate, a hash of its poll token, its addresses, the approval. | yes |  |
@@ -1783,7 +1878,7 @@ Every table is listed in `crates/control/tables.toml`, and a test fails when one
 | `settings` | **plaintext** | Control's own VAPID key pair, which signs the pushes it sends, and its hosted key (M178), which signs the hosted machines enrolled under a project's delegation. | nothing of one |  |
 | `notices` | metadata | A notice for an account with no push, made from names control holds ("Ada left Acme"). | yes |  |
 | `labs_flags` | metadata | The Labs flags an account or a team turned on for its machines. | yes: a team's go when the team does. | PostHog |
-| `teams` | metadata | A team: its id, name, founder and founder's root, and whether it's locked. | partly: the teams it founded, or that nobody else is left in, go with it; the rest stay. | PostHog |
+| `teams` | metadata | A team: its id, name, founder and founder's root, whether it's locked, and the latest lock an owner signed. | partly: the teams it founded, or that nobody else is left in, go with it; the rest stay. | PostHog |
 | `rosters` | metadata | A team's signed roster, every version: who's in it and their roles. | partly: a disbanded team's go; in a team that stays, it's in the signed roster until an owner signs a new one. |  |
 | `invites` | metadata | An Ask me first invite: a hash of its code, the team, the role, its expiry, the owner's signed invite. | yes |  |
 | `presigned_invites` | metadata | A one-time invite an owner's device signed, waiting to be used. | yes |  |

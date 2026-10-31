@@ -7,7 +7,7 @@
   display: flex;
   flex-direction: column;
   gap: 14px;
-  max-width: 760px;
+  max-width: 1400px;
   min-width: 0;
 }
 
@@ -26,18 +26,26 @@
   background: var(--surface);
 }
 
+/* The four lanes: columns on a wide page, fewer on a narrow block, one on a phone. */
+/* The lanes are columns, so the page takes more than the 880px reading column of its siblings. */
+@media (min-width: 701px) {
+  .platform-section[data-board-page] {
+    padding-inline: max(24px, calc((100% - 1280px) / 2));
+  }
+}
+
+.board-lanes {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 230px), 1fr));
+  gap: 12px;
+  align-items: start;
+}
+
 .board-zone {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  padding: 10px 12px;
-  border: 1px solid var(--divider);
-  border-radius: 8px;
-  background: var(--surface);
-}
-
-.board-zone[data-board-zone="lane_done"] {
-  border-style: dashed;
+  gap: 8px;
+  min-width: 0;
 }
 
 /* A group (a phase, a wave): a heading with its progress, and the four lanes
@@ -50,17 +58,23 @@
 
 .board-group-head {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: 8px;
-  padding-bottom: 2px;
+  margin-top: 10px;
+  padding: 8px 8px 8px 12px;
+  border-left: 4px solid var(--accent);
   border-bottom: 1px solid var(--divider);
+  border-radius: 4px 4px 0 0;
+  background: var(--raised);
 }
 
 .board-group-head h2 {
   flex: 1;
   min-width: 0;
   margin: 0;
-  font-size: 1.1em;
+  font-size: 22px;
+  line-height: 1.15;
+  overflow-wrap: anywhere;
 }
 
 .board-marks {
@@ -86,17 +100,21 @@
   flex-wrap: wrap;
 }
 
-.board-chip {
+/* An attachment is a swarm chip (platform/swarm.css), which is the warning's orange there: here it is neutral. */
+.board .sw-chip.board-chip {
+  align-self: auto;
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  padding: 1px 6px;
+  max-width: 100%;
   border: 1px solid var(--divider);
-  border-radius: 999px;
-  font-size: 0.85em;
+  background: transparent;
+  color: var(--fg);
+  font-weight: 500;
+  overflow-wrap: anywhere;
 }
 
-.board-chip.proof {
+.board .sw-chip.board-chip.proof {
   border-style: dashed;
 }
 
@@ -104,6 +122,8 @@
   display: flex;
   align-items: center;
   gap: 8px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--divider);
 }
 
 .board-zone-head h2 {
@@ -130,27 +150,6 @@
   transition: width 0.2s;
 }
 
-.board-rows {
-  display: flex;
-  flex-direction: column;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.board-row {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  padding: 6px 0;
-  border-top: 1px solid var(--divider);
-}
-
-.board-row:first-child {
-  border-top: 0;
-}
-
-.board-glyph,
 .board-more {
   flex: none;
   min-width: 32px;
@@ -162,33 +161,6 @@
   color: var(--fg);
 }
 
-.board-glyph {
-  font-size: 1.15em;
-}
-
-.board-glyph.s-working {
-  color: var(--info);
-}
-
-.board-glyph.s-needs_input {
-  color: var(--warn);
-  font-weight: 700;
-}
-
-.board-glyph.s-done {
-  color: var(--ok);
-}
-
-.board-glyph.s-failed {
-  color: var(--danger);
-}
-
-.board-glyph.s-none,
-.board-glyph.s-open {
-  color: var(--dim);
-}
-
-.board-glyph:hover,
 .board-more:hover {
   background: var(--raised);
 }
@@ -255,18 +227,35 @@
   overflow-wrap: anywhere;
 }
 
-.board-needs-you {
-  margin: 8px 0;
+/* The header's counts, in the swarm's style where the page isn't the platform's (the shell's block). */
+.board .sw-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 18px;
+  margin: 6px 0;
+  font: 500 12px/1.2 var(--f-mono, ui-monospace, monospace);
+  color: var(--dim);
+  font-variant-numeric: tabular-nums;
 }
 
-.board-needs-you-button {
-  height: 28px;
-  padding: 0 10px;
-  border: 1px solid var(--warn);
-  border-radius: 6px;
+.board .sw-stats b {
+  display: block;
+  font: 700 20px/1 var(--f-mono, ui-monospace, monospace);
+  color: var(--fg);
+}
+
+.board .sw-stats .board-needs-you-button {
+  padding: 0;
+  border: 0;
   background: transparent;
-  color: var(--warn);
-  font-weight: 600;
+  color: var(--dim);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.board .sw-stats .board-needs-you-button b {
+  color: var(--accent);
 }
 
 .board-ask {
@@ -433,11 +422,6 @@
 }
 
 @media (max-width: 700px) {
-  .board-zone {
-    padding: 8px 10px;
-  }
-
-  .board-glyph,
   .board-more {
     min-width: 40px;
     height: 40px;
@@ -564,4 +548,228 @@
 
 .board-done-list .board-list {
   margin-top: 8px;
+}
+
+/* A row is a swarm card (platform/swarm.css scopes those rules to the platform page, so the shell's block gets the same look here): its bar the lane's tone. */
+.board .board-card {
+  --c: var(--muted);
+  --ct: var(--subtle);
+}
+
+.board .board-card.sw-accent {
+  --c: var(--accent);
+}
+
+.board .board-card.sw-ok {
+  --c: var(--ok);
+}
+
+.board .board-card.sw-warn {
+  --c: var(--warn);
+}
+
+.board .board-card.sw-muted {
+  --c: var(--muted);
+}
+
+.board .board-rows {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.board .board-rows > .board-card {
+  position: relative;
+  min-width: 0;
+  margin: 0;
+  padding: 10px 12px 10px 14px;
+  border: 1px solid color-mix(in srgb, var(--c) 45%, var(--line, var(--divider)));
+  border-radius: var(--card-radius, 8px);
+  background: color-mix(in srgb, var(--c) 7%, var(--surface));
+}
+
+.board .board-rows > .board-card::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 8px;
+  bottom: 8px;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: var(--c);
+}
+
+.board .board-card .board-main {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 0;
+}
+
+.board-card-head {
+  flex-wrap: nowrap;
+  align-items: flex-start;
+}
+
+/* The row's title is about the Issues list's row title: clearly the title by weight and colour, small enough for more rows to fit. */
+.board .board-card-name {
+  flex: 0 1 auto;
+  font-size: 14px;
+  line-height: 1.35;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--fg);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+/* The title is the item's link: it lights up as an Issues row's title does. The space after it is the card's, which opens the drawer. */
+.board a.board-card-name:hover,
+.board a.board-card-name:focus-visible,
+.board a.board-card-name:active {
+  color: var(--accent);
+  text-decoration: underline;
+}
+
+.board-card-fill {
+  flex: 1 1 0;
+  min-width: 0;
+  align-self: stretch;
+}
+
+.board .board-card {
+  cursor: pointer;
+}
+
+.board .board-card a,
+.board .board-card button,
+.board .board-card summary {
+  cursor: pointer;
+}
+
+.board .board-sub .board-ptr {
+  color: var(--dim);
+  text-decoration: none;
+}
+
+.board-card-head .chip,
+.board-card-head .board-proof {
+  flex: none;
+}
+
+.board-card-head .board-more {
+  min-width: 28px;
+  height: 24px;
+  margin: -2px -6px 0 0;
+}
+
+.board .board-sub {
+  margin: 0;
+}
+
+.board-ask {
+  background: color-mix(in srgb, var(--warn) 8%, transparent);
+}
+
+/* The group's menu button sits at the end of its header. */
+.board-group-head .board-more {
+  min-width: 32px;
+  height: 28px;
+  margin-left: auto;
+}
+
+/* The drawer: a row's item, read-only, as a side panel; a sheet on a phone. */
+.board-drawer {
+  position: fixed;
+  z-index: 20;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  box-sizing: border-box;
+  width: min(420px, 100%);
+  padding: 14px 16px;
+  overflow-y: auto;
+  overflow-wrap: anywhere;
+  border-left: 1px solid var(--divider);
+  background: var(--bg, var(--surface));
+  box-shadow: -8px 0 24px rgb(0 0 0 / 0.25);
+  outline: none;
+}
+
+.board-drawer-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.board-drawer-title {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-size: 1.15em;
+}
+
+.board-drawer h3 {
+  margin: 14px 0 4px;
+  font-size: 0.8em;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--dim);
+}
+
+.board-drawer .md {
+  margin: 0;
+}
+
+.board-drawer-comment {
+  padding: 6px 0;
+  border-top: 1px solid var(--divider);
+}
+
+.board-checks {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.board-checks li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  padding: 3px 0;
+}
+
+.board-drawer-attached {
+  margin: 4px 0;
+}
+
+@media (max-width: 600px) {
+  /* One column, the rows that wait on the reader first. */
+  .board-lanes {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .board-lanes > .board-zone:has([data-needs-you]) {
+    order: -1;
+  }
+
+  .board-rows > [data-needs-you] {
+    order: -1;
+  }
+
+  .board-drawer {
+    top: auto;
+    left: 0;
+    width: auto;
+    max-height: 80vh;
+    border-left: 0;
+    border-top: 1px solid var(--divider);
+    border-radius: 12px 12px 0 0;
+    box-shadow: 0 -8px 24px rgb(0 0 0 / 0.25);
+  }
 }

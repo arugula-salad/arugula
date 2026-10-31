@@ -43,6 +43,7 @@ import { ReplyTag, setThreadNav, ThreadFooter } from "./thread-ui";
 import { AskMessage, askOfMessage } from "./ask-card";
 import { answerVia, SaidAvatar, SaidHead, saidOf, SessionCardMessage, sessionOf } from "./session-card";
 import { dmLabel } from "./members";
+import { handled } from "./escape";
 import { useStickToBottom } from "./stick";
 import { BookmarkIcon } from "./icons";
 import { Time } from "../ui/time";
@@ -778,7 +779,10 @@ function EditBox({ text: start, done }: { text: string; done: (t: string | null)
         aria-label="Edit message"
         onInput={(e) => setText((e.target as HTMLTextAreaElement).value)}
         onKeyDown={(e) => {
-          if (e.key === "Escape") done(null);
+          if (e.key === "Escape") {
+            handled(e);
+            done(null);
+          }
           if (e.key === "Enter" && !e.shiftKey && !e.isComposing && !inOpenFence(text, (e.target as HTMLTextAreaElement).selectionStart)) {
             e.preventDefault();
             done(text.trim() ? text : null);

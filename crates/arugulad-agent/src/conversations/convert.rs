@@ -23,7 +23,7 @@ use std::{
 
 use serde_json::Value;
 
-use super::branch;
+use super::{branch, context::Context};
 use crate::agent::{
     images,
     transcript::{Entry, Tool},
@@ -81,7 +81,8 @@ impl Follow {
         let mut changed = false;
         if file != self.file || !self.same(&mut f, md.len())? {
             changed = self.read > 0 || self.open.is_some();
-            *self = Self { file, ..Self::default() };
+            let context_only = self.c.context_only;
+            *self = Self { file, c: Converter { context_only, ..Default::default() }, ..Self::default() };
         }
         f.seek(SeekFrom::Start(self.read))?;
         let mut new = vec![];
@@ -93,6 +94,17 @@ impl Follow {
     /// keep: its entries name them.
     pub fn take_images(&mut self) -> Vec<Arc<[u8]>> {
         std::mem::take(&mut self.c.images)
+    }
+
+    /// Follow only the context (#397): the model, fill and compactions of
+    /// a session this block runs, which has its entries already.
+    pub fn context_only() -> Self {
+        Self { c: Converter { context_only: true, ..Default::default() }, ..Default::default() }
+    }
+
+    /// What the transcript says of the context window so far.
+    pub fn context(&self) -> Option<Value> {
+        self.open.as_ref().unwrap_or(&self.c).context.summary()
     }
 
     /// The entries so far. `finished`: as for [`entries`].
@@ -147,6 +159,10 @@ struct Converter {
     parents: HashSet<String>,
     /// Images in prompts, not yet kept (M71).
     images: Vec<Arc<[u8]>>,
+    /// The model, the window's fill and the compactions (#397).
+    context: Context,
+    /// Only `context` is wanted: lines aren't converted to entries.
+    context_only: bool,
 }
 
 impl Converter {
@@ -183,6 +199,10 @@ impl Converter {
     }
 
     fn line(&mut self, v: &Value) {
+        self.context.line(v);
+        if self.context_only {
+            return;
+        }
         self.chain.line(v);
         self.convert(v);
         self.from.resize(self.out.len(), v["uuid"].as_str().unwrap_or_default().to_owned());
@@ -551,6 +571,23 @@ mod tests {
         assert_eq!(t.status, "failed");
         let live = entries(&fixture("shapes/subagent-call.jsonl"), false);
         assert_eq!(tools(&live)[0].status, "pending");
+    }
+
+    #[test]
+    fn a_followed_transcript_says_its_context() {
+        // Compacted by Claude Code at 967k of a window its usage shows is 1M.
+        let mut c = Converter::default();
+        c.lines(&fixture("shapes/compaction.jsonl"));
+        let ctx = c.context.summary().expect("a summary");
+        assert_eq!(ctx["compactions"], 1);
+        assert_eq!(ctx["last"]["trigger"], "auto");
+        assert_eq!(ctx["last"]["kind"], "overflow");
+        assert_eq!(ctx["window"], 1_000_000);
+        // Asking only for the context converts no entries.
+        let mut only = Converter { context_only: true, ..Default::default() };
+        only.lines(&fixture("shapes/compaction.jsonl"));
+        assert!(only.out.is_empty());
+        assert_eq!(only.context.summary(), Some(ctx));
     }
 
     #[test]

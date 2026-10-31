@@ -181,24 +181,17 @@ pub async fn note_agent(
 
 /// `GET /api/me/passkeys`: the account's passkeys, and its GitHub link.
 pub async fn passkeys(State(app): State<Arc<App>>, s: Session) -> R {
+    // A passkey reset that's due is done first (DK10).
+    if app.db.finish_due_passkey_reset(&s.account, arugula_e2e::now_ms())? {
+        crate::reset::passkeys_were_reset(&app, &s.account);
+    }
     Ok(Json(json!({
         "passkeys": app.db.passkeys(&s.account)?, "github": app.db.github_identity(&s.account)?.map(|(_, login)| login), "ways": app.db.sign_ins(&s.account)?,
     })))
 }
 
-/// `POST /api/me/passkeys/{id}/remove`: never the last way to sign in.
-pub async fn remove_passkey(State(app): State<Arc<App>>, s: PageSession, Path(id): Path<String>) -> R {
-    s.not_app(&app)?;
-    match app.db.drop_passkey(&s.account, &id)? {
-        Ok(()) => {
-            info!(account = s.account, "passkey removed");
-            app.analytics.capture(&s.account, "passkey removed", json!({}));
-            Ok(Json(json!({ "passkeys": app.db.passkey_count(&s.account)? })))
-        }
-        Err(why @ "no such passkey") => Err(err(StatusCode::NOT_FOUND, why)),
-        Err(why) => Err(err(StatusCode::CONFLICT, why)),
-    }
-}
+// Removing one takes another of the account's passkeys (DK10, #393):
+// `passkey::remove_start` and `passkey::remove`.
 
 // ---------------------------------------------------------------- deleting
 
@@ -827,27 +820,5 @@ mod tests {
         db.add_session("new", "acct-a", 1, 100).unwrap();
         assert_eq!(db.prune(50).unwrap(), 1);
         assert_eq!(db.sessions("acct-a", 0).unwrap().len(), 1);
-    }
-
-    #[test]
-    fn the_last_way_to_sign_in_stays() {
-        let db = Db::memory();
-        let a = db.account_for("passkey", "pk1", "", "acct-a", 1).unwrap();
-        db.add_passkey("pk1", &a, -7, b"k", 1).unwrap();
-        assert!(db.drop_passkey(&a, "pk1").unwrap().is_err());
-        db.add_passkey("pk2", &a, -7, b"k", 2).unwrap();
-        assert!(db.drop_passkey(&a, "nope").unwrap().is_err());
-        db.drop_passkey(&a, "pk1").unwrap().unwrap();
-        assert_eq!(db.passkey_count(&a).unwrap(), 1);
-        assert_eq!(db.sign_ins(&a).unwrap(), 1);
-        // The passkey that made it was its identity too: gone with it, but
-        // for its log (DK3), which says a signed-in page removed it.
-        assert_eq!(db.mentions("pk1"), ["passkey_log.credential"]);
-        let log = db.passkey_log(&a).unwrap();
-        let last = log.events.last().unwrap();
-        assert_eq!(
-            (last.credential.as_str(), last.event, last.by.as_str()),
-            ("pk1", arugula_e2e::passkey::Change::Removed, "session")
-        );
     }
 }
