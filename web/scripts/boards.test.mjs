@@ -3,7 +3,7 @@
 // the board routes' paths. Run with `node --experimental-strip-types`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { LANE_GLYPH, answerReady, askWaitingLine, assigneesLine, chipOf, counted, debounced, earlierLine, epicLine, firstLine, groupLine, isCard, laneCount, liveWord, marksOf, needsYou, needsYouLine, parsePointer, pointerHref, pointerLabel, pointerToSend, proofMark, rowGlyph, sections, stepActive, workLabel } from "../src/shared/boards/text.ts";
+import { LANE_GLYPH, answerReady, askWaitingLine, assigneesLine, chipOf, counted, debounced, earlierLine, epicLine, firstLine, groupLine, isCard, laneCount, liveWord, marksOf, needsYou, needsYouLine, parsePointer, pointerHref, pointerLabel, pointerToSend, proofMark, rowGlyph, sections, stepActive, workLabel, workChip } from "../src/shared/boards/text.ts";
 import { parse, pathOf } from "../src/platform/paths.ts";
 
 const P = "prj_8f2ec0ffee00112233445566778899aa";
@@ -92,6 +92,16 @@ test("an attachment's chip is its label and its state, and says nothing of what 
   assert.deepEqual(chipOf({ role: "work", pointer: { kind: "forge_item", id: "fi_abc123" }, live }), { label: "acme/app#7", state: "merged" });
   assert.deepEqual(chipOf({ role: "work", pointer: { kind: "forge_item", id: "fi_abc123" } }), { label: "PR or issue abc123", state: null });
   assert.deepEqual(chipOf({ role: "work", pointer: { kind: "block", machine: "m", pane: "7" }, block: { state: "working" } }), { label: "agent 7", state: "working" });
+});
+
+test("a block's chip is its title, and work on an issue says its board and links to the row (#372)", () => {
+  const block = { role: "work", pointer: { kind: "block", machine: "m", pane: "7" } };
+  assert.deepEqual(chipOf({ ...block, block: { state: "idle", title: "Lexer lane" } }), { label: "Lexer lane", state: "idle" });
+  assert.deepEqual(chipOf({ ...block, block: { state: "idle" } }), { label: "agent 7", state: "idle" });
+  const on = { project: P, board: B, title: "Launch", row: "row_0a1b" };
+  assert.deepEqual(workChip("#12", on), { label: "#12 · Launch", path: `/p/${P}/boards/${B}#row=row_0a1b` });
+  assert.deepEqual(workChip("#12", null), { label: "#12", path: null });
+  assert.deepEqual(workChip("ARUGU-7"), { label: "ARUGU-7", path: null });
 });
 
 test("the board routes read and write the same paths", () => {

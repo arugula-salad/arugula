@@ -2927,7 +2927,7 @@ async fn fake_boards(f: FakeBoards) -> String {
 
 /// The board tools (boards, step 3) are listed and work only with the
 /// `boards` flag on; board_read lists a project's boards and reads one as
-/// lanes, rows and 72-column text; board_write adds a row, sets needs_input
+/// lanes, rows and 72-column text; board_write adds a row, clears a status
 /// with no rev, offers no zone, move or other status, attaches proof, says to
 /// read again on a 409, needs a rev for a note, makes a board and closes it,
 /// and passes the platform's refusals through.
@@ -2968,6 +2968,7 @@ async fn an_agent_reads_and_writes_a_board_where_the_flag_is_on() {
             "move",
             "attach",
             "detach",
+            "ask",
             "remove_row",
             "create_board",
             "edit_board",
@@ -3011,7 +3012,7 @@ async fn an_agent_reads_and_writes_a_board_where_the_flag_is_on() {
     )
     .await;
     assert!(attached["summary"].as_str().unwrap().contains("Note: that PR references an issue"), "{attached}");
-    call(&s, "board_write", json!({ "kind": "set", "board": "brd_1", "row": "row_1", "status": "needs_input" })).await;
+    call(&s, "board_write", json!({ "kind": "set", "board": "brd_1", "row": "row_1", "status": "none" })).await;
     call(&s, "board_write", json!({ "kind": "set", "board": "brd_1", "row": "row_1", "note": "ok", "rev": 2 })).await;
     // Lanes follow the work: no other status, and no move to a lane.
     for refusal in [
@@ -3082,8 +3083,8 @@ async fn an_agent_reads_and_writes_a_board_where_the_flag_is_on() {
     assert!(no.contains("its own machine added"), "{no}");
 
     let calls = fake.calls.lock().unwrap().clone();
-    let status = calls.iter().find(|(a, b)| a.starts_with("PUT ") && b["status"] == "needs_input").unwrap();
-    assert_eq!(status.1, json!({ "id": "row_1", "status": "needs_input" }), "a status names no rev: {status:?}");
+    let status = calls.iter().find(|(a, b)| a.starts_with("PUT ") && b["status"] == "none").unwrap();
+    assert_eq!(status.1, json!({ "id": "row_1", "status": "none" }), "a status names no rev: {status:?}");
     assert!(!calls.iter().any(|(_, b)| b["status"] == "done"), "a refused status never goes out");
     let moves: Vec<_> =
         calls.iter().filter(|(a, _)| a.contains("/move")).map(|(a, b)| (a.as_str(), b.clone())).collect();
@@ -3120,4 +3121,209 @@ async fn an_agent_reads_and_writes_a_board_where_the_flag_is_on() {
         "a link goes to the platform as it is: {linked:?}"
     );
     s.cancel().await.unwrap();
+}
+
+/// A fake control's platform for work that knows its issue (#372): the
+/// project `prj_1` that the machine may write boards of while `granted`, the
+/// rows of `#12` (one board, `brd_1` "Launch", row `row_1`) and of nothing
+/// else, and the block states it is told. Every attach as it came: the body,
+/// and the signing machine's id the test expects in it.
+#[cfg(feature = "labs")]
+#[derive(Clone, Default)]
+struct FakeWork {
+    granted: Arc<std::sync::atomic::AtomicBool>,
+    machine: Arc<std::sync::Mutex<String>>,
+    attached: Arc<std::sync::Mutex<Vec<Value>>>,
+    told: Arc<std::sync::Mutex<Vec<Value>>>,
+}
+
+#[cfg(feature = "labs")]
+async fn fake_work(f: FakeWork) -> String {
+    use axum::{
+        Json, Router,
+        extract::State,
+        http::StatusCode,
+        response::IntoResponse,
+        routing::{get, post, put},
+    };
+    use std::sync::atomic::Ordering::Relaxed;
+    async fn reach(State(f): State<FakeWork>) -> Json<Value> {
+        let powers = if f.granted.load(Relaxed) { json!(["boards.write"]) } else { json!(["boards.read"]) };
+        Json(json!({ "projects": [{ "id": "prj_1", "name": "Launch crew", "powers": powers, "boards": 1 }] }))
+    }
+    async fn attach(State(f): State<FakeWork>, Json(b): Json<Value>) -> axum::response::Response {
+        if !f.granted.load(Relaxed) {
+            let said = json!({ "error": "no boards.write grant over this project", "reason": "agent_ungranted" });
+            return (StatusCode::FORBIDDEN, Json(said)).into_response();
+        }
+        assert_eq!(b["machine"], f.machine.lock().unwrap().as_str(), "the block is the signer's: {b}");
+        f.attached.lock().unwrap().push(b.clone());
+        let on = if b["issue"] == "#12" {
+            json!([{ "board": "brd_1", "title": "Launch", "row": "row_1" }])
+        } else {
+            json!([])
+        };
+        Json(json!({ "on": on })).into_response()
+    }
+    async fn told(State(f): State<FakeWork>, Json(b): Json<Value>) -> Json<Value> {
+        f.told.lock().unwrap().push(b);
+        Json(json!({}))
+    }
+    let app = Router::new()
+        .route("/control.json", get(|| async { Json(json!({ "daemon_auth": 2 })) }))
+        .route("/api/daemon/trust", get(|| async { Json(json!({ "certs": [], "revocations": [] })) }))
+        .route("/api/daemon/peers", get(|| async { Json(json!({})) }))
+        .route("/api/daemon/push-subs", get(|| async { Json(json!({ "subs": [] })) }))
+        .route("/api/daemon/access", post(|| async { Json(json!({})) }))
+        .route("/api/daemon/issue-home", get(|| async { Json(json!({ "project": "prj_1", "home": "native" })) }))
+        .route(arugula_control_wire::boards::AGENT_BOARD_REACH, get(reach))
+        .route(arugula_control_wire::boards::AGENT_PROJECT_ATTACH_BLOCK, post(attach))
+        .route(arugula_control_wire::boards::AGENT_BLOCK_STATE, put(told))
+        .with_state(f);
+    let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let at = format!("http://{}", l.local_addr().unwrap());
+    tokio::spawn(async move { axum::serve(l, app).await.unwrap() });
+    at
+}
+
+/// An agent started on an issue (#372) is on its row: the block keeps the
+/// issue and the board's title (control's answer), reports its title, and a
+/// restart keeps them. Without the grant the block keeps its issue and the
+/// answer says which grant would attach it; with no issue nothing changes;
+/// an agent opened through the API with `work` (`arugula agent --issue`) is
+/// attached too; a worktree's branch starts with the issue's number.
+#[cfg(all(unix, feature = "labs"))]
+#[tokio::test(flavor = "multi_thread")]
+async fn an_agent_started_on_an_issue_is_on_its_row() {
+    use std::sync::atomic::Ordering::Relaxed;
+    let control = FakeWork::default();
+    control.granted.store(true, Relaxed);
+    let url = fake_work(control.clone()).await;
+    let machine = control.machine.clone();
+    let mut d = Daemon::child_in(&["--wisp-token-file", "/nonexistent"], &[], |state| {
+        let keys = arugula_e2e::DeviceKeys::load_or_create(&state.join("daemon.key")).unwrap();
+        *machine.lock().unwrap() = keys.id();
+        let cert = arugula_e2e::Cert::new(&keys, "a1", arugula_e2e::Kind::Daemon, "test");
+        let saved = json!({ "url": url, "trust": { "account": "a1", "root": keys.id() }, "cert": cert });
+        std::fs::write(state.join("control.json"), saved.to_string()).unwrap();
+        arugula_proto::flags::set(state, "boards", true).unwrap();
+    });
+    let s = bridge(&d, Client::named("claude-code")).await;
+    let agent = |extra: Value| {
+        let mut a = json!({ "agent": "acp", "command": format!("python3 {}", agentd::fake()), "prompt": "hello" });
+        a.as_object_mut().unwrap().extend(extra.as_object().unwrap().clone());
+        a
+    };
+    // The daemon takes a moment to join the fake control.
+    let deadline = std::time::Instant::now() + Duration::from_secs(20);
+    while control.attached.lock().unwrap().is_empty() {
+        let r = call_raw(&s, "start_agent", agent(json!({ "issue": "#12", "title": "Lexer lane" }))).await;
+        let r = r.structured_content.unwrap_or_default();
+        if r["issue"]["boards"][0]["title"] == "Launch" {
+            break;
+        }
+        assert!(std::time::Instant::now() < deadline, "never joined: {r}");
+        tokio::time::sleep(Duration::from_millis(300)).await;
+    }
+    let first = control.attached.lock().unwrap()[0].clone();
+    assert_eq!(first["issue"], "#12", "{first}");
+    let block: u64 = first["pane"].as_str().unwrap().parse().unwrap();
+    let work = json!({ "issue": "#12", "boards": [{ "project": "prj_1", "board": "brd_1", "title": "Launch", "row": "row_1" }] });
+    assert_eq!(d.state(block)["work"], work);
+
+    // The answer says it, too; the report carries the block's title.
+    let r = call(&s, "start_agent", agent(json!({ "issue": "#12", "title": "Lexer lane" }))).await;
+    assert_eq!(r["issue"]["boards"][0], json!({ "board": "brd_1", "title": "Launch", "row": "row_1" }), "{r}");
+    assert!(r["summary"].as_str().unwrap().contains("attached to its row on \"Launch\""), "{r}");
+    let reported = |block: u64, title: &str| {
+        control
+            .told
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|b| b["pane"].as_str().is_some_and(|p| p.parse() == Ok(block)) && b["block"]["title"] == title)
+    };
+    d.wait_for("the report with its title", || reported(block, "Lexer lane"));
+
+    // Kept across a restart, in the block's config and in its state.
+    d.stop();
+    d.start();
+    d.wait_for("the block", || d.raw("GET", &format!("/api/blocks/{block}"), None).0 == 200);
+    assert_eq!(d.state(block)["work"], work, "after a restart");
+    let saved: Value = serde_json::from_str(&std::fs::read_to_string(d.state.join("layout.json")).unwrap()).unwrap();
+    assert_eq!(saved["panes"][block.to_string()]["config"]["work"], work);
+
+    // No issue: nothing changes, and control is not asked.
+    let asked = control.attached.lock().unwrap().len();
+    let plain = call(&s, "start_agent", agent(json!({ "title": "Not on an issue" }))).await;
+    assert!(plain.get("issue").is_none(), "{plain}");
+    let plain_block = plain["block"].as_u64().unwrap();
+    d.wait(plain_block, "idle");
+    d.wait_for("its report", || {
+        control.told.lock().unwrap().iter().any(|b| b["pane"] == plain_block.to_string().as_str())
+    });
+    let titled = control
+        .told
+        .lock()
+        .unwrap()
+        .iter()
+        .any(|b| b["pane"] == plain_block.to_string().as_str() && b["block"].get("title").is_some());
+    assert!(!titled, "a block on no issue reports no title: {:?}", control.told.lock().unwrap());
+    assert_eq!(d.state(plain["block"].as_u64().unwrap())["work"], Value::Null);
+    assert_eq!(control.attached.lock().unwrap().len(), asked);
+    // A chat is no agent's work.
+    let chat = json!({ "chat": true, "prompt": "hello", "issue": "#12" });
+    assert!(refused(&s, "start_agent", chat).await.contains("issue is an agent's"));
+    // An issue that isn't one is refused, an issue with no row is on none.
+    assert!(refused(&s, "start_agent", agent(json!({ "issue": "twelve" }))).await.contains("#N"));
+    let none = call(&s, "start_agent", agent(json!({ "issue": "#99" }))).await;
+    assert_eq!(none["issue"]["boards"], json!([]), "{none}");
+    assert!(none["issue"]["said"].as_str().unwrap().contains("no board"), "{none}");
+
+    // Through the API, as `arugula agent --issue` does.
+    let opened = d.open_with(json!({ "type": "agent", "config": agent(json!({ "work": { "issue": "#12" } })) }));
+    d.wait_for("its row", || d.state(opened)["work"] == work);
+    let bad = d.raw(
+        "POST",
+        "/api/blocks",
+        Some(json!({ "type": "agent", "config": agent(json!({ "work": { "issue": "x" } })) })),
+    );
+    assert_eq!(bad.0, 400, "{bad:?}");
+
+    // A worktree's branch starts with the issue's number.
+    let tmp = std::env::temp_dir().join(format!("arugula-372-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&tmp);
+    std::fs::create_dir_all(&tmp).unwrap();
+    let tmp = tmp.canonicalize().unwrap();
+    git(&tmp, &["init", "-q", "--bare", "-b", "main", "origin.git"]);
+    git(&tmp, &["init", "-q", "-b", "main", "work"]);
+    let repo = tmp.join("work");
+    git(&repo, &["commit", "-q", "--allow-empty", "-m", "one"]);
+    git(&repo, &["remote", "add", "origin", tmp.join("origin.git").to_str().unwrap()]);
+    git(&repo, &["push", "-q", "origin", "main"]);
+    let wt =
+        call(&s, "start_agent", agent(json!({ "issue": "#12", "title": "Lexer lane", "cwd": repo, "worktree": {} })))
+            .await;
+    assert!(wt["summary"].as_str().unwrap().contains("branch feat/12-lexer-lane"), "{wt}");
+    let none = refused(&s, "start_agent", agent(json!({ "cwd": repo, "worktree": {} }))).await;
+    assert!(none.contains("branch name"), "{none}");
+
+    // Without the grant: the block keeps its issue; the answer says what to grant.
+    control.granted.store(false, Relaxed);
+    let r = call(&s, "start_agent", agent(json!({ "issue": "#12" }))).await;
+    assert_eq!(r["issue"]["boards"], json!([]), "{r}");
+    assert!(r["issue"]["said"].as_str().unwrap().contains("boards.write"), "{r}");
+    assert_eq!(d.state(r["block"].as_u64().unwrap())["work"], json!({ "issue": "#12" }));
+
+    // Boards off here: the issue is kept, and nothing is asked of control.
+    arugula_proto::flags::set(&d.state, "boards", false).unwrap();
+    let asked = control.attached.lock().unwrap().len();
+    let r = call(&s, "start_agent", agent(json!({ "issue": "#12" }))).await;
+    assert_eq!(r["issue"]["boards"], json!([]), "{r}");
+    assert!(r["issue"]["said"].as_str().unwrap().contains("boards are off"), "{r}");
+    assert_eq!(control.attached.lock().unwrap().len(), asked);
+
+    s.cancel().await.unwrap();
+    let _ = Command::new("git").args(["worktree", "prune"]).current_dir(&repo).status();
+    let _ = std::fs::remove_dir_all(&tmp);
 }

@@ -3147,6 +3147,14 @@ auth = "daemon"
 clients = ["daemon"]
 note = "The state of one of the signing machine's own agent blocks, for the board rows that point at it (aru-116): the state word, branch, short HEAD, pushed, uncommitted count and diffstat, nothing else. The machine is the signer, never the body. Needs `boards.write` over a project; 403 without."
 
+[[route]]
+method = "POST"
+path = "/api/daemon/projects/{project}/attach-block"  # wire::boards::AGENT_PROJECT_ATTACH_BLOCK
+process = "platform"
+auth = "daemon"
+clients = ["daemon"]
+note = "Attaches one of the signing machine's own agent blocks, started on an issue, as work to that issue's row on every board of the project (`boards.write` over it; 403 without, and for a block of another machine). Answers the rows it is on."
+
 # ---- platform: deploys and their approval (M218, platform step 7)
 # A project's environments and deploys (M217's storage). Members read; owners
 # and editors (or their agents) plan and ask; only an owner approves or

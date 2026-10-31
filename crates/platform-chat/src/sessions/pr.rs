@@ -882,6 +882,7 @@ mod tests {
             model: None,
             ran_model: None,
             asker_agent: None,
+            work_item: None,
         }
     }
 

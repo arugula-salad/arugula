@@ -123,6 +123,17 @@ pub const AGENT_BOARD_ROW_ASK: &str = "/api/daemon/boards/{id}/rows/{row}/ask";
 /// own agent blocks, for the rows that point at it. The machine is the one
 /// that signed the request, never a field of the body.
 pub const AGENT_BLOCK_STATE: &str = "/api/daemon/block-state";
+/// `POST` [`AttachBlock`]: a machine's agent block was started on an issue
+/// (`start_agent`'s `issue`): attach it, as work, to that issue's row on
+/// every board of the project; answered [`BlockAttached`]. Needs the
+/// machine's `boards.write` over the project; the block is the signing
+/// machine's own.
+pub const AGENT_PROJECT_ATTACH_BLOCK: &str = "/api/daemon/projects/{project}/attach-block";
+
+/// [`AGENT_PROJECT_ATTACH_BLOCK`] for `project`.
+pub fn agent_project_attach_block(project: &str) -> String {
+    format!("/api/daemon/projects/{project}/attach-block")
+}
 
 /// [`BOARD_ROW_ASK`] for `row` of `id`.
 pub fn board_row_ask(id: &str, row: &str) -> String {
@@ -648,6 +659,10 @@ impl Diffstat {
 #[serde(deny_unknown_fields)]
 pub struct BlockState {
     pub state: BlockWord,
+    /// The name its starter or its person gave the block: a board's chip
+    /// for it. Never the first words of a prompt.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub branch: Option<String>,
     /// HEAD, abbreviated.
@@ -777,6 +792,86 @@ pub struct AnswerAsk {
     pub option: Option<String>,
     #[serde(default)]
     pub text: Option<String>,
+}
+
+/// An issue as a starter writes it: `#N`, `owner/repo#N` or `IDENT-N`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum IssueRef {
+    /// `#N`: a native issue of the project, else a GitHub issue of one of
+    /// its repos.
+    Number(u64),
+    /// `owner/repo#N`.
+    Repo { repo: String, number: u64 },
+    /// `IDENT-N`: a Plane item; the key in capitals.
+    Plane { key: String, number: u64 },
+}
+
+impl IssueRef {
+    /// The reference `text` writes, or none when it isn't one.
+    pub fn parse(text: &str) -> Option<IssueRef> {
+        let text = text.trim();
+        let number = |n: &str| n.parse::<u64>().ok().filter(|n| *n > 0);
+        let digits = |n: &str| !n.is_empty() && n.len() <= 9 && n.bytes().all(|b| b.is_ascii_digit());
+        if let Some((left, n)) = text.rsplit_once('#') {
+            if !digits(n) {
+                return None;
+            }
+            let number = number(n)?;
+            if left.is_empty() {
+                return Some(IssueRef::Number(number));
+            }
+            let name = |s: &str| !s.is_empty() && s.bytes().all(|b| b.is_ascii_alphanumeric() || b"._-".contains(&b));
+            let (owner, repo) = left.split_once('/')?;
+            return (name(owner) && name(repo)).then(|| IssueRef::Repo { repo: left.to_owned(), number });
+        }
+        let (key, n) = text.rsplit_once('-')?;
+        let key_ok = key.bytes().next().is_some_and(|b| b.is_ascii_alphabetic())
+            && key.bytes().all(|b| b.is_ascii_alphanumeric());
+        if !(key_ok && digits(n)) {
+            return None;
+        }
+        Some(IssueRef::Plane { key: key.to_ascii_uppercase(), number: number(n)? })
+    }
+
+    /// The issue's number, for a branch name.
+    pub fn number(&self) -> u64 {
+        match self {
+            IssueRef::Number(n) | IssueRef::Repo { number: n, .. } | IssueRef::Plane { number: n, .. } => *n,
+        }
+    }
+}
+
+/// [`AGENT_PROJECT_ATTACH_BLOCK`]'s body: the issue as the starter wrote it
+/// (`#N`, `owner/repo#N` or `IDENT-N`) and the block, which is on the
+/// signing machine.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "BoardAttachBlock"))]
+#[serde(deny_unknown_fields)]
+pub struct AttachBlock {
+    pub issue: String,
+    pub machine: String,
+    pub pane: String,
+}
+
+/// One row a block was attached to.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "BoardBlockOn"))]
+pub struct BlockOn {
+    pub board: String,
+    pub title: String,
+    pub row: String,
+}
+
+/// [`AGENT_PROJECT_ATTACH_BLOCK`]'s answer: the rows the block is on now
+/// (also those it was on already), and none when no board of the project
+/// has a row for the issue.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "BoardBlockAttached"))]
+pub struct BlockAttached {
+    pub on: Vec<BlockOn>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -1225,6 +1320,19 @@ pub struct WorkItems {
 mod tests {
     use super::*;
 
+    /// The three forms a starter writes an issue in, and what isn't one.
+    #[test]
+    fn an_issue_is_written_as_a_number_a_repo_number_or_a_key() {
+        assert_eq!(IssueRef::parse(" #372 "), Some(IssueRef::Number(372)));
+        let repo = IssueRef::parse("arugula-salad/arugula#12");
+        assert_eq!(repo, Some(IssueRef::Repo { repo: "arugula-salad/arugula".into(), number: 12 }));
+        assert_eq!(IssueRef::parse("arugu-7"), Some(IssueRef::Plane { key: "ARUGU".into(), number: 7 }));
+        assert_eq!(IssueRef::parse("ARUGU-7").map(|r| r.number()), Some(7));
+        for no in ["372", "#", "#0", "#x", "a/b/c#1", "/r#1", "o/#1", "-5", "1A-5", "A-", "A B-5", "#1234567890"] {
+            assert_eq!(IssueRef::parse(no), None, "{no}");
+        }
+    }
+
     fn row(pointer: Pointer, lane: Lane, note: &str) -> Row {
         Row {
             id: "row_1".into(),
@@ -1417,6 +1525,7 @@ Done: People can sign up.
     fn a_block_row_shows_its_reported_state() {
         let mut r = row(Pointer::Block { machine: "m1".into(), pane: "7".into() }, Lane::Doing, "Tokenizer");
         r.block = Some(BlockState {
+            title: None,
             state: BlockWord::NeedsInput,
             branch: Some("feat/tokenizer".into()),
             head: Some("abc1234".into()),

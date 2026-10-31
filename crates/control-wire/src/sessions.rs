@@ -330,6 +330,29 @@ pub struct SessionCard {
     /// move it (its asker, an owner or an editor) and it's queued or done.
     #[serde(default)]
     pub moves: Vec<SessionPlace>,
+    /// The issue it was started on, with the first board that has a row for
+    /// it (#372).
+    #[serde(default)]
+    pub work: Option<SessionWork>,
+}
+
+/// The issue a session was started on, as its header's chip shows it:
+/// `#N · ‹board›`, linking to the board's row.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct SessionWork {
+    /// The issue (`iss_…`) and its number.
+    pub issue: String,
+    pub number: u64,
+    /// The board that has a row for it, when boards are on for the reader,
+    /// its title and the row.
+    #[serde(default)]
+    pub board: Option<String>,
+    #[serde(default)]
+    pub board_title: Option<String>,
+    #[serde(default)]
+    pub row: Option<String>,
 }
 
 /// One of a project's workspaces, as Move to… lists it.

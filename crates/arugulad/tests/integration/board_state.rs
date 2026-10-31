@@ -76,7 +76,7 @@ async fn an_agent_blocks_state_goes_to_control() {
 
     d.post(&format!("/api/panes/{id}/close"), json!({}));
     told(&fake, id, "closed").await;
-    let allowed = ["state", "branch", "head", "pushed", "uncommitted", "diffstat"];
+    let allowed = ["state", "title", "branch", "head", "pushed", "uncommitted", "diffstat"];
     for b in fake.told.lock().unwrap().iter() {
         let keys: Vec<_> = b["block"].as_object().unwrap().keys().collect();
         assert!(keys.iter().all(|k| allowed.contains(&k.as_str())), "{b}");

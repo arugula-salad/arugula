@@ -1116,6 +1116,17 @@ impl Db {
         )
     }
 
+    /// The rows (board, its title, row) whose item is native issue `id`,
+    /// oldest board first.
+    pub fn rows_of_issue(&self, id: &str) -> Result<Vec<(String, String, String)>> {
+        self.c().query_map(
+            "SELECT b.id, b.title, e.id FROM board_entries e JOIN boards b ON b.id = e.board_id
+             WHERE e.kind = 'row' AND e.target_kind = 'issue' AND e.target = ?1 ORDER BY b.created_at, b.id",
+            params![id],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+        )
+    }
+
     /// The projects over which `machine` holds a live `boards.write` grant,
     /// each with the account that gave it: whether the owner still reads the
     /// project is for [`crate::grants::agent_may`].
@@ -1133,9 +1144,10 @@ impl Db {
         let d = b.diffstat;
         self.c().execute(
             "INSERT INTO board_block_states (machine, pane, account, state, branch, head, pushed, uncommitted,
-                 diff_files, diff_added, diff_removed, updated_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
+                 diff_files, diff_added, diff_removed, updated_at, title)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)
              ON CONFLICT (machine, pane) DO UPDATE SET account = excluded.account, state = excluded.state,
+                 title = COALESCE(excluded.title, board_block_states.title),
                  branch = excluded.branch, head = excluded.head, pushed = excluded.pushed,
                  uncommitted = excluded.uncommitted, diff_files = excluded.diff_files,
                  diff_added = excluded.diff_added, diff_removed = excluded.diff_removed,
@@ -1152,7 +1164,8 @@ impl Db {
                 d.map(|d| d.files),
                 d.map(|d| d.added),
                 d.map(|d| d.removed),
-                at
+                at,
+                b.title
             ],
         )?;
         Ok(())
@@ -1166,7 +1179,7 @@ impl Db {
         let c = self.c();
         c.query_map(
             &format!(
-                "SELECT pane, state, branch, head, pushed, uncommitted, diff_files, diff_added, diff_removed
+                "SELECT pane, state, branch, head, pushed, uncommitted, diff_files, diff_added, diff_removed, title
                  FROM board_block_states WHERE machine = ?1 AND {}",
                 in_json(&c, "pane", 2)
             ),
@@ -1175,6 +1188,7 @@ impl Db {
                 let files: Option<u32> = r.get(6)?;
                 let state = BlockState {
                     state: word_of(&r.get::<String>(1)?)?,
+                    title: r.get(9)?,
                     branch: r.get(2)?,
                     head: r.get(3)?,
                     pushed: r.get(4)?,

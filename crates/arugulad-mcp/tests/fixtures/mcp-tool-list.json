@@ -1755,13 +1755,11 @@
                 ]
               },
               "branch": {
-                "description": "The new branch's name.",
+                "default": "",
+                "description": "The new branch's name. Default, with an issue: `feat/N-` and the words of the title or prompt.",
                 "type": "string"
               }
             },
-            "required": [
-              "branch"
-            ],
             "type": "object"
           }
         },
@@ -1809,6 +1807,14 @@
           "cwd": {
             "default": null,
             "description": "Where it works.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "issue": {
+            "default": null,
+            "description": "The issue it works on: `#N`, `owner/repo#N` or `IDENT-N`. The block keeps it, and its header says it (`#N · board`). With this machine's boards.write grant over the issue's project, the block is attached to that issue's row on every board of the project, which moves the row to Doing; without it the answer says so. A worktree's branch, when you give none, starts with the issue's number (`feat/357-…`). Not for a chat.",
             "type": [
               "string",
               "null"
@@ -1875,11 +1881,65 @@
       },
       "name": "start_agent",
       "outputSchema": {
+        "$defs": {
+          "StartedBoard": {
+            "properties": {
+              "board": {
+                "type": "string"
+              },
+              "row": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "board",
+              "title",
+              "row"
+            ],
+            "type": "object"
+          },
+          "StartedOn": {
+            "description": "The issue a block was started on, the boards whose row it is attached\nto (none when it wasn't attached), and a sentence saying why not.",
+            "properties": {
+              "boards": {
+                "items": {
+                  "$ref": "#/$defs/StartedBoard"
+                },
+                "type": "array"
+              },
+              "issue": {
+                "type": "string"
+              },
+              "said": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "issue",
+              "boards",
+              "said"
+            ],
+            "type": "object"
+          }
+        },
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
           "block": {
             "minimum": 0,
             "type": "integer"
+          },
+          "issue": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/StartedOn"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "summary": {
             "type": "string"
@@ -5908,13 +5968,11 @@
                 ]
               },
               "branch": {
-                "description": "The new branch's name.",
+                "default": "",
+                "description": "The new branch's name. Default, with an issue: `feat/N-` and the words of the title or prompt.",
                 "type": "string"
               }
             },
-            "required": [
-              "branch"
-            ],
             "type": "object"
           }
         },
@@ -5962,6 +6020,14 @@
           "cwd": {
             "default": null,
             "description": "Where it works.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "issue": {
+            "default": null,
+            "description": "The issue it works on: `#N`, `owner/repo#N` or `IDENT-N`. The block keeps it, and its header says it (`#N · board`). With this machine's boards.write grant over the issue's project, the block is attached to that issue's row on every board of the project, which moves the row to Doing; without it the answer says so. A worktree's branch, when you give none, starts with the issue's number (`feat/357-…`). Not for a chat.",
             "type": [
               "string",
               "null"
@@ -6041,11 +6107,65 @@
       },
       "name": "start_agent",
       "outputSchema": {
+        "$defs": {
+          "StartedBoard": {
+            "properties": {
+              "board": {
+                "type": "string"
+              },
+              "row": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "board",
+              "title",
+              "row"
+            ],
+            "type": "object"
+          },
+          "StartedOn": {
+            "description": "The issue a block was started on, the boards whose row it is attached\nto (none when it wasn't attached), and a sentence saying why not.",
+            "properties": {
+              "boards": {
+                "items": {
+                  "$ref": "#/$defs/StartedBoard"
+                },
+                "type": "array"
+              },
+              "issue": {
+                "type": "string"
+              },
+              "said": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "issue",
+              "boards",
+              "said"
+            ],
+            "type": "object"
+          }
+        },
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
           "block": {
             "minimum": 0,
             "type": "integer"
+          },
+          "issue": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/StartedOn"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "summary": {
             "type": "string"
@@ -10343,13 +10463,11 @@
                 ]
               },
               "branch": {
-                "description": "The new branch's name.",
+                "default": "",
+                "description": "The new branch's name. Default, with an issue: `feat/N-` and the words of the title or prompt.",
                 "type": "string"
               }
             },
-            "required": [
-              "branch"
-            ],
             "type": "object"
           }
         },
@@ -10397,6 +10515,14 @@
           "cwd": {
             "default": null,
             "description": "Where it works.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "issue": {
+            "default": null,
+            "description": "The issue it works on: `#N`, `owner/repo#N` or `IDENT-N`. The block keeps it, and its header says it (`#N · board`). With this machine's boards.write grant over the issue's project, the block is attached to that issue's row on every board of the project, which moves the row to Doing; without it the answer says so. A worktree's branch, when you give none, starts with the issue's number (`feat/357-…`). Not for a chat.",
             "type": [
               "string",
               "null"
@@ -10463,11 +10589,65 @@
       },
       "name": "start_agent",
       "outputSchema": {
+        "$defs": {
+          "StartedBoard": {
+            "properties": {
+              "board": {
+                "type": "string"
+              },
+              "row": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "board",
+              "title",
+              "row"
+            ],
+            "type": "object"
+          },
+          "StartedOn": {
+            "description": "The issue a block was started on, the boards whose row it is attached\nto (none when it wasn't attached), and a sentence saying why not.",
+            "properties": {
+              "boards": {
+                "items": {
+                  "$ref": "#/$defs/StartedBoard"
+                },
+                "type": "array"
+              },
+              "issue": {
+                "type": "string"
+              },
+              "said": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "issue",
+              "boards",
+              "said"
+            ],
+            "type": "object"
+          }
+        },
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
           "block": {
             "minimum": 0,
             "type": "integer"
+          },
+          "issue": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/StartedOn"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "summary": {
             "type": "string"
@@ -14496,13 +14676,11 @@
                 ]
               },
               "branch": {
-                "description": "The new branch's name.",
+                "default": "",
+                "description": "The new branch's name. Default, with an issue: `feat/N-` and the words of the title or prompt.",
                 "type": "string"
               }
             },
-            "required": [
-              "branch"
-            ],
             "type": "object"
           }
         },
@@ -14550,6 +14728,14 @@
           "cwd": {
             "default": null,
             "description": "Where it works.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "issue": {
+            "default": null,
+            "description": "The issue it works on: `#N`, `owner/repo#N` or `IDENT-N`. The block keeps it, and its header says it (`#N · board`). With this machine's boards.write grant over the issue's project, the block is attached to that issue's row on every board of the project, which moves the row to Doing; without it the answer says so. A worktree's branch, when you give none, starts with the issue's number (`feat/357-…`). Not for a chat.",
             "type": [
               "string",
               "null"
@@ -14629,11 +14815,65 @@
       },
       "name": "start_agent",
       "outputSchema": {
+        "$defs": {
+          "StartedBoard": {
+            "properties": {
+              "board": {
+                "type": "string"
+              },
+              "row": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "board",
+              "title",
+              "row"
+            ],
+            "type": "object"
+          },
+          "StartedOn": {
+            "description": "The issue a block was started on, the boards whose row it is attached\nto (none when it wasn't attached), and a sentence saying why not.",
+            "properties": {
+              "boards": {
+                "items": {
+                  "$ref": "#/$defs/StartedBoard"
+                },
+                "type": "array"
+              },
+              "issue": {
+                "type": "string"
+              },
+              "said": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "issue",
+              "boards",
+              "said"
+            ],
+            "type": "object"
+          }
+        },
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
           "block": {
             "minimum": 0,
             "type": "integer"
+          },
+          "issue": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/StartedOn"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "summary": {
             "type": "string"

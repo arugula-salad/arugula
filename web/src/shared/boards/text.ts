@@ -150,9 +150,17 @@ export function laneCount(z: Pick<BoardZone, "rows">): { total: number; proven: 
  * may see it (an item they can't read says nothing but what it is). */
 export function chipOf(a: Pick<BoardAttachment, "pointer" | "live" | "block" | "role">): { label: string; state: string | null } {
   const label = pointerLabel(a.pointer, a.live);
-  if (a.block) return { label, state: BLOCK_LABEL[a.block.state] };
+  // The block's own name, when its starter gave it one (#372).
+  if (a.block) return { label: a.block.title || label, state: BLOCK_LABEL[a.block.state] };
   if (a.live) return { label, state: liveWord(a.live) };
   return { label, state: null };
+}
+
+/** Work that knows its issue (#372): the chip `#12 · Launch` on an agent block's or a session's header, or `#12` when it is on no board (or isn't known to be), and the platform page's address of the board with `#row=` its row, for its link. */
+export function workChip(issue: string, on?: { project: string; board: string; title: string; row: string } | null): { label: string; path: string | null } {
+  if (!on) return { label: issue, path: null };
+  const path = `/p/${encodeURIComponent(on.project)}/boards/${encodeURIComponent(on.board)}#row=${encodeURIComponent(on.row)}`;
+  return { label: `${issue} · ${on.title}`, path };
 }
 
 /** The longest goal the platform takes (`GOAL_MAX`, control-wire). */

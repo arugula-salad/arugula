@@ -42,6 +42,12 @@ pub struct Args {
     /// A short name for the block, shown instead of the agent's name.
     #[arg(long)]
     title: Option<String>,
+    /// The issue it works on (`#N`, `owner/repo#N` or `IDENT-N`): the block
+    /// is attached to that issue's row on the boards of its project (Labs:
+    /// boards; with this machine's boards.write grant) and says it in its
+    /// header.
+    #[arg(long, value_name = "ISSUE", hide = true, conflicts_with_all = ["chat", "resume", "fork"])]
+    issue: Option<String>,
     /// An MCP server for the session, `NAME=COMMAND LINE` (stdio; may be
     /// repeated). Its forms and sign-in links show as cards.
     #[arg(long = "mcp", value_name = "NAME=COMMAND")]
@@ -177,6 +183,7 @@ pub fn run(args: Args, ctx: Ctx) -> anyhow::Result<i32> {
             codex,
             model,
             title,
+            issue,
             mcp,
             allow,
             permission_mode,
@@ -212,6 +219,9 @@ pub fn run(args: Args, ctx: Ctx) -> anyhow::Result<i32> {
             }
             config["model"] = json!(model);
             config["title"] = json!(title);
+            if let Some(issue) = issue {
+                config["work"] = json!({ "issue": issue });
+            }
             if !mcp.is_empty() {
                 config["mcp_servers"] = json!(mcp);
             }

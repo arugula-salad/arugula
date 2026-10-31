@@ -246,7 +246,12 @@ block?: BoardBlockState | null, };
  * No message text, no file names, no prompts: the type has no field that
  * could carry them, and a body with another field is refused.
  */
-export type BoardBlockState = { state: BoardBlockWord, branch?: string | null, 
+export type BoardBlockState = { state: BoardBlockWord, 
+/**
+ * The name its starter or its person gave the block: a board's chip
+ * for it. Never the first words of a prompt.
+ */
+title?: string | null, branch?: string | null, 
 /**
  * HEAD, abbreviated.
  */
@@ -4098,7 +4103,12 @@ picked: string | null,
  * workspaces that have its repo, by name. Empty unless the reader may
  * move it (its asker, an owner or an editor) and it's queued or done.
  */
-moves: Array<SessionPlace>, };
+moves: Array<SessionPlace>, 
+/**
+ * The issue it was started on, with the first board that has a row for
+ * it (#372).
+ */
+work: SessionWork | null, };
 
 /**
  * A turn's finish step (M261): the command, whether it passed, and when
@@ -4450,6 +4460,21 @@ going?: boolean,
  * At most this many (default 50, at most [`WAVE_MAX`]).
  */
 limit?: number, };
+
+/**
+ * The issue a session was started on, as its header's chip shows it:
+ * `#N · ‹board›`, linking to the board's row.
+ */
+export type SessionWork = { 
+/**
+ * The issue (`iss_…`) and its number.
+ */
+issue: string, number: number, 
+/**
+ * The board that has a row for it, when boards are on for the reader,
+ * its title and the row.
+ */
+board: string | null, board_title: string | null, row: string | null, };
 
 /**
  * A read-only share of one pane. `token`, `path` and `url` are only in the

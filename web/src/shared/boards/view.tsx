@@ -93,6 +93,12 @@ export function BoardPanel({
     };
   }, [id, shown]);
 
+  // A link from a block or a session names a row, `#row=row_…` (#372).
+  const rowKey = view ? location.hash.match(/^#row=(row_[0-9a-f]+)/)?.[1] : undefined;
+  useEffect(() => {
+    if (rowKey) document.querySelector(`[data-board-row="${rowKey}"]`)?.scrollIntoView({ block: "center" });
+  }, [rowKey, !!view]);
+
   if (missing && !view) return <p class="board-none dim" data-board-missing>That board isn't one you can read ({missing}).</p>;
   if (!view) return <p class="board-none dim">Loading…</p>;
 

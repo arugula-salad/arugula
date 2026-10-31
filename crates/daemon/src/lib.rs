@@ -70,6 +70,7 @@ pub mod ports;
 mod public_preview;
 use arugula_mux::procinfo;
 use arugula_mux::provider;
+pub mod board_attach;
 mod board_block;
 mod board_state;
 mod people_block;

@@ -11,6 +11,7 @@
 
 use std::{ops::Deref, sync::Arc, time::Duration};
 
+use arugula_control_wire::boards::IssueRef;
 use arugula_proto::{
     Attention, BlockType, PaneId, Policy,
     api::{ActRequest, HistoryEntry, HistoryKind, OpenRequest, RunRequest, WaitResult},
@@ -370,11 +371,15 @@ pub struct StartAgentArgs {
     /// Work in a git worktree of its own that Arugula makes on a new branch, in the repo that holds cwd (`.claude/worktrees/BRANCH` where the repo keeps its worktrees, else `.arugula/worktrees/BRANCH`). Refused if the branch or worktree exists. The agent runs there; closing the block removes the worktree and branch only when nothing is uncommitted or unpushed and the branch is merged into its base, else keeps them and says why (close never forces).
     #[serde(default)]
     pub worktree: Option<WorktreeArgs>,
+    /// The issue it works on: `#N`, `owner/repo#N` or `IDENT-N`. The block keeps it, and its header says it (`#N · board`). With this machine's boards.write grant over the issue's project, the block is attached to that issue's row on every board of the project, which moves the row to Doing; without it the answer says so. A worktree's branch, when you give none, starts with the issue's number (`feat/357-…`). Not for a chat.
+    #[serde(default)]
+    pub issue: Option<String>,
 }
 
 #[derive(Deserialize, JsonSchema)]
 pub struct WorktreeArgs {
-    /// The new branch's name.
+    /// The new branch's name. Default, with an issue: `feat/N-` and the words of the title or prompt.
+    #[serde(default)]
     pub branch: String,
     /// What to branch from, on origin. Default: the repo's default branch.
     #[serde(default)]
@@ -1081,7 +1086,7 @@ fn all_defs() -> Vec<Def> {
             idempotent: false,
             open_world: true,
             flag: None,
-            output: Some(output_schema::<results::BlockOnly>),
+            output: Some(output_schema::<results::StartedAgent>),
             human: line(
                 "start other agents beside it and look after them",
                 "Start two agents on branches of their own, one per bug, and review what each did.",
@@ -2817,6 +2822,13 @@ impl ToolCall<'_, '_> {
         if recipe.is_some() && !matches!(a.agent, AgentKind::Claude) {
             return Err("recipe is for agent claude: Claude Code runs the recipe".into());
         }
+        let issue = match a.issue.as_deref().map(str::trim).filter(|i| !i.is_empty()) {
+            Some(i) => {
+                IssueRef::parse(i).ok_or_else(|| format!("issue {i:?}: an issue is #N, owner/repo#N or IDENT-N"))?;
+                Some(i.to_owned())
+            }
+            None => None,
+        };
         // An agent doesn't hand another one every check switched off.
         if let Some(m) = a.permission_mode.as_deref().filter(|m| SKIPS_CHECKS.contains(m)) {
             return Err(format!("permission_mode {m} skips every check: only the user starts an agent like that"));
@@ -2837,6 +2849,9 @@ impl ToolCall<'_, '_> {
         if let Some(o) = &owned {
             config["cwd"] = json!(o.path);
             config["worktree"] = json!(o);
+        }
+        if let Some(i) = &issue {
+            config["work"] = json!({ "issue": i });
         }
         if let Some(c) = &a.command {
             config["command"] = json!(c);
@@ -2895,14 +2910,48 @@ impl ToolCall<'_, '_> {
                 return Err(e);
             }
         };
-        let tail =
+        let mut tail =
             owned.as_ref().map(|w| format!(", in worktree {} (branch {})", w.path, w.branch)).unwrap_or_default();
+        let on = match &issue {
+            Some(i) => Some(self.on_issue(i, block).await),
+            None => None,
+        };
+        if let Some(on) = &on {
+            tail.push_str(&format!(". {}", on.said));
+        }
         done(
             format!(
                 "Started an agent in %{block}{tail}; wait on it (until needs_input or idle): the answer has its last message and the work it left; read_output for its transcript"
             ),
-            results::BlockOnly { block },
+            results::StartedAgent { block, issue: on },
         )
+    }
+
+    /// `start_agent {issue}`: attach the block to the issue's row, and say
+    /// what became of it. The block keeps its issue either way.
+    async fn on_issue(&self, issue: &str, block: arugula_proto::PaneId) -> results::StartedOn {
+        let home = self.current_project(None).await.ok();
+        match arugulad_base::board_attach::keep(self.app, home, issue, block).await {
+            Ok(boards) if boards.is_empty() => results::StartedOn {
+                issue: issue.to_owned(),
+                boards: vec![],
+                said: format!("It is on {issue}, but no board of the project has a row for it, so it is on none."),
+            },
+            Ok(boards) => {
+                let names: Vec<_> = boards.iter().map(|b| format!("{:?}", b.title)).collect();
+                let said = format!("It is on {issue}: attached to its row on {}.", names.join(", "));
+                let boards = boards
+                    .into_iter()
+                    .map(|b| results::StartedBoard { board: b.board, title: b.title, row: b.row })
+                    .collect();
+                results::StartedOn { issue: issue.to_owned(), boards, said }
+            }
+            Err(why) => results::StartedOn {
+                issue: issue.to_owned(),
+                boards: vec![],
+                said: format!("It is on {issue}, but not attached to a row: {why}."),
+            },
+        }
     }
 
     /// `start_agent {worktree}`: the new branch's worktree, in the repo that
@@ -2916,10 +2965,12 @@ impl ToolCall<'_, '_> {
         if a.vm || remote || self.on_machine().await? {
             return Err("worktree is for an agent on this machine: not a VM or another host's".into());
         }
-        let branch = w.branch.trim();
-        if branch.is_empty() {
-            return Err("worktree needs a branch name".into());
-        }
+        let branch = match (w.branch.trim(), a.issue.as_deref().and_then(IssueRef::parse)) {
+            ("", None) => return Err("worktree needs a branch name".into()),
+            ("", Some(i)) => suggest_branch(i.number(), a.title.as_deref().unwrap_or(&a.prompt)),
+            (b, _) => b.to_owned(),
+        };
+        let branch = branch.as_str();
         let dir = match (&a.cwd, self.own_pane()) {
             (Some(c), _) => c.clone(),
             (None, Some(p)) => {
@@ -2950,6 +3001,7 @@ impl ToolCall<'_, '_> {
             (a.user_settings, "user_settings"),
             (a.vm, "vm"),
             (a.worktree.is_some(), "worktree"),
+            (a.issue.is_some(), "issue"),
         ];
         if let Some((_, k)) = agent_only.iter().find(|(set, _)| *set) {
             return Err(format!("{k} is an agent's: a chat is Claude with no tools, in a folder of its own"));
@@ -3268,6 +3320,22 @@ fn run_lands_on_machine(req: &RunRequest) -> bool {
 
 /// Whether `start_agent` may start this agent ([`confine`]), and a worn
 /// recipe on this host only.
+/// The branch a worktree is made on when `start_agent` is given an issue and
+/// no branch: `feat/357-` and up to six words of `text` (the title, else the
+/// prompt).
+fn suggest_branch(number: u64, text: &str) -> String {
+    let words: Vec<String> = text
+        .split(|c: char| !c.is_ascii_alphanumeric())
+        .filter(|w| !w.is_empty())
+        .take(6)
+        .map(str::to_ascii_lowercase)
+        .collect();
+    match words.is_empty() {
+        true => format!("feat/{number}"),
+        false => format!("feat/{number}-{}", words.join("-")),
+    }
+}
+
 fn may_start(caller_on_machine: bool, on_machine: bool, vm: bool, worn: bool) -> Result<(), String> {
     confine(caller_on_machine, on_machine || vm)?;
     if worn && (on_machine || vm) {
@@ -3346,6 +3414,15 @@ mod tests {
     }
 
     use super::*;
+
+    /// A worktree started on an issue, with no branch given, is branched on
+    /// the issue's number (#372).
+    #[test]
+    fn a_suggested_branch_starts_with_the_issues_number() {
+        assert_eq!(suggest_branch(357, "Plane: the connect form's fields"), "feat/357-plane-the-connect-form-s-fields");
+        assert_eq!(suggest_branch(12, "  Fix it!! "), "feat/12-fix-it");
+        assert_eq!(suggest_branch(5, "???"), "feat/5");
+    }
 
     /// #580: an `outputSchema` is an object at the root (MCP's rule) that
     /// says what `done` adds, `summary`, and no grouped tool lists one.

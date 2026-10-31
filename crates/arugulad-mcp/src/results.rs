@@ -200,6 +200,31 @@ pub struct BlockOnly {
     pub block: PaneId,
 }
 
+/// A started agent block, and, when it was started on an issue, what became
+/// of its row (#372). Without an issue it is [`BlockOnly`].
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct StartedAgent {
+    pub block: PaneId,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub issue: Option<StartedOn>,
+}
+
+/// The issue a block was started on, the boards whose row it is attached
+/// to (none when it wasn't attached), and a sentence saying why not.
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct StartedOn {
+    pub issue: String,
+    pub boards: Vec<StartedBoard>,
+    pub said: String,
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct StartedBoard {
+    pub board: String,
+    pub title: String,
+    pub row: String,
+}
+
 /// A file of a diff block. The fields are the block's own, passed through.
 #[derive(Debug, Serialize)]
 pub struct DiffFile {
@@ -448,6 +473,7 @@ mod tests {
             json!({ "pane": 7, "tab": "its tab", "chat": "c1", "position": null }),
         );
         shaped(BlockOnly { block: 9 }, json!({ "block": 9 }));
+        shaped(StartedAgent { block: 9, issue: None }, json!({ "block": 9 }));
         same(PortOpened { block: 9, port: 3000 }, json!({ "block": 9, "port": 3000 }));
         same(Screen { pane: 7, text: "hi".into() }, json!({ "pane": 7, "text": "hi" }));
         shaped(
