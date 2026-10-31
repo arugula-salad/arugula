@@ -48,6 +48,7 @@
 
 mod ask;
 mod assets;
+pub(crate) mod checklist;
 pub(crate) mod embeds;
 pub mod library;
 pub mod link;
@@ -164,6 +165,8 @@ struct Entry {
     /// Bumped when the body is written, so clients can mark a fill (a
     /// refill too).
     rev: u64,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    tasks: Vec<checklist::Item>,
 }
 
 #[derive(Debug, Default)]
@@ -301,7 +304,7 @@ impl Doc {
             st.title = outline.title;
             st.entries = planned
                 .into_iter()
-                .map(|s| Entry { id: s.id, heading: s.heading, intent: s.intent, body: None, rev: 0 })
+                .map(|s| Entry { id: s.id, heading: s.heading, intent: s.intent, body: None, rev: 0, tasks: vec![] })
                 .collect();
             st.rev += 1;
         }
@@ -330,7 +333,8 @@ impl Doc {
             // Before the first write: a bad fence leaves the section, on
             // disk and in the state, exactly as it was.
             embeds::check(md, &st.assets).map_err(|e| format!("section {section}: {e}; the section is unchanged"))?;
-            if md.len() > SECTION_MAX {
+            let tasks_size = checklist::stored_size(&st.entries[at].tasks);
+            if md.len() + tasks_size > SECTION_MAX {
                 return Err(format!(
                     "section {section} is {} bytes; the cap is {SECTION_MAX} (64 KB): split it or shorten it",
                     md.len()
@@ -341,9 +345,9 @@ impl Doc {
                 .iter()
                 .enumerate()
                 .filter(|(i, _)| *i != at)
-                .map(|(_, e)| e.body.as_ref().map_or(0, String::len))
+                .map(|(_, e)| e.body.as_ref().map_or(0, String::len) + checklist::stored_size(&e.tasks))
                 .sum();
-            if (others + md.len()) as u64 > READ_MAX {
+            if (others + md.len() + tasks_size) as u64 > READ_MAX {
                 return Err(format!(
                     "the Doc would be {} bytes; the cap is {READ_MAX} (1 MiB): shorten a section",
                     others + md.len()
@@ -455,7 +459,14 @@ impl Doc {
             title: title.clone(),
             entries: entries
                 .into_iter()
-                .map(|e| link::ManifestEntry { id: e.id, heading: e.heading, intent: e.intent, body: e.body })
+                .map(|e| {
+                    let body = if e.tasks.is_empty() {
+                        e.body.clone()
+                    } else {
+                        Some(format!("{}\n\n{}", e.body.as_deref().unwrap_or_default(), checklist::markdown(&e.tasks)))
+                    };
+                    link::ManifestEntry { id: e.id, heading: e.heading, intent: e.intent, body }
+                })
                 .collect(),
             assets,
         };
@@ -578,7 +589,8 @@ fn load(dir: &Path) -> Result<Loaded, String> {
             Err(e) => return Err(format!("can't read {}: {e}", path.display())),
         };
         let rev = u64::from(body.is_some());
-        entries.push(Entry { id: s.id, heading: s.heading, intent: s.intent, body, rev });
+        let tasks = checklist::load(dir, &s.id)?;
+        entries.push(Entry { id: s.id, heading: s.heading, intent: s.intent, body, rev, tasks });
     }
     Ok(Loaded { title: outline.title, entries })
 }
@@ -594,8 +606,13 @@ fn markdown(title: &str, entries: &[Entry]) -> String {
                 out.push_str(embeds::plain(b).trim_end());
                 out.push('\n');
             }
+            None if !e.tasks.is_empty() => {}
             None if e.intent.is_empty() => out.push_str("_(coming)_\n"),
             None => out.push_str(&format!("_(coming: {})_\n", e.intent)),
+        }
+        if !e.tasks.is_empty() {
+            out.push('\n');
+            out.push_str(&checklist::markdown(&e.tasks));
         }
     }
     out
@@ -658,6 +675,27 @@ impl Block for Doc {
     fn call_by(&self, method: &str, args: Value, by: Option<&str>) -> BoxFuture<'static, Result<Value, String>> {
         let me = self.me.upgrade();
         match method {
+            "doc_checklist" => {
+                let section = args["section"].as_str().unwrap_or_default().to_owned();
+                let items = serde_json::from_value::<Vec<checklist::Planned>>(args["items"].clone()).map_err(|e| {
+                    format!("doc_checklist needs {{section, items: [{{id, text, owner: {{role, pane}}}}]}}: {e}")
+                });
+                Box::pin(async move { me.ok_or("closed")?.checklist(&section, items?).await })
+            }
+            "doc_feedback" => {
+                if by.is_some_and(|by| by.starts_with("mcp:")) {
+                    return Box::pin(async { Err("only the owner can report checklist results".into()) });
+                }
+                let req = serde_json::from_value::<checklist::Feedback>(args).map_err(|e| {
+                    format!("doc_feedback needs {{section, item, revision, status, note?, screenshot?}}: {e}")
+                });
+                Box::pin(async move {
+                    let me = me.ok_or("closed")?;
+                    let answer = me.feedback(req?).await?;
+                    let _ = me.deliver_checklists().await;
+                    Ok(answer)
+                })
+            }
             // #1067: an agent's ask. Not in `link::METHODS`: it raises a
             // card and reads one, and uploads nothing.
             "doc_share_ask" => {
@@ -774,6 +812,173 @@ mod tests {
 
     fn entries(d: &Doc) -> Vec<Value> {
         d.state()["entries"].as_array().unwrap().clone()
+    }
+
+    fn checklist_plan(pane: u32) -> Value {
+        json!({ "section": "s1", "items": [{ "id": "phone", "text": "Phone layout fits", "owner": { "role": "frontend", "pane": pane } }] })
+    }
+
+    fn feedback(revision: u64, status: &str, note: &str) -> Value {
+        json!({ "section": "s1", "item": "phone", "revision": revision, "status": status, "note": note })
+    }
+
+    #[tokio::test]
+    async fn checklist_results_survive_restore_and_are_readable_as_markdown() {
+        let dir = temp("checklist-restore");
+        let (d, _) = doc(&dir, false);
+        outline(&d, 1).await.unwrap();
+        d.call("doc_checklist", checklist_plan(77)).await.unwrap();
+        d.call("doc_feedback", feedback(0, "passed", "")).await.unwrap();
+        assert!(d.text().contains("- [x] Phone layout fits"));
+        d.call("doc_feedback", feedback(1, "failed", "The buttons overlap on a phone.")).await.unwrap();
+        fill(&d, "s1", "Test on a phone.").await.unwrap();
+        let (back, _) = doc(&dir, true);
+        assert_eq!(back.state()["entries"][0]["tasks"], d.state()["entries"][0]["tasks"]);
+        assert!(back.text().contains("The buttons overlap on a phone."));
+        assert!(back.text().contains("waiting to send to owner"));
+        assert!(back.text().contains("owner: frontend, agent %77"));
+        // A refilled body does not replace the person's results.
+        assert_eq!(back.state()["entries"][0]["tasks"][0]["status"], "failed");
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[tokio::test]
+    async fn checklist_feedback_checks_revisions_and_keeps_results_when_reassigned() {
+        let dir = temp("checklist-revision");
+        let (d, _) = doc(&dir, false);
+        outline(&d, 1).await.unwrap();
+        d.call("doc_checklist", checklist_plan(77)).await.unwrap();
+        assert!(d.call_by("doc_feedback", feedback(0, "passed", ""), Some("mcp:agent")).await.is_err());
+        for args in [
+            feedback(4, "passed", ""),
+            feedback(0, "failed", ""),
+            json!({ "section": "s1", "item": "phone", "revision": 0, "status": "failed", "screenshot": "../outside.png" }),
+        ] {
+            assert!(d.call("doc_feedback", args).await.is_err());
+        }
+        assert_eq!(d.state()["entries"][0]["tasks"][0]["revision"], 0);
+        d.call("doc_feedback", feedback(0, "failed", "A failure.")).await.unwrap();
+        assert!(d.call("doc_feedback", feedback(0, "passed", "")).await.unwrap_err().contains("another device"));
+        let mut replacement = checklist_plan(77);
+        replacement["items"][0]["text"] = json!("A different test");
+        assert!(d.call("doc_checklist", replacement).await.unwrap_err().contains("keep its id and text"));
+        d.call("doc_checklist", checklist_plan(78)).await.unwrap();
+        let item = d.state()["entries"][0]["tasks"][0].clone();
+        assert_eq!(item["owner"]["pane"], 78);
+        assert_eq!(item["note"], "A failure.");
+        assert_eq!(item["status"], "failed");
+        assert_eq!(item["revision"], 2);
+        assert_eq!(item["report_revision"], 1);
+        assert_eq!(item["report_owner"]["pane"], 77, "a definition change cannot redirect a saved report");
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[tokio::test]
+    async fn checklist_caps_and_corrupt_sidecars_never_replace_the_saved_result() {
+        let dir = temp("checklist-caps");
+        let (d, _) = doc(&dir, false);
+        outline(&d, 1).await.unwrap();
+        d.call("doc_checklist", checklist_plan(77)).await.unwrap();
+        for (key, value) in [("id", "../escape"), ("text", ""), ("text", "two\nlines")] {
+            let mut args = checklist_plan(77);
+            args["items"][0][key] = json!(value);
+            assert!(d.call("doc_checklist", args).await.is_err());
+        }
+        let mut duplicate = checklist_plan(77);
+        let repeated = duplicate["items"][0].clone();
+        duplicate["items"].as_array_mut().unwrap().push(repeated);
+        assert!(d.call("doc_checklist", duplicate).await.is_err());
+        assert!(d.call("doc_feedback", feedback(0, "failed", &"x".repeat(4001))).await.is_err());
+        let path = dir.join(FOLDER).join("s1.tasks.json");
+        std::fs::write(&path, "broken").unwrap();
+        let (back, _) = doc(&dir, true);
+        assert!(back.state()["error"].as_str().unwrap().contains("doesn't parse"));
+        assert!(back.call("doc_checklist", checklist_plan(77)).await.is_err());
+        assert_eq!(std::fs::read_to_string(path).unwrap(), "broken");
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    struct FeedbackAgent(Arc<Mutex<Vec<String>>>);
+    impl Block for FeedbackAgent {
+        fn kind(&self) -> BlockType {
+            BlockType::Agent
+        }
+        fn config(&self) -> Value {
+            json!({})
+        }
+        fn state(&self) -> Value {
+            json!({})
+        }
+        fn text(&self) -> String {
+            String::new()
+        }
+        fn close(&self) {}
+        fn call(&self, method: &str, args: Value) -> BoxFuture<'static, Result<Value, String>> {
+            assert_eq!(method, "send");
+            self.0.lock().unwrap().push(args["text"].as_str().unwrap().to_owned());
+            Box::pin(async { Ok(json!({})) })
+        }
+    }
+
+    #[tokio::test]
+    async fn a_saved_failure_is_delivered_to_its_owner_after_restore_and_only_once_after_receipt() {
+        use std::sync::atomic::AtomicBool;
+        let dir = temp("checklist-delivery");
+        let (d, _) = doc(&dir, false);
+        outline(&d, 1).await.unwrap();
+        d.call("doc_checklist", checklist_plan(77)).await.unwrap();
+        d.call("doc_feedback", feedback(0, "failed", "The result is wrong.")).await.unwrap();
+        d.call("doc_checklist", checklist_plan(78)).await.unwrap();
+        drop(d);
+        let messages = Arc::new(Mutex::new(Vec::new()));
+        let agent: Arc<dyn Block> = Arc::new(FeedbackAgent(messages.clone()));
+        let online = Arc::new(AtomicBool::new(false));
+        let (ctx, _seen, mut commands) = ctx_with_cmds(&dir, true);
+        let on = online.clone();
+        let responder = tokio::spawn(async move {
+            while let Some(cmd) = commands.recv().await {
+                match cmd {
+                    crate::mux::Cmd::Api(crate::mux::Api::Panes(reply)) => {
+                        let panes = if on.load(Ordering::SeqCst) {
+                            vec![serde_json::from_value(json!({ "session": 1, "session_name": "Test", "tab": 1, "id": 77, "epoch": 1, "running": false, "type": "agent", "policy": { "kind": "none" } })).unwrap()]
+                        } else {
+                            vec![]
+                        };
+                        let _ = reply.send(panes);
+                    }
+                    crate::mux::Cmd::Api(crate::mux::Api::Block(id, reply)) => {
+                        assert_eq!(id, 77);
+                        let _ = reply.send(Some(agent.clone()));
+                    }
+                    _ => panic!("unexpected checklist command"),
+                }
+            }
+        });
+        let (back, _) = doc(&dir, true);
+        back.attach(ctx.clone(), None);
+        back.deliver_checklists().await.unwrap();
+        assert!(messages.lock().unwrap().is_empty());
+        assert_eq!(back.state()["entries"][0]["tasks"][0]["sent"], 0);
+        online.store(true, Ordering::SeqCst);
+        back.deliver_checklists().await.unwrap();
+        let delivered = messages.lock().unwrap().clone();
+        assert_eq!(delivered.len(), 1);
+        assert!(delivered[0].contains("Test failure for frontend"));
+        assert!(delivered[0].contains("The result is wrong."));
+        back.close();
+        drop(back);
+        let (again, _) = doc(&dir, true);
+        again.attach(ctx, None);
+        again.deliver_checklists().await.unwrap();
+        assert_eq!(messages.lock().unwrap().len(), 1, "the saved receipt prevents another send after restart");
+        again.call("doc_feedback", feedback(2, "passed", "Fixed now.")).await.unwrap();
+        assert_eq!(messages.lock().unwrap().len(), 2, "the original recipient hears that its failure is resolved");
+        assert!(messages.lock().unwrap()[1].contains("Test result updated: passed"));
+        again.deliver_checklists().await.unwrap();
+        assert_eq!(messages.lock().unwrap().len(), 2);
+        again.close();
+        responder.abort();
+        std::fs::remove_dir_all(dir).unwrap();
     }
 
     #[tokio::test]

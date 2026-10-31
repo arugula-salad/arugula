@@ -316,14 +316,34 @@ impl BlockCtx {
     /// next prompt, or Claude Code's in a terminal through its inbox hook.
     /// Whether it went straight in (else it waits for the agent).
     pub async fn follow_up(&self, pane: PaneId, text: String, by: arugula_proto::Driver) -> Result<bool, String> {
+        self.follow_up_image(pane, text, by, None).await
+    }
+
+    /// A block follow-up with an optional base64 image. The receiving block
+    /// keeps the image in its own durable prompt queue before returning.
+    /// Terminal inbox hooks accept text alone.
+    pub async fn follow_up_image(
+        &self,
+        pane: PaneId,
+        text: String,
+        by: arugula_proto::Driver,
+        image: Option<String>,
+    ) -> Result<bool, String> {
         let cmds = self.cmds.as_ref().ok_or("this block can't reach other panes")?;
         let (tx, rx) = tokio::sync::oneshot::channel();
         cmds.send(crate::mux::Cmd::Api(crate::mux::Api::Block(pane, tx)))
             .map_err(|_| "the daemon is stopping".to_owned())?;
         if let Some(b) = rx.await.ok().flatten() {
             let name = (by.who != "owner").then_some(by.name.as_str());
-            b.call_by("send", serde_json::json!({ "text": text }), name).await?;
+            let mut args = serde_json::json!({ "text": text });
+            if let Some(image) = image {
+                args["image"] = serde_json::json!(image);
+            }
+            b.call_by("send", args, name).await?;
             return Ok(true);
+        }
+        if image.is_some() {
+            return Err("attachments need an agent block".into());
         }
         let (tx, rx) = tokio::sync::oneshot::channel();
         cmds.send(crate::mux::Cmd::Api(crate::mux::Api::FollowUp(pane, text, by, tx)))

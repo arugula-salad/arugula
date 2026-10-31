@@ -14,6 +14,8 @@ import type { PaneId } from "../proto";
 import { plain } from "../ui/embeds";
 import { Markdown } from "../ui/markdown";
 import { BlockError, BlockLoading } from "../ui/block-states";
+import { Checklist, checklistMarkdown, type ChecklistItem, type Feedback } from "./checklist";
+import "./docs.css";
 
 export interface Section {
   id: string;
@@ -23,6 +25,7 @@ export interface Section {
   body: string | null;
   /** Bumped when the body is written, a refill too. */
   rev: number;
+  tasks?: ChecklistItem[];
 }
 
 /** A picture the Doc keeps; the bytes are never in the state. */
@@ -53,8 +56,9 @@ export type ImageLoader = (name: string, rev: number) => Promise<string | null>;
 export function markdown(s: DocState): string {
   const parts = [`# ${s.title}\n`];
   for (const e of s.entries) {
-    const body = e.body !== null ? `${plain(e.body).trimEnd()}\n` : `_(coming${e.intent ? `: ${e.intent}` : ""})_\n`;
+    const body = e.body !== null ? `${plain(e.body).trimEnd()}\n` : e.tasks?.length ? "" : `_(coming${e.intent ? `: ${e.intent}` : ""})_\n`;
     parts.push(`\n## ${e.heading}\n\n${body}`);
+    if (e.tasks?.length) parts.push(`\n${checklistMarkdown(e.tasks)}`);
   }
   return parts.join("");
 }
@@ -100,6 +104,7 @@ export function DocBlock({
   byline,
   foot,
   share,
+  feedback,
 }: {
   id: PaneId;
   s: DocState | null;
@@ -111,6 +116,8 @@ export function DocBlock({
   foot?: ComponentChildren;
   /** At the header's right: the Copy link button (#411). */
   share?: ComponentChildren;
+  /** Only the owner's live Doc view supplies a write callback. */
+  feedback?: (section: string, result: Feedback, screenshot?: File) => Promise<void>;
 }) {
   // Drawn again when a picture is added or replaced, and not otherwise.
   const kept = JSON.stringify(s?.assets ?? []);
@@ -123,7 +130,7 @@ export function DocBlock({
   }, [kept, load, cached]);
   if (!s) return <BlockLoading what="the Doc" />;
   if (s.error) return <BlockError data-doc-block={id} title="Can't show this Doc" detail={s.error} />;
-  const done = s.entries.filter((e) => e.body !== null).length;
+  const done = s.entries.filter((e) => e.body !== null || e.tasks?.length).length;
   return (
     <div class="doc" data-doc-block={id}>
       <div class="doc-page">
@@ -155,12 +162,13 @@ export function DocBlock({
               <div key={e.rev} class={fresh.get(e.id) === e.rev ? "doc-body doc-fresh" : "doc-body"}>
                 <Markdown text={e.body} refs={null} embeds image={image} />
               </div>
-            ) : (
+            ) : !e.tasks?.length ? (
               <div class="doc-pending">
                 <span class="doc-coming">Coming…</span>
                 {e.intent && <span class="doc-intent"> {e.intent}</span>}
               </div>
-            )}
+            ) : null}
+            {!!e.tasks?.length && <Checklist items={e.tasks} report={feedback ? (result, file) => feedback(e.id, result, file) : undefined} image={(name) => image(`assets/${name}`, "Test screenshot", 0)} />}
           </section>
         ))}
         {foot}
