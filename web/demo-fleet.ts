@@ -122,7 +122,8 @@ const BOX_WORK: [string, string][] = [
 
 const OPUS = "claude-opus-5-5";
 const OPUS_1M = "claude-opus-5-5[1m]";
-const SONNET = "claude-sonnet-4-5";
+const SONNET = "claude-sonnet-5-5";
+const HAIKU = "claude-haiku-5-5";
 
 type Step = Record<string, unknown>;
 type Role = "working" | "near-full" | "permission" | "question" | "failed" | "compacted" | "overflow";
@@ -133,10 +134,10 @@ interface Task {
   project: string;
   /** The first turn's steps, before the role's ending. */
   steps: Step[];
-  /** What it runs, asks, or fails on. */
+  /** What it runs, asks, or fails on: a command that fails, and why. */
   run?: string;
   question?: Step;
-  fail?: string;
+  fail?: { on: string; reason: string };
   summary: string;
 }
 
@@ -210,7 +211,10 @@ const TASKS: Task[] = [
       { think: "It passes alone. Two tests share the temp bucket name; the clock decides which one wins." },
       { tool: "Edit tests/upload.rs", kind: "edit" },
     ],
-    fail: "API Error: 529 {\"type\":\"overloaded_error\",\"message\":\"Overloaded\"}",
+    fail: {
+      on: "cargo test -p upload",
+      reason: "cargo test -p upload failed: upload::resumes_after_timeout timed out after 60s (1 of 48 tests failed)",
+    },
     summary: "Each test gets a bucket of its own; 200 runs in a row passed.",
   },
   {
@@ -267,11 +271,12 @@ const FILLS: Record<Role, { model: string; usage: Step[] }> = {
   "near-full": { model: OPUS, usage: [{ usage: 186_000 }] },
   permission: { model: SONNET, usage: [{ usage: 141_000 }] },
   question: { model: OPUS, usage: [{ usage: 44_000 }] },
-  failed: { model: SONNET, usage: [{ usage: 97_000 }] },
+  failed: { model: HAIKU, usage: [{ usage: 97_000 }] },
   // Compacted on its own at a quarter of a 1M window: not an overflow.
   compacted: { model: OPUS_1M, usage: [{ usage: 250_000 }, { compact: "auto", pre: 250_000, post: 20_000 }, { usage: 31_000 }] },
-  // Compacted at 90% of the window: an overflow.
-  overflow: { model: OPUS, usage: [{ usage: 181_000 }, { compact: "auto", pre: 181_000, post: 21_000 }, { usage: 27_000 }] },
+  // Compacted at 90% of the window (an overflow), then a long turn that
+  // filled it again: the strip reads full, not the dip after compacting.
+  overflow: { model: OPUS, usage: [{ usage: 181_000 }, { compact: "auto", pre: 181_000, post: 21_000 }, { usage: 166_000 }] },
 };
 
 const CHAT: { who: number; text: string }[] = [
@@ -287,7 +292,7 @@ const CHAOS_CHAT = [
   "Can someone look at the permission prompt on the build box?",
   "Agent finished the drift fix, plan is clean now.",
   "Heads up: deploying billing in 10.",
-  "That 529 was the API, not us. Retried and it's fine.",
+  "The upload test timed out on the build box again. Looking.",
   "Who has the release notes doc open? Adding the refund flow.",
 ];
 
@@ -512,7 +517,11 @@ HISTFILE=~/.bash_history
     // splitting the last, four to a tab.
     const split = async (machine: string, work: [string, string][]) => {
       const url = this.urls.get(machine)!;
-      let last: number | undefined = (await paneIds(url))[0];
+      const first = (await paneIds(url))[0];
+      // The machine's first shell, which starts at home, works in a project
+      // too: a bare "~" isn't one.
+      await typeIn(url, first, `cd ~/src/${work[0][0]} && clear`);
+      let last: number | undefined = first;
       for (const [i, [p, cmd]] of work.entries()) last = await term(url, this.src(machine, p), cmd, (i + 1) % 4 ? last : undefined);
     };
     for (const m of laptops)
@@ -584,7 +593,7 @@ HISTFILE=~/.bash_history
         now = "asking";
         break;
       case "failed":
-        first.push({ fail: task.fail ?? TASKS[4].fail! });
+        first.push(...failing(task.fail ?? TASKS[4].fail!));
         break;
       default:
         first.push({ say: task.summary, ms: 10 });
@@ -648,7 +657,7 @@ HISTFILE=~/.bash_history
       if (what === "work") steps.push({ busy: task.run ?? "cargo test", kind: "execute", secs: r.int(30, 120) }, { say: task.summary });
       if (what === "ask") steps.push({ run: task.run ?? "npm test", output: "ok" }, { say: task.summary });
       if (what === "question") steps.push({ question: task.question! }, { say: task.summary });
-      if (what === "fail") steps.push({ fail: task.fail! });
+      if (what === "fail") steps.push(...failing(task.fail!));
       a.turns.push(steps);
       a.task = task;
       writeFileSync(a.file, JSON.stringify({ turns: a.turns, then: [{ say: "Done." }] }));
@@ -663,16 +672,18 @@ HISTFILE=~/.bash_history
     }
   }
 
-  /** A turn's growth in context: more tokens, and a compaction (automatic)
-   * once the window passes 85%. */
+  /** A turn's growth in context: more tokens, and an automatic compaction
+   * once the window passes 75%, below where it would be an overflow (80%):
+   * an overflow's strip reads low right after it, which looks wrong. */
   private grow(a: Agent, r: Rng): Step[] {
     const next = a.tokens + r.int(8_000, 30_000);
-    if (next > a.window * 0.85) {
+    if (next > a.window * 0.75) {
+      const pre = Math.min(next, Math.floor(a.window * 0.78));
       const post = r.int(15_000, 25_000);
       a.tokens = post + r.int(2_000, 8_000);
       return [
-        { usage: next, model: a.model },
-        { compact: "auto", pre: next, post },
+        { usage: pre, model: a.model },
+        { compact: "auto", pre, post },
         { usage: a.tokens, model: a.model },
       ];
     }
@@ -682,6 +693,13 @@ HISTFILE=~/.bash_history
 }
 
 // ---- helpers
+
+/** A turn that ends on a failing command: the tool call fails, then the
+ * turn does, saying why. */
+const failing = (f: { on: string; reason: string }): Step[] => [
+  { tool: f.on, kind: "execute", ms: 1200, status: "failed" },
+  { fail: f.reason },
+];
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const log = (s: string) => console.log(`  demo: ${s}`);
@@ -709,7 +727,12 @@ async function paneIds(url: string): Promise<number[]> {
  * `split`, or in a tab of its own. */
 async function term(url: string, cwd: string, line: string, split?: number) {
   const pane = (await post(url, "/api/run", { cwd, ...(split ? { split } : {}) })).pane as number;
-  if (!line) return pane;
+  if (line) await typeIn(url, pane, line);
+  return pane;
+}
+
+/** Type `line` and Enter into a shell once its prompt is up. */
+async function typeIn(url: string, pane: number, line: string) {
   for (let i = 0; i < 50; i++) {
     const info = ((await (await fetch(`${url}/api/panes`, { headers: auth(url) })).json()) as { id: number; running: boolean }[]).find((p) => p.id === pane);
     if (info?.running) break;
@@ -717,7 +740,6 @@ async function term(url: string, cwd: string, line: string, split?: number) {
   }
   await sleep(300);
   await post(url, `/api/panes/${pane}/send`, { text: line, enter: true });
-  return pane;
 }
 
 function sql<T>(file: string, f: (db: DatabaseSync) => T): T {
