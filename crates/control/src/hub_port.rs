@@ -342,6 +342,10 @@ impl HubPort for InProcess {
         })
     }
 
+    fn passkey_log<'a>(&'a self, account: &'a str) -> BoxFuture<'a, HubResult<arugula_e2e::passkey::Log>> {
+        Box::pin(async move { self.app()?.db.passkey_log(account) })
+    }
+
     fn product_links<'a>(
         &'a self,
         account: &'a str,

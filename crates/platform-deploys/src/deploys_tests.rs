@@ -631,8 +631,27 @@ async fn a_superseded_deploy_says_why_and_is_not_approved() {
     assert_eq!(ids, [new.as_str()], "{w}");
 }
 
+/// DK3: the passkey is checked against the account's passkey log as the hub
+/// publishes it, with no verdict from the hub: one the log says was removed
+/// before the approval came no longer approves.
+#[tokio::test]
+async fn a_passkey_removed_from_the_log_no_longer_approves() {
+    let (hub, _app, base, t, _) = seeded().await;
+    let a = devices(&hub, "a");
+    devices(&hub, "b");
+    let env = production(&base, &t).await;
+    let (id, op) = asked(&base, "a", &t, &env, "deadbeef").await;
+    hub.passkey_removed("pk-a", 1);
+    let approve = format!("/api/deploys/{id}/approve");
+    let (st, v) = call(&base, "a", "POST", &approve, Some(signed(&a.phone, "a", &id, &op, Decision::Once))).await;
+    assert_eq!((st, v["reason"].as_str()), (403, Some(PASSKEY)), "{v}");
+    assert!(v["error"].as_str().is_some_and(|e| e.contains("wasn't one of the account's then")), "{v}");
+    assert_eq!(hub.calls_of("verify_passkey"), 0, "not asked for a verdict");
+    assert_eq!(state(&base, &id).await, json!("pending"));
+}
+
 /// Every approval and deny carries a passkey's assertion over its bytes,
-/// which the hub checks: none, one over another challenge, another
+/// checked against the account's published passkey log: none, one over another challenge, another
 /// account's passkey, or one without user verification are refused, even
 /// with the owner's phone's real signature. What a browser's stored key
 /// signs alone (an automated browser, its profile on disk) never counts.
@@ -669,7 +688,8 @@ async fn every_approval_needs_the_owners_passkey() {
     assert_eq!((st, v["reason"].as_str()), (403, Some(PASSKEY)), "a deny too: {v}");
     assert_eq!(state(&base, &id).await, json!("pending"));
     assert!(app.db.deploy_approvals(&id).unwrap().is_empty());
-    assert!(hub.calls_of("verify_passkey") >= 3, "the hub checked them");
+    assert!(hub.calls_of("passkey_log") >= 3, "checked against the hub's published log (DK3)");
+    assert_eq!(hub.calls_of("verify_passkey"), 0, "not asked for a verdict");
 
     let (st, d) = call(&base, "a", "POST", &approve, Some(signed(&a.phone, "a", &id, &op, Decision::Once))).await;
     assert_eq!(

@@ -270,6 +270,13 @@ arugula-control --public-url https://control.example.com --listen 127.0.0.1:7690
   Apple's CDN reads the file within a day of it changing, and Macs about
   weekly; `https://app-site-association.cdn-apple.com/a/v1/<host>` shows
   what the CDN has.
+- **Passkeys on the platform page** (S46, DK5): with `--platform-host`,
+  every site of control's serves `/.well-known/webauthn` listing the
+  platform page's origin (`{"origins": ["https://app.arugula.io"]}`,
+  public, JSON, never a redirect; a 404 without a platform host), so a
+  passkey made for control's host (its relying party) may be used there
+  too. It does nothing until a page on the platform's origin asks for a
+  passkey, and the hub still checks each assertion's origin itself.
 - **Billing** (optional) needs both `STRIPE_SECRET_KEY` and
   `STRIPE_WEBHOOK_SECRET`; with the key alone control doesn't start.
 - **Behind a proxy** that passes the client's address in a header, use

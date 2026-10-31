@@ -315,6 +315,10 @@ impl HubPort for HttpHub {
         Box::pin(self.0.call("verify_passkey", a))
     }
 
+    fn passkey_log<'a>(&'a self, account: &'a str) -> BoxFuture<'a, HubResult<arugula_e2e::passkey::Log>> {
+        Box::pin(self.0.call("passkey_log", AccountArgs { account: account.to_owned() }))
+    }
+
     fn product_links<'a>(&'a self, account: &'a str) -> BoxFuture<'a, HubResult<Vec<crate::hub::ProductLink>>> {
         Box::pin(self.0.call("product_links", AccountArgs { account: account.to_owned() }))
     }
@@ -433,6 +437,7 @@ async fn hub_call(State(s): State<Arc<Serving<dyn HubPort>>>, Path(method): Path
                 let a: PasskeyArgs = args(&body)?;
                 answer(hub.verify_passkey(&a.account, &a.challenge, &a.assertion).await?)?
             }
+            "passkey_log" => answer(hub.passkey_log(&args::<AccountArgs>(&body)?.account).await?)?,
             "hosted_enrollment" => answer(hub.hosted_enrollment(&args::<EnrollAsk>(&body)?).await?)?,
             "hosted_enrolled" => answer(hub.hosted_enrolled(&args::<WorkspacesArgs>(&body)?.workspaces).await?)?,
             "hosted_gone" => answer(hub.hosted_gone(&args::<WorkspacesArgs>(&body)?.workspaces).await?)?,

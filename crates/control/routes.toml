@@ -162,6 +162,17 @@ auth = "public"
 clients = ["apple"]
 note = "Names the desktop app (`<team>.io.arugula.desktop`) for webcredentials. JSON, never a redirect, on every site."
 
+# Related origins for control's passkeys (S46, DK5, webauthn_site.rs): 404
+# without a platform host.
+
+[[route]]
+method = "GET"
+path = "/.well-known/webauthn"  # webauthn_site::PATH
+process = "hub"
+auth = "public"
+clients = ["browser"]
+note = "Lists the platform page's origin, so it may use control's passkeys. The browser fetches it itself, with no cookie. JSON, never a redirect, on every site; a 404 on the platform's host."
+
 [[route]]
 method = "GET"
 path = "/oauth/authorize"
@@ -383,6 +394,17 @@ path = "/api/me/passkeys/{id}/remove"
 process = "hub"
 auth = "session"
 clients = ["page"]
+note = "Logs the removal in the account's passkey log, by session (DK3); DK10 (#393) makes it take another passkey's assertion."
+
+# DK3 (aru-126): an account's passkey log, append-only and hash-chained.
+
+[[route]]
+method = "GET"
+path = "/api/accounts/{id}/passkeys/log"
+process = "hub"
+auth = "public"
+clients = ["page", "daemon", "cli", "browser"]
+note = "Rate-limited per client address (limit::PASSKEY_LOGS, 600 an hour). Every passkey added to or removed from the account, with its public key, RP, AAGUID, when and by what, each event hashed into the next: what anyone checks a stored passkey assertion (a deploy's approval) against with arugula_e2e::passkey::verify, with no call to the hub. Public on purpose: a log only the hub's own callers could read would show each of them what the hub chose, and the keys in it are public keys. The same answer, an empty log, for an account that isn't, so it says nothing of which accounts exist. Kept after the account is deleted."
 
 [[route]]
 method = "GET"

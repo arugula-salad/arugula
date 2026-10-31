@@ -386,6 +386,8 @@ mod tests {
             trust: Some(Trust { account: "acct1".into(), root: root.id() }),
             account_certs: vec![root_cert],
             account_revocations: vec![],
+            locked: false,
+            lock: None,
             legacy_app_children: None,
             purpose: None,
         };

@@ -94,6 +94,19 @@ impl Config {
         host.and_then(|h| self.sites.iter().find(|s| authority(s).as_deref() == Some(h.as_str())))
             .map_or(&self.public_url, |s| s)
     }
+
+    /// Which origins may use control's passkeys, by RP ID: each of
+    /// control's sites (or its public URL, when no sites are listed) for
+    /// its own host, as the hub takes them (aru-078). Not the platform
+    /// page's yet: DK4 adds it. What the platform pins to check a passkey
+    /// against the hub's published log (`arugula_e2e::passkey::verify`).
+    pub fn passkey_origins(&self) -> arugula_e2e::passkey::Origins {
+        let sites: Vec<&str> = match self.sites.is_empty() {
+            true => vec![self.public_url.as_str()],
+            false => self.sites.iter().map(String::as_str).filter(|s| *s != self.page_url).collect(),
+        };
+        arugula_e2e::passkey::origins_of_sites(sites)
+    }
 }
 
 /// The hub's change-feed sequence a call after a write waits for

@@ -1,0 +1,2556 @@
+{
+  "about": "A passkey's assertion checked against its account's log, trusting nothing else (DK3, aru-126). The log must be the account's asked about (`account`). Then the whole log, in order: each event is the log's account's, its seq is its place (from 0), its prev the hash of the one before (64 zeros first), its hash its own (SHA-256 of body and proof line), its time not before the one before's, its fields fit their lines (an RP may list several sites, space separated, only on a `by backfill <ms>` event), its key's format its alg's (sec1 for -7, raw for -8, spki for -257), its `by` one of passkey, signup, github, device <id>, session, reset, deleted or backfill <ms>, with a proof exactly when it's passkey; a passkey is added only when it isn't live and removed only when it is, with its key. A proof is checked as an assertion below, by a passkey live just before the event, over SHA-256 of the event's body (base64url), except that its origin must be its RP's own (http or https, the RP as host, any port), not one the verifier pins: whether a log holds together never depends on a verifier's configuration. The first event that fails is `chain`, with its index. Then the assertion's passkey must be live at `at`: added by an event at or before `at`, and not removed by one at or before it (`not_live`). Then, in order: clientDataJSON base64url JSON with type, challenge and origin (`client_data`); type webauthn.get (`ceremony`); the challenge exactly (`challenge`); not crossOrigin true, nor a topOrigin other than origin (`framed`); authenticator data base64url of 37 bytes or more (`auth_data`); its first 32 bytes SHA-256 of the passkey's RP, or of one of them (`rp`); the origin one the verifier allows for that RP (`origin`); flags with UP (0x01) and UV (0x04) (`user`); a key that reads (`key`); the signature, over authenticator data then SHA-256 of clientDataJSON: ES256 DER over P-256, Ed25519 strict, RS256 PKCS#1 v1.5 with SHA-256 (`signature`). Base64url may come padded, but its trailing bits must be zero. The client data is read strictly: a field it reads (type, challenge, origin, crossOrigin, topOrigin) twice is `client_data`; other fields are ignored, twice or not. An ES256 signature's DER integers must be minimal and positive. No provider policy: any AAGUID counts. Ed25519 is checked strictly (Rust's verify_strict); WebCrypto may take small-order keys and non-canonical signatures it would refuse, and no case here has one.",
+  "cases": [
+    {
+      "about": "ES256 from the platform's page, before its removal",
+      "input": {
+        "account": "acct_owner",
+        "assertion": "es_app",
+        "at": 2999,
+        "challenge": "9uh3wH9X0X8ZDwT5AjWxmQM8ytWOqjsE1BjnUD6LJOA",
+        "log": "owner",
+        "origins": "control_and_app"
+      },
+      "output": {"added": 0, "ok": true, "rp": "control.example"}
+    },
+    {
+      "about": "ES256 at its removal's time: removed before at",
+      "input": {
+        "account": "acct_owner",
+        "assertion": "es_app",
+        "at": 3000,
+        "challenge": "9uh3wH9X0X8ZDwT5AjWxmQM8ytWOqjsE1BjnUD6LJOA",
+        "log": "owner",
+        "origins": "control_and_app"
+      },
+      "output": {"ok": false, "refused": "not_live"}
+    },
+    {
+      "about": "ES256 before it was added",
+      "input": {
+        "account": "acct_owner",
+        "assertion": "es_app",
+        "at": 999,
+        "challenge": "9uh3wH9X0X8ZDwT5AjWxmQM8ytWOqjsE1BjnUD6LJOA",
+        "log": "owner",
+        "origins": "control_and_app"
+      },
+      "output": {"ok": false, "refused": "not_live"}
+    },
+    {
+      "about": "Ed25519, added by the ES256 one's proof",
+      "input": {
+        "account": "acct_owner",
+        "assertion": "ed_app",
+        "at": 5000,
+        "challenge": "9uh3wH9X0X8ZDwT5AjWxmQM8ytWOqjsE1BjnUD6LJOA",
+        "log": "owner",
+        "origins": "control_and_app"
+      },
+      "output": {"added": 2, "ok": true, "rp": "control.example"}
+    },
+    {
+      "about": "Ed25519 from control's own page",
+      "input": {
+        "account": "acct_owner",
+        "assertion": "ed_control",
+        "at": 5000,
+        "challenge": "9uh3wH9X0X8ZDwT5AjWxmQM8ytWOqjsE1BjnUD6LJOA",
+        "log": "owner",
+        "origins": "control_and_app"
+      },
+      "output": {"added": 2, "ok": true, "rp": "control.example"}
+    },
+    {
+      "about": "from the platform's page where the verifier allows only control's",
+      "input": {
+        "account": "acct_owner",
+        "assertion": "ed_app",
+        "at": 5000,
+        "challenge": "9uh3wH9X0X8ZDwT5AjWxmQM8ytWOqjsE1BjnUD6LJOA",
+        "log": "owner",
+        "origins": "control_only"
+      },
+      "output": {"ok": false, "refused": "origin"}
+    },
+    {
+      "about": "a passkey a device signed for, just before it was added",
+      "input": {
+        "account": "acct_owner",
+        "assertion": "ed3_app",
+        "at": 3999,
+        "challenge": "9uh3wH9X0X8ZDwT5AjWxmQM8ytWOqjsE1BjnUD6LJOA",
+        "log": "owner",
+        "origins": "control_and_app"
+      },
+      "output": {"ok": false, "refused": "not_live"}
+    },
+    {
+      "about": "a passkey a device signed for, as it was added",
+      "input": {
+        "account": "acct_owner",
+        "assertion": "ed3_app",
+        "at": 4000,
+        "challenge": "9uh3wH9X0X8ZDwT5AjWxmQM8ytWOqjsE1BjnUD6LJOA",
+        "log": "owner",
+        "origins": "control_and_app"
+      },
+      "output": {"added": 4, "ok": true, "rp": "control.example"}
+    },
+    {
+      "about": "RS256 before a page removed it",
+      "input": {
+        "account": "acct_owner",
+        "assertion": "rsa_app",
+        "at": 5999,
+        "challenge": "9uh3wH9X0X8ZDwT5AjWxmQM8ytWOqjsE1BjnUD6LJOA",
+        "log": "owner",
+        "origins": "control_and_app"
+      },
+      "output": {"added": 1, "ok": true, "rp": "control.example"}
+    },
+    {
+      "about": "RS256 after a page removed it",
+      "input": {
+        "account": "acct_owner",
+        "assertion": "rsa_app",
+        "at": 6000,
+        "challenge": "9uh3wH9X0X8ZDwT5AjWxmQM8ytWOqjsE1BjnUD6LJOA",
+        "log": "owner",
+        "origins": "control_and_app"
+      },
+      "output": {"ok": false, "refused": "not_live"}
+    },
+    {
+      "about": "a passkey that was never the account's",
+      "input": {
+        "account": "acct_owner",
+        "assertion": "stranger",
+        "at": 5000,
+        "challenge": "9uh3wH9X0X8ZDwT5AjWxmQM8ytWOqjsE1BjnUD6LJOA",
+        "log": "owner",
+        "origins": "control_and_app"
+      },
+      "output": {"ok": false, "refused": "not_live"}
+    },
+    {
+      "about": "from another site",
+      "input": {
+        "account": "acct_owner",
+        "assertion": "evil_origin",
+        "at": 5000,
+        "challenge": "9uh3wH9X0X8ZDwT5AjWxmQM8ytWOqjsE1BjnUD6LJOA",
+        "log": "owner",
+        "origins": "control_and_app"
+      },
+      "output": {"ok": false, "refused": "origin"}
+    },
+    {
+      "about": "UV not set",
+      "input": {
+        "account": "acct_owner",
+        "assertion": "no_uv",
+        "at": 5000,
+        "challenge": "9uh3wH9X0X8ZDwT5AjWxmQM8ytWOqjsE1BjnUD6LJOA",
+        "log": "owner",
+        "origins": "control_and_app"
+      },
+      "output": {"ok": false, "refused": "user"}
+    },
+    {
+      "about": "UP not set",
+      "input": {
+        "account": "acct_owner",
+        "assertion": "no_up",
+        "at": 5000,
+        "challenge": "9uh3wH9X0X8ZDwT5AjWxmQM8ytWOqjsE1BjnUD6LJOA",
+        "log": "owner",
+        "origins": "control_and_app"
+      },
+      "output": {"ok": false, "refused": "user"}
+    },
+    {
+      "about": "for another RP",
+      "input": {
+        "account": "acct_owner",
+        "assertion": "other_rp",
+        "at": 5000,
+        "challenge": "9uh3wH9X0X8ZDwT5AjWxmQM8ytWOqjsE1BjnUD6LJOA",
+        "log": "owner",
+        "origins": "control_and_app"
+      },
+      "output": {"ok": false, "refused": "rp"}
+    },
+    {
+      "about": "inside another site's frame",
+      "input": {
+        "account": "acct_owner",
+        "assertion": "cross_origin",
+        "at": 5000,
+        "challenge": "9uh3wH9X0X8ZDwT5AjWxmQM8ytWOqjsE1BjnUD6LJOA",
+        "log": "owner",
+        "origins": "control_and_app"
+      },
+      "output": {"ok": false, "refused": "framed"}
+    },
+    {
+      "about": "under another site's page",
+      "input": {
+        "account": "acct_owner",
+        "assertion": "top_origin",
+        "at": 5000,
+        "challenge": "9uh3wH9X0X8ZDwT5AjWxmQM8ytWOqjsE1BjnUD6LJOA",
+        "log": "owner",
+        "origins": "control_and_app"
+      },
+      "output": {"ok": false, "refused": "framed"}
+    },
+    {
+      "about": "its own page as topOrigin",
+      "input": {
+        "account": "acct_owner",
+        "assertion": "top_self",
+        "at": 5000,
+        "challenge": "9uh3wH9X0X8ZDwT5AjWxmQM8ytWOqjsE1BjnUD6LJOA",
+        "log": "owner",
+        "origins": "control_and_app"
+      },
+      "output": {"added": 2, "ok": true, "rp": "control.example"}
+    },
+    {
+      "about": "made, not asserted",
+      "input": {
+        "account": "acct_owner",
+        "assertion": "create",
+        "at": 5000,
+        "challenge": "9uh3wH9X0X8ZDwT5AjWxmQM8ytWOqjsE1BjnUD6LJOA",
+        "log": "owner",
+        "origins": "control_and_app"
+      },
+      "output": {"ok": false, "refused": "ceremony"}
+    },
+    {
+      "about": "over other bytes",
+      "input": {
+        "account": "acct_owner",
+        "assertion": "other_bytes",
+        "at": 5000,
+        "challenge": "9uh3wH9X0X8ZDwT5AjWxmQM8ytWOqjsE1BjnUD6LJOA",
+        "log": "owner",
+        "origins": "control_and_app"
+      },
+      "output": {"ok": false, "refused": "challenge"}
+    },
+    {
+      "about": "signed by another key",
+      "input": {
+        "account": "acct_owner",
+        "assertion": "forged",
+        "at": 5000,
+        "challenge": "9uh3wH9X0X8ZDwT5AjWxmQM8ytWOqjsE1BjnUD6LJOA",
+        "log": "owner",
+        "origins": "control_and_app"
+      },
+      "output": {"ok": false, "refused": "signature"}
+    },
+    {
+      "about": "short authenticator data",
+      "input": {
+        "account": "acct_owner",
+        "assertion": "short",
+        "at": 5000,
+        "challenge": "9uh3wH9X0X8ZDwT5AjWxmQM8ytWOqjsE1BjnUD6LJOA",
+        "log": "owner",
+        "origins": "control_and_app"
+      },
+      "output": {"ok": false, "refused": "auth_data"}
+    },
+    {
+      "about": "client data that isn't JSON",
+      "input": {
+        "account": "acct_owner",
+        "assertion": "not_json",
+        "at": 5000,
+        "challenge": "9uh3wH9X0X8ZDwT5AjWxmQM8ytWOqjsE1BjnUD6LJOA",
+        "log": "owner",
+        "origins": "control_and_app"
+      },
+      "output": {"ok": false, "refused": "client_data"}
+    },
+    {
+      "about": "padded base64url",
+      "input": {
+        "account": "acct_owner",
+        "assertion": "padded",
+        "at": 5000,
+        "challenge": "9uh3wH9X0X8ZDwT5AjWxmQM8ytWOqjsE1BjnUD6LJOA",
+        "log": "owner",
+        "origins": "control_and_app"
+      },
+      "output": {"added": 2, "ok": true, "rp": "control.example"}
+    },
+    {
+      "about": "backfilled, made at the old site",
+      "input": {
+        "account": "acct_old",
+        "assertion": "old_site",
+        "at": 9500,
+        "challenge": "9uh3wH9X0X8ZDwT5AjWxmQM8ytWOqjsE1BjnUD6LJOA",
+        "log": "backfilled",
+        "origins": "both_sites"
+      },
+      "output": {"added": 0, "ok": true, "rp": "old.example"}
+    },
+    {
+      "about": "backfilled, made at the new site",
+      "input": {
+        "account": "acct_old",
+        "assertion": "new_site",
+        "at": 9500,
+        "challenge": "9uh3wH9X0X8ZDwT5AjWxmQM8ytWOqjsE1BjnUD6LJOA",
+        "log": "backfilled",
+        "origins": "both_sites"
+      },
+      "output": {"added": 0, "ok": true, "rp": "control.example"}
+    },
+    {
+      "about": "backfilled, a site it lists neither",
+      "input": {
+        "account": "acct_old",
+        "assertion": "third_site",
+        "at": 9500,
+        "challenge": "9uh3wH9X0X8ZDwT5AjWxmQM8ytWOqjsE1BjnUD6LJOA",
+        "log": "backfilled",
+        "origins": "both_sites"
+      },
+      "output": {"ok": false, "refused": "rp"}
+    },
+    {
+      "about": "backfilled, the old site's RP from the new site's page",
+      "input": {
+        "account": "acct_old",
+        "assertion": "old_rp_new_origin",
+        "at": 9500,
+        "challenge": "9uh3wH9X0X8ZDwT5AjWxmQM8ytWOqjsE1BjnUD6LJOA",
+        "log": "backfilled",
+        "origins": "both_sites"
+      },
+      "output": {"ok": false, "refused": "origin"}
+    },
+    {
+      "about": "a key swapped in event 0",
+      "input": {
+        "account": "acct_owner",
+        "assertion": "ed_app",
+        "at": 5000,
+        "challenge": "9uh3wH9X0X8ZDwT5AjWxmQM8ytWOqjsE1BjnUD6LJOA",
+        "log": "swapped",
+        "origins": "control_and_app"
+      },
+      "output": {"event": 0, "ok": false, "refused": "chain"}
+    },
+    {
+      "about": "a key swapped in event 0 and rehashed: event 1's prev breaks",
+      "input": {
+        "account": "acct_owner",
+        "assertion": "ed_app",
+        "at": 5000,
+        "challenge": "9uh3wH9X0X8ZDwT5AjWxmQM8ytWOqjsE1BjnUD6LJOA",
+        "log": "rehashed",
+        "origins": "control_and_app"
+      },
+      "output": {"event": 1, "ok": false, "refused": "chain"}
+    },
+    {
+      "about": "an event cut out",
+      "input": {
+        "account": "acct_owner",
+        "assertion": "ed_app",
+        "at": 5000,
+        "challenge": "9uh3wH9X0X8ZDwT5AjWxmQM8ytWOqjsE1BjnUD6LJOA",
+        "log": "cut",
+        "origins": "control_and_app"
+      },
+      "output": {"event": 1, "ok": false, "refused": "chain"}
+    },
+    {
+      "about": "another account's event",
+      "input": {
+        "account": "acct_owner",
+        "assertion": "ed_app",
+        "at": 5000,
+        "challenge": "9uh3wH9X0X8ZDwT5AjWxmQM8ytWOqjsE1BjnUD6LJOA",
+        "log": "other_account",
+        "origins": "control_and_app"
+      },
+      "output": {"event": 4, "ok": false, "refused": "chain"}
+    },
+    {
+      "about": "a passkey event without its proof",
+      "input": {
+        "account": "acct_owner",
+        "assertion": "ed_app",
+        "at": 5000,
+        "challenge": "9uh3wH9X0X8ZDwT5AjWxmQM8ytWOqjsE1BjnUD6LJOA",
+        "log": "unproven",
+        "origins": "control_and_app"
+      },
+      "output": {"event": 2, "ok": false, "refused": "chain"}
+    },
+    {
+      "about": "an add signed by a passkey already removed",
+      "input": {
+        "account": "acct_owner",
+        "assertion": "ed_app",
+        "at": 5000,
+        "challenge": "9uh3wH9X0X8ZDwT5AjWxmQM8ytWOqjsE1BjnUD6LJOA",
+        "log": "late_signer",
+        "origins": "control_and_app"
+      },
+      "output": {"event": 6, "ok": false, "refused": "chain"}
+    },
+    {
+      "about": "an event older than the one before",
+      "input": {
+        "account": "acct_owner",
+        "assertion": "ed_app",
+        "at": 5000,
+        "challenge": "9uh3wH9X0X8ZDwT5AjWxmQM8ytWOqjsE1BjnUD6LJOA",
+        "log": "backwards",
+        "origins": "control_and_app"
+      },
+      "output": {"event": 6, "ok": false, "refused": "chain"}
+    },
+    {
+      "about": "a passkey added twice",
+      "input": {
+        "account": "acct_owner",
+        "assertion": "ed_app",
+        "at": 5000,
+        "challenge": "9uh3wH9X0X8ZDwT5AjWxmQM8ytWOqjsE1BjnUD6LJOA",
+        "log": "twice",
+        "origins": "control_and_app"
+      },
+      "output": {"event": 6, "ok": false, "refused": "chain"}
+    },
+    {
+      "about": "a passkey removed that wasn't there",
+      "input": {
+        "account": "acct_owner",
+        "assertion": "ed_app",
+        "at": 5000,
+        "challenge": "9uh3wH9X0X8ZDwT5AjWxmQM8ytWOqjsE1BjnUD6LJOA",
+        "log": "removed_unknown",
+        "origins": "control_and_app"
+      },
+      "output": {"event": 6, "ok": false, "refused": "chain"}
+    },
+    {
+      "about": "a line smuggled into by",
+      "input": {
+        "account": "acct_owner",
+        "assertion": "ed_app",
+        "at": 5000,
+        "challenge": "9uh3wH9X0X8ZDwT5AjWxmQM8ytWOqjsE1BjnUD6LJOA",
+        "log": "smuggled",
+        "origins": "control_and_app"
+      },
+      "output": {"event": 6, "ok": false, "refused": "chain"}
+    },
+    {
+      "about": "a proof on an event the hub vouches for",
+      "input": {
+        "account": "acct_owner",
+        "assertion": "ed_app",
+        "at": 5000,
+        "challenge": "9uh3wH9X0X8ZDwT5AjWxmQM8ytWOqjsE1BjnUD6LJOA",
+        "log": "proof_on_vouched",
+        "origins": "control_and_app"
+      },
+      "output": {"event": 6, "ok": false, "refused": "chain"}
+    },
+    {
+      "about": "an open RP on an event that isn't backfilled",
+      "input": {
+        "account": "acct_owner",
+        "assertion": "ed_app",
+        "at": 5000,
+        "challenge": "9uh3wH9X0X8ZDwT5AjWxmQM8ytWOqjsE1BjnUD6LJOA",
+        "log": "open_rp",
+        "origins": "control_and_app"
+      },
+      "output": {"event": 6, "ok": false, "refused": "chain"}
+    },
+    {
+      "about": "a key whose format isn't its alg's",
+      "input": {
+        "account": "acct_owner",
+        "assertion": "ed_app",
+        "at": 5000,
+        "challenge": "9uh3wH9X0X8ZDwT5AjWxmQM8ytWOqjsE1BjnUD6LJOA",
+        "log": "format",
+        "origins": "control_and_app"
+      },
+      "output": {"event": 6, "ok": false, "refused": "chain"}
+    },
+    {
+      "about": "an add whose proof came from the platform's page, not its RP's own",
+      "input": {
+        "account": "acct_owner",
+        "assertion": "ed_app",
+        "at": 5000,
+        "challenge": "9uh3wH9X0X8ZDwT5AjWxmQM8ytWOqjsE1BjnUD6LJOA",
+        "log": "proof_elsewhere",
+        "origins": "control_and_app"
+      },
+      "output": {"event": 6, "ok": false, "refused": "chain"}
+    },
+    {
+      "about": "a verifier that doesn't list the origin the log's proofs came from",
+      "input": {
+        "account": "acct_owner",
+        "assertion": "ed_app",
+        "at": 5000,
+        "challenge": "9uh3wH9X0X8ZDwT5AjWxmQM8ytWOqjsE1BjnUD6LJOA",
+        "log": "owner",
+        "origins": "app_only"
+      },
+      "output": {"added": 2, "ok": true, "rp": "control.example"}
+    },
+    {
+      "about": "another account's log",
+      "input": {
+        "account": "acct_other",
+        "assertion": "ed_app",
+        "at": 5000,
+        "challenge": "9uh3wH9X0X8ZDwT5AjWxmQM8ytWOqjsE1BjnUD6LJOA",
+        "log": "owner",
+        "origins": "control_and_app"
+      },
+      "output": {"ok": false, "refused": "account"}
+    },
+    {
+      "about": "base64url with trailing bits set",
+      "input": {
+        "account": "acct_owner",
+        "assertion": "trailing_bits",
+        "at": 5000,
+        "challenge": "9uh3wH9X0X8ZDwT5AjWxmQM8ytWOqjsE1BjnUD6LJOA",
+        "log": "owner",
+        "origins": "control_and_app"
+      },
+      "output": {"ok": false, "refused": "auth_data"}
+    },
+    {
+      "about": "a field the check reads, twice",
+      "input": {
+        "account": "acct_owner",
+        "assertion": "dup_challenge",
+        "at": 5000,
+        "challenge": "9uh3wH9X0X8ZDwT5AjWxmQM8ytWOqjsE1BjnUD6LJOA",
+        "log": "owner",
+        "origins": "control_and_app"
+      },
+      "output": {"ok": false, "refused": "client_data"}
+    },
+    {
+      "about": "a field it ignores, twice",
+      "input": {
+        "account": "acct_owner",
+        "assertion": "dup_other",
+        "at": 5000,
+        "challenge": "9uh3wH9X0X8ZDwT5AjWxmQM8ytWOqjsE1BjnUD6LJOA",
+        "log": "owner",
+        "origins": "control_and_app"
+      },
+      "output": {"added": 2, "ok": true, "rp": "control.example"}
+    },
+    {
+      "about": "an ES256 signature with a needless leading zero",
+      "input": {
+        "account": "acct_owner",
+        "assertion": "der_long",
+        "at": 2999,
+        "challenge": "9uh3wH9X0X8ZDwT5AjWxmQM8ytWOqjsE1BjnUD6LJOA",
+        "log": "owner",
+        "origins": "control_and_app"
+      },
+      "output": {"ok": false, "refused": "signature"}
+    },
+    {
+      "about": "ES256, its r needing a sign byte",
+      "input": {
+        "account": "acct_owner",
+        "assertion": "der_signed",
+        "at": 2999,
+        "challenge": "9uh3wH9X0X8ZDwT5AjWxmQM8ytWOqjsE1BjnUD6LJOA",
+        "log": "owner",
+        "origins": "control_and_app"
+      },
+      "output": {"added": 0, "ok": true, "rp": "control.example"}
+    },
+    {
+      "about": "ES256, its r's sign byte dropped (negative)",
+      "input": {
+        "account": "acct_owner",
+        "assertion": "der_negative",
+        "at": 2999,
+        "challenge": "9uh3wH9X0X8ZDwT5AjWxmQM8ytWOqjsE1BjnUD6LJOA",
+        "log": "owner",
+        "origins": "control_and_app"
+      },
+      "output": {"ok": false, "refused": "signature"}
+    }
+  ],
+  "checks": ["arugula_e2e::passkey::verify", "arugula_e2e::passkey::check_chain"],
+  "input": "log, assertion and origins: labels; account: whose log it should be (origins: { rp: [origins] }, the verifier's pinned map); challenge: base64url; at: ms, the verifier's own record of when it arrived",
+  "keys": {},
+  "objects": {
+    "app_only": {
+      "control.example": ["https://app.example"]
+    },
+    "backfilled": {
+      "account": "acct_old",
+      "began": 9000,
+      "events": [
+        {
+          "aaguid": "00000000000000000000000000000000",
+          "account": "acct_old",
+          "alg": -8,
+          "at": 500,
+          "by": "backfill 9000",
+          "credential": "AgICAgICAgICAgICAgICAg",
+          "event": "added",
+          "hash": "7050a4ff1b6b65f9d2d50b02f562870a22e342793b78f068df3846591455d241",
+          "key": "gTl3Dqh9F19Wo1Rmw0x-zMuNipG07jeiXfYPW4_Js5Q",
+          "keyFormat": "raw",
+          "prev": "0000000000000000000000000000000000000000000000000000000000000000",
+          "rp": "control.example old.example",
+          "seq": 0
+        }
+      ]
+    },
+    "backwards": {
+      "account": "acct_owner",
+      "events": [
+        {
+          "aaguid": "fbfc3007154e4ecc8c0b6e020557d7bd",
+          "account": "acct_owner",
+          "alg": -7,
+          "at": 1000,
+          "by": "signup",
+          "credential": "EREREREREREREREREREREQ",
+          "event": "added",
+          "hash": "185bb2879962f802034fa0f8a9869d86644c0e47a9a178df40a91af5504021a0",
+          "key": "BAIX5hfwtkQ5KCePlpmeaaI6TywVK99tbN9m5bgCgtTtGUp968uXcS0t2jyoWqh2Wlb0X8dYWZZS8ol8ZTBuV5Q",
+          "keyFormat": "sec1",
+          "prev": "0000000000000000000000000000000000000000000000000000000000000000",
+          "rp": "control.example",
+          "seq": 0
+        },
+        {
+          "aaguid": "00000000000000000000000000000000",
+          "account": "acct_owner",
+          "alg": -257,
+          "at": 1500,
+          "by": "github",
+          "credential": "UlJSUlJSUlJSUlJSUlJSUg",
+          "event": "added",
+          "hash": "85134e62937515bff98ac7e86d401d5340f4fc34bd14b798d0cdc701426f7252",
+          "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA0_SvFUJnVhDsI4X8PXKX-O5lnZpoRtsqWUH7vBPsTt3rFWcMiqtMCekZI8lGrXGGq9m_LTb1FbRPFtYmxBqQsdelHl6er0Sg8a1o28PT-5iIfnUjH8bleFJk6K1iRlyo579hU5rXAs0pzFdU0WiVpWEDimacTfpHZ7F53w0sg5zvq6ed8i_5P3B9z5rBh4os82tOArdmAIJ_aZMTJLeCOX8sMSlWDpZeq69WKGKRudrQUCg-YWMiFApyGQO4PSAVwQdTLBs0NqPXsmPOuPohvstHshr91ypPg0O9DC9QT7e7912WEYTj7zjhVooYlNYK-xyp0HNVAq38AVHRJ5NewQIDAQAB",
+          "keyFormat": "spki",
+          "prev": "185bb2879962f802034fa0f8a9869d86644c0e47a9a178df40a91af5504021a0",
+          "rp": "control.example",
+          "seq": 1
+        },
+        {
+          "aaguid": "00000000000000000000000000000000",
+          "account": "acct_owner",
+          "alg": -8,
+          "at": 2000,
+          "by": "passkey",
+          "credential": "AgICAgICAgICAgICAgICAg",
+          "event": "added",
+          "hash": "8b08dcae213159f3cddbab477453a4dbf7439e9a71855cbcf74b2c70c1aec114",
+          "key": "gTl3Dqh9F19Wo1Rmw0x-zMuNipG07jeiXfYPW4_Js5Q",
+          "keyFormat": "raw",
+          "prev": "85134e62937515bff98ac7e86d401d5340f4fc34bd14b798d0cdc701426f7252",
+          "proof": {
+            "authenticatorData": "a0VSR89O6IQunw3j9h2nuoCHSI-KE3luCkikpADknaEFAAAAAA",
+            "clientDataJSON": "eyJjaGFsbGVuZ2UiOiJWTHNZSGVSMmpES0JCOU43cV9tUU42cGxzcXE3NmVaRTdHU0JFVlUxUHJ3IiwiY3Jvc3NPcmlnaW4iOmZhbHNlLCJvcmlnaW4iOiJodHRwczovL2NvbnRyb2wuZXhhbXBsZSIsInR5cGUiOiJ3ZWJhdXRobi5nZXQifQ",
+            "id": "EREREREREREREREREREREQ",
+            "signature": "MEUCIQC6c9bbMM4aMdKKpDbEDUo_z3nB7l5oAVi6S7Fv-5gVWQIgLXkwYp2ic850Smj8FHN6F25X771gR_GKYAYNp1zLIyU"
+          },
+          "rp": "control.example",
+          "seq": 2
+        },
+        {
+          "aaguid": "fbfc3007154e4ecc8c0b6e020557d7bd",
+          "account": "acct_owner",
+          "alg": -7,
+          "at": 3000,
+          "by": "passkey",
+          "credential": "EREREREREREREREREREREQ",
+          "event": "removed",
+          "hash": "8f71b6c1884e78576f4d9ffb91010c535943512c1b099cac51c27f5b813ca089",
+          "key": "BAIX5hfwtkQ5KCePlpmeaaI6TywVK99tbN9m5bgCgtTtGUp968uXcS0t2jyoWqh2Wlb0X8dYWZZS8ol8ZTBuV5Q",
+          "keyFormat": "sec1",
+          "prev": "8b08dcae213159f3cddbab477453a4dbf7439e9a71855cbcf74b2c70c1aec114",
+          "proof": {
+            "authenticatorData": "a0VSR89O6IQunw3j9h2nuoCHSI-KE3luCkikpADknaEFAAAAAA",
+            "clientDataJSON": "eyJjaGFsbGVuZ2UiOiJWVEpzc2FYS1dtb0c0b3ZFbXJVYUMzOEotMmRtbm13VzdWcmhDbGlReXNJIiwiY3Jvc3NPcmlnaW4iOmZhbHNlLCJvcmlnaW4iOiJodHRwczovL2NvbnRyb2wuZXhhbXBsZSIsInR5cGUiOiJ3ZWJhdXRobi5nZXQifQ",
+            "id": "AgICAgICAgICAgICAgICAg",
+            "signature": "WNjzj5-NuevZ2adcJXUg8gYECu5toji-q6nNGDUfLfFlZWmML77vz2J5clnrxxKM9mRlbzSgg5xmdaY1uXuCDQ"
+          },
+          "rp": "control.example",
+          "seq": 3
+        },
+        {
+          "aaguid": "00000000000000000000000000000000",
+          "account": "acct_owner",
+          "alg": -8,
+          "at": 4000,
+          "by": "device dev_laptop",
+          "credential": "AwMDAwMDAwMDAwMDAwMDAw",
+          "event": "added",
+          "hash": "a87a0f7a02c57c2f836d7bc0e85c6b6bb7bc52609014a2d996e502316a151808",
+          "key": "7UkoxijRwsbq6QM4kFmVYSlZJzpcY_k2NsFGFKyHN9E",
+          "keyFormat": "raw",
+          "prev": "8f71b6c1884e78576f4d9ffb91010c535943512c1b099cac51c27f5b813ca089",
+          "rp": "control.example",
+          "seq": 4
+        },
+        {
+          "aaguid": "00000000000000000000000000000000",
+          "account": "acct_owner",
+          "alg": -257,
+          "at": 6000,
+          "by": "session",
+          "credential": "UlJSUlJSUlJSUlJSUlJSUg",
+          "event": "removed",
+          "hash": "233ad70b465c0671d21c92fe87525efe28b91a7a74d19fd0d4c8608ce8cf0d72",
+          "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA0_SvFUJnVhDsI4X8PXKX-O5lnZpoRtsqWUH7vBPsTt3rFWcMiqtMCekZI8lGrXGGq9m_LTb1FbRPFtYmxBqQsdelHl6er0Sg8a1o28PT-5iIfnUjH8bleFJk6K1iRlyo579hU5rXAs0pzFdU0WiVpWEDimacTfpHZ7F53w0sg5zvq6ed8i_5P3B9z5rBh4os82tOArdmAIJ_aZMTJLeCOX8sMSlWDpZeq69WKGKRudrQUCg-YWMiFApyGQO4PSAVwQdTLBs0NqPXsmPOuPohvstHshr91ypPg0O9DC9QT7e7912WEYTj7zjhVooYlNYK-xyp0HNVAq38AVHRJ5NewQIDAQAB",
+          "keyFormat": "spki",
+          "prev": "a87a0f7a02c57c2f836d7bc0e85c6b6bb7bc52609014a2d996e502316a151808",
+          "rp": "control.example",
+          "seq": 5
+        },
+        {
+          "aaguid": "00000000000000000000000000000000",
+          "account": "acct_owner",
+          "alg": -8,
+          "at": 5000,
+          "by": "signup",
+          "credential": "BAQEBAQEBAQEBAQEBAQEBA",
+          "event": "added",
+          "hash": "06c3aea736daaaabb5f19f1634982ead207998a8cbff20bcff071da55620258e",
+          "key": "ypOsFwUYcHHWe4PH_w7-gQjo7EUwV113JoeTM9vavnw",
+          "keyFormat": "raw",
+          "prev": "233ad70b465c0671d21c92fe87525efe28b91a7a74d19fd0d4c8608ce8cf0d72",
+          "rp": "control.example",
+          "seq": 6
+        }
+      ]
+    },
+    "both_sites": {
+      "control.example": ["https://control.example"],
+      "old.example": ["https://old.example"]
+    },
+    "control_and_app": {
+      "control.example": ["https://control.example", "https://app.example"]
+    },
+    "control_only": {
+      "control.example": ["https://control.example"]
+    },
+    "create": {
+      "authenticatorData": "a0VSR89O6IQunw3j9h2nuoCHSI-KE3luCkikpADknaEFAAAAAA",
+      "clientDataJSON": "eyJjaGFsbGVuZ2UiOiI5dWgzd0g5WDBYOFpEd1Q1QWpXeG1RTTh5dFdPcWpzRTFCam5VRDZMSk9BIiwiY3Jvc3NPcmlnaW4iOmZhbHNlLCJvcmlnaW4iOiJodHRwczovL2FwcC5leGFtcGxlIiwidHlwZSI6IndlYmF1dGhuLmNyZWF0ZSJ9",
+      "id": "AgICAgICAgICAgICAgICAg",
+      "signature": "AeFIX4BRk_a19fnHdYmDiOkJBssB2mQYZaPF6i78HJXatl0ASb40s4PvubsJjEBfRBYROYs2n5CkONql_Aj2DQ"
+    },
+    "cross_origin": {
+      "authenticatorData": "a0VSR89O6IQunw3j9h2nuoCHSI-KE3luCkikpADknaEFAAAAAA",
+      "clientDataJSON": "eyJjaGFsbGVuZ2UiOiI5dWgzd0g5WDBYOFpEd1Q1QWpXeG1RTTh5dFdPcWpzRTFCam5VRDZMSk9BIiwiY3Jvc3NPcmlnaW4iOnRydWUsIm9yaWdpbiI6Imh0dHBzOi8vYXBwLmV4YW1wbGUiLCJ0eXBlIjoid2ViYXV0aG4uZ2V0In0",
+      "id": "AgICAgICAgICAgICAgICAg",
+      "signature": "eJ-cmSqNDItI2h3rVzGTzUO4-JQZvmui9_WkMZoQxb4CN6Ap-M389zqSjdC-PxOMayJklLM_REpSWwrheyfCCQ"
+    },
+    "cut": {
+      "account": "acct_owner",
+      "events": [
+        {
+          "aaguid": "fbfc3007154e4ecc8c0b6e020557d7bd",
+          "account": "acct_owner",
+          "alg": -7,
+          "at": 1000,
+          "by": "signup",
+          "credential": "EREREREREREREREREREREQ",
+          "event": "added",
+          "hash": "185bb2879962f802034fa0f8a9869d86644c0e47a9a178df40a91af5504021a0",
+          "key": "BAIX5hfwtkQ5KCePlpmeaaI6TywVK99tbN9m5bgCgtTtGUp968uXcS0t2jyoWqh2Wlb0X8dYWZZS8ol8ZTBuV5Q",
+          "keyFormat": "sec1",
+          "prev": "0000000000000000000000000000000000000000000000000000000000000000",
+          "rp": "control.example",
+          "seq": 0
+        },
+        {
+          "aaguid": "00000000000000000000000000000000",
+          "account": "acct_owner",
+          "alg": -8,
+          "at": 2000,
+          "by": "passkey",
+          "credential": "AgICAgICAgICAgICAgICAg",
+          "event": "added",
+          "hash": "8b08dcae213159f3cddbab477453a4dbf7439e9a71855cbcf74b2c70c1aec114",
+          "key": "gTl3Dqh9F19Wo1Rmw0x-zMuNipG07jeiXfYPW4_Js5Q",
+          "keyFormat": "raw",
+          "prev": "85134e62937515bff98ac7e86d401d5340f4fc34bd14b798d0cdc701426f7252",
+          "proof": {
+            "authenticatorData": "a0VSR89O6IQunw3j9h2nuoCHSI-KE3luCkikpADknaEFAAAAAA",
+            "clientDataJSON": "eyJjaGFsbGVuZ2UiOiJWTHNZSGVSMmpES0JCOU43cV9tUU42cGxzcXE3NmVaRTdHU0JFVlUxUHJ3IiwiY3Jvc3NPcmlnaW4iOmZhbHNlLCJvcmlnaW4iOiJodHRwczovL2NvbnRyb2wuZXhhbXBsZSIsInR5cGUiOiJ3ZWJhdXRobi5nZXQifQ",
+            "id": "EREREREREREREREREREREQ",
+            "signature": "MEUCIQC6c9bbMM4aMdKKpDbEDUo_z3nB7l5oAVi6S7Fv-5gVWQIgLXkwYp2ic850Smj8FHN6F25X771gR_GKYAYNp1zLIyU"
+          },
+          "rp": "control.example",
+          "seq": 2
+        },
+        {
+          "aaguid": "fbfc3007154e4ecc8c0b6e020557d7bd",
+          "account": "acct_owner",
+          "alg": -7,
+          "at": 3000,
+          "by": "passkey",
+          "credential": "EREREREREREREREREREREQ",
+          "event": "removed",
+          "hash": "8f71b6c1884e78576f4d9ffb91010c535943512c1b099cac51c27f5b813ca089",
+          "key": "BAIX5hfwtkQ5KCePlpmeaaI6TywVK99tbN9m5bgCgtTtGUp968uXcS0t2jyoWqh2Wlb0X8dYWZZS8ol8ZTBuV5Q",
+          "keyFormat": "sec1",
+          "prev": "8b08dcae213159f3cddbab477453a4dbf7439e9a71855cbcf74b2c70c1aec114",
+          "proof": {
+            "authenticatorData": "a0VSR89O6IQunw3j9h2nuoCHSI-KE3luCkikpADknaEFAAAAAA",
+            "clientDataJSON": "eyJjaGFsbGVuZ2UiOiJWVEpzc2FYS1dtb0c0b3ZFbXJVYUMzOEotMmRtbm13VzdWcmhDbGlReXNJIiwiY3Jvc3NPcmlnaW4iOmZhbHNlLCJvcmlnaW4iOiJodHRwczovL2NvbnRyb2wuZXhhbXBsZSIsInR5cGUiOiJ3ZWJhdXRobi5nZXQifQ",
+            "id": "AgICAgICAgICAgICAgICAg",
+            "signature": "WNjzj5-NuevZ2adcJXUg8gYECu5toji-q6nNGDUfLfFlZWmML77vz2J5clnrxxKM9mRlbzSgg5xmdaY1uXuCDQ"
+          },
+          "rp": "control.example",
+          "seq": 3
+        },
+        {
+          "aaguid": "00000000000000000000000000000000",
+          "account": "acct_owner",
+          "alg": -8,
+          "at": 4000,
+          "by": "device dev_laptop",
+          "credential": "AwMDAwMDAwMDAwMDAwMDAw",
+          "event": "added",
+          "hash": "a87a0f7a02c57c2f836d7bc0e85c6b6bb7bc52609014a2d996e502316a151808",
+          "key": "7UkoxijRwsbq6QM4kFmVYSlZJzpcY_k2NsFGFKyHN9E",
+          "keyFormat": "raw",
+          "prev": "8f71b6c1884e78576f4d9ffb91010c535943512c1b099cac51c27f5b813ca089",
+          "rp": "control.example",
+          "seq": 4
+        },
+        {
+          "aaguid": "00000000000000000000000000000000",
+          "account": "acct_owner",
+          "alg": -257,
+          "at": 6000,
+          "by": "session",
+          "credential": "UlJSUlJSUlJSUlJSUlJSUg",
+          "event": "removed",
+          "hash": "233ad70b465c0671d21c92fe87525efe28b91a7a74d19fd0d4c8608ce8cf0d72",
+          "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA0_SvFUJnVhDsI4X8PXKX-O5lnZpoRtsqWUH7vBPsTt3rFWcMiqtMCekZI8lGrXGGq9m_LTb1FbRPFtYmxBqQsdelHl6er0Sg8a1o28PT-5iIfnUjH8bleFJk6K1iRlyo579hU5rXAs0pzFdU0WiVpWEDimacTfpHZ7F53w0sg5zvq6ed8i_5P3B9z5rBh4os82tOArdmAIJ_aZMTJLeCOX8sMSlWDpZeq69WKGKRudrQUCg-YWMiFApyGQO4PSAVwQdTLBs0NqPXsmPOuPohvstHshr91ypPg0O9DC9QT7e7912WEYTj7zjhVooYlNYK-xyp0HNVAq38AVHRJ5NewQIDAQAB",
+          "keyFormat": "spki",
+          "prev": "a87a0f7a02c57c2f836d7bc0e85c6b6bb7bc52609014a2d996e502316a151808",
+          "rp": "control.example",
+          "seq": 5
+        }
+      ]
+    },
+    "der_long": {
+      "authenticatorData": "a0VSR89O6IQunw3j9h2nuoCHSI-KE3luCkikpADknaEFAAAAAA",
+      "clientDataJSON": "eyJjaGFsbGVuZ2UiOiI5dWgzd0g5WDBYOFpEd1Q1QWpXeG1RTTh5dFdPcWpzRTFCam5VRDZMSk9BIiwiY3Jvc3NPcmlnaW4iOmZhbHNlLCJvcmlnaW4iOiJodHRwczovL2FwcC5leGFtcGxlIiwidHlwZSI6IndlYmF1dGhuLmdldCJ9",
+      "id": "EREREREREREREREREREREQ",
+      "signature": "MEYCIQCkQqwufuF18xz3hHF-x_gKwjFN_GVRx_TVSqzssGXxhwIhAB5f7jG2dYqwKRtmoiprZKp4ORWtTevOC9qiBMJ1E4Ia"
+    },
+    "der_negative": {
+      "authenticatorData": "a0VSR89O6IQunw3j9h2nuoCHSI-KE3luCkikpADknaEFAAAAAA",
+      "clientDataJSON": "eyJjaGFsbGVuZ2UiOiI5dWgzd0g5WDBYOFpEd1Q1QWpXeG1RTTh5dFdPcWpzRTFCam5VRDZMSk9BIiwiY3Jvc3NPcmlnaW4iOmZhbHNlLCJuIjoyLCJvcmlnaW4iOiJodHRwczovL2FwcC5leGFtcGxlIiwidHlwZSI6IndlYmF1dGhuLmdldCJ9",
+      "id": "EREREREREREREREREREREQ",
+      "signature": "MEQCIPuhJY1VtNuDHh4XEgPJh7yL2geRAMGM46sGu4wMvsPeAiBGbDKQEtL1fEAqui9QUb3R1jT9gMkokryogjrKm_G1rg"
+    },
+    "der_signed": {
+      "authenticatorData": "a0VSR89O6IQunw3j9h2nuoCHSI-KE3luCkikpADknaEFAAAAAA",
+      "clientDataJSON": "eyJjaGFsbGVuZ2UiOiI5dWgzd0g5WDBYOFpEd1Q1QWpXeG1RTTh5dFdPcWpzRTFCam5VRDZMSk9BIiwiY3Jvc3NPcmlnaW4iOmZhbHNlLCJuIjoyLCJvcmlnaW4iOiJodHRwczovL2FwcC5leGFtcGxlIiwidHlwZSI6IndlYmF1dGhuLmdldCJ9",
+      "id": "EREREREREREREREREREREQ",
+      "signature": "MEUCIQD7oSWNVbTbgx4eFxIDyYe8i9oHkQDBjOOrBruMDL7D3gIgRmwykBLS9XxAKrovUFG90dY0_YDJKJK8qII6ypvxta4"
+    },
+    "dup_challenge": {
+      "authenticatorData": "a0VSR89O6IQunw3j9h2nuoCHSI-KE3luCkikpADknaEFAAAAAA",
+      "clientDataJSON": "eyJ0eXBlIjoid2ViYXV0aG4uZ2V0IiwiY2hhbGxlbmdlIjoiYjNSb1pYSSIsImNoYWxsZW5nZSI6Ijl1aDN3SDlYMFg4WkR3VDVBald4bVFNOHl0V09xanNFMUJqblVENkxKT0EiLCJvcmlnaW4iOiJodHRwczovL2FwcC5leGFtcGxlIiwiY3Jvc3NPcmlnaW4iOmZhbHNlfQ",
+      "id": "AgICAgICAgICAgICAgICAg",
+      "signature": "YFXKVflY13xnjmFahN1sreIbJdBT7EKvCYFOFmKgMBOwzbTz3qFGFYXCHohb9zWB6WB4bLSVkj_Ryr7B4_F8Cw"
+    },
+    "dup_other": {
+      "authenticatorData": "a0VSR89O6IQunw3j9h2nuoCHSI-KE3luCkikpADknaEFAAAAAA",
+      "clientDataJSON": "eyJ0eXBlIjoid2ViYXV0aG4uZ2V0IiwiY2hhbGxlbmdlIjoiOXVoM3dIOVgwWDhaRHdUNUFqV3htUU04eXRXT3Fqc0UxQmpuVUQ2TEpPQSIsIm9yaWdpbiI6Imh0dHBzOi8vYXBwLmV4YW1wbGUiLCJ4IjoxLCJ4IjoyfQ",
+      "id": "AgICAgICAgICAgICAgICAg",
+      "signature": "tUeghVFkHLC2OYVx3sNG06QYTus7iP7D_VvYuFFYAftafjDR3dcy6wYcpZeQQwkUJ3BPnMwuhJy_V658ITOLCg"
+    },
+    "ed3_app": {
+      "authenticatorData": "a0VSR89O6IQunw3j9h2nuoCHSI-KE3luCkikpADknaEFAAAAAA",
+      "clientDataJSON": "eyJjaGFsbGVuZ2UiOiI5dWgzd0g5WDBYOFpEd1Q1QWpXeG1RTTh5dFdPcWpzRTFCam5VRDZMSk9BIiwiY3Jvc3NPcmlnaW4iOmZhbHNlLCJvcmlnaW4iOiJodHRwczovL2FwcC5leGFtcGxlIiwidHlwZSI6IndlYmF1dGhuLmdldCJ9",
+      "id": "AwMDAwMDAwMDAwMDAwMDAw",
+      "signature": "NUeuzvFHi-auqu32gHyOWMQ8itOLwK4EqYeSYBOzjFIN9_ehzbh0s6E0G6wqsbEis61plNSpqrykichf3HwRAQ"
+    },
+    "ed_app": {
+      "authenticatorData": "a0VSR89O6IQunw3j9h2nuoCHSI-KE3luCkikpADknaEFAAAAAA",
+      "clientDataJSON": "eyJjaGFsbGVuZ2UiOiI5dWgzd0g5WDBYOFpEd1Q1QWpXeG1RTTh5dFdPcWpzRTFCam5VRDZMSk9BIiwiY3Jvc3NPcmlnaW4iOmZhbHNlLCJvcmlnaW4iOiJodHRwczovL2FwcC5leGFtcGxlIiwidHlwZSI6IndlYmF1dGhuLmdldCJ9",
+      "id": "AgICAgICAgICAgICAgICAg",
+      "signature": "yGgWznNAAw_ttjjO_ooGVcBr5q-w9g5DEuIyjQQZERGQyRrKHEnrdpYNSBPZ3seLBR2XuJNB7yZvoDKeya6ICg"
+    },
+    "ed_control": {
+      "authenticatorData": "a0VSR89O6IQunw3j9h2nuoCHSI-KE3luCkikpADknaEFAAAAAA",
+      "clientDataJSON": "eyJjaGFsbGVuZ2UiOiI5dWgzd0g5WDBYOFpEd1Q1QWpXeG1RTTh5dFdPcWpzRTFCam5VRDZMSk9BIiwiY3Jvc3NPcmlnaW4iOmZhbHNlLCJvcmlnaW4iOiJodHRwczovL2NvbnRyb2wuZXhhbXBsZSIsInR5cGUiOiJ3ZWJhdXRobi5nZXQifQ",
+      "id": "AgICAgICAgICAgICAgICAg",
+      "signature": "6Ga_O7xZD1iBAizVe8Uw5PWiOd6GC0FRuRpiM4wlKGIgK4aUg5npXwlDropFuZd4JiBlVNfRZGrm_J3ddcqmCw"
+    },
+    "es_app": {
+      "authenticatorData": "a0VSR89O6IQunw3j9h2nuoCHSI-KE3luCkikpADknaEFAAAAAA",
+      "clientDataJSON": "eyJjaGFsbGVuZ2UiOiI5dWgzd0g5WDBYOFpEd1Q1QWpXeG1RTTh5dFdPcWpzRTFCam5VRDZMSk9BIiwiY3Jvc3NPcmlnaW4iOmZhbHNlLCJvcmlnaW4iOiJodHRwczovL2FwcC5leGFtcGxlIiwidHlwZSI6IndlYmF1dGhuLmdldCJ9",
+      "id": "EREREREREREREREREREREQ",
+      "signature": "MEUCIQCkQqwufuF18xz3hHF-x_gKwjFN_GVRx_TVSqzssGXxhwIgHl_uMbZ1irApG2aiKmtkqng5Fa1N684L2qIEwnUTgho"
+    },
+    "evil_origin": {
+      "authenticatorData": "a0VSR89O6IQunw3j9h2nuoCHSI-KE3luCkikpADknaEFAAAAAA",
+      "clientDataJSON": "eyJjaGFsbGVuZ2UiOiI5dWgzd0g5WDBYOFpEd1Q1QWpXeG1RTTh5dFdPcWpzRTFCam5VRDZMSk9BIiwiY3Jvc3NPcmlnaW4iOmZhbHNlLCJvcmlnaW4iOiJodHRwczovL2V2aWwuZXhhbXBsZSIsInR5cGUiOiJ3ZWJhdXRobi5nZXQifQ",
+      "id": "AgICAgICAgICAgICAgICAg",
+      "signature": "kjrSMd0mTvCwUDYYi7TJNaFUKGEIIqZN2nFWk1RNnHTwpM6UQNUoMa9A_e1jElvfZHlsG61Fm1lAR6SmAtB_AA"
+    },
+    "forged": {
+      "authenticatorData": "a0VSR89O6IQunw3j9h2nuoCHSI-KE3luCkikpADknaEFAAAAAA",
+      "clientDataJSON": "eyJjaGFsbGVuZ2UiOiI5dWgzd0g5WDBYOFpEd1Q1QWpXeG1RTTh5dFdPcWpzRTFCam5VRDZMSk9BIiwiY3Jvc3NPcmlnaW4iOmZhbHNlLCJvcmlnaW4iOiJodHRwczovL2FwcC5leGFtcGxlIiwidHlwZSI6IndlYmF1dGhuLmdldCJ9",
+      "id": "AgICAgICAgICAgICAgICAg",
+      "signature": "7XdK8Sz-wHvjkdK7MaRyMlM36PcGnAq1M4pvefER2ysBqlnRMbMPC4RCIJbmGnEJ30b80LLrOEdGg2sx9k1bCg"
+    },
+    "format": {
+      "account": "acct_owner",
+      "events": [
+        {
+          "aaguid": "fbfc3007154e4ecc8c0b6e020557d7bd",
+          "account": "acct_owner",
+          "alg": -7,
+          "at": 1000,
+          "by": "signup",
+          "credential": "EREREREREREREREREREREQ",
+          "event": "added",
+          "hash": "185bb2879962f802034fa0f8a9869d86644c0e47a9a178df40a91af5504021a0",
+          "key": "BAIX5hfwtkQ5KCePlpmeaaI6TywVK99tbN9m5bgCgtTtGUp968uXcS0t2jyoWqh2Wlb0X8dYWZZS8ol8ZTBuV5Q",
+          "keyFormat": "sec1",
+          "prev": "0000000000000000000000000000000000000000000000000000000000000000",
+          "rp": "control.example",
+          "seq": 0
+        },
+        {
+          "aaguid": "00000000000000000000000000000000",
+          "account": "acct_owner",
+          "alg": -257,
+          "at": 1500,
+          "by": "github",
+          "credential": "UlJSUlJSUlJSUlJSUlJSUg",
+          "event": "added",
+          "hash": "85134e62937515bff98ac7e86d401d5340f4fc34bd14b798d0cdc701426f7252",
+          "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA0_SvFUJnVhDsI4X8PXKX-O5lnZpoRtsqWUH7vBPsTt3rFWcMiqtMCekZI8lGrXGGq9m_LTb1FbRPFtYmxBqQsdelHl6er0Sg8a1o28PT-5iIfnUjH8bleFJk6K1iRlyo579hU5rXAs0pzFdU0WiVpWEDimacTfpHZ7F53w0sg5zvq6ed8i_5P3B9z5rBh4os82tOArdmAIJ_aZMTJLeCOX8sMSlWDpZeq69WKGKRudrQUCg-YWMiFApyGQO4PSAVwQdTLBs0NqPXsmPOuPohvstHshr91ypPg0O9DC9QT7e7912WEYTj7zjhVooYlNYK-xyp0HNVAq38AVHRJ5NewQIDAQAB",
+          "keyFormat": "spki",
+          "prev": "185bb2879962f802034fa0f8a9869d86644c0e47a9a178df40a91af5504021a0",
+          "rp": "control.example",
+          "seq": 1
+        },
+        {
+          "aaguid": "00000000000000000000000000000000",
+          "account": "acct_owner",
+          "alg": -8,
+          "at": 2000,
+          "by": "passkey",
+          "credential": "AgICAgICAgICAgICAgICAg",
+          "event": "added",
+          "hash": "8b08dcae213159f3cddbab477453a4dbf7439e9a71855cbcf74b2c70c1aec114",
+          "key": "gTl3Dqh9F19Wo1Rmw0x-zMuNipG07jeiXfYPW4_Js5Q",
+          "keyFormat": "raw",
+          "prev": "85134e62937515bff98ac7e86d401d5340f4fc34bd14b798d0cdc701426f7252",
+          "proof": {
+            "authenticatorData": "a0VSR89O6IQunw3j9h2nuoCHSI-KE3luCkikpADknaEFAAAAAA",
+            "clientDataJSON": "eyJjaGFsbGVuZ2UiOiJWTHNZSGVSMmpES0JCOU43cV9tUU42cGxzcXE3NmVaRTdHU0JFVlUxUHJ3IiwiY3Jvc3NPcmlnaW4iOmZhbHNlLCJvcmlnaW4iOiJodHRwczovL2NvbnRyb2wuZXhhbXBsZSIsInR5cGUiOiJ3ZWJhdXRobi5nZXQifQ",
+            "id": "EREREREREREREREREREREQ",
+            "signature": "MEUCIQC6c9bbMM4aMdKKpDbEDUo_z3nB7l5oAVi6S7Fv-5gVWQIgLXkwYp2ic850Smj8FHN6F25X771gR_GKYAYNp1zLIyU"
+          },
+          "rp": "control.example",
+          "seq": 2
+        },
+        {
+          "aaguid": "fbfc3007154e4ecc8c0b6e020557d7bd",
+          "account": "acct_owner",
+          "alg": -7,
+          "at": 3000,
+          "by": "passkey",
+          "credential": "EREREREREREREREREREREQ",
+          "event": "removed",
+          "hash": "8f71b6c1884e78576f4d9ffb91010c535943512c1b099cac51c27f5b813ca089",
+          "key": "BAIX5hfwtkQ5KCePlpmeaaI6TywVK99tbN9m5bgCgtTtGUp968uXcS0t2jyoWqh2Wlb0X8dYWZZS8ol8ZTBuV5Q",
+          "keyFormat": "sec1",
+          "prev": "8b08dcae213159f3cddbab477453a4dbf7439e9a71855cbcf74b2c70c1aec114",
+          "proof": {
+            "authenticatorData": "a0VSR89O6IQunw3j9h2nuoCHSI-KE3luCkikpADknaEFAAAAAA",
+            "clientDataJSON": "eyJjaGFsbGVuZ2UiOiJWVEpzc2FYS1dtb0c0b3ZFbXJVYUMzOEotMmRtbm13VzdWcmhDbGlReXNJIiwiY3Jvc3NPcmlnaW4iOmZhbHNlLCJvcmlnaW4iOiJodHRwczovL2NvbnRyb2wuZXhhbXBsZSIsInR5cGUiOiJ3ZWJhdXRobi5nZXQifQ",
+            "id": "AgICAgICAgICAgICAgICAg",
+            "signature": "WNjzj5-NuevZ2adcJXUg8gYECu5toji-q6nNGDUfLfFlZWmML77vz2J5clnrxxKM9mRlbzSgg5xmdaY1uXuCDQ"
+          },
+          "rp": "control.example",
+          "seq": 3
+        },
+        {
+          "aaguid": "00000000000000000000000000000000",
+          "account": "acct_owner",
+          "alg": -8,
+          "at": 4000,
+          "by": "device dev_laptop",
+          "credential": "AwMDAwMDAwMDAwMDAwMDAw",
+          "event": "added",
+          "hash": "a87a0f7a02c57c2f836d7bc0e85c6b6bb7bc52609014a2d996e502316a151808",
+          "key": "7UkoxijRwsbq6QM4kFmVYSlZJzpcY_k2NsFGFKyHN9E",
+          "keyFormat": "raw",
+          "prev": "8f71b6c1884e78576f4d9ffb91010c535943512c1b099cac51c27f5b813ca089",
+          "rp": "control.example",
+          "seq": 4
+        },
+        {
+          "aaguid": "00000000000000000000000000000000",
+          "account": "acct_owner",
+          "alg": -257,
+          "at": 6000,
+          "by": "session",
+          "credential": "UlJSUlJSUlJSUlJSUlJSUg",
+          "event": "removed",
+          "hash": "233ad70b465c0671d21c92fe87525efe28b91a7a74d19fd0d4c8608ce8cf0d72",
+          "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA0_SvFUJnVhDsI4X8PXKX-O5lnZpoRtsqWUH7vBPsTt3rFWcMiqtMCekZI8lGrXGGq9m_LTb1FbRPFtYmxBqQsdelHl6er0Sg8a1o28PT-5iIfnUjH8bleFJk6K1iRlyo579hU5rXAs0pzFdU0WiVpWEDimacTfpHZ7F53w0sg5zvq6ed8i_5P3B9z5rBh4os82tOArdmAIJ_aZMTJLeCOX8sMSlWDpZeq69WKGKRudrQUCg-YWMiFApyGQO4PSAVwQdTLBs0NqPXsmPOuPohvstHshr91ypPg0O9DC9QT7e7912WEYTj7zjhVooYlNYK-xyp0HNVAq38AVHRJ5NewQIDAQAB",
+          "keyFormat": "spki",
+          "prev": "a87a0f7a02c57c2f836d7bc0e85c6b6bb7bc52609014a2d996e502316a151808",
+          "rp": "control.example",
+          "seq": 5
+        },
+        {
+          "aaguid": "00000000000000000000000000000000",
+          "account": "acct_owner",
+          "alg": -8,
+          "at": 7000,
+          "by": "github",
+          "credential": "BAQEBAQEBAQEBAQEBAQEBA",
+          "event": "added",
+          "hash": "8b4f3fd6a9c38ef16f1b08c33be9e1688ca17c8aa25fff5dd8e02c346d4e0d07",
+          "key": "ypOsFwUYcHHWe4PH_w7-gQjo7EUwV113JoeTM9vavnw",
+          "keyFormat": "sec1",
+          "prev": "233ad70b465c0671d21c92fe87525efe28b91a7a74d19fd0d4c8608ce8cf0d72",
+          "rp": "control.example",
+          "seq": 6
+        }
+      ]
+    },
+    "late_signer": {
+      "account": "acct_owner",
+      "events": [
+        {
+          "aaguid": "fbfc3007154e4ecc8c0b6e020557d7bd",
+          "account": "acct_owner",
+          "alg": -7,
+          "at": 1000,
+          "by": "signup",
+          "credential": "EREREREREREREREREREREQ",
+          "event": "added",
+          "hash": "185bb2879962f802034fa0f8a9869d86644c0e47a9a178df40a91af5504021a0",
+          "key": "BAIX5hfwtkQ5KCePlpmeaaI6TywVK99tbN9m5bgCgtTtGUp968uXcS0t2jyoWqh2Wlb0X8dYWZZS8ol8ZTBuV5Q",
+          "keyFormat": "sec1",
+          "prev": "0000000000000000000000000000000000000000000000000000000000000000",
+          "rp": "control.example",
+          "seq": 0
+        },
+        {
+          "aaguid": "00000000000000000000000000000000",
+          "account": "acct_owner",
+          "alg": -257,
+          "at": 1500,
+          "by": "github",
+          "credential": "UlJSUlJSUlJSUlJSUlJSUg",
+          "event": "added",
+          "hash": "85134e62937515bff98ac7e86d401d5340f4fc34bd14b798d0cdc701426f7252",
+          "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA0_SvFUJnVhDsI4X8PXKX-O5lnZpoRtsqWUH7vBPsTt3rFWcMiqtMCekZI8lGrXGGq9m_LTb1FbRPFtYmxBqQsdelHl6er0Sg8a1o28PT-5iIfnUjH8bleFJk6K1iRlyo579hU5rXAs0pzFdU0WiVpWEDimacTfpHZ7F53w0sg5zvq6ed8i_5P3B9z5rBh4os82tOArdmAIJ_aZMTJLeCOX8sMSlWDpZeq69WKGKRudrQUCg-YWMiFApyGQO4PSAVwQdTLBs0NqPXsmPOuPohvstHshr91ypPg0O9DC9QT7e7912WEYTj7zjhVooYlNYK-xyp0HNVAq38AVHRJ5NewQIDAQAB",
+          "keyFormat": "spki",
+          "prev": "185bb2879962f802034fa0f8a9869d86644c0e47a9a178df40a91af5504021a0",
+          "rp": "control.example",
+          "seq": 1
+        },
+        {
+          "aaguid": "00000000000000000000000000000000",
+          "account": "acct_owner",
+          "alg": -8,
+          "at": 2000,
+          "by": "passkey",
+          "credential": "AgICAgICAgICAgICAgICAg",
+          "event": "added",
+          "hash": "8b08dcae213159f3cddbab477453a4dbf7439e9a71855cbcf74b2c70c1aec114",
+          "key": "gTl3Dqh9F19Wo1Rmw0x-zMuNipG07jeiXfYPW4_Js5Q",
+          "keyFormat": "raw",
+          "prev": "85134e62937515bff98ac7e86d401d5340f4fc34bd14b798d0cdc701426f7252",
+          "proof": {
+            "authenticatorData": "a0VSR89O6IQunw3j9h2nuoCHSI-KE3luCkikpADknaEFAAAAAA",
+            "clientDataJSON": "eyJjaGFsbGVuZ2UiOiJWTHNZSGVSMmpES0JCOU43cV9tUU42cGxzcXE3NmVaRTdHU0JFVlUxUHJ3IiwiY3Jvc3NPcmlnaW4iOmZhbHNlLCJvcmlnaW4iOiJodHRwczovL2NvbnRyb2wuZXhhbXBsZSIsInR5cGUiOiJ3ZWJhdXRobi5nZXQifQ",
+            "id": "EREREREREREREREREREREQ",
+            "signature": "MEUCIQC6c9bbMM4aMdKKpDbEDUo_z3nB7l5oAVi6S7Fv-5gVWQIgLXkwYp2ic850Smj8FHN6F25X771gR_GKYAYNp1zLIyU"
+          },
+          "rp": "control.example",
+          "seq": 2
+        },
+        {
+          "aaguid": "fbfc3007154e4ecc8c0b6e020557d7bd",
+          "account": "acct_owner",
+          "alg": -7,
+          "at": 3000,
+          "by": "passkey",
+          "credential": "EREREREREREREREREREREQ",
+          "event": "removed",
+          "hash": "8f71b6c1884e78576f4d9ffb91010c535943512c1b099cac51c27f5b813ca089",
+          "key": "BAIX5hfwtkQ5KCePlpmeaaI6TywVK99tbN9m5bgCgtTtGUp968uXcS0t2jyoWqh2Wlb0X8dYWZZS8ol8ZTBuV5Q",
+          "keyFormat": "sec1",
+          "prev": "8b08dcae213159f3cddbab477453a4dbf7439e9a71855cbcf74b2c70c1aec114",
+          "proof": {
+            "authenticatorData": "a0VSR89O6IQunw3j9h2nuoCHSI-KE3luCkikpADknaEFAAAAAA",
+            "clientDataJSON": "eyJjaGFsbGVuZ2UiOiJWVEpzc2FYS1dtb0c0b3ZFbXJVYUMzOEotMmRtbm13VzdWcmhDbGlReXNJIiwiY3Jvc3NPcmlnaW4iOmZhbHNlLCJvcmlnaW4iOiJodHRwczovL2NvbnRyb2wuZXhhbXBsZSIsInR5cGUiOiJ3ZWJhdXRobi5nZXQifQ",
+            "id": "AgICAgICAgICAgICAgICAg",
+            "signature": "WNjzj5-NuevZ2adcJXUg8gYECu5toji-q6nNGDUfLfFlZWmML77vz2J5clnrxxKM9mRlbzSgg5xmdaY1uXuCDQ"
+          },
+          "rp": "control.example",
+          "seq": 3
+        },
+        {
+          "aaguid": "00000000000000000000000000000000",
+          "account": "acct_owner",
+          "alg": -8,
+          "at": 4000,
+          "by": "device dev_laptop",
+          "credential": "AwMDAwMDAwMDAwMDAwMDAw",
+          "event": "added",
+          "hash": "a87a0f7a02c57c2f836d7bc0e85c6b6bb7bc52609014a2d996e502316a151808",
+          "key": "7UkoxijRwsbq6QM4kFmVYSlZJzpcY_k2NsFGFKyHN9E",
+          "keyFormat": "raw",
+          "prev": "8f71b6c1884e78576f4d9ffb91010c535943512c1b099cac51c27f5b813ca089",
+          "rp": "control.example",
+          "seq": 4
+        },
+        {
+          "aaguid": "00000000000000000000000000000000",
+          "account": "acct_owner",
+          "alg": -257,
+          "at": 6000,
+          "by": "session",
+          "credential": "UlJSUlJSUlJSUlJSUlJSUg",
+          "event": "removed",
+          "hash": "233ad70b465c0671d21c92fe87525efe28b91a7a74d19fd0d4c8608ce8cf0d72",
+          "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA0_SvFUJnVhDsI4X8PXKX-O5lnZpoRtsqWUH7vBPsTt3rFWcMiqtMCekZI8lGrXGGq9m_LTb1FbRPFtYmxBqQsdelHl6er0Sg8a1o28PT-5iIfnUjH8bleFJk6K1iRlyo579hU5rXAs0pzFdU0WiVpWEDimacTfpHZ7F53w0sg5zvq6ed8i_5P3B9z5rBh4os82tOArdmAIJ_aZMTJLeCOX8sMSlWDpZeq69WKGKRudrQUCg-YWMiFApyGQO4PSAVwQdTLBs0NqPXsmPOuPohvstHshr91ypPg0O9DC9QT7e7912WEYTj7zjhVooYlNYK-xyp0HNVAq38AVHRJ5NewQIDAQAB",
+          "keyFormat": "spki",
+          "prev": "a87a0f7a02c57c2f836d7bc0e85c6b6bb7bc52609014a2d996e502316a151808",
+          "rp": "control.example",
+          "seq": 5
+        },
+        {
+          "aaguid": "00000000000000000000000000000000",
+          "account": "acct_owner",
+          "alg": -8,
+          "at": 7000,
+          "by": "passkey",
+          "credential": "BAQEBAQEBAQEBAQEBAQEBA",
+          "event": "added",
+          "hash": "97a83f41aed492ca61d0bd7146dbff7c5d1e42a0f34e5c9991fa2b185407bb27",
+          "key": "ypOsFwUYcHHWe4PH_w7-gQjo7EUwV113JoeTM9vavnw",
+          "keyFormat": "raw",
+          "prev": "233ad70b465c0671d21c92fe87525efe28b91a7a74d19fd0d4c8608ce8cf0d72",
+          "proof": {
+            "authenticatorData": "a0VSR89O6IQunw3j9h2nuoCHSI-KE3luCkikpADknaEFAAAAAA",
+            "clientDataJSON": "eyJjaGFsbGVuZ2UiOiJrVVJlSk85bW9Ld2N1NlNzUHF1Z2ZJdF9UU3NfMkI1MGFxTmVDaFQ1UTI0IiwiY3Jvc3NPcmlnaW4iOmZhbHNlLCJvcmlnaW4iOiJodHRwczovL2NvbnRyb2wuZXhhbXBsZSIsInR5cGUiOiJ3ZWJhdXRobi5nZXQifQ",
+            "id": "EREREREREREREREREREREQ",
+            "signature": "MEQCICXr50-M6rsvEiKI0jugR_ejseDVvzOjsPflHCevqiwQAiBT4LMMs6lzoIOJ4Sy1CRoGeLpSq6AIBlCXqqCqldroBQ"
+          },
+          "rp": "control.example",
+          "seq": 6
+        }
+      ]
+    },
+    "new_site": {
+      "authenticatorData": "a0VSR89O6IQunw3j9h2nuoCHSI-KE3luCkikpADknaEFAAAAAA",
+      "clientDataJSON": "eyJjaGFsbGVuZ2UiOiI5dWgzd0g5WDBYOFpEd1Q1QWpXeG1RTTh5dFdPcWpzRTFCam5VRDZMSk9BIiwiY3Jvc3NPcmlnaW4iOmZhbHNlLCJvcmlnaW4iOiJodHRwczovL2NvbnRyb2wuZXhhbXBsZSIsInR5cGUiOiJ3ZWJhdXRobi5nZXQifQ",
+      "id": "AgICAgICAgICAgICAgICAg",
+      "signature": "6Ga_O7xZD1iBAizVe8Uw5PWiOd6GC0FRuRpiM4wlKGIgK4aUg5npXwlDropFuZd4JiBlVNfRZGrm_J3ddcqmCw"
+    },
+    "no_up": {
+      "authenticatorData": "a0VSR89O6IQunw3j9h2nuoCHSI-KE3luCkikpADknaEEAAAAAA",
+      "clientDataJSON": "eyJjaGFsbGVuZ2UiOiI5dWgzd0g5WDBYOFpEd1Q1QWpXeG1RTTh5dFdPcWpzRTFCam5VRDZMSk9BIiwiY3Jvc3NPcmlnaW4iOmZhbHNlLCJvcmlnaW4iOiJodHRwczovL2FwcC5leGFtcGxlIiwidHlwZSI6IndlYmF1dGhuLmdldCJ9",
+      "id": "AgICAgICAgICAgICAgICAg",
+      "signature": "50hZgMo6rcEKKZMLp5pVLnQzOYYBWS4BKqCInplgrEw4vNCUI9fHFthicmIqRtoZrRw2O0zqzBC2qno83VwnCQ"
+    },
+    "no_uv": {
+      "authenticatorData": "a0VSR89O6IQunw3j9h2nuoCHSI-KE3luCkikpADknaEBAAAAAA",
+      "clientDataJSON": "eyJjaGFsbGVuZ2UiOiI5dWgzd0g5WDBYOFpEd1Q1QWpXeG1RTTh5dFdPcWpzRTFCam5VRDZMSk9BIiwiY3Jvc3NPcmlnaW4iOmZhbHNlLCJvcmlnaW4iOiJodHRwczovL2FwcC5leGFtcGxlIiwidHlwZSI6IndlYmF1dGhuLmdldCJ9",
+      "id": "AgICAgICAgICAgICAgICAg",
+      "signature": "IKZJW6JlMf8LGOscHkn9EamRH9TX2B3V-11ww57o1hJ7xmtObXidpVVsad0shlRDc_ysISgl07EFLnrJ3QLSBQ"
+    },
+    "not_json": {
+      "authenticatorData": "a0VSR89O6IQunw3j9h2nuoCHSI-KE3luCkikpADknaEFAAAAAA",
+      "clientDataJSON": "bm90IGpzb24",
+      "id": "AgICAgICAgICAgICAgICAg",
+      "signature": "yGgWznNAAw_ttjjO_ooGVcBr5q-w9g5DEuIyjQQZERGQyRrKHEnrdpYNSBPZ3seLBR2XuJNB7yZvoDKeya6ICg"
+    },
+    "old_rp_new_origin": {
+      "authenticatorData": "dAhz2dMtRzH6C14Q70SiN3Gkg0q70OYuYsdxd2xuSDEFAAAAAA",
+      "clientDataJSON": "eyJjaGFsbGVuZ2UiOiI5dWgzd0g5WDBYOFpEd1Q1QWpXeG1RTTh5dFdPcWpzRTFCam5VRDZMSk9BIiwiY3Jvc3NPcmlnaW4iOmZhbHNlLCJvcmlnaW4iOiJodHRwczovL2NvbnRyb2wuZXhhbXBsZSIsInR5cGUiOiJ3ZWJhdXRobi5nZXQifQ",
+      "id": "AgICAgICAgICAgICAgICAg",
+      "signature": "1n60Zi-7Jlvf3380AV958Q2OyTU8x2riNb_4IijykF_5qfCzrwTh-l5QM_HxyH2UYKgv0pRwxrz0RbLGXFRcBA"
+    },
+    "old_site": {
+      "authenticatorData": "dAhz2dMtRzH6C14Q70SiN3Gkg0q70OYuYsdxd2xuSDEFAAAAAA",
+      "clientDataJSON": "eyJjaGFsbGVuZ2UiOiI5dWgzd0g5WDBYOFpEd1Q1QWpXeG1RTTh5dFdPcWpzRTFCam5VRDZMSk9BIiwiY3Jvc3NPcmlnaW4iOmZhbHNlLCJvcmlnaW4iOiJodHRwczovL29sZC5leGFtcGxlIiwidHlwZSI6IndlYmF1dGhuLmdldCJ9",
+      "id": "AgICAgICAgICAgICAgICAg",
+      "signature": "Y7HTHXzO7ufW2EI5tuU_1xcnRpK7S4NrCOmygyvZbsg1QgoZUsapIcpYX8O5inBtlnOuUp149zC9ItfFZpe5Bw"
+    },
+    "open_rp": {
+      "account": "acct_owner",
+      "events": [
+        {
+          "aaguid": "fbfc3007154e4ecc8c0b6e020557d7bd",
+          "account": "acct_owner",
+          "alg": -7,
+          "at": 1000,
+          "by": "signup",
+          "credential": "EREREREREREREREREREREQ",
+          "event": "added",
+          "hash": "185bb2879962f802034fa0f8a9869d86644c0e47a9a178df40a91af5504021a0",
+          "key": "BAIX5hfwtkQ5KCePlpmeaaI6TywVK99tbN9m5bgCgtTtGUp968uXcS0t2jyoWqh2Wlb0X8dYWZZS8ol8ZTBuV5Q",
+          "keyFormat": "sec1",
+          "prev": "0000000000000000000000000000000000000000000000000000000000000000",
+          "rp": "control.example",
+          "seq": 0
+        },
+        {
+          "aaguid": "00000000000000000000000000000000",
+          "account": "acct_owner",
+          "alg": -257,
+          "at": 1500,
+          "by": "github",
+          "credential": "UlJSUlJSUlJSUlJSUlJSUg",
+          "event": "added",
+          "hash": "85134e62937515bff98ac7e86d401d5340f4fc34bd14b798d0cdc701426f7252",
+          "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA0_SvFUJnVhDsI4X8PXKX-O5lnZpoRtsqWUH7vBPsTt3rFWcMiqtMCekZI8lGrXGGq9m_LTb1FbRPFtYmxBqQsdelHl6er0Sg8a1o28PT-5iIfnUjH8bleFJk6K1iRlyo579hU5rXAs0pzFdU0WiVpWEDimacTfpHZ7F53w0sg5zvq6ed8i_5P3B9z5rBh4os82tOArdmAIJ_aZMTJLeCOX8sMSlWDpZeq69WKGKRudrQUCg-YWMiFApyGQO4PSAVwQdTLBs0NqPXsmPOuPohvstHshr91ypPg0O9DC9QT7e7912WEYTj7zjhVooYlNYK-xyp0HNVAq38AVHRJ5NewQIDAQAB",
+          "keyFormat": "spki",
+          "prev": "185bb2879962f802034fa0f8a9869d86644c0e47a9a178df40a91af5504021a0",
+          "rp": "control.example",
+          "seq": 1
+        },
+        {
+          "aaguid": "00000000000000000000000000000000",
+          "account": "acct_owner",
+          "alg": -8,
+          "at": 2000,
+          "by": "passkey",
+          "credential": "AgICAgICAgICAgICAgICAg",
+          "event": "added",
+          "hash": "8b08dcae213159f3cddbab477453a4dbf7439e9a71855cbcf74b2c70c1aec114",
+          "key": "gTl3Dqh9F19Wo1Rmw0x-zMuNipG07jeiXfYPW4_Js5Q",
+          "keyFormat": "raw",
+          "prev": "85134e62937515bff98ac7e86d401d5340f4fc34bd14b798d0cdc701426f7252",
+          "proof": {
+            "authenticatorData": "a0VSR89O6IQunw3j9h2nuoCHSI-KE3luCkikpADknaEFAAAAAA",
+            "clientDataJSON": "eyJjaGFsbGVuZ2UiOiJWTHNZSGVSMmpES0JCOU43cV9tUU42cGxzcXE3NmVaRTdHU0JFVlUxUHJ3IiwiY3Jvc3NPcmlnaW4iOmZhbHNlLCJvcmlnaW4iOiJodHRwczovL2NvbnRyb2wuZXhhbXBsZSIsInR5cGUiOiJ3ZWJhdXRobi5nZXQifQ",
+            "id": "EREREREREREREREREREREQ",
+            "signature": "MEUCIQC6c9bbMM4aMdKKpDbEDUo_z3nB7l5oAVi6S7Fv-5gVWQIgLXkwYp2ic850Smj8FHN6F25X771gR_GKYAYNp1zLIyU"
+          },
+          "rp": "control.example",
+          "seq": 2
+        },
+        {
+          "aaguid": "fbfc3007154e4ecc8c0b6e020557d7bd",
+          "account": "acct_owner",
+          "alg": -7,
+          "at": 3000,
+          "by": "passkey",
+          "credential": "EREREREREREREREREREREQ",
+          "event": "removed",
+          "hash": "8f71b6c1884e78576f4d9ffb91010c535943512c1b099cac51c27f5b813ca089",
+          "key": "BAIX5hfwtkQ5KCePlpmeaaI6TywVK99tbN9m5bgCgtTtGUp968uXcS0t2jyoWqh2Wlb0X8dYWZZS8ol8ZTBuV5Q",
+          "keyFormat": "sec1",
+          "prev": "8b08dcae213159f3cddbab477453a4dbf7439e9a71855cbcf74b2c70c1aec114",
+          "proof": {
+            "authenticatorData": "a0VSR89O6IQunw3j9h2nuoCHSI-KE3luCkikpADknaEFAAAAAA",
+            "clientDataJSON": "eyJjaGFsbGVuZ2UiOiJWVEpzc2FYS1dtb0c0b3ZFbXJVYUMzOEotMmRtbm13VzdWcmhDbGlReXNJIiwiY3Jvc3NPcmlnaW4iOmZhbHNlLCJvcmlnaW4iOiJodHRwczovL2NvbnRyb2wuZXhhbXBsZSIsInR5cGUiOiJ3ZWJhdXRobi5nZXQifQ",
+            "id": "AgICAgICAgICAgICAgICAg",
+            "signature": "WNjzj5-NuevZ2adcJXUg8gYECu5toji-q6nNGDUfLfFlZWmML77vz2J5clnrxxKM9mRlbzSgg5xmdaY1uXuCDQ"
+          },
+          "rp": "control.example",
+          "seq": 3
+        },
+        {
+          "aaguid": "00000000000000000000000000000000",
+          "account": "acct_owner",
+          "alg": -8,
+          "at": 4000,
+          "by": "device dev_laptop",
+          "credential": "AwMDAwMDAwMDAwMDAwMDAw",
+          "event": "added",
+          "hash": "a87a0f7a02c57c2f836d7bc0e85c6b6bb7bc52609014a2d996e502316a151808",
+          "key": "7UkoxijRwsbq6QM4kFmVYSlZJzpcY_k2NsFGFKyHN9E",
+          "keyFormat": "raw",
+          "prev": "8f71b6c1884e78576f4d9ffb91010c535943512c1b099cac51c27f5b813ca089",
+          "rp": "control.example",
+          "seq": 4
+        },
+        {
+          "aaguid": "00000000000000000000000000000000",
+          "account": "acct_owner",
+          "alg": -257,
+          "at": 6000,
+          "by": "session",
+          "credential": "UlJSUlJSUlJSUlJSUlJSUg",
+          "event": "removed",
+          "hash": "233ad70b465c0671d21c92fe87525efe28b91a7a74d19fd0d4c8608ce8cf0d72",
+          "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA0_SvFUJnVhDsI4X8PXKX-O5lnZpoRtsqWUH7vBPsTt3rFWcMiqtMCekZI8lGrXGGq9m_LTb1FbRPFtYmxBqQsdelHl6er0Sg8a1o28PT-5iIfnUjH8bleFJk6K1iRlyo579hU5rXAs0pzFdU0WiVpWEDimacTfpHZ7F53w0sg5zvq6ed8i_5P3B9z5rBh4os82tOArdmAIJ_aZMTJLeCOX8sMSlWDpZeq69WKGKRudrQUCg-YWMiFApyGQO4PSAVwQdTLBs0NqPXsmPOuPohvstHshr91ypPg0O9DC9QT7e7912WEYTj7zjhVooYlNYK-xyp0HNVAq38AVHRJ5NewQIDAQAB",
+          "keyFormat": "spki",
+          "prev": "a87a0f7a02c57c2f836d7bc0e85c6b6bb7bc52609014a2d996e502316a151808",
+          "rp": "control.example",
+          "seq": 5
+        },
+        {
+          "aaguid": "00000000000000000000000000000000",
+          "account": "acct_owner",
+          "alg": -8,
+          "at": 7000,
+          "by": "github",
+          "credential": "BAQEBAQEBAQEBAQEBAQEBA",
+          "event": "added",
+          "hash": "05ddc7f4dfcfd414804b9f16b37ed781ed4aeefc48c4be26f13d591ee99e0e48",
+          "key": "ypOsFwUYcHHWe4PH_w7-gQjo7EUwV113JoeTM9vavnw",
+          "keyFormat": "raw",
+          "prev": "233ad70b465c0671d21c92fe87525efe28b91a7a74d19fd0d4c8608ce8cf0d72",
+          "rp": "control.example old.example",
+          "seq": 6
+        }
+      ]
+    },
+    "other_account": {
+      "account": "acct_owner",
+      "events": [
+        {
+          "aaguid": "fbfc3007154e4ecc8c0b6e020557d7bd",
+          "account": "acct_owner",
+          "alg": -7,
+          "at": 1000,
+          "by": "signup",
+          "credential": "EREREREREREREREREREREQ",
+          "event": "added",
+          "hash": "185bb2879962f802034fa0f8a9869d86644c0e47a9a178df40a91af5504021a0",
+          "key": "BAIX5hfwtkQ5KCePlpmeaaI6TywVK99tbN9m5bgCgtTtGUp968uXcS0t2jyoWqh2Wlb0X8dYWZZS8ol8ZTBuV5Q",
+          "keyFormat": "sec1",
+          "prev": "0000000000000000000000000000000000000000000000000000000000000000",
+          "rp": "control.example",
+          "seq": 0
+        },
+        {
+          "aaguid": "00000000000000000000000000000000",
+          "account": "acct_owner",
+          "alg": -257,
+          "at": 1500,
+          "by": "github",
+          "credential": "UlJSUlJSUlJSUlJSUlJSUg",
+          "event": "added",
+          "hash": "85134e62937515bff98ac7e86d401d5340f4fc34bd14b798d0cdc701426f7252",
+          "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA0_SvFUJnVhDsI4X8PXKX-O5lnZpoRtsqWUH7vBPsTt3rFWcMiqtMCekZI8lGrXGGq9m_LTb1FbRPFtYmxBqQsdelHl6er0Sg8a1o28PT-5iIfnUjH8bleFJk6K1iRlyo579hU5rXAs0pzFdU0WiVpWEDimacTfpHZ7F53w0sg5zvq6ed8i_5P3B9z5rBh4os82tOArdmAIJ_aZMTJLeCOX8sMSlWDpZeq69WKGKRudrQUCg-YWMiFApyGQO4PSAVwQdTLBs0NqPXsmPOuPohvstHshr91ypPg0O9DC9QT7e7912WEYTj7zjhVooYlNYK-xyp0HNVAq38AVHRJ5NewQIDAQAB",
+          "keyFormat": "spki",
+          "prev": "185bb2879962f802034fa0f8a9869d86644c0e47a9a178df40a91af5504021a0",
+          "rp": "control.example",
+          "seq": 1
+        },
+        {
+          "aaguid": "00000000000000000000000000000000",
+          "account": "acct_owner",
+          "alg": -8,
+          "at": 2000,
+          "by": "passkey",
+          "credential": "AgICAgICAgICAgICAgICAg",
+          "event": "added",
+          "hash": "8b08dcae213159f3cddbab477453a4dbf7439e9a71855cbcf74b2c70c1aec114",
+          "key": "gTl3Dqh9F19Wo1Rmw0x-zMuNipG07jeiXfYPW4_Js5Q",
+          "keyFormat": "raw",
+          "prev": "85134e62937515bff98ac7e86d401d5340f4fc34bd14b798d0cdc701426f7252",
+          "proof": {
+            "authenticatorData": "a0VSR89O6IQunw3j9h2nuoCHSI-KE3luCkikpADknaEFAAAAAA",
+            "clientDataJSON": "eyJjaGFsbGVuZ2UiOiJWTHNZSGVSMmpES0JCOU43cV9tUU42cGxzcXE3NmVaRTdHU0JFVlUxUHJ3IiwiY3Jvc3NPcmlnaW4iOmZhbHNlLCJvcmlnaW4iOiJodHRwczovL2NvbnRyb2wuZXhhbXBsZSIsInR5cGUiOiJ3ZWJhdXRobi5nZXQifQ",
+            "id": "EREREREREREREREREREREQ",
+            "signature": "MEUCIQC6c9bbMM4aMdKKpDbEDUo_z3nB7l5oAVi6S7Fv-5gVWQIgLXkwYp2ic850Smj8FHN6F25X771gR_GKYAYNp1zLIyU"
+          },
+          "rp": "control.example",
+          "seq": 2
+        },
+        {
+          "aaguid": "fbfc3007154e4ecc8c0b6e020557d7bd",
+          "account": "acct_owner",
+          "alg": -7,
+          "at": 3000,
+          "by": "passkey",
+          "credential": "EREREREREREREREREREREQ",
+          "event": "removed",
+          "hash": "8f71b6c1884e78576f4d9ffb91010c535943512c1b099cac51c27f5b813ca089",
+          "key": "BAIX5hfwtkQ5KCePlpmeaaI6TywVK99tbN9m5bgCgtTtGUp968uXcS0t2jyoWqh2Wlb0X8dYWZZS8ol8ZTBuV5Q",
+          "keyFormat": "sec1",
+          "prev": "8b08dcae213159f3cddbab477453a4dbf7439e9a71855cbcf74b2c70c1aec114",
+          "proof": {
+            "authenticatorData": "a0VSR89O6IQunw3j9h2nuoCHSI-KE3luCkikpADknaEFAAAAAA",
+            "clientDataJSON": "eyJjaGFsbGVuZ2UiOiJWVEpzc2FYS1dtb0c0b3ZFbXJVYUMzOEotMmRtbm13VzdWcmhDbGlReXNJIiwiY3Jvc3NPcmlnaW4iOmZhbHNlLCJvcmlnaW4iOiJodHRwczovL2NvbnRyb2wuZXhhbXBsZSIsInR5cGUiOiJ3ZWJhdXRobi5nZXQifQ",
+            "id": "AgICAgICAgICAgICAgICAg",
+            "signature": "WNjzj5-NuevZ2adcJXUg8gYECu5toji-q6nNGDUfLfFlZWmML77vz2J5clnrxxKM9mRlbzSgg5xmdaY1uXuCDQ"
+          },
+          "rp": "control.example",
+          "seq": 3
+        },
+        {
+          "aaguid": "00000000000000000000000000000000",
+          "account": "acct_other",
+          "alg": -8,
+          "at": 4000,
+          "by": "device dev_laptop",
+          "credential": "AwMDAwMDAwMDAwMDAwMDAw",
+          "event": "added",
+          "hash": "a87a0f7a02c57c2f836d7bc0e85c6b6bb7bc52609014a2d996e502316a151808",
+          "key": "7UkoxijRwsbq6QM4kFmVYSlZJzpcY_k2NsFGFKyHN9E",
+          "keyFormat": "raw",
+          "prev": "8f71b6c1884e78576f4d9ffb91010c535943512c1b099cac51c27f5b813ca089",
+          "rp": "control.example",
+          "seq": 4
+        },
+        {
+          "aaguid": "00000000000000000000000000000000",
+          "account": "acct_owner",
+          "alg": -257,
+          "at": 6000,
+          "by": "session",
+          "credential": "UlJSUlJSUlJSUlJSUlJSUg",
+          "event": "removed",
+          "hash": "233ad70b465c0671d21c92fe87525efe28b91a7a74d19fd0d4c8608ce8cf0d72",
+          "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA0_SvFUJnVhDsI4X8PXKX-O5lnZpoRtsqWUH7vBPsTt3rFWcMiqtMCekZI8lGrXGGq9m_LTb1FbRPFtYmxBqQsdelHl6er0Sg8a1o28PT-5iIfnUjH8bleFJk6K1iRlyo579hU5rXAs0pzFdU0WiVpWEDimacTfpHZ7F53w0sg5zvq6ed8i_5P3B9z5rBh4os82tOArdmAIJ_aZMTJLeCOX8sMSlWDpZeq69WKGKRudrQUCg-YWMiFApyGQO4PSAVwQdTLBs0NqPXsmPOuPohvstHshr91ypPg0O9DC9QT7e7912WEYTj7zjhVooYlNYK-xyp0HNVAq38AVHRJ5NewQIDAQAB",
+          "keyFormat": "spki",
+          "prev": "a87a0f7a02c57c2f836d7bc0e85c6b6bb7bc52609014a2d996e502316a151808",
+          "rp": "control.example",
+          "seq": 5
+        }
+      ]
+    },
+    "other_bytes": {
+      "authenticatorData": "a0VSR89O6IQunw3j9h2nuoCHSI-KE3luCkikpADknaEFAAAAAA",
+      "clientDataJSON": "eyJjaGFsbGVuZ2UiOiJvLXJWN3RyVjM0SXhqRkZvWGJ3Y0ZIbzIwZi1GaFB5QzNtc0kwTDlqcDVVIiwiY3Jvc3NPcmlnaW4iOmZhbHNlLCJvcmlnaW4iOiJodHRwczovL2FwcC5leGFtcGxlIiwidHlwZSI6IndlYmF1dGhuLmdldCJ9",
+      "id": "AgICAgICAgICAgICAgICAg",
+      "signature": "KtjmjvObddDkwXdKqiWjLbM-D4PIOZ6IGl8n4ZtKRTO9zwOXLu6n_fNaYmVzjQ0FrT82QdMaceEoVCi5jk82Cg"
+    },
+    "other_rp": {
+      "authenticatorData": "UNhY4JhezH9gQYqvDMWrWH9CwlcKiECVqejMrND2VFwFAAAAAA",
+      "clientDataJSON": "eyJjaGFsbGVuZ2UiOiI5dWgzd0g5WDBYOFpEd1Q1QWpXeG1RTTh5dFdPcWpzRTFCam5VRDZMSk9BIiwiY3Jvc3NPcmlnaW4iOmZhbHNlLCJvcmlnaW4iOiJodHRwczovL2FwcC5leGFtcGxlIiwidHlwZSI6IndlYmF1dGhuLmdldCJ9",
+      "id": "AgICAgICAgICAgICAgICAg",
+      "signature": "tNxxtLG8vL5oGzGPTOG6JVRjiaYiDypsYuhTGP2U4Fy_CHFSINx5IW0Z4fW-MlOvCpT8BrVNIlpOCOZSjI8bCg"
+    },
+    "owner": {
+      "account": "acct_owner",
+      "events": [
+        {
+          "aaguid": "fbfc3007154e4ecc8c0b6e020557d7bd",
+          "account": "acct_owner",
+          "alg": -7,
+          "at": 1000,
+          "by": "signup",
+          "credential": "EREREREREREREREREREREQ",
+          "event": "added",
+          "hash": "185bb2879962f802034fa0f8a9869d86644c0e47a9a178df40a91af5504021a0",
+          "key": "BAIX5hfwtkQ5KCePlpmeaaI6TywVK99tbN9m5bgCgtTtGUp968uXcS0t2jyoWqh2Wlb0X8dYWZZS8ol8ZTBuV5Q",
+          "keyFormat": "sec1",
+          "prev": "0000000000000000000000000000000000000000000000000000000000000000",
+          "rp": "control.example",
+          "seq": 0
+        },
+        {
+          "aaguid": "00000000000000000000000000000000",
+          "account": "acct_owner",
+          "alg": -257,
+          "at": 1500,
+          "by": "github",
+          "credential": "UlJSUlJSUlJSUlJSUlJSUg",
+          "event": "added",
+          "hash": "85134e62937515bff98ac7e86d401d5340f4fc34bd14b798d0cdc701426f7252",
+          "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA0_SvFUJnVhDsI4X8PXKX-O5lnZpoRtsqWUH7vBPsTt3rFWcMiqtMCekZI8lGrXGGq9m_LTb1FbRPFtYmxBqQsdelHl6er0Sg8a1o28PT-5iIfnUjH8bleFJk6K1iRlyo579hU5rXAs0pzFdU0WiVpWEDimacTfpHZ7F53w0sg5zvq6ed8i_5P3B9z5rBh4os82tOArdmAIJ_aZMTJLeCOX8sMSlWDpZeq69WKGKRudrQUCg-YWMiFApyGQO4PSAVwQdTLBs0NqPXsmPOuPohvstHshr91ypPg0O9DC9QT7e7912WEYTj7zjhVooYlNYK-xyp0HNVAq38AVHRJ5NewQIDAQAB",
+          "keyFormat": "spki",
+          "prev": "185bb2879962f802034fa0f8a9869d86644c0e47a9a178df40a91af5504021a0",
+          "rp": "control.example",
+          "seq": 1
+        },
+        {
+          "aaguid": "00000000000000000000000000000000",
+          "account": "acct_owner",
+          "alg": -8,
+          "at": 2000,
+          "by": "passkey",
+          "credential": "AgICAgICAgICAgICAgICAg",
+          "event": "added",
+          "hash": "8b08dcae213159f3cddbab477453a4dbf7439e9a71855cbcf74b2c70c1aec114",
+          "key": "gTl3Dqh9F19Wo1Rmw0x-zMuNipG07jeiXfYPW4_Js5Q",
+          "keyFormat": "raw",
+          "prev": "85134e62937515bff98ac7e86d401d5340f4fc34bd14b798d0cdc701426f7252",
+          "proof": {
+            "authenticatorData": "a0VSR89O6IQunw3j9h2nuoCHSI-KE3luCkikpADknaEFAAAAAA",
+            "clientDataJSON": "eyJjaGFsbGVuZ2UiOiJWTHNZSGVSMmpES0JCOU43cV9tUU42cGxzcXE3NmVaRTdHU0JFVlUxUHJ3IiwiY3Jvc3NPcmlnaW4iOmZhbHNlLCJvcmlnaW4iOiJodHRwczovL2NvbnRyb2wuZXhhbXBsZSIsInR5cGUiOiJ3ZWJhdXRobi5nZXQifQ",
+            "id": "EREREREREREREREREREREQ",
+            "signature": "MEUCIQC6c9bbMM4aMdKKpDbEDUo_z3nB7l5oAVi6S7Fv-5gVWQIgLXkwYp2ic850Smj8FHN6F25X771gR_GKYAYNp1zLIyU"
+          },
+          "rp": "control.example",
+          "seq": 2
+        },
+        {
+          "aaguid": "fbfc3007154e4ecc8c0b6e020557d7bd",
+          "account": "acct_owner",
+          "alg": -7,
+          "at": 3000,
+          "by": "passkey",
+          "credential": "EREREREREREREREREREREQ",
+          "event": "removed",
+          "hash": "8f71b6c1884e78576f4d9ffb91010c535943512c1b099cac51c27f5b813ca089",
+          "key": "BAIX5hfwtkQ5KCePlpmeaaI6TywVK99tbN9m5bgCgtTtGUp968uXcS0t2jyoWqh2Wlb0X8dYWZZS8ol8ZTBuV5Q",
+          "keyFormat": "sec1",
+          "prev": "8b08dcae213159f3cddbab477453a4dbf7439e9a71855cbcf74b2c70c1aec114",
+          "proof": {
+            "authenticatorData": "a0VSR89O6IQunw3j9h2nuoCHSI-KE3luCkikpADknaEFAAAAAA",
+            "clientDataJSON": "eyJjaGFsbGVuZ2UiOiJWVEpzc2FYS1dtb0c0b3ZFbXJVYUMzOEotMmRtbm13VzdWcmhDbGlReXNJIiwiY3Jvc3NPcmlnaW4iOmZhbHNlLCJvcmlnaW4iOiJodHRwczovL2NvbnRyb2wuZXhhbXBsZSIsInR5cGUiOiJ3ZWJhdXRobi5nZXQifQ",
+            "id": "AgICAgICAgICAgICAgICAg",
+            "signature": "WNjzj5-NuevZ2adcJXUg8gYECu5toji-q6nNGDUfLfFlZWmML77vz2J5clnrxxKM9mRlbzSgg5xmdaY1uXuCDQ"
+          },
+          "rp": "control.example",
+          "seq": 3
+        },
+        {
+          "aaguid": "00000000000000000000000000000000",
+          "account": "acct_owner",
+          "alg": -8,
+          "at": 4000,
+          "by": "device dev_laptop",
+          "credential": "AwMDAwMDAwMDAwMDAwMDAw",
+          "event": "added",
+          "hash": "a87a0f7a02c57c2f836d7bc0e85c6b6bb7bc52609014a2d996e502316a151808",
+          "key": "7UkoxijRwsbq6QM4kFmVYSlZJzpcY_k2NsFGFKyHN9E",
+          "keyFormat": "raw",
+          "prev": "8f71b6c1884e78576f4d9ffb91010c535943512c1b099cac51c27f5b813ca089",
+          "rp": "control.example",
+          "seq": 4
+        },
+        {
+          "aaguid": "00000000000000000000000000000000",
+          "account": "acct_owner",
+          "alg": -257,
+          "at": 6000,
+          "by": "session",
+          "credential": "UlJSUlJSUlJSUlJSUlJSUg",
+          "event": "removed",
+          "hash": "233ad70b465c0671d21c92fe87525efe28b91a7a74d19fd0d4c8608ce8cf0d72",
+          "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA0_SvFUJnVhDsI4X8PXKX-O5lnZpoRtsqWUH7vBPsTt3rFWcMiqtMCekZI8lGrXGGq9m_LTb1FbRPFtYmxBqQsdelHl6er0Sg8a1o28PT-5iIfnUjH8bleFJk6K1iRlyo579hU5rXAs0pzFdU0WiVpWEDimacTfpHZ7F53w0sg5zvq6ed8i_5P3B9z5rBh4os82tOArdmAIJ_aZMTJLeCOX8sMSlWDpZeq69WKGKRudrQUCg-YWMiFApyGQO4PSAVwQdTLBs0NqPXsmPOuPohvstHshr91ypPg0O9DC9QT7e7912WEYTj7zjhVooYlNYK-xyp0HNVAq38AVHRJ5NewQIDAQAB",
+          "keyFormat": "spki",
+          "prev": "a87a0f7a02c57c2f836d7bc0e85c6b6bb7bc52609014a2d996e502316a151808",
+          "rp": "control.example",
+          "seq": 5
+        }
+      ]
+    },
+    "padded": {
+      "authenticatorData": "a0VSR89O6IQunw3j9h2nuoCHSI-KE3luCkikpADknaEFAAAAAA==",
+      "clientDataJSON": "eyJjaGFsbGVuZ2UiOiI5dWgzd0g5WDBYOFpEd1Q1QWpXeG1RTTh5dFdPcWpzRTFCam5VRDZMSk9BIiwiY3Jvc3NPcmlnaW4iOmZhbHNlLCJvcmlnaW4iOiJodHRwczovL2FwcC5leGFtcGxlIiwidHlwZSI6IndlYmF1dGhuLmdldCJ9",
+      "id": "AgICAgICAgICAgICAgICAg",
+      "signature": "yGgWznNAAw_ttjjO_ooGVcBr5q-w9g5DEuIyjQQZERGQyRrKHEnrdpYNSBPZ3seLBR2XuJNB7yZvoDKeya6ICg"
+    },
+    "proof_elsewhere": {
+      "account": "acct_owner",
+      "events": [
+        {
+          "aaguid": "fbfc3007154e4ecc8c0b6e020557d7bd",
+          "account": "acct_owner",
+          "alg": -7,
+          "at": 1000,
+          "by": "signup",
+          "credential": "EREREREREREREREREREREQ",
+          "event": "added",
+          "hash": "185bb2879962f802034fa0f8a9869d86644c0e47a9a178df40a91af5504021a0",
+          "key": "BAIX5hfwtkQ5KCePlpmeaaI6TywVK99tbN9m5bgCgtTtGUp968uXcS0t2jyoWqh2Wlb0X8dYWZZS8ol8ZTBuV5Q",
+          "keyFormat": "sec1",
+          "prev": "0000000000000000000000000000000000000000000000000000000000000000",
+          "rp": "control.example",
+          "seq": 0
+        },
+        {
+          "aaguid": "00000000000000000000000000000000",
+          "account": "acct_owner",
+          "alg": -257,
+          "at": 1500,
+          "by": "github",
+          "credential": "UlJSUlJSUlJSUlJSUlJSUg",
+          "event": "added",
+          "hash": "85134e62937515bff98ac7e86d401d5340f4fc34bd14b798d0cdc701426f7252",
+          "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA0_SvFUJnVhDsI4X8PXKX-O5lnZpoRtsqWUH7vBPsTt3rFWcMiqtMCekZI8lGrXGGq9m_LTb1FbRPFtYmxBqQsdelHl6er0Sg8a1o28PT-5iIfnUjH8bleFJk6K1iRlyo579hU5rXAs0pzFdU0WiVpWEDimacTfpHZ7F53w0sg5zvq6ed8i_5P3B9z5rBh4os82tOArdmAIJ_aZMTJLeCOX8sMSlWDpZeq69WKGKRudrQUCg-YWMiFApyGQO4PSAVwQdTLBs0NqPXsmPOuPohvstHshr91ypPg0O9DC9QT7e7912WEYTj7zjhVooYlNYK-xyp0HNVAq38AVHRJ5NewQIDAQAB",
+          "keyFormat": "spki",
+          "prev": "185bb2879962f802034fa0f8a9869d86644c0e47a9a178df40a91af5504021a0",
+          "rp": "control.example",
+          "seq": 1
+        },
+        {
+          "aaguid": "00000000000000000000000000000000",
+          "account": "acct_owner",
+          "alg": -8,
+          "at": 2000,
+          "by": "passkey",
+          "credential": "AgICAgICAgICAgICAgICAg",
+          "event": "added",
+          "hash": "8b08dcae213159f3cddbab477453a4dbf7439e9a71855cbcf74b2c70c1aec114",
+          "key": "gTl3Dqh9F19Wo1Rmw0x-zMuNipG07jeiXfYPW4_Js5Q",
+          "keyFormat": "raw",
+          "prev": "85134e62937515bff98ac7e86d401d5340f4fc34bd14b798d0cdc701426f7252",
+          "proof": {
+            "authenticatorData": "a0VSR89O6IQunw3j9h2nuoCHSI-KE3luCkikpADknaEFAAAAAA",
+            "clientDataJSON": "eyJjaGFsbGVuZ2UiOiJWTHNZSGVSMmpES0JCOU43cV9tUU42cGxzcXE3NmVaRTdHU0JFVlUxUHJ3IiwiY3Jvc3NPcmlnaW4iOmZhbHNlLCJvcmlnaW4iOiJodHRwczovL2NvbnRyb2wuZXhhbXBsZSIsInR5cGUiOiJ3ZWJhdXRobi5nZXQifQ",
+            "id": "EREREREREREREREREREREQ",
+            "signature": "MEUCIQC6c9bbMM4aMdKKpDbEDUo_z3nB7l5oAVi6S7Fv-5gVWQIgLXkwYp2ic850Smj8FHN6F25X771gR_GKYAYNp1zLIyU"
+          },
+          "rp": "control.example",
+          "seq": 2
+        },
+        {
+          "aaguid": "fbfc3007154e4ecc8c0b6e020557d7bd",
+          "account": "acct_owner",
+          "alg": -7,
+          "at": 3000,
+          "by": "passkey",
+          "credential": "EREREREREREREREREREREQ",
+          "event": "removed",
+          "hash": "8f71b6c1884e78576f4d9ffb91010c535943512c1b099cac51c27f5b813ca089",
+          "key": "BAIX5hfwtkQ5KCePlpmeaaI6TywVK99tbN9m5bgCgtTtGUp968uXcS0t2jyoWqh2Wlb0X8dYWZZS8ol8ZTBuV5Q",
+          "keyFormat": "sec1",
+          "prev": "8b08dcae213159f3cddbab477453a4dbf7439e9a71855cbcf74b2c70c1aec114",
+          "proof": {
+            "authenticatorData": "a0VSR89O6IQunw3j9h2nuoCHSI-KE3luCkikpADknaEFAAAAAA",
+            "clientDataJSON": "eyJjaGFsbGVuZ2UiOiJWVEpzc2FYS1dtb0c0b3ZFbXJVYUMzOEotMmRtbm13VzdWcmhDbGlReXNJIiwiY3Jvc3NPcmlnaW4iOmZhbHNlLCJvcmlnaW4iOiJodHRwczovL2NvbnRyb2wuZXhhbXBsZSIsInR5cGUiOiJ3ZWJhdXRobi5nZXQifQ",
+            "id": "AgICAgICAgICAgICAgICAg",
+            "signature": "WNjzj5-NuevZ2adcJXUg8gYECu5toji-q6nNGDUfLfFlZWmML77vz2J5clnrxxKM9mRlbzSgg5xmdaY1uXuCDQ"
+          },
+          "rp": "control.example",
+          "seq": 3
+        },
+        {
+          "aaguid": "00000000000000000000000000000000",
+          "account": "acct_owner",
+          "alg": -8,
+          "at": 4000,
+          "by": "device dev_laptop",
+          "credential": "AwMDAwMDAwMDAwMDAwMDAw",
+          "event": "added",
+          "hash": "a87a0f7a02c57c2f836d7bc0e85c6b6bb7bc52609014a2d996e502316a151808",
+          "key": "7UkoxijRwsbq6QM4kFmVYSlZJzpcY_k2NsFGFKyHN9E",
+          "keyFormat": "raw",
+          "prev": "8f71b6c1884e78576f4d9ffb91010c535943512c1b099cac51c27f5b813ca089",
+          "rp": "control.example",
+          "seq": 4
+        },
+        {
+          "aaguid": "00000000000000000000000000000000",
+          "account": "acct_owner",
+          "alg": -257,
+          "at": 6000,
+          "by": "session",
+          "credential": "UlJSUlJSUlJSUlJSUlJSUg",
+          "event": "removed",
+          "hash": "233ad70b465c0671d21c92fe87525efe28b91a7a74d19fd0d4c8608ce8cf0d72",
+          "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA0_SvFUJnVhDsI4X8PXKX-O5lnZpoRtsqWUH7vBPsTt3rFWcMiqtMCekZI8lGrXGGq9m_LTb1FbRPFtYmxBqQsdelHl6er0Sg8a1o28PT-5iIfnUjH8bleFJk6K1iRlyo579hU5rXAs0pzFdU0WiVpWEDimacTfpHZ7F53w0sg5zvq6ed8i_5P3B9z5rBh4os82tOArdmAIJ_aZMTJLeCOX8sMSlWDpZeq69WKGKRudrQUCg-YWMiFApyGQO4PSAVwQdTLBs0NqPXsmPOuPohvstHshr91ypPg0O9DC9QT7e7912WEYTj7zjhVooYlNYK-xyp0HNVAq38AVHRJ5NewQIDAQAB",
+          "keyFormat": "spki",
+          "prev": "a87a0f7a02c57c2f836d7bc0e85c6b6bb7bc52609014a2d996e502316a151808",
+          "rp": "control.example",
+          "seq": 5
+        },
+        {
+          "aaguid": "00000000000000000000000000000000",
+          "account": "acct_owner",
+          "alg": -8,
+          "at": 7000,
+          "by": "passkey",
+          "credential": "BAQEBAQEBAQEBAQEBAQEBA",
+          "event": "added",
+          "hash": "5ce5dd2994d7e5cbc54d507b37324f77217227f8e7f5e8c5c8b0a1d39beaa5a9",
+          "key": "ypOsFwUYcHHWe4PH_w7-gQjo7EUwV113JoeTM9vavnw",
+          "keyFormat": "raw",
+          "prev": "233ad70b465c0671d21c92fe87525efe28b91a7a74d19fd0d4c8608ce8cf0d72",
+          "proof": {
+            "authenticatorData": "a0VSR89O6IQunw3j9h2nuoCHSI-KE3luCkikpADknaEFAAAAAA",
+            "clientDataJSON": "eyJjaGFsbGVuZ2UiOiJrVVJlSk85bW9Ld2N1NlNzUHF1Z2ZJdF9UU3NfMkI1MGFxTmVDaFQ1UTI0IiwiY3Jvc3NPcmlnaW4iOmZhbHNlLCJvcmlnaW4iOiJodHRwczovL2FwcC5leGFtcGxlIiwidHlwZSI6IndlYmF1dGhuLmdldCJ9",
+            "id": "AgICAgICAgICAgICAgICAg",
+            "signature": "3mhnfDtHVlZZ-4xCiRKlnCk8cv28UUD6rWQUr_h9JmgWYgnzRewmysN4sMiqaJd_Lf1IoEs7BfOXaqa9KUT5CQ"
+          },
+          "rp": "control.example",
+          "seq": 6
+        }
+      ]
+    },
+    "proof_on_vouched": {
+      "account": "acct_owner",
+      "events": [
+        {
+          "aaguid": "fbfc3007154e4ecc8c0b6e020557d7bd",
+          "account": "acct_owner",
+          "alg": -7,
+          "at": 1000,
+          "by": "signup",
+          "credential": "EREREREREREREREREREREQ",
+          "event": "added",
+          "hash": "185bb2879962f802034fa0f8a9869d86644c0e47a9a178df40a91af5504021a0",
+          "key": "BAIX5hfwtkQ5KCePlpmeaaI6TywVK99tbN9m5bgCgtTtGUp968uXcS0t2jyoWqh2Wlb0X8dYWZZS8ol8ZTBuV5Q",
+          "keyFormat": "sec1",
+          "prev": "0000000000000000000000000000000000000000000000000000000000000000",
+          "rp": "control.example",
+          "seq": 0
+        },
+        {
+          "aaguid": "00000000000000000000000000000000",
+          "account": "acct_owner",
+          "alg": -257,
+          "at": 1500,
+          "by": "github",
+          "credential": "UlJSUlJSUlJSUlJSUlJSUg",
+          "event": "added",
+          "hash": "85134e62937515bff98ac7e86d401d5340f4fc34bd14b798d0cdc701426f7252",
+          "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA0_SvFUJnVhDsI4X8PXKX-O5lnZpoRtsqWUH7vBPsTt3rFWcMiqtMCekZI8lGrXGGq9m_LTb1FbRPFtYmxBqQsdelHl6er0Sg8a1o28PT-5iIfnUjH8bleFJk6K1iRlyo579hU5rXAs0pzFdU0WiVpWEDimacTfpHZ7F53w0sg5zvq6ed8i_5P3B9z5rBh4os82tOArdmAIJ_aZMTJLeCOX8sMSlWDpZeq69WKGKRudrQUCg-YWMiFApyGQO4PSAVwQdTLBs0NqPXsmPOuPohvstHshr91ypPg0O9DC9QT7e7912WEYTj7zjhVooYlNYK-xyp0HNVAq38AVHRJ5NewQIDAQAB",
+          "keyFormat": "spki",
+          "prev": "185bb2879962f802034fa0f8a9869d86644c0e47a9a178df40a91af5504021a0",
+          "rp": "control.example",
+          "seq": 1
+        },
+        {
+          "aaguid": "00000000000000000000000000000000",
+          "account": "acct_owner",
+          "alg": -8,
+          "at": 2000,
+          "by": "passkey",
+          "credential": "AgICAgICAgICAgICAgICAg",
+          "event": "added",
+          "hash": "8b08dcae213159f3cddbab477453a4dbf7439e9a71855cbcf74b2c70c1aec114",
+          "key": "gTl3Dqh9F19Wo1Rmw0x-zMuNipG07jeiXfYPW4_Js5Q",
+          "keyFormat": "raw",
+          "prev": "85134e62937515bff98ac7e86d401d5340f4fc34bd14b798d0cdc701426f7252",
+          "proof": {
+            "authenticatorData": "a0VSR89O6IQunw3j9h2nuoCHSI-KE3luCkikpADknaEFAAAAAA",
+            "clientDataJSON": "eyJjaGFsbGVuZ2UiOiJWTHNZSGVSMmpES0JCOU43cV9tUU42cGxzcXE3NmVaRTdHU0JFVlUxUHJ3IiwiY3Jvc3NPcmlnaW4iOmZhbHNlLCJvcmlnaW4iOiJodHRwczovL2NvbnRyb2wuZXhhbXBsZSIsInR5cGUiOiJ3ZWJhdXRobi5nZXQifQ",
+            "id": "EREREREREREREREREREREQ",
+            "signature": "MEUCIQC6c9bbMM4aMdKKpDbEDUo_z3nB7l5oAVi6S7Fv-5gVWQIgLXkwYp2ic850Smj8FHN6F25X771gR_GKYAYNp1zLIyU"
+          },
+          "rp": "control.example",
+          "seq": 2
+        },
+        {
+          "aaguid": "fbfc3007154e4ecc8c0b6e020557d7bd",
+          "account": "acct_owner",
+          "alg": -7,
+          "at": 3000,
+          "by": "passkey",
+          "credential": "EREREREREREREREREREREQ",
+          "event": "removed",
+          "hash": "8f71b6c1884e78576f4d9ffb91010c535943512c1b099cac51c27f5b813ca089",
+          "key": "BAIX5hfwtkQ5KCePlpmeaaI6TywVK99tbN9m5bgCgtTtGUp968uXcS0t2jyoWqh2Wlb0X8dYWZZS8ol8ZTBuV5Q",
+          "keyFormat": "sec1",
+          "prev": "8b08dcae213159f3cddbab477453a4dbf7439e9a71855cbcf74b2c70c1aec114",
+          "proof": {
+            "authenticatorData": "a0VSR89O6IQunw3j9h2nuoCHSI-KE3luCkikpADknaEFAAAAAA",
+            "clientDataJSON": "eyJjaGFsbGVuZ2UiOiJWVEpzc2FYS1dtb0c0b3ZFbXJVYUMzOEotMmRtbm13VzdWcmhDbGlReXNJIiwiY3Jvc3NPcmlnaW4iOmZhbHNlLCJvcmlnaW4iOiJodHRwczovL2NvbnRyb2wuZXhhbXBsZSIsInR5cGUiOiJ3ZWJhdXRobi5nZXQifQ",
+            "id": "AgICAgICAgICAgICAgICAg",
+            "signature": "WNjzj5-NuevZ2adcJXUg8gYECu5toji-q6nNGDUfLfFlZWmML77vz2J5clnrxxKM9mRlbzSgg5xmdaY1uXuCDQ"
+          },
+          "rp": "control.example",
+          "seq": 3
+        },
+        {
+          "aaguid": "00000000000000000000000000000000",
+          "account": "acct_owner",
+          "alg": -8,
+          "at": 4000,
+          "by": "device dev_laptop",
+          "credential": "AwMDAwMDAwMDAwMDAwMDAw",
+          "event": "added",
+          "hash": "a87a0f7a02c57c2f836d7bc0e85c6b6bb7bc52609014a2d996e502316a151808",
+          "key": "7UkoxijRwsbq6QM4kFmVYSlZJzpcY_k2NsFGFKyHN9E",
+          "keyFormat": "raw",
+          "prev": "8f71b6c1884e78576f4d9ffb91010c535943512c1b099cac51c27f5b813ca089",
+          "rp": "control.example",
+          "seq": 4
+        },
+        {
+          "aaguid": "00000000000000000000000000000000",
+          "account": "acct_owner",
+          "alg": -257,
+          "at": 6000,
+          "by": "session",
+          "credential": "UlJSUlJSUlJSUlJSUlJSUg",
+          "event": "removed",
+          "hash": "233ad70b465c0671d21c92fe87525efe28b91a7a74d19fd0d4c8608ce8cf0d72",
+          "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA0_SvFUJnVhDsI4X8PXKX-O5lnZpoRtsqWUH7vBPsTt3rFWcMiqtMCekZI8lGrXGGq9m_LTb1FbRPFtYmxBqQsdelHl6er0Sg8a1o28PT-5iIfnUjH8bleFJk6K1iRlyo579hU5rXAs0pzFdU0WiVpWEDimacTfpHZ7F53w0sg5zvq6ed8i_5P3B9z5rBh4os82tOArdmAIJ_aZMTJLeCOX8sMSlWDpZeq69WKGKRudrQUCg-YWMiFApyGQO4PSAVwQdTLBs0NqPXsmPOuPohvstHshr91ypPg0O9DC9QT7e7912WEYTj7zjhVooYlNYK-xyp0HNVAq38AVHRJ5NewQIDAQAB",
+          "keyFormat": "spki",
+          "prev": "a87a0f7a02c57c2f836d7bc0e85c6b6bb7bc52609014a2d996e502316a151808",
+          "rp": "control.example",
+          "seq": 5
+        },
+        {
+          "aaguid": "00000000000000000000000000000000",
+          "account": "acct_owner",
+          "alg": -8,
+          "at": 7000,
+          "by": "github",
+          "credential": "BAQEBAQEBAQEBAQEBAQEBA",
+          "event": "added",
+          "hash": "9d1562952ab2e8ef18be23049e14a5bacb87c8c8a7cf7f93627fa16d41fac353",
+          "key": "ypOsFwUYcHHWe4PH_w7-gQjo7EUwV113JoeTM9vavnw",
+          "keyFormat": "raw",
+          "prev": "233ad70b465c0671d21c92fe87525efe28b91a7a74d19fd0d4c8608ce8cf0d72",
+          "proof": {
+            "authenticatorData": "a0VSR89O6IQunw3j9h2nuoCHSI-KE3luCkikpADknaEFAAAAAA",
+            "clientDataJSON": "eyJjaGFsbGVuZ2UiOiJLVlBKSzR4Y2h3ZEF0MTF3SW80cVFHblU4aldGV1BQVHF2TXpsOGt1SDdvIiwiY3Jvc3NPcmlnaW4iOmZhbHNlLCJvcmlnaW4iOiJodHRwczovL2NvbnRyb2wuZXhhbXBsZSIsInR5cGUiOiJ3ZWJhdXRobi5nZXQifQ",
+            "id": "AgICAgICAgICAgICAgICAg",
+            "signature": "5HPU-2U6KiQiuZNkwa8DIqq-JIOA_SSWC8RntBw2qt8LXk9ZhWWzrNuv-FU1gQ33jlKow4Ed1WnrVrsIPOGkAQ"
+          },
+          "rp": "control.example",
+          "seq": 6
+        }
+      ]
+    },
+    "rehashed": {
+      "account": "acct_owner",
+      "events": [
+        {
+          "aaguid": "fbfc3007154e4ecc8c0b6e020557d7bd",
+          "account": "acct_owner",
+          "alg": -7,
+          "at": 1000,
+          "by": "signup",
+          "credential": "EREREREREREREREREREREQ",
+          "event": "added",
+          "hash": "f71e8558acc5401560c17514b425d7085b9210e6f0c9a0dacdd8d8acf02e0a39",
+          "key": "BCYVk5Ks93UZ7EWglzEWh8fF3wXEXu7kXWNzG8yHdfechHqGgOXNaIBD4MfGlR2ZVrCuLWddHmBh-EXKnPWyOL8",
+          "keyFormat": "sec1",
+          "prev": "0000000000000000000000000000000000000000000000000000000000000000",
+          "rp": "control.example",
+          "seq": 0
+        },
+        {
+          "aaguid": "00000000000000000000000000000000",
+          "account": "acct_owner",
+          "alg": -257,
+          "at": 1500,
+          "by": "github",
+          "credential": "UlJSUlJSUlJSUlJSUlJSUg",
+          "event": "added",
+          "hash": "85134e62937515bff98ac7e86d401d5340f4fc34bd14b798d0cdc701426f7252",
+          "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA0_SvFUJnVhDsI4X8PXKX-O5lnZpoRtsqWUH7vBPsTt3rFWcMiqtMCekZI8lGrXGGq9m_LTb1FbRPFtYmxBqQsdelHl6er0Sg8a1o28PT-5iIfnUjH8bleFJk6K1iRlyo579hU5rXAs0pzFdU0WiVpWEDimacTfpHZ7F53w0sg5zvq6ed8i_5P3B9z5rBh4os82tOArdmAIJ_aZMTJLeCOX8sMSlWDpZeq69WKGKRudrQUCg-YWMiFApyGQO4PSAVwQdTLBs0NqPXsmPOuPohvstHshr91ypPg0O9DC9QT7e7912WEYTj7zjhVooYlNYK-xyp0HNVAq38AVHRJ5NewQIDAQAB",
+          "keyFormat": "spki",
+          "prev": "185bb2879962f802034fa0f8a9869d86644c0e47a9a178df40a91af5504021a0",
+          "rp": "control.example",
+          "seq": 1
+        },
+        {
+          "aaguid": "00000000000000000000000000000000",
+          "account": "acct_owner",
+          "alg": -8,
+          "at": 2000,
+          "by": "passkey",
+          "credential": "AgICAgICAgICAgICAgICAg",
+          "event": "added",
+          "hash": "8b08dcae213159f3cddbab477453a4dbf7439e9a71855cbcf74b2c70c1aec114",
+          "key": "gTl3Dqh9F19Wo1Rmw0x-zMuNipG07jeiXfYPW4_Js5Q",
+          "keyFormat": "raw",
+          "prev": "85134e62937515bff98ac7e86d401d5340f4fc34bd14b798d0cdc701426f7252",
+          "proof": {
+            "authenticatorData": "a0VSR89O6IQunw3j9h2nuoCHSI-KE3luCkikpADknaEFAAAAAA",
+            "clientDataJSON": "eyJjaGFsbGVuZ2UiOiJWTHNZSGVSMmpES0JCOU43cV9tUU42cGxzcXE3NmVaRTdHU0JFVlUxUHJ3IiwiY3Jvc3NPcmlnaW4iOmZhbHNlLCJvcmlnaW4iOiJodHRwczovL2NvbnRyb2wuZXhhbXBsZSIsInR5cGUiOiJ3ZWJhdXRobi5nZXQifQ",
+            "id": "EREREREREREREREREREREQ",
+            "signature": "MEUCIQC6c9bbMM4aMdKKpDbEDUo_z3nB7l5oAVi6S7Fv-5gVWQIgLXkwYp2ic850Smj8FHN6F25X771gR_GKYAYNp1zLIyU"
+          },
+          "rp": "control.example",
+          "seq": 2
+        },
+        {
+          "aaguid": "fbfc3007154e4ecc8c0b6e020557d7bd",
+          "account": "acct_owner",
+          "alg": -7,
+          "at": 3000,
+          "by": "passkey",
+          "credential": "EREREREREREREREREREREQ",
+          "event": "removed",
+          "hash": "8f71b6c1884e78576f4d9ffb91010c535943512c1b099cac51c27f5b813ca089",
+          "key": "BAIX5hfwtkQ5KCePlpmeaaI6TywVK99tbN9m5bgCgtTtGUp968uXcS0t2jyoWqh2Wlb0X8dYWZZS8ol8ZTBuV5Q",
+          "keyFormat": "sec1",
+          "prev": "8b08dcae213159f3cddbab477453a4dbf7439e9a71855cbcf74b2c70c1aec114",
+          "proof": {
+            "authenticatorData": "a0VSR89O6IQunw3j9h2nuoCHSI-KE3luCkikpADknaEFAAAAAA",
+            "clientDataJSON": "eyJjaGFsbGVuZ2UiOiJWVEpzc2FYS1dtb0c0b3ZFbXJVYUMzOEotMmRtbm13VzdWcmhDbGlReXNJIiwiY3Jvc3NPcmlnaW4iOmZhbHNlLCJvcmlnaW4iOiJodHRwczovL2NvbnRyb2wuZXhhbXBsZSIsInR5cGUiOiJ3ZWJhdXRobi5nZXQifQ",
+            "id": "AgICAgICAgICAgICAgICAg",
+            "signature": "WNjzj5-NuevZ2adcJXUg8gYECu5toji-q6nNGDUfLfFlZWmML77vz2J5clnrxxKM9mRlbzSgg5xmdaY1uXuCDQ"
+          },
+          "rp": "control.example",
+          "seq": 3
+        },
+        {
+          "aaguid": "00000000000000000000000000000000",
+          "account": "acct_owner",
+          "alg": -8,
+          "at": 4000,
+          "by": "device dev_laptop",
+          "credential": "AwMDAwMDAwMDAwMDAwMDAw",
+          "event": "added",
+          "hash": "a87a0f7a02c57c2f836d7bc0e85c6b6bb7bc52609014a2d996e502316a151808",
+          "key": "7UkoxijRwsbq6QM4kFmVYSlZJzpcY_k2NsFGFKyHN9E",
+          "keyFormat": "raw",
+          "prev": "8f71b6c1884e78576f4d9ffb91010c535943512c1b099cac51c27f5b813ca089",
+          "rp": "control.example",
+          "seq": 4
+        },
+        {
+          "aaguid": "00000000000000000000000000000000",
+          "account": "acct_owner",
+          "alg": -257,
+          "at": 6000,
+          "by": "session",
+          "credential": "UlJSUlJSUlJSUlJSUlJSUg",
+          "event": "removed",
+          "hash": "233ad70b465c0671d21c92fe87525efe28b91a7a74d19fd0d4c8608ce8cf0d72",
+          "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA0_SvFUJnVhDsI4X8PXKX-O5lnZpoRtsqWUH7vBPsTt3rFWcMiqtMCekZI8lGrXGGq9m_LTb1FbRPFtYmxBqQsdelHl6er0Sg8a1o28PT-5iIfnUjH8bleFJk6K1iRlyo579hU5rXAs0pzFdU0WiVpWEDimacTfpHZ7F53w0sg5zvq6ed8i_5P3B9z5rBh4os82tOArdmAIJ_aZMTJLeCOX8sMSlWDpZeq69WKGKRudrQUCg-YWMiFApyGQO4PSAVwQdTLBs0NqPXsmPOuPohvstHshr91ypPg0O9DC9QT7e7912WEYTj7zjhVooYlNYK-xyp0HNVAq38AVHRJ5NewQIDAQAB",
+          "keyFormat": "spki",
+          "prev": "a87a0f7a02c57c2f836d7bc0e85c6b6bb7bc52609014a2d996e502316a151808",
+          "rp": "control.example",
+          "seq": 5
+        }
+      ]
+    },
+    "removed_unknown": {
+      "account": "acct_owner",
+      "events": [
+        {
+          "aaguid": "fbfc3007154e4ecc8c0b6e020557d7bd",
+          "account": "acct_owner",
+          "alg": -7,
+          "at": 1000,
+          "by": "signup",
+          "credential": "EREREREREREREREREREREQ",
+          "event": "added",
+          "hash": "185bb2879962f802034fa0f8a9869d86644c0e47a9a178df40a91af5504021a0",
+          "key": "BAIX5hfwtkQ5KCePlpmeaaI6TywVK99tbN9m5bgCgtTtGUp968uXcS0t2jyoWqh2Wlb0X8dYWZZS8ol8ZTBuV5Q",
+          "keyFormat": "sec1",
+          "prev": "0000000000000000000000000000000000000000000000000000000000000000",
+          "rp": "control.example",
+          "seq": 0
+        },
+        {
+          "aaguid": "00000000000000000000000000000000",
+          "account": "acct_owner",
+          "alg": -257,
+          "at": 1500,
+          "by": "github",
+          "credential": "UlJSUlJSUlJSUlJSUlJSUg",
+          "event": "added",
+          "hash": "85134e62937515bff98ac7e86d401d5340f4fc34bd14b798d0cdc701426f7252",
+          "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA0_SvFUJnVhDsI4X8PXKX-O5lnZpoRtsqWUH7vBPsTt3rFWcMiqtMCekZI8lGrXGGq9m_LTb1FbRPFtYmxBqQsdelHl6er0Sg8a1o28PT-5iIfnUjH8bleFJk6K1iRlyo579hU5rXAs0pzFdU0WiVpWEDimacTfpHZ7F53w0sg5zvq6ed8i_5P3B9z5rBh4os82tOArdmAIJ_aZMTJLeCOX8sMSlWDpZeq69WKGKRudrQUCg-YWMiFApyGQO4PSAVwQdTLBs0NqPXsmPOuPohvstHshr91ypPg0O9DC9QT7e7912WEYTj7zjhVooYlNYK-xyp0HNVAq38AVHRJ5NewQIDAQAB",
+          "keyFormat": "spki",
+          "prev": "185bb2879962f802034fa0f8a9869d86644c0e47a9a178df40a91af5504021a0",
+          "rp": "control.example",
+          "seq": 1
+        },
+        {
+          "aaguid": "00000000000000000000000000000000",
+          "account": "acct_owner",
+          "alg": -8,
+          "at": 2000,
+          "by": "passkey",
+          "credential": "AgICAgICAgICAgICAgICAg",
+          "event": "added",
+          "hash": "8b08dcae213159f3cddbab477453a4dbf7439e9a71855cbcf74b2c70c1aec114",
+          "key": "gTl3Dqh9F19Wo1Rmw0x-zMuNipG07jeiXfYPW4_Js5Q",
+          "keyFormat": "raw",
+          "prev": "85134e62937515bff98ac7e86d401d5340f4fc34bd14b798d0cdc701426f7252",
+          "proof": {
+            "authenticatorData": "a0VSR89O6IQunw3j9h2nuoCHSI-KE3luCkikpADknaEFAAAAAA",
+            "clientDataJSON": "eyJjaGFsbGVuZ2UiOiJWTHNZSGVSMmpES0JCOU43cV9tUU42cGxzcXE3NmVaRTdHU0JFVlUxUHJ3IiwiY3Jvc3NPcmlnaW4iOmZhbHNlLCJvcmlnaW4iOiJodHRwczovL2NvbnRyb2wuZXhhbXBsZSIsInR5cGUiOiJ3ZWJhdXRobi5nZXQifQ",
+            "id": "EREREREREREREREREREREQ",
+            "signature": "MEUCIQC6c9bbMM4aMdKKpDbEDUo_z3nB7l5oAVi6S7Fv-5gVWQIgLXkwYp2ic850Smj8FHN6F25X771gR_GKYAYNp1zLIyU"
+          },
+          "rp": "control.example",
+          "seq": 2
+        },
+        {
+          "aaguid": "fbfc3007154e4ecc8c0b6e020557d7bd",
+          "account": "acct_owner",
+          "alg": -7,
+          "at": 3000,
+          "by": "passkey",
+          "credential": "EREREREREREREREREREREQ",
+          "event": "removed",
+          "hash": "8f71b6c1884e78576f4d9ffb91010c535943512c1b099cac51c27f5b813ca089",
+          "key": "BAIX5hfwtkQ5KCePlpmeaaI6TywVK99tbN9m5bgCgtTtGUp968uXcS0t2jyoWqh2Wlb0X8dYWZZS8ol8ZTBuV5Q",
+          "keyFormat": "sec1",
+          "prev": "8b08dcae213159f3cddbab477453a4dbf7439e9a71855cbcf74b2c70c1aec114",
+          "proof": {
+            "authenticatorData": "a0VSR89O6IQunw3j9h2nuoCHSI-KE3luCkikpADknaEFAAAAAA",
+            "clientDataJSON": "eyJjaGFsbGVuZ2UiOiJWVEpzc2FYS1dtb0c0b3ZFbXJVYUMzOEotMmRtbm13VzdWcmhDbGlReXNJIiwiY3Jvc3NPcmlnaW4iOmZhbHNlLCJvcmlnaW4iOiJodHRwczovL2NvbnRyb2wuZXhhbXBsZSIsInR5cGUiOiJ3ZWJhdXRobi5nZXQifQ",
+            "id": "AgICAgICAgICAgICAgICAg",
+            "signature": "WNjzj5-NuevZ2adcJXUg8gYECu5toji-q6nNGDUfLfFlZWmML77vz2J5clnrxxKM9mRlbzSgg5xmdaY1uXuCDQ"
+          },
+          "rp": "control.example",
+          "seq": 3
+        },
+        {
+          "aaguid": "00000000000000000000000000000000",
+          "account": "acct_owner",
+          "alg": -8,
+          "at": 4000,
+          "by": "device dev_laptop",
+          "credential": "AwMDAwMDAwMDAwMDAwMDAw",
+          "event": "added",
+          "hash": "a87a0f7a02c57c2f836d7bc0e85c6b6bb7bc52609014a2d996e502316a151808",
+          "key": "7UkoxijRwsbq6QM4kFmVYSlZJzpcY_k2NsFGFKyHN9E",
+          "keyFormat": "raw",
+          "prev": "8f71b6c1884e78576f4d9ffb91010c535943512c1b099cac51c27f5b813ca089",
+          "rp": "control.example",
+          "seq": 4
+        },
+        {
+          "aaguid": "00000000000000000000000000000000",
+          "account": "acct_owner",
+          "alg": -257,
+          "at": 6000,
+          "by": "session",
+          "credential": "UlJSUlJSUlJSUlJSUlJSUg",
+          "event": "removed",
+          "hash": "233ad70b465c0671d21c92fe87525efe28b91a7a74d19fd0d4c8608ce8cf0d72",
+          "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA0_SvFUJnVhDsI4X8PXKX-O5lnZpoRtsqWUH7vBPsTt3rFWcMiqtMCekZI8lGrXGGq9m_LTb1FbRPFtYmxBqQsdelHl6er0Sg8a1o28PT-5iIfnUjH8bleFJk6K1iRlyo579hU5rXAs0pzFdU0WiVpWEDimacTfpHZ7F53w0sg5zvq6ed8i_5P3B9z5rBh4os82tOArdmAIJ_aZMTJLeCOX8sMSlWDpZeq69WKGKRudrQUCg-YWMiFApyGQO4PSAVwQdTLBs0NqPXsmPOuPohvstHshr91ypPg0O9DC9QT7e7912WEYTj7zjhVooYlNYK-xyp0HNVAq38AVHRJ5NewQIDAQAB",
+          "keyFormat": "spki",
+          "prev": "a87a0f7a02c57c2f836d7bc0e85c6b6bb7bc52609014a2d996e502316a151808",
+          "rp": "control.example",
+          "seq": 5
+        },
+        {
+          "aaguid": "00000000000000000000000000000000",
+          "account": "acct_owner",
+          "alg": -8,
+          "at": 7000,
+          "by": "session",
+          "credential": "BAQEBAQEBAQEBAQEBAQEBA",
+          "event": "removed",
+          "hash": "52d5111f8a137def43692c1edf5b9cb34d49c21bf55b14d260c7d84966615417",
+          "key": "ypOsFwUYcHHWe4PH_w7-gQjo7EUwV113JoeTM9vavnw",
+          "keyFormat": "raw",
+          "prev": "233ad70b465c0671d21c92fe87525efe28b91a7a74d19fd0d4c8608ce8cf0d72",
+          "rp": "control.example",
+          "seq": 6
+        }
+      ]
+    },
+    "rsa_app": {
+      "authenticatorData": "a0VSR89O6IQunw3j9h2nuoCHSI-KE3luCkikpADknaEFAAAAAA",
+      "clientDataJSON": "eyJ0eXBlIjoid2ViYXV0aG4uZ2V0IiwiY2hhbGxlbmdlIjoiOXVoM3dIOVgwWDhaRHdUNUFqV3htUU04eXRXT3Fqc0UxQmpuVUQ2TEpPQSIsIm9yaWdpbiI6Imh0dHBzOi8vYXBwLmV4YW1wbGUiLCJjcm9zc09yaWdpbiI6ZmFsc2V9",
+      "id": "UlJSUlJSUlJSUlJSUlJSUg",
+      "signature": "qnhbZnk1hvKxwDZG3qgE_XQhhR_d6h3Z_ZwgyVnzbuBm8iiSF6b6FkXsOew68tKSIyoiPIDfD_1dp-SPE_M_WYb72Fts8ItAIeXT7HTq_dRj-PcBb0pN-yFiGe6CtI9N7ID4EQIueWr3LjiZ6LcFfR7xtwdA6WHVpJppaGirw6R7LW0KzmYJhAU9SvYpO_RrN19sUcphwxC5Gn_ulHxQy7U0ITc5cEX7wEE2iVeduE7K9Go-JmENghj_qLgoEf5BIgUY0JeU4T8QdJbWfZ6kk3GnX1g8rhg2fkFmNvfzsGBIVvGE94me7UvinTxFbAaiRqmAMMLqGeKpYACjZEOkRw"
+    },
+    "short": {
+      "authenticatorData": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "clientDataJSON": "eyJjaGFsbGVuZ2UiOiI5dWgzd0g5WDBYOFpEd1Q1QWpXeG1RTTh5dFdPcWpzRTFCam5VRDZMSk9BIiwiY3Jvc3NPcmlnaW4iOmZhbHNlLCJvcmlnaW4iOiJodHRwczovL2FwcC5leGFtcGxlIiwidHlwZSI6IndlYmF1dGhuLmdldCJ9",
+      "id": "AgICAgICAgICAgICAgICAg",
+      "signature": "yGgWznNAAw_ttjjO_ooGVcBr5q-w9g5DEuIyjQQZERGQyRrKHEnrdpYNSBPZ3seLBR2XuJNB7yZvoDKeya6ICg"
+    },
+    "smuggled": {
+      "account": "acct_owner",
+      "events": [
+        {
+          "aaguid": "fbfc3007154e4ecc8c0b6e020557d7bd",
+          "account": "acct_owner",
+          "alg": -7,
+          "at": 1000,
+          "by": "signup",
+          "credential": "EREREREREREREREREREREQ",
+          "event": "added",
+          "hash": "185bb2879962f802034fa0f8a9869d86644c0e47a9a178df40a91af5504021a0",
+          "key": "BAIX5hfwtkQ5KCePlpmeaaI6TywVK99tbN9m5bgCgtTtGUp968uXcS0t2jyoWqh2Wlb0X8dYWZZS8ol8ZTBuV5Q",
+          "keyFormat": "sec1",
+          "prev": "0000000000000000000000000000000000000000000000000000000000000000",
+          "rp": "control.example",
+          "seq": 0
+        },
+        {
+          "aaguid": "00000000000000000000000000000000",
+          "account": "acct_owner",
+          "alg": -257,
+          "at": 1500,
+          "by": "github",
+          "credential": "UlJSUlJSUlJSUlJSUlJSUg",
+          "event": "added",
+          "hash": "85134e62937515bff98ac7e86d401d5340f4fc34bd14b798d0cdc701426f7252",
+          "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA0_SvFUJnVhDsI4X8PXKX-O5lnZpoRtsqWUH7vBPsTt3rFWcMiqtMCekZI8lGrXGGq9m_LTb1FbRPFtYmxBqQsdelHl6er0Sg8a1o28PT-5iIfnUjH8bleFJk6K1iRlyo579hU5rXAs0pzFdU0WiVpWEDimacTfpHZ7F53w0sg5zvq6ed8i_5P3B9z5rBh4os82tOArdmAIJ_aZMTJLeCOX8sMSlWDpZeq69WKGKRudrQUCg-YWMiFApyGQO4PSAVwQdTLBs0NqPXsmPOuPohvstHshr91ypPg0O9DC9QT7e7912WEYTj7zjhVooYlNYK-xyp0HNVAq38AVHRJ5NewQIDAQAB",
+          "keyFormat": "spki",
+          "prev": "185bb2879962f802034fa0f8a9869d86644c0e47a9a178df40a91af5504021a0",
+          "rp": "control.example",
+          "seq": 1
+        },
+        {
+          "aaguid": "00000000000000000000000000000000",
+          "account": "acct_owner",
+          "alg": -8,
+          "at": 2000,
+          "by": "passkey",
+          "credential": "AgICAgICAgICAgICAgICAg",
+          "event": "added",
+          "hash": "8b08dcae213159f3cddbab477453a4dbf7439e9a71855cbcf74b2c70c1aec114",
+          "key": "gTl3Dqh9F19Wo1Rmw0x-zMuNipG07jeiXfYPW4_Js5Q",
+          "keyFormat": "raw",
+          "prev": "85134e62937515bff98ac7e86d401d5340f4fc34bd14b798d0cdc701426f7252",
+          "proof": {
+            "authenticatorData": "a0VSR89O6IQunw3j9h2nuoCHSI-KE3luCkikpADknaEFAAAAAA",
+            "clientDataJSON": "eyJjaGFsbGVuZ2UiOiJWTHNZSGVSMmpES0JCOU43cV9tUU42cGxzcXE3NmVaRTdHU0JFVlUxUHJ3IiwiY3Jvc3NPcmlnaW4iOmZhbHNlLCJvcmlnaW4iOiJodHRwczovL2NvbnRyb2wuZXhhbXBsZSIsInR5cGUiOiJ3ZWJhdXRobi5nZXQifQ",
+            "id": "EREREREREREREREREREREQ",
+            "signature": "MEUCIQC6c9bbMM4aMdKKpDbEDUo_z3nB7l5oAVi6S7Fv-5gVWQIgLXkwYp2ic850Smj8FHN6F25X771gR_GKYAYNp1zLIyU"
+          },
+          "rp": "control.example",
+          "seq": 2
+        },
+        {
+          "aaguid": "fbfc3007154e4ecc8c0b6e020557d7bd",
+          "account": "acct_owner",
+          "alg": -7,
+          "at": 3000,
+          "by": "passkey",
+          "credential": "EREREREREREREREREREREQ",
+          "event": "removed",
+          "hash": "8f71b6c1884e78576f4d9ffb91010c535943512c1b099cac51c27f5b813ca089",
+          "key": "BAIX5hfwtkQ5KCePlpmeaaI6TywVK99tbN9m5bgCgtTtGUp968uXcS0t2jyoWqh2Wlb0X8dYWZZS8ol8ZTBuV5Q",
+          "keyFormat": "sec1",
+          "prev": "8b08dcae213159f3cddbab477453a4dbf7439e9a71855cbcf74b2c70c1aec114",
+          "proof": {
+            "authenticatorData": "a0VSR89O6IQunw3j9h2nuoCHSI-KE3luCkikpADknaEFAAAAAA",
+            "clientDataJSON": "eyJjaGFsbGVuZ2UiOiJWVEpzc2FYS1dtb0c0b3ZFbXJVYUMzOEotMmRtbm13VzdWcmhDbGlReXNJIiwiY3Jvc3NPcmlnaW4iOmZhbHNlLCJvcmlnaW4iOiJodHRwczovL2NvbnRyb2wuZXhhbXBsZSIsInR5cGUiOiJ3ZWJhdXRobi5nZXQifQ",
+            "id": "AgICAgICAgICAgICAgICAg",
+            "signature": "WNjzj5-NuevZ2adcJXUg8gYECu5toji-q6nNGDUfLfFlZWmML77vz2J5clnrxxKM9mRlbzSgg5xmdaY1uXuCDQ"
+          },
+          "rp": "control.example",
+          "seq": 3
+        },
+        {
+          "aaguid": "00000000000000000000000000000000",
+          "account": "acct_owner",
+          "alg": -8,
+          "at": 4000,
+          "by": "device dev_laptop",
+          "credential": "AwMDAwMDAwMDAwMDAwMDAw",
+          "event": "added",
+          "hash": "a87a0f7a02c57c2f836d7bc0e85c6b6bb7bc52609014a2d996e502316a151808",
+          "key": "7UkoxijRwsbq6QM4kFmVYSlZJzpcY_k2NsFGFKyHN9E",
+          "keyFormat": "raw",
+          "prev": "8f71b6c1884e78576f4d9ffb91010c535943512c1b099cac51c27f5b813ca089",
+          "rp": "control.example",
+          "seq": 4
+        },
+        {
+          "aaguid": "00000000000000000000000000000000",
+          "account": "acct_owner",
+          "alg": -257,
+          "at": 6000,
+          "by": "session",
+          "credential": "UlJSUlJSUlJSUlJSUlJSUg",
+          "event": "removed",
+          "hash": "233ad70b465c0671d21c92fe87525efe28b91a7a74d19fd0d4c8608ce8cf0d72",
+          "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA0_SvFUJnVhDsI4X8PXKX-O5lnZpoRtsqWUH7vBPsTt3rFWcMiqtMCekZI8lGrXGGq9m_LTb1FbRPFtYmxBqQsdelHl6er0Sg8a1o28PT-5iIfnUjH8bleFJk6K1iRlyo579hU5rXAs0pzFdU0WiVpWEDimacTfpHZ7F53w0sg5zvq6ed8i_5P3B9z5rBh4os82tOArdmAIJ_aZMTJLeCOX8sMSlWDpZeq69WKGKRudrQUCg-YWMiFApyGQO4PSAVwQdTLBs0NqPXsmPOuPohvstHshr91ypPg0O9DC9QT7e7912WEYTj7zjhVooYlNYK-xyp0HNVAq38AVHRJ5NewQIDAQAB",
+          "keyFormat": "spki",
+          "prev": "a87a0f7a02c57c2f836d7bc0e85c6b6bb7bc52609014a2d996e502316a151808",
+          "rp": "control.example",
+          "seq": 5
+        },
+        {
+          "aaguid": "00000000000000000000000000000000",
+          "account": "acct_owner",
+          "alg": -8,
+          "at": 7000,
+          "by": "github\nby signup",
+          "credential": "BAQEBAQEBAQEBAQEBAQEBA",
+          "event": "added",
+          "hash": "277797e7d21211ba67dd4ef4ee803ae70b6961f961898259d70489be36aaf581",
+          "key": "ypOsFwUYcHHWe4PH_w7-gQjo7EUwV113JoeTM9vavnw",
+          "keyFormat": "raw",
+          "prev": "233ad70b465c0671d21c92fe87525efe28b91a7a74d19fd0d4c8608ce8cf0d72",
+          "rp": "control.example",
+          "seq": 6
+        }
+      ]
+    },
+    "stranger": {
+      "authenticatorData": "a0VSR89O6IQunw3j9h2nuoCHSI-KE3luCkikpADknaEFAAAAAA",
+      "clientDataJSON": "eyJjaGFsbGVuZ2UiOiI5dWgzd0g5WDBYOFpEd1Q1QWpXeG1RTTh5dFdPcWpzRTFCam5VRDZMSk9BIiwiY3Jvc3NPcmlnaW4iOmZhbHNlLCJvcmlnaW4iOiJodHRwczovL2FwcC5leGFtcGxlIiwidHlwZSI6IndlYmF1dGhuLmdldCJ9",
+      "id": "BAQEBAQEBAQEBAQEBAQEBA",
+      "signature": "7XdK8Sz-wHvjkdK7MaRyMlM36PcGnAq1M4pvefER2ysBqlnRMbMPC4RCIJbmGnEJ30b80LLrOEdGg2sx9k1bCg"
+    },
+    "swapped": {
+      "account": "acct_owner",
+      "events": [
+        {
+          "aaguid": "fbfc3007154e4ecc8c0b6e020557d7bd",
+          "account": "acct_owner",
+          "alg": -7,
+          "at": 1000,
+          "by": "signup",
+          "credential": "EREREREREREREREREREREQ",
+          "event": "added",
+          "hash": "185bb2879962f802034fa0f8a9869d86644c0e47a9a178df40a91af5504021a0",
+          "key": "gTl3Dqh9F19Wo1Rmw0x-zMuNipG07jeiXfYPW4_Js5Q",
+          "keyFormat": "sec1",
+          "prev": "0000000000000000000000000000000000000000000000000000000000000000",
+          "rp": "control.example",
+          "seq": 0
+        },
+        {
+          "aaguid": "00000000000000000000000000000000",
+          "account": "acct_owner",
+          "alg": -257,
+          "at": 1500,
+          "by": "github",
+          "credential": "UlJSUlJSUlJSUlJSUlJSUg",
+          "event": "added",
+          "hash": "85134e62937515bff98ac7e86d401d5340f4fc34bd14b798d0cdc701426f7252",
+          "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA0_SvFUJnVhDsI4X8PXKX-O5lnZpoRtsqWUH7vBPsTt3rFWcMiqtMCekZI8lGrXGGq9m_LTb1FbRPFtYmxBqQsdelHl6er0Sg8a1o28PT-5iIfnUjH8bleFJk6K1iRlyo579hU5rXAs0pzFdU0WiVpWEDimacTfpHZ7F53w0sg5zvq6ed8i_5P3B9z5rBh4os82tOArdmAIJ_aZMTJLeCOX8sMSlWDpZeq69WKGKRudrQUCg-YWMiFApyGQO4PSAVwQdTLBs0NqPXsmPOuPohvstHshr91ypPg0O9DC9QT7e7912WEYTj7zjhVooYlNYK-xyp0HNVAq38AVHRJ5NewQIDAQAB",
+          "keyFormat": "spki",
+          "prev": "185bb2879962f802034fa0f8a9869d86644c0e47a9a178df40a91af5504021a0",
+          "rp": "control.example",
+          "seq": 1
+        },
+        {
+          "aaguid": "00000000000000000000000000000000",
+          "account": "acct_owner",
+          "alg": -8,
+          "at": 2000,
+          "by": "passkey",
+          "credential": "AgICAgICAgICAgICAgICAg",
+          "event": "added",
+          "hash": "8b08dcae213159f3cddbab477453a4dbf7439e9a71855cbcf74b2c70c1aec114",
+          "key": "gTl3Dqh9F19Wo1Rmw0x-zMuNipG07jeiXfYPW4_Js5Q",
+          "keyFormat": "raw",
+          "prev": "85134e62937515bff98ac7e86d401d5340f4fc34bd14b798d0cdc701426f7252",
+          "proof": {
+            "authenticatorData": "a0VSR89O6IQunw3j9h2nuoCHSI-KE3luCkikpADknaEFAAAAAA",
+            "clientDataJSON": "eyJjaGFsbGVuZ2UiOiJWTHNZSGVSMmpES0JCOU43cV9tUU42cGxzcXE3NmVaRTdHU0JFVlUxUHJ3IiwiY3Jvc3NPcmlnaW4iOmZhbHNlLCJvcmlnaW4iOiJodHRwczovL2NvbnRyb2wuZXhhbXBsZSIsInR5cGUiOiJ3ZWJhdXRobi5nZXQifQ",
+            "id": "EREREREREREREREREREREQ",
+            "signature": "MEUCIQC6c9bbMM4aMdKKpDbEDUo_z3nB7l5oAVi6S7Fv-5gVWQIgLXkwYp2ic850Smj8FHN6F25X771gR_GKYAYNp1zLIyU"
+          },
+          "rp": "control.example",
+          "seq": 2
+        },
+        {
+          "aaguid": "fbfc3007154e4ecc8c0b6e020557d7bd",
+          "account": "acct_owner",
+          "alg": -7,
+          "at": 3000,
+          "by": "passkey",
+          "credential": "EREREREREREREREREREREQ",
+          "event": "removed",
+          "hash": "8f71b6c1884e78576f4d9ffb91010c535943512c1b099cac51c27f5b813ca089",
+          "key": "BAIX5hfwtkQ5KCePlpmeaaI6TywVK99tbN9m5bgCgtTtGUp968uXcS0t2jyoWqh2Wlb0X8dYWZZS8ol8ZTBuV5Q",
+          "keyFormat": "sec1",
+          "prev": "8b08dcae213159f3cddbab477453a4dbf7439e9a71855cbcf74b2c70c1aec114",
+          "proof": {
+            "authenticatorData": "a0VSR89O6IQunw3j9h2nuoCHSI-KE3luCkikpADknaEFAAAAAA",
+            "clientDataJSON": "eyJjaGFsbGVuZ2UiOiJWVEpzc2FYS1dtb0c0b3ZFbXJVYUMzOEotMmRtbm13VzdWcmhDbGlReXNJIiwiY3Jvc3NPcmlnaW4iOmZhbHNlLCJvcmlnaW4iOiJodHRwczovL2NvbnRyb2wuZXhhbXBsZSIsInR5cGUiOiJ3ZWJhdXRobi5nZXQifQ",
+            "id": "AgICAgICAgICAgICAgICAg",
+            "signature": "WNjzj5-NuevZ2adcJXUg8gYECu5toji-q6nNGDUfLfFlZWmML77vz2J5clnrxxKM9mRlbzSgg5xmdaY1uXuCDQ"
+          },
+          "rp": "control.example",
+          "seq": 3
+        },
+        {
+          "aaguid": "00000000000000000000000000000000",
+          "account": "acct_owner",
+          "alg": -8,
+          "at": 4000,
+          "by": "device dev_laptop",
+          "credential": "AwMDAwMDAwMDAwMDAwMDAw",
+          "event": "added",
+          "hash": "a87a0f7a02c57c2f836d7bc0e85c6b6bb7bc52609014a2d996e502316a151808",
+          "key": "7UkoxijRwsbq6QM4kFmVYSlZJzpcY_k2NsFGFKyHN9E",
+          "keyFormat": "raw",
+          "prev": "8f71b6c1884e78576f4d9ffb91010c535943512c1b099cac51c27f5b813ca089",
+          "rp": "control.example",
+          "seq": 4
+        },
+        {
+          "aaguid": "00000000000000000000000000000000",
+          "account": "acct_owner",
+          "alg": -257,
+          "at": 6000,
+          "by": "session",
+          "credential": "UlJSUlJSUlJSUlJSUlJSUg",
+          "event": "removed",
+          "hash": "233ad70b465c0671d21c92fe87525efe28b91a7a74d19fd0d4c8608ce8cf0d72",
+          "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA0_SvFUJnVhDsI4X8PXKX-O5lnZpoRtsqWUH7vBPsTt3rFWcMiqtMCekZI8lGrXGGq9m_LTb1FbRPFtYmxBqQsdelHl6er0Sg8a1o28PT-5iIfnUjH8bleFJk6K1iRlyo579hU5rXAs0pzFdU0WiVpWEDimacTfpHZ7F53w0sg5zvq6ed8i_5P3B9z5rBh4os82tOArdmAIJ_aZMTJLeCOX8sMSlWDpZeq69WKGKRudrQUCg-YWMiFApyGQO4PSAVwQdTLBs0NqPXsmPOuPohvstHshr91ypPg0O9DC9QT7e7912WEYTj7zjhVooYlNYK-xyp0HNVAq38AVHRJ5NewQIDAQAB",
+          "keyFormat": "spki",
+          "prev": "a87a0f7a02c57c2f836d7bc0e85c6b6bb7bc52609014a2d996e502316a151808",
+          "rp": "control.example",
+          "seq": 5
+        }
+      ]
+    },
+    "third_site": {
+      "authenticatorData": "SHt6jrXQcf3PVoqSvicNzTqMic5Sgs3ClHn8JZecb9gFAAAAAA",
+      "clientDataJSON": "eyJjaGFsbGVuZ2UiOiI5dWgzd0g5WDBYOFpEd1Q1QWpXeG1RTTh5dFdPcWpzRTFCam5VRDZMSk9BIiwiY3Jvc3NPcmlnaW4iOmZhbHNlLCJvcmlnaW4iOiJodHRwczovL3RoaXJkLmV4YW1wbGUiLCJ0eXBlIjoid2ViYXV0aG4uZ2V0In0",
+      "id": "AgICAgICAgICAgICAgICAg",
+      "signature": "_rAtKpsXthFRIJLQyl2UD9_Pp7ZsM4JZ8fWAPs0bwNbUPdsACvTL0lNVZnzgLKt8RXsMaAWmrJGvo86EytwWBA"
+    },
+    "top_origin": {
+      "authenticatorData": "a0VSR89O6IQunw3j9h2nuoCHSI-KE3luCkikpADknaEFAAAAAA",
+      "clientDataJSON": "eyJjaGFsbGVuZ2UiOiI5dWgzd0g5WDBYOFpEd1Q1QWpXeG1RTTh5dFdPcWpzRTFCam5VRDZMSk9BIiwiY3Jvc3NPcmlnaW4iOmZhbHNlLCJvcmlnaW4iOiJodHRwczovL2FwcC5leGFtcGxlIiwidG9wT3JpZ2luIjoiaHR0cHM6Ly9ldmlsLmV4YW1wbGUiLCJ0eXBlIjoid2ViYXV0aG4uZ2V0In0",
+      "id": "AgICAgICAgICAgICAgICAg",
+      "signature": "j0tfDQd16sBt_SylnRUivdcGD0TN6bsi_L3GqYTM2R6h444ZjwSVdOfC-mqjkMgeo3AWVw1ijrt_dfldBOdACw"
+    },
+    "top_self": {
+      "authenticatorData": "a0VSR89O6IQunw3j9h2nuoCHSI-KE3luCkikpADknaEFAAAAAA",
+      "clientDataJSON": "eyJjaGFsbGVuZ2UiOiI5dWgzd0g5WDBYOFpEd1Q1QWpXeG1RTTh5dFdPcWpzRTFCam5VRDZMSk9BIiwiY3Jvc3NPcmlnaW4iOmZhbHNlLCJvcmlnaW4iOiJodHRwczovL2FwcC5leGFtcGxlIiwidG9wT3JpZ2luIjoiaHR0cHM6Ly9hcHAuZXhhbXBsZSIsInR5cGUiOiJ3ZWJhdXRobi5nZXQifQ",
+      "id": "AgICAgICAgICAgICAgICAg",
+      "signature": "dmlnT2yp8cHHYeR4YnzQznnsgH-OlYRWzyJcdAqT2i7aLASZKAsAH0LtolIyqE2hwi10ytWbtIgsP0rF8HFvBg"
+    },
+    "trailing_bits": {
+      "authenticatorData": "a0VSR89O6IQunw3j9h2nuoCHSI-KE3luCkikpADknaEFAAAAAB",
+      "clientDataJSON": "eyJjaGFsbGVuZ2UiOiI5dWgzd0g5WDBYOFpEd1Q1QWpXeG1RTTh5dFdPcWpzRTFCam5VRDZMSk9BIiwiY3Jvc3NPcmlnaW4iOmZhbHNlLCJvcmlnaW4iOiJodHRwczovL2FwcC5leGFtcGxlIiwidHlwZSI6IndlYmF1dGhuLmdldCJ9",
+      "id": "AgICAgICAgICAgICAgICAg",
+      "signature": "yGgWznNAAw_ttjjO_ooGVcBr5q-w9g5DEuIyjQQZERGQyRrKHEnrdpYNSBPZ3seLBR2XuJNB7yZvoDKeya6ICg"
+    },
+    "twice": {
+      "account": "acct_owner",
+      "events": [
+        {
+          "aaguid": "fbfc3007154e4ecc8c0b6e020557d7bd",
+          "account": "acct_owner",
+          "alg": -7,
+          "at": 1000,
+          "by": "signup",
+          "credential": "EREREREREREREREREREREQ",
+          "event": "added",
+          "hash": "185bb2879962f802034fa0f8a9869d86644c0e47a9a178df40a91af5504021a0",
+          "key": "BAIX5hfwtkQ5KCePlpmeaaI6TywVK99tbN9m5bgCgtTtGUp968uXcS0t2jyoWqh2Wlb0X8dYWZZS8ol8ZTBuV5Q",
+          "keyFormat": "sec1",
+          "prev": "0000000000000000000000000000000000000000000000000000000000000000",
+          "rp": "control.example",
+          "seq": 0
+        },
+        {
+          "aaguid": "00000000000000000000000000000000",
+          "account": "acct_owner",
+          "alg": -257,
+          "at": 1500,
+          "by": "github",
+          "credential": "UlJSUlJSUlJSUlJSUlJSUg",
+          "event": "added",
+          "hash": "85134e62937515bff98ac7e86d401d5340f4fc34bd14b798d0cdc701426f7252",
+          "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA0_SvFUJnVhDsI4X8PXKX-O5lnZpoRtsqWUH7vBPsTt3rFWcMiqtMCekZI8lGrXGGq9m_LTb1FbRPFtYmxBqQsdelHl6er0Sg8a1o28PT-5iIfnUjH8bleFJk6K1iRlyo579hU5rXAs0pzFdU0WiVpWEDimacTfpHZ7F53w0sg5zvq6ed8i_5P3B9z5rBh4os82tOArdmAIJ_aZMTJLeCOX8sMSlWDpZeq69WKGKRudrQUCg-YWMiFApyGQO4PSAVwQdTLBs0NqPXsmPOuPohvstHshr91ypPg0O9DC9QT7e7912WEYTj7zjhVooYlNYK-xyp0HNVAq38AVHRJ5NewQIDAQAB",
+          "keyFormat": "spki",
+          "prev": "185bb2879962f802034fa0f8a9869d86644c0e47a9a178df40a91af5504021a0",
+          "rp": "control.example",
+          "seq": 1
+        },
+        {
+          "aaguid": "00000000000000000000000000000000",
+          "account": "acct_owner",
+          "alg": -8,
+          "at": 2000,
+          "by": "passkey",
+          "credential": "AgICAgICAgICAgICAgICAg",
+          "event": "added",
+          "hash": "8b08dcae213159f3cddbab477453a4dbf7439e9a71855cbcf74b2c70c1aec114",
+          "key": "gTl3Dqh9F19Wo1Rmw0x-zMuNipG07jeiXfYPW4_Js5Q",
+          "keyFormat": "raw",
+          "prev": "85134e62937515bff98ac7e86d401d5340f4fc34bd14b798d0cdc701426f7252",
+          "proof": {
+            "authenticatorData": "a0VSR89O6IQunw3j9h2nuoCHSI-KE3luCkikpADknaEFAAAAAA",
+            "clientDataJSON": "eyJjaGFsbGVuZ2UiOiJWTHNZSGVSMmpES0JCOU43cV9tUU42cGxzcXE3NmVaRTdHU0JFVlUxUHJ3IiwiY3Jvc3NPcmlnaW4iOmZhbHNlLCJvcmlnaW4iOiJodHRwczovL2NvbnRyb2wuZXhhbXBsZSIsInR5cGUiOiJ3ZWJhdXRobi5nZXQifQ",
+            "id": "EREREREREREREREREREREQ",
+            "signature": "MEUCIQC6c9bbMM4aMdKKpDbEDUo_z3nB7l5oAVi6S7Fv-5gVWQIgLXkwYp2ic850Smj8FHN6F25X771gR_GKYAYNp1zLIyU"
+          },
+          "rp": "control.example",
+          "seq": 2
+        },
+        {
+          "aaguid": "fbfc3007154e4ecc8c0b6e020557d7bd",
+          "account": "acct_owner",
+          "alg": -7,
+          "at": 3000,
+          "by": "passkey",
+          "credential": "EREREREREREREREREREREQ",
+          "event": "removed",
+          "hash": "8f71b6c1884e78576f4d9ffb91010c535943512c1b099cac51c27f5b813ca089",
+          "key": "BAIX5hfwtkQ5KCePlpmeaaI6TywVK99tbN9m5bgCgtTtGUp968uXcS0t2jyoWqh2Wlb0X8dYWZZS8ol8ZTBuV5Q",
+          "keyFormat": "sec1",
+          "prev": "8b08dcae213159f3cddbab477453a4dbf7439e9a71855cbcf74b2c70c1aec114",
+          "proof": {
+            "authenticatorData": "a0VSR89O6IQunw3j9h2nuoCHSI-KE3luCkikpADknaEFAAAAAA",
+            "clientDataJSON": "eyJjaGFsbGVuZ2UiOiJWVEpzc2FYS1dtb0c0b3ZFbXJVYUMzOEotMmRtbm13VzdWcmhDbGlReXNJIiwiY3Jvc3NPcmlnaW4iOmZhbHNlLCJvcmlnaW4iOiJodHRwczovL2NvbnRyb2wuZXhhbXBsZSIsInR5cGUiOiJ3ZWJhdXRobi5nZXQifQ",
+            "id": "AgICAgICAgICAgICAgICAg",
+            "signature": "WNjzj5-NuevZ2adcJXUg8gYECu5toji-q6nNGDUfLfFlZWmML77vz2J5clnrxxKM9mRlbzSgg5xmdaY1uXuCDQ"
+          },
+          "rp": "control.example",
+          "seq": 3
+        },
+        {
+          "aaguid": "00000000000000000000000000000000",
+          "account": "acct_owner",
+          "alg": -8,
+          "at": 4000,
+          "by": "device dev_laptop",
+          "credential": "AwMDAwMDAwMDAwMDAwMDAw",
+          "event": "added",
+          "hash": "a87a0f7a02c57c2f836d7bc0e85c6b6bb7bc52609014a2d996e502316a151808",
+          "key": "7UkoxijRwsbq6QM4kFmVYSlZJzpcY_k2NsFGFKyHN9E",
+          "keyFormat": "raw",
+          "prev": "8f71b6c1884e78576f4d9ffb91010c535943512c1b099cac51c27f5b813ca089",
+          "rp": "control.example",
+          "seq": 4
+        },
+        {
+          "aaguid": "00000000000000000000000000000000",
+          "account": "acct_owner",
+          "alg": -257,
+          "at": 6000,
+          "by": "session",
+          "credential": "UlJSUlJSUlJSUlJSUlJSUg",
+          "event": "removed",
+          "hash": "233ad70b465c0671d21c92fe87525efe28b91a7a74d19fd0d4c8608ce8cf0d72",
+          "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA0_SvFUJnVhDsI4X8PXKX-O5lnZpoRtsqWUH7vBPsTt3rFWcMiqtMCekZI8lGrXGGq9m_LTb1FbRPFtYmxBqQsdelHl6er0Sg8a1o28PT-5iIfnUjH8bleFJk6K1iRlyo579hU5rXAs0pzFdU0WiVpWEDimacTfpHZ7F53w0sg5zvq6ed8i_5P3B9z5rBh4os82tOArdmAIJ_aZMTJLeCOX8sMSlWDpZeq69WKGKRudrQUCg-YWMiFApyGQO4PSAVwQdTLBs0NqPXsmPOuPohvstHshr91ypPg0O9DC9QT7e7912WEYTj7zjhVooYlNYK-xyp0HNVAq38AVHRJ5NewQIDAQAB",
+          "keyFormat": "spki",
+          "prev": "a87a0f7a02c57c2f836d7bc0e85c6b6bb7bc52609014a2d996e502316a151808",
+          "rp": "control.example",
+          "seq": 5
+        },
+        {
+          "aaguid": "00000000000000000000000000000000",
+          "account": "acct_owner",
+          "alg": -8,
+          "at": 7000,
+          "by": "github",
+          "credential": "AgICAgICAgICAgICAgICAg",
+          "event": "added",
+          "hash": "31266ef8fccb3f4d1686806f7e02e9a1d3997b5bc05dbd23fba2d21069285664",
+          "key": "gTl3Dqh9F19Wo1Rmw0x-zMuNipG07jeiXfYPW4_Js5Q",
+          "keyFormat": "raw",
+          "prev": "233ad70b465c0671d21c92fe87525efe28b91a7a74d19fd0d4c8608ce8cf0d72",
+          "rp": "control.example",
+          "seq": 6
+        }
+      ]
+    },
+    "unproven": {
+      "account": "acct_owner",
+      "events": [
+        {
+          "aaguid": "fbfc3007154e4ecc8c0b6e020557d7bd",
+          "account": "acct_owner",
+          "alg": -7,
+          "at": 1000,
+          "by": "signup",
+          "credential": "EREREREREREREREREREREQ",
+          "event": "added",
+          "hash": "185bb2879962f802034fa0f8a9869d86644c0e47a9a178df40a91af5504021a0",
+          "key": "BAIX5hfwtkQ5KCePlpmeaaI6TywVK99tbN9m5bgCgtTtGUp968uXcS0t2jyoWqh2Wlb0X8dYWZZS8ol8ZTBuV5Q",
+          "keyFormat": "sec1",
+          "prev": "0000000000000000000000000000000000000000000000000000000000000000",
+          "rp": "control.example",
+          "seq": 0
+        },
+        {
+          "aaguid": "00000000000000000000000000000000",
+          "account": "acct_owner",
+          "alg": -257,
+          "at": 1500,
+          "by": "github",
+          "credential": "UlJSUlJSUlJSUlJSUlJSUg",
+          "event": "added",
+          "hash": "85134e62937515bff98ac7e86d401d5340f4fc34bd14b798d0cdc701426f7252",
+          "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA0_SvFUJnVhDsI4X8PXKX-O5lnZpoRtsqWUH7vBPsTt3rFWcMiqtMCekZI8lGrXGGq9m_LTb1FbRPFtYmxBqQsdelHl6er0Sg8a1o28PT-5iIfnUjH8bleFJk6K1iRlyo579hU5rXAs0pzFdU0WiVpWEDimacTfpHZ7F53w0sg5zvq6ed8i_5P3B9z5rBh4os82tOArdmAIJ_aZMTJLeCOX8sMSlWDpZeq69WKGKRudrQUCg-YWMiFApyGQO4PSAVwQdTLBs0NqPXsmPOuPohvstHshr91ypPg0O9DC9QT7e7912WEYTj7zjhVooYlNYK-xyp0HNVAq38AVHRJ5NewQIDAQAB",
+          "keyFormat": "spki",
+          "prev": "185bb2879962f802034fa0f8a9869d86644c0e47a9a178df40a91af5504021a0",
+          "rp": "control.example",
+          "seq": 1
+        },
+        {
+          "aaguid": "00000000000000000000000000000000",
+          "account": "acct_owner",
+          "alg": -8,
+          "at": 2000,
+          "by": "passkey",
+          "credential": "AgICAgICAgICAgICAgICAg",
+          "event": "added",
+          "hash": "54bb181de4768c328107d37babf99037aa65b2aabbe9e644ec64811155353ebc",
+          "key": "gTl3Dqh9F19Wo1Rmw0x-zMuNipG07jeiXfYPW4_Js5Q",
+          "keyFormat": "raw",
+          "prev": "85134e62937515bff98ac7e86d401d5340f4fc34bd14b798d0cdc701426f7252",
+          "rp": "control.example",
+          "seq": 2
+        },
+        {
+          "aaguid": "fbfc3007154e4ecc8c0b6e020557d7bd",
+          "account": "acct_owner",
+          "alg": -7,
+          "at": 3000,
+          "by": "passkey",
+          "credential": "EREREREREREREREREREREQ",
+          "event": "removed",
+          "hash": "8f71b6c1884e78576f4d9ffb91010c535943512c1b099cac51c27f5b813ca089",
+          "key": "BAIX5hfwtkQ5KCePlpmeaaI6TywVK99tbN9m5bgCgtTtGUp968uXcS0t2jyoWqh2Wlb0X8dYWZZS8ol8ZTBuV5Q",
+          "keyFormat": "sec1",
+          "prev": "8b08dcae213159f3cddbab477453a4dbf7439e9a71855cbcf74b2c70c1aec114",
+          "proof": {
+            "authenticatorData": "a0VSR89O6IQunw3j9h2nuoCHSI-KE3luCkikpADknaEFAAAAAA",
+            "clientDataJSON": "eyJjaGFsbGVuZ2UiOiJWVEpzc2FYS1dtb0c0b3ZFbXJVYUMzOEotMmRtbm13VzdWcmhDbGlReXNJIiwiY3Jvc3NPcmlnaW4iOmZhbHNlLCJvcmlnaW4iOiJodHRwczovL2NvbnRyb2wuZXhhbXBsZSIsInR5cGUiOiJ3ZWJhdXRobi5nZXQifQ",
+            "id": "AgICAgICAgICAgICAgICAg",
+            "signature": "WNjzj5-NuevZ2adcJXUg8gYECu5toji-q6nNGDUfLfFlZWmML77vz2J5clnrxxKM9mRlbzSgg5xmdaY1uXuCDQ"
+          },
+          "rp": "control.example",
+          "seq": 3
+        },
+        {
+          "aaguid": "00000000000000000000000000000000",
+          "account": "acct_owner",
+          "alg": -8,
+          "at": 4000,
+          "by": "device dev_laptop",
+          "credential": "AwMDAwMDAwMDAwMDAwMDAw",
+          "event": "added",
+          "hash": "a87a0f7a02c57c2f836d7bc0e85c6b6bb7bc52609014a2d996e502316a151808",
+          "key": "7UkoxijRwsbq6QM4kFmVYSlZJzpcY_k2NsFGFKyHN9E",
+          "keyFormat": "raw",
+          "prev": "8f71b6c1884e78576f4d9ffb91010c535943512c1b099cac51c27f5b813ca089",
+          "rp": "control.example",
+          "seq": 4
+        },
+        {
+          "aaguid": "00000000000000000000000000000000",
+          "account": "acct_owner",
+          "alg": -257,
+          "at": 6000,
+          "by": "session",
+          "credential": "UlJSUlJSUlJSUlJSUlJSUg",
+          "event": "removed",
+          "hash": "233ad70b465c0671d21c92fe87525efe28b91a7a74d19fd0d4c8608ce8cf0d72",
+          "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA0_SvFUJnVhDsI4X8PXKX-O5lnZpoRtsqWUH7vBPsTt3rFWcMiqtMCekZI8lGrXGGq9m_LTb1FbRPFtYmxBqQsdelHl6er0Sg8a1o28PT-5iIfnUjH8bleFJk6K1iRlyo579hU5rXAs0pzFdU0WiVpWEDimacTfpHZ7F53w0sg5zvq6ed8i_5P3B9z5rBh4os82tOArdmAIJ_aZMTJLeCOX8sMSlWDpZeq69WKGKRudrQUCg-YWMiFApyGQO4PSAVwQdTLBs0NqPXsmPOuPohvstHshr91ypPg0O9DC9QT7e7912WEYTj7zjhVooYlNYK-xyp0HNVAq38AVHRJ5NewQIDAQAB",
+          "keyFormat": "spki",
+          "prev": "a87a0f7a02c57c2f836d7bc0e85c6b6bb7bc52609014a2d996e502316a151808",
+          "rp": "control.example",
+          "seq": 5
+        }
+      ]
+    }
+  },
+  "output": "{ ok: true, added: the seq of the passkey's added event, rp: the RP it was for }, or { ok: false, refused: a code, event: the index, for chain }"
+}

@@ -12,7 +12,7 @@ import { PageHeader } from "../../shared/ui/page-header";
 import { Time } from "../../shared/ui/time";
 import { useSubscribe } from "../../shared/ui/hooks";
 import { names } from "../links";
-import { follow, pathOf } from "../router";
+import { follow, followRow, pathOf } from "../router";
 import { session } from "../session";
 import { historyPath, lastMoved, rowNote, shortRef, type DeployHistory, type DeploySummary, type Environment } from "../deploys-text";
 import { deployTone, toneClass } from "../swarm";
@@ -154,7 +154,7 @@ export function DeploysPage({ project }: { project: string }) {
 function Row({ d }: { d: DeploySummary }) {
   const path = `/deploys/${d.id}`;
   return (
-    <tr class={`deploy-row ${toneClass(deployTone(d.state))}`} data-deploy-row={d.id} data-deploy-state={d.state}>
+    <tr class={`deploy-row ${toneClass(deployTone(d.state))}`} data-deploy-row={d.id} data-deploy-state={d.state} onClick={(e) => followRow(e, path)}>
       <td>
         <DeployState state={d.state} />
       </td>

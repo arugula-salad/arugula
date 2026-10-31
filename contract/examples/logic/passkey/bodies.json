@@ -1,0 +1,203 @@
+{
+  "about": "An event of an account's passkey log, as text: `arugula passkey log v1`, then account, seq, prev (the event before's hash, or 64 zeros), event (added or removed), credential, rp, alg, key (its format and base64url), aaguid, at and by, one a line, each ending in a newline. A `by passkey` event has a proof line after it, `proof <credential> <clientDataJSON> <authenticatorData> <signature>`, the signer's assertion. Its hash is SHA-256 of the body and the proof line, hex; what the proof signs (its challenge) is SHA-256 of the body alone, base64url.",
+  "cases": [
+    {
+      "about": "the owner's event 0: es256 signing up",
+      "input": {"event": "owner_0"},
+      "output": {
+        "body": "arugula passkey log v1\naccount acct_owner\nseq 0\nprev 0000000000000000000000000000000000000000000000000000000000000000\nevent added\ncredential EREREREREREREREREREREQ\nrp control.example\nalg -7\nkey sec1 BAIX5hfwtkQ5KCePlpmeaaI6TywVK99tbN9m5bgCgtTtGUp968uXcS0t2jyoWqh2Wlb0X8dYWZZS8ol8ZTBuV5Q\naaguid fbfc3007154e4ecc8c0b6e020557d7bd\nat 1000\nby signup\n",
+        "challenge": "GFuyh5li-AIDT6D4qYadhmRMDkepoXjfQKka9VBAIaA",
+        "hash": "185bb2879962f802034fa0f8a9869d86644c0e47a9a178df40a91af5504021a0",
+        "proof_line": ""
+      }
+    },
+    {
+      "about": "the owner's event 1: rs256 after github",
+      "input": {"event": "owner_1"},
+      "output": {
+        "body": "arugula passkey log v1\naccount acct_owner\nseq 1\nprev 185bb2879962f802034fa0f8a9869d86644c0e47a9a178df40a91af5504021a0\nevent added\ncredential UlJSUlJSUlJSUlJSUlJSUg\nrp control.example\nalg -257\nkey spki MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA0_SvFUJnVhDsI4X8PXKX-O5lnZpoRtsqWUH7vBPsTt3rFWcMiqtMCekZI8lGrXGGq9m_LTb1FbRPFtYmxBqQsdelHl6er0Sg8a1o28PT-5iIfnUjH8bleFJk6K1iRlyo579hU5rXAs0pzFdU0WiVpWEDimacTfpHZ7F53w0sg5zvq6ed8i_5P3B9z5rBh4os82tOArdmAIJ_aZMTJLeCOX8sMSlWDpZeq69WKGKRudrQUCg-YWMiFApyGQO4PSAVwQdTLBs0NqPXsmPOuPohvstHshr91ypPg0O9DC9QT7e7912WEYTj7zjhVooYlNYK-xyp0HNVAq38AVHRJ5NewQIDAQAB\naaguid 00000000000000000000000000000000\nat 1500\nby github\n",
+        "challenge": "hRNOYpN1Fb_5isfobUAdU0D0_DS9FLeY0M3HAUJvclI",
+        "hash": "85134e62937515bff98ac7e86d401d5340f4fc34bd14b798d0cdc701426f7252",
+        "proof_line": ""
+      }
+    },
+    {
+      "about": "the owner's event 2: ed25519 signed for",
+      "input": {"event": "owner_2"},
+      "output": {
+        "body": "arugula passkey log v1\naccount acct_owner\nseq 2\nprev 85134e62937515bff98ac7e86d401d5340f4fc34bd14b798d0cdc701426f7252\nevent added\ncredential AgICAgICAgICAgICAgICAg\nrp control.example\nalg -8\nkey raw gTl3Dqh9F19Wo1Rmw0x-zMuNipG07jeiXfYPW4_Js5Q\naaguid 00000000000000000000000000000000\nat 2000\nby passkey\n",
+        "challenge": "VLsYHeR2jDKBB9N7q_mQN6plsqq76eZE7GSBEVU1Prw",
+        "hash": "8b08dcae213159f3cddbab477453a4dbf7439e9a71855cbcf74b2c70c1aec114",
+        "proof_line": "proof EREREREREREREREREREREQ eyJjaGFsbGVuZ2UiOiJWTHNZSGVSMmpES0JCOU43cV9tUU42cGxzcXE3NmVaRTdHU0JFVlUxUHJ3IiwiY3Jvc3NPcmlnaW4iOmZhbHNlLCJvcmlnaW4iOiJodHRwczovL2NvbnRyb2wuZXhhbXBsZSIsInR5cGUiOiJ3ZWJhdXRobi5nZXQifQ a0VSR89O6IQunw3j9h2nuoCHSI-KE3luCkikpADknaEFAAAAAA MEUCIQC6c9bbMM4aMdKKpDbEDUo_z3nB7l5oAVi6S7Fv-5gVWQIgLXkwYp2ic850Smj8FHN6F25X771gR_GKYAYNp1zLIyU\n"
+      }
+    },
+    {
+      "about": "the owner's event 3: es256 removed",
+      "input": {"event": "owner_3"},
+      "output": {
+        "body": "arugula passkey log v1\naccount acct_owner\nseq 3\nprev 8b08dcae213159f3cddbab477453a4dbf7439e9a71855cbcf74b2c70c1aec114\nevent removed\ncredential EREREREREREREREREREREQ\nrp control.example\nalg -7\nkey sec1 BAIX5hfwtkQ5KCePlpmeaaI6TywVK99tbN9m5bgCgtTtGUp968uXcS0t2jyoWqh2Wlb0X8dYWZZS8ol8ZTBuV5Q\naaguid fbfc3007154e4ecc8c0b6e020557d7bd\nat 3000\nby passkey\n",
+        "challenge": "VTJssaXKWmoG4ovEmrUaC38J-2dmnmwW7VrhCliQysI",
+        "hash": "8f71b6c1884e78576f4d9ffb91010c535943512c1b099cac51c27f5b813ca089",
+        "proof_line": "proof AgICAgICAgICAgICAgICAg eyJjaGFsbGVuZ2UiOiJWVEpzc2FYS1dtb0c0b3ZFbXJVYUMzOEotMmRtbm13VzdWcmhDbGlReXNJIiwiY3Jvc3NPcmlnaW4iOmZhbHNlLCJvcmlnaW4iOiJodHRwczovL2NvbnRyb2wuZXhhbXBsZSIsInR5cGUiOiJ3ZWJhdXRobi5nZXQifQ a0VSR89O6IQunw3j9h2nuoCHSI-KE3luCkikpADknaEFAAAAAA WNjzj5-NuevZ2adcJXUg8gYECu5toji-q6nNGDUfLfFlZWmML77vz2J5clnrxxKM9mRlbzSgg5xmdaY1uXuCDQ\n"
+      }
+    },
+    {
+      "about": "the owner's event 4: by a device",
+      "input": {"event": "owner_4"},
+      "output": {
+        "body": "arugula passkey log v1\naccount acct_owner\nseq 4\nprev 8f71b6c1884e78576f4d9ffb91010c535943512c1b099cac51c27f5b813ca089\nevent added\ncredential AwMDAwMDAwMDAwMDAwMDAw\nrp control.example\nalg -8\nkey raw 7UkoxijRwsbq6QM4kFmVYSlZJzpcY_k2NsFGFKyHN9E\naaguid 00000000000000000000000000000000\nat 4000\nby device dev_laptop\n",
+        "challenge": "qHoPegLFfC-DbXvA6Fxra7e8UmCQFKLZluUCMWoVGAg",
+        "hash": "a87a0f7a02c57c2f836d7bc0e85c6b6bb7bc52609014a2d996e502316a151808",
+        "proof_line": ""
+      }
+    },
+    {
+      "about": "the owner's event 5: rs256 removed",
+      "input": {"event": "owner_5"},
+      "output": {
+        "body": "arugula passkey log v1\naccount acct_owner\nseq 5\nprev a87a0f7a02c57c2f836d7bc0e85c6b6bb7bc52609014a2d996e502316a151808\nevent removed\ncredential UlJSUlJSUlJSUlJSUlJSUg\nrp control.example\nalg -257\nkey spki MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA0_SvFUJnVhDsI4X8PXKX-O5lnZpoRtsqWUH7vBPsTt3rFWcMiqtMCekZI8lGrXGGq9m_LTb1FbRPFtYmxBqQsdelHl6er0Sg8a1o28PT-5iIfnUjH8bleFJk6K1iRlyo579hU5rXAs0pzFdU0WiVpWEDimacTfpHZ7F53w0sg5zvq6ed8i_5P3B9z5rBh4os82tOArdmAIJ_aZMTJLeCOX8sMSlWDpZeq69WKGKRudrQUCg-YWMiFApyGQO4PSAVwQdTLBs0NqPXsmPOuPohvstHshr91ypPg0O9DC9QT7e7912WEYTj7zjhVooYlNYK-xyp0HNVAq38AVHRJ5NewQIDAQAB\naaguid 00000000000000000000000000000000\nat 6000\nby session\n",
+        "challenge": "IzrXC0ZcBnHSHJL-h1Je_ii5Gnp00Z_Q1MhgjOjPDXI",
+        "hash": "233ad70b465c0671d21c92fe87525efe28b91a7a74d19fd0d4c8608ce8cf0d72",
+        "proof_line": ""
+      }
+    },
+    {
+      "about": "a backfilled event, its RP either site",
+      "input": {"event": "backfilled_0"},
+      "output": {
+        "body": "arugula passkey log v1\naccount acct_old\nseq 0\nprev 0000000000000000000000000000000000000000000000000000000000000000\nevent added\ncredential AgICAgICAgICAgICAgICAg\nrp control.example old.example\nalg -8\nkey raw gTl3Dqh9F19Wo1Rmw0x-zMuNipG07jeiXfYPW4_Js5Q\naaguid 00000000000000000000000000000000\nat 500\nby backfill 9000\n",
+        "challenge": "cFCk_xtrZfnS1QsC9WKHCiLjQnk7ePBo3zhGWRRV0kE",
+        "hash": "7050a4ff1b6b65f9d2d50b02f562870a22e342793b78f068df3846591455d241",
+        "proof_line": ""
+      }
+    }
+  ],
+  "checks": [
+    "arugula_e2e::passkey::Event::body",
+    "arugula_e2e::passkey::Event::proof_line",
+    "arugula_e2e::passkey::Event::compute_hash",
+    "arugula_e2e::passkey::Event::challenge"
+  ],
+  "input": "event: an event's label",
+  "keys": {},
+  "objects": {
+    "backfilled_0": {
+      "aaguid": "00000000000000000000000000000000",
+      "account": "acct_old",
+      "alg": -8,
+      "at": 500,
+      "by": "backfill 9000",
+      "credential": "AgICAgICAgICAgICAgICAg",
+      "event": "added",
+      "hash": "7050a4ff1b6b65f9d2d50b02f562870a22e342793b78f068df3846591455d241",
+      "key": "gTl3Dqh9F19Wo1Rmw0x-zMuNipG07jeiXfYPW4_Js5Q",
+      "keyFormat": "raw",
+      "prev": "0000000000000000000000000000000000000000000000000000000000000000",
+      "rp": "control.example old.example",
+      "seq": 0
+    },
+    "owner_0": {
+      "aaguid": "fbfc3007154e4ecc8c0b6e020557d7bd",
+      "account": "acct_owner",
+      "alg": -7,
+      "at": 1000,
+      "by": "signup",
+      "credential": "EREREREREREREREREREREQ",
+      "event": "added",
+      "hash": "185bb2879962f802034fa0f8a9869d86644c0e47a9a178df40a91af5504021a0",
+      "key": "BAIX5hfwtkQ5KCePlpmeaaI6TywVK99tbN9m5bgCgtTtGUp968uXcS0t2jyoWqh2Wlb0X8dYWZZS8ol8ZTBuV5Q",
+      "keyFormat": "sec1",
+      "prev": "0000000000000000000000000000000000000000000000000000000000000000",
+      "rp": "control.example",
+      "seq": 0
+    },
+    "owner_1": {
+      "aaguid": "00000000000000000000000000000000",
+      "account": "acct_owner",
+      "alg": -257,
+      "at": 1500,
+      "by": "github",
+      "credential": "UlJSUlJSUlJSUlJSUlJSUg",
+      "event": "added",
+      "hash": "85134e62937515bff98ac7e86d401d5340f4fc34bd14b798d0cdc701426f7252",
+      "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA0_SvFUJnVhDsI4X8PXKX-O5lnZpoRtsqWUH7vBPsTt3rFWcMiqtMCekZI8lGrXGGq9m_LTb1FbRPFtYmxBqQsdelHl6er0Sg8a1o28PT-5iIfnUjH8bleFJk6K1iRlyo579hU5rXAs0pzFdU0WiVpWEDimacTfpHZ7F53w0sg5zvq6ed8i_5P3B9z5rBh4os82tOArdmAIJ_aZMTJLeCOX8sMSlWDpZeq69WKGKRudrQUCg-YWMiFApyGQO4PSAVwQdTLBs0NqPXsmPOuPohvstHshr91ypPg0O9DC9QT7e7912WEYTj7zjhVooYlNYK-xyp0HNVAq38AVHRJ5NewQIDAQAB",
+      "keyFormat": "spki",
+      "prev": "185bb2879962f802034fa0f8a9869d86644c0e47a9a178df40a91af5504021a0",
+      "rp": "control.example",
+      "seq": 1
+    },
+    "owner_2": {
+      "aaguid": "00000000000000000000000000000000",
+      "account": "acct_owner",
+      "alg": -8,
+      "at": 2000,
+      "by": "passkey",
+      "credential": "AgICAgICAgICAgICAgICAg",
+      "event": "added",
+      "hash": "8b08dcae213159f3cddbab477453a4dbf7439e9a71855cbcf74b2c70c1aec114",
+      "key": "gTl3Dqh9F19Wo1Rmw0x-zMuNipG07jeiXfYPW4_Js5Q",
+      "keyFormat": "raw",
+      "prev": "85134e62937515bff98ac7e86d401d5340f4fc34bd14b798d0cdc701426f7252",
+      "proof": {
+        "authenticatorData": "a0VSR89O6IQunw3j9h2nuoCHSI-KE3luCkikpADknaEFAAAAAA",
+        "clientDataJSON": "eyJjaGFsbGVuZ2UiOiJWTHNZSGVSMmpES0JCOU43cV9tUU42cGxzcXE3NmVaRTdHU0JFVlUxUHJ3IiwiY3Jvc3NPcmlnaW4iOmZhbHNlLCJvcmlnaW4iOiJodHRwczovL2NvbnRyb2wuZXhhbXBsZSIsInR5cGUiOiJ3ZWJhdXRobi5nZXQifQ",
+        "id": "EREREREREREREREREREREQ",
+        "signature": "MEUCIQC6c9bbMM4aMdKKpDbEDUo_z3nB7l5oAVi6S7Fv-5gVWQIgLXkwYp2ic850Smj8FHN6F25X771gR_GKYAYNp1zLIyU"
+      },
+      "rp": "control.example",
+      "seq": 2
+    },
+    "owner_3": {
+      "aaguid": "fbfc3007154e4ecc8c0b6e020557d7bd",
+      "account": "acct_owner",
+      "alg": -7,
+      "at": 3000,
+      "by": "passkey",
+      "credential": "EREREREREREREREREREREQ",
+      "event": "removed",
+      "hash": "8f71b6c1884e78576f4d9ffb91010c535943512c1b099cac51c27f5b813ca089",
+      "key": "BAIX5hfwtkQ5KCePlpmeaaI6TywVK99tbN9m5bgCgtTtGUp968uXcS0t2jyoWqh2Wlb0X8dYWZZS8ol8ZTBuV5Q",
+      "keyFormat": "sec1",
+      "prev": "8b08dcae213159f3cddbab477453a4dbf7439e9a71855cbcf74b2c70c1aec114",
+      "proof": {
+        "authenticatorData": "a0VSR89O6IQunw3j9h2nuoCHSI-KE3luCkikpADknaEFAAAAAA",
+        "clientDataJSON": "eyJjaGFsbGVuZ2UiOiJWVEpzc2FYS1dtb0c0b3ZFbXJVYUMzOEotMmRtbm13VzdWcmhDbGlReXNJIiwiY3Jvc3NPcmlnaW4iOmZhbHNlLCJvcmlnaW4iOiJodHRwczovL2NvbnRyb2wuZXhhbXBsZSIsInR5cGUiOiJ3ZWJhdXRobi5nZXQifQ",
+        "id": "AgICAgICAgICAgICAgICAg",
+        "signature": "WNjzj5-NuevZ2adcJXUg8gYECu5toji-q6nNGDUfLfFlZWmML77vz2J5clnrxxKM9mRlbzSgg5xmdaY1uXuCDQ"
+      },
+      "rp": "control.example",
+      "seq": 3
+    },
+    "owner_4": {
+      "aaguid": "00000000000000000000000000000000",
+      "account": "acct_owner",
+      "alg": -8,
+      "at": 4000,
+      "by": "device dev_laptop",
+      "credential": "AwMDAwMDAwMDAwMDAwMDAw",
+      "event": "added",
+      "hash": "a87a0f7a02c57c2f836d7bc0e85c6b6bb7bc52609014a2d996e502316a151808",
+      "key": "7UkoxijRwsbq6QM4kFmVYSlZJzpcY_k2NsFGFKyHN9E",
+      "keyFormat": "raw",
+      "prev": "8f71b6c1884e78576f4d9ffb91010c535943512c1b099cac51c27f5b813ca089",
+      "rp": "control.example",
+      "seq": 4
+    },
+    "owner_5": {
+      "aaguid": "00000000000000000000000000000000",
+      "account": "acct_owner",
+      "alg": -257,
+      "at": 6000,
+      "by": "session",
+      "credential": "UlJSUlJSUlJSUlJSUlJSUg",
+      "event": "removed",
+      "hash": "233ad70b465c0671d21c92fe87525efe28b91a7a74d19fd0d4c8608ce8cf0d72",
+      "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA0_SvFUJnVhDsI4X8PXKX-O5lnZpoRtsqWUH7vBPsTt3rFWcMiqtMCekZI8lGrXGGq9m_LTb1FbRPFtYmxBqQsdelHl6er0Sg8a1o28PT-5iIfnUjH8bleFJk6K1iRlyo579hU5rXAs0pzFdU0WiVpWEDimacTfpHZ7F53w0sg5zvq6ed8i_5P3B9z5rBh4os82tOArdmAIJ_aZMTJLeCOX8sMSlWDpZeq69WKGKRudrQUCg-YWMiFApyGQO4PSAVwQdTLBs0NqPXsmPOuPohvstHshr91ypPg0O9DC9QT7e7912WEYTj7zjhVooYlNYK-xyp0HNVAq38AVHRJ5NewQIDAQAB",
+      "keyFormat": "spki",
+      "prev": "a87a0f7a02c57c2f836d7bc0e85c6b6bb7bc52609014a2d996e502316a151808",
+      "rp": "control.example",
+      "seq": 5
+    }
+  },
+  "output": "body, proof_line (empty but on a `by passkey` event), hash (hex), challenge (base64url)"
+}

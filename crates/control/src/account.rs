@@ -695,7 +695,11 @@ mod tests {
         assert_eq!(db.team_default_project("t2").unwrap(), t2);
         assert_eq!(db.cloud_drive(&bobs, "acct-bob").unwrap(), Some(true));
 
-        assert_eq!(app.db.mentions("acct-alice"), Vec::<String>::new());
+        // But her passkey log (DK3), kept so what she approved still checks
+        // out: it says her passkeys went with her.
+        assert_eq!(app.db.mentions("acct-alice"), ["passkey_log.account"]);
+        let log = app.db.passkey_log("acct-alice").unwrap();
+        assert!(log.events.last().is_some_and(|e| e.by == "deleted"), "{log:?}");
         assert_eq!(app.db.mentions(&ac.device), Vec::<String>::new());
         assert_eq!(app.db.mentions(&box1), Vec::<String>::new());
         // Only Bob's notice that it went, which names it.
@@ -836,7 +840,14 @@ mod tests {
         db.drop_passkey(&a, "pk1").unwrap().unwrap();
         assert_eq!(db.passkey_count(&a).unwrap(), 1);
         assert_eq!(db.sign_ins(&a).unwrap(), 1);
-        // The passkey that made it was its identity too: gone with it.
-        assert!(db.mentions("pk1").is_empty(), "{:?}", db.mentions("pk1"));
+        // The passkey that made it was its identity too: gone with it, but
+        // for its log (DK3), which says a signed-in page removed it.
+        assert_eq!(db.mentions("pk1"), ["passkey_log.credential"]);
+        let log = db.passkey_log(&a).unwrap();
+        let last = log.events.last().unwrap();
+        assert_eq!(
+            (last.credential.as_str(), last.event, last.by.as_str()),
+            ("pk1", arugula_e2e::passkey::Change::Removed, "session")
+        );
     }
 }
