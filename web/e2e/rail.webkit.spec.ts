@@ -33,10 +33,10 @@ test("Alice, a team and a machine, on a control with a platform page", async ({ 
 });
 
 test("Projects is the rail's first place, above Panes, and the bar has no Projects ↗", async () => {
-  const places = alice.locator(".ws-rail [data-open-projects], .ws-rail [data-open-sessions], .ws-rail [data-open-panes]");
-  await expect(places).toHaveCount(3);
+  const places = alice.locator(".ws-rail [data-open-projects], .ws-rail [data-open-panes]");
+  await expect(places).toHaveCount(2);
   const order = await alice.locator(".ws-rail .ws-rail-button").evaluateAll((els) => els.map((e) => e.querySelector(".ws-rail-label")!.textContent));
-  expect(order.slice(0, 3)).toEqual(["Projects", "Sessions", "Panes"]);
+  expect(order.slice(0, 2)).toEqual(["Projects", "Panes"]);
   const projects = alice.locator(".ws-rail [data-open-projects]");
   const panes = alice.locator(".ws-rail [data-open-panes]");
   const [p, n] = await Promise.all([projects.boundingBox(), panes.boundingBox()]);

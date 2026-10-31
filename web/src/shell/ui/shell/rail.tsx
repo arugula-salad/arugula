@@ -1,5 +1,5 @@
 // The rail down the left of the workspace (M108, #1023): Arugula's mark
-// (this machine's sessions), Sessions (the sidebar), Panes, Swarm, Chat (on
+// (this machine's sessions), Panes, Swarm, Chat (on
 // the platform page, M153), Boards (with the `boards` flag), Docs, Agents and
 // Settings, with Projects (the platform page's `/`) above them all (#376).
 // It stays while the swarm or agents cover the panes, so the way back is
@@ -19,12 +19,12 @@ import { Rail as SharedRail, type RailItem } from "../../../shared/ui/rail";
 import { openPlatform, platformHref } from "../../platform-links";
 import { chatUnread, closePlace, currentPlace, hasBoards, hasChat, openBoards, openChat, openOverview, useChatTick, type Place } from "../places";
 import { countView } from "../../../shared/telemetry";
-import { AgentsIcon, BoardsIcon, ChatIcon, DocsIcon, Mark, PanesIcon, ProjectsIcon, SessionsIcon, SettingsIcon, SwarmIcon } from "./icons";
-import { focusSessionSearch, setSidebarOpen, useSidebar } from "./prefs";
+import { AgentsIcon, BoardsIcon, ChatIcon, DocsIcon, Mark, PanesIcon, ProjectsIcon, SettingsIcon, SwarmIcon } from "./icons";
+import { focusSessionSearch } from "./prefs";
 
 /** Re-render on any route change, the swarm's too (it closes without a
  * hashchange). */
-function usePlace(client: Client): Place {
+export function usePlace(client: Client): Place {
   useChatTick(client);
   const [, tick] = useState(0);
   useEffect(() => {
@@ -41,7 +41,6 @@ function usePlace(client: Client): Place {
 
 export function Rail({ client }: { client: Client }) {
   const at = usePlace(client);
-  const { open } = useSidebar();
   const threads = hasChat();
   const { n, mention } = threads ? chatUnread() : { n: 0, mention: false };
   // As places.tsx decides: the machine owner's, Agents with the Labs flag.
@@ -70,21 +69,6 @@ export function Rail({ client }: { client: Client }) {
       href: projects,
       target: "arugula-platform",
       onClick: () => openPlatform("/"),
-    },
-    {
-      label: "Sessions",
-      tip: `${open && at === "panes" ? "Hide" : "Show"} sessions sidebar on ${host}`,
-      here: open && at === "panes",
-      toggle: true,
-      controls: "ws-session-sidebar",
-      hook: "data-open-sessions",
-      icon: <SessionsIcon />,
-      onClick: () => {
-        if (at !== "panes") {
-          closePlace(at);
-          setSidebarOpen(true);
-        } else setSidebarOpen(!open);
-      },
     },
     { label: "Panes", tip: "Your panes: back to this session's last tab and pane", here: at === "panes", hook: "data-open-panes", icon: <PanesIcon />, onClick: panes },
     {

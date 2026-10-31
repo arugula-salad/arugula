@@ -36,12 +36,6 @@
   display: none;
 }
 
-.ws-rail-button.on {
-  background: var(--surface);
-  border-color: var(--line-strong);
-  color: var(--fg);
-}
-
 .ws-sidebar {
   border-right-color: var(--line-strong);
 }
@@ -303,23 +297,27 @@ html[data-desktop="macos"]:not([data-native-tabs]) .app.ws::before {
   -webkit-app-region: drag;
 }
 
-/* Sessions changes the sidebar, not the current destination. */
-.ws-rail-utility {
-  padding-bottom: 8px;
-  margin-bottom: 2px;
-  border-bottom: 1px solid var(--line-strong);
-}
-.ws-rail-utility .ws-rail-button.on {
+/* The caret that shows and hides the sessions sidebar (#378). It's in the
+   header, so it stays when the sidebar is closed. */
+.ws-sidebar-toggle {
+  flex: none;
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  border-radius: var(--btn-radius);
   background: none;
-  border-color: transparent;
+  color: var(--dim);
+  font-size: 18px;
+  line-height: 1;
+}
+.ws-sidebar-toggle:hover {
+  background: var(--raised);
   color: var(--fg);
 }
-.ws-rail-utility .ws-rail-button:hover { background: var(--raised); }
-.ws-sidebar-chevron {
-  position: absolute;
-  right: 3px;
-  top: 7px;
-  font-size: 14px;
-  line-height: 1;
-  color: var(--dim);
+.ws-wordmark + .ws-crumbs .ws-sidebar-toggle {
+  margin-left: 8px;
 }
