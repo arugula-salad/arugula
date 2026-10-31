@@ -277,6 +277,14 @@ since?: number, };
 export type BoardBlockWord = "working" | "needs_input" | "idle" | "closed";
 
 /**
+ * Where an item is in its own life, the same words for every source
+ * (Arugula #405): Plane's state groups, which a native issue's and a GitHub
+ * issue's open and closed map onto. A lane reads it: `completed` and
+ * `canceled` are Done, every other category is not.
+ */
+export type BoardCategory = "triage" | "backlog" | "unstarted" | "started" | "completed" | "canceled";
+
+/**
  * A `git diff --stat` summary line as numbers: nothing of the files.
  */
 export type BoardDiffstat = { files: number, added: number, removed: number, };
@@ -356,7 +364,11 @@ state_name?: string | null,
 /**
  * Where a tracker item is, in the tracker.
  */
-url?: string | null, };
+url?: string | null, 
+/**
+ * An issue's status category; a PR and a run have none.
+ */
+category?: BoardCategory, };
 
 /**
  * What a pointer to an item, an issue or a run is now, from data control

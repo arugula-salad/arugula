@@ -59,15 +59,8 @@ fn attach(app: &Platform, project: &str, pr: &PrText, refs: &Refs) -> anyhow::Re
             }
         }
     }
-    let done = app.db.auto_attach(
-        project,
-        &pr.id,
-        pr.repo_id,
-        &refs.numbers,
-        &plane,
-        arugula_e2e::now_ms(),
-        wire::ATTACHMENTS_MAX,
-    )?;
+    let done =
+        app.db.auto_attach(project, &pr.id, pr.repo_id, refs, &plane, arugula_e2e::now_ms(), wire::ATTACHMENTS_MAX)?;
     let mut moved = done.attached;
     for b in done.detached {
         if !moved.contains(&b) {

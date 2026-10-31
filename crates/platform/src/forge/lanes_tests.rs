@@ -517,3 +517,67 @@ async fn a_reference_names_one_item_or_says_why_not() {
 fn wire_fi(id: &str) -> arugula_control_wire::boards::Pointer {
     arugula_control_wire::boards::Pointer::ForgeItem { id: id.to_owned() }
 }
+
+/// Every source's issues carry a status category to the board, and Done
+/// means the same for all: a native issue closed as not planned, a Plane
+/// item in `cancelled` and a closed GitHub issue are Done, a Plane item
+/// that is started and an open native issue are not.
+#[tokio::test]
+async fn every_sources_issue_has_a_category_and_done_means_the_same() {
+    let (base, app, team, id) = start().await;
+    app.db
+        .c()
+        .execute(
+            "INSERT INTO tracker_connections (id, project_id, provider, workspace_slug, source_project_id, identifier,
+                 name, mirror_id, created_at)
+             VALUES ('trk_1', ?1, 'plane', 'acme', 'p1', 'ARUGU', 'Arugula', -1, 1)",
+            params![team],
+        )
+        .unwrap();
+    for (id, number, state, group) in
+        [("fi_pl1", 1u64, "closed", "cancelled"), ("fi_pl2", 2, "open", "started"), ("fi_pl3", 3, "open", "completed")]
+    {
+        app.db
+            .c()
+            .execute(
+                "INSERT INTO forge_items (id, repo_id, number, kind, state, title, provider, connection_id, state_name,
+                     state_group, created_at, updated_at, synced_at)
+                 VALUES (?1, -1, ?2, 'issue', ?3, 't', 'plane', 'trk_1', ?4, ?4, 1, 1, 1)",
+                params![id, number, state, group],
+            )
+            .unwrap();
+    }
+    item(&app, "fi_gc", 88, 700, "issue", "closed", "Closed on GitHub", ("", ""));
+    let (dropped, _) = native(&base, &team, "Not planned").await;
+    let (open, _) = native(&base, &team, "Open").await;
+    app.db
+        .c()
+        .execute(
+            "UPDATE issues SET state = 'closed', close_reason = 'not_planned', closed_at = 5 WHERE id = ?1",
+            params![dropped],
+        )
+        .unwrap();
+    let pointers = [
+        fi("fi_pl1"),
+        fi("fi_pl2"),
+        fi("fi_pl3"),
+        fi("fi_gc"),
+        json!({ "kind": "issue", "id": dropped }),
+        json!({ "kind": "issue", "id": open }),
+    ];
+    for p in pointers {
+        add(&base, &id, p).await;
+    }
+    let v = read(&base, "bob", &id).await;
+    let seen = |item: &str| {
+        let (lane, row) = on(&v, item);
+        (lane.to_owned(), row["live"]["category"].as_str().map(str::to_owned))
+    };
+    let is = |lane: &str, category: &str| (lane.to_owned(), Some(category.to_owned()));
+    assert_eq!(seen("fi_pl1"), is("lane_done", "canceled"), "{v}");
+    assert_eq!(seen("fi_pl2"), is("lane_next", "started"), "{v}");
+    assert_eq!(seen("fi_pl3"), is("lane_done", "completed"), "the group decides, not the mirrored state: {v}");
+    assert_eq!(seen("fi_gc"), is("lane_done", "completed"), "{v}");
+    assert_eq!(seen(&dropped), is("lane_done", "canceled"), "{v}");
+    assert_eq!(seen(&open), is("lane_next", "unstarted"), "{v}");
+}

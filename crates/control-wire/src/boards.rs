@@ -670,6 +670,41 @@ pub struct NewBoard {
     pub goal: Option<String>,
 }
 
+/// Where an item is in its own life, the same words for every source
+/// (Arugula #405): Plane's state groups, which a native issue's and a GitHub
+/// issue's open and closed map onto. A lane reads it: `completed` and
+/// `canceled` are Done, every other category is not.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "BoardCategory"))]
+#[serde(rename_all = "snake_case")]
+pub enum Category {
+    Triage,
+    Backlog,
+    Unstarted,
+    Started,
+    Completed,
+    Canceled,
+}
+
+impl Category {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Triage => "triage",
+            Self::Backlog => "backlog",
+            Self::Unstarted => "unstarted",
+            Self::Started => "started",
+            Self::Completed => "completed",
+            Self::Canceled => "canceled",
+        }
+    }
+
+    /// Whether the work is over: completed or canceled.
+    pub fn is_done(self) -> bool {
+        matches!(self, Self::Completed | Self::Canceled)
+    }
+}
+
 /// What a pointer to an item, an issue or a run is now, from data control
 /// already has (the forge mirror, the issues and runs tables): a separate fact, never written
 /// over the row's stored `status`.
@@ -729,6 +764,10 @@ pub struct Live {
     /// Where a tracker item is, in the tracker.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub url: Option<String>,
+    /// An issue's status category; a PR and a run have none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub category: Option<Category>,
 }
 
 /// What an agent block is doing (aru-116's second ruling).
@@ -1865,6 +1904,7 @@ Done: People can sign up.
                 identifier: None,
                 state_name: None,
                 url: None,
+                category: None,
             });
             r
         };

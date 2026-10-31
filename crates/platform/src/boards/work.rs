@@ -92,11 +92,14 @@ pub async fn list(
     };
     // Rows already on a board drop out after the read, so read that many more.
     let on_boards: HashSet<String> = if q.untriaged { app.db.project_board_targets(&project)? } else { HashSet::new() };
-    let read = limit.saturating_add(u32::try_from(on_boards.len()).unwrap_or(u32::MAX));
+    // The same work on a board under another issue (the native issue and its
+    // GitHub copy) drops out too.
+    let worked: HashSet<String> = if q.untriaged { app.db.project_board_work_items(&project)? } else { HashSet::new() };
+    let read = limit.saturating_add(u32::try_from(on_boards.len() + worked.len()).unwrap_or(u32::MAX));
     let mut out: Vec<wire::WorkItem> = Vec::new();
-    // The (repo, number) of each native issue read that was exported to
-    // GitHub: its mirrored copy is the same work.
-    let mut exported: HashSet<(u64, u64)> = HashSet::new();
+    // The work of each native issue read: its mirrored copy is the same work,
+    // and the picker lists the native one.
+    let mut native: HashSet<String> = HashSet::new();
 
     if issues {
         let words = words(text.unwrap_or(""));
@@ -105,11 +108,13 @@ pub async fn list(
         }
         let f = Filter { open: q.untriaged.then_some(true), words: &words, ..Default::default() };
         // Native issues are read by number, newest first, not by `updated_at`.
-        for i in app.db.issues(&project, &f, None, read)?.0 {
-            if let Some(g) = &i.github {
-                exported.insert((g.repo_id, g.number));
-            }
-            if on_boards.contains(&i.id) {
+        let read_issues = app.db.issues(&project, &f, None, read)?.0;
+        let ids: Vec<&str> = read_issues.iter().map(|i| i.id.as_str()).collect();
+        let work = app.db.work_identities(&ids)?;
+        for i in read_issues {
+            let same = work.get(&i.id).cloned().unwrap_or_default();
+            native.insert(same.clone());
+            if on_boards.contains(&i.id) || worked.contains(&same) {
                 continue;
             }
             out.push(wire::WorkItem {
@@ -142,8 +147,12 @@ pub async fn list(
             limit: read,
             ..Default::default()
         };
-        for i in app.db.forge_items(&checked.readable, &f)? {
-            if on_boards.contains(&i.id) || exported.contains(&(i.repo_id, i.number)) {
+        let read_items = app.db.forge_items(&checked.readable, &f)?;
+        let ids: Vec<&str> = read_items.iter().filter(|i| i.kind == "issue").map(|i| i.id.as_str()).collect();
+        let work = app.db.work_identities(&ids)?;
+        for i in read_items {
+            let same = work.get(&i.id);
+            if on_boards.contains(&i.id) || same.is_some_and(|w| native.contains(w) || worked.contains(w)) {
                 continue;
             }
             let repo = repos.iter().find(|r| r.repo_id == i.repo_id).map(|r| r.full_name.clone());
@@ -168,8 +177,11 @@ pub async fn list(
         let viewer = Viewer::of(app, account).await?;
         let conns = viewer::check_connections(app, &viewer, &app.db.tracker_connections(&project)?).await?;
         let f = TrackerFilter { open: q.untriaged, text, limit: read, ..Default::default() };
-        for i in app.db.tracker_items(&conns, &f)? {
-            if on_boards.contains(&i.id) {
+        let read_items = app.db.tracker_items(&conns, &f)?;
+        let ids: Vec<&str> = read_items.iter().map(|i| i.id.as_str()).collect();
+        let work = app.db.work_identities(&ids)?;
+        for i in read_items {
+            if on_boards.contains(&i.id) || work.get(&i.id).is_some_and(|w| worked.contains(w)) {
                 continue;
             }
             let Some(c) = conns.get(i.mirror_id) else { continue };

@@ -591,6 +591,18 @@
       ],
       "type": "object"
     },
+    "Category": {
+      "description": "Where an item is in its own life, the same words for every source\n(Arugula #405): Plane's state groups, which a native issue's and a GitHub\nissue's open and closed map onto. A lane reads it: `completed` and\n`canceled` are Done, every other category is not.",
+      "enum": [
+        "triage",
+        "backlog",
+        "unstarted",
+        "started",
+        "completed",
+        "canceled"
+      ],
+      "type": "string"
+    },
     "ChatAgent": {
       "description": "The agent that wrote a message (M197): the machine whose grant it acted\nthrough, and its name now. The message's author is the machine's owner.",
       "properties": {
@@ -770,6 +782,17 @@
             "type": "string"
           },
           "type": "array"
+        },
+        "category": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Category"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "An issue's status category; a PR and a run have none."
         },
         "identifier": {
           "description": "A tracker item's project key (`ARUGU`: the card reads `ARUGU-12`).",
