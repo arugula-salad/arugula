@@ -44,9 +44,13 @@ pub struct CreateArgs {
     /// The project's id (prj_…) or personal. Default: the current project.
     #[serde(default)]
     pub project: Option<String>,
-    /// The Plane connection to create the item in (tc_…, from
-    /// the project's settings or forge_read).
-    pub connection: String,
+    /// The Plane connection to create the item in (tc_…, from capabilities'
+    /// trackers). Not needed when the project has one connection.
+    #[serde(default)]
+    pub connection: Option<String>,
+    /// Or its identifier, like ARUGU, in any case.
+    #[serde(default)]
+    pub tracker: Option<String>,
     /// One line, at most 255 characters.
     pub title: String,
     #[serde(default)]
@@ -166,7 +170,13 @@ async fn write_of(c: &Call<'_>, kind: &str, a: Value) -> Result<(String, Tracker
             let a: CreateArgs = args(a)?;
             (
                 a.project,
-                TrackerWrite::Create { connection: Some(a.connection), title: a.title, body: a.body, state: a.state },
+                TrackerWrite::Create {
+                    connection: a.connection,
+                    tracker: a.tracker,
+                    title: a.title,
+                    body: a.body,
+                    state: a.state,
+                },
             )
         }
         "comment" => {
@@ -238,7 +248,7 @@ pub(super) async fn trackers_reach(app: &crate::server::App) -> TrackersReach {
     let projects: Vec<TrackerReachProject> = serde_json::from_value(v["projects"].clone()).unwrap_or_default();
     let live = !projects.is_empty();
     let note = if live {
-        "tracker_write creates, comments on, closes, reopens and edits a Plane project's work items over these projects. A write may wait for a person to approve it, as the connection says; what is sent says it was via Arugula, by your person's agent on this machine.".into()
+        "tracker_write creates, comments on, closes, reopens and edits a Plane project's work items over these projects. A write may wait for a person to approve it, as the connection says; what is sent says it was via Arugula, by your person's agent on this machine. Each project lists its connections (id, identifier, agent_writes): create takes connection or tracker, or neither when there is one. After a daemon update, a session may need to reload its tool list to see tools new in this version.".into()
     } else {
         "This machine's owner hasn't given its agents trackers.write: `arugula grants add <machine> trackers.write --project <name>`, or Settings, Agents, Plane writes, on the platform page.".into()
     };
