@@ -3,7 +3,7 @@
   "commit": "8adec681025ad983e6c15a7ea5336425fd493ba7",
   "branch": "main",
   "state": "pending",
-  "at": "2026-10-31T08:12:35Z",
+  "at": "2026-10-31T08:19:55Z",
   "phases": {
     "lint": {
       "verdict": "unbuilt",
@@ -26,7 +26,8 @@
     "e2e": {
       "verdict": "pending",
       "build": "newest",
-      "runs": []
+      "runs": [],
+      "culprit": "70ddecfa513eee1a0807bb206f65292d6c325ecd"
     },
     "claims": {
       "verdict": "pending",
