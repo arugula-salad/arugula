@@ -13,6 +13,12 @@
 //! that fill or more, or when the window had been exceeded. A manual one is
 //! always plain. Two sessions of theirs compacted at 22% and 25% of a 1M
 //! window after a quiet stretch and were reported as running out.
+//!
+//! **From inside the session** (#396, a spike): the Claude Code mod's
+//! signals ([`Context::signal`]) feed the same summary for a terminal pane,
+//! with what a transcript doesn't say: the window as the engine has it
+//! (not guessed from the model's name), the effort, and a compaction as it
+//! happens.
 
 use serde_json::{Value, json};
 
@@ -92,9 +98,50 @@ pub struct Context {
     marks: Vec<Mark>,
     /// The API refused a prompt for its length, and nothing compacted since.
     exceeded: Option<u64>,
+    /// The window as Claude Code has it (#396): only the mod says.
+    engine_window: Option<u64>,
+    /// The effort of the last model request (#396): only the mod says.
+    effort: Option<String>,
 }
 
 impl Context {
+    /// The window: the engine's when the mod said, else from the model.
+    fn window(&self) -> u64 {
+        self.engine_window.unwrap_or_else(|| window_for(self.model.as_deref(), self.seen))
+    }
+
+    /// What the Claude Code mod says from inside the session (#396), `at`
+    /// when it arrived. A subagent's own loop says nothing of the main
+    /// window, as a sidechain's transcript lines don't.
+    pub fn signal(&mut self, s: &arugula_proto::api::SessionSignal, at: u64) {
+        if s.agent_id.is_some() {
+            return;
+        }
+        if let Some(m) = s.model.as_deref().filter(|m| !m.is_empty()) {
+            self.model = Some(m.to_owned());
+        }
+        if let Some(e) = s.effort.as_deref().filter(|e| !e.is_empty()) {
+            self.effort = Some(e.to_owned());
+        }
+        if let Some(w) = s.window.filter(|w| *w > 0) {
+            self.engine_window = Some(w);
+        }
+        match s.event.as_str() {
+            "usage" => {
+                if let Some(t) = s.tokens.filter(|t| *t > 0) {
+                    self.used = Some(t);
+                    self.seen = self.seen.max(t);
+                }
+            }
+            "compact" => {
+                let trigger = s.trigger.clone().unwrap_or_else(|| "auto".into());
+                let meta = json!({ "trigger": trigger, "preTokens": s.tokens_before, "postTokens": s.tokens_after });
+                self.compacted(&json!({ "compactMetadata": meta }), at);
+            }
+            _ => {}
+        }
+    }
+
     pub fn line(&mut self, v: &Value) {
         if v["isSidechain"] == true {
             return;
@@ -144,7 +191,7 @@ impl Context {
         let trigger = meta["trigger"].as_str().unwrap_or("auto").to_owned();
         let before = meta["preTokens"].as_u64().or(self.used);
         self.seen = self.seen.max(before.unwrap_or(0));
-        let window = window_for(self.model.as_deref(), self.seen);
+        let window = self.window();
         let full = before.is_some_and(|b| b as f64 / window as f64 >= OVERFLOW_AT);
         let overflow = trigger != "manual" && (full || self.exceeded.is_some());
         self.marks.push(Mark {
@@ -164,7 +211,7 @@ impl Context {
     fn all_marks(&self) -> Vec<Mark> {
         let mut marks = self.marks.clone();
         if let Some(at) = self.exceeded {
-            let window = window_for(self.model.as_deref(), self.seen);
+            let window = self.window();
             marks.push(Mark { kind: Kind::Overflow, trigger: "window".into(), at_ms: at, before: self.used, window });
         }
         marks
@@ -177,7 +224,7 @@ impl Context {
         if self.model.is_none() && self.used.is_none() && marks.is_empty() {
             return None;
         }
-        let window = window_for(self.model.as_deref(), self.seen);
+        let window = self.window();
         let last = marks.last().map(|m| {
             json!({
                 "kind": match m.kind { Kind::Compacted => "compacted", Kind::Overflow => "overflow" },
@@ -187,14 +234,19 @@ impl Context {
                 "window_before": m.window,
             })
         });
-        Some(json!({
+        let mut summary = json!({
             "model": self.model.as_deref().map(short_model),
             "tokens": self.used,
             "window": window,
             "compactions": marks.len(),
             "overflows": marks.iter().filter(|m| m.kind == Kind::Overflow).count(),
             "last": last,
-        }))
+        });
+        // Only the mod says (#396); a transcript's summary is as it was.
+        if let Some(e) = &self.effort {
+            summary["effort"] = json!(e);
+        }
+        Some(summary)
     }
 }
 
@@ -308,6 +360,41 @@ mod tests {
         assert_eq!(short_model("claude-haiku-4-5-20251001"), "Haiku 4.5");
         assert_eq!(short_model("claude-3-5-sonnet-20241022"), "Sonnet 3.5");
         assert_eq!(short_model("claude-opus-5-5[1m]"), "Opus 5.5");
+    }
+
+    #[test]
+    fn the_mods_window_settles_what_the_model_name_cant() {
+        // #396: a 1M session whose model id carries no marker, compacted
+        // automatically at 190k. From the name alone that's 95% of 200k.
+        use arugula_proto::api::SessionSignal;
+        let sig = |event: &str| SessionSignal { event: event.into(), ..Default::default() };
+        let mut c = Context::default();
+        c.signal(
+            &SessionSignal { model: Some("claude-opus-5-5".into()), effort: Some("high".into()), ..sig("step") },
+            1,
+        );
+        c.signal(&SessionSignal { tokens: Some(190_000), window: Some(1_000_000), ..sig("usage") }, 2);
+        c.signal(
+            &SessionSignal {
+                trigger: Some("auto".into()),
+                tokens_before: Some(190_000),
+                tokens_after: Some(12_000),
+                ..sig("compact")
+            },
+            3,
+        );
+        let s = c.summary().expect("a summary");
+        assert_eq!(s["window"], 1_000_000);
+        assert_eq!(s["effort"], "high");
+        assert_eq!(s["last"]["kind"], "compacted");
+        assert_eq!(s["last"]["at_ms"], 3);
+        assert_eq!(s["tokens"], 12_000);
+        // A subagent's loop says nothing of the main window.
+        c.signal(&SessionSignal { tokens: Some(5), agent_id: Some("a1".into()), ..sig("usage") }, 4);
+        assert_eq!(c.summary().unwrap()["tokens"], 12_000);
+        // Without the mod, the same compaction reads as an overflow.
+        let s = read(&[assistant("claude-opus-5-5", 1, 189_999, 0), boundary("auto", 190_000, 12_000)]);
+        assert_eq!(s["last"]["kind"], "overflow");
     }
 
     #[test]

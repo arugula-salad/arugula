@@ -410,6 +410,56 @@ pub struct AttentionRequest {
     pub why: Option<String>,
 }
 
+/// What Claude Code says about its session from inside it (#396, a spike):
+/// the Claude Code mod in `plugins/claude-code/mod` sends one per event,
+/// through `arugula session-signal`. `event` is `start`, `usage` (the
+/// engine's `session.measure`: the window's fill), `step` (a model request:
+/// its model and effort) or `compact` (a compaction, after it ran).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+pub struct SessionSignal {
+    pub event: String,
+    /// Claude Code's session id.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session_id: Option<String>,
+    /// A subagent's loop, when it's one of theirs; else the main loop.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agent_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub effort: Option<String>,
+    /// Input tokens the last response was answered over (the fill).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tokens: Option<u64>,
+    /// The model's window, as the engine has it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub window: Option<u64>,
+    /// A compaction's `manual`, `auto` or `plugin`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub trigger: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tokens_before: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tokens_after: Option<u64>,
+    /// What the session has cost so far, in US dollars (the engine's ledger).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cost_usd: Option<f64>,
+    /// Claude Code's version, and the mod's.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub claude_version: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mod_version: Option<String>,
+}
+
+/// What the daemon makes of a [`SessionSignal`]: the pane's context, in the
+/// agent block's `context` shape (#397), and its own version.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SessionSignaled {
+    pub daemon_version: String,
+    #[serde(default)]
+    pub context: serde_json::Value,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Process {
     pub pid: u32,

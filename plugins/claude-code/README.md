@@ -43,3 +43,14 @@ for those names as well.
 PATH check; `cargo test -p arugula hooks::tests::plugin_hooks_are_the_snippet`
 fails when they differ. Check the plugin and the marketplace with
 `claude plugin validate plugins/claude-code` and `claude plugin validate .`.
+
+## `mod/`: live session signals (a spike, #396)
+
+`mod/` is a separate plugin, `arugula-live`: a Claude Code mod (an
+in-process hooks module, `mod/hooks/register.ts`) that tells the pane's
+daemon about the session as it runs (the window's fill and size, the model
+and effort, the cost, and each compaction) through `arugula
+session-signal`, and shows a status line (`arugula %1 ● live · 5% of 1M ·
+v0.66.4`). It isn't in the marketplace or this plugin's `hooks.json`; try it
+with `claude --plugin-dir plugins/claude-code/mod`. Why it sits beside the
+hooks and how far it goes: `docs/decisions/aru-128-*.md`.

@@ -138,6 +138,8 @@ impl Request for crate::api::NvimHelpRequest {}
 
 impl Request for crate::api::AttentionRequest {}
 
+impl Request for crate::api::SessionSignal {}
+
 impl Request for crate::api::PromptRequest {}
 
 impl Request for crate::api::AskRequest {}
@@ -310,6 +312,7 @@ macro_rules! every_op {
         $m!($crate::op::ops::AdapterInstall);
         $m!($crate::op::ops::ConversationsList);
         $m!($crate::op::ops::ConversationOpen);
+        $m!($crate::op::ops::PaneSessionSignal);
         $m!($crate::op::ops::MachinesList);
         $m!($crate::op::ops::MachineReset);
         $m!($crate::op::ops::PushKeyGet);
@@ -1141,6 +1144,22 @@ pub mod ops {
         type Res = ConversationList;
     }
 
+    /// `POST /api/panes/N/session-signal` (#396, a spike): what Claude Code
+    /// in a pane says about its session from inside it (the window's fill,
+    /// the model and effort, a compaction), from the Claude Code mod
+    /// through `arugula session-signal`. Answers the pane's context.
+    pub struct PaneSessionSignal;
+
+    impl Op for PaneSessionSignal {
+        const NAME: &'static str = "pane.session_signal";
+        const METHOD: Method = Method::Post;
+        const PATH: &'static str = "/api/panes/{id}/session-signal";
+        const ACCESS: Access = Access::Pane(Role::Editor);
+        type Path = PaneId;
+        type Req = crate::api::SessionSignal;
+        type Res = crate::api::SessionSignaled;
+    }
+
     /// `POST /api/conversations/open` (M33): a conversation as an agent
     /// block, stopped, showing its transcript; the block that already has
     /// it, if one does. `then` continues or forks it.
@@ -1913,6 +1932,7 @@ mod tests {
             ("keys", ops::PaneKeys::path(&7)),
             ("mouse", ops::PaneMouse::path(&7)),
             ("attention", ops::PaneAttention::path(&7)),
+            ("session-signal", ops::PaneSessionSignal::path(&7)),
             ("followup", ops::PaneFollowUp::path(&7)),
             ("prompt", ops::PanePrompt::path(&7)),
             ("ask", ops::PaneAsk::path(&7)),

@@ -287,6 +287,14 @@ enum Command {
     /// once.
     #[command(hide = true)]
     Inbox,
+    /// What Claude Code says about its session from inside it.
+    ///
+    /// The Claude Code mod in `plugins/claude-code/mod` runs it with a signal
+    /// on stdin (the window's fill, the model and effort, a compaction) and
+    /// reads the pane's context and both versions back. Outside an Arugula
+    /// pane: exit 3.
+    #[command(hide = true)]
+    SessionSignal,
     /// The commands Claude Code's hooks and Arugula's clients run.
     ///
     /// People don't run them, so `arugula --help` leaves them out; they're
@@ -566,6 +574,7 @@ impl Cli {
                     | Command::Ask
                     | Command::Hook
                     | Command::Inbox
+                    | Command::SessionSignal
                     | Command::Plumbing
             )
     }
@@ -656,7 +665,7 @@ const GROUPS: &[(&str, &[&str])] = &[
 /// What Claude Code's hooks and the clients run, hidden from `--help` and
 /// listed by `arugula help plumbing` (with `attention STATE`, which is
 /// `attention`'s other half).
-const PLUMBING: &[&str] = &["ask", "hook", "inbox", "bridge"];
+const PLUMBING: &[&str] = &["ask", "hook", "inbox", "session-signal", "bridge"];
 
 /// Rows of `  name  summary` under a heading, styled as clap styles its own.
 fn command_rows(cmd: &clap::Command, heading: &str, rows: &[(String, String)], width: usize) -> String {
@@ -874,6 +883,9 @@ fn real_main(mut cli: Cli) -> anyhow::Result<i32> {
     if let Command::Hook = cli.cmd {
         return Ok(hook::run(http::Target::Socket(socket(&cli))));
     }
+    if let Command::SessionSignal = cli.cmd {
+        return Ok(hook::session_signal(http::Target::Socket(socket(&cli))));
+    }
     if let Command::Web(args) = &cli.cmd
         && cli.ssh.is_none()
     {
@@ -1011,7 +1023,12 @@ fn real_main(mut cli: Cli) -> anyhow::Result<i32> {
         Command::Capture(args) => cmd::capture::run(args, ctx),
         Command::Events(args) => cmd::events::run(args, ctx),
         Command::Close(args) => cmd::close::run(args, ctx),
-        Command::Ask | Command::Hook | Command::Inbox | Command::Plumbing | Command::Hooks { .. } => {
+        Command::Ask
+        | Command::Hook
+        | Command::Inbox
+        | Command::SessionSignal
+        | Command::Plumbing
+        | Command::Hooks { .. } => {
             unreachable!("handled first")
         }
         Command::Attention(args) => cmd::attention::run(args, ctx),
