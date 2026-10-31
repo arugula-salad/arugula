@@ -3,7 +3,7 @@
   "commit": "2ab51953a325608e7f16020201b81c7ffcd37233",
   "branch": "main",
   "state": "red",
-  "at": "2026-10-31T00:21:53Z",
+  "at": "2026-10-31T00:40:55Z",
   "phases": {
     "lint": {
       "verdict": "pending",
@@ -29,8 +29,7 @@
       "build": "newest",
       "runs": [],
       "reason": "superseded",
-      "coveredBy": "8ffdee096bb73f92aca1cf930a83fa0c469c45bd",
-      "culprit": "1e00c112eba29f15cf5d08e1ea699c2786a1ff44"
+      "coveredBy": "8ffdee096bb73f92aca1cf930a83fa0c469c45bd"
     },
     "e2e": {
       "verdict": "unbuilt",
@@ -51,8 +50,7 @@
       "build": "newest",
       "runs": [],
       "reason": "superseded",
-      "coveredBy": "8ffdee096bb73f92aca1cf930a83fa0c469c45bd",
-      "culprit": "1e00c112eba29f15cf5d08e1ea699c2786a1ff44"
+      "coveredBy": "8ffdee096bb73f92aca1cf930a83fa0c469c45bd"
     },
     "windows": {
       "verdict": "fail",
