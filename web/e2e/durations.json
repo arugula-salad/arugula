@@ -1,4 +1,6 @@
 {
+  "a11y-platform.spec.ts": 57,
+  "a11y-shell.spec.ts": 21,
   "access-callers.spec.ts": 0.9,
   "access.spec.ts": 3.4,
   "account-delete.spec.ts": 18,
