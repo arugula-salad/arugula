@@ -1809,6 +1809,7 @@ impl Control {
     /// pinned. It publishes nothing and asks for no push subscriptions:
     /// control answers a hosted machine only there and on the relay.
     async fn refresh_hosted(&self, e: &Enrolled, number: u64) -> anyhow::Result<bool> {
+        let took = std::time::Instant::now();
         // Its dev servers show on control's block origins too (M186,
         // members' previews). It never follows a move: the release pins
         // control's URL.
@@ -1819,7 +1820,14 @@ impl Control {
         let changed = serde_json::to_value(&saved).ok() != serde_json::to_value(&e.saved).ok();
         let wrote = (changed || self.unsaved.load(std::sync::atomic::Ordering::SeqCst)) && self.save_or_say(&saved);
         let next = Enrolled::build(saved, e.keys.clone(), &self.acl, self.open_agents());
-        info!(devices = next.trusted.devices.len(), others = next.others.len(), changed, "hosted: project refreshed");
+        let took_ms = took.elapsed().as_millis() as u64;
+        info!(
+            devices = next.trusted.devices.len(),
+            others = next.others.len(),
+            changed,
+            took_ms,
+            "hosted: project refreshed"
+        );
         self.install(Some(next));
         self.refreshed.send_modify(|n| *n = (*n).max(number));
         Ok(wrote)
@@ -1865,6 +1873,7 @@ impl Control {
         if e.saved.hosted.is_some() {
             return self.refresh_hosted(&e, number).await;
         }
+        let took = std::time::Instant::now();
         let moved_to = self.where_control_is(&e.saved.url).await;
         // This machine's version, OS and arch (M100): control keeps them on
         // its row. An older control ignores them.
@@ -1986,7 +1995,15 @@ impl Control {
         // granted is reachable after this refresh, not the next.
         self.publish(&next).await;
         next.push = self.push_subs(&next).await;
-        info!(devices = next.trusted.devices.len(), others = next.others.len(), changed, "certificates refreshed");
+        // From the start, control's answers included.
+        let took_ms = took.elapsed().as_millis() as u64;
+        info!(
+            devices = next.trusted.devices.len(),
+            others = next.others.len(),
+            changed,
+            took_ms,
+            "certificates refreshed"
+        );
         self.install(Some(next));
         self.refreshed.send_modify(|n| *n = (*n).max(number));
         Ok(wrote)
