@@ -74,6 +74,25 @@ export function dragsFiles(e: DragEvent): boolean {
   return !!e.dataTransfer && [...e.dataTransfer.types].includes("Files");
 }
 
+const onMac = /Mac|iPhone|iPad/.test(navigator.platform);
+
+/** The key that opens the picker, as a tooltip writes it (#412): ⌘U on a
+ * Mac, Ctrl+U elsewhere (on a Mac Ctrl+U is a text field's kill-line). */
+export const attachHint = onMac ? "⌘U" : "Ctrl+U";
+
+/** A keydown on a composer's form: the picker's key opens that composer's
+ * file picker, so the thread's while a reply is being written and the room's
+ * otherwise. The page's own shortcut (view source) is taken only here, with
+ * focus in a composer. */
+export function attachKey(e: KeyboardEvent) {
+  if (e.code !== "KeyU" || e.shiftKey || e.altKey || e.isComposing) return;
+  if (onMac ? !e.metaKey || e.ctrlKey : !e.ctrlKey || e.metaKey) return;
+  const button = (e.currentTarget as HTMLElement).querySelector<HTMLButtonElement>("[data-attach-button]");
+  if (!button) return;
+  e.preventDefault();
+  button.click();
+}
+
 /** The 📎 button: opens the system's file picker. */
 export function AttachButton({ add }: { add: (files: File[]) => void }) {
   const input = useRef<HTMLInputElement>(null);
@@ -90,7 +109,7 @@ export function AttachButton({ add }: { add: (files: File[]) => void }) {
           e.currentTarget.value = "";
         }}
       />
-      <button type="button" class="compose-tool" title="Attach files" aria-label="Attach files" data-attach-button onClick={() => input.current?.click()}>
+      <button type="button" class="compose-tool" title={`Attach files (${attachHint})`} aria-label="Attach files" aria-keyshortcuts={onMac ? "Meta+U" : "Control+U"} data-attach-button onClick={() => input.current?.click()}>
         <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.4">
           <path d="M13.2 7.6l-5 5a3.2 3.2 0 0 1-4.5-4.5l5.3-5.3a2.1 2.1 0 0 1 3 3L6.6 11a1 1 0 0 1-1.5-1.5l4.7-4.7" stroke-linecap="round" stroke-linejoin="round" />
         </svg>

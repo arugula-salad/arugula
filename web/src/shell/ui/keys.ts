@@ -181,9 +181,13 @@ const table: Binding[] = [
     ...appKey("KeyU"),
     when: () => mac && !!appClient(),
     run: () => {
-      // The agent composer's 📎 when one has focus or is the active pane,
-      // else the active terminal's Attach file….
+      // A chat composer's 📎 when focus is in one (the thread's, else the
+      // room's of the chat block), else the agent composer's when one has
+      // focus or is the active pane, else the active terminal's Attach file….
       const c = appClient()!;
+      const chat = document.activeElement?.closest(".thread-compose") ?? document.activeElement?.closest("[data-chat-block]")?.querySelector(".thread-compose");
+      const chatAttach = chat?.querySelector<HTMLButtonElement>("[data-attach-button]");
+      if (chatAttach) return chatAttach.click();
       const pane = c.active();
       const el = pane === undefined ? null : document.querySelector(`[data-pane="${pane}"]`);
       const composer = document.activeElement?.closest(".agent-composer") ?? el?.querySelector(".agent-composer");

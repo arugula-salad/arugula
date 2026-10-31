@@ -30,7 +30,7 @@ import { EmojiPicker } from "./emoji-picker";
 import { MessagePreviews } from "./previews";
 import { hookFor, itemsOf, MsgItems, MsgMenu } from "./msg-actions";
 import { QUICK } from "./reactions";
-import { AttachButton, AttachChips, dragsFiles, filesOf, MessageFiles, useAttachments } from "./files-ui";
+import { AttachButton, attachKey, AttachChips, dragsFiles, filesOf, MessageFiles, useAttachments } from "./files-ui";
 import { PinnedMark, SystemLine } from "./pins-ui";
 // Pins (#119) fill the ⋯ menu's pin hook.
 import "./pins-hooks";
@@ -1028,6 +1028,7 @@ export function RoomCompose({
     <form
       class={`thread-compose${dropping ? " dropping" : ""}`}
       {...dropTarget(setDropping)}
+      onKeyDown={attachKey}
       onSubmit={(e) => {
         e.preventDefault();
         void send();
