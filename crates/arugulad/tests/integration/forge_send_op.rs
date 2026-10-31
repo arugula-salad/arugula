@@ -195,7 +195,7 @@ fn a_machine_sends_its_persons_draft_when_control_asks() {
     let ops = f.said.lock().unwrap().iter().find(|v| v["t"] == "ops").cloned().unwrap();
     assert_eq!(
         ops["ops"],
-        json!(["forge.send", "runs.start", "runs.revoke", "hosted.archive", "hosted.archive_blocks"])
+        json!(["forge.send", "runs.start", "runs.revoke", "hosted.archive", "hosted.archive_blocks", "agents.mention"])
     );
     assert_eq!(
         answer(&f, "mine").unwrap(),
