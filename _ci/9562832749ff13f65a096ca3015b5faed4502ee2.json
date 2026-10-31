@@ -3,12 +3,14 @@
   "commit": "9562832749ff13f65a096ca3015b5faed4502ee2",
   "branch": "main",
   "state": "pending",
-  "at": "2026-10-31T05:55:54Z",
+  "at": "2026-10-31T05:57:13Z",
   "phases": {
     "lint": {
-      "verdict": "pending",
+      "verdict": "unbuilt",
       "build": "newest",
-      "runs": []
+      "runs": [],
+      "reason": "superseded",
+      "coveredBy": "0b9922b3d929e85a229bc2096d82ff7a374e9661"
     },
     "build": {
       "verdict": "pending",
@@ -37,9 +39,11 @@
       "runs": []
     },
     "windows": {
-      "verdict": "pending",
+      "verdict": "unbuilt",
       "build": "newest",
-      "runs": []
+      "runs": [],
+      "reason": "superseded",
+      "coveredBy": "0b9922b3d929e85a229bc2096d82ff7a374e9661"
     }
   }
 }
