@@ -39,7 +39,7 @@ use crate::{
 use arugula_control_common::{ApiError, err};
 
 /// The reader's role in `project` now: none for a stranger.
-async fn role_in(app: &Platform, project: &str, account: &str) -> Result<Option<TeamRole>, ApiError> {
+pub(super) async fn role_in(app: &Platform, project: &str, account: &str) -> Result<Option<TeamRole>, ApiError> {
     let Some(p) = app.db.issue_project(project)? else { return Ok(None) };
     Ok(match (&p.account, &p.team) {
         (Some(a), _) => (a == account).then_some(TeamRole::Owner),

@@ -3,7 +3,7 @@
 // typed as a pointer. Plain functions, for the view and its tests
 // (scripts/boards.test.mjs).
 
-import type { BoardAsk, BoardAttachment, BoardBlockState, BoardBlockWord, BoardGroup, BoardLane, BoardMark, BoardProgress, BoardLive, BoardLiveState, BoardPointer, BoardProof, BoardRow, BoardView, BoardWorkItem, BoardZone, OnIssue } from "../proto";
+import type { BoardAsk, BoardAttachment, BoardBlockState, BoardBlockWord, BoardGroup, BoardLane, BoardMark, BoardProgress, BoardLive, BoardLiveState, BoardPointer, BoardProof, BoardRow, BoardRowRelation, BoardView, BoardWorkItem, BoardZone, RelationKind, OnIssue } from "../proto";
 import type { Tone } from "../ui/state-chip";
 
 /** A row's lane as its glyph. A row asking for input shows `?` instead. */
@@ -98,16 +98,43 @@ export function groupLine(p: Pick<BoardProgress, "done" | "total">): string {
 }
 
 /** What a row's marks say, for its card: `merged, not closed`; `after #1859`
- * for a PR stacked on another (the row waits for it); and the attachments of
- * agents that were replaced (`earlier`), which the card folds. */
-export function marksOf(r: Pick<BoardRow, "marks">): { merged: boolean; after: { words: string; repo?: string } | null; earlier: Set<string> } {
+ * for a PR stacked on another (the row waits for it); `blocked by #7` for each
+ * open blocker, or `blocked by something you can't see` when the reader may not
+ * read it (#403); and the attachments of agents that were replaced
+ * (`earlier`), which the card folds. */
+export function marksOf(r: Pick<BoardRow, "marks">): { merged: boolean; after: { words: string; repo?: string } | null; blocked: { words: string; title?: string; repo?: string }[]; earlier: Set<string> } {
   const marks: BoardMark[] = r.marks ?? [];
   const after = marks.find((m) => m.kind === "after");
   return {
     merged: marks.some((m) => m.kind === "merged_not_closed"),
     after: after && after.kind === "after" ? { words: `after #${after.number}`, repo: after.repo } : null,
+    blocked: marks.flatMap((m) => (m.kind === "blocked_by" ? [m.number === undefined ? { words: UNSEEN_BLOCKER } : { words: `blocked by #${m.number}`, title: m.title, repo: m.repo }] : [])),
     earlier: new Set(marks.flatMap((m) => (m.kind === "earlier" ? [m.attachment] : []))),
   };
+}
+
+/** What a row says of a blocker the reader may not read. */
+export const UNSEEN_BLOCKER = "blocked by something you can't see";
+
+/** The board header's count of rows that can start now: `3 ready` (#403). */
+export function readyCount(v: Pick<BoardView, "ready">): number {
+  return v.ready?.length ?? 0;
+}
+
+/** The kinds a person may relate by, with their words from the first item's side and the second's. */
+export const RELATION_KINDS: { kind: RelationKind; out: string; in: string }[] = [
+  { kind: "blocks", out: "Blocks", in: "Blocked by" },
+  { kind: "relates", out: "Relates to", in: "Relates to" },
+  { kind: "duplicate_of", out: "Duplicate of", in: "Duplicated by" },
+  { kind: "discovered_from", out: "Discovered from", in: "Led to" },
+];
+
+/** An edge of a row's item as the drawer says it: `Blocked by #7 Design`, or `Blocked by something you can't see` when the reader may not read the other end. */
+export function relationLine(x: Pick<BoardRowRelation, "kind" | "direction" | "other">): string {
+  const k = RELATION_KINDS.find((r) => r.kind === x.kind);
+  const lead = (x.direction === "out" ? k?.out : k?.in) ?? x.kind;
+  const other = x.other ? `#${x.other.number} ${x.other.title}`.trim() : "something you can't see";
+  return `${lead} ${other}`;
 }
 
 /** The fold's summary: `earlier agents (2)`. */

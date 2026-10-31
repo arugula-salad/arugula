@@ -359,7 +359,7 @@ export type BoardLiveState = "open" | "checks_running" | "checks_failed" | "merg
  * A note on a row that its lane doesn't say, worked out on every read and
  * never stored (aru-125, decisions 7 to 9).
  */
-export type BoardMark = { "kind": "merged_not_closed" } | { "kind": "after", number: number, repo?: string, } | { "kind": "earlier", attachment: string, };
+export type BoardMark = { "kind": "merged_not_closed" } | { "kind": "after", number: number, repo?: string, } | { "kind": "earlier", attachment: string, } | { "kind": "blocked_by", number?: number, title?: string, repo?: string, };
 
 /**
  * [`BOARD_ENTRY_MOVE`]'s body. A row moves to a group (`zone`) or, with
@@ -463,7 +463,7 @@ proof?: BoardProof,
 group?: string, 
 /**
  * What the lane doesn't say, in a fixed order: `merged_not_closed`,
- * `after`, then one `earlier` for each closed block.
+ * `after`, `blocked_by`, then one `earlier` for each closed block.
  */
 marks?: Array<BoardMark>, 
 /**
@@ -474,6 +474,10 @@ ask?: BoardAsk,
  * The last [`ASKED_SHOWN`] asks answered, newest first.
  */
 asked?: Array<BoardAnsweredAsk>, 
+/**
+ * The edges of the row's item, both ways, for the drawer.
+ */
+relations?: Array<BoardRowRelation>, 
 /**
  * A `fi_`, `iss_` or `run_` pointer's state now, when the reader may see the
  * item ([`BoardView`] is read with it; a write's answer has it too).
@@ -491,6 +495,28 @@ block?: BoardBlockState | null,
 agent?: ChatAgent | null, created_at: number, updated_at: number, };
 
 /**
+ * An edge of a row's item, as the reader sees it.
+ */
+export type BoardRowRelation = { 
+/**
+ * `rel_…`, to take it off.
+ */
+id: string, kind: RelationKind, direction: RelationDirection, source: RelationSource, 
+/**
+ * The item at the other end. Left out when the reader may not read it:
+ * the edge is "something you can't see", with no title or number.
+ */
+other?: BoardLive, 
+/**
+ * The `iss_` or `fi_` id of the item at the other end, with `other`.
+ */
+item?: string, 
+/**
+ * The reader may take it off: an owner or editor, and it was made here.
+ */
+removable: boolean, };
+
+/**
  * Where a row stands. `None` says nothing.
  */
 export type BoardStatus = "none" | "open" | "working" | "needs_input" | "done" | "failed";
@@ -506,6 +532,11 @@ export type BoardView = { board: ProjectBoard, zones: Array<BoardZone>,
  * Empty for a board with none; an old client ignores it.
  */
 groups: Array<BoardGroup>, 
+/**
+ * The ready set (Arugula #403): the rows (`row_…`) with an issue or a
+ * PR as their item that are in Next and have no open blocker.
+ */
+ready?: Array<string>, 
 /**
  * What a write did that the board alone doesn't say: a PR attached to
  * the row of the issue it closes, an item that was there already.
@@ -3700,6 +3731,24 @@ url?: string,
 path?: string, pin?: PinState, };
 
 export type Rect = { x: number, y: number, cols: number, rows: number, };
+
+/**
+ * Which end of an edge a row's item is.
+ */
+export type RelationDirection = "out" | "in";
+
+/**
+ * What an edge between two work items says (Arugula #403). Only `blocks`
+ * gates: it keeps the blocked item's row out of the ready set until the
+ * blocker is closed.
+ */
+export type RelationKind = "blocks" | "relates" | "duplicate_of" | "discovered_from";
+
+/**
+ * Who made an edge. `plane` and `github` edges are read from there, and
+ * Arugula doesn't change them.
+ */
+export type RelationSource = "person" | "agent" | "plane" | "github";
 
 /**
  * Where a remote block's pane lives (#17): a host in the home daemon's

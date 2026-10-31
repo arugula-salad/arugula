@@ -112,6 +112,7 @@ pub mod asks;
 pub mod auto;
 pub mod lanes;
 pub mod refs;
+pub mod relations;
 pub mod resolve;
 pub mod work;
 
@@ -648,13 +649,15 @@ fn assess(pointer: &wire::Pointer, attached: &[(wire::AttachRole, &wire::Pointer
 
 /// A row's marks (see [`wire::Mark`]): `merged_not_closed`; `after` the
 /// first open PR of the row (its own, then those attached) that is stacked
-/// on another, with the repo as `repo_of` says it; `earlier` for each
-/// closed block attached.
+/// on another, with the repo as `repo_of` says it; the `blocked` marks of
+/// its item's open blockers ([`relations`]); `earlier` for each closed
+/// block attached.
 fn marks_of(
     merged_not_closed: bool,
     pointer: &wire::Pointer,
     attachments: &[&db::Attached],
     facts: &Facts,
+    blocked: Vec<wire::Mark>,
     repo_of: &dyn Fn(&wire::Pointer) -> Option<String>,
 ) -> Vec<wire::Mark> {
     let mut marks = vec![];
@@ -669,6 +672,7 @@ fn marks_of(
     if let Some((number, repo)) = stacked {
         marks.push(wire::Mark::After { number, repo });
     }
+    marks.extend(blocked);
     marks.extend(
         attachments.iter().filter(|a| is_earlier(a, facts)).map(|a| wire::Mark::Earlier { attachment: a.id.clone() }),
     );
@@ -759,7 +763,12 @@ async fn read(app: &Platform, account: &str, id: &str) -> Result<wire::BoardView
     let mut board = stored.board.clone();
     name_boards(app, std::slice::from_mut(&mut board)).await?;
     progress(app, &project, std::slice::from_mut(&mut board)).await?;
-    let ids = Ids::of(stored.rows.iter().map(|r| &r.pointer).chain(stored.attachments.iter().map(|a| &a.pointer)));
+    let row_items: Vec<&str> = stored.rows.iter().filter_map(|r| item_id(&r.pointer)).collect();
+    let edges = relations::Edges::load(app, account, &project, &row_items).await?;
+    let others = edges.others(&row_items);
+    let ids = Ids::of(
+        stored.rows.iter().map(|r| &r.pointer).chain(stored.attachments.iter().map(|a| &a.pointer)).chain(&others),
+    );
     let live = chips(app, account, &project, &ids).await?;
     let blocks = block_states(app, &project, &ids.blocks).await?;
     let facts = facts(app, &project, &ids, &blocks)?;
@@ -783,6 +792,7 @@ async fn read(app: &Platform, account: &str, id: &str) -> Result<wire::BoardView
             rows: vec![],
         })
         .collect();
+    let mut ready: Vec<String> = vec![];
     let mut groups: Vec<wire::Group> = stored
         .groups
         .iter()
@@ -796,7 +806,15 @@ async fn read(app: &Platform, account: &str, id: &str) -> Result<wire::BoardView
         // The attachments of a replaced agent come last.
         let mut ordered = mine.clone();
         ordered.sort_by_key(|a| is_earlier(a, &facts));
-        let marks = marks_of(a.merged_not_closed, &e.pointer, &mine, &facts, &|p| chip(p).0.and_then(|l| l.repo));
+        let (relations, blocked) = match item_id(&e.pointer) {
+            Some(item) => edges.of(item, &facts, &live),
+            None => (vec![], vec![]),
+        };
+        if a.lane == wire::Lane::Next && item_id(&e.pointer).is_some() && blocked.is_empty() {
+            ready.push(e.id.clone());
+        }
+        let marks =
+            marks_of(a.merged_not_closed, &e.pointer, &mine, &facts, blocked, &|p| chip(p).0.and_then(|l| l.repo));
         let attachments: Vec<wire::Attachment> = ordered
             .iter()
             .map(|a| {
@@ -833,6 +851,7 @@ async fn read(app: &Platform, account: &str, id: &str) -> Result<wire::BoardView
             marks,
             ask,
             asked,
+            relations,
             live: row_live,
             block: row_block,
             agent: e
@@ -843,7 +862,7 @@ async fn read(app: &Platform, account: &str, id: &str) -> Result<wire::BoardView
             updated_at: e.updated_at,
         });
     }
-    Ok(wire::BoardView { board, zones, groups, said: None })
+    Ok(wire::BoardView { board, zones, groups, ready, said: None })
 }
 
 /// The board `id`, in `project`, changed: pages showing it read it again
@@ -1461,6 +1480,9 @@ pub async fn detach_route(
 #[cfg(test)]
 #[path = "boards_asks_tests.rs"]
 mod asks_tests;
+#[cfg(test)]
+#[path = "boards_relations_tests.rs"]
+mod relations_tests;
 #[cfg(test)]
 #[path = "boards_tests.rs"]
 mod tests;

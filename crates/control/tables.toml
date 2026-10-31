@@ -1407,6 +1407,17 @@ note = "Those of projects that go with it go, and those that name the account. W
 seen_by = ["litestream"]
 
 [[table]]
+name = "work_relations"
+plane = "platform"
+process = "platform"
+holds = "plaintext"
+what = "A typed edge between two work items of a project (Arugula #403): blocks, relates, duplicate_of or discovered_from, from an issue or a mirrored item to another, who made it (a person, an agent, or Plane or GitHub for an edge read from there), the account and the machine, and when. Only blocks gates a row's being ready."
+why_asleep = "A board says what a row waits for, and which rows can start, on a phone with every machine asleep."
+with_account = "partly"
+note = "Those of projects that go with it go. Where it only made one, its name goes."
+seen_by = ["litestream"]
+
+[[table]]
 name = "board_block_states"
 plane = "platform"
 process = "platform"

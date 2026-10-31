@@ -196,6 +196,30 @@ pub async fn ask(
     Ok(Json(super::asks::ask(&app, actor(&d), &id, &row, &n).await?))
 }
 
+/// `POST /api/daemon/projects/{project}/relations`: relate two items of the
+/// project (`issues.write` over it); the edge says an agent made it.
+pub async fn relate(
+    State(app): State<Arc<Platform>>,
+    d: Machine,
+    Path(project): Path<String>,
+    Json(n): Json<wire::NewRelation>,
+) -> J<wire::Relation> {
+    app.limits.check_daemon(AGENT_BOARD_WRITES, &d.daemon)?;
+    Ok(Json(super::relations::add(&app, actor(&d), &project, &n).await?))
+}
+
+/// `DELETE /api/daemon/projects/{project}/relations/{relation}`: a relation
+/// this machine's agents made.
+pub async fn unrelate(
+    State(app): State<Arc<Platform>>,
+    d: Machine,
+    Path((project, relation)): Path<(String, String)>,
+) -> J<serde_json::Value> {
+    app.limits.check_daemon(AGENT_BOARD_WRITES, &d.daemon)?;
+    super::relations::remove(&app, actor(&d), &project, &relation).await?;
+    Ok(Json(serde_json::json!({})))
+}
+
 /// `PUT /api/daemon/block-state`: the state of one of the signing machine's
 /// own agent blocks. The machine is the signer's, never the body's, so one
 /// machine can't set another's block. Refused (403) unless the machine holds

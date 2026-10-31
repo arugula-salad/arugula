@@ -4,7 +4,9 @@
 
 use std::sync::{Arc, Mutex};
 
-use super::{BoxFuture, Edit, Item, NewItem, Page, ProjectInfo, Result, TrackerError, TrackerProvider, Trackers};
+use super::{
+    BoxFuture, Edit, Item, NewItem, Page, ProjectInfo, Relations, Result, TrackerError, TrackerProvider, Trackers,
+};
 
 struct State {
     key: String,
@@ -17,6 +19,8 @@ struct State {
     refused: usize,
     /// What writes were sent, in order.
     sent: Vec<Sent>,
+    /// (blocker, blocked) as the tracker's ids.
+    blocks: Vec<(String, String)>,
 }
 
 /// A write the fake was sent, as it arrived: a body or comment is the HTML
@@ -50,13 +54,26 @@ struct Keyed {
 
 impl FakeTracker {
     pub fn new(key: &str, workspace: &str, project: ProjectInfo, items: Vec<Item>) -> Self {
-        let state =
-            State { key: key.into(), workspace: workspace.into(), project, items, page: 2, refused: 0, sent: vec![] };
+        let state = State {
+            key: key.into(),
+            workspace: workspace.into(),
+            project,
+            items,
+            page: 2,
+            refused: 0,
+            sent: vec![],
+            blocks: vec![],
+        };
         FakeTracker { state: Arc::new(Mutex::new(state)) }
     }
 
     pub fn set_items(&self, items: Vec<Item>) {
         self.state.lock().unwrap().items = items;
+    }
+
+    /// Which items block which, as (blocker, blocked) tracker ids.
+    pub fn set_blocks(&self, blocks: Vec<(&str, &str)>) {
+        self.state.lock().unwrap().blocks = blocks.into_iter().map(|(a, b)| (a.into(), b.into())).collect();
     }
 
     /// The writes sent so far.
@@ -149,6 +166,20 @@ impl TrackerProvider for Keyed {
         Box::pin(async move {
             let s = self.check(workspace)?;
             s.items.iter().find(|i| i.id == item).cloned().ok_or(TrackerError::NotFound)
+        })
+    }
+
+    fn relations<'a>(&'a self, workspace: &'a str, _: &'a str, item: &'a str) -> BoxFuture<'a, Result<Relations>> {
+        Box::pin(async move {
+            let s = self.check(workspace)?;
+            if !s.items.iter().any(|i| i.id == item) {
+                return Err(TrackerError::NotFound);
+            }
+            let ids = |pick: &dyn Fn(&(String, String)) -> Option<String>| s.blocks.iter().filter_map(pick).collect();
+            Ok(Relations {
+                blocked_by: ids(&|(a, b)| (b == item).then(|| a.clone())),
+                blocking: ids(&|(a, b)| (a == item).then(|| b.clone())),
+            })
         })
     }
 

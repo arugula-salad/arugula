@@ -32,6 +32,7 @@ pub mod billing;
 pub mod boards;
 pub mod boards_asks;
 pub mod boards_lanes;
+pub mod boards_relations;
 pub mod chat;
 pub mod chat_files;
 pub mod chat_people;
