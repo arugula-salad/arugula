@@ -169,6 +169,11 @@ export function PlaneConnections({ p }: { p: PlatformProject }) {
             open Workspace settings → Webhooks → Add webhook. Paste the URL, choose individual events and tick <b>Work items</b> only, and create it. Plane then shows a secret:
             paste it into the connection's Webhook cell here. Plane sends every project's events to one webhook, and Arugula ignores the other projects'.
           </p>
+          <p>
+            <a href="https://docs.arugula.io/plane/" target="_blank" rel="noreferrer">
+              More about Plane in Arugula
+            </a>
+          </p>
         </>
       }
     >
