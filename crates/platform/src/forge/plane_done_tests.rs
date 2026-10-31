@@ -151,11 +151,7 @@ async fn a_merged_pr_moves_the_plane_item_to_done() {
     assert_eq!(on(&v, &second).1["proof"], json!({ "by": "ci", "pointer": fi(&pr_id(&w.app, 70)) }), "{v}");
     let job = &w.jobs()[0];
     assert_eq!(job.state, "done");
-    assert_eq!(
-        job.checkpoint.as_ref().unwrap()["moved"],
-        "moved ARUGU-2 to Done: merged acme/site#70",
-        "{job:?}"
-    );
+    assert_eq!(job.checkpoint.as_ref().unwrap()["moved"], "moved ARUGU-2 to Done: merged acme/site#70", "{job:?}");
     assert_eq!(job.checkpoint.as_ref().unwrap()["by"], "bob", "bob is in the project");
 
     deliver(&w.app, "closed", &p, 10, true, BOB).await;

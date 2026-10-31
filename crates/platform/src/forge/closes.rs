@@ -26,11 +26,11 @@ use tracing::warn;
 use crate::{
     Platform,
     boards::refs::{Refs, references},
-    trackers::done,
     db::{
         forge::MergedPr,
         issues::{Actor, CloseReason, Patch, State},
     },
+    trackers::done,
 };
 
 /// Who an issue is closed as when no member of its project merged the PR:

@@ -709,8 +709,11 @@ async fn the_poller_moves_the_plane_item_a_merged_pr_names() {
     }
     let turn = poller::tick(&app, t).await.unwrap();
     assert!(matches!(turn, Some(poller::Turn::Done { backfill: true, .. })), "{turn:?}");
-    let jobs: Vec<String> =
-        app.db.c().query_map("SELECT id FROM platform_jobs WHERE kind = 'plane_done'", params![], |r| r.get(0)).unwrap();
+    let jobs: Vec<String> = app
+        .db
+        .c()
+        .query_map("SELECT id FROM platform_jobs WHERE kind = 'plane_done'", params![], |r| r.get(0))
+        .unwrap();
     assert_eq!(jobs.len(), 1, "one for the merged PR, none for the one closed unmerged: {jobs:?}");
     assert!(fake.sent().is_empty());
     let worker = Worker::new().with(Moves { app: app.clone() });
