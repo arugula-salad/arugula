@@ -10,7 +10,22 @@ import { useModal } from "./modal";
 const SETTLE_MS = 500;
 
 /** Over whatever panel is open. Cancel, or a click outside, keeps it. */
-export function ConfirmRemove({ title, children, label = "Remove", go, cancel }: { title: string; children: preact.ComponentChildren; label?: string; go: () => void; cancel: () => void }) {
+export function ConfirmRemove({
+  title,
+  children,
+  label = "Remove",
+  go,
+  cancel,
+  busy = false,
+}: {
+  title: string;
+  children: preact.ComponentChildren;
+  label?: string;
+  go: () => void;
+  cancel: () => void;
+  /** Not yet: what it needs is still coming (the button waits). */
+  busy?: boolean;
+}) {
   const [ready, setReady] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   // Over the dialog it came from: Escape cancels this one only (UI audit #150).
@@ -28,7 +43,7 @@ export function ConfirmRemove({ title, children, label = "Remove", go, cancel }:
           <button class="secondary" data-cancel-remove onClick={cancel}>
             Cancel
           </button>
-          <button class="primary danger" data-confirm-remove disabled={!ready} onClick={go}>
+          <button class="primary danger" data-confirm-remove disabled={!ready || busy} onClick={go}>
             {label}
           </button>
         </div>

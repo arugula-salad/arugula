@@ -19,6 +19,10 @@
 //!
 //! When it's done, the account's devices are reset as support's are
 //! (`Db::reset_account_devices`): the next browser enrolls as the first.
+//! Its passkeys are removed too, `by reset` in its passkey log
+//! (`Db::drop_passkeys_by_reset`, DK10 #393): the one way to remove a
+//! passkey without another's say-so, and what lets a GitHub sign-in add a
+//! first one again to an account that had one.
 
 use std::sync::Arc;
 
@@ -116,7 +120,7 @@ pub async fn start(State(app): State<Arc<App>>, s: PageSession) -> R {
         "A reset of your devices started",
         format!(
             "Someone signed in to your Arugula account with GitHub asked to reset its devices. It happens {}: \
-             every device and recovery code stops working, and the next browser that signs in becomes your first device.\n\n\
+             every device, passkey and recovery code stops working, and the next browser that signs in becomes your first device.\n\n\
              If this wasn't you, open Arugula control on any of your devices and cancel it under Devices and machines.",
             when(due)
         ),
@@ -134,7 +138,7 @@ pub async fn status(State(app): State<Arc<App>>, s: PageSession) -> R {
             &s.account,
             "reset-done",
             "Your devices were reset",
-            "Your Arugula account's devices were reset. Sign in with a browser to make it your first device, and keep the new recovery codes it shows.".into(),
+            "Your Arugula account's devices were reset, and its passkeys removed. Sign in with a browser to make it your first device, and keep the new recovery codes it shows; then add a passkey again.".into(),
         );
         return Ok(Json(json!({ "pending": null, "done": true })));
     }
@@ -301,15 +305,19 @@ mod tests {
     }
 
     /// Once due, the next read does it, and a browser that signs its own
-    /// certificate is the first device.
+    /// certificate is the first device. Its passkeys go too, `by reset`
+    /// (DK10, #393): what lets one be added again.
     #[tokio::test]
     async fn a_due_reset_is_done_on_the_next_read() {
         let (c, _) = with_mail().await;
         person(&c.app, "lex00", "a1");
+        c.app.db.add_passkey("pk1", "a1", -8, &[7; 32], 1).unwrap();
+        c.app.db.add_passkey("pk2", "a1", -8, &[8; 32], 1).unwrap();
         let starter = signed_in(&c, "a1", Via::Github, 0);
         c.as_person(&starter, "POST", "/api/me/reset", Some(json!({}))).await;
         let (_, v) = c.as_person(&starter, "GET", "/api/me/reset", None).await;
         assert_eq!(v["done"], false, "not due yet: {v}");
+        assert_eq!(c.app.db.passkey_count("a1").unwrap(), 2, "nor its passkeys");
         c.app.db.conn().execute("UPDATE reset_requests SET due = 1", []).unwrap();
 
         let k = DeviceKeys::generate();
@@ -320,5 +328,10 @@ mod tests {
         assert_eq!(c.app.db.last_reset("a1").unwrap().map(|r| r.1), Some("self-service".to_owned()));
         let (_, v) = c.as_person(&starter, "GET", "/api/me/reset", None).await;
         assert_eq!(v["pending"], serde_json::Value::Null, "{v}");
+        assert_eq!(c.app.db.passkey_count("a1").unwrap(), 0);
+        let log = c.app.db.passkey_log("a1").unwrap();
+        let removed: Vec<_> = log.events.iter().filter(|e| e.by == "reset").map(|e| e.credential.as_str()).collect();
+        assert_eq!(removed, ["pk1", "pk2"]);
+        assert_eq!(arugula_e2e::passkey::check_chain(&log), Ok(()));
     }
 }

@@ -5,7 +5,7 @@
 
 import { useEffect, useRef, useState } from "preact/hooks";
 import { UsageReports } from "../../shared/ui/account-telemetry";
-import { agentName, api, shownName, type ControlSession } from "../control";
+import { agentName, api, passkeyRemoval, passkeyRemove, shownName, type ControlSession, type PasskeyRemoval } from "../control";
 import { desktopApp } from "../../shared/desktop";
 import { BrowserStep, browserButton } from "../../shared/ui/browser-step";
 import { currentHand, lending, setLending } from "../hand";
@@ -71,6 +71,9 @@ export function passkeyName(k: Passkeys["passkeys"][number], i: number): string 
   return `Passkey ${i + 1}`;
 }
 
+/** Why the only passkey's Remove waits (DK10, #393). */
+const ONLY_PASSKEY = "Removing a passkey takes another of yours: add another passkey first.";
+
 /** Where linking GitHub comes back to: `#github-link=<what happened>`. */
 export const GITHUB_LINK_HASH = /^#github-link=([a-z-]+)$/;
 
@@ -103,8 +106,11 @@ export function AccountPanel({ s, close, linked, emailBack }: { s: ControlSessio
   const [keys, setKeys] = useState<Passkeys | null>(null);
   const [err, setErr] = useState("");
   const [confirming, setConfirming] = useState<string | null>(null);
-  // The passkey whose Remove was clicked: a dialog asks.
+  // The passkey whose Remove was clicked: a dialog asks, and another of
+  // the account's passkeys agrees (DK10, #393): what it signs, fetched as
+  // the dialog opens, or why not.
   const [removing, setRemoving] = useState<{ id: string; name: string } | null>(null);
+  const [removal, setRemoval] = useState<{ id: string; options?: PasskeyRemoval; err?: string } | null>(null);
   const [unlinking, setUnlinking] = useState(false);
   const [deleting, setDeleting] = useState(false);
   // The desktop app's window can't link GitHub or change passkeys, sign-ins
@@ -134,6 +140,16 @@ export function AccountPanel({ s, close, linked, emailBack }: { s: ControlSessio
     setErr("");
     setConfirming(null);
     f().then(load, (e: Error) => setErr(e.message));
+  };
+  // DK10: removing a passkey takes another, so the only one stays.
+  const onlyPasskey = keys?.passkeys.length === 1;
+  const askToRemove = (id: string, name: string) => {
+    setRemoving({ id, name });
+    setRemoval({ id });
+    passkeyRemoval(id).then(
+      (options) => setRemoval((r) => (r?.id === id ? { id, options } : r)),
+      (e: Error) => setRemoval((r) => (r?.id === id ? { id, err: e.message } : r)),
+    );
   };
   if (deleting) return <DeleteAccount s={s} back={() => setDeleting(false)} />;
   const others = (sessions ?? []).filter((x) => !x.current).length;
@@ -220,28 +236,48 @@ export function AccountPanel({ s, close, linked, emailBack }: { s: ControlSessio
                 <button
                   class="secondary danger small"
                   data-remove-passkey={k.id}
-                  disabled={waiting || (keys?.ways ?? 0) <= 1}
+                  disabled={waiting || onlyPasskey || (keys?.ways ?? 0) <= 1}
                   {...browserButton("Remove")}
-                  title={(keys?.ways ?? 0) <= 1 ? "Your only way to sign in" : app ? "Opens in your browser" : undefined}
-                  onClick={() => (app ? toBrowser("remove-passkey") : setRemoving({ id: k.id, name: passkeyName(k, i) }))}
+                  title={onlyPasskey ? ONLY_PASSKEY : (keys?.ways ?? 0) <= 1 ? "Your only way to sign in" : app ? "Opens in your browser" : undefined}
+                  onClick={() => (app ? toBrowser("remove-passkey") : askToRemove(k.id, passkeyName(k, i)))}
                 />
               </li>
             ))}
           </ul>
+          {onlyPasskey ? (
+            <p class="dim" data-only-passkey>
+              {ONLY_PASSKEY}
+            </p>
+          ) : null}
           {removing ? (
             <ConfirmRemove
               title={`Remove ${removing.name}?`}
-              cancel={() => setRemoving(null)}
+              busy={!(removal?.id === removing.id && removal.options)}
+              cancel={() => {
+                setRemoving(null);
+                setRemoval(null);
+              }}
               go={() => {
                 const id = removing.id;
+                const options = removal?.id === id ? removal.options : undefined;
+                if (!options) return;
                 setRemoving(null);
+                setRemoval(null);
                 act(async () => {
-                  await api(`/api/me/passkeys/${encodeURIComponent(id)}/remove`, {});
+                  await passkeyRemove(id, options);
                   await s.refreshMe();
                 });
               }}
             >
               <p>It stops signing you in at once. To use it again, add it as a new passkey.</p>
+              <p class="dim" data-remove-passkey-with>
+                Confirm with another of your passkeys: your browser asks for one when you press Remove.
+              </p>
+              {removal?.id === removing.id && removal.err ? (
+                <p class="control-error" data-remove-passkey-error>
+                  {removal.err}
+                </p>
+              ) : null}
             </ConfirmRemove>
           ) : null}
           {s.info.passkeys ? (

@@ -597,7 +597,13 @@ export async function passkeyRegister(name?: string, device?: PasskeySigner): Pr
 /** One of the account's passkeys agrees to the one made (`p`): control
  * keeps it then. Call it from a click. */
 export async function passkeyConfirm(p: PasskeyToConfirm): Promise<void> {
-  const o = p.options;
+  const step_up = await agreeWith(p.options);
+  await finishRegister({ ...p.finish, step_up }, p.prf);
+}
+
+/** One of the account's passkeys `o` offers signs its challenge: the
+ * assertion, as control takes it. */
+async function agreeWith(o: PasskeyToConfirm["options"]) {
   const got = (await navigator.credentials.get({
     publicKey: {
       challenge: unb64u(o.challenge),
@@ -609,13 +615,27 @@ export async function passkeyConfirm(p: PasskeyToConfirm): Promise<void> {
   })) as PublicKeyCredential | null;
   if (!got) throw new Error("no passkey chosen");
   const a = got.response as AuthenticatorAssertionResponse;
-  const step_up = {
+  return {
     id: b64u(got.rawId),
     clientDataJSON: b64u(a.clientDataJSON),
     authenticatorData: b64u(a.authenticatorData),
     signature: b64u(a.signature),
   };
-  await finishRegister({ ...p.finish, step_up }, p.prf);
+}
+
+/** What another of the account's passkeys signs to remove one (DK10,
+ * #393): its removal in the account's passkey log, and the others to
+ * choose from. Asked for as the dialog opens, so the click that confirms
+ * goes straight to the passkey. */
+export type PasskeyRemoval = PasskeyToConfirm["options"];
+
+export const passkeyRemoval = (id: string) => api<PasskeyRemoval>(`/api/me/passkeys/${encodeURIComponent(id)}/remove/start`, {});
+
+/** Another of the account's passkeys agrees, and control removes `id`
+ * (a session alone can't). Call it from a click. */
+export async function passkeyRemove(id: string, o: PasskeyRemoval): Promise<void> {
+  const assertion = await agreeWith(o);
+  await api(`/api/me/passkeys/${encodeURIComponent(id)}/remove`, { assertion });
 }
 
 async function finishRegister(body: Record<string, unknown>, prf: PrfOut | undefined) {

@@ -1260,23 +1260,31 @@ impl Db {
         )?)
     }
 
-    /// Remove a passkey, unless it's the account's last way to sign in
-    /// (checked in the same transaction), logged `by session` (DK3). Whether
-    /// it went.
-    pub fn drop_passkey(&self, account: &str, id: &str) -> anyhow::Result<Result<(), &'static str>> {
-        self.drop_passkey_as(account, id, None)
-    }
-
-    /// As [`Db::drop_passkey`], logged as `signed`: the removal event
-    /// [`Db::passkey_next_removal`] made, with another passkey's assertion
-    /// over it as its proof (`by passkey`, DK10 #393), which must still be
-    /// the log's next event.
+    /// Remove a passkey (DK10, #393), logged as `signed`: its removal event
+    /// as [`Db::passkey_next_removal`] made it, with another of the
+    /// account's passkeys' assertion over it as its proof (`by passkey`),
+    /// which must still be the log's next event. Never the account's last
+    /// way to sign in (checked in the same transaction). A session alone
+    /// can't remove one: only aru-119's reset drops passkeys without a
+    /// passkey's say-so ([`Db::drop_passkeys_by_reset`]). Whether it went,
+    /// or why not.
     pub fn drop_passkey_as(
         &self,
         account: &str,
         id: &str,
-        signed: Option<arugula_e2e::passkey::Event>,
+        signed: arugula_e2e::passkey::Event,
     ) -> anyhow::Result<Result<(), &'static str>> {
+        if signed.account != account
+            || signed.credential != id
+            || signed.event != arugula_e2e::passkey::Change::Removed
+            || signed.by != "passkey"
+        {
+            return Ok(Err("that removal is another passkey's"));
+        }
+        // Another passkey's: none signs its own removal.
+        if signed.proof.as_ref().is_none_or(|p| p.id == id) {
+            return Ok(Err("use another of your passkeys to remove this one"));
+        }
         let mut c = self.c();
         let tx = c.transaction()?;
         let ways: u64 = tx.query_row(
@@ -1299,31 +1307,52 @@ impl Db {
             "DELETE FROM identities WHERE provider = 'passkey' AND subject = ?2 AND account = ?1",
             params![account, id],
         )?;
-        // Its log says so (DK3): a signed-in page removed it, or (DK10,
-        // #393) another passkey signed its removal.
-        match signed {
-            Some(e) => {
-                if e.account != account || e.credential != id || e.event != arugula_e2e::passkey::Change::Removed {
-                    return Ok(Err("that removal is another passkey's"));
-                }
-                match passkey_log::append(&tx, e, true)? {
-                    Ok(_) => {}
-                    Err(passkey_log::NotAppended::Moved) => {
-                        return Ok(Err("the account's passkeys changed meanwhile: remove it again"));
-                    }
-                    Err(passkey_log::NotAppended::Breaks) => {
-                        return Ok(Err("that passkey's assertion doesn't confirm this removal"));
-                    }
-                }
+        // Its log says so, with the proof: the log checks it's a live
+        // passkey's, over this event (`check_chain`).
+        match passkey_log::append(&tx, signed, true)? {
+            Ok(_) => {}
+            Err(passkey_log::NotAppended::Moved) => {
+                return Ok(Err("the account's passkeys changed meanwhile: remove it again"));
             }
-            None => {
-                if !passkey_log::remove(&tx, account, id, arugula_e2e::now_ms(), "session")? {
-                    tracing::warn!(account, "a passkey removed that its log didn't have");
-                }
+            Err(passkey_log::NotAppended::Breaks) => {
+                return Ok(Err("that passkey's assertion doesn't confirm this removal"));
             }
         }
         tx.commit()?;
         Ok(Ok(()))
+    }
+
+    /// aru-119's reset, once done, drops every passkey of the account,
+    /// logged `by reset` (DK10, #393): how a person who lost theirs gets to
+    /// add a first one again. Not for an account without GitHub, whose
+    /// passkeys are its only way in. How many went.
+    pub fn drop_passkeys_by_reset(&self, account: &str, now: u64) -> anyhow::Result<usize> {
+        let mut c = self.c();
+        let tx = c.transaction()?;
+        let github: bool = tx.query_row(
+            "SELECT EXISTS (SELECT 1 FROM identities WHERE account = ?1 AND provider = 'github')",
+            params![account],
+            |r| r.get(0),
+        )?;
+        if !github {
+            return Ok(0);
+        }
+        let ids: Vec<String> = {
+            let mut q = tx.prepare("SELECT id FROM passkeys WHERE account = ?1 ORDER BY created, id")?;
+            q.query_map(params![account], |r| r.get(0))?.collect::<Result<_, _>>()?
+        };
+        for id in &ids {
+            tx.execute("DELETE FROM passkeys WHERE id = ?2 AND account = ?1", params![account, id])?;
+            tx.execute(
+                "DELETE FROM identities WHERE provider = 'passkey' AND subject = ?2 AND account = ?1",
+                params![account, id],
+            )?;
+            if !passkey_log::remove(&tx, account, id, now, "reset")? {
+                tracing::warn!(account, "a passkey reset away that its log didn't have");
+            }
+        }
+        tx.commit()?;
+        Ok(ids.len())
     }
 
     // ---- devices

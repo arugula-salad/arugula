@@ -94,7 +94,7 @@ export function ResetOffer() {
             <b>Reset your devices.</b> After a 48-hour wait, this browser becomes your account's first device. Before you start:
           </p>
           <ul>
-            <li>Every device and recovery code you have stops working.</li>
+            <li>Every device, passkey and recovery code you have stops working.</li>
             <li>Each machine is dropped, and you join it again on the machine.</li>
             <li>Teammates see that your key changed, and check it again.</li>
             <li>Anything end to end encrypted to your old devices can't be read.</li>

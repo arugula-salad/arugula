@@ -1606,7 +1606,14 @@ anyone. Never from the desktop app's window (`sessions.via = app`), and:
   the new passkey's id and the registration's challenge
   (`arugula add passkey device v1`);
 - an account with none: a browser or a phone of its signs, as above, or
-  the session is a GitHub sign-in from the last ten minutes. The page says
+  the session is a GitHub sign-in from the last ten minutes. GitHub's word
+  is enough only for an account that never had a passkey (its passkey log
+  is empty; for an account made before the log began, also no passkey
+  sign-in on record), or once aru-119's reset has run since it last had
+  one: then the passkey is logged `by reset` (DK10, #393). Otherwise
+  control refuses with `reason: "reset"`: add it from a browser or a
+  phone of the account's, or start a reset (48 hours, announced to every
+  device and the email, cancellable by any device). The page says
   which device it is as it starts; when that one can't sign (no browser,
   or browsers an app window approved before #1343, which don't count), the
   page sends the person through GitHub
@@ -1619,13 +1626,33 @@ anyone. Never from the desktop app's window (`sessions.via = app`), and:
   signed in and its User-Agent (what a session says its device is is a
   claim), and the passkey keeps both.
 
+**Removing a passkey takes another** (DK10, #393, aru-126). A session
+alone can't, or someone holding the GitHub account (or a stolen session)
+could remove every passkey, add their own as a "first" one, and approve.
+`POST /api/me/passkeys/{id}/remove/start` makes the removal's event in the
+account's passkey log and answers `webauthn.get` options: its challenge
+is SHA-256 of that event's body, `allowCredentials` the account's other
+passkeys. One of them signs it, with user verification, and
+`POST /api/me/passkeys/{id}/remove {assertion}` checks it against the log
+and appends the event with the assertion as its proof (`by passkey`), so
+anyone can check the removal later. Without an assertion it's 403
+`remove_with_passkey` ("use another of your passkeys to remove this
+one"); a passkey can't sign its own removal. The last passkey can't be
+removed at all, as there's no other to sign: 409 `last_passkey` ("add
+another passkey first, or start a reset"), and the page disables its
+Remove and says why. Never from the desktop app's window. The one way to
+drop passkeys without another's say-so is aru-119's reset: when it's
+done, every passkey of the account is removed `by reset` (for an account
+with GitHub linked; passkeys that are its only way in stay), and the
+next first passkey from a fresh GitHub sign-in is logged `by reset`.
+
 **The passkey log** (DK3, aru-126, `db/passkey_log.rs`). Every passkey
 added to or removed from an account is an event in the account's passkey
 log: its credential id, public key, RP, its authenticator's AAGUID, when,
 and what let it happen (`by`: another passkey, whose assertion over the
 event is kept as its proof; or what control vouches for: `signup`,
-`github`, `device <id>`, `session` for a removal by a signed-in page,
-`reset`, `deleted` when the account goes, and `backfill <ms>` for passkeys
+`github`, `device <id>`, `session` for a removal by a signed-in page
+before DK10, `reset`, `deleted` when the account goes, and `backfill <ms>` for passkeys
 from before the log, whose RP may name each of control's sites, since
 which one wasn't kept). Each event hashes the one before, as
 `deploy_events` do (aru-103); triggers refuse an update or a delete, and

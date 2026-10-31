@@ -90,7 +90,8 @@ impl Db {
     }
 
     /// The pending reset, once it's due: done (its devices reset, as
-    /// support's is, `by` `self-service`). Whether it was.
+    /// support's is, `by` `self-service`), and its passkeys dropped
+    /// ([`Db::drop_passkeys_by_reset`]). Whether it was.
     pub fn finish_due_reset(&self, account: &str, now: u64) -> anyhow::Result<bool> {
         let Some(p) = self.pending_reset(account)? else { return Ok(false) };
         if p.due > now {
@@ -104,6 +105,9 @@ impl Db {
             return Ok(false);
         }
         self.reset_account_devices(account, "self-service", "asked for on the approval screen, after the wait", now)?;
+        // Its passkeys too (DK10, #393, aru-119 as amended): the one way to
+        // drop them without another passkey, so one can be added again.
+        self.drop_passkeys_by_reset(account, now)?;
         Ok(true)
     }
 }

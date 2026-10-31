@@ -32,7 +32,16 @@
 //!   as it starts, and control sends the person through GitHub again when
 //!   it can't sign and the sign-in is older (`reason: "reauth"`). Browsers
 //!   an app window approved before #1343 can't sign, so their accounts go
-//!   through GitHub.
+//!   through GitHub. GitHub's word is enough only for an account that never
+//!   had a passkey, or whose passkeys aru-119's reset dropped since
+//!   (DK10, #393, [`github_first`]); otherwise `reason: "reset"`.
+//!
+//! **Removing one takes another** (DK10, #393, aru-126): a `webauthn.get`
+//! with user verification, from another of the account's passkeys, over
+//! the removal's event in the log, kept as its proof
+//! ([`remove_start`], [`remove`]). A session alone can't, and the last
+//! passkey can't be removed at all: only aru-119's reset drops passkeys
+//! without one (`Db::drop_passkeys_by_reset`).
 //!
 //! Every device of the account hears of it (a push), and the passkey keeps
 //! which device's sign-in added it, and which sign-in. Only the page does
@@ -104,6 +113,12 @@ enum Purpose {
     /// one's `added` event, made for its place in the log, which the
     /// assertion signs and which goes in the log with it as its proof.
     AddPasskey {
+        event: Box<Event>,
+    },
+    /// Another of the account's passkeys agreeing to remove one (DK10):
+    /// its `removed` event, made for its place in the log, which the
+    /// assertion signs and which goes in the log with it as its proof.
+    RemovePasskey {
         event: Box<Event>,
     },
 }
@@ -202,6 +217,33 @@ pub(crate) fn fresh_github(info: &SessionInfo) -> bool {
     info.via.as_deref() == Some(auth::Via::Github.as_str()) && now_ms().saturating_sub(info.created) <= REAUTH_MS
 }
 
+/// The refusal's code when a GitHub sign-in can't add a first passkey
+/// because the account had one (DK10).
+pub const RESET: &str = "reset";
+
+/// What a fresh GitHub sign-in may log a first passkey as (DK10, #393;
+/// aru-119 as amended): `github` for an account that never had one,
+/// `reset` once aru-119's reset was done after it last had one, else
+/// nothing: it takes a reset.
+fn github_first(app: &App, account: &str) -> anyhow::Result<Option<&'static str>> {
+    let Some(had) = app.db.passkey_last_seen(account)? else { return Ok(Some("github")) };
+    let reset = app.db.last_reset(account)?.is_some_and(|(at, _)| at >= had)
+        || app.db.passkey_log(account)?.events.last().is_some_and(|e| e.event == Change::Removed && e.by == "reset");
+    Ok(reset.then_some("reset"))
+}
+
+/// A GitHub sign-in can't add a first passkey to an account that had one.
+fn take_a_reset(browsers: bool) -> ApiError {
+    let instead = if browsers { "add it from a browser or a phone that's one of your devices, or " } else { "" };
+    refusal(
+        StatusCode::FORBIDDEN,
+        RESET,
+        &format!(
+            "this account has had a passkey, so a GitHub sign-in can't add a first one at once: {instead}start a reset (it takes 48 hours, and any of your devices can cancel it)"
+        ),
+    )
+}
+
 fn reauth() -> ApiError {
     refusal(
         StatusCode::FORBIDDEN,
@@ -252,9 +294,19 @@ pub async fn register_start(
     // whose browsers all came that way signs in with GitHub again.
     let this_page = body.as_ref().and_then(|b| b.device.as_deref());
     let page_signs = this_page.is_some_and(|d| browsers.iter().any(|c| c.device == d));
-    let first_by_github = have.is_empty() && session.as_ref().is_some_and(|(_, i)| fresh_github(i));
+    // DK10: GitHub's word adds a first one only to an account that never
+    // had one, or after aru-119's reset.
+    let github_may = match (&account, have.is_empty()) {
+        (Some(a), true) => github_first(&app, a)?.is_some(),
+        _ => false,
+    };
+    let first_by_github = github_may && session.as_ref().is_some_and(|(_, i)| fresh_github(i));
     if let Some((_, info)) = &session {
         from_app(info)?;
+        // (Before asking for GitHub again: it wouldn't do.)
+        if have.is_empty() && !page_signs && !github_may {
+            return Err(take_a_reset(!browsers.is_empty()));
+        }
         if have.is_empty() && !page_signs && !fresh_github(info) {
             return Err(reauth());
         }
@@ -613,7 +665,9 @@ async fn register(
             made.draft(&account, site, &format!("device {d}")).after(None),
             false,
         )?,
-        Some(_) => app.db.add_passkey_logged(&made.public, made.draft(&account, site, "github").after(None), false)?,
+        Some(Vouch { github, .. }) => {
+            app.db.add_passkey_logged(&made.public, made.draft(&account, site, github).after(None), false)?
+        }
         None => app.db.add_passkey_logged(&made.public, made.draft(&account, site, "signup").after(None), false)?,
     };
     if let Err(why) = logged {
@@ -648,6 +702,9 @@ async fn register(
 struct Vouch {
     device: Option<String>,
     proof: Option<Box<Event>>,
+    /// With neither, what the GitHub sign-in's first passkey is logged
+    /// `by`: `github`, or `reset` after aru-119's reset (DK10).
+    github: &'static str,
 }
 
 /// Adding `made` to `account` (registered over `challenge`), which `info`
@@ -686,10 +743,16 @@ fn confirm_adding(
     // A first one: a browser or a phone signed for it, or the session is a
     // fresh GitHub sign-in.
     if have.is_empty() {
-        if signed.is_none() && !fresh_github(info) {
+        if signed.is_some() {
+            return Ok(Vouch { device, proof: None, github: "github" });
+        }
+        // DK10: GitHub's word only for an account that never had one, or
+        // after aru-119's reset.
+        let Some(by) = github_first(app, account)? else { return Err(take_a_reset(!browsers.is_empty())) };
+        if !fresh_github(info) {
             return Err(reauth());
         }
-        return Ok(Vouch { device, proof: None });
+        return Ok(Vouch { device, proof: None, github: by });
     }
     if !browsers.is_empty() && signed.is_none() {
         return Err(refusal(
@@ -722,7 +785,7 @@ fn confirm_adding(
         return Err(no());
     }
     app.db.passkey_used(&a.id, count, now_ms())?;
-    Ok(Vouch { device, proof: Some(Box::new(event.with_proof(a.e2e()))) })
+    Ok(Vouch { device, proof: Some(Box::new(event.with_proof(a.e2e()))), github: "github" })
 }
 
 /// Every device of the account hears that a passkey was added: by the
@@ -749,6 +812,107 @@ fn tell_devices(app: &Arc<App>, account: &str, device: Option<&str>, info: &Sess
         "A passkey was added to your account".into(),
         format!("{what} was added from {from}. Not you? Remove it under Sign-in, and the device that added it."),
     );
+}
+
+/// Removing your only passkey: there's no other to sign.
+fn last_passkey() -> ApiError {
+    refusal(
+        StatusCode::CONFLICT,
+        "last_passkey",
+        "that's your only passkey, and removing one takes another: add another passkey first, or start a reset",
+    )
+}
+
+/// A session alone can't remove a passkey.
+fn another_passkey() -> ApiError {
+    refusal(StatusCode::FORBIDDEN, "remove_with_passkey", "use another of your passkeys to remove this one")
+}
+
+/// `POST /api/me/passkeys/{id}/remove/start` (DK10, #393): the
+/// `webauthn.get` options another of the account's passkeys signs to
+/// remove `id`: a challenge that is its `removed` event in the account's
+/// log (SHA-256 of its body), and the account's other passkeys to choose
+/// from. Never the account's last passkey.
+pub async fn remove_start(
+    State(app): State<Arc<App>>,
+    headers: HeaderMap,
+    s: auth::PageSession,
+    axum::extract::Path(id): axum::extract::Path<String>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    s.not_app(&app)?;
+    let have = app.db.passkey_ids(&s.account)?;
+    if !have.contains(&id) {
+        return Err(err(StatusCode::NOT_FOUND, "no such passkey"));
+    }
+    let others: Vec<&String> = have.iter().filter(|k| **k != id).collect();
+    if others.is_empty() {
+        return Err(last_passkey());
+    }
+    let event = app.db.passkey_next_removal(&s.account, &id, "passkey")?.ok_or_else(|| {
+        err(StatusCode::CONFLICT, "that passkey isn't in your passkey log: start a reset to remove it")
+    })?;
+    let challenge = event.challenge();
+    app.passkeys.issue_as(challenge.clone(), Purpose::RemovePasskey { event: Box::new(event) });
+    Ok(Json(json!({
+        "challenge": challenge,
+        "rpId": rp_id(app.cfg.site(&headers)),
+        "userVerification": "required",
+        "timeout": CHALLENGE_TTL_MS,
+        "allowCredentials": others.iter().map(|id| json!({ "type": "public-key", "id": id })).collect::<Vec<_>>(),
+    })))
+}
+
+#[derive(Deserialize, Default)]
+pub struct Remove {
+    /// Another of the account's passkeys agreeing ([`remove_start`]'s
+    /// challenge). Without it, refused: a session alone can't.
+    #[serde(default)]
+    assertion: Option<Assertion>,
+}
+
+/// `POST /api/me/passkeys/{id}/remove {assertion}` (DK10, #393): remove a
+/// passkey with another's say-so, kept in the account's passkey log as the
+/// removal's proof. Never from the desktop app's window, never the last
+/// passkey, and never on a session alone (403 `remove_with_passkey`).
+pub async fn remove(
+    State(app): State<Arc<App>>,
+    headers: HeaderMap,
+    s: auth::PageSession,
+    axum::extract::Path(id): axum::extract::Path<String>,
+    body: Option<Json<Remove>>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    s.not_app(&app)?;
+    let have = app.db.passkey_ids(&s.account)?;
+    if !have.contains(&id) {
+        return Err(err(StatusCode::NOT_FOUND, "no such passkey"));
+    }
+    if have.len() < 2 {
+        return Err(last_passkey());
+    }
+    let a = body.and_then(|Json(b)| b.assertion).ok_or_else(another_passkey)?;
+    let site = app.cfg.site(&headers);
+    let (cd, _) = client_data(site, &a.client_data, "webauthn.get")?;
+    let event = match app.passkeys.take(&cd.challenge) {
+        Some(Purpose::RemovePasskey { event }) if event.account == s.account && event.credential == id => event,
+        _ => return Err(bad("that request expired; try again")),
+    };
+    if a.id == id {
+        return Err(another_passkey());
+    }
+    let (pk, count) = asserted(&app, site, &a, &cd.challenge)?;
+    if pk.account != s.account {
+        return Err(another_passkey());
+    }
+    match app.db.drop_passkey_as(&s.account, &id, event.with_proof(a.e2e()))? {
+        Ok(()) => {
+            app.db.passkey_used(&a.id, count, now_ms())?;
+            tracing::info!(account = s.account, "passkey removed, by another");
+            app.analytics.capture(&s.account, "passkey removed", json!({}));
+            Ok(Json(json!({ "passkeys": app.db.passkey_count(&s.account)? })))
+        }
+        Err(why @ "no such passkey") => Err(err(StatusCode::NOT_FOUND, why)),
+        Err(why) => Err(err(StatusCode::CONFLICT, why)),
+    }
 }
 
 pub async fn login_start(
@@ -1393,6 +1557,8 @@ mod tests {
             })
             .unwrap();
         assert_eq!(added, (None, Some(session.to_owned())));
+        // DK10: the account never had one, so GitHub's word is enough (#1386).
+        assert_eq!(app.db.passkey_log("acct-fresh").unwrap().events[0].by, "github");
         // Its GitHub sign-in went stale before it finished: refused there too.
         let h = signed_in(&app, "acct-slow", auth::Via::Github, 0);
         let opts = start(&app, &h).await.unwrap();
@@ -1487,17 +1653,139 @@ mod tests {
         assert!(app.db.passkey(&late.id()).unwrap().is_none(), "and it wasn't added");
     }
 
-    /// DK3: a passkey removed by a page, and the rest when the account goes,
+    /// The page's session, from its headers.
+    fn page(h: &HeaderMap, account: &str) -> auth::PageSession {
+        let token_hash = auth::hash(auth::cookie(h, auth::SESSION_COOKIE).unwrap());
+        auth::PageSession { account: account.to_owned(), token_hash }
+    }
+
+    async fn removal(app: &Arc<App>, h: &HeaderMap, account: &str, id: &str) -> Result<serde_json::Value, ApiError> {
+        remove_start(State(app.clone()), h.clone(), page(h, account), axum::extract::Path(id.to_owned()))
+            .await
+            .map(|j| j.0)
+    }
+
+    async fn remove_with(
+        app: &Arc<App>,
+        h: &HeaderMap,
+        account: &str,
+        id: &str,
+        assertion: Option<Assertion>,
+    ) -> Result<serde_json::Value, ApiError> {
+        let body = Some(Json(Remove { assertion }));
+        remove(State(app.clone()), h.clone(), page(h, account), axum::extract::Path(id.to_owned()), body)
+            .await
+            .map(|j| j.0)
+    }
+
+    /// DK10 (#393): a session alone can't remove a passkey; another of the
+    /// account's passkeys can, over the removal's event, which goes in the
+    /// log with its assertion as the proof. The last one can't be removed.
+    #[tokio::test]
+    async fn removing_a_passkey_takes_another() {
+        let app = App::for_tests(ORIGIN).start();
+        let h = signed_in(&app, "acct-d", auth::Via::Github, 0);
+        let (a, b) = (Authn::new(70), Authn::new(71));
+        for k in [&a, &b] {
+            app.db.add_passkey(&k.id(), "acct-d", EDDSA, &k.key.verifying_key().to_bytes(), 1).unwrap();
+        }
+        let theirs = Authn::new(72);
+        app.db.account_for("github", "gh-acct-e", "e", "acct-e", 1).unwrap();
+        app.db.add_passkey(&theirs.id(), "acct-e", EDDSA, &theirs.key.verifying_key().to_bytes(), 1).unwrap();
+
+        // A session alone: refused, saying what to do.
+        let e = remove_with(&app, &h, "acct-d", &a.id(), None).await.unwrap_err();
+        assert_eq!((e.0, e.2), (StatusCode::FORBIDDEN, Some("remove_with_passkey")));
+        assert_eq!(e.1, "use another of your passkeys to remove this one");
+        let ch = |app: &Arc<App>| {
+            let (app, h, id) = (app.clone(), h.clone(), a.id());
+            async move { removal(&app, &h, "acct-d", &id).await.unwrap()["challenge"].as_str().unwrap().to_owned() }
+        };
+        let opts = removal(&app, &h, "acct-d", &a.id()).await.unwrap();
+        assert_eq!(opts["allowCredentials"], json!([{ "type": "public-key", "id": b.id() }]), "the others");
+        // Not the passkey itself, another account's, one without user
+        // verification, or over another challenge.
+        let tries = [
+            (a.get(&ch(&app).await, UP | UV, json!({})), "itself"),
+            (theirs.get(&ch(&app).await, UP | UV, json!({})), "another account's"),
+            (b.get(&ch(&app).await, UP, json!({})), "no user verification"),
+            (b.get("bm90IG91cnM", UP | UV, json!({})), "not a challenge control made"),
+        ];
+        for (t, why) in tries {
+            assert!(remove_with(&app, &h, "acct-d", &a.id(), Some(t)).await.is_err(), "{why}");
+        }
+        assert_eq!(app.db.passkey_count("acct-d").unwrap(), 2, "nothing removed");
+        // Another of its own: removed, and logged with its proof.
+        let c = ch(&app).await;
+        let proof = b.get(&c, UP | UV, json!({}));
+        assert_eq!(remove_with(&app, &h, "acct-d", &a.id(), Some(proof.clone())).await.unwrap()["passkeys"], 1);
+        let log = app.db.passkey_log("acct-d").unwrap();
+        let last = log.events.last().unwrap();
+        assert_eq!(
+            (last.event, last.credential.as_str(), last.by.as_str()),
+            (Change::Removed, a.id().as_str(), "passkey")
+        );
+        assert_eq!(last.proof, Some(proof.e2e()));
+        assert_eq!(last.challenge(), c, "the passkey signed the removal");
+        assert_eq!(arugula_e2e::passkey::check_chain(&log), Ok(()));
+        // The last one: there's no other to sign, so not with a passkey either.
+        for e in [
+            removal(&app, &h, "acct-d", &b.id()).await.unwrap_err(),
+            remove_with(&app, &h, "acct-d", &b.id(), None).await.unwrap_err(),
+        ] {
+            assert_eq!((e.0, e.2), (StatusCode::CONFLICT, Some("last_passkey")));
+            assert!(e.1.contains("add another passkey first, or start a reset"), "{}", e.1);
+        }
+        assert_eq!(app.db.passkey_count("acct-d").unwrap(), 1);
+    }
+
+    /// DK10 (#393): a fresh GitHub sign-in adds a first passkey at once
+    /// only to an account that never had one. One that had one and has
+    /// none left waits for aru-119's reset, and the passkey is logged `by
+    /// reset`.
+    #[tokio::test]
+    async fn a_first_passkey_again_takes_a_reset() {
+        let app = App::for_tests(ORIGIN).start();
+        let h = signed_in(&app, "acct-h", auth::Via::Github, 0);
+        let old = Authn::new(90);
+        app.db.add_passkey(&old.id(), "acct-h", EDDSA, &old.key.verifying_key().to_bytes(), 1).unwrap();
+        // As a signed-in page could remove it before DK10.
+        app.db.drop_passkey_by_session("acct-h", &old.id()).unwrap();
+        let e = start(&app, &h).await.unwrap_err();
+        assert_eq!((e.0, e.2), (StatusCode::FORBIDDEN, Some(RESET)));
+        assert!(e.1.contains("start a reset"), "{}", e.1);
+        // Nor at the end, with a challenge from before.
+        let challenge = app.passkeys.issue(Purpose::Register { account: Some("acct-h".into()), name: String::new() });
+        let r = register(&app, &h, Authn::new(91).create(&challenge, None)).await;
+        assert_eq!(r.map_err(reason).err(), Some(Some(RESET)));
+        assert_eq!(app.db.passkey_count("acct-h").unwrap(), 0);
+        // aru-119's reset, once its wait is over: then GitHub's word adds one.
+        app.db.start_reset("acct-h", "x", 1, 2).unwrap();
+        assert!(app.db.finish_due_reset("acct-h", now_ms()).unwrap());
+        let opts = start(&app, &h).await.unwrap();
+        let new = Authn::new(92);
+        register(&app, &h, new.create(opts["challenge"].as_str().unwrap(), None)).await.unwrap();
+        let log = app.db.passkey_log("acct-h").unwrap();
+        let last = log.events.last().unwrap();
+        assert_eq!(
+            (last.event, last.credential.as_str(), last.by.as_str()),
+            (Change::Added, new.id().as_str(), "reset")
+        );
+        assert_eq!(arugula_e2e::passkey::check_chain(&log), Ok(()));
+    }
+
+    /// DK3: a passkey another removed, and the rest when the account goes,
     /// are removals in its log, which stays, and anyone may read it; an
     /// approval made before still checks out against it, and not after.
     #[tokio::test]
     async fn the_log_outlives_removals_and_the_account() {
         let app = App::for_tests(ORIGIN).start();
-        app.db.account_for("github", "gh-acct-r", "r", "acct-r", 1).unwrap();
+        let h = signed_in(&app, "acct-r", auth::Via::Github, 0);
         let (a, b) = (Authn::new(60), Authn::new(61));
         app.db.add_passkey(&a.id(), "acct-r", EDDSA, &a.key.verifying_key().to_bytes(), 1).unwrap();
         app.db.add_passkey(&b.id(), "acct-r", EDDSA, &b.key.verifying_key().to_bytes(), 2).unwrap();
-        app.db.drop_passkey("acct-r", &a.id()).unwrap().unwrap();
+        let c = removal(&app, &h, "acct-r", &a.id()).await.unwrap()["challenge"].as_str().unwrap().to_owned();
+        remove_with(&app, &h, "acct-r", &a.id(), Some(b.get(&c, UP | UV, json!({})))).await.unwrap();
         let ch = B64.encode(Sha256::digest(b"an approval"));
         let made = arugula_e2e::now_ms();
         let approval = b.get(&ch, UP | UV, json!({}));
@@ -1514,7 +1802,7 @@ mod tests {
         let body = axum::body::to_bytes(res.into_body(), 1 << 20).await.unwrap();
         let published: arugula_e2e::passkey::Log = serde_json::from_slice(&body).unwrap();
         let kinds: Vec<(&str, &str)> = published.events.iter().map(|e| (e.event.as_str(), e.by.as_str())).collect();
-        assert_eq!(kinds, [("added", "signup"), ("added", "signup"), ("removed", "session"), ("removed", "deleted")]);
+        assert_eq!(kinds, [("added", "signup"), ("added", "signup"), ("removed", "passkey"), ("removed", "deleted")]);
         let o = site_origins(&app.cfg.sites);
         let e2e = approval.e2e();
         let v = arugula_e2e::passkey::verify(&published, "acct-r", &e2e, &ch, made - 1, &o);

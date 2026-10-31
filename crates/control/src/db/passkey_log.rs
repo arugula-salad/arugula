@@ -221,6 +221,44 @@ impl Db {
             .is_some())
     }
 
+    /// When the account last stopped having a passkey, as far as this hub
+    /// knows (DK10, #393): its log's last event, or, for an account made
+    /// before the log began whose log is empty, the log's start, when a
+    /// sign-in by passkey is still on record (it had one, removed before
+    /// the log). `None`: it never had one, so a fresh GitHub sign-in may
+    /// add a first one at once.
+    pub fn passkey_last_seen(&self, account: &str) -> anyhow::Result<Option<u64>> {
+        let log = self.passkey_log(account)?;
+        if let Some(last) = log.events.last() {
+            return Ok(Some(last.at));
+        }
+        let Some(began) = log.began else { return Ok(None) };
+        let c = self.c();
+        let before: bool = c
+            .query_row("SELECT created FROM accounts WHERE id = ?1", params![account], |r| r.get::<_, i64>(0))
+            .optional()?
+            .is_some_and(|created| (created.max(0) as u64) < began);
+        let by_passkey = before
+            && c.query_row(
+                "SELECT EXISTS (SELECT 1 FROM sessions WHERE account = ?1 AND via = 'passkey')",
+                params![account],
+                |r| r.get::<_, bool>(0),
+            )?;
+        Ok(by_passkey.then_some(began))
+    }
+
+    /// A passkey removed as a signed-in page could before DK10 (#393):
+    /// logged `by session`. For tests of the accounts that did.
+    #[cfg(test)]
+    pub fn drop_passkey_by_session(&self, account: &str, id: &str) -> anyhow::Result<()> {
+        let mut c = self.c();
+        let tx = c.transaction()?;
+        tx.execute("DELETE FROM passkeys WHERE id = ?2 AND account = ?1", params![account, id])?;
+        anyhow::ensure!(remove(&tx, account, id, arugula_e2e::now_ms(), "session")?, "not in the log");
+        tx.commit()?;
+        Ok(())
+    }
+
     /// A new passkey: its row, with its public key's bytes, and its `added`
     /// event, in one transaction. `pinned`: `e` was made and signed for its
     /// place (a step-up's), which must still be the next; else it goes
@@ -414,22 +452,20 @@ mod tests {
         assert!(db.ever_had_passkey("a2").unwrap() && !db.ever_had_passkey("a3").unwrap());
     }
 
-    /// DK10's seam: a removal another passkey signs goes in as made, with
-    /// its proof, and the log still holds together.
-    #[test]
-    fn a_signed_removal_goes_in_with_its_proof() {
+    /// Passkey `id`, its key from `seed`, added to `account`'s log.
+    fn add_keyed(db: &Db, account: &str, id: &str, seed: u8) -> ed25519_dalek::SigningKey {
+        let k = ed25519_dalek::SigningKey::from_bytes(&[seed; 32]);
+        let d = Draft { key: k.verifying_key().to_bytes().to_vec(), ..draft(account, id, 10, "signup") };
+        db.add_passkey_logged(&d.key.clone(), d.after(None), false).unwrap().unwrap();
+        k
+    }
+
+    /// Passkey `id` (key `k`)'s assertion over `e`, with UP and UV, from
+    /// control.test's page.
+    fn signed_by(e: &Event, id: &str, k: &ed25519_dalek::SigningKey) -> Assertion {
         use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD as B64};
         use ed25519_dalek::Signer as _;
         use sha2::{Digest as _, Sha256};
-        let db = Db::memory();
-        let (k1, k2) =
-            (ed25519_dalek::SigningKey::from_bytes(&[1; 32]), ed25519_dalek::SigningKey::from_bytes(&[2; 32]));
-        for (id, k) in [("pk1", &k1), ("pk2", &k2)] {
-            let d = Draft { key: k.verifying_key().to_bytes().to_vec(), ..draft("a1", id, 10, "signup") };
-            db.add_passkey_logged(&d.key.clone(), d.after(None), false).unwrap().unwrap();
-        }
-        assert!(db.passkey_next_removal("a1", "pk3", "passkey").unwrap().is_none(), "not live");
-        let e = db.passkey_next_removal("a1", "pk1", "passkey").unwrap().unwrap();
         let cd = serde_json::to_vec(&serde_json::json!({
             "type": "webauthn.get", "challenge": e.challenge(), "origin": "https://control.test",
         }))
@@ -438,25 +474,111 @@ mod tests {
         data.extend_from_slice(&[0x05, 0, 0, 0, 0]);
         let mut msg = data.clone();
         msg.extend_from_slice(&Sha256::digest(&cd));
-        let proof = Assertion {
-            id: "pk2".into(),
+        Assertion {
+            id: id.into(),
             client_data_json: B64.encode(&cd),
             authenticator_data: B64.encode(&data),
-            signature: B64.encode(k2.sign(&msg).to_bytes()),
-        };
+            signature: B64.encode(k.sign(&msg).to_bytes()),
+        }
+    }
+
+    /// DK10: a removal another passkey signs goes in as made, with its
+    /// proof, and the log still holds together.
+    #[test]
+    fn a_signed_removal_goes_in_with_its_proof() {
+        use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD as B64};
+        let db = Db::memory();
+        let k1 = add_keyed(&db, "a1", "pk1", 1);
+        let k2 = add_keyed(&db, "a1", "pk2", 2);
+        assert!(db.passkey_next_removal("a1", "pk3", "passkey").unwrap().is_none(), "not live");
+        let e = db.passkey_next_removal("a1", "pk1", "passkey").unwrap().unwrap();
+        let proof = signed_by(&e, "pk2", &k2);
         // A proof that isn't over this event, or isn't a live passkey's,
         // never goes in: it would break the log for good.
         let mut forged = proof.clone();
         forged.signature = B64.encode([0u8; 64]);
-        assert!(db.drop_passkey_as("a1", "pk1", Some(e.clone().with_proof(forged))).unwrap().is_err());
+        assert!(db.drop_passkey_as("a1", "pk1", e.clone().with_proof(forged)).unwrap().is_err());
         let unknown = Assertion { id: "pk9".into(), ..proof.clone() };
-        assert!(db.drop_passkey_as("a1", "pk1", Some(e.clone().with_proof(unknown))).unwrap().is_err());
+        assert!(db.drop_passkey_as("a1", "pk1", e.clone().with_proof(unknown)).unwrap().is_err());
+        // Nor the passkey's own say-so, or none (a session alone), or a
+        // removal the hub vouches for.
+        let own = signed_by(&e, "pk1", &k1);
+        assert_eq!(
+            db.drop_passkey_as("a1", "pk1", e.clone().with_proof(own)).unwrap(),
+            Err("use another of your passkeys to remove this one")
+        );
+        assert!(db.drop_passkey_as("a1", "pk1", e.clone()).unwrap().is_err());
+        let by_session = db.passkey_next_removal("a1", "pk1", "session").unwrap().unwrap();
+        let p = signed_by(&by_session, "pk2", &k2);
+        assert!(db.drop_passkey_as("a1", "pk1", by_session.with_proof(p)).unwrap().is_err());
         assert_eq!(db.passkey_count("a1").unwrap(), 2, "nothing removed");
         assert_eq!(check_chain(&db.passkey_log("a1").unwrap()), Ok(()));
-        db.drop_passkey_as("a1", "pk1", Some(e.with_proof(proof))).unwrap().unwrap();
+        db.drop_passkey_as("a1", "pk1", e.with_proof(proof.clone())).unwrap().unwrap();
         let log = db.passkey_log("a1").unwrap();
-        assert_eq!(log.events.last().map(|e| (e.event, e.by.as_str())), Some((Change::Removed, "passkey")));
+        let last = log.events.last().unwrap();
+        assert_eq!((last.event, last.by.as_str(), last.proof.as_ref()), (Change::Removed, "passkey", Some(&proof)));
         assert_eq!(check_chain(&log), Ok(()));
         assert_eq!(db.passkey_count("a1").unwrap(), 1);
+        // The last one: nothing else to sign.
+        assert!(db.passkey_next_removal("a1", "pk2", "passkey").unwrap().is_some());
+        assert_eq!(db.passkey_ids("a1").unwrap(), ["pk2"]);
+    }
+
+    /// A passkey that made its account is its sign-in identity too: gone
+    /// with it, but for its log.
+    #[test]
+    fn a_removed_passkey_takes_its_identity() {
+        let db = Db::memory();
+        let a = db.account_for("passkey", "pk1", "", "acct-a", 1).unwrap();
+        add_keyed(&db, &a, "pk1", 1);
+        let k2 = add_keyed(&db, &a, "pk2", 2);
+        let e = db.passkey_next_removal(&a, "pk1", "passkey").unwrap().unwrap();
+        let p = signed_by(&e, "pk2", &k2);
+        db.drop_passkey_as(&a, "pk1", e.with_proof(p)).unwrap().unwrap();
+        assert_eq!(db.sign_ins(&a).unwrap(), 1);
+        assert_eq!(db.mentions("pk1"), ["passkey_log.credential"]);
+    }
+
+    /// aru-119's reset drops every passkey, `by reset`; never an account's
+    /// only way in.
+    #[test]
+    fn a_reset_drops_every_passkey() {
+        let db = Db::memory();
+        db.account_for("github", "gh-1", "lex", "a1", 1).unwrap();
+        add_keyed(&db, "a1", "pk1", 1);
+        add_keyed(&db, "a1", "pk2", 2);
+        assert_eq!(db.drop_passkeys_by_reset("a1", 50).unwrap(), 2);
+        assert_eq!(db.passkey_count("a1").unwrap(), 0);
+        let log = db.passkey_log("a1").unwrap();
+        let tail: Vec<_> = log.events[2..].iter().map(|e| (e.event, e.by.as_str(), e.at)).collect();
+        assert_eq!(tail, [(Change::Removed, "reset", 50), (Change::Removed, "reset", 50)]);
+        assert_eq!(check_chain(&log), Ok(()));
+        // Passkeys alone: they stay.
+        let b = db.account_for("passkey", "pk3", "", "a2", 1).unwrap();
+        add_keyed(&db, &b, "pk3", 3);
+        assert_eq!(db.drop_passkeys_by_reset(&b, 50).unwrap(), 0);
+        assert_eq!(db.passkey_count(&b).unwrap(), 1);
+    }
+
+    /// DK10: whether, and since when, an account had a passkey, for a
+    /// first one from a fresh GitHub sign-in.
+    #[test]
+    fn when_an_account_last_had_a_passkey() {
+        let db = Db::memory();
+        for (id, created) in [("new", 2000), ("old", 500), ("old-pk", 500)] {
+            db.account_for("github", &format!("gh-{id}"), id, id, created).unwrap();
+        }
+        assert_eq!(db.passkey_last_seen("new").unwrap(), None, "never had one");
+        db.add_session("t1", "old-pk", 600, u64::MAX / 2).unwrap();
+        db.set_session_via("t1", "passkey").unwrap();
+        // No log began yet: what the log says is all there is.
+        assert_eq!(db.passkey_last_seen("old-pk").unwrap(), None);
+        db.backfill_passkey_log("control.test", 1000).unwrap();
+        // Made before the log, with a passkey sign-in on record: it had one.
+        assert_eq!(db.passkey_last_seen("old-pk").unwrap(), Some(1000));
+        assert_eq!(db.passkey_last_seen("old").unwrap(), None, "no sign of one");
+        assert_eq!(db.passkey_last_seen("new").unwrap(), None, "made after: its log says");
+        add_keyed(&db, "new", "pk1", 1);
+        assert_eq!(db.passkey_last_seen("new").unwrap(), Some(10), "its add");
     }
 }

@@ -41,11 +41,14 @@ takes two days and can be stopped by anything they still have.
    as the support reset (`Db::reset_account_devices`, `by` = `self-service`).
    The waiting browser reloads, enrolls as the first device, and shows new
    recovery codes. No timer process: done lazily, inside the transaction
-   that reads the account.
+   that reads the account. Its passkeys are removed too, `by reset` in its
+   passkey log (DK10, #393, for an account with GitHub linked): the one way
+   to remove a passkey without another's say-so, and what lets a fresh
+   GitHub sign-in add a first one again to an account that had one.
 
 ## What a reset costs, shown before it starts
 
-- Every device and recovery code stops working
+- Every device, passkey and recovery code stops working
 - Each machine is dropped and needs *Join again* on the machine
 - Teammates see that your key changed, and check it again
 - Anything end to end encrypted to the old devices can't be read
