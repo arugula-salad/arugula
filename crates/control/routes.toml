@@ -2836,6 +2836,22 @@ clients = ["page", "cli"]
 note = "Answers an ask with one of its options, or text when it has none: the person it names, or an owner or editor for them (403 otherwise). People only: a machine's signature is 401, and an agent has no route to answer. The answer is kept in the row's history."
 
 [[route]]
+method = "POST"
+path = "/api/projects/{project}/relations"  # wire::boards::PROJECT_RELATIONS
+process = "platform"
+auth = "session"
+clients = ["page"]
+note = "Relates two items of the project (Arugula #403): blocks, relates, duplicate_of or discovered_from, owners and editors, behind the boards Labs flag. Both ends are issues or mirrored items of the project the writer reads (400 otherwise); an edge to itself is 400, the same edge twice and a blocks cycle are 409."
+
+[[route]]
+method = "DELETE"
+path = "/api/projects/{project}/relations/{relation}"  # wire::boards::PROJECT_RELATION
+process = "platform"
+auth = "session"
+clients = ["page"]
+note = "Takes a relation off: owners and editors. One that comes from Plane is 403, \"it comes from Plane\"."
+
+[[route]]
 method = "GET"
 path = "/api/projects/{project}/work"  # wire::boards::PROJECT_WORK
 process = "platform"
@@ -3138,6 +3154,22 @@ process = "platform"
 auth = "daemon"
 clients = ["daemon"]
 note = "Asks a person of the project a question on a row (`boards.write`); it says an agent asked. It reads the answer from the board: there is no route for an agent to answer."
+
+[[route]]
+method = "POST"
+path = "/api/daemon/projects/{project}/relations"  # wire::boards::AGENT_PROJECT_RELATIONS
+process = "platform"
+auth = "daemon"
+clients = ["daemon"]
+note = "Relates two items of the project for a machine's agent (Arugula #403): needs `issues.write` over the project (403 without), the owner's role is the ceiling, and the edge says an agent made it."
+
+[[route]]
+method = "DELETE"
+path = "/api/daemon/projects/{project}/relations/{relation}"  # wire::boards::AGENT_PROJECT_RELATION
+process = "platform"
+auth = "daemon"
+clients = ["daemon"]
+note = "A relation the same machine's agents made (`issues.write`); anything else is 403."
 
 [[route]]
 method = "PUT"

@@ -83,6 +83,8 @@ pub mod ops;
 #[cfg(test)]
 mod ops_tests;
 pub mod poller;
+#[cfg(test)]
+mod relations_tests;
 pub mod send;
 // Also the chat crate's tests' (#314, the `testing` feature): `Logs`,
 // what was minted and posted.

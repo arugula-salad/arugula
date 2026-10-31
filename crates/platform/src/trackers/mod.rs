@@ -118,6 +118,16 @@ pub struct Page {
     pub next: Option<String>,
 }
 
+/// What blocks a work item and what it blocks (#403), as the tracker's ids
+/// of the items. The tracker's other relation kinds aren't mirrored.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct Relations {
+    /// The items that block it.
+    pub blocked_by: Vec<String>,
+    /// The items it blocks.
+    pub blocking: Vec<String>,
+}
+
 /// What a new item says (#359).
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct NewItem {
@@ -181,6 +191,15 @@ pub trait TrackerProvider: Send + Sync {
         item: &'a str,
         edit: &'a Edit,
     ) -> BoxFuture<'a, Result<Item>>;
+    /// The `blocked_by` and `blocking` relations of `item` (#403).
+    fn relations<'a>(
+        &'a self,
+        _workspace: &'a str,
+        _project_id: &'a str,
+        _item: &'a str,
+    ) -> BoxFuture<'a, Result<Relations>> {
+        Box::pin(async { Err(TrackerError::NotYet("reading an item's relations")) })
+    }
     /// The items whose parent is `epic`.
     fn children<'a>(
         &'a self,

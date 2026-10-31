@@ -22,7 +22,7 @@
 // to make again.
 
 import { useEffect, useId, useRef, useState } from "preact/hooks";
-import type { BoardAsk, BoardAnsweredAsk, BoardAttachment, BoardGroup, BoardPointer, ForgeText, ProjectBoard, BoardRow, BoardView, BoardWorkItem, BoardZone } from "../proto";
+import type { RelationKind, BoardAsk, BoardAnsweredAsk, BoardAttachment, BoardGroup, BoardPointer, ForgeText, ProjectBoard, BoardRow, BoardView, BoardWorkItem, BoardZone } from "../proto";
 import { chat } from "../chat-store";
 import { usePlatformApi } from "../platform-api";
 import { Markdown } from "../ui/markdown";
@@ -36,7 +36,7 @@ import { agentShort } from "../agent-label";
 import { day } from "../time";
 import { BoardError, STALE_REV, boards, type ForgeChecks } from "./store";
 import "./boards.css";
-import { PICK_DELAY_MS, cardTone, checkTone, checkWord, groupMove, liveTone, prsOf, PICK_LIMIT, assigneesLine, blockClass, GOAL_MAX, answerReady, askWaitingLine, blockFacts, chipOf, settledFacts, debounced, earlierLine, epicLine, groupLine, isCard, laneCount, liveClass, liveWord, marksOf, needsYou, pointerHref, pointerLabel, pointerText, pointerToSend, proofMark, sections, stepActive, workLabel } from "./text";
+import { PICK_DELAY_MS, cardTone, checkTone, checkWord, groupMove, liveTone, prsOf, PICK_LIMIT, assigneesLine, blockClass, GOAL_MAX, answerReady, askWaitingLine, blockFacts, chipOf, settledFacts, debounced, earlierLine, epicLine, groupLine, isCard, laneCount, liveClass, liveWord, marksOf, needsYou, pointerHref, pointerLabel, pointerText, pointerToSend, proofMark, readyCount, relationLine, RELATION_KINDS, sections, stepActive, workLabel } from "./text";
 
 const STALE_SAID = "That changed while you were editing, so the board is read again. Make your change again if it still applies.";
 
@@ -272,7 +272,7 @@ export function BoardPanel({
           <p>Its rows go with it. Their issues and PRs stay where they are.</p>
         </ConfirmRemove>
       )}
-      {opened && <Drawer r={opened} platform={platform} close={() => setDrawer(null)} />}
+      {opened && <Drawer r={opened} platform={platform} close={() => setDrawer(null)} project={view.board.project} others={view.zones.flatMap((z) => z.rows)} write={write} act={act} id={id} />}
     </div>
   );
 }
@@ -334,6 +334,9 @@ function Epic({ b, act, id, write, view }: { b: ProjectBoard; act: Act; id: stri
         </span>
         <span>
           <b>{b.progress.proven}</b> proven
+        </span>
+        <span data-board-ready={readyCount(view)}>
+          <b>{readyCount(view)}</b> ready
         </span>
         {waiting.length > 0 && (
           <button type="button" class="needs board-needs-you-button" data-board-needs-you={waiting.length} onClick={() => document.querySelector(`[data-board-row="${waiting[0].id}"]`)?.scrollIntoView({ behavior: "smooth", block: "center" })}>
@@ -656,7 +659,7 @@ function Row({
               </span>
             )}
           </div>
-          {(marks.merged || marks.after) && (
+          {(marks.merged || marks.after || marks.blocked.length > 0) && (
             <div class="board-line board-marks" data-board-marks>
               {marks.merged && (
                 <span class="ws-tag board-mark" data-board-mark="merged_not_closed" title="A PR of this row merged, but its issue is still open">
@@ -668,6 +671,11 @@ function Row({
                   {marks.after.words}
                 </span>
               )}
+              {marks.blocked.map((m, i) => (
+                <span key={i} class="ws-tag waits board-mark" data-board-mark="blocked_by" title={m.title ? `${m.title}${m.repo ? ` (${m.repo})` : ""}` : "You can't read the item that blocks this one"}>
+                  {m.words}
+                </span>
+              ))}
             </div>
           )}
           {current.length > 0 && (
@@ -747,7 +755,7 @@ async function readRow(r: BoardRow): Promise<Read> {
 }
 
 /** The drawer: a row's item, read-only, beside the board (a sheet on a phone). Its title, state and link out; the body, the latest comments, the PRs' checks, the attachments and the proof's evidence. */
-function Drawer({ r, platform, close }: { r: BoardRow; platform: (path: string) => string | undefined; close: () => void }) {
+function Drawer({ r, platform, close, project, others, write, act, id }: { r: BoardRow; platform: (path: string) => string | undefined; close: () => void; project: string; others: BoardRow[]; write: boolean; act: (write: () => Promise<BoardView>) => Promise<boolean>; id: string }) {
   const [read, setRead] = useState<Read | null>(null);
   const ref = useRef<HTMLDivElement>(null);
   const href = pointerHref(r, platform);
@@ -838,6 +846,7 @@ function Drawer({ r, platform, close }: { r: BoardRow; platform: (path: string) 
           ))}
         </section>
       )}
+      {(r.relations?.length || (write && itemId(r))) && <Relations r={r} project={project} others={others} write={write} act={act} id={id} />}
       {r.attachments.length > 0 && (
         <section data-board-drawer-attachments>
           <h3>Attached</h3>
@@ -862,6 +871,72 @@ function Drawer({ r, platform, close }: { r: BoardRow; platform: (path: string) 
         </section>
       )}
     </div>
+  );
+}
+
+/** The id of the issue or mirrored item a row is on, if it is on one. */
+const itemId = (r: BoardRow): string | undefined => (r.pointer.kind === "issue" || r.pointer.kind === "forge_item" ? r.pointer.id : undefined);
+
+/** A row's item's relations both ways (#403), with add and remove for those who may write. The item at the other end is picked among the board's other rows. A relation Plane or GitHub keeps can't be removed here. */
+function Relations({ r, project, others, write, act, id }: { r: BoardRow; project: string; others: BoardRow[]; write: boolean; act: (write: () => Promise<BoardView>) => Promise<boolean>; id: string }) {
+  const [kind, setKind] = useState<RelationKind>("blocks");
+  const [dir, setDir] = useState<"out" | "in">("out");
+  const [to, setTo] = useState("");
+  const mine = itemId(r);
+  const words = RELATION_KINDS.find((k) => k.kind === kind)!;
+  const choices = others.filter((o) => o.id !== r.id && itemId(o));
+  /** A relation write, then the board as it is. */
+  const then = (write: () => Promise<unknown>) => async () => {
+    await write();
+    return boards.get(id);
+  };
+  const add = async () => {
+    const other = choices.find((o) => o.id === to);
+    if (!mine || !other) return;
+    const [from, target] = dir === "out" ? [mine, itemId(other)!] : [itemId(other)!, mine];
+    if (await act(then(() => boards.relate(project, { from, to: target, kind })))) setTo("");
+  };
+  return (
+    <section data-board-drawer-relations>
+      <h3>Relations</h3>
+      {(r.relations ?? []).map((x) => (
+        <div key={x.id} class="board-drawer-relation" data-board-relation={x.kind} data-board-relation-source={x.source}>
+          <span>{relationLine(x)}</span>
+          {x.source !== "person" && x.source !== "agent" && <span class="dim"> · from {x.source === "plane" ? "Plane" : "GitHub"}</span>}
+          {x.removable && (
+            <button type="button" class="board-more" aria-label="Remove relation" data-board-relation-remove onClick={() => void act(then(() => boards.unrelate(project, x.id)))}>
+              ×
+            </button>
+          )}
+        </div>
+      ))}
+      {write && mine && choices.length > 0 && (
+        <div class="board-line board-relation-add" data-board-relation-add>
+          <select aria-label="This item" value={dir} onChange={(e) => setDir(e.currentTarget.value as "out" | "in")}>
+            <option value="out">{words.out}</option>
+            {words.in !== words.out && <option value="in">{words.in}</option>}
+          </select>
+          <select aria-label="Kind" value={kind} onChange={(e) => setKind(e.currentTarget.value as RelationKind)}>
+            {RELATION_KINDS.map((k) => (
+              <option key={k.kind} value={k.kind}>
+                {k.kind.replace("_", " ")}
+              </option>
+            ))}
+          </select>
+          <select aria-label="Other item" value={to} onChange={(e) => setTo(e.currentTarget.value)}>
+            <option value="">Pick a row…</option>
+            {choices.map((o) => (
+              <option key={o.id} value={o.id}>
+                {isCard(o.live) ? `#${o.live.number} ${o.live.title}` : pointerLabel(o.pointer, o.live)}
+              </option>
+            ))}
+          </select>
+          <button type="button" class="btn" disabled={!to} data-board-relation-submit onClick={() => void add()}>
+            Add
+          </button>
+        </div>
+      )}
+    </section>
   );
 }
 

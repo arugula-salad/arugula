@@ -135,6 +135,40 @@ pub fn agent_project_attach_block(project: &str) -> String {
     format!("/api/daemon/projects/{project}/attach-block")
 }
 
+/// `POST` [`NewRelation`]: relate two items of the project (owners and
+/// editors): answered [`Relation`]. An item is an issue (`iss_…`) or a
+/// mirrored item (`fi_…`) of the project; a `blocks` edge that closes a
+/// cycle, or an edge to the item itself, is refused.
+pub const PROJECT_RELATIONS: &str = "/api/projects/{project}/relations";
+/// `DELETE`: take a relation off (owners and editors). One that comes from
+/// Plane or GitHub is refused, 403: it is changed there.
+pub const PROJECT_RELATION: &str = "/api/projects/{project}/relations/{relation}";
+/// `POST` [`NewRelation`]: an agent relates two items (`issues.write` over
+/// the project); the edge says an agent made it.
+pub const AGENT_PROJECT_RELATIONS: &str = "/api/daemon/projects/{project}/relations";
+/// `DELETE`: an agent takes off a relation its own machine made.
+pub const AGENT_PROJECT_RELATION: &str = "/api/daemon/projects/{project}/relations/{relation}";
+
+/// [`PROJECT_RELATIONS`] for `project`.
+pub fn project_relations(project: &str) -> String {
+    format!("/api/projects/{project}/relations")
+}
+
+/// [`PROJECT_RELATION`] for `relation` of `project`.
+pub fn project_relation(project: &str, relation: &str) -> String {
+    format!("/api/projects/{project}/relations/{relation}")
+}
+
+/// [`AGENT_PROJECT_RELATIONS`] for `project`.
+pub fn agent_project_relations(project: &str) -> String {
+    format!("/api/daemon/projects/{project}/relations")
+}
+
+/// [`AGENT_PROJECT_RELATION`] for `relation` of `project`.
+pub fn agent_project_relation(project: &str, relation: &str) -> String {
+    format!("/api/daemon/projects/{project}/relations/{relation}")
+}
+
 /// [`BOARD_ROW_ASK`] for `row` of `id`.
 pub fn board_row_ask(id: &str, row: &str) -> String {
     format!("/api/boards/{id}/rows/{row}/ask")
@@ -421,6 +455,21 @@ pub enum Mark {
     /// An agent block attached to the row (`attachment`) was closed, and
     /// another may have taken its place: it no longer counts toward Doing.
     Earlier { attachment: String },
+    /// The row's item is blocked by an open item (a `blocks` edge, Arugula
+    /// #403): the row stays in its lane. `number`, `title` and `repo` are
+    /// left out when the reader may not read the blocker (one such mark
+    /// stands for all of them: "something you can't see").
+    BlockedBy {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "ts", ts(optional))]
+        number: Option<u64>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "ts", ts(optional))]
+        title: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "ts", ts(optional))]
+        repo: Option<String>,
+    },
 }
 
 /// [`BOARD_ATTACHMENTS`]' body: attach `pointer` to `row` as `role`.
@@ -763,6 +812,145 @@ pub struct AnsweredAsk {
     pub answered_at: u64,
 }
 
+/// What an edge between two work items says (Arugula #403). Only `blocks`
+/// gates: it keeps the blocked item's row out of the ready set until the
+/// blocker is closed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "RelationKind"))]
+#[serde(rename_all = "snake_case")]
+pub enum RelationKind {
+    /// The first item blocks the second.
+    Blocks,
+    Relates,
+    /// The first item duplicates the second.
+    DuplicateOf,
+    /// The first item was found while working on the second.
+    DiscoveredFrom,
+}
+
+impl RelationKind {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            RelationKind::Blocks => "blocks",
+            RelationKind::Relates => "relates",
+            RelationKind::DuplicateOf => "duplicate_of",
+            RelationKind::DiscoveredFrom => "discovered_from",
+        }
+    }
+
+    pub fn parse(s: &str) -> Option<Self> {
+        Some(match s {
+            "blocks" => RelationKind::Blocks,
+            "relates" => RelationKind::Relates,
+            "duplicate_of" => RelationKind::DuplicateOf,
+            "discovered_from" => RelationKind::DiscoveredFrom,
+            _ => return None,
+        })
+    }
+
+    /// Whether an open item on the first end keeps the second out of the
+    /// ready set.
+    pub fn blocks_ready(self) -> bool {
+        self == RelationKind::Blocks
+    }
+}
+
+/// Who made an edge. `plane` and `github` edges are read from there, and
+/// Arugula doesn't change them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "RelationSource"))]
+#[serde(rename_all = "snake_case")]
+pub enum RelationSource {
+    Person,
+    Agent,
+    Plane,
+    Github,
+}
+
+impl RelationSource {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            RelationSource::Person => "person",
+            RelationSource::Agent => "agent",
+            RelationSource::Plane => "plane",
+            RelationSource::Github => "github",
+        }
+    }
+
+    pub fn parse(s: &str) -> Option<Self> {
+        Some(match s {
+            "person" => RelationSource::Person,
+            "agent" => RelationSource::Agent,
+            "plane" => RelationSource::Plane,
+            "github" => RelationSource::Github,
+            _ => return None,
+        })
+    }
+}
+
+/// [`PROJECT_RELATIONS`]' body: `from` `kind` `to`, each end an `iss_` or
+/// `fi_` id of the project (`a` blocks `b`: from a, to b).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "NewRelation"))]
+#[serde(deny_unknown_fields)]
+pub struct NewRelation {
+    pub from: String,
+    pub to: String,
+    pub kind: RelationKind,
+}
+
+/// An edge made, as [`PROJECT_RELATIONS`] answers it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "Relation"))]
+pub struct Relation {
+    /// `rel_…`.
+    pub id: String,
+    pub from: String,
+    pub to: String,
+    pub kind: RelationKind,
+    pub source: RelationSource,
+    pub created_at: u64,
+}
+
+/// Which end of an edge a row's item is.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "RelationDirection"))]
+#[serde(rename_all = "snake_case")]
+pub enum RelationDirection {
+    /// The row's item is the first end: it blocks, duplicates, was found from.
+    Out,
+    /// The row's item is the second end: it is blocked by the other.
+    In,
+}
+
+/// An edge of a row's item, as the reader sees it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "BoardRowRelation"))]
+pub struct RowRelation {
+    /// `rel_…`, to take it off.
+    pub id: String,
+    pub kind: RelationKind,
+    pub direction: RelationDirection,
+    pub source: RelationSource,
+    /// The item at the other end. Left out when the reader may not read it:
+    /// the edge is "something you can't see", with no title or number.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub other: Option<Live>,
+    /// The `iss_` or `fi_` id of the item at the other end, with `other`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub item: Option<String>,
+    /// The reader may take it off: an owner or editor, and it was made here.
+    pub removable: bool,
+}
+
 /// [`BOARD_ROW_ASK`]'s body: `who` is an account of the project. `options`
 /// are 0 to [`ASK_OPTIONS_MAX`] (none: free text), and `recommend` is one
 /// of them.
@@ -900,7 +1088,7 @@ pub struct Row {
     #[cfg_attr(feature = "ts", ts(optional))]
     pub group: Option<String>,
     /// What the lane doesn't say, in a fixed order: `merged_not_closed`,
-    /// `after`, then one `earlier` for each closed block.
+    /// `after`, `blocked_by`, then one `earlier` for each closed block.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub marks: Vec<Mark>,
     /// The row's one open question: asked, else raised by the board.
@@ -910,6 +1098,9 @@ pub struct Row {
     /// The last [`ASKED_SHOWN`] asks answered, newest first.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub asked: Vec<AnsweredAsk>,
+    /// The edges of the row's item, both ways, for the drawer.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub relations: Vec<RowRelation>,
     /// A `fi_`, `iss_` or `run_` pointer's state now, when the reader may see the
     /// item ([`BoardView`] is read with it; a write's answer has it too).
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -968,6 +1159,10 @@ pub struct BoardView {
     /// Empty for a board with none; an old client ignores it.
     #[serde(default)]
     pub groups: Vec<Group>,
+    /// The ready set (Arugula #403): the rows (`row_…`) with an issue or a
+    /// PR as their item that are in Next and have no open blocker.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub ready: Vec<String>,
     /// What a write did that the board alone doesn't say: a PR attached to
     /// the row of the issue it closes, an item that was there already.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1103,12 +1298,14 @@ impl Proof {
 }
 
 impl Mark {
-    /// `merged, not closed`, `after #1859`, `earlier agent`.
+    /// `merged, not closed`, `after #1859`, `blocked by #1860`, `earlier agent`.
     fn words(&self) -> String {
         match self {
             Mark::MergedNotClosed => "merged, not closed".to_owned(),
             Mark::After { number, .. } => format!("after #{number}"),
             Mark::Earlier { .. } => "earlier agent".to_owned(),
+            Mark::BlockedBy { number: Some(n), .. } => format!("blocked by #{n}"),
+            Mark::BlockedBy { number: None, .. } => "blocked by something you can't see".to_owned(),
         }
     }
 }
@@ -1188,7 +1385,8 @@ fn lane_text<'a>(out: &mut String, title: &str, rows: impl Iterator<Item = &'a R
 /// A board as plain text, no wider than [`TEXT_WIDTH`] columns: before the
 /// lanes, `Goal:` with the goal's first line, `Issues` with the board's
 /// progress when it has any, and `Done:` with the done note's first line
-/// when it is closed. Then each lane is its title and how many rows it holds
+/// when it is closed, and `Ready (n):` with the labels of the rows that can
+/// start now when there are any (#403). Then each lane is its title and how many rows it holds
 /// (the Done lane also how many are proven), and its rows, each a glyph, a
 /// short pointer label and the note (cut to fit). Under a row: what is
 /// attached to it, and under an agent block's row what its machine reported
@@ -1219,6 +1417,15 @@ pub fn render(view: &BoardView) -> String {
     }
     if b.closed_at.is_some() {
         out += &format!("{}\n", fit(&format!("Done: {}", first(&b.done_note)), TEXT_WIDTH));
+    }
+    let ready: Vec<String> = view
+        .ready
+        .iter()
+        .filter_map(|id| view.zones.iter().flat_map(|z| &z.rows).find(|r| &r.id == id))
+        .map(|r| r.pointer.label())
+        .collect();
+    if !ready.is_empty() {
+        out += &format!("{}\n", fit(&format!("Ready ({}): {}", ready.len(), ready.join(", ")), TEXT_WIDTH));
     }
     if view.groups.is_empty() {
         for z in &view.zones {
@@ -1347,6 +1554,7 @@ mod tests {
             marks: vec![],
             ask: None,
             asked: vec![],
+            relations: vec![],
             live: None,
             block: None,
             agent: None,
@@ -1383,7 +1591,7 @@ mod tests {
     }
 
     fn view(zones: Vec<Zone>) -> BoardView {
-        BoardView { board: board(), zones, groups: vec![], said: None }
+        BoardView { board: board(), zones, groups: vec![], ready: vec![], said: None }
     }
 
     /// A board's text form: the four lanes with their counts, a glyph per
@@ -1671,5 +1879,33 @@ Done: People can sign up.
         );
         assert!([&run, &link].iter().all(|p| AttachRole::Proof.takes(p)));
         assert!(![&fi, &block].iter().any(|p| AttachRole::Proof.takes(p)));
+    }
+
+    /// A blocked row says what blocks it (or that it can't say), and the
+    /// ready set is a line of the rows that can start; only `blocks` gates.
+    #[test]
+    fn the_text_says_what_blocks_a_row_and_what_is_ready() {
+        let mut blocked = row(Pointer::Issue { id: "iss_blocked".into() }, Lane::Next, "Build");
+        blocked.id = "row_b".into();
+        blocked.marks = vec![
+            Mark::BlockedBy { number: Some(7), title: Some("Design".into()), repo: None },
+            Mark::BlockedBy { number: None, title: None, repo: None },
+        ];
+        let mut free = row(Pointer::Issue { id: "iss_free".into() }, Lane::Next, "Design");
+        free.id = "row_f".into();
+        let mut v = view(lanes(vec![(Lane::Next, vec![blocked, free])]));
+        v.ready = vec!["row_f".into()];
+        let text = render(&v);
+        assert!(text.contains("blocked by #7 · blocked by something you can't see"), "{text}");
+        assert!(text.contains("Ready (1): iss_free"), "{text}");
+        assert!(!text.contains("Ready (2)"), "{text}");
+        assert!(RelationKind::Blocks.blocks_ready());
+        assert!(
+            ![RelationKind::Relates, RelationKind::DuplicateOf, RelationKind::DiscoveredFrom]
+                .iter()
+                .any(|k| k.blocks_ready())
+        );
+        v.ready.clear();
+        assert!(!render(&v).contains("Ready"), "no ready set, no line");
     }
 }
