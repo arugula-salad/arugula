@@ -1606,14 +1606,13 @@ anyone. Never from the desktop app's window (`sessions.via = app`), and:
   the new passkey's id and the registration's challenge
   (`arugula add passkey device v1`);
 - an account with none: a browser or a phone of its signs, as above, or
-  the session is a GitHub sign-in from the last ten minutes. GitHub's word
-  is enough only for an account that never had a passkey (its passkey log
-  is empty; for an account made before the log began, also no passkey
-  sign-in on record), or once aru-119's reset has run since it last had
-  one: then the passkey is logged `by reset` (DK10, #393). Otherwise
-  control refuses with `reason: "reset"`: add it from a browser or a
-  phone of the account's, or start a reset (48 hours, announced to every
-  device and the email, cancellable by any device). The page says
+  the session is a GitHub sign-in from the last ten minutes. Either is
+  enough only for an account that never had a passkey (its passkey log is
+  empty; for an account made before the log began, also no passkey
+  sign-in on record), or once a reset (the passkey reset below, or
+  aru-119's device reset) was done since it last had one: GitHub's is
+  then logged `by reset` (DK10, #393; aru-119, aru-126). Otherwise control
+  refuses with `reason: "reset"` ("start a passkey reset"). The page says
   which device it is as it starts; when that one can't sign (no browser,
   or browsers an app window approved before #1343, which don't count), the
   page sends the person through GitHub
@@ -1637,14 +1636,29 @@ passkeys. One of them signs it, with user verification, and
 and appends the event with the assertion as its proof (`by passkey`), so
 anyone can check the removal later. Without an assertion it's 403
 `remove_with_passkey` ("use another of your passkeys to remove this
-one"); a passkey can't sign its own removal. The last passkey can't be
-removed at all, as there's no other to sign: 409 `last_passkey` ("add
-another passkey first, or start a reset"), and the page disables its
-Remove and says why. Never from the desktop app's window. The one way to
-drop passkeys without another's say-so is aru-119's reset: when it's
-done, every passkey of the account is removed `by reset` (for an account
-with GitHub linked; passkeys that are its only way in stay), and the
-next first passkey from a fresh GitHub sign-in is logged `by reset`.
+one, or, if you've lost them, start a passkey reset"); a passkey can't
+sign its own removal. The last passkey can't be removed at all, as
+there's no other to sign: 409 `last_passkey` ("add another passkey
+first, or start a passkey reset"), and the page disables its Remove and
+says why. Never from the desktop app's window. Only a reset drops
+passkeys without another's say-so, every one of them `by reset` (for an
+account with GitHub linked; passkeys that are its only way in stay):
+
+- **The passkey reset** (aru-119 as amended, `reset.rs`), for passkeys
+  lost while devices are in use. `POST /api/me/passkeys/reset` starts it
+  from a GitHub sign-in from the last ten minutes, whether or not a device
+  was used lately; every device and the account's email are told. After
+  48 hours the next read (`GET /api/me/passkeys/reset`, the passkeys list,
+  or starting to add one) removes every passkey; devices, machines and
+  recovery codes stay. `POST /api/me/passkeys/reset/cancel` stops it: the
+  sign-in that started it, a device or recovery code the account trusts
+  signing `arugula passkey reset cancel v1\n<account>\n<started_at>`, or
+  any working passkey of the account asserting over SHA-256 of that text
+  (the status read gives the options). At most one done a week, three
+  started a day. The page offers it under Passkeys, and *Devices and
+  machines* shows one waiting, with a cancel this device signs.
+- **aru-119's device reset**, which removes the passkeys with the
+  devices.
 
 **The passkey log** (DK3, aru-126, `db/passkey_log.rs`). Every passkey
 added to or removed from an account is an event in the account's passkey
@@ -1829,7 +1843,7 @@ Every table is listed in `crates/control/tables.toml`, and a test fails when one
 | `devices` | metadata | A device's or machine's certificate (public keys, signed by a device the account trusts), and its approval. | yes |  |
 | `turned_down` | metadata | Which device turned a waiting device down, and when. | yes |  |
 | `account_resets` | **plaintext** | An account's devices reset (aru-119): when, who ran it, the reason support wrote, and the certificates and revocations it archived. | yes |  |
-| `reset_requests` | metadata | A reset of an account's devices its person asked for (aru-119, #1582): when it started and is due, the sign-in that started it (its token's hash), and whether it was cancelled (by which device) or done. | yes |  |
+| `reset_requests` | metadata | A reset its person asked for (aru-119, #1582): of the account's devices, or (DK10, #393) of its passkeys alone (`kind`); when it started and is due, the sign-in that started it (its token's hash), and whether it was cancelled (by which device or passkey) or done. | yes |  |
 | `account_emails` | **plaintext** | An account's email address for security notices (#1609): GitHub's primary verified one, or one typed and verified by a link, and when. | yes | The email provider |
 | `email_tokens` | **plaintext** | A typed address waiting for its verify link (#1609): the link's token by its hash, the address, and when it expires (a day). | yes | The email provider |
 | `email_sends` | metadata | That control emailed an account (#1609): which kind of notice and when, never its body. Kept 90 days, for the daily limit. | yes |  |

@@ -603,7 +603,7 @@ export async function passkeyConfirm(p: PasskeyToConfirm): Promise<void> {
 
 /** One of the account's passkeys `o` offers signs its challenge: the
  * assertion, as control takes it. */
-async function agreeWith(o: PasskeyToConfirm["options"]) {
+export async function agreeWith(o: PasskeyToConfirm["options"]) {
   const got = (await navigator.credentials.get({
     publicKey: {
       challenge: unb64u(o.challenge),

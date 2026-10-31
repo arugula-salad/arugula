@@ -246,7 +246,7 @@ name = "reset_requests"
 plane = "machine"
 process = "hub"
 holds = "metadata"
-what = "A reset of an account's devices its person asked for (aru-119, #1582): when it started and is due, the sign-in that started it (its token's hash), and whether it was cancelled (by which device) or done."
+what = "A reset its person asked for (aru-119, #1582): of the account's devices, or (DK10, #393) of its passkeys alone (`kind`); when it started and is due, the sign-in that started it (its token's hash), and whether it was cancelled (by which device or passkey) or done."
 with_account = "deleted"
 seen_by = ["litestream"]
 

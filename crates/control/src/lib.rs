@@ -614,6 +614,9 @@ fn routes() -> Routes {
         // DK10: removing one takes another passkey's say-so.
         .route("/api/me/passkeys/{id}/remove/start", post(passkey::remove_start))
         .route("/api/me/passkeys/{id}/remove", post(passkey::remove))
+        // DK10: a reset of the passkeys alone, for lost ones.
+        .route("/api/me/passkeys/reset", get(reset::passkeys_status).post(reset::start_passkeys))
+        .route("/api/me/passkeys/reset/cancel", post(reset::cancel_passkeys))
         // DK3: an account's passkey log, for anyone checking an approval.
         .route("/api/accounts/{id}/passkeys/log", get(passkey::log))
         .route("/api/me/github/unlink", post(github_link::unlink))

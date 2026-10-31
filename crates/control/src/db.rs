@@ -278,6 +278,11 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
     if !has("revocations", "machine")? {
         conn.execute_batch("ALTER TABLE revocations ADD COLUMN machine INTEGER NOT NULL DEFAULT 0")?;
     }
+    // What a self-service reset replaces (DK10, #393): `devices` (aru-119,
+    // every row before) or `passkeys`.
+    if !has("reset_requests", "kind")? {
+        conn.execute_batch("ALTER TABLE reset_requests ADD COLUMN kind TEXT NOT NULL DEFAULT 'devices'")?;
+    }
     // What a hosted box is for (M219): `deploy` for one deploy's run.
     if !has("hosted_enrollments", "purpose")? {
         conn.execute_batch("ALTER TABLE hosted_enrollments ADD COLUMN purpose TEXT")?;

@@ -181,6 +181,10 @@ pub async fn note_agent(
 
 /// `GET /api/me/passkeys`: the account's passkeys, and its GitHub link.
 pub async fn passkeys(State(app): State<Arc<App>>, s: Session) -> R {
+    // A passkey reset that's due is done first (DK10).
+    if app.db.finish_due_passkey_reset(&s.account, arugula_e2e::now_ms())? {
+        crate::reset::passkeys_were_reset(&app, &s.account);
+    }
     Ok(Json(json!({
         "passkeys": app.db.passkeys(&s.account)?, "github": app.db.github_identity(&s.account)?.map(|(_, login)| login), "ways": app.db.sign_ins(&s.account)?,
     })))

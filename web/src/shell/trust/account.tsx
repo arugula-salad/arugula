@@ -13,6 +13,7 @@ import { ConfirmRemove } from "../../shared/ui/confirm";
 import { Time } from "../../shared/ui/time";
 import { NameLine, RecoveryLeft } from "./recovery";
 import { EmailSection } from "./email";
+import { PasskeyResetOffer } from "./reset";
 
 export interface SessionRow {
   id: string;
@@ -72,7 +73,7 @@ export function passkeyName(k: Passkeys["passkeys"][number], i: number): string 
 }
 
 /** Why the only passkey's Remove waits (DK10, #393). */
-const ONLY_PASSKEY = "Removing a passkey takes another of yours: add another passkey first.";
+const ONLY_PASSKEY = "Removing a passkey takes another of yours: add another passkey first, or, if you've lost it, start a passkey reset.";
 
 /** Where linking GitHub comes back to: `#github-link=<what happened>`. */
 export const GITHUB_LINK_HASH = /^#github-link=([a-z-]+)$/;
@@ -289,6 +290,8 @@ export function AccountPanel({ s, close, linked, emailBack }: { s: ControlSessio
               onClick={() => (app ? toBrowser("add-passkey") : act(() => s.addPasskey()))}
             />
           ) : null}
+          {/* DK10: the way back from lost passkeys; it takes GitHub. */}
+          {!app && keys?.github ? <PasskeyResetOffer done={load} back={ACCOUNT_HASH} /> : null}
         </>
       ) : null}
       <EmailSection back={emailBack} />

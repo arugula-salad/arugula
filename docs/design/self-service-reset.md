@@ -46,6 +46,13 @@ takes two days and can be stopped by anything they still have.
    to remove a passkey without another's say-so, and what lets a fresh
    GitHub sign-in add a first one again to an account that had one.
 
+A **passkey reset** (DK10, #393, aru-119 as amended) is the same flow for
+the passkeys alone, for a person whose passkeys are lost while their
+devices are in use: `POST /api/me/passkeys/reset`, offered under Passkeys
+in *Sign-in and account*. It starts even with a device used lately, waits
+48 hours, and any device, recovery code or working passkey cancels it.
+When done it removes every passkey and nothing else.
+
 ## What a reset costs, shown before it starts
 
 - Every device, passkey and recovery code stops working
