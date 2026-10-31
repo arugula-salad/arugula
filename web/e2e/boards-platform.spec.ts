@@ -516,6 +516,75 @@ test("a board's cards carry their lane's tone, its groups are managed on the pag
   await expect(titles).toHaveText(["Wave 2", "Wave one"], { timeout: 15_000 });
 });
 
+// #426: a board is often a pane, so its lanes and cards follow the board's width, not the window's.
+test("in a board 760px wide the lanes are two per row and every card title keeps 14ch, at any viewport", async () => {
+  test.setTimeout(120_000);
+  const made = await api(alice, "POST", `/api/projects/${project}/boards`, { title: "Narrow" });
+  expect(made.status).toBe(200);
+  const id = made.body!.board.id as string;
+  const entries = `/api/boards/${id}/entries`;
+  const first = await api(alice, "PUT", entries, { entry: "zone", title: "Wave" });
+  const wave = (first.body!.groups as { id: string }[])[0].id;
+  const add = async (title: string, state?: string) => {
+    const i = await api(alice, "POST", `/api/projects/${project}/issues`, { title, body: "", labels: [], assignees: [] });
+    expect(i.status).toBe(200);
+    if (state) expect((await api(alice, "PATCH", `/api/issues/${i.body!.id}`, { state, reason: "completed" })).status).toBe(200);
+    const r = await api(alice, "PUT", entries, { entry: "row", zone: wave, pointer: { kind: "issue", id: i.body!.id } });
+    expect(r.status).toBe(200);
+    return r.body!.zones.flatMap((z: any) => z.rows).find((x: any) => x.pointer.id === i.body!.id);
+  };
+  await add("Next up: write the migration guide for the new settings");
+  // Done cards with a closed chip and a proof tag, the case that squeezed the title.
+  for (const title of ["Plane settings: show the webhook URL and its secret", "Publish the release notes and the changelog for everyone"]) {
+    const done = await add(title, "closed");
+    expect((await api(alice, "POST", `/api/boards/${id}/attachments`, { row: done.id, role: "proof", pointer: { kind: "link", url: "https://example.com/branch" } })).status).toBe(200);
+  }
+
+  await alice.setViewportSize({ width: 1900, height: 1000 });
+  await platform(alice, `/p/${project}/boards/${id}`);
+  await expect(alice.locator("[data-board-row]")).toHaveCount(3, { timeout: 15_000 });
+  const shots = process.env.SHOTS_426; // "<dir>/<before|after>-", for a look by eye
+  const columns = (w: number) =>
+    alice.evaluate((px) => {
+      const board = document.querySelector<HTMLElement>(".board")!;
+      board.style.maxWidth = "none";
+      board.style.width = `${px}px`;
+      return getComputedStyle(document.querySelector(".board-lanes")!).gridTemplateColumns.split(" ").length;
+    }, w);
+  // The window stays wide throughout; only the board's own width changes.
+  for (const [width, lanes] of [[1700, 4], [1000, 4], [760, 2], [480, 1]] as const) {
+    const across = await columns(width);
+    if (shots) await alice.locator(".board").screenshot({ path: `${shots}${width}.png` });
+    expect(across).toBe(lanes);
+    const m = await alice.evaluate(() => {
+      const probe = document.createElement("span");
+      const first = document.querySelector<HTMLElement>(".board-card [data-board-title]")!;
+      probe.style.cssText = `position:absolute;visibility:hidden;width:14ch;font:${getComputedStyle(first).font}`;
+      document.body.append(probe);
+      const ch = probe.getBoundingClientRect().width;
+      probe.remove();
+      const lanes = document.querySelector<HTMLElement>(".board-lanes")!;
+      return {
+        ch,
+        titles: [...document.querySelectorAll(".board-card [data-board-title]")].map((t) => t.getBoundingClientRect().width),
+        scroll: lanes.scrollWidth - lanes.clientWidth,
+        // The menu stays at its head's top-right, however the title and chip wrap.
+        menus: [...document.querySelectorAll(".board-card-head")].map((h) => {
+          const b = h.querySelector("[data-board-row-menu]")!.getBoundingClientRect();
+          const r = h.getBoundingClientRect();
+          return { right: r.right - b.right, top: b.top - r.top };
+        }),
+      };
+    });
+    for (const w of m.titles) expect(w).toBeGreaterThanOrEqual(Math.min(m.ch, width - 80) - 0.5);
+    expect(m.scroll).toBeLessThanOrEqual(0);
+    for (const b of m.menus) (expect(b.right).toBeLessThanOrEqual(8), expect(b.top).toBeLessThanOrEqual(8));
+  }
+  // The proof tag is on the sub line, not the head.
+  await expect(alice.locator(".board-card-head [data-board-proof]")).toHaveCount(0);
+  await expect(alice.locator(".board-sub [data-board-proof]")).toHaveCount(2);
+});
+
 test("a card's title opens the drawer with the item's body, its comments and the PR's checks", async () => {
   test.setTimeout(90_000);
   const checks = { item: "fi_0123456789abcdef0123456789abcdef", head_sha: "abc1234", checks: [
