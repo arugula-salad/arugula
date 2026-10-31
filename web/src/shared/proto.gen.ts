@@ -221,9 +221,28 @@ export type BoardBlockWord = "working" | "needs_input" | "idle" | "closed";
 export type BoardDiffstat = { files: number, added: number, removed: number, };
 
 /**
- * Zone or row.
+ * Zone (a group, in a database; a lane, on the wire) or row.
  */
 export type BoardEntryKind = "zone" | "row";
+
+/**
+ * A named, ordered section of a board that its author sets: a phase, a
+ * wave, an area. A row belongs to at most one ([`Row::group`]); a group
+ * holds no lane, and a row's lane is the same in any group.
+ */
+export type BoardGroup = { 
+/**
+ * `zon_…`.
+ */
+id: string, 
+/**
+ * Counts changes to its title.
+ */
+rev: number, title: string, 
+/**
+ * Its rows with an issue or a PR, counted as a board's are.
+ */
+progress: BoardProgress, };
 
 /**
  * Where a row is, worked out on every read from the live state of its
@@ -286,10 +305,24 @@ url?: string | null, };
 export type BoardLiveState = "open" | "checks_running" | "checks_failed" | "merged" | "closed" | "running" | "succeeded" | "run_failed" | "other";
 
 /**
- * [`BOARD_ENTRY_MOVE`]'s body. Every move is refused (aru-125): lanes
- * follow the work.
+ * A note on a row that its lane doesn't say, worked out on every read and
+ * never stored (aru-125, decisions 7 to 9).
  */
-export type BoardMoveEntry = { rev: number | null, zone: string | null, before: string | null, };
+export type BoardMark = { "kind": "merged_not_closed" } | { "kind": "after", number: number, repo?: string, } | { "kind": "earlier", attachment: string, };
+
+/**
+ * [`BOARD_ENTRY_MOVE`]'s body. A row moves to a group (`zone`) or, with
+ * `zone: null`, out of its group; with `zone` absent it stays where it is.
+ * It goes before `before` (a row of the place it goes to), last without
+ * one. A group moves among groups:
+ * `before` is a group, `zone` is absent. A lane is never set (aru-125): a
+ * `zone` that is a lane is refused.
+ */
+export type BoardMoveEntry = { rev: number | null, 
+/**
+ * The group the row goes to; `null`: none. Absent: its own.
+ */
+zone?: string | null, before: string | null, };
 
 /**
  * What a row points at. `None` is free text. The ids are the platform's:
@@ -321,20 +354,25 @@ export type BoardProofBy = "ci" | "evidence";
 
 /**
  * [`BOARD_ENTRIES`]' body. Without `id` it adds a row, last (`entry` is
- * `row` or absent); with `id` it changes that row: what is absent is left
- * as it is, and a change to `pointer` or `note` names `rev`. `zone`, `title`,
- * `kind`, `entry: zone` and `status` are refused (aru-125: lanes follow the
- * work), except `status: needs_input` on a row, which stays until asks
- * replace it. The row's `pointer` is an issue or a PR (or a link, for a
- * note).
+ * `row` or absent), or, with `entry: zone`, a group with a `title`, last;
+ * with `id` it changes that row or group: what is absent is left as it is,
+ * and a change to `pointer`, `note` or a group's `title` names `rev`. A
+ * new row's `zone` is the group it goes in. `kind`, and a `zone` that is a
+ * lane, are refused, and so is every `status` but `needs_input`, which stays
+ * until asks replace it (aru-125: lanes follow the work). The row's
+ * `pointer` is an issue or a PR (or a link, for a note).
  */
 export type BoardPutEntry = { id: string | null, rev: number | null, entry: BoardEntryKind | null, 
 /**
- * Refused: rows have no zone.
+ * A new row's group (`zon_…`).
  */
-zone: string | null, title: string | null, 
+zone: string | null, 
 /**
- * Refused: no one makes a zone.
+ * A group's title.
+ */
+title: string | null, 
+/**
+ * Refused: a group has no kind.
  */
 kind: BoardZoneKind | null, 
 /**
@@ -364,6 +402,15 @@ attachments: Array<BoardAttachment>,
  */
 proof?: BoardProof, 
 /**
+ * The group (`zon_…`) the row belongs to, if any.
+ */
+group?: string, 
+/**
+ * What the lane doesn't say, in a fixed order: `merged_not_closed`,
+ * `after`, then one `earlier` for each closed block.
+ */
+marks?: Array<BoardMark>, 
+/**
  * A `fi_`, `iss_` or `run_` pointer's state now, when the reader may see the
  * item ([`BoardView`] is read with it; a write's answer has it too).
  */
@@ -386,9 +433,15 @@ export type BoardStatus = "none" | "open" | "working" | "needs_input" | "done" |
 
 /**
  * A board with its four lanes, in order (`lane_next`, `lane_doing`,
- * `lane_review`, `lane_done`), each with its rows.
+ * `lane_review`, `lane_done`), each with its rows, and its groups, in
+ * order. The rows of a group are those with [`Row::group`] set to its id; a
+ * row without one comes after the grouped ones.
  */
 export type BoardView = { board: ProjectBoard, zones: Array<BoardZone>, 
+/**
+ * Empty for a board with none; an old client ignores it.
+ */
+groups: Array<BoardGroup>, 
 /**
  * What a write did that the board alone doesn't say: a PR attached to
  * the row of the issue it closes, an item that was there already.

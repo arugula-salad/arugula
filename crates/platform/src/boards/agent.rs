@@ -14,9 +14,10 @@
 //!
 //! An agent makes and runs boards too (aru-123): it makes one, sets its title
 //! and goal, closes and reopens it, adds rows, and attaches work and proof
-//! to them, and the board says it was an agent's. What it may not do is
-//! destroy or rewrite another hand's work (see [`super`]), or move a row:
-//! lanes follow the work (aru-125).
+//! to them, and the board says it was an agent's. It plans too: it makes,
+//! renames, moves and deletes groups, and puts a row in one. What it may not
+//! do is destroy or rewrite another hand's work (see [`super`]), or set a
+//! lane: lanes follow the work (aru-125).
 
 use std::sync::Arc;
 
@@ -133,8 +134,8 @@ pub async fn put(
     Ok(Json(super::put(&app, actor(&d), &id, &p).await?))
 }
 
-/// `POST /api/daemon/boards/{id}/entries/{entry}/move`: refused, 400: lanes
-/// follow the work.
+/// `POST /api/daemon/boards/{id}/entries/{entry}/move`: a row's group and
+/// place, or a group's; a lane is refused, 400: lanes follow the work.
 pub async fn move_entry(
     State(app): State<Arc<Platform>>,
     d: Machine,

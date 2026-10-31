@@ -2,7 +2,11 @@
 // platform page's `/p/:project/boards/:board`, and a board block in a daemon
 // workspace (a pin onto it, `shell/blocks/board.tsx`). The four lanes in
 // order (Next, Doing, Review, Done: nobody makes or moves them, the work
-// does), each with its rows: a glyph for the row's lane, a link to what it
+// does), each with its rows; a board whose author made groups (phases, waves)
+// shows each as a section with its progress and the four lanes of its rows
+// under it, the rows with no group last. A row's marks say what its lane
+// doesn't: merged but not closed, waiting on another PR, earlier agents
+// folded away. Each row has: a glyph for the row's lane, a link to what it
 // points at with that item's state now (`live`), chips for what is attached
 // to it, on a Done row the mark that says it is proven or not yet, and a
 // note. Owners and editors add, edit and delete rows; a viewer's writes are
@@ -27,7 +31,7 @@ import { agentShort } from "../agent-label";
 import { day } from "../time";
 import { BoardError, STALE_REV, boards } from "./store";
 import "./boards.css";
-import { BLOCK_LABEL, PICK_DELAY_MS, PICK_LIMIT, assigneesLine, blockClass, GOAL_MAX, blockFacts, chipOf, debounced, epicLine, isCard, laneCount, liveClass, liveWord, pointerHref, pointerLabel, pointerText, pointerToSend, proofMark, rowGlyph, stepActive, workLabel } from "./text";
+import { BLOCK_LABEL, PICK_DELAY_MS, PICK_LIMIT, assigneesLine, blockClass, GOAL_MAX, blockFacts, chipOf, debounced, earlierLine, epicLine, groupLine, isCard, laneCount, liveClass, liveWord, marksOf, pointerHref, pointerLabel, pointerText, pointerToSend, proofMark, rowGlyph, sections, stepActive, workLabel } from "./text";
 
 const STALE_SAID = "That changed while you were editing, so the board is read again. Make your change again if it still applies.";
 
@@ -161,9 +165,24 @@ export function BoardPanel({
           {STALE_SAID}
         </p>
       )}
-      {view.zones.map((z) => (
-        <Lane key={z.id} z={z} project={view.board.project} editing={editing} setEditing={setEditing} act={act} id={id} platform={platform} />
-      ))}
+      {sections(view).map((s) => {
+        const lanes = s.lanes.map((z) => <Lane key={z.id} z={z} project={view.board.project} editing={editing} setEditing={setEditing} act={act} id={id} platform={platform} />);
+        // No groups: the lanes alone, as before.
+        if (!view.groups?.length) return lanes;
+        return (
+          <section class="board-group" key={s.group?.id ?? "none"} data-board-group={s.group?.id ?? "none"}>
+            <header class="board-group-head">
+              <h2 data-board-group-title>{s.group?.title ?? "No group"}</h2>
+              {s.group && (
+                <span class="board-group-progress dim" data-board-group-progress>
+                  {groupLine(s.group.progress)}
+                </span>
+              )}
+            </header>
+            {lanes}
+          </section>
+        );
+      })}
       {view.said && (
         <p class="board-said" role="status" data-board-said>
           {view.said}
@@ -347,6 +366,19 @@ function Chip({ a, platform }: { a: BoardAttachment; platform: (path: string) =>
   );
 }
 
+/** What a machine reported of an attached agent block. */
+function BlockLine({ a }: { a: BoardAttachment }) {
+  const b = a.block!;
+  return (
+    <div class="board-line board-block" data-board-block={b.state}>
+      <span class={`ws-tag ${blockClass(b.state)}`}>{BLOCK_LABEL[b.state]}</span>
+      {blockFacts(b).map((f) => (
+        <span class="board-fact dim" key={f}>{f}</span>
+      ))}
+    </div>
+  );
+}
+
 function Row({
   r,
   project,
@@ -369,6 +401,9 @@ function Row({
   const card = isCard(r.live);
   const who = card ? assigneesLine(r.live!.assignees) : "";
   const mark = proofMark(r);
+  const marks = marksOf(r);
+  const earlier = r.attachments.filter((a) => marks.earlier.has(a.id));
+  const current = r.attachments.filter((a) => !marks.earlier.has(a.id));
   const proofTag = mark && (
     <span class={`ws-tag board-proof ${mark.proven ? "proven" : "unproven"}`} data-board-proof={mark.proven ? (r.proof?.by ?? "proven") : "not-proven"}>
       {mark.words}
@@ -420,22 +455,38 @@ function Row({
             {r.live && !card && <span class="board-item dim">{r.live.title}</span>}
             {!card && proofTag}
           </div>
-          {r.attachments.length > 0 && (
+          {(marks.merged || marks.after) && (
+            <div class="board-line board-marks" data-board-marks>
+              {marks.merged && (
+                <span class="ws-tag board-mark" data-board-mark="merged_not_closed" title="A PR of this row merged, but its issue is still open">
+                  merged, not closed
+                </span>
+              )}
+              {marks.after && (
+                <span class="ws-tag waits board-mark" data-board-mark="after" title={marks.after.repo ? `Stacked on a PR of ${marks.after.repo}` : "Stacked on another PR"}>
+                  {marks.after.words}
+                </span>
+              )}
+            </div>
+          )}
+          {current.length > 0 && (
             <div class="board-line board-chips" data-board-attachments>
-              {r.attachments.map((a) => (
+              {current.map((a) => (
                 <Chip key={a.id} a={a} platform={platform} />
               ))}
             </div>
           )}
-          {r.attachments.map((a) =>
-            a.block ? (
-              <div class="board-line board-block" key={a.id} data-board-block={a.block.state}>
-                <span class={`ws-tag ${blockClass(a.block.state)}`}>{BLOCK_LABEL[a.block.state]}</span>
-                {blockFacts(a.block).map((f) => (
-                  <span class="board-fact dim" key={f}>{f}</span>
+          {current.map((a) => (a.block ? <BlockLine key={a.id} a={a} /> : null))}
+          {earlier.length > 0 && (
+            <details class="board-earlier" data-board-earlier={earlier.length}>
+              <summary class="dim">{earlierLine(earlier.length)}</summary>
+              <div class="board-line board-chips">
+                {earlier.map((a) => (
+                  <Chip key={a.id} a={a} platform={platform} />
                 ))}
               </div>
-            ) : null,
+              {earlier.map((a) => (a.block ? <BlockLine key={a.id} a={a} /> : null))}
+            </details>
           )}
           {r.note && (
             <div class="board-note" data-board-note>

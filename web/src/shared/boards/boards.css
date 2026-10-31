@@ -40,6 +40,39 @@
   border-style: dashed;
 }
 
+/* A group (a phase, a wave): a heading with its progress, and the four lanes
+   of its rows under it. */
+.board-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.board-group-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding-bottom: 2px;
+  border-bottom: 1px solid var(--divider);
+}
+
+.board-group-head h2 {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-size: 1.1em;
+}
+
+.board-marks {
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.board-earlier summary {
+  cursor: pointer;
+  font-size: 0.85em;
+}
+
 .board-said {
   margin: 0;
   padding: 8px 10px;

@@ -1,9 +1,16 @@
 //! The one-time move of boards to lanes (aru-125, `0073_board_lanes`): run
-//! on start, per board that still has zones, and a no-op once none has.
+//! on start, per board that still has a zone that isn't a group, and a no-op
+//! once none has.
 //!
 //! A board made before lanes is an ordered list of zones of rows. A board
-//! now is rows with attachments, and its lanes follow the work, so each
-//! board is rewritten in place:
+//! now is rows with attachments, whose lanes follow the work, and groups the
+//! board's author sets. Each board is rewritten in place:
+//! - a zone whose title is a status (Next, Up next, Backlog, Todo, Doing, In
+//!   progress, WIP, Review, In review, Done, Shipped, PROOFS: any case, with
+//!   a leading `N · ` ignored), or whose kind is `proofs`, is a lane in all
+//!   but name: it goes, and its rows lose their group;
+//! - every other zone stays, in order, as a group (`zone_kind` `group`), with
+//!   its rows;
 //! - a PR row that references an issue row of the board becomes a `work`
 //!   attachment of it;
 //! - a block row, and a run row outside PROOFS, becomes a `work` attachment
@@ -14,7 +21,7 @@
 //!   none stays, a note row;
 //! - Cloud workspace rows stay as they are: they aren't an issue or a PR,
 //!   and a workspace isn't something that is attached;
-//! - then the zones go and the rows keep their order, zone by zone.
+//! - the rows keep their order, zone by zone.
 //!
 //! "References" is [`crate::boards::refs`]. Each board is one transaction
 //! holding the board's row, and reads what is left of its zones inside it,
@@ -25,7 +32,7 @@ use arugula_control_wire::boards::{AttachRole, Pointer};
 
 use super::{
     Db,
-    boards::{Entry, pointer_cols, pointer_of},
+    boards::{ENTRY_COLS, Entry, entry_row, pointer_cols},
     sql::{Optional as _, Sql, params},
 };
 use crate::boards::refs::{IssueKey, Source, references, references_in};
@@ -36,12 +43,47 @@ pub struct Moved {
     pub boards: usize,
     pub attached: usize,
     pub proofs: usize,
+    /// Zones that stayed as groups.
+    pub groups: usize,
 }
 
-/// A row before the move, with the zone it was in.
+/// A row before the move, with whether its zone was PROOFS.
 struct Old {
     row: Entry,
     proofs: bool,
+}
+
+/// Zones that aren't groups yet: what a board has before the move.
+const OLD_ZONES: &str = "kind = 'zone' AND (zone_kind IS NULL OR zone_kind <> 'group')";
+
+/// Whether a zone is a lane in all but name: a status title (case and spaces
+/// ignored, and a leading `N · `), or the PROOFS kind.
+fn status_like(title: &str, proofs: bool) -> bool {
+    if proofs {
+        return true;
+    }
+    let t = title.trim();
+    let t = match t.split_once('·') {
+        Some((n, rest)) if !n.trim().is_empty() && n.trim().chars().all(|c| c.is_ascii_digit()) => rest,
+        _ => t,
+    };
+    let t = t.trim().to_lowercase();
+    matches!(
+        t.as_str(),
+        "next"
+            | "up next"
+            | "backlog"
+            | "todo"
+            | "to do"
+            | "doing"
+            | "in progress"
+            | "wip"
+            | "review"
+            | "in review"
+            | "done"
+            | "shipped"
+            | "proofs"
+    )
 }
 
 /// What a PR row says of itself: the repo, and what its title and head
@@ -56,21 +98,22 @@ impl Db {
     /// platform's start runs it after the migrations.
     pub fn lanes_move(&self) -> Result<Moved> {
         let boards: Vec<String> = self.c().query_map(
-            "SELECT DISTINCT board_id FROM board_entries WHERE kind = 'zone' OR zone_id IS NOT NULL",
+            &format!("SELECT DISTINCT board_id FROM board_entries WHERE {OLD_ZONES}"),
             params![],
             |r| r.get(0),
         )?;
         let mut moved = Moved::default();
         for b in boards {
-            let (attached, proofs) = self.lanes_move_board(&b)?;
+            let (attached, proofs, groups) = self.lanes_move_board(&b)?;
             moved.boards += 1;
             moved.attached += attached;
             moved.proofs += proofs;
+            moved.groups += groups;
         }
         Ok(moved)
     }
 
-    fn lanes_move_board(&self, board: &str) -> Result<(usize, usize)> {
+    fn lanes_move_board(&self, board: &str) -> Result<(usize, usize, usize)> {
         let mut c = self.c();
         let tx = c.immediate()?;
         let held: Option<String> = tx
@@ -78,61 +121,41 @@ impl Db {
             .optional()?;
         // The board is gone, or another machine moved it already.
         let left: u64 = tx.query_row(
-            "SELECT count(*) FROM board_entries WHERE board_id = ?1 AND (kind = 'zone' OR zone_id IS NOT NULL)",
+            &format!("SELECT count(*) FROM board_entries WHERE board_id = ?1 AND {OLD_ZONES}"),
             params![board],
             |r| r.get(0),
         )?;
         if held.is_none() || left == 0 {
-            tx.execute("DELETE FROM board_entries WHERE board_id = ?1 AND kind = 'zone'", params![board])?;
             tx.commit()?;
-            return Ok((0, 0));
+            return Ok((0, 0, 0));
         }
-        let zones: Vec<(String, bool)> = tx.query_map(
-            "SELECT id, zone_kind = 'proofs' FROM board_entries WHERE board_id = ?1 AND kind = 'zone'
+        let zones: Vec<(String, String, bool)> = tx.query_map(
+            "SELECT id, title, zone_kind = 'proofs' FROM board_entries WHERE board_id = ?1 AND kind = 'zone'
              ORDER BY position, id",
             params![board],
-            |r| Ok((r.get(0)?, r.get::<Option<bool>>(1)?.unwrap_or(false))),
+            |r| Ok((r.get(0)?, r.get(1)?, r.get::<Option<bool>>(2)?.unwrap_or(false))),
         )?;
         let mut rows: Vec<Old> = vec![];
-        for (zone, proofs) in &zones {
+        for (zone, _, proofs) in &zones {
             let found = tx.query_map(
-                "SELECT id, rev, note, status, target_kind, target, pane, created_at, updated_at, agent
-                 FROM board_entries WHERE board_id = ?1 AND kind = 'row' AND zone_id = ?2 ORDER BY position, id",
+                &format!(
+                    "SELECT {ENTRY_COLS} FROM board_entries
+                     WHERE board_id = ?1 AND kind = 'row' AND zone_id = ?2 ORDER BY position, id"
+                ),
                 params![board, zone],
-                |r| {
-                    Ok(Entry {
-                        id: r.get(0)?,
-                        rev: r.get(1)?,
-                        note: r.get(2)?,
-                        status: super::boards::status_of(r.get(3)?)?,
-                        pointer: pointer_of(r.get(4)?, r.get(5)?, r.get(6)?)?,
-                        created_at: r.get(7)?,
-                        updated_at: r.get(8)?,
-                        agent: r.get(9)?,
-                    })
-                },
+                entry_row,
             )?;
             rows.extend(found.into_iter().map(|row| Old { row, proofs: *proofs }));
         }
         // Rows whose zone is gone keep their place, last.
         let orphans = tx.query_map(
-            "SELECT id, rev, note, status, target_kind, target, pane, created_at, updated_at, agent
-             FROM board_entries WHERE board_id = ?1 AND kind = 'row'
-               AND (zone_id IS NULL OR zone_id NOT IN (SELECT id FROM board_entries WHERE kind = 'zone'))
-             ORDER BY position, id",
+            &format!(
+                "SELECT {ENTRY_COLS} FROM board_entries WHERE board_id = ?1 AND kind = 'row'
+                   AND (zone_id IS NULL OR zone_id NOT IN (SELECT id FROM board_entries WHERE kind = 'zone'))
+                 ORDER BY position, id"
+            ),
             params![board],
-            |r| {
-                Ok(Entry {
-                    id: r.get(0)?,
-                    rev: r.get(1)?,
-                    note: r.get(2)?,
-                    status: super::boards::status_of(r.get(3)?)?,
-                    pointer: pointer_of(r.get(4)?, r.get(5)?, r.get(6)?)?,
-                    created_at: r.get(7)?,
-                    updated_at: r.get(8)?,
-                    agent: r.get(9)?,
-                })
-            },
+            entry_row,
         )?;
         rows.extend(orphans.into_iter().map(|row| Old { row, proofs: false }));
 
@@ -211,8 +234,28 @@ impl Db {
                 attached += 1;
             }
         }
-        tx.execute("DELETE FROM board_entries WHERE board_id = ?1 AND kind = 'zone'", params![board])?;
-        tx.execute("UPDATE board_entries SET zone_id = NULL WHERE board_id = ?1", params![board])?;
+        // The lanes in all but name go, with their rows' place in them; the
+        // other zones stay as groups, in order.
+        let (gone_zones, kept): (Vec<_>, Vec<_>) =
+            zones.iter().partition(|(_, title, proofs)| status_like(title, *proofs));
+        for (zone, ..) in &gone_zones {
+            tx.execute(
+                "UPDATE board_entries SET zone_id = NULL WHERE board_id = ?1 AND zone_id = ?2",
+                params![board, zone],
+            )?;
+            tx.execute("DELETE FROM board_entries WHERE id = ?1", params![zone])?;
+        }
+        tx.execute(
+            "UPDATE board_entries SET zone_id = NULL WHERE board_id = ?1 AND kind = 'row' AND zone_id IS NOT NULL
+               AND zone_id NOT IN (SELECT id FROM board_entries WHERE kind = 'zone')",
+            params![board],
+        )?;
+        for (place, (zone, ..)) in kept.iter().enumerate() {
+            tx.execute(
+                "UPDATE board_entries SET zone_kind = 'group', position = ?2 WHERE id = ?1",
+                params![zone, place],
+            )?;
+        }
         let mut place = 0u64;
         for o in &rows {
             if tx.execute("UPDATE board_entries SET position = ?2 WHERE id = ?1", params![o.row.id, place])? > 0 {
@@ -220,7 +263,7 @@ impl Db {
             }
         }
         tx.commit()?;
-        Ok((attached, proofs))
+        Ok((attached, proofs, kept.len()))
     }
 }
 
@@ -349,7 +392,7 @@ mod tests {
         }
     }
 
-    /// The move on the phase 3 board's shape: zones go, a PR that names an
+    /// The move on the phase 3 board's shape: its status zones go, a PR that names an
     /// issue row, the block and the evidence become that row's attachments,
     /// the rest stay as rows; and a second run moves nothing.
     #[test]
@@ -357,7 +400,7 @@ mod tests {
         let db = Db::memory();
         old_board(&db);
         let moved = db.lanes_move().unwrap();
-        assert_eq!(moved, Moved { boards: 1, attached: 3, proofs: 1 });
+        assert_eq!(moved, Moved { boards: 1, attached: 3, proofs: 1, groups: 0 });
 
         let c = db.c();
         let zones: u64 =
@@ -402,5 +445,237 @@ mod tests {
 
         assert_eq!(db.lanes_move().unwrap(), Moved::default(), "idempotent");
         assert_eq!(db.board_stored("brd_1").unwrap().unwrap(), stored);
+    }
+
+    /// A board of `zones` (id, title, kind) in order, with a `row` for an
+    /// issue (`fi_i1`...) in each of `rows` (zone, row id, note, issue);
+    /// issue rows are made as mirrored issues, a note is a row without one.
+    fn board_of(db: &Db, board: &str, zones: &[(&str, &str, Option<&str>)], rows: &[(&str, &str, &str, Option<&str>)]) {
+        let c = db.c();
+        c.execute(
+            "INSERT INTO boards (id, project_id, title, created_by, created_at, updated_at)
+             VALUES (?1, 'prj_1', 'Board', 'a', 1, 1)",
+            params![board],
+        )
+        .unwrap();
+        for (n, (id, title, kind)) in zones.iter().enumerate() {
+            c.execute(
+                "INSERT INTO board_entries (id, board_id, kind, position, title, zone_kind, created_at, updated_at)
+                 VALUES (?1, ?2, 'zone', ?3, ?4, ?5, 1, 1)",
+                params![id, board, n, title, kind],
+            )
+            .unwrap();
+        }
+        for (n, (zone, id, note, issue)) in rows.iter().enumerate() {
+            if let Some(issue) = issue {
+                c.execute(
+                    "INSERT INTO forge_items (id, repo_id, number, kind, state, title, created_at, updated_at, synced_at)
+                     VALUES (?1, 88, ?2, 'issue', 'open', 'An issue', 1, 1, 1) ON CONFLICT DO NOTHING",
+                    params![issue, n + 100],
+                )
+                .unwrap();
+            }
+            c.execute(
+                "INSERT INTO board_entries (id, board_id, kind, zone_id, position, note, target_kind, target,
+                     created_at, updated_at)
+                 VALUES (?1, ?2, 'row', ?3, ?4, ?5, ?6, ?7, 1, 1)",
+                params![id, board, zone, n, note, issue.map(|_| "forge_item"), issue],
+            )
+            .unwrap();
+        }
+    }
+
+    /// What the board is now: its groups as (title, [row ids]), and the rows
+    /// with no group.
+    fn groups_of(db: &Db, board: &str) -> (Vec<(String, Vec<String>)>, Vec<String>) {
+        let stored = db.board_stored(board).unwrap().unwrap();
+        let of = |g: Option<&str>| -> Vec<String> {
+            stored.rows.iter().filter(|r| r.zone.as_deref() == g).map(|r| r.id.clone()).collect()
+        };
+        let groups = stored.groups.iter().map(|g| (g.title.clone(), of(Some(&g.id)))).collect();
+        (groups, of(None))
+    }
+
+    /// "Device keys": Decide, Build and Clean up are phases. All three stay
+    /// as groups with their rows, and a second run moves nothing.
+    #[test]
+    fn a_board_of_phases_keeps_its_groups() {
+        let db = Db::memory();
+        board_of(
+            &db,
+            "brd_dk",
+            &[("zon_1", "Decide", None), ("zon_2", "Build", None), ("zon_3", "Clean up", None)],
+            &[
+                ("zon_1", "row_a", "pick", Some("fi_a")),
+                ("zon_2", "row_b", "build", Some("fi_b")),
+                ("zon_2", "row_c", "more", Some("fi_c")),
+                ("zon_3", "row_d", "tidy", None),
+            ],
+        );
+        assert_eq!(db.lanes_move().unwrap(), Moved { boards: 1, attached: 0, proofs: 0, groups: 3 });
+        let (groups, none) = groups_of(&db, "brd_dk");
+        let ids = |v: &[&str]| v.iter().map(|s| (*s).to_owned()).collect::<Vec<_>>();
+        assert_eq!(
+            groups,
+            [
+                ("Decide".to_owned(), ids(&["row_a"])),
+                ("Build".to_owned(), ids(&["row_b", "row_c"])),
+                ("Clean up".to_owned(), ids(&["row_d"]))
+            ]
+        );
+        assert!(none.is_empty(), "{none:?}");
+        let before = db.board_stored("brd_dk").unwrap().unwrap();
+        assert_eq!(db.lanes_move().unwrap(), Moved::default(), "idempotent");
+        assert_eq!(db.board_stored("brd_dk").unwrap().unwrap(), before);
+    }
+
+    /// "One rail everywhere": two numbered phases and a PROOFS zone. The
+    /// phases stay as groups, PROOFS folds, and its evidence that names an
+    /// issue row becomes that row's proof.
+    #[test]
+    fn numbered_phases_stay_and_proofs_fold() {
+        let db = Db::memory();
+        board_of(
+            &db,
+            "brd_rail",
+            &[
+                ("zon_1", "1 · Shared rail", None),
+                ("zon_2", "2 · Platform page and sessions caret", None),
+                ("zon_p", "PROOFS", Some("proofs")),
+            ],
+            &[
+                ("zon_1", "row_a", "rail", Some("fi_a")),
+                ("zon_2", "row_b", "caret", Some("fi_b")),
+                ("zon_p", "row_ev", "CI green for #100", None),
+                ("zon_p", "row_loose", "nightly", None),
+            ],
+        );
+        // The evidence row is a link: made so, naming issue #100 (row_a).
+        db.c()
+            .execute(
+                "UPDATE board_entries SET target_kind = 'link', target = 'https://ci.example.com/9' WHERE id = 'row_ev'",
+                params![],
+            )
+            .unwrap();
+        assert_eq!(db.lanes_move().unwrap(), Moved { boards: 1, attached: 0, proofs: 1, groups: 2 });
+        let (groups, none) = groups_of(&db, "brd_rail");
+        assert_eq!(
+            groups,
+            [
+                ("1 · Shared rail".to_owned(), vec!["row_a".to_owned()]),
+                ("2 · Platform page and sessions caret".to_owned(), vec!["row_b".to_owned()])
+            ]
+        );
+        assert_eq!(none, ["row_loose"], "evidence that names no issue stays, with no group");
+        let stored = db.board_stored("brd_rail").unwrap().unwrap();
+        assert_eq!(stored.attachments.len(), 1);
+        assert_eq!(stored.attachments[0].row, "row_a");
+        assert_eq!(stored.attachments[0].role, AttachRole::Proof);
+        let zones: u64 = db
+            .c()
+            .query_row("SELECT count(*) FROM board_entries WHERE kind = 'zone'", params![], |r| r.get(0))
+            .unwrap();
+        assert_eq!(zones, 2, "PROOFS is gone");
+        assert_eq!(db.lanes_move().unwrap(), Moved::default(), "idempotent");
+        assert_eq!(db.board_stored("brd_rail").unwrap().unwrap(), stored);
+    }
+
+    /// "UX improvements": Doing, Up next and Done are lanes. No groups are
+    /// left, every row has none, and the order is kept.
+    #[test]
+    fn a_board_of_statuses_has_no_groups_left() {
+        let db = Db::memory();
+        board_of(
+            &db,
+            "brd_ux",
+            &[("zon_1", "Doing", None), ("zon_2", "Up next", None), ("zon_3", "  DONE ", None)],
+            &[
+                ("zon_1", "row_a", "a", Some("fi_a")),
+                ("zon_2", "row_b", "b", Some("fi_b")),
+                ("zon_3", "row_c", "c", Some("fi_c")),
+            ],
+        );
+        assert_eq!(db.lanes_move().unwrap(), Moved { boards: 1, attached: 0, proofs: 0, groups: 0 });
+        let (groups, none) = groups_of(&db, "brd_ux");
+        assert!(groups.is_empty(), "{groups:?}");
+        assert_eq!(none, ["row_a", "row_b", "row_c"]);
+        let c = db.c();
+        let zoned: u64 = c
+            .query_row(
+                "SELECT count(*) FROM board_entries WHERE zone_id IS NOT NULL OR kind = 'zone'",
+                params![],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(zoned, 0);
+        drop(c);
+        assert_eq!(db.lanes_move().unwrap(), Moved::default(), "idempotent");
+    }
+
+    /// A board with phases and a status zone: the status zone folds, the
+    /// phases stay in their order, and a second run changes nothing.
+    #[test]
+    fn a_mixed_board_folds_only_its_status_zones() {
+        let db = Db::memory();
+        board_of(
+            &db,
+            "brd_mix",
+            &[("zon_1", "Wave 1", None), ("zon_2", "Backlog", None), ("zon_3", "Wave 2", None)],
+            &[
+                ("zon_1", "row_a", "a", Some("fi_a")),
+                ("zon_2", "row_b", "b", Some("fi_b")),
+                ("zon_3", "row_c", "c", Some("fi_c")),
+            ],
+        );
+        db.lanes_move().unwrap();
+        let (groups, none) = groups_of(&db, "brd_mix");
+        assert_eq!(
+            groups,
+            [("Wave 1".to_owned(), vec!["row_a".to_owned()]), ("Wave 2".to_owned(), vec!["row_c".to_owned()])]
+        );
+        assert_eq!(none, ["row_b"]);
+        let before = db.board_stored("brd_mix").unwrap().unwrap();
+        assert_eq!(db.lanes_move().unwrap(), Moved::default());
+        assert_eq!(db.board_stored("brd_mix").unwrap().unwrap(), before);
+    }
+
+    /// The titles that are lanes in all but name, and those that aren't.
+    #[test]
+    fn status_titles_are_told_from_phases() {
+        for t in [
+            "Next",
+            "next",
+            "Up next",
+            "Backlog",
+            "Todo",
+            "To do",
+            "Doing",
+            "In progress",
+            "WIP",
+            "Review",
+            "In review",
+            "Done",
+            "Shipped",
+            "PROOFS",
+            " done ",
+            "2 · Done",
+            "10·Up next",
+        ] {
+            assert!(status_like(t, false), "{t}");
+        }
+        for t in [
+            "Decide",
+            "Build",
+            "Clean up",
+            "1 · Shared rail",
+            "Done well",
+            "Wave 1",
+            "Reviewers",
+            "Next steps",
+            "· Done",
+        ] {
+            assert!(!status_like(t, false), "{t}");
+        }
+        assert!(status_like("Evidence", true), "the PROOFS kind folds under any title");
     }
 }

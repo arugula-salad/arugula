@@ -10,10 +10,14 @@
 //! - A row's `rev` counts changes to its pointer and note. A write that
 //!   changes those names the rev it read and is refused as
 //!   [`Refused::Stale`] if the row moved on.
-//! - A row has no zone: its lane is worked out on every read from the live
-//!   state of its items ([`crate::boards`]) and is never stored. Zone
-//!   entries exist only in a database made before 0072, until
-//!   [`Db::lanes_move`] clears them on start.
+//! - A row's lane is worked out on every read from the live state of its
+//!   items ([`crate::boards`]) and is never stored. What is stored is its
+//!   **group**: a group is a `zone` entry (`zone_kind` `group`), a board's
+//!   named, ordered section, and a row's `zone_id` is its group or none.
+//!   Rows are one ordered list per board; a read lists them by group, in
+//!   the groups' order, and those with none last ([`Stored::rows`]). A
+//!   database made before lanes has zones that are not groups until
+//!   [`Db::lanes_move`] folds them on start.
 //! - Work and proof are attached to a row (`board_attachments`,
 //!   [`Attached`]); deleting a row takes its attachments.
 //! - A pointer is stored, not resolved. A row's `note` and `status` are
@@ -25,7 +29,7 @@
 
 use anyhow::{Result, bail};
 use arugula_control_wire::{
-    boards::{AttachRole, BlockState, BlockWord, Board, Diffstat, Pointer, Status},
+    boards::{AttachRole, BlockState, BlockWord, Board, Diffstat, EntryKind, Pointer, Status},
     chat::ChatAgent,
 };
 
@@ -46,6 +50,11 @@ fn new_board_id() -> String {
 /// A new row's id: `row_` and 32 hex characters.
 fn new_row_id() -> String {
     format!("row_{}", hex::encode(arugula_e2e::random::<16>()))
+}
+
+/// A new group's id: `zon_` and 32 hex characters.
+fn new_group_id() -> String {
+    format!("zon_{}", hex::encode(arugula_e2e::random::<16>()))
 }
 
 /// A new attachment's id: `att_` and 32 hex characters.
@@ -80,8 +89,18 @@ pub struct Entry {
     pub pointer: Pointer,
     /// The machine whose agent added a row (`boards.write`); none: a person.
     pub agent: Option<String>,
+    /// The row's group.
+    pub zone: Option<String>,
     pub created_at: u64,
     pub updated_at: u64,
+}
+
+/// One group as stored.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Group {
+    pub id: String,
+    pub rev: u64,
+    pub title: String,
 }
 
 /// One thing attached to a row, as stored.
@@ -96,21 +115,29 @@ pub struct Attached {
     pub created_at: u64,
 }
 
-/// A board and its rows in order, with what is attached to them (oldest
-/// first).
+/// A board with its groups in order, its rows (by group, in the groups'
+/// order, then in the order of the board; those with no group last), and
+/// what is attached to them (oldest first).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Stored {
     pub board: Board,
+    pub groups: Vec<Group>,
     pub rows: Vec<Entry>,
     pub attachments: Vec<Attached>,
 }
 
-/// What a new row, or a change to one, says. Absent: left as it is.
+/// What a new row or group, or a change to one, says. Absent: left as it is.
 #[derive(Debug, Default, Clone)]
 pub struct Put<'a> {
-    /// The row changed; none: add one, last.
+    /// The row or group changed; none: add one, last.
     pub id: Option<&'a str>,
     pub rev: Option<u64>,
+    /// None: a row. A new group is `Zone`.
+    pub entry: Option<EntryKind>,
+    /// A new row's group.
+    pub zone: Option<&'a str>,
+    /// A group's title.
+    pub title: Option<&'a str>,
     pub pointer: Option<&'a Pointer>,
     pub note: Option<&'a str>,
     pub status: Option<Status>,
@@ -118,9 +145,22 @@ pub struct Put<'a> {
     pub agent: Option<&'a str>,
 }
 
+/// Where [`Db::move_entry`] puts a row or a group.
+#[derive(Debug, Default, Clone, Copy)]
+pub struct Move<'a> {
+    /// A row's group: `Some(None)` takes it out of its group, none leaves it
+    /// in its own.
+    pub zone: Option<Option<&'a str>>,
+    /// The sibling it goes before; none: last.
+    pub before: Option<&'a str>,
+    /// The rev it must still have.
+    pub rev: Option<u64>,
+}
+
 const BOARD_COLS: &str = "id, project_id, title, created_by, created_at, updated_at, goal, done_note, closed_at, \
                           closed_by, created_by_agent, closed_by_agent";
-const ENTRY_COLS: &str = "id, rev, note, status, target_kind, target, pane, created_at, updated_at, agent";
+pub(super) const ENTRY_COLS: &str =
+    "id, rev, note, status, target_kind, target, pane, created_at, updated_at, agent, zone_id";
 const ATTACHED_COLS: &str = "id, row_id, role, target_kind, target, pane, agent, created_at";
 
 fn board_row(r: &Row) -> Result<Board> {
@@ -221,7 +261,7 @@ pub(super) fn pointer_of(kind: Option<String>, target: Option<String>, pane: Opt
     })
 }
 
-fn entry_row(r: &Row) -> Result<Entry> {
+pub(super) fn entry_row(r: &Row) -> Result<Entry> {
     Ok(Entry {
         id: r.get(0)?,
         rev: r.get(1)?,
@@ -231,7 +271,12 @@ fn entry_row(r: &Row) -> Result<Entry> {
         created_at: r.get(7)?,
         updated_at: r.get(8)?,
         agent: r.get(9)?,
+        zone: r.get(10)?,
     })
+}
+
+fn group_row(r: &Row) -> Result<Group> {
+    Ok(Group { id: r.get(0)?, rev: r.get(1)?, title: r.get(2)? })
 }
 
 fn attached_row(r: &Row) -> Result<Attached> {
@@ -268,10 +313,30 @@ fn entry(c: &impl Sql, board: &str, id: &str) -> Result<Option<Entry>> {
     .optional()
 }
 
+/// A group of `board`.
+fn group_of(c: &impl Sql, board: &str, id: &str) -> Result<Option<Group>> {
+    c.query_row(
+        "SELECT id, rev, title FROM board_entries
+         WHERE board_id = ?1 AND id = ?2 AND kind = 'zone' AND zone_kind = 'group'",
+        params![board, id],
+        group_row,
+    )
+    .optional()
+}
+
 /// The ids of a board's rows, in order.
 fn siblings(c: &impl Sql, board: &str) -> Result<Vec<String>> {
     c.query_map(
         "SELECT id FROM board_entries WHERE board_id = ?1 AND kind = 'row' ORDER BY position, id",
+        params![board],
+        |r| r.get(0),
+    )
+}
+
+/// The ids of a board's groups, in order.
+fn group_ids(c: &impl Sql, board: &str) -> Result<Vec<String>> {
+    c.query_map(
+        "SELECT id FROM board_entries WHERE board_id = ?1 AND kind = 'zone' ORDER BY position, id",
         params![board],
         |r| r.get(0),
     )
@@ -393,7 +458,8 @@ impl Db {
         )
     }
 
-    /// A board with its rows in order and their attachments, from one read.
+    /// A board with its groups and rows in order and their attachments,
+    /// from one read.
     pub fn board_stored(&self, id: &str) -> Result<Option<Stored>> {
         let c = self.c();
         let Some(board) = c
@@ -402,19 +468,40 @@ impl Db {
         else {
             return Ok(None);
         };
-        let all = c.query_map(
+        let groups = c.query_map(
+            "SELECT id, rev, title FROM board_entries
+             WHERE board_id = ?1 AND kind = 'zone' AND zone_kind = 'group' ORDER BY position, id",
+            params![id],
+            group_row,
+        )?;
+        let mut rows = c.query_map(
             &format!("SELECT {ENTRY_COLS}, position FROM board_entries WHERE board_id = ?1 AND kind = 'row'"),
             params![id],
-            |r| Ok((entry_row(r)?, r.get::<u64>(10)?)),
+            |r| Ok((entry_row(r)?, r.get::<u64>(11)?)),
         )?;
-        let mut rows = all;
-        rows.sort_by(|a, b| (a.1, &a.0.id).cmp(&(b.1, &b.0.id)));
+        // By group, in the groups' order (a row with none, or in a group that
+        // isn't there, last), then as the board has them.
+        let place = |zone: &Option<String>| groups.iter().position(|g| Some(&g.id) == zone.as_ref());
+        rows.sort_by(|a, b| {
+            let key = |e: &(Entry, u64)| (place(&e.0.zone).unwrap_or(usize::MAX), e.1, e.0.id.clone());
+            key(a).cmp(&key(b))
+        });
         let attachments = c.query_map(
             &format!("SELECT {ATTACHED_COLS} FROM board_attachments WHERE board_id = ?1 ORDER BY created_at, id"),
             params![id],
             attached_row,
         )?;
-        Ok(Some(Stored { board, rows: rows.into_iter().map(|(e, _)| e).collect(), attachments }))
+        let rows = rows
+            .into_iter()
+            .map(|(mut e, _)| {
+                // A row in a group that isn't there is in none.
+                if place(&e.zone).is_none() {
+                    e.zone = None;
+                }
+                e
+            })
+            .collect();
+        Ok(Some(Stored { board, groups, rows, attachments }))
     }
 
     /// Set a board's title and goal (each only when given). `false`: no such
@@ -510,8 +597,8 @@ impl Db {
         Ok(out)
     }
 
-    /// Add a row last, or change one (see [`Put`]); the id of the row.
-    /// `absorb`: rows of the board that the new one takes in, in the same
+    /// Add a row or a group last, or change one (see [`Put`]); its id.
+    /// `absorb`: rows of the board that a new row takes in, in the same
     /// transaction: each becomes a `work` attachment of it (a PR row of the
     /// issue it closes), with the attachments it had, and its place is gone.
     pub fn put_entry(
@@ -521,6 +608,7 @@ impl Db {
         absorb: &[String],
         at: u64,
         max_rows: u64,
+        max_groups: u64,
     ) -> Result<std::result::Result<String, Refused>> {
         let mut c = self.c();
         let tx = c.immediate()?;
@@ -529,7 +617,30 @@ impl Db {
         }
         let row = match p.id {
             Some(id) => {
+                if let Some(group) = group_of(&tx, board, id)? {
+                    if p.pointer.is_some() || p.note.is_some() || p.status.is_some() || p.zone.is_some() {
+                        return bad("a group has a title, and nothing else to change");
+                    }
+                    let Some(title) = p.title else { return bad("nothing to change") };
+                    let Some(rev) = p.rev else { return bad("name the rev you read (\"rev\")") };
+                    if rev != group.rev {
+                        return Ok(Err(Refused::Stale { rev: group.rev }));
+                    }
+                    tx.execute(
+                        "UPDATE board_entries SET rev = rev + 1, title = ?2, updated_at = ?3 WHERE id = ?1",
+                        params![id, title, at],
+                    )?;
+                    touch(&tx, board, at)?;
+                    tx.commit()?;
+                    return Ok(Ok(id.to_owned()));
+                }
                 let Some(old) = entry(&tx, board, id)? else { return Ok(Err(Refused::Missing("no such row"))) };
+                if p.title.is_some() {
+                    return bad("a row has a note, not a title");
+                }
+                if p.zone.is_some() {
+                    return bad("a row changes group by a move");
+                }
                 let text = p.pointer.is_some() || p.note.is_some();
                 if !text && p.status.is_none() {
                     return bad("nothing to change");
@@ -563,7 +674,27 @@ impl Db {
                 }
                 id.to_owned()
             }
+            None if p.entry == Some(EntryKind::Zone) => {
+                let Some(title) = p.title else { return bad("a group needs a title") };
+                if p.zone.is_some() || p.pointer.is_some() || p.note.is_some() || p.status.is_some() {
+                    return bad("a group has a title, and nothing else");
+                }
+                let n = group_ids(&tx, board)?.len();
+                if n as u64 >= max_groups {
+                    return bad(format!("a board has at most {max_groups} groups"));
+                }
+                let id = new_group_id();
+                tx.execute(
+                    "INSERT INTO board_entries (id, board_id, kind, position, title, zone_kind, created_at, updated_at)
+                     VALUES (?1, ?2, 'zone', ?3, ?4, 'group', ?5, ?5)",
+                    params![id, board, n, title, at],
+                )?;
+                id
+            }
             None => {
+                if p.title.is_some() {
+                    return bad("a row has a note, not a title");
+                }
                 let n: u64 = tx.query_row(
                     "SELECT count(*) FROM board_entries WHERE board_id = ?1 AND kind = 'row'",
                     params![board],
@@ -572,13 +703,30 @@ impl Db {
                 if n >= max_rows {
                     return bad(format!("a board has at most {max_rows} rows"));
                 }
+                if let Some(zone) = p.zone
+                    && group_of(&tx, board, zone)?.is_none()
+                {
+                    return Ok(Err(Refused::Missing("no such group")));
+                }
                 let (kind, target, pane) = p.pointer.map(pointer_cols).unwrap_or((None, None, None));
                 let id = new_row_id();
                 tx.execute(
                     "INSERT INTO board_entries (id, board_id, kind, zone_id, position, note, status, target_kind, target,
                          pane, created_at, updated_at, agent)
-                     VALUES (?1, ?2, 'row', NULL, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?9, ?10)",
-                    params![id, board, n, p.note.unwrap_or(""), p.status.and_then(status_str), kind, target, pane, at, p.agent],
+                     VALUES (?1, ?2, 'row', ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?10, ?11)",
+                    params![
+                        id,
+                        board,
+                        p.zone,
+                        n,
+                        p.note.unwrap_or(""),
+                        p.status.and_then(status_str),
+                        kind,
+                        target,
+                        pane,
+                        at,
+                        p.agent
+                    ],
                 )?;
                 for from in absorb {
                     let Some(taken) = entry(&tx, board, from)? else { continue };
@@ -603,18 +751,129 @@ impl Db {
         Ok(Ok(row))
     }
 
-    /// Delete a row and what is attached to it.
-    pub fn delete_entry(&self, board: &str, id: &str, at: u64) -> Result<std::result::Result<(), Refused>> {
+    /// Change a row's group and its place, or a group's place among groups
+    /// (see [`Move`]). A row goes before `before` (a row of the group it
+    /// goes to), or last in it. `rev`, if named, must be the row's or
+    /// group's.
+    pub fn move_entry(&self, board: &str, id: &str, m: &Move, at: u64) -> Result<std::result::Result<(), Refused>> {
+        let Move { zone, before, rev } = *m;
         let mut c = self.c();
         let tx = c.immediate()?;
         if !lock(&tx, board)? {
             return Ok(Err(Refused::Missing("no such board")));
         }
-        if entry(&tx, board, id)?.is_none() {
-            return Ok(Err(Refused::Missing("no such row")));
+        if before == Some(id) {
+            return bad("an entry can't go before itself");
         }
-        tx.execute("DELETE FROM board_attachments WHERE row_id = ?1", params![id])?;
-        tx.execute("DELETE FROM board_entries WHERE id = ?1", params![id])?;
+        if let Some(group) = group_of(&tx, board, id)? {
+            if rev.is_some_and(|r| r != group.rev) {
+                return Ok(Err(Refused::Stale { rev: group.rev }));
+            }
+            if zone.is_some() {
+                return bad("a group moves among groups; \"zone\" is for rows");
+            }
+            let mut ids = group_ids(&tx, board)?;
+            ids.retain(|i| i != id);
+            let index = match before {
+                Some(b) => match ids.iter().position(|i| i == b) {
+                    Some(i) => i,
+                    None => return bad("\"before\" is a group of this board"),
+                },
+                None => ids.len(),
+            };
+            ids.insert(index, id.to_owned());
+            renumber(&tx, &ids)?;
+        } else {
+            let Some(e) = entry(&tx, board, id)? else { return Ok(Err(Refused::Missing("no such entry"))) };
+            if rev.is_some_and(|r| r != e.rev) {
+                return Ok(Err(Refused::Stale { rev: e.rev }));
+            }
+            let to: Option<String> = match zone {
+                None => e.zone.clone(),
+                Some(z) => z.map(str::to_owned),
+            };
+            if let Some(z) = &to
+                && group_of(&tx, board, z)?.is_none()
+            {
+                return Ok(Err(Refused::Missing("no such group")));
+            }
+            // The board's rows, flat, with each one's group.
+            let mut all: Vec<(String, Option<String>)> = tx.query_map(
+                "SELECT id, zone_id FROM board_entries WHERE board_id = ?1 AND kind = 'row' ORDER BY position, id",
+                params![board],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )?;
+            all.retain(|(i, _)| i != id);
+            let index = match before {
+                Some(b) => match all.iter().position(|(i, z)| i == b && *z == to) {
+                    Some(i) => i,
+                    None => return bad("\"before\" is a row of the group it goes to"),
+                },
+                // Last on the board is last in its group: a read lists by group.
+                None => all.len(),
+            };
+            if to != e.zone {
+                tx.execute("UPDATE board_entries SET zone_id = ?2 WHERE id = ?1", params![id, to])?;
+            }
+            all.insert(index, (id.to_owned(), to));
+            renumber(&tx, &all.into_iter().map(|(i, _)| i).collect::<Vec<_>>())?;
+        }
+        tx.execute("UPDATE board_entries SET updated_at = ?2 WHERE id = ?1", params![id, at])?;
+        touch(&tx, board, at)?;
+        tx.commit()?;
+        Ok(Ok(()))
+    }
+
+    /// Delete a row with what is attached to it, or a group with its rows.
+    /// With `agent` (a machine whose agent deletes), a group that holds a
+    /// row some other hand added is refused, read in the same transaction as
+    /// the delete.
+    pub fn delete_entry(
+        &self,
+        board: &str,
+        id: &str,
+        agent: Option<&str>,
+        at: u64,
+    ) -> Result<std::result::Result<(), Refused>> {
+        let mut c = self.c();
+        let tx = c.immediate()?;
+        if !lock(&tx, board)? {
+            return Ok(Err(Refused::Missing("no such board")));
+        }
+        if group_of(&tx, board, id)?.is_some() {
+            if let Some(machine) = agent {
+                let others: u64 = tx.query_row(
+                    "SELECT count(*) FROM board_entries
+                     WHERE board_id = ?1 AND kind = 'row' AND zone_id = ?2 AND (agent IS NULL OR agent != ?3)",
+                    params![board, id, machine],
+                    |r| r.get(0),
+                )?;
+                if others > 0 {
+                    return Ok(Err(Refused::Forbidden(
+                        "an agent removes a group only when every row in it was added by its own machine: this one \
+                         holds someone else's"
+                            .to_owned(),
+                    )));
+                }
+            }
+            tx.execute(
+                "DELETE FROM board_attachments WHERE row_id IN
+                     (SELECT id FROM board_entries WHERE board_id = ?1 AND kind = 'row' AND zone_id = ?2)",
+                params![board, id],
+            )?;
+            tx.execute(
+                "DELETE FROM board_entries WHERE board_id = ?1 AND kind = 'row' AND zone_id = ?2",
+                params![board, id],
+            )?;
+            tx.execute("DELETE FROM board_entries WHERE id = ?1", params![id])?;
+            renumber(&tx, &group_ids(&tx, board)?)?;
+        } else {
+            if entry(&tx, board, id)?.is_none() {
+                return Ok(Err(Refused::Missing("no such row")));
+            }
+            tx.execute("DELETE FROM board_attachments WHERE row_id = ?1", params![id])?;
+            tx.execute("DELETE FROM board_entries WHERE id = ?1", params![id])?;
+        }
         renumber(&tx, &siblings(&tx, board)?)?;
         touch(&tx, board, at)?;
         tx.commit()?;
@@ -806,6 +1065,32 @@ impl Db {
             )?
         };
         Ok((items, checks))
+    }
+
+    /// For each open PR among `ids`, the number of another open PR of the
+    /// same repo whose branch it targets: a stack, whose upper PR waits for
+    /// the lower. Only items of `project`'s linked repos, as [`Self::item_facts`].
+    pub fn stacked_on(&self, project: &str, ids: &[&str]) -> Result<Vec<(String, u64)>> {
+        if ids.is_empty() {
+            return Ok(vec![]);
+        }
+        let c = self.c();
+        c.query_map(
+            &format!(
+                "SELECT i.id, min(p.number) FROM forge_items i
+                 JOIN forge_items p ON p.repo_id = i.repo_id AND p.kind = 'pr' AND p.state = 'open'
+                     AND p.head_ref = i.base_ref AND p.id <> i.id
+                 WHERE i.kind = 'pr' AND i.state = 'open' AND i.base_ref IS NOT NULL
+                   AND (i.repo_id IN (SELECT repo_id FROM linked_repos WHERE project_id = ?2 AND unlinked_at IS NULL)
+                        OR i.connection_id IN
+                           (SELECT id FROM tracker_connections WHERE project_id = ?2 AND unlinked_at IS NULL))
+                   AND {}
+                 GROUP BY i.id",
+                in_json(&c, "i.id", 1)
+            ),
+            params![json_list(ids)?, project],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
     }
 
     /// The boards (id, project) with a row that points at native issue `id`.

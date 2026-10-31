@@ -309,3 +309,97 @@ async fn a_github_issue_is_named_from_its_own_repo() {
     assert_eq!(rows(&v).len(), 2, "this repo's is: {v}");
     assert_eq!(on(&v, "fi_a2").1["attachments"][0]["pointer"], fi("fi_same"));
 }
+
+/// The bug that merged isn't done fixes: one issue row through its PR open
+/// (Review), the PR merged with the issue still open (Review, marked), and
+/// the issue closed (Done, proven by CI when the merge was green). It never
+/// falls back to Next in between.
+#[tokio::test]
+async fn merged_isnt_done_until_the_issue_closes() {
+    let (base, app, team, id) = start().await;
+    let (login, _) = native(&base, &team, "Fix login").await;
+    let v = add(&base, &id, json!({ "kind": "issue", "id": login })).await;
+    let row = on(&v, &login).1["id"].as_str().unwrap().to_owned();
+    assert_eq!(on(&v, &login).0, "lane_next");
+
+    item(&app, "fi_fix", 88, 30, "pr", "open", "Fix login", ("feat/fix", "h_fix"));
+    let v = attach(&base, &id, &row, "work", fi("fi_fix")).await;
+    assert_eq!(on(&v, &login).0, "lane_review", "the PR is open");
+    assert!(on(&v, &login).1.get("marks").is_none(), "nothing to mark yet: {v}");
+
+    // Merged, the issue still open: Review, and the mark says why.
+    app.db.c().execute("UPDATE forge_items SET state = 'merged' WHERE id = 'fi_fix'", params![]).unwrap();
+    check(&app, 88, "h_fix", "build", "completed", Some("success"));
+    let v = read(&base, "bob", &id).await;
+    assert_eq!(on(&v, &login).0, "lane_review", "merged is not done: {v}");
+    assert_eq!(on(&v, &login).1["marks"], json!([{ "kind": "merged_not_closed" }]), "{v}");
+    assert!(on(&v, &login).1.get("proof").is_none(), "{v}");
+    assert_eq!(v["board"]["progress"], json!({ "done": 0, "total": 1, "proven": 0 }), "{v}");
+
+    // The issue closed: Done, proven by the green merge, and no mark.
+    app.db
+        .c()
+        .execute(
+            "UPDATE issues SET state = 'closed', close_reason = 'completed', closed_at = 5 WHERE id = ?1",
+            params![login],
+        )
+        .unwrap();
+    let v = read(&base, "bob", &id).await;
+    assert_eq!(on(&v, &login).0, "lane_done", "{v}");
+    assert_eq!(on(&v, &login).1["proof"], json!({ "by": "ci", "pointer": fi("fi_fix") }), "{v}");
+    assert!(on(&v, &login).1.get("marks").is_none(), "the issue is closed: {v}");
+    assert_eq!(v["board"]["progress"], json!({ "done": 1, "total": 1, "proven": 1 }), "{v}");
+}
+
+/// A PR stacked on another open PR is `after` it, with that PR's number;
+/// the repo is named for a reader of the repo and left out for one who isn't.
+/// Once the lower one merges, the mark goes.
+#[tokio::test]
+async fn a_stacked_pr_is_after_the_one_below() {
+    let (base, app, team, id) = start().await;
+    let (login, _) = native(&base, &team, "Fix login").await;
+    let v = add(&base, &id, json!({ "kind": "issue", "id": login })).await;
+    let row = on(&v, &login).1["id"].as_str().unwrap().to_owned();
+    // fi_low is #40 on acme/app (77, private), on branch feat/low; fi_a1 (#1)
+    // targets it.
+    item(&app, "fi_low", 77, 40, "pr", "open", "Lower", ("feat/low", "h_low"));
+    app.db.c().execute("UPDATE forge_items SET base_ref = 'feat/low' WHERE id = 'fi_a1'", params![]).unwrap();
+    let v = attach(&base, &id, &row, "work", fi("fi_a1")).await;
+    assert_eq!(on(&v, &login).0, "lane_review");
+
+    let v = read(&base, "bob", &id).await;
+    assert_eq!(on(&v, &login).1["marks"], json!([{ "kind": "after", "number": 40, "repo": "acme/app" }]), "{v}");
+    let v = read(&base, "carol", &id).await;
+    assert_eq!(on(&v, &login).1["marks"], json!([{ "kind": "after", "number": 40 }]), "no repo for carol: {v}");
+    assert!(!v.to_string().contains("acme/app"), "{v}");
+
+    // Not stacked on a PR that isn't open, or on a branch no PR has.
+    app.db.c().execute("UPDATE forge_items SET state = 'merged' WHERE id = 'fi_low'", params![]).unwrap();
+    let v = read(&base, "bob", &id).await;
+    assert!(on(&v, &login).1.get("marks").is_none(), "the lower one merged: {v}");
+    app.db
+        .c()
+        .execute("UPDATE forge_items SET state = 'open', head_ref = 'other' WHERE id = 'fi_low'", params![])
+        .unwrap();
+    let v = read(&base, "bob", &id).await;
+    assert!(on(&v, &login).1.get("marks").is_none(), "no PR is on that branch: {v}");
+
+    // Only an open PR waits: once the upper one merged, or the lower branch is
+    // a PR of another repo, there is nothing to wait for.
+    app.db.c().execute("UPDATE forge_items SET head_ref = 'feat/low' WHERE id = 'fi_low'", params![]).unwrap();
+    app.db.c().execute("UPDATE forge_items SET state = 'merged' WHERE id = 'fi_a1'", params![]).unwrap();
+    let v = read(&base, "bob", &id).await;
+    assert_eq!(on(&v, &login).1["marks"], json!([{ "kind": "merged_not_closed" }]), "the upper PR merged: {v}");
+    app.db.c().execute("UPDATE forge_items SET state = 'open' WHERE id = 'fi_a1'", params![]).unwrap();
+    app.db.c().execute("UPDATE forge_items SET repo_id = 88 WHERE id = 'fi_low'", params![]).unwrap();
+    let v = read(&base, "bob", &id).await;
+    assert!(on(&v, &login).1.get("marks").is_none(), "that branch is in another repo: {v}");
+    app.db.c().execute("UPDATE forge_items SET repo_id = 77 WHERE id = 'fi_low'", params![]).unwrap();
+
+    // A PR that is a row's item is marked the same way.
+    app.db.c().execute("UPDATE forge_items SET head_ref = 'feat/low' WHERE id = 'fi_low'", params![]).unwrap();
+    let (s, _) = call(&base, "bob", "DELETE", &format!("/api/boards/{id}/entries/{row}"), None).await;
+    assert_eq!(s, 200);
+    let v = add(&base, &id, fi("fi_a1")).await;
+    assert_eq!(on(&v, "fi_a1").1["marks"], json!([{ "kind": "after", "number": 40, "repo": "acme/app" }]), "{v}");
+}

@@ -16,6 +16,9 @@
 // and the note show, the Boards page folds it under "Done (1)") and reopens
 // it; Bob sees the goal, progress and the Done banner and none of the buttons.
 // #339: `/boards` lists every project's boards, by project, folded the same.
+// Groups (aru-125, decision 6): a board whose author made groups shows each as
+// a section with its progress and the four lanes of its rows under it, the
+// rows with none last; a board without any looks as it did.
 
 import { expect, test, type Locator, type Page } from "@playwright/test";
 import { closeContexts } from "./helpers";
@@ -370,4 +373,32 @@ test("a board with a long title and goal wraps in a card on a phone, with no sid
     await expect(bob.locator("[data-issue-row]").first()).toBeVisible();
     await bob.screenshot({ path: `${process.env.BOARDS_SHOTS}/issues.png`, animations: "disabled" });
   }
+});
+
+test("a board with groups shows each as a section with its four lanes, and the rows with none last", async () => {
+  test.setTimeout(90_000);
+  const made = await api(alice, "POST", `/api/projects/${project}/boards`, { title: "Phased" });
+  expect(made.status).toBe(200);
+  const id = made.body!.board.id as string;
+  const entries = `/api/boards/${id}/entries`;
+  await api(alice, "PUT", entries, { entry: "zone", title: "Decide" });
+  const both = await api(alice, "PUT", entries, { entry: "zone", title: "Build" });
+  const [decide, build] = (both.body!.groups as { id: string }[]).map((g) => g.id);
+  for (const [note, zone] of [["Pick a name", decide], ["Wire it up", build], ["Loose end", undefined]] as const) {
+    expect((await api(alice, "PUT", entries, { entry: "row", note, zone })).status).toBe(200);
+  }
+  await platform(alice, `/p/${project}/boards/${id}`);
+  await expect(alice.locator("[data-board-group-title]")).toHaveText(["Decide", "Build", "No group"], { timeout: 15_000 });
+  const groupOf = (title: string) => alice.locator("[data-board-group]").filter({ has: alice.locator("[data-board-group-title]", { hasText: title }) });
+  // Each group has the four lanes, and its rows are in them.
+  for (const title of ["Decide", "Build", "No group"]) await expect(groupOf(title).locator("[data-board-zone] h2")).toHaveText(["Next", "Doing", "Review", "Done"]);
+  await expect(groupOf("Decide").locator("[data-board-row]")).toHaveCount(1);
+  await expect(groupOf("Decide").locator("[data-board-note]")).toHaveText("Pick a name");
+  await expect(groupOf("Build").locator("[data-board-note]")).toHaveText("Wire it up");
+  await expect(groupOf("No group").locator("[data-board-note]")).toHaveText("Loose end");
+  await expect(groupOf("Decide").locator("[data-board-group-progress]")).toHaveText("no work yet");
+  // A board without groups is as before: lanes only.
+  await platform(alice, boardPath);
+  await expect(alice.locator("[data-board-group]")).toHaveCount(0);
+  await expect(alice.locator("[data-board-zone] h2")).toHaveText(["Next", "Doing", "Review", "Done"]);
 });

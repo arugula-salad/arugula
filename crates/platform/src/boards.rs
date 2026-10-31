@@ -1,6 +1,6 @@
 //! Boards over the platform's routes (boards, step 1): a
-//! project's boards ([`db::boards`]), each an ordered list of zones that
-//! hold an ordered list of rows. A board is a project-scoped platform
+//! project's boards ([`db::boards`]), each an ordered list of rows, in
+//! groups if its author made any. A board is a project-scoped platform
 //! object (`brd_`), not a daemon block: it is here, with every machine
 //! asleep. It has a thread like an issue (`chat::objects`). The wire is
 //! [`arugula_control_wire::boards`], which says how revs work.
@@ -31,10 +31,16 @@
 //! weren't there.
 //!
 //! **Lanes** (aru-125): a board is rows, a row is one piece of work, and
-//! nobody moves it. A read answers the board as four synthetic zones
+//! nobody sets its lane. A read answers the board as four synthetic zones
 //! (`lane_next`, `lane_doing`, `lane_review`, `lane_done`), each row in the
 //! lane [`lanes::lane`] works out from the live state of its items, never
-//! stored. A row's primary item is an issue or a PR (its pointer); a PR, an
+//! stored. What a board's author sets is its **groups** (phases, waves,
+//! areas): named, ordered sections, made, renamed, moved and deleted by
+//! people and agents alike, with a row's group and its place in it changed
+//! by a move. A read answers them as `groups`, with each row's `group`, and
+//! a row's `marks` say what its lane doesn't: `merged_not_closed`, `after`
+//! another open PR it is stacked on, and `earlier` agents that were
+//! replaced. A row's primary item is an issue or a PR (its pointer); a PR, an
 //! agent block or a run goes with it as a `work` attachment, a run or a link
 //! as `proof` (`board_attachments`). A row with no issue or PR is a note and
 //! stays in Next. Adding a PR that references the issue of a row attaches it
@@ -539,6 +545,9 @@ struct Facts {
     by_id: HashMap<String, Fact>,
     /// By (machine, pane): as reported, when the machine's grant stands.
     blocks: HashMap<(String, String), Fact>,
+    /// By `fi_` id of an open PR: the number of the open PR of its repo that
+    /// it is stacked on (it targets that PR's branch).
+    after: HashMap<String, u64>,
 }
 
 /// The facts for `ids`, in `project`; `blocks` is what [`block_states`] found.
@@ -568,6 +577,7 @@ fn facts(
         };
         f.by_id.insert(i.id, fact);
     }
+    f.after = app.db.stacked_on(project, &found)?.into_iter().collect();
     let issues: Vec<&str> = ids.issues.iter().map(String::as_str).collect();
     for i in app.db.issue_states(project, &issues)? {
         f.by_id.insert(i.id, Fact::Issue { closed: i.closed });
@@ -595,13 +605,17 @@ impl Facts {
     }
 }
 
+/// A row as its facts read it.
+struct Assessed {
+    lane: wire::Lane,
+    /// On a Done row.
+    proof: Option<wire::Proof>,
+    merged_not_closed: bool,
+}
+
 /// A row's lane and, on Done, its proof: from its primary pointer and what
 /// is attached to it as (role, pointer).
-fn assess(
-    pointer: &wire::Pointer,
-    attached: &[(wire::AttachRole, &wire::Pointer)],
-    facts: &Facts,
-) -> (wire::Lane, Option<wire::Proof>) {
+fn assess(pointer: &wire::Pointer, attached: &[(wire::AttachRole, &wire::Pointer)], facts: &Facts) -> Assessed {
     let counted = matches!(pointer, wire::Pointer::Issue { .. } | wire::Pointer::ForgeItem { .. });
     let item = counted.then(|| facts.of(pointer)).flatten();
     let primary = if counted { Primary::Item(item.as_ref()) } else { Primary::Note };
@@ -610,12 +624,50 @@ fn assess(
         .filter(|(r, _)| *r == wire::AttachRole::Work)
         .filter_map(|(_, p)| facts.of(p).map(|f| (*p, f)))
         .collect();
-    let lane = lanes::lane(primary, &work.iter().map(|(_, f)| *f).collect::<Vec<_>>());
+    let seen: Vec<Fact> = work.iter().map(|(_, f)| *f).collect();
+    let lane = lanes::lane(primary, &seen);
+    let merged_not_closed = lanes::merged_not_closed(primary, &seen);
     if lane != wire::Lane::Done || !counted {
-        return (lane, None);
+        return Assessed { lane, proof: None, merged_not_closed };
     }
     let evidence = attached.iter().find(|(r, _)| *r == wire::AttachRole::Proof).map(|(_, p)| *p);
-    (lane, lanes::proof((pointer, item.as_ref()), &work, evidence))
+    Assessed { lane, proof: lanes::proof((pointer, item.as_ref()), &work, evidence), merged_not_closed }
+}
+
+/// A row's marks (see [`wire::Mark`]): `merged_not_closed`; `after` the
+/// first open PR of the row (its own, then those attached) that is stacked
+/// on another, with the repo as `repo_of` says it; `earlier` for each
+/// closed block attached.
+fn marks_of(
+    merged_not_closed: bool,
+    pointer: &wire::Pointer,
+    attachments: &[&db::Attached],
+    facts: &Facts,
+    repo_of: &dyn Fn(&wire::Pointer) -> Option<String>,
+) -> Vec<wire::Mark> {
+    let mut marks = vec![];
+    if merged_not_closed {
+        marks.push(wire::Mark::MergedNotClosed);
+    }
+    let work = attachments.iter().filter(|a| a.role == wire::AttachRole::Work).map(|a| &a.pointer);
+    let stacked = std::iter::once(pointer).chain(work).find_map(|p| match p {
+        wire::Pointer::ForgeItem { id } => facts.after.get(id).map(|n| (*n, repo_of(p))),
+        _ => None,
+    });
+    if let Some((number, repo)) = stacked {
+        marks.push(wire::Mark::After { number, repo });
+    }
+    marks.extend(
+        attachments.iter().filter(|a| is_earlier(a, facts)).map(|a| wire::Mark::Earlier { attachment: a.id.clone() }),
+    );
+    marks
+}
+
+/// Whether an attachment is an agent block that was closed.
+fn is_earlier(a: &db::Attached, facts: &Facts) -> bool {
+    a.role == wire::AttachRole::Work
+        && matches!(a.pointer, wire::Pointer::Block { .. })
+        && matches!(facts.of(&a.pointer), Some(Fact::Block { closed: true }))
 }
 
 /// What each agent block reported, as a board shows it: only when its
@@ -665,10 +717,10 @@ async fn progress(app: &Platform, project: &str, boards: &mut [wire::Board]) -> 
                 .filter(|a| a.board == b.id && a.row == t.row)
                 .filter_map(|a| a.role.map(|r| (r, &a.pointer)))
                 .collect();
-            let (lane, proof) = assess(&t.pointer, &attached, &facts);
+            let a = assess(&t.pointer, &attached, &facts);
             b.progress.total += 1;
-            b.progress.done += u32::from(lane == wire::Lane::Done);
-            b.progress.proven += u32::from(proof.is_some());
+            b.progress.done += u32::from(a.lane == wire::Lane::Done);
+            b.progress.proven += u32::from(a.proof.is_some());
         }
     }
     Ok(())
@@ -714,28 +766,46 @@ async fn read(app: &Platform, account: &str, id: &str) -> Result<wire::BoardView
             rows: vec![],
         })
         .collect();
+    let mut groups: Vec<wire::Group> = stored
+        .groups
+        .iter()
+        .map(|g| wire::Group { id: g.id.clone(), rev: g.rev, title: g.title.clone(), progress: Default::default() })
+        .collect();
     for e in &stored.rows {
         let mine: Vec<&db::Attached> = stored.attachments.iter().filter(|a| a.row == e.id).collect();
         let attached: Vec<(wire::AttachRole, &wire::Pointer)> = mine.iter().map(|a| (a.role, &a.pointer)).collect();
-        let (lane, proof) = assess(&e.pointer, &attached, &facts);
+        let a = assess(&e.pointer, &attached, &facts);
         let (row_live, row_block) = chip(&e.pointer);
-        let attachments = mine
+        // The attachments of a replaced agent come last.
+        let mut ordered = mine.clone();
+        ordered.sort_by_key(|a| is_earlier(a, &facts));
+        let marks = marks_of(a.merged_not_closed, &e.pointer, &mine, &facts, &|p| chip(p).0.and_then(|l| l.repo));
+        let attachments = ordered
             .iter()
             .map(|a| {
                 let (live, block) = chip(&a.pointer);
                 wire::Attachment { id: a.id.clone(), role: a.role, pointer: a.pointer.clone(), live, block }
             })
             .collect();
-        let at = wire::Lane::ALL.iter().position(|l| *l == lane).unwrap_or(0);
+        if let Some(g) = groups.iter_mut().find(|g| Some(&g.id) == e.zone.as_ref())
+            && matches!(e.pointer, wire::Pointer::Issue { .. } | wire::Pointer::ForgeItem { .. })
+        {
+            g.progress.total += 1;
+            g.progress.done += u32::from(a.lane == wire::Lane::Done);
+            g.progress.proven += u32::from(a.proof.is_some());
+        }
+        let at = wire::Lane::ALL.iter().position(|l| *l == a.lane).unwrap_or(0);
         zones[at].rows.push(wire::Row {
             id: e.id.clone(),
             rev: e.rev,
             pointer: e.pointer.clone(),
             note: e.note.clone(),
             status: e.status,
-            lane,
+            lane: a.lane,
             attachments,
-            proof,
+            proof: a.proof,
+            group: e.zone.clone(),
+            marks,
             live: row_live,
             block: row_block,
             agent: e
@@ -746,7 +816,7 @@ async fn read(app: &Platform, account: &str, id: &str) -> Result<wire::BoardView
             updated_at: e.updated_at,
         });
     }
-    Ok(wire::BoardView { board, zones, said: None })
+    Ok(wire::BoardView { board, zones, groups, said: None })
 }
 
 /// The board `id`, in `project`, changed: pages showing it read it again
@@ -881,6 +951,22 @@ fn follows(why: &str) -> ApiError {
     bad(&format!("{}: {why}", wire::LANES_FOLLOW))
 }
 
+/// What a lane id in a group's place is told.
+fn not_a_lane() -> ApiError {
+    follows(
+        "a lane is never set, and is no group. A row goes in a group (zon_…) or in none; its lane changes as its \
+         issue closes, its PR opens or merges, or its agent block or run works",
+    )
+}
+
+/// `id` as a group's: a lane is refused with why, anything else is a `zon_` id.
+fn group_id_ok(id: &str) -> Result<(), ApiError> {
+    if id.starts_with("lane_") {
+        return Err(not_a_lane());
+    }
+    id_ok(id, "zon").map_err(|_| bad("expected a group id that starts zon_"))
+}
+
 /// A row's item is an issue or a PR, or nothing, or (a note) a link; a run
 /// or an agent block is attached, and a workspace is neither.
 fn primary_ok(p: &wire::Pointer) -> Result<(), ApiError> {
@@ -893,12 +979,14 @@ fn primary_ok(p: &wire::Pointer) -> Result<(), ApiError> {
     }
 }
 
-/// Refuse what only a zone's change, a row's status or a move would do.
-fn refuse_zone_writes(p: &wire::PutEntry) -> Result<(), ApiError> {
-    if p.zone.is_some() || p.kind.is_some() || p.title.is_some() || p.entry == Some(wire::EntryKind::Zone) {
-        return Err(follows(
-            "a board has four lanes, Next, Doing, Review and Done, and nobody makes, renames, moves or deletes a zone",
-        ));
+/// Refuse what sets a lane: a lane for a group, a kind, or a status other
+/// than `needs_input`.
+fn refuse_lane_writes(p: &wire::PutEntry) -> Result<(), ApiError> {
+    if let Some(z) = &p.zone {
+        group_id_ok(z)?;
+    }
+    if p.kind.is_some() {
+        return Err(bad("a group has a title and no kind"));
     }
     if p.status.is_some_and(|s| !matches!(s, wire::Status::NeedsInput | wire::Status::None)) {
         return Err(follows(
@@ -1057,21 +1145,24 @@ async fn plan_add(
     Ok(Plan::Add { absorb: vec![], said: None })
 }
 
-/// Add a row, or change one (see [`wire::PutEntry`]). Adding an issue or a
+/// Add a row or a group, or change one (see [`wire::PutEntry`]). Adding an issue or a
 /// PR that is on the board already, or that goes with a row there, changes
 /// no rows: see [`Plan`], and the answer's `said`.
 pub async fn put(app: &Platform, by: Actor<'_>, id: &str, p: &wire::PutEntry) -> Result<wire::BoardView, ApiError> {
     let board = board_place(app, by, id, true).await?;
-    refuse_zone_writes(p)?;
+    refuse_lane_writes(p)?;
     if let Some(machine) = by.agent {
         agent_put_allowed(app, id, machine, p)?;
     }
     if let Some(i) = &p.id {
-        if id_ok(i, "zon").is_ok() {
-            return Err(follows("a board has four lanes, and no zones to change"));
+        if i.starts_with("lane_") {
+            return Err(not_a_lane());
         }
-        id_ok(i, "row").map_err(|_| bad("expected an id that starts row_"))?;
+        if id_ok(i, "zon").is_err() {
+            id_ok(i, "row").map_err(|_| bad("expected an id that starts row_ or zon_"))?;
+        }
     }
+    let title = p.title.as_deref().map(title_ok).transpose()?;
     let note = p.note.as_deref().map(note_ok).transpose()?;
     let pointer = p.pointer.as_ref().filter(|ptr| **ptr != wire::Pointer::None);
     if let Some(ptr) = &p.pointer {
@@ -1079,10 +1170,19 @@ pub async fn put(app: &Platform, by: Actor<'_>, id: &str, p: &wire::PutEntry) ->
     }
     let mut said = None;
     let mut change = true;
-    let put =
-        Put { id: p.id.as_deref(), rev: p.rev, pointer: p.pointer.as_ref(), note, status: p.status, agent: by.agent };
-    if p.id.is_some() {
-        app.db.put_entry(id, &put, &[], now_ms(), wire::ROWS_MAX)?.map_err(refused)?;
+    let put = Put {
+        id: p.id.as_deref(),
+        rev: p.rev,
+        entry: p.entry,
+        zone: p.zone.as_deref(),
+        title,
+        pointer: p.pointer.as_ref(),
+        note,
+        status: p.status,
+        agent: by.agent,
+    };
+    if p.id.is_some() || p.entry == Some(wire::EntryKind::Zone) {
+        app.db.put_entry(id, &put, &[], now_ms(), wire::ROWS_MAX, wire::GROUPS_MAX)?.map_err(refused)?;
     } else {
         let stored = app.db.board_stored(id)?.ok_or_else(no_board)?;
         let plan = match pointer {
@@ -1102,7 +1202,7 @@ pub async fn put(app: &Platform, by: Actor<'_>, id: &str, p: &wire::PutEntry) ->
                 said = Some(s);
             }
             Plan::Add { absorb, said: s } => {
-                app.db.put_entry(id, &put, &absorb, now_ms(), wire::ROWS_MAX)?.map_err(refused)?;
+                app.db.put_entry(id, &put, &absorb, now_ms(), wire::ROWS_MAX, wire::GROUPS_MAX)?.map_err(refused)?;
                 said = s;
             }
         }
@@ -1165,26 +1265,39 @@ pub async fn detach(app: &Platform, by: Actor<'_>, id: &str, attachment: &str) -
     read(app, by.account, id).await
 }
 
-/// Moving a row is refused: its lane follows the work (aru-125).
+/// Change a row's group and its place in it, or a group's place among
+/// groups. That is planning, so people and agents alike may. A lane is never
+/// set (aru-125): a move to one is refused.
 pub async fn move_entry(
     app: &Platform,
     by: Actor<'_>,
     id: &str,
-    _entry: &str,
-    _m: &wire::MoveEntry,
+    entry: &str,
+    m: &wire::MoveEntry,
 ) -> Result<wire::BoardView, ApiError> {
-    board_place(app, by, id, true).await?;
-    Err(follows(
-        "a row can't be moved. Its lane changes as its issue closes, its PR opens or merges, or its agent block or \
-         run works: attach the work to the row to show it",
-    ))
+    let board = board_place(app, by, id, true).await?;
+    if entry.starts_with("lane_") {
+        return Err(not_a_lane());
+    }
+    if id_ok(entry, "zon").is_err() {
+        id_ok(entry, "row").map_err(|_| bad("expected an id that starts row_ or zon_"))?;
+    }
+    if let Some(Some(z)) = &m.zone {
+        group_id_ok(z)?;
+    }
+    let to = db::Move { zone: m.zone.as_ref().map(|z| z.as_deref()), before: m.before.as_deref(), rev: m.rev };
+    app.db.move_entry(id, entry, &to, now_ms())?.map_err(refused)?;
+    changed(app, &board.project, id);
+    read(app, by.account, id).await
 }
 
-/// Delete a row, with what is attached to it.
+/// Delete a row, with what is attached to it, or a group with its rows. An
+/// agent deletes only rows its own machine added, and a group only when
+/// every row in it is one.
 pub async fn delete(app: &Platform, by: Actor<'_>, id: &str, entry: &str) -> Result<wire::BoardView, ApiError> {
     let board = board_place(app, by, id, true).await?;
-    if id_ok(entry, "zon").is_ok() {
-        return Err(follows("a board has four lanes, and no zones to delete"));
+    if entry.starts_with("lane_") {
+        return Err(not_a_lane());
     }
     if let (Some(machine), Some(e)) = (by.agent, app.db.board_entry(id, entry)?)
         && e.agent.as_deref() != Some(machine)
@@ -1194,7 +1307,7 @@ pub async fn delete(app: &Platform, by: Actor<'_>, id: &str, entry: &str) -> Res
             "an agent removes only the rows its own machine added: this one is someone else's",
         ));
     }
-    app.db.delete_entry(id, entry, now_ms())?.map_err(refused)?;
+    app.db.delete_entry(id, entry, by.agent, now_ms())?.map_err(refused)?;
     changed(app, &board.project, id);
     read(app, by.account, id).await
 }
@@ -1253,8 +1366,9 @@ pub async fn reopen_route(State(app): State<Arc<Platform>>, s: Person, Path(id):
     Ok(Json(reopen(&app, Actor::person(&s.account), &id).await?))
 }
 
-/// `PUT /api/boards/{id}/entries`: add a row, or change a row's note or
-/// pointer (owners and editors); 409 `stale_rev` when the row moved on.
+/// `PUT /api/boards/{id}/entries`: add a row or a group, or change a row's
+/// note or pointer or a group's title (owners and editors); 409 `stale_rev`
+/// when it moved on.
 pub async fn put_route(
     State(app): State<Arc<Platform>>,
     s: Person,
@@ -1264,8 +1378,8 @@ pub async fn put_route(
     Ok(Json(put(&app, Actor::person(&s.account), &id, &p).await?))
 }
 
-/// `POST /api/boards/{id}/entries/{entry}/move`: refused, 400: lanes follow
-/// the work.
+/// `POST /api/boards/{id}/entries/{entry}/move`: a row's group and place, or
+/// a group's place (owners and editors); a lane is refused, 400.
 pub async fn move_route(
     State(app): State<Arc<Platform>>,
     s: Person,
@@ -1276,7 +1390,7 @@ pub async fn move_route(
 }
 
 /// `DELETE /api/boards/{id}/entries/{entry}`: a row and what is attached to
-/// it (owners and editors).
+/// it, or a group and its rows (owners and editors).
 pub async fn delete_route(
     State(app): State<Arc<Platform>>,
     s: Person,

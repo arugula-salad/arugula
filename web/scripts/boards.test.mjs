@@ -3,7 +3,7 @@
 // the board routes' paths. Run with `node --experimental-strip-types`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { LANE_GLYPH, assigneesLine, chipOf, counted, debounced, epicLine, firstLine, isCard, laneCount, liveWord, parsePointer, pointerHref, pointerLabel, pointerToSend, proofMark, rowGlyph, stepActive, workLabel } from "../src/shared/boards/text.ts";
+import { LANE_GLYPH, assigneesLine, chipOf, counted, debounced, earlierLine, epicLine, firstLine, groupLine, isCard, laneCount, liveWord, marksOf, parsePointer, pointerHref, pointerLabel, pointerToSend, proofMark, rowGlyph, sections, stepActive, workLabel } from "../src/shared/boards/text.ts";
 import { parse, pathOf } from "../src/platform/paths.ts";
 
 const P = "prj_8f2ec0ffee00112233445566778899aa";
@@ -143,4 +143,49 @@ test("a row sends a pointer that was picked or typed, never one it only kept", (
   assert.deepEqual(pointerToSend("iss_0abc", "", null), { pointer: picked });
   assert.deepEqual(pointerToSend("https://example.com/x", "", null), { pointer: { kind: "link", url: "https://example.com/x" } });
   assert.equal(pointerToSend("some words", "", null), null);
+});
+
+test("a board with groups is a section for each, its lanes under it, and the rows with none last", () => {
+  const row = (id, group) => ({ id, group });
+  const lanes = [
+    { id: "lane_next", title: "Next", rows: [row("a", "zon_1"), row("b", "zon_2"), row("c")] },
+    { id: "lane_doing", title: "Doing", rows: [] },
+    { id: "lane_review", title: "Review", rows: [] },
+    { id: "lane_done", title: "Done", rows: [row("d", "zon_1")] },
+  ];
+  const groups = [
+    { id: "zon_1", title: "One", progress: { done: 1, total: 2, proven: 0 } },
+    { id: "zon_2", title: "Two", progress: { done: 0, total: 0, proven: 0 } },
+  ];
+  const got = sections({ zones: lanes, groups });
+  assert.deepEqual(got.map((s) => s.group?.title ?? null), ["One", "Two", null]);
+  assert.deepEqual(got.map((s) => s.lanes.length), [4, 4, 4], "four lanes in each");
+  assert.deepEqual(got.map((s) => s.lanes.flatMap((z) => z.rows.map((r) => r.id))), [["a", "d"], ["b"], ["c"]]);
+  assert.deepEqual(got[0].lanes.map((z) => z.id), lanes.map((z) => z.id));
+  // Nothing ungrouped: no last section. A row in a group that's gone is ungrouped.
+  assert.equal(sections({ zones: lanes.map((z) => ({ ...z, rows: z.rows.filter((r) => r.group) })), groups }).length, 2);
+  assert.equal(sections({ zones: [{ id: "lane_next", title: "Next", rows: [row("x", "zon_9")] }], groups }).at(-1).lanes[0].rows[0].id, "x");
+  // No groups (or none from an old platform): the lanes as they came.
+  assert.deepEqual(sections({ zones: lanes, groups: [] }), [{ group: null, lanes }]);
+  assert.deepEqual(sections({ zones: lanes }), [{ group: null, lanes }]);
+  assert.equal(groupLine({ done: 1, total: 2 }), "1 of 2 done");
+  assert.equal(groupLine({ done: 0, total: 0 }), "no work yet");
+});
+
+test("a row's marks: merged but not closed, after a PR, and earlier agents folded", () => {
+  assert.deepEqual(marksOf({}), { merged: false, after: null, earlier: new Set() });
+  const m = marksOf({
+    marks: [
+      { kind: "merged_not_closed" },
+      { kind: "after", number: 1859, repo: "acme/app" },
+      { kind: "earlier", attachment: "att_1" },
+      { kind: "earlier", attachment: "att_2" },
+    ],
+  });
+  assert.equal(m.merged, true);
+  assert.deepEqual(m.after, { words: "after #1859", repo: "acme/app" });
+  assert.deepEqual([...m.earlier], ["att_1", "att_2"]);
+  assert.equal(marksOf({ marks: [{ kind: "after", number: 3 }] }).after.repo, undefined);
+  assert.equal(earlierLine(1), "earlier agent (1)");
+  assert.equal(earlierLine(2), "earlier agents (2)");
 });

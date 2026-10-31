@@ -202,9 +202,10 @@ async fn a_board_from_creation_to_a_stale_write() {
     let _ = plan;
 }
 
-/// Nobody moves a row or makes a zone, and nobody sets a status but
-/// `needs_input`: each is refused in the words "lanes follow the work", for
-/// a person; the rows stay where the work puts them.
+/// Nobody sets a lane (a row in a lane's place, a move to one, a lane's
+/// change or delete) or a status but `needs_input`: each is refused in the
+/// words "lanes follow the work", for a person; the rows stay where the work
+/// puts them.
 #[tokio::test]
 async fn lanes_follow_the_work_and_refuse_the_rest() {
     let hub = Arc::new(TestHub::default());
@@ -218,16 +219,16 @@ async fn lanes_follow_the_work_and_refuse_the_rest() {
         assert_eq!(r.0, 400, "{}", r.1);
         assert!(r.1["error"].as_str().unwrap().starts_with("lanes follow the work: "), "{}", r.1);
     };
-    // Zones.
-    follows(&put(&base, "a", &id, json!({ "entry": "zone", "title": "Now" })).await);
-    follows(&put(&base, "a", &id, json!({ "entry": "zone", "title": "Next", "kind": "lane" })).await);
-    follows(&put(&base, "a", &id, json!({ "entry": "row", "zone": "zon_0123", "note": "x" })).await);
-    follows(&put(&base, "a", &id, json!({ "id": "zon_0123", "rev": 1, "title": "Later" })).await);
-    follows(&call(&base, "a", "DELETE", &format!("/api/boards/{id}/entries/zon_0123"), None).await);
-    // Moves.
-    follows(&mv(&base, "a", &id, &plan, json!({})).await);
+    // A lane is no group: not a row's place, not changed, not deleted.
+    follows(&put(&base, "a", &id, json!({ "entry": "row", "zone": "lane_done", "note": "x" })).await);
+    follows(&put(&base, "a", &id, json!({ "id": "lane_next", "rev": 0, "title": "Later" })).await);
+    follows(&call(&base, "a", "DELETE", &format!("/api/boards/{id}/entries/lane_next"), None).await);
+    // Moves to a lane, or of one.
     follows(&mv(&base, "a", &id, &plan, json!({ "zone": "lane_done" })).await);
-    follows(&mv(&base, "a", &id, "zon_0123", json!({ "before": "zon_0456" })).await);
+    follows(&mv(&base, "a", &id, "lane_doing", json!({ "before": "lane_next" })).await);
+    // A group has no kind.
+    let (st, v) = put(&base, "a", &id, json!({ "entry": "zone", "title": "Next", "kind": "lane" })).await;
+    assert_eq!(st, 400, "{v}");
     // A status, but needs_input (and none, which clears it).
     for s in ["open", "working", "done", "failed"] {
         follows(&put(&base, "a", &id, json!({ "id": plan, "status": s })).await);
@@ -244,6 +245,182 @@ async fn lanes_follow_the_work_and_refuse_the_rest() {
     follows(&put(&base, "a", &id, json!({ "entry": "row", "note": "x", "status": "done" })).await);
     let (_, v) = call(&base, "a", "GET", &format!("/api/boards/{id}"), None).await;
     assert_eq!(shape(&v), lanes(&["the plan"], &[], &[], &[]), "nothing moved, nothing was made");
+    assert_eq!(v["groups"], json!([]), "{v}");
+}
+
+/// The notes of every row in the lane `next`, in order: a board's rows as it
+/// lists them, by group and then as it has them.
+fn order(v: &Value) -> Vec<String> {
+    v["zones"][0]["rows"].as_array().unwrap().iter().map(|r| r["note"].as_str().unwrap().to_owned()).collect()
+}
+
+/// A group's id by its title.
+fn group(v: &Value, title: &str) -> String {
+    let g = v["groups"].as_array().unwrap().iter().find(|g| g["title"] == title);
+    g.unwrap_or_else(|| panic!("no group {title}: {v}"))["id"].as_str().unwrap().to_owned()
+}
+
+/// A board's groups are its author's to set: made, renamed, moved and
+/// deleted, with rows put in them and moved among them. A group lists its
+/// rows first, in the groups' order, and rows with none last; each group
+/// counts its own work; and a row's lane is the same in any group.
+#[tokio::test]
+async fn groups_are_the_authors_to_set() {
+    let hub = Arc::new(TestHub::default());
+    let (app, base) = serve(hub.clone()).await;
+    let p = seed(&app, &hub, true);
+    let (_, b) = call(&base, "a", "POST", &format!("/api/projects/{p}/boards"), Some(json!({ "title": "B" }))).await;
+    let id = b["board"]["id"].as_str().unwrap().to_owned();
+
+    // Made last, each; moved before another.
+    put(&base, "a", &id, json!({ "entry": "zone", "title": "Build" })).await;
+    let (st, v) = put(&base, "a", &id, json!({ "entry": "zone", "title": "Decide" })).await;
+    assert_eq!(st, 200, "{v}");
+    let titles = |v: &Value| -> Vec<String> {
+        v["groups"].as_array().unwrap().iter().map(|g| g["title"].as_str().unwrap().to_owned()).collect()
+    };
+    assert_eq!(titles(&v), ["Build", "Decide"]);
+    assert_eq!(v["groups"][0]["rev"], 1);
+    assert_eq!(v["zones"].as_array().unwrap().len(), 4, "the lanes are the same four: {v}");
+    let (build, decide) = (group(&v, "Build"), group(&v, "Decide"));
+    let (st, v) = mv(&base, "a", &id, &decide, json!({ "before": build })).await;
+    assert_eq!((st, titles(&v)), (200, vec!["Decide".to_owned(), "Build".to_owned()]), "{v}");
+
+    // Rows: in a group, in none, and a group that isn't there.
+    let add = |zone: Option<&str>, note: &str| json!({ "entry": "row", "note": note, "zone": zone });
+    let (st, v) = put(&base, "a", &id, add(Some("zon_0123"), "x")).await;
+    assert_eq!(st, 404, "{v}");
+    put(&base, "a", &id, add(Some(&build), "b1")).await;
+    put(&base, "a", &id, add(Some(&decide), "d1")).await;
+    put(&base, "a", &id, add(None, "loose")).await;
+    let (_, v) = put(&base, "a", &id, add(Some(&build), "b2")).await;
+    assert_eq!(order(&v), ["d1", "b1", "b2", "loose"], "by group, ungrouped last: {v}");
+    let on = |v: &Value, note: &str| -> Value { rows_in(v).into_iter().find(|r| r["note"] == note).unwrap().clone() };
+    assert_eq!((on(&v, "b1")["group"].clone(), on(&v, "loose").get("group").cloned()), (json!(build), None));
+    let (b1, b2, d1, loose) = (
+        on(&v, "b1")["id"].as_str().unwrap().to_owned(),
+        on(&v, "b2")["id"].as_str().unwrap().to_owned(),
+        on(&v, "d1")["id"].as_str().unwrap().to_owned(),
+        on(&v, "loose")["id"].as_str().unwrap().to_owned(),
+    );
+
+    // Moves: into a group (last in it), within one, before a row, out of one.
+    let (st, v) = mv(&base, "a", &id, &loose, json!({ "zone": decide })).await;
+    assert_eq!((st, order(&v)), (200, vec!["d1".into(), "loose".into(), "b1".into(), "b2".into()]), "{v}");
+    let (_, v) = mv(&base, "a", &id, &b2, json!({ "before": b1 })).await;
+    assert_eq!(order(&v), ["d1", "loose", "b2", "b1"], "within its group: {v}");
+    let (_, v) = mv(&base, "a", &id, &d1, json!({ "zone": null })).await;
+    assert_eq!(order(&v), ["loose", "b2", "b1", "d1"], "out of its group: {v}");
+    assert!(on(&v, "d1").get("group").is_none(), "{v}");
+    let (st, v) = mv(&base, "a", &id, &b1, json!({ "zone": decide, "before": b2 })).await;
+    assert_eq!(st, 400, "before is a row of the group it goes to: {v}");
+    let (st, v) = mv(&base, "a", &id, &b1, json!({ "zone": "zon_0123" })).await;
+    assert_eq!(st, 404, "{v}");
+    let (st, v) = mv(&base, "a", &id, &b1, json!({ "rev": 99 })).await;
+    assert_eq!((st, v["reason"].as_str()), (409, Some(super::STALE_REV)), "{v}");
+
+    // A group's title takes its rev; a row's group is not changed by a put.
+    let (st, v) = put(&base, "a", &id, json!({ "id": build, "rev": 1, "title": "Make" })).await;
+    assert_eq!((st, v["groups"][1]["rev"].clone(), titles(&v)), (200, json!(2), vec!["Decide".into(), "Make".into()]));
+    let (st, v) = put(&base, "a", &id, json!({ "id": build, "rev": 1, "title": "Stale" })).await;
+    assert_eq!((st, v["reason"].as_str()), (409, Some(super::STALE_REV)), "{v}");
+    let (st, v) = put(&base, "a", &id, json!({ "id": build, "rev": 2, "note": "x" })).await;
+    assert_eq!(st, 400, "a group has a title: {v}");
+    let (st, v) = put(&base, "a", &id, json!({ "id": b1, "rev": 1, "zone": decide })).await;
+    assert_eq!(st, 400, "a row changes group by a move: {v}");
+
+    // Each group counts its own work: a closed issue in Decide.
+    let shut = issue(&base, "a", &p, "Shut").await;
+    app.db
+        .c()
+        .execute(
+            "UPDATE issues SET state = 'closed', close_reason = 'completed', closed_at = 5 WHERE id = ?1",
+            params![shut],
+        )
+        .unwrap();
+    let (_, v) = put(
+        &base,
+        "a",
+        &id,
+        json!({ "entry": "row", "zone": decide, "note": "shut", "pointer": { "kind": "issue", "id": shut } }),
+    )
+    .await;
+    assert_eq!(v["groups"][0]["progress"], json!({ "done": 1, "total": 1, "proven": 0 }), "{v}");
+    assert_eq!(v["groups"][1]["progress"], json!({ "done": 0, "total": 0, "proven": 0 }), "{v}");
+    assert_eq!(lane(&v, on(&v, "shut")["id"].as_str().unwrap()), "done", "a lane is the work's, in any group");
+
+    // Deleting a group takes its rows with it (loose and shut were in
+    // Decide), and nobody else's.
+    let (st, v) = call(&base, "a", "DELETE", &format!("/api/boards/{id}/entries/{decide}"), None).await;
+    assert_eq!(
+        (st, titles(&v), order(&v)),
+        (200, vec!["Make".to_owned()], vec!["b2".to_owned(), "b1".to_owned(), "d1".to_owned()]),
+        "{v}"
+    );
+    assert!(on(&v, "d1").get("group").is_none(), "the row taken out of its group before is not in a group: {v}");
+
+    // A viewer reads groups and changes none.
+    let (st, v) = call(&base, "v", "GET", &format!("/api/boards/{id}"), None).await;
+    assert_eq!((st, titles(&v)), (200, vec!["Make".to_owned()]));
+    let (st, _) = put(&base, "v", &id, json!({ "entry": "zone", "title": "No" })).await;
+    assert_eq!(st, 403);
+}
+
+/// An agent with `boards.write` plans: it makes, renames, moves and deletes
+/// groups and puts rows in them, a person's too. It deletes a group only
+/// when every row in it is its own machine's (aru-123), and it still can't
+/// set a lane.
+#[tokio::test]
+async fn an_agent_plans_with_groups_under_aru_123() {
+    use crate::agents_tests::give;
+    use arugula_control_wire::boards::{agent_board_entries, agent_board_entry, agent_board_entry_move};
+
+    let (hub, _app, base, t, _u) = crate::agents_tests::seeded().await;
+    hub.flag_named("team:t", FLAG, true);
+    let (_, b) =
+        call(&base, "a", "POST", &format!("/api/projects/{t}/boards"), Some(json!({ "title": "Launch" }))).await;
+    let id = b["board"]["id"].as_str().unwrap().to_owned();
+    let (st, g) =
+        call(&base, "a", "POST", "/api/grants", give("geek", "boards.write", json!({ "kind": "project", "id": t })))
+            .await;
+    assert_eq!(st, 200, "{g}");
+
+    // A person's group with a person's row; the agent's own group and row.
+    let (_, v) = put(&base, "a", &id, json!({ "entry": "zone", "title": "Theirs" })).await;
+    let theirs = group(&v, "Theirs");
+    let (_, v) = put(&base, "a", &id, json!({ "entry": "row", "note": "their row", "zone": theirs })).await;
+    let their_row = rows_in(&v)[0]["id"].as_str().unwrap().to_owned();
+    let (st, v) = geek_put(&base, &id, json!({ "entry": "zone", "title": "Mine" })).await;
+    assert_eq!(st, 200, "an agent makes a group: {v}");
+    let mine = group(&v, "Mine");
+    let (st, v) = geek_put(&base, &id, json!({ "entry": "row", "note": "my row", "zone": mine })).await;
+    assert_eq!(st, 200, "{v}");
+    assert_eq!(order(&v), ["their row", "my row"]);
+
+    // Planning is allowed on anyone's: rename, move a group, move a row.
+    let (st, v) = geek_put(&base, &id, json!({ "id": theirs, "rev": 1, "title": "Phase 1" })).await;
+    assert_eq!((st, group(&v, "Phase 1")), (200, theirs.clone()), "{v}");
+    let (st, v) = geek(&base, "POST", &agent_board_entry_move(&id, &mine), Some(json!({ "before": theirs }))).await;
+    assert_eq!((st, order(&v)), (200, vec!["my row".to_owned(), "their row".to_owned()]), "{v}");
+    let (st, v) = geek(&base, "POST", &agent_board_entry_move(&id, &their_row), Some(json!({ "zone": mine }))).await;
+    assert_eq!((st, order(&v)), (200, vec!["my row".to_owned(), "their row".to_owned()]), "{v}");
+    let (st, v) =
+        geek(&base, "POST", &agent_board_entry_move(&id, &their_row), Some(json!({ "zone": "lane_done" }))).await;
+    assert_eq!(st, 400, "{v}");
+    assert!(v["error"].as_str().unwrap().starts_with("lanes follow the work: "), "{v}");
+
+    // Deleting: a group with a person's row in it is refused (their row went
+    // to Mine); Phase 1 holds none now and goes.
+    let (st, v) = geek(&base, "DELETE", &agent_board_entry(&id, &mine), None).await;
+    assert_eq!(st, 403, "someone else's row is in it: {v}");
+    assert!(v["error"].as_str().unwrap().contains("every row in it was added by its own machine"), "{v}");
+    let (st, v) = geek(&base, "DELETE", &agent_board_entry(&id, &theirs), None).await;
+    assert_eq!((st, v["groups"].as_array().unwrap().len()), (200, 1), "{v}");
+    let (_, v) = geek_put(&base, &id, json!({ "entry": "zone", "title": "Empty" })).await;
+    let (st, v) = geek(&base, "DELETE", &agent_board_entry(&id, &group(&v, "Empty")), None).await;
+    assert_eq!(st, 200, "{v}");
+    let _ = agent_board_entries(&id);
+    assert_eq!(order(&geek(&base, "GET", &arugula_control_wire::boards::agent_board(&id), None).await.1).len(), 2);
 }
 
 /// What is attached to a row: work moves its lane, proof is a mark; a run
@@ -539,7 +716,7 @@ async fn an_agent_with_boards_write_works_the_rows() {
         geek(&base, "PUT", &agent_board_entries(&id), Some(json!({ "id": plan, "rev": 1, "note": "stale" }))).await;
     assert_eq!((st, v["reason"].as_str()), (409, Some(super::STALE_REV)), "{v}");
 
-    // What lanes refuse an agent too: a status, a zone, a move.
+    // What lanes refuse an agent too: a status, a lane, a move to one.
     let follows = |what: &str, r: (u16, Value)| {
         assert_eq!(r.0, 400, "{what}: {}", r.1);
         assert!(r.1["error"].as_str().unwrap().starts_with("lanes follow the work: "), "{what}: {}", r.1);
@@ -548,7 +725,7 @@ async fn an_agent_with_boards_write_works_the_rows() {
         "a status",
         geek(&base, "PUT", &agent_board_entries(&id), Some(json!({ "id": green, "status": "done" }))).await,
     );
-    follows("a zone", geek_put(&base, &id, json!({ "entry": "zone", "title": "Now" })).await);
+    follows("a lane", geek_put(&base, &id, json!({ "entry": "row", "zone": "lane_done", "note": "x" })).await);
     follows(
         "a move",
         geek(&base, "POST", &agent_board_entry_move(&id, &mine_id), Some(json!({ "zone": "lane_done" }))).await,
@@ -886,4 +1063,51 @@ async fn a_machine_reports_its_blocks_and_the_row_shows_it() {
     assert_eq!(st, 200);
     let (_, v) = call(&base, "a", "GET", &format!("/api/boards/{id}"), None).await;
     assert_eq!(row_in(&v, &row_id)["attachments"][0].get("block"), None, "{v}");
+}
+
+/// An agent that was replaced: its closed block's attachment goes after the
+/// open ones and is marked `earlier`, and only the open one moves the row to
+/// Doing.
+#[tokio::test]
+async fn a_replaced_agent_is_marked_earlier_and_comes_last() {
+    use crate::agents_tests::give;
+    use arugula_control_wire::boards::AGENT_BLOCK_STATE;
+
+    let (hub, _app, base, t, _u) = crate::agents_tests::seeded().await;
+    hub.flag_named("team:t", FLAG, true);
+    let (_, b) =
+        call(&base, "a", "POST", &format!("/api/projects/{t}/boards"), Some(json!({ "title": "Launch" }))).await;
+    let id = b["board"]["id"].as_str().unwrap().to_owned();
+    let (st, _) =
+        call(&base, "a", "POST", "/api/grants", give("geek", "boards.write", json!({ "kind": "project", "id": t })))
+            .await;
+    assert_eq!(st, 200);
+    let parser = issue(&base, "a", &t, "Parser").await;
+    let (_, v) =
+        put(&base, "a", &id, json!({ "entry": "row", "note": "parser", "pointer": { "kind": "issue", "id": parser } }))
+            .await;
+    let row = v["zones"][0]["rows"][0]["id"].as_str().unwrap().to_owned();
+    // Pane 7 first, then its replacement, pane 8.
+    for pane in ["7", "8"] {
+        let pointer = json!({ "kind": "block", "machine": "geek", "pane": pane });
+        let (st, v) = attach(&base, "a", &id, json!({ "row": row, "role": "work", "pointer": pointer })).await;
+        assert_eq!(st, 200, "{v}");
+    }
+    let state = |pane: &str, state: &str| json!({ "pane": pane, "block": { "state": state } });
+    assert_eq!(geek(&base, "PUT", AGENT_BLOCK_STATE, Some(state("7", "closed"))).await.0, 200);
+    assert_eq!(geek(&base, "PUT", AGENT_BLOCK_STATE, Some(state("8", "working"))).await.0, 200);
+
+    let (_, v) = call(&base, "a", "GET", &format!("/api/boards/{id}"), None).await;
+    let r = row_in(&v, &row);
+    assert_eq!(lane(&v, &row), "doing", "the open block moves it: {v}");
+    let panes: Vec<_> = r["attachments"].as_array().unwrap().iter().map(|a| a["pointer"]["pane"].clone()).collect();
+    assert_eq!(panes, [json!("8"), json!("7")], "the open one first: {v}");
+    let earlier = r["attachments"][1]["id"].clone();
+    assert_eq!(r["marks"], json!([{ "kind": "earlier", "attachment": earlier }]), "{v}");
+
+    // Both closed: Next, and both earlier.
+    assert_eq!(geek(&base, "PUT", AGENT_BLOCK_STATE, Some(state("8", "closed"))).await.0, 200);
+    let (_, v) = call(&base, "a", "GET", &format!("/api/boards/{id}"), None).await;
+    assert_eq!(lane(&v, &row), "next", "{v}");
+    assert_eq!(row_in(&v, &row)["marks"].as_array().unwrap().len(), 2, "{v}");
 }

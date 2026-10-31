@@ -1,9 +1,9 @@
 // What a board says (boards, step 2; lanes, aru-125): a row's glyph, a
-// lane's count, an attachment's chip, a pointer's label and the id a person
+// lane's count, a group's sections, a row's marks, an attachment's chip, a pointer's label and the id a person
 // typed as a pointer. Plain functions, for the view and its tests
 // (scripts/boards.test.mjs).
 
-import type { BoardAttachment, BoardBlockState, BoardBlockWord, BoardLane, BoardProgress, BoardLive, BoardLiveState, BoardPointer, BoardProof, BoardRow, BoardWorkItem, BoardZone } from "../proto";
+import type { BoardAttachment, BoardBlockState, BoardBlockWord, BoardGroup, BoardLane, BoardMark, BoardProgress, BoardLive, BoardLiveState, BoardPointer, BoardProof, BoardRow, BoardView, BoardWorkItem, BoardZone } from "../proto";
 
 /** A row's lane as its glyph. A row asking for input shows `?` instead. */
 export const LANE_GLYPH: Record<BoardLane, string> = {
@@ -54,6 +54,44 @@ export function proofMark(r: Pick<BoardRow, "lane" | "pointer" | "proof">): { pr
   const p: BoardProof | undefined = r.proof;
   if (!p) return { proven: false, words: "not proven yet" };
   return { proven: true, words: p.by === "ci" ? "proven by CI" : "proven" };
+}
+
+/** A board's sections, top to bottom: each group with the four lanes of its
+ * rows, then the rows with no group (only if there are any). A board with
+ * no groups is one section without a group, its lanes as they came. */
+export type Section = { group: BoardGroup | null; lanes: BoardZone[] };
+
+export function sections(v: Pick<BoardView, "zones" | "groups">): Section[] {
+  const groups = v.groups ?? [];
+  if (!groups.length) return [{ group: null, lanes: v.zones }];
+  const of = (keep: (r: BoardRow) => boolean): BoardZone[] => v.zones.map((z) => ({ ...z, rows: z.rows.filter(keep) }));
+  const out: Section[] = groups.map((g) => ({ group: g, lanes: of((r) => r.group === g.id) }));
+  const loose = of((r) => !r.group || !groups.some((g) => g.id === r.group));
+  if (loose.some((z) => z.rows.length)) out.push({ group: null, lanes: loose });
+  return out;
+}
+
+/** A group's progress in words: `2 of 5 done`, or `no work yet`. */
+export function groupLine(p: Pick<BoardProgress, "done" | "total">): string {
+  return p.total ? `${p.done} of ${p.total} done` : "no work yet";
+}
+
+/** What a row's marks say, for its card: `merged, not closed`; `after #1859`
+ * for a PR stacked on another (the row waits for it); and the attachments of
+ * agents that were replaced (`earlier`), which the card folds. */
+export function marksOf(r: Pick<BoardRow, "marks">): { merged: boolean; after: { words: string; repo?: string } | null; earlier: Set<string> } {
+  const marks: BoardMark[] = r.marks ?? [];
+  const after = marks.find((m) => m.kind === "after");
+  return {
+    merged: marks.some((m) => m.kind === "merged_not_closed"),
+    after: after && after.kind === "after" ? { words: `after #${after.number}`, repo: after.repo } : null,
+    earlier: new Set(marks.flatMap((m) => (m.kind === "earlier" ? [m.attachment] : []))),
+  };
+}
+
+/** The fold's summary: `earlier agents (2)`. */
+export function earlierLine(n: number): string {
+  return `earlier agent${n === 1 ? "" : "s"} (${n})`;
 }
 
 /** What a machine reported of an agent block, as a tag. */
