@@ -408,13 +408,55 @@ fn focus_then_unfocus_gives_back_the_layout() {
     assert_eq!(m.layout(1).unwrap(), before);
     // A pane from elsewhere can't be focused.
     assert!(m.apply(Intent::Focus { tab: 1, pane: Some(42) }).is_err());
-    // Focus is saved with the layout; an older layout loads without it.
+}
+
+#[test]
+fn focus_belongs_to_the_client_holding_the_tab() {
+    let mut m = tab_of(4);
+    let (desktop, phone) = (7, 8);
+    m.view(desktop, 1, 100, 40, None, true).unwrap();
     m.apply(Intent::Focus { tab: 1, pane: Some(2) }).unwrap();
+    assert_eq!(m.tab(1).unwrap().focus, Some(2));
+    // Showing the tab again, or zooming to the same pane, keeps it.
+    assert!(!m.view(desktop, 1, 100, 40, None, false).unwrap());
+    assert_eq!(m.tab(1).unwrap().focus, Some(2));
+    // Without a claim, another client changes nothing.
+    assert!(!m.view(phone, 1, 60, 59, Some(3), false).unwrap());
+    assert_eq!(m.tab(1).unwrap().focus, Some(2));
+    // Its claim wins: the phone's zoom isn't beaten by the desktop's focus.
+    m.view(phone, 1, 60, 59, Some(3), true).unwrap();
+    assert_eq!(m.tab(1).unwrap().focus, None, "another client's claim");
+    assert_eq!(m.layout(1).unwrap().panes.iter().map(|p| p.0).collect::<Vec<_>>(), vec![3]);
+    // The same size and zoom, but a focus to end: still a change to send.
+    m.view(phone, 1, 60, 59, Some(3), true).unwrap();
+    m.apply(Intent::Focus { tab: 1, pane: Some(3) }).unwrap();
+    assert_eq!(m.tab(1).unwrap().focus_by, Some(phone));
+    m.view(phone, 1, 60, 59, Some(4), true).unwrap();
+    assert_eq!(m.tab(1).unwrap().focus, None, "the holder zooms to another pane");
+    // The holder going away ends its focus.
+    m.view(desktop, 1, 100, 40, None, true).unwrap();
+    m.apply(Intent::Focus { tab: 1, pane: Some(2) }).unwrap();
+    assert!(!m.release(phone));
+    assert_eq!(m.tab(1).unwrap().focus, Some(2));
+    assert!(m.release(desktop));
+    assert_eq!(m.tab(1).unwrap().focus, None, "released");
+    assert_eq!(m.layout(1).unwrap().panes.len(), 4);
+}
+
+#[test]
+fn an_old_save_loads_without_focus() {
+    let mut m = tab_of(3);
+    m.view(7, 1, 100, 40, None, true).unwrap();
+    m.apply(Intent::Focus { tab: 1, pane: Some(2) }).unwrap();
+    // Focus isn't saved: nobody holds it after a restart.
     let back: Mux = serde_json::from_str(&serde_json::to_string(&m).unwrap()).unwrap();
-    assert_eq!(back.tab(1).unwrap().focus, Some(2));
+    assert_eq!(back.tab(1).unwrap().focus, None);
+    // A save from before has the key, with no holder: it's ignored.
     let mut old = serde_json::to_value(&m).unwrap();
-    old["tabs"]["1"].as_object_mut().unwrap().remove("focus");
-    assert_eq!(serde_json::from_value::<Mux>(old).unwrap().tab(1).unwrap().focus, None);
+    old["tabs"]["1"]["focus"] = serde_json::json!(2);
+    let old: Mux = serde_json::from_value(old).unwrap();
+    assert_eq!(old.tab(1).unwrap().focus, None);
+    assert_eq!(old.layout(1).unwrap().panes.len(), 3);
 }
 
 #[test]

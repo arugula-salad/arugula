@@ -62,6 +62,7 @@ impl Daemon {
                     Some(z) => self.zoomed.insert(client, z),
                     None => self.zoomed.remove(&client),
                 };
+                self.view_size.insert(client, (cols, rows));
                 if self.viewing.insert(client, tab) != Some(tab) {
                     // Presence only: no pane changed.
                     self.soon();
@@ -245,6 +246,9 @@ impl Daemon {
             info!(?client, ?intent, why, "intent refused");
             why
         };
+        if let (Intent::Focus { tab, pane: Some(_) }, Some(client)) = (&intent, client) {
+            self.take_for_focus(client, *tab).map_err(refused)?;
+        }
         self.check_move(&intent).map_err(refused)?;
         let local = matches!(intent, Intent::Split { local: true, .. });
         let before: Vec<SessionId> = self.mux.sessions.iter().map(|s| s.id).collect();
@@ -506,6 +510,28 @@ impl Daemon {
             _ if other => Claim::No,
             c => c,
         }
+    }
+
+    /// A focus is its holder's view, so `client` takes the tab first, under
+    /// the size rule (#1506): another person's tab isn't taken, and the
+    /// focus is refused rather than hiding panes on their screen (#439).
+    fn take_for_focus(&mut self, client: ClientId, tab: TabId) -> Result<(), String> {
+        let owner = self.mux.tab(tab).map_err(|e| e.to_string())?.owner;
+        if owner.is_none_or(|o| o == client) {
+            return Ok(());
+        }
+        let who = self.clients.get(&client).map(|c| c.principal.id().to_owned()).unwrap_or_default();
+        let claim = self.between_people(client, &who, tab, Claim::Yes, false);
+        if claim != Claim::Yes {
+            return Err("someone else is using this tab's size: ask for it first".to_owned());
+        }
+        let size = self.view_size.get(&client).copied().ok_or("show the tab first")?;
+        let zoom = self.zoomed.get(&client).copied();
+        let now = std::time::Instant::now();
+        if self.hold.view(&mut self.mux, client, tab, size, zoom, claim, now).map_err(|e| e.to_string())? {
+            self.changed();
+        }
+        Ok(())
     }
 
     /// An ssh guest's (`who`, a principal id) window (M65) sizes the pane's tab, zoomed to it.

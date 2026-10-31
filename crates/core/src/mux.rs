@@ -38,12 +38,17 @@ pub struct Tab {
     /// While set, this pane fills the tab and the others keep their sizes
     /// (a phone showing one pane at a time).
     pub zoom: Option<PaneId>,
-    /// While set, this pane fills the tab for everyone (desktop focus mode,
-    /// [`Intent::Focus`]). Unlike `zoom`, which follows one client's view,
-    /// it's shared, saved and survives a reload; it never touches `root`,
-    /// so unfocusing gives back the same layout.
-    #[serde(default)]
+    /// While set, this pane fills the tab (desktop focus mode,
+    /// [`Intent::Focus`]); it never touches `root`, so unfocusing gives back
+    /// the same layout. Like `zoom` it belongs to the client holding the
+    /// tab ([`Tab::focus_by`]): another client's claim, or the holder going
+    /// away, ends it, so it can't trap a client that took the tab since.
+    /// Not saved: a focus from an older save has no holder and is dropped.
+    #[serde(skip)]
     pub focus: Option<PaneId>,
+    /// The client that set `focus`: the tab's owner at the time.
+    #[serde(skip)]
+    pub focus_by: Option<ClientId>,
 }
 
 /// A whole-tab arrangement for [`Intent::Arrange`].
@@ -222,8 +227,8 @@ pub enum Intent {
         #[cfg_attr(feature = "ts", ts(optional))]
         main: Option<PaneId>,
     },
-    /// Show one pane filling the tab, for everyone, or (`pane: None`) the
-    /// whole tab again. See [`Tab::focus`].
+    /// Show one pane filling the tab, until another client takes the tab,
+    /// or (`pane: None`) the whole tab again. See [`Tab::focus`].
     Focus {
         tab: TabId,
         pane: Option<PaneId>,
@@ -344,7 +349,17 @@ impl Mux {
         let id = self.next_tab;
         self.tabs.insert(
             id,
-            Tab { id, name: None, root, cols: DEFAULT_COLS, rows: DEFAULT_ROWS, owner: None, zoom: None, focus: None },
+            Tab {
+                id,
+                name: None,
+                root,
+                cols: DEFAULT_COLS,
+                rows: DEFAULT_ROWS,
+                owner: None,
+                zoom: None,
+                focus: None,
+                focus_by: None,
+            },
         );
         let s = self.session_mut(session)?;
         let at = index.unwrap_or(s.tabs.len()).min(s.tabs.len());
@@ -569,6 +584,7 @@ impl Mux {
                     return Err(Error::NoPane(p));
                 }
                 t.focus = pane;
+                t.focus_by = pane.and(t.owner);
                 Ok(vec![])
             }
             SetOption { scope, name, value } => {
@@ -628,8 +644,17 @@ impl Mux {
         // bigger tab, as tmux does.
         let (min_cols, min_rows) = t.root.min_size();
         let next = (cols.max(2).max(min_cols), rows.max(1).max(min_rows), Some(client), zoom);
+        // A focus is its holder's view: anyone else taking the tab, or the
+        // holder zooming to another pane (a phone's tap), ends it.
+        let unfocus = t.focus.is_some() && (t.focus_by != Some(client) || zoom.is_some_and(|z| Some(z) != t.focus));
+        if unfocus {
+            (t.focus, t.focus_by) = (None, None);
+        }
         if (t.cols, t.rows, t.owner, t.zoom) == next {
-            return Ok(false);
+            if unfocus {
+                self.rev += 1;
+            }
+            return Ok(unfocus);
         }
         (t.cols, t.rows, t.owner, t.zoom) = next;
         self.rev += 1;
@@ -640,10 +665,16 @@ impl Mux {
     /// views them.
     pub fn release(&mut self, client: ClientId) -> bool {
         let mut changed = false;
-        for t in self.tabs.values_mut().filter(|t| t.owner == Some(client)) {
-            t.owner = None;
-            t.zoom = None;
-            changed = true;
+        for t in self.tabs.values_mut() {
+            if t.owner == Some(client) {
+                t.owner = None;
+                t.zoom = None;
+                changed = true;
+            }
+            if t.focus_by == Some(client) {
+                (t.focus, t.focus_by) = (None, None);
+                changed = true;
+            }
         }
         if changed {
             self.rev += 1;

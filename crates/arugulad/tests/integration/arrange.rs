@@ -172,3 +172,52 @@ async fn arranging_and_focusing_keep_every_pane_and_its_scrollback() {
         read_pane_until(&mut ws, p, &format!("again-{}", p + 40)).await;
     }
 }
+
+async fn view(ws: &mut Ws, tab: u32, (cols, rows): (u16, u16), zoom: Option<u32>) {
+    send(ws, ClientMsg::View { tab, cols, rows, zoom, claim: true, typed: false, asked: false }).await;
+}
+
+#[tokio::test]
+async fn a_focus_is_the_holders_and_never_traps_the_next_client() {
+    let d: Daemon = arugulad!("focus-holder").env("PS1", "$ ").start();
+    let (mut desktop, _) = connect_async(d.ws("/ws")).await.unwrap();
+    let In::Msg(ServerMsg::Hello { state, .. }) = recv(&mut desktop).await else { panic!("expected hello") };
+    let tab = state.tabs[0].id;
+    for (pane, edge) in [(1, Edge::Right), (2, Edge::Bottom)] {
+        intent(&mut desktop, Intent::Split { pane, edge, local: false, cwd: None }).await;
+    }
+    let s = state_where(&mut desktop, |s| s.tabs[0].layout.panes.len() == 3).await;
+    let ids: Vec<u32> = s.tabs[0].root.panes();
+
+    // The desktop holds the tab and focuses a pane.
+    view(&mut desktop, tab, (120, 40), None).await;
+    intent(&mut desktop, Intent::Focus { tab, pane: Some(ids[0]) }).await;
+    let s = state_where(&mut desktop, |s| s.tabs[0].focus == Some(ids[0])).await;
+    assert_eq!(s.tabs[0].layout.panes.len(), 1);
+
+    // The phone claims the tab and opens another pane: its zoom wins.
+    let (mut phone, _) = connect_async(d.ws("/ws")).await.unwrap();
+    let In::Msg(ServerMsg::Hello { .. }) = recv(&mut phone).await else { panic!("expected hello") };
+    view(&mut phone, tab, (60, 59), Some(ids[1])).await;
+    let s = state_where(&mut phone, |s| s.tabs[0].focus.is_none() && s.tabs[0].zoom == Some(ids[1])).await;
+    assert_eq!(s.tabs[0].layout.panes.iter().map(|p| p.0).collect::<Vec<_>>(), vec![ids[1]]);
+    // Tapping a third pane isn't blocked either.
+    view(&mut phone, tab, (60, 59), Some(ids[2])).await;
+    state_where(&mut phone, |s| s.tabs[0].layout.panes.iter().map(|p| p.0).collect::<Vec<_>>() == vec![ids[2]]).await;
+
+    // The desktop focuses again: it takes the tab back first (same person),
+    // and its focus holds.
+    intent(&mut desktop, Intent::Focus { tab, pane: Some(ids[0]) }).await;
+    let s = state_where(&mut desktop, |s| s.tabs[0].focus == Some(ids[0])).await;
+    assert_eq!((s.tabs[0].cols, s.tabs[0].rows), (120, 40), "the tab has the desktop's size");
+    assert_eq!(s.tabs[0].zoom, None, "and none of the phone's zoom");
+
+    // The phone leaving ends nothing of the desktop's; the desktop going
+    // away ends its focus.
+    drop(phone);
+    drop(desktop);
+    let (mut again, _) = connect_async(d.ws("/ws")).await.unwrap();
+    let In::Msg(ServerMsg::Hello { .. }) = recv(&mut again).await else { panic!("expected hello") };
+    let s = state_where(&mut again, |s| s.tabs[0].focus.is_none()).await;
+    assert_eq!(s.tabs[0].layout.panes.len(), 3, "every pane is reachable");
+}
