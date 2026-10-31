@@ -141,14 +141,23 @@ export async function upload(request: Request, pane: PaneId, files: File[], chip
 }
 
 /** Ask for files: the browser's picker, which on a phone also offers its
- * photos and camera. Nothing if it's dismissed. */
+ * photos and camera. Nothing if it's dismissed. The input is in the page
+ * while the picker is open: WebKit (the desktop app) can collect a detached
+ * one, and then its `change` never comes and the files go nowhere. */
 export function pick(): Promise<File[]> {
   return new Promise((res) => {
     const input = document.createElement("input");
     input.type = "file";
     input.multiple = true;
-    input.addEventListener("change", () => res([...(input.files ?? [])]));
-    input.addEventListener("cancel", () => res([]));
+    input.hidden = true;
+    input.dataset.pickInput = "";
+    const done = (files: File[]) => {
+      input.remove();
+      res(files);
+    };
+    input.addEventListener("change", () => done([...(input.files ?? [])]));
+    input.addEventListener("cancel", () => done([]));
+    document.body.append(input);
     input.click();
   });
 }
