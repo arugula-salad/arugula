@@ -2,8 +2,8 @@
   "schema": 1,
   "commit": "7525ff2fbad0028efa93abcdba565af0d4d5452f",
   "branch": "main",
-  "state": "pending",
-  "at": "2026-10-31T15:58:34Z",
+  "state": "green",
+  "at": "2026-10-31T15:59:38Z",
   "phases": {
     "lint": {
       "verdict": "pass",
@@ -186,13 +186,13 @@
       ]
     },
     "macos": {
-      "verdict": "pending",
+      "verdict": "pass",
       "build": "newest",
       "runs": [
         {
           "name": "macos (test)",
           "id": 124582010205,
-          "conclusion": null,
+          "conclusion": "success",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/41215496762/job/124582010205"
         },
         {

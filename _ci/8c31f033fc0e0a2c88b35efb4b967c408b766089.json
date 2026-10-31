@@ -3,7 +3,7 @@
   "commit": "8c31f033fc0e0a2c88b35efb4b967c408b766089",
   "branch": "main",
   "state": "pending",
-  "at": "2026-10-31T15:55:33Z",
+  "at": "2026-10-31T15:59:38Z",
   "phases": {
     "lint": {
       "verdict": "pending",
@@ -18,14 +18,18 @@
       ]
     },
     "build": {
-      "verdict": "pending",
+      "verdict": "unbuilt",
       "build": "newest",
-      "runs": []
+      "runs": [],
+      "reason": "superseded",
+      "coveredBy": "7e6817b2f03e996b15b3eaa02fc7b64c87e25699"
     },
     "test": {
-      "verdict": "pending",
+      "verdict": "unbuilt",
       "build": "newest",
-      "runs": []
+      "runs": [],
+      "reason": "superseded",
+      "coveredBy": "7e6817b2f03e996b15b3eaa02fc7b64c87e25699"
     },
     "e2e": {
       "verdict": "pending",
@@ -33,14 +37,18 @@
       "runs": []
     },
     "claims": {
-      "verdict": "pending",
+      "verdict": "unbuilt",
       "build": "newest",
-      "runs": []
+      "runs": [],
+      "reason": "superseded",
+      "coveredBy": "7e6817b2f03e996b15b3eaa02fc7b64c87e25699"
     },
     "macos": {
-      "verdict": "pending",
+      "verdict": "unbuilt",
       "build": "newest",
-      "runs": []
+      "runs": [],
+      "reason": "superseded",
+      "coveredBy": "7e6817b2f03e996b15b3eaa02fc7b64c87e25699"
     },
     "windows": {
       "verdict": "pending",
@@ -55,7 +63,7 @@
         {
           "name": "workspace-clippy",
           "id": 124583953291,
-          "conclusion": null,
+          "conclusion": "success",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/41216970835/job/124583953291"
         },
         {
