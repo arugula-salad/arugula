@@ -3,10 +3,10 @@
   "commit": "396af818604f2d84a822accb9305ecc8a90b3daf",
   "branch": "main",
   "state": "pending",
-  "at": "2026-10-31T22:41:04Z",
+  "at": "2026-10-31T22:41:59Z",
   "phases": {
     "lint": {
-      "verdict": "pending",
+      "verdict": "pass",
       "build": "newest",
       "runs": [
         {
@@ -20,6 +20,12 @@
           "id": 124678356871,
           "conclusion": "success",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/41248802494/job/124678356871"
+        },
+        {
+          "name": "suite-changed",
+          "id": 124679319891,
+          "conclusion": "success",
+          "url": "https://github.com/arugula-salad/arugula/actions/runs/41248802423/job/124679319891"
         }
       ]
     },
@@ -72,7 +78,7 @@
         {
           "name": "core",
           "id": 124678397020,
-          "conclusion": null,
+          "conclusion": "success",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/41248802494/job/124678397020"
         }
       ]
@@ -193,15 +199,28 @@
         {
           "name": "macos (webkit)",
           "id": 124678397030,
-          "conclusion": null,
+          "conclusion": "failure",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/41248802494/job/124678397030"
         }
-      ]
+      ],
+      "reason": "retrying"
     },
     "windows": {
       "verdict": "pending",
       "build": "newest",
       "runs": [
+        {
+          "name": "workspace",
+          "id": 124679357688,
+          "conclusion": null,
+          "url": "https://github.com/arugula-salad/arugula/actions/runs/41248802423/job/124679357688"
+        },
+        {
+          "name": "workspace-clippy",
+          "id": 124679357641,
+          "conclusion": null,
+          "url": "https://github.com/arugula-salad/arugula/actions/runs/41248802423/job/124679357641"
+        },
         {
           "name": "desktop",
           "id": 124677983544,
@@ -209,6 +228,12 @@
           "url": "https://github.com/arugula-salad/arugula/actions/runs/41248802322/job/124677983544"
         }
       ]
+    }
+  },
+  "retried": {
+    "macos (webkit)": {
+      "run": 124678397030,
+      "at": "2026-10-31T22:41:59Z"
     }
   }
 }
