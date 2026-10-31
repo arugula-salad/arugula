@@ -9,12 +9,13 @@
 //!   `trackers.write` grant over the project every time
 //!   (`arugula grants add <machine> trackers.write --project <name>`), and
 //!   never goes past its owner's role.
-//! - **A write may wait.** On a connection whose agent writes are set to
-//!   "Approve each write" (the default) the write is kept for a person, and
-//!   this answers "waiting for a person to approve it" with its `tw_` id:
-//!   nothing reached Plane yet, and an agent can't approve its own. On
-//!   "Allow all writes" it lands at once. Either way what lands ends with
-//!   a "via Arugula" line naming the person and this machine, added by the
+//! - **A write may wait.** The connection's policy says, per kind (create,
+//!   comment, edit, state change, field change), whether a write is kept for
+//!   a person (this answers "waiting for a person to approve it" with its
+//!   `tw_` id and the kind that needs it: nothing reached Plane yet, and an
+//!   agent can't approve its own) or lands at once (the answer says which
+//!   kind was allowed). What lands may end with a "via Arugula" line, as the
+//!   connection's attribution says (full, short or none), added by the
 //!   platform when it is sent.
 //! - **Items** are the mirror's (`fi_…`, which `forge_read` lists) or
 //!   `IDENT-N` (`ARUGU-7`). Assignees are not here.
@@ -37,7 +38,7 @@ pub(crate) const WRITE_TOOL: &str = "tracker_write";
 /// The platform's route for what a machine reaches.
 const REACH: &str = arugula_control_wire::projects::AGENT_TRACKER_REACH;
 
-pub(crate) const WRITE_DESCRIPTION: &str = "Write to the Plane project connected to a project in Arugula control: create a work item, comment on one, close it (completed or cancelled), reopen it (into the project's default state), or edit it. Your person's trackers.write grant over the project says you may, never more than their role. A write may wait: when the connection is set to approve each agent write (the default) it is kept for a person to approve, edit or drop in the project's Triage, and this says \"waiting for a person to approve it\" with its id; nothing has reached Plane yet, and you can't approve it yourself. When the connection allows agent writes it lands at once. What is sent ends with a line saying it was sent via Arugula by your person's agent on this machine. Create and edit also take state, module, type and labels by name (any case) or id, and parent as IDENT-N: an unknown name is refused with the project's real ones, and forge_read tracker_fields lists them. Items are named by their fi_ id (forge_read lists them) or IDENT-N, like ARUGU-7. Assignees are not supported.";
+pub(crate) const WRITE_DESCRIPTION: &str = "Write to the Plane project connected to a project in Arugula control: create a work item, comment on one, close it (completed or cancelled), reopen it (into the project's default state), or edit it. Your person's trackers.write grant over the project says you may, never more than their role. A write may wait: the connection decides which kinds (create, comment, edit, state change, field change) wait for a person to approve, edit or drop in the project's Triage, and the answer says which applied. A waiting write says \"waiting for a person to approve it\" with its id; nothing has reached Plane yet, and you can't approve it yourself. What is sent may end with a \"via Arugula\" line, as the connection says. Create and edit also take state, module, type and labels by name (any case) or id, and parent as IDENT-N: an unknown name is refused with the project's real ones, and forge_read tracker_fields lists them. Items are named by their fi_ id (forge_read lists them) or IDENT-N, like ARUGU-7. Assignees are not supported.";
 
 #[derive(Deserialize, JsonSchema)]
 pub struct CreateArgs {
@@ -297,7 +298,7 @@ pub(super) async fn trackers_reach(app: &crate::server::App) -> TrackersReach {
     let projects: Vec<TrackerReachProject> = serde_json::from_value(v["projects"].clone()).unwrap_or_default();
     let live = !projects.is_empty();
     let note = if live {
-        "tracker_write creates, comments on, closes, reopens and edits a Plane project's work items over these projects. A write may wait for a person to approve it, as the connection says; what is sent says it was via Arugula, by your person's agent on this machine. Each project lists its connections (id, identifier, agent_writes): create takes connection or tracker, or neither when there is one. After a daemon update, a session may need to reload its tool list to see tools new in this version.".into()
+        "tracker_write creates, comments on, closes, reopens and edits a Plane project's work items over these projects. A write may wait for a person to approve it, as the connection says; what is sent may say it was via Arugula, as the connection says. Each project lists its connections (id, identifier, write_policy: which kinds go at once): create takes connection or tracker, or neither when there is one. After a daemon update, a session may need to reload its tool list to see tools new in this version.".into()
     } else {
         "This machine's owner hasn't given its agents trackers.write: `arugula grants add <machine> trackers.write --project <name>`, or Settings, Agents, Plane writes, on the platform page.".into()
     };

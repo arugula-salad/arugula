@@ -1281,7 +1281,11 @@
       "description": "A tracker project connected to a project, or disconnected and waiting\nfor the purge. Never the key or the webhook secret.",
       "properties": {
         "agent_writes": {
-          "description": "`approve` (each agent write waits for a person) or `allow`.",
+          "description": "A summary for a client that predates `write_policy`: `allow` if every\nkind of agent write is allowed, else `approve`. Read-only.",
+          "type": "string"
+        },
+        "attribution": {
+          "description": "What a write's footer says: `full`, `short` or `none`.",
           "type": "string"
         },
         "backfilled_at": {
@@ -1373,6 +1377,10 @@
         },
         "workspace_slug": {
           "type": "string"
+        },
+        "write_policy": {
+          "$ref": "#/$defs/TrackerWritePolicy",
+          "description": "Which kinds of agent write go at once and which wait for a person."
         }
       },
       "required": [
@@ -1383,6 +1391,8 @@
         "identifier",
         "name",
         "agent_writes",
+        "write_policy",
+        "attribution",
         "has_webhook_secret",
         "webhook_url",
         "created_at",
@@ -1603,7 +1613,7 @@
       "description": "A live Plane connection of a project an agent reaches.",
       "properties": {
         "agent_writes": {
-          "description": "`approve` or `allow`.",
+          "description": "`allow` if every kind of write is allowed, else `approve`.",
           "type": "string"
         },
         "id": {
@@ -1618,6 +1628,10 @@
         },
         "workspace_slug": {
           "type": "string"
+        },
+        "write_policy": {
+          "$ref": "#/$defs/TrackerWritePolicy",
+          "description": "Per kind: `allow` or `approve`."
         }
       },
       "required": [
@@ -1625,7 +1639,8 @@
         "identifier",
         "name",
         "workspace_slug",
-        "agent_writes"
+        "agent_writes",
+        "write_policy"
       ],
       "type": "object"
     },
@@ -1653,9 +1668,16 @@
       "type": "object"
     },
     "TrackerSettings": {
-      "description": "`PATCH /api/projects/{project}/trackers/{connection}`: whether agents'\nwrites to the tracker wait for a person (`approve`) or go (`allow`), and\nits webhook secret; either or both, the answer is its\n[`TrackerConnection`]. A webhook secret is sealed like the key and never\nshown back; an empty one removes it.",
+      "description": "`PATCH /api/projects/{project}/trackers/{connection}`: which kinds of\nagent write wait for a person (`write_policy`), what their footer says\n(`attribution`: `full`, `short` or `none`), the older `agent_writes`\n(`approve` or `allow`, which sets every kind), and the webhook secret;\nany of them, the answer is its\n[`TrackerConnection`]. A webhook secret is sealed like the key and never\nshown back; an empty one removes it.",
       "properties": {
         "agent_writes": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "attribution": {
           "default": null,
           "type": [
             "string",
@@ -1668,6 +1690,17 @@
             "string",
             "null"
           ]
+        },
+        "write_policy": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TrackerWritePolicy"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         }
       },
       "type": "object"
@@ -1915,6 +1948,38 @@
       "required": [
         "state",
         "text"
+      ],
+      "type": "object"
+    },
+    "TrackerWritePolicy": {
+      "description": "What an agent's write to a tracker does, per kind: `allow` sends it at\nonce, `approve` keeps it for a person. An edit that is several kinds goes\nat once only if every one of them allows.",
+      "properties": {
+        "comment": {
+          "type": "string"
+        },
+        "create": {
+          "description": "A new work item, whatever fields it carries.",
+          "type": "string"
+        },
+        "edit": {
+          "description": "An edit of the title or the body.",
+          "type": "string"
+        },
+        "fields": {
+          "description": "An edit naming a module, parent, type or labels.",
+          "type": "string"
+        },
+        "state": {
+          "description": "A close, a reopen, or an edit naming a state.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "create",
+        "comment",
+        "edit",
+        "state",
+        "fields"
       ],
       "type": "object"
     },

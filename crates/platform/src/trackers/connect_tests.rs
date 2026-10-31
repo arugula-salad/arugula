@@ -129,6 +129,15 @@ async fn an_editor_connects_and_the_items_are_mirrored() {
         (made["identifier"].as_str(), made["name"].as_str(), made["agent_writes"].as_str()),
         (Some("ARUGU"), Some("Arugula"), Some("approve"))
     );
+    assert_eq!(
+        (
+            made["write_policy"]["comment"].as_str(),
+            made["write_policy"]["state"].as_str(),
+            made["attribution"].as_str()
+        ),
+        (Some("allow"), Some("approve"), Some("short")),
+        "a connection made now has the middle preset and the short footer"
+    );
     assert_eq!(made["has_webhook_secret"], true);
     assert_eq!(secrets(&app), 2);
     // The same Plane project, again, while it's connected.
@@ -186,6 +195,41 @@ async fn an_editor_connects_and_the_items_are_mirrored() {
     assert_eq!(s, 422);
     let (s, v) = call(&base, "bob", "PATCH", &path, Some(json!({ "agent_writes": "allow" }))).await;
     assert_eq!((s, v["agent_writes"].as_str()), (200, Some("allow")), "{v}");
+    assert_eq!(
+        (v["write_policy"]["create"].as_str(), v["write_policy"]["fields"].as_str()),
+        (Some("allow"), Some("allow"))
+    );
+
+    // The policy per kind: each is allow or approve, all five are said, and
+    // a viewer can't change it. The attribution is full, short or none.
+    let kinds = |create: &str, comment: &str| json!({ "create": create, "comment": comment, "edit": "allow", "state": "approve", "fields": "allow" });
+    let (s, _) = call(&base, "carol", "PATCH", &path, Some(json!({ "write_policy": kinds("allow", "allow") }))).await;
+    assert_eq!(s, 403);
+    let (s, _) = call(&base, "carol", "PATCH", &path, Some(json!({ "attribution": "none" }))).await;
+    assert_eq!(s, 403);
+    let (s, v) = call(&base, "bob", "PATCH", &path, Some(json!({ "write_policy": kinds("allow", "whenever") }))).await;
+    assert_eq!(s, 422, "{v}");
+    let (s, _) = call(&base, "bob", "PATCH", &path, Some(json!({ "write_policy": { "create": "allow" } }))).await;
+    assert_eq!(s, 422, "a policy names all five kinds");
+    let (s, _) = call(&base, "bob", "PATCH", &path, Some(json!({ "attribution": "loud" }))).await;
+    assert_eq!(s, 422);
+    let (s, v) = call(&base, "bob", "PATCH", &path, Some(json!({ "write_policy": kinds("approve", "approve") }))).await;
+    assert_eq!(
+        (s, v["agent_writes"].as_str(), v["write_policy"]["create"].as_str()),
+        (200, Some("approve"), Some("approve"))
+    );
+    let (s, v) = call(&base, "bob", "PATCH", &path, Some(json!({ "attribution": "none" }))).await;
+    assert_eq!(
+        (s, v["attribution"].as_str(), v["write_policy"]["state"].as_str()),
+        (200, Some("none"), Some("approve")),
+        "{v}"
+    );
+    let (s, v) = call(&base, "bob", "PATCH", &path, Some(json!({ "agent_writes": "allow" }))).await;
+    assert_eq!(
+        (s, v["write_policy"]["state"].as_str(), v["attribution"].as_str()),
+        (200, Some("allow"), Some("none")),
+        "{v}"
+    );
 
     // Disconnecting: a viewer can't. The secrets go now, the rows at the purge.
     let (s, _) = call(&base, "carol", "DELETE", &path, None).await;

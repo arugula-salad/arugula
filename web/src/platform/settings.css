@@ -1067,6 +1067,31 @@ html[data-corners="square"] .platform input.sw-switch {
 .platform .plane-connect-label {
   font-weight: 600;
 }
+/* What agents may write (#423): the preset, then a compact row a kind. */
+.platform .plane-policy {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  max-width: 28rem;
+}
+.platform .plane-kinds {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 0.85em;
+}
+.platform .plane-kinds label,
+.platform .plane-attribution {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.platform .plane-policy .dim {
+  font-size: 0.85em;
+}
 .platform .plane-hook {
   display: grid;
   gap: 6px;

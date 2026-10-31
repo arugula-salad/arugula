@@ -6,14 +6,18 @@
 //! - **An agent's write** (`POST /api/daemon/projects/{project}/tracker-writes`)
 //!   needs the machine's `trackers.write` over the project, asked on every
 //!   call and never past its owner's role. Then the connection's
-//!   `agent_writes` says: `allow` sends it at once, `approve` (the default)
-//!   keeps it as a `tracker_writes` row that waits for a person.
+//!   `write_policy` says, per kind of write ([`super::policy`]): `allow`
+//!   sends it at once, `approve` keeps it as a `tracker_writes` row that
+//!   waits for a person. The answer says which kind applied.
 //! - **Approving is a person's.** Approve, edit and drop are routes for an
 //!   owner or editor signed in as themselves; no machine route reaches them.
 //!   An approved write is sent as that agent's.
 //! - **The footer** is added when a write is *sent*, never stored: a body or
-//!   comment ends with a blank line and `— via Arugula, by <person>` (for an
-//!   agent's, `<person>'s agent on <machine>`), so an edit can't take it away.
+//!   comment ends with a blank line and the line the connection's
+//!   `attribution` asks for: `— via Arugula, by <person>` (for an agent's,
+//!   `<person>'s agent on <machine>`) in full, `— via Arugula` in short, or
+//!   none. So an edit can't take it away, and a change of attribution
+//!   after a write waited applies when it is approved.
 //!   Bodies and comments go to Plane as escaped HTML; a title is plain text.
 //! - **Fields** (#422): a write may name a state, a module, a type and
 //!   labels (and a parent as `IDENT-N`). They are kept as the person or agent
@@ -44,6 +48,7 @@ use super::{
     Edit, Item, NewItem, TrackerError, TrackerProvider,
     connect::ingest_page,
     fields::{self, Wanted},
+    policy::{self, Attribution, Verdict},
 };
 use crate::{
     Platform,
@@ -87,10 +92,14 @@ pub fn html(text: &str) -> String {
         .collect()
 }
 
-/// `text`, a blank line, and the footer.
-fn with_footer(text: &str, footer: &str) -> String {
+/// `text`, a blank line, and the footer, if there is one.
+fn with_footer(text: &str, footer: Option<&str>) -> String {
     let text = text.trim();
-    if text.is_empty() { footer.to_owned() } else { format!("{text}\n\n{footer}") }
+    match footer {
+        None => text.to_owned(),
+        Some(f) if text.is_empty() => f.to_owned(),
+        Some(f) => format!("{text}\n\n{f}"),
+    }
 }
 
 /// Who a write was for.
@@ -103,11 +112,17 @@ pub struct Who {
 }
 
 impl Who {
-    /// `— via Arugula, by Ada` or `— via Arugula, by Ada's agent on geek`.
-    fn footer(&self) -> String {
-        match &self.agent {
-            None => format!("— via Arugula, by {}", self.person),
-            Some((id, name)) => format!("— via Arugula, by {}", agent_label(&self.person, id, name)),
+    /// The footer the connection's `attribution` asks for: `— via Arugula,
+    /// by Ada` or `— via Arugula, by Ada's agent on geek` (full), `— via
+    /// Arugula` (short), or none.
+    fn footer(&self, attribution: &str) -> Option<String> {
+        match Attribution::parse(attribution)? {
+            Attribution::None => None,
+            Attribution::Short => Some("— via Arugula".to_owned()),
+            Attribution::Full => Some(match &self.agent {
+                None => format!("— via Arugula, by {}", self.person),
+                Some((id, name)) => format!("— via Arugula, by {}", agent_label(&self.person, id, name)),
+            }),
         }
     }
 }
@@ -432,7 +447,8 @@ pub async fn send(
     let provider = provider(app, project, c)?;
     let provider = &*provider;
     let (ws, pid) = (c.workspace_slug.as_str(), c.source_project_id.as_str());
-    let footer = who.footer();
+    let footer = who.footer(&c.attribution);
+    let footer = footer.as_deref();
     let source = |fi: &str| -> Result<String, ApiError> {
         let t =
             app.db.tracker_target(project, fi)?.ok_or_else(|| err(StatusCode::NOT_FOUND, "no such Plane work item"))?;
@@ -454,7 +470,7 @@ pub async fn send(
             };
             let new = NewItem {
                 title: title.clone(),
-                body: Some(html(&with_footer(body.as_deref().unwrap_or_default(), &footer))),
+                body: Some(html(&with_footer(body.as_deref().unwrap_or_default(), footer))),
                 state: picked.state.map(|s| s.id),
                 item_type: picked.item_type.map(|t| t.id),
                 parent_id,
@@ -466,7 +482,7 @@ pub async fn send(
         }
         TrackerWrite::Comment { item, text } => {
             let id = source(item)?;
-            provider.comment(ws, pid, &id, &html(&with_footer(text, &footer))).await.map_err(tracker_error)?;
+            provider.comment(ws, pid, &id, &html(&with_footer(text, footer))).await.map_err(tracker_error)?;
             (provider.get(ws, pid, &id).await.map_err(tracker_error)?, None, None)
         }
         TrackerWrite::Close { item, close_as } => {
@@ -508,7 +524,7 @@ pub async fn send(
             let moved = picked.state;
             let edit = Edit {
                 title: title.clone(),
-                body: body.as_deref().map(|b| html(&with_footer(b, &footer))),
+                body: body.as_deref().map(|b| html(&with_footer(b, footer))),
                 state: moved.as_ref().map(|s| s.id.clone()),
                 item_type: picked.item_type.map(|t| t.id),
                 parent_id,
@@ -614,10 +630,15 @@ pub async fn agent(
     writer(&app, &d.account, &project).await?;
     let (c, w) = resolve(&app, &project, None, &w).await?;
     let who = who_agent(&app, &d.account, &d.daemon).await?;
-    if c.agent_writes == "allow" {
-        info!(account = %d.account, %project, connection = %c.id, kind = kind(&w), "an agent wrote to Plane");
-        return Ok(Json(land(&app, &project, &c, &w, &who).await?));
-    }
+    let why = match policy::judge(&c.write_policy, &w) {
+        Verdict::Allowed(why) => {
+            info!(account = %d.account, %project, connection = %c.id, kind = kind(&w), "an agent wrote to Plane");
+            let mut done = land(&app, &project, &c, &w, &who).await?;
+            done.text = format!("{}: {why}", done.text);
+            return Ok(Json(done));
+        }
+        Verdict::Waits(why) => why,
+    };
     let id = format!("tw_{}", hex::encode(arugula_e2e::random::<16>()));
     app.db.add_tracker_write(&PendingWrite {
         id: id.clone(),
@@ -635,7 +656,7 @@ pub async fn agent(
     info!(account = %d.account, %project, connection = %c.id, write = %id, "an agent's Plane write waits for a person");
     Ok(Json(TrackerWriteDone {
         state: "waiting".into(),
-        text: format!("waiting for a person to approve it ({id})"),
+        text: format!("waiting for a person to approve it ({id}): {why}"),
         write: Some(id),
         item: None,
         reference: None,
@@ -664,7 +685,8 @@ pub async fn reach(State(app): State<Arc<Platform>>, d: Machine) -> Result<Json<
                     identifier: c.identifier,
                     name: c.name,
                     workspace_slug: c.workspace_slug,
-                    agent_writes: c.agent_writes,
+                    agent_writes: policy::summary(&c.write_policy).into(),
+                    write_policy: c.write_policy,
                 })
                 .collect();
             projects.push(TrackerReachProject { id, name, connections });

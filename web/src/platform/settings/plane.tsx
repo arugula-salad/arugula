@@ -16,6 +16,7 @@ import { ConfirmRemove } from "../../shared/ui/confirm";
 import type { PlatformProject } from "../session";
 import { names } from "../links";
 import { follow, pathOf } from "../router";
+import { ATTRIBUTIONS, CUSTOM, KINDS, PRESETS, attributionHelp, presetOf } from "./plane-policy";
 import { Section } from "./section";
 
 /** A call to the platform: its JSON, or its `{error}` thrown. */
@@ -208,19 +209,64 @@ export function PlaneConnections({ p }: { p: PlatformProject }) {
                   <td data-col="Items">{c.purge_after !== null ? <span class="dim">disconnected, gone within {hours(c.purge_after)}h</span> : c.backfilled_at === null ? <span class="dim">{c.items} so far…</span> : c.items}</td>
                   <td data-col="Agent writes">
                     {c.purge_after === null && (
-                      <select
-                        aria-label={`What agents may write to ${c.identifier}`}
-                        data-plane-writes={c.id}
-                        value={c.agent_writes}
-                        disabled={busy || !changes}
-                        onChange={(e) => {
-                          const agent_writes = e.currentTarget.value;
-                          void act(() => call("PATCH", `${base}/${c.id}`, { agent_writes }));
-                        }}
-                      >
-                        <option value="approve">Approve each write</option>
-                        <option value="allow">Allow all writes</option>
-                      </select>
+                      <div class="plane-policy" data-plane-policy={c.id}>
+                        <select
+                          aria-label={`What agents may write to ${c.identifier}`}
+                          data-plane-writes={c.id}
+                          value={presetOf(c.write_policy)}
+                          disabled={busy || !changes}
+                          onChange={(e) => {
+                            const preset = PRESETS.find((x) => x.name === e.currentTarget.value);
+                            if (preset) void act(() => call("PATCH", `${base}/${c.id}`, { write_policy: preset.policy }));
+                          }}
+                        >
+                          {presetOf(c.write_policy) === CUSTOM && <option value={CUSTOM}>{CUSTOM}</option>}
+                          {PRESETS.map((x) => (
+                            <option value={x.name}>{x.name}</option>
+                          ))}
+                        </select>
+                        <ul class="plane-kinds">
+                          {KINDS.map(({ kind, label }) => (
+                            <li>
+                              <label>
+                                <span>{label}</span>
+                                <select
+                                  aria-label={`${label}, ${c.identifier}`}
+                                  data-plane-kind={kind}
+                                  value={c.write_policy[kind]}
+                                  disabled={busy || !changes}
+                                  onChange={(e) => {
+                                    const write_policy = { ...c.write_policy, [kind]: e.currentTarget.value };
+                                    void act(() => call("PATCH", `${base}/${c.id}`, { write_policy }));
+                                  }}
+                                >
+                                  <option value="allow">Allow</option>
+                                  <option value="approve">Approve</option>
+                                </select>
+                              </label>
+                            </li>
+                          ))}
+                        </ul>
+                        <label class="plane-attribution">
+                          <span>Footer</span>
+                          <select
+                            data-plane-attribution={c.id}
+                            value={c.attribution}
+                            disabled={busy || !changes}
+                            onChange={(e) => {
+                              const attribution = e.currentTarget.value;
+                              void act(() => call("PATCH", `${base}/${c.id}`, { attribution }));
+                            }}
+                          >
+                            {ATTRIBUTIONS.map((a) => (
+                              <option value={a.value}>{a.label}</option>
+                            ))}
+                          </select>
+                        </label>
+                        <span class="dim" data-plane-attribution-help>
+                          {attributionHelp(c.attribution)}
+                        </span>
+                      </div>
                     )}
                   </td>
                   <td data-col="Webhook">

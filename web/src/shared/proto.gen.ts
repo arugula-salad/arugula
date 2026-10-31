@@ -4779,9 +4779,18 @@ source_project_id: string,
  */
 identifier: string, name: string, 
 /**
- * `approve` (each agent write waits for a person) or `allow`.
+ * A summary for a client that predates `write_policy`: `allow` if every
+ * kind of agent write is allowed, else `approve`. Read-only.
  */
 agent_writes: string, 
+/**
+ * Which kinds of agent write go at once and which wait for a person.
+ */
+write_policy: TrackerWritePolicy, 
+/**
+ * What a write's footer says: `full`, `short` or `none`.
+ */
+attribution: string, 
 /**
  * A webhook secret is kept for it.
  */
@@ -4857,13 +4866,15 @@ error: string | null, created_at: number, };
 export type TrackerPendingWrites = { project: string, writes: Array<TrackerPendingWrite>, };
 
 /**
- * `PATCH /api/projects/{project}/trackers/{connection}`: whether agents'
- * writes to the tracker wait for a person (`approve`) or go (`allow`), and
- * its webhook secret; either or both, the answer is its
+ * `PATCH /api/projects/{project}/trackers/{connection}`: which kinds of
+ * agent write wait for a person (`write_policy`), what their footer says
+ * (`attribution`: `full`, `short` or `none`), the older `agent_writes`
+ * (`approve` or `allow`, which sets every kind), and the webhook secret;
+ * any of them, the answer is its
  * [`TrackerConnection`]. A webhook secret is sealed like the key and never
  * shown back; an empty one removes it.
  */
-export type TrackerSettings = { agent_writes: string | null, webhook_secret: string | null, };
+export type TrackerSettings = { agent_writes: string | null, write_policy: TrackerWritePolicy | null, attribution: string | null, webhook_secret: string | null, };
 
 /**
  * A write to a tracker's work item, the same for people and agents. `item`
@@ -4895,6 +4906,29 @@ item: string | null, reference: string | null,
  * A sentence for whoever asked.
  */
 text: string, };
+
+/**
+ * What an agent's write to a tracker does, per kind: `allow` sends it at
+ * once, `approve` keeps it for a person. An edit that is several kinds goes
+ * at once only if every one of them allows.
+ */
+export type TrackerWritePolicy = { 
+/**
+ * A new work item, whatever fields it carries.
+ */
+create: string, comment: string, 
+/**
+ * An edit of the title or the body.
+ */
+edit: string, 
+/**
+ * A close, a reopen, or an edit naming a state.
+ */
+state: string, 
+/**
+ * An edit naming a module, parent, type or labels.
+ */
+fields: string, };
 
 /**
  * What a pane is busy with (M23), for drawing and grouping it without

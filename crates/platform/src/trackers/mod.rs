@@ -35,6 +35,7 @@ pub mod connect_tests;
 pub mod fake;
 pub mod fields;
 pub mod plane;
+pub mod policy;
 pub mod webhook;
 #[cfg(any(test, feature = "testing"))]
 pub mod webhook_tests;

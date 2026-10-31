@@ -19,7 +19,11 @@ use super::{
     mirror::POLL_LEASE_MS,
     sql::{Optional as _, Row, Sql, Tx, params},
 };
-use crate::{forge::viewer::ReadableConnections, trackers::Item};
+use crate::{
+    forge::viewer::ReadableConnections,
+    trackers::{Item, policy},
+};
+use arugula_control_wire::projects::TrackerWritePolicy;
 
 /// What a connection's API key is sealed under in `project_secrets`.
 pub fn key_name(connection: &str) -> String {
@@ -42,7 +46,9 @@ pub struct Connection {
     pub identifier: String,
     pub name: String,
     pub mirror_id: i64,
-    pub agent_writes: String,
+    pub write_policy: TrackerWritePolicy,
+    /// `full`, `short` or `none`.
+    pub attribution: String,
     pub linked_by: Option<String>,
     pub created_at: u64,
     pub unlinked_at: Option<u64>,
@@ -55,8 +61,8 @@ pub struct Connection {
 }
 
 const COLUMNS: &str = "c.id, c.project_id, c.provider, c.workspace_slug, c.source_project_id, c.identifier, c.name, \
-     c.mirror_id, c.agent_writes, c.linked_by, c.created_at, c.unlinked_at, c.purge_after, c.backfilled_at, \
-     EXISTS (SELECT 1 FROM project_secrets s WHERE s.project_id = c.project_id \
+     c.mirror_id, c.write_policy, c.attribution, c.linked_by, c.created_at, c.unlinked_at, c.purge_after, \
+     c.backfilled_at, EXISTS (SELECT 1 FROM project_secrets s WHERE s.project_id = c.project_id \
          AND s.name = 'tracker/plane/' || c.id || '/webhook'), \
      c.last_delivery_at";
 
@@ -70,14 +76,15 @@ fn row(r: &Row) -> Result<Connection> {
         identifier: r.get(5)?,
         name: r.get(6)?,
         mirror_id: r.get(7)?,
-        agent_writes: r.get(8)?,
-        linked_by: r.get(9)?,
-        created_at: r.get(10)?,
-        unlinked_at: r.get(11)?,
-        purge_after: r.get(12)?,
-        backfilled_at: r.get(13)?,
-        has_webhook_secret: r.get(14)?,
-        last_delivery_at: r.get(15)?,
+        write_policy: policy::parse(&r.get::<String>(8)?),
+        attribution: r.get(9)?,
+        linked_by: r.get(10)?,
+        created_at: r.get(11)?,
+        unlinked_at: r.get(12)?,
+        purge_after: r.get(13)?,
+        backfilled_at: r.get(14)?,
+        has_webhook_secret: r.get(15)?,
+        last_delivery_at: r.get(16)?,
     })
 }
 
@@ -220,12 +227,23 @@ impl Db {
             .optional()
     }
 
-    /// Whether agents' writes wait for a person (`approve`) or go
-    /// (`allow`), on a live connection: whether there was one.
-    pub fn set_tracker_agent_writes(&self, project: &str, id: &str, writes: &str) -> Result<bool> {
+    /// Which kinds of agent write wait for a person, on a live connection:
+    /// whether there was one.
+    pub fn set_tracker_write_policy(&self, project: &str, id: &str, policy: &TrackerWritePolicy) -> Result<bool> {
+        let json = serde_json::to_string(policy)?;
         let n = self.c().execute(
-            "UPDATE tracker_connections SET agent_writes = ?1 WHERE project_id = ?2 AND id = ?3 AND unlinked_at IS NULL",
-            params![writes, project, id],
+            "UPDATE tracker_connections SET write_policy = ?1 WHERE project_id = ?2 AND id = ?3 AND unlinked_at IS NULL",
+            params![json, project, id],
+        )?;
+        Ok(n == 1)
+    }
+
+    /// What the footer on a write says (`full`, `short` or `none`), on a
+    /// live connection: whether there was one.
+    pub fn set_tracker_attribution(&self, project: &str, id: &str, attribution: &str) -> Result<bool> {
+        let n = self.c().execute(
+            "UPDATE tracker_connections SET attribution = ?1 WHERE project_id = ?2 AND id = ?3 AND unlinked_at IS NULL",
+            params![attribution, project, id],
         )?;
         Ok(n == 1)
     }
