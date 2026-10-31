@@ -120,6 +120,17 @@ branch (`.github/workflows/full-check.yml`, the same as `gh workflow run
 check.yml --ref BRANCH`); a fork's pull request can't. To run it again,
 remove the label and add it back.
 
+Every pull request also runs `.github/workflows/pull-request.yml` (#306),
+on GitHub's `ubuntu-24.04` runners only: **pr-lint** (check.yml's lint
+action), **pr-build** (the debug binaries, as check.yml's build:
+`.github/actions/build-debug`) and **pr-e2e (N)**, the twelve shards
+(`.github/actions/e2e-shard`, which check.yml's e2e runs too), with
+**pr-gate** as the verdict. It needs no secret: with sccache's password
+(a branch of this repository) the build goes through sccache, and a fork's
+compiles cold. A new push cancels the run before. It's advisory for now:
+no ruleset requires pr-gate, and its summary says so. Its jobs are named
+`pr-*` so no `ci.green` phase matches them.
+
 A commit on main whose required checks all passed gets a `ci/green/<sha>`
 tag, and one that passed and then failed a re-run gets `ci/revoked/<sha>`
 (chant's `ci.green`, #503). `chant.workspace.json` names the checks:
