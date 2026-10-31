@@ -57,8 +57,8 @@ mod tests {
             app.cfg.sites.push(crate::Site::new(a).unwrap());
         }
         app.cfg.also_redirect = !also.is_empty();
-        app.cfg.platform_host = platform
-            .map(|h| crate::platform_host::parse(h, CONTROL, &app.cfg.sites, None).unwrap().unwrap());
+        app.cfg.platform_host =
+            platform.map(|h| crate::platform_host::parse(h, CONTROL, &app.cfg.sites, None).unwrap().unwrap());
         let app = app.start();
         let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let base = format!("http://{}", l.local_addr().unwrap());
