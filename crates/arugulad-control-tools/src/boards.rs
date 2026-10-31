@@ -162,7 +162,7 @@ pub struct AttachArgs {
     /// The row, by its item: #N, owner/repo#N, IDENT-N, or an iss_/fi_ id.
     pub item: String,
     /// What to attach: a PR (#N, owner/repo#N or fi_…), a run (run_…), an
-    /// https:// link, or an agent block (block:MACHINE/PANE).
+    /// https:// link, or an agent block (block:MACHINE/PANE, the pane as %N or N).
     pub to: Vec<String>,
     /// work moves the row's lane (PRs, blocks and runs are work, the
     /// default); proof marks a Done row proven (a link is proof, the
@@ -682,7 +682,10 @@ fn target(to: &str) -> Result<Target, String> {
             .split_once('/')
             .filter(|(m, p)| !m.is_empty() && !p.is_empty())
             .ok_or_else(|| format!("{to:?}: an agent block is block:MACHINE/PANE"))?;
-        return Ok(Target::Done(Pointer::Block { machine: machine.into(), pane: pane.into() }, AttachRole::Work));
+        return Ok(Target::Done(
+            Pointer::Block { machine: machine.into(), pane: pane.trim().trim_start_matches('%').into() },
+            AttachRole::Work,
+        ));
     }
     if to.starts_with("run_") {
         return Ok(Target::Done(Pointer::Run { id: to.into() }, AttachRole::Work));

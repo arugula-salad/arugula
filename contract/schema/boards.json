@@ -1041,6 +1041,7 @@
               "type": "string"
             },
             "pane": {
+              "description": "The block's pane, as `%N` or `N`; stored as `N`.",
               "type": "string"
             }
           },

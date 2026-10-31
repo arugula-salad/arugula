@@ -239,6 +239,7 @@ pub enum Pointer {
     /// An agent block on a machine.
     Block {
         machine: String,
+        /// The block's pane, as `%N` or `N`; stored as `N`.
         pane: String,
     },
     /// An `https://` URL, as evidence (a CI page, a report). The platform

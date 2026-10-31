@@ -266,6 +266,13 @@ fn name_ok(s: &str, what: &str) -> Result<(), ApiError> {
     Ok(())
 }
 
+/// A block pointer's pane as a machine reports it: the plain number. `%N`
+/// and `N` both name pane N.
+pub(crate) fn plain_pane(pane: &str) -> &str {
+    let pane = pane.trim();
+    pane.strip_prefix('%').unwrap_or(pane)
+}
+
 fn pointer_ok(p: &wire::Pointer) -> Result<(), ApiError> {
     match p {
         wire::Pointer::None => Ok(()),
@@ -1245,6 +1252,11 @@ pub async fn put(app: &Platform, by: Actor<'_>, id: &str, p: &wire::PutEntry) ->
 /// (it moves the row's lane), a run or a link as `proof` (it marks a Done
 /// row proven). An item that is on the board already isn't attached again.
 pub async fn attach(app: &Platform, by: Actor<'_>, id: &str, a: &wire::AttachRow) -> Result<wire::BoardView, ApiError> {
+    let mut a = a.clone();
+    if let wire::Pointer::Block { pane, .. } = &mut a.pointer {
+        *pane = plain_pane(pane).to_owned();
+    }
+    let a = &a;
     let board = board_place(app, by, id, true).await?;
     id_ok(&a.row, "row").map_err(|_| bad("expected a row id that starts row_"))?;
     if !a.role.takes(&a.pointer) {

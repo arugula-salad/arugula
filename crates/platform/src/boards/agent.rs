@@ -204,11 +204,12 @@ pub async fn ask(
 pub async fn put_block_state(
     State(app): State<Arc<Platform>>,
     d: Machine,
-    Json(p): Json<wire::PutBlockState>,
+    Json(mut p): Json<wire::PutBlockState>,
 ) -> J<serde_json::Value> {
     app.limits.check_daemon(AGENT_BLOCK_REPORTS, &d.daemon)?;
     super::gate(&app, &d.account).await?;
     may_report(&app, &d).await?;
+    p.pane = super::plain_pane(&p.pane).to_owned();
     super::name_ok(&p.pane, "pane")?;
     state_ok(&p.block)?;
     app.db.put_block_state(&d.daemon, &d.account, &p.pane, &p.block, arugula_e2e::now_ms())?;
@@ -236,6 +237,7 @@ pub async fn attach_block(
     if a.machine != d.daemon {
         return Err(err(StatusCode::FORBIDDEN, "a machine attaches only its own blocks"));
     }
+    let a = wire::AttachBlock { pane: super::plain_pane(&a.pane).to_owned(), ..a };
     super::name_ok(&a.pane, "pane")?;
     let want = wire::IssueRef::parse(&a.issue)
         .ok_or_else(|| err(StatusCode::BAD_REQUEST, "an issue is #N, owner/repo#N or IDENT-N"))?;

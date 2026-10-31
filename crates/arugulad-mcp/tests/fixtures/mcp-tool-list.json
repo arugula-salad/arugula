@@ -8145,7 +8145,7 @@
             ]
           },
           "to": {
-            "description": "attach: What to attach: a PR (#N, owner/repo#N or fi_…), a run (run_…), an\nhttps:// link, or an agent block (block:MACHINE/PANE).",
+            "description": "attach: What to attach: a PR (#N, owner/repo#N or fi_…), a run (run_…), an\nhttps:// link, or an agent block (block:MACHINE/PANE, the pane as %N or N).",
             "items": {
               "type": "string"
             },
@@ -16741,7 +16741,7 @@
             ]
           },
           "to": {
-            "description": "attach: What to attach: a PR (#N, owner/repo#N or fi_…), a run (run_…), an\nhttps:// link, or an agent block (block:MACHINE/PANE).",
+            "description": "attach: What to attach: a PR (#N, owner/repo#N or fi_…), a run (run_…), an\nhttps:// link, or an agent block (block:MACHINE/PANE, the pane as %N or N).",
             "items": {
               "type": "string"
             },
