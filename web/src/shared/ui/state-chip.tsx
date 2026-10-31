@@ -10,7 +10,7 @@ import "./state-chip.css";
 
 /** A chip's tone, by the palette color it takes (as a card's bar does,
  * platform/swarm.css). */
-export type Tone = "accent" | "ok" | "warn" | "danger" | "info" | "teal" | "muted";
+export type Tone = "accent" | "ok" | "warn" | "danger" | "info" | "teal" | "merged" | "muted";
 
 type Data = { [data: `data-${string}`]: unknown };
 

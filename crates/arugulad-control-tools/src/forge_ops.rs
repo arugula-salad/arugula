@@ -17,7 +17,8 @@
 //! to an operation that sends ([`op`]'s test says so), and the platform
 //! refuses a machine's send anyway.
 
-use arugula_control_wire::forge_ops::{DraftQuery, DraftRef, InboxQuery, ItemQuery, ItemRef, Op};
+use arugula_control_wire::boards::IssueRef;
+use arugula_control_wire::forge_ops::{DraftQuery, DraftRef, InboxQuery, ItemQuery, ItemRef, Op, TrackerRef};
 use arugula_control_wire::projects::NewDraft;
 use rmcp::handler::server::common::schema_for_type;
 use schemars::JsonSchema;
@@ -37,9 +38,11 @@ pub struct ItemArgs {
 #[derive(Deserialize, JsonSchema)]
 pub struct IssueItemArgs {
     /// The issue: OWNER/NAME#N, or its link on github.com; or a native
-    /// issue in Arugula control, "#N" (in the current project) or "iss_…".
+    /// issue in Arugula control, "#N" (in the current project) or "iss_…";
+    /// or a Plane item, IDENT-N (such as ALL-2212).
     pub item: String,
-    /// A native issue's project for "#N": its id (prj_…) or personal.
+    /// A native issue's project for "#N", or a Plane item's for IDENT-N: its
+    /// id (prj_…) or personal.
     /// Default: the one this clone's GitHub repo is linked to, else the
     /// user's personal project.
     #[serde(default)]
@@ -58,7 +61,7 @@ pub struct ItemsArgs {
     /// pr or issue.
     #[serde(default)]
     pub item_kind: Option<String>,
-    /// open, closed or merged.
+    /// open, closed or merged (Plane's items: open or closed, by state group).
     #[serde(default)]
     pub state: Option<String>,
     /// A GitHub login.
@@ -67,12 +70,18 @@ pub struct ItemsArgs {
     /// A GitHub login among the requested reviewers.
     #[serde(default)]
     pub review_requested: Option<String>,
-    /// Text in the title.
+    /// Text in the title; IDENT-N (such as ALL-2212) finds that Plane item first.
     #[serde(default)]
     pub q: Option<String>,
     /// At most this many (default 100, at most 200).
     #[serde(default)]
     pub limit: Option<u32>,
+    /// github or plane: only that provider's. Default: both.
+    #[serde(default)]
+    pub provider: Option<String>,
+    /// A Plane connection's key, such as ALL: only its items.
+    #[serde(default)]
+    pub tracker: Option<String>,
 }
 
 #[derive(Deserialize, JsonSchema)]
@@ -150,13 +159,13 @@ pub(crate) const READ: &[Kind] = &[
     },
     Kind {
         name: "issue",
-        description: "An issue: its state, title, author, labels, assignees, what happened to it and its waiting drafts. A native issue (\"#N\" or \"iss_…\"): it, its timeline and its newest comments.",
+        description: "An issue: its state, title, author, labels, assignees, what happened to it and its waiting drafts. A native issue (\"#N\" or \"iss_…\"): it, its timeline and its newest comments. A Plane item (\"IDENT-N\", such as ALL-2212): its title, state and url; its body and comments aren't mirrored.",
         schema: schema_for_type::<IssueItemArgs>,
         flag: None,
     },
     Kind {
         name: "items",
-        description: "The PRs and issues of one linked repo, or of a project's linked repos, last updated first; item_kind, state, author, review_requested and q narrow it. Repos the user can't read on GitHub are named as withheld.",
+        description: "The PRs and issues of one linked repo, or of a project's linked repos and its connected Plane projects' work items (provider plane, with identifier ALL and number so ALL-2212), last updated first; provider, tracker, item_kind, state, author, review_requested and q narrow it (q as IDENT-N finds that Plane item first). Repos the user can't read on GitHub are named as withheld.",
         schema: schema_for_type::<ItemsArgs>,
         flag: None,
     },
@@ -237,7 +246,13 @@ pub(crate) fn op(tool: &str, kind: &str, a: Value, by: &str) -> Result<Op, Strin
     };
     Ok(match (tool, kind) {
         ("forge_read", "pr") => Op::PrGet(item(&args::<ItemArgs>(a)?.item)?),
-        ("forge_read", "issue") => Op::IssueGet(item(&args::<IssueItemArgs>(a)?.item)?),
+        ("forge_read", "issue") => {
+            let a: IssueItemArgs = args(a)?;
+            match IssueRef::parse(&a.item) {
+                Some(IssueRef::Plane { key, number }) => Op::TrackerGet(TrackerRef { project: a.project, key, number }),
+                _ => Op::IssueGet(item(&a.item)?),
+            }
+        }
         ("forge_read", "checks") => Op::ChecksGet(item(&args::<ItemArgs>(a)?.item)?),
         ("forge_read", "items") => {
             let a: ItemsArgs = args(a)?;
@@ -250,6 +265,8 @@ pub(crate) fn op(tool: &str, kind: &str, a: Value, by: &str) -> Result<Op, Strin
                 review_requested: a.review_requested,
                 q: a.q,
                 limit: a.limit,
+                provider: a.provider,
+                tracker: a.tracker,
             })
         }
         ("forge_read", "drafts") => {
@@ -309,17 +326,26 @@ fn said(e: CloudRefused) -> String {
     }
 }
 
-/// `acme/app#7 [pr, open] Fix it` and who wrote it.
+/// `acme/app#7 [pr, open] Fix it` and who wrote it; a Plane item is
+/// `ALL-2212 [plane, In Review] Fix it`.
 fn line(i: &Value) -> String {
-    let mut s = format!(
-        "{}#{} [{}, {}{}] {}",
-        i["repo"].as_str().unwrap_or("?"),
-        i["number"],
-        i["kind"].as_str().unwrap_or("?"),
-        if i["draft"] == true { "draft, " } else { "" },
-        i["state"].as_str().unwrap_or("?"),
-        i["title"].as_str().unwrap_or(""),
-    );
+    let mut s = match (i["provider"].as_str(), i["identifier"].as_str()) {
+        (Some("plane"), Some(key)) => format!(
+            "{key}-{} [plane, {}] {}",
+            i["number"],
+            i["state_name"].as_str().filter(|n| !n.is_empty()).or(i["state"].as_str()).unwrap_or("?"),
+            i["title"].as_str().unwrap_or(""),
+        ),
+        _ => format!(
+            "{}#{} [{}, {}{}] {}",
+            i["repo"].as_str().unwrap_or("?"),
+            i["number"],
+            i["kind"].as_str().unwrap_or("?"),
+            if i["draft"] == true { "draft, " } else { "" },
+            i["state"].as_str().unwrap_or("?"),
+            i["title"].as_str().unwrap_or(""),
+        ),
+    };
     if let Some(a) = i["author"].as_str() {
         s += &format!(" by {a}");
     }
@@ -342,6 +368,10 @@ fn draft_line(d: &Value) -> String {
 /// What a kind's answer says in a sentence.
 fn summary(o: &Op, r: &Value) -> String {
     match o {
+        Op::TrackerGet(_) => {
+            let url = r["item"]["url"].as_str().map(|u| format!(" {u}")).unwrap_or_default();
+            format!("{}{url}; {}", line(&r["item"]), r["note"].as_str().unwrap_or_default())
+        }
         Op::PrGet(_) | Op::IssueGet(_) => {
             let drafts = r["drafts"].as_array().map_or(0, Vec::len);
             let events = r["events"].as_array().map_or(0, Vec::len);
@@ -452,6 +482,26 @@ mod tests {
             }
         }
         assert_eq!(DRAFT.iter().map(|k| k.name).collect::<Vec<_>>(), ["comment", "review", "issue", "discard"]);
+    }
+
+    /// A Plane ref reads a tracker item, in the project the agent names; a
+    /// GitHub one still reads a repo's. Plane's items list as `ALL-2212`.
+    #[test]
+    fn a_plane_item_is_read_by_its_key() {
+        let r = op("forge_read", "issue", json!({ "item": "all-2212", "project": "prj_1" }), "x").unwrap();
+        assert_eq!(r, Op::TrackerGet(TrackerRef { project: Some("prj_1".into()), key: "ALL".into(), number: 2212 }));
+        let g = op("forge_read", "issue", json!({ "item": "acme/app#7" }), "x").unwrap();
+        assert_eq!(g, Op::IssueGet(ItemRef { repo: "acme/app".into(), number: 7 }));
+        let l =
+            op("forge_read", "items", json!({ "provider": "plane", "tracker": "ALL", "q": "ALL-2212" }), "x").unwrap();
+        let Op::ItemList(q) = l else { panic!() };
+        assert_eq!(
+            (q.provider.as_deref(), q.tracker.as_deref(), q.q.as_deref()),
+            (Some("plane"), Some("ALL"), Some("ALL-2212"))
+        );
+        let item = json!({ "provider": "plane", "identifier": "ALL", "number": 2212, "state_name": "In Review",
+                           "state": "open", "title": "Fix it", "repo": null });
+        assert_eq!(line(&item), "ALL-2212 [plane, In Review] Fix it");
     }
 
     #[test]

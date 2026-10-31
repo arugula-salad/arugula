@@ -4859,7 +4859,7 @@ export type TrackerSettings = { agent_writes: string | null, webhook_secret: str
  * the item's number). Assignees are not here: a tracker's members aren't
  * Arugula's people.
  */
-export type TrackerWrite = { "kind": "create", connection: string | null, title: string, body: string | null, state: string | null, } | { "kind": "comment", item: string, text: string, } | { "kind": "close", item: string, as: TrackerClose, } | { "kind": "reopen", item: string, } | { "kind": "edit", item: string, title: string | null, body: string | null, };
+export type TrackerWrite = { "kind": "create", connection: string | null, tracker: string | null, title: string, body: string | null, state: string | null, } | { "kind": "comment", item: string, text: string, } | { "kind": "close", item: string, as: TrackerClose, } | { "kind": "reopen", item: string, } | { "kind": "edit", item: string, title: string | null, body: string | null, };
 
 /**
  * What a write came to: it landed (`sent`, with the item's `fi_` id), or

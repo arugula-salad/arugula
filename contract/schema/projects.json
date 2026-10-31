@@ -398,7 +398,7 @@
       "type": "object"
     },
     "ForgeItem": {
-      "description": "A PR or an issue, as metadata: never its body.",
+      "description": "A PR or an issue, as metadata: never its body. A Plane item (#420) is\none too, with `provider` `plane`.",
       "properties": {
         "assignees": {
           "items": {
@@ -444,6 +444,14 @@
           "description": "The platform's id: `fi_` and 32 hex characters.",
           "type": "string"
         },
+        "identifier": {
+          "default": null,
+          "description": "A Plane item's project key (`ALL`).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "kind": {
           "description": "`pr` or `issue`.",
           "type": "string"
@@ -461,13 +469,23 @@
           ]
         },
         "number": {
+          "description": "A Plane item's sequence id (`ALL-2212` is 2212).",
           "format": "uint64",
           "minimum": 0,
           "type": "integer"
         },
-        "repo": {
-          "description": "`OWNER/NAME`.",
+        "provider": {
+          "default": "github",
+          "description": "`github` or `plane`; an older platform's items are GitHub's.",
           "type": "string"
+        },
+        "repo": {
+          "default": null,
+          "description": "`OWNER/NAME`; none for a Plane item.",
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "reviewers": {
           "description": "Requested reviewers' logins.",
@@ -480,6 +498,21 @@
           "description": "`open`, `closed` or `merged`.",
           "type": "string"
         },
+        "state_group": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "state_name": {
+          "default": null,
+          "description": "A Plane item's state as Plane names it (`In Review`) and its group\n(`backlog`, `unstarted`, `started`, `completed` or `cancelled`).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "title": {
           "type": "string"
         },
@@ -487,11 +520,18 @@
           "format": "uint64",
           "minimum": 0,
           "type": "integer"
+        },
+        "url": {
+          "default": null,
+          "description": "A Plane item's page in Plane.",
+          "type": [
+            "string",
+            "null"
+          ]
         }
       },
       "required": [
         "id",
-        "repo",
         "number",
         "kind",
         "state",
@@ -1463,8 +1503,46 @@
       ],
       "type": "object"
     },
+    "TrackerReachConnection": {
+      "description": "A live Plane connection of a project an agent reaches.",
+      "properties": {
+        "agent_writes": {
+          "description": "`approve` or `allow`.",
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "identifier": {
+          "description": "The Plane project's identifier, like `ARUGU`.",
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "workspace_slug": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "identifier",
+        "name",
+        "workspace_slug",
+        "agent_writes"
+      ],
+      "type": "object"
+    },
     "TrackerReachProject": {
       "properties": {
+        "connections": {
+          "default": [],
+          "description": "Its live connections: never a key or a secret.",
+          "items": {
+            "$ref": "#/$defs/TrackerReachConnection"
+          },
+          "type": "array"
+        },
         "id": {
           "type": "string"
         },
@@ -1502,7 +1580,7 @@
       "description": "A write to a tracker's work item, the same for people and agents. `item`\nis the mirror's `fi_` id, or `IDENT-N` (the connection's identifier and\nthe item's number). Assignees are not here: a tracker's members aren't\nArugula's people.",
       "oneOf": [
         {
-          "description": "A new item. `connection` is needed on an agent's route and, on a\nperson's, is the path's. `state` is a state group (`backlog`,\n`unstarted`, `started`).",
+          "description": "A new item. On an agent's route `connection` or `tracker` (the\nconnection's identifier, in any case) says where; with neither, the\nproject's only live connection is used. On a person's, the path's\nconnection is it. `state` is a state group (`backlog`, `unstarted`,\n`started`).",
           "properties": {
             "body": {
               "default": null,
@@ -1531,6 +1609,13 @@
             },
             "title": {
               "type": "string"
+            },
+            "tracker": {
+              "default": null,
+              "type": [
+                "string",
+                "null"
+              ]
             }
           },
           "required": [

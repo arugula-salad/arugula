@@ -543,6 +543,7 @@ pub struct TrackerItem {
     pub state_name: String,
     pub state_group: String,
     pub item_type: Option<String>,
+    pub created_at: u64,
     pub updated_at: u64,
 }
 
@@ -551,12 +552,16 @@ pub struct TrackerItem {
 pub struct TrackerFilter<'a> {
     /// Only open items.
     pub open: bool,
+    /// Only closed items.
+    pub closed: bool,
+    /// Only the item with this sequence id.
+    pub number: Option<u64>,
     pub text: Option<&'a str>,
     pub limit: u32,
 }
 
 const ITEM_COLUMNS: &str = "i.id, i.repo_id, i.connection_id, i.number, i.title, i.state, i.state_name, \
-     i.state_group, i.item_type, i.updated_at";
+     i.state_group, i.item_type, i.updated_at, i.created_at";
 
 fn item_row(r: &Row) -> Result<TrackerItem> {
     Ok(TrackerItem {
@@ -570,6 +575,7 @@ fn item_row(r: &Row) -> Result<TrackerItem> {
         state_group: r.get::<Option<String>>(7)?.unwrap_or_default(),
         item_type: r.get(8)?,
         updated_at: r.get(9)?,
+        created_at: r.get(10)?,
     })
 }
 
@@ -609,6 +615,12 @@ impl Db {
         let mut args: Vec<String> = Vec::new();
         if f.open {
             wh.push("i.state = 'open'".to_owned());
+        }
+        if f.closed {
+            wh.push("i.state = 'closed'".to_owned());
+        }
+        if let Some(n) = f.number {
+            wh.push(format!("i.number = {n}"));
         }
         if let Some(t) = f.text.filter(|t| !t.trim().is_empty()) {
             wh.push(format!(r"{} LIKE ? ESCAPE '\'", fold(&c, "i.title")));

@@ -92,7 +92,13 @@ pub async fn call(
             let Json(item) = items::get(st(), viewer.clone(), Path(id.clone())).await?;
             let Json(events) = items::events(st(), viewer.clone(), Path(id.clone())).await?;
             let Json(drafts) = drafts::item(st(), viewer, Path(id), Query(DraftsQuery::default())).await?;
-            answer(&op, v, wire::ItemView { item, events: events.events, drafts: drafts.drafts })
+            answer(&op, v, wire::ItemView { item, events: events.events, drafts: drafts.drafts, note: None })
+        }
+        Op::TrackerGet(r) => {
+            let project = r.project.as_deref().unwrap_or("personal");
+            let item = items::plane_get(&app, &viewer, project, &r.key, r.number).await?;
+            let note = "A Plane item's body and comments aren't mirrored: open its url in Plane to read them.";
+            answer(&op, v, wire::ItemView { item, events: vec![], drafts: vec![], note: Some(note.to_owned()) })
         }
         Op::ChecksGet(r) => {
             let id = item_id(&app, &viewer, r, None).await?;
@@ -113,6 +119,8 @@ pub async fn call(
                 review_requested: q.review_requested.clone(),
                 q: q.q.clone(),
                 limit: q.limit,
+                provider: q.provider.clone(),
+                tracker: q.tracker.clone(),
             };
             let Json(listed) = items::list(st(), viewer, Path(project), Query(query)).await?;
             answer(&op, v, listed)

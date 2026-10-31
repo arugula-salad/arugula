@@ -17,7 +17,10 @@ use crate::{
     Platform,
     agents_tests::give,
     chat_tests::{TestHub, call},
-    db::sql::{Sql as _, params},
+    db::{
+        sql::{Sql as _, params},
+        trackers::NewConnection,
+    },
     grants::AGENT_UNGRANTED,
 };
 
@@ -341,4 +344,69 @@ async fn no_answer_carries_the_key() {
     assert!(err.contains("refused") && !err.contains(KEY), "{err}");
     assert!(w.app.db.mentions(KEY).is_empty());
     let _ = TrackerWrite::Reopen { item: String::new() };
+}
+
+/// A project with one connection: `create {title}` lands there, and the
+/// reach lists the connection (identifier and policy) without a key. With a
+/// second, a create naming neither is refused listing both; `tracker` names
+/// one in any case; a disconnected one is not listed or chosen.
+#[tokio::test]
+async fn create_picks_the_only_connection_and_the_reach_lists_them() {
+    let w = world().await;
+    w.grant().await;
+
+    let (s, v) = geek(&w.base, "GET", "/api/daemon/trackers/reach", None).await;
+    assert_eq!(s, 200, "{v}");
+    let listed = &v["projects"][0]["connections"];
+    assert_eq!(
+        (listed[0]["id"].as_str(), listed[0]["identifier"].as_str(), listed[0]["agent_writes"].as_str()),
+        (Some(w.connection.as_str()), Some("ARUGU"), Some("approve")),
+        "{v}"
+    );
+    assert!(!v.to_string().contains(KEY), "{v}");
+
+    let (s, v) = w.agent(json!({ "kind": "create", "title": "Only one" })).await;
+    assert_eq!((s, v["state"].as_str()), (200, Some("waiting")), "{v}");
+    assert_eq!(count(&w.app, "tracker_writes", "connection_id = ?1", params![w.connection.clone()]), 1);
+
+    let second = NewConnection {
+        id: "tc_second".into(),
+        project_id: w.project.clone(),
+        workspace_slug: "acme".into(),
+        source_project_id: "pl-proj-2".into(),
+        identifier: "OPS".into(),
+        name: "Ops".into(),
+        linked_by: "alice".into(),
+    };
+    w.app.db.connect_tracker(&second, 5).unwrap().unwrap();
+    let (s, v) = w.agent(json!({ "kind": "create", "title": "Which?" })).await;
+    let said = v["error"].as_str().unwrap_or_default();
+    assert_eq!(s, 422, "{v}");
+    assert!(said.contains(&format!("{} (ARUGU)", w.connection)) && said.contains("tc_second (OPS)"), "{v}");
+
+    let (s, v) = w.agent(json!({ "kind": "create", "tracker": "ops", "title": "By identifier" })).await;
+    assert_eq!(s, 200, "{v}");
+    assert_eq!(count(&w.app, "tracker_writes", "connection_id = 'tc_second'", params![]), 1);
+    let (s, v) = w.agent(json!({ "kind": "create", "tracker": "NOPE", "title": "Nowhere" })).await;
+    assert_eq!(s, 404, "{v}");
+    let (s, v) =
+        w.agent(json!({ "kind": "create", "connection": w.connection, "tracker": "OPS", "title": "Clash" })).await;
+    assert_eq!(s, 422, "{v}");
+
+    w.app.db.disconnect_tracker(&w.project, "tc_second", 9).unwrap().unwrap();
+    let (s, v) = w.agent(json!({ "kind": "create", "title": "Back to one" })).await;
+    assert_eq!(s, 200, "{v}");
+    let (_, v) = geek(&w.base, "GET", "/api/daemon/trackers/reach", None).await;
+    assert_eq!(v["projects"][0]["connections"].as_array().unwrap().len(), 1, "{v}");
+}
+
+/// A project with no live connection refuses a create that names none.
+#[tokio::test]
+async fn create_without_a_connection_is_refused_when_there_is_none() {
+    let w = world().await;
+    w.grant().await;
+    w.app.db.disconnect_tracker(&w.project, &w.connection, 9).unwrap().unwrap();
+    let (s, v) = w.agent(json!({ "kind": "create", "title": "Nowhere" })).await;
+    assert_eq!(s, 422, "{v}");
+    assert!(v["error"].as_str().unwrap().contains("no connected Plane project"), "{v}");
 }

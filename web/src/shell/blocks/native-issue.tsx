@@ -17,8 +17,9 @@
 //   block's state, which everyone who sees the pane gets, holds nothing
 //   more of it.
 //
-// The foot says where it was read from, and when Arugula control can't be
-// reached, that this is what it said last.
+// The header, facts and source are ItemBlock's (#410); where it was read
+// from is the source icon's tooltip, and only when Arugula control can't be
+// reached does a line say that this is what it said last.
 
 import { useEffect, useState } from "preact/hooks";
 import type { Client } from "../client";
@@ -26,11 +27,12 @@ import type { ForgePin, NativeIssue, PlatformProjects } from "../../shared/proto
 import { chat } from "../../shared/chat-store";
 import { IssueApiContext, IssueView, type IssueApi, type IssuePlace } from "../../shared/issues/view";
 import { IssueError, issues } from "../../shared/issues/store";
+import { ItemBlock, type ItemFact } from "../../shared/ui/item-block";
 import { Time } from "../../shared/ui/time";
 import { platformFetch } from "../../shared/maintenance";
 import { useSubscribe } from "../../shared/ui/hooks";
 import { platformHref } from "../platform-links";
-import { BlockLoading, OpenOutside } from "./block-states";
+import { BlockLoading } from "./block-states";
 import { getControlSession } from "../ui/people";
 
 /** What the daemon says of it to everyone who sees the pane. */
@@ -144,46 +146,82 @@ function useReader(s: NativeIssueState, project: string | null | undefined): Rea
   return reader;
 }
 
-/** Where it was read from, and that it's what it said last when the
- * platform can't be reached. */
-function Foot({ s, me }: { s: NativeIssueState; me: boolean }) {
-  if (s.pin.stale && !me) return <span data-issue-foot>Arugula control can't be reached now: this is what it said {s.read_ms ? <Time at={s.read_ms} long /> : "last"}.</span>;
-  return <span data-issue-foot>{me ? "Read as you, through Arugula control." : "Read through Arugula control by this machine, for its owner."}</span>;
+/** That Arugula control can't be reached, when it can't: what it said
+ * last. Where an issue was read from is the source icon's tooltip. */
+function Foot({ s }: { s: NativeIssueState }) {
+  if (!s.pin.stale) return null;
+  return <span data-issue-foot>Arugula control can't be reached now: this is what it said {s.read_ms ? <Time at={s.read_ms} long /> : "last"}.</span>;
+}
+
+/** The source icon's tooltip: who it's read as, and how it's followed. */
+function sourceTitle(s: NativeIssueState, me: boolean): string {
+  if (s.pin.stale && !me) return "Arugula · control can't be reached: this is what it said last";
+  return me ? "Arugula · read as you, through Arugula control" : "Arugula · read through Arugula control by this machine, for its owner";
 }
 
 export function NativeIssueBlock({ client, block, s, refresh }: { client: Client; block: number; s: NativeIssueState; refresh: () => void }) {
   const owners = useOwnersRead(client, block, s);
   const reader = useReader(s, owners?.project ?? owners?.issue?.project);
+  useSubscribe((fn) => issues.subscribe(fn));
   const id = s.pin.global_id;
   // What this page hears changed, the daemon reads again too, so its
   // text (and its agents' read) keeps up.
   const me = reader?.as === "me";
   useEffect(() => (me ? chat.onObject(id, refresh) : undefined), [id, me]);
-  const name = nativeIssueTitle(s, owners);
   const there = platformHref(`/issues/${id}`);
-  return (
-    <div class="review issue-block" data-issue-block={id} data-issue-reader={reader?.as} data-stale={s.pin.stale ? "" : undefined}>
-      <div class="review-bar">
-        <span class="review-path">
-          <b>{name}</b> <span class="ws-tag" title="A project's own issue, read through Arugula control">control</span>
-        </span>
-        {there && <OpenOutside href={there} data-issue-platform-link />}
-      </div>
-      <div class="review-body issue-block-body">
+  const issue = owners?.issue ?? issues.known(id);
+  const attrs = { "data-issue-block": id, "data-issue-reader": reader?.as, "data-stale": s.pin.stale ? "" : undefined };
+  // Nothing to draw a header from yet, or ever (not the reader's to
+  // read): one line.
+  if (reader === null || !issue) {
+    return (
+      <div class="issue-block" {...attrs}>
         {reader === null ? (
           <BlockLoading what="the issue from Arugula control" />
         ) : reader.as === "me" ? (
-          <IssueView key={id} id={id} place={reader.place} refresh={s.read_ms ?? undefined} foot={<Foot s={s} me />} Missing={({ what }) => <FromBlock s={s} owners={owners} what={what} />} />
+          <IssueView key={id} id={id} place={reader.place} refresh={s.read_ms ?? undefined} Missing={({ what }) => <FromBlock s={s} owners={owners} what={what} />} />
         ) : (
           <FromBlock s={s} owners={owners} />
         )}
       </div>
+    );
+  }
+  const nameOf = (a: string) => (reader.as === "me" ? reader.place.members.find((m) => m.account === a)?.name : undefined) ?? a;
+  const facts: ItemFact[] = [
+    { kind: "labels", labels: issue.labels },
+    { kind: "assignees", people: issue.assignees.map(nameOf) },
+  ];
+  return (
+    <div class="issue-block" {...attrs}>
+      <ItemBlock
+        kind="issue"
+        number={issue.number}
+        title={issue.title}
+        state={issue.state === "closed" ? "closed" : "open"}
+        source={{ kind: "arugula", live: me ? (s.pin.stale ? "paused" : "following") : null, title: sourceTitle(s, me) }}
+        onRefresh={refresh}
+        refreshTitle={s.read_ms ? `Read ${new Date(s.read_ms).toLocaleTimeString()}` : undefined}
+        href={there ?? undefined}
+        facts={facts}
+        tabs={[
+          {
+            id: "activity",
+            label: "Activity",
+            content:
+              reader.as === "me" ? (
+                <IssueView key={id} id={id} place={reader.place} refresh={s.read_ms ?? undefined} foot={<Foot s={s} />} Missing={({ what }) => <FromBlock s={s} owners={owners} what={what} />} />
+              ) : (
+                <FromBlock s={s} owners={owners} />
+              ),
+          },
+        ]}
+      />
     </div>
   );
 }
 
 /** What the daemon read for its owner, read only; or why there's nothing
- * (for anyone else: `#N`, and that it can't be read here). */
+ * (for anyone else: `#N`, and that it can't be read here), in one line. */
 function FromBlock({ s, owners, what }: { s: NativeIssueState; owners: OwnersRead | null | undefined; what?: string }) {
   const session = getControlSession();
   const issue = owners?.issue;
@@ -192,17 +230,12 @@ function FromBlock({ s, owners, what }: { s: NativeIssueState; owners: OwnersRea
       s.loading || owners === undefined
         ? "Loading the issue from Arugula control…"
         : owners === null
-          ? `${s.number ? `#${s.number}: you` : "You"} can't read this here. Open it on the platform page if it's in a project of yours.`
+          ? `${s.number ? `#${s.number}: you` : "You"} can't read this here.`
           : (what ?? s.error ?? "Arugula control didn't say what it is.");
     return (
-      <div class="issue-page" data-issue-missing data-issue-unreadable={owners === null ? "" : undefined}>
-        <p class="dim">{why}</p>
-        {owners !== null && (
-          <p class="dim">
-            <Foot s={s} me={false} />
-          </p>
-        )}
-      </div>
+      <p class="dim" data-issue-missing data-issue-unreadable={owners === null ? "" : undefined}>
+        {why}
+      </p>
     );
   }
   const place: IssuePlace = {
@@ -213,7 +246,7 @@ function FromBlock({ s, owners, what }: { s: NativeIssueState; owners: OwnersRea
   };
   return (
     <IssueApiContext.Provider value={blockApi(issue)}>
-      <IssueView key={`${s.pin.global_id}-block`} id={s.pin.global_id} place={place} refresh={s.read_ms} foot={<Foot s={s} me={false} />} />
+      <IssueView key={`${s.pin.global_id}-block`} id={s.pin.global_id} place={place} refresh={s.read_ms} foot={<Foot s={s} />} />
     </IssueApiContext.Provider>
   );
 }

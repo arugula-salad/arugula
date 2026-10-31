@@ -130,17 +130,42 @@ test("an issue opens from the menu, given to you; an agent's new issue is a draf
   const block = await page.evaluate(() => window.__arugula.client.state!.panes.find((p) => p.type === "forge")!.id);
   const el = page.locator(`[data-forge-block="${block}"]`);
   await expect(el).toHaveAttribute("data-forge-kind", "issue");
-  await expect(el.locator(".review-path")).toContainText(`Add a frobnicator to the CLI #${N} ${REPO}`);
-  await expect(el.locator("[data-issue-state]")).toHaveText("open");
+  await expect(el.locator("[data-item-head]")).toContainText(`#${N}Add a frobnicator to the CLI`);
+  await expect(el.locator("[data-item-pill]")).toHaveText("Open");
+  // The words the old block put around it are gone: no sentence under the
+  // header, no heading over a single item, no polls line, no description line.
+  await expect(el.locator("[data-item-next]")).toHaveCount(0);
+  for (const gone of ["opened by", "assigned to nobody", "Waiting on you", "No agent on it", "polls", "Pull requests ("])
+    await expect(el).not.toContainText(gone);
+  await expect(el.locator("h4")).toHaveCount(0);
+  await expect(el.locator("[data-item-facts]")).toBeVisible();
   // Looking at it, what's there is seen; then sam gives it to you.
-  await expect(el.locator('[data-want="assigned"]')).toHaveCount(0);
+  await expect(el.locator('[data-item-next]')).toHaveCount(0);
   timelines[N].push({ id: 99001, type: "assignees", created_at: "2099-01-01T00:00:00Z", user: { login: "sam" }, assignee: { login: "jhgaylor" }, removed_assignee: false });
   issues[N].updated_at = "2026-10-03T05:00:00Z";
-  await expect(el.locator('[data-want="assigned"]')).toContainText("assigned to you by sam");
+  await expect(el.locator('[data-item-next="warn"]')).toContainText("assigned to you by sam");
   await expect.poll(async () => (await info(page, block))?.reason?.kind).toBe("input");
   await expect(el.locator('[data-linked="14571"]')).toContainText("enh: add org members");
+  // Closed, it waits on no one: no strip, and the description going leaves
+  // no line saying so.
+  issues[N].state = "closed";
+  issues[N].body = "";
+  issues[N].updated_at = "2026-10-03T06:00:00Z";
+  await expect(el.locator("[data-item-pill]")).toHaveText("Closed");
+  await expect(el.locator("[data-item-next]")).toHaveCount(0);
+  await expect(el.locator("[data-item-body]")).toHaveCount(0);
+  await expect(el).not.toContainText("No description");
+  await expect(el.locator("[data-agent-on]")).toHaveCount(0);
+  await expect(el.getByRole("button", { name: "Comment" })).toHaveCount(0);
+  issues[N].state = "open";
+  issues[N].body = "The CLI needs a `frobnicate` command.";
+  issues[N].updated_at = "2026-10-03T07:00:00Z";
+  await expect(el.locator("[data-item-pill]")).toHaveText("Open");
+  await expect(el.locator("[data-item-next]")).toContainText("assigned to you by sam");
   // Opened from a link with no clone of ours: the owner still gets the button.
   await expect(el.locator("[data-agent-on]")).toBeVisible();
+  // No agent yet: no Agents tab.
+  await expect(el.locator('[data-item-tab="agents"]')).toHaveCount(0);
 
   // An agent's new issue: a draft on a block of its own, its text shown once
   // (as Markdown), with the actions on the block rather than a card over it.
@@ -168,7 +193,7 @@ test("an issue opens from the menu, given to you; an agent's new issue is a draf
   expect(writes[0]).toEqual({ route: "/issues", body: { title: "Frobs leak memory", body: "Memory grows.\n\n- **per frob**" }, auth: `token ${TOKEN}` });
   // The block is the issue now.
   await expect(draft).toHaveAttribute("data-forge-kind", "issue");
-  await expect(draft.locator(".review-path")).toContainText("Frobs leak memory");
+  await expect(draft.locator("[data-item-head]")).toContainText("Frobs leak memory");
   // Another, dropped from the block: nothing goes.
   const other = page.locator(`[data-forge-block="${(await draftNew("Nope")).block}"]`);
   await other.locator("[data-new-drop]").click();
@@ -187,8 +212,10 @@ test("Agent on this: the issue and its agent in a tab, on a branch of their own,
     [REPO, N, clone, `${origin}/api/v1`] as const,
   ))!;
   const el = page.locator(`[data-forge-block="${block}"]`);
-  await expect(el.locator("[data-issue-state]")).toHaveText("open");
+  await expect(el.locator("[data-item-pill]")).toHaveText("Open");
   await el.locator("[data-agent-on]").click();
+  // The agent is the Agents tab's; Agent on this is gone from the footer.
+  await el.locator('[data-item-tab="agents"]').click();
 
   const branch = "i14556-add-a-frobnicator-to-the";
   await expect(el.locator("[data-agent-link]")).toContainText(branch);
@@ -231,5 +258,6 @@ test("Agent on this: the issue and its agent in a tab, on a branch of their own,
   expect(prBlock).not.toBeNull();
   expect(await tabOf(page, prBlock!)).toBe(await tabOf(page, block));
   await expect(page.locator(`[data-forge-block="${prBlock}"] .review-path`)).toContainText(`#91 ${REPO}`);
+  await expect(el.locator("[data-agent-on]")).toHaveCount(0);
   expect(writes).toEqual([]);
 });

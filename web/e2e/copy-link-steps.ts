@@ -83,7 +83,9 @@ export function copyLinkSpecs(name: string, clipboard: boolean, shots = false) {
     expect(made.status).toBe(200);
     const doc = made.body!.doc.id as string;
     await open(`/p/${project}/docs/${doc}`, "[data-doc-page] .doc-title");
-    // The page's address names the Doc by id and a slug; the link is that address.
+    // The page's address names the Doc by id and a slug; the link is that address,
+    // once the page has put the slug in (WebKit reads the address before that).
+    await alice.waitForURL(new RegExp(`/docs/${doc}-[a-z0-9-]+$`));
     await copyLink(alice.url(), "doc");
     await expect(alice.locator("[data-copy-link]")).toHaveAttribute("data-link", new RegExp(`^${app}/p/${project}[^/]*/docs/${doc}`));
   });

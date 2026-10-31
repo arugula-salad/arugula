@@ -2994,6 +2994,8 @@ async fn an_agent_reads_and_writes_a_board_where_the_flag_is_on() {
             "attach",
             "detach",
             "ask",
+            "relate",
+            "unrelate",
             "note",
             "group",
             "drop",

@@ -181,16 +181,38 @@ pub struct WithheldRepo {
     pub why: String,
 }
 
-/// A PR or an issue, as metadata: never its body.
+fn github() -> String {
+    "github".to_owned()
+}
+
+/// A PR or an issue, as metadata: never its body. A Plane item (#420) is
+/// one too, with `provider` `plane`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct ForgeItem {
     /// The platform's id: `fi_` and 32 hex characters.
     pub id: String,
-    /// `OWNER/NAME`.
-    pub repo: String,
+    /// `OWNER/NAME`; none for a Plane item.
+    #[serde(default)]
+    pub repo: Option<String>,
+    /// A Plane item's sequence id (`ALL-2212` is 2212).
     pub number: u64,
+    /// `github` or `plane`; an older platform's items are GitHub's.
+    #[serde(default = "github")]
+    pub provider: String,
+    /// A Plane item's project key (`ALL`).
+    #[serde(default)]
+    pub identifier: Option<String>,
+    /// A Plane item's state as Plane names it (`In Review`) and its group
+    /// (`backlog`, `unstarted`, `started`, `completed` or `cancelled`).
+    #[serde(default)]
+    pub state_name: Option<String>,
+    #[serde(default)]
+    pub state_group: Option<String>,
+    /// A Plane item's page in Plane.
+    #[serde(default)]
+    pub url: Option<String>,
     /// `pr` or `issue`.
     pub kind: String,
     /// `open`, `closed` or `merged`.
@@ -815,12 +837,16 @@ pub enum TrackerClose {
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum TrackerWrite {
-    /// A new item. `connection` is needed on an agent's route and, on a
-    /// person's, is the path's. `state` is a state group (`backlog`,
-    /// `unstarted`, `started`).
+    /// A new item. On an agent's route `connection` or `tracker` (the
+    /// connection's identifier, in any case) says where; with neither, the
+    /// project's only live connection is used. On a person's, the path's
+    /// connection is it. `state` is a state group (`backlog`, `unstarted`,
+    /// `started`).
     Create {
         #[serde(default)]
         connection: Option<String>,
+        #[serde(default)]
+        tracker: Option<String>,
         title: String,
         #[serde(default)]
         body: Option<String>,
@@ -910,4 +936,20 @@ pub struct TrackerReach {
 pub struct TrackerReachProject {
     pub id: String,
     pub name: String,
+    /// Its live connections: never a key or a secret.
+    #[serde(default)]
+    pub connections: Vec<TrackerReachConnection>,
+}
+
+/// A live Plane connection of a project an agent reaches.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+pub struct TrackerReachConnection {
+    pub id: String,
+    /// The Plane project's identifier, like `ARUGU`.
+    pub identifier: String,
+    pub name: String,
+    pub workspace_slug: String,
+    /// `approve` or `allow`.
+    pub agent_writes: String,
 }

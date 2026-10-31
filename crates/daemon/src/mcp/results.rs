@@ -122,6 +122,22 @@ pub struct TrackersReach {
 pub struct TrackerReachProject {
     pub id: String,
     pub name: String,
+    /// Its live Plane connections: what `tracker_write create` can name.
+    #[serde(default)]
+    pub connections: Vec<TrackerReachConnection>,
+}
+
+/// A live Plane connection of a project. Never a key or a secret.
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+pub struct TrackerReachConnection {
+    /// `tc_…`: `connection` on `create`.
+    pub id: String,
+    /// The Plane project's identifier: `tracker` on `create`.
+    pub identifier: String,
+    pub name: String,
+    pub workspace_slug: String,
+    /// `approve` (a person approves each write) or `allow`.
+    pub agent_writes: String,
 }
 
 /// The projects in control whose boards agents here reach: through grants
