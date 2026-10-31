@@ -10,8 +10,9 @@
 //! (`feat/357-plane`), or `IDENT-N` for a Plane item. A bare `#N` in prose
 //! is not one. The PR's own number is never a reference to an issue.
 //!
-//! A merged PR closes the native issues it names ([`crate::forge::closes`]):
-//! `part of`, `refs` or `see` before `Arugula #N` only links ([`Refs::soft`]).
+//! A merged PR closes the native issues it names and moves the Plane items it
+//! names to Done ([`crate::forge::closes`]): `part of`, `refs` or `see` before
+//! `Arugula #N` or `KEY-N` only links ([`Refs::soft`], [`Refs::soft_plane`]).
 //!
 //! `Arugula #N` names a native issue only. Any other `#N` names the GitHub
 //! issue N of the PR's repo or, when the board has no row for that, the
@@ -32,6 +33,9 @@ pub struct Refs {
     pub soft: Vec<u64>,
     /// Plane items as (key, number): `ARUGU-12` is (`ARUGU`, 12).
     pub plane: Vec<(String, u64)>,
+    /// Those of `plane` written only as `part of ARUGU-12`, `refs ARUGU-12`
+    /// or `see ARUGU-12`: linked, but not moved to Done when the PR merges.
+    pub soft_plane: Vec<(String, u64)>,
 }
 
 impl Refs {
@@ -62,10 +66,23 @@ impl Refs {
         self.native.iter().copied().filter(|n| !self.soft.contains(n))
     }
 
-    fn add_plane(&mut self, key: &str, n: u64) {
-        if !self.plane.iter().any(|(k, m)| k == key && *m == n) {
+    /// A Plane item named softly is soft unless it is named plainly too,
+    /// before or after.
+    fn add_plane(&mut self, key: &str, n: u64, soft: bool) {
+        let named = |(k, m): &(String, u64)| k == key && *m == n;
+        if !self.plane.iter().any(named) {
             self.plane.push((key.to_owned(), n));
+            if soft {
+                self.soft_plane.push((key.to_owned(), n));
+            }
+        } else if !soft {
+            self.soft_plane.retain(|p| !named(p));
         }
+    }
+
+    /// The Plane items a merge moves to Done: those named plainly.
+    pub fn closing_plane(&self) -> impl Iterator<Item = &(String, u64)> + '_ {
+        self.plane.iter().filter(|p| !self.soft_plane.contains(p))
     }
 
     pub fn is_empty(&self) -> bool {
@@ -181,10 +198,10 @@ pub fn references(title: &str, branch: &str, body: &str, own: Option<u64>) -> Re
     let mut r = Refs::default();
     for text in [title, body] {
         hashes(text, &mut r);
-        plane(text, &mut r);
+        plane(text, &mut r, true);
     }
     segments(branch, &mut r);
-    plane(&branch.to_uppercase(), &mut r);
+    plane(&branch.to_uppercase(), &mut r, false);
     if let Some(own) = own {
         r.numbers.retain(|n| *n != own);
     }
@@ -233,7 +250,7 @@ fn hashes(text: &str, r: &mut Refs) {
     }
 }
 
-/// Whether `before`, the text ahead of `Arugula`, ends in `part of`, `refs` or
+/// Whether `before`, the text ahead of `Arugula` or of a Plane key, ends in `part of`, `refs` or
 /// `see` (a colon allowed): the reference only links.
 fn soft_before(before: &str) -> bool {
     let words = |s: &'_ str| -> Vec<String> {
@@ -259,8 +276,9 @@ fn segments(branch: &str, r: &mut Refs) {
 }
 
 /// `KEY-N` words: capitals and digits starting with a capital, a dash and
-/// digits, not part of a longer word.
-fn plane(text: &str, r: &mut Refs) {
+/// digits, not part of a longer word. `soft_ok` is whether `part of` before
+/// one makes it soft (not in a branch).
+fn plane(text: &str, r: &mut Refs, soft_ok: bool) {
     let b = text.as_bytes();
     let mut i = 0;
     while i < b.len() {
@@ -275,7 +293,7 @@ fn plane(text: &str, r: &mut Refs) {
             && let Some((n, rest)) = number(&text[key_end + 1..])
             && rest.chars().next().is_none_or(|c| !c.is_alphanumeric())
         {
-            r.add_plane(&text[i..key_end], n);
+            r.add_plane(&text[i..key_end], n, soft_ok && soft_before(&text[..i].to_lowercase()));
         }
         i = key_end.max(i + 1);
     }
@@ -304,6 +322,10 @@ mod tests {
         assert_eq!(references("", "", "Closes #9 and (#10)", None).numbers, vec![9, 10]);
         assert_eq!(references("Plane: ARUGU-12 and not xARUGU-13", "", "", None).plane, vec![("ARUGU".into(), 12)]);
         assert_eq!(references("", "feat/arugu-14-x", "", None).plane, vec![("ARUGU".into(), 14)]);
+        let soft = references("Part of ARUGU-1, see: ARUGU-2, ARUGU-3", "", "refs ARUGU-1", None);
+        assert_eq!((soft.plane.len(), soft.closing_plane().collect::<Vec<_>>()), (3, vec![&("ARUGU".into(), 3)]));
+        let both = references("Part of ARUGU-1", "", "Fixes ARUGU-1. ARUGU-2, refs ARUGU-2", None);
+        assert_eq!((both.closing_plane().count(), both.soft_plane.len()), (2, 0));
     }
 
     /// A native issue is named from any PR; a GitHub issue only from a PR of

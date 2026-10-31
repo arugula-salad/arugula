@@ -28,13 +28,31 @@ use crate::{
     secrets::SecretCipher,
 };
 
-pub(super) const KEY: &str = "plane-key-for-the-test"; // gitleaks:allow
+pub(crate) const KEY: &str = "plane-key-for-the-test"; // gitleaks:allow
 pub(super) const WEBHOOK: &str = "plane-hook-for-the-test"; // gitleaks:allow
-pub(super) const MASTER: &str = "0303030303030303030303030303030303030303030303030303030303030303"; // gitleaks:allow
+pub(crate) const MASTER: &str = "0303030303030303030303030303030303030303030303030303030303030303"; // gitleaks:allow
 
 /// The platform over `hub` with a fake Plane (workspace `acme`, project
 /// `ARUGU` with three items, one completed), and its address.
 pub(super) async fn serve(hub: &Arc<TestHub>) -> (FakeTracker, Arc<Platform>, String) {
+    let cfg = crate::Config {
+        public_url: "https://control.example".into(),
+        page_url: "https://app.example".into(),
+        ..Default::default()
+    };
+    let mut p = Platform::new(cfg, crate::db::Db::test(), hub.clone(), reqwest::Client::new(), Default::default());
+    let fake = plane(&mut p);
+    let app = Arc::new(p);
+    let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let base = format!("http://{}", l.local_addr().unwrap());
+    let router = crate::testing::router(app.clone());
+    tokio::spawn(async move { axum::serve(l, router).await.unwrap() });
+    (fake, app, base)
+}
+
+/// The fake Plane (workspace `acme`, project `ARUGU` with three items, one
+/// completed) as `p`'s trackers, with a key to keep its connections' keys.
+pub(crate) fn plane(p: &mut Platform) -> FakeTracker {
     let project = ProjectInfo { id: "pl-proj-1".into(), identifier: "ARUGU".into(), name: "Arugula".into() };
     let items = vec![
         item(1, "First", "backlog", 3_000),
@@ -42,20 +60,9 @@ pub(super) async fn serve(hub: &Arc<TestHub>) -> (FakeTracker, Arc<Platform>, St
         item(3, "Third", "completed", 1_000),
     ];
     let fake = FakeTracker::new(KEY, "acme", project, items);
-    let cfg = crate::Config {
-        public_url: "https://control.example".into(),
-        page_url: "https://app.example".into(),
-        ..Default::default()
-    };
-    let mut p = Platform::new(cfg, crate::db::Db::test(), hub.clone(), reqwest::Client::new(), Default::default());
     p.secret_key = Some(Arc::new(SecretCipher::new(MASTER).unwrap()));
     p.trackers = Arc::new(FakeTrackers(fake.clone()));
-    let app = Arc::new(p);
-    let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let base = format!("http://{}", l.local_addr().unwrap());
-    let router = crate::testing::router(app.clone());
-    tokio::spawn(async move { axum::serve(l, router).await.unwrap() });
-    (fake, app, base)
+    fake
 }
 
 pub(super) fn count(app: &Platform, table: &str, filter: &str, p: &[&dyn Param]) -> u64 {
@@ -66,13 +73,13 @@ fn secrets(app: &Platform) -> u64 {
     count(app, "project_secrets", "name LIKE 'tracker/plane/%'", params![])
 }
 
-pub(super) async fn connect_as(base: &str, who: &str, project: &str, key: &str, what: &str) -> (u16, Value) {
+pub(crate) async fn connect_as(base: &str, who: &str, project: &str, key: &str, what: &str) -> (u16, Value) {
     let body = json!({ "workspace_slug": "acme", "project": what, "api_key": key, "webhook_secret": WEBHOOK });
     call(base, who, "POST", &format!("/api/projects/{project}/trackers"), Some(body)).await
 }
 
 /// Until the backfill, which the connect started, has finished.
-pub(super) async fn backfilled(app: &Platform, project: &str, id: &str) {
+pub(crate) async fn backfilled(app: &Platform, project: &str, id: &str) {
     for _ in 0..200 {
         if app.db.tracker_connection(project, id).unwrap().is_some_and(|c| c.backfilled_at.is_some()) {
             return;

@@ -31,6 +31,7 @@ mod boards_tests;
 pub mod connect;
 #[cfg(any(test, feature = "testing"))]
 pub mod connect_tests;
+pub mod done;
 #[cfg(any(test, feature = "testing"))]
 pub mod fake;
 pub mod fields;

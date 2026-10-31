@@ -389,6 +389,11 @@ pub fn throwaway_key() -> aws_lc_rs::rsa::KeyPair {
 /// The platform with the App, over `hub`, against a fake GitHub: its
 /// state, the platform, and the platform's address.
 pub async fn serve(hub: &Arc<TestHub>) -> (Shared, Arc<Platform>, String) {
+    serve_with(hub, |_| ()).await
+}
+
+/// [`serve`], with `set` run on the platform before it is shared.
+pub async fn serve_with(hub: &Arc<TestHub>, set: impl FnOnce(&mut Platform)) -> (Shared, Arc<Platform>, String) {
     let gh: Shared = Arc::default();
     let api = fake_github(gh.clone()).await;
     let cfg = crate::Config {
@@ -398,6 +403,7 @@ pub async fn serve(hub: &Arc<TestHub>) -> (Shared, Arc<Platform>, String) {
     };
     let mut p = Platform::new(cfg, crate::db::Db::test(), hub.clone(), reqwest::Client::new(), Default::default());
     p.github = Some(GithubApp::new("1".into(), "arugula-test".into(), SECRET.into(), &api, throwaway_key()));
+    set(&mut p);
     let app = Arc::new(p);
     let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let base = format!("http://{}", l.local_addr().unwrap());

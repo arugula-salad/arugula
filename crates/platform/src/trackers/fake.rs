@@ -34,6 +34,8 @@ struct State {
     in_modules: Vec<(String, String)>,
     /// Refuse to put an item in a module.
     module_down: bool,
+    /// State changes still to refuse as unreachable.
+    state_down: usize,
 }
 
 /// A write the fake was sent, as it arrived: a body or comment is the HTML
@@ -119,6 +121,7 @@ impl FakeTracker {
             labels: HashMap::new(),
             in_modules: vec![],
             module_down: false,
+            state_down: 0,
         };
         FakeTracker { state: Arc::new(Mutex::new(state)) }
     }
@@ -156,6 +159,11 @@ impl FakeTracker {
     /// Whether putting an item in a module fails.
     pub fn set_module_down(&self, down: bool) {
         self.state.lock().unwrap().module_down = down;
+    }
+
+    /// Whether the next `n` state changes fail as unreachable.
+    pub fn fail_state_changes(&self, n: usize) {
+        self.state.lock().unwrap().state_down = n;
     }
 
     /// The writes sent so far.
@@ -318,6 +326,10 @@ impl TrackerProvider for Keyed {
     ) -> BoxFuture<'a, Result<Item>> {
         Box::pin(async move {
             let mut s = self.check(workspace)?;
+            if s.state_down > 0 {
+                s.state_down -= 1;
+                return Err(TrackerError::Unavailable("the fake is down".into()));
+            }
             let at = s.items.iter().map(|i| i.updated_at).max().unwrap_or(0) + 1;
             let st = s.fields.states.iter().find(|x| x.id == state).cloned().ok_or(TrackerError::NotFound)?;
             let it = s.items.iter_mut().find(|i| i.id == id).ok_or(TrackerError::NotFound)?;

@@ -127,7 +127,7 @@ impl Who {
     }
 }
 
-async fn person_name(app: &Platform, account: &str) -> Result<String, ApiError> {
+pub(super) async fn person_name(app: &Platform, account: &str) -> Result<String, ApiError> {
     let n = name_of(app, account).await?;
     Ok(if n.is_empty() { account.to_owned() } else { n })
 }
