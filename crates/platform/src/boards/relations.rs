@@ -227,7 +227,11 @@ fn pointer_of(id: &str) -> wire::Pointer {
 /// Whether a blocker still blocks: an open issue or an open PR. An item the
 /// mirror no longer has (no fact) blocks nothing.
 fn is_open(f: Option<&Fact>) -> bool {
-    matches!(f, Some(Fact::Issue { closed: false } | Fact::Pr(Pr::Open)))
+    match f {
+        Some(Fact::Issue { category }) => !category.is_done(),
+        Some(Fact::Pr(Pr::Open)) => true,
+        _ => false,
+    }
 }
 
 // ---------------------------------------------------------------- routes

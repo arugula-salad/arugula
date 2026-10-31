@@ -25,7 +25,7 @@
 //! attached one merged with every check on its head completed and none red;
 //! by evidence when a `proof` attachment is on it; otherwise not proven.
 
-use arugula_control_wire::boards::{Lane, Pointer, Proof, ProofBy};
+use arugula_control_wire::boards::{Category, Lane, Pointer, Proof, ProofBy};
 
 /// A PR as a lane reads it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -43,8 +43,9 @@ pub enum Pr {
 /// What an item is now, as far as a lane cares.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Fact {
+    /// An issue of any source, by its status category.
     Issue {
-        closed: bool,
+        category: Category,
     },
     Pr(Pr),
     /// An agent block, as its machine last reported it.
@@ -69,8 +70,10 @@ pub enum Primary<'a> {
 /// The row's lane.
 pub fn lane(primary: Primary<'_>, attached: &[Fact]) -> Lane {
     let Primary::Item(item) = primary else { return Lane::Next };
-    if let Some(Fact::Issue { closed: true } | Fact::Pr(Pr::Merged { .. } | Pr::Closed)) = item {
-        return Lane::Done;
+    match item {
+        Some(Fact::Issue { category }) if category.is_done() => return Lane::Done,
+        Some(Fact::Pr(Pr::Merged { .. } | Pr::Closed)) => return Lane::Done,
+        _ => {}
     }
     let open = |f: &Fact| matches!(f, Fact::Pr(Pr::Open));
     if item.is_some_and(open) || attached.iter().any(open) || merged_not_closed(primary, attached) {
@@ -78,6 +81,38 @@ pub fn lane(primary: Primary<'_>, attached: &[Fact]) -> Lane {
     }
     let under_way = |f: &Fact| matches!(f, Fact::Block { closed: false } | Fact::Run { running: true });
     if attached.iter().any(under_way) { Lane::Doing } else { Lane::Next }
+}
+
+/// A native issue's category: open is `unstarted`, closed as not planned or
+/// as a duplicate is `canceled`, any other close (or none named) `completed`.
+pub fn native_category(closed: bool, reason: Option<&str>) -> Category {
+    match (closed, reason) {
+        (false, _) => Category::Unstarted,
+        (true, Some("not_planned" | "duplicate")) => Category::Canceled,
+        (true, _) => Category::Completed,
+    }
+}
+
+/// A mirrored GitHub issue's category from its `state`. The mirror keeps no
+/// state reason, so a closed issue is `completed` even when GitHub closed it
+/// as not planned.
+pub fn github_category(state: &str) -> Category {
+    if state == "open" { Category::Unstarted } else { Category::Completed }
+}
+
+/// A Plane item's category: its state group, which spells `canceled` as
+/// `cancelled`. A group this build doesn't know, or none, reads as the
+/// item's `state`, open or closed, as a GitHub issue does.
+pub fn plane_category(group: Option<&str>, state: &str) -> Category {
+    match group.map(str::to_ascii_lowercase).as_deref() {
+        Some("triage") => Category::Triage,
+        Some("backlog") => Category::Backlog,
+        Some("unstarted") => Category::Unstarted,
+        Some("started") => Category::Started,
+        Some("completed") => Category::Completed,
+        Some("cancelled" | "canceled") => Category::Canceled,
+        _ => github_category(state),
+    }
 }
 
 /// When a Doing row stalled (Arugula #404), in milliseconds: every block of
@@ -100,7 +135,10 @@ pub fn stalled(lane: Lane, attached: &[Fact], idle: &[Option<u64>], now: u64, mi
 /// Whether the row's issue is open while a PR of the row merged and none is
 /// open: the work is in and the issue isn't closed.
 pub fn merged_not_closed(primary: Primary<'_>, attached: &[Fact]) -> bool {
-    let Primary::Item(Some(Fact::Issue { closed: false })) = primary else { return false };
+    let Primary::Item(Some(Fact::Issue { category })) = primary else { return false };
+    if category.is_done() {
+        return false;
+    }
     let merged = |f: &Fact| matches!(f, Fact::Pr(Pr::Merged { .. }));
     attached.iter().any(merged) && !attached.iter().any(|f| matches!(f, Fact::Pr(Pr::Open)))
 }
@@ -142,8 +180,8 @@ mod tests {
     /// Every row of the lane table.
     #[test]
     fn the_lane_table() {
-        let issue_open = Fact::Issue { closed: false };
-        let issue_closed = Fact::Issue { closed: true };
+        let issue_open = Fact::Issue { category: Category::Unstarted };
+        let issue_closed = Fact::Issue { category: Category::Completed };
         fn item(f: &Fact) -> Primary<'_> {
             Primary::Item(Some(f))
         }
@@ -189,7 +227,8 @@ mod tests {
     /// The mark `merged_not_closed`: an open issue, a merged PR, no open one.
     #[test]
     fn merged_not_closed_needs_an_open_issue_a_merged_pr_and_no_open_one() {
-        let (open, closed) = (Fact::Issue { closed: false }, Fact::Issue { closed: true });
+        let (open, closed) =
+            (Fact::Issue { category: Category::Unstarted }, Fact::Issue { category: Category::Completed });
         let mnc = |p: Primary<'_>, a: &[Fact]| merged_not_closed(p, a);
         assert!(mnc(Primary::Item(Some(&open)), &[MERGED]));
         assert!(mnc(Primary::Item(Some(&open)), &[Fact::Pr(Pr::Closed), MERGED, LIVE_BLOCK]));
@@ -238,7 +277,7 @@ mod tests {
     fn a_done_row_is_proven_by_ci_or_evidence_or_not() {
         let (pr, att) = (ptr("fi_pr"), ptr("fi_att"));
         let link = Pointer::Link { url: "https://ci.example.com/1".into() };
-        let issue = Fact::Issue { closed: true };
+        let issue = Fact::Issue { category: Category::Completed };
         let red = Fact::Pr(Pr::Merged { green: false });
         let ci = |p: &Pointer| Some(Proof { by: ProofBy::Ci, pointer: Some(p.clone()) });
         // The primary PR merged green.
@@ -256,5 +295,52 @@ mod tests {
         assert_eq!(proof((&pr, Some(&MERGED)), &[], Some(&link)), ci(&pr));
         // Closed unmerged is Done, and never proven by CI.
         assert_eq!(proof((&pr, Some(&Fact::Pr(Pr::Closed))), &[], None), None);
+    }
+
+    /// Each source's status category: a native issue by how it closed, a
+    /// GitHub issue by open or closed (the mirror has no reason), Plane's
+    /// state group as it is with `cancelled` spelled `canceled`, and a group
+    /// we don't know by the item's state.
+    #[test]
+    fn every_source_maps_onto_a_status_category() {
+        use Category::*;
+        assert_eq!(native_category(false, None), Unstarted);
+        assert_eq!(native_category(true, Some("completed")), Completed);
+        assert_eq!(native_category(true, None), Completed);
+        assert_eq!(native_category(true, Some("not_planned")), Canceled);
+        assert_eq!(native_category(true, Some("duplicate")), Canceled);
+        assert_eq!(github_category("open"), Unstarted);
+        assert_eq!(github_category("closed"), Completed);
+        let plane = |group: &str| plane_category(Some(group), "open");
+        assert_eq!(plane("triage"), Triage);
+        assert_eq!(plane("backlog"), Backlog);
+        assert_eq!(plane("unstarted"), Unstarted);
+        assert_eq!(plane("started"), Started);
+        assert_eq!(plane("completed"), Completed);
+        assert_eq!(plane("cancelled"), Canceled);
+        // Not a group we know, or none: by the item's state.
+        assert_eq!(plane_category(Some("someday"), "open"), Unstarted);
+        assert_eq!(plane_category(Some("someday"), "closed"), Completed);
+        assert_eq!(plane_category(None, "open"), Unstarted);
+        assert_eq!(plane_category(None, "closed"), Completed);
+        assert_eq!(serde_json::to_string(&Canceled).unwrap(), "\"canceled\"");
+    }
+
+    /// Only completed and canceled are Done; every other category is open.
+    #[test]
+    fn completed_and_canceled_are_done_and_the_rest_are_not() {
+        use Category::*;
+        for c in [Triage, Backlog, Unstarted, Started] {
+            let f = Fact::Issue { category: c };
+            assert_eq!(lane(Primary::Item(Some(&f)), &[]), Lane::Next, "{c:?}");
+            assert_eq!(lane(Primary::Item(Some(&f)), &[OPEN_PR]), Lane::Review, "{c:?}");
+            assert_eq!(lane(Primary::Item(Some(&f)), &[LIVE_BLOCK]), Lane::Doing, "{c:?}");
+            assert!(merged_not_closed(Primary::Item(Some(&f)), &[MERGED]), "{c:?}");
+        }
+        for c in [Completed, Canceled] {
+            let f = Fact::Issue { category: c };
+            assert_eq!(lane(Primary::Item(Some(&f)), &[OPEN_PR, LIVE_BLOCK]), Lane::Done, "{c:?}");
+            assert!(!merged_not_closed(Primary::Item(Some(&f)), &[MERGED]), "{c:?}");
+        }
     }
 }

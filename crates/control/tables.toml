@@ -1418,6 +1418,28 @@ note = "Those of projects that go with it go. Where it only made one, its name g
 seen_by = ["litestream"]
 
 [[table]]
+name = "work_items"
+plane = "platform"
+process = "platform"
+holds = "metadata"
+what = "One piece of work of a project (Arugula #405), made when a board takes a native issue, the GitHub issue it was exported to or a Plane item: its id and project. A board holds one row for it, whichever of its issues was added."
+why_asleep = "A board lists a piece of work once, on a teammate's phone with every machine asleep."
+with_account = "deleted"
+note = "Those of projects that go with it."
+seen_by = ["litestream"]
+
+[[table]]
+name = "work_item_refs"
+plane = "platform"
+process = "platform"
+holds = "metadata"
+what = "Where a work item lives (Arugula #405): one row for each issue it is, in a system (native, github or plane): the issue's id, the project, GitHub repo or tracker connection, and its key (`12`, `org/repo#12`, `ARUGU-12`) and link."
+why_asleep = "A PR's reference finds the board's row by any of its work's numbers, with every machine asleep."
+with_account = "deleted"
+note = "Those of work items that go with their project."
+seen_by = ["litestream"]
+
+[[table]]
 name = "board_block_states"
 plane = "platform"
 process = "platform"

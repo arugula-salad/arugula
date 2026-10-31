@@ -10,7 +10,7 @@ use std::time::Instant;
 use serde_json::{Value, json};
 
 use super::{
-    lanes_tests::{add, attach, check, fi, native, on, read, start},
+    lanes_tests::{add, attach, check, fi, item, native, on, read, rows, start},
     viewer_tests::world,
 };
 use crate::{
@@ -210,4 +210,161 @@ async fn a_person_attachment_is_never_taken_off() {
     assert_eq!(attachments(&app, &id), (2, 1), "the body names it");
     hook_with(&app, 88, "edited", 61, ("More", "nothing"), "chore/y", 14, false);
     assert_eq!(attachments(&app, &id), (1, 0), "the body drops it");
+}
+
+/// A second board of the team's project.
+async fn another_board(base: &str, team: &str) -> String {
+    let (s, b) =
+        call(base, "bob", "POST", &format!("/api/projects/{team}/boards"), Some(json!({ "title": "Two" }))).await;
+    assert_eq!(s, 200, "{b}");
+    b["board"]["id"].as_str().unwrap().to_owned()
+}
+
+/// The pointers attached to the row of `item`.
+fn attached_to(v: &Value, item: &str) -> Vec<String> {
+    on(v, item).1["attachments"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|a| a["pointer"]["id"].as_str().unwrap().to_owned())
+        .collect()
+}
+
+/// A board with a native #n and an unrelated GitHub #n of acme/site (88):
+/// "Closes #n" from a PR of acme/site is the GitHub issue's, "Arugula #n" is
+/// the native one's from any repo, and "Closes #n" from another repo
+/// (acme/app, 77) falls to the native issue. Auto-attach and a hand add say
+/// the same.
+#[tokio::test]
+async fn a_bare_number_is_the_prs_repos_issue_and_arugula_is_the_native_one() {
+    let (base, app, team, id) = start().await;
+    let (nat, n) = native(&base, &team, "Native").await;
+    item(&app, "fi_g", 88, n, "issue", "open", "GitHub's own", ("", ""));
+    add(&base, &id, json!({ "kind": "issue", "id": nat })).await;
+    let v = add(&base, &id, fi("fi_g")).await;
+    assert_eq!(rows(&v).len(), 2, "two issues, two rows: {v}");
+
+    hook(&app, 88, "opened", 70, &format!("Closes #{n}"), "x/a", 10, false);
+    let v = read(&base, "bob", &id).await;
+    assert_eq!((attached_to(&v, &nat).len(), attached_to(&v, "fi_g")), (0, vec![pr_id(&app, 88, 70)]), "{v}");
+
+    hook(&app, 88, "opened", 71, &format!("Arugula #{n}: native"), "x/b", 11, false);
+    let v = read(&base, "bob", &id).await;
+    assert_eq!(attached_to(&v, &nat), vec![pr_id(&app, 88, 71)], "{v}");
+    assert_eq!(attached_to(&v, "fi_g").len(), 1, "the GitHub row got nothing more: {v}");
+
+    hook(&app, 77, "opened", 72, &format!("Closes #{n}"), "x/c", 12, false);
+    let v = read(&base, "bob", &id).await;
+    assert_eq!(attached_to(&v, &nat), vec![pr_id(&app, 88, 71), pr_id(&app, 77, 72)], "another repo's PR: native: {v}");
+    assert_eq!(attached_to(&v, "fi_g").len(), 1, "{v}");
+
+    // A hand add of the same three PRs, on a board of its own.
+    let two = another_board(&base, &team).await;
+    add(&base, &two, json!({ "kind": "issue", "id": nat })).await;
+    add(&base, &two, fi("fi_g")).await;
+    item(&app, "fi_h1", 88, 80, "pr", "open", &format!("Closes #{n}"), ("x/d", "d1"));
+    item(&app, "fi_h2", 88, 81, "pr", "open", &format!("Arugula #{n}"), ("x/e", "d2"));
+    item(&app, "fi_h3", 77, 82, "pr", "open", &format!("Closes #{n}"), ("x/f", "d3"));
+    for pr in ["fi_h1", "fi_h2", "fi_h3"] {
+        let v = add(&base, &two, fi(pr)).await;
+        assert_eq!(rows(&v).len(), 2, "{pr} was attached, not added: {v}");
+    }
+    let v = read(&base, "bob", &two).await;
+    assert_eq!(attached_to(&v, "fi_g"), ["fi_h1"], "{v}");
+    assert_eq!(attached_to(&v, &nat), ["fi_h2", "fi_h3"], "{v}");
+}
+
+/// A native issue exported to GitHub and mirrored is one row, whichever is
+/// added first, the picker lists it once (the native one, then not at all
+/// once it is on a board), and a PR finds the row by either number.
+#[tokio::test]
+async fn an_exported_issue_is_one_row_and_listed_once() {
+    let (base, app, team, id) = start().await;
+    let (nat, n) = native(&base, &team, "Exported").await;
+    item(&app, "fi_x", 88, 500, "issue", "open", "Exported", ("", ""));
+    app.db
+        .c()
+        .execute(
+            "UPDATE issues SET github_repo = 'acme/site', github_repo_id = 88, github_number = 500 WHERE id = ?1",
+            params![nat],
+        )
+        .unwrap();
+    let listed = |untriaged: bool| {
+        let (base, team, nat) = (base.clone(), team.clone(), nat.clone());
+        async move {
+            let q = if untriaged { "&untriaged=true" } else { "" };
+            let (_, v) =
+                call(&base, "bob", "GET", &format!("/api/projects/{team}/work?kind=issue&limit=100{q}"), None).await;
+            v["items"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|i| i["pointer"]["id"].as_str().unwrap().to_owned())
+                .filter(|i| *i == "fi_x" || *i == nat)
+                .collect::<Vec<_>>()
+        }
+    };
+    assert_eq!(listed(false).await, std::slice::from_ref(&nat), "the picker lists the native issue, not its copy");
+
+    // The native issue first, then its copy: the same row.
+    add(&base, &id, json!({ "kind": "issue", "id": nat })).await;
+    let v = add(&base, &id, fi("fi_x")).await;
+    assert_eq!(rows(&v).len(), 1, "{v}");
+    let row = on(&v, &nat).1["id"].as_str().unwrap().to_owned();
+    assert!(v["said"].as_str().unwrap().contains(&row), "the answer says which row: {v}");
+    assert!(listed(true).await.is_empty(), "on a board, by either id: not untriaged");
+
+    // The copy first, then the native issue.
+    let two = another_board(&base, &team).await;
+    add(&base, &two, fi("fi_x")).await;
+    let v = add(&base, &two, json!({ "kind": "issue", "id": nat })).await;
+    assert_eq!(rows(&v).len(), 1, "{v}");
+    assert!(v["said"].is_string(), "{v}");
+
+    // A PR finds the row by the GitHub number or by the native one.
+    hook(&app, 88, "opened", 90, "Closes #500", "x/g", 10, false);
+    hook(&app, 88, "opened", 91, &format!("Arugula #{n}"), "x/h", 11, false);
+    let (a, b) = (pr_id(&app, 88, 90), pr_id(&app, 88, 91));
+    assert_eq!(attached_to(&read(&base, "bob", &id).await, &nat), [a.clone(), b.clone()]);
+    assert_eq!(
+        attached_to(&read(&base, "bob", &two).await, "fi_x"),
+        [a, b],
+        "the other board's row points at the copy"
+    );
+}
+
+/// The trap: two work items that turn out to be one, both on boards. The
+/// GitHub issue is a row first; the native issue is a row of another board
+/// before it is linked; then the link is recorded and the native issue is
+/// added where the copy is. One work item, one row on each board, no ref
+/// left pointing at a work item that is gone.
+#[tokio::test]
+async fn a_native_issue_that_gains_its_link_merges_with_the_copy_already_on_boards() {
+    let (base, app, team, id) = start().await;
+    let (nat, _) = native(&base, &team, "Linked later").await;
+    item(&app, "fi_t", 88, 600, "issue", "open", "Linked later", ("", ""));
+    let two = another_board(&base, &team).await;
+    add(&base, &id, fi("fi_t")).await;
+    add(&base, &two, json!({ "kind": "issue", "id": nat })).await;
+    let count = |sql: &str| -> u64 { app.db.c().query_row(sql, params![], |r| r.get(0)).unwrap() };
+    assert_eq!(count("SELECT count(*) FROM work_items"), 2, "not linked: two");
+
+    app.db
+        .c()
+        .execute(
+            "UPDATE issues SET github_repo = 'acme/site', github_repo_id = 88, github_number = 600 WHERE id = ?1",
+            params![nat],
+        )
+        .unwrap();
+    let v = add(&base, &id, json!({ "kind": "issue", "id": nat })).await;
+    assert_eq!(rows(&v).len(), 1, "the copy's row is the native issue's too: {v}");
+    assert!(v["said"].is_string(), "{v}");
+
+    assert_eq!(count("SELECT count(*) FROM work_items"), 1);
+    assert_eq!(count("SELECT count(*) FROM work_item_refs"), 2);
+    assert_eq!(count("SELECT count(*) FROM work_item_refs WHERE work_item NOT IN (SELECT id FROM work_items)"), 0);
+    assert_eq!(count("SELECT count(DISTINCT work_item) FROM board_entries WHERE work_item IS NOT NULL"), 1);
+    assert_eq!(count("SELECT count(*) FROM board_entries WHERE kind = 'row'"), 2, "one row on each board");
+    let v = read(&base, "bob", &two).await;
+    assert_eq!(rows(&v).len(), 1, "{v}");
 }
