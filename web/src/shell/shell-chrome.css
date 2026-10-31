@@ -93,6 +93,11 @@
   gap: 6px;
 }
 
+.ws-session-actions .work-chip {
+  font-size: 11px;
+  padding: 0 6px;
+}
+
 .ws-session-actions .att {
   flex: none;
 }

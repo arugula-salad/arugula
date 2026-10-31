@@ -707,6 +707,7 @@ impl Daemon {
                 reason: None,
                 answered: None,
                 work: None,
+                on_issue: None,
                 project: None,
                 branch: None,
                 head: None,

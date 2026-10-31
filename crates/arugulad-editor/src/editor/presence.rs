@@ -100,6 +100,7 @@ impl Block for Presence {
             }),
             file,
             editor: Some(self.link.info()),
+            on_issue: None,
             stopped: false,
         }
     }
