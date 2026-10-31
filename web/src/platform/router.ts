@@ -47,3 +47,11 @@ export function follow(e: MouseEvent, path: string) {
   e.preventDefault();
   go(path);
 }
+
+/** A whole table row as a link (#373): its own click opens `path`, as the
+ * link inside it does. Not a click on that link or a button (they handle
+ * themselves), nor one that ends a text selection. */
+export function followRow(e: MouseEvent, path: string) {
+  if ((e.target as Element).closest("a, button") || getSelection()?.toString()) return;
+  follow(e, path);
+}

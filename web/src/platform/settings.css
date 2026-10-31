@@ -761,8 +761,10 @@ html[data-corners="square"] .platform input.sw-switch {
   color: var(--dim);
 }
 
-.platform .deploy-table tr {
-  position: relative;
+/* The whole row opens its deploy, by its onClick (#373); a stretched link
+ * over a positioned tr opened the last row's in WebKit. */
+.platform .deploy-table tbody tr {
+  cursor: pointer;
 }
 
 .platform .deploy-table td {
@@ -789,12 +791,6 @@ html[data-corners="square"] .platform input.sw-switch {
 .platform .deploy-table a {
   color: var(--accent);
   text-decoration: none;
-}
-
-.platform .deploy-table a::after {
-  content: "";
-  position: absolute;
-  inset: 0;
 }
 
 .platform .deploy-table a code {
