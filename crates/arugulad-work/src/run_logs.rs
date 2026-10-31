@@ -173,9 +173,16 @@ async fn send_log(
             return Ok(());
         }
         let Some(log) = pane_log(app, pane, epoch).await else { return Ok(()) };
+        // The run's output ends where its process did: what the terminal
+        // writes after ("[exited with code 0 · press Enter for a shell]")
+        // is the pane's, not the run's (#161).
+        let end = match app.mux.api(|r| Api::Pane(pane, r)).await.flatten().and_then(|h| h.status().exited_at) {
+            Some(at) => log.end().min(at),
+            None => log.end(),
+        };
         // Bytes the pane's log dropped before they were sent are a gap.
         let from = s.offset.max(log.start());
-        let have = log.end().saturating_sub(from);
+        let have = end.saturating_sub(from);
         if have == 0 || (!all && have < CHUNK_BYTES) {
             return Ok(());
         }

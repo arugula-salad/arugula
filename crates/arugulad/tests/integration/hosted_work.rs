@@ -1037,6 +1037,31 @@ fn a_hosted_runs_log_and_artifact_go_to_the_bucket() {
     assert_eq!(artifacts, vec![want], "the file, not the link");
     assert!(f.refused.lock().unwrap().is_empty(), "{:?}", f.refused.lock().unwrap());
 
+    // A failing run (#161): the pane, the run and the kept log agree on
+    // its exit, and the kept log is the command's output alone, without
+    // the terminal's own note after it.
+    let c = run_id('c');
+    f.items.lock().unwrap().push(f.item(&c, "echo boom; exit 1", f.grant(&f.root)));
+    d.wait_for("run c reported", || f.reports_of(&c).len() == 2);
+    assert_eq!(f.reports_of(&c)[1].detail, r#"{"exit":1}"#);
+    let pane = (1..=8)
+        .find(|n| {
+            let (status, text) = d.raw("GET", &format!("/api/panes/{n}/capture?scope=scrollback"), None);
+            status == 200 && text.contains(&format!("arugula run {c}"))
+        })
+        .expect("the run's pane");
+    let shown = d.get(&format!("/api/panes/{pane}/capture?scope=scrollback"));
+    assert!(shown.as_str().unwrap().contains("[exited with code 1 · press Enter for a shell]"), "{shown}");
+    let (logs, _) = f.uploads_of(&c);
+    let mut all = Vec::new();
+    for u in &logs {
+        let Upload::Log { n, .. } = u else { unreachable!() };
+        all.extend_from_slice(&f.objects.lock().unwrap()[&format!("{c}/log/{n}")]);
+    }
+    let kept = String::from_utf8_lossy(&all).into_owned();
+    assert!(kept.contains("boom\r\n"), "{kept:?}");
+    assert!(!kept.contains("press Enter for a shell") && !kept.contains("exited with code"), "{kept:?}");
+
     // No bucket: the run runs, and nothing's sent.
     f.off.store(true, SeqCst);
     let b = run_id('b');
