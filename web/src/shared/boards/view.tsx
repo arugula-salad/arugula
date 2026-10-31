@@ -670,11 +670,16 @@ function Row({
               </span>
             )}
           </div>
-          {(marks.merged || marks.after || marks.stalled || marks.blocked.length > 0) && (
+          {(marks.merged || marks.cancelled || marks.after || marks.stalled || marks.blocked.length > 0) && (
             <div class="board-line board-marks" data-board-marks>
               {marks.merged && (
                 <span class="ws-tag board-mark" data-board-mark="merged_not_closed" title="A PR of this row merged, but its issue is still open">
                   merged, not closed
+                </span>
+              )}
+              {marks.cancelled && (
+                <span class="ws-tag board-mark" data-board-mark="cancelled" title="This item was canceled, so the row is done and not proven">
+                  cancelled
                 </span>
               )}
               {marks.after && (

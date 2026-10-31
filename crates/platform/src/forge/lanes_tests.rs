@@ -575,7 +575,7 @@ async fn every_sources_issue_has_a_category_and_done_means_the_same() {
     };
     let is = |lane: &str, category: &str| (lane.to_owned(), Some(category.to_owned()));
     assert_eq!(seen("fi_pl1"), is("lane_done", "canceled"), "{v}");
-    assert_eq!(seen("fi_pl2"), is("lane_next", "started"), "{v}");
+    assert_eq!(seen("fi_pl2"), is("lane_doing", "started"), "{v}");
     assert_eq!(seen("fi_pl3"), is("lane_done", "completed"), "the group decides, not the mirrored state: {v}");
     assert_eq!(seen("fi_gc"), is("lane_done", "completed"), "{v}");
     assert_eq!(seen(&dropped), is("lane_done", "canceled"), "{v}");

@@ -431,6 +431,8 @@ pub struct ItemFact {
     pub provider: String,
     /// A tracker item's own state group.
     pub state_group: Option<String>,
+    /// A tracker item's own state name.
+    pub state_name: Option<String>,
 }
 
 /// A native issue as a board row reads it.
@@ -1100,7 +1102,7 @@ impl Db {
         let c = self.c();
         let items = c.query_map(
             &format!(
-                "SELECT i.id, i.kind, i.state, i.repo_id, i.head_sha, i.provider, i.state_group FROM forge_items i
+                "SELECT i.id, i.kind, i.state, i.repo_id, i.head_sha, i.provider, i.state_group, i.state_name FROM forge_items i
                  WHERE (i.repo_id IN (SELECT repo_id FROM linked_repos WHERE project_id = ?2 AND unlinked_at IS NULL)
                         OR i.connection_id IN
                            (SELECT id FROM tracker_connections WHERE project_id = ?2 AND unlinked_at IS NULL))
@@ -1117,6 +1119,7 @@ impl Db {
                     head_sha: r.get(4)?,
                     provider: r.get(5)?,
                     state_group: r.get(6)?,
+                    state_name: r.get(7)?,
                 })
             },
         )?;

@@ -38,7 +38,7 @@
 //! areas): named, ordered sections, made, renamed, moved and deleted by
 //! people and agents alike, with a row's group and its place in it changed
 //! by a move. A read answers them as `groups`, with each row's `group`, and
-//! a row's `marks` say what its lane doesn't: `merged_not_closed`, `after`
+//! a row's `marks` say what its lane doesn't: `merged_not_closed`, `cancelled`, `after`
 //! another open PR it is stacked on, and `earlier` agents that were
 //! replaced. A row's primary item is an issue or a PR (its pointer); a PR, an
 //! agent block or a run goes with it as a `work` attachment, a run or a link
@@ -104,6 +104,7 @@ use crate::{
     issues::PERSONAL,
     trackers,
 };
+use arugula_control_wire::boards::Category;
 use lanes::{Fact, Pr, Primary, github_category, plane_category};
 use refs::{IssueKey, Refs, Source, references};
 
@@ -585,15 +586,20 @@ fn facts(app: &Platform, project: &str, ids: &Ids, blocks: &Blocks) -> Result<Fa
                 "closed" => Pr::Closed,
                 _ => Pr::Open,
             }),
-            _ if i.provider == "plane" => Fact::Issue { category: plane_category(i.state_group.as_deref(), &i.state) },
-            _ => Fact::Issue { category: github_category(&i.state) },
+            _ if i.provider == "plane" => {
+                let category = plane_category(i.state_group.as_deref(), &i.state);
+                let review =
+                    category == Category::Started && lanes::names_review(i.state_name.as_deref().unwrap_or_default());
+                Fact::Issue { category, review }
+            }
+            _ => Fact::Issue { category: github_category(&i.state), review: false },
         };
         f.by_id.insert(i.id, fact);
     }
     f.after = app.db.stacked_on(project, &found)?.into_iter().collect();
     let issues: Vec<&str> = ids.issues.iter().map(String::as_str).collect();
     for i in app.db.issue_states(project, &issues)? {
-        f.by_id.insert(i.id, Fact::Issue { category: i.category });
+        f.by_id.insert(i.id, Fact::Issue { category: i.category, review: false });
     }
     for id in &ids.runs {
         if let Some(run) = app.db.run(id)? {
@@ -637,6 +643,8 @@ struct Assessed {
     /// On a Done row.
     proof: Option<wire::Proof>,
     merged_not_closed: bool,
+    /// The primary issue is canceled: Done, never proven.
+    cancelled: bool,
 }
 
 /// A row's lane and, on Done, its proof: from its primary pointer and what
@@ -653,20 +661,22 @@ fn assess(pointer: &wire::Pointer, attached: &[Attach<'_>], facts: &Facts) -> As
     let seen: Vec<Fact> = work.iter().map(|(_, f)| *f).collect();
     let lane = lanes::lane(primary, &seen);
     let merged_not_closed = lanes::merged_not_closed(primary, &seen);
+    let cancelled = lanes::cancelled(primary);
     if lane != wire::Lane::Done || !counted {
-        return Assessed { lane, proof: None, merged_not_closed };
+        return Assessed { lane, proof: None, merged_not_closed, cancelled };
     }
     let evidence = attached.iter().find(|(r, ..)| *r == wire::AttachRole::Proof).map(|(_, p, _)| *p);
-    Assessed { lane, proof: lanes::proof((pointer, item.as_ref()), &work, evidence), merged_not_closed }
+    Assessed { lane, proof: lanes::proof((pointer, item.as_ref()), &work, evidence), merged_not_closed, cancelled }
 }
 
-/// A row's marks (see [`wire::Mark`]): `merged_not_closed`; `after` the
+/// A row's marks (see [`wire::Mark`]), from what [`assess`] found:
+/// `merged_not_closed`; `cancelled`; `after` the
 /// first open PR of the row (its own, then those attached) that is stacked
 /// on another, with the repo as `repo_of` says it; the `blocked` marks of
 /// its item's open blockers ([`relations`]); `stalled` when [`stall_of`]
 /// says so; `earlier` for each closed or taken-over block attached.
 fn marks_of(
-    merged_not_closed: bool,
+    assessed: &Assessed,
     stalled: Option<u64>,
     pointer: &wire::Pointer,
     attachments: &[&db::Attached],
@@ -675,8 +685,11 @@ fn marks_of(
     repo_of: &dyn Fn(&wire::Pointer) -> Option<String>,
 ) -> Vec<wire::Mark> {
     let mut marks = vec![];
-    if merged_not_closed {
+    if assessed.merged_not_closed {
         marks.push(wire::Mark::MergedNotClosed);
+    }
+    if assessed.cancelled {
+        marks.push(wire::Mark::Cancelled);
     }
     let work = attachments.iter().filter(|a| a.role == wire::AttachRole::Work).map(|a| &a.pointer);
     let stacked = std::iter::once(pointer).chain(work).find_map(|p| match p {
@@ -872,9 +885,7 @@ async fn read(app: &Platform, account: &str, id: &str) -> Result<wire::BoardView
         if a.lane == wire::Lane::Next && item_id(&e.pointer).is_some() && blocked.is_empty() {
             ready.push(e.id.clone());
         }
-        let marks = marks_of(a.merged_not_closed, stalled, &e.pointer, &mine, &facts, blocked, &|p| {
-            chip(p).0.and_then(|l| l.repo)
-        });
+        let marks = marks_of(&a, stalled, &e.pointer, &mine, &facts, blocked, &|p| chip(p).0.and_then(|l| l.repo));
         let attachments: Vec<wire::Attachment> = ordered
             .iter()
             .map(|a| {

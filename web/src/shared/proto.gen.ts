@@ -381,7 +381,7 @@ export type BoardLiveState = "open" | "checks_running" | "checks_failed" | "merg
  * A note on a row that its lane doesn't say, worked out on every read and
  * never stored (aru-125, decisions 7 to 9).
  */
-export type BoardMark = { "kind": "merged_not_closed" } | { "kind": "after", number: number, repo?: string, } | { "kind": "earlier", attachment: string, } | { "kind": "stalled", since: number, } | { "kind": "blocked_by", number?: number, title?: string, repo?: string, };
+export type BoardMark = { "kind": "merged_not_closed" } | { "kind": "cancelled" } | { "kind": "after", number: number, repo?: string, } | { "kind": "earlier", attachment: string, } | { "kind": "stalled", since: number, } | { "kind": "blocked_by", number?: number, title?: string, repo?: string, };
 
 /**
  * [`BOARD_ENTRY_MOVE`]'s body. A row moves to a group (`zone`) or, with
@@ -485,7 +485,7 @@ proof?: BoardProof,
 group?: string, 
 /**
  * What the lane doesn't say, in a fixed order: `merged_not_closed`,
- * `after`, `blocked_by`, then one `earlier` for each closed block.
+ * `cancelled`, `after`, `blocked_by`, then one `earlier` for each closed block.
  */
 marks?: Array<BoardMark>, 
 /**
