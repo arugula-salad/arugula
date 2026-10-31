@@ -841,9 +841,9 @@ pub struct BlockState {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub diffstat: Option<Diffstat>,
     /// When `state` last changed, in milliseconds: control's to keep, set
-    /// on a read (a report's own is ignored).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[cfg_attr(feature = "ts", ts(optional))]
+    /// on a read and never on the wire. A daemon's report can't carry it,
+    /// and a released daemon refuses a block state that has it.
+    #[serde(skip)]
     pub since: Option<u64>,
 }
 

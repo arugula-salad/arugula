@@ -1018,10 +1018,10 @@ async fn a_machine_reports_its_blocks_and_the_row_shows_it() {
     let (st, v) = geek(&base, "PUT", AGENT_BLOCK_STATE, Some(report)).await;
     assert_eq!(st, 200, "{v}");
     let (_, v) = call(&base, "a", "GET", &format!("/api/boards/{id}"), None).await;
-    let mut shown = row_in(&v, &row_id)["attachments"][0]["block"].clone();
-    assert!(shown.as_object_mut().unwrap().remove("since").is_some_and(|s| s.is_u64()), "when it began: {v}");
+    // Exactly the report: a released daemon refuses a block state with any
+    // other field, so control's own `since` stays off the wire.
     assert_eq!(
-        shown,
+        row_in(&v, &row_id)["attachments"][0]["block"],
         json!({ "state": "needs_input", "branch": "feat/parser", "head": "abc1234", "pushed": false,
                 "uncommitted": 2, "diffstat": { "files": 3, "added": 40, "removed": 2 } }),
         "the row shows the state: {v}"
