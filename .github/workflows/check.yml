@@ -112,21 +112,9 @@ jobs:
           # Ghostty for x86_64-linux-gnu, as build, core and test all build it
           # (clippy's adds macOS's, static's musl: their own).
           ghostty-key: gnu
-      - run: just bootstrap
-      - run: just web
-      - run: mise exec -- cargo build -p arugulad -p arugula --features arugulad/debug-embed
-      # Control: the server's own workspace (server/Cargo.toml), into the
-      # same target dir.
-      - run: mise exec -- scripts/server-cargo build -p arugula-control --features arugula-control/debug-embed
-      - run: scripts/ci-env keep debug
-      - name: Hand them to the jobs that need them
-        run: tar -cf "$RUNNER_TEMP/run-debug.tar" -C "$CI_RUN" debug dist
-      - uses: actions/upload-artifact@v4
-        with:
-          name: run-debug
-          path: ${{ runner.temp }}/run-debug.tar
-          retention-days: 1
-          compression-level: 1
+      # The binaries and the run-debug artifact (pull-request.yml builds
+      # the same on GitHub's runners).
+      - uses: ./.github/actions/build-debug
       - name: sccache's hits
         if: always() && env.RUSTC_WRAPPER == 'sccache'
         run: sccache --show-stats
@@ -458,50 +446,12 @@ jobs:
           rust: "false"
           fetch: run-debug
           claude-code: "true"
-      - run: scripts/ci-env use
-      - run: just bootstrap
-      - name: Playwright's browsers
-        run: just browsers
-      # Shards by recorded time (web/scripts/e2e-shard.mjs, e2e/durations.json),
-      # not Playwright's --shard by count: six of those ran 155-316 s (#868).
-      # Twelve since #259: on GitHub's runners a shard more costs no pod
-      # time, and seven ran ~5.8 min of specs each while test and macOS end
-      # at ~10. Twelve is about the floor: control.spec.ts alone is ~170 s
-      # of the ~190 s each gets, so more shards wouldn't end any sooner.
-      # The count is the matrix's (strategy.job-total). A stale durations.json
-      # unbalances them (a 125 s spec weighed as 7 s held one 2 min longer):
-      # refresh it when a shard runs well over the rest.
-      # Each keeps its JSON report so `just e2e-durations RUN` can refresh
-      # the times.
-      - name: The Playwright specs, shard ${{ matrix.shard }} of ${{ strategy.job-total }}
-        run: |
-          port=$(scripts/free-port)
-          cd web
-          mapfile -t files < <(node scripts/e2e-shard.mjs ${{ matrix.shard }} ${{ strategy.job-total }})
-          # No files would run every spec in every shard.
-          [ ${#files[@]} -gt 0 ] || { echo "e2e-shard listed nothing" >&2; exit 1; }
-          E2E_PORT=$port pnpm exec playwright test "${files[@]}"
-        env:
-          E2E_CHROMIUM: "1"
-          E2E_SET: rest
-          E2E_TIMINGS: ${{ runner.temp }}/e2e-timings.json
-      - name: The shard's times
-        if: always()
-        uses: actions/upload-artifact@v4
+      # The shard's steps, shared with pull-request.yml's shards (the
+      # shard logic and why twelve: the action's comment).
+      - uses: ./.github/actions/e2e-shard
         with:
-          name: e2e-timings-${{ matrix.shard }}
-          path: ${{ runner.temp }}/e2e-timings.json
-          retention-days: 30
-          if-no-files-found: ignore
-      # A failed spec's screenshot (playwright.config.ts), kept a week.
-      - name: Failed specs' screenshots
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: e2e-failures-${{ matrix.shard }}
-          path: web/test-results/
-          retention-days: 7
-          if-no-files-found: ignore
+          shard: ${{ matrix.shard }}
+          total: ${{ strategy.job-total }}
 
   # The specs on the test stack (team-swarm-phones' box behind netem).
   stack:

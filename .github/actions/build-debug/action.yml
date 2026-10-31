@@ -1,0 +1,31 @@
+# The debug binaries, web/dist embedded (debug-embed: the specs run them
+# from other checkouts), for the specs and the test stack's CLI, handed on
+# as the run-debug artifact (scripts/ci-env keep, .github/actions/setup's
+# `fetch: run-debug`). check.yml's build on the pods and pull-request.yml's
+# on GitHub's runners both run this, after .github/actions/setup.
+name: build-debug
+description: The debug daemon, CLI and control with web/dist embedded, uploaded as the run-debug artifact
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      run: just bootstrap
+    - shell: bash
+      run: just web
+    - shell: bash
+      run: mise exec -- cargo build -p arugulad -p arugula --features arugulad/debug-embed
+    # Control: the server's own workspace (server/Cargo.toml), into the
+    # same target dir.
+    - shell: bash
+      run: mise exec -- scripts/server-cargo build -p arugula-control --features arugula-control/debug-embed
+    - shell: bash
+      run: scripts/ci-env keep debug
+    - name: Hand them to the jobs that need them
+      shell: bash
+      run: tar -cf "$RUNNER_TEMP/run-debug.tar" -C "$CI_RUN" debug dist
+    - uses: actions/upload-artifact@v4
+      with:
+        name: run-debug
+        path: ${{ runner.temp }}/run-debug.tar
+        retention-days: 1
+        compression-level: 1
