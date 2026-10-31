@@ -46,7 +46,7 @@ pub struct Args {
     /// is attached to that issue's row on the boards of its project (Labs:
     /// boards; with this machine's boards.write grant) and says it in its
     /// header.
-    #[arg(long, value_name = "ISSUE", conflicts_with_all = ["chat", "resume", "fork"])]
+    #[arg(long, value_name = "ISSUE", hide = true, conflicts_with_all = ["chat", "resume", "fork"])]
     issue: Option<String>,
     /// An MCP server for the session, `NAME=COMMAND LINE` (stdio; may be
     /// repeated). Its forms and sign-in links show as cards.

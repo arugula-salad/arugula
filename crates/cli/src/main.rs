@@ -1114,7 +1114,7 @@ mod tests {
         let (off, on) = (hidden(&labs_command(false)), hidden(&labs_command(true)));
         let mut set: Vec<String> = super::LABS_COMMANDS.iter().map(|(c, _)| (*c).to_owned()).collect();
         for (cmd, opts) in [
-            ("agent", &["recipe", "vm", "machine"][..]),
+            ("agent", &["recipe", "issue", "vm", "machine"][..]),
             ("run", &["vm", "vm_tab", "image", "sandbox"][..]),
             ("open", &["machine"][..]),
             ("edit", &["machine"][..]),

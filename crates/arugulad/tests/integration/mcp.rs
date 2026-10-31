@@ -3235,7 +3235,12 @@ async fn an_agent_started_on_an_issue_is_on_its_row() {
     assert_eq!(r["issue"]["boards"][0], json!({ "board": "brd_1", "title": "Launch", "row": "row_1" }), "{r}");
     assert!(r["summary"].as_str().unwrap().contains("attached to its row on \"Launch\""), "{r}");
     let reported = |block: u64, title: &str| {
-        control.told.lock().unwrap().iter().any(|b| b["pane"].as_str().is_some_and(|p| p.parse() == Ok(block)) && b["block"]["title"] == title)
+        control
+            .told
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|b| b["pane"].as_str().is_some_and(|p| p.parse() == Ok(block)) && b["block"]["title"] == title)
     };
     d.wait_for("the report with its title", || reported(block, "Lexer lane"));
 
@@ -3249,8 +3254,20 @@ async fn an_agent_started_on_an_issue_is_on_its_row() {
 
     // No issue: nothing changes, and control is not asked.
     let asked = control.attached.lock().unwrap().len();
-    let plain = call(&s, "start_agent", agent(json!({}))).await;
+    let plain = call(&s, "start_agent", agent(json!({ "title": "Not on an issue" }))).await;
     assert!(plain.get("issue").is_none(), "{plain}");
+    let plain_block = plain["block"].as_u64().unwrap();
+    d.wait(plain_block, "idle");
+    d.wait_for("its report", || {
+        control.told.lock().unwrap().iter().any(|b| b["pane"] == plain_block.to_string().as_str())
+    });
+    let titled = control
+        .told
+        .lock()
+        .unwrap()
+        .iter()
+        .any(|b| b["pane"] == plain_block.to_string().as_str() && b["block"].get("title").is_some());
+    assert!(!titled, "a block on no issue reports no title: {:?}", control.told.lock().unwrap());
     assert_eq!(d.state(plain["block"].as_u64().unwrap())["work"], Value::Null);
     assert_eq!(control.attached.lock().unwrap().len(), asked);
     // An issue that isn't one is refused, an issue with no row is on none.
@@ -3293,6 +3310,14 @@ async fn an_agent_started_on_an_issue_is_on_its_row() {
     assert_eq!(r["issue"]["boards"], json!([]), "{r}");
     assert!(r["issue"]["said"].as_str().unwrap().contains("boards.write"), "{r}");
     assert_eq!(d.state(r["block"].as_u64().unwrap())["work"], json!({ "issue": "#12" }));
+
+    // Boards off here: the issue is kept, and nothing is asked of control.
+    arugula_proto::flags::set(&d.state, "boards", false).unwrap();
+    let asked = control.attached.lock().unwrap().len();
+    let r = call(&s, "start_agent", agent(json!({ "issue": "#12" }))).await;
+    assert_eq!(r["issue"]["boards"], json!([]), "{r}");
+    assert!(r["issue"]["said"].as_str().unwrap().contains("boards are off"), "{r}");
+    assert_eq!(control.attached.lock().unwrap().len(), asked);
 
     s.cancel().await.unwrap();
     let _ = Command::new("git").args(["worktree", "prune"]).current_dir(&repo).status();
