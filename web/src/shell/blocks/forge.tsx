@@ -27,6 +27,8 @@ import { isNativeIssue, NativeIssueBlock, nativeIssueText, nativeIssueTitle, typ
 import { BlockError, BlockLoading, OpenOutside } from "./block-states";
 import { registerBlock, type BlockView } from "./view";
 import { Time } from "../../shared/ui/time";
+import { ago } from "../../shared/time";
+import { ItemBlock, type ItemSource, type NextStep } from "../../shared/ui/item-block";
 
 /** "Open pull request…": a link, OWNER/REPO#N, or N in `dir`'s repository,
  * beside `split` or in a new tab of `session`. */
@@ -337,128 +339,201 @@ function IssueBlock({ client, id, s }: { client: Client; id: PaneId; s: ForgeSta
   const l = s.link;
   const linked = [...(issue?.linked ?? [])];
   if (l?.pr && !linked.some((x) => x.number === l.pr)) linked.push({ number: l.pr, title: `from ${l.branch}`, state: "open", url: l.pr_url ?? "", head: l.branch });
-  const waiting = s.drafts.filter((d) => d.status === "waiting");
-  const { asks, done } = splitWants(s.wants, it?.state);
+  const open = it?.state === "open";
+  const waiting = open ? s.drafts.filter((d) => d.status === "waiting") : [];
+  // The agent on it, asking: its pane's reason is the question (#409).
+  const asking = open && l ? client.state?.panes.find((p) => p.id === l.block)?.reason : null;
+  const question = asking?.kind === "ask" || asking?.kind === "input" ? asking : null;
+  const asks = open ? s.wants.filter((w) => w.kind !== "done") : [];
+  // One strip, the first that applies: the agent's question, a draft of
+  // yours, then what the forge says waits on you. None once it's closed.
+  const next: NextStep | null = question
+    ? {
+        tone: "warn",
+        text: `${l!.agent} asks: ${question.headline}`,
+        actions: mayWrite && (
+          <button class="primary small" data-agent-answer onClick={() => client.focusPane(l!.block)}>
+            Answer
+          </button>
+        ),
+      }
+    : waiting.length > 0
+      ? { tone: "warn", text: waiting.length === 1 ? "Your draft is waiting" : `${waiting.length} drafts of yours are waiting` }
+      : asks.length > 0
+        ? { tone: "warn", text: asks[0].why }
+        : null;
+  const failed = !!it && s.error;
   return (
     <div class="review ws forge" data-forge-block={id} data-forge-kind="issue">
-      <div class="review-bar">
-        <span class="review-path" title={it?.url ?? s.repo}>
-          {it?.title ? <b>{it.title}</b> : null}{" "}
-          <span class="dim forge-ref">
-            #{s.number} {s.repo}
+      {!it && (
+        <div class="review-bar">
+          <span class="review-path" title={s.repo}>
+            <span class="dim forge-ref">
+              #{s.number} {s.repo}
+            </span>
           </span>
-        </span>
-        {it && <span class={`ws-tag forge-state ${it.state}`} data-issue-state={it.state}>{it.state}</span>}
-        <PinTag s={s} />
-        {mayWrite && (
-          <button title="Read it again" aria-label="Read it again" disabled={busy !== null} onClick={refresh}>
-            {busy === "refresh" ? "…" : "↻"}
-          </button>
-        )}
-        <LiveTag s={s} />
-        {it && <OpenOutside href={it.url} />}
-      </div>
-      {s.error && (
-        <BlockError data-forge-error title="Can't read this issue" detail={s.error} retry={mayWrite ? refresh : undefined} inline={!!issue}>
-          {mayOwn && s.logins.length > 0 && (
-            <div class="ws-actions" data-forge-logins>
-              {s.logins.map((x) => (
-                <button class="secondary small" key={x.name} onClick={() => void call("login", { name: x.name }, "couldn't use that login")}>
-                  Use login {x.name} ({x.url})
-                </button>
-              ))}
-            </div>
-          )}
-        </BlockError>
-      )}
-      {issue && it && (
-        <div class="review-body ws-body">
-          <div class="dim forge-meta">
-            opened by {it.author}
-            {" · "}
-            {it.assignees.length ? `assigned to ${it.assignees.join(", ")}` : "assigned to nobody"}
-            {s.login && ` · as ${s.me ?? "?"} (tea login ${s.login})`}
-            {it.labels.length > 0 && " · "}
-            {it.labels.map((x) => (
-              <span key={x} class="ws-tag">
-                {x}
-              </span>
-            ))}
-            <Done done={done} />
-          </div>
-          {(asks.length > 0 || waiting.length > 0) && (
-            <section class="ws-gates" data-forge-wants>
-              <h4>Waiting on you</h4>
-              {waiting.length > 0 && (
-                <p class="forge-want" data-forge-drafts-waiting>
-                  {waiting.length === 1 ? "A draft waits" : `${waiting.length} drafts wait`} for you to send it: it's on the card
-                </p>
-              )}
-              {asks.map((w) => (
-                <div class="ws-gate" key={w.kind} data-want={w.kind}>
-                  <div class="ws-gate-what">{w.why}</div>
-                </div>
-              ))}
-            </section>
-          )}
-          {s.said && <p class="ws-said" data-forge-said>{s.said}</p>}
-          <section data-issue-agent>
-            <h4>Agent</h4>
-            {l ? (
-              <div class="forge-row" data-agent-link={l.block}>
-                <b>{l.agent}</b> works on it in %{l.block}, on <code>{l.branch}</code> from <code>{l.base}</code> <span class="dim"><Time at={l.at_ms} /></span>
-                <div class="dim">{l.worktree}</div>
-                <div>
-                  {l.pr ? (
-                    <span data-agent-pr={l.pr}>
-                      Its pull request: <b>#{l.pr}</b>
-                      {l.pr_block !== undefined && <span class="dim"> (beside it, %{l.pr_block})</span>}
-                    </span>
-                  ) : (
-                    <span class="dim" data-agent-pr-waiting>Its pull request shows up here when it opens one from {l.branch}.</span>
-                  )}
-                </div>
-              </div>
-            ) : it.state === "open" && mayOwn ? (
-              <div class="ws-actions">
-                <button class="primary small" data-agent-on disabled={busy !== null} onClick={() => void agentOn(false)}>
-                  {busy === "agent" ? "Starting…" : "Agent on this"}
-                </button>
-                <button class="secondary small" disabled={busy !== null} onClick={() => void agentOn(true)}>
-                  With instructions…
-                </button>
-                <span class="dim ws-note">A worktree and branch i{s.number}-… from the default branch, Claude Code there with the issue, both in a tab.</span>
-              </div>
-            ) : (
-              <p class="dim">No agent on it.</p>
-            )}
-          </section>
-          <section data-issue-linked>
-            <h4>Pull requests ({linked.length})</h4>
-            {linked.map((x) => (
-              <div key={x.number} class="forge-row" data-linked={x.number}>
-                {linkedState(x.state)} <b>#{x.number}</b> {x.title}
-                {x.url && (
-                  <>
-                    {" "}
-                    <a class="dim" href={x.url} target="_blank" rel="noopener">
-                      ↗
-                    </a>
-                  </>
-                )}
-                {mayOwn && (
-                  <button class="forge-open-pr" onClick={() => openPrBlock(x.number)}>
-                    Open
-                  </button>
-                )}
-              </div>
-            ))}
-          </section>
-          {s.drafts.length > 0 && <Drafts s={s} />}
-          <Cols s={s} body={it.body} side={[<Timeline key="t" events={issue.events} s={s} />]} />
-          <Foot s={s} buttons={mayWrite && it.state === "open" ? <button onClick={() => void comment()}>Comment…</button> : null} />
         </div>
       )}
+      <div class="review-body ws-body">
+        {s.error && (
+          <BlockError data-forge-error title="Can't read this issue" detail={s.error} retry={mayWrite ? refresh : undefined} inline={!!issue}>
+            {mayOwn && s.logins.length > 0 && (
+              <div class="ws-actions" data-forge-logins>
+                {s.logins.map((x) => (
+                  <button class="secondary small" key={x.name} onClick={() => void call("login", { name: x.name }, "couldn't use that login")}>
+                    Use login {x.name} ({x.url})
+                  </button>
+                ))}
+              </div>
+            )}
+          </BlockError>
+        )}
+        {s.said && <p class="ws-said" data-forge-said>{s.said}</p>}
+        {issue && it && (
+          <ItemBlock
+            kind="issue"
+            number={s.number}
+            title={it.title}
+            state={it.state === "open" ? "open" : "closed"}
+            source={issueSource(s, !!failed)}
+            refreshTitle={s.updated_ms ? `Read ${ago(s.updated_ms)}` : "Read it again"}
+            onRefresh={mayWrite && busy === null ? refresh : undefined}
+            href={it.url}
+            next={next}
+            facts={[
+              ...(it.labels.length ? [{ kind: "labels" as const, labels: it.labels }] : []),
+              ...(it.assignees.length ? [{ kind: "assignees" as const, people: it.assignees }] : []),
+              { kind: "comments" as const, count: it.comments },
+            ]}
+            body={it.body.trim() ? <Body text={it.body} s={s} description /> : undefined}
+            tabs={[
+              {
+                id: "activity",
+                label: "Activity",
+                count: issue.events.length + linked.length,
+                content: (
+                  <IssueActivity
+                    s={s}
+                    events={issue.events}
+                    linked={linked}
+                    drafts={open}
+                    onOpen={mayOwn ? openPrBlock : undefined}
+                  />
+                ),
+              },
+              ...(l
+                ? [
+                    {
+                      id: "agents",
+                      label: "Agents",
+                      count: 1,
+                      tone: question ? ("warn" as const) : undefined,
+                      content: (
+                        <div class="forge-row" data-agent-link={l.block}>
+                          <b>{l.agent}</b> in %{l.block}, on <code>{l.branch}</code> from <code>{l.base}</code>{" "}
+                          <span class="dim">
+                            <Time at={l.at_ms} />
+                          </span>
+                          <div class="dim">{l.worktree}</div>
+                          <div>
+                            {l.pr ? (
+                              <span data-agent-pr={l.pr}>
+                                PR <b>#{l.pr}</b>
+                                {l.pr_block !== undefined && <span class="dim"> (beside it, %{l.pr_block})</span>}
+                              </span>
+                            ) : (
+                              <span class="dim" data-agent-pr-waiting title={`Its pull request shows up here when it opens one from ${l.branch}.`}>
+                                no pull request yet
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      ),
+                    },
+                  ]
+                : []),
+            ]}
+            footer={
+              <>
+                {mayWrite && open && <button class="secondary small" onClick={() => void comment()}>Comment</button>}
+                {!l && open && mayOwn && (
+                  <>
+                    <button class="primary small" data-agent-on disabled={busy !== null} title={`A worktree and branch i${s.number}-… from the default branch, Claude Code there with the issue, both in a tab.`} onClick={() => void agentOn(false)}>
+                      {busy === "agent" ? "Starting…" : "Agent on this"}
+                    </button>
+                    <button class="secondary small" disabled={busy !== null} onClick={() => void agentOn(true)}>
+                      With instructions…
+                    </button>
+                  </>
+                )}
+              </>
+            }
+          />
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** Where an issue is read, as the header's source icon: the forge's, a dot
+ * while the block follows it, and in the tooltip who it acts as and how
+ * it's read (what the old polls line said). */
+function issueSource(s: ForgeState, failed: boolean): ItemSource {
+  const how = s.pin
+    ? `read through Arugula control${s.pin.stale ? ", can't reach it now: as it said last" : ""}`
+    : s.live === "webhook"
+      ? `live (${s.live_via === "github-app" ? "GitHub App" : "webhook"})`
+      : s.live
+        ? "polling"
+        : "";
+  const as = s.pin ? `as ${s.me ?? "?"}` : s.login ? `as ${s.me ?? "?"} (${s.login})` : "";
+  return {
+    kind: s.provider === "github" || s.provider === "gitlab" ? s.provider : "forgejo",
+    live: failed ? null : s.watching ? "following" : "paused",
+    title: [s.provider, as, how, s.live_why, s.pin?.stale].filter(Boolean).join(" · "),
+  };
+}
+
+/** The Activity tab: the pull requests that refer to it, an agent's drafts
+ * (while it's open), then what happened, newest first. */
+function IssueActivity({ s, events, linked, drafts, onOpen }: { s: ForgeState; events: ForgeEvent[]; linked: NonNullable<ForgeState["issue"]>["linked"]; drafts: boolean; onOpen?: (n: number) => void }) {
+  const settled = drafts ? s.drafts : [];
+  if (!events.length && !linked.length && !settled.length) return <p class="dim">Nothing yet.</p>;
+  return (
+    <div data-forge-timeline>
+      {linked.map((x) => (
+        <div key={x.number} class="forge-row" data-linked={x.number}>
+          {linkedState(x.state)} <b>#{x.number}</b> {x.title}
+          {x.url && (
+            <>
+              {" "}
+              <a class="dim" href={x.url} target="_blank" rel="noopener">
+                ↗
+              </a>
+            </>
+          )}
+          {onOpen && (
+            <button class="forge-open-pr" onClick={() => onOpen(x.number)}>
+              Open
+            </button>
+          )}
+        </div>
+      ))}
+      {settled.map((d) => (
+        <div key={d.id} class={`forge-draft ${d.status}`} data-draft={d.id} data-draft-status={d.status}>
+          <b>{d.by.replace(/^mcp:/, "")}</b> drafted {draftWhat(d)} <span class="dim"><Time at={d.at_ms} /></span>
+          {d.status === "sent" && <span class="ws-tag">sent by {d.settled_by}</span>}
+          {d.status === "dropped" && <span class="ws-tag">dropped by {d.settled_by}</span>}
+          {d.error && <span class="ws-tag bad">{d.error}</span>}
+          {draftBody(d) && <Body text={draftBody(d)!} s={s} />}
+        </div>
+      ))}
+      {tidy(events).map((e) => (
+        <div key={e.id} class="forge-row forge-event">
+          <Time class="dim" at={e.at} /> <b>{e.actor ?? "someone"}</b> {eventLine(e)}
+          {e.body && <Body text={e.body} s={s} />}
+        </div>
+      ))}
     </div>
   );
 }
