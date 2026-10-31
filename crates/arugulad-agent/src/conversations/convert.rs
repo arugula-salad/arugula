@@ -23,11 +23,16 @@ use std::{
 
 use serde_json::Value;
 
-use super::{branch, context::Context};
+use super::{branch, context::Context, spend::Spend};
 use crate::agent::{
     images,
     transcript::{Entry, Tool},
 };
+
+/// `needle` is somewhere in `line`.
+fn mentions(line: &[u8], needle: &[u8]) -> bool {
+    line.windows(needle.len()).any(|w| w == needle)
+}
 
 /// The entries of a transcript. `finished`: nothing is running it, so a tool
 /// call that never got its result was cut off. What [`Follow`] is held to;
@@ -107,6 +112,11 @@ impl Follow {
         self.open.as_ref().unwrap_or(&self.c).context.summary()
     }
 
+    /// Its responses' tokens so far, to price (#398).
+    pub fn spend(&self) -> Spend {
+        self.open.as_ref().unwrap_or(&self.c).spend.clone()
+    }
+
     /// The entries so far. `finished`: as for [`entries`].
     pub fn entries(&self, finished: bool) -> Vec<Entry> {
         self.open.as_ref().unwrap_or(&self.c).entries(finished)
@@ -161,7 +171,10 @@ struct Converter {
     images: Vec<Arc<[u8]>>,
     /// The model, the window's fill and the compactions (#397).
     context: Context,
-    /// Only `context` is wanted: lines aren't converted to entries.
+    /// Its responses' tokens (#398).
+    spend: Spend,
+    /// Only `context` (and `spend`) is wanted: lines aren't converted to
+    /// entries.
     context_only: bool,
 }
 
@@ -170,6 +183,11 @@ impl Converter {
     fn lines(&mut self, jsonl: &[u8]) {
         for line in jsonl.split(|b| *b == b'\n') {
             if line.is_empty() {
+                continue;
+            }
+            // The context and the spend read only replies and compactions:
+            // a tool's output, often the most of a transcript, isn't parsed.
+            if self.context_only && !mentions(line, b"\"assistant\"") && !mentions(line, b"compact_boundary") {
                 continue;
             }
             if let Ok(v) = serde_json::from_slice::<Value>(line) {
@@ -200,6 +218,7 @@ impl Converter {
 
     fn line(&mut self, v: &Value) {
         self.context.line(v);
+        self.spend.line(v);
         if self.context_only {
             return;
         }

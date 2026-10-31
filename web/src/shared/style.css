@@ -1720,6 +1720,113 @@ a.work-chip:hover {
   font-weight: 600;
 }
 
+/* #398: the estimate, at API prices, and its parts. */
+.agent-estimate {
+  display: inline-flex;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Above the bar's plain-button look (block-chrome.css): a quiet figure that
+   opens its parts. */
+.agent-bar .agent-estimate .agent-estimate-btn:not(.primary) {
+  display: inline-flex;
+  align-items: baseline;
+  height: auto;
+  min-width: 0;
+  line-height: 1.4;
+  padding: 1px 6px;
+  white-space: pre;
+  border: 1px solid transparent;
+  background: none;
+  color: var(--dim);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.agent-bar .agent-estimate button.agent-estimate-btn:not(.primary):not(.secondary):hover,
+.agent-bar .agent-estimate button.agent-estimate-btn:not(.primary):not(.secondary).on {
+  border-color: var(--line);
+  background: none;
+  color: var(--fg);
+}
+
+.agent-estimate-note {
+  color: var(--dim);
+}
+
+.agent-estimate-pop {
+  position: fixed;
+  z-index: 40;
+  width: max-content;
+  min-width: 260px;
+  max-width: min(520px, calc(100vw - 24px));
+  max-height: 60vh;
+  overflow: auto;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--card-radius);
+  background: var(--surface);
+  box-shadow: 0 6px 24px color-mix(in srgb, var(--letterbox) 45%, transparent);
+  font-size: 12px;
+  white-space: normal;
+}
+
+.agent-estimate-lede {
+  margin: 0 0 8px;
+  color: var(--dim);
+}
+
+.agent-estimate-lede:last-child {
+  margin: 8px 0 0;
+}
+
+.agent-estimate-pop table {
+  border-collapse: collapse;
+  width: 100%;
+}
+
+.agent-estimate-pop th,
+.agent-estimate-pop td {
+  padding: 3px 6px 3px 0;
+  text-align: left;
+  vertical-align: baseline;
+  font-weight: normal;
+}
+
+.agent-estimate-pop td {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.agent-estimate-pop td.agent-estimate-tokens {
+  color: var(--dim);
+  font-size: 11px;
+  white-space: normal;
+}
+
+.agent-estimate-kind {
+  margin-left: 6px;
+  color: var(--dim);
+  font-size: 11px;
+}
+
+.agent-estimate-total th,
+.agent-estimate-total td {
+  border-top: 1px solid var(--line);
+  font-weight: 600;
+}
+
+@media (max-width: 600px) {
+  .agent-estimate-note {
+    display: none;
+  }
+
+  .agent-estimate-pop td.agent-estimate-tokens {
+    display: none;
+  }
+}
+
 .agent-status {
   padding: 1px 8px;
   border-radius: var(--chip-radius);
@@ -4941,6 +5048,18 @@ button.diff-why-run {
   flex: none;
   font-size: 11px;
   color: var(--ok);
+}
+
+.conv-cost-note {
+  color: var(--dim);
+  font-size: 11px;
+}
+
+.conv-cost {
+  flex: none;
+  font-size: 11px;
+  color: var(--dim);
+  font-variant-numeric: tabular-nums;
 }
 
 .conv-when {

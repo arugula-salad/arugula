@@ -136,6 +136,9 @@ never compiles the daemon, the mux or Ghostty: build them with
   GitLab map onto too), with its tokens from a `TokenSource`. The daemon's
   forge blocks read through it with the person's `gh` token; the platform
   will with an installation or one-use user token. It knows no blocks.
+- `crates/prices`: Anthropic's list prices for Claude tokens, one table:
+  the platform's broker settles hosted calls at it, and the daemon estimates
+  what a Claude Code session cost with it (#398).
 - `crates/testkit`: the harness for the daemon's integration tests.
 - `crates/desktop`: the desktop app (Tauri). Outside the Cargo workspace, with
   its own `Cargo.lock`, so it releases on its own (#388).

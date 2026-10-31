@@ -18,6 +18,7 @@
 pub mod branch;
 pub mod context;
 pub mod convert;
+pub mod spend;
 
 use std::{
     collections::HashMap,
@@ -130,6 +131,10 @@ pub struct Conversation {
     pub archived: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub live: Option<Live>,
+    /// What it and its subagents cost, estimated at API list prices
+    /// ([`spend`], #398): filled in by a listing once it's been worked out.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub estimate: Option<Value>,
 }
 
 /// What the start and end of a transcript say.
@@ -306,6 +311,7 @@ impl Index {
                 continued_in: h.continued_in.clone(),
                 archived: rec.archived,
                 live: live.get(&h.id).cloned(),
+                estimate: None,
             });
         }
         out.sort_by(|a, b| b.updated_ms.cmp(&a.updated_ms).then_with(|| a.id.cmp(&b.id)));

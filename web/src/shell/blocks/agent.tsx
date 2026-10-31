@@ -20,7 +20,7 @@ import { BlockLoading } from "./block-states";
 import { openFile } from "./diff";
 import { workChip } from "../../shared/boards/text";
 import { platformHref } from "../platform-links";
-import { ContextStrip, type AgentContext } from "./agent-context";
+import { ContextStrip, CostEstimate, type AgentContext, type Estimate } from "./agent-context";
 import { AskCard, headline, type Ask, type Question } from "../../shared/ask";
 import { pick, store } from "../upload";
 
@@ -125,6 +125,9 @@ export interface AgentState {
   model?: string | null;
   /** From the transcript (#397): null before it has said anything. */
   context?: AgentContext | null;
+  /** What it and its subagents cost at API list prices, from their
+   *  transcripts (#398): null before they've used any tokens. */
+  estimate?: Estimate | null;
 }
 
 interface Worn {
@@ -594,9 +597,11 @@ function AgentBlock({ client, id, s }: { client: Client; id: PaneId; s: AgentSta
         )}
         <span class="agent-spacer" />
         {s.context && <ContextStrip c={s.context} />}
-        {s.cost && (
-          <span class="agent-cost" title={`${s.turns} turns, ${s.tokens.total} tokens`}>
-            {money(s.cost.total, s.cost.currency)}
+        {s.estimate && <CostEstimate e={s.estimate} />}
+        {/* What an agent with no transcript we read says it cost: its own estimate. */}
+        {s.cost && !s.estimate && (
+          <span class="agent-cost" title={`What the agent reports this session cost: its own estimate, not a bill. ${s.turns} turns, ${s.tokens.total} tokens.`}>
+            ≈ {money(s.cost.total, s.cost.currency)}
             {s.cost.last_turn != null && s.turns > 1 ? ` (last ${money(s.cost.last_turn, s.cost.currency)})` : ""}
           </span>
         )}

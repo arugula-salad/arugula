@@ -438,6 +438,9 @@ struct Inner {
     live_ctx_path: Option<PathBuf>,
     live_ctx_looked: u32,
     live_ctx_stamp: Option<(u64, std::time::SystemTime)>,
+    /// Its session's subagents' transcripts, followed for what they cost
+    /// (#398).
+    subagents: crate::conversations::spend::Subagents,
     /// The session's `configOptions` (for choosing a model).
     config_options: Value,
     /// The model the agent says it answers with (claude-agent-acp's
@@ -712,6 +715,7 @@ impl Inner {
             live_ctx_path: None,
             live_ctx_looked: 0,
             live_ctx_stamp: None,
+            subagents: Default::default(),
             config_options: Value::Null,
             served_model: None,
             model_settled: false,
@@ -1659,9 +1663,12 @@ impl Inner {
         state["model"] = model;
         // #397: the model, the window's fill and the compactions, from the
         // transcript.
-        state["context"] =
-            if self.cfg.import.is_some() && !self.frozen { self.follow.context() } else { self.live_ctx.context() }
-                .unwrap_or(Value::Null);
+        let transcript = if self.cfg.import.is_some() && !self.frozen { &self.follow } else { &self.live_ctx };
+        state["context"] = transcript.context().unwrap_or(Value::Null);
+        // #398: what the session and its subagents cost, estimated from
+        // their transcripts' tokens at API list prices.
+        state["estimate"] =
+            crate::conversations::spend::estimate(&transcript.spend(), &self.subagents).unwrap_or(Value::Null);
         state["model_name"] = json!(self.model_name());
         state["served_model"] = json!(self.served_model);
         // #606: it will carry on by itself (its turn held for background
@@ -2415,6 +2422,9 @@ async fn run(agent: Agent, mut rx: mpsc::UnboundedReceiver<Msg>) {
                     if (g.cfg.import.is_none() || g.frozen) && refresh_context(&mut g) {
                         dirty = true;
                     }
+                    if refresh_subagents(&mut g) {
+                        dirty = true;
+                    }
                 }
                 if retry_at.is_some_and(|t| tokio::time::Instant::now() >= t) {
                     retry_at = None;
@@ -2447,6 +2457,16 @@ fn refresh_context(g: &mut Inner) -> bool {
     }
     g.live_ctx_stamp = stamp;
     g.live_ctx.read(&path).unwrap_or(false)
+}
+
+/// The subagents of the session whose transcript this block reads, for
+/// what they cost (#398). True if what they say changed.
+fn refresh_subagents(g: &mut Inner) -> bool {
+    let transcript = match &g.cfg.import {
+        Some(imp) if !g.frozen => Some(PathBuf::from(&imp.path)),
+        _ => g.live_ctx_path.clone(),
+    };
+    transcript.is_some_and(|t| g.subagents.refresh(&t))
 }
 
 /// An opened conversation, read again if its transcript changed; and who
