@@ -112,6 +112,7 @@ pub mod asks;
 pub mod auto;
 pub mod lanes;
 pub mod refs;
+pub mod resolve;
 pub mod work;
 
 /// The Labs flag boards are behind.

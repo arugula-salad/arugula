@@ -1217,6 +1217,66 @@
       },
       "type": "object"
     },
+    "Resolution": {
+      "description": "One reference, resolved: the `pointer` it names, or `why` it names none\n(nothing by that number, or more than one thing: the answer names them).",
+      "properties": {
+        "item": {
+          "description": "The reference as it was written.",
+          "type": "string"
+        },
+        "pointer": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Pointer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "why": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "item"
+      ],
+      "type": "object"
+    },
+    "ResolveItems": {
+      "additionalProperties": false,
+      "description": "[`AGENT_BOARD_RESOLVE`]'s body: up to [`RESOLVE_MAX`] references, each\n`#N`, `owner/repo#N`, `IDENT-N` or an `iss_`/`fi_` id.",
+      "properties": {
+        "items": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "items"
+      ],
+      "type": "object"
+    },
+    "Resolved": {
+      "description": "[`AGENT_BOARD_RESOLVE`]'s answer, one for each reference, in order.",
+      "properties": {
+        "items": {
+          "items": {
+            "$ref": "#/$defs/Resolution"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "items"
+      ],
+      "type": "object"
+    },
     "Row": {
       "properties": {
         "agent": {

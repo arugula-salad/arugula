@@ -46,7 +46,7 @@ use axum::http::StatusCode;
 const AGENT_BOARD_READS: (&str, usize) = ("board-agent-read", 3_600);
 /// Writes a machine's agents make, per hour: each lands at once and shows
 /// on everyone's board, so fewer than reads.
-const AGENT_BOARD_WRITES: (&str, usize) = ("board-agent-write", 600);
+pub(super) const AGENT_BOARD_WRITES: (&str, usize) = ("board-agent-write", 600);
 /// Block reports a machine makes, per hour: its daemon sends a block's
 /// changes a few seconds apart at most.
 const AGENT_BLOCK_REPORTS: (&str, usize) = ("board-block-state", 2_400);

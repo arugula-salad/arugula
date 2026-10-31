@@ -119,6 +119,11 @@ pub fn agent_board_reopen(id: &str) -> String {
 /// for it to answer.
 pub const AGENT_BOARD_ROW_ASK: &str = "/api/daemon/boards/{id}/rows/{row}/ask";
 
+/// `POST` [`ResolveItems`]: an agent asks which issues and PRs of the board's
+/// project its references (`#N`, `owner/repo#N`, `IDENT-N`) name, before it
+/// adds or attaches them (`boards.write`). Nothing changes.
+pub const AGENT_BOARD_RESOLVE: &str = "/api/daemon/boards/{id}/resolve";
+
 /// `PUT` [`PutBlockState`]: a machine tells control the state of one of its
 /// own agent blocks, for the rows that point at it. The machine is the one
 /// that signed the request, never a field of the body.
@@ -149,6 +154,14 @@ pub fn board_ask_answer(id: &str, ask: &str) -> String {
 pub fn agent_board_row_ask(id: &str, row: &str) -> String {
     format!("/api/daemon/boards/{id}/rows/{row}/ask")
 }
+
+/// [`AGENT_BOARD_RESOLVE`] for `id`.
+pub fn agent_board_resolve(id: &str) -> String {
+    format!("/api/daemon/boards/{id}/resolve")
+}
+
+/// The most references one [`AGENT_BOARD_RESOLVE`] takes.
+pub const RESOLVE_MAX: usize = 50;
 
 /// [`AGENT_BOARD_ENTRIES`] for `id`.
 pub fn agent_board_entries(id: &str) -> String {
@@ -854,6 +867,40 @@ pub struct AttachBlock {
     pub pane: String,
 }
 
+/// [`AGENT_BOARD_RESOLVE`]'s body: up to [`RESOLVE_MAX`] references, each
+/// `#N`, `owner/repo#N`, `IDENT-N` or an `iss_`/`fi_` id.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "BoardResolveItems"))]
+#[serde(deny_unknown_fields)]
+pub struct ResolveItems {
+    pub items: Vec<String>,
+}
+
+/// One reference, resolved: the `pointer` it names, or `why` it names none
+/// (nothing by that number, or more than one thing: the answer names them).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "BoardResolution"))]
+pub struct Resolution {
+    /// The reference as it was written.
+    pub item: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub pointer: Option<Pointer>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub why: Option<String>,
+}
+
+/// [`AGENT_BOARD_RESOLVE`]'s answer, one for each reference, in order.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "BoardResolved"))]
+pub struct Resolved {
+    pub items: Vec<Resolution>,
+}
+
 /// One row a block was attached to.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
@@ -1064,9 +1111,29 @@ impl Pointer {
 }
 
 impl Row {
+    /// How the row's item is written to address it: `#N` for a native or a
+    /// GitHub issue or PR, `IDENT-N` for a Plane item, else the pointer's
+    /// short label.
+    pub fn item_label(&self) -> String {
+        item_label(&self.pointer, self.live.as_ref())
+    }
+
     /// Whether the row has a primary item to count: not a note row.
     pub fn counted(&self) -> bool {
         matches!(self.pointer, Pointer::Issue { .. } | Pointer::ForgeItem { .. })
+    }
+}
+
+/// [`Row::item_label`] for any pointer and its state.
+pub fn item_label(pointer: &Pointer, live: Option<&Live>) -> String {
+    match (pointer, live) {
+        (Pointer::Issue { .. } | Pointer::ForgeItem { .. }, Some(l)) if l.number > 0 => {
+            match (&l.provider, &l.identifier) {
+                (Some(_), Some(key)) => format!("{key}-{}", l.number),
+                _ => format!("#{}", l.number),
+            }
+        }
+        _ => pointer.label(),
     }
 }
 
@@ -1137,7 +1204,7 @@ fn lane_text<'a>(out: &mut String, title: &str, rows: impl Iterator<Item = &'a R
     let pad = TEXT_WIDTH - title.chars().count() - count.chars().count();
     *out += &format!("{title}{}{count}\n", " ".repeat(pad));
     for r in rows {
-        let label = fit(&r.pointer.label(), LABEL);
+        let label = fit(&r.item_label(), LABEL);
         let lead = format!("  {} {label:<LABEL$} ", r.lane.glyph());
         let mark = match (r.lane, r.counted(), &r.proof) {
             (Lane::Done, true, Some(p)) => p.mark(),
@@ -1454,7 +1521,8 @@ Done: People can sign up.
     }
 
     /// A row on an issue or a PR ends with its assignees as `(@a, @b)`, and
-    /// the note is what gives way when the line is full.
+    /// the note is what gives way when the line is full. It is labelled by
+    /// its item (`#4`), as an agent addresses it.
     #[test]
     fn a_row_with_assignees_ends_with_them() {
         let on = |note: &str, who: &[&str]| {
@@ -1480,7 +1548,7 @@ Done: People can sign up.
         )]);
         let text = render(&view(zones));
         let want = format!(
-            "{}\n  ○ iss_1a2b3c4d       Fix login (@ana, @Bo_Li)\n  ○ iss_1a2b3c4d       Fix the login redirect for every browser… (@ana)\n  ○ iss_1a2b3c4d       Fix login\n",
+            "{}\n  ○ #4                 Fix login (@ana, @Bo_Li)\n  ○ #4                 Fix the login redirect for every browser… (@ana)\n  ○ #4                 Fix login\n",
             head("Next", "3")
         );
         assert!(text.starts_with(&want), "{text}");
