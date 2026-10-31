@@ -235,8 +235,9 @@ pub async fn put_block_state(
     may_report(&app, &d).await?;
     p.pane = super::plain_pane(&p.pane).to_owned();
     super::name_ok(&p.pane, "pane")?;
-    state_ok(&p.block)?;
-    app.db.put_block_state(&d.daemon, &d.account, &p.pane, &p.block, arugula_e2e::now_ms())?;
+    let block = wire::BlockState::from(p.block);
+    state_ok(&block)?;
+    app.db.put_block_state(&d.daemon, &d.account, &p.pane, &block, arugula_e2e::now_ms())?;
     match app.db.boards_on_block(&d.daemon, &p.pane) {
         Ok(boards) => boards.iter().for_each(|(b, project)| super::changed(&app, project, b)),
         Err(e) => tracing::warn!(error = %e, "boards: finding those on a block"),

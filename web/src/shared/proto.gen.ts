@@ -249,7 +249,8 @@ released?: boolean, };
  * (aru-116's second ruling): the state word, the branch, the short HEAD,
  * whether it is pushed, how many files are uncommitted and the diffstat.
  * No message text, no file names, no prompts: the type has no field that
- * could carry them, and a body with another field is refused.
+ * could carry them. This is the view, read leniently by a daemon; control
+ * refuses a body with another field through [`BlockStateReport`].
  */
 export type BoardBlockState = { state: BoardBlockWord, 
 /**
