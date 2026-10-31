@@ -9,6 +9,7 @@
   gap: 14px;
   max-width: 1400px;
   min-width: 0;
+  container-type: inline-size;
 }
 
 .board-head {
@@ -36,7 +37,6 @@
   background: var(--surface);
 }
 
-/* The four lanes: columns on a wide page, fewer on a narrow block, one on a phone. */
 /* The lanes are columns, so the page takes more than the 880px reading column of its siblings. */
 @media (min-width: 701px) {
   .platform-section[data-board-page] {
@@ -44,11 +44,32 @@
   }
 }
 
+/* The four lanes: four across when each gets 230px of the board, two per row
+   below that, one under 520px. The board is the container, not the window: a
+   board is often a pane. */
 .board-lanes {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 230px), 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 12px;
   align-items: start;
+}
+
+/* Four lanes at 230px and their gaps need 956px; narrower, two per row: Next and Doing, then Review and Done. */
+@container (max-width: 955px) {
+  .board-lanes {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@container (max-width: 519px) {
+  /* One column, the rows that wait on the reader first. */
+  .board-lanes {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .board-lanes > .board-zone:has([data-needs-you]) {
+    order: -1;
+  }
 }
 
 .board-zone {
@@ -623,13 +644,23 @@
   align-items: flex-start;
 }
 
+/* The title and the state chip wrap together beside the menu button: the chip drops under the title when they don't fit, and the button stays top-right. */
+.board-card-lead {
+  display: flex;
+  flex: 1 1 0;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 2px 10px;
+  min-width: 0;
+}
+
 /* The row's title is about the Issues list's row title: clearly the title by weight and colour, small enough for more rows to fit. */
 .board .board-card-name {
   flex: 0 1 auto;
   font-size: 14px;
   line-height: 1.35;
-  min-width: 0;
-  overflow-wrap: anywhere;
+  min-width: min(14ch, 100%);
+  overflow-wrap: break-word;
   color: var(--fg);
   font-weight: 600;
   text-decoration: none;
@@ -641,12 +672,6 @@
 .board a.board-card-name:active {
   color: var(--accent);
   text-decoration: underline;
-}
-
-.board-card-fill {
-  flex: 1 1 0;
-  min-width: 0;
-  align-self: stretch;
 }
 
 .board .board-card {
@@ -664,8 +689,7 @@
   text-decoration: none;
 }
 
-.board-card-head .chip,
-.board-card-head .board-proof {
+.board-card-head .chip {
   flex: none;
 }
 
@@ -757,17 +781,6 @@
 }
 
 @media (max-width: 600px) {
-  /* One column, the rows that wait on the reader first. */
-  .board-lanes {
-    display: flex;
-    flex-direction: column;
-    align-items: stretch;
-  }
-
-  .board-lanes > .board-zone:has([data-needs-you]) {
-    order: -1;
-  }
-
   .board-rows > [data-needs-you] {
     order: -1;
   }

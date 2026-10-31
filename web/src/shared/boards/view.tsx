@@ -637,22 +637,22 @@ function Row({
       ) : (
         <div class="board-main">
           <div class="board-card-head board-line board-card-title">
-            {href ? (
-              <a class="board-card-name board-title" href={href} target={external ? "_blank" : undefined} rel="noopener noreferrer" data-board-title data-board-item-link>
-                {title}
-              </a>
-            ) : (
-              <span class="board-card-name board-title" data-board-title>
-                {title}
-              </span>
-            )}
-            <span class="board-card-fill" />
-            {r.live && (
-              <StateChip tone={liveTone(r.live.state)} data-board-live={r.live.state}>
-                {liveWord(r.live)}
-              </StateChip>
-            )}
-            {proofTag}
+            <div class="board-card-lead">
+              {href ? (
+                <a class="board-card-name board-title" href={href} target={external ? "_blank" : undefined} rel="noopener noreferrer" data-board-title data-board-item-link>
+                  {title}
+                </a>
+              ) : (
+                <span class="board-card-name board-title" data-board-title>
+                  {title}
+                </span>
+              )}
+              {r.live && (
+                <StateChip tone={liveTone(r.live.state)} data-board-live={r.live.state}>
+                  {liveWord(r.live)}
+                </StateChip>
+              )}
+            </div>
             <button type="button" class="board-more" aria-label="Row actions" data-board-row-menu onClick={more}>
               ⋯
             </button>
@@ -669,6 +669,7 @@ function Row({
                 {agentShort(r.agent)}
               </span>
             )}
+            {proofTag}
           </div>
           {(marks.merged || marks.after || marks.stalled || marks.blocked.length > 0) && (
             <div class="board-line board-marks" data-board-marks>
