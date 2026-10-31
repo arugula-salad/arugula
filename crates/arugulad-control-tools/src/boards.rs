@@ -600,8 +600,9 @@ fn describe(r: &Row) -> String {
 }
 
 /// The row an item names on the board: by its primary item first, then by
-/// what is attached. A reference that names two rows at one level is
-/// refused, naming both.
+/// what is attached. A bare `#N` is the native issue's row when the board
+/// has one; any other reference that names two rows at one level is refused,
+/// naming both.
 fn find_row<'a>(v: &'a BoardView, item: &str) -> Result<&'a Row, String> {
     let item = item.trim();
     if item.starts_with("row_") {
@@ -623,6 +624,12 @@ fn find_row<'a>(v: &'a BoardView, item: &str) -> Result<&'a Row, String> {
             [] => {}
             [one] => return Ok(one),
             many => {
+                if matches!(want, Some(IssueRef::Number(_))) {
+                    let mut native = many.iter().filter(|r| r.live.as_ref().is_some_and(|l| l.kind == "native"));
+                    if let (Some(one), None) = (native.next(), native.next()) {
+                        return Ok(one);
+                    }
+                }
                 let names: Vec<String> = many.iter().map(|r| describe(r)).collect();
                 return Err(format!(
                     "{item} names more than one row on this board ({}): write owner/repo#N, IDENT-N or the iss_/fi_ id of the one you mean",
@@ -1397,20 +1404,33 @@ mod tests {
     }
 
     /// `#5` that is both a native issue and a GitHub issue on the board is
-    /// not guessed: the refusal names both, and the unambiguous forms work.
+    /// the native issue's row; the repo's form names the other. With no
+    /// native row, one repo's row is `#5`, and several repos' rows are not
+    /// guessed: the refusal names them all.
     #[test]
-    fn an_ambiguous_number_names_both_rows() {
+    fn a_bare_number_is_the_native_row() {
         let v = board(json!([
             row("row_1", json!({ "kind": "issue", "id": "iss_a" }), native(5), json!([])),
             row("row_2", json!({ "kind": "forge_item", "id": "fi_b" }), github("acme/app", "issue", 5), json!([])),
         ]));
-        let e = find_row(&v, "#5").unwrap_err();
-        assert!(
-            e.contains("the native issue #5") && e.contains("acme/app#5") && e.contains("more than one row"),
-            "{e}"
-        );
+        assert_eq!(find_row(&v, "#5").map(|r| r.id.as_str()), Ok("row_1"));
         assert_eq!(find_row(&v, "acme/app#5").map(|r| r.id.as_str()), Ok("row_2"));
         assert_eq!(find_row(&v, "iss_a").map(|r| r.id.as_str()), Ok("row_1"));
+
+        let one = board(json!([row(
+            "row_2",
+            json!({ "kind": "forge_item", "id": "fi_b" }),
+            github("acme/app", "issue", 5),
+            json!([])
+        )]));
+        assert_eq!(find_row(&one, "#5").map(|r| r.id.as_str()), Ok("row_2"));
+
+        let two = board(json!([
+            row("row_2", json!({ "kind": "forge_item", "id": "fi_b" }), github("acme/app", "issue", 5), json!([])),
+            row("row_3", json!({ "kind": "forge_item", "id": "fi_c" }), github("acme/site", "issue", 5), json!([])),
+        ]));
+        let e = find_row(&two, "#5").unwrap_err();
+        assert!(e.contains("acme/app#5") && e.contains("acme/site#5") && e.contains("more than one row"), "{e}");
     }
 
     /// A group is found by its title in any case, or by its id.

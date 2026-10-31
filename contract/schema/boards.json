@@ -1485,7 +1485,7 @@
       "type": "string"
     },
     "Resolution": {
-      "description": "One reference, resolved: the `pointer` it names, or `why` it names none\n(nothing by that number, or more than one thing: the answer names them).",
+      "description": "One reference, resolved: the `pointer` it names, or `why` it names none\n(nothing by that number, or several linked repos have it and the project\nhas no native issue of it: the answer names them).",
       "properties": {
         "item": {
           "description": "The reference as it was written.",
