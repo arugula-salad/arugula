@@ -1,0 +1,128 @@
+name: pull request (hosted)
+
+# A pull request's run of what main's check.yml would fail it for, on
+# GitHub's runners alone (#306): lint, the debug binaries and the e2e
+# shards. Nothing here runs on arugula-amd64 or the Macs: those take only
+# main's pushes, merge groups and the full-check label (full-check.yml).
+# GitHub's Linux runners are free for this public repository, so what it
+# costs is wall time.
+#
+# Advisory for now: no ruleset requires it, and pr-gate's summary says so.
+# Making it required is adding `pr-gate` to the "binaries check" ruleset's
+# required status checks. This workflow doesn't run on merge groups, so
+# with the merge queue on (docs/development.md, "Merging through the
+# queue"), a required pr-gate would also need reporting on a group.
+#
+# A fork's pull request gets no secrets, and nothing here needs one:
+# without SCCACHE_WEBDAV_PASSWORD .github/actions/setup leaves sccache out
+# and the build compiles cold (rust-cache still restores main's
+# dependencies). No pull_request_target: a pull request's code never runs
+# with this repository's secrets or a write token.
+#
+# The jobs' names: chant matches main's required checks by name
+# (chant.workspace.json's ci.green phases: lint, build, e2e*, ...). A pull
+# request's check runs land on its head commit, which a squash merge
+# leaves off main, but these are still named so that no phase's pattern
+# matches them, as binaries.yml's are (docs/testing.md). The job ids are
+# check.yml's, so rust-cache (keyed by job id) restores what main's build
+# saved.
+on:
+  pull_request:
+
+# A new push to the pull request cancels its run before.
+concurrency:
+  group: pull-request-hosted-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  # Empty on a fork's pull request: the build compiles without sccache.
+  SCCACHE_WEBDAV_PASSWORD: ${{ secrets.SCCACHE_WEBDAV_PASSWORD }}
+  # mise's GitHub downloads (Zig's, nextest's) share the runner's IP's rate
+  # limit unauthenticated.
+  GITHUB_TOKEN: ${{ github.token }}
+  # As check.yml's: rust-cache's key hashes the CARGO_* variables, so
+  # these keep it main's build's.
+  CARGO_PROFILE_DEV_DEBUG: line-tables-only
+  CARGO_PROFILE_TEST_DEBUG: line-tables-only
+
+jobs:
+  # check.yml's lint, without gitleaks (binaries.yml's quick scans the pull
+  # request's commits).
+  lint:
+    name: pr-lint
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: just
+      - uses: ./.github/actions/lint
+
+  # check.yml's build, on a hosted runner: Ubuntu 24.04, the glibc the
+  # shards run on.
+  build:
+    name: pr-build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+        with:
+          cache-key: build
+          ghostty-key: gnu
+      - uses: ./.github/actions/build-debug
+      - name: sccache's hits
+        if: always() && env.RUSTC_WRAPPER == 'sccache'
+        run: sccache --show-stats
+
+  # check.yml's e2e shards, on this run's binaries.
+  e2e:
+    name: pr-e2e (${{ matrix.shard }})
+    needs: build
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+        with:
+          rust: "false"
+          fetch: run-debug
+          claude-code: "true"
+      - uses: ./.github/actions/e2e-shard
+        with:
+          shard: ${{ matrix.shard }}
+          total: ${{ strategy.job-total }}
+
+  # The run's one verdict, the check a ruleset would require: every job
+  # above passed. Its summary says the run is advisory.
+  gate:
+    name: pr-gate
+    needs: [lint, build, e2e]
+    if: always()
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Every job passed
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: |
+          {
+            echo "## pull request (hosted): advisory"
+            echo
+            echo "No ruleset requires this run yet (#306): a red one doesn't block the merge."
+            echo "main's check.yml still runs the whole suite after the merge."
+            echo
+            echo "| job | result |"
+            echo "| --- | --- |"
+            echo "$NEEDS" | jq -r 'to_entries[] | "| \(.key) | \(.value.result) |"'
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "$NEEDS" | jq -r 'to_entries[] | "\(.key): \(.value.result)"'
+          if echo "$NEEDS" | jq -e 'any(.[]; .result != "success")' >/dev/null; then
+            echo "::error::a job failed or was cancelled (advisory: this doesn't block the merge)"
+            exit 1
+          fi
