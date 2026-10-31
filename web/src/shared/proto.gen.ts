@@ -3093,6 +3093,21 @@ blocks: number, };
 export type NvimWhere = "pane" | "tab" | "new";
 
 /**
+ * A board with a row an agent block is attached to.
+ */
+export type OnBoard = { project: string, board: string, title: string, row: string, };
+
+/**
+ * The issue a block was started on, and the boards with a row it is
+ * attached to (#372).
+ */
+export type OnIssue = { 
+/**
+ * As its starter wrote it (`#N`, `owner/repo#N` or `IDENT-N`).
+ */
+issue: string, boards?: Array<OnBoard>, };
+
+/**
  * `POST /api/conversations/open` (M33): a Claude Code conversation as an
  * agent block.
  */
@@ -3330,7 +3345,12 @@ editor?: EditorInfo | null,
  * run (`nvim`). It's an editor whatever its foreground is, and keeps
  * this across restarts.
  */
-app?: string | null, };
+app?: string | null, 
+/**
+ * The issue an agent block was started on, and the boards it is on
+ * (#372): the chip on its sidebar row and its swarm card.
+ */
+on_issue?: OnIssue | null, };
 
 export type PaneOp = { "op": "set_policy", policy: Policy, } | { "op": "purge" } | { "op": "set_integration", on: boolean, } | { "op": "attention", state: Attention, } | { "op": "take_control" } | { "op": "request_control" } | { "op": "give_control", to: string, } | { "op": "release_control" } | { "op": "set_pair", on: boolean, } | { "op": "request_trust" } | { "op": "grant_trust", to: string, minutes: number, } | { "op": "revoke_trust", to: string, } | { "op": "set_private", on: boolean, };
 

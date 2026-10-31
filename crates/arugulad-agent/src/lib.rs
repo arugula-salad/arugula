@@ -3344,7 +3344,20 @@ impl Block for Agent {
         let g = self.inner.lock().unwrap();
         // A stopped agent isn't running (UI audit #154).
         let stopped = matches!(g.status, Status::Exited | Status::Stopped);
-        crate::block::Summary { title: g.shown_title(), stopped, ..Default::default() }
+        let on_issue = g.cfg.work.as_ref().map(|w| arugula_proto::OnIssue {
+            issue: w.issue.clone(),
+            boards: w
+                .boards
+                .iter()
+                .map(|b| arugula_proto::OnBoard {
+                    project: b.project.clone(),
+                    board: b.board.clone(),
+                    title: b.title.clone(),
+                    row: b.row.clone(),
+                })
+                .collect(),
+        });
+        crate::block::Summary { title: g.shown_title(), on_issue, stopped, ..Default::default() }
     }
 
     fn state(&self) -> Value {

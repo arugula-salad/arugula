@@ -9,6 +9,8 @@ import { paneIds, type Client } from "../../client";
 import { directory } from "../../hosts";
 import type { Attention, PaneInfo, Session, SessionId, TabId } from "../../../shared/proto";
 import { AttentionBadge } from "../attention";
+import { onIssueChip } from "../../../shared/boards/text";
+import { platformHref } from "../../platform-links";
 import { needsYou, NEEDS_YOU } from "../../../shared/needs-you";
 import { sessionItems, sessionMenuHint } from "../commands";
 import { openFresh } from "../open-fresh";
@@ -47,6 +49,8 @@ export interface SessionSummary {
   context: string | null;
   /** When any of its panes last printed (ms), 0 if unknown. */
   last: number;
+  /** The issue its agents work on (#372), as a chip. */
+  work: ReturnType<typeof onIssueChip>;
 }
 
 export function summarize(client: Client, session: Session): SessionSummary {
@@ -80,6 +84,7 @@ export function summarize(client: Client, session: Session): SessionSummary {
     group: needs.length ? "needs" : attention === "working" ? "working" : "idle",
     context,
     last: Math.max(0, ...infos.map((i) => i.activity?.last_ms ?? 0)),
+    work: onIssueChip(infos.map((i) => i.on_issue)),
   };
 }
 
@@ -354,6 +359,11 @@ function SessionRow({
         </button>
       )}
       <span class="ws-session-actions">
+        {row.work && (row.work.path && platformHref(row.work.path) ? (
+          <a class="work-chip" href={platformHref(row.work.path)} target="_blank" rel="noopener noreferrer" title={row.work.title} data-session-work>{row.work.label}</a>
+        ) : (
+          <span class="work-chip" title={row.work.title} data-session-work>{row.work.label}</span>
+        ))}
         <AttentionBadge state={row.attention} reason={row.reason} pane={row.pane} client={client} />
         <button class="ws-icon-button ws-session-more" aria-label={`Actions for ${s.name}`} title={cap(sessionMenuHint(items()))} onClick={menu}>
           <MoreIcon />
