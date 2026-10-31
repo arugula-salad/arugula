@@ -24,8 +24,8 @@ use std::sync::Arc;
 
 use arugula_control_common::{ApiError, err};
 use arugula_control_wire::projects::{
-    TrackerClose, TrackerPendingWrite, TrackerPendingWrites, TrackerReach, TrackerReachProject, TrackerWrite,
-    TrackerWriteDone,
+    TrackerClose, TrackerPendingWrite, TrackerPendingWrites, TrackerReach, TrackerReachConnection, TrackerReachProject,
+    TrackerWrite, TrackerWriteDone,
 };
 use arugula_e2e::now_ms;
 use axum::{
@@ -146,6 +146,41 @@ fn tracker_error(e: TrackerError) -> ApiError {
     }
 }
 
+/// The live connection a new item goes to: the one named by id (`asked`) or by
+/// identifier (`tracker`, in any case), else the project's only one. Two
+/// or more are listed in the refusal.
+fn create_in(
+    app: &Platform,
+    project: &str,
+    asked: Option<&str>,
+    tracker: Option<&str>,
+) -> Result<Connection, ApiError> {
+    let live: Vec<Connection> =
+        app.db.tracker_connections(project)?.into_iter().filter(|c| c.unlinked_at.is_none()).collect();
+    let tracker = tracker.map(str::trim).filter(|t| !t.is_empty());
+    let not_connected = || err(StatusCode::NOT_FOUND, "that Plane project isn't connected to this project");
+    let c = match (asked, tracker) {
+        (Some(id), _) => live.iter().find(|c| c.id == id).ok_or_else(not_connected)?,
+        (None, Some(t)) => live.iter().find(|c| c.identifier.eq_ignore_ascii_case(t)).ok_or_else(not_connected)?,
+        (None, None) => match live.as_slice() {
+            [] => return Err(bad("this project has no connected Plane project to create the item in")),
+            [only] => only,
+            many => {
+                let list: Vec<String> = many.iter().map(|c| format!("{} ({})", c.id, c.identifier)).collect();
+                return Err(bad(&format!(
+                    "this project has {} Plane connections: say which with connection or tracker: {}",
+                    many.len(),
+                    list.join(", ")
+                )));
+            }
+        },
+    };
+    if asked.is_some_and(|_| tracker.is_some_and(|t| !c.identifier.eq_ignore_ascii_case(t))) {
+        return Err(bad("tracker: that isn't the identifier of the connection"));
+    }
+    Ok(c.clone())
+}
+
 /// The write as it will be kept and sent: texts checked, an item named by
 /// its `fi_` id, and the live connection it goes to (which, when
 /// `connection` is given, must be that one).
@@ -172,20 +207,23 @@ async fn resolve(
         Ok(t)
     };
     Ok(match w {
-        TrackerWrite::Create { connection: own, title, body, state } => {
-            let id = match (connection, own.as_deref()) {
+        TrackerWrite::Create { connection: own, tracker, title, body, state } => {
+            let asked = match (connection, own.as_deref()) {
                 (Some(a), Some(b)) if a != b => return Err(bad("connection: that isn't the one in the address")),
-                (Some(a), _) | (None, Some(a)) => a,
-                (None, None) => return Err(bad("a new item needs the connection to create it in")),
+                (Some(a), _) | (None, Some(a)) => Some(a),
+                (None, None) => None,
             };
+            let c = create_in(app, project, asked, tracker.as_deref())?;
             let state = match state.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
                 None => None,
                 Some(s @ ("backlog" | "unstarted" | "started")) => Some(s.to_owned()),
                 Some(_) => return Err(bad("state: backlog, unstarted or started")),
             };
             let body = body.as_deref().map(|b| text_ok("a body", b, true)).transpose()?.filter(|b| !b.is_empty());
-            let c = live(id)?;
-            (c.clone(), TrackerWrite::Create { connection: Some(c.id), title: title_ok(title)?, body, state })
+            (
+                c.clone(),
+                TrackerWrite::Create { connection: Some(c.id), tracker: None, title: title_ok(title)?, body, state },
+            )
         }
         TrackerWrite::Comment { item, text } => {
             let t = target(item)?;
@@ -405,7 +443,20 @@ pub async fn reach(State(app): State<Arc<Platform>>, d: Machine) -> Result<Json<
             && agent_may(&app, &d, TRACKERS_WRITE, &scope).await.is_ok()
             && let Some(name) = owner_reads(&app, &d.account, &scope, false).await?
         {
-            projects.push(TrackerReachProject { id, name });
+            let connections = app
+                .db
+                .tracker_connections(&id)?
+                .into_iter()
+                .filter(|c| c.unlinked_at.is_none())
+                .map(|c| TrackerReachConnection {
+                    id: c.id,
+                    identifier: c.identifier,
+                    name: c.name,
+                    workspace_slug: c.workspace_slug,
+                    agent_writes: c.agent_writes,
+                })
+                .collect();
+            projects.push(TrackerReachProject { id, name, connections });
         }
     }
     projects.sort_by(|a, b| (&a.name, &a.id).cmp(&(&b.name, &b.id)));

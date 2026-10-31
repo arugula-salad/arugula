@@ -815,12 +815,16 @@ pub enum TrackerClose {
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum TrackerWrite {
-    /// A new item. `connection` is needed on an agent's route and, on a
-    /// person's, is the path's. `state` is a state group (`backlog`,
-    /// `unstarted`, `started`).
+    /// A new item. On an agent's route `connection` or `tracker` (the
+    /// connection's identifier, in any case) says where; with neither, the
+    /// project's only live connection is used. On a person's, the path's
+    /// connection is it. `state` is a state group (`backlog`, `unstarted`,
+    /// `started`).
     Create {
         #[serde(default)]
         connection: Option<String>,
+        #[serde(default)]
+        tracker: Option<String>,
         title: String,
         #[serde(default)]
         body: Option<String>,
@@ -910,4 +914,20 @@ pub struct TrackerReach {
 pub struct TrackerReachProject {
     pub id: String,
     pub name: String,
+    /// Its live connections: never a key or a secret.
+    #[serde(default)]
+    pub connections: Vec<TrackerReachConnection>,
+}
+
+/// A live Plane connection of a project an agent reaches.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+pub struct TrackerReachConnection {
+    pub id: String,
+    /// The Plane project's identifier, like `ARUGU`.
+    pub identifier: String,
+    pub name: String,
+    pub workspace_slug: String,
+    /// `approve` or `allow`.
+    pub agent_writes: String,
 }

@@ -1071,9 +1071,48 @@
             ],
             "type": "object"
           },
+          "TrackerReachConnection": {
+            "description": "A live Plane connection of a project. Never a key or a secret.",
+            "properties": {
+              "agent_writes": {
+                "description": "`approve` (a person approves each write) or `allow`.",
+                "type": "string"
+              },
+              "id": {
+                "description": "`tc_…`: `connection` on `create`.",
+                "type": "string"
+              },
+              "identifier": {
+                "description": "The Plane project's identifier: `tracker` on `create`.",
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "workspace_slug": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "identifier",
+              "name",
+              "workspace_slug",
+              "agent_writes"
+            ],
+            "type": "object"
+          },
           "TrackerReachProject": {
             "description": "A project a machine's `trackers.write` reaches.",
             "properties": {
+              "connections": {
+                "default": [],
+                "description": "Its live Plane connections: what `tracker_write create` can name.",
+                "items": {
+                  "$ref": "#/$defs/TrackerReachConnection"
+                },
+                "type": "array"
+              },
               "id": {
                 "type": "string"
               },
@@ -5245,9 +5284,48 @@
             ],
             "type": "object"
           },
+          "TrackerReachConnection": {
+            "description": "A live Plane connection of a project. Never a key or a secret.",
+            "properties": {
+              "agent_writes": {
+                "description": "`approve` (a person approves each write) or `allow`.",
+                "type": "string"
+              },
+              "id": {
+                "description": "`tc_…`: `connection` on `create`.",
+                "type": "string"
+              },
+              "identifier": {
+                "description": "The Plane project's identifier: `tracker` on `create`.",
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "workspace_slug": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "identifier",
+              "name",
+              "workspace_slug",
+              "agent_writes"
+            ],
+            "type": "object"
+          },
           "TrackerReachProject": {
             "description": "A project a machine's `trackers.write` reaches.",
             "properties": {
+              "connections": {
+                "default": [],
+                "description": "Its live Plane connections: what `tracker_write create` can name.",
+                "items": {
+                  "$ref": "#/$defs/TrackerReachConnection"
+                },
+                "type": "array"
+              },
               "id": {
                 "type": "string"
               },
@@ -8526,7 +8604,7 @@
         "readOnlyHint": false,
         "title": "Write to Plane"
       },
-      "description": "Write to the Plane project connected to a project in Arugula control: create a work item, comment on one, close it (completed or cancelled), reopen it, or edit its title or body. Your person's trackers.write grant over the project says you may, never more than their role. A write may wait: when the connection is set to approve each agent write (the default) it is kept for a person to approve, edit or drop in the project's Triage, and this says \"waiting for a person to approve it\" with its id; nothing has reached Plane yet, and you can't approve it yourself. When the connection allows agent writes it lands at once. What is sent ends with a line saying it was sent via Arugula by your person's agent on this machine. Items are named by their fi_ id (forge_read lists them) or IDENT-N, like ARUGU-7. Assignees are not supported.\n- create {connection, title, body?, project?, state?}: Create a work item in a connected Plane project (may wait for a person).\n- comment {item, text, project?}: Comment on a work item (may wait for a person).\n- close {as, item, project?}: Close a work item as completed or cancelled (may wait for a person).\n- reopen {item, project?}: Open a closed work item again (may wait for a person).\n- edit {item, body?, project?, title?}: Change a work item's title or body (may wait for a person).",
+      "description": "Write to the Plane project connected to a project in Arugula control: create a work item, comment on one, close it (completed or cancelled), reopen it, or edit its title or body. Your person's trackers.write grant over the project says you may, never more than their role. A write may wait: when the connection is set to approve each agent write (the default) it is kept for a person to approve, edit or drop in the project's Triage, and this says \"waiting for a person to approve it\" with its id; nothing has reached Plane yet, and you can't approve it yourself. When the connection allows agent writes it lands at once. What is sent ends with a line saying it was sent via Arugula by your person's agent on this machine. Items are named by their fi_ id (forge_read lists them) or IDENT-N, like ARUGU-7. Assignees are not supported.\n- create {title, body?, connection?, project?, state?, tracker?}: Create a work item in a connected Plane project (may wait for a person).\n- comment {item, text, project?}: Comment on a work item (may wait for a person).\n- close {as, item, project?}: Close a work item as completed or cancelled (may wait for a person).\n- reopen {item, project?}: Open a closed work item again (may wait for a person).\n- edit {item, body?, project?, title?}: Change a work item's title or body (may wait for a person).",
       "inputSchema": {
         "$defs": {
           "CloseAs": {
@@ -8551,8 +8629,12 @@
             ]
           },
           "connection": {
-            "description": "create: The Plane connection to create the item in (tc_…, from\nthe project's settings or forge_read).",
-            "type": "string"
+            "default": null,
+            "description": "create: The Plane connection to create the item in (tc_…, from capabilities'\ntrackers). Not needed when the project has one connection.",
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "item": {
             "description": "comment: The work item: its fi_ id, or IDENT-N.",
@@ -8591,6 +8673,14 @@
           "title": {
             "default": null,
             "description": "create: One line, at most 255 characters.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "tracker": {
+            "default": null,
+            "description": "create: Or its identifier, like ARUGU, in any case.",
             "type": [
               "string",
               "null"
@@ -9678,9 +9768,48 @@
             ],
             "type": "object"
           },
+          "TrackerReachConnection": {
+            "description": "A live Plane connection of a project. Never a key or a secret.",
+            "properties": {
+              "agent_writes": {
+                "description": "`approve` (a person approves each write) or `allow`.",
+                "type": "string"
+              },
+              "id": {
+                "description": "`tc_…`: `connection` on `create`.",
+                "type": "string"
+              },
+              "identifier": {
+                "description": "The Plane project's identifier: `tracker` on `create`.",
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "workspace_slug": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "identifier",
+              "name",
+              "workspace_slug",
+              "agent_writes"
+            ],
+            "type": "object"
+          },
           "TrackerReachProject": {
             "description": "A project a machine's `trackers.write` reaches.",
             "properties": {
+              "connections": {
+                "default": [],
+                "description": "Its live Plane connections: what `tracker_write create` can name.",
+                "items": {
+                  "$ref": "#/$defs/TrackerReachConnection"
+                },
+                "type": "array"
+              },
               "id": {
                 "type": "string"
               },
@@ -13852,9 +13981,48 @@
             ],
             "type": "object"
           },
+          "TrackerReachConnection": {
+            "description": "A live Plane connection of a project. Never a key or a secret.",
+            "properties": {
+              "agent_writes": {
+                "description": "`approve` (a person approves each write) or `allow`.",
+                "type": "string"
+              },
+              "id": {
+                "description": "`tc_…`: `connection` on `create`.",
+                "type": "string"
+              },
+              "identifier": {
+                "description": "The Plane project's identifier: `tracker` on `create`.",
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "workspace_slug": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "identifier",
+              "name",
+              "workspace_slug",
+              "agent_writes"
+            ],
+            "type": "object"
+          },
           "TrackerReachProject": {
             "description": "A project a machine's `trackers.write` reaches.",
             "properties": {
+              "connections": {
+                "default": [],
+                "description": "Its live Plane connections: what `tracker_write create` can name.",
+                "items": {
+                  "$ref": "#/$defs/TrackerReachConnection"
+                },
+                "type": "array"
+              },
               "id": {
                 "type": "string"
               },
@@ -17133,7 +17301,7 @@
         "readOnlyHint": false,
         "title": "Write to Plane"
       },
-      "description": "Write to the Plane project connected to a project in Arugula control: create a work item, comment on one, close it (completed or cancelled), reopen it, or edit its title or body. Your person's trackers.write grant over the project says you may, never more than their role. A write may wait: when the connection is set to approve each agent write (the default) it is kept for a person to approve, edit or drop in the project's Triage, and this says \"waiting for a person to approve it\" with its id; nothing has reached Plane yet, and you can't approve it yourself. When the connection allows agent writes it lands at once. What is sent ends with a line saying it was sent via Arugula by your person's agent on this machine. Items are named by their fi_ id (forge_read lists them) or IDENT-N, like ARUGU-7. Assignees are not supported.\n- create {connection, title, body?, project?, state?}: Create a work item in a connected Plane project (may wait for a person).\n- comment {item, text, project?}: Comment on a work item (may wait for a person).\n- close {as, item, project?}: Close a work item as completed or cancelled (may wait for a person).\n- reopen {item, project?}: Open a closed work item again (may wait for a person).\n- edit {item, body?, project?, title?}: Change a work item's title or body (may wait for a person).",
+      "description": "Write to the Plane project connected to a project in Arugula control: create a work item, comment on one, close it (completed or cancelled), reopen it, or edit its title or body. Your person's trackers.write grant over the project says you may, never more than their role. A write may wait: when the connection is set to approve each agent write (the default) it is kept for a person to approve, edit or drop in the project's Triage, and this says \"waiting for a person to approve it\" with its id; nothing has reached Plane yet, and you can't approve it yourself. When the connection allows agent writes it lands at once. What is sent ends with a line saying it was sent via Arugula by your person's agent on this machine. Items are named by their fi_ id (forge_read lists them) or IDENT-N, like ARUGU-7. Assignees are not supported.\n- create {title, body?, connection?, project?, state?, tracker?}: Create a work item in a connected Plane project (may wait for a person).\n- comment {item, text, project?}: Comment on a work item (may wait for a person).\n- close {as, item, project?}: Close a work item as completed or cancelled (may wait for a person).\n- reopen {item, project?}: Open a closed work item again (may wait for a person).\n- edit {item, body?, project?, title?}: Change a work item's title or body (may wait for a person).",
       "inputSchema": {
         "$defs": {
           "CloseAs": {
@@ -17158,8 +17326,12 @@
             ]
           },
           "connection": {
-            "description": "create: The Plane connection to create the item in (tc_…, from\nthe project's settings or forge_read).",
-            "type": "string"
+            "default": null,
+            "description": "create: The Plane connection to create the item in (tc_…, from capabilities'\ntrackers). Not needed when the project has one connection.",
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "item": {
             "description": "comment: The work item: its fi_ id, or IDENT-N.",
@@ -17198,6 +17370,14 @@
           "title": {
             "default": null,
             "description": "create: One line, at most 255 characters.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "tracker": {
+            "default": null,
+            "description": "create: Or its identifier, like ARUGU, in any case.",
             "type": [
               "string",
               "null"
@@ -17868,9 +18048,48 @@
             ],
             "type": "object"
           },
+          "TrackerReachConnection": {
+            "description": "A live Plane connection of a project. Never a key or a secret.",
+            "properties": {
+              "agent_writes": {
+                "description": "`approve` (a person approves each write) or `allow`.",
+                "type": "string"
+              },
+              "id": {
+                "description": "`tc_…`: `connection` on `create`.",
+                "type": "string"
+              },
+              "identifier": {
+                "description": "The Plane project's identifier: `tracker` on `create`.",
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "workspace_slug": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "identifier",
+              "name",
+              "workspace_slug",
+              "agent_writes"
+            ],
+            "type": "object"
+          },
           "TrackerReachProject": {
             "description": "A project a machine's `trackers.write` reaches.",
             "properties": {
+              "connections": {
+                "default": [],
+                "description": "Its live Plane connections: what `tracker_write create` can name.",
+                "items": {
+                  "$ref": "#/$defs/TrackerReachConnection"
+                },
+                "type": "array"
+              },
               "id": {
                 "type": "string"
               },
@@ -19645,9 +19864,48 @@
             ],
             "type": "object"
           },
+          "TrackerReachConnection": {
+            "description": "A live Plane connection of a project. Never a key or a secret.",
+            "properties": {
+              "agent_writes": {
+                "description": "`approve` (a person approves each write) or `allow`.",
+                "type": "string"
+              },
+              "id": {
+                "description": "`tc_…`: `connection` on `create`.",
+                "type": "string"
+              },
+              "identifier": {
+                "description": "The Plane project's identifier: `tracker` on `create`.",
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "workspace_slug": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "identifier",
+              "name",
+              "workspace_slug",
+              "agent_writes"
+            ],
+            "type": "object"
+          },
           "TrackerReachProject": {
             "description": "A project a machine's `trackers.write` reaches.",
             "properties": {
+              "connections": {
+                "default": [],
+                "description": "Its live Plane connections: what `tracker_write create` can name.",
+                "items": {
+                  "$ref": "#/$defs/TrackerReachConnection"
+                },
+                "type": "array"
+              },
               "id": {
                 "type": "string"
               },
