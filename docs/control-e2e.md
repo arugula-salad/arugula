@@ -163,8 +163,9 @@ device nobody trusted. Now:
   it named ("Arugula app on …"). Control holds them to `Cert::is_browser`
   on every link, the root included: they, and browsers they certified,
   make no new browsers, recovery codes, owners or editors, and remove no
-  browsers. What they did before stands. The deploy approval (M218) asks
-  the same of every link.
+  browsers. What they did before stands. The deploy approval (M218) asked
+  the same of every link until DK4 (aru-126): it's a passkey's assertion
+  alone now, whatever devices the owner has.
 - A daemon's own certificate is signed by the device that approved its
   `join` code. When the approver puts it in a team, that device also
   signs the choice (`illogical team join v1`: the daemon, the team, its
@@ -1703,7 +1704,7 @@ on …", "illogical app"), and it approved browsers. A browser or a phone
 such a window approved counts again wherever control checks "a browser all
 the way back" (signing for a passkey, approving a browser or recovery
 codes, removing a browser, raising a team's owner or editor, a standing
-grant's signature, approving a deploy), when control stored and approved
+grant's signature), when control stored and approved
 both rows before #1343 shipped: before `2026-10-22T20:18:00Z`
 (`legacy_app::APP_KIND_SHIPPED_MS`, when the v0.59.0 release run's
 `control` job finished, rounded down). The window then counts as the link
@@ -1723,8 +1724,9 @@ refused a window approving a browser. The platform gets the list with an
 account's devices (`DeviceTrust::legacy_app_children`); a hosted box pins
 the first list control sends (`Enrollment::legacy_app_children`), and each
 later refresh only shrinks it, never adds; a box that has none counts no
-window. A box checks a deploy's approval and a standing grant (and its
-revokes, M253) against the list it pinned, as the hub does. The page gets it from `GET /api/devices` (`legacy_app_children`)
+window. A box checks a standing grant (and its revokes, M253) against the
+list it pinned, as the hub does. (A deploy's approval it checks against the
+passkey logs and origins it pinned instead, DK4.) The page gets it from `GET /api/devices` (`legacy_app_children`)
 to show what control will take (Approve, recovery codes, standing grants).
 Daemons' and pages' own checks of team papers keep #1343's rule.
 
@@ -1978,7 +1980,7 @@ Every table is listed in `crates/control/tables.toml`, and a test fails when one
 | `work_item_refs` | metadata | Where a work item lives (Arugula #405): one row for each issue it is, in a system (native, github or plane): the issue's id, the project, GitHub repo or tracker connection, and its key (`12`, `org/repo#12`, `ARUGU-12`) and link. | A PR's reference finds the board's row by any of its work's numbers, with every machine asleep. | yes: those of work items that go with their project. |  |
 | `board_block_states` | **plaintext** | What a machine says of one of its own agent blocks, for the board rows that point at it: the state word (working, needs input, idle or closed), the branch, the short HEAD, whether it is pushed, the number of uncommitted files and the diffstat as three numbers. Never message text, file names, prompts or a transcript (aru-116). Set under the machine's boards.write grant, and shown only on boards of a project that grant covers. | A board shows what an agent was doing on a teammate's phone with its machine asleep. | yes: those of its machines. |  |
 | `board_settings` | **plaintext** | A project's settings for its boards (Arugula #404): how many minutes a Doing row's agent blocks may sit idle before the row is stalled. A project with no row uses the default. | A board marks a row stalled on a teammate's phone with every machine asleep. | yes: those of projects that go with it. |  |
-| `deploy_approvals` | metadata | A deploy's approvals and denies (M218): S37's work approval over the deploy's operation (its environment, plan's digest, source and planned event's hash), signed by a project owner's device. Which deploy, its event in the log, the decision, the operation's hash, the approver's account, the device that signed and its name then, by when the apply must start, the signature, the passkey assertion the hub checked over the approval (credential id, clientDataJSON, authenticatorData, signature), and when; and when a start used it up, by which run (M219). | An owner approves a deploy from their phone and a driver run checks it, with every machine asleep. | partly: those of projects that go with it go. The rest are kept as signed, the account's id in them included, as its events are: rewriting one would break its signature. |  |
+| `deploy_approvals` | metadata | A deploy's approvals and denies (M218): S37's work approval over the deploy's operation (its environment, plan's digest, source and planned event's hash), confirmed by a project owner's passkey (v2, DK4: the passkey's assertion over the approval is its signature). Which deploy, its event in the log, the decision, the operation's hash, the approver's account, by when the apply must start, the passkey assertion checked over the approval (credential id, clientDataJSON, authenticatorData, signature), and when; for approvals from before DK4 (v1), the device that signed and its name then, and its signature; and when a start used it up, by which run (M219). | An owner approves a deploy from their phone and a driver run checks it, with every machine asleep. | partly: those of projects that go with it go. The rest are kept as signed, the account's id in them included, as its events are: rewriting one would break its signature. |  |
 | `deploy_runs` | metadata | The run that applies an approved deploy (M219): which deploy and run, the approval it applies, the hosted workspace it runs on, the environment's driver then, when it was made, when its machine was given the environment's secrets (once), and when the project's owners were told its apply failed (once). No secret: those are sealed in project_secrets and given only to the run's machine, while it runs. | A deploy's run applies it on the project's hosted workspace, and its log takes the deploy's start only from that run, with every owner's device asleep. | partly: those of deploys that go with its projects go. |  |
 | `platform_migrations` | metadata | Which of the platform's numbered migrations (M142) its database has: each one's number, name, checksum, whether it's additive (older builds may start past it) and when it ran, or that it was found already in place on a database made before migrations. | The platform checks its tables are the shape its code expects before it serves anything, whether or not any machine is up. | nothing of one |  |
 | `hosted_workspaces` | metadata | A hosted workspace (M179): its project, name and spec (clone URLs, packages, its setup script and the names of the env vars it takes), the spec's hash and the one its box was built from, the provider, the template and sandbox id of its box, its state, what was asked of it, the create's journal, when its enrollment runs out, the hosted machine it enrolled as, the digest of its egress rules (M185), the last error, the worker's lease, who made it and when; and how its box's setup goes (M183): its status, its step, the pane it runs in, and a failed setup's reason as a fixed code, never the pane's text. | The platform makes, wakes, pauses and deletes hosted workspaces' boxes itself, and the page lists them, with every machine asleep. | partly: it stops naming the account as its maker. Workspaces in its personal project and its disbanded teams' projects are deleted, boxes and all, by the worker; their rows stay, marked deleted. | E2B |

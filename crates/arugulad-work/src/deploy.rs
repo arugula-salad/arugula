@@ -4,13 +4,14 @@
 //!
 //! - **Checked here, against what this machine pinned** ([`check`]): the
 //!   run's operation is the apply of one deploy (`kind deploy`); the
-//!   approval it carries is a project owner's, signed by one of their
-//!   browsers over exactly that deploy's operation, not past its
-//!   `expires` by this machine's clock, confirmed with a passkey over its
-//!   bytes (`arugula_e2e::deploy::check_apply`, with the team's roster and
-//!   members' certificates, or the account's chain, and what grandfathered
-//!   app windows approved, as this machine pinned them). A run whose
-//!   approval doesn't verify here fails, and nothing runs.
+//!   approval it carries is a project owner's, over exactly that deploy's
+//!   operation, not past its `expires` by this machine's clock, its
+//!   passkey assertion checked against the owner's passkey log
+//!   (`arugula_e2e::deploy::check_apply`, DK4: with the team's roster or
+//!   the account, the passkey logs and the origins this machine pinned, a
+//!   log the work carries taken only as the pinned one or one after it).
+//!   No device signs it (aru-126). A run whose approval doesn't verify here
+//!   fails, and nothing runs.
 //! - **Started only once control takes its start** ([`apply`]): its
 //!   `running` report is sent and answered before anything runs, because
 //!   that's when the platform starts the deploy (and refuses a stale one,
@@ -36,8 +37,9 @@ use std::{path::PathBuf, process::Stdio, sync::Arc, time::Duration};
 
 use arugula_control_wire::work::{DeployWork, Secret, SecretsAsk, WORK_ARTIFACT, WORK_SECRETS, WorkItem};
 use arugula_e2e::{
-    deploy::{PasskeyParts, check_apply},
+    deploy::{Pinned, check_apply},
     now_ms,
+    passkey::Assertion,
     run::{Op, State},
 };
 #[cfg(unix)]
@@ -418,14 +420,17 @@ pub fn check(app: &App, item: &WorkItem, d: &DeployWork) -> Result<(), Refused> 
     let Some(owners) = crate::hosted::runs::owners(&e.saved) else {
         return Err(Refused("approval_not_an_owner", "this machine pinned no owners for its project".into()));
     };
-    let pk = d
-        .passkey
-        .as_ref()
-        .map(|p| PasskeyParts { client_data_json: &p.client_data_json, authenticator_data: &p.authenticator_data });
-    // A box that pinned none counts no app window.
-    let children = pin.legacy_app_children.clone().unwrap_or_default();
-    check_apply(&d.approval, o, &d.deploy, &owners, &children, pk, now_ms())
-        .map_err(|r| Refused(r.code(), r.says().into()))?;
+    let pk = d.passkey.as_ref().map(|p| Assertion {
+        id: p.id.clone(),
+        client_data_json: p.client_data_json.clone(),
+        authenticator_data: p.authenticator_data.clone(),
+        signature: p.signature.clone(),
+    });
+    // A box that pinned no origins takes a passkey from none.
+    let origins = pin.passkey_origins.clone().unwrap_or_default();
+    let pinned = Pinned { owners: &owners, passkey_logs: &pin.passkey_logs, origins: &origins };
+    check_apply(&d.approval, o, &d.deploy, &pinned, pk.as_ref(), d.passkey_log.as_ref(), now_ms())
+        .map_err(|r| Refused(r.code(), r.says()))?;
     // The plan the owner approved names the driver, its settings and the
     // roll back (M220): the platform can't swap in another driver, another
     // Fly app, or another image to go back to.

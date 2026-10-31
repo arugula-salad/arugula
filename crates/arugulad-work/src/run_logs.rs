@@ -396,6 +396,8 @@ mod tests {
             locked: false,
             lock: None,
             legacy_app_children: None,
+            passkey_logs: None,
+            passkey_origins: None,
             purpose: None,
         };
         crate::hosted::trust::saved_from(got, &keys, None).unwrap()

@@ -2,20 +2,23 @@
 //! approvals and denies a deploy got, made by `0027_deploy_approvals`.
 //!
 //! An approval is S37's work approval over a deploy's operation
-//! ([`arugula_e2e::deploy`]): signed by a project owner's device, which the
-//! routes check ([`crate::approvals::verify`]) before they come here with a
-//! [`VerifiedApproval`]. Here it's written **in the same transaction** as
+//! ([`arugula_e2e::deploy`]): since DK4 (v2), a project owner's passkey
+//! assertion over its bytes, which the routes check
+//! ([`crate::approvals::verify`]) before they come here with a
+//! [`VerifiedApproval`]. Rows from before (v1) name the device that signed
+//! too, and keep its signature; a v2's `device` and `sig` are empty, which
+//! is how a row says it's a v2 (no v1 has either empty). Here it's written **in the same transaction** as
 //! the deploy's `approved` (or `denied`) event (M217's
 //! `record_approval_in`: as a person, never an agent; the plan and the
 //! `planned` event checked against the log; the stale rule).
 //!
-//! The event's detail holds the signed fields, so the log alone is enough to
-//! check it, by anyone who has the device's public key. The row here is
-//! what's quick to read. Neither is ever changed: an approval that's
+//! The event's detail holds the signed fields and the passkey's assertion,
+//! so the log alone is enough to check it, by anyone who has the account's
+//! passkey log (DK3). The row here is what's quick to read. Neither is ever changed: an approval that's
 //! replaced is a new deploy's.
 
 use anyhow::{Context as _, Result, bail};
-use arugula_e2e::deploy::{Approval, Decision, Operation};
+use arugula_e2e::deploy::{Approval, Decision, Operation, V1, V2};
 
 use super::{
     Db,
@@ -42,16 +45,25 @@ pub struct StoredApproval {
     pub decision: Decision,
     pub op: String,
     pub account: String,
+    /// v1: the device that signed it, and its name then. Empty in v2.
     pub device: String,
     pub device_name: String,
     pub expires: u64,
+    /// v1: the device's signature. Empty in v2.
     pub sig: String,
-    /// The passkey assertion the hub checked over the approval's bytes.
+    /// The passkey assertion checked over the approval's bytes: in v2, the
+    /// whole of its signature.
     pub passkey: Option<PasskeyProof>,
     pub at: u64,
 }
 
 impl StoredApproval {
+    /// Its format: v2 (DK4) when it names no device and holds no device
+    /// signature, else v1.
+    pub fn v(&self) -> u8 {
+        if self.device.is_empty() && self.sig.is_empty() { V2 } else { V1 }
+    }
+
     /// The signed object it was made from.
     pub fn signed(&self) -> Approval {
         Approval {
@@ -62,6 +74,7 @@ impl StoredApproval {
             expires: self.expires,
             by: self.device.clone(),
             sig: self.sig.clone(),
+            v: self.v(),
         }
     }
 }
@@ -125,7 +138,7 @@ impl Db {
     }
 
     /// Record a verified approval (or deny) of its deploy, as its account,
-    /// with the signing device's name then: the deploy's event and the
+    /// with the signing device's name then (v1; empty for a v2): the deploy's event and the
     /// approval's row, in one transaction, or neither. Refused as M217's
     /// `record_approval` refuses (the deploy's state, its plan or log, the
     /// stale rule).

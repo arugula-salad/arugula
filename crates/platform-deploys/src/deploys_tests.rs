@@ -1,7 +1,8 @@
-//! Deploys and their approval through the platform's routes (M218): only a
-//! project owner's device signs one in, an agent never does (on its owner's
-//! own machine too, aru-091), always confirmed with a passkey the hub
-//! checks, and a stale deploy is refused. The hub is chat's [`TestHub`],
+//! Deploys and their approval through the platform's routes (M218, DK4):
+//! only a project owner's passkey approves one (v2: an assertion over its
+//! bytes, checked against the account's published passkey log), whatever
+//! devices they have; an agent never does (on its owner's own machine too,
+//! aru-091); and a stale deploy is refused. The hub is chat's [`TestHub`],
 //! which keeps each account's devices and passkeys as the test says.
 
 // Also the feature crates' test harness (#314, the `testing` feature): its
@@ -29,17 +30,17 @@ use crate::{
         projects::{DEPLOYS_PLAN, ISSUES_WRITE},
         sql::Sql as _,
     },
-    deploys::{AGENT, NOT_A_DEVICE, NOT_AN_OWNER, OTHER_OPERATION, PASSKEY, STALE},
+    deploys::{AGENT, NOT_A_DEVICE, NOT_AN_OWNER, OLD_APPROVAL, OTHER_OPERATION, PASSKEY, STALE},
     grants::AGENT_UNGRANTED,
     hub::DeviceTrust,
 };
 
 /// An account's devices: a phone (its root), a CLI on its machine, and a
-/// browser it removed.
+/// browser it removed; and its passkey, `pk-<account>`. Since DK4 only the
+/// passkey approves: the devices are there to show they play no part.
 pub struct Devices {
     pub phone: DeviceKeys,
     cli: DeviceKeys,
-    removed: DeviceKeys,
 }
 
 pub fn devices(hub: &TestHub, account: &str) -> Devices {
@@ -70,7 +71,7 @@ pub fn devices(hub: &TestHub, account: &str) -> Devices {
             legacy_app_children: vec![],
         },
     );
-    Devices { phone, cli, removed }
+    Devices { phone, cli }
 }
 
 /// A version of team t's roster, signed by `by`.
@@ -213,41 +214,63 @@ fn assertion(body: &str, pk: &Pk) -> Value {
     })
 }
 
-/// `who`'s `keys` signing `decision` on deploy `d` whose operation hash is
-/// `op`, good for an hour, confirmed with `who`'s passkey: the body the
-/// approve and deny routes take.
-pub fn signed(keys: &DeviceKeys, who: &str, d: &str, op: &str, decision: Decision) -> Value {
-    signed_until(keys, who, d, op, decision, now_ms() + 3_600_000)
+/// `who`'s passkey's assertion over `body`, as the shared crate takes it.
+pub fn passkey_assertion(who: &str, body: &str) -> arugula_e2e::passkey::Assertion {
+    serde_json::from_value(assertion(body, &Pk { of: who, challenge: None, flags: 0x05 })).unwrap()
 }
 
-pub fn signed_until(keys: &DeviceKeys, who: &str, d: &str, op: &str, decision: Decision, expires: u64) -> Value {
-    signed_with(keys, who, d, op, decision, expires, Some(&Pk { of: who, challenge: None, flags: 0x05 }))
+/// `who`'s v2 approval (DK4) of `decision` on deploy `d` whose operation
+/// hash is `op`, good for an hour, confirmed with `who`'s passkey: the body
+/// the approve and deny routes take.
+pub fn signed(who: &str, d: &str, op: &str, decision: Decision) -> Value {
+    signed_until(who, d, op, decision, now_ms() + 3_600_000)
 }
 
-fn signed_with(
-    keys: &DeviceKeys,
-    who: &str,
-    d: &str,
-    op: &str,
-    decision: Decision,
-    expires: u64,
-    pk: Option<&Pk>,
-) -> Value {
-    let mut a = Approval {
+pub fn signed_until(who: &str, d: &str, op: &str, decision: Decision, expires: u64) -> Value {
+    signed_with(who, d, op, decision, expires, Some(&Pk { of: who, challenge: None, flags: 0x05 }))
+}
+
+/// The v2 approval's bytes for the route's body, and its assertion by `pk`.
+fn signed_with(who: &str, d: &str, op: &str, decision: Decision, expires: u64, pk: Option<&Pk>) -> Value {
+    let a = v2(who, d, op, decision, expires);
+    let mut v = json!({ "op": a.op, "expires": a.expires });
+    if let Some(pk) = pk {
+        v["passkey"] = assertion(&a.body(), pk);
+    }
+    v
+}
+
+fn v2(who: &str, d: &str, op: &str, decision: Decision, expires: u64) -> Approval {
+    Approval {
         deploy: d.into(),
         op: op.into(),
         account: who.into(),
         decision,
         expires,
+        by: String::new(),
+        sig: String::new(),
+        v: arugula_e2e::deploy::V2,
+    }
+}
+
+/// What a page from before DK4 sent: a v1 approval, signed by `keys`, with
+/// `who`'s passkey over its bytes.
+fn signed_v1(keys: &DeviceKeys, who: &str, d: &str, op: &str, decision: Decision) -> Value {
+    let mut a = Approval {
+        deploy: d.into(),
+        op: op.into(),
+        account: who.into(),
+        decision,
+        expires: now_ms() + 3_600_000,
         by: keys.id(),
         sig: String::new(),
+        v: arugula_e2e::deploy::V1,
     };
     a.sig = hex::encode(keys.signature(a.body().as_bytes()));
-    let mut v = json!({ "op": a.op, "expires": a.expires, "by": a.by, "sig": a.sig });
-    if let Some(pk) = pk {
-        v["passkey"] = assertion(&a.body(), pk);
-    }
-    v
+    json!({
+        "op": a.op, "expires": a.expires, "by": a.by, "sig": a.sig,
+        "passkey": assertion(&a.body(), &Pk { of: who, challenge: None, flags: 0x05 }),
+    })
 }
 
 /// t's environment `production`, made by a, its owner.
@@ -281,15 +304,16 @@ async fn state(base: &str, id: &str) -> Value {
     call(base, "a", "GET", &format!("/api/deploys/{id}"), None).await.1["state"].clone()
 }
 
-/// An editor plans and asks; the owner's phone approves, with a signature
-/// over the deploy's operation that the log keeps and anyone can check.
-/// The owners got a push saying where it's going and what. Nobody else
+/// An editor plans and asks; the owner approves with their passkey (v2,
+/// DK4), an assertion over the approval's bytes that the log keeps and
+/// anyone can check against the account's published passkey log. The
+/// owners got a push saying where it's going and what. Nobody else
 /// approves: an editor, a viewer, or someone outside the team.
 #[tokio::test]
-async fn an_owners_phone_approves_and_the_log_keeps_its_signature() {
+async fn an_owners_passkey_approves_and_the_log_keeps_its_assertion() {
     let (hub, _app, base, t, _) = seeded().await;
-    let a = devices(&hub, "a");
-    let b = devices(&hub, "b");
+    devices(&hub, "a");
+    devices(&hub, "b");
     let env = production(&base, &t).await;
     let (st, v) = call(
         &base,
@@ -361,13 +385,13 @@ async fn an_owners_phone_approves_and_the_log_keeps_its_signature() {
     assert_eq!(push.1["title"], json!("Approve a deploy to production?"));
     assert!(hub.pushes().iter().all(|(to, _, _)| to != "b"));
 
-    for (who, keys, reason) in [("b", &b.phone, NOT_AN_OWNER), ("x", &a.phone, NOT_AN_OWNER)] {
+    for (who, reason) in [("b", NOT_AN_OWNER), ("x", NOT_AN_OWNER)] {
         let (st, v) = call(
             &base,
             who,
             "POST",
             &format!("/api/deploys/{id}/approve"),
-            Some(signed(keys, who, &id, &op, Decision::Once)),
+            Some(signed(who, &id, &op, Decision::Once)),
         )
         .await;
         assert_eq!((st, v["reason"].as_str()), (403, Some(reason)), "{who}: {v}");
@@ -375,20 +399,17 @@ async fn an_owners_phone_approves_and_the_log_keeps_its_signature() {
 
     let (st, d) = call(&base, "a", "GET", &format!("/api/deploys/{id}"), None).await;
     assert_eq!((st, &d["may_approve"]), (200, &json!(true)), "{d}");
-    let (st, d) = call(
-        &base,
-        "a",
-        "POST",
-        &format!("/api/deploys/{id}/approve"),
-        Some(signed(&a.phone, "a", &id, &op, Decision::Once)),
-    )
-    .await;
+    let (st, d) =
+        call(&base, "a", "POST", &format!("/api/deploys/{id}/approve"), Some(signed("a", &id, &op, Decision::Once)))
+            .await;
     assert_eq!((st, &d["state"]), (200, &json!("approved")), "{d}");
     let approval = &d["approvals"][0];
     assert_eq!(
-        (&approval["decision"], &approval["device_name"], &approval["device"]),
-        (&json!("once"), &json!("Pixel"), &json!(a.phone.id()))
+        (&approval["v"], &approval["decision"], &approval["device"], &approval["sig"], &approval["passkey"]["id"]),
+        (&json!(2), &json!("once"), &json!(""), &json!(""), &json!("pk-a")),
+        "no device signs it: {approval}"
     );
+    assert!(approval["body"].as_str().unwrap().starts_with("arugula deploy approval v2\n"), "{approval}");
     assert!(approval["id"].as_str().unwrap().starts_with("apv_"));
     assert_eq!(
         d["events"].as_array().unwrap().iter().map(|e| e["kind"].as_str().unwrap()).collect::<Vec<_>>(),
@@ -397,50 +418,49 @@ async fn an_owners_phone_approves_and_the_log_keeps_its_signature() {
     assert_eq!(d["log"], json!({ "verified": 3 }));
 
     // The log alone is enough to check it: the event's detail holds the
-    // signed approval, which verifies with the phone's public key.
+    // approval and its passkey's assertion, which checks out against a's
+    // passkey log as the hub publishes it, at the event's time.
     let event = _app.db.deploy_history(&id).unwrap().pop().unwrap();
     let detail = event.detail_json().unwrap();
-    let from_log = Approval {
-        deploy: event.deploy.clone(),
-        op: detail["op"].as_str().unwrap().into(),
-        account: event.actor.strip_prefix("person ").unwrap().into(),
-        decision: Decision::Once,
-        expires: detail["expires"].as_u64().unwrap(),
-        by: detail["device"].as_str().unwrap().into(),
-        sig: detail["signature"].as_str().unwrap().into(),
-    };
-    assert!(from_log.signed_by(&hex::encode(a.phone.sign_public())));
+    assert_eq!((detail["v"].as_u64(), detail.get("device"), detail.get("signature")), (Some(2), None, None));
+    let from_log = v2(
+        event.actor.strip_prefix("person ").unwrap(),
+        &event.deploy,
+        detail["op"].as_str().unwrap(),
+        Decision::Once,
+        detail["expires"].as_u64().unwrap(),
+    );
+    let assertion: arugula_e2e::passkey::Assertion = serde_json::from_value(json!({
+        "id": detail["passkey"]["id"], "clientDataJSON": detail["passkey"]["client_data_json"],
+        "authenticatorData": detail["passkey"]["authenticator_data"], "signature": detail["passkey"]["signature"],
+    }))
+    .unwrap();
+    use crate::HubPort as _;
+    let log = hub.passkey_log("a").await.unwrap();
+    let origins = arugula_e2e::passkey::origins_of_sites(["https://control.example"]);
+    assert!(from_log.passkey_checks(&assertion, &log, event.at, &origins).is_ok());
     assert_eq!(event.actor, "person a");
 
     // Once is once: it isn't waiting any more.
-    let (st, _) = call(
-        &base,
-        "a",
-        "POST",
-        &format!("/api/deploys/{id}/approve"),
-        Some(signed(&a.phone, "a", &id, &op, Decision::Once)),
-    )
-    .await;
+    let (st, _) =
+        call(&base, "a", "POST", &format!("/api/deploys/{id}/approve"), Some(signed("a", &id, &op, Decision::Once)))
+            .await;
     assert_eq!(st, 409);
 
     // And a deny is signed the same way.
     let (id2, op2) = asked(&base, "a", &t, &env, "cafef00d").await;
-    let (st, d) = call(
-        &base,
-        "a",
-        "POST",
-        &format!("/api/deploys/{id2}/deny"),
-        Some(signed(&a.phone, "a", &id2, &op2, Decision::Deny)),
-    )
-    .await;
+    let (st, d) =
+        call(&base, "a", "POST", &format!("/api/deploys/{id2}/deny"), Some(signed("a", &id2, &op2, Decision::Deny)))
+            .await;
     assert_eq!((st, &d["state"], &d["approvals"][0]["decision"]), (200, &json!("denied"), &json!("deny")), "{d}");
 }
 
 /// Agents plan and ask, and never approve or deny: not a's agent on geek,
-/// a's own machine, with a's phone's real signature in hand; not a's CLI
-/// login; not a's CLI device's key. Neither does a removed device, a
-/// signature over another deploy or another operation, or an expired one.
-/// The deploy waits through all of it, then a's phone approves it.
+/// a's own machine, with a's real passkey assertion in hand; not a's CLI
+/// login. There's no machine route that approves. Neither does an old
+/// (v1) approval with a device's signature, an assertion over another
+/// deploy, decision, account or operation, or an expired one. The deploy
+/// waits through all of it, then a's passkey approves it.
 #[tokio::test]
 async fn an_agent_on_the_owners_own_machine_never_approves() {
     let (hub, app, base, t, _) = seeded().await;
@@ -479,11 +499,12 @@ async fn an_agent_on_the_owners_own_machine_never_approves() {
         && m["deploy"] == json!(id)
         && m["body"].as_str().unwrap().contains("'s agent on geek-box")));
 
-    let good = signed(&a.phone, "a", &id, &op, Decision::Once);
+    let good = signed("a", &id, &op, Decision::Once);
     let approve = format!("/api/deploys/{id}/approve");
     let deny = format!("/api/deploys/{id}/deny");
 
-    // The agent, with the owner's real signature: refused as an agent.
+    // The agent, with the owner's real passkey assertion: refused as an
+    // agent.
     for path in [&approve, &deny] {
         let (st, v) = geek(&base, "POST", path, Some(good.clone())).await;
         assert_eq!((st, v["reason"].as_str()), (403, Some(AGENT)), "{path}: {v}");
@@ -493,30 +514,26 @@ async fn an_agent_on_the_owners_own_machine_never_approves() {
         let (st, _) = geek(&base, "POST", &path, Some(good.clone())).await;
         assert!(st == 404 || st == 405, "{path}: {st}");
     }
-    // a's CLI login (what an agent on geek could use), even with the phone's
-    // signature: not a device signature.
+    // a's CLI login (what an agent on geek could use), even with a's real
+    // passkey assertion: not a browser's session.
     let cli = ("x-test-cli", &*format!("a {}", a.cli.id()));
     let (st, v) = as_header(&cli_base, cli, "POST", &approve, Some(good.clone())).await;
     assert_eq!((st, v["reason"].as_str()), (403, Some(NOT_A_DEVICE)), "{v}");
-    // The CLI device's own key (a file on geek), from a's browser session.
-    let (st, v) = call(&base, "a", "POST", &approve, Some(signed(&a.cli, "a", &id, &op, Decision::Once))).await;
-    assert_eq!((st, v["reason"].as_str()), (403, Some(NOT_A_DEVICE)), "a CLI's key: {v}");
-    // A device a removed.
-    let (st, v) = call(&base, "a", "POST", &approve, Some(signed(&a.removed, "a", &id, &op, Decision::Once))).await;
-    assert_eq!((st, v["reason"].as_str()), (403, Some(NOT_A_DEVICE)), "a removed device: {v}");
-    // A key nobody certified.
-    let (st, v) =
-        call(&base, "a", "POST", &approve, Some(signed(&DeviceKeys::generate(), "a", &id, &op, Decision::Once))).await;
-    assert_eq!((st, v["reason"].as_str()), (403, Some(NOT_A_DEVICE)), "{v}");
-    // The phone's signature over another deploy, or as a deny, or for
-    // another account, doesn't verify here.
+    // A page from before DK4: a v1 with a device's signature, even the
+    // phone's, with the passkey over its bytes.
+    for keys in [&a.phone, &a.cli] {
+        let (st, v) = call(&base, "a", "POST", &approve, Some(signed_v1(keys, "a", &id, &op, Decision::Once))).await;
+        assert_eq!((st, v["reason"].as_str()), (400, Some(OLD_APPROVAL)), "a v1: {v}");
+    }
+    // a's passkey over another deploy, or as a deny, or b's passkey over
+    // b's account's bytes: not this approval's.
     for wrong in [
-        signed(&a.phone, "a", "dep_other", &op, Decision::Once),
-        signed(&a.phone, "a", &id, &op, Decision::Deny),
-        signed(&a.phone, "b", &id, &op, Decision::Once),
+        signed("a", "dep_other", &op, Decision::Once),
+        signed("a", &id, &op, Decision::Deny),
+        signed("b", &id, &op, Decision::Once),
     ] {
         let (st, v) = call(&base, "a", "POST", &approve, Some(wrong)).await;
-        assert_eq!((st, v["reason"].as_str()), (403, Some("bad_signature")), "{v}");
+        assert_eq!((st, v["reason"].as_str()), (403, Some(PASSKEY)), "{v}");
     }
     // Over another operation (another plan): a good signature, the wrong bytes.
     let other = Operation {
@@ -529,14 +546,12 @@ async fn an_agent_on_the_owners_own_machine_never_approves() {
         source_where: "acme/app".into(),
         planned: "00".repeat(32),
     };
-    let (st, v) =
-        call(&base, "a", "POST", &approve, Some(signed(&a.phone, "a", &id, &other.hash(), Decision::Once))).await;
+    let (st, v) = call(&base, "a", "POST", &approve, Some(signed("a", &id, &other.hash(), Decision::Once))).await;
     assert_eq!((st, v["reason"].as_str()), (409, Some(OTHER_OPERATION)), "{v}");
     // Expired, or good for too long.
     for expires in [now_ms() - 1, now_ms() + 8 * 24 * 3_600_000] {
         let (st, _) =
-            call(&base, "a", "POST", &approve, Some(signed_until(&a.phone, "a", &id, &op, Decision::Once, expires)))
-                .await;
+            call(&base, "a", "POST", &approve, Some(signed_until("a", &id, &op, Decision::Once, expires))).await;
         assert_eq!(st, 400);
     }
     assert_eq!(state(&base, &id).await, json!("pending"), "it waited through all of that");
@@ -550,12 +565,12 @@ async fn an_agent_on_the_owners_own_machine_never_approves() {
 }
 
 /// Another deploy applied to the environment after this one was planned:
-/// a good signature from the owner's phone is refused as stale, and the
+/// a good approval with the owner's passkey is refused as stale, and the
 /// page isn't offered approval for it.
 #[tokio::test]
-async fn a_stale_deploy_is_refused_even_with_a_good_signature() {
+async fn a_stale_deploy_is_refused_even_with_a_good_approval() {
     let (hub, app, base, t, _) = seeded().await;
-    let a = devices(&hub, "a");
+    devices(&hub, "a");
     let env = production(&base, &t).await;
     let (first, first_op) = asked(&base, "a", &t, &env, "aaaa1111").await;
     // Planned, not asked for: asking would stale the first (#334). The
@@ -569,7 +584,7 @@ async fn a_stale_deploy_is_refused_even_with_a_good_signature() {
         "a",
         "POST",
         &format!("/api/deploys/{first}/approve"),
-        Some(signed(&a.phone, "a", &first, &first_op, Decision::Once)),
+        Some(signed("a", &first, &first_op, Decision::Once)),
     )
     .await;
     assert_eq!(st, 200);
@@ -588,7 +603,7 @@ async fn a_stale_deploy_is_refused_even_with_a_good_signature() {
         "a",
         "POST",
         &format!("/api/deploys/{second}/approve"),
-        Some(signed(&a.phone, "a", &second, &second_op, Decision::Once)),
+        Some(signed("a", &second, &second_op, Decision::Once)),
     )
     .await;
     assert_eq!((st, v["reason"].as_str()), (409, Some(STALE)), "{v}");
@@ -605,7 +620,7 @@ async fn a_stale_deploy_is_refused_even_with_a_good_signature() {
 #[tokio::test]
 async fn a_superseded_deploy_says_why_and_is_not_approved() {
     let (hub, app, base, t, _) = seeded().await;
-    let a = devices(&hub, "a");
+    devices(&hub, "a");
     let env = production(&base, &t).await;
     let (old, old_op) = asked(&base, "a", &t, &env, "aaaa1111").await;
     let (new, _) = asked(&base, "a", &t, &env, "bbbb2222").await;
@@ -621,7 +636,7 @@ async fn a_superseded_deploy_says_why_and_is_not_approved() {
         "a",
         "POST",
         &format!("/api/deploys/{old}/approve"),
-        Some(signed(&a.phone, "a", &old, &old_op, Decision::Once)),
+        Some(signed("a", &old, &old_op, Decision::Once)),
     )
     .await;
     assert_eq!(st, 409, "{v}");
@@ -637,29 +652,28 @@ async fn a_superseded_deploy_says_why_and_is_not_approved() {
 #[tokio::test]
 async fn a_passkey_removed_from_the_log_no_longer_approves() {
     let (hub, _app, base, t, _) = seeded().await;
-    let a = devices(&hub, "a");
+    devices(&hub, "a");
     devices(&hub, "b");
     let env = production(&base, &t).await;
     let (id, op) = asked(&base, "a", &t, &env, "deadbeef").await;
     hub.passkey_removed("pk-a", 1);
     let approve = format!("/api/deploys/{id}/approve");
-    let (st, v) = call(&base, "a", "POST", &approve, Some(signed(&a.phone, "a", &id, &op, Decision::Once))).await;
+    let (st, v) = call(&base, "a", "POST", &approve, Some(signed("a", &id, &op, Decision::Once))).await;
     assert_eq!((st, v["reason"].as_str()), (403, Some(PASSKEY)), "{v}");
     assert!(v["error"].as_str().is_some_and(|e| e.contains("wasn't one of the account's then")), "{v}");
     assert_eq!(hub.calls_of("verify_passkey"), 0, "not asked for a verdict");
     assert_eq!(state(&base, &id).await, json!("pending"));
 }
 
-/// Every approval and deny carries a passkey's assertion over its bytes,
-/// checked against the account's published passkey log: none, one over another challenge, another
-/// account's passkey, or one without user verification are refused, even
-/// with the owner's phone's real signature. What a browser's stored key
-/// signs alone (an automated browser, its profile on disk) never counts.
-/// The assertion is kept with the approval and in its event.
+/// Every approval and deny is a passkey's assertion over its bytes, checked
+/// against the account's published passkey log: none, one over another
+/// challenge, another account's passkey, or one without user verification
+/// are refused. The assertion, with its credential id, is kept with the
+/// approval and in its event.
 #[tokio::test]
 async fn every_approval_needs_the_owners_passkey() {
     let (hub, app, base, t, _) = seeded().await;
-    let a = devices(&hub, "a");
+    devices(&hub, "a");
     devices(&hub, "b");
     let env = production(&base, &t).await;
     let (id, op) = asked(&base, "a", &t, &env, "deadbeef").await;
@@ -668,30 +682,26 @@ async fn every_approval_needs_the_owners_passkey() {
     let deny = format!("/api/deploys/{id}/deny");
     let pk = |of, challenge, flags| Pk { of, challenge, flags };
     for (why, body) in [
-        ("no passkey", signed_with(&a.phone, "a", &id, &op, Decision::Once, expires, None)),
+        ("no passkey", signed_with("a", &id, &op, Decision::Once, expires, None)),
         (
             "another challenge",
-            signed_with(&a.phone, "a", &id, &op, Decision::Once, expires, Some(&pk("a", Some("bm90IHRoaXM"), 0x05))),
+            signed_with("a", &id, &op, Decision::Once, expires, Some(&pk("a", Some("bm90IHRoaXM"), 0x05))),
         ),
-        ("b's passkey", signed_with(&a.phone, "a", &id, &op, Decision::Once, expires, Some(&pk("b", None, 0x05)))),
-        (
-            "no user verification",
-            signed_with(&a.phone, "a", &id, &op, Decision::Once, expires, Some(&pk("a", None, 0x01))),
-        ),
+        ("b's passkey", signed_with("a", &id, &op, Decision::Once, expires, Some(&pk("b", None, 0x05)))),
+        ("no user verification", signed_with("a", &id, &op, Decision::Once, expires, Some(&pk("a", None, 0x01)))),
     ] {
         let (st, v) = call(&base, "a", "POST", &approve, Some(body)).await;
         assert_eq!((st, v["reason"].as_str()), (403, Some(PASSKEY)), "{why}: {v}");
     }
     let (st, v) =
-        call(&base, "a", "POST", &deny, Some(signed_with(&a.phone, "a", &id, &op, Decision::Deny, expires, None)))
-            .await;
+        call(&base, "a", "POST", &deny, Some(signed_with("a", &id, &op, Decision::Deny, expires, None))).await;
     assert_eq!((st, v["reason"].as_str()), (403, Some(PASSKEY)), "a deny too: {v}");
     assert_eq!(state(&base, &id).await, json!("pending"));
     assert!(app.db.deploy_approvals(&id).unwrap().is_empty());
     assert!(hub.calls_of("passkey_log") >= 3, "checked against the hub's published log (DK3)");
     assert_eq!(hub.calls_of("verify_passkey"), 0, "not asked for a verdict");
 
-    let (st, d) = call(&base, "a", "POST", &approve, Some(signed(&a.phone, "a", &id, &op, Decision::Once))).await;
+    let (st, d) = call(&base, "a", "POST", &approve, Some(signed("a", &id, &op, Decision::Once))).await;
     assert_eq!(
         (st, &d["state"], &d["approvals"][0]["passkey"]["id"]),
         (200, &json!("approved"), &json!("pk-a")),
@@ -703,231 +713,162 @@ async fn every_approval_needs_the_owners_passkey() {
     assert!(detail["passkey"]["client_data_json"].as_str().is_some_and(|c| !c.is_empty()));
 }
 
-/// A device counts only if browsers certified it all the way to the
-/// account's root: a browser certificate a CLI device signed (what an agent
-/// holding the owner's CLI key could mint), a chain rooted in a CLI, the
-/// desktop app's window or a browser it let in never approves, signature and
-/// passkey good. A recovery code may be a link on the way, never the signer.
+/// DK4 (aru-126): no device plays a part. An owner whose every device came
+/// in through a CLI's or the app's certificate (a CLI-rooted chain, a
+/// browser a CLI certified, the app's window and what it let in), and whose
+/// owner role a CLI's key gave, approves with their passkey; the platform
+/// doesn't ask the hub for devices or rosters. The owner role is read now:
+/// one made an editor since doesn't approve. A personal project's owner is
+/// its account.
 #[tokio::test]
-async fn a_device_a_cli_certified_never_approves() {
-    let (hub, _app, base, t, _) = seeded().await;
-    let a = devices(&hub, "a");
-    let env = production(&base, &t).await;
-    let (id, op) = asked(&base, "a", &t, &env, "deadbeef").await;
-    let approve = format!("/api/deploys/{id}/approve");
-    let cert = |keys: &DeviceKeys, kind, by: &DeviceKeys| {
-        let mut c = Cert::new(keys, "a", kind, "made up");
-        c.sign_with(by);
-        c
-    };
-
-    // A browser certificate a's CLI signed, under a's real (browser) root.
-    let minted = DeviceKeys::generate();
-    let mut root = Cert::new(&a.phone, "a", Kind::Browser, "Pixel");
-    root.sign_with(&a.phone);
-    let certs = vec![root.clone(), cert(&a.cli, Kind::Cli, &a.phone), cert(&minted, Kind::Browser, &a.cli)];
-    hub.devices("a", DeviceTrust { root: a.phone.id(), certs, revocations: vec![], legacy_app_children: vec![] });
-    let (st, v) = call(&base, "a", "POST", &approve, Some(signed(&minted, "a", &id, &op, Decision::Once))).await;
-    assert_eq!((st, v["reason"].as_str()), (403, Some(NOT_A_DEVICE)), "a CLI's browser: {v}");
-
-    // A chain whose root is a CLI.
-    let cli_root = DeviceKeys::generate();
-    let mut croot = Cert::new(&cli_root, "a", Kind::Cli, "the first CLI");
-    croot.sign_with(&cli_root);
-    let browser = DeviceKeys::generate();
-    let certs = vec![croot, cert(&browser, Kind::Browser, &cli_root)];
-    hub.devices("a", DeviceTrust { root: cli_root.id(), certs, revocations: vec![], legacy_app_children: vec![] });
-    let (st, v) = call(&base, "a", "POST", &approve, Some(signed(&browser, "a", &id, &op, Decision::Once))).await;
-    assert_eq!((st, v["reason"].as_str()), (403, Some(NOT_A_DEVICE)), "a CLI-rooted chain: {v}");
-    assert!(v["error"].as_str().unwrap().contains("signing in with a passkey"), "says what to do: {v}");
-
-    // The desktop app's window from before it had a kind ("Arugula app on
-    // …", a browser certificate), and a browser it let in.
-    let app_window = DeviceKeys::generate();
-    let mut old_app = Cert::new(&app_window, "a", Kind::Browser, "Arugula app on jake-air");
-    old_app.sign_with(&a.phone);
-    let let_in = DeviceKeys::generate();
-    let certs = vec![root.clone(), old_app, cert(&let_in, Kind::Browser, &app_window)];
-    hub.devices("a", DeviceTrust { root: a.phone.id(), certs, revocations: vec![], legacy_app_children: vec![] });
-    for (who, keys) in [("the app's window", &app_window), ("a browser the app let in", &let_in)] {
-        let (st, v) = call(&base, "a", "POST", &approve, Some(signed(keys, "a", &id, &op, Decision::Once))).await;
-        assert_eq!((st, v["reason"].as_str()), (403, Some(NOT_A_DEVICE)), "{who}: {v}");
-    }
-    assert_eq!(state(&base, &id).await, json!("pending"));
-
-    // A browser a recovery code let in after every other was lost counts:
-    // the code is the person's own, on paper, and only a browser made it.
-    let code = DeviceKeys::generate();
-    let recovered = DeviceKeys::generate();
-    let certs = vec![root, cert(&code, Kind::Recovery, &a.phone), cert(&recovered, Kind::Browser, &code)];
-    hub.devices("a", DeviceTrust { root: a.phone.id(), certs, revocations: vec![], legacy_app_children: vec![] });
-    let (st, v) = call(&base, "a", "POST", &approve, Some(signed(&code, "a", &id, &op, Decision::Once))).await;
-    assert_eq!((st, v["reason"].as_str()), (403, Some(NOT_A_DEVICE)), "a recovery code itself never signs: {v}");
-    let (st, d) = call(&base, "a", "POST", &approve, Some(signed(&recovered, "a", &id, &op, Decision::Once))).await;
-    assert_eq!((st, &d["state"]), (200, &json!("approved")), "a recovered browser: {d}");
-}
-
-/// A browser the desktop app's window (from before it had a kind)
-/// approved back then, as the hub says (`legacy_app_children`), approves:
-/// the window counts just above it. So does a team owner whose role such
-/// a browser gave. Not when the hub doesn't say so, and never the window
-/// itself, nor what it certifies now.
-#[tokio::test]
-async fn a_browser_a_grandfathered_app_window_let_in_approves() {
-    let (hub, _app, base, t, _) = seeded().await;
-    let a = devices(&hub, "a");
-    let b = devices(&hub, "b");
-    let env = production(&base, &t).await;
-    let (id, op) = asked(&base, "a", &t, &env, "deadbeef").await;
-    let approve = format!("/api/deploys/{id}/approve");
-    let mut root = Cert::new(&a.phone, "a", Kind::Browser, "Pixel");
-    root.sign_with(&a.phone);
-    let window = DeviceKeys::generate();
-    let mut old_app = Cert::new(&window, "a", Kind::Browser, "Arugula app on jake-air");
-    old_app.sign_with(&a.phone);
-    let firefox = DeviceKeys::generate();
-    let mut ff = Cert::new(&firefox, "a", Kind::Browser, "Firefox on Mac");
-    ff.sign_with(&window);
-    let edge = DeviceKeys::generate();
-    let mut ed = Cert::new(&edge, "a", Kind::Browser, "Edge");
-    ed.sign_with(&window);
-    let certs = vec![root, old_app, ff, ed];
-    let trust = |legacy_app_children: Vec<String>| DeviceTrust {
-        root: a.phone.id(),
-        certs: certs.clone(),
-        revocations: vec![],
-        legacy_app_children,
-    };
-
-    // The hub doesn't say so (stored or approved after the cutoff).
-    hub.devices("a", trust(vec![]));
-    let (st, v) = call(&base, "a", "POST", &approve, Some(signed(&firefox, "a", &id, &op, Decision::Once))).await;
-    assert_eq!((st, v["reason"].as_str()), (403, Some(NOT_A_DEVICE)), "not grandfathered: {v}");
-
-    // It does: still never the window itself, nor what it certifies now.
-    hub.devices("a", trust(vec![firefox.id()]));
-    for (who, keys) in [("the window itself", &window), ("what it certifies now", &edge)] {
-        let (st, v) = call(&base, "a", "POST", &approve, Some(signed(keys, "a", &id, &op, Decision::Once))).await;
-        assert_eq!((st, v["reason"].as_str()), (403, Some(NOT_A_DEVICE)), "{who}: {v}");
-    }
-    assert_eq!(state(&base, &id).await, json!("pending"));
-
-    // A team's owner made by a browser b's window let in: b's roster
-    // version 2 makes a an owner, signed by b's Firefox.
-    let (ar, br) = (a.phone.id(), b.phone.id());
-    let mut b_root = Cert::new(&b.phone, "b", Kind::Browser, "Pixel");
-    b_root.sign_with(&b.phone);
-    let b_window = DeviceKeys::generate();
-    let mut b_app = Cert::new(&b_window, "b", Kind::Browser, "illogical app");
-    b_app.sign_with(&b.phone);
-    let b_firefox = DeviceKeys::generate();
-    let mut b_ff = Cert::new(&b_firefox, "b", Kind::Browser, "Firefox");
-    b_ff.sign_with(&b_window);
-    let b_trust = |legacy_app_children: Vec<String>| DeviceTrust {
-        root: br.clone(),
-        certs: vec![b_root.clone(), b_app.clone(), b_ff.clone()],
-        revocations: vec![],
-        legacy_app_children,
-    };
-    let v1 = roster(1, &[("b", &br, TeamRole::Owner), ("a", &ar, TeamRole::Editor)], &b.phone);
-    let both = [("b", br.as_str(), TeamRole::Owner), ("a", ar.as_str(), TeamRole::Owner)];
-    hub.rosters("t", vec![v1, roster(2, &both, &b_firefox)]);
-    hub.devices("b", b_trust(vec![]));
-    let (st, v) = call(&base, "a", "POST", &approve, Some(signed(&firefox, "a", &id, &op, Decision::Once))).await;
-    assert_eq!((st, v["reason"].as_str()), (403, Some(NOT_AN_OWNER)), "b's not grandfathered: {v}");
-    hub.devices("b", b_trust(vec![b_firefox.id()]));
-    let (st, d) = call(&base, "a", "POST", &approve, Some(signed(&firefox, "a", &id, &op, Decision::Once))).await;
-    assert_eq!((st, &d["state"]), (200, &json!("approved")), "both grandfathered: {d}");
-}
-
-/// root → window W → browser X → browser Y, X a child the hub lists: X
-/// removed since doesn't take Y with it, so Y approves; Y removed doesn't.
-#[tokio::test]
-async fn a_browser_removed_on_the_way_keeps_what_it_approved() {
-    let (hub, _app, base, t, _) = seeded().await;
-    let a = devices(&hub, "a");
-    let env = production(&base, &t).await;
-    let (id, op) = asked(&base, "a", &t, &env, "deadbeef").await;
-    let approve = format!("/api/deploys/{id}/approve");
-    let mk = |keys: &DeviceKeys, name: &str, by: &DeviceKeys| {
-        let mut c = Cert::new(keys, "a", Kind::Browser, name);
-        c.created = now_ms() - 60_000;
-        c.sign_with(by);
-        c
-    };
-    let (w, x, y) = (DeviceKeys::generate(), DeviceKeys::generate(), DeviceKeys::generate());
-    let certs = vec![
-        mk(&a.phone, "Pixel", &a.phone),
-        mk(&w, "illogical app on geek", &a.phone),
-        mk(&x, "Firefox on Linux", &w),
-        mk(&y, "Firefox on Mac", &x),
-    ];
-    let (x_gone, y_gone) = (Revocation::new("a", &x.id(), &a.phone), Revocation::new("a", &y.id(), &a.phone));
-    let trust = |revocations: Vec<Revocation>| DeviceTrust {
-        root: a.phone.id(),
-        certs: certs.clone(),
-        revocations,
-        legacy_app_children: vec![x.id()],
-    };
-    hub.devices("a", trust(vec![x_gone.clone(), y_gone]));
-    let (st, v) = call(&base, "a", "POST", &approve, Some(signed(&y, "a", &id, &op, Decision::Once))).await;
-    assert_eq!((st, v["reason"].as_str()), (403, Some(NOT_A_DEVICE)), "Y removed: {v}");
-    hub.devices("a", trust(vec![x_gone]));
-    let (st, d) = call(&base, "a", "POST", &approve, Some(signed(&y, "a", &id, &op, Decision::Once))).await;
-    assert_eq!((st, &d["state"]), (200, &json!("approved")), "X removed after it approved Y: {d}");
-}
-
-/// A team's owner approves only if a browser made them an owner: the
-/// roster version that made a an owner signed by b's CLI (or a's own CLI
-/// founding the team) doesn't count, signature and passkey good; the same
-/// version signed by b's phone does. A personal project's owner is its
-/// account, with no roster.
-#[tokio::test]
-async fn an_owner_a_cli_made_never_approves() {
+async fn an_owner_whose_browser_a_cli_certified_approves_with_a_passkey() {
     let (hub, app, base, t, _) = seeded().await;
     let a = devices(&hub, "a");
     let b = devices(&hub, "b");
     let env = production(&base, &t).await;
     let (id, op) = asked(&base, "a", &t, &env, "deadbeef").await;
     let approve = format!("/api/deploys/{id}/approve");
-    let (ar, br) = (a.phone.id(), b.phone.id());
+    let cert = |keys: &DeviceKeys, kind, name: &str, by: &DeviceKeys| {
+        let mut c = Cert::new(keys, "a", kind, name);
+        c.sign_with(by);
+        c
+    };
+    // a's root is a CLI; its browser, a CLI certified it; the app's window
+    // let another in.
+    let cli_root = DeviceKeys::generate();
+    let (browser, window, let_in) = (DeviceKeys::generate(), DeviceKeys::generate(), DeviceKeys::generate());
+    let certs = vec![
+        cert(&cli_root, Kind::Cli, "the first CLI", &cli_root),
+        cert(&browser, Kind::Browser, "Firefox", &cli_root),
+        cert(&window, Kind::App, "Arugula app on jake-air", &browser),
+        cert(&let_in, Kind::Browser, "Safari", &window),
+    ];
+    hub.devices("a", DeviceTrust { root: cli_root.id(), certs, revocations: vec![], legacy_app_children: vec![] });
+    // b's CLI made a an owner of t.
+    let (ar, br) = (cli_root.id(), b.phone.id());
     let v1 = roster(1, &[("b", &br, TeamRole::Owner), ("a", &ar, TeamRole::Editor)], &b.phone);
     let both = [("b", br.as_str(), TeamRole::Owner), ("a", ar.as_str(), TeamRole::Owner)];
+    hub.rosters("t", vec![v1, roster(2, &both, &b.cli)]);
+    let _ = a;
 
-    hub.rosters("t", vec![v1.clone(), roster(2, &both, &b.cli)]);
-    let (st, v) = call(&base, "a", "POST", &approve, Some(signed(&a.phone, "a", &id, &op, Decision::Once))).await;
-    assert_eq!((st, v["reason"].as_str()), (403, Some(NOT_AN_OWNER)), "made an owner by b's CLI: {v}");
-    assert!(v["error"].as_str().unwrap().contains("given by a CLI's or the app's key"), "{v}");
+    // Made an editor since: not an owner now.
+    hub.team("t", &[("a", TeamRole::Editor), ("b", TeamRole::Owner), ("x", TeamRole::Viewer)]);
+    crate::cache::catch_up(&app).await.unwrap();
+    let (st, v) = call(&base, "a", "POST", &approve, Some(signed("a", &id, &op, Decision::Once))).await;
+    assert_eq!((st, v["reason"].as_str()), (403, Some(NOT_AN_OWNER)), "an editor now: {v}");
+    hub.team("t", &[("a", TeamRole::Owner), ("b", TeamRole::Editor), ("x", TeamRole::Viewer)]);
+    crate::cache::catch_up(&app).await.unwrap();
 
-    // a founded the team from its CLI.
-    hub.rosters("t", vec![roster(1, &[("a", ar.as_str(), TeamRole::Owner)], &a.cli)]);
-    let (st, v) = call(&base, "a", "POST", &approve, Some(signed(&a.phone, "a", &id, &op, Decision::Once))).await;
-    assert_eq!((st, v["reason"].as_str()), (403, Some(NOT_AN_OWNER)), "founded from a CLI: {v}");
+    let (st, d) = call(&base, "a", "POST", &approve, Some(signed("a", &id, &op, Decision::Once))).await;
+    assert_eq!((st, &d["state"]), (200, &json!("approved")), "{d}");
+    assert_eq!((hub.calls_of("device_trust"), hub.calls_of("team_rosters")), (0, 0), "no device or roster asked");
 
-    // Signed by someone who wasn't an owner before it.
-    hub.rosters("t", vec![v1.clone(), roster(2, &both, &a.phone)]);
-    let (st, v) = call(&base, "a", "POST", &approve, Some(signed(&a.phone, "a", &id, &op, Decision::Once))).await;
-    assert_eq!((st, v["reason"].as_str()), (403, Some(NOT_AN_OWNER)), "a made itself an owner: {v}");
-    assert_eq!(state(&base, &id).await, json!("pending"));
-
-    hub.rosters("t", vec![v1, roster(2, &both, &b.phone)]);
-    let (st, d) = call(&base, "a", "POST", &approve, Some(signed(&a.phone, "a", &id, &op, Decision::Once))).await;
-    assert_eq!((st, &d["state"]), (200, &json!("approved")), "made an owner by b's phone: {d}");
-
-    // A personal project: its account is its owner, no roster asked.
+    // A personal project: its account is its owner.
     let mine = crate::projects::personal_project(&app, "a").await.unwrap().unwrap();
-    hub.rosters("t", vec![]);
     let env = production(&base, &mine).await;
     let (id, op) = asked(&base, "a", &mine, &env, "cafef00d").await;
-    let (st, d) = call(
-        &base,
-        "a",
-        "POST",
-        &format!("/api/deploys/{id}/approve"),
-        Some(signed(&a.phone, "a", &id, &op, Decision::Once)),
-    )
-    .await;
+    let (st, d) =
+        call(&base, "a", "POST", &format!("/api/deploys/{id}/approve"), Some(signed("a", &id, &op, Decision::Once)))
+            .await;
     assert_eq!((st, &d["state"]), (200, &json!("approved")), "{d}");
+}
+
+/// DK4: an account with no passkey can't approve or deny, whatever devices
+/// it has: neither one that never had one nor one whose every passkey was
+/// removed. The deploy waits.
+#[tokio::test]
+async fn an_account_with_no_passkey_cant_approve() {
+    let (hub, app, base, t, _) = seeded().await;
+    let env = production(&base, &t).await;
+    let (id, op) = asked(&base, "a", &t, &env, "deadbeef").await;
+    // a has no passkey: an assertion from a key the hub never registered.
+    for path in [format!("/api/deploys/{id}/approve"), format!("/api/deploys/{id}/deny")] {
+        let d = if path.ends_with("deny") { Decision::Deny } else { Decision::Once };
+        let (st, v) = call(&base, "a", "POST", &path, Some(signed("a", &id, &op, d))).await;
+        assert_eq!((st, v["reason"].as_str()), (403, Some(PASSKEY)), "{v}");
+        assert!(v["error"].as_str().unwrap().contains("has no passkey"), "{v}");
+    }
+    // a's passkey, removed.
+    devices(&hub, "a");
+    hub.passkey_removed("pk-a", 1);
+    let (st, v) =
+        call(&base, "a", "POST", &format!("/api/deploys/{id}/approve"), Some(signed("a", &id, &op, Decision::Once)))
+            .await;
+    assert_eq!((st, v["reason"].as_str()), (403, Some(PASSKEY)), "{v}");
+    assert_eq!(state(&base, &id).await, json!("pending"));
+    assert!(app.db.deploy_approvals(&id).unwrap().is_empty());
+}
+
+/// History (DK4): an approval recorded before the switch (v1: a device's
+/// signature, with a passkey's assertion beside it) still reads on the
+/// deploy's page as it was made: its v1 bytes, its device's signature over
+/// them, its passkey's assertion, which still checks out against the
+/// account's passkey log at the time it was recorded; and the log's chain
+/// still checks.
+#[tokio::test]
+async fn an_old_v1_approval_still_verifies_on_the_deploy_page() {
+    let (hub, app, base, t, _) = seeded().await;
+    let a = devices(&hub, "a");
+    let env = production(&base, &t).await;
+    let (id, op) = asked(&base, "a", &t, &env, "deadbeef").await;
+    let (_, operation) = app.db.deploy_operation(&id).unwrap().unwrap();
+    let expires = now_ms() + 3_600_000;
+    let v1 = Approval::v1(&a.phone, &id, &operation, "a", Decision::Once, expires);
+    assert_eq!(v1.op, op);
+    let pk = assertion(&v1.body(), &Pk { of: "a", challenge: None, flags: 0x05 });
+    let proof = d::PasskeyProof {
+        id: pk["id"].as_str().unwrap().into(),
+        client_data_json: pk["clientDataJSON"].as_str().unwrap().into(),
+        authenticator_data: pk["authenticatorData"].as_str().unwrap().into(),
+        signature: pk["signature"].as_str().unwrap().into(),
+    };
+    let recorded = VerifiedApproval::unchecked_for_tests(
+        &id,
+        &operation.plan,
+        &operation.planned,
+        &v1.op,
+        "a",
+        &v1.by,
+        d::Decision::Once,
+        expires,
+        &v1.sig,
+    )
+    .with_passkey_for_tests(proof.clone());
+    let at = now_ms();
+    app.db.record_deploy_approval(&recorded, "Pixel", at).unwrap().unwrap();
+
+    let (st, d) = call(&base, "a", "GET", &format!("/api/deploys/{id}"), None).await;
+    assert_eq!(st, 200, "{d}");
+    let shown = &d["approvals"][0];
+    assert_eq!(
+        (&shown["v"], &shown["device"], &shown["device_name"], &shown["passkey"]["id"]),
+        (&json!(1), &json!(a.phone.id()), &json!("Pixel"), &json!("pk-a")),
+        "{shown}"
+    );
+    assert_eq!(shown["body"].as_str().unwrap(), v1.body());
+    assert_eq!(d["log"], json!({ "verified": 3 }), "the chain checks");
+    // Read back, it's the v1 it was: its device's signature holds, and its
+    // passkey's assertion checks out against the log at its time.
+    let stored = app.db.deploy_approvals(&id).unwrap().pop().unwrap();
+    let back = stored.signed();
+    assert_eq!(back, v1);
+    assert!(back.signed_by(&hex::encode(a.phone.sign_public())));
+    use crate::HubPort as _;
+    let log = hub.passkey_log("a").await.unwrap();
+    let origins = arugula_e2e::passkey::origins_of_sites(["https://control.example"]);
+    let assertion = arugula_e2e::passkey::Assertion {
+        id: proof.id,
+        client_data_json: proof.client_data_json,
+        authenticator_data: proof.authenticator_data,
+        signature: proof.signature,
+    };
+    assert!(back.passkey_checks(&assertion, &log, stored.at, &origins).is_ok());
+    // Its event keeps the v1's fields.
+    let detail = app.db.deploy_history(&id).unwrap().pop().unwrap().detail_json().unwrap();
+    assert_eq!(
+        (detail["device"].as_str(), detail["signature"].as_str()),
+        (Some(v1.by.as_str()), Some(v1.sig.as_str()))
+    );
 }
 
 /// Asks are limited per project and per asker (a person, or an agent's
@@ -1040,7 +981,7 @@ fn recorded_only_over_the_operation_and_never_stale() {
     };
     let keys = DeviceKeys::generate();
     let approval = |id: &str, op: &Operation| {
-        let a = Approval::new(&keys, id, op, "a", Decision::Once, now_ms() + 1000);
+        let a = Approval::v1(&keys, id, op, "a", Decision::Once, now_ms() + 1000);
         VerifiedApproval::unchecked_for_tests(
             id,
             &op.plan,
@@ -1299,7 +1240,7 @@ async fn a_deploy_names_its_environment_by_name_too() {
 #[tokio::test]
 async fn a_projects_history_lists_its_deploys_newest_first() {
     let (hub, _app, base, t, _) = seeded().await;
-    let a = devices(&hub, "a");
+    devices(&hub, "a");
     let env = production(&base, &t).await;
     let (st, staging) = call(
         &base,
@@ -1314,7 +1255,7 @@ async fn a_projects_history_lists_its_deploys_newest_first() {
     let tick = || tokio::time::sleep(std::time::Duration::from_millis(3));
     // Denied by a's phone, then one to staging and one still planned.
     let (denied, op) = asked(&base, "b", &t, &env, "deadbeef").await;
-    let deny = Some(signed(&a.phone, "a", &denied, &op, Decision::Deny));
+    let deny = Some(signed("a", &denied, &op, Decision::Deny));
     let (st, v) = call(&base, "a", "POST", &format!("/api/deploys/{denied}/deny"), deny).await;
     assert_eq!((st, &v["state"]), (200, &json!("denied")), "{v}");
     let plan = async |who: &str, env: &str, sha: &str| {

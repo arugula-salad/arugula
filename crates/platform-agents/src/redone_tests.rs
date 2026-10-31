@@ -175,7 +175,7 @@ fn people_are_numeric_github_ids_only() {
 #[tokio::test]
 async fn tenants_become_projects_and_redone_tokens_work_through_the_platform() {
     let (hub, app, base) = platform().await;
-    let a = devices(&hub, "a");
+    devices(&hub, "a");
     let state = std::fs::read(dir().join("state.json")).unwrap();
     let backup = Backup::read(&dir()).unwrap();
 
@@ -284,7 +284,7 @@ async fn tenants_become_projects_and_redone_tokens_work_through_the_platform() {
         let why = refused(&tool(&base, &token, name, json!({ "plan_id": dep_id })).await);
         assert!(why.contains("never approve"), "{name}: {why}");
     }
-    let good = signed(&a.phone, "a", &dep_id, &op, Decision::Once);
+    let good = signed("a", &dep_id, &op, Decision::Once);
     let st = bearer(&base, &token, "POST", &format!("/api/deploys/{dep_id}/approve"), Some(good.clone())).await;
     assert!(matches!(st.status().as_u16(), 401 | 403 | 404), "{}", st.status());
     for other in ["rdn_approve_fern-test-key".to_owned(), raw("tok_new1"), raw("tok_moss1"), raw("tok_ghost1")] {
@@ -381,7 +381,7 @@ async fn redones_tools_work_on_the_platform_and_never_claim_or_approve() {
         crate::infisical::Writer::new(reqwest::Client::new(), &url, "proj-planter-apps", "prod", "id", "s3cret");
     let (hub, app, base) =
         platform_with(crate::infisical::Projection::new(crate::infisical::Mode::On, Some(writer))).await;
-    let a = devices(&hub, "a");
+    devices(&hub, "a");
     import(&app, &Backup::read(&dir()).unwrap(), &ship_options(false)).await.unwrap();
     let fern = app.db.redone_personal_project("a").unwrap().unwrap();
     let alder = app.db.team_default_project("t").unwrap().unwrap();
@@ -608,7 +608,7 @@ async fn redones_tools_work_on_the_platform_and_never_claim_or_approve() {
         "a",
         "POST",
         &format!("/api/deploys/{dep_id}/approve"),
-        Some(signed(&a.phone, "a", &dep_id, &op, Decision::Once)),
+        Some(signed("a", &dep_id, &op, Decision::Once)),
     )
     .await;
     assert_eq!((st, &d["state"]), (200, &json!("approved")), "{d}");

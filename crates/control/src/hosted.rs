@@ -323,11 +323,29 @@ fn enrollment(app: &App, h: &HostedRow) -> anyhow::Result<Enrollment> {
         locked: false,
         lock: None,
         legacy_app_children: None,
+        passkey_logs: None,
+        passkey_origins: None,
         purpose: h.purpose.clone(),
     };
     let people = Owner::parse(&h.cert.owner).and_then(|o| people(&app.db, &o).transpose()).transpose()?;
     if let Some(p) = &people {
         e.legacy_app_children = Some(legacy_app_children(&app.db, p)?);
+    }
+    // A deploy's box checks the approval it applies against its people's
+    // passkey logs, as published (DK3), and the origins a platform action
+    // may come from (DK4, aru-126): it pins both.
+    if h.purpose.as_deref() == Some(arugula_control_wire::hosted::DEPLOY) {
+        let accounts: Vec<String> = match &people {
+            Some(People::Team { roster, .. }) => roster.members.iter().map(|m| m.account.clone()).collect(),
+            Some(People::Account { trust, .. }) => vec![trust.account.clone()],
+            None => vec![],
+        };
+        let mut logs = std::collections::BTreeMap::new();
+        for a in accounts {
+            logs.insert(a.clone(), app.db.passkey_log(&a)?);
+        }
+        e.passkey_logs = Some(logs);
+        e.passkey_origins = Some(crate::passkey::platform_origins(app));
     }
     match people {
         Some(People::Team { pin, roster, certs }) => {

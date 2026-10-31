@@ -269,9 +269,18 @@ pub async fn work(app: &Platform, m: &HostedMachine, takes: &[String]) -> Result
     for id in ready {
         // A deploy's run (M219) goes only to a machine that applies them,
         // with what it checks before it does.
-        let deploy = crate::features::deploys().deploy_work(&app.db, &id)?;
+        let mut deploy = crate::features::deploys().deploy_work(&app.db, &id)?;
         if deploy.is_some() && !takes_deploys {
             continue;
+        }
+        // With the approver's passkey log as the hub publishes it (DK4),
+        // which the box takes only as the one it pinned or one after it.
+        // Without the hub's answer it goes by what it pinned.
+        if let Some(d) = &mut deploy {
+            match app.hub.passkey_log(&d.approval.account).await {
+                Ok(log) => d.passkey_log = Some(log),
+                Err(e) => warn!(run = id, error = %format!("{e:#}"), "no passkey log for a deploy's run"),
+            }
         }
         if app.db.deploy_run_of(&id)?.is_some() && deploy.is_none() {
             continue;

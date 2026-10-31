@@ -65,9 +65,10 @@ check its signatures byte for byte.
   first* invites (`ask_invite`), a daemon's team `join`, a machine's `move`,
   and a member's `devices`.
 - `deploy/`: a deploy's `operation` (its bytes and hash) and `approval` (its
-  signed bytes, form and passkey challenge), what a machine checks before it
-  applies one (`check_apply`: every refusal, in order, including CLI, app,
-  laundered, revoked and grandfathered-app devices, and bad passkeys), which
+  bytes, form and passkey challenge, v2 and v1), what a machine checks before
+  it applies one (`check_apply`: every refusal, in order, including keys not
+  in the passkey log or removed from it, logs that don't extend the pinned
+  one, origins not pinned, and bad passkeys), which
   `secrets` a driver takes, and `planter`'s and `apps_platform`'s names and
   sources.
 - `drivers/`: every driver's `settings` and `setting_fields`, the

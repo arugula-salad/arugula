@@ -826,8 +826,10 @@ arugula grants add geek deploys.plan --project acme
 It's off until the owner gives it, and it's a switch of its own per machine
 and project under Settings, Agents and deploys. Asks are limited per
 project. No grant approves a deploy. An owner approves on their phone or
-in a browser: the device's signature over the deploy's operation, and a
-passkey's assertion over the approval, which the hub checks.
+in a browser with a passkey: one user-verified assertion over the
+approval's bytes, checked against the account's published passkey log
+(DK4, aru-126). No device signs it, and which devices the owner has plays
+no part.
 
 **Environments and planning a deploy (M252).** All of it is on the
 platform page, and planning is in the CLI and MCP too:
@@ -875,8 +877,9 @@ Approving stays the owner's, on their phone or in a browser, with a
 passkey: the deploy's card opens control's page for it.
 
 **Applying a deploy (M219).** An approval queues the deploy's apply. Before
-anything runs, the platform checks the approval's expiry, the approving
-device and the approver's owner role again.
+anything runs, the platform checks the approval's expiry, the approver's
+owner role, and that the approving passkey is still in their passkey log
+(not removed since), again.
 
 Each deploy gets a fresh box: a hosted workspace made for that one deploy.
 Nobody can list it, open it or reach it, the project's owners included. It
@@ -889,9 +892,12 @@ after two minutes), whatever happened: a failure, a refusal, a box that
 never came up, or a crash on the platform part way. A reaper deletes any
 deploy box past its longest life.
 
-The box checks the approval itself, against the owners it pinned when it
-enrolled: an owner's browser signed exactly this operation, it hasn't
-expired, a passkey confirmed it, and the plan is its driver's. Only a
+The box checks the approval itself, against what it pinned when it
+enrolled: the owners, their passkey logs (a later copy only as the pinned
+one with more after it) and the origins a passkey may come from. An
+owner's passkey, in the log and not removed, confirmed exactly this
+operation from a pinned origin, it hasn't expired, and the plan is its
+driver's. Only a
 deploy's own box applies a deploy, and only that one. The deploy starts
 only when its run starts, before the approval expires, and that start uses
 the approval up: it never starts the deploy again or goes to another run.
@@ -1170,17 +1176,18 @@ routes.toml lists for `cli` (401 `page_only` on the rest). It can't allow
 the desktop app's sign-in, add a passkey, enroll or approve a device,
 approve a machine's join, make recovery codes, or approve a deploy: those
 need control's page in a browser, by its cookie, and adding a passkey or
-approving a deploy needs a passkey too. A CLI device approves only CLIs
+approving a deploy needs a passkey too (a deploy, a passkey alone: DK4). A CLI device approves only CLIs
 and machines (no command does today), never a browser. Its key also can't make a team's owner or editor, and the app's can't
 make an owner (it makes editors); neither removes a browser or a phone:
 daemons and pages refuse those papers unless a browser all the way back to
 the account's root signed them. The desktop app's
 window is an `app` device: it reaches your machines and approves machines,
-CLIs and apps, but not browsers, phones, recovery codes or deploys.
+CLIs and apps, but not browsers, phones or recovery codes. (Deploys are
+approved with a passkey, on whatever device: DK4.)
 Before #1343 the app's window enrolled as a browser it named ("Arugula app
 on …"). A browser such a window approved, both stored and approved by
 control before #1343 shipped (2026-10-22 20:18 UTC, by control's own
-record), counts again: it can sign for a passkey and approve deploys. The
+record), counts again: it can sign for a passkey. The
 window itself can't, nor anything it approves now.
 [control-e2e.md](control-e2e.md#page-only-actions-need-a-browser-and-a-passkey)
 has the details.
@@ -1301,7 +1308,7 @@ owner must be one of the project's owners or editors on
 `ARUGULA_HOSTED_ACCOUNTS`, it's recorded with the machine
 (`started_by_agent`), and it runs under the project's live standing grant
 like any trigger's, or waits for an approval without one. No power is an
-approval of anything: a deploy's is an owner device's (M218). The MCP
+approval of anything: a deploy's is an owner's passkey (M218, DK4). The MCP
 tools are `start_run` (a spec, a command or an instruction, on one of the
 project's hosted boxes), `read_run` (a run's state, timeline and a page of
 its log by byte offset, or a project's latest runs) and `wait` with `run`

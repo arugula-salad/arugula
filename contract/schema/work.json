@@ -6,7 +6,8 @@
           "type": "string"
         },
         "by": {
-          "description": "The signing device's id.",
+          "default": "",
+          "description": "v1: the signing device's id. Empty in v2, which no device signs.",
           "type": "string"
         },
         "decision": {
@@ -26,8 +27,16 @@
           "type": "string"
         },
         "sig": {
-          "description": "Ed25519 signature by `by` over [`Approval::body`], hex.",
+          "default": "",
+          "description": "v1: Ed25519 signature by `by` over [`Approval::body`], hex. Empty in\nv2, whose passkey assertion is its signature.",
           "type": "string"
+        },
+        "v": {
+          "description": "Its format, [`V1`] or [`V2`]: absent is v1 (every approval from\nbefore DK4).",
+          "format": "uint8",
+          "maximum": 255,
+          "minimum": 0,
+          "type": "integer"
         }
       },
       "required": [
@@ -35,9 +44,7 @@
         "op",
         "account",
         "decision",
-        "expires",
-        "by",
-        "sig"
+        "expires"
       ],
       "type": "object"
     },
@@ -83,6 +90,40 @@
           "type": "object"
         }
       ]
+    },
+    "Assertion": {
+      "additionalProperties": false,
+      "description": "A passkey's assertion, as the page got it from\n`navigator.credentials.get`: each base64url.",
+      "properties": {
+        "authenticatorData": {
+          "type": "string"
+        },
+        "clientDataJSON": {
+          "type": "string"
+        },
+        "id": {
+          "description": "The credential's id (`rawId`).",
+          "type": "string"
+        },
+        "signature": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "clientDataJSON",
+        "authenticatorData",
+        "signature"
+      ],
+      "type": "object"
+    },
+    "Change": {
+      "description": "What happened to a passkey.",
+      "enum": [
+        "added",
+        "removed"
+      ],
+      "type": "string"
     },
     "ChatAgent": {
       "description": "The agent that wrote a message (M197): the machine whose grant it acted\nthrough, and its name now. The message's author is the machine's owner.",
@@ -510,7 +551,7 @@
       "type": "string"
     },
     "DeployWork": {
-      "description": "What a deploy's run applies (M219), for its machine to check: the\ndeploy's operation (`arugula deploy op v1`) and the approval an owner's\ndevice signed over it, with the passkey assertion the hub checked.",
+      "description": "What a deploy's run applies (M219), for its machine to check: the\ndeploy's operation (`arugula deploy op v1`) and an owner's approval over\nit (v2 since DK4: the approval's bytes, and the passkey assertion over\nthem that is its signature), with the approver's passkey log as the hub\npublishes it (DK3), which the machine takes only as the one it pinned or\none after it (`arugula_e2e::deploy::check_apply`).",
       "properties": {
         "approval": {
           "$ref": "#/$defs/Approval"
@@ -543,6 +584,17 @@
             }
           ],
           "default": null
+        },
+        "passkey_log": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Log"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The approver's passkey log, as the platform read it from the hub\nwhen it handed out the work. `None` from a platform from before DK4,\nor when the hub didn't answer: the machine goes by what it pinned."
         },
         "roll_back": {
           "anyOf": [
@@ -735,6 +787,91 @@
           ]
         }
       },
+      "type": "object"
+    },
+    "Event": {
+      "additionalProperties": false,
+      "description": "One event of an account's log.",
+      "properties": {
+        "aaguid": {
+          "description": "The authenticator's AAGUID, 32 hex, [`NO_AAGUID`] when unknown.",
+          "type": "string"
+        },
+        "account": {
+          "type": "string"
+        },
+        "alg": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "at": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "by": {
+          "description": "What let it happen ([`By`]).",
+          "type": "string"
+        },
+        "credential": {
+          "description": "The passkey's credential id, base64url.",
+          "type": "string"
+        },
+        "event": {
+          "$ref": "#/$defs/Change"
+        },
+        "hash": {
+          "description": "SHA-256 of the body and proof line, hex.",
+          "type": "string"
+        },
+        "key": {
+          "description": "Its public key, base64url.",
+          "type": "string"
+        },
+        "keyFormat": {
+          "description": "How `key` is encoded: `sec1` (P-256, uncompressed), `raw` (Ed25519)\nor `spki` (RSA).",
+          "type": "string"
+        },
+        "prev": {
+          "description": "The hash of the event before, or [`ZERO`].",
+          "type": "string"
+        },
+        "proof": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Assertion"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "On a `by passkey` event, the signer's assertion over [`Event::challenge`]."
+        },
+        "rp": {
+          "description": "The RP ID it was made for; for a backfilled event, possibly each of\ncontrol's sites, space-separated.",
+          "type": "string"
+        },
+        "seq": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "account",
+        "seq",
+        "prev",
+        "event",
+        "credential",
+        "rp",
+        "alg",
+        "keyFormat",
+        "key",
+        "aaguid",
+        "at",
+        "by",
+        "hash"
+      ],
       "type": "object"
     },
     "FinishResult": {
@@ -1087,6 +1224,35 @@
           ]
         }
       },
+      "type": "object"
+    },
+    "Log": {
+      "additionalProperties": false,
+      "description": "An account's log, oldest first.",
+      "properties": {
+        "account": {
+          "type": "string"
+        },
+        "began": {
+          "description": "When this hub began keeping logs (ms): removals before then are in\nno log. Said by the hub, not hashed; `None` when it doesn't say.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "events": {
+          "items": {
+            "$ref": "#/$defs/Event"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "account",
+        "events"
+      ],
       "type": "object"
     },
     "NewDoc": {

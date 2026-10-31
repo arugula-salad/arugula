@@ -1,16 +1,20 @@
 // A deploy's approval (M218): S37's work approval over a deploy's
-// operation, signed by this browser's device key. The same bytes as
-// `arugula_e2e::deploy` in Rust; the first lines are pinned there
-// (`frozen.rs`).
+// operation. Since DK4 (aru-126) it's v2: no device signs it, and its
+// signature is a user-verified passkey assertion whose challenge is SHA-256
+// of these bytes. The same bytes as `arugula_e2e::deploy` in Rust; the first
+// lines are pinned there (`frozen.rs`).
 //
-//   arugula deploy op v1               arugula deploy approval v1
+//   arugula deploy op v1               arugula deploy approval v2
 //   project <prj id>                   deploy <dep id>
 //   environment <env id>               op <operation hash, hex>
 //   name <environment's name>          account <approver's account>
 //   plan <sha-256 hex>                 decision <once|deny>
 //   source <commit|artifact> <ref>     expires <ms>
-//   where <place>                      by <device id>
+//   where <place>
 //   planned <planned event's hash>
+//
+// v1 (before DK4), which the platform no longer takes, named the signing
+// device too (`by <device id>`, last) and carried its Ed25519 signature.
 //
 // The platform sends the operation's bytes and their hash, and the deploy's
 // `planned` event as stored; the page hashes the bytes itself and reads
@@ -37,8 +41,12 @@ export interface Approval {
   account: string;
   decision: Decision;
   expires: number;
-  by: string;
-  sig: string;
+  /** 2 (DK4) or, absent, 1. */
+  v?: number;
+  /** v1 only: the signing device's id. */
+  by?: string;
+  /** v1 only: its Ed25519 signature, hex. */
+  sig?: string;
 }
 
 /** S37: an approval defaults to 24 hours. */
@@ -84,14 +92,16 @@ export async function sha256Hex(text: string): Promise<string> {
   return hex(new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text))));
 }
 
+/** The bytes an approval is over: a v2's (DK4), or a v1's, which names its
+ * device. */
 export function approvalBody(a: Omit<Approval, "sig">): string {
-  return `arugula deploy approval v1\ndeploy ${a.deploy}\nop ${a.op}\naccount ${a.account}\ndecision ${a.decision}\nexpires ${a.expires}\nby ${a.by}\n`;
+  const head = `deploy ${a.deploy}\nop ${a.op}\naccount ${a.account}\ndecision ${a.decision}\nexpires ${a.expires}\n`;
+  return a.v === 2 ? `arugula deploy approval v2\n${head}` : `arugula deploy approval v1\n${head}by ${a.by}\n`;
 }
 
-/** Sign an approval with an Ed25519 private key. */
-export async function signApproval(a: Omit<Approval, "sig">, key: CryptoKey): Promise<Approval> {
-  const sig = await crypto.subtle.sign("Ed25519", key, new TextEncoder().encode(approvalBody(a)));
-  return { ...a, sig: hex(new Uint8Array(sig)) };
+/** The WebAuthn challenge an approval's passkey signs: SHA-256 of its bytes. */
+export async function approvalChallenge(a: Omit<Approval, "sig">): Promise<Uint8Array<ArrayBuffer>> {
+  return new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(approvalBody(a))));
 }
 
 /** A deploy's plan as an owner reads it (M220): its text, checked against

@@ -240,8 +240,11 @@ pub struct WorkItem {
 }
 
 /// What a deploy's run applies (M219), for its machine to check: the
-/// deploy's operation (`arugula deploy op v1`) and the approval an owner's
-/// device signed over it, with the passkey assertion the hub checked.
+/// deploy's operation (`arugula deploy op v1`) and an owner's approval over
+/// it (v2 since DK4: the approval's bytes, and the passkey assertion over
+/// them that is its signature), with the approver's passkey log as the hub
+/// publishes it (DK3), which the machine takes only as the one it pinned or
+/// one after it (`arugula_e2e::deploy::check_apply`).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct DeployWork {
@@ -251,6 +254,11 @@ pub struct DeployWork {
     pub approval: Approval,
     #[serde(default)]
     pub passkey: Option<PasskeyAssertion>,
+    /// The approver's passkey log, as the platform read it from the hub
+    /// when it handed out the work. `None` from a platform from before DK4,
+    /// or when the hub didn't answer: the machine goes by what it pinned.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub passkey_log: Option<arugula_e2e::passkey::Log>,
     /// The environment's driver.
     pub driver: String,
     /// The names of the secrets its driver gets: their values come only

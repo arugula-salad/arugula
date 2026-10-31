@@ -108,6 +108,24 @@ pub fn origins_of_sites<'a>(sites: impl IntoIterator<Item = &'a str>) -> Origins
     o
 }
 
+/// `related` (a page's URL: the platform page's) may use the passkeys of
+/// `site`'s RP too: WebAuthn's related origins (DK4, aru-126), which
+/// control's `/.well-known/webauthn` lists for platform actions. Nothing
+/// when either is empty or not a URL.
+pub fn add_related_origin(o: &mut Origins, site: &str, related: &str) {
+    let (Some((rp, _)), Some((_, page))) =
+        (origins_of_sites([site]).into_iter().next(), origins_of_sites([related]).into_iter().next())
+    else {
+        return;
+    };
+    let list = o.entry(rp).or_default();
+    for origin in page {
+        if !list.contains(&origin) {
+            list.push(origin);
+        }
+    }
+}
+
 /// What happened to a passkey.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
@@ -517,6 +535,30 @@ pub fn check_chain(log: &Log) -> Result<(), Refusal> {
     live_at(log, u64::MAX).map(|_| ())
 }
 
+/// Whether `newer` is `older` with nothing changed and maybe more after
+/// it: the same account, and `older`'s events, exactly, its first. How a
+/// verifier that pinned a log (a deploy's box, DK4) takes a later copy
+/// only as one after it: a removal it saw can't be dropped, nor a key
+/// swapped, without the copy failing this.
+pub fn extends(older: &Log, newer: &Log) -> bool {
+    older.account == newer.account
+        && newer.events.len() >= older.events.len()
+        && newer.events[..older.events.len()] == older.events[..]
+}
+
+/// The newer of a log a verifier pinned and one it was handed, when one
+/// extends the other ([`extends`]); `None` when neither does (one of them
+/// was rewritten, or they're two accounts').
+pub fn newest<'a>(pinned: &'a Log, handed: &'a Log) -> Option<&'a Log> {
+    if extends(pinned, handed) {
+        Some(handed)
+    } else if extends(handed, pinned) {
+        Some(pinned)
+    } else {
+        None
+    }
+}
+
 /// The passkeys live at `at`, by credential id, having checked the whole
 /// chain.
 fn live_at(log: &Log, at: u64) -> Result<BTreeMap<&str, &Event>, Refusal> {
@@ -828,6 +870,23 @@ mod tests {
     }
 
     #[test]
+    fn a_pinned_log_is_only_ever_extended() {
+        let (log, _, _) = log();
+        let first = Log { events: log.events[..2].to_vec(), ..log.clone() };
+        assert!(extends(&first, &log) && extends(&log, &log) && !extends(&log, &first));
+        assert_eq!(newest(&first, &log), Some(&log), "handed a newer one");
+        assert_eq!(newest(&log, &first), Some(&log), "handed an older one: the pinned");
+        let mut dropped = log.clone();
+        dropped.events.remove(2);
+        let mut rewritten = log.clone();
+        rewritten.events[1].at += 1;
+        for bad in [&rewritten, &Log { account: "other".into(), ..log.clone() }] {
+            assert_eq!(newest(&log, bad), None);
+        }
+        assert_eq!(newest(&dropped, &rewritten), None, "a removal dropped and something else changed");
+    }
+
+    #[test]
     fn by_reads_back_what_it_writes() {
         for b in [
             By::Passkey,
@@ -852,6 +911,14 @@ mod tests {
         assert_eq!(o["control.example.com"], ["https://control.example.com"]);
         assert_eq!(o["127.0.0.1"], ["http://127.0.0.1:7690"]);
         assert_eq!(o["old.example"], ["https://old.example"]);
+        let mut o = origins_of_sites(["https://control.example.com", "https://old.example"]);
+        add_related_origin(&mut o, "https://control.example.com", "https://App.Example.com/");
+        assert_eq!(o["control.example.com"], ["https://control.example.com", "https://app.example.com"]);
+        assert_eq!(o["old.example"], ["https://old.example"], "only for the site's own RP");
+        let before = o.clone();
+        add_related_origin(&mut o, "https://control.example.com", "");
+        add_related_origin(&mut o, "", "https://app.example.com");
+        assert_eq!(o, before);
     }
 
     /// The log's own proofs are checked against what the log says, so a

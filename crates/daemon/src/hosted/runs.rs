@@ -309,6 +309,8 @@ pub(crate) mod tests {
             locked: false,
             lock: None,
             legacy_app_children: None,
+            passkey_logs: None,
+            passkey_origins: None,
             purpose: None,
         };
         (super::super::trust::saved_from(got, &keys, None).unwrap(), d, root, phone)

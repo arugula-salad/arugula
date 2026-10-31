@@ -1,11 +1,12 @@
 //! A deploy's approval (M218, platform step 7): S37's work approval (q3)
-//! over a deploy. A project owner's device signs it, and the platform stores
-//! it beside the deploy and checks it, but holds no key that could make one.
+//! over a deploy. A project owner's passkey confirms it (DK4, aru-126), and
+//! the platform stores it beside the deploy and checks it, but holds no key
+//! that could make one.
 //!
 //! **The operation** is what's approved: the project, the environment (its
 //! id and its name, so the name a person reads is in the hashed bytes), the
 //! plan's digest and the source, and the hash of the deploy's `planned` event in its
-//! environment's log (M217's hash chain), so the owner's device signs the
+//! environment's log (M217's hash chain), so the owner's approval covers the
 //! log up to the plan. Its SHA-256 over these exact bytes is the operation
 //! hash, as S37's `arugula op v1` is for a run:
 //!
@@ -25,22 +26,30 @@
 //!
 //! **The approval** names the deploy **and** the operation's hash, as S37's
 //! names the request and the operation, so it can't move to another deploy
-//! or another plan. A deny is signed too, so the record says who denied it.
+//! or another plan. A deny is made the same way, so the record says who
+//! denied it. Since DK4 (#385, aru-126) it's v2: no device signs it, and its
+//! signature is one user-verified passkey assertion whose WebAuthn challenge
+//! is SHA-256 of these bytes, base64url ([`Approval::passkey_challenge`]),
+//! from a passkey in the account's published passkey log ([`crate::passkey`]):
 //!
 //! ```text
-//! arugula deploy approval v1
+//! arugula deploy approval v2
 //! deploy <dep id>
 //! op <operation hash, hex>
 //! account <the approver's account>
 //! decision <once|deny>
 //! expires <ms: by when the apply must start>
-//! by <approver's device id>
 //! ```
+//!
+//! v1 (M218), which the platform no longer takes but still reads and
+//! checks, named the signing device too (`by <device id>`, its last line)
+//! and carried that device's Ed25519 signature beside the passkey's
+//! assertion.
 //!
 //! Values here are ids, hex and one-word references (the platform refuses a
 //! deploy whose source holds a space or a newline), so none is base64. Each
 //! first line is its domain separator, pinned in `frozen.rs`; browsers
-//! (`web/src/shell/e2e/deploy.ts`) sign the same bytes.
+//! (`web/src/shell/e2e/deploy.ts`) make the same bytes.
 
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -50,13 +59,9 @@ pub mod apps_platform;
 #[path = "deploy_planter.rs"]
 pub mod planter;
 
-use crate::{
-    Cert, Trust,
-    cert::{LegacyAppChildren, verify_hex},
-    hosted::Owners,
-    keys::DeviceKeys,
-    team::TeamRole,
-};
+use std::collections::BTreeMap;
+
+use crate::{cert::verify_hex, hosted::Owners, keys::DeviceKeys, team::TeamRole};
 
 /// An approval's longest life (S37 q4: at most 7 days), from when it's
 /// taken, with S37's ten minutes' slack for the approver's clock.
@@ -263,16 +268,39 @@ pub struct Approval {
     pub decision: Decision,
     /// Ms since the epoch.
     pub expires: u64,
-    /// The signing device's id.
+    /// v1: the signing device's id. Empty in v2, which no device signs.
+    #[serde(default)]
     pub by: String,
-    /// Ed25519 signature by `by` over [`Approval::body`], hex.
+    /// v1: Ed25519 signature by `by` over [`Approval::body`], hex. Empty in
+    /// v2, whose passkey assertion is its signature.
+    #[serde(default)]
     pub sig: String,
+    /// Its format, [`V1`] or [`V2`]: absent is v1 (every approval from
+    /// before DK4).
+    #[serde(default = "v1", skip_serializing_if = "is_v1")]
+    pub v: u8,
+}
+
+/// M218's approval: a device's signature over its bytes, with a passkey's
+/// assertion beside it. Read and checked for history only (aru-126).
+pub const V1: u8 = 1;
+/// DK4's (#385, aru-126): a user-verified passkey assertion over its bytes
+/// is the whole of it. The only kind the platform takes now.
+pub const V2: u8 = 2;
+
+fn v1() -> u8 {
+    V1
+}
+
+fn is_v1(v: &u8) -> bool {
+    *v == V1
 }
 
 impl Approval {
-    /// An approval (or a deny) of `deploy`'s `op` by `account`, signed by
-    /// `signer`.
-    pub fn new(
+    /// A v1 approval (or deny) of `deploy`'s `op` by `account`, signed by
+    /// `signer`: what the platform took before DK4, made now only for
+    /// history and its tests.
+    pub fn v1(
         signer: &DeviceKeys,
         deploy: &str,
         op: &Operation,
@@ -288,35 +316,72 @@ impl Approval {
             expires,
             by: signer.id(),
             sig: String::new(),
+            v: V1,
         };
         a.sig = hex::encode(signer.signature(a.body().as_bytes()));
         a
     }
 
+    /// A v2 approval (or deny) of `deploy`'s `op` by `account`: nothing
+    /// signs it here. Its signature is a passkey's assertion over
+    /// [`Approval::passkey_challenge`], kept beside it.
+    pub fn v2(deploy: &str, op: &Operation, account: &str, decision: Decision, expires: u64) -> Self {
+        Self {
+            deploy: deploy.to_owned(),
+            op: op.hash(),
+            account: account.to_owned(),
+            decision,
+            expires,
+            by: String::new(),
+            sig: String::new(),
+            v: V2,
+        }
+    }
+
+    /// The bytes it's over. Frozen once shipped: see `frozen.rs`.
     pub fn body(&self) -> String {
-        // Frozen once shipped: see `frozen.rs`.
-        format!(
-            "arugula deploy approval v1\ndeploy {}\nop {}\naccount {}\ndecision {}\nexpires {}\nby {}\n",
-            self.deploy,
-            self.op,
-            self.account,
-            self.decision.as_str(),
-            self.expires,
-            self.by
-        )
+        match self.v {
+            V1 => format!(
+                "arugula deploy approval v1\ndeploy {}\nop {}\naccount {}\ndecision {}\nexpires {}\nby {}\n",
+                self.deploy,
+                self.op,
+                self.account,
+                self.decision.as_str(),
+                self.expires,
+                self.by
+            ),
+            _ => format!(
+                "arugula deploy approval v{}\ndeploy {}\nop {}\naccount {}\ndecision {}\nexpires {}\n",
+                self.v,
+                self.deploy,
+                self.op,
+                self.account,
+                self.decision.as_str(),
+                self.expires
+            ),
+        }
     }
 
-    /// No field holds a space or a newline, so it has one body only.
+    /// No field holds a space or a newline, so it has one body only: a v1
+    /// names its device and signature, a v2 neither. Any other version
+    /// isn't one.
     pub fn well_formed(&self) -> bool {
-        [&self.deploy, &self.op, &self.account, &self.by, &self.sig]
-            .iter()
-            .all(|f| !f.is_empty() && f.len() <= 200 && f.bytes().all(|b| b.is_ascii_graphic()))
+        let word = |f: &String| !f.is_empty() && f.len() <= 200 && f.bytes().all(|b| b.is_ascii_graphic());
+        match self.v {
+            V1 => [&self.deploy, &self.op, &self.account, &self.by, &self.sig].into_iter().all(word),
+            V2 => {
+                [&self.deploy, &self.op, &self.account].into_iter().all(word)
+                    && self.by.is_empty()
+                    && self.sig.is_empty()
+            }
+            _ => false,
+        }
     }
 
-    /// The signature is `sign_hex`'s (an Ed25519 public key, hex) over
-    /// [`Approval::body`].
+    /// A v1's signature is `sign_hex`'s (an Ed25519 public key, hex) over
+    /// [`Approval::body`]. Never a v2, which no device signs.
     pub fn signed_by(&self, sign_hex: &str) -> bool {
-        self.well_formed() && verify_hex(sign_hex, self.body().as_bytes(), &self.sig)
+        self.v == V1 && self.well_formed() && verify_hex(sign_hex, self.body().as_bytes(), &self.sig)
     }
 
     /// The WebAuthn challenge its passkey assertion signs (M218): SHA-256
@@ -325,34 +390,31 @@ impl Approval {
         use base64::Engine as _;
         base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(Sha256::digest(self.body().as_bytes()))
     }
+
+    /// Its passkey assertion checked against `account`'s passkey `log`
+    /// (DK3) at `at`, from an origin `origins` allows: the one check that
+    /// makes an approval a person's (aru-126), v1 or v2. A v1's device
+    /// signature isn't checked: it adds nothing a passkey doesn't.
+    pub fn passkey_checks<'a>(
+        &self,
+        assertion: &crate::passkey::Assertion,
+        log: &'a crate::passkey::Log,
+        at: u64,
+        origins: &crate::passkey::Origins,
+    ) -> Result<crate::passkey::Verified<'a>, crate::passkey::Refusal> {
+        crate::passkey::verify(log, &self.account, assertion, &self.passkey_challenge(), at, origins)
+    }
 }
 
-/// Whether `device` may approve a deploy for `account` (M218): it, and
-/// every device that certified it back to the account's `root`, is a
-/// browser's or a phone's own (never a CLI's or the desktop app's, whose
-/// keys a program on its computer can read), by [`Trust::chained`] over
-/// every certificate kept on the way. The platform asks it before it takes
-/// an approval, and a hosted machine before it applies one (M219).
-///
-/// `children` is the account's browsers and phones that a grandfathered
-/// app window approved (control's `legacy_app::children`): such a window
-/// counts as the link just above one of them, the root included, and
-/// nowhere else ([`crate::cert::legacy_app_link`]).
-pub fn approver_chained(account: &str, root: &str, certs: &[Cert], device: &str, children: &[String]) -> bool {
-    let trust = Trust { account: account.to_owned(), root: root.to_owned() };
-    trust.chained_below(certs, device, |c, below| {
-        crate::cert::browser_or_legacy_link(c, below, device, children)
-            && (c.device != root || c.is_browser() || crate::cert::legacy_app_link(c, below, children))
-    })
-}
-
-/// The parts of a passkey's assertion a machine can check without the
-/// passkey's public key (which only the hub keeps): each base64url, as the
-/// approval's record keeps them.
-#[derive(Debug, Clone, Copy)]
-pub struct PasskeyParts<'a> {
-    pub client_data_json: &'a str,
-    pub authenticator_data: &'a str,
+/// What a machine pinned that a deploy's approval is checked against
+/// (M219, DK4): its project's owners, their passkey logs (by account, each
+/// only ever extended: `arugula_e2e::passkey::extends`), and which origins
+/// may use each RP's passkeys.
+#[derive(Clone, Copy)]
+pub struct Pinned<'a> {
+    pub owners: &'a Owners<'a>,
+    pub passkey_logs: &'a BTreeMap<String, crate::passkey::Log>,
+    pub origins: &'a crate::passkey::Origins,
 }
 
 /// Why a machine won't apply a deploy (M219): what it checked itself,
@@ -373,13 +435,15 @@ pub enum ApplyRefusal {
     /// Its account isn't an owner of the project, as the machine knows
     /// them (its team's roster, or its account's).
     NotAnOwner,
-    /// Its device isn't one of the owner's that counts: trusted now, and a
-    /// browser certified by browsers to their root.
-    Device,
-    /// The signature isn't that device's over the approval.
-    Signature,
-    /// No passkey assertion over this approval, with user verification.
-    Passkey,
+    /// The machine pinned no passkey log for its account, or the log the
+    /// work carried isn't the pinned one, or one after it (one of them was
+    /// rewritten).
+    PasskeyLog,
+    /// No passkey assertion came with it (`None`), or the account's
+    /// passkey log refused it: the key not in the log, or removed by now,
+    /// an origin the machine didn't pin, over other bytes, no user
+    /// verification, a bad signature.
+    Passkey(Option<crate::passkey::Refusal>),
 }
 
 impl ApplyRefusal {
@@ -391,60 +455,58 @@ impl ApplyRefusal {
             ApplyRefusal::Denied => "approval_denied",
             ApplyRefusal::Expired => "approval_expired",
             ApplyRefusal::NotAnOwner => "approval_not_an_owner",
-            ApplyRefusal::Device => "approval_device",
-            ApplyRefusal::Signature => "approval_signature",
-            ApplyRefusal::Passkey => "approval_passkey",
+            ApplyRefusal::PasskeyLog => "approval_passkey_log",
+            ApplyRefusal::Passkey(_) => "approval_passkey",
         }
     }
 
-    pub fn says(self) -> &'static str {
+    pub fn says(self) -> String {
         match self {
-            ApplyRefusal::Form => "the deploy's approval isn't well formed",
-            ApplyRefusal::Deploy => "the approval is another deploy's",
-            ApplyRefusal::Operation => "the approval signs another operation than the one this run applies",
-            ApplyRefusal::Denied => "the deploy was denied, not approved",
-            ApplyRefusal::Expired => "the approval's time to start has passed: approve it again",
-            ApplyRefusal::NotAnOwner => "the approver isn't an owner of this project, by what this machine pinned",
-            ApplyRefusal::Device => {
-                "the approving device isn't one of the owner's browsers (trusted now, certified by browsers to their root)"
+            ApplyRefusal::Form => "the deploy's approval isn't well formed".into(),
+            ApplyRefusal::Deploy => "the approval is another deploy's".into(),
+            ApplyRefusal::Operation => "the approval signs another operation than the one this run applies".into(),
+            ApplyRefusal::Denied => "the deploy was denied, not approved".into(),
+            ApplyRefusal::Expired => "the approval's time to start has passed: approve it again".into(),
+            ApplyRefusal::NotAnOwner => {
+                "the approver isn't an owner of this project, by what this machine pinned".into()
             }
-            ApplyRefusal::Signature => "the approval isn't signed by its device",
-            ApplyRefusal::Passkey => "the approval has no passkey assertion over it, with user verification",
+            ApplyRefusal::PasskeyLog => {
+                "the approver's passkey log isn't the one this machine pinned, or one after it".into()
+            }
+            ApplyRefusal::Passkey(None) => "the approval has no passkey assertion over it".into(),
+            ApplyRefusal::Passkey(Some(r)) => format!("the approval's passkey doesn't check out: {r}"),
         }
     }
 }
 
-/// What a machine checks before it applies `deploy`'s operation `op` (M219),
-/// with the owners it pinned at enrollment (`owners`: its team's roster
-/// and members' certificates, or its account's chain) and the browsers
-/// grandfathered app windows approved that it pinned with them
-/// (`children`, by account: see [`approver_chained`]), at `now` by its own
+/// What a machine checks before it applies `deploy`'s operation `op` (M219;
+/// DK4, aru-126), against what it pinned (`pinned`) and at `now` by its own
 /// clock:
-/// - the approval is `once`, for this deploy, over exactly this operation,
-///   and not past its `expires`;
-/// - its account is an owner of the project, and its device one of that
-///   owner's, trusted now, a browser certified by browsers to their root
-///   ([`approver_chained`]), whose signature over the approval checks;
-/// - a passkey assertion came with it whose ceremony is `webauthn.get`
-///   over exactly this approval's challenge, with user presence and
-///   verification. Its signature is the hub's to check (it keeps passkeys'
-///   public keys); until the hub publishes them, the machine checks the
-///   rest.
+/// - the approval is well formed (v2, or a v1 made before DK4), `once`,
+///   for this deploy, over exactly this operation, and not past its
+///   `expires`;
+/// - its account is an owner of the project, as the machine pinned them;
+/// - its passkey assertion (`passkey`) checks out against the account's
+///   passkey log: the newer of the one pinned and the one the work carried
+///   (`carried`), when one extends the other ([`crate::passkey::newest`]);
+///   the passkey in it and not removed by `now`, from an origin pinned for
+///   its RP, a `webauthn.get` over exactly this approval's bytes, the
+///   person verified, the signature good ([`Approval::passkey_checks`]).
 ///
-/// `children` is what the machine pinned: the first set control sent it
-/// (at enrollment, or at the first refresh that carried one, for a machine
-/// enrolled before control sent it), and since then only what every later
-/// refresh also sent (their intersection): a refresh never adds to it. A
-/// machine that pinned none passes an empty set, so no window counts on it.
-/// Control could have sent a wrong first set, as it could have sent wrong
-/// certificates at enrollment: the machine trusts it no more than that.
+/// No device signs it, and the devices that certified one play no part
+/// (aru-126). A v1 approval (a device's signature with a passkey's
+/// assertion, made before DK4, at most 7 days old) is checked by its
+/// passkey alone, as a v2 is: its device's signature adds nothing a
+/// passkey doesn't. Against whoever runs the platform this is
+/// tamper-evident, not tamper-proof: control enrolled this machine and
+/// sent what it pinned.
 pub fn check_apply(
     approval: &Approval,
     op: &Operation,
     deploy: &str,
-    owners: &Owners,
-    children: &LegacyAppChildren,
-    passkey: Option<PasskeyParts>,
+    pinned: &Pinned,
+    passkey: Option<&crate::passkey::Assertion>,
+    carried: Option<&crate::passkey::Log>,
     now: u64,
 ) -> Result<(), ApplyRefusal> {
     if !approval.well_formed() {
@@ -462,48 +524,17 @@ pub fn check_apply(
     if approval.expires <= now {
         return Err(ApplyRefusal::Expired);
     }
-    if owners.role_of(&approval.account) != Some(TeamRole::Owner) {
+    if pinned.owners.role_of(&approval.account) != Some(TeamRole::Owner) {
         return Err(ApplyRefusal::NotAnOwner);
     }
-    let (trusted, root, all) = match owners {
-        Owners::Team { roster, certs } => {
-            let root = roster.member(&approval.account).map(|m| m.root.clone()).unwrap_or_default();
-            let all = certs.get(&approval.account).map(|(c, _)| c.as_slice()).unwrap_or_default();
-            (roster.devices(&approval.account, certs), root, all)
-        }
-        Owners::Account { trust, certs, revocations } => {
-            let t = Trust { account: approval.account.clone(), root: trust.root.clone() };
-            (t.evaluate(certs, revocations), trust.root.clone(), *certs)
-        }
+    let assertion = passkey.ok_or(ApplyRefusal::Passkey(None))?;
+    let held = pinned.passkey_logs.get(&approval.account).ok_or(ApplyRefusal::PasskeyLog)?;
+    let log = match carried {
+        Some(c) => crate::passkey::newest(held, c).ok_or(ApplyRefusal::PasskeyLog)?,
+        None => held,
     };
-    let Some(cert) = trusted.get(&approval.by) else { return Err(ApplyRefusal::Device) };
-    let children = children.get(&approval.account).map(Vec::as_slice).unwrap_or_default();
-    if !approver_chained(&approval.account, &root, all, &approval.by, children) {
-        return Err(ApplyRefusal::Device);
-    }
-    if !approval.signed_by(&cert.sign) {
-        return Err(ApplyRefusal::Signature);
-    }
-    let pk = passkey.ok_or(ApplyRefusal::Passkey)?;
-    if !passkey_binds(approval, pk) {
-        return Err(ApplyRefusal::Passkey);
-    }
+    approval.passkey_checks(assertion, log, now, pinned.origins).map_err(|r| ApplyRefusal::Passkey(Some(r)))?;
     Ok(())
-}
-
-/// Whether a passkey assertion's client data and authenticator data are
-/// over `approval`: a `webauthn.get` whose challenge is its
-/// [`Approval::passkey_challenge`], user present and verified.
-pub fn passkey_binds(approval: &Approval, pk: PasskeyParts) -> bool {
-    use base64::Engine as _;
-    let b64 = base64::engine::general_purpose::URL_SAFE_NO_PAD;
-    let Ok(raw) = b64.decode(pk.client_data_json.trim_end_matches('=')) else { return false };
-    let Ok(cd) = serde_json::from_slice::<serde_json::Value>(&raw) else { return false };
-    let Ok(data) = b64.decode(pk.authenticator_data.trim_end_matches('=')) else { return false };
-    cd["type"] == "webauthn.get"
-        && cd["challenge"].as_str() == Some(approval.passkey_challenge().as_str())
-        && data.len() >= 37
-        && data[32] & 0x05 == 0x05
 }
 
 #[cfg(test)]
@@ -539,10 +570,10 @@ mod tests {
     }
 
     #[test]
-    fn signed_by_its_device_only_and_bound_to_its_deploy_and_operation() {
+    fn a_v1_is_signed_by_its_device_only_and_bound_to_its_deploy_and_operation() {
         let k = DeviceKeys::generate();
         let other = DeviceKeys::generate();
-        let a = Approval::new(&k, "dep_1", &op(), "acct", Decision::Once, 5);
+        let a = Approval::v1(&k, "dep_1", &op(), "acct", Decision::Once, 5);
         assert!(a.signed_by(&hex::encode(k.sign_public())));
         assert!(!a.signed_by(&hex::encode(other.sign_public())));
         assert!(a.body().starts_with("arugula deploy approval v1\ndeploy dep_1\n"));
@@ -554,14 +585,46 @@ mod tests {
         assert!(!replanned.signed_by(&hex::encode(k.sign_public())), "another plan");
         let denied = Approval { decision: Decision::Deny, ..a.clone() };
         assert!(!denied.signed_by(&hex::encode(k.sign_public())), "a once isn't a deny");
-        let spaced = Approval { account: "a b".into(), ..a };
+        let spaced = Approval { account: "a b".into(), ..a.clone() };
         assert!(!spaced.well_formed());
+        // As stored before DK4: no `v`, read as v1.
+        let mut json = serde_json::to_value(&a).unwrap();
+        assert!(json.get("v").is_none());
+        json.as_object_mut().unwrap().remove("v");
+        assert_eq!(serde_json::from_value::<Approval>(json).unwrap(), a);
+    }
+
+    /// DK4: a v2 names no device and holds no signature; its bytes say v2,
+    /// so no v1's bytes or challenge are ever a v2's.
+    #[test]
+    fn a_v2_is_its_bytes_alone() {
+        let a = Approval::v2("dep_1", &op(), "acct", Decision::Once, 5);
+        assert_eq!(
+            a.body(),
+            format!(
+                "arugula deploy approval v2\ndeploy dep_1\nop {}\naccount acct\ndecision once\nexpires 5\n",
+                op().hash()
+            )
+        );
+        assert!(a.well_formed());
+        assert!(!a.signed_by(&hex::encode(DeviceKeys::generate().sign_public())), "nothing signs a v2");
+        let k = DeviceKeys::generate();
+        let with_device = Approval { by: k.id(), ..a.clone() };
+        assert!(!with_device.well_formed(), "a v2 names no device");
+        let with_sig = Approval { sig: "00".into(), ..a.clone() };
+        assert!(!with_sig.well_formed(), "nor holds a signature");
+        assert!(!Approval { v: 3, ..a.clone() }.well_formed(), "no other version");
+        let v1 = Approval::v1(&k, "dep_1", &op(), "acct", Decision::Once, 5);
+        assert_ne!(a.passkey_challenge(), v1.passkey_challenge());
+        let json = serde_json::to_value(&a).unwrap();
+        assert_eq!(json["v"], 2);
+        assert_eq!(serde_json::from_value::<Approval>(json).unwrap(), a);
     }
 
     /// The page checks the same fixture (`web/scripts/deploy.fixture.json`):
-    /// the operation's bytes and hash, and the approval's bytes and
-    /// signature from the same key (Ed25519 signs the same bytes the same
-    /// way every time).
+    /// the operation's bytes and hash, a v2 approval's bytes and passkey
+    /// challenge, and a v1's bytes and signature from the same key (Ed25519
+    /// signs the same bytes the same way every time).
     #[test]
     fn the_pages_fixture_is_these_bytes() {
         let k = DeviceKeys {
@@ -569,20 +632,18 @@ mod tests {
             noise_public: [9; 32],
             sign: ed25519_dalek::SigningKey::from_bytes(&[7; 32]),
         };
-        let a = Approval::new(
-            &k,
-            "dep_00112233445566778899aabbccddeeff",
-            &op(),
-            "acct1",
-            Decision::Once,
-            1_800_000_000_000,
-        );
+        let dep = "dep_00112233445566778899aabbccddeeff";
+        let a = Approval::v1(&k, dep, &op(), "acct1", Decision::Once, 1_800_000_000_000);
+        let v2 = Approval::v2(dep, &op(), "acct1", Decision::Once, 1_800_000_000_000);
         let got = serde_json::json!({
             "seed": hex::encode([7u8; 32]),
             "sign": hex::encode(k.sign_public()),
             "operation": { "body": op().body(), "hash": op().hash() },
             "approval": a,
             "approval_body": a.body(),
+            "approval_v2": v2,
+            "approval_v2_body": v2.body(),
+            "approval_v2_challenge": v2.passkey_challenge(),
         });
         let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../web/scripts/deploy.fixture.json");
         if std::env::var_os("ARUGULA_WRITE_FIXTURE").is_some() {
@@ -593,236 +654,208 @@ mod tests {
         assert!(a.signed_by(&hex::encode(k.sign_public())));
     }
 
-    /// A passkey assertion's parts over `a`, as a browser gives them:
-    /// `webauthn.get` over its challenge, with `flags`.
-    fn passkey_over(a: &Approval, kind: &str, flags: u8) -> (String, String) {
-        use base64::Engine as _;
-        let b64 = base64::engine::general_purpose::URL_SAFE_NO_PAD;
-        let cd = serde_json::json!({ "type": kind, "challenge": a.passkey_challenge(), "origin": "https://c.test" });
-        let mut data = Sha256::digest(b"c.test").to_vec();
-        data.push(flags);
-        data.extend_from_slice(&[0, 0, 0, 0]);
-        (b64.encode(cd.to_string()), b64.encode(data))
+    /// A test passkey (Ed25519) of `account`'s, its id `pk-<n>`.
+    struct Pk {
+        key: ed25519_dalek::SigningKey,
+        id: String,
     }
 
-    /// M219: what a hosted machine checks before it applies a deploy, from
-    /// the owners it pinned: a team's roster and certificates, or its
-    /// account's chain. Only an owner's browser approves, once, over this
-    /// deploy's operation, before it expires, confirmed with a passkey.
+    const RP: &str = "control.test";
+
+    impl Pk {
+        fn new(n: u8) -> Self {
+            use base64::Engine as _;
+            Pk {
+                key: ed25519_dalek::SigningKey::from_bytes(&[n; 32]),
+                id: base64::engine::general_purpose::URL_SAFE_NO_PAD.encode([n; 16]),
+            }
+        }
+
+        /// Its `added` event in `account`'s log, at `at`, after `prev`.
+        fn added(&self, account: &str, at: u64, prev: Option<&crate::passkey::Event>) -> crate::passkey::Event {
+            crate::passkey::Draft {
+                account: account.into(),
+                event: crate::passkey::Change::Added,
+                credential: self.id.clone(),
+                rp: RP.into(),
+                alg: crate::passkey::EDDSA,
+                key: self.key.verifying_key().to_bytes().to_vec(),
+                aaguid: crate::passkey::NO_AAGUID.into(),
+                at,
+                by: "signup".into(),
+            }
+            .after(prev)
+        }
+
+        /// Its assertion over `a`'s challenge, from `origin`, with `flags`.
+        fn over(&self, a: &Approval, origin: &str, flags: u8) -> crate::passkey::Assertion {
+            use base64::Engine as _;
+            use ed25519_dalek::Signer as _;
+            let b64 = base64::engine::general_purpose::URL_SAFE_NO_PAD;
+            let cd =
+                serde_json::json!({ "type": "webauthn.get", "challenge": a.passkey_challenge(), "origin": origin })
+                    .to_string();
+            let mut data = Sha256::digest(RP.as_bytes()).to_vec();
+            data.push(flags);
+            data.extend_from_slice(&[0, 0, 0, 0]);
+            let mut msg = data.clone();
+            msg.extend_from_slice(&Sha256::digest(cd.as_bytes()));
+            crate::passkey::Assertion {
+                id: self.id.clone(),
+                client_data_json: b64.encode(cd.as_bytes()),
+                authenticator_data: b64.encode(&data),
+                signature: b64.encode(self.key.sign(&msg).to_bytes()),
+            }
+        }
+    }
+
+    /// M219, DK4: what a hosted machine checks before it applies a deploy,
+    /// from what it pinned: the owners (a team's roster, or its account),
+    /// their passkey logs and the origins. Only an owner's passkey that's in
+    /// the log approves, once, over this deploy's operation, before it
+    /// expires, from a pinned origin. No device plays a part: an owner whose
+    /// every device is a CLI's approves with her passkey.
     #[test]
     fn a_machine_checks_the_approval_against_what_it_pinned() {
         use crate::{
-            Cert, Kind, Revocation,
+            Cert, Kind, Trust,
+            passkey::{Log, Origins, Refusal, origins_of_sites},
             team::{Member, Roster, TeamRole},
         };
-        let phone = DeviceKeys::generate();
-        let mut root = Cert::new(&phone, "a", Kind::Browser, "Pixel");
-        root.sign_with(&phone);
+        // a's only device is a CLI, its root: it approved nothing before DK4.
         let cli = DeviceKeys::generate();
-        let mut cli_cert = Cert::new(&cli, "a", Kind::Cli, "geek");
-        cli_cert.sign_with(&phone);
-        let gone = DeviceKeys::generate();
-        let mut gone_cert = Cert::new(&gone, "a", Kind::Browser, "old laptop");
-        gone_cert.sign_with(&phone);
-        let revoked = Revocation::new("a", &gone.id(), &phone);
-        let bphone = DeviceKeys::generate();
-        let mut broot = Cert::new(&bphone, "b", Kind::Browser, "b's phone");
-        broot.sign_with(&bphone);
-        let member = |a: &str, root: &str, role| Member { account: a.into(), root: root.into(), role, name: a.into() };
+        let mut root = Cert::new(&cli, "a", Kind::Cli, "geek");
+        root.sign_with(&cli);
+        let member = |a: &str, role| Member { account: a.into(), root: format!("{a}-root"), role, name: a.into() };
         let mut roster = Roster {
             v: 1,
             team: "t".into(),
             name: "t".into(),
             version: 1,
             at: 1,
-            members: vec![member("a", &phone.id(), TeamRole::Owner), member("b", &bphone.id(), TeamRole::Editor)],
+            members: vec![member("a", TeamRole::Owner), member("b", TeamRole::Editor)],
             spent: vec![],
             redeem: None,
             by: String::new(),
             sig: String::new(),
         };
-        roster.sign_with(&phone);
-        let certs: crate::team::AccountCerts = [
-            ("a".to_owned(), (vec![root.clone(), cli_cert.clone(), gone_cert.clone()], vec![revoked.clone()])),
-            ("b".to_owned(), (vec![broot], vec![])),
-        ]
-        .into();
+        roster.sign_with(&cli);
+        let certs = crate::team::AccountCerts::new();
         let team = Owners::Team { roster: &roster, certs: &certs };
-        let all = [root, cli_cert, gone_cert];
-        let trust = Trust { account: "a".into(), root: phone.id() };
-        let mine = Owners::Account { trust: &trust, certs: &all, revocations: std::slice::from_ref(&revoked) };
+        let all = [root];
+        let trust = Trust { account: "a".into(), root: cli.id() };
+        let mine = Owners::Account { trust: &trust, certs: &all, revocations: &[] };
+        // a's passkeys: k1 added at 100, k2 at 200, k1 removed by k2 at 300;
+        // b's: kb. k9 is in no log.
+        let (k1, k2, kb, k9) = (Pk::new(1), Pk::new(2), Pk::new(3), Pk::new(9));
+        let mut log = Log { account: "a".into(), ..Default::default() };
+        log.events.push(k1.added("a", 100, None));
+        log.events.push(k2.added("a", 200, log.events.last()));
+        let removal = log.events[0].removal(300, "reset").placed_after(log.events.last());
+        let before_removal = log.clone();
+        log.events.push(removal);
+        let mut blog = Log { account: "b".into(), ..Default::default() };
+        blog.events.push(kb.added("b", 100, None));
+        let logs: BTreeMap<String, Log> = [("a".to_owned(), log.clone()), ("b".to_owned(), blog)].into();
+        let origins = origins_of_sites(["https://control.test"]);
+        let mut related = origins.clone();
+        related.get_mut(RP).unwrap().push("https://app.test".into());
         let now = 1_000;
-        let check = |owners: &Owners, a: &Approval, pk: Option<(String, String)>| {
-            let parts = pk.as_ref().map(|(c, d)| PasskeyParts { client_data_json: c, authenticator_data: d });
-            check_apply(a, &op(), "dep_1", owners, &LegacyAppChildren::new(), parts, now)
+        let check = |owners: &Owners,
+                     logs: &BTreeMap<String, Log>,
+                     o: &Origins,
+                     a: &Approval,
+                     pk: Option<crate::passkey::Assertion>,
+                     carried: Option<&Log>| {
+            let pinned = Pinned { owners, passkey_logs: logs, origins: o };
+            check_apply(a, &op(), "dep_1", &pinned, pk.as_ref(), carried, now)
         };
-        let good = Approval::new(&phone, "dep_1", &op(), "a", Decision::Once, now + 1);
+        let good = Approval::v2("dep_1", &op(), "a", Decision::Once, now + 1);
+        let here = "https://control.test";
         for owners in [&team, &mine] {
-            assert_eq!(check(owners, &good, Some(passkey_over(&good, "webauthn.get", 0x05))), Ok(()));
+            assert_eq!(check(owners, &logs, &origins, &good, Some(k2.over(&good, here, 0x05)), None), Ok(()));
+            assert_eq!(check(owners, &logs, &origins, &good, Some(k2.over(&good, here, 0x05)), Some(&log)), Ok(()));
         }
-        let ok_pk = |a: &Approval| Some(passkey_over(a, "webauthn.get", 0x05));
-        assert_eq!(check(&team, &good, None), Err(ApplyRefusal::Passkey), "no passkey");
-        type Case = (Approval, Option<(String, String)>, ApplyRefusal);
-        let cases: Vec<Case> = vec![
-            (good.clone(), Some(passkey_over(&good, "webauthn.get", 0x01)), ApplyRefusal::Passkey),
-            (good.clone(), Some(passkey_over(&good, "webauthn.create", 0x05)), ApplyRefusal::Passkey),
+        let pk = |p: &Pk, a: &Approval| Some(p.over(a, here, 0x05));
+        // Every refusal, in order.
+        let no = |r: Refusal| Err(ApplyRefusal::Passkey(Some(r)));
+        let cases: Vec<(Approval, Option<crate::passkey::Assertion>, Result<(), ApplyRefusal>)> = vec![
+            (Approval { by: "x".into(), ..good.clone() }, pk(&k2, &good), Err(ApplyRefusal::Form)),
+            (Approval::v2("dep_2", &op(), "a", Decision::Once, now + 1), None, Err(ApplyRefusal::Deploy)),
+            (Approval { op: "00".repeat(32), ..good.clone() }, None, Err(ApplyRefusal::Operation)),
+            (Approval::v2("dep_1", &op(), "a", Decision::Deny, now + 1), None, Err(ApplyRefusal::Denied)),
+            (Approval::v2("dep_1", &op(), "a", Decision::Once, now), None, Err(ApplyRefusal::Expired)),
+            (good.clone(), None, Err(ApplyRefusal::Passkey(None))),
+            (good.clone(), pk(&k9, &good), no(Refusal::NotLive)),
+            (good.clone(), pk(&k1, &good), no(Refusal::NotLive)),
+            (good.clone(), Some(k2.over(&good, "https://app.test", 0x05)), no(Refusal::Origin)),
+            (good.clone(), Some(k2.over(&good, here, 0x01)), no(Refusal::User)),
             (
                 good.clone(),
-                ok_pk(&Approval::new(&phone, "dep_1", &op(), "a", Decision::Once, now + 2)),
-                ApplyRefusal::Passkey,
+                pk(&k2, &Approval::v2("dep_1", &op(), "a", Decision::Once, now + 2)),
+                no(Refusal::Challenge),
             ),
-            (Approval::new(&phone, "dep_2", &op(), "a", Decision::Once, now + 1), None, ApplyRefusal::Deploy),
-            (Approval { op: "00".repeat(32), ..good.clone() }, None, ApplyRefusal::Operation),
-            (Approval::new(&phone, "dep_1", &op(), "a", Decision::Deny, now + 1), None, ApplyRefusal::Denied),
-            (Approval::new(&phone, "dep_1", &op(), "a", Decision::Once, now), None, ApplyRefusal::Expired),
-            (Approval::new(&cli, "dep_1", &op(), "a", Decision::Once, now + 1), None, ApplyRefusal::Device),
-            (Approval::new(&gone, "dep_1", &op(), "a", Decision::Once, now + 1), None, ApplyRefusal::Device),
-            (Approval { sig: "00".repeat(64), ..good.clone() }, None, ApplyRefusal::Signature),
+            (good.clone(), pk(&kb, &good), no(Refusal::NotLive)),
         ];
-        for (a, pk, want) in cases {
-            let pk = pk.or_else(|| ok_pk(&a));
-            assert_eq!(check(&team, &a, pk.clone()), Err(want), "{a:?}");
-            assert_eq!(check(&mine, &a, pk), Err(want), "{a:?}");
+        for (a, p, want) in cases {
+            for owners in [&team, &mine] {
+                assert_eq!(check(owners, &logs, &origins, &a, p.clone(), None), want, "{a:?}");
+            }
         }
-        // An editor's own browser doesn't approve.
-        let b = Approval::new(&bphone, "dep_1", &op(), "b", Decision::Once, now + 1);
-        assert_eq!(check(&team, &b, ok_pk(&b)), Err(ApplyRefusal::NotAnOwner));
-        assert_eq!(check(&mine, &b, ok_pk(&b)), Err(ApplyRefusal::NotAnOwner), "not this account");
-    }
-
-    /// A browser the desktop app's window approved before the app had a
-    /// kind of its own counts when the hub says so (its id in `children`):
-    /// the window is a link just above it, and nowhere else. Not as the
-    /// device that signs, not above what it certifies now or a recovery
-    /// code it made (listed or not), and a CLI or an `app` certificate
-    /// never.
-    #[test]
-    fn a_grandfathered_app_window_counts_just_above_what_it_approved() {
-        use crate::{Cert, Kind, Revocation};
-        let mk = |name: &str, kind, account: &str, by: Option<&DeviceKeys>| {
-            let k = DeviceKeys::generate();
-            let mut c = Cert::new(&k, account, kind, name);
-            c.sign_with(by.unwrap_or(&k));
-            (k, c)
-        };
-        let (phone, root) = mk("Pixel", Kind::Browser, "a", None);
-        let (window, window_cert) = mk("Arugula app on jake-air", Kind::Browser, "a", Some(&phone));
-        let (firefox, firefox_cert) = mk("Firefox on Mac", Kind::Browser, "a", Some(&window));
-        let (later, later_cert) = mk("Firefox on Linux", Kind::Browser, "a", Some(&firefox));
-        let (edge, edge_cert) = mk("Edge", Kind::Browser, "a", Some(&window));
-        let (code, code_cert) = mk("recovery 1", Kind::Recovery, "a", Some(&window));
-        let (opera, opera_cert) = mk("Opera", Kind::Browser, "a", Some(&code));
-        let (cli, cli_cert) = mk("geek", Kind::Cli, "a", Some(&phone));
-        let (chrome, chrome_cert) = mk("Chrome", Kind::Browser, "a", Some(&cli));
-        let (app, app_cert) = mk("Arugula app on jake-mini", Kind::App, "a", Some(&phone));
-        let (safari, safari_cert) = mk("Safari", Kind::Browser, "a", Some(&app));
-        let certs = [
-            root,
-            window_cert,
-            firefox_cert,
-            later_cert,
-            edge_cert,
-            code_cert,
-            opera_cert,
-            cli_cert,
-            chrome_cert,
-            app_cert,
-            safari_cert,
-        ];
-        let p = phone.id();
-        let ids = |ks: &[&DeviceKeys]| ks.iter().map(|k| k.id()).collect::<Vec<_>>();
-        let chained =
-            |device: &DeviceKeys, children: &[String]| approver_chained("a", &p, &certs, &device.id(), children);
-        let ff = ids(&[&firefox]);
-        assert!(chained(&firefox, &ff), "what the window approved back then");
-        assert!(chained(&later, &ff), "and what that approves now");
-        assert!(!chained(&firefox, &[]) && !chained(&later, &[]), "not when the hub doesn't say so");
-        assert!(!chained(&firefox, &ids(&[&window])), "the window's own id isn't a child");
-        assert!(!chained(&edge, &ff), "what the window certifies now");
-        assert!(!chained(&window, &ff) && !chained(&window, &ids(&[&window])), "the window itself never signs");
-        assert!(!chained(&opera, &ff) && !chained(&opera, &ids(&[&code])), "a recovery code the window made");
-        assert!(!chained(&chrome, &ids(&[&chrome])), "a CLI never counts");
-        assert!(!chained(&safari, &ids(&[&safari])), "nor an `app` certificate");
-        assert!(chained(&phone, &[]) && chained(&phone, &ff), "the phone is as it was");
-
-        // A window as the root (self-signed, from before the app couldn't be
-        // one) counts as the root just above what it approved.
-        let mut wroot = Cert::new(&window, "b", Kind::Browser, "illogical app");
-        wroot.sign_with(&window);
-        let mut b_firefox = Cert::new(&firefox, "b", Kind::Browser, "Firefox");
-        b_firefox.sign_with(&window);
-        let b = [wroot, b_firefox];
-        assert!(approver_chained("b", &window.id(), &b, &firefox.id(), &ff));
-        assert!(!approver_chained("b", &window.id(), &b, &firefox.id(), &[]));
-        assert!(!approver_chained("b", &window.id(), &b, &window.id(), &ff));
-
-        // A machine checks it with the set it pinned, by account.
-        let trust = Trust { account: "a".into(), root: p.clone() };
-        let mine = Owners::Account { trust: &trust, certs: &certs, revocations: &[] as &[Revocation] };
-        let now = 1_000;
-        let check = |by: &DeviceKeys, children: &LegacyAppChildren| {
-            let a = Approval::new(by, "dep_1", &op(), "a", Decision::Once, now + 1);
-            let (cd, ad) = passkey_over(&a, "webauthn.get", 0x05);
-            let parts = Some(PasskeyParts { client_data_json: &cd, authenticator_data: &ad });
-            check_apply(&a, &op(), "dep_1", &mine, children, parts, now)
-        };
-        let pinned = |account: &str, ks: &[&DeviceKeys]| LegacyAppChildren::from([(account.to_owned(), ids(ks))]);
-        assert_eq!(check(&firefox, &pinned("a", &[&firefox])), Ok(()));
-        assert_eq!(check(&firefox, &LegacyAppChildren::new()), Err(ApplyRefusal::Device), "pinned none");
-        assert_eq!(check(&firefox, &pinned("b", &[&firefox])), Err(ApplyRefusal::Device), "another account's");
-        assert_eq!(check(&window, &pinned("a", &[&firefox])), Err(ApplyRefusal::Device), "the window's own");
-        assert_eq!(check(&edge, &pinned("a", &[&firefox])), Err(ApplyRefusal::Device), "what it certifies now");
-    }
-
-    /// root → window W → browser X → browser Y: X removed since doesn't
-    /// take Y with it (a removed device's past approvals stand on any
-    /// chain); Y removed can't approve; W removed certifies nothing new.
-    #[test]
-    fn a_link_removed_since_keeps_what_it_approved() {
-        use crate::{Cert, Kind, Revocation};
-        let mk = |name: &str, kind, by: Option<&DeviceKeys>, created: u64| {
-            let k = DeviceKeys::generate();
-            let mut c = Cert::new(&k, "a", kind, name);
-            c.created = created;
-            c.sign_with(by.unwrap_or(&k));
-            (k, c)
-        };
-        let revoke = |device: &DeviceKeys, by: &DeviceKeys, at: u64| {
-            let mut r = Revocation::new("a", &device.id(), by);
-            r.at = at;
-            r.sig = hex::encode(by.signature(r.body().as_bytes()));
-            r
-        };
-        let (phone, root) = mk("Pixel", Kind::Browser, None, 1);
-        let (w, wc) = mk("illogical app on geek", Kind::Browser, Some(&phone), 10);
-        let (x, xc) = mk("Firefox on Linux", Kind::Browser, Some(&w), 20);
-        let (y, yc) = mk("Firefox on Mac", Kind::Browser, Some(&x), 30);
-        let (z, zc) = mk("Edge", Kind::Browser, Some(&w), 60);
-        let certs = [root, wc, xc, yc, zc];
-        let children = vec![x.id()];
-        let p = phone.id();
-        assert!(approver_chained("a", &p, &certs, &y.id(), &children), "links on the way aren't checked for removal");
-
-        let trust = Trust { account: "a".into(), root: p.clone() };
-        let now = 1_000;
-        let check = |revs: &[Revocation], by: &DeviceKeys| {
-            let mine = Owners::Account { trust: &trust, certs: &certs, revocations: revs };
-            let a = Approval::new(by, "dep_1", &op(), "a", Decision::Once, now + 1);
-            let (cd, ad) = passkey_over(&a, "webauthn.get", 0x05);
-            let parts = Some(PasskeyParts { client_data_json: &cd, authenticator_data: &ad });
-            let pinned = LegacyAppChildren::from([("a".to_owned(), vec![x.id(), z.id()])]);
-            check_apply(&a, &op(), "dep_1", &mine, &pinned, parts, now)
-        };
-        let x_gone = revoke(&x, &phone, 40);
-        assert_eq!(check(std::slice::from_ref(&x_gone), &y), Ok(()), "X removed after it approved Y");
-        let y_gone = revoke(&y, &phone, 40);
-        assert_eq!(check(&[x_gone.clone(), y_gone], &y), Err(ApplyRefusal::Device), "Y removed");
-        // W removed at 50: Z, which it certified at 60, isn't trusted, so it
-        // doesn't approve even were it listed.
-        let w_gone = revoke(&w, &phone, 50);
-        assert!(trust.evaluate(&certs, std::slice::from_ref(&w_gone)).get(&z.id()).is_none());
-        assert_eq!(check(std::slice::from_ref(&w_gone), &z), Err(ApplyRefusal::Device), "what W certifies after");
-        assert_eq!(check(&[w_gone, x_gone], &y), Ok(()), "W and X removed after Y came: Y stands");
+        // The platform page's origin counts once the machine pinned it.
+        let app = Some(k2.over(&good, "https://app.test", 0x05));
+        assert_eq!(check(&team, &logs, &related, &good, app, None), Ok(()));
+        // An editor's passkey doesn't approve, nor anyone's on another's
+        // project.
+        let b = Approval::v2("dep_1", &op(), "b", Decision::Once, now + 1);
+        assert_eq!(check(&team, &logs, &origins, &b, pk(&kb, &b), None), Err(ApplyRefusal::NotAnOwner));
+        assert_eq!(check(&mine, &logs, &origins, &b, pk(&kb, &b), None), Err(ApplyRefusal::NotAnOwner));
+        // The log the work carries must be the pinned one or one after it.
+        let pinned_before: BTreeMap<String, Log> = [("a".to_owned(), before_removal.clone())].into();
+        let k1_good = pk(&k1, &good);
+        assert_eq!(
+            check(&team, &pinned_before, &origins, &good, k1_good.clone(), None),
+            Ok(()),
+            "pinned before the removal"
+        );
+        assert_eq!(
+            check(&team, &pinned_before, &origins, &good, k1_good.clone(), Some(&log)),
+            no(Refusal::NotLive),
+            "a newer log carried: removed since"
+        );
+        assert_eq!(
+            check(&team, &logs, &origins, &good, k1_good, Some(&before_removal)),
+            no(Refusal::NotLive),
+            "an older log carried: the pinned one's removal stands"
+        );
+        let mut rewritten = log.clone();
+        rewritten.events.pop();
+        rewritten.events.push(Pk::new(4).added("a", 400, rewritten.events.last()));
+        assert_eq!(
+            check(&team, &logs, &origins, &good, pk(&k2, &good), Some(&rewritten)),
+            Err(ApplyRefusal::PasskeyLog),
+            "a carried log that dropped a removal"
+        );
+        let none = BTreeMap::new();
+        assert_eq!(
+            check(&team, &none, &origins, &good, pk(&k2, &good), Some(&log)),
+            Err(ApplyRefusal::PasskeyLog),
+            "none pinned"
+        );
+        // A v1 from before DK4 applies by its passkey; its device isn't
+        // looked at.
+        let v1 = Approval::v1(&cli, "dep_1", &op(), "a", Decision::Once, now + 1);
+        assert_eq!(check(&team, &logs, &origins, &v1, pk(&k2, &v1), None), Ok(()));
+        assert_eq!(
+            check(&team, &logs, &origins, &v1, pk(&k2, &good), None),
+            no(Refusal::Challenge),
+            "a v2's assertion"
+        );
+        assert_eq!(
+            check(&team, &logs, &origins, &good, pk(&k2, &v1), None),
+            no(Refusal::Challenge),
+            "a v1's assertion"
+        );
     }
 
     #[test]

@@ -1,16 +1,18 @@
 //! `deploy`: what a deploy's owner approves (the operation's bytes and
-//! hash, the approval's signed bytes and passkey challenge), what a machine
-//! checks before it applies one (`check_apply`), which secrets a driver
-//! takes, and planter's and apps-platform's names and sources.
+//! hash, the approval's bytes and passkey challenge, v2 and v1), what a
+//! machine checks before it applies one (`check_apply`: the owner's passkey
+//! against the passkey log it pinned), which secrets a driver takes, and
+//! planter's and apps-platform's names and sources.
 
 use std::collections::BTreeMap;
 
 use arugula_e2e::{
     Kind,
     deploy::{
-        Approval, Decision, Operation, PasskeyParts, apps_platform, check_apply, driver_secrets, driver_takes, planter,
-        secret_name_ok,
+        ApplyRefusal, Approval, Decision, Operation, Pinned, apps_platform, check_apply, driver_secrets, driver_takes,
+        planter, secret_name_ok,
     },
+    passkey::{Assertion, Change, Draft, EDDSA, Log, NO_AAGUID, Origins},
     team::TeamRole,
 };
 use base64::Engine as _;
@@ -19,7 +21,7 @@ use serde_json::{Value, json};
 use sha2::{Digest as _, Sha256};
 
 use crate::{
-    harness::{Ctx, Example, OWNERS_SHAPE, OwnersIn, Spec, cert, input, member, person, revoke},
+    harness::{Ctx, Example, OWNERS_SHAPE, OwnersIn, Spec, cert, input, member, person},
     team::roster,
 };
 
@@ -127,12 +129,15 @@ fn approval() -> Example {
         "deploy",
         "approval",
         run_approval,
-        "A deploy's approval, or its deny, as an owner's device signs it: the deploy, the operation's hash, the \
-         approver's account, the decision (once or deny), when the apply must start by (ms), and the signing \
-         device, as a fixed text. Its sig is that device's Ed25519 signature over the body. well_formed: no field \
-         is empty, longer than 200 bytes, or holds anything but printable ASCII without spaces, so the body reads \
-         one way only. signed_by: well formed, and the signature is the given key's. Its passkey assertion's \
-         WebAuthn challenge is SHA-256 of the body, base64url without padding.",
+        "A deploy's approval, or its deny, as a fixed text: the deploy, the operation's hash, the approver's \
+         account, the decision (once or deny) and when the apply must start by (ms). v2 (DK4, aru-126; `v: 2`) \
+         is the only kind made now: no device signs it (no by, no sig), and its signature is a passkey's \
+         assertion whose WebAuthn challenge is SHA-256 of the body, base64url without padding. v1 (M218; no \
+         `v`) named the signing device too, as its body's last line, and carried that device's Ed25519 \
+         signature over the body (sig). well_formed: no field is empty, longer than 200 bytes, or holds \
+         anything but printable ASCII without spaces, so the body reads one way only; a v2 has no by and no \
+         sig, and no other version is. signed_by: a v1, well formed, and the signature is the given key's; \
+         never a v2.",
         &[
             "arugula_e2e::deploy::Approval::body",
             "arugula_e2e::deploy::Approval::well_formed",
@@ -141,24 +146,34 @@ fn approval() -> Example {
         ],
     )
     .shapes(
-        "approval: an approval's label; sign: an Ed25519 public key, hex, to check its signature against",
+        "approval: an approval's label; sign: an Ed25519 public key, hex, to check a v1's signature against",
         "body; well_formed; signed_by: whether sign signed it; passkey_challenge",
     );
     let alice = person(&mut ex, "alice", 1);
     let other = ex.key("someone-else", 2);
     let o = op(&plan('a'), "production");
     ex.object("op", &o);
-    let once = Approval::new(&alice.keys, "dep_1", &o, "alice", Decision::Once, 90_000);
-    let deny = Approval::new(&alice.keys, "dep_1", &o, "alice", Decision::Deny, 90_000);
+    let v2 = Approval::v2("dep_1", &o, "alice", Decision::Once, 90_000);
+    let v2_deny = Approval::v2("dep_1", &o, "alice", Decision::Deny, 90_000);
+    let v2_named = Approval { by: alice.keys.id(), ..v2.clone() };
+    let v2_signed = Approval { sig: hex::encode(alice.keys.signature(v2.body().as_bytes())), ..v2.clone() };
+    let v3 = Approval { v: 3, ..v2.clone() };
+    let once = Approval::v1(&alice.keys, "dep_1", &o, "alice", Decision::Once, 90_000);
+    let deny = Approval::v1(&alice.keys, "dep_1", &o, "alice", Decision::Deny, 90_000);
     let pk = hex::encode(alice.keys.sign_public());
     let them = hex::encode(other.sign_public());
     let mut later = once.clone();
     later.expires = 99_000;
-    let mut spaced = Approval::new(&alice.keys, "dep_1 dep_2", &o, "alice", Decision::Once, 90_000);
+    let mut spaced = Approval::v1(&alice.keys, "dep_1 dep_2", &o, "alice", Decision::Once, 90_000);
     spaced.account = "alice".into();
     let mut moved = once.clone();
     moved.deploy = "dep_2".into();
     for (l, a) in [
+        ("v2", &v2),
+        ("v2-deny", &v2_deny),
+        ("v2-naming-a-device", &v2_named),
+        ("v2-with-a-signature", &v2_signed),
+        ("v3", &v3),
         ("once", &once),
         ("deny", &deny),
         ("expires-changed", &later),
@@ -171,13 +186,18 @@ fn approval() -> Example {
         let got = ex.computed(about, json!({ "approval": l, "sign": sign }));
         assert_eq!((got["signed_by"].as_bool(), got["well_formed"].as_bool()), (Some(ok), Some(form)), "{about}");
     };
-    case("alice approves the deploy once", "once", &pk, true, true);
-    case("alice denies it: a deny is signed too", "deny", &pk, true, true);
-    case("checked against another key", "once", &them, false, true);
-    case("its expiry pushed out after she signed", "expires-changed", &pk, false, true);
-    case("moved to another deploy after she signed", "other-deploy", &pk, false, true);
+    case("alice approves the deploy once, v2: her passkey's assertion is its signature", "v2", &pk, false, true);
+    case("alice denies it, v2", "v2-deny", &pk, false, true);
+    case("a v2 naming a device: not well formed", "v2-naming-a-device", &pk, false, false);
+    case("a v2 carrying a device's signature: not well formed", "v2-with-a-signature", &pk, false, false);
+    case("version 3: not one", "v3", &pk, false, false);
+    case("v1: alice approves the deploy once, from her device", "once", &pk, true, true);
+    case("v1: alice denies it: a deny is signed too", "deny", &pk, true, true);
+    case("v1, checked against another key", "once", &them, false, true);
+    case("v1, its expiry pushed out after she signed", "expires-changed", &pk, false, true);
+    case("v1, moved to another deploy after she signed", "other-deploy", &pk, false, true);
     case(
-        "a space in a field: not well formed, so never signed_by, whoever signed it",
+        "v1, a space in a field: not well formed, so never signed_by, whoever signed it",
         "space-in-deploy",
         &pk,
         false,
@@ -190,35 +210,42 @@ fn approval() -> Example {
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
-struct Passkey {
-    client_data_json: String,
-    authenticator_data: String,
-}
-
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
 struct ApplyIn {
     approval: String,
     op: String,
     deploy: String,
     owners: OwnersIn,
-    #[serde(default)]
-    children: BTreeMap<String, Vec<String>>,
-    passkey: Option<Passkey>,
+    /// The passkey logs the machine pinned: account → a log's label.
+    passkey_logs: BTreeMap<String, String>,
+    origins: Origins,
+    /// An assertion's label, or none.
+    passkey: Option<String>,
+    /// The log the work carried: a log's label, or none.
+    carried: Option<String>,
     now: u64,
 }
 
 fn run_check_apply(ctx: &Ctx, v: &Value) -> anyhow::Result<Value> {
     let i: ApplyIn = input(v)?;
     let owners = i.owners.load(ctx)?;
-    let passkey = i
-        .passkey
-        .as_ref()
-        .map(|p| PasskeyParts { client_data_json: &p.client_data_json, authenticator_data: &p.authenticator_data });
-    let r =
-        check_apply(&ctx.get(&i.approval)?, &ctx.get(&i.op)?, &i.deploy, &owners.owners(), &i.children, passkey, i.now);
+    let owners = owners.owners();
+    let logs: BTreeMap<String, Log> =
+        i.passkey_logs.iter().map(|(a, l)| Ok((a.clone(), ctx.get(l)?))).collect::<anyhow::Result<_>>()?;
+    let passkey: Option<Assertion> = i.passkey.as_deref().map(|l| ctx.get(l)).transpose()?;
+    let carried: Option<Log> = i.carried.as_deref().map(|l| ctx.get(l)).transpose()?;
+    let pinned = Pinned { owners: &owners, passkey_logs: &logs, origins: &i.origins };
+    let r = check_apply(
+        &ctx.get(&i.approval)?,
+        &ctx.get(&i.op)?,
+        &i.deploy,
+        &pinned,
+        passkey.as_ref(),
+        carried.as_ref(),
+        i.now,
+    );
     Ok(match r {
         Ok(()) => json!({ "ok": true }),
+        Err(ApplyRefusal::Passkey(Some(why))) => json!({ "refused": "approval_passkey", "passkey": why.code() }),
         Err(e) => json!({ "refused": e.code() }),
     })
 }
@@ -227,14 +254,59 @@ fn b64(b: &[u8]) -> String {
     base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(b)
 }
 
-/// A passkey assertion's client data and authenticator data over `challenge`.
-fn passkey(kind: &str, challenge: &str, flags: u8, len: usize) -> Value {
-    let cd = json!({ "type": kind, "challenge": challenge, "origin": "https://app.example.invalid" }).to_string();
-    let mut data = Sha256::digest(b"app.example.invalid").to_vec();
-    data.push(flags);
-    data.extend([0, 0, 0, 7]);
-    data.truncate(len);
-    json!({ "client_data_json": b64(cd.as_bytes()), "authenticator_data": b64(&data) })
+const RP: &str = "control.example.invalid";
+const CONTROL: &str = "https://control.example.invalid";
+const APP: &str = "https://app.example.invalid";
+
+/// A test passkey: Ed25519 from seed byte `n`, its id `n` sixteen times.
+struct Pk {
+    key: ed25519_dalek::SigningKey,
+    id: String,
+}
+
+impl Pk {
+    fn new(n: u8) -> Self {
+        Pk { key: ed25519_dalek::SigningKey::from_bytes(&[n; 32]), id: b64(&[n; 16]) }
+    }
+
+    /// Its `added` event in `account`'s log at `at`, after the log's last.
+    fn add_to(&self, log: &mut Log, at: u64) {
+        let e = Draft {
+            account: log.account.clone(),
+            event: Change::Added,
+            credential: self.id.clone(),
+            rp: RP.into(),
+            alg: EDDSA,
+            key: self.key.verifying_key().to_bytes().to_vec(),
+            aaguid: NO_AAGUID.into(),
+            at,
+            by: "signup".into(),
+        }
+        .after(log.events.last());
+        log.events.push(e);
+    }
+
+    /// An assertion of `kind` over `challenge` from `origin` for RP `rp`,
+    /// with `flags`.
+    fn sign(&self, kind: &str, challenge: &str, origin: &str, rp: &str, flags: u8) -> Assertion {
+        use ed25519_dalek::Signer as _;
+        let cd = json!({ "type": kind, "challenge": challenge, "origin": origin }).to_string();
+        let mut data = Sha256::digest(rp.as_bytes()).to_vec();
+        data.push(flags);
+        data.extend([0, 0, 0, 0]);
+        let mut msg = data.clone();
+        msg.extend_from_slice(&Sha256::digest(cd.as_bytes()));
+        Assertion {
+            id: self.id.clone(),
+            client_data_json: b64(cd.as_bytes()),
+            authenticator_data: b64(&data),
+            signature: b64(&self.key.sign(&msg).to_bytes()),
+        }
+    }
+
+    fn over(&self, a: &Approval) -> Assertion {
+        self.sign("webauthn.get", &a.passkey_challenge(), CONTROL, RP, 0x05)
+    }
 }
 
 fn check_apply_cases() -> Example {
@@ -242,86 +314,73 @@ fn check_apply_cases() -> Example {
         "deploy",
         "check_apply",
         run_check_apply,
-        "What a machine checks before it applies a deploy (M219), from what it pinned rather than the platform's \
-         word, in this order, the first failure being the refusal: the approval is well formed (approval_form); \
-         for this deploy (approval_deploy); over exactly this operation's hash (approval_operation); once, not a \
-         deny (approval_denied); not expired, expires > now (approval_expired); its account an owner of the \
-         project, as the machine knows them, its team's roster or its own account (approval_not_an_owner); its \
-         device trusted now from that owner's root, and a browser's or a phone's own device certified by \
-         browsers (or recovery codes) back to a root that is a browser, never a CLI's or the app's \
-         (approval_device; a grandfathered app window counts only just above a browser the hub says it \
-         approved, `children`); the signature that device's (approval_signature); and a passkey assertion with \
-         it: client data of type webauthn.get whose challenge is the approval's, authenticator data of at least \
-         37 bytes with user presence and verification (flags & 0x05), base64url with or without padding \
-         (approval_passkey). The passkey's own signature is the hub's to check.",
+        "What a machine checks before it applies a deploy (M219; DK4, aru-126), from what it pinned rather than \
+         the platform's word, in this order, the first failure being the refusal: the approval is well formed \
+         (approval_form; a v2, or a v1 made before DK4); for this deploy (approval_deploy); over exactly this \
+         operation's hash (approval_operation); once, not a deny (approval_denied); not expired, expires > now \
+         (approval_expired); its account an owner of the project, as the machine knows them, its team's roster \
+         or its own account (approval_not_an_owner); a passkey assertion with it (approval_passkey, with no \
+         `passkey`); the account's passkey log pinned, and the one the work carried, if any, the pinned one or \
+         one after it, its events the pinned one's first (approval_passkey_log), the newer of the two being \
+         used; and the assertion checked against that log at now, as passkey/verify does (approval_passkey, \
+         `passkey` saying which check failed: not_live for a key not in the log or removed by now, origin for \
+         an origin not pinned for its RP, challenge for other bytes, user without UV). No device plays a \
+         part: which devices the owner has, and who certified them, is never looked at. A v1 is checked by its \
+         passkey alone, as a v2 is.",
         &[
             "arugula_e2e::deploy::check_apply",
-            "arugula_e2e::deploy::approver_chained",
-            "arugula_e2e::deploy::passkey_binds",
+            "arugula_e2e::deploy::Approval::passkey_checks",
+            "arugula_e2e::passkey::newest",
+            "arugula_e2e::passkey::extends",
         ],
     )
     .shapes(
         &format!(
-            "approval and op: labels; deploy: the deploy the run applies; {OWNERS_SHAPE}; children: the browsers \
-             grandfathered app windows approved, by account ({{ account: [device ids] }}); passkey: {{ \
-             client_data_json, authenticator_data }}, each base64url, or null; now: the machine's clock, ms"
+            "approval and op: labels; deploy: the deploy the run applies; {OWNERS_SHAPE}; passkey_logs: the \
+             passkey logs the machine pinned, {{ account: a log's label }}; origins: which origins may use each \
+             RP's passkeys, as the machine pinned them ({{ rp: [origins] }}); passkey: an assertion's label, or \
+             null; carried: the label of the log the work carried, or null; now: the machine's clock, ms"
         ),
-        "ok: true, or refused: the check's code",
+        "ok: true, or refused: the check's code (and passkey: passkey/verify's refusal)",
     );
     let alice = person(&mut ex, "alice", 1);
     let bob = person(&mut ex, "bob", 2);
     let ak = &alice.keys;
-    let k = |ex: &mut Example, l: &str, n| ex.key(l, n);
-    let (cli, app, oldapp, code, recovered, phone, by_old, laundered, gone) = (
-        k(&mut ex, "alice-cli", 10),
-        k(&mut ex, "alice-app", 11),
-        k(&mut ex, "alice-old-app", 12),
-        k(&mut ex, "alice-recovery", 13),
-        k(&mut ex, "alice-recovered-laptop", 14),
-        k(&mut ex, "alice-phone", 15),
-        k(&mut ex, "alice-phone-by-old-app", 16),
-        k(&mut ex, "alice-browser-by-cli", 17),
-        k(&mut ex, "alice-revoked-tablet", 18),
-    );
-    for (l, c) in [
-        ("alice-cli", cert(&cli, "alice", Kind::Cli, "terminal", 1_100, ak)),
-        ("alice-app", cert(&app, "alice", Kind::App, "Arugula app", 1_100, ak)),
-        ("alice-old-app", cert(&oldapp, "alice", Kind::Browser, "Arugula app on jake-air", 1_100, ak)),
-        ("alice-recovery", cert(&code, "alice", Kind::Recovery, "recovery 1", 1_100, ak)),
-        ("alice-recovered-laptop", cert(&recovered, "alice", Kind::Browser, "new laptop", 1_200, &code)),
-        ("alice-phone", cert(&phone, "alice", Kind::Browser, "phone", 1_100, ak)),
-        ("alice-phone-by-old-app", cert(&by_old, "alice", Kind::Browser, "Safari on iPhone", 1_200, &oldapp)),
-        ("alice-browser-by-cli", cert(&laundered, "alice", Kind::Browser, "laundered", 1_200, &cli)),
-        ("alice-revoked-tablet", cert(&gone, "alice", Kind::Browser, "tablet", 1_100, ak)),
-    ] {
-        ex.object(l, &c);
-    }
-    ex.object("alice-tablet-revoked", &revoke("alice", &gone.id(), 5_000, ak));
-    // A CLI-rooted account: its root is a CLI, so nothing of it approves.
-    let cliroot = ex.key("carol-cli-root", 20);
-    ex.object("carol-cli-root", &cert(&cliroot, "carol", Kind::Cli, "terminal", 1_000, &cliroot));
-    let alice_certs: Vec<&str> = vec![
-        "alice",
-        "alice-cli",
-        "alice-app",
-        "alice-old-app",
-        "alice-recovery",
-        "alice-recovered-laptop",
-        "alice-phone",
-        "alice-phone-by-old-app",
-        "alice-browser-by-cli",
-        "alice-revoked-tablet",
-    ];
+    // alice's only other device is a CLI: it plays no part.
+    let cli = ex.key("alice-cli", 10);
+    ex.object("alice-cli", &cert(&cli, "alice", Kind::Cli, "terminal", 1_100, ak));
     ex.object(
         "team-roster",
         &roster(1, 1_000, vec![member(&alice, TeamRole::Owner), member(&bob, TeamRole::Editor)], ak),
     );
-    let account = json!({ "account": { "account": "alice", "root": alice.cert.device, "certs": alice_certs,
-                          "revocations": ["alice-tablet-revoked"] } });
+    let account =
+        json!({ "account": { "account": "alice", "root": alice.cert.device, "certs": ["alice", "alice-cli"] } });
     let team = json!({ "team": { "roster": "team-roster", "certs": {
-        "alice": { "certs": alice_certs, "revocations": ["alice-tablet-revoked"] },
-        "bob": { "certs": ["bob"] } } } });
-    let carol = json!({ "account": { "account": "carol", "root": cliroot.id(), "certs": ["carol-cli-root"] } });
+        "alice": { "certs": ["alice", "alice-cli"] }, "bob": { "certs": ["bob"] } } } });
+
+    // alice's passkeys: k1 added at 1000, k2 at 2000, k1 removed at 30000
+    // (by a reset); bob's kb. k9 is in no log.
+    let (k1, k2, kb, k9) = (Pk::new(0x31), Pk::new(0x32), Pk::new(0x33), Pk::new(0x39));
+    let mut log = Log { account: "alice".into(), ..Default::default() };
+    k1.add_to(&mut log, 1_000);
+    k2.add_to(&mut log, 2_000);
+    let before_removal = log.clone();
+    let removal = log.events[0].removal(30_000, "reset").placed_after(log.events.last());
+    log.events.push(removal);
+    let mut rewritten = before_removal.clone();
+    Pk::new(0x34).add_to(&mut rewritten, 30_000);
+    let mut blog = Log { account: "bob".into(), ..Default::default() };
+    kb.add_to(&mut blog, 1_000);
+    for (l, g) in [
+        ("alice-log", &log),
+        ("alice-log-before-removal", &before_removal),
+        ("alice-log-rewritten", &rewritten),
+        ("bob-log", &blog),
+    ] {
+        ex.object(l, g);
+    }
+    let logs = json!({ "alice": "alice-log", "bob": "bob-log" });
+    let origins = json!({ RP: [CONTROL] });
 
     let o = op(&plan('a'), "production");
     ex.object("op", &o);
@@ -329,42 +388,47 @@ fn check_apply_cases() -> Example {
     ex.object("op-renamed", &op(&plan('a'), "prod"));
     ex.object("op-other-project", &Operation { project: "prj_2".into(), ..o.clone() });
     let now = 50_000;
-    let approve = |ex: &mut Example, l: &str, by: &arugula_e2e::DeviceKeys, account: &str, d: Decision, exp: u64| {
-        let a = Approval::new(by, "dep_1", &o, account, d, exp);
+    let v2 = |ex: &mut Example, l: &str, account: &str, d: Decision, exp: u64| {
+        let a = Approval::v2("dep_1", &o, account, d, exp);
         ex.object(l, &a);
         a
     };
-    let good = approve(&mut ex, "by-alice", ak, "alice", Decision::Once, 90_000);
-    let pk = |a: &Approval| passkey("webauthn.get", &a.passkey_challenge(), 0x05, 37);
+    let good = v2(&mut ex, "by-alice", "alice", Decision::Once, 90_000);
+    let assertion = |ex: &mut Example, l: &str, a: Assertion| -> Value {
+        ex.object(l, &a);
+        json!(l)
+    };
+    let p = assertion(&mut ex, "k2-over-by-alice", k2.over(&good));
     let mut cases: Vec<(String, String, Value, Value, Value, Value)> = vec![];
-    let mut add = |about: &str, a: &str, owners: &Value, passkey: Value, more: Value, want: Value| {
-        cases.push((about.into(), a.into(), owners.clone(), passkey, more, want));
+    let mut add = |about: &str, a: &str, owners: &Value, passkey: &Value, more: Value, want: Value| {
+        cases.push((about.into(), a.into(), owners.clone(), passkey.clone(), more, want));
     };
     let ok = json!({ "ok": true });
     let no = |code: &str| json!({ "refused": code });
-    let p = pk(&good);
+    let pk_no = |why: &str| json!({ "refused": "approval_passkey", "passkey": why });
     add(
-        "alice, owner of her account's project, approves from her root browser",
+        "alice, owner of her account's project, approves with her passkey",
         "by-alice",
         &account,
-        p.clone(),
+        &p,
         json!({}),
         ok.clone(),
     );
-    add("alice, owner of the team's project, approves", "by-alice", &team, p.clone(), json!({}), ok.clone());
+    add("alice, owner of the team's project, approves", "by-alice", &team, &p, json!({}), ok.clone());
     add(
-        "checked for another deploy",
+        "the work carried the log the machine pinned",
         "by-alice",
-        &account,
-        p.clone(),
-        json!({ "deploy": "dep_2" }),
-        no("approval_deploy"),
+        &team,
+        &p,
+        json!({ "carried": "alice-log" }),
+        ok.clone(),
     );
+    add("checked for another deploy", "by-alice", &account, &p, json!({ "deploy": "dep_2" }), no("approval_deploy"));
     add(
         "checked against another plan",
         "by-alice",
         &account,
-        p.clone(),
+        &p,
         json!({ "op": "op-other-plan" }),
         no("approval_operation"),
     );
@@ -372,7 +436,7 @@ fn check_apply_cases() -> Example {
         "checked against the environment renamed",
         "by-alice",
         &account,
-        p.clone(),
+        &p,
         json!({ "op": "op-renamed" }),
         no("approval_operation"),
     );
@@ -380,107 +444,121 @@ fn check_apply_cases() -> Example {
         "checked against another project's operation",
         "by-alice",
         &account,
-        p.clone(),
+        &p,
         json!({ "op": "op-other-project" }),
         no("approval_operation"),
     );
-    let deny = approve(&mut ex, "deny-by-alice", ak, "alice", Decision::Deny, 90_000);
-    add("a deny", "deny-by-alice", &account, pk(&deny), json!({}), no("approval_denied"));
-    add("its expiry is now", "by-alice", &account, p.clone(), json!({ "now": 90_000 }), no("approval_expired"));
-    add("1 ms before its expiry", "by-alice", &account, p.clone(), json!({ "now": 89_999 }), ok.clone());
-    let by_bob = approve(&mut ex, "by-bob", &bob.keys, "bob", Decision::Once, 90_000);
-    add("bob, an editor of the team, approves", "by-bob", &team, pk(&by_bob), json!({}), no("approval_not_an_owner"));
-    add("bob approves alice's own project", "by-bob", &account, pk(&by_bob), json!({}), no("approval_not_an_owner"));
-    let by_mallory = approve(&mut ex, "mallory-as-alice-by-bob", &bob.keys, "alice", Decision::Once, 90_000);
+    let deny = v2(&mut ex, "deny-by-alice", "alice", Decision::Deny, 90_000);
+    let pd = assertion(&mut ex, "k2-over-deny-by-alice", k2.over(&deny));
+    add("a deny", "deny-by-alice", &account, &pd, json!({}), no("approval_denied"));
+    add("its expiry is now", "by-alice", &account, &p, json!({ "now": 90_000 }), no("approval_expired"));
+    add("1 ms before its expiry", "by-alice", &account, &p, json!({ "now": 89_999 }), ok.clone());
+    let by_bob = v2(&mut ex, "by-bob", "bob", Decision::Once, 90_000);
+    let pb = assertion(&mut ex, "kb-over-by-bob", kb.over(&by_bob));
+    add("bob, an editor of the team, approves", "by-bob", &team, &pb, json!({}), no("approval_not_an_owner"));
+    add("bob approves alice's own project", "by-bob", &account, &pb, json!({}), no("approval_not_an_owner"));
+    let as_alice = assertion(&mut ex, "kb-over-by-alice", kb.over(&good));
+    add("bob's passkey says it's alice's approval", "by-alice", &team, &as_alice, json!({}), pk_no("not_live"));
+    add("no passkey assertion", "by-alice", &account, &Value::Null, json!({}), no("approval_passkey"));
+    let p9 = assertion(&mut ex, "k9-over-by-alice", k9.over(&good));
+    add("a passkey that's in no log", "by-alice", &account, &p9, json!({}), pk_no("not_live"));
+    let p1 = assertion(&mut ex, "k1-over-by-alice", k1.over(&good));
+    add("a passkey removed from her log before now", "by-alice", &account, &p1, json!({}), pk_no("not_live"));
     add(
-        "bob's device signs as alice",
-        "mallory-as-alice-by-bob",
+        "the same, the machine having pinned her log before the removal",
+        "by-alice",
         &account,
-        pk(&by_mallory),
-        json!({}),
-        no("approval_device"),
+        &p1,
+        json!({ "passkey_logs": { "alice": "alice-log-before-removal" } }),
+        ok.clone(),
     );
-    for (l, by, about, want) in [
-        ("by-alice-cli", &cli, "from alice's CLI", no("approval_device")),
-        ("by-alice-app", &app, "from alice's app", no("approval_device")),
+    add(
+        "the same, the work carrying the log since the removal",
+        "by-alice",
+        &account,
+        &p1,
+        json!({ "passkey_logs": { "alice": "alice-log-before-removal" }, "carried": "alice-log" }),
+        pk_no("not_live"),
+    );
+    add(
+        "the work carrying her log from before the removal the machine pinned: the pinned one counts",
+        "by-alice",
+        &account,
+        &p1,
+        json!({ "carried": "alice-log-before-removal" }),
+        pk_no("not_live"),
+    );
+    add(
+        "the work carrying a log that dropped the removal and added a key",
+        "by-alice",
+        &account,
+        &p,
+        json!({ "carried": "alice-log-rewritten" }),
+        no("approval_passkey_log"),
+    );
+    add(
+        "the machine pinned no log for her",
+        "by-alice",
+        &account,
+        &p,
+        json!({ "passkey_logs": { "bob": "bob-log" }, "carried": "alice-log" }),
+        no("approval_passkey_log"),
+    );
+    let ch = good.passkey_challenge();
+    let from_app = assertion(&mut ex, "k2-over-by-alice-from-app", k2.sign("webauthn.get", &ch, APP, RP, 0x05));
+    add("from the platform page's origin, not pinned", "by-alice", &account, &from_app, json!({}), pk_no("origin"));
+    add(
+        "from the platform page's origin, pinned for the RP",
+        "by-alice",
+        &account,
+        &from_app,
+        json!({ "origins": { RP: [CONTROL, APP] } }),
+        ok.clone(),
+    );
+    let other = Approval::v2("dep_9", &o, "alice", Decision::Once, 90_000).passkey_challenge();
+    for (l, about, a, want) in [
         (
-            "by-alice-old-app",
-            &oldapp,
-            "from the app's browser certificate from before it had a kind",
-            no("approval_device"),
+            "k2-create",
+            "a passkey made for a registration (webauthn.create)",
+            k2.sign("webauthn.create", &ch, CONTROL, RP, 0x05),
+            pk_no("ceremony"),
         ),
-        ("by-alice-recovery", &code, "from alice's recovery code", no("approval_device")),
-        ("by-alice-recovered", &recovered, "from a browser her recovery code let in", ok.clone()),
-        ("by-alice-phone", &phone, "from a phone her root approved", ok.clone()),
         (
-            "by-alice-phone-by-old-app",
-            &by_old,
-            "from a phone the old app window approved, with no children pinned",
-            no("approval_device"),
+            "k2-other-challenge",
+            "a passkey over another approval's challenge",
+            k2.sign("webauthn.get", &other, CONTROL, RP, 0x05),
+            pk_no("challenge"),
         ),
-        ("by-alice-browser-by-cli", &laundered, "from a browser her CLI made (never trusted)", no("approval_device")),
-        ("by-alice-revoked-tablet", &gone, "from a tablet she revoked", no("approval_device")),
+        ("k2-up-only", "user presence only", k2.sign("webauthn.get", &ch, CONTROL, RP, 0x01), pk_no("user")),
+        ("k2-uv-only", "user verification only", k2.sign("webauthn.get", &ch, CONTROL, RP, 0x04), pk_no("user")),
+        ("k2-more-flags", "more flags set: fine", k2.sign("webauthn.get", &ch, CONTROL, RP, 0x45), ok.clone()),
+        ("k2-other-rp", "for another RP", k2.sign("webauthn.get", &ch, CONTROL, "other.invalid", 0x05), pk_no("rp")),
     ] {
-        let a = approve(&mut ex, l, by, "alice", Decision::Once, 90_000);
-        add(about, l, &account, pk(&a), json!({}), want);
+        let v = assertion(&mut ex, l, a);
+        add(about, "by-alice", &account, &v, json!({}), want);
     }
-    let a = approve(&mut ex, "by-alice-phone-by-old-app", &by_old, "alice", Decision::Once, 90_000);
+    let mut forged = k2.over(&good);
+    forged.signature = b64(&[0u8; 64]);
+    let forged = assertion(&mut ex, "k2-forged", forged);
+    add("a signature that isn't the passkey's", "by-alice", &account, &forged, json!({}), pk_no("signature"));
+    // A v1 from before DK4, by alice's CLI, applies by its passkey alone.
+    let v1 = Approval::v1(&cli, "dep_1", &o, "alice", Decision::Once, 90_000);
+    ex.object("v1-by-alice-cli", &v1);
+    let pv1 = assertion(&mut ex, "k2-over-v1-by-alice-cli", k2.over(&v1));
     add(
-        "from a phone the old app window approved, the hub naming it among the window's children",
-        "by-alice-phone-by-old-app",
+        "a v1 made before DK4, by her CLI: its passkey alone counts",
+        "v1-by-alice-cli",
         &account,
-        pk(&a),
-        json!({ "children": { "alice": [by_old.id()] } }),
+        &pv1,
+        json!({}),
         ok.clone(),
     );
-    add(
-        "the same, as alice's team's owner",
-        "by-alice-phone-by-old-app",
-        &team,
-        pk(&a),
-        json!({ "children": { "alice": [by_old.id()] } }),
-        ok.clone(),
-    );
-    let a = approve(&mut ex, "by-alice-old-app-as-child", &oldapp, "alice", Decision::Once, 90_000);
-    add(
-        "from the old app window itself, the hub naming it among its own children",
-        "by-alice-old-app-as-child",
-        &account,
-        pk(&a),
-        json!({ "children": { "alice": [oldapp.id()] } }),
-        no("approval_device"),
-    );
-    let a = approve(&mut ex, "by-carol-cli-root", &cliroot, "carol", Decision::Once, 90_000);
-    add(
-        "carol's account is rooted at a CLI: its root approves nothing",
-        "by-carol-cli-root",
-        &carol,
-        pk(&a),
-        json!({}),
-        no("approval_device"),
-    );
-    let mut pushed = good.clone();
-    pushed.expires = 99_000;
-    ex.object("by-alice-expiry-pushed", &pushed);
-    add(
-        "its expiry pushed out after she signed",
-        "by-alice-expiry-pushed",
-        &account,
-        pk(&pushed),
-        json!({}),
-        no("approval_signature"),
-    );
-    let mut forged = good.clone();
-    forged.sig = hex::encode(bob.keys.signature(good.body().as_bytes()));
-    ex.object("by-alice-signed-by-bob", &forged);
-    add(
-        "said to be by alice's device, signed by bob's",
-        "by-alice-signed-by-bob",
-        &account,
-        pk(&forged),
-        json!({}),
-        no("approval_signature"),
-    );
+    add("a v1 with a v2's assertion", "v1-by-alice-cli", &account, &p, json!({}), pk_no("challenge"));
+    add("a v2 with a v1's assertion", "by-alice", &account, &pv1, json!({}), pk_no("challenge"));
+    let mut named = good.clone();
+    named.by = cli.id();
+    ex.object("v2-naming-a-device", &named);
+    add("a v2 naming a device", "v2-naming-a-device", &account, &p, json!({}), no("approval_form"));
     let mut spaced = good.clone();
     spaced.deploy = "dep_1 dep_2".into();
     ex.object("space-in-deploy", &spaced);
@@ -488,77 +566,14 @@ fn check_apply_cases() -> Example {
         "a space in its deploy",
         "space-in-deploy",
         &account,
-        p.clone(),
+        &p,
         json!({ "deploy": "dep_1 dep_2" }),
         no("approval_form"),
     );
-    let mut empty = good.clone();
-    empty.sig = String::new();
-    ex.object("no-signature", &empty);
-    add("no signature", "no-signature", &account, p.clone(), json!({}), no("approval_form"));
-    let ch = good.passkey_challenge();
-    let other = Approval::new(ak, "dep_9", &o, "alice", Decision::Once, 90_000).passkey_challenge();
-    add("no passkey assertion", "by-alice", &account, Value::Null, json!({}), no("approval_passkey"));
-    add(
-        "a passkey made for a registration (webauthn.create)",
-        "by-alice",
-        &account,
-        passkey("webauthn.create", &ch, 0x05, 37),
-        json!({}),
-        no("approval_passkey"),
-    );
-    add(
-        "a passkey over another approval's challenge",
-        "by-alice",
-        &account,
-        passkey("webauthn.get", &other, 0x05, 37),
-        json!({}),
-        no("approval_passkey"),
-    );
-    add(
-        "a passkey with user presence only",
-        "by-alice",
-        &account,
-        passkey("webauthn.get", &ch, 0x01, 37),
-        json!({}),
-        no("approval_passkey"),
-    );
-    add(
-        "a passkey with user verification only",
-        "by-alice",
-        &account,
-        passkey("webauthn.get", &ch, 0x04, 37),
-        json!({}),
-        no("approval_passkey"),
-    );
-    add(
-        "a passkey with more flags set: fine",
-        "by-alice",
-        &account,
-        passkey("webauthn.get", &ch, 0x45, 37),
-        json!({}),
-        ok.clone(),
-    );
-    add(
-        "authenticator data of 36 bytes",
-        "by-alice",
-        &account,
-        passkey("webauthn.get", &ch, 0x05, 36),
-        json!({}),
-        no("approval_passkey"),
-    );
-    let mut padded = passkey("webauthn.get", &ch, 0x05, 37);
-    padded["client_data_json"] = json!(format!("{}==", padded["client_data_json"].as_str().unwrap()));
-    add("its client data base64url with padding: fine", "by-alice", &account, padded, json!({}), ok.clone());
-    let mut not_json = passkey("webauthn.get", &ch, 0x05, 37);
-    not_json["client_data_json"] = json!(b64(b"not json"));
-    add("client data that isn't JSON", "by-alice", &account, not_json, json!({}), no("approval_passkey"));
-    let mut not_b64 = passkey("webauthn.get", &ch, 0x05, 37);
-    not_b64["authenticator_data"] = json!("!!!");
-    add("authenticator data that isn't base64url", "by-alice", &account, not_b64, json!({}), no("approval_passkey"));
     for (about, a, owners, passkey, more, want) in cases {
-        let mut input = json!({ "approval": a, "op": "op", "deploy": "dep_1", "owners": owners, "children": {},
-                                "passkey": passkey, "now": now });
+        let mut input = json!({ "approval": a, "op": "op", "deploy": "dep_1", "owners": owners,
+                                "passkey_logs": logs, "origins": origins, "passkey": passkey, "carried": null,
+                                "now": now });
         for (k, v) in more.as_object().unwrap() {
             input[k] = v.clone();
         }

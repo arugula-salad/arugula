@@ -1018,11 +1018,26 @@ impl Assertion {
 }
 
 /// The origins each of control's own sites' passkeys may be used from: the
-/// site's own (aru-078; DK4 adds the platform page's).
+/// site's own (aru-078). What sign-in, the step-up and adding or removing a
+/// passkey take ([`asserted`]): never the platform page's.
 fn site_origins<'a>(sites: impl IntoIterator<Item = &'a Site>) -> Origins {
     let mut o = Origins::new();
     for s in sites {
         o.entry(rp_id(s).to_owned()).or_default().push(s.origin.clone());
+    }
+    o
+}
+
+/// The origins a passkey may be used from for a platform action (a
+/// deploy's approval or deny, DK4, aru-126): control's own sites'
+/// ([`site_origins`]), and the platform page's for the RP of control's
+/// public URL, the related origin `/.well-known/webauthn` lists (S46 q1).
+/// Only [`verify_for`] and what a deploy's box pins take it: the platform
+/// page can't sign anyone in to control.
+pub(crate) fn platform_origins(app: &App) -> Origins {
+    let mut o = site_origins(&app.cfg.sites);
+    if let Some(p) = &app.cfg.platform_host {
+        arugula_e2e::passkey::add_related_origin(&mut o, &app.cfg.public_url, &p.origin);
     }
     o
 }
@@ -1067,9 +1082,10 @@ fn counted(pk: &Passkey, count: u32) -> Result<(), ApiError> {
 /// checked for the platform (`HubPort::verify_passkey`) against `account`'s
 /// passkey log, as the platform itself now checks it
 /// (`arugula_e2e::passkey::verify`): live now, a `webauthn.get` from one of
-/// control's own sites over exactly `challenge` (base64url), the person
-/// verified (UV), the signature; and here its counter didn't go backwards.
-/// Nothing is signed in. Why not, or `Ok`.
+/// control's own sites or the platform page ([`platform_origins`], DK4)
+/// over exactly `challenge` (base64url), the person verified (UV), the
+/// signature; and here its counter didn't go backwards. Nothing is signed
+/// in. Why not, or `Ok`.
 pub fn verify_for(
     app: &App,
     account: &str,
@@ -1083,14 +1099,7 @@ pub fn verify_for(
         authenticator_data: a.authenticator_data.clone(),
         signature: a.signature.clone(),
     };
-    let v = match arugula_e2e::passkey::verify(
-        &log,
-        account,
-        &assertion,
-        challenge,
-        now_ms(),
-        &site_origins(&app.cfg.sites),
-    ) {
+    let v = match arugula_e2e::passkey::verify(&log, account, &assertion, challenge, now_ms(), &platform_origins(app)) {
         Ok(v) => v,
         Err(r) => return Ok(Err(r.says())),
     };
@@ -1191,6 +1200,22 @@ mod tests {
         let mut forged = make("pk1", &challenge, site, UP | UV);
         forged.signature = B64.encode([0u8; 64]);
         assert!(check("acct-a", forged).is_err(), "a bad signature");
+        // DK4: the platform page's origin counts for a platform action once
+        // control has a platform host, and only for its own RP.
+        let page = "https://app.test";
+        assert!(check("acct-a", make("pk1", &challenge, page, UP | UV)).is_err(), "no platform host");
+        let mut app = App::for_tests("https://control.test");
+        app.cfg.platform_host =
+            Some(crate::platform_host::PlatformHost { host: "app.test".into(), origin: page.into() });
+        app.db.add_passkey("pk1", "acct-a", EDDSA, &key.verifying_key().to_bytes(), 1).unwrap();
+        let check = |a| verify_for(&app, "acct-a", &challenge, &a).unwrap();
+        assert_eq!(check(make("pk1", &challenge, page, UP | UV)), Ok(()));
+        assert_eq!(check(make("pk1", &challenge, site, UP | UV)), Ok(()));
+        assert!(check(make("pk1", &challenge, "https://other.test", UP | UV)).is_err());
+        assert_eq!(platform_origins(&app)["control.test"], [site, page]);
+        // Sign-in, the step-up, adding and removing a passkey: control's own
+        // origin only.
+        assert_eq!(site_origins(&app.cfg.sites)["control.test"], [site]);
     }
 
     #[tokio::test]

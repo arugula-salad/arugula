@@ -9,6 +9,18 @@
     "sig": "6a7fca1a6b922868628bf54184d24d4cb733007ced9e31f623c789e75349ed31dbedf7f5961515340381bdd5b35c000ce9ab057cd4cad03904b68968487ef208"
   },
   "approval_body": "arugula deploy approval v1\ndeploy dep_00112233445566778899aabbccddeeff\nop 1fd3b1c7e0bdbfca87c195da7e6edf44b5e668e4596980bf46bd6643ef6f316e\naccount acct1\ndecision once\nexpires 1800000000000\nby 0231cdd300519920\n",
+  "approval_v2": {
+    "account": "acct1",
+    "by": "",
+    "decision": "once",
+    "deploy": "dep_00112233445566778899aabbccddeeff",
+    "expires": 1800000000000,
+    "op": "1fd3b1c7e0bdbfca87c195da7e6edf44b5e668e4596980bf46bd6643ef6f316e",
+    "sig": "",
+    "v": 2
+  },
+  "approval_v2_body": "arugula deploy approval v2\ndeploy dep_00112233445566778899aabbccddeeff\nop 1fd3b1c7e0bdbfca87c195da7e6edf44b5e668e4596980bf46bd6643ef6f316e\naccount acct1\ndecision once\nexpires 1800000000000\n",
+  "approval_v2_challenge": "ZTUoJf6aO0XmbMXqYsjWKPkSA4Ase3EJ8oGWzCTFop0",
   "operation": {
     "body": "arugula deploy op v1\nproject prj_1\nenvironment env_1\nname production\nplan abababababababababababababababababababababababababababababababab\nsource commit deadbeef\nwhere acme/app\nplanned efefefefefefefefefefefefefefefefefefefefefefefefefefefefefefefef\n",
     "hash": "1fd3b1c7e0bdbfca87c195da7e6edf44b5e668e4596980bf46bd6643ef6f316e"
