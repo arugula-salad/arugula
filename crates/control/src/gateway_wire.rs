@@ -389,7 +389,11 @@ async fn what_crosses_the_gateway() {
     let r = http.post(format!("{base}{path}")).header("cookie", &cookie).body(body).send().await.unwrap();
     assert_eq!(r.text().await.unwrap(), format!("{{\"got\":{}}}", 3 << 20));
 
-    // A stream's chunks arrive a second apart, not all at the end.
+    // A stream's chunks arrive a second apart, not all at the end. The two
+    // seconds count from the request: the platform's first sleep can start
+    // before the headers reach us, and on a slow runner (macos-intel,
+    // #1704) the headers came late enough to leave less than 2 s after them.
+    let asked = std::time::Instant::now();
     let r = http.get(format!("{base}/api/chat/live")).header("cookie", &cookie).send().await.unwrap();
     let started = std::time::Instant::now();
     let mut stream = r.bytes_stream();
@@ -401,7 +405,7 @@ async fn what_crosses_the_gateway() {
         rest.extend_from_slice(&c.unwrap());
     }
     assert_eq!(rest, b"data: 1\n\ndata: 2\n\n");
-    assert!(started.elapsed() >= Duration::from_secs(2));
+    assert!(asked.elapsed() >= Duration::from_secs(2));
 }
 
 /// A platform that can't be reached (a deploy restarting it): tried again
