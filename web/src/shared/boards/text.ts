@@ -3,7 +3,7 @@
 // typed as a pointer. Plain functions, for the view and its tests
 // (scripts/boards.test.mjs).
 
-import type { BoardAsk, BoardAttachment, BoardBlockState, BoardBlockWord, BoardGroup, BoardLane, BoardMark, BoardProgress, BoardLive, BoardLiveState, BoardPointer, BoardProof, BoardRow, BoardRowRelation, BoardView, BoardWorkItem, BoardZone, RelationKind } from "../proto";
+import type { BoardAsk, BoardAttachment, BoardBlockState, BoardBlockWord, BoardGroup, BoardLane, BoardMark, BoardProgress, BoardLive, BoardLiveState, BoardPointer, BoardProof, BoardRow, BoardRowRelation, BoardView, BoardWorkItem, BoardZone, RelationKind, OnIssue } from "../proto";
 import type { Tone } from "../ui/state-chip";
 
 /** A row's lane as its glyph. A row asking for input shows `?` instead. */
@@ -194,6 +194,30 @@ export function workChip(issue: string, on?: { project: string; board: string; t
   if (!on) return { label: issue, path: null };
   const path = `/p/${encodeURIComponent(on.project)}/boards/${encodeURIComponent(on.board)}#row=${encodeURIComponent(on.row)}`;
   return { label: `${issue} · ${on.title}`, path };
+}
+
+/** The chip of the work on a session row or a swarm card (#372): the first agent's issue, `#12 +2` when two more are on issues too, with its board in the tooltip, and the board's row for its link. `null` when none is on an issue. */
+export function onIssueChip(works: (OnIssue | null | undefined)[]): { label: string; title: string; path: string | null } | null {
+  const on = works.filter((w): w is OnIssue => !!w);
+  if (!on.length) return null;
+  const board = on[0].boards?.[0];
+  const more = on.length - 1;
+  const title = board ? `${on[0].issue} on ${board.title}` : `Started on ${on[0].issue}`;
+  return { label: more ? `${on[0].issue} +${more}` : on[0].issue, title: more ? `${title} (and ${more} more)` : title, path: workChip(on[0].issue, board).path };
+}
+
+/** The swarm's group for agents on no board, which goes last. */
+export const NO_BOARD = "No board";
+
+/** The swarm's "By board" group of a pane: the title of the first board its agent is on, else [`NO_BOARD`]. */
+export function boardGroup(on?: OnIssue | null): string {
+  const board = on?.boards?.[0];
+  return board ? board.title || "Untitled board" : NO_BOARD;
+}
+
+/** Clusters in the order they are laid out: the biggest first, then by name; [`NO_BOARD`] after all the others. */
+export function clusterOrder(a: [string, number], b: [string, number]): number {
+  return +(a[0] === NO_BOARD) - +(b[0] === NO_BOARD) || b[1] - a[1] || a[0].localeCompare(b[0]);
 }
 
 /** The longest goal the platform takes (`GOAL_MAX`, control-wire). */

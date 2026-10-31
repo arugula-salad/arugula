@@ -3,7 +3,7 @@
 // the board routes' paths. Run with `node --experimental-strip-types`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { settledFacts, LANE_GLYPH, cardTone, checkTone, checkWord, groupMove, liveTone, prsOf, answerReady, askWaitingLine, assigneesLine, chipOf, counted, debounced, earlierLine, epicLine, firstLine, groupLine, isCard, laneCount, liveWord, marksOf, readyCount, relationLine, UNSEEN_BLOCKER, needsYou, needsYouLine, parsePointer, pointerHref, pointerLabel, pointerToSend, proofMark, rowGlyph, sections, stepActive, workLabel, workChip } from "../src/shared/boards/text.ts";
+import { settledFacts, LANE_GLYPH, cardTone, checkTone, checkWord, groupMove, liveTone, prsOf, answerReady, askWaitingLine, assigneesLine, chipOf, counted, debounced, earlierLine, epicLine, firstLine, groupLine, isCard, laneCount, liveWord, marksOf, readyCount, relationLine, UNSEEN_BLOCKER, needsYou, needsYouLine, parsePointer, pointerHref, pointerLabel, pointerToSend, proofMark, rowGlyph, sections, stepActive, workLabel, workChip, onIssueChip, boardGroup, clusterOrder, NO_BOARD } from "../src/shared/boards/text.ts";
 import { parse, pathOf } from "../src/platform/paths.ts";
 
 const P = "prj_8f2ec0ffee00112233445566778899aa";
@@ -214,6 +214,28 @@ test("a board counts the asks that wait on the reader, raised ones included, and
   assert.equal(askWaitingLine(ask()), "Waiting for Sam, asked by an agent on m1.");
   assert.match(askWaitingLine(ask({ raised: true })), /^Raised by the board/);
   assert.deepEqual([answerReady(""), answerReady("  "), answerReady(" yes ")], [false, false, true]);
+});
+
+test("an agent's issue is a chip on a session row and a swarm card, the first and how many more (#372)", () => {
+  const on = (issue, ...titles) => ({ issue, boards: titles.map((title, i) => ({ project: P, board: B, title, row: `row_${i}` })) });
+  assert.equal(onIssueChip([]), null);
+  assert.equal(onIssueChip([null, undefined]), null);
+  assert.deepEqual(onIssueChip([null, on("#12", "Launch")]), { label: "#12", title: "#12 on Launch", path: `/p/${P}/boards/${B}#row=row_0` });
+  assert.deepEqual(onIssueChip([on("#12")]), { label: "#12", title: "Started on #12", path: null });
+  assert.deepEqual(onIssueChip([on("#12", "Launch"), null, on("#13"), on("#14", "Later")]), { label: "#12 +2", title: "#12 on Launch (and 2 more)", path: `/p/${P}/boards/${B}#row=row_0` });
+});
+
+test("the swarm's By board groups agents by their first board, and No board goes last (#372)", () => {
+  const on = (...titles) => ({ issue: "#1", boards: titles.map((title) => ({ project: P, board: B, title, row: "r" })) });
+  assert.equal(boardGroup(on("Launch", "Later")), "Launch");
+  assert.equal(boardGroup(on("")), "Untitled board");
+  assert.equal(boardGroup(on()), NO_BOARD);
+  assert.equal(boardGroup({ issue: "#1" }), NO_BOARD);
+  assert.equal(boardGroup(null), NO_BOARD);
+  assert.equal(boardGroup(undefined), NO_BOARD);
+  // Biggest first, then by name; the pile with no board after them all, however big.
+  const names = [[NO_BOARD, 9], ["Zed", 2], ["Alpha", 2], ["Big", 5]];
+  assert.deepEqual(names.sort(clusterOrder).map((n) => n[0]), ["Big", "Alpha", "Zed", NO_BOARD]);
 });
 
 test("a card's bar is its lane's tone, and a row that waits on the reader takes the attention tone", () => {

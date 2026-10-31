@@ -222,6 +222,7 @@ impl Daemon {
             claude_ide: self.cards.as_ref().is_some_and(|c| c.linked(p.id)),
             started_by: meta.started_by.clone(),
             app: meta.app.clone(),
+            on_issue: None,
             running,
             policy: meta.policy,
             current: status.current.map(info_of),
@@ -302,6 +303,7 @@ impl Daemon {
             started_by: meta.started_by.clone(),
             app: None,
             editor: s.editor,
+            on_issue: s.on_issue,
             diff: None,
             claude_ide: false,
         }

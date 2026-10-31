@@ -29,6 +29,7 @@ import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import type { WorkKind } from "../../shared/proto";
 import { C, Meter, readColors, type FieldHooks, type FieldPane, type Measured, type SwarmScene } from "./field";
 import { KINDS } from "./model";
+import { NO_BOARD } from "../../shared/boards/text";
 
 type Shape = "box" | "hex" | "pent" | "drum" | "slab";
 const SHAPE: Record<WorkKind, Shape> = {
@@ -429,7 +430,7 @@ export class City implements SwarmScene {
     const groups = new Map<string, Building[]>();
     for (const b of this.bs.values()) groups.set(b.group, [...(groups.get(b.group) ?? []), b]);
     const list: Block[] = [...groups.entries()]
-      .sort((a, b) => a[0].localeCompare(b[0]))
+      .sort((a, b) => +(a[0] === NO_BOARD) - +(b[0] === NO_BOARD) || a[0].localeCompare(b[0]))
       .map(([name, bs]) => {
         const cols = Math.max(4, Math.ceil(Math.sqrt(bs.length * 1.6)));
         const sorted = [...bs].sort((a, b) => (a.sub ?? a.where).localeCompare(b.sub ?? b.where) || (a.id ?? 0) - (b.id ?? 0) || a.key.localeCompare(b.key));

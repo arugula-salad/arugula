@@ -97,6 +97,41 @@ test("clusters by project (with fallback groups), machine, kind, session and own
   await expect(page.locator(".swarm-legend span")).toHaveCount(11);
 });
 
+test("an agent on an issue wears its chip in the swarm, which clusters by board with No board last (#372)", async ({ page }, testInfo) => {
+  const a = await fake.agentOn("workstation", "#12", { title: "Launch" });
+  const b = await fake.agentOn("build-01", "#13", { title: "Launch" });
+  const c = await fake.agentOn("build-02", "#14", { title: "Later" });
+  const d = await fake.agentOn("workstation", "#15");
+  await swarm(page);
+  const chip = (host: string, id: number) => page.evaluate(([h, i]) => window.__arugula.fleet.panes.find((p) => p.host === h && p.id === i)?.info.on_issue?.issue ?? null, [host, id] as const);
+  await expect.poll(() => chip("workstation", a)).toBe("#12");
+  await expect.poll(() => chip("build-02", c)).toBe("#14");
+  await page.locator('[data-g="board"]').click();
+  await expect(page.locator('[data-g="board"]')).toHaveText("Board");
+  await expect.poll(() => clusters(page), { timeout: 10_000 }).toEqual(["Later", "Launch", "No board"]);
+  // The agents in them: two on Launch, one on Later, and every other pane (and #15, on no row) on none.
+  const sized = await page.evaluate(() => Object.fromEntries((window.__arugula.swarm as { clusters: { name: string; n: number }[] }).clusters.map((c) => [c.name, c.n])));
+  expect([sized["Launch"], sized["Later"]]).toEqual([2, 1]);
+  expect(sized["No board"]).toBeGreaterThan(10);
+  // Hovering it peeks, with the chip (the board's title in its tooltip).
+  const key = await page.evaluate(([h, i]) => window.__arugula.fleet.panes.find((p) => p.host === h && p.id === i)!.key, ["build-01", b] as const);
+  await page.waitForTimeout(1500);
+  const pos = (await page.evaluate((k) => (window.__arugula.swarm as { screenOf(k: string): { x: number; y: number } }).screenOf(k), key))!;
+  await page.mouse.move(pos.x, pos.y);
+  await expect(page.locator(".swarm-peek [data-swarm-work]")).toHaveText("#13", { timeout: 10_000 });
+  await expect(page.locator(".swarm-peek [data-swarm-work]")).toHaveAttribute("title", "#13 on Launch");
+  expect(await chip("workstation", d)).toBe("#15");
+  await page.screenshot({ path: testInfo.outputPath("swarm-by-board.png") });
+  // The sessions sidebar on the panes: its session's row has the chip, linking to the board's row.
+  await page.goto("/");
+  if (!(await page.locator("[data-session-sidebar]").count())) await page.locator(".ws-head [data-open-sessions]").click();
+  await expect(page.locator("[data-session-sidebar]")).toBeVisible();
+  const row = page.locator(".ws-session", { has: page.locator("[data-session-work]", { hasText: "#12" }) }).first();
+  await expect(row.locator("[data-session-work]").first()).toHaveAttribute("title", /#12 on Launch/, { timeout: 20_000 });
+  await page.screenshot({ path: testInfo.outputPath("sidebar.png") });
+  for (const [h, i] of [["workstation", a], ["build-01", b], ["build-02", c], ["workstation", d]] as const) await fake.close(h, i);
+});
+
 test("Panes and Escape lead back to the panes (#551)", async ({ page }) => {
   await swarm(page);
   // The rail beside the swarm: its Panes.

@@ -27,6 +27,7 @@ import { GateWhy } from "../ui/gate-why";
 import { NvimIcon } from "../ui/shell/icons";
 import { PointChoices, pointOf, proposalLine } from "../ui/point-choices";
 import { finished, needsYou, NEEDS_YOU } from "../../shared/needs-you";
+import { onIssueChip } from "../../shared/boards/text";
 import { activityOf, bundleOf, cardTitle, headlineOf, holdStill, shortHost, whatItDoes, shortPaths, shownNow, wantsYou, followable, editorAt, GROUPING_LABEL, GROUPINGS, groupOf, isPresence, kindOf, KIND_LABEL, KINDS, REASON_COL, reasonOf, type GroupBy } from "./model";
 
 const BY_KEY = "arugula.swarm.by";
@@ -236,9 +237,9 @@ export function SwarmView({
           group: groupOf(p, by),
           act: activityOf(p),
           stale: p.stale,
-          label: p.info.editor
+          label: `${p.info.editor
             ? `%${p.id} ${p.info.file?.split("/").pop() ?? p.info.title ?? "editor"} · ${appName(p.info.editor.app)}`
-            : `%${p.id} ${whatItDoes(p)}`,
+            : `%${p.id} ${whatItDoes(p)}`}${p.info.on_issue ? ` ${onIssueChip([p.info.on_issue])!.label}` : ""}`,
           where: p.host,
           lastOut: p.info.activity?.last_ms ?? 0,
           att: r && wanting.has(p.key) ? { col: REASON_COL[r.kind], bundle: onRail.get(p.key) ?? null, since: r.since_ms, need: needsYou(p.info) } : null,
@@ -558,6 +559,11 @@ export function SwarmView({
             )}
             <b>{byKey(peek.key) ? `%${byKey(peek.key)!.id}  ${editorAt(byKey(peek.key)!) ?? byKey(peek.key)!.info.current?.text ?? byKey(peek.key)!.info.command ?? ""}` : ""}</b>
             <span>{byKey(peek.key) ? `${byKey(peek.key)!.host} · ${groupOf(byKey(peek.key)!, by)}` : ""}</span>
+            {onIssueChip([byKey(peek.key)?.info.on_issue]) && (
+              <span class="work-chip" title={onIssueChip([byKey(peek.key)?.info.on_issue])!.title} data-swarm-work>
+                {onIssueChip([byKey(peek.key)?.info.on_issue])!.label}
+              </span>
+            )}
           </div>
           <pre>{peek.text}</pre>
         </div>

@@ -1165,6 +1165,31 @@ pub struct PaneInfo {
     /// this across restarts.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub app: Option<String>,
+    /// The issue an agent block was started on, and the boards it is on
+    /// (#372): the chip on its sidebar row and its swarm card.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub on_issue: Option<OnIssue>,
+}
+
+/// The issue a block was started on, and the boards with a row it is
+/// attached to (#372).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct OnIssue {
+    /// As its starter wrote it (`#N`, `owner/repo#N` or `IDENT-N`).
+    pub issue: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub boards: Vec<OnBoard>,
+}
+
+/// A board with a row an agent block is attached to.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct OnBoard {
+    pub project: String,
+    pub board: String,
+    pub title: String,
+    pub row: String,
 }
 
 /// What an editor says about itself in summaries (M28, S17's schema):
