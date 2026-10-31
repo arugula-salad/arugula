@@ -3,7 +3,7 @@
   "commit": "0c18c27f98f23ffbc46f8f46d642abdecb3d9eb3",
   "branch": "main",
   "state": "pending",
-  "at": "2026-10-31T10:06:40Z",
+  "at": "2026-10-31T10:12:31Z",
   "phases": {
     "lint": {
       "verdict": "pass",
@@ -72,7 +72,7 @@
         {
           "name": "test-postgres",
           "id": 124506598067,
-          "conclusion": null,
+          "conclusion": "success",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/41190644696/job/124506598067"
         },
         {
@@ -109,7 +109,7 @@
         {
           "name": "e2e (12)",
           "id": 124507644857,
-          "conclusion": null,
+          "conclusion": "success",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/41190644696/job/124507644857"
         },
         {
@@ -121,7 +121,7 @@
         {
           "name": "e2e (3)",
           "id": 124507644746,
-          "conclusion": null,
+          "conclusion": "success",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/41190644696/job/124507644746"
         },
         {
@@ -157,10 +157,11 @@
         {
           "name": "e2e (9)",
           "id": 124507644757,
-          "conclusion": null,
+          "conclusion": "failure",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/41190644696/job/124507644757"
         }
-      ]
+      ],
+      "reason": "retrying"
     },
     "claims": {
       "verdict": "pass",
@@ -187,13 +188,13 @@
       ]
     },
     "macos": {
-      "verdict": "pending",
+      "verdict": "pass",
       "build": "newest",
       "runs": [
         {
           "name": "macos (test)",
           "id": 124506598105,
-          "conclusion": null,
+          "conclusion": "success",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/41190644696/job/124506598105"
         },
         {
@@ -202,8 +203,7 @@
           "conclusion": "success",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/41190644696/job/124506598110"
         }
-      ],
-      "culprit": "c0d9113e241a6c9a319d4ed1159624f27ef2acbc"
+      ]
     },
     "windows": {
       "verdict": "pass",
@@ -228,6 +228,12 @@
           "url": "https://github.com/arugula-salad/arugula/actions/runs/41190644623/job/124506597386"
         }
       ]
+    }
+  },
+  "retried": {
+    "e2e (9)": {
+      "run": 124507644757,
+      "at": "2026-10-31T10:12:31Z"
     }
   }
 }
