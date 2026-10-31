@@ -72,6 +72,9 @@ pub enum Op {
     /// [`ForgeItems`](crate::projects::ForgeItems).
     #[serde(rename = "item.list")]
     ItemList(ItemQuery),
+    /// A Plane item by its key and number (`ALL-2212`): [`ItemView`].
+    #[serde(rename = "tracker.get")]
+    TrackerGet(TrackerRef),
     /// A PR's head commit's checks: [`ForgeChecks`](crate::projects::ForgeChecks).
     #[serde(rename = "checks.get")]
     ChecksGet(ItemRef),
@@ -113,10 +116,11 @@ pub enum Op {
 }
 
 /// Every operation's name, reads and drafts first.
-pub const NAMES: [&str; 15] = [
+pub const NAMES: [&str; 16] = [
     "pr.get",
     "issue.get",
     "item.list",
+    "tracker.get",
     "checks.get",
     "inbox.list",
     "draft.create",
@@ -137,6 +141,7 @@ impl Op {
             Op::PrGet(_) => "pr.get",
             Op::IssueGet(_) => "issue.get",
             Op::ItemList(_) => "item.list",
+            Op::TrackerGet(_) => "tracker.get",
             Op::ChecksGet(_) => "checks.get",
             Op::InboxList(_) => "inbox.list",
             Op::DraftCreate(_) => "draft.create",
@@ -206,6 +211,17 @@ impl std::fmt::Display for ItemRef {
     }
 }
 
+/// A Plane item: its project's key and its number there (`ALL-2212`), in
+/// `project` (default: the reader's personal one).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+pub struct TrackerRef {
+    #[serde(default)]
+    pub project: Option<String>,
+    pub key: String,
+    pub number: u64,
+}
+
 /// `item.list`: a project's items (the reader's personal project when
 /// neither `project` nor `repo` says), or one linked repo's. The rest
 /// narrows it as `GET /api/projects/{project}/items`'s query does.
@@ -229,11 +245,17 @@ pub struct ItemQuery {
     /// A GitHub login among the requested reviewers.
     #[serde(default)]
     pub review_requested: Option<String>,
-    /// Text in the title.
+    /// Text in the title; `IDENT-N` also matches that Plane item.
     #[serde(default)]
     pub q: Option<String>,
     #[serde(default)]
     pub limit: Option<u32>,
+    /// `github` or `plane`: only that provider's.
+    #[serde(default)]
+    pub provider: Option<String>,
+    /// A Plane connection's key (`ALL`): only its items.
+    #[serde(default)]
+    pub tracker: Option<String>,
 }
 
 /// `draft.list`: a project's drafts, a repo's (and an item's, with
@@ -339,6 +361,9 @@ pub struct ItemView {
     pub item: ForgeItem,
     pub events: Vec<ForgeEvent>,
     pub drafts: Vec<ForgeDraft>,
+    /// What the mirror doesn't have of it: a Plane item's body and comments.
+    #[serde(default)]
+    pub note: Option<String>,
 }
 
 /// What a send answers (M168): the comment, review or issue on GitHub,
@@ -401,6 +426,7 @@ mod tests {
             Op::PrGet(r()),
             Op::IssueGet(r()),
             Op::ItemList(ItemQuery::default()),
+            Op::TrackerGet(TrackerRef::default()),
             Op::ChecksGet(r()),
             Op::InboxList(InboxQuery::default()),
             Op::DraftCreate(NewDraft::default()),

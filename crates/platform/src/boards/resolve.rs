@@ -117,7 +117,7 @@ pub(crate) async fn one(
         }
         IssueRef::Plane { key, number } => {
             let conns = viewer::check_connections(app, &viewer, &app.db.tracker_connections(project)?).await?;
-            let f = TrackerFilter { open: false, text: None, limit: PLANE_SCAN };
+            let f = TrackerFilter { limit: PLANE_SCAN, ..Default::default() };
             let mut found = None;
             for i in app.db.tracker_items(&conns, &f)? {
                 let same = conns.get(i.mirror_id).is_some_and(|c| c.identifier.eq_ignore_ascii_case(&key));

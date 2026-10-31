@@ -16,10 +16,16 @@ use axum::{
 use serde::Deserialize;
 use serde_json::Value;
 
-use super::viewer::{self, Viewer};
+use arugula_control_wire::boards::IssueRef;
+
+use super::viewer::{self, ReadableConnection, Viewer};
 use crate::{
     Platform,
-    db::forge::{ForgeItem, ItemFilter},
+    db::{
+        forge::{ForgeItem, ItemFilter},
+        trackers::{TrackerFilter, TrackerItem},
+    },
+    trackers,
 };
 
 /// How many items a list holds at most, and when it doesn't say.
@@ -38,8 +44,13 @@ pub(crate) fn names(json: &str) -> Vec<String> {
 fn wire_item(i: ForgeItem, repo: &str) -> wire::ForgeItem {
     wire::ForgeItem {
         id: i.id,
-        repo: repo.to_owned(),
+        repo: Some(repo.to_owned()),
         number: i.number,
+        provider: "github".to_owned(),
+        identifier: None,
+        state_name: None,
+        state_group: None,
+        url: None,
         kind: i.kind,
         state: i.state,
         title: i.title,
@@ -73,6 +84,10 @@ pub struct ItemsQuery {
     /// list's search.
     pub q: Option<String>,
     pub limit: Option<u32>,
+    /// `github` or `plane`.
+    pub provider: Option<String>,
+    /// A Plane connection's key.
+    pub tracker: Option<String>,
 }
 
 /// `GET /api/projects/{project}/items`: the project's items the viewer
@@ -84,14 +99,67 @@ pub async fn list(
     Query(q): Query<ItemsQuery>,
 ) -> Result<Json<wire::ForgeItems>, ApiError> {
     let (project, _) = super::links::membership(&app, &v.account, &project, false).await?;
-    let mut repos = app.db.linked_repos(&project)?;
+    let provider = q.provider.as_deref().map(str::trim).filter(|p| !p.is_empty()).map(str::to_ascii_lowercase);
+    if let Some(p) = &provider
+        && !matches!(p.as_str(), "github" | "plane")
+    {
+        return Err(err(StatusCode::BAD_REQUEST, &format!("provider is github or plane, not {p:?}")));
+    }
+    let tracker = q.tracker.as_deref().map(str::trim).filter(|t| !t.is_empty());
+    let limit = q.limit.unwrap_or(DEFAULT).clamp(1, MOST);
+    // A tracker narrows to Plane as a repo narrows to GitHub; a GitHub-only filter leaves Plane out.
+    let github = provider.as_deref() != Some("plane") && tracker.is_none();
+    let plane = provider.as_deref() != Some("github")
+        && q.repo.is_none()
+        && q.author.is_none()
+        && q.review_requested.is_none()
+        && matches!(q.kind.as_deref(), None | Some("issue"))
+        && matches!(q.state.as_deref(), None | Some("open" | "closed"));
+    let (mut items, mut withheld) = (Vec::new(), Vec::new());
+    if github {
+        let (found, held) = github_items(&app, &v, &project, &q, limit).await?;
+        items = found;
+        withheld = held;
+    }
+    if plane {
+        items.extend(plane_items(&app, &v, &project, &q, tracker, limit).await?);
+    }
+    // The exact `IDENT-N` a search names stays in front of the rest.
+    let exact = exact_ref(&q);
+    items.sort_by_key(|i| {
+        let named = exact.as_ref().is_some_and(|(key, n)| {
+            i.number == *n && i.identifier.as_deref().is_some_and(|k| k.eq_ignore_ascii_case(key))
+        });
+        (!named, std::cmp::Reverse(i.updated_at))
+    });
+    items.truncate(limit as usize);
+    Ok(Json(wire::ForgeItems { project, items, withheld }))
+}
+
+/// The `IDENT-N` a search writes whole.
+fn exact_ref(q: &ItemsQuery) -> Option<(String, u64)> {
+    match IssueRef::parse(q.q.as_deref()?) {
+        Some(IssueRef::Plane { key, number }) => Some((key, number)),
+        _ => None,
+    }
+}
+
+/// The project's linked repos' items the viewer may read, and the repos they may not.
+async fn github_items(
+    app: &Platform,
+    v: &Viewer,
+    project: &str,
+    q: &ItemsQuery,
+    limit: u32,
+) -> Result<(Vec<wire::ForgeItem>, Vec<wire::WithheldRepo>), ApiError> {
+    let mut repos = app.db.linked_repos(project)?;
     if let Some(name) = &q.repo {
         repos.retain(|r| r.full_name.eq_ignore_ascii_case(name.trim()));
         if repos.is_empty() {
             return Err(err(StatusCode::NOT_FOUND, &format!("{name} isn't linked to this project")));
         }
     }
-    let checked = viewer::check(&app, &v, &repos).await?;
+    let checked = viewer::check(app, v, &repos).await?;
     let f = ItemFilter {
         kind: q.kind.as_deref(),
         state: q.state.as_deref(),
@@ -99,13 +167,18 @@ pub async fn list(
         review_requested: q.review_requested.as_deref(),
         text: q.q.as_deref(),
         number: None,
-        limit: q.limit.unwrap_or(DEFAULT).clamp(1, MOST),
+        limit,
     };
     let name = |id: u64| repos.iter().find(|r| r.repo_id == id).map_or("", |r| r.full_name.as_str());
-    let items = app.db.forge_items(&checked.readable, &f)?.into_iter().map(|i| {
-        let repo = name(i.repo_id).to_owned();
-        wire_item(i, &repo)
-    });
+    let items = app
+        .db
+        .forge_items(&checked.readable, &f)?
+        .into_iter()
+        .map(|i| {
+            let repo = name(i.repo_id).to_owned();
+            wire_item(i, &repo)
+        })
+        .collect();
     let withheld = checked
         .withheld
         .iter()
@@ -113,7 +186,93 @@ pub async fn list(
         .filter(|(_, why)| *why != viewer::Withheld::Unlinked)
         .map(|(id, why)| wire::WithheldRepo { repo: name(*id).to_owned(), why: why.as_str().to_owned() })
         .collect();
-    Ok(Json(wire::ForgeItems { project, items: items.collect(), withheld }))
+    Ok((items, withheld))
+}
+
+/// A Plane item as an agent reads it.
+fn plane_item(i: TrackerItem, c: &ReadableConnection) -> wire::ForgeItem {
+    wire::ForgeItem {
+        id: i.id,
+        repo: None,
+        number: i.number,
+        provider: "plane".to_owned(),
+        identifier: Some(c.identifier.clone()),
+        state_name: Some(i.state_name),
+        state_group: Some(i.state_group),
+        url: Some(trackers::item_url(&c.workspace_slug, &c.identifier, i.number)),
+        kind: "issue".to_owned(),
+        state: i.state,
+        title: i.title,
+        labels: vec![],
+        author: None,
+        assignees: vec![],
+        reviewers: vec![],
+        draft: false,
+        merge_state: None,
+        head_ref: None,
+        head_sha: None,
+        base_ref: None,
+        created_at: i.created_at,
+        updated_at: i.updated_at,
+    }
+}
+
+/// The project's connections' items the viewer may read, by the rule the
+/// board's picker reads them by ([`viewer::check_connections`]): a
+/// connection they may not read is left out, unnamed. `q` as `IDENT-N`
+/// finds that item, and as text the titles.
+async fn plane_items(
+    app: &Platform,
+    v: &Viewer,
+    project: &str,
+    q: &ItemsQuery,
+    tracker: Option<&str>,
+    limit: u32,
+) -> Result<Vec<wire::ForgeItem>, ApiError> {
+    let mut all = app.db.tracker_connections(project)?;
+    if let Some(key) = tracker {
+        all.retain(|c| c.identifier.eq_ignore_ascii_case(key));
+    }
+    let conns = viewer::check_connections(app, v, &all).await?;
+    let text = q.q.as_deref().map(str::trim).filter(|t| !t.is_empty());
+    let (closed, open) = (q.state.as_deref() == Some("closed"), q.state.as_deref() == Some("open"));
+    let mut out = Vec::new();
+    let mut read = |f: &TrackerFilter<'_>, only: Option<&str>| -> Result<(), ApiError> {
+        for i in app.db.tracker_items(&conns, f)? {
+            let Some(c) = conns.get(i.mirror_id) else { continue };
+            if only.is_some_and(|k| !c.identifier.eq_ignore_ascii_case(k))
+                || out.iter().any(|o: &wire::ForgeItem| o.id == i.id)
+            {
+                continue;
+            }
+            out.push(plane_item(i, c));
+        }
+        Ok(())
+    };
+    if let Some((key, number)) = exact_ref(q) {
+        read(&TrackerFilter { open, closed, number: Some(number), limit: MOST, ..Default::default() }, Some(&key))?;
+    }
+    read(&TrackerFilter { open, closed, text, limit, ..Default::default() }, None)?;
+    Ok(out)
+}
+
+/// One Plane item by its key and number, when the viewer may read its
+/// connection (`tracker.get`): no item at all to anyone else.
+pub async fn plane_get(
+    app: &Platform,
+    v: &Viewer,
+    project: &str,
+    key: &str,
+    number: u64,
+) -> Result<wire::ForgeItem, ApiError> {
+    let (project, _) = super::links::membership(app, &v.account, project, false).await?;
+    let mut all = app.db.tracker_connections(&project)?;
+    all.retain(|c| c.identifier.eq_ignore_ascii_case(key));
+    let conns = viewer::check_connections(app, v, &all).await?;
+    let f = TrackerFilter { number: Some(number), limit: 1, ..Default::default() };
+    let found = app.db.tracker_items(&conns, &f)?.into_iter().next();
+    let item = found.and_then(|i| conns.get(i.mirror_id).map(|c| plane_item(i, c)));
+    item.ok_or_else(|| err(StatusCode::NOT_FOUND, &format!("{key}-{number} isn't in the mirror of this project (yet)")))
 }
 
 /// `GET /api/forge/items/{id}`.
