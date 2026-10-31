@@ -1306,6 +1306,6 @@ mod tests {
         }
         let readme = docs[0].1;
         let first = readme.lines().skip(2).take_while(|l| !l.is_empty()).collect::<Vec<_>>().join(" ");
-        assert!(first.starts_with("Keep track of your agents without checking every session."), "{first}");
+        assert!(first.starts_with("Every agent on every machine in one view."), "{first}");
     }
 }
