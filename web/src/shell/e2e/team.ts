@@ -344,24 +344,18 @@ export function asOf(certs: AccountCerts, at: number): AccountCerts {
  * (from 1 on a first look) and follow the one before. The first that
  * doesn't stops the walk: where it stood, and that version.
  *
- * Options, for the page:
- * - `vet(prev, certs)`: the certificates each step is checked with, as
- *   the page holds them for `prev`'s owners (the founder for a first
- *   version), from the roots that roster names, not control's alone.
- * - `lateOk(account, root, device)`: a version before the last one may
- *   also have been signed by a device removed since, if that device
- *   counted as of the version's `at` (not before the version it follows)
- *   and `lateOk` says so: the page allows it only when it hadn't seen that
- *   device's removal before this look, so a removed device's key can't
- *   date one back once the page knows. Those versions come back third, to
- *   show. The last version is always checked as of now. Rust's `advance`
- *   has no such allowance. */
+ * With `lateOk`, a version before the last one may also have been signed
+ * by a device removed since, if that device counted as of the version's
+ * `at` (which isn't before the version it follows): a real team's history
+ * isn't refused for an owner's lost laptop. Those versions come back
+ * third, to show. The last version is always checked as of now. Rust's
+ * `advance` has no such allowance. */
 export async function advance(
   held: Roster | null,
   history: Roster[],
   pin: TeamPin,
   certs: AccountCerts,
-  opts: { vet?: (prev: Roster | null, certs: AccountCerts) => Promise<AccountCerts>; lateOk?: (account: string, root: string, device: string) => boolean } = {},
+  lateOk = false,
 ): Promise<[Roster | null, number | null, number[]]> {
   let cur = held;
   const late: number[] = [];
@@ -372,47 +366,14 @@ export async function advance(
       return [cur, r.version, late];
     }
     if (r.version !== (cur ? cur.version + 1 : 1)) return [cur, r.version, late];
-    const step = opts.vet ? await opts.vet(cur, certs) : certs;
-    if (!(await follows(r, cur, pin, step))) {
+    if (!(await follows(r, cur, pin, certs))) {
       const last = i === history.length - 1;
-      if (!opts.lateOk || last || (cur && r.at < cur.at)) return [cur, r.version, late];
-      const signers = (cur ? cur.members.filter((m) => m.role === "owner") : [{ account: pin.founder, root: pin.founder_root }]).filter((m) =>
-        (step[m.account]?.[0] ?? []).some((c) => c.device === r.by),
-      );
-      if (!signers.some((m) => opts.lateOk!(m.account, m.root, r.by)) || !(await follows(r, cur, pin, asOf(step, r.at)))) return [cur, r.version, late];
+      if (!lateOk || last || (cur && r.at < cur.at) || !(await follows(r, cur, pin, asOf(certs, r.at)))) return [cur, r.version, late];
       late.push(r.version);
     }
     cur = r;
   }
   return [cur, null, late];
-}
-
-/** The certificates of `prev`'s owners (the founder `pin` names, for a
- * first version), each passed through `take` from the root that roster
- * names: what the page holds for them. Others are left as they are. */
-export async function ownersAsHeld(
-  prev: Roster | null,
-  pin: TeamPin,
-  certs: AccountCerts,
-  take: (account: string, root: string, got: [Cert[], Revocation[]]) => Promise<[Cert[], Revocation[]]>,
-): Promise<AccountCerts> {
-  const out: AccountCerts = { ...certs };
-  const owners = prev ? prev.members.filter((m) => m.role === "owner") : [{ account: pin.founder, root: pin.founder_root }];
-  for (const m of owners) if (out[m.account]) out[m.account] = await take(m.account, m.root, out[m.account]);
-  return out;
-}
-
-/** Whether `l` is signed by a device (one that may approve) of an owner in
- * `roster`, for its team, against a version no newer than it
- * (`TeamLock::signed_in`). */
-export async function lockSignedIn(l: TeamLock, roster: Roster, certs: AccountCerts): Promise<boolean> {
-  if (l.team !== roster.team || !(l.version <= roster.version)) return false;
-  for (const m of roster.members.filter((x) => x.role === "owner")) {
-    const [c, r] = certs[m.account] ?? [[], []];
-    const d = (await evaluate({ account: m.account, root: m.root }, c, r)).get(l.by);
-    if (d && d.kind !== "daemon" && (await verify(d.sign, lockBody(l), l.sig))) return true;
-  }
-  return false;
 }
 
 /** The members whose root `to` names differently from `from`: another
@@ -423,24 +384,5 @@ export function rootChanges(from: Roster, to: Roster): { account: string; name: 
     const was = from.members.find((x) => x.account === m.account);
     if (was && was.root !== m.root) out.push({ account: m.account, name: m.name, from: was.root, to: m.root });
   }
-  return out;
-}
-
-/** Whether a team is locked, signed by an owner's device (`team::TeamLock`). */
-export interface TeamLock {
-  team: string;
-  locked: boolean;
-  version: number;
-  at: number;
-  by: string;
-  sig: string;
-}
-
-export const lockBody = (l: TeamLock) =>
-  `arugula team lock v1\nteam ${l.team}\nlocked ${l.locked ? "yes" : "no"}\nversion ${l.version}\nat ${l.at}\nby ${l.by}\n`;
-
-export async function signLock(l: Omit<TeamLock, "by" | "sig">, keys: DeviceKeys): Promise<TeamLock> {
-  const out: TeamLock = { ...l, by: keys.id, sig: "" };
-  out.sig = await signText(keys, lockBody(out));
   return out;
 }

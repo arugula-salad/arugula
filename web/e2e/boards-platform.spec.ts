@@ -402,3 +402,17 @@ test("a board with groups shows each as a section with its four lanes, and the r
   await expect(alice.locator("[data-board-group]")).toHaveCount(0);
   await expect(alice.locator("[data-board-zone] h2")).toHaveText(["Next", "Doing", "Review", "Done"]);
 });
+
+test("connecting a Plane project: each field is labelled, says what goes in it, and is wide enough to read", async () => {
+  test.setTimeout(60_000);
+  await platform(alice, `/p/${project}/settings`);
+  const form = alice.locator("[data-plane-form]");
+  await expect(form).toBeVisible({ timeout: 15_000 });
+  for (const [hook, label] of [["workspace", "Workspace"], ["project", "Project"], ["key", "API key"], ["hook", "Webhook secret"]] as const) {
+    const input = form.locator(`[data-plane-${hook}]`);
+    // The label is the field's own, so a screen reader and a click both find it.
+    await expect(form.getByLabel(label, { exact: false }).first()).toBeVisible();
+    expect((await input.boundingBox())!.width, `${hook} is wide enough to read`).toBeGreaterThan(240);
+  }
+  if (process.env.BOARDS_SHOTS) await form.screenshot({ path: `${process.env.BOARDS_SHOTS}/plane-connect.png`, animations: "disabled" });
+});
