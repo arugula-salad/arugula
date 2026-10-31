@@ -3,7 +3,7 @@
   "commit": "f5be868f54de592d4890a5e5eb69880c7b82e0a5",
   "branch": "main",
   "state": "pending",
-  "at": "2026-10-31T02:14:54Z",
+  "at": "2026-10-31T02:17:14Z",
   "phases": {
     "lint": {
       "verdict": "pass",
@@ -60,7 +60,7 @@
         {
           "name": "test",
           "id": 124408749042,
-          "conclusion": null,
+          "conclusion": "success",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/41156833914/job/124408749042"
         },
         {
@@ -72,7 +72,7 @@
         {
           "name": "test-postgres",
           "id": 124408749102,
-          "conclusion": null,
+          "conclusion": "success",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/41156833914/job/124408749102"
         },
         {
