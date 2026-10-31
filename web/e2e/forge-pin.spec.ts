@@ -76,25 +76,33 @@ test("a pinned PR looks as GitHub's does, read through Arugula control", async (
   await reset(page);
   const block = await open(page, "pr", 1);
   const el = page.locator(`[data-forge-block="${block}"]`);
-  await expect(el.locator(".review-path")).toContainText("Fix the parser #1 acme/app");
-  await expect(el.locator("[data-pr-state]")).toHaveText("open");
-  await expect(el.locator("[data-forge-pin]")).toHaveAttribute("data-forge-pin", ITEM);
-  await expect(el.locator(".forge-meta")).toContainText("jake-gh wants to merge fix-parser into main · as jake-gh on GitHub");
-  await expect(el.locator("[data-forge-chips]")).toContainText("checks passed");
-  await expect(el.locator("[data-forge-chips]")).toContainText("1 review");
-  await expect(el.locator("[data-forge-chips]")).toContainText("mergeable");
+  await expect(el.locator("[data-item-head] .item-number")).toHaveText("#1");
+  await expect(el.locator("[data-item-head] .item-title")).toHaveText("Fix the parser");
+  await expect(el.locator("[data-item-pill]")).toHaveText("Open");
+  await expect(el.locator("[data-item-fact=branch]")).toHaveText("fix-parser → main");
+  await expect(el.locator('[data-item-fact="checks"]')).toContainText("✓ 2");
+  await expect(el.locator('[data-item-fact="reviewers"] [data-item-avatar]')).toHaveCount(1);
+  await expect(el.locator('[data-item-avatar][data-name="dan-gh"]')).toHaveAttribute("title", "dan-gh approved");
+  await expect(el.locator('[data-item-fact="mergeable"]')).toHaveAttribute("data-mergeable", "clean");
+  // Green, settled and the person's to merge: the one strip.
+  await expect(el.locator('[data-item-next="ok"]')).toContainText("Ready to merge");
   await expect(el.locator("[data-check]")).toHaveCount(2);
-  await expect(el.locator("[data-forge-reviews]")).toContainText("Asked: dan-gh");
+  await el.locator('[data-item-tab="reviews"]').click();
   await expect(el.locator('[data-review="approved"]')).toContainText("dan-gh");
+  await el.locator('[data-item-tab="activity"]').click();
   await expect(el.locator("[data-forge-timeline] .forge-event")).toHaveCount(3);
   await expect(el.locator("[data-forge-timeline]")).toContainText("dan-gh commented");
-  await expect(el.locator("[data-forge-pin-body]")).toContainText("No description to show here");
-  const foot = el.locator("[data-forge-pin-read]");
-  await expect(foot).toContainText("read through Arugula control");
-  await expect(foot).toContainText("live (GitHub App)");
-  await expect(el.locator(".forge-polls")).not.toContainText("polls");
+  // The mirror keeps no description: the part isn't drawn, nor a line saying so.
+  await expect(el.locator("[data-item-body]")).toHaveCount(0);
+  await expect(el).not.toContainText("No description");
+  // Where it's read is the source icon's tooltip, not a line.
+  const source = el.locator("[data-item-source]");
+  await expect(source).toHaveAttribute("title", /read through Arugula control/);
+  await expect(source).toHaveAttribute("title", /live \(GitHub App\)/);
+  await expect(source).not.toHaveAttribute("title", /polls/);
+  await expect(el).not.toContainText("read through");
   // The person's own buttons stay.
-  await expect(el.getByRole("button", { name: "Comment…" })).toBeVisible();
+  await expect(el.getByRole("button", { name: "Comment", exact: true })).toBeVisible();
   await expect(el.locator("[data-forge-checkout]")).toBeVisible();
 });
 
@@ -105,15 +113,17 @@ test("a pinned issue, and a pin whose platform can't be reached shows what it sa
   const block = await open(page, "issue", 2);
   const el = page.locator(`[data-forge-block="${block}"]`);
   await expect(el).toHaveAttribute("data-forge-kind", "issue");
-  await expect(el.locator(".review-path")).toContainText("The parser drops tabs #2 acme/app");
-  await expect(el.locator("[data-forge-pin]")).toBeVisible();
-  await expect(el.locator(".forge-meta")).toContainText("assigned to jake-gh");
-  await expect(el.locator("[data-forge-pin-body]")).toBeVisible();
-  await expect(el.locator("[data-forge-pin-read]")).toContainText("read through Arugula control");
+  await expect(el.locator("[data-item-head] .item-title")).toHaveText("The parser drops tabs");
+  await expect(el.locator("[data-item-head] .item-number")).toHaveText("#2");
+  await expect(el.locator('[data-item-fact="assignees"] [data-name="jake-gh"]')).toBeVisible();
+  // Where it's read is the source icon's tooltip, not a tag or a line.
+  const source = el.locator("[data-item-source]");
+  await expect(source).toHaveAttribute("title", /read through Arugula control/);
+  await expect(el.locator("[data-forge-pin], [data-forge-pin-read]")).toHaveCount(0);
 
   stale = "control answered 502";
   await page.evaluate((b) => window.__arugula.client.api(`/api/blocks/${b}/call/refresh`, {}, ""), block);
-  await expect(el.locator("[data-forge-pin-read]")).toContainText("can't reach it now: as it said last");
-  await expect(el.locator("[data-forge-pin-read]")).toHaveAttribute("title", "control answered 502");
-  await expect(el.locator(".review-path")).toContainText("The parser drops tabs");
+  await expect(source).toHaveAttribute("title", /can't reach it now: as it said last/);
+  await expect(source).toHaveAttribute("title", /control answered 502/);
+  await expect(el.locator("[data-item-head] .item-title")).toHaveText("The parser drops tabs");
 });

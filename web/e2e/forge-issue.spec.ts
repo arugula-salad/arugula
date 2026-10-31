@@ -257,7 +257,7 @@ test("Agent on this: the issue and its agent in a tab, on a branch of their own,
   );
   expect(prBlock).not.toBeNull();
   expect(await tabOf(page, prBlock!)).toBe(await tabOf(page, block));
-  await expect(page.locator(`[data-forge-block="${prBlock}"] .review-path`)).toContainText(`#91 ${REPO}`);
+  await expect(page.locator(`[data-forge-block="${prBlock}"] [data-item-head] .item-number`)).toHaveText("#91");
   await expect(el.locator("[data-agent-on]")).toHaveCount(0);
   expect(writes).toEqual([]);
 });
