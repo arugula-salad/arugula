@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # `scripts/release check-green` (#503): a release tag on a commit with a
 # ci/green tag passes; one with no green tag, or with a ci/revoked tag too,
-# fails, and ARUGULA_RELEASE_SKIP_GREEN=1 lets it through. Against a local
+# fails, and ARUGULA_RELEASE_SKIP_GREEN=1 lets it through. `check-rare`
+# (#305) the same for the ci/rare tag rare-nightly.yml writes. Against a local
 # bare repository standing in for GitHub (GITHUB_SERVER_URL), so nothing
 # reaches the network.
 #
@@ -30,19 +31,28 @@ one=$(git rev-parse 'v1.0.0^{commit}') two=$(git rev-parse 'app-v1.0.0^{commit}'
 git tag -a "ci/green/$one" -m green "$one"
 git tag -a "ci/green/$two" -m green "$two"
 git tag -a "ci/revoked/$two" -m revoked "$two"
+# Only one passed the rare jobs. A ci/rare tag is lightweight, as the
+# workflow makes it.
+git tag "ci/rare/$one" "$one"
 git push -q "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY.git" --tags
 
-expect() { # WANT TAG [ENV...]: check-green's exit status is WANT
-  local want=$1 tag=$2 got=0
-  shift 2
-  env "$@" "$release" check-green "$tag" >"$tmp/out" 2>&1 || got=$?
-  if [ "$got" = "$want" ]; then printf 'ok    %s %s: %s\n' "$tag" "$*" "$(tail -1 "$tmp/out")"
-  else bad "$tag $*: exit $got, wanted $want: $(cat "$tmp/out")"; fi
+expect() { # WANT CHECK TAG [ENV...]: check-CHECK's exit status is WANT
+  local want=$1 check=$2 tag=$3 got=0
+  shift 3
+  env "$@" "$release" "check-$check" "$tag" >"$tmp/out" 2>&1 || got=$?
+  if [ "$got" = "$want" ]; then printf 'ok    %s %s %s: %s\n' "$check" "$tag" "$*" "$(tail -1 "$tmp/out")"
+  else bad "$check $tag $*: exit $got, wanted $want: $(cat "$tmp/out")"; fi
 }
-expect 0 v1.0.0
-expect 1 app-v1.0.0
-expect 1 v1.0.1
-expect 0 v1.0.1 ARUGULA_RELEASE_SKIP_GREEN=1
-expect 1 v9.9.9
+expect 0 green v1.0.0
+expect 1 green app-v1.0.0
+expect 1 green v1.0.1
+expect 0 green v1.0.1 ARUGULA_RELEASE_SKIP_GREEN=1
+expect 1 green v9.9.9
+expect 0 rare v1.0.0
+expect 1 rare v1.0.1
+if grep -qF "just release --rare" "$tmp/out"; then printf 'ok    rare v1.0.1: says how\n'; else bad "rare v1.0.1 doesn't say how: $(cat "$tmp/out")"; fi
+expect 1 rare app-v1.0.0
+expect 0 rare v1.0.1 ARUGULA_RELEASE_SKIP_GREEN=1
+expect 1 rare v9.9.9
 
 exit $fail

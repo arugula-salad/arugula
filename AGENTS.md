@@ -301,7 +301,12 @@ lints the daemon with neither, and with each alone.
   typecheck), then the web import rule and its tests (`just web-imports`),
   the `proto-ts` check, fmt and clippy, for both workspaces (the root's
   and the server's).
-- `just e2e`: the browser specs. `just e2e-webkit`: WebKit's.
+- `just e2e`: the browser specs. `just e2e-webkit`: WebKit's. CI runs
+  WebKit's specs, `just check-core`, the platform on Postgres and the
+  test stack's claims and specs nightly and on a release candidate
+  (`.github/workflows/rare-nightly.yml`), not on each push to main; a
+  daemon release needs them to have passed (docs/development.md,
+  "Releasing").
   `just e2e-spec e2e/<name>.spec.ts`: only the ones named.
 - In a session on a hosted dev box (your branch is `arugula/...`): run the
   specs you wrote or changed with `just e2e-spec`, one at a time

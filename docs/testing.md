@@ -56,25 +56,19 @@ once (#287); a new push to a branch cancels that branch's run:
   - **clippy**: Linux, Apple silicon (`just check-macos`; Intel's runs
     weekly in macos-intel.yml), the desktop app
     and `just notices-check`;
-  - **core**: `just check-core`, clippy and the daemon's and the CLI's
-    tests with the `labs` feature off (#452);
   - **test** and **test-2**: `just test` in two halves on two pods
     (`just test-run 1` and `2`, nextest's `--partition count:N/2`), the
     box's binaries from static: each builds beside static, runs the server
     workspace's half while static builds (`just test-run N server`), and
     waits for them (`scripts/ci-wait-job`) only before the rest run
     (`just test-run N rest`). test runs the doctests and control-smoke too;
-  - **test-postgres**: the platform's tests again on Postgres
-    (`just test-platform-postgres`), beside test and test-2;
-  - **testnet**: the test stack's ssh and control profiles;
   - **e2e**: the specs (`E2E_SET=rest`) in twelve shards split by recorded
     time (`web/scripts/e2e-shard.mjs` from `web/e2e/durations.json`; refresh
     it with `just e2e-durations RUN` after a main run), each with its own
     test daemon on a free port. The shards run on GitHub's runners
     (`ubuntu-24.04`, since 2026-10-28), from build's binaries: they build
     nothing, and a VM of their own keeps other jobs' load out of their
-    timings. **stack**: those on the test stack
-    (`E2E_SET=stack`). The specs that time things (`E2E_SET=perf`: the
+    timings. The specs that time things (`E2E_SET=perf`: the
     frame rates, `editors.spec.ts`) run nightly instead
     (`.github/workflows/perf-nightly.yml`, since 2026-10-28). The frame
     rates are logged, and what the code does in a frame is asserted: a
@@ -89,13 +83,34 @@ once (#287); a new push to a branch cancels that branch's run:
   Each job takes one of two build directories kept for its kind of job,
   and a test stack with its own name, ports and subnet (`scripts/ci-env`),
   so jobs and runs on geek don't share either.
-  Pushes to branches other than main skip testnet, stack and perf (geek
-  runs several branches at once, and their load failed the tests that
-  time things); `gh workflow run check.yml --ref BRANCH` runs them all.
-- **macos** (our Macs: a throwaway Tart VM per job, home-cloud's
-  `mac_runner`, `runs-on: [self-hosted, macos-arm64]`):
-  `just test` and `just e2e-webkit`, with `ARUGULA_SKIP_DOCKER=1` (no
-  Docker there; geek's test runs the ssh tests).
+- **macos (test)** (our Macs: a throwaway Tart VM per job, home-cloud's
+  `mac_runner`, `runs-on: [self-hosted, macos-arm64]`, set up by
+  `.github/actions/macos-setup`): `just test`, with
+  `ARUGULA_SKIP_DOCKER=1` (no Docker there; Linux's test runs the ssh
+  tests).
+
+The jobs that rarely failed left check.yml on 2026-10-28 (#305): in
+main's runs from 10-23, test-postgres failed 0 times in 73, testnet 0 in
+107, stack 1 in 107, core 2 in 108 and macos (webkit) 0 in 110, and they
+added the pod and Mac load that drove test's p90. They run in
+`.github/workflows/rare-nightly.yml` every night on main's head, and on a
+release candidate (`gh workflow run rare-nightly.yml --ref main -f
+sha=SHA`, which `just release --rare` runs):
+- core: `just check-core`, clippy and the daemon's and the CLI's
+  tests with the `labs` feature off (#452);
+- test-postgres: the platform's tests again on Postgres
+  (`just test-platform-postgres`);
+- testnet: the test stack's ssh and control profiles (their claims
+  under `BREAK=1` are testnet-break.yml's, nightly);
+- stack: the specs on the test stack (`E2E_SET=stack`);
+- webkit: `just e2e-webkit` on our Macs.
+
+It builds what testnet and stack need itself (rare-build and rare-static,
+copies of check.yml's build and static). When every job passes, its last
+job tags the commit `ci/rare/<sha>`, and a daemon release refuses a commit
+without that tag (development.md, "Releasing"). A break these jobs would
+catch now shows up at the nightly or the release candidate, after its
+commit is green: that's the risk #305 accepted.
 
 Pull requests run none of check.yml (the home cloud's pods take only
 main's pushes). They run `.github/workflows/binaries.yml` on GitHub's
@@ -123,10 +138,12 @@ remove the label and add it back.
 A commit on main whose required checks all passed gets a `ci/green/<sha>`
 tag, and one that passed and then failed a re-run gets `ci/revoked/<sha>`
 (chant's `ci.green`, #503). `chant.workspace.json` names the checks:
-lint; build, static and clippy; test, test-2, test-postgres and core; the
-e2e shards; testnet, stack and desktop-xvfb (since 2026-10-28: they failed
-unseen while they weren't required); macos (test) and macos (webkit); and
-Windows' workspace, workspace-clippy and desktop. A skipped run counts as
+lint; build, static and clippy; test and test-2; the e2e shards;
+desktop-xvfb (since 2026-10-28: it failed unseen while it wasn't
+required); macos (test); and Windows' workspace, workspace-clippy and
+desktop. rare-nightly.yml's jobs aren't among them (#305), so they keep
+check.yml's names, and its builds and its WebKit job have names of their
+own (rare-build, rare-static, webkit). A skipped run counts as
 passed. Every phase builds the newest commit (`"build": "newest"`, #1675):
 one run at a time on main, and pushes that land while one runs leave only
 the newest waiting; the ones in between get no run and no tag. A required
@@ -166,7 +183,7 @@ green commit newer than everything it reported. `scripts/tests/ci-red.sh`
 
 The same workflow runs `scripts/ci-nightly-red` for the scheduled
 workflows (forges-nightly, macos-vm, macos-intel, testnet-break,
-perf-nightly), which ci/green doesn't count: one issue per workflow,
+perf-nightly, rare-nightly), which ci/green doesn't count: one issue per workflow,
 "nightly is red: WORKFLOW", opened when its newest scheduled run on main
 failed, commented on once per failed run, and closed when one passes.
 `scripts/tests/ci-nightly-red.sh` runs it with a fake gh.
@@ -1070,7 +1087,7 @@ stack recreate the boxes they use, so give each worktree its own stack
 
 | Test | Also needs | Run |
 |---|---|---|
-| the testnet's claims | `ssh`: nothing more. `control`: node, and the static binaries (`just static aarch64` on Apple silicon, `just static` on x86_64) | `just testnet up ssh` (or `control`), `just testnet test ssh`, `just testnet break ssh`, `just testnet down`. On `control`'s stack the ssh claims run too: CI runs `up control`, then `test` for `ssh` and `control`, and `break` for both when the claims or the stack change (`scripts/testnet-changed`) and every night (`testnet-break.yml`) |
+| the testnet's claims | `ssh`: nothing more. `control`: node, and the static binaries (`just static aarch64` on Apple silicon, `just static` on x86_64) | `just testnet up ssh` (or `control`), `just testnet test ssh`, `just testnet break ssh`, `just testnet down`. On `control`'s stack the ssh claims run too: CI runs `up control`, then `test` for `ssh` and `control` (rare-nightly.yml, every night and on a release candidate), and `break` for both every night (`testnet-break.yml`) |
 | `crates/arugulad/tests/integration/ssh.rs`, `reboot.rs` (in `just test`) | the box's static binaries (or `ARUGULA_SSH_BINARIES`); `reboot.rs` also node and Playwright's Chromium in `web/` (`cd web && pnpm install`) | `cargo test -p arugulad --test integration ssh::` (or `reboot::`); they bring the `ssh` profile up themselves when it isn't ready (healthy), and `just test-run` brings it up before the suite (`testnet/suite-up.sh`) |
 | `testnet/measure-tailnet.sh` (S28) | the static binaries | `just testnet measure tailnet`; it brings the `tailnet` profile up itself |
 | `team-swarm-phones.spec.ts`, "a machine on another network, behind netem" (in `just e2e`) | `just static <arch>`; it builds a small Debian image with `tc` and `socat`, names its container and network after `COMPOSE_PROJECT_NAME`, and removes them after | `just e2e` |

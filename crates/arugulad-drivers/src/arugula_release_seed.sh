@@ -38,6 +38,9 @@ git add -A
 git commit -qm notes
 git tag -a "ci/green/$(git rev-parse HEAD~3)" -m green HEAD~3
 git tag -a "ci/green/$two" -m green "$two"
+# two passed the rare jobs too (rare-nightly.yml's ci/rare tag, #305),
+# which a daemon release needs.
+git tag "ci/rare/$two" "$two"
 git push -q "$bare" main --tags
 git checkout -q -b pr "$two"
 echo pr >src/code

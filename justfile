@@ -482,8 +482,10 @@ shellcheck:
 
 # Release without waiting for a version bump to pass CI (#524): commit the
 # bump on top of the newest commit on main with a ci/green tag, tag it, and
-# push the tag with main, the bump merged in (docs/development.md).
-# just release [patch|minor|major] [--app] [COMMIT|--older] [--dry-run]
+# push the tag with main, the bump merged in (docs/development.md). A
+# daemon release also needs the commit's ci/rare tag (rare-nightly.yml,
+# #305): --rare starts those jobs on it and waits for them first.
+# just release [patch|minor|major] [--app] [COMMIT|--older] [--rare] [--dry-run]
 release *args:
     scripts/release bump {{args}}
 
@@ -590,8 +592,8 @@ test-quarantined: web e2e-build
 # The platform's suite on Postgres (M143), as hosted control runs it: a
 # postgres:17 container of its own on a free port, removed after (from
 # CI's mirror: docs/testing.md, "CI's images"). The same tests as on SQLite
-# (`Db::test`); check.yml runs it in a job of its own (test-postgres),
-# beside test and test-2. Every arugula-platform* package: the base, its
+# (`Db::test`); CI runs it in a job of its own (test-postgres), nightly
+# and on a release candidate (rare-nightly.yml, #305). Every arugula-platform* package: the base, its
 # feature crates and the binary (#314).
 test-platform-postgres:
     #!/usr/bin/env bash

@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 # Did this push change what the test stack's claims are made of (#868)?
-# check.yml runs `just testnet break` (each claim under BREAK=1, which
+# check.yml ran `just testnet break` (each claim under BREAK=1, which
 # must fail) only then: it checks the claims, not the product, and took
-# 4.6 of testnet's 8.5 minutes. testnet-break.yml runs it nightly too.
+# 4.6 of testnet's 8.5 minutes. Since #305 testnet runs in rare-nightly.yml
+# and nothing calls this; testnet-break.yml runs the claims under BREAK=1
+# every night.
 # Same answers as scripts/changed: 0 run, 1 skip.
 #
 #   scripts/testnet-changed BEFORE

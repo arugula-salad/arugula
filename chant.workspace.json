@@ -222,10 +222,10 @@
       "phases": {
         "lint": { "runs": ["lint", "changes", "suite-changed"], "build": "newest" },
         "build": { "runs": ["build", "static", "clippy"], "skipped": "pass", "build": "newest" },
-        "test": { "runs": ["test", "test-2", "test-postgres", "core"], "skipped": "pass", "build": "newest" },
+        "test": { "runs": ["test", "test-2"], "skipped": "pass", "build": "newest" },
         "e2e": { "runs": ["e2e*"], "skipped": "pass", "build": "newest" },
-        "claims": { "runs": ["testnet", "stack", "desktop-xvfb"], "skipped": "pass", "build": "newest" },
-        "macos": { "runs": ["macos (*)"], "skipped": "pass", "build": "newest" },
+        "claims": { "runs": ["desktop-xvfb"], "skipped": "pass", "build": "newest" },
+        "macos": { "runs": ["macos (test)"], "skipped": "pass", "build": "newest" },
         "windows": { "runs": ["workspace", "workspace-clippy", "desktop"], "skipped": "pass", "build": "newest" }
       },
       "require": ["lint", "build", "test", "e2e", "claims", "macos", "windows"]

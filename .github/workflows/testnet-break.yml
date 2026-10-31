@@ -1,9 +1,10 @@
 # The test stack's claims under BREAK=1, every night on main (#868): each
 # claim with its property broken, where it must fail, which shows it can
-# catch what it checks. check.yml runs it only when the claims or the stack
-# change (scripts/testnet-changed); this catches a product change that left
-# a claim unable to fail. Its own binaries, like check.yml's static and
-# build jobs make, through the same compile cache.
+# catch what it checks. Until #305 check.yml's testnet also ran it when the
+# claims or the stack changed (scripts/testnet-changed); testnet is
+# rare-nightly.yml's now, and this is where it runs, catching too a product
+# change that left a claim unable to fail. Its own binaries, like
+# check.yml's static and build jobs make, through the same compile cache.
 name: testnet-break
 on:
   schedule:

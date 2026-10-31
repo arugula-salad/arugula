@@ -23,7 +23,9 @@
 //!    release` runs), with the bump and the lane the plan names, the
 //!    commit, and the deploy's id as a trailer. It refuses what it refuses
 //!    (no notes on `main`, the tag there already, the commit released
-//!    already); else it commits the bump, tags it and pushes the tag and
+//!    already, a daemon release's commit without the `ci/rare/<sha>` tag
+//!    rare-nightly.yml gives it, #305); else it commits the bump, tags it
+//!    and pushes the tag and
 //!    `main` in one atomic push.
 //! 4. **Revokes the token** at GitHub right after: nothing after needs it.
 //! 5. **Follows the tag's release workflow** to its end, for at most
