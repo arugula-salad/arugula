@@ -320,6 +320,8 @@ fn enrollment(app: &App, h: &HostedRow) -> anyhow::Result<Enrollment> {
         trust: None,
         account_certs: vec![],
         account_revocations: vec![],
+        locked: false,
+        lock: None,
         legacy_app_children: None,
         purpose: h.purpose.clone(),
     };
@@ -329,6 +331,8 @@ fn enrollment(app: &App, h: &HostedRow) -> anyhow::Result<Enrollment> {
     }
     match people {
         Some(People::Team { pin, roster, certs }) => {
+            e.locked = app.db.team(&pin.team)?.is_some_and(|t| t.locked);
+            e.lock = crate::teams::lock_of(app, &pin.team)?;
             e.team = Some(pin);
             e.roster = Some(*roster);
             e.certs = certs;

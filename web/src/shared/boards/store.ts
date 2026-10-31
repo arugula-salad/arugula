@@ -5,7 +5,7 @@
 // and the shell's board block read through it. A write that names a stale
 // `rev` is refused with 409 (`stale_rev`): the view reads the board again.
 
-import type { BoardAttachRole, BoardList, BoardPointer, BoardPutEntry, BoardView, BoardWorkItems, TrackerConnections, TrackerWriteDone } from "../proto";
+import type { BoardAttachRole, ForgeContent, NativeIssue, BoardList, BoardPointer, BoardPutEntry, BoardView, BoardWorkItems, TrackerConnections, TrackerWriteDone } from "../proto";
 import { chat } from "../chat-store";
 import { platformFetch, refusalOf } from "../maintenance";
 
@@ -19,6 +19,13 @@ export class BoardError extends Error {
   ) {
     super(message);
   }
+}
+
+/** A PR's checks as `GET /api/forge/items/{id}/checks` gives them (control-wire's `ForgeChecks`, not generated yet). */
+export interface ForgeChecks {
+  item: string;
+  head_sha: string | null;
+  checks: { kind: string; name: string; status: string; conclusion: string | null; url: string | null; updated_at: number }[];
 }
 
 export const STALE_REV = "stale_rev";
@@ -74,6 +81,13 @@ export const boards = {
   close: (id: string, done_note: string) => call<BoardView>("POST", `/api/boards/${enc(id)}/close`, { done_note }),
   reopen: (id: string) => call<BoardView>("POST", `/api/boards/${enc(id)}/reopen`, {}),
   remove: (id: string, entry: string) => call<BoardView>("DELETE", `/api/boards/${enc(id)}/entries/${enc(entry)}`),
+  /** Move a row to a group (`zone`, null: none), or a group among groups (`before`, null: last). */
+  move: (id: string, entry: string, rev: number, m: { zone?: string | null; before?: string | null }) =>
+    call<BoardView>("POST", `/api/boards/${enc(id)}/entries/${enc(entry)}/move`, { rev, before: null, ...m }),
+  /** The drawer's reads, through the routes the Issues page and the forge blocks use: a native issue, a mirrored item's body and comments, a PR's checks. */
+  issue: (id: string) => call<NativeIssue>("GET", `/api/issues/${enc(id)}`),
+  content: (item: string) => call<ForgeContent>("GET", `/api/forge/items/${enc(item)}/content`),
+  checks: (item: string) => call<ForgeChecks>("GET", `/api/forge/items/${enc(item)}/checks`),
   /** A project's work items matching `q`, newest first: what a row may point at. */
   work(project: string, q: string, limit: number): Promise<BoardWorkItems> {
     return call<BoardWorkItems>("GET", `/api/projects/${enc(project)}/work?q=${enc(q)}&limit=${limit}`);

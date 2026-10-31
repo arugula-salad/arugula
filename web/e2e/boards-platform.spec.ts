@@ -38,11 +38,15 @@ let team = "";
 let app = "";
 let project = "";
 let boardPath = "";
+let managed = "";
 
 const FIRST = "Fix the installer";
 const SECOND = "Tidy the changelog";
 const THIRD = "Update the screenshots";
 const NEW = "Write the launch note";
+const OPEN = "Cut the release";
+const SHIPPED = "Publish the notes";
+const BODY = "The release is cut from main.";
 
 async function platform(p: Page, path = "/") {
   await p.goto(`${app}${path}`);
@@ -341,6 +345,8 @@ test("/boards lists every project's boards by project, folded under Done the sam
     await expect(page.locator("[data-boards-stats]")).toHaveText("0 open1 done");
     await acme.locator("[data-boards-done] summary").click();
     await expect(acme.locator("[data-board-link]")).toContainText("Launch");
+    // A board's title in a list is its link.
+    await expect(acme.locator("a[data-board-link]")).toHaveAttribute("href", /\/boards\/brd_[0-9a-f]+/);
     await expect(acme.locator("[data-boards-done] li.board-card.sw-card.sw-muted")).toContainText("Done");
     expect(await p.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
   }
@@ -401,6 +407,242 @@ test("a board with groups shows each as a section with its four lanes, and the r
   await platform(alice, boardPath);
   await expect(alice.locator("[data-board-group]")).toHaveCount(0);
   await expect(alice.locator("[data-board-zone] h2")).toHaveText(["Next", "Doing", "Review", "Done"]);
+});
+
+test("a board's cards carry their lane's tone, its groups are managed on the page, and a row moves to another group", async () => {
+  test.setTimeout(120_000);
+  const made = await api(alice, "POST", `/api/projects/${project}/boards`, { title: "Managed" });
+  expect(made.status).toBe(200);
+  const id = made.body!.board.id as string;
+  managed = `/p/${project}/boards/${id}`;
+  const entries = `/api/boards/${id}/entries`;
+  const me = (await api(alice, "GET", "/api/projects")).body!.me.account as string;
+  // Two groups, a row in the first with an open issue (Next), one with a closed issue (Done) and a note row.
+  const first = await api(alice, "PUT", entries, { entry: "zone", title: "Wave one" });
+  const wave = (first.body!.groups as { id: string }[])[0].id;
+  const issue = async (title: string, state?: string) => {
+    const i = await api(alice, "POST", `/api/projects/${project}/issues`, { title, body: title === OPEN ? BODY : "", labels: [], assignees: [] });
+    expect(i.status).toBe(200);
+    if (state) expect((await api(alice, "PATCH", `/api/issues/${i.body!.id}`, { state, reason: "completed" })).status).toBe(200);
+    const r = await api(alice, "PUT", entries, { entry: "row", zone: wave, pointer: { kind: "issue", id: i.body!.id } });
+    expect(r.status).toBe(200);
+    return r.body!.zones.flatMap((z: any) => z.rows).find((x: any) => x.pointer.id === i.body!.id);
+  };
+  const open = await issue(OPEN);
+  const shipped = await issue(SHIPPED, "closed");
+  // An ask to Alice on the open one, and evidence attached to the shipped one.
+  expect((await api(alice, "POST", `/api/boards/${id}/rows/${open.id}/ask`, { who: me, question: "Ship it this week?", options: ["Yes", "Next week"], recommend: "Yes" })).status).toBe(200);
+  expect((await api(alice, "POST", `/api/boards/${id}/attachments`, { row: shipped.id, role: "proof", pointer: { kind: "link", url: "https://example.com/branch" } })).status).toBe(200);
+
+  await platform(alice, managed);
+  const lanes = alice.locator("[data-board-group] .board-lanes");
+  await expect(lanes).toHaveCount(1, { timeout: 15_000 });
+  await expect(alice.locator("[data-board-zone] ul.sw-cards")).toHaveCount(4);
+  // A group's title is a heading above the lanes, and a row's title is a smaller, plainer one.
+  const px = (l: Locator) => l.evaluate((el) => parseFloat(getComputedStyle(el).fontSize));
+  expect(await px(alice.locator("[data-board-group-title]").first())).toBeGreaterThanOrEqual(22);
+  expect(await px(alice.locator("[data-board-zone] h2").first())).toBeLessThan(18);
+  expect(await px(alice.locator("[data-board-row] [data-board-title]").first())).toBeLessThanOrEqual(15);
+  // The bar is the lane's tone; a row that waits on Alice takes the attention tone, and the header counts it.
+  const card = row(alice, SHIPPED);
+  await expect(zone(alice, "Done").locator(card)).toHaveClass(/\bsw-card\b.*\bsw-ok\b/);
+  await expect(card.locator(".chip")).toContainText(/closed/i);
+  // Its title is the issue's page, and its `#N` is dim text, not a link.
+  await expect(card.locator("[data-board-title]")).toHaveAttribute("href", /\/issues\/iss_[0-9a-f]+$/);
+  await expect(card.locator("[data-board-ptr]")).toHaveText(/^#\d+$/);
+  await expect(card.locator("a[data-board-ptr]")).toHaveCount(0);
+  // A click on the title follows the link and doesn't open the drawer.
+  await card.locator("[data-board-title]").click();
+  await expect(alice).toHaveURL(/\/issues\/iss_/);
+  await platform(alice, managed);
+  await expect(card).toBeVisible({ timeout: 15_000 });
+  await expect(alice.locator("[data-board-drawer]")).toHaveCount(0);
+  await expect(row(alice, OPEN)).toHaveClass(/\bsw-accent\b/);
+  await expect(card.locator(".sw-chip")).toContainText("example.com/branch");
+  await expect(alice.locator("[data-board-stats]")).toContainText("1 done");
+  await expect(alice.locator("[data-board-needs-you]")).toContainText("1 Needs you");
+  await row(alice, OPEN).locator("[data-board-ask-option='Yes']").click();
+  await expect(row(alice, OPEN)).toHaveClass(/\bsw-muted\b/, { timeout: 15_000 });
+  await expect(alice.locator("[data-board-needs-you]")).toHaveCount(0);
+  // A second question, left open: it is in the header's count, and its card takes the attention tone.
+  const price = await issue("Decide the price");
+  expect((await api(alice, "POST", `/api/boards/${id}/rows/${price.id}/ask`, { who: me, question: "Free or paid?", options: ["Free", "Paid"] })).status).toBe(200);
+  await platform(alice, managed);
+  await expect(alice.locator("[data-board-needs-you]")).toContainText("1 Needs you", { timeout: 15_000 });
+  await expect(row(alice, "Decide the price")).toHaveClass(/\bsw-accent\b/);
+
+  // Add a group, rename it, move it up, and delete it again.
+  const titles = alice.locator("[data-board-group-title]");
+  await alice.locator("[data-board-add-group]").click();
+  await alice.locator(".prompt input").fill("Wave two");
+  await alice.locator(".prompt input").press("Enter");
+  await expect(titles).toHaveText(["Wave one", "Wave two"], { timeout: 15_000 });
+  const second = alice.locator("[data-board-group]").filter({ has: alice.locator("[data-board-group-title]", { hasText: "Wave two" }) });
+  await second.locator("[data-board-group-menu]").click();
+  await alice.getByRole("menuitem", { name: "Rename…" }).click();
+  await alice.locator(".prompt input").fill("Wave 2");
+  await alice.locator(".prompt input").press("Enter");
+  await expect(titles).toHaveText(["Wave one", "Wave 2"], { timeout: 15_000 });
+  await alice.locator("[data-board-group-menu]").nth(1).click();
+  await alice.getByRole("menuitem", { name: "Move up" }).click();
+  await expect(titles).toHaveText(["Wave 2", "Wave one"], { timeout: 15_000 });
+  await alice.locator("[data-board-group-menu]").nth(0).click();
+  await expect(alice.getByRole("menuitem", { name: "Move up" })).toBeDisabled();
+  await alice.keyboard.press("Escape");
+
+  // Move the open issue's row to Wave 2 from its menu.
+  await row(alice, OPEN).locator("[data-board-row-menu]").click();
+  await alice.getByRole("menuitem", { name: "Move to group…" }).click();
+  // The group the row is in is checked, so its item is a radio; the others are plain items.
+  await alice.locator('[role^="menuitem"]', { hasText: "Wave 2" }).click();
+  const wave2 = alice.locator("[data-board-group]").filter({ has: alice.locator("[data-board-group-title]", { hasText: "Wave 2" }) });
+  await expect(wave2.locator(row(alice, OPEN))).toHaveCount(1, { timeout: 15_000 });
+  await expect(alice.locator("[data-board-group]").filter({ hasText: "Wave one" }).locator(row(alice, OPEN))).toHaveCount(0);
+
+  if (process.env.BOARDS_SHOTS) {
+    await alice.setViewportSize({ width: 1400, height: 900 });
+    await alice.screenshot({ path: `${process.env.BOARDS_SHOTS}/board-desktop.png`, animations: "disabled" });
+    await platform(alice, `/p/${project}/issues`);
+    await expect(alice.locator("[data-issue-row]").first()).toBeVisible();
+    await alice.screenshot({ path: `${process.env.BOARDS_SHOTS}/issues-desktop.png`, animations: "disabled" });
+  }
+  // A group with nothing in it goes after a confirm; the others stay.
+  expect((await api(alice, "PUT", entries, { entry: "zone", title: "Scratch" })).status).toBe(200);
+  await platform(alice, managed);
+  await expect(titles).toHaveText(["Wave 2", "Wave one", "Scratch"], { timeout: 15_000 });
+  await alice.locator("[data-board-group-menu]").nth(2).click();
+  await alice.getByRole("menuitem", { name: "Delete the group…" }).click();
+  await alice.locator("[data-confirm-remove]").click();
+  await expect(titles).toHaveText(["Wave 2", "Wave one"], { timeout: 15_000 });
+});
+
+test("a card's title opens the drawer with the item's body, its comments and the PR's checks", async () => {
+  test.setTimeout(90_000);
+  const checks = { item: "fi_0123456789abcdef0123456789abcdef", head_sha: "abc1234", checks: [
+    { kind: "check_run", name: "binaries/quick", status: "completed", conclusion: "success", url: "https://github.com/acme/app/runs/1", updated_at: 1 },
+    { kind: "check_run", name: "lint", status: "completed", conclusion: "failure", url: null, updated_at: 1 },
+  ] };
+  // The GitHub side has no mirror here: the board is read with a PR in place of the first row, and the item routes answer as the platform does.
+  await alice.route(/\/api\/boards\/brd_[0-9a-f]+$/, async (route) => {
+    const r = await route.fetch();
+    const j = await r.json();
+    const pr = j.zones.flatMap((z: any) => z.rows).find((x: any) => x.live?.title === SHIPPED);
+    if (pr) {
+      pr.pointer = { kind: "forge_item", id: checks.item };
+      pr.live = { state: "checks_failed", kind: "pr", repo: "acme/app", number: 7, title: SHIPPED, assignees: [] };
+      pr.lane = "review";
+      // Two agents on it: one working with a title, one idle with none. Neither is named by its pane number.
+      pr.attachments = [
+        { id: "att_0000000000000000000000000000aa01", role: "work", pointer: { kind: "block", machine: "mch_0123", pane: "640" }, block: { state: "working", title: "Lexer lane", branch: "feat/lexer", head: "abc1234", pushed: false, uncommitted: 2 } },
+        { id: "att_0000000000000000000000000000aa02", role: "work", pointer: { kind: "block", machine: "mch_0123", pane: "641" }, block: { state: "idle", branch: "feat/other", head: "def5678", pushed: true, uncommitted: 0 } },
+      ];
+    }
+    await route.fulfill({ response: r, json: j });
+  });
+  await alice.route(/\/api\/forge\/items\/fi_[0-9a-f]+\/checks$/, (route) => route.fulfill({ json: checks }));
+  await alice.route(/\/api\/forge\/items\/fi_[0-9a-f]+\/content$/, (route) =>
+    route.fulfill({
+      json: {
+        item: checks.item,
+        from: "github",
+        body: { kind: "body", id: 1, author: "alice", body: "The PR body, from GitHub.", path: null, line: null, reply_to: null, created_at: 1, updated_at: 1 },
+        comments: [1, 2, 3, 4].map((n) => ({ kind: "comment", id: n + 1, author: "bob", body: `Comment ${n}`, path: null, line: null, reply_to: null, created_at: n, updated_at: n })),
+      },
+    }),
+  );
+  await platform(alice, managed);
+  const card = row(alice, SHIPPED);
+  await expect(card).toHaveClass(/\bsw-warn\b/, { timeout: 15_000 });
+  // One chip per agent: its title and its state, once. Its branch and the rest come only when it has stopped, dim beside the chip.
+  const working = card.locator('[data-board-block="working"]');
+  await expect(working).toHaveText(/^Lexer lane\s*working$/);
+  await expect(card.getByText("working", { exact: true })).toHaveCount(1);
+  await expect(card).not.toContainText("640");
+  await expect(card).not.toContainText("641");
+  await expect(card.locator('[data-board-block="idle"]')).toHaveText(/^agent\s*idle$/);
+  await expect(card.locator("[data-board-block-facts]")).toHaveText("feat/other@def5678 · pushed");
+  await expect(card).not.toContainText("feat/lexer");
+  // The chip opens the agent's pane, on control's page (the platform page has no panes of its own).
+  await expect(working.locator("[data-board-block-open]")).toHaveAttribute("href", /\/#pane=mch_0123\.640$/);
+  // The title is the item's link (here a PR on GitHub, in a new tab), and `#N` is plain text: clicking the title leaves the board alone.
+  const title = card.locator("[data-board-title]");
+  await expect(title).toHaveAttribute("href", "https://github.com/acme/app/pull/7");
+  await expect(card.locator("[data-board-ptr]")).toHaveText("acme/app#7");
+  await expect(card.locator("a[data-board-ptr]")).toHaveCount(0);
+  const [tab] = await Promise.all([alice.context().waitForEvent("page"), title.click()]);
+  await tab.close();
+  await expect(alice.locator("[data-board-drawer]")).toHaveCount(0);
+  // Details in the row's menu opens the drawer; so does the card's empty space (its corner, here), and Enter on the focused card.
+  await card.locator("[data-board-row-menu]").click();
+  await alice.getByRole("menuitem", { name: "Details" }).click();
+  await expect(alice.locator("[data-board-drawer]")).toHaveCount(1);
+  await expect(alice.locator("[data-board-drawer]")).toBeFocused();
+  await alice.keyboard.press("Escape");
+  await expect(alice.locator("[data-board-drawer]")).toHaveCount(0);
+  await card.focus();
+  await alice.keyboard.press("Enter");
+  await expect(alice.locator("[data-board-drawer]")).toHaveCount(1);
+  await expect(alice.locator("[data-board-drawer]")).toBeFocused();
+  await alice.keyboard.press("Escape");
+  await expect(alice.locator("[data-board-drawer]")).toHaveCount(0);
+  // A click on a chip is the chip's, not the card's.
+  const [pane] = await Promise.all([alice.context().waitForEvent("page"), card.locator("[data-board-block-open]").first().click()]);
+  await pane.close();
+  await expect(alice.locator("[data-board-drawer]")).toHaveCount(0);
+  await card.click({ position: { x: 6, y: 6 } });
+  const drawer = alice.locator("[data-board-drawer]");
+  await expect(drawer.locator("[data-board-drawer-title]")).toHaveText(SHIPPED);
+  await expect(drawer.locator("[data-board-drawer-body]")).toHaveText("The PR body, from GitHub.");
+  // The latest three comments, not the first.
+  await expect(drawer.locator("[data-board-drawer-comments] .board-drawer-comment")).toHaveCount(3);
+  await expect(drawer.locator("[data-board-drawer-comments]")).toContainText("Comment 4");
+  await expect(drawer.locator("[data-board-drawer-comments]")).not.toContainText("Comment 1");
+  await expect(drawer.locator('[data-board-check="binaries/quick"]')).toContainText("success");
+  await expect(drawer.locator('[data-board-check="lint"]')).toContainText("failure");
+  await expect(drawer.locator("[data-board-drawer-link]")).toHaveAttribute("href", "https://github.com/acme/app/pull/7");
+  await drawer.locator("[data-board-drawer-close]").click();
+  await expect(drawer).toHaveCount(0);
+  // An item the reader may not read here has no body to show: the drawer says to open it on GitHub.
+  await alice.unroute(/\/api\/forge\/items\/fi_[0-9a-f]+\/content$/);
+  await alice.route(/\/api\/forge\/items\/fi_[0-9a-f]+\/content$/, (route) => route.fulfill({ status: 404, json: { error: "not found" } }));
+  await card.click({ position: { x: 6, y: 6 } });
+  await expect(drawer.locator("[data-board-drawer-body] a")).toHaveText("Open on GitHub");
+  await expect(drawer.locator("[data-board-drawer-comments]")).toHaveCount(0);
+  await expect(drawer.locator('[data-board-check="lint"]')).toContainText("failure");
+  await drawer.locator("[data-board-drawer-close]").click();
+  if (process.env.BOARDS_SHOTS) {
+    await alice.setViewportSize({ width: 1400, height: 900 });
+    await alice.screenshot({ path: `${process.env.BOARDS_SHOTS}/board-agents-desktop.png`, animations: "disabled" });
+    await alice.setViewportSize({ width: 390, height: 844 });
+    await alice.screenshot({ path: `${process.env.BOARDS_SHOTS}/board-agents-phone.png`, animations: "disabled", fullPage: true });
+  }
+  await alice.unroute(/\/api\/boards\/brd_[0-9a-f]+$/);
+});
+
+test("a native issue's drawer shows its body, and a viewer on a phone has the drawer as a sheet and no sideways scroll", async () => {
+  test.setTimeout(90_000);
+  await platform(bob, managed);
+  // Bob can't manage anything.
+  await expect(row(bob, OPEN)).toHaveCount(1, { timeout: 15_000 });
+  for (const hook of ["add-group", "group-menu"]) await expect(bob.locator(`[data-board-${hook}]`)).toHaveCount(0);
+  await row(bob, OPEN).locator("[data-board-row-menu]").click();
+  await expect(bob.getByRole("menuitem", { name: "Move to group…" })).toHaveCount(0);
+  await bob.keyboard.press("Escape");
+  expect(await bob.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
+  await row(bob, OPEN).click({ position: { x: 6, y: 6 } });
+  const drawer = bob.locator("[data-board-drawer]");
+  await expect(drawer).toBeVisible();
+  await expect(drawer.locator("[data-board-drawer-body]")).toHaveText(BODY, { timeout: 15_000 });
+  const box = (await drawer.boundingBox())!;
+  expect(box.x).toBeGreaterThanOrEqual(0);
+  expect(box.x + box.width).toBeLessThanOrEqual(390);
+  // A sheet at the foot of the screen, not a side panel.
+  expect(box.width).toBeGreaterThan(380);
+  expect(box.y).toBeGreaterThan(100);
+  expect(await bob.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
+  await bob.keyboard.press("Escape");
+  await expect(drawer).toHaveCount(0);
+  if (process.env.BOARDS_SHOTS) await bob.screenshot({ path: `${process.env.BOARDS_SHOTS}/board-phone.png`, animations: "disabled" });
 });
 
 test("connecting a Plane project: each field is labelled, says what goes in it, and is wide enough to read", async () => {
