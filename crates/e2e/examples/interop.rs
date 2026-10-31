@@ -84,49 +84,6 @@ async fn main() -> anyhow::Result<()> {
             let certs: AccountCerts = serde_json::from_value(v["certs"].clone())?;
             println!("{}", roster.is_some_and(|r| r.follows(prev.as_ref(), &pin, &certs)));
         }
-        Some("refresh") => {
-            // `checkpoint::refresh_account`: what's kept of an account after
-            // a fresh look, as signatures, and the stamps.
-            let mut s = String::new();
-            std::io::stdin().read_to_string(&mut s)?;
-            let v: serde_json::Value = serde_json::from_str(&s)?;
-            let trust: arugula_e2e::Trust = serde_json::from_value(v["trust"].clone())?;
-            let part = |k: &str| -> anyhow::Result<(Vec<arugula_e2e::Cert>, Vec<arugula_e2e::Revocation>)> {
-                Ok((
-                    serde_json::from_value(v[k]["certs"].clone())?,
-                    serde_json::from_value(v[k]["revocations"].clone())?,
-                ))
-            };
-            let (fresh, old) = (part("fresh")?, part("old")?);
-            let mut seen: arugula_e2e::checkpoint::Seen = serde_json::from_value(v["seen"].clone())?;
-            let now = v["now"].as_u64().unwrap_or_default();
-            let (certs, revs, refused) =
-                arugula_e2e::checkpoint::refresh_account(&trust, fresh, (&old.0, &old.1), &mut seen, now);
-            let sigs = |x: Vec<String>| {
-                let mut x = x;
-                x.sort();
-                x
-            };
-            println!(
-                "{}",
-                serde_json::json!({
-                    "certs": sigs(certs.into_iter().map(|c| c.sig).collect()),
-                    "revocations": sigs(revs.into_iter().map(|r| r.sig).collect()),
-                    "refused": refused,
-                    "seen": seen,
-                })
-            );
-        }
-        Some("lock") => {
-            // `TeamLock::signed_in`.
-            let mut s = String::new();
-            std::io::stdin().read_to_string(&mut s)?;
-            let v: serde_json::Value = serde_json::from_str(&s)?;
-            let lock: Option<arugula_e2e::team::TeamLock> = serde_json::from_value(v["lock"].clone()).ok();
-            let roster: Roster = serde_json::from_value(v["roster"].clone())?;
-            let certs: AccountCerts = serde_json::from_value(v["certs"].clone())?;
-            println!("{}", lock.is_some_and(|l| l.signed_in(&roster, &certs)));
-        }
         Some("advance") => {
             // `checkpoint::advance`: where a roster stands after a history,
             // from the one held, and the version that stopped it.

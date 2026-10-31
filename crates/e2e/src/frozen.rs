@@ -17,7 +17,7 @@ use crate::{
     deploy::{Approval, Decision, Operation},
     keys::{DeviceKeys, HEADER, device_id},
     push::PushSub,
-    team::{Invite, Member, Move, Roster, TeamLock, TeamPin},
+    team::{Invite, Member, Move, Roster, TeamPin},
 };
 
 fn text(hex: &str) -> String {
@@ -120,7 +120,6 @@ fn signed_domains_never_change() {
         sig: String::new(),
     };
     let pin = TeamPin { team: "t".into(), founder: "a".into(), founder_root: "r".into() };
-    let lock = TeamLock { team: "t".into(), locked: true, version: 1, at: 1, by: "d".into(), sig: String::new() };
 
     let cases = [
         (first_line(cert.body()), "696c6c6f676963616c20646576696365207631"),
@@ -139,8 +138,6 @@ fn signed_domains_never_change() {
         (first_line(public.body()), "61727567756c61207075626c69632070726576696577206772616e74207631"),
         // Run events (M210), which hosted daemons sign.
         (first_line(run.body()), "61727567756c612072756e206576656e74207631"),
-        // A team's lock, signed by an owner's page.
-        (first_line(lock.body()), "61727567756c61207465616d206c6f636b207631"),
         // Agent sessions' events (M254), which hosted daemons sign.
         (first_line(session.body()), "61727567756c612073657373696f6e206576656e74207631"),
         // M218's deploy operation and approval.

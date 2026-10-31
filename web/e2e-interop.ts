@@ -11,8 +11,7 @@ import { daemonNow, E2ESocket, readWelcome } from "./src/shell/e2e/channel.ts";
 import { blockRoutesLabel } from "./src/shell/blocks/block-route.ts";
 import { blockOrigin, blockSrc, credsFor, frameAllow, grantExpiry, heard, isWebKit, MAX_LIFE_MS, mint, type Framed } from "./src/shell/blocks/through-control.ts";
 import { workerDirectBlocked } from "./src/shell/block/lna.ts";
-import { advance, follows, lockSignedIn, newInviteKey, redeemInvite, signInvite, signLock, signRedeem, signRoster, type Roster, type TeamLock, type TeamPin } from "./src/shell/e2e/team.ts";
-import { refreshAccount, type Seen } from "./src/shell/e2e/checkpoint.ts";
+import { advance, follows, newInviteKey, redeemInvite, signInvite, signRedeem, signRoster, type Roster, type TeamPin } from "./src/shell/e2e/team.ts";
 
 const bin = process.env.INTEROP_BIN ?? "../target/debug/examples/interop";
 let failed = 0;
@@ -164,88 +163,6 @@ check("Rust trusts what we signed", JSON.stringify(rust) === JSON.stringify([roo
     await step("another version at the one held is refused", w3, [v1, w2, other3], [3, 3]);
     await step("a version nobody in the team signed is refused", w3, [bad4], [3, 4]);
     await step("a version left out in between stops the walk", v1, [w2, await signRoster({ ...v1, version: 4 }, alice)], [2, 4]);
-  }
-
-  // A team's lock, signed here: Rust takes the same ones.
-  {
-    const lockOk = async (what: string, lock: unknown, want: boolean) => {
-      const rs = execFileSync(bin, ["lock"], { input: JSON.stringify({ lock, roster: v1, certs: tc }) }).toString().trim() === "true";
-      const ts = await lockSignedIn(lock as TeamLock, v1, tc);
-      check(what, rs === want && ts === want, `rust ${rs}, ts ${ts}`);
-    };
-    const l = await signLock({ team: pin.team, locked: true, version: 1, at: 5 }, alice);
-    await lockOk("an owner's lock signed here checks out in Rust", l, true);
-    await lockOk("not one bent after signing", { ...l, locked: false }, false);
-    await lockOk("nor one signed by someone outside the team", await signLock({ team: pin.team, locked: false, version: 1, at: 6 }, bob), false);
-    await lockOk("nor one against a version the machine doesn't have", await signLock({ team: pin.team, locked: false, version: 2, at: 6 }, alice), false);
-  }
-
-  // What's kept of an account after a fresh look (`checkpoint::refresh_account`):
-  // removals add up, a certificate first seen after its approver's removal
-  // is dropped, and certificates that would bring a removed device back
-  // are refused. Rust and this code keep the same.
-  {
-    const root = await generateKeys();
-    const laptop = await generateKeys();
-    const phone = await generateKeys();
-    const stranger = await generateKeys();
-    const signed = async (k: typeof root, by: typeof root, name: string, created: number): Promise<Cert> => {
-      const c: Cert = { v: 1, account: "acct", device: k.id, kind: "browser", name, noise: k.noisePub, sign: k.signPub, created, approver: by.id, sig: "" };
-      c.sig = await signText(by, certBody(c));
-      return c;
-    };
-    const rc = await signed(root, root, "root", 1);
-    const lc = await signed(laptop, root, "laptop", 2);
-    const pc = await signed(phone, root, "phone", 3);
-    const revoke = async (device: string, by: typeof root, at: number): Promise<Revocation> => {
-      const r: Revocation = { v: 1, account: "acct", device, at, by: by.id, sig: "" };
-      r.sig = await signText(by, revocationBody(r));
-      return r;
-    };
-    const gone = await revoke(lc.device, root, 100);
-    const late = await signed(stranger, laptop, "stranger", 50);
-    const trust = { account: "acct", root: root.id };
-    const both = async (what: string, fresh: { certs: Cert[]; revocations: Revocation[] }, old: { certs: Cert[]; revocations: Revocation[] }, seen: Seen, now: number) => {
-      const rs = JSON.parse(execFileSync(bin, ["refresh"], { input: JSON.stringify({ trust, fresh, old, seen, now }) }).toString());
-      const ts = await refreshAccount(trust, fresh, old, { round: seen.round, at: { ...seen.at } }, now);
-      const mine = { certs: ts.certs.map((c) => c.sig).sort(), revocations: ts.revocations.map((r) => r.sig).sort(), refused: ts.refused };
-      const same = JSON.stringify([rs.certs, rs.revocations, rs.refused]) === JSON.stringify([mine.certs, mine.revocations, mine.refused]);
-      check(what, same, `rust ${JSON.stringify(rs.certs.length)}/${rs.refused}, ts ${mine.certs.length}/${mine.refused}`);
-      return rs;
-    };
-    const held = { certs: [rc, lc, pc], revocations: [gone] };
-    const seen: Seen = { round: 1, at: { [rc.sig]: 1, [lc.sig]: 1, [pc.sig]: 1, [gone.sig]: 1 } };
-    await both("a removal control leaves out is kept", { certs: [rc, lc, pc], revocations: [] }, held, seen, 2);
-    const r = await both("a certificate first seen after its approver's removal is dropped", { certs: [rc, lc, pc, late], revocations: [gone] }, held, seen, 2);
-    check("…and Rust drops it", !r.certs.includes(late.sig));
-    await both("one seen with the removal stays", { certs: [rc, lc, pc, late], revocations: [gone] }, { certs: [], revocations: [] }, { round: 0, at: {} }, 1);
-    // As stamps begin: what was held is let off; a certificate first
-    // supplied then is judged like any.
-    const m = await both("as stamps begin, a newly supplied late certificate is dropped", { certs: [rc, lc, pc, late], revocations: [gone] }, held, { round: 0, at: {} }, 1);
-    check("…and Rust drops it", !m.certs.includes(late.sig));
-    // The phone removed by the laptop; control then leaves the laptop out.
-    const phoneGone = await revoke(pc.device, laptop, 10);
-    const byLaptop = { certs: [rc, lc, pc], revocations: [phoneGone] };
-    const r2 = await both("certificates that would bring a removed device back are refused", { certs: [rc, pc], revocations: [phoneGone] }, byLaptop, { round: 1, at: { [rc.sig]: 1, [lc.sig]: 1, [pc.sig]: 1, [phoneGone.sig]: 1 } }, 2);
-    check("…and Rust refuses them", r2.refused === true);
-    // A device approved after its approver's first removal: control
-    // leaves out that removal's signer, so the approver's removal moves
-    // later. Root approves S and A; A approves B (made at 150); S removes
-    // A at 100, root at 200.
-    const sK = await generateKeys();
-    const aK = await generateKeys();
-    const bK = await generateKeys();
-    const sc = await signed(sK, root, "s", 4);
-    const ac = await signed(aK, root, "a", 5);
-    const bc = await signed(bK, aK, "b", 150);
-    const aBy = async (by: typeof root, at: number): Promise<Revocation> => {
-      const r: Revocation = { v: 1, account: "acct", device: ac.device, at, by: by.id, sig: "" };
-      r.sig = await signText(by, revocationBody(r));
-      return r;
-    };
-    const aGone = [await aBy(sK, 100), await aBy(root, 200)];
-    const r3 = await both("leaving out a removal's signer doesn't let in what its approver approved after", { certs: [rc, ac, bc], revocations: aGone }, { certs: [rc, sc, ac, bc], revocations: aGone }, { round: 0, at: {} }, 1);
-    check("…and Rust refuses them", r3.refused === true);
   }
 
   // Nor does a CLI remove a browser; it removes a machine.
