@@ -3,7 +3,7 @@
   "commit": "6aa36c4ca13e0263bc46496bd2eb6089a45c8b28",
   "branch": "main",
   "state": "pending",
-  "at": "2026-10-31T10:17:17Z",
+  "at": "2026-10-31T10:28:41Z",
   "phases": {
     "lint": {
       "verdict": "pending",
@@ -156,13 +156,13 @@
       ]
     },
     "claims": {
-      "verdict": "pending",
+      "verdict": "pass",
       "build": "newest",
       "runs": [
         {
           "name": "testnet",
           "id": 124507033573,
-          "conclusion": null,
+          "conclusion": "success",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/41190548524/job/124507033573"
         },
         {
