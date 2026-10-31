@@ -135,7 +135,6 @@ pub struct TrackerReachConnection {
     /// The Plane project's identifier: `tracker` on `create`.
     pub identifier: String,
     pub name: String,
-    pub workspace_slug: String,
     /// `approve` (a person approves each write) or `allow`.
     pub agent_writes: String,
 }

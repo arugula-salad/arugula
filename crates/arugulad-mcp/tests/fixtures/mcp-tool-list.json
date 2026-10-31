@@ -1088,16 +1088,12 @@
               },
               "name": {
                 "type": "string"
-              },
-              "workspace_slug": {
-                "type": "string"
               }
             },
             "required": [
               "id",
               "identifier",
               "name",
-              "workspace_slug",
               "agent_writes"
             ],
             "type": "object"
@@ -5317,16 +5313,12 @@
               },
               "name": {
                 "type": "string"
-              },
-              "workspace_slug": {
-                "type": "string"
               }
             },
             "required": [
               "id",
               "identifier",
               "name",
-              "workspace_slug",
               "agent_writes"
             ],
             "type": "object"
@@ -9817,16 +9809,12 @@
               },
               "name": {
                 "type": "string"
-              },
-              "workspace_slug": {
-                "type": "string"
               }
             },
             "required": [
               "id",
               "identifier",
               "name",
-              "workspace_slug",
               "agent_writes"
             ],
             "type": "object"
@@ -14046,16 +14034,12 @@
               },
               "name": {
                 "type": "string"
-              },
-              "workspace_slug": {
-                "type": "string"
               }
             },
             "required": [
               "id",
               "identifier",
               "name",
-              "workspace_slug",
               "agent_writes"
             ],
             "type": "object"
@@ -18129,16 +18113,12 @@
               },
               "name": {
                 "type": "string"
-              },
-              "workspace_slug": {
-                "type": "string"
               }
             },
             "required": [
               "id",
               "identifier",
               "name",
-              "workspace_slug",
               "agent_writes"
             ],
             "type": "object"
@@ -19961,16 +19941,12 @@
               },
               "name": {
                 "type": "string"
-              },
-              "workspace_slug": {
-                "type": "string"
               }
             },
             "required": [
               "id",
               "identifier",
               "name",
-              "workspace_slug",
               "agent_writes"
             ],
             "type": "object"
