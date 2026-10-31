@@ -97,7 +97,7 @@ test("clusters by project (with fallback groups), machine, kind, session and own
   await expect(page.locator(".swarm-legend span")).toHaveCount(11);
 });
 
-test("an agent on an issue wears its chip in the swarm, which clusters by board with No board last (#372)", async ({ page }) => {
+test("an agent on an issue wears its chip in the swarm, which clusters by board with No board last (#372)", async ({ page }, testInfo) => {
   const a = await fake.agentOn("workstation", "#12", { title: "Launch" });
   const b = await fake.agentOn("build-01", "#13", { title: "Launch" });
   const c = await fake.agentOn("build-02", "#14", { title: "Later" });
@@ -121,7 +121,14 @@ test("an agent on an issue wears its chip in the swarm, which clusters by board 
   await expect(page.locator(".swarm-peek [data-swarm-work]")).toHaveText("#13", { timeout: 10_000 });
   await expect(page.locator(".swarm-peek [data-swarm-work]")).toHaveAttribute("title", "#13 on Launch");
   expect(await chip("workstation", d)).toBe("#15");
-  await page.locator('[data-g="project"]').click();
+  await page.screenshot({ path: testInfo.outputPath("swarm-by-board.png") });
+  // The sessions sidebar on the panes: its session's row has the chip, linking to the board's row.
+  await page.goto("/");
+  if (!(await page.locator("[data-session-sidebar]").count())) await page.locator(".ws-head [data-open-sessions]").click();
+  await expect(page.locator("[data-session-sidebar]")).toBeVisible();
+  const row = page.locator(".ws-session", { has: page.locator("[data-session-work]", { hasText: "#12" }) }).first();
+  await expect(row.locator("[data-session-work]").first()).toHaveAttribute("title", /#12 on Launch/, { timeout: 20_000 });
+  await page.screenshot({ path: testInfo.outputPath("sidebar.png") });
   for (const [h, i] of [["workstation", a], ["build-01", b], ["build-02", c], ["workstation", d]] as const) await fake.close(h, i);
 });
 
