@@ -308,15 +308,6 @@
             "null"
           ]
         },
-        "since": {
-          "description": "When `state` last changed, in milliseconds: control's to keep, set\non a read (a report's own is ignored).",
-          "format": "uint64",
-          "minimum": 0,
-          "type": [
-            "integer",
-            "null"
-          ]
-        },
         "state": {
           "$ref": "#/$defs/BlockWord"
         },
