@@ -8,9 +8,10 @@
 //!   nobody's to read back.
 //! - **Connecting** reads the project from Plane with the key first. A key
 //!   Plane refuses, or a project it doesn't know, is a 422 and nothing is
-//!   kept. Then the key (and the optional webhook secret) are sealed with
-//!   the project's key ([`keys`]), the connection is kept, and the backfill
-//!   starts.
+//!   kept. Then the key (and a webhook secret, if one is sent) are sealed
+//!   with the project's key ([`keys`]), the connection is kept, and the
+//!   backfill starts. The webhook's secret is usually given after, by the
+//!   PATCH ([`settings`]): Plane makes it once it has the connection's URL.
 //! - **The backfill** ([`tick`]) is a linked repo's poller's way
 //!   ([`crate::forge::poller`]): each machine claims a connection that
 //!   isn't backfilled (`Db::claim_backfill`, a lease, `FOR UPDATE SKIP
@@ -83,6 +84,8 @@ fn wire(app: &Platform, c: &Connection) -> Result<TrackerConnection, ApiError> {
         name: c.name.clone(),
         agent_writes: c.agent_writes.clone(),
         has_webhook_secret: c.has_webhook_secret,
+        webhook_url: format!("{}/plane/webhook/{}", app.cfg.public_url, c.id),
+        last_delivery_at: c.last_delivery_at,
         linked_by: c.linked_by.clone(),
         created_at: c.created_at,
         unlinked_at: c.unlinked_at,
@@ -199,7 +202,8 @@ pub async fn connect(
 }
 
 /// `PATCH /api/projects/{project}/trackers/{connection}`: whether agents'
-/// writes wait for a person.
+/// writes wait for a person, and the connection's webhook secret (sealed
+/// like the key; an empty one removes it). Either or both.
 pub async fn settings(
     State(app): State<Arc<Platform>>,
     Person { account }: Person,
@@ -208,13 +212,41 @@ pub async fn settings(
 ) -> Result<Json<TrackerConnection>, ApiError> {
     crate::boards::gate(&app, &account).await?;
     let project = changer(&app, &account, &project).await?;
-    if !matches!(b.agent_writes.as_str(), "approve" | "allow") {
+    if b.agent_writes.is_none() && b.webhook_secret.is_none() {
+        return Err(err(StatusCode::UNPROCESSABLE_ENTITY, "agent_writes or webhook_secret"));
+    }
+    if b.agent_writes.as_deref().is_some_and(|w| !matches!(w, "approve" | "allow")) {
         return Err(err(StatusCode::UNPROCESSABLE_ENTITY, "agent_writes: approve or allow"));
     }
-    if !app.db.set_tracker_agent_writes(&project, &id, &b.agent_writes)? {
-        return Err(err(StatusCode::NOT_FOUND, "that Plane project isn't connected to this project"));
+    let secret = b.webhook_secret.as_deref().map(str::trim);
+    if secret.is_some_and(|w| !w.is_empty() && !good_secret(w)) {
+        return Err(err(StatusCode::UNPROCESSABLE_ENTITY, "that doesn't look like a webhook secret"));
     }
-    info!(%account, %project, connection = %id, agent_writes = %b.agent_writes, "changed what agents may write to Plane");
+    let not_connected = || err(StatusCode::NOT_FOUND, "that Plane project isn't connected to this project");
+    if !app.db.tracker_connection(&project, &id)?.is_some_and(|c| c.unlinked_at.is_none()) {
+        return Err(not_connected());
+    }
+    if let Some(secret) = secret {
+        let name = webhook_name(&id);
+        if secret.is_empty() {
+            keys::remove(&app.db, &project, &name)?;
+        } else {
+            let Some(master) = app.secret_key.as_deref() else {
+                return Err(err(
+                    StatusCode::NOT_IMPLEMENTED,
+                    "this control can't keep a tracker's secret (it has no key to seal it)",
+                ));
+            };
+            keys::seal(&app.db, master, &project, &name, secret)?;
+        }
+        info!(%account, %project, connection = %id, set = !secret.is_empty(), "changed a Plane webhook's secret");
+    }
+    if let Some(writes) = &b.agent_writes {
+        if !app.db.set_tracker_agent_writes(&project, &id, writes)? {
+            return Err(not_connected());
+        }
+        info!(%account, %project, connection = %id, agent_writes = %writes, "changed what agents may write to Plane");
+    }
     let c =
         app.db.tracker_connection(&project, &id)?.ok_or_else(|| err(StatusCode::NOT_FOUND, "no such connection"))?;
     Ok(Json(wire(&app, &c)?))

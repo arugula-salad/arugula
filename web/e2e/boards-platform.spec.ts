@@ -650,11 +650,13 @@ test("connecting a Plane project: each field is labelled, says what goes in it, 
   await platform(alice, `/p/${project}/settings`);
   const form = alice.locator("[data-plane-form]");
   await expect(form).toBeVisible({ timeout: 15_000 });
-  for (const [hook, label] of [["workspace", "Workspace"], ["project", "Project"], ["key", "API key"], ["hook", "Webhook secret"]] as const) {
+  for (const [hook, label] of [["workspace", "Workspace"], ["project", "Project"], ["key", "API key"]] as const) {
     const input = form.locator(`[data-plane-${hook}]`);
     // The label is the field's own, so a screen reader and a click both find it.
     await expect(form.getByLabel(label, { exact: false }).first()).toBeVisible();
     expect((await input.boundingBox())!.width, `${hook} is wide enough to read`).toBeGreaterThan(240);
   }
+  // The secret comes after connecting, in the connection's row.
+  await expect(form.locator("[data-plane-hook]")).toHaveCount(0);
   if (process.env.BOARDS_SHOTS) await form.screenshot({ path: `${process.env.BOARDS_SHOTS}/plane-connect.png`, animations: "disabled" });
 });

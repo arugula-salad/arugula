@@ -3,11 +3,15 @@
 // project, what agents may write to each, and a form to connect another.
 // Connecting takes a Plane API key, which control reads the project with
 // and seals; it is never shown again, so the field is a password input and
-// is cleared after the form is sent. A team's viewers see the list only.
+// is cleared after the form is sent. A connection's Webhook cell (#417) shows
+// the URL to give Plane and takes the webhook's secret after the connection
+// exists, as Plane makes the secret only once it has the URL; the secret is
+// never shown back. A team's viewers see the list only.
 
 import { useEffect, useState } from "preact/hooks";
 import type { TrackerConnection, TrackerConnections } from "../../shared/proto.gen";
 import { platformFetch } from "../../shared/maintenance";
+import { ago } from "../../shared/time";
 import { ConfirmRemove } from "../../shared/ui/confirm";
 import type { PlatformProject } from "../session";
 import { names } from "../links";
@@ -29,12 +33,87 @@ async function call<T>(method: string, path: string, body?: unknown): Promise<T>
 
 const hours = (ms: number) => Math.max(1, Math.ceil((ms - Date.now()) / 3_600_000));
 
+/** What a connection's webhook is doing, in a line. */
+export function hookStatus(c: Pick<TrackerConnection, "has_webhook_secret" | "last_delivery_at">, now = Date.now()): string {
+  if (!c.has_webhook_secret) return "No secret: changes arrive within 5 minutes.";
+  if (c.last_delivery_at === null) return "Waiting for a first delivery.";
+  return `Last delivery ${ago(c.last_delivery_at, now, "long")}.`;
+}
+
+/** A connection's webhook: the URL to give Plane, whether a secret is kept
+ * (never the secret), and a field to set, replace or remove it. */
+function WebhookCell({ c, changes, busy, save }: { c: TrackerConnection; changes: boolean; busy: boolean; save: (secret: string) => Promise<void> }) {
+  const [editing, setEditing] = useState(false);
+  const [secret, setSecret] = useState("");
+  const [copied, setCopied] = useState(false);
+  const copy = () =>
+    void navigator.clipboard.writeText(c.webhook_url).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    }, () => {});
+  const done = (e: Event) => {
+    e.preventDefault();
+    const v = secret.trim();
+    // The secret leaves the field as it's sent, whatever the answer.
+    setSecret("");
+    setEditing(false);
+    void save(v);
+  };
+  return (
+    <div class="plane-hook" data-plane-webhook={c.id}>
+      <span class="plane-hook-url">
+        <code data-plane-hook-url>{c.webhook_url}</code>
+        <button type="button" class="secondary small" data-plane-hook-copy aria-label={`Copy the webhook URL for ${c.identifier}`} onClick={copy}>
+          {copied ? "Copied" : "Copy"}
+        </button>
+      </span>
+      <span class="plane-hook-secret">
+        Secret: <b data-plane-hook-state>{c.has_webhook_secret ? "set" : "not set"}</b>
+        {changes && !editing && (
+          <>
+            <button type="button" class="secondary small" data-plane-hook-edit disabled={busy} onClick={() => setEditing(true)}>
+              {c.has_webhook_secret ? "Replace" : "Set"}
+            </button>
+            {c.has_webhook_secret && (
+              <button type="button" class="secondary danger small" data-plane-hook-remove disabled={busy} onClick={() => void save("")}>
+                Remove
+              </button>
+            )}
+          </>
+        )}
+      </span>
+      {editing && (
+        <form class="plane-hook-form" data-plane-hook-form onSubmit={done}>
+          <input
+            class="field"
+            required
+            type="password"
+            autocomplete="off"
+            aria-label={`Webhook secret for ${c.identifier}`}
+            value={secret}
+            data-plane-hook-secret
+            onInput={(e) => setSecret(e.currentTarget.value)}
+          />
+          <button class="primary small" disabled={busy}>
+            Save
+          </button>
+          <button type="button" class="secondary small" onClick={() => (setSecret(""), setEditing(false))}>
+            Cancel
+          </button>
+        </form>
+      )}
+      <span class="dim" data-plane-hook-status>
+        {hookStatus(c)}
+      </span>
+    </div>
+  );
+}
+
 export function PlaneConnections({ p }: { p: PlatformProject }) {
   const [conns, setConns] = useState<TrackerConnection[] | null>(null);
   const [workspace, setWorkspace] = useState("");
   const [project, setProject] = useState("");
   const [key, setKey] = useState("");
-  const [hook, setHook] = useState("");
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
   const [disconnecting, setDisconnecting] = useState<TrackerConnection | null>(null);
@@ -60,10 +139,9 @@ export function PlaneConnections({ p }: { p: PlatformProject }) {
   };
   const submit = (e: Event) => {
     e.preventDefault();
-    const body = { workspace_slug: workspace.trim(), project: project.trim(), api_key: key.trim(), webhook_secret: hook.trim() || undefined };
+    const body = { workspace_slug: workspace.trim(), project: project.trim(), api_key: key.trim() };
     // The key leaves the form as it's sent, whatever the answer.
     setKey("");
-    setHook("");
     void act(async () => {
       await call("POST", base, body);
       setProject("");
@@ -85,7 +163,11 @@ export function PlaneConnections({ p }: { p: PlatformProject }) {
             Connecting takes a Plane API key from the person who connects it. Control reads the project with it, keeps the key sealed, and never shows it again. Disconnecting stops
             reading the project at once and removes the key; what was read of it goes within a day.
           </p>
-          <p>The webhook secret is optional: it is what Plane signs live updates with.</p>
+          <p>
+            Without a webhook, changes arrive within 5 minutes. A webhook makes them instant. Once the project is connected, copy its webhook URL from the table, then in Plane
+            open Workspace settings → Webhooks → Add webhook. Paste the URL, choose individual events and tick <b>Work items</b> only, and create it. Plane then shows a secret:
+            paste it into the connection's Webhook cell here. Plane sends every project's events to one webhook, and Arugula ignores the other projects'.
+          </p>
         </>
       }
     >
@@ -111,6 +193,7 @@ export function PlaneConnections({ p }: { p: PlatformProject }) {
                 <th scope="col">Project</th>
                 <th scope="col">Items</th>
                 <th scope="col">Agent writes</th>
+                <th scope="col">Webhook</th>
                 <th scope="col">
                   <span class="settings-hidden">Disconnect</span>
                 </th>
@@ -138,6 +221,11 @@ export function PlaneConnections({ p }: { p: PlatformProject }) {
                         <option value="approve">Approve each write</option>
                         <option value="allow">Allow all writes</option>
                       </select>
+                    )}
+                  </td>
+                  <td data-col="Webhook">
+                    {c.purge_after === null && (
+                      <WebhookCell c={c} changes={changes} busy={busy} save={(webhook_secret) => act(() => call("PATCH", `${base}/${c.id}`, { webhook_secret }))} />
                     )}
                   </td>
                   <td class="settings-row-act">
@@ -170,13 +258,6 @@ export function PlaneConnections({ p }: { p: PlatformProject }) {
             <span class="plane-connect-label">API key</span>
             <input class="field" required type="password" autocomplete="off" value={key} data-plane-key onInput={(e) => setKey(e.currentTarget.value)} />
             <span class="dim">From Plane's Profile settings, under API tokens. It's sealed here and never shown again.</span>
-          </label>
-          <label class="plane-connect-field">
-            <span class="plane-connect-label">
-              Webhook secret <span class="dim">(optional)</span>
-            </span>
-            <input class="field" type="password" autocomplete="off" value={hook} data-plane-hook onInput={(e) => setHook(e.currentTarget.value)} />
-            <span class="dim">Leave it empty to start: changes arrive within 5 minutes without one. A webhook makes them instant.</span>
           </label>
           <span class="plane-connect-buttons">
             <button class="primary" disabled={busy}>

@@ -369,3 +369,64 @@ async fn a_backfill_turn_tells_the_boards() {
     assert_eq!(row(&w.app, w.mirror, "item-1").unwrap().0, "First, changed");
     assert!(heard(&mut rx), "the board wasn't told");
 }
+
+const LATER: &str = "the-secret-plane-showed-later"; // gitleaks:allow
+
+/// The webhook is set up after connecting (#417): the row names the URL to
+/// give Plane, a secret patched on lands a signed delivery with no
+/// reconnect (a replaced one retires the old), an empty one removes it, and
+/// the row says when a signed delivery last came. A bad signature doesn't
+/// count, and no answer carries the secret. A viewer can't, and a secret
+/// that isn't printable is a 422.
+#[tokio::test]
+async fn a_secret_set_after_connecting_takes_deliveries_and_the_row_says_when() {
+    let hub = Arc::new(TestHub::default());
+    let w = world(&hub).await;
+    hub.team("t1", &[("alice", TeamRole::Owner), ("carol", TeamRole::Viewer)]);
+    let path = format!("/api/projects/{}/trackers/{}", w.project, w.conn);
+    let (s, v) = call(&w.base, "alice", "GET", &format!("/api/projects/{}/trackers", w.project), None).await;
+    assert_eq!(s, 200, "{v}");
+    let url = format!("https://control.example/plane/webhook/{}", w.conn);
+    assert_eq!(v["connections"][0]["webhook_url"], url.as_str());
+    assert_eq!(v["connections"][0]["last_delivery_at"], Value::Null);
+
+    // Removed: the URL answers 404, as for a connection that kept no secret.
+    let (s, v) = call(&w.base, "alice", "PATCH", &path, Some(json!({ "webhook_secret": "  " }))).await;
+    assert_eq!((s, &v["has_webhook_secret"]), (200, &json!(false)), "{v}");
+    let body = updated("pl-proj-1", "item-1");
+    let (s, _) = signed(&w.base, &w.conn, "d1", "workitem.updated", &body).await;
+    assert_eq!(s, 404);
+
+    // Not for a viewer, not unprintable, not nothing at all.
+    let (s, _) = call(&w.base, "carol", "PATCH", &path, Some(json!({ "webhook_secret": LATER }))).await;
+    assert_eq!(s, 403);
+    let (s, _) = call(&w.base, "alice", "PATCH", &path, Some(json!({ "webhook_secret": "short" }))).await;
+    assert_eq!(s, 422);
+    let (s, _) = call(&w.base, "alice", "PATCH", &path, Some(json!({}))).await;
+    assert_eq!(s, 422);
+    assert!(!w.app.db.tracker_connection(&w.project, &w.conn).unwrap().unwrap().has_webhook_secret);
+
+    // Set, with no reconnect: same id, same URL.
+    let (s, v) = call(&w.base, "alice", "PATCH", &path, Some(json!({ "webhook_secret": format!(" {LATER} ") }))).await;
+    assert_eq!(s, 200, "{v}");
+    assert_eq!(
+        (v["id"].as_str(), v["has_webhook_secret"].clone(), v["webhook_url"].as_str()),
+        (Some(&*w.conn), json!(true), Some(&*url))
+    );
+    assert!(!v.to_string().contains(LATER));
+    assert!(w.app.db.mentions(LATER).is_empty(), "sealed, not stored as text");
+
+    // The old secret no longer signs, and a bad signature isn't a delivery.
+    let bytes = serde_json::to_vec(&body).unwrap();
+    let (s, _) = post(&w.base, &w.conn, "d2", "workitem.updated", Some(&sign(WEBHOOK, &bytes)), &body).await;
+    assert_eq!(s, 401);
+    assert_eq!(w.app.db.tracker_connection(&w.project, &w.conn).unwrap().unwrap().last_delivery_at, None);
+
+    let before = now_ms();
+    let sig = sign(LATER, &bytes);
+    let (s, v) = post(&w.base, &w.conn, "d3", "workitem.updated", Some(&sig), &body).await;
+    assert_eq!(s, 200, "{v}");
+    let (s, v) = call(&w.base, "alice", "GET", &format!("/api/projects/{}/trackers", w.project), None).await;
+    assert_eq!(s, 200, "{v}");
+    assert!(v["connections"][0]["last_delivery_at"].as_u64().is_some_and(|t| t >= before), "{v}");
+}

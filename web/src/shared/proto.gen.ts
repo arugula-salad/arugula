@@ -4755,6 +4755,14 @@ agent_writes: string,
  */
 has_webhook_secret: boolean, 
 /**
+ * The payload URL to give Plane's webhook for it.
+ */
+webhook_url: string, 
+/**
+ * When a signed delivery from Plane last arrived.
+ */
+last_delivery_at: number | null, 
+/**
  * Who connected it (an account id), when that account is still there.
  */
 linked_by: string | null, created_at: number, 
@@ -4818,10 +4826,12 @@ export type TrackerPendingWrites = { project: string, writes: Array<TrackerPendi
 
 /**
  * `PATCH /api/projects/{project}/trackers/{connection}`: whether agents'
- * writes to the tracker wait for a person (`approve`) or go (`allow`);
- * the answer is its [`TrackerConnection`].
+ * writes to the tracker wait for a person (`approve`) or go (`allow`), and
+ * its webhook secret; either or both, the answer is its
+ * [`TrackerConnection`]. A webhook secret is sealed like the key and never
+ * shown back; an empty one removes it.
  */
-export type TrackerSettings = { agent_writes: string, };
+export type TrackerSettings = { agent_writes: string | null, webhook_secret: string | null, };
 
 /**
  * A write to a tracker's work item, the same for people and agents. `item`

@@ -1276,6 +1276,15 @@
           "minimum": 0,
           "type": "integer"
         },
+        "last_delivery_at": {
+          "description": "When a signed delivery from Plane last arrived.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
         "linked_by": {
           "description": "Who connected it (an account id), when that account is still there.",
           "type": [
@@ -1318,6 +1327,10 @@
           "minimum": 0,
           "type": "integer"
         },
+        "webhook_url": {
+          "description": "The payload URL to give Plane's webhook for it.",
+          "type": "string"
+        },
         "workspace_slug": {
           "type": "string"
         }
@@ -1331,6 +1344,7 @@
         "name",
         "agent_writes",
         "has_webhook_secret",
+        "webhook_url",
         "created_at",
         "items",
         "waiting_writes"
@@ -1465,15 +1479,23 @@
       "type": "object"
     },
     "TrackerSettings": {
-      "description": "`PATCH /api/projects/{project}/trackers/{connection}`: whether agents'\nwrites to the tracker wait for a person (`approve`) or go (`allow`);\nthe answer is its [`TrackerConnection`].",
+      "description": "`PATCH /api/projects/{project}/trackers/{connection}`: whether agents'\nwrites to the tracker wait for a person (`approve`) or go (`allow`), and\nits webhook secret; either or both, the answer is its\n[`TrackerConnection`]. A webhook secret is sealed like the key and never\nshown back; an empty one removes it.",
       "properties": {
         "agent_writes": {
-          "type": "string"
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "webhook_secret": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
         }
       },
-      "required": [
-        "agent_writes"
-      ],
       "type": "object"
     },
     "TrackerWrite": {

@@ -102,6 +102,10 @@ pub async fn webhook(
         warn!(connection = %id, %event, %delivery, "a Plane webhook with a bad or missing signature");
         return arugula_control_common::err(StatusCode::UNAUTHORIZED, "bad signature").into_response();
     }
+    // A signed delivery, whatever it asks for: the connection's row says so.
+    if let Err(e) = app.db.tracker_delivered(&c.id, now_ms()) {
+        warn!(connection = %id, error = %e, "noting a Plane webhook's delivery");
+    }
     let key = format!("plane:{delivery}");
     if !delivery.is_empty() {
         match app.db.first_delivery(&key, &event, now_ms()) {
