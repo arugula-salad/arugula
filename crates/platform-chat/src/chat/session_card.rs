@@ -76,6 +76,7 @@ pub fn post_card_by(app: &Platform, s: &Session, started_by: Option<&str>) -> an
             via: Some(&via),
             parent,
             also,
+            agent_session: None,
         },
     )?;
     if let Some(parent) = parent {

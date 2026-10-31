@@ -76,6 +76,9 @@ pub struct Message {
     pub parent: Option<i64>,
     /// A reply that was also sent to the channel: the room's list has it.
     pub also: bool,
+    /// With `agent`: the session that wrote it, as its machine called it
+    /// (#429). Display only.
+    pub agent_session: Option<String>,
 }
 
 impl Message {
@@ -146,6 +149,8 @@ pub struct NewMessage<'a> {
     /// also sent to the channel.
     pub parent: Option<i64>,
     pub also: bool,
+    /// With `agent`: the name of the session that wrote it (#429).
+    pub agent_session: Option<&'a str>,
 }
 
 /// Which page of a room's messages.
@@ -182,7 +187,7 @@ pub struct Search<'a> {
 const NOT_SYSTEM: &str = "(chat_messages.via IS NULL OR chat_messages.via != 'system') AND NOT EXISTS (SELECT 1 FROM chat_system s WHERE s.room = chat_messages.room AND s.seq = chat_messages.seq)";
 
 const ROOM_COLS: &str = "id, scope, kind, name, machine, target, created_by, created, archived, last_seq";
-pub(super) const MSG_COLS: &str = "room, seq, author, at, text, quote, ref_machine, ref_pane, mentions, edited, deleted, imported, agent, via, parent, also";
+pub(super) const MSG_COLS: &str = "room, seq, author, at, text, quote, ref_machine, ref_pane, mentions, edited, deleted, imported, agent, via, parent, also, agent_session";
 
 /// What the room's own list holds: not the replies, unless sent to the
 /// channel too (#106).
@@ -222,6 +227,7 @@ pub(super) fn msg_row(r: &Row) -> Result<Message> {
         via: r.get(13)?,
         parent: r.get(14)?,
         also: r.get(15)?,
+        agent_session: r.get(16)?,
     })
 }
 
@@ -1272,8 +1278,8 @@ pub(super) fn add_message_in(
         |r| r.get(0),
     )?;
     tx.execute(
-        "INSERT INTO chat_messages (room, seq, author, at, text, quote, ref_machine, ref_pane, mentions, agent, via, parent, also)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
+        "INSERT INTO chat_messages (room, seq, author, at, text, quote, ref_machine, ref_pane, mentions, agent, via, parent, also, agent_session)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
         params![
             room,
             seq,
@@ -1287,7 +1293,8 @@ pub(super) fn add_message_in(
             m.agent,
             m.via,
             m.parent,
-            m.also
+            m.also,
+            m.agent_session
         ],
     )?;
     if let Some(parent) = m.parent {
@@ -1476,6 +1483,7 @@ mod tests {
                 via: None,
                 parent: None,
                 also: false,
+                agent_session: None,
             },
         )
         .unwrap()

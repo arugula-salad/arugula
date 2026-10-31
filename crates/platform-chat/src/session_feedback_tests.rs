@@ -130,6 +130,7 @@ async fn session_on(
                 via: None,
                 parent: None,
                 also: false,
+                agent_session: None,
             },
         )
         .unwrap();

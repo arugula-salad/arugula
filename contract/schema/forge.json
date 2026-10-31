@@ -29,6 +29,13 @@
           "format": "int64",
           "type": "integer"
         },
+        "session": {
+          "description": "The one session it names (#429): `ux-improvements` of\n`@geek/ux-improvements`, as the poster typed it, lowercased. The\ndaemon matches it against its sessions' names, exactly. An older\ndaemon ignores it.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "target": {
           "description": "What an issue's, PR's or box's thread hangs on (`iss_…`), the id\nan agent posts to it by.",
           "type": [

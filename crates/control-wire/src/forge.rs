@@ -322,6 +322,12 @@ pub struct AgentMention {
     /// on geek".
     pub author: String,
     pub text: String,
+    /// The one session it names (#429): `ux-improvements` of
+    /// `@geek/ux-improvements`, as the poster typed it, lowercased. The
+    /// daemon matches it against its sessions' names, exactly. An older
+    /// daemon ignores it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session: Option<String>,
 }
 
 /// A draft to send: what it is and where it goes. `account` is its person,

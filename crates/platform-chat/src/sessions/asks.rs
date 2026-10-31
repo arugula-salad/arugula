@@ -77,6 +77,7 @@ pub async fn post(app: &Platform, room: &Room, thread: u64, of: &str, asker: &st
             via: Some(&via),
             parent,
             also,
+            agent_session: None,
         },
     )?;
     if let Some(parent) = parent {

@@ -126,6 +126,43 @@ pub fn at_words(text: &str) -> Vec<String> {
     out
 }
 
+/// The sessions a text names (#429): `@<machine>/<session>` is
+/// `(machine, session)`, both lowercased, the session as typed (the
+/// daemon matches it against its own names). The machine's `@word` is also
+/// in [`at_words`]; a `/` ends it there.
+pub fn at_sessions(text: &str) -> Vec<(String, String)> {
+    let mut out = Vec::new();
+    let mut prev: Option<char> = None;
+    let word = |ch: char| ch.is_alphanumeric() || matches!(ch, '_' | '-' | '.');
+    for (i, c) in text.char_indices() {
+        if c == '@' && !prev.is_some_and(char::is_alphanumeric) {
+            let rest = &text[i + 1..];
+            let end = rest.find(|ch: char| !word(ch)).unwrap_or(rest.len());
+            if let Some(after) = rest[end..].strip_prefix('/') {
+                let n = after.find(|ch: char| !word(ch)).unwrap_or(after.len());
+                let machine = rest[..end].trim_end_matches(['.', '-']).to_lowercase();
+                let session = after[..n].trim_end_matches(['.', '-']).to_lowercase();
+                if !machine.is_empty() && !session.is_empty() && !out.contains(&(machine.clone(), session.clone())) {
+                    out.push((machine, session));
+                }
+            }
+        }
+        prev = Some(c);
+    }
+    out
+}
+
+/// A session's name as a message keeps it (#429): one line, cut short.
+/// None when there is nothing to show.
+pub fn session_label(name: &str) -> Option<String> {
+    let one = name.split_whitespace().collect::<Vec<_>>().join(" ");
+    let cut: String = one.chars().take(SESSION_LABEL_MAX).collect();
+    (!cut.is_empty()).then_some(cut)
+}
+
+/// The longest session name a message keeps, in characters.
+pub const SESSION_LABEL_MAX: usize = 80;
+
 /// The one word a roster calls a person (control's `teams::member_name`):
 /// the name they chose, its words joined by `-`, else `account-` and the
 /// start of their id.
@@ -608,6 +645,26 @@ mod tests {
         assert_eq!(at_words("mail jake@example.com"), Vec::<String>::new());
         assert_eq!(at_words("(@jhgaylor) and @jhgaylor again, @"), ["jhgaylor"]);
         assert_eq!(at_words("@ünïcode @a.b."), ["ünïcode", "a.b"]);
+    }
+
+    #[test]
+    fn a_session_is_named_after_a_slash() {
+        let pair = |m: &str, s: &str| (m.to_owned(), s.to_owned());
+        assert_eq!(
+            at_sessions("@Geek-Box/UX-Improvements can you look, and @mini/fix. cc @alex"),
+            [pair("geek-box", "ux-improvements"), pair("mini", "fix")]
+        );
+        assert_eq!(at_sessions("@geek and @mini/ and @/x and mail a@b.com/ux"), Vec::<(String, String)>::new());
+        assert_eq!(at_sessions("@geek/ux @geek/ux"), [pair("geek", "ux")]);
+        // The machine's word is still a word of its own.
+        assert_eq!(at_words("@geek/ux-improvements"), ["geek"]);
+    }
+
+    #[test]
+    fn a_session_label_is_one_short_line() {
+        assert_eq!(session_label("  UX \n Improvements "), Some("UX Improvements".into()));
+        assert_eq!(session_label("   "), None);
+        assert_eq!(session_label(&"x".repeat(200)).map(|s| s.chars().count()), Some(SESSION_LABEL_MAX));
     }
 
     #[test]

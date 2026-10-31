@@ -329,6 +329,7 @@ async fn back_in_a_dm_in_the_millisecond_of_its_last_message_reads_from_after_it
         via: None,
         parent: None,
         also: false,
+        agent_session: None,
     };
     app.db.add_chat_message(&id, &m).unwrap();
     assert!(app.db.add_chat_member_from_now(&id, "x", at).unwrap());

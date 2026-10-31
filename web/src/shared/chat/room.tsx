@@ -616,6 +616,11 @@ export function RoomMessage({
         {head && (
           <div class="thread-head">
             {said ? <SaidHead ses={said} project={room.project} /> : <span class="thread-name">{name}</span>}
+            {m.agent?.session && !said && (
+              <span class="thread-session" title={`The session that wrote it, on ${m.agent.machine_name || "its machine"}`}>
+                · {m.agent.session}
+              </span>
+            )}
             {m.agent && (
               <span class="msg-badge agent-badge" title={`Written by an agent on ${m.agent.machine_name || "a machine"}, through its owner's grant`}>
                 agent

@@ -208,6 +208,12 @@ pub struct ChatRoomAgent {
 pub struct ChatAgent {
     pub machine: String,
     pub machine_name: String,
+    /// The session that posted, as its machine called it then (#429): an
+    /// agent block's title, or the Claude Code session's name. Display
+    /// only; never what a permission rests on.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub session: Option<String>,
 }
 
 /// A pane a message names, as the poster sends it.
@@ -694,6 +700,11 @@ pub struct ChatPost {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "ts", ts(optional))]
     pub also: Option<bool>,
+    /// An agent's post: the name of the session that wrote it (#429). Kept
+    /// beside the agent, trimmed and cut short; a person's post ignores it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub session: Option<String>,
 }
 
 /// Why control pushed someone.

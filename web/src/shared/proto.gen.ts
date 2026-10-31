@@ -676,7 +676,13 @@ export type ChatAddMembers = { accounts: Array<string>, };
  * The agent that wrote a message (M197): the machine whose grant it acted
  * through, and its name now. The message's author is the machine's owner.
  */
-export type ChatAgent = { machine: string, machine_name: string, };
+export type ChatAgent = { machine: string, machine_name: string, 
+/**
+ * The session that posted, as its machine called it then (#429): an
+ * agent block's title, or the Claude Code session's name. Display
+ * only; never what a permission rests on.
+ */
+session?: string, };
 
 /**
  * An ask's form (Arugula #214, [`ASK`]): which repo a thread's `@arugula`
@@ -1022,7 +1028,12 @@ parent?: number,
  * With `parent`: also send it to the channel, as Slack's checkbox
  * does. The room's list shows it too.
  */
-also?: boolean, };
+also?: boolean, 
+/**
+ * An agent's post: the name of the session that wrote it (#429). Kept
+ * beside the agent, trimmed and cut short; a person's post ignores it.
+ */
+session?: string, };
 
 export type ChatPosted = { seq: number, 
 /**

@@ -254,6 +254,7 @@ impl Db {
             via: None,
             parent: None,
             also: false,
+            agent_session: None,
         };
         let seq = super::chat::add_message_in(&tx, room, &m, Some(("session_pr", None)))?;
         tx.commit()?;

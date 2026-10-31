@@ -276,6 +276,7 @@ pub(crate) fn say(app: &Platform, room: &Room, thread: u64, text: &str) -> Resul
             via: Some(SYSTEM_VIA),
             parent,
             also: false,
+            agent_session: None,
         },
     )?;
     let ev = match parent {

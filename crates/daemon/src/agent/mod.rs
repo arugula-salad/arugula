@@ -86,6 +86,11 @@ pub trait Agents: Send + Sync + 'static {
     /// The Claude Code conversations on this machine, as the mux asks
     /// (#146).
     fn sessions(&self) -> Arc<dyn AgentSessions>;
+    /// The titles of Claude Code conversations, by id (#429): the name a
+    /// session goes by. Reads the index, so call it off the runtime.
+    fn conversation_titles(&self, _ids: &[String]) -> std::collections::HashMap<String, String> {
+        std::collections::HashMap::new()
+    }
 }
 
 static AGENTS: OnceLock<Box<dyn Agents>> = OnceLock::new();
@@ -108,6 +113,11 @@ pub(crate) fn sessions() -> Arc<dyn AgentSessions> {
         Some(a) => a.sessions(),
         None => Arc::new(NoSessions),
     }
+}
+
+/// [`Agents::conversation_titles`]; none without the agent block.
+pub(crate) fn conversation_titles(ids: &[String]) -> std::collections::HashMap<String, String> {
+    AGENTS.get().map(|a| a.conversation_titles(ids)).unwrap_or_default()
 }
 
 /// No conversations: a build without the agent block.

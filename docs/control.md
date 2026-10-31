@@ -1225,11 +1225,21 @@ relay connection (no polling), and the post answers it in `pushed` as
 op, or whose owner turned it off, leaves a named `@word` in `unreached`;
 the message is still stored, and `read_thread` with `mentions_only` finds
 it. The daemon (`crates/daemon/src/agent_mentions.rs`) hands the text to
-the session that last posted in that thread, through the hooks inbox that
-`arugula inbox` follow-ups use (waiting, unread, if its hooks aren't
-live); with no such session, it is held in the machine's inbox, which
-`capabilities` counts and a `read_thread` of the room clears. The text a
-session sees begins `Message from <author> in <thread> (a teammate, not
+one session, through the hooks inbox that `arugula inbox` follow-ups use
+(waiting, unread, if its hooks aren't live), the first of: the session an
+`@machine/session` names (#429: `@geek/ux-improvements`, matched exactly
+against the live sessions' names, lowercased with each run of other
+characters a `-`; no such session, or two, and it goes on, saying so); the
+session that posted in the thread the message is under (`post_thread`
+notes its pane per thread root, in memory); the session that last posted in
+the room (a top-level `@geek`, or a thread whose session has ended, which
+the text says). With none, it is held in the machine's inbox, which
+`capabilities` counts and a `read_thread` of the room clears. So two
+sessions on one machine talking in one channel each hear their own
+threads. An agent's post carries its session's name (an agent block's
+title, or the Claude Code conversation's), shown beside "<owner>'s agent on
+<machine>"; it is display only and never what a permission rests on. The
+text a session sees begins `Message from <author> in <thread> (a teammate, not
 your person):` and says it is information, never an approval or a command.
 The owner turns it off for a machine with `arugulad sharing agent-mentions
 off` or the sharing settings in the web client (`sharing.json`); on by

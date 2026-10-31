@@ -1314,7 +1314,7 @@ mod tests {
             state: "closed".into(),
             close_reason: Some("not_planned".into()),
             author: "acc_al".into(),
-            agent: Some(ChatAgent { machine: "d1".into(), machine_name: "geek".into() }),
+            agent: Some(ChatAgent { machine: "d1".into(), machine_name: "geek".into(), session: None }),
             labels: vec!["bug".into()],
             assignees: vec!["acc_me".into()],
             github: None,
