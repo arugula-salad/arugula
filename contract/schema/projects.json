@@ -1503,8 +1503,46 @@
       ],
       "type": "object"
     },
+    "TrackerReachConnection": {
+      "description": "A live Plane connection of a project an agent reaches.",
+      "properties": {
+        "agent_writes": {
+          "description": "`approve` or `allow`.",
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "identifier": {
+          "description": "The Plane project's identifier, like `ARUGU`.",
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "workspace_slug": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "identifier",
+        "name",
+        "workspace_slug",
+        "agent_writes"
+      ],
+      "type": "object"
+    },
     "TrackerReachProject": {
       "properties": {
+        "connections": {
+          "default": [],
+          "description": "Its live connections: never a key or a secret.",
+          "items": {
+            "$ref": "#/$defs/TrackerReachConnection"
+          },
+          "type": "array"
+        },
         "id": {
           "type": "string"
         },
@@ -1542,7 +1580,7 @@
       "description": "A write to a tracker's work item, the same for people and agents. `item`\nis the mirror's `fi_` id, or `IDENT-N` (the connection's identifier and\nthe item's number). Assignees are not here: a tracker's members aren't\nArugula's people.",
       "oneOf": [
         {
-          "description": "A new item. `connection` is needed on an agent's route and, on a\nperson's, is the path's. `state` is a state group (`backlog`,\n`unstarted`, `started`).",
+          "description": "A new item. On an agent's route `connection` or `tracker` (the\nconnection's identifier, in any case) says where; with neither, the\nproject's only live connection is used. On a person's, the path's\nconnection is it. `state` is a state group (`backlog`, `unstarted`,\n`started`).",
           "properties": {
             "body": {
               "default": null,
@@ -1571,6 +1609,13 @@
             },
             "title": {
               "type": "string"
+            },
+            "tracker": {
+              "default": null,
+              "type": [
+                "string",
+                "null"
+              ]
             }
           },
           "required": [

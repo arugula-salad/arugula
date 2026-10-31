@@ -25,6 +25,8 @@ interface Ui {
   peach: string;
   teal: string;
   pink: string;
+  /** A merged change (the item block's purple pill). */
+  merged: string;
   muted: string;
   subtle: string;
   /** Text on an accent, danger or ok fill. */
@@ -88,6 +90,7 @@ export const PALETTES: Palette[] = [
       peach: "#fab387",
       teal: "#94e2d5",
       pink: "#f5c2e7",
+      merged: "#b4befe",
       muted: "#585b70",
       subtle: "#a6adc8",
       "on-color": "#11111b",
@@ -119,6 +122,7 @@ export const PALETTES: Palette[] = [
       peach: "#f29b6b",
       teal: "#5fd3c4",
       pink: "#ad9cf2",
+      merged: "#b49cf2",
       muted: "#3a4658",
       subtle: "#b4c0d0",
       "on-color": "#06090d",
@@ -148,6 +152,7 @@ export const PALETTES: Palette[] = [
       peach: "#fe640b",
       teal: "#179299",
       pink: "#ea76cb",
+      merged: "#8250df",
       muted: "#9ca0b0",
       subtle: "#5c5f77",
       "on-color": "#ffffff",
@@ -177,6 +182,7 @@ export const PALETTES: Palette[] = [
       peach: "#e86a17",
       teal: "#16978e",
       pink: "#d23f8f",
+      merged: "#8250df",
       muted: "#a0a0a6",
       subtle: "#3c3c43",
       "on-color": "#ffffff",
@@ -206,6 +212,7 @@ export const PALETTES: Palette[] = [
       peach: "#cb4b16",
       teal: "#2aa198",
       pink: "#d33682",
+      merged: "#6c71c4",
       muted: "#b5b9b0",
       subtle: "#657b83",
       "on-color": "#fdf6e3",
@@ -235,6 +242,7 @@ export const PALETTES: Palette[] = [
       peach: "#d08770",
       teal: "#8fbcbb",
       pink: "#b48ead",
+      merged: "#a07fc9",
       muted: "#4c566a",
       subtle: "#e5e9f0",
       "on-color": "#21252e",
@@ -264,6 +272,7 @@ export const PALETTES: Palette[] = [
       peach: "#fe8019",
       teal: "#8ec07c",
       pink: "#d3869b",
+      merged: "#b16286",
       muted: "#665c54",
       subtle: "#d5c4a1",
       "on-color": "#1d2021",
@@ -293,6 +302,7 @@ export const PALETTES: Palette[] = [
       peach: "#ff9e64",
       teal: "#73daca",
       pink: "#bb9af7",
+      merged: "#9d7cd8",
       muted: "#414868",
       subtle: "#a9b1d6",
       "on-color": "#101014",
@@ -322,6 +332,7 @@ export const PALETTES: Palette[] = [
       peach: "#ffb86c",
       teal: "#8be9fd",
       pink: "#ff79c6",
+      merged: "#bd93f9",
       muted: "#6272a4",
       subtle: "#e0e0e0",
       "on-color": "#191a21",
@@ -506,7 +517,7 @@ function legibleOn(color: string, on: string[], toward: string): string {
 
 /** The words the chrome writes in each color: the dimmed, the accent and
  * the status colors. */
-const TEXT = ["fg", "dim", "subtle", "accent", "warn", "ok", "danger", "info", "peach", "teal", "pink"] as const;
+const TEXT = ["fg", "dim", "subtle", "accent", "warn", "ok", "danger", "info", "peach", "teal", "pink", "merged"] as const;
 
 /** The palette's UI colors as the page uses them (M113): a word in any of
  * them reads at WCAG AA (4.5:1) on the backgrounds it sits on (bg, surface
