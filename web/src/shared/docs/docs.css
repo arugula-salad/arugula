@@ -116,6 +116,12 @@
   margin: 8px 0;
 }
 
+.doc-test-image .doc-image {
+  max-width: 100%;
+  height: auto;
+  border-radius: 8px;
+}
+
 .doc-test-form,
 .doc-test-form label {
   display: flex;

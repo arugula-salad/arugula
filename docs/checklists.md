@@ -26,7 +26,8 @@ Make a Doc with `doc new`, then use `doc checklist`:
 ```
 
 `block` is the Doc block; `owner.pane` is an agent block on the same
-machine, as `list` names it. The calling agent must be allowed to drive
+machine, as `list` names it. Only the machine owner's agents may define
+checklists. The calling agent must be allowed to drive
 every recipient as well as the Doc; one unauthorized recipient rejects
 the entire assignment. `owner.role` is a label the person sees. These
 labels belong to the checklist; they do not claim a workspace-wide role

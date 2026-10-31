@@ -22,7 +22,10 @@ pub const ASSETS_MAX: usize = 20;
 
 /// Reserved immutable images, saved only with a person's checklist result.
 pub(super) fn is_checklist_screenshot(name: &str) -> bool {
-    name.to_ascii_lowercase().starts_with("checklist-")
+    let name = name.to_ascii_lowercase();
+    let Some((stem, ext)) = name.rsplit_once('.') else { return false };
+    let Some(hash) = stem.strip_prefix("checklist-") else { return false };
+    hash.len() == 64 && hash.bytes().all(|b| b.is_ascii_hexdigit()) && matches!(ext, "png" | "jpg" | "gif" | "webp")
 }
 
 /// The folder inside the Doc's.
@@ -137,6 +140,10 @@ mod tests {
 
     #[test]
     fn names_are_plain_files_with_a_picture_extension() {
+        assert!(is_checklist_screenshot(&format!("checklist-{}.png", "a".repeat(64))));
+        assert!(is_checklist_screenshot(&format!("CHECKLIST-{}.PNG", "A".repeat(64))));
+        assert!(!is_checklist_screenshot("checklist-plan.png"), "ordinary pictures keep their existing names");
+        assert!(!is_checklist_screenshot(&format!("checklist-{}.png", "z".repeat(64))));
         for good in ["a.png", "Chart-1_final.jpeg", "x.webp", "0.gif", "a.b.png"] {
             assert_eq!(check_name(good), Ok(()), "{good}");
         }

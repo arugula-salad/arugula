@@ -107,6 +107,7 @@ test.describe("on a phone", () => {
     await row.getByRole("button", { name: "Report failure to frontend" }).click();
     await expect(row).toContainText("Sent to owner", { timeout: 15_000 });
     await expect(row.getByRole("img", { name: "Test screenshot" })).toBeVisible();
+    await expect.poll(async () => row.getByRole("img", { name: "Test screenshot" }).evaluate((img) => img instanceof HTMLImageElement && img.naturalWidth > 0 && img.getBoundingClientRect().width <= img.parentElement!.clientWidth)).toBe(true);
     await capture("sent");
     if (process.env.CHECKLIST_SHOT) await page.locator(`[data-doc-block="${doc}"]`).screenshot({ path: process.env.CHECKLIST_SHOT });
     await bring(page, owner);

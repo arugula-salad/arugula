@@ -922,7 +922,8 @@ mod tests {
         let (d, _) = doc(&dir, false);
         outline(&d, 2).await.unwrap();
         for n in 0..20 {
-            put(&d, &format!("chart-{n}.png"), &png("chart")).await.unwrap();
+            let name = if n == 0 { "checklist-plan.png".into() } else { format!("chart-{n}.png") };
+            put(&d, &name, &png("chart")).await.unwrap();
         }
         for (section, count) in [("s1", 20), ("s2", 5)] {
             let items: Vec<Value> = (0..count).map(|n| json!({ "id": format!("test-{n}"), "text": format!("Test {n}"), "owner": { "role": "frontend", "pane": 77 } })).collect();
@@ -947,10 +948,14 @@ mod tests {
         assert!(put(&d, "one-too-many.png", &png("chart")).await.unwrap_err().contains("at most 20"));
         let reserved = d.state()["entries"][0]["tasks"][0]["screenshot"].as_str().unwrap().to_owned();
         assert!(put(&d, &reserved, &png("overwrite")).await.unwrap_err().contains("saved with feedback"));
-        let orphan = dir.join(FOLDER).join("assets/checklist-orphan.png");
+        let orphan = dir.join(FOLDER).join("assets").join(format!("checklist-{}.png", "0".repeat(64)));
         std::fs::write(&orphan, png("interrupted save")).unwrap();
         let (restored, _) = doc(&dir, true);
         assert!(!orphan.exists(), "restore reclaims an image written before an interrupted verdict save");
+        assert!(
+            dir.join(FOLDER).join("assets/checklist-plan.png").exists(),
+            "cleanup preserves ordinary named pictures"
+        );
         assert_eq!(restored.state()["assets"].as_array().unwrap().len(), 45);
         for n in 0..2 {
             assert_eq!(restored.state()["entries"][n]["tasks"], d.state()["entries"][n]["tasks"]);
