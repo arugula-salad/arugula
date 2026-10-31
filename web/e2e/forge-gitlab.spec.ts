@@ -98,19 +98,20 @@ test("a merge request's failed pipeline is rerun from the block", async ({ page 
   writeFileSync(glabHost(), origin.replace("http://", ""));
   const block = await openMr(page);
   const el = page.locator(`[data-forge-block="${block}"]`);
-  await expect(el.locator(".review-path")).toContainText(`fix(issue): reject invalid list output flags #3941 ${REPO}`);
-  await expect(el.locator("[data-pr-state]")).toHaveText("open");
+  await expect(el.locator("[data-item-head] .item-number")).toHaveText("#3941");
+  await expect(el.locator("[data-item-head] .item-title")).toHaveText("fix(issue): reject invalid list output flags");
+  await expect(el.locator("[data-item-pill]")).toHaveText("Open");
   await expect(el.locator("[data-check]")).toHaveCount(23);
   await expect(el.locator('[data-check="manual"]')).toHaveCount(3);
-  await expect(el.locator(".forge-meta")).toContainText("as jhgaylor (glab, 127.0.0.1:");
-  await expect(el.locator('[data-want="failed"]')).toContainText("1 check failed: tests:integration");
+  await expect(el.locator("[data-item-source]")).toHaveAttribute("title", new RegExp(`${REPO}\\nas jhgaylor \\(glab, 127.0.0.1:`));
+  await expect(el.locator('[data-item-next="danger"]')).toContainText("tests:integration failed");
   await expect(el.locator("[data-forge-read-only]")).toHaveCount(0);
   await el.locator("[data-rerun]").click();
   await expect.poll(() => writes.length).toBe(1);
   expect(writes[0]).toEqual({ route: "/api/v4/projects/34675721/pipelines/2892163626/retry", auth: `Bearer ${TOKEN}` });
-  // Running again: nothing waits on you.
-  await expect(el.locator('[data-want="failed"]')).toHaveCount(0);
-  await expect(el.locator(".forge-check.running")).toBeVisible();
+  // Running again: nothing waits on you, and the facts show it pending.
+  await expect(el.locator("[data-item-next]")).toHaveCount(0);
+  await expect(el.locator('[data-item-fact="checks"] .item-warn')).toBeVisible();
 });
 
 test("with no glab login it reads anonymously and offers no writes", async ({ page }) => {
@@ -118,11 +119,11 @@ test("with no glab login it reads anonymously and offers no writes", async ({ pa
   rmSync(glabHost(), { force: true });
   const block = await openMr(page);
   const el = page.locator(`[data-forge-block="${block}"]`);
-  await expect(el.locator(".review-path")).toContainText(`#3941 ${REPO}`);
+  await expect(el.locator("[data-item-head] .item-number")).toHaveText("#3941");
   await expect(el.locator("[data-forge-read-only]")).toContainText("read-only: no glab login for 127.0.0.1:");
-  await expect(el.locator(".forge-meta")).toContainText("anonymously, read-only");
+  await expect(el.locator("[data-item-source]")).toHaveAttribute("title", /anonymously, read-only/);
   await expect(el.locator("[data-check]")).toHaveCount(23);
   await expect(el.locator("[data-rerun]")).toHaveCount(0);
-  await expect(el.locator(".forge-actions button", { hasText: "Comment" })).toHaveCount(0);
+  await expect(el.locator("[data-item-foot] button", { hasText: "Comment" })).toHaveCount(0);
   expect(writes).toEqual([]);
 });

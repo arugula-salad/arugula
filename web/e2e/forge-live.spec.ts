@@ -70,14 +70,15 @@ test("Live updates makes a signed webhook; a delivery reads the PR at once", asy
   await expect.poll(async () => (await panes(page)).length).toBe(2);
   const block = await page.evaluate(() => window.__arugula.client.state!.panes.find((p) => p.type === "forge")!.id);
   const el = page.locator(`[data-forge-block="${block}"]`);
-  await expect(el.locator("[data-forge-live-state]")).toContainText("polling");
+  const source = el.locator("[data-item-source]");
+  await expect(source).toHaveAttribute("title", /polling/);
   await el.locator("[data-forge-live]").click();
   await expect.poll(() => hooks.length).toBe(1);
   const made = hooks[0].body;
   expect(made.type).toBe("forgejo");
   expect(made.config.url).toMatch(new RegExp(`^${baseURL}/api/forge/hooks/forgejo\\?k=`));
   await expect(el.locator("[data-forge-live]")).toHaveText("Stop live updates");
-  await expect(el.locator("[data-forge-live-state]")).toContainText("live (webhook)");
+  await expect(source).toHaveAttribute("title", /live \(webhook\)/);
 
   const payload = JSON.stringify({ action: "reviewed", repository: { full_name: REPO }, pull_request: { number: 84 } });
   const deliver = (sig?: string) =>

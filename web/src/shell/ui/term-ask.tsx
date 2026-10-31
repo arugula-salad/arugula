@@ -55,14 +55,19 @@ function Watching({ client, id }: { client: Client; id: PaneId }) {
  * card still shows where attention goes (the swarm, the phone). */
 export const drawsItsOwn = (ask: Ask) => ask.source === "forge" && ask.id === "new";
 
-/** #317: a forge block holds its actions at the foot of its body (`.forge-foot`); the card sits above them, not over them. The height in px, kept as the block redraws. */
+/** #317: a forge block holds its actions at the foot of its body (`.forge-foot`, or an item block's `.item-foot`); the card sits above them, not over them. The height in px, kept as the block redraws. */
 function useFootLift(on: boolean) {
   const ref = useRef<HTMLDivElement>(null);
   const [lift, setLift] = useState(0);
   useEffect(() => {
     const pane = ref.current?.closest(".pane");
     if (!on || !pane) return;
-    const measure = () => setLift(pane.querySelector<HTMLElement>(".forge-foot")?.offsetHeight ?? 0);
+    // From the foot's top to the pane's bottom: an item block's foot sits
+    // under its content, not at the pane's bottom.
+    const measure = () => {
+      const foot = pane.querySelector<HTMLElement>(".forge-foot, .item-foot");
+      setLift(foot ? Math.max(0, Math.round(pane.getBoundingClientRect().bottom - foot.getBoundingClientRect().top)) : 0);
+    };
     measure();
     const ro = new ResizeObserver(measure);
     ro.observe(pane);

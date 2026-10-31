@@ -60,6 +60,8 @@ test.beforeAll(async () => {
       }
       if (u.pathname === "/user") return answer(res, inm, { login: "jhgaylor" });
       if (u.pathname === "/user/teams") return answer(res, inm, []);
+      // Squash only, as GitHub tells a login that can push (UI audit #196).
+      if (p === "") return answer(res, inm, { full_name: REPO, allow_merge_commit: false, allow_squash_merge: true, allow_rebase_merge: false });
       if (p === `/pulls/${N}`) return answer(res, inm, item);
       if (p.endsWith("/check-runs")) return answer(res, inm, { total_count: runs.length, check_runs: runs });
       if (p.endsWith("/status")) return answer(res, inm, { state: "pending", total_count: 0, statuses: [] });
@@ -89,13 +91,22 @@ test("red check runs on your GitHub PR rerun from the block", async ({ page }) =
     [origin, REPO, N] as const,
   );
   const el = page.locator(`[data-forge-block="${block}"]`);
-  await expect(el.locator(".review-path")).toContainText(`fix: preserve percent-encoded path in DisplayURL #${N} ${REPO}`);
+  await expect(el.locator("[data-item-head] .item-number")).toHaveText(`#${N}`);
+  await expect(el.locator("[data-item-head] .item-title")).toHaveText("fix: preserve percent-encoded path in DisplayURL");
   await expect(el.locator("[data-check]")).toHaveCount(11);
-  await expect(el.locator('[data-want="failed"]')).toContainText("3 checks failed: build (ubuntu-latest)");
-  await expect(el.locator(".forge-meta")).toContainText("as jhgaylor (gh on");
+  // #408: one red strip, with its buttons; the sentences are tooltips and icons.
+  const strip = el.locator("[data-item-next]");
+  await expect(strip).toHaveAttribute("data-item-next", "danger");
+  await expect(strip).toContainText("build (ubuntu-latest) and 2 more failed");
+  await expect(el.locator('[data-item-tab="checks"]')).toHaveAttribute("data-tone", "danger");
+  await expect(el.locator('[data-item-fact="checks"]')).toContainText("✕ 3");
+  for (const gone of ["Waiting on you", "wants to merge", "checks failed", "polls", "no reviews"]) await expect(el).not.toContainText(gone);
+  // Who you act as, and how it's read, are the source icon's tooltip.
   // M172: the reader's, not a pin (forge-pin.spec.ts): it says how it polls.
-  await expect(el.locator("[data-forge-pin]")).toHaveCount(0);
-  await expect(el.locator(".forge-polls")).toContainText("polls");
+  const source = el.locator("[data-item-source]");
+  await expect(source).toHaveAttribute("title", /as jhgaylor \(gh on /);
+  await expect(source).toHaveAttribute("title", /polls/);
+  await expect(source).not.toHaveAttribute("title", /Arugula control/);
   // On the rail too, with a rerun.
   await expect
     .poll(() => page.evaluate((b) => window.__arugula.client.info(b)?.reason?.actions ?? [], block))
@@ -107,7 +118,7 @@ test("red check runs on your GitHub PR rerun from the block", async ({ page }) =
   await expect.poll(() => writes.length).toBe(1);
   expect(writes[0]).toEqual({ route: "/actions/runs/28656994029/rerun-failed-jobs", auth: `Bearer ${TOKEN}` });
   // The jobs queue again: no longer failed.
-  await expect(el.locator('[data-want="failed"]')).toHaveCount(0);
+  await expect(el.locator("[data-item-next]")).toHaveCount(0);
   await expect(el.locator('[data-check="queued"]')).toHaveCount(3);
 
   // #379: running and queued check dots use the warn colour, not accent.
@@ -153,4 +164,22 @@ test("a chart or svg fence in a PR's description is code, not a chart or a pictu
   } finally {
     item.body = was;
   }
+});
+
+// UI audit #196, kept through #408: Merge ▾ offers only the methods the
+// repository allows, and a squash-only repository offers Squash alone.
+test("a squash-only repository's Merge ▾ offers only Squash", async ({ page }) => {
+  await reset(page);
+  const block = await page.evaluate(
+    ([api, repo, number]) =>
+      window.__arugula.client
+        .request("POST", "/api/blocks", { type: "forge", config: { provider: "github", api, repo, number }, local: true })
+        .then((r) => r.json<{ block: number }>())
+        .then((r) => r.block),
+    [origin, REPO, N] as const,
+  );
+  const el = page.locator(`[data-forge-block="${block}"]`);
+  await el.locator("[data-item-foot]").getByRole("button", { name: "Merge ▾" }).click();
+  const choices = page.locator(".prompt-choices button");
+  await expect(choices).toHaveText(["Squash"]);
 });

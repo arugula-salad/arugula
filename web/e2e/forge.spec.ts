@@ -111,20 +111,23 @@ test("a pull request opens from the menu; the review asked of you is approved th
   const block = await openPr(page);
   const el = page.locator(`[data-forge-block="${block}"]`);
   // #317: the title first, then the number and the repo.
-  await expect(el.locator(".review-path")).toContainText(`CI: delete the kept build once it passes 30 GB #84 ${REPO}`);
-  await expect(el.locator(".review-path b")).toHaveText("CI: delete the kept build once it passes 30 GB");
+  await expect(el.locator("[data-item-head] .item-number")).toHaveText("#84");
+  await expect(el.locator("[data-item-head] .item-title")).toHaveText("CI: delete the kept build once it passes 30 GB");
   await expect.poll(() => page.evaluate((b) => window.__arugula.client.title(b), block)).toMatch(/^#84 CI: delete the kept build/);
-  await expect(el.locator("[data-pr-state]")).toHaveText("open");
+  await expect(el.locator("[data-item-pill]")).toHaveText("Open");
   await expect(el.locator("[data-check]")).toHaveCount(2);
-  // What waits on you comes first, and it's on the rail too.
-  await expect(el.locator('[data-want="review"]')).toContainText("review requested from you");
+  // What waits on you is the one strip, and it's on the rail too.
+  await expect(el.locator('[data-item-next="warn"]')).toContainText("Your review is asked for");
   await expect.poll(() => page.evaluate((b) => window.__arugula.client.info(b)?.reason?.kind, block)).toBe("gate");
   await el.locator("[data-approve-review]").click();
   await expect.poll(() => writes.length).toBe(1);
   expect(writes[0]).toEqual({ route: "/pulls/84/reviews", body: { event: "APPROVED", body: "" }, auth: `token ${TOKEN}` });
   // Read back: approved, and no longer asked.
+  await expect(el.locator('[data-item-avatar][data-name="jhgaylor"]')).toHaveAttribute("title", "jhgaylor approved");
+  await expect(el.locator('[data-item-avatar][data-ring]')).toHaveCount(0);
+  await expect(el.locator("[data-item-next=warn]")).toHaveCount(0);
+  await el.locator('[data-item-tab="reviews"]').click();
   await expect(el.locator('[data-review="approved"]')).toBeVisible();
-  await expect(el.locator('[data-want="review"]')).toHaveCount(0);
   await expect.poll(() => page.evaluate((b) => window.__arugula.client.info(b)?.reason ?? null, block)).toBeNull();
 });
 
@@ -165,32 +168,26 @@ test("a description is drawn as Markdown, with the status chips and the actions 
   await expect(desc.locator("details li.md-task input")).toBeChecked();
   await expect(desc.locator("details")).toHaveCount(1);
   await expect(desc).toContainText("<details onclick=alert(1)>");
-  // Where it stands, in chips under the meta line.
-  const chips = el.locator("[data-forge-chips]");
-  await expect(chips).toContainText("checks passed");
-  await expect(chips).toContainText("no reviews");
-  await expect(chips).toContainText("mergeable");
-  await expect(el.locator(".forge-meta")).toContainText("tea login e2e");
-  // The footer holds the actions at the bottom of the body, scrolled or not.
-  const scroller = el.locator(".review-body");
-  const foot = el.locator(".forge-foot");
-  const atBottom = async () => {
-    const [f, b] = [await foot.boundingBox(), await scroller.boundingBox()];
-    return Math.round(f!.y + f!.height) - Math.round(b!.y + b!.height);
-  };
-  expect(await scroller.evaluate((e) => e.scrollHeight > e.clientHeight)).toBe(true);
-  expect(await atBottom()).toBe(0);
-  await scroller.evaluate((e) => e.scrollTo(0, e.scrollHeight / 2));
-  expect(await atBottom()).toBe(0);
+  // Where it stands, in the facts row: icons and counts, no words.
+  await expect(el.locator('[data-item-fact="checks"]')).toContainText("✓ 2");
+  await expect(el.locator('[data-item-fact="reviewers"] [data-item-avatar][data-ring="asked"]')).toHaveCount(1);
+  await expect(el.locator('[data-item-fact="mergeable"]')).toHaveAttribute("data-mergeable", "clean");
+  await expect(el.locator("[data-item-source]")).toHaveAttribute("title", /tea login e2e/);
+  // #408: the description folds to a few lines with More, so the long one
+  // doesn't push the actions away; they're under it.
+  await expect(el.locator("[data-item-more]")).toHaveText("More");
+  const foot = el.locator(".item-foot");
   await expect(foot.locator("button", { hasText: "Comment" })).toBeVisible();
-  await expect(foot.locator("[data-forge-live-state]")).toContainText("polls");
+  await expect(el.locator("[data-item-source]")).toHaveAttribute("title", /polls/);
 });
 
 test("an agent's comment waits as a draft until a person edits and sends it", async ({ page }) => {
   fresh();
+  item.requested_reviewers = [];
+  reviews = [];
   const block = await openPr(page);
   const el = page.locator(`[data-forge-block="${block}"]`);
-  await expect(el.locator(".review-path")).toContainText("#84");
+  await expect(el.locator("[data-item-head] .item-number")).toHaveText("#84");
   // An agent's write (the CLI under Claude Code sends agent: true).
   const r = await page.evaluate(
     (b) => window.__arugula.client.request("POST", `/api/blocks/${b}/call/comment`, { body: "LGTM, one nit", agent: true }).then((r) => r.json<{ draft: string }>()),
@@ -202,7 +199,7 @@ test("an agent's comment waits as a draft until a person edits and sends it", as
   const card = page.locator(`.pane-ask .ask[data-ask="${r.draft}"]`);
   await expect(card).toContainText("an agent drafted a comment on jhgaylor/illogical#84");
   // #317: the card sits above the block's actions at the foot, not over them.
-  const foot = el.locator(".forge-foot");
+  const foot = el.locator(".item-foot");
   await expect(foot).toBeVisible();
   await expect.poll(async () => {
     const [c, f] = await Promise.all([page.locator(".pane-ask").boundingBox(), foot.boundingBox()]);
@@ -211,7 +208,10 @@ test("an agent's comment waits as a draft until a person edits and sends it", as
   await expect(foot.locator("button, a").first()).toBeVisible();
   const box = card.locator('textarea[name="body"]');
   await expect(box).toHaveValue("LGTM, one nit");
-  await expect(el.locator("[data-forge-drafts-waiting]")).toContainText("A draft waits");
+  // The strip says the draft is yours to send, with Send; no sentence.
+  await expect(el.locator('[data-item-next="warn"]')).toContainText("Your comment draft");
+  await expect(el.locator("[data-send-draft]")).toBeVisible();
+  await expect(el).not.toContainText("A draft waits");
   await box.fill("LGTM, one small nit.\n\nThanks!");
   await card.locator("[data-ask-submit]").click();
   await expect.poll(() => writes.length).toBe(1);
@@ -219,7 +219,9 @@ test("an agent's comment waits as a draft until a person edits and sends it", as
   expect(writes[0].body).toEqual({ body: "LGTM, one small nit.\n\nThanks!" });
   expect(writes[0].auth).toBe(`token ${TOKEN}`);
   // The block says who sent it, and the comment's in its timeline.
+  await el.locator('[data-item-tab="activity"]').click();
   await expect(el.locator(`[data-draft="${r.draft}"]`)).toHaveAttribute("data-draft-status", "sent");
+  await expect(el.locator("[data-send-draft]")).toHaveCount(0);
   await expect(el.locator(`[data-draft="${r.draft}"]`)).toContainText("sent by");
   await expect(el.locator("[data-forge-timeline]")).toContainText("LGTM, one small nit.");
   await expect(card).toHaveCount(0);
@@ -236,6 +238,36 @@ test("an agent's comment waits as a draft until a person edits and sends it", as
   expect(writes.length).toBe(1);
 });
 
+test("the strip's Send sends the waiting draft as drafted, and the draft goes once the PR is merged", async ({ page }) => {
+  fresh();
+  item.requested_reviewers = [];
+  reviews = [];
+  const block = await openPr(page);
+  const el = page.locator(`[data-forge-block="${block}"]`);
+  const r = await page.evaluate(
+    (b) => window.__arugula.client.request("POST", `/api/blocks/${b}/call/comment`, { body: "Ship it", agent: true }).then((r) => r.json<{ draft: string }>()),
+    block,
+  );
+  expect(writes).toEqual([]);
+  await expect(el.locator('[data-item-next="warn"]')).toContainText("Your comment draft");
+  await el.locator("[data-send-draft]").click();
+  await expect.poll(() => writes.length).toBe(1);
+  expect(writes[0].route).toBe("/issues/84/comments");
+  expect(writes[0].body).toEqual({ body: "Ship it" });
+  await expect(page.locator(`.pane-ask .ask[data-ask="${r.draft}"]`)).toHaveCount(0);
+  // Merged since: a draft still waiting isn't a want, and isn't drawn.
+  const d = await page.evaluate(
+    (b) => window.__arugula.client.request("POST", `/api/blocks/${b}/call/comment`, { body: "Too late", agent: true }).then((r) => r.json<{ draft: string }>()),
+    block,
+  );
+  Object.assign(item, { state: "closed", merged: true, merged_at: "2026-10-03T02:00:00Z", merged_by: { login: "jhgaylor" } });
+  touch();
+  await page.evaluate((b) => window.__arugula.client.api(`/api/blocks/${b}/call/refresh`, {}, ""), block);
+  await expect(el.locator("[data-item-pill]")).toHaveText("Merged");
+  await expect(el.locator("[data-item-next], [data-send-draft], [data-forge-drafts]")).toHaveCount(0);
+  expect(d.draft).toBeTruthy();
+});
+
 test("a merged pull request isn't waiting on you: the tag says merged once", async ({ page }) => {
   fresh();
   Object.assign(item, { state: "closed", merged: true, merged_at: "2026-10-03T02:00:00Z", merged_by: { login: "jhgaylor" } });
@@ -244,10 +276,12 @@ test("a merged pull request isn't waiting on you: the tag says merged once", asy
   touch();
   const block = await openPr(page);
   const el = page.locator(`[data-forge-block="${block}"]`);
-  await expect(el.locator('[data-pr-state="merged"]')).toBeVisible();
-  await expect(el.locator("[data-forge-wants]")).toHaveCount(0);
-  await expect(el.locator("[data-forge-done]")).toHaveCount(0);
+  await expect(el.locator("[data-item-pill]")).toHaveText("Merged");
+  // Never a want after the end: no strip, no waiting draft, no finished news.
+  await expect(el.locator("[data-item-next]")).toHaveCount(0);
+  await expect(el.locator("[data-forge-wants], [data-forge-done], [data-send-draft], [data-forge-drafts]")).toHaveCount(0);
   await expect(el).not.toContainText("Waiting on you");
+  await expect(el).not.toContainText("waits for you");
   // Open and green, the news is one quiet line, not a request.
   fresh();
   item.requested_reviewers = [];
@@ -257,11 +291,12 @@ test("a merged pull request isn't waiting on you: the tag says merged once", asy
   touch();
   const open = await openPr(page);
   const el2 = page.locator(`[data-forge-block="${open}"]`);
-  await expect(el2.locator("[data-forge-done]")).toHaveCount(1);
-  await expect(el2.locator("[data-forge-wants]")).toHaveCount(0);
+  // Open and green, nothing but the ready strip, and no finished news.
+  await expect(el2.locator('[data-item-next="ok"]')).toContainText("Ready to merge");
+  await expect(el2.locator("[data-forge-done], [data-forge-wants]")).toHaveCount(0);
   // Phone width: the long title wraps or ends in an ellipsis, nothing scrolls sideways.
   await page.setViewportSize({ width: 390, height: 800 });
-  await expect.poll(() => el2.evaluate((e) => [...e.querySelectorAll<HTMLElement>(".review-bar, .review-body")].every((x) => x.scrollWidth <= x.clientWidth))).toBe(true);
+  await expect.poll(() => el2.evaluate((e) => [...e.querySelectorAll<HTMLElement>(".review-body")].every((x) => x.scrollWidth <= x.clientWidth))).toBe(true);
 });
 
 test("with labs on, Forgejo's and GitLab's links in terminal output open as blocks", async ({ page }) => {
