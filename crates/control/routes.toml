@@ -2737,7 +2737,7 @@ path = "/api/projects/{project}/boards"  # wire::boards::PROJECT_BOARDS
 process = "platform"
 auth = "session"
 clients = ["page", "cli"]
-note = "A project's boards: open ones first, then closed ones, each oldest first. Each has its goal, done note and progress (its issue rows, each issue once, done when closed at its source)."
+note = "A project's boards: open ones first, then closed ones, each oldest first. Each has its goal, done note and progress (its rows with an issue or a PR, those in Done and those proven)."
 
 [[route]]
 method = "POST"
@@ -2753,7 +2753,7 @@ path = "/api/boards/{id}"  # wire::boards::BOARD
 process = "platform"
 auth = "session"
 clients = ["page", "cli"]
-note = "A board with its zones and rows in order: any member."
+note = "A board as its four lanes (Next, Doing, Review, Done) with their rows, each row with its attachments and, on Done, its proof: any member."
 
 [[route]]
 method = "PATCH"
@@ -2785,7 +2785,7 @@ path = "/api/boards/{id}/entries"  # wire::boards::BOARD_ENTRIES
 process = "platform"
 auth = "session"
 clients = ["page", "cli"]
-note = "Makes or changes a zone or a row (owners and editors). A change to a title, pointer or note names the rev it read and is refused with 409 stale_rev if the entry moved on; a status alone needs none."
+note = "Adds a row, or changes a row's note or pointer (owners and editors). A change names the rev it read and is refused with 409 stale_rev if the row moved on. A zone, a title and a status are refused (lanes follow the work). Adding a PR that references the issue of a row on the board attaches it to that row; adding an issue that PR rows reference takes those rows in as its work."
 
 [[route]]
 method = "DELETE"
@@ -2793,7 +2793,7 @@ path = "/api/boards/{id}/entries/{entry}"  # wire::boards::BOARD_ENTRY
 process = "platform"
 auth = "session"
 clients = ["page", "cli"]
-note = "Deletes a row, or a zone and its rows: owners and editors."
+note = "Deletes a row and what is attached to it: owners and editors."
 
 [[route]]
 method = "POST"
@@ -2801,7 +2801,23 @@ path = "/api/boards/{id}/entries/{entry}/move"  # wire::boards::BOARD_ENTRY_MOVE
 process = "platform"
 auth = "session"
 clients = ["page", "cli"]
-note = "Reorders a row or a zone, within or between zones: owners and editors."
+note = "Refused, 400: lanes follow the work. A row's lane comes from the live state of its issue, PR, agent block and run."
+
+[[route]]
+method = "POST"
+path = "/api/boards/{id}/attachments"  # wire::boards::BOARD_ATTACHMENTS
+process = "platform"
+auth = "session"
+clients = ["page", "cli"]
+note = "Attaches work (a PR, an agent block or a run) or proof (a run or a link) to a row: owners and editors. An item on the board already is not attached again."
+
+[[route]]
+method = "DELETE"
+path = "/api/boards/{id}/attachments/{attachment}"  # wire::boards::BOARD_ATTACHMENT
+process = "platform"
+auth = "session"
+clients = ["page", "cli"]
+note = "Takes an attachment off its row: owners and editors."
 
 [[route]]
 method = "GET"
@@ -3065,7 +3081,7 @@ path = "/api/daemon/boards/{id}/entries"  # wire::boards::AGENT_BOARD_ENTRIES
 process = "platform"
 auth = "daemon"
 clients = ["daemon"]
-note = "Makes or renames a zone, adds a row to a zone, or sets a row's note or status, or its pointer when its own machine added it (`boards.write`); 409 `stale_rev` when the entry moved on."
+note = "Adds a row, or sets a row's note, or its pointer when its own machine added it (`boards.write`); 409 `stale_rev` when the row moved on. A zone and a status are refused (lanes follow the work)."
 
 [[route]]
 method = "DELETE"
@@ -3073,7 +3089,7 @@ path = "/api/daemon/boards/{id}/entries/{entry}"  # wire::boards::AGENT_BOARD_EN
 process = "platform"
 auth = "daemon"
 clients = ["daemon"]
-note = "A row the same machine's agents added, or a zone holding no other hand's row (`boards.write`); anything else is 403."
+note = "A row the same machine's agents added (`boards.write`); anything else is 403."
 
 [[route]]
 method = "POST"
@@ -3081,7 +3097,23 @@ path = "/api/daemon/boards/{id}/entries/{entry}/move"  # wire::boards::AGENT_BOA
 process = "platform"
 auth = "daemon"
 clients = ["daemon"]
-note = "Moves a row, within its zone or to another, or a zone (`boards.write`)."
+note = "Refused, 400: lanes follow the work."
+
+[[route]]
+method = "POST"
+path = "/api/daemon/boards/{id}/attachments"  # wire::boards::AGENT_BOARD_ATTACHMENTS
+process = "platform"
+auth = "daemon"
+clients = ["daemon"]
+note = "Attaches work or proof to a row (`boards.write`)."
+
+[[route]]
+method = "DELETE"
+path = "/api/daemon/boards/{id}/attachments/{attachment}"  # wire::boards::AGENT_BOARD_ATTACHMENT
+process = "platform"
+auth = "daemon"
+clients = ["daemon"]
+note = "An attachment the same machine's agents made (`boards.write`); anything else is 403."
 
 [[route]]
 method = "PUT"

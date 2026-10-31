@@ -5,7 +5,7 @@
 // and the shell's board block read through it. A write that names a stale
 // `rev` is refused with 409 (`stale_rev`): the view reads the board again.
 
-import type { BoardList, BoardMoveEntry, BoardPutEntry, BoardView, BoardWorkItems, TrackerConnections, TrackerWriteDone } from "../proto";
+import type { BoardAttachRole, BoardList, BoardPointer, BoardPutEntry, BoardView, BoardWorkItems, TrackerConnections, TrackerWriteDone } from "../proto";
 import { chat } from "../chat-store";
 import { platformFetch, refusalOf } from "../maintenance";
 
@@ -57,15 +57,14 @@ export const boards = {
     titles.set(id, v.board.title);
     return v;
   },
-  /** Make or change an entry: what isn't given is left as it is. */
+  /** Add a row, or change one's note or pointer: what isn't given is left as it is. The answer's `said` tells when the platform attached a PR to the row of its issue instead of adding it, or found it there already. */
   put(id: string, p: Partial<BoardPutEntry>) {
     const full: BoardPutEntry = { id: null, rev: null, entry: null, zone: null, title: null, kind: null, pointer: null, note: null, status: null, ...p };
     return call<BoardView>("PUT", `/api/boards/${enc(id)}/entries`, full);
   },
-  move(id: string, entry: string, m: Partial<BoardMoveEntry>) {
-    const full: BoardMoveEntry = { rev: null, zone: null, before: null, ...m };
-    return call<BoardView>("POST", `/api/boards/${enc(id)}/entries/${enc(entry)}/move`, full);
-  },
+  /** Attach work (a PR, an agent block, a run) or proof (a run, a link) to a row. */
+  attach: (id: string, row: string, role: BoardAttachRole, pointer: BoardPointer) => call<BoardView>("POST", `/api/boards/${enc(id)}/attachments`, { row, role, pointer }),
+  detach: (id: string, attachment: string) => call<BoardView>("DELETE", `/api/boards/${enc(id)}/attachments/${enc(attachment)}`),
   /** Rename the board, or change its goal (empty clears it). */
   edit: (id: string, e: { title?: string; goal?: string }) => call<BoardView>("PATCH", `/api/boards/${enc(id)}`, e),
   /** Close the board as an epic, with what a person can now do. */

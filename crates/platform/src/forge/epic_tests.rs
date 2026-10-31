@@ -27,26 +27,36 @@ async fn issue(base: &str, app: &crate::Platform, project: &str, title: &str, cl
     id
 }
 
-/// A row on `pointer` in `zone`.
-async fn row(base: &str, board: &str, zone: &str, kind: &str, id: &str, status: &str) -> Value {
+/// A row on `pointer`: its id.
+async fn row(base: &str, board: &str, kind: &str, id: &str) -> String {
     let (s, v) = call(
         base,
         "bob",
         "PUT",
         &format!("/api/boards/{board}/entries"),
-        Some(json!({ "entry": "row", "zone": zone, "pointer": { "kind": kind, "id": id }, "status": status })),
+        Some(json!({ "entry": "row", "pointer": { "kind": kind, "id": id } })),
     )
     .await;
     assert_eq!(s, 200, "{v}");
-    v
+    v["zones"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .flat_map(|z| z["rows"].as_array().unwrap())
+        .find(|r| r["pointer"]["id"] == id)
+        .map(|r| r["id"].as_str().unwrap().to_owned())
+        .unwrap_or_else(|| panic!("{v}"))
 }
 
-fn progress(v: &Value) -> (u64, u64) {
-    (v["progress"]["done"].as_u64().unwrap(), v["progress"]["total"].as_u64().unwrap())
+fn progress(v: &Value) -> (u64, u64, u64) {
+    let p = &v["progress"];
+    (p["done"].as_u64().unwrap(), p["total"].as_u64().unwrap(), p["proven"].as_u64().unwrap())
 }
 
+/// Progress counts the rows with an issue or a PR as their item, whoever
+/// reads: a lane follows the work, not the reader's access to the repo.
 #[tokio::test]
-async fn progress_counts_issues_closed_at_their_source_as_the_reader_may_read_them() {
+async fn progress_counts_the_rows_in_done_and_those_proven() {
     let hub = Arc::new(TestHub::default());
     let (gh, app, base) = serve(&hub).await;
     let (team, _) = world(&hub, &gh, &app).await;
@@ -75,53 +85,63 @@ async fn progress_counts_issues_closed_at_their_source_as_the_reader_may_read_th
     let (s, b) =
         call(&base, "bob", "POST", &format!("/api/projects/{team}/boards"), Some(json!({ "title": "E" }))).await;
     assert_eq!(s, 200, "{b}");
-    assert_eq!(progress(&b["board"]), (0, 0), "a board with no rows");
+    assert_eq!(progress(&b["board"]), (0, 0, 0), "a board with no rows");
     let id = b["board"]["id"].as_str().unwrap().to_owned();
-    let (_, z) = call(
-        &base,
-        "bob",
-        "PUT",
-        &format!("/api/boards/{id}/entries"),
-        Some(json!({ "entry": "zone", "title": "Now" })),
-    )
-    .await;
-    let zone = z["zones"][0]["id"].as_str().unwrap().to_owned();
 
-    // Counted: the native pair (the closed one is `open` on its row and
-    // twice), the public repo's pair, and the private repo's pair, which
-    // only a reader of acme/app counts. Not counted: PRs and a run.
-    for (kind, ptr, status) in [
-        ("issue", open.as_str(), "done"),
-        ("issue", shut.as_str(), "open"),
-        ("issue", shut.as_str(), "done"),
-        ("forge_item", "fi_i3", "done"),
-        ("forge_item", "fi_i4", "open"),
-        ("forge_item", "fi_i1", "open"),
-        ("forge_item", "fi_i2", "open"),
-        ("forge_item", "fi_a1", "done"),
-        ("forge_item", "fi_a3", "done"),
-        ("run", "run_1", "done"),
+    // Counted: two native issues, four mirrored issues and two PRs (an open
+    // one in Review, a merged one in Done). Not counted: a note, and a
+    // second row for an issue that is a row already, which isn't added.
+    let mut shut_row = String::new();
+    for (kind, ptr) in [
+        ("issue", open.as_str()),
+        ("issue", shut.as_str()),
+        ("issue", shut.as_str()),
+        ("forge_item", "fi_i3"),
+        ("forge_item", "fi_i4"),
+        ("forge_item", "fi_i1"),
+        ("forge_item", "fi_i2"),
+        ("forge_item", "fi_a1"),
+        ("forge_item", "fi_a3"),
     ] {
-        row(&base, &id, &zone, kind, ptr, status).await;
+        let r = row(&base, &id, kind, ptr).await;
+        if ptr == shut {
+            shut_row = r;
+        }
     }
+    let (s, _) =
+        call(&base, "bob", "PUT", &format!("/api/boards/{id}/entries"), Some(json!({ "entry": "row", "note": "n" })))
+            .await;
+    assert_eq!(s, 200);
 
-    // bob reads acme/app: six issues, three closed. The row's own status
-    // changed nothing.
+    // Done: the closed native issue, fi_i2, fi_i4 and the merged PR (with
+    // no check on its head, it is not proven by CI).
     let (_, v) = call(&base, "bob", "GET", &format!("/api/boards/{id}"), None).await;
-    assert_eq!(progress(&v["board"]), (3, 6), "{v}");
+    assert_eq!(progress(&v["board"]), (4, 8, 0), "{v}");
     let (_, l) = call(&base, "bob", "GET", &format!("/api/projects/{team}/boards"), None).await;
-    assert_eq!(progress(&l["boards"][0]), (3, 6), "the list says what the view does");
+    assert_eq!(progress(&l["boards"][0]), (4, 8, 0), "the list says what the view does");
 
-    // carol can't read acme/app: its two rows count toward neither number.
+    // carol can't read acme/app, and the board is the same for her.
     let (_, v) = call(&base, "carol", "GET", &format!("/api/boards/{id}"), None).await;
-    assert_eq!(progress(&v["board"]), (2, 4), "{v}");
+    assert_eq!(progress(&v["board"]), (4, 8, 0), "{v}");
     let (_, l) = call(&base, "carol", "GET", &format!("/api/projects/{team}/boards"), None).await;
-    assert_eq!(progress(&l["boards"][0]), (2, 4));
+    assert_eq!(progress(&l["boards"][0]), (4, 8, 0));
 
     // An issue closing at its source moves the count.
     app.db.c().execute(CLOSE, params![open]).unwrap();
     let (_, v) = call(&base, "bob", "GET", &format!("/api/boards/{id}"), None).await;
-    assert_eq!(progress(&v["board"]), (4, 6));
+    assert_eq!(progress(&v["board"]), (5, 8, 0));
+
+    // Evidence on a Done row proves it.
+    let (s, v) = call(
+        &base,
+        "bob",
+        "POST",
+        &format!("/api/boards/{id}/attachments"),
+        Some(json!({ "row": shut_row, "role": "proof", "pointer": { "kind": "link", "url": "https://ci.example.com/1" } })),
+    )
+    .await;
+    assert_eq!(s, 200, "{v}");
+    assert_eq!(progress(&v["board"]), (5, 8, 1), "{v}");
 }
 
 #[tokio::test]
@@ -185,8 +205,8 @@ async fn a_goal_is_set_and_a_board_is_closed_and_opened_again() {
     );
     let closed_at = v["board"]["closed_at"].as_u64().unwrap();
     let (s, v) =
-        call(&base, "bob", "PUT", &format!("{path}/entries"), Some(json!({ "entry": "zone", "title": "Late" }))).await;
-    assert_eq!(s, 200, "a closed board's zones are editable: {v}");
+        call(&base, "bob", "PUT", &format!("{path}/entries"), Some(json!({ "entry": "row", "note": "Late" }))).await;
+    assert_eq!(s, 200, "a closed board's rows are editable: {v}");
     let (_, l) = call(&base, "carol", "GET", &format!("/api/projects/{team}/boards"), None).await;
     let order: Vec<&str> = l["boards"].as_array().unwrap().iter().map(|b| b["id"].as_str().unwrap()).collect();
     assert_eq!(order, [second.as_str(), first.as_str()], "open first: {l}");

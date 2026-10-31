@@ -1,5 +1,84 @@
 {
   "$defs": {
+    "AttachRole": {
+      "description": "What an attachment is for.",
+      "oneOf": [
+        {
+          "const": "work",
+          "description": "The work itself: a PR, an agent block or a run. It moves the lane.",
+          "type": "string"
+        },
+        {
+          "const": "proof",
+          "description": "Evidence that the work is done: a run or a link.",
+          "type": "string"
+        }
+      ]
+    },
+    "AttachRow": {
+      "description": "[`BOARD_ATTACHMENTS`]' body: attach `pointer` to `row` as `role`.",
+      "properties": {
+        "pointer": {
+          "$ref": "#/$defs/Pointer"
+        },
+        "role": {
+          "$ref": "#/$defs/AttachRole"
+        },
+        "row": {
+          "description": "The row (`row_…`).",
+          "type": "string"
+        }
+      },
+      "required": [
+        "row",
+        "pointer",
+        "role"
+      ],
+      "type": "object"
+    },
+    "Attachment": {
+      "description": "Something attached to a row.",
+      "properties": {
+        "block": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/BlockState"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "A `Block` pointer's block as its machine last reported it."
+        },
+        "id": {
+          "description": "`att_` and 32 hex characters.",
+          "type": "string"
+        },
+        "live": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Live"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The item's state now, when the reader may see it: an item they can't\nread says nothing, as an unreadable row does."
+        },
+        "pointer": {
+          "$ref": "#/$defs/Pointer"
+        },
+        "role": {
+          "$ref": "#/$defs/AttachRole"
+        }
+      },
+      "required": [
+        "id",
+        "role",
+        "pointer"
+      ],
+      "type": "object"
+    },
     "BlockState": {
       "additionalProperties": false,
       "description": "What a daemon says of one of its own agent blocks, and all it says\n(aru-116's second ruling): the state word, the branch, the short HEAD,\nwhether it is pushed, how many files are uncommitted and the diffstat.\nNo message text, no file names, no prompts: the type has no field that\ncould carry them, and a body with another field is refused.",
@@ -126,6 +205,7 @@
           "$ref": "#/$defs/BoardProgress",
           "default": {
             "done": 0,
+            "proven": 0,
             "total": 0
           },
           "description": "How many of its issues are closed."
@@ -171,9 +251,15 @@
       "type": "object"
     },
     "BoardProgress": {
-      "description": "A board's issues, counted: the rows on a native issue or a mirrored\nGitHub issue (not a PR, a run or a link), each issue once, and the ones\nclosed at their source. A row the reader can't read counts toward\nneither; a row's own status counts for nothing.",
+      "description": "A board's work, counted: the rows with a primary item (an issue or a\nPR; a note row is never counted). `done` is those in the Done lane, and\n`proven` those of them with a proof.",
       "properties": {
         "done": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "proven": {
+          "default": 0,
           "format": "uint32",
           "minimum": 0,
           "type": "integer"
@@ -237,10 +323,25 @@
       "type": "object"
     },
     "BoardView": {
-      "description": "A board with its zones and rows, in order.",
+      "description": "A board with its four lanes, in order (`lane_next`, `lane_doing`,\n`lane_review`, `lane_done`), each with its rows, and its groups, in\norder. The rows of a group are those with [`Row::group`] set to its id; a\nrow without one comes after the grouped ones.",
       "properties": {
         "board": {
           "$ref": "#/$defs/Board"
+        },
+        "groups": {
+          "default": [],
+          "description": "Empty for a board with none; an old client ignores it.",
+          "items": {
+            "$ref": "#/$defs/Group"
+          },
+          "type": "array"
+        },
+        "said": {
+          "description": "What a write did that the board alone doesn't say: a PR attached to\nthe row of the issue it closes, an item that was there already.",
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "zones": {
           "items": {
@@ -331,12 +432,70 @@
       "type": "object"
     },
     "EntryKind": {
-      "description": "Zone or row.",
+      "description": "Zone (a group, in a database; a lane, on the wire) or row.",
       "enum": [
         "zone",
         "row"
       ],
       "type": "string"
+    },
+    "Group": {
+      "description": "A named, ordered section of a board that its author sets: a phase, a\nwave, an area. A row belongs to at most one ([`Row::group`]); a group\nholds no lane, and a row's lane is the same in any group.",
+      "properties": {
+        "id": {
+          "description": "`zon_…`.",
+          "type": "string"
+        },
+        "progress": {
+          "$ref": "#/$defs/BoardProgress",
+          "default": {
+            "done": 0,
+            "proven": 0,
+            "total": 0
+          },
+          "description": "Its rows with an issue or a PR, counted as a board's are."
+        },
+        "rev": {
+          "description": "Counts changes to its title.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "title": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "rev",
+        "title"
+      ],
+      "type": "object"
+    },
+    "Lane": {
+      "description": "Where a row is, worked out on every read from the live state of its\nitems and never stored (aru-125). Each is the furthest that applies, in\nthe order `done`, `review`, `doing`, `next`.",
+      "oneOf": [
+        {
+          "const": "next",
+          "description": "Nothing is under way, or the row is a note.",
+          "type": "string"
+        },
+        {
+          "const": "doing",
+          "description": "An agent block that isn't closed, or a run that is running.",
+          "type": "string"
+        },
+        {
+          "const": "review",
+          "description": "A PR is open, or the issue is open and its PR merged (see\n[`Mark::MergedNotClosed`]).",
+          "type": "string"
+        },
+        {
+          "const": "done",
+          "description": "The issue is closed, or the PR merged or closed.",
+          "type": "string"
+        }
+      ]
     },
     "Live": {
       "description": "The item a row points at, as it is now: what the page draws beside the\nrow's own status, and the label of its link.",
@@ -410,7 +569,7 @@
       "type": "object"
     },
     "LiveState": {
-      "description": "What a row's `fi_`, `iss_` or `run_` pointer is now, from data control\nalready has (the forge mirror, the issues and runs tables): a separate fact, never written\nover the row's stored `status`.",
+      "description": "What a pointer to an item, an issue or a run is now, from data control\nalready has (the forge mirror, the issues and runs tables): a separate fact, never written\nover the row's stored `status`.",
       "oneOf": [
         {
           "enum": [
@@ -456,8 +615,68 @@
         }
       ]
     },
+    "Mark": {
+      "description": "A note on a row that its lane doesn't say, worked out on every read and\nnever stored (aru-125, decisions 7 to 9).",
+      "oneOf": [
+        {
+          "description": "The issue is open and a PR of the row merged, with none open: the\nwork is in, the issue isn't closed. The row is in Review.",
+          "properties": {
+            "kind": {
+              "const": "merged_not_closed",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "An open PR of the row is stacked on another open PR: it targets that\nPR's branch, so it waits for it. `repo` is left out when the reader\nmay not read the repo.",
+          "properties": {
+            "kind": {
+              "const": "after",
+              "type": "string"
+            },
+            "number": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "repo": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "kind",
+            "number"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "An agent block attached to the row (`attachment`) was closed, and\nanother may have taken its place: it no longer counts toward Doing.",
+          "properties": {
+            "attachment": {
+              "type": "string"
+            },
+            "kind": {
+              "const": "earlier",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "attachment"
+          ],
+          "type": "object"
+        }
+      ]
+    },
     "MoveEntry": {
-      "description": "[`BOARD_ENTRY_MOVE`]'s body: put the entry just before `before` (a\nsibling), or last when there is none. A row may go to another `zone`\n(its own, if absent); a zone moves among zones, never past `proofs`.",
+      "description": "[`BOARD_ENTRY_MOVE`]'s body. A row moves to a group (`zone`) or, with\n`zone: null`, out of its group; with `zone` absent it stays where it is.\nIt goes before `before` (a row of the place it goes to), last without\none. A group moves among groups:\n`before` is a group, `zone` is absent. A lane is never set (aru-125): a\n`zone` that is a lane is refused.",
       "properties": {
         "before": {
           "default": null,
@@ -476,7 +695,7 @@
           ]
         },
         "zone": {
-          "default": null,
+          "description": "The group the row goes to; `null`: none. Absent: its own.",
           "type": [
             "string",
             "null"
@@ -622,6 +841,44 @@
         }
       ]
     },
+    "Proof": {
+      "description": "The mark on a Done row that is proven. A Done row without one is not\nproven yet.",
+      "properties": {
+        "by": {
+          "$ref": "#/$defs/ProofBy"
+        },
+        "pointer": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Pointer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "What proves it: the merged PR, or the evidence attached."
+        }
+      },
+      "required": [
+        "by"
+      ],
+      "type": "object"
+    },
+    "ProofBy": {
+      "description": "How a Done row is proven.",
+      "oneOf": [
+        {
+          "const": "ci",
+          "description": "A PR of the row merged with every check on its head completed and\nnone red.",
+          "type": "string"
+        },
+        {
+          "const": "evidence",
+          "description": "A `proof` attachment.",
+          "type": "string"
+        }
+      ]
+    },
     "PutBlockState": {
       "additionalProperties": false,
       "description": "[`AGENT_BLOCK_STATE`]'s body: the pane (of the machine that signs it) and\nits state.",
@@ -640,7 +897,7 @@
       "type": "object"
     },
     "PutEntry": {
-      "description": "[`BOARD_ENTRIES`]' body. Without `id` it makes an entry: `entry` says\nwhich. A zone is added before the `proofs` zone (a `proofs` one goes\nlast, and a board has one); a row is added last in `zone`. With `id` it\nchanges that entry: what is absent is left as it is. A change to\n`title`, `pointer` or `note` names `rev`; a change to `status` alone\ndoesn't.",
+      "description": "[`BOARD_ENTRIES`]' body. Without `id` it adds a row, last (`entry` is\n`row` or absent), or, with `entry: zone`, a group with a `title`, last;\nwith `id` it changes that row or group: what is absent is left as it is,\nand a change to `pointer`, `note` or a group's `title` names `rev`. A\nnew row's `zone` is the group it goes in. `kind`, and a `zone` that is a\nlane, are refused, and so is every `status` but `needs_input`, which stays\nuntil asks replace it (aru-125: lanes follow the work). The row's\n`pointer` is an issue or a PR (or a link, for a note).",
       "properties": {
         "entry": {
           "anyOf": [
@@ -670,7 +927,7 @@
             }
           ],
           "default": null,
-          "description": "A new zone's kind."
+          "description": "Refused: a group has no kind."
         },
         "note": {
           "default": null,
@@ -710,10 +967,11 @@
             }
           ],
           "default": null,
-          "description": "A row's status; `\"none\"` clears it."
+          "description": "Refused, except `\"needs_input\"`."
         },
         "title": {
           "default": null,
+          "description": "A group's title.",
           "type": [
             "string",
             "null"
@@ -721,7 +979,7 @@
         },
         "zone": {
           "default": null,
-          "description": "A new row's zone.",
+          "description": "A new row's group (`zon_…`).",
           "type": [
             "string",
             "null"
@@ -743,6 +1001,14 @@
           ],
           "description": "The machine whose agent added the row, if one did (it may remove\nit; nobody else's agent may)."
         },
+        "attachments": {
+          "default": [],
+          "description": "Work and proof attached to the row, oldest first.",
+          "items": {
+            "$ref": "#/$defs/Attachment"
+          },
+          "type": "array"
+        },
         "block": {
           "anyOf": [
             {
@@ -759,8 +1025,20 @@
           "minimum": 0,
           "type": "integer"
         },
+        "group": {
+          "description": "The group (`zon_…`) the row belongs to, if any.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "id": {
           "type": "string"
+        },
+        "lane": {
+          "$ref": "#/$defs/Lane",
+          "default": "next",
+          "description": "Where the row is, from the live state of its items."
         },
         "live": {
           "anyOf": [
@@ -773,11 +1051,29 @@
           ],
           "description": "A `fi_`, `iss_` or `run_` pointer's state now, when the reader may see the\nitem ([`BoardView`] is read with it; a write's answer has it too)."
         },
+        "marks": {
+          "description": "What the lane doesn't say, in a fixed order: `merged_not_closed`,\n`after`, then one `earlier` for each closed block.",
+          "items": {
+            "$ref": "#/$defs/Mark"
+          },
+          "type": "array"
+        },
         "note": {
           "type": "string"
         },
         "pointer": {
           "$ref": "#/$defs/Pointer"
+        },
+        "proof": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Proof"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Set only on a Done row that is proven."
         },
         "rev": {
           "format": "uint64",
@@ -785,7 +1081,8 @@
           "type": "integer"
         },
         "status": {
-          "$ref": "#/$defs/Status"
+          "$ref": "#/$defs/Status",
+          "description": "Kept for old clients; nothing writes it any more (aru-125)."
         },
         "updated_at": {
           "format": "uint64",
@@ -988,9 +1285,9 @@
       "type": "object"
     },
     "ZoneKind": {
-      "description": "A zone's kind: `proofs` is the board's last zone. Absent: a plain one.",
+      "description": "A zone's kind: every zone a read answers is a `lane`, one of the four\n([`Lane`]). No one makes a zone.",
       "enum": [
-        "proofs"
+        "lane"
       ],
       "type": "string"
     }

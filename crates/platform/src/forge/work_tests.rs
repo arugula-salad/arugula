@@ -177,17 +177,11 @@ async fn untriaged_is_open_issues_no_board_of_this_project_points_at() {
             params![eve],
         )
         .unwrap();
-        c.execute(
-            "INSERT INTO board_entries (id, board_id, kind, position, title, created_at, updated_at)
-             VALUES ('bez_eve', 'brd_eve', 'zone', 0, 'Now', 1, 1)",
-            params![],
-        )
-        .unwrap();
         for (n, kind, target) in [(0, "forge_item", "fi_a2"), (1, "issue", a.as_str())] {
             c.execute(
-                "INSERT INTO board_entries (id, board_id, kind, zone_id, position, note, target_kind, target,
+                "INSERT INTO board_entries (id, board_id, kind, position, note, target_kind, target,
                      created_at, updated_at)
-                 VALUES (?1, 'brd_eve', 'row', 'bez_eve', ?2, '', ?3, ?4, 1, 1)",
+                 VALUES (?1, 'brd_eve', 'row', ?2, '', ?3, ?4, 1, 1)",
                 params![format!("ber_eve{n}"), n, kind, target],
             )
             .unwrap();
@@ -206,10 +200,8 @@ async fn untriaged_is_open_issues_no_board_of_this_project_points_at() {
         let base = base.clone();
         async move { call(&base, "bob", "PUT", &path, Some(body)).await }
     };
-    let (_, z) = put(json!({ "entry": "zone", "title": "Now" })).await;
-    let zone = z["zones"][0]["id"].as_str().unwrap().to_owned();
     for ptr in [json!({ "kind": "issue", "id": a }), json!({ "kind": "forge_item", "id": "fi_a5" })] {
-        let (s, v) = put(json!({ "entry": "row", "zone": zone, "note": "n", "pointer": ptr })).await;
+        let (s, v) = put(json!({ "entry": "row", "note": "n", "pointer": ptr })).await;
         assert_eq!(s, 200, "{v}");
     }
     let (s, _) = call(&base, "bob", "PATCH", &format!("/api/issues/{b}"), Some(json!({ "state": "closed" }))).await;

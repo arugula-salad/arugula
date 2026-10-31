@@ -40,7 +40,7 @@ function Triage({ p }: { p: PlatformProject }) {
   const on = useBoards(p.id);
   const [items, setItems] = useState<BoardWorkItem[] | null>(null);
   const [error, setError] = useState<string | null>(null);
-  // The boards and their zones, read the first time Add to board… is used.
+  // The boards, read the first time Add to board… is used.
   const where = useRef<Promise<ReturnType<typeof targets>> | null>(null);
   const all = pathOf({ page: "issues", project: p.id }, names);
   const off = on === "off";
@@ -56,8 +56,12 @@ function Triage({ p }: { p: PlatformProject }) {
   }, [p.id, on === null || off]);
 
   const add = (i: BoardWorkItem, t: Target) =>
-    boards.put(t.board, { entry: "row", zone: t.zone, pointer: i.pointer }).then(
-      () => setItems((l) => l && without(l, i.pointer)),
+    boards.put(t.board, { entry: "row", pointer: i.pointer }).then(
+      (v) => {
+        setItems((l) => l && without(l, i.pointer));
+        // A PR that goes with an issue's row is attached to it, not added.
+        if (v.said) toast(v.said);
+      },
       (e: Error) => toast(`Couldn't add it to the board: ${e.message}`),
     );
   const menu = async (e: MouseEvent, i: BoardWorkItem) => {
@@ -65,14 +69,11 @@ function Triage({ p }: { p: PlatformProject }) {
     const at = { clientX: e.clientX, clientY: e.clientY, preventDefault: () => e.preventDefault() };
     e.preventDefault();
     try {
-      where.current ??= boards.list(p.id).then((l) => Promise.all(l.boards.map((b) => boards.get(b.id)))).then(targets);
-      const boardsAndZones = await where.current;
-      const entries: MenuItem[] = boardsAndZones.length
-        ? boardsAndZones.map((b) => ({
-            label: b.title,
-            submenu: b.zones.map((z) => ({ label: z.title, run: () => void add(i, { board: b.board, zone: z.id }) })),
-          }))
-        : [{ label: "No board has a zone to add to", run: () => {}, disabled: true }];
+      where.current ??= boards.list(p.id).then((l) => targets(l.boards));
+      const open = await where.current;
+      const entries: MenuItem[] = open.length
+        ? open.map((b) => ({ label: b.title, run: () => void add(i, { board: b.board }) }))
+        : [{ label: "No open board to add to", run: () => {}, disabled: true }];
       openMenu(at, entries, { from });
     } catch (err) {
       where.current = null;

@@ -2,7 +2,7 @@
 // plain functions: a project's open issues that sit on no board, and where
 // each can go. Run with `node --experimental-strip-types`.
 
-import type { BoardPointer, BoardView, BoardWorkItem } from "../../shared/proto";
+import type { BoardPointer, BoardWorkItem, ProjectBoard } from "../../shared/proto";
 
 export const TRIAGE_LEDE = "Open issues that aren't on a board yet.";
 export const TRIAGE_NONE = "Nothing to triage: every open issue is on a board.";
@@ -30,20 +30,14 @@ export function itemHref(i: Pick<BoardWorkItem, "pointer" | "source" | "repo" | 
   return undefined;
 }
 
-/** A place an item can go: one zone of one board. */
-export type Target = { board: string; zone: string };
+/** A place an item can go: a board. */
+export type Target = { board: string };
 
-/** The menu's model: each board with its zones but Proofs (a board's last
- * zone, where what's proven goes, not where work is put). A board left with
- * no zone is out. */
-export function targets(views: readonly Pick<BoardView, "board" | "zones">[]): { board: string; title: string; zones: { id: string; title: string }[] }[] {
-  return views
-    .map((v) => ({
-      board: v.board.id,
-      title: v.board.title,
-      zones: v.zones.filter((z) => z.kind !== "proofs").map((z) => ({ id: z.id, title: z.title })),
-    }))
-    .filter((b) => b.zones.length > 0);
+/** The menu's model: each board of the project that is still open (a closed
+ * board's work is done). Boards have no zones to choose from: the item is a
+ * row, and its lane follows it. */
+export function targets(list: readonly Pick<ProjectBoard, "id" | "title" | "closed_at">[]): { board: string; title: string }[] {
+  return list.filter((b) => b.closed_at == null).map((b) => ({ board: b.id, title: b.title }));
 }
 
 /** The items still on the list once `pointer` has been put on a board. */

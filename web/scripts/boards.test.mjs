@@ -3,23 +3,25 @@
 // the board routes' paths. Run with `node --experimental-strip-types`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { GLYPH, assigneesLine, debounced, epicLine, firstLine, isCard, liveWord, parsePointer, pointerHref, pointerLabel, pointerToSend, progress, proven, stepActive, stepBefore, workLabel } from "../src/shared/boards/text.ts";
+import { LANE_GLYPH, assigneesLine, chipOf, counted, debounced, earlierLine, epicLine, firstLine, groupLine, isCard, laneCount, liveWord, marksOf, parsePointer, pointerHref, pointerLabel, pointerToSend, proofMark, rowGlyph, sections, stepActive, workLabel } from "../src/shared/boards/text.ts";
 import { parse, pathOf } from "../src/platform/paths.ts";
 
 const P = "prj_8f2ec0ffee00112233445566778899aa";
 const B = "brd_0123456789abcdef0123456789abcdef";
 
-test("a status is a glyph, and a zone's progress counts the done rows", () => {
-  assert.deepEqual(Object.values(GLYPH), ["○", "○", "◐", "?", "●", "✕"]);
-  const rows = ["done", "working", "done", "none"].map((status) => ({ status }));
-  assert.deepEqual(progress({ rows }), { done: 2, total: 4, pct: 50 });
-  assert.deepEqual(progress({ rows: [] }), { done: 0, total: 0, pct: 0 });
+test("a lane is a glyph, a row asking for input is a ?, and a lane counts its proven rows", () => {
+  assert.deepEqual(Object.values(LANE_GLYPH), ["○", "◐", "◑", "●"]);
+  assert.equal(rowGlyph({ lane: "review", status: "none" }), "◑");
+  assert.equal(rowGlyph({ lane: "doing", status: "needs_input" }), "?");
+  const rows = [{ proof: { by: "ci" } }, {}, { proof: { by: "evidence" } }];
+  assert.deepEqual(laneCount({ rows }), { total: 3, proven: 2 });
+  assert.deepEqual(laneCount({ rows: [] }), { total: 0, proven: 0 });
 });
 
 test("an epic's progress is in words, and a text's first line is what a list shows", () => {
-  assert.deepEqual(epicLine({ done: 3, total: 5 }), { words: "3 of 5 issues done", pct: 60 });
-  assert.deepEqual(epicLine({ done: 1, total: 1 }), { words: "1 of 1 issue done", pct: 100 });
-  assert.deepEqual(epicLine({ done: 0, total: 0 }), { words: "No issues yet", pct: 0 });
+  assert.deepEqual(epicLine({ done: 3, total: 5, proven: 2 }), { words: "3 of 5 done, 2 proven", pct: 60 });
+  assert.deepEqual(epicLine({ done: 0, total: 2, proven: 0 }), { words: "0 of 2 done", pct: 0 });
+  assert.deepEqual(epicLine({ done: 0, total: 0, proven: 0 }), { words: "No work yet", pct: 0 });
   assert.equal(firstLine("\n  Ship it  \nand more"), "Ship it");
   assert.equal(firstLine(""), "");
 });
@@ -59,37 +61,37 @@ test("a card's assignees are comma-separated, and shortened past three", () => {
   assert.equal(assigneesLine(["a", "b", "c", "d", "e"]), "a, b +3");
 });
 
-test("a typed pointer is an id of a kind a row may point at", () => {
+test("a typed pointer is an id of a kind a row may have as its item", () => {
   assert.deepEqual(parsePointer(""), { kind: "none" });
   assert.deepEqual(parsePointer(" iss_0abc "), { kind: "issue", id: "iss_0abc" });
   assert.deepEqual(parsePointer("fi_0abc"), { kind: "forge_item", id: "fi_0abc" });
-  assert.deepEqual(parsePointer("hw_0abc"), { kind: "workspace", id: "hw_0abc" });
+  assert.equal(parsePointer("hw_0abc"), null, "a workspace is not a row's item");
+  assert.equal(parsePointer("run_0abc"), null, "a run is attached, not a row's item");
   assert.deepEqual(parsePointer("https://example.com/x"), { kind: "link", url: "https://example.com/x" });
   assert.equal(parsePointer("http://example.com/x"), null);
   assert.equal(parsePointer("https://example.com/a b"), null);
   assert.equal(parsePointer("brd_0abc"), null);
 });
 
-test("a proofs row is proven by a link, a succeeded run or a merged PR", () => {
-  const link = { pointer: { kind: "link", url: "https://ci.example.com/1" } };
-  assert.equal(proven(link), true);
-  assert.equal(pointerLabel(link.pointer), "ci.example.com/1");
-  assert.equal(pointerHref(link, () => undefined), "https://ci.example.com/1");
-  const live = (state) => ({ state, kind: "run", number: 0, title: "manual run" });
-  assert.equal(proven({ pointer: { kind: "run", id: "run_a" }, live: live("succeeded") }), true);
-  assert.equal(proven({ pointer: { kind: "run", id: "run_a" }, live: live("running") }), false);
-  assert.equal(proven({ pointer: { kind: "run", id: "run_a" } }), false);
-  assert.equal(proven({ pointer: { kind: "forge_item", id: "fi_a" }, live: live("merged") }), true);
-  assert.equal(proven({ pointer: { kind: "none" } }), false);
+test("a Done row says how it is proven, or that it isn't yet; others say nothing", () => {
+  const issue = { kind: "issue", id: "iss_a" };
+  assert.deepEqual(proofMark({ lane: "done", pointer: issue, proof: { by: "ci" } }), { proven: true, words: "proven by CI" });
+  assert.deepEqual(proofMark({ lane: "done", pointer: issue, proof: { by: "evidence" } }), { proven: true, words: "proven" });
+  assert.deepEqual(proofMark({ lane: "done", pointer: issue }), { proven: false, words: "not proven yet" });
+  assert.equal(proofMark({ lane: "review", pointer: issue }), null);
+  assert.equal(proofMark({ lane: "done", pointer: { kind: "none" } }), null, "a note has nothing to prove");
+  assert.equal(counted({ pointer: { kind: "forge_item", id: "fi_a" } }), true);
+  assert.equal(counted({ pointer: { kind: "link", url: "https://x.example/1" } }), false);
 });
 
-test("a step moves an entry one place, or can't", () => {
-  const ids = ["a", "b", "c"];
-  assert.equal(stepBefore(ids, 0, true), null);
-  assert.deepEqual(stepBefore(ids, 2, true), { before: "b" });
-  assert.deepEqual(stepBefore(ids, 0, false), { before: "c" });
-  assert.deepEqual(stepBefore(ids, 1, false), { before: null });
-  assert.equal(stepBefore(ids, 2, false), null);
+test("an attachment's chip is its label and its state, and says nothing of what the reader can't see", () => {
+  const link = { role: "proof", pointer: { kind: "link", url: "https://ci.example.com/1" } };
+  assert.deepEqual(chipOf(link), { label: "ci.example.com/1", state: null });
+  assert.equal(pointerHref(link, () => undefined), "https://ci.example.com/1");
+  const live = { state: "merged", kind: "pr", repo: "acme/app", number: 7, title: "Fix" };
+  assert.deepEqual(chipOf({ role: "work", pointer: { kind: "forge_item", id: "fi_abc123" }, live }), { label: "acme/app#7", state: "merged" });
+  assert.deepEqual(chipOf({ role: "work", pointer: { kind: "forge_item", id: "fi_abc123" } }), { label: "PR or issue abc123", state: null });
+  assert.deepEqual(chipOf({ role: "work", pointer: { kind: "block", machine: "m", pane: "7" }, block: { state: "working" } }), { label: "agent 7", state: "working" });
 });
 
 test("the board routes read and write the same paths", () => {
@@ -141,4 +143,49 @@ test("a row sends a pointer that was picked or typed, never one it only kept", (
   assert.deepEqual(pointerToSend("iss_0abc", "", null), { pointer: picked });
   assert.deepEqual(pointerToSend("https://example.com/x", "", null), { pointer: { kind: "link", url: "https://example.com/x" } });
   assert.equal(pointerToSend("some words", "", null), null);
+});
+
+test("a board with groups is a section for each, its lanes under it, and the rows with none last", () => {
+  const row = (id, group) => ({ id, group });
+  const lanes = [
+    { id: "lane_next", title: "Next", rows: [row("a", "zon_1"), row("b", "zon_2"), row("c")] },
+    { id: "lane_doing", title: "Doing", rows: [] },
+    { id: "lane_review", title: "Review", rows: [] },
+    { id: "lane_done", title: "Done", rows: [row("d", "zon_1")] },
+  ];
+  const groups = [
+    { id: "zon_1", title: "One", progress: { done: 1, total: 2, proven: 0 } },
+    { id: "zon_2", title: "Two", progress: { done: 0, total: 0, proven: 0 } },
+  ];
+  const got = sections({ zones: lanes, groups });
+  assert.deepEqual(got.map((s) => s.group?.title ?? null), ["One", "Two", null]);
+  assert.deepEqual(got.map((s) => s.lanes.length), [4, 4, 4], "four lanes in each");
+  assert.deepEqual(got.map((s) => s.lanes.flatMap((z) => z.rows.map((r) => r.id))), [["a", "d"], ["b"], ["c"]]);
+  assert.deepEqual(got[0].lanes.map((z) => z.id), lanes.map((z) => z.id));
+  // Nothing ungrouped: no last section. A row in a group that's gone is ungrouped.
+  assert.equal(sections({ zones: lanes.map((z) => ({ ...z, rows: z.rows.filter((r) => r.group) })), groups }).length, 2);
+  assert.equal(sections({ zones: [{ id: "lane_next", title: "Next", rows: [row("x", "zon_9")] }], groups }).at(-1).lanes[0].rows[0].id, "x");
+  // No groups (or none from an old platform): the lanes as they came.
+  assert.deepEqual(sections({ zones: lanes, groups: [] }), [{ group: null, lanes }]);
+  assert.deepEqual(sections({ zones: lanes }), [{ group: null, lanes }]);
+  assert.equal(groupLine({ done: 1, total: 2 }), "1 of 2 done");
+  assert.equal(groupLine({ done: 0, total: 0 }), "no work yet");
+});
+
+test("a row's marks: merged but not closed, after a PR, and earlier agents folded", () => {
+  assert.deepEqual(marksOf({}), { merged: false, after: null, earlier: new Set() });
+  const m = marksOf({
+    marks: [
+      { kind: "merged_not_closed" },
+      { kind: "after", number: 1859, repo: "acme/app" },
+      { kind: "earlier", attachment: "att_1" },
+      { kind: "earlier", attachment: "att_2" },
+    ],
+  });
+  assert.equal(m.merged, true);
+  assert.deepEqual(m.after, { words: "after #1859", repo: "acme/app" });
+  assert.deepEqual([...m.earlier], ["att_1", "att_2"]);
+  assert.equal(marksOf({ marks: [{ kind: "after", number: 3 }] }).after.repo, undefined);
+  assert.equal(earlierLine(1), "earlier agent (1)");
+  assert.equal(earlierLine(2), "earlier agents (2)");
 });

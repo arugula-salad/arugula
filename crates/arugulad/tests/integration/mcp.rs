@@ -2798,8 +2798,8 @@ async fn an_agent_plans_a_deploy_and_asks_and_never_approves() {
 }
 
 /// A fake control's platform for the status board's tools: project `prj_1`
-/// with one board (`brd_1`: zone `zon_1` "Now" with a row `row_1` at rev 2),
-/// answering a write to the row's note at another rev with 409, and a
+/// with one board (`brd_1`: four lanes, a row `row_1` at rev 2 in Next and
+/// two in Done), answering a write to the row's note at another rev with 409, and a
 /// repoint of a row it didn't add with 403 as the platform does. Every call as it came:
 /// method and path, its body.
 #[cfg(feature = "labs")]
@@ -2818,17 +2818,29 @@ async fn fake_boards(f: FakeBoards) -> String {
         routing::{get, post},
     };
     fn view() -> Value {
+        let lane = |id: &str, title: &str, rows: Value| json!({ "id": format!("lane_{id}"), "rev": 0, "title": title, "kind": "lane", "rows": rows });
         json!({
             "board": { "id": "brd_1", "project": "prj_1", "title": "Launch", "created_by": "a1",
                        "created_at": 1, "updated_at": 1 },
-            "zones": [{ "id": "zon_1", "rev": 1, "title": "Now", "rows": [{
-                "id": "row_1", "rev": 2, "pointer": { "kind": "issue", "id": "iss_0123456789abcdef" },
-                "note": "fix login", "status": "working", "created_at": 1, "updated_at": 1 }] },
-                { "id": "zon_2", "rev": 1, "title": "PROOFS", "kind": "proofs", "rows": [
-                    { "id": "row_3", "rev": 1, "pointer": { "kind": "link", "url": "https://ci.example.com/runs/42" },
-                      "note": "CI on main", "status": "done", "created_at": 1, "updated_at": 1 },
-                    { "id": "row_4", "rev": 1, "pointer": { "kind": "run", "id": "run_ee11" },
-                      "note": "Nightly", "status": "done", "created_at": 1, "updated_at": 1 }] }],
+            "groups": [{ "id": "zon_1", "rev": 1, "title": "Phase 1", "progress": { "done": 0, "total": 1 } }],
+            "zones": [
+                lane("next", "Next", json!([{
+                    "id": "row_1", "rev": 2, "pointer": { "kind": "issue", "id": "iss_0123456789abcdef" },
+                    "note": "fix login", "status": "none", "lane": "next", "attachments": [], "group": "zon_1",
+                    "created_at": 1, "updated_at": 1 }])),
+                lane("doing", "Doing", json!([])),
+                lane("review", "Review", json!([])),
+                lane("done", "Done", json!([
+                    { "id": "row_3", "rev": 1, "pointer": { "kind": "issue", "id": "iss_aa11" },
+                      "note": "CI on main", "status": "none", "lane": "done",
+                      "attachments": [{ "id": "att_1", "role": "proof",
+                                        "pointer": { "kind": "link", "url": "https://ci.example.com/runs/42" } }],
+                      "proof": { "by": "evidence", "pointer": { "kind": "link", "url": "https://ci.example.com/runs/42" } },
+                      "created_at": 1, "updated_at": 1 },
+                    { "id": "row_4", "rev": 1, "pointer": { "kind": "issue", "id": "iss_bb22" },
+                      "note": "Nightly", "status": "none", "lane": "done", "attachments": [],
+                      "created_at": 1, "updated_at": 1 }])),
+            ],
         })
     }
     async fn any(State(f): State<FakeBoards>, req: Request) -> Response {
@@ -2869,11 +2881,30 @@ async fn fake_boards(f: FakeBoards) -> String {
                 if b["entry"] == "row" {
                     v["zones"][0]["rows"].as_array_mut().unwrap().push(json!({
                         "id": "row_2", "rev": 1, "pointer": { "kind": "none" }, "note": b["note"],
-                        "status": b["status"], "agent": { "machine": "m1", "machine_name": "geek" },
-                        "created_at": 2, "updated_at": 2 }));
+                        "status": "none", "lane": "next", "attachments": [],
+                        "agent": { "machine": "m1", "machine_name": "geek" }, "created_at": 2, "updated_at": 2 }));
                 }
                 Json(v).into_response()
             }
+            ("POST", "/api/daemon/boards/brd_1/attachments") => {
+                let mut v = view();
+                v["said"] = json!("that PR references an issue that is row row_1 on this board");
+                Json(v).into_response()
+            }
+            ("DELETE", "/api/daemon/boards/brd_1/attachments/att_1") => {
+                said(StatusCode::FORBIDDEN, "an agent takes off only the attachments its own machine made", "forbidden")
+            }
+            ("POST", "/api/daemon/boards/brd_1/entries/row_1/move" | "/api/daemon/boards/brd_1/entries/zon_1/move") => {
+                if b["zone"] == "lane_done" {
+                    return said(StatusCode::BAD_REQUEST, "lanes follow the work: a lane is never set", "bad_request");
+                }
+                Json(view()).into_response()
+            }
+            ("DELETE", "/api/daemon/boards/brd_1/entries/zon_1") => said(
+                StatusCode::FORBIDDEN,
+                "an agent removes a group only when every row in it was added by its own machine",
+                "forbidden",
+            ),
             ("DELETE", "/api/daemon/boards/brd_1/entries/row_1") => {
                 said(StatusCode::FORBIDDEN, "an agent removes only the rows its own machine added", "forbidden")
             }
@@ -2896,10 +2927,10 @@ async fn fake_boards(f: FakeBoards) -> String {
 
 /// The board tools (boards, step 3) are listed and work only with the
 /// `boards` flag on; board_read lists a project's boards and reads one as
-/// zones, rows and 72-column text; board_write adds a row, sets a status
-/// with no rev, says to read again on a 409, needs a rev for a note, makes
-/// a board with its zones and closes it, and passes the platform's refusal
-/// of a repoint through.
+/// lanes, rows and 72-column text; board_write adds a row, sets needs_input
+/// with no rev, offers no zone, move or other status, attaches proof, says to
+/// read again on a 409, needs a rev for a note, makes a board and closes it,
+/// and passes the platform's refusals through.
 #[cfg(feature = "labs")]
 #[tokio::test(flavor = "multi_thread")]
 async fn an_agent_reads_and_writes_a_board_where_the_flag_is_on() {
@@ -2935,6 +2966,8 @@ async fn an_agent_reads_and_writes_a_board_where_the_flag_is_on() {
             "add_row",
             "set",
             "move",
+            "attach",
+            "detach",
             "remove_row",
             "create_board",
             "edit_board",
@@ -2959,27 +2992,61 @@ async fn an_agent_reads_and_writes_a_board_where_the_flag_is_on() {
     let read = call(&s, "board_read", json!({ "board": "brd_1" })).await;
     assert_eq!(read["zones"][0]["rows"][0]["rev"], 2, "{read}");
     let text = read["text"].as_str().unwrap();
-    assert!(text.starts_with("Launch\nNow") && text.contains("◐ iss_01234567"), "{text}");
+    assert!(
+        text.starts_with("Launch\n# Phase 1") && text.contains("Next") && text.contains("○ iss_01234567"),
+        "{text}"
+    );
     assert!(text.lines().all(|l| l.chars().count() <= 72), "{text}");
     assert!(text.contains("[proven] CI on main") && text.contains("[not proven yet] Nightly"), "{text}");
+    assert!(read["summary"].as_str().unwrap().contains("3 row(s): 1 next, 0 doing, 0 review, 2 done"), "{read}");
 
-    let added = call(
-        &s,
-        "board_write",
-        json!({ "kind": "add_row", "board": "brd_1", "zone": "zon_1", "note": "agent row", "status": "working" }),
-    )
-    .await;
+    let added = call(&s, "board_write", json!({ "kind": "add_row", "board": "brd_1", "note": "agent row" })).await;
     assert_eq!(added["zones"][0]["rows"][1]["agent"]["machine_name"], "geek", "{added}");
     assert!(added["summary"].as_str().unwrap().contains("as your person's agent"), "{added}");
     let link = json!({ "kind": "link", "url": "https://ci.example.com/runs/43" });
+    let attached = call(
+        &s,
+        "board_write",
+        json!({ "kind": "attach", "board": "brd_1", "row": "row_1", "role": "proof", "pointer": link }),
+    )
+    .await;
+    assert!(attached["summary"].as_str().unwrap().contains("Note: that PR references an issue"), "{attached}");
+    call(&s, "board_write", json!({ "kind": "set", "board": "brd_1", "row": "row_1", "status": "needs_input" })).await;
+    call(&s, "board_write", json!({ "kind": "set", "board": "brd_1", "row": "row_1", "note": "ok", "rev": 2 })).await;
+    // Lanes follow the work: no other status, and no move to a lane.
+    for refusal in [
+        json!({ "kind": "set", "board": "brd_1", "row": "row_1", "status": "done" }),
+        json!({ "kind": "move", "board": "brd_1", "row": "row_1", "zone": "lane_done" }),
+    ] {
+        refused(&s, "board_write", refusal).await;
+    }
+    // Groups are the plan: made, renamed, moved, deleted, and rows put in and out of them.
+    let made = call(&s, "board_write", json!({ "kind": "add_zone", "board": "brd_1", "title": "Phase 2" })).await;
+    assert!(
+        made["summary"].as_str().unwrap().contains("Added a group")
+            && made["summary"].as_str().unwrap().contains("1 group(s)"),
+        "{made}"
+    );
     call(
         &s,
         "board_write",
-        json!({ "kind": "add_row", "board": "brd_1", "zone": "zon_2", "note": "CI", "status": "open", "pointer": link }),
+        json!({ "kind": "edit_zone", "board": "brd_1", "zone": "zon_1", "rev": 1, "title": "One" }),
     )
     .await;
-    call(&s, "board_write", json!({ "kind": "set", "board": "brd_1", "row": "row_1", "status": "done" })).await;
-    call(&s, "board_write", json!({ "kind": "set", "board": "brd_1", "row": "row_1", "note": "ok", "rev": 2 })).await;
+    call(&s, "board_write", json!({ "kind": "move_zone", "board": "brd_1", "zone": "zon_1", "before": "zon_2" })).await;
+    call(&s, "board_write", json!({ "kind": "move", "board": "brd_1", "row": "row_1", "zone": null })).await;
+    call(
+        &s,
+        "board_write",
+        json!({ "kind": "move", "board": "brd_1", "row": "row_1", "zone": "zon_1", "before": "row_9" }),
+    )
+    .await;
+    call(&s, "board_write", json!({ "kind": "add_row", "board": "brd_1", "note": "in a group", "zone": "zon_1" }))
+        .await;
+    let held = refused(&s, "board_write", json!({ "kind": "delete_zone", "board": "brd_1", "zone": "zon_1" })).await;
+    assert!(held.contains("every row in it was added by its own machine"), "the platform's refusal: {held}");
+    let taken = refused(&s, "board_write", json!({ "kind": "detach", "board": "brd_1", "attachment": "att_1" })).await;
+    assert!(taken.contains("only the attachments its own machine made"), "the platform's refusal: {taken}");
 
     let stale = refused(
         &s,
@@ -2994,7 +3061,7 @@ async fn an_agent_reads_and_writes_a_board_where_the_flag_is_on() {
     let repoint = refused(
         &s,
         "board_write",
-        json!({ "kind": "set", "board": "brd_1", "row": "row_1", "rev": 2, "pointer": { "kind": "run", "id": "run_ab12" } }),
+        json!({ "kind": "set", "board": "brd_1", "row": "row_1", "rev": 2, "pointer": { "kind": "issue", "id": "iss_ab12" } }),
     )
     .await;
     assert!(repoint.contains("repoints only the rows its own machine added"), "the platform's refusal: {repoint}");
@@ -3002,7 +3069,7 @@ async fn an_agent_reads_and_writes_a_board_where_the_flag_is_on() {
     let made = call(
         &s,
         "board_write",
-        json!({ "kind": "create_board", "project": "prj_1", "title": "Epic", "goal": "Ship it", "zones": ["Now", "Later"] }),
+        json!({ "kind": "create_board", "project": "prj_1", "title": "Epic", "goal": "Ship it" }),
     )
     .await;
     assert!(made["summary"].as_str().unwrap().contains("Made a board"), "{made}");
@@ -3015,21 +3082,42 @@ async fn an_agent_reads_and_writes_a_board_where_the_flag_is_on() {
     assert!(no.contains("its own machine added"), "{no}");
 
     let calls = fake.calls.lock().unwrap().clone();
-    let status = calls.iter().find(|(a, b)| a.starts_with("PUT ") && b["status"] == "done").unwrap();
-    assert_eq!(status.1, json!({ "id": "row_1", "status": "done" }), "a status names no rev: {status:?}");
+    let status = calls.iter().find(|(a, b)| a.starts_with("PUT ") && b["status"] == "needs_input").unwrap();
+    assert_eq!(status.1, json!({ "id": "row_1", "status": "needs_input" }), "a status names no rev: {status:?}");
+    assert!(!calls.iter().any(|(_, b)| b["status"] == "done"), "a refused status never goes out");
+    let moves: Vec<_> =
+        calls.iter().filter(|(a, _)| a.contains("/move")).map(|(a, b)| (a.as_str(), b.clone())).collect();
+    assert_eq!(
+        moves,
+        [
+            (
+                "POST /api/daemon/boards/brd_1/entries/row_1/move",
+                json!({ "rev": null, "zone": "lane_done", "before": null })
+            ),
+            ("POST /api/daemon/boards/brd_1/entries/zon_1/move", json!({ "before": "zon_2" })),
+            ("POST /api/daemon/boards/brd_1/entries/row_1/move", json!({ "rev": null, "zone": null, "before": null })),
+            (
+                "POST /api/daemon/boards/brd_1/entries/row_1/move",
+                json!({ "rev": null, "zone": "zon_1", "before": "row_9" })
+            ),
+        ],
+        "a move out of a group keeps its null zone: {calls:?}"
+    );
+    let zone = calls.iter().find(|(a, b)| a.starts_with("PUT ") && b["entry"] == "zone").unwrap();
+    assert_eq!(zone.1, json!({ "entry": "zone", "title": "Phase 2" }), "{zone:?}");
+    let grouped = calls.iter().find(|(a, b)| a.starts_with("PUT ") && b["note"] == "in a group").unwrap();
+    assert_eq!(grouped.1, json!({ "entry": "row", "zone": "zon_1", "note": "in a group" }), "{grouped:?}");
     let add = calls.iter().find(|(a, b)| a.starts_with("PUT ") && b["entry"] == "row").unwrap();
-    assert_eq!(add.1, json!({ "entry": "row", "zone": "zon_1", "note": "agent row", "status": "working" }), "{add:?}");
+    assert_eq!(add.1, json!({ "entry": "row", "note": "agent row" }), "{add:?}");
     let make = calls.iter().find(|(a, _)| a.starts_with("POST /api/daemon/projects/prj_1/boards")).unwrap();
     assert_eq!(make.1, json!({ "title": "Epic", "goal": "Ship it" }), "{make:?}");
-    let zones: Vec<_> = calls.iter().filter(|(a, b)| a.starts_with("PUT ") && b["entry"] == "zone").collect();
-    assert_eq!(
-        zones.iter().map(|z| z.1["title"].as_str().unwrap()).collect::<Vec<_>>(),
-        ["Now", "Later"],
-        "its zones in order: {zones:?}"
-    );
     let close = calls.iter().find(|(a, _)| a.starts_with("POST /api/daemon/boards/brd_1/close")).unwrap();
     assert_eq!(close.1, json!({ "done_note": "Log in." }), "{close:?}");
-    let linked = calls.iter().find(|(a, b)| a.starts_with("PUT ") && b["zone"] == "zon_2").unwrap();
-    assert_eq!(linked.1["pointer"], link, "a link pointer goes to the platform as it is: {linked:?}");
+    let linked = calls.iter().find(|(a, _)| a.starts_with("POST /api/daemon/boards/brd_1/attachments")).unwrap();
+    assert_eq!(
+        linked.1,
+        json!({ "row": "row_1", "pointer": link, "role": "proof" }),
+        "a link goes to the platform as it is: {linked:?}"
+    );
     s.cancel().await.unwrap();
 }

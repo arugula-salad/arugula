@@ -101,6 +101,8 @@ fn routes() -> Routes {
         .route(boards::BOARD_ENTRIES, put(crate::boards::put_route))
         .route(boards::BOARD_ENTRY, axum::routing::delete(crate::boards::delete_route))
         .route(boards::BOARD_ENTRY_MOVE, post(crate::boards::move_route))
+        .route(boards::BOARD_ATTACHMENTS, post(crate::boards::attach_route))
+        .route(boards::BOARD_ATTACHMENT, axum::routing::delete(crate::boards::detach_route))
         .route(boards::AGENT_BOARD_REACH, get(crate::boards::agent::reach))
         .route(boards::AGENT_PROJECT_BOARDS, get(crate::boards::agent::list).post(crate::boards::agent::create))
         .route(boards::AGENT_BOARD, get(crate::boards::agent::get).patch(crate::boards::agent::edit))
@@ -109,6 +111,8 @@ fn routes() -> Routes {
         .route(boards::AGENT_BOARD_ENTRIES, put(crate::boards::agent::put))
         .route(boards::AGENT_BOARD_ENTRY, axum::routing::delete(crate::boards::agent::delete))
         .route(boards::AGENT_BOARD_ENTRY_MOVE, post(crate::boards::agent::move_entry))
+        .route(boards::AGENT_BOARD_ATTACHMENTS, post(crate::boards::agent::attach))
+        .route(boards::AGENT_BOARD_ATTACHMENT, axum::routing::delete(crate::boards::agent::detach))
         .route(boards::AGENT_BLOCK_STATE, put(crate::boards::agent::put_block_state))
         // Project Docs (aru-118), with chat.
         .route(project_docs::PROJECT_DOCS, get(crate::project_docs::list_route).post(crate::project_docs::create_route))

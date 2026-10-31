@@ -72,6 +72,8 @@ pub mod ingest;
 #[cfg(test)]
 mod ingest_tests;
 pub mod items;
+#[cfg(test)]
+mod lanes_tests;
 pub mod links;
 #[cfg(any(test, feature = "testing"))]
 pub mod links_tests;
