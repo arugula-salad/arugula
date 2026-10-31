@@ -6,15 +6,25 @@
 import { useMemo } from "preact/hooks";
 import { CodeBlock } from "../ui/codeblock";
 import { Markdown, type ChatKit } from "../ui/markdown";
-import type { IsMe } from "../ui/markup";
+import type { ForgeInline, IsMe } from "../ui/markup";
 import { SHORTCODE, onlyEmoji, useEmoji, withEmoji } from "./emoji";
 
-export function ChatMarkdown({ text, isMe, landed }: { text: string; isMe?: IsMe; landed?: (token: string) => boolean }) {
+export function ChatMarkdown({
+  text,
+  isMe,
+  landed,
+  machine,
+}: {
+  text: string;
+  isMe?: IsMe;
+  landed?: (token: string) => boolean;
+  machine?: ForgeInline["machine"];
+}) {
   // The shortcode table comes only for a text that has one.
   const table = useEmoji(SHORTCODE.test(text));
   const kit = useMemo<ChatKit>(
     () => ({ text: table ? (s) => withEmoji(s, table) : undefined, jumbo: onlyEmoji(text, table), Code: CodeBlock }),
     [text, table],
   );
-  return <Markdown text={text} refs={null} chat={kit} isMe={isMe} landed={landed} />;
+  return <Markdown text={text} refs={null} chat={kit} isMe={isMe} landed={landed} machine={machine} />;
 }

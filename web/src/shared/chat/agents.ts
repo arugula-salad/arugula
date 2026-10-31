@@ -82,3 +82,53 @@ export function chipLabel(agents: ChatRoomAgent[]): string {
   const n = new Set(agents.map((a) => a.machine)).size;
   return `${n} ${n === 1 ? "machine's" : "machines'"} agents`;
 }
+
+/** A session's name as `@machine/session` spells it (#429): lowercase, each
+ * run of anything but letters and digits one `-`, none at the ends. The
+ * daemon matches by this rule (agent_mentions.rs `slug`), so they agree. */
+export function sessionSlug(name: string): string {
+  return name.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "-").replace(/^-+|-+$/g, "");
+}
+
+/** A machine `@` offers (#428), or one of its recent sessions. */
+export interface MachineMention {
+  /** What goes after the `@`: the machine's name, lowercased as control
+   * resolves it, or `<machine>/<session slug>`. */
+  token: string;
+  machine: string;
+  /** The machine's name, or the session's. */
+  name: string;
+  /** With a session: the machine it's under. */
+  session?: boolean;
+}
+
+/** What control's `@` can name (platform chat.rs `at_words`): letters,
+ * digits, `_`, `-` and `.`, not ending in `-` or `.`. */
+const MENTIONABLE_WORD = /^[\p{L}\p{N}_.-]*[\p{L}\p{N}_]$/u;
+
+/** The machines a mention reaches in a room (control says: `mentionable`),
+ * each followed by its recent sessions, for `@`. `typed` is what follows the
+ * `@`: `geek` filters machines by name, `geek/ux` the sessions of the machine
+ * that is `geek`. A name that isn't one word to type can't be mentioned
+ * and isn't offered. */
+export function machineMentions(agents: ChatRoomAgent[], typed: string): MachineMention[] {
+  const q = typed.toLowerCase();
+  const slash = q.indexOf("/");
+  const out: MachineMention[] = [];
+  const seen = new Set<string>();
+  for (const a of agents) {
+    const token = a.machine_name.toLowerCase();
+    if (!a.mentionable || !token || !MENTIONABLE_WORD.test(token) || seen.has(token)) continue;
+    seen.add(token);
+    const mine = a.sessions.map((s) => ({ name: s, slug: sessionSlug(s) })).filter((s, i, all) => s.slug && all.findIndex((t) => t.slug === s.slug) === i);
+    if (slash >= 0) {
+      if (token !== q.slice(0, slash)) continue;
+      const tail = q.slice(slash + 1);
+      const shown = mine.filter((s) => s.slug.startsWith(tail));
+      if (shown.length) out.push({ token, machine: a.machine, name: a.machine_name }, ...shown.map((s) => ({ token: `${token}/${s.slug}`, machine: a.machine, name: s.name, session: true })));
+    } else if (token.startsWith(q) || a.machine_name.toLowerCase().startsWith(q)) {
+      out.push({ token, machine: a.machine, name: a.machine_name }, ...mine.map((s) => ({ token: `${token}/${s.slug}`, machine: a.machine, name: s.name, session: true })));
+    }
+  }
+  return out;
+}

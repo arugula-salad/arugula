@@ -11,6 +11,7 @@ import { usePlatformApi } from "../platform-api";
 import { useSubscribe } from "../ui/hooks";
 import { agentOwners, chipLabel } from "./agents";
 import { closeOnEscape } from "./escape";
+import { MachineIcon } from "./icons";
 
 export function AgentsChip({ room }: { room: string }) {
   useSubscribe((fn) => chat.subscribe(fn));
@@ -37,12 +38,7 @@ export function AgentsChip({ room }: { room: string }) {
   return (
     <div class="agents-chip" ref={box} data-room-agents>
       <button class={open ? "chat-info agents-chip-btn on" : "chat-info agents-chip-btn"} aria-expanded={open} aria-haspopup="dialog" title="Agents that can read this room" data-agents-chip onClick={() => setOpen(!open)}>
-        <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
-          <rect x="3" y="5.5" width="10" height="7" rx="2" />
-          <path d="M8 5.5V3M6.5 3h3" />
-          <circle cx="6" cy="9" r=".6" fill="currentColor" />
-          <circle cx="10" cy="9" r=".6" fill="currentColor" />
-        </svg>
+        <MachineIcon />
         <span class="agents-chip-text">{chipLabel(agents)}</span>
       </button>
       {open && (

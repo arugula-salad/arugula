@@ -198,6 +198,15 @@ pub struct ChatRoomAgent {
     /// What it may do here: `threads.read`, `threads.post`, and on a
     /// native issue's thread `issues.write`.
     pub powers: Vec<String>,
+    /// Whether an `@` of the machine's name reaches it here (#428): control's
+    /// own check when it routes a mention, not the page's reading of `powers`.
+    #[serde(default)]
+    pub mentionable: bool,
+    /// With `mentionable`: the names of the sessions its agents posted from
+    /// in this room in the last week, newest first, at most five (#428). Only
+    /// the room's detail fills it.
+    #[serde(default)]
+    pub sessions: Vec<String>,
 }
 
 /// The agent that wrote a message (M197): the machine whose grant it acted

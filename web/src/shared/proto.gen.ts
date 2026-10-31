@@ -1210,7 +1210,18 @@ owner: string, owner_name: string, machine: string, machine_name: string,
  * What it may do here: `threads.read`, `threads.post`, and on a
  * native issue's thread `issues.write`.
  */
-powers: Array<string>, };
+powers: Array<string>, 
+/**
+ * Whether an `@` of the machine's name reaches it here (#428): control's
+ * own check when it routes a mention, not the page's reading of `powers`.
+ */
+mentionable: boolean, 
+/**
+ * With `mentionable`: the names of the sessions its agents posted from
+ * in this room in the last week, newest first, at most five (#428). Only
+ * the room's detail fills it.
+ */
+sessions: Array<string>, };
 
 /**
  * `PATCH /api/chat/rooms/{id}`: a channel renamed or archived, by its

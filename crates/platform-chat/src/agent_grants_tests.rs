@@ -97,7 +97,8 @@ async fn an_agent_reaches_what_its_owner_granted_and_reads() {
     assert_eq!(
         detail["agents"],
         json!([{ "owner": "a", "owner_name": "a", "machine": "geek", "machine_name": "geek-box",
-                 "powers": ["threads.post", "threads.read"] }])
+                 "powers": ["threads.post", "threads.read"],
+                 "mentionable": true, "sessions": [] }])
     );
     let (_, detail) = call(&base, "b", "GET", "/api/chat/rooms/dm_ab", None).await;
     assert_eq!(detail["agents"][0]["powers"], json!(["threads.read"]), "a DM says so too: {detail}");

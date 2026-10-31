@@ -17,7 +17,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "preac
 import { chat, type PaneQuote } from "../chat-store";
 import type { ChatMessage, ChatRoom } from "../proto";
 import { AgentsChip } from "./agents-chip";
-import { authorLabel, isSystemLine } from "./agents";
+import { authorLabel, isSystemLine, machineMentions } from "./agents";
 import { ChatMarkdown } from "./chat-markdown";
 import { mentionToken } from "../ui/markup";
 import { MsgAvatar } from "./avatar";
@@ -45,7 +45,8 @@ import { answerVia, SaidAvatar, SaidHead, saidOf, SessionCardMessage, sessionOf 
 import { dmLabel } from "./members";
 import { handled } from "./escape";
 import { useStickToBottom } from "./stick";
-import { BookmarkIcon } from "./icons";
+import { BookmarkIcon, MachineIcon } from "./icons";
+import { presence } from "./presence";
 import { Time } from "../ui/time";
 
 // ---- machines, by control's id for them
@@ -528,6 +529,13 @@ export function RoomMessage({
   // The same function while it's for the same people: Markdown parses again for a new one.
   const landed = useCallback((t: string) => forMe && chat.isMe(t), [forMe]);
   const [copied, setCopied] = useState(false);
+  // `@geek`, when geek is a machine this message mentions: its icon (#428).
+  const heard = m.mentions.filter((x) => x.startsWith("machine:"));
+  const machineIcon = useCallback(
+    (word: string) =>
+      heard.some((id) => chat.agents(room.id).some((a) => `machine:${a.machine}` === id && a.machine_name.toLowerCase() === word)) ? <MachineIcon size={13} /> : null,
+    [room.id, heard.join(" ")],
+  );
   // Which of its pop-ups is open: the emoji menu, the ⋯ menu, or the sheet
   // a long-press opens on a phone (the emoji and the menu's items together).
   const [panel, setPanel] = useState<"react" | "menu" | "sheet" | null>(null);
@@ -659,7 +667,7 @@ export function RoomMessage({
             }}
           />
         ) : (
-          m.text && <ChatMarkdown text={m.text} isMe={chat.isMe} landed={landed} />
+          m.text && <ChatMarkdown text={m.text} isMe={chat.isMe} landed={landed} machine={machineIcon} />
         )}
         {m.edited !== null && !editing && <span class="thread-tag" title={new Date(m.edited).toLocaleString()}>(edited)</span>}
         <PinnedMark m={m} />
@@ -844,7 +852,15 @@ function PaneChip({ pane, quote }: { pane: NonNullable<ChatMessage["pane"]>; quo
  * matches a login, a whole name, or the one word a team's roster calls
  * someone. A name with spaces can't be typed after `@`, so it's their
  * roster word, from the teams this page knows. */
-type Mentionable = { token: string; name: string; who: string; note?: string };
+type Mentionable = {
+  token: string;
+  name: string;
+  who: string;
+  note?: string;
+  /** A machine's (#428), or with `session`, one of its sessions, under it. */
+  machine?: string;
+  session?: boolean;
+};
 
 function mentionables(api: PlatformApi, room: string): Mentionable[] {
   const out: Mentionable[] = [];
@@ -857,6 +873,16 @@ function mentionables(api: PlatformApi, room: string): Mentionable[] {
     if (token) out.push({ token, name: p.name, who: p.account });
   }
   return out;
+}
+
+/** The most rows of machines and their sessions `@` lists (#428). */
+const MACHINE_ROWS = 12;
+
+/** A machine's dot (#428): lit while control has its daemon connected. */
+function MachineDot({ machine }: { machine: string }) {
+  useSubscribe((fn) => presence.subscribe(fn));
+  const state = presence.machine(machine) ? "online" : "offline";
+  return <span class={`presence-dot presence-${state}`} data-presence={state} title={state} role="img" aria-label={state} />;
 }
 
 export function RoomCompose({
@@ -901,6 +927,7 @@ export function RoomCompose({
   // Quoting reads a pane on a machine of yours: none, no button.
   const api = usePlatformApi();
   useSubscribe((fn) => api.subscribe(fn));
+  useSubscribe((fn) => chat.subscribe(fn));
   const canQuote = !thread && !!api.quote?.can();
   const QuotePicker = api.quote?.Picker;
   const input = useRef<HTMLTextAreaElement>(null);
@@ -929,12 +956,28 @@ export function RoomCompose({
   }, [files.add]);
 
   const caret = input.current?.selectionStart ?? text.length;
-  const typing = /(?:^|[^\w])@([\w.-]*)$/.exec(text.slice(0, caret));
+  const typing = /(?:^|[^\w])@([\w./-]*)$/.exec(text.slice(0, caret));
+  // Ask after every machine at once, so the dots are known by the first `@`.
+  const agents = chat.agents(room.id);
+  const hearing = agents.filter((a) => a.mentionable).map((a) => a.machine);
+  useEffect(() => {
+    for (const m of hearing) presence.machine(m);
+  }, [hearing.join(" ")]);
+  const machineOptions: Mentionable[] = typing
+    ? machineMentions(agents, typing[1])
+        .slice(0, MACHINE_ROWS)
+        .map((m) => {
+          const a = agents.find((x) => x.machine === m.machine)!;
+          return { token: m.token, name: m.name, who: "", machine: m.machine, session: m.session, note: m.session ? `@${m.token}` : a.owner === chat.me ? "yours" : a.owner_name };
+        })
+    : [];
   const options: Mentionable[] = typing
     ? [
         ...mentionables(api, room.id)
           .filter((p) => p.token.startsWith(typing[1].toLowerCase()) || p.name.toLowerCase().startsWith(typing[1].toLowerCase()))
           .slice(0, 6),
+        // The machines whose agents hear this room, and their recent sessions (#428).
+        ...machineOptions,
         // `@channel` and `@here` after the people (#114).
         ...broadcastOptions(typing[1]).map((b) => ({ token: b.token, name: `@${b.token}`, who: "", note: b.note })),
       ]
@@ -1061,15 +1104,30 @@ export function RoomCompose({
             <li
               key={p.who || p.token}
               role="option"
+              data-mention-machine={p.machine && !p.session ? p.token : undefined}
+              data-mention-session={p.session ? p.token : undefined}
               aria-selected={i === pick % options.length}
-              class={i === pick % options.length ? "picked" : ""}
+              class={`${i === pick % options.length ? "picked" : ""}${p.machine ? ` mention-machine-row${p.session ? " in-session" : ""}` : ""}${p.machine && !presence.machine(p.machine) ? " offline" : ""}`.trim()}
               onMouseDown={(e) => {
                 e.preventDefault();
                 choose(p.token);
               }}
             >
-              {p.who ? <MsgAvatar who={p.who} name={p.name} account={p.who} /> : <span class="mention-all" aria-hidden="true">@</span>}
-              <b>{p.who ? p.name : `@${p.token}`}</b>
+              {p.machine ? (
+                p.session ? (
+                  <span class="mention-session-gap" aria-hidden="true" />
+                ) : (
+                  <span class="avatar-wrap mention-machine-icon">
+                    <MachineIcon size={18} />
+                    <MachineDot machine={p.machine} />
+                  </span>
+                )
+              ) : p.who ? (
+                <MsgAvatar who={p.who} name={p.name} account={p.who} />
+              ) : (
+                <span class="mention-all" aria-hidden="true">@</span>
+              )}
+              <b>{p.who || p.machine ? p.name : `@${p.token}`}</b>
               <span>{p.note ?? `@${p.token}`}</span>
             </li>
           ))}

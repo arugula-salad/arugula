@@ -19,3 +19,16 @@ export function SearchIcon({ size = 14 }: { size?: number }) {
     </svg>
   );
 }
+
+/** A machine's agent (#428): beside the machine in the `@` picker and in a
+ * message that mentions it, and on the room's agents chip. */
+export function MachineIcon({ size = 15 }: { size?: number }) {
+  return (
+    <svg class="machine-icon" viewBox="0 0 16 16" width={size} height={size} aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
+      <rect x="3" y="5.5" width="10" height="7" rx="2" />
+      <path d="M8 5.5V3M6.5 3h3" />
+      <circle cx="6" cy="9" r=".6" fill="currentColor" />
+      <circle cx="10" cy="9" r=".6" fill="currentColor" />
+    </svg>
+  );
+}
