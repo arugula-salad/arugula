@@ -16,7 +16,7 @@ use crate::{
 
 /// A flagged team world, and a board of it by bob (an editor signed in with
 /// GitHub): (base, app, team, board).
-async fn start() -> (String, Arc<crate::Platform>, String, String) {
+pub(super) async fn start() -> (String, Arc<crate::Platform>, String, String) {
     let hub = Arc::new(TestHub::default());
     let (gh, app, base) = serve(&hub).await;
     let (team, _) = world(&hub, &gh, &app).await;
@@ -29,7 +29,7 @@ async fn start() -> (String, Arc<crate::Platform>, String, String) {
     (base, app, team, id)
 }
 
-async fn add(base: &str, board: &str, pointer: Value) -> Value {
+pub(super) async fn add(base: &str, board: &str, pointer: Value) -> Value {
     let (s, v) = call(
         base,
         "bob",
@@ -42,7 +42,7 @@ async fn add(base: &str, board: &str, pointer: Value) -> Value {
     v
 }
 
-async fn attach(base: &str, board: &str, row: &str, role: &str, pointer: Value) -> Value {
+pub(super) async fn attach(base: &str, board: &str, row: &str, role: &str, pointer: Value) -> Value {
     let (s, v) = call(
         base,
         "bob",
@@ -55,14 +55,14 @@ async fn attach(base: &str, board: &str, row: &str, role: &str, pointer: Value) 
     v
 }
 
-async fn read(base: &str, who: &str, board: &str) -> Value {
+pub(super) async fn read(base: &str, who: &str, board: &str) -> Value {
     let (s, v) = call(base, who, "GET", &format!("/api/boards/{board}"), None).await;
     assert_eq!(s, 200, "{v}");
     v
 }
 
 /// Every row with the lane it is in.
-fn rows(v: &Value) -> Vec<(&str, &Value)> {
+pub(super) fn rows(v: &Value) -> Vec<(&str, &Value)> {
     v["zones"]
         .as_array()
         .unwrap()
@@ -72,15 +72,15 @@ fn rows(v: &Value) -> Vec<(&str, &Value)> {
 }
 
 /// The row whose item is `id`.
-fn on<'a>(v: &'a Value, id: &str) -> (&'a str, &'a Value) {
+pub(super) fn on<'a>(v: &'a Value, id: &str) -> (&'a str, &'a Value) {
     rows(v).into_iter().find(|(_, r)| r["pointer"]["id"] == id).unwrap_or_else(|| panic!("no row on {id}: {v}"))
 }
 
-fn fi(id: &str) -> Value {
+pub(super) fn fi(id: &str) -> Value {
     json!({ "kind": "forge_item", "id": id })
 }
 
-async fn native(base: &str, team: &str, title: &str) -> (String, u64) {
+pub(super) async fn native(base: &str, team: &str, title: &str) -> (String, u64) {
     let (s, i) =
         call(base, "bob", "POST", &format!("/api/projects/{team}/issues"), Some(json!({ "title": title }))).await;
     assert_eq!(s, 200, "{i}");
@@ -88,7 +88,7 @@ async fn native(base: &str, team: &str, title: &str) -> (String, u64) {
 }
 
 #[allow(clippy::too_many_arguments)]
-fn item(
+pub(super) fn item(
     app: &crate::Platform,
     id: &str,
     repo: u64,
@@ -109,7 +109,7 @@ fn item(
         .unwrap();
 }
 
-fn check(app: &crate::Platform, repo: u64, sha: &str, name: &str, status: &str, conclusion: Option<&str>) {
+pub(super) fn check(app: &crate::Platform, repo: u64, sha: &str, name: &str, status: &str, conclusion: Option<&str>) {
     app.db
         .c()
         .execute(

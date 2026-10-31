@@ -108,6 +108,7 @@ use lanes::{Fact, Pr, Primary};
 use refs::{IssueKey, Refs, Source, references};
 
 pub mod agent;
+pub mod auto;
 pub mod lanes;
 pub mod refs;
 pub mod work;
