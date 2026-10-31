@@ -24,11 +24,14 @@ use crate::{Deleted, forge::viewer::Readable};
 /// purge runs every few minutes, so a little under a day.
 pub const PURGE_GRACE_MS: u64 = 23 * 3600 * 1000;
 
-/// A merged PR as [`Db::merged_prs`] reads it.
+/// A merged PR as [`Db::merged_prs`] reads it: what its references are read
+/// from, as [`PrText`](super::boards::PrText) has them.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MergedPr {
+    pub id: String,
     pub number: u64,
     pub title: String,
+    pub head_ref: Option<String>,
     pub body: Option<String>,
     /// The GitHub id of whoever merged it.
     pub merged_by: Option<u64>,
@@ -283,8 +286,9 @@ impl Db {
     }
 
     /// The merged PRs of `repo` among these `numbers`, as the issues they
-    /// close are read (Arugula #432): title, body when the content cache has
-    /// it, and GitHub's id for who merged it when a `merged` event says.
+    /// close are read (Arugula #432): title, head branch, body when the
+    /// content cache has it, and GitHub's id for who merged it when a
+    /// `merged` event says.
     pub fn merged_prs(&self, repo_id: u64, numbers: &[u64]) -> anyhow::Result<Vec<MergedPr>> {
         if numbers.is_empty() {
             return Ok(vec![]);
@@ -293,7 +297,7 @@ impl Db {
         let nums = numbers.iter().map(u64::to_string).collect::<Vec<_>>().join(", ");
         self.c().query_map(
             &format!(
-                "SELECT i.number, i.title,
+                "SELECT i.id, i.number, i.title, i.head_ref,
                         (SELECT c.body FROM forge_content c
                          WHERE c.repo_id = i.repo_id AND c.number = i.number AND c.kind = 'body'
                          ORDER BY c.github_id LIMIT 1),
@@ -304,7 +308,16 @@ impl Db {
                  WHERE i.repo_id = ?1 AND i.kind = 'pr' AND i.state = 'merged' AND i.number IN ({nums})"
             ),
             params![repo_id],
-            |r| Ok(MergedPr { number: r.get(0)?, title: r.get(1)?, body: r.get(2)?, merged_by: r.get(3)? }),
+            |r| {
+                Ok(MergedPr {
+                    id: r.get(0)?,
+                    number: r.get(1)?,
+                    title: r.get(2)?,
+                    head_ref: r.get(3)?,
+                    body: r.get(4)?,
+                    merged_by: r.get(5)?,
+                })
+            },
         )
     }
 

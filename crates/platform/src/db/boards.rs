@@ -1432,6 +1432,65 @@ impl Db {
         )
     }
 
+    /// The native issues of `project` that merging PR `pr` (of `repo`)
+    /// closes (Arugula #432), by id: those its references name, by the rule
+    /// the boards attach by (`Arugula #N` is a native issue, except written
+    /// softly; any other `#N` is the native issue exported as GitHub's #N
+    /// of `repo`, else native N unless `repo` has a GitHub issue N), and
+    /// those of the rows a person or an agent attached it to as work (a
+    /// row's issue, or any native issue of its work item). Board or no
+    /// board; open or not, for the caller to say.
+    pub fn issues_closed_by(&self, project: &str, repo: u64, pr: &str, refs: &Refs) -> Result<Vec<String>> {
+        // Numbers are the platform's own: written into the statement.
+        let list = |ns: &[u64]| ns.iter().map(u64::to_string).collect::<Vec<_>>().join(", ");
+        let mut out: Vec<String> = vec![];
+        let mut add = |ids: Vec<String>| {
+            for id in ids {
+                if !out.contains(&id) {
+                    out.push(id);
+                }
+            }
+        };
+        let native: Vec<u64> = refs.closing_native().collect();
+        if !native.is_empty() {
+            add(self.c().query_map(
+                &format!("SELECT id FROM issues WHERE project_id = ?1 AND number IN ({}) ORDER BY number", list(&native)),
+                params![project],
+                |r| r.get(0),
+            )?);
+        }
+        if !refs.numbers.is_empty() {
+            let n = list(&refs.numbers);
+            add(self.c().query_map(
+                &format!(
+                    "SELECT id FROM issues WHERE project_id = ?1 AND
+                        ((github_repo_id = ?2 AND github_number IN ({n}))
+                         OR (number IN ({n}) AND NOT EXISTS (
+                             SELECT 1 FROM forge_items f
+                             WHERE f.repo_id = ?2 AND f.kind = 'issue' AND f.number = issues.number)))
+                     ORDER BY number"
+                ),
+                params![project, repo],
+                |r| r.get(0),
+            )?);
+        }
+        add(self.c().query_map(
+            "SELECT DISTINCT i.id FROM board_attachments a
+             JOIN boards b ON b.id = a.board_id
+             JOIN board_entries e ON e.board_id = a.board_id AND e.id = a.row_id
+             JOIN issues i ON i.project_id = ?1 AND
+                 ((e.target_kind = 'issue' AND e.target = i.id)
+                  OR (e.work_item IS NOT NULL AND i.id IN
+                      (SELECT w.target FROM work_item_refs w WHERE w.work_item = e.work_item AND w.system = 'native')))
+             WHERE b.project_id = ?1 AND a.target_kind = 'forge_item' AND a.target = ?2
+               AND a.role = 'work' AND a.source IS NULL
+             ORDER BY i.id",
+            params![project, pr],
+            |r| r.get(0),
+        )?);
+        Ok(out)
+    }
+
     /// Make the automatic attachments of PR `pr` (of `repo`) in `project`
     /// what its references say: attached as work to the rows
     /// [`rows_named`] finds on each board (a native issue of the project, an
