@@ -14,8 +14,17 @@
 //!   still is. The tests round-trip messages recorded from both sides.
 //! - **Be as lenient as either side was.** Deployed daemons and control
 //!   don't upgrade together, so a field either one read with
-//!   `#[serde(default)]` keeps it, and nothing here is `deny_unknown_fields`.
-//!   A field neither side needs to find is not made required.
+//!   `#[serde(default)]` keeps it. A field neither side needs to find is not
+//!   made required.
+//!
+//! Strictness is for what control parses from a daemon, and only there. A
+//! type control sends, or that a daemon reads in an answer, never has
+//! `#[serde(deny_unknown_fields)]`: a field control adds later must not break
+//! a released daemon. Where control must refuse a daemon's body with a field
+//! it doesn't list (a block state can't carry prompt text), the body holds a
+//! request-only twin with the attribute (`boards::BlockStateReport`), which
+//! converts into the lenient type the rest reads. A type that is only ever a
+//! request body may carry the attribute itself.
 
 use serde::{Deserialize, Serialize};
 
