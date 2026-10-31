@@ -14,10 +14,13 @@ import { BoardPanel } from "../../shared/boards/view";
 import { BoardError, boards } from "../../shared/boards/store";
 import { epicLine, firstLine } from "../../shared/boards/text";
 import { useSubscribe } from "../../shared/ui/hooks";
+import { PageHeader } from "../../shared/ui/page-header";
+import { StateChip } from "../../shared/ui/state-chip";
 import { names } from "../links";
 import { follow, go, pathOf } from "../router";
 import { SectionHead } from "../section-head";
 import { session, type PlatformProject } from "../session";
+import { issueTone, toneClass } from "../swarm";
 import { toast } from "../toast";
 import { mayWrite } from "./issues";
 import { Missing } from "./project";
@@ -80,8 +83,8 @@ export function useBoardsOn(): boolean {
 
 function BoardsOff() {
   return (
-    <section class="platform-section" data-boards-off>
-      <h1>Boards</h1>
+    <section class="platform-section sw-page" data-boards-off>
+      <PageHeader title="Boards" />
       <p class="dim">Boards are a Labs feature, and they're off for you. A team owner turns them on in the team's Labs, on control's page.</p>
     </section>
   );
@@ -113,8 +116,8 @@ export function AllBoardsPage() {
     return Array.isArray(l) && l.length > 0 ? [{ p, list: l }] : [];
   });
   return (
-    <section class="platform-section" data-all-boards-page>
-      <h1>Boards</h1>
+    <section class="platform-section sw-page" data-all-boards-page>
+      <PageHeader title="Boards" stats={lists && shown.length > 0 && <BoardStats list={shown.flatMap((s) => s.list)} />} />
       {lists === null && <p class="dim">Loading…</p>}
       {lists && shown.length === 0 && <p class="dim">No boards yet. Make one on a project's Boards page.</p>}
       {shown.map(({ p, list }) => {
@@ -159,8 +162,8 @@ function BoardList({ p }: { p: PlatformProject }) {
     }
   };
   return (
-    <section class="platform-section" data-boards-page>
-      <h1>Boards</h1>
+    <section class="platform-section sw-page" data-boards-page>
+      <PageHeader title="Boards" stats={list && list.length > 0 && <BoardStats list={list} />} />
       {list === null && <p class="dim">Loading…</p>}
       {list?.length === 0 && <p class="dim">No boards yet.</p>}
       {list && <BoardItems p={p} list={list} data="data-boards" />}
@@ -217,23 +220,45 @@ export function ProjectBoards({ p, list }: { p: PlatformProject; list: ProjectBo
   );
 }
 
-/** One board in a list: its title, the goal's first line and its progress (a closed board has the done note's first line instead). */
+/** What a list of boards holds, as the issues' list counts its issues: the open ones and the done. */
+function BoardStats({ list }: { list: ProjectBoard[] }) {
+  const done = list.filter((b) => b.closed_at != null).length;
+  return (
+    <div class="sw-stats" data-boards-stats>
+      <span>
+        <b>{list.length - done}</b> open
+      </span>
+      <span>
+        <b>{done}</b> done
+      </span>
+    </div>
+  );
+}
+
+/** One board in a list, a card as an issue's is, its bar the board's state (open ok, closed muted): its title, the goal's first line (a closed board has the done note's instead), its progress and its state. */
 function BoardItem({ p, b }: { p: PlatformProject; b: ProjectBoard }) {
   const to = pathOf({ page: "board", project: p.id, board: b.id }, names);
   const closed = b.closed_at != null;
   const e = epicLine(b.progress);
   const line = firstLine(closed ? b.done_note : b.goal);
+  const tone = closed ? "closed" : "open";
   return (
-    <li class="board-item-row">
-      <a href={to} data-board-link={b.id} onClick={(ev) => follow(ev, to)}>
-        {b.title}
-      </a>
-      {line && <span class="board-item-line dim">{line}</span>}
-      {!closed && (
-        <span class="board-item-progress dim" data-board-progress>
-          {e.words}
-        </span>
-      )}
+    <li class={`board-card sw-card ${toneClass(issueTone(tone))}`}>
+      <div class="board-card-head">
+        <a href={to} class="board-card-title" data-board-link={b.id} onClick={(ev) => follow(ev, to)}>
+          {b.title}
+        </a>
+        <StateChip tone={issueTone(tone)}>{closed ? "Done" : "Open"}</StateChip>
+      </div>
+      {line && <p class="board-card-line dim">{line}</p>}
+      <div class="board-card-progress dim" data-board-progress>
+        {b.progress.total > 0 && (
+          <div class="board-bar" role="progressbar" aria-valuemin={0} aria-valuemax={b.progress.total} aria-valuenow={b.progress.done} aria-label={e.words}>
+            <i style={{ width: `${e.pct}%` }} />
+          </div>
+        )}
+        <span>{e.words}</span>
+      </div>
     </li>
   );
 }
@@ -244,7 +269,7 @@ function BoardItems({ p, list, data }: { p: PlatformProject; list: ProjectBoard[
   const done = list.filter((b) => b.closed_at != null);
   return (
     <>
-      <ul class="platform-list board-list" {...{ [data]: true }}>
+      <ul class="board-list sw-cards" {...{ [data]: true }}>
         {open.map((b) => (
           <BoardItem key={b.id} p={p} b={b} />
         ))}
@@ -252,7 +277,7 @@ function BoardItems({ p, list, data }: { p: PlatformProject; list: ProjectBoard[
       {done.length > 0 && (
         <details class="board-done-list" data-boards-done>
           <summary>Done ({done.length})</summary>
-          <ul class="platform-list board-list">
+          <ul class="board-list sw-cards">
             {done.map((b) => (
               <BoardItem key={b.id} p={p} b={b} />
             ))}

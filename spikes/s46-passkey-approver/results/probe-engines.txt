@@ -1,0 +1,28 @@
+
+## Playwright Firefox 155.0
+- rp.s46.test: secure=true PublicKeyCredential=function
+  relatedOrigins=true uvpa=false hybrid=false
+  get(rpId rp.s46.test): SecurityError after 1 ms: The operation is insecure.
+  the browser's own well-known fetches: 0
+- app.s46.test: secure=true PublicKeyCredential=function
+  relatedOrigins=true uvpa=false hybrid=false
+  get(rpId rp.s46.test): SecurityError after 1 ms: The operation is insecure.
+  the browser's own well-known fetches: 0
+- stranger.s46.test: secure=true PublicKeyCredential=function
+  relatedOrigins=true uvpa=false hybrid=false
+  get(rpId rp.s46.test): SecurityError after 1 ms: The operation is insecure.
+  the browser's own well-known fetches: 0
+
+## Playwright WebKit 26.6
+- rp.s46.test: secure=true PublicKeyCredential=object
+  relatedOrigins=undefined uvpa=undefined hybrid=undefined
+  get(rpId rp.s46.test): TypeError after 0 ms: undefined is not an object (evaluating 'navigator.credentials.get')
+  the browser's own well-known fetches: 0
+- app.s46.test: secure=true PublicKeyCredential=object
+  relatedOrigins=undefined uvpa=undefined hybrid=undefined
+  get(rpId rp.s46.test): TypeError after 1 ms: undefined is not an object (evaluating 'navigator.credentials.get')
+  the browser's own well-known fetches: 0
+- stranger.s46.test: secure=true PublicKeyCredential=object
+  relatedOrigins=undefined uvpa=undefined hybrid=undefined
+  get(rpId rp.s46.test): TypeError after 0 ms: undefined is not an object (evaluating 'navigator.credentials.get')
+  the browser's own well-known fetches: 0

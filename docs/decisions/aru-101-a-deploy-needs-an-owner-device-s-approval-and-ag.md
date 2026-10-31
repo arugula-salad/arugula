@@ -89,5 +89,16 @@ step 7, #1317, kept from the roadmap).
 
 The standing grant never covers a deploy ("One standing grant per project
 starts runs").
+**Amended: the approver is an owner's passkey** (Jake, 2026-10-30,
+aru-126, Arugula native #385). The approval is one user-verified passkey
+assertion over its bytes, from a passkey registered to a project owner, with
+no device-key signature; the device's kind and the devices that certified it
+play no part, and an owner's role no longer has to have been given by a
+browser. Agents still never approve: they hold no passkey. Against whoever
+runs the platform, an approval is tamper-evident (the log, aru-103, and the
+hub's published passkey keys), not tamper-proof: the platform holds the
+environment's secrets and enrolls the fresh box that applies it. Approvals
+already in a deploy's log keep verifying as they were made.
+
 Where: the deploy approval (Arugula #14, M218, native), `crates/platform/src/grants.rs`, `crates/platform-api/src/auth.rs`, `crates/daemon/src/mcp/tools.rs`.
 From: #1317 (platform step 7), the plan in #1290, S37 (q3), M89 (#971, parked in #1002).
