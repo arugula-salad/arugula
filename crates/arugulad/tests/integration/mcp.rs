@@ -3235,7 +3235,7 @@ async fn an_agent_started_on_an_issue_is_on_its_row() {
     assert_eq!(r["issue"]["boards"][0], json!({ "board": "brd_1", "title": "Launch", "row": "row_1" }), "{r}");
     assert!(r["summary"].as_str().unwrap().contains("attached to its row on \"Launch\""), "{r}");
     let reported = |block: u64, title: &str| {
-        control.told.lock().unwrap().iter().any(|b| b["pane"] == block.to_string() && b["block"]["title"] == title)
+        control.told.lock().unwrap().iter().any(|b| b["pane"].as_str().is_some_and(|p| p.parse() == Ok(block)) && b["block"]["title"] == title)
     };
     d.wait_for("the report with its title", || reported(block, "Lexer lane"));
 
