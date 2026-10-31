@@ -7,14 +7,14 @@
 #
 # WHAT names the job in the message. BEFORE is the push's previous commit
 # (github.event.before), no longer the base (#1675). On main the base is
-# the newest commit before this one that passed CI (a ci/green tag and no
-# ci/revoked one, as `chant ci last-green` reads them): chant builds only
-# the newest commit of a burst, so the push's previous commit may never
+# `chant ci base` (chant#4643): the newest commit below this one whose
+# record shows every required phase built and passed on it. chant builds
+# only the newest commit of a burst, so the push's previous commit may never
 # have been built, and a docs-only push on top of it mustn't skip what it
 # changed. On another branch the base is where it left main. Exits 0 (yes,
 # run it) when anything listed changed, and whenever it can't tell: a new
-# branch with no base found, a manual run, a failed fetch, no green commit
-# among main's last 200.
+# branch with no base found, a manual run, a failed fetch, no base chant
+# can find. ARUGULA_CHANT runs chant (tests put a fake there).
 set -euo pipefail
 what=$1
 shift 2
@@ -27,12 +27,14 @@ if [ "$ref" = refs/heads/main ]; then
   if [ "$(git rev-parse --is-shallow-repository)" = true ]; then
     git fetch -q --no-tags --depth=201 origin "+refs/heads/main:refs/remotes/origin/main" 2>/dev/null || yes "can't fetch main"
   fi
-  ci=$(git ls-remote origin 'refs/tags/ci/*' 2>/dev/null) || yes "can't read the ci/ tags"
-  base=''
-  for c in $(git rev-list --first-parent --max-count 200 HEAD^ 2>/dev/null); do
-    case "$ci" in *"refs/tags/ci/revoked/$c"*) continue ;; *"refs/tags/ci/green/$c"*) base=$c; break ;; esac
-  done
-  [ -n "$base" ] || yes "no green commit among main's last 200"
+  # chant ci base reads the records on chant/lifecycle and the ci/ tags.
+  # Its tip is enough. (Never --depth in a full clone.)
+  depth=()
+  [ "$(git rev-parse --is-shallow-repository)" = true ] && depth=(--depth=1)
+  git fetch -q --no-tags ${depth[@]+"${depth[@]}"} origin "+refs/heads/chant/lifecycle:refs/remotes/origin/chant/lifecycle" "+refs/tags/ci/*:refs/tags/ci/*" 2>/dev/null ||
+    yes "can't fetch chant/lifecycle and the ci/ tags"
+  chant=${ARUGULA_CHANT:-npx --yes @intentius/chant@0.124.61}
+  base=$($chant ci base 2>/dev/null) || yes "chant ci base found no commit that passed CI"
 else
   # CI's checkout is shallow: fetch enough of this branch and of main to
   # meet. (Never --depth in a full clone: that would make it shallow.)

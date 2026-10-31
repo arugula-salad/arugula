@@ -856,6 +856,7 @@ macos cmd="tools" *args:
 # nvim when there is one (`just nvim-tips-check`).
 test-scripts:
     scripts/tests/ci-red.sh
+    scripts/tests/changed.sh
     scripts/tests/ci-nightly-red.sh
     scripts/tests/quarantine.sh
     scripts/tests/install.sh
