@@ -49,10 +49,14 @@ async fn a_chain_has_one_ready_row_and_closing_the_blocker_moves_it() {
     let (lane, rb) = on(&v, &b);
     assert_eq!(lane, "lane_next", "a blocked row stays in its lane: {v}");
     assert_eq!(rb["marks"], json!([{ "kind": "blocked_by", "number": a_no, "title": "Design" }]), "{rb}");
-    assert_eq!(rb["relations"][0]["direction"], json!("in"), "{rb}");
-    assert_eq!(rb["relations"][0]["other"]["title"], json!("Design"));
-    assert_eq!(rb["relations"][0]["removable"], json!(true));
-    assert_eq!(on(&v, &b).1["relations"][1]["direction"], json!("out"));
+    // Edges made at the same moment come back in id order, which is random.
+    let rels = rb["relations"].as_array().unwrap();
+    let inward = rels.iter().find(|r| r["direction"] == "in").expect("Design blocks Build");
+    assert_eq!(inward["other"]["title"], json!("Design"), "{rb}");
+    assert_eq!(inward["removable"], json!(true));
+    let outward = rels.iter().find(|r| r["direction"] == "out").expect("Build blocks Ship");
+    assert_eq!(outward["other"]["title"], json!("Ship"), "{rb}");
+    assert_eq!(rels.len(), 2, "{rb}");
     assert!(on(&v, &a).1.get("marks").is_none(), "{v}");
 
     app.db
