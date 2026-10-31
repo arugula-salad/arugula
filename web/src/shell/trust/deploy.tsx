@@ -1,19 +1,17 @@
-// A deploy's approval (M218), on control's page, which holds this
-// browser's device keys ("The platform page is on app.arugula.io, not on
-// the keys' origin"). The platform page's Approve and Deny come here as
-// `#deploy=dep_…`; so does a tap on the push, through the platform page.
+// A deploy's approval (M218), on control's page, where the account's
+// passkeys are made (their RP is control's host). The platform page's
+// Approve and Deny come here as `#deploy=dep_…`; so does a tap on the push,
+// through the platform page. (DK5 moves the dialog to the platform page.)
 //
 // The page reads the deploy, hashes the operation's bytes itself and shows
 // them, and hashes its `planned` event again, so where it goes, what it
 // deploys and who planned it all come from hashed bytes. Then it asks for a
-// passkey over the approval's bytes (challenge: their SHA-256) and signs
-// S37's approval with this device's key. Both go to the platform: it checks
-// the device's signature against the account's devices (an owner's
-// browser, certified by browsers back to the root), and has the hub check
-// the passkey's assertion (registered to this account, user verified, over
-// this approval). Without a passkey nothing is approved, so whatever drives
-// this browser can't approve alone. When this browser's keys came from that
-// passkey (#764), the signing key is derived from it again too.
+// passkey, user verified, over the approval's bytes (v2, DK4: challenge
+// their SHA-256), and sends the assertion: that is the approval's
+// signature. No device key signs it (aru-126). The platform checks the
+// assertion against the account's published passkey log and that the
+// account owns the project now. Whatever drives this browser can't make the
+// assertion without the person.
 
 import { useEffect, useState } from "preact/hooks";
 import { deployStateText, deployTitle, plannerText, shortRef, staleNote } from "../../shared/deploys";
@@ -25,18 +23,17 @@ import { api, type ControlSession } from "../control";
 import {
   DEFAULT_LIFE_MS,
   actorOf,
-  approvalBody,
+  approvalChallenge,
   checkPlan,
   eventCanonical,
   parseOperation,
   sha256Hex,
-  signApproval,
+  type Approval,
   type CheckedPlan,
   type Decision,
   type DeployEvent,
   type Operation,
 } from "../e2e/deploy.ts";
-import { PRF_SALTS, prfBytes, prfSignKey } from "../e2e/keys.ts";
 import { platformHref } from "../platform-links";
 import { clearHash } from "./common";
 
@@ -121,7 +118,8 @@ const b64u = (b: ArrayBuffer) =>
     .replace(/\//g, "_")
     .replace(/=+$/, "");
 
-/** What the platform takes of a passkey's assertion (the hub checks it). */
+/** What the platform takes of a passkey's assertion: the approval's
+ * signature, checked against the account's passkey log. */
 interface Assertion {
   id: string;
   clientDataJSON: string;
@@ -130,10 +128,9 @@ interface Assertion {
 }
 
 /** Ask for a passkey (user verification required), its challenge SHA-256
- * of the approval's own bytes: its assertion, and the PRF output for
- * signing when it gives one. */
-async function passkey(body: string): Promise<{ assertion: Assertion; second?: ArrayBuffer }> {
-  const challenge = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(body)));
+ * of the approval's own bytes: its assertion. */
+async function passkey(a: Approval): Promise<Assertion> {
+  const challenge = await approvalChallenge(a);
   // Only the account's own passkeys: a password manager may keep others
   // for this site (one control refused to keep, or another account's).
   const mine = await api<{ passkeys: { id: string }[] }>("/api/me/passkeys").then(
@@ -150,15 +147,11 @@ async function passkey(body: string): Promise<{ assertion: Assertion; second?: A
       rpId: location.hostname,
       userVerification: "required",
       timeout: 5 * 60 * 1000,
-      extensions: { prf: { eval: { first: PRF_SALTS.noise, second: PRF_SALTS.sign } } } as AuthenticationExtensionsClientInputs,
     },
   })) as PublicKeyCredential | null;
   if (!cred) throw new Error("no passkey chosen");
   const r = cred.response as AuthenticatorAssertionResponse;
-  return {
-    assertion: { id: b64u(cred.rawId), clientDataJSON: b64u(r.clientDataJSON), authenticatorData: b64u(r.authenticatorData), signature: b64u(r.signature) },
-    second: prfBytes((cred.getClientExtensionResults() as { prf?: { results?: { second?: unknown } } }).prf?.results?.second),
-  };
+  return { id: b64u(cred.rawId), clientDataJSON: b64u(r.clientDataJSON), authenticatorData: b64u(r.authenticatorData), signature: b64u(r.signature) };
 }
 
 export function DeployPrompt({ s, id }: { s: ControlSession; id: string }) {
@@ -184,24 +177,11 @@ export function DeployPrompt({ s, id }: { s: ControlSession; id: string }) {
     setBusy(true);
     setErr("");
     try {
-      const a = { deploy: d.id, op: d.operation.hash, account: s.account, decision, expires: Date.now() + DEFAULT_LIFE_MS, by: s.keys.id };
-      const { assertion, second } = await passkey(approvalBody(a));
-      let key = s.keys.sign.privateKey;
-      // This browser's key is the passkey's own (#764) only if it derives
-      // to this device's: otherwise, or if it won't derive, its own.
-      if (second) {
-        const derived = await prfSignKey(second).catch((e: Error) => {
-          console.warn("arugula: the passkey's PRF output gave no key:", e);
-          return null;
-        });
-        if (derived?.pub === s.keys.signPub) key = derived.key;
-      }
-      const signed = await signApproval(a, key);
+      const a: Approval = { v: 2, deploy: d.id, op: d.operation.hash, account: s.account, decision, expires: Date.now() + DEFAULT_LIFE_MS };
+      const assertion = await passkey(a);
       const after = await api<Deploy>(`/api/deploys/${d.id}/${decision === "once" ? "approve" : "deny"}`, {
-        op: signed.op,
-        expires: signed.expires,
-        by: signed.by,
-        sig: signed.sig,
+        op: a.op,
+        expires: a.expires,
         passkey: assertion,
       });
       setD(after);
@@ -253,7 +233,7 @@ export function DeployPrompt({ s, id }: { s: ControlSession; id: string }) {
               </pre>
             </>
           ) : null}
-          <p class="dim">The operation you sign:</p>
+          <p class="dim">The operation your passkey confirms:</p>
           <pre class="deploy-op" data-deploy-op>
             {d.operation.body}
           </pre>

@@ -5,9 +5,10 @@
 //! - **The approval enqueues it.** Recording an owner's approval queues
 //!   the deploy's job (`deploy` on `platform_jobs`, in the approval's own
 //!   transaction). The job ([`Apply`]) checks again before anything runs:
-//!   the approval's `expires` (else the deploy `expired`), the approving
-//!   device (still one of the owner's browsers, not removed) and the
-//!   owner's role now, by the hub's roster (else `canceled`, saying why).
+//!   the approval's `expires` (else the deploy `expired`), the owner's role
+//!   now, by the hub's roster, and that its passkey is still in the
+//!   account's published log, not removed since (DK4: else `canceled`,
+//!   saying why).
 //! - **A fresh box per deploy** (Jake, 2026-10-22). The job makes a hosted
 //!   workspace of purpose `deploy` for the project (named after the deploy,
 //!   with nothing to set up, its id kept in the job's checkpoint before its
@@ -21,8 +22,9 @@
 //!   approves the run with the deploy's approval. M212's dispatch carries it
 //!   to the box. A deploy never applies on a people's workspace.
 //! - **The box checks it too.** The work it pulls carries the deploy's
-//!   operation and the approval as signed ([`deploy_work`]); the box
-//!   checks them against the owners it pinned before it starts
+//!   operation, the approval and its passkey's assertion ([`deploy_work`]),
+//!   and the approver's passkey log (`work::work`); the box checks them
+//!   against the owners, passkey logs and origins it pinned before it starts
 //!   (`arugula_e2e::deploy::check_apply`), and that the plan is its
 //!   driver's, and refuses a run whose approval doesn't verify there.
 //! - **Started only by its run.** The box's signed `running` report starts
@@ -164,21 +166,35 @@ fn approval_of(db: &Db, deploy: &str) -> Result<Option<StoredApproval>> {
     Ok(db.deploy_approvals(deploy)?.into_iter().rev().find(|a| a.decision == arugula_e2e::deploy::Decision::Once))
 }
 
-/// Whether the approval still holds at apply time: its device is one of
-/// the approver's browsers, not removed, and the approver an owner of the
-/// project now (for a team's, made one by a browser). `Err(None)`: the hub
+/// Whether the approval still holds at apply time (DK4): not past its
+/// `expires`, the approver an owner of the project now, and its passkey
+/// still in the account's published log, not removed since: its assertion
+/// checked again against the log at `now`. A v1 (from before DK4) is
+/// checked by its passkey too, never its device. `Err(None)`: the hub
 /// didn't answer, so ask again later.
-async fn recheck(app: &Platform, a: &StoredApproval, p: &IssueProject) -> Result<(), Option<String>> {
+async fn recheck(app: &Platform, a: &StoredApproval, p: &IssueProject, now: u64) -> Result<(), Option<String>> {
     let why = |e: arugula_control_common::ApiError| {
         if matches!(e.0, StatusCode::FORBIDDEN | StatusCode::NOT_FOUND) { Some(e.1) } else { None }
     };
-    super::approving_device(app, &a.account, &a.device).await.map_err(why)?;
+    if now >= a.expires {
+        return Err(Some("its approval expired".into()));
+    }
     if super::role(app, &a.account, p, true).await.map_err(why)? != Some(TeamRole::Owner) {
         return Err(Some("the approver isn't an owner of the project now".into()));
     }
-    if let (None, Some(team)) = (&p.account, &p.team) {
-        super::owner_made_by_a_browser(app, team, &a.account).await.map_err(why)?;
-    }
+    let Some(pk) = &a.passkey else {
+        return Err(Some("the approval has no passkey assertion".into()));
+    };
+    let log = app.hub.passkey_log(&a.account).await.map_err(|_| None)?;
+    let assertion = arugula_e2e::passkey::Assertion {
+        id: pk.id.clone(),
+        client_data_json: pk.client_data_json.clone(),
+        authenticator_data: pk.authenticator_data.clone(),
+        signature: pk.signature.clone(),
+    };
+    a.signed()
+        .passkey_checks(&assertion, &log, now, &app.cfg.passkey_origins())
+        .map_err(|r| Some(format!("the approval's passkey doesn't check out now: {r}")))?;
     Ok(())
 }
 
@@ -347,7 +363,7 @@ async fn step(app: &Arc<Platform>, db: &Db, job: &mut LeasedJob, now: u64) -> Re
         return teardown(app, &d.id, &cp, now);
     }
     let p = db.issue_project(&project)?.context("a deploy's project is gone")?;
-    match recheck(app, &a, &p).await {
+    match recheck(app, &a, &p, now).await {
         Ok(()) => {}
         Err(None) => return Ok(Step::Again(now + HUB_RETRY_MS)),
         Err(Some(why)) => {
@@ -444,13 +460,20 @@ fn approve_run(
     a: &StoredApproval,
     now: u64,
 ) -> Result<std::result::Result<(), crate::db::runs::Refused>> {
-    let approval = deploy_approval(run, &a.id, &a.device);
+    // Who approved it, for the run's `approved` event: v1's device, or
+    // v2's passkey (DK4).
+    let by = match &a.passkey {
+        Some(pk) if a.v() == arugula_e2e::deploy::V2 => format!("passkey:{}", pk.id),
+        _ => a.device.clone(),
+    };
+    let approval = deploy_approval(run, &a.id, &by);
     Ok(db.move_run(&run.id, &Move::Approved { from: RunState::Pending, at: now, approval: &approval })?.map(|_| ()))
 }
 
 /// What a deploy's run carries to its box: the deploy's operation and its
-/// approval as signed, for the box to check. `None` when `run` isn't a
-/// deploy's.
+/// approval with its passkey's assertion, for the box to check (the
+/// approver's passkey log is added by `work::work`, which asks the hub).
+/// `None` when `run` isn't a deploy's.
 pub fn deploy_work(db: &Db, run: &str) -> Result<Option<DeployWork>> {
     let Some(dr) = db.deploy_run_of(run)? else { return Ok(None) };
     // An approval a start used up goes to no other run.
@@ -477,6 +500,7 @@ pub fn deploy_work(db: &Db, run: &str) -> Result<Option<DeployWork>> {
             authenticator_data: p.authenticator_data,
             signature: p.signature,
         }),
+        passkey_log: None,
         roll_back,
         approval_id: Some(dr.approval),
         driver: dr.driver,

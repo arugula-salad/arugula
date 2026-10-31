@@ -4,10 +4,10 @@
 // inbox lists the deploys waiting for the reader, and a project's
 // environments their history (`DeployRow`).
 //
-// Approving needs a device key, and this page holds none ("The platform
-// page is on app.arugula.io, not on the keys' origin"): Approve and Deny
-// open the deploy on control's page (`#deploy=dep_…`), which shows the
-// same operation, asks for a passkey and signs it there.
+// Approving takes a passkey over the approval's bytes (DK4), and this page
+// doesn't ask for one yet (DK5): Approve and Deny open the deploy on
+// control's page (`#deploy=dep_…`), which shows the same operation and asks
+// for the passkey there.
 
 import { useEffect, useState } from "preact/hooks";
 import { platformFetch, refusalOf } from "../../shared/maintenance";
@@ -51,6 +51,8 @@ export interface Deploy {
   may_approve: boolean;
   approvals: {
     id: string;
+    /** 2: a passkey's assertion alone (DK4); 1: a device's signature too. */
+    v?: number;
     decision: "once" | "deny";
     name: string;
     account: string;
@@ -170,7 +172,7 @@ export function DeployCard({ d, link, planOpen, headless }: { d: Deploy; link?: 
           <a class="primary" href={approveHref(d.id)} data-deploy-approve>
             Approve
           </a>
-          <p class="dim deploy-why">Opens on Control, where your device keys are. You confirm with a passkey there.</p>
+          <p class="dim deploy-why">Opens on Control, where you confirm with your passkey.</p>
         </div>
       ) : null}
     </article>
@@ -229,8 +231,8 @@ export function DeployPage({ id }: { id: string }) {
           <ul class="platform-list deploy-approvals">
             {d.approvals.map((a) => (
               <li key={a.id} data-deploy-approval={a.decision}>
-                {a.decision === "once" ? "Approved" : "Denied"} by {a.name || "a deleted account"} on {a.device_name}
-                {a.passkey ? ", with a passkey" : ""}, <Time at={a.at} />
+                {a.decision === "once" ? "Approved" : "Denied"} by {a.name || "a deleted account"}
+                {a.v === 2 ? " with a passkey" : <>{` on ${a.device_name}`}{a.passkey ? ", with a passkey" : ""}</>}, <Time at={a.at} />
                 {/* Only while it can still be applied (UI audit #167). */}
                 {a.decision === "once" && d.state === "approved" ? <span class="dim">
                     {" "}

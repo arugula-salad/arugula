@@ -95,17 +95,23 @@ impl Config {
             .map_or(&self.public_url, |s| s)
     }
 
-    /// Which origins may use control's passkeys, by RP ID: each of
-    /// control's sites (or its public URL, when no sites are listed) for
-    /// its own host, as the hub takes them (aru-078). Not the platform
-    /// page's yet: DK4 adds it. What the platform pins to check a passkey
-    /// against the hub's published log (`arugula_e2e::passkey::verify`).
+    /// Which origins may use control's passkeys for a platform action (a
+    /// deploy's approval), by RP ID: each of control's sites (or its public
+    /// URL, when no sites are listed) for its own host, as the hub takes
+    /// them (aru-078), and the platform page's origin for the RP of
+    /// control's public URL (DK4, aru-126: related origins, which control's
+    /// `/.well-known/webauthn` lists). What the platform pins to check a
+    /// passkey against the hub's published log
+    /// (`arugula_e2e::passkey::verify`). Sign-ins never take the page's
+    /// origin: the hub checks those itself, against its own sites only.
     pub fn passkey_origins(&self) -> arugula_e2e::passkey::Origins {
         let sites: Vec<&str> = match self.sites.is_empty() {
             true => vec![self.public_url.as_str()],
             false => self.sites.iter().map(String::as_str).filter(|s| *s != self.page_url).collect(),
         };
-        arugula_e2e::passkey::origins_of_sites(sites)
+        let mut o = arugula_e2e::passkey::origins_of_sites(sites);
+        arugula_e2e::passkey::add_related_origin(&mut o, &self.public_url, &self.page_url);
+        o
     }
 }
 
@@ -154,4 +160,28 @@ pub fn good_repo(r: &str) -> bool {
         })
     };
     ok(p.next()) && ok(p.next()) && p.next().is_none()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// DK4: a platform action's passkey may come from control's sites, each
+    /// for its own RP, and from the platform page for control's public
+    /// URL's RP only (related origins); the page is never an RP of its own.
+    #[test]
+    fn the_platform_page_uses_controls_passkeys_for_platform_actions() {
+        let cfg = Config {
+            public_url: "https://control.example".into(),
+            sites: vec!["https://control.example".into(), "https://old.example".into(), "https://app.example".into()],
+            page_url: "https://app.example".into(),
+            ..Default::default()
+        };
+        let o = cfg.passkey_origins();
+        assert_eq!(o["control.example"], ["https://control.example", "https://app.example"]);
+        assert_eq!(o["old.example"], ["https://old.example"]);
+        assert!(!o.contains_key("app.example"), "{o:?}");
+        let none = Config { page_url: String::new(), ..cfg };
+        assert_eq!(none.passkey_origins()["control.example"], ["https://control.example"]);
+    }
 }

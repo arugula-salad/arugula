@@ -14,7 +14,7 @@ use std::{sync::Arc, time::Duration};
 use arugula_control_wire::work::{Report, Reported, SecretsAsk, SecretsGiven, TAKES_DEPLOY, TAKES_RUN, Work};
 use arugula_e2e::{
     DeviceKeys,
-    deploy::{Decision, PasskeyParts, check_apply},
+    deploy::{Decision, Pinned, check_apply},
     hosted::Owners,
     now_ms,
     run::{Op, State as RunState},
@@ -201,7 +201,7 @@ pub(crate) async fn set_secret(base: &str, who: &str, env: &str, name: &str) -> 
     call(base, who, "POST", &format!("/api/environments/{env}/secrets/{name}"), Some(json!({ "value": SECRET }))).await
 }
 
-/// Planned by b and approved by a's phone, good until `expires`.
+/// Planned by b and approved with a's passkey (v2), good until `expires`.
 pub(crate) async fn approved(
     base: &str,
     hub: &TestHub,
@@ -210,12 +210,12 @@ pub(crate) async fn approved(
     sha: &str,
     expires: u64,
 ) -> (String, String) {
-    let a = devices(hub, "a");
+    devices(hub, "a");
     let (id, op) = asked(base, "b", t, env, sha).await;
     let body = if expires == 0 {
-        signed(&a.phone, "a", &id, &op, Decision::Once)
+        signed("a", &id, &op, Decision::Once)
     } else {
-        signed_until(&a.phone, "a", &id, &op, Decision::Once, expires)
+        signed_until("a", &id, &op, Decision::Once, expires)
     };
     let (st, d) = call(base, "a", "POST", &format!("/api/deploys/{id}/approve"), Some(body)).await;
     assert_eq!((st, &d["state"]), (200, &json!("approved")), "{d}");
@@ -288,17 +288,27 @@ async fn an_approved_deploy_is_applied_by_its_run_with_its_secrets_once() {
         (dw.operation.hash(), dw.approval.op.clone(), dw.secrets.clone()),
         (op.clone(), op.clone(), vec!["APP_TOKEN".to_owned()])
     );
-    // The box's own check, with the team's roster and certificates as it
-    // pins them.
+    // The box's own check (DK4), with the team's roster, the owner's
+    // passkey log and the origins as it pins them, and the log the work
+    // carried.
     use crate::HubPort as _;
     let roster = hub.team_rosters("t").await.unwrap().pop().unwrap();
-    let trust = hub.device_trust("a").await.unwrap().unwrap();
-    let children: arugula_e2e::cert::LegacyAppChildren = [("a".to_owned(), trust.legacy_app_children)].into();
-    let certs: arugula_e2e::team::AccountCerts = [("a".to_owned(), (trust.certs, trust.revocations))].into();
+    let certs = arugula_e2e::team::AccountCerts::new();
     let owners = Owners::Team { roster: &roster, certs: &certs };
+    let logs = [("a".to_owned(), hub.passkey_log("a").await.unwrap())].into();
+    let origins = app.cfg.passkey_origins();
+    let pinned = Pinned { owners: &owners, passkey_logs: &logs, origins: &origins };
+    assert_eq!(dw.approval.v, arugula_e2e::deploy::V2);
+    assert_eq!(dw.passkey_log.as_ref(), logs.get("a"), "the work carries the approver's log");
     let pk = dw.passkey.as_ref().unwrap();
-    let parts = PasskeyParts { client_data_json: &pk.client_data_json, authenticator_data: &pk.authenticator_data };
-    assert_eq!(check_apply(&dw.approval, &dw.operation, &id, &owners, &children, Some(parts), now_ms()), Ok(()));
+    let assertion = crate::approvals::assertion_of(&crate::hub::PasskeyAssertion {
+        id: pk.id.clone(),
+        client_data_json: pk.client_data_json.clone(),
+        authenticator_data: pk.authenticator_data.clone(),
+        signature: pk.signature.clone(),
+    });
+    let check = |carried| check_apply(&dw.approval, &dw.operation, &id, &pinned, Some(&assertion), carried, now_ms());
+    assert_eq!(check(dw.passkey_log.as_ref()), Ok(()));
 
     // No secrets before it runs.
     assert!(matches!(ask(&app, &m, &run.id).await, SecretsGiven::Refused { .. }));
@@ -429,6 +439,78 @@ async fn an_approver_who_isnt_an_owner_now_isnt_applied() {
     assert!(box_of(&app, &id).is_none() && fake.boxes().is_empty(), "no box was made");
 }
 
+/// DK4: at apply time the approval's passkey must still be in the
+/// approver's published log: one removed since (a lost phone) cancels the
+/// deploy before any box is made.
+#[tokio::test]
+async fn a_passkey_removed_since_its_approval_isnt_applied() {
+    let (hub, app, base, t, fake) = world().await;
+    let env = production(&base, &t).await;
+    let (id, _) = approved(&base, &hub, &t, &env, "lostphone", 0).await;
+    hub.passkey_removed("pk-a", now_ms());
+    settle(&app).await;
+    assert_eq!(state(&app, &id), State::Canceled);
+    let why = app.db.deploy_history(&id).unwrap().pop().unwrap().detail_json().unwrap();
+    assert!(why["reason"].as_str().unwrap().contains("passkey"), "{why}");
+    assert!(box_of(&app, &id).is_none() && fake.boxes().is_empty(), "no box was made");
+}
+
+/// DK4's rollout: a v1 approval (a device's signature beside the passkey)
+/// recorded before the switch, its apply still to come, is applied: the job
+/// and the box check it by its passkey, as they check a v2. Its run's
+/// approval names its device.
+#[tokio::test]
+async fn a_v1_approval_from_before_the_switch_still_applies() {
+    let (hub, app, _base, t, _fake) = world().await;
+    let base = _base;
+    let env = production(&base, &t).await;
+    set_secret(&base, "a", &env, "APP_TOKEN").await;
+    let a = devices(&hub, "a");
+    let (id, op) = asked(&base, "b", &t, &env, "beforedk4").await;
+    let (_, operation) = app.db.deploy_operation(&id).unwrap().unwrap();
+    let expires = now_ms() + 3_600_000;
+    let v1 = arugula_e2e::deploy::Approval::v1(&a.phone, &id, &operation, "a", Decision::Once, expires);
+    assert_eq!(v1.op, op);
+    let pk = crate::deploys_tests::passkey_assertion("a", &v1.body());
+    let recorded = crate::db::deploys::VerifiedApproval::unchecked_for_tests(
+        &id,
+        &operation.plan,
+        &operation.planned,
+        &v1.op,
+        "a",
+        &v1.by,
+        crate::db::deploys::Decision::Once,
+        expires,
+        &v1.sig,
+    )
+    .with_passkey_for_tests(crate::db::deploys::PasskeyProof {
+        id: pk.id.clone(),
+        client_data_json: pk.client_data_json.clone(),
+        authenticator_data: pk.authenticator_data.clone(),
+        signature: pk.signature.clone(),
+    });
+    app.db.record_deploy_approval(&recorded, "Pixel", now_ms()).unwrap().unwrap();
+    let m = boot(&app, &hub, &id).await;
+    let dr = app.db.deploy_run(&id).unwrap().expect("its run is made");
+    let run = app.db.run(&dr.run).unwrap().unwrap();
+    assert_eq!(run.state, RunState::Approved, "the job's recheck took it");
+    let w = pull(&app, &m, &[TAKES_RUN, TAKES_DEPLOY]).await;
+    let dw = w.items[0].deploy.as_ref().unwrap();
+    assert_eq!(dw.approval, v1);
+    use crate::HubPort as _;
+    let roster = hub.team_rosters("t").await.unwrap().pop().unwrap();
+    let certs = arugula_e2e::team::AccountCerts::new();
+    let owners = Owners::Team { roster: &roster, certs: &certs };
+    let logs = [("a".to_owned(), hub.passkey_log("a").await.unwrap())].into();
+    let origins = app.cfg.passkey_origins();
+    let pinned = Pinned { owners: &owners, passkey_logs: &logs, origins: &origins };
+    assert_eq!(
+        check_apply(&dw.approval, &dw.operation, &id, &pinned, Some(&pk), dw.passkey_log.as_ref(), now_ms()),
+        Ok(()),
+        "the box takes it by its passkey"
+    );
+}
+
 /// A box that never comes up (it never enrolls): the deploy is canceled,
 /// saying so, and the box is deleted all the same.
 #[tokio::test]
@@ -511,7 +593,7 @@ async fn a_run_the_box_refuses_cancels_its_deploy_and_pages_its_owners() {
     let (id, _) = approved(&base, &hub, &t, &env, "refused", 0).await;
     let m = boot(&app, &hub, &id).await;
     let run = app.db.run(&app.db.deploy_run(&id).unwrap().unwrap().run).unwrap().unwrap();
-    let detail = r#"{"reason":"approval_device: not one of the owner's browsers"}"#;
+    let detail = r#"{"reason":"approval_passkey: that passkey wasn't one of the account's then"}"#;
     let r = work::report(&app, &m.m, &m.report(&run, RunState::Approved, RunState::Failed, now_ms(), detail))
         .await
         .unwrap();
@@ -537,7 +619,7 @@ async fn a_run_the_box_refuses_cancels_its_deploy_and_pages_its_owners() {
     assert_eq!(
         page.1["body"],
         json!(format!(
-            "The deploy box refused the approval for {id}: approval_device: not one of the owner's browsers"
+            "The deploy box refused the approval for {id}: approval_passkey: that passkey wasn't one of the account's then"
         ))
     );
     settle(&app).await;
@@ -718,15 +800,10 @@ async fn chant_fly_approved(base: &str, hub: &TestHub, t: &str, env: &str, sha: 
     let (st, d) = call(base, "b", "POST", &format!("/api/deploys/{id}/request"), None).await;
     assert_eq!(st, 200, "{d}");
     let op = d["operation"]["hash"].as_str().unwrap().to_owned();
-    let a = devices(hub, "a");
-    let (st, d) = call(
-        base,
-        "a",
-        "POST",
-        &format!("/api/deploys/{id}/approve"),
-        Some(signed(&a.phone, "a", &id, &op, Decision::Once)),
-    )
-    .await;
+    devices(hub, "a");
+    let (st, d) =
+        call(base, "a", "POST", &format!("/api/deploys/{id}/approve"), Some(signed("a", &id, &op, Decision::Once)))
+            .await;
     assert_eq!((st, &d["state"]), (200, &json!("approved")), "{d}");
     id
 }
@@ -894,8 +971,8 @@ async fn release_approved(base: &str, hub: &TestHub, t: &str, env: &str, sha: &s
     let (st, d) = call(base, "b", "POST", &format!("/api/deploys/{id}/request"), None).await;
     assert_eq!(st, 200, "{d}");
     let op = d["operation"]["hash"].as_str().unwrap().to_owned();
-    let a = devices(hub, "a");
-    let body = signed(&a.phone, "a", &id, &op, Decision::Once);
+    devices(hub, "a");
+    let body = signed("a", &id, &op, Decision::Once);
     let (st, d) = call(base, "a", "POST", &format!("/api/deploys/{id}/approve"), Some(body)).await;
     assert_eq!((st, &d["state"]), (200, &json!("approved")), "{d}");
     (id, text)
@@ -1170,15 +1247,10 @@ async fn planter_ship_mints_from_planters_app_and_gives_its_box_the_artifact() {
     let (st, d) = call(&base, "b", "POST", &format!("/api/deploys/{id}/request"), None).await;
     assert_eq!(st, 200, "{d}");
     let op = d["operation"]["hash"].as_str().unwrap().to_owned();
-    let a = devices(&hub, "a");
-    let (st, d) = call(
-        &base,
-        "a",
-        "POST",
-        &format!("/api/deploys/{id}/approve"),
-        Some(signed(&a.phone, "a", &id, &op, Decision::Once)),
-    )
-    .await;
+    devices(&hub, "a");
+    let (st, d) =
+        call(&base, "a", "POST", &format!("/api/deploys/{id}/approve"), Some(signed("a", &id, &op, Decision::Once)))
+            .await;
     assert_eq!((st, &d["state"]), (200, &json!("approved")), "{d}");
 
     let m = boot(&app, &hub, &id).await;

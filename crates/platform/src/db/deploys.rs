@@ -748,13 +748,13 @@ impl Decision {
 /// An approval or a deny whose signature has been checked: the only way
 /// one is recorded ([`Db::record_approval`]). Its fields are private, so
 /// storage can't be handed one that wasn't verified: outside tests, it's
-/// made only by M218's verifier, which checks the owner device's signature
-/// over the deploy's operation before it makes one.
+/// made only by M218's verifier, which checks the owner's passkey assertion
+/// over the approval's bytes (v2, DK4) before it makes one.
 ///
 /// It names the deploy, its plan's digest and the hash of its `planned`
-/// event, so the device signs the log up to the plan; recording it checks
-/// them against the deploy's row and its log. The whole of it goes in the
-/// event's detail ([`VerifiedApproval::detail`]).
+/// event, so the approval covers the log up to the plan; recording it
+/// checks them against the deploy's row and its log. The whole of it goes
+/// in the event's detail ([`VerifiedApproval::detail`]).
 ///
 /// Outside this crate (feature crates, #314) there's no making one: what
 /// names the parts compiles,
@@ -779,26 +779,28 @@ pub struct VerifiedApproval {
     deploy: String,
     plan_digest: String,
     planned_hash: String,
-    /// The operation's hash the device signed over (M218's `arugula deploy
-    /// op v1`), hex.
+    /// The operation's hash it's over (M218's `arugula deploy op v1`), hex.
     op: String,
     /// The approver: a project owner's account.
     account: String,
-    /// The approving device.
+    /// v1: the approving device. Empty in v2.
     device: String,
     decision: Decision,
     /// By when the apply must start, ms.
     expires: u64,
-    /// The device's signature, hex.
+    /// v1: the device's signature, hex. Empty in v2.
     signature: String,
-    /// The passkey assertion the hub checked over the approval's bytes
-    /// (M218): `None` only for tests' unchecked ones.
+    /// The passkey assertion checked over the approval's bytes (M218; in
+    /// v2 the whole of its signature): `None` only for tests' unchecked
+    /// ones.
     passkey: Option<PasskeyProof>,
+    /// Its format: `arugula_e2e::deploy::V1` or `V2`.
+    v: u8,
 }
 
-/// A passkey's assertion, as the hub checked it (M218): each base64url.
-/// With the passkey's public key (the hub's), anyone can check it again
-/// from the log.
+/// A passkey's assertion, as the platform checked it (M218, DK4): each
+/// base64url, with the passkey's credential id. Against the account's
+/// published passkey log (DK3), anyone can check it again.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PasskeyProof {
     pub id: String,
@@ -809,12 +811,11 @@ pub struct PasskeyProof {
 
 impl VerifiedApproval {
     /// M218's verifier ([`crate::approvals::verify`]) makes one this way,
-    /// and nothing else does: once the approving device is one of the
-    /// account's that counts (a browser's, chained to its root, not
-    /// revoked), its signature checks out over `approval`'s bytes, and `op`
-    /// (the deploy's operation as the log has it now) hashes to what it
-    /// signed. `pub(crate)`, so no other crate makes one (the type's doc
-    /// test checks that).
+    /// and nothing else does: once `passkey` checks out over `approval`'s
+    /// bytes against its account's passkey log, its account is an owner,
+    /// and `op` (the deploy's operation as the log has it now) hashes to
+    /// what it names. `pub(crate)`, so no other crate makes one (the type's
+    /// doc test checks that).
     pub(crate) fn from_checked(
         approval: &arugula_e2e::deploy::Approval,
         op: &arugula_e2e::deploy::Operation,
@@ -834,7 +835,13 @@ impl VerifiedApproval {
             expires: approval.expires,
             signature: approval.sig.clone(),
             passkey: Some(passkey),
+            v: approval.v,
         }
+    }
+
+    /// Its format: `arugula_e2e::deploy::V1` or `V2`.
+    pub fn v(&self) -> u8 {
+        self.v
     }
 
     pub fn passkey(&self) -> Option<&PasskeyProof> {
@@ -875,7 +882,16 @@ impl VerifiedApproval {
             expires,
             signature: signature.into(),
             passkey: None,
+            v: arugula_e2e::deploy::V1,
         }
+    }
+
+    /// One made without checking anything, with a passkey's assertion:
+    /// tests only (a v1 recorded before DK4, say).
+    #[cfg(any(test, feature = "testing"))]
+    pub fn with_passkey_for_tests(mut self, passkey: PasskeyProof) -> Self {
+        self.passkey = Some(passkey);
+        self
     }
 
     pub fn deploy(&self) -> &str {
@@ -907,19 +923,31 @@ impl VerifiedApproval {
     }
 
     /// What its event's detail holds: enough, with the event's deploy and
-    /// actor, to check the signature from the log.
+    /// actor, to check it from the log. A v2 (DK4) names no device and
+    /// holds no device's signature: its passkey's assertion is its
+    /// signature, checked against the account's published passkey log.
     pub fn detail(&self) -> serde_json::Value {
-        let mut d = json!({
-            "decision": self.decision.as_str(),
-            "plan": self.plan_digest,
-            "planned": self.planned_hash,
-            "op": self.op,
-            "device": self.device,
-            "expires": self.expires,
-            "signature": self.signature,
-        });
-        // M218: the passkey's assertion the hub checked over the
-        // approval's bytes.
+        let mut d = match self.v {
+            arugula_e2e::deploy::V1 => json!({
+                "decision": self.decision.as_str(),
+                "plan": self.plan_digest,
+                "planned": self.planned_hash,
+                "op": self.op,
+                "device": self.device,
+                "expires": self.expires,
+                "signature": self.signature,
+            }),
+            v => json!({
+                "v": v,
+                "decision": self.decision.as_str(),
+                "plan": self.plan_digest,
+                "planned": self.planned_hash,
+                "op": self.op,
+                "expires": self.expires,
+            }),
+        };
+        // M218: the passkey's assertion over the approval's bytes, with
+        // its credential id.
         if let Some(p) = &self.passkey {
             d["passkey"] = json!({
                 "id": p.id,

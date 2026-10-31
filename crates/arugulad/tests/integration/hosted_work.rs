@@ -201,6 +201,24 @@ impl Fake {
         out
     }
 
+    /// acct1's passkey log (DK4): one passkey, `pk`, whose key is the
+    /// root's (an Ed25519 key, as a passkey's may be), made for `c.test`.
+    fn passkey_log(&self) -> arugula_e2e::passkey::Log {
+        let added = arugula_e2e::passkey::Draft {
+            account: "acct1".into(),
+            event: arugula_e2e::passkey::Change::Added,
+            credential: "pk".into(),
+            rp: "c.test".into(),
+            alg: arugula_e2e::passkey::EDDSA,
+            key: self.root.sign_public().to_vec(),
+            aaguid: arugula_e2e::passkey::NO_AAGUID.into(),
+            at: 1,
+            by: "signup".into(),
+        }
+        .after(None);
+        arugula_e2e::passkey::Log { account: "acct1".into(), events: vec![added], began: None }
+    }
+
     fn pulls(&self) -> u32 {
         *self.pulls.lock().unwrap()
     }
@@ -228,6 +246,10 @@ async fn enroll(Axum(f): Axum<Fake>, Json(b): Json<EnrollRequest>) -> Response {
         locked: false,
         lock: None,
         legacy_app_children: None,
+        // DK4: acct1's passkey (the root's key, as an Ed25519 passkey) and
+        // the origin it's used from.
+        passkey_logs: Some([("acct1".to_owned(), f.passkey_log())].into()),
+        passkey_origins: Some(arugula_e2e::passkey::origins_of_sites(["https://c.test"])),
         purpose: f.purpose.lock().unwrap().clone(),
     };
     *f.enrolled.lock().unwrap() = Some((e.clone(), b.sign));
@@ -746,8 +768,9 @@ fn a_run_a_crash_interrupts_fails_and_never_runs_again() {
     let _ = std::fs::remove_dir_all(&marks);
 }
 
-/// A deploy of `source` to production, approved by `by` (the account's
-/// own browser, or someone else's key), with a passkey over the approval.
+/// A deploy of `source` to production, approved (v2, DK4) with an assertion
+/// over the approval by the key `by` as the passkey `pk` (the account's
+/// passkey when it's the root's, or someone else's key).
 fn deploy_item(f: &Fake, run: &str, dep: &str, source: &str, by: &DeviceKeys) -> WorkItem {
     deploy_item_by(f, run, dep, source, by, ("fake", "acme/app", &["APP_TOKEN"]))
 }
@@ -787,11 +810,15 @@ fn deploy_item_with(
         planned: "cd".repeat(32),
     };
     op.plan = arugula_e2e::drivers::plan_digest(driver, &op, &settings, None);
-    let approval = Approval::new(by, dep, &op, "acct1", Decision::Once, arugula_e2e::now_ms() + 3_600_000);
+    let approval = Approval::v2(dep, &op, "acct1", Decision::Once, arugula_e2e::now_ms() + 3_600_000);
     let b64 = base64::engine::general_purpose::URL_SAFE_NO_PAD;
-    let cd = json!({ "type": "webauthn.get", "challenge": approval.passkey_challenge(), "origin": "https://c.test" });
+    let cd = json!({ "type": "webauthn.get", "challenge": approval.passkey_challenge(), "origin": "https://c.test" })
+        .to_string();
     let mut data = Sha256::digest(b"c.test").to_vec();
     data.extend_from_slice(&[0x05, 0, 0, 0, 0]);
+    let mut signed = data.clone();
+    signed.extend_from_slice(&Sha256::digest(cd.as_bytes()));
+    let signature = b64.encode(by.signature(&signed));
     let run_op =
         Op { deploy: Some(DeployApply { deploy: dep.into(), driver: driver.into(), op: op.hash() }), ..Op::default() }
             .encode(&f.device());
@@ -811,10 +838,11 @@ fn deploy_item_with(
             approval,
             passkey: Some(PasskeyAssertion {
                 id: "pk".into(),
-                client_data_json: b64.encode(cd.to_string()),
+                client_data_json: b64.encode(cd.as_bytes()),
                 authenticator_data: b64.encode(&data),
-                signature: "c2ln".into(),
+                signature,
             }),
+            passkey_log: Some(f.passkey_log()),
             driver: driver.into(),
             secrets: secrets.iter().map(|s| s.to_string()).collect(),
             settings,
@@ -879,7 +907,8 @@ fn a_hosted_machine_applies_a_deploy_and_its_secret_never_reaches_disk_or_a_pane
         .start();
     wait(&marks, &f, "the box enrolled", || !f.device().is_empty());
 
-    // Someone else's key: refused on the box, before any secret.
+    // Someone else's key as the passkey: refused on the box, before any
+    // secret.
     let forged = run_id('7');
     f.items.lock().unwrap().push(deploy_item(
         &f,
@@ -891,9 +920,9 @@ fn a_hosted_machine_applies_a_deploy_and_its_secret_never_reaches_disk_or_a_pane
     wait(&marks, &f, "the forged deploy refused", || f.reports_of(&forged).len() == 1);
     let r = &f.reports_of(&forged)[0];
     assert_eq!((r.from.as_str(), r.to.as_str()), ("approved", "failed"));
-    assert!(r.detail.contains("approval_device"), "{}", r.detail);
+    assert!(r.detail.contains("approval_passkey"), "{}", r.detail);
 
-    // Approved by the account's own browser: it runs, and fails part way.
+    // Approved with the account's own passkey: it runs, and fails part way.
     let dep = format!("dep_{}", "1".repeat(32));
     let run = run_id('8');
     f.items.lock().unwrap().push(deploy_item(&f, &run, &dep, "fail-1", &f.root));

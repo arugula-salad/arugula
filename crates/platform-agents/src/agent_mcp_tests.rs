@@ -150,11 +150,11 @@ async fn production(base: &str, t: &str) -> String {
 /// a run and plans a deploy, each its owner's and labelled as their agent
 /// on the token; sets a project secret it can't read back; and is refused
 /// an approval by every route and tool there is for one, the owner's own
-/// signature in hand. Every call is in its owner's list.
+/// passkey assertion in hand. Every call is in its owner's list.
 #[tokio::test]
 async fn an_agent_with_only_a_token_files_runs_plans_and_never_approves() {
     let (hub, app, base, t, _) = platform().await;
-    let a = devices(&hub, "a");
+    devices(&hub, "a");
     production(&base, &t).await;
 
     let (st, minted) = mint(&base, "a", "redone", &[&t], &ALL).await;
@@ -253,11 +253,11 @@ async fn an_agent_with_only_a_token_files_runs_plans_and_never_approves() {
         let why = refused(&tool(&base, &token, name, json!({ "id": dep_id })).await);
         assert!(why.contains("never approve"), "{name}: {why}");
     }
-    // ...and no route, even with the owner's own signature and passkey.
-    let good = signed(&a.phone, "a", &dep_id, &op, Decision::Once);
+    // ...and no route, even with the owner's own passkey assertion.
+    let good = signed("a", &dep_id, &op, Decision::Once);
     for (path, body) in [
         (format!("/api/deploys/{dep_id}/approve"), Some(good.clone())),
-        (format!("/api/deploys/{dep_id}/deny"), Some(signed(&a.phone, "a", &dep_id, &op, Decision::Deny))),
+        (format!("/api/deploys/{dep_id}/deny"), Some(signed("a", &dep_id, &op, Decision::Deny))),
         (format!("/api/daemon/deploys/{dep_id}/approve"), Some(good.clone())),
         (format!("/api/projects/{t}/runs/grant"), Some(json!({}))),
         (format!("/api/projects/{t}/runs/grant/revoke"), Some(json!({}))),

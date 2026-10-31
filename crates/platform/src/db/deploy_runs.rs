@@ -72,8 +72,9 @@ pub struct NewDeployRun<'a> {
 }
 
 /// The run's approval (`approved`), from the deploy's approval as it was
-/// recorded: its id, and the device that signed it. Only the deploy's own
-/// run gets one, for its own operation and machine.
+/// recorded: its id, and who approved it (`by`: a v1's device, or
+/// `passkey:<credential id>` for a v2, DK4). Only the deploy's own run gets
+/// one, for its own operation and machine.
 pub fn deploy_approval(run: &Run, approval: &str, device: &str) -> runs::Approval {
     runs::Approval::of_deploy(approval, &run.daemon, &run.op_hash, device)
 }

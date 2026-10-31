@@ -319,6 +319,8 @@ async fn enroll(Axum(f): Axum<Fake>, Json(b): Json<EnrollRequest>) -> Response {
         locked: false,
         lock: None,
         legacy_app_children: None,
+        passkey_logs: None,
+        passkey_origins: None,
         purpose: None,
     };
     *f.enrolled.lock().unwrap() = Some((e.clone(), b.sign));

@@ -1,8 +1,67 @@
 {
-  "about": "A deploy's approval, or its deny, as an owner's device signs it: the deploy, the operation's hash, the approver's account, the decision (once or deny), when the apply must start by (ms), and the signing device, as a fixed text. Its sig is that device's Ed25519 signature over the body. well_formed: no field is empty, longer than 200 bytes, or holds anything but printable ASCII without spaces, so the body reads one way only. signed_by: well formed, and the signature is the given key's. Its passkey assertion's WebAuthn challenge is SHA-256 of the body, base64url without padding.",
+  "about": "A deploy's approval, or its deny, as a fixed text: the deploy, the operation's hash, the approver's account, the decision (once or deny) and when the apply must start by (ms). v2 (DK4, aru-126; `v: 2`) is the only kind made now: no device signs it (no by, no sig), and its signature is a passkey's assertion whose WebAuthn challenge is SHA-256 of the body, base64url without padding. v1 (M218; no `v`) named the signing device too, as its body's last line, and carried that device's Ed25519 signature over the body (sig). well_formed: no field is empty, longer than 200 bytes, or holds anything but printable ASCII without spaces, so the body reads one way only; a v2 has no by and no sig, and no other version is. signed_by: a v1, well formed, and the signature is the given key's; never a v2.",
   "cases": [
     {
-      "about": "alice approves the deploy once",
+      "about": "alice approves the deploy once, v2: her passkey's assertion is its signature",
+      "input": {"approval": "v2", "sign": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c"},
+      "output": {
+        "body": "arugula deploy approval v2\ndeploy dep_1\nop 1589972dbfdd1a89f71a32f0eabde06d9bdedbd7bdd3fcf6f19080ee5a1b0c99\naccount alice\ndecision once\nexpires 90000\n",
+        "passkey_challenge": "Q1r6fWXRNKCthy3LgXSDr1iRHbPInAls4xLOgsJvOQY",
+        "signed_by": false,
+        "well_formed": true
+      }
+    },
+    {
+      "about": "alice denies it, v2",
+      "input": {
+        "approval": "v2-deny",
+        "sign": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c"
+      },
+      "output": {
+        "body": "arugula deploy approval v2\ndeploy dep_1\nop 1589972dbfdd1a89f71a32f0eabde06d9bdedbd7bdd3fcf6f19080ee5a1b0c99\naccount alice\ndecision deny\nexpires 90000\n",
+        "passkey_challenge": "X9wkUD4OYwLmeixpyeiY1-TDDqd4ZnTMUmFavEKNryo",
+        "signed_by": false,
+        "well_formed": true
+      }
+    },
+    {
+      "about": "a v2 naming a device: not well formed",
+      "input": {
+        "approval": "v2-naming-a-device",
+        "sign": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c"
+      },
+      "output": {
+        "body": "arugula deploy approval v2\ndeploy dep_1\nop 1589972dbfdd1a89f71a32f0eabde06d9bdedbd7bdd3fcf6f19080ee5a1b0c99\naccount alice\ndecision once\nexpires 90000\n",
+        "passkey_challenge": "Q1r6fWXRNKCthy3LgXSDr1iRHbPInAls4xLOgsJvOQY",
+        "signed_by": false,
+        "well_formed": false
+      }
+    },
+    {
+      "about": "a v2 carrying a device's signature: not well formed",
+      "input": {
+        "approval": "v2-with-a-signature",
+        "sign": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c"
+      },
+      "output": {
+        "body": "arugula deploy approval v2\ndeploy dep_1\nop 1589972dbfdd1a89f71a32f0eabde06d9bdedbd7bdd3fcf6f19080ee5a1b0c99\naccount alice\ndecision once\nexpires 90000\n",
+        "passkey_challenge": "Q1r6fWXRNKCthy3LgXSDr1iRHbPInAls4xLOgsJvOQY",
+        "signed_by": false,
+        "well_formed": false
+      }
+    },
+    {
+      "about": "version 3: not one",
+      "input": {"approval": "v3", "sign": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c"},
+      "output": {
+        "body": "arugula deploy approval v3\ndeploy dep_1\nop 1589972dbfdd1a89f71a32f0eabde06d9bdedbd7bdd3fcf6f19080ee5a1b0c99\naccount alice\ndecision once\nexpires 90000\n",
+        "passkey_challenge": "yMcg5I3evEZj1MYyB2O8ptr-f3aP-nD9lvWiiIzE7XM",
+        "signed_by": false,
+        "well_formed": false
+      }
+    },
+    {
+      "about": "v1: alice approves the deploy once, from her device",
       "input": {
         "approval": "once",
         "sign": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c"
@@ -15,7 +74,7 @@
       }
     },
     {
-      "about": "alice denies it: a deny is signed too",
+      "about": "v1: alice denies it: a deny is signed too",
       "input": {
         "approval": "deny",
         "sign": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c"
@@ -28,7 +87,7 @@
       }
     },
     {
-      "about": "checked against another key",
+      "about": "v1, checked against another key",
       "input": {
         "approval": "once",
         "sign": "8139770ea87d175f56a35466c34c7ecccb8d8a91b4ee37a25df60f5b8fc9b394"
@@ -41,7 +100,7 @@
       }
     },
     {
-      "about": "its expiry pushed out after she signed",
+      "about": "v1, its expiry pushed out after she signed",
       "input": {
         "approval": "expires-changed",
         "sign": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c"
@@ -54,7 +113,7 @@
       }
     },
     {
-      "about": "moved to another deploy after she signed",
+      "about": "v1, moved to another deploy after she signed",
       "input": {
         "approval": "other-deploy",
         "sign": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c"
@@ -67,7 +126,7 @@
       }
     },
     {
-      "about": "a space in a field: not well formed, so never signed_by, whoever signed it",
+      "about": "v1, a space in a field: not well formed, so never signed_by, whoever signed it",
       "input": {
         "approval": "space-in-deploy",
         "sign": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c"
@@ -86,7 +145,7 @@
     "arugula_e2e::deploy::Approval::signed_by",
     "arugula_e2e::deploy::Approval::passkey_challenge"
   ],
-  "input": "approval: an approval's label; sign: an Ed25519 public key, hex, to check its signature against",
+  "input": "approval: an approval's label; sign: an Ed25519 public key, hex, to check a v1's signature against",
   "keys": {
     "alice": {
       "device": "37f29b7074cf8b52",
@@ -168,6 +227,56 @@
       "expires": 90000,
       "op": "1589972dbfdd1a89f71a32f0eabde06d9bdedbd7bdd3fcf6f19080ee5a1b0c99",
       "sig": "48e741dce3134a87f5cd7a4592a1d312f547cbaa89977ff61ec7d25fb8dda576fa8d362a6051e29f5f12cf7daed014ee321aef0500b07ec3474012aa17536406"
+    },
+    "v2": {
+      "account": "alice",
+      "by": "",
+      "decision": "once",
+      "deploy": "dep_1",
+      "expires": 90000,
+      "op": "1589972dbfdd1a89f71a32f0eabde06d9bdedbd7bdd3fcf6f19080ee5a1b0c99",
+      "sig": "",
+      "v": 2
+    },
+    "v2-deny": {
+      "account": "alice",
+      "by": "",
+      "decision": "deny",
+      "deploy": "dep_1",
+      "expires": 90000,
+      "op": "1589972dbfdd1a89f71a32f0eabde06d9bdedbd7bdd3fcf6f19080ee5a1b0c99",
+      "sig": "",
+      "v": 2
+    },
+    "v2-naming-a-device": {
+      "account": "alice",
+      "by": "37f29b7074cf8b52",
+      "decision": "once",
+      "deploy": "dep_1",
+      "expires": 90000,
+      "op": "1589972dbfdd1a89f71a32f0eabde06d9bdedbd7bdd3fcf6f19080ee5a1b0c99",
+      "sig": "",
+      "v": 2
+    },
+    "v2-with-a-signature": {
+      "account": "alice",
+      "by": "",
+      "decision": "once",
+      "deploy": "dep_1",
+      "expires": 90000,
+      "op": "1589972dbfdd1a89f71a32f0eabde06d9bdedbd7bdd3fcf6f19080ee5a1b0c99",
+      "sig": "2c3091415a9abec85045bab1adcfaf588548de2a8d9deadf72deefdceac9f0231eb50604b50f977dd9d1e6d163af3467968eef39c5bcdb28d8e903c3fa91ef0f",
+      "v": 2
+    },
+    "v3": {
+      "account": "alice",
+      "by": "",
+      "decision": "once",
+      "deploy": "dep_1",
+      "expires": 90000,
+      "op": "1589972dbfdd1a89f71a32f0eabde06d9bdedbd7bdd3fcf6f19080ee5a1b0c99",
+      "sig": "",
+      "v": 3
     }
   },
   "output": "body; well_formed; signed_by: whether sign signed it; passkey_challenge"

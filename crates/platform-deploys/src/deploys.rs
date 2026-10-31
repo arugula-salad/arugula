@@ -16,22 +16,16 @@
 //!   or editor of the project, and its machine needs the owner's
 //!   `deploys.plan` grant over the project (off until given), asked on
 //!   every call;
-//! - **approve or deny:** an owner, **with one of their devices' signature**
-//!   over the operation and a passkey's assertion over the approval
+//! - **approve or deny:** an owner by the roster read now, **with their
+//!   passkey**: one user-verified assertion over the approval's bytes (v2,
+//!   DK4, aru-126), from a passkey in the account's published log
 //!   ([`verify`]). Nothing else counts.
 //!
-//! **What a device is here.** A browser's (or a phone's, or the desktop
-//! app's) device key: the Ed25519 key it holds non-extractable, or derives
-//! from a passkey (#764), certified by browsers all the way back to the
-//! account's root (a CLI's or the app's certificate anywhere on the way
-//! refuses it; recovery codes may be links on the way, and so may an app
-//! window from before it had a kind, just above a browser it approved back
-//! then, [`DeviceTrust::legacy_app_children`]) and not revoked, which the platform checks itself
-//! from what the hub keeps ([`HubPort::device_trust`],
-//! `arugula_e2e::Trust::evaluate`). Not a CLI's device: its key is a file
-//! on a machine, where an agent can read it. Not a machine's, and not a
-//! recovery code. The platform holds no such key, so it can't make an
-//! approval: it can only refuse service.
+//! **No device signs it** (aru-126). Which device the person approved on,
+//! and which devices certified it, play no part: an owner whose browser
+//! came in through a CLI's or the app's certificate approves with their
+//! passkey like anyone else. Device keys decide who reaches a machine; a
+//! passkey says a person meant this.
 //!
 //! **Agents never approve.** No grant, MCP tool, CLI call or thread message
 //! counts as an approval, on the owner's own machine too (aru-091, aru-101):
@@ -39,38 +33,42 @@
 //!   signature is refused as an agent's, and a CLI's login as not a device;
 //! - there's no machine route that approves, and no MCP tool or CLI command
 //!   that calls one;
-//! - an approval is recorded only from a [`VerifiedApproval`] (a device signature
-//!   that checked out), as a person ([`db::deploys::EventKind::allows`]
-//!   refuses an agent anyway).
+//! - an approval is recorded only from a [`VerifiedApproval`] (a passkey
+//!   assertion that checked out), as a person
+//!   ([`db::deploys::EventKind::allows`] refuses an agent anyway);
+//! - an agent holds no passkey, so it can't make the assertion.
 //!
-//! **The person, not only their browser.** Every approval and deny carries
-//! a passkey's assertion over the approval's bytes (challenge: their
-//! SHA-256), with user verification, from a passkey registered to the
-//! approving account. The platform checks it against the account's passkey
-//! log, which the hub publishes (DK3, [`HubPort::passkey_log`]), with the
-//! check anyone makes (`arugula_e2e::passkey::verify`); it's stored with the
-//! approval and in its event, so anyone can check it again against that
-//! log. An account with no passkey can't approve.
+//! **Anyone can check it again.** The assertion and its passkey's
+//! credential id are stored with the approval and in its event, and the
+//! hub publishes each account's passkey log (DK3, [`HubPort::passkey_log`]),
+//! so anyone can check it against that log
+//! (`arugula_e2e::passkey::verify`). An account with no passkey can't
+//! approve. Against whoever runs the platform this is tamper-evident, not
+//! tamper-proof (aru-126).
+//!
+//! **Approvals from before DK4 (v1)** named the device that signed them too,
+//! with its signature beside the passkey's assertion. They still read and
+//! show, and their events keep the log's chain; a v1 recorded before the
+//! switch still applies within its life (7 days at most), by its passkey.
+//! New ones are v2 only: a page that sends a device signature is told to
+//! reload ([`OLD_APPROVAL`]).
 //!
 //! **Applied by M219** (`deploys::apply`): an approval enqueues the
-//! deploy's job, which checks the approval's `expires`, the approving
-//! device and the owner's role again, then makes the run that applies it
-//! on the project's hosted workspace. That machine checks the approval
-//! itself against what it pinned (`arugula_e2e::deploy::check_apply`), and
-//! the log takes the deploy's `started` only from that run, before its
-//! `expires`. Left (`TODO(passkeys)`, DK4 #385): the machine checks the
-//! stored passkey proof's signature too, against the published log, not
-//! only its client data.
+//! deploy's job, which checks the approval's `expires`, the owner's role
+//! and that the passkey is still in the account's log again, then makes
+//! the run that applies it on the project's hosted workspace. That machine
+//! checks the approval itself against what it pinned
+//! (`arugula_e2e::deploy::check_apply`: the owners, their passkey logs and
+//! the origins), and the log takes the deploy's `started` only from that
+//! run, before its `expires`.
 //!
 //! **Asking** records the deploy's `requested` event and pushes each of the
 //! project's owners a card (`deploy` in the push: a tap opens the deploy on
 //! the platform page, where Approve and Deny go to control's page, which
-//! holds the device keys and signs with a passkey).
+//! asks for the passkey; DK5 moves that to the platform page).
 //!
 //! [`db::deploys`]: crate::db::deploys
 //! [`db::deploys::EventKind::allows`]: crate::db::deploys::EventKind::allows
-//! [`HubPort::device_trust`]: crate::hub::HubPort::device_trust
-//! [`DeviceTrust::legacy_app_children`]: crate::hub::DeviceTrust::legacy_app_children
 //! [`HubPort::passkey_log`]: crate::hub::HubPort::passkey_log
 
 pub mod agent;
@@ -106,9 +104,7 @@ use crate::{
 /// The base's since #314: what deploys asked first, which agents and
 /// hosted workspaces ask too.
 pub use crate::{
-    approvals::{
-        NOT_AN_OWNER, OTHER_OPERATION, PASSKEY, approving_device, challenge_of, owner_made_by_a_browser, verify,
-    },
+    approvals::{NOT_AN_OWNER, OLD_APPROVAL, OTHER_OPERATION, PASSKEY, assertion_of, challenge_of, verify},
     auth::BrowserPerson,
     project_roles::{owners, project_as, role},
 };
@@ -128,7 +124,7 @@ pub const NOT_A_DEVICE: &str = "not_a_device";
 pub const STALE: &str = "stale";
 
 /// Approvals and denies per account, per hour: each asks the hub for the
-/// account's devices.
+/// account's passkey log.
 const APPROVALS: (&str, usize) = ("deploy-approve", 120);
 /// Plans and asks per account, per hour (a person's).
 const DEPLOY_WRITES: (&str, usize) = ("deploy-write", 600);
@@ -197,7 +193,7 @@ fn requested_at(events: &[crate::db::deploys::Event]) -> Option<u64> {
 }
 
 /// A deploy as the routes answer it: with its environment, project,
-/// operation (the exact bytes an owner's device signs, and their hash),
+/// operation (the exact bytes an owner's approval is over, and their hash),
 /// approvals and log. `may_approve`: whether the reader is an owner and
 /// it's waiting for approval with nothing applied since its plan.
 pub(crate) async fn deploy_json(
@@ -220,7 +216,7 @@ pub(crate) async fn deploy_json(
         .iter()
         .map(|a| {
             json!({
-                "id": a.id, "decision": a.decision.as_str(), "account": a.account, "device": a.device,
+                "id": a.id, "v": a.v(), "decision": a.decision.as_str(), "account": a.account, "device": a.device,
                 "device_name": a.device_name, "expires": a.expires, "at": a.at, "seq": a.seq, "op": a.op,
                 "sig": a.sig, "body": a.signed().body(),
                 "passkey": a.passkey.as_ref().map(|p| json!({
@@ -857,30 +853,32 @@ pub async fn waiting(State(app): State<Arc<Platform>>, s: Person) -> J {
     Ok(Json(json!({ "deploys": out })))
 }
 
-/// What an owner's page sends to approve or deny: the signed approval's
-/// fields that aren't the route's (the deploy and the decision) or the
-/// session's (the account), and the passkey's assertion over the
-/// approval's bytes.
+/// What an owner's page sends to approve or deny: the approval's fields
+/// that aren't the route's (the deploy and the decision) or the session's
+/// (the account), and the passkey's assertion over the approval's bytes
+/// (v2, DK4), which is its signature. A page from before DK4 sends a
+/// device's signature too (`by`, `sig`): refused, so it reloads.
 #[derive(Deserialize)]
 pub struct Signed {
     op: String,
     expires: u64,
-    by: String,
-    sig: String,
     #[serde(default)]
     passkey: Option<PasskeyAssertion>,
+    #[serde(default)]
+    by: Option<String>,
+    #[serde(default)]
+    sig: Option<String>,
 }
 
 async fn decide(app: &Platform, account: &str, id: &str, decision: Decision, b: Signed) -> J {
     app.limits.check_account(APPROVALS, account)?;
-    // The roster now, not a kept one: an owner who was just made an editor
-    // doesn't approve.
     let (_, env, p, _) = deploy_as(app, account, id, false).await?;
-    if role(app, account, &p, true).await? != Some(TeamRole::Owner) {
+    if b.by.is_some() || b.sig.is_some() {
         return Err(refusal(
-            StatusCode::FORBIDDEN,
-            NOT_AN_OWNER,
-            "only the project's owners approve or deny its deploys",
+            StatusCode::BAD_REQUEST,
+            OLD_APPROVAL,
+            "deploys are approved with a passkey alone now, with no device's signature: reload the page and \
+             approve again",
         ));
     }
     let a = Approval {
@@ -889,23 +887,21 @@ async fn decide(app: &Platform, account: &str, id: &str, decision: Decision, b: 
         account: account.to_owned(),
         decision,
         expires: b.expires,
-        by: b.by,
-        sig: b.sig,
+        by: String::new(),
+        sig: String::new(),
+        v: arugula_e2e::deploy::V2,
     };
-    let (v, device_name) = verify(app, &a, b.passkey.as_ref(), now_ms()).await?;
-    // A personal project's owner is its account. A team's owner must have
-    // been made one by a browser: the hub refuses rosters that add owners
-    // from a CLI or the app, and this checks it again.
-    if let (None, Some(team)) = (&p.account, &p.team) {
-        owner_made_by_a_browser(app, team, account).await?;
-    }
-    let (r, _) = app.db.record_deploy_approval(&v, &device_name, now_ms())?.map_err(refused)?;
+    // The owner's role now, the operation, and the passkey against the
+    // account's log: `verify`, the only maker of a `VerifiedApproval`.
+    let v = verify(app, &a, &p, b.passkey.as_ref(), now_ms()).await?;
+    let (r, _) = app.db.record_deploy_approval(&v, "", now_ms())?.map_err(refused)?;
     Ok(Json(deploy_json(app, &r.deploy, &env, &p, true).await?))
 }
 
-/// `POST /api/deploys/{id}/approve {op, expires, by, sig}`: approve it
-/// once, as an owner, with their device's signature over the operation. A
-/// browser's session only: never a machine's signature or a CLI's login.
+/// `POST /api/deploys/{id}/approve {op, expires, passkey}`: approve it
+/// once, as an owner, with their passkey's assertion over the approval's
+/// bytes. A browser's session only: never a machine's signature or a CLI's
+/// login.
 pub async fn approve(
     State(app): State<Arc<Platform>>,
     s: BrowserPerson,
@@ -915,8 +911,8 @@ pub async fn approve(
     decide(&app, &s.account, &id, Decision::Once, b).await
 }
 
-/// `POST /api/deploys/{id}/deny {op, expires, by, sig}`: deny it, signed as
-/// an approval is.
+/// `POST /api/deploys/{id}/deny {op, expires, passkey}`: deny it, confirmed
+/// with a passkey as an approval is.
 pub async fn deny(
     State(app): State<Arc<Platform>>,
     s: BrowserPerson,

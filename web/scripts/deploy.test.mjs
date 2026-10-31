@@ -1,12 +1,12 @@
-// A deploy's approval (M218): the page's copy of `arugula_e2e::deploy`
-// reads and signs the same bytes as Rust's (deploy.fixture.json, which
+// A deploy's approval (M218, DK4): the page's copy of `arugula_e2e::deploy`
+// reads and makes the same bytes as Rust's (deploy.fixture.json, which
 // `the_pages_fixture_is_these_bytes` in crates/e2e/src/deploy.rs pins); a
 // push for one opens its card on the platform page, at `/deploys/:id`.
 // Run with `node --experimental-strip-types`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { actorOf, approvalBody, checkPlan, eventCanonical, parseOperation, sha256Hex, signApproval } from "../src/shell/e2e/deploy.ts";
+import { actorOf, approvalBody, approvalChallenge, checkPlan, eventCanonical, parseOperation, sha256Hex } from "../src/shell/e2e/deploy.ts";
 import { platformTap } from "../src/shell/tap.ts";
 import { parse, pathOf } from "../src/platform/paths.ts";
 import { deployTitle, staleNote, waitedText } from "../src/shared/deploys.ts";
@@ -50,13 +50,20 @@ test("a planned event hashes as M217's does, and says who planned it", async () 
   assert.equal(actorOf("run run_1"), null);
 });
 
-test("an approval signs Rust's bytes, with Rust's signature", async () => {
+test("a v2 approval is Rust's bytes, and its passkey's challenge their SHA-256", async () => {
+  const { by, sig, ...a } = f.approval_v2;
+  assert.equal(by, "");
+  assert.equal(sig, "");
+  assert.equal(approvalBody(a), f.approval_v2_body);
+  const b64u = (b) => btoa(String.fromCharCode(...b)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  assert.equal(b64u(await approvalChallenge(a)), f.approval_v2_challenge);
+});
+
+test("a v1 approval (before DK4) still reads as Rust's bytes, and its signature checks", async () => {
   const { sig, ...a } = f.approval;
   assert.equal(approvalBody(a), f.approval_body);
-  // PKCS#8 for an Ed25519 seed (RFC 8410), as the page imports one.
-  const pkcs8 = new Uint8Array([...hexOf("302e020100300506032b657004220420"), ...hexOf(f.seed)]);
-  const key = await crypto.subtle.importKey("pkcs8", pkcs8, { name: "Ed25519" }, false, ["sign"]);
-  assert.equal((await signApproval(a, key)).sig, sig);
+  const key = await crypto.subtle.importKey("raw", hexOf(f.sign), { name: "Ed25519" }, false, ["verify"]);
+  assert.ok(await crypto.subtle.verify("Ed25519", key, hexOf(sig), new TextEncoder().encode(f.approval_body)));
 });
 
 test("a deploy's push opens its card on the platform page", () => {

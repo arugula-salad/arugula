@@ -106,7 +106,9 @@ fn signed_domains_never_change() {
         expires: 1,
         by: "d".into(),
         sig: String::new(),
+        v: crate::deploy::V1,
     };
+    let approval_v2 = Approval::v2("d", &op, "a", Decision::Once, 1);
     let project_grant: crate::project_grant::ProjectGrant = serde_json::from_value(json!({
         "id": "i", "project": "p", "owner": "account:a", "delegation": "d", "caps": ["runs.start"], "made": 1, "by": "d",
     }))
@@ -146,6 +148,8 @@ fn signed_domains_never_change() {
         // M218's deploy operation and approval.
         (first_line(op.body()), "61727567756c61206465706c6f79206f70207631"),
         (first_line(approval.body()), "61727567756c61206465706c6f7920617070726f76616c207631"),
+        // DK4's: a passkey assertion over it is its whole signature.
+        (first_line(approval_v2.body()), "61727567756c61206465706c6f7920617070726f76616c207632"),
         // The standing project grant and its revoke (M211; the revoke is v2).
         (first_line(project_grant.body()), "61727567756c612070726f6a656374206772616e74207631"),
         (first_line(grant_revoke.body()), "61727567756c612070726f6a656374206772616e74207265766f6b65207632"),
