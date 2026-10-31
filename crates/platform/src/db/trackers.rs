@@ -50,12 +50,15 @@ pub struct Connection {
     pub backfilled_at: Option<u64>,
     /// A webhook secret is sealed for it.
     pub has_webhook_secret: bool,
+    /// When a delivery with a good signature last arrived.
+    pub last_delivery_at: Option<u64>,
 }
 
 const COLUMNS: &str = "c.id, c.project_id, c.provider, c.workspace_slug, c.source_project_id, c.identifier, c.name, \
      c.mirror_id, c.agent_writes, c.linked_by, c.created_at, c.unlinked_at, c.purge_after, c.backfilled_at, \
      EXISTS (SELECT 1 FROM project_secrets s WHERE s.project_id = c.project_id \
-         AND s.name = 'tracker/plane/' || c.id || '/webhook')";
+         AND s.name = 'tracker/plane/' || c.id || '/webhook'), \
+     c.last_delivery_at";
 
 fn row(r: &Row) -> Result<Connection> {
     Ok(Connection {
@@ -74,6 +77,7 @@ fn row(r: &Row) -> Result<Connection> {
         purge_after: r.get(12)?,
         backfilled_at: r.get(13)?,
         has_webhook_secret: r.get(14)?,
+        last_delivery_at: r.get(15)?,
     })
 }
 
@@ -224,6 +228,12 @@ impl Db {
             params![writes, project, id],
         )?;
         Ok(n == 1)
+    }
+
+    /// Note that a delivery with a good signature arrived at `now`.
+    pub fn tracker_delivered(&self, id: &str, now: u64) -> Result<()> {
+        self.c().execute("UPDATE tracker_connections SET last_delivery_at = ?1 WHERE id = ?2", params![now, id])?;
+        Ok(())
     }
 
     /// Run `f` on a connection's mirror rows in one transaction, if it's

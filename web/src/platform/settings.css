@@ -1067,6 +1067,29 @@ html[data-corners="square"] .platform input.sw-switch {
 .platform .plane-connect-label {
   font-weight: 600;
 }
+.platform .plane-hook {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  max-width: 28rem;
+}
+.platform .plane-hook-url,
+.platform .plane-hook-secret,
+.platform .plane-hook-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.platform .plane-hook-url code {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-size: 0.85em;
+}
+.platform .plane-hook-form .field {
+  flex: 1 1 10rem;
+  min-width: 0;
+}
 .platform .plane-connect-buttons {
   display: flex;
   justify-content: flex-end;

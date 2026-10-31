@@ -695,6 +695,10 @@ pub struct TrackerConnection {
     pub agent_writes: String,
     /// A webhook secret is kept for it.
     pub has_webhook_secret: bool,
+    /// The payload URL to give Plane's webhook for it.
+    pub webhook_url: String,
+    /// When a signed delivery from Plane last arrived.
+    pub last_delivery_at: Option<u64>,
     /// Who connected it (an account id), when that account is still there.
     pub linked_by: Option<String>,
     pub created_at: u64,
@@ -738,13 +742,27 @@ impl std::fmt::Debug for ConnectTracker {
 }
 
 /// `PATCH /api/projects/{project}/trackers/{connection}`: whether agents'
-/// writes to the tracker wait for a person (`approve`) or go (`allow`);
-/// the answer is its [`TrackerConnection`].
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+/// writes to the tracker wait for a person (`approve`) or go (`allow`), and
+/// its webhook secret; either or both, the answer is its
+/// [`TrackerConnection`]. A webhook secret is sealed like the key and never
+/// shown back; an empty one removes it.
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct TrackerSettings {
-    pub agent_writes: String,
+    #[serde(default)]
+    pub agent_writes: Option<String>,
+    #[serde(default)]
+    pub webhook_secret: Option<String>,
+}
+
+impl std::fmt::Debug for TrackerSettings {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("TrackerSettings")
+            .field("agent_writes", &self.agent_writes)
+            .field("webhook_secret", &self.webhook_secret.as_ref().map(|_| "<redacted>"))
+            .finish()
+    }
 }
 
 /// `POST /api/projects/{project}/trackers/{connection}/writes`
