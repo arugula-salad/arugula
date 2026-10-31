@@ -3,7 +3,7 @@
   "commit": "ebb067284044f8af51f1ff5e189a38783e70ecae",
   "branch": "main",
   "state": "pending",
-  "at": "2026-10-31T02:45:32Z",
+  "at": "2026-10-31T02:49:58Z",
   "phases": {
     "lint": {
       "verdict": "pass",
@@ -54,19 +54,19 @@
       ]
     },
     "test": {
-      "verdict": "pending",
+      "verdict": "pass",
       "build": "newest",
       "runs": [
         {
           "name": "test",
           "id": 124417522634,
-          "conclusion": null,
+          "conclusion": "success",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/41160731051/job/124417522634"
         },
         {
           "name": "test-2",
           "id": 124417522637,
-          "conclusion": null,
+          "conclusion": "success",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/41160731051/job/124417522637"
         },
         {
@@ -84,13 +84,13 @@
       ]
     },
     "e2e": {
-      "verdict": "pending",
+      "verdict": "pass",
       "build": "newest",
       "runs": [
         {
           "name": "e2e (1)",
           "id": 124418418490,
-          "conclusion": null,
+          "conclusion": "success",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/41160731051/job/124418418490"
         },
         {
@@ -108,7 +108,7 @@
         {
           "name": "e2e (12)",
           "id": 124418418543,
-          "conclusion": null,
+          "conclusion": "success",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/41160731051/job/124418418543"
         },
         {
@@ -132,19 +132,19 @@
         {
           "name": "e2e (5)",
           "id": 124418418416,
-          "conclusion": null,
+          "conclusion": "success",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/41160731051/job/124418418416"
         },
         {
           "name": "e2e (6)",
           "id": 124418418413,
-          "conclusion": null,
+          "conclusion": "success",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/41160731051/job/124418418413"
         },
         {
           "name": "e2e (7)",
           "id": 124418418408,
-          "conclusion": null,
+          "conclusion": "success",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/41160731051/job/124418418408"
         },
         {
@@ -156,19 +156,19 @@
         {
           "name": "e2e (9)",
           "id": 124418418554,
-          "conclusion": null,
+          "conclusion": "success",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/41160731051/job/124418418554"
         }
       ]
     },
     "claims": {
-      "verdict": "pending",
+      "verdict": "pass",
       "build": "newest",
       "runs": [
         {
           "name": "testnet",
           "id": 124418418338,
-          "conclusion": null,
+          "conclusion": "success",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/41160731051/job/124418418338"
         },
         {
@@ -180,7 +180,7 @@
         {
           "name": "desktop-xvfb",
           "id": 124417522686,
-          "conclusion": null,
+          "conclusion": "success",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/41160731051/job/124417522686"
         }
       ]
@@ -192,7 +192,7 @@
         {
           "name": "macos (test)",
           "id": 124417522687,
-          "conclusion": null,
+          "conclusion": "failure",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/41160731051/job/124417522687"
         },
         {
@@ -201,7 +201,8 @@
           "conclusion": "success",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/41160731051/job/124417522689"
         }
-      ]
+      ],
+      "reason": "retrying"
     },
     "windows": {
       "verdict": "pass",
@@ -226,6 +227,12 @@
           "url": "https://github.com/arugula-salad/arugula/actions/runs/41160731066/job/124417512396"
         }
       ]
+    }
+  },
+  "retried": {
+    "macos (test)": {
+      "run": 124417522687,
+      "at": "2026-10-31T02:49:58Z"
     }
   }
 }
