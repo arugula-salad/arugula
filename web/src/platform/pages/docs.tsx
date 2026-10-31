@@ -13,6 +13,7 @@ import { chat } from "../../shared/chat-store";
 import { DocError, projectDocs } from "../../shared/docs/store";
 import { whoLabel } from "../../shared/issues/text";
 import { useSubscribe } from "../../shared/ui/hooks";
+import { CopyLinkButton } from "../../shared/ui/copy-link";
 import { PageHeader } from "../../shared/ui/page-header";
 import { Time } from "../../shared/ui/time";
 import { DocBlock, type DocState } from "../../shared/docs/doc-render";
@@ -181,6 +182,7 @@ export function DocPage({ project, doc }: { project: string; doc: string }) {
           s={state}
           fresh={fresh}
           load={noImages}
+          share={<CopyLinkButton link={new URL(pathOf({ page: "doc", project, doc }, names), location.href).href} />}
           byline={
             view && (
               <>
