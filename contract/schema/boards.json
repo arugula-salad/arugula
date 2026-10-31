@@ -323,10 +323,18 @@
       "type": "object"
     },
     "BoardView": {
-      "description": "A board with its four lanes, in order (`lane_next`, `lane_doing`,\n`lane_review`, `lane_done`), each with its rows.",
+      "description": "A board with its four lanes, in order (`lane_next`, `lane_doing`,\n`lane_review`, `lane_done`), each with its rows, and its groups, in\norder. The rows of a group are those with [`Row::group`] set to its id; a\nrow without one comes after the grouped ones.",
       "properties": {
         "board": {
           "$ref": "#/$defs/Board"
+        },
+        "groups": {
+          "default": [],
+          "description": "Empty for a board with none; an old client ignores it.",
+          "items": {
+            "$ref": "#/$defs/Group"
+          },
+          "type": "array"
         },
         "said": {
           "description": "What a write did that the board alone doesn't say: a PR attached to\nthe row of the issue it closes, an item that was there already.",
@@ -424,12 +432,45 @@
       "type": "object"
     },
     "EntryKind": {
-      "description": "Zone or row.",
+      "description": "Zone (a group, in a database; a lane, on the wire) or row.",
       "enum": [
         "zone",
         "row"
       ],
       "type": "string"
+    },
+    "Group": {
+      "description": "A named, ordered section of a board that its author sets: a phase, a\nwave, an area. A row belongs to at most one ([`Row::group`]); a group\nholds no lane, and a row's lane is the same in any group.",
+      "properties": {
+        "id": {
+          "description": "`zon_…`.",
+          "type": "string"
+        },
+        "progress": {
+          "$ref": "#/$defs/BoardProgress",
+          "default": {
+            "done": 0,
+            "proven": 0,
+            "total": 0
+          },
+          "description": "Its rows with an issue or a PR, counted as a board's are."
+        },
+        "rev": {
+          "description": "Counts changes to its title.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "title": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "rev",
+        "title"
+      ],
+      "type": "object"
     },
     "Lane": {
       "description": "Where a row is, worked out on every read from the live state of its\nitems and never stored (aru-125). Each is the furthest that applies, in\nthe order `done`, `review`, `doing`, `next`.",
@@ -446,7 +487,7 @@
         },
         {
           "const": "review",
-          "description": "A PR is open.",
+          "description": "A PR is open, or the issue is open and its PR merged (see\n[`Mark::MergedNotClosed`]).",
           "type": "string"
         },
         {
@@ -574,8 +615,68 @@
         }
       ]
     },
+    "Mark": {
+      "description": "A note on a row that its lane doesn't say, worked out on every read and\nnever stored (aru-125, decisions 7 to 9).",
+      "oneOf": [
+        {
+          "description": "The issue is open and a PR of the row merged, with none open: the\nwork is in, the issue isn't closed. The row is in Review.",
+          "properties": {
+            "kind": {
+              "const": "merged_not_closed",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "An open PR of the row is stacked on another open PR: it targets that\nPR's branch, so it waits for it. `repo` is left out when the reader\nmay not read the repo.",
+          "properties": {
+            "kind": {
+              "const": "after",
+              "type": "string"
+            },
+            "number": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "repo": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "kind",
+            "number"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "An agent block attached to the row (`attachment`) was closed, and\nanother may have taken its place: it no longer counts toward Doing.",
+          "properties": {
+            "attachment": {
+              "type": "string"
+            },
+            "kind": {
+              "const": "earlier",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "attachment"
+          ],
+          "type": "object"
+        }
+      ]
+    },
     "MoveEntry": {
-      "description": "[`BOARD_ENTRY_MOVE`]'s body. Every move is refused (aru-125): lanes\nfollow the work.",
+      "description": "[`BOARD_ENTRY_MOVE`]'s body. A row moves to a group (`zone`) or, with\n`zone: null`, out of its group; with `zone` absent it stays where it is.\nIt goes before `before` (a row of the place it goes to), last without\none. A group moves among groups:\n`before` is a group, `zone` is absent. A lane is never set (aru-125): a\n`zone` that is a lane is refused.",
       "properties": {
         "before": {
           "default": null,
@@ -594,7 +695,7 @@
           ]
         },
         "zone": {
-          "default": null,
+          "description": "The group the row goes to; `null`: none. Absent: its own.",
           "type": [
             "string",
             "null"
@@ -796,7 +897,7 @@
       "type": "object"
     },
     "PutEntry": {
-      "description": "[`BOARD_ENTRIES`]' body. Without `id` it adds a row, last (`entry` is\n`row` or absent); with `id` it changes that row: what is absent is left\nas it is, and a change to `pointer` or `note` names `rev`. `zone`, `title`,\n`kind`, `entry: zone` and `status` are refused (aru-125: lanes follow the\nwork), except `status: needs_input` on a row, which stays until asks\nreplace it. The row's `pointer` is an issue or a PR (or a link, for a\nnote).",
+      "description": "[`BOARD_ENTRIES`]' body. Without `id` it adds a row, last (`entry` is\n`row` or absent), or, with `entry: zone`, a group with a `title`, last;\nwith `id` it changes that row or group: what is absent is left as it is,\nand a change to `pointer`, `note` or a group's `title` names `rev`. A\nnew row's `zone` is the group it goes in. `kind`, and a `zone` that is a\nlane, are refused, and so is every `status` but `needs_input`, which stays\nuntil asks replace it (aru-125: lanes follow the work). The row's\n`pointer` is an issue or a PR (or a link, for a note).",
       "properties": {
         "entry": {
           "anyOf": [
@@ -826,7 +927,7 @@
             }
           ],
           "default": null,
-          "description": "Refused: no one makes a zone."
+          "description": "Refused: a group has no kind."
         },
         "note": {
           "default": null,
@@ -870,6 +971,7 @@
         },
         "title": {
           "default": null,
+          "description": "A group's title.",
           "type": [
             "string",
             "null"
@@ -877,7 +979,7 @@
         },
         "zone": {
           "default": null,
-          "description": "Refused: rows have no zone.",
+          "description": "A new row's group (`zon_…`).",
           "type": [
             "string",
             "null"
@@ -923,6 +1025,13 @@
           "minimum": 0,
           "type": "integer"
         },
+        "group": {
+          "description": "The group (`zon_…`) the row belongs to, if any.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "id": {
           "type": "string"
         },
@@ -941,6 +1050,13 @@
             }
           ],
           "description": "A `fi_`, `iss_` or `run_` pointer's state now, when the reader may see the\nitem ([`BoardView`] is read with it; a write's answer has it too)."
+        },
+        "marks": {
+          "description": "What the lane doesn't say, in a fixed order: `merged_not_closed`,\n`after`, then one `earlier` for each closed block.",
+          "items": {
+            "$ref": "#/$defs/Mark"
+          },
+          "type": "array"
         },
         "note": {
           "type": "string"
