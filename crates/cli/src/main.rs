@@ -607,8 +607,9 @@ const LABS_COMMANDS: &[(&str, &str)] = &[
     ("machines", flags::SANDBOX_PROVIDERS),
     ("sandboxes", flags::SANDBOX_PROVIDERS),
 ];
-const LABS_OPTIONS: [(&str, &[&str], &str); 5] = [
+const LABS_OPTIONS: [(&str, &[&str], &str); 6] = [
     ("agent", &["recipe"], flags::AGENT_DELEGATION),
+    ("agent", &["issue"], flags::BOARDS),
     ("agent", &["vm", "machine"], flags::SANDBOX_PROVIDERS),
     ("run", &["vm", "vm_tab", "image", "sandbox"], flags::SANDBOX_PROVIDERS),
     ("open", &["machine"], flags::SANDBOX_PROVIDERS),
@@ -1062,7 +1063,7 @@ mod tests {
         assert!(listed.contains(&"run") && listed.contains(&"pr"), "{listed:?}");
         // Options: out of the subcommand's help, still parsed.
         for (cmd, opts) in [
-            ("agent", &["recipe", "vm", "machine"][..]),
+            ("agent", &["recipe", "issue", "vm", "machine"][..]),
             ("run", &["vm", "vm_tab", "image", "sandbox"][..]),
             ("open", &["machine"][..]),
             ("edit", &["machine"][..]),

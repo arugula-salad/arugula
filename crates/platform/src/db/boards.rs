@@ -1134,7 +1134,7 @@ impl Db {
                  diff_files, diff_added, diff_removed, updated_at, title)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)
              ON CONFLICT (machine, pane) DO UPDATE SET account = excluded.account, state = excluded.state,
-                 title = excluded.title,
+                 title = COALESCE(excluded.title, board_block_states.title),
                  branch = excluded.branch, head = excluded.head, pushed = excluded.pushed,
                  uncommitted = excluded.uncommitted, diff_files = excluded.diff_files,
                  diff_added = excluded.diff_added, diff_removed = excluded.diff_removed,

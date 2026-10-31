@@ -74,7 +74,7 @@ mod turnwork;
 use arugula_mux::{acl, block, mux, pane, paths, perm, procinfo, provider, shellenv, shim, store, sys, sys::home};
 #[cfg(unix)]
 use arugulad_base::upload;
-use arugulad_base::{agent, api, features, lab_hooks, mcp, review, rules, server, task, telemetry, work, worktree};
+use arugulad_base::{agent, api, board_attach, features, lab_hooks, mcp, review, rules, server, task, telemetry, work, worktree};
 
 use std::{
     collections::{BTreeMap, VecDeque},
@@ -185,6 +185,10 @@ pub struct Config {
     /// removes it only if nothing would be lost.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub worktree: Option<crate::worktree::Owned>,
+    /// The issue it was started on, and the boards it is on (#372): its
+    /// header's chip. Kept, so a restart keeps them.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub work: Option<board_attach::Work>,
     /// A hosted session's agent (M255): it runs as this session user, never
     /// as the daemon's, and so does the daemon's git in its directory. It
     /// gets no `/mcp`: the daemon's port is closed to it. It gets
@@ -1630,6 +1634,8 @@ impl Inner {
         });
         // M76: the recipe it wears, by name.
         state["recipe"] = json!(self.cfg.def.recipe);
+        // #372: the issue it was started on, and the boards it is on.
+        state["work"] = json!(self.cfg.work);
         // What it may switch to, and what it's on.
         let (models, model) = self.models();
         state["models"] = models;
@@ -3287,6 +3293,20 @@ impl Agent {
         Ok(json!({}))
     }
 
+    /// Keep the boards this block is on (`start_agent` with an `issue`): its
+    /// chip. The issue is the block's from its start; only the boards come
+    /// later, with control's answer.
+    fn set_work(&self, args: &Value) -> Result<Value, String> {
+        let boards: Vec<board_attach::WorkBoard> =
+            serde_json::from_value(args["boards"].clone()).map_err(|e| format!("set_work takes boards: {e}"))?;
+        let mut g = self.inner.lock().unwrap();
+        let work = g.cfg.work.as_mut().ok_or("this block wasn't started on an issue")?;
+        work.boards = boards;
+        drop(g);
+        self.changed();
+        Ok(json!({}))
+    }
+
     fn start(&self) -> Result<Value, String> {
         let mut g = self.inner.lock().unwrap();
         if g.link.is_some() && !matches!(g.status, Status::Exited | Status::Stopped) {
@@ -3366,7 +3386,7 @@ impl Block for Agent {
 
     fn call_by(&self, method: &str, args: Value, by: Option<&str>) -> BoxFuture<'static, Result<Value, String>> {
         if self.inner.lock().unwrap().cfg.def.agent == Kind::Managoat
-            && !matches!(method, "state" | "image" | "set_title")
+            && !matches!(method, "state" | "image" | "set_title" | "set_work")
         {
             return Box::pin(async { Err(defs::CLOUD_MIGRATION.into()) });
         }
@@ -3405,6 +3425,7 @@ impl Block for Agent {
                 self.changed();
                 Ok(self.state())
             }
+            "set_work" => self.set_work(&args),
             "set_model" => self.set_model(&args),
             "state" => Ok(self.state()),
             "turn_result" => return self.turn_result(),
