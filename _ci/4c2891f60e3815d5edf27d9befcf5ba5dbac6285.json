@@ -3,7 +3,7 @@
   "commit": "4c2891f60e3815d5edf27d9befcf5ba5dbac6285",
   "branch": "main",
   "state": "pending",
-  "at": "2026-10-31T04:48:15Z",
+  "at": "2026-10-31T04:49:33Z",
   "phases": {
     "lint": {
       "verdict": "pass",
@@ -66,7 +66,7 @@
         {
           "name": "test-2",
           "id": 124443997631,
-          "conclusion": null,
+          "conclusion": "success",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/41168972091/job/124443997631"
         },
         {
@@ -86,7 +86,7 @@
       "culprit": "baa6212bb48c173b7b2c8fbd348c19c752bd0e11"
     },
     "e2e": {
-      "verdict": "pending",
+      "verdict": "pass",
       "build": "newest",
       "runs": [
         {
@@ -110,25 +110,25 @@
         {
           "name": "e2e (12)",
           "id": 124444771280,
-          "conclusion": null,
+          "conclusion": "success",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/41168972091/job/124444771280"
         },
         {
           "name": "e2e (2)",
           "id": 124444771245,
-          "conclusion": null,
+          "conclusion": "success",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/41168972091/job/124444771245"
         },
         {
           "name": "e2e (3)",
           "id": 124444771283,
-          "conclusion": null,
+          "conclusion": "success",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/41168972091/job/124444771283"
         },
         {
           "name": "e2e (4)",
           "id": 124444771213,
-          "conclusion": null,
+          "conclusion": "success",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/41168972091/job/124444771213"
         },
         {
@@ -152,7 +152,7 @@
         {
           "name": "e2e (8)",
           "id": 124444771460,
-          "conclusion": null,
+          "conclusion": "success",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/41168972091/job/124444771460"
         },
         {
