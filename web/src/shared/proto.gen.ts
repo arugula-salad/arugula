@@ -242,7 +242,7 @@ block?: BoardBlockState | null,
  * A block that a newer agent took the row from (`take`): it is an
  * earlier agent whatever it reports, and holds no claim.
  */
-released: boolean, };
+released?: boolean, };
 
 /**
  * What a daemon says of one of its own agent blocks, and all it says

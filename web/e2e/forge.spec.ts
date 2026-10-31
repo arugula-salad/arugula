@@ -208,9 +208,9 @@ test("an agent's comment waits as a draft until a person edits and sends it", as
   await expect(foot.locator("button, a").first()).toBeVisible();
   const box = card.locator('textarea[name="body"]');
   await expect(box).toHaveValue("LGTM, one nit");
-  // The strip says the draft is yours to send, with Send; no sentence.
+  // The strip says the draft is yours, no sentence; its card has Send.
   await expect(el.locator('[data-item-next="warn"]')).toContainText("Your comment draft");
-  await expect(el.locator("[data-send-draft]")).toBeVisible();
+  await expect(el.locator("[data-send-draft]")).toHaveCount(0);
   await expect(el).not.toContainText("A draft waits");
   await box.fill("LGTM, one small nit.\n\nThanks!");
   await card.locator("[data-ask-submit]").click();
@@ -238,7 +238,7 @@ test("an agent's comment waits as a draft until a person edits and sends it", as
   expect(writes.length).toBe(1);
 });
 
-test("the strip's Send sends the waiting draft as drafted, and the draft goes once the PR is merged", async ({ page }) => {
+test("a waiting draft is the strip's one item, sent from its card, and goes once the PR is merged", async ({ page }) => {
   fresh();
   item.requested_reviewers = [];
   reviews = [];
@@ -250,7 +250,7 @@ test("the strip's Send sends the waiting draft as drafted, and the draft goes on
   );
   expect(writes).toEqual([]);
   await expect(el.locator('[data-item-next="warn"]')).toContainText("Your comment draft");
-  await el.locator("[data-send-draft]").click();
+  await page.locator(`.pane-ask .ask[data-ask="${r.draft}"] [data-ask-submit]`).click();
   await expect.poll(() => writes.length).toBe(1);
   expect(writes[0].route).toBe("/issues/84/comments");
   expect(writes[0].body).toEqual({ body: "Ship it" });
