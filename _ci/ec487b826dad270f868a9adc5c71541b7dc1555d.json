@@ -2,8 +2,8 @@
   "schema": 1,
   "commit": "ec487b826dad270f868a9adc5c71541b7dc1555d",
   "branch": "main",
-  "state": "pending",
-  "at": "2026-10-31T15:42:32Z",
+  "state": "green",
+  "at": "2026-10-31T15:47:18Z",
   "phases": {
     "lint": {
       "verdict": "pass",
@@ -54,19 +54,19 @@
       ]
     },
     "test": {
-      "verdict": "pending",
+      "verdict": "pass",
       "build": "newest",
       "runs": [
         {
           "name": "test",
           "id": 124579062226,
-          "conclusion": null,
+          "conclusion": "success",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/41214284292/job/124579062226"
         },
         {
           "name": "test-2",
           "id": 124579062167,
-          "conclusion": null,
+          "conclusion": "success",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/41214284292/job/124579062167"
         },
         {
@@ -84,49 +84,49 @@
       ]
     },
     "e2e": {
-      "verdict": "pending",
+      "verdict": "pass",
       "build": "newest",
       "runs": [
         {
           "name": "e2e (1)",
           "id": 124579921499,
-          "conclusion": null,
+          "conclusion": "success",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/41214284292/job/124579921499"
         },
         {
           "name": "e2e (10)",
           "id": 124579921612,
-          "conclusion": null,
+          "conclusion": "success",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/41214284292/job/124579921612"
         },
         {
           "name": "e2e (11)",
           "id": 124579921511,
-          "conclusion": null,
+          "conclusion": "success",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/41214284292/job/124579921511"
         },
         {
           "name": "e2e (12)",
           "id": 124579921622,
-          "conclusion": null,
+          "conclusion": "success",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/41214284292/job/124579921622"
         },
         {
           "name": "e2e (2)",
           "id": 124579921508,
-          "conclusion": null,
+          "conclusion": "success",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/41214284292/job/124579921508"
         },
         {
           "name": "e2e (3)",
           "id": 124579921567,
-          "conclusion": null,
+          "conclusion": "success",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/41214284292/job/124579921567"
         },
         {
           "name": "e2e (4)",
           "id": 124579921576,
-          "conclusion": null,
+          "conclusion": "success",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/41214284292/job/124579921576"
         },
         {
@@ -138,13 +138,13 @@
         {
           "name": "e2e (6)",
           "id": 124579921578,
-          "conclusion": null,
+          "conclusion": "success",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/41214284292/job/124579921578"
         },
         {
           "name": "e2e (7)",
           "id": 124579921583,
-          "conclusion": null,
+          "conclusion": "success",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/41214284292/job/124579921583"
         },
         {
@@ -156,43 +156,43 @@
         {
           "name": "e2e (9)",
           "id": 124579921572,
-          "conclusion": null,
+          "conclusion": "success",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/41214284292/job/124579921572"
         }
       ]
     },
     "claims": {
-      "verdict": "pending",
+      "verdict": "pass",
       "build": "newest",
       "runs": [
         {
           "name": "testnet",
           "id": 124579921428,
-          "conclusion": null,
+          "conclusion": "success",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/41214284292/job/124579921428"
         },
         {
           "name": "stack",
           "id": 124580229898,
-          "conclusion": null,
+          "conclusion": "success",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/41214284292/job/124580229898"
         },
         {
           "name": "desktop-xvfb",
           "id": 124579062251,
-          "conclusion": null,
+          "conclusion": "success",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/41214284292/job/124579062251"
         }
       ]
     },
     "macos": {
-      "verdict": "pending",
+      "verdict": "pass",
       "build": "newest",
       "runs": [
         {
           "name": "macos (test)",
           "id": 124579062220,
-          "conclusion": null,
+          "conclusion": "success",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/41214284292/job/124579062220"
         },
         {
