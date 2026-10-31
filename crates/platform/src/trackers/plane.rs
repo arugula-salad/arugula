@@ -31,7 +31,7 @@ use std::time::Duration;
 use reqwest::header::{HeaderMap, HeaderValue};
 use serde_json::{Value, json};
 
-use super::{BoxFuture, Edit, Item, NewItem, Page, ProjectInfo, Result, TrackerError, TrackerProvider};
+use super::{BoxFuture, Edit, Item, NewItem, Page, ProjectInfo, Relations, Result, TrackerError, TrackerProvider};
 
 /// Items a page asks for: Plane's most.
 const PER_PAGE: u32 = 100;
@@ -310,6 +310,30 @@ impl TrackerProvider for Plane {
                 body["description_html"] = json!(h);
             }
             self.patch(workspace, project_id, id, body).await
+        })
+    }
+
+    /// Plane's `GET …/work-items/{id}/relations/`: arrays of work item ids
+    /// under `blocked_by` (the items that block this one) and `blocking`
+    /// (the items this one blocks).
+    fn relations<'a>(
+        &'a self,
+        workspace: &'a str,
+        project_id: &'a str,
+        id: &'a str,
+    ) -> BoxFuture<'a, Result<Relations>> {
+        Box::pin(async move {
+            let path = format!(
+                "/api/v1/workspaces/{}/projects/{}/work-items/{}/relations/",
+                segment(workspace)?,
+                segment(project_id)?,
+                segment(id)?
+            );
+            let v = self.get(&path, &[]).await?;
+            let ids = |k: &str| -> Vec<String> {
+                v[k].as_array().into_iter().flatten().filter_map(Value::as_str).map(str::to_owned).collect()
+            };
+            Ok(Relations { blocked_by: ids("blocked_by"), blocking: ids("blocking") })
         })
     }
 

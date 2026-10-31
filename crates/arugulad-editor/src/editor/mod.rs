@@ -477,6 +477,7 @@ impl Block for Editor {
                 None => st.name.clone(),
             }),
             editor: self.link.lock().unwrap().as_ref().map(|l| l.info()),
+            on_issue: None,
             stopped: false,
         }
     }

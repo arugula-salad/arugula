@@ -527,6 +527,13 @@
           },
           "type": "array"
         },
+        "ready": {
+          "description": "The ready set (Arugula #403): the rows (`row_…`) with an issue or a\nPR as their item that are in Next and have no open blocker.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
         "said": {
           "description": "What a write did that the board alone doesn't say: a PR attached to\nthe row of the issue it closes, an item that was there already.",
           "type": [
@@ -863,6 +870,39 @@
             "attachment"
           ],
           "type": "object"
+        },
+        {
+          "description": "The row's item is blocked by an open item (a `blocks` edge, Arugula\n#403): the row stays in its lane. `number`, `title` and `repo` are\nleft out when the reader may not read the blocker (one such mark\nstands for all of them: \"something you can't see\").",
+          "properties": {
+            "kind": {
+              "const": "blocked_by",
+              "type": "string"
+            },
+            "number": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "repo": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "title": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
         }
       ]
     },
@@ -948,6 +988,27 @@
       },
       "required": [
         "title"
+      ],
+      "type": "object"
+    },
+    "NewRelation": {
+      "additionalProperties": false,
+      "description": "[`PROJECT_RELATIONS`]' body: `from` `kind` `to`, each end an `iss_` or\n`fi_` id of the project (`a` blocks `b`: from a, to b).",
+      "properties": {
+        "from": {
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/$defs/RelationKind"
+        },
+        "to": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "from",
+        "to",
+        "kind"
       ],
       "type": "object"
     },
@@ -1218,6 +1279,92 @@
       },
       "type": "object"
     },
+    "Relation": {
+      "description": "An edge made, as [`PROJECT_RELATIONS`] answers it.",
+      "properties": {
+        "created_at": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "from": {
+          "type": "string"
+        },
+        "id": {
+          "description": "`rel_…`.",
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/$defs/RelationKind"
+        },
+        "source": {
+          "$ref": "#/$defs/RelationSource"
+        },
+        "to": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "from",
+        "to",
+        "kind",
+        "source",
+        "created_at"
+      ],
+      "type": "object"
+    },
+    "RelationDirection": {
+      "description": "Which end of an edge a row's item is.",
+      "oneOf": [
+        {
+          "const": "out",
+          "description": "The row's item is the first end: it blocks, duplicates, was found from.",
+          "type": "string"
+        },
+        {
+          "const": "in",
+          "description": "The row's item is the second end: it is blocked by the other.",
+          "type": "string"
+        }
+      ]
+    },
+    "RelationKind": {
+      "description": "What an edge between two work items says (Arugula #403). Only `blocks`\ngates: it keeps the blocked item's row out of the ready set until the\nblocker is closed.",
+      "oneOf": [
+        {
+          "enum": [
+            "relates"
+          ],
+          "type": "string"
+        },
+        {
+          "const": "blocks",
+          "description": "The first item blocks the second.",
+          "type": "string"
+        },
+        {
+          "const": "duplicate_of",
+          "description": "The first item duplicates the second.",
+          "type": "string"
+        },
+        {
+          "const": "discovered_from",
+          "description": "The first item was found while working on the second.",
+          "type": "string"
+        }
+      ]
+    },
+    "RelationSource": {
+      "description": "Who made an edge. `plane` and `github` edges are read from there, and\nArugula doesn't change them.",
+      "enum": [
+        "person",
+        "agent",
+        "plane",
+        "github"
+      ],
+      "type": "string"
+    },
     "Resolution": {
       "description": "One reference, resolved: the `pointer` it names, or `why` it names none\n(nothing by that number, or more than one thing: the answer names them).",
       "properties": {
@@ -1360,7 +1507,7 @@
           "description": "A `fi_`, `iss_` or `run_` pointer's state now, when the reader may see the\nitem ([`BoardView`] is read with it; a write's answer has it too)."
         },
         "marks": {
-          "description": "What the lane doesn't say, in a fixed order: `merged_not_closed`,\n`after`, then one `earlier` for each closed block.",
+          "description": "What the lane doesn't say, in a fixed order: `merged_not_closed`,\n`after`, `blocked_by`, then one `earlier` for each closed block.",
           "items": {
             "$ref": "#/$defs/Mark"
           },
@@ -1382,6 +1529,13 @@
             }
           ],
           "description": "Set only on a Done row that is proven."
+        },
+        "relations": {
+          "description": "The edges of the row's item, both ways, for the drawer.",
+          "items": {
+            "$ref": "#/$defs/RowRelation"
+          },
+          "type": "array"
         },
         "rev": {
           "format": "uint64",
@@ -1406,6 +1560,54 @@
         "status",
         "created_at",
         "updated_at"
+      ],
+      "type": "object"
+    },
+    "RowRelation": {
+      "description": "An edge of a row's item, as the reader sees it.",
+      "properties": {
+        "direction": {
+          "$ref": "#/$defs/RelationDirection"
+        },
+        "id": {
+          "description": "`rel_…`, to take it off.",
+          "type": "string"
+        },
+        "item": {
+          "description": "The `iss_` or `fi_` id of the item at the other end, with `other`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "kind": {
+          "$ref": "#/$defs/RelationKind"
+        },
+        "other": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Live"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The item at the other end. Left out when the reader may not read it:\nthe edge is \"something you can't see\", with no title or number."
+        },
+        "removable": {
+          "description": "The reader may take it off: an owner or editor, and it was made here.",
+          "type": "boolean"
+        },
+        "source": {
+          "$ref": "#/$defs/RelationSource"
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "direction",
+        "source",
+        "removable"
       ],
       "type": "object"
     },

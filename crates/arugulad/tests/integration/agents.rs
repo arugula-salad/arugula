@@ -1115,3 +1115,31 @@ fn legacy_cloud_transcript_restores_without_launching_or_accepting_commands() {
         assert!(body.contains("retired"), "{body}");
     }
 }
+
+/// #372: the panes' summary says which issue an agent block was started on,
+/// and its boards when they come after the start, so the sidebar and the
+/// swarm show the chip without opening the block.
+#[test]
+fn an_agent_block_on_an_issue_says_so_in_the_panes_summary() {
+    let d = Daemon::child();
+    let plain = d.open("hello");
+    let config = json!({ "agent": "acp", "command": ["python3", fake()], "cwd": d.sessions, "prompt": "hello", "work": { "issue": "#12" } });
+    let id = d.open_with(json!({ "type": "agent", "config": config }));
+    let on_issue = |pane: u64| {
+        d.get("/api/panes").as_array().unwrap().iter().find(|p| p["id"] == pane).map(|p| p["on_issue"].clone())
+    };
+    assert_eq!(on_issue(id), Some(json!({ "issue": "#12" })));
+    assert_eq!(on_issue(plain), Some(Value::Null), "an agent on no issue says nothing");
+
+    let boards = json!([{ "project": "prj_1", "board": "brd_1", "title": "Launch", "row": "row_1" }]);
+    d.call(id, "set_work", json!({ "boards": boards }));
+    let mut now = on_issue(id);
+    for _ in 0..50 {
+        if now.as_ref().is_some_and(|v| v["boards"] == boards) {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(100));
+        now = on_issue(id);
+    }
+    assert_eq!(now, Some(json!({ "issue": "#12", "boards": boards })));
+}

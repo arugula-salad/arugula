@@ -8005,7 +8005,7 @@
         "readOnlyHint": false,
         "title": "Write to a board"
       },
-      "description": "Write to a project's board in Arugula control, at once: what you write lands now, labelled as your person's agent on this machine, never as them. Their boards.write grant over the project says you may, never more than their role. One row is one piece of work, addressed by its item (#N, owner/repo#N, IDENT-N or an iss_/fi_ id), never by a row id. The lanes (Next, Doing, Review, Done) follow the live state of the work: there are no statuses, and you can't set a lane. Add issues with add (up to 50 in one call; each is a row, or is attached or already there, and the answer says which). A PR or an agent block is not a row of its own: attach it to the row of its issue (a PR that names that issue is attached for you). When you need a person's decision, ask with options (ask: who, the question, up to four options, a recommendation, why); they answer on the board and you read the answer in board_read, never by waiting. Groups are your phases or waves: add_group, rename_group, move_group, delete_group, and group puts a row in one. note sets a row's one-line note (pass the rev to refuse a stale write), drop removes a row you added, detach takes off an attachment you made. You may also make a board (an epic, with a goal), set its title and goal, close it with a note saying what a person can now do, and open it again. A write answers in a few lines: what changed, the rows' cards and the board's progress; pass verbose: true for the whole board. If one item of a batch fails, the others still land and the answer says which failed and why.\n- add {board, items, group?, verbose?}: Add issues or PRs to a board as rows, up to 50 in one call: #N, owner/repo#N, IDENT-N or an iss_/fi_ id. Each is a row, or is attached to the row of the issue it names (a PR), or is there already; one that fails doesn't stop the rest. Optionally into a group.\n- attach {board, item, to, role?, verbose?}: Attach work (a PR, an agent block or a run) or proof (a run or a link) to the row of an item, by the item (#N), not a row id.\n- detach {board, item, what, verbose?}: Take off an attachment you made, from the row of an item.\n- ask {board, item, question, who, options?, recommend?, verbose?, why?}: Ask a person of the project a question on the row of an item (an issue or a PR; one open ask per row), with up to four options or none for free text. They answer on the board, and the answer is the row's asked in board_read: read it there. You can't answer an ask.\n- note {board, item, text, rev?, verbose?}: Set the one-line note of the row of an item. With rev, a row that changed since is not written and the answer is its current note.\n- group {board, item, group?, verbose?}: Put the row of an item in a group (a phase, a wave), or out of its group (group: null).\n- drop {board, item, verbose?}: Remove the row of an item that you added.\n- add_group {board, title, verbose?}: Add a group to a board, last: a named section (a phase, a wave, an area) that rows go in.\n- rename_group {board, group, title, verbose?}: Rename a group.\n- move_group {board, group, before?, verbose?}: Move a group among a board's groups.\n- delete_group {board, group, verbose?}: Delete a group that is empty or holds only rows you added, with its rows.\n- create_board {title, goal?, project?, verbose?}: Make a board in a project, with a goal (an epic); returns it.\n- edit_board {board, goal?, title?, verbose?}: Set a board's title and/or goal.\n- close_board {board, done_note, verbose?}: Close a board with a note saying what a person can now do.\n- reopen_board {board, verbose?}: Open a closed board again, keeping its note.",
+      "description": "Write to a project's board in Arugula control, at once: what you write lands now, labelled as your person's agent on this machine, never as them. Their boards.write grant over the project says you may, never more than their role. One row is one piece of work, addressed by its item (#N, owner/repo#N, IDENT-N or an iss_/fi_ id), never by a row id. The lanes (Next, Doing, Review, Done) follow the live state of the work: there are no statuses, and you can't set a lane. Add issues with add (up to 50 in one call; each is a row, or is attached or already there, and the answer says which). A PR or an agent block is not a row of its own: attach it to the row of its issue (a PR that names that issue is attached for you). When you need a person's decision, ask with options (ask: who, the question, up to four options, a recommendation, why); they answer on the board and you read the answer in board_read, never by waiting. Groups are your phases or waves: add_group, rename_group, move_group, delete_group, and group puts a row in one. note sets a row's one-line note (pass the rev to refuse a stale write), drop removes a row you added, detach takes off an attachment you made. To say what blocks what, relate two items (relate: the item blocks, relates to, duplicates or was discovered from another; only blocks gates the board's Ready line, and a blocked row stays in its lane and says what blocks it) and unrelate one your machine made; relate needs your person's issues.write grant over the project too. You may also make a board (an epic, with a goal), set its title and goal, close it with a note saying what a person can now do, and open it again. A write answers in a few lines: what changed, the rows' cards and the board's progress; pass verbose: true for the whole board. If one item of a batch fails, the others still land and the answer says which failed and why.\n- add {board, items, group?, verbose?}: Add issues or PRs to a board as rows, up to 50 in one call: #N, owner/repo#N, IDENT-N or an iss_/fi_ id. Each is a row, or is attached to the row of the issue it names (a PR), or is there already; one that fails doesn't stop the rest. Optionally into a group.\n- attach {board, item, to, role?, verbose?}: Attach work (a PR, an agent block or a run) or proof (a run or a link) to the row of an item, by the item (#N), not a row id.\n- detach {board, item, what, verbose?}: Take off an attachment you made, from the row of an item.\n- ask {board, item, question, who, options?, recommend?, verbose?, why?}: Ask a person of the project a question on the row of an item (an issue or a PR; one open ask per row), with up to four options or none for free text. They answer on the board, and the answer is the row's asked in board_read: read it there. You can't answer an ask.\n- relate {board, item, kind, to, verbose?}: Relate two items of the board's project: item blocks, relates to, duplicates (duplicate_of) or was discovered from (discovered_from) to. A blocked row stays in its lane, says what blocks it, and is left out of board_read's Ready line until the blocker is closed. A blocks cycle is refused. Needs the issues.write grant too.\n- unrelate {board, item, kind, to, verbose?}: Take off a relation your machine made (the same item, to and kind as relate). One a person made, or that comes from Plane, stays. Found through a row of the board that has item or to as its item.\n- note {board, item, text, rev?, verbose?}: Set the one-line note of the row of an item. With rev, a row that changed since is not written and the answer is its current note.\n- group {board, item, group?, verbose?}: Put the row of an item in a group (a phase, a wave), or out of its group (group: null).\n- drop {board, item, verbose?}: Remove the row of an item that you added.\n- add_group {board, title, verbose?}: Add a group to a board, last: a named section (a phase, a wave, an area) that rows go in.\n- rename_group {board, group, title, verbose?}: Rename a group.\n- move_group {board, group, before?, verbose?}: Move a group among a board's groups.\n- delete_group {board, group, verbose?}: Delete a group that is empty or holds only rows you added, with its rows.\n- create_board {title, goal?, project?, verbose?}: Make a board in a project, with a goal (an epic); returns it.\n- edit_board {board, goal?, title?, verbose?}: Set a board's title and/or goal.\n- close_board {board, done_note, verbose?}: Close a board with a note saying what a person can now do.\n- reopen_board {board, verbose?}: Open a closed board again, keeping its note.",
       "inputSchema": {
         "$defs": {
           "AttachRoleArg": {
@@ -8013,6 +8013,15 @@
             "enum": [
               "work",
               "proof"
+            ],
+            "type": "string"
+          },
+          "RelationKindArg": {
+            "enum": [
+              "blocks",
+              "relates",
+              "duplicate_of",
+              "discovered_from"
             ],
             "type": "string"
           }
@@ -8028,7 +8037,7 @@
             ]
           },
           "board": {
-            "description": "add, attach, detach, ask, note, group, drop, add_group, rename_group, move_group, delete_group, edit_board, close_board, reopen_board: The board (brd_…).",
+            "description": "add, attach, detach, ask, note, group, drop, add_group, rename_group, move_group, delete_group, edit_board, close_board, reopen_board: The board (brd_…). relate, unrelate: The board (brd_…): its project is the one the items are in.",
             "type": "string"
           },
           "done_note": {
@@ -8052,7 +8061,7 @@
             ]
           },
           "item": {
-            "description": "attach: The row, by its item: #N, owner/repo#N, IDENT-N, or an iss_/fi_ id. detach, note, group: The row, by its item. ask: The row, by its item (an issue or a PR; one open ask per row). A note\nrow is refused. drop: The row, by its item: one you added.",
+            "description": "attach: The row, by its item: #N, owner/repo#N, IDENT-N, or an iss_/fi_ id. detach, note, group: The row, by its item. ask: The row, by its item (an issue or a PR; one open ask per row). A note\nrow is refused. relate, unrelate: The first item of the relation: an issue or PR of the project, as\n#N, owner/repo#N, IDENT-N, or an iss_… / fi_… id. It is not a row. drop: The row, by its item: one you added.",
             "type": "string"
           },
           "items": {
@@ -8063,12 +8072,14 @@
             "type": "array"
           },
           "kind": {
-            "description": "Which one (see the tool's description).",
+            "description": "relate, unrelate: blocks (the first must be closed before the second can start),\nrelates, duplicate_of or discovered_from. Only blocks gates.",
             "enum": [
               "add",
               "attach",
               "detach",
               "ask",
+              "relate",
+              "unrelate",
               "note",
               "group",
               "drop",
@@ -8145,7 +8156,7 @@
             ]
           },
           "to": {
-            "description": "attach: What to attach: a PR (#N, owner/repo#N or fi_…), a run (run_…), an\nhttps:// link, or an agent block (block:MACHINE/PANE, the pane as %N or N).",
+            "description": "attach: What to attach: a PR (#N, owner/repo#N or fi_…), a run (run_…), an\nhttps:// link, or an agent block (block:MACHINE/PANE, the pane as %N or N). relate, unrelate: The second item, written the same way. `item` blocks, relates to,\nduplicates or was discovered from it.",
             "items": {
               "type": "string"
             },
@@ -16601,7 +16612,7 @@
         "readOnlyHint": false,
         "title": "Write to a board"
       },
-      "description": "Write to a project's board in Arugula control, at once: what you write lands now, labelled as your person's agent on this machine, never as them. Their boards.write grant over the project says you may, never more than their role. One row is one piece of work, addressed by its item (#N, owner/repo#N, IDENT-N or an iss_/fi_ id), never by a row id. The lanes (Next, Doing, Review, Done) follow the live state of the work: there are no statuses, and you can't set a lane. Add issues with add (up to 50 in one call; each is a row, or is attached or already there, and the answer says which). A PR or an agent block is not a row of its own: attach it to the row of its issue (a PR that names that issue is attached for you). When you need a person's decision, ask with options (ask: who, the question, up to four options, a recommendation, why); they answer on the board and you read the answer in board_read, never by waiting. Groups are your phases or waves: add_group, rename_group, move_group, delete_group, and group puts a row in one. note sets a row's one-line note (pass the rev to refuse a stale write), drop removes a row you added, detach takes off an attachment you made. You may also make a board (an epic, with a goal), set its title and goal, close it with a note saying what a person can now do, and open it again. A write answers in a few lines: what changed, the rows' cards and the board's progress; pass verbose: true for the whole board. If one item of a batch fails, the others still land and the answer says which failed and why.\n- add {board, items, group?, verbose?}: Add issues or PRs to a board as rows, up to 50 in one call: #N, owner/repo#N, IDENT-N or an iss_/fi_ id. Each is a row, or is attached to the row of the issue it names (a PR), or is there already; one that fails doesn't stop the rest. Optionally into a group.\n- attach {board, item, to, role?, verbose?}: Attach work (a PR, an agent block or a run) or proof (a run or a link) to the row of an item, by the item (#N), not a row id.\n- detach {board, item, what, verbose?}: Take off an attachment you made, from the row of an item.\n- ask {board, item, question, who, options?, recommend?, verbose?, why?}: Ask a person of the project a question on the row of an item (an issue or a PR; one open ask per row), with up to four options or none for free text. They answer on the board, and the answer is the row's asked in board_read: read it there. You can't answer an ask.\n- note {board, item, text, rev?, verbose?}: Set the one-line note of the row of an item. With rev, a row that changed since is not written and the answer is its current note.\n- group {board, item, group?, verbose?}: Put the row of an item in a group (a phase, a wave), or out of its group (group: null).\n- drop {board, item, verbose?}: Remove the row of an item that you added.\n- add_group {board, title, verbose?}: Add a group to a board, last: a named section (a phase, a wave, an area) that rows go in.\n- rename_group {board, group, title, verbose?}: Rename a group.\n- move_group {board, group, before?, verbose?}: Move a group among a board's groups.\n- delete_group {board, group, verbose?}: Delete a group that is empty or holds only rows you added, with its rows.\n- create_board {title, goal?, project?, verbose?}: Make a board in a project, with a goal (an epic); returns it.\n- edit_board {board, goal?, title?, verbose?}: Set a board's title and/or goal.\n- close_board {board, done_note, verbose?}: Close a board with a note saying what a person can now do.\n- reopen_board {board, verbose?}: Open a closed board again, keeping its note.",
+      "description": "Write to a project's board in Arugula control, at once: what you write lands now, labelled as your person's agent on this machine, never as them. Their boards.write grant over the project says you may, never more than their role. One row is one piece of work, addressed by its item (#N, owner/repo#N, IDENT-N or an iss_/fi_ id), never by a row id. The lanes (Next, Doing, Review, Done) follow the live state of the work: there are no statuses, and you can't set a lane. Add issues with add (up to 50 in one call; each is a row, or is attached or already there, and the answer says which). A PR or an agent block is not a row of its own: attach it to the row of its issue (a PR that names that issue is attached for you). When you need a person's decision, ask with options (ask: who, the question, up to four options, a recommendation, why); they answer on the board and you read the answer in board_read, never by waiting. Groups are your phases or waves: add_group, rename_group, move_group, delete_group, and group puts a row in one. note sets a row's one-line note (pass the rev to refuse a stale write), drop removes a row you added, detach takes off an attachment you made. To say what blocks what, relate two items (relate: the item blocks, relates to, duplicates or was discovered from another; only blocks gates the board's Ready line, and a blocked row stays in its lane and says what blocks it) and unrelate one your machine made; relate needs your person's issues.write grant over the project too. You may also make a board (an epic, with a goal), set its title and goal, close it with a note saying what a person can now do, and open it again. A write answers in a few lines: what changed, the rows' cards and the board's progress; pass verbose: true for the whole board. If one item of a batch fails, the others still land and the answer says which failed and why.\n- add {board, items, group?, verbose?}: Add issues or PRs to a board as rows, up to 50 in one call: #N, owner/repo#N, IDENT-N or an iss_/fi_ id. Each is a row, or is attached to the row of the issue it names (a PR), or is there already; one that fails doesn't stop the rest. Optionally into a group.\n- attach {board, item, to, role?, verbose?}: Attach work (a PR, an agent block or a run) or proof (a run or a link) to the row of an item, by the item (#N), not a row id.\n- detach {board, item, what, verbose?}: Take off an attachment you made, from the row of an item.\n- ask {board, item, question, who, options?, recommend?, verbose?, why?}: Ask a person of the project a question on the row of an item (an issue or a PR; one open ask per row), with up to four options or none for free text. They answer on the board, and the answer is the row's asked in board_read: read it there. You can't answer an ask.\n- relate {board, item, kind, to, verbose?}: Relate two items of the board's project: item blocks, relates to, duplicates (duplicate_of) or was discovered from (discovered_from) to. A blocked row stays in its lane, says what blocks it, and is left out of board_read's Ready line until the blocker is closed. A blocks cycle is refused. Needs the issues.write grant too.\n- unrelate {board, item, kind, to, verbose?}: Take off a relation your machine made (the same item, to and kind as relate). One a person made, or that comes from Plane, stays. Found through a row of the board that has item or to as its item.\n- note {board, item, text, rev?, verbose?}: Set the one-line note of the row of an item. With rev, a row that changed since is not written and the answer is its current note.\n- group {board, item, group?, verbose?}: Put the row of an item in a group (a phase, a wave), or out of its group (group: null).\n- drop {board, item, verbose?}: Remove the row of an item that you added.\n- add_group {board, title, verbose?}: Add a group to a board, last: a named section (a phase, a wave, an area) that rows go in.\n- rename_group {board, group, title, verbose?}: Rename a group.\n- move_group {board, group, before?, verbose?}: Move a group among a board's groups.\n- delete_group {board, group, verbose?}: Delete a group that is empty or holds only rows you added, with its rows.\n- create_board {title, goal?, project?, verbose?}: Make a board in a project, with a goal (an epic); returns it.\n- edit_board {board, goal?, title?, verbose?}: Set a board's title and/or goal.\n- close_board {board, done_note, verbose?}: Close a board with a note saying what a person can now do.\n- reopen_board {board, verbose?}: Open a closed board again, keeping its note.",
       "inputSchema": {
         "$defs": {
           "AttachRoleArg": {
@@ -16609,6 +16620,15 @@
             "enum": [
               "work",
               "proof"
+            ],
+            "type": "string"
+          },
+          "RelationKindArg": {
+            "enum": [
+              "blocks",
+              "relates",
+              "duplicate_of",
+              "discovered_from"
             ],
             "type": "string"
           }
@@ -16624,7 +16644,7 @@
             ]
           },
           "board": {
-            "description": "add, attach, detach, ask, note, group, drop, add_group, rename_group, move_group, delete_group, edit_board, close_board, reopen_board: The board (brd_…).",
+            "description": "add, attach, detach, ask, note, group, drop, add_group, rename_group, move_group, delete_group, edit_board, close_board, reopen_board: The board (brd_…). relate, unrelate: The board (brd_…): its project is the one the items are in.",
             "type": "string"
           },
           "done_note": {
@@ -16648,7 +16668,7 @@
             ]
           },
           "item": {
-            "description": "attach: The row, by its item: #N, owner/repo#N, IDENT-N, or an iss_/fi_ id. detach, note, group: The row, by its item. ask: The row, by its item (an issue or a PR; one open ask per row). A note\nrow is refused. drop: The row, by its item: one you added.",
+            "description": "attach: The row, by its item: #N, owner/repo#N, IDENT-N, or an iss_/fi_ id. detach, note, group: The row, by its item. ask: The row, by its item (an issue or a PR; one open ask per row). A note\nrow is refused. relate, unrelate: The first item of the relation: an issue or PR of the project, as\n#N, owner/repo#N, IDENT-N, or an iss_… / fi_… id. It is not a row. drop: The row, by its item: one you added.",
             "type": "string"
           },
           "items": {
@@ -16659,12 +16679,14 @@
             "type": "array"
           },
           "kind": {
-            "description": "Which one (see the tool's description).",
+            "description": "relate, unrelate: blocks (the first must be closed before the second can start),\nrelates, duplicate_of or discovered_from. Only blocks gates.",
             "enum": [
               "add",
               "attach",
               "detach",
               "ask",
+              "relate",
+              "unrelate",
               "note",
               "group",
               "drop",
@@ -16741,7 +16763,7 @@
             ]
           },
           "to": {
-            "description": "attach: What to attach: a PR (#N, owner/repo#N or fi_…), a run (run_…), an\nhttps:// link, or an agent block (block:MACHINE/PANE, the pane as %N or N).",
+            "description": "attach: What to attach: a PR (#N, owner/repo#N or fi_…), a run (run_…), an\nhttps:// link, or an agent block (block:MACHINE/PANE, the pane as %N or N). relate, unrelate: The second item, written the same way. `item` blocks, relates to,\nduplicates or was discovered from it.",
             "items": {
               "type": "string"
             },

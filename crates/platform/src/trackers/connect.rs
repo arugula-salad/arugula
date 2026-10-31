@@ -298,6 +298,38 @@ pub fn ingest_page(
     })
 }
 
+/// Read the `blocked_by` and `blocking` relations of the items of a page
+/// and store them as `connection`'s `plane` edges (#403): one request each,
+/// within Plane's rate limit and the lease. An item the tracker no longer has
+/// is skipped; any other failure ends the turn like a failed page.
+/// `None` when the claim was lost.
+async fn mirror_relations(
+    app: &Platform,
+    job: &Backfill,
+    provider: &dyn super::TrackerProvider,
+    items: &[super::Item],
+    now: u64,
+) -> anyhow::Result<Option<()>> {
+    let mut changed: Vec<String> = vec![];
+    for it in items {
+        if !app.db.renew_backfill(job, now_ms())? {
+            return Ok(None);
+        }
+        let rel = match provider.relations(&job.workspace_slug, &job.source_project_id, &it.id).await {
+            Ok(r) => r,
+            Err(TrackerError::NotFound | TrackerError::NotYet(_)) => continue,
+            Err(e) => return Err(e.into()),
+        };
+        changed.extend(app.db.plane_relations_set(&job.id, &it.id, &rel.blocked_by, &rel.blocking, now)?);
+    }
+    changed.sort();
+    changed.dedup();
+    if !changed.is_empty() {
+        crate::boards::items_changed(app, &changed);
+    }
+    Ok(Some(()))
+}
+
 /// What one backfill turn did.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Turn {
@@ -353,6 +385,9 @@ async fn turn(app: &Platform, job: &Backfill, now: u64) -> anyhow::Result<Option
             return Ok(None);
         };
         crate::boards::items_changed(app, &changed);
+        if mirror_relations(app, job, &*provider, &page.items, now).await?.is_none() {
+            return Ok(None);
+        }
         cursor = page.next;
         if cursor.is_none() {
             let done = app.db.finish_backfill(job, &Finish::Done, now_ms())?;
@@ -443,6 +478,9 @@ async fn reconcile_turn(app: &Platform, job: &Backfill, now: u64) -> anyhow::Res
             return Ok(None);
         };
         crate::boards::items_changed(app, &changed);
+        if mirror_relations(app, job, &*provider, &page.items, now).await?.is_none() {
+            return Ok(None);
+        }
         total += changed.len();
         // A page with nothing newer than `since` is the end of what changed.
         let newer = since.is_none_or(|t| page.items.iter().any(|i| i.updated_at > t));

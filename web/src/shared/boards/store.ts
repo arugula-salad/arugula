@@ -5,7 +5,7 @@
 // and the shell's board block read through it. A write that names a stale
 // `rev` is refused with 409 (`stale_rev`): the view reads the board again.
 
-import type { BoardAttachRole, ForgeContent, NativeIssue, BoardList, BoardPointer, BoardPutEntry, BoardView, BoardWorkItems, TrackerConnections, TrackerWriteDone } from "../proto";
+import type { BoardAttachRole, ForgeContent, NativeIssue, BoardList, BoardPointer, BoardPutEntry, BoardView, BoardWorkItems, RelationKind, TrackerConnections, TrackerWriteDone } from "../proto";
 import { chat } from "../chat-store";
 import { platformFetch, refusalOf } from "../maintenance";
 
@@ -74,6 +74,10 @@ export const boards = {
   /** Answer an ask with one of its options, or with text when it has none: the person it names, or an owner or editor for them. */
   answer: (id: string, ask: string, a: { option: string } | { text: string }) =>
     call<BoardView>("POST", `/api/boards/${enc(id)}/asks/${enc(ask)}/answer`, { option: null, text: null, ...a }),
+  /** Relate two items of the project (owners and editors): `from` `kind` `to`, ids that start iss_ or fi_ (#403). The board is read again after. */
+  relate: (project: string, r: { from: string; to: string; kind: RelationKind }) => call<unknown>("POST", `/api/projects/${enc(project)}/relations`, r),
+  /** Take a relation off; one that comes from Plane is refused. */
+  unrelate: (project: string, relation: string) => call<unknown>("DELETE", `/api/projects/${enc(project)}/relations/${enc(relation)}`),
   detach: (id: string, attachment: string) => call<BoardView>("DELETE", `/api/boards/${enc(id)}/attachments/${enc(attachment)}`),
   /** Rename the board, or change its goal (empty clears it). */
   edit: (id: string, e: { title?: string; goal?: string }) => call<BoardView>("PATCH", `/api/boards/${enc(id)}`, e),

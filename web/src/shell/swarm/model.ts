@@ -7,11 +7,12 @@ import { cleanTitle } from "../../shared/titles";
 import type { FleetPane } from "../fleet";
 import type { Reason, WorkKind } from "../../shared/proto";
 import { NEEDS_YOU } from "../../shared/needs-you";
+import { boardGroup } from "../../shared/boards/text";
 
 // "owner", not "person": it groups by whose a pane is, and a team owns
 // some (UI audit #172).
-export type GroupBy = "project" | "machine" | "kind" | "session" | "owner";
-export const GROUPINGS: GroupBy[] = ["project", "machine", "kind", "session", "owner"];
+export type GroupBy = "project" | "machine" | "kind" | "session" | "owner" | "board";
+export const GROUPINGS: GroupBy[] = ["project", "machine", "kind", "session", "owner", "board"];
 
 /** Each grouping's button, in sentence case. */
 export const GROUPING_LABEL: Record<GroupBy, string> = {
@@ -20,6 +21,7 @@ export const GROUPING_LABEL: Record<GroupBy, string> = {
   kind: "Kind",
   session: "Session",
   owner: "Owner",
+  board: "Board",
 };
 
 /** The prototype's palette, one colour per kind. */
@@ -167,6 +169,8 @@ export function groupOf(p: FleetPane, by: GroupBy): string {
       return p.session ? `${p.session.name} · ${p.host}` : p.host;
     case "owner":
       return ownerOf(p);
+    case "board":
+      return boardGroup(p.info.on_issue);
   }
 }
 

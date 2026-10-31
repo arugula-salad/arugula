@@ -47,9 +47,10 @@
 
 use arugula_control_wire::boards::{
     self as wire, AGENT_BOARD_REACH, AttachRole, AttachRow, BoardList, BoardView, CloseBoard, EditBoard, IssueRef,
-    Live, MoveEntry, NewAsk, NewBoard, Pointer, PutEntry, ResolveItems, Resolved, Row, agent_board,
+    Live, MoveEntry, NewAsk, NewBoard, NewRelation, Pointer, PutEntry, ResolveItems, Resolved, Row, agent_board,
     agent_board_attachment, agent_board_attachments, agent_board_close, agent_board_entries, agent_board_entry,
     agent_board_entry_move, agent_board_reopen, agent_board_resolve, agent_board_row_ask, agent_project_boards,
+    agent_project_relation, agent_project_relations,
 };
 use reqwest::Method;
 use rmcp::handler::server::common::schema_for_type;
@@ -69,7 +70,7 @@ pub(crate) const WRITE_TOOL: &str = "board_write";
 
 pub(crate) const READ_DESCRIPTION: &str = "Read a project's board in Arugula control (an epic when it has a goal; with this machine's boards.read grant over its project). One row is one piece of work: an issue (or a PR with no issue), or a note, with a one-line note and what is attached to it (work: PRs, agent blocks, runs; proof: runs, links). The lanes follow the work and nobody sets them: Next, Doing (an agent block that isn't closed, or a run running), Review (a PR is open) and Done (the issue is closed, or the PR merged or closed); a Done row is proven by CI or by evidence, or not proven yet. Groups are the plan's phases or waves. Returns the board as 72-column text, each row by its item (#N, IDENT-N), and its progress; with verbose: true, also the JSON with ids and revs. With board (brd_…): that board. Without: the project's boards (project, else the one this clone's GitHub repo is linked to, else your person's personal project), to pick one from.";
 
-pub(crate) const WRITE_DESCRIPTION: &str = "Write to a project's board in Arugula control, at once: what you write lands now, labelled as your person's agent on this machine, never as them. Their boards.write grant over the project says you may, never more than their role. One row is one piece of work, addressed by its item (#N, owner/repo#N, IDENT-N or an iss_/fi_ id), never by a row id. The lanes (Next, Doing, Review, Done) follow the live state of the work: there are no statuses, and you can't set a lane. Add issues with add (up to 50 in one call; each is a row, or is attached or already there, and the answer says which). A PR or an agent block is not a row of its own: attach it to the row of its issue (a PR that names that issue is attached for you). When you need a person's decision, ask with options (ask: who, the question, up to four options, a recommendation, why); they answer on the board and you read the answer in board_read, never by waiting. Groups are your phases or waves: add_group, rename_group, move_group, delete_group, and group puts a row in one. note sets a row's one-line note (pass the rev to refuse a stale write), drop removes a row you added, detach takes off an attachment you made. You may also make a board (an epic, with a goal), set its title and goal, close it with a note saying what a person can now do, and open it again. A write answers in a few lines: what changed, the rows' cards and the board's progress; pass verbose: true for the whole board. If one item of a batch fails, the others still land and the answer says which failed and why.";
+pub(crate) const WRITE_DESCRIPTION: &str = "Write to a project's board in Arugula control, at once: what you write lands now, labelled as your person's agent on this machine, never as them. Their boards.write grant over the project says you may, never more than their role. One row is one piece of work, addressed by its item (#N, owner/repo#N, IDENT-N or an iss_/fi_ id), never by a row id. The lanes (Next, Doing, Review, Done) follow the live state of the work: there are no statuses, and you can't set a lane. Add issues with add (up to 50 in one call; each is a row, or is attached or already there, and the answer says which). A PR or an agent block is not a row of its own: attach it to the row of its issue (a PR that names that issue is attached for you). When you need a person's decision, ask with options (ask: who, the question, up to four options, a recommendation, why); they answer on the board and you read the answer in board_read, never by waiting. Groups are your phases or waves: add_group, rename_group, move_group, delete_group, and group puts a row in one. note sets a row's one-line note (pass the rev to refuse a stale write), drop removes a row you added, detach takes off an attachment you made. To say what blocks what, relate two items (relate: the item blocks, relates to, duplicates or was discovered from another; only blocks gates the board's Ready line, and a blocked row stays in its lane and says what blocks it) and unrelate one your machine made; relate needs your person's issues.write grant over the project too. You may also make a board (an epic, with a goal), set its title and goal, close it with a note saying what a person can now do, and open it again. A write answers in a few lines: what changed, the rows' cards and the board's progress; pass verbose: true for the whole board. If one item of a batch fails, the others still land and the answer says which failed and why.";
 
 /// The most a batch takes.
 const BATCH_MAX: usize = wire::RESOLVE_MAX;
@@ -221,6 +222,43 @@ pub struct AskArgs {
 }
 
 #[derive(Deserialize, JsonSchema)]
+pub struct RelateArgs {
+    /// The board (brd_…): its project is the one the items are in.
+    pub board: String,
+    /// The first item of the relation: an issue or PR of the project, as
+    /// #N, owner/repo#N, IDENT-N, or an iss_… / fi_… id. It is not a row.
+    pub item: String,
+    /// The second item, written the same way. `item` blocks, relates to,
+    /// duplicates or was discovered from it.
+    pub to: String,
+    /// blocks (the first must be closed before the second can start),
+    /// relates, duplicate_of or discovered_from. Only blocks gates.
+    pub kind: RelationKindArg,
+    #[serde(default)]
+    pub verbose: bool,
+}
+
+#[derive(Deserialize, JsonSchema, Clone, Copy)]
+#[serde(rename_all = "snake_case")]
+pub enum RelationKindArg {
+    Blocks,
+    Relates,
+    DuplicateOf,
+    DiscoveredFrom,
+}
+
+impl From<RelationKindArg> for wire::RelationKind {
+    fn from(k: RelationKindArg) -> Self {
+        match k {
+            RelationKindArg::Blocks => wire::RelationKind::Blocks,
+            RelationKindArg::Relates => wire::RelationKind::Relates,
+            RelationKindArg::DuplicateOf => wire::RelationKind::DuplicateOf,
+            RelationKindArg::DiscoveredFrom => wire::RelationKind::DiscoveredFrom,
+        }
+    }
+}
+
+#[derive(Deserialize, JsonSchema)]
 pub struct NoteArgs {
     /// The board (brd_…).
     pub board: String,
@@ -339,6 +377,18 @@ pub(crate) const WRITE: &[Kind] = &[
         flag: Some(arugula_proto::flags::BOARDS),
     },
     Kind {
+        name: "relate",
+        description: "Relate two items of the board's project: item blocks, relates to, duplicates (duplicate_of) or was discovered from (discovered_from) to. A blocked row stays in its lane, says what blocks it, and is left out of board_read's Ready line until the blocker is closed. A blocks cycle is refused. Needs the issues.write grant too.",
+        schema: schema_for_type::<RelateArgs>,
+        flag: Some(arugula_proto::flags::BOARDS),
+    },
+    Kind {
+        name: "unrelate",
+        description: "Take off a relation your machine made (the same item, to and kind as relate). One a person made, or that comes from Plane, stays. Found through a row of the board that has item or to as its item.",
+        schema: schema_for_type::<RelateArgs>,
+        flag: Some(arugula_proto::flags::BOARDS),
+    },
+    Kind {
         name: "note",
         description: "Set the one-line note of the row of an item. With rev, a row that changed since is not written and the answer is its current note.",
         schema: schema_for_type::<NoteArgs>,
@@ -431,6 +481,11 @@ fn text(v: &BoardView) -> String {
 
 /// `Title (brd_…): 3/11 done, 2 proven, 2 group(s)`; for a board with no
 /// issue or PR yet, `no issues yet`.
+/// How many rows can start now (the board's ready set).
+fn ready_line(v: &BoardView) -> String {
+    format!("{} ready.", v.ready.len())
+}
+
 fn progress(v: &BoardView) -> String {
     let (b, p) = (&v.board, v.board.progress);
     let state = match p.total {
@@ -696,6 +751,37 @@ fn target(to: &str) -> Result<Target, String> {
     Ok(Target::Item(to.into()))
 }
 
+/// The `iss_` or `fi_` ids `item` and `to` name, in the board's project.
+async fn relation_ends(c: &Call<'_>, board: &str, item: &str, to: &str) -> Result<(String, String), String> {
+    let resolved = resolve(c, board, &[item.to_owned(), to.to_owned()]).await?;
+    let mut ends = vec![];
+    for (what, r) in [item, to].into_iter().zip(resolved.items) {
+        match r.pointer {
+            Some(Pointer::Issue { id } | Pointer::ForgeItem { id }) => ends.push(id),
+            _ => {
+                return Err(format!(
+                    "{what}: {}",
+                    r.why.unwrap_or_else(|| "control didn't resolve it to an issue or PR".into())
+                ));
+            }
+        }
+    }
+    let to = ends.pop().unwrap_or_default();
+    Ok((ends.pop().unwrap_or_default(), to))
+}
+
+/// The id of the relation `from` `kind` `to` that a row of the board shows.
+fn relation_between(v: &BoardView, from: &str, to: &str, kind: wire::RelationKind) -> Option<String> {
+    rows(v).find_map(|r| {
+        let me = pointer_id(&r.pointer)?;
+        r.relations.iter().find_map(|x| {
+            let other = x.item.as_deref()?;
+            let (a, b) = if x.direction == wire::RelationDirection::Out { (me, other) } else { (other, me) };
+            (a == from && b == to && x.kind == kind).then(|| x.id.clone())
+        })
+    })
+}
+
 async fn add(c: &Call<'_>, a: AddArgs) -> Out {
     if a.items.is_empty() || a.items.len() > BATCH_MAX {
         return Err(format!("add takes 1 to {BATCH_MAX} items, not {}", a.items.len()));
@@ -946,6 +1032,41 @@ pub(crate) async fn board_write(c: &Call<'_>, kind: &str, a: Value) -> Out {
             let v = boards_call(c, Method::POST, &agent_board_row_ask(&a.board, &row.id), Some(body)).await?;
             one_row(&view_of(v)?, &format!("Asked on {}.", row.item_label()), &row.id, a.verbose)
         }
+        "relate" => {
+            let a: RelateArgs = args(a)?;
+            let view = read_view(c, &a.board).await?;
+            let (from, to) = relation_ends(c, &a.board, &a.item, &a.to).await?;
+            let kind = wire::RelationKind::from(a.kind);
+            let body = given(NewRelation { from, to, kind })?;
+            boards_call(c, Method::POST, &agent_project_relations(&view.board.project), Some(body)).await?;
+            let after = read_view(c, &a.board).await?;
+            let words = kind.as_str().replace('_', " ");
+            answer(
+                format!("Related: {} {words} {}.\n{}", a.item.trim(), a.to.trim(), ready_line(&after)),
+                &after,
+                a.verbose,
+            )
+        }
+        "unrelate" => {
+            let a: RelateArgs = args(a)?;
+            let view = read_view(c, &a.board).await?;
+            let (from, to) = relation_ends(c, &a.board, &a.item, &a.to).await?;
+            let kind = wire::RelationKind::from(a.kind);
+            let rel = relation_between(&view, &from, &to, kind).ok_or_else(|| {
+                format!(
+                    "no such relation on a row of this board: {} and {} need a row with one of them as its item",
+                    a.item.trim(),
+                    a.to.trim()
+                )
+            })?;
+            boards_call(c, Method::DELETE, &agent_project_relation(&view.board.project, &rel), None).await?;
+            let after = read_view(c, &a.board).await?;
+            answer(
+                format!("Took off the relation between {} and {}.\n{}", a.item.trim(), a.to.trim(), ready_line(&after)),
+                &after,
+                a.verbose,
+            )
+        }
         "note" => {
             let a: NoteArgs = args(a)?;
             let view = read_view(c, &a.board).await?;
@@ -1143,6 +1264,29 @@ mod tests {
         );
     }
 
+    /// A relation is found from what a row shows of it, by its two ends.
+    #[test]
+    fn unrelate_finds_the_relation_on_a_row() {
+        let view: BoardView = serde_json::from_value(json!({
+            "board": { "id": "brd_1", "project": "prj_1", "title": "T", "goal": "", "done_note": "", "rev": 1,
+                       "created_by": "a", "progress": { "done": 0, "total": 0, "proven": 0 },
+                       "created_at": 0, "updated_at": 0 },
+            "zones": [{ "id": "lane_next", "rev": 0, "title": "Next", "rows": [
+                { "id": "row_b", "rev": 1, "pointer": { "kind": "issue", "id": "iss_b" }, "note": "",
+                  "status": "none", "created_at": 0, "updated_at": 0,
+                  "relations": [{ "id": "rel_1", "kind": "blocks", "direction": "in", "source": "agent",
+                                  "item": "iss_a", "removable": true }] }
+            ] }],
+            "groups": []
+        }))
+        .unwrap();
+        let k = wire::RelationKind::Blocks;
+        assert_eq!(relation_between(&view, "iss_a", "iss_b", k).as_deref(), Some("rel_1"));
+        assert_eq!(relation_between(&view, "iss_b", "iss_a", k), None);
+        assert_eq!(relation_between(&view, "iss_a", "iss_b", wire::RelationKind::Relates), None);
+        assert_eq!(ready_line(&view), "0 ready.");
+    }
+
     /// A board's args take only a title, and leave out what isn't given.
     #[test]
     fn a_board_is_made_from_a_title_alone() {
@@ -1164,6 +1308,8 @@ mod tests {
                 "attach",
                 "detach",
                 "ask",
+                "relate",
+                "unrelate",
                 "note",
                 "group",
                 "drop",

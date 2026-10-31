@@ -12,6 +12,7 @@
 
 import type { WorkKind } from "../../shared/proto";
 import { KINDS } from "./model";
+import { clusterOrder } from "../../shared/boards/text";
 
 /** M61: an unread thread, and one that mentions you. */
 export const UNREAD = "#e6ebf4";
@@ -360,7 +361,7 @@ export class Field implements SwarmScene {
     const placedBefore = this.groups.size;
     const counts = new Map<string, number>();
     for (const t of this.tiles.values()) counts.set(t.group, (counts.get(t.group) ?? 0) + 1);
-    const names = [...counts.keys()].sort((a, b) => counts.get(b)! - counts.get(a)! || a.localeCompare(b));
+    const names = [...counts.keys()].sort((a, b) => clusterOrder([a, counts.get(a)!], [b, counts.get(b)!]));
     const placed: Group[] = [];
     // Spread the clusters to the view's shape: wide on a laptop, tall on a
     // phone held upright.

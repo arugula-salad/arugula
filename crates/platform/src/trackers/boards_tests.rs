@@ -187,3 +187,71 @@ async fn a_plane_item_is_on_a_board_and_closing_it_moves_the_progress() {
     assert_eq!(progress(&v), (0, 1));
     assert!(work(&base, "bob", &team, "").await.iter().all(|i| i["source"] != "plane"));
 }
+
+/// A Plane `blocked_by` shows on the row (Arugula #403): the backfill reads
+/// each item's relations and stores them as `plane` edges, the row of the
+/// blocked item says "blocked by ARUGU's #1" and is out of the ready set,
+/// the edge can't be deleted here, and a reconcile that finds it gone in
+/// Plane takes it off.
+#[tokio::test]
+async fn a_plane_blocked_by_shows_on_the_row_and_stays_read_only() {
+    use crate::trackers::connect::Reconciled;
+    use arugula_control_wire::boards::project_relation;
+
+    let hub = Arc::new(TestHub::default());
+    let (fake, app, base) = serve(&hub).await;
+    hub.team("t1", &[("alice", TeamRole::Owner), ("bob", TeamRole::Editor), ("carol", TeamRole::Viewer)]);
+    hub.flag_named("team:t1", FLAG, true);
+    let team = crate::projects::team_project(&app, "t1").await.unwrap().unwrap();
+    // Plane says item-1 blocks item-2 (and, from the other side, item-2 is blocked by it).
+    fake.set_blocks(vec![("item-1", "item-2")]);
+    let (s, made) = connect_as(&base, "bob", &team, KEY, "ARUGU").await;
+    assert_eq!(s, 200, "{made}");
+    let conn = made["id"].as_str().unwrap().to_owned();
+    backfilled(&app, &team, &conn).await;
+    let mirror = app.db.tracker_connection(&team, &conn).unwrap().unwrap().mirror_id;
+    let (first, second) = (mirrored_id(&app, mirror, 1), mirrored_id(&app, mirror, 2));
+
+    let id = board(
+        &base,
+        "bob",
+        &team,
+        &[json!({ "kind": "forge_item", "id": first }), json!({ "kind": "forge_item", "id": second })],
+    )
+    .await;
+    for who in ["bob", "carol"] {
+        let v = read(&base, who, &id).await;
+        let blocked = lane_rows(&v).into_iter().find(|r| r["pointer"]["id"] == json!(second)).unwrap().clone();
+        assert_eq!(
+            blocked["marks"],
+            json!([{ "kind": "blocked_by", "number": 1, "title": "First", "repo": "Arugula" }]),
+            "{who}: {blocked}"
+        );
+        assert_eq!(blocked["relations"][0]["source"], json!("plane"), "{who}");
+        assert_eq!(blocked["relations"][0]["removable"], json!(false), "{who}: it is Plane's");
+        let ready: Vec<_> = v["ready"].as_array().unwrap().iter().collect();
+        let first_row = lane_rows(&v).into_iter().find(|r| r["pointer"]["id"] == json!(first)).unwrap()["id"].clone();
+        assert_eq!(ready, [&first_row], "{who}: only the blocker can start: {v}");
+    }
+
+    // Read-only here: deleting it is refused, saying where it comes from.
+    let v = read(&base, "bob", &id).await;
+    let blocked = lane_rows(&v).into_iter().find(|r| r["pointer"]["id"] == json!(second)).unwrap().clone();
+    let rel = blocked["relations"][0]["id"].as_str().unwrap().to_owned();
+    let (s, v) = call(&base, "bob", "DELETE", &project_relation(&team, &rel), None).await;
+    assert_eq!((s, v["error"].as_str()), (403, Some("it comes from Plane")), "{v}");
+
+    // Plane drops it; the next reconcile reads the item again and the edge goes.
+    fake.set_blocks(vec![]);
+    fake.set_items(vec![
+        item(1, "First", "backlog", 9_000_000_000_000),
+        item(2, "Second", "started", 9_000_000_000_001),
+        item(3, "Third", "completed", 1_000),
+    ]);
+    let due = arugula_e2e::now_ms() + 24 * 3_600_000;
+    assert!(matches!(connect::reconcile(&app, due).await.unwrap(), Some(Reconciled::Done { .. })));
+    let v = read(&base, "bob", &id).await;
+    let blocked = lane_rows(&v).into_iter().find(|r| r["pointer"]["id"] == json!(second)).unwrap().clone();
+    assert!(blocked.get("marks").is_none() && blocked.get("relations").is_none(), "{blocked}");
+    assert_eq!(v["ready"].as_array().unwrap().len(), 2, "{v}");
+}

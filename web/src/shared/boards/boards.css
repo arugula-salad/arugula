@@ -773,3 +773,19 @@
     box-shadow: 0 -8px 24px rgb(0 0 0 / 0.25);
   }
 }
+
+/* A row's relations in the drawer (#403). */
+.board-drawer-relation {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 0;
+}
+.board-drawer-relation .board-more {
+  margin-left: auto;
+}
+.board-relation-add {
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}

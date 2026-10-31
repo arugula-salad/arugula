@@ -5,6 +5,7 @@
 // theme lays out its panes in world units and draws them; this does the rest.
 
 import type { WorkKind } from "../../shared/proto";
+import { clusterOrder } from "../../shared/boards/text";
 import { C, Meter, readColors, type FieldHooks, type FieldPane, type Measured, type SwarmScene } from "./field";
 
 export { C };
@@ -346,7 +347,7 @@ export abstract class Flat implements SwarmScene {
       a.push(p);
     }
     return [...m.entries()]
-      .sort((a, b) => b[1].length - a[1].length || a[0].localeCompare(b[0]))
+      .sort((a, b) => clusterOrder([a[0], a[1].length], [b[0], b[1].length]))
       .map(([name, ps]) => ({ name, ps: ps.sort((a, b) => (a.sub ?? "").localeCompare(b.sub ?? "") || a.where.localeCompare(b.where) || (a.id ?? 0) - (b.id ?? 0) || a.key.localeCompare(b.key)) }));
   }
 }
