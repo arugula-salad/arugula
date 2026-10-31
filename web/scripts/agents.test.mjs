@@ -12,6 +12,7 @@ import {
   COLUMNS,
   COMMAND_POWERS,
   deployGrant,
+  hasWorkOnBoards,
   liveOver,
   machinesOf,
   matrixOf,
@@ -20,6 +21,8 @@ import {
   RUN_POWERS,
   SINGLE,
   singleGrant,
+  withWorkOnBoards,
+  WORK_ON_BOARDS,
 } from "../src/platform/settings/grants.ts";
 
 const msg = (over) => ({ author: "a1", name: "Jake", agent: null, ...over });
@@ -266,4 +269,14 @@ test("a line the platform wrote isn't a person's", () => {
   assert.equal(authorLabel(line), "Arugula");
   assert.equal(isSystemLine(msg({ via: "notes" })), false);
   assert.equal(isSystemLine(msg({ author: "", name: "" })), false);
+});
+
+test("Work on boards is boards.write, issues.write and trackers.write together (#366)", () => {
+  assert.deepEqual(WORK_ON_BOARDS, ["boards.write", "issues.write", "trackers.write"]);
+  assert.equal(hasWorkOnBoards(["boards.write", "issues.write"]), false, "two of three isn't it");
+  const on = withWorkOnBoards(["threads.read", "issues.write"], true);
+  assert.deepEqual(on, ["threads.read", ...WORK_ON_BOARDS]);
+  assert.equal(hasWorkOnBoards(on), true);
+  // Off takes the three and keeps the others.
+  assert.deepEqual(withWorkOnBoards(on, false), ["threads.read"]);
 });

@@ -3140,6 +3140,14 @@ clients = ["daemon"]
 note = "Asks a person of the project a question on a row (`boards.write`); it says an agent asked. It reads the answer from the board: there is no route for an agent to answer."
 
 [[route]]
+method = "POST"
+path = "/api/daemon/boards/{id}/resolve"  # wire::boards::AGENT_BOARD_RESOLVE
+process = "platform"
+auth = "daemon"
+clients = ["daemon"]
+note = "Resolves up to 50 references (`#N`, `owner/repo#N`, `IDENT-N`, an `iss_`/`fi_` id) to the issues and PRs of the board's project they name, before the agent adds or attaches them (`boards.write`). A reference that names two things, or none, answers why instead of a pointer. Changes nothing."
+
+[[route]]
 method = "PUT"
 path = "/api/daemon/block-state"  # wire::boards::AGENT_BLOCK_STATE
 process = "platform"
