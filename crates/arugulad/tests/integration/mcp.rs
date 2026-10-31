@@ -2819,26 +2819,28 @@ async fn fake_boards(f: FakeBoards) -> String {
     };
     fn view() -> Value {
         let lane = |id: &str, title: &str, rows: Value| json!({ "id": format!("lane_{id}"), "rev": 0, "title": title, "kind": "lane", "rows": rows });
+        let native = |n: u64| json!({ "state": "open", "kind": "native", "number": n, "title": "" });
         json!({
             "board": { "id": "brd_1", "project": "prj_1", "title": "Launch", "created_by": "a1",
-                       "created_at": 1, "updated_at": 1 },
-            "groups": [{ "id": "zon_1", "rev": 1, "title": "Phase 1", "progress": { "done": 0, "total": 1 } }],
+                       "created_at": 1, "updated_at": 1, "progress": { "done": 2, "total": 3, "proven": 1 } },
+            "groups": [{ "id": "zon_1", "rev": 1, "title": "Phase 1", "progress": { "done": 0, "total": 1 } },
+                       { "id": "zon_2", "rev": 1, "title": "Phase 2", "progress": { "done": 0, "total": 0 } }],
             "zones": [
                 lane("next", "Next", json!([{
                     "id": "row_1", "rev": 2, "pointer": { "kind": "issue", "id": "iss_0123456789abcdef" },
                     "note": "fix login", "status": "none", "lane": "next", "attachments": [], "group": "zon_1",
-                    "created_at": 1, "updated_at": 1 }])),
+                    "live": native(12), "created_at": 1, "updated_at": 1 }])),
                 lane("doing", "Doing", json!([])),
                 lane("review", "Review", json!([])),
                 lane("done", "Done", json!([
                     { "id": "row_3", "rev": 1, "pointer": { "kind": "issue", "id": "iss_aa11" },
-                      "note": "CI on main", "status": "none", "lane": "done",
+                      "note": "CI on main", "status": "none", "lane": "done", "live": native(3),
                       "attachments": [{ "id": "att_1", "role": "proof",
                                         "pointer": { "kind": "link", "url": "https://ci.example.com/runs/42" } }],
                       "proof": { "by": "evidence", "pointer": { "kind": "link", "url": "https://ci.example.com/runs/42" } },
                       "created_at": 1, "updated_at": 1 },
                     { "id": "row_4", "rev": 1, "pointer": { "kind": "issue", "id": "iss_bb22" },
-                      "note": "Nightly", "status": "none", "lane": "done", "attachments": [],
+                      "note": "Nightly", "status": "none", "lane": "done", "attachments": [], "live": native(4),
                       "created_at": 1, "updated_at": 1 }])),
             ],
         })
@@ -2866,6 +2868,20 @@ async fn fake_boards(f: FakeBoards) -> String {
                 v["board"]["created_by_agent"] = json!({ "machine": "m1", "machine_name": "geek" });
                 Json(v).into_response()
             }
+            ("POST", "/api/daemon/boards/brd_1/resolve") => {
+                let items: Vec<Value> = b["items"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|i| match i.as_str().unwrap() {
+                        "#30" => json!({ "item": "#30", "pointer": { "kind": "forge_item", "id": "fi_30" } }),
+                        "#31" => json!({ "item": "#31", "pointer": { "kind": "forge_item", "id": "fi_31" } }),
+                        "#12" => json!({ "item": "#12", "pointer": { "kind": "issue", "id": "iss_0123456789abcdef" } }),
+                        other => json!({ "item": other, "why": format!("nothing is {other} in this project") }),
+                    })
+                    .collect();
+                Json(json!({ "items": items })).into_response()
+            }
             ("PUT", "/api/daemon/boards/brd_1/entries") => {
                 if b["id"] == "row_1" && b["pointer"].is_object() {
                     return said(
@@ -2878,23 +2894,32 @@ async fn fake_boards(f: FakeBoards) -> String {
                     return said(StatusCode::CONFLICT, "this entry is at rev 2 now: read the board again", "stale_rev");
                 }
                 let mut v = view();
-                if b["entry"] == "row" {
+                if b["entry"] == "row" && b["pointer"]["id"] == "fi_30" {
                     v["zones"][0]["rows"].as_array_mut().unwrap().push(json!({
-                        "id": "row_2", "rev": 1, "pointer": { "kind": "none" }, "note": b["note"],
+                        "id": "row_2", "rev": 1, "pointer": b["pointer"], "note": "", "group": b["zone"],
                         "status": "none", "lane": "next", "attachments": [],
+                        "live": { "state": "open", "kind": "issue", "repo": "acme/app", "number": 30, "title": "" },
                         "agent": { "machine": "m1", "machine_name": "geek" }, "created_at": 2, "updated_at": 2 }));
+                }
+                if b["entry"] == "row" && b["pointer"]["id"] == "fi_31" {
+                    // A PR that names the issue of row_1 goes to that row.
+                    v["zones"][0]["rows"][0]["attachments"] = json!([{ "id": "att_9", "role": "work",
+                        "pointer": b["pointer"], "live": { "state": "open", "kind": "pr", "repo": "acme/app", "number": 31, "title": "" } }]);
                 }
                 Json(v).into_response()
             }
-            ("POST", "/api/daemon/boards/brd_1/attachments") => {
+            ("POST", "/api/daemon/boards/brd_1/rows/row_1/ask") => {
                 let mut v = view();
-                v["said"] = json!("that PR references an issue that is row row_1 on this board");
+                v["zones"][0]["rows"][0]["ask"] = json!({ "id": "ask_1", "who": "acc", "who_name": "Sam",
+                    "question": b["question"], "options": b["options"], "asked_by": "geek", "raised": false,
+                    "mine": false, "can_answer": false, "created_at": 2 });
                 Json(v).into_response()
             }
+            ("POST", "/api/daemon/boards/brd_1/attachments") => Json(view()).into_response(),
             ("DELETE", "/api/daemon/boards/brd_1/attachments/att_1") => {
                 said(StatusCode::FORBIDDEN, "an agent takes off only the attachments its own machine made", "forbidden")
             }
-            ("POST", "/api/daemon/boards/brd_1/entries/row_1/move" | "/api/daemon/boards/brd_1/entries/zon_1/move") => {
+            ("POST", "/api/daemon/boards/brd_1/entries/row_1/move" | "/api/daemon/boards/brd_1/entries/zon_2/move") => {
                 if b["zone"] == "lane_done" {
                     return said(StatusCode::BAD_REQUEST, "lanes follow the work: a lane is never set", "bad_request");
                 }
@@ -2927,10 +2952,12 @@ async fn fake_boards(f: FakeBoards) -> String {
 
 /// The board tools (boards, step 3) are listed and work only with the
 /// `boards` flag on; board_read lists a project's boards and reads one as
-/// lanes, rows and 72-column text; board_write adds a row, clears a status
-/// with no rev, offers no zone, move or other status, attaches proof, says to
-/// read again on a 409, needs a rev for a note, makes a board and closes it,
-/// and passes the platform's refusals through.
+/// lanes, rows and 72-column text, the JSON only when verbose; board_write
+/// (#366) adds a batch of issues by their items, one failing without
+/// stopping the rest, attaches a PR to the row of its issue, addresses rows by
+/// item, writes a note unless its rev is stale, groups rows, asks, makes a
+/// board and closes it, offers no old kind, and passes the platform's
+/// refusals through, in answers of a few lines.
 #[cfg(feature = "labs")]
 #[tokio::test(flavor = "multi_thread")]
 async fn an_agent_reads_and_writes_a_board_where_the_flag_is_on() {
@@ -2963,21 +2990,21 @@ async fn an_agent_reads_and_writes_a_board_where_the_flag_is_on() {
     assert_eq!(
         kinds(&tools, "board_write"),
         [
-            "add_row",
-            "set",
-            "move",
+            "add",
             "attach",
             "detach",
             "ask",
-            "remove_row",
+            "note",
+            "group",
+            "drop",
+            "add_group",
+            "rename_group",
+            "move_group",
+            "delete_group",
             "create_board",
             "edit_board",
             "close_board",
-            "reopen_board",
-            "add_zone",
-            "edit_zone",
-            "move_zone",
-            "delete_zone"
+            "reopen_board"
         ]
     );
     // show's board kind pins one beside the caller, by its id.
@@ -2987,85 +3014,101 @@ async fn an_agent_reads_and_writes_a_board_where_the_flag_is_on() {
     assert!(refused(&s, "show", json!({ "kind": "board", "board": "not a board" })).await.contains("brd_"));
 
     let listed = call(&s, "board_read", json!({ "project": "prj_1" })).await;
+    assert!(listed.get("boards").is_none(), "the JSON only when verbose: {listed}");
+    let listed = call(&s, "board_read", json!({ "project": "prj_1", "verbose": true })).await;
     assert_eq!(listed["boards"][0]["id"], "brd_1", "{listed}");
     assert!(listed["summary"].as_str().unwrap().contains("Launch (brd_1)"), "{listed}");
 
     let read = call(&s, "board_read", json!({ "board": "brd_1" })).await;
-    assert_eq!(read["zones"][0]["rows"][0]["rev"], 2, "{read}");
-    let text = read["text"].as_str().unwrap();
-    assert!(
-        text.starts_with("Launch\n# Phase 1") && text.contains("Next") && text.contains("○ iss_01234567"),
-        "{text}"
-    );
+    assert!(read.get("zones").is_none(), "the JSON only when verbose: {read}");
+    let text = read["summary"].as_str().unwrap();
+    assert!(text.starts_with("Launch (brd_1): 2/3 done, 1 proven, 2 group(s)\nLaunch\n"), "{text}");
+    assert!(text.contains("# Phase 1"), "{text}");
+    assert!(text.contains("Next") && text.contains("○ #12"), "rows by their items: {text}");
     assert!(text.lines().all(|l| l.chars().count() <= 72), "{text}");
     assert!(text.contains("[proven] CI on main") && text.contains("[not proven yet] Nightly"), "{text}");
-    assert!(read["summary"].as_str().unwrap().contains("3 row(s): 1 next, 0 doing, 0 review, 2 done"), "{read}");
+    let full = call(&s, "board_read", json!({ "board": "brd_1", "verbose": true })).await;
+    assert_eq!(full["zones"][0]["rows"][0]["rev"], 2, "{full}");
+    assert_eq!(full["text"].as_str().unwrap().matches("Phase 1").count(), 1, "{full}");
 
-    let added = call(&s, "board_write", json!({ "kind": "add_row", "board": "brd_1", "note": "agent row" })).await;
-    assert_eq!(added["zones"][0]["rows"][1]["agent"]["machine_name"], "geek", "{added}");
-    assert!(added["summary"].as_str().unwrap().contains("as your person's agent"), "{added}");
+    // A batch: #30 is added, #31 is a PR for #12's issue and is attached to it, #12 is there already and #99 isn't
+    // anything: the others land, and the answer says which failed and why.
+    let added = call(
+        &s,
+        "board_write",
+        json!({ "kind": "add", "board": "brd_1", "items": ["#30", "#99", "#31", "#12"], "group": "phase 2" }),
+    )
+    .await;
+    let said = added["summary"].as_str().unwrap();
+    assert!(said.lines().count() <= 20 && added.get("zones").is_none(), "{added}");
+    assert!(said.contains("#99: failed, nothing is #99 in this project"), "{said}");
+    assert!(said.contains("#30: added, #30 ○ Next"), "{said}");
+    assert!(said.contains("#31: attached to #12 (Next)"), "{said}");
+    assert!(said.contains("#12: already on the board as #12"), "{said}");
+    assert!(said.starts_with("Added: 1 added, 1 failed, 1 attached, 1 already there."), "{said}");
+    assert!(said.contains("Launch (brd_1): 2/3 done"), "{said}");
+    assert!(
+        refused(&s, "board_write", json!({ "kind": "add", "board": "brd_1", "items": [] })).await.contains("1 to 50")
+    );
+    assert!(refused(&s, "board_write", json!({ "kind": "add_row", "board": "brd_1" })).await.contains("add_row"));
+
     let link = json!({ "kind": "link", "url": "https://ci.example.com/runs/43" });
     let attached = call(
         &s,
         "board_write",
-        json!({ "kind": "attach", "board": "brd_1", "row": "row_1", "role": "proof", "pointer": link }),
+        json!({ "kind": "attach", "board": "brd_1", "item": "#12", "to": ["https://ci.example.com/runs/43", "run_ab12"] }),
     )
     .await;
-    assert!(attached["summary"].as_str().unwrap().contains("Note: that PR references an issue"), "{attached}");
-    call(&s, "board_write", json!({ "kind": "set", "board": "brd_1", "row": "row_1", "status": "none" })).await;
-    call(&s, "board_write", json!({ "kind": "set", "board": "brd_1", "row": "row_1", "note": "ok", "rev": 2 })).await;
-    // Lanes follow the work: no other status, and no move to a lane.
-    for refusal in [
-        json!({ "kind": "set", "board": "brd_1", "row": "row_1", "status": "done" }),
-        json!({ "kind": "move", "board": "brd_1", "row": "row_1", "zone": "lane_done" }),
-    ] {
-        refused(&s, "board_write", refusal).await;
-    }
-    // Groups are the plan: made, renamed, moved, deleted, and rows put in and out of them.
-    let made = call(&s, "board_write", json!({ "kind": "add_zone", "board": "brd_1", "title": "Phase 2" })).await;
-    assert!(
-        made["summary"].as_str().unwrap().contains("Added a group")
-            && made["summary"].as_str().unwrap().contains("1 group(s)"),
-        "{made}"
-    );
-    call(
-        &s,
-        "board_write",
-        json!({ "kind": "edit_zone", "board": "brd_1", "zone": "zon_1", "rev": 1, "title": "One" }),
-    )
-    .await;
-    call(&s, "board_write", json!({ "kind": "move_zone", "board": "brd_1", "zone": "zon_1", "before": "zon_2" })).await;
-    call(&s, "board_write", json!({ "kind": "move", "board": "brd_1", "row": "row_1", "zone": null })).await;
-    call(
-        &s,
-        "board_write",
-        json!({ "kind": "move", "board": "brd_1", "row": "row_1", "zone": "zon_1", "before": "row_9" }),
-    )
-    .await;
-    call(&s, "board_write", json!({ "kind": "add_row", "board": "brd_1", "note": "in a group", "zone": "zon_1" }))
-        .await;
-    let held = refused(&s, "board_write", json!({ "kind": "delete_zone", "board": "brd_1", "zone": "zon_1" })).await;
-    assert!(held.contains("every row in it was added by its own machine"), "the platform's refusal: {held}");
-    let taken = refused(&s, "board_write", json!({ "kind": "detach", "board": "brd_1", "attachment": "att_1" })).await;
-    assert!(taken.contains("only the attachments its own machine made"), "the platform's refusal: {taken}");
-
+    assert!(attached["summary"].as_str().unwrap().contains("attached as proof to #12"), "{attached}");
+    call(&s, "board_write", json!({ "kind": "note", "board": "brd_1", "item": "#12", "text": "ok", "rev": 2 })).await;
     let stale = refused(
         &s,
         "board_write",
-        json!({ "kind": "set", "board": "brd_1", "row": "row_1", "note": "late", "rev": 1 }),
+        json!({ "kind": "note", "board": "brd_1", "item": "#12", "text": "late", "rev": 1 }),
     )
     .await;
-    assert!(stale.contains("board_read again") && stale.contains("rev 2"), "{stale}");
-    let norev =
-        refused(&s, "board_write", json!({ "kind": "set", "board": "brd_1", "row": "row_1", "note": "x" })).await;
-    assert!(norev.contains("rev"), "{norev}");
-    let repoint = refused(
+    assert!(
+        stale.contains("at rev 2 now") && stale.contains("\"fix login\"") && stale.contains("Nothing was written"),
+        "{stale}"
+    );
+    let asked = call(
         &s,
         "board_write",
-        json!({ "kind": "set", "board": "brd_1", "row": "row_1", "rev": 2, "pointer": { "kind": "issue", "id": "iss_ab12" } }),
+        json!({ "kind": "ask", "board": "brd_1", "item": "#12", "who": "acc", "question": "Ship?", "options": ["Yes", "No"] }),
     )
     .await;
-    assert!(repoint.contains("repoints only the rows its own machine added"), "the platform's refusal: {repoint}");
+    assert!(
+        asked["summary"].as_str().unwrap().contains("Asked on #12.")
+            && asked["summary"].as_str().unwrap().contains("? Ship? (for Sam)"),
+        "{asked}"
+    );
+    let none =
+        refused(&s, "board_write", json!({ "kind": "note", "board": "brd_1", "item": "#77", "text": "x" })).await;
+    assert!(none.contains("no row on this board has #77"), "{none}");
+
+    // Groups are the plan: made, renamed, moved, deleted, and rows put in and out of them, by title.
+    let made = call(&s, "board_write", json!({ "kind": "add_group", "board": "brd_1", "title": "Phase 3" })).await;
+    assert!(made["summary"].as_str().unwrap().contains("Added a group"), "{made}");
+    call(&s, "board_write", json!({ "kind": "rename_group", "board": "brd_1", "group": "phase 1", "title": "One" }))
+        .await;
+    call(&s, "board_write", json!({ "kind": "move_group", "board": "brd_1", "group": "Phase 2", "before": "Phase 1" }))
+        .await;
+    call(&s, "board_write", json!({ "kind": "group", "board": "brd_1", "item": "#12", "group": null })).await;
+    call(&s, "board_write", json!({ "kind": "group", "board": "brd_1", "item": "#12", "group": "Phase 2" })).await;
+    let ungrouped = refused(&s, "board_write", json!({ "kind": "group", "board": "brd_1", "item": "#12" })).await;
+    assert!(ungrouped.contains("or null"), "{ungrouped}");
+    let held =
+        refused(&s, "board_write", json!({ "kind": "delete_group", "board": "brd_1", "group": "Phase 1" })).await;
+    assert!(held.contains("every row in it was added by its own machine"), "the platform's refusal: {held}");
+    let taken = refused(
+        &s,
+        "board_write",
+        json!({ "kind": "detach", "board": "brd_1", "item": "#3", "what": "https://ci.example.com/runs/42" }),
+    )
+    .await;
+    assert!(taken.contains("only the attachments its own machine made"), "the platform's refusal: {taken}");
+    let no = refused(&s, "board_write", json!({ "kind": "drop", "board": "brd_1", "item": "#12" })).await;
+    assert!(no.contains("its own machine added"), "{no}");
 
     let made = call(
         &s,
@@ -3079,47 +3122,53 @@ async fn an_agent_reads_and_writes_a_board_where_the_flag_is_on() {
     assert!(closed["summary"].as_str().unwrap().contains("Closed a board"), "{closed}");
     let empty = refused(&s, "board_write", json!({ "kind": "edit_board", "board": "brd_1" })).await;
     assert!(empty.contains("title or a goal"), "{empty}");
-    let no = refused(&s, "board_write", json!({ "kind": "remove_row", "board": "brd_1", "row": "row_1" })).await;
-    assert!(no.contains("its own machine added"), "{no}");
 
     let calls = fake.calls.lock().unwrap().clone();
-    let status = calls.iter().find(|(a, b)| a.starts_with("PUT ") && b["status"] == "none").unwrap();
-    assert_eq!(status.1, json!({ "id": "row_1", "status": "none" }), "a status names no rev: {status:?}");
-    assert!(!calls.iter().any(|(_, b)| b["status"] == "done"), "a refused status never goes out");
+    let resolve = calls.iter().find(|(a, _)| a.ends_with("/resolve")).unwrap();
+    assert_eq!(resolve.1, json!({ "items": ["#30", "#99", "#31", "#12"] }), "one call resolves the batch: {resolve:?}");
+    let puts: Vec<_> = calls.iter().filter(|(a, b)| a.starts_with("PUT ") && b["entry"] == "row").collect();
+    assert_eq!(puts.len(), 3, "#99 never goes out: {puts:?}");
+    assert_eq!(
+        puts[0].1,
+        json!({ "entry": "row", "zone": "zon_2", "pointer": { "kind": "forge_item", "id": "fi_30" } }),
+        "the group is found by its title: {:?}",
+        puts[0]
+    );
+    let rev = calls.iter().find(|(a, b)| a.starts_with("PUT ") && b["note"] == "ok").unwrap();
+    assert_eq!(rev.1, json!({ "id": "row_1", "rev": 2, "note": "ok" }), "{rev:?}");
+    assert!(!calls.iter().any(|(_, b)| b["note"] == "late"), "a stale note never goes out");
+    let rename = calls.iter().find(|(a, b)| a.starts_with("PUT ") && b["title"] == "One").unwrap();
+    assert_eq!(rename.1, json!({ "id": "zon_1", "rev": 1, "title": "One" }), "{rename:?}");
     let moves: Vec<_> =
         calls.iter().filter(|(a, _)| a.contains("/move")).map(|(a, b)| (a.as_str(), b.clone())).collect();
     assert_eq!(
         moves,
         [
-            (
-                "POST /api/daemon/boards/brd_1/entries/row_1/move",
-                json!({ "rev": null, "zone": "lane_done", "before": null })
-            ),
-            ("POST /api/daemon/boards/brd_1/entries/zon_1/move", json!({ "before": "zon_2" })),
+            ("POST /api/daemon/boards/brd_1/entries/zon_2/move", json!({ "before": "zon_1" })),
             ("POST /api/daemon/boards/brd_1/entries/row_1/move", json!({ "rev": null, "zone": null, "before": null })),
             (
                 "POST /api/daemon/boards/brd_1/entries/row_1/move",
-                json!({ "rev": null, "zone": "zon_1", "before": "row_9" })
+                json!({ "rev": null, "zone": "zon_2", "before": null })
             ),
         ],
         "a move out of a group keeps its null zone: {calls:?}"
     );
     let zone = calls.iter().find(|(a, b)| a.starts_with("PUT ") && b["entry"] == "zone").unwrap();
-    assert_eq!(zone.1, json!({ "entry": "zone", "title": "Phase 2" }), "{zone:?}");
-    let grouped = calls.iter().find(|(a, b)| a.starts_with("PUT ") && b["note"] == "in a group").unwrap();
-    assert_eq!(grouped.1, json!({ "entry": "row", "zone": "zon_1", "note": "in a group" }), "{grouped:?}");
-    let add = calls.iter().find(|(a, b)| a.starts_with("PUT ") && b["entry"] == "row").unwrap();
-    assert_eq!(add.1, json!({ "entry": "row", "note": "agent row" }), "{add:?}");
+    assert_eq!(zone.1, json!({ "entry": "zone", "title": "Phase 3" }), "{zone:?}");
+    let ask = calls.iter().find(|(a, _)| a.ends_with("/rows/row_1/ask")).unwrap();
+    assert_eq!(ask.1, json!({ "who": "acc", "question": "Ship?", "options": ["Yes", "No"] }), "{ask:?}");
     let make = calls.iter().find(|(a, _)| a.starts_with("POST /api/daemon/projects/prj_1/boards")).unwrap();
     assert_eq!(make.1, json!({ "title": "Epic", "goal": "Ship it" }), "{make:?}");
     let close = calls.iter().find(|(a, _)| a.starts_with("POST /api/daemon/boards/brd_1/close")).unwrap();
     assert_eq!(close.1, json!({ "done_note": "Log in." }), "{close:?}");
-    let linked = calls.iter().find(|(a, _)| a.starts_with("POST /api/daemon/boards/brd_1/attachments")).unwrap();
+    let attaches: Vec<_> =
+        calls.iter().filter(|(a, _)| a.starts_with("POST /api/daemon/boards/brd_1/attachments")).collect();
     assert_eq!(
-        linked.1,
+        attaches[0].1,
         json!({ "row": "row_1", "pointer": link, "role": "proof" }),
-        "a link goes to the platform as it is: {linked:?}"
+        "a link goes to the platform as proof: {attaches:?}"
     );
+    assert_eq!(attaches[1].1["role"], "work", "a run is work: {attaches:?}");
     s.cancel().await.unwrap();
 }
 

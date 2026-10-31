@@ -71,10 +71,35 @@ pub async fn set(State(app): State<Arc<App>>, s: PageSession, Json(b): Json<Set>
     Ok(Json(json!({ "sent": true })))
 }
 
-/// The account's address taken off: no more notices by email.
+/// The account's address taken off: no more notices by email. The address
+/// it was hears so (DK10).
 pub async fn remove(State(app): State<Arc<App>>, s: PageSession) -> R {
     s.not_app(&app)?;
-    Ok(Json(json!({ "removed": app.db.remove_email(&s.account)? })))
+    let old = app.db.verified_email(&s.account)?;
+    let removed = app.db.remove_email(&s.account)?;
+    if let Some(old) = old.filter(|_| removed) {
+        tell_old_address(&app, &s.account, &old, "was removed from your Arugula account");
+    }
+    Ok(Json(json!({ "removed": removed })))
+}
+
+/// The account's verified address `old` was replaced or removed: it hears
+/// so, outside the daily limit (DK10, #393), so a session can't change the
+/// address quietly before a reset. A passkey reset waits two days after.
+pub fn tell_old_address(app: &App, account: &str, old: &str, what: &str) {
+    info!(account, "told the old address it changed");
+    mail::send_security(
+        app,
+        account,
+        old,
+        "email-changed",
+        "Arugula: your account's email changed".into(),
+        format!(
+            "This address {what}: security notices go elsewhere now, or nowhere. If that wasn't you, sign in to \
+             Arugula and check Sign-in and account and Devices and machines, or contact support. No reset of your \
+             passkeys can start for two days."
+        ),
+    );
 }
 
 #[derive(Deserialize)]
@@ -87,8 +112,11 @@ pub struct Verify {
 /// `#email=expired`). No session needed: the token is the proof, used once.
 pub async fn verify(State(app): State<Arc<App>>, Query(q): Query<Verify>) -> Response {
     match app.db.verify_email(&hash(&q.t), now_ms()) {
-        Ok(Some((account, _))) => {
+        Ok(Some((account, _, old))) => {
             info!(account, "verified an address");
+            if let Some(old) = old {
+                tell_old_address(&app, &account, &old, "was replaced as your Arugula account's email");
+            }
             Redirect::to("/#email=verified").into_response()
         }
         Ok(None) => Redirect::to("/#email=expired").into_response(),
@@ -180,6 +208,53 @@ mod tests {
         assert!(db.verify_email("h", 3).unwrap().is_some());
         assert!(!db.email_from_github("a1", "gh3@example.com", 4).unwrap());
         assert_eq!(db.verified_email("a1").unwrap().as_deref(), Some("typed@example.com"));
+        // The same address again changes nothing, nor when it changed (DK10
+        // counts two days from that).
+        assert!(db.email_from_github("a2", "gh@example.com", 1).unwrap());
+        assert!(!db.email_from_github("a2", "gh@example.com", 9).unwrap());
+        assert_eq!(db.email_changed_at("a2").unwrap(), Some(1));
+    }
+
+    /// DK10 security review, item 1: replacing or removing the account's
+    /// address tells the address it was, outside the daily limit, so a
+    /// session can't quietly change it before a passkey reset.
+    #[tokio::test]
+    async fn the_old_address_hears_it_changed() {
+        let sent = std::sync::Arc::default();
+        let fake = Mailer::Fake(std::sync::Arc::clone(&sent));
+        let c = control(move |app| app.mail = fake).await;
+        person(&c.app, "lex00", "a1");
+        c.app.db.email_from_github("a1", "old@example.com", 1).unwrap();
+        for _ in 0..crate::mail::DAILY_LIMIT {
+            c.app.db.record_send("a1", "other", arugula_e2e::now_ms(), true).unwrap();
+        }
+        c.app.db.add_email_token("a1", "new@example.com", &crate::auth::hash("t"), u64::MAX / 2).unwrap();
+        let http = reqwest::Client::builder().redirect(reqwest::redirect::Policy::none()).build().unwrap();
+        http.get(format!("{}/auth/email/verify?t=t", c.base)).send().await.unwrap();
+        assert!(c.app.db.email_changed_at("a1").unwrap().is_some_and(|t| t > 1), "when it changed");
+        let cookie = session(&c.app, "a1");
+        let (st, _) = c.as_person(&cookie, "DELETE", "/api/me/email", None).await;
+        assert_eq!(st, 200);
+        let told = tokio::time::timeout(std::time::Duration::from_secs(5), async {
+            loop {
+                let got: Vec<crate::mail::Sent> = sent.lock().unwrap().clone();
+                if got.len() >= 2 {
+                    break got;
+                }
+                tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+            }
+        })
+        .await
+        .unwrap();
+        let to: Vec<(&str, &str)> = told.iter().map(|m| (m.to.as_str(), m.subject.as_str())).collect();
+        assert_eq!(
+            to,
+            [
+                ("old@example.com", "Arugula: your account's email changed"),
+                ("new@example.com", "Arugula: your account's email changed")
+            ]
+        );
+        assert!(told[0].body.contains("was replaced") && told[1].body.contains("was removed"));
     }
 
     /// At most five a day, then refused.

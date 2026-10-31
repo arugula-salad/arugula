@@ -51,6 +51,21 @@ export const TRACKERS_WRITE = "trackers.write";
 export const BOARDS_READ = "boards.read";
 export const BOARDS_WRITE = "boards.write";
 
+/** #366: "Work on boards", one switch for the agent that runs a board: it
+ * adds, attaches and asks on the project's boards, files its issues and
+ * writes to its Plane project. The three powers together; each is still its
+ * own grant. */
+export const WORK_ON_BOARDS = [BOARDS_WRITE, "issues.write", TRACKERS_WRITE];
+
+/** Whether `powers` hold the whole of "Work on boards". */
+export const hasWorkOnBoards = (powers: string[]) => WORK_ON_BOARDS.every((p) => powers.includes(p));
+
+/** `powers` with "Work on boards" on, or off: the other powers stay. */
+export function withWorkOnBoards(powers: string[], on: boolean): string[] {
+  const rest = powers.filter((p) => !WORK_ON_BOARDS.includes(p));
+  return on ? [...rest, ...WORK_ON_BOARDS] : rest;
+}
+
 /** How much of a project's boards a machine's agents have. */
 export type BoardsLevel = "off" | "read" | "write";
 

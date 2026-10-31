@@ -110,8 +110,12 @@ device-keys board, Arugula native #382 to #390).
   ever had a passkey gets a new "first" one only through aru-119's reset,
   with its 48-hour wait that any device can cancel. A fresh GitHub sign-in
   (#1386) adds a first passkey at once only to an account that never had
-  one. Without this, holding the GitHub account would be enough to approve
-  a deploy.
+  one, and so does a browser's signature: a device key doesn't add a first
+  passkey back either (Jake, 2026-10-31). The way back from lost passkeys is
+  aru-119's passkey reset (DK10, #393): the passkeys alone, allowed while
+  devices are in use, 48 hours, cancellable by any device or working
+  passkey. Without this, holding the GitHub account would be enough to
+  approve a deploy.
 
 Where: `crates/platform/src/approvals.rs`, `crates/e2e/src/deploy.rs`,
 `crates/e2e/src/cert.rs`, `crates/control/src/passkey.rs`.

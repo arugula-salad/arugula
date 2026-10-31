@@ -370,6 +370,7 @@ async fn the_apps_window_doesnt_delete_remove_passkeys_or_sign_out_everywhere() 
     let app = session_via(&c, "a1", Via::App);
     for (path, body) in [
         ("/api/me/delete", json!({ "confirm": "jake" })),
+        ("/api/me/passkeys/pk1/remove/start", json!({})),
         ("/api/me/passkeys/pk1/remove", json!({})),
         ("/api/me/sessions/end-all", json!({})),
     ] {
@@ -378,8 +379,12 @@ async fn the_apps_window_doesnt_delete_remove_passkeys_or_sign_out_everywhere() 
     }
     assert_eq!(c.app.db.passkey_count("a1").unwrap(), 2);
     let browser = session(&c.app, "a1");
-    let (st, v) = c.as_person(&browser, "POST", "/api/me/passkeys/pk1/remove", Some(json!({}))).await;
+    // A browser's page asks for another passkey to remove one (DK10,
+    // passkey.rs's tests): its session alone doesn't.
+    let (st, v) = c.as_person(&browser, "POST", "/api/me/passkeys/pk1/remove/start", Some(json!({}))).await;
     assert_eq!(st, 200, "{v}");
+    let (st, v) = c.as_person(&browser, "POST", "/api/me/passkeys/pk1/remove", Some(json!({}))).await;
+    assert_eq!((st, v["reason"].as_str()), (403, Some("remove_with_passkey")), "{v}");
     let (st, v) = c.as_person(&browser, "POST", "/api/me/sessions/end-all", Some(json!({}))).await;
     assert!(st < 300, "{st} {v}");
 }

@@ -117,3 +117,23 @@ test("escape closes the image viewer and is prevented", async () => {
   // The viewer took the key (an Escape left unhandled would leave full screen in the desktop app).
   expect(await aliceChat.evaluate(() => (window as unknown as { escapes: boolean[] }).escapes)).toEqual([true]);
 });
+
+test("escape cancels a message edit and is prevented", async () => {
+  test.setTimeout(60_000);
+  const room = aliceChat.locator("[data-chat-control] [data-room-view]");
+  // ↑ in an empty composer edits the last message of one's own.
+  const box = room.getByRole("textbox", { name: "Message #general" });
+  await box.focus();
+  await box.press("ArrowUp");
+  const edit = room.getByRole("textbox", { name: "Edit message" });
+  await expect(edit).toBeVisible();
+  // On the box itself, so it runs after the page's own handler (stopPropagation
+  // doesn't stop listeners on the same target).
+  await edit.evaluate((el) => {
+    const seen: boolean[] = ((window as unknown as { edits: boolean[] }).edits = []);
+    el.addEventListener("keydown", (e) => e.key === "Escape" && seen.push(e.defaultPrevented));
+  });
+  await edit.press("Escape");
+  await expect(room.locator(".msg-edit")).toHaveCount(0);
+  expect(await aliceChat.evaluate(() => (window as unknown as { edits: boolean[] }).edits)).toEqual([true]);
+});

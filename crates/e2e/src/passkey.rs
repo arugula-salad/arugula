@@ -35,11 +35,13 @@
 //!   signer, since the body is made before the person picks a passkey.
 //! - the rest the hub vouches for, and the log says which: `signup` (a
 //!   passkey that made its account, #102), `github` (a first passkey after
-//!   a fresh GitHub sign-in, #1386), `device <id>` (a first passkey one of
-//!   the account's browsers signed for), `session` (removed by a signed-in
-//!   page, until DK10 #393 makes removal take a passkey), `reset` (aru-119,
-//!   after its wait), `deleted` (the account was deleted) and `backfill <ms>`
-//!   (a passkey from before the log, written at `<ms>`).
+//!   a fresh GitHub sign-in to an account that never had one, #1386),
+//!   `device <id>` (a first passkey one of the account's browsers signed
+//!   for), `session` (removed by a signed-in page, before DK10 #393 made
+//!   removal take another passkey: no longer made), `reset` (aru-119, after
+//!   its wait: every passkey removed, or a first one added again from a
+//!   fresh GitHub sign-in), `deleted` (the account was deleted) and
+//!   `backfill <ms>` (a passkey from before the log, written at `<ms>`).
 //!
 //! **Backfilled history is partial.** A log whose events say `backfill <ms>`
 //! began at `<ms>`: the passkeys the account had then are there, added at

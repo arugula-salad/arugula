@@ -29,6 +29,7 @@ import { ThreadsView } from "./threads-view";
 import { badge } from "./threads";
 import { browseChannels, ChatDialogs, LeaveButton, leaveItem, MemberTools, newChannelDialog, newDmDialog } from "./members";
 import { machineName, machineUp, roomLabel, roomSigil, RoomBody } from "./room";
+import { handled } from "./escape";
 import { AgentsChip } from "./agents-chip";
 import { newSection, openGroupMenu, openRoomMenu, RoomStar, toggleGroup } from "./sections";
 import { inScope, ordered, place, placed, present, sortOf, STARRED, type ChatScope } from "./sidebar";
@@ -740,7 +741,7 @@ function RoomSwitcher({ rooms, open, close }: { rooms: ChatRoom[]; open: boolean
           }}
           onKeyDown={(e) => {
             if (e.key === "Escape") {
-              e.preventDefault();
+              handled(e);
               close();
             } else if (e.key === "ArrowDown" || e.key === "ArrowUp") {
               e.preventDefault();

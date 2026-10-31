@@ -390,11 +390,43 @@ clients = ["page"]
 
 [[route]]
 method = "POST"
+path = "/api/me/passkeys/{id}/remove/start"
+process = "hub"
+auth = "session"
+clients = ["page"]
+note = "DK10 (#393): the webauthn.get options another of the account's passkeys signs to remove this one: the challenge is SHA-256 of its removed event in the passkey log, allowCredentials the account's other passkeys. 409 last_passkey for the only one."
+
+[[route]]
+method = "POST"
 path = "/api/me/passkeys/{id}/remove"
 process = "hub"
 auth = "session"
 clients = ["page"]
-note = "Logs the removal in the account's passkey log, by session (DK3); DK10 (#393) makes it take another passkey's assertion."
+note = "DK10 (#393): takes another of the account's passkeys' assertion over remove/start's challenge, kept in the passkey log as the removal's proof (by passkey). A session alone gets 403 remove_with_passkey; the last passkey 409 last_passkey. Only a reset (the passkey reset, or aru-119's device reset) drops passkeys without one."
+
+[[route]]
+method = "GET"
+path = "/api/me/passkeys/reset"
+process = "hub"
+auth = "session"
+clients = ["page"]
+note = "DK10 (#393, aru-119 as amended): whether a reset of the account's passkeys is waiting, finishing it once due (every passkey removed by reset); while waiting, the webauthn.get options a passkey signs to cancel it."
+
+[[route]]
+method = "POST"
+path = "/api/me/passkeys/reset"
+process = "hub"
+auth = "session"
+clients = ["page"]
+note = "DK10 (#393, aru-119 as amended): start a reset of the account's passkeys only, allowed while devices are in use. A GitHub sign-in from the last ten minutes (403 reauth); one a week, three started a day; 48-hour wait; every device and the email are told."
+
+[[route]]
+method = "POST"
+path = "/api/me/passkeys/reset/cancel"
+process = "hub"
+auth = "session"
+clients = ["page"]
+note = "DK10 (#393): cancel the passkey reset: the sign-in that started it, a device or recovery code the account trusts signing `arugula passkey reset cancel v1`, or any working passkey of the account over SHA-256 of that text. A session alone can't."
 
 # DK3 (aru-126): an account's passkey log, append-only and hash-chained.
 
@@ -3154,6 +3186,14 @@ process = "platform"
 auth = "daemon"
 clients = ["daemon"]
 note = "Asks a person of the project a question on a row (`boards.write`); it says an agent asked. It reads the answer from the board: there is no route for an agent to answer."
+
+[[route]]
+method = "POST"
+path = "/api/daemon/boards/{id}/resolve"  # wire::boards::AGENT_BOARD_RESOLVE
+process = "platform"
+auth = "daemon"
+clients = ["daemon"]
+note = "Resolves up to 50 references (`#N`, `owner/repo#N`, `IDENT-N`, an `iss_`/`fi_` id) to the issues and PRs of the board's project they name, before the agent adds or attaches them (`boards.write`). A reference that names two things, or none, answers why instead of a pointer. Changes nothing."
 
 [[route]]
 method = "POST"
