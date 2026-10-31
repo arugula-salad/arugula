@@ -1673,10 +1673,11 @@ impl ForgeBlock {
             st.read_only = None;
             st.rate = None;
             st.rerun = pr.as_ref().and_then(pin::rerun);
-            // A pin makes no call to GitHub, so it can't ask the repository's
-            // merge methods: unknown, and Merge offers what the forge enforces (#427).
-            if pr.is_some() && st.merge_styles.is_none() {
-                st.merge_styles = Some(vec![]);
+            // A pin makes no call to GitHub: the repository's merge methods
+            // are the platform's word (#427). Without one, unknown, and
+            // Merge offers what the forge enforces.
+            if pr.is_some() {
+                st.merge_styles = link.merge_styles.clone().or(st.merge_styles.take()).or(Some(vec![]));
             }
             st.pr = pr;
             st.issue = issue;

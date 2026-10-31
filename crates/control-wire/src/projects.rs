@@ -342,6 +342,13 @@ pub struct ForgeRepo {
     /// GitHub of its own.
     #[serde(default)]
     pub login: Option<String>,
+    /// #427: the ways the repository lets a pull request be merged, in the
+    /// `merge` method's words (`merge`, `squash`, `rebase`), read from
+    /// GitHub with the App and kept an hour, for a block pinned to one of
+    /// its items, which reads no GitHub of its own. Absent until known;
+    /// empty when GitHub won't say.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub merge_styles: Option<Vec<String>>,
 }
 
 /// Drafts (M170): a comment, a review or a new issue on a linked repo,

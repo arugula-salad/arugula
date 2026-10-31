@@ -123,7 +123,10 @@ async fn token(Json(b): Json<Value>) -> Response {
 
 async fn repo(Path((o, r)): Path<(String, String)>) -> Response {
     match format!("{o}/{r}").as_str() {
-        "acme/app" => Json(json!({ "id": APP, "full_name": "acme/app", "private": true })).into_response(),
+        // Squash only, as GitHub tells the App (#427).
+        "acme/app" => Json(json!({ "id": APP, "full_name": "acme/app", "private": true,
+            "allow_merge_commit": false, "allow_squash_merge": true, "allow_rebase_merge": false }))
+        .into_response(),
         "acme/site" => Json(json!({ "id": SITE, "full_name": "acme/site", "private": false })).into_response(),
         _ => StatusCode::NOT_FOUND.into_response(),
     }
@@ -565,6 +568,26 @@ async fn opt_in_then_out() {
     let log = String::from_utf8_lossy(&logs.lock().unwrap()).into_owned();
     assert!(log.contains("a linked repo's content mirroring"), "the logs were captured: {log}");
     assert!(!log.contains("SECRET"), "{log}");
+}
+
+/// #427: a block pinned to a linked repo can't ask GitHub for the
+/// repository's merge methods, so the platform's word on the repo carries
+/// them, read with the App: a squash-only repo yields `["squash"]`, one
+/// whose settings GitHub doesn't give is empty, and one the reader may not
+/// read has none.
+#[tokio::test]
+async fn the_repo_answer_carries_its_merge_methods() {
+    let w = world().await;
+    let ask = |who: &'static str, repo: &'static str| {
+        let (base, path) = (w.base.clone(), format!("/api/forge/repos/{repo}"));
+        async move { call(&base, who, "GET", &path, None).await }
+    };
+    let (s, v) = ask("alice", "acme/app").await;
+    assert_eq!((s, &v["linked"], &v["merge_styles"]), (200, &json!(true), &json!(["squash"])), "{v}");
+    let (_, v) = ask("alice", "acme/site").await;
+    assert_eq!(v["merge_styles"], json!([]), "GitHub gave no allow_* fields: unknown, not all");
+    let (_, v) = ask("dave", "acme/app").await;
+    assert!(v["linked"] == false && v.get("merge_styles").is_none(), "{v}");
 }
 
 /// A reader the viewer check refuses gets a 404, and GitHub is never

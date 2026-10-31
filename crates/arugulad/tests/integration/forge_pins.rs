@@ -117,7 +117,9 @@ async fn repo(State(f): State<Fake>, Path((owner, name)): Path<(String, String)>
     }
     let linked = f.linked() && format!("{owner}/{name}").eq_ignore_ascii_case("acme/app");
     Json(json!({ "repo": format!("{owner}/{name}"), "linked": linked, "project": linked.then_some(PROJECT),
-                 "repo_id": linked.then_some(77), "login": linked.then_some("jake-gh") }))
+                 "repo_id": linked.then_some(77), "login": linked.then_some("jake-gh"),
+                 // #427: how the platform read the repository's merge methods.
+                 "merge_styles": linked.then_some(["squash"]) }))
     .into_response()
 }
 
@@ -322,6 +324,7 @@ fn a_linked_repos_block_is_a_pin_and_calls_no_github() {
     assert_eq!(s["pr"]["reviews"][0]["author"], "dan-gh");
     assert_eq!(s["pr"]["item"]["url"], "https://github.com/acme/app/pull/1");
     assert_eq!(s["me"], "jake-gh", "you, as the platform knows you");
+    assert_eq!(s["merge_styles"], json!(["squash"]), "the repository's merge methods, as the platform read them");
     assert!(state(&d, other)["pin"].is_null());
     let reads = f.reads();
     let theirs = f.github("acme/other");
