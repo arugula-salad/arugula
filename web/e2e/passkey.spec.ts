@@ -84,6 +84,9 @@ test("make an account with a passkey, sign out, sign back in", async ({ page }) 
   await controlPanel(page, "account");
   await expect(page.locator("[data-passkey-name]")).toHaveText(/^Passkey from Chrome on \w+/);
   await expect(page.locator("[data-passkeys] li .dim")).toContainText("last used");
+  // The only one can't be removed: removing one takes another (DK10, #393).
+  await expect(page.locator("[data-remove-passkey]")).toBeDisabled();
+  await expect(page.locator("[data-only-passkey]")).toContainText("add another passkey first");
   // With a second passkey, one can be removed, after a dialog: a
   // double-click on Remove only opens it. Adding it takes the first one's
   // say-so, with a click of its own; control keeps none before.
@@ -92,13 +95,36 @@ test("make an account with a passkey, sign out, sign back in", async ({ page }) 
   expect(((await page.evaluate(() => fetch("/api/me/passkeys").then((r) => r.json()))) as { passkeys: unknown[] }).passkeys).toHaveLength(1);
   await page.locator("[data-passkey-confirm-go]").click();
   await expect(page.locator("[data-passkeys] li")).toHaveCount(2);
+  await expect(page.locator("[data-only-passkey]")).toHaveCount(0);
+  const [gone, kept] = await page.locator("[data-remove-passkey]").evaluateAll((els) => els.map((e) => e.getAttribute("data-remove-passkey")!));
   await page.locator("[data-remove-passkey]").first().dblclick();
   await new Promise((r) => setTimeout(r, 1000));
   expect(((await page.evaluate(() => fetch("/api/me/passkeys").then((r) => r.json()))) as { passkeys: unknown[] }).passkeys).toHaveLength(2);
   const ask = page.locator("[data-confirm-dialog]");
   await expect(ask).toContainText("stops signing you in at once");
+  await expect(ask.locator("[data-remove-passkey-with]")).toContainText("Confirm with another of your passkeys");
+  // DK10: the session alone can't; control says what to do instead.
+  const alone = await page.evaluate(
+    (id) =>
+      fetch(`/api/me/passkeys/${encodeURIComponent(id)}/remove`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" }).then(async (r) => [
+        r.status,
+        ((await r.json()) as { reason?: string }).reason,
+      ]),
+    gone,
+  );
+  expect(alone).toEqual([403, "remove_with_passkey"]);
+  // Remove: the other passkey (the virtual authenticator holds both) signs.
   await ask.locator("[data-confirm-remove]").click();
   await expect(page.locator("[data-passkeys] li")).toHaveCount(1);
+  await expect(page.locator(`[data-passkey="${kept}"]`)).toHaveCount(1);
+  // In the account's passkey log, by that passkey, with its assertion.
+  const log = (await page.evaluate((a) => fetch(`/api/accounts/${a}/passkeys/log`).then((r) => r.json()), first.account)) as {
+    events: { event: string; credential: string; by: string; proof?: { id: string } }[];
+  };
+  expect(log.events.at(-1)).toMatchObject({ event: "removed", credential: gone, by: "passkey", proof: { id: kept } });
+  // The last one waits for another.
+  await expect(page.locator("[data-remove-passkey]")).toBeDisabled();
+  await expect(page.locator("[data-only-passkey]")).toBeVisible();
 });
 
 // #764: a passkey with PRF gives the same 32 bytes every time, and those

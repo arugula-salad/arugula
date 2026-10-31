@@ -611,7 +611,12 @@ fn routes() -> Routes {
         .route("/api/me/sessions/device", post(account::session_device))
         .route("/api/me/sessions/{id}/end", post(account::end_session))
         .route("/api/me/passkeys", get(account::passkeys))
-        .route("/api/me/passkeys/{id}/remove", post(account::remove_passkey))
+        // DK10: removing one takes another passkey's say-so.
+        .route("/api/me/passkeys/{id}/remove/start", post(passkey::remove_start))
+        .route("/api/me/passkeys/{id}/remove", post(passkey::remove))
+        // DK10: a reset of the passkeys alone, for lost ones.
+        .route("/api/me/passkeys/reset", get(reset::passkeys_status).post(reset::start_passkeys))
+        .route("/api/me/passkeys/reset/cancel", post(reset::cancel_passkeys))
         // DK3: an account's passkey log, for anyone checking an approval.
         .route("/api/accounts/{id}/passkeys/log", get(passkey::log))
         .route("/api/me/github/unlink", post(github_link::unlink))
@@ -1100,6 +1105,12 @@ async fn run(platforms: Box<dyn Platforms>) -> anyhow::Result<()> {
     let backfilled = db.backfill_passkey_log(&hosts.join(" "), arugula_e2e::now_ms())?;
     if backfilled > 0 {
         info!(passkeys = backfilled, "passkeys from before the passkey log written into it");
+    }
+    // DK10: which accounts from before the log signed in with a passkey,
+    // kept before their sessions are pruned.
+    let noted = db.note_passkeys_before_log(arugula_e2e::now_ms())?;
+    if noted > 0 {
+        info!(accounts = noted, "accounts that had a passkey before the passkey log noted");
     }
     let block_domain = blocks::domain(a.block_domain.as_deref().unwrap_or(""), &sites)?;
     match &block_domain {

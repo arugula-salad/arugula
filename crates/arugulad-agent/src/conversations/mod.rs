@@ -16,6 +16,7 @@
 //! [`convert`] turns a transcript into an agent block's entries.
 
 pub mod branch;
+pub mod context;
 pub mod convert;
 
 use std::{
@@ -329,6 +330,19 @@ impl Index {
     pub fn live_for(&self, session: &str) -> Option<Live> {
         live(&self.dirs.claude.join("sessions"), &self.ours).remove(session)
     }
+}
+
+/// A session's transcript by its id, in whichever project folder holds it:
+/// a directory listing, not the index's scan of every file.
+pub fn transcript_of(dirs: &Dirs, session: &str) -> Option<PathBuf> {
+    if session.is_empty() || session.contains(['/', '\\']) {
+        return None;
+    }
+    std::fs::read_dir(dirs.claude.join("projects"))
+        .ok()?
+        .filter_map(Result::ok)
+        .map(|d| d.path().join(format!("{session}.jsonl")))
+        .find(|p| p.is_file())
 }
 
 /// The mux's `AgentSessions`: the conversations in Claude Code's folders.

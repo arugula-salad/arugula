@@ -44,8 +44,10 @@ import {
   redeemInvite,
   askBody,
   askOk,
+  ownersAsHeld,
   signAskInvite,
   signInvite,
+  signLock,
   signRoster,
   teamJoinBody,
   word,
@@ -53,10 +55,11 @@ import {
   type AskInvite,
   type Invite,
   type Roster,
+  type TeamLock,
   type TeamPin,
   type TeamRole,
 } from "./e2e/team.ts";
-import { checkRoster, RosterStore, type RootChange, type RosterProblem } from "./team-rosters.ts";
+import { checkRoster, RosterStore, takeLock, TrustStore, withTimeout, type RootChange, type RosterProblem } from "./team-rosters.ts";
 
 export interface ControlInfo {
   control: true;
@@ -134,6 +137,11 @@ export interface Team {
   team: string;
   pin: TeamPin;
   locked: boolean;
+  /** The owner's signed word that set `locked` (none from before). */
+  lock?: TeamLock | null;
+  /** Control says it's locked, with no owner's signed word this page
+   * holds: its claim only (`locked` is then false). */
+  lockClaimed?: boolean;
   roster: Roster;
   role: TeamRole | null;
   /** Who used an invite link and waits for an owner (owners only). Only
@@ -172,6 +180,9 @@ const PINS_KEY = "arugula.control.pins";
 /** The last roster this browser checked for each team (`team-rosters.ts`),
  * and members' roots that changed since it looked, until dismissed. */
 const ROSTERS_KEY = "arugula.control.rosters";
+/** Each account's certificates and removals as this page last held them,
+ * and when it first saw each (`TrustStore`). */
+const HELD_CERTS_KEY = "arugula.control.held-certs";
 const ROOT_CHANGES_KEY = "arugula.control.root-changes";
 
 function readKey<T>(key: string, empty: T): T {
@@ -586,7 +597,13 @@ export async function passkeyRegister(name?: string, device?: PasskeySigner): Pr
 /** One of the account's passkeys agrees to the one made (`p`): control
  * keeps it then. Call it from a click. */
 export async function passkeyConfirm(p: PasskeyToConfirm): Promise<void> {
-  const o = p.options;
+  const step_up = await agreeWith(p.options);
+  await finishRegister({ ...p.finish, step_up }, p.prf);
+}
+
+/** One of the account's passkeys `o` offers signs its challenge: the
+ * assertion, as control takes it. */
+export async function agreeWith(o: PasskeyToConfirm["options"]) {
   const got = (await navigator.credentials.get({
     publicKey: {
       challenge: unb64u(o.challenge),
@@ -598,13 +615,27 @@ export async function passkeyConfirm(p: PasskeyToConfirm): Promise<void> {
   })) as PublicKeyCredential | null;
   if (!got) throw new Error("no passkey chosen");
   const a = got.response as AuthenticatorAssertionResponse;
-  const step_up = {
+  return {
     id: b64u(got.rawId),
     clientDataJSON: b64u(a.clientDataJSON),
     authenticatorData: b64u(a.authenticatorData),
     signature: b64u(a.signature),
   };
-  await finishRegister({ ...p.finish, step_up }, p.prf);
+}
+
+/** What another of the account's passkeys signs to remove one (DK10,
+ * #393): its removal in the account's passkey log, and the others to
+ * choose from. Asked for as the dialog opens, so the click that confirms
+ * goes straight to the passkey. */
+export type PasskeyRemoval = PasskeyToConfirm["options"];
+
+export const passkeyRemoval = (id: string) => api<PasskeyRemoval>(`/api/me/passkeys/${encodeURIComponent(id)}/remove/start`, {});
+
+/** Another of the account's passkeys agrees, and control removes `id`
+ * (a session alone can't). Call it from a click. */
+export async function passkeyRemove(id: string, o: PasskeyRemoval): Promise<void> {
+  const assertion = await agreeWith(o);
+  await api(`/api/me/passkeys/${encodeURIComponent(id)}/remove`, { assertion });
 }
 
 async function finishRegister(body: Record<string, unknown>, prf: PrfOut | undefined) {
@@ -1543,6 +1574,25 @@ export class ControlSession {
         api<{ daemons: ForeignEntry[]; offers?: ShareOffer[] }>("/api/directory"),
       ]);
       this.rootMismatch = !!devs.trust && devs.trust.root !== e.root;
+      // As this page last held them: removals only add up, and a
+      // certificate first seen after its approver's removal doesn't count.
+      // One look, with the people whose machines the directory lists (by
+      // the roots this browser pinned for them on first sight).
+      const ownTrust = { account: e.account, root: e.root };
+      const looked = await this.held.look(async (l) => {
+        const own = await l.take(ownTrust, devs);
+        const theirs = new Map<string, { certs: Cert[]; revocations: Revocation[] }>();
+        for (const d of dir.daemons) {
+          const t = d.chain?.trust;
+          if (!d.hosted && d.account && t && !theirs.has(`${t.account}.${t.root}`) && pin(d.account, t.root)) theirs.set(`${t.account}.${t.root}`, await l.take(t, d.chain!));
+        }
+        return { own, theirs };
+      });
+      // Not kept: the view this page held before, not control's answer
+      // (control's, on a first look with nothing held).
+      const own = looked.kept ? looked.value.own : (this.held.view(ownTrust) ?? looked.value.own);
+      devs.certs = own.certs;
+      devs.revocations = own.revocations;
       this.trusted = await evaluate({ account: e.account, root: e.root }, devs.certs, devs.revocations);
       this.certs = devs.certs;
       this.revocations = devs.revocations;
@@ -1575,9 +1625,9 @@ export class ControlSession {
         let cert = this.trusted.get(d.id);
         // Someone else's machine: by their account's certificates, from
         // the root this browser pinned for them on first sight.
-        if (!cert && d.account && chain?.trust && pin(d.account, chain.trust.root)) {
-          cert = (await evaluate(chain.trust, chain.certs, chain.revocations)).get(d.id);
-        }
+        // Only once what this browser checked of them is kept.
+        const theirs = chain?.trust && looked.value.theirs.get(`${chain.trust.account}.${chain.trust.root}`);
+        if (!cert && looked.kept && theirs && chain?.trust) cert = (await evaluate(chain.trust, theirs.certs, theirs.revocations)).get(d.id);
         if (cert?.kind === "daemon") daemons.push({ ...entry, cert });
       }
       this.offers = dir.offers ?? [];
@@ -1651,7 +1701,9 @@ export class ControlSession {
   teamsLoaded = false;
 
   /** The last roster this page checked for each team (`RosterStore`). */
-  private rosters = new RosterStore(() => localStorage, ROSTERS_KEY);
+  private rosters = new RosterStore(() => localStorage, ROSTERS_KEY, () => !!this.enrollment?.held);
+  /** Each account's certificates and removals as last held (`TrustStore`). */
+  private held = new TrustStore(() => localStorage, HELD_CERTS_KEY, () => !!this.enrollment?.held);
 
   async loadTeams() {
     let loaded = true;
@@ -1667,42 +1719,103 @@ export class ControlSession {
     const held = this.rosters.held();
     const kept = rootChangesKept();
     const lateKept = rosterLateKept();
-    for (const t of r.teams) {
-      // The founder pinned on first sight. The team's daemons check each
-      // roster version against it; this browser checks the ones it signs.
-      const ok = pin(`team:${t.team}`, `${t.pin.founder}.${t.pin.founder_root}`);
-      // And each version from the last this browser checked: an owner's
-      // change is signed on top of the one shown, so that one must be a
-      // version owners wrote, not just what control says is latest.
-      const c = await checkRoster(held[t.team] ?? null, t.roster, t.pin, t.certs, (since) =>
-        api<{ rosters: Roster[]; certs: AccountCerts }>(`/api/teams/${encodeURIComponent(t.team)}/rosters?since=${since}`),
-      );
-      if (ok && c.keep && c.keep.version > (held[t.team]?.version ?? 0)) held[t.team] = c.keep;
-      if (ok && c.changes.length) kept[t.team] = [...(kept[t.team] ?? []), ...c.changes];
-      if (ok && c.late.length) lateKept[t.team] = [...new Set([...(lateKept[t.team] ?? []), ...c.late])].sort((a, b) => a - b);
-      // #762: only someone who held an owner's link; anything else control
-      // says waits is refused here, never shown.
-      const requests: Team["requests"] = [];
-      for (const q of t.requests ?? []) {
-        const by = await askOk(c.roster, t.certs, q);
-        if (by) requests.push({ ...q, role: q.invite.role, by });
+    // What the look needs from control, fetched before it takes the
+    // browser-wide lock (an answer that's slow to come mustn't hold up
+    // every tab's look), each given up after FETCH_TIMEOUT_MS: the versions
+    // after the one held, for each team control has a newer one of.
+    const fetched = new Map<string, { since: number; got: { rosters: Roster[]; certs: AccountCerts } | null }>();
+    await Promise.all(
+      r.teams
+        .filter((t) => t.roster.version > (held[t.team]?.version ?? 0))
+        .map(async (t) => {
+          const since = held[t.team]?.version ?? 0;
+          const path = `/api/teams/${encodeURIComponent(t.team)}/rosters?since=${since}`;
+          const got = await api<{ rosters: Roster[]; certs: AccountCerts }>(path, undefined, withTimeout(fetch)).catch(() => null);
+          fetched.set(t.team, { since, got });
+        }),
+    );
+    // One look at what this page holds, for every team.
+    const looked = await this.held.look(async (l) => {
+      // An account's certificates as this page holds them, from `root`.
+      const take = async (account: string, root: string, [certs, revocations]: [Cert[], Revocation[]]): Promise<[Cert[], Revocation[]]> => {
+        const got = await l.take({ account, root }, { certs, revocations });
+        return [got.certs, got.revocations];
+      };
+      for (const t of r.teams) {
+        // The founder pinned on first sight. The team's daemons check each
+        // roster version against it; this browser checks the ones it signs.
+        const ok = pin(`team:${t.team}`, `${t.pin.founder}.${t.pin.founder_root}`);
+        // And each version from the last this browser checked: an owner's
+        // change is signed on top of the one shown, so that one must be a
+        // version owners wrote, not just what control says is latest.
+        // Each step is checked with the certificates this page holds for
+        // that version's owners, from the roots it names (history's too);
+        // a version a device removed since had signed stands only if this
+        // page hadn't seen that removal before.
+        const c = await checkRoster(
+          held[t.team] ?? null,
+          t.roster,
+          t.pin,
+          t.certs,
+          // Only what was fetched before the look: nothing from control
+          // while it holds the lock.
+          async (since) => {
+            const f = fetched.get(t.team);
+            if (!f?.got || f.since !== since) throw new Error("the team's history wasn't fetched");
+            return f.got;
+          },
+          {
+            vet: (prev, certs) => ownersAsHeld(prev, t.pin, certs, take),
+            lateOk: (account, root, device) => !l.removedBefore(account, root, device),
+          },
+        );
+        // Members' certificates as this page holds them, from the roots the
+        // roster it checked names.
+        for (const m of c.roster.members) if (t.certs[m.account]) t.certs[m.account] = await take(m.account, m.root, t.certs[m.account]);
+        for (const a of Object.keys(t.certs)) if (!c.roster.members.some((m) => m.account === a)) delete t.certs[a];
+        // The team's lock as an owner signed it: only from an owner in the
+        // roster checked, for this team, not dated far ahead, and newer than
+        // the one held. Without one, control's plain word is only its claim,
+        // not the owners' state.
+        const lock = ok && !c.problem ? await takeLock(l, t.team, t.lock, c.roster, t.certs) : l.lock(t.team);
+        t.lock = lock ?? null;
+        if (lock) t.locked = lock.locked;
+        else {
+          t.lockClaimed = t.locked;
+          t.locked = false;
+        }
+        if (ok && c.keep && c.keep.version > (held[t.team]?.version ?? 0)) held[t.team] = c.keep;
+        if (ok && c.changes.length) kept[t.team] = [...(kept[t.team] ?? []), ...c.changes];
+        if (ok && c.late.length) lateKept[t.team] = [...new Set([...(lateKept[t.team] ?? []), ...c.late])].sort((a, b) => a - b);
+        // #762: only someone who held an owner's link; anything else control
+        // says waits is refused here, never shown.
+        const requests: Team["requests"] = [];
+        for (const q of t.requests ?? []) {
+          const by = await askOk(c.roster, t.certs, q);
+          if (by) requests.push({ ...q, role: q.invite.role, by });
+        }
+        out.push({
+          ...t,
+          roster: c.roster,
+          requests,
+          verified: ok && !c.problem,
+          ...(c.problem ? { rosterProblem: c.problem } : {}),
+          ...(kept[t.team]?.length ? { rootChanges: kept[t.team] } : {}),
+          ...(lateKept[t.team]?.length ? { rosterLate: lateKept[t.team] } : c.late.length ? { rosterLate: c.late } : {}),
+        });
       }
-      out.push({
-        ...t,
-        roster: c.roster,
-        requests,
-        verified: ok && !c.problem,
-        ...(c.problem ? { rosterProblem: c.problem } : {}),
-        ...(kept[t.team]?.length ? { rootChanges: kept[t.team] } : {}),
-        ...(lateKept[t.team]?.length ? { rosterLate: lateKept[t.team] } : c.late.length ? { rosterLate: c.late } : {}),
-      });
-    }
+    });
     this.rosters.save();
+    // From now on, storage found empty was cleared, not never kept.
+    if (this.enrollment && !this.enrollment.held && this.rosters.kept && looked.kept) {
+      this.enrollment = { ...this.enrollment, held: true };
+      await saveEnrollment(this.enrollment).catch(() => {});
+    }
     writeKey(ROOT_CHANGES_KEY, kept);
     writeKey(ROSTER_LATE_KEY, lateKept);
     // Checked, but not kept: no change is signed on what this browser
     // would forget.
-    if (!this.rosters.kept) for (const t of out) t.rosterProblem ??= "unsaved";
+    if (!this.rosters.kept || !looked.kept) for (const t of out) t.rosterProblem ??= "unsaved";
     const now = r.asked ?? [];
     const yes = this.asked.find((a) => !now.some((x) => x.team === a.team) && out.some((t) => t.team === a.team));
     if (yes) this.joined = { team: yes.team, name: yes.name };
@@ -2023,8 +2136,16 @@ export class ControlSession {
     }
   }
 
+  /** Lock or unlock a team, signed by this device (`TeamLock`): machines
+   * take it only from an owner in the roster they hold, and only newer
+   * than the lock they hold. */
   async lockTeam(team: string, locked: boolean) {
-    await api(`/api/teams/${team}/lock`, { locked });
+    const t = this.teams.find((x) => x.team === team);
+    if (!t) throw new Error("no such team");
+    if (!locked && t.rosterProblem) throw new Error("control's list of this team's members doesn't check out here; unlocking waits until it does");
+    // After the lock this page checked and holds (never dated far ahead).
+    const lock = await signLock({ team, locked, version: t.roster.version, at: Math.max(Date.now(), (this.held.lock(team)?.at ?? 0) + 1) }, this.keys);
+    await api(`/api/teams/${team}/lock`, { locked, lock });
     await this.refresh();
   }
 

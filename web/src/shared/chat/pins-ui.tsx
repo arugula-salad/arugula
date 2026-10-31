@@ -10,6 +10,7 @@ import type { ChatMessage, ChatRoom } from "../proto";
 import { askText } from "../ui/menu";
 import { usePlatformApi } from "../platform-api";
 import { authorLabel } from "./agents";
+import { handled } from "./escape";
 import { mayPin, preview, systemText } from "./pins";
 import { Time } from "../ui/time";
 
@@ -49,7 +50,11 @@ function Popover({
   useEffect(() => {
     if (!open) return;
     const away = (e: PointerEvent) => !root.current?.contains(e.target as Node) && setOpen(false);
-    const key = (e: KeyboardEvent) => e.key === "Escape" && !document.querySelector(".prompt") && setOpen(false);
+    const key = (e: KeyboardEvent) => {
+      if (e.key !== "Escape" || document.querySelector(".prompt")) return;
+      handled(e);
+      setOpen(false);
+    };
     document.addEventListener("pointerdown", away);
     document.addEventListener("keydown", key);
     return () => {

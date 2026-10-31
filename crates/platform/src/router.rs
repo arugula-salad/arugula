@@ -106,6 +106,7 @@ fn routes() -> Routes {
         .route(boards::BOARD_ROW_ASK, post(crate::boards::asks::ask_route))
         .route(boards::BOARD_ASK_ANSWER, post(crate::boards::asks::answer_route))
         .route(boards::AGENT_BOARD_ROW_ASK, post(crate::boards::agent::ask))
+        .route(boards::AGENT_BOARD_RESOLVE, post(crate::boards::resolve::route))
         .route(boards::AGENT_BOARD_REACH, get(crate::boards::agent::reach))
         .route(boards::AGENT_PROJECT_BOARDS, get(crate::boards::agent::list).post(crate::boards::agent::create))
         .route(boards::AGENT_BOARD, get(crate::boards::agent::get).patch(crate::boards::agent::edit))

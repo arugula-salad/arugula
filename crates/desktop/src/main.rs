@@ -813,9 +813,48 @@ fn tab_in(w: &tauri::WebviewWindow) {
         // SAFETY: the window's NSWindow, on the main thread, while it lives.
         let ns = unsafe { &*(ptr as *const objc2_app_kit::NSWindow) };
         ns.setTabbingMode(objc2_app_kit::NSWindowTabbingMode::Preferred);
+        keep_full_screen_on_escape();
         let _ = w2.show();
         if !updates::quiet() {
             let _ = w2.set_focus();
+        }
+    });
+}
+
+/// macOS: an Escape the page leaves unhandled reaches the window as
+/// `cancelOperation:`, and a full-screen NSWindow leaves full screen on it
+/// (#392). Safari's way out is the green button, ⌃⌘F or the View menu, so the
+/// window ignores it while full screen. tao's `TaoWindow` (registered with
+/// the first window, so this runs after one exists) doesn't define the
+/// method; adding it overrides NSWindow's, and outside full screen it calls
+/// NSWindow's. The page still gets its Escape: this is the responder chain's
+/// last stop.
+#[cfg(target_os = "macos")]
+fn keep_full_screen_on_escape() {
+    use objc2::{
+        ClassType,
+        ffi::class_addMethod,
+        runtime::{AnyClass, AnyObject, Imp, Sel},
+        sel,
+    };
+    use objc2_app_kit::{NSWindow, NSWindowStyleMask};
+    static ONCE: std::sync::Once = std::sync::Once::new();
+
+    extern "C-unwind" fn cancel_operation(this: &NSWindow, _cmd: Sel, sender: Option<&AnyObject>) {
+        if this.styleMask().contains(NSWindowStyleMask::FullScreen) {
+            return;
+        }
+        // SAFETY: NSWindow's own `cancelOperation:`, with the same arguments.
+        unsafe { objc2::msg_send![super(this, NSWindow::class()), cancelOperation: sender] }
+    }
+
+    ONCE.call_once(|| {
+        let Some(class) = AnyClass::get(c"TaoWindow") else { return };
+        // SAFETY: `cancel_operation` has the signature of `cancelOperation:`
+        // (`v@:@`); the class is tao's, and adds nothing of its own for it.
+        unsafe {
+            let imp: Imp = std::mem::transmute(cancel_operation as extern "C-unwind" fn(_, _, _));
+            class_addMethod(class as *const AnyClass as *mut AnyClass, sel!(cancelOperation:), imp, c"v@:@".as_ptr());
         }
     });
 }

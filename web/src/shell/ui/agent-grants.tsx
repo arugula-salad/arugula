@@ -35,10 +35,28 @@ const POWERS: Record<string, string> = {
   "runs.command": "Start commands and instructions as runs",
   "boards.read": "Read boards",
   "boards.write": "Make and change boards",
+  "work.boards": "Work on boards: add, attach and ask on them, file issues and write to Plane",
   "trackers.write": "Write to your connected Plane projects",
   "sessions.start": "Start agent sessions as you",
   "sessions.reply": "Answer and prompt agent sessions",
 };
+
+/** #366: where a machine holds all of `boards.write`, `issues.write` and
+ * `trackers.write` is one line, "Work on boards"; the three leave their own
+ * lines there. */
+export function withWork(byPower: Map<string, string[]>): Map<string, string[]> {
+  const three = ["boards.write", "issues.write", "trackers.write"];
+  const all = (byPower.get("boards.write") ?? []).filter((w) => three.every((p) => byPower.get(p)?.includes(w)));
+  if (!all.length) return byPower;
+  const out = new Map(byPower);
+  for (const p of three) {
+    const rest = (out.get(p) ?? []).filter((w) => !all.includes(w));
+    if (rest.length) out.set(p, rest);
+    else out.delete(p);
+  }
+  out.set("work.boards", all);
+  return out;
+}
 
 /** Where one reaches, in words. */
 function over(g: Grant): string {
@@ -98,8 +116,9 @@ function AgentGrants({ close }: { close: () => void }) {
   }, [id, name]);
   const settings = platformOrigin();
   // By power, each with where it reaches.
-  const byPower = new Map<string, string[]>();
-  for (const g of grants ?? []) byPower.set(g.power, [...(byPower.get(g.power) ?? []), over(g)]);
+  const plain = new Map<string, string[]>();
+  for (const g of grants ?? []) plain.set(g.power, [...(plain.get(g.power) ?? []), over(g)]);
+  const byPower = withWork(plain);
   const order = Object.keys(POWERS);
   const powers = [...byPower.keys()].sort((a, b) => (order.indexOf(a) + 1 || 99) - (order.indexOf(b) + 1 || 99) || a.localeCompare(b));
   return (

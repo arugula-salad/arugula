@@ -186,10 +186,6 @@ impl Cert {
         hex32(&self.noise).unwrap_or_default()
     }
 
-    fn verifying_key(&self) -> anyhow::Result<VerifyingKey> {
-        Ok(VerifyingKey::from_bytes(&hex32(&self.sign)?)?)
-    }
-
     /// Sign as `approver` (setting `approver` first).
     pub fn sign_with(&mut self, approver: &DeviceKeys) {
         self.approver = approver.id();
@@ -198,7 +194,7 @@ impl Cert {
 
     /// The signature checks out against `approver`'s key.
     pub fn signed_by(&self, approver: &Cert) -> bool {
-        approver.device == self.approver && verify(&approver.verifying_key(), self.body().as_bytes(), &self.sig)
+        approver.device == self.approver && verify_hex(&approver.sign, self.body().as_bytes(), &self.sig)
     }
 
     /// The desktop app's window: an `app` certificate, or a `browser` one
@@ -219,10 +215,72 @@ impl Cert {
     }
 }
 
-/// `sig_hex` is `sign_hex`'s Ed25519 signature of `msg`.
+/// `sig_hex` is `sign_hex`'s Ed25519 signature of `msg`. The answer is
+/// kept ([`Checked`]): the same key, bytes and signature again are
+/// answered without checking again.
 pub fn verify_hex(sign_hex: &str, msg: &[u8], sig_hex: &str) -> bool {
+    let what = Checked::key(sign_hex, msg, sig_hex);
+    if let Some(ok) = CHECKED.lock().unwrap_or_else(|e| e.into_inner()).get(&what) {
+        return ok;
+    }
+    let ok = verify_now(sign_hex, msg, sig_hex);
+    CHECKED.lock().unwrap_or_else(|e| e.into_inner()).put(what, ok);
+    ok
+}
+
+/// [`verify_hex`], checked now: what [`Checked`] keeps.
+fn verify_now(sign_hex: &str, msg: &[u8], sig_hex: &str) -> bool {
     let key = hex32(sign_hex).and_then(|k| Ok(VerifyingKey::from_bytes(&k)?));
     verify(&key, msg, sig_hex)
+}
+
+/// Signature checks made, and their answers, by exactly what was checked:
+/// the signer's key and the signature as given (hex) and the signed bytes.
+/// A check is a pure function of those three, so a kept answer is the one
+/// checking again would give; anything that differs in a byte is another
+/// entry. In memory only, never saved, and bounded: at most
+/// [`Checked::KEPT`] answers, those looked at least recently going first.
+/// A machine's refresh checks every certificate on every chain again; with
+/// these kept, only what it hasn't seen before is checked (#363).
+struct Checked {
+    /// Answers kept or looked at since `before` was set aside.
+    now: HashMap<Vec<u8>, bool>,
+    /// The ones before that: looked at again, an answer moves to `now`.
+    before: HashMap<Vec<u8>, bool>,
+}
+
+static CHECKED: std::sync::LazyLock<std::sync::Mutex<Checked>> =
+    std::sync::LazyLock::new(|| std::sync::Mutex::new(Checked { now: HashMap::new(), before: HashMap::new() }));
+
+impl Checked {
+    const KEPT: usize = 4096;
+
+    /// Key, signature and bytes, each after its length: no two different
+    /// checks share one.
+    fn key(sign_hex: &str, msg: &[u8], sig_hex: &str) -> Vec<u8> {
+        let mut k = Vec::with_capacity(24 + sign_hex.len() + sig_hex.len() + msg.len());
+        for part in [sign_hex.as_bytes(), sig_hex.as_bytes(), msg] {
+            k.extend_from_slice(&(part.len() as u64).to_le_bytes());
+            k.extend_from_slice(part);
+        }
+        k
+    }
+
+    fn get(&mut self, k: &[u8]) -> Option<bool> {
+        if let Some(&ok) = self.now.get(k) {
+            return Some(ok);
+        }
+        let ok = self.before.remove(k)?;
+        self.put(k.to_vec(), ok);
+        Some(ok)
+    }
+
+    fn put(&mut self, k: Vec<u8>, ok: bool) {
+        if self.now.len() >= Self::KEPT / 2 {
+            self.before = std::mem::take(&mut self.now);
+        }
+        self.now.insert(k, ok);
+    }
 }
 
 fn verify(key: &anyhow::Result<VerifyingKey>, msg: &[u8], sig_hex: &str) -> bool {
@@ -259,7 +317,7 @@ impl Revocation {
     }
 
     pub fn signed_by(&self, signer: &Cert) -> bool {
-        signer.device == self.by && verify(&signer.verifying_key(), self.body().as_bytes(), &self.sig)
+        signer.device == self.by && verify_hex(&signer.sign, self.body().as_bytes(), &self.sig)
     }
 
     pub fn body(&self) -> String {
@@ -328,7 +386,7 @@ impl Trust {
                     .get(r.device.as_str())
                     .is_some_and(|cs| cs.iter().any(|c| matches!(c.kind, Kind::Browser | Kind::Recovery)));
                 let browser = |c: &Cert| browser_link(c, &r.by, |c| c.kind == Kind::Browser);
-                if signer.is_some_and(|s| s.kind.approves() && verify(&s.verifying_key(), r.body().as_bytes(), &r.sig))
+                if signer.is_some_and(|s| s.kind.approves() && verify_hex(&s.sign, r.body().as_bytes(), &r.sig))
                     && (!of_browser || g.valid(&revoked, &r.by, r.at, 0, &browser).is_some())
                 {
                     let at = next.entry(r.device.clone()).or_insert(r.at);
@@ -504,7 +562,7 @@ impl<'a> Graph<'a> {
             formed
                 .get(c.approver.as_str())
                 .and_then(|a| a.first())
-                .is_some_and(|a| verify(&a.verifying_key(), c.body().as_bytes(), &c.sig))
+                .is_some_and(|a| verify_hex(&a.sign, c.body().as_bytes(), &c.sig))
         };
         let mut by_id: HashMap<&str, Vec<&Cert>> = HashMap::new();
         for (id, cs) in &formed {
@@ -813,6 +871,56 @@ pub fn join_mac_ok(secret: &str, trust: &Trust, cert: &Cert, mac: &str) -> bool 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A kept answer is the one checking again gives: a valid signature, the
+    /// bytes changed, the signature changed, another key, and junk, each
+    /// asked twice (the second time from what's kept) and in between the
+    /// others, against [`verify_now`].
+    #[test]
+    fn a_kept_check_answers_as_checking_again() {
+        let (k, other) = (DeviceKeys::generate(), DeviceKeys::generate());
+        let key = hex::encode(k.sign_public());
+        let msg = format!("a body {}", crate::now_ms());
+        let sig = hex::encode(k.signature(msg.as_bytes()));
+        let mut bent = sig.clone().into_bytes();
+        bent[10] = if bent[10] == b'0' { b'1' } else { b'0' };
+        let bent = String::from_utf8(bent).unwrap();
+        let cases: Vec<(&str, String, String, bool)> = vec![
+            ("valid", key.clone(), msg.clone(), true),
+            ("another body", key.clone(), format!("{msg}!"), false),
+            ("one byte of the body", key.clone(), msg.replacen('a', "b", 1), false),
+            ("another key", hex::encode(other.sign_public()), msg.clone(), false),
+            ("junk key", "zz".into(), msg.clone(), false),
+        ];
+        for round in 0..2 {
+            for (what, key, msg, want) in &cases {
+                for (s, ok) in [(&sig, *want), (&bent, false), (&"00".to_owned(), false)] {
+                    assert_eq!(verify_now(key, msg.as_bytes(), s), ok, "{what}, checked now");
+                    assert_eq!(verify_hex(key, msg.as_bytes(), s), ok, "{what}, round {round}");
+                }
+            }
+        }
+    }
+
+    /// What's kept stays bounded, the answers looked at most recently stay,
+    /// and every answer kept is the one put.
+    #[test]
+    fn checks_kept_are_bounded() {
+        let mut c = Checked { now: HashMap::new(), before: HashMap::new() };
+        let k = |i: usize| Checked::key("key", format!("body {i}").as_bytes(), "sig");
+        c.put(k(0), true);
+        for i in 1..Checked::KEPT * 3 {
+            c.put(k(i), i.is_multiple_of(3));
+            // The first, looked at all along, stays.
+            assert_eq!(c.get(&k(0)), Some(true));
+            assert!(c.now.len() + c.before.len() <= Checked::KEPT);
+        }
+        for i in 1..Checked::KEPT * 3 {
+            assert!(c.get(&k(i)).is_none_or(|ok| ok == (i.is_multiple_of(3))));
+        }
+        assert_eq!(c.get(&k(Checked::KEPT * 3 - 1)), Some((Checked::KEPT * 3 - 1).is_multiple_of(3)));
+        assert_ne!(Checked::key("ab", b"c", "d"), Checked::key("a", b"bc", "d"));
+    }
 
     fn root(account: &str) -> (DeviceKeys, Cert) {
         let k = DeviceKeys::generate();

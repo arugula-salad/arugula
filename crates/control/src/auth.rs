@@ -620,8 +620,20 @@ async fn github_finish(app: &App, headers: &HeaderMap, q: Callback) -> Result<(S
     // Its address for security notices (#1609), best-effort: a sign-in
     // never fails over it, nor waits on more than GitHub's one answer.
     if let Some(email) = github_email(app, gh, &access).await {
+        let old = app.db.verified_email(&account).ok().flatten();
         match app.db.email_from_github(&account, &email, now_ms()) {
-            Ok(true) => info!(%account, "kept GitHub's address for notices"),
+            Ok(true) => {
+                info!(%account, "kept GitHub's address for notices");
+                // DK10: an address it replaced hears so.
+                if let Some(old) = old.filter(|o| *o != email) {
+                    crate::account_email::tell_old_address(
+                        app,
+                        &account,
+                        &old,
+                        "was replaced as your Arugula account's email by your GitHub account's",
+                    );
+                }
+            }
             Ok(false) => {}
             Err(e) => warn!(%account, "couldn't keep GitHub's address: {e}"),
         }

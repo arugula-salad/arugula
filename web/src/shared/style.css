@@ -1670,6 +1670,55 @@ a.work-chip:hover {
   font-variant-numeric: tabular-nums;
 }
 
+.agent-context {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--dim);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.agent-context > :not(:first-child)::before {
+  content: "·";
+  margin-right: 6px;
+}
+
+.agent-context-fill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--ok);
+}
+
+.agent-context-fill[data-tone="warn"] {
+  color: var(--warn);
+}
+
+.agent-context-fill[data-tone="danger"] {
+  color: var(--danger);
+}
+
+.agent-context-bar {
+  width: 44px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--raised);
+  overflow: hidden;
+}
+
+.agent-context-bar > span {
+  display: block;
+  height: 100%;
+  background: currentColor;
+}
+
+.agent-context-mark.overflow {
+  color: var(--danger);
+  font-weight: 600;
+}
+
 .agent-status {
   padding: 1px 8px;
   border-radius: var(--chip-radius);
