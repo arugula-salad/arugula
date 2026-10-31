@@ -3,7 +3,7 @@
   "commit": "2ab51953a325608e7f16020201b81c7ffcd37233",
   "branch": "main",
   "state": "red",
-  "at": "2026-10-31T00:03:52Z",
+  "at": "2026-10-31T00:21:53Z",
   "phases": {
     "lint": {
       "verdict": "pending",
@@ -76,8 +76,7 @@
           "conclusion": "success",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/41144061751/job/124364944634"
         }
-      ],
-      "culprit": "1e00c112eba29f15cf5d08e1ea699c2786a1ff44"
+      ]
     }
   },
   "failure": {
