@@ -85,6 +85,13 @@ approved the concept).
 The 48 hours, support's shortening and the weekly limit are the starting
 values; change them here when the PRs that build it say otherwise.
 
+**Passkeys too, once they approve** (S46 q5, Jake, 2026-10-30, aru-126).
+An account that has ever had a passkey gets a new first one only through
+this reset: the fresh-GitHub first passkey (#1386) is immediate only for
+an account that never had one. Outside a reset, removing a passkey takes
+an assertion from another of the account's passkeys; a session alone
+can't.
+
 Where: `crates/control/src/passkey.rs` (`fresh_github`), `crates/e2e/src/cert.rs`,
 `web/src/shell/trust/`.
 From: #1582, #1581, epic #1599.

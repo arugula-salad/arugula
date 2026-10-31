@@ -42,6 +42,13 @@ A new device must be approved by a device the account already trusts (the
 first is trusted on enrollment). Daemons verify the chain themselves back to
 the account's pinned root, so control can't add a reader; team rosters are
 signed by an owner's device of the previous version.
+**Where the chain stops** (Jake, 2026-10-30, aru-126). The chain decides
+which keys may reach a machine. It doesn't prove a person meant an action:
+on the platform plane that's a passkey's user-verified assertion over the
+action's bytes (deploy approvals, standing run grants, team owner changes).
+A device's kind matters only for who may connect and who may approve a new
+device.
+
 Where: `crates/e2e/src/cert.rs`, `crates/e2e/src/team.rs`.
 From: [M17](docs/plan-archive.md#m17-illogical-control-accounts-devices-enrollment-directory), [M19](docs/plan-archive.md#m19-teams-sharing-roles-team-daemons-invites), S15.
 
