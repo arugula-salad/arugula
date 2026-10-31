@@ -283,6 +283,16 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
     if !has("reset_requests", "kind")? {
         conn.execute_batch("ALTER TABLE reset_requests ADD COLUMN kind TEXT NOT NULL DEFAULT 'devices'")?;
     }
+    // Whether a device reset drops the passkeys too (DK10): only when its
+    // start reached a verified address that hadn't just changed.
+    if !has("reset_requests", "with_passkeys")? {
+        conn.execute_batch("ALTER TABLE reset_requests ADD COLUMN with_passkeys INTEGER NOT NULL DEFAULT 0")?;
+    }
+    // Whether a notice counts toward the daily limit: a reset's, or a
+    // changed address's, doesn't (DK10).
+    if !has("email_sends", "limited")? {
+        conn.execute_batch("ALTER TABLE email_sends ADD COLUMN limited INTEGER NOT NULL DEFAULT 1")?;
+    }
     // What a hosted box is for (M219): `deploy` for one deploy's run.
     if !has("hosted_enrollments", "purpose")? {
         conn.execute_batch("ALTER TABLE hosted_enrollments ADD COLUMN purpose TEXT")?;
@@ -1125,6 +1135,9 @@ impl Db {
     /// Forget what has expired: sessions, join codes, invites. How many
     /// sessions went.
     pub fn prune(&self, now: u64) -> anyhow::Result<usize> {
+        // What the sessions about to go say of passkeys before the log
+        // (DK10), kept first.
+        self.note_passkeys_before_log(now)?;
         let c = self.c();
         let n = c.execute("DELETE FROM sessions WHERE expires <= ?1", params![now])?;
         c.execute(
@@ -2885,6 +2898,7 @@ impl Db {
             "DELETE FROM recovery_uses WHERE account = ?1",
             "DELETE FROM account_resets WHERE account = ?1",
             "DELETE FROM reset_requests WHERE account = ?1",
+            "DELETE FROM passkey_before_log WHERE account = ?1",
             "DELETE FROM account_emails WHERE account = ?1",
             "DELETE FROM email_tokens WHERE account = ?1",
             "DELETE FROM email_sends WHERE account = ?1",

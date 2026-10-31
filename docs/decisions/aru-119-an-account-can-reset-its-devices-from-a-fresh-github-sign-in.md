@@ -116,6 +116,16 @@ device was used in the last two days.
 - **Limits.** As the device reset: at most one done a week, three started a
   day. Seen in the passkey log, the account's notices and *Devices and
   machines* while it waits.
+- **Its warning must go** (security review of #1875). It needs a verified
+  address that hasn't changed in the last 48 hours (a change or removal
+  tells the old address), else it refuses and points to support. Its
+  start waits for the email to be taken, and doesn't start if it isn't.
+  Reset emails are outside the daily mail limit. After a device, recovery
+  code or passkey cancels a reset of either kind, no passkey reset starts
+  for 7 days.
+- **The device reset's passkey part** follows the same rule: it removes the
+  passkeys only when its start reached such an address, and any working
+  passkey can cancel it too.
 
 The device reset stays as it is.
 

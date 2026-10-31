@@ -1796,8 +1796,13 @@ mod tests {
         assert_eq!(app.db.passkey_count("acct-h").unwrap(), 0);
         // aru-119's device reset, once its wait is over: then GitHub's word
         // adds one.
+        // One whose warning didn't reach a verified address doesn't count.
         app.db.start_reset("acct-h", "x", 1, 2).unwrap();
-        assert!(app.db.finish_due_reset("acct-h", now_ms()).unwrap());
+        assert_eq!(app.db.finish_due_reset("acct-h", now_ms()).unwrap(), Some(false));
+        assert_eq!(start(&app, &h).await.map_err(reason).err(), Some(Some(RESET)));
+        app.db.start_reset("acct-h", "x", 3, 4).unwrap();
+        app.db.reset_takes_passkeys("acct-h", 3).unwrap();
+        assert_eq!(app.db.finish_due_reset("acct-h", now_ms()).unwrap(), Some(true));
         let opts = start(&app, &h).await.unwrap();
         let new = Authn::new(92);
         register(&app, &h, new.create(opts["challenge"].as_str().unwrap(), None)).await.unwrap();

@@ -50,6 +50,14 @@ WHEN NEW.seq != (SELECT COUNT(*) FROM passkey_log WHERE account = NEW.account)
 BEGIN
     SELECT RAISE(ABORT, 'passkey_log takes only its next event');
 END;
+-- Accounts made before the log began that signed in with a passkey then,
+-- as the sessions still on record each time the hub starts said (DK10):
+-- they had one, though their log may be empty. Kept, as sessions are
+-- pruned.
+CREATE TABLE IF NOT EXISTS passkey_before_log (
+    account TEXT PRIMARY KEY,
+    noted_at INTEGER NOT NULL
+);
 ";
 
 /// The setting that says when this hub began keeping passkey logs: the
@@ -207,26 +215,26 @@ impl Db {
         Ok(Log { account: account.to_owned(), events, began })
     }
 
-    /// Whether the account's log has any event: it has had a passkey since
-    /// this hub began keeping logs, or had one then (DK10: a first passkey
-    /// is immediate only for an account that never had one). An account
-    /// whose passkeys were all removed before the log began has an empty
-    /// one: [`Log::began`] says when that was, to compare with when the
-    /// account was made.
+    /// Whether the account has had a passkey, as far as this hub knows: its
+    /// log has an event (it had one since the log began, or then), or it
+    /// was noted as having signed in with one before the log began
+    /// (`passkey_before_log`, DK10: a first passkey is immediate only for
+    /// an account that never had one).
     pub fn ever_had_passkey(&self, account: &str) -> anyhow::Result<bool> {
-        Ok(self
-            .c()
-            .query_row("SELECT 1 FROM passkey_log WHERE account = ?1 LIMIT 1", params![account], |_| Ok(()))
-            .optional()?
-            .is_some())
+        Ok(self.c().query_row(
+            "SELECT EXISTS (SELECT 1 FROM passkey_log WHERE account = ?1)
+                 OR EXISTS (SELECT 1 FROM passkey_before_log WHERE account = ?1)",
+            params![account],
+            |r| r.get::<_, bool>(0),
+        )?)
     }
 
     /// When the account last stopped having a passkey, as far as this hub
-    /// knows (DK10, #393): its log's last event, or, for an account made
-    /// before the log began whose log is empty, the log's start, when a
-    /// sign-in by passkey is still on record (it had one, removed before
-    /// the log). `None`: it never had one, so a fresh GitHub sign-in may
-    /// add a first one at once.
+    /// knows (DK10, #393): its log's last event, or, for an account whose
+    /// log is empty but that signed in with a passkey before the log began
+    /// (noted then, [`Db::note_passkeys_before_log`], or a session still on
+    /// record), the log's start. `None`: it never had one, so a first one
+    /// may be added at once.
     pub fn passkey_last_seen(&self, account: &str) -> anyhow::Result<Option<u64>> {
         let log = self.passkey_log(account)?;
         if let Some(last) = log.events.last() {
@@ -234,6 +242,14 @@ impl Db {
         }
         let Some(began) = log.began else { return Ok(None) };
         let c = self.c();
+        let noted: bool = c.query_row(
+            "SELECT EXISTS (SELECT 1 FROM passkey_before_log WHERE account = ?1)",
+            params![account],
+            |r| r.get(0),
+        )?;
+        if noted {
+            return Ok(Some(began));
+        }
         let before: bool = c
             .query_row("SELECT created FROM accounts WHERE id = ?1", params![account], |r| r.get::<_, i64>(0))
             .optional()?
@@ -245,6 +261,28 @@ impl Db {
                 |r| r.get::<_, bool>(0),
             )?;
         Ok(by_passkey.then_some(began))
+    }
+
+    /// Note, for good, each account made before the log began that a
+    /// passkey sign-in on record says had a passkey (DK10): sessions are
+    /// pruned, so what they say is kept in `passkey_before_log` while they
+    /// still say it. The hub runs it as it starts, after the backfill. How
+    /// many were new.
+    pub fn note_passkeys_before_log(&self, now: u64) -> anyhow::Result<usize> {
+        let c = self.c();
+        let Some(began) = c
+            .query_row("SELECT v FROM settings WHERE k = ?1", params![BEGAN], |r| r.get::<_, String>(0))
+            .optional()?
+            .and_then(|v| v.parse::<i64>().ok())
+        else {
+            return Ok(0);
+        };
+        Ok(c.execute(
+            "INSERT OR IGNORE INTO passkey_before_log (account, noted_at)
+             SELECT DISTINCT s.account, ?2 FROM sessions s JOIN accounts a ON a.id = s.account
+             WHERE s.via = 'passkey' AND a.created < ?1",
+            params![began, now as i64],
+        )?)
     }
 
     /// A passkey removed as a signed-in page could before DK10 (#393):
@@ -580,5 +618,30 @@ mod tests {
         assert_eq!(db.passkey_last_seen("new").unwrap(), None, "made after: its log says");
         add_keyed(&db, "new", "pk1", 1);
         assert_eq!(db.passkey_last_seen("new").unwrap(), Some(10), "its add");
+    }
+
+    /// DK10 security review, item 5: what a passkey sign-in on record says
+    /// of an account from before the log is kept once noted, so pruning
+    /// the session doesn't make it an account that never had a passkey.
+    #[test]
+    fn a_passkey_before_the_log_outlives_its_session() {
+        let db = Db::memory();
+        for (id, created) in [("old-pk", 500), ("new-pk", 2000)] {
+            db.account_for("github", &format!("gh-{id}"), id, id, created).unwrap();
+        }
+        for (t, account) in [("t1", "old-pk"), ("t2", "new-pk")] {
+            db.add_session(t, account, 600, 3000).unwrap();
+            db.set_session_via(t, "passkey").unwrap();
+        }
+        assert_eq!(db.note_passkeys_before_log(700).unwrap(), 0, "no log yet: nothing to compare with");
+        db.backfill_passkey_log("control.test", 1000).unwrap();
+        // Pruning notes first, then the sessions go.
+        assert_eq!(db.prune(5000).unwrap(), 2);
+        assert!(db.sessions("old-pk", 0).unwrap().is_empty());
+        assert!(db.ever_had_passkey("old-pk").unwrap());
+        assert_eq!(db.passkey_last_seen("old-pk").unwrap(), Some(1000));
+        assert!(!db.ever_had_passkey("new-pk").unwrap(), "made after the log began: its log says");
+        assert_eq!(db.passkey_last_seen("new-pk").unwrap(), None);
+        assert_eq!(db.note_passkeys_before_log(6000).unwrap(), 0, "once");
     }
 }

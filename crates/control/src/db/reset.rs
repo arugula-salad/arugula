@@ -166,16 +166,63 @@ impl Db {
 
     /// The pending device reset, once it's due: done (its devices reset, as
     /// support's is, `by` `self-service`), and its passkeys dropped
-    /// ([`Db::drop_passkeys_by_reset`]). Whether it was.
-    pub fn finish_due_reset(&self, account: &str, now: u64) -> anyhow::Result<bool> {
+    /// ([`Db::drop_passkeys_by_reset`]) when its start said it would
+    /// ([`Db::reset_takes_passkeys`]). Whether it was done, and if so
+    /// whether it took the passkeys.
+    pub fn finish_due_reset(&self, account: &str, now: u64) -> anyhow::Result<Option<bool>> {
+        let with_passkeys: bool = match self.pending_reset(account)? {
+            Some(p) => self.c().query_row(
+                "SELECT with_passkeys FROM reset_requests WHERE account = ?1 AND kind = 'devices' AND started_at = ?2",
+                params![account, p.started_at as i64],
+                |r| r.get(0),
+            )?,
+            None => return Ok(None),
+        };
         if !self.mark_due_done(account, Kind::Devices, now)? {
-            return Ok(false);
+            return Ok(None);
         }
         self.reset_account_devices(account, "self-service", "asked for on the approval screen, after the wait", now)?;
         // Its passkeys too (DK10, #393, aru-119 as amended): one way to
         // drop them without another passkey, so one can be added again.
-        self.drop_passkeys_by_reset(account, now)?;
-        Ok(true)
+        if with_passkeys {
+            self.drop_passkeys_by_reset(account, now)?;
+        }
+        Ok(Some(with_passkeys))
+    }
+
+    /// The device reset started at `started_at` drops the passkeys too
+    /// (DK10): its start reached the account's verified address, which
+    /// hadn't just changed.
+    pub fn reset_takes_passkeys(&self, account: &str, started_at: u64) -> anyhow::Result<()> {
+        self.c().execute(
+            "UPDATE reset_requests SET with_passkeys = 1 WHERE account = ?1 AND kind = 'devices' AND started_at = ?2",
+            params![account, started_at as i64],
+        )?;
+        Ok(())
+    }
+
+    /// A reset whose start couldn't warn anyone, gone as if never started
+    /// (DK10: one never runs silently).
+    pub fn forget_reset(&self, account: &str, kind: Kind, started_at: u64) -> anyhow::Result<()> {
+        self.c().execute(
+            "DELETE FROM reset_requests WHERE account = ?1 AND kind = ?2 AND started_at = ?3 AND done_at IS NULL",
+            params![account, kind.as_str(), started_at as i64],
+        )?;
+        Ok(())
+    }
+
+    /// When a reset of the account's (either kind) was last cancelled by
+    /// something it trusts, not the sign-in that started it: a device, a
+    /// recovery code or a passkey (DK10: then no passkey reset for a week).
+    pub fn last_trusted_cancel(&self, account: &str) -> anyhow::Result<Option<u64>> {
+        Ok(self
+            .c()
+            .query_row(
+                "SELECT MAX(cancelled_at) FROM reset_requests WHERE account = ?1 AND cancelled_by != 'session'",
+                params![account],
+                |r| r.get::<_, Option<i64>>(0),
+            )?
+            .map(|t| t.max(0) as u64))
     }
 
     /// The pending passkey reset, once it's due: done, every passkey
@@ -190,9 +237,21 @@ impl Db {
     }
 
     /// When the account last had a reset done that lets a first passkey in
-    /// again: a device reset or a passkey reset, whichever came last.
+    /// again, whichever came last: a passkey reset, a device reset that
+    /// took the passkeys ([`Db::reset_takes_passkeys`]), or support's.
     pub fn last_reset_for_passkeys(&self, account: &str) -> anyhow::Result<Option<u64>> {
-        let devices = self.last_reset(account)?.map(|(at, _)| at);
-        Ok(devices.max(self.last_reset_done_of(account, Kind::Passkeys)?))
+        let c = self.c();
+        let ours: Option<i64> = c.query_row(
+            "SELECT MAX(done_at) FROM reset_requests
+             WHERE account = ?1 AND (kind = 'passkeys' OR (kind = 'devices' AND with_passkeys = 1))",
+            params![account],
+            |r| r.get(0),
+        )?;
+        let support: Option<i64> = c.query_row(
+            "SELECT MAX(at) FROM account_resets WHERE account = ?1 AND by != 'self-service'",
+            params![account],
+            |r| r.get(0),
+        )?;
+        Ok(ours.max(support).map(|t| t.max(0) as u64))
     }
 }

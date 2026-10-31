@@ -671,7 +671,7 @@ test("a browser nothing approves offers a reset; a trusted device can cancel one
   await signIn(fresh);
   await expect(fresh.getByText("Approve this browser")).toBeVisible();
   await fresh.locator("[data-reset-open]").click();
-  await expect(fresh.locator("[data-reset-offer]")).toContainText("Every device, passkey and recovery code you have stops working");
+  await expect(fresh.locator("[data-reset-offer]")).toContainText("Every device and recovery code you have stops working");
   await fresh.locator("[data-reset-start]").click();
   await expect(fresh.locator("[data-reset-offer] .control-error")).toContainText("one of your devices was used in the last two days");
 

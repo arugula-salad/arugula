@@ -1655,10 +1655,21 @@ account with GitHub linked; passkeys that are its only way in stay):
   signing `arugula passkey reset cancel v1\n<account>\n<started_at>`, or
   any working passkey of the account asserting over SHA-256 of that text
   (the status read gives the options). At most one done a week, three
-  started a day. The page offers it under Passkeys, and *Devices and
+  started a day, and none for 7 days after a device, recovery code or
+  passkey cancelled a reset of either kind (409 `cancelled_recently`). It
+  needs a verified address that hasn't changed in 48 hours (409 `no_email`
+  or `email_changed`, pointing to support); its start waits for the
+  warning email to be taken, and isn't recorded if it isn't (503
+  `email_failed`). A cancel after it's due, or after it finished, is 409
+  `already_done`. The page offers it under Passkeys, and *Devices and
   machines* shows one waiting, with a cancel this device signs.
-- **aru-119's device reset**, which removes the passkeys with the
-  devices.
+- **aru-119's device reset**, which removes the passkeys with the devices
+  only when its start's warning reached such an address
+  (`reset_requests.with_passkeys`); any working passkey cancels it too
+  (over SHA-256 of `arugula reset cancel v1…`).
+
+Reset emails, and the one an account's old address gets when the address
+is replaced or removed, are outside the daily mail limit.
 
 **The passkey log** (DK3, aru-126, `db/passkey_log.rs`). Every passkey
 added to or removed from an account is an event in the account's passkey
@@ -1816,9 +1827,9 @@ sleeps, and control pushes and searches them itself.
 
 <!-- Written by `just control-tables` from crates/control/tables.toml. Edit that, not this. -->
 
-Control's database has 156 tables in two planes ("Two planes, two trust rules"):
+Control's database has 157 tables in two planes ("Two planes, two trust rules"):
 
-- **The machine plane** (51 tables) is what control needs to route and check: ids, names, addresses, public keys and signed statements. What moves between a client and a machine stays end to end, and control can't read it.
+- **The machine plane** (52 tables) is what control needs to route and check: ids, names, addresses, public keys and signed statements. What moves between a client and a machine stays end to end, and control can't read it.
 - **The platform plane** (105 tables) is what has to exist while every machine is asleep: billing and usage, chat and the threads on objects, Shared Docs, Cloud workspaces, linked repos' PRs and issues, and projects' native issues, runs and deploys. Control reads most of it, and says so here.
 
 Every table is listed in `crates/control/tables.toml`, and a test fails when one isn't. **Holds** is what's in it: metadata (ids, names, addresses, times, counts, public keys, signed statements), ciphertext (encrypted to keys control never holds), or plaintext (what people or their agents wrote, or a secret control can read). **Gone with the account** is what deleting an account does to its rows.
@@ -1840,13 +1851,14 @@ Every table is listed in `crates/control/tables.toml`, and a test fails when one
 | `account_link_tombstones` | metadata | When an account last unlinked a product (M229): the client, the account, when. An assertion issued until then never links. Kept a day, far past any assertion's life. | yes |  |
 | `link_alerts` | metadata | The ops counter of bulk link calls (M229): per product's client and kind (unlinks, lookups), how many went over the alert line, and when last. | nothing of one |  |
 | `passkeys` | metadata | A passkey's public key, its sign count, what keeps it, the browser that added it (its User-Agent, the device its sign-in said it is, and that sign-in), whether it gives PRF. | yes |  |
+| `passkey_before_log` | metadata | Accounts made before the passkey log began that signed in with a passkey then (DK10, #393): noted from the sessions still on record as the hub starts and before it prunes them, so an account whose passkeys were removed before the log still counts as having had one. The account and when it was noted. | yes |  |
 | `devices` | metadata | A device's or machine's certificate (public keys, signed by a device the account trusts), and its approval. | yes |  |
 | `turned_down` | metadata | Which device turned a waiting device down, and when. | yes |  |
 | `account_resets` | **plaintext** | An account's devices reset (aru-119): when, who ran it, the reason support wrote, and the certificates and revocations it archived. | yes |  |
-| `reset_requests` | metadata | A reset its person asked for (aru-119, #1582): of the account's devices, or (DK10, #393) of its passkeys alone (`kind`); when it started and is due, the sign-in that started it (its token's hash), and whether it was cancelled (by which device or passkey) or done. | yes |  |
+| `reset_requests` | metadata | A reset its person asked for (aru-119, #1582): of the account's devices, or (DK10, #393) of its passkeys alone (`kind`); whether a device reset takes the passkeys too (`with_passkeys`: its warning reached a settled verified address); when it started and is due, the sign-in that started it (its token's hash), and whether it was cancelled (by which device or passkey) or done. | yes |  |
 | `account_emails` | **plaintext** | An account's email address for security notices (#1609): GitHub's primary verified one, or one typed and verified by a link, and when. | yes | The email provider |
 | `email_tokens` | **plaintext** | A typed address waiting for its verify link (#1609): the link's token by its hash, the address, and when it expires (a day). | yes | The email provider |
-| `email_sends` | metadata | That control emailed an account (#1609): which kind of notice and when, never its body. Kept 90 days, for the daily limit. | yes |  |
+| `email_sends` | metadata | That control emailed an account (#1609): which kind of notice and when, never its body, and whether it counts toward the daily limit (a reset's, or a changed address's, doesn't: DK10). Kept 90 days, for the daily limit. | yes |  |
 | `revocations` | metadata | A signed revocation of a device's or machine's key. | yes |  |
 | `recovery_uses` | metadata | Which device each recovery code let in (their ids), recorded once, when control first takes an approval by the code. | yes |  |
 | `joins` | metadata | A machine asking to join: its certificate, a hash of its poll token, its addresses, the approval. | yes |  |

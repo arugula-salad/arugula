@@ -215,6 +215,15 @@ note = "Approvals the account made stay checkable after it goes: its passkeys' r
 seen_by = ["litestream"]
 
 [[table]]
+name = "passkey_before_log"
+plane = "machine"
+process = "hub"
+holds = "metadata"
+what = "Accounts made before the passkey log began that signed in with a passkey then (DK10, #393): noted from the sessions still on record as the hub starts and before it prunes them, so an account whose passkeys were removed before the log still counts as having had one. The account and when it was noted."
+with_account = "deleted"
+seen_by = ["litestream"]
+
+[[table]]
 name = "devices"
 plane = "machine"
 process = "hub"
@@ -246,7 +255,7 @@ name = "reset_requests"
 plane = "machine"
 process = "hub"
 holds = "metadata"
-what = "A reset its person asked for (aru-119, #1582): of the account's devices, or (DK10, #393) of its passkeys alone (`kind`); when it started and is due, the sign-in that started it (its token's hash), and whether it was cancelled (by which device or passkey) or done."
+what = "A reset its person asked for (aru-119, #1582): of the account's devices, or (DK10, #393) of its passkeys alone (`kind`); whether a device reset takes the passkeys too (`with_passkeys`: its warning reached a settled verified address); when it started and is due, the sign-in that started it (its token's hash), and whether it was cancelled (by which device or passkey) or done."
 with_account = "deleted"
 seen_by = ["litestream"]
 
@@ -273,7 +282,7 @@ name = "email_sends"
 plane = "machine"
 process = "hub"
 holds = "metadata"
-what = "That control emailed an account (#1609): which kind of notice and when, never its body. Kept 90 days, for the daily limit."
+what = "That control emailed an account (#1609): which kind of notice and when, never its body, and whether it counts toward the daily limit (a reset's, or a changed address's, doesn't: DK10). Kept 90 days, for the daily limit."
 with_account = "deleted"
 seen_by = ["litestream"]
 

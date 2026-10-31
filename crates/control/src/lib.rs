@@ -1106,6 +1106,12 @@ async fn run(platforms: Box<dyn Platforms>) -> anyhow::Result<()> {
     if backfilled > 0 {
         info!(passkeys = backfilled, "passkeys from before the passkey log written into it");
     }
+    // DK10: which accounts from before the log signed in with a passkey,
+    // kept before their sessions are pruned.
+    let noted = db.note_passkeys_before_log(arugula_e2e::now_ms())?;
+    if noted > 0 {
+        info!(accounts = noted, "accounts that had a passkey before the passkey log noted");
+    }
     let block_domain = blocks::domain(a.block_domain.as_deref().unwrap_or(""), &sites)?;
     match &block_domain {
         Some(d) => info!(domain = %d, "blocks served at b-<key>.{d}"),
