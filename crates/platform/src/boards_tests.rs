@@ -1115,7 +1115,8 @@ async fn a_replaced_agent_is_marked_earlier_and_comes_last() {
 /// A board of `project` with a row on `issue`, made by `who`: the board's
 /// id and the row's.
 async fn board_on(base: &str, who: &str, project: &str, title: &str, issue: &str) -> (String, String) {
-    let (_, b) = call(base, who, "POST", &format!("/api/projects/{project}/boards"), Some(json!({ "title": title }))).await;
+    let (_, b) =
+        call(base, who, "POST", &format!("/api/projects/{project}/boards"), Some(json!({ "title": title }))).await;
     let id = b["board"]["id"].as_str().unwrap().to_owned();
     let pointer = json!({ "kind": "issue", "id": issue });
     let (st, v) = put(base, who, &id, json!({ "entry": "row", "note": title, "pointer": pointer })).await;
@@ -1156,7 +1157,12 @@ async fn a_block_started_on_an_issue_is_attached_to_its_rows() {
     grant_write(&base, "a", "geek", &t).await;
     let (st, v) = geek(&base, "POST", &route(&t), Some(body("#1"))).await;
     assert_eq!(st, 200, "{v}");
-    let mut on: Vec<_> = v["on"].as_array().unwrap().iter().map(|o| (o["title"].as_str().unwrap(), o["row"].as_str().unwrap())).collect();
+    let mut on: Vec<_> = v["on"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|o| (o["title"].as_str().unwrap(), o["row"].as_str().unwrap()))
+        .collect();
     on.sort();
     assert_eq!(on, vec![("Launch", launch_row.as_str()), ("Plan", plan_row.as_str())], "{v}");
     for (board, row) in [(&launch, &launch_row), (&plan, &plan_row)] {

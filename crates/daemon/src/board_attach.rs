@@ -10,7 +10,7 @@
 //! Only with the `boards` flag on here, and only when this machine has
 //! joined control.
 
-use arugula_control_wire::boards::{AttachBlock, IssueRef, BlockAttached, agent_project_attach_block};
+use arugula_control_wire::boards::{AttachBlock, BlockAttached, IssueRef, agent_project_attach_block};
 use std::sync::Arc;
 
 use arugula_proto::{PaneId, flags};
@@ -89,13 +89,12 @@ async fn attach(app: &App, home: Option<String>, issue: &str, pane: PaneId) -> R
         pane: pane.to_string(),
     })
     .map_err(|e| e.to_string())?;
-    let v = app
-        .control
-        .cloud(Method::POST, &agent_project_attach_block(&project.id), Some(&body))
-        .await
-        .map_err(|e| match e {
-            CloudRefused::Said { status: 403, .. } => no_grant(&project.name),
-            e => format!("the row wasn't attached: {e}"),
+    let v =
+        app.control.cloud(Method::POST, &agent_project_attach_block(&project.id), Some(&body)).await.map_err(|e| {
+            match e {
+                CloudRefused::Said { status: 403, .. } => no_grant(&project.name),
+                e => format!("the row wasn't attached: {e}"),
+            }
         })?;
     let attached: BlockAttached =
         serde_json::from_value(v).map_err(|e| format!("Arugula control sent an answer I can't read: {e}"))?;

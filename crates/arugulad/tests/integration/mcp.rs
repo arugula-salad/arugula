@@ -3262,7 +3262,11 @@ async fn an_agent_started_on_an_issue_is_on_its_row() {
     // Through the API, as `arugula agent --issue` does.
     let opened = d.open_with(json!({ "type": "agent", "config": agent(json!({ "work": { "issue": "#12" } })) }));
     d.wait_for("its row", || d.state(opened)["work"] == work);
-    let bad = d.raw("POST", "/api/blocks", Some(json!({ "type": "agent", "config": agent(json!({ "work": { "issue": "x" } })) })));
+    let bad = d.raw(
+        "POST",
+        "/api/blocks",
+        Some(json!({ "type": "agent", "config": agent(json!({ "work": { "issue": "x" } })) })),
+    );
     assert_eq!(bad.0, 400, "{bad:?}");
 
     // A worktree's branch starts with the issue's number.
@@ -3276,7 +3280,9 @@ async fn an_agent_started_on_an_issue_is_on_its_row() {
     git(&repo, &["commit", "-q", "--allow-empty", "-m", "one"]);
     git(&repo, &["remote", "add", "origin", tmp.join("origin.git").to_str().unwrap()]);
     git(&repo, &["push", "-q", "origin", "main"]);
-    let wt = call(&s, "start_agent", agent(json!({ "issue": "#12", "title": "Lexer lane", "cwd": repo, "worktree": {} }))).await;
+    let wt =
+        call(&s, "start_agent", agent(json!({ "issue": "#12", "title": "Lexer lane", "cwd": repo, "worktree": {} })))
+            .await;
     assert!(wt["summary"].as_str().unwrap().contains("branch feat/12-lexer-lane"), "{wt}");
     let none = refused(&s, "start_agent", agent(json!({ "cwd": repo, "worktree": {} }))).await;
     assert!(none.contains("branch name"), "{none}");

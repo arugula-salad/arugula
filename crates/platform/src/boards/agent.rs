@@ -273,7 +273,15 @@ pub async fn attach_block(
         let board = &stored.board;
         if super::already(&stored, &pointer).is_none() {
             app.db
-                .attach(&board.id, &row, wire::AttachRole::Work, &pointer, Some(&d.daemon), arugula_e2e::now_ms(), wire::ATTACHMENTS_MAX)?
+                .attach(
+                    &board.id,
+                    &row,
+                    wire::AttachRole::Work,
+                    &pointer,
+                    Some(&d.daemon),
+                    arugula_e2e::now_ms(),
+                    wire::ATTACHMENTS_MAX,
+                )?
                 .map_err(super::refused)?;
             super::changed(&app, &project, &board.id);
         }

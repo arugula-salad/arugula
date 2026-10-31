@@ -211,7 +211,8 @@ async fn title_of(app: &App, id: PaneId) -> Option<String> {
     let config = app.mux.api(|r| Api::Block(id, r)).await.flatten()?.config();
     config.get("work").filter(|w| !w.is_null())?;
     let title = config["title"].as_str()?.trim();
-    (!title.is_empty() && title.chars().count() <= 200 && !title.chars().any(char::is_control)).then(|| title.to_owned())
+    (!title.is_empty() && title.chars().count() <= 200 && !title.chars().any(char::is_control))
+        .then(|| title.to_owned())
 }
 
 /// Why sending stopped, and for how long.

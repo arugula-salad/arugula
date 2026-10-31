@@ -74,7 +74,9 @@ mod turnwork;
 use arugula_mux::{acl, block, mux, pane, paths, perm, procinfo, provider, shellenv, shim, store, sys, sys::home};
 #[cfg(unix)]
 use arugulad_base::upload;
-use arugulad_base::{agent, api, board_attach, features, lab_hooks, mcp, review, rules, server, task, telemetry, work, worktree};
+use arugulad_base::{
+    agent, api, board_attach, features, lab_hooks, mcp, review, rules, server, task, telemetry, work, worktree,
+};
 
 use std::{
     collections::{BTreeMap, VecDeque},
