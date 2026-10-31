@@ -3,7 +3,7 @@
 // the board routes' paths. Run with `node --experimental-strip-types`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { LANE_GLYPH, answerReady, askWaitingLine, assigneesLine, chipOf, counted, debounced, earlierLine, epicLine, firstLine, groupLine, isCard, laneCount, liveWord, marksOf, needsYou, needsYouLine, parsePointer, pointerHref, pointerLabel, pointerToSend, proofMark, rowGlyph, sections, stepActive, workLabel, workChip } from "../src/shared/boards/text.ts";
+import { LANE_GLYPH, cardTone, checkTone, checkWord, groupMove, liveTone, prsOf, answerReady, askWaitingLine, assigneesLine, chipOf, counted, debounced, earlierLine, epicLine, firstLine, groupLine, isCard, laneCount, liveWord, marksOf, needsYou, needsYouLine, parsePointer, pointerHref, pointerLabel, pointerToSend, proofMark, rowGlyph, sections, stepActive, workLabel, workChip } from "../src/shared/boards/text.ts";
 import { parse, pathOf } from "../src/platform/paths.ts";
 
 const P = "prj_8f2ec0ffee00112233445566778899aa";
@@ -212,4 +212,35 @@ test("a board counts the asks that wait on the reader, raised ones included, and
   assert.equal(askWaitingLine(ask()), "Waiting for Sam, asked by an agent on m1.");
   assert.match(askWaitingLine(ask({ raised: true })), /^Raised by the board/);
   assert.deepEqual([answerReady(""), answerReady("  "), answerReady(" yes ")], [false, false, true]);
+});
+
+test("a card's bar is its lane's tone, and a row that waits on the reader takes the attention tone", () => {
+  assert.deepEqual(["next", "doing", "review", "done"].map((lane) => cardTone({ lane })), ["muted", "ok", "warn", "ok"]);
+  assert.equal(cardTone({ lane: "review", ask: { mine: true } }), "accent");
+  assert.equal(cardTone({ lane: "review", ask: { mine: false, raised: true } }), "warn");
+  assert.deepEqual(["open", "checks_running", "checks_failed", "merged", "closed", "other"].map(liveTone), ["accent", "warn", "danger", "ok", "muted", "muted"]);
+});
+
+test("a group moves one place, and not past either end", () => {
+  const g = [{ id: "a" }, { id: "b" }, { id: "c" }];
+  assert.deepEqual(groupMove(g, "b", false), { before: "a" });
+  assert.deepEqual(groupMove(g, "a", true), { before: "c" });
+  assert.deepEqual(groupMove(g, "b", true), { before: null });
+  assert.equal(groupMove(g, "a", false), undefined);
+  assert.equal(groupMove(g, "c", true), undefined);
+  assert.equal(groupMove(g, "zzz", true), undefined);
+});
+
+test("the PRs behind a row are its own item if it is one, then the attached ones, once each", () => {
+  const pr = (id, number) => ({ pointer: { kind: "forge_item", id }, live: { kind: "pr", repo: "acme/app", number, state: "open", title: "t" } });
+  const row = { pointer: { kind: "issue", id: "iss_1" }, live: { kind: "native", number: 1, state: "open", title: "t" }, attachments: [{ role: "work", ...pr("fi_1", 7) }, { role: "work", ...pr("fi_1", 7) }, { role: "proof", ...pr("fi_2", 8) }, { role: "work", pointer: { kind: "link", url: "https://x.test/" } }] };
+  assert.deepEqual(prsOf(row).map((p) => p.id), ["fi_1"]);
+  assert.deepEqual(prsOf({ ...pr("fi_3", 9), attachments: [] }).map((p) => p.id), ["fi_3"]);
+});
+
+test("a check says its conclusion once it has one, and its tone follows", () => {
+  const c = (status, conclusion = null) => ({ status, conclusion });
+  assert.equal(checkWord(c("completed", "success")), "success");
+  assert.equal(checkWord(c("in_progress")), "in progress");
+  assert.deepEqual([c("completed", "success"), c("completed", "failure"), c("queued"), c("completed", "skipped")].map(checkTone), ["ok", "danger", "warn", "muted"]);
 });

@@ -9,8 +9,11 @@
 // folded away. Each row has: a glyph for the row's lane, a link to what it
 // points at with that item's state now (`live`), chips for what is attached
 // to it, on a Done row the mark that says it is proven or not yet, and a
-// note. Owners and editors add, edit and delete rows; a viewer's writes are
-// refused and say so. (The real page is B5's.)
+// note. Owners and editors add, edit and delete rows, and make, rename, move
+// and delete groups; a viewer's writes are refused and say so. A row is a
+// swarm card (platform/swarm.css, as the Issues page's): its bar is its
+// lane's tone, and its title opens the drawer, a read-only side sheet with the
+// item's body, comments, checks, attachments and proof (#369).
 //
 // It reads the board as the person looking: now, again when the platform
 // says it changed (the board's thread, chat's live stream), and when the
@@ -19,19 +22,21 @@
 // to make again.
 
 import { useEffect, useId, useRef, useState } from "preact/hooks";
-import type { BoardAsk, BoardAnsweredAsk, BoardAttachment, BoardPointer, ProjectBoard, BoardRow, BoardView, BoardWorkItem, BoardZone } from "../proto";
+import type { BoardAsk, BoardAnsweredAsk, BoardAttachment, BoardGroup, BoardPointer, ForgeText, ProjectBoard, BoardRow, BoardView, BoardWorkItem, BoardZone } from "../proto";
 import { chat } from "../chat-store";
 import { usePlatformApi } from "../platform-api";
 import { Markdown } from "../ui/markdown";
+import { ConfirmRemove } from "../ui/confirm";
+import { StateChip } from "../ui/state-chip";
 import { useSubscribe } from "../ui/hooks";
 import { askText, openMenu, type MenuItem } from "../ui/menu";
 import { issues } from "../issues/store";
 import { whoLabel } from "../issues/text";
 import { agentShort } from "../agent-label";
 import { day } from "../time";
-import { BoardError, STALE_REV, boards } from "./store";
+import { BoardError, STALE_REV, boards, type ForgeChecks } from "./store";
 import "./boards.css";
-import { BLOCK_LABEL, PICK_DELAY_MS, PICK_LIMIT, assigneesLine, blockClass, GOAL_MAX, answerReady, askWaitingLine, blockFacts, chipOf, debounced, earlierLine, epicLine, groupLine, isCard, laneCount, liveClass, liveWord, marksOf, needsYou, needsYouLine, pointerHref, pointerLabel, pointerText, pointerToSend, proofMark, rowGlyph, sections, stepActive, workLabel } from "./text";
+import { BLOCK_LABEL, PICK_DELAY_MS, cardTone, checkTone, checkWord, groupMove, liveTone, prsOf, PICK_LIMIT, assigneesLine, blockClass, GOAL_MAX, answerReady, askWaitingLine, blockFacts, chipOf, debounced, earlierLine, epicLine, groupLine, isCard, laneCount, liveClass, liveWord, marksOf, needsYou, pointerHref, pointerLabel, pointerText, pointerToSend, proofMark, sections, stepActive, workLabel } from "./text";
 
 const STALE_SAID = "That changed while you were editing, so the board is read again. Make your change again if it still applies.";
 
@@ -62,6 +67,10 @@ export function BoardPanel({
   const [missing, setMissing] = useState<string | null>(null);
   const [stale, setStale] = useState(false);
   const [editing, setEditing] = useState<string | null>(null);
+  /** The row whose drawer is open. */
+  const [drawer, setDrawer] = useState<string | null>(null);
+  /** The group a Delete waits on. */
+  const [dropping, setDropping] = useState<BoardGroup | null>(null);
   // Chat says when the thread's object changed; it's on while chat is.
   useSubscribe((fn) => chat.subscribe(fn));
   const seen = useRef(0);
@@ -153,6 +162,32 @@ export function BoardPanel({
     if (t?.trim() && t.trim() !== view.board.title) await act(() => boards.edit(id, { title: t.trim() }));
   };
 
+  const addGroup = async () => {
+    const t = await askText("Add a group", "", "a phase, a wave or an area");
+    if (t?.trim()) await act(() => boards.put(id, { entry: "zone", title: t.trim() }));
+  };
+  const renameGroup = async (g: BoardGroup) => {
+    const t = await askText("Rename the group", g.title);
+    if (t?.trim() && t.trim() !== g.title) await act(() => boards.put(id, { id: g.id, rev: g.rev, entry: "zone", title: t.trim() }));
+  };
+  const moveGroup = (g: BoardGroup, down: boolean) => {
+    const to = groupMove(view.groups ?? [], g.id, down);
+    if (to) void act(() => boards.move(id, g.id, g.rev, to));
+  };
+  const moveRow = (r: BoardRow, zone: string | null) => void act(() => boards.move(id, r.id, r.rev, { zone }));
+  const groupMenu = (e: MouseEvent, g: BoardGroup) => {
+    const all = view.groups ?? [];
+    const at = all.findIndex((x) => x.id === g.id);
+    menuAt(e, [
+      { label: "Rename…", run: () => void renameGroup(g) },
+      { label: "Move up", disabled: at <= 0, run: () => moveGroup(g, false) },
+      { label: "Move down", disabled: at >= all.length - 1, run: () => moveGroup(g, true) },
+      "separator",
+      { label: "Delete the group…", danger: true, run: () => setDropping(g) },
+    ]);
+  };
+  const opened = drawer ? view.zones.flatMap((z) => z.rows).find((r) => r.id === drawer) : undefined;
+
   return (
     <div class="board" data-board={id}>
       {back}
@@ -165,15 +200,20 @@ export function BoardPanel({
           view.board.title
         )}
       </h1>
-      <Epic b={view.board} act={act} id={id} write={write} />
-      <NeedsYou view={view} />
+      <Epic b={view.board} act={act} id={id} write={write} view={view} />
       {stale && (
         <p class="board-stale" role="status" data-board-stale>
           {STALE_SAID}
         </p>
       )}
       {sections(view).map((s) => {
-        const lanes = s.lanes.map((z) => <Lane key={z.id} z={z} project={view.board.project} editing={editing} setEditing={setEditing} act={act} id={id} platform={platform} />);
+        const lanes = (
+          <div class="board-lanes">
+            {s.lanes.map((z) => (
+              <Lane key={z.id} z={z} project={view.board.project} editing={editing} setEditing={setEditing} act={act} id={id} platform={platform} groups={write ? (view.groups ?? []) : []} moveRow={moveRow} open={setDrawer} />
+            ))}
+          </div>
+        );
         // No groups: the lanes alone, as before.
         if (!view.groups?.length) return lanes;
         return (
@@ -184,6 +224,11 @@ export function BoardPanel({
                 <span class="board-group-progress dim" data-board-group-progress>
                   {groupLine(s.group.progress)}
                 </span>
+              )}
+              {s.group && write && (
+                <button type="button" class="board-more" aria-label={`Group actions: ${s.group.title}`} data-board-group-menu={s.group.id} onClick={(e) => groupMenu(e, s.group!)}>
+                  ⋯
+                </button>
               )}
             </header>
             {lanes}
@@ -202,6 +247,11 @@ export function BoardPanel({
           <button type="button" class="board-add" data-board-add-row onClick={() => setEditing("new")}>
             + Add row
           </button>
+          {write && (
+            <button type="button" class="board-add" data-board-add-group onClick={() => void addGroup()}>
+              + Add a group
+            </button>
+          )}
           <button type="button" class="board-add" data-board-new-issue onClick={() => void newIssue()}>
             + New issue
           </button>
@@ -212,17 +262,29 @@ export function BoardPanel({
           ))}
         </p>
       )}
+      {dropping && (
+        <ConfirmRemove
+          title={`Delete the group ${dropping.title}?`}
+          label="Delete"
+          go={() => (setDropping(null), void act(() => boards.remove(id, dropping.id)))}
+          cancel={() => setDropping(null)}
+        >
+          <p>Its rows go with it. Their issues and PRs stay where they are.</p>
+        </ConfirmRemove>
+      )}
+      {opened && <Drawer r={opened} platform={platform} close={() => setDrawer(null)} />}
     </div>
   );
 }
 
 /** A board's goal, progress and closing, under its title. The panel doesn't know whether the person may write (the pin block has no project), so without `write` the controls still show and the platform's refusal comes back as `act`'s toast. */
-function Epic({ b, act, id, write }: { b: ProjectBoard; act: Act; id: string; write: boolean }) {
+function Epic({ b, act, id, write, view }: { b: ProjectBoard; act: Act; id: string; write: boolean; view: BoardView }) {
   const [goalOpen, setGoalOpen] = useState(false);
   const [goal, setGoal] = useState("");
   const [closing, setClosing] = useState(false);
   const [note, setNote] = useState("");
   const e = epicLine(b.progress);
+  const waiting = needsYou(view);
   const { teams } = usePlatformApi();
   const nameOf = (account: string) => teams().flatMap((t) => t.roster.members).find((m) => m.account === account)?.name;
   const saveGoal = async () => {
@@ -266,6 +328,19 @@ function Epic({ b, act, id, write }: { b: ProjectBoard; act: Act; id: string; wr
           Made by {whoLabel(b.created_by, b.created_by_agent, nameOf)}
         </p>
       )}
+      <div class="sw-stats board-stats" data-board-stats>
+        <span>
+          <b>{b.progress.done}</b> done
+        </span>
+        <span>
+          <b>{b.progress.proven}</b> proven
+        </span>
+        {waiting.length > 0 && (
+          <button type="button" class="needs board-needs-you-button" data-board-needs-you={waiting.length} onClick={() => document.querySelector(`[data-board-row="${waiting[0].id}"]`)?.scrollIntoView({ behavior: "smooth", block: "center" })}>
+            <b>{waiting.length}</b> Needs you
+          </button>
+        )}
+      </div>
       <div class="board-progress" data-board-progress>
         {b.progress.total > 0 && (
           <div class="board-bar" role="progressbar" aria-valuemin={0} aria-valuemax={b.progress.total} aria-valuenow={b.progress.done} aria-label={e.words}>
@@ -318,23 +393,6 @@ function Epic({ b, act, id, write }: { b: ProjectBoard; act: Act; id: string; wr
 }
 
 type Act = (write: () => Promise<BoardView>) => Promise<boolean>;
-
-/** "Needs you (N)": the asks that name the reader, and those the board raised on rows they can see. Clicking scrolls to the first. */
-function NeedsYou({ view }: { view: BoardView }) {
-  const rows = needsYou(view);
-  if (!rows.length) return null;
-  const go = () => {
-    const el = document.querySelector(`[data-board-row="${rows[0].id}"]`);
-    if (el) (el as HTMLElement).scrollIntoView({ behavior: "smooth", block: "center" });
-  };
-  return (
-    <p class="board-needs-you" data-board-needs-you={rows.length}>
-      <button type="button" class="board-needs-you-button" onClick={go}>
-        {needsYouLine(rows.length)}
-      </button>
-    </p>
-  );
-}
 
 /** A row's open question: the question, its why folded, the options as buttons with the recommendation marked, and a text box when there are none. Only a person who may answer gets the buttons; a raised ask has none to give. */
 function AskCard({ a, answer }: { a: BoardAsk; answer: (a: { option: string } | { text: string }) => Promise<boolean> }) {
@@ -412,6 +470,9 @@ function Lane({
   act,
   id,
   platform,
+  groups,
+  moveRow,
+  open,
 }: {
   z: BoardZone;
   project: string;
@@ -420,6 +481,10 @@ function Lane({
   act: Act;
   id: string;
   platform: (path: string) => string | undefined;
+  /** The groups a row may move to; none for a reader who can't write. */
+  groups: BoardGroup[];
+  moveRow: (r: BoardRow, zone: string | null) => void;
+  open: (row: string) => void;
 }) {
   const n = laneCount(z);
   return (
@@ -431,20 +496,21 @@ function Lane({
           {n.proven > 0 && ` · ${n.proven} proven`}
         </span>
       </header>
-      <ul class="board-rows">
+      <ul class="board-rows sw-cards">
         {z.rows.map((r) => (
-          <Row key={r.id} r={r} editing={editing === r.id} setEditing={setEditing} act={act} id={id} project={project} platform={platform} />
+          <Row key={r.id} r={r} editing={editing === r.id} setEditing={setEditing} act={act} id={id} project={project} platform={platform} groups={groups} moveRow={moveRow} open={open} />
         ))}
       </ul>
     </section>
   );
 }
 
+/** An attachment as a chip (`sw-chip`): what it points at, and its state. */
 function Chip({ a, platform }: { a: BoardAttachment; platform: (path: string) => string | undefined }) {
   const c = chipOf(a);
   const href = pointerHref({ pointer: a.pointer, live: a.live }, platform);
   return (
-    <span class={`board-chip ${a.role}`} data-board-attachment={a.id} data-attach-role={a.role}>
+    <span class={`sw-chip board-chip ${a.role}`} data-board-attachment={a.id} data-attach-role={a.role}>
       {a.role === "proof" && <span class="dim">proof </span>}
       {href ? (
         <a class="board-ptr" href={href} target={a.pointer.kind === "forge_item" || a.pointer.kind === "link" ? "_blank" : undefined} rel="noopener noreferrer">
@@ -479,6 +545,9 @@ function Row({
   act,
   id,
   platform,
+  groups,
+  moveRow,
+  open,
 }: {
   r: BoardRow;
   editing: boolean;
@@ -487,6 +556,9 @@ function Row({
   id: string;
   project: string;
   platform: (path: string) => string | undefined;
+  groups: BoardGroup[];
+  moveRow: (r: BoardRow, zone: string | null) => void;
+  open: (row: string) => void;
 }) {
   const label = pointerLabel(r.pointer, r.live);
   const href = pointerHref(r, platform);
@@ -496,6 +568,7 @@ function Row({
   const marks = marksOf(r);
   const earlier = r.attachments.filter((a) => marks.earlier.has(a.id));
   const current = r.attachments.filter((a) => !marks.earlier.has(a.id));
+  const tone = cardTone(r);
   const proofTag = mark && (
     <span class={`ws-tag board-proof ${mark.proven ? "proven" : "unproven"}`} data-board-proof={mark.proven ? (r.proof?.by ?? "proven") : "not-proven"}>
       {mark.words}
@@ -504,14 +577,30 @@ function Row({
   const more = (e: MouseEvent) =>
     menuAt(e, [
       { label: "Edit…", run: () => setEditing(r.id) },
+      ...(groups.length
+        ? [
+            {
+              label: "Move to group…",
+              submenu: [
+                ...groups.map((g) => ({ label: g.title, checked: r.group === g.id, run: () => r.group !== g.id && moveRow(r, g.id) })),
+                ...(r.group ? [{ label: "No group", run: () => moveRow(r, null) }] : []),
+              ],
+            },
+          ]
+        : []),
       "separator",
       { label: "Delete the row", danger: true, run: () => void act(() => boards.remove(id, r.id)) },
     ]);
+  // The title opens the drawer; a modified click or a middle click still follows the link.
+  const show = (e: MouseEvent) => {
+    if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+    e.preventDefault();
+    open(r.id);
+  };
+  const title = card ? r.live!.title : label || "Note";
+  const external = r.pointer.kind === "forge_item" || r.pointer.kind === "link";
   return (
-    <li class="board-row" data-board-row={r.id} data-lane={r.lane} data-status={r.status}>
-      <span class={`board-glyph s-${r.status}`} title={r.status === "needs_input" ? "Needs input" : r.lane} data-board-glyph>
-        {rowGlyph(r)}
-      </span>
+    <li class={`board-card sw-card sw-${tone}`} data-board-row={r.id} data-lane={r.lane} data-status={r.status} data-tone={tone} data-needs-you={r.ask?.mine ? "" : undefined}>
       {editing ? (
         <RowForm
           project={project}
@@ -521,19 +610,22 @@ function Row({
         />
       ) : (
         <div class="board-main">
-          {card && (
-            <div class="board-line board-card-title" data-board-title>
-              <span class="board-title">{r.live!.title}</span>
-              {proofTag}
-            </div>
-          )}
-          <div class={card ? "board-line board-sub" : "board-line"}>
-            {label && (href ? <a class="board-ptr" href={href} target={r.pointer.kind === "forge_item" || r.pointer.kind === "link" ? "_blank" : undefined} rel="noopener noreferrer" data-board-ptr>{label}</a> : <span class="board-ptr" data-board-ptr>{label}</span>)}
+          <div class="board-card-head board-line board-card-title">
+            <a class="board-card-name board-title" href={href ?? "#"} data-board-title data-board-open onClick={show}>
+              {title}
+            </a>
             {r.live && (
-              <span class={`ws-tag board-live ${liveClass(r.live.state)}`} data-board-live={r.live.state}>
+              <StateChip tone={liveTone(r.live.state)} data-board-live={r.live.state}>
                 {liveWord(r.live)}
-              </span>
+              </StateChip>
             )}
+            {proofTag}
+            <button type="button" class="board-more" aria-label="Row actions" data-board-row-menu onClick={more}>
+              ⋯
+            </button>
+          </div>
+          <div class="board-line board-sub dim">
+            {label && (href ? <a class="board-ptr" href={href} target={external ? "_blank" : undefined} rel="noopener noreferrer" data-board-ptr>{label}</a> : <span class="board-ptr" data-board-ptr>{label}</span>)}
             {card && who && (
               <span class="board-who dim" data-board-who>
                 {who}
@@ -544,8 +636,6 @@ function Row({
                 {agentShort(r.agent)}
               </span>
             )}
-            {r.live && !card && <span class="board-item dim">{r.live.title}</span>}
-            {!card && proofTag}
           </div>
           {(marks.merged || marks.after) && (
             <div class="board-line board-marks" data-board-marks>
@@ -580,20 +670,188 @@ function Row({
               {earlier.map((a) => (a.block ? <BlockLine key={a.id} a={a} /> : null))}
             </details>
           )}
-          {r.ask && <AskCard a={r.ask} answer={(a) => act(() => boards.answer(id, r.ask!.id, a))} />}
-          {r.asked && r.asked.length > 0 && <Answered asked={r.asked} />}
           {r.note && (
-            <div class="board-note" data-board-note>
+            <div class="board-note dim" data-board-note>
               <Markdown text={r.note} refs={null} />
             </div>
           )}
+          {r.ask && <AskCard a={r.ask} answer={(a) => act(() => boards.answer(id, r.ask!.id, a))} />}
+          {r.asked && r.asked.length > 0 && <Answered asked={r.asked} />}
         </div>
       )}
-      <button type="button" class="board-more" aria-label="Row actions" data-board-row-menu onClick={more}>
-        ⋯
-      </button>
     </li>
   );
+}
+
+/** What the drawer read of a row's item. `body` null: the reader may not read it here. */
+interface Read {
+  body: string | null;
+  comments: { who: string; text: string; at: number }[];
+  checks: { label: string; checks: ForgeChecks["checks"] }[];
+}
+
+/** The most comments the drawer shows. */
+const DRAWER_COMMENTS = 3;
+
+const commentOf = (t: ForgeText) => ({ who: t.author ?? "", text: t.body, at: t.created_at });
+
+/** A row's item as the drawer reads it, with the APIs the pages use: a native issue's body and thread, a mirrored item's content, the checks of each PR behind the row. Any read that fails leaves its part out. */
+async function readRow(r: BoardRow): Promise<Read> {
+  const out: Read = { body: null, comments: [], checks: [] };
+  const p = r.pointer;
+  const reads: Promise<void>[] = [];
+  if (p.kind === "issue") {
+    reads.push(boards.issue(p.id).then((i) => void (out.body = i.body)).catch(() => {}));
+    reads.push(
+      chat
+        .openObject(p.id)
+        .then(async (room) => {
+          await chat.load(room.id);
+          out.comments = (chat.messages(room.id)?.list ?? []).filter((m) => m.text).slice(-DRAWER_COMMENTS).map((m) => ({ who: m.name, text: m.text, at: m.at }));
+        })
+        .catch(() => {}),
+    );
+  } else if (p.kind === "forge_item" && r.live?.provider !== "plane") {
+    reads.push(
+      boards
+        .content(p.id)
+        .then((c) => {
+          out.body = c.body?.body ?? "";
+          out.comments = c.comments.filter((t) => t.kind === "comment" || !t.path).slice(-DRAWER_COMMENTS).map(commentOf);
+        })
+        .catch(() => {}),
+    );
+  }
+  const prs = prsOf(r).slice(0, 3);
+  const checks = await Promise.all(prs.map((x) => boards.checks(x.id).then((c) => ({ label: x.label, checks: c.checks })).catch(() => null)));
+  await Promise.all(reads);
+  out.checks = checks.flatMap((c) => (c ? [c] : []));
+  return out;
+}
+
+/** The drawer: a row's item, read-only, beside the board (a sheet on a phone). Its title, state and link out; the body, the latest comments, the PRs' checks, the attachments and the proof's evidence. */
+function Drawer({ r, platform, close }: { r: BoardRow; platform: (path: string) => string | undefined; close: () => void }) {
+  const [read, setRead] = useState<Read | null>(null);
+  const ref = useRef<HTMLDivElement>(null);
+  const href = pointerHref(r, platform);
+  const key = `${r.id}:${r.updated_at}`;
+  useEffect(() => {
+    setRead(null);
+    let live = true;
+    void readRow(r).then((v) => live && setRead(v));
+    return () => void (live = false);
+  }, [key]);
+  useEffect(() => {
+    ref.current?.focus({ preventScroll: true });
+    const esc = (e: KeyboardEvent) => e.key === "Escape" && close();
+    document.addEventListener("keydown", esc);
+    return () => document.removeEventListener("keydown", esc);
+  }, []);
+  const title = isCard(r.live) ? r.live.title : pointerLabel(r.pointer, r.live) || "Note";
+  const evidence = r.attachments.filter((a) => a.role === "proof");
+  const readable = r.pointer.kind === "issue" || (r.pointer.kind === "forge_item" && r.live?.provider !== "plane");
+  const external = r.pointer.kind === "forge_item" || r.pointer.kind === "link";
+  return (
+    <div ref={ref} class="board-drawer" role="dialog" aria-label={title} tabIndex={-1} data-board-drawer={r.id}>
+      <header class="board-drawer-head">
+        <h2 class="board-drawer-title" data-board-drawer-title>
+          {title}
+        </h2>
+        <button type="button" class="board-more" aria-label="Close" data-board-drawer-close onClick={close}>
+          ×
+        </button>
+      </header>
+      <div class="board-line">
+        {r.live && <StateChip tone={liveTone(r.live.state)}>{liveWord(r.live)}</StateChip>}
+        {href && (
+          <a class="board-ptr" href={href} target={external ? "_blank" : undefined} rel="noopener noreferrer" data-board-drawer-link>
+            {pointerLabel(r.pointer, r.live)} ↗
+          </a>
+        )}
+      </div>
+      {r.note && <p class="dim">{r.note}</p>}
+      {readable && (
+        <section data-board-drawer-body>
+          {!read ? (
+            <p class="dim">Loading…</p>
+          ) : read.body === null ? (
+            <p class="dim">{href ? <a href={href} target="_blank" rel="noopener noreferrer">Open on GitHub</a> : "Not available here."}</p>
+          ) : read.body.trim() ? (
+            <Markdown text={read.body} refs={null} />
+          ) : (
+            <p class="dim">No description.</p>
+          )}
+        </section>
+      )}
+      {read && read.comments.length > 0 && (
+        <section data-board-drawer-comments>
+          <h3>Latest comments</h3>
+          {read.comments.map((c, i) => (
+            <div key={i} class="board-drawer-comment">
+              <div class="dim">
+                {c.who} · {day(c.at)}
+              </div>
+              <Markdown text={c.text} refs={null} />
+            </div>
+          ))}
+        </section>
+      )}
+      {read && read.checks.length > 0 && (
+        <section data-board-drawer-checks>
+          <h3>Checks</h3>
+          {read.checks.map((c) => (
+            <div key={c.label}>
+              {read.checks.length > 1 && <div class="dim">{c.label}</div>}
+              {c.checks.length === 0 && <p class="dim">No checks reported.</p>}
+              <ul class="board-checks">
+                {c.checks.map((k) => (
+                  <li key={k.name} data-board-check={k.name}>
+                    <CheckChip tone={checkTone(k)} word={checkWord(k)} />
+                    {k.url && /^https:\/\//.test(k.url) ? (
+                      <a href={k.url} target="_blank" rel="noopener noreferrer">
+                        {k.name}
+                      </a>
+                    ) : (
+                      k.name
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))}
+        </section>
+      )}
+      {r.attachments.length > 0 && (
+        <section data-board-drawer-attachments>
+          <h3>Attached</h3>
+          {r.attachments.map((a) => (
+            <div key={a.id} class="board-drawer-attached">
+              <Chip a={a} platform={platform} />
+              {a.block && <BlockLine a={a} />}
+            </div>
+          ))}
+        </section>
+      )}
+      {(r.proof || evidence.length > 0) && (
+        <section data-board-drawer-proof>
+          <h3>Proof</h3>
+          {r.proof && (
+            <p>
+              {r.proof.by === "ci" ? "Proven by the merged PR, with its checks green." : "Proven by evidence."}
+            </p>
+          )}
+          {evidence.map((a) => (
+            <Chip key={a.id} a={a} platform={platform} />
+          ))}
+        </section>
+      )}
+    </div>
+  );
+}
+
+/** A check as a chip. */
+function CheckChip({ tone, word }: { tone: Parameters<typeof StateChip>[0]["tone"]; word: string }) {
+  return <StateChip tone={tone}>{word}</StateChip>;
 }
 
 /** A row's note and pointer, new or edited. The pointer is sent only when

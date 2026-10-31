@@ -4,6 +4,7 @@
 // (scripts/boards.test.mjs).
 
 import type { BoardAsk, BoardAttachment, BoardBlockState, BoardBlockWord, BoardGroup, BoardLane, BoardMark, BoardProgress, BoardLive, BoardLiveState, BoardPointer, BoardProof, BoardRow, BoardView, BoardWorkItem, BoardZone } from "../proto";
+import type { Tone } from "../ui/state-chip";
 
 /** A row's lane as its glyph. A row asking for input shows `?` instead. */
 export const LANE_GLYPH: Record<BoardLane, string> = {
@@ -297,4 +298,48 @@ export function pointerHref(r: Pick<BoardRow, "pointer" | "live">, platform: (pa
   if (p.kind === "run") return platform(`/runs/${p.id}`);
   if (p.kind === "link") return /^https:\/\//.test(p.url) ? p.url : undefined;
   return undefined;
+}
+
+/** A card's tone, which is its lane's: Next muted, Doing ok, Review warn and Done ok; a row that waits on the reader takes the attention tone (accent), whatever its lane. */
+export function cardTone(r: Pick<BoardRow, "lane" | "ask">): Tone {
+  if (r.ask?.mine) return "accent";
+  return r.lane === "next" ? "muted" : r.lane === "review" ? "warn" : "ok";
+}
+
+/** A live item's state chip tone, as the lists' chips take it: open and merged ok, checks running warn, failed danger, closed muted. */
+export function liveTone(s: BoardLiveState): Tone {
+  if (s === "checks_running" || s === "running") return "warn";
+  if (s === "checks_failed" || s === "run_failed") return "danger";
+  if (s === "other" || s === "closed") return "muted";
+  return s === "open" ? "accent" : "ok";
+}
+
+/** Where a group goes when it moves one place up or down, as `before` for the move route: the group it goes before, `null` for last, `undefined` when it is already at that end. */
+export function groupMove(groups: Pick<BoardGroup, "id">[], id: string, down: boolean): { before: string | null } | undefined {
+  const i = groups.findIndex((g) => g.id === id);
+  if (i < 0 || (down ? i === groups.length - 1 : i === 0)) return undefined;
+  return { before: down ? (groups[i + 2]?.id ?? null) : groups[i - 1].id };
+}
+
+/** The pull requests behind a row, for its checks: the primary item if it is one, then the attached ones (a mirrored PR is a `forge_item` whose live kind is `pr`). */
+export function prsOf(r: Pick<BoardRow, "pointer" | "live" | "attachments">): { id: string; label: string }[] {
+  const out: { id: string; label: string }[] = [];
+  const add = (p: BoardPointer, live?: BoardLive | null) => {
+    if (p.kind === "forge_item" && live?.kind === "pr" && !out.some((o) => o.id === p.id)) out.push({ id: p.id, label: pointerLabel(p, live) });
+  };
+  add(r.pointer, r.live);
+  for (const a of r.attachments) if (a.role !== "proof") add(a.pointer, a.live);
+  return out;
+}
+
+/** A check's words: its conclusion once it has one, else its status. */
+export function checkWord(c: { status: string; conclusion: string | null }): string {
+  return (c.status === "completed" && c.conclusion ? c.conclusion : c.status).replace(/_/g, " ");
+}
+
+/** A check's tone: green passed, red failed, amber still going, muted the rest. */
+export function checkTone(c: { status: string; conclusion: string | null }): Tone {
+  if (c.status !== "completed") return "warn";
+  if (c.conclusion === "success") return "ok";
+  return c.conclusion === "failure" || c.conclusion === "timed_out" || c.conclusion === "cancelled" || c.conclusion === "action_required" ? "danger" : "muted";
 }
