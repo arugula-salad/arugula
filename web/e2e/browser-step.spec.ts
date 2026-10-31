@@ -7,7 +7,10 @@
 // Stripe's checkout and `/api/billing`; `window.open` is recorded, not
 // followed (the app's own hand-off to the browser is crates/desktop's).
 // With the app's `open_outside` command (#364; faked here, the xvfb
-// platform test runs the real one) the page asks the app and doesn't open.
+// platform test runs the real one) the page asks the app and doesn't open,
+// and the step asks as soon as it has the address, with no second click
+// (#381); *Open again* asks once more. An app without the command (its
+// invoke rejects) keeps the open button and its click's `window.open`.
 // In a plain browser the same buttons still redirect in the tab.
 
 import { expect, test, type Page } from "@playwright/test";
@@ -30,14 +33,16 @@ let project = "";
 
 /** Alice's page on the platform, in the desktop app or not; `window.open`
  * records what it was asked to open. */
-async function visit(browser: import("@playwright/test").Browser, path: string, desktop: boolean, commands = false) {
+async function visit(browser: import("@playwright/test").Browser, path: string, desktop: boolean, commands: boolean | "old" = false) {
   const ctx = await browser.newContext();
   await ctx.addCookies(await alice.context().cookies());
   await ctx.addInitScript(([d, c]) => {
     if (d) Object.assign(window, { __arugulaApp: { name: "Arugula app on test-mac", platform: "macos" } });
     const asked: unknown[][] = [];
     (window as unknown as { asked: unknown[][] }).asked = asked;
-    if (c) Object.assign(window, { __TAURI__: { core: { invoke: async (...a: unknown[]) => void asked.push(a) } } });
+    if (c === true) Object.assign(window, { __TAURI__: { core: { invoke: async (...a: unknown[]) => void asked.push(a) } } });
+    // An app from before open_outside: Tauri rejects a command it hasn't got.
+    if (c === "old") Object.assign(window, { __TAURI__: { core: { invoke: async (...a: unknown[]) => (asked.push(a), Promise.reject("command open_outside not found")) } } });
     (window as unknown as { opened: unknown[][] }).opened = [];
     window.open = ((...a: unknown[]) => ((window as unknown as { opened: unknown[][] }).opened.push(a), null)) as typeof window.open;
   }, [desktop, commands] as const);
@@ -174,18 +179,47 @@ test("the app: Upgrade opens checkout in the browser, and the new plan shows whe
   await p.context().close();
 });
 
-test("the app with open_outside: Upgrade asks the app, and the page opens nothing", async ({ browser }) => {
+test("the app with open_outside: Upgrade asks the app on its own, the page opens nothing, and Open again asks again (#381)", async ({ browser }) => {
   const p = await visit(browser, "/settings", true, true);
+  await fakeBilling(p, { plan: "personal", checkouts: 0 });
+  await p.reload();
+  await p.locator("[data-open-plan]").click();
+  await p.getByRole("button", { name: /^Add a payment method/ }).click();
+  // No open button and no second click: the waiting state is up.
+  await expect(p.locator("[data-browser-step-waiting]")).toBeVisible();
+  await expect(p.locator("[data-browser-step-open]")).toHaveCount(0);
+  expect(await asked(p)).toEqual([["open_outside", { url: CHECKOUT }]]);
+  expect(await opened(p)).toEqual([]);
+
+  // A focus doesn't open it again; Open again does.
+  await focus(p);
+  await p.waitForTimeout(300);
+  expect(await asked(p)).toHaveLength(1);
+  await p.locator("[data-browser-step-again-open]").click();
+  await expect.poll(() => asked(p)).toEqual([
+    ["open_outside", { url: CHECKOUT }],
+    ["open_outside", { url: CHECKOUT }],
+  ]);
+  expect(await opened(p)).toEqual([]);
+  await p.context().close();
+});
+
+test("an app without open_outside: nothing opens on its own, and the open button's click does (#381)", async ({ browser }) => {
+  const p = await visit(browser, "/settings", true, "old");
   await fakeBilling(p, { plan: "personal", checkouts: 0 });
   await p.reload();
   await p.locator("[data-open-plan]").click();
   await p.getByRole("button", { name: /^Add a payment method/ }).click();
   const open = p.locator("[data-browser-step-open]");
   await expect(open).toBeEnabled();
-  await open.click();
-  await expect(p.locator("[data-browser-step-waiting]")).toBeVisible();
+  await expect(p.locator("[data-browser-step-waiting]")).toHaveCount(0);
+  // The auto-open asked once and was refused; the page opened nothing.
   expect(await asked(p)).toEqual([["open_outside", { url: CHECKOUT }]]);
   expect(await opened(p)).toEqual([]);
+  await open.click();
+  await expect(p.locator("[data-browser-step-waiting]")).toBeVisible();
+  // The click asks again, is refused again, and opens the old way.
+  await expect.poll(() => opened(p)).toEqual([[CHECKOUT, "_blank", "noopener"]]);
   await p.context().close();
 });
 

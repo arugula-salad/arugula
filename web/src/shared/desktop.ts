@@ -43,17 +43,29 @@ export function tauriInvoke(): (<T>(cmd: string, args?: Record<string, unknown>)
   return desktopApp() && t?.core?.invoke ? t.core.invoke : null;
 }
 
+/** Open `url` in the person's browser through the app (#364), and say
+ * whether it did: false outside the app and when the app has no such command
+ * (it rejects). It never opens the page's own window, and needs no click
+ * gesture, so an address that arrives after a request can go too (#381). */
+export async function openOutsideAsync(url: string): Promise<boolean> {
+  const invoke = tauriInvoke();
+  if (!invoke) return false;
+  try {
+    await invoke("open_outside", { url });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /** Open `url` in the person's browser, from control's page or the platform
  * page in the app (#364): `window.open` keeps control's own pages in an app
  * window. Returns whether the app took it; false outside the app, for the
  * caller's own `window.open`. An app without the command rejects, and then
  * this opens it the old way. Call it in the click, for the gesture. */
 export function openOutside(url: string): boolean {
-  const invoke = tauriInvoke();
-  if (!invoke) return false;
-  invoke("open_outside", { url }).catch(() => {
-    window.open(url, "_blank", "noopener");
-  });
+  if (!tauriInvoke()) return false;
+  void openOutsideAsync(url).then((ok) => ok || window.open(url, "_blank", "noopener"));
   return true;
 }
 
