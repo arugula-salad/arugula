@@ -172,7 +172,7 @@ test("a reload comes back to the same session, tab and pane, with the sidebar as
   const pid = (await text(page, second)).match(/before-42 (\d+)/)![1];
   await page.evaluate((p) => window.__arugula.client.setActive(p), second);
   const layout = (await tab(page)).root;
-  await page.locator(".ws-rail [data-open-sessions]").click();
+  await page.locator(".ws-head [data-open-sessions]").click();
   await expect(page.locator("[data-session-sidebar]")).toHaveCount(0);
 
   await page.reload();

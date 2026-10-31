@@ -109,6 +109,25 @@ test("red check runs on your GitHub PR rerun from the block", async ({ page }) =
   // The jobs queue again: no longer failed.
   await expect(el.locator('[data-want="failed"]')).toHaveCount(0);
   await expect(el.locator('[data-check="queued"]')).toHaveCount(3);
+
+  // #379: running and queued check dots use the warn colour, not accent.
+  const colors = await el.locator(".forge-dot.queued").first().evaluate(() => {
+    const dot = document.querySelector(".forge-dot.queued") as HTMLElement;
+    const dotBg = getComputedStyle(dot).backgroundColor;
+    const warnEl = document.createElement("div");
+    warnEl.style.color = "var(--warn)";
+    document.body.appendChild(warnEl);
+    const warnColor = getComputedStyle(warnEl).color;
+    document.body.removeChild(warnEl);
+    const accentEl = document.createElement("div");
+    accentEl.style.color = "var(--accent)";
+    document.body.appendChild(accentEl);
+    const accentColor = getComputedStyle(accentEl).color;
+    document.body.removeChild(accentEl);
+    return { dotBg, warnColor, accentColor };
+  });
+  expect(colors.dotBg).toBe(colors.warnColor);
+  expect(colors.dotBg).not.toBe(colors.accentColor);
 });
 
 // #964: a Doc draws a chart fence and shows an svg one; a forge's body is

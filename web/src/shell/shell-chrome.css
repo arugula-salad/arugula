@@ -9,38 +9,6 @@
   margin-left: 0;
 }
 
-.ws-rail {
-  padding-top: 0;
-  gap: 6px;
-  border-right-color: var(--line-strong);
-}
-
-.ws-brand {
-  height: var(--head-h);
-  margin-bottom: 2px;
-  border-bottom: 1px solid var(--line-strong);
-}
-
-.ws-rail-button {
-  min-height: 48px;
-  box-sizing: border-box;
-  justify-content: center;
-  gap: 6px;
-  margin-inline: 4px;
-  padding: 6px 0;
-  border: 1px solid transparent;
-  border-radius: var(--btn-radius);
-}
-
-.ws-rail-button.here::before {
-  display: none;
-}
-
-.ws-rail-button.on {
-  background: var(--surface);
-  border-color: var(--line-strong);
-  color: var(--fg);
-}
 
 .ws-sidebar {
   border-right-color: var(--line-strong);
@@ -239,7 +207,7 @@
 
 /* Align the workspace's reading order: identity on the left, actions on
    the right. Surface boundaries are independent of text contrast. */
-.ws-head, .ws-sidebar, .ws-rail, .ws-foot {
+.ws-head, .ws-sidebar, .ws-foot {
   background: var(--surface);
 }
 .ws-session-main {
@@ -288,9 +256,6 @@ html[data-desktop="macos"]:not([data-native-tabs]) .app.ws {
   padding-top: 28px;
   box-sizing: border-box;
 }
-html[data-desktop="macos"]:not([data-native-tabs]) .ws-rail {
-  padding-top: 0;
-}
 html[data-desktop="macos"]:not([data-native-tabs]) .app.ws::before {
   content: "";
   position: absolute;
@@ -303,23 +268,27 @@ html[data-desktop="macos"]:not([data-native-tabs]) .app.ws::before {
   -webkit-app-region: drag;
 }
 
-/* Sessions changes the sidebar, not the current destination. */
-.ws-rail-utility {
-  padding-bottom: 8px;
-  margin-bottom: 2px;
-  border-bottom: 1px solid var(--line-strong);
-}
-.ws-rail-utility .ws-rail-button.on {
+/* The caret that shows and hides the sessions sidebar (#378). It's in the
+   header, so it stays when the sidebar is closed. */
+.ws-sidebar-toggle {
+  flex: none;
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  border-radius: var(--btn-radius);
   background: none;
-  border-color: transparent;
+  color: var(--dim);
+  font-size: 18px;
+  line-height: 1;
+}
+.ws-sidebar-toggle:hover {
+  background: var(--raised);
   color: var(--fg);
 }
-.ws-rail-utility .ws-rail-button:hover { background: var(--raised); }
-.ws-sidebar-chevron {
-  position: absolute;
-  right: 3px;
-  top: 7px;
-  font-size: 14px;
-  line-height: 1;
-  color: var(--dim);
+.ws-wordmark + .ws-crumbs .ws-sidebar-toggle {
+  margin-left: 8px;
 }

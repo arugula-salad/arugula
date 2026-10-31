@@ -11,6 +11,7 @@ import { AuthorAvatar, roomLabel, roomSigil, machineName } from "./room";
 import { authorLabel } from "./agents";
 import { usePlatformApi, type PlatformApi } from "../platform-api";
 import type { ChatRoute } from "./route";
+import { handled } from "./escape";
 
 export function when(at: number): string {
   const d = new Date(at);
@@ -201,6 +202,7 @@ export function SearchField({ route, phone }: { route: ChatRoute; phone?: boolea
       onKeyDown={(e) => {
         if (e.key === "Enter") go(text, true);
         if (e.key === "Escape") {
+          handled(e);
           setText("");
           go("", true);
           input.current?.blur();

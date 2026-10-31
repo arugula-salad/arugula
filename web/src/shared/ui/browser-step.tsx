@@ -4,9 +4,15 @@
 // the window would wait on nothing; this step opens it there, says so, and
 // asks again when the window gets the person back. A plain browser keeps its
 // same-tab redirect, so callers use this only when `desktopApp()`.
+//
+// An app with the `open_outside` command (#364) needs no click for it, so the
+// step opens the site itself as soon as it has the address and goes straight
+// to waiting (#381): the button that brought the person here already says
+// ↗. An app without it keeps the open button, whose click is the gesture
+// `window.open` needs.
 
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
-import { desktopApp, openOutside } from "../desktop";
+import { desktopApp, openOutside, openOutsideAsync, tauriInvoke } from "../desktop";
 
 /** The label of a button that leaves for the browser: marked as such in the
  * desktop app only. */
@@ -17,7 +23,7 @@ export const browserButton = (label: string) => (desktopApp() ? { children: `${l
  *   A getter runs when the step appears, not on the click: the click then
  *   opens a known address, still inside the person's gesture (WKWebView
  *   treats a `window.open` after an `await` as a popup).
- * - `label`: the button that opens it.
+ * - `label`: the button that opens it, for an app that can't open it itself.
  * - `check`: true once what happened there shows here. It runs when the
  *   window regains focus or becomes visible, and on *Check again*; no timer.
  * - `onDone`: after `check` said true; the step goes away.
@@ -38,6 +44,9 @@ export function BrowserStep({
 }) {
   const [href, setHref] = useState(typeof url === "string" ? url : "");
   const [opened, setOpened] = useState(false);
+  // The app is opening it (#381): until it says it did, or couldn't.
+  const [trying, setTrying] = useState(() => !!tauriInvoke());
+  const tried = useRef(false);
   const [checking, setChecking] = useState(false);
   const [err, setErr] = useState("");
   const running = useRef(false);
@@ -49,9 +58,21 @@ export function BrowserStep({
 
   useEffect(() => {
     live.current = true;
-    if (typeof url !== "string") url().then((u) => live.current && setHref(u), (e: Error) => live.current && setErr(e.message));
+    if (typeof url !== "string") url().then((u) => live.current && setHref(u), (e: Error) => live.current && (setErr(e.message), setTrying(false)));
     return () => void (live.current = false);
   }, []);
+
+  // Once per step, when the address is known: never with an empty one, and
+  // not again if it changes or the step redraws.
+  useEffect(() => {
+    if (!trying || !href || tried.current) return;
+    tried.current = true;
+    void openOutsideAsync(href).then((ok) => {
+      if (!live.current) return;
+      if (ok) setOpened(true);
+      setTrying(false);
+    });
+  }, [href, trying]);
 
   const again = async () => {
     // Back again while one is out: it may have read the answer before the
@@ -99,9 +120,32 @@ export function BrowserStep({
         <>
           <p data-browser-step-waiting>Finish in your browser, then come back here.</p>
           <div class="prompt-buttons">
+            <button
+              type="button"
+              class="secondary"
+              data-browser-step-again-open
+              title="Opens in your browser"
+              onClick={() => {
+                // For a tab closed by mistake, or a browser that didn't come up.
+                openOutside(href) || window.open(href, "_blank", "noopener");
+              }}
+            >
+              Open again ↗
+            </button>
             <button type="button" class="secondary" data-browser-step-again disabled={checking} onClick={() => void again()}>
               Check again
             </button>
+            <button type="button" class="secondary" data-browser-step-cancel onClick={cancel}>
+              Cancel
+            </button>
+          </div>
+        </>
+      ) : trying ? (
+        <>
+          <p class="dim" data-browser-step-opening>
+            Opening your browser…
+          </p>
+          <div class="prompt-buttons">
             <button type="button" class="secondary" data-browser-step-cancel onClick={cancel}>
               Cancel
             </button>

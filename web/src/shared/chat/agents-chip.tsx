@@ -10,6 +10,7 @@ import { chat } from "../chat-store";
 import { usePlatformApi } from "../platform-api";
 import { useSubscribe } from "../ui/hooks";
 import { agentOwners, chipLabel } from "./agents";
+import { closeOnEscape } from "./escape";
 
 export function AgentsChip({ room }: { room: string }) {
   useSubscribe((fn) => chat.subscribe(fn));
@@ -23,7 +24,7 @@ export function AgentsChip({ room }: { room: string }) {
     const down = (e: PointerEvent) => {
       if (box.current && !box.current.contains(e.target as Node)) setOpen(false);
     };
-    const key = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
+    const key = closeOnEscape(() => setOpen(false));
     addEventListener("pointerdown", down, true);
     addEventListener("keydown", key);
     return () => {

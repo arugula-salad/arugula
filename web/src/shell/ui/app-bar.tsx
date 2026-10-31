@@ -21,7 +21,6 @@ import { AccountPicture } from "../../shared/chat/avatar";
 import { presenceItems } from "../../shared/chat/presence";
 import { LiveSwitch, liveItems } from "../../shared/live/switch";
 import { SearchIcon } from "./shell/icons";
-import { openPlatform, platformHref } from "../platform-links";
 
 /** Who is signed in, through control: their name and their account's
  * items. A daemon's own page has none, and its menu is settings only. */
@@ -90,7 +89,6 @@ export function AppBar({
       {client.state && <CommandsButton client={client} />}
       <UpdateChip client={client} />
       {end}
-      <ProjectsLink />
       <AccountButton client={client} />
       <WindowButtons />
     </header>
@@ -117,31 +115,6 @@ export function CommandsButton({ client, search }: { client: Client; search?: bo
       <span>Commands</span>
       <kbd aria-hidden="true">{keyHint("palette")}</kbd>
     </button>
-  );
-}
-
-/** The way to the platform page, as its bar's "Machines ↗" comes here
- * (UI audit #170): only where control has one. */
-export function ProjectsLink() {
-  const href = platformHref("/");
-  if (!href) return null;
-  return (
-    <a
-      class="place ws-cross"
-      href={href}
-      target="arugula-platform"
-      title="Your projects, their issues, runs and chat, on the platform page"
-      data-open-projects
-      onClick={(e) => {
-        // Its own tab, or this window in the app (openPlatform); a modified
-        // click is the browser's.
-        if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
-        e.preventDefault();
-        openPlatform("/");
-      }}
-    >
-      Projects ↗
-    </a>
   );
 }
 

@@ -7,6 +7,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import { findEmoji, recentEmoji, rememberEmoji, useEmoji } from "./emoji";
+import { handled } from "./escape";
 
 /** `pick`: the character chosen (already remembered as recent). `close`:
  * Escape, a click outside, or the same button again is the caller's too. */
@@ -57,7 +58,7 @@ export function EmojiPicker({ pick, close, above }: { pick: (char: string) => vo
       data-emoji-picker
       onKeyDown={(e) => {
         if (e.key === "Escape") {
-          e.stopPropagation();
+          handled(e);
           close();
         }
       }}

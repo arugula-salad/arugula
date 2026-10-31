@@ -10,6 +10,7 @@ import { usePlatformApi, type PlatformApi, type PlatformTeam } from "../platform
 import { ConfirmRemove } from "../ui/confirm";
 import type { MenuItem } from "../ui/menu";
 import { MsgAvatar } from "./avatar";
+import { closeOnEscape } from "./escape";
 import "./members.css";
 
 /** The most people in one DM, me included: control's `DM_PEOPLE`. */
@@ -84,11 +85,11 @@ function NewChannel({ d, close }: { d: Extract<Dialog, { kind: "channel" }>; clo
     >
       <label>
         New channel in {d.name}
-        <input autoFocus value={name} placeholder="one word, like general" data-new-channel-name onInput={(e) => setName((e.target as HTMLInputElement).value)} onKeyDown={(e) => e.key === "Escape" && close()} />
+        <input autoFocus value={name} placeholder="one word, like general" data-new-channel-name onInput={(e) => setName((e.target as HTMLInputElement).value)} onKeyDown={closeOnEscape(close)} />
       </label>
       <label>
         Topic (optional)
-        <input value={topic} placeholder="what it's for" onInput={(e) => setTopic((e.target as HTMLInputElement).value)} onKeyDown={(e) => e.key === "Escape" && close()} />
+        <input value={topic} placeholder="what it's for" onInput={(e) => setTopic((e.target as HTMLInputElement).value)} onKeyDown={closeOnEscape(close)} />
       </label>
       <div class="members-kind" role="radiogroup" aria-label="Who can find it">
         <label class="members-radio">
@@ -145,7 +146,7 @@ function Browser({ d, close }: { d: Extract<Dialog, { kind: "browse" }>; close: 
     <div class="prompt members-dialog" aria-label={`Channels in ${d.name}`} data-channel-browser>
       <label>
         Channels in {d.name}
-        <input autoFocus value={q} placeholder="search by name or topic" onInput={(e) => setQ((e.target as HTMLInputElement).value)} onKeyDown={(e) => e.key === "Escape" && close()} />
+        <input autoFocus value={q} placeholder="search by name or topic" onInput={(e) => setQ((e.target as HTMLInputElement).value)} onKeyDown={closeOnEscape(close)} />
       </label>
       {failed && <p class="chat-none">{failed}</p>}
       {list && list.length === 0 && <p class="chat-none">{q ? "No public channel matches." : "No public channels yet."}</p>}
@@ -217,7 +218,7 @@ function NewDm({ d, close }: { d: Extract<Dialog, { kind: "dm" }>; close: () => 
     >
       <label>
         Message people in {t.roster.name}
-        <input autoFocus value={q} placeholder="search their names" onInput={(e) => setQ((e.target as HTMLInputElement).value)} onKeyDown={(e) => e.key === "Escape" && close()} />
+        <input autoFocus value={q} placeholder="search their names" onInput={(e) => setQ((e.target as HTMLInputElement).value)} onKeyDown={closeOnEscape(close)} />
       </label>
       {people.length === 0 && <p class="chat-none">Nobody else is in {t.roster.name} yet.</p>}
       <ul class="members-list">

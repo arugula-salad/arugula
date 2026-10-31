@@ -1343,6 +1343,50 @@ test("the app's passkey buttons open the browser up front and never call their r
   await laptop.locator(".prompt").getByRole("button", { name: "Done" }).click();
 });
 
+test("the app with open_outside: Add passkey ↗ opens the browser on one click, and Open again asks again (#381)", async () => {
+  await laptop.evaluate(() => {
+    const asked: unknown[][] = [];
+    Object.assign(window, {
+      __arugulaApp: { name: "Arugula app on test-mac" },
+      asked,
+      opened: [] as unknown[][],
+      __TAURI__: { core: { invoke: async (...a: unknown[]) => void asked.push(a) } },
+    });
+    window.open = (...a: unknown[]) => ((window as unknown as { opened: unknown[][] }).opened.push(a), null);
+    window.__arugula.control!.info.passkeys = true;
+  });
+  const asked = () => laptop.evaluate(() => (window as unknown as { asked: unknown[][] }).asked);
+  await controlPanel(laptop, "account");
+  await laptop.locator("[data-add-passkey]").click();
+  // One click: the app was asked for control's #account, and the step waits.
+  await expect(laptop.locator("[data-browser-step-waiting]")).toBeVisible();
+  await expect(laptop.locator("[data-browser-step-open]")).toHaveCount(0);
+  expect(await asked()).toEqual([["open_outside", { url: `${base}/#account` }]]);
+  await laptop.locator("[data-browser-step-again-open]").click();
+  await expect.poll(asked).toEqual([
+    ["open_outside", { url: `${base}/#account` }],
+    ["open_outside", { url: `${base}/#account` }],
+  ]);
+  expect(await laptop.evaluate(() => (window as unknown as { opened: unknown[][] }).opened)).toEqual([]);
+  await laptop.locator("[data-browser-step-cancel]").click();
+
+  // An app from before the command refuses it: the open button stays.
+  await laptop.evaluate(() => {
+    (window as unknown as { asked: unknown[][] }).asked.length = 0;
+    Object.assign(window, { __TAURI__: { core: { invoke: async () => Promise.reject("command open_outside not found") } } });
+  });
+  await laptop.locator("[data-add-passkey]").click();
+  await expect(laptop.locator("[data-browser-step-open]")).toBeVisible();
+  await expect(laptop.locator("[data-browser-step-waiting]")).toHaveCount(0);
+  expect(await laptop.evaluate(() => (window as unknown as { opened: unknown[][] }).opened)).toEqual([]);
+  await laptop.locator("[data-browser-step-cancel]").click();
+  await laptop.evaluate(() => {
+    delete (window as unknown as { __arugulaApp?: unknown }).__arugulaApp;
+    delete (window as unknown as { __TAURI__?: unknown }).__TAURI__;
+  });
+  await laptop.locator(".prompt").getByRole("button", { name: "Done" }).click();
+});
+
 test("sessions: where you're signed in, and signing out everywhere (#173)", async () => {
   await controlPanel(laptop, "account");
   await expect(laptop.getByRole("heading", { name: "Sign-in and account" })).toBeVisible();
