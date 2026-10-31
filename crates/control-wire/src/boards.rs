@@ -1277,7 +1277,8 @@ pub struct ResolveItems {
 }
 
 /// One reference, resolved: the `pointer` it names, or `why` it names none
-/// (nothing by that number, or more than one thing: the answer names them).
+/// (nothing by that number, or several linked repos have it and the project
+/// has no native issue of it: the answer names them).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "BoardResolution"))]

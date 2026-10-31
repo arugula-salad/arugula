@@ -472,10 +472,11 @@ async fn an_ask_follows_a_pr_row_taken_in_by_its_issue() {
     assert_eq!(r["asked"][0]["answer"], json!("Yes"), "and so did the history: {r}");
 }
 
-/// What an agent's reference names (#366): `#N` is a native issue or a
-/// GitHub item of a linked repo, `owner/repo#N` is that repo's, and a number
-/// that names two things names none, with both said. Nothing by that number
-/// is refused, as is an `iss_` id of another project.
+/// What an agent's reference names (#366, #436): `#N` is the project's native
+/// issue when it has one, else the GitHub item of the one linked repo that has
+/// that number, and `owner/repo#N` is that repo's. A number that several repos
+/// have, with no native issue, names none, with all said. Nothing by that
+/// number is refused, as is an `iss_` id of another project.
 #[tokio::test]
 async fn a_reference_names_one_item_or_says_why_not() {
     let (base, app, team, _id) = start().await;
@@ -483,33 +484,35 @@ async fn a_reference_names_one_item_or_says_why_not() {
         let (app, team) = (app.clone(), team.clone());
         async move { crate::boards::resolve::one(&app, "bob", &team, item).await.unwrap() }
     };
+    let issue = |p: &Result<arugula_control_wire::boards::Pointer, String>| {
+        matches!(p, Ok(arugula_control_wire::boards::Pointer::Issue { .. }))
+    };
     // acme/site has issue #2 and PR #3; acme/app (the viewer can read) has PR #1.
     assert_eq!(one("acme/site#2").await, Ok(wire_fi("fi_a2")));
-    assert_eq!(one("#3").await, Ok(wire_fi("fi_a3")), "a number only GitHub has");
+    assert_eq!(one("#3").await, Ok(wire_fi("fi_a3")), "a number only one repo has");
     let nothing = one("#99").await.unwrap_err();
     assert!(nothing.contains("nothing is #99"), "{nothing}");
-    let (iss, number) = native(&base, &team, "Native two").await;
+    // Two repos have #3 and there is no native #3: the choices are listed.
+    item(&app, "fi_dup3", 77, 3, "issue", "open", "dup", ("", ""));
+    let two = one("#3").await.unwrap_err();
+    assert!(two.contains("acme/site#3") && two.contains("acme/app#3"), "{two}");
+    assert_eq!(one("acme/app#3").await, Ok(wire_fi("fi_dup3")));
+    let (iss, number) = native(&base, &team, "Native one").await;
     assert_eq!(number, 1);
-    let both = one("#1").await.unwrap_err();
-    assert!(both.contains("the native issue #1") && both.contains("acme/app#1"), "{both}");
+    // Native #1 and acme/app's PR #1: the native issue wins, and the repo's form names the PR.
+    let native_wins = one("#1").await;
+    assert_eq!(native_wins, Ok(arugula_control_wire::boards::Pointer::Issue { id: iss.clone() }));
+    assert_eq!(one("acme/app#1").await, Ok(wire_fi("fi_a1")), "the repo's form names the repo's item");
     let (_, _) = native(&base, &team, "Native two").await;
-    assert!(one("#2").await.unwrap_err().contains("acme/site#2"), "#2 is native and acme/site's issue");
-    assert_eq!(one("acme/app#1").await, Ok(wire_fi("fi_a1")), "the repo's form is not ambiguous");
+    assert!(issue(&one("#2").await), "#2 is native and acme/site's issue: the native one");
+    let (_, _) = native(&base, &team, "Native three").await;
+    assert!(issue(&one("#3").await), "native #3 wins over both repos' #3");
     assert_eq!(
         crate::boards::resolve::one(&app, "bob", &team, &iss).await.unwrap(),
         Ok(arugula_control_wire::boards::Pointer::Issue { id: iss.clone() })
     );
     let other = crate::boards::resolve::one(&app, "bob", &team, "iss_notmine").await.unwrap().unwrap_err();
     assert!(other.contains("isn't an issue of this project"), "{other}");
-    // A native issue exported to acme/site#2 is the same work as that mirror: `#2` is the native one, not both.
-    app.db
-        .c()
-        .execute(
-            "UPDATE issues SET github_repo = 'acme/site', github_repo_id = 88, github_number = 2 WHERE number = 2 AND project_id = ?1",
-            params![team],
-        )
-        .unwrap();
-    assert_eq!(one("#2").await.map(|p| matches!(p, arugula_control_wire::boards::Pointer::Issue { .. })), Ok(true));
     let bad = one("banana").await.unwrap_err();
     assert!(bad.contains("#N, owner/repo#N"), "{bad}");
 }

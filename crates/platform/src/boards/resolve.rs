@@ -3,10 +3,10 @@
 //! tool writes rows by their items, so the machine asks here before it adds
 //! or attaches one. Nothing changes.
 //!
-//! `#N` is a native issue of the project, or an issue or PR of one of its
-//! linked repos. When it names both (and the GitHub one isn't the native
-//! issue's own export), or the number is in two repos, it names none and the
-//! answer says which, rather than guessing.
+//! `#N` is the project's native issue when it has one. Otherwise it is the
+//! issue or PR of a linked repo, when exactly one has that number; when
+//! several do, it names none and the answer says which, rather than guessing.
+//! A repo's item is `owner/repo#N`.
 
 use arugula_control_wire::boards::{self as wire, IssueRef, Pointer};
 
@@ -90,19 +90,16 @@ pub(crate) async fn one(
     Ok(match want {
         IssueRef::Number(n) => {
             let native = app.db.issue_by_number(project, n)?;
-            let mut github = in_repo(n)?;
-            if let Some(g) = native.as_ref().and_then(|i| i.github.as_ref()) {
-                // The native issue's own export is the same work.
-                github.retain(|(name, _)| !name.eq_ignore_ascii_case(&format!("{}#{}", g.repo, g.number)));
+            if let Some(i) = native {
+                // The project's own issue wins over any repo's item of that number.
+                return Ok(Ok(Pointer::Issue { id: i.id }));
             }
-            match (native, github.len()) {
-                (Some(i), 0) => Ok(Pointer::Issue { id: i.id }),
-                (None, 1) => Ok(github.remove(0).1),
-                (None, 0) => Err(format!("nothing is #{n} in this project")),
-                (native, _) => {
-                    let mut names: Vec<String> =
-                        native.iter().map(|i| format!("the native issue #{}", i.number)).collect();
-                    names.extend(github.into_iter().map(|(name, _)| name));
+            let mut github = in_repo(n)?;
+            match github.len() {
+                1 => Ok(github.remove(0).1),
+                0 => Err(format!("nothing is #{n} in this project")),
+                _ => {
+                    let names: Vec<String> = github.into_iter().map(|(name, _)| name).collect();
                     Err(format!(
                         "#{n} names more than one thing ({}): write owner/repo#{n} or the iss_/fi_ id",
                         names.join(" and ")

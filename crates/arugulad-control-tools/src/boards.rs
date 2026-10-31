@@ -70,7 +70,7 @@ pub(crate) const WRITE_TOOL: &str = "board_write";
 
 pub(crate) const READ_DESCRIPTION: &str = "Read a project's board in Arugula control (an epic when it has a goal; with this machine's boards.read grant over its project). One row is one piece of work: an issue (or a PR with no issue), or a note, with a one-line note and what is attached to it (work: PRs, agent blocks, runs; proof: runs, links). The lanes follow the work and nobody sets them. Lane by the row's primary item: Next (Plane triage, backlog or unstarted; a note), Doing (a Plane started state; or an agent block that isn't closed, or a run running), Review (a PR is open; or a Plane started state with 'review' in its name), Done (the issue is completed or canceled, or the PR merged or closed). A canceled item (a Plane project's cancelled state, or a native issue closed as not planned or a duplicate) is Done, marked cancelled and never proven; any other Done row is proven by CI or by evidence, or not proven yet. Groups are the plan's phases or waves. Returns the board as 72-column text, each row by its item (#N, IDENT-N), and its progress; with verbose: true, also the JSON with ids and revs. With board (brd_…): that board. Without: the project's boards (project, else the one this clone's GitHub repo is linked to, else your person's personal project), to pick one from.";
 
-pub(crate) const WRITE_DESCRIPTION: &str = "Write to a project's board in Arugula control, at once: what you write lands now, labelled as your person's agent on this machine, never as them. Their boards.write grant over the project says you may, never more than their role. One row is one piece of work, addressed by its item (#N, owner/repo#N, IDENT-N or an iss_/fi_ id: IDENT-N, such as ALL-2212, names a Plane item directly, and forge_read items with provider plane gives its fi_ id), never by a row id. The lanes (Next, Doing, Review, Done) follow the live state of the work: there are no statuses, and you can't set a lane. Lane by the row's primary item: Next (Plane triage, backlog or unstarted), Doing (a Plane started state, or a live agent block or run), Review (an open PR, or a Plane started state with 'review' in its name), Done (completed or canceled, or the PR merged or closed); canceled is Done, marked cancelled, never proven. Add issues with add (up to 50 in one call; each is a row, or is attached or already there, and the answer says which). A PR or an agent block is not a row of its own: attach it to the row of its issue (a PR that names that issue is attached for you). When you need a person's decision, ask with options (ask: who, the question, up to four options, a recommendation, why); they answer on the board and you read the answer in board_read, never by waiting. Groups are your phases or waves: add_group, rename_group, move_group, delete_group, and group puts a row in one. note sets a row's one-line note (pass the rev to refuse a stale write), drop removes a row you added, detach takes off an attachment you made. To say what blocks what, relate two items (relate: the item blocks, relates to, duplicates or was discovered from another; only blocks gates the board's Ready line, and a blocked row stays in its lane and says what blocks it) and unrelate one your machine made; relate needs your person's issues.write grant over the project too. You may also make a board (an epic, with a goal), set its title and goal, close it with a note saying what a person can now do, and open it again. A write answers in a few lines: what changed, the rows' cards and the board's progress; pass verbose: true for the whole board. If one item of a batch fails, the others still land and the answer says which failed and why.";
+pub(crate) const WRITE_DESCRIPTION: &str = "Write to a project's board in Arugula control, at once: what you write lands now, labelled as your person's agent on this machine, never as them. Their boards.write grant over the project says you may, never more than their role. One row is one piece of work, addressed by its item (#N, owner/repo#N, IDENT-N or an iss_/fi_ id: a bare #N is the project's native issue when it has one, else the one linked repo's item with that number, and a repo's PR or issue is owner/repo#N; IDENT-N, such as ALL-2212, names a Plane item directly, and forge_read items with provider plane gives its fi_ id), never by a row id. The lanes (Next, Doing, Review, Done) follow the live state of the work: there are no statuses, and you can't set a lane. Lane by the row's primary item: Next (Plane triage, backlog or unstarted), Doing (a Plane started state, or a live agent block or run), Review (an open PR, or a Plane started state with 'review' in its name), Done (completed or canceled, or the PR merged or closed); canceled is Done, marked cancelled, never proven. Add issues with add (up to 50 in one call; each is a row, or is attached or already there, and the answer says which). A PR or an agent block is not a row of its own: attach it to the row of its issue (a PR that names that issue is attached for you). When you need a person's decision, ask with options (ask: who, the question, up to four options, a recommendation, why); they answer on the board and you read the answer in board_read, never by waiting. Groups are your phases or waves: add_group, rename_group, move_group, delete_group, and group puts a row in one. note sets a row's one-line note (pass the rev to refuse a stale write), drop removes a row you added, detach takes off an attachment you made. To say what blocks what, relate two items (relate: the item blocks, relates to, duplicates or was discovered from another; only blocks gates the board's Ready line, and a blocked row stays in its lane and says what blocks it) and unrelate one your machine made; relate needs your person's issues.write grant over the project too. You may also make a board (an epic, with a goal), set its title and goal, close it with a note saying what a person can now do, and open it again. A write answers in a few lines: what changed, the rows' cards and the board's progress; pass verbose: true for the whole board. If one item of a batch fails, the others still land and the answer says which failed and why.";
 
 /// The most a batch takes.
 const BATCH_MAX: usize = wire::RESOLVE_MAX;
@@ -600,8 +600,9 @@ fn describe(r: &Row) -> String {
 }
 
 /// The row an item names on the board: by its primary item first, then by
-/// what is attached. A reference that names two rows at one level is
-/// refused, naming both.
+/// what is attached. A bare `#N` is the native issue's row when the board
+/// has one; any other reference that names two rows at one level is refused,
+/// naming both.
 fn find_row<'a>(v: &'a BoardView, item: &str) -> Result<&'a Row, String> {
     let item = item.trim();
     if item.starts_with("row_") {
@@ -623,6 +624,12 @@ fn find_row<'a>(v: &'a BoardView, item: &str) -> Result<&'a Row, String> {
             [] => {}
             [one] => return Ok(one),
             many => {
+                if matches!(want, Some(IssueRef::Number(_))) {
+                    let mut native = many.iter().filter(|r| r.live.as_ref().is_some_and(|l| l.kind == "native"));
+                    if let (Some(one), None) = (native.next(), native.next()) {
+                        return Ok(one);
+                    }
+                }
                 let names: Vec<String> = many.iter().map(|r| describe(r)).collect();
                 return Err(format!(
                     "{item} names more than one row on this board ({}): write owner/repo#N, IDENT-N or the iss_/fi_ id of the one you mean",
@@ -1397,20 +1404,33 @@ mod tests {
     }
 
     /// `#5` that is both a native issue and a GitHub issue on the board is
-    /// not guessed: the refusal names both, and the unambiguous forms work.
+    /// the native issue's row; the repo's form names the other. With no
+    /// native row, one repo's row is `#5`, and several repos' rows are not
+    /// guessed: the refusal names them all.
     #[test]
-    fn an_ambiguous_number_names_both_rows() {
+    fn a_bare_number_is_the_native_row() {
         let v = board(json!([
             row("row_1", json!({ "kind": "issue", "id": "iss_a" }), native(5), json!([])),
             row("row_2", json!({ "kind": "forge_item", "id": "fi_b" }), github("acme/app", "issue", 5), json!([])),
         ]));
-        let e = find_row(&v, "#5").unwrap_err();
-        assert!(
-            e.contains("the native issue #5") && e.contains("acme/app#5") && e.contains("more than one row"),
-            "{e}"
-        );
+        assert_eq!(find_row(&v, "#5").map(|r| r.id.as_str()), Ok("row_1"));
         assert_eq!(find_row(&v, "acme/app#5").map(|r| r.id.as_str()), Ok("row_2"));
         assert_eq!(find_row(&v, "iss_a").map(|r| r.id.as_str()), Ok("row_1"));
+
+        let one = board(json!([row(
+            "row_2",
+            json!({ "kind": "forge_item", "id": "fi_b" }),
+            github("acme/app", "issue", 5),
+            json!([])
+        )]));
+        assert_eq!(find_row(&one, "#5").map(|r| r.id.as_str()), Ok("row_2"));
+
+        let two = board(json!([
+            row("row_2", json!({ "kind": "forge_item", "id": "fi_b" }), github("acme/app", "issue", 5), json!([])),
+            row("row_3", json!({ "kind": "forge_item", "id": "fi_c" }), github("acme/site", "issue", 5), json!([])),
+        ]));
+        let e = find_row(&two, "#5").unwrap_err();
+        assert!(e.contains("acme/app#5") && e.contains("acme/site#5") && e.contains("more than one row"), "{e}");
     }
 
     /// A group is found by its title in any case, or by its id.
