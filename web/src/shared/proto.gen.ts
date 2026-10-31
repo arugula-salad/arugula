@@ -264,12 +264,7 @@ head?: string | null, pushed?: boolean | null,
 /**
  * How many files are uncommitted.
  */
-uncommitted?: number | null, diffstat?: BoardDiffstat | null, 
-/**
- * When `state` last changed, in milliseconds: control's to keep, set
- * on a read (a report's own is ignored).
- */
-since?: number, };
+uncommitted?: number | null, diffstat?: BoardDiffstat | null, };
 
 /**
  * What an agent block is doing (aru-116's second ruling).
