@@ -2,8 +2,8 @@
   "schema": 1,
   "commit": "c0d9113e241a6c9a319d4ed1159624f27ef2acbc",
   "branch": "main",
-  "state": "pending",
-  "at": "2026-10-31T09:43:06Z",
+  "state": "red",
+  "at": "2026-10-31T09:53:33Z",
   "phases": {
     "lint": {
       "verdict": "pass",
@@ -54,13 +54,13 @@
       ]
     },
     "test": {
-      "verdict": "pending",
+      "verdict": "fail",
       "build": "newest",
       "runs": [
         {
           "name": "test",
           "id": 124504051440,
-          "conclusion": null,
+          "conclusion": "failure",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/41187263145/job/124504051440"
         },
         {
@@ -72,7 +72,7 @@
         {
           "name": "test-postgres",
           "id": 124504051181,
-          "conclusion": null,
+          "conclusion": "failure",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/41187263145/job/124504051181"
         },
         {
@@ -85,7 +85,7 @@
       "culprit": "baa6212bb48c173b7b2c8fbd348c19c752bd0e11"
     },
     "e2e": {
-      "verdict": "pending",
+      "verdict": "pass",
       "build": "newest",
       "runs": [
         {
@@ -157,7 +157,7 @@
         {
           "name": "e2e (9)",
           "id": 124504052133,
-          "conclusion": null,
+          "conclusion": "success",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/41187263145/job/124504052133"
         }
       ]
@@ -187,13 +187,13 @@
       ]
     },
     "macos": {
-      "verdict": "pending",
+      "verdict": "fail",
       "build": "newest",
       "runs": [
         {
           "name": "macos (test)",
           "id": 124504051514,
-          "conclusion": null,
+          "conclusion": "failure",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/41187263145/job/124504051514"
         },
         {
@@ -227,6 +227,15 @@
           "url": "https://github.com/arugula-salad/arugula/actions/runs/41187263123/job/124497515193"
         }
       ]
+    }
+  },
+  "failure": {
+    "phase": "test",
+    "run": {
+      "name": "test",
+      "id": 124504051440,
+      "conclusion": "failure",
+      "url": "https://github.com/arugula-salad/arugula/actions/runs/41187263145/job/124504051440"
     }
   },
   "retried": {
