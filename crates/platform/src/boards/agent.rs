@@ -12,6 +12,11 @@
 //! the one that signed the request, and it needs `boards.write` over at
 //! least one project of its owner's.
 //!
+//! A block started on an issue ([`attach_block`]) is attached, as work, to
+//! that issue's row on every board of the project: the machine tells control
+//! the issue and the pane, control finds the rows, and the machine needs
+//! `boards.write` over the project, as for any attach.
+//!
 //! An agent makes and runs boards too (aru-123): it makes one, sets its title
 //! and goal, closes and reopens it, adds rows, and attaches work and proof
 //! to them, and the board says it was an agent's. It plans too: it makes,
@@ -27,11 +32,11 @@ use axum::{
     extract::{Path, State},
 };
 
-use super::J;
+use super::{J, refs::Source};
 use crate::{
     Platform,
     auth::Machine,
-    db::{issues::Actor, projects::BOARDS_WRITE},
+    db::{boards as db, issues::Actor, projects::BOARDS_WRITE},
     grants::{AGENT_UNGRANTED, AgentScope, agent_may, owner_reads},
 };
 use arugula_control_common::{ApiError, err, refusal};
@@ -202,6 +207,81 @@ pub async fn put_block_state(
     Ok(Json(serde_json::json!({})))
 }
 
+/// `POST /api/daemon/projects/{project}/attach-block`: attach one of the
+/// signing machine's own agent blocks, started on an issue, to the row of
+/// that issue on each board of the project. 403 without the machine's
+/// `boards.write` over the project; only that project's rows are touched.
+/// Answers the rows the block is on (also those it was on already), none
+/// when no board has a row for the issue.
+pub async fn attach_block(
+    State(app): State<Arc<Platform>>,
+    d: Machine,
+    Path(project): Path<String>,
+    Json(a): Json<wire::AttachBlock>,
+) -> J<wire::BlockAttached> {
+    app.limits.check_daemon(AGENT_BOARD_WRITES, &d.daemon)?;
+    let project = super::place(&app, actor(&d), &project, true).await?;
+    if a.machine != d.daemon {
+        return Err(err(StatusCode::FORBIDDEN, "a machine attaches only its own blocks"));
+    }
+    super::name_ok(&a.pane, "pane")?;
+    let want = wire::IssueRef::parse(&a.issue)
+        .ok_or_else(|| err(StatusCode::BAD_REQUEST, "an issue is #N, owner/repo#N or IDENT-N"))?;
+    let repo = match &want {
+        wire::IssueRef::Repo { repo, .. } => app
+            .db
+            .linked_repos(&project)?
+            .into_iter()
+            .find(|l| l.unlinked_at.is_none() && l.full_name.eq_ignore_ascii_case(repo))
+            .map(|l| l.repo_id),
+        _ => None,
+    };
+    let pointer = wire::Pointer::Block { machine: d.daemon.clone(), pane: a.pane.clone() };
+    // (board, title, row, native): `#N` is a native issue's before it is a
+    // GitHub issue's.
+    let mut found: Vec<(db::Stored, String, bool)> = vec![];
+    for board in app.db.boards(&project)? {
+        let Some(stored) = app.db.board_stored(&board.id)? else { continue };
+        let (mut items, mut issues): (Vec<&str>, Vec<&str>) = (vec![], vec![]);
+        for id in stored.rows.iter().filter_map(|r| super::item_id(&r.pointer)) {
+            if id.starts_with("iss_") { issues.push(id) } else { items.push(id) }
+        }
+        let known = super::known(&app, &d.account, &project, &items, &issues).await?;
+        for r in &stored.rows {
+            let Some(key) = super::item_id(&r.pointer).and_then(|id| known.get(id)).and_then(|k| k.key.as_ref()) else {
+                continue;
+            };
+            let native = key.source == Source::Native;
+            let is = match (&want, &key.source) {
+                (wire::IssueRef::Number(n), Source::Native | Source::Repo(_)) => key.number == *n,
+                (wire::IssueRef::Repo { number, .. }, Source::Repo(id)) => repo == Some(*id) && key.number == *number,
+                (wire::IssueRef::Plane { key: k, number }, Source::Plane(c)) => {
+                    c.eq_ignore_ascii_case(k) && key.number == *number
+                }
+                _ => false,
+            };
+            if is {
+                found.push((stored.clone(), r.id.clone(), native));
+            }
+        }
+    }
+    if found.iter().any(|f| f.2) {
+        found.retain(|f| f.2);
+    }
+    let mut on = vec![];
+    for (stored, row, _) in found {
+        let board = &stored.board;
+        if super::already(&stored, &pointer).is_none() {
+            app.db
+                .attach(&board.id, &row, wire::AttachRole::Work, &pointer, Some(&d.daemon), arugula_e2e::now_ms(), wire::ATTACHMENTS_MAX)?
+                .map_err(super::refused)?;
+            super::changed(&app, &project, &board.id);
+        }
+        on.push(wire::BlockOn { board: board.id.clone(), title: board.title.clone(), row });
+    }
+    Ok(Json(wire::BlockAttached { on }))
+}
+
 /// The machine holds `boards.write` over at least one project, as
 /// [`agent_may`] reads it now.
 async fn may_report(app: &Platform, d: &Machine) -> Result<(), ApiError> {
@@ -223,6 +303,9 @@ fn state_ok(b: &wire::BlockState) -> Result<(), ApiError> {
     let line = |s: &str| !s.is_empty() && s.chars().count() <= 200 && !s.chars().any(char::is_control);
     if b.branch.as_deref().is_some_and(|s| !line(s)) {
         return Err(err(StatusCode::BAD_REQUEST, "a branch is 1 to 200 characters, on one line"));
+    }
+    if b.title.as_deref().is_some_and(|s| !line(s)) {
+        return Err(err(StatusCode::BAD_REQUEST, "a title is 1 to 200 characters, on one line"));
     }
     if b.head.as_deref().is_some_and(|h| h.is_empty() || h.len() > 40 || !h.chars().all(|c| c.is_ascii_alphanumeric()))
     {
