@@ -3,7 +3,7 @@
   "commit": "7004db99836fc77e46ec0adfb9099d3dd704c325",
   "branch": "main",
   "state": "pending",
-  "at": "2026-10-31T22:41:59Z",
+  "at": "2026-10-31T22:49:04Z",
   "phases": {
     "lint": {
       "verdict": "pending",
@@ -36,8 +36,7 @@
       "build": "newest",
       "runs": [],
       "reason": "superseded",
-      "coveredBy": "396af818604f2d84a822accb9305ecc8a90b3daf",
-      "culprit": "bb01dbd6646ece712aebf62d7acc077a747fa5f2"
+      "coveredBy": "396af818604f2d84a822accb9305ecc8a90b3daf"
     },
     "claims": {
       "verdict": "unbuilt",
