@@ -7577,6 +7577,17 @@ html[data-scheme="light"] .doc {
   font-weight: 700;
 }
 
+/* The session an agent's post came from (#429), after "<owner>'s agent on
+   <machine>": muted, and the first thing to give way in a narrow row. */
+.thread-session {
+  color: var(--dim);
+  font-size: 12px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .thread-head time {
   font-size: 11px;
   color: var(--dim);

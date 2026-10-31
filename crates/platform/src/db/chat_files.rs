@@ -244,6 +244,7 @@ mod tests {
                 via: None,
                 parent: None,
                 also: false,
+                agent_session: None,
             },
         )
         .unwrap()

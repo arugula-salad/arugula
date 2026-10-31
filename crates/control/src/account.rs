@@ -642,6 +642,7 @@ mod tests {
                 via: None,
                 parent: None,
                 also: false,
+                agent_session: None,
             };
             chat.add_chat_message(room, &m).unwrap();
         };

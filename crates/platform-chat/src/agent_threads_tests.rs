@@ -280,6 +280,67 @@ async fn a_mention_is_told_to_the_machine_or_says_it_was_not() {
     assert_eq!(last.3, "b", "{sent:?}");
 }
 
+/// The sessions the ops asked of geek named, in order (#429).
+fn told_sessions(hub: &crate::testing::hub::TestHub) -> Vec<Option<String>> {
+    hub.ops_asked()
+        .into_iter()
+        .filter_map(|(m, op)| match op {
+            DaemonOp::AgentMention(a) if m == "geek" => Some(a.session),
+            _ => None,
+        })
+        .collect()
+}
+
+/// An agent's post carries its session's name, shown beside the agent
+/// (#429); a person's post can't carry one, and a blank name is none.
+/// `@geek-box/ux-improvements` tells the daemon which session, and a plain
+/// `@geek-box` doesn't.
+#[tokio::test]
+async fn a_post_names_its_session_and_a_mention_can_address_one() {
+    let (hub, _app, base, t, _u) = seeded().await;
+    geek_in_t(&base, &t).await;
+    hub.answers_ops("geek", OpAnswer::Done { url: None });
+    let room = "/api/chat/rooms/ch_general/messages";
+    let path = agent_messages("ch_general");
+    let agent =
+        |text: &str, session: Value| geek(&base, "POST", &path, Some(json!({ "text": text, "session": session })));
+
+    let (st, v) = agent("from ux", json!("  UX\n Improvements ")).await;
+    assert_eq!(st, 200, "{v}");
+    agent("from nobody", json!("   ")).await;
+    agent("from an old daemon", Value::Null).await;
+    let (_, v) = call(&base, "b", "POST", room, Some(json!({ "text": "b is sneaky", "session": "Sneaky" }))).await;
+    assert!(v["seq"].is_number(), "{v}");
+
+    let (_, v) = geek(&base, "GET", &path, None).await;
+    let shown: Vec<(String, Value)> = v["messages"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .skip(2) // the room's two notices that geek can post and read
+        .map(|m| (m["text"].as_str().unwrap().to_owned(), m["agent"]["session"].clone()))
+        .collect();
+    assert_eq!(
+        shown,
+        [
+            ("from ux".to_owned(), json!("UX Improvements")),
+            ("from nobody".to_owned(), Value::Null),
+            ("from an old daemon".to_owned(), Value::Null),
+            ("b is sneaky".to_owned(), Value::Null),
+        ]
+    );
+    let (_, v) = call(&base, "b", "GET", room, None).await;
+    let last = v["messages"].as_array().unwrap().iter().find(|m| m["text"] == "b is sneaky").unwrap().clone();
+    assert!(last["agent"].is_null(), "a person's post has no agent, so no session: {last}");
+
+    for text in ["@geek-box/UX-Improvements look at this", "@geek-box and this", "@geek-box/ look", "@GEEK-BOX/billing"]
+    {
+        let (_, v) = call(&base, "b", "POST", room, say(text)).await;
+        assert_eq!((&v["mentions"], &v["unreached"]), (&json!(["machine:geek"]), &json!([])), "{text}: {v}");
+    }
+    assert_eq!(told_sessions(&hub), [Some("ux-improvements".to_owned()), None, None, Some("billing".to_owned())]);
+}
+
 /// A reply under a message of an agent's is for that agent's machine, with
 /// no mention; a reply under a person's, or the agent's own, is for nobody.
 #[tokio::test]

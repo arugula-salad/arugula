@@ -190,10 +190,11 @@ fn doc_wire(d: &db::Stored) -> wire::Doc {
         project: d.project.clone(),
         title: d.title.clone(),
         author: d.made_by.clone(),
-        agent: d
-            .made_by_session
-            .as_ref()
-            .map(|s| ChatAgent { machine: s.clone(), machine_name: crate::issues::session_name(s) }),
+        agent: d.made_by_session.as_ref().map(|s| ChatAgent {
+            machine: s.clone(),
+            machine_name: crate::issues::session_name(s),
+            session: None,
+        }),
         sections: d.sections,
         written: d.written,
         rev: d.rev,

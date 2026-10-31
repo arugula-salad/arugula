@@ -187,7 +187,11 @@ pub(crate) fn session_name(id: &str) -> String {
 type Names = std::collections::HashMap<String, String>;
 
 fn agent(names: &Names, machine: &Option<String>) -> Option<ChatAgent> {
-    machine.as_ref().map(|m| ChatAgent { machine: m.clone(), machine_name: names.get(m).cloned().unwrap_or_default() })
+    machine.as_ref().map(|m| ChatAgent {
+        machine: m.clone(),
+        machine_name: names.get(m).cloned().unwrap_or_default(),
+        session: None,
+    })
 }
 
 fn issue_wire(i: &db::Issue, names: &Names) -> wire::Issue {

@@ -262,6 +262,13 @@
         },
         "machine_name": {
           "type": "string"
+        },
+        "session": {
+          "description": "The session that posted, as its machine called it then (#429): an\nagent block's title, or the Claude Code session's name. Display\nonly; never what a permission rests on.",
+          "type": [
+            "string",
+            "null"
+          ]
         }
       },
       "required": [
@@ -1340,6 +1347,13 @@
           ]
         },
         "quote": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "session": {
+          "description": "An agent's post: the name of the session that wrote it (#429). Kept\nbeside the agent, trimmed and cut short; a person's post ignores it.",
           "type": [
             "string",
             "null"

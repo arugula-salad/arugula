@@ -605,6 +605,7 @@ async fn a_thread_with_only_the_platforms_reply_is_listed() {
                 via: Some("session-card:ses_1234abcd"),
                 parent: Some(p),
                 also: false,
+                agent_session: None,
             },
         )
         .unwrap();

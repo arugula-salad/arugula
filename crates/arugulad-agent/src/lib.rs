@@ -527,6 +527,11 @@ impl crate::agent::Agents for AgentBlock {
     fn sessions(&self) -> Arc<dyn crate::mux::AgentSessions> {
         Arc::new(crate::conversations::Sessions)
     }
+
+    fn conversation_titles(&self, ids: &[String]) -> std::collections::HashMap<String, String> {
+        let all = crate::conversations::Index::global().lock().unwrap().scan();
+        all.into_iter().filter(|c| ids.contains(&c.id)).map(|c| (c.id, c.title)).collect()
+    }
 }
 
 /// The agent type's kind: what an agent block is given beside what every

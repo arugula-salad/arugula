@@ -206,7 +206,7 @@ fn board_row(r: &Row) -> Result<Board> {
 
 /// A machine stored on a board, not yet named.
 fn machine_of(m: Option<String>) -> Option<ChatAgent> {
-    m.map(|machine| ChatAgent { machine, machine_name: String::new() })
+    m.map(|machine| ChatAgent { machine, machine_name: String::new(), session: None })
 }
 
 fn status_str(s: Status) -> Option<&'static str> {

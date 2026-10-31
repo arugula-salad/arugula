@@ -103,6 +103,7 @@ pub(crate) fn post(app: &Platform, room: &Room, thread: u64, author: &str, via: 
             via: Some(via),
             parent,
             also: false,
+            agent_session: None,
         },
     )?;
     let ev = match parent {

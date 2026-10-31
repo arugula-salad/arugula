@@ -776,6 +776,7 @@ impl Shower {
             agent: m.agent.as_ref().map(|a| wire::ChatAgent {
                 machine: a.clone(),
                 machine_name: self.agents.get(a).cloned().unwrap_or_default(),
+                session: m.agent_session.clone(),
             }),
             via: m.via.clone(),
             reactions: self.reacted(m),
@@ -824,6 +825,7 @@ impl Shower {
                     agent: (!r.agent.is_empty()).then(|| wire::ChatAgent {
                         machine: r.agent.clone(),
                         machine_name: self.agents.get(&r.agent).cloned().unwrap_or_default(),
+                        session: None,
                     }),
                 });
             }
@@ -905,6 +907,9 @@ struct Told<'a> {
     /// Who wrote it, as people read it.
     author: String,
     text: &'a str,
+    /// The sessions it names, `@<machine>/<session>`: (machine's name,
+    /// session), both lowercased (#429).
+    sessions: Vec<(String, String)>,
 }
 
 /// Tells the agents a new message is for (#394): those it mentions
@@ -952,6 +957,12 @@ async fn tell_agents(
             parent: told.parent,
             author: told.author.clone(),
             text: told.text.to_owned(),
+            // Only a machine the text named by `@name/session` is told one.
+            session: told
+                .sessions
+                .iter()
+                .find(|(m, _)| mentioned.contains(&a.machine.as_str()) && *m == a.machine_name.to_lowercase())
+                .map(|(_, s)| s.clone()),
         });
         let answer = tokio::time::timeout(Duration::from_secs(5), app.hub.daemon_op(&a.machine, &op)).await;
         if matches!(answer, Ok(Ok(OpAnswer::Done { .. }))) {
@@ -1845,6 +1856,8 @@ pub(crate) async fn post_replied(
             via,
             parent: b.parent,
             also: b.parent.is_some() && b.also.unwrap_or(false),
+            // Display only: an agent's session, not a person's word.
+            agent_session: agent.and(b.session.as_deref().and_then(session_label)).as_deref(),
         },
     )?;
     if !attach.is_empty() {
@@ -1886,7 +1899,7 @@ pub(crate) async fn post_replied(
         Some(a) => format!("{}'s agent on {}", name_of(app, &s.account).await?, a.machine_name),
         None => name_of(app, &s.account).await?,
     };
-    let told = Told { room: &room, seq, parent: b.parent, author: who, text };
+    let told = Told { room: &room, seq, parent: b.parent, author: who, text, sessions: at_sessions(text) };
     pushed.extend(tell_agents(app, &facts, &told, &stored, replying_to, agent, &mut unreached).await);
     let replied = sessions::posted(app, &room, &s.account, agent, via.is_some(), seq, b.parent, text).await;
     Ok((ChatPosted { seq, mentions: stored, unreached, pushed }, replied))

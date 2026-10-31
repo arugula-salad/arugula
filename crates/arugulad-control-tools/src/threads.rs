@@ -415,10 +415,24 @@ pub(crate) async fn post_thread(c: &Call<'_>, a: PostThreadArgs) -> Out {
         body["parent"] = json!(p);
         body["also"] = json!(a.also);
     }
+    // The posting session's name, shown beside "<owner>'s agent on <machine>"
+    // (#429): display only, so a pane with no name posts without one.
+    let pane = c.own_pane();
+    if let Some(pane) = pane
+        && let Some(name) = arugulad_base::agent_mentions::session_name(c.app(), pane).await
+    {
+        body["session"] = json!(name);
+    }
     let v = threads_call(c, Method::POST, &agent_messages(room), Some(body)).await?;
-    // The session that posts is the one a mention in this thread is for (#394).
-    if let Some(pane) = c.own_pane() {
-        c.app().agent_mentions.note_post(room, pane);
+    // The session that posts is the one a mention in this thread is for
+    // (#394): the room's last poster, and the thread's, whose root is the
+    // message it replies under or this one (#429).
+    if let Some(pane) = pane {
+        let mentions = &c.app().agent_mentions;
+        mentions.note_post(room, pane);
+        if let Some(root) = a.parent.or_else(|| v["seq"].as_i64()) {
+            mentions.note_thread(room, root, pane);
+        }
     }
     let mut summary = format!(
         "Posted as seq {}{} in {room}, labelled as your person's agent on this machine",

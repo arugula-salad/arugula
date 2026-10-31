@@ -936,10 +936,11 @@ async fn read(app: &Platform, account: &str, id: &str) -> Result<wire::BoardView
             relations,
             live: row_live,
             block: row_block,
-            agent: e
-                .agent
-                .clone()
-                .map(|m| ChatAgent { machine_name: names.get(&m).cloned().unwrap_or_default(), machine: m }),
+            agent: e.agent.clone().map(|m| ChatAgent {
+                machine_name: names.get(&m).cloned().unwrap_or_default(),
+                machine: m,
+                session: None,
+            }),
             created_at: e.created_at,
             updated_at: e.updated_at,
         });

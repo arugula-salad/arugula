@@ -245,6 +245,7 @@ fn line<'a>(author: &'a str, at: u64, agent: Option<&'a str>, text: &'a str) -> 
         via: None,
         parent: None,
         also: false,
+        agent_session: None,
     }
 }
 
@@ -290,6 +291,7 @@ mod tests {
                 via: None,
                 parent: None,
                 also: false,
+                agent_session: None,
             },
         )
         .unwrap()
