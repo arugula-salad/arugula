@@ -1,0 +1,137 @@
+#!/usr/bin/env bash
+# A pull request that changes CI has a passing check.yml run on its head
+# commit before it merges (#304; docs/development.md, "Changing CI"). The
+# files that count are the ones `touches` lists: .github/, the justfile,
+# chant.workspace.json, .config/nextest.toml and the CI scripts. Main's
+# longest red stretch was CI rewrites landing unrun; check.yml runs only on
+# main's pushes and merge groups, so a branch runs it by hand or with the
+# `full-check` label (full-check.yml).
+#
+#   ci-branch-run touches          the file names on stdin that count, one a
+#                                  line; exits 0 when any does, 1 when none
+#   ci-branch-run gate PR SHA      binaries.yml's ci-branch-run job: exits 0
+#                                  when pull request PR changes no CI file,
+#                                  or when check.yml passed on SHA, its head;
+#                                  while a run on SHA is in progress it waits
+#                                  for it (up to ARUGULA_BRANCH_RUN_WAIT
+#                                  seconds, 2 hours); otherwise exits 1,
+#                                  saying how to get a run
+#   ci-branch-run rerun SHA        full-check.yml, after it dispatches
+#                                  check.yml: once the check.yml run on SHA
+#                                  shows up and binaries.yml's newest run of
+#                                  SHA has finished, re-runs that run's failed
+#                                  jobs if ci-branch-run is one of them, so
+#                                  the gate waits for the new run
+#
+# gate and rerun call the GitHub API through gh, on GH_REPO with GH_TOKEN:
+# gate needs `pull-requests: read` and `actions: read` (a fork's pull
+# request has those), rerun `actions: write`. ARUGULA_BRANCH_RUN_POLL
+# (60) is the seconds between looks.
+set -euo pipefail
+
+# The files a pull request changes that make it need a branch run.
+touches() {
+  local f any=1
+  while IFS= read -r f; do
+    case "$f" in
+      .github/* | justfile | chant.workspace.json | .config/nextest.toml | \
+        scripts/ci-* | scripts/*-changed | scripts/changed)
+        echo "$f"
+        any=0
+        ;;
+    esac
+  done
+  return "$any"
+}
+
+wait_s=${ARUGULA_BRANCH_RUN_WAIT:-7200}
+poll=${ARUGULA_BRANCH_RUN_POLL:-60}
+start=$SECONDS
+waited() { [ $((SECONDS - start)) -ge "$wait_s" ]; }
+
+# check.yml's runs on SHA: status, conclusion and link, a line each (TSV).
+check_runs() {
+  gh api "repos/$GH_REPO/actions/workflows/check.yml/runs?head_sha=$1&per_page=100" \
+    --jq '.workflow_runs[] | [.status, (.conclusion // "-"), .html_url] | @tsv'
+}
+
+fail() {
+  echo "::error::$1"
+  exit 1
+}
+
+gate() {
+  local pr=${1:?usage: ci-branch-run gate PR SHA} sha=${2:?usage: ci-branch-run gate PR SHA}
+  local files ci runs url
+  # A rename counts by its old name too: moving a CI script away changes CI.
+  files=$(gh api --paginate "repos/$GH_REPO/pulls/$pr/files" --jq '.[] | .filename, (.previous_filename // empty)')
+  if ! ci=$(touches <<<"$files"); then
+    echo "this pull request changes no CI file: no branch run needed"
+    return 0
+  fi
+  echo "this pull request changes CI ($(head -5 <<<"$ci" | paste -sd' ' -)), so check.yml must pass on its head, ${sha:0:12}"
+  while :; do
+    runs=$(check_runs "$sha")
+    url=$(awk -F'\t' '$1 == "completed" && $2 == "success" { print $3; exit }' <<<"$runs")
+    if [ -n "$url" ]; then
+      echo "check.yml passed on ${sha:0:12}: $url"
+      return 0
+    fi
+    url=$(awk -F'\t' '$1 != "completed" && $3 != "" { print $3; exit }' <<<"$runs")
+    [ -n "$url" ] || break
+    if waited; then
+      fail "check.yml is still running on ${sha:0:12} after $((wait_s / 60)) minutes ($url). Re-run this job once it passes."
+    fi
+    echo "check.yml is running on ${sha:0:12} ($url): waiting for it"
+    sleep "$poll"
+  done
+  url=$(awk -F'\t' '$3 != "" { print $3; exit }' <<<"$runs")
+  if [ -n "$url" ]; then
+    fail "check.yml failed on ${sha:0:12} ($url). Fix it and push, then run check.yml on the new head (remove the full-check label and add it again)."
+  fi
+  fail "no check.yml run on ${sha:0:12}, this pull request's head. Add the full-check label (or remove it and add it again), which re-runs this job to wait for it, or run \`gh workflow run check.yml --ref BRANCH\` and re-run this job. A fork's branch can't run check.yml: someone who can push here puts the commit on a branch of this repository and runs it there."
+}
+
+rerun() {
+  local sha=${1:?usage: ci-branch-run rerun SHA} run id status failed
+  # The dispatch takes a few seconds to show up as a run.
+  until [ -n "$(check_runs "$sha")" ]; do
+    if waited; then
+      echo "no check.yml run on ${sha:0:12} showed up: not re-running ci-branch-run"
+      return 0
+    fi
+    sleep "$poll"
+  done
+  # Only a finished run can be re-run.
+  while :; do
+    run=$(gh api "repos/$GH_REPO/actions/workflows/binaries.yml/runs?head_sha=$sha&event=pull_request&per_page=1" \
+      --jq '.workflow_runs[0] // empty | [.id, .status] | @tsv')
+    if [ -z "$run" ]; then
+      echo "no binaries.yml run of ${sha:0:12}: nothing to re-run"
+      return 0
+    fi
+    IFS=$'\t' read -r id status <<<"$run"
+    [ "$status" != completed ] || break
+    if waited; then
+      echo "binaries.yml's run $id of ${sha:0:12} is still going: re-run its ci-branch-run job by hand once it finishes"
+      return 0
+    fi
+    echo "binaries.yml's run $id of ${sha:0:12} is $status: waiting for it to finish"
+    sleep "$poll"
+  done
+  failed=$(gh api "repos/$GH_REPO/actions/runs/$id/jobs?filter=latest&per_page=100" \
+    --jq '.jobs[] | select(.name == "ci-branch-run" and .conclusion == "failure") | .id')
+  if [ -z "$failed" ]; then
+    echo "binaries.yml's run $id didn't fail ci-branch-run: nothing to re-run"
+    return 0
+  fi
+  echo "re-running binaries.yml's run $id's failed jobs: ci-branch-run waits for check.yml"
+  gh run rerun "$id" --failed
+}
+
+case ${1:-} in
+  touches) touches ;;
+  gate) shift; gate "$@" ;;
+  rerun) shift; rerun "$@" ;;
+  *) sed -n '10,24p' "$0" >&2; exit 2 ;;
+esac

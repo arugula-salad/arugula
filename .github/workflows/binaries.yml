@@ -9,6 +9,8 @@ name: binaries
 # by the recipes check.yml runs.
 # desktop-xvfb: `just desktop-xvfb`, only for a pull request that changes
 # the desktop app or its Xvfb tests (#1677; #1616 broke it unseen).
+# ci-branch-run: a pull request that changes CI has a passing check.yml
+# run on its head commit (#304; scripts/ci-branch-run).
 on:
   pull_request:
   push:
@@ -117,10 +119,44 @@ jobs:
         env:
           ARUGULA_DESKTOP_IMAGE_REPO: ghcr.io/arugula-salad/arugula-desktop-xvfb
 
+  # A pull request that changes CI (.github/, the justfile,
+  # chant.workspace.json, .config/nextest.toml, the CI scripts: the list is
+  # scripts/ci-branch-run's) needs a passing check.yml run on its head
+  # commit (#304; docs/development.md, "Changing CI"). It reads the pull
+  # request's files and check.yml's runs on its head through the API with
+  # this job's token, which a fork's pull request gets too: no secrets, and
+  # no pull_request_target. While a run is in progress it waits for it.
+  # When there's none it fails, saying how to start one; the full-check
+  # label starts one, then re-runs this job once binaries.yml's run has
+  # finished, so it waits for that run (full-check.yml). Not named like
+  # check.yml's jobs (chant matches main's required checks by name).
+  ci-branch-run:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    # check.yml takes ~35 min, more when the pods are busy:
+    # scripts/ci-branch-run waits up to 2 hours.
+    timeout-minutes: 125
+    permissions:
+      contents: read
+      pull-requests: read
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: scripts/ci-branch-run
+          sparse-checkout-cone-mode: false
+      - name: check.yml passed on the head, if this changes CI
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+          SHA: ${{ github.event.pull_request.head.sha }}
+        run: scripts/ci-branch-run gate "$PR" "$SHA"
+
   # The merge queue's check on a pull request (docs/development.md,
   # "Merging through the queue"): its ruleset requires `queue` by name, on
   # the pull request before it's queued and on its merge group after.
-  # Here it's binaries and quick; the group's is check.yml's, the whole
+  # Here it's binaries, quick and ci-branch-run; the group's is check.yml's, the whole
   # suite. So this workflow has no merge_group trigger: its `queue`,
   # skipped on a group, would count as passed there.
   queue:
@@ -128,7 +164,7 @@ jobs:
     # this, only a failed or cancelled one. desktop-changes is here too, so
     # its failing can't pass as desktop-xvfb skipped.
     if: github.event_name == 'pull_request' && !cancelled() && !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled')
-    needs: [binaries, quick, desktop-changes, desktop-xvfb]
+    needs: [binaries, quick, ci-branch-run, desktop-changes, desktop-xvfb]
     runs-on: ubuntu-latest
     steps:
-      - run: echo "binaries and quick passed (and desktop-xvfb, when it ran); the merge queue runs check.yml on the group"
+      - run: echo "binaries, quick and ci-branch-run passed (and desktop-xvfb, when it ran); the merge queue runs check.yml on the group"
