@@ -3,7 +3,7 @@
   "commit": "c7379bd27b2636a3dc8db68e0d78c92b9683db9c",
   "branch": "main",
   "state": "pending",
-  "at": "2026-10-31T05:45:10Z",
+  "at": "2026-10-31T05:48:54Z",
   "phases": {
     "lint": {
       "verdict": "pass",
@@ -30,7 +30,7 @@
       ]
     },
     "build": {
-      "verdict": "pending",
+      "verdict": "pass",
       "build": "newest",
       "runs": [
         {
@@ -42,13 +42,13 @@
         {
           "name": "static",
           "id": 124456418513,
-          "conclusion": null,
+          "conclusion": "success",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/41173563088/job/124456418513"
         },
         {
           "name": "clippy",
           "id": 124456418491,
-          "conclusion": null,
+          "conclusion": "success",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/41173563088/job/124456418491"
         }
       ]
@@ -72,7 +72,7 @@
         {
           "name": "test-postgres",
           "id": 124456418574,
-          "conclusion": null,
+          "conclusion": "failure",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/41173563088/job/124456418574"
         },
         {
@@ -82,6 +82,7 @@
           "url": "https://github.com/arugula-salad/arugula/actions/runs/41173563088/job/124456418557"
         }
       ],
+      "reason": "retrying",
       "culprit": "baa6212bb48c173b7b2c8fbd348c19c752bd0e11"
     },
     "e2e": {
@@ -173,6 +174,12 @@
           "url": "https://github.com/arugula-salad/arugula/actions/runs/41173563088/job/124457151101"
         },
         {
+          "name": "stack",
+          "id": 124457348202,
+          "conclusion": "success",
+          "url": "https://github.com/arugula-salad/arugula/actions/runs/41173563088/job/124457348202"
+        },
+        {
           "name": "desktop-xvfb",
           "id": 124456418525,
           "conclusion": null,
@@ -199,19 +206,19 @@
       ]
     },
     "windows": {
-      "verdict": "pending",
+      "verdict": "pass",
       "build": "newest",
       "runs": [
         {
           "name": "workspace",
           "id": 124456405737,
-          "conclusion": null,
+          "conclusion": "success",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/41173563194/job/124456405737"
         },
         {
           "name": "workspace-clippy",
           "id": 124456405714,
-          "conclusion": null,
+          "conclusion": "success",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/41173563194/job/124456405714"
         },
         {
@@ -221,6 +228,12 @@
           "url": "https://github.com/arugula-salad/arugula/actions/runs/41173563207/job/124456404576"
         }
       ]
+    }
+  },
+  "retried": {
+    "test-postgres": {
+      "run": 124456418574,
+      "at": "2026-10-31T05:48:54Z"
     }
   }
 }
