@@ -168,7 +168,13 @@ The same workflow runs `scripts/ci-nightly-red` for the scheduled
 workflows (forges-nightly, macos-vm, macos-intel, testnet-break,
 perf-nightly), which ci/green doesn't count: one issue per workflow,
 "nightly is red: WORKFLOW", opened when its newest scheduled run on main
-failed, commented on once per failed run, and closed when one passes.
+failed, commented on once per failed run, and closed when one passes. A
+newer successful manual run (`workflow_dispatch`) on main also clears the
+alert if it tests the failed commit or a descendant. Only the newest
+completed manual run counts: an older success, a run on another branch or
+older code, and a failed or cancelled manual run can't dismiss the alert.
+The monitor needs main's full Git history to check ancestry (ci-red.yml
+already checks it out).
 `scripts/tests/ci-nightly-red.sh` runs it with a fake gh.
 
 The Rust tests run under cargo-nextest (`.config/nextest.toml`): each in
