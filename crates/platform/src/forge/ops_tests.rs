@@ -192,3 +192,149 @@ async fn the_inbox_as_operations() {
     let (_, v) = op(&base, "bob", "inbox.list", json!({ "done": true })).await;
     assert!(v["result"]["entries"][0]["done_at"].is_u64(), "{v}");
 }
+
+/// Plane's two connections, one in the team's project (`ALL`, "Allcorp
+/// Secret Roadmap") and one in eve's (`EVE`): their items, newest first.
+fn plane_world(app: &crate::Platform, team: &str, eve: &str) {
+    use crate::{db::trackers::NewConnection, trackers::fake::item};
+    let put = |project: &str, id: &str, key: &str, name: &str, items: Vec<crate::trackers::Item>| {
+        let n = NewConnection {
+            id: id.into(),
+            project_id: project.into(),
+            workspace_slug: "acme-ws".into(),
+            source_project_id: format!("src-{key}"),
+            identifier: key.into(),
+            name: name.into(),
+            linked_by: "alice".into(),
+        };
+        let c = app.db.connect_tracker(&n, 1).unwrap().unwrap();
+        app.db
+            .tracker_mirror(id, None, |tx| {
+                for it in &items {
+                    crate::db::trackers::upsert_item(tx, id, c.mirror_id, it, 1)?;
+                }
+                Ok(())
+            })
+            .unwrap();
+    };
+    put(
+        team,
+        "tc_all",
+        "ALL",
+        "Allcorp Secret Roadmap",
+        vec![
+            item(2212, "Fix login timeout, after ALL-7", "started", 50),
+            item(7, "Docs for sign in", "completed", 45),
+            item(8, "Login page copy", "unstarted", 5),
+        ],
+    );
+    put(team, "tc_ops", "OPS", "Ops", vec![item(8, "Ops rota", "started", 3)]);
+    put(eve, "tc_eve", "EVE", "Eve's Plane", vec![item(1, "Eve's login plan", "started", 60)]);
+}
+
+fn numbers(v: &Value) -> Vec<(String, u64)> {
+    v["result"]["items"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .map(|i| {
+            (i["identifier"].as_str().or(i["repo"].as_str()).unwrap_or("?").to_owned(), i["number"].as_u64().unwrap())
+        })
+        .collect()
+}
+
+/// A project's Plane items are listed beside its GitHub ones, found by
+/// `IDENT-N` and by title, and read one at a time; a reader outside the
+/// project gets none of them, nor the connection's name.
+#[tokio::test]
+async fn plane_items_are_listed_found_and_read_by_members_only() {
+    let hub = Arc::new(TestHub::default());
+    let (gh, app, base) = serve(&hub).await;
+    let (team, eve) = world(&hub, &gh, &app).await;
+    plane_world(&app, &team, &eve);
+
+    // Merged, newest first; GitHub's items keep their shape and Plane's carry theirs.
+    let (s, v) = op(&base, "bob", "item.list", json!({ "project": team })).await;
+    assert_eq!(s, 200, "{v}");
+    let got = numbers(&v);
+    assert_eq!(
+        got,
+        [("ALL", 2212), ("ALL", 7), ("acme/app", 1), ("acme/site", 2), ("acme/site", 3), ("ALL", 8), ("OPS", 8)]
+            .map(|(k, n)| (k.to_owned(), n))
+    );
+    let p = &v["result"]["items"][0];
+    assert_eq!(
+        (p["provider"].as_str(), p["repo"].is_null(), p["state_group"].as_str()),
+        (Some("plane"), true, Some("started"))
+    );
+    assert_eq!(p["url"], "https://app.plane.so/acme-ws/browse/ALL-2212/");
+    assert_eq!(v["result"]["items"][2]["provider"], "github");
+
+    // `IDENT-N` first, then titles; filters narrow Plane as they do GitHub.
+    let (_, v) = op(&base, "bob", "item.list", json!({ "project": team, "provider": "plane", "q": "ALL-2212" })).await;
+    assert_eq!(numbers(&v), [("ALL".to_owned(), 2212)], "{v}");
+    let (_, v) = op(&base, "bob", "item.list", json!({ "project": team, "q": "all-8" })).await;
+    assert_eq!(numbers(&v), [("ALL".to_owned(), 8)], "the key counts, not only the number: {v}");
+    let (_, v) = op(&base, "bob", "item.list", json!({ "project": team, "q": "ALL-7" })).await;
+    assert_eq!(numbers(&v), [("ALL".to_owned(), 7), ("ALL".to_owned(), 2212)], "the exact one leads: {v}");
+    let (_, v) = op(&base, "bob", "item.list", json!({ "project": team, "q": "ops" })).await;
+    assert_eq!(numbers(&v), [("OPS".to_owned(), 8)], "{v}");
+    let (_, v) = op(&base, "bob", "item.list", json!({ "project": team, "provider": "plane", "q": "login" })).await;
+    assert_eq!(numbers(&v), [("ALL".to_owned(), 2212), ("ALL".to_owned(), 8)], "{v}");
+    let (_, v) = op(&base, "bob", "item.list", json!({ "project": team, "provider": "plane", "q": "login" })).await;
+    assert_eq!(numbers(&v), [("ALL".to_owned(), 2212), ("ALL".to_owned(), 8)].to_vec(), "{v}");
+    let (_, v) = op(&base, "bob", "item.list", json!({ "project": team, "tracker": "ALL", "state": "closed" })).await;
+    assert_eq!(numbers(&v), [("ALL".to_owned(), 7)], "{v}");
+    let (_, v) = op(&base, "bob", "item.list", json!({ "project": team, "tracker": "NOPE" })).await;
+    assert_eq!(numbers(&v), vec![], "{v}");
+    let (_, v) = op(&base, "bob", "item.list", json!({ "project": team, "provider": "plane", "limit": 2 })).await;
+    assert_eq!(numbers(&v).len(), 2, "{v}");
+    let (_, v) = op(&base, "bob", "item.list", json!({ "project": team, "provider": "github" })).await;
+    assert!(numbers(&v).iter().all(|(k, _)| k != "ALL"), "{v}");
+    let (_, v) = op(&base, "bob", "item.list", json!({ "repo": "acme/site" })).await;
+    assert!(numbers(&v).iter().all(|(k, _)| k != "ALL"), "a repo is GitHub's: {v}");
+    let (s, v) = op(&base, "bob", "item.list", json!({ "project": team, "provider": "jira" })).await;
+    assert_eq!(s, 400, "{v}");
+
+    // A viewer who didn't sign in with GitHub reads Plane's items, as the board's picker lets her.
+    let (_, v) = op(&base, "carol", "item.list", json!({ "project": team, "provider": "plane" })).await;
+    assert_eq!(numbers(&v).len(), 4, "{v}");
+
+    // One item.
+    let (s, v) = op(&base, "bob", "tracker.get", json!({ "project": team, "key": "ALL", "number": 2212 })).await;
+    assert_eq!(s, 200, "{v}");
+    assert_eq!(v["result"]["item"]["title"], "Fix login timeout, after ALL-7");
+    assert!(v["result"]["note"].as_str().unwrap().contains("aren't mirrored"), "{v}");
+    let (s, _) = op(&base, "bob", "tracker.get", json!({ "project": team, "key": "ALL", "number": 99 })).await;
+    assert_eq!(s, 404);
+    let (s, _) = op(&base, "bob", "tracker.get", json!({ "project": team, "key": "EVE", "number": 1 })).await;
+    assert_eq!(s, 404, "another project's key");
+
+    // Outside the project: no Plane items, and no connection named.
+    let secret = |v: &Value| {
+        let t = v.to_string();
+        ["Fix login", "Allcorp", "Docs for sign in"].iter().any(|w| t.contains(w))
+    };
+    for (what, args) in [
+        ("item.list", json!({ "project": team })),
+        ("item.list", json!({ "project": team, "provider": "plane", "tracker": "ALL", "q": "ALL-2212" })),
+        ("tracker.get", json!({ "project": team, "key": "ALL", "number": 2212 })),
+    ] {
+        let (s, v) = op(&base, "eve", what, args).await;
+        assert_eq!(s, 404, "{what}: {v}");
+        assert!(!secret(&v), "{what} leaks: {v}");
+    }
+    // Her own project holds hers, and none of the team's.
+    let (s, v) = op(&base, "eve", "item.list", json!({ "provider": "plane" })).await;
+    assert_eq!((s, numbers(&v)), (200, vec![("EVE".to_owned(), 1)]), "{v}");
+    let (_, v) = op(&base, "eve", "item.list", json!({ "tracker": "ALL" })).await;
+    assert_eq!(numbers(&v), vec![], "{v}");
+    assert!(!secret(&v), "{v}");
+
+    // A disconnected connection reads nothing, to anyone.
+    app.db.disconnect_tracker(&team, "tc_all", 2).unwrap().unwrap();
+    let (_, v) = op(&base, "bob", "item.list", json!({ "project": team, "provider": "plane" })).await;
+    assert_eq!(numbers(&v), [("OPS".to_owned(), 8)], "only the live connection: {v}");
+    let (s, _) = op(&base, "bob", "tracker.get", json!({ "project": team, "key": "ALL", "number": 2212 })).await;
+    assert_eq!(s, 404);
+}

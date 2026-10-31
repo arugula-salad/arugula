@@ -113,15 +113,17 @@ test("a pinned issue, and a pin whose platform can't be reached shows what it sa
   const block = await open(page, "issue", 2);
   const el = page.locator(`[data-forge-block="${block}"]`);
   await expect(el).toHaveAttribute("data-forge-kind", "issue");
-  await expect(el.locator(".review-path")).toContainText("The parser drops tabs #2 acme/app");
-  await expect(el.locator("[data-forge-pin]")).toBeVisible();
-  await expect(el.locator(".forge-meta")).toContainText("assigned to jake-gh");
-  await expect(el.locator("[data-forge-pin-body]")).toBeVisible();
-  await expect(el.locator("[data-forge-pin-read]")).toContainText("read through Arugula control");
+  await expect(el.locator("[data-item-head] .item-title")).toHaveText("The parser drops tabs");
+  await expect(el.locator("[data-item-head] .item-number")).toHaveText("#2");
+  await expect(el.locator('[data-item-fact="assignees"] [data-name="jake-gh"]')).toBeVisible();
+  // Where it's read is the source icon's tooltip, not a tag or a line.
+  const source = el.locator("[data-item-source]");
+  await expect(source).toHaveAttribute("title", /read through Arugula control/);
+  await expect(el.locator("[data-forge-pin], [data-forge-pin-read]")).toHaveCount(0);
 
   stale = "control answered 502";
   await page.evaluate((b) => window.__arugula.client.api(`/api/blocks/${b}/call/refresh`, {}, ""), block);
-  await expect(el.locator("[data-forge-pin-read]")).toContainText("can't reach it now: as it said last");
-  await expect(el.locator("[data-forge-pin-read]")).toHaveAttribute("title", "control answered 502");
-  await expect(el.locator(".review-path")).toContainText("The parser drops tabs");
+  await expect(source).toHaveAttribute("title", /can't reach it now: as it said last/);
+  await expect(source).toHaveAttribute("title", /control answered 502/);
+  await expect(el.locator("[data-item-head] .item-title")).toHaveText("The parser drops tabs");
 });

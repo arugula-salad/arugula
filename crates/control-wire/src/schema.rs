@@ -68,7 +68,7 @@ fn files() -> Vec<(&'static str, &'static [&'static str], fn(&mut SchemaGenerato
             forge::ForgeWatch, forge::Standing, forge::ForgeWatching, forge::Poke, forge::ForgePoke, forge::GithubTokenRequest, forge::GithubToken, forge::Ops, forge::OpAsk, forge::OpDone, forge::DaemonOp, forge::ForgeSend, forge::AgentMention, forge::OpAnswer,
         ],
         "forge_ops" => [
-            forge_ops::Call, forge_ops::Op, forge_ops::ItemRef, forge_ops::ItemQuery, forge_ops::DraftQuery, forge_ops::InboxQuery, forge_ops::InboxMarkOn, forge_ops::DraftRef, forge_ops::CommentOn, forge_ops::ReviewOf, forge_ops::NewIssue, forge_ops::ItemView, forge_ops::Sent,
+            forge_ops::Call, forge_ops::Op, forge_ops::ItemRef, forge_ops::ItemQuery, forge_ops::TrackerRef, forge_ops::DraftQuery, forge_ops::InboxQuery, forge_ops::InboxMarkOn, forge_ops::DraftRef, forge_ops::CommentOn, forge_ops::ReviewOf, forge_ops::NewIssue, forge_ops::ItemView, forge_ops::Sent,
         ],
         "hosted" => [
             hosted::PublicPorts, hosted::PublicPort, hosted::EnrollAsk, hosted::EnrollGiven, hosted::Enrolled, hosted::EnrollRequest, hosted::Enrollment, hosted::DelegationPost, hosted::RevokePost, hosted::WakeAnswer, hosted::WakeCode, hosted::SetupPlan, hosted::SetupRepo, hosted::SetupStatus, hosted::SetupReport,

@@ -202,7 +202,7 @@ fn item(r: &Read) -> Item {
     let mut item = Item {
         kind: if i.kind == "issue" { ItemKind::Issue } else { ItemKind::Pr },
         number: i.number,
-        url: url(&i.repo, &i.kind, i.number),
+        url: url(i.repo.as_deref().unwrap_or_default(), &i.kind, i.number),
         title: i.title.clone(),
         body: r.content.as_ref().and_then(|c| c.body.as_ref()).map(|b| b.body.clone()).unwrap_or_default(),
         author: i.author.clone().unwrap_or_default(),
@@ -383,8 +383,13 @@ mod tests {
         Read {
             item: ForgeItem {
                 id: "fi_0a".into(),
-                repo: "acme/app".into(),
+                repo: Some("acme/app".into()),
                 number: 7,
+                provider: "github".into(),
+                identifier: None,
+                state_name: None,
+                state_group: None,
+                url: None,
                 kind: "pr".into(),
                 state: "open".into(),
                 title: "a fix".into(),

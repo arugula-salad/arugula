@@ -167,7 +167,7 @@ pub async fn list(
         // A connection's open items, by the same rule: any member of the project reads them.
         let viewer = Viewer::of(app, account).await?;
         let conns = viewer::check_connections(app, &viewer, &app.db.tracker_connections(&project)?).await?;
-        let f = TrackerFilter { open: q.untriaged, text, limit: read };
+        let f = TrackerFilter { open: q.untriaged, text, limit: read, ..Default::default() };
         for i in app.db.tracker_items(&conns, &f)? {
             if on_boards.contains(&i.id) {
                 continue;
