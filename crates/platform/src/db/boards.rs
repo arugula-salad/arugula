@@ -1103,6 +1103,17 @@ impl Db {
         )
     }
 
+    /// The rows (board, its title, row) whose item is native issue `id`,
+    /// oldest board first.
+    pub fn rows_of_issue(&self, id: &str) -> Result<Vec<(String, String, String)>> {
+        self.c().query_map(
+            "SELECT b.id, b.title, e.id FROM board_entries e JOIN boards b ON b.id = e.board_id
+             WHERE e.kind = 'row' AND e.target_kind = 'issue' AND e.target = ?1 ORDER BY b.created_at, b.id",
+            params![id],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+        )
+    }
+
     /// The projects over which `machine` holds a live `boards.write` grant,
     /// each with the account that gave it: whether the owner still reads the
     /// project is for [`crate::grants::agent_may`].

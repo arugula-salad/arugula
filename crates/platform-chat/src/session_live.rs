@@ -32,7 +32,7 @@ use std::sync::Arc;
 use arugula_control_common::{ApiError, err};
 use arugula_control_wire::sessions::{
     SessionAct, SessionAnswered, SessionCard, SessionFinish, SessionLine, SessionOpen, SessionPort, SessionTry,
-    SessionTurn, SessionView,
+    SessionTurn, SessionView, SessionWork,
 };
 use arugula_control_wire::work::{Reported, SessionReport};
 use arugula_e2e::{now_ms, team::TeamRole};
@@ -377,6 +377,26 @@ pub(crate) async fn view(app: &Platform, s: &Session, may: bool, reader: &str) -
         Some(m) => Some(crate::chat::sessions::agent_asker(app, &name(&s.asker), m).await?),
         None => None,
     };
+    let work = match s.work_item.as_deref() {
+        Some(item) => match app.db.issue(item)? {
+            Some(i) => {
+                let rows = match arugula_platform::chat::flag_on(app, reader, arugula_platform::boards::FLAG).await {
+                    Ok(true) => app.db.rows_of_issue(item)?,
+                    _ => vec![],
+                };
+                let first = rows.into_iter().next();
+                Some(SessionWork {
+                    issue: i.id,
+                    number: i.number,
+                    board: first.as_ref().map(|r| r.0.clone()),
+                    board_title: first.as_ref().map(|r| r.1.clone()),
+                    row: first.map(|r| r.2),
+                })
+            }
+            None => None,
+        },
+        None => None,
+    };
     let card = SessionCard {
         session: s.id.clone(),
         project: s.project.clone(),
@@ -424,6 +444,7 @@ pub(crate) async fn view(app: &Platform, s: &Session, may: bool, reader: &str) -
         tries,
         picked,
         moves: vec![],
+        work,
     };
     let lines = events
         .iter()

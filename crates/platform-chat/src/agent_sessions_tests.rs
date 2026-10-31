@@ -152,6 +152,10 @@ async fn an_agent_starts_one_on_an_issue_and_answers_which_repo() {
     let s = app.db.session(v["session"].as_str().expect("started")).unwrap().unwrap();
     assert_eq!((s.asker.as_str(), s.asker_agent.as_deref(), s.repo.as_deref()), ("a", Some("geek"), Some("o/web")));
     assert!(s.branch.contains(&format!("i{}-fix-the-canary", i.number)), "{}", s.branch);
+    // It records the issue as its work item (#372), and its card says it.
+    assert_eq!(s.work_item.as_deref(), Some(i.id.as_str()));
+    let (st, v) = call(&base, "a", "GET", &format!("/api/sessions/{}", s.id), None).await;
+    assert_eq!((st, v["card"]["work"]["number"].as_u64()), (200, Some(i.number)), "{v}");
 
     // In the channel: the agent's reply naming a repo answers its ask.
     let (st, v) = geek(&base, "POST", AGENT_SESSIONS, Some(json!({ "room": ROOM, "prompt": "tidy the README" }))).await;
@@ -163,6 +167,7 @@ async fn an_agent_starts_one_on_an_issue_and_answers_which_repo() {
     assert_eq!(st, 200);
     let s = session_of(&app, &t, p).expect("the answer started it");
     assert_eq!((s.asker.as_str(), s.asker_agent.as_deref(), s.repo.as_deref()), ("a", Some("geek"), Some("o/app")));
+    assert_eq!(s.work_item, None, "a channel's session is on no issue");
     let first = &app.db.session_prompts(&s.id).unwrap()[0];
     assert!(!first.text.contains("o/app please"), "the answer was for the platform: {}", first.text);
 }

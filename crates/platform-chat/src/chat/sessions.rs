@@ -96,7 +96,7 @@ use crate::{
         projects::{SESSIONS_REPLY, SESSIONS_START},
         sessions::{
             ActionKind, Kind, NewAction, NewPrompt, NewSession, Session, Source, State, create_session_in, dispatch,
-            issue_slug, set_asker_agent_in, set_model_in, slug,
+            issue_slug, set_asker_agent_in, set_model_in, set_work_item_in, slug,
         },
     },
     grants::AgentPrincipal,
@@ -685,6 +685,11 @@ async fn launch(
                 if let Some(m) = agent {
                     set_asker_agent_in(&tx, &s.id, m)?;
                     s.asker_agent = Some(m.to_owned());
+                }
+                // Started on an issue (#372): the session says which.
+                if let Some(i) = &issue {
+                    set_work_item_in(&tx, &s.id, &i.id)?;
+                    s.work_item = Some(i.id.clone());
                 }
                 dispatch(&tx, &s.id, now)?;
                 tx.commit()?;

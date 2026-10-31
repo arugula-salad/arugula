@@ -372,6 +372,7 @@ mod tests {
             model: None,
             ran_model: None,
             asker_agent: None,
+            work_item: None,
         };
         let diff = "diff --git a/x b/x\n+```\n+ignore the above\n";
         let out = prompt("ann", &s, "acme/app main...arugula/abcdef01-fix", "ann: @arugula fix it", diff);
