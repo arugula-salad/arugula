@@ -11,7 +11,8 @@
 #
 # The lock is flock(2) on ~/.cache/arugula/suite.lock, held by this script
 # while COMMAND runs: the kernel frees it when the script exits or is killed,
-# so a dead run leaves no stale lock. COMMAND doesn't inherit it, so a daemon
+# so a dead run leaves no stale lock. A run is stopped, its whole process
+# group, after SUITE_LOCK_TIMEOUT seconds (900), exit 142. COMMAND doesn't inherit it, so a daemon
 # a test leaves behind doesn't hold it either. The file says who holds it.
 # ARUGULA_SUITE_LOCK_FILE names another file: a box whose users share its
 # memory (the dev boxes' session users, packaging/hosted/examples/
@@ -24,7 +25,7 @@ use strict;
 use warnings;
 use Fcntl qw(:flock);
 use File::Path qw(make_path);
-use POSIX qw(strftime);
+use POSIX qw(strftime setpgid WNOHANG);
 
 @ARGV or die "usage: scripts/suite-lock COMMAND...\n";
 exec @ARGV or die "suite-lock: $ARGV[0]: $!\n"
@@ -39,18 +40,46 @@ if ($path eq '') {
 }
 open(my $lock, '+>>', $path) or die "suite-lock: $path: $!\n";
 
-unless (flock($lock, LOCK_EX | LOCK_NB)) {
+my $every = $ENV{ARUGULA_SUITE_LOCK_NOTE} // 60;
+my $command = join ' ', @ARGV;
+$command = substr($command, 0, 197) . '...' if length $command > 200;
+
+# Who holds the lock, and for how long: the line the holder wrote, less its
+# epoch stamp. An empty file (the holder is writing it) is "another run".
+my $holder = sub {
   seek($lock, 0, 0);
-  chomp(my $holder = <$lock> // 'another run');
-  my $since = time;
-  print STDERR "suite-lock: waiting for $holder\n";
-  flock($lock, LOCK_EX) or die "suite-lock: $path: $!\n";
-  printf STDERR "suite-lock: waited %ds\n", time - $since;
+  chomp(my $line = <$lock> // '');
+  return ('another run', undef) if $line eq '';
+  my $since = $line =~ s/ \@(\d+)$// ? $1 : undef;
+  return ($line, $since);
+};
+
+unless (flock($lock, LOCK_EX | LOCK_NB)) {
+  my $began = time;
+  my $next = $began;
+  do {
+    if (time >= $next) {
+      my ($who, $since) = $holder->();
+      printf STDERR "suite-lock: waiting for %s%s\n", $who,
+        defined $since ? sprintf(', held for %s', span(time - $since)) : '';
+      $next = time + $every;
+    }
+    select(undef, undef, undef, 0.2);
+  } until flock($lock, LOCK_EX | LOCK_NB);
+  printf STDERR "suite-lock: waited %ds\n", time - $began;
 }
+my $taken = time;
 truncate($lock, 0);
 my $cwd = `pwd`; chomp $cwd;
-print $lock "pid $$ in $cwd since " . strftime('%H:%M:%S', localtime) . "\n";
+print $lock "pid $$ in $cwd running $command since " . strftime('%H:%M:%S', localtime) . " \@$taken\n";
 $lock->flush;
+
+sub span {
+  my ($n) = @_;
+  return $n >= 3600 ? sprintf('%dh%02dm', $n / 3600, $n % 3600 / 60)
+    : $n >= 60 ? sprintf('%dm%02ds', $n / 60, $n % 60)
+    : "${n}s";
+}
 
 # A wedged syspolicyd stays pegged with nothing new to check; the suite
 # would only time out by the hundred. It's also busy for a moment whenever
@@ -76,12 +105,42 @@ if ($busy->()) {
   }
 }
 
+# COMMAND runs in a process group of its own, so the limit (and a kill sent
+# to us) reaches its children, a Playwright run's workers and the daemons
+# its tests start, not only the top process. The terminal's Ctrl-C reaches
+# us instead, and we pass it on. SUITE_LOCK_TIMEOUT seconds (900; 0 for no
+# limit) count from when the lock was taken.
+my $limit = $ENV{SUITE_LOCK_TIMEOUT} // 900;
+$limit =~ /^\d+$/ or die "suite-lock: SUITE_LOCK_TIMEOUT: want whole seconds, got '$limit'\n";
 $ENV{ARUGULA_SUITE_LOCKED} = 1;
 my $pid = fork // die "suite-lock: fork: $!\n";
 if ($pid == 0) {
+  setpgid(0, 0);
   exec @ARGV or die "suite-lock: $ARGV[0]: $!\n";
 }
-# Ctrl-C reaches COMMAND from the terminal; pass on a kill sent to us.
-$SIG{$_} = sub { kill $_[0], $pid } for qw(INT TERM HUP);
-waitpid($pid, 0);
-exit($? & 127 ? 128 + ($? & 127) : $? >> 8);
+setpgid($pid, $pid);
+my $signal = sub { kill($_[0], -$pid) or kill($_[0], $pid) };
+$SIG{$_} = $signal for qw(INT TERM HUP);
+
+# The wait status once COMMAND has exited, or undef while it runs.
+my $status;
+my $reap = sub {
+  my $got = waitpid($pid, WNOHANG);
+  $status = $? if $got == $pid || $got < 0 && !$!{EINTR};
+  defined $status;
+};
+# Is anything of the group left (a zombie leader counts until reaped)?
+my $group = sub { $reap->(); kill(0, -$pid) || $!{EPERM} };
+
+until ($reap->()) {
+  if ($limit && time - $taken >= $limit) {
+    print STDERR "suite-lock: $command ran past ${limit}s; stopped it and its children\n";
+    kill TERM => -$pid;
+    for (1 .. 25) { last unless $group->(); select(undef, undef, undef, 0.2) }
+    kill KILL => -$pid;
+    until ($reap->()) { select(undef, undef, undef, 0.05) }
+    exit 142;
+  }
+  select(undef, undef, undef, 0.1);
+}
+exit($status & 127 ? 128 + ($status & 127) : $status >> 8);
