@@ -20,7 +20,7 @@ use tracing::warn;
 
 use crate::{
     Platform,
-    boards::refs::references,
+    boards::refs::{Refs, references},
     db::{
         forge::MergedPr,
         issues::{Actor, CloseReason, Patch, State},
@@ -62,8 +62,17 @@ pub async fn merged(p: &Platform, repo: u64, numbers: &[u64]) {
     }
 }
 
+/// What a merged PR names, by the boards' own rule ([`references`] over its
+/// title, head branch and body): native issues in `numbers` and `native`
+/// (`native` less the softly written, [`Refs::closing_native`]) and Plane
+/// items in `plane`. One place for every thing a merge moves; Plane's Done
+/// reads `plane` of the same result.
+pub fn named_by(pr: &MergedPr) -> Refs {
+    references(&pr.title, pr.head_ref.as_deref().unwrap_or(""), pr.body.as_deref().unwrap_or(""), Some(pr.number))
+}
+
 async fn close_for(p: &Platform, project: &str, repo: (u64, &str), pr: &MergedPr) -> anyhow::Result<()> {
-    let refs = references(&pr.title, pr.head_ref.as_deref().unwrap_or(""), pr.body.as_deref().unwrap_or(""), Some(pr.number));
+    let refs = named_by(pr);
     let mut issues = vec![];
     for id in p.db.issues_closed_by(project, repo.0, &pr.id, &refs)? {
         if let Some(i) = p.db.issue(&id)?.filter(|i| i.state == State::Open) {
