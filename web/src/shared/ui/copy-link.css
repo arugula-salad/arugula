@@ -33,3 +33,9 @@
     min-height: 34px;
   }
 }
+
+/* "Copy link" and "Copied ✓" take the same width, so the header doesn't move when it changes. */
+.copy-link button[data-copy-link-main] {
+  min-width: 104px;
+  text-align: center;
+}
