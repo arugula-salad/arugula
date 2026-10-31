@@ -3,7 +3,7 @@
   "commit": "9562832749ff13f65a096ca3015b5faed4502ee2",
   "branch": "main",
   "state": "unbuilt",
-  "at": "2026-10-31T09:14:24Z",
+  "at": "2026-10-31T10:17:17Z",
   "phases": {
     "lint": {
       "verdict": "unbuilt",
@@ -24,8 +24,7 @@
       "build": "newest",
       "runs": [],
       "reason": "superseded",
-      "coveredBy": "0b9922b3d929e85a229bc2096d82ff7a374e9661",
-      "culprit": "baa6212bb48c173b7b2c8fbd348c19c752bd0e11"
+      "coveredBy": "0b9922b3d929e85a229bc2096d82ff7a374e9661"
     },
     "e2e": {
       "verdict": "unbuilt",
