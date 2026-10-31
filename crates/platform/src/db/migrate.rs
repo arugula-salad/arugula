@@ -571,9 +571,9 @@ const SQLITE: &[Migration] = &[
         additive: true,
     },
     Migration {
-        version: 80,
+        version: 81,
         name: "tracker_fields",
-        sql: include_str!("../../migrations/sqlite/0080_tracker_fields.sql"),
+        sql: include_str!("../../migrations/sqlite/0081_tracker_fields.sql"),
         additive: true,
     },
 ];
@@ -1057,9 +1057,9 @@ const POSTGRES: &[Migration] = &[
         additive: true,
     },
     Migration {
-        version: 80,
+        version: 81,
         name: "tracker_fields",
-        sql: include_str!("../../migrations/postgres/0080_tracker_fields.sql"),
+        sql: include_str!("../../migrations/postgres/0081_tracker_fields.sql"),
         additive: true,
     },
 ];

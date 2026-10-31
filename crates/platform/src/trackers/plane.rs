@@ -26,8 +26,8 @@
 //!   its number;
 //! - `GET …/projects/{project}/` `states/`, `modules/`, `labels/` and
 //!   `work-item-types/` (each paged `results`, or a bare array): a
-//!   project's [`Fields`]. A project without types answers the last with
-//!   404 or an empty list, which is no types.
+//!   project's [`Fields`]. A project without modules or types may answer
+//!   those with 404 or an empty list, which is none.
 //!
 //! Bodies and comments are HTML, already escaped by the caller; a title is
 //! plain text. An answer's body is never put in an error: Plane may echo
@@ -195,6 +195,15 @@ impl Plane {
         let v = self.get(&path, &[]).await?;
         let label = |l: &Value| l.as_str().or_else(|| l["id"].as_str()).map(str::to_owned);
         Ok(v["labels"].as_array().into_iter().flatten().filter_map(label).collect())
+    }
+}
+
+/// A list a project doesn't have (modules or types turned off, 404) is an
+/// empty one, not a failure: the states are still worth reading.
+fn absent_is_empty(r: Result<Vec<Value>>) -> Result<Vec<Value>> {
+    match r {
+        Err(TrackerError::NotFound) => Ok(vec![]),
+        r => r,
     }
 }
 
@@ -388,16 +397,12 @@ impl TrackerProvider for Plane {
                 states.push((s["sequence"].as_f64().unwrap_or(f64::MAX), info));
             }
             states.sort_by(|a, b| a.0.total_cmp(&b.0));
-            let modules = named(&self.list_all(workspace, project_id, "modules").await?);
-            let labels = named(&self.list_all(workspace, project_id, "labels").await?);
-            let types = match self.list_all(workspace, project_id, "work-item-types").await {
-                Ok(all) => {
-                    named(&all.into_iter().filter(|t| t["is_active"].as_bool() != Some(false)).collect::<Vec<_>>())
-                }
-                // Types aren't enabled for the project.
-                Err(TrackerError::NotFound) => vec![],
-                Err(e) => return Err(e),
-            };
+            let modules = named(&absent_is_empty(self.list_all(workspace, project_id, "modules").await)?);
+            let labels = named(&absent_is_empty(self.list_all(workspace, project_id, "labels").await)?);
+            // Types aren't enabled for every project.
+            let types = absent_is_empty(self.list_all(workspace, project_id, "work-item-types").await)?;
+            let types =
+                named(&types.into_iter().filter(|t| t["is_active"].as_bool() != Some(false)).collect::<Vec<_>>());
             Ok(Fields { states: states.into_iter().map(|(_, s)| s).collect(), modules, types, labels })
         })
     }
@@ -496,6 +501,13 @@ mod tests {
         let v = |l: &[&str]| l.iter().map(|s| s.to_string()).collect::<Vec<_>>();
         assert_eq!(merged_labels(v(&["a", "b"]), &v(&["b", "c"]), &v(&[])), v(&["a", "b", "c"]));
         assert_eq!(merged_labels(v(&["a", "b"]), &v(&["c"]), &v(&["a"])), v(&["b", "c"]));
+    }
+
+    #[test]
+    fn a_list_the_project_lacks_is_empty_but_other_failures_stay() {
+        assert_eq!(absent_is_empty(Err(TrackerError::NotFound)), Ok(vec![]));
+        assert_eq!(absent_is_empty(Ok(vec![json!(1)])), Ok(vec![json!(1)]));
+        assert_eq!(absent_is_empty(Err(TrackerError::Unauthorized)), Err(TrackerError::Unauthorized));
     }
 
     #[test]

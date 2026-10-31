@@ -1,4 +1,4 @@
--- 0080: what a Plane project offers a work item (Arugula #422): its states,
+-- 0081: what a Plane project offers a work item (Arugula #422): its states,
 -- modules, types and labels, kept as JSON beside the connection so a write
 -- can name them without a read of Plane each time. Refreshed at reconcile,
 -- and once on demand when a write names something not in it.
