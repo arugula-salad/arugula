@@ -252,7 +252,7 @@ async fn one_row_is_one_piece_of_work() {
     assert!(v["said"].as_str().unwrap().contains(&row), "the answer says so: {v}");
     assert_eq!(
         on(&v, &issue).1["attachments"][0],
-        json!({ "id": on(&v, &issue).1["attachments"][0]["id"], "role": "work", "pointer": fi("fi_t"), "released": false, "live": on(&v, &issue).1["attachments"][0]["live"] })
+        json!({ "id": on(&v, &issue).1["attachments"][0]["id"], "role": "work", "pointer": fi("fi_t"), "live": on(&v, &issue).1["attachments"][0]["live"] })
     );
     assert_eq!(on(&v, &issue).0, "lane_review", "its PR is open");
     // By its branch.
