@@ -15,12 +15,19 @@
 //! answer to a write doesn't expand the state:
 //!
 //! - `POST …/work-items/` (`name`, `description_html`, `state`, `parent`,
-//!   `type`);
+//!   `type_id`, `labels`);
 //! - `POST …/work-items/{item}/comments/` (`comment_html`);
-//! - `PATCH …/work-items/{item}/` (`name`, `description_html`, `state`);
-//! - `GET /api/v1/workspaces/{slug}/projects/{project}/states/` (paged,
-//!   `results`, each `id`, `group`, `sequence`), to turn a state group into
-//!   the first state in it.
+//! - `PATCH …/work-items/{item}/` (`name`, `description_html`, `state`,
+//!   `parent`, `type_id`, `labels`), after a read of the item's own labels
+//!   when some are added or taken off;
+//! - `POST …/modules/{module}/module-issues/` (`issues`: item ids), a call
+//!   of its own;
+//! - `GET /api/v1/workspaces/{slug}/work-items/{IDENT}-{N}/`, an item by
+//!   its number;
+//! - `GET …/projects/{project}/` `states/`, `modules/`, `labels/` and
+//!   `work-item-types/` (each paged `results`, or a bare array): a
+//!   project's [`Fields`]. A project without modules or types may answer
+//!   those with 404 or an empty list, which is none.
 //!
 //! Bodies and comments are HTML, already escaped by the caller; a title is
 //! plain text. An answer's body is never put in an error: Plane may echo
@@ -31,14 +38,17 @@ use std::time::Duration;
 use reqwest::header::{HeaderMap, HeaderValue};
 use serde_json::{Value, json};
 
-use super::{BoxFuture, Edit, Item, NewItem, Page, ProjectInfo, Relations, Result, TrackerError, TrackerProvider};
+use super::{
+    BoxFuture, Edit, Fields, Item, Named, NewItem, Page, ProjectInfo, Relations, Result, StateInfo, TrackerError,
+    TrackerProvider,
+};
 
 /// Items a page asks for: Plane's most.
 const PER_PAGE: u32 = 100;
 /// Most pages read looking for a project.
 const PROJECT_PAGES: usize = 20;
-/// Most pages of states read looking for a group's.
-const STATE_PAGES: usize = 5;
+/// Most pages read of one list of a project's fields.
+const FIELD_PAGES: usize = 5;
 /// How long Plane has to answer one request.
 const TIMEOUT: Duration = Duration::from_secs(30);
 
@@ -149,30 +159,69 @@ impl Plane {
         self.read(workspace, project_id, id).await
     }
 
-    /// The id of the first state of `group` in the project (the lowest
-    /// `sequence`).
-    async fn state_in(&self, workspace: &str, project_id: &str, group: &str) -> Result<String> {
-        let path = format!("/api/v1/workspaces/{}/projects/{}/states/", segment(workspace)?, segment(project_id)?);
+    /// Every entry of a project's list (`states`, `labels`…): paged
+    /// `results`, or a bare array.
+    async fn list_all(&self, workspace: &str, project_id: &str, what: &str) -> Result<Vec<Value>> {
+        let path = format!("/api/v1/workspaces/{}/projects/{}/{what}/", segment(workspace)?, segment(project_id)?);
         let mut cursor: Option<String> = None;
-        let mut best: Option<(f64, String)> = None;
-        for _ in 0..STATE_PAGES {
+        let mut all = vec![];
+        for _ in 0..FIELD_PAGES {
             let mut q = vec![("per_page", PER_PAGE.to_string())];
             q.extend(cursor.take().map(|c| ("cursor", c)));
             let v = self.get(&path, &q).await?;
-            for s in v["results"].as_array().into_iter().flatten() {
-                let (Some(id), Some(g)) = (s["id"].as_str(), s["group"].as_str()) else { continue };
-                let seq = s["sequence"].as_f64().unwrap_or(f64::MAX);
-                if g == group && best.as_ref().is_none_or(|(b, _)| seq < *b) {
-                    best = Some((seq, id.to_owned()));
+            match v.as_array() {
+                Some(bare) => {
+                    all.extend(bare.iter().cloned());
+                    break;
                 }
+                None => all.extend(v["results"].as_array().into_iter().flatten().cloned()),
             }
             cursor = next(&v);
             if cursor.is_none() {
                 break;
             }
         }
-        best.map(|(_, id)| id).ok_or_else(|| TrackerError::Unavailable(format!("the project has no {group} state")))
+        Ok(all)
     }
+
+    /// The ids of the labels an item has.
+    async fn labels_of(&self, workspace: &str, project_id: &str, id: &str) -> Result<Vec<String>> {
+        let path = format!(
+            "/api/v1/workspaces/{}/projects/{}/work-items/{}/",
+            segment(workspace)?,
+            segment(project_id)?,
+            segment(id)?
+        );
+        let v = self.get(&path, &[]).await?;
+        let label = |l: &Value| l.as_str().or_else(|| l["id"].as_str()).map(str::to_owned);
+        Ok(v["labels"].as_array().into_iter().flatten().filter_map(label).collect())
+    }
+}
+
+/// A list a project doesn't have (modules or types turned off, 404) is an
+/// empty one, not a failure: the states are still worth reading.
+fn absent_is_empty(r: Result<Vec<Value>>) -> Result<Vec<Value>> {
+    match r {
+        Err(TrackerError::NotFound) => Ok(vec![]),
+        r => r,
+    }
+}
+
+/// An item's labels with some added and some taken off.
+fn merged_labels(mut current: Vec<String>, add: &[String], remove: &[String]) -> Vec<String> {
+    for l in add {
+        if !current.contains(l) {
+            current.push(l.clone());
+        }
+    }
+    current.retain(|l| !remove.contains(l));
+    current
+}
+
+/// The ids and names in a list of a project's fields.
+fn named(all: &[Value]) -> Vec<Named> {
+    let one = |v: &Value| Some(Named { id: v["id"].as_str()?.to_owned(), name: v["name"].as_str()?.to_owned() });
+    all.iter().filter_map(one).collect()
 }
 
 /// `next_cursor`, when the answer says another page follows.
@@ -249,11 +298,17 @@ impl TrackerProvider for Plane {
             if let Some(h) = &new.body {
                 body["description_html"] = json!(h);
             }
-            if let Some(g) = &new.state_group {
-                body["state"] = json!(self.state_in(workspace, project_id, g).await?);
+            if let Some(s) = &new.state {
+                body["state"] = json!(segment(s)?);
+            }
+            if let Some(t) = &new.item_type {
+                body["type_id"] = json!(segment(t)?);
             }
             if let Some(p) = &new.parent_id {
                 body["parent"] = json!(segment(p)?);
+            }
+            if !new.labels.is_empty() {
+                body["labels"] = json!(new.labels.iter().map(|l| segment(l)).collect::<Result<Vec<_>>>()?);
             }
             let made = self.send(reqwest::Method::POST, &path, &[], Some(body)).await?;
             let id = made["id"]
@@ -286,12 +341,9 @@ impl TrackerProvider for Plane {
         workspace: &'a str,
         project_id: &'a str,
         id: &'a str,
-        group: &'a str,
+        state: &'a str,
     ) -> BoxFuture<'a, Result<Item>> {
-        Box::pin(async move {
-            let state = self.state_in(workspace, project_id, group).await?;
-            self.patch(workspace, project_id, id, json!({ "state": state })).await
-        })
+        Box::pin(async move { self.patch(workspace, project_id, id, json!({ "state": segment(state)? })).await })
     }
 
     fn edit<'a>(
@@ -309,7 +361,86 @@ impl TrackerProvider for Plane {
             if let Some(h) = &edit.body {
                 body["description_html"] = json!(h);
             }
+            if let Some(s) = &edit.state {
+                body["state"] = json!(segment(s)?);
+            }
+            if let Some(t) = &edit.item_type {
+                body["type_id"] = json!(segment(t)?);
+            }
+            if let Some(p) = &edit.parent_id {
+                body["parent"] = json!(segment(p)?);
+            }
+            if !edit.labels_add.is_empty() || !edit.labels_remove.is_empty() {
+                // Plane sets an item's labels whole: the union, less those taken off.
+                let current = self.labels_of(workspace, project_id, id).await?;
+                let labels = merged_labels(current, &edit.labels_add, &edit.labels_remove);
+                body["labels"] = json!(labels.iter().map(|l| segment(l)).collect::<Result<Vec<_>>>()?);
+            }
             self.patch(workspace, project_id, id, body).await
+        })
+    }
+
+    fn fields<'a>(&'a self, workspace: &'a str, project_id: &'a str) -> BoxFuture<'a, Result<Fields>> {
+        Box::pin(async move {
+            let mut states: Vec<(f64, StateInfo)> = vec![];
+            for s in self.list_all(workspace, project_id, "states").await? {
+                let (Some(id), Some(name), Some(group)) = (s["id"].as_str(), s["name"].as_str(), s["group"].as_str())
+                else {
+                    continue;
+                };
+                let info = StateInfo {
+                    id: id.into(),
+                    name: name.into(),
+                    group: group.into(),
+                    default: s["default"].as_bool() == Some(true),
+                };
+                states.push((s["sequence"].as_f64().unwrap_or(f64::MAX), info));
+            }
+            states.sort_by(|a, b| a.0.total_cmp(&b.0));
+            let modules = named(&absent_is_empty(self.list_all(workspace, project_id, "modules").await)?);
+            let labels = named(&absent_is_empty(self.list_all(workspace, project_id, "labels").await)?);
+            // Types aren't enabled for every project.
+            let types = absent_is_empty(self.list_all(workspace, project_id, "work-item-types").await)?;
+            let types =
+                named(&types.into_iter().filter(|t| t["is_active"].as_bool() != Some(false)).collect::<Vec<_>>());
+            Ok(Fields { states: states.into_iter().map(|(_, s)| s).collect(), modules, types, labels })
+        })
+    }
+
+    fn add_to_module<'a>(
+        &'a self,
+        workspace: &'a str,
+        project_id: &'a str,
+        module: &'a str,
+        id: &'a str,
+    ) -> BoxFuture<'a, Result<()>> {
+        Box::pin(async move {
+            let path = format!(
+                "/api/v1/workspaces/{}/projects/{}/modules/{}/module-issues/",
+                segment(workspace)?,
+                segment(project_id)?,
+                segment(module)?
+            );
+            self.send(reqwest::Method::POST, &path, &[], Some(json!({ "issues": [segment(id)?] }))).await.map(|_| ())
+        })
+    }
+
+    fn by_sequence<'a>(
+        &'a self,
+        workspace: &'a str,
+        project_id: &'a str,
+        identifier: &'a str,
+        sequence: u64,
+    ) -> BoxFuture<'a, Result<Item>> {
+        Box::pin(async move {
+            let path =
+                format!("/api/v1/workspaces/{}/work-items/{}-{sequence}/", segment(workspace)?, segment(identifier)?);
+            let v = self.get(&path, &[("expand", "state,type".into())]).await?;
+            // The identifier names a project: an item of another one isn't here.
+            if v["project"].as_str().is_some_and(|p| p != project_id) {
+                return Err(TrackerError::NotFound);
+            }
+            item(&v)
         })
     }
 
@@ -363,6 +494,20 @@ mod tests {
         assert_eq!(i.updated_at - i.created_at, 86_400_500);
         // Not expanded: no guessing at its state.
         assert!(item(&json!({ "id": "u1", "sequence_id": 7, "state": "uuid" })).is_err());
+    }
+
+    #[test]
+    fn labels_are_the_union_less_those_taken_off() {
+        let v = |l: &[&str]| l.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        assert_eq!(merged_labels(v(&["a", "b"]), &v(&["b", "c"]), &v(&[])), v(&["a", "b", "c"]));
+        assert_eq!(merged_labels(v(&["a", "b"]), &v(&["c"]), &v(&["a"])), v(&["b", "c"]));
+    }
+
+    #[test]
+    fn a_list_the_project_lacks_is_empty_but_other_failures_stay() {
+        assert_eq!(absent_is_empty(Err(TrackerError::NotFound)), Ok(vec![]));
+        assert_eq!(absent_is_empty(Ok(vec![json!(1)])), Ok(vec![json!(1)]));
+        assert_eq!(absent_is_empty(Err(TrackerError::Unauthorized)), Err(TrackerError::Unauthorized));
     }
 
     #[test]

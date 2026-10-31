@@ -75,6 +75,10 @@ pub enum Op {
     /// A Plane item by its key and number (`ALL-2212`): [`ItemView`].
     #[serde(rename = "tracker.get")]
     TrackerGet(TrackerRef),
+    /// What a Plane project offers an item, by its key or connection:
+    /// [`TrackerFields`](crate::projects::TrackerFields).
+    #[serde(rename = "tracker.fields")]
+    TrackerFields(TrackerFieldsQuery),
     /// A PR's head commit's checks: [`ForgeChecks`](crate::projects::ForgeChecks).
     #[serde(rename = "checks.get")]
     ChecksGet(ItemRef),
@@ -116,11 +120,12 @@ pub enum Op {
 }
 
 /// Every operation's name, reads and drafts first.
-pub const NAMES: [&str; 16] = [
+pub const NAMES: [&str; 17] = [
     "pr.get",
     "issue.get",
     "item.list",
     "tracker.get",
+    "tracker.fields",
     "checks.get",
     "inbox.list",
     "draft.create",
@@ -142,6 +147,7 @@ impl Op {
             Op::IssueGet(_) => "issue.get",
             Op::ItemList(_) => "item.list",
             Op::TrackerGet(_) => "tracker.get",
+            Op::TrackerFields(_) => "tracker.fields",
             Op::ChecksGet(_) => "checks.get",
             Op::InboxList(_) => "inbox.list",
             Op::DraftCreate(_) => "draft.create",
@@ -220,6 +226,20 @@ pub struct TrackerRef {
     pub project: Option<String>,
     pub key: String,
     pub number: u64,
+}
+
+/// `tracker.fields`: the Plane project connected to `project` (default: the
+/// reader's personal one) that `tracker` (its identifier) or `connection`
+/// (its id) names; with neither, the project's only one.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+pub struct TrackerFieldsQuery {
+    #[serde(default)]
+    pub project: Option<String>,
+    #[serde(default)]
+    pub tracker: Option<String>,
+    #[serde(default)]
+    pub connection: Option<String>,
 }
 
 /// `item.list`: a project's items (the reader's personal project when
@@ -427,6 +447,7 @@ mod tests {
             Op::IssueGet(r()),
             Op::ItemList(ItemQuery::default()),
             Op::TrackerGet(TrackerRef::default()),
+            Op::TrackerFields(TrackerFieldsQuery::default()),
             Op::ChecksGet(r()),
             Op::InboxList(InboxQuery::default()),
             Op::DraftCreate(NewDraft::default()),

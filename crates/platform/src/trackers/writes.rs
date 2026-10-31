@@ -15,6 +15,11 @@
 //!   comment ends with a blank line and `— via Arugula, by <person>` (for an
 //!   agent's, `<person>'s agent on <machine>`), so an edit can't take it away.
 //!   Bodies and comments go to Plane as escaped HTML; a title is plain text.
+//! - **Fields** (#422): a write may name a state, a module, a type and
+//!   labels (and a parent as `IDENT-N`). They are kept as the person or agent
+//!   said them and turned into the tracker's ids when the write is *sent*
+//!   ([`super::fields`]), so one that waited for approval meets the project
+//!   as it is then. An unknown name is a 422 that lists the real ones.
 //! - **After a write** the item is read back and written to the mirror
 //!   ([`super::connect::ingest_page`]), and the boards that hold it are told.
 //! - **The key** is opened for the call into a local `String`; an error says
@@ -35,7 +40,11 @@ use axum::{
 };
 use tracing::{info, warn};
 
-use super::{Edit, NewItem, TrackerError, TrackerProvider, connect::ingest_page};
+use super::{
+    Edit, Item, NewItem, TrackerError, TrackerProvider,
+    connect::ingest_page,
+    fields::{self, Wanted},
+};
 use crate::{
     Platform,
     auth::{Machine, Person},
@@ -135,6 +144,37 @@ fn text_ok(what: &str, t: &str, may_be_empty: bool) -> Result<String, ApiError> 
     Ok(t.to_owned())
 }
 
+/// A name or id, trimmed; none when it is empty.
+fn clean(s: &Option<String>) -> Option<String> {
+    s.as_deref().map(str::trim).filter(|s| !s.is_empty()).map(str::to_owned)
+}
+
+/// Names trimmed, the empty ones dropped, each once (in any case).
+fn clean_all(names: &[String]) -> Vec<String> {
+    let mut out: Vec<String> = vec![];
+    for n in names.iter().map(|n| n.trim()).filter(|n| !n.is_empty()) {
+        if !out.iter().any(|o| o.eq_ignore_ascii_case(n)) {
+            out.push(n.to_owned());
+        }
+    }
+    out
+}
+
+/// `IDENT-N`, split.
+fn parent_ref(p: &str) -> Option<(&str, u64)> {
+    let (ident, n) = p.trim().rsplit_once('-')?;
+    let n = n.parse::<u64>().ok().filter(|n| *n > 0)?;
+    (!ident.is_empty()).then_some((ident, n))
+}
+
+fn parent_ok(p: &Option<String>) -> Result<Option<String>, ApiError> {
+    let Some(p) = clean(p) else { return Ok(None) };
+    if parent_ref(&p).is_none() {
+        return Err(bad("parent: IDENT-N, such as ARUGU-7"));
+    }
+    Ok(Some(p))
+}
+
 fn tracker_error(e: TrackerError) -> ApiError {
     match e {
         TrackerError::Unauthorized => err(
@@ -207,23 +247,26 @@ async fn resolve(
         Ok(t)
     };
     Ok(match w {
-        TrackerWrite::Create { connection: own, tracker, title, body, state } => {
+        TrackerWrite::Create { connection: own, tracker, title, body, state, module, parent, item_type, labels } => {
             let asked = match (connection, own.as_deref()) {
                 (Some(a), Some(b)) if a != b => return Err(bad("connection: that isn't the one in the address")),
                 (Some(a), _) | (None, Some(a)) => Some(a),
                 (None, None) => None,
             };
             let c = create_in(app, project, asked, tracker.as_deref())?;
-            let state = match state.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
-                None => None,
-                Some(s @ ("backlog" | "unstarted" | "started")) => Some(s.to_owned()),
-                Some(_) => return Err(bad("state: backlog, unstarted or started")),
-            };
             let body = body.as_deref().map(|b| text_ok("a body", b, true)).transpose()?.filter(|b| !b.is_empty());
-            (
-                c.clone(),
-                TrackerWrite::Create { connection: Some(c.id), tracker: None, title: title_ok(title)?, body, state },
-            )
+            let create = TrackerWrite::Create {
+                connection: Some(c.id.clone()),
+                tracker: None,
+                title: title_ok(title)?,
+                body,
+                state: clean(state),
+                module: clean(module),
+                parent: parent_ok(parent)?,
+                item_type: clean(item_type),
+                labels: clean_all(labels),
+            };
+            (c, create)
         }
         TrackerWrite::Comment { item, text } => {
             let t = target(item)?;
@@ -237,16 +280,40 @@ async fn resolve(
             let t = target(item)?;
             (live(&t.connection_id)?, TrackerWrite::Reopen { item: t.id })
         }
-        TrackerWrite::Edit { item, title, body } => {
-            if title.is_none() && body.is_none() {
-                return Err(bad("an edit needs a title or a body"));
-            }
+        TrackerWrite::Edit { item, title, body, state, module, parent, item_type, labels, labels_remove } => {
             let t = target(item)?;
-            let title = title.as_deref().map(title_ok).transpose()?;
-            let body = body.as_deref().map(|b| text_ok("a body", b, true)).transpose()?;
-            (live(&t.connection_id)?, TrackerWrite::Edit { item: t.id, title, body })
+            let edit = TrackerWrite::Edit {
+                item: t.id,
+                title: title.as_deref().map(title_ok).transpose()?,
+                body: body.as_deref().map(|b| text_ok("a body", b, true)).transpose()?,
+                state: clean(state),
+                module: clean(module),
+                parent: parent_ok(parent)?,
+                item_type: clean(item_type),
+                labels: clean_all(labels),
+                labels_remove: clean_all(labels_remove),
+            };
+            if edit_is_empty(&edit) {
+                return Err(bad("an edit needs a title, a body, a state, a module, a parent, a type or labels"));
+            }
+            (live(&t.connection_id)?, edit)
         }
     })
+}
+
+/// An edit that changes nothing.
+fn edit_is_empty(w: &TrackerWrite) -> bool {
+    let TrackerWrite::Edit { title, body, state, module, parent, item_type, labels, labels_remove, .. } = w else {
+        return false;
+    };
+    title.is_none()
+        && body.is_none()
+        && state.is_none()
+        && module.is_none()
+        && parent.is_none()
+        && item_type.is_none()
+        && labels.is_empty()
+        && labels_remove.is_empty()
 }
 
 fn kind(w: &TrackerWrite) -> &'static str {
@@ -256,6 +323,17 @@ fn kind(w: &TrackerWrite) -> &'static str {
         TrackerWrite::Close { .. } => "close",
         TrackerWrite::Reopen { .. } => "reopen",
         TrackerWrite::Edit { .. } => "edit",
+    }
+}
+
+/// Whether `w` moves an item to another state: a close, a reopen, or an
+/// edit that names a state. An approval can tell these from an edit of the
+/// title or the body, which [`kind`] calls the same.
+pub fn changes_state(w: &TrackerWrite) -> bool {
+    match w {
+        TrackerWrite::Close { .. } | TrackerWrite::Reopen { .. } => true,
+        TrackerWrite::Edit { state, .. } => state.is_some(),
+        TrackerWrite::Create { .. } | TrackerWrite::Comment { .. } => false,
     }
 }
 
@@ -270,16 +348,8 @@ fn item_of(w: &TrackerWrite) -> Option<&str> {
     }
 }
 
-/// Send `w` (already resolved) to the tracker as `who`, with the footer;
-/// then read the item back into the mirror. The item's `fi_` id and its
-/// `IDENT-N`.
-pub async fn send(
-    app: &Platform,
-    project: &str,
-    c: &Connection,
-    w: &TrackerWrite,
-    who: &Who,
-) -> Result<(String, String), ApiError> {
+/// The connection's tracker, with its key opened for the call.
+pub fn provider(app: &Platform, project: &str, c: &Connection) -> Result<Arc<dyn TrackerProvider>, ApiError> {
     let master = app
         .secret_key
         .as_deref()
@@ -288,6 +358,79 @@ pub async fn send(
         .ok_or_else(|| err(StatusCode::CONFLICT, "this connection's API key isn't kept: connect the project again"))?;
     let provider: Arc<dyn TrackerProvider> = app.trackers.plane(&key);
     drop(key);
+    Ok(provider)
+}
+
+/// What a sent write came to.
+#[derive(Debug)]
+pub struct Landed {
+    /// The mirror row's `fi_` id.
+    pub item: String,
+    /// `IDENT-N`.
+    pub reference: String,
+    /// The state a close, a reopen or an edit moved it to.
+    pub state: Option<String>,
+    /// What didn't land of a write that did: the item is written, but not
+    /// put in its module.
+    pub note: Option<String>,
+}
+
+/// The parent `IDENT-N` as Plane's id: the mirror's item first, else Plane's
+/// own by number. It must be in the connection `c`.
+async fn parent_id(
+    app: &Platform,
+    project: &str,
+    c: &Connection,
+    provider: &dyn TrackerProvider,
+    parent: &str,
+) -> Result<String, ApiError> {
+    let (ident, n) = parent_ref(parent).ok_or_else(|| bad("parent: IDENT-N, such as ARUGU-7"))?;
+    if !ident.eq_ignore_ascii_case(&c.identifier) {
+        return Err(bad(&format!(
+            "parent: {} isn't in {}; a parent is in the same Plane project",
+            parent.trim(),
+            c.identifier
+        )));
+    }
+    if let Some(t) = app.db.tracker_target(project, &format!("{}-{n}", c.identifier))?
+        && t.connection_id == c.id
+    {
+        return Ok(t.source_item_id);
+    }
+    match provider.by_sequence(&c.workspace_slug, &c.source_project_id, &c.identifier, n).await {
+        Ok(found) => Ok(found.id),
+        Err(TrackerError::NotFound) => {
+            Err(bad(&format!("parent: Plane has no work item {}-{n} in {}", c.identifier, c.identifier)))
+        }
+        Err(e) => Err(tracker_error(e)),
+    }
+}
+
+/// Put `item` in the module, once it is written. A failure doesn't undo the
+/// write, so it comes back as a sentence for the answer, not an error that
+/// would have the write sent again.
+async fn in_module(
+    provider: &dyn TrackerProvider,
+    c: &Connection,
+    module: Option<&super::Named>,
+    item: &Item,
+) -> Option<String> {
+    let m = module?;
+    let put = provider.add_to_module(&c.workspace_slug, &c.source_project_id, &m.id, &item.id).await;
+    put.err().map(|e| format!("couldn't add it to module {}: {e}", m.name))
+}
+
+/// Send `w` (already resolved) to the tracker as `who`, with the footer;
+/// then read the item back into the mirror.
+pub async fn send(
+    app: &Platform,
+    project: &str,
+    c: &Connection,
+    w: &TrackerWrite,
+    who: &Who,
+) -> Result<Landed, ApiError> {
+    let provider = provider(app, project, c)?;
+    let provider = &*provider;
     let (ws, pid) = (c.workspace_slug.as_str(), c.source_project_id.as_str());
     let footer = who.footer();
     let source = |fi: &str| -> Result<String, ApiError> {
@@ -295,35 +438,95 @@ pub async fn send(
             app.db.tracker_target(project, fi)?.ok_or_else(|| err(StatusCode::NOT_FOUND, "no such Plane work item"))?;
         Ok(t.source_item_id)
     };
-    let done = match w {
-        TrackerWrite::Create { title, body, state, .. } => {
+    let (done, state, note) = match w {
+        TrackerWrite::Create { title, body, state, module, parent, item_type, labels, .. } => {
+            let wanted = Wanted {
+                state: state.as_deref(),
+                module: module.as_deref(),
+                item_type: item_type.as_deref(),
+                labels,
+                labels_remove: &[],
+            };
+            let picked = fields::resolve(app, c, provider, &wanted).await?;
+            let parent_id = match parent {
+                Some(p) => Some(parent_id(app, project, c, provider, p).await?),
+                None => None,
+            };
             let new = NewItem {
                 title: title.clone(),
                 body: Some(html(&with_footer(body.as_deref().unwrap_or_default(), &footer))),
-                state_group: state.clone(),
-                ..Default::default()
+                state: picked.state.map(|s| s.id),
+                item_type: picked.item_type.map(|t| t.id),
+                parent_id,
+                labels: picked.labels,
             };
-            provider.create(ws, pid, &new).await
+            let made = provider.create(ws, pid, &new).await.map_err(tracker_error)?;
+            let note = in_module(provider, c, picked.module.as_ref(), &made).await;
+            (made, None, note)
         }
         TrackerWrite::Comment { item, text } => {
             let id = source(item)?;
             provider.comment(ws, pid, &id, &html(&with_footer(text, &footer))).await.map_err(tracker_error)?;
-            provider.get(ws, pid, &id).await
+            (provider.get(ws, pid, &id).await.map_err(tracker_error)?, None, None)
         }
         TrackerWrite::Close { item, close_as } => {
             let group = match close_as {
                 TrackerClose::Completed => "completed",
                 TrackerClose::Cancelled => "cancelled",
             };
-            provider.set_state(ws, pid, &source(item)?, group).await
+            let to = fields::find(app, c, provider, |f| {
+                fields::group_state(f, group).cloned().ok_or_else(|| format!("{} has no {group} state", c.identifier))
+            })
+            .await?;
+            let id = source(item)?;
+            (provider.set_state(ws, pid, &id, &to.id).await.map_err(tracker_error)?, Some(to.name), None)
         }
-        TrackerWrite::Reopen { item } => provider.set_state(ws, pid, &source(item)?, "unstarted").await,
-        TrackerWrite::Edit { item, title, body } => {
-            let edit = Edit { title: title.clone(), body: body.as_deref().map(|b| html(&with_footer(b, &footer))) };
-            provider.edit(ws, pid, &source(item)?, &edit).await
+        TrackerWrite::Reopen { item } => {
+            let to = fields::find(app, c, provider, |f| {
+                fields::reopen_state(f)
+                    .cloned()
+                    .ok_or_else(|| format!("{} has no default or unstarted state to reopen into", c.identifier))
+            })
+            .await?;
+            let id = source(item)?;
+            (provider.set_state(ws, pid, &id, &to.id).await.map_err(tracker_error)?, Some(to.name), None)
         }
-    }
-    .map_err(tracker_error)?;
+        TrackerWrite::Edit { item, title, body, state, module, parent, item_type, labels, labels_remove } => {
+            let wanted = Wanted {
+                state: state.as_deref(),
+                module: module.as_deref(),
+                item_type: item_type.as_deref(),
+                labels,
+                labels_remove,
+            };
+            let picked = fields::resolve(app, c, provider, &wanted).await?;
+            let parent_id = match parent {
+                Some(p) => Some(parent_id(app, project, c, provider, p).await?),
+                None => None,
+            };
+            let id = source(item)?;
+            let moved = picked.state;
+            let edit = Edit {
+                title: title.clone(),
+                body: body.as_deref().map(|b| html(&with_footer(b, &footer))),
+                state: moved.as_ref().map(|s| s.id.clone()),
+                item_type: picked.item_type.map(|t| t.id),
+                parent_id,
+                labels_add: picked.labels,
+                labels_remove: picked.labels_remove,
+            };
+            let only_state = Edit { state: None, ..edit.clone() }.is_empty();
+            let written = match &moved {
+                // A state alone is a state change, so the history says "moved".
+                Some(s) if only_state => provider.set_state(ws, pid, &id, &s.id).await,
+                _ if edit.is_empty() => provider.get(ws, pid, &id).await,
+                _ => provider.edit(ws, pid, &id, &edit).await,
+            }
+            .map_err(tracker_error)?;
+            let note = in_module(provider, c, picked.module.as_ref(), &written).await;
+            (written, moved.map(|s| s.name), note)
+        }
+    };
     let changed = ingest_page(app, &c.id, c.mirror_id, None, std::slice::from_ref(&done), now_ms())?;
     if let Some(ids) = &changed {
         crate::boards::items_changed(app, ids);
@@ -332,17 +535,25 @@ pub async fn send(
         .db
         .tracker_item_id(&c.id, &done.id)?
         .ok_or_else(|| err(StatusCode::CONFLICT, "the connection was disconnected as the write was sent"))?;
-    Ok((fi, format!("{}-{}", c.identifier, done.sequence_id)))
+    Ok(Landed { item: fi, reference: format!("{}-{}", c.identifier, done.sequence_id), state, note })
 }
 
-fn sent_text(w: &TrackerWrite, reference: &str) -> String {
-    match w {
-        TrackerWrite::Create { .. } => format!("created {reference} in Plane"),
-        TrackerWrite::Comment { .. } => format!("commented on {reference} in Plane"),
-        TrackerWrite::Close { .. } => format!("closed {reference} in Plane"),
-        TrackerWrite::Reopen { .. } => format!("reopened {reference} in Plane"),
-        TrackerWrite::Edit { .. } => format!("edited {reference} in Plane"),
+fn sent_text(w: &TrackerWrite, l: &Landed) -> String {
+    let r = &l.reference;
+    let mut s = match w {
+        TrackerWrite::Create { .. } => format!("created {r} in Plane"),
+        TrackerWrite::Comment { .. } => format!("commented on {r} in Plane"),
+        TrackerWrite::Close { .. } => format!("closed {r} in Plane"),
+        TrackerWrite::Reopen { .. } => format!("reopened {r} in Plane ({})", l.state.as_deref().unwrap_or("?")),
+        TrackerWrite::Edit { .. } => match &l.state {
+            Some(state) => format!("edited {r} in Plane (now {state})"),
+            None => format!("edited {r} in Plane"),
+        },
+    };
+    if let Some(note) = &l.note {
+        s = format!("{s}; {note}");
     }
+    s
 }
 
 async fn land(
@@ -352,13 +563,13 @@ async fn land(
     w: &TrackerWrite,
     who: &Who,
 ) -> Result<TrackerWriteDone, ApiError> {
-    let (fi, reference) = send(app, project, c, w, who).await?;
+    let landed = send(app, project, c, w, who).await?;
     Ok(TrackerWriteDone {
         state: "sent".into(),
         write: None,
-        text: sent_text(w, &reference),
-        item: Some(fi),
-        reference: Some(reference),
+        text: sent_text(w, &landed),
+        item: Some(landed.item),
+        reference: Some(landed.reference),
     })
 }
 

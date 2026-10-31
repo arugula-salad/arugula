@@ -41,7 +41,7 @@ use axum::{
 };
 use tracing::{info, warn};
 
-use super::TrackerError;
+use super::{TrackerError, fields};
 use crate::{
     Platform,
     auth::Person,
@@ -468,6 +468,10 @@ async fn reconcile_turn(app: &Platform, job: &Backfill, now: u64) -> anyhow::Res
         .ok_or_else(|| anyhow::anyhow!("the connection's key isn't kept"))?;
     let provider = app.trackers.plane(&key);
     let since = app.db.tracker_newest(job.mirror_id)?.map(|t| t.saturating_sub(OVERLAP_MS));
+    // What writes may name (#422). A failure leaves the old ones: a write reads them again when it needs to.
+    if let Err(e) = fields::refresh(app, &job.id, &job.workspace_slug, &job.source_project_id, &*provider).await {
+        warn!(connection = %job.id, error = %e, "couldn't read a Plane project's fields");
+    }
     let (mut cursor, mut total) = (None::<String>, 0);
     for _ in 0..RECONCILE_PAGES {
         if !app.db.renew_backfill(job, now_ms())? {

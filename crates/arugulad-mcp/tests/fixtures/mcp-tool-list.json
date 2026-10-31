@@ -6872,7 +6872,7 @@
         "readOnlyHint": true,
         "title": "Read a linked repo's PRs and issues"
       },
-      "description": "Read PRs and issues on GitHub repos linked to the user's projects in Arugula control (list kind linked_repos lists them), with no block open: a PR, an issue, a list of them, a PR's checks, or drafts waiting for a person. As the user (the owner of this machine), and only what GitHub lets them read. For a repo that isn't linked, show (kind pr or issue) opens a block instead. Also Arugula's own (native) issues: kind issue with item \"#N\" (in the current project) or \"iss_…\", and kind native_issues (with this machine's threads.read grant).\n- pr {item}: A pull request: its state, title, author, labels, reviewers, branches, what happened to it (reviews, pushes) and its waiting drafts. Metadata only, no body or comments.\n- issue {item, project?}: An issue: its state, title, author, labels, assignees, what happened to it and its waiting drafts. A native issue (\"#N\" or \"iss_…\"): it, its timeline and its newest comments. A Plane item (\"IDENT-N\", such as ALL-2212): its title, state and url; its body and comments aren't mirrored.\n- items {author?, item_kind?, limit?, project?, provider?, q?, repo?, review_requested?, state?, tracker?}: The PRs and issues of one linked repo, or of a project's linked repos and its connected Plane projects' work items (provider plane, with identifier ALL and number so ALL-2212), last updated first; provider, tracker, item_kind, state, author, review_requested and q narrow it (q as IDENT-N finds that Plane item first). Repos the user can't read on GitHub are named as withheld.\n- checks {item}: A pull request's checks on its head commit: each one's status and conclusion.\n- inbox {done?, limit?}: The user's inbox: PRs and issues on their linked repos that want something of them (a review requested, their checks failed, changes requested, a mention, assigned, merged or ready, a draft waiting), newest first, each with whether they've seen it.\n- drafts {item?, project?, state?}: Drafts waiting for a person to send: on a PR or issue, a repo or a project, or the user's own.\n- draft {draft}: One draft: what it says and what became of it (waiting, sent with its link, discarded or failed).\n- native_issues {assignee?, author?, before?, labels?, limit?, project?, q?, state?}: Arugula's own (native) issues of a project in Arugula control (the current one unless project names it), newest first; state, labels, assignee, author and q (search words) narrow it. issue_write writes to them at once.",
+      "description": "Read PRs and issues on GitHub repos linked to the user's projects in Arugula control (list kind linked_repos lists them), with no block open: a PR, an issue, a list of them, a PR's checks, or drafts waiting for a person. As the user (the owner of this machine), and only what GitHub lets them read. For a repo that isn't linked, show (kind pr or issue) opens a block instead. Also Arugula's own (native) issues: kind issue with item \"#N\" (in the current project) or \"iss_…\", and kind native_issues (with this machine's threads.read grant).\n- pr {item}: A pull request: its state, title, author, labels, reviewers, branches, what happened to it (reviews, pushes) and its waiting drafts. Metadata only, no body or comments.\n- issue {item, project?}: An issue: its state, title, author, labels, assignees, what happened to it and its waiting drafts. A native issue (\"#N\" or \"iss_…\"): it, its timeline and its newest comments. A Plane item (\"IDENT-N\", such as ALL-2212): its title, state and url; its body and comments aren't mirrored.\n- items {author?, item_kind?, limit?, project?, provider?, q?, repo?, review_requested?, state?, tracker?}: The PRs and issues of one linked repo, or of a project's linked repos and its connected Plane projects' work items (provider plane, with identifier ALL and number so ALL-2212), last updated first; provider, tracker, item_kind, state, author, review_requested and q narrow it (q as IDENT-N finds that Plane item first). Repos the user can't read on GitHub are named as withheld.\n- tracker_fields {connection?, project?, tracker?}: What a connected Plane project offers a work item, for tracker_write: its states (name, group, which one a new item starts in), modules, types and labels. Name them in create and edit.\n- checks {item}: A pull request's checks on its head commit: each one's status and conclusion.\n- inbox {done?, limit?}: The user's inbox: PRs and issues on their linked repos that want something of them (a review requested, their checks failed, changes requested, a mention, assigned, merged or ready, a draft waiting), newest first, each with whether they've seen it.\n- drafts {item?, project?, state?}: Drafts waiting for a person to send: on a PR or issue, a repo or a project, or the user's own.\n- draft {draft}: One draft: what it says and what became of it (waiting, sent with its link, discarded or failed).\n- native_issues {assignee?, author?, before?, labels?, limit?, project?, q?, state?}: Arugula's own (native) issues of a project in Arugula control (the current one unless project names it), newest first; state, labels, assignee, author and q (search words) narrow it. issue_write writes to them at once.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
@@ -6899,6 +6899,14 @@
             "minimum": 0,
             "type": [
               "integer",
+              "null"
+            ]
+          },
+          "connection": {
+            "default": null,
+            "description": "tracker_fields: Or its id (tc_…, from capabilities' trackers).",
+            "type": [
+              "string",
               "null"
             ]
           },
@@ -6933,6 +6941,7 @@
               "pr",
               "issue",
               "items",
+              "tracker_fields",
               "checks",
               "inbox",
               "drafts",
@@ -6961,7 +6970,7 @@
           },
           "project": {
             "default": null,
-            "description": "issue: A native issue's project for \"#N\", or a Plane item's for IDENT-N: its\nid (prj_…) or personal.\nDefault: the one this clone's GitHub repo is linked to, else the\nuser's personal project. items: The project's id (prj_…). Default: the repo's project, else the\nuser's personal one. drafts: The project's id (prj_…): all of its drafts. native_issues: The project's id (prj_…) or personal. Default: the current project.",
+            "description": "issue: A native issue's project for \"#N\", or a Plane item's for IDENT-N: its\nid (prj_…) or personal.\nDefault: the one this clone's GitHub repo is linked to, else the\nuser's personal project. items, tracker_fields: The project's id (prj_…). Default: the repo's project, else the\nuser's personal one. drafts: The project's id (prj_…): all of its drafts. native_issues: The project's id (prj_…) or personal. Default: the current project.",
             "type": [
               "string",
               "null"
@@ -7009,7 +7018,7 @@
           },
           "tracker": {
             "default": null,
-            "description": "items: A Plane connection's key, such as ALL: only its items.",
+            "description": "items: A Plane connection's key, such as ALL: only its items. tracker_fields: A Plane connection's key, such as ARUGU. Not needed when the project\nhas one connection.",
             "type": [
               "string",
               "null"
@@ -8643,7 +8652,7 @@
         "readOnlyHint": false,
         "title": "Write to Plane"
       },
-      "description": "Write to the Plane project connected to a project in Arugula control: create a work item, comment on one, close it (completed or cancelled), reopen it, or edit its title or body. Your person's trackers.write grant over the project says you may, never more than their role. A write may wait: when the connection is set to approve each agent write (the default) it is kept for a person to approve, edit or drop in the project's Triage, and this says \"waiting for a person to approve it\" with its id; nothing has reached Plane yet, and you can't approve it yourself. When the connection allows agent writes it lands at once. What is sent ends with a line saying it was sent via Arugula by your person's agent on this machine. Items are named by their fi_ id (forge_read lists them) or IDENT-N, like ARUGU-7. Assignees are not supported.\n- create {title, body?, connection?, project?, state?, tracker?}: Create a work item in a connected Plane project (may wait for a person).\n- comment {item, text, project?}: Comment on a work item (may wait for a person).\n- close {as, item, project?}: Close a work item as completed or cancelled (may wait for a person).\n- reopen {item, project?}: Open a closed work item again (may wait for a person).\n- edit {item, body?, project?, title?}: Change a work item's title or body (may wait for a person).",
+      "description": "Write to the Plane project connected to a project in Arugula control: create a work item, comment on one, close it (completed or cancelled), reopen it (into the project's default state), or edit it. Your person's trackers.write grant over the project says you may, never more than their role. A write may wait: when the connection is set to approve each agent write (the default) it is kept for a person to approve, edit or drop in the project's Triage, and this says \"waiting for a person to approve it\" with its id; nothing has reached Plane yet, and you can't approve it yourself. When the connection allows agent writes it lands at once. What is sent ends with a line saying it was sent via Arugula by your person's agent on this machine. Create and edit also take state, module, type and labels by name (any case) or id, and parent as IDENT-N: an unknown name is refused with the project's real ones, and forge_read tracker_fields lists them. Items are named by their fi_ id (forge_read lists them) or IDENT-N, like ARUGU-7. Assignees are not supported.\n- create {title, body?, connection?, labels?, module?, parent?, project?, state?, tracker?, type?}: Create a work item in a connected Plane project (may wait for a person).\n- comment {item, text, project?}: Comment on a work item (may wait for a person).\n- close {as, item, project?}: Close a work item as completed or cancelled (may wait for a person).\n- reopen {item, project?}: Open a closed work item again (may wait for a person).\n- edit {item, body?, labels?, labels_remove?, module?, parent?, project?, state?, title?, type?}: Change a work item: its title, body, state, module, parent, type or labels (may wait for a person).",
       "inputSchema": {
         "$defs": {
           "CloseAs": {
@@ -8690,6 +8699,38 @@
             ],
             "type": "string"
           },
+          "labels": {
+            "default": [],
+            "description": "create: Labels to give it, by name or id. edit: Labels to add, by name or id.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "labels_remove": {
+            "default": [],
+            "description": "edit: Labels to take off, by name or id.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "module": {
+            "default": null,
+            "description": "create: The module to put it in, by name or id. edit: Put it in this module, by name or id.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "parent": {
+            "default": null,
+            "description": "create: Its parent, such as an epic: IDENT-N, like ARUGU-7. edit: Its parent: IDENT-N, like ARUGU-7.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "project": {
             "default": null,
             "description": "create: The project's id (prj_…) or personal. Default: the current project.",
@@ -8700,7 +8741,7 @@
           },
           "state": {
             "default": null,
-            "description": "create: The state group it starts in: backlog, unstarted or started.",
+            "description": "create: The state it starts in: its name (any case) or id, or a state group\n(backlog, unstarted, started, completed, cancelled): the first state\nof it. edit: Move it to this state: its name (any case) or id, or a state group.",
             "type": [
               "string",
               "null"
@@ -8720,6 +8761,14 @@
           "tracker": {
             "default": null,
             "description": "create: Or its identifier, like ARUGU, in any case.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "type": {
+            "default": null,
+            "description": "create, edit: Its type, such as Epic, by name or id.",
             "type": [
               "string",
               "null"
@@ -15608,7 +15657,7 @@
         "readOnlyHint": true,
         "title": "Read a linked repo's PRs and issues"
       },
-      "description": "Read PRs and issues on GitHub repos linked to the user's projects in Arugula control (list kind linked_repos lists them), with no block open: a PR, an issue, a list of them, a PR's checks, or drafts waiting for a person. As the user (the owner of this machine), and only what GitHub lets them read. For a repo that isn't linked, show (kind pr or issue) opens a block instead. Also Arugula's own (native) issues: kind issue with item \"#N\" (in the current project) or \"iss_…\", and kind native_issues (with this machine's threads.read grant).\n- pr {item}: A pull request: its state, title, author, labels, reviewers, branches, what happened to it (reviews, pushes) and its waiting drafts. Metadata only, no body or comments.\n- issue {item, project?}: An issue: its state, title, author, labels, assignees, what happened to it and its waiting drafts. A native issue (\"#N\" or \"iss_…\"): it, its timeline and its newest comments. A Plane item (\"IDENT-N\", such as ALL-2212): its title, state and url; its body and comments aren't mirrored.\n- items {author?, item_kind?, limit?, project?, provider?, q?, repo?, review_requested?, state?, tracker?}: The PRs and issues of one linked repo, or of a project's linked repos and its connected Plane projects' work items (provider plane, with identifier ALL and number so ALL-2212), last updated first; provider, tracker, item_kind, state, author, review_requested and q narrow it (q as IDENT-N finds that Plane item first). Repos the user can't read on GitHub are named as withheld.\n- checks {item}: A pull request's checks on its head commit: each one's status and conclusion.\n- inbox {done?, limit?}: The user's inbox: PRs and issues on their linked repos that want something of them (a review requested, their checks failed, changes requested, a mention, assigned, merged or ready, a draft waiting), newest first, each with whether they've seen it.\n- drafts {item?, project?, state?}: Drafts waiting for a person to send: on a PR or issue, a repo or a project, or the user's own.\n- draft {draft}: One draft: what it says and what became of it (waiting, sent with its link, discarded or failed).\n- native_issues {assignee?, author?, before?, labels?, limit?, project?, q?, state?}: Arugula's own (native) issues of a project in Arugula control (the current one unless project names it), newest first; state, labels, assignee, author and q (search words) narrow it. issue_write writes to them at once.",
+      "description": "Read PRs and issues on GitHub repos linked to the user's projects in Arugula control (list kind linked_repos lists them), with no block open: a PR, an issue, a list of them, a PR's checks, or drafts waiting for a person. As the user (the owner of this machine), and only what GitHub lets them read. For a repo that isn't linked, show (kind pr or issue) opens a block instead. Also Arugula's own (native) issues: kind issue with item \"#N\" (in the current project) or \"iss_…\", and kind native_issues (with this machine's threads.read grant).\n- pr {item}: A pull request: its state, title, author, labels, reviewers, branches, what happened to it (reviews, pushes) and its waiting drafts. Metadata only, no body or comments.\n- issue {item, project?}: An issue: its state, title, author, labels, assignees, what happened to it and its waiting drafts. A native issue (\"#N\" or \"iss_…\"): it, its timeline and its newest comments. A Plane item (\"IDENT-N\", such as ALL-2212): its title, state and url; its body and comments aren't mirrored.\n- items {author?, item_kind?, limit?, project?, provider?, q?, repo?, review_requested?, state?, tracker?}: The PRs and issues of one linked repo, or of a project's linked repos and its connected Plane projects' work items (provider plane, with identifier ALL and number so ALL-2212), last updated first; provider, tracker, item_kind, state, author, review_requested and q narrow it (q as IDENT-N finds that Plane item first). Repos the user can't read on GitHub are named as withheld.\n- tracker_fields {connection?, project?, tracker?}: What a connected Plane project offers a work item, for tracker_write: its states (name, group, which one a new item starts in), modules, types and labels. Name them in create and edit.\n- checks {item}: A pull request's checks on its head commit: each one's status and conclusion.\n- inbox {done?, limit?}: The user's inbox: PRs and issues on their linked repos that want something of them (a review requested, their checks failed, changes requested, a mention, assigned, merged or ready, a draft waiting), newest first, each with whether they've seen it.\n- drafts {item?, project?, state?}: Drafts waiting for a person to send: on a PR or issue, a repo or a project, or the user's own.\n- draft {draft}: One draft: what it says and what became of it (waiting, sent with its link, discarded or failed).\n- native_issues {assignee?, author?, before?, labels?, limit?, project?, q?, state?}: Arugula's own (native) issues of a project in Arugula control (the current one unless project names it), newest first; state, labels, assignee, author and q (search words) narrow it. issue_write writes to them at once.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
@@ -15635,6 +15684,14 @@
             "minimum": 0,
             "type": [
               "integer",
+              "null"
+            ]
+          },
+          "connection": {
+            "default": null,
+            "description": "tracker_fields: Or its id (tc_…, from capabilities' trackers).",
+            "type": [
+              "string",
               "null"
             ]
           },
@@ -15669,6 +15726,7 @@
               "pr",
               "issue",
               "items",
+              "tracker_fields",
               "checks",
               "inbox",
               "drafts",
@@ -15697,7 +15755,7 @@
           },
           "project": {
             "default": null,
-            "description": "issue: A native issue's project for \"#N\", or a Plane item's for IDENT-N: its\nid (prj_…) or personal.\nDefault: the one this clone's GitHub repo is linked to, else the\nuser's personal project. items: The project's id (prj_…). Default: the repo's project, else the\nuser's personal one. drafts: The project's id (prj_…): all of its drafts. native_issues: The project's id (prj_…) or personal. Default: the current project.",
+            "description": "issue: A native issue's project for \"#N\", or a Plane item's for IDENT-N: its\nid (prj_…) or personal.\nDefault: the one this clone's GitHub repo is linked to, else the\nuser's personal project. items, tracker_fields: The project's id (prj_…). Default: the repo's project, else the\nuser's personal one. drafts: The project's id (prj_…): all of its drafts. native_issues: The project's id (prj_…) or personal. Default: the current project.",
             "type": [
               "string",
               "null"
@@ -15745,7 +15803,7 @@
           },
           "tracker": {
             "default": null,
-            "description": "items: A Plane connection's key, such as ALL: only its items.",
+            "description": "items: A Plane connection's key, such as ALL: only its items. tracker_fields: A Plane connection's key, such as ARUGU. Not needed when the project\nhas one connection.",
             "type": [
               "string",
               "null"
@@ -17379,7 +17437,7 @@
         "readOnlyHint": false,
         "title": "Write to Plane"
       },
-      "description": "Write to the Plane project connected to a project in Arugula control: create a work item, comment on one, close it (completed or cancelled), reopen it, or edit its title or body. Your person's trackers.write grant over the project says you may, never more than their role. A write may wait: when the connection is set to approve each agent write (the default) it is kept for a person to approve, edit or drop in the project's Triage, and this says \"waiting for a person to approve it\" with its id; nothing has reached Plane yet, and you can't approve it yourself. When the connection allows agent writes it lands at once. What is sent ends with a line saying it was sent via Arugula by your person's agent on this machine. Items are named by their fi_ id (forge_read lists them) or IDENT-N, like ARUGU-7. Assignees are not supported.\n- create {title, body?, connection?, project?, state?, tracker?}: Create a work item in a connected Plane project (may wait for a person).\n- comment {item, text, project?}: Comment on a work item (may wait for a person).\n- close {as, item, project?}: Close a work item as completed or cancelled (may wait for a person).\n- reopen {item, project?}: Open a closed work item again (may wait for a person).\n- edit {item, body?, project?, title?}: Change a work item's title or body (may wait for a person).",
+      "description": "Write to the Plane project connected to a project in Arugula control: create a work item, comment on one, close it (completed or cancelled), reopen it (into the project's default state), or edit it. Your person's trackers.write grant over the project says you may, never more than their role. A write may wait: when the connection is set to approve each agent write (the default) it is kept for a person to approve, edit or drop in the project's Triage, and this says \"waiting for a person to approve it\" with its id; nothing has reached Plane yet, and you can't approve it yourself. When the connection allows agent writes it lands at once. What is sent ends with a line saying it was sent via Arugula by your person's agent on this machine. Create and edit also take state, module, type and labels by name (any case) or id, and parent as IDENT-N: an unknown name is refused with the project's real ones, and forge_read tracker_fields lists them. Items are named by their fi_ id (forge_read lists them) or IDENT-N, like ARUGU-7. Assignees are not supported.\n- create {title, body?, connection?, labels?, module?, parent?, project?, state?, tracker?, type?}: Create a work item in a connected Plane project (may wait for a person).\n- comment {item, text, project?}: Comment on a work item (may wait for a person).\n- close {as, item, project?}: Close a work item as completed or cancelled (may wait for a person).\n- reopen {item, project?}: Open a closed work item again (may wait for a person).\n- edit {item, body?, labels?, labels_remove?, module?, parent?, project?, state?, title?, type?}: Change a work item: its title, body, state, module, parent, type or labels (may wait for a person).",
       "inputSchema": {
         "$defs": {
           "CloseAs": {
@@ -17426,6 +17484,38 @@
             ],
             "type": "string"
           },
+          "labels": {
+            "default": [],
+            "description": "create: Labels to give it, by name or id. edit: Labels to add, by name or id.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "labels_remove": {
+            "default": [],
+            "description": "edit: Labels to take off, by name or id.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "module": {
+            "default": null,
+            "description": "create: The module to put it in, by name or id. edit: Put it in this module, by name or id.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "parent": {
+            "default": null,
+            "description": "create: Its parent, such as an epic: IDENT-N, like ARUGU-7. edit: Its parent: IDENT-N, like ARUGU-7.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "project": {
             "default": null,
             "description": "create: The project's id (prj_…) or personal. Default: the current project.",
@@ -17436,7 +17526,7 @@
           },
           "state": {
             "default": null,
-            "description": "create: The state group it starts in: backlog, unstarted or started.",
+            "description": "create: The state it starts in: its name (any case) or id, or a state group\n(backlog, unstarted, started, completed, cancelled): the first state\nof it. edit: Move it to this state: its name (any case) or id, or a state group.",
             "type": [
               "string",
               "null"
@@ -17456,6 +17546,14 @@
           "tracker": {
             "default": null,
             "description": "create: Or its identifier, like ARUGU, in any case.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "type": {
+            "default": null,
+            "description": "create, edit: Its type, such as Epic, by name or id.",
             "type": [
               "string",
               "null"
@@ -20502,7 +20600,7 @@
         "readOnlyHint": true,
         "title": "Read a linked repo's PRs and issues"
       },
-      "description": "Read PRs and issues on GitHub repos linked to the user's projects in Arugula control (list kind linked_repos lists them), with no block open: a PR, an issue, a list of them, a PR's checks, or drafts waiting for a person. As the user (the owner of this machine), and only what GitHub lets them read. For a repo that isn't linked, show (kind pr or issue) opens a block instead. Also Arugula's own (native) issues: kind issue with item \"#N\" (in the current project) or \"iss_…\", and kind native_issues (with this machine's threads.read grant).\n- pr {item}: A pull request: its state, title, author, labels, reviewers, branches, what happened to it (reviews, pushes) and its waiting drafts. Metadata only, no body or comments.\n- issue {item, project?}: An issue: its state, title, author, labels, assignees, what happened to it and its waiting drafts. A native issue (\"#N\" or \"iss_…\"): it, its timeline and its newest comments. A Plane item (\"IDENT-N\", such as ALL-2212): its title, state and url; its body and comments aren't mirrored.\n- items {author?, item_kind?, limit?, project?, provider?, q?, repo?, review_requested?, state?, tracker?}: The PRs and issues of one linked repo, or of a project's linked repos and its connected Plane projects' work items (provider plane, with identifier ALL and number so ALL-2212), last updated first; provider, tracker, item_kind, state, author, review_requested and q narrow it (q as IDENT-N finds that Plane item first). Repos the user can't read on GitHub are named as withheld.\n- checks {item}: A pull request's checks on its head commit: each one's status and conclusion.\n- inbox {done?, limit?}: The user's inbox: PRs and issues on their linked repos that want something of them (a review requested, their checks failed, changes requested, a mention, assigned, merged or ready, a draft waiting), newest first, each with whether they've seen it.\n- drafts {item?, project?, state?}: Drafts waiting for a person to send: on a PR or issue, a repo or a project, or the user's own.\n- draft {draft}: One draft: what it says and what became of it (waiting, sent with its link, discarded or failed).\n- native_issues {assignee?, author?, before?, labels?, limit?, project?, q?, state?}: Arugula's own (native) issues of a project in Arugula control (the current one unless project names it), newest first; state, labels, assignee, author and q (search words) narrow it. issue_write writes to them at once.",
+      "description": "Read PRs and issues on GitHub repos linked to the user's projects in Arugula control (list kind linked_repos lists them), with no block open: a PR, an issue, a list of them, a PR's checks, or drafts waiting for a person. As the user (the owner of this machine), and only what GitHub lets them read. For a repo that isn't linked, show (kind pr or issue) opens a block instead. Also Arugula's own (native) issues: kind issue with item \"#N\" (in the current project) or \"iss_…\", and kind native_issues (with this machine's threads.read grant).\n- pr {item}: A pull request: its state, title, author, labels, reviewers, branches, what happened to it (reviews, pushes) and its waiting drafts. Metadata only, no body or comments.\n- issue {item, project?}: An issue: its state, title, author, labels, assignees, what happened to it and its waiting drafts. A native issue (\"#N\" or \"iss_…\"): it, its timeline and its newest comments. A Plane item (\"IDENT-N\", such as ALL-2212): its title, state and url; its body and comments aren't mirrored.\n- items {author?, item_kind?, limit?, project?, provider?, q?, repo?, review_requested?, state?, tracker?}: The PRs and issues of one linked repo, or of a project's linked repos and its connected Plane projects' work items (provider plane, with identifier ALL and number so ALL-2212), last updated first; provider, tracker, item_kind, state, author, review_requested and q narrow it (q as IDENT-N finds that Plane item first). Repos the user can't read on GitHub are named as withheld.\n- tracker_fields {connection?, project?, tracker?}: What a connected Plane project offers a work item, for tracker_write: its states (name, group, which one a new item starts in), modules, types and labels. Name them in create and edit.\n- checks {item}: A pull request's checks on its head commit: each one's status and conclusion.\n- inbox {done?, limit?}: The user's inbox: PRs and issues on their linked repos that want something of them (a review requested, their checks failed, changes requested, a mention, assigned, merged or ready, a draft waiting), newest first, each with whether they've seen it.\n- drafts {item?, project?, state?}: Drafts waiting for a person to send: on a PR or issue, a repo or a project, or the user's own.\n- draft {draft}: One draft: what it says and what became of it (waiting, sent with its link, discarded or failed).\n- native_issues {assignee?, author?, before?, labels?, limit?, project?, q?, state?}: Arugula's own (native) issues of a project in Arugula control (the current one unless project names it), newest first; state, labels, assignee, author and q (search words) narrow it. issue_write writes to them at once.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
@@ -20529,6 +20627,14 @@
             "minimum": 0,
             "type": [
               "integer",
+              "null"
+            ]
+          },
+          "connection": {
+            "default": null,
+            "description": "tracker_fields: Or its id (tc_…, from capabilities' trackers).",
+            "type": [
+              "string",
               "null"
             ]
           },
@@ -20563,6 +20669,7 @@
               "pr",
               "issue",
               "items",
+              "tracker_fields",
               "checks",
               "inbox",
               "drafts",
@@ -20591,7 +20698,7 @@
           },
           "project": {
             "default": null,
-            "description": "issue: A native issue's project for \"#N\", or a Plane item's for IDENT-N: its\nid (prj_…) or personal.\nDefault: the one this clone's GitHub repo is linked to, else the\nuser's personal project. items: The project's id (prj_…). Default: the repo's project, else the\nuser's personal one. drafts: The project's id (prj_…): all of its drafts. native_issues: The project's id (prj_…) or personal. Default: the current project.",
+            "description": "issue: A native issue's project for \"#N\", or a Plane item's for IDENT-N: its\nid (prj_…) or personal.\nDefault: the one this clone's GitHub repo is linked to, else the\nuser's personal project. items, tracker_fields: The project's id (prj_…). Default: the repo's project, else the\nuser's personal one. drafts: The project's id (prj_…): all of its drafts. native_issues: The project's id (prj_…) or personal. Default: the current project.",
             "type": [
               "string",
               "null"
@@ -20639,7 +20746,7 @@
           },
           "tracker": {
             "default": null,
-            "description": "items: A Plane connection's key, such as ALL: only its items.",
+            "description": "items: A Plane connection's key, such as ALL: only its items. tracker_fields: A Plane connection's key, such as ARUGU. Not needed when the project\nhas one connection.",
             "type": [
               "string",
               "null"

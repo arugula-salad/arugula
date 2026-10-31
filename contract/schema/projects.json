@@ -1410,6 +1410,102 @@
       ],
       "type": "object"
     },
+    "TrackerFieldName": {
+      "description": "A module, a type or a label of a Plane project.",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "name"
+      ],
+      "type": "object"
+    },
+    "TrackerFieldState": {
+      "description": "A state of a Plane project, as `tracker.fields` lists them.",
+      "properties": {
+        "default": {
+          "description": "The state a new item starts in.",
+          "type": "boolean"
+        },
+        "group": {
+          "description": "`backlog`, `unstarted`, `started`, `completed` or `cancelled`.",
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "group",
+        "default"
+      ],
+      "type": "object"
+    },
+    "TrackerFields": {
+      "description": "What a connected Plane project offers a work item (#422): the names a\n[`TrackerWrite`] may use.",
+      "properties": {
+        "connection": {
+          "description": "The connection (`tc_…`) and its identifier, such as `ARUGU`.",
+          "type": "string"
+        },
+        "identifier": {
+          "type": "string"
+        },
+        "labels": {
+          "items": {
+            "$ref": "#/$defs/TrackerFieldName"
+          },
+          "type": "array"
+        },
+        "modules": {
+          "items": {
+            "$ref": "#/$defs/TrackerFieldName"
+          },
+          "type": "array"
+        },
+        "read_at": {
+          "description": "When control last read them from Plane (milliseconds).",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "states": {
+          "description": "In the order Plane keeps them.",
+          "items": {
+            "$ref": "#/$defs/TrackerFieldState"
+          },
+          "type": "array"
+        },
+        "types": {
+          "description": "Empty when the project doesn't have item types.",
+          "items": {
+            "$ref": "#/$defs/TrackerFieldName"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "connection",
+        "identifier",
+        "states",
+        "modules",
+        "types",
+        "labels",
+        "read_at"
+      ],
+      "type": "object"
+    },
     "TrackerPendingWrite": {
       "description": "A write waiting for a person, as the Triage page shows it.",
       "properties": {
@@ -1580,7 +1676,7 @@
       "description": "A write to a tracker's work item, the same for people and agents. `item`\nis the mirror's `fi_` id, or `IDENT-N` (the connection's identifier and\nthe item's number). Assignees are not here: a tracker's members aren't\nArugula's people.",
       "oneOf": [
         {
-          "description": "A new item. On an agent's route `connection` or `tracker` (the\nconnection's identifier, in any case) says where; with neither, the\nproject's only live connection is used. On a person's, the path's\nconnection is it. `state` is a state group (`backlog`, `unstarted`,\n`started`).",
+          "description": "A new item. On an agent's route `connection` or `tracker` (the\nconnection's identifier, in any case) says where; with neither, the\nproject's only live connection is used. On a person's, the path's\nconnection is it. `state` is a state's name or id, or a state group\n(`backlog`, `unstarted`, `started`, `completed`, `cancelled`: its\nfirst state); `state_group` is the same, as an older daemon sends\nit. `module`, `type` and `labels` are names or ids and `parent` is\n`IDENT-N`; control turns them into the tracker's ids when it sends\nthe write.",
           "properties": {
             "body": {
               "default": null,
@@ -1600,6 +1696,27 @@
               "const": "create",
               "type": "string"
             },
+            "labels": {
+              "default": [],
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "module": {
+              "default": null,
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "parent": {
+              "default": null,
+              "type": [
+                "string",
+                "null"
+              ]
+            },
             "state": {
               "default": null,
               "type": [
@@ -1611,6 +1728,13 @@
               "type": "string"
             },
             "tracker": {
+              "default": null,
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "type": {
               "default": null,
               "type": [
                 "string",
@@ -1665,6 +1789,7 @@
           "type": "object"
         },
         {
+          "description": "Open it again, in the project's default state.",
           "properties": {
             "item": {
               "type": "string"
@@ -1681,6 +1806,7 @@
           "type": "object"
         },
         {
+          "description": "Change an item: what is `None` or empty stays. The fields are a\ncreate's; `labels` are added and `labels_remove` taken off.",
           "properties": {
             "body": {
               "default": null,
@@ -1696,7 +1822,49 @@
               "const": "edit",
               "type": "string"
             },
+            "labels": {
+              "default": [],
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "labels_remove": {
+              "default": [],
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "module": {
+              "default": null,
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "parent": {
+              "default": null,
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "state": {
+              "default": null,
+              "type": [
+                "string",
+                "null"
+              ]
+            },
             "title": {
+              "default": null,
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "type": {
               "default": null,
               "type": [
                 "string",
