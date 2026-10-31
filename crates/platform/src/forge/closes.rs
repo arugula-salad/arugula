@@ -140,4 +140,3 @@ pub(crate) async fn merger(p: &Platform, project: &str, github: Option<u64>) -> 
     };
     member.then_some(account)
 }
-
