@@ -460,8 +460,12 @@ jobs:
           claude-code: "true"
       - run: scripts/ci-env use
       - run: just bootstrap
-      - name: Playwright's browsers
-        run: just browsers
+      # Chromium only: under E2E_SET=rest the webkit project matches nothing
+      # (playwright.config.ts), and WebKit's system packages were most of
+      # the step's apt time (114 MB, 20 s to 1.5 min a shard, #259). setup
+      # restores ~/.cache/ms-playwright, so the browser itself isn't fetched.
+      - name: Playwright's Chromium
+        run: just browsers chromium
       # Shards by recorded time (web/scripts/e2e-shard.mjs, e2e/durations.json),
       # not Playwright's --shard by count: six of those ran 155-316 s (#868).
       # Twelve since #259: on GitHub's runners a shard more costs no pod
