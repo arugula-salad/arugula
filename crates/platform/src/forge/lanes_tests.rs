@@ -534,7 +534,9 @@ async fn every_sources_issue_has_a_category_and_done_means_the_same() {
             params![team],
         )
         .unwrap();
-    for (id, number, state, group) in [("fi_pl1", 1u64, "closed", "cancelled"), ("fi_pl2", 2, "open", "started")] {
+    for (id, number, state, group) in
+        [("fi_pl1", 1u64, "closed", "cancelled"), ("fi_pl2", 2, "open", "started"), ("fi_pl3", 3, "open", "completed")]
+    {
         app.db
             .c()
             .execute(
@@ -558,6 +560,7 @@ async fn every_sources_issue_has_a_category_and_done_means_the_same() {
     let pointers = [
         fi("fi_pl1"),
         fi("fi_pl2"),
+        fi("fi_pl3"),
         fi("fi_gc"),
         json!({ "kind": "issue", "id": dropped }),
         json!({ "kind": "issue", "id": open }),
@@ -573,6 +576,7 @@ async fn every_sources_issue_has_a_category_and_done_means_the_same() {
     let is = |lane: &str, category: &str| (lane.to_owned(), Some(category.to_owned()));
     assert_eq!(seen("fi_pl1"), is("lane_done", "canceled"), "{v}");
     assert_eq!(seen("fi_pl2"), is("lane_next", "started"), "{v}");
+    assert_eq!(seen("fi_pl3"), is("lane_done", "completed"), "the group decides, not the mirrored state: {v}");
     assert_eq!(seen("fi_gc"), is("lane_done", "completed"), "{v}");
     assert_eq!(seen(&dropped), is("lane_done", "canceled"), "{v}");
     assert_eq!(seen(&open), is("lane_next", "unstarted"), "{v}");
