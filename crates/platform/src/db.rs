@@ -33,6 +33,7 @@ pub mod boards;
 pub mod boards_asks;
 pub mod boards_lanes;
 pub mod boards_relations;
+pub mod boards_work;
 pub mod chat;
 pub mod chat_files;
 pub mod chat_people;
@@ -78,6 +79,7 @@ pub mod sessions;
 pub mod sql;
 pub mod trackers;
 pub mod triggers;
+pub mod work_items;
 
 pub use pg::Listening;
 pub use sql::{Conn, Sql};
@@ -136,6 +138,7 @@ impl Db {
         }
         let db = Self { backend: Backend::Sqlite(Mutex::new(conn)) };
         db.lanes_moved()?;
+        db.work_moved()?;
         Ok(db)
     }
 
@@ -155,6 +158,7 @@ impl Db {
             tracing::info!(?ran, "the platform's schema, on Postgres");
         }
         db.lanes_moved()?;
+        db.work_moved()?;
         Ok(db)
     }
 
@@ -199,6 +203,16 @@ impl Db {
         let moved = self.lanes_move().context("moving boards to lanes")?;
         if moved.boards > 0 {
             tracing::info!(?moved, "boards moved to lanes");
+        }
+        Ok(())
+    }
+
+    /// Board rows given their work items ([`Db::work_move`]), once, after
+    /// the migrations and the move to lanes.
+    fn work_moved(&self) -> anyhow::Result<()> {
+        let moved = self.work_move().context("giving board rows their work items")?;
+        if moved.boards > 0 {
+            tracing::info!(?moved, "board rows moved to work items");
         }
         Ok(())
     }

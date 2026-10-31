@@ -22,6 +22,11 @@
 //!   [`Attached`]); deleting a row takes its attachments.
 //! - Asks (`board_asks`, [`super::boards_asks`]) are questions on a row; deleting
 //!   a row takes its asks.
+//! - A row whose item is an issue has its **work item** (`work_item`,
+//!   [`super::work_items`]): the native issue and the GitHub issue it was
+//!   exported to are one, so a board holds one row for the two. The row
+//!   keeps its pointer; [`Db::work_move`] gives the rows of an older build
+//!   their work items on start.
 //! - A pointer is stored, not resolved. A row's `note` and `status` are
 //!   separate columns.
 //! - Deleting a project (or its account) takes its boards.
@@ -31,7 +36,7 @@
 
 use anyhow::{Result, bail};
 use arugula_control_wire::{
-    boards::{AttachRole, BlockState, BlockWord, Board, Diffstat, EntryKind, Pointer, Status},
+    boards::{AttachRole, BlockState, BlockWord, Board, Category, Diffstat, EntryKind, Pointer, Status},
     chat::ChatAgent,
 };
 
@@ -42,7 +47,13 @@ use super::{
     issues::Actor,
     sql::{Optional as _, Row, Sql, params},
 };
-use crate::Deleted;
+use crate::{
+    Deleted,
+    boards::{
+        lanes::native_category,
+        refs::{Candidate, Refs, rows_named},
+    },
+};
 
 /// A new board's id: `brd_` and 32 hex characters.
 fn new_board_id() -> String {
@@ -99,6 +110,9 @@ pub struct Entry {
     pub zone: Option<String>,
     pub created_at: u64,
     pub updated_at: u64,
+    /// The work item of the row's issue (`work_item_refs`); none for a note,
+    /// a PR and the rest.
+    pub work_item: Option<String>,
 }
 
 /// One group as stored.
@@ -168,7 +182,7 @@ pub struct Move<'a> {
 const BOARD_COLS: &str = "id, project_id, title, created_by, created_at, updated_at, goal, done_note, closed_at, \
                           closed_by, created_by_agent, closed_by_agent";
 pub(super) const ENTRY_COLS: &str =
-    "id, rev, note, status, target_kind, target, pane, created_at, updated_at, agent, zone_id";
+    "id, rev, note, status, target_kind, target, pane, created_at, updated_at, agent, zone_id, work_item";
 const ATTACHED_COLS: &str = "id, row_id, role, target_kind, target, pane, agent, created_at, released_at";
 
 fn board_row(r: &Row) -> Result<Board> {
@@ -280,6 +294,7 @@ pub(super) fn entry_row(r: &Row) -> Result<Entry> {
         updated_at: r.get(8)?,
         agent: r.get(9)?,
         zone: r.get(10)?,
+        work_item: r.get(11)?,
     })
 }
 
@@ -334,7 +349,7 @@ fn group_of(c: &impl Sql, board: &str, id: &str) -> Result<Option<Group>> {
 }
 
 /// The ids of a board's rows, in order.
-fn siblings(c: &impl Sql, board: &str) -> Result<Vec<String>> {
+pub(super) fn siblings(c: &impl Sql, board: &str) -> Result<Vec<String>> {
     c.query_map(
         "SELECT id FROM board_entries WHERE board_id = ?1 AND kind = 'row' ORDER BY position, id",
         params![board],
@@ -352,11 +367,31 @@ fn group_ids(c: &impl Sql, board: &str) -> Result<Vec<String>> {
 }
 
 /// Number `ids` 0, 1, 2... as the order of their siblings.
-fn renumber(c: &impl Sql, ids: &[String]) -> Result<()> {
+pub(super) fn renumber(c: &impl Sql, ids: &[String]) -> Result<()> {
     for (i, id) in ids.iter().enumerate() {
         c.execute("UPDATE board_entries SET position = ?2 WHERE id = ?1 AND position != ?2", params![id, i])?;
     }
     Ok(())
+}
+
+/// The work item of the issue a pointer is, made if it has none.
+fn work_item_of(c: &impl Sql, p: Option<&Pointer>, at: u64) -> Result<Option<String>> {
+    match p {
+        Some(Pointer::Issue { id } | Pointer::ForgeItem { id }) => super::work_items::work_item_for(c, id, at),
+        _ => Ok(None),
+    }
+}
+
+/// The row of `board`, other than `except`, that is `work_item`: a board
+/// has one row for a piece of work.
+fn taken(c: &impl Sql, board: &str, work_item: Option<&str>, except: Option<&str>) -> Result<Option<String>> {
+    let Some(work_item) = work_item else { return Ok(None) };
+    c.query_row(
+        "SELECT id FROM board_entries WHERE board_id = ?1 AND kind = 'row' AND work_item = ?2 AND id <> ?3",
+        params![board, work_item, except.unwrap_or("")],
+        |r| r.get(0),
+    )
+    .optional()
 }
 
 pub(super) fn touch(c: &impl Sql, board: &str, at: u64) -> Result<()> {
@@ -392,6 +427,10 @@ pub struct ItemFact {
     /// A tracker's items have a negative one.
     pub repo_id: i64,
     pub head_sha: Option<String>,
+    /// `plane` for a tracker's item, `github` for the rest.
+    pub provider: String,
+    /// A tracker item's own state group.
+    pub state_group: Option<String>,
 }
 
 /// A native issue as a board row reads it.
@@ -400,6 +439,8 @@ pub struct IssueState {
     pub number: u64,
     pub title: String,
     pub closed: bool,
+    /// Its status category, from how it closed.
+    pub category: Category,
     /// Accounts; a list that doesn't parse reads as none.
     pub assignees: Vec<String>,
 }
@@ -486,7 +527,7 @@ impl Db {
         let mut rows = c.query_map(
             &format!("SELECT {ENTRY_COLS}, position FROM board_entries WHERE board_id = ?1 AND kind = 'row'"),
             params![id],
-            |r| Ok((entry_row(r)?, r.get::<u64>(11)?)),
+            |r| Ok((entry_row(r)?, r.get::<u64>(12)?)),
         )?;
         // By group, in the groups' order (a row with none, or in a group that
         // isn't there, last), then as the board has them.
@@ -663,10 +704,14 @@ impl Db {
                     // Without a new pointer, the stored one is left as it is
                     // (one this build can't read included).
                     if let Some((kind, target, pane)) = p.pointer.map(pointer_cols) {
+                        let work_item = work_item_of(&tx, p.pointer, at)?;
+                        if let Some(held) = taken(&tx, board, work_item.as_deref(), Some(id))? {
+                            return bad(format!("that is row {held} on this board already"));
+                        }
                         tx.execute(
                             "UPDATE board_entries SET rev = rev + 1, note = ?2, target_kind = ?3, target = ?4, pane = ?5,
-                                 updated_at = ?6 WHERE id = ?1",
-                            params![id, note, kind, target, pane, at],
+                                 updated_at = ?6, work_item = ?7 WHERE id = ?1",
+                            params![id, note, kind, target, pane, at, work_item],
                         )?;
                     } else {
                         tx.execute(
@@ -718,11 +763,15 @@ impl Db {
                     return Ok(Err(Refused::Missing("no such group")));
                 }
                 let (kind, target, pane) = p.pointer.map(pointer_cols).unwrap_or((None, None, None));
+                let work_item = work_item_of(&tx, p.pointer, at)?;
+                if let Some(held) = taken(&tx, board, work_item.as_deref(), None)? {
+                    return bad(format!("that is row {held} on this board already"));
+                }
                 let id = new_row_id();
                 tx.execute(
                     "INSERT INTO board_entries (id, board_id, kind, zone_id, position, note, status, target_kind, target,
-                         pane, created_at, updated_at, agent)
-                     VALUES (?1, ?2, 'row', ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?10, ?11)",
+                         pane, created_at, updated_at, agent, work_item)
+                     VALUES (?1, ?2, 'row', ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?10, ?11, ?12)",
                     params![
                         id,
                         board,
@@ -734,7 +783,8 @@ impl Db {
                         target,
                         pane,
                         at,
-                        p.agent
+                        p.agent,
+                        work_item
                     ],
                 )?;
                 for from in absorb {
@@ -1018,16 +1068,19 @@ impl Db {
         let c = self.c();
         c.query_map(
             &format!(
-                "SELECT id, number, title, closed_at IS NOT NULL, assignees FROM issues WHERE project_id = ?1 AND {}",
+                "SELECT id, number, title, closed_at IS NOT NULL, assignees, close_reason FROM issues
+                 WHERE project_id = ?1 AND {}",
                 in_json(&c, "id", 2)
             ),
             params![project, json_list(ids)?],
             |r| {
+                let closed: bool = r.get(3)?;
                 Ok(IssueState {
                     id: r.get(0)?,
                     number: r.get(1)?,
                     title: r.get(2)?,
-                    closed: r.get(3)?,
+                    closed,
+                    category: native_category(closed, r.get::<Option<String>>(5)?.as_deref()),
                     assignees: serde_json::from_str(&r.get::<String>(4)?).unwrap_or_default(),
                 })
             },
@@ -1047,7 +1100,7 @@ impl Db {
         let c = self.c();
         let items = c.query_map(
             &format!(
-                "SELECT i.id, i.kind, i.state, i.repo_id, i.head_sha FROM forge_items i
+                "SELECT i.id, i.kind, i.state, i.repo_id, i.head_sha, i.provider, i.state_group FROM forge_items i
                  WHERE (i.repo_id IN (SELECT repo_id FROM linked_repos WHERE project_id = ?2 AND unlinked_at IS NULL)
                         OR i.connection_id IN
                            (SELECT id FROM tracker_connections WHERE project_id = ?2 AND unlinked_at IS NULL))
@@ -1062,6 +1115,8 @@ impl Db {
                     state: r.get(2)?,
                     repo_id: r.get(3)?,
                     head_sha: r.get(4)?,
+                    provider: r.get(5)?,
+                    state_group: r.get(6)?,
                 })
             },
         )?;
@@ -1291,6 +1346,12 @@ pub(crate) fn erase_account(c: &impl Sql, d: &Deleted) -> Result<()> {
              (SELECT id FROM boards WHERE project_id NOT IN (SELECT id FROM projects))",
         params![],
     )?;
+    c.execute(
+        "DELETE FROM work_item_refs WHERE work_item IN
+             (SELECT id FROM work_items WHERE project_id NOT IN (SELECT id FROM projects))",
+        params![],
+    )?;
+    c.execute("DELETE FROM work_items WHERE project_id NOT IN (SELECT id FROM projects)", params![])?;
     super::boards_asks::erase_account(c, d)?;
     super::boards_relations::erase_account(c, d)?;
     c.execute("DELETE FROM board_settings WHERE project_id NOT IN (SELECT id FROM projects)", params![])?;
@@ -1369,20 +1430,21 @@ impl Db {
     }
 
     /// Make the automatic attachments of PR `pr` (of `repo`) in `project`
-    /// what its references say: attached as work to each row whose issue
-    /// is one of `numbers` (a native issue of the project, or an issue of
-    /// `repo`) or one of the Plane items `plane` ((`mirror_id`, number)),
+    /// what its references say: attached as work to the rows
+    /// [`rows_named`] finds on each board (a native issue of the project, an
+    /// issue of `repo`, or one of the Plane items `plane`, ((`mirror_id`,
+    /// number)), by the issue a row points at or any issue of its work item),
     /// and taken off a row it no longer names. One indexed read finds the
-    /// rows; a row the PR is attached to already (by a person, an agent or
-    /// this), or whose board has the PR as a row, is left as it is, and so
-    /// is any attachment that isn't automatic.
+    /// rows that may be named; a row the PR is attached to already (by a
+    /// person, an agent or this), or whose board has the PR as a row, is
+    /// left as it is, and so is any attachment that isn't automatic.
     #[allow(clippy::too_many_arguments)]
     pub fn auto_attach(
         &self,
         project: &str,
         pr: &str,
         repo: u64,
-        numbers: &[u64],
+        refs: &Refs,
         plane: &[(i64, u64)],
         at: u64,
         max: u64,
@@ -1392,33 +1454,51 @@ impl Db {
         // Numbers and ids are the platform's own: written into the statement.
         let list = |ns: &[u64]| ns.iter().map(u64::to_string).collect::<Vec<_>>().join(", ");
         let mut rows: Vec<(String, String)> = vec![];
-        if !numbers.is_empty() || !plane.is_empty() {
+        let (numbers, native) = (list(&refs.numbers), list(&refs.native));
+        if !refs.numbers.is_empty() || !refs.native.is_empty() || !plane.is_empty() {
+            // The issues a reference may name, by id.
+            let mut named: Vec<String> = vec![];
+            if !refs.numbers.is_empty() || !refs.native.is_empty() {
+                let all =
+                    [numbers.as_str(), native.as_str()].iter().filter(|l| !l.is_empty()).copied().collect::<Vec<_>>();
+                named.push(format!("SELECT id FROM issues WHERE project_id = ?1 AND number IN ({})", all.join(", ")));
+            }
             let mut mirrored = vec![];
-            if !numbers.is_empty() {
-                mirrored.push(format!("(repo_id = {repo} AND number IN ({}))", list(numbers)));
+            if !refs.numbers.is_empty() {
+                mirrored.push(format!("(repo_id = {repo} AND number IN ({numbers}))"));
             }
             mirrored.extend(plane.iter().map(|(m, n)| format!("(repo_id = {m} AND number = {n})")));
-            let native = if numbers.is_empty() {
-                "FALSE".to_owned()
-            } else {
-                format!(
-                    "(e.target_kind = 'issue' AND e.target IN
-                        (SELECT id FROM issues WHERE project_id = ?1 AND number IN ({})))",
-                    list(numbers)
-                )
-            };
-            rows = tx.query_map(
+            if !mirrored.is_empty() {
+                named.push(format!("SELECT id FROM forge_items WHERE kind = 'issue' AND ({})", mirrored.join(" OR ")));
+            }
+            let named = named.join(" UNION ");
+            let found: Vec<(String, String)> = tx.query_map(
                 &format!(
                     "SELECT e.board_id, e.id FROM board_entries e JOIN boards b ON b.id = e.board_id
-                     WHERE b.project_id = ?1 AND e.kind = 'row' AND ({native} OR
-                        (e.target_kind = 'forge_item' AND e.target IN
-                            (SELECT id FROM forge_items WHERE kind = 'issue' AND ({}))))
-                     ORDER BY e.board_id, e.id",
-                    mirrored.join(" OR ")
+                     WHERE b.project_id = ?1 AND e.kind = 'row' AND
+                        ((e.target_kind IN ('issue', 'forge_item') AND e.target IN ({named}))
+                         OR e.work_item IN (SELECT w.work_item FROM work_item_refs w WHERE w.target IN ({named})))
+                     ORDER BY e.board_id, e.id"
                 ),
                 params![project],
                 |r| Ok((r.get(0)?, r.get(1)?)),
             )?;
+            // Which of them the PR names: one rule, for every board.
+            let ids: Vec<&str> = found.iter().map(|(_, row)| row.as_str()).collect();
+            let keys = super::work_items::keys_of_rows(&tx, &ids)?;
+            let mut boards: Vec<&String> = found.iter().map(|(b, _)| b).collect();
+            boards.dedup();
+            for board in boards {
+                let cands: Vec<Candidate<'_>> = found
+                    .iter()
+                    .filter(|(b, _)| b == board)
+                    .filter_map(|(_, row)| keys.iter().find(|k| &k.row == row))
+                    .map(|k| Candidate { row: &k.row, work_item: k.work_item.as_deref(), keys: &k.keys })
+                    .collect();
+                for row in rows_named(refs, Some(repo), &cands) {
+                    rows.push((board.clone(), row.to_owned()));
+                }
+            }
         }
         let held: Vec<(String, String, String)> = tx.query_map(
             "SELECT a.board_id, a.row_id, a.id FROM board_attachments a JOIN boards b ON b.id = a.board_id

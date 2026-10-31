@@ -104,7 +104,7 @@ use crate::{
     issues::PERSONAL,
     trackers,
 };
-use lanes::{Fact, Pr, Primary};
+use lanes::{Fact, Pr, Primary, github_category, plane_category};
 use refs::{IssueKey, Refs, Source, references};
 
 pub mod agent;
@@ -404,6 +404,7 @@ fn live_item(i: &ForgeItem, repo: &str, checks: &[&CheckState]) -> wire::Live {
         identifier: None,
         state_name: None,
         url: None,
+        category: (i.kind == "issue").then(|| github_category(&i.state)),
     }
 }
 
@@ -421,6 +422,7 @@ fn live_plane(i: &TrackerItem, c: &ReadableConnection) -> wire::Live {
         identifier: Some(c.identifier.clone()),
         state_name: Some(i.state_name.clone()),
         url: Some(trackers::item_url(&c.workspace_slug, &c.identifier, i.number)),
+        category: Some(plane_category(Some(&i.state_group), &i.state)),
     }
 }
 
@@ -443,6 +445,7 @@ fn live_run(run: &Run) -> wire::Live {
         identifier: None,
         state_name: None,
         url: None,
+        category: None,
     }
 }
 
@@ -507,7 +510,7 @@ async fn chips(
             .collect();
         let people =
             if accounts.is_empty() { HashMap::new() } else { app.cache.accounts(&*app.hub, &accounts).await? };
-        for db::IssueState { id, number, title, closed, assignees: who } in found {
+        for db::IssueState { id, number, title, closed, category, assignees: who } in found {
             let state = if closed { wire::LiveState::Closed } else { wire::LiveState::Open };
             let assignees = who
                 .into_iter()
@@ -530,6 +533,7 @@ async fn chips(
                     identifier: None,
                     state_name: None,
                     url: None,
+                    category: Some(category),
                 },
             );
         }
@@ -581,14 +585,15 @@ fn facts(app: &Platform, project: &str, ids: &Ids, blocks: &Blocks) -> Result<Fa
                 "closed" => Pr::Closed,
                 _ => Pr::Open,
             }),
-            _ => Fact::Issue { closed: i.state != "open" },
+            _ if i.provider == "plane" => Fact::Issue { category: plane_category(i.state_group.as_deref(), &i.state) },
+            _ => Fact::Issue { category: github_category(&i.state) },
         };
         f.by_id.insert(i.id, fact);
     }
     f.after = app.db.stacked_on(project, &found)?.into_iter().collect();
     let issues: Vec<&str> = ids.issues.iter().map(String::as_str).collect();
     for i in app.db.issue_states(project, &issues)? {
-        f.by_id.insert(i.id, Fact::Issue { closed: i.closed });
+        f.by_id.insert(i.id, Fact::Issue { category: i.category });
     }
     for id in &ids.runs {
         if let Some(run) = app.db.run(id)? {
@@ -1291,26 +1296,44 @@ async fn plan_add(
     } else {
         items.push(mine)
     }
+    // A board has one row for a piece of work: the native issue and the
+    // GitHub issue it was exported to are one.
+    let work_item = app.db.work_item_for(mine)?;
+    if let Some(wi) = &work_item
+        && let Some(row) = app.db.row_of_work_item(&stored.board.id, wi)?
+    {
+        return Ok(Plan::Already(format!("that is row {row} on this board already: it was not added again")));
+    }
     let found = known(app, account, &stored.board.project, &items, &issues).await?;
     let Some(me) = found.get(mine) else { return Ok(Plan::Add { absorb: vec![], said: None }) };
+    let on_board = app.db.board_row_keys(&stored.board.id)?;
+    let candidates: Vec<refs::Candidate<'_>> = on_board
+        .iter()
+        .map(|k| refs::Candidate { row: &k.row, work_item: k.work_item.as_deref(), keys: &k.keys })
+        .collect();
     if me.pr {
         // A PR for an issue that is a row.
-        for (row, id) in &rows {
-            if let Some(key) = found.get(*id).and_then(|k| k.key.as_ref())
-                && me.refs.name(me.repo, key)
-            {
-                let said = format!(
-                    "that PR references an issue that is row {row} on this board, so it is attached to that row as \
-                     work instead of added as a row of its own"
-                );
-                return Ok(Plan::Attach { row: (*row).to_owned(), said });
-            }
+        if let Some(row) = refs::rows_named(&me.refs, me.repo, &candidates).first() {
+            let said = format!(
+                "that PR references an issue that is row {row} on this board, so it is attached to that row as \
+                 work instead of added as a row of its own"
+            );
+            return Ok(Plan::Attach { row: (*row).to_owned(), said });
         }
     } else if let Some(key) = &me.key {
         // An issue that PR rows reference: they become its work.
+        let keys = match &work_item {
+            Some(wi) => app.db.issue_keys_of(mine, wi)?,
+            None => vec![key.clone()],
+        };
+        let new = refs::Candidate { row: NEW_ROW, work_item: work_item.as_deref(), keys: &keys };
+        let mut all = candidates.clone();
+        all.push(new);
         let absorb: Vec<String> = rows
             .iter()
-            .filter(|(_, id)| found.get(*id).is_some_and(|k| k.pr && k.refs.name(k.repo, key)))
+            .filter(|(_, id)| {
+                found.get(*id).is_some_and(|k| k.pr && refs::rows_named(&k.refs, k.repo, &all).contains(&NEW_ROW))
+            })
             .map(|(row, _)| (*row).to_owned())
             .collect();
         if !absorb.is_empty() {
@@ -1324,6 +1347,10 @@ async fn plan_add(
     }
     Ok(Plan::Add { absorb: vec![], said: None })
 }
+
+/// The row an issue being added would be, among a board's, when a PR row
+/// asks which row it names.
+const NEW_ROW: &str = "new";
 
 /// Add a row or a group, or change one (see [`wire::PutEntry`]). Adding an issue or a
 /// PR that is on the board already, or that goes with a row there, changes
