@@ -360,6 +360,21 @@
             "null"
           ]
         },
+        "lock": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TeamLock"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "locked": {
+          "default": false,
+          "description": "A team's project: whether the team is locked, as control says\n(`locked`) and as an owner signed it (`lock`, the latest).",
+          "type": "boolean"
+        },
         "purpose": {
           "description": "What the box is for (M219): [`DEPLOY`] or [`SNAPSHOT`], or `None` for\na people's workspace. A box that hears either stays one.",
           "type": [
@@ -867,6 +882,42 @@
       "required": [
         "key",
         "expires"
+      ],
+      "type": "object"
+    },
+    "TeamLock": {
+      "description": "Whether a team is locked (only its owners get in while it is), signed\nby a device of one of its owners. Control keeps the latest and hands it\nout; a machine takes one only if an owner in the roster it holds signed\nit and it's newer than the one it holds\n([`crate::checkpoint::take_lock`]), so control can't unlock a team or\nbring back an older state.\n\n```text\narugula team lock v1\nteam <id>\nlocked yes|no\nversion <the roster version it was signed against>\nat <ms>\nby <device id>\n```",
+      "properties": {
+        "at": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "by": {
+          "type": "string"
+        },
+        "locked": {
+          "type": "boolean"
+        },
+        "sig": {
+          "type": "string"
+        },
+        "team": {
+          "type": "string"
+        },
+        "version": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "team",
+        "locked",
+        "version",
+        "at",
+        "by",
+        "sig"
       ],
       "type": "object"
     },
