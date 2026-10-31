@@ -277,6 +277,8 @@ test("a merged pull request isn't waiting on you: the tag says merged once", asy
   const block = await openPr(page);
   const el = page.locator(`[data-forge-block="${block}"]`);
   await expect(el.locator("[data-item-pill]")).toHaveText("Merged");
+  // Nothing left to act on: it opens on Activity, not a red Checks.
+  await expect(el.locator('[data-item-tab][aria-selected="true"]')).toHaveAttribute("data-item-tab", "activity");
   // Never a want after the end: no strip, no waiting draft, no finished news.
   await expect(el.locator("[data-item-next]")).toHaveCount(0);
   await expect(el.locator("[data-forge-wants], [data-forge-done], [data-send-draft], [data-forge-drafts]")).toHaveCount(0);

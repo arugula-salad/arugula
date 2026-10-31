@@ -764,21 +764,21 @@ function PrBlock({ client, id, s }: { client: Client; id: PaneId; s: ForgeState 
             footer={
               (canComment || mayOwn) && (
                 <>
-                  {canComment && <button onClick={() => void comment()}>Comment</button>}
-                  {canComment && !asked && <button onClick={() => void review("comment")}>Review</button>}
-                  {canComment && <button onClick={() => void merge()}>Merge ▾</button>}
+                  {canComment && <button class="secondary small" onClick={() => void comment()}>Comment</button>}
+                  {canComment && !asked && <button class="secondary small" onClick={() => void review("comment")}>Review</button>}
+                  {canComment && <button class="secondary small" onClick={() => void merge()}>Merge ▾</button>}
                   {mayOwn && (
-                    <button data-forge-diff disabled={busy !== null} onClick={() => void call("diff", {}, "couldn't show the changes")}>
+                    <button class="secondary small" data-forge-diff disabled={busy !== null} onClick={() => void call("diff", {}, "couldn't show the changes")}>
                       Diff
                     </button>
                   )}
                   {mayOwn && (
-                    <button data-forge-checkout disabled={busy !== null} onClick={() => void call("checkout", {}, "couldn't check it out")}>
+                    <button class="secondary small" data-forge-checkout disabled={busy !== null} onClick={() => void call("checkout", {}, "couldn't check it out")}>
                       Checkout
                     </button>
                   )}
                   {mayOwn && s.provider !== "github" && !s.read_only && (
-                    <button data-forge-live disabled={busy !== null} title="A webhook on the repository, straight to this daemon" onClick={() => void call("live", { on: !s.hook }, "couldn't change live updates")}>
+                    <button class="secondary small" data-forge-live disabled={busy !== null} title="A webhook on the repository, straight to this daemon" onClick={() => void call("live", { on: !s.hook }, "couldn't change live updates")}>
                       {s.hook ? "Stop live updates" : "Live updates"}
                     </button>
                   )}
@@ -1001,7 +1001,8 @@ function prTabs(s: ForgeState, pr: Pr, open: boolean, waiting: Draft[]): ItemTab
       ),
     });
   }
-  return tabs;
+  // A merged or closed PR has nothing left to act on: its Activity first, not a red Checks.
+  return open ? tabs : [...tabs.filter((x) => x.id === "activity"), ...tabs.filter((x) => x.id !== "activity")];
 }
 
 function plain(s: ForgeState | null): string {
