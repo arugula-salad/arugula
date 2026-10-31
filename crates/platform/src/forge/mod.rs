@@ -56,6 +56,8 @@ use crate::Platform;
 
 mod app;
 #[cfg(test)]
+mod auto_attach_tests;
+#[cfg(test)]
 mod boards_live_tests;
 pub mod content;
 #[cfg(test)]

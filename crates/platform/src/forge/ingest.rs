@@ -426,6 +426,18 @@ pub fn webhook(p: &Platform, event: &str, delivery: &str, v: &Value, came: Insta
                 let shas: Vec<String> = rows.checks.iter().map(|c| c.head_sha.clone()).collect();
                 crate::boards::mirror_changed(p, repo, &numbers, &shas);
             }
+            // A PR written, or its body edited (which leaves the row as it
+            // was): the boards it names are its to attach to (#368).
+            let mut prs: Vec<u64> =
+                rows.iter().filter(|_| w.fixed > 0).flat_map(|(_, r)| r.items.iter().map(|i| i.number)).collect();
+            if let Some(c) = &content
+                && c.changes
+                    .iter()
+                    .any(|ch| matches!(ch, crate::db::content::Change::Opened(_) | crate::db::content::Change::Body(_)))
+            {
+                prs.push(c.number);
+            }
+            crate::boards::auto::auto_attach_prs(p, repo, &prs);
             debug!(
                 event,
                 delivery,

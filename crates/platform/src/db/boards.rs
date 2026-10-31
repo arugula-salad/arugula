@@ -1258,3 +1258,175 @@ impl Db {
         Ok(rows.into_iter().collect())
     }
 }
+
+/// A mirrored PR as the references in it are read (Arugula #368): its
+/// title, head branch and, when the content cache has it, body.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PrText {
+    pub id: String,
+    pub repo_id: u64,
+    pub number: u64,
+    pub title: String,
+    pub head_ref: Option<String>,
+    pub body: Option<String>,
+}
+
+/// What [`Db::auto_attach`] changed: the boards it touched.
+#[derive(Debug, Default, PartialEq, Eq)]
+pub struct AutoAttached {
+    pub attached: Vec<String>,
+    pub detached: Vec<String>,
+}
+
+impl Db {
+    /// The PRs of `repo` with one of these `numbers`, as their references
+    /// are read. Not per viewer: the references only decide where a PR is
+    /// attached, and the lane that follows says nothing of the PR.
+    pub fn prs_to_attach(&self, repo: u64, numbers: &[u64]) -> Result<Vec<PrText>> {
+        if numbers.is_empty() {
+            return Ok(vec![]);
+        }
+        // Numbers are the platform's own: written into the statement.
+        let nums = numbers.iter().map(u64::to_string).collect::<Vec<_>>().join(", ");
+        self.c().query_map(
+            &format!(
+                "SELECT i.id, i.repo_id, i.number, i.title, i.head_ref,
+                        (SELECT c.body FROM forge_content c
+                         WHERE c.repo_id = i.repo_id AND c.number = i.number AND c.kind = 'body'
+                         ORDER BY c.github_id LIMIT 1)
+                 FROM forge_items i WHERE i.repo_id = ?1 AND i.kind = 'pr' AND i.number IN ({nums})"
+            ),
+            params![repo],
+            |r| {
+                Ok(PrText {
+                    id: r.get(0)?,
+                    repo_id: r.get(1)?,
+                    number: r.get(2)?,
+                    title: r.get(3)?,
+                    head_ref: r.get(4)?,
+                    body: r.get(5)?,
+                })
+            },
+        )
+    }
+
+    /// Make the automatic attachments of PR `pr` (of `repo`) in `project`
+    /// what its references say: attached as work to each row whose issue
+    /// is one of `numbers` (a native issue of the project, or an issue of
+    /// `repo`) or one of the Plane items `plane` ((`mirror_id`, number)),
+    /// and taken off a row it no longer names. One indexed read finds the
+    /// rows; a row the PR is attached to already (by a person, an agent or
+    /// this), or whose board has the PR as a row, is left as it is, and so
+    /// is any attachment that isn't automatic.
+    #[allow(clippy::too_many_arguments)]
+    pub fn auto_attach(
+        &self,
+        project: &str,
+        pr: &str,
+        repo: u64,
+        numbers: &[u64],
+        plane: &[(i64, u64)],
+        at: u64,
+        max: u64,
+    ) -> Result<AutoAttached> {
+        let mut c = self.c();
+        let tx = c.immediate()?;
+        // Numbers and ids are the platform's own: written into the statement.
+        let list = |ns: &[u64]| ns.iter().map(u64::to_string).collect::<Vec<_>>().join(", ");
+        let mut rows: Vec<(String, String)> = vec![];
+        if !numbers.is_empty() || !plane.is_empty() {
+            let mut mirrored = vec![];
+            if !numbers.is_empty() {
+                mirrored.push(format!("(repo_id = {repo} AND number IN ({}))", list(numbers)));
+            }
+            mirrored.extend(plane.iter().map(|(m, n)| format!("(repo_id = {m} AND number = {n})")));
+            let native = if numbers.is_empty() {
+                "FALSE".to_owned()
+            } else {
+                format!(
+                    "(e.target_kind = 'issue' AND e.target IN
+                        (SELECT id FROM issues WHERE project_id = ?1 AND number IN ({})))",
+                    list(numbers)
+                )
+            };
+            rows = tx.query_map(
+                &format!(
+                    "SELECT e.board_id, e.id FROM board_entries e JOIN boards b ON b.id = e.board_id
+                     WHERE b.project_id = ?1 AND e.kind = 'row' AND ({native} OR
+                        (e.target_kind = 'forge_item' AND e.target IN
+                            (SELECT id FROM forge_items WHERE kind = 'issue' AND ({}))))
+                     ORDER BY e.board_id, e.id",
+                    mirrored.join(" OR ")
+                ),
+                params![project],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )?;
+        }
+        let held: Vec<(String, String, String)> = tx.query_map(
+            "SELECT a.board_id, a.row_id, a.id FROM board_attachments a JOIN boards b ON b.id = a.board_id
+             WHERE a.target_kind = 'forge_item' AND a.target = ?1 AND a.source = 'auto' AND b.project_id = ?2
+             ORDER BY a.board_id, a.id",
+            params![pr, project],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+        )?;
+        let mut out = AutoAttached::default();
+        let mut boards: Vec<&String> = rows.iter().map(|(b, _)| b).chain(held.iter().map(|(b, ..)| b)).collect();
+        boards.sort();
+        boards.dedup();
+        for board in boards {
+            // The board's changes take turns; what was read is read again
+            // under the lock where it matters.
+            if !lock(&tx, board)? {
+                continue;
+            }
+            let mut gone = false;
+            for (_, _, att) in held.iter().filter(|(b, row, _)| b == board && !rows.contains(&(b.clone(), row.clone())))
+            {
+                gone |= tx
+                    .execute("DELETE FROM board_attachments WHERE board_id = ?1 AND id = ?2", params![board, att])?
+                    > 0;
+            }
+            if gone {
+                out.detached.push(board.clone());
+            }
+            let mut attached = false;
+            for (_, row) in rows.iter().filter(|(b, _)| b == board) {
+                let own: u64 = tx.query_row(
+                    "SELECT count(*) FROM board_entries
+                     WHERE board_id = ?1 AND kind = 'row' AND target_kind = 'forge_item' AND target = ?2",
+                    params![board, pr],
+                    |r| r.get(0),
+                )?;
+                // Attached by hand to this row or another, or already by us.
+                let there: u64 = tx.query_row(
+                    "SELECT count(*) FROM board_attachments
+                     WHERE board_id = ?1 AND target_kind = 'forge_item' AND target = ?2
+                       AND (row_id = ?3 OR source IS NULL)",
+                    params![board, pr, row],
+                    |r| r.get(0),
+                )?;
+                let n: u64 =
+                    tx.query_row("SELECT count(*) FROM board_attachments WHERE row_id = ?1", params![row], |r| {
+                        r.get(0)
+                    })?;
+                if own > 0 || there > 0 || n >= max {
+                    continue;
+                }
+                tx.execute(
+                    "INSERT INTO board_attachments (id, board_id, row_id, role, target_kind, target, agent, created_at, source)
+                     VALUES (?1, ?2, ?3, 'work', 'forge_item', ?4, NULL, ?5, 'auto')",
+                    params![new_attachment_id(), board, row, pr, at],
+                )?;
+                attached = true;
+            }
+            if attached {
+                out.attached.push(board.clone());
+            }
+            if gone || attached {
+                touch(&tx, board, at)?;
+            }
+        }
+        tx.commit()?;
+        Ok(out)
+    }
+}
