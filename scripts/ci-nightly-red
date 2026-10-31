@@ -18,7 +18,7 @@ set -euo pipefail
 
 repo=${GITHUB_REPOSITORY:-arugula-salad/arugula}
 mention=${ARUGULA_RED_MENTION:-}
-read -r -a nightlies <<<"${*:-${ARUGULA_NIGHTLIES:-forges-nightly macos-vm macos-intel testnet-break perf-nightly}}"
+read -r -a nightlies <<<"${*:-${ARUGULA_NIGHTLIES:-forges-nightly macos-vm macos-intel testnet-break perf-nightly rare-nightly}}"
 
 errors=0
 for wf in "${nightlies[@]}"; do
