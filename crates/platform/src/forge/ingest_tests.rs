@@ -605,6 +605,39 @@ fn fill(gh: &Shared, now: u64) {
     );
 }
 
+/// A PR merged while the webhook was missed (Arugula #432): the poller's
+/// backfill reads it, and the native issue its title names is closed.
+#[tokio::test]
+async fn the_poller_closes_the_issue_a_merged_pr_names() {
+    let (gh, app, _base, _hub) = serve().await;
+    let t = now_ms();
+    link(&app, REPO, t);
+    let project = app.db.personal_project("alice", 1).unwrap();
+    app.db.c().execute("UPDATE linked_repos SET project_id = ?1 WHERE repo_id = ?2", params![project, REPO]).unwrap();
+    let new = |title| crate::db::issues::NewIssue { project: &project, title, body: "", labels: &[], assignees: &[] };
+    let by = crate::db::issues::Actor::person("alice");
+    let named = app.db.create_issue(&new("Named"), by, 1).unwrap().unwrap();
+    let other = app.db.create_issue(&new("Other"), by, 1).unwrap().unwrap();
+    {
+        let mut merged = pr(5, &format!("Arugula #{}: poll", named.number), "closed", t, "abc");
+        merged["merged_at"] = json!(iso(t));
+        let mut unmerged = pr(6, &format!("Arugula #{}: poll", other.number), "closed", t, "def");
+        unmerged["merged_at"] = Value::Null;
+        let mut g = gh.lock().unwrap();
+        g.prs.insert(5, merged);
+        g.prs.insert(6, unmerged);
+    }
+    let turn = poller::tick(&app, t).await.unwrap();
+    assert!(matches!(turn, Some(poller::Turn::Done { backfill: true, .. })), "{turn:?}");
+    let state = |id: &str| app.db.issue(id).unwrap().unwrap().state.as_str().to_owned();
+    assert_eq!(state(&named.id), "closed");
+    assert_eq!(state(&other.id), "open", "a PR closed unmerged closes nothing");
+    let events = app.db.issue_events(&named.id).unwrap();
+    let closed: Vec<_> = events.iter().filter(|e| e.kind.as_str() == "closed").collect();
+    assert_eq!(closed.len(), 1, "{events:?}");
+    assert_eq!(closed[0].detail, json!({ "reason": "completed", "pr": "acme/app#5" }));
+}
+
 /// A newly linked repo is backfilled on its poller's first turn, with
 /// read-only tokens for it alone, logged as the mirror's.
 #[tokio::test]
