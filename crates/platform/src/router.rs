@@ -96,7 +96,10 @@ fn routes() -> Routes {
         .route(boards::PROJECT_BOARDS, get(crate::boards::list_route).post(crate::boards::create_route))
         .route(boards::PROJECT_WORK, get(crate::boards::work::route))
         .route(boards::BOARD, get(crate::boards::get_route).patch(crate::boards::edit_route))
-        .route(boards::PROJECT_BOARD_SETTINGS, get(crate::boards::settings_route).put(crate::boards::put_settings_route))
+        .route(
+            boards::PROJECT_BOARD_SETTINGS,
+            get(crate::boards::settings_route).put(crate::boards::put_settings_route),
+        )
         .route(boards::BOARD_CLOSE, post(crate::boards::close_route))
         .route(boards::BOARD_REOPEN, post(crate::boards::reopen_route))
         .route(boards::BOARD_ENTRIES, put(crate::boards::put_route))

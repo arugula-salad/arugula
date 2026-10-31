@@ -37,7 +37,7 @@ import { agentShort } from "../agent-label";
 import { day } from "../time";
 import { BoardError, STALE_REV, boards, type ForgeChecks } from "./store";
 import "./boards.css";
-import { PICK_DELAY_MS, cardTone, checkTone, checkWord, groupMove, liveTone, prsOf, PICK_LIMIT, assigneesLine, blockClass, GOAL_MAX, answerReady, askWaitingLine, blockFacts, chipOf, settledFacts, debounced, earlierLine, epicLine, groupLine, isCard, laneCount, liveClass, liveWord, marksOf, needsYou, pointerHref, pointerLabel, pointerText, pointerToSend, proofMark, readyCount, relationLine, RELATION_KINDS, sections, stepActive, workLabel } from "./text";
+import { PICK_DELAY_MS, cardTone, checkTone, checkWord, groupMove, liveTone, prsOf, PICK_LIMIT, assigneesLine, blockClass, GOAL_MAX, answerReady, askWaitingLine, blockFacts, chipOf, settledFacts, debounced, earlierLine, epicLine, holdsRow, groupLine, isCard, laneCount, liveClass, liveWord, marksOf, needsYou, pointerHref, pointerLabel, pointerText, pointerToSend, proofMark, readyCount, relationLine, RELATION_KINDS, sections, stepActive, workLabel } from "./text";
 
 const STALE_SAID = "That changed while you were editing, so the board is read again. Make your change again if it still applies.";
 
@@ -670,7 +670,7 @@ function Row({
               </span>
             )}
           </div>
-          {(marks.merged || marks.after || marks.blocked.length > 0) && (
+          {(marks.merged || marks.after || marks.stalled || marks.blocked.length > 0) && (
             <div class="board-line board-marks" data-board-marks>
               {marks.merged && (
                 <span class="ws-tag board-mark" data-board-mark="merged_not_closed" title="A PR of this row merged, but its issue is still open">
@@ -680,6 +680,11 @@ function Row({
               {marks.after && (
                 <span class="ws-tag waits board-mark" data-board-mark="after" title={marks.after.repo ? `Stacked on a PR of ${marks.after.repo}` : "Stacked on another PR"}>
                   {marks.after.words}
+                </span>
+              )}
+              {marks.stalled && (
+                <span class="ws-tag warn board-mark" data-board-mark="stalled" title="Every agent on this row has been idle past the project's limit, and no pull request is open">
+                  {marks.stalled.words}
                 </span>
               )}
               {marks.blocked.map((m, i) => (
@@ -864,6 +869,11 @@ function Drawer({ r, platform, close, project, others, write, act, id }: { r: Bo
           {r.attachments.map((a) => (
             <div key={a.id} class="board-drawer-attached">
               <Chip a={a} platform={platform} facts="all" />
+              {write && holdsRow(a) && (
+                <button type="button" class="secondary small" data-board-release={a.id} title="Take this agent off the row; it keeps running, and another may take the row" onClick={() => void act(() => boards.detach(id, a.id))}>
+                  Release
+                </button>
+              )}
             </div>
           ))}
         </section>

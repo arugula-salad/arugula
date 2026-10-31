@@ -1261,7 +1261,8 @@ async fn a_second_machines_block_on_a_claimed_row_is_refused_naming_the_holder()
         }
         b
     };
-    let by_b = |base: String, path: String, b: Value| async move { signed(&base, "b bmac", "POST", &path, Some(b)).await };
+    let by_b =
+        |base: String, path: String, b: Value| async move { signed(&base, "b bmac", "POST", &path, Some(b)).await };
 
     // geek's block takes the row, and reports.
     assert_eq!(geek(&base, "POST", &route(&t), Some(body("geek", "7", false))).await.0, 200);
@@ -1284,20 +1285,31 @@ async fn a_second_machines_block_on_a_claimed_row_is_refused_naming_the_holder()
     // bmac takes it: the old blocks are earlier agents and come last.
     let (st, v) = by_b(base.clone(), route(&t), body("bmac", "3", true)).await;
     assert_eq!(st, 200, "{v}");
-    let working = json!({ "pane": "3", "block": { "state": "working" } });
+    let working_again = || json!({ "pane": "3", "block": { "state": "working" } });
+    let working = working_again();
     assert_eq!(signed(&base, "b bmac", "PUT", AGENT_BLOCK_STATE, Some(working)).await.0, 200);
     let (_, v) = call(&base, "a", "GET", &format!("/api/boards/{board}"), None).await;
     let r = row_in(&v, &row);
     let at = r["attachments"].as_array().unwrap();
-    let panes: Vec<_> = at.iter().map(|a| (a["pointer"]["machine"].as_str().unwrap(), a["released"].as_bool())).collect();
+    let panes: Vec<_> =
+        at.iter().map(|a| (a["pointer"]["machine"].as_str().unwrap(), a["released"].as_bool())).collect();
     assert_eq!(panes[0], ("bmac", Some(false)), "{v}");
     assert!(panes[1..].iter().all(|p| p.0 == "geek" && p.1 == Some(true)), "{v}");
     assert_eq!(r["marks"].as_array().unwrap().len(), 2, "one earlier each: {v}");
     assert_eq!(lane(&v, &row), "doing", "bmac's block is not closed: {v}");
 
+    // A block taken over doesn't hold the row up: with bmac's closed, the
+    // row is Next though geek's old block still reports working.
+    let closed = json!({ "pane": "3", "block": { "state": "closed" } });
+    assert_eq!(signed(&base, "b bmac", "PUT", AGENT_BLOCK_STATE, Some(closed)).await.0, 200);
+    let (_, v) = call(&base, "a", "GET", &format!("/api/boards/{board}"), None).await;
+    assert_eq!(lane(&v, &row), "next", "{v}");
+    assert_eq!(signed(&base, "b bmac", "PUT", AGENT_BLOCK_STATE, Some(working_again())).await.0, 200);
+
     // An agent's board_write attach honours it too: geek is refused now.
     let att = |pane: &str, take: bool| {
-        let mut b = json!({ "row": row, "role": "work", "pointer": { "kind": "block", "machine": "geek", "pane": pane } });
+        let mut b =
+            json!({ "row": row, "role": "work", "pointer": { "kind": "block", "machine": "geek", "pane": pane } });
         if take {
             b["take"] = json!(true);
         }
@@ -1307,6 +1319,9 @@ async fn a_second_machines_block_on_a_claimed_row_is_refused_naming_the_holder()
     assert_eq!((st, v["reason"].as_str()), (409, Some(CLAIMED)), "{v}");
     let (st, v) = geek(&base, "POST", &agent_board_attachments(&board), Some(att("11", true))).await;
     assert_eq!(st, 200, "{v}");
+    let (_, v) = call(&base, "a", "GET", &format!("/api/boards/{board}"), None).await;
+    let bmacs = row_in(&v, &row)["attachments"].as_array().unwrap().iter().find(|a| a["pointer"]["pane"] == "3").cloned();
+    assert_eq!(bmacs.unwrap()["released"], json!(true), "geek took the row from bmac: {v}");
 
     // bmac's block was released by that take; geek's holds. Closing it
     // releases the claim: bmac attaches again, no take.

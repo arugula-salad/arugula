@@ -527,6 +527,16 @@ item?: string,
 removable: boolean, };
 
 /**
+ * What a project says about its boards (Arugula #404).
+ */
+export type BoardSettings = { 
+/**
+ * A Doing row whose blocks have all been idle for longer than this many
+ * minutes (1 to [`STALL_MINUTES_MAX`]) is stalled.
+ */
+stall_minutes: number, };
+
+/**
  * Where a row stands. `None` says nothing.
  */
 export type BoardStatus = "none" | "open" | "working" | "needs_input" | "done" | "failed";

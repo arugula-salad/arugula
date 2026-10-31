@@ -892,7 +892,8 @@ async fn attach(c: &Call<'_>, a: AttachArgs) -> Out {
                 AttachRoleArg::Proof => AttachRole::Proof,
             })
             .unwrap_or(role);
-        let body = serde_json::to_value(AttachRow { row: row.id.clone(), pointer, role, take: a.take }).map_err(|e| e.to_string())?;
+        let body = serde_json::to_value(AttachRow { row: row.id.clone(), pointer, role, take: a.take })
+            .map_err(|e| e.to_string())?;
         match boards_call(c, Method::POST, &agent_board_attachments(&a.board), Some(body)).await.and_then(view_of) {
             Err(why) => tally.did("failed", format!("{to}: failed, {why}")),
             Ok(after) => {

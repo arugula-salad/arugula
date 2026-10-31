@@ -41,6 +41,7 @@ import { ClaudeSpend } from "../settings/spend";
 import { ClientApps } from "../settings/client-apps";
 import { TeamChat } from "../settings/chat-alerts";
 import { PlaneConnections } from "../settings/plane";
+import { BoardSettings } from "../settings/board-settings";
 import { Section, SectionIndex } from "../settings/section";
 
 /** A call to the platform: its JSON, or the platform's `{error}` thrown
@@ -274,6 +275,7 @@ export function ProjectSettings({ id, link }: { id: string; link?: string }) {
             )}
           </Section>
           {boards !== null && boards !== "off" && <PlaneConnections p={p} />}
+          {boards !== null && boards !== "off" && <BoardSettings p={p} />}
           <IssueHomeSetting key={linked} p={p} />
           <Environments p={p} />
           <RunGrant project={p.id} />

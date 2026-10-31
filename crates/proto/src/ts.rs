@@ -229,6 +229,7 @@ fn generate() -> String {
         c.visit::<MoveEntry>();
         c.visit::<WorkQuery>();
         c.visit::<WorkItems>();
+        c.visit::<BoardSettings>();
     }
     // A project's Docs (aru-118).
     {

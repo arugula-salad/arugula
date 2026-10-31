@@ -564,12 +564,7 @@ struct Facts {
 }
 
 /// The facts for `ids`, in `project`; `blocks` is what [`block_states`] found.
-fn facts(
-    app: &Platform,
-    project: &str,
-    ids: &Ids,
-    blocks: &Blocks,
-) -> Result<Facts, ApiError> {
+fn facts(app: &Platform, project: &str, ids: &Ids, blocks: &Blocks) -> Result<Facts, ApiError> {
     let mut f = Facts::default();
     let found: Vec<&str> = ids.items.iter().map(String::as_str).collect();
     let (items, checks) = app.db.item_facts(project, &found)?;
@@ -747,11 +742,7 @@ impl Blocks {
 /// What each agent block reported, as a board shows it: only when its
 /// machine holds `boards.write` over the project now (the grant is asked on
 /// every read, so a revoked one hides what it reported).
-async fn block_states(
-    app: &Platform,
-    project: &str,
-    blocks: &[(String, String)],
-) -> Result<Blocks, ApiError> {
+async fn block_states(app: &Platform, project: &str, blocks: &[(String, String)]) -> Result<Blocks, ApiError> {
     let mut by_machine: std::collections::BTreeMap<&str, Vec<&str>> = Default::default();
     for (machine, pane) in blocks {
         by_machine.entry(machine).or_default().push(pane);
@@ -862,8 +853,7 @@ async fn read(app: &Platform, account: &str, id: &str) -> Result<wire::BoardView
         .collect();
     for e in &stored.rows {
         let mine: Vec<&db::Attached> = stored.attachments.iter().filter(|a| a.row == e.id).collect();
-        let attached: Vec<Attach<'_>> =
-            mine.iter().map(|a| (a.role, &a.pointer, a.released_at.is_some())).collect();
+        let attached: Vec<Attach<'_>> = mine.iter().map(|a| (a.role, &a.pointer, a.released_at.is_some())).collect();
         let a = assess(&e.pointer, &attached, &facts);
         let stalled = stall_of(&mine, a.lane, &facts, &blocks, now, minutes);
         let (row_live, row_block) = chip(&e.pointer);
@@ -897,16 +887,15 @@ async fn read(app: &Platform, account: &str, id: &str) -> Result<wire::BoardView
         }
         let at = wire::Lane::ALL.iter().position(|l| *l == a.lane).unwrap_or(0);
         // Needs you, when the reader owns a block that stalled the row.
-        let stalled_yours = stalled.zip(
-            mine.iter()
-                .filter(|a| a.role == wire::AttachRole::Work && a.released_at.is_none())
-                .find_map(|a| match &a.pointer {
+        let stalled_yours =
+            stalled.zip(mine.iter().filter(|a| a.role == wire::AttachRole::Work && a.released_at.is_none()).find_map(
+                |a| match &a.pointer {
                     wire::Pointer::Block { machine, pane } if blocks.owned_by(machine, pane, account) => {
                         Some(machine.clone())
                     }
                     _ => None,
-                }),
-        );
+                },
+            ));
         let raised = asks::raised(row_live.as_ref(), &attachments, stalled_yours, e.updated_at, &|m| {
             names.get(m).filter(|n| !n.is_empty()).cloned().unwrap_or_else(|| "a machine".to_owned())
         });

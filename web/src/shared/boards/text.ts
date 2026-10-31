@@ -102,15 +102,31 @@ export function groupLine(p: Pick<BoardProgress, "done" | "total">): string {
  * open blocker, or `blocked by something you can't see` when the reader may not
  * read it (#403); and the attachments of agents that were replaced
  * (`earlier`), which the card folds. */
-export function marksOf(r: Pick<BoardRow, "marks">): { merged: boolean; after: { words: string; repo?: string } | null; blocked: { words: string; title?: string; repo?: string }[]; earlier: Set<string> } {
+export function marksOf(r: Pick<BoardRow, "marks">, now: number = Date.now()): { merged: boolean; after: { words: string; repo?: string } | null; stalled: { words: string; since: number } | null; blocked: { words: string; title?: string; repo?: string }[]; earlier: Set<string> } {
   const marks: BoardMark[] = r.marks ?? [];
   const after = marks.find((m) => m.kind === "after");
+  const stalled = marks.find((m) => m.kind === "stalled");
   return {
     merged: marks.some((m) => m.kind === "merged_not_closed"),
     after: after && after.kind === "after" ? { words: `after #${after.number}`, repo: after.repo } : null,
+    stalled: stalled && stalled.kind === "stalled" ? { words: `stalled ${stalledFor(stalled.since, now)}`, since: stalled.since } : null,
     blocked: marks.flatMap((m) => (m.kind === "blocked_by" ? [m.number === undefined ? { words: UNSEEN_BLOCKER } : { words: `blocked by #${m.number}`, title: m.title, repo: m.repo }] : [])),
     earlier: new Set(marks.flatMap((m) => (m.kind === "earlier" ? [m.attachment] : []))),
   };
+}
+
+/** How long ago a stall began, to the minute, as the wire's `ago` says it: `42m`, `3h5m`, `2d` (#404). */
+export function stalledFor(since: number, now: number): string {
+  const m = Math.max(0, Math.floor((now - since) / 60_000));
+  const [d, h, min] = [Math.floor(m / 1440), Math.floor(m / 60) % 24, m % 60];
+  if (d > 0) return `${d}d`;
+  if (h === 0) return `${min}m`;
+  return min === 0 ? `${h}h` : `${h}h${min}m`;
+}
+
+/** Whether an attachment is an agent block holding its row: work, reported and not closed, and not taken over (#404). A person releases it by taking it off. */
+export function holdsRow(a: Pick<BoardAttachment, "role" | "block" | "released">): boolean {
+  return a.role === "work" && !a.released && !!a.block && a.block.state !== "closed";
 }
 
 /** What a row says of a blocker the reader may not read. */
@@ -358,7 +374,8 @@ export function pointerHref(r: Pick<BoardRow, "pointer" | "live">, platform: (pa
 }
 
 /** A card's tone, which is its lane's: Next muted, Doing ok, Review warn and Done ok; a row that waits on the reader takes the attention tone (accent), whatever its lane. */
-export function cardTone(r: Pick<BoardRow, "lane" | "ask">): Tone {
+export function cardTone(r: Pick<BoardRow, "lane" | "ask"> & Partial<Pick<BoardRow, "marks">>): Tone {
+  if (r.marks?.some((m) => m.kind === "stalled")) return "warn";
   if (r.ask?.mine) return "accent";
   return r.lane === "next" ? "muted" : r.lane === "review" ? "warn" : "ok";
 }
