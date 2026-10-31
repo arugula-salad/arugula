@@ -162,6 +162,17 @@ auth = "public"
 clients = ["apple"]
 note = "Names the desktop app (`<team>.io.arugula.desktop`) for webcredentials. JSON, never a redirect, on every site."
 
+# Related origins for control's passkeys (S46, DK5, webauthn_site.rs): 404
+# without a platform host.
+
+[[route]]
+method = "GET"
+path = "/.well-known/webauthn"  # webauthn_site::PATH
+process = "hub"
+auth = "public"
+clients = ["browser"]
+note = "Lists the platform page's origin, so it may use control's passkeys. The browser fetches it itself, with no cookie. JSON, never a redirect, on every site; a 404 on the platform's host."
+
 [[route]]
 method = "GET"
 path = "/oauth/authorize"

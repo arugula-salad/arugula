@@ -113,6 +113,7 @@ mod two_sites;
 mod wake;
 #[cfg(test)]
 mod wake_wire;
+mod webauthn_site;
 
 use std::{net::SocketAddr, path::PathBuf, sync::Arc};
 
@@ -580,6 +581,8 @@ fn routes() -> Routes {
         .route("/.well-known/jwks.json", get(issuer::jwks))
         // The macOS app may use control's passkeys in its window (D2).
         .route(apple_site::PATH, get(apple_site::association))
+        // The platform page may ask for control's passkeys (S46, DK5).
+        .route(webauthn_site::PATH, get(webauthn_site::related_origins))
         .route("/oauth/authorize", get(issuer::authorize))
         .route("/oauth/consent", post(issuer::consent))
         .route("/oauth/token", post(issuer::token_endpoint))
