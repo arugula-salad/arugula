@@ -398,7 +398,7 @@
       "type": "object"
     },
     "ForgeItem": {
-      "description": "A PR or an issue, as metadata: never its body.",
+      "description": "A PR or an issue, as metadata: never its body. A Plane item (#420) is\none too, with `provider` `plane`.",
       "properties": {
         "assignees": {
           "items": {
@@ -444,6 +444,14 @@
           "description": "The platform's id: `fi_` and 32 hex characters.",
           "type": "string"
         },
+        "identifier": {
+          "default": null,
+          "description": "A Plane item's project key (`ALL`).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "kind": {
           "description": "`pr` or `issue`.",
           "type": "string"
@@ -461,13 +469,23 @@
           ]
         },
         "number": {
+          "description": "A Plane item's sequence id (`ALL-2212` is 2212).",
           "format": "uint64",
           "minimum": 0,
           "type": "integer"
         },
-        "repo": {
-          "description": "`OWNER/NAME`.",
+        "provider": {
+          "default": "github",
+          "description": "`github` or `plane`; an older platform's items are GitHub's.",
           "type": "string"
+        },
+        "repo": {
+          "default": null,
+          "description": "`OWNER/NAME`; none for a Plane item.",
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "reviewers": {
           "description": "Requested reviewers' logins.",
@@ -480,6 +498,21 @@
           "description": "`open`, `closed` or `merged`.",
           "type": "string"
         },
+        "state_group": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "state_name": {
+          "default": null,
+          "description": "A Plane item's state as Plane names it (`In Review`) and its group\n(`backlog`, `unstarted`, `started`, `completed` or `cancelled`).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "title": {
           "type": "string"
         },
@@ -487,11 +520,18 @@
           "format": "uint64",
           "minimum": 0,
           "type": "integer"
+        },
+        "url": {
+          "default": null,
+          "description": "A Plane item's page in Plane.",
+          "type": [
+            "string",
+            "null"
+          ]
         }
       },
       "required": [
         "id",
-        "repo",
         "number",
         "kind",
         "state",

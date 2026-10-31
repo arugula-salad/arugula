@@ -46,6 +46,20 @@
           "type": "object"
         },
         {
+          "$ref": "#/$defs/TrackerRef",
+          "description": "A Plane item by its key and number (`ALL-2212`): [`ItemView`].",
+          "properties": {
+            "op": {
+              "const": "tracker.get",
+              "type": "string"
+            }
+          },
+          "required": [
+            "op"
+          ],
+          "type": "object"
+        },
+        {
           "$ref": "#/$defs/ItemRef",
           "description": "A PR's head commit's checks: [`ForgeChecks`](crate::projects::ForgeChecks).",
           "properties": {
@@ -486,7 +500,7 @@
       "type": "object"
     },
     "ForgeItem": {
-      "description": "A PR or an issue, as metadata: never its body.",
+      "description": "A PR or an issue, as metadata: never its body. A Plane item (#420) is\none too, with `provider` `plane`.",
       "properties": {
         "assignees": {
           "items": {
@@ -532,6 +546,14 @@
           "description": "The platform's id: `fi_` and 32 hex characters.",
           "type": "string"
         },
+        "identifier": {
+          "default": null,
+          "description": "A Plane item's project key (`ALL`).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "kind": {
           "description": "`pr` or `issue`.",
           "type": "string"
@@ -549,13 +571,23 @@
           ]
         },
         "number": {
+          "description": "A Plane item's sequence id (`ALL-2212` is 2212).",
           "format": "uint64",
           "minimum": 0,
           "type": "integer"
         },
-        "repo": {
-          "description": "`OWNER/NAME`.",
+        "provider": {
+          "default": "github",
+          "description": "`github` or `plane`; an older platform's items are GitHub's.",
           "type": "string"
+        },
+        "repo": {
+          "default": null,
+          "description": "`OWNER/NAME`; none for a Plane item.",
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "reviewers": {
           "description": "Requested reviewers' logins.",
@@ -568,6 +600,21 @@
           "description": "`open`, `closed` or `merged`.",
           "type": "string"
         },
+        "state_group": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "state_name": {
+          "default": null,
+          "description": "A Plane item's state as Plane names it (`In Review`) and its group\n(`backlog`, `unstarted`, `started`, `completed` or `cancelled`).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "title": {
           "type": "string"
         },
@@ -575,11 +622,18 @@
           "format": "uint64",
           "minimum": 0,
           "type": "integer"
+        },
+        "url": {
+          "default": null,
+          "description": "A Plane item's page in Plane.",
+          "type": [
+            "string",
+            "null"
+          ]
         }
       },
       "required": [
         "id",
-        "repo",
         "number",
         "kind",
         "state",
@@ -686,9 +740,17 @@
             "null"
           ]
         },
+        "provider": {
+          "default": null,
+          "description": "`github` or `plane`: only that provider's.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "q": {
           "default": null,
-          "description": "Text in the title.",
+          "description": "Text in the title; `IDENT-N` also matches that Plane item.",
           "type": [
             "string",
             "null"
@@ -713,6 +775,14 @@
         "state": {
           "default": null,
           "description": "`open`, `closed` or `merged`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "tracker": {
+          "default": null,
+          "description": "A Plane connection's key (`ALL`): only its items.",
           "type": [
             "string",
             "null"
@@ -756,6 +826,14 @@
         },
         "item": {
           "$ref": "#/$defs/ForgeItem"
+        },
+        "note": {
+          "default": null,
+          "description": "What the mirror doesn't have of it: a Plane item's body and comments.",
+          "type": [
+            "string",
+            "null"
+          ]
         }
       },
       "required": [
@@ -886,6 +964,20 @@
           "properties": {
             "op": {
               "const": "item.list",
+              "type": "string"
+            }
+          },
+          "required": [
+            "op"
+          ],
+          "type": "object"
+        },
+        {
+          "$ref": "#/$defs/TrackerRef",
+          "description": "A Plane item by its key and number (`ALL-2212`): [`ItemView`].",
+          "properties": {
+            "op": {
+              "const": "tracker.get",
               "type": "string"
             }
           },
@@ -1109,6 +1201,31 @@
           ]
         }
       },
+      "type": "object"
+    },
+    "TrackerRef": {
+      "description": "A Plane item: its project's key and its number there (`ALL-2212`), in\n`project` (default: the reader's personal one).",
+      "properties": {
+        "key": {
+          "type": "string"
+        },
+        "number": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "project": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "key",
+        "number"
+      ],
       "type": "object"
     }
   },

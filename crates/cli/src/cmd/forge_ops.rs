@@ -246,6 +246,9 @@ pub fn list(a: ListArgs, kind: &str, json_out: bool) -> anyhow::Result<i32> {
         review_requested: a.review_requested,
         q: a.search,
         limit: a.limit,
+        // A list here is GitHub's, as it was before Plane items joined the API's.
+        provider: Some("github".into()),
+        tracker: None,
     };
     let v = call(Op::ItemList(q))?;
     if json_out {
