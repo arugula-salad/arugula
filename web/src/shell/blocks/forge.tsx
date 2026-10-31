@@ -686,8 +686,7 @@ function PrBlock({ client, id, s }: { client: Client; id: PaneId; s: ForgeState 
   const waiting = open ? s.drafts.filter((d) => d.status === "waiting") : [];
   const asked = s.wants.some((w) => w.kind === "review");
   const canComment = mayWrite && open;
-  const send = (d: Draft) => void client.api(`/api/blocks/${id}/call/answer`, { id: d.id, content: {} }, "couldn't send the draft");
-  const next = pr && it && open ? nextStep(s, pr, mayWrite, busy, { review, call, merge, send, waiting }) : null;
+  const next = pr && it && open ? nextStep(s, pr, mayWrite, busy, { review, call, merge, waiting }) : null;
   const source: ItemSource = {
     kind: s.provider,
     live: s.error ? null : s.watching ? "following" : "paused",
@@ -794,7 +793,7 @@ function nextStep(
   pr: Pr,
   mayWrite: boolean,
   busy: string | null,
-  on: { review: (e: "approve" | "request_changes") => Promise<void>; call: (m: string, a: unknown, f: string) => Promise<unknown>; merge: () => Promise<void>; send: (d: Draft) => void; waiting: Draft[] },
+  on: { review: (e: "approve" | "request_changes") => Promise<void>; call: (m: string, a: unknown, f: string) => Promise<unknown>; merge: () => Promise<void>; waiting: Draft[] },
 ): NextStep | null {
   const it = pr.item;
   if (it.mergeable === false) return { tone: "danger", text: `Conflicts with ${it.base.branch}` };
@@ -836,18 +835,12 @@ function nextStep(
       ),
     };
   }
+  // The draft's own card, over the block, holds Send and Drop: a second
+  // Send here sits under it.
   const [draft] = on.waiting;
   if (draft) {
     const more = on.waiting.length - 1;
-    return {
-      tone: "warn",
-      text: `Your ${draftKind(draft)} draft${more > 0 ? ` and ${more} more` : ""}`,
-      actions: mayWrite && (
-        <button class="primary small" data-send-draft disabled={busy !== null} onClick={() => on.send(draft)}>
-          Send
-        </button>
-      ),
-    };
+    return { tone: "warn", text: `Your ${draftKind(draft)} draft${more > 0 ? ` and ${more} more` : ""}` };
   }
   const settled = !it.draft && it.mergeable === true && !it.blocked && !pr.checks.some((c) => [...FAILED, ...RUNNING].includes(c.state));
   if (settled && mayWrite) {
