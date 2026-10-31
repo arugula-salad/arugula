@@ -56,6 +56,9 @@ test("in a browser, Projects opens the platform page in a tab of its own", async
 
 // #288: in the desktop app the platform page replaces this window.
 test("in the app, Projects lands on the platform page in this window", async () => {
+  // macOS's WebKit only for now: Playwright's Linux WebKit throws its own
+  // "Assertion error" when a page goes to the platform page's origin (#402).
+  test.skip(process.platform === "linux", "Playwright's Linux WebKit asserts on a cross-origin navigation (#402)");
   const shell = await alice.context().newPage();
   await shell.addInitScript(() => Object.assign(window, { __arugulaApp: { name: "Arugula app on test-mac", signedIn: true } }));
   await shell.goto(`${t.base}/`);
