@@ -3,7 +3,7 @@
   "commit": "b263b1c49a6f59cda0be60a7dee7bcbbfd7ac9a2",
   "branch": "main",
   "state": "pending",
-  "at": "2026-10-30T23:59:18Z",
+  "at": "2026-10-31T00:01:52Z",
   "phases": {
     "lint": {
       "verdict": "pending",
@@ -55,7 +55,7 @@
         {
           "name": "workspace-clippy",
           "id": 124375645568,
-          "conclusion": null,
+          "conclusion": "success",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/41147096516/job/124375645568"
         },
         {
