@@ -6,7 +6,7 @@ use std::collections::BTreeMap;
 
 use arugula_e2e::{
     Cert, Revocation, Trust,
-    team::{AccountCerts, Move, Roster, TeamPin},
+    team::{AccountCerts, Move, Roster, TeamLock, TeamPin},
 };
 use serde::{Deserialize, Serialize};
 
@@ -72,7 +72,11 @@ pub struct Flags {
 pub struct TeamAnswer {
     #[serde(default)]
     pub team: Option<TeamPin>,
+    /// Control's plain word, for machines from before `lock`.
     pub locked: bool,
+    /// The owner's signed word on whether it's locked (the latest).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lock: Option<TeamLock>,
     pub rosters: Vec<Roster>,
     pub certs: AccountCerts,
     #[serde(default)]
@@ -97,7 +101,11 @@ pub struct SharedTeamAnswer {
     pub team: Option<TeamPin>,
     #[serde(default)]
     pub name: String,
+    /// Control's plain word, for machines from before `lock`.
     pub locked: bool,
+    /// The owner's signed word on whether it's locked (the latest).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lock: Option<TeamLock>,
     pub rosters: Vec<Roster>,
     pub certs: AccountCerts,
     #[serde(default)]

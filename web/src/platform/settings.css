@@ -1041,3 +1041,33 @@ html[data-corners="square"] .platform input.sw-switch {
     animation: none;
   }
 }
+
+/* Connecting a Plane project (#356): each field on its own line, with what
+   to put in it, so nothing is cut off at any width. */
+.platform .plane-connect {
+  display: grid;
+  gap: 14px;
+  max-width: 34rem;
+  margin-top: 16px;
+}
+.platform .plane-connect h3 {
+  margin: 0;
+}
+.platform .plane-connect-field {
+  display: grid;
+  gap: 4px;
+}
+.platform .plane-connect-field input {
+  width: 100%;
+  box-sizing: border-box;
+}
+.platform .plane-connect-field .dim {
+  font-size: 0.85em;
+}
+.platform .plane-connect-label {
+  font-weight: 600;
+}
+.platform .plane-connect-buttons {
+  display: flex;
+  justify-content: flex-end;
+}
