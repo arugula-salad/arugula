@@ -10,7 +10,7 @@
 //! Only with the `boards` flag on here, and only when this machine has
 //! joined control.
 
-use arugula_control_wire::boards::{AttachBlock, BlockAttached, IssueRef, agent_project_attach_block};
+use arugula_control_wire::boards::{AttachBlock, BlockAttached, CLAIMED, IssueRef, agent_project_attach_block};
 use std::sync::Arc;
 
 use arugula_proto::{PaneId, flags};
@@ -50,12 +50,48 @@ pub fn issue_of(config: &serde_json::Value) -> Result<Option<String>, String> {
     }
 }
 
+/// Why a block wasn't attached to its issue's row.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum NotKept {
+    /// Another machine's block holds the row (Arugula #404), and `take` wasn't
+    /// set: what control said, naming the holder.
+    Claimed(String),
+    /// Anything else: boards off, not joined, no grant, control down.
+    Why(String),
+}
+
+impl std::fmt::Display for NotKept {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let (NotKept::Claimed(s) | NotKept::Why(s)) = self;
+        f.write_str(s)
+    }
+}
+
+impl From<&str> for NotKept {
+    fn from(s: &str) -> Self {
+        NotKept::Why(s.to_owned())
+    }
+}
+
+impl From<String> for NotKept {
+    fn from(s: String) -> Self {
+        NotKept::Why(s)
+    }
+}
+
 /// Attach `pane`, which was started on `issue`, and keep the boards it is on
 /// with the block (for its chip). `home`: the project of whoever started it,
-/// when known. The boards (none when no board has a row for the issue), or
-/// why it wasn't tried or was refused.
-pub async fn keep(app: &App, home: Option<String>, issue: &str, pane: PaneId) -> Result<Vec<WorkBoard>, String> {
-    let boards = attach(app, home, issue, pane).await?;
+/// when known. `take`: take a row another machine's block holds, folding that
+/// block under `earlier`. The boards (none when no board has a row for the
+/// issue), or why it wasn't tried or was refused.
+pub async fn keep(
+    app: &App,
+    home: Option<String>,
+    issue: &str,
+    pane: PaneId,
+    take: bool,
+) -> Result<Vec<WorkBoard>, NotKept> {
+    let boards = attach(app, home, issue, pane, take).await?;
     if !boards.is_empty()
         && let Some(b) = app.mux.api(|r| Api::Block(pane, r)).await.flatten()
     {
@@ -68,14 +104,20 @@ pub async fn keep(app: &App, home: Option<String>, issue: &str, pane: PaneId) ->
 /// (`arugula agent --issue`): nobody waits for its answer.
 pub fn keep_later(app: Arc<App>, issue: String, pane: PaneId) {
     crate::task::spawn(async move {
-        match keep(&app, None, &issue, pane).await {
+        match keep(&app, None, &issue, pane, false).await {
             Ok(boards) => debug!(pane, issue, boards = boards.len(), "a block is on its issue's rows"),
             Err(why) => debug!(pane, issue, "a block started on an issue isn't on a row: {why}"),
         }
     });
 }
 
-async fn attach(app: &App, home: Option<String>, issue: &str, pane: PaneId) -> Result<Vec<WorkBoard>, String> {
+async fn attach(
+    app: &App,
+    home: Option<String>,
+    issue: &str,
+    pane: PaneId,
+    take: bool,
+) -> Result<Vec<WorkBoard>, NotKept> {
     if !crate::lab_flags::flags(app.control.state_dir()).has(flags::BOARDS) {
         return Err("boards are off on this machine (Labs: boards), so the row wasn't attached".into());
     }
@@ -87,13 +129,17 @@ async fn attach(app: &App, home: Option<String>, issue: &str, pane: PaneId) -> R
         issue: issue.to_owned(),
         machine: enrolled.keys.id(),
         pane: pane.to_string(),
+        take,
     })
     .map_err(|e| e.to_string())?;
     let v =
         app.control.cloud(Method::POST, &agent_project_attach_block(&project.id), Some(&body)).await.map_err(|e| {
             match e {
-                CloudRefused::Said { status: 403, .. } => no_grant(&project.name),
-                e => format!("the row wasn't attached: {e}"),
+                CloudRefused::Said { status: 403, .. } => NotKept::Why(no_grant(&project.name)),
+                CloudRefused::Said { status: 409, said, reason } if reason.as_deref() == Some(CLAIMED) => {
+                    NotKept::Claimed(said)
+                }
+                e => NotKept::Why(format!("the row wasn't attached: {e}")),
             }
         })?;
     let attached: BlockAttached =

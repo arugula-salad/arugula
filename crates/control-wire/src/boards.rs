@@ -30,6 +30,9 @@ pub const PROJECT_BOARDS: &str = "/api/projects/{project}/boards";
 /// [`EditBoard`]: set its title or goal (owners and editors), answered
 /// [`BoardView`].
 pub const BOARD: &str = "/api/boards/{id}";
+/// `GET`: a project's [`BoardSettings`] (members). `PUT` [`BoardSettings`]:
+/// set them (owners and editors); answered [`BoardSettings`].
+pub const PROJECT_BOARD_SETTINGS: &str = "/api/projects/{project}/board-settings";
 /// `POST` [`CloseBoard`]: close the board with a done note (owners and
 /// editors); answered [`BoardView`]. Its issues and rows stay as
 /// they are, and its rows stay editable.
@@ -226,6 +229,11 @@ pub fn agent_board_attachment(id: &str, attachment: &str) -> String {
 /// says what to do instead.
 pub const LANES_FOLLOW: &str = "lanes follow the work";
 
+/// The reason of a 409 that refuses an agent block a row another machine's
+/// block holds (Arugula #404): the sentence names who holds it. `take`
+/// takes the row over.
+pub const CLAIMED: &str = "claimed";
+
 /// The longest title, in characters, and the longest note: one line each.
 pub const TITLE_MAX: usize = 120;
 /// A board's goal or done note, in characters.
@@ -237,6 +245,10 @@ pub const BOARDS_MAX: u64 = 100;
 pub const GROUPS_MAX: u64 = 30;
 pub const ROWS_MAX: u64 = 500;
 pub const ATTACHMENTS_MAX: u64 = 20;
+/// How long, in minutes, a Doing row's blocks may sit idle before it is
+/// stalled: the default, and the most a project may set (a week).
+pub const STALL_MINUTES_DEFAULT: u32 = 30;
+pub const STALL_MINUTES_MAX: u32 = 10_080;
 /// The longest link pointer's URL, in bytes.
 pub const LINK_MAX: usize = 2048;
 /// An ask's question, one line.
@@ -403,6 +415,23 @@ impl AttachRole {
     }
 }
 
+/// What a project says about its boards (Arugula #404).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "BoardSettings"))]
+#[serde(deny_unknown_fields)]
+pub struct BoardSettings {
+    /// A Doing row whose blocks have all been idle for longer than this many
+    /// minutes (1 to [`STALL_MINUTES_MAX`]) is stalled.
+    pub stall_minutes: u32,
+}
+
+impl Default for BoardSettings {
+    fn default() -> Self {
+        BoardSettings { stall_minutes: STALL_MINUTES_DEFAULT }
+    }
+}
+
 /// Something attached to a row.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
@@ -419,6 +448,20 @@ pub struct Attachment {
     /// A `Block` pointer's block as its machine last reported it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub block: Option<BlockState>,
+    /// A block that a newer agent took the row from (`take`): it is an
+    /// earlier agent whatever it reports, and holds no claim.
+    #[serde(default)]
+    pub released: bool,
+}
+
+impl Attachment {
+    /// Whether this is an agent block holding its row: work, reported and
+    /// not closed, and not taken over.
+    pub fn holds(&self) -> bool {
+        self.role == AttachRole::Work
+            && !self.released
+            && self.block.as_ref().is_some_and(|b| b.state != BlockWord::Closed)
+    }
 }
 
 /// How a Done row is proven.
@@ -469,6 +512,12 @@ pub enum Mark {
     /// An agent block attached to the row (`attachment`) was closed, and
     /// another may have taken its place: it no longer counts toward Doing.
     Earlier { attachment: String },
+    /// The row is in Doing, every block of it that isn't closed has been
+    /// idle for longer than the project's `stall_minutes`, and no PR is on
+    /// it (Arugula #404). `since` is when the last of them went idle, in
+    /// milliseconds. It names no block: who holds the row is the block's
+    /// chip, for a reader who may see it.
+    Stalled { since: u64 },
     /// The row's item is blocked by an open item (a `blocks` edge, Arugula
     /// #403): the row stays in its lane. `number`, `title` and `repo` are
     /// left out when the reader may not read the blocker (one such mark
@@ -495,6 +544,10 @@ pub struct AttachRow {
     pub row: String,
     pub pointer: Pointer,
     pub role: AttachRole,
+    /// For an agent block as work on a row another machine's block holds:
+    /// take the row over. The old block is folded under `earlier`.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub take: bool,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -738,6 +791,11 @@ pub struct BlockState {
     pub uncommitted: Option<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub diffstat: Option<Diffstat>,
+    /// When `state` last changed, in milliseconds: control's to keep, set
+    /// on a read (a report's own is ignored).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub since: Option<u64>,
 }
 
 impl BlockState {
@@ -1054,6 +1112,10 @@ pub struct AttachBlock {
     pub issue: String,
     pub machine: String,
     pub pane: String,
+    /// Take a row that another machine's block holds, folding that block
+    /// under `earlier`; without it the attach is refused, 409 `claimed`.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub take: bool,
 }
 
 /// [`AGENT_BOARD_RESOLVE`]'s body: up to [`RESOLVE_MAX`] references, each
@@ -1365,13 +1427,31 @@ impl Proof {
     }
 }
 
+/// `42m` or `3h5m` or `2d`: how long ago `since` was, at `now` (both in
+/// milliseconds), to the minute.
+pub fn ago(since: u64, now: u64) -> String {
+    let m = now.saturating_sub(since) / 60_000;
+    match (m / 1440, m / 60 % 24, m % 60) {
+        (0, 0, m) => format!("{m}m"),
+        (0, h, 0) => format!("{h}h"),
+        (0, h, m) => format!("{h}h{m}m"),
+        (d, _, _) => format!("{d}d"),
+    }
+}
+
+fn now_ms() -> u64 {
+    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_millis() as u64)
+}
+
 impl Mark {
-    /// `merged, not closed`, `after #1859`, `blocked by #1860`, `earlier agent`.
+    /// `merged, not closed`, `after #1859`, `blocked by #1860`, `earlier agent`,
+    /// `stalled 42m`.
     fn words(&self) -> String {
         match self {
             Mark::MergedNotClosed => "merged, not closed".to_owned(),
             Mark::After { number, .. } => format!("after #{number}"),
             Mark::Earlier { .. } => "earlier agent".to_owned(),
+            Mark::Stalled { since } => format!("stalled {}", ago(*since, now_ms())),
             Mark::BlockedBy { number: Some(n), .. } => format!("blocked by #{n}"),
             Mark::BlockedBy { number: None, .. } => "blocked by something you can't see".to_owned(),
         }
@@ -1421,6 +1501,10 @@ fn lane_text<'a>(out: &mut String, title: &str, rows: impl Iterator<Item = &'a R
         out.push('\n');
         if !r.marks.is_empty() {
             *out += &format!("      {}\n", fit(&marks_line(&r.marks), TEXT_WIDTH - 6));
+        }
+        if let Some(b) = r.attachments.iter().find(|a| a.holds()).and_then(|a| a.block.as_ref()) {
+            let who = b.title.as_deref().unwrap_or("an agent");
+            *out += &format!("      {}\n", fit(&format!("claimed by {who}"), TEXT_WIDTH - 6));
         }
         if !r.attachments.is_empty() {
             let with: Vec<String> = r
@@ -1680,6 +1764,7 @@ mod tests {
             pointer: Pointer::Block { machine: "m1".into(), pane: "7".into() },
             live: None,
             block: None,
+            released: false,
         }];
         let mut proof_att = row(Pointer::Issue { id: "iss_cc22".into() }, Lane::Done, "Docs");
         proof_att.attachments = vec![Attachment {
@@ -1688,6 +1773,7 @@ mod tests {
             pointer: Pointer::Link { url: "https://ci.example.com/runs/42".into() },
             live: None,
             block: None,
+            released: false,
         }];
         let zones = lanes(vec![
             (Lane::Next, vec![row(Pointer::None, Lane::Next, "Decide the name"), row(Pointer::None, Lane::Next, "")]),
@@ -1809,6 +1895,7 @@ Done: People can sign up.
             pushed: Some(false),
             uncommitted: Some(2),
             diffstat: Some(Diffstat { files: 3, added: 40, removed: 2 }),
+            since: None,
         });
         let text = render(&view(lanes(vec![(Lane::Doing, vec![r])])));
         let want = format!(

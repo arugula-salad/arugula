@@ -80,6 +80,23 @@ pub fn lane(primary: Primary<'_>, attached: &[Fact]) -> Lane {
     if attached.iter().any(under_way) { Lane::Doing } else { Lane::Next }
 }
 
+/// When a Doing row stalled (Arugula #404), in milliseconds: every block of
+/// it that isn't closed is idle (`idle[i]` is when the i-th went idle, none
+/// for one that is not), the last of them went idle more than `minutes` ago,
+/// and no PR (or running run) is on it. The time is when that last block
+/// went idle. `attached` are the row's work facts, `idle` has one entry for
+/// each open block among them.
+pub fn stalled(lane: Lane, attached: &[Fact], idle: &[Option<u64>], now: u64, minutes: u32) -> Option<u64> {
+    if lane != Lane::Doing || idle.is_empty() || idle.iter().any(Option::is_none) {
+        return None;
+    }
+    if attached.iter().any(|f| matches!(f, Fact::Pr(_) | Fact::Run { running: true })) {
+        return None;
+    }
+    let since = idle.iter().flatten().copied().max()?;
+    (now.saturating_sub(since) > u64::from(minutes) * 60_000).then_some(since)
+}
+
 /// Whether the row's issue is open while a PR of the row merged and none is
 /// open: the work is in and the issue isn't closed.
 pub fn merged_not_closed(primary: Primary<'_>, attached: &[Fact]) -> bool {
@@ -183,6 +200,32 @@ mod tests {
         assert!(!mnc(Primary::Item(Some(&MERGED)), &[MERGED]), "a PR primary is Done at once");
         assert!(!mnc(Primary::Item(None), &[MERGED]));
         assert!(!mnc(Primary::Note, &[MERGED]));
+    }
+
+    /// A Doing row is stalled when all its open blocks have been idle for
+    /// longer than N minutes and nothing else is on it.
+    #[test]
+    fn a_doing_row_stalls_when_every_open_block_is_idle_past_n_minutes() {
+        const MIN: u64 = 60_000;
+        let now = 100 * MIN;
+        let st = |lane, attached: &[Fact], idle: &[Option<u64>]| stalled(lane, attached, idle, now, 30);
+        let blocks = [LIVE_BLOCK, LIVE_BLOCK];
+        // Idle for 42 minutes: stalled, since then.
+        assert_eq!(st(Lane::Doing, &[LIVE_BLOCK], &[Some(58 * MIN)]), Some(58 * MIN));
+        // Exactly N is not longer than N; N and a millisecond is.
+        assert_eq!(st(Lane::Doing, &[LIVE_BLOCK], &[Some(70 * MIN)]), None);
+        assert_eq!(st(Lane::Doing, &[LIVE_BLOCK], &[Some(70 * MIN - 1)]), Some(70 * MIN - 1));
+        // One block still working (or waiting): not stalled.
+        assert_eq!(st(Lane::Doing, &blocks, &[Some(10 * MIN), None]), None);
+        // The last to go idle counts.
+        assert_eq!(st(Lane::Doing, &blocks, &[Some(10 * MIN), Some(50 * MIN)]), Some(50 * MIN));
+        assert_eq!(st(Lane::Doing, &blocks, &[Some(10 * MIN), Some(90 * MIN)]), None);
+        // A PR on the row (any state), or a run running: not stalled.
+        assert_eq!(st(Lane::Doing, &[LIVE_BLOCK, Fact::Pr(Pr::Closed)], &[Some(0)]), None);
+        assert_eq!(st(Lane::Doing, &[LIVE_BLOCK, RUNNING], &[Some(0)]), None);
+        // Only a Doing row; no open block says nothing.
+        assert_eq!(st(Lane::Review, &[LIVE_BLOCK], &[Some(0)]), None);
+        assert_eq!(st(Lane::Doing, &[RUNNING], &[]), None);
     }
 
     fn ptr(id: &str) -> Pointer {

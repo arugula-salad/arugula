@@ -568,7 +568,7 @@ fn facts(
     app: &Platform,
     project: &str,
     ids: &Ids,
-    blocks: &HashMap<(String, String), wire::BlockState>,
+    blocks: &Blocks,
 ) -> Result<Facts, ApiError> {
     let mut f = Facts::default();
     let found: Vec<&str> = ids.items.iter().map(String::as_str).collect();
@@ -600,13 +600,22 @@ fn facts(
             f.by_id.insert(id.clone(), Fact::Run { running: run.state == RunState::Running });
         }
     }
-    for (k, b) in blocks {
+    for (k, b) in &blocks.state {
         f.blocks.insert(k.clone(), Fact::Block { closed: b.state == wire::BlockWord::Closed });
     }
     Ok(f)
 }
 
 impl Facts {
+    /// [`Self::of`] for an attachment: a block a newer agent took the row
+    /// from (`released`) is closed to this row.
+    fn of_attached(&self, p: &wire::Pointer, released: bool) -> Option<Fact> {
+        match (p, released) {
+            (wire::Pointer::Block { .. }, true) => Some(Fact::Block { closed: true }),
+            _ => self.of(p),
+        }
+    }
+
     fn of(&self, p: &wire::Pointer) -> Option<Fact> {
         match p {
             wire::Pointer::ForgeItem { id } | wire::Pointer::Issue { id } | wire::Pointer::Run { id } => {
@@ -618,6 +627,10 @@ impl Facts {
     }
 }
 
+/// What is attached to a row, as a lane reads it: its role, its pointer, and
+/// whether a newer agent took the row from it (`released`).
+type Attach<'a> = (wire::AttachRole, &'a wire::Pointer, bool);
+
 /// A row as its facts read it.
 struct Assessed {
     lane: wire::Lane,
@@ -628,14 +641,14 @@ struct Assessed {
 
 /// A row's lane and, on Done, its proof: from its primary pointer and what
 /// is attached to it as (role, pointer).
-fn assess(pointer: &wire::Pointer, attached: &[(wire::AttachRole, &wire::Pointer)], facts: &Facts) -> Assessed {
+fn assess(pointer: &wire::Pointer, attached: &[Attach<'_>], facts: &Facts) -> Assessed {
     let counted = matches!(pointer, wire::Pointer::Issue { .. } | wire::Pointer::ForgeItem { .. });
     let item = counted.then(|| facts.of(pointer)).flatten();
     let primary = if counted { Primary::Item(item.as_ref()) } else { Primary::Note };
     let work: Vec<(&wire::Pointer, Fact)> = attached
         .iter()
-        .filter(|(r, _)| *r == wire::AttachRole::Work)
-        .filter_map(|(_, p)| facts.of(p).map(|f| (*p, f)))
+        .filter(|(r, ..)| *r == wire::AttachRole::Work)
+        .filter_map(|(_, p, released)| facts.of_attached(p, *released).map(|f| (*p, f)))
         .collect();
     let seen: Vec<Fact> = work.iter().map(|(_, f)| *f).collect();
     let lane = lanes::lane(primary, &seen);
@@ -643,17 +656,18 @@ fn assess(pointer: &wire::Pointer, attached: &[(wire::AttachRole, &wire::Pointer
     if lane != wire::Lane::Done || !counted {
         return Assessed { lane, proof: None, merged_not_closed };
     }
-    let evidence = attached.iter().find(|(r, _)| *r == wire::AttachRole::Proof).map(|(_, p)| *p);
+    let evidence = attached.iter().find(|(r, ..)| *r == wire::AttachRole::Proof).map(|(_, p, _)| *p);
     Assessed { lane, proof: lanes::proof((pointer, item.as_ref()), &work, evidence), merged_not_closed }
 }
 
 /// A row's marks (see [`wire::Mark`]): `merged_not_closed`; `after` the
 /// first open PR of the row (its own, then those attached) that is stacked
 /// on another, with the repo as `repo_of` says it; the `blocked` marks of
-/// its item's open blockers ([`relations`]); `earlier` for each closed
-/// block attached.
+/// its item's open blockers ([`relations`]); `stalled` when [`stall_of`]
+/// says so; `earlier` for each closed or taken-over block attached.
 fn marks_of(
     merged_not_closed: bool,
+    stalled: Option<u64>,
     pointer: &wire::Pointer,
     attachments: &[&db::Attached],
     facts: &Facts,
@@ -672,6 +686,7 @@ fn marks_of(
     if let Some((number, repo)) = stacked {
         marks.push(wire::Mark::After { number, repo });
     }
+    marks.extend(stalled.map(|since| wire::Mark::Stalled { since }));
     marks.extend(blocked);
     marks.extend(
         attachments.iter().filter(|a| is_earlier(a, facts)).map(|a| wire::Mark::Earlier { attachment: a.id.clone() }),
@@ -683,7 +698,50 @@ fn marks_of(
 fn is_earlier(a: &db::Attached, facts: &Facts) -> bool {
     a.role == wire::AttachRole::Work
         && matches!(a.pointer, wire::Pointer::Block { .. })
-        && matches!(facts.of(&a.pointer), Some(Fact::Block { closed: true }))
+        && (a.released_at.is_some() || matches!(facts.of(&a.pointer), Some(Fact::Block { closed: true })))
+}
+
+/// When the row stalled (see [`lanes::stalled`]), from the blocks as they
+/// reported and `minutes`, the project's setting.
+fn stall_of(
+    attachments: &[&db::Attached],
+    lane: wire::Lane,
+    facts: &Facts,
+    blocks: &Blocks,
+    now: u64,
+    minutes: u32,
+) -> Option<u64> {
+    let work = attachments.iter().filter(|a| a.role == wire::AttachRole::Work);
+    let seen: Vec<Fact> = work.clone().filter_map(|a| facts.of_attached(&a.pointer, a.released_at.is_some())).collect();
+    let idle: Vec<Option<u64>> = work
+        .filter(|a| a.released_at.is_none())
+        .filter(|a| matches!(facts.of(&a.pointer), Some(Fact::Block { closed: false })))
+        .map(|a| match &a.pointer {
+            wire::Pointer::Block { machine, pane } => blocks.idle_since(machine, pane),
+            _ => None,
+        })
+        .collect();
+    lanes::stalled(lane, &seen, &idle, now, minutes)
+}
+
+/// What each machine's blocks reported ([`block_states`]), and whose they
+/// are.
+#[derive(Default)]
+struct Blocks {
+    state: HashMap<(String, String), wire::BlockState>,
+    /// The account of the machine that reported the block: its owner.
+    owner: HashMap<(String, String), String>,
+}
+
+impl Blocks {
+    fn idle_since(&self, machine: &str, pane: &str) -> Option<u64> {
+        let b = self.state.get(&(machine.to_owned(), pane.to_owned()))?;
+        (b.state == wire::BlockWord::Idle).then_some(b.since).flatten()
+    }
+
+    fn owned_by(&self, machine: &str, pane: &str, account: &str) -> bool {
+        self.owner.get(&(machine.to_owned(), pane.to_owned())).is_some_and(|o| o == account)
+    }
 }
 
 /// What each agent block reported, as a board shows it: only when its
@@ -693,21 +751,22 @@ async fn block_states(
     app: &Platform,
     project: &str,
     blocks: &[(String, String)],
-) -> Result<HashMap<(String, String), wire::BlockState>, ApiError> {
+) -> Result<Blocks, ApiError> {
     let mut by_machine: std::collections::BTreeMap<&str, Vec<&str>> = Default::default();
     for (machine, pane) in blocks {
         by_machine.entry(machine).or_default().push(pane);
     }
-    let mut states: HashMap<(String, String), wire::BlockState> = HashMap::new();
+    let mut found = Blocks::default();
     for (machine, panes) in by_machine {
         if !machine_writes(app, machine, project).await {
             continue;
         }
-        for (pane, state) in app.db.block_states(machine, &panes)? {
-            states.insert((machine.to_owned(), pane), state);
+        for (pane, state, owner) in app.db.block_states(machine, &panes)? {
+            found.owner.insert((machine.to_owned(), pane.clone()), owner);
+            found.state.insert((machine.to_owned(), pane), state);
         }
     }
-    Ok(states)
+    Ok(found)
 }
 
 /// Fill each board's progress: its rows with an issue or a PR as their item,
@@ -728,10 +787,10 @@ async fn progress(app: &Platform, project: &str, boards: &mut [wire::Board]) -> 
             if !matches!(t.pointer, wire::Pointer::Issue { .. } | wire::Pointer::ForgeItem { .. }) {
                 continue;
             }
-            let attached: Vec<(wire::AttachRole, &wire::Pointer)> = things
+            let attached: Vec<Attach<'_>> = things
                 .iter()
                 .filter(|a| a.board == b.id && a.row == t.row)
-                .filter_map(|a| a.role.map(|r| (r, &a.pointer)))
+                .filter_map(|a| a.role.map(|r| (r, &a.pointer, false)))
                 .collect();
             let a = assess(&t.pointer, &attached, &facts);
             b.progress.total += 1;
@@ -772,12 +831,15 @@ async fn read(app: &Platform, account: &str, id: &str) -> Result<wire::BoardView
     let live = chips(app, account, &project, &ids).await?;
     let blocks = block_states(app, &project, &ids.blocks).await?;
     let facts = facts(app, &project, &ids, &blocks)?;
+    let (now, minutes) = (now_ms(), app.db.stall_minutes(&project, wire::STALL_MINUTES_DEFAULT)?);
     let chip = |p: &wire::Pointer| -> (Option<wire::Live>, Option<wire::BlockState>) {
         match p {
             wire::Pointer::ForgeItem { id } | wire::Pointer::Issue { id } | wire::Pointer::Run { id } => {
                 (live.get(id).cloned(), None)
             }
-            wire::Pointer::Block { machine, pane } => (None, blocks.get(&(machine.clone(), pane.clone())).cloned()),
+            wire::Pointer::Block { machine, pane } => {
+                (None, blocks.state.get(&(machine.clone(), pane.clone())).cloned())
+            }
             _ => (None, None),
         }
     };
@@ -800,8 +862,10 @@ async fn read(app: &Platform, account: &str, id: &str) -> Result<wire::BoardView
         .collect();
     for e in &stored.rows {
         let mine: Vec<&db::Attached> = stored.attachments.iter().filter(|a| a.row == e.id).collect();
-        let attached: Vec<(wire::AttachRole, &wire::Pointer)> = mine.iter().map(|a| (a.role, &a.pointer)).collect();
+        let attached: Vec<Attach<'_>> =
+            mine.iter().map(|a| (a.role, &a.pointer, a.released_at.is_some())).collect();
         let a = assess(&e.pointer, &attached, &facts);
+        let stalled = stall_of(&mine, a.lane, &facts, &blocks, now, minutes);
         let (row_live, row_block) = chip(&e.pointer);
         // The attachments of a replaced agent come last.
         let mut ordered = mine.clone();
@@ -813,13 +877,15 @@ async fn read(app: &Platform, account: &str, id: &str) -> Result<wire::BoardView
         if a.lane == wire::Lane::Next && item_id(&e.pointer).is_some() && blocked.is_empty() {
             ready.push(e.id.clone());
         }
-        let marks =
-            marks_of(a.merged_not_closed, &e.pointer, &mine, &facts, blocked, &|p| chip(p).0.and_then(|l| l.repo));
+        let marks = marks_of(a.merged_not_closed, stalled, &e.pointer, &mine, &facts, blocked, &|p| {
+            chip(p).0.and_then(|l| l.repo)
+        });
         let attachments: Vec<wire::Attachment> = ordered
             .iter()
             .map(|a| {
                 let (live, block) = chip(&a.pointer);
-                wire::Attachment { id: a.id.clone(), role: a.role, pointer: a.pointer.clone(), live, block }
+                let released = a.released_at.is_some();
+                wire::Attachment { id: a.id.clone(), role: a.role, pointer: a.pointer.clone(), live, block, released }
             })
             .collect();
         if let Some(g) = groups.iter_mut().find(|g| Some(&g.id) == e.zone.as_ref())
@@ -830,7 +896,18 @@ async fn read(app: &Platform, account: &str, id: &str) -> Result<wire::BoardView
             g.progress.proven += u32::from(a.proof.is_some());
         }
         let at = wire::Lane::ALL.iter().position(|l| *l == a.lane).unwrap_or(0);
-        let raised = asks::raised(row_live.as_ref(), &attachments, e.updated_at, &|m| {
+        // Needs you, when the reader owns a block that stalled the row.
+        let stalled_yours = stalled.zip(
+            mine.iter()
+                .filter(|a| a.role == wire::AttachRole::Work && a.released_at.is_none())
+                .find_map(|a| match &a.pointer {
+                    wire::Pointer::Block { machine, pane } if blocks.owned_by(machine, pane, account) => {
+                        Some(machine.clone())
+                    }
+                    _ => None,
+                }),
+        );
+        let raised = asks::raised(row_live.as_ref(), &attachments, stalled_yours, e.updated_at, &|m| {
             names.get(m).filter(|n| !n.is_empty()).cloned().unwrap_or_else(|| "a machine".to_owned())
         });
         let (ask, asked) = asks.row(&e.id, raised);
@@ -1134,6 +1211,57 @@ fn already(stored: &db::Stored, pointer: &wire::Pointer) -> Option<String> {
         .map(|a| format!("that is attached to row {} as {} already: it was not attached again", a.row, a.role.as_str()))
 }
 
+/// Whether another machine's block holds `row` against a block of `machine`
+/// (#404): one that is work on the row, was not taken over and isn't
+/// reported closed. A block that hasn't reported yet holds it: it is
+/// attached and isn't closed. The machine's own other panes are no
+/// conflict (a pane it restarted). Refused 409 `claimed`, saying that
+/// `what` ("#12") is being worked by the holder, since when it attached.
+pub(crate) async fn claim_conflict(
+    app: &Platform,
+    project: &str,
+    stored: &db::Stored,
+    row: &str,
+    machine: &str,
+    what: &str,
+) -> Result<(), ApiError> {
+    let holders: Vec<&db::Attached> = stored
+        .attachments
+        .iter()
+        .filter(|a| a.row == row && a.role == wire::AttachRole::Work && a.released_at.is_none())
+        .filter(|a| matches!(&a.pointer, wire::Pointer::Block { machine: m, .. } if m != machine))
+        .collect();
+    let panes: Vec<(String, String)> = holders
+        .iter()
+        .filter_map(|a| match &a.pointer {
+            wire::Pointer::Block { machine, pane } => Some((machine.clone(), pane.clone())),
+            _ => None,
+        })
+        .collect();
+    let blocks = block_states(app, project, &panes).await?;
+    for a in holders {
+        let wire::Pointer::Block { machine: m, pane } = &a.pointer else { continue };
+        let state = blocks.state.get(&(m.clone(), pane.clone()));
+        if state.is_some_and(|b| b.state == wire::BlockWord::Closed) {
+            continue;
+        }
+        let title = state.and_then(|b| b.title.clone()).unwrap_or_else(|| "an agent".to_owned());
+        let name = agent_names(app, std::slice::from_ref(m)).await?.remove(m).map(|d| d.name).unwrap_or_default();
+        let on = if name.is_empty() { "another machine".to_owned() } else { name };
+        let at = (a.created_at / 60_000) % 1440;
+        return Err(refusal(
+            StatusCode::CONFLICT,
+            wire::CLAIMED,
+            &format!(
+                "{what} is being worked by {title} on {on}, since {:02}:{:02} UTC: pass take: true to take it over",
+                at / 60,
+                at % 60
+            ),
+        ));
+    }
+    Ok(())
+}
+
 /// The id a pointer to an issue or a mirrored item holds.
 fn item_id(p: &wire::Pointer) -> Option<&str> {
     match p {
@@ -1299,7 +1427,28 @@ pub async fn attach(app: &Platform, by: Actor<'_>, id: &str, a: &wire::AttachRow
     {
         return Err(bad("work attached to a row is a PR: an issue is a row of its own"));
     }
+    let claiming = match (&a.pointer, a.role, by.agent) {
+        (wire::Pointer::Block { machine, .. }, wire::AttachRole::Work, Some(_)) => Some(machine.as_str()),
+        _ => None,
+    };
+    if let (Some(machine), false) = (claiming, a.take) {
+        let what = match stored.rows.iter().find(|r| r.id == a.row).and_then(|r| item_id(&r.pointer)) {
+            Some(item) => {
+                let (items, issues): (Vec<&str>, Vec<&str>) =
+                    if item.starts_with("iss_") { (vec![], vec![item]) } else { (vec![item], vec![]) };
+                match known(app, by.account, &board.project, &items, &issues).await?.get(item) {
+                    Some(k) => k.key.as_ref().map_or("this row".to_owned(), |k| format!("#{}", k.number)),
+                    None => "this row".to_owned(),
+                }
+            }
+            None => "this row".to_owned(),
+        };
+        claim_conflict(app, &board.project, &stored, &a.row, machine, &what).await?;
+    }
     app.db.attach(id, &a.row, a.role, &a.pointer, by.agent, now_ms(), wire::ATTACHMENTS_MAX)?.map_err(refused)?;
+    if let (Some(machine), true) = (claiming, a.take) {
+        app.db.release_blocks(&a.row, machine, now_ms())?;
+    }
     changed(app, &board.project, id);
     read(app, by.account, id).await
 }
@@ -1370,6 +1519,37 @@ pub async fn delete(app: &Platform, by: Actor<'_>, id: &str, entry: &str) -> Res
 }
 
 // ---------------------------------------------------------------- routes
+
+/// `GET /api/projects/{project}/board-settings`: a project's board settings
+/// (members).
+pub async fn settings_route(
+    State(app): State<Arc<Platform>>,
+    s: Person,
+    Path(project): Path<String>,
+) -> J<wire::BoardSettings> {
+    let project = place(&app, Actor::person(&s.account), &project, false).await?;
+    Ok(Json(wire::BoardSettings { stall_minutes: app.db.stall_minutes(&project, wire::STALL_MINUTES_DEFAULT)? }))
+}
+
+/// `PUT /api/projects/{project}/board-settings`: set them (owners and
+/// editors). `stall_minutes` is 1 to a week; the boards of the project are
+/// told, for a row's stalled mark moves with it.
+pub async fn put_settings_route(
+    State(app): State<Arc<Platform>>,
+    s: Person,
+    Path(project): Path<String>,
+    Json(n): Json<wire::BoardSettings>,
+) -> J<wire::BoardSettings> {
+    let project = place(&app, Actor::person(&s.account), &project, true).await?;
+    if !(1..=wire::STALL_MINUTES_MAX).contains(&n.stall_minutes) {
+        return Err(bad(&format!("stall_minutes is 1 to {}", wire::STALL_MINUTES_MAX)));
+    }
+    app.db.set_stall_minutes(&project, n.stall_minutes, now_ms())?;
+    for b in app.db.boards(&project)? {
+        changed(&app, &project, &b.id);
+    }
+    Ok(Json(n))
+}
 
 /// `GET /api/projects/{project}/boards`: a project's boards, open ones
 /// first, each oldest first.

@@ -2781,6 +2781,22 @@ note = "Makes a board in the project: owners and editors."
 
 [[route]]
 method = "GET"
+path = "/api/projects/{project}/board-settings"  # wire::boards::PROJECT_BOARD_SETTINGS
+process = "platform"
+auth = "session"
+clients = ["page"]
+note = "A project's board settings (stall_minutes: how long a Doing row's agent blocks may sit idle before it is stalled; 30 by default): any member."
+
+[[route]]
+method = "PUT"
+path = "/api/projects/{project}/board-settings"  # wire::boards::PROJECT_BOARD_SETTINGS
+process = "platform"
+auth = "session"
+clients = ["page"]
+note = "Sets the project's board settings (stall_minutes, 1 to 10080): owners and editors, people only."
+
+[[route]]
+method = "GET"
 path = "/api/boards/{id}"  # wire::boards::BOARD
 process = "platform"
 auth = "session"

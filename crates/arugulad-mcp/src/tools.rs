@@ -374,6 +374,9 @@ pub struct StartAgentArgs {
     /// The issue it works on: `#N`, `owner/repo#N` or `IDENT-N`. The block keeps it, and its header says it (`#N · board`). With this machine's boards.write grant over the issue's project, the block is attached to that issue's row on every board of the project, which moves the row to Doing; without it the answer says so. A worktree's branch, when you give none, starts with the issue's number (`feat/357-…`). Not for a chat.
     #[serde(default)]
     pub issue: Option<String>,
+    /// With issue: take the row over when another machine's agent already works it. Without it, an issue another machine's agent holds refuses the start, naming who holds it; with it, that agent is folded under "earlier agents" and this one holds the row.
+    #[serde(default)]
+    pub take: bool,
 }
 
 #[derive(Deserialize, JsonSchema)]
@@ -2913,7 +2916,14 @@ impl ToolCall<'_, '_> {
         let mut tail =
             owned.as_ref().map(|w| format!(", in worktree {} (branch {})", w.path, w.branch)).unwrap_or_default();
         let on = match &issue {
-            Some(i) => Some(self.on_issue(i, block).await),
+            Some(i) => match self.on_issue(i, block, a.take).await {
+                Ok(on) => Some(on),
+                Err(held) => {
+                    // The row is held: this agent isn't started.
+                    let _ = crate::mcp::ops::call::<ClosePane>(self, serde_json::json!({ "id": block })).await;
+                    return Err(held);
+                }
+            },
             None => None,
         };
         if let Some(on) = &on {
@@ -2929,9 +2939,17 @@ impl ToolCall<'_, '_> {
 
     /// `start_agent {issue}`: attach the block to the issue's row, and say
     /// what became of it. The block keeps its issue either way.
-    async fn on_issue(&self, issue: &str, block: arugula_proto::PaneId) -> results::StartedOn {
+    /// A row another machine's agent holds (Arugula #404) refuses the start,
+    /// unless `take`: the answer is the refusal, which names the holder.
+    async fn on_issue(
+        &self,
+        issue: &str,
+        block: arugula_proto::PaneId,
+        take: bool,
+    ) -> Result<results::StartedOn, String> {
+        use arugulad_base::board_attach::NotKept;
         let home = self.current_project(None).await.ok();
-        match arugulad_base::board_attach::keep(self.app, home, issue, block).await {
+        Ok(match arugulad_base::board_attach::keep(self.app, home, issue, block, take).await {
             Ok(boards) if boards.is_empty() => results::StartedOn {
                 issue: issue.to_owned(),
                 boards: vec![],
@@ -2946,12 +2964,13 @@ impl ToolCall<'_, '_> {
                     .collect();
                 results::StartedOn { issue: issue.to_owned(), boards, said }
             }
-            Err(why) => results::StartedOn {
+            Err(NotKept::Claimed(why)) => return Err(format!("{why}; no agent was started")),
+            Err(NotKept::Why(why)) => results::StartedOn {
                 issue: issue.to_owned(),
                 boards: vec![],
                 said: format!("It is on {issue}, but not attached to a row: {why}."),
             },
-        }
+        })
     }
 
     /// `start_agent {worktree}`: the new branch's worktree, in the repo that

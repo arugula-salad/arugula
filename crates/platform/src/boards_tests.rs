@@ -1018,8 +1018,10 @@ async fn a_machine_reports_its_blocks_and_the_row_shows_it() {
     let (st, v) = geek(&base, "PUT", AGENT_BLOCK_STATE, Some(report)).await;
     assert_eq!(st, 200, "{v}");
     let (_, v) = call(&base, "a", "GET", &format!("/api/boards/{id}"), None).await;
+    let mut shown = row_in(&v, &row_id)["attachments"][0]["block"].clone();
+    assert!(shown.as_object_mut().unwrap().remove("since").is_some_and(|s| s.is_u64()), "when it began: {v}");
     assert_eq!(
-        row_in(&v, &row_id)["attachments"][0]["block"],
+        shown,
         json!({ "state": "needs_input", "branch": "feat/parser", "head": "abc1234", "pushed": false,
                 "uncommitted": 2, "diffstat": { "files": 3, "added": 40, "removed": 2 } }),
         "the row shows the state: {v}"
@@ -1229,4 +1231,167 @@ async fn a_block_attached_as_percent_n_is_pane_n() {
     assert_eq!(st, 200, "{v}");
     let (_, v) = call(&base, "a", "GET", &format!("/api/boards/{id}"), None).await;
     assert_eq!(lane(&v, &row_id), "doing", "the report for pane 640 is found: {v}");
+}
+
+// ---------------------------------------------------------------- claims (#404)
+
+/// A second machine's block on a row another machine's block holds is refused
+/// 409, naming the holder; the holder's own machine isn't a conflict; `take`
+/// folds the old block under `earlier`; and the claim lapses when its block
+/// closes. The board_write attach (an agent block as work) keeps the same
+/// rule.
+#[tokio::test]
+async fn a_second_machines_block_on_a_claimed_row_is_refused_naming_the_holder() {
+    use arugula_control_wire::boards::{
+        AGENT_BLOCK_STATE, CLAIMED, agent_board_attachments, agent_project_attach_block as route,
+    };
+
+    let (hub, _app, base, t, _u) = crate::agents_tests::seeded().await;
+    hub.flag_named("team:t", FLAG, true);
+    hub.daemon("bmac", "b", Some("t"));
+    let one = issue(&base, "a", &t, "Parser").await;
+    let (board, row) = board_on(&base, "a", &t, "Launch", &one).await;
+    grant_write(&base, "a", "geek", &t).await;
+    grant_write(&base, "b", "bmac", &t).await;
+
+    let body = |machine: &str, pane: &str, take: bool| {
+        let mut b = json!({ "issue": "#1", "machine": machine, "pane": pane });
+        if take {
+            b["take"] = json!(true);
+        }
+        b
+    };
+    let by_b = |base: String, path: String, b: Value| async move { signed(&base, "b bmac", "POST", &path, Some(b)).await };
+
+    // geek's block takes the row, and reports.
+    assert_eq!(geek(&base, "POST", &route(&t), Some(body("geek", "7", false))).await.0, 200);
+    let report = json!({ "pane": "7", "block": { "state": "working", "title": "Parser lane" } });
+    assert_eq!(geek(&base, "PUT", AGENT_BLOCK_STATE, Some(report)).await.0, 200);
+
+    // bmac's is refused, naming geek's block, its machine and when.
+    let (st, v) = by_b(base.clone(), route(&t), body("bmac", "3", false)).await;
+    assert_eq!((st, v["reason"].as_str()), (409, Some(CLAIMED)), "{v}");
+    let said = v["error"].as_str().or(v["message"].as_str()).unwrap_or_default().to_owned();
+    for want in ["#1", "Parser lane", "geek-box", "since ", "UTC"] {
+        assert!(said.contains(want), "{want:?} in {said:?}: {v}");
+    }
+    let (_, v) = call(&base, "a", "GET", &format!("/api/boards/{board}"), None).await;
+    assert_eq!(row_in(&v, &row)["attachments"].as_array().unwrap().len(), 1, "nothing was attached: {v}");
+
+    // The holder's own machine, another pane: no conflict.
+    assert_eq!(geek(&base, "POST", &route(&t), Some(body("geek", "9", false))).await.0, 200);
+
+    // bmac takes it: the old blocks are earlier agents and come last.
+    let (st, v) = by_b(base.clone(), route(&t), body("bmac", "3", true)).await;
+    assert_eq!(st, 200, "{v}");
+    let working = json!({ "pane": "3", "block": { "state": "working" } });
+    assert_eq!(signed(&base, "b bmac", "PUT", AGENT_BLOCK_STATE, Some(working)).await.0, 200);
+    let (_, v) = call(&base, "a", "GET", &format!("/api/boards/{board}"), None).await;
+    let r = row_in(&v, &row);
+    let at = r["attachments"].as_array().unwrap();
+    let panes: Vec<_> = at.iter().map(|a| (a["pointer"]["machine"].as_str().unwrap(), a["released"].as_bool())).collect();
+    assert_eq!(panes[0], ("bmac", Some(false)), "{v}");
+    assert!(panes[1..].iter().all(|p| p.0 == "geek" && p.1 == Some(true)), "{v}");
+    assert_eq!(r["marks"].as_array().unwrap().len(), 2, "one earlier each: {v}");
+    assert_eq!(lane(&v, &row), "doing", "bmac's block is not closed: {v}");
+
+    // An agent's board_write attach honours it too: geek is refused now.
+    let att = |pane: &str, take: bool| {
+        let mut b = json!({ "row": row, "role": "work", "pointer": { "kind": "block", "machine": "geek", "pane": pane } });
+        if take {
+            b["take"] = json!(true);
+        }
+        b
+    };
+    let (st, v) = geek(&base, "POST", &agent_board_attachments(&board), Some(att("11", false))).await;
+    assert_eq!((st, v["reason"].as_str()), (409, Some(CLAIMED)), "{v}");
+    let (st, v) = geek(&base, "POST", &agent_board_attachments(&board), Some(att("11", true))).await;
+    assert_eq!(st, 200, "{v}");
+
+    // bmac's block was released by that take; geek's holds. Closing it
+    // releases the claim: bmac attaches again, no take.
+    let closed = json!({ "pane": "11", "block": { "state": "closed" } });
+    assert_eq!(geek(&base, "PUT", AGENT_BLOCK_STATE, Some(closed)).await.0, 200);
+    let (st, v) = by_b(base.clone(), route(&t), body("bmac", "4", false)).await;
+    assert_eq!(st, 200, "a closed block holds nothing: {v}");
+}
+
+/// Stalled: a Doing row whose open blocks have all been idle longer than the
+/// project's `stall_minutes`, with no PR on it. It is a mark for every
+/// reader, in Needs you only for the person who owns the block, and a reader
+/// who can't see the block (its machine's grant lapsed) is told nothing of
+/// it. The setting is the owners' and editors'.
+#[tokio::test]
+async fn a_doing_row_with_only_idle_blocks_is_stalled_past_n_minutes() {
+    use arugula_control_wire::boards::{AGENT_BLOCK_STATE, PROJECT_BOARD_SETTINGS};
+
+    let (hub, app, base, t, _u) = crate::agents_tests::seeded().await;
+    hub.flag_named("team:t", FLAG, true);
+    let one = issue(&base, "a", &t, "Parser").await;
+    let (board, row) = board_on(&base, "a", &t, "Launch", &one).await;
+    let (st, granted) = call(
+        &base,
+        "a",
+        "POST",
+        "/api/grants",
+        crate::agents_tests::give("geek", "boards.write", json!({ "kind": "project", "id": t })),
+    )
+    .await;
+    assert_eq!(st, 200, "{granted}");
+    let pointer = json!({ "kind": "block", "machine": "geek", "pane": "7" });
+    let (st, v) = attach(&base, "a", &board, json!({ "row": row, "role": "work", "pointer": pointer })).await;
+    assert_eq!(st, 200, "{v}");
+    let idle = json!({ "pane": "7", "block": { "state": "idle" } });
+    assert_eq!(geek(&base, "PUT", AGENT_BLOCK_STATE, Some(idle.clone())).await.0, 200);
+
+    let read = |who: &'static str| {
+        let (base, board) = (base.clone(), board.clone());
+        async move { call(&base, who, "GET", &format!("/api/boards/{board}"), None).await.1 }
+    };
+    let marks = |v: &Value| row_in(v, &row)["marks"].clone();
+    let asked = |v: &Value| row_in(v, &row)["ask"]["question"].as_str().map(str::to_owned);
+
+    // Just now: not stalled.
+    let v = read("a").await;
+    assert_eq!(marks(&v), Value::Null, "{v}");
+    // The idle report is repeated: it is still idle since the first.
+    let long_ago = arugula_e2e::now_ms() - 42 * 60_000;
+    app.db.c().execute("UPDATE board_block_states SET state_since = ?1", params![long_ago]).unwrap();
+    assert_eq!(geek(&base, "PUT", AGENT_BLOCK_STATE, Some(idle.clone())).await.0, 200);
+    let v = read("a").await;
+    assert_eq!(marks(&v), json!([{ "kind": "stalled", "since": long_ago }]), "42 minutes idle, 30 allowed: {v}");
+    assert_eq!(lane(&v, &row), "doing", "{v}");
+    // The block's owner has it in Needs you.
+    assert!(asked(&v).is_some_and(|q| q.contains("stalled 42m")), "{v}");
+    // Another member sees the mark, not the ask.
+    let v = read("b").await;
+    assert_eq!(marks(&v), json!([{ "kind": "stalled", "since": long_ago }]), "{v}");
+    assert_eq!(asked(&v), None, "not b's block: {v}");
+
+    // A working block un-stalls it; so does a PR; the setting moves the line.
+    let working = json!({ "pane": "7", "block": { "state": "working" } });
+    assert_eq!(geek(&base, "PUT", AGENT_BLOCK_STATE, Some(working)).await.0, 200);
+    assert_eq!(marks(&read("a").await), Value::Null);
+    assert_eq!(geek(&base, "PUT", AGENT_BLOCK_STATE, Some(idle.clone())).await.0, 200);
+    app.db.c().execute("UPDATE board_block_states SET state_since = ?1", params![long_ago]).unwrap();
+    assert_eq!(marks(&read("a").await).as_array().map(Vec::len), Some(1));
+    let path = PROJECT_BOARD_SETTINGS.replace("{project}", &t);
+    let (st, v) = call(&base, "a", "GET", &path, None).await;
+    assert_eq!((st, v["stall_minutes"].as_u64()), (200, Some(30)), "{v}");
+    let (st, v) = call(&base, "b", "PUT", &path, Some(json!({ "stall_minutes": 60 }))).await;
+    assert_eq!((st, v["stall_minutes"].as_u64()), (200, Some(60)), "an editor sets it: {v}");
+    assert_eq!(marks(&read("a").await), Value::Null, "42m is under 60");
+    assert_eq!(call(&base, "x", "PUT", &path, Some(json!({ "stall_minutes": 5 }))).await.0, 403, "a viewer may not");
+    assert_eq!(call(&base, "a", "PUT", &path, Some(json!({ "stall_minutes": 0 }))).await.0, 400);
+    assert_eq!(call(&base, "x", "GET", &path, None).await.1["stall_minutes"], 60, "a member reads it");
+    assert_eq!(call(&base, "a", "PUT", &path, Some(json!({ "stall_minutes": 30 }))).await.0, 200);
+
+    // A reader who can't see the block is told nothing: its machine's grant
+    // lapsed, so there is no block, no claim and no stall.
+    let grant = granted["id"].as_str().unwrap();
+    let (st, _) = call(&base, "a", "POST", &format!("/api/grants/{grant}/revoke"), None).await;
+    assert_eq!(st, 200);
+    let v = read("b").await;
+    assert_eq!((marks(&v), asked(&v)), (Value::Null, None), "{v}");
+    assert_eq!(lane(&v, &row), "next", "{v}");
 }

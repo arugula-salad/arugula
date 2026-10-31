@@ -237,7 +237,12 @@ live?: BoardLive | null,
 /**
  * A `Block` pointer's block as its machine last reported it.
  */
-block?: BoardBlockState | null, };
+block?: BoardBlockState | null, 
+/**
+ * A block that a newer agent took the row from (`take`): it is an
+ * earlier agent whatever it reports, and holds no claim.
+ */
+released: boolean, };
 
 /**
  * What a daemon says of one of its own agent blocks, and all it says
@@ -259,7 +264,12 @@ head?: string | null, pushed?: boolean | null,
 /**
  * How many files are uncommitted.
  */
-uncommitted?: number | null, diffstat?: BoardDiffstat | null, };
+uncommitted?: number | null, diffstat?: BoardDiffstat | null, 
+/**
+ * When `state` last changed, in milliseconds: control's to keep, set
+ * on a read (a report's own is ignored).
+ */
+since?: number, };
 
 /**
  * What an agent block is doing (aru-116's second ruling).
@@ -359,7 +369,7 @@ export type BoardLiveState = "open" | "checks_running" | "checks_failed" | "merg
  * A note on a row that its lane doesn't say, worked out on every read and
  * never stored (aru-125, decisions 7 to 9).
  */
-export type BoardMark = { "kind": "merged_not_closed" } | { "kind": "after", number: number, repo?: string, } | { "kind": "earlier", attachment: string, } | { "kind": "blocked_by", number?: number, title?: string, repo?: string, };
+export type BoardMark = { "kind": "merged_not_closed" } | { "kind": "after", number: number, repo?: string, } | { "kind": "earlier", attachment: string, } | { "kind": "stalled", since: number, } | { "kind": "blocked_by", number?: number, title?: string, repo?: string, };
 
 /**
  * [`BOARD_ENTRY_MOVE`]'s body. A row moves to a group (`zone`) or, with

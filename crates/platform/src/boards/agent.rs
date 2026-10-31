@@ -249,7 +249,9 @@ pub async fn put_block_state(
 /// that issue on each board of the project. 403 without the machine's
 /// `boards.write` over the project; only that project's rows are touched.
 /// Answers the rows the block is on (also those it was on already), none
-/// when no board has a row for the issue.
+/// when no board has a row for the issue. A row another machine's block
+/// holds refuses it, 409 `claimed`, naming the holder, unless `take` is set,
+/// which folds that block under `earlier` (#404).
 pub async fn attach_block(
     State(app): State<Arc<Platform>>,
     d: Machine,
@@ -306,9 +308,20 @@ pub async fn attach_block(
     if found.iter().any(|f| f.2) {
         found.retain(|f| f.2);
     }
+    // Refused before any row is touched, so a claim is held on every board or none.
+    if !a.take {
+        for (stored, row, _) in &found {
+            if super::already(stored, &pointer).is_none() {
+                super::claim_conflict(&app, &project, stored, row, &d.daemon, &a.issue).await?;
+            }
+        }
+    }
     let mut on = vec![];
     for (stored, row, _) in found {
         let board = &stored.board;
+        if a.take {
+            app.db.release_blocks(&row, &d.daemon, arugula_e2e::now_ms())?;
+        }
         if super::already(&stored, &pointer).is_none() {
             app.db
                 .attach(

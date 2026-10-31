@@ -1429,6 +1429,17 @@ note = "Those of its machines."
 seen_by = ["litestream"]
 
 [[table]]
+name = "board_settings"
+plane = "platform"
+process = "platform"
+holds = "plaintext"
+what = "A project's settings for its boards (Arugula #404): how many minutes a Doing row's agent blocks may sit idle before the row is stalled. A project with no row uses the default."
+why_asleep = "A board marks a row stalled on a teammate's phone with every machine asleep."
+with_account = "deleted"
+note = "Those of projects that go with it."
+seen_by = ["litestream"]
+
+[[table]]
 name = "deploy_approvals"
 plane = "platform"
 process = "platform"
