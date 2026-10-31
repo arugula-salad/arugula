@@ -198,6 +198,17 @@ impl Plane {
     }
 }
 
+/// An item's labels with some added and some taken off.
+fn merged_labels(mut current: Vec<String>, add: &[String], remove: &[String]) -> Vec<String> {
+    for l in add {
+        if !current.contains(l) {
+            current.push(l.clone());
+        }
+    }
+    current.retain(|l| !remove.contains(l));
+    current
+}
+
 /// The ids and names in a list of a project's fields.
 fn named(all: &[Value]) -> Vec<Named> {
     let one = |v: &Value| Some(Named { id: v["id"].as_str()?.to_owned(), name: v["name"].as_str()?.to_owned() });
@@ -352,14 +363,9 @@ impl TrackerProvider for Plane {
             }
             if !edit.labels_add.is_empty() || !edit.labels_remove.is_empty() {
                 // Plane sets an item's labels whole: the union, less those taken off.
-                let mut labels = self.labels_of(workspace, project_id, id).await?;
-                for l in &edit.labels_add {
-                    if !labels.contains(l) {
-                        labels.push(segment(l)?.to_owned());
-                    }
-                }
-                labels.retain(|l| !edit.labels_remove.contains(l));
-                body["labels"] = json!(labels);
+                let current = self.labels_of(workspace, project_id, id).await?;
+                let labels = merged_labels(current, &edit.labels_add, &edit.labels_remove);
+                body["labels"] = json!(labels.iter().map(|l| segment(l)).collect::<Result<Vec<_>>>()?);
             }
             self.patch(workspace, project_id, id, body).await
         })
@@ -483,6 +489,13 @@ mod tests {
         assert_eq!(i.updated_at - i.created_at, 86_400_500);
         // Not expanded: no guessing at its state.
         assert!(item(&json!({ "id": "u1", "sequence_id": 7, "state": "uuid" })).is_err());
+    }
+
+    #[test]
+    fn labels_are_the_union_less_those_taken_off() {
+        let v = |l: &[&str]| l.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        assert_eq!(merged_labels(v(&["a", "b"]), &v(&["b", "c"]), &v(&[])), v(&["a", "b", "c"]));
+        assert_eq!(merged_labels(v(&["a", "b"]), &v(&["c"]), &v(&["a"])), v(&["b", "c"]));
     }
 
     #[test]
