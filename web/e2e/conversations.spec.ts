@@ -21,7 +21,7 @@ const seed = (word: string, title: string, more?: (base: Base) => object[]) => {
 };
 
 // The run's Claude directory is every spec's: what these leave in it is a
-// conversation each later daemon lists (and a hint it offers, aru-118).
+// conversation each later daemon lists (and a hint it offers, aru-127).
 test.afterAll(() => {
   rmSync(join(claude, "projects"), { recursive: true, force: true });
   for (const cwd of seeded) rmSync(cwd, { recursive: true, force: true });

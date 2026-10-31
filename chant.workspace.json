@@ -41,7 +41,7 @@
       "links": [{ "member": "proto", "output": "ts" }],
       "generated": [
         {
-          "path": "src/proto.gen.ts",
+          "path": "src/shared/proto.gen.ts",
           "generator": "just proto-ts",
           "sources": ["crates/proto/src"]
         }

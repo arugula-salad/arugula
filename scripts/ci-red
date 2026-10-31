@@ -32,7 +32,7 @@ hours=${ARUGULA_RED_HOURS:-6}
 mention=${ARUGULA_RED_MENTION:-}
 now=${ARUGULA_RED_NOW:-$(date +%s)}
 # Pinned like chant-ci-green.yml's (#1675). Tests put a fake in its place.
-chant=${ARUGULA_RED_CHANT:-npx --yes @intentius/chant@0.124.52}
+chant=${ARUGULA_RED_CHANT:-npx --yes @intentius/chant@0.124.60}
 title="main is red"
 main=$(git rev-parse --verify "${ARUGULA_RED_MAIN:-origin/main}^{commit}")
 short() { git rev-parse --short=12 "$1"; }

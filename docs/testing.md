@@ -147,7 +147,7 @@ its `_ci` records. A check run is matched by name, so no other workflow
 that runs on main's commits may have a job named like a required one, not
 even one that's skipped there (binaries.yml's PR-only desktop-xvfb is
 named `desktop-xvfb (pull request)` for that). `npx
-@intentius/chant@0.124.52 ci last-green` (after `git fetch --tags`) prints
+@intentius/chant@0.124.60 ci last-green` (after `git fetch --tags`) prints
 the newest green commit.
 
 `.github/workflows/ci-red.yml` runs `scripts/ci-red` every hour and after

@@ -388,7 +388,7 @@ newest is:
 
 ```sh
 git fetch origin --tags
-sha=$(npx @intentius/chant@0.124.52 ci last-green)
+sha=$(npx @intentius/chant@0.124.60 ci last-green)
 ```
 
 `just green` lists the newest of them, newest first (`just green 50` for
