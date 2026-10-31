@@ -138,6 +138,16 @@ pub const AGENT_BLOCK_STATE: &str = "/api/daemon/block-state";
 /// machine's own.
 pub const AGENT_PROJECT_ATTACH_BLOCK: &str = "/api/daemon/projects/{project}/attach-block";
 
+/// `POST` [`CheckClaim`]: before a pane is opened on an issue, ask whether
+/// another machine's block holds its row on any board of the project;
+/// answered [`ClaimChecked`]. Read-only; needs the machine's `boards.write`.
+pub const AGENT_PROJECT_CLAIM_CHECK: &str = "/api/daemon/projects/{project}/claim-check";
+
+/// [`AGENT_PROJECT_CLAIM_CHECK`] for `project`.
+pub fn agent_project_claim_check(project: &str) -> String {
+    format!("/api/daemon/projects/{project}/claim-check")
+}
+
 /// [`AGENT_PROJECT_ATTACH_BLOCK`] for `project`.
 pub fn agent_project_attach_block(project: &str) -> String {
     format!("/api/daemon/projects/{project}/attach-block")
@@ -1116,6 +1126,28 @@ pub struct AttachBlock {
     /// under `earlier`; without it the attach is refused, 409 `claimed`.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub take: bool,
+}
+
+/// [`AGENT_PROJECT_CLAIM_CHECK`]'s body: the issue as the starter wrote it
+/// and the asking machine (the signer).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "BoardCheckClaim"))]
+#[serde(deny_unknown_fields)]
+pub struct CheckClaim {
+    pub issue: String,
+    pub machine: String,
+}
+
+/// [`AGENT_PROJECT_CLAIM_CHECK`]'s answer: `held` says who holds the row
+/// (the sentence of the 409 at attach), none when nothing does.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "BoardClaimChecked"))]
+pub struct ClaimChecked {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub held: Option<String>,
 }
 
 /// [`AGENT_BOARD_RESOLVE`]'s body: up to [`RESOLVE_MAX`] references, each

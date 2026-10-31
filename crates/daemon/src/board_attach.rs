@@ -10,7 +10,10 @@
 //! Only with the `boards` flag on here, and only when this machine has
 //! joined control.
 
-use arugula_control_wire::boards::{AttachBlock, BlockAttached, CLAIMED, IssueRef, agent_project_attach_block};
+use arugula_control_wire::boards::{
+    AttachBlock, BlockAttached, CLAIMED, CheckClaim, ClaimChecked, IssueRef, agent_project_attach_block,
+    agent_project_claim_check,
+};
 use std::sync::Arc;
 
 use arugula_proto::{PaneId, flags};
@@ -40,12 +43,13 @@ pub struct WorkBoard {
 }
 
 /// What a config opening an agent block says of its issue: nothing, or the
-/// issue as written. An issue that isn't one is the opener's mistake.
-pub fn issue_of(config: &serde_json::Value) -> Result<Option<String>, String> {
+/// issue as written and whether to `take` the row. An issue that isn't one is
+/// the opener's mistake.
+pub fn issue_of(config: &serde_json::Value) -> Result<Option<(String, bool)>, String> {
     let Some(w) = config.get("work").filter(|w| !w.is_null()) else { return Ok(None) };
     let issue = w["issue"].as_str().unwrap_or_default().trim();
     match IssueRef::parse(issue) {
-        Some(_) => Ok(Some(issue.to_owned())),
+        Some(_) => Ok(Some((issue.to_owned(), w["take"].as_bool().unwrap_or(false)))),
         None => Err(format!("work.issue {issue:?}: an issue is #N, owner/repo#N or IDENT-N")),
     }
 }
@@ -102,13 +106,28 @@ pub async fn keep(
 
 /// [`keep`], in the background, for a block opened through the API
 /// (`arugula agent --issue`): nobody waits for its answer.
-pub fn keep_later(app: Arc<App>, issue: String, pane: PaneId) {
+pub fn keep_later(app: Arc<App>, issue: String, take: bool, pane: PaneId) {
     crate::task::spawn(async move {
-        match keep(&app, None, &issue, pane, false).await {
+        match keep(&app, None, &issue, pane, take).await {
             Ok(boards) => debug!(pane, issue, boards = boards.len(), "a block is on its issue's rows"),
             Err(why) => debug!(pane, issue, "a block started on an issue isn't on a row: {why}"),
         }
     });
+}
+
+/// Before a pane is opened on `issue`: who holds its row, if another machine's
+/// block does (Arugula #404). A machine that can't ask (boards off, not
+/// joined, no grant, control down) is told nothing: the attach says why the
+/// row isn't taken, as it always did, and refuses a race with its 409.
+pub async fn held(app: &App, home: Option<String>, issue: &str) -> Option<String> {
+    if !crate::lab_flags::flags(app.control.state_dir()).has(flags::BOARDS) {
+        return None;
+    }
+    let enrolled = app.control.enrolled()?;
+    let project = write_project(app, home).await.ok()?;
+    let body = serde_json::to_value(CheckClaim { issue: issue.to_owned(), machine: enrolled.keys.id() }).ok()?;
+    let v = app.control.cloud(Method::POST, &agent_project_claim_check(&project.id), Some(&body)).await.ok()?;
+    serde_json::from_value::<ClaimChecked>(v).ok()?.held
 }
 
 async fn attach(

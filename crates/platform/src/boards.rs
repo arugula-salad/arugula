@@ -1214,6 +1214,21 @@ pub(crate) async fn claim_conflict(
     machine: &str,
     what: &str,
 ) -> Result<(), ApiError> {
+    match claim_holder(app, project, stored, row, machine, what).await? {
+        Some(said) => Err(refusal(StatusCode::CONFLICT, wire::CLAIMED, &said)),
+        None => Ok(()),
+    }
+}
+
+/// [`claim_conflict`]'s sentence, none when nothing holds the row.
+pub(crate) async fn claim_holder(
+    app: &Platform,
+    project: &str,
+    stored: &db::Stored,
+    row: &str,
+    machine: &str,
+    what: &str,
+) -> Result<Option<String>, ApiError> {
     let holders: Vec<&db::Attached> = stored
         .attachments
         .iter()
@@ -1238,17 +1253,13 @@ pub(crate) async fn claim_conflict(
         let name = agent_names(app, std::slice::from_ref(m)).await?.remove(m).map(|d| d.name).unwrap_or_default();
         let on = if name.is_empty() { "another machine".to_owned() } else { name };
         let at = (a.created_at / 60_000) % 1440;
-        return Err(refusal(
-            StatusCode::CONFLICT,
-            wire::CLAIMED,
-            &format!(
-                "{what} is being worked by {title} on {on}, since {:02}:{:02} UTC: pass take: true to take it over",
-                at / 60,
-                at % 60
-            ),
-        ));
+        return Ok(Some(format!(
+            "{what} is being worked by {title} on {on}, since {:02}:{:02} UTC: pass take: true to take it over",
+            at / 60,
+            at % 60
+        )));
     }
-    Ok(())
+    Ok(None)
 }
 
 /// The id a pointer to an issue or a mirrored item holds.

@@ -2902,6 +2902,14 @@ impl ToolCall<'_, '_> {
             host: if a.vm { None } else { host },
             local: false,
         };
+        // A row another machine's agent holds refuses the start before a pane
+        // opens; the 409 at attach still catches a race.
+        if let (Some(i), false) = (&issue, a.take) {
+            let home = self.current_project(None).await.ok();
+            if let Some(held) = arugulad_base::board_attach::held(self.app, home, i).await {
+                return Err(format!("{held}; no agent was started"));
+            }
+        }
         let block = match self.open(req).await {
             Ok(b) => b,
             Err(e) => {
@@ -2920,7 +2928,7 @@ impl ToolCall<'_, '_> {
                 Ok(on) => Some(on),
                 Err(held) => {
                     // The row is held: this agent isn't started.
-                    let _ = crate::mcp::ops::call::<ClosePane>(self, serde_json::json!({ "id": block })).await;
+                    let _ = crate::mcp::ops::call::<ClosePane>(self, serde_json::json!({ "pane": block })).await;
                     return Err(held);
                 }
             },

@@ -1244,6 +1244,7 @@ async fn a_block_attached_as_percent_n_is_pane_n() {
 async fn a_second_machines_block_on_a_claimed_row_is_refused_naming_the_holder() {
     use arugula_control_wire::boards::{
         AGENT_BLOCK_STATE, CLAIMED, agent_board_attachments, agent_project_attach_block as route,
+        agent_project_claim_check as claim_check,
     };
 
     let (hub, _app, base, t, _u) = crate::agents_tests::seeded().await;
@@ -1278,6 +1279,20 @@ async fn a_second_machines_block_on_a_claimed_row_is_refused_naming_the_holder()
     }
     let (_, v) = call(&base, "a", "GET", &format!("/api/boards/{board}"), None).await;
     assert_eq!(row_in(&v, &row)["attachments"].as_array().unwrap().len(), 1, "nothing was attached: {v}");
+
+    // The preflight says the same, without attaching anything: bmac is told
+    // who holds it, geek (the holder's machine) is not.
+    let check = |m: &str| json!({ "issue": "#1", "machine": m });
+    let (st, v) = by_b(base.clone(), claim_check(&t), check("bmac")).await;
+    assert_eq!(st, 200, "{v}");
+    let held = v["held"].as_str().unwrap_or_default();
+    assert!(held.contains("Parser lane") && held.contains("geek-box"), "{v}");
+    let (_, v) = geek(&base, "POST", &claim_check(&t), Some(check("geek"))).await;
+    assert_eq!(v.get("held"), None, "its own machine: {v}");
+    let (st, _) = geek(&base, "POST", &claim_check(&t), Some(check("bmac"))).await;
+    assert_eq!(st, 403, "only for its own blocks");
+    let (_, v) = call(&base, "a", "GET", &format!("/api/boards/{board}"), None).await;
+    assert_eq!(row_in(&v, &row)["attachments"].as_array().unwrap().len(), 1, "a check attaches nothing: {v}");
 
     // The holder's own machine, another pane: no conflict.
     assert_eq!(geek(&base, "POST", &route(&t), Some(body("geek", "9", false))).await.0, 200);
@@ -1320,7 +1335,8 @@ async fn a_second_machines_block_on_a_claimed_row_is_refused_naming_the_holder()
     let (st, v) = geek(&base, "POST", &agent_board_attachments(&board), Some(att("11", true))).await;
     assert_eq!(st, 200, "{v}");
     let (_, v) = call(&base, "a", "GET", &format!("/api/boards/{board}"), None).await;
-    let bmacs = row_in(&v, &row)["attachments"].as_array().unwrap().iter().find(|a| a["pointer"]["pane"] == "3").cloned();
+    let bmacs =
+        row_in(&v, &row)["attachments"].as_array().unwrap().iter().find(|a| a["pointer"]["pane"] == "3").cloned();
     assert_eq!(bmacs.unwrap()["released"], json!(true), "geek took the row from bmac: {v}");
 
     // bmac's block was released by that take; geek's holds. Closing it

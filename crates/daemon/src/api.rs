@@ -794,10 +794,15 @@ async fn open_block(
         arugula_proto::BlockType::Agent => crate::board_attach::issue_of(&req.config).map_err(bad)?,
         _ => None,
     };
+    if let Some((issue, false)) = &issue
+        && let Some(held) = crate::board_attach::held(&app, None, issue).await
+    {
+        return Err(ApiError(StatusCode::CONFLICT, format!("{held}; no agent was started")));
+    }
     match app.mux.api(|r| Api::Open(req, who, r)).await {
         Some(Ok(block)) => {
-            if let Some(issue) = issue {
-                crate::board_attach::keep_later(app.clone(), issue, block);
+            if let Some((issue, take)) = issue {
+                crate::board_attach::keep_later(app.clone(), issue, take, block);
             }
             Ok(Json(OpenResponse { block }))
         }

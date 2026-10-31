@@ -608,6 +608,35 @@
       ],
       "type": "object"
     },
+    "CheckClaim": {
+      "additionalProperties": false,
+      "description": "[`AGENT_PROJECT_CLAIM_CHECK`]'s body: the issue as the starter wrote it\nand the asking machine (the signer).",
+      "properties": {
+        "issue": {
+          "type": "string"
+        },
+        "machine": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "issue",
+        "machine"
+      ],
+      "type": "object"
+    },
+    "ClaimChecked": {
+      "description": "[`AGENT_PROJECT_CLAIM_CHECK`]'s answer: `held` says who holds the row\n(the sentence of the 409 at attach), none when nothing does.",
+      "properties": {
+        "held": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
     "CloseBoard": {
       "description": "`POST` to close a board: what was done, not empty.",
       "properties": {

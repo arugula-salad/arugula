@@ -3184,6 +3184,15 @@ struct FakeWork {
     machine: Arc<std::sync::Mutex<String>>,
     attached: Arc<std::sync::Mutex<Vec<Value>>>,
     told: Arc<std::sync::Mutex<Vec<Value>>>,
+    /// The sentence control says of another machine's block that holds the
+    /// row of #12 (Arugula #404): set, the claim check says it and an attach
+    /// without `take` is refused 409; an attach with `take` clears it.
+    holder: Arc<std::sync::Mutex<Option<String>>>,
+    /// The claim checks asked, and the attaches that took the row.
+    checked: Arc<std::sync::Mutex<Vec<Value>>>,
+    /// The check sees no claim (a race: it was taken after the check).
+    blind: Arc<std::sync::atomic::AtomicBool>,
+    taken: Arc<std::sync::Mutex<Vec<Value>>>,
 }
 
 #[cfg(feature = "labs")]
@@ -3206,6 +3215,20 @@ async fn fake_work(f: FakeWork) -> String {
             return (StatusCode::FORBIDDEN, Json(said)).into_response();
         }
         assert_eq!(b["machine"], f.machine.lock().unwrap().as_str(), "the block is the signer's: {b}");
+        if b["issue"] == "#12" {
+            let held = f.holder.lock().unwrap().clone();
+            match (held, b["take"] == true) {
+                (Some(said), false) => {
+                    let said = json!({ "error": said, "reason": arugula_control_wire::boards::CLAIMED });
+                    return (StatusCode::CONFLICT, Json(said)).into_response();
+                }
+                (Some(_), true) => {
+                    f.holder.lock().unwrap().take();
+                    f.taken.lock().unwrap().push(b.clone());
+                }
+                (None, _) => {}
+            }
+        }
         f.attached.lock().unwrap().push(b.clone());
         let on = if b["issue"] == "#12" {
             json!([{ "board": "brd_1", "title": "Launch", "row": "row_1" }])
@@ -3213,6 +3236,13 @@ async fn fake_work(f: FakeWork) -> String {
             json!([])
         };
         Json(json!({ "on": on })).into_response()
+    }
+    async fn check(State(f): State<FakeWork>, Json(b): Json<Value>) -> Json<Value> {
+        assert_eq!(b["machine"], f.machine.lock().unwrap().as_str(), "the check is the signer's: {b}");
+        f.checked.lock().unwrap().push(b.clone());
+        let seen = b["issue"] == "#12" && !f.blind.load(std::sync::atomic::Ordering::Relaxed);
+        let held = if seen { f.holder.lock().unwrap().clone() } else { None };
+        Json(json!({ "held": held }))
     }
     async fn told(State(f): State<FakeWork>, Json(b): Json<Value>) -> Json<Value> {
         f.told.lock().unwrap().push(b);
@@ -3227,12 +3257,97 @@ async fn fake_work(f: FakeWork) -> String {
         .route("/api/daemon/issue-home", get(|| async { Json(json!({ "project": "prj_1", "home": "native" })) }))
         .route(arugula_control_wire::boards::AGENT_BOARD_REACH, get(reach))
         .route(arugula_control_wire::boards::AGENT_PROJECT_ATTACH_BLOCK, post(attach))
+        .route(arugula_control_wire::boards::AGENT_PROJECT_CLAIM_CHECK, post(check))
         .route(arugula_control_wire::boards::AGENT_BLOCK_STATE, put(told))
         .with_state(f);
     let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let at = format!("http://{}", l.local_addr().unwrap());
     tokio::spawn(async move { axum::serve(l, app).await.unwrap() });
     at
+}
+
+/// A row another machine's agent holds refuses a start on its issue (Arugula
+/// #404) before a pane opens, naming the holder, through `start_agent` and
+/// through the API (`arugula agent --issue`); `take: true` starts it, and
+/// control is told to take the row. A race that gets past the check is
+/// refused at attach, and that agent's pane is closed.
+#[cfg(all(unix, feature = "labs"))]
+#[tokio::test(flavor = "multi_thread")]
+async fn a_start_on_an_issue_another_agent_holds_is_refused_without_a_pane() {
+    use std::sync::atomic::Ordering::Relaxed;
+    let control = FakeWork::default();
+    control.granted.store(true, Relaxed);
+    let url = fake_work(control.clone()).await;
+    let machine = control.machine.clone();
+    let d = Daemon::child_in(&["--wisp-token-file", "/nonexistent"], &[], |state| {
+        let keys = arugula_e2e::DeviceKeys::load_or_create(&state.join("daemon.key")).unwrap();
+        *machine.lock().unwrap() = keys.id();
+        let cert = arugula_e2e::Cert::new(&keys, "a1", arugula_e2e::Kind::Daemon, "test");
+        let saved = json!({ "url": url, "trust": { "account": "a1", "root": keys.id() }, "cert": cert });
+        std::fs::write(state.join("control.json"), saved.to_string()).unwrap();
+        arugula_proto::flags::set(state, "boards", true).unwrap();
+    });
+    let s = bridge(&d, Client::named("claude-code")).await;
+    let agent = |extra: Value| {
+        let mut a = json!({ "agent": "acp", "command": format!("python3 {}", agentd::fake()), "prompt": "hello" });
+        a.as_object_mut().unwrap().extend(extra.as_object().unwrap().clone());
+        a
+    };
+    let panes = || d.get("/api/panes").as_array().unwrap().len();
+    // The daemon takes a moment to join the fake control; a start on a free
+    // row asks first, and is on it.
+    let deadline = std::time::Instant::now() + Duration::from_secs(20);
+    while control.attached.lock().unwrap().is_empty() {
+        let r = call_raw(&s, "start_agent", agent(json!({ "issue": "#12" }))).await;
+        let r = r.structured_content.unwrap_or_default();
+        if r["issue"]["boards"][0]["title"] == "Launch" {
+            break;
+        }
+        assert!(std::time::Instant::now() < deadline, "never joined: {r}");
+        tokio::time::sleep(Duration::from_millis(300)).await;
+    }
+    assert!(!control.checked.lock().unwrap().is_empty(), "it asked before it opened a pane");
+
+    // Another machine's block holds the row: refused, naming it, no pane.
+    let said = "#12 is being worked by Parser lane on geek-box, since 14:02 UTC: pass take: true to take it over";
+    *control.holder.lock().unwrap() = Some(said.to_owned());
+    let (before, attached) = (panes(), control.attached.lock().unwrap().len());
+    let why = refused(&s, "start_agent", agent(json!({ "issue": "#12" }))).await;
+    assert!(why.contains("Parser lane") && why.contains("geek-box") && why.contains("no agent was started"), "{why}");
+    assert_eq!((panes(), control.attached.lock().unwrap().len()), (before, attached), "no pane, no attach");
+    // Through the API, as `arugula agent --issue` does: 409, and no pane.
+    let api = d.raw(
+        "POST",
+        "/api/blocks",
+        Some(json!({ "type": "agent", "config": agent(json!({ "work": { "issue": "#12" } })) })),
+    );
+    assert_eq!(api.0, 409, "{api:?}");
+    assert!(api.1.contains("Parser lane"), "{api:?}");
+    assert_eq!(panes(), before);
+    // Another issue is no one's.
+    let free = call(&s, "start_agent", agent(json!({ "issue": "#99" }))).await;
+    assert_eq!(free["issue"]["boards"], json!([]), "{free}");
+
+    // take: true starts it, and control is told to take the row.
+    let r = call(&s, "start_agent", agent(json!({ "issue": "#12", "take": true }))).await;
+    assert_eq!(r["issue"]["boards"][0]["title"], "Launch", "{r}");
+    assert_eq!(control.taken.lock().unwrap().len(), 1, "{:?}", control.taken.lock().unwrap());
+    // The API's `work.take` too.
+    *control.holder.lock().unwrap() = Some(said.to_owned());
+    let opened =
+        d.open_with(json!({ "type": "agent", "config": agent(json!({ "work": { "issue": "#12", "take": true } })) }));
+    d.wait_for("its take", || control.taken.lock().unwrap().len() == 2);
+    assert!(d.state(opened)["work"]["issue"] == "#12");
+
+    // A race past the check: the attach is refused, and that agent's pane
+    // closes, so no pane is left.
+    *control.holder.lock().unwrap() = Some(said.to_owned());
+    control.blind.store(true, Relaxed);
+    let before = panes();
+    let why = refused(&s, "start_agent", agent(json!({ "issue": "#12" }))).await;
+    assert!(why.contains("Parser lane") && why.contains("no agent was started"), "{why}");
+    d.wait_for("the pane to close", || panes() == before);
+    s.cancel().await.unwrap();
 }
 
 /// An agent started on an issue (#372) is on its row: the block keeps the

@@ -609,7 +609,7 @@ const LABS_COMMANDS: &[(&str, &str)] = &[
 ];
 const LABS_OPTIONS: [(&str, &[&str], &str); 6] = [
     ("agent", &["recipe"], flags::AGENT_DELEGATION),
-    ("agent", &["issue"], flags::BOARDS),
+    ("agent", &["issue", "take"], flags::BOARDS),
     ("agent", &["vm", "machine"], flags::SANDBOX_PROVIDERS),
     ("run", &["vm", "vm_tab", "image", "sandbox"], flags::SANDBOX_PROVIDERS),
     ("open", &["machine"], flags::SANDBOX_PROVIDERS),
@@ -1063,7 +1063,7 @@ mod tests {
         assert!(listed.contains(&"run") && listed.contains(&"pr"), "{listed:?}");
         // Options: out of the subcommand's help, still parsed.
         for (cmd, opts) in [
-            ("agent", &["recipe", "issue", "vm", "machine"][..]),
+            ("agent", &["recipe", "issue", "take", "vm", "machine"][..]),
             ("run", &["vm", "vm_tab", "image", "sandbox"][..]),
             ("open", &["machine"][..]),
             ("edit", &["machine"][..]),
@@ -1114,7 +1114,7 @@ mod tests {
         let (off, on) = (hidden(&labs_command(false)), hidden(&labs_command(true)));
         let mut set: Vec<String> = super::LABS_COMMANDS.iter().map(|(c, _)| (*c).to_owned()).collect();
         for (cmd, opts) in [
-            ("agent", &["recipe", "issue", "vm", "machine"][..]),
+            ("agent", &["recipe", "issue", "take", "vm", "machine"][..]),
             ("run", &["vm", "vm_tab", "image", "sandbox"][..]),
             ("open", &["machine"][..]),
             ("edit", &["machine"][..]),
