@@ -156,13 +156,23 @@ const MERGE_STYLES: Record<string, [string, string][]> = {
 };
 
 /** The ways to merge to offer: the forge's, less those the repository
- * doesn't allow when it says (UI audit #196). */
+ * doesn't allow when it says (UI audit #196). Not asked yet (`allowed`
+ * undefined) it's the forge's default alone, never every method (#427);
+ * asked and unanswered (empty: the forge won't say, or the login can only
+ * read) it's all of them, as the forge enforces them anyway. */
 function mergeStyles(provider: string, allowed: string[] | undefined): [string, string][] {
   const all = MERGE_STYLES[provider] ?? MERGE_STYLES.forgejo;
-  if (!allowed) return all;
+  if (!allowed) return all.slice(0, 1);
   const ok = all.filter(([v]) => allowed.includes(v));
   return ok.length ? ok : all;
 }
+
+/** A method in the confirm button's words: "Confirm squash". */
+const MERGE_WORDS: Record<string, string> = { "rebase-merge": "rebase and merge", "fast-forward-only": "fast-forward" };
+const mergeWord = (style: string) => MERGE_WORDS[style] ?? style;
+
+/** How long the confirm button waits for its click before it reverts. */
+const CONFIRM_MS = 5000;
 
 /** M37: an issue, the agent on it, and a new issue's draft. */
 function IssueBlock({ client, id, s }: { client: Client; id: PaneId; s: ForgeState }) {
@@ -660,12 +670,38 @@ function PrBlock({ client, id, s }: { client: Client; id: PaneId; s: ForgeState 
   };
   // UI audit #178: the forge's ways to merge, to pick from, rather than a
   // word to type; #196: only the ones the repository allows, when the
-  // forge says (a squash-only repo offers Squash alone).
+  // forge says (a squash-only repo offers Squash alone). #427: picking one
+  // doesn't merge: the button turns into "Confirm squash" for a few
+  // seconds, and only a click on that does.
+  const [confirming, setConfirming] = useState<string | null>(null);
+  // A layout effect: attached as the button appears, with no tick to press Escape in.
+  useLayoutEffect(() => {
+    if (!confirming) return;
+    const timer = setTimeout(() => setConfirming(null), CONFIRM_MS);
+    const key = (e: KeyboardEvent) => e.key === "Escape" && setConfirming(null);
+    const away = (e: Event) => {
+      if (!(e.target as Element | null)?.closest?.("[data-merge-confirm]")) setConfirming(null);
+    };
+    window.addEventListener("keydown", key, true);
+    document.addEventListener("pointerdown", away, true);
+    return () => {
+      clearTimeout(timer);
+      window.removeEventListener("keydown", key, true);
+      document.removeEventListener("pointerdown", away, true);
+    };
+  }, [confirming]);
   const merge = async () => {
-    const styles = mergeStyles(s?.provider ?? "", s?.merge_styles);
+    const asked = s?.merge_styles;
+    const styles = mergeStyles(s?.provider ?? "", asked);
     const choices: PromptChoice[] = styles.map(([value, label]) => ({ value, label }));
-    const style = await askText(`Merge #${s?.number ?? ""}`, "", "pick how, or type a method", Promise.resolve(choices));
-    if (style?.trim()) await call("merge", { style: style.trim() }, "couldn't merge");
+    const title = `Merge #${s?.number ?? ""}${asked ? "" : " (checking the repository's methods…)"}`;
+    const style = await askText(title, "", "pick how, or type a method", Promise.resolve(choices));
+    if (style?.trim()) setConfirming(style.trim());
+  };
+  const confirmMerge = async () => {
+    const style = confirming;
+    setConfirming(null);
+    if (style) await call("merge", { style }, "couldn't merge");
   };
   const refresh = () => void call("refresh", {}, "couldn't read the pull request");
   const viewer = role === "viewer";
@@ -686,7 +722,7 @@ function PrBlock({ client, id, s }: { client: Client; id: PaneId; s: ForgeState 
   const waiting = open ? s.drafts.filter((d) => d.status === "waiting") : [];
   const asked = s.wants.some((w) => w.kind === "review");
   const canComment = mayWrite && open;
-  const next = pr && it && open ? nextStep(s, pr, mayWrite, busy, { review, call, merge, waiting }) : null;
+  const next = pr && it && open ? nextStep(s, pr, mayWrite, busy, { review, call, merge, confirming, confirmMerge, waiting }) : null;
   const source: ItemSource = {
     kind: s.provider,
     live: s.error ? null : s.watching ? "following" : "paused",
@@ -738,7 +774,7 @@ function PrBlock({ client, id, s }: { client: Client; id: PaneId; s: ForgeState 
                 <>
                   {canComment && <button class="secondary small" onClick={() => void comment()}>Comment</button>}
                   {canComment && !asked && <button class="secondary small" onClick={() => void review("comment")}>Review</button>}
-                  {canComment && <button class="secondary small" onClick={() => void merge()}>Merge ▾</button>}
+                  {canComment && (confirming ? <ConfirmMerge style={confirming} go={confirmMerge} /> : <button class="secondary small" onClick={() => void merge()}>Merge ▾</button>)}
                   {mayOwn && (
                     <button class="secondary small" data-forge-diff disabled={busy !== null} onClick={() => void call("diff", {}, "couldn't show the changes")}>
                       Diff
@@ -761,6 +797,15 @@ function PrBlock({ client, id, s }: { client: Client; id: PaneId; s: ForgeState 
         </div>
       )}
     </div>
+  );
+}
+
+/** The merge button once a method is picked (#427): the one click that merges. */
+function ConfirmMerge({ style, go }: { style: string; go: () => Promise<void> }) {
+  return (
+    <button class="primary danger small" data-merge-confirm onClick={() => void go()}>
+      Confirm {mergeWord(style)}
+    </button>
   );
 }
 
@@ -793,7 +838,7 @@ function nextStep(
   pr: Pr,
   mayWrite: boolean,
   busy: string | null,
-  on: { review: (e: "approve" | "request_changes") => Promise<void>; call: (m: string, a: unknown, f: string) => Promise<unknown>; merge: () => Promise<void>; waiting: Draft[] },
+  on: { review: (e: "approve" | "request_changes") => Promise<void>; call: (m: string, a: unknown, f: string) => Promise<unknown>; merge: () => Promise<void>; confirming: string | null; confirmMerge: () => Promise<void>; waiting: Draft[] },
 ): NextStep | null {
   const it = pr.item;
   if (it.mergeable === false) return { tone: "danger", text: `Conflicts with ${it.base.branch}` };
@@ -848,9 +893,13 @@ function nextStep(
       tone: "ok",
       text: "Ready to merge",
       actions: (
-        <button class="primary small" data-merge disabled={busy !== null} onClick={() => void on.merge()}>
-          Merge ▾
-        </button>
+        on.confirming ? (
+          <ConfirmMerge style={on.confirming} go={on.confirmMerge} />
+        ) : (
+          <button class="primary small" data-merge disabled={busy !== null} onClick={() => void on.merge()}>
+            Merge ▾
+          </button>
+        )
       ),
     };
   }

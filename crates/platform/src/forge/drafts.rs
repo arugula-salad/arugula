@@ -351,6 +351,45 @@ pub async fn discard(
     Ok(Json(wire::DraftDiscarded { id, state }))
 }
 
+/// How long a repository's merge methods are kept (#427).
+const STYLES_KEEP: std::time::Duration = std::time::Duration::from_secs(3600);
+
+/// The ways the repository lets a PR be merged (#427), read once from
+/// GitHub with the App's read token and kept per repository for
+/// [`STYLES_KEEP`]: empty when GitHub won't say, `None` when it couldn't be
+/// asked now (no App, its limit spent, a failed read; not kept, so the next
+/// ask tries again).
+async fn merge_styles(app: &Arc<Platform>, v: &Viewer, link: &crate::db::forge::LinkedRepo) -> Option<Vec<String>> {
+    let gh = app.github.as_ref()?;
+    if let Some((at, s)) = gh.styles.lock().unwrap().get(&link.repo_id)
+        && at.elapsed() < STYLES_KEEP
+    {
+        return Some(s.clone());
+    }
+    if gh.ingest.stats.reserved(link.installation_id, 0, now_ms() / 1000).is_some() {
+        return None;
+    }
+    let tokens = super::poller::RepoTokens {
+        p: app,
+        caller: &v.account,
+        purpose: super::Purpose::Read,
+        installation: link.installation_id,
+        repo_id: link.repo_id,
+    };
+    let client = arugula_forge_github::Github::new(&gh.api, app.http.clone(), tokens);
+    match client.merge_styles(&link.full_name).await {
+        Ok(s) => {
+            let s = s.unwrap_or_default();
+            gh.styles.lock().unwrap().insert(link.repo_id, (std::time::Instant::now(), s.clone()));
+            Some(s)
+        }
+        Err(e) => {
+            tracing::warn!(repo = link.repo_id, error = %e, "reading a repository's merge methods");
+            None
+        }
+    }
+}
+
 /// `GET /api/forge/repos/{owner}/{name}`: whether the reader may keep
 /// drafts for it here (module docs).
 pub async fn repo(
@@ -367,9 +406,10 @@ pub async fn repo(
     let c = viewer::check(&app, &v, std::slice::from_ref(&link)).await?;
     if c.readable.has(link.repo_id) {
         out.linked = true;
-        out.project = Some(link.project_id);
+        out.project = Some(link.project_id.clone());
         out.repo_id = Some(link.repo_id);
         out.login = v.github.as_ref().map(|u| u.login.clone());
+        out.merge_styles = merge_styles(&app, &v, &link).await;
     } else if let Some((_, why)) =
         c.withheld.iter().find(|(_, w)| !matches!(w, Withheld::NotMember | Withheld::Unlinked))
     {

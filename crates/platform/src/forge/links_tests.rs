@@ -151,6 +151,12 @@ async fn token(State(h): State<Shared>, Json(b): Json<Value>) -> Response {
         return Json(json!({ "token": "ghs_fake", "expires_at": "2099-01-01T00:00:00Z", "repositories": covers }))
             .into_response();
     }
+    // A repository by id the test didn't make (a read of its settings, #427).
+    if let Some(id) = b["repository_ids"][0].as_u64() {
+        let covers = json!([{ "id": id }]);
+        return Json(json!({ "token": "ghs_fake", "expires_at": "2099-01-01T00:00:00Z", "repositories": covers }))
+            .into_response();
+    }
     assert_eq!(b["repositories"].as_array().map(Vec::len), Some(1));
     let short = b["repositories"][0].as_str().unwrap();
     let grants = h.grants.iter().find(|(name, _)| name.rsplit('/').next() == Some(short)).map(|(_, g)| g.clone());

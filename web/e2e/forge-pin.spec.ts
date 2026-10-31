@@ -39,6 +39,8 @@ function pinned(s: Record<string, unknown>, stale?: string) {
   return {
     ...s, loading: false, error: null, read_only: null, rate: null, logins: [], me: "jake-gh", polls: 4, reads: 4, updated_ms: now - 30_000,
     live: "webhook", live_via: "github-app", wants: [], rerun: null,
+    // #427: a pin reads no GitHub; the platform says how the repo merges (squash only here).
+    merge_styles: kind === "pr" ? ["squash"] : undefined,
     pr: kind === "pr" ? { item: it, reviews: [{ id: "pf-2", author: "dan-gh", state: "approved", commit: null, stale: false, at: now - 300_000, body: null, url: null }], checks: [check("build", "success"), check("lint", "success")], rollup: "success", events } : null,
     issue: kind === "issue" ? { item: it, events, linked: [] } : null,
     pin: { kind, global_id: ITEM, ...(stale ? { stale } : {}) },
@@ -70,6 +72,17 @@ const open = (page: Page, kind: "pr" | "issue", number: number) =>
         .then((r) => r.block),
     [kind, number] as const,
   );
+
+// #427: the pin has no GitHub to ask, so Merge ▾ offers what the platform said the repository allows.
+test("a pinned squash-only PR's Merge ▾ offers only Squash", async ({ page }) => {
+  await pin(page);
+  await reset(page);
+  const block = await open(page, "pr", 1);
+  const el = page.locator(`[data-forge-block="${block}"]`);
+  await expect(el.locator("[data-item-head] .item-number")).toHaveText("#1");
+  await el.locator("[data-item-foot]").getByRole("button", { name: "Merge ▾" }).click();
+  await expect(page.locator(".prompt-choices button")).toHaveText(["Squash"]);
+});
 
 test("a pinned PR looks as GitHub's does, read through Arugula control", async ({ page }) => {
   await pin(page);

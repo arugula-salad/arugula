@@ -429,6 +429,9 @@ pub struct GithubApp {
     pub ingest: super::ingest::Ingest,
     /// Content read from GitHub for people, for a few minutes (M166).
     pub bodies: super::content::Cache,
+    /// A repository's merge methods by its id, and when they were read
+    /// (#427); see [`super::drafts::merge_styles`].
+    pub styles: Mutex<HashMap<u64, (Instant, Vec<String>)>>,
 }
 
 /// An RSA private key from PEM (PKCS#1 `RSA PRIVATE KEY`, as GitHub hands
@@ -488,6 +491,7 @@ impl GithubApp {
             reads: Mutex::default(),
             ingest: Default::default(),
             bodies: Default::default(),
+            styles: Default::default(),
         }
     }
 

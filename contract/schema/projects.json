@@ -585,6 +585,17 @@
             "null"
           ]
         },
+        "merge_styles": {
+          "description": "`merge` method's words (`merge`, `squash`, `rebase`), read from\nGitHub with the App and kept an hour, for a block pinned to one of\nits items, which reads no GitHub of its own. Absent until known;\nempty when GitHub won't say.",
+          "items": {
+            "type": "string"
+          },
+          "title": "427: the ways the repository lets a pull request be merged, in the",
+          "type": [
+            "array",
+            "null"
+          ]
+        },
         "project": {
           "default": null,
           "description": "The project it's linked to, when it's linked for the reader.",

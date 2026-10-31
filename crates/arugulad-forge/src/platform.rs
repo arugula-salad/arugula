@@ -44,6 +44,9 @@ pub struct Link {
     pub project: String,
     pub repo_id: u64,
     pub login: Option<String>,
+    /// The repository's merge methods as the platform read them (#427);
+    /// none from a control before that, or while it can't say.
+    pub merge_styles: Option<Vec<String>>,
 }
 
 /// How long the platform's word on a repo is used.
@@ -86,7 +89,9 @@ async fn ask_link(repo: &str) -> Result<Option<Link>, String> {
         Ok(v) => {
             let r: ForgeRepo = serde_json::from_value(v).map_err(|e| format!("the platform's answer: {e}"))?;
             Ok(match (r.linked, r.project, r.repo_id) {
-                (true, Some(project), Some(repo_id)) => Some(Link { project, repo_id, login: r.login }),
+                (true, Some(project), Some(repo_id)) => {
+                    Some(Link { project, repo_id, login: r.login, merge_styles: r.merge_styles })
+                }
                 _ => None,
             })
         }

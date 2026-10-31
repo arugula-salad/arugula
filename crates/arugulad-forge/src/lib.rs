@@ -865,17 +865,13 @@ impl ForgeBlock {
             let h = had.clone().unwrap_or_default();
             (h.reviews, h.item.requested, h.events)
         };
-        // UI audit #196: how the repository lets it be merged, so Merge
-        // offers only those; read again with the rest (a cached answer
-        // costs nothing), and kept as it was when the forge won't say.
-        let styles = if moved && polled.item.state == ItemState::Open && a.read_only().is_none() {
-            match a.merge_styles(&repo).await {
-                Ok(s) => Some(s),
-                Err(e) => {
-                    warn!(pane = self.ctx.id, error = %e, "the repository's merge methods");
-                    None
-                }
-            }
+        // UI audit #196, #427: how the repository lets it be merged, so
+        // Merge offers only those. Read again with the rest (a cached
+        // answer costs nothing), and on every poll until the block has an
+        // answer: a read that isn't "moved" (a block back after a restart,
+        // an unchanged PR, an ask that failed) must not leave Merge guessing.
+        let styles = if polled.item.state == ItemState::Open && (moved || !self.has_merge_styles()) {
+            Some(self.read_merge_styles(&*a, &repo).await)
         } else {
             None
         };
@@ -898,11 +894,35 @@ impl ForgeBlock {
             st.rerun = rerun(&pr, a.rerun_api() && st.read_only.is_none());
             st.rate = a.rate();
             if let Some(s) = styles {
-                st.merge_styles = s;
+                st.merge_styles = Some(s);
             }
             st.pr = Some(pr);
         }
         self.after_read(had.is_none());
+    }
+
+    /// Whether the block knows how the repository lets a PR be merged.
+    /// Empty is asked and unanswered (the forge doesn't say, the login can
+    /// only read, or the ask failed), so it is asked again.
+    fn has_merge_styles(&self) -> bool {
+        self.state.lock().unwrap().merge_styles.as_ref().is_some_and(|s| !s.is_empty())
+    }
+
+    /// The repository's merge methods for the block's state (#427): the
+    /// forge's, or what the block already had when it can't ask now, or
+    /// empty, which Merge reads as "any the forge enforces".
+    async fn read_merge_styles(&self, a: &dyn Adapter, repo: &str) -> Vec<String> {
+        let had = self.state.lock().unwrap().merge_styles.clone().unwrap_or_default();
+        if a.read_only().is_some() {
+            return had;
+        }
+        match a.merge_styles(repo).await {
+            Ok(s) => s.unwrap_or(had),
+            Err(e) => {
+                warn!(pane = self.ctx.id, error = %e, "the repository's merge methods");
+                had
+            }
+        }
     }
 
     /// What every read ends with: what's seen, and what's raised.
@@ -1653,6 +1673,12 @@ impl ForgeBlock {
             st.read_only = None;
             st.rate = None;
             st.rerun = pr.as_ref().and_then(pin::rerun);
+            // A pin makes no call to GitHub: the repository's merge methods
+            // are the platform's word (#427). Without one, unknown, and
+            // Merge offers what the forge enforces.
+            if pr.is_some() {
+                st.merge_styles = link.merge_styles.clone().or(st.merge_styles.take()).or(Some(vec![]));
+            }
             st.pr = pr;
             st.issue = issue;
             st.pin = Some(pin);
