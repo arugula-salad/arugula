@@ -840,8 +840,12 @@ pub enum TrackerWrite {
     /// A new item. On an agent's route `connection` or `tracker` (the
     /// connection's identifier, in any case) says where; with neither, the
     /// project's only live connection is used. On a person's, the path's
-    /// connection is it. `state` is a state group (`backlog`, `unstarted`,
-    /// `started`).
+    /// connection is it. `state` is a state's name or id, or a state group
+    /// (`backlog`, `unstarted`, `started`, `completed`, `cancelled`: its
+    /// first state); `state_group` is the same, as an older daemon sends
+    /// it. `module`, `type` and `labels` are names or ids and `parent` is
+    /// `IDENT-N`; control turns them into the tracker's ids when it sends
+    /// the write.
     Create {
         #[serde(default)]
         connection: Option<String>,
@@ -850,8 +854,16 @@ pub enum TrackerWrite {
         title: String,
         #[serde(default)]
         body: Option<String>,
-        #[serde(default)]
+        #[serde(default, alias = "state_group")]
         state: Option<String>,
+        #[serde(default)]
+        module: Option<String>,
+        #[serde(default)]
+        parent: Option<String>,
+        #[serde(default, rename = "type")]
+        item_type: Option<String>,
+        #[serde(default)]
+        labels: Vec<String>,
     },
     Comment {
         item: String,
@@ -862,16 +874,72 @@ pub enum TrackerWrite {
         #[serde(rename = "as")]
         close_as: TrackerClose,
     },
+    /// Open it again, in the project's default state.
     Reopen {
         item: String,
     },
+    /// Change an item: what is `None` or empty stays. The fields are a
+    /// create's; `labels` are added and `labels_remove` taken off.
     Edit {
         item: String,
         #[serde(default)]
         title: Option<String>,
         #[serde(default)]
         body: Option<String>,
+        #[serde(default)]
+        state: Option<String>,
+        #[serde(default)]
+        module: Option<String>,
+        #[serde(default)]
+        parent: Option<String>,
+        #[serde(default, rename = "type")]
+        item_type: Option<String>,
+        #[serde(default)]
+        labels: Vec<String>,
+        #[serde(default)]
+        labels_remove: Vec<String>,
     },
+}
+
+/// A state of a Plane project, as `tracker.fields` lists them.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct TrackerFieldState {
+    pub id: String,
+    pub name: String,
+    /// `backlog`, `unstarted`, `started`, `completed` or `cancelled`.
+    pub group: String,
+    /// The state a new item starts in.
+    pub default: bool,
+}
+
+/// A module, a type or a label of a Plane project.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct TrackerFieldName {
+    pub id: String,
+    pub name: String,
+}
+
+/// What a connected Plane project offers a work item (#422): the names a
+/// [`TrackerWrite`] may use.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct TrackerFields {
+    /// The connection (`tc_…`) and its identifier, such as `ARUGU`.
+    pub connection: String,
+    pub identifier: String,
+    /// In the order Plane keeps them.
+    pub states: Vec<TrackerFieldState>,
+    pub modules: Vec<TrackerFieldName>,
+    /// Empty when the project doesn't have item types.
+    pub types: Vec<TrackerFieldName>,
+    pub labels: Vec<TrackerFieldName>,
+    /// When control last read them from Plane (milliseconds).
+    pub read_at: u64,
 }
 
 /// What a write came to: it landed (`sent`, with the item's `fi_` id), or

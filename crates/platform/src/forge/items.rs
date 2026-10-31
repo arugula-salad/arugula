@@ -275,6 +275,47 @@ pub async fn plane_get(
     item.ok_or_else(|| err(StatusCode::NOT_FOUND, &format!("{key}-{number} isn't in the mirror of this project (yet)")))
 }
 
+/// What a Plane project offers a work item (`tracker.fields`), when the
+/// viewer may read its connection: the one `connection` or `tracker` names,
+/// else the project's only one. The kept fields while they're fresh.
+pub async fn tracker_fields(
+    app: &Platform,
+    v: &Viewer,
+    project: &str,
+    tracker: Option<&str>,
+    connection: Option<&str>,
+) -> Result<wire::TrackerFields, ApiError> {
+    let (project, _) = super::links::membership(app, &v.account, project, false).await?;
+    let all: Vec<_> = app.db.tracker_connections(&project)?.into_iter().filter(|c| c.unlinked_at.is_none()).collect();
+    let ask = |t: &str| t.trim().to_owned();
+    let (tracker, connection) = (tracker.map(ask).filter(|t| !t.is_empty()), connection.map(ask));
+    let named: Vec<_> = all
+        .iter()
+        .filter(|c| connection.as_ref().is_none_or(|id| *id == c.id))
+        .filter(|c| tracker.as_ref().is_none_or(|t| c.identifier.eq_ignore_ascii_case(t)))
+        .collect();
+    let c = match named.as_slice() {
+        [] => return Err(err(StatusCode::NOT_FOUND, "that Plane project isn't connected to this project")),
+        [only] => (*only).clone(),
+        many => {
+            let list: Vec<&str> = many.iter().map(|c| c.identifier.as_str()).collect();
+            let list = list.join(", ");
+            return Err(err(
+                StatusCode::UNPROCESSABLE_ENTITY,
+                &format!("this project has {} Plane connections: say which with tracker: {list}", many.len()),
+            ));
+        }
+    };
+    // Only a connection the viewer may read.
+    if viewer::check_connections(app, v, std::slice::from_ref(&c)).await?.is_empty() {
+        return Err(err(StatusCode::NOT_FOUND, "that Plane project isn't connected to this project"));
+    }
+    let provider = crate::trackers::writes::provider(app, &project, &c)?;
+    let (fields, _) = crate::trackers::fields::load(app, &c, &*provider).await?;
+    let read_at = app.db.tracker_fields(&c.id)?.map_or(0, |(_, at)| at);
+    Ok(crate::trackers::fields::wire(&c, &fields, read_at))
+}
+
 /// `GET /api/forge/items/{id}`.
 pub async fn get(
     State(app): State<Arc<Platform>>,

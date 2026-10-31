@@ -2,10 +2,14 @@
 //! project, and the one key it accepts. [`FakeTrackers`] hands it out as the
 //! platform's [`Trackers`].
 
-use std::sync::{Arc, Mutex};
+use std::{
+    collections::HashMap,
+    sync::{Arc, Mutex},
+};
 
 use super::{
-    BoxFuture, Edit, Item, NewItem, Page, ProjectInfo, Relations, Result, TrackerError, TrackerProvider, Trackers,
+    BoxFuture, Edit, Fields, Item, Named, NewItem, Page, ProjectInfo, Relations, Result, StateInfo, TrackerError,
+    TrackerProvider, Trackers,
 };
 
 struct State {
@@ -21,20 +25,67 @@ struct State {
     sent: Vec<Sent>,
     /// (blocker, blocked) as the tracker's ids.
     blocks: Vec<(String, String)>,
+    fields: Fields,
+    /// How many times the fields were read.
+    fields_read: usize,
+    /// Each item's labels, as ids.
+    labels: HashMap<String, Vec<String>>,
+    /// (module, item) as ids.
+    in_modules: Vec<(String, String)>,
+    /// Refuse to put an item in a module.
+    module_down: bool,
 }
 
 /// A write the fake was sent, as it arrived: a body or comment is the HTML
 /// the platform sent, a title the plain text.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct Sent {
-    /// `create`, `comment`, `state` or `edit`.
+    /// `create`, `comment`, `state`, `edit` or `module`.
     pub kind: String,
     /// The tracker's id of the item written to; none for a create.
     pub item: Option<String>,
     pub title: Option<String>,
     pub html: Option<String>,
-    /// The state group, for a create or a state.
-    pub group: Option<String>,
+    /// The state's id, for a create, a state or an edit.
+    pub state: Option<String>,
+    /// The item type's id.
+    pub item_type: Option<String>,
+    /// The parent's id.
+    pub parent: Option<String>,
+    /// The labels' ids a create sets or an edit adds, and those it takes off.
+    pub labels: Vec<String>,
+    pub labels_remove: Vec<String>,
+    /// The module's id, for a `module`.
+    pub module: Option<String>,
+}
+
+/// A project's fields as Plane starts one.
+pub fn default_fields() -> Fields {
+    let state = |id: &str, name: &str, group: &str, default| StateInfo {
+        id: id.into(),
+        name: name.into(),
+        group: group.into(),
+        default,
+    };
+    Fields {
+        states: vec![
+            state("st-backlog", "Backlog", "backlog", false),
+            state("st-todo", "Todo", "unstarted", true),
+            state("st-progress", "In Progress", "started", false),
+            state("st-review", "In Review", "started", false),
+            state("st-done", "Done", "completed", false),
+            state("st-cancelled", "Cancelled", "cancelled", false),
+        ],
+        modules: vec![Named { id: "mod-boards".into(), name: "Boards".into() }],
+        types: vec![
+            Named { id: "ty-epic".into(), name: "Epic".into() },
+            Named { id: "ty-task".into(), name: "Task".into() },
+        ],
+        labels: vec![
+            Named { id: "lb-agent".into(), name: "agent".into() },
+            Named { id: "lb-bug".into(), name: "bug".into() },
+        ],
+    }
 }
 
 /// The fake tracker's world; clones share it.
@@ -63,6 +114,11 @@ impl FakeTracker {
             refused: 0,
             sent: vec![],
             blocks: vec![],
+            fields: default_fields(),
+            fields_read: 0,
+            labels: HashMap::new(),
+            in_modules: vec![],
+            module_down: false,
         };
         FakeTracker { state: Arc::new(Mutex::new(state)) }
     }
@@ -74,6 +130,32 @@ impl FakeTracker {
     /// Which items block which, as (blocker, blocked) tracker ids.
     pub fn set_blocks(&self, blocks: Vec<(&str, &str)>) {
         self.state.lock().unwrap().blocks = blocks.into_iter().map(|(a, b)| (a.into(), b.into())).collect();
+    }
+
+    /// What the project offers from now on.
+    pub fn set_fields(&self, fields: Fields) {
+        self.state.lock().unwrap().fields = fields;
+    }
+
+    /// How many times the fields were read.
+    pub fn fields_read(&self) -> usize {
+        self.state.lock().unwrap().fields_read
+    }
+
+    /// The ids of an item's labels.
+    pub fn labels_of(&self, item: &str) -> Vec<String> {
+        self.state.lock().unwrap().labels.get(item).cloned().unwrap_or_default()
+    }
+
+    /// The modules (ids) an item is in.
+    pub fn modules_of(&self, item: &str) -> Vec<String> {
+        let s = self.state.lock().unwrap();
+        s.in_modules.iter().filter(|(_, i)| i == item).map(|(m, _)| m.clone()).collect()
+    }
+
+    /// Whether putting an item in a module fails.
+    pub fn set_module_down(&self, down: bool) {
+        self.state.lock().unwrap().module_down = down;
     }
 
     /// The writes sent so far.
@@ -187,15 +269,24 @@ impl TrackerProvider for Keyed {
         Box::pin(async move {
             let mut s = self.check(workspace)?;
             let n = s.items.iter().map(|i| i.sequence_id).max().unwrap_or(0) + 1;
-            let group = new.state_group.clone().unwrap_or_else(|| "backlog".into());
-            let mut made = item(n, &new.title, &group, 5_000_000_000_000);
+            let mut made = item(n, &new.title, "backlog", 5_000_000_000_000);
+            if let Some(st) = new.state.as_deref().and_then(|id| s.fields.states.iter().find(|x| x.id == id)) {
+                (made.state_name, made.state_group) = (st.name.clone(), st.group.clone());
+            }
+            if let Some(t) = new.item_type.as_deref().and_then(|id| s.fields.types.iter().find(|x| x.id == id)) {
+                made.item_type = Some(t.name.clone());
+            }
             made.parent_id = new.parent_id.clone();
             s.items.push(made.clone());
+            s.labels.insert(made.id.clone(), new.labels.clone());
             s.sent.push(Sent {
                 kind: "create".into(),
                 title: Some(new.title.clone()),
                 html: new.body.clone(),
-                group: new.state_group.clone(),
+                state: new.state.clone(),
+                item_type: new.item_type.clone(),
+                parent: new.parent_id.clone(),
+                labels: new.labels.clone(),
                 ..Default::default()
             });
             Ok(made)
@@ -223,20 +314,21 @@ impl TrackerProvider for Keyed {
         workspace: &'a str,
         _: &'a str,
         id: &'a str,
-        group: &'a str,
+        state: &'a str,
     ) -> BoxFuture<'a, Result<Item>> {
         Box::pin(async move {
             let mut s = self.check(workspace)?;
             let at = s.items.iter().map(|i| i.updated_at).max().unwrap_or(0) + 1;
+            let st = s.fields.states.iter().find(|x| x.id == state).cloned().ok_or(TrackerError::NotFound)?;
             let it = s.items.iter_mut().find(|i| i.id == id).ok_or(TrackerError::NotFound)?;
-            it.state_group = group.into();
-            it.state_name = group.into();
+            it.state_group = st.group;
+            it.state_name = st.name;
             it.updated_at = at;
             let out = it.clone();
             s.sent.push(Sent {
                 kind: "state".into(),
                 item: Some(id.into()),
-                group: Some(group.into()),
+                state: Some(state.into()),
                 ..Default::default()
             });
             Ok(out)
@@ -247,20 +339,90 @@ impl TrackerProvider for Keyed {
         Box::pin(async move {
             let mut s = self.check(workspace)?;
             let at = s.items.iter().map(|i| i.updated_at).max().unwrap_or(0) + 1;
+            let st = edit.state.as_deref().and_then(|id| s.fields.states.iter().find(|x| x.id == id)).cloned();
+            let ty = edit.item_type.as_deref().and_then(|id| s.fields.types.iter().find(|x| x.id == id)).cloned();
             let it = s.items.iter_mut().find(|i| i.id == id).ok_or(TrackerError::NotFound)?;
             if let Some(t) = &edit.title {
                 it.title = t.clone();
             }
+            if let Some(st) = st {
+                (it.state_name, it.state_group) = (st.name, st.group);
+            }
+            if let Some(ty) = ty {
+                it.item_type = Some(ty.name);
+            }
+            if edit.parent_id.is_some() {
+                it.parent_id = edit.parent_id.clone();
+            }
             it.updated_at = at;
             let out = it.clone();
+            let have = s.labels.entry(id.to_owned()).or_default();
+            for l in &edit.labels_add {
+                if !have.contains(l) {
+                    have.push(l.clone());
+                }
+            }
+            have.retain(|l| !edit.labels_remove.contains(l));
             s.sent.push(Sent {
                 kind: "edit".into(),
                 item: Some(id.into()),
                 title: edit.title.clone(),
                 html: edit.body.clone(),
+                state: edit.state.clone(),
+                item_type: edit.item_type.clone(),
+                parent: edit.parent_id.clone(),
+                labels: edit.labels_add.clone(),
+                labels_remove: edit.labels_remove.clone(),
                 ..Default::default()
             });
             Ok(out)
+        })
+    }
+
+    fn fields<'a>(&'a self, workspace: &'a str, _: &'a str) -> BoxFuture<'a, Result<Fields>> {
+        Box::pin(async move {
+            let mut s = self.check(workspace)?;
+            s.fields_read += 1;
+            Ok(s.fields.clone())
+        })
+    }
+
+    fn add_to_module<'a>(
+        &'a self,
+        workspace: &'a str,
+        _: &'a str,
+        module: &'a str,
+        id: &'a str,
+    ) -> BoxFuture<'a, Result<()>> {
+        Box::pin(async move {
+            let mut s = self.check(workspace)?;
+            if s.module_down {
+                return Err(TrackerError::Unavailable("it answered 500".into()));
+            }
+            s.in_modules.push((module.into(), id.into()));
+            s.sent.push(Sent {
+                kind: "module".into(),
+                item: Some(id.into()),
+                module: Some(module.into()),
+                ..Default::default()
+            });
+            Ok(())
+        })
+    }
+
+    fn by_sequence<'a>(
+        &'a self,
+        workspace: &'a str,
+        _: &'a str,
+        identifier: &'a str,
+        sequence: u64,
+    ) -> BoxFuture<'a, Result<Item>> {
+        Box::pin(async move {
+            let s = self.check(workspace)?;
+            if !identifier.eq_ignore_ascii_case(&s.project.identifier) {
+                return Err(TrackerError::NotFound);
+            }
+            s.items.iter().find(|i| i.sequence_id == sequence).cloned().ok_or(TrackerError::NotFound)
         })
     }
 

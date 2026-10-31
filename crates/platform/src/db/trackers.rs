@@ -236,6 +236,27 @@ impl Db {
         Ok(())
     }
 
+    /// The project's fields as last kept for a connection (JSON) and when
+    /// (milliseconds); none before the first read.
+    pub fn tracker_fields(&self, id: &str) -> Result<Option<(String, u64)>> {
+        let kept: Option<(Option<String>, Option<u64>)> = self
+            .c()
+            .query_row("SELECT fields, fields_at FROM tracker_connections WHERE id = ?1", params![id], |r| {
+                Ok((r.get(0)?, r.get(1)?))
+            })
+            .optional()?;
+        Ok(kept.and_then(|(json, at)| Some((json?, at?))))
+    }
+
+    /// Keep the project's fields (JSON) read at `now`.
+    pub fn set_tracker_fields(&self, id: &str, json: &str, now: u64) -> Result<()> {
+        self.c().execute(
+            "UPDATE tracker_connections SET fields = ?1, fields_at = ?2 WHERE id = ?3",
+            params![json, now, id],
+        )?;
+        Ok(())
+    }
+
     /// Run `f` on a connection's mirror rows in one transaction, if it's
     /// live and (`lease`) the backfill's claim is still that one. `None`,
     /// and nothing written, otherwise.

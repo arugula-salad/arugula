@@ -60,6 +60,20 @@
           "type": "object"
         },
         {
+          "$ref": "#/$defs/TrackerFieldsQuery",
+          "description": "What a Plane project offers an item, by its key or connection:\n[`TrackerFields`](crate::projects::TrackerFields).",
+          "properties": {
+            "op": {
+              "const": "tracker.fields",
+              "type": "string"
+            }
+          },
+          "required": [
+            "op"
+          ],
+          "type": "object"
+        },
+        {
           "$ref": "#/$defs/ItemRef",
           "description": "A PR's head commit's checks: [`ForgeChecks`](crate::projects::ForgeChecks).",
           "properties": {
@@ -987,6 +1001,20 @@
           "type": "object"
         },
         {
+          "$ref": "#/$defs/TrackerFieldsQuery",
+          "description": "What a Plane project offers an item, by its key or connection:\n[`TrackerFields`](crate::projects::TrackerFields).",
+          "properties": {
+            "op": {
+              "const": "tracker.fields",
+              "type": "string"
+            }
+          },
+          "required": [
+            "op"
+          ],
+          "type": "object"
+        },
+        {
           "$ref": "#/$defs/ItemRef",
           "description": "A PR's head commit's checks: [`ForgeChecks`](crate::projects::ForgeChecks).",
           "properties": {
@@ -1194,6 +1222,33 @@
           ]
         },
         "url": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "TrackerFieldsQuery": {
+      "description": "`tracker.fields`: the Plane project connected to `project` (default: the\nreader's personal one) that `tracker` (its identifier) or `connection`\n(its id) names; with neither, the project's only one.",
+      "properties": {
+        "connection": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "project": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "tracker": {
           "default": null,
           "type": [
             "string",

@@ -24,6 +24,8 @@
 
 use std::{future::Future, pin::Pin, sync::Arc};
 
+use serde::{Deserialize, Serialize};
+
 #[cfg(test)]
 mod boards_tests;
 pub mod connect;
@@ -31,6 +33,7 @@ pub mod connect;
 pub mod connect_tests;
 #[cfg(any(test, feature = "testing"))]
 pub mod fake;
+pub mod fields;
 pub mod plane;
 pub mod webhook;
 #[cfg(any(test, feature = "testing"))]
@@ -128,32 +131,76 @@ pub struct Relations {
     pub blocking: Vec<String>,
 }
 
-/// What a new item says (#359).
+/// What a new item says (#359). Everything the tracker names is its id.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct NewItem {
     pub title: String,
     /// HTML, already escaped.
     pub body: Option<String>,
-    /// The state group it starts in (`backlog`, `unstarted`, …): the first
-    /// state of it; none: the project's default.
-    pub state_group: Option<String>,
+    /// The state it starts in; none: the project's default.
+    pub state: Option<String>,
+    /// The item type's id.
     pub item_type: Option<String>,
     pub parent_id: Option<String>,
+    /// The labels' ids.
+    pub labels: Vec<String>,
 }
 
-/// What an edit changes (#359): what's `None` stays.
+/// What an edit changes (#359): what's `None` or empty stays.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct Edit {
     pub title: Option<String>,
     /// HTML, already escaped.
     pub body: Option<String>,
+    pub state: Option<String>,
+    pub item_type: Option<String>,
+    pub parent_id: Option<String>,
+    /// Labels' ids to add to the item's own.
+    pub labels_add: Vec<String>,
+    /// Labels' ids to take off it.
+    pub labels_remove: Vec<String>,
+}
+
+impl Edit {
+    /// Whether it changes nothing.
+    pub fn is_empty(&self) -> bool {
+        *self == Edit::default()
+    }
+}
+
+/// One of a project's states, in the order the tracker keeps them.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct StateInfo {
+    pub id: String,
+    pub name: String,
+    /// `backlog`, `unstarted`, `started`, `completed` or `cancelled`.
+    pub group: String,
+    /// The state a new item starts in.
+    pub default: bool,
+}
+
+/// A module, a type or a label: something an item is put in or given.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Named {
+    pub id: String,
+    pub name: String,
+}
+
+/// What a project offers a work item (#422).
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub struct Fields {
+    pub states: Vec<StateInfo>,
+    pub modules: Vec<Named>,
+    /// Empty when the project doesn't have item types.
+    pub types: Vec<Named>,
+    pub labels: Vec<Named>,
 }
 
 /// A tracker's API, for one key. Object-safe and async, as the platform's
 /// other providers are. The writes take bodies and comments as HTML the
-/// caller has escaped, a title as plain text, and `set_state` a state
-/// *group*, for which the provider picks the first state. Each write
-/// answers with the item as the tracker has it now. `project_id` is the tracker's own id, as
+/// caller has escaped, a title as plain text, and name a state, type, parent
+/// or label by its id ([`Fields`] says which). Each write answers with the
+/// item as the tracker has it now. `project_id` is the tracker's own id, as
 /// [`ProjectInfo::id`] gives it.
 pub trait TrackerProvider: Send + Sync {
     /// The project `reference` names: its id, or its identifier.
@@ -177,6 +224,7 @@ pub trait TrackerProvider: Send + Sync {
         item: &'a str,
         body: &'a str,
     ) -> BoxFuture<'a, Result<()>>;
+    /// Move `item` to the state with id `state`.
     fn set_state<'a>(
         &'a self,
         workspace: &'a str,
@@ -190,6 +238,25 @@ pub trait TrackerProvider: Send + Sync {
         project_id: &'a str,
         item: &'a str,
         edit: &'a Edit,
+    ) -> BoxFuture<'a, Result<Item>>;
+    /// The project's states, modules, types and labels (#422).
+    fn fields<'a>(&'a self, workspace: &'a str, project_id: &'a str) -> BoxFuture<'a, Result<Fields>>;
+    /// Put `item` in a module; a separate call from the create or edit.
+    fn add_to_module<'a>(
+        &'a self,
+        workspace: &'a str,
+        project_id: &'a str,
+        module: &'a str,
+        item: &'a str,
+    ) -> BoxFuture<'a, Result<()>>;
+    /// The item numbered `sequence` in the project (`ARUGU-7` is 7), for a
+    /// parent the mirror doesn't hold yet.
+    fn by_sequence<'a>(
+        &'a self,
+        workspace: &'a str,
+        project_id: &'a str,
+        identifier: &'a str,
+        sequence: u64,
     ) -> BoxFuture<'a, Result<Item>>;
     /// The `blocked_by` and `blocking` relations of `item` (#403).
     fn relations<'a>(

@@ -18,7 +18,9 @@
 //! refuses a machine's send anyway.
 
 use arugula_control_wire::boards::IssueRef;
-use arugula_control_wire::forge_ops::{DraftQuery, DraftRef, InboxQuery, ItemQuery, ItemRef, Op, TrackerRef};
+use arugula_control_wire::forge_ops::{
+    DraftQuery, DraftRef, InboxQuery, ItemQuery, ItemRef, Op, TrackerFieldsQuery, TrackerRef,
+};
 use arugula_control_wire::projects::NewDraft;
 use rmcp::handler::server::common::schema_for_type;
 use schemars::JsonSchema;
@@ -82,6 +84,22 @@ pub struct ItemsArgs {
     /// A Plane connection's key, such as ALL: only its items.
     #[serde(default)]
     pub tracker: Option<String>,
+}
+
+/// Kind `tracker_fields`'s.
+#[derive(Deserialize, JsonSchema)]
+pub struct TrackerFieldsArgs {
+    /// The project's id (prj_…). Default: the repo's project, else the
+    /// user's personal one.
+    #[serde(default)]
+    pub project: Option<String>,
+    /// A Plane connection's key, such as ARUGU. Not needed when the project
+    /// has one connection.
+    #[serde(default)]
+    pub tracker: Option<String>,
+    /// Or its id (tc_…, from capabilities' trackers).
+    #[serde(default)]
+    pub connection: Option<String>,
 }
 
 #[derive(Deserialize, JsonSchema)]
@@ -170,6 +188,12 @@ pub(crate) const READ: &[Kind] = &[
         flag: None,
     },
     Kind {
+        name: "tracker_fields",
+        description: "What a connected Plane project offers a work item, for tracker_write: its states (name, group, which one a new item starts in), modules, types and labels. Name them in create and edit.",
+        schema: schema_for_type::<TrackerFieldsArgs>,
+        flag: Some(arugula_proto::flags::BOARDS),
+    },
+    Kind {
         name: "checks",
         description: "A pull request's checks on its head commit: each one's status and conclusion.",
         schema: schema_for_type::<ItemArgs>,
@@ -252,6 +276,10 @@ pub(crate) fn op(tool: &str, kind: &str, a: Value, by: &str) -> Result<Op, Strin
                 Some(IssueRef::Plane { key, number }) => Op::TrackerGet(TrackerRef { project: a.project, key, number }),
                 _ => Op::IssueGet(item(&a.item)?),
             }
+        }
+        ("forge_read", "tracker_fields") => {
+            let a: TrackerFieldsArgs = args(a)?;
+            Op::TrackerFields(TrackerFieldsQuery { project: a.project, tracker: a.tracker, connection: a.connection })
         }
         ("forge_read", "checks") => Op::ChecksGet(item(&args::<ItemArgs>(a)?.item)?),
         ("forge_read", "items") => {
@@ -365,6 +393,34 @@ fn draft_line(d: &Value) -> String {
     format!("{} {what} on {on}, {}", d["id"].as_str().unwrap_or("?"), d["state"].as_str().unwrap_or("?"))
 }
 
+/// A Plane project's fields in a few lines: names only, for choosing from.
+/// The JSON has the ids.
+fn fields_text(r: &Value) -> String {
+    let names = |k: &str| -> Vec<String> {
+        r[k].as_array().into_iter().flatten().map(|x| x["name"].as_str().unwrap_or("?").to_owned()).collect()
+    };
+    let states: Vec<String> = r["states"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .map(|s| {
+            let default = if s["default"] == true { ", default" } else { "" };
+            format!("{} ({}{default})", s["name"].as_str().unwrap_or("?"), s["group"].as_str().unwrap_or("?"))
+        })
+        .collect();
+    let list = |what: &str, v: Vec<String>| {
+        if v.is_empty() { format!("{what}: none") } else { format!("{what}: {}", v.join(", ")) }
+    };
+    format!(
+        "{}; {}; {}; {}; {}",
+        r["identifier"].as_str().unwrap_or("?"),
+        list("states", states),
+        list("modules", names("modules")),
+        list("types", names("types")),
+        list("labels", names("labels")),
+    )
+}
+
 /// What a kind's answer says in a sentence.
 fn summary(o: &Op, r: &Value) -> String {
     match o {
@@ -372,6 +428,7 @@ fn summary(o: &Op, r: &Value) -> String {
             let url = r["item"]["url"].as_str().map(|u| format!(" {u}")).unwrap_or_default();
             format!("{}{url}; {}", line(&r["item"]), r["note"].as_str().unwrap_or_default())
         }
+        Op::TrackerFields(_) => fields_text(r),
         Op::PrGet(_) | Op::IssueGet(_) => {
             let drafts = r["drafts"].as_array().map_or(0, Vec::len);
             let events = r["events"].as_array().map_or(0, Vec::len);
@@ -482,6 +539,33 @@ mod tests {
             }
         }
         assert_eq!(DRAFT.iter().map(|k| k.name).collect::<Vec<_>>(), ["comment", "review", "issue", "discard"]);
+    }
+
+    /// `tracker_fields` asks for a Plane project's fields by its key or
+    /// connection, and its text is names to choose from, not ids.
+    #[test]
+    fn a_planes_fields_are_asked_by_key_and_told_compactly() {
+        let o = op("forge_read", "tracker_fields", json!({ "tracker": "ARUGU", "project": "prj_1" }), "x").unwrap();
+        assert_eq!(
+            o,
+            Op::TrackerFields(TrackerFieldsQuery {
+                project: Some("prj_1".into()),
+                tracker: Some("ARUGU".into()),
+                connection: None
+            })
+        );
+        let r = json!({
+            "identifier": "ARUGU", "connection": "tc_1", "read_at": 1,
+            "states": [
+                { "id": "s1", "name": "Todo", "group": "unstarted", "default": true },
+                { "id": "s2", "name": "Done", "group": "completed", "default": false },
+            ],
+            "modules": [{ "id": "m1", "name": "Boards" }], "types": [], "labels": [{ "id": "l1", "name": "agent" }],
+        });
+        assert_eq!(
+            summary(&o, &r),
+            "ARUGU; states: Todo (unstarted, default), Done (completed); modules: Boards; types: none; labels: agent"
+        );
     }
 
     /// A Plane ref reads a tracker item, in the project the agent names; a

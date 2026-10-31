@@ -46,7 +46,7 @@ export function editable(w: TrackerWrite): string | null {
     case "comment":
       return w.text;
     case "edit":
-      return w.body ?? w.title ?? "";
+      return w.body ?? w.title;
     default:
       return null;
   }
@@ -66,18 +66,36 @@ export function withText(w: TrackerWrite, text: string): TrackerWrite {
   }
 }
 
-/** What the write shows as its text (a title first, for a new item). */
+/** The fields a create or edit sets, in one line: state, module, parent, type, labels. */
+export function fieldsLine(w: TrackerWrite): string {
+  if (w.kind !== "create" && w.kind !== "edit") return "";
+  const labels = [...w.labels.map((l) => `+${l}`), ...(w.kind === "edit" ? w.labels_remove.map((l) => `-${l}`) : [])];
+  const parts = [
+    w.state && `state ${w.state}`,
+    w.module && `module ${w.module}`,
+    w.parent && `parent ${w.parent}`,
+    w.type && `type ${w.type}`,
+    labels.length > 0 && `labels ${labels.join(" ")}`,
+  ].filter(Boolean);
+  return parts.join(" · ");
+}
+
+/** What the write shows as its text (a title first, for a new item), then its fields. */
 export function shown(w: TrackerWrite): string {
-  switch (w.kind) {
-    case "create":
-      return w.body ? `${w.title}: ${w.body}` : w.title;
-    case "comment":
-      return w.text;
-    case "edit":
-      return [w.title, w.body].filter(Boolean).join(": ");
-    default:
-      return "";
-  }
+  const fields = fieldsLine(w);
+  const text = (() => {
+    switch (w.kind) {
+      case "create":
+        return w.body ? `${w.title}: ${w.body}` : w.title;
+      case "comment":
+        return w.text;
+      case "edit":
+        return [w.title, w.body].filter(Boolean).join(": ");
+      default:
+        return "";
+    }
+  })();
+  return fields ? (text ? `${text} (${fields})` : fields) : text;
 }
 
 export function WaitingWrites({ project }: { project: string }) {
