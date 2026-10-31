@@ -2,7 +2,7 @@
 schema: 1
 id: "aru-128"
 title: "A Claude Code mod reports live session signals beside the hooks, through the CLI"
-state: "proposed"
+state: "decided"
 area: "Agents and blocks"
 source:
   via: "cli"
@@ -25,17 +25,25 @@ options:
     label: "No mod: keep reading transcripts (#397, PR #1882) and add what's missing there"
     how: "The daemon follows the session's JSONL for model, usage and compact_boundary, and prices tokens itself for #398."
     tradeoff: "Nothing new to install or keep up with, and it works after the fact and across restarts. But it can't know the window (proven below: Sonnet 5.5 and Haiku 5.5 run with a 1M window here, the transcript names them without a marker and carries no 1M beta), it only covers agent blocks (not `claude` in a terminal pane), it has no cost ledger or rate limits, and the transcript format is undocumented and changes too."
-choice: null
-rejected: []
+choice:
+  option: "a"
+  reason: "Jake accepted the spike's recommendation: a separate opt-in plugin beside the command hooks, watch-only, via the CLI"
+rejected:
+  - option: "b"
+    why: "It would lose what works without mods (older Claude Code, a Team or Enterprise login's guard, hosts without the plugin), and a mod can't be the person's answer to a permission."
+  - option: "c"
+    why: "No Windows (the daemon is a named pipe there, which the engine refuses), and it copies the CLI's socket logic; a later optimisation for macOS and Linux."
+  - option: "d"
+    why: "A transcript can't tell the window, covers only agent blocks, and has no cost ledger or rate limits; it stays the durable fallback, not the only source."
 supersedes: []
 evidence:
   - title: "#396: Spike: a Claude Code mod in our plugin for live session signals"
     url: "https://github.com/arugula-salad/arugula/issues/396"
   - title: "Podium's reporter, a Claude Code mod (decision 2, gotcha on classic hooks, CHANGELOG #803, #834, #408, #594, #595)"
     url: "https://github.com/eengelking/podium"
-decided_by: null
+decided_by: "jhgaylor"
 proposed_by: "claude-code (spike #396)"
-decided_on: null
+decided_on: "2026-10-31"
 reviews: []
 constrains:
   - "aru-039"
@@ -46,7 +54,7 @@ constrains:
 
 # A Claude Code mod reports live session signals beside the hooks, through the CLI
 
-**Recommendation: go with conditions (option a).** A mod is the only way to
+**Decided: go with conditions (option a)**, as the spike recommended. A mod is the only way to
 learn the context window as Claude Code has it, the engine's own cost and
 rate limits, and per-loop (subagent) usage while the session runs, and it is
 the only source at all for `claude` in a terminal pane. It is additive: it
