@@ -55,7 +55,7 @@ pub mod link;
 
 use std::{
     path::{Path, PathBuf},
-    sync::{Arc, Mutex, Weak},
+    sync::{Arc, Mutex, Weak, atomic::AtomicBool},
 };
 
 use arugula_proto::{BlockType, fs::READ_MAX};
@@ -214,6 +214,8 @@ pub struct Doc {
     shares: tokio::sync::Mutex<()>,
     /// An agent's ask to share, and its card (#1067).
     card: ask::Card,
+    /// A retry task exists only while checklist feedback is waiting.
+    checklist_delivery: AtomicBool,
 }
 
 impl Doc {
@@ -232,6 +234,7 @@ impl Doc {
         }
         if restoring {
             state.assets = assets::load(&dir.join(assets::FOLDER));
+            checklist::prune_restored_screenshots(&dir, &mut state);
             state.shared = link.current().map(|(_, e)| SharedAt { made: e.made, updated: e.updated });
         }
         Arc::new_cyclic(|me| Doc {
@@ -244,6 +247,7 @@ impl Doc {
             link,
             shares: tokio::sync::Mutex::new(()),
             card: Default::default(),
+            checklist_delivery: AtomicBool::new(false),
         })
     }
 
@@ -370,6 +374,9 @@ impl Doc {
     /// `doc_asset_put`: a picture, by name; a name already kept is replaced.
     async fn asset_put(&self, name: &str, data: &str) -> Result<Value, String> {
         assets::check_name(name)?;
+        if assets::is_checklist_screenshot(name) {
+            return Err("checklist screenshots are saved with feedback, not doc_asset_put".into());
+        }
         // The base64 of the cap, and a little over, before it is decoded.
         if data.len() > ASSET_MAX / 3 * 4 + 8 {
             return Err(format!("{name} is too big; the cap is {ASSET_MAX} bytes (2 MB): shrink it"));
@@ -389,7 +396,9 @@ impl Doc {
             if let Some(a) = st.assets.iter().find(|a| a.name != name && a.name.eq_ignore_ascii_case(name)) {
                 return Err(format!("the Doc has {} already: use that name to replace it", a.name));
             }
-            if st.assets.len() >= ASSETS_MAX && !st.assets.iter().any(|a| a.name == name) {
+            if st.assets.iter().filter(|a| !assets::is_checklist_screenshot(&a.name)).count() >= ASSETS_MAX
+                && !st.assets.iter().any(|a| a.name == name)
+            {
                 return Err(format!("a Doc has at most {ASSETS_MAX} assets: replace one by its name"));
             }
         }
@@ -771,6 +780,7 @@ impl Block for Doc {
 #[cfg(test)]
 mod tests {
     use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::time::Duration;
 
     use super::*;
 
@@ -889,12 +899,80 @@ mod tests {
         duplicate["items"].as_array_mut().unwrap().push(repeated);
         assert!(d.call("doc_checklist", duplicate).await.is_err());
         assert!(d.call("doc_feedback", feedback(0, "failed", &"x".repeat(4001))).await.is_err());
+        let mut report = feedback(0, "failed", "Keep the evidence.");
+        report["image"] = json!(b64(&png("evidence")));
+        d.call("doc_feedback", report).await.unwrap();
+        let image = d.state()["entries"][0]["tasks"][0]["screenshot"].as_str().unwrap().to_owned();
         let path = dir.join(FOLDER).join("s1.tasks.json");
         std::fs::write(&path, "broken").unwrap();
         let (back, _) = doc(&dir, true);
         assert!(back.state()["error"].as_str().unwrap().contains("doesn't parse"));
         assert!(back.call("doc_checklist", checklist_plan(77)).await.is_err());
         assert_eq!(std::fs::read_to_string(path).unwrap(), "broken");
+        assert!(
+            dir.join(FOLDER).join("assets").join(image).exists(),
+            "a corrupt sidecar cannot make its screenshot eligible for cleanup"
+        );
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[tokio::test]
+    async fn checklist_screenshots_do_not_spend_the_docs_picture_budget_or_leak_on_retry() {
+        let dir = temp("checklist-images");
+        let (d, _) = doc(&dir, false);
+        outline(&d, 2).await.unwrap();
+        for n in 0..20 {
+            put(&d, &format!("chart-{n}.png"), &png("chart")).await.unwrap();
+        }
+        for (section, count) in [("s1", 20), ("s2", 5)] {
+            let items: Vec<Value> = (0..count).map(|n| json!({ "id": format!("test-{n}"), "text": format!("Test {n}"), "owner": { "role": "frontend", "pane": 77 } })).collect();
+            d.call("doc_checklist", json!({ "section": section, "items": items })).await.unwrap();
+            for n in 0..count {
+                d.call("doc_feedback", json!({ "section": section, "item": format!("test-{n}"), "revision": 0, "status": "failed", "image": b64(&png(&format!("{section}-{n}"))) })).await.unwrap();
+            }
+        }
+        assert_eq!(d.state()["assets"].as_array().unwrap().len(), 45, "25 screenshots coexist with 20 Doc pictures");
+        let before = d.state();
+        let request = |revision, image: String| json!({ "section": "s1", "item": "test-0", "revision": revision, "status": "failed", "image": image });
+        let e = d.call("doc_feedback", request(0, b64(&png("stale")))).await.unwrap_err();
+        assert!(e.contains("another device"));
+        assert_eq!(d.state(), before, "a stale upload changes neither results nor assets");
+        assert_eq!(std::fs::read_dir(dir.join(FOLDER).join("assets")).unwrap().count(), 45);
+        d.call("doc_feedback", request(1, b64(&png("s1-0")))).await.unwrap();
+        assert_eq!(d.state()["assets"].as_array().unwrap().len(), 45, "identical bytes reuse their immutable asset");
+        let old = d.state()["entries"][0]["tasks"][0]["screenshot"].as_str().unwrap().to_owned();
+        d.call("doc_feedback", request(2, b64(&png("replacement")))).await.unwrap();
+        assert_eq!(d.state()["assets"].as_array().unwrap().len(), 45);
+        assert!(!dir.join(FOLDER).join("assets").join(old).exists(), "an unreferenced old screenshot is reclaimed");
+        assert!(put(&d, "one-too-many.png", &png("chart")).await.unwrap_err().contains("at most 20"));
+        let reserved = d.state()["entries"][0]["tasks"][0]["screenshot"].as_str().unwrap().to_owned();
+        assert!(put(&d, &reserved, &png("overwrite")).await.unwrap_err().contains("saved with feedback"));
+        let orphan = dir.join(FOLDER).join("assets/checklist-orphan.png");
+        std::fs::write(&orphan, png("interrupted save")).unwrap();
+        let (restored, _) = doc(&dir, true);
+        assert!(!orphan.exists(), "restore reclaims an image written before an interrupted verdict save");
+        assert_eq!(restored.state()["assets"].as_array().unwrap().len(), 45);
+        for n in 0..2 {
+            assert_eq!(restored.state()["entries"][n]["tasks"], d.state()["entries"][n]["tasks"]);
+        }
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[tokio::test]
+    async fn a_failed_verdict_write_removes_its_new_screenshot_and_preserves_the_old_report() {
+        let dir = temp("checklist-image-io");
+        let (d, _) = doc(&dir, false);
+        outline(&d, 1).await.unwrap();
+        d.call("doc_checklist", checklist_plan(77)).await.unwrap();
+        let request = |revision, image: String| json!({ "section": "s1", "item": "phone", "revision": revision, "status": "failed", "image": image });
+        d.call("doc_feedback", request(0, b64(&png("first")))).await.unwrap();
+        let before = d.state();
+        let saved = std::fs::read(dir.join(FOLDER).join("s1.tasks.json")).unwrap();
+        std::fs::create_dir(dir.join(FOLDER).join("s1.tasks.tmp")).unwrap();
+        assert!(d.call("doc_feedback", request(1, b64(&png("replacement")))).await.is_err());
+        assert_eq!(d.state(), before);
+        assert_eq!(std::fs::read(dir.join(FOLDER).join("s1.tasks.json")).unwrap(), saved);
+        assert_eq!(std::fs::read_dir(dir.join(FOLDER).join("assets")).unwrap().count(), 1);
         std::fs::remove_dir_all(dir).unwrap();
     }
 
@@ -913,6 +991,10 @@ mod tests {
             String::new()
         }
         fn close(&self) {}
+        fn call_by(&self, method: &str, args: Value, by: Option<&str>) -> BoxFuture<'static, Result<Value, String>> {
+            assert_eq!(by, Some("Checklist feedback"), "relayed context must not appear as the owner's own prompt");
+            self.call(method, args)
+        }
         fn call(&self, method: &str, args: Value) -> BoxFuture<'static, Result<Value, String>> {
             assert_eq!(method, "send");
             self.0.lock().unwrap().push(args["text"].as_str().unwrap().to_owned());
@@ -964,11 +1046,16 @@ mod tests {
         let delivered = messages.lock().unwrap().clone();
         assert_eq!(delivered.len(), 1);
         assert!(delivered[0].contains("Test failure for frontend"));
+        assert!(delivered[0].contains("Relayed checklist feedback"));
         assert!(delivered[0].contains("The result is wrong."));
         back.close();
         drop(back);
         let (again, _) = doc(&dir, true);
         again.attach(ctx, None);
+        assert!(
+            !again.checklist_delivery.load(Ordering::SeqCst),
+            "a restored Doc without pending reports starts no retry task"
+        );
         again.deliver_checklists().await.unwrap();
         assert_eq!(messages.lock().unwrap().len(), 1, "the saved receipt prevents another send after restart");
         again.call("doc_feedback", feedback(2, "passed", "Fixed now.")).await.unwrap();
@@ -976,6 +1063,26 @@ mod tests {
         assert!(messages.lock().unwrap()[1].contains("Test result updated: passed"));
         again.deliver_checklists().await.unwrap();
         assert_eq!(messages.lock().unwrap().len(), 2);
+        tokio::time::timeout(Duration::from_secs(2), async {
+            while again.checklist_delivery.load(Ordering::SeqCst) {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap();
+        // Save directly so only the background worker can deliver it.
+        again.call("doc_checklist", checklist_plan(77)).await.unwrap();
+        again.feedback(serde_json::from_value(feedback(4, "failed", "Failed again.")).unwrap()).await.unwrap();
+        tokio::time::timeout(Duration::from_secs(2), async {
+            loop {
+                if messages.lock().unwrap().len() == 3 && !again.checklist_delivery.load(Ordering::SeqCst) {
+                    break;
+                }
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap();
         again.close();
         responder.abort();
         std::fs::remove_dir_all(dir).unwrap();

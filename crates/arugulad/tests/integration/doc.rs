@@ -370,6 +370,38 @@ fn an_agent_block_drives_its_own_doc_and_no_one_elses() {
 }
 
 #[test]
+fn a_checklist_cannot_route_to_an_agent_the_caller_may_not_drive() {
+    let d = Daemon::child();
+    let a = d.open("hello");
+    d.wait(a, "idle");
+    let doc = agent_mcp(&d, a, "doc", outline(1)).unwrap()["block"].as_u64().unwrap();
+    let start = |caller| {
+        let id = agent_mcp(
+            &d,
+            caller,
+            "start_agent",
+            json!({ "agent": "acp", "command": format!("python3 {}", fake()), "prompt": "hello" }),
+        )
+        .unwrap()["block"]
+            .as_u64()
+            .unwrap();
+        d.wait(id, "idle");
+        id
+    };
+    let child = start(a);
+    let grandchild = start(child);
+    let item = |id: &str, pane| json!({ "id": id, "text": "Phone layout fits", "owner": { "role": "frontend", "pane": pane } });
+    let request = |items: Vec<Value>| json!({ "kind": "checklist", "block": doc, "section": "s1", "items": items });
+    agent_mcp(&d, a, "doc", request(vec![item("phone", child)])).unwrap();
+    let saved = d.state(doc)["entries"][0]["tasks"].clone();
+    for items in [vec![item("phone", child), item("other", grandchild)], vec![item("phone", grandchild)]] {
+        let e = agent_mcp(&d, a, "doc", request(items)).unwrap_err();
+        assert!(e.contains("wasn't started by this agent"), "{e}");
+        assert_eq!(d.state(doc)["entries"][0]["tasks"], saved, "reject the whole assignment before writing any item");
+    }
+}
+
+#[test]
 fn an_agent_blocks_approval_lets_doc_through_without_a_card() {
     let d = Daemon::child();
     // The fake agent asks permission for the tool: `doc`, answered by

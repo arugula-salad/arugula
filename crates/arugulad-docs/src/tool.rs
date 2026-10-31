@@ -325,6 +325,11 @@ async fn doc_checklist(call: &Call<'_>, a: DocChecklistArgs) -> Out {
     if p.info.kind != BlockType::Doc {
         return Err(format!("%{block} isn't a Doc"));
     }
+    // Assigning a recipient creates a future route into its prompt queue.
+    // Being allowed to edit the Doc alone does not grant that authority.
+    for item in &a.items {
+        call.drivable(item.owner.pane).await?;
+    }
     let b = call.app().mux.api(|r| Api::Block(block, r)).await.flatten().ok_or_else(|| format!("no block %{block}"))?;
     let out = b.call_by("doc_checklist", json!({ "section": a.section, "items": a.items }), Some(&call.by())).await?;
     done(format!("Checklist saved in {} of Doc %{block}; read_output reads the person's results", a.section), out)

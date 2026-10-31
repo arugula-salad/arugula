@@ -20,6 +20,11 @@ pub const ASSET_MAX: usize = 2 * 1024 * 1024;
 /// The pictures one Doc has.
 pub const ASSETS_MAX: usize = 20;
 
+/// Reserved immutable images, saved only with a person's checklist result.
+pub(super) fn is_checklist_screenshot(name: &str) -> bool {
+    name.to_ascii_lowercase().starts_with("checklist-")
+}
+
 /// The folder inside the Doc's.
 pub const FOLDER: &str = "assets";
 

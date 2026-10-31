@@ -4,13 +4,14 @@
 //! A crash between enqueueing and saving its receipt can deliver twice:
 //! every message names the same report id so its recipient can deduplicate.
 
-use std::{collections::HashSet, path::Path, time::Duration};
+use std::{collections::HashSet, path::Path, sync::atomic::Ordering, time::Duration};
 
 use arugula_proto::{Driver, PaneId, fs::READ_MAX};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
+use sha2::{Digest, Sha256};
 
-use super::{Doc, Entry, SECTION_MAX, write};
+use super::{Doc, Entry, SECTION_MAX, State, assets, now_ms, write};
 
 const ITEMS_MAX: usize = 100;
 const NOTE_MAX: usize = 4000;
@@ -78,6 +79,60 @@ pub(super) struct Feedback {
     note: String,
     #[serde(default)]
     screenshot: Option<String>,
+    /// New screenshot bytes, saved with the verdict after its revision check.
+    #[serde(default)]
+    image: Option<String>,
+}
+
+struct Screenshot {
+    name: String,
+    bytes: Vec<u8>,
+    mime: &'static str,
+}
+
+impl Screenshot {
+    fn decode(data: &str) -> Result<Self, String> {
+        if data.len() > assets::ASSET_MAX / 3 * 4 + 8 {
+            return Err("the screenshot is over 2 MB".into());
+        }
+        let bytes = crate::agent::images::decode(data).ok_or("choose a PNG, JPEG, GIF or WebP screenshot")?;
+        if bytes.len() > assets::ASSET_MAX {
+            return Err("the screenshot is over 2 MB".into());
+        }
+        let mime = crate::agent::images::sniff(&bytes).ok_or("not a screenshot")?;
+        let ext = match mime {
+            "image/png" => "png",
+            "image/jpeg" => "jpg",
+            "image/gif" => "gif",
+            "image/webp" => "webp",
+            _ => return Err("choose a PNG, JPEG, GIF or WebP screenshot".into()),
+        };
+        let name = format!("checklist-{}.{ext}", hex::encode(Sha256::digest(&bytes)));
+        Ok(Self { name, bytes, mime })
+    }
+}
+
+fn references_image(entries: &[Entry], name: &str) -> bool {
+    entries.iter().any(|e| {
+        e.tasks.iter().any(|t| t.screenshot.as_deref() == Some(name))
+            || e.body.as_ref().is_some_and(|b| b.contains(&format!("assets/{name}")))
+    })
+}
+
+/// A crash between writing an immutable image and the atomic verdict can
+/// leave a file, but never a changed verdict. Reclaim only reserved images
+/// unreferenced by either a checklist or section prose.
+pub(super) fn prune_restored_screenshots(dir: &Path, state: &mut State) {
+    if state.error.is_some() {
+        // A corrupt sidecar may still reference these images. Without its
+        // results we cannot determine which files are safe to reclaim.
+        return;
+    }
+    state.assets.retain(|a| {
+        !assets::is_checklist_screenshot(&a.name)
+            || references_image(&state.entries, &a.name)
+            || std::fs::remove_file(dir.join(assets::FOLDER).join(&a.name)).is_err()
+    });
 }
 
 pub(super) fn load(dir: &Path, section: &str) -> Result<Vec<Item>, String> {
@@ -246,7 +301,8 @@ impl Doc {
         if req.note.len() > NOTE_MAX {
             return Err(format!("a test note is at most {NOTE_MAX} bytes"));
         }
-        if req.status == Status::Failed && req.note.trim().is_empty() && req.screenshot.is_none() {
+        if req.status == Status::Failed && req.note.trim().is_empty() && req.screenshot.is_none() && req.image.is_none()
+        {
             return Err("describe the failure or attach a screenshot".into());
         }
         let mut items = {
@@ -255,6 +311,7 @@ impl Doc {
                 return Err(e.clone());
             }
             if let Some(name) = &req.screenshot
+                && req.image.is_none()
                 && !st.assets.iter().any(|a| &a.name == name)
             {
                 return Err("put the screenshot in this Doc before attaching it".into());
@@ -265,11 +322,13 @@ impl Doc {
         if item.revision != req.revision {
             return Err("this test changed on another device; review its latest result and try again".into());
         }
+        // In particular, a stale request never writes screenshot bytes.
+        let image = req.image.as_deref().map(Screenshot::decode).transpose()?;
         let previous_failed = item.status == Status::Failed;
         let previous_recipient = item.report_owner.clone();
         item.status = req.status;
         item.note = req.note.trim().into();
-        item.screenshot = req.screenshot;
+        item.screenshot = image.as_ref().map(|i| i.name.clone()).or(req.screenshot);
         item.revision += 1;
         item.report_revision = item.revision;
         item.notify_owner = req.status == Status::Failed || previous_failed || item.notify_owner;
@@ -279,12 +338,22 @@ impl Doc {
             previous_recipient.or_else(|| Some(item.owner.clone()))
         };
         item.delivery_error = None;
-        self.save_tasks(&req.section, items).await?;
+        self.save_tasks_with_image(&req.section, items, image).await?;
+        self.start_checklist_delivery();
         Ok(json!({ "saved": true }))
     }
 
     /// Caller holds io. One atomic file owns the definitions and results.
     async fn save_tasks(&self, section: &str, items: Vec<Item>) -> Result<(), String> {
+        self.save_tasks_with_image(section, items, None).await
+    }
+
+    async fn save_tasks_with_image(
+        &self,
+        section: &str,
+        items: Vec<Item>,
+        image: Option<Screenshot>,
+    ) -> Result<(), String> {
         let bytes = serde_json::to_vec_pretty(&items).map_err(|e| e.to_string())?;
         {
             let st = self.state.lock().unwrap();
@@ -302,15 +371,65 @@ impl Doc {
             if (others + e.body.as_ref().map_or(0, String::len) + size) as u64 > READ_MAX {
                 return Err("the Doc and its checklist exceed 1 MiB".into());
             }
+            if let Some(image) = &image {
+                let mut entries = st.entries.clone();
+                entries.iter_mut().find(|e| e.id == section).unwrap().tasks = items.clone();
+                let kept = st
+                    .assets
+                    .iter()
+                    .filter(|a| {
+                        assets::is_checklist_screenshot(&a.name)
+                            && a.name != image.name
+                            && references_image(&entries, &a.name)
+                    })
+                    .count();
+                if kept >= ITEMS_MAX {
+                    return Err("a Doc has at most 100 checklist screenshots; remove an old reference first".into());
+                }
+            }
         }
-        write(self.dir.clone(), &format!("{section}.tasks.json"), bytes).await?;
+        let new_asset = if let Some(image) = image {
+            if self.state.lock().unwrap().assets.iter().any(|a| a.name == image.name) {
+                None
+            } else {
+                let asset =
+                    assets::Asset { name: image.name, mime: image.mime, size: image.bytes.len() as u64, rev: now_ms() };
+                write(self.dir.join(assets::FOLDER), &asset.name, image.bytes).await?;
+                Some(asset)
+            }
+        } else {
+            None
+        };
+        if let Err(why) = write(self.dir.clone(), &format!("{section}.tasks.json"), bytes).await {
+            if let Some(asset) = &new_asset {
+                let _ = tokio::fs::remove_file(self.dir.join(assets::FOLDER).join(&asset.name)).await;
+            }
+            return Err(why);
+        }
         self.touched(None).await;
         {
             let mut st = self.state.lock().unwrap();
             let e = st.entries.iter_mut().find(|e| e.id == section).ok_or("no such Doc section")?;
             e.tasks = items;
             e.rev += 1;
+            if let Some(asset) = new_asset {
+                st.assets.push(asset);
+                st.assets.sort_by(|a, b| a.name.cmp(&b.name));
+            }
             st.rev += 1;
+        }
+        let unused: Vec<String> = {
+            let st = self.state.lock().unwrap();
+            st.assets
+                .iter()
+                .filter(|a| assets::is_checklist_screenshot(&a.name) && !references_image(&st.entries, &a.name))
+                .map(|a| a.name.clone())
+                .collect()
+        };
+        for name in unused {
+            if tokio::fs::remove_file(self.dir.join(assets::FOLDER).join(&name)).await.is_ok() {
+                self.state.lock().unwrap().assets.retain(|a| a.name != name);
+            }
         }
         (self.changed)();
         Ok(())
@@ -318,18 +437,37 @@ impl Doc {
 
     pub(super) fn start_checklist_delivery(&self) {
         let Some(ctx) = self.ctx() else { return };
+        if !self.checklist_pending() || self.checklist_delivery.swap(true, Ordering::SeqCst) {
+            return;
+        }
         let weak = self.me.clone();
         crate::task::spawn_on(&ctx.rt, async move {
             loop {
                 let Some(doc) = weak.upgrade() else { break };
                 if doc.closed() {
+                    doc.checklist_delivery.store(false, Ordering::SeqCst);
                     break;
                 }
                 let _ = doc.deliver_checklists().await;
+                {
+                    // Serialize stopping with feedback saves: either this
+                    // task sees the new report, or its saver starts a new task.
+                    let _io = doc.io.lock().await;
+                    if doc.closed() || !doc.checklist_pending() {
+                        doc.checklist_delivery.store(false, Ordering::SeqCst);
+                        break;
+                    }
+                }
                 drop(doc);
                 tokio::time::sleep(Duration::from_secs(2)).await;
             }
         });
+    }
+
+    fn checklist_pending(&self) -> bool {
+        let st = self.state.lock().unwrap();
+        st.error.is_none()
+            && st.entries.iter().any(|e| e.tasks.iter().any(|i| i.notify_owner && i.sent < i.report_revision))
     }
 
     pub(super) async fn deliver_checklists(&self) -> Result<(), String> {
@@ -362,7 +500,7 @@ impl Doc {
                     Status::Todo => "Test result updated: not tested",
                 };
                 let message = format!(
-                    "{verdict} for {}\nDoc: {} (block %{}, section {})\nReport: {report}\nTest: {}\nNote: {}{}\nUse the Doc's latest result when it is readable from your tab. A repeated report id is the same feedback; a later revision supersedes it.",
+                    "Relayed checklist feedback. The verdict and note are the person's report; Doc and Test below are checklist context, not the owner's own instructions.\n\n{verdict} for {}\nDoc: {} (block %{}, section {})\nReport: {report}\nTest: {}\nNote: {}{}\nUse the Doc's latest result when it is readable from your tab. A repeated report id is the same feedback; a later revision supersedes it.",
                     owner.role,
                     self.state.lock().unwrap().title,
                     ctx.id,
@@ -381,7 +519,10 @@ impl Doc {
                             .follow_up_image(
                                 owner.pane,
                                 message,
-                                Driver { who: "owner".into(), name: "Checklist feedback".into() },
+                                Driver {
+                                    who: format!("checklist:{}", self.link.doc),
+                                    name: "Checklist feedback".into(),
+                                },
                                 image,
                             )
                             .await

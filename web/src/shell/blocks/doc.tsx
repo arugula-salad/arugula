@@ -113,21 +113,21 @@ registerBlock("doc", (client: Client, id): BlockView => {
     if (!res.ok) throw new Error(body.error || "Couldn't save the test result. Try again.");
   };
   const feedback = async (section: string, result: Feedback, file?: File) => {
-    let screenshot = result.screenshot;
+    let image: string | undefined;
     if (file) {
       if (file.size > 2 * 1024 * 1024) throw new Error("The screenshot must be 2 MB or smaller.");
       const ext = ({ "image/png": "png", "image/jpeg": "jpg", "image/gif": "gif", "image/webp": "webp" } as Record<string, string>)[file.type];
       if (!ext) throw new Error("Choose a PNG, JPEG, GIF or WebP screenshot.");
-      const data = await new Promise<string>((resolve, reject) => {
+      image = await new Promise<string>((resolve, reject) => {
         const reader = new FileReader();
         reader.onload = () => resolve(String(reader.result).split(",")[1]);
         reader.onerror = () => reject(new Error("Couldn't read the screenshot."));
         reader.readAsDataURL(file);
       });
-      screenshot = `test-${crypto.randomUUID()}.${ext}`;
-      await call("doc_asset_put", { name: screenshot, data });
     }
-    await call("doc_feedback", { section, ...result, screenshot });
+    // One request lets the daemon reject a stale result before storing its
+    // image, and commit both together without consuming the Doc asset budget.
+    await call("doc_feedback", { section, ...result, image });
   };
   open.set(id, images);
   const draw = () => {

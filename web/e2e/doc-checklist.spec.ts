@@ -1,4 +1,6 @@
 import { fileURLToPath } from "node:url";
+import { mkdirSync } from "node:fs";
+import { join } from "node:path";
 import { expect, test, type Page } from "@playwright/test";
 import { bring, newDoc, png, type Post } from "./doc-steps";
 import { open, paneEl, panes, reset } from "./helpers";
@@ -36,6 +38,8 @@ test("saved pass and failure results reach only the assigned agent", async ({ pa
   await expect(row).toHaveAttribute("data-test-status", "failed");
   await expect(row).toContainText("Sent to owner", { timeout: 15_000 });
   await expect.poll(async () => JSON.stringify(await state(page, owner))).toContain("The action buttons overlap on the phone.");
+  await expect.poll(async () => JSON.stringify(await state(page, owner))).toContain("A follow-up from Checklist feedback");
+  await expect.poll(async () => JSON.stringify(await state(page, owner))).toContain("Relayed checklist feedback");
   expect(JSON.stringify(await state(page, other))).not.toContain("The action buttons overlap on the phone.");
   await open(page);
   await bring(page, doc);
@@ -57,29 +61,58 @@ test("a draft failure cannot overwrite a result received while editing", async (
   await row.getByRole("button", { name: "Report a failure" }).click();
   const draft = row.getByRole("textbox", { name: "Failure note for Phone layout fits" });
   await draft.fill("My unsent report.");
+  await row.locator('input[type="file"]').setInputFiles({ name: "failure.png", mimeType: "image/png", buffer: png(40, 20) });
   await post(page)(`/api/blocks/${doc}/call/doc_feedback`, { section: "s1", item: "phone", revision: 0, status: "failed", note: "Another device's report." });
   await expect(row.locator("blockquote")).toHaveText("Another device's report.");
   await row.getByRole("button", { name: "Report failure to frontend" }).click();
   await expect(row.getByRole("alert")).toContainText("another device");
   expect((await state(page, doc)).entries[0].tasks[0].note).toBe("Another device's report.");
+  expect((await state(page, doc)).assets).toHaveLength(0);
   await expect(draft).toHaveValue("My unsent report.");
   await row.getByRole("button", { name: "Review latest result and keep my draft" }).click();
   await row.getByRole("button", { name: "Report failure to frontend" }).click();
   await expect(row.locator("blockquote")).toHaveText("My unsent report.");
+  await expect.poll(async () => (await state(page, doc)).assets.length).toBe(1);
 });
 
 test.describe("on a phone", () => {
   test.use(pixel7);
   test("a failure screenshot is saved and attached to the owner's prompt", async ({ page }) => {
     const { doc, owner, row } = await setup(page);
+    const capture = async (name: string) => {
+      if (!process.env.CHECKLIST_SHOT_DIR) return;
+      mkdirSync(process.env.CHECKLIST_SHOT_DIR, { recursive: true });
+      await page.locator(`[data-doc-block="${doc}"]`).screenshot({ path: join(process.env.CHECKLIST_SHOT_DIR, `${name}.png`) });
+    };
+    if (process.env.CHECKLIST_SHOT_DIR) {
+      // The pre-feature workflow uses the unchanged Markdown task renderer.
+      const [term] = await panes(page);
+      const before = await newDoc(post(page), term);
+      await post(page)(`/api/blocks/${before}/call/doc_fill`, { section: "s1", markdown: "- [ ] Phone layout fits" });
+      await bring(page, before);
+      const baseline = page.locator(`[data-doc-block="${before}"]`);
+      await expect(baseline.getByRole("checkbox")).toBeDisabled();
+      mkdirSync(process.env.CHECKLIST_SHOT_DIR, { recursive: true });
+      await baseline.screenshot({ path: join(process.env.CHECKLIST_SHOT_DIR, "markdown-before.png") });
+      await bring(page, doc);
+    }
+    await row.getByRole("checkbox").click();
+    await expect(row.getByRole("checkbox")).toBeChecked();
+    await capture("pass");
     await row.getByRole("button", { name: "Report a failure" }).click();
-    await row.locator('input[type="file"]').setInputFiles({ name: "failure.png", mimeType: "image/png", buffer: png(8, 6) });
+    await row.getByRole("textbox").fill("The action buttons overlap on the phone.");
+    await capture("failure-form");
+    const evidence = await page.locator(`[data-doc-block="${doc}"]`).screenshot();
+    await row.locator('input[type="file"]').setInputFiles({ name: "failure.png", mimeType: "image/png", buffer: evidence });
     await row.getByRole("button", { name: "Report failure to frontend" }).click();
     await expect(row).toContainText("Sent to owner", { timeout: 15_000 });
     await expect(row.getByRole("img", { name: "Test screenshot" })).toBeVisible();
+    await capture("sent");
     if (process.env.CHECKLIST_SHOT) await page.locator(`[data-doc-block="${doc}"]`).screenshot({ path: process.env.CHECKLIST_SHOT });
     await bring(page, owner);
     const report = paneEl(page, owner).locator(".agent-user").filter({ hasText: "Test failure for frontend" });
+    await expect(paneEl(page, owner)).toContainText("A follow-up from Checklist feedback");
     await expect(report.locator(".agent-image img")).toHaveCount(1, { timeout: 15_000 });
+    if (process.env.CHECKLIST_SHOT_DIR) await paneEl(page, owner).screenshot({ path: join(process.env.CHECKLIST_SHOT_DIR, "recipient.png") });
   });
 });
