@@ -15,6 +15,7 @@ pub mod doc_links;
 pub mod email;
 pub mod hosted;
 pub mod issuer;
+pub mod passkey_log;
 pub mod platform;
 pub mod reset;
 #[cfg(test)]
@@ -661,6 +662,7 @@ impl Db {
         conn.execute_batch(doc_links::SCHEMA)?;
         conn.execute_batch(email::SCHEMA)?;
         conn.execute_batch(reset::SCHEMA)?;
+        conn.execute_batch(passkey_log::SCHEMA)?;
         conn.execute_batch(hosted::SCHEMA)?;
         conn.execute_batch(changes::SCHEMA)?;
         conn.execute_batch(platform::SCHEMA)?;
@@ -678,6 +680,7 @@ impl Db {
         conn.execute_batch(doc_links::SCHEMA).unwrap();
         conn.execute_batch(email::SCHEMA).unwrap();
         conn.execute_batch(reset::SCHEMA).unwrap();
+        conn.execute_batch(passkey_log::SCHEMA).unwrap();
         conn.execute_batch(hosted::SCHEMA).unwrap();
         conn.execute_batch(changes::SCHEMA).unwrap();
         conn.execute_batch(platform::SCHEMA).unwrap();
@@ -1146,11 +1149,22 @@ impl Db {
 
     // ---- passkeys
 
+    /// For tests: a passkey made at `control.test` by signing up, logged
+    /// as any is ([`Db::add_passkey_logged`]).
+    #[cfg(test)]
     pub fn add_passkey(&self, id: &str, account: &str, alg: i64, public: &[u8], now: u64) -> anyhow::Result<()> {
-        self.c().execute(
-            "INSERT INTO passkeys (id, account, alg, public, sign_count, created) VALUES (?1, ?2, ?3, ?4, 0, ?5)",
-            params![id, account, alg, public, now],
-        )?;
+        let d = arugula_e2e::passkey::Draft {
+            account: account.into(),
+            event: arugula_e2e::passkey::Change::Added,
+            credential: id.into(),
+            rp: "control.test".into(),
+            alg,
+            key: public.to_vec(),
+            aaguid: arugula_e2e::passkey::NO_AAGUID.into(),
+            at: now,
+            by: "signup".into(),
+        };
+        self.add_passkey_logged(public, d.after(None), false)?.map_err(|_| anyhow::anyhow!("moved"))?;
         Ok(())
     }
 
@@ -1247,8 +1261,22 @@ impl Db {
     }
 
     /// Remove a passkey, unless it's the account's last way to sign in
-    /// (checked in the same transaction). Whether it went.
+    /// (checked in the same transaction), logged `by session` (DK3). Whether
+    /// it went.
     pub fn drop_passkey(&self, account: &str, id: &str) -> anyhow::Result<Result<(), &'static str>> {
+        self.drop_passkey_as(account, id, None)
+    }
+
+    /// As [`Db::drop_passkey`], logged as `signed`: the removal event
+    /// [`Db::passkey_next_removal`] made, with another passkey's assertion
+    /// over it as its proof (`by passkey`, DK10 #393), which must still be
+    /// the log's next event.
+    pub fn drop_passkey_as(
+        &self,
+        account: &str,
+        id: &str,
+        signed: Option<arugula_e2e::passkey::Event>,
+    ) -> anyhow::Result<Result<(), &'static str>> {
         let mut c = self.c();
         let tx = c.transaction()?;
         let ways: u64 = tx.query_row(
@@ -1271,6 +1299,29 @@ impl Db {
             "DELETE FROM identities WHERE provider = 'passkey' AND subject = ?2 AND account = ?1",
             params![account, id],
         )?;
+        // Its log says so (DK3): a signed-in page removed it, or (DK10,
+        // #393) another passkey signed its removal.
+        match signed {
+            Some(e) => {
+                if e.account != account || e.credential != id || e.event != arugula_e2e::passkey::Change::Removed {
+                    return Ok(Err("that removal is another passkey's"));
+                }
+                match passkey_log::append(&tx, e, true)? {
+                    Ok(_) => {}
+                    Err(passkey_log::NotAppended::Moved) => {
+                        return Ok(Err("the account's passkeys changed meanwhile: remove it again"));
+                    }
+                    Err(passkey_log::NotAppended::Breaks) => {
+                        return Ok(Err("that passkey's assertion doesn't confirm this removal"));
+                    }
+                }
+            }
+            None => {
+                if !passkey_log::remove(&tx, account, id, arugula_e2e::now_ms(), "session")? {
+                    tracing::warn!(account, "a passkey removed that its log didn't have");
+                }
+            }
+        }
         tx.commit()?;
         Ok(Ok(()))
     }
@@ -2775,6 +2826,12 @@ impl Db {
             ] {
                 tx.execute(sql, params![d])?;
             }
+        }
+        // Its passkey log stays (DK3), so what they approved before still
+        // checks out; it says they went with the account.
+        let now = arugula_e2e::now_ms();
+        for e in passkey_log::live(&tx, a)? {
+            passkey_log::remove(&tx, a, &e.credential, now, "deleted")?;
         }
         for sql in [
             "DELETE FROM doc_link_parts WHERE id IN (SELECT id FROM doc_links WHERE account = ?1)",

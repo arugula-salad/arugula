@@ -204,6 +204,17 @@ with_account = "deleted"
 seen_by = ["litestream"]
 
 [[table]]
+name = "passkey_log"
+plane = "platform"
+process = "hub"
+holds = "metadata"
+what = "An account's passkey log (DK3, aru-126): each passkey added or removed, with its credential id, public key, RP, its authenticator's AAGUID, when, what let it happen (another passkey's assertion, kept as its proof; a sign-up, a fresh GitHub sign-in, a device, a signed-in page, a reset, the account's deletion, or the backfill of passkeys from before the log) and the hash of the event before. Append-only (triggers refuse an update or a delete), and public: GET /api/accounts/{id}/passkeys/log."
+why_asleep = "A deploy's approval is a passkey's assertion, and the platform, a box or anyone else checks a stored one against this log, with every machine asleep."
+with_account = "kept"
+note = "Approvals the account made stay checkable after it goes: its passkeys' removal is logged (by `deleted`), and the log, the account's id in it, is kept for good, as deploy_events are."
+seen_by = ["litestream"]
+
+[[table]]
 name = "devices"
 plane = "machine"
 process = "hub"

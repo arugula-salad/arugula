@@ -14,7 +14,10 @@ ed25519-dalek = { workspace = true }
 getrandom = { workspace = true }
 hex = { workspace = true }
 hkdf = { workspace = true }
-p256 = { workspace = true, features = ["ecdh"] }
+p256 = { workspace = true, features = ["ecdh", "ecdsa"] }
+# RS256 passkeys' signatures (`passkey::verify`), as control checks them: already
+# in every build through rustls.
+aws-lc-rs = { version = "1.18.1", default-features = false, features = ["aws-lc-sys"] }
 base64 = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }

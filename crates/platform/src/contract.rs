@@ -136,6 +136,9 @@ async fn principals(f: &dyn Fixture) {
     };
     let v = hub.verify_passkey("acct-pa", "challenge", &unknown).await.unwrap();
     assert!(!v.ok && !v.why.is_empty(), "{v:?}");
+    // DK3: an account's passkey log, its own; empty for one with none.
+    let log = hub.passkey_log("acct-pa").await.unwrap();
+    assert_eq!((log.account.as_str(), log.events.len()), ("acct-pa", 0));
 
     f.revoke("acct-pa", &cli).unwrap();
     assert!(resolve(c).await.is_none(), "a revoked device");

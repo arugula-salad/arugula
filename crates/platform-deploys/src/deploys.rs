@@ -46,10 +46,11 @@
 //! **The person, not only their browser.** Every approval and deny carries
 //! a passkey's assertion over the approval's bytes (challenge: their
 //! SHA-256), with user verification, from a passkey registered to the
-//! approving account. The hub keeps passkeys' public keys and checks it
-//! ([`HubPort::verify_passkey`]); it's stored with the approval and in its
-//! event, so the log can be checked again. An account with no passkey
-//! can't approve.
+//! approving account. The platform checks it against the account's passkey
+//! log, which the hub publishes (DK3, [`HubPort::passkey_log`]), with the
+//! check anyone makes (`arugula_e2e::passkey::verify`); it's stored with the
+//! approval and in its event, so anyone can check it again against that
+//! log. An account with no passkey can't approve.
 //!
 //! **Applied by M219** (`deploys::apply`): an approval enqueues the
 //! deploy's job, which checks the approval's `expires`, the approving
@@ -57,9 +58,9 @@
 //! on the project's hosted workspace. That machine checks the approval
 //! itself against what it pinned (`arugula_e2e::deploy::check_apply`), and
 //! the log takes the deploy's `started` only from that run, before its
-//! `expires`. Left (`TODO(passkeys)`): the hub publishes passkeys' public
-//! keys, so a stored passkey proof (in the approval and its event) can be
-//! checked by anyone, the machine included, not only by the hub.
+//! `expires`. Left (`TODO(passkeys)`, DK4 #385): the machine checks the
+//! stored passkey proof's signature too, against the published log, not
+//! only its client data.
 //!
 //! **Asking** records the deploy's `requested` event and pushes each of the
 //! project's owners a card (`deploy` in the push: a tap opens the deploy on
@@ -70,7 +71,7 @@
 //! [`db::deploys::EventKind::allows`]: crate::db::deploys::EventKind::allows
 //! [`HubPort::device_trust`]: crate::hub::HubPort::device_trust
 //! [`DeviceTrust::legacy_app_children`]: crate::hub::DeviceTrust::legacy_app_children
-//! [`HubPort::verify_passkey`]: crate::hub::HubPort::verify_passkey
+//! [`HubPort::passkey_log`]: crate::hub::HubPort::passkey_log
 
 pub mod agent;
 pub mod apply;

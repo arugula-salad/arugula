@@ -582,7 +582,12 @@ export async function passkeyRegister(name?: string, device?: PasskeySigner): Pr
     ...(device_sig && device ? { device: { id: device.id, sig: await device.sign(addPasskeyDeviceBody(device.account, id, o.challenge)) } } : {}),
   };
   if (step_up === "passkey") {
-    const options = await api<PasskeyToConfirm["options"]>("/auth/passkey/register/step-up", { id: finish.id });
+    // Its attestation too: the step-up signs the new passkey's event in
+    // the account's passkey log (DK3), its key and AAGUID in it.
+    const options = await api<PasskeyToConfirm["options"]>("/auth/passkey/register/step-up", {
+      id: finish.id,
+      attestationObject: finish.attestationObject,
+    });
     return { finish, prf, options };
   }
   await finishRegister(finish, prf);

@@ -54,6 +54,9 @@ pub const DAEMON_PUSHES: (&str, usize) = ("daemon-push", 2_000);
 /// them: counted before the brake for everyone, so one account's many
 /// subscriptions can't spend it.
 pub const ACCOUNT_PUSHES: (&str, usize) = ("account-push", 3_000);
+/// Reads of an account's passkey log (DK3), per client address: a box or
+/// a person checking approvals, now and then.
+pub const PASSKEY_LOGS: (&str, usize) = ("passkey-log", 600);
 /// Looking people up to share with, per account.
 pub const PEOPLE: (&str, usize) = ("people", 120);
 /// Devices asking into an account, per account.

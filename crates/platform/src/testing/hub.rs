@@ -82,6 +82,9 @@ struct State {
     /// Passkeys by credential id: their account and Ed25519 public key
     /// (M218).
     passkeys: BTreeMap<String, (String, [u8; 32])>,
+    /// Accounts' passkey logs (DK3): each passkey above, added at 0 by
+    /// signing up, for RP `control.example`.
+    passkey_logs: BTreeMap<String, arugula_e2e::passkey::Log>,
     /// Hosted machines (M179): the projects with a delegation, the
     /// enrollments asked for, the workspaces whose box enrolled (as which
     /// machine), and the workspaces said gone.
@@ -302,7 +305,38 @@ impl TestHub {
 
     /// A passkey of an account's, Ed25519, as the hub keeps it (M218).
     pub fn passkey(&self, id: &str, account: &str, public: [u8; 32]) {
-        self.state.lock().unwrap().passkeys.insert(id.into(), (account.into(), public));
+        let mut s = self.state.lock().unwrap();
+        if s.passkeys.insert(id.into(), (account.into(), public)) == Some((account.into(), public)) {
+            return;
+        }
+        let log = s
+            .passkey_logs
+            .entry(account.into())
+            .or_insert_with(|| arugula_e2e::passkey::Log { account: account.into(), ..Default::default() });
+        let added = arugula_e2e::passkey::Draft {
+            account: account.into(),
+            event: arugula_e2e::passkey::Change::Added,
+            credential: id.into(),
+            rp: "control.example".into(),
+            alg: arugula_e2e::passkey::EDDSA,
+            key: public.to_vec(),
+            aaguid: arugula_e2e::passkey::NO_AAGUID.into(),
+            at: 0,
+            by: "signup".into(),
+        }
+        .after(log.events.last());
+        log.events.push(added);
+    }
+
+    /// A passkey removed at `at`, by a signed-in page, as its account's log
+    /// says (DK3).
+    pub fn passkey_removed(&self, id: &str, at: u64) {
+        let mut s = self.state.lock().unwrap();
+        let Some((account, _)) = s.passkeys.remove(id) else { return };
+        let log = s.passkey_logs.get_mut(&account).expect("its log");
+        let added = log.events.iter().rev().find(|e| e.credential == id).expect("its event").clone();
+        let removed = added.removal(at, "session").placed_after(log.events.last());
+        log.events.push(removed);
     }
 
     /// An account's devices as the hub keeps them (M218).
@@ -672,6 +706,12 @@ impl HubPort for TestHub {
     fn team_rosters<'a>(&'a self, team: &'a str) -> BoxFuture<'a, HubResult<Vec<arugula_e2e::team::Roster>>> {
         self.called("team_rosters");
         done(self.state.lock().unwrap().rosters.get(team).cloned().unwrap_or_default())
+    }
+
+    fn passkey_log<'a>(&'a self, account: &'a str) -> BoxFuture<'a, HubResult<arugula_e2e::passkey::Log>> {
+        self.called("passkey_log");
+        let log = self.state.lock().unwrap().passkey_logs.get(account).cloned();
+        done(log.unwrap_or_else(|| arugula_e2e::passkey::Log { account: account.into(), ..Default::default() }))
     }
 
     /// The hub's checks (`passkey::verify_for`), for Ed25519 passkeys on
