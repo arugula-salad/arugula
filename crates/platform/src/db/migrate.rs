@@ -553,9 +553,9 @@ const SQLITE: &[Migration] = &[
         additive: true,
     },
     Migration {
-        version: 77,
+        version: 78,
         name: "tracker_last_delivery",
-        sql: include_str!("../../migrations/sqlite/0077_tracker_last_delivery.sql"),
+        sql: include_str!("../../migrations/sqlite/0078_tracker_last_delivery.sql"),
         additive: true,
     },
 ];
@@ -1021,9 +1021,9 @@ const POSTGRES: &[Migration] = &[
         additive: true,
     },
     Migration {
-        version: 77,
+        version: 78,
         name: "tracker_last_delivery",
-        sql: include_str!("../../migrations/postgres/0077_tracker_last_delivery.sql"),
+        sql: include_str!("../../migrations/postgres/0078_tracker_last_delivery.sql"),
         additive: true,
     },
 ];
