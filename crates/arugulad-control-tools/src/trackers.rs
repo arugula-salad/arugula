@@ -37,7 +37,7 @@ pub(crate) const WRITE_TOOL: &str = "tracker_write";
 /// The platform's route for what a machine reaches.
 const REACH: &str = arugula_control_wire::projects::AGENT_TRACKER_REACH;
 
-pub(crate) const WRITE_DESCRIPTION: &str = "Write to the Plane project connected to a project in Arugula control: create a work item, comment on one, close it (completed or cancelled), reopen it, or edit its title or body. Your person's trackers.write grant over the project says you may, never more than their role. A write may wait: when the connection is set to approve each agent write (the default) it is kept for a person to approve, edit or drop in the project's Triage, and this says \"waiting for a person to approve it\" with its id; nothing has reached Plane yet, and you can't approve it yourself. When the connection allows agent writes it lands at once. What is sent ends with a line saying it was sent via Arugula by your person's agent on this machine. Items are named by their fi_ id (forge_read lists them) or IDENT-N, like ARUGU-7. Assignees are not supported.";
+pub(crate) const WRITE_DESCRIPTION: &str = "Write to the Plane project connected to a project in Arugula control: create a work item, comment on one, close it (completed or cancelled), reopen it (into the project's default state), or edit it. Your person's trackers.write grant over the project says you may, never more than their role. A write may wait: when the connection is set to approve each agent write (the default) it is kept for a person to approve, edit or drop in the project's Triage, and this says \"waiting for a person to approve it\" with its id; nothing has reached Plane yet, and you can't approve it yourself. When the connection allows agent writes it lands at once. What is sent ends with a line saying it was sent via Arugula by your person's agent on this machine. Create and edit also take state, module, type and labels by name (any case) or id, and parent as IDENT-N: an unknown name is refused with the project's real ones, and forge_read tracker_fields lists them. Items are named by their fi_ id (forge_read lists them) or IDENT-N, like ARUGU-7. Assignees are not supported.";
 
 #[derive(Deserialize, JsonSchema)]
 pub struct CreateArgs {
@@ -55,9 +55,23 @@ pub struct CreateArgs {
     pub title: String,
     #[serde(default)]
     pub body: Option<String>,
-    /// The state group it starts in: backlog, unstarted or started.
+    /// The state it starts in: its name (any case) or id, or a state group
+    /// (backlog, unstarted, started, completed, cancelled): the first state
+    /// of it.
     #[serde(default)]
     pub state: Option<String>,
+    /// The module to put it in, by name or id.
+    #[serde(default)]
+    pub module: Option<String>,
+    /// Its parent, such as an epic: IDENT-N, like ARUGU-7.
+    #[serde(default)]
+    pub parent: Option<String>,
+    /// Its type, such as Epic, by name or id.
+    #[serde(default, rename = "type")]
+    pub item_type: Option<String>,
+    /// Labels to give it, by name or id.
+    #[serde(default)]
+    pub labels: Vec<String>,
 }
 
 #[derive(Deserialize, JsonSchema)]
@@ -102,6 +116,24 @@ pub struct EditArgs {
     pub title: Option<String>,
     #[serde(default)]
     pub body: Option<String>,
+    /// Move it to this state: its name (any case) or id, or a state group.
+    #[serde(default)]
+    pub state: Option<String>,
+    /// Put it in this module, by name or id.
+    #[serde(default)]
+    pub module: Option<String>,
+    /// Its parent: IDENT-N, like ARUGU-7.
+    #[serde(default)]
+    pub parent: Option<String>,
+    /// Its type, such as Epic, by name or id.
+    #[serde(default, rename = "type")]
+    pub item_type: Option<String>,
+    /// Labels to add, by name or id.
+    #[serde(default)]
+    pub labels: Vec<String>,
+    /// Labels to take off, by name or id.
+    #[serde(default)]
+    pub labels_remove: Vec<String>,
 }
 
 pub(crate) const WRITE: &[Kind] = &[
@@ -131,7 +163,7 @@ pub(crate) const WRITE: &[Kind] = &[
     },
     Kind {
         name: "edit",
-        description: "Change a work item's title or body (may wait for a person).",
+        description: "Change a work item: its title, body, state, module, parent, type or labels (may wait for a person).",
         schema: schema_for_type::<EditArgs>,
         flag: Some(arugula_proto::flags::BOARDS),
     },
@@ -176,6 +208,10 @@ async fn write_of(c: &Call<'_>, kind: &str, a: Value) -> Result<(String, Tracker
                     title: a.title,
                     body: a.body,
                     state: a.state,
+                    module: a.module,
+                    parent: a.parent,
+                    item_type: a.item_type,
+                    labels: a.labels,
                 },
             )
         }
@@ -197,7 +233,20 @@ async fn write_of(c: &Call<'_>, kind: &str, a: Value) -> Result<(String, Tracker
         }
         "edit" => {
             let a: EditArgs = args(a)?;
-            (a.project, TrackerWrite::Edit { item: a.item, title: a.title, body: a.body })
+            (
+                a.project,
+                TrackerWrite::Edit {
+                    item: a.item,
+                    title: a.title,
+                    body: a.body,
+                    state: a.state,
+                    module: a.module,
+                    parent: a.parent,
+                    item_type: a.item_type,
+                    labels: a.labels,
+                    labels_remove: a.labels_remove,
+                },
+            )
         }
         _ => return Err(format!("{WRITE_TOOL} kind {kind} isn't wired up")),
     };

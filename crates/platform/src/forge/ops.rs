@@ -100,6 +100,13 @@ pub async fn call(
             let note = "A Plane item's body and comments aren't mirrored: open its url in Plane to read them.";
             answer(&op, v, wire::ItemView { item, events: vec![], drafts: vec![], note: Some(note.to_owned()) })
         }
+        Op::TrackerFields(q) => {
+            crate::boards::gate(&app, &d.account).await?;
+            let project = q.project.as_deref().unwrap_or("personal");
+            let fields =
+                items::tracker_fields(&app, &viewer, project, q.tracker.as_deref(), q.connection.as_deref()).await?;
+            answer(&op, v, fields)
+        }
         Op::ChecksGet(r) => {
             let id = item_id(&app, &viewer, r, None).await?;
             let Json(checks) = items::checks(st(), viewer, Path(id)).await?;
