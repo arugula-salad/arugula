@@ -96,6 +96,7 @@ fn body(word: BlockWord, repo: &Repo, title: Option<String>) -> BlockState {
         pushed: repo.pushed,
         uncommitted: repo.uncommitted,
         diffstat: repo.diffstat,
+        since: None,
     }
 }
 

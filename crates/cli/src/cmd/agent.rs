@@ -48,6 +48,11 @@ pub struct Args {
     /// header.
     #[arg(long, value_name = "ISSUE", hide = true, conflicts_with_all = ["chat", "resume", "fork"])]
     issue: Option<String>,
+    /// With --issue: take the row over when another machine's agent holds
+    /// it (that agent is folded under "earlier agents"). Without it the
+    /// start is refused, naming who holds the row.
+    #[arg(long, hide = true, requires = "issue")]
+    take: bool,
     /// An MCP server for the session, `NAME=COMMAND LINE` (stdio; may be
     /// repeated). Its forms and sign-in links show as cards.
     #[arg(long = "mcp", value_name = "NAME=COMMAND")]
@@ -184,6 +189,7 @@ pub fn run(args: Args, ctx: Ctx) -> anyhow::Result<i32> {
             model,
             title,
             issue,
+            take,
             mcp,
             allow,
             permission_mode,
@@ -220,7 +226,7 @@ pub fn run(args: Args, ctx: Ctx) -> anyhow::Result<i32> {
             config["model"] = json!(model);
             config["title"] = json!(title);
             if let Some(issue) = issue {
-                config["work"] = json!({ "issue": issue });
+                config["work"] = json!({ "issue": issue, "take": take });
             }
             if !mcp.is_empty() {
                 config["mcp_servers"] = json!(mcp);

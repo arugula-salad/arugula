@@ -3,7 +3,7 @@
 // the board routes' paths. Run with `node --experimental-strip-types`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { settledFacts, LANE_GLYPH, cardTone, checkTone, checkWord, groupMove, liveTone, prsOf, answerReady, askWaitingLine, assigneesLine, chipOf, counted, debounced, earlierLine, epicLine, firstLine, groupLine, isCard, laneCount, liveWord, marksOf, readyCount, relationLine, UNSEEN_BLOCKER, needsYou, needsYouLine, parsePointer, pointerHref, pointerLabel, pointerToSend, proofMark, rowGlyph, sections, stepActive, workLabel, workChip, onIssueChip, boardGroup, clusterOrder, NO_BOARD } from "../src/shared/boards/text.ts";
+import { holdsRow, stalledFor, settledFacts, LANE_GLYPH, cardTone, checkTone, checkWord, groupMove, liveTone, prsOf, answerReady, askWaitingLine, assigneesLine, chipOf, counted, debounced, earlierLine, epicLine, firstLine, groupLine, isCard, laneCount, liveWord, marksOf, readyCount, relationLine, UNSEEN_BLOCKER, needsYou, needsYouLine, parsePointer, pointerHref, pointerLabel, pointerToSend, proofMark, rowGlyph, sections, stepActive, workLabel, workChip, onIssueChip, boardGroup, clusterOrder, NO_BOARD } from "../src/shared/boards/text.ts";
 import { parse, pathOf } from "../src/platform/paths.ts";
 
 const P = "prj_8f2ec0ffee00112233445566778899aa";
@@ -185,7 +185,7 @@ test("a board with groups is a section for each, its lanes under it, and the row
 });
 
 test("a row's marks: merged but not closed, after a PR, and earlier agents folded", () => {
-  assert.deepEqual(marksOf({}), { merged: false, after: null, blocked: [], earlier: new Set() });
+  assert.deepEqual(marksOf({}), { merged: false, after: null, stalled: null, blocked: [], earlier: new Set() });
   const m = marksOf({
     marks: [
       { kind: "merged_not_closed" },
@@ -293,4 +293,18 @@ test("a blocked row says what blocks it, or that it can't say, and the board cou
   assert.equal(relationLine({ kind: "blocks", direction: "out", other: live }), "Blocks #7 Design");
   assert.equal(relationLine({ kind: "duplicate_of", direction: "in" }), "Duplicated by something you can't see");
   assert.equal(relationLine({ kind: "discovered_from", direction: "out", other: live }), "Discovered from #7 Design");
+});
+
+test("a stalled row says how long, takes the warn tone, and a block holds its row until it closes or is released", () => {
+  assert.deepEqual(["0", "59", "60", "65", "1440", "3000"].map((m) => stalledFor(0, Number(m) * 60_000)), ["0m", "59m", "1h", "1h5m", "1d", "2d"]);
+  const m = marksOf({ marks: [{ kind: "stalled", since: 1_000 }] }, 1_000 + 42 * 60_000);
+  assert.deepEqual(m.stalled, { words: "stalled 42m", since: 1_000 });
+  assert.equal(cardTone({ lane: "doing", marks: [{ kind: "stalled", since: 1 }] }), "warn");
+  assert.equal(cardTone({ lane: "doing", marks: [{ kind: "stalled", since: 1 }], ask: { mine: true } }), "warn");
+  const block = (state) => ({ role: "work", block: { state }, released: false });
+  assert.equal(holdsRow(block("idle")), true);
+  assert.equal(holdsRow(block("closed")), false);
+  assert.equal(holdsRow({ ...block("working"), released: true }), false);
+  assert.equal(holdsRow({ role: "proof", block: { state: "working" } }), false);
+  assert.equal(holdsRow({ role: "work" }), false, "a reader who can't see the block sees no claim");
 });

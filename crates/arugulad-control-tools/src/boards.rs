@@ -170,6 +170,11 @@ pub struct AttachArgs {
     /// default, and so may be a run).
     #[serde(default)]
     pub role: Option<AttachRoleArg>,
+    /// For an agent block as work: take the row over when another machine's
+    /// block holds it. Without it that attach is refused, naming who holds
+    /// the row; with it the old block is folded under "earlier agents".
+    #[serde(default)]
+    pub take: bool,
     #[serde(default)]
     pub verbose: bool,
 }
@@ -660,6 +665,9 @@ fn card(v: &BoardView, r: &Row) -> Vec<String> {
     if !r.marks.is_empty() {
         out.push(format!("  {}", wire::marks_line(&r.marks)));
     }
+    if let Some(b) = r.attachments.iter().find(|a| a.holds()).and_then(|a| a.block.as_ref()) {
+        out.push(format!("  claimed by {}", b.title.as_deref().unwrap_or("an agent")));
+    }
     if let Some(a) = &r.ask {
         let by = if a.raised { "the board".to_owned() } else { format!("for {}", a.who_name) };
         out.push(format!("  ? {} ({by})", short(&a.question, 70)));
@@ -884,7 +892,8 @@ async fn attach(c: &Call<'_>, a: AttachArgs) -> Out {
                 AttachRoleArg::Proof => AttachRole::Proof,
             })
             .unwrap_or(role);
-        let body = serde_json::to_value(AttachRow { row: row.id.clone(), pointer, role }).map_err(|e| e.to_string())?;
+        let body = serde_json::to_value(AttachRow { row: row.id.clone(), pointer, role, take: a.take })
+            .map_err(|e| e.to_string())?;
         match boards_call(c, Method::POST, &agent_board_attachments(&a.board), Some(body)).await.and_then(view_of) {
             Err(why) => tally.did("failed", format!("{to}: failed, {why}")),
             Ok(after) => {

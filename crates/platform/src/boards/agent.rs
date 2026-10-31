@@ -249,7 +249,9 @@ pub async fn put_block_state(
 /// that issue on each board of the project. 403 without the machine's
 /// `boards.write` over the project; only that project's rows are touched.
 /// Answers the rows the block is on (also those it was on already), none
-/// when no board has a row for the issue.
+/// when no board has a row for the issue. A row another machine's block
+/// holds refuses it, 409 `claimed`, naming the holder, unless `take` is set,
+/// which folds that block under `earlier` (#404).
 pub async fn attach_block(
     State(app): State<Arc<Platform>>,
     d: Machine,
@@ -263,28 +265,71 @@ pub async fn attach_block(
     }
     let a = wire::AttachBlock { pane: super::plain_pane(&a.pane).to_owned(), ..a };
     super::name_ok(&a.pane, "pane")?;
-    let want = wire::IssueRef::parse(&a.issue)
+    let pointer = wire::Pointer::Block { machine: d.daemon.clone(), pane: a.pane.clone() };
+    let found = rows_of(&app, &d, &project, &a.issue).await?;
+    // Refused before any row is touched, so a claim is held on every board or none.
+    if !a.take {
+        for (stored, row, _) in &found {
+            if super::already(stored, &pointer).is_none() {
+                super::claim_conflict(&app, &project, stored, row, &d.daemon, &a.issue).await?;
+            }
+        }
+    }
+    let mut on = vec![];
+    for (stored, row, _) in found {
+        let board = &stored.board;
+        if a.take {
+            app.db.release_blocks(&row, &d.daemon, arugula_e2e::now_ms())?;
+        }
+        if super::already(&stored, &pointer).is_none() {
+            app.db
+                .attach(
+                    &board.id,
+                    &row,
+                    wire::AttachRole::Work,
+                    &pointer,
+                    Some(&d.daemon),
+                    arugula_e2e::now_ms(),
+                    wire::ATTACHMENTS_MAX,
+                )?
+                .map_err(super::refused)?;
+            super::changed(&app, &project, &board.id);
+        }
+        on.push(wire::BlockOn { board: board.id.clone(), title: board.title.clone(), row });
+    }
+    Ok(Json(wire::BlockAttached { on }))
+}
+
+/// The rows of `project`'s boards that are on `issue` (as the starter wrote
+/// it): (board, row, native). `#N` is a native issue's before it is a GitHub
+/// issue's.
+async fn rows_of(
+    app: &Platform,
+    d: &Machine,
+    project: &str,
+    issue: &str,
+) -> Result<Vec<(db::Stored, String, bool)>, ApiError> {
+    let want = wire::IssueRef::parse(issue)
         .ok_or_else(|| err(StatusCode::BAD_REQUEST, "an issue is #N, owner/repo#N or IDENT-N"))?;
     let repo = match &want {
         wire::IssueRef::Repo { repo, .. } => app
             .db
-            .linked_repos(&project)?
+            .linked_repos(project)?
             .into_iter()
             .find(|l| l.unlinked_at.is_none() && l.full_name.eq_ignore_ascii_case(repo))
             .map(|l| l.repo_id),
         _ => None,
     };
-    let pointer = wire::Pointer::Block { machine: d.daemon.clone(), pane: a.pane.clone() };
     // (board, title, row, native): `#N` is a native issue's before it is a
     // GitHub issue's.
     let mut found: Vec<(db::Stored, String, bool)> = vec![];
-    for board in app.db.boards(&project)? {
+    for board in app.db.boards(project)? {
         let Some(stored) = app.db.board_stored(&board.id)? else { continue };
         let (mut items, mut issues): (Vec<&str>, Vec<&str>) = (vec![], vec![]);
         for id in stored.rows.iter().filter_map(|r| super::item_id(&r.pointer)) {
             if id.starts_with("iss_") { issues.push(id) } else { items.push(id) }
         }
-        let known = super::known(&app, &d.account, &project, &items, &issues).await?;
+        let known = super::known(app, &d.account, project, &items, &issues).await?;
         for r in &stored.rows {
             let Some(key) = super::item_id(&r.pointer).and_then(|id| known.get(id)).and_then(|k| k.key.as_ref()) else {
                 continue;
@@ -306,26 +351,33 @@ pub async fn attach_block(
     if found.iter().any(|f| f.2) {
         found.retain(|f| f.2);
     }
-    let mut on = vec![];
-    for (stored, row, _) in found {
-        let board = &stored.board;
-        if super::already(&stored, &pointer).is_none() {
-            app.db
-                .attach(
-                    &board.id,
-                    &row,
-                    wire::AttachRole::Work,
-                    &pointer,
-                    Some(&d.daemon),
-                    arugula_e2e::now_ms(),
-                    wire::ATTACHMENTS_MAX,
-                )?
-                .map_err(super::refused)?;
-            super::changed(&app, &project, &board.id);
-        }
-        on.push(wire::BlockOn { board: board.id.clone(), title: board.title.clone(), row });
+    Ok(found)
+}
+
+/// `POST /api/daemon/projects/{project}/claim-check`: is the row of `issue`
+/// held by another machine's block, on any board of the project? Read-only
+/// (`boards.write`, as attach-block); `held` is the sentence that names the
+/// holder, none when nothing holds it. `start_agent` asks before it opens a
+/// pane; the 409 at attach stays the backstop for a race (#404).
+pub async fn claim_check(
+    State(app): State<Arc<Platform>>,
+    d: Machine,
+    Path(project): Path<String>,
+    Json(c): Json<wire::CheckClaim>,
+) -> J<wire::ClaimChecked> {
+    app.limits.check_daemon(AGENT_BOARD_WRITES, &d.daemon)?;
+    let project = super::place(&app, actor(&d), &project, true).await?;
+    if c.machine != d.daemon {
+        return Err(err(StatusCode::FORBIDDEN, "a machine asks only for its own blocks"));
     }
-    Ok(Json(wire::BlockAttached { on }))
+    wire::IssueRef::parse(&c.issue)
+        .ok_or_else(|| err(StatusCode::BAD_REQUEST, "an issue is #N, owner/repo#N or IDENT-N"))?;
+    for (stored, row, _) in rows_of(&app, &d, &project, &c.issue).await? {
+        if let Some(held) = super::claim_holder(&app, &project, &stored, &row, &d.daemon, &c.issue).await? {
+            return Ok(Json(wire::ClaimChecked { held: Some(held) }));
+        }
+    }
+    Ok(Json(wire::ClaimChecked { held: None }))
 }
 
 /// The machine holds `boards.write` over at least one project, as

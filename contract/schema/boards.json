@@ -140,6 +140,10 @@
         },
         "pane": {
           "type": "string"
+        },
+        "take": {
+          "description": "Take a row that another machine's block holds, folding that block\nunder `earlier`; without it the attach is refused, 409 `claimed`.",
+          "type": "boolean"
         }
       },
       "required": [
@@ -176,6 +180,10 @@
         "row": {
           "description": "The row (`row_…`).",
           "type": "string"
+        },
+        "take": {
+          "description": "For an agent block as work on a row another machine's block holds:\ntake the row over. The old block is folded under `earlier`.",
+          "type": "boolean"
         }
       },
       "required": [
@@ -216,6 +224,11 @@
         },
         "pointer": {
           "$ref": "#/$defs/Pointer"
+        },
+        "released": {
+          "default": false,
+          "description": "A block that a newer agent took the row from (`take`): it is an\nearlier agent whatever it reports, and holds no claim.",
+          "type": "boolean"
         },
         "role": {
           "$ref": "#/$defs/AttachRole"
@@ -293,6 +306,15 @@
         "pushed": {
           "type": [
             "boolean",
+            "null"
+          ]
+        },
+        "since": {
+          "description": "When `state` last changed, in milliseconds: control's to keep, set\non a read (a report's own is ignored).",
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
             "null"
           ]
         },
@@ -513,6 +535,22 @@
       ],
       "type": "object"
     },
+    "BoardSettings": {
+      "additionalProperties": false,
+      "description": "What a project says about its boards (Arugula #404).",
+      "properties": {
+        "stall_minutes": {
+          "description": "A Doing row whose blocks have all been idle for longer than this many\nminutes (1 to [`STALL_MINUTES_MAX`]) is stalled.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "stall_minutes"
+      ],
+      "type": "object"
+    },
     "BoardView": {
       "description": "A board with its four lanes, in order (`lane_next`, `lane_doing`,\n`lane_review`, `lane_done`), each with its rows, and its groups, in\norder. The rows of a group are those with [`Row::group`] set to its id; a\nrow without one comes after the grouped ones.",
       "properties": {
@@ -568,6 +606,35 @@
         "machine",
         "machine_name"
       ],
+      "type": "object"
+    },
+    "CheckClaim": {
+      "additionalProperties": false,
+      "description": "[`AGENT_PROJECT_CLAIM_CHECK`]'s body: the issue as the starter wrote it\nand the asking machine (the signer).",
+      "properties": {
+        "issue": {
+          "type": "string"
+        },
+        "machine": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "issue",
+        "machine"
+      ],
+      "type": "object"
+    },
+    "ClaimChecked": {
+      "description": "[`AGENT_PROJECT_CLAIM_CHECK`]'s answer: `held` says who holds the row\n(the sentence of the 409 at attach), none when nothing does.",
+      "properties": {
+        "held": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
       "type": "object"
     },
     "CloseBoard": {
@@ -868,6 +935,25 @@
           "required": [
             "kind",
             "attachment"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "The row is in Doing, every block of it that isn't closed has been\nidle for longer than the project's `stall_minutes`, and no PR is on\nit (Arugula #404). `since` is when the last of them went idle, in\nmilliseconds. It names no block: who holds the row is the block's\nchip, for a reader who may see it.",
+          "properties": {
+            "kind": {
+              "const": "stalled",
+              "type": "string"
+            },
+            "since": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "kind",
+            "since"
           ],
           "type": "object"
         },

@@ -12,7 +12,9 @@
 //! read and never stored: a PR whose checks failed, or an agent block that
 //! is waiting for input. They come from the chips and block states the
 //! reader already may see, so a reader who can't read a PR isn't told about
-//! it, and they clear with their cause. An asked question beats a raised one.
+//! it, and they clear with their cause. A stalled row (#404) is raised for
+//! the person who owns the block that stalled it, and for no one else. An
+//! asked question beats a raised one.
 //! (A drafted merge isn't one of them yet: the platform keeps no merge
 //! drafts, `forge::drafts` takes comment, review and issue.)
 
@@ -257,6 +259,7 @@ impl Asks {
 pub(super) fn raised(
     live: Option<&wire::Live>,
     attachments: &[wire::Attachment],
+    stalled: Option<(u64, String)>,
     at: u64,
     machine_name: &dyn Fn(&str) -> String,
 ) -> Option<wire::Ask> {
@@ -279,11 +282,15 @@ pub(super) fn raised(
     if let Some(l) = seen.into_iter().find(|l| l.kind == "pr" && l.state == wire::LiveState::ChecksFailed) {
         return Some(ask(format!("#{}'s checks failed", l.number)));
     }
-    work.into_iter().find_map(|a| match (&a.pointer, &a.block) {
+    let waiting = work.into_iter().find_map(|a| match (&a.pointer, &a.block) {
         (wire::Pointer::Block { machine, .. }, Some(b)) if b.state == wire::BlockWord::NeedsInput => {
             Some(ask(format!("{}'s agent is waiting for you", machine_name(machine))))
         }
         _ => None,
+    });
+    waiting.or_else(|| {
+        let (since, machine) = stalled?;
+        Some(ask(format!("{}'s agent has stalled {}", machine_name(&machine), wire::ago(since, arugula_e2e::now_ms()))))
     })
 }
 

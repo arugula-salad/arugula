@@ -2781,6 +2781,22 @@ note = "Makes a board in the project: owners and editors."
 
 [[route]]
 method = "GET"
+path = "/api/projects/{project}/board-settings"  # wire::boards::PROJECT_BOARD_SETTINGS
+process = "platform"
+auth = "session"
+clients = ["page"]
+note = "A project's board settings (stall_minutes: how long a Doing row's agent blocks may sit idle before it is stalled; 30 by default): any member."
+
+[[route]]
+method = "PUT"
+path = "/api/projects/{project}/board-settings"  # wire::boards::PROJECT_BOARD_SETTINGS
+process = "platform"
+auth = "session"
+clients = ["page"]
+note = "Sets the project's board settings (stall_minutes, 1 to 10080): owners and editors, people only."
+
+[[route]]
+method = "GET"
 path = "/api/boards/{id}"  # wire::boards::BOARD
 process = "platform"
 auth = "session"
@@ -3226,6 +3242,14 @@ process = "platform"
 auth = "daemon"
 clients = ["daemon"]
 note = "Attaches one of the signing machine's own agent blocks, started on an issue, as work to that issue's row on every board of the project (`boards.write` over it; 403 without, and for a block of another machine). Answers the rows it is on."
+
+[[route]]
+method = "POST"
+path = "/api/daemon/projects/{project}/claim-check"  # wire::boards::AGENT_PROJECT_CLAIM_CHECK
+process = "platform"
+auth = "daemon"
+clients = ["daemon"]
+note = "Asks, before a pane is opened on an issue, whether another machine's agent block holds its row on any board of the project (`boards.write` over it; read-only). Answers who holds it, if anyone."
 
 # ---- platform: deploys and their approval (M218, platform step 7)
 # A project's environments and deploys (M217's storage). Members read; owners

@@ -96,6 +96,10 @@ fn routes() -> Routes {
         .route(boards::PROJECT_BOARDS, get(crate::boards::list_route).post(crate::boards::create_route))
         .route(boards::PROJECT_WORK, get(crate::boards::work::route))
         .route(boards::BOARD, get(crate::boards::get_route).patch(crate::boards::edit_route))
+        .route(
+            boards::PROJECT_BOARD_SETTINGS,
+            get(crate::boards::settings_route).put(crate::boards::put_settings_route),
+        )
         .route(boards::BOARD_CLOSE, post(crate::boards::close_route))
         .route(boards::BOARD_REOPEN, post(crate::boards::reopen_route))
         .route(boards::BOARD_ENTRIES, put(crate::boards::put_route))
@@ -123,6 +127,7 @@ fn routes() -> Routes {
         .route(boards::AGENT_BOARD_ATTACHMENT, axum::routing::delete(crate::boards::agent::detach))
         .route(boards::AGENT_BLOCK_STATE, put(crate::boards::agent::put_block_state))
         .route(boards::AGENT_PROJECT_ATTACH_BLOCK, post(crate::boards::agent::attach_block))
+        .route(boards::AGENT_PROJECT_CLAIM_CHECK, post(crate::boards::agent::claim_check))
         // Project Docs (aru-118), with chat.
         .route(project_docs::PROJECT_DOCS, get(crate::project_docs::list_route).post(crate::project_docs::create_route))
         .route(

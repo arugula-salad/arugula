@@ -119,6 +119,8 @@ pub struct Attached {
     /// The machine whose agent attached it; none: a person.
     pub agent: Option<String>,
     pub created_at: u64,
+    /// When a newer agent took the row over from this block (#404).
+    pub released_at: Option<u64>,
 }
 
 /// A board with its groups in order, its rows (by group, in the groups'
@@ -167,7 +169,7 @@ const BOARD_COLS: &str = "id, project_id, title, created_by, created_at, updated
                           closed_by, created_by_agent, closed_by_agent";
 pub(super) const ENTRY_COLS: &str =
     "id, rev, note, status, target_kind, target, pane, created_at, updated_at, agent, zone_id";
-const ATTACHED_COLS: &str = "id, row_id, role, target_kind, target, pane, agent, created_at";
+const ATTACHED_COLS: &str = "id, row_id, role, target_kind, target, pane, agent, created_at, released_at";
 
 fn board_row(r: &Row) -> Result<Board> {
     Ok(Board {
@@ -298,6 +300,7 @@ fn attached_row(r: &Row) -> Result<Attached> {
         pointer: pointer_of(r.get(3)?, r.get(4)?, r.get(5)?)?,
         agent: r.get(6)?,
         created_at: r.get(7)?,
+        released_at: r.get(8)?,
     })
 }
 
@@ -1144,13 +1147,16 @@ impl Db {
         let d = b.diffstat;
         self.c().execute(
             "INSERT INTO board_block_states (machine, pane, account, state, branch, head, pushed, uncommitted,
-                 diff_files, diff_added, diff_removed, updated_at, title)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)
+                 diff_files, diff_added, diff_removed, updated_at, title, state_since)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?12)
              ON CONFLICT (machine, pane) DO UPDATE SET account = excluded.account, state = excluded.state,
                  title = COALESCE(excluded.title, board_block_states.title),
                  branch = excluded.branch, head = excluded.head, pushed = excluded.pushed,
                  uncommitted = excluded.uncommitted, diff_files = excluded.diff_files,
                  diff_added = excluded.diff_added, diff_removed = excluded.diff_removed,
+                 state_since = CASE WHEN board_block_states.state = excluded.state
+                     THEN COALESCE(board_block_states.state_since, board_block_states.updated_at)
+                     ELSE excluded.updated_at END,
                  updated_at = excluded.updated_at",
             params![
                 machine,
@@ -1171,15 +1177,17 @@ impl Db {
         Ok(())
     }
 
-    /// What `machine` last said of these `panes`, by pane.
-    pub fn block_states(&self, machine: &str, panes: &[&str]) -> Result<Vec<(String, BlockState)>> {
+    /// What `machine` last said of these `panes`, by pane, with the account
+    /// the machine reported for (the block's owner).
+    pub fn block_states(&self, machine: &str, panes: &[&str]) -> Result<Vec<(String, BlockState, String)>> {
         if panes.is_empty() {
             return Ok(vec![]);
         }
         let c = self.c();
         c.query_map(
             &format!(
-                "SELECT pane, state, branch, head, pushed, uncommitted, diff_files, diff_added, diff_removed, title
+                "SELECT pane, state, branch, head, pushed, uncommitted, diff_files, diff_added, diff_removed, title,
+                        COALESCE(state_since, updated_at), account
                  FROM board_block_states WHERE machine = ?1 AND {}",
                 in_json(&c, "pane", 2)
             ),
@@ -1197,10 +1205,44 @@ impl Db {
                         (Some(files), Some(added), Some(removed)) => Some(Diffstat { files, added, removed }),
                         _ => None,
                     },
+                    since: Some(r.get(10)?),
                 };
-                Ok((r.get(0)?, state))
+                Ok((r.get(0)?, state, r.get(11)?))
             },
         )
+    }
+
+    /// How many minutes a Doing row's blocks may sit idle before it is
+    /// stalled (#404): the project's, else `default`.
+    pub fn stall_minutes(&self, project: &str, default: u32) -> Result<u32> {
+        let set: Option<u32> = self
+            .c()
+            .query_row("SELECT stall_minutes FROM board_settings WHERE project_id = ?1", params![project], |r| r.get(0))
+            .optional()?;
+        Ok(set.unwrap_or(default))
+    }
+
+    /// Set a project's stall minutes.
+    pub fn set_stall_minutes(&self, project: &str, minutes: u32, at: u64) -> Result<()> {
+        self.c().execute(
+            "INSERT INTO board_settings (project_id, stall_minutes, updated_at) VALUES (?1, ?2, ?3)
+             ON CONFLICT (project_id) DO UPDATE SET stall_minutes = excluded.stall_minutes,
+                 updated_at = excluded.updated_at",
+            params![project, minutes, at],
+        )?;
+        Ok(())
+    }
+
+    /// Fold the blocks of `machines` other than `keep` that are work on
+    /// `row` under `earlier`: they are released, not detached (#404).
+    pub fn release_blocks(&self, row: &str, keep: &str, at: u64) -> Result<()> {
+        self.c().execute(
+            "UPDATE board_attachments SET released_at = ?3
+             WHERE row_id = ?1 AND role = 'work' AND target_kind = 'block' AND target != ?2
+               AND released_at IS NULL",
+            params![row, keep, at],
+        )?;
+        Ok(())
     }
 
     /// The boards (id, project) with a row that points at `machine`'s block
@@ -1251,6 +1293,7 @@ pub(crate) fn erase_account(c: &impl Sql, d: &Deleted) -> Result<()> {
     )?;
     super::boards_asks::erase_account(c, d)?;
     super::boards_relations::erase_account(c, d)?;
+    c.execute("DELETE FROM board_settings WHERE project_id NOT IN (SELECT id FROM projects)", params![])?;
     c.execute("DELETE FROM boards WHERE project_id NOT IN (SELECT id FROM projects)", params![])?;
     c.execute("UPDATE boards SET created_by = '' WHERE created_by = ?1", params![d.account])?;
     c.execute("UPDATE boards SET closed_by = '' WHERE closed_by = ?1", params![d.account])?;
