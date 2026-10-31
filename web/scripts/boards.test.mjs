@@ -3,7 +3,7 @@
 // the board routes' paths. Run with `node --experimental-strip-types`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { LANE_GLYPH, assigneesLine, chipOf, counted, debounced, earlierLine, epicLine, firstLine, groupLine, isCard, laneCount, liveWord, marksOf, parsePointer, pointerHref, pointerLabel, pointerToSend, proofMark, rowGlyph, sections, stepActive, workLabel } from "../src/shared/boards/text.ts";
+import { LANE_GLYPH, answerReady, askWaitingLine, assigneesLine, chipOf, counted, debounced, earlierLine, epicLine, firstLine, groupLine, isCard, laneCount, liveWord, marksOf, needsYou, needsYouLine, parsePointer, pointerHref, pointerLabel, pointerToSend, proofMark, rowGlyph, sections, stepActive, workLabel } from "../src/shared/boards/text.ts";
 import { parse, pathOf } from "../src/platform/paths.ts";
 
 const P = "prj_8f2ec0ffee00112233445566778899aa";
@@ -188,4 +188,18 @@ test("a row's marks: merged but not closed, after a PR, and earlier agents folde
   assert.equal(marksOf({ marks: [{ kind: "after", number: 3 }] }).after.repo, undefined);
   assert.equal(earlierLine(1), "earlier agent (1)");
   assert.equal(earlierLine(2), "earlier agents (2)");
+});
+
+test("a board counts the asks that wait on the reader, raised ones included, and says who an ask waits on", () => {
+  const ask = (over) => ({ id: "ask_1", question: "Ship?", options: [], mine: false, raised: false, can_answer: false, who: "a", who_name: "Sam", asked_by: "an agent on m1", ...over });
+  const zones = [
+    { rows: [{ id: "row_1", ask: ask({ mine: true }) }, { id: "row_2" }, { id: "row_3", ask: ask({ id: "" , raised: true, mine: true }) }] },
+    { rows: [{ id: "row_4", ask: ask({ mine: false }) }] },
+  ];
+  assert.deepEqual(needsYou({ zones }).map((r) => r.id), ["row_1", "row_3"]);
+  assert.deepEqual(needsYou({ zones: [{ rows: [] }] }), []);
+  assert.equal(needsYouLine(2), "Needs you (2)");
+  assert.equal(askWaitingLine(ask()), "Waiting for Sam, asked by an agent on m1.");
+  assert.match(askWaitingLine(ask({ raised: true })), /^Raised by the board/);
+  assert.deepEqual([answerReady(""), answerReady("  "), answerReady(" yes ")], [false, false, true]);
 });

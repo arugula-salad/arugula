@@ -203,9 +203,9 @@ async fn a_board_from_creation_to_a_stale_write() {
 }
 
 /// Nobody sets a lane (a row in a lane's place, a move to one, a lane's
-/// change or delete) or a status but `needs_input`: each is refused in the
-/// words "lanes follow the work", for a person; the rows stay where the work
-/// puts them.
+/// change or delete) or a status: each is refused in the words "lanes follow
+/// the work" (`needs_input`, in "ask with a question"), for a person; the rows
+/// stay where the work puts them.
 #[tokio::test]
 async fn lanes_follow_the_work_and_refuse_the_rest() {
     let hub = Arc::new(TestHub::default());
@@ -229,16 +229,13 @@ async fn lanes_follow_the_work_and_refuse_the_rest() {
     // A group has no kind.
     let (st, v) = put(&base, "a", &id, json!({ "entry": "zone", "title": "Next", "kind": "lane" })).await;
     assert_eq!(st, 400, "{v}");
-    // A status, but needs_input (and none, which clears it).
+    // A status (and none, which clears it); needs_input is an ask now.
     for s in ["open", "working", "done", "failed"] {
         follows(&put(&base, "a", &id, json!({ "id": plan, "status": s })).await);
     }
     let (st, v) = put(&base, "a", &id, json!({ "id": plan, "status": "needs_input" })).await;
-    assert_eq!(
-        (st, &row_in(&v, &plan)["status"], &row_in(&v, &plan)["rev"]),
-        (200, &json!("needs_input"), &json!(1)),
-        "{v}"
-    );
+    assert_eq!(st, 400, "{v}");
+    assert!(v["error"].as_str().unwrap().starts_with("ask with a question: "), "{v}");
     let (st, v) = put(&base, "a", &id, json!({ "id": plan, "status": "none" })).await;
     assert_eq!((st, &row_in(&v, &plan)["status"]), (200, &json!("none")), "{v}");
     // A new row with a status is refused the same way.
@@ -581,7 +578,7 @@ async fn a_pointer_from_a_newer_build_reads_as_none_and_is_kept() {
     let rev = v["zones"][0]["rows"][0]["rev"].clone();
     let (st, _) = put(&base, "a", &id, json!({ "id": row, "rev": rev, "note": "proof, edited" })).await;
     assert_eq!(st, 200);
-    let (st, _) = put(&base, "a", &id, json!({ "id": row, "status": "needs_input" })).await;
+    let (st, _) = put(&base, "a", &id, json!({ "id": row, "status": "none" })).await;
     assert_eq!(st, 200);
     let kept: (String, String) = app
         .db
@@ -731,7 +728,8 @@ async fn an_agent_with_boards_write_works_the_rows() {
         geek(&base, "POST", &agent_board_entry_move(&id, &mine_id), Some(json!({ "zone": "lane_done" }))).await,
     );
     let (st, v) = geek_put(&base, &id, json!({ "id": green, "status": "needs_input" })).await;
-    assert_eq!(st, 200, "needs_input stays: {v}");
+    assert_eq!(st, 400, "needs_input is an ask now: {v}");
+    assert!(v["error"].as_str().unwrap().starts_with("ask with a question: "), "{v}");
 
     // Attach: proof on a person's row, and take it off again; a person's
     // attachment is a person's.

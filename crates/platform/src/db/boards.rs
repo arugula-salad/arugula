@@ -20,6 +20,8 @@
 //!   [`Db::lanes_move`] folds them on start.
 //! - Work and proof are attached to a row (`board_attachments`,
 //!   [`Attached`]); deleting a row takes its attachments.
+//! - Asks (`board_asks`, [`super::boards_asks`]) are questions on a row; deleting
+//!   a row takes its asks.
 //! - A pointer is stored, not resolved. A row's `note` and `status` are
 //!   separate columns.
 //! - Deleting a project (or its account) takes its boards.
@@ -73,6 +75,10 @@ pub enum Refused {
     Bad(String),
     /// The change is something its author may not do; why.
     Forbidden(String),
+    /// It clashes with what is there; why (an ask on a row that has one).
+    Conflict(String),
+    /// The request is well formed and means nothing here; why.
+    Unprocessable(String),
 }
 
 fn bad<T>(why: impl Into<String>) -> Result<std::result::Result<T, Refused>> {
@@ -297,14 +303,14 @@ fn attached_row(r: &Row) -> Result<Attached> {
 
 /// Lock the board's row for the rest of the transaction: its changes take
 /// turns.
-fn lock(c: &impl Sql, board: &str) -> Result<bool> {
+pub(super) fn lock(c: &impl Sql, board: &str) -> Result<bool> {
     let found: Option<String> = c
         .query_row(&format!("SELECT id FROM boards WHERE id = ?1{}", c.for_update()), params![board], |r| r.get(0))
         .optional()?;
     Ok(found.is_some())
 }
 
-fn entry(c: &impl Sql, board: &str, id: &str) -> Result<Option<Entry>> {
+pub(super) fn entry(c: &impl Sql, board: &str, id: &str) -> Result<Option<Entry>> {
     c.query_row(
         &format!("SELECT {ENTRY_COLS} FROM board_entries WHERE board_id = ?1 AND id = ?2 AND kind = 'row'"),
         params![board, id],
@@ -350,7 +356,7 @@ fn renumber(c: &impl Sql, ids: &[String]) -> Result<()> {
     Ok(())
 }
 
-fn touch(c: &impl Sql, board: &str, at: u64) -> Result<()> {
+pub(super) fn touch(c: &impl Sql, board: &str, at: u64) -> Result<()> {
     c.execute("UPDATE boards SET updated_at = ?2 WHERE id = ?1", params![board, at])?;
     Ok(())
 }
@@ -740,6 +746,7 @@ impl Db {
                         )?;
                     }
                     tx.execute("UPDATE board_attachments SET row_id = ?2 WHERE row_id = ?1", params![from, id])?;
+                    super::boards_asks::absorb(&tx, from, &id)?;
                     tx.execute("DELETE FROM board_entries WHERE id = ?1", params![from])?;
                 }
                 renumber(&tx, &siblings(&tx, board)?)?;
@@ -862,6 +869,11 @@ impl Db {
                 params![board, id],
             )?;
             tx.execute(
+                "DELETE FROM board_asks WHERE row_id IN
+                     (SELECT id FROM board_entries WHERE board_id = ?1 AND kind = 'row' AND zone_id = ?2)",
+                params![board, id],
+            )?;
+            tx.execute(
                 "DELETE FROM board_entries WHERE board_id = ?1 AND kind = 'row' AND zone_id = ?2",
                 params![board, id],
             )?;
@@ -872,6 +884,7 @@ impl Db {
                 return Ok(Err(Refused::Missing("no such row")));
             }
             tx.execute("DELETE FROM board_attachments WHERE row_id = ?1", params![id])?;
+            tx.execute("DELETE FROM board_asks WHERE row_id = ?1", params![id])?;
             tx.execute("DELETE FROM board_entries WHERE id = ?1", params![id])?;
         }
         renumber(&tx, &siblings(&tx, board)?)?;
@@ -1213,10 +1226,16 @@ pub(crate) fn erase_account(c: &impl Sql, d: &Deleted) -> Result<()> {
         params![],
     )?;
     c.execute(
+        "DELETE FROM board_asks WHERE board_id IN
+             (SELECT id FROM boards WHERE project_id NOT IN (SELECT id FROM projects))",
+        params![],
+    )?;
+    c.execute(
         "DELETE FROM board_entries WHERE board_id IN
              (SELECT id FROM boards WHERE project_id NOT IN (SELECT id FROM projects))",
         params![],
     )?;
+    super::boards_asks::erase_account(c, d)?;
     c.execute("DELETE FROM boards WHERE project_id NOT IN (SELECT id FROM projects)", params![])?;
     c.execute("UPDATE boards SET created_by = '' WHERE created_by = ?1", params![d.account])?;
     c.execute("UPDATE boards SET closed_by = '' WHERE closed_by = ?1", params![d.account])?;

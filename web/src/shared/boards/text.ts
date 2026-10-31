@@ -3,7 +3,7 @@
 // typed as a pointer. Plain functions, for the view and its tests
 // (scripts/boards.test.mjs).
 
-import type { BoardAttachment, BoardBlockState, BoardBlockWord, BoardGroup, BoardLane, BoardMark, BoardProgress, BoardLive, BoardLiveState, BoardPointer, BoardProof, BoardRow, BoardView, BoardWorkItem, BoardZone } from "../proto";
+import type { BoardAsk, BoardAttachment, BoardBlockState, BoardBlockWord, BoardGroup, BoardLane, BoardMark, BoardProgress, BoardLive, BoardLiveState, BoardPointer, BoardProof, BoardRow, BoardView, BoardWorkItem, BoardZone } from "../proto";
 
 /** A row's lane as its glyph. A row asking for input shows `?` instead. */
 export const LANE_GLYPH: Record<BoardLane, string> = {
@@ -16,6 +16,26 @@ export const LANE_GLYPH: Record<BoardLane, string> = {
 /** The glyph a row shows: its lane's, or `?` when it asks for input. */
 export function rowGlyph(r: Pick<BoardRow, "lane" | "status">): string {
   return r.status === "needs_input" ? "?" : LANE_GLYPH[r.lane];
+}
+
+/** The rows that wait on the reader, in the board's order: those whose ask names them, and those the board raised itself (a PR's red checks, an agent waiting). */
+export function needsYou(v: Pick<BoardView, "zones">): BoardRow[] {
+  return v.zones.flatMap((z) => z.rows).filter((r) => r.ask?.mine);
+}
+
+/** The board header's count: `Needs you (2)`. */
+export function needsYouLine(n: number): string {
+  return `Needs you (${n})`;
+}
+
+/** What a card says of who an ask waits on, when the reader can't answer it. */
+export function askWaitingLine(a: Pick<BoardAsk, "raised" | "who_name" | "asked_by">): string {
+  return a.raised ? "Raised by the board; it clears when its cause does." : `Waiting for ${a.who_name}, asked by ${a.asked_by}.`;
+}
+
+/** Whether a typed answer to a free-text ask can be sent. */
+export function answerReady(text: string): boolean {
+  return text.trim().length > 0;
 }
 
 /** Whether a row has an issue or a PR as its item: only those rows are

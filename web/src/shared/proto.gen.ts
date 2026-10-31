@@ -171,6 +171,52 @@ export type Attention = "idle" | "working" | "needs_input" | "done";
 export type BlockType = "terminal" | "browser" | "agent" | "editor" | "diff" | "file" | "remote" | "workspace" | "app" | "forge" | "invite" | "agents" | "doc" | "chat" | "team_chat" | "board" | "people";
 
 /**
+ * An ask that was answered, kept in the row's history.
+ */
+export type BoardAnsweredAsk = { id: string, question: string, answer: string, asked_by: string, answered_by: string, answered_at: number, };
+
+/**
+ * A question on a row that a person answers on the board (Arugula #367):
+ * asked by a person or an agent, or raised by the board itself from the
+ * state of the row's items (`raised`, never stored, and with no answer).
+ */
+export type BoardAsk = { 
+/**
+ * `ask_…`; a raised ask has none.
+ */
+id: string, 
+/**
+ * The account it is for; empty for a raised ask.
+ */
+who: string, 
+/**
+ * Who it is for, as the reader's page names them.
+ */
+who_name: string, question: string, why?: string, 
+/**
+ * None: free text.
+ */
+options: Array<string>, recommend?: string, 
+/**
+ * Who asked, as a name: a person, or an agent and its machine. Empty
+ * for a raised ask.
+ */
+asked_by: string, 
+/**
+ * The board raised it, from its items' state, and it clears with its
+ * cause: nobody answers it.
+ */
+raised: boolean, 
+/**
+ * It is for the reader (a raised ask is for whoever reads the row).
+ */
+mine: boolean, 
+/**
+ * The reader may answer it: the person it names, or an owner or editor.
+ */
+can_answer: boolean, created_at: number, };
+
+/**
  * What an attachment is for.
  */
 export type BoardAttachRole = "work" | "proof";
@@ -358,8 +404,8 @@ export type BoardProofBy = "ci" | "evidence";
  * with `id` it changes that row or group: what is absent is left as it is,
  * and a change to `pointer`, `note` or a group's `title` names `rev`. A
  * new row's `zone` is the group it goes in. `kind`, and a `zone` that is a
- * lane, are refused, and so is every `status` but `needs_input`, which stays
- * until asks replace it (aru-125: lanes follow the work). The row's
+ * lane, are refused, and so is every `status` (aru-125: lanes follow the work;
+ * a question for a person is an ask, #367). The row's
  * `pointer` is an issue or a PR (or a link, for a note).
  */
 export type BoardPutEntry = { id: string | null, rev: number | null, entry: BoardEntryKind | null, 
@@ -380,13 +426,14 @@ kind: BoardZoneKind | null,
  */
 pointer: BoardPointer | null, note: string | null, 
 /**
- * Refused, except `"needs_input"`.
+ * Refused: ask with a question instead.
  */
 status: BoardStatus | null, };
 
 export type BoardRow = { id: string, rev: number, pointer: BoardPointer, note: string, 
 /**
- * Kept for old clients; nothing writes it any more (aru-125).
+ * Kept for old clients: `needs_input` when the row has an open ask
+ * (#367), `none` otherwise. Nothing writes it.
  */
 status: BoardStatus, 
 /**
@@ -410,6 +457,14 @@ group?: string,
  * `after`, then one `earlier` for each closed block.
  */
 marks?: Array<BoardMark>, 
+/**
+ * The row's one open question: asked, else raised by the board.
+ */
+ask?: BoardAsk, 
+/**
+ * The last [`ASKED_SHOWN`] asks answered, newest first.
+ */
+asked?: Array<BoardAnsweredAsk>, 
 /**
  * A `fi_`, `iss_` or `run_` pointer's state now, when the reader may see the
  * item ([`BoardView`] is read with it; a write's answer has it too).

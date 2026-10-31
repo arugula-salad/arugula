@@ -1,5 +1,133 @@
 {
   "$defs": {
+    "AnswerAsk": {
+      "additionalProperties": false,
+      "description": "[`BOARD_ASK_ANSWER`]'s body: one of the ask's `option`s, or `text` when\nit has none.",
+      "properties": {
+        "option": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "text": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "AnsweredAsk": {
+      "description": "An ask that was answered, kept in the row's history.",
+      "properties": {
+        "answer": {
+          "type": "string"
+        },
+        "answered_at": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "answered_by": {
+          "type": "string"
+        },
+        "asked_by": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "question": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "question",
+        "answer",
+        "asked_by",
+        "answered_by",
+        "answered_at"
+      ],
+      "type": "object"
+    },
+    "Ask": {
+      "description": "A question on a row that a person answers on the board (Arugula #367):\nasked by a person or an agent, or raised by the board itself from the\nstate of the row's items (`raised`, never stored, and with no answer).",
+      "properties": {
+        "asked_by": {
+          "description": "Who asked, as a name: a person, or an agent and its machine. Empty\nfor a raised ask.",
+          "type": "string"
+        },
+        "can_answer": {
+          "default": false,
+          "description": "The reader may answer it: the person it names, or an owner or editor.",
+          "type": "boolean"
+        },
+        "created_at": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "id": {
+          "description": "`ask_…`; a raised ask has none.",
+          "type": "string"
+        },
+        "mine": {
+          "default": false,
+          "description": "It is for the reader (a raised ask is for whoever reads the row).",
+          "type": "boolean"
+        },
+        "options": {
+          "default": [],
+          "description": "None: free text.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "question": {
+          "type": "string"
+        },
+        "raised": {
+          "default": false,
+          "description": "The board raised it, from its items' state, and it clears with its\ncause: nobody answers it.",
+          "type": "boolean"
+        },
+        "recommend": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "who": {
+          "description": "The account it is for; empty for a raised ask.",
+          "type": "string"
+        },
+        "who_name": {
+          "description": "Who it is for, as the reader's page names them.",
+          "type": "string"
+        },
+        "why": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "who",
+        "who_name",
+        "question",
+        "asked_by",
+        "created_at"
+      ],
+      "type": "object"
+    },
     "AttachRole": {
       "description": "What an attachment is for.",
       "oneOf": [
@@ -704,6 +832,44 @@
       },
       "type": "object"
     },
+    "NewAsk": {
+      "additionalProperties": false,
+      "description": "[`BOARD_ROW_ASK`]'s body: `who` is an account of the project. `options`\nare 0 to [`ASK_OPTIONS_MAX`] (none: free text), and `recommend` is one\nof them.",
+      "properties": {
+        "options": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "question": {
+          "type": "string"
+        },
+        "recommend": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "who": {
+          "type": "string"
+        },
+        "why": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "who",
+        "question"
+      ],
+      "type": "object"
+    },
     "NewBoard": {
       "properties": {
         "goal": {
@@ -897,7 +1063,7 @@
       "type": "object"
     },
     "PutEntry": {
-      "description": "[`BOARD_ENTRIES`]' body. Without `id` it adds a row, last (`entry` is\n`row` or absent), or, with `entry: zone`, a group with a `title`, last;\nwith `id` it changes that row or group: what is absent is left as it is,\nand a change to `pointer`, `note` or a group's `title` names `rev`. A\nnew row's `zone` is the group it goes in. `kind`, and a `zone` that is a\nlane, are refused, and so is every `status` but `needs_input`, which stays\nuntil asks replace it (aru-125: lanes follow the work). The row's\n`pointer` is an issue or a PR (or a link, for a note).",
+      "description": "[`BOARD_ENTRIES`]' body. Without `id` it adds a row, last (`entry` is\n`row` or absent), or, with `entry: zone`, a group with a `title`, last;\nwith `id` it changes that row or group: what is absent is left as it is,\nand a change to `pointer`, `note` or a group's `title` names `rev`. A\nnew row's `zone` is the group it goes in. `kind`, and a `zone` that is a\nlane, are refused, and so is every `status` (aru-125: lanes follow the work;\na question for a person is an ask, #367). The row's\n`pointer` is an issue or a PR (or a link, for a note).",
       "properties": {
         "entry": {
           "anyOf": [
@@ -967,7 +1133,7 @@
             }
           ],
           "default": null,
-          "description": "Refused, except `\"needs_input\"`."
+          "description": "Refused: ask with a question instead."
         },
         "title": {
           "default": null,
@@ -1000,6 +1166,24 @@
             }
           ],
           "description": "The machine whose agent added the row, if one did (it may remove\nit; nobody else's agent may)."
+        },
+        "ask": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Ask"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The row's one open question: asked, else raised by the board."
+        },
+        "asked": {
+          "description": "The last [`ASKED_SHOWN`] asks answered, newest first.",
+          "items": {
+            "$ref": "#/$defs/AnsweredAsk"
+          },
+          "type": "array"
         },
         "attachments": {
           "default": [],
@@ -1082,7 +1266,7 @@
         },
         "status": {
           "$ref": "#/$defs/Status",
-          "description": "Kept for old clients; nothing writes it any more (aru-125)."
+          "description": "Kept for old clients: `needs_input` when the row has an open ask\n(#367), `none` otherwise. Nothing writes it."
         },
         "updated_at": {
           "format": "uint64",
