@@ -79,6 +79,9 @@ test("a Done row says how it is proven, or that it isn't yet; others say nothing
   assert.deepEqual(proofMark({ lane: "done", pointer: issue, proof: { by: "evidence" } }), { proven: true, words: "proven" });
   assert.deepEqual(proofMark({ lane: "done", pointer: issue }), { proven: false, words: "not proven yet" });
   assert.equal(proofMark({ lane: "review", pointer: issue }), null);
+  // A cancelled row says so in its mark and is not "not proven yet".
+  assert.equal(proofMark({ lane: "done", pointer: issue, marks: [{ kind: "cancelled" }] }), null);
+  assert.equal(marksOf({ marks: [{ kind: "cancelled" }] }).cancelled, true);
   assert.equal(proofMark({ lane: "done", pointer: { kind: "none" } }), null, "a note has nothing to prove");
   assert.equal(counted({ pointer: { kind: "forge_item", id: "fi_a" } }), true);
   assert.equal(counted({ pointer: { kind: "link", url: "https://x.example/1" } }), false);
@@ -185,7 +188,7 @@ test("a board with groups is a section for each, its lanes under it, and the row
 });
 
 test("a row's marks: merged but not closed, after a PR, and earlier agents folded", () => {
-  assert.deepEqual(marksOf({}), { merged: false, after: null, stalled: null, blocked: [], earlier: new Set() });
+  assert.deepEqual(marksOf({}), { merged: false, cancelled: false, after: null, stalled: null, blocked: [], earlier: new Set() });
   const m = marksOf({
     marks: [
       { kind: "merged_not_closed" },

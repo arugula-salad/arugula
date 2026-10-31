@@ -10,11 +10,21 @@
 //! | the row's items                                                  | lane   |
 //! |------------------------------------------------------------------|--------|
 //! | a note: no issue or PR as its item                               | Next   |
-//! | the primary issue is closed, or the primary PR merged or closed  | Done   |
+//! | the primary issue is completed or canceled, or the primary PR merged or closed | Done |
 //! | the primary PR, or an attached PR, is open                       | Review |
 //! | the primary issue is open, an attached PR merged, none is open   | Review |
+//! | the primary issue is started, and its state's name says review   | Review |
+//! | the primary issue is started                                     | Doing  |
 //! | an attached agent block that isn't closed, or a run running      | Doing  |
-//! | otherwise                                                        | Next   |
+//! | otherwise (triage, backlog or unstarted)                         | Next   |
+//!
+//! Only the primary item's category counts: an attached issue never moves a
+//! lane. A started state is Review when "review" is in its name
+//! ([`names_review`]), which only a Plane item has.
+//!
+//! A canceled primary issue (a Plane `cancelled` state, a native issue closed
+//! as not planned or as a duplicate) is Done and never proven: it has the
+//! `cancelled` mark, whatever merged.
 //!
 //! Merged isn't done (decision 7): a PR that merged while its issue is open
 //! leaves the row in Review, marked `merged_not_closed`
@@ -46,6 +56,8 @@ pub enum Fact {
     /// An issue of any source, by its status category.
     Issue {
         category: Category,
+        /// A started Plane state whose name says review ([`names_review`]).
+        review: bool,
     },
     Pr(Pr),
     /// An agent block, as its machine last reported it.
@@ -71,7 +83,7 @@ pub enum Primary<'a> {
 pub fn lane(primary: Primary<'_>, attached: &[Fact]) -> Lane {
     let Primary::Item(item) = primary else { return Lane::Next };
     match item {
-        Some(Fact::Issue { category }) if category.is_done() => return Lane::Done,
+        Some(Fact::Issue { category, .. }) if category.is_done() => return Lane::Done,
         Some(Fact::Pr(Pr::Merged { .. } | Pr::Closed)) => return Lane::Done,
         _ => {}
     }
@@ -79,8 +91,24 @@ pub fn lane(primary: Primary<'_>, attached: &[Fact]) -> Lane {
     if item.is_some_and(open) || attached.iter().any(open) || merged_not_closed(primary, attached) {
         return Lane::Review;
     }
+    let started = matches!(item, Some(Fact::Issue { category: Category::Started, .. }));
+    if matches!(item, Some(Fact::Issue { review: true, .. })) {
+        return Lane::Review;
+    }
     let under_way = |f: &Fact| matches!(f, Fact::Block { closed: false } | Fact::Run { running: true });
-    if attached.iter().any(under_way) { Lane::Doing } else { Lane::Next }
+    if started || attached.iter().any(under_way) { Lane::Doing } else { Lane::Next }
+}
+
+/// Whether a started Plane state's name says review: "In Review" and
+/// "Code review" do, whatever the case.
+pub fn names_review(state_name: &str) -> bool {
+    state_name.to_ascii_lowercase().contains("review")
+}
+
+/// Whether the row's primary item is canceled, from any source: the row is
+/// Done, never proven, and marked `cancelled`.
+pub fn cancelled(primary: Primary<'_>) -> bool {
+    matches!(primary, Primary::Item(Some(Fact::Issue { category: Category::Canceled, .. })))
 }
 
 /// A native issue's category: open is `unstarted`, closed as not planned or
@@ -135,7 +163,7 @@ pub fn stalled(lane: Lane, attached: &[Fact], idle: &[Option<u64>], now: u64, mi
 /// Whether the row's issue is open while a PR of the row merged and none is
 /// open: the work is in and the issue isn't closed.
 pub fn merged_not_closed(primary: Primary<'_>, attached: &[Fact]) -> bool {
-    let Primary::Item(Some(Fact::Issue { category })) = primary else { return false };
+    let Primary::Item(Some(Fact::Issue { category, .. })) = primary else { return false };
     if category.is_done() {
         return false;
     }
@@ -145,12 +173,15 @@ pub fn merged_not_closed(primary: Primary<'_>, attached: &[Fact]) -> bool {
 
 /// Whether a Done row is proven, and how. `item`: the primary pointer and its
 /// fact; `attached`: the PRs attached as work, as (pointer, fact);
-/// `evidence`: the first `proof` attachment.
+/// `evidence`: the first `proof` attachment. A canceled row is never proven.
 pub fn proof(
     item: (&Pointer, Option<&Fact>),
     attached: &[(&Pointer, Fact)],
     evidence: Option<&Pointer>,
 ) -> Option<Proof> {
+    if cancelled(Primary::Item(item.1)) {
+        return None;
+    }
     let green = |f: &Fact| matches!(f, Fact::Pr(Pr::Merged { green: true }));
     let by_ci = item
         .1
@@ -180,8 +211,8 @@ mod tests {
     /// Every row of the lane table.
     #[test]
     fn the_lane_table() {
-        let issue_open = Fact::Issue { category: Category::Unstarted };
-        let issue_closed = Fact::Issue { category: Category::Completed };
+        let issue_open = Fact::Issue { category: Category::Unstarted, review: false };
+        let issue_closed = Fact::Issue { category: Category::Completed, review: false };
         fn item(f: &Fact) -> Primary<'_> {
             Primary::Item(Some(f))
         }
@@ -227,8 +258,10 @@ mod tests {
     /// The mark `merged_not_closed`: an open issue, a merged PR, no open one.
     #[test]
     fn merged_not_closed_needs_an_open_issue_a_merged_pr_and_no_open_one() {
-        let (open, closed) =
-            (Fact::Issue { category: Category::Unstarted }, Fact::Issue { category: Category::Completed });
+        let (open, closed) = (
+            Fact::Issue { category: Category::Unstarted, review: false },
+            Fact::Issue { category: Category::Completed, review: false },
+        );
         let mnc = |p: Primary<'_>, a: &[Fact]| merged_not_closed(p, a);
         assert!(mnc(Primary::Item(Some(&open)), &[MERGED]));
         assert!(mnc(Primary::Item(Some(&open)), &[Fact::Pr(Pr::Closed), MERGED, LIVE_BLOCK]));
@@ -277,7 +310,7 @@ mod tests {
     fn a_done_row_is_proven_by_ci_or_evidence_or_not() {
         let (pr, att) = (ptr("fi_pr"), ptr("fi_att"));
         let link = Pointer::Link { url: "https://ci.example.com/1".into() };
-        let issue = Fact::Issue { category: Category::Completed };
+        let issue = Fact::Issue { category: Category::Completed, review: false };
         let red = Fact::Pr(Pr::Merged { green: false });
         let ci = |p: &Pointer| Some(Proof { by: ProofBy::Ci, pointer: Some(p.clone()) });
         // The primary PR merged green.
@@ -331,16 +364,67 @@ mod tests {
     fn completed_and_canceled_are_done_and_the_rest_are_not() {
         use Category::*;
         for c in [Triage, Backlog, Unstarted, Started] {
-            let f = Fact::Issue { category: c };
-            assert_eq!(lane(Primary::Item(Some(&f)), &[]), Lane::Next, "{c:?}");
+            let f = Fact::Issue { category: c, review: false };
+            let alone = if c == Started { Lane::Doing } else { Lane::Next };
+            assert_eq!(lane(Primary::Item(Some(&f)), &[]), alone, "{c:?}");
             assert_eq!(lane(Primary::Item(Some(&f)), &[OPEN_PR]), Lane::Review, "{c:?}");
             assert_eq!(lane(Primary::Item(Some(&f)), &[LIVE_BLOCK]), Lane::Doing, "{c:?}");
             assert!(merged_not_closed(Primary::Item(Some(&f)), &[MERGED]), "{c:?}");
         }
         for c in [Completed, Canceled] {
-            let f = Fact::Issue { category: c };
+            let f = Fact::Issue { category: c, review: false };
             assert_eq!(lane(Primary::Item(Some(&f)), &[OPEN_PR, LIVE_BLOCK]), Lane::Done, "{c:?}");
             assert!(!merged_not_closed(Primary::Item(Some(&f)), &[MERGED]), "{c:?}");
         }
+    }
+
+    /// A Plane started state is Doing, or Review when its name says so; the
+    /// states before it are Next; an attached PR still lifts to Review and a
+    /// merged one with the issue open stays Review over a started primary.
+    #[test]
+    fn a_started_primary_is_doing_or_review_and_the_rest_wait() {
+        let issue = |category, review| Fact::Issue { category, review };
+        let lane_of = |f: &Fact, a: &[Fact]| lane(Primary::Item(Some(f)), a);
+        let started = issue(Category::Started, false);
+        assert_eq!(lane_of(&started, &[]), Lane::Doing);
+        assert_eq!(lane_of(&issue(Category::Started, true), &[]), Lane::Review);
+        assert_eq!(lane_of(&issue(Category::Started, true), &[LIVE_BLOCK]), Lane::Review);
+        assert_eq!(lane_of(&started, &[OPEN_PR]), Lane::Review);
+        assert_eq!(lane_of(&started, &[MERGED]), Lane::Review, "merged, not closed stays in Review");
+        assert!(merged_not_closed(Primary::Item(Some(&started)), &[MERGED]));
+        for c in [Category::Triage, Category::Backlog, Category::Unstarted] {
+            assert_eq!(lane_of(&issue(c, false), &[]), Lane::Next, "{c:?}");
+        }
+        // Only the primary counts: an attached issue moves nothing.
+        assert_eq!(lane_of(&issue(Category::Unstarted, false), &[started]), Lane::Next);
+        // Done wins over a review name.
+        assert_eq!(lane_of(&issue(Category::Completed, true), &[]), Lane::Done);
+    }
+
+    #[test]
+    fn a_state_name_with_review_in_it_is_review() {
+        assert!(names_review("In Review"));
+        assert!(names_review("code REVIEW"));
+        assert!(names_review("Peer-reviewing"));
+        assert!(!names_review("In Progress"));
+        assert!(!names_review(""));
+    }
+
+    /// A canceled primary is Done and never proven, even with a PR that
+    /// merged green; the mark is the primary's alone.
+    #[test]
+    fn a_canceled_primary_is_done_and_cancelled() {
+        let canceled = Fact::Issue { category: Category::Canceled, review: false };
+        let done = Fact::Issue { category: Category::Completed, review: false };
+        assert_eq!(lane(Primary::Item(Some(&canceled)), &[MERGED, OPEN_PR, LIVE_BLOCK]), Lane::Done);
+        assert!(!merged_not_closed(Primary::Item(Some(&canceled)), &[MERGED]));
+        assert!(cancelled(Primary::Item(Some(&canceled))));
+        let (none, att) = (ptr("iss_1"), ptr("fi_att"));
+        let link = Pointer::Link { url: "https://ci.example.com/1".into() };
+        assert_eq!(proof((&none, Some(&canceled)), &[(&att, MERGED)], Some(&link)), None);
+        assert!(!cancelled(Primary::Item(Some(&done))));
+        assert!(!cancelled(Primary::Item(Some(&MERGED))));
+        assert!(!cancelled(Primary::Item(None)));
+        assert!(!cancelled(Primary::Note));
     }
 }

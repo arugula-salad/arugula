@@ -510,6 +510,10 @@ pub enum Mark {
     /// The issue is open and a PR of the row merged, with none open: the
     /// work is in, the issue isn't closed. The row is in Review.
     MergedNotClosed,
+    /// The row's item was canceled (a Plane `cancelled` state, a native issue
+    /// closed as not planned or as a duplicate): the row is Done and never
+    /// proven, whatever merged.
+    Cancelled,
     /// An open PR of the row is stacked on another open PR: it targets that
     /// PR's branch, so it waits for it. `repo` is left out when the reader
     /// may not read the repo.
@@ -1269,7 +1273,7 @@ pub struct Row {
     #[cfg_attr(feature = "ts", ts(optional))]
     pub group: Option<String>,
     /// What the lane doesn't say, in a fixed order: `merged_not_closed`,
-    /// `after`, `blocked_by`, then one `earlier` for each closed block.
+    /// `cancelled`, `after`, `blocked_by`, then one `earlier` for each closed block.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub marks: Vec<Mark>,
     /// The row's one open question: asked, else raised by the board.
@@ -1520,6 +1524,7 @@ impl Mark {
     fn words(&self) -> String {
         match self {
             Mark::MergedNotClosed => "merged, not closed".to_owned(),
+            Mark::Cancelled => "cancelled".to_owned(),
             Mark::After { number, .. } => format!("after #{number}"),
             Mark::Earlier { .. } => "earlier agent".to_owned(),
             Mark::Stalled { since } => format!("stalled {}", ago(*since, now_ms())),
@@ -1530,10 +1535,12 @@ impl Mark {
 }
 
 /// The words of a row's marks, with its closed blocks counted:
-/// `merged, not closed · after #1859 · earlier agents (2)`.
+/// `merged, not closed · after #1859 · earlier agents (2)`. `cancelled` is
+/// left out: the row's proof slot says it.
 pub fn marks_line(marks: &[Mark]) -> String {
     let earlier = marks.iter().filter(|m| matches!(m, Mark::Earlier { .. })).count();
-    let mut parts: Vec<String> = marks.iter().filter(|m| !matches!(m, Mark::Earlier { .. })).map(Mark::words).collect();
+    let said = |m: &&Mark| !matches!(m, Mark::Earlier { .. } | Mark::Cancelled);
+    let mut parts: Vec<String> = marks.iter().filter(said).map(Mark::words).collect();
     if earlier > 0 {
         parts.push(format!("earlier agents ({earlier})"));
     }
@@ -1555,7 +1562,9 @@ fn lane_text<'a>(out: &mut String, title: &str, rows: impl Iterator<Item = &'a R
     for r in rows {
         let label = fit(&r.item_label(), LABEL);
         let lead = format!("  {} {label:<LABEL$} ", r.lane.glyph());
+        let cancelled = r.marks.contains(&Mark::Cancelled);
         let mark = match (r.lane, r.counted(), &r.proof) {
+            (Lane::Done, true, _) if cancelled => "[cancelled] ",
             (Lane::Done, true, Some(p)) => p.mark(),
             (Lane::Done, true, None) => "[not proven yet] ",
             _ => "",
@@ -1570,8 +1579,9 @@ fn lane_text<'a>(out: &mut String, title: &str, rows: impl Iterator<Item = &'a R
         };
         *out += format!("{lead}{note}").trim_end();
         out.push('\n');
-        if !r.marks.is_empty() {
-            *out += &format!("      {}\n", fit(&marks_line(&r.marks), TEXT_WIDTH - 6));
+        let marks = marks_line(&r.marks);
+        if !marks.is_empty() {
+            *out += &format!("      {}\n", fit(&marks, TEXT_WIDTH - 6));
         }
         if let Some(b) = r.attachments.iter().find(|a| a.holds()).and_then(|a| a.block.as_ref()) {
             let who = b.title.as_deref().unwrap_or("an agent");
@@ -1614,7 +1624,7 @@ fn lane_text<'a>(out: &mut String, title: &str, rows: impl Iterator<Item = &'a R
 /// short pointer label and the note (cut to fit). Under a row: what is
 /// attached to it, and under an agent block's row what its machine reported
 /// of it. A Done row starts its note with `[proven by CI]`, `[proven]` or
-/// `[not proven yet]`, and a note row (no issue or PR) has no mark. Ids and
+/// `[not proven yet]` (`[cancelled]` when its item was canceled), and a note row (no issue or PR) has no mark. Ids and
 /// revs aren't in it: they are in the [`BoardView`]. Under a row, its marks
 /// ([`marks_line`]). A board with groups is a `# Title  done/total` header
 /// for each group, and the lanes that hold its rows under it; rows with no
@@ -1995,6 +2005,13 @@ Done: People can sign up.
         assert!(text.contains("Fix login\n      merged, not closed · after #1859 · earlier agents (2)\n"), "{text}");
         assert_eq!(marks_line(&[Mark::Earlier { attachment: "a".into() }]), "earlier agents (1)");
         assert_eq!(marks_line(&[]), "");
+        // A cancelled row says so once, in its proof slot.
+        let mut c = row(Pointer::Issue { id: "iss_2".into() }, Lane::Done, "Dropped");
+        c.marks = vec![Mark::Cancelled];
+        let text = render(&view(lanes(vec![(Lane::Done, vec![c])])));
+        assert!(text.contains("[cancelled] Dropped"), "{text}");
+        assert_eq!(text.matches("cancelled").count(), 1, "{text}");
+        assert_eq!(marks_line(&[Mark::Cancelled, Mark::MergedNotClosed]), "merged, not closed");
     }
 
     /// With groups the text is a header for each group (with its progress)
@@ -2054,6 +2071,7 @@ Done: People can sign up.
         use serde_json::json;
         let marks = [
             (Mark::MergedNotClosed, json!({ "kind": "merged_not_closed" })),
+            (Mark::Cancelled, json!({ "kind": "cancelled" })),
             (Mark::After { number: 3, repo: None }, json!({ "kind": "after", "number": 3 })),
             (
                 Mark::After { number: 3, repo: Some("a/b".into()) },

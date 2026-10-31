@@ -228,7 +228,7 @@ fn pointer_of(id: &str) -> wire::Pointer {
 /// mirror no longer has (no fact) blocks nothing.
 fn is_open(f: Option<&Fact>) -> bool {
     match f {
-        Some(Fact::Issue { category }) => !category.is_done(),
+        Some(Fact::Issue { category, .. }) => !category.is_done(),
         Some(Fact::Pr(Pr::Open)) => true,
         _ => false,
     }

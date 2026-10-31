@@ -188,6 +188,75 @@ async fn a_plane_item_is_on_a_board_and_closing_it_moves_the_progress() {
     assert!(work(&base, "bob", &team, "").await.iter().all(|i| i["source"] != "plane"));
 }
 
+/// A Plane item's state group drives its row's lane (Arugula #424): started
+/// is Doing, a started state with "review" in its name is Review, backlog is
+/// Next, and cancelled is Done, marked `cancelled` and not counted as proven.
+/// A native issue closed as not planned reads the same.
+#[tokio::test]
+async fn a_plane_state_group_moves_the_row_and_cancelled_is_done_and_not_proven() {
+    use crate::trackers::connect::Reconciled;
+
+    let hub = Arc::new(TestHub::default());
+    let (fake, app, base) = serve(&hub).await;
+    hub.team("t1", &[("alice", TeamRole::Owner), ("bob", TeamRole::Editor)]);
+    hub.flag("team:t1", true);
+    hub.flag_named("team:t1", FLAG, true);
+    let team = crate::projects::team_project(&app, "t1").await.unwrap().unwrap();
+    let (s, made) = connect_as(&base, "bob", &team, KEY, "ARUGU").await;
+    assert_eq!(s, 200, "{made}");
+    let conn = made["id"].as_str().unwrap().to_owned();
+    backfilled(&app, &team, &conn).await;
+    let mirror = app.db.tracker_connection(&team, &conn).unwrap().unwrap().mirror_id;
+
+    let state = |n, group: &str, name: &str| {
+        let mut it = item(n, "Work", group, 9_000_000_000_000 + n);
+        it.state_name = name.into();
+        it
+    };
+    fake.set_items(vec![
+        state(1, "backlog", "Backlog"),
+        state(2, "started", "In Progress"),
+        state(3, "started", "In Review"),
+        state(4, "cancelled", "Cancelled"),
+        state(5, "unstarted", "Needs review"),
+    ]);
+    let due = arugula_e2e::now_ms() + 24 * 3_600_000;
+    assert!(matches!(connect::reconcile(&app, due).await.unwrap(), Some(Reconciled::Done { .. })));
+    let ids: Vec<String> = (1..=5).map(|n| mirrored_id(&app, mirror, n)).collect();
+    let pointers: Vec<Value> = ids.iter().map(|id| json!({ "kind": "forge_item", "id": id })).collect();
+    let board_id = board(&base, "bob", &team, &pointers).await;
+
+    let v = read(&base, "bob", &board_id).await;
+    let row = |v: &Value, id: &str| lane_rows(v).into_iter().find(|r| r["pointer"]["id"] == json!(id)).unwrap().clone();
+    let lanes: Vec<_> = ids.iter().map(|id| row(&v, id)["lane"].as_str().unwrap().to_owned()).collect();
+    assert_eq!(lanes, ["next", "doing", "review", "done", "next"], "{v}");
+    let cancelled = row(&v, &ids[3]);
+    assert_eq!(cancelled["marks"], json!([{ "kind": "cancelled" }]), "{cancelled}");
+    assert!(cancelled.get("proof").is_none(), "{cancelled}");
+    assert!(row(&v, &ids[1]).get("marks").is_none(), "started is not marked");
+    assert_eq!(progress(&v), (1, 5));
+    assert_eq!(v["board"]["progress"]["proven"], json!(0), "{v}");
+
+    // A native issue closed as not planned: the same row.
+    let (s, native) =
+        call(&base, "bob", "POST", &format!("/api/projects/{team}/issues"), Some(json!({ "title": "Skip" }))).await;
+    assert_eq!(s, 200, "{native}");
+    let native = native["id"].as_str().unwrap().to_owned();
+    app.db
+        .c()
+        .execute(
+            "UPDATE issues SET state = 'closed', close_reason = 'not_planned', closed_at = 5 WHERE id = ?1",
+            params![native],
+        )
+        .unwrap();
+    let id = board(&base, "bob", &team, &[json!({ "kind": "issue", "id": native })]).await;
+    let v = read(&base, "bob", &id).await;
+    let r = &lane_rows(&v)[0];
+    assert_eq!(r["lane"], json!("done"), "{r}");
+    assert_eq!(r["marks"], json!([{ "kind": "cancelled" }]), "{r}");
+    assert_eq!((progress(&v), &v["board"]["progress"]["proven"]), ((1, 1), &json!(0)), "{v}");
+}
+
 /// A Plane `blocked_by` shows on the row (Arugula #403): the backfill reads
 /// each item's relations and stores them as `plane` edges, the row of the
 /// blocked item says "blocked by ARUGU's #1" and is out of the ready set,
@@ -253,5 +322,6 @@ async fn a_plane_blocked_by_shows_on_the_row_and_stays_read_only() {
     let v = read(&base, "bob", &id).await;
     let blocked = lane_rows(&v).into_iter().find(|r| r["pointer"]["id"] == json!(second)).unwrap().clone();
     assert!(blocked.get("marks").is_none() && blocked.get("relations").is_none(), "{blocked}");
-    assert_eq!(v["ready"].as_array().unwrap().len(), 2, "{v}");
+    // Item 2 is started, so it's in Doing: only the backlog item is ready.
+    assert_eq!(v["ready"].as_array().unwrap().len(), 1, "{v}");
 }

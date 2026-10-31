@@ -69,9 +69,11 @@ export function liveClass(s: BoardLiveState): string {
 }
 
 /** The mark on a Done row: how it is proven, or that it isn't yet. Null for a
- * row that isn't Done, and for a note, which has nothing to prove. */
-export function proofMark(r: Pick<BoardRow, "lane" | "pointer" | "proof">): { proven: boolean; words: string } | null {
+ * row that isn't Done, for a note, which has nothing to prove, and for a
+ * cancelled one, whose `cancelled` mark says it instead. */
+export function proofMark(r: Pick<BoardRow, "lane" | "pointer" | "proof" | "marks">): { proven: boolean; words: string } | null {
   if (r.lane !== "done" || !counted(r)) return null;
+  if (r.marks?.some((m) => m.kind === "cancelled")) return null;
   const p: BoardProof | undefined = r.proof;
   if (!p) return { proven: false, words: "not proven yet" };
   return { proven: true, words: p.by === "ci" ? "proven by CI" : "proven" };
@@ -97,17 +99,18 @@ export function groupLine(p: Pick<BoardProgress, "done" | "total">): string {
   return p.total ? `${p.done} of ${p.total} done` : "no work yet";
 }
 
-/** What a row's marks say, for its card: `merged, not closed`; `after #1859`
+/** What a row's marks say, for its card: `merged, not closed`; `cancelled`; `after #1859`
  * for a PR stacked on another (the row waits for it); `blocked by #7` for each
  * open blocker, or `blocked by something you can't see` when the reader may not
  * read it (#403); and the attachments of agents that were replaced
  * (`earlier`), which the card folds. */
-export function marksOf(r: Pick<BoardRow, "marks">, now: number = Date.now()): { merged: boolean; after: { words: string; repo?: string } | null; stalled: { words: string; since: number } | null; blocked: { words: string; title?: string; repo?: string }[]; earlier: Set<string> } {
+export function marksOf(r: Pick<BoardRow, "marks">, now: number = Date.now()): { merged: boolean; cancelled: boolean; after: { words: string; repo?: string } | null; stalled: { words: string; since: number } | null; blocked: { words: string; title?: string; repo?: string }[]; earlier: Set<string> } {
   const marks: BoardMark[] = r.marks ?? [];
   const after = marks.find((m) => m.kind === "after");
   const stalled = marks.find((m) => m.kind === "stalled");
   return {
     merged: marks.some((m) => m.kind === "merged_not_closed"),
+    cancelled: marks.some((m) => m.kind === "cancelled"),
     after: after && after.kind === "after" ? { words: `after #${after.number}`, repo: after.repo } : null,
     stalled: stalled && stalled.kind === "stalled" ? { words: `stalled ${stalledFor(stalled.since, now)}`, since: stalled.since } : null,
     blocked: marks.flatMap((m) => (m.kind === "blocked_by" ? [m.number === undefined ? { words: UNSEEN_BLOCKER } : { words: `blocked by #${m.number}`, title: m.title, repo: m.repo }] : [])),

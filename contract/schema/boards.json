@@ -910,6 +910,19 @@
           "type": "object"
         },
         {
+          "description": "The row's item was canceled (a Plane `cancelled` state, a native issue\nclosed as not planned or as a duplicate): the row is Done and never\nproven, whatever merged.",
+          "properties": {
+            "kind": {
+              "const": "cancelled",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
           "description": "An open PR of the row is stacked on another open PR: it targets that\nPR's branch, so it waits for it. `repo` is left out when the reader\nmay not read the repo.",
           "properties": {
             "kind": {
@@ -1606,7 +1619,7 @@
           "description": "A `fi_`, `iss_` or `run_` pointer's state now, when the reader may see the\nitem ([`BoardView`] is read with it; a write's answer has it too)."
         },
         "marks": {
-          "description": "What the lane doesn't say, in a fixed order: `merged_not_closed`,\n`after`, `blocked_by`, then one `earlier` for each closed block.",
+          "description": "What the lane doesn't say, in a fixed order: `merged_not_closed`,\n`cancelled`, `after`, `blocked_by`, then one `earlier` for each closed block.",
           "items": {
             "$ref": "#/$defs/Mark"
           },
