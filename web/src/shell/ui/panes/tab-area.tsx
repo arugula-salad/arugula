@@ -53,11 +53,14 @@ export function TabArea({ client, tab, cell, phone }: { client: Client; tab: Tab
   // one, and the two swap for good, the page stuck redrawing.
   const stale = () => client.tab !== tab.id;
 
-  // A tab focused on one pane (M109, anyone's doing) has the keys there.
+  // A tab we focused on one pane (M109) has the keys there. Not one another
+  // client holds: following it would zoom to it here, which claims the tab
+  // and ends their focus (#439).
+  const holder = tab.owner === client.clientId;
   useEffect(() => {
     if (stale()) return;
-    if (tab.focus !== null && client.active(tab.id) !== tab.focus) client.setActive(tab.focus);
-  }, [client, tab.id, tab.focus]);
+    if (holder && tab.focus !== null && client.active(tab.id) !== tab.focus) client.setActive(tab.focus);
+  }, [client, tab.id, tab.focus, holder]);
 
   // Tell the daemon what we show. Showing a tab (or another pane, on a
   // phone) claims its size; resizing the window only updates a size we own.

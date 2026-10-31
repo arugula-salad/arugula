@@ -4700,8 +4700,9 @@ presence?: Array<Presence>, };
 
 export type TabView = { id: number, name: string | null, root: Node, cols: number, rows: number, owner: number | null, zoom: number | null, 
 /**
- * The pane filling the tab for everyone (focus mode, M109), if any.
- * `layout` already shows it.
+ * The pane filling the tab (focus mode, M109), if any: its holder's
+ * view, ended by another client's claim of the tab (#439). `layout`
+ * already shows it.
  */
 focus: number | null, layout: Layout, };
 

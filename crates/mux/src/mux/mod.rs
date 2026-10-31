@@ -479,6 +479,9 @@ struct Daemon {
     viewing: HashMap<ClientId, TabId>,
     /// ...and the one pane in it, on a phone.
     zoomed: HashMap<ClientId, PaneId>,
+    /// ...and the cell area each client last said it shows a tab in, so a
+    /// focus can take the tab for it (#439).
+    view_size: HashMap<ClientId, (u16, u16)>,
     /// Blocks some client draws now (M11), as they were last told.
     drawn: std::collections::HashSet<PaneId>,
     /// This host's files, as `/api/fs` serves them.
@@ -667,6 +670,7 @@ pub fn start(
         refused: HashMap::new(),
         viewing: HashMap::new(),
         zoomed: HashMap::new(),
+        view_size: HashMap::new(),
         drawn: Default::default(),
         fs: fs.clone(),
         shell_env: shell_env.clone(),
@@ -1406,6 +1410,7 @@ impl Daemon {
                 self.refused.remove(&client);
                 self.viewing.remove(&client);
                 self.zoomed.remove(&client);
+                self.view_size.remove(&client);
                 // Their last client left: they no longer drive anything.
                 if let Some(who) = gone
                     && !self.clients.values().any(|c| c.principal.id() == who.id() && !self.summary.contains(&c.client))

@@ -1003,8 +1003,9 @@ pub struct TabView {
     pub rows: u16,
     pub owner: Option<ClientId>,
     pub zoom: Option<PaneId>,
-    /// The pane filling the tab for everyone (focus mode, M109), if any.
-    /// `layout` already shows it.
+    /// The pane filling the tab (focus mode, M109), if any: its holder's
+    /// view, ended by another client's claim of the tab (#439). `layout`
+    /// already shows it.
     #[serde(default)]
     pub focus: Option<PaneId>,
     pub layout: Layout,
