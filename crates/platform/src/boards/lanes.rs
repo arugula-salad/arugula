@@ -121,11 +121,16 @@ pub fn native_category(closed: bool, reason: Option<&str>) -> Category {
     }
 }
 
-/// A mirrored GitHub issue's category from its `state`. The mirror keeps no
-/// state reason, so a closed issue is `completed` even when GitHub closed it
-/// as not planned.
-pub fn github_category(state: &str) -> Category {
-    if state == "open" { Category::Unstarted } else { Category::Completed }
+/// A mirrored GitHub issue's category from its `state` and `state_reason`:
+/// closed as not planned (or as a duplicate) is `canceled`, any other close
+/// `completed`. A row mirrored before the reason was kept has none, and reads
+/// as `completed` until a re-sync fills it.
+pub fn github_category(state: &str, reason: Option<&str>) -> Category {
+    match (state, reason) {
+        ("open", _) => Category::Unstarted,
+        (_, Some("not_planned" | "duplicate")) => Category::Canceled,
+        _ => Category::Completed,
+    }
 }
 
 /// A Plane item's category: its state group, which spells `canceled` as
@@ -139,7 +144,7 @@ pub fn plane_category(group: Option<&str>, state: &str) -> Category {
         Some("started") => Category::Started,
         Some("completed") => Category::Completed,
         Some("cancelled" | "canceled") => Category::Canceled,
-        _ => github_category(state),
+        _ => github_category(state, None),
     }
 }
 
@@ -342,8 +347,12 @@ mod tests {
         assert_eq!(native_category(true, None), Completed);
         assert_eq!(native_category(true, Some("not_planned")), Canceled);
         assert_eq!(native_category(true, Some("duplicate")), Canceled);
-        assert_eq!(github_category("open"), Unstarted);
-        assert_eq!(github_category("closed"), Completed);
+        assert_eq!(github_category("open", None), Unstarted);
+        assert_eq!(github_category("open", Some("reopened")), Unstarted);
+        assert_eq!(github_category("closed", None), Completed);
+        assert_eq!(github_category("closed", Some("completed")), Completed);
+        assert_eq!(github_category("closed", Some("not_planned")), Canceled);
+        assert_eq!(github_category("closed", Some("duplicate")), Canceled);
         let plane = |group: &str| plane_category(Some(group), "open");
         assert_eq!(plane("triage"), Triage);
         assert_eq!(plane("backlog"), Backlog);

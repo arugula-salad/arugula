@@ -584,3 +584,40 @@ async fn every_sources_issue_has_a_category_and_done_means_the_same() {
     assert_eq!(seen(&dropped), is("lane_done", "canceled"), "{v}");
     assert_eq!(seen(&open), is("lane_next", "unstarted"), "{v}");
 }
+
+/// A GitHub issue closed as not planned is canceled: Done, marked
+/// `cancelled` and never proven, even with a green merge attached; one
+/// closed as completed is proven by that merge as before, and a closed
+/// row mirrored before the reason was kept reads as completed.
+#[tokio::test]
+async fn a_github_issue_closed_as_not_planned_is_cancelled_not_proven() {
+    let (base, app, _team, id) = start().await;
+    item(&app, "fi_notplanned", 88, 50, "issue", "closed", "Dropped", ("", ""));
+    item(&app, "fi_done", 88, 51, "issue", "closed", "Shipped", ("", ""));
+    item(&app, "fi_before", 88, 52, "issue", "closed", "Before the reason", ("", ""));
+    for (fid, reason) in [("fi_notplanned", "not_planned"), ("fi_done", "completed")] {
+        app.db.c().execute("UPDATE forge_items SET state_reason = ?2 WHERE id = ?1", params![fid, reason]).unwrap();
+    }
+    let mut rows_of = std::collections::HashMap::new();
+    for p in ["fi_notplanned", "fi_done", "fi_before"] {
+        let v = add(&base, &id, fi(p)).await;
+        rows_of.insert(p, on(&v, p).1["id"].as_str().unwrap().to_owned());
+    }
+    for (p, number, sha) in [("fi_notplanned", 53u64, "h_np"), ("fi_done", 54, "h_dn")] {
+        item(&app, &format!("{p}merge"), 88, number, "pr", "merged", p, ("", sha));
+        check(&app, 88, sha, "build", "completed", Some("success"));
+        attach(&base, &id, &rows_of[p], "work", fi(&format!("{p}merge"))).await;
+    }
+    let v = read(&base, "bob", &id).await;
+    let np = on(&v, "fi_notplanned");
+    assert_eq!(np.0, "lane_done", "{v}");
+    assert_eq!(np.1["live"]["category"], "canceled", "{v}");
+    assert_eq!(np.1["marks"], json!([{ "kind": "cancelled" }]), "{v}");
+    assert!(np.1.get("proof").is_none(), "a canceled row is never proven: {v}");
+    let dn = on(&v, "fi_done");
+    assert_eq!(dn.0, "lane_done", "{v}");
+    assert_eq!(dn.1["live"]["category"], "completed", "{v}");
+    assert!(dn.1.get("marks").is_none(), "{v}");
+    assert_eq!(dn.1["proof"], json!({ "by": "ci", "pointer": fi("fi_donemerge") }), "{v}");
+    assert_eq!(on(&v, "fi_before").1["live"]["category"], "completed", "{v}");
+}

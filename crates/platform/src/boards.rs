@@ -405,7 +405,7 @@ fn live_item(i: &ForgeItem, repo: &str, checks: &[&CheckState]) -> wire::Live {
         identifier: None,
         state_name: None,
         url: None,
-        category: (i.kind == "issue").then(|| github_category(&i.state)),
+        category: (i.kind == "issue").then(|| github_category(&i.state, i.state_reason.as_deref())),
     }
 }
 
@@ -592,7 +592,7 @@ fn facts(app: &Platform, project: &str, ids: &Ids, blocks: &Blocks) -> Result<Fa
                     category == Category::Started && lanes::names_review(i.state_name.as_deref().unwrap_or_default());
                 Fact::Issue { category, review }
             }
-            _ => Fact::Issue { category: github_category(&i.state), review: false },
+            _ => Fact::Issue { category: github_category(&i.state, i.state_reason.as_deref()), review: false },
         };
         f.by_id.insert(i.id, fact);
     }
