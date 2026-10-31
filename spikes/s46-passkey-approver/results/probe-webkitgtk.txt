@@ -1,0 +1,15 @@
+WebKitGTK 2.52.6
+
+## as shipped
+- feature LoginStatusAPIRequiresWebAuthn: status internal, enabled False
+- ua: Mozilla/5.0 (X11; Ubuntu; Linux x86_64) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/60.5 Safari/605.1.15
+- secure: True
+- credentials: undefined
+- pkc: undefined
+
+## with every WebAuthn flag turned on
+- feature LoginStatusAPIRequiresWebAuthn: status internal, enabled False
+- ua: Mozilla/5.0 (X11; Ubuntu; Linux x86_64) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/60.5 Safari/605.1.15
+- secure: True
+- credentials: undefined
+- pkc: undefined
