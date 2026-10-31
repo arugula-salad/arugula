@@ -109,4 +109,3 @@ async fn merger(p: &Platform, project: &str, github: Option<u64>) -> Option<Stri
     };
     member.then_some(account)
 }
-

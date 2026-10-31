@@ -1458,7 +1458,10 @@ impl Db {
         let native: Vec<u64> = refs.closing_native().collect();
         if !native.is_empty() {
             add(self.c().query_map(
-                &format!("SELECT id FROM issues WHERE project_id = ?1 AND number IN ({}) ORDER BY number", list(&native)),
+                &format!(
+                    "SELECT id FROM issues WHERE project_id = ?1 AND number IN ({}) ORDER BY number",
+                    list(&native)
+                ),
                 params![project],
                 |r| r.get(0),
             )?);
