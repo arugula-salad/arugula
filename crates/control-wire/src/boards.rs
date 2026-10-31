@@ -460,7 +460,7 @@ pub struct Attachment {
     pub block: Option<BlockState>,
     /// A block that a newer agent took the row from (`take`): it is an
     /// earlier agent whatever it reports, and holds no claim.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub released: bool,
 }
 

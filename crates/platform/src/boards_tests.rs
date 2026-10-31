@@ -1308,7 +1308,7 @@ async fn a_second_machines_block_on_a_claimed_row_is_refused_naming_the_holder()
     let at = r["attachments"].as_array().unwrap();
     let panes: Vec<_> =
         at.iter().map(|a| (a["pointer"]["machine"].as_str().unwrap(), a["released"].as_bool())).collect();
-    assert_eq!(panes[0], ("bmac", Some(false)), "{v}");
+    assert_eq!(panes[0], ("bmac", None), "a holder isn't released, and says nothing: {v}");
     assert!(panes[1..].iter().all(|p| p.0 == "geek" && p.1 == Some(true)), "{v}");
     assert_eq!(r["marks"].as_array().unwrap().len(), 2, "one earlier each: {v}");
     assert_eq!(lane(&v, &row), "doing", "bmac's block is not closed: {v}");
