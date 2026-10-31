@@ -56,5 +56,13 @@ Ed25519 assertions, short-lived, with keys at a JWKS URL, rotated, so
 studio, hud and the platform page sign people in through it ("The hub is an
 issuer: one identity for every product"). Passkeys stay bound to
 `control.arugula.io`.
+**The platform page uses them as related origins** (S46, Jake,
+2026-10-30, aru-126). Passkeys stay bound to `control.arugula.io`. Control
+serves `/.well-known/webauthn` listing the platform page's origin, so an
+approval made there (a deploy, a standing grant, an owner change) uses the
+same passkey, and its assertion names the platform's origin. Sign-in stays
+on control's page. Moving the RP to `arugula.io` was rejected: any app
+on `<name>.apps.arugula.io` could then raise the person's passkey sheet.
+
 Where: `crates/control/src/auth.rs`, `crates/control/src/passkey.rs` (`rp_id`).
 From: #1150, M134 (#1151), #1337 (platform step 8).
