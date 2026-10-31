@@ -535,9 +535,9 @@ const SQLITE: &[Migration] = &[
         additive: false,
     },
     Migration {
-        version: 76,
+        version: 74,
         name: "work_knows_its_issue",
-        sql: include_str!("../../migrations/sqlite/0076_work_knows_its_issue.sql"),
+        sql: include_str!("../../migrations/sqlite/0074_work_knows_its_issue.sql"),
         additive: true,
     },
 ];
@@ -985,9 +985,9 @@ const POSTGRES: &[Migration] = &[
         additive: false,
     },
     Migration {
-        version: 76,
+        version: 74,
         name: "work_knows_its_issue",
-        sql: include_str!("../../migrations/postgres/0076_work_knows_its_issue.sql"),
+        sql: include_str!("../../migrations/postgres/0074_work_knows_its_issue.sql"),
         additive: true,
     },
 ];
