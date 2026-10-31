@@ -195,7 +195,7 @@ async fn a_person_attachment_is_never_taken_off() {
     assert_eq!(attachments(&app, &id), (1, 0));
 
     // Its body names the issue: already attached, so nothing is added.
-    app.db.c().execute("UPDATE linked_repos SET mirror_content = 1 WHERE repo_id = 88", params![]).unwrap();
+    app.db.c().execute("UPDATE linked_repos SET mirror_content = ?1 WHERE repo_id = 88", params![true]).unwrap();
     let edit = |at, body: &str| hook_with(&app, 88, "edited", 60, ("Plumbing", body), "chore/x", at, false);
     edit(11, &format!("Arugula #{n}"));
     assert_eq!(attachments(&app, &id), (1, 0), "theirs, not ours");
