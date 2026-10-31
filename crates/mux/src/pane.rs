@@ -250,6 +250,10 @@ pub struct Status {
     pub input_at: u64,
     /// How the last process ended (`Some(code)`), until another starts.
     pub exited: Option<Option<i32>>,
+    /// Where the program's output ended when it did: the terminal's own
+    /// "[exited …]" note is written after this, so a log kept for the run
+    /// stops here (#161).
+    pub exited_at: Option<u64>,
     pub modes: crate::keys::Modes,
     /// The shell drew its prompt and nothing has started since (shell
     /// integration says so): typing a line there runs it in the shell.
@@ -1933,6 +1937,7 @@ impl State {
             st.busy = false;
             st.at_prompt = false;
             st.exited = Some(None);
+            st.exited_at = Some(st.end);
         }
         let note = if machine_gone {
             self.notify(What::Machine(false));
@@ -1979,6 +1984,7 @@ impl State {
         {
             let mut st = self.status.lock().unwrap();
             st.exited = None;
+            st.exited_at = None;
             st.at_prompt = false;
             if self.host.is_none() {
                 st.cwd.get_or_insert_with(|| spawn.cwd.display().to_string());
@@ -2033,6 +2039,7 @@ impl State {
             st.busy = false;
             st.at_prompt = false;
             st.exited = Some(code);
+            st.exited_at = Some(st.end);
             (st.current.is_some(), st.end)
         };
         if pending {
