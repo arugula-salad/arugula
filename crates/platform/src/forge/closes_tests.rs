@@ -22,14 +22,14 @@ use crate::{
 };
 
 /// A PR of acme/site (repo 88) as GitHub sends it at second `at` of the hour.
-struct Pr<'a> {
-    number: u64,
-    title: &'a str,
-    body: &'a str,
-    branch: &'a str,
+pub(super) struct Pr<'a> {
+    pub(super) number: u64,
+    pub(super) title: &'a str,
+    pub(super) body: &'a str,
+    pub(super) branch: &'a str,
 }
 
-fn pr<'a>(number: u64, title: &'a str, body: &'a str) -> Pr<'a> {
+pub(super) fn pr<'a>(number: u64, title: &'a str, body: &'a str) -> Pr<'a> {
     Pr { number, title, body, branch: "chore/x" }
 }
 
@@ -52,7 +52,7 @@ fn payload(action: &str, pr: &Pr<'_>, at: u32, merged: bool, sender: (&str, u64)
 }
 
 /// A webhook as the mirror and then the closer see it.
-async fn deliver(app: &Platform, action: &str, pr: &Pr<'_>, at: u32, merged: bool, sender: (&str, u64)) {
+pub(super) async fn deliver(app: &Platform, action: &str, pr: &Pr<'_>, at: u32, merged: bool, sender: (&str, u64)) {
     let v = payload(action, pr, at, merged, sender);
     crate::forge::ingest::webhook(app, "pull_request", "d", &v, Instant::now());
     closes::webhook(app, "pull_request", &v).await;
@@ -64,17 +64,17 @@ async fn open_and_merge(app: &Platform, pr: &Pr<'_>, sender: (&str, u64)) {
     deliver(app, "closed", pr, 10, true, sender).await;
 }
 
-const BOB: (&str, u64) = ("bob-gh", 1002);
+pub(super) const BOB: (&str, u64) = ("bob-gh", 1002);
 
 fn closed_events(app: &Platform, issue: &str) -> Vec<Event> {
     app.db.issue_events(issue).unwrap().into_iter().filter(|e| e.kind.as_str() == "closed").collect()
 }
 
-fn mirror_bodies(app: &Platform) {
+pub(super) fn mirror_bodies(app: &Platform) {
     app.db.c().execute("UPDATE linked_repos SET mirror_content = ?1 WHERE repo_id = 88", params![true]).unwrap();
 }
 
-fn pr_id(app: &Platform, number: u64) -> String {
+pub(super) fn pr_id(app: &Platform, number: u64) -> String {
     app.db
         .c()
         .query_row("SELECT id FROM forge_items WHERE repo_id = 88 AND number = ?1", params![number], |r| r.get(0))

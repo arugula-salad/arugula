@@ -370,7 +370,10 @@ pub async fn report(app: &Platform, m: &HostedMachine, r: &Report) -> Result<Rep
 /// claims every kind.
 pub fn start(app: &Arc<Platform>) {
     let ticks = crate::triggers::schedule::Ticks { gate: Arc::new(crate::triggers::Members(app.clone())) };
-    let worker = crate::jobs::Worker::new().with(Dispatch { app: app.clone() }).with(ticks);
+    let worker = crate::jobs::Worker::new()
+        .with(Dispatch { app: app.clone() })
+        .with(ticks)
+        .with(crate::trackers::done::Moves { app: app.clone() });
     crate::jobs::start(app.clone(), crate::features::jobs(app, worker));
 }
 

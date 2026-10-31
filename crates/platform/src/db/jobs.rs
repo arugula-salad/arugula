@@ -80,11 +80,13 @@ pub enum JobKind {
     Schedule,
     /// An agent session's (M254): it follows the session while it lives.
     Session,
+    /// A merged PR's move of a Plane item to Done (#437).
+    PlaneDone,
 }
 
 impl JobKind {
-    pub const ALL: [JobKind; 5] =
-        [JobKind::Workspace, JobKind::Run, JobKind::Deploy, JobKind::Schedule, JobKind::Session];
+    pub const ALL: [JobKind; 6] =
+        [JobKind::Workspace, JobKind::Run, JobKind::Deploy, JobKind::Schedule, JobKind::Session, JobKind::PlaneDone];
 
     pub fn as_str(self) -> &'static str {
         match self {
@@ -93,6 +95,7 @@ impl JobKind {
             JobKind::Deploy => "deploy",
             JobKind::Schedule => "schedule",
             JobKind::Session => "session",
+            JobKind::PlaneDone => "plane_done",
         }
     }
 
@@ -616,7 +619,7 @@ fn end_work_in(tx: &impl Sql, id: &str, kind: JobKind, why: &str, now: u64) -> R
                 let _ = move_session_in(tx, id, &Move::Control { from, to: State::Failed, at: now, detail: &detail })?;
             }
         }
-        JobKind::Workspace | JobKind::Schedule => {}
+        JobKind::Workspace | JobKind::Schedule | JobKind::PlaneDone => {}
     }
     Ok(())
 }

@@ -285,6 +285,16 @@ fn platform(db: Db, hub: &Arc<TestHub>, api: &str) -> Arc<Platform> {
 }
 
 fn platform_with(db: Db, hub: &Arc<TestHub>, api: &str, settings: Settings) -> Arc<Platform> {
+    platform_set(db, hub, api, settings, |_| ())
+}
+
+fn platform_set(
+    db: Db,
+    hub: &Arc<TestHub>,
+    api: &str,
+    settings: Settings,
+    set: impl FnOnce(&mut Platform),
+) -> Arc<Platform> {
     let cfg = crate::Config { public_url: "https://control.example".into(), ..Default::default() };
     let mut p = Platform::new(cfg, db, hub.clone(), reqwest::Client::new(), Default::default());
     // Event rules' makers (M214) are on the hosted beta's list.
@@ -292,6 +302,7 @@ fn platform_with(db: Db, hub: &Arc<TestHub>, api: &str, settings: Settings) -> A
     let mut app = GithubApp::new("1".into(), "arugula-test".into(), SECRET.into(), api, throwaway_key());
     app.ingest.settings = settings;
     p.github = Some(app);
+    set(&mut p);
     Arc::new(p)
 }
 
@@ -649,6 +660,65 @@ async fn the_poller_closes_the_issue_a_merged_pr_names() {
     let closed: Vec<_> = events.iter().filter(|e| e.kind.as_str() == "closed").collect();
     assert_eq!(closed.len(), 1, "{events:?}");
     assert_eq!(closed[0].detail, json!({ "reason": "completed", "pr": "acme/app#5" }));
+}
+
+/// A PR merged while the webhook was missed (Arugula #437): the poller's
+/// backfill reads it and queues the move of the Plane item its title names,
+/// and the queue's worker sends it to Done, once.
+#[tokio::test]
+async fn the_poller_moves_the_plane_item_a_merged_pr_names() {
+    use crate::{
+        jobs::Worker,
+        trackers::{
+            connect::ingest_page,
+            connect_tests::{KEY, plane},
+            done::Moves,
+        },
+    };
+    let (gh, api) = fake_github().await;
+    let hub = Arc::new(TestHub::default());
+    let mut fake = None;
+    let app = platform_set(Db::test(), &hub, &api, Settings::default(), |p| fake = Some(plane(p)));
+    let fake = fake.unwrap();
+    let t = now_ms();
+    link(&app, REPO, t);
+    let project = app.db.personal_project("alice", 1).unwrap();
+    app.db.c().execute("UPDATE linked_repos SET project_id = ?1 WHERE repo_id = ?2", params![project, REPO]).unwrap();
+    let new = crate::db::trackers::NewConnection {
+        id: "tc_1".into(),
+        project_id: project.clone(),
+        workspace_slug: "acme".into(),
+        source_project_id: "pl-proj-1".into(),
+        identifier: "ARUGU".into(),
+        name: "Arugula".into(),
+        linked_by: "alice".into(),
+    };
+    let c = app.db.connect_tracker(&new, 1).unwrap().unwrap();
+    let key = crate::secrets::SecretCipher::new(crate::trackers::connect_tests::MASTER).unwrap();
+    crate::keys::seal(&app.db, &key, &project, &crate::db::trackers::key_name(&c.id), KEY).unwrap();
+    let items = [crate::trackers::fake::item(2, "Second", "started", 2_000)];
+    ingest_page(&app, &c.id, c.mirror_id, None, &items, 3_000).unwrap();
+    {
+        let mut merged = pr(5, "ARUGU-2: poll", "closed", t, "abc");
+        merged["merged_at"] = json!(iso(t));
+        let mut unmerged = pr(6, "ARUGU-2: poll again", "closed", t, "def");
+        unmerged["merged_at"] = Value::Null;
+        let mut g = gh.lock().unwrap();
+        g.prs.insert(5, merged);
+        g.prs.insert(6, unmerged);
+    }
+    let turn = poller::tick(&app, t).await.unwrap();
+    assert!(matches!(turn, Some(poller::Turn::Done { backfill: true, .. })), "{turn:?}");
+    let jobs: Vec<String> =
+        app.db.c().query_map("SELECT id FROM platform_jobs WHERE kind = 'plane_done'", params![], |r| r.get(0)).unwrap();
+    assert_eq!(jobs.len(), 1, "one for the merged PR, none for the one closed unmerged: {jobs:?}");
+    assert!(fake.sent().is_empty());
+    let worker = Worker::new().with(Moves { app: app.clone() });
+    assert!(worker.tick(&app.db).await.unwrap());
+    assert!(!worker.tick(&app.db).await.unwrap());
+    let sent = fake.sent();
+    assert_eq!(sent.len(), 1, "{sent:?}");
+    assert_eq!((sent[0].item.as_deref(), sent[0].state.as_deref()), (Some("item-2"), Some("st-done")));
 }
 
 /// A newly linked repo is backfilled on its poller's first turn, with

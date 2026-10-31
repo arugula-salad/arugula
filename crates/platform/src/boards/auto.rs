@@ -19,7 +19,10 @@ use super::{
     changed,
     refs::{Refs, references},
 };
-use crate::{Platform, db::boards::PrText};
+use crate::{
+    Platform,
+    db::{boards::PrText, trackers::Connection},
+};
 
 /// The PRs of `repo` with these `numbers`, if it is linked to a project:
 /// each attached to the rows it names, and the boards that moved told.
@@ -50,15 +53,26 @@ pub fn auto_attach(app: &Platform, project: &str, pr: &PrText) {
     }
 }
 
-fn attach(app: &Platform, project: &str, pr: &PrText, refs: &Refs) -> anyhow::Result<Vec<String>> {
-    let mut plane = vec![];
-    if !refs.plane.is_empty() {
-        for c in app.db.tracker_connections(project)?.iter().filter(|c| c.unlinked_at.is_none()) {
-            for (_, n) in refs.plane.iter().filter(|(k, _)| k.eq_ignore_ascii_case(&c.identifier)) {
-                plane.push((c.mirror_id, *n));
-            }
+/// The Plane items among `named` (as (key, number)) that `project`'s live
+/// connections hold, each as its connection and number: a key matches a
+/// connection's identifier in any case. A board's attach and a merge's move to
+/// Done ([`crate::forge::closes`]) read the same mapping.
+pub fn plane_items(app: &Platform, project: &str, named: &[(String, u64)]) -> anyhow::Result<Vec<(Connection, u64)>> {
+    let mut items = vec![];
+    for c in app.db.tracker_connections(project)?.into_iter().filter(|c| c.unlinked_at.is_none()) {
+        for (_, n) in named.iter().filter(|(k, _)| k.eq_ignore_ascii_case(&c.identifier)) {
+            items.push((c.clone(), *n));
         }
     }
+    Ok(items)
+}
+
+fn attach(app: &Platform, project: &str, pr: &PrText, refs: &Refs) -> anyhow::Result<Vec<String>> {
+    let plane: Vec<(i64, u64)> = if refs.plane.is_empty() {
+        vec![]
+    } else {
+        plane_items(app, project, &refs.plane)?.into_iter().map(|(c, n)| (c.mirror_id, n)).collect()
+    };
     let done =
         app.db.auto_attach(project, &pr.id, pr.repo_id, refs, &plane, arugula_e2e::now_ms(), wire::ATTACHMENTS_MAX)?;
     let mut moved = done.attached;

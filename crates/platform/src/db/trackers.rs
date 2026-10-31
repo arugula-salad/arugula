@@ -454,6 +454,20 @@ impl Db {
             .optional()
     }
 
+    /// The state group the mirror holds for the tracker's item (`started`,
+    /// `completed`…): none if it isn't mirrored or has none.
+    pub fn tracker_item_group(&self, connection: &str, source_item: &str) -> Result<Option<String>> {
+        let group: Option<Option<String>> = self
+            .c()
+            .query_row(
+                "SELECT state_group FROM forge_items WHERE connection_id = ?1 AND source_item_id = ?2",
+                params![connection, source_item],
+                |r| r.get(0),
+            )
+            .optional()?;
+        Ok(group.flatten())
+    }
+
     /// The newest `updated_at` mirrored for a connection: where a reconcile
     /// reads from.
     pub fn tracker_newest(&self, mirror_id: i64) -> Result<Option<u64>> {

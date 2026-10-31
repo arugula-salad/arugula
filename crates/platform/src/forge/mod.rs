@@ -85,6 +85,8 @@ pub mod links_tests;
 pub mod ops;
 #[cfg(test)]
 mod ops_tests;
+#[cfg(test)]
+mod plane_done_tests;
 pub mod poller;
 #[cfg(test)]
 mod relations_tests;

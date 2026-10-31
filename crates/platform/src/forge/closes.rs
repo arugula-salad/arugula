@@ -1,9 +1,10 @@
-//! A merged PR closes the native issues it names (Arugula #432). The link a
+//! A merged PR closes the native issues it names (Arugula #432) and moves the
+//! Plane items it names to Done (#437). The link a
 //! PR makes is the one the boards already read ([`crate::boards::refs`],
 //! [`crate::boards::auto`]): `Arugula #N`, `Closes #N`, `(#N)` or a branch
 //! `feat/N-…` in its title, branch or body; and the issue of any row a person
 //! or an agent attached it to as work. Nobody writes a keyword or tends a
-//! board. `part of`, `refs` or `see` before `Arugula #N` only links.
+//! board. `part of`, `refs` or `see` before `Arugula #N` or `KEY-N` only links.
 //!
 //! It runs wherever the mirror learns of a PR: a webhook ([`webhook`]) and
 //! the poller's turns ([`merged`]). Only an issue of the project the PR's
@@ -13,6 +14,10 @@
 //! a redelivery or a second pass over the same PR adds nothing. It is closed
 //! as the person who merged the PR when they are in the project, else as the
 //! App; the event names the PR.
+//!
+//! A Plane item is not moved here: after the native closes, this queues a job
+//! for each ([`crate::trackers::done`]), so a slow or failing Plane never
+//! delays or fails the webhook, and the job retries and sends once.
 
 use arugula_e2e::now_ms;
 use serde_json::Value;
@@ -21,6 +26,7 @@ use tracing::warn;
 use crate::{
     Platform,
     boards::refs::{Refs, references},
+    trackers::done,
     db::{
         forge::MergedPr,
         issues::{Actor, CloseReason, Patch, State},
@@ -58,6 +64,9 @@ pub async fn merged(p: &Platform, repo: u64, numbers: &[u64]) {
     for pr in prs {
         if let Err(e) = close_for(p, &link.project_id, (repo, &link.full_name), &pr).await {
             warn!(repo, number = pr.number, error = format!("{e:#}"), "closing the issues a merged PR names");
+        }
+        if let Err(e) = queue_plane(p, &link.project_id, &link.full_name, &pr) {
+            warn!(repo, number = pr.number, error = format!("{e:#}"), "queueing the Plane items a merged PR names");
         }
     }
 }
@@ -98,8 +107,30 @@ async fn close_for(p: &Platform, project: &str, repo: (u64, &str), pr: &MergedPr
     Ok(())
 }
 
+/// A job for each Plane item of `project` that `pr` names plainly, to move it
+/// to Done. One job to a PR and item, so a redelivery or a second pass adds
+/// none.
+fn queue_plane(p: &Platform, project: &str, repo: &str, pr: &MergedPr) -> anyhow::Result<()> {
+    let refs = named_by(pr);
+    let closing: Vec<_> = refs.closing_plane().cloned().collect();
+    if closing.is_empty() {
+        return Ok(());
+    }
+    for (c, number) in crate::boards::auto::plane_items(p, project, &closing)? {
+        let to = done::Move {
+            project: project.to_owned(),
+            connection: c.id,
+            number,
+            pr: format!("{repo}#{}", pr.number),
+            merged_by: pr.merged_by,
+        };
+        done::queue(&p.db, &pr.id, &to)?;
+    }
+    Ok(())
+}
+
 /// The account of whoever merged (by GitHub's id), if they are in `project`.
-async fn merger(p: &Platform, project: &str, github: Option<u64>) -> Option<String> {
+pub(crate) async fn merger(p: &Platform, project: &str, github: Option<u64>) -> Option<String> {
     let account = p.hub.github_account(github?).await.ok().flatten()?;
     let project = p.db.issue_project(project).ok().flatten()?;
     let member = match (&project.account, &project.team) {
