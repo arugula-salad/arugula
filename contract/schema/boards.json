@@ -226,7 +226,6 @@
           "$ref": "#/$defs/Pointer"
         },
         "released": {
-          "default": false,
           "description": "A block that a newer agent took the row from (`take`): it is an\nearlier agent whatever it reports, and holds no claim.",
           "type": "boolean"
         },
