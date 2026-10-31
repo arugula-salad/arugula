@@ -121,6 +121,20 @@ device nobody trusted. Now:
   is a device the account trusts now and its `created` is within ten
   minutes of control's clock (`approval_ok`), on every path: a presigned
   enrollment, an approval, a machine's or the CLI's join, recovery codes.
+- Daemons and pages don't take `created` alone: each stamps every
+  certificate and revocation with the round of looking it first saw it
+  in (`arugula_e2e::checkpoint::drop_late`; rounds are counted in
+  `control.json` on a daemon and in the browser's storage on a page, not
+  read off a clock). A certificate first seen in a later round than the
+  revocation of the device that approved it doesn't count, whatever
+  `created` says. So once a machine or page has seen a device's removal,
+  that device's key can't approve anything new there by dating it
+  earlier. What a device approved before its removal arrives with the
+  removal or before it, and stays. This holds only where the removal was
+  seen first: a machine or page that receives a backdated certificate
+  together with the removal, or before it, judges it by `created`. What
+  was held before stamps were kept is let off once; a certificate first
+  supplied after that is judged like any.
 - Daemons and pages read only certificates signed by the key of the
   device they name as approver; any other is set aside before anything
   else, so it can't count against one that is. Since #761 a new browser is
@@ -218,14 +232,26 @@ device nobody trusted. Now:
     change only on top of a version that follows. If control's latest
     doesn't follow, the page shows the last one it checked and holds
     changes until control's does. The page keeps what it checked in
-    memory for as long as it's open; if the browser can't store it, the
-    page still checks rosters but signs no team change.
+    memory for as long as it's open. Certificates, removals and locks are
+    kept as one store per browser, and each look at them is one
+    transaction under a browser-wide lock (the Web Locks API): it reads the
+    store afresh, counts its round after the stored one and writes back
+    before another tab may look, so tabs never share a round or split a
+    removal from the certificate it rests on. What a look needs from
+    control is fetched before it takes the lock, each fetch given up after
+    15 seconds, so a slow answer doesn't hold up other tabs. If the browser has no such
+    lock, can't read or store what it checked, or finds it gone after this
+    browser kept it, the page keeps nothing from that look: it goes on with
+    what it held before (control's answer only on a first look), signs no
+    team change, and lists no one else's machines.
   - The first time a page sees a team, it checks the whole signed history
     from version 1, which the founder it pinned signs. A version before
     the latest may have been signed by a device removed since: the page
-    takes it if that device counted as of the version's date, and says so
-    in Teams. The latest version must be signed by a device that counts
-    now. Machines make no such allowance: a version signed by a device
+    takes it if that device counted as of the version's date and the page
+    hadn't seen its removal before this look, and says so in Teams. The
+    latest version must be signed by a device that counts now. Every
+    version is checked with the certificates the page holds for its
+    owners, the ones it fetched for history included. Machines make no such allowance: a version signed by a device
     removed since stops a machine's first look at that team.
   - When a member's root changes between the version the page held and
     the one it takes, Teams shows the old and new fingerprints until you
@@ -284,19 +310,35 @@ device nobody trusted. Now:
   a daemon keeps every revocation it has seen, for its own account, its
   team's members and the people it shares with, and a later answer from
   control can't take one away. A member's removals outlive their
-  membership: if they're let back into the team, those still count. A device a daemon holds as removed (and
+  membership: if they're let back into the team, those still count. An
+  owner's page keeps its own account's removals, its teams' members' and
+  those of people whose machines it lists the same way, in the browser.
+  A device a daemon holds as removed (and
   what that device approved after) can't count again: if control's
   certificates would let it back in, for instance by leaving out the
   certificate a revocation rests on, the daemon keeps the certificates
-  it had.
+  it had. If `control.json` can't be written, what a refresh found still
+  counts in memory, and every refresh tries to save it again until it
+  can.
 - **Accepted risk:** a malicious control can *withhold* a revocation from a
   daemon that hasn't seen it yet. Control can't add readers, but it can
   delay removing one. As with Tailnet Lock, this is written down rather
   than solved.
-- **Accepted risk:** whether a team is locked is control's word. A locked
-  team lets only its owners in; control can unlock it on a daemon, which
-  lets its editors and viewers back in with the roles the signed roster
-  gives them. It can't add anyone the roster doesn't list.
+- **A team's lock is signed** (`arugula team lock v1`: team, locked or
+  not, the roster version, when, and the signing device). An owner's page
+  signs it, control keeps the latest and hands it out with the plain
+  `locked` older machines read, and refuses one an owner didn't sign.
+  A machine takes a lock record only if a device of an owner in the roster
+  it holds signed it, against a version it has, and it's newer than the
+  record it holds (`arugula_e2e::checkpoint::take_lock`); a team's hosted
+  machines hold it too. Without one the team stays as the machine holds
+  it: control's plain word can lock a team (it can refuse service anyway),
+  never unlock it. Control writes a lock only if it's newer than the one
+  it holds, checked as it writes, and refuses one dated more than ten
+  minutes ahead of its clock. The owner's page shows and signs after the
+  lock it checked the same way, never control's word for it; with no
+  signed lock held, it says control claims the team is locked, not that
+  it is.
 
 **Recovery:**
 
@@ -969,7 +1011,7 @@ or whoever runs yours) does:
 |---|---|
 | relays and stores honestly | only your devices and the people you share with read them |
 | has its database or relay copied, or logs everything it sees | still unreadable: it holds certificates and ciphertext, never a private key |
-| turns malicious **after** your machines and devices are set up, without changing the page it serves | can't add a reader: daemons check every device against the root they pinned and every roster against the last one they checked, and keep every revocation they've seen. It can withhold revocations a machine hasn't seen yet, unlock a locked team, and refuse service |
+| turns malicious **after** your machines and devices are set up, without changing the page it serves | can't add a reader: daemons check every device against the root they pinned and every roster against the last one they checked, keep every revocation they've seen, and refuse a certificate first seen after its approver's removal; a team's lock changes only by an owner's signed word. It can withhold revocations and lock changes a machine hasn't seen yet, lock a team, and refuse service |
 | lies at **join** about which account a machine joins | refused by the machine: the approving device's answer to the secret in its link doesn't match (an older daemon or CLI: caught by the account fingerprint, if you compare it) |
 | lies about which account a **new browser or phone** is approved into | refused by that device: the approving device's answer to the code it showed doesn't match (approved from a page from before codes: it shows the account fingerprint to check) |
 | lies about who **@name** is when you share with them | believed on the first share unless you verify them; after that the share stops, saying their key changed |
@@ -1763,7 +1805,7 @@ Every table is listed in `crates/control/tables.toml`, and a test fails when one
 | `settings` | **plaintext** | Control's own VAPID key pair, which signs the pushes it sends, and its hosted key (M178), which signs the hosted machines enrolled under a project's delegation. | nothing of one |  |
 | `notices` | metadata | A notice for an account with no push, made from names control holds ("Ada left Acme"). | yes |  |
 | `labs_flags` | metadata | The Labs flags an account or a team turned on for its machines. | yes: a team's go when the team does. | PostHog |
-| `teams` | metadata | A team: its id, name, founder and founder's root, and whether it's locked. | partly: the teams it founded, or that nobody else is left in, go with it; the rest stay. | PostHog |
+| `teams` | metadata | A team: its id, name, founder and founder's root, whether it's locked, and the latest lock an owner signed. | partly: the teams it founded, or that nobody else is left in, go with it; the rest stay. | PostHog |
 | `rosters` | metadata | A team's signed roster, every version: who's in it and their roles. | partly: a disbanded team's go; in a team that stays, it's in the signed roster until an owner signs a new one. |  |
 | `invites` | metadata | An Ask me first invite: a hash of its code, the team, the role, its expiry, the owner's signed invite. | yes |  |
 | `presigned_invites` | metadata | A one-time invite an owner's device signed, waiting to be used. | yes |  |

@@ -8,7 +8,7 @@ use arugula_control_wire::hosted;
 use arugula_e2e::{
     Cert, DeviceKeys, Kind, Trust,
     cert::verify_hex,
-    checkpoint::{kept, refresh_account},
+    checkpoint::{kept, refresh_account, take_lock},
     hosted::{Owner, Owners},
 };
 use tracing::warn;
@@ -39,6 +39,8 @@ pub fn saved_from(got: hosted::Enrollment, keys: &DeviceKeys, prev: Option<&Save
         trust,
         account_certs,
         account_revocations,
+        locked: got_locked,
+        lock: got_lock,
         legacy_app_children,
         purpose,
     } = got;
@@ -62,75 +64,91 @@ pub fn saved_from(got: hosted::Enrollment, keys: &DeviceKeys, prev: Option<&Save
     // leaving one out mustn't let a removed device count again.
     let revocations =
         kept(revocations, prev.and_then(|p| p.hosted.as_ref()).map_or(&[][..], |h| h.revocations.as_slice()));
-    let (account, trust, own_certs, own_revocations, team, roster, team_certs, former_members) = match delegation
-        .owner()
-    {
-        Some(Owner::Team(id)) => {
-            let pin = team.context("a team's project came without its team")?;
-            ensure!(pin.team == id, "the project's team isn't the delegation's");
-            let mut r = roster.context("a team's project came without its roster")?;
-            // Each member's removed devices, as the box last held them, stay
-            // removed (members taken out since included), checked from the
-            // root the roster held names; a member control leaves out keeps
-            // them for later. Before the roster's checked, so a removed
-            // device can't sign it.
-            let held_roster = prev.and_then(|p| p.roster.as_ref());
-            let none = Default::default();
-            let mut former = prev.map(|p| p.former_members.clone()).unwrap_or_default();
-            let mut certs = take_members(prev.map_or(&none, |p| &p.team_certs), held_roster, &former, certs);
-            if let Some(p) = prev {
-                ensure!(p.team.as_ref() == Some(&pin), "control changed this machine's team");
-                if let Some(last) = &p.roster
-                    && r != *last
-                    && !r.follows(Some(last), &pin, &certs)
-                {
-                    warn!(
-                        version = r.version,
-                        "hosted: a team roster from control doesn't check out; keeping the last"
-                    );
-                    r = last.clone();
-                }
-            }
-            ensure!(r.team == pin.team && r.well_formed(), "the team's roster isn't well formed");
-            ensure!(
-                delegation.signed_for(&Owners::Team { roster: &r, certs: &certs }),
-                "the delegation isn't signed by an owner of the team"
-            );
-            retire_members(held_roster, Some(&r), &mut certs, &mut former);
-            let trust = Trust { account: pin.founder.clone(), root: pin.founder_root.clone() };
-            (pin.founder.clone(), trust, vec![], vec![], Some(pin), Some(r), certs, former)
-        }
-        Some(Owner::Account(id)) => {
-            let t = trust.context("an account's project came without its account")?;
-            ensure!(t.account == id, "the project's account isn't the delegation's");
-            if let Some(p) = prev {
-                ensure!(p.trust.root == t.root, "control changed the account's root");
-            }
-            let (account_certs, account_revocations) = match prev {
-                Some(p) => {
-                    let (c, r, refused) =
-                        refresh_account(&t, (account_certs, account_revocations), (&p.certs, &p.revocations));
-                    if refused {
+    // When this box first saw each certificate and removal it holds.
+    let mut seen = prev.map(|p| p.seen.clone()).unwrap_or_default();
+    let now = seen.next();
+    let (account, trust, own_certs, own_revocations, team, roster, team_certs, former_members, (locked, lock)) =
+        match delegation.owner() {
+            Some(Owner::Team(id)) => {
+                let pin = team.context("a team's project came without its team")?;
+                ensure!(pin.team == id, "the project's team isn't the delegation's");
+                let mut r = roster.context("a team's project came without its roster")?;
+                // Each member's removed devices, as the box last held them, stay
+                // removed (members taken out since included), checked from the
+                // root the roster held names; a member control leaves out keeps
+                // them for later. Before the roster's checked, so a removed
+                // device can't sign it.
+                let held_roster = prev.and_then(|p| p.roster.as_ref());
+                let none = Default::default();
+                let mut former = prev.map(|p| p.former_members.clone()).unwrap_or_default();
+                let mut certs =
+                    take_members(prev.map_or(&none, |p| &p.team_certs), held_roster, &former, certs, &mut seen, now);
+                if let Some(p) = prev {
+                    ensure!(p.team.as_ref() == Some(&pin), "control changed this machine's team");
+                    if let Some(last) = &p.roster
+                        && r != *last
+                        && !r.follows(Some(last), &pin, &certs)
+                    {
                         warn!(
-                            "hosted: the account's certificates would let a removed device back in; keeping the last"
+                            version = r.version,
+                            "hosted: a team roster from control doesn't check out; keeping the last"
                         );
+                        r = last.clone();
                     }
-                    (c, r)
                 }
-                None => (account_certs, account_revocations),
-            };
-            ensure!(
-                delegation.signed_for(&Owners::Account {
-                    trust: &t,
-                    certs: &account_certs,
-                    revocations: &account_revocations
-                }),
-                "the delegation isn't signed by the account's device"
-            );
-            (id, t, account_certs, account_revocations, None, None, Default::default(), Default::default())
-        }
-        None => anyhow::bail!("the delegation names no owner"),
-    };
+                ensure!(r.team == pin.team && r.well_formed(), "the team's roster isn't well formed");
+                ensure!(
+                    delegation.signed_for(&Owners::Team { roster: &r, certs: &certs }),
+                    "the delegation isn't signed by an owner of the team"
+                );
+                retire_members(held_roster, Some(&r), &mut certs, &mut former);
+                let trust = Trust { account: pin.founder.clone(), root: pin.founder_root.clone() };
+                // Locked or not as an owner's newer signed word says; control
+                // alone can lock it, never unlock it (`take_lock`).
+                let held_lock = prev.map_or((false, None), |p| (p.locked, p.lock.as_ref()));
+                let lock = take_lock(held_lock, got_lock, got_locked, Some(&r), &certs);
+                (pin.founder.clone(), trust, vec![], vec![], Some(pin), Some(r), certs, former, lock)
+            }
+            Some(Owner::Account(id)) => {
+                let t = trust.context("an account's project came without its account")?;
+                ensure!(t.account == id, "the project's account isn't the delegation's");
+                if let Some(p) = prev {
+                    ensure!(p.trust.root == t.root, "control changed the account's root");
+                }
+                let (account_certs, account_revocations) = match prev {
+                    Some(p) => {
+                        let (c, r, refused) = refresh_account(
+                            &t,
+                            (account_certs, account_revocations),
+                            (&p.certs, &p.revocations),
+                            &mut seen,
+                            now,
+                        );
+                        if refused {
+                            warn!(
+                                "hosted: the account's certificates would let a removed device back in; keeping the last"
+                            );
+                        }
+                        (c, r)
+                    }
+                    None => {
+                        arugula_e2e::checkpoint::stamp(&mut seen, &account_certs, &account_revocations, now);
+                        (account_certs, account_revocations)
+                    }
+                };
+                ensure!(
+                    delegation.signed_for(&Owners::Account {
+                        trust: &t,
+                        certs: &account_certs,
+                        revocations: &account_revocations
+                    }),
+                    "the delegation isn't signed by the account's device"
+                );
+                let none = (false, None);
+                (id, t, account_certs, account_revocations, None, None, Default::default(), Default::default(), none)
+            }
+            None => anyhow::bail!("the delegation names no owner"),
+        };
     // What grandfathered app windows approved (M219's `check_apply`): the
     // first set control sends is pinned, and every later one only takes
     // from it (what both say), never adds; one control doesn't send keeps
@@ -170,7 +188,7 @@ pub fn saved_from(got: hosted::Enrollment, keys: &DeviceKeys, prev: Option<&Save
         approver: String::new(),
         sig: cert.sig.clone(),
     };
-    Ok(Saved {
+    let mut out = Saved {
         url: url.trim_end_matches('/').to_owned(),
         trust,
         cert: own,
@@ -181,7 +199,9 @@ pub fn saved_from(got: hosted::Enrollment, keys: &DeviceKeys, prev: Option<&Save
         team_certs,
         former_members,
         team_names: Default::default(),
-        locked: false,
+        locked,
+        lock,
+        seen,
         peers: Default::default(),
         shared_teams: Default::default(),
         held_teams: Default::default(),
@@ -200,7 +220,10 @@ pub fn saved_from(got: hosted::Enrollment, keys: &DeviceKeys, prev: Option<&Save
                 || prev.and_then(|p| p.hosted.as_ref()).is_some_and(|h| h.builder),
             legacy_app_children,
         }),
-    })
+    };
+    crate::control::prune_seen(&mut out);
+    out.seen.settle(now);
+    Ok(out)
 }
 
 #[cfg(test)]
@@ -239,6 +262,8 @@ mod tests {
             trust: Some(Trust { account: "acct1".into(), root: root.id() }),
             account_certs: vec![root_cert],
             account_revocations: vec![],
+            locked: false,
+            lock: None,
             legacy_app_children: None,
             purpose: None,
         };
@@ -441,6 +466,8 @@ mod tests {
             trust: None,
             account_certs: vec![],
             account_revocations: vec![],
+            locked: false,
+            lock: None,
             legacy_app_children: None,
             purpose: None,
         };
@@ -512,6 +539,35 @@ mod tests {
         let third = saved_from(back, &keys, Some(&second)).unwrap();
         assert!(third.roster.as_ref().unwrap().member("e").is_some());
         assert!(!has_phone(&third), "a removal from before e left counts again");
+    }
+
+    /// A team's hosted machine holds the team's lock as ordinary team
+    /// machines do: an owner's signed word locks it, and control alone
+    /// can't unlock it, nor can an editor's word.
+    #[test]
+    fn a_hosted_machine_holds_its_teams_lock() {
+        use arugula_e2e::team::TeamLock;
+        let keys = DeviceKeys::generate();
+        let Team { got, o, e, .. } = team(&keys);
+        let lock = |locked, at, by: &DeviceKeys| {
+            let mut l = TeamLock { team: "t1".into(), locked, version: 1, at, by: String::new(), sig: String::new() };
+            l.sign_with(by);
+            l
+        };
+        let first = saved_from(got.clone(), &keys, None).unwrap();
+        assert!(!first.locked);
+        let mut locked = got.clone();
+        (locked.locked, locked.lock) = (true, Some(lock(true, 10, &o)));
+        let second = saved_from(locked, &keys, Some(&first)).unwrap();
+        assert!(second.locked, "an owner's lock");
+        let third = saved_from(got.clone(), &keys, Some(&second)).unwrap();
+        assert!(third.locked, "control unlocked it by its plain word");
+        let mut by_editor = got.clone();
+        by_editor.lock = Some(lock(false, 20, &e));
+        assert!(saved_from(by_editor, &keys, Some(&third)).unwrap().locked, "an editor unlocked it");
+        let mut by_owner = got.clone();
+        by_owner.lock = Some(lock(false, 20, &o));
+        assert!(!saved_from(by_owner, &keys, Some(&third)).unwrap().locked, "an owner's newer unlock");
     }
 
     #[test]
