@@ -345,6 +345,8 @@ test("/boards lists every project's boards by project, folded under Done the sam
     await expect(page.locator("[data-boards-stats]")).toHaveText("0 open1 done");
     await acme.locator("[data-boards-done] summary").click();
     await expect(acme.locator("[data-board-link]")).toContainText("Launch");
+    // A board's title in a list is its link.
+    await expect(acme.locator("a[data-board-link]")).toHaveAttribute("href", /\/boards\/brd_[0-9a-f]+/);
     await expect(acme.locator("[data-boards-done] li.board-card.sw-card.sw-muted")).toContainText("Done");
     expect(await p.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
   }
@@ -445,6 +447,16 @@ test("a board's cards carry their lane's tone, its groups are managed on the pag
   const card = row(alice, SHIPPED);
   await expect(zone(alice, "Done").locator(card)).toHaveClass(/\bsw-card\b.*\bsw-ok\b/);
   await expect(card.locator(".chip")).toContainText(/closed/i);
+  // Its title is the issue's page, and its `#N` is dim text, not a link.
+  await expect(card.locator("[data-board-title]")).toHaveAttribute("href", /\/issues\/iss_[0-9a-f]+$/);
+  await expect(card.locator("[data-board-ptr]")).toHaveText(/^#\d+$/);
+  await expect(card.locator("a[data-board-ptr]")).toHaveCount(0);
+  // A click on the title follows the link and doesn't open the drawer.
+  await card.locator("[data-board-title]").click();
+  await expect(alice).toHaveURL(/\/issues\/iss_/);
+  await platform(alice, managed);
+  await expect(card).toBeVisible({ timeout: 15_000 });
+  await expect(alice.locator("[data-board-drawer]")).toHaveCount(0);
   await expect(row(alice, OPEN)).toHaveClass(/\bsw-accent\b/);
   await expect(card.locator(".sw-chip")).toContainText("example.com/branch");
   await expect(alice.locator("[data-board-stats]")).toContainText("1 done");
@@ -552,11 +564,32 @@ test("a card's title opens the drawer with the item's body, its comments and the
   await expect(card).not.toContainText("feat/lexer");
   // The chip opens the agent's pane, on control's page (the platform page has no panes of its own).
   await expect(working.locator("[data-board-block-open]")).toHaveAttribute("href", /\/#pane=mch_0123\.640$/);
-  // A modified click follows the link (a new tab), and leaves the board alone.
-  const [tab] = await Promise.all([alice.context().waitForEvent("page"), card.locator("[data-board-open]").click({ modifiers: ["Shift"] })]);
+  // The title is the item's link (here a PR on GitHub, in a new tab), and `#N` is plain text: clicking the title leaves the board alone.
+  const title = card.locator("[data-board-title]");
+  await expect(title).toHaveAttribute("href", "https://github.com/acme/app/pull/7");
+  await expect(card.locator("[data-board-ptr]")).toHaveText("acme/app#7");
+  await expect(card.locator("a[data-board-ptr]")).toHaveCount(0);
+  const [tab] = await Promise.all([alice.context().waitForEvent("page"), title.click()]);
   await tab.close();
   await expect(alice.locator("[data-board-drawer]")).toHaveCount(0);
-  await card.locator("[data-board-open]").click();
+  // Details in the row's menu opens the drawer; so does the card's empty space (its corner, here), and Enter on the focused card.
+  await card.locator("[data-board-row-menu]").click();
+  await alice.getByRole("menuitem", { name: "Details" }).click();
+  await expect(alice.locator("[data-board-drawer]")).toHaveCount(1);
+  await expect(alice.locator("[data-board-drawer]")).toBeFocused();
+  await alice.keyboard.press("Escape");
+  await expect(alice.locator("[data-board-drawer]")).toHaveCount(0);
+  await card.focus();
+  await alice.keyboard.press("Enter");
+  await expect(alice.locator("[data-board-drawer]")).toHaveCount(1);
+  await expect(alice.locator("[data-board-drawer]")).toBeFocused();
+  await alice.keyboard.press("Escape");
+  await expect(alice.locator("[data-board-drawer]")).toHaveCount(0);
+  // A click on a chip is the chip's, not the card's.
+  const [pane] = await Promise.all([alice.context().waitForEvent("page"), card.locator("[data-board-block-open]").first().click()]);
+  await pane.close();
+  await expect(alice.locator("[data-board-drawer]")).toHaveCount(0);
+  await card.click({ position: { x: 6, y: 6 } });
   const drawer = alice.locator("[data-board-drawer]");
   await expect(drawer.locator("[data-board-drawer-title]")).toHaveText(SHIPPED);
   await expect(drawer.locator("[data-board-drawer-body]")).toHaveText("The PR body, from GitHub.");
@@ -572,7 +605,7 @@ test("a card's title opens the drawer with the item's body, its comments and the
   // An item the reader may not read here has no body to show: the drawer says to open it on GitHub.
   await alice.unroute(/\/api\/forge\/items\/fi_[0-9a-f]+\/content$/);
   await alice.route(/\/api\/forge\/items\/fi_[0-9a-f]+\/content$/, (route) => route.fulfill({ status: 404, json: { error: "not found" } }));
-  await card.locator("[data-board-open]").click();
+  await card.click({ position: { x: 6, y: 6 } });
   await expect(drawer.locator("[data-board-drawer-body] a")).toHaveText("Open on GitHub");
   await expect(drawer.locator("[data-board-drawer-comments]")).toHaveCount(0);
   await expect(drawer.locator('[data-board-check="lint"]')).toContainText("failure");
@@ -596,7 +629,7 @@ test("a native issue's drawer shows its body, and a viewer on a phone has the dr
   await expect(bob.getByRole("menuitem", { name: "Move to group…" })).toHaveCount(0);
   await bob.keyboard.press("Escape");
   expect(await bob.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
-  await row(bob, OPEN).locator("[data-board-open]").click();
+  await row(bob, OPEN).click({ position: { x: 6, y: 6 } });
   const drawer = bob.locator("[data-board-drawer]");
   await expect(drawer).toBeVisible();
   await expect(drawer.locator("[data-board-drawer-body]")).toHaveText(BODY, { timeout: 15_000 });

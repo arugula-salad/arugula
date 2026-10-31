@@ -615,7 +615,7 @@
 
 /* The row's title is about the Issues list's row title: clearly the title by weight and colour, small enough for more rows to fit. */
 .board .board-card-name {
-  flex: 1;
+  flex: 0 1 auto;
   font-size: 14px;
   line-height: 1.35;
   min-width: 0;
@@ -625,8 +625,33 @@
   text-decoration: none;
 }
 
-.board .board-card-name:hover {
+/* The title is the item's link: it lights up as an Issues row's title does. The space after it is the card's, which opens the drawer. */
+.board a.board-card-name:hover,
+.board a.board-card-name:focus-visible,
+.board a.board-card-name:active {
   color: var(--accent);
+  text-decoration: underline;
+}
+
+.board-card-fill {
+  flex: 1 1 0;
+  min-width: 0;
+  align-self: stretch;
+}
+
+.board .board-card {
+  cursor: pointer;
+}
+
+.board .board-card a,
+.board .board-card button,
+.board .board-card summary {
+  cursor: pointer;
+}
+
+.board .board-sub .board-ptr {
+  color: var(--dim);
+  text-decoration: none;
 }
 
 .board-card-head .chip,

@@ -584,6 +584,7 @@ function Row({
   );
   const more = (e: MouseEvent) =>
     menuAt(e, [
+      { label: "Details", run: () => open(r.id) },
       { label: "Edit…", run: () => setEditing(r.id) },
       ...(groups.length
         ? [
@@ -599,16 +600,19 @@ function Row({
       "separator",
       { label: "Delete the row", danger: true, run: () => void act(() => boards.remove(id, r.id)) },
     ]);
-  // The title opens the drawer; a modified click or a middle click still follows the link.
-  const show = (e: MouseEvent) => {
-    if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
-    e.preventDefault();
+  // The card's empty space opens the drawer (Enter on the focused card too); its links, chips, buttons and forms do their own.
+  const body = (e: MouseEvent) => {
+    if (e.button !== 0 || (e.target as Element).closest("a, button, summary, input, textarea, select, form, details, .board-ask")) return;
+    if (window.getSelection()?.toString()) return;
     open(r.id);
+  };
+  const key = (e: KeyboardEvent) => {
+    if (e.key === "Enter" && e.target === e.currentTarget) (e.preventDefault(), open(r.id));
   };
   const title = card ? r.live!.title : label || "Note";
   const external = r.pointer.kind === "forge_item" || r.pointer.kind === "link";
   return (
-    <li class={`board-card sw-card sw-${tone}`} data-board-row={r.id} data-lane={r.lane} data-status={r.status} data-tone={tone} data-needs-you={r.ask?.mine ? "" : undefined}>
+    <li class={`board-card sw-card sw-${tone}`} data-board-row={r.id} data-lane={r.lane} data-status={r.status} data-tone={tone} data-needs-you={r.ask?.mine ? "" : undefined} tabIndex={editing ? undefined : 0} onClick={editing ? undefined : body} onKeyDown={editing ? undefined : key}>
       {editing ? (
         <RowForm
           project={project}
@@ -619,9 +623,16 @@ function Row({
       ) : (
         <div class="board-main">
           <div class="board-card-head board-line board-card-title">
-            <a class="board-card-name board-title" href={href ?? "#"} data-board-title data-board-open onClick={show}>
-              {title}
-            </a>
+            {href ? (
+              <a class="board-card-name board-title" href={href} target={external ? "_blank" : undefined} rel="noopener noreferrer" data-board-title data-board-item-link>
+                {title}
+              </a>
+            ) : (
+              <span class="board-card-name board-title" data-board-title>
+                {title}
+              </span>
+            )}
+            <span class="board-card-fill" />
             {r.live && (
               <StateChip tone={liveTone(r.live.state)} data-board-live={r.live.state}>
                 {liveWord(r.live)}
@@ -633,7 +644,7 @@ function Row({
             </button>
           </div>
           <div class="board-line board-sub dim">
-            {label && (href ? <a class="board-ptr" href={href} target={external ? "_blank" : undefined} rel="noopener noreferrer" data-board-ptr>{label}</a> : <span class="board-ptr" data-board-ptr>{label}</span>)}
+            {label && <span class="board-ptr" data-board-ptr>{label}</span>}
             {card && who && (
               <span class="board-who dim" data-board-who>
                 {who}
