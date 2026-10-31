@@ -50,7 +50,7 @@ jobs:
           ARUGULA_RED_HOURS: ${{ vars.ARUGULA_RED_HOURS || '6' }}
           ARUGULA_RED_MENTION: ${{ vars.ARUGULA_RED_MENTION }}
       # The scheduled workflows, which ci/green doesn't count: an issue
-      # each while its newest scheduled run is red.
+      # each until a scheduled run or newer manual validation is green.
       - run: scripts/ci-nightly-red
         if: ${{ !cancelled() }}
         env:

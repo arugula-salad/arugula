@@ -8,8 +8,8 @@
 #
 #   its newest scheduled run on main failed    open the issue, or comment
 #                                              on it once per failed run
-#   its newest scheduled run on main passed    comment that it's green and
-#                                              close the issue
+#   its newest scheduled run on main passed, or a newer manual run on the
+#     same or a descendant commit passed       comment and close the issue
 #
 # The workflows are its arguments (their files' names, without .yml), or
 # ARUGULA_NIGHTLIES. Reads and writes with gh (GH_TOKEN: actions: read,
@@ -23,20 +23,42 @@ read -r -a nightlies <<<"${*:-${ARUGULA_NIGHTLIES:-forges-nightly macos-vm macos
 errors=0
 for wf in "${nightlies[@]}"; do
   title="nightly is red: $wf"
-  # Its newest finished scheduled run on main: "ID CONCLUSION URL". One
+  # Its newest finished scheduled run on main: "ID CONCLUSION URL CREATED SHA". One
   # workflow gh can't read (renamed, or not on main yet) doesn't stop the
   # others; the job fails at the end.
   if ! run=$(gh run list -R "$repo" -w "$wf.yml" -b main -e schedule -s completed -L 1 \
-    --json databaseId,conclusion,url --jq '.[] | "\(.databaseId) \(.conclusion) \(.url)"'); then
+    --json databaseId,conclusion,url,createdAt,headSha \
+    --jq '.[] | "\(.databaseId) \(.conclusion) \(.url) \(.createdAt) \(.headSha)"'); then
     echo "$wf: couldn't list its runs" >&2
     errors=1
     continue
   fi
-  id='' conclusion='' url=''
-  read -r id conclusion url <<<"$run" || true
+  id='' conclusion='' url='' created='' sha=''
+  read -r id conclusion url created sha <<<"$run" || true
   if [ -z "$id" ]; then echo "$wf: no scheduled run yet"; continue; fi
   # Cancelled or skipped says nothing either way.
   case "$conclusion" in success|failure|timed_out|startup_failure) ;; *) echo "$wf: newest run $id $conclusion"; continue ;; esac
+
+  # A maintainer can validate a fix without waiting for the next schedule.
+  # Only main's newest completed manual run can clear the scheduled failure;
+  # a later invocation on old code must not dismiss it. ci-red.yml checks out
+  # main's full history, so ancestry is checked locally, without another API call.
+  if [ "$conclusion" != success ]; then
+    if manual=$(gh run list -R "$repo" -w "$wf.yml" -b main -e workflow_dispatch -s completed -L 1 \
+      --json conclusion,url,createdAt,headSha \
+      --jq '.[] | "\(.conclusion) \(.url) \(.createdAt) \(.headSha)"'); then
+      manual_conclusion='' manual_url='' manual_created='' manual_sha=''
+      read -r manual_conclusion manual_url manual_created manual_sha <<<"$manual" || true
+      if [ "$manual_conclusion" = success ] && [[ "$manual_created" > "$created" ]] &&
+        git merge-base --is-ancestor "$sha" "$manual_sha"; then
+        conclusion=success
+        url=$manual_url
+      fi
+    else
+      echo "$wf: couldn't list manual runs" >&2
+      errors=1
+    fi
+  fi
 
   issue='' state=''
   found=$(gh issue list -R "$repo" --state all --search "in:title \"$title\"" --limit 20 \
@@ -55,7 +77,7 @@ for wf in "${nightlies[@]}"; do
   fi
 
   news="- The scheduled run $url ended $conclusion."
-  footer="This is scripts/ci-nightly-red, every hour: it closes this when a scheduled $wf run passes."
+  footer="This is scripts/ci-nightly-red, every hour: it closes this when a scheduled $wf run passes, or a newer manual run on main passes on the same or a descendant commit."
   if [ "$state" = OPEN ]; then
     said=$(gh issue view "$issue" -R "$repo" --json body,comments --jq '.body, .comments[].body')
     if [[ "$said" == *"/runs/$id"* ]]; then echo "$wf: #$issue already names run $id"; continue; fi
