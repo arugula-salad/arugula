@@ -691,6 +691,7 @@ pub async fn tick(p: &Platform, now: u64) -> anyhow::Result<Option<Turn>> {
     let out = poll.run().await;
     // Whatever it wrote before it stopped, as a turn that ran out of pages did.
     crate::boards::auto::auto_attach_prs(p, repo, &poll.prs);
+    super::closes::merged(p, repo, &poll.prs).await;
     let (job, fixed, drift) = (poll.job, poll.fixed, poll.drift);
     gh.ingest.stats.drift(repo, now, drift);
     match out {

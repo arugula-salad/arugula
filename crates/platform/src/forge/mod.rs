@@ -59,6 +59,9 @@ mod app;
 mod auto_attach_tests;
 #[cfg(test)]
 mod boards_live_tests;
+pub mod closes;
+#[cfg(test)]
+mod closes_tests;
 pub mod content;
 #[cfg(test)]
 mod content_tests;

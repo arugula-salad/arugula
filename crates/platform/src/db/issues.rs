@@ -235,6 +235,10 @@ pub struct Patch<'a> {
     pub state: Option<State>,
     pub labels: Option<ListEdit<'a>>,
     pub assignees: Option<ListEdit<'a>>,
+    /// A merged PR (`owner/repo#123`) closing the issue: it closes an open
+    /// one only (never one closed already, for any reason, nor a reopened
+    /// one again), and the `closed` event names the PR.
+    pub by_pr: Option<&'a str>,
 }
 
 /// Which of a project's issues a list wants. Each that's set narrows it.
@@ -467,6 +471,9 @@ impl Db {
         else {
             return Ok(None);
         };
+        if p.by_pr.is_some() && old.state != State::Open {
+            return Ok(Some((old, vec![])));
+        }
         let mut new = old.clone();
         let mut events = Vec::new();
         let mut edited = serde_json::Map::new();
@@ -491,7 +498,11 @@ impl Db {
                 State::Closed(why) => {
                     // A closed one closed again for another reason keeps its time.
                     new.closed_at = old.closed_at.or(Some(at));
-                    events.push((EventKind::Closed, json!({ "reason": why.as_str() })));
+                    let mut detail = json!({ "reason": why.as_str() });
+                    if let Some(pr) = p.by_pr {
+                        detail["pr"] = pr.into();
+                    }
+                    events.push((EventKind::Closed, detail));
                 }
             }
         }

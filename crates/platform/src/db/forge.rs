@@ -24,6 +24,16 @@ use crate::{Deleted, forge::viewer::Readable};
 /// purge runs every few minutes, so a little under a day.
 pub const PURGE_GRACE_MS: u64 = 23 * 3600 * 1000;
 
+/// A merged PR as [`Db::merged_prs`] reads it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MergedPr {
+    pub number: u64,
+    pub title: String,
+    pub body: Option<String>,
+    /// The GitHub id of whoever merged it.
+    pub merged_by: Option<u64>,
+}
+
 /// A repo linked to a project, or unlinked and waiting for the purge.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LinkedRepo {
@@ -270,6 +280,32 @@ impl Db {
                 link_row,
             )
             .optional()
+    }
+
+    /// The merged PRs of `repo` among these `numbers`, as the issues they
+    /// close are read (Arugula #432): title, body when the content cache has
+    /// it, and GitHub's id for who merged it when a `merged` event says.
+    pub fn merged_prs(&self, repo_id: u64, numbers: &[u64]) -> anyhow::Result<Vec<MergedPr>> {
+        if numbers.is_empty() {
+            return Ok(vec![]);
+        }
+        // Numbers are the platform's own: written into the statement.
+        let nums = numbers.iter().map(u64::to_string).collect::<Vec<_>>().join(", ");
+        self.c().query_map(
+            &format!(
+                "SELECT i.number, i.title,
+                        (SELECT c.body FROM forge_content c
+                         WHERE c.repo_id = i.repo_id AND c.number = i.number AND c.kind = 'body'
+                         ORDER BY c.github_id LIMIT 1),
+                        (SELECT e.actor_id FROM forge_events e
+                         WHERE e.repo_id = i.repo_id AND e.number = i.number AND e.kind = 'merged'
+                         ORDER BY e.at DESC LIMIT 1)
+                 FROM forge_items i
+                 WHERE i.repo_id = ?1 AND i.kind = 'pr' AND i.state = 'merged' AND i.number IN ({nums})"
+            ),
+            params![repo_id],
+            |r| Ok(MergedPr { number: r.get(0)?, title: r.get(1)?, body: r.get(2)?, merged_by: r.get(3)? }),
+        )
     }
 
     /// A live link, by the repo's name (any case).
