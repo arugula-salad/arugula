@@ -20,6 +20,7 @@ import { BlockLoading } from "./block-states";
 import { openFile } from "./diff";
 import { workChip } from "../../shared/boards/text";
 import { platformHref } from "../platform-links";
+import { ContextStrip, type AgentContext } from "./agent-context";
 import { AskCard, headline, type Ask, type Question } from "../../shared/ask";
 import { pick, store } from "../upload";
 
@@ -122,6 +123,8 @@ export interface AgentState {
   /** The models the session offers, and the one it's on. */
   models?: { value: string; name: string; description: string | null }[];
   model?: string | null;
+  /** From the transcript (#397): null before it has said anything. */
+  context?: AgentContext | null;
 }
 
 interface Worn {
@@ -590,6 +593,7 @@ function AgentBlock({ client, id, s }: { client: Client; id: PaneId; s: AgentSta
           </span>
         )}
         <span class="agent-spacer" />
+        {s.context && <ContextStrip c={s.context} />}
         {s.cost && (
           <span class="agent-cost" title={`${s.turns} turns, ${s.tokens.total} tokens`}>
             {money(s.cost.total, s.cost.currency)}
