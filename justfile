@@ -850,6 +850,7 @@ macos cmd="tools" *args:
 # a release deploying the hub only when what it's built from changed; the
 # hosted template's supervision of arugulad (M258); its templates, one
 # per workspace size (M266); its tools for session users (Arugula #215);
+# binaries.yml's gate on pull requests that change CI (#304);
 # and the flaky tests' quarantine (.config/quarantine.toml): its script,
 # and last the manifest itself, which fails when an entry has no issue or
 # is past its `until`. Also the nvim key tips' `:help` tags, against a real
@@ -868,6 +869,7 @@ test-scripts:
     scripts/tests/hosted-supervisor.sh
     scripts/tests/hosted-template.sh
     scripts/tests/hosted-tools.sh
+    scripts/tests/ci-branch-run.sh
     node scripts/quarantine.mjs check
     scripts/check-nvim-tips
 

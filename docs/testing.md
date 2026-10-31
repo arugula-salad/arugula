@@ -118,7 +118,9 @@ pulls the test image from GHCR. Adding the `full-check` label to a pull
 request from a branch of this repository dispatches check.yml on that
 branch (`.github/workflows/full-check.yml`, the same as `gh workflow run
 check.yml --ref BRANCH`); a fork's pull request can't. To run it again,
-remove the label and add it back.
+remove the label and add it back. A pull request that changes CI needs
+such a run on its head commit, and binaries.yml's `ci-branch-run` job
+fails it until it has one (development.md, "Changing CI").
 
 A commit on main whose required checks all passed gets a `ci/green/<sha>`
 tag, and one that passed and then failed a re-run gets `ci/revoked/<sha>`

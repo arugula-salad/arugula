@@ -331,6 +331,20 @@ lints the daemon with neither, and with each alone.
   Run suites through `just`: a `cargo nextest run` of your own skips the
   lock.
 
+## Changing CI, and a red main
+
+- A pull request that changes `.github/`, the `justfile`,
+  `chant.workspace.json`, `.config/nextest.toml` or the CI scripts
+  (`scripts/ci-*`, `scripts/*-changed`, `scripts/changed`) needs a
+  passing check.yml run on its head commit before it merges. Add the
+  `full-check` label, and after another push remove it and add it again.
+  binaries.yml's `ci-branch-run` job fails the pull request until it has
+  one (docs/development.md, "Changing CI").
+- When main goes red and the same job fails again on its retry, revert
+  the commit that broke it within about 30 minutes and bring the change
+  back with its fix in a new pull request. Don't fix forward while others
+  land on top (docs/development.md, "When main goes red").
+
 ## Binaries
 
 No screenshots, recordings, builds or archives in the repo, on any branch:
