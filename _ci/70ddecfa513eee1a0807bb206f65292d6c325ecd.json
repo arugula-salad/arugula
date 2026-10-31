@@ -2,8 +2,8 @@
   "schema": 1,
   "commit": "70ddecfa513eee1a0807bb206f65292d6c325ecd",
   "branch": "main",
-  "state": "pending",
-  "at": "2026-10-31T06:58:56Z",
+  "state": "red",
+  "at": "2026-10-31T08:04:14Z",
   "phases": {
     "lint": {
       "verdict": "pending",
@@ -48,7 +48,7 @@
       ]
     },
     "test": {
-      "verdict": "pending",
+      "verdict": "fail",
       "build": "newest",
       "runs": [
         {
@@ -76,11 +76,10 @@
           "url": "https://github.com/arugula-salad/arugula/actions/runs/41176545548/job/124465204564"
         }
       ],
-      "reason": "retrying",
       "culprit": "baa6212bb48c173b7b2c8fbd348c19c752bd0e11"
     },
     "e2e": {
-      "verdict": "pending",
+      "verdict": "fail",
       "build": "newest",
       "runs": [
         {
@@ -155,8 +154,7 @@
           "conclusion": "failure",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/41176545548/job/124466337976"
         }
-      ],
-      "reason": "retrying"
+      ]
     },
     "claims": {
       "verdict": "pass",
@@ -183,7 +181,7 @@
       ]
     },
     "macos": {
-      "verdict": "pending",
+      "verdict": "fail",
       "build": "newest",
       "runs": [
         {
@@ -198,8 +196,7 @@
           "conclusion": "success",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/41176545548/job/124465204584"
         }
-      ],
-      "reason": "retrying"
+      ]
     },
     "windows": {
       "verdict": "unbuilt",
@@ -207,6 +204,15 @@
       "runs": [],
       "reason": "superseded",
       "coveredBy": "bc31ac2c57a2b4fe99360a1f6da6042cb79d759b"
+    }
+  },
+  "failure": {
+    "phase": "test",
+    "run": {
+      "name": "test-2",
+      "id": 124465204543,
+      "conclusion": "failure",
+      "url": "https://github.com/arugula-salad/arugula/actions/runs/41176545548/job/124465204543"
     }
   },
   "retried": {
@@ -230,14 +236,5 @@
       "run": 124465204651,
       "at": "2026-10-31T06:45:35Z"
     }
-  },
-  "request": {
-    "tag": "ci/build/70ddecfa513eee1a0807bb206f65292d6c325ecd",
-    "reason": "bisect",
-    "phases": [
-      "e2e"
-    ],
-    "at": "2026-10-31T06:25:02Z",
-    "dispatched": true
   }
 }

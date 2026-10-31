@@ -2,8 +2,8 @@
   "schema": 1,
   "commit": "ea92629360c76c4e2375ca13b505154752ac11ba",
   "branch": "main",
-  "state": "unbuilt",
-  "at": "2026-10-31T06:33:58Z",
+  "state": "pending",
+  "at": "2026-10-31T08:04:14Z",
   "phases": {
     "lint": {
       "verdict": "unbuilt",
@@ -28,11 +28,10 @@
       "culprit": "baa6212bb48c173b7b2c8fbd348c19c752bd0e11"
     },
     "e2e": {
-      "verdict": "unbuilt",
+      "verdict": "pending",
       "build": "newest",
       "runs": [],
-      "reason": "superseded",
-      "coveredBy": "70ddecfa513eee1a0807bb206f65292d6c325ecd"
+      "reason": "requested"
     },
     "claims": {
       "verdict": "unbuilt",
@@ -55,5 +54,14 @@
       "reason": "superseded",
       "coveredBy": "bc31ac2c57a2b4fe99360a1f6da6042cb79d759b"
     }
+  },
+  "request": {
+    "tag": "ci/build/ea92629360c76c4e2375ca13b505154752ac11ba",
+    "reason": "bisect",
+    "phases": [
+      "e2e"
+    ],
+    "at": "2026-10-31T08:04:14Z",
+    "dispatched": true
   }
 }
