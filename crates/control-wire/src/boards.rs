@@ -1535,10 +1535,12 @@ impl Mark {
 }
 
 /// The words of a row's marks, with its closed blocks counted:
-/// `merged, not closed · after #1859 · earlier agents (2)`.
+/// `merged, not closed · after #1859 · earlier agents (2)`. `cancelled` is
+/// left out: the row's proof slot says it.
 pub fn marks_line(marks: &[Mark]) -> String {
     let earlier = marks.iter().filter(|m| matches!(m, Mark::Earlier { .. })).count();
-    let mut parts: Vec<String> = marks.iter().filter(|m| !matches!(m, Mark::Earlier { .. })).map(Mark::words).collect();
+    let said = |m: &&Mark| !matches!(m, Mark::Earlier { .. } | Mark::Cancelled);
+    let mut parts: Vec<String> = marks.iter().filter(said).map(Mark::words).collect();
     if earlier > 0 {
         parts.push(format!("earlier agents ({earlier})"));
     }
@@ -1577,8 +1579,9 @@ fn lane_text<'a>(out: &mut String, title: &str, rows: impl Iterator<Item = &'a R
         };
         *out += format!("{lead}{note}").trim_end();
         out.push('\n');
-        if !r.marks.is_empty() {
-            *out += &format!("      {}\n", fit(&marks_line(&r.marks), TEXT_WIDTH - 6));
+        let marks = marks_line(&r.marks);
+        if !marks.is_empty() {
+            *out += &format!("      {}\n", fit(&marks, TEXT_WIDTH - 6));
         }
         if let Some(b) = r.attachments.iter().find(|a| a.holds()).and_then(|a| a.block.as_ref()) {
             let who = b.title.as_deref().unwrap_or("an agent");
@@ -2002,6 +2005,13 @@ Done: People can sign up.
         assert!(text.contains("Fix login\n      merged, not closed · after #1859 · earlier agents (2)\n"), "{text}");
         assert_eq!(marks_line(&[Mark::Earlier { attachment: "a".into() }]), "earlier agents (1)");
         assert_eq!(marks_line(&[]), "");
+        // A cancelled row says so once, in its proof slot.
+        let mut c = row(Pointer::Issue { id: "iss_2".into() }, Lane::Done, "Dropped");
+        c.marks = vec![Mark::Cancelled];
+        let text = render(&view(lanes(vec![(Lane::Done, vec![c])])));
+        assert!(text.contains("[cancelled] Dropped"), "{text}");
+        assert_eq!(text.matches("cancelled").count(), 1, "{text}");
+        assert_eq!(marks_line(&[Mark::Cancelled, Mark::MergedNotClosed]), "merged, not closed");
     }
 
     /// With groups the text is a header for each group (with its progress)
