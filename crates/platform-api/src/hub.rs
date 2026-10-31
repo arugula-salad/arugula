@@ -324,6 +324,17 @@ pub trait HubPort: Send + Sync {
         Box::pin(async { anyhow::bail!("this hub doesn't check passkeys for the platform") })
     }
 
+    /// The account's passkey log (DK3, aru-126): every passkey added to or
+    /// removed from it, hash-chained, as the hub publishes it at
+    /// `GET /api/accounts/{id}/passkeys/log`. The platform checks a passkey's
+    /// assertion against it itself (`arugula_e2e::passkey::verify`), so a
+    /// stored approval's proof can be checked again with no verdict from the
+    /// hub. Empty for an account with none. A hub from before DK3 can't say.
+    fn passkey_log<'a>(&'a self, account: &'a str) -> BoxFuture<'a, HubResult<arugula_e2e::passkey::Log>> {
+        let _ = account;
+        Box::pin(async { anyhow::bail!("this hub doesn't publish passkey logs") })
+    }
+
     /// The products an account let sign it in or is linked to (M229), by
     /// product: its consent, and the product's user linked to it by numeric
     /// GitHub id, if any. Empty for an account with none, or that isn't

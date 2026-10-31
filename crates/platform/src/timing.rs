@@ -355,6 +355,9 @@ impl HubPort for Timed {
     ) -> BoxFuture<'a, HubResult<crate::hub::PasskeyVerdict>> {
         timed!(self.0.verify_passkey(account, challenge, assertion))
     }
+    fn passkey_log<'a>(&'a self, account: &'a str) -> BoxFuture<'a, HubResult<arugula_e2e::passkey::Log>> {
+        timed!(self.0.passkey_log(account))
+    }
     fn product_links<'a>(&'a self, account: &'a str) -> BoxFuture<'a, HubResult<Vec<crate::hub::ProductLink>>> {
         timed!(self.0.product_links(account))
     }

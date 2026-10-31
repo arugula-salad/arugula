@@ -612,6 +612,8 @@ fn routes() -> Routes {
         .route("/api/me/sessions/{id}/end", post(account::end_session))
         .route("/api/me/passkeys", get(account::passkeys))
         .route("/api/me/passkeys/{id}/remove", post(account::remove_passkey))
+        // DK3: an account's passkey log, for anyone checking an approval.
+        .route("/api/accounts/{id}/passkeys/log", get(passkey::log))
         .route("/api/me/github/unlink", post(github_link::unlink))
         .route("/api/me/email", get(account_email::get).post(account_email::set).delete(account_email::remove))
         .route("/api/me/reset", get(reset::status).post(reset::start))
@@ -1085,6 +1087,20 @@ async fn run(platforms: Box<dyn Platforms>) -> anyhow::Result<()> {
         .chain(also_urls.iter().map(String::as_str))
         .map(Site::new)
         .collect::<anyhow::Result<_>>()?;
+    // DK3: passkeys from before the passkey log go into it, once per
+    // account. Which site each was made at wasn't kept, so their RP is
+    // each of control's sites (the one whose hash an assertion carries is
+    // the passkey's).
+    let mut hosts: Vec<&str> = vec![];
+    for h in sites.iter().map(Site::host) {
+        if !hosts.contains(&h) {
+            hosts.push(h);
+        }
+    }
+    let backfilled = db.backfill_passkey_log(&hosts.join(" "), arugula_e2e::now_ms())?;
+    if backfilled > 0 {
+        info!(passkeys = backfilled, "passkeys from before the passkey log written into it");
+    }
     let block_domain = blocks::domain(a.block_domain.as_deref().unwrap_or(""), &sites)?;
     match &block_domain {
         Some(d) => info!(domain = %d, "blocks served at b-<key>.{d}"),

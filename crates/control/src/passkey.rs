@@ -21,9 +21,11 @@
 //! **Adding one to an account takes more than its session** (attestation
 //! is `none`, so a passkey made in software could claim to verify anyone):
 //! - an account with a passkey confirms with one of them: a `webauthn.get`
-//!   with user verification over a challenge that names the account and
-//!   the new passkey's id (`arugula add passkey v1`), asked for once the new
-//!   one is made (`/auth/passkey/register/step-up`);
+//!   with user verification over the new passkey's event in the account's
+//!   passkey log (DK3: SHA-256 of its body, `arugula passkey log v1`), asked
+//!   for once the new one is made (`/auth/passkey/register/step-up`, with
+//!   its attestation); the assertion is kept in the log as the event's
+//!   proof;
 //! - an account with none needs one of its browsers or phones (a browser
 //!   all the way back to its root) to sign for it, or a GitHub sign-in from
 //!   the last ten minutes ([`REAUTH_MS`]); the page says which device it is
@@ -39,6 +41,13 @@
 //!
 //! Every ceremony refuses one from inside another site's frame
 //! (`crossOrigin`, `topOrigin`).
+//!
+//! **The passkey log** (DK3, aru-126, `db::passkey_log`): every passkey
+//! added or removed is an event in its account's append-only, hash-chained
+//! log, which anyone may read (`GET /api/accounts/{id}/passkeys/log`).
+//! Every assertion here is checked against it with
+//! `arugula_e2e::passkey::verify`, the check the platform and boxes make
+//! with no call to the hub; the hub adds only the signature counter.
 
 use std::{
     collections::HashMap,
@@ -58,6 +67,8 @@ use ciborium::value::Value as Cbor;
 use serde::Deserialize;
 use serde_json::json;
 use sha2::{Digest, Sha256};
+
+use arugula_e2e::passkey::{Change, Draft, Event, Origins, Refusal};
 
 use crate::{
     ApiError, App, Site, auth,
@@ -89,10 +100,11 @@ enum Purpose {
         name: String,
     },
     Login,
-    /// One of `account`'s passkeys agreeing to add `credential` to it.
+    /// One of the account's passkeys agreeing to add a new one: the new
+    /// one's `added` event, made for its place in the log, which the
+    /// assertion signs and which goes in the log with it as its proof.
     AddPasskey {
-        account: String,
-        credential: String,
+        event: Box<Event>,
     },
 }
 
@@ -198,15 +210,6 @@ fn reauth() -> ApiError {
     )
 }
 
-/// The challenge an account's passkey signs to add `credential` to it: the
-/// hash of what it's for, so the assertion says so.
-fn add_passkey_challenge(account: &str, credential: &str) -> String {
-    let nonce = hex::encode(arugula_e2e::random::<16>());
-    B64.encode(Sha256::digest(
-        format!("arugula add passkey v1\naccount {account}\ncredential {credential}\nnonce {nonce}\n").as_bytes(),
-    ))
-}
-
 fn same_origin(app: &App, headers: &HeaderMap) -> Result<(), ApiError> {
     match headers.get(header::ORIGIN).and_then(|o| o.to_str().ok()) {
         Some(o) if o == app.cfg.site(headers).origin => Ok(()),
@@ -295,11 +298,17 @@ pub async fn register_start(
 pub struct StepUp {
     /// The new passkey's id (base64url, as `rawId`), made but not added.
     id: String,
+    /// Its attestation (base64url), for its key and AAGUID: they're in the
+    /// log event the step-up signs. A page from before DK3 doesn't send
+    /// it, and is asked to load again.
+    #[serde(rename = "attestationObject", default)]
+    attestation: Option<String>,
 }
 
-/// `POST /auth/passkey/register/step-up {id}`: for an account with
-/// passkeys, the `webauthn.get` options one of them signs to add the new
-/// one, `id`: a challenge naming the account and `id`, and the account's
+/// `POST /auth/passkey/register/step-up {id, attestationObject}`: for an
+/// account with passkeys, the `webauthn.get` options one of them signs to
+/// add the new one, `id`: a challenge that is the new passkey's `added`
+/// event in the account's log (SHA-256 of its body), and the account's
 /// passkeys to choose from.
 pub async fn register_step_up(
     State(app): State<Arc<App>>,
@@ -316,9 +325,16 @@ pub async fn register_step_up(
     if b.id.is_empty() || b.id.len() > 1024 || B64.decode(&b.id).is_err() || have.contains(&b.id) {
         return Err(bad("not a new passkey's id"));
     }
-    let challenge = add_passkey_challenge(&info.account, &b.id);
-    app.passkeys
-        .issue_as(challenge.clone(), Purpose::AddPasskey { account: info.account.clone(), credential: b.id.clone() });
+    let attestation =
+        b.attestation.as_deref().ok_or_else(|| bad("this page is out of date: load it again, then add the passkey"))?;
+    let site = app.cfg.site(&headers);
+    let made = attested(site, attestation)?;
+    if made.id != b.id {
+        return Err(bad("credential id mismatch"));
+    }
+    let event = app.db.passkey_next(made.draft(&info.account, site, "passkey"))?;
+    let challenge = event.challenge();
+    app.passkeys.issue_as(challenge.clone(), Purpose::AddPasskey { event: Box::new(event) });
     Ok(Json(json!({
         "challenge": challenge,
         "rpId": rp_id(app.cfg.site(&headers)),
@@ -496,34 +512,38 @@ pub async fn register_finish(State(app): State<Arc<App>>, headers: HeaderMap, Js
     }
 }
 
-async fn register(
-    app: &Arc<App>,
-    headers: &HeaderMap,
-    r: Registration,
-) -> Result<(String, Option<&'static str>, Option<header::HeaderValue>), ApiError> {
-    same_origin(app, headers)?;
-    let site = app.cfg.site(headers);
-    let (cd, _) = client_data(site, &r.client_data, "webauthn.create")?;
-    let Some(Purpose::Register { account, name }) = app.passkeys.take(&cd.challenge) else {
-        return Err(bad("that request expired; try again"));
-    };
-    // One more for a signed-in account: its own session still (not the
-    // desktop app's window), and confirmed: a browser or a phone of its
-    // signs, a passkey it has agrees, or (with neither) a fresh GitHub
-    // sign-in.
-    let added_by = match &account {
-        Some(a) => {
-            let (hash, info) = session_of(app, headers)
-                .filter(|(_, i)| i.account == *a)
-                .ok_or_else(|| err(StatusCode::UNAUTHORIZED, "sign in again"))?;
-            from_app(&info)?;
-            let device =
-                confirm_adding(app, site, a, &r.id, &cd.challenge, &info, r.step_up.as_ref(), r.device.as_ref())?;
-            Some((hash, info, device))
+/// A new passkey, as its attestation says: its id (base64url), its key
+/// (as [`cose_key`] gives it) and its authenticator's AAGUID (hex, zeros
+/// when it didn't say), checked as made for `site` with the person
+/// verified.
+struct Made {
+    id: String,
+    alg: i64,
+    public: Vec<u8>,
+    aaguid: String,
+}
+
+impl Made {
+    /// Its `added` event for `account`'s log, made for `site`'s RP now,
+    /// `by` this, not yet placed.
+    fn draft(&self, account: &str, site: &Site, by: &str) -> Draft {
+        Draft {
+            account: account.to_owned(),
+            event: Change::Added,
+            credential: self.id.clone(),
+            rp: rp_id(site).to_owned(),
+            alg: self.alg,
+            key: self.public.clone(),
+            aaguid: self.aaguid.clone(),
+            at: now_ms(),
+            by: by.to_owned(),
         }
-        None => None,
-    };
-    let att: Cbor = ciborium::from_reader(B64.decode(&r.attestation).map_err(|_| bad("bad attestation"))?.as_slice())
+    }
+}
+
+/// An attestation object (base64url) read for its new passkey.
+fn attested(site: &Site, attestation: &str) -> Result<Made, ApiError> {
+    let att: Cbor = ciborium::from_reader(B64.decode(attestation).map_err(|_| bad("bad attestation"))?.as_slice())
         .map_err(|_| bad("bad attestation"))?;
     let m = att.as_map().ok_or_else(|| bad("bad attestation"))?;
     let data = m
@@ -537,34 +557,78 @@ async fn register(
     }
     let id_len = u16::from_be_bytes([rest[16], rest[17]]) as usize;
     let cred_id = rest.get(18..18 + id_len).ok_or_else(|| bad("short credential"))?;
-    if B64.encode(cred_id) != r.id {
-        return Err(bad("credential id mismatch"));
-    }
     let key: Cbor = ciborium::from_reader(&rest[18 + id_len..]).map_err(|_| bad("bad credential key"))?;
     let (alg, public) = cose_key(&key)?;
-    let now = now_ms();
+    Ok(Made { id: B64.encode(cred_id), alg, public, aaguid: hex::encode(&rest[..16]) })
+}
+
+async fn register(
+    app: &Arc<App>,
+    headers: &HeaderMap,
+    r: Registration,
+) -> Result<(String, Option<&'static str>, Option<header::HeaderValue>), ApiError> {
+    same_origin(app, headers)?;
+    let site = app.cfg.site(headers);
+    let (cd, _) = client_data(site, &r.client_data, "webauthn.create")?;
+    let Some(Purpose::Register { account, name }) = app.passkeys.take(&cd.challenge) else {
+        return Err(bad("that request expired; try again"));
+    };
+    let made = attested(site, &r.attestation)?;
+    if made.id != r.id {
+        return Err(bad("credential id mismatch"));
+    }
+    // One more for a signed-in account: its own session still (not the
+    // desktop app's window), and confirmed: a browser or a phone of its
+    // signs, a passkey it has agrees, or (with neither) a fresh GitHub
+    // sign-in.
+    let added_by = match &account {
+        Some(a) => {
+            let (hash, info) = session_of(app, headers)
+                .filter(|(_, i)| i.account == *a)
+                .ok_or_else(|| err(StatusCode::UNAUTHORIZED, "sign in again"))?;
+            from_app(&info)?;
+            let vouch =
+                confirm_adding(app, site, a, &made, &cd.challenge, &info, r.step_up.as_ref(), r.device.as_ref())?;
+            Some((hash, info, vouch))
+        }
+        None => None,
+    };
     // Signed in: add it to the account. Not: it is a new account.
     let (account, cookie) = match account {
         Some(a) => (a, None),
         None => {
-            let a = app.db.account_for("passkey", &r.id, "", &auth::new_account_id(), now)?;
+            let a = app.db.account_for("passkey", &r.id, "", &auth::new_account_id(), now_ms())?;
             app.db.set_name(&a, &name)?;
             app.analytics.signed_in(&a, "passkey", true);
             (a.clone(), Some(auth::start_session(app, &a, auth::Via::Passkey)?))
         }
     };
-    app.db.add_passkey(&r.id, &account, alg, &public, now)?;
-    let aaguid = hex::encode(&rest[..16]);
-    let provider = provider(&aaguid);
+    // Into the account's passkey log (DK3), saying what let it in: a
+    // passkey's step-up (its proof, signed over this event, which must
+    // still be the next), or what the hub vouches for.
+    let logged = match added_by.as_ref().map(|(_, _, v)| v) {
+        Some(Vouch { proof: Some(event), .. }) => app.db.add_passkey_logged(&made.public, (**event).clone(), true)?,
+        Some(Vouch { device: Some(d), .. }) => app.db.add_passkey_logged(
+            &made.public,
+            made.draft(&account, site, &format!("device {d}")).after(None),
+            false,
+        )?,
+        Some(_) => app.db.add_passkey_logged(&made.public, made.draft(&account, site, "github").after(None), false)?,
+        None => app.db.add_passkey_logged(&made.public, made.draft(&account, site, "signup").after(None), false)?,
+    };
+    if logged.is_err() {
+        return Err(err(StatusCode::CONFLICT, "your passkeys changed while this one was being added: add it again"));
+    }
+    let provider = provider(&made.aaguid);
     app.db.note_passkey(&r.id, &crate::account::agent(headers), provider)?;
     if let Some(prf) = r.prf {
         app.db.passkey_prf(&r.id, prf)?;
     }
-    if let Some((hash, info, device)) = &added_by {
+    if let Some((hash, info, vouch)) = &added_by {
         // The device is the one that signed for it, not what the sign-in
         // said it is.
-        app.db.note_passkey_added(&r.id, device.as_deref(), &hash[..crate::account::SESSION_ID_LEN])?;
-        tell_devices(app, &account, device.as_deref(), info, provider);
+        app.db.note_passkey_added(&r.id, vouch.device.as_deref(), &hash[..crate::account::SESSION_ID_LEN])?;
+        tell_devices(app, &account, vouch.device.as_deref(), info, provider);
     }
     app.analytics.capture(
         &account,
@@ -574,24 +638,34 @@ async fn register(
     Ok((account, provider, cookie))
 }
 
-/// Adding `credential` to `account` (registered over `challenge`), which
-/// `info` is signed in to. A first passkey: one of its browsers or phones
-/// signs for it (`device`), or the session is a GitHub sign-in from the
-/// last ten minutes. One more: a passkey it has agrees (`step_up`: UV, over
-/// the challenge [`register_step_up`] made for this account and this
-/// credential), and with a browser or a phone, one of them signs too. The
-/// device that signed, if one did.
+/// What let a passkey be added to a signed-in account: the device of the
+/// account's that signed for it, if one did, and the step-up, if one
+/// agreed: its `added` event, signed (the proof), for its place in the log.
+/// Neither: a fresh GitHub sign-in.
+struct Vouch {
+    device: Option<String>,
+    proof: Option<Box<Event>>,
+}
+
+/// Adding `made` to `account` (registered over `challenge`), which `info`
+/// is signed in to. A first passkey: one of its browsers or phones signs
+/// for it (`device`), or the session is a GitHub sign-in from the last ten
+/// minutes. One more: a passkey it has agrees (`step_up`: UV, over the
+/// event [`register_step_up`] made for this account and this passkey, its
+/// key and AAGUID as made), and with a browser or a phone, one of them
+/// signs too.
 #[allow(clippy::too_many_arguments)]
 fn confirm_adding(
     app: &App,
     site: &Site,
     account: &str,
-    credential: &str,
+    made: &Made,
     challenge: &str,
     info: &SessionInfo,
     step_up: Option<&Assertion>,
     device: Option<&DeviceSig>,
-) -> Result<Option<String>, ApiError> {
+) -> Result<Vouch, ApiError> {
+    let credential = made.id.as_str();
     let browsers = browser_devices(app, account)?;
     let signed = match device {
         Some(d) => browsers.iter().find(|c| {
@@ -604,6 +678,7 @@ fn confirm_adding(
         }),
         None => None,
     };
+    let device = signed.map(|c| c.device.clone());
     let have = app.db.passkey_ids(account)?;
     // A first one: a browser or a phone signed for it, or the session is a
     // fresh GitHub sign-in.
@@ -611,7 +686,7 @@ fn confirm_adding(
         if signed.is_none() && !fresh_github(info) {
             return Err(reauth());
         }
-        return Ok(signed.map(|c| c.device.clone()));
+        return Ok(Vouch { device, proof: None });
     }
     if !browsers.is_empty() && signed.is_none() {
         return Err(refusal(
@@ -622,21 +697,29 @@ fn confirm_adding(
     }
     let no = || refusal(StatusCode::FORBIDDEN, "step_up", "confirm with one of your passkeys to add another");
     let a = step_up.ok_or_else(no)?;
-    let (cd, raw) = client_data(site, &a.client_data, "webauthn.get")?;
-    match app.passkeys.take(&cd.challenge) {
-        Some(Purpose::AddPasskey { account: for_account, credential: for_credential })
-            if for_account == account && for_credential == credential => {}
+    let (cd, _) = client_data(site, &a.client_data, "webauthn.get")?;
+    let event = match app.passkeys.take(&cd.challenge) {
+        Some(Purpose::AddPasskey { event })
+            if event.account == account
+                && event.credential == credential
+                && event.alg == made.alg
+                && event.key == B64.encode(&made.public)
+                && event.aaguid == made.aaguid
+                && event.rp == rp_id(site) =>
+        {
+            event
+        }
         _ => return Err(no()),
-    }
+    };
     if a.id == credential {
         return Err(no());
     }
-    let (pk, count) = asserted(app, site, a, &raw)?;
+    let (pk, count) = asserted(app, site, a, &cd.challenge)?;
     if pk.account != account {
         return Err(no());
     }
     app.db.passkey_used(&a.id, count, now_ms())?;
-    Ok(signed.map(|c| c.device.clone()))
+    Ok(Vouch { device, proof: Some(Box::new(event.with_proof(a.e2e()))) })
 }
 
 /// Every device of the account hears that a passkey was added: by the
@@ -708,11 +791,11 @@ pub async fn login_finish(State(app): State<Arc<App>>, headers: HeaderMap, Json(
 fn login(app: &Arc<App>, headers: &HeaderMap, a: Assertion) -> Result<(header::HeaderValue, Passkey), ApiError> {
     same_origin(app, headers)?;
     let site = app.cfg.site(headers);
-    let (cd, raw) = client_data(site, &a.client_data, "webauthn.get")?;
+    let (cd, _) = client_data(site, &a.client_data, "webauthn.get")?;
     if !matches!(app.passkeys.take(&cd.challenge), Some(Purpose::Login)) {
         return Err(bad("that request expired; try again"));
     }
-    let (pk, count) = asserted(app, site, &a, &raw)?;
+    let (pk, count) = asserted(app, site, &a, &cd.challenge)?;
     app.db.passkey_used(&a.id, count, now_ms())?;
     if a.prf {
         app.db.passkey_prf(&a.id, true)?;
@@ -721,98 +804,112 @@ fn login(app: &Arc<App>, headers: &HeaderMap, a: Assertion) -> Result<(header::H
     Ok((auth::start_session(app, &pk.account, via)?, pk))
 }
 
-/// A registered passkey's assertion (its client data `raw`, checked by the
-/// caller): the signature checks out with its key, the authenticator
-/// verified the person, and its counter didn't go backwards. The passkey,
-/// and the counter to keep.
-fn asserted(app: &App, site: &Site, a: &Assertion, raw: &[u8]) -> Result<(Passkey, u32), ApiError> {
+impl Assertion {
+    /// As the passkey log's check takes it.
+    fn e2e(&self) -> arugula_e2e::passkey::Assertion {
+        arugula_e2e::passkey::Assertion {
+            id: self.id.clone(),
+            client_data_json: self.client_data.clone(),
+            authenticator_data: self.authenticator_data.clone(),
+            signature: self.signature.clone(),
+        }
+    }
+}
+
+/// The origins each of control's own sites' passkeys may be used from: the
+/// site's own (aru-078; DK4 adds the platform page's).
+fn site_origins<'a>(sites: impl IntoIterator<Item = &'a Site>) -> Origins {
+    let mut o = Origins::new();
+    for s in sites {
+        o.entry(rp_id(s).to_owned()).or_default().push(s.origin.clone());
+    }
+    o
+}
+
+/// The status a refusal of the log's check answers with.
+fn refused(r: Refusal) -> ApiError {
+    let status = match r {
+        Refusal::NotLive | Refusal::Signature | Refusal::Key | Refusal::Chain(_) => StatusCode::UNAUTHORIZED,
+        Refusal::Origin | Refusal::Framed => StatusCode::FORBIDDEN,
+        _ => StatusCode::BAD_REQUEST,
+    };
+    err(status, &r.says())
+}
+
+/// A registered passkey's assertion over `challenge` (its client data
+/// checked by the caller for the ceremony it's for), as `site` takes it:
+/// checked against its account's passkey log with the one check anyone
+/// makes (`arugula_e2e::passkey::verify`: live now, for this site's RP from
+/// this site's page, the person verified, the signature), and its counter
+/// didn't go backwards. The passkey, and the counter to keep.
+fn asserted(app: &App, site: &Site, a: &Assertion, challenge: &str) -> Result<(Passkey, u32), ApiError> {
     let pk =
         app.db.passkey(&a.id)?.ok_or_else(|| err(StatusCode::UNAUTHORIZED, "this passkey isn't registered here"))?;
-    let data = B64.decode(&a.authenticator_data).map_err(|_| bad("bad authenticator data"))?;
-    let (_, count, _) = auth_data(site, &data)?;
-    let sig = B64.decode(&a.signature).map_err(|_| bad("bad signature"))?;
-    if !signed(&pk, &data, raw, &sig)? {
-        return Err(err(StatusCode::UNAUTHORIZED, "the passkey's signature doesn't check out"));
-    }
-    // A counter that goes backwards means a cloned authenticator. Synced
-    // passkeys report 0 throughout.
+    let log = app.db.passkey_log(&pk.account)?;
+    let v =
+        arugula_e2e::passkey::verify(&log, &a.e2e(), challenge, now_ms(), &site_origins([site])).map_err(refused)?;
+    counted(&pk, v.count)?;
+    Ok((pk, v.count))
+}
+
+/// A counter that goes backwards means a cloned authenticator. Synced
+/// passkeys report 0 throughout.
+fn counted(pk: &Passkey, count: u32) -> Result<(), ApiError> {
     if count != 0 && pk.sign_count != 0 && count <= pk.sign_count {
         return Err(err(StatusCode::UNAUTHORIZED, "this passkey's counter went backwards; it may have been copied"));
     }
-    Ok((pk, count))
-}
-
-/// Whether `sig` is the passkey's over `data ‖ SHA-256(client data)`.
-fn signed(pk: &Passkey, data: &[u8], raw: &[u8], sig: &[u8]) -> Result<bool, ApiError> {
-    let mut msg = data.to_vec();
-    msg.extend_from_slice(&Sha256::digest(raw));
-    Ok(match pk.alg {
-        ES256 => {
-            use p256::ecdsa::signature::Verifier;
-            let key = p256::ecdsa::VerifyingKey::from_sec1_bytes(&pk.public).map_err(|_| bad("stored key"))?;
-            let s = p256::ecdsa::Signature::from_der(sig).map_err(|_| bad("bad signature"))?;
-            key.verify(&msg, &s).is_ok()
-        }
-        EDDSA => {
-            let key: [u8; 32] = pk.public.as_slice().try_into().map_err(|_| bad("stored key"))?;
-            let sig: [u8; 64] = sig.try_into().map_err(|_| bad("bad signature"))?;
-            ed25519_dalek::VerifyingKey::from_bytes(&key)
-                .map(|k| k.verify_strict(&msg, &ed25519_dalek::Signature::from_bytes(&sig)).is_ok())
-                .unwrap_or(false)
-        }
-        RS256 => {
-            aws_lc_rs::signature::UnparsedPublicKey::new(&aws_lc_rs::signature::RSA_PKCS1_2048_8192_SHA256, &pk.public)
-                .verify(&msg, sig)
-                .is_ok()
-        }
-        _ => false,
-    })
+    Ok(())
 }
 
 /// A passkey's assertion over a challenge the platform made (M218: a
 /// deploy's approval, whose challenge is SHA-256 of the approval's bytes),
-/// checked for the platform (`HubPort::verify_passkey`): the passkey is
-/// registered to `account`, the ceremony is a `webauthn.get` from one of
-/// control's own sites over exactly `challenge` (base64url), the
-/// authenticator verified the person (UV), the signature checks out with
-/// the passkey's key, and its counter didn't go backwards. Nothing is
-/// signed in. Why not, or `Ok`.
+/// checked for the platform (`HubPort::verify_passkey`) against `account`'s
+/// passkey log, as the platform itself now checks it
+/// (`arugula_e2e::passkey::verify`): live now, a `webauthn.get` from one of
+/// control's own sites over exactly `challenge` (base64url), the person
+/// verified (UV), the signature; and here its counter didn't go backwards.
+/// Nothing is signed in. Why not, or `Ok`.
 pub fn verify_for(
     app: &App,
     account: &str,
     challenge: &str,
     a: &arugula_platform_api::hub::PasskeyAssertion,
 ) -> anyhow::Result<Result<(), String>> {
-    let no = |why: &str| Ok(Err(why.to_owned()));
-    let Some(pk) = app.db.passkey(&a.id)? else { return no("that passkey isn't registered here") };
-    if pk.account != account {
-        return no("that passkey isn't one of yours");
-    }
-    let Ok(raw) = B64.decode(&a.client_data_json) else { return no("bad clientDataJSON") };
-    let Ok(cd) = serde_json::from_slice::<ClientData>(&raw) else { return no("bad clientDataJSON") };
-    if cd.kind != "webauthn.get" {
-        return no("wrong WebAuthn ceremony");
-    }
-    if cd.challenge != challenge {
-        return no("the passkey signed something other than this approval");
-    }
-    let Some(site) = app.cfg.sites.iter().find(|s| s.origin == cd.origin) else {
-        return no("a passkey from another site");
-    };
-    // The sign-in's own checks: the signature, UV, and the counter.
-    let assertion = Assertion {
+    let log = app.db.passkey_log(account)?;
+    let assertion = arugula_e2e::passkey::Assertion {
         id: a.id.clone(),
-        client_data: a.client_data_json.clone(),
+        client_data_json: a.client_data_json.clone(),
         authenticator_data: a.authenticator_data.clone(),
         signature: a.signature.clone(),
-        prf: false,
     };
-    let count = match asserted(app, site, &assertion, &raw) {
-        Ok((_, count)) => count,
-        Err(e) => return Ok(Err(e.1)),
+    let v = match arugula_e2e::passkey::verify(&log, &assertion, challenge, now_ms(), &site_origins(&app.cfg.sites)) {
+        Ok(v) => v,
+        Err(r) => return Ok(Err(r.says())),
     };
-    app.db.passkey_used(&a.id, count, now_ms())?;
+    if let Some(pk) = app.db.passkey(&a.id)? {
+        if let Err(e) = counted(&pk, v.count) {
+            return Ok(Err(e.1));
+        }
+        app.db.passkey_used(&a.id, v.count, now_ms())?;
+    }
     Ok(Ok(()))
+}
+
+/// `GET /api/accounts/{id}/passkeys/log` (DK3): the account's passkey log,
+/// for anyone checking a stored assertion against it. Public: its keys are
+/// public keys, and a log anyone may read and keep a copy of is what makes
+/// a rewrite visible (aru-103, aru-126). An account that isn't has an empty
+/// one, as one with no passkeys has.
+pub async fn log(
+    State(app): State<Arc<App>>,
+    axum::extract::Path(account): axum::extract::Path<String>,
+) -> Result<Response, ApiError> {
+    if account.is_empty() || account.len() > 128 {
+        return Err(err(StatusCode::NOT_FOUND, "no such account"));
+    }
+    let mut res = Json(app.db.passkey_log(&account)?).into_response();
+    res.headers_mut().insert(header::CACHE_CONTROL, header::HeaderValue::from_static("no-store"));
+    Ok(res)
 }
 
 #[cfg(test)]
@@ -1168,8 +1265,10 @@ mod tests {
             .map(|j| j.0)
     }
 
-    async fn step_up(app: &Arc<App>, h: &HeaderMap, id: &str) -> Result<serde_json::Value, ApiError> {
-        register_step_up(State(app.clone()), h.clone(), Json(StepUp { id: id.into() })).await.map(|j| j.0)
+    /// The step-up for `a`, made (its attestation) and not yet added.
+    async fn step_up(app: &Arc<App>, h: &HeaderMap, a: &Authn) -> Result<serde_json::Value, ApiError> {
+        let attestation = Some(a.create("unused", None).attestation);
+        register_step_up(State(app.clone()), h.clone(), Json(StepUp { id: a.id(), attestation })).await.map(|j| j.0)
     }
 
     fn reason(e: ApiError) -> Option<&'static str> {
@@ -1237,39 +1336,95 @@ mod tests {
         }
         let attempt = |step| attempt(&app, &h, &new, step);
         assert_eq!(attempt(None).await.map_err(reason).err(), Some(Some("step_up")));
-        async fn ch(app: &Arc<App>, h: &HeaderMap, id: &str) -> String {
-            step_up(app, h, id).await.unwrap()["challenge"].as_str().unwrap().to_owned()
+        async fn ch(app: &Arc<App>, h: &HeaderMap, a: &Authn) -> String {
+            step_up(app, h, a).await.unwrap()["challenge"].as_str().unwrap().to_owned()
         }
         let (app_, h_) = (&app, &h);
-        let ch = move |id: String| async move { ch(app_, h_, &id).await };
+        let ch = move |seed: u8| async move { ch(app_, h_, &Authn::new(seed)).await };
         // Over a challenge made for another new passkey.
-        let other = ch(Authn::new(10).id()).await;
+        let other = ch(10).await;
         assert!(attempt(Some(mine.get(&other, UP | UV, json!({})))).await.is_err(), "another new passkey's");
         // Another account's passkey.
-        let c = ch(new.id()).await;
+        let c = ch(9).await;
         assert!(attempt(Some(theirs.get(&c, UP | UV, json!({})))).await.is_err(), "another account's passkey");
         // Without user verification.
-        let c = ch(new.id()).await;
+        let c = ch(9).await;
         assert!(attempt(Some(mine.get(&c, UP, json!({})))).await.is_err(), "no user verification");
         // From inside another site's frame.
-        let c = ch(new.id()).await;
+        let c = ch(9).await;
         let framed = mine.get(&c, UP | UV, json!({ "crossOrigin": true, "topOrigin": "https://evil.test" }));
         assert!(attempt(Some(framed)).await.is_err(), "framed");
         // A made-up challenge.
         assert!(attempt(Some(mine.get("bm90IG91cnM", UP | UV, json!({})))).await.is_err(), "not one control made");
         // The new passkey can't vouch for itself, nor ask for a challenge.
-        assert!(step_up(&app, &h, &mine.id()).await.is_err(), "not a new passkey");
+        assert!(step_up(&app, &h, &mine).await.is_err(), "not a new passkey");
         // Its own: added, once.
-        let c = ch(new.id()).await;
+        let c = ch(9).await;
         let step = mine.get(&c, UP | UV, json!({}));
         assert_eq!(attempt(Some(step.clone())).await.unwrap(), "acct-a");
         assert_eq!(app.db.passkey_count("acct-a").unwrap(), 2);
         assert!(app.db.passkeys("acct-b").unwrap().len() == 1, "nothing changed for the other account");
+        // DK3: in the log, with the step-up as its proof, which anyone can
+        // check against the log alone.
+        let log = app.db.passkey_log("acct-a").unwrap();
+        let added = &log.events[1];
+        assert_eq!((added.credential.as_str(), added.by.as_str()), (new.id().as_str(), "passkey"));
+        assert_eq!(added.proof.as_ref().map(|p| p.id.clone()), Some(mine.id()));
+        assert_eq!(added.challenge(), c, "the step-up signed the event");
+        assert_eq!(arugula_e2e::passkey::check_chain(&log, &site_origins(&app.cfg.sites)), Ok(()));
         // Its challenge works once.
         let again = Authn::new(11);
         let opts = start(&app, &h).await.unwrap();
         let r = register(&app, &h, again.create(opts["challenge"].as_str().unwrap(), Some(step))).await;
         assert!(r.is_err(), "a step-up is good once");
+        // A step-up made before another passkey came in is for a place in
+        // the log that's taken: asked again.
+        let late = Authn::new(12);
+        let c = ch(12).await;
+        app.db
+            .add_passkey(&Authn::new(13).id(), "acct-a", EDDSA, &Authn::new(13).key.verifying_key().to_bytes(), 1)
+            .unwrap();
+        let opts = start(&app, &h).await.unwrap();
+        let r = register(
+            &app,
+            &h,
+            late.create(opts["challenge"].as_str().unwrap(), Some(mine.get(&c, UP | UV, json!({})))),
+        )
+        .await;
+        assert_eq!(r.err().map(|e| e.0), Some(StatusCode::CONFLICT));
+        assert!(app.db.passkey(&late.id()).unwrap().is_none(), "and it wasn't added");
+    }
+
+    /// DK3: a passkey removed by a page, and the rest when the account goes,
+    /// are removals in its log, which stays, and anyone may read it; an
+    /// approval made before still checks out against it, and not after.
+    #[tokio::test]
+    async fn the_log_outlives_removals_and_the_account() {
+        let app = App::for_tests(ORIGIN).start();
+        app.db.account_for("github", "gh-acct-r", "r", "acct-r", 1).unwrap();
+        let (a, b) = (Authn::new(60), Authn::new(61));
+        app.db.add_passkey(&a.id(), "acct-r", EDDSA, &a.key.verifying_key().to_bytes(), 1).unwrap();
+        app.db.add_passkey(&b.id(), "acct-r", EDDSA, &b.key.verifying_key().to_bytes(), 2).unwrap();
+        app.db.drop_passkey("acct-r", &a.id()).unwrap().unwrap();
+        let ch = B64.encode(Sha256::digest(b"an approval"));
+        let made = arugula_e2e::now_ms();
+        let approval = b.get(&ch, UP | UV, json!({}));
+        app.db.delete_account(&crate::db::Erase { account: "acct-r", disband: &[], retain_for: &[] }).unwrap();
+        assert!(app.db.passkey(&b.id()).unwrap().is_none());
+        let res = log(State(app.clone()), axum::extract::Path("acct-r".to_owned())).await.unwrap();
+        let body = axum::body::to_bytes(res.into_body(), 1 << 20).await.unwrap();
+        let published: arugula_e2e::passkey::Log = serde_json::from_slice(&body).unwrap();
+        let kinds: Vec<(&str, &str)> = published.events.iter().map(|e| (e.event.as_str(), e.by.as_str())).collect();
+        assert_eq!(kinds, [("added", "signup"), ("added", "signup"), ("removed", "session"), ("removed", "deleted")]);
+        let o = site_origins(&app.cfg.sites);
+        let e2e = approval.e2e();
+        let v = arugula_e2e::passkey::verify(&published, &e2e, &ch, made - 1, &o);
+        assert!(v.is_ok(), "made before the account went: {v:?}");
+        let gone = published.events[3].at;
+        assert_eq!(arugula_e2e::passkey::verify(&published, &e2e, &ch, gone, &o).err(), Some(Refusal::NotLive));
+        let other = log(State(app.clone()), axum::extract::Path("acct-none".to_owned())).await.unwrap();
+        let body = axum::body::to_bytes(other.into_body(), 1 << 20).await.unwrap();
+        assert_eq!(serde_json::from_slice::<serde_json::Value>(&body).unwrap()["events"], json!([]));
     }
 
     /// Every device of the account hears that a passkey was added, naming
@@ -1483,7 +1638,7 @@ mod tests {
         assert_eq!(start(&app, &h).await.map_err(reason).err(), Some(Some("app_window")));
         let mine = Authn::new(30);
         app.db.add_passkey(&mine.id(), "acct-w", EDDSA, &mine.key.verifying_key().to_bytes(), 1).unwrap();
-        assert_eq!(step_up(&app, &h, &Authn::new(31).id()).await.map_err(reason).err(), Some(Some("app_window")));
+        assert_eq!(step_up(&app, &h, &Authn::new(31)).await.map_err(reason).err(), Some(Some("app_window")));
         let challenge = app.passkeys.issue(Purpose::Register { account: Some("acct-w".into()), name: "w".into() });
         let r = register(&app, &h, Authn::new(31).create(&challenge, None)).await;
         assert_eq!(r.map_err(reason).err(), Some(Some("app_window")));

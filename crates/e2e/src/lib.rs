@@ -21,6 +21,8 @@
 //!   daemon signs when it reports a move.
 //! - [`project_grant`]: the standing project grant (M211): an owner's
 //!   device lets the platform start runs on the project's hosted machines.
+//! - [`passkey`]: an account's passkey log (DK3), which the hub publishes,
+//!   and the one check of a passkey's assertion against it.
 
 pub mod block;
 pub mod cert;
@@ -31,6 +33,7 @@ pub mod drivers;
 pub mod hosted;
 pub mod keys;
 pub mod mux;
+pub mod passkey;
 pub mod preview;
 pub mod project_grant;
 pub mod push;

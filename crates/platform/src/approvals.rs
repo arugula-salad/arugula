@@ -167,19 +167,30 @@ pub async fn verify(
         ));
     }
     // The person, not only their browser: a passkey's assertion over this
-    // approval's bytes, with user verification, checked by the hub, which
-    // keeps passkeys' public keys. A browser's stored key signs without
-    // one, so whatever drives the browser (automation, its profile on
-    // disk) can't approve alone.
+    // approval's bytes, with user verification. A browser's stored key
+    // signs without one, so whatever drives the browser (automation, its
+    // profile on disk) can't approve alone.
     let no_passkey = |why: &str| refusal(StatusCode::FORBIDDEN, PASSKEY, why);
     let Some(pk) = passkey else {
         return Err(no_passkey("a deploy is approved or denied with a passkey: confirm it with one"));
     };
-    // TODO(passkeys): the hub publishes passkeys' public keys, so the proof
-    // kept below can be checked again without asking the hub.
-    let verdict = app.hub.verify_passkey(&a.account, &challenge_of(a), pk).await?;
-    if !verdict.ok {
-        return Err(no_passkey(&format!("the passkey didn't confirm this approval: {}", verdict.why)));
+    // Checked here against the account's passkey log as the hub publishes
+    // it (DK3, aru-126), with the check anyone makes of the proof kept
+    // below: the passkey live now (the platform's own time), its RP and
+    // origin one of control's sites', UP and UV, the signature. The hub
+    // gives the log, not a verdict.
+    let log = app.hub.passkey_log(&a.account).await?;
+    if log.account != a.account {
+        return Err(no_passkey("the hub sent another account's passkey log"));
+    }
+    let assertion = arugula_e2e::passkey::Assertion {
+        id: pk.id.clone(),
+        client_data_json: pk.client_data_json.clone(),
+        authenticator_data: pk.authenticator_data.clone(),
+        signature: pk.signature.clone(),
+    };
+    if let Err(r) = arugula_e2e::passkey::verify(&log, &assertion, &challenge_of(a), now, &app.cfg.passkey_origins()) {
+        return Err(no_passkey(&format!("the passkey didn't confirm this approval: {r}")));
     }
     let proof = PasskeyProof {
         id: pk.id.clone(),

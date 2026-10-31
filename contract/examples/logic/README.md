@@ -86,3 +86,12 @@ check its signatures byte for byte.
   seed), which client `accept`s a machine (every refusal: form, wrong
   project, not in it, unsigned by an owner's device, a bad signature,
   revoked by time or by another owner), `live`, and project `owner` names.
+- `passkey/`: an account's passkey log (DK3, aru-126): each event's `bodies`
+  (text, proof line, hash and the challenge a proof signs), and `verify`,
+  the one check of a passkey's assertion against a log (the chain, whether
+  the passkey was live then, and every way an assertion misses), for
+  ES256, Ed25519 and RS256 keys. The page's copy
+  (`web/src/shell/e2e/passkey.ts`) runs these files too
+  (`web/scripts/passkey.test.mjs`). ES256 signatures are RFC 6979's, so
+  deterministic too; the one RS256 assertion is a constant, made once with
+  a key that was thrown away.

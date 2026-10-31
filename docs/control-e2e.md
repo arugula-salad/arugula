@@ -1556,8 +1556,10 @@ attestation is `none` and a passkey made in software can claim to verify
 anyone. Never from the desktop app's window (`sessions.via = app`), and:
 
 - an account with a passkey confirms the new one with one of its own,
-  with user verification, over a challenge that hashes the account and the
-  new passkey's id (`arugula add passkey v1`), and with a browser or a
+  with user verification, over the new passkey's event in the account's
+  passkey log (SHA-256 of its body, `arugula passkey log v1`: the account,
+  the new passkey's id, key and AAGUID, DK3), which keeps the assertion as
+  the event's proof, and with a browser or a
   phone, one of them (a browser all the way back) also signs the account,
   the new passkey's id and the registration's challenge
   (`arugula add passkey device v1`);
@@ -1574,6 +1576,24 @@ anyone. Never from the desktop app's window (`sessions.via = app`), and:
   account") naming the device that signed for it, or else how the session
   signed in and its User-Agent (what a session says its device is is a
   claim), and the passkey keeps both.
+
+**The passkey log** (DK3, aru-126, `db/passkey_log.rs`). Every passkey
+added to or removed from an account is an event in the account's passkey
+log: its credential id, public key, RP, its authenticator's AAGUID, when,
+and what let it happen (`by`: another passkey, whose assertion over the
+event is kept as its proof; or what control vouches for: `signup`,
+`github`, `device <id>`, `session` for a removal by a signed-in page,
+`reset`, `deleted` when the account goes, and `backfill <ms>` for passkeys
+from before the log, whose RP may name each of control's sites, since
+which one wasn't kept). Each event hashes the one before, as
+`deploy_events` do (aru-103); triggers refuse an update or a delete, and
+the log outlives its account. Anyone may read it
+(`GET /api/accounts/{id}/passkeys/log`), and anyone checks a passkey's
+assertion against it with `arugula_e2e::passkey::verify` (the page's copy
+is `web/src/shell/e2e/passkey.ts`; `contract/examples/logic/passkey/` pins
+both): control's own sign-ins, the platform for a deploy's approval, and
+anyone checking a stored one later. A backfilled log says nothing of
+passkeys removed before it began (`began`).
 
 Linking GitHub adds a way to sign in the same way, so it is never from the
 desktop app's window either (`github_link::start` answers 403 to a
@@ -1713,10 +1733,10 @@ sleeps, and control pushes and searches them itself.
 
 <!-- Written by `just control-tables` from crates/control/tables.toml. Edit that, not this. -->
 
-Control's database has 153 tables in two planes ("Two planes, two trust rules"):
+Control's database has 154 tables in two planes ("Two planes, two trust rules"):
 
 - **The machine plane** (51 tables) is what control needs to route and check: ids, names, addresses, public keys and signed statements. What moves between a client and a machine stays end to end, and control can't read it.
-- **The platform plane** (102 tables) is what has to exist while every machine is asleep: billing and usage, chat and the threads on objects, Shared Docs, Cloud workspaces, linked repos' PRs and issues, and projects' native issues, runs and deploys. Control reads most of it, and says so here.
+- **The platform plane** (103 tables) is what has to exist while every machine is asleep: billing and usage, chat and the threads on objects, Shared Docs, Cloud workspaces, linked repos' PRs and issues, and projects' native issues, runs and deploys. Control reads most of it, and says so here.
 
 Every table is listed in `crates/control/tables.toml`, and a test fails when one isn't. **Holds** is what's in it: metadata (ids, names, addresses, times, counts, public keys, signed statements), ciphertext (encrypted to keys control never holds), or plaintext (what people or their agents wrote, or a secret control can read). **Gone with the account** is what deleting an account does to its rows.
 
@@ -1780,6 +1800,7 @@ Every table is listed in `crates/control/tables.toml`, and a test fails when one
 
 | Table | Holds | What | Why it exists while machines sleep | Gone with the account | Also seen by |
 |---|---|---|---|---|---|
+| `passkey_log` | metadata | An account's passkey log (DK3, aru-126): each passkey added or removed, with its credential id, public key, RP, its authenticator's AAGUID, when, what let it happen (another passkey's assertion, kept as its proof; a sign-up, a fresh GitHub sign-in, a device, a signed-in page, a reset, the account's deletion, or the backfill of passkeys from before the log) and the hash of the event before. Append-only (triggers refuse an update or a delete), and public: GET /api/accounts/{id}/passkeys/log. | A deploy's approval is a passkey's assertion, and the platform, a box or anyone else checks a stored one against this log, with every machine asleep. | kept: approvals the account made stay checkable after it goes: its passkeys' removal is logged (by `deleted`), and the log, the account's id in it, is kept for good, as deploy_events are. |  |
 | `billing` | metadata | Who pays: Stripe's customer and subscription ids, the seat item, the status. | A plan holds with every machine off, and Stripe's webhooks come whenever. | yes: a team's go when the team does. An account with a paid plan cancels it before it can be deleted. | PostHog, Stripe |
 | `reported` | metadata | How many hosted sandbox minutes have gone to Stripe. | Minutes are reported hourly, whether or not anyone's machine is up. | yes | Stripe |
 | `usage` | metadata | Bytes relayed per account per day, for the free plan's monthly allowance. | The month's allowance counts across every machine's sleeps. | yes |  |
