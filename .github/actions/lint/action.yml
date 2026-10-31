@@ -35,6 +35,9 @@ runs:
     - name: DECISIONS.md lists the decision records (docs/decisions/)
       shell: bash
       run: just decisions check
+    - name: docs/gotchas/README.md lists the gotchas
+      shell: bash
+      run: just gotchas check
     - name: The release notes' headline sections (docs/releases/, What's new)
       shell: bash
       run: just whats-new

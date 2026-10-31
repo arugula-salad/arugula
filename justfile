@@ -84,6 +84,12 @@ contract-schema mode="write":
 decisions mode="write":
     node scripts/decisions-index.mjs {{ if mode == "write" { "" } else { "--check" } }}
 
+# Write docs/gotchas/README.md, the index of the gotchas, from the pages'
+# front matter. Without `write`, check it's current and each page has its
+# three parts.
+gotchas mode="write":
+    node scripts/gotchas-index.mjs {{ if mode == "write" { "" } else { "--check" } }}
+
 # Check the headline sections of the release notes (docs/releases/X.Y.Z.md),
 # which What's new reads at build time, and list them.
 whats-new:
@@ -929,6 +935,7 @@ check: test mux-guard workspace-guard
     just proto-ts check
     just contract-schema check
     just decisions check
+    just gotchas check
     just whats-new
     just control-tables check
     scripts/check-binaries
@@ -999,6 +1006,7 @@ rollup-check:
     step lint proto-ts just proto-ts check
     step lint contract-schema just contract-schema check
     step lint decisions just decisions check
+    step lint gotchas just gotchas check
     step lint whats-new just whats-new
     step lint gitleaks scripts/ci-gitleaks
     # The rest of `just check`'s.
