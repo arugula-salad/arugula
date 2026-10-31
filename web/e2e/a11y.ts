@@ -12,9 +12,12 @@
 // What a place already does wrong is in a11y-known.json, each with why. A
 // scan fails on a violation that isn't listed, and on a listed one that
 // didn't turn up, so the list shrinks as the fixes land: a fix has to take
-// its line out (`sometimes: true` keeps a line that comes and goes with
-// timing out of that second check). A11Y_DUMP=DIR writes each place's
-// violations there as JSON, to write the list from.
+// its line out. `sometimes: true` keeps a line out of that second check,
+// for one that comes and goes with timing or turns up on one platform and
+// not another (a size that follows the font: macOS and CI's Linux differ);
+// its reason says which. Only those lines: the rest still fail when gone.
+// A11Y_DUMP=DIR writes each place's violations there as JSON, to write the
+// list from.
 
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -36,7 +39,8 @@ export interface Known {
   rule: string;
   target: string;
   reason: string;
-  /** Comes and goes with timing: not failed when it doesn't turn up. */
+  /** Comes and goes with timing, or with the platform's fonts: not
+   * failed when it doesn't turn up. */
   sometimes?: boolean;
 }
 
