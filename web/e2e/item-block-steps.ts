@@ -37,6 +37,17 @@ async function open(page: Page) {
   await expect(page.locator("[data-item-block]")).toHaveCount(7);
 }
 
+/** A custom property's colour as the browser computes it. */
+const cssColor = (page: Page, v: string) =>
+  page.evaluate((v) => {
+    const s = document.createElement("i");
+    s.style.color = `var(${v})`;
+    document.body.append(s);
+    const c = getComputedStyle(s).color;
+    s.remove();
+    return c;
+  }, v);
+
 const SHOTS = "test-results";
 
 export function itemBlockSpecs(tag: string) {
@@ -55,6 +66,15 @@ export function itemBlockSpecs(tag: string) {
     await expect(b.locator("[data-item-next='danger']")).toContainText("e2e (10) failed");
     await expect(b.locator("[data-item-next]")).toHaveCount(1);
     await expect(b.locator("[data-item-next] button")).toHaveText(["Rerun", "Open run ↗"]);
+    // The strip's primary takes its tone (red here), with the page's background as its text.
+    const [fill, danger, text, bg] = await Promise.all([
+      b.locator("[data-item-next] .primary").evaluate((e) => getComputedStyle(e).backgroundColor),
+      cssColor(page, "--danger"),
+      b.locator("[data-item-next] .primary").evaluate((e) => getComputedStyle(e).color),
+      cssColor(page, "--bg"),
+    ]);
+    expect(fill).toBe(danger);
+    expect(text).toBe(bg);
     const facts = b.locator("[data-item-facts]");
     await expect(facts.locator("[data-item-fact='branch']")).toHaveText("land/rail-and-ux → main");
     await expect(facts.locator("[data-item-fact='checks']")).toHaveText(/✓ 29\s*● 1\s*✕ 1/);
