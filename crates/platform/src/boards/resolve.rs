@@ -52,11 +52,20 @@ pub async fn route(
 }
 
 /// The pointer `item` names in `project`, or why it names none.
-pub(crate) async fn one(app: &Platform, account: &str, project: &str, item: &str) -> Result<Result<Pointer, String>, ApiError> {
+pub(crate) async fn one(
+    app: &Platform,
+    account: &str,
+    project: &str,
+    item: &str,
+) -> Result<Result<Pointer, String>, ApiError> {
     let item = item.trim();
     if item.starts_with("iss_") {
         let ok = app.db.issue(item)?.is_some_and(|i| i.project == project);
-        return Ok(if ok { Ok(Pointer::Issue { id: item.to_owned() }) } else { Err(format!("{item} isn't an issue of this project")) });
+        return Ok(if ok {
+            Ok(Pointer::Issue { id: item.to_owned() })
+        } else {
+            Err(format!("{item} isn't an issue of this project"))
+        });
     }
     if item.starts_with("fi_") {
         super::id_ok(item, "fi")?;
@@ -91,14 +100,19 @@ pub(crate) async fn one(app: &Platform, account: &str, project: &str, item: &str
                 (None, 1) => Ok(github.remove(0).1),
                 (None, 0) => Err(format!("nothing is #{n} in this project")),
                 (native, _) => {
-                    let mut names: Vec<String> = native.iter().map(|i| format!("the native issue #{}", i.number)).collect();
+                    let mut names: Vec<String> =
+                        native.iter().map(|i| format!("the native issue #{}", i.number)).collect();
                     names.extend(github.into_iter().map(|(name, _)| name));
-                    Err(format!("#{n} names more than one thing ({}): write owner/repo#{n} or the iss_/fi_ id", names.join(" and ")))
+                    Err(format!(
+                        "#{n} names more than one thing ({}): write owner/repo#{n} or the iss_/fi_ id",
+                        names.join(" and ")
+                    ))
                 }
             }
         }
         IssueRef::Repo { repo, number } => {
-            let found = in_repo(number)?.into_iter().find(|(name, _)| name.eq_ignore_ascii_case(&format!("{repo}#{number}")));
+            let found =
+                in_repo(number)?.into_iter().find(|(name, _)| name.eq_ignore_ascii_case(&format!("{repo}#{number}")));
             found.map(|f| f.1).ok_or_else(|| format!("nothing is {repo}#{number} in this project"))
         }
         IssueRef::Plane { key, number } => {
