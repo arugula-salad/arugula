@@ -70,6 +70,11 @@ button.chip:is(:hover, :focus-visible) {
   --ct: var(--teal);
 }
 
+.chip-merged {
+  --c: var(--merged);
+  --ct: var(--merged);
+}
+
 .chip-muted {
   --c: var(--muted);
   --ct: var(--subtle);
