@@ -130,7 +130,7 @@ impl Db {
         let there: Option<String> = tx
             .query_row(
                 "SELECT id FROM work_relations WHERE kind = ?3
-                 AND ((from_id = ?1 AND to_id = ?2) OR (?4 = 1 AND from_id = ?2 AND to_id = ?1))",
+                 AND ((from_id = ?1 AND to_id = ?2) OR (CAST(?4 AS BIGINT) = 1 AND from_id = ?2 AND to_id = ?1))",
                 params![n.from, n.to, n.kind.as_str(), i64::from(both)],
                 |r| r.get(0),
             )
@@ -302,7 +302,8 @@ impl Db {
             let n = tx.execute(
                 "INSERT INTO work_relations (id, project_id, from_kind, from_id, to_kind, to_id, kind, source,
                      created_by, created_at)
-                 SELECT ?1, ?2, 'forge_item', ?3, 'forge_item', ?4, 'blocks', 'plane', '', ?5
+                 SELECT CAST(?1 AS TEXT), CAST(?2 AS TEXT), 'forge_item', CAST(?3 AS TEXT), 'forge_item', CAST(?4 AS TEXT),
+                        'blocks', 'plane', '', CAST(?5 AS BIGINT)
                  WHERE NOT EXISTS (SELECT 1 FROM work_relations WHERE from_id = ?3 AND to_id = ?4 AND kind = 'blocks')",
                 params![new_id(), project, f, t, at],
             )?;
