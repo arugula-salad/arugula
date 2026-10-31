@@ -1,5 +1,5 @@
 // The machine's sharing settings (native #205): Guest SSH access, which
-// was the `guest-ssh` Labs flag. Its owner's, kept by the daemon
+// was the `guest-ssh` Labs flag, and (#394) whether agents hear their mentions. Its owner's, kept by the daemon
 // (`sharing.get`/`sharing.set`, `sharing.json` in its state directory), off
 // until they turn it on; control has no say in it. *Guest SSH access…* in
 // the machine's settings (the machine menu, or the account menu's *This
@@ -62,9 +62,9 @@ function SharingDialog({ client, close }: { client: Client; close: () => void })
   };
   useEffect(() => void load(), []);
 
-  const set = async (guest_ssh: boolean) => {
+  const set = async (change: SharingSetRequest) => {
     const res = await client
-      .request(OPS["sharing.set"].method, opPath("sharing.set"), { guest_ssh } satisfies SharingSetRequest)
+      .request(OPS["sharing.set"].method, opPath("sharing.set"), change satisfies SharingSetRequest)
       .catch(() => null);
     if (!res?.ok) setError("couldn't change it");
     // The pane menu follows the host's features: no reload.
@@ -88,9 +88,25 @@ function SharingDialog({ client, close }: { client: Client; close: () => void })
             role="switch"
             data-sharing-guest-ssh
             checked={sharing.guest_ssh}
-            onChange={(e) => void set(e.currentTarget.checked)}
+            onChange={(e) => void set({ guest_ssh: e.currentTarget.checked })}
           />{" "}
           Guest SSH access on this machine
+        </label>
+      )}
+      <p class="hint">
+        A teammate's <code>@</code>-mention of this machine in a thread, or a reply to one of its agents, is handed to the agent's
+        session as a message from a teammate (never as your approval). On unless you turn it off here.
+      </p>
+      {sharing && (
+        <label class="sharing-switch">
+          <input
+            type="checkbox"
+            role="switch"
+            data-sharing-agent-mentions
+            checked={sharing.agent_mentions ?? true}
+            onChange={(e) => void set({ agent_mentions: e.currentTarget.checked })}
+          />{" "}
+          Agents hear their mentions on this machine
         </label>
       )}
       <div class="prompt-buttons">

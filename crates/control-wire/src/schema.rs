@@ -65,7 +65,7 @@ fn files() -> Vec<(&'static str, &'static [&'static str], fn(&mut SchemaGenerato
             deploys::DeploySource, deploys::DeployPlan,
         ],
         "forge" => [
-            forge::ForgeWatch, forge::Standing, forge::ForgeWatching, forge::Poke, forge::ForgePoke, forge::GithubTokenRequest, forge::GithubToken, forge::Ops, forge::OpAsk, forge::OpDone, forge::DaemonOp, forge::ForgeSend, forge::OpAnswer,
+            forge::ForgeWatch, forge::Standing, forge::ForgeWatching, forge::Poke, forge::ForgePoke, forge::GithubTokenRequest, forge::GithubToken, forge::Ops, forge::OpAsk, forge::OpDone, forge::DaemonOp, forge::ForgeSend, forge::AgentMention, forge::OpAnswer,
         ],
         "forge_ops" => [
             forge_ops::Call, forge_ops::Op, forge_ops::ItemRef, forge_ops::ItemQuery, forge_ops::DraftQuery, forge_ops::InboxQuery, forge_ops::InboxMarkOn, forge_ops::DraftRef, forge_ops::CommentOn, forge_ops::ReviewOf, forge_ops::NewIssue, forge_ops::ItemView, forge_ops::Sent,

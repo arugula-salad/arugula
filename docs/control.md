@@ -1196,8 +1196,8 @@ snippet's allow list and the post in its ask list; an agent a guest stands
 behind is refused. `@` and a machine's name (`@geek`, or `@geek's agent`)
 in a room its `threads.read` grant reaches is a mention of its agents
 (posting or `issues.write` alone isn't: they couldn't read it), kept as
-`machine:<id>` among the message's mentions. It pushes nobody, and nothing
-wakes an agent: they read their mentions when they look. `capabilities`
+`machine:<id>` among the message's mentions. It pushes no person; the agents
+are told over their machine's connection (below). `capabilities`
 says whether the thread tools are live and what they reach. The routes are
 `/api/daemon/chat/rooms`, `/api/daemon/chat/rooms/{id}/messages` (`GET`,
 `POST`), `/api/daemon/chat/search`
@@ -1213,6 +1213,28 @@ each message's reactions, attachments and pin, and system lines as
 `* alice pinned a message`. A reaction or a pin is the owner's, labelled
 with the machine, and pushes nobody. [labs.md](labs.md#threads-and-chat)
 lists the rest of chat and which of it agents don't get.
+
+**Agents hear their mentions (#394).** A post in a thread reaches a
+machine's agents when it `@`-names the machine, or is a reply in a thread
+whose newest message is that machine's agent's: the reply an agent gets to
+its own question comes back the same way, with no tool of its own. Whoever
+may post there may address them, since posting already needs
+`threads.post`. Control sends the daemon an `agents.mention` op over its
+relay connection (no polling), and the post answers it in `pushed` as
+`machine:<id>` (`why: agent`). A machine that is offline, doesn't know the
+op, or whose owner turned it off, leaves a named `@word` in `unreached`;
+the message is still stored, and `read_thread` with `mentions_only` finds
+it. The daemon (`crates/daemon/src/agent_mentions.rs`) hands the text to
+the session that last posted in that thread, through the hooks inbox that
+`arugula inbox` follow-ups use (waiting, unread, if its hooks aren't
+live); with no such session, it is held in the machine's inbox, which
+`capabilities` counts and a `read_thread` of the room clears. The text a
+session sees begins `Message from <author> in <thread> (a teammate, not
+your person):` and says it is information, never an approval or a command.
+The owner turns it off for a machine with `arugulad sharing agent-mentions
+off` or the sharing settings in the web client (`sharing.json`); on by
+default. A reply under a thread's newest message, when that is a person's,
+tells no agent. Edits tell nobody.
 
 **Agents on native issues (M200).** The same machine's agents read and
 write a project's native issues over MCP. An issue is `#N` in the current

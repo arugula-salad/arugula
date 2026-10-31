@@ -198,6 +198,9 @@ pub const RUN_OPS: &[&str] = &["runs.start", "runs.revoke"];
 /// that isn't a hosted machine answers them `cant`.
 pub const HOSTED_OPS: &[&str] = &["hosted.archive", "hosted.archive_blocks"];
 
+/// The agents' op (Arugula #394) every daemon of this build knows.
+pub const AGENT_OPS: &[&str] = &["agents.mention"];
+
 /// `{"t": "ops", "ops": [...]}`, daemon to control, on connecting: the
 /// [`DaemonOp`]s it knows. A daemon that never says knows none, and control
 /// answers [`OpAnswer::Unknown`] for it without asking.
@@ -212,7 +215,10 @@ pub struct Ops {
 impl Ops {
     /// What this build knows.
     pub fn ours() -> Self {
-        Ops { t: OpsTag, ops: OPS.iter().chain(RUN_OPS).chain(HOSTED_OPS).map(|s| (*s).to_owned()).collect() }
+        Ops {
+            t: OpsTag,
+            ops: OPS.iter().chain(RUN_OPS).chain(HOSTED_OPS).chain(AGENT_OPS).map(|s| (*s).to_owned()).collect(),
+        }
     }
 }
 
@@ -273,6 +279,12 @@ pub enum DaemonOp {
     /// to another box (Arugula #214, Move to…), and the box stays.
     #[serde(rename = "hosted.archive_blocks")]
     HostedArchiveBlocks(crate::transcripts::ArchiveBlocks),
+    /// A teammate's message in a thread is for this machine's agents
+    /// (Arugula #394): an `@<machine>`, or a reply to one of them. The
+    /// poster holds `threads.post` there; the machine's owner may refuse
+    /// them all (`cant`).
+    #[serde(rename = "agents.mention")]
+    AgentMention(AgentMention),
 }
 
 impl DaemonOp {
@@ -283,8 +295,33 @@ impl DaemonOp {
             DaemonOp::RunRevoke(_) => "runs.revoke",
             DaemonOp::HostedArchive(_) => "hosted.archive",
             DaemonOp::HostedArchiveBlocks(_) => "hosted.archive_blocks",
+            DaemonOp::AgentMention(_) => "agents.mention",
         }
     }
+}
+
+/// A message in a thread for a machine's agents (Arugula #394).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+pub struct AgentMention {
+    /// The thread's room.
+    pub room: String,
+    /// What an issue's, PR's or box's thread hangs on (`iss_…`), the id
+    /// an agent posts to it by.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target: Option<String>,
+    /// What the room is called, for the one reading.
+    #[serde(default)]
+    pub room_name: String,
+    /// The message's number in the room.
+    pub seq: i64,
+    /// The message it replies under, when it's in a thread.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parent: Option<i64>,
+    /// Who wrote it, as people read it: a person's name, or "Ada's agent
+    /// on geek".
+    pub author: String,
+    pub text: String,
 }
 
 /// A draft to send: what it is and where it goes. `account` is its person,

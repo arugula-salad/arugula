@@ -412,7 +412,7 @@ nothing else of the above. What they get:
 - No tool for previews (they get the URL text), presence, avatars, levels,
   DND, mark unread, saved, typing, sidebar or starring: those are a
   person's own state, or no use to an agent, and a grant shouldn't reach
-  them. Nothing wakes an agent, and a reaction pushes nobody.
+  them. A mention wakes an agent only as control.md's "Agents hear their mentions" says; a reaction pushes nobody.
 
 ### Chat's API
 

@@ -175,6 +175,8 @@ pub enum TelemetryCmd {
 pub enum SharingSetting {
     /// Guest SSH access.
     GuestSsh,
+    /// Teammates' messages in a thread reaching this machine's agents.
+    AgentMentions,
 }
 
 /// What `arugulad sharing NAME` is told.

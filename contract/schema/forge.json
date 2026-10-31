@@ -1,5 +1,53 @@
 {
   "$defs": {
+    "AgentMention": {
+      "description": "A message in a thread for a machine's agents (Arugula #394).",
+      "properties": {
+        "author": {
+          "description": "Who wrote it, as people read it: a person's name, or \"Ada's agent\non geek\".",
+          "type": "string"
+        },
+        "parent": {
+          "description": "The message it replies under, when it's in a thread.",
+          "format": "int64",
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "room": {
+          "description": "The thread's room.",
+          "type": "string"
+        },
+        "room_name": {
+          "default": "",
+          "description": "What the room is called, for the one reading.",
+          "type": "string"
+        },
+        "seq": {
+          "description": "The message's number in the room.",
+          "format": "int64",
+          "type": "integer"
+        },
+        "target": {
+          "description": "What an issue's, PR's or box's thread hangs on (`iss_…`), the id\nan agent posts to it by.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "text": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "room",
+        "seq",
+        "author",
+        "text"
+      ],
+      "type": "object"
+    },
     "ArchiveBlocks": {
       "description": "`hosted.archive_blocks` (Arugula #214): [`ArchiveOpen`] for these agent\nblocks only. The platform asks before Move to… takes a session off a\nbox that stays up: its conversation goes with it, and the box's other\nblocks are archived when they close, as they end (one transcript per\nblock is kept). A daemon from before it answers that it doesn't know\nthe op.",
       "properties": {
@@ -86,6 +134,20 @@
           "properties": {
             "op": {
               "const": "hosted.archive_blocks",
+              "type": "string"
+            }
+          },
+          "required": [
+            "op"
+          ],
+          "type": "object"
+        },
+        {
+          "$ref": "#/$defs/AgentMention",
+          "description": "A teammate's message in a thread is for this machine's agents\n(Arugula #394): an `@<machine>`, or a reply to one of them. The\nposter holds `threads.post` there; the machine's owner may refuse\nthem all (`cant`).",
+          "properties": {
+            "op": {
+              "const": "agents.mention",
               "type": "string"
             }
           },

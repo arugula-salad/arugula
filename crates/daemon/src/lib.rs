@@ -9,6 +9,7 @@ mod acl {
 }
 mod acl_api;
 pub mod agent;
+mod agent_mentions;
 use arugula_mux::agentenv;
 pub mod api;
 pub mod args;
@@ -678,8 +679,21 @@ fn sharing_cli(
     use arugula_proto::sharing;
     let state = |on| if on { "on" } else { "off" };
     let about = "Invite a guest with only OpenSSH to a pane (`arugula share --guest`).";
+    let mentions_about = "A teammate's `@<machine>` or reply in a thread reaches this machine's agents.";
     match (name, switch) {
-        (None, _) => println!("guest-ssh  {:3}  {about}", state(sharing::guest_ssh(dir))),
+        (None, _) => {
+            println!("guest-ssh  {:3}  {about}", state(sharing::guest_ssh(dir)));
+            println!("agent-mentions  {:3}  {mentions_about}", state(sharing::agent_mentions(dir)));
+        }
+        (Some(args::SharingSetting::AgentMentions), None) => println!("{}", state(sharing::agent_mentions(dir))),
+        (Some(args::SharingSetting::AgentMentions), Some(s)) => {
+            let on = s == args::OnOff::On;
+            sharing::set_agent_mentions(dir, on).map_err(|e| anyhow::anyhow!("{e}"))?;
+            println!("agent-mentions is {}", state(on));
+            if daemon_running(dir) {
+                println!("  The running daemon follows at once.");
+            }
+        }
         (Some(args::SharingSetting::GuestSsh), None) => println!("{}", state(sharing::guest_ssh(dir))),
         (Some(args::SharingSetting::GuestSsh), Some(s)) => {
             let on = s == args::OnOff::On;

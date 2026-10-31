@@ -2,7 +2,10 @@
 //! post in what its owner's grants reach, signed as the machine; mentions
 //! of an agent are kept and read back, and push nobody.
 
-use arugula_control_wire::chat::{AGENT_ROOMS, AGENT_SEARCH, agent_messages};
+use arugula_control_wire::{
+    chat::{AGENT_ROOMS, AGENT_SEARCH, agent_messages},
+    forge::{DaemonOp, OpAnswer},
+};
 use arugula_e2e::team::TeamRole;
 use serde_json::{Value, json};
 
@@ -81,12 +84,14 @@ async fn an_agent_lists_reads_searches_and_posts_where_granted() {
                { "kind": "project", "id": t, "name": "t", "powers": ["threads.post", "threads.read"] }])
     );
 
-    // b asks geek's agent by name; nobody is pushed for it, and the word
-    // reached someone.
+    // b asks geek's agent by name; geek's daemon is connected and takes it, so
+    // the word reached someone, and no device is pushed.
+    hub.answers_ops("geek", OpAnswer::Done { url: None });
     let (st, asked) =
         call(&base, "b", "POST", "/api/chat/rooms/ch_general/messages", say("@geek-box's agent: look")).await;
     assert_eq!(st, 200, "{asked}");
     assert_eq!((&asked["mentions"], &asked["unreached"]), (&json!(["machine:geek"]), &json!([])));
+    assert_eq!(asked["pushed"], json!([{ "account": "machine:geek", "why": "agent" }]));
     assert!(hub.pushes().is_empty(), "nobody pushed: {:?}", hub.pushes());
     call(&base, "b", "POST", "/api/chat/rooms/ch_general/messages", say("and something else")).await;
 
@@ -167,10 +172,11 @@ async fn an_agent_is_mentioned_only_where_it_reaches() {
     let (_, v) = call(&base, "b", "POST", "/api/chat/rooms/ch_general/messages", say("@geek-box hi")).await;
     assert_eq!((&v["mentions"], &v["unreached"]), (&json!([]), &json!(["geek-box"])), "post only: {v}");
     call(&base, "a", "POST", "/api/grants", give("geek", THREADS_READ, json!({ "kind": "project", "id": t }))).await;
+    hub.answers_ops("geek", OpAnswer::Done { url: None });
     let (_, v) = call(&base, "b", "POST", "/api/chat/rooms/ch_general/messages", say("@a and @GEEK-box")).await;
     assert_eq!((&v["mentions"], &v["unreached"]), (&json!(["a", "machine:geek"]), &json!([])), "{v}");
     let pushed: Vec<&str> = v["pushed"].as_array().unwrap().iter().map(|p| p["account"].as_str().unwrap()).collect();
-    assert_eq!(pushed, ["a"], "the person is pushed, not the machine");
+    assert_eq!(pushed, ["a", "machine:geek"], "the person is pushed, and the machine told");
     assert!(hub.pushes().iter().all(|(to, _, _)| to == "a"), "{:?}", hub.pushes());
     let (_, v) = call(&base, "b", "POST", "/api/chat/rooms/dm_bx/messages", say("@geek-box?")).await;
     assert_eq!(v["unreached"], json!(["geek-box"]), "a's grant doesn't reach b and x's DM");
@@ -223,4 +229,91 @@ async fn an_agent_comments_on_an_issue_by_its_id() {
     assert!(ids(&v).contains(&room.as_str()), "{v}");
     let (st, _) = geek(&base, "GET", &agent_messages(&theirs.id), None).await;
     assert_eq!(st, 404, "u's issue isn't a's to see");
+}
+
+/// Gives geek (a's machine) threads in t, as `an_agent_is_mentioned_only_where_it_reaches` does.
+async fn geek_in_t(base: &str, t: &str) {
+    for power in [THREADS_POST, THREADS_READ] {
+        let (st, g) =
+            call(base, "a", "POST", "/api/grants", give("geek", power, json!({ "kind": "project", "id": t }))).await;
+        assert_eq!(st, 200, "{g}");
+    }
+}
+
+/// The ops asked of geek, as `(room, seq, parent, author, text)`.
+fn told(hub: &crate::testing::hub::TestHub) -> Vec<(String, i64, Option<i64>, String, String)> {
+    hub.ops_asked()
+        .into_iter()
+        .filter_map(|(m, op)| match op {
+            DaemonOp::AgentMention(a) if m == "geek" => Some((a.room, a.seq, a.parent, a.author, a.text)),
+            _ => None,
+        })
+        .collect()
+}
+
+/// `@geek-box` with geek connected is told to its daemon, and reached
+/// (`pushed`); with it offline, or its owner's switch off, the word is
+/// `unreached` and the mention is still stored for the agents to read.
+#[tokio::test]
+async fn a_mention_is_told_to_the_machine_or_says_it_was_not() {
+    let (hub, _app, base, t, _u) = seeded().await;
+    geek_in_t(&base, &t).await;
+    let post = |text: &'static str| call(&base, "b", "POST", "/api/chat/rooms/ch_general/messages", say(text));
+
+    // Offline (the test hub's default): not told, the word unreached.
+    let (_, v) = post("@geek-box are you there").await;
+    assert_eq!((&v["mentions"], &v["unreached"]), (&json!(["machine:geek"]), &json!(["geek-box"])), "{v}");
+    assert_eq!(v["pushed"], json!([]));
+
+    // The owner turned mentions off: the daemon says so.
+    hub.answers_ops("geek", OpAnswer::Cant { why: "off".into() });
+    let (_, v) = post("@geek-box now?").await;
+    assert_eq!((&v["unreached"], &v["pushed"]), (&json!(["geek-box"]), &json!([])), "{v}");
+
+    // Connected: told, and pushed as the machine.
+    hub.answers_ops("geek", OpAnswer::Done { url: None });
+    let (_, v) = post("@geek-box what is the board for").await;
+    assert_eq!((&v["unreached"], &v["pushed"]), (&json!([]), &json!([{ "account": "machine:geek", "why": "agent" }])));
+    let sent = told(&hub);
+    let last = sent.last().unwrap();
+    assert_eq!((last.0.as_str(), last.2, last.4.as_str()), ("ch_general", None, "@geek-box what is the board for"));
+    assert_eq!(last.3, "b", "{sent:?}");
+}
+
+/// A reply under a message of an agent's is for that agent's machine, with
+/// no mention; a reply under a person's, or the agent's own, is for nobody.
+#[tokio::test]
+async fn a_reply_to_an_agents_message_is_told_to_its_machine() {
+    let (hub, _app, base, t, _u) = seeded().await;
+    geek_in_t(&base, &t).await;
+    hub.answers_ops("geek", OpAnswer::Done { url: None });
+    let room = "/api/chat/rooms/ch_general/messages";
+
+    // b starts a thread; a reply under b's own message tells no one.
+    let (_, root) = call(&base, "b", "POST", room, say("a question for the board")).await;
+    let root = root["seq"].as_i64().unwrap();
+    let reply = |text: &'static str| call(&base, "b", "POST", room, Some(json!({ "text": text, "parent": root })));
+    let (_, v) = reply("more on it").await;
+    assert_eq!(v["pushed"], json!([]));
+    assert!(told(&hub).is_empty());
+
+    // geek's agent answers in the thread; b's next reply there is for it.
+    let (st, v) =
+        geek(&base, "POST", &agent_messages("ch_general"), Some(json!({ "text": "my view", "parent": root }))).await;
+    assert_eq!(st, 200, "{v}");
+    let (_, v) = reply("thanks, and one more thing").await;
+    assert_eq!(v["pushed"], json!([{ "account": "machine:geek", "why": "agent" }]), "{v}");
+    let sent = told(&hub);
+    assert_eq!(sent.len(), 1, "{sent:?}");
+    assert_eq!((sent[0].2, sent[0].4.as_str()), (Some(root), "thanks, and one more thing"));
+
+    // The agent's own reply isn't told to itself, and a person's reply
+    // after b's isn't an answer to the agent's message.
+    let (_, v) =
+        geek(&base, "POST", &agent_messages("ch_general"), Some(json!({ "text": "ok", "parent": root }))).await;
+    assert_eq!(told(&hub).len(), 1, "{v}");
+    let (_, v) = reply("and then b says more").await;
+    assert_eq!(v["pushed"], json!([{ "account": "machine:geek", "why": "agent" }]), "the agent spoke last: {v}");
+    let (_, v) = call(&base, "a", "POST", room, Some(json!({ "text": "a chimes in", "parent": root }))).await;
+    assert_eq!(v["pushed"].as_array().map(|p| p.iter().filter(|p| p["why"] == "agent").count()), Some(0), "{v}");
 }

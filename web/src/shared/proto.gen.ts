@@ -1037,7 +1037,7 @@ export type ChatPresent = { account: string, state: PresenceState, };
 /**
  * Why control pushed someone.
  */
-export type ChatPushWhy = "mention" | "dm" | "keyword" | "message" | "thread";
+export type ChatPushWhy = "mention" | "dm" | "keyword" | "message" | "thread" | "agent";
 
 export type ChatPushed = { account: string, why: ChatPushWhy, };
 
@@ -4583,6 +4583,12 @@ export type Sharing = {
  */
 guest_ssh: boolean, 
 /**
+ * Agent mentions (Arugula #394): teammates' messages in a thread
+ * reach this machine's agents (`@<machine>`, or a reply to one of
+ * them). On by default; the owner turns it off here.
+ */
+agent_mentions?: boolean, 
+/**
  * Whether this build has guest ssh. A build without Labs keeps the
  * setting, and nothing follows. Absent: it has.
  */
@@ -4592,7 +4598,7 @@ built?: boolean, };
  * `PUT /api/sharing` (the `sharing.set` operation): the settings to
  * change; one left out stays as it is.
  */
-export type SharingSetRequest = { guest_ssh?: boolean, };
+export type SharingSetRequest = { guest_ssh?: boolean, agent_mentions?: boolean, };
 
 /**
  * A split's area and how long each child is along the split's direction,
