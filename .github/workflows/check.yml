@@ -615,6 +615,11 @@ jobs:
       testnet: ${{ steps.ask.outputs.testnet }}
     steps:
       - uses: actions/checkout@v4
+      # scripts/changed runs chant ci base (chant#4643) through npx: keep its download.
+      - uses: actions/cache@v4
+        with:
+          path: ~/.npm
+          key: npm-chant-0.124.61
       - id: ask
         run: |
           before="${{ github.event.before }}"

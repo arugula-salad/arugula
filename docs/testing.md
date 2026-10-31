@@ -135,8 +135,9 @@ the tick bisects the unbuilt commits below it (dispatching check.yml at a
 `ci/build/<sha>` tag) to name the one that broke it. Its records are on the
 `chant/lifecycle` branch (`_ci/<sha>.json`). Since an unbuilt commit
 may sit under a docs-only push, the jobs that skip on what changed
-(`scripts/changed`) diff main against the newest green commit, not the
-push's previous one. The nightly workflows aren't required: `scripts/ci-nightly-red`
+(`scripts/changed`) diff main against `chant ci base` (chant#4643): the
+newest commit below whose record shows every required phase built and
+passed there, not the push's previous one. When chant finds none, they run. The nightly workflows aren't required: `scripts/ci-nightly-red`
 opens an issue for each whose newest scheduled run failed (below). `.github/workflows/chant-ci-green.yml` runs
 `chant ci tick` when check, windows or windows-desktop finish on main, and
 every 15 minutes. It's generated: after changing `ci.green` or those
