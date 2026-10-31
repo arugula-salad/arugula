@@ -1,0 +1,47 @@
+{
+  "schema": 1,
+  "commit": "6bcdde489207a16e8485d5bfe84ebe8a23b8ec24",
+  "branch": "main",
+  "state": "pending",
+  "at": "2026-10-31T00:05:38Z",
+  "phases": {
+    "lint": {
+      "verdict": "pending",
+      "build": "newest",
+      "runs": []
+    },
+    "build": {
+      "verdict": "pending",
+      "build": "newest",
+      "runs": []
+    },
+    "test": {
+      "verdict": "pending",
+      "build": "newest",
+      "runs": [],
+      "culprit": "1e00c112eba29f15cf5d08e1ea699c2786a1ff44"
+    },
+    "e2e": {
+      "verdict": "pending",
+      "build": "newest",
+      "runs": []
+    },
+    "claims": {
+      "verdict": "pending",
+      "build": "newest",
+      "runs": []
+    },
+    "macos": {
+      "verdict": "pending",
+      "build": "newest",
+      "runs": [],
+      "culprit": "1e00c112eba29f15cf5d08e1ea699c2786a1ff44"
+    },
+    "windows": {
+      "verdict": "pending",
+      "build": "newest",
+      "runs": [],
+      "culprit": "1e00c112eba29f15cf5d08e1ea699c2786a1ff44"
+    }
+  }
+}
