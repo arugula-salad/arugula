@@ -15,17 +15,20 @@ name: pull request (hosted)
 #
 # A fork's pull request gets no secrets, and nothing here needs one:
 # without SCCACHE_WEBDAV_PASSWORD .github/actions/setup leaves sccache out
-# and the build compiles cold (rust-cache still restores main's
-# dependencies). No pull_request_target: a pull request's code never runs
+# and the build compiles cold. No pull_request_target: a pull request's code never runs
 # with this repository's secrets or a write token.
 #
 # The jobs' names: chant matches main's required checks by name
 # (chant.workspace.json's ci.green phases: lint, build, e2e*, ...). A pull
 # request's check runs land on its head commit, which a squash merge
 # leaves off main, but these are still named so that no phase's pattern
-# matches them, as binaries.yml's are (docs/testing.md). The job ids are
-# check.yml's, so rust-cache (keyed by job id) restores what main's build
-# saved.
+# matches them, as binaries.yml's are (docs/testing.md).
+#
+# Its build is cold for the Rust crates even with sccache: on this PR's
+# first run (#1927) sccache hit only Ghostty's C and assembly (419 of 1018
+# compiles, no Rust), and rust-cache found nothing, since main's caches
+# come from the pods (another checkout path, another set of toolchains)
+# and a pull request doesn't save. It still built in under 7 minutes.
 on:
   pull_request:
 
@@ -43,8 +46,7 @@ env:
   # mise's GitHub downloads (Zig's, nextest's) share the runner's IP's rate
   # limit unauthenticated.
   GITHUB_TOKEN: ${{ github.token }}
-  # As check.yml's: rust-cache's key hashes the CARGO_* variables, so
-  # these keep it main's build's.
+  # As check.yml's, so the binaries are the ones main's build makes.
   CARGO_PROFILE_DEV_DEBUG: line-tables-only
   CARGO_PROFILE_TEST_DEBUG: line-tables-only
 
