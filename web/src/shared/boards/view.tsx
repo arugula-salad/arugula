@@ -36,7 +36,7 @@ import { agentShort } from "../agent-label";
 import { day } from "../time";
 import { BoardError, STALE_REV, boards, type ForgeChecks } from "./store";
 import "./boards.css";
-import { BLOCK_LABEL, PICK_DELAY_MS, cardTone, checkTone, checkWord, groupMove, liveTone, prsOf, PICK_LIMIT, assigneesLine, blockClass, GOAL_MAX, answerReady, askWaitingLine, blockFacts, chipOf, debounced, earlierLine, epicLine, groupLine, isCard, laneCount, liveClass, liveWord, marksOf, needsYou, pointerHref, pointerLabel, pointerText, pointerToSend, proofMark, sections, stepActive, workLabel } from "./text";
+import { PICK_DELAY_MS, cardTone, checkTone, checkWord, groupMove, liveTone, prsOf, PICK_LIMIT, assigneesLine, blockClass, GOAL_MAX, answerReady, askWaitingLine, blockFacts, chipOf, settledFacts, debounced, earlierLine, epicLine, groupLine, isCard, laneCount, liveClass, liveWord, marksOf, needsYou, pointerHref, pointerLabel, pointerText, pointerToSend, proofMark, sections, stepActive, workLabel } from "./text";
 
 const STALE_SAID = "That changed while you were editing, so the board is read again. Make your change again if it still applies.";
 
@@ -505,35 +505,43 @@ function Lane({
   );
 }
 
-/** An attachment as a chip (`sw-chip`): what it points at, and its state. */
-function Chip({ a, platform }: { a: BoardAttachment; platform: (path: string) => string | undefined }) {
+/** An attachment as a chip (`sw-chip`): what it points at, and its state. An agent block is one chip, its title and its state (no second status line), a link to its pane where the reader can reach it: control's page on the platform page, the pane itself in the shell. `facts` says its branch and the rest after the chip, dim: `settled`, once it has stopped; `all`, in the drawer. */
+function Chip({ a, platform, facts = "settled" }: { a: BoardAttachment; platform: (path: string) => string | undefined; facts?: "settled" | "all" }) {
+  const api = usePlatformApi();
   const c = chipOf(a);
-  const href = pointerHref({ pointer: a.pointer, live: a.live }, platform);
-  return (
-    <span class={`sw-chip board-chip ${a.role}`} data-board-attachment={a.id} data-attach-role={a.role}>
-      {a.role === "proof" && <span class="dim">proof </span>}
-      {href ? (
-        <a class="board-ptr" href={href} target={a.pointer.kind === "forge_item" || a.pointer.kind === "link" ? "_blank" : undefined} rel="noopener noreferrer">
-          {c.label}
-        </a>
-      ) : (
-        <span class="board-ptr">{c.label}</span>
-      )}
-      {c.state && <span class={`ws-tag board-live ${a.live ? liveClass(a.live.state) : a.block ? blockClass(a.block.state) : ""}`}>{c.state}</span>}
-    </span>
+  const p = a.pointer;
+  const href = pointerHref({ pointer: p, live: a.live }, platform);
+  // The pane: a link to control's page here; in the shell, when the machine is one of the reader's.
+  const pane = p.kind === "block" ? (api.controlHref ? { href: api.controlHref(`pane=${p.machine}.${p.pane}`) } : api.machine(p.machine) ? { go: () => api.goToPane(p.machine, p.pane, null) } : null) : null;
+  const name = pane?.href ? (
+    <a class="board-ptr" href={pane.href} target="_blank" rel="noopener noreferrer" title="Open its pane" data-board-block-open>
+      {c.label}
+    </a>
+  ) : pane?.go ? (
+    <a class="board-ptr" href="#" title="Open its pane" data-board-block-open onClick={(e) => (e.preventDefault(), pane.go!())}>
+      {c.label}
+    </a>
+  ) : href ? (
+    <a class="board-ptr" href={href} target={p.kind === "forge_item" || p.kind === "link" ? "_blank" : undefined} rel="noopener noreferrer">
+      {c.label}
+    </a>
+  ) : (
+    <span class="board-ptr">{c.label}</span>
   );
-}
-
-/** What a machine reported of an attached agent block. */
-function BlockLine({ a }: { a: BoardAttachment }) {
-  const b = a.block!;
+  const more = a.block ? (facts === "all" ? blockFacts(a.block) : settledFacts(a.block)) : [];
   return (
-    <div class="board-line board-block" data-board-block={b.state}>
-      <span class={`ws-tag ${blockClass(b.state)}`}>{BLOCK_LABEL[b.state]}</span>
-      {blockFacts(b).map((f) => (
-        <span class="board-fact dim" key={f}>{f}</span>
-      ))}
-    </div>
+    <>
+      <span class={`sw-chip board-chip ${a.role}`} data-board-attachment={a.id} data-attach-role={a.role} data-board-block={a.block?.state}>
+        {a.role === "proof" && <span class="dim">proof </span>}
+        {name}
+        {c.state && <span class={`ws-tag board-live ${a.live ? liveClass(a.live.state) : a.block ? blockClass(a.block.state) : ""}`}>{c.state}</span>}
+      </span>
+      {more.length > 0 && (
+        <span class="board-fact dim" data-board-block-facts>
+          {more.join(" · ")}
+        </span>
+      )}
+    </>
   );
 }
 
@@ -658,7 +666,6 @@ function Row({
               ))}
             </div>
           )}
-          {current.map((a) => (a.block ? <BlockLine key={a.id} a={a} /> : null))}
           {earlier.length > 0 && (
             <details class="board-earlier" data-board-earlier={earlier.length}>
               <summary class="dim">{earlierLine(earlier.length)}</summary>
@@ -667,7 +674,6 @@ function Row({
                   <Chip key={a.id} a={a} platform={platform} />
                 ))}
               </div>
-              {earlier.map((a) => (a.block ? <BlockLine key={a.id} a={a} /> : null))}
             </details>
           )}
           {r.note && (
@@ -826,8 +832,7 @@ function Drawer({ r, platform, close }: { r: BoardRow; platform: (path: string) 
           <h3>Attached</h3>
           {r.attachments.map((a) => (
             <div key={a.id} class="board-drawer-attached">
-              <Chip a={a} platform={platform} />
-              {a.block && <BlockLine a={a} />}
+              <Chip a={a} platform={platform} facts="all" />
             </div>
           ))}
         </section>

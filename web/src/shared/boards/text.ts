@@ -128,6 +128,11 @@ export function blockClass(w: BoardBlockWord): string {
   return w === "needs_input" ? "waits" : "";
 }
 
+/** The facts of a block worth saying beside its chip: its branch, pushed state and uncommitted files once it has stopped working (idle or closed), where they say what is left to do. While it works or waits, the state is all. */
+export function settledFacts(b: BoardBlockState): string[] {
+  return b.state === "idle" || b.state === "closed" ? blockFacts(b) : [];
+}
+
 /** The rest of a block's report, each fact short: `branch@head`, pushed or
  * unpushed, the uncommitted files and the diffstat (`3 files, +40 −2`). */
 export function blockFacts(b: BoardBlockState): string[] {
@@ -152,7 +157,7 @@ export function laneCount(z: Pick<BoardZone, "rows">): { total: number; proven: 
 export function chipOf(a: Pick<BoardAttachment, "pointer" | "live" | "block" | "role">): { label: string; state: string | null } {
   const label = pointerLabel(a.pointer, a.live);
   // The block's own name, when its starter gave it one (#372).
-  if (a.block) return { label: a.block.title || label, state: BLOCK_LABEL[a.block.state] };
+  if (a.block) return { label: a.block.title?.trim() || label, state: BLOCK_LABEL[a.block.state] };
   if (a.live) return { label, state: liveWord(a.live) };
   return { label, state: null };
 }
@@ -199,7 +204,8 @@ export function pointerLabel(p: BoardPointer, live?: BoardLive | null): string {
     case "workspace":
       return `workspace ${short(p.id)}`;
     case "block":
-      return `agent ${p.pane}`;
+      // A pane number means nothing to a reader: the block's title names it (`chipOf`).
+      return "agent";
     case "link":
       return p.url.replace(/^https:\/\//, "");
   }

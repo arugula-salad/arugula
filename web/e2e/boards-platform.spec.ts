@@ -436,6 +436,11 @@ test("a board's cards carry their lane's tone, its groups are managed on the pag
   const lanes = alice.locator("[data-board-group] .board-lanes");
   await expect(lanes).toHaveCount(1, { timeout: 15_000 });
   await expect(alice.locator("[data-board-zone] ul.sw-cards")).toHaveCount(4);
+  // A group's title is a heading above the lanes, and a row's title is a smaller, plainer one.
+  const px = (l: Locator) => l.evaluate((el) => parseFloat(getComputedStyle(el).fontSize));
+  expect(await px(alice.locator("[data-board-group-title]").first())).toBeGreaterThanOrEqual(22);
+  expect(await px(alice.locator("[data-board-zone] h2").first())).toBeLessThan(18);
+  expect(await px(alice.locator("[data-board-row] [data-board-title]").first())).toBeLessThanOrEqual(15);
   // The bar is the lane's tone; a row that waits on Alice takes the attention tone, and the header counts it.
   const card = row(alice, SHIPPED);
   await expect(zone(alice, "Done").locator(card)).toHaveClass(/\bsw-card\b.*\bsw-ok\b/);
@@ -514,6 +519,11 @@ test("a card's title opens the drawer with the item's body, its comments and the
       pr.pointer = { kind: "forge_item", id: checks.item };
       pr.live = { state: "checks_failed", kind: "pr", repo: "acme/app", number: 7, title: SHIPPED, assignees: [] };
       pr.lane = "review";
+      // Two agents on it: one working with a title, one idle with none. Neither is named by its pane number.
+      pr.attachments = [
+        { id: "att_0000000000000000000000000000aa01", role: "work", pointer: { kind: "block", machine: "mch_0123", pane: "640" }, block: { state: "working", title: "Lexer lane", branch: "feat/lexer", head: "abc1234", pushed: false, uncommitted: 2 } },
+        { id: "att_0000000000000000000000000000aa02", role: "work", pointer: { kind: "block", machine: "mch_0123", pane: "641" }, block: { state: "idle", branch: "feat/other", head: "def5678", pushed: true, uncommitted: 0 } },
+      ];
     }
     await route.fulfill({ response: r, json: j });
   });
@@ -531,6 +541,17 @@ test("a card's title opens the drawer with the item's body, its comments and the
   await platform(alice, managed);
   const card = row(alice, SHIPPED);
   await expect(card).toHaveClass(/\bsw-warn\b/, { timeout: 15_000 });
+  // One chip per agent: its title and its state, once. Its branch and the rest come only when it has stopped, dim beside the chip.
+  const working = card.locator('[data-board-block="working"]');
+  await expect(working).toHaveText(/^Lexer lane\s*working$/);
+  await expect(card.getByText("working", { exact: true })).toHaveCount(1);
+  await expect(card).not.toContainText("640");
+  await expect(card).not.toContainText("641");
+  await expect(card.locator('[data-board-block="idle"]')).toHaveText(/^agent\s*idle$/);
+  await expect(card.locator("[data-board-block-facts]")).toHaveText("feat/other@def5678 · pushed");
+  await expect(card).not.toContainText("feat/lexer");
+  // The chip opens the agent's pane, on control's page (the platform page has no panes of its own).
+  await expect(working.locator("[data-board-block-open]")).toHaveAttribute("href", /\/#pane=mch_0123\.640$/);
   // A modified click follows the link (a new tab), and leaves the board alone.
   const [tab] = await Promise.all([alice.context().waitForEvent("page"), card.locator("[data-board-open]").click({ modifiers: ["Shift"] })]);
   await tab.close();
@@ -556,6 +577,12 @@ test("a card's title opens the drawer with the item's body, its comments and the
   await expect(drawer.locator("[data-board-drawer-comments]")).toHaveCount(0);
   await expect(drawer.locator('[data-board-check="lint"]')).toContainText("failure");
   await drawer.locator("[data-board-drawer-close]").click();
+  if (process.env.BOARDS_SHOTS) {
+    await alice.setViewportSize({ width: 1400, height: 900 });
+    await alice.screenshot({ path: `${process.env.BOARDS_SHOTS}/board-agents-desktop.png`, animations: "disabled" });
+    await alice.setViewportSize({ width: 390, height: 844 });
+    await alice.screenshot({ path: `${process.env.BOARDS_SHOTS}/board-agents-phone.png`, animations: "disabled", fullPage: true });
+  }
   await alice.unroute(/\/api\/boards\/brd_[0-9a-f]+$/);
 });
 

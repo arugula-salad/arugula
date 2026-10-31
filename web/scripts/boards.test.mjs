@@ -3,7 +3,7 @@
 // the board routes' paths. Run with `node --experimental-strip-types`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { LANE_GLYPH, cardTone, checkTone, checkWord, groupMove, liveTone, prsOf, answerReady, askWaitingLine, assigneesLine, chipOf, counted, debounced, earlierLine, epicLine, firstLine, groupLine, isCard, laneCount, liveWord, marksOf, needsYou, needsYouLine, parsePointer, pointerHref, pointerLabel, pointerToSend, proofMark, rowGlyph, sections, stepActive, workLabel, workChip } from "../src/shared/boards/text.ts";
+import { settledFacts, LANE_GLYPH, cardTone, checkTone, checkWord, groupMove, liveTone, prsOf, answerReady, askWaitingLine, assigneesLine, chipOf, counted, debounced, earlierLine, epicLine, firstLine, groupLine, isCard, laneCount, liveWord, marksOf, needsYou, needsYouLine, parsePointer, pointerHref, pointerLabel, pointerToSend, proofMark, rowGlyph, sections, stepActive, workLabel, workChip } from "../src/shared/boards/text.ts";
 import { parse, pathOf } from "../src/platform/paths.ts";
 
 const P = "prj_8f2ec0ffee00112233445566778899aa";
@@ -36,7 +36,7 @@ test("a pointer is labelled by its item when the platform read it", () => {
   assert.equal(liveWord(plane), "In Progress");
   assert.equal(liveWord({ state: "open" }), "open");
   assert.equal(workLabel({ source: "plane", repo: "Arugula", identifier: "ARUGU", number: 12, title: "x" }), "ARUGU-12");
-  assert.equal(pointerLabel({ kind: "block", machine: "m1", pane: "p2" }), "agent p2");
+  assert.equal(pointerLabel({ kind: "block", machine: "m1", pane: "p2" }), "agent");
   assert.equal(pointerLabel({ kind: "none" }), "");
   const here = (path) => `https://app.example${path}`;
   assert.equal(pointerHref({ pointer: { kind: "forge_item", id: "fi_abc123" }, live }, here), "https://github.com/acme/app/pull/7");
@@ -91,13 +91,15 @@ test("an attachment's chip is its label and its state, and says nothing of what 
   const live = { state: "merged", kind: "pr", repo: "acme/app", number: 7, title: "Fix" };
   assert.deepEqual(chipOf({ role: "work", pointer: { kind: "forge_item", id: "fi_abc123" }, live }), { label: "acme/app#7", state: "merged" });
   assert.deepEqual(chipOf({ role: "work", pointer: { kind: "forge_item", id: "fi_abc123" } }), { label: "PR or issue abc123", state: null });
-  assert.deepEqual(chipOf({ role: "work", pointer: { kind: "block", machine: "m", pane: "7" }, block: { state: "working" } }), { label: "agent 7", state: "working" });
+  assert.deepEqual(chipOf({ role: "work", pointer: { kind: "block", machine: "m", pane: "7" }, block: { state: "working" } }), { label: "agent", state: "working" });
 });
 
 test("a block's chip is its title, and work on an issue says its board and links to the row (#372)", () => {
   const block = { role: "work", pointer: { kind: "block", machine: "m", pane: "7" } };
   assert.deepEqual(chipOf({ ...block, block: { state: "idle", title: "Lexer lane" } }), { label: "Lexer lane", state: "idle" });
-  assert.deepEqual(chipOf({ ...block, block: { state: "idle" } }), { label: "agent 7", state: "idle" });
+  assert.deepEqual(chipOf({ ...block, block: { state: "idle" } }), { label: "agent", state: "idle" });
+  // The pane number is never the name.
+  assert.deepEqual(chipOf({ ...block, block: { state: "idle", title: "  " } }), { label: "agent", state: "idle" });
   const on = { project: P, board: B, title: "Launch", row: "row_0a1b" };
   assert.deepEqual(workChip("#12", on), { label: "#12 · Launch", path: `/p/${P}/boards/${B}#row=row_0a1b` });
   assert.deepEqual(workChip("#12", null), { label: "#12", path: null });
@@ -243,4 +245,12 @@ test("a check says its conclusion once it has one, and its tone follows", () => 
   assert.equal(checkWord(c("completed", "success")), "success");
   assert.equal(checkWord(c("in_progress")), "in progress");
   assert.deepEqual([c("completed", "success"), c("completed", "failure"), c("queued"), c("completed", "skipped")].map(checkTone), ["ok", "danger", "warn", "muted"]);
+});
+
+test("a block's branch, pushed state and uncommitted files show only once it has stopped working", () => {
+  const facts = { branch: "feat/x", head: "abc1234", pushed: false, uncommitted: 2 };
+  assert.deepEqual(settledFacts({ state: "working", ...facts }), []);
+  assert.deepEqual(settledFacts({ state: "needs_input", ...facts }), []);
+  assert.deepEqual(settledFacts({ state: "idle", ...facts }), ["feat/x@abc1234", "unpushed", "2 uncommitted"]);
+  assert.equal(settledFacts({ state: "closed", ...facts }).length, 3);
 });
