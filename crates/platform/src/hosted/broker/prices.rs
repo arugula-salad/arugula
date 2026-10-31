@@ -227,21 +227,31 @@ mod tests {
         (a - b).abs() < 1e-9
     }
 
-    /// The broker's sums on the shared table: fast mode doubling only the
-    /// models that have it, and an unknown model at the dearest row. (The
-    /// table's own prices are `arugula-prices`' tests.)
+    /// The lobby's sums (`costOf` in studio's `lobby/metering.mjs`): a
+    /// million tokens of each kind at each column's price, cache writes at
+    /// 1.25× and 2× input, fast mode doubling only the models that have it,
+    /// and an unknown model at the dearest row.
     #[test]
-    fn prices_are_the_tables() {
+    fn prices_are_the_lobbys() {
         assert!(close(usd("claude-opus-5-20261001", json!({ "input_tokens": 1_000_000 })), 5.0));
         assert!(close(usd("claude-opus-5-5", json!({ "input_tokens": 1_000_000 })), 4.0), "most specific first");
+        assert!(close(usd("claude-sonnet-4-6", json!({ "output_tokens": 1_000_000 })), 15.0));
+        assert!(close(usd("claude-haiku-4-5", json!({ "cache_read_input_tokens": 1_000_000 })), 0.1));
         assert!(close(usd("claude-haiku-4-5", json!({ "cache_creation_input_tokens": 1_000_000 })), 1.25));
+        let hour = json!({ "cache_creation_input_tokens": 3_000_000,
+                           "cache_creation": { "ephemeral_1h_input_tokens": 1_000_000 } });
+        assert!(close(usd("claude-haiku-4-5", hour), 2.0 * 1.25 + 2.0), "what's left is the five-minute cache");
+        let both = json!({ "cache_creation": { "ephemeral_5m_input_tokens": 1_000_000, "ephemeral_1h_input_tokens": 0 },
+                           "cache_creation_input_tokens": 9_000_000 });
+        assert!(close(usd("claude-haiku-4-5", both), 1.25), "the split wins over the total");
         let fast = json!({ "output_tokens": 1_000_000, "speed": "fast" });
         assert!(close(usd("claude-opus-5-5", fast.clone()), 40.0));
-        assert!(close(usd("claude-opus-4-7", fast), 25.0), "no fast mode, no double");
+        assert!(close(usd("claude-opus-5", fast), 25.0), "no fast mode, no double");
         let (p, known) = price_of("claude-next-9");
         assert!(!known);
         assert_eq!(p.prefix, "claude-fable-5-1");
         assert!(close(usd("claude-next-9", json!({ "output_tokens": 1_000_000 })), 50.0));
+        assert!(close(usd("claude-haiku-4-5", json!({ "input_tokens": -5, "output_tokens": "x" })), 0.0));
         let search = json!({ "server_tool_use": { "web_search_requests": 3 } });
         assert!(close(usd("claude-haiku-4-5", search), 0.03), "web searches at $10 a thousand");
         // A reservation: 3,000 bytes as 1,000 tokens of one-hour cache
@@ -252,10 +262,42 @@ mod tests {
         );
         assert_eq!(reservation("claude-opus-5-5", 0, Some(1000), true), micros(1000.0 * 20.0 * 2.0 / 1e6));
         assert_eq!(reservation("claude-next", 0, None, false), micros(128_000.0 * 50.0 / 1e6), "the dearest row");
-        // A row with a long prompt's rates reserves at them.
-        assert_eq!(reservation("claude-haiku-5-5", 0, Some(1000), false), micros(1000.0 * 2.5 / 1e6));
         assert_eq!(micros(1.234_567_8), 1_234_568);
         assert_eq!(micros(f64::NAN), 0);
+    }
+
+    /// Hosted calls are charged at exactly the rows they were before the
+    /// table moved to `arugula-prices` (#398): every row, fast mode and the
+    /// fallback as main's `prices.rs` had them. A price change is a billing
+    /// change, made on purpose, here as well as in the table.
+    #[test]
+    fn prices_are_mains_table() {
+        let rows: Vec<(&str, f64, f64, f64)> =
+            arugula_prices::PRICES.iter().map(|p| (p.prefix, p.input, p.output, p.cache_read)).collect();
+        assert_eq!(
+            rows,
+            [
+                ("claude-fable-5-1", 10.0, 50.0, 0.25),
+                ("claude-fable-5", 10.0, 50.0, 0.25),
+                ("claude-mythos-5", 10.0, 50.0, 0.25),
+                ("claude-opus-5-5", 4.0, 20.0, 0.2),
+                ("claude-opus-5", 5.0, 25.0, 0.5),
+                ("claude-opus-4", 5.0, 25.0, 0.5),
+                ("claude-sonnet-5-5", 2.0, 10.0, 0.2),
+                ("claude-sonnet-5", 2.0, 10.0, 0.2),
+                ("claude-sonnet-4", 3.0, 15.0, 0.3),
+                ("claude-haiku-4-5", 1.0, 5.0, 0.1),
+            ]
+        );
+        assert!(arugula_prices::PRICES.iter().all(|p| p.over.is_none()), "no long-prompt rates");
+        assert_eq!(FAST, ["claude-opus-5-5"]);
+        assert_eq!(dearest().prefix, "claude-fable-5-1");
+        // Models with no row are still charged as the dearest.
+        for m in ["claude-haiku-5-5", "claude-mythos-5-1-x", "claude-next-9"] {
+            let known = price_of(m).1;
+            assert_eq!(known, m.starts_with("claude-mythos-5"), "{m}");
+        }
+        assert_eq!(price_of("claude-haiku-5-5").0.prefix, "claude-fable-5-1");
     }
 
     /// Server-sent events split anywhere, a JSON body, and a body with no
