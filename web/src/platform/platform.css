@@ -10,10 +10,18 @@
 /* The shell's frame (shared/frame.css, #1018): its surface around the
    page, and the page in a panel inside it, as a pane sits in the shell. */
 .platform {
+  --rail-w: 56px;
   height: 100%;
   display: flex;
-  flex-direction: column;
+  /* The rail (./rail, #377), then the page's body beside it; a phone has
+     the body alone. */
+  flex-direction: row;
   background: var(--surface);
+}
+
+.platform-body {
+  /* Chat's panel and the pages sit in it as they sat in .platform. */
+  min-height: 0;
 }
 
 .platform-main {
@@ -105,10 +113,27 @@
   white-space: nowrap;
 }
 
-/* The desktop app on macOS: its buttons sit over the head's left end,
-   before the wordmark (the shell's rail is under them instead). */
-html[data-desktop="macos"]:not([data-native-tabs]) .platform-bar {
+/* The desktop app on macOS: its buttons sit over the rail's top, in a strip
+   above the page, as on the shell (shared/style.css's `.app.ws`). With no
+   rail (a phone's width) they sit over the head's left end instead. */
+html[data-desktop="macos"]:not([data-native-tabs]) .platform:not(:has(> .ws-rail)) .platform-bar {
   padding-left: 78px;
+}
+html[data-desktop="macos"]:not([data-native-tabs]) .platform:has(> .ws-rail) {
+  position: relative;
+  padding-top: 28px;
+  box-sizing: border-box;
+}
+html[data-desktop="macos"]:not([data-native-tabs]) .platform:has(> .ws-rail)::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto;
+  height: 28px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--line-strong);
+  box-sizing: border-box;
+  app-region: drag;
+  -webkit-app-region: drag;
 }
 
 /* With AppKit's tab bar showing, the page starts below it, as the shell's
@@ -137,7 +162,7 @@ html[data-native-tabs] .platform {
 /* Chat in the page's frame (UI audit #169): the bar, then the rooms in a
    panel inset as a page's section is, not drawn over the window as the
    shell's chat is. A phone's chat keeps the whole screen. */
-.platform-chat > .chat:not(.phone) {
+.platform-chat > .platform-body > .chat:not(.phone) {
   position: relative;
   inset: auto;
   z-index: auto;
@@ -146,7 +171,7 @@ html[data-native-tabs] .platform {
   background: none;
 }
 
-.platform-chat > .chat:not(.phone) > .chat-body {
+.platform-chat > .platform-body > .chat:not(.phone) > .chat-body {
   margin: 8px;
   border: 1px solid var(--line-strong);
   border-radius: var(--field-radius);
@@ -154,7 +179,7 @@ html[data-native-tabs] .platform {
   overflow: hidden;
 }
 
-html[data-corners="square"] .platform-chat > .chat > .chat-body {
+html[data-corners="square"] .platform-chat > .platform-body > .chat > .chat-body {
   border-radius: 0;
 }
 

@@ -1,12 +1,11 @@
 // The platform page's bar (M150): where you are (the project, with a way
-// to the others), the platform's places, and a way back to the shell on
-// control's page, where the machines, the keys and the trust screens are.
-// It's the shell's workspace head (shared/frame.css, #1018): the wordmark
-// at its left end, then the project and its places, so the two pages sit
-// in one frame.
+// to the others) and the project's places. It's the shell's workspace head
+// (shared/frame.css, #1018), so the two pages sit in one frame. The rail
+// beside it (./rail, #377) has the wordmark's and Control's jobs and Chat;
+// on a phone, with no rail, the bar keeps them.
 
 import type { ComponentChildren } from "preact";
-import { useSubscribe } from "../shared/ui/hooks";
+import { usePhone, useSubscribe } from "../shared/ui/hooks";
 import { useEffect, useRef } from "preact/hooks";
 import { openMenu, useMenuFrom, type MenuItem } from "../shared/ui/menu";
 import { openAppearance } from "../shared/ui/appearance";
@@ -30,7 +29,7 @@ import { issuesPlace } from "./pages/triage-text";
  * workspaces and its deploys (Deploy… and a deploy) have places of their
  * own (Discovery 5). */
 type Section = "home" | "issues" | "boards" | "runs" | "sessions" | "workspaces" | "deploys" | "chat" | "inbox" | "settings";
-function sectionOf(r: Route): Section | null {
+export function sectionOf(r: Route): Section | null {
   switch (r.page) {
     case "project":
       return "home";
@@ -70,6 +69,12 @@ function sectionOf(r: Route): Section | null {
   }
 }
 
+/** Each project's chat is its own rooms (UI audit #169): a team's
+ * channels and DMs, Personal's your machines' threads. */
+export function chatPath(project: string | undefined): string {
+  return project ? pathOf({ page: "chat", project }, names) : "/chat";
+}
+
 function Place({ to, here, children, data }: { to: string; here: boolean; children: ComponentChildren; data: string }) {
   return (
     <a class={here ? "place frame-place here" : "place frame-place"} href={to} aria-current={here ? "page" : undefined} {...{ [`data-platform-${data}`]: "" }} onClick={(e) => follow(e, to)}>
@@ -85,6 +90,8 @@ export function PlatformBar({ children }: { children?: ComponentChildren }) {
   useSubscribe((fn) => chat.subscribe(fn));
   useSubscribe((fn) => where.subscribe(fn));
   const r = useRoute();
+  // A phone has no rail (#377): the bar keeps what the rail has elsewhere.
+  const rail = !usePhone();
   // None on a page that's no project's: the bar says "All projects".
   const project = barProject(r);
   const p = session.project(project);
@@ -99,13 +106,11 @@ export function PlatformBar({ children }: { children?: ComponentChildren }) {
   // body says it isn't one of theirs.
   const unknown = !!project && !p && session.state === "ready";
   const here = unknown ? null : sectionOf(r);
-  // Each project's chat is its own rooms (UI audit #169): a team's
-  // channels and DMs, Personal's your machines' threads.
-  const chatTo = project ? pathOf({ page: "chat", project }, names) : "/chat";
+  const chatTo = chatPath(project);
   const pick = (e: MouseEvent) => {
     const at = (e.currentTarget as HTMLElement).getBoundingClientRect();
     const items: MenuItem[] = [
-      // The way back to / where the wordmark is hidden (a phone).
+      // The way back to /, where there's no rail's Projects (a phone).
       { label: "All projects", checked: !project, run: () => go("/") },
       { header: "Projects" },
       ...session.projects.map((x) => ({ label: x.name, checked: x.id === project, run: () => go(pathOf({ page: "project", project: x.id }, names)) })),
@@ -142,17 +147,19 @@ export function PlatformBar({ children }: { children?: ComponentChildren }) {
     <header class="ws-head platform-bar" data-tauri-drag-region data-platform-bar>
       {/* As the shell's "Arugula / Control": which page this is, and the
           way to its overview, every project. */}
-      <a
-        class="ws-wordmark"
-        href="/"
-        aria-label="Arugula Projects: all your projects"
-        title="All your projects"
-        aria-current={r.page === "home" ? "page" : undefined}
-        data-platform-wordmark
-        onClick={(e) => follow(e, "/")}
-      >
-        Arugula <span aria-hidden="true">/</span> <strong>Projects</strong>
-      </a>
+      {!rail && (
+        <a
+          class="ws-wordmark"
+          href="/"
+          aria-label="Arugula Projects: all your projects"
+          title="All your projects"
+          aria-current={r.page === "home" ? "page" : undefined}
+          data-platform-wordmark
+          onClick={(e) => follow(e, "/")}
+        >
+          Arugula <span aria-hidden="true">/</span> <strong>Projects</strong>
+        </a>
+      )}
       <button
         ref={switcher}
         class="scope-label platform-project"
@@ -205,11 +212,13 @@ export function PlatformBar({ children }: { children?: ComponentChildren }) {
             Deploys
           </Place>
         )}
-        <Place to={chatTo} here={here === "chat"} data="chat">
-          Chat
-          {/* An id that's none of the reader's counts nothing. */}
-          {!unknown && (!project || p) && <ChatPlaceUnread team={p ? (p.team?.id ?? null) : undefined} />}
-        </Place>
+        {!rail && (
+          <Place to={chatTo} here={here === "chat"} data="chat">
+            Chat
+            {/* An id that's none of the reader's counts nothing. */}
+            {!unknown && (!project || p) && <ChatPlaceUnread team={p ? (p.team?.id ?? null) : undefined} />}
+          </Place>
+        )}
         <Place to="/inbox" here={here === "inbox"} data="inbox">
           Inbox
           <InboxCount />
@@ -221,9 +230,11 @@ export function PlatformBar({ children }: { children?: ComponentChildren }) {
       </nav>
       {children}
       <div class="bar-fill" data-tauri-drag-region />
-      <a class="place platform-shell" href={controlOrigin()} title="Your machines, terminals, devices and teams, on Control" data-platform-shell>
-        Control
-      </a>
+      {!rail && (
+        <a class="place platform-shell" href={controlOrigin()} title="Your machines, terminals, devices and teams, on Control" data-platform-shell>
+          Control
+        </a>
+      )}
       {/* #341: live presence, beside the account, with its Labs flag. */}
       <LiveSwitch />
       {me && (

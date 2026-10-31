@@ -86,7 +86,7 @@ test("a project's home lists its channels and its team, read only, with the way 
 
 test("chat on the platform page: Alice makes #general and mentions Bob, who answers", async () => {
   test.setTimeout(90_000);
-  await alice.locator("[data-platform-chat]").click();
+  await alice.locator("[data-open-chat]").click();
   const page = alice.locator("[data-chat-control]");
   await expect(page).toBeVisible({ timeout: 15_000 });
   await page.locator(`[data-room-new="${team}/channels"]`).click();
