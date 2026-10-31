@@ -130,7 +130,7 @@ impl Db {
                      WHERE i.repo_id = ?1 AND i.number = ?2 AND l.unlinked_at IS NULL"
                 ),
                 params![repo_id, number],
-                |r| Ok((item_row(r)?, r.get::<String>(18)?)),
+                |r| Ok((item_row(r)?, r.get::<String>(19)?)),
             )
             .optional()?
         else {

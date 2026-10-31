@@ -453,6 +453,8 @@ pub struct ForgeItem {
     pub number: u64,
     pub kind: String,
     pub state: String,
+    /// An issue's GitHub `state_reason`, when it has one.
+    pub state_reason: Option<String>,
     pub title: String,
     pub labels: String,
     pub author_login: Option<String>,
@@ -469,7 +471,7 @@ pub struct ForgeItem {
 }
 
 pub(super) const ITEM_COLUMNS: &str = "i.id, i.repo_id, i.number, i.kind, i.state, i.title, i.labels, i.author_login, i.author_id, \
-     i.assignees, i.reviewers, i.draft, i.merge_state, i.head_ref, i.head_sha, i.base_ref, i.created_at, i.updated_at";
+     i.assignees, i.reviewers, i.draft, i.merge_state, i.head_ref, i.head_sha, i.base_ref, i.created_at, i.updated_at, i.state_reason";
 
 pub(super) fn item_row(r: &Row) -> anyhow::Result<ForgeItem> {
     Ok(ForgeItem {
@@ -491,6 +493,7 @@ pub(super) fn item_row(r: &Row) -> anyhow::Result<ForgeItem> {
         base_ref: r.get(15)?,
         created_at: r.get(16)?,
         updated_at: r.get(17)?,
+        state_reason: r.get(18)?,
     })
 }
 
