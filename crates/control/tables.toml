@@ -1387,6 +1387,17 @@ note = "Those of projects that go with it go. The rest stay: they name no accoun
 seen_by = ["litestream"]
 
 [[table]]
+name = "board_asks"
+plane = "platform"
+process = "platform"
+holds = "plaintext"
+what = "A question on a board's row that a person answers (Arugula #367): who it is for, the question, why, its options and recommendation, who asked (a person, or the machine of their agent), and once answered, the answer, who gave it and when. An answered one stays as the row's history."
+why_asleep = "A teammate answers an agent's question on their phone with every machine asleep."
+with_account = "partly"
+note = "Those of projects that go with it go, and those that name the account. Where it only asked or answered, its name goes."
+seen_by = ["litestream"]
+
+[[table]]
 name = "board_block_states"
 plane = "platform"
 process = "platform"

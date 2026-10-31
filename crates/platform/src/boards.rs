@@ -108,6 +108,7 @@ use lanes::{Fact, Pr, Primary};
 use refs::{IssueKey, Refs, Source, references};
 
 pub mod agent;
+pub mod asks;
 pub mod lanes;
 pub mod refs;
 pub mod work;
@@ -200,6 +201,8 @@ fn refused(r: Refused) -> ApiError {
         }
         Refused::Bad(why) => err(StatusCode::BAD_REQUEST, &why),
         Refused::Forbidden(why) => err(StatusCode::FORBIDDEN, &why),
+        Refused::Conflict(why) => err(StatusCode::CONFLICT, &why),
+        Refused::Unprocessable(why) => err(StatusCode::UNPROCESSABLE_ENTITY, &why),
     }
 }
 
@@ -732,6 +735,10 @@ async fn progress(app: &Platform, project: &str, boards: &mut [wire::Board]) -> 
 async fn read(app: &Platform, account: &str, id: &str) -> Result<wire::BoardView, ApiError> {
     let stored = app.db.board_stored(id)?.ok_or_else(no_board)?;
     let mut machines: Vec<String> = stored.rows.iter().filter_map(|e| e.agent.clone()).collect();
+    machines.extend(stored.attachments.iter().filter_map(|a| match &a.pointer {
+        wire::Pointer::Block { machine, .. } => Some(machine.clone()),
+        _ => None,
+    }));
     machines.sort();
     machines.dedup();
     let names: HashMap<String, String> = if machines.is_empty() {
@@ -756,6 +763,7 @@ async fn read(app: &Platform, account: &str, id: &str) -> Result<wire::BoardView
             _ => (None, None),
         }
     };
+    let asks = asks::Asks::load(app, account, &project, id).await?;
     let mut zones: Vec<wire::Zone> = wire::Lane::ALL
         .iter()
         .map(|l| wire::Zone {
@@ -780,7 +788,7 @@ async fn read(app: &Platform, account: &str, id: &str) -> Result<wire::BoardView
         let mut ordered = mine.clone();
         ordered.sort_by_key(|a| is_earlier(a, &facts));
         let marks = marks_of(a.merged_not_closed, &e.pointer, &mine, &facts, &|p| chip(p).0.and_then(|l| l.repo));
-        let attachments = ordered
+        let attachments: Vec<wire::Attachment> = ordered
             .iter()
             .map(|a| {
                 let (live, block) = chip(&a.pointer);
@@ -795,17 +803,27 @@ async fn read(app: &Platform, account: &str, id: &str) -> Result<wire::BoardView
             g.progress.proven += u32::from(a.proof.is_some());
         }
         let at = wire::Lane::ALL.iter().position(|l| *l == a.lane).unwrap_or(0);
+        let raised = asks::raised(row_live.as_ref(), &attachments, e.updated_at, &|m| {
+            names.get(m).filter(|n| !n.is_empty()).cloned().unwrap_or_else(|| "a machine".to_owned())
+        });
+        let (ask, asked) = asks.row(&e.id, raised);
         zones[at].rows.push(wire::Row {
             id: e.id.clone(),
             rev: e.rev,
             pointer: e.pointer.clone(),
             note: e.note.clone(),
-            status: e.status,
+            status: match (&ask, e.status) {
+                (Some(_), _) => wire::Status::NeedsInput,
+                (None, wire::Status::NeedsInput) => wire::Status::None,
+                (None, s) => s,
+            },
             lane: a.lane,
             attachments,
             proof: a.proof,
             group: e.zone.clone(),
             marks,
+            ask,
+            asked,
             live: row_live,
             block: row_block,
             agent: e
@@ -979,8 +997,8 @@ fn primary_ok(p: &wire::Pointer) -> Result<(), ApiError> {
     }
 }
 
-/// Refuse what sets a lane: a lane for a group, a kind, or a status other
-/// than `needs_input`.
+/// Refuse what sets a lane: a lane for a group, a kind, or a status. A
+/// question for a person is an ask (#367), not `needs_input`.
 fn refuse_lane_writes(p: &wire::PutEntry) -> Result<(), ApiError> {
     if let Some(z) = &p.zone {
         group_id_ok(z)?;
@@ -988,7 +1006,13 @@ fn refuse_lane_writes(p: &wire::PutEntry) -> Result<(), ApiError> {
     if p.kind.is_some() {
         return Err(bad("a group has a title and no kind"));
     }
-    if p.status.is_some_and(|s| !matches!(s, wire::Status::NeedsInput | wire::Status::None)) {
+    if p.status == Some(wire::Status::NeedsInput) {
+        return Err(bad(
+            "ask with a question: a row that needs a person asks them on the board (an ask names who, the question \
+             and its options), and that replaces the needs_input status",
+        ));
+    }
+    if p.status.is_some_and(|s| s != wire::Status::None) {
         return Err(follows(
             "a row's lane comes from the live state of its issue, PR, agent block and run, so there is no status to \
              set: attach the work to the row instead",
@@ -1420,6 +1444,9 @@ pub async fn detach_route(
     Ok(Json(detach(&app, Actor::person(&s.account), &id, &attachment).await?))
 }
 
+#[cfg(test)]
+#[path = "boards_asks_tests.rs"]
+mod asks_tests;
 #[cfg(test)]
 #[path = "boards_tests.rs"]
 mod tests;

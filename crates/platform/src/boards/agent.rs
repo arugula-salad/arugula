@@ -179,6 +179,18 @@ pub async fn detach(
     Ok(Json(super::detach(&app, actor(&d), &id, &attachment).await?))
 }
 
+/// `POST /api/daemon/boards/{id}/rows/{row}/ask`: ask a person of the project
+/// a question on a row. There is no route to answer: only a person does.
+pub async fn ask(
+    State(app): State<Arc<Platform>>,
+    d: Machine,
+    Path((id, row)): Path<(String, String)>,
+    Json(n): Json<wire::NewAsk>,
+) -> J<wire::BoardView> {
+    app.limits.check_daemon(AGENT_BOARD_WRITES, &d.daemon)?;
+    Ok(Json(super::asks::ask(&app, actor(&d), &id, &row, &n).await?))
+}
+
 /// `PUT /api/daemon/block-state`: the state of one of the signing machine's
 /// own agent blocks. The machine is the signer's, never the body's, so one
 /// machine can't set another's block. Refused (403) unless the machine holds

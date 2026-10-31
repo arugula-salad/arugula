@@ -21,8 +21,10 @@
 //!   move it among them; remove or repoint a row its own machine added.
 //!   Never remove or repoint a row another hand added, or delete a group
 //!   that holds one: the platform refuses those (aru-123). **Nobody sets a
-//!   lane:** it follows the work, and a move to one and every status but
-//!   `needs_input` are refused (aru-125).
+//!   lane:** it follows the work, and a move to one and every status are
+//!   refused (aru-125). **Asking:** `ask` puts a question on a row for a
+//!   person (#367); they answer on the board, and the answer is in
+//!   `board_read` (a row's `asked`). An agent can't answer.
 //! - **Revs.** A row's `rev` counts changes to its note and pointer. A
 //!   write of a note names the `rev` that `board_read` showed; if the row
 //!   moved on, the platform answers 409 and this says to read again.
@@ -36,9 +38,9 @@
 
 use arugula_control_wire::boards::{
     self as wire, AGENT_BOARD_REACH, AttachRole, AttachRow, BoardList, BoardView, CloseBoard, EditBoard, MoveEntry,
-    NewBoard, Pointer, PutEntry, Status, agent_board, agent_board_attachment, agent_board_attachments,
+    NewAsk, NewBoard, Pointer, PutEntry, Status, agent_board, agent_board_attachment, agent_board_attachments,
     agent_board_close, agent_board_entries, agent_board_entry, agent_board_entry_move, agent_board_reopen,
-    agent_project_boards,
+    agent_board_row_ask, agent_project_boards,
 };
 use reqwest::Method;
 use rmcp::handler::server::common::schema_for_type;
@@ -58,23 +60,21 @@ pub(crate) const WRITE_TOOL: &str = "board_write";
 
 pub(crate) const READ_DESCRIPTION: &str = "Read a project's board in Arugula control (an epic when it has a goal; with this machine's boards.read grant over its project): a board is rows, each one piece of work: an issue or a PR, or a note, with a one-line note, and what is attached to it (work: PRs, agent blocks, runs; proof: runs, links). It is read as four lanes that follow the work, never placed by anyone: Next, Doing (an agent block that isn't closed, or a run running), Review (a PR is open) and Done (the issue is closed, or the PR merged or closed); a Done row is proven by CI (a PR merged with every check green) or by evidence, or not proven yet. Returns the lanes and rows with their ids and revs (what board_write names), and the board as 72-column text. With board (brd_…): that board. Without: the project's boards (project, else the one this clone's GitHub repo is linked to, else your person's personal project), to pick one from.";
 
-pub(crate) const WRITE_DESCRIPTION: &str = "Write to a project's board in Arugula control, at once: what you write lands now, labelled as your person's agent on this machine, never as them. Their boards.write grant over the project says you may, never more than their role. A board is rows, one piece of work each, and its lanes (Next, Doing, Review, Done) follow the live state of the work: you can't set a lane or a status (except needs_input); the platform refuses those, \"lanes follow the work\". What you can set is the plan: groups, the board's named, ordered sections (phases, waves, areas), and the group each row is in. You may make a board (an epic, with a goal), set its title and goal, close it with a note saying what a person can now do, and open it again; make, rename, move and delete groups (add_zone, edit_zone, move_zone, delete_zone), and put a row in a group or out of one (add_row with zone, move); add a row for an issue or a PR (a PR that names the issue of a row is attached to that row, and an item already on the board isn't added again; the answer says so), set a row's note, attach work (a PR, an agent block or a run, which moves the lane) or proof (a run or a link, which marks a Done row proven) to a row, take off an attachment you made, and remove or repoint a row you added. You may not remove or repoint a row someone else added, or delete a group that holds one. A note, a pointer or a group's title names the rev board_read showed for it; if it has changed since, this says so: board_read again and retry. Every kind returns the board as it is now.";
+pub(crate) const WRITE_DESCRIPTION: &str = "Write to a project's board in Arugula control, at once: what you write lands now, labelled as your person's agent on this machine, never as them. Their boards.write grant over the project says you may, never more than their role. A board is rows, one piece of work each, and its lanes (Next, Doing, Review, Done) follow the live state of the work: you can't set a lane or a status; the platform refuses those, \"lanes follow the work\". To get a person's decision, ask them: the ask kind puts a question on a row (who, the question, why, up to four options, a recommendation); they answer on the board, and you read the answer in board_read (the row's asked, newest first), never by waiting on it. What you can set is the plan: groups, the board's named, ordered sections (phases, waves, areas), and the group each row is in. You may make a board (an epic, with a goal), set its title and goal, close it with a note saying what a person can now do, and open it again; make, rename, move and delete groups (add_zone, edit_zone, move_zone, delete_zone), and put a row in a group or out of one (add_row with zone, move); add a row for an issue or a PR (a PR that names the issue of a row is attached to that row, and an item already on the board isn't added again; the answer says so), set a row's note, attach work (a PR, an agent block or a run, which moves the lane) or proof (a run or a link, which marks a Done row proven) to a row, take off an attachment you made, and remove or repoint a row you added. You may not remove or repoint a row someone else added, or delete a group that holds one. A note, a pointer or a group's title names the rev board_read showed for it; if it has changed since, this says so: board_read again and retry. Every kind returns the board as it is now.";
 
-/// The one status a row may be given: it asks a person for input, until
-/// asks replace it.
+/// The one status a row may be given: none, which clears an old one. A
+/// question for a person is an `ask` now.
 #[derive(Deserialize, JsonSchema, Clone, Copy)]
 #[serde(rename_all = "snake_case")]
 pub enum StatusArg {
     /// Clear it.
     None,
-    NeedsInput,
 }
 
 impl From<StatusArg> for Status {
     fn from(s: StatusArg) -> Self {
         match s {
             StatusArg::None => Status::None,
-            StatusArg::NeedsInput => Status::NeedsInput,
         }
     }
 }
@@ -257,10 +257,34 @@ pub struct SetRowArgs {
     /// The row's rev from board_read: needed with note or pointer.
     #[serde(default)]
     pub rev: Option<u64>,
-    /// needs_input, or none to clear it. Lanes follow the work: no other
-    /// status is taken.
+    /// none, to clear an old status. Lanes follow the work: no other status
+    /// is taken, and a question for a person is an ask.
     #[serde(default)]
     pub status: Option<StatusArg>,
+}
+
+#[derive(Deserialize, JsonSchema)]
+pub struct AskArgs {
+    /// The board (brd_…).
+    pub board: String,
+    /// The row (row_…, from board_read): one with an issue or a PR as its
+    /// item, with no open ask. A note row is refused.
+    pub row: String,
+    /// The person it is for: an account of the project (the issues'
+    /// assignees and a board's people are named in board_read).
+    pub who: String,
+    /// One line, at most 200 characters.
+    pub question: String,
+    /// Why you ask, at most 2000 characters. Folded on the card.
+    #[serde(default)]
+    pub why: Option<String>,
+    /// Up to four answers, each at most 80 characters, as buttons. None: they
+    /// type an answer.
+    #[serde(default)]
+    pub options: Vec<String>,
+    /// One of the options, marked as what you would pick.
+    #[serde(default)]
+    pub recommend: Option<String>,
 }
 
 #[derive(Deserialize, JsonSchema)]
@@ -308,7 +332,7 @@ pub(crate) const WRITE: &[Kind] = &[
     },
     Kind {
         name: "set",
-        description: "Set a row's note or pointer (with its rev), or its needs_input status.",
+        description: "Set a row's note or pointer (with its rev), or clear an old status.",
         schema: schema_for_type::<SetRowArgs>,
         flag: Some(arugula_proto::flags::BOARDS),
     },
@@ -328,6 +352,12 @@ pub(crate) const WRITE: &[Kind] = &[
         name: "detach",
         description: "Take off an attachment you made.",
         schema: schema_for_type::<DetachArgs>,
+        flag: Some(arugula_proto::flags::BOARDS),
+    },
+    Kind {
+        name: "ask",
+        description: "Ask a person of the project a question on a row (an issue or a PR; one open ask per row), with up to four options or none for free text. They answer on the board, and the answer is the row's asked in board_read: read it there. You can't answer an ask.",
+        schema: schema_for_type::<AskArgs>,
         flag: Some(arugula_proto::flags::BOARDS),
     },
     Kind {
@@ -582,7 +612,7 @@ pub(crate) async fn board_write(c: &Call<'_>, kind: &str, a: Value) -> Out {
         "set" => {
             let a: SetRowArgs = args(a)?;
             if a.note.is_none() && a.pointer.is_none() && a.status.is_none() {
-                return Err("set needs note or pointer (with rev) or status (needs_input or none)".into());
+                return Err("set needs note or pointer (with rev) or status (none)".into());
             }
             let text = a.note.is_some() || a.pointer.is_some();
             if text && a.rev.is_none() {
@@ -646,6 +676,18 @@ pub(crate) async fn board_write(c: &Call<'_>, kind: &str, a: Value) -> Out {
             let a: DetachArgs = args(a)?;
             let v = boards_call(c, Method::DELETE, &agent_board_attachment(&a.board, &a.attachment), None).await?;
             board_done("Took off an attachment", v)
+        }
+        "ask" => {
+            let a: AskArgs = args(a)?;
+            let body = given(NewAsk {
+                who: a.who,
+                question: a.question,
+                why: a.why,
+                options: a.options,
+                recommend: a.recommend,
+            })?;
+            let v = boards_call(c, Method::POST, &agent_board_row_ask(&a.board, &a.row), Some(body)).await?;
+            board_done("Asked", v)
         }
         "remove_row" => {
             let a: RemoveRowArgs = args(a)?;
@@ -731,6 +773,7 @@ mod tests {
                 "move",
                 "attach",
                 "detach",
+                "ask",
                 "remove_row",
                 "create_board",
                 "edit_board",
@@ -751,9 +794,25 @@ mod tests {
         assert!(body(None).get("zone").is_none(), "no zone: its own");
         assert!(serde_json::from_value::<SetRowArgs>(json!({ "board": "b", "row": "r", "status": "done" })).is_err());
         assert!(
-            serde_json::from_value::<SetRowArgs>(json!({ "board": "b", "row": "r", "status": "needs_input" })).is_ok()
+            serde_json::from_value::<SetRowArgs>(json!({ "board": "b", "row": "r", "status": "needs_input" })).is_err(),
+            "a question for a person is an ask"
         );
+        assert!(serde_json::from_value::<SetRowArgs>(json!({ "board": "b", "row": "r", "status": "none" })).is_ok());
         assert!(serde_json::from_value::<PointerArg>(json!({ "kind": "workspace", "id": "hw_1" })).is_err());
+    }
+
+    /// An ask names who and the question, and leaves out what isn't given.
+    #[test]
+    fn an_ask_is_sent_as_the_wire_says() {
+        let a: AskArgs = serde_json::from_value(
+            json!({ "board": "b", "row": "r", "who": "acc", "question": "Ship?", "options": ["Yes", "No"] }),
+        )
+        .unwrap();
+        let body =
+            given(NewAsk { who: a.who, question: a.question, why: a.why, options: a.options, recommend: a.recommend })
+                .unwrap();
+        assert_eq!(body, json!({ "who": "acc", "question": "Ship?", "options": ["Yes", "No"] }));
+        assert!(serde_json::from_value::<AskArgs>(json!({ "board": "b", "row": "r", "question": "Ship?" })).is_err());
     }
 
     #[test]

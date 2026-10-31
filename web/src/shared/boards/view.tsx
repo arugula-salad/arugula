@@ -19,7 +19,7 @@
 // to make again.
 
 import { useEffect, useId, useRef, useState } from "preact/hooks";
-import type { BoardAttachment, BoardPointer, ProjectBoard, BoardRow, BoardView, BoardWorkItem, BoardZone } from "../proto";
+import type { BoardAsk, BoardAnsweredAsk, BoardAttachment, BoardPointer, ProjectBoard, BoardRow, BoardView, BoardWorkItem, BoardZone } from "../proto";
 import { chat } from "../chat-store";
 import { usePlatformApi } from "../platform-api";
 import { Markdown } from "../ui/markdown";
@@ -31,7 +31,7 @@ import { agentShort } from "../agent-label";
 import { day } from "../time";
 import { BoardError, STALE_REV, boards } from "./store";
 import "./boards.css";
-import { BLOCK_LABEL, PICK_DELAY_MS, PICK_LIMIT, assigneesLine, blockClass, GOAL_MAX, blockFacts, chipOf, debounced, earlierLine, epicLine, groupLine, isCard, laneCount, liveClass, liveWord, marksOf, pointerHref, pointerLabel, pointerText, pointerToSend, proofMark, rowGlyph, sections, stepActive, workLabel } from "./text";
+import { BLOCK_LABEL, PICK_DELAY_MS, PICK_LIMIT, assigneesLine, blockClass, GOAL_MAX, answerReady, askWaitingLine, blockFacts, chipOf, debounced, earlierLine, epicLine, groupLine, isCard, laneCount, liveClass, liveWord, marksOf, needsYou, needsYouLine, pointerHref, pointerLabel, pointerText, pointerToSend, proofMark, rowGlyph, sections, stepActive, workLabel } from "./text";
 
 const STALE_SAID = "That changed while you were editing, so the board is read again. Make your change again if it still applies.";
 
@@ -160,6 +160,7 @@ export function BoardPanel({
         )}
       </h1>
       <Epic b={view.board} act={act} id={id} write={write} />
+      <NeedsYou view={view} />
       {stale && (
         <p class="board-stale" role="status" data-board-stale>
           {STALE_SAID}
@@ -311,6 +312,91 @@ function Epic({ b, act, id, write }: { b: ProjectBoard; act: Act; id: string; wr
 }
 
 type Act = (write: () => Promise<BoardView>) => Promise<boolean>;
+
+/** "Needs you (N)": the asks that name the reader, and those the board raised on rows they can see. Clicking scrolls to the first. */
+function NeedsYou({ view }: { view: BoardView }) {
+  const rows = needsYou(view);
+  if (!rows.length) return null;
+  const go = () => {
+    const el = document.querySelector(`[data-board-row="${rows[0].id}"]`);
+    if (el) (el as HTMLElement).scrollIntoView({ behavior: "smooth", block: "center" });
+  };
+  return (
+    <p class="board-needs-you" data-board-needs-you={rows.length}>
+      <button type="button" class="board-needs-you-button" onClick={go}>
+        {needsYouLine(rows.length)}
+      </button>
+    </p>
+  );
+}
+
+/** A row's open question: the question, its why folded, the options as buttons with the recommendation marked, and a text box when there are none. Only a person who may answer gets the buttons; a raised ask has none to give. */
+function AskCard({ a, answer }: { a: BoardAsk; answer: (a: { option: string } | { text: string }) => Promise<boolean> }) {
+  const [text, setText] = useState("");
+  const [busy, setBusy] = useState(false);
+  const send = async (a: { option: string } | { text: string }) => {
+    setBusy(true);
+    await answer(a);
+    setBusy(false);
+  };
+  return (
+    <div class={`board-ask${a.raised ? " raised" : ""}${a.mine ? " mine" : ""}`} data-board-ask={a.raised ? "raised" : a.id}>
+      <div class="board-line board-ask-question">
+        <span class="ws-tag waits">{a.raised ? "Board" : "Asks"}</span>
+        <span data-board-ask-question>{a.question}</span>
+      </div>
+      {a.why && (
+        <details class="board-ask-why">
+          <summary class="dim">Why</summary>
+          <p>{a.why}</p>
+        </details>
+      )}
+      {a.can_answer && a.options.length > 0 && (
+        <div class="board-line board-ask-options">
+          {a.options.map((o) => (
+            <button key={o} type="button" class={`board-ask-option${o === a.recommend ? " recommended" : ""}`} disabled={busy} data-board-ask-option={o} title={o === a.recommend ? "Recommended" : undefined} onClick={() => void send({ option: o })}>
+              {o}
+              {o === a.recommend && <span class="dim"> · recommended</span>}
+            </button>
+          ))}
+        </div>
+      )}
+      {a.can_answer && a.options.length === 0 && (
+        <form
+          class="board-line board-ask-text"
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (answerReady(text)) void send({ text: text.trim() }).then(() => setText(""));
+          }}
+        >
+          <input type="text" value={text} maxLength={2000} aria-label="Your answer" placeholder="your answer" data-board-ask-text onInput={(e) => setText(e.currentTarget.value)} />
+          <button type="submit" class="primary" disabled={busy || !answerReady(text)} data-board-ask-send>
+            Send
+          </button>
+        </form>
+      )}
+      {!a.can_answer && (
+        <div class="board-line dim" data-board-ask-waiting>
+          {askWaitingLine(a)}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** The last answers on a row, folded. */
+function Answered({ asked }: { asked: BoardAnsweredAsk[] }) {
+  return (
+    <details class="board-asked" data-board-asked={asked.length}>
+      <summary class="dim">Answered ({asked.length})</summary>
+      {asked.map((q) => (
+        <p key={q.id} class="board-asked-one">
+          {q.question} <b>{q.answer}</b> <span class="dim">· {q.answered_by}, {day(q.answered_at)}</span>
+        </p>
+      ))}
+    </details>
+  );
+}
 
 function Lane({
   z,
@@ -488,6 +574,8 @@ function Row({
               {earlier.map((a) => (a.block ? <BlockLine key={a.id} a={a} /> : null))}
             </details>
           )}
+          {r.ask && <AskCard a={r.ask} answer={(a) => act(() => boards.answer(id, r.ask!.id, a))} />}
+          {r.asked && r.asked.length > 0 && <Answered asked={r.asked} />}
           {r.note && (
             <div class="board-note" data-board-note>
               <Markdown text={r.note} refs={null} />
