@@ -3270,6 +3270,9 @@ async fn an_agent_started_on_an_issue_is_on_its_row() {
     assert!(!titled, "a block on no issue reports no title: {:?}", control.told.lock().unwrap());
     assert_eq!(d.state(plain["block"].as_u64().unwrap())["work"], Value::Null);
     assert_eq!(control.attached.lock().unwrap().len(), asked);
+    // A chat is no agent's work.
+    let chat = json!({ "chat": true, "prompt": "hello", "issue": "#12" });
+    assert!(refused(&s, "start_agent", chat).await.contains("issue is an agent's"));
     // An issue that isn't one is refused, an issue with no row is on none.
     assert!(refused(&s, "start_agent", agent(json!({ "issue": "twelve" }))).await.contains("#N"));
     let none = call(&s, "start_agent", agent(json!({ "issue": "#99" }))).await;

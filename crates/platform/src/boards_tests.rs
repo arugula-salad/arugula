@@ -1183,6 +1183,10 @@ async fn a_block_started_on_an_issue_is_attached_to_its_rows() {
     assert_eq!((at.as_array().unwrap().len(), at[0]["block"]["title"].as_str()), (1, Some("Parser lane")), "{v}");
     assert_eq!(lane(&v, &launch_row), "doing", "{v}");
 
+    // A title is one line.
+    let two_lines = json!({ "pane": "7", "block": { "state": "working", "title": "a\nb" } });
+    assert_eq!(geek(&base, "PUT", AGENT_BLOCK_STATE, Some(two_lines)).await.0, 400);
+
     // Nothing for an issue with no row, or a name that is none.
     let (st, none) = geek(&base, "POST", &route(&t), Some(body("#9"))).await;
     assert_eq!((st, &none["on"]), (200, &json!([])), "{none}");
