@@ -242,14 +242,24 @@
   margin: 12px 0 8px;
 }
 
-/* A project's own issue (M203): the platform page's issue view in a
-   block, which scrolls as one page. */
-.issue-block-body {
-  padding: 12px 16px 0;
+/* A project's own issue (M203, #410): an item block around the platform
+   page's issue view, which scrolls as one page. The header and facts say
+   its title, state, labels and assignees, so the view doesn't again. */
+.issue-block {
+  min-height: 0;
+  height: 100%;
+  overflow: auto;
+  padding: 8px;
 }
 
-.issue-block .issue-head h1 {
-  font-size: 20px;
+.issue-block > p {
+  margin: 0;
+  padding: 8px;
+}
+
+.issue-block .item-tab-panel .issue-head h1,
+.issue-block .item-tab-panel .issue-meta {
+  display: none;
 }
 
 /* The editor's bar (UI audit #177): its folder and file where a browser's

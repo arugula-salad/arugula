@@ -69,11 +69,21 @@ test("an issue opens as a block in geek's workspace, read as Alice", async ({ br
   block = (opened.body as { block: number }).block;
   const view = pinned(alice);
   await expect(view).toHaveAttribute("data-issue-reader", "me", { timeout: 15_000 });
-  await expect(view.locator("[data-issue-title]")).toHaveText(TITLE);
-  await expect(view.locator("[data-issue-state]")).toHaveText("Open");
-  await expect(view.locator("[data-issue-labels] [data-issue-label]")).toHaveText(["bug"]);
+  // ItemBlock's header and facts say the title, state and labels; the
+  // old words (the `control` tag, "Read as you…" foot) are gone, and an
+  // open issue nobody is waiting on has no next-step strip.
+  await expect(view.locator("[data-item-head] .item-title")).toHaveText(TITLE);
+  await expect(view.locator("[data-item-pill]")).toHaveText("Open");
+  await expect(view.locator('[data-item-source="arugula"]')).toHaveAttribute("title", /read as you, through Arugula control/);
+  await expect(view.locator('[data-item-fact="labels"] .item-label')).toHaveText(["bug"]);
+  await expect(view.locator("[data-item-tab]")).toHaveText(["Activity"]);
   await expect(view.locator("[data-issue-body]")).toContainText("dry-run finds nothing");
-  await expect(view.locator("[data-issue-foot]")).toContainText("Read as you, through Arugula control");
+  await expect(view.locator(".ws-tag")).toHaveCount(0);
+  await expect(view.locator("[data-issue-foot]")).toHaveCount(0);
+  await expect(view.locator("[data-item-next]")).toHaveCount(0);
+  await expect(view).not.toContainText("Read as you");
+
+  await view.screenshot({ path: `/tmp/410-shots/${process.env.SHOT ?? "after"}-open.png` });
 
   // The daemon reads it as the machine only with a grant, and says how.
   const st = await call(alice, "GET", `/api/blocks/${block}`);
@@ -120,7 +130,7 @@ test("the phone and the platform page show the same view, and all three update l
   await show(phone, "geek");
   await phone.evaluate((b) => window.__arugula.client.setActive(b), block);
   const onPhone = pinned(phone);
-  await expect(onPhone.locator("[data-issue-title]")).toHaveText(TITLE, { timeout: 15_000 });
+  await expect(onPhone.locator(".item-title")).toHaveText(TITLE, { timeout: 15_000 });
   await expect(onPhone.locator(".thread-msg").last()).toContainText("I can reproduce it on geek");
   expect(await phone.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 
@@ -136,8 +146,8 @@ test("the phone and the platform page show the same view, and all three update l
   await there.locator("[data-issue-title-edit]").fill("Search misses words with hyphens");
   await there.locator("[data-issue-title-edit]").press("Enter");
   await expect(there.locator("[data-issue-title]")).toHaveText("Search misses words with hyphens");
-  await expect(pinned(alice).locator("[data-issue-title]")).toHaveText("Search misses words with hyphens", { timeout: 10_000 });
-  await expect(onPhone.locator("[data-issue-title]")).toHaveText("Search misses words with hyphens", { timeout: 10_000 });
+  await expect(pinned(alice).locator(".item-title")).toHaveText("Search misses words with hyphens", { timeout: 10_000 });
+  await expect(onPhone.locator(".item-title")).toHaveText("Search misses words with hyphens", { timeout: 10_000 });
 
   // A comment from the phone: the platform page and the block have it.
   const box = onPhone.locator(".thread-compose textarea");
@@ -148,9 +158,12 @@ test("the phone and the platform page show the same view, and all three update l
 
   // Closed from the block: closed everywhere, with the event in the timeline.
   await pinned(alice).locator("[data-issue-close]").click();
-  for (const v of [pinned(alice), onPhone, there]) {
-    await expect(v.locator("[data-issue-state]")).toHaveText("Closed", { timeout: 10_000 });
+  for (const v of [pinned(alice), onPhone]) {
+    await expect(v.locator("[data-item-pill]")).toHaveText("Closed", { timeout: 10_000 });
+    await expect(v.locator("[data-item-next]")).toHaveCount(0);
   }
+  await expect(there.locator("[data-issue-state]")).toHaveText("Closed", { timeout: 10_000 });
+  await pinned(alice).screenshot({ path: `/tmp/410-shots/${process.env.SHOT ?? "after"}-closed.png` });
   await expect(there.locator('[data-issue-event="closed"]')).toBeVisible();
   await expect(onPhone.locator('[data-issue-event="closed"]')).toBeVisible({ timeout: 10_000 });
 });
