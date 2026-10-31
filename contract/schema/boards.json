@@ -1,5 +1,26 @@
 {
   "$defs": {
+    "AttachBlock": {
+      "additionalProperties": false,
+      "description": "[`AGENT_PROJECT_ATTACH_BLOCK`]'s body: the issue as the starter wrote it\n(`#N`, `owner/repo#N` or `IDENT-N`) and the block, which is on the\nsigning machine.",
+      "properties": {
+        "issue": {
+          "type": "string"
+        },
+        "machine": {
+          "type": "string"
+        },
+        "pane": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "issue",
+        "machine",
+        "pane"
+      ],
+      "type": "object"
+    },
     "AttachRole": {
       "description": "What an attachment is for.",
       "oneOf": [
@@ -79,6 +100,41 @@
       ],
       "type": "object"
     },
+    "BlockAttached": {
+      "description": "[`AGENT_PROJECT_ATTACH_BLOCK`]'s answer: the rows the block is on now\n(also those it was on already), and none when no board of the project\nhas a row for the issue.",
+      "properties": {
+        "on": {
+          "items": {
+            "$ref": "#/$defs/BlockOn"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "on"
+      ],
+      "type": "object"
+    },
+    "BlockOn": {
+      "description": "One row a block was attached to.",
+      "properties": {
+        "board": {
+          "type": "string"
+        },
+        "row": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "board",
+        "title",
+        "row"
+      ],
+      "type": "object"
+    },
     "BlockState": {
       "additionalProperties": false,
       "description": "What a daemon says of one of its own agent blocks, and all it says\n(aru-116's second ruling): the state word, the branch, the short HEAD,\nwhether it is pushed, how many files are uncommitted and the diffstat.\nNo message text, no file names, no prompts: the type has no field that\ncould carry them, and a body with another field is refused.",
@@ -114,6 +170,13 @@
         },
         "state": {
           "$ref": "#/$defs/BlockWord"
+        },
+        "title": {
+          "description": "The name its starter or its person gave the block: a board's chip\nfor it. Never the first words of a prompt.",
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "uncommitted": {
           "description": "How many files are uncommitted.",
