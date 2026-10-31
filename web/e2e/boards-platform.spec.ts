@@ -729,3 +729,64 @@ test("connecting a Plane project: each field is labelled, says what goes in it, 
   await expect(form.locator("[data-plane-hook]")).toHaveCount(0);
   if (process.env.BOARDS_SHOTS) await form.screenshot({ path: `${process.env.BOARDS_SHOTS}/plane-connect.png`, animations: "disabled" });
 });
+
+test("a Plane connection's agent writes: the middle preset, a kind per row, the footer; a preset saves and a changed kind reads Custom", async () => {
+  test.setTimeout(90_000);
+  // No Plane here: the connection is a stand-in the page reads and patches, which keeps what it is told.
+  const conn: Record<string, any> = {
+    id: "tc_0123", provider: "plane", workspace_slug: "acme", source_project_id: "pl-1", identifier: "ARUGU", name: "Arugula",
+    agent_writes: "approve", write_policy: { create: "approve", comment: "allow", edit: "allow", state: "approve", fields: "allow" }, attribution: "short",
+    has_webhook_secret: false, webhook_url: "http://app.localhost/plane/webhook/tc_0123", last_delivery_at: null, linked_by: null,
+    created_at: Date.now(), unlinked_at: null, purge_after: null, backfilled_at: Date.now(), items: 3, waiting_writes: 0,
+  };
+  const patches: unknown[] = [];
+  await alice.route(new RegExp(`/api/projects/${project}/trackers(/tc_0123)?$`), async (route) => {
+    const req = route.request();
+    if (req.method() === "PATCH") {
+      const b = req.postDataJSON();
+      patches.push(b);
+      Object.assign(conn, b);
+      conn.agent_writes = Object.values(conn.write_policy).every((v) => v === "allow") ? "allow" : "approve";
+      return route.fulfill({ json: conn });
+    }
+    return route.fulfill({ json: { project, connections: [conn] } });
+  });
+  await platform(alice, `/p/${project}/settings`);
+  const cell = alice.locator("[data-plane-policy]");
+  const preset = alice.locator("[data-plane-writes]");
+  const kinds = ["create", "comment", "edit", "state", "fields"];
+  await expect(cell).toBeVisible({ timeout: 15_000 });
+  await expect(preset).toHaveValue("Allow comments and edits, approve creates and closes");
+  await expect(cell.locator("[data-plane-kind]")).toHaveCount(5);
+  for (const [i, kind] of kinds.entries()) await expect(cell.locator(`[data-plane-kind="${kind}"]`)).toHaveValue(["approve", "allow", "allow", "approve", "allow"][i]);
+  await expect(alice.locator("[data-plane-attribution]")).toHaveValue("short");
+  await expect(alice.locator("[data-plane-attribution-help]")).toHaveText("Ends each body and comment with: — via Arugula");
+  const shots = process.env.PLANE_SHOTS;
+  const shoot = async (name: string) => {
+    if (!shots) return;
+    for (const [w, h] of [[1400, 900], [480, 900]] as const) {
+      await alice.setViewportSize({ width: w, height: h });
+      await alice.locator("#plane").screenshot({ path: `${shots}/${name}-${w}.png`, animations: "disabled" });
+    }
+    await alice.setViewportSize({ width: 1280, height: 800 });
+  };
+  await shoot("plane-policy-middle");
+
+  // A preset saves, and a reload shows it.
+  await preset.selectOption("Allow everything");
+  await expect.poll(() => patches.length).toBe(1);
+  expect(patches[0]).toEqual({ write_policy: { create: "allow", comment: "allow", edit: "allow", state: "allow", fields: "allow" } });
+  await alice.reload();
+  await expect(alice.locator("[data-plane-writes]")).toHaveValue("Allow everything", { timeout: 15_000 });
+  for (const kind of kinds) await expect(alice.locator(`[data-plane-kind="${kind}"]`)).toHaveValue("allow");
+
+  // One kind changed: no preset is it.
+  await alice.locator('[data-plane-kind="state"]').selectOption("approve");
+  await expect(alice.locator("[data-plane-writes]")).toHaveValue("Custom");
+  await expect(alice.locator("[data-plane-writes] option")).toHaveCount(4);
+  await alice.locator("[data-plane-attribution]").selectOption("none");
+  await expect(alice.locator("[data-plane-attribution-help]")).toHaveText("Sends the text as written, with no line added.");
+  expect(patches.at(-1)).toEqual({ attribution: "none" });
+  await shoot("plane-policy-custom");
+  await alice.unroute(new RegExp(`/api/projects/${project}/trackers(/tc_0123)?$`));
+});

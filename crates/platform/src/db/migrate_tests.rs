@@ -430,3 +430,36 @@ fn existing_channels_become_public_with_the_whole_team_in() {
     assert_eq!(count(&c, "SELECT count(*) FROM chat_rooms WHERE auto_join != 0"), 1);
     assert_eq!(count(&c, "SELECT count(*) FROM chat_rooms WHERE dm_key IS NOT NULL"), 0, "old DMs have no key");
 }
+
+/// Write policy (0082, #423): a connection that allowed agent writes has
+/// every kind allowed, one that approved has every kind approved, so an
+/// upgrade never loosens one; a connection made after has the middle preset.
+/// Every one has the short footer.
+#[test]
+fn a_connections_agent_writes_become_a_policy_for_every_kind() {
+    let mut c = Connection::open_in_memory().unwrap();
+    run_to(&mut c, 81).unwrap();
+    let add = "INSERT INTO tracker_connections
+        (id, project_id, provider, workspace_slug, source_project_id, identifier, name, mirror_id, created_at";
+    c.execute_batch(&format!(
+        "{add}, agent_writes) VALUES ('tc_allow', 'p', 'plane', 'w', 's1', 'A', 'A', -1, 1, 'allow');
+         {add}, agent_writes) VALUES ('tc_approve', 'p', 'plane', 'w', 's2', 'B', 'B', -2, 1, 'approve');
+         {add}) VALUES ('tc_default', 'p', 'plane', 'w', 's3', 'C', 'C', -3, 1);"
+    ))
+    .unwrap();
+    assert_eq!(run(&mut c).unwrap().ran, [82]);
+    c.execute_batch(&format!("{add}) VALUES ('tc_new', 'p', 'plane', 'w', 's4', 'D', 'D', -4, 1);")).unwrap();
+    let row = |id: &str| -> (String, String) {
+        c.query_row("SELECT write_policy, attribution FROM tracker_connections WHERE id = ?1", [id], |r| {
+            Ok((r.get(0)?, r.get(1)?))
+        })
+        .unwrap()
+    };
+    let json = |kinds: [&str; 5]| serde_json::to_string(&crate::trackers::policy::preset(&kinds)).unwrap();
+    let (_, middle) = crate::trackers::policy::PRESETS[crate::trackers::policy::DEFAULT_PRESET];
+    let short = "short".to_owned();
+    assert_eq!(row("tc_allow"), (json(["allow"; 5]), short.clone()));
+    assert_eq!(row("tc_approve"), (json(["approve"; 5]), short.clone()));
+    assert_eq!(row("tc_default"), (json(["approve"; 5]), short.clone()), "the default of agent_writes was approve");
+    assert_eq!(row("tc_new"), (json(middle), short));
+}

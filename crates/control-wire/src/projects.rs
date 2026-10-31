@@ -697,6 +697,24 @@ pub struct TrackerConnections {
     pub connections: Vec<TrackerConnection>,
 }
 
+/// What an agent's write to a tracker does, per kind: `allow` sends it at
+/// once, `approve` keeps it for a person. An edit that is several kinds goes
+/// at once only if every one of them allows.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct TrackerWritePolicy {
+    /// A new work item, whatever fields it carries.
+    pub create: String,
+    pub comment: String,
+    /// An edit of the title or the body.
+    pub edit: String,
+    /// A close, a reopen, or an edit naming a state.
+    pub state: String,
+    /// An edit naming a module, parent, type or labels.
+    pub fields: String,
+}
+
 /// A tracker project connected to a project, or disconnected and waiting
 /// for the purge. Never the key or the webhook secret.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -713,8 +731,13 @@ pub struct TrackerConnection {
     /// The project's short key, such as `ARUGU`.
     pub identifier: String,
     pub name: String,
-    /// `approve` (each agent write waits for a person) or `allow`.
+    /// A summary for a client that predates `write_policy`: `allow` if every
+    /// kind of agent write is allowed, else `approve`. Read-only.
     pub agent_writes: String,
+    /// Which kinds of agent write go at once and which wait for a person.
+    pub write_policy: TrackerWritePolicy,
+    /// What a write's footer says: `full`, `short` or `none`.
+    pub attribution: String,
     /// A webhook secret is kept for it.
     pub has_webhook_secret: bool,
     /// The payload URL to give Plane's webhook for it.
@@ -763,9 +786,11 @@ impl std::fmt::Debug for ConnectTracker {
     }
 }
 
-/// `PATCH /api/projects/{project}/trackers/{connection}`: whether agents'
-/// writes to the tracker wait for a person (`approve`) or go (`allow`), and
-/// its webhook secret; either or both, the answer is its
+/// `PATCH /api/projects/{project}/trackers/{connection}`: which kinds of
+/// agent write wait for a person (`write_policy`), what their footer says
+/// (`attribution`: `full`, `short` or `none`), the older `agent_writes`
+/// (`approve` or `allow`, which sets every kind), and the webhook secret;
+/// any of them, the answer is its
 /// [`TrackerConnection`]. A webhook secret is sealed like the key and never
 /// shown back; an empty one removes it.
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -775,6 +800,10 @@ pub struct TrackerSettings {
     #[serde(default)]
     pub agent_writes: Option<String>,
     #[serde(default)]
+    pub write_policy: Option<TrackerWritePolicy>,
+    #[serde(default)]
+    pub attribution: Option<String>,
+    #[serde(default)]
     pub webhook_secret: Option<String>,
 }
 
@@ -782,6 +811,8 @@ impl std::fmt::Debug for TrackerSettings {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("TrackerSettings")
             .field("agent_writes", &self.agent_writes)
+            .field("write_policy", &self.write_policy)
+            .field("attribution", &self.attribution)
             .field("webhook_secret", &self.webhook_secret.as_ref().map(|_| "<redacted>"))
             .finish()
     }
@@ -1018,6 +1049,8 @@ pub struct TrackerReachConnection {
     pub identifier: String,
     pub name: String,
     pub workspace_slug: String,
-    /// `approve` or `allow`.
+    /// `allow` if every kind of write is allowed, else `approve`.
     pub agent_writes: String,
+    /// Per kind: `allow` or `approve`.
+    pub write_policy: TrackerWritePolicy,
 }

@@ -95,6 +95,14 @@ impl World {
         call(&self.base, who, "POST", &format!("/api/projects/{}/tracker-writes/{id}/{what}", self.project), None).await
     }
 
+    /// Change the connection's settings as alice, who owns the team.
+    async fn settings(&self, body: Value) -> Value {
+        let path = format!("/api/projects/{}/trackers/{}", self.project, self.connection);
+        let (s, v) = call(&self.base, "alice", "PATCH", &path, Some(body)).await;
+        assert_eq!(s, 200, "{v}");
+        v
+    }
+
     fn items(&self) -> u64 {
         count(&self.app, "forge_items", "provider = 'plane'", params![])
     }
@@ -113,6 +121,7 @@ fn footer_of(s: &Sent) -> &str {
 #[tokio::test]
 async fn an_agents_create_waits_and_a_person_approves_it() {
     let w = world().await;
+    w.settings(json!({ "attribution": "full" })).await;
     let create =
         json!({ "kind": "create", "connection": w.connection, "title": "Add retries", "body": "Plane times out." });
 
@@ -189,9 +198,7 @@ async fn an_agents_create_waits_and_a_person_approves_it() {
 #[tokio::test]
 async fn in_allow_mode_an_agents_writes_land_at_once() {
     let w = world().await;
-    let path = format!("/api/projects/{}/trackers/{}", w.project, w.connection);
-    let (s, v) = call(&w.base, "alice", "PATCH", &path, Some(json!({ "agent_writes": "allow" }))).await;
-    assert_eq!(s, 200, "{v}");
+    w.settings(json!({ "agent_writes": "allow", "attribution": "full" })).await;
 
     // Allow mode doesn't skip the grant.
     let (s, v) = w.agent(json!({ "kind": "comment", "item": "ARUGU-1", "text": "hi" })).await;
@@ -235,6 +242,7 @@ async fn in_allow_mode_an_agents_writes_land_at_once() {
 #[tokio::test]
 async fn a_persons_write_lands_at_once() {
     let w = world().await;
+    w.settings(json!({ "attribution": "full" })).await;
     let (s, v) = w.person("bob", json!({ "kind": "create", "title": "From Bob", "body": "Please." })).await;
     assert_eq!((s, v["state"].as_str(), v["reference"].as_str()), (200, Some("sent"), Some("ARUGU-4")), "{v}");
     let sent = w.fake.sent();
@@ -284,6 +292,7 @@ async fn markup_reaches_plane_escaped() {
 #[tokio::test]
 async fn an_edited_write_keeps_its_footer_and_a_drop_sends_nothing() {
     let w = world().await;
+    w.settings(json!({ "agent_writes": "approve", "attribution": "full" })).await;
     w.grant().await;
     let (_, v) = w.agent(json!({ "kind": "comment", "item": "ARUGU-1", "text": "draft" })).await;
     let id = v["write"].as_str().unwrap().to_owned();
@@ -832,4 +841,162 @@ async fn the_fields_are_read_by_members_through_the_operation() {
     w.hub.flag_named("team:t1", crate::boards::FLAG, false);
     w.app.cache.drop_all();
     assert_eq!(ask("bob", json!({ "project": w.project })).await.0, 404);
+}
+
+// ---- the policy and the footer (#423)
+
+/// A comment from an agent's `geek` on ARUGU-1.
+fn comment(text: &str) -> Value {
+    json!({ "kind": "comment", "item": "ARUGU-1", "text": text })
+}
+
+/// With the middle preset, which a connection linked now has, a comment
+/// lands at once and says why; a close waits and says why, and the waiting
+/// row keeps the write's own kind for Triage.
+#[tokio::test]
+async fn the_middle_preset_sends_a_comment_and_holds_a_close() {
+    let w = world().await;
+    w.grant().await;
+    let (s, listed) = call(&w.base, "alice", "GET", &format!("/api/projects/{}/trackers", w.project), None).await;
+    assert_eq!(s, 200, "{listed}");
+    let c = &listed["connections"][0];
+    let (name, row) = super::policy::PRESETS[super::policy::DEFAULT_PRESET];
+    assert!(name.starts_with("Allow comments and edits"), "{name}");
+    let kinds = ["create", "comment", "edit", "state", "fields"];
+    let got: Vec<_> = kinds.iter().map(|k| c["write_policy"][k].as_str().unwrap()).collect();
+    assert_eq!(
+        (got, c["attribution"].as_str(), c["agent_writes"].as_str()),
+        (row.to_vec(), Some("short"), Some("approve"))
+    );
+
+    let (s, v) = w.agent(comment("looks good")).await;
+    assert_eq!((s, v["state"].as_str()), (200, Some("sent")), "{v}");
+    assert!(v["text"].as_str().unwrap().ends_with(": comments are allowed"), "{v}");
+
+    let (s, v) = w.agent(json!({ "kind": "close", "item": "ARUGU-1", "as": "completed" })).await;
+    assert_eq!((s, v["state"].as_str()), (200, Some("waiting")), "{v}");
+    let id = v["write"].as_str().unwrap();
+    assert_eq!(
+        v["text"].as_str().unwrap(),
+        format!("waiting for a person to approve it ({id}): state changes need approval")
+    );
+    let kind: String =
+        w.app.db.c().query_row("SELECT kind FROM tracker_writes WHERE id = ?1", params![id], |r| r.get(0)).unwrap();
+    assert_eq!(kind, "close", "Triage still sees the write's own kind");
+    assert_eq!(w.fake.sent().len(), 1, "only the comment");
+}
+
+/// A create is only a create, whatever fields it carries; an edit that is
+/// several kinds goes at once only if every one allows, and the answer names
+/// the first that needs approval.
+#[tokio::test]
+async fn an_edit_goes_at_once_only_if_every_kind_it_is_allows() {
+    let w = world().await;
+    w.grant().await;
+    let both = json!({ "kind": "edit", "item": "ARUGU-1", "title": "Renamed", "labels": ["Agent"] });
+
+    // Middle preset, then fields approved: the edit names a field, so it waits.
+    let all_but_fields = json!({
+        "create": "allow", "comment": "allow", "edit": "allow", "state": "allow", "fields": "approve",
+    });
+    w.settings(json!({ "write_policy": all_but_fields })).await;
+    let (s, v) = w.agent(both.clone()).await;
+    assert_eq!((s, v["state"].as_str()), (200, Some("waiting")), "{v}");
+    assert!(v["text"].as_str().unwrap().ends_with(": field changes need approval"), "{v}");
+    let (s, v) = w.agent(json!({ "kind": "edit", "item": "ARUGU-1", "title": "Title only" })).await;
+    assert_eq!((s, v["state"].as_str()), (200, Some("sent")), "{v}");
+    assert!(v["text"].as_str().unwrap().ends_with(": edits are allowed"), "{v}");
+    // A create with fields counts only as a create.
+    let (s, v) = w
+        .agent(json!({ "kind": "create", "connection": w.connection, "title": "New", "labels": ["Agent"], "module": "Boards" }))
+        .await;
+    assert_eq!((s, v["state"].as_str()), (200, Some("sent")), "{v}");
+    assert!(v["text"].as_str().unwrap().ends_with(": creates are allowed"), "{v}");
+    assert_eq!(w.fake.sent().iter().filter(|s| s.kind == "edit").count(), 1);
+
+    // An edit naming a title, a state and labels is three kinds: the first
+    // that needs approval is named.
+    let three = json!({ "kind": "edit", "item": "ARUGU-2", "title": "T", "state": "started", "labels": ["Agent"] });
+    let (_, v) = w.agent(three.clone()).await;
+    assert!(v["text"].as_str().unwrap().ends_with(": field changes need approval"), "{v}");
+    w.settings(json!({ "write_policy": { "create": "allow", "comment": "allow", "edit": "approve", "state": "approve", "fields": "approve" } }))
+        .await;
+    let (_, v) = w.agent(three).await;
+    assert!(v["text"].as_str().unwrap().ends_with(": edits need approval"), "{v}");
+
+    // With everything allowed it lands.
+    let before = w.fake.sent().len();
+    w.settings(json!({ "agent_writes": "allow" })).await;
+    let (s, v) = w.agent(both).await;
+    assert_eq!((s, v["state"].as_str()), (200, Some("sent")), "{v}");
+    assert!(v["text"].as_str().unwrap().ends_with(": edits and field changes are allowed"), "{v}");
+    assert_eq!(w.fake.sent().len(), before + 1);
+}
+
+/// `full` is the line with the person and the machine, `short` is "— via
+/// Arugula" and nothing else, `none` adds nothing; a person's write follows
+/// the same setting.
+#[tokio::test]
+async fn the_footer_follows_the_connections_attribution() {
+    let w = world().await;
+    w.grant().await;
+    w.settings(json!({ "agent_writes": "allow", "attribution": "full" })).await;
+    w.agent(comment("one")).await;
+    w.settings(json!({ "attribution": "short" })).await;
+    w.agent(comment("two")).await;
+    w.settings(json!({ "attribution": "none" })).await;
+    w.agent(comment("three")).await;
+    w.person("bob", comment("four")).await;
+    w.settings(json!({ "attribution": "short" })).await;
+    w.person("bob", comment("five")).await;
+    let sent = w.fake.sent();
+    let html: Vec<&str> = sent.iter().map(|s| s.html.as_deref().unwrap()).collect();
+    assert!(html[0].starts_with("<p>one</p><p>— via Arugula, by alice&#39;s agent on "), "{}", html[0]);
+    assert_eq!(html[1], "<p>two</p><p>— via Arugula</p>");
+    assert_eq!(html[2], "<p>three</p>");
+    assert_eq!(html[3], "<p>four</p>");
+    assert_eq!(html[4], "<p>five</p><p>— via Arugula</p>");
+    // No person or machine anywhere in a short or empty footer.
+    assert!(!html[1].contains("alice") && !html[1].contains("geek"));
+
+    // A body with nothing in it gets no footer from "none", either.
+    w.settings(json!({ "attribution": "none" })).await;
+    let (s, _) = w.person("bob", json!({ "kind": "create", "title": "No body" })).await;
+    assert_eq!(s, 200);
+    assert_eq!(w.fake.sent().last().unwrap().html.as_deref(), Some(""));
+}
+
+/// The footer is added when a write is sent, never kept: attribution changed
+/// after a write waited applies when it is approved.
+#[tokio::test]
+async fn approving_uses_the_attribution_at_send_time() {
+    let w = world().await;
+    w.grant().await;
+    w.settings(json!({ "agent_writes": "approve", "attribution": "full" })).await;
+    let (_, v) = w.agent(comment("queued")).await;
+    let id = v["write"].as_str().unwrap().to_owned();
+    let kept: String =
+        w.app.db.c().query_row("SELECT request FROM tracker_writes WHERE id = ?1", params![id], |r| r.get(0)).unwrap();
+    assert!(!kept.contains("via Arugula"), "{kept}");
+    w.settings(json!({ "attribution": "short" })).await;
+    assert_eq!(w.decide("bob", &id, "approve").await.0, 200);
+    assert_eq!(w.fake.sent()[0].html.as_deref(), Some("<p>queued</p><p>— via Arugula</p>"));
+}
+
+/// The reach lists each connection's policy, and the summary `agent_writes`
+/// is `allow` only when every kind allows.
+#[tokio::test]
+async fn the_reach_lists_the_policy_and_a_summary() {
+    let w = world().await;
+    w.grant().await;
+    let reach = || async {
+        let (s, v) = geek(&w.base, "GET", "/api/daemon/trackers/reach", None).await;
+        assert_eq!(s, 200, "{v}");
+        v["projects"][0]["connections"][0].clone()
+    };
+    let c = reach().await;
+    assert_eq!((c["agent_writes"].as_str(), c["write_policy"]["comment"].as_str()), (Some("approve"), Some("allow")));
+    w.settings(json!({ "agent_writes": "allow" })).await;
+    let c = reach().await;
+    assert_eq!((c["agent_writes"].as_str(), c["write_policy"]["create"].as_str()), (Some("allow"), Some("allow")));
 }

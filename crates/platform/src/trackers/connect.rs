@@ -41,7 +41,10 @@ use axum::{
 };
 use tracing::{info, warn};
 
-use super::{TrackerError, fields};
+use super::{
+    TrackerError, fields,
+    policy::{self, Attribution},
+};
 use crate::{
     Platform,
     auth::Person,
@@ -82,7 +85,9 @@ fn wire(app: &Platform, c: &Connection) -> Result<TrackerConnection, ApiError> {
         source_project_id: c.source_project_id.clone(),
         identifier: c.identifier.clone(),
         name: c.name.clone(),
-        agent_writes: c.agent_writes.clone(),
+        agent_writes: policy::summary(&c.write_policy).into(),
+        write_policy: c.write_policy.clone(),
+        attribution: c.attribution.clone(),
         has_webhook_secret: c.has_webhook_secret,
         webhook_url: format!("{}/plane/webhook/{}", app.cfg.public_url, c.id),
         last_delivery_at: c.last_delivery_at,
@@ -212,11 +217,20 @@ pub async fn settings(
 ) -> Result<Json<TrackerConnection>, ApiError> {
     crate::boards::gate(&app, &account).await?;
     let project = changer(&app, &account, &project).await?;
-    if b.agent_writes.is_none() && b.webhook_secret.is_none() {
-        return Err(err(StatusCode::UNPROCESSABLE_ENTITY, "agent_writes or webhook_secret"));
+    if b.agent_writes.is_none() && b.write_policy.is_none() && b.attribution.is_none() && b.webhook_secret.is_none() {
+        return Err(err(StatusCode::UNPROCESSABLE_ENTITY, "write_policy, attribution, agent_writes or webhook_secret"));
     }
     if b.agent_writes.as_deref().is_some_and(|w| !matches!(w, "approve" | "allow")) {
         return Err(err(StatusCode::UNPROCESSABLE_ENTITY, "agent_writes: approve or allow"));
+    }
+    if b.write_policy.as_ref().is_some_and(|p| !policy::valid(p)) {
+        return Err(err(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "write_policy: each of create, comment, edit, state and fields is approve or allow",
+        ));
+    }
+    if b.attribution.as_deref().is_some_and(|a| Attribution::parse(a).is_none()) {
+        return Err(err(StatusCode::UNPROCESSABLE_ENTITY, "attribution: full, short or none"));
     }
     let secret = b.webhook_secret.as_deref().map(str::trim);
     if secret.is_some_and(|w| !w.is_empty() && !good_secret(w)) {
@@ -241,11 +255,19 @@ pub async fn settings(
         }
         info!(%account, %project, connection = %id, set = !secret.is_empty(), "changed a Plane webhook's secret");
     }
-    if let Some(writes) = &b.agent_writes {
-        if !app.db.set_tracker_agent_writes(&project, &id, writes)? {
+    // The older `agent_writes` sets every kind; a `write_policy` beside it wins.
+    let set = b.write_policy.clone().or_else(|| b.agent_writes.as_deref().map(policy::all));
+    if let Some(set) = &set {
+        if !app.db.set_tracker_write_policy(&project, &id, set)? {
             return Err(not_connected());
         }
-        info!(%account, %project, connection = %id, agent_writes = %writes, "changed what agents may write to Plane");
+        info!(%account, %project, connection = %id, ?set, "changed what agents may write to Plane");
+    }
+    if let Some(attribution) = &b.attribution {
+        if !app.db.set_tracker_attribution(&project, &id, attribution)? {
+            return Err(not_connected());
+        }
+        info!(%account, %project, connection = %id, %attribution, "changed what a Plane write's footer says");
     }
     let c =
         app.db.tracker_connection(&project, &id)?.ok_or_else(|| err(StatusCode::NOT_FOUND, "no such connection"))?;

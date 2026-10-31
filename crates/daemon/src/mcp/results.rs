@@ -135,8 +135,12 @@ pub struct TrackerReachConnection {
     /// The Plane project's identifier: `tracker` on `create`.
     pub identifier: String,
     pub name: String,
-    /// `approve` (a person approves each write) or `allow`.
+    /// `allow` if every kind of write is allowed, else `approve`.
     pub agent_writes: String,
+    /// Per kind (create, comment, edit, state, fields): `allow` sends a
+    /// write at once, `approve` keeps it for a person.
+    #[serde(default)]
+    pub write_policy: std::collections::BTreeMap<String, String>,
 }
 
 /// The projects in control whose boards agents here reach: through grants

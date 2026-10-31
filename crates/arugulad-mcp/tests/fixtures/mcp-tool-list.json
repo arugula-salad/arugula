@@ -1075,7 +1075,7 @@
             "description": "A live Plane connection of a project. Never a key or a secret.",
             "properties": {
               "agent_writes": {
-                "description": "`approve` (a person approves each write) or `allow`.",
+                "description": "`allow` if every kind of write is allowed, else `approve`.",
                 "type": "string"
               },
               "id": {
@@ -1088,6 +1088,14 @@
               },
               "name": {
                 "type": "string"
+              },
+              "write_policy": {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "default": {},
+                "description": "Per kind (create, comment, edit, state, fields): `allow` sends a\nwrite at once, `approve` keeps it for a person.",
+                "type": "object"
               }
             },
             "required": [
@@ -5305,7 +5313,7 @@
             "description": "A live Plane connection of a project. Never a key or a secret.",
             "properties": {
               "agent_writes": {
-                "description": "`approve` (a person approves each write) or `allow`.",
+                "description": "`allow` if every kind of write is allowed, else `approve`.",
                 "type": "string"
               },
               "id": {
@@ -5318,6 +5326,14 @@
               },
               "name": {
                 "type": "string"
+              },
+              "write_policy": {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "default": {},
+                "description": "Per kind (create, comment, edit, state, fields): `allow` sends a\nwrite at once, `approve` keeps it for a person.",
+                "type": "object"
               }
             },
             "required": [
@@ -8652,7 +8668,7 @@
         "readOnlyHint": false,
         "title": "Write to Plane"
       },
-      "description": "Write to the Plane project connected to a project in Arugula control: create a work item, comment on one, close it (completed or cancelled), reopen it (into the project's default state), or edit it. Your person's trackers.write grant over the project says you may, never more than their role. A write may wait: when the connection is set to approve each agent write (the default) it is kept for a person to approve, edit or drop in the project's Triage, and this says \"waiting for a person to approve it\" with its id; nothing has reached Plane yet, and you can't approve it yourself. When the connection allows agent writes it lands at once. What is sent ends with a line saying it was sent via Arugula by your person's agent on this machine. Create and edit also take state, module, type and labels by name (any case) or id, and parent as IDENT-N: an unknown name is refused with the project's real ones, and forge_read tracker_fields lists them. Items are named by their fi_ id (forge_read lists them) or IDENT-N, like ARUGU-7. Assignees are not supported.\n- create {title, body?, connection?, labels?, module?, parent?, project?, state?, tracker?, type?}: Create a work item in a connected Plane project (may wait for a person).\n- comment {item, text, project?}: Comment on a work item (may wait for a person).\n- close {as, item, project?}: Close a work item as completed or cancelled (may wait for a person).\n- reopen {item, project?}: Open a closed work item again (may wait for a person).\n- edit {item, body?, labels?, labels_remove?, module?, parent?, project?, state?, title?, type?}: Change a work item: its title, body, state, module, parent, type or labels (may wait for a person).",
+      "description": "Write to the Plane project connected to a project in Arugula control: create a work item, comment on one, close it (completed or cancelled), reopen it (into the project's default state), or edit it. Your person's trackers.write grant over the project says you may, never more than their role. A write may wait: the connection decides which kinds (create, comment, edit, state change, field change) wait for a person to approve, edit or drop in the project's Triage, and the answer says which applied. A waiting write says \"waiting for a person to approve it\" with its id; nothing has reached Plane yet, and you can't approve it yourself. What is sent may end with a \"via Arugula\" line, as the connection says. Create and edit also take state, module, type and labels by name (any case) or id, and parent as IDENT-N: an unknown name is refused with the project's real ones, and forge_read tracker_fields lists them. Items are named by their fi_ id (forge_read lists them) or IDENT-N, like ARUGU-7. Assignees are not supported.\n- create {title, body?, connection?, labels?, module?, parent?, project?, state?, tracker?, type?}: Create a work item in a connected Plane project (may wait for a person).\n- comment {item, text, project?}: Comment on a work item (may wait for a person).\n- close {as, item, project?}: Close a work item as completed or cancelled (may wait for a person).\n- reopen {item, project?}: Open a closed work item again (may wait for a person).\n- edit {item, body?, labels?, labels_remove?, module?, parent?, project?, state?, title?, type?}: Change a work item: its title, body, state, module, parent, type or labels (may wait for a person).",
       "inputSchema": {
         "$defs": {
           "CloseAs": {
@@ -9860,7 +9876,7 @@
             "description": "A live Plane connection of a project. Never a key or a secret.",
             "properties": {
               "agent_writes": {
-                "description": "`approve` (a person approves each write) or `allow`.",
+                "description": "`allow` if every kind of write is allowed, else `approve`.",
                 "type": "string"
               },
               "id": {
@@ -9873,6 +9889,14 @@
               },
               "name": {
                 "type": "string"
+              },
+              "write_policy": {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "default": {},
+                "description": "Per kind (create, comment, edit, state, fields): `allow` sends a\nwrite at once, `approve` keeps it for a person.",
+                "type": "object"
               }
             },
             "required": [
@@ -14090,7 +14114,7 @@
             "description": "A live Plane connection of a project. Never a key or a secret.",
             "properties": {
               "agent_writes": {
-                "description": "`approve` (a person approves each write) or `allow`.",
+                "description": "`allow` if every kind of write is allowed, else `approve`.",
                 "type": "string"
               },
               "id": {
@@ -14103,6 +14127,14 @@
               },
               "name": {
                 "type": "string"
+              },
+              "write_policy": {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "default": {},
+                "description": "Per kind (create, comment, edit, state, fields): `allow` sends a\nwrite at once, `approve` keeps it for a person.",
+                "type": "object"
               }
             },
             "required": [
@@ -17437,7 +17469,7 @@
         "readOnlyHint": false,
         "title": "Write to Plane"
       },
-      "description": "Write to the Plane project connected to a project in Arugula control: create a work item, comment on one, close it (completed or cancelled), reopen it (into the project's default state), or edit it. Your person's trackers.write grant over the project says you may, never more than their role. A write may wait: when the connection is set to approve each agent write (the default) it is kept for a person to approve, edit or drop in the project's Triage, and this says \"waiting for a person to approve it\" with its id; nothing has reached Plane yet, and you can't approve it yourself. When the connection allows agent writes it lands at once. What is sent ends with a line saying it was sent via Arugula by your person's agent on this machine. Create and edit also take state, module, type and labels by name (any case) or id, and parent as IDENT-N: an unknown name is refused with the project's real ones, and forge_read tracker_fields lists them. Items are named by their fi_ id (forge_read lists them) or IDENT-N, like ARUGU-7. Assignees are not supported.\n- create {title, body?, connection?, labels?, module?, parent?, project?, state?, tracker?, type?}: Create a work item in a connected Plane project (may wait for a person).\n- comment {item, text, project?}: Comment on a work item (may wait for a person).\n- close {as, item, project?}: Close a work item as completed or cancelled (may wait for a person).\n- reopen {item, project?}: Open a closed work item again (may wait for a person).\n- edit {item, body?, labels?, labels_remove?, module?, parent?, project?, state?, title?, type?}: Change a work item: its title, body, state, module, parent, type or labels (may wait for a person).",
+      "description": "Write to the Plane project connected to a project in Arugula control: create a work item, comment on one, close it (completed or cancelled), reopen it (into the project's default state), or edit it. Your person's trackers.write grant over the project says you may, never more than their role. A write may wait: the connection decides which kinds (create, comment, edit, state change, field change) wait for a person to approve, edit or drop in the project's Triage, and the answer says which applied. A waiting write says \"waiting for a person to approve it\" with its id; nothing has reached Plane yet, and you can't approve it yourself. What is sent may end with a \"via Arugula\" line, as the connection says. Create and edit also take state, module, type and labels by name (any case) or id, and parent as IDENT-N: an unknown name is refused with the project's real ones, and forge_read tracker_fields lists them. Items are named by their fi_ id (forge_read lists them) or IDENT-N, like ARUGU-7. Assignees are not supported.\n- create {title, body?, connection?, labels?, module?, parent?, project?, state?, tracker?, type?}: Create a work item in a connected Plane project (may wait for a person).\n- comment {item, text, project?}: Comment on a work item (may wait for a person).\n- close {as, item, project?}: Close a work item as completed or cancelled (may wait for a person).\n- reopen {item, project?}: Open a closed work item again (may wait for a person).\n- edit {item, body?, labels?, labels_remove?, module?, parent?, project?, state?, title?, type?}: Change a work item: its title, body, state, module, parent, type or labels (may wait for a person).",
       "inputSchema": {
         "$defs": {
           "CloseAs": {
@@ -18228,7 +18260,7 @@
             "description": "A live Plane connection of a project. Never a key or a secret.",
             "properties": {
               "agent_writes": {
-                "description": "`approve` (a person approves each write) or `allow`.",
+                "description": "`allow` if every kind of write is allowed, else `approve`.",
                 "type": "string"
               },
               "id": {
@@ -18241,6 +18273,14 @@
               },
               "name": {
                 "type": "string"
+              },
+              "write_policy": {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "default": {},
+                "description": "Per kind (create, comment, edit, state, fields): `allow` sends a\nwrite at once, `approve` keeps it for a person.",
+                "type": "object"
               }
             },
             "required": [
@@ -20056,7 +20096,7 @@
             "description": "A live Plane connection of a project. Never a key or a secret.",
             "properties": {
               "agent_writes": {
-                "description": "`approve` (a person approves each write) or `allow`.",
+                "description": "`allow` if every kind of write is allowed, else `approve`.",
                 "type": "string"
               },
               "id": {
@@ -20069,6 +20109,14 @@
               },
               "name": {
                 "type": "string"
+              },
+              "write_policy": {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "default": {},
+                "description": "Per kind (create, comment, edit, state, fields): `allow` sends a\nwrite at once, `approve` keeps it for a person.",
+                "type": "object"
               }
             },
             "required": [
