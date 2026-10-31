@@ -78,7 +78,11 @@ the approved design for the board (Arugula #187, step 1 of 5), three rulings:
   word, the branch, the short HEAD, whether it is pushed, the number of
   uncommitted files and the diffstat line. It may not send message text, file
   names or transcripts. It does so only under a `boards.write` machine grant
-  its owner gives. This is a deliberate step past "Chat lives in control, in
+  its owner gives. For a block started on an issue (#372) it also sends the
+  name its starter gave it, the board's chip for it, never the first words of
+  a prompt, and asks control to attach it to the issue's rows
+  (`POST /api/daemon/projects/{project}/attach-block`, which needs the same
+  grant over that project). This is a deliberate step past "Chat lives in control, in
   plain text; terminal content doesn't": control learns what an agent block
   is doing, never what it said or touched.
 - **A board serves as the project's tracker,** so issues get no parent field

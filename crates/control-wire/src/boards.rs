@@ -52,6 +52,12 @@ pub const BOARD_ATTACHMENTS: &str = "/api/boards/{id}/attachments";
 /// `DELETE`: take an attachment off its row; answered [`BoardView`].
 pub const BOARD_ATTACHMENT: &str = "/api/boards/{id}/attachments/{attachment}";
 /// `GET` [`WorkQuery`]: a project's work items, [`WorkItems`].
+/// `POST` [`NewAsk`]: a person asks a question on a row (owners and
+/// editors). One open ask per row, and only on a row with an issue or a PR.
+pub const BOARD_ROW_ASK: &str = "/api/boards/{id}/rows/{row}/ask";
+/// `POST` [`AnswerAsk`]: the person an ask names answers it, or an owner or
+/// editor for them. A machine and its agents never do.
+pub const BOARD_ASK_ANSWER: &str = "/api/boards/{id}/asks/{ask}/answer";
 pub const PROJECT_WORK: &str = "/api/projects/{project}/work";
 
 /// A machine's agents, under `boards.read` / `boards.write` (over the
@@ -108,10 +114,41 @@ pub fn agent_board_reopen(id: &str) -> String {
     format!("/api/daemon/boards/{id}/reopen")
 }
 
+/// `POST` [`NewAsk`]: an agent asks a person a question on a row
+/// (`boards.write`). It reads the answer from the board; there is no route
+/// for it to answer.
+pub const AGENT_BOARD_ROW_ASK: &str = "/api/daemon/boards/{id}/rows/{row}/ask";
+
 /// `PUT` [`PutBlockState`]: a machine tells control the state of one of its
 /// own agent blocks, for the rows that point at it. The machine is the one
 /// that signed the request, never a field of the body.
 pub const AGENT_BLOCK_STATE: &str = "/api/daemon/block-state";
+/// `POST` [`AttachBlock`]: a machine's agent block was started on an issue
+/// (`start_agent`'s `issue`): attach it, as work, to that issue's row on
+/// every board of the project; answered [`BlockAttached`]. Needs the
+/// machine's `boards.write` over the project; the block is the signing
+/// machine's own.
+pub const AGENT_PROJECT_ATTACH_BLOCK: &str = "/api/daemon/projects/{project}/attach-block";
+
+/// [`AGENT_PROJECT_ATTACH_BLOCK`] for `project`.
+pub fn agent_project_attach_block(project: &str) -> String {
+    format!("/api/daemon/projects/{project}/attach-block")
+}
+
+/// [`BOARD_ROW_ASK`] for `row` of `id`.
+pub fn board_row_ask(id: &str, row: &str) -> String {
+    format!("/api/boards/{id}/rows/{row}/ask")
+}
+
+/// [`BOARD_ASK_ANSWER`] for `ask` of `id`.
+pub fn board_ask_answer(id: &str, ask: &str) -> String {
+    format!("/api/boards/{id}/asks/{ask}/answer")
+}
+
+/// [`AGENT_BOARD_ROW_ASK`] for `row` of `id`.
+pub fn agent_board_row_ask(id: &str, row: &str) -> String {
+    format!("/api/daemon/boards/{id}/rows/{row}/ask")
+}
 
 /// [`AGENT_BOARD_ENTRIES`] for `id`.
 pub fn agent_board_entries(id: &str) -> String {
@@ -155,6 +192,15 @@ pub const ROWS_MAX: u64 = 500;
 pub const ATTACHMENTS_MAX: u64 = 20;
 /// The longest link pointer's URL, in bytes.
 pub const LINK_MAX: usize = 2048;
+/// An ask's question, one line.
+pub const ASK_MAX: usize = 200;
+/// An ask's why.
+pub const ASK_WHY_MAX: usize = 2000;
+/// An ask's options, and the longest one.
+pub const ASK_OPTIONS_MAX: usize = 4;
+pub const ASK_OPTION_MAX: usize = 80;
+/// How many answered asks a row carries, newest first.
+pub const ASKED_SHOWN: usize = 3;
 
 /// What a row points at. `None` is free text. The ids are the platform's:
 /// `fi_…` (a mirrored PR or issue), `iss_…`, `run_…`, `hw_…`.
@@ -613,6 +659,10 @@ impl Diffstat {
 #[serde(deny_unknown_fields)]
 pub struct BlockState {
     pub state: BlockWord,
+    /// The name its starter or its person gave the block: a board's chip
+    /// for it. Never the first words of a prompt.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub branch: Option<String>,
     /// HEAD, abbreviated.
@@ -661,6 +711,169 @@ pub struct PutBlockState {
     pub block: BlockState,
 }
 
+/// A question on a row that a person answers on the board (Arugula #367):
+/// asked by a person or an agent, or raised by the board itself from the
+/// state of the row's items (`raised`, never stored, and with no answer).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "BoardAsk"))]
+pub struct Ask {
+    /// `ask_…`; a raised ask has none.
+    pub id: String,
+    /// The account it is for; empty for a raised ask.
+    pub who: String,
+    /// Who it is for, as the reader's page names them.
+    pub who_name: String,
+    pub question: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub why: Option<String>,
+    /// None: free text.
+    #[serde(default)]
+    pub options: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub recommend: Option<String>,
+    /// Who asked, as a name: a person, or an agent and its machine. Empty
+    /// for a raised ask.
+    pub asked_by: String,
+    /// The board raised it, from its items' state, and it clears with its
+    /// cause: nobody answers it.
+    #[serde(default)]
+    pub raised: bool,
+    /// It is for the reader (a raised ask is for whoever reads the row).
+    #[serde(default)]
+    pub mine: bool,
+    /// The reader may answer it: the person it names, or an owner or editor.
+    #[serde(default)]
+    pub can_answer: bool,
+    pub created_at: u64,
+}
+
+/// An ask that was answered, kept in the row's history.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "BoardAnsweredAsk"))]
+pub struct AnsweredAsk {
+    pub id: String,
+    pub question: String,
+    pub answer: String,
+    pub asked_by: String,
+    pub answered_by: String,
+    pub answered_at: u64,
+}
+
+/// [`BOARD_ROW_ASK`]'s body: `who` is an account of the project. `options`
+/// are 0 to [`ASK_OPTIONS_MAX`] (none: free text), and `recommend` is one
+/// of them.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "BoardNewAsk"))]
+#[serde(deny_unknown_fields)]
+pub struct NewAsk {
+    pub who: String,
+    pub question: String,
+    #[serde(default)]
+    pub why: Option<String>,
+    #[serde(default)]
+    pub options: Vec<String>,
+    #[serde(default)]
+    pub recommend: Option<String>,
+}
+
+/// [`BOARD_ASK_ANSWER`]'s body: one of the ask's `option`s, or `text` when
+/// it has none.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "BoardAnswerAsk"))]
+#[serde(deny_unknown_fields)]
+pub struct AnswerAsk {
+    #[serde(default)]
+    pub option: Option<String>,
+    #[serde(default)]
+    pub text: Option<String>,
+}
+
+/// An issue as a starter writes it: `#N`, `owner/repo#N` or `IDENT-N`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum IssueRef {
+    /// `#N`: a native issue of the project, else a GitHub issue of one of
+    /// its repos.
+    Number(u64),
+    /// `owner/repo#N`.
+    Repo { repo: String, number: u64 },
+    /// `IDENT-N`: a Plane item; the key in capitals.
+    Plane { key: String, number: u64 },
+}
+
+impl IssueRef {
+    /// The reference `text` writes, or none when it isn't one.
+    pub fn parse(text: &str) -> Option<IssueRef> {
+        let text = text.trim();
+        let number = |n: &str| n.parse::<u64>().ok().filter(|n| *n > 0);
+        let digits = |n: &str| !n.is_empty() && n.len() <= 9 && n.bytes().all(|b| b.is_ascii_digit());
+        if let Some((left, n)) = text.rsplit_once('#') {
+            if !digits(n) {
+                return None;
+            }
+            let number = number(n)?;
+            if left.is_empty() {
+                return Some(IssueRef::Number(number));
+            }
+            let name = |s: &str| !s.is_empty() && s.bytes().all(|b| b.is_ascii_alphanumeric() || b"._-".contains(&b));
+            let (owner, repo) = left.split_once('/')?;
+            return (name(owner) && name(repo)).then(|| IssueRef::Repo { repo: left.to_owned(), number });
+        }
+        let (key, n) = text.rsplit_once('-')?;
+        let key_ok = key.bytes().next().is_some_and(|b| b.is_ascii_alphabetic())
+            && key.bytes().all(|b| b.is_ascii_alphanumeric());
+        if !(key_ok && digits(n)) {
+            return None;
+        }
+        Some(IssueRef::Plane { key: key.to_ascii_uppercase(), number: number(n)? })
+    }
+
+    /// The issue's number, for a branch name.
+    pub fn number(&self) -> u64 {
+        match self {
+            IssueRef::Number(n) | IssueRef::Repo { number: n, .. } | IssueRef::Plane { number: n, .. } => *n,
+        }
+    }
+}
+
+/// [`AGENT_PROJECT_ATTACH_BLOCK`]'s body: the issue as the starter wrote it
+/// (`#N`, `owner/repo#N` or `IDENT-N`) and the block, which is on the
+/// signing machine.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "BoardAttachBlock"))]
+#[serde(deny_unknown_fields)]
+pub struct AttachBlock {
+    pub issue: String,
+    pub machine: String,
+    pub pane: String,
+}
+
+/// One row a block was attached to.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "BoardBlockOn"))]
+pub struct BlockOn {
+    pub board: String,
+    pub title: String,
+    pub row: String,
+}
+
+/// [`AGENT_PROJECT_ATTACH_BLOCK`]'s answer: the rows the block is on now
+/// (also those it was on already), and none when no board of the project
+/// has a row for the issue.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "BoardBlockAttached"))]
+pub struct BlockAttached {
+    pub on: Vec<BlockOn>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "BoardRow"))]
@@ -669,7 +882,8 @@ pub struct Row {
     pub rev: u64,
     pub pointer: Pointer,
     pub note: String,
-    /// Kept for old clients; nothing writes it any more (aru-125).
+    /// Kept for old clients: `needs_input` when the row has an open ask
+    /// (#367), `none` otherwise. Nothing writes it.
     pub status: Status,
     /// Where the row is, from the live state of its items.
     #[serde(default)]
@@ -689,6 +903,13 @@ pub struct Row {
     /// `after`, then one `earlier` for each closed block.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub marks: Vec<Mark>,
+    /// The row's one open question: asked, else raised by the board.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub ask: Option<Ask>,
+    /// The last [`ASKED_SHOWN`] asks answered, newest first.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub asked: Vec<AnsweredAsk>,
     /// A `fi_`, `iss_` or `run_` pointer's state now, when the reader may see the
     /// item ([`BoardView`] is read with it; a write's answer has it too).
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -759,8 +980,8 @@ pub struct BoardView {
 /// with `id` it changes that row or group: what is absent is left as it is,
 /// and a change to `pointer`, `note` or a group's `title` names `rev`. A
 /// new row's `zone` is the group it goes in. `kind`, and a `zone` that is a
-/// lane, are refused, and so is every `status` but `needs_input`, which stays
-/// until asks replace it (aru-125: lanes follow the work). The row's
+/// lane, are refused, and so is every `status` (aru-125: lanes follow the work;
+/// a question for a person is an ask, #367). The row's
 /// `pointer` is an issue or a PR (or a link, for a note).
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
@@ -786,7 +1007,7 @@ pub struct PutEntry {
     pub pointer: Option<Pointer>,
     #[serde(default)]
     pub note: Option<String>,
-    /// Refused, except `"needs_input"`.
+    /// Refused: ask with a question instead.
     #[serde(default)]
     pub status: Option<Status>,
 }
@@ -947,6 +1168,16 @@ fn lane_text<'a>(out: &mut String, title: &str, rows: impl Iterator<Item = &'a R
                 .collect();
             *out += &format!("      {}\n", fit(&format!("with {}", with.join(", ")), TEXT_WIDTH - 6));
         }
+        if let Some(a) = &r.ask {
+            let by = if a.raised { "the board".to_owned() } else { format!("for {}", a.who_name) };
+            *out += &format!("      {}\n", fit(&format!("? {} ({by})", a.question), TEXT_WIDTH - 6));
+        }
+        if r.ask.is_none()
+            && let Some(a) = r.asked.first()
+        {
+            let line = format!("answered: {} → {}", a.question, a.answer);
+            *out += &format!("      {}\n", fit(&line, TEXT_WIDTH - 6));
+        }
         if let Some(b) = &r.block {
             // Under the row, in line with its label.
             *out += &format!("      {}\n", fit(&b.line(), TEXT_WIDTH - 6));
@@ -1089,6 +1320,19 @@ pub struct WorkItems {
 mod tests {
     use super::*;
 
+    /// The three forms a starter writes an issue in, and what isn't one.
+    #[test]
+    fn an_issue_is_written_as_a_number_a_repo_number_or_a_key() {
+        assert_eq!(IssueRef::parse(" #372 "), Some(IssueRef::Number(372)));
+        let repo = IssueRef::parse("arugula-salad/arugula#12");
+        assert_eq!(repo, Some(IssueRef::Repo { repo: "arugula-salad/arugula".into(), number: 12 }));
+        assert_eq!(IssueRef::parse("arugu-7"), Some(IssueRef::Plane { key: "ARUGU".into(), number: 7 }));
+        assert_eq!(IssueRef::parse("ARUGU-7").map(|r| r.number()), Some(7));
+        for no in ["372", "#", "#0", "#x", "a/b/c#1", "/r#1", "o/#1", "-5", "1A-5", "A-", "A B-5", "#1234567890"] {
+            assert_eq!(IssueRef::parse(no), None, "{no}");
+        }
+    }
+
     fn row(pointer: Pointer, lane: Lane, note: &str) -> Row {
         Row {
             id: "row_1".into(),
@@ -1101,6 +1345,8 @@ mod tests {
             proof: None,
             group: None,
             marks: vec![],
+            ask: None,
+            asked: vec![],
             live: None,
             block: None,
             agent: None,
@@ -1244,9 +1490,42 @@ Done: People can sign up.
     /// A block's row carries what its machine reported under it, and the
     /// body that reports it takes no field the ruling doesn't list.
     #[test]
+    fn a_row_shows_its_ask_and_then_its_last_answer() {
+        let mut r = row(Pointer::Issue { id: "iss_1a2b3c4d".into() }, Lane::Review, "Parser");
+        r.ask = Some(Ask {
+            id: "ask_1".into(),
+            who: "acc".into(),
+            who_name: "sam".into(),
+            question: "Ship it?".into(),
+            why: None,
+            options: vec!["Yes".into(), "No".into()],
+            recommend: None,
+            asked_by: "an agent on m1".into(),
+            raised: false,
+            mine: false,
+            can_answer: false,
+            created_at: 0,
+        });
+        let text = render(&view(lanes(vec![(Lane::Review, vec![r.clone()])])));
+        assert!(text.contains("      ? Ship it? (for sam)\n"), "{text}");
+        r.ask = None;
+        r.asked = vec![AnsweredAsk {
+            id: "ask_1".into(),
+            question: "Ship it?".into(),
+            answer: "Yes".into(),
+            asked_by: "an agent on m1".into(),
+            answered_by: "sam".into(),
+            answered_at: 1,
+        }];
+        let text = render(&view(lanes(vec![(Lane::Review, vec![r])])));
+        assert!(text.contains("      answered: Ship it? → Yes\n"), "{text}");
+    }
+
+    #[test]
     fn a_block_row_shows_its_reported_state() {
         let mut r = row(Pointer::Block { machine: "m1".into(), pane: "7".into() }, Lane::Doing, "Tokenizer");
         r.block = Some(BlockState {
+            title: None,
             state: BlockWord::NeedsInput,
             branch: Some("feat/tokenizer".into()),
             head: Some("abc1234".into()),

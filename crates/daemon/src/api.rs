@@ -788,8 +788,19 @@ async fn open_block(
             return Err(bad(format!("no host {} in this daemon's list", at.host)));
         }
     }
+    // An agent started on an issue (`arugula agent --issue`, #372): its
+    // row, once it's open.
+    let issue = match req.kind {
+        arugula_proto::BlockType::Agent => crate::board_attach::issue_of(&req.config).map_err(bad)?,
+        _ => None,
+    };
     match app.mux.api(|r| Api::Open(req, who, r)).await {
-        Some(Ok(block)) => Ok(Json(OpenResponse { block })),
+        Some(Ok(block)) => {
+            if let Some(issue) = issue {
+                crate::board_attach::keep_later(app.clone(), issue, block);
+            }
+            Ok(Json(OpenResponse { block }))
+        }
         Some(Err(e)) => Err(bad(e)),
         None => Err(ApiError(StatusCode::SERVICE_UNAVAILABLE, "daemon is shutting down".into())),
     }

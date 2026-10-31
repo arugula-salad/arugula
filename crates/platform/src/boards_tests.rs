@@ -203,9 +203,9 @@ async fn a_board_from_creation_to_a_stale_write() {
 }
 
 /// Nobody sets a lane (a row in a lane's place, a move to one, a lane's
-/// change or delete) or a status but `needs_input`: each is refused in the
-/// words "lanes follow the work", for a person; the rows stay where the work
-/// puts them.
+/// change or delete) or a status: each is refused in the words "lanes follow
+/// the work" (`needs_input`, in "ask with a question"), for a person; the rows
+/// stay where the work puts them.
 #[tokio::test]
 async fn lanes_follow_the_work_and_refuse_the_rest() {
     let hub = Arc::new(TestHub::default());
@@ -229,16 +229,13 @@ async fn lanes_follow_the_work_and_refuse_the_rest() {
     // A group has no kind.
     let (st, v) = put(&base, "a", &id, json!({ "entry": "zone", "title": "Next", "kind": "lane" })).await;
     assert_eq!(st, 400, "{v}");
-    // A status, but needs_input (and none, which clears it).
+    // A status (and none, which clears it); needs_input is an ask now.
     for s in ["open", "working", "done", "failed"] {
         follows(&put(&base, "a", &id, json!({ "id": plan, "status": s })).await);
     }
     let (st, v) = put(&base, "a", &id, json!({ "id": plan, "status": "needs_input" })).await;
-    assert_eq!(
-        (st, &row_in(&v, &plan)["status"], &row_in(&v, &plan)["rev"]),
-        (200, &json!("needs_input"), &json!(1)),
-        "{v}"
-    );
+    assert_eq!(st, 400, "{v}");
+    assert!(v["error"].as_str().unwrap().starts_with("ask with a question: "), "{v}");
     let (st, v) = put(&base, "a", &id, json!({ "id": plan, "status": "none" })).await;
     assert_eq!((st, &row_in(&v, &plan)["status"]), (200, &json!("none")), "{v}");
     // A new row with a status is refused the same way.
@@ -581,7 +578,7 @@ async fn a_pointer_from_a_newer_build_reads_as_none_and_is_kept() {
     let rev = v["zones"][0]["rows"][0]["rev"].clone();
     let (st, _) = put(&base, "a", &id, json!({ "id": row, "rev": rev, "note": "proof, edited" })).await;
     assert_eq!(st, 200);
-    let (st, _) = put(&base, "a", &id, json!({ "id": row, "status": "needs_input" })).await;
+    let (st, _) = put(&base, "a", &id, json!({ "id": row, "status": "none" })).await;
     assert_eq!(st, 200);
     let kept: (String, String) = app
         .db
@@ -731,7 +728,8 @@ async fn an_agent_with_boards_write_works_the_rows() {
         geek(&base, "POST", &agent_board_entry_move(&id, &mine_id), Some(json!({ "zone": "lane_done" }))).await,
     );
     let (st, v) = geek_put(&base, &id, json!({ "id": green, "status": "needs_input" })).await;
-    assert_eq!(st, 200, "needs_input stays: {v}");
+    assert_eq!(st, 400, "needs_input is an ask now: {v}");
+    assert!(v["error"].as_str().unwrap().starts_with("ask with a question: "), "{v}");
 
     // Attach: proof on a person's row, and take it off again; a person's
     // attachment is a person's.
@@ -1110,4 +1108,93 @@ async fn a_replaced_agent_is_marked_earlier_and_comes_last() {
     let (_, v) = call(&base, "a", "GET", &format!("/api/boards/{id}"), None).await;
     assert_eq!(lane(&v, &row), "next", "{v}");
     assert_eq!(row_in(&v, &row)["marks"].as_array().unwrap().len(), 2, "{v}");
+}
+
+/// A board of `project` with a row on `issue`, made by `who`: the board's
+/// id and the row's.
+async fn board_on(base: &str, who: &str, project: &str, title: &str, issue: &str) -> (String, String) {
+    let (_, b) =
+        call(base, who, "POST", &format!("/api/projects/{project}/boards"), Some(json!({ "title": title }))).await;
+    let id = b["board"]["id"].as_str().unwrap().to_owned();
+    let pointer = json!({ "kind": "issue", "id": issue });
+    let (st, v) = put(base, who, &id, json!({ "entry": "row", "note": title, "pointer": pointer })).await;
+    assert_eq!(st, 200, "{v}");
+    (id.clone(), rows_in(&v)[0]["id"].as_str().unwrap().to_owned())
+}
+
+/// A block started on an issue is attached to that issue's row on every
+/// board of the project, as the machine's work, and to nothing else: the
+/// route is the machine's own (its grant over the project, its own block),
+/// and another project's rows are never touched (#372).
+#[tokio::test]
+async fn a_block_started_on_an_issue_is_attached_to_its_rows() {
+    use crate::grants::AGENT_UNGRANTED;
+    use arugula_control_wire::boards::{AGENT_BLOCK_STATE, agent_project_attach_block as route};
+
+    let (hub, _app, base, t, u) = crate::agents_tests::seeded().await;
+    hub.flag_named("team:t", FLAG, true);
+    hub.flag("team:u", true);
+    hub.flag_named("team:u", FLAG, true);
+
+    // Two issues, #1 and #2; two boards with a row for #1, one with #2. Team
+    // u has an issue #1 of its own, and a board on it.
+    let (one, two) = (issue(&base, "a", &t, "Parser").await, issue(&base, "a", &t, "Lexer").await);
+    let (launch, launch_row) = board_on(&base, "a", &t, "Launch", &one).await;
+    let (plan, plan_row) = board_on(&base, "a", &t, "Plan", &one).await;
+    let (_, _) = board_on(&base, "a", &t, "Lexing", &two).await;
+    let theirs = issue(&base, "c", &u, "Theirs").await;
+    let (other, other_row) = board_on(&base, "c", &u, "Other", &theirs).await;
+
+    let body = |issue: &str| json!({ "issue": issue, "machine": "geek", "pane": "7" });
+    // No grant: refused, and nothing attached.
+    let (st, v) = geek(&base, "POST", &route(&t), Some(body("#1"))).await;
+    assert_eq!((st, v["reason"].as_str()), (403, Some(AGENT_UNGRANTED)), "{v}");
+    let (_, v) = call(&base, "a", "GET", &format!("/api/boards/{launch}"), None).await;
+    assert_eq!(row_in(&v, &launch_row)["attachments"], json!([]), "{v}");
+
+    grant_write(&base, "a", "geek", &t).await;
+    let (st, v) = geek(&base, "POST", &route(&t), Some(body("#1"))).await;
+    assert_eq!(st, 200, "{v}");
+    let mut on: Vec<_> = v["on"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|o| (o["title"].as_str().unwrap(), o["row"].as_str().unwrap()))
+        .collect();
+    on.sort();
+    assert_eq!(on, vec![("Launch", launch_row.as_str()), ("Plan", plan_row.as_str())], "{v}");
+    for (board, row) in [(&launch, &launch_row), (&plan, &plan_row)] {
+        let (_, v) = call(&base, "a", "GET", &format!("/api/boards/{board}"), None).await;
+        let at = &row_in(&v, row)["attachments"];
+        assert_eq!(at[0]["pointer"], json!({ "kind": "block", "machine": "geek", "pane": "7" }), "{v}");
+        assert_eq!((at[0]["role"].as_str(), at.as_array().unwrap().len()), (Some("work"), 1), "{v}");
+    }
+
+    // Again: the rows are the same and nothing is attached twice. Its
+    // report shows on the row with the block's title, and the row is Doing.
+    let (st, again) = geek(&base, "POST", &route(&t), Some(body("#1"))).await;
+    assert_eq!((st, again["on"].as_array().unwrap().len()), (200, 2), "{again}");
+    let report = json!({ "pane": "7", "block": { "state": "working", "title": "Parser lane" } });
+    assert_eq!(geek(&base, "PUT", AGENT_BLOCK_STATE, Some(report)).await.0, 200);
+    let (_, v) = call(&base, "a", "GET", &format!("/api/boards/{launch}"), None).await;
+    let at = &row_in(&v, &launch_row)["attachments"];
+    assert_eq!((at.as_array().unwrap().len(), at[0]["block"]["title"].as_str()), (1, Some("Parser lane")), "{v}");
+    assert_eq!(lane(&v, &launch_row), "doing", "{v}");
+
+    // A title is one line.
+    let two_lines = json!({ "pane": "7", "block": { "state": "working", "title": "a\nb" } });
+    assert_eq!(geek(&base, "PUT", AGENT_BLOCK_STATE, Some(two_lines)).await.0, 400);
+
+    // Nothing for an issue with no row, or a name that is none.
+    let (st, none) = geek(&base, "POST", &route(&t), Some(body("#9"))).await;
+    assert_eq!((st, &none["on"]), (200, &json!([])), "{none}");
+    assert_eq!(geek(&base, "POST", &route(&t), Some(body("one"))).await.0, 400);
+
+    // The block is the signer's own, and the project is the grant's.
+    let theirs_pane = json!({ "issue": "#1", "machine": "someone-else", "pane": "7" });
+    assert_eq!(geek(&base, "POST", &route(&t), Some(theirs_pane)).await.0, 403);
+    let (st, _) = geek(&base, "POST", &route(&u), Some(body("#1"))).await;
+    assert!(st == 403 || st == 404, "no grant over u: {st}");
+    let (_, v) = call(&base, "c", "GET", &format!("/api/boards/{other}"), None).await;
+    assert_eq!(row_in(&v, &other_row)["attachments"], json!([]), "u's rows are not touched: {v}");
 }

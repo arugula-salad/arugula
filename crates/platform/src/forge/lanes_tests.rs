@@ -16,7 +16,7 @@ use crate::{
 
 /// A flagged team world, and a board of it by bob (an editor signed in with
 /// GitHub): (base, app, team, board).
-async fn start() -> (String, Arc<crate::Platform>, String, String) {
+pub(super) async fn start() -> (String, Arc<crate::Platform>, String, String) {
     let hub = Arc::new(TestHub::default());
     let (gh, app, base) = serve(&hub).await;
     let (team, _) = world(&hub, &gh, &app).await;
@@ -29,7 +29,7 @@ async fn start() -> (String, Arc<crate::Platform>, String, String) {
     (base, app, team, id)
 }
 
-async fn add(base: &str, board: &str, pointer: Value) -> Value {
+pub(super) async fn add(base: &str, board: &str, pointer: Value) -> Value {
     let (s, v) = call(
         base,
         "bob",
@@ -42,7 +42,7 @@ async fn add(base: &str, board: &str, pointer: Value) -> Value {
     v
 }
 
-async fn attach(base: &str, board: &str, row: &str, role: &str, pointer: Value) -> Value {
+pub(super) async fn attach(base: &str, board: &str, row: &str, role: &str, pointer: Value) -> Value {
     let (s, v) = call(
         base,
         "bob",
@@ -55,14 +55,14 @@ async fn attach(base: &str, board: &str, row: &str, role: &str, pointer: Value) 
     v
 }
 
-async fn read(base: &str, who: &str, board: &str) -> Value {
+pub(super) async fn read(base: &str, who: &str, board: &str) -> Value {
     let (s, v) = call(base, who, "GET", &format!("/api/boards/{board}"), None).await;
     assert_eq!(s, 200, "{v}");
     v
 }
 
 /// Every row with the lane it is in.
-fn rows(v: &Value) -> Vec<(&str, &Value)> {
+pub(super) fn rows(v: &Value) -> Vec<(&str, &Value)> {
     v["zones"]
         .as_array()
         .unwrap()
@@ -72,15 +72,15 @@ fn rows(v: &Value) -> Vec<(&str, &Value)> {
 }
 
 /// The row whose item is `id`.
-fn on<'a>(v: &'a Value, id: &str) -> (&'a str, &'a Value) {
+pub(super) fn on<'a>(v: &'a Value, id: &str) -> (&'a str, &'a Value) {
     rows(v).into_iter().find(|(_, r)| r["pointer"]["id"] == id).unwrap_or_else(|| panic!("no row on {id}: {v}"))
 }
 
-fn fi(id: &str) -> Value {
+pub(super) fn fi(id: &str) -> Value {
     json!({ "kind": "forge_item", "id": id })
 }
 
-async fn native(base: &str, team: &str, title: &str) -> (String, u64) {
+pub(super) async fn native(base: &str, team: &str, title: &str) -> (String, u64) {
     let (s, i) =
         call(base, "bob", "POST", &format!("/api/projects/{team}/issues"), Some(json!({ "title": title }))).await;
     assert_eq!(s, 200, "{i}");
@@ -88,7 +88,7 @@ async fn native(base: &str, team: &str, title: &str) -> (String, u64) {
 }
 
 #[allow(clippy::too_many_arguments)]
-fn item(
+pub(super) fn item(
     app: &crate::Platform,
     id: &str,
     repo: u64,
@@ -109,7 +109,7 @@ fn item(
         .unwrap();
 }
 
-fn check(app: &crate::Platform, repo: u64, sha: &str, name: &str, status: &str, conclusion: Option<&str>) {
+pub(super) fn check(app: &crate::Platform, repo: u64, sha: &str, name: &str, status: &str, conclusion: Option<&str>) {
     app.db
         .c()
         .execute(
@@ -402,4 +402,72 @@ async fn a_stacked_pr_is_after_the_one_below() {
     assert_eq!(s, 200);
     let v = add(&base, &id, fi("fi_a1")).await;
     assert_eq!(on(&v, "fi_a1").1["marks"], json!([{ "kind": "after", "number": 40, "repo": "acme/app" }]), "{v}");
+}
+
+/// The board raises an ask for red checks on an attached PR (Arugula #367),
+/// as a chip says it: to a reader of the repo, and not to one without access,
+/// who is told nothing of the PR, not even that it failed.
+#[tokio::test]
+async fn red_checks_raise_an_ask_only_for_a_reader_of_the_pr() {
+    let (base, app, team, id) = start().await;
+    let (login, _) = native(&base, &team, "Fix login").await;
+    let v = add(&base, &id, json!({ "kind": "issue", "id": login })).await;
+    let row = on(&v, &login).1["id"].as_str().unwrap().to_owned();
+    attach(&base, &id, &row, "work", fi("fi_a1")).await;
+    let v = read(&base, "bob", &id).await;
+    assert!(on(&v, &login).1.get("ask").is_none(), "checks still running: {v}");
+
+    check(&app, 77, "abc", "tests", "completed", Some("failure"));
+    let v = read(&base, "bob", &id).await;
+    let ask = &on(&v, &login).1["ask"];
+    assert_eq!(
+        (ask["question"].as_str(), ask["raised"].clone(), ask["mine"].clone(), ask["can_answer"].clone()),
+        (Some("#1's checks failed"), json!(true), json!(true), json!(false)),
+        "{v}"
+    );
+
+    let v = read(&base, "carol", &id).await;
+    assert!(on(&v, &login).1.get("ask").is_none(), "no access to the PR, no ask about it: {v}");
+    assert!(!v.to_string().contains("checks failed") && !v.to_string().contains("secret plan"), "{v}");
+    assert_eq!(on(&v, &login).0, "lane_review", "the lane still moves for her: {v}");
+
+    // A row whose own item is a PR raises it too, and it clears when the checks pass.
+    item(&app, "fi_own", 88, 40, "pr", "open", "own", ("feat/own", "own1"));
+    check(&app, 88, "own1", "tests", "completed", Some("failure"));
+    let v = add(&base, &id, fi("fi_own")).await;
+    assert_eq!(on(&v, "fi_own").1["ask"]["question"], json!("#40's checks failed"), "{v}");
+    app.db.c().execute("UPDATE forge_checks SET conclusion = 'success' WHERE head_sha = 'own1'", params![]).unwrap();
+    let v = read(&base, "bob", &id).await;
+    assert!(on(&v, "fi_own").1.get("ask").is_none(), "it clears with its cause: {v}");
+
+    // Raised asks have nothing to answer.
+    let (s, _) =
+        call(&base, "bob", "POST", &format!("/api/boards/{id}/asks/ask_none/answer"), Some(json!({ "text": "x" })))
+            .await;
+    assert_eq!(s, 404);
+}
+
+/// A PR row that asks a question and is then taken in by the issue it closes
+/// hands its open ask and its history to the issue's row; the issue's row
+/// keeps the one ask it has.
+#[tokio::test]
+async fn an_ask_follows_a_pr_row_taken_in_by_its_issue() {
+    let (base, app, team, id) = start().await;
+    let (issue, n) = native(&base, &team, "Lanes").await;
+    item(&app, "fi_t", 88, 30, "pr", "open", &format!("Arugula #{n}: lanes"), ("feat/x", "abc"));
+    let v = add(&base, &id, fi("fi_t")).await;
+    let pr_row = on(&v, "fi_t").1["id"].as_str().unwrap().to_owned();
+    let ask = |q: &str| json!({ "who": "bob", "question": q, "options": ["Yes", "No"] });
+    let (s, v) = call(&base, "bob", "POST", &format!("/api/boards/{id}/rows/{pr_row}/ask"), Some(ask("Done?"))).await;
+    assert_eq!(s, 200, "{v}");
+    let old = on(&v, "fi_t").1["ask"]["id"].as_str().unwrap().to_owned();
+    call(&base, "bob", "POST", &format!("/api/boards/{id}/asks/{old}/answer"), Some(json!({ "option": "Yes" }))).await;
+    let (s, v) = call(&base, "bob", "POST", &format!("/api/boards/{id}/rows/{pr_row}/ask"), Some(ask("Merge?"))).await;
+    assert_eq!(s, 200, "{v}");
+
+    let v = add(&base, &id, json!({ "kind": "issue", "id": issue })).await;
+    assert_eq!(rows(&v).len(), 1, "the PR row went into the issue's: {v}");
+    let r = on(&v, &issue).1;
+    assert_eq!(r["ask"]["question"], json!("Merge?"), "the open ask came along: {r}");
+    assert_eq!(r["asked"][0]["answer"], json!("Yes"), "and so did the history: {r}");
 }

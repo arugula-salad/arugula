@@ -64,6 +64,9 @@ export const boards = {
   },
   /** Attach work (a PR, an agent block, a run) or proof (a run, a link) to a row. */
   attach: (id: string, row: string, role: BoardAttachRole, pointer: BoardPointer) => call<BoardView>("POST", `/api/boards/${enc(id)}/attachments`, { row, role, pointer }),
+  /** Answer an ask with one of its options, or with text when it has none: the person it names, or an owner or editor for them. */
+  answer: (id: string, ask: string, a: { option: string } | { text: string }) =>
+    call<BoardView>("POST", `/api/boards/${enc(id)}/asks/${enc(ask)}/answer`, { option: null, text: null, ...a }),
   detach: (id: string, attachment: string) => call<BoardView>("DELETE", `/api/boards/${enc(id)}/attachments/${enc(attachment)}`),
   /** Rename the board, or change its goal (empty clears it). */
   edit: (id: string, e: { title?: string; goal?: string }) => call<BoardView>("PATCH", `/api/boards/${enc(id)}`, e),

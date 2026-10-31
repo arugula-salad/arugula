@@ -2820,6 +2820,22 @@ clients = ["page", "cli"]
 note = "Takes an attachment off its row: owners and editors."
 
 [[route]]
+method = "POST"
+path = "/api/boards/{id}/rows/{row}/ask"  # wire::boards::BOARD_ROW_ASK
+process = "platform"
+auth = "session"
+clients = ["page", "cli"]
+note = "Asks a member of the project a question on a row (Arugula #367): owners and editors, behind the boards Labs flag. One open ask per row (409), and only on a row with an issue or a PR (422)."
+
+[[route]]
+method = "POST"
+path = "/api/boards/{id}/asks/{ask}/answer"  # wire::boards::BOARD_ASK_ANSWER
+process = "platform"
+auth = "session"
+clients = ["page", "cli"]
+note = "Answers an ask with one of its options, or text when it has none: the person it names, or an owner or editor for them (403 otherwise). People only: a machine's signature is 401, and an agent has no route to answer. The answer is kept in the row's history."
+
+[[route]]
 method = "GET"
 path = "/api/projects/{project}/work"  # wire::boards::PROJECT_WORK
 process = "platform"
@@ -3116,12 +3132,28 @@ clients = ["daemon"]
 note = "An attachment the same machine's agents made (`boards.write`); anything else is 403."
 
 [[route]]
+method = "POST"
+path = "/api/daemon/boards/{id}/rows/{row}/ask"  # wire::boards::AGENT_BOARD_ROW_ASK
+process = "platform"
+auth = "daemon"
+clients = ["daemon"]
+note = "Asks a person of the project a question on a row (`boards.write`); it says an agent asked. It reads the answer from the board: there is no route for an agent to answer."
+
+[[route]]
 method = "PUT"
 path = "/api/daemon/block-state"  # wire::boards::AGENT_BLOCK_STATE
 process = "platform"
 auth = "daemon"
 clients = ["daemon"]
 note = "The state of one of the signing machine's own agent blocks, for the board rows that point at it (aru-116): the state word, branch, short HEAD, pushed, uncommitted count and diffstat, nothing else. The machine is the signer, never the body. Needs `boards.write` over a project; 403 without."
+
+[[route]]
+method = "POST"
+path = "/api/daemon/projects/{project}/attach-block"  # wire::boards::AGENT_PROJECT_ATTACH_BLOCK
+process = "platform"
+auth = "daemon"
+clients = ["daemon"]
+note = "Attaches one of the signing machine's own agent blocks, started on an issue, as work to that issue's row on every board of the project (`boards.write` over it; 403 without, and for a block of another machine). Answers the rows it is on."
 
 # ---- platform: deploys and their approval (M218, platform step 7)
 # A project's environments and deploys (M217's storage). Members read; owners

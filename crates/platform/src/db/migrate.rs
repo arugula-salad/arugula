@@ -534,6 +534,24 @@ const SQLITE: &[Migration] = &[
         sql: include_str!("../../migrations/sqlite/0073_board_lanes.sql"),
         additive: false,
     },
+    Migration {
+        version: 74,
+        name: "board_asks",
+        sql: include_str!("../../migrations/sqlite/0074_board_asks.sql"),
+        additive: true,
+    },
+    Migration {
+        version: 75,
+        name: "board_auto_attach",
+        sql: include_str!("../../migrations/sqlite/0075_board_auto_attach.sql"),
+        additive: true,
+    },
+    Migration {
+        version: 76,
+        name: "work_knows_its_issue",
+        sql: include_str!("../../migrations/sqlite/0076_work_knows_its_issue.sql"),
+        additive: true,
+    },
 ];
 
 /// Postgres's (M143): the same versions, names and `additive` flags as
@@ -977,6 +995,24 @@ const POSTGRES: &[Migration] = &[
         name: "board_lanes",
         sql: include_str!("../../migrations/postgres/0073_board_lanes.sql"),
         additive: false,
+    },
+    Migration {
+        version: 74,
+        name: "board_asks",
+        sql: include_str!("../../migrations/postgres/0074_board_asks.sql"),
+        additive: true,
+    },
+    Migration {
+        version: 75,
+        name: "board_auto_attach",
+        sql: include_str!("../../migrations/postgres/0075_board_auto_attach.sql"),
+        additive: true,
+    },
+    Migration {
+        version: 76,
+        name: "work_knows_its_issue",
+        sql: include_str!("../../migrations/postgres/0076_work_knows_its_issue.sql"),
+        additive: true,
     },
 ];
 

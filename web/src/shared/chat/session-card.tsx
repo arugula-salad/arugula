@@ -57,6 +57,7 @@ import { platformFetch, refusalOf } from "../maintenance";
 import { usePlatformApi } from "../platform-api";
 import type { ChatMessage, ChatRoom, SessionAct, SessionCard, SessionMove, SessionPick, SessionPr, SessionPrSent, SessionTry, SessionTryAsk, SessionView } from "../proto";
 import { DiffLink, MergedLine, mergedOf } from "./session-done";
+import { workChip } from "../boards/text";
 
 /** How long a turn may go without its box saying anything (`QUIET_MS`). */
 export const QUIET_MS = 60_000;
@@ -182,6 +183,13 @@ export type Tone = "accent" | "ok" | "warn" | "danger" | "muted";
 
 /** What the card says of a session's state, and its tone. `quiet`: its
  * box hasn't been heard from for [`QUIET_MS`] mid-turn. */
+/** The issue it was started on, and the board with a row for it (#372): `#12 · Launch`, opening the row on the board. */
+function SessionWorkChip({ card }: { card: SessionCard }) {
+  const w = card.work!;
+  const c = workChip(`#${w.number}`, w.board && w.row ? { project: card.project, board: w.board, title: w.board_title ?? "", row: w.row } : null);
+  return c.path ? <a class="work-chip" href={c.path} title="Its issue's row on the board" data-session-work>{c.label}</a> : <span class="work-chip" title="The issue it was started on" data-session-work>{c.label}</span>;
+}
+
 export function stateOf(state: string, quiet: boolean): { label: string; tone: Tone } {
   if (state === "unresponsive" || (quiet && (state === "working" || state === "needs_input"))) return { label: "stopped responding", tone: "danger" };
   switch (state) {
@@ -705,6 +713,7 @@ export function SessionCardView({ ses, large = false, onView }: { ses: string; l
         <span class="session-card-branch" data-session-branch>
           {c.branch}
         </span>
+        {c.work && <SessionWorkChip card={c} />}
         {c.workspace_name && <span class="dim">on {c.workspace_name}</span>}
         {c.harness !== "claude" || (c.ran && c.ran !== "claude") ? (
           <span class="dim" data-session-harness>

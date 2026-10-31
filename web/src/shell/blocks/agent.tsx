@@ -18,6 +18,8 @@ import { answeredLine, mayAnswer } from "../ui/term-ask";
 import { registerBlock, type BlockView } from "./view";
 import { BlockLoading } from "./block-states";
 import { openFile } from "./diff";
+import { workChip } from "../../shared/boards/text";
+import { platformHref } from "../platform-links";
 import { AskCard, headline, type Ask, type Question } from "../../shared/ask";
 import { pick, store } from "../upload";
 
@@ -61,10 +63,24 @@ export interface Perm {
   at_ms: number;
 }
 
+/** `#N · board`, linking to the board's row on the platform page; `#N` alone when it is on no board, or without a platform page to open. */
+function WorkChip({ work }: { work: NonNullable<AgentState["work"]> }) {
+  const c = workChip(work.issue, work.boards?.[0]);
+  const href = c.path ? platformHref(c.path) : undefined;
+  const more = (work.boards?.length ?? 0) > 1 ? ` (and ${work.boards!.length - 1} more board${work.boards!.length > 2 ? "s" : ""})` : "";
+  return href ? (
+    <a class="work-chip" href={href} target="_blank" rel="noopener noreferrer" title={`On ${work.issue}'s row${more}`} data-work-chip>{c.label}</a>
+  ) : (
+    <span class="work-chip" title={`Started on ${work.issue}`} data-work-chip>{c.label}</span>
+  );
+}
+
 export interface AgentState {
   agent: "claude" | "codex" | "managoat" | "acp";
   label: string;
   title: string | null;
+  /** The issue it was started on, and the boards it is on (#372). */
+  work?: { issue: string; boards?: { project: string; board: string; title: string; row: string }[] } | null;
   cwd: string | null;
   vm: boolean;
   session_id: string | null;
@@ -567,6 +583,7 @@ function AgentBlock({ client, id, s }: { client: Client; id: PaneId; s: AgentSta
         <span class="agent-name" title={s.server?.name ? `${s.server.name} ${s.server.version ?? ""}` : undefined}>
           {s.title ?? s.label}
         </span>
+        {s.work && <WorkChip work={s.work} />}
         {s.vm && (
           <span class="host-tag" title="Runs on this tab's throwaway VM">
             VM

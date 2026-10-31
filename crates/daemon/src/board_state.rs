@@ -3,6 +3,7 @@
 //! second ruling).
 //!
 //! What is sent is [`BlockState`] and nothing else: the state word, the
+//! name its starter gave a block that was started on an issue (#372), the
 //! branch, the short HEAD, whether it is pushed, the number of uncommitted
 //! files and the diffstat as three numbers. Its type has no field for
 //! message text, file names or a transcript, and this module reads none
@@ -86,9 +87,10 @@ fn diffstat(line: &str) -> Option<Diffstat> {
     Some(Diffstat { files, added: count("insertion").unwrap_or(0), removed: count("deletion").unwrap_or(0) })
 }
 
-fn body(word: BlockWord, repo: &Repo) -> BlockState {
+fn body(word: BlockWord, repo: &Repo, title: Option<String>) -> BlockState {
     BlockState {
         state: word,
+        title,
         branch: repo.branch.clone(),
         head: repo.head.clone(),
         pushed: repo.pushed,
@@ -167,7 +169,7 @@ pub async fn keep_reporting(app: Arc<App>) {
                     {
                         *repo = work_of(&w);
                     }
-                    let state = body(word, repo);
+                    let state = body(word, repo, title_of(&app, id).await);
                     if word == BlockWord::Closed {
                         agents.remove(&id);
                         repos.remove(&id);
@@ -200,6 +202,17 @@ fn enabled(app: &App) -> bool {
 
 async fn is_agent(app: &App, id: PaneId) -> bool {
     app.mux.api(Api::Panes).await.unwrap_or_default().iter().any(|p| p.info.id == id && p.info.kind == BlockType::Agent)
+}
+
+/// The name a block started on an issue was given (`start_agent`'s `title`,
+/// or a rename): its chip on a board. Never the first words of a prompt, and
+/// none for a block that isn't on an issue.
+async fn title_of(app: &App, id: PaneId) -> Option<String> {
+    let config = app.mux.api(|r| Api::Block(id, r)).await.flatten()?.config();
+    config.get("work").filter(|w| !w.is_null())?;
+    let title = config["title"].as_str()?.trim();
+    (!title.is_empty() && title.chars().count() <= 200 && !title.chars().any(char::is_control))
+        .then(|| title.to_owned())
 }
 
 /// Why sending stopped, and for how long.

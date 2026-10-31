@@ -255,6 +255,64 @@
   overflow-wrap: anywhere;
 }
 
+.board-needs-you {
+  margin: 8px 0;
+}
+
+.board-needs-you-button {
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--warn);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--warn);
+  font-weight: 600;
+}
+
+.board-ask {
+  margin: 6px 0;
+  padding: 6px 8px;
+  border-left: 3px solid var(--warn);
+  border-radius: 4px;
+  background: var(--raised);
+}
+
+.board-ask.raised {
+  border-left-color: var(--dim);
+}
+
+.board-ask-question {
+  font-weight: 600;
+}
+
+.board-ask-why p,
+.board-asked-one {
+  margin: 4px 0;
+  overflow-wrap: anywhere;
+}
+
+.board-ask-options {
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.board-ask-option,
+.board-ask-text button {
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 6px;
+}
+
+.board-ask-option.recommended {
+  border-color: var(--ok);
+  font-weight: 600;
+}
+
+.board-ask-text input {
+  flex: 1;
+  min-width: 0;
+}
+
 .board-note .md {
   margin: 0;
 }

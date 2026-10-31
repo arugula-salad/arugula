@@ -216,6 +216,9 @@ struct Poll<'p> {
     pages: usize,
     fixed: usize,
     drift: u64,
+    /// The PRs it wrote or fixed, for the boards to attach (#368) once
+    /// their content is in.
+    prs: Vec<u64>,
 }
 
 impl<'p> Poll<'p> {
@@ -312,6 +315,7 @@ impl<'p> Poll<'p> {
         // A session's PR it saw merged ends the session (M265).
         let changed: Vec<&ItemRow> =
             items.iter().zip(&wrote).filter(|(_, (w, ..))| w.fixed()).map(|(it, _)| it).collect();
+        self.prs.extend(changed.iter().filter(|it| it.kind == "pr").map(|it| it.number));
         crate::features::chat().merged_seen(self.p, self.job.repo_id, &changed);
         let before = now.saturating_sub(GRACE_MS);
         for (wrote, at, which, kind, started) in wrote {
@@ -683,8 +687,10 @@ pub async fn tick(p: &Platform, now: u64) -> anyhow::Result<Option<Turn>> {
     // repo linked again missed its webhooks while it wasn't), from then on.
     let drift_from = job.reconciled_at.filter(|r| job.backfilled_at.is_some() && *r >= job.linked_at);
     let pages = gh.ingest.settings.pages.max(1);
-    let mut poll = Poll { p, job, gh: client, drift_from, now, pages, fixed: 0, drift: 0 };
+    let mut poll = Poll { p, job, gh: client, drift_from, now, pages, fixed: 0, drift: 0, prs: vec![] };
     let out = poll.run().await;
+    // Whatever it wrote before it stopped, as a turn that ran out of pages did.
+    crate::boards::auto::auto_attach_prs(p, repo, &poll.prs);
     let (job, fixed, drift) = (poll.job, poll.fixed, poll.drift);
     gh.ingest.stats.drift(repo, now, drift);
     match out {
