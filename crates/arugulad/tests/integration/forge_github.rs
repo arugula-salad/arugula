@@ -73,6 +73,8 @@ struct Inner {
     remaining: u64,
     /// Answer reads as a secondary rate limit does (403, Retry-After).
     spent: bool,
+    /// The next this many reads of the repository itself fail (#427).
+    repo_fails: u32,
     next: u64,
 }
 
@@ -216,6 +218,14 @@ async fn moved_timeline(
 }
 
 async fn repo(State(f): State<Fake>, h: HeaderMap) -> Response {
+    let fails = f.with(|i| {
+        let fails = i.repo_fails > 0;
+        i.repo_fails = i.repo_fails.saturating_sub(1);
+        fails
+    });
+    if fails {
+        return (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "message": "try later" }))).into_response();
+    }
     answer(
         &f,
         "repo",
@@ -463,6 +473,24 @@ fn info(d: &Daemon, pane: u64) -> Value {
 fn read(d: &Daemon, block: u64) -> Value {
     d.wait_for("the first read", || d.state(block)["updated_ms"].as_u64().is_some_and(|t| t > 0));
     d.state(block)
+}
+
+/// #427: a read that isn't "moved" still learns the repository's merge
+/// methods. The first read's ask fails; the polls after it find the PR
+/// unchanged (a 304), and Merge ends up offering only the squash the
+/// repository allows.
+#[test]
+fn an_unchanged_pr_still_learns_the_merge_methods() {
+    let dir = scratch("styles");
+    let hub = Hub::start(&dir, "someone", &[], &[]);
+    hub.f.with(|i| i.repo_fails = 1);
+    let d = hub.daemon();
+    let block = open_pr(&d);
+    let st = read(&d, block);
+    assert_eq!(st["error"], Value::Null, "{st}");
+    d.wait_for("polls past the first", || hub.f.not_modified("pull") >= 2);
+    d.wait_for("the merge methods", || d.state(block)["merge_styles"] == json!(["squash"]));
+    assert_eq!(hub.f.full("pull"), 1, "the PR was never read whole again: these polls weren't moved");
 }
 
 #[test]
