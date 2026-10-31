@@ -30,7 +30,7 @@ const api = (p: Page, method: string, path: string, body?: unknown) =>
   );
 
 test("a click on a row opens its deploy, and the deploy goes back to Deploys", async ({ browser }) => {
-  // macOS's WebKit only (the desktop app's; CI's macos (webkit) job runs it).
+  // macOS's WebKit only (the desktop app's; CI's webkit job, rare-nightly.yml's, runs it).
   // Playwright's Linux WebKit throws its own "Assertion error" here while
   // the platform home loads, before any of this test's checks (#402).
   test.skip(process.platform === "linux", "Playwright's Linux WebKit asserts on this page (#402)");

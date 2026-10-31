@@ -1,0 +1,306 @@
+# The jobs that rarely fail (#305), moved out of check.yml on 2026-10-28:
+# in main's runs from 10-23 test-postgres failed 0 times in 73, testnet 0
+# in 107, stack 1 in 107, core 2 in 108 and macos (webkit) 0 in 110, and
+# on every push they added pod and Mac load that drove test's p90. They
+# run here every night on main's head, and on a release candidate:
+#
+#   gh workflow run rare-nightly.yml --ref main -f sha=SHA
+#
+# which `just release --rare` does for the newest green commit, and waits
+# for. When every job passes, the last one tags the commit ci/rare/<sha>.
+# ci/green doesn't count this run, so a daemon release checks that tag
+# instead: `scripts/release bump` and `check-version` refuse a commit
+# without it (docs/development.md, "Releasing"). The run's name carries the
+# commit it tests (run-name below), since a dispatched run's head_sha is
+# main's head while it checks out its `sha` input. A red scheduled run
+# opens an issue (scripts/ci-nightly-red).
+#
+# The jobs keep check.yml's names: chant matches main's required checks by
+# name and a scheduled run lands on main's head, but none of these names
+# is in chant.workspace.json's ci.green any more. One that goes back into
+# ci.green has to leave this file, or this run would count toward green.
+# For the same reason the builds they need are rare-build and rare-static
+# (ci.green requires build and static), and the WebKit job is webkit
+# (ci.green requires macos (test)). The two builds copy check.yml's build
+# and static, as perf-nightly's build does. Calling check.yml from here
+# (workflow_call) would have kept one copy, but its concurrency group is
+# keyed by github.ref, which a called workflow takes from its caller: the
+# nightly on main would queue behind main's push runs and replace the one
+# waiting.
+name: rare-nightly
+run-name: rare-nightly ${{ inputs.sha || github.sha }}
+on:
+  schedule:
+    - cron: "13 8 * * *"
+  workflow_dispatch:
+    inputs:
+      sha:
+        description: The commit to run them on (a full SHA; main's head when empty)
+        required: false
+        default: ""
+
+permissions:
+  # scripts/ci-wait-job reads the run's jobs.
+  actions: read
+  contents: read
+  packages: read
+
+# A run per commit: a release candidate's never waits behind, or is
+# replaced by, the nightly's.
+concurrency:
+  group: rare-nightly-${{ inputs.sha || github.sha }}
+  cancel-in-progress: false
+
+env:
+  NEXTEST_PROFILE: ci
+  SCCACHE_WEBDAV_PASSWORD: ${{ secrets.SCCACHE_WEBDAV_PASSWORD }}
+  GITHUB_TOKEN: ${{ github.token }}
+  CARGO_PROFILE_DEV_DEBUG: line-tables-only
+  CARGO_PROFILE_TEST_DEBUG: line-tables-only
+
+jobs:
+  # check.yml's build: the debug binaries, web/dist embedded, for testnet's
+  # CLI and stack's specs.
+  rare-build:
+    runs-on: arugula-amd64
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.sha || github.sha }}
+      - uses: ./.github/actions/setup
+        with:
+          cache-key: build
+          ghostty-key: gnu
+      - run: just bootstrap
+      - run: just web
+      - run: mise exec -- cargo build -p arugulad -p arugula --features arugulad/debug-embed
+      - run: mise exec -- scripts/server-cargo build -p arugula-control --features arugula-control/debug-embed
+      - run: scripts/ci-env keep debug
+      - name: Hand them to the jobs that need them
+        run: tar -cf "$RUNNER_TEMP/run-debug.tar" -C "$CI_RUN" debug dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: run-debug
+          path: ${{ runner.temp }}/run-debug.tar
+          retention-days: 1
+          compression-level: 1
+
+  # check.yml's static: the box's binaries, for the test stack.
+  rare-static:
+    runs-on: arugula-amd64
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.sha || github.sha }}
+      - uses: ./.github/actions/setup
+        with:
+          cache-key: static
+      - run: just bootstrap
+      - run: just static x86_64
+        env:
+          CARGO_PROFILE_RELEASE_OPT_LEVEL: "1"
+      - run: scripts/ci-env keep static
+      - name: Hand them to the jobs that need them
+        run: tar -cf "$RUNNER_TEMP/run-static.tar" -C "$CI_RUN" x86_64-unknown-linux-musl
+      - uses: actions/upload-artifact@v4
+        with:
+          name: run-static
+          path: ${{ runner.temp }}/run-static.tar
+          retention-days: 1
+          compression-level: 1
+
+  # The daemon and the CLI built without the `labs` feature (crates/daemon/
+  # src/labs/mod.rs): clippy and the tests. The ssh tests, which need
+  # Docker, run in check.yml's test.
+  core:
+    runs-on: arugula-amd64
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.sha || github.sha }}
+      - uses: ./.github/actions/setup
+        with:
+          cache-key: core
+          # Ghostty for x86_64-linux-gnu, as check.yml's build and test
+          # build it.
+          ghostty-key: gnu
+      - run: just bootstrap
+      - run: just check-core
+        env:
+          ARUGULA_SKIP_DOCKER: "1"
+          ARUGULA_REQUIRE_SYSTEMD: "1"
+      - name: sccache's hits
+        if: always() && env.RUSTC_WRAPPER == 'sccache'
+        run: sccache --show-stats
+
+  # The platform's suite again, on Postgres (M143): a postgres:17 container
+  # on the pod's Docker (its dind sidecar), reached as the test stack is,
+  # rather than a `services:` container. It builds only the server
+  # workspace's tests (no Ghostty, no daemon), the same units as check.yml's
+  # test-build, so sccache has them.
+  test-postgres:
+    runs-on: arugula-amd64
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.sha || github.sha }}
+      - uses: ./.github/actions/setup
+        with:
+          cache-key: test-postgres
+          cache-workspace: server
+          ghostty: "false"
+      - run: just bootstrap
+      # The platform embeds web/dist-platform, and control web/dist.
+      - run: just web
+      - name: The platform on Postgres
+        run: just test-platform-postgres
+        env:
+          # As check.yml's test (scripts/ci-env): the platform's tests
+          # compile at ~3.2-3.5 GiB each (four, not six), and six threads.
+          CARGO_BUILD_JOBS: "4"
+          NEXTEST_TEST_THREADS: "6"
+      - name: sccache's hits
+        if: always() && env.RUSTC_WRAPPER == 'sccache'
+        run: sccache --show-stats
+
+  # The test stack's claims on fresh boxes. One stack, the control
+  # profile's: it has every box the ssh profile has, so the ssh claims run
+  # on it first, and building and starting it once saves a second round.
+  # The claims under BREAK=1 are testnet-break.yml's, every night.
+  testnet:
+    # Not after rare-static: it sets up and starts the stack's tools while
+    # rare-static builds, and waits for its musl binaries before it needs
+    # them (#1680).
+    needs: rare-build
+    runs-on: arugula-amd64
+    # 8-13 min when it works; a hung claim held a pod for 45 min.
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.sha || github.sha }}
+      - uses: ./.github/actions/setup
+        with:
+          rust: "false"
+          fetch: run-debug
+      - run: scripts/ci-env testnet
+      - run: just bootstrap
+      # The relay claim's phones (web/fixtures/m52-phones.ts): a Pixel in
+      # Google Chrome itself, not Playwright's Chromium, and an iPhone in
+      # WebKit.
+      - name: Playwright's browsers
+        run: just browsers
+      - name: Google Chrome
+        run: command -v google-chrome >/dev/null || (cd web && pnpm exec playwright install --with-deps chrome)
+      - name: Wait for rare-static
+        run: scripts/ci-wait-job rare-static
+      - name: rare-static's binaries
+        uses: actions/download-artifact@v4
+        with:
+          name: run-static
+          path: ${{ runner.temp }}/artifacts
+      - name: Into the run directory
+        run: mkdir -p "$CI_RUN" && tar -xf "$RUNNER_TEMP/artifacts/run-static.tar" -C "$CI_RUN"
+      - name: Its binaries, this run's
+        run: |
+          echo "ARUGULA_TESTNET_BINARIES=$CI_RUN/x86_64-unknown-linux-musl/release" >> "$GITHUB_ENV"
+          echo "ARUGULA_SSH_BINARIES=$CI_RUN/x86_64-unknown-linux-musl/release" >> "$GITHUB_ENV"
+          echo "ARUGULA_CLI=$CI_RUN/debug/arugula" >> "$GITHUB_ENV"
+      - name: The control profile's stack
+        run: just testnet down && just testnet up control
+      - name: The claims
+        run: just testnet test ssh && just testnet test control
+      - name: Take the test stack down
+        if: always()
+        run: just testnet down
+
+  # The specs on the test stack (team-swarm-phones' box behind netem).
+  stack:
+    needs: [rare-build, rare-static]
+    runs-on: arugula-amd64
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.sha || github.sha }}
+      - uses: ./.github/actions/setup
+        with:
+          rust: "false"
+          fetch: run-debug run-static
+          claude-code: "true"
+      - run: scripts/ci-env use
+      - run: scripts/ci-env testnet
+      - run: just bootstrap
+      # team-swarm-phones' phones are WebKit's.
+      - name: Playwright's browsers
+        run: just browsers
+      - name: The Playwright specs on the test stack
+        run: port=$(scripts/free-port) && cd web && E2E_PORT=$port pnpm exec playwright test
+        env:
+          E2E_CHROMIUM: "1"
+          E2E_SET: stack
+      # A failed spec's screenshot (playwright.config.ts), kept a week.
+      - name: Failed specs' screenshots
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: stack-failures
+          path: web/test-results/
+          retention-days: 7
+          if-no-files-found: ignore
+      - name: Take the test stack down
+        if: always()
+        run: just testnet down
+
+  # The WebKit specs (Safari's engine) on our Macs: check.yml's macos job's
+  # other half until #305, set up the same way (.github/actions/macos-setup).
+  # Not named macos: ci.green requires check.yml's macos (test).
+  webkit:
+    runs-on: [self-hosted, macos-arm64]
+    env:
+      ARUGULA_SKIP_DOCKER: "1"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.sha || github.sha }}
+      - uses: ./.github/actions/macos-setup
+        with:
+          cache-key: webkit
+      - name: Playwright's WebKit
+        run: just browsers webkit
+      - name: The WebKit specs (Safari's engine)
+        run: just e2e-webkit
+        env:
+          E2E_PORT: "7769"
+      # A failed spec's screenshot (playwright.config.ts), kept a week.
+      - name: Failed specs' screenshots
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: webkit-failures
+          path: web/test-results/
+          retention-days: 7
+          if-no-files-found: ignore
+
+  # Every job above passed: the commit gets ci/rare/<sha>, which
+  # scripts/release check-rare reads (with git alone, as ci/green). The ci/
+  # tags are protected, so it's CI_GREEN_TOKEN's, as chant-ci-green.yml's
+  # tags are; this job checks out nothing, so the token never meets the
+  # commit's code.
+  rare-passed:
+    needs: [core, test-postgres, testnet, stack, webkit]
+    runs-on: ubuntu-latest
+    permissions: {}
+    steps:
+      - name: Tag the commit ci/rare/<sha>
+        env:
+          GH_TOKEN: ${{ secrets.CI_GREEN_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          SHA: ${{ inputs.sha || github.sha }}
+        run: |
+          if ! [[ "$SHA" =~ ^[0-9a-f]{40}$ ]]; then echo "::error::$SHA isn't a full commit SHA: no tag"; exit 1; fi
+          if gh api "repos/$GH_REPO/git/ref/tags/ci/rare/$SHA" >/dev/null 2>&1; then
+            echo "ci/rare/$SHA is there already"
+          else
+            gh api "repos/$GH_REPO/git/refs" -f ref="refs/tags/ci/rare/$SHA" -f sha="$SHA" >/dev/null
+            echo "tagged ci/rare/$SHA"
+          fi

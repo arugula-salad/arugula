@@ -309,8 +309,13 @@ daemon's update check read it.
    tag with main, the bump merged in. If main has newer commits that
    aren't green yet, it lists them (the release would leave them out) and
    stops: wait for them, or `just release --older` releases without them
-   (#1679). `just release --dry-run` shows the commit, the version, the
-   bump and any commits left out, and stops. By hand instead: set the
+   (#1679). The commit also needs its `ci/rare/<sha>` tag: the jobs CI
+   runs nightly instead of on each push passed on it (below). Without
+   one it stops; `just release --rare` starts those jobs on the commit,
+   waits for them (about as long as a check.yml run) and releases if they
+   pass. `just release --dry-run` shows the commit, the version, the
+   bump, any commits left out and whether the commit has its `ci/rare`
+   tag, and stops. By hand instead: set the
    version in the workspace `Cargo.toml` and in `server/Cargo.toml`, run `just release-fixtures` and
    commit (`just notices` if dependencies changed; CI fails if
    THIRD_PARTY.md is stale), push it to main, wait for CI to pass on it, and
@@ -400,9 +405,23 @@ refuse a tag on a commit with no `ci/green` tag, or with a `ci/revoked`
 one (a re-run failed after it passed). A commit that changes nothing but
 Arugula's own versions (in the manifests, the lock files and the
 THIRD_PARTY.md files), release notes and its copy of the client fixtures counts as its parent: that's
-the commit `just release` tags. `ARUGULA_RELEASE_SKIP_GREEN=1` skips that
-check; in the release workflows it comes from the repository variable of
-the same name. The variable stays unset. Only an org admin sets it, to 1,
+the commit `just release` tags.
+
+A daemon release needs more than `ci/green` (#305). test-postgres, core,
+testnet, stack and the WebKit specs run in
+`.github/workflows/rare-nightly.yml`, every night on main's head and on a
+release candidate, not on each push, so `ci/green` doesn't cover them. A
+run whose jobs all pass tags the commit it tested `ci/rare/<sha>` (with
+`CI_GREEN_TOKEN`, since the `ci/` tags are protected). `scripts/release
+check-version` and `just release` refuse a commit without that tag (or,
+for the bump commit, its parent without it); `scripts/release check-rare
+TAG` checks it alone. To start the jobs on a commit by hand:
+`gh workflow run rare-nightly.yml --ref main -f sha=SHA` (a full SHA; the
+run's name, `rare-nightly SHA`, says which). The app's releases
+(`check-app-version`, `just release --app`) don't need it.
+
+`ARUGULA_RELEASE_SKIP_GREEN=1` skips both checks; in the release
+workflows it comes from the repository variable of the same name. The variable stays unset. Only an org admin sets it, to 1,
 for one named release when CI can't go green (an outage, say), and unsets
 it once that release is out (lex00, 2026-10-08, #524).
 
@@ -440,8 +459,8 @@ them find the run directory where it always was. Each pod has Docker (a
 privileged dind sidecar) for the test stack and the ssh tests, and boots
 systemd with a user manager for the runner (home-cloud's
 `images/gha-runner`, target `systemd`; #735), so the tests that start the
-daemon as a service run as they did on geek. check.yml's `test` and `core`
-set `ARUGULA_REQUIRE_SYSTEMD=1`, which fails those tests instead of
+daemon as a service run as they did on geek. check.yml's `test` and
+rare-nightly.yml's `core` set `ARUGULA_REQUIRE_SYSTEMD=1`, which fails those tests instead of
 skipping them if a pod ever comes up without one. Pods ask for 2.5 CPUs
 and 3.5 GiB, and up to 24 run at once, on two amd64 nodes with about 85
 GiB between them for runners; a heavy job (a cargo build) uses 5 to 7 GB,
