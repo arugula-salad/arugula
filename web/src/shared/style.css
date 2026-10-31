@@ -5521,6 +5521,17 @@ html[data-scheme="light"] .doc {
   border-bottom: 2px solid var(--doc-rule);
 }
 
+.doc-head-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.doc-head-row .doc-title {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
 .doc-title {
   margin: 0;
   font: 800 38px/1.02 var(--f-display);

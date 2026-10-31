@@ -1,0 +1,41 @@
+/* The Copy link button (#411, ./copy-link.tsx): a small pill at a header's
+   right end, with a ▾ beside it when it has more to offer. */
+
+.copy-link {
+  display: inline-flex;
+  flex: none;
+  align-items: stretch;
+  margin-left: auto;
+}
+
+.copy-link button {
+  padding: 4px 10px;
+  border-radius: var(--btn-radius);
+  background: var(--raised-hover);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.copy-link button[data-copy-link-main]:not(:last-child) {
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+}
+
+.copy-link button[data-copy-link-more] {
+  padding: 4px 6px;
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+  border-left: 1px solid var(--border, rgb(128 128 128 / 0.3));
+}
+
+@media (pointer: coarse) {
+  .copy-link button {
+    min-height: 34px;
+  }
+}
+
+/* "Copy link" and "Copied ✓" take the same width, so the header doesn't move when it changes. */
+.copy-link button[data-copy-link-main] {
+  min-width: 104px;
+  text-align: center;
+}

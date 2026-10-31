@@ -99,6 +99,7 @@ export function DocBlock({
   cached,
   byline,
   foot,
+  share,
 }: {
   id: PaneId;
   s: DocState | null;
@@ -108,6 +109,8 @@ export function DocBlock({
   byline?: ComponentChildren;
   /** Under the last section: the share viewer's "Made with Arugula" (#255). */
   foot?: ComponentChildren;
+  /** At the header's right: the Copy link button (#411). */
+  share?: ComponentChildren;
 }) {
   // Drawn again when a picture is added or replaced, and not otherwise.
   const kept = JSON.stringify(s?.assets ?? []);
@@ -125,7 +128,14 @@ export function DocBlock({
     <div class="doc" data-doc-block={id}>
       <div class="doc-page">
         <header class="doc-head">
-          <h1 class="doc-title">{s.title || "Untitled"}</h1>
+          {share ? (
+            <div class="doc-head-row">
+              <h1 class="doc-title">{s.title || "Untitled"}</h1>
+              {share}
+            </div>
+          ) : (
+            <h1 class="doc-title">{s.title || "Untitled"}</h1>
+          )}
           <p class="doc-meta">
             {byline && <>{byline} · </>}
             {s.entries.length === 0 ? (

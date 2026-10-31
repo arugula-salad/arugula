@@ -29,6 +29,7 @@ import { Markdown } from "../ui/markdown";
 import { ConfirmRemove } from "../ui/confirm";
 import { StateChip } from "../ui/state-chip";
 import { useSubscribe } from "../ui/hooks";
+import { CopyLinkButton } from "../ui/copy-link";
 import { askText, openMenu, type MenuItem } from "../ui/menu";
 import { issues } from "../issues/store";
 import { whoLabel } from "../issues/text";
@@ -51,6 +52,7 @@ export function BoardPanel({
   platform,
   back,
   write = true,
+  menu,
 }: {
   id: string;
   /** False for a block that isn't on screen: it reads nothing then. */
@@ -61,6 +63,8 @@ export function BoardPanel({
   back?: preact.ComponentChildren;
   /** Whether to offer the board's own edits (title, goal, closing). False for a viewer; a block can't tell, so it offers them and the platform's 403 comes back as a toast. */
   write?: boolean;
+  /** The Copy link button's ▾ items, given the board's team link (the block adds "Open in browser ↗"). */
+  menu?: (link: string) => MenuItem[];
 }) {
   const { toast } = usePlatformApi();
   const [view, setView] = useState<BoardView | null>(null);
@@ -162,6 +166,10 @@ export function BoardPanel({
     if (t?.trim() && t.trim() !== view.board.title) await act(() => boards.edit(id, { title: t.trim() }));
   };
 
+  // The team link: the board's page on the platform, as the page or block names it.
+  const path = platform(`/p/${view.board.project}/boards/${id}`);
+  const shareLink = path ? new URL(path, location.href).href : null;
+
   const addGroup = async () => {
     const t = await askText("Add a group", "", "a phase, a wave or an area");
     if (t?.trim()) await act(() => boards.put(id, { entry: "zone", title: t.trim() }));
@@ -191,6 +199,7 @@ export function BoardPanel({
   return (
     <div class="board" data-board={id}>
       {back}
+      <div class="board-head">
       <h1 class="board-title" data-board-title>
         {write ? (
           <span role="button" tabIndex={0} class="board-rename" title="Rename the board" data-board-rename onClick={() => void rename()} onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && (e.preventDefault(), void rename())}>
@@ -200,6 +209,8 @@ export function BoardPanel({
           view.board.title
         )}
       </h1>
+      <CopyLinkButton link={shareLink} menu={shareLink ? menu?.(shareLink) : undefined} />
+      </div>
       <Epic b={view.board} act={act} id={id} write={write} view={view} />
       {stale && (
         <p class="board-stale" role="status" data-board-stale>

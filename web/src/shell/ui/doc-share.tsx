@@ -14,6 +14,7 @@ import type { Client } from "../client";
 import type { PaneId } from "../../shared/proto";
 import { ConfirmRemove } from "../../shared/ui/confirm";
 import { CopyText } from "../../shared/ui/copy";
+import { CopyLinkButton } from "../../shared/ui/copy-link";
 import type { MenuItem } from "../../shared/ui/menu";
 import { useModal } from "../../shared/ui/modal";
 import { useSubscribe } from "../../shared/ui/hooks";
@@ -71,24 +72,41 @@ async function refresh(client: Client, id: PaneId) {
   }
 }
 
-/** In the Doc's bar (UI audit #196): "shared" once it has a link, with
- * when its copy was last updated, and ↗ to open the link; nothing while
- * it's only the owner's. */
-function ShareState({ id, s }: { id: PaneId; s: DocState }) {
+/** In the Doc's bar (UI audit #196): the Copy link button (#411), "shared"
+ * once it has a link, with when its copy was last updated, and ↗ to open
+ * the link. This Doc lives on one machine, so it has no team link yet: the
+ * button's click is the public link's flow (Share link…, or Copy link once
+ * it's shared) and the ▾ holds the rest. */
+function ShareState({ client, id, s }: { client: Client; id: PaneId; s: DocState }) {
   useSubscribe(onLinks);
-  if (!s.shared) return null;
+  const items = docShareItems(client, id);
+  const main = items[0];
+  // Unshared, "Share link…" is the click and also in the ▾; shared, the click is Copy link.
+  const more = s.shared ? items.slice(1) : items;
+  const menu = more.filter((i, n) => i !== "separator" || n < more.length - 1);
   const url = links.get(id);
   return (
     <>
-      <span class="ws-tag doc-bar-shared" data-doc-bar-shared title={`Shared with a link; the link shows it as it was ${ago(s.shared.updated, Date.now(), "long")} (${when(s.shared.updated)})`}>
-        <LinkIcon /> shared
-      </span>
-      {url && <OpenOutside href={url} data-doc-bar-open />}
+      {main && typeof main === "object" && "run" in main && (
+        <CopyLinkButton
+          link={null}
+          onClick={() => (main.disabled ? client.toast(main.hint ?? "this Doc can't be shared") : main.run())}
+          menu={menu}
+        />
+      )}
+      {s.shared && (
+        <>
+          <span class="ws-tag doc-bar-shared" data-doc-bar-shared title={`Shared with a link; the link shows it as it was ${ago(s.shared.updated, Date.now(), "long")} (${when(s.shared.updated)})`}>
+            <LinkIcon /> shared
+          </span>
+          {url && <OpenOutside href={url} data-doc-bar-open />}
+        </>
+      )}
     </>
   );
 }
 
-docHooks.bar = (_client, id, s) => <ShareState id={id} s={s} />;
+docHooks.bar = (client, id, s) => <ShareState client={client} id={id} s={s} />;
 
 docHooks.state = (client, id, s: DocState) => {
   // When it arrives, and each time it becomes shared or isn't.
