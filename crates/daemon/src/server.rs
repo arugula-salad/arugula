@@ -75,6 +75,9 @@ pub struct App {
     /// pane (ms since the epoch): whether a pane's hooks are live, for MCP's
     /// `capabilities` (#229). Memory only.
     pub hooks_heard: std::sync::Mutex<std::collections::HashMap<PaneId, u64>>,
+    /// Which session last posted in each thread, and the mentions no
+    /// session took (Arugula #394). Memory only.
+    pub agent_mentions: crate::agent_mentions::State,
 }
 
 impl App {
@@ -112,6 +115,7 @@ impl App {
             next_client: AtomicU64::new(1),
             tailnet_seen: Default::default(),
             hooks_heard: Default::default(),
+            agent_mentions: Default::default(),
         })
     }
 

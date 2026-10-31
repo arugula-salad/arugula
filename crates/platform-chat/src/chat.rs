@@ -856,8 +856,9 @@ fn reactions_of(db: &Db, ms: &[&Message]) -> anyhow::Result<HashMap<(String, i64
 /// that can read the mention; [`room_agents`]), by its name: `@geek`, or
 /// `@geek's agent` (the word stops at the `'`). Each is stored beside the
 /// accounts as `machine:<id>`, and its word leaves `unreached`. Nobody is
-/// pushed for one and nothing wakes an agent: its agents read it over MCP.
-/// An agent doesn't mention its own machine.
+/// pushed for one; its machine's daemon is told instead ([`tell_agents`]),
+/// and its agents also read it over MCP. An agent doesn't mention its own
+/// machine.
 async fn agent_mentions(
     app: &Platform,
     facts: &Facts,
@@ -881,6 +882,85 @@ async fn agent_mentions(
     }
     unreached.retain(|w| !agents.iter().any(|a| named(a, w)));
     Ok(out)
+}
+
+/// The machine whose agent wrote the newest message in the thread a new
+/// reply goes under (#394): the reply is for it. None for a post in the
+/// room, which has no one message it answers.
+fn replying_to_agent(app: &Platform, room: &Room, parent: Option<i64>) -> anyhow::Result<Option<String>> {
+    let Some(parent) = parent else { return Ok(None) };
+    let (newest, _) = app.db.chat_thread_messages(&room.id, parent, Page::Newest, 1)?;
+    let last = match newest.into_iter().next() {
+        Some(m) => Some(m),
+        None => app.db.chat_message(&room.id, parent)?,
+    };
+    Ok(last.and_then(|m| m.agent))
+}
+
+/// A message being told to agents (#394).
+struct Told<'a> {
+    room: &'a Room,
+    seq: i64,
+    parent: Option<i64>,
+    /// Who wrote it, as people read it.
+    author: String,
+    text: &'a str,
+}
+
+/// Tells the agents a new message is for (#394): those it mentions
+/// (`stored`'s `machine:<id>`), and the one it replies to. Each machine's
+/// daemon gets it over its connection and routes it to a session; one that
+/// took it is `pushed` as `machine:<id>`. A mention that couldn't be told
+/// (the machine is offline, doesn't know the op, or its owner turned
+/// mentions off) goes back into `unreached` by its name: it is stored,
+/// and the agents read it the next time they look. A failure here never
+/// fails the post.
+async fn tell_agents(
+    app: &Platform,
+    facts: &Facts,
+    told: &Told<'_>,
+    stored: &[String],
+    replying_to: Option<String>,
+    by: Option<&AgentPrincipal>,
+    unreached: &mut Vec<String>,
+) -> Vec<ChatPushed> {
+    use arugula_control_wire::forge::{AgentMention, DaemonOp, OpAnswer};
+    let mentioned: Vec<&str> = stored.iter().filter_map(|m| m.strip_prefix(wire::AGENT_MENTION)).collect();
+    let mut want: Vec<&str> = mentioned.clone();
+    want.extend(replying_to.as_deref());
+    want.retain(|m| by.is_none_or(|b| b.machine != *m));
+    want.sort();
+    want.dedup();
+    if want.is_empty() {
+        return vec![];
+    }
+    let agents = match room_agents(app, facts, told.room).await {
+        Ok(a) => a,
+        Err(e) => {
+            tracing::warn!("couldn't work out whom to tell: {e:#}");
+            return vec![];
+        }
+    };
+    let mut out = vec![];
+    for a in agents.iter().filter(|a| want.contains(&a.machine.as_str()) && a.powers.iter().any(|p| p == THREADS_READ))
+    {
+        let op = DaemonOp::AgentMention(AgentMention {
+            room: told.room.id.clone(),
+            target: told.room.target.clone(),
+            room_name: told.room.name.clone(),
+            seq: told.seq,
+            parent: told.parent,
+            author: told.author.clone(),
+            text: told.text.to_owned(),
+        });
+        let answer = tokio::time::timeout(Duration::from_secs(5), app.hub.daemon_op(&a.machine, &op)).await;
+        if matches!(answer, Ok(Ok(OpAnswer::Done { .. }))) {
+            out.push(ChatPushed { account: format!("{}{}", wire::AGENT_MENTION, a.machine), why: ChatPushWhy::Agent });
+        } else if mentioned.contains(&a.machine.as_str()) {
+            unreached.push(a.machine_name.to_lowercase());
+        }
+    }
+    out
 }
 
 // ---------------------------------------------------------------- live
@@ -1749,6 +1829,7 @@ pub(crate) async fn post_replied(
     named.extend(extra.keyword.iter().cloned());
     let mut stored = named.clone();
     stored.extend(agent_mentions(app, &facts, &room, &mut unreached, agent).await?);
+    let replying_to = replying_to_agent(app, &room, b.parent)?;
     let at = now_ms();
     let seq = app.db.add_chat_message(
         &room.id,
@@ -1783,7 +1864,7 @@ pub(crate) async fn post_replied(
         Some(parent) => Some(ThreadPush { parent, also, followers: app.db.chat_thread_followers(&room.id, parent)? }),
         None => None,
     };
-    let pushed = push(
+    let mut pushed = push(
         app,
         &facts,
         &room,
@@ -1801,6 +1882,12 @@ pub(crate) async fn post_replied(
         b.notify_anyway.unwrap_or(false),
     )
     .await?;
+    let who = match agent {
+        Some(a) => format!("{}'s agent on {}", name_of(app, &s.account).await?, a.machine_name),
+        None => name_of(app, &s.account).await?,
+    };
+    let told = Told { room: &room, seq, parent: b.parent, author: who, text };
+    pushed.extend(tell_agents(app, &facts, &told, &stored, replying_to, agent, &mut unreached).await);
     let replied = sessions::posted(app, &room, &s.account, agent, via.is_some(), seq, b.parent, text).await;
     Ok((ChatPosted { seq, mentions: stored, unreached, pushed }, replied))
 }
@@ -1948,6 +2035,8 @@ async fn push(
             ChatPushWhy::Dm => format!("{me} wrote to you"),
             ChatPushWhy::Message => format!("{me} in {place}"),
             ChatPushWhy::Thread => format!("{me} replied in a thread in {place}"),
+            // Told over the machine's connection, never pushed to a device.
+            ChatPushWhy::Agent => format!("{me} wrote to an agent in {place}"),
         };
         let msg = json!({
             "chat": { "room": room.id, "seq": seq, "parent": thread.as_ref().map(|t| t.parent) },

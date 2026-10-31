@@ -1468,6 +1468,11 @@
           "const": "thread",
           "description": "A reply in a thread the person follows (#106).",
           "type": "string"
+        },
+        {
+          "const": "agent",
+          "description": "A machine's agents, told over its connection (#394): the account\nis `machine:<id>`.",
+          "type": "string"
         }
       ]
     },

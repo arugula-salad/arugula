@@ -1,5 +1,5 @@
 //! The machine's sharing settings (native #205): what its owner lets
-//! people without a way in of their own do here. One so far, **Guest SSH
+//! people without a way in of their own do here. **Guest SSH
 //! access**: the owner may invite a guest with only OpenSSH to a pane
 //! (M65, *Invite over ssh…*, `arugula share --guest`). It was the
 //! `guest-ssh` Labs flag; it is off until the owner turns it on.
@@ -51,6 +51,12 @@ pub struct Sharing {
     /// ssh. Off by default.
     #[serde(default)]
     pub guest_ssh: bool,
+    /// Agent mentions (Arugula #394): teammates' messages in a thread
+    /// reach this machine's agents (`@<machine>`, or a reply to one of
+    /// them). On by default; the owner turns it off here.
+    #[serde(default = "yes")]
+    #[cfg_attr(feature = "ts", ts(as = "Option<bool>", optional))]
+    pub agent_mentions: bool,
     /// Whether this build has guest ssh. A build without Labs keeps the
     /// setting, and nothing follows. Absent: it has.
     #[serde(default = "yes")]
@@ -70,6 +76,9 @@ pub struct SharingSetRequest {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "ts", ts(optional))]
     pub guest_ssh: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub agent_mentions: Option<bool>,
 }
 
 /// The file as it is: empty if there's none, or it doesn't parse (logged
@@ -91,10 +100,25 @@ pub fn guest_ssh(state_dir: &Path) -> bool {
         .unwrap_or(false)
 }
 
+/// Whether teammates' messages in a thread reach this machine's agents
+/// (Arugula #394): on unless the file says `agent_mentions: false`.
+pub fn agent_mentions(state_dir: &Path) -> bool {
+    doc(state_dir).get("agent_mentions").and_then(Value::as_bool).unwrap_or(true)
+}
+
 /// Turns Guest SSH access on or off, keeping the rest of the file.
 pub fn set_guest_ssh(state_dir: &Path, on: bool) -> io::Result<()> {
+    set(state_dir, "guest_ssh", on)
+}
+
+/// Turns agent mentions on or off, keeping the rest of the file.
+pub fn set_agent_mentions(state_dir: &Path, on: bool) -> io::Result<()> {
+    set(state_dir, "agent_mentions", on)
+}
+
+fn set(state_dir: &Path, key: &str, on: bool) -> io::Result<()> {
     let mut m = doc(state_dir);
-    m.insert("guest_ssh".into(), Value::Bool(on));
+    m.insert(key.into(), Value::Bool(on));
     let mut text = serde_json::to_string_pretty(&Value::Object(m)).expect("a JSON object serializes");
     text.push('\n');
     flags::write_atomic(&state_dir.join(FILE), text.as_bytes())
@@ -163,6 +187,17 @@ mod tests {
             flags::Pushed { account: [(OLD_FLAG.to_owned(), true)].into(), team: [(OLD_FLAG.to_owned(), true)].into() };
         flags::write_control(&d, &pushed).unwrap();
         assert!(!guest_ssh(&d) && !migrate(&d).unwrap());
+        fs::remove_dir_all(&d).unwrap();
+    }
+
+    #[test]
+    fn agent_mentions_are_on_until_the_owner_turns_them_off() {
+        let d = dir("mentions");
+        assert!(agent_mentions(&d));
+        set_agent_mentions(&d, false).unwrap();
+        assert!(!agent_mentions(&d) && !guest_ssh(&d));
+        set_agent_mentions(&d, true).unwrap();
+        assert!(agent_mentions(&d));
         fs::remove_dir_all(&d).unwrap();
     }
 

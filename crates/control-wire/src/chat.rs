@@ -710,6 +710,9 @@ pub enum ChatPushWhy {
     Message,
     /// A reply in a thread the person follows (#106).
     Thread,
+    /// A machine's agents, told over its connection (#394): the account
+    /// is `machine:<id>`.
+    Agent,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -1330,7 +1333,8 @@ pub fn agent_pin(room: &str, seq: i64) -> String {
 /// How a message's `mentions` names a machine's agents: `machine:` and the
 /// machine's id. An `@` and the machine's name (`@geek`, `@geek's agent`)
 /// mentions them where their `threads.read` grant reaches the room. Nobody is
-/// pushed for it, and nothing wakes an agent: they read it with
+/// pushed for it, and (#394) its machine's daemon is told, which hands it
+/// to the session it's for; the agents also read it with
 /// [`AgentMessagesQuery::mentions`].
 pub const AGENT_MENTION: &str = "machine:";
 
