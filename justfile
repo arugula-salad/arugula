@@ -637,9 +637,12 @@ e2e url="": web e2e-build
 # web/), as a session on a dev box runs the ones it wrote or changed
 # (Arugula #264): the web dependencies when the checkout has none, the
 # binaries the specs run, then Playwright on a free port (beside other
-# checkouts' runs) under the suite lock.
+# checkouts' runs) under the suite lock. Arguments go to Playwright as
+# given: `-g "two words"` stays one pattern. The lock stops a run after
+# SUITE_LOCK_TIMEOUT seconds (900).
+[positional-arguments]
 e2e-spec +specs: _web-deps web e2e-build
-    cd web && E2E_PORT="${E2E_PORT:-$(../scripts/free-port)}" {{suite_lock}} pnpm exec playwright test {{specs}}
+    cd web && E2E_PORT="${E2E_PORT:-$(../scripts/free-port)}" {{suite_lock}} pnpm exec playwright test "$@"
 
 [private]
 _web-deps:

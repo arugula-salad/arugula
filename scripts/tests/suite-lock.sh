@@ -4,7 +4,11 @@
 # one, CI and ARUGULA_SUITE_LOCK=0 don't wait; a holder killed with -9
 # leaves no lock behind; ARUGULA_SUITE_LOCK_FILE is one lock for every
 # home; SIGTERM reaches COMMAND; a syspolicyd that stays
-# busy is refused, with the lock left free, and one that settles isn't.
+# busy is refused, with the lock left free, and one that settles isn't;
+# a run past SUITE_LOCK_TIMEOUT is stopped with its children (one that
+# ignores TERM too), exit 142, and the next waiter gets the lock; a waiter
+# is told every so often who holds it and for how long; `just e2e-spec`
+# hands `-g "two words"` to Playwright as one argument.
 # The lock lives under a temp HOME, and a stand-in ps plays syspolicyd.
 #
 #   scripts/tests/suite-lock.sh
@@ -151,5 +155,56 @@ printf '1.0\n' >"$work/cpu"
 rm -f "$work/calls"
 out=$(PATH="$stubs:$PATH" "$lock" true 2>&1) || true
 if [ -z "$out" ]; then ok "a quiet syspolicyd says nothing"; else bad "a quiet syspolicyd said: $out"; fi
+
+# A run past its limit: the command and its child (which ignores TERM) are
+# stopped, the exit is 142, and a second waiter takes the lock after.
+rm -f "$work/kid" "$work/ran"
+cat >"$work/stubborn.sh" <<STUB
+#!/bin/sh
+sh -c "trap '' TERM; echo \$\$ >'$work/kid'; while :; do sleep 0.1; done" &
+echo \$! >"$work/lead"
+while :; do sleep 0.1; done
+STUB
+chmod +x "$work/stubborn.sh"
+set +e
+SUITE_LOCK_TIMEOUT=2 "$lock" "$work/stubborn.sh" >"$work/out" 2>&1 &
+runner=$!
+pids+=("$runner")
+until_file "$work/kid"
+kid=$(cat "$work/kid")
+pids+=("$kid")
+start=$SECONDS
+out2=$("$lock" sh -c "touch '$work/ran'" 2>&1)
+waited=$((SECONDS - start))
+wait "$runner"
+code=$?
+set -e
+if [ "$code" = 142 ]; then ok "a run past its limit exits 142"; else bad "past the limit: wanted 142, got $code: $(cat "$work/out")"; fi
+case "$(cat "$work/out")" in *"ran past 2s; stopped it and its children") ok "and says so" ;; *) bad "no limit line: $(cat "$work/out")" ;; esac
+if ! kill -0 "$kid" 2>/dev/null && ! kill -0 "$(cat "$work/lead")" 2>/dev/null; then ok "the command and a child that ignores TERM are gone"; else bad "a process outlived the limit"; fi
+if [ -e "$work/ran" ] && [ "$waited" -ge 1 ]; then ok "a second waiter gets the lock after"; else bad "the waiter didn't run after the limit: $out2"; fi
+# The waiter above waited about 2 s, and its own limit (default) hadn't
+# started: it ran. A run inside its limit exits as its command did.
+if SUITE_LOCK_TIMEOUT=3 "$lock" sh -c 'exit 0'; then ok "a run inside its limit finishes normally"; else bad "a run inside its limit failed"; fi
+
+# Waiting says who holds the lock and for how long, again every so often.
+touch "$work/go6"
+hold "$work/go6"
+(sleep 3; rm -f "$work/go6") &
+out=$(ARUGULA_SUITE_LOCK_NOTE=1 "$lock" true 2>&1)
+case "$out" in *"waiting for pid "*" in "*" running sh -c "*", held for "*) ok "a waiter names the holder's worktree and command, and how long" ;; *) bad "no holder detail: $out" ;; esac
+if [ "$(printf '%s\n' "$out" | grep -c 'waiting for')" -ge 2 ]; then ok "and says it again while it waits"; else bad "said once: $out"; fi
+wait
+
+# `just e2e-spec e2e/x.spec.ts -g "two words"` (its dependencies, the
+# builds, skipped) hands Playwright one -g pattern. A stand-in pnpm lists
+# its arguments.
+mkdir -p "$work/bin"
+# shellcheck disable=SC2016 # the stand-in expands it
+printf '#!/bin/sh\nfor a; do echo "arg:$a"; done\n' >"$work/bin/pnpm"
+chmod +x "$work/bin/pnpm"
+args=$(cd "$root" && PATH="$work/bin:$PATH" E2E_PORT=1 ARUGULA_SUITE_LOCK=0 just --no-deps e2e-spec e2e/x.spec.ts -g "two words" 2>/dev/null || true)
+want=$(printf 'arg:exec\narg:playwright\narg:test\narg:e2e/x.spec.ts\narg:-g\narg:two words')
+if [ "$args" = "$want" ]; then ok "e2e-spec keeps -g \"two words\" one pattern"; else bad "e2e-spec arguments: $args"; fi
 
 exit $fail

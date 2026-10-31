@@ -68,6 +68,7 @@ export function Markdown({
   chat,
   isMe,
   landed,
+  machine,
 }: {
   text: string;
   refs: string | null;
@@ -76,11 +77,12 @@ export function Markdown({
   chat?: ChatKit;
   isMe?: IsMe;
   landed?: (token: string) => boolean;
+  machine?: ForgeInline["machine"];
 }) {
   // A poll that changes nothing hands back the same text: don't parse it again.
   const out = useMemo(
-    () => blocks(bodyLines(text), { refs, embeds, image, chat, isMe, landed, text: chat?.text }),
-    [text, refs, embeds, image, chat, isMe, landed],
+    () => blocks(bodyLines(text), { refs, embeds, image, chat, isMe, landed, machine, text: chat?.text }),
+    [text, refs, embeds, image, chat, isMe, landed, machine],
   );
   return <div class={chat ? (chat.jumbo ? "md md-chat md-jumbo" : "md md-chat") : "md"}>{out}</div>;
 }

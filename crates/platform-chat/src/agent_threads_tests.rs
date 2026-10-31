@@ -378,3 +378,78 @@ async fn a_reply_to_an_agents_message_is_told_to_its_machine() {
     let (_, v) = call(&base, "a", "POST", room, Some(json!({ "text": "a chimes in", "parent": root }))).await;
     assert_eq!(v["pushed"].as_array().map(|p| p.iter().filter(|p| p["why"] == "agent").count()), Some(0), "{v}");
 }
+
+/// The machines `@` offers in a room (#428): the ones a mention reaches
+/// (a live `threads.read` grant over the room), each with the sessions its
+/// agents posted from there this week, newest first, five at most. A
+/// machine with only `threads.post`, or with no grant, isn't offered, and
+/// neither are sessions that posted elsewhere, long ago, or were deleted.
+#[tokio::test]
+async fn the_room_offers_the_machines_a_mention_reaches_and_their_sessions() {
+    use crate::db::chat::NewMessage;
+    let (hub, app, base, t, _u) = seeded().await;
+    geek_in_t(&base, &t).await;
+    hub.daemon("mini", "a", Some("t"));
+    hub.daemon("pad", "a", Some("t"));
+    let (st, g) =
+        call(&base, "a", "POST", "/api/grants", give("mini", THREADS_POST, json!({ "kind": "project", "id": t })))
+            .await;
+    assert_eq!(st, 200, "{g}");
+    let path = agent_messages("ch_general");
+    for n in 1..=7 {
+        let (st, v) =
+            geek(&base, "POST", &path, Some(json!({ "text": "hi", "session": format!("Session {n}") }))).await;
+        assert_eq!(st, 200, "{v}");
+    }
+    // Session 1 speaks again: the newest, once.
+    geek(&base, "POST", &path, Some(json!({ "text": "again", "session": "Session 1" }))).await;
+    let now = arugula_e2e::now_ms();
+    let post = |room: &str, at: u64, session: &str| {
+        let m = NewMessage {
+            author: "a",
+            at,
+            text: "old",
+            quote: None,
+            ref_machine: None,
+            ref_pane: None,
+            mentions: &[],
+            agent: Some("geek"),
+            via: None,
+            parent: None,
+            also: false,
+            agent_session: Some(session),
+        };
+        app.db.add_chat_message(room, &m).unwrap()
+    };
+    post("ch_general", now - 8 * 24 * 60 * 60 * 1000, "Last Month");
+    post("dm_ab", now, "Elsewhere");
+    let gone = post("ch_general", now, "Deleted");
+    app.db.delete_chat_message("ch_general", gone, now).unwrap();
+
+    let (_, v) = call(&base, "b", "GET", "/api/chat/rooms/ch_general", None).await;
+    let offered: Vec<(&str, bool, Vec<&str>)> = v["agents"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|a| {
+            let s =
+                a["sessions"].as_array().map(|s| s.iter().map(|s| s.as_str().unwrap()).collect()).unwrap_or_default();
+            (a["machine"].as_str().unwrap(), a["mentionable"].as_bool().unwrap(), s)
+        })
+        .collect();
+    assert_eq!(
+        offered,
+        [
+            ("geek", true, vec!["Session 1", "Session 7", "Session 6", "Session 5", "Session 4"]),
+            ("mini", false, vec![]),
+        ],
+        "pad has no grant, mini can only post: {v}"
+    );
+
+    // What is offered is what a mention reaches: geek is pushed, mini isn't.
+    hub.answers_ops("geek", OpAnswer::Done { url: None });
+    hub.answers_ops("mini", OpAnswer::Done { url: None });
+    let (_, v) = call(&base, "b", "POST", "/api/chat/rooms/ch_general/messages", say("@geek-box and @mini-box")).await;
+    assert_eq!(v["pushed"], json!([{ "account": "machine:geek", "why": "agent" }]), "{v}");
+    assert_eq!(v["unreached"], json!(["mini-box"]), "{v}");
+}

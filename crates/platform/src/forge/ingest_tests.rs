@@ -359,6 +359,18 @@ fn repository(repo: u64) -> Value {
     json!({ "id": repo, "full_name": if repo == REPO { "acme/app".to_owned() } else { format!("acme/r{repo}") } })
 }
 
+/// An issue's mirrored `state_reason`.
+fn reason(app: &Platform, number: u64) -> Option<String> {
+    app.db
+        .c()
+        .query_row(
+            "SELECT state_reason FROM forge_items WHERE repo_id = ?1 AND number = ?2",
+            params![REPO, number],
+            |r| r.get(0),
+        )
+        .unwrap()
+}
+
 /// An item's row: its title, state and GitHub time.
 fn item(app: &Platform, number: u64) -> Option<(String, String, u64)> {
     use crate::db::sql::Optional as _;
@@ -586,6 +598,7 @@ fn fill(gh: &Shared, now: u64) {
     }
     g.issues.insert(10, issue(10, "open issue", "open", now - 300 * day));
     g.issues.insert(11, issue(11, "closed issue", "closed", now - 5 * day));
+    g.issues.get_mut(&11).unwrap()["state_reason"] = json!("not_planned");
     g.issues.insert(12, issue(12, "ancient issue", "closed", now - 120 * day));
     g.runs.insert(
         "sha1".into(),
@@ -655,6 +668,7 @@ async fn backfill_fills_a_newly_linked_repo() {
         .unwrap();
     assert_eq!(numbers, [1, 2, 4, 5, 6, 10, 11]);
     assert_eq!(item(&app, 2).unwrap().1, "closed");
+    assert_eq!((reason(&app, 10), reason(&app, 11)), (None, Some("not_planned".to_owned())), "the backfill keeps it");
     assert_eq!(count(&app, "SELECT count(*) FROM forge_checks WHERE head_sha = 'sha1' AND conclusion = 'failure'"), 1);
     assert_eq!(count(&app, "SELECT count(*) FROM forge_checks WHERE head_sha = 'sha4' AND status = 'pending'"), 1);
     assert_eq!(count(&app, "SELECT count(*) FROM forge_events WHERE kind = 'review'"), 1, "not the pending one");
@@ -1055,6 +1069,32 @@ async fn history_and_early_statuses_are_not_drift() {
     let turn = poller::tick(&app, t1).await.unwrap();
     assert_eq!(turn, Some(poller::Turn::Done { repo: REPO, backfill: false, fixed: 2, drift: 1 }));
     assert_eq!(count(&app, "SELECT count(*) FROM forge_events WHERE github_id = 60"), 1, "written all the same");
+}
+
+/// An issue's `state_reason` arrives on `issues.closed` and is kept, and
+/// `issues.reopened` replaces it.
+#[tokio::test]
+async fn a_closed_issue_keeps_why_it_closed() {
+    let (_gh, app, base, _hub) = serve().await;
+    link(&app, REPO, now_ms());
+    let t = now_ms();
+    let send = |action: &'static str, d: &'static str, state: &str, why: Value, at: u64| {
+        let mut i = issue(8, "dropped", state, at);
+        i["state_reason"] = why;
+        let body = json!({ "action": action, "repository": repository(REPO), "sender": { "login": "bob", "id": 2 },
+            "issue": i });
+        let base = base.clone();
+        async move { hook(&base, "issues", d, &body).await }
+    };
+    assert_eq!(send("opened", "c1", "open", Value::Null, t).await, 202);
+    assert_eq!(reason(&app, 8), None);
+    assert_eq!(send("closed", "c2", "closed", json!("not_planned"), t + 1000).await, 202);
+    assert_eq!(item(&app, 8).unwrap().1, "closed");
+    assert_eq!(reason(&app, 8).as_deref(), Some("not_planned"));
+    assert_eq!(send("reopened", "c3", "open", json!("reopened"), t + 2000).await, 202);
+    assert_eq!(reason(&app, 8).as_deref(), Some("reopened"));
+    assert_eq!(send("closed", "c4", "closed", json!("completed"), t + 3000).await, 202);
+    assert_eq!(reason(&app, 8).as_deref(), Some("completed"));
 }
 
 /// An issue deleted, or transferred away, goes with its events and inbox

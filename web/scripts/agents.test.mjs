@@ -3,7 +3,7 @@
 // switches read of the grants. Run with `node --experimental-strip-types`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { agentLines, agentOwners, authorLabel, chipLabel, isSystemLine } from "../src/shared/chat/agents.ts";
+import { agentLines, agentOwners, authorLabel, chipLabel, isSystemLine, machineMentions, sessionSlug } from "../src/shared/chat/agents.ts";
 import {
   boardsLevel,
   boardsMove,
@@ -279,4 +279,27 @@ test("Work on boards is boards.write, issues.write and trackers.write together (
   assert.equal(hasWorkOnBoards(on), true);
   // Off takes the three and keeps the others.
   assert.deepEqual(withWorkOnBoards(on, false), ["threads.read"]);
+});
+
+const agent = (over) => ({ owner: "a1", owner_name: "Aaron", machine: "m1", machine_name: "Mini", powers: ["threads.read"], mentionable: true, sessions: [], ...over });
+
+test("a session's name is spelled as the daemon matches it", () => {
+  assert.equal(sessionSlug("UX Improvements"), "ux-improvements");
+  assert.equal(sessionSlug("  fix: the #428 bug!! "), "fix-the-428-bug");
+  assert.equal(sessionSlug("***"), "");
+});
+
+test("@ offers the machines a mention reaches, each with its sessions under it", () => {
+  const agents = [
+    agent({ sessions: ["UX Improvements", "UX  improvements", "Billing"] }),
+    agent({ machine: "m2", machine_name: "geek-box", sessions: ["Docs"] }),
+    agent({ machine: "m3", machine_name: "pad", mentionable: false, sessions: ["Nope"] }),
+    agent({ machine: "m4", machine_name: "Aaron's Mac" }),
+  ];
+  const tokens = (typed) => machineMentions(agents, typed).map((m) => m.token);
+  assert.deepEqual(tokens(""), ["mini", "mini/ux-improvements", "mini/billing", "geek-box", "geek-box/docs"]);
+  assert.deepEqual(tokens("g"), ["geek-box", "geek-box/docs"]);
+  assert.deepEqual(tokens("mini/u"), ["mini", "mini/ux-improvements"]);
+  assert.deepEqual(tokens("mini/zzz"), []);
+  assert.deepEqual(tokens("pad"), [], "without the grant it isn't offered");
 });

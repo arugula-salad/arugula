@@ -56,7 +56,7 @@ function marked(s: string, mark: RegExp | undefined, key: () => number): Compone
 // One pattern for every inline form; the first group that matched says
 // which. Order matters: code before the rest, so `**x**` in code stays.
 const INLINE =
-  /(`[^`\n]+`)|(\*\*[^*\n]+\*\*)|((?:^|(?<=[\s(]))[*_][^*_\s][^*_\n]*[*_](?=$|[\s.,;:!?)]))|(https?:\/\/[^\s<>()]+[^\s<>().,;:!?'"])|((?:^|(?<=[^\w]))@[\w.-]*\w)/g;
+  /(`[^`\n]+`)|(\*\*[^*\n]+\*\*)|((?:^|(?<=[\s(]))[*_][^*_\s][^*_\n]*[*_](?=$|[\s.,;:!?)]))|(https?:\/\/[^\s<>()]+[^\s<>().,;:!?'"])|((?:^|(?<=[^\w]))@[\w.-]*\w(?:\/[\w.-]*\w)?)/g;
 
 // The forge pass (PR and issue bodies) adds two forms after those: a
 // `[text](url)` link and a `#N` reference.
@@ -80,6 +80,10 @@ export type ForgeInline = {
   image?: (src: string, alt: string, key: number) => ComponentChildren;
   /** What the plain text between forms becomes (chat's `:joy:` as 😂). */
   text?: (s: string) => string;
+  /** Chat's: a machine's icon for `@word` when it names a machine that
+   * heard the message (#428), else null. Such a mention may go on with
+   * `/session`, and the chip then holds both. */
+  machine?: (word: string) => ComponentChildren;
 };
 
 /** Only these hrefs come out of a body: whoever opened the PR wrote it. */
@@ -93,7 +97,7 @@ export function inline(text: string, isMe?: IsMe, landed?: (token: string) => bo
   for (const m of text.matchAll(forge ? (forge.image ? DOC_INLINE : FORGE_INLINE) : INLINE)) {
     const i = m.index!;
     if (i > at) out.push(...marked(plain(text.slice(at, i)), mark, () => k++));
-    const s = m[0];
+    let s = m[0];
     if (m[1]) out.push(<code key={k++}>{s.slice(1, -1)}</code>);
     else if (m[2]) out.push(forge ? <strong key={k++}>{inline(s.slice(2, -2), isMe, landed, forge)}</strong> : <b key={k++}>{inline(s.slice(2, -2), isMe, landed, undefined, mark)}</b>);
     else if (m[3]) out.push(forge ? <em key={k++}>{inline(s.slice(1, -1), isMe, landed, forge)}</em> : <i key={k++}>{inline(s.slice(1, -1), isMe, landed, undefined, mark)}</i>);
@@ -120,20 +124,33 @@ export function inline(text: string, isMe?: IsMe, landed?: (token: string) => bo
           </a>,
         );
       else out.push(s);
-    } else if (landed && !landed(s.slice(1).toLowerCase()))
-      // Marked still, but as one that reached nobody (#296).
-      out.push(
-        <span key={k++} class="mention-missed" title="This reached no one: nobody by that name sees this thread">
-          {s}
-        </span>,
-      );
-    else {
-      const token = s.slice(1).toLowerCase();
-      out.push(
-        <span key={k++} class={isMe?.(token) ? "mention me" : "mention"}>
-          {s}
-        </span>,
-      );
+    } else {
+      // `@machine/session` goes on past the word control resolves (#429).
+      const slash = s.indexOf("/");
+      const word = (slash < 0 ? s : s.slice(0, slash)).slice(1).toLowerCase();
+      const icon = forge?.machine?.(word);
+      // Not a machine's: only the word is a mention, as before the sessions.
+      if (slash >= 0 && !icon) s = s.slice(0, slash);
+      if (icon)
+        out.push(
+          <span key={k++} class="mention mention-machine">
+            {icon}
+            {s}
+          </span>,
+        );
+      else if (landed && !landed(word))
+        // Marked still, but as one that reached nobody (#296).
+        out.push(
+          <span key={k++} class="mention-missed" title="This reached no one: nobody by that name sees this thread">
+            {s}
+          </span>,
+        );
+      else
+        out.push(
+          <span key={k++} class={isMe?.(word) ? "mention me" : "mention"}>
+            {s}
+          </span>,
+        );
     }
     at = i + s.length;
   }

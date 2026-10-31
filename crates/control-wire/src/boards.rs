@@ -429,7 +429,6 @@ impl AttachRole {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "BoardSettings"))]
-#[serde(deny_unknown_fields)]
 pub struct BoardSettings {
     /// A Doing row whose blocks have all been idle for longer than this many
     /// minutes (1 to [`STALL_MINUTES_MAX`]) is stalled.
@@ -802,7 +801,6 @@ impl BlockWord {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "BoardDiffstat"))]
-#[serde(deny_unknown_fields)]
 pub struct Diffstat {
     pub files: u32,
     pub added: u32,
@@ -821,11 +819,11 @@ impl Diffstat {
 /// (aru-116's second ruling): the state word, the branch, the short HEAD,
 /// whether it is pushed, how many files are uncommitted and the diffstat.
 /// No message text, no file names, no prompts: the type has no field that
-/// could carry them, and a body with another field is refused.
+/// could carry them. This is the view, read leniently by a daemon; control
+/// refuses a body with another field through [`BlockStateReport`].
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "BoardBlockState"))]
-#[serde(deny_unknown_fields)]
 pub struct BlockState {
     pub state: BlockWord,
     /// The name its starter or its person gave the block: a board's chip
@@ -845,8 +843,7 @@ pub struct BlockState {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub diffstat: Option<Diffstat>,
     /// When `state` last changed, in milliseconds: control's to keep, set
-    /// on a read and never on the wire. A daemon's report can't carry it,
-    /// and a released daemon refuses a block state that has it.
+    /// on a read and never on the wire. A daemon's report can't carry it.
     #[serde(skip)]
     pub since: Option<u64>,
 }
@@ -874,6 +871,82 @@ impl BlockState {
     }
 }
 
+/// [`Diffstat`] as a daemon reports it: a field it doesn't list is refused.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "BoardDiffstatReport"))]
+#[serde(deny_unknown_fields)]
+pub struct DiffstatReport {
+    pub files: u32,
+    pub added: u32,
+    pub removed: u32,
+}
+
+impl From<Diffstat> for DiffstatReport {
+    fn from(d: Diffstat) -> Self {
+        DiffstatReport { files: d.files, added: d.added, removed: d.removed }
+    }
+}
+
+impl From<DiffstatReport> for Diffstat {
+    fn from(d: DiffstatReport) -> Self {
+        Diffstat { files: d.files, added: d.added, removed: d.removed }
+    }
+}
+
+/// [`BlockState`] as a daemon reports it (aru-116's second ruling): the same
+/// fields, but a body with another one is refused, so no message text, file
+/// name or prompt can ride along. It is only ever parsed by control, from a
+/// daemon; [`BlockState`] is what everyone reads.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "BoardBlockStateReport"))]
+#[serde(deny_unknown_fields)]
+pub struct BlockStateReport {
+    pub state: BlockWord,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub branch: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub head: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pushed: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub uncommitted: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub diffstat: Option<DiffstatReport>,
+}
+
+impl From<BlockState> for BlockStateReport {
+    fn from(b: BlockState) -> Self {
+        BlockStateReport {
+            state: b.state,
+            title: b.title,
+            branch: b.branch,
+            head: b.head,
+            pushed: b.pushed,
+            uncommitted: b.uncommitted,
+            diffstat: b.diffstat.map(Into::into),
+        }
+    }
+}
+
+impl From<BlockStateReport> for BlockState {
+    fn from(b: BlockStateReport) -> Self {
+        BlockState {
+            state: b.state,
+            title: b.title,
+            branch: b.branch,
+            head: b.head,
+            pushed: b.pushed,
+            uncommitted: b.uncommitted,
+            diffstat: b.diffstat.map(Into::into),
+            since: None,
+        }
+    }
+}
+
 /// [`AGENT_BLOCK_STATE`]'s body: the pane (of the machine that signs it) and
 /// its state.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -882,7 +955,7 @@ impl BlockState {
 #[serde(deny_unknown_fields)]
 pub struct PutBlockState {
     pub pane: String,
-    pub block: BlockState,
+    pub block: BlockStateReport,
 }
 
 /// A question on a row that a person answers on the board (Arugula #367):
@@ -1204,7 +1277,8 @@ pub struct ResolveItems {
 }
 
 /// One reference, resolved: the `pointer` it names, or `why` it names none
-/// (nothing by that number, or more than one thing: the answer names them).
+/// (nothing by that number, or several linked repos have it and the project
+/// has no native issue of it: the answer names them).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "BoardResolution"))]
@@ -1825,6 +1899,91 @@ mod tests {
 
     fn view(zones: Vec<Zone>) -> BoardView {
         BoardView { board: board(), zones, groups: vec![], ready: vec![], said: None }
+    }
+
+    /// Adds `"added_later"` to every object in `v`.
+    fn add_a_field(v: &mut serde_json::Value) {
+        match v {
+            serde_json::Value::Object(o) => {
+                o.values_mut().for_each(add_a_field);
+                o.insert("added_later".into(), true.into());
+            }
+            serde_json::Value::Array(a) => a.iter_mut().for_each(add_a_field),
+            _ => {}
+        }
+    }
+
+    /// A daemon reads a board with a field control adds later: on the board,
+    /// a zone, a row, an attachment, a block, a mark, a live state and a
+    /// diffstat alike.
+    #[test]
+    fn a_board_view_with_a_field_added_later_still_parses() {
+        let block = BlockState {
+            state: BlockWord::Working,
+            title: None,
+            branch: Some("feat/x".into()),
+            head: Some("abc1234".into()),
+            pushed: Some(false),
+            uncommitted: Some(2),
+            diffstat: Some(Diffstat { files: 3, added: 40, removed: 2 }),
+            since: None,
+        };
+        let live = Live {
+            state: LiveState::Open,
+            kind: "pr".into(),
+            repo: Some("o/r".into()),
+            number: 7,
+            title: "t".into(),
+            assignees: vec![],
+            provider: None,
+            identifier: None,
+            state_name: None,
+            url: None,
+            category: None,
+        };
+        let mut r = row(Pointer::Issue { id: "iss_1".into() }, Lane::Doing, "x");
+        r.live = Some(live.clone());
+        r.block = Some(block.clone());
+        r.marks = vec![Mark::Earlier { attachment: "att_1".into() }];
+        r.attachments = vec![Attachment {
+            id: "att_1".into(),
+            role: AttachRole::Work,
+            pointer: Pointer::Block { machine: "m1".into(), pane: "7".into() },
+            live: Some(live),
+            block: Some(block),
+            released: false,
+        }];
+        let v = view(lanes(vec![(Lane::Doing, vec![r])]));
+        let mut json = serde_json::to_value(&v).unwrap();
+        add_a_field(&mut json);
+        let row = &json["zones"][1]["rows"][0];
+        for level in [&json["board"], &json["zones"][1], row, &row["attachments"][0], &row["block"], &row["marks"][0]] {
+            assert_eq!(level["added_later"], true, "{level}");
+        }
+        assert_eq!(row["live"]["added_later"], true);
+        assert_eq!(row["block"]["diffstat"]["added_later"], true);
+        assert_eq!(serde_json::from_value::<BoardView>(json).unwrap(), v);
+    }
+
+    /// Control still refuses what a daemon's block-state report lists no
+    /// field for, and what it takes becomes the block state a board shows.
+    #[test]
+    fn a_block_state_report_refuses_a_field_it_does_not_list() {
+        let ok = serde_json::json!({ "pane": "7", "block": {
+            "state": "idle", "branch": "b", "diffstat": { "files": 1, "added": 2, "removed": 3 } } });
+        let put: PutBlockState = serde_json::from_value(ok.clone()).unwrap();
+        let block = BlockState::from(put.block);
+        assert_eq!(block.diffstat, Some(Diffstat { files: 1, added: 2, removed: 3 }));
+        assert_eq!((block.state, block.since), (BlockWord::Idle, None));
+        for at in [vec![], vec!["block"], vec!["block", "diffstat"]] {
+            let mut v = ok.clone();
+            let mut o = &mut v;
+            for k in &at {
+                o = &mut o[*k];
+            }
+            o["message"] = "all done".into();
+            assert!(serde_json::from_value::<PutBlockState>(v).is_err(), "{at:?}");
+        }
     }
 
     /// A board's text form: the four lanes with their counts, a glyph per

@@ -3209,7 +3209,7 @@ path = "/api/daemon/boards/{id}/resolve"  # wire::boards::AGENT_BOARD_RESOLVE
 process = "platform"
 auth = "daemon"
 clients = ["daemon"]
-note = "Resolves up to 50 references (`#N`, `owner/repo#N`, `IDENT-N`, an `iss_`/`fi_` id) to the issues and PRs of the board's project they name, before the agent adds or attaches them (`boards.write`). A reference that names two things, or none, answers why instead of a pointer. Changes nothing."
+note = "Resolves up to 50 references (`#N`, `owner/repo#N`, `IDENT-N`, an `iss_`/`fi_` id) to the issues and PRs of the board's project they name, before the agent adds or attaches them (`boards.write`). A bare `#N` is the project's native issue when it has one, else the one linked repo's item; a reference that names none, or several repos' items, answers why instead of a pointer. Changes nothing."
 
 [[route]]
 method = "POST"

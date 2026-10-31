@@ -642,7 +642,11 @@ just e2e-spec e2e/hints.spec.ts
 It installs the web dependencies if the checkout has none, builds the web
 client and the binaries the specs run (into the checkout's `target/`, or
 `CARGO_TARGET_DIR` with `target` linked to it), and runs Playwright on a
-free port, so two sessions' runs don't collide on `E2E_PORT`. The box's
+free port, so two sessions' runs don't collide on `E2E_PORT`. Arguments go
+to Playwright as given, so `-g "two words"` is one pattern. The suite lock
+stops a run, its whole process group, after `SUITE_LOCK_TIMEOUT` seconds
+(900, from when it took the lock; exit 142), and a run waiting for it says
+who holds it. The box's
 setup (`packaging/hosted/examples/arugula-dev-setup.sh`) puts in what that
 needs: python3, Playwright's Chromium with its system libraries in
 `/opt/arugula/tools/ms-playwright` (`PLAYWRIGHT_BROWSERS_PATH`,

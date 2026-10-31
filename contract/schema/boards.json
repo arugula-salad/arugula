@@ -276,8 +276,7 @@
       "type": "object"
     },
     "BlockState": {
-      "additionalProperties": false,
-      "description": "What a daemon says of one of its own agent blocks, and all it says\n(aru-116's second ruling): the state word, the branch, the short HEAD,\nwhether it is pushed, how many files are uncommitted and the diffstat.\nNo message text, no file names, no prompts: the type has no field that\ncould carry them, and a body with another field is refused.",
+      "description": "What a daemon says of one of its own agent blocks, and all it says\n(aru-116's second ruling): the state word, the branch, the short HEAD,\nwhether it is pushed, how many files are uncommitted and the diffstat.\nNo message text, no file names, no prompts: the type has no field that\ncould carry them. This is the view, read leniently by a daemon; control\nrefuses a body with another field through [`BlockStateReport`].",
       "properties": {
         "branch": {
           "type": [
@@ -320,6 +319,61 @@
         },
         "uncommitted": {
           "description": "How many files are uncommitted.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "state"
+      ],
+      "type": "object"
+    },
+    "BlockStateReport": {
+      "additionalProperties": false,
+      "description": "[`BlockState`] as a daemon reports it (aru-116's second ruling): the same\nfields, but a body with another one is refused, so no message text, file\nname or prompt can ride along. It is only ever parsed by control, from a\ndaemon; [`BlockState`] is what everyone reads.",
+      "properties": {
+        "branch": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "diffstat": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/DiffstatReport"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "head": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "pushed": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "state": {
+          "$ref": "#/$defs/BlockWord"
+        },
+        "title": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "uncommitted": {
           "format": "uint32",
           "minimum": 0,
           "type": [
@@ -526,7 +580,6 @@
       "type": "object"
     },
     "BoardSettings": {
-      "additionalProperties": false,
       "description": "What a project says about its boards (Arugula #404).",
       "properties": {
         "stall_minutes": {
@@ -659,8 +712,34 @@
       "type": "object"
     },
     "Diffstat": {
-      "additionalProperties": false,
       "description": "A `git diff --stat` summary line as numbers: nothing of the files.",
+      "properties": {
+        "added": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "files": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "removed": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "files",
+        "added",
+        "removed"
+      ],
+      "type": "object"
+    },
+    "DiffstatReport": {
+      "additionalProperties": false,
+      "description": "[`Diffstat`] as a daemon reports it: a field it doesn't list is refused.",
       "properties": {
         "added": {
           "format": "uint32",
@@ -1294,7 +1373,7 @@
       "description": "[`AGENT_BLOCK_STATE`]'s body: the pane (of the machine that signs it) and\nits state.",
       "properties": {
         "block": {
-          "$ref": "#/$defs/BlockState"
+          "$ref": "#/$defs/BlockStateReport"
         },
         "pane": {
           "type": "string"
@@ -1485,7 +1564,7 @@
       "type": "string"
     },
     "Resolution": {
-      "description": "One reference, resolved: the `pointer` it names, or `why` it names none\n(nothing by that number, or more than one thing: the answer names them).",
+      "description": "One reference, resolved: the `pointer` it names, or `why` it names none\n(nothing by that number, or several linked repos have it and the project\nhas no native issue of it: the answer names them).",
       "properties": {
         "item": {
           "description": "The reference as it was written.",

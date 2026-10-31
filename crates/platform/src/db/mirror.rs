@@ -45,6 +45,9 @@ pub struct ItemRow {
     pub kind: String,
     /// `open`, `closed` or `merged`.
     pub state: String,
+    /// GitHub's `state_reason` of an issue (`completed`, `not_planned`,
+    /// `reopened`), when it names one. A PR has none.
+    pub state_reason: Option<String>,
     pub title: String,
     pub labels: String,
     pub author_login: Option<String>,
@@ -63,7 +66,8 @@ pub struct ItemRow {
 }
 
 const ITEM_COLUMNS: &str = "repo_id, number, kind, state, title, labels, author_login, author_id, assignees, \
-                            reviewers, draft, merge_state, head_ref, head_sha, base_ref, created_at, updated_at";
+                            reviewers, draft, merge_state, head_ref, head_sha, base_ref, created_at, updated_at, \
+                            state_reason";
 
 fn item_row(r: &Row) -> Result<ItemRow> {
     Ok(ItemRow {
@@ -84,6 +88,7 @@ fn item_row(r: &Row) -> Result<ItemRow> {
         base_ref: r.get(14)?,
         created_at: r.get(15)?,
         updated_at: r.get(16)?,
+        state_reason: r.get(17)?,
     })
 }
 
@@ -99,6 +104,7 @@ impl ItemRow {
         };
         field("kind", self.kind == was.kind);
         field("state", self.state == was.state);
+        field("state_reason", self.state_reason == was.state_reason);
         field("title", self.title == was.title);
         field("labels", self.labels == was.labels);
         field("author", self.author_login == was.author_login && self.author_id == was.author_id);
@@ -218,14 +224,15 @@ pub fn upsert_item(c: &impl Sql, it: &ItemRow, from: Source, now: u64) -> Result
     let id = format!("fi_{}", hex::encode(arugula_e2e::random::<16>()));
     c.execute(
         "INSERT INTO forge_items (id, repo_id, number, kind, state, title, labels, author_login, author_id,
-             assignees, reviewers, draft, merge_state, head_ref, head_sha, base_ref, created_at, updated_at, synced_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19)
+             assignees, reviewers, draft, merge_state, head_ref, head_sha, base_ref, created_at, updated_at, synced_at, state_reason)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?21)
          ON CONFLICT (repo_id, number) DO UPDATE SET kind = excluded.kind, state = excluded.state,
              title = excluded.title, labels = excluded.labels, author_login = excluded.author_login,
              author_id = excluded.author_id, assignees = excluded.assignees, reviewers = excluded.reviewers,
              draft = excluded.draft, merge_state = COALESCE(excluded.merge_state, forge_items.merge_state),
              head_ref = excluded.head_ref, head_sha = excluded.head_sha, base_ref = excluded.base_ref,
-             created_at = excluded.created_at, updated_at = excluded.updated_at, synced_at = excluded.synced_at
+             created_at = excluded.created_at, updated_at = excluded.updated_at, synced_at = excluded.synced_at,
+             state_reason = excluded.state_reason
          WHERE excluded.updated_at > forge_items.updated_at
              OR (excluded.updated_at = forge_items.updated_at AND ?20)",
         params![
@@ -248,7 +255,8 @@ pub fn upsert_item(c: &impl Sql, it: &ItemRow, from: Source, now: u64) -> Result
             it.created_at,
             it.updated_at,
             now,
-            fetched
+            fetched,
+            it.state_reason
         ],
     )?;
     Ok(wrote)
@@ -759,6 +767,7 @@ mod tests {
             number: 1,
             kind: "pr".into(),
             state: "open".into(),
+            state_reason: None,
             title: title.into(),
             labels: "[]".into(),
             author_login: Some("bob".into()),

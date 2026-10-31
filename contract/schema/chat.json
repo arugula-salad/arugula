@@ -1819,6 +1819,11 @@
         "machine_name": {
           "type": "string"
         },
+        "mentionable": {
+          "default": false,
+          "description": "Whether an `@` of the machine's name reaches it here (#428): control's\nown check when it routes a mention, not the page's reading of `powers`.",
+          "type": "boolean"
+        },
         "owner": {
           "description": "The owner's account, and their name now.",
           "type": "string"
@@ -1828,6 +1833,14 @@
         },
         "powers": {
           "description": "What it may do here: `threads.read`, `threads.post`, and on a\nnative issue's thread `issues.write`.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "sessions": {
+          "default": [],
+          "description": "With `mentionable`: the names of the sessions its agents posted from\nin this room in the last week, newest first, at most five (#428). Only\nthe room's detail fills it.",
           "items": {
             "type": "string"
           },

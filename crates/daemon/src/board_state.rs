@@ -222,7 +222,7 @@ enum Wait {
 }
 
 async fn send(app: &App, id: PaneId, state: &BlockState) -> Result<(), Wait> {
-    let put = PutBlockState { pane: id.to_string(), block: state.clone() };
+    let put = PutBlockState { pane: id.to_string(), block: state.clone().into() };
     let body = serde_json::to_value(&put).map_err(|e| Wait::For(NO_GRANT, e.to_string()))?;
     let call = app.control.cloud_now(Method::PUT, AGENT_BLOCK_STATE, Some(&body));
     match tokio::time::timeout(REQUEST, call).await {
