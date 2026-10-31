@@ -436,8 +436,8 @@ pub enum ApplyRefusal {
     /// them (its team's roster, or its account's).
     NotAnOwner,
     /// The machine pinned no passkey log for its account, or the log the
-    /// work carried isn't the pinned one, or one after it (one of them was
-    /// rewritten).
+    /// work carried isn't the pinned one, older, or one after it (one of
+    /// them was rewritten).
     PasskeyLog,
     /// No passkey assertion came with it (`None`), or the account's
     /// passkey log refused it: the key not in the log, or removed by now,
@@ -487,11 +487,17 @@ impl ApplyRefusal {
 ///   `expires`;
 /// - its account is an owner of the project, as the machine pinned them;
 /// - its passkey assertion (`passkey`) checks out against the account's
-///   passkey log: the newer of the one pinned and the one the work carried
-///   (`carried`), when one extends the other ([`crate::passkey::newest`]);
-///   the passkey in it and not removed by `now`, from an origin pinned for
-///   its RP, a `webauthn.get` over exactly this approval's bytes, the
-///   person verified, the signature good ([`Approval::passkey_checks`]).
+///   passkey log as the machine pinned it (from control, at enrollment or
+///   a refresh): the passkey in it and not removed by `now`, from an origin
+///   pinned for its RP, a `webauthn.get` over exactly this approval's
+///   bytes, the person verified, the signature good
+///   ([`Approval::passkey_checks`]);
+/// - of the log the work carried (`carried`, written by the platform), only
+///   the removals after the pinned log count ([`crate::passkey::removed_since`]):
+///   never a key it adds, since an `added` event by sign-up or GitHub needs
+///   no proof. A carried log that isn't the pinned one, older, or one after
+///   it is refused. The approving key is in the pinned log already: the
+///   approval is recorded before its deploy's box is made and enrolls.
 ///
 /// No device signs it, and the devices that certified one play no part
 /// (aru-126). A v1 approval (a device's signature with a passkey's
@@ -529,11 +535,15 @@ pub fn check_apply(
     }
     let assertion = passkey.ok_or(ApplyRefusal::Passkey(None))?;
     let held = pinned.passkey_logs.get(&approval.account).ok_or(ApplyRefusal::PasskeyLog)?;
-    let log = match carried {
-        Some(c) => crate::passkey::newest(held, c).ok_or(ApplyRefusal::PasskeyLog)?,
-        None => held,
-    };
-    approval.passkey_checks(assertion, log, now, pinned.origins).map_err(|r| ApplyRefusal::Passkey(Some(r)))?;
+    approval.passkey_checks(assertion, held, now, pinned.origins).map_err(|r| ApplyRefusal::Passkey(Some(r)))?;
+    // From the log the work carried (the platform's word), only removals:
+    // a key removed since the machine pinned the log doesn't approve.
+    if let Some(c) = carried {
+        let removed = crate::passkey::removed_since(held, c, now).ok_or(ApplyRefusal::PasskeyLog)?;
+        if removed.contains(assertion.id.as_str()) {
+            return Err(ApplyRefusal::Passkey(Some(crate::passkey::Refusal::NotLive)));
+        }
+    }
     Ok(())
 }
 
@@ -810,7 +820,8 @@ mod tests {
         let b = Approval::v2("dep_1", &op(), "b", Decision::Once, now + 1);
         assert_eq!(check(&team, &logs, &origins, &b, pk(&kb, &b), None), Err(ApplyRefusal::NotAnOwner));
         assert_eq!(check(&mine, &logs, &origins, &b, pk(&kb, &b), None), Err(ApplyRefusal::NotAnOwner));
-        // The log the work carries must be the pinned one or one after it.
+        // Of the log the work carries, only removals count, and it must be
+        // the pinned one, older, or one after it.
         let pinned_before: BTreeMap<String, Log> = [("a".to_owned(), before_removal.clone())].into();
         let k1_good = pk(&k1, &good);
         assert_eq!(
@@ -836,6 +847,17 @@ mod tests {
             Err(ApplyRefusal::PasskeyLog),
             "a carried log that dropped a removal"
         );
+        // A carried log that appends a key of the platform's own (`by
+        // signup` needs no proof): never taken, so that key approves nothing.
+        let k5 = Pk::new(5);
+        let mut appended = log.clone();
+        appended.events.push(k5.added("a", 400, appended.events.last()));
+        assert_eq!(
+            check(&team, &logs, &origins, &good, pk(&k5, &good), Some(&appended)),
+            no(Refusal::NotLive),
+            "a key only the carried log has"
+        );
+        assert_eq!(check(&team, &logs, &origins, &good, pk(&k2, &good), Some(&appended)), Ok(()), "the pinned key");
         let none = BTreeMap::new();
         assert_eq!(
             check(&team, &none, &origins, &good, pk(&k2, &good), Some(&log)),

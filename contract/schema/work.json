@@ -551,7 +551,7 @@
       "type": "string"
     },
     "DeployWork": {
-      "description": "What a deploy's run applies (M219), for its machine to check: the\ndeploy's operation (`arugula deploy op v1`) and an owner's approval over\nit (v2 since DK4: the approval's bytes, and the passkey assertion over\nthem that is its signature), with the approver's passkey log as the hub\npublishes it (DK3), which the machine takes only as the one it pinned or\none after it (`arugula_e2e::deploy::check_apply`).",
+      "description": "What a deploy's run applies (M219), for its machine to check: the\ndeploy's operation (`arugula deploy op v1`) and an owner's approval over\nit (v2 since DK4: the approval's bytes, and the passkey assertion over\nthem that is its signature), with the approver's passkey log as the hub\npublishes it (DK3). The machine takes only its removals after the log it\npinned from control, never a key it adds\n(`arugula_e2e::deploy::check_apply`, `arugula_e2e::passkey::removed_since`).",
       "properties": {
         "approval": {
           "$ref": "#/$defs/Approval"

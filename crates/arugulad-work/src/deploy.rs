@@ -8,8 +8,8 @@
 //!   operation, not past its `expires` by this machine's clock, its
 //!   passkey assertion checked against the owner's passkey log
 //!   (`arugula_e2e::deploy::check_apply`, DK4: with the team's roster or
-//!   the account, the passkey logs and the origins this machine pinned, a
-//!   log the work carries taken only as the pinned one or one after it).
+//!   the account, the passkey logs and the origins this machine pinned from
+//!   control; of a log the work carries, only its removals since).
 //!   No device signs it (aru-126). A run whose approval doesn't verify here
 //!   fails, and nothing runs.
 //! - **Started only once control takes its start** ([`apply`]): its

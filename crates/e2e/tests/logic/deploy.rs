@@ -320,17 +320,20 @@ fn check_apply_cases() -> Example {
          operation's hash (approval_operation); once, not a deny (approval_denied); not expired, expires > now \
          (approval_expired); its account an owner of the project, as the machine knows them, its team's roster \
          or its own account (approval_not_an_owner); a passkey assertion with it (approval_passkey, with no \
-         `passkey`); the account's passkey log pinned, and the one the work carried, if any, the pinned one or \
-         one after it, its events the pinned one's first (approval_passkey_log), the newer of the two being \
-         used; and the assertion checked against that log at now, as passkey/verify does (approval_passkey, \
-         `passkey` saying which check failed: not_live for a key not in the log or removed by now, origin for \
-         an origin not pinned for its RP, challenge for other bytes, user without UV). No device plays a \
+         `passkey`); the account's passkey log pinned (approval_passkey_log), and the assertion checked against \
+         the pinned log at now, as passkey/verify does (approval_passkey, `passkey` saying which check failed: \
+         not_live for a key not in the log or removed by now, origin for an origin not pinned for its RP, \
+         challenge for other bytes, user without UV); then the log the work carried, if any (the platform's \
+         word): it must be the pinned one, older, or one after it, its events the pinned one's first \
+         (approval_passkey_log), and only its removals after the pinned log, at or before now, count \
+         (approval_passkey, not_live, for the key removed): a key it adds is never taken, since an added event \
+         by sign-up or GitHub needs no proof. No device plays a \
          part: which devices the owner has, and who certified them, is never looked at. A v1 is checked by its \
          passkey alone, as a v2 is.",
         &[
             "arugula_e2e::deploy::check_apply",
             "arugula_e2e::deploy::Approval::passkey_checks",
-            "arugula_e2e::passkey::newest",
+            "arugula_e2e::passkey::removed_since",
             "arugula_e2e::passkey::extends",
         ],
     )
@@ -369,12 +372,17 @@ fn check_apply_cases() -> Example {
     log.events.push(removal);
     let mut rewritten = before_removal.clone();
     Pk::new(0x34).add_to(&mut rewritten, 30_000);
+    // The platform's own key, appended `by signup` to a log it carries.
+    let mut appended = log.clone();
+    let k5 = Pk::new(0x35);
+    k5.add_to(&mut appended, 40_000);
     let mut blog = Log { account: "bob".into(), ..Default::default() };
     kb.add_to(&mut blog, 1_000);
     for (l, g) in [
         ("alice-log", &log),
         ("alice-log-before-removal", &before_removal),
         ("alice-log-rewritten", &rewritten),
+        ("alice-log-with-a-key-appended", &appended),
         ("bob-log", &blog),
     ] {
         ex.object(l, g);
@@ -495,6 +503,23 @@ fn check_apply_cases() -> Example {
         &p,
         json!({ "carried": "alice-log-rewritten" }),
         no("approval_passkey_log"),
+    );
+    let p5 = assertion(&mut ex, "k5-over-by-alice", k5.over(&good));
+    add(
+        "a key only the carried log has, appended by sign-up (the platform's own): never taken",
+        "by-alice",
+        &account,
+        &p5,
+        json!({ "carried": "alice-log-with-a-key-appended" }),
+        pk_no("not_live"),
+    );
+    add(
+        "her pinned key, the carried log having a key appended: fine",
+        "by-alice",
+        &account,
+        &p,
+        json!({ "carried": "alice-log-with-a-key-appended" }),
+        ok.clone(),
     );
     add(
         "the machine pinned no log for her",

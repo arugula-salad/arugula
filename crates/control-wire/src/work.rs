@@ -243,8 +243,9 @@ pub struct WorkItem {
 /// deploy's operation (`arugula deploy op v1`) and an owner's approval over
 /// it (v2 since DK4: the approval's bytes, and the passkey assertion over
 /// them that is its signature), with the approver's passkey log as the hub
-/// publishes it (DK3), which the machine takes only as the one it pinned or
-/// one after it (`arugula_e2e::deploy::check_apply`).
+/// publishes it (DK3). The machine takes only its removals after the log it
+/// pinned from control, never a key it adds
+/// (`arugula_e2e::deploy::check_apply`, `arugula_e2e::passkey::removed_since`).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct DeployWork {

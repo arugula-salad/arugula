@@ -60,7 +60,7 @@
 //! No provider policy: every passkey counts (aru-126). The log keeps each
 //! passkey's AAGUID so one can be added.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD as B64};
 use serde::{Deserialize, Serialize};
@@ -546,17 +546,28 @@ pub fn extends(older: &Log, newer: &Log) -> bool {
         && newer.events[..older.events.len()] == older.events[..]
 }
 
-/// The newer of a log a verifier pinned and one it was handed, when one
-/// extends the other ([`extends`]); `None` when neither does (one of them
-/// was rewritten, or they're two accounts').
-pub fn newest<'a>(pinned: &'a Log, handed: &'a Log) -> Option<&'a Log> {
-    if extends(pinned, handed) {
-        Some(handed)
-    } else if extends(handed, pinned) {
-        Some(pinned)
-    } else {
-        None
+/// The passkeys a log a verifier was handed (`handed`, not pinned: a
+/// deploy's work item, which the platform writes) removes after the log it
+/// pinned, at or before `at`: the only thing such a log may tell it. Its
+/// `added` events are never taken: a `by signup` or `by github` event needs
+/// no proof, so whoever wrote the handed log could add a key of its own.
+/// `None` when neither log extends the other ([`extends`]: one of them was
+/// rewritten, or they're two accounts'); empty when the handed one is the
+/// pinned one or older.
+pub fn removed_since<'a>(pinned: &Log, handed: &'a Log, at: u64) -> Option<BTreeSet<&'a str>> {
+    if extends(handed, pinned) {
+        return Some(BTreeSet::new());
     }
+    if !extends(pinned, handed) {
+        return None;
+    }
+    Some(
+        handed.events[pinned.events.len()..]
+            .iter()
+            .filter(|e| e.event == Change::Removed && e.at <= at)
+            .map(|e| e.credential.as_str())
+            .collect(),
+    )
 }
 
 /// The passkeys live at `at`, by credential id, having checked the whole
@@ -874,16 +885,24 @@ mod tests {
         let (log, _, _) = log();
         let first = Log { events: log.events[..2].to_vec(), ..log.clone() };
         assert!(extends(&first, &log) && extends(&log, &log) && !extends(&log, &first));
-        assert_eq!(newest(&first, &log), Some(&log), "handed a newer one");
-        assert_eq!(newest(&log, &first), Some(&log), "handed an older one: the pinned");
+        // Handed a newer one: only its removals (k1's, at 3000) count.
+        let k1 = log.events[0].credential.as_str();
+        assert_eq!(removed_since(&first, &log, 5000), Some([k1].into()));
+        assert_eq!(removed_since(&first, &log, 2999), Some(BTreeSet::new()), "not removed yet then");
+        assert_eq!(removed_since(&log, &first, 5000), Some(BTreeSet::new()), "an older one: nothing");
+        // An `added` it appends is never taken.
+        let k9 = Pk::new(9);
+        let mut more = first.clone();
+        more.events.push(k9.draft(2500, "signup").after(more.events.last()));
+        assert_eq!(removed_since(&first, &more, 5000), Some(BTreeSet::new()));
         let mut dropped = log.clone();
         dropped.events.remove(2);
         let mut rewritten = log.clone();
         rewritten.events[1].at += 1;
         for bad in [&rewritten, &Log { account: "other".into(), ..log.clone() }] {
-            assert_eq!(newest(&log, bad), None);
+            assert_eq!(removed_since(&log, bad, 5000), None);
         }
-        assert_eq!(newest(&dropped, &rewritten), None, "a removal dropped and something else changed");
+        assert_eq!(removed_since(&dropped, &rewritten, 5000), None, "a removal dropped and something else changed");
     }
 
     #[test]

@@ -274,7 +274,7 @@ pub async fn work(app: &Platform, m: &HostedMachine, takes: &[String]) -> Result
             continue;
         }
         // With the approver's passkey log as the hub publishes it (DK4),
-        // which the box takes only as the one it pinned or one after it.
+        // of which the box takes only removals since the log it pinned.
         // Without the hub's answer it goes by what it pinned.
         if let Some(d) = &mut deploy {
             match app.hub.passkey_log(&d.approval.account).await {

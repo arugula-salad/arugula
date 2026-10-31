@@ -1,5 +1,5 @@
 {
-  "about": "What a machine checks before it applies a deploy (M219; DK4, aru-126), from what it pinned rather than the platform's word, in this order, the first failure being the refusal: the approval is well formed (approval_form; a v2, or a v1 made before DK4); for this deploy (approval_deploy); over exactly this operation's hash (approval_operation); once, not a deny (approval_denied); not expired, expires > now (approval_expired); its account an owner of the project, as the machine knows them, its team's roster or its own account (approval_not_an_owner); a passkey assertion with it (approval_passkey, with no `passkey`); the account's passkey log pinned, and the one the work carried, if any, the pinned one or one after it, its events the pinned one's first (approval_passkey_log), the newer of the two being used; and the assertion checked against that log at now, as passkey/verify does (approval_passkey, `passkey` saying which check failed: not_live for a key not in the log or removed by now, origin for an origin not pinned for its RP, challenge for other bytes, user without UV). No device plays a part: which devices the owner has, and who certified them, is never looked at. A v1 is checked by its passkey alone, as a v2 is.",
+  "about": "What a machine checks before it applies a deploy (M219; DK4, aru-126), from what it pinned rather than the platform's word, in this order, the first failure being the refusal: the approval is well formed (approval_form; a v2, or a v1 made before DK4); for this deploy (approval_deploy); over exactly this operation's hash (approval_operation); once, not a deny (approval_denied); not expired, expires > now (approval_expired); its account an owner of the project, as the machine knows them, its team's roster or its own account (approval_not_an_owner); a passkey assertion with it (approval_passkey, with no `passkey`); the account's passkey log pinned (approval_passkey_log), and the assertion checked against the pinned log at now, as passkey/verify does (approval_passkey, `passkey` saying which check failed: not_live for a key not in the log or removed by now, origin for an origin not pinned for its RP, challenge for other bytes, user without UV); then the log the work carried, if any (the platform's word): it must be the pinned one, older, or one after it, its events the pinned one's first (approval_passkey_log), and only its removals after the pinned log, at or before now, count (approval_passkey, not_live, for the key removed): a key it adds is never taken, since an added event by sign-up or GitHub needs no proof. No device plays a part: which devices the owner has, and who certified them, is never looked at. A v1 is checked by its passkey alone, as a v2 is.",
   "cases": [
     {
       "about": "alice, owner of her account's project, approves with her passkey",
@@ -486,6 +486,52 @@
       "output": {"refused": "approval_passkey_log"}
     },
     {
+      "about": "a key only the carried log has, appended by sign-up (the platform's own): never taken",
+      "input": {
+        "approval": "by-alice",
+        "carried": "alice-log-with-a-key-appended",
+        "deploy": "dep_1",
+        "now": 50000,
+        "op": "op",
+        "origins": {
+          "control.example.invalid": ["https://control.example.invalid"]
+        },
+        "owners": {
+          "account": {
+            "account": "alice",
+            "certs": ["alice", "alice-cli"],
+            "root": "37f29b7074cf8b52"
+          }
+        },
+        "passkey": "k5-over-by-alice",
+        "passkey_logs": {"alice": "alice-log", "bob": "bob-log"}
+      },
+      "output": {"passkey": "not_live", "refused": "approval_passkey"}
+    },
+    {
+      "about": "her pinned key, the carried log having a key appended: fine",
+      "input": {
+        "approval": "by-alice",
+        "carried": "alice-log-with-a-key-appended",
+        "deploy": "dep_1",
+        "now": 50000,
+        "op": "op",
+        "origins": {
+          "control.example.invalid": ["https://control.example.invalid"]
+        },
+        "owners": {
+          "account": {
+            "account": "alice",
+            "certs": ["alice", "alice-cli"],
+            "root": "37f29b7074cf8b52"
+          }
+        },
+        "passkey": "k2-over-by-alice",
+        "passkey_logs": {"alice": "alice-log", "bob": "bob-log"}
+      },
+      "output": {"ok": true}
+    },
+    {
       "about": "the machine pinned no log for her",
       "input": {
         "approval": "by-alice",
@@ -834,7 +880,7 @@
   "checks": [
     "arugula_e2e::deploy::check_apply",
     "arugula_e2e::deploy::Approval::passkey_checks",
-    "arugula_e2e::passkey::newest",
+    "arugula_e2e::passkey::removed_since",
     "arugula_e2e::passkey::extends"
   ],
   "input": "approval and op: labels; deploy: the deploy the run applies; owners: who may sign for the project, as the checking side pinned them: { team: { roster: a label, certs: { account: { certs, revocations } } } } for a team's project, or { account: { account, root, certs: [labels], revocations: [labels] } } for one account's; passkey_logs: the passkey logs the machine pinned, { account: a log's label }; origins: which origins may use each RP's passkeys, as the machine pinned them ({ rp: [origins] }); passkey: an assertion's label, or null; carried: the label of the log the work carried, or null; now: the machine's clock, ms",
@@ -1018,6 +1064,71 @@
         }
       ]
     },
+    "alice-log-with-a-key-appended": {
+      "account": "alice",
+      "events": [
+        {
+          "aaguid": "00000000000000000000000000000000",
+          "account": "alice",
+          "alg": -8,
+          "at": 1000,
+          "by": "signup",
+          "credential": "MTExMTExMTExMTExMTExMQ",
+          "event": "added",
+          "hash": "2d3601fdd68c1e271fb0adb73249eda581b3c05c3da4f6183f3f540de8186794",
+          "key": "SAdaWX5yGhVuLgeZ3lzAxTJNxufq8c3UYlCGjsUyFd0",
+          "keyFormat": "raw",
+          "prev": "0000000000000000000000000000000000000000000000000000000000000000",
+          "rp": "control.example.invalid",
+          "seq": 0
+        },
+        {
+          "aaguid": "00000000000000000000000000000000",
+          "account": "alice",
+          "alg": -8,
+          "at": 2000,
+          "by": "signup",
+          "credential": "MjIyMjIyMjIyMjIyMjIyMg",
+          "event": "added",
+          "hash": "067a2f34b76fddb66ce0877cdee1783bb191b43271f9d1540c30925d7df619fc",
+          "key": "XiEsCYDks5_AlyETSqAhCTdO39JgwNPQPLUByNZUV6k",
+          "keyFormat": "raw",
+          "prev": "2d3601fdd68c1e271fb0adb73249eda581b3c05c3da4f6183f3f540de8186794",
+          "rp": "control.example.invalid",
+          "seq": 1
+        },
+        {
+          "aaguid": "00000000000000000000000000000000",
+          "account": "alice",
+          "alg": -8,
+          "at": 30000,
+          "by": "reset",
+          "credential": "MTExMTExMTExMTExMTExMQ",
+          "event": "removed",
+          "hash": "df6053297c21ebc6214af84e4739215bde8d563fe17df2a15c113f3f6923fc3f",
+          "key": "SAdaWX5yGhVuLgeZ3lzAxTJNxufq8c3UYlCGjsUyFd0",
+          "keyFormat": "raw",
+          "prev": "067a2f34b76fddb66ce0877cdee1783bb191b43271f9d1540c30925d7df619fc",
+          "rp": "control.example.invalid",
+          "seq": 2
+        },
+        {
+          "aaguid": "00000000000000000000000000000000",
+          "account": "alice",
+          "alg": -8,
+          "at": 40000,
+          "by": "signup",
+          "credential": "NTU1NTU1NTU1NTU1NTU1NQ",
+          "event": "added",
+          "hash": "b2e7a5a280ad830060ee85eefb5259b8b06064cb61ddfd001ea8a911161e79e7",
+          "key": "ptJFXqOldxq6n8sDeSQRTJL58yUEn2tCaec52QSLuGk",
+          "keyFormat": "raw",
+          "prev": "df6053297c21ebc6214af84e4739215bde8d563fe17df2a15c113f3f6923fc3f",
+          "rp": "control.example.invalid",
+          "seq": 3
+        }
+      ]
+    },
     "bob": {
       "account": "bob",
       "approver": "c242667535a3d34f",
@@ -1151,6 +1262,12 @@
       "clientDataJSON": "eyJjaGFsbGVuZ2UiOiJRMXI2ZldYUk5LQ3RoeTNMZ1hTRHIxaVJIYlBJbkFsczR4TE9nc0p2T1FZIiwib3JpZ2luIjoiaHR0cHM6Ly9jb250cm9sLmV4YW1wbGUuaW52YWxpZCIsInR5cGUiOiJ3ZWJhdXRobi5nZXQifQ",
       "id": "MjIyMjIyMjIyMjIyMjIyMg",
       "signature": "o6YA--2Lg8MSbcTAqQAb6N-MbiAC_hU3a-EQbhpW7KGGGH212kQ5lYw6sCw9udoIyXHDss1uNVseNHaMWiFfDQ"
+    },
+    "k5-over-by-alice": {
+      "authenticatorData": "RDTL8Stzf8rzX4BbXUVx9_Y8P4AANh5bjkYKbR0uPv8FAAAAAA",
+      "clientDataJSON": "eyJjaGFsbGVuZ2UiOiJRMXI2ZldYUk5LQ3RoeTNMZ1hTRHIxaVJIYlBJbkFsczR4TE9nc0p2T1FZIiwib3JpZ2luIjoiaHR0cHM6Ly9jb250cm9sLmV4YW1wbGUuaW52YWxpZCIsInR5cGUiOiJ3ZWJhdXRobi5nZXQifQ",
+      "id": "NTU1NTU1NTU1NTU1NTU1NQ",
+      "signature": "0N1Oe8WitjE-vS6gGeQlq22izSgczJyQSyOIzcRPMJhOhZIWPZS3Tw4sWXS_wVoZxxXOanm_i6HzZxMCWZVfAA"
     },
     "k9-over-by-alice": {
       "authenticatorData": "RDTL8Stzf8rzX4BbXUVx9_Y8P4AANh5bjkYKbR0uPv8FAAAAAA",
