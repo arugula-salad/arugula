@@ -181,12 +181,6 @@ pub struct Enrollment {
     pub roster: Option<Roster>,
     #[serde(default)]
     pub certs: AccountCerts,
-    /// A team's project: whether the team is locked, as control says
-    /// (`locked`) and as an owner signed it (`lock`, the latest).
-    #[serde(default)]
-    pub locked: bool,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub lock: Option<arugula_e2e::team::TeamLock>,
     /// An account's project: its root, certificates and revocations.
     #[serde(default)]
     pub trust: Option<Trust>,

@@ -343,63 +343,6 @@ impl Move {
     }
 }
 
-/// Whether a team is locked (only its owners get in while it is), signed
-/// by a device of one of its owners. Control keeps the latest and hands it
-/// out; a machine takes one only if an owner in the roster it holds signed
-/// it and it's newer than the one it holds
-/// ([`crate::checkpoint::take_lock`]), so control can't unlock a team or
-/// bring back an older state.
-///
-/// ```text
-/// arugula team lock v1
-/// team <id>
-/// locked yes|no
-/// version <the roster version it was signed against>
-/// at <ms>
-/// by <device id>
-/// ```
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
-pub struct TeamLock {
-    pub team: String,
-    pub locked: bool,
-    pub version: u64,
-    pub at: u64,
-    pub by: String,
-    pub sig: String,
-}
-
-impl TeamLock {
-    pub fn body(&self) -> String {
-        format!(
-            "arugula team lock v1\nteam {}\nlocked {}\nversion {}\nat {}\nby {}\n",
-            self.team,
-            if self.locked { "yes" } else { "no" },
-            self.version,
-            self.at,
-            self.by
-        )
-    }
-
-    pub fn sign_with(&mut self, keys: &DeviceKeys) {
-        self.by = keys.id();
-        self.sig = hex::encode(keys.signature(self.body().as_bytes()));
-    }
-
-    /// Signed by a device (one that may approve) of an owner in `roster`,
-    /// for its team, against a version no newer than it.
-    pub fn signed_in(&self, roster: &Roster, certs: &AccountCerts) -> bool {
-        self.team == roster.team
-            && self.version <= roster.version
-            && roster.members.iter().filter(|m| m.role == TeamRole::Owner).any(|m| {
-                roster
-                    .devices(&m.account, certs)
-                    .get(&self.by)
-                    .is_some_and(|d| d.kind.approves() && verify_hex(&d.sign, self.body().as_bytes(), &self.sig))
-            })
-    }
-}
-
 /// Every member account's certificates and revocations, as control hands
 /// them out.
 pub type AccountCerts = HashMap<String, (Vec<Cert>, Vec<Revocation>)>;

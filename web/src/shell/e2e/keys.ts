@@ -39,9 +39,6 @@ export interface Enrollment {
   account: string;
   root: string;
   cert: Cert;
-  /** This browser has kept what it checked (rosters, certificates) in its
-   * storage: if that's missing later, it was cleared, not never kept. */
-  held?: boolean;
 }
 
 // Frozen (#504): renaming it would lose every browser's device key.
