@@ -10,6 +10,9 @@
 //! (`feat/357-plane`), or `IDENT-N` for a Plane item. A bare `#N` in prose
 //! is not one. The PR's own number is never a reference to an issue.
 //!
+//! A merged PR closes the native issues it names ([`crate::forge::closes`]):
+//! `part of`, `refs` or `see` before `Arugula #N` only links ([`Refs::soft`]).
+//!
 //! `Arugula #N` names a native issue only. Any other `#N` names the GitHub
 //! issue N of the PR's repo or, when the board has no row for that, the
 //! native issue N ([`rows_named`], which decides it for every caller). A
@@ -24,6 +27,9 @@ pub struct Refs {
     pub numbers: Vec<u64>,
     /// Native issue numbers, as `Arugula #N` says them.
     pub native: Vec<u64>,
+    /// Those of `native` written only as `part of Arugula #N`, `refs Arugula
+    /// #N` or `see Arugula #N`: linked, but not closed when the PR merges.
+    pub soft: Vec<u64>,
     /// Plane items as (key, number): `ARUGU-12` is (`ARUGU`, 12).
     pub plane: Vec<(String, u64)>,
 }
@@ -39,6 +45,21 @@ impl Refs {
         if !self.native.contains(&n) {
             self.native.push(n);
         }
+        self.soft.retain(|s| *s != n);
+    }
+
+    /// A native issue named softly: soft unless it is named plainly too,
+    /// before or after.
+    fn add_soft(&mut self, n: u64) {
+        if !self.native.contains(&n) {
+            self.native.push(n);
+            self.soft.push(n);
+        }
+    }
+
+    /// The native issues a merge closes: those named plainly.
+    pub fn closing_native(&self) -> impl Iterator<Item = u64> + '_ {
+        self.native.iter().copied().filter(|n| !self.soft.contains(n))
     }
 
     fn add_plane(&mut self, key: &str, n: u64) {
@@ -201,10 +222,27 @@ fn hashes(text: &str, r: &mut Refs) {
         let spaced = before.len() > word.len();
         let last = word.rsplit(|c: char| !c.is_ascii_alphabetic()).next().unwrap_or("");
         if spaced && last == "arugula" {
-            r.add_native(n);
+            if soft_before(&word[..word.len() - last.len()]) {
+                r.add_soft(n);
+            } else {
+                r.add_native(n);
+            }
         } else if before.ends_with('(') || (spaced && CLOSING.contains(&last)) {
             r.add_number(n);
         }
+    }
+}
+
+/// Whether `before`, the text ahead of `Arugula`, ends in `part of`, `refs` or
+/// `see` (a colon allowed): the reference only links.
+fn soft_before(before: &str) -> bool {
+    let words = |s: &'_ str| -> Vec<String> {
+        s.split(|c: char| !c.is_ascii_alphabetic()).filter(|w| !w.is_empty()).map(str::to_owned).rev().take(2).collect()
+    };
+    match words(before).as_slice() {
+        [w, ..] if w == "refs" || w == "see" => true,
+        [w, p] => w == "of" && p == "part",
+        _ => false,
     }
 }
 
@@ -254,6 +292,10 @@ mod tests {
         assert_eq!(r.numbers, vec![339]);
         let named = references("Arugula #365: lanes", "", "", None);
         assert_eq!((named.native, named.numbers), (vec![365], vec![]));
+        let soft = references("Part of Arugula #5, see: arugula #6, REFS Arugula #7, Arugula #8", "", "", None);
+        assert_eq!((soft.native, soft.soft), (vec![5, 6, 7, 8], vec![5, 6, 7]));
+        let both = references("Part of Arugula #5", "", "Closes Arugula #5. Arugula #6, refs Arugula #6", None);
+        assert_eq!((both.closing_native().collect::<Vec<_>>(), both.soft), (vec![5, 6], vec![]));
         assert_eq!(references("Closes #12, fixes: #13", "", "", None).numbers, vec![12, 13]);
         assert_eq!(references("Resolved #7", "", "", None).numbers, vec![7]);
         assert_eq!(references("see #44 for why", "", "", None).numbers, Vec::<u64>::new());

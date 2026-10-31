@@ -69,6 +69,11 @@ runs (aru-122, aru-123). This makes them follow those, not a hand.
   `Closes #N`, `(#N)`, a branch `feat/N-…`, `IDENT-N` for Plane) is attached to
   that row; an issue that PR rows name takes them in; an item already on the
   board is a no-op that says where.
+- **The PR that names the issue closes it when it merges (Arugula #432).** The
+  same references close the native issue, board or no board, as completed, and
+  so does the issue of a row a person or an agent attached the PR to as work.
+  Nobody writes a keyword; `part of Arugula #N` (or `refs`, `see`) links
+  without closing. A PR closed unmerged closes nothing, and nothing reopens.
 - **Migration in place:** PR, block, run and proof rows that reference an
   issue row become its attachments; the rest stay as rows. Zones whose title
   is a status fold into the lanes (below).

@@ -136,6 +136,8 @@ pub async fn webhook(State(p): State<Arc<Platform>>, headers: HeaderMap, body: B
     }
     // M164: a linked repo's rows, before its pokes go.
     super::ingest::webhook(&p, &event, &delivery, &v, came);
+    // Arugula #432: a merged PR closes the native issues it says it closes.
+    super::closes::webhook(&p, &event, &v).await;
     // M214: the runs its event rules start. One that failed is tried again
     // on GitHub's redelivery: its key keeps the rest from starting twice.
     if !crate::triggers::events::webhook(&p, &event, &delivery, &v).await {

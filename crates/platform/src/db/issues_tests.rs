@@ -152,6 +152,13 @@ fn patches_write_their_events() {
     let (now, ev) = db.patch_issue(&i.id, &dup, Actor::person("a1"), 40).unwrap().unwrap();
     assert_eq!(kinds(&ev), [(EventKind::Closed, json!({ "reason": "duplicate" }))]);
     assert_eq!(now.closed_at, Some(30), "a new reason keeps when it closed");
+    let by_pr =
+        Patch { state: Some(State::Closed(CloseReason::Completed)), by_pr: Some("o/r#9"), ..Default::default() };
+    let (now, ev) = db.patch_issue(&i.id, &by_pr, Actor::person("a1"), 45).unwrap().unwrap();
+    assert!(
+        ev.is_empty() && now.state == State::Closed(CloseReason::Duplicate),
+        "a merged PR closes an open issue only"
+    );
 
     let reopen = Patch {
         state: Some(State::Open),
