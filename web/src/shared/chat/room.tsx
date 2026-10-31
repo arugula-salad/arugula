@@ -526,8 +526,14 @@ export function RoomMessage({
   // Mine or my agent's: I may delete it, not rewrite what an agent said.
   const owned = !!m.author && m.author === chat.me;
   const forMe = m.mentions.includes(chat.me);
+  // A token reached someone if it names me and I'm mentioned, or names one
+  // of the room's people whom control recorded in `mentions` (#438).
+  const api = usePlatformApi();
+  useSubscribe((fn) => api.subscribe(fn));
+  const named = mentionables(api, room.id);
+  const reached = named.filter((p) => m.mentions.includes(p.who)).map((p) => p.token);
   // The same function while it's for the same people: Markdown parses again for a new one.
-  const landed = useCallback((t: string) => forMe && chat.isMe(t), [forMe]);
+  const landed = useCallback((t: string) => (chat.isMe(t) ? forMe : reached.includes(t.toLowerCase())), [forMe, reached.join(" ")]);
   const [copied, setCopied] = useState(false);
   // `@geek`, when geek is a machine this message mentions: its icon (#428).
   const heard = m.mentions.filter((x) => x.startsWith("machine:"));
