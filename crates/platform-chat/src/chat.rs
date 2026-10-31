@@ -872,8 +872,8 @@ async fn agent_mentions(
         return Ok(vec![]);
     }
     let mut agents = room_agents(app, facts, room).await?;
-    agents.retain(|a| a.powers.iter().any(|p| p == THREADS_READ));
-    let named = |a: &ChatRoomAgent, w: &str| !a.machine_name.is_empty() && a.machine_name.to_lowercase() == w;
+    agents.retain(hears);
+    let named = |a: &ChatRoomAgent, w: &str| a.machine_name.to_lowercase() == w;
     let mut out: Vec<String> = Vec::new();
     for a in &agents {
         let mention = format!("{}{}", wire::AGENT_MENTION, a.machine);
@@ -885,6 +885,19 @@ async fn agent_mentions(
     unreached.retain(|w| !agents.iter().any(|a| named(a, w)));
     Ok(out)
 }
+
+/// Whether a mention can reach this agent's machine (#394): it reads the
+/// room (`threads.read`) and has a name to be addressed by. The picker's
+/// machines (#428) and [`agent_mentions`] ask this one question.
+fn hears(a: &ChatRoomAgent) -> bool {
+    !a.machine_name.is_empty() && a.powers.iter().any(|p| p == THREADS_READ)
+}
+
+/// How far back a machine's sessions are offered to `@` (#428).
+const SESSIONS_SINCE_MS: u64 = 7 * 24 * 60 * 60 * 1000;
+
+/// The most sessions offered under one machine (#428).
+const SESSIONS_OFFERED: usize = 5;
 
 /// The machine whose agent wrote the newest message in the thread a new
 /// reply goes under (#394): the reply is for it. None for a post in the
@@ -1468,7 +1481,15 @@ pub async fn room(State(app): State<Arc<Platform>>, s: Person, Path(id): Path<St
         .collect();
     let mut people: Vec<ChatPerson> = people;
     with_dnd(&app, &mut people)?;
-    let agents = room_agents(&app, &facts, &room).await?;
+    let mut agents = room_agents(&app, &facts, &room).await?;
+    let posted = app.db.chat_agent_sessions(&room.id, now_ms().saturating_sub(SESSIONS_SINCE_MS))?;
+    for a in &mut agents {
+        a.mentionable = hears(a);
+        if a.mentionable {
+            a.sessions =
+                posted.iter().filter(|(m, _)| *m == a.machine).map(|(_, s)| s.clone()).take(SESSIONS_OFFERED).collect();
+        }
+    }
     let can_manage = members::may_manage(&facts, &room, &s.account);
     Ok(Json(ChatRoomDetail { room: listed(&app, &facts, &s.account, &room, from)?, people, can_manage, agents }))
 }
@@ -1605,6 +1626,8 @@ async fn room_agents(app: &Platform, facts: &Facts, room: &Room) -> anyhow::Resu
             machine,
             machine_name: d.name.clone(),
             powers,
+            mentionable: false,
+            sessions: vec![],
         });
     }
     Ok(out)

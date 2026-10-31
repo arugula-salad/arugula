@@ -7621,6 +7621,11 @@ html[data-scheme="light"] .doc {
   font-weight: 600;
 }
 
+.mention-machine .machine-icon {
+  vertical-align: -2px;
+  margin-right: 2px;
+}
+
 /* An @ that reached no one: still marked, but not as a person. */
 .mention-missed {
   background: none;
@@ -8309,6 +8314,40 @@ button.thread-quote:hover {
 .mention-pick li span:last-child {
   color: inherit;
   opacity: 0.7;
+}
+
+/* A machine's row (#428): its icon with the online dot, and an offline one
+   dimmed but listed (the mention is stored for it); its sessions under it. */
+.mention-pick li.offline {
+  opacity: 0.6;
+}
+
+.mention-pick .mention-machine-icon {
+  display: inline-grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  flex: none;
+}
+
+.mention-pick li.in-session {
+  padding-left: 36px;
+}
+
+.mention-pick li.in-session b {
+  font-weight: 500;
+}
+
+.mention-pick .mention-session-gap {
+  display: none;
+}
+
+.mention-pick li b,
+.mention-pick li span:last-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .mention-pick .mention-all {

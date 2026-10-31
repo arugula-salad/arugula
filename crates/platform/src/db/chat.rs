@@ -679,6 +679,19 @@ impl Db {
             .optional()
     }
 
+    /// The sessions each machine's agents posted from in `room` since
+    /// `since` (ms), as `(machine, session)`, the newest post's first. A
+    /// name once per machine; deleted posts don't count (#428).
+    pub fn chat_agent_sessions(&self, room: &str, since: u64) -> Result<Vec<(String, String)>> {
+        self.c().query_map(
+            "SELECT agent, agent_session FROM chat_messages
+             WHERE room = ?1 AND agent IS NOT NULL AND agent_session IS NOT NULL AND deleted IS NULL AND at >= ?2
+             GROUP BY agent, agent_session ORDER BY MAX(at) DESC, MAX(seq) DESC",
+            params![room, since],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+    }
+
     /// The author's new text, and whom it mentions now.
     pub fn edit_chat_message(&self, room: &str, seq: i64, text: &str, mentions: &[String], at: u64) -> Result<()> {
         let mut c = self.c();
