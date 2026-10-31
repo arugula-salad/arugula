@@ -119,7 +119,26 @@ plain commands (`click Sign in with GitHub`, `fill [data-signup-name] Ada`,
 file or stdin, `--login` to sign in as anyone with the fake GitHub,
 `--passkey` for a virtual authenticator with PRF (as Touch ID), and
 `--profile` to stay signed in between runs. The commands and an example
-are at the top of `web/dev-browser.ts`. [testing.md](testing.md) covers the tests, fakes and fixtures.
+are at the top of `web/dev-browser.ts`.
+
+`just demo-fleet [--seed N] [--chaos] [--load N]` (#399) is dev-control
+with a seeded demo fleet, for README, site and launch screenshots and as
+load for perf runs: four made-up people (the first signs in) on their
+laptops and a team build box, terminals running stand-in builds and tests
+at a neutral prompt, agent blocks in every state (working, asking to run
+something, asking a question, failed, done, with the context strip at
+varied fills, one compacted at low fill and one near full), and in control
+#general and a DM, a board with rows in each lane (a linked repo's open PR
+in Review), and a Doc. It runs on 127.0.0.1:7790 in a throwaway state
+directory, beside a `just dev-control`, and Ctrl-C removes all of it. The
+same `--seed` gives the same fleet; `--chaos` keeps agents finishing,
+asking and failing; `--load N` adds N agents and N terminals. Nothing in it
+is an account's: each machine's home, user and prompt are its persona's,
+and the avatars are drawn locally. Hosted workspaces are left out: their
+box is an `arugulad --hosted`, which does root's work (sudo) on the
+machine it runs on. `web/demo-fleet.ts` says what's in it.
+
+[testing.md](testing.md) covers the tests, fakes and fixtures.
 `just test-scripts` tests install.sh and checks that what a release
 ships (targets, desktop downloads) is named the same in release.yml,
 app-release.yml, scripts/release, the Homebrew formula, install.sh and the site: add a

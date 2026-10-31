@@ -74,6 +74,29 @@ open is in $CLAUDE_CONFIG_DIR/sessions/<pid>.json, as Claude Code lists it.
 
 Only clients that declare elicitation {form: {}, url: {}} get questions; the
 others get "I don't have access to an AskUserQuestion tool" (S13).
+
+Scripted (--demo FILE, #399's demo fleet): the prompt's text is only shown,
+and each turn of the session plays the next list of steps in FILE
+({"turns": [[step, ...], ...], "then": [step, ...]}; "then" once the turns
+run out), read again at every prompt, so whoever drives it can add turns.
+A step is one of:
+  {"title": T}                          names the session T
+  {"think": T}                          a thought
+  {"say": T, "ms": MS}                  a reply, a word every MS ms
+  {"tool": T, "kind": K, "ms": MS, "status": S}
+                                        a tool call that takes MS ms, ending
+                                        completed (or S)
+  {"run": CMD, "output": OUT}           a shell command that asks permission
+  {"question": Q}                       AskUserQuestion with one question
+  {"busy": T, "kind": K, "secs": N}     a tool call running for N seconds
+                                        (null: until the turn is cancelled)
+  {"usage": TOKENS, "model": M}         an assistant entry with that many
+                                        tokens of context in the session's
+                                        transcript ($CLAUDE_CONFIG_DIR, as
+                                        Claude Code keeps it, #397)
+  {"compact": TRIGGER, "pre": N, "post": M}
+                                        a compact_boundary entry there
+  {"fail": MESSAGE}                     the turn fails with MESSAGE
 """
 
 import json
@@ -397,6 +420,104 @@ def mcp_call_stdio(srv, tool, args):
         p.wait()
 
 
+DEMO = sys.argv[sys.argv.index("--demo") + 1] if "--demo" in sys.argv else None
+
+
+def transcript(sid, s, entry):
+    """Append an entry to the session's transcript, where Claude Code keeps
+    it: $CLAUDE_CONFIG_DIR/projects/<cwd with - for / and .>/<id>.jsonl."""
+    cwd = s.get("cwd") or "/"
+    root = os.environ.get("CLAUDE_CONFIG_DIR", os.path.expanduser("~/.claude"))
+    d = os.path.join(root, "projects", re.sub(r"[/.]", "-", cwd))
+    os.makedirs(d, exist_ok=True)
+    s["entries"] = s.get("entries", 0) + 1
+    base = {"uuid": f"{sid}-{s['entries']}", "parentUuid": None, "sessionId": sid, "cwd": cwd, "gitBranch": "main",
+            "entrypoint": "sdk-ts", "version": "2.1.288", "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S.000Z", time.gmtime()),
+            "isSidechain": False}
+    with open(os.path.join(d, f"{sid}.jsonl"), "a") as f:
+        f.write(json.dumps({**base, **entry}) + "\n")
+
+
+def demo_turn(mid, sid, s, n):
+    """One turn of --demo's script. Returns the stop reason, or None when it
+    answered the prompt itself (a failed turn)."""
+    try:
+        with open(DEMO) as f:
+            script = json.load(f)
+    except (OSError, ValueError):
+        script = {}
+    k = s.get("demo_turns", 0)
+    s["demo_turns"] = k + 1
+    turns = script.get("turns") or []
+    steps = turns[k] if k < len(turns) else script.get("then") or [{"say": "Done."}]
+    for i, st in enumerate(steps):
+        if sid in cancelled:
+            cancelled.discard(sid)
+            return "cancelled"
+        tid = f"tool{n}-{i}"
+        if "title" in st:
+            update(sid, s, {"sessionUpdate": "session_info_update", "title": st["title"]})
+        elif "think" in st:
+            update(sid, s, {"sessionUpdate": "agent_thought_chunk", "messageId": f"t{n}-{i}",
+                            "content": {"type": "text", "text": st["think"]}})
+        elif "say" in st:
+            words = st["say"].split(" ")
+            for j, w in enumerate(words):
+                update(sid, s, {"sessionUpdate": "agent_message_chunk", "messageId": f"m{n}-{i}",
+                                "content": {"type": "text", "text": w + (" " if j < len(words) - 1 else "")}})
+                time.sleep(st.get("ms", 40) / 1000)
+        elif "tool" in st:
+            update(sid, s, {"sessionUpdate": "tool_call", "toolCallId": tid, "title": st["tool"],
+                            "kind": st.get("kind", "read"), "status": "in_progress"})
+            time.sleep(st.get("ms", 300) / 1000)
+            update(sid, s, {"sessionUpdate": "tool_call_update", "toolCallId": tid,
+                            "status": st.get("status", "completed")})
+        elif "run" in st:
+            cmd = st["run"]
+            update(sid, s, {"sessionUpdate": "tool_call", "toolCallId": tid, "title": cmd, "kind": "execute",
+                            "status": "pending", "rawInput": {"command": cmd}})
+            outcome = (ask(sid, tid, cmd) or {}).get("outcome", {})
+            if outcome.get("outcome") == "cancelled":
+                update(sid, s, {"sessionUpdate": "tool_call_update", "toolCallId": tid, "status": "failed"})
+                return "cancelled"
+            if outcome.get("outcome") == "selected" and outcome.get("optionId", "").startswith("allow"):
+                update(sid, s, {"sessionUpdate": "tool_call_update", "toolCallId": tid, "status": "completed",
+                                "rawOutput": st.get("output", "")})
+            else:
+                update(sid, s, {"sessionUpdate": "tool_call_update", "toolCallId": tid, "status": "failed",
+                                "rawOutput": "User refused permission to run tool"})
+        elif "question" in st:
+            if ask_user(sid, s, f"{n}-{i}", [st["question"]], lambda t: None) == "cancelled":
+                return "cancelled"
+        elif "busy" in st:
+            update(sid, s, {"sessionUpdate": "tool_call", "toolCallId": tid, "title": st["busy"],
+                            "kind": st.get("kind", "execute"), "status": "in_progress"})
+            until = time.time() + st["secs"] if st.get("secs") is not None else None
+            while until is None or time.time() < until:
+                if sid in cancelled:
+                    update(sid, s, {"sessionUpdate": "tool_call_update", "toolCallId": tid, "status": "failed"})
+                    cancelled.discard(sid)
+                    return "cancelled"
+                time.sleep(0.2)
+            update(sid, s, {"sessionUpdate": "tool_call_update", "toolCallId": tid, "status": "completed"})
+        elif "usage" in st:
+            tokens = st["usage"]
+            transcript(sid, s, {"type": "assistant", "message": {
+                "id": f"msg-{sid}-{n}-{i}", "role": "assistant", "model": st.get("model", "claude-opus-5-5"),
+                "content": [{"type": "text", "text": "…"}],
+                "usage": {"input_tokens": 3, "cache_read_input_tokens": max(tokens - 13, 0),
+                          "cache_creation_input_tokens": 10, "output_tokens": 40}}})
+        elif "compact" in st:
+            transcript(sid, s, {"type": "system", "subtype": "compact_boundary", "content": "Conversation compacted",
+                                "compactMetadata": {"trigger": st["compact"], "preTokens": st.get("pre"),
+                                                    "postTokens": st.get("post")}})
+        elif "fail" in st:
+            save(sid, s)
+            send({"id": mid, "error": {"code": -32603, "message": st["fail"]}})
+            return None
+    return "end_turn"
+
+
 def prompt(mid, p):
     sid = p["sessionId"]
     s = load(sid)
@@ -406,6 +527,16 @@ def prompt(mid, p):
     text = "".join(c.get("text", "") for c in blocks)
     update(sid, s, {"sessionUpdate": "user_message_chunk", "content": {"type": "text", "text": text}})
     n = len(s["updates"])
+    if DEMO:
+        stop = demo_turn(mid, sid, s, n)
+        if stop is None:
+            return
+        s["cost"] = round(s.get("cost", 0) + 0.37, 4)
+        update(sid, s, {"sessionUpdate": "usage_update", "used": 10, "size": 1000,
+                        "cost": {"amount": s["cost"], "currency": "USD"}})
+        save(sid, s)
+        send({"id": mid, "result": {"stopReason": stop, "usage": {"inputTokens": 1, "outputTokens": 2, "totalTokens": 3}}})
+        return
     msg = lambda t: update(sid, s, {"sessionUpdate": "agent_message_chunk", "messageId": f"m{n}",
                                    "content": {"type": "text", "text": t}})
     stop = "end_turn"

@@ -1099,6 +1099,17 @@ dev-control *machines:
     {{server_cargo}} build -p arugula-control
     cd web && TARGET_DIR="{{target_dir}}/debug" node --experimental-strip-types --no-warnings dev-control.ts {{machines}}
 
+# A seeded demo fleet (#399) on a throwaway control at 127.0.0.1:7790, for
+# screenshots, demos and perf runs: made-up people on laptops and a build
+# box, agents in every state, chat, a board and a Doc, and no real account
+# data. --seed N (the same N, the same fleet), --chaos (keeps it moving),
+# --load N (N more agents and terminals). Ctrl-C removes all of it.
+# web/demo-fleet.ts says what's in it.
+demo-fleet *args:
+    {{cargo}} build -p arugulad
+    {{server_cargo}} build -p arugula-control
+    cd web && TARGET_DIR="{{target_dir}}/debug" node --experimental-strip-types --no-warnings dev-control.ts --demo {{args}}
+
 # The platform page (M150) on 127.0.0.1:7691, beside `just dev-control`
 # (run that first): Vite serves it and sends control's paths to 7690. Sign
 # in on control's page; the session cookie is the same host's, so this page

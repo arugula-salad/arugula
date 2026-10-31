@@ -93,22 +93,45 @@
 // made (you its owner) if you have none by that name.
 //
 // Start over: delete the state directory.
+//
+// `--demo` (`just demo-fleet`, #399): a seeded demo fleet (demo-fleet.ts)
+// on a throwaway control, safe to screenshot: made-up people (the first
+// signs in) on their laptops and a team build box, terminals and agents in
+// every state, chat, a board and a Doc, and no real account data. Its own
+// state directory (deleted on Ctrl-C) and port (7790), so it runs beside
+// a `just dev-control`. `--seed N` picks the fleet (the same N, the same
+// fleet); `--chaos` keeps it moving; `--load N` adds N agents and N
+// terminals, for perf runs. DEV_CONTROL_DIR keeps it instead.
 
 import { execFileSync, spawn, type ChildProcess } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { lookup } from "node:dns/promises";
 import { isIP } from "node:net";
-import { homedir, userInfo } from "node:os";
+import { homedir, tmpdir, userInfo } from "node:os";
 import { join } from "node:path";
 import type { Server } from "node:http";
 import { Device } from "./fixtures/device.ts";
 import { fakeGithub } from "./fixtures/fakes.ts";
 import { fakeE2b } from "./fixtures/fake-e2b.ts";
 import { fingerprint, type Cert } from "./src/shell/e2e/cert.ts";
+import { daemonPort } from "./e2e/ports.ts";
+import { DemoFleet, TEAM as DEMO_TEAM, demoArgs } from "./demo-fleet.ts";
 
 // An agent's pane exports ARUGULA_* (the socket, keep-panes…) that would
 // change what these daemons do (#682): not theirs.
 for (const k of Object.keys(process.env)) if (/^(ARUGULA|ILLOGICAL)_/.test(k)) delete process.env[k];
+
+const { demo: demoOpts, rest: argv } = demoArgs(process.argv.slice(2));
+/** A throwaway state directory, deleted on the way out. */
+const throwaway = demoOpts && !process.env.DEV_CONTROL_DIR ? mkdtempSync(join(tmpdir(), "arugula-demo-fleet-")) : null;
+const demo = demoOpts ? new DemoFleet(demoOpts, process.env.DEV_CONTROL_DIR ?? throwaway!) : null;
+if (demo) {
+  process.env.DEV_CONTROL_DIR ??= throwaway!;
+  process.env.DEV_CONTROL_PORT ??= "7790";
+  process.env.DEV_CONTROL_LOGIN = demo.viewer;
+  process.env.DEV_CONTROL_LOGINS = demo.people.slice(1).join(",");
+  process.env.DEV_CONTROL_CHAT = "1";
+}
 
 const host = process.env.DEV_CONTROL_HOST || "127.0.0.1";
 /** Only this machine's browsers, or others' too (a tailnet's). */
@@ -132,7 +155,7 @@ const logins = (process.env.DEV_CONTROL_LOGINS ?? "").split(",").map((l) => l.tr
 const labs = process.env.DEV_CONTROL_LABS !== "0";
 const approveAll = process.env.DEV_CONTROL_APPROVE_BROWSERS !== "0";
 const chatOn = process.env.DEV_CONTROL_CHAT === "1";
-const machines = process.argv.slice(2).length ? process.argv.slice(2) : ["workstation", "laptop"];
+const machines = demo ? demo.machines.map((m) => m.spec) : argv.length ? argv : ["workstation", "laptop"];
 const machineNames = machines.map((m) => m.split("@")[0]);
 const cloud = (process.env.DEV_CONTROL_CLOUD ?? "").split(",").map((l) => l.trim()).filter(Boolean);
 const hosted = process.env.DEV_CONTROL_HOSTED === "1" || cloud.length > 0;
@@ -170,6 +193,7 @@ const bye = (code = 0) => {
   }
   github?.close();
   e2b?.close();
+  if (throwaway) rmSync(throwaway, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
   process.exit(code);
 };
 process.on("exit", () => procs.forEach(stop));
@@ -326,8 +350,12 @@ async function seedChat(d: Device): Promise<Device[]> {
   if (others.length) await d.admitAll(team);
   await d.api("/api/flags", { name: "chat", on: true, team });
   await d.api("/api/flags", { name: "boards", on: true, team });
+  // The demo fleet says its own things (demo-fleet.ts).
+  if (demo) return others;
   const general = await d.api<{ id: string }>(`/api/chat/teams/${team}/channels`, { name: "general" });
   await d.api(`/api/chat/rooms/${general.id}/messages`, { text: "Morning! The deploy went out green." });
+  // A member posts in a channel they've joined (or it's no such room).
+  for (const o of others) await o.api(`/api/chat/rooms/${general.id}/join`, {});
   for (const o of others) {
     await o.api(`/api/chat/rooms/${general.id}/messages`, { text: `@${login} nice. I'll look at the flaky upload test next.` });
     const dm = await o.api<{ id: string }>(`/api/chat/teams/${team}/dms`, { with: d.account });
@@ -376,13 +404,18 @@ async function startMachines(d: Device) {
     }
     const flags = join(state, "flags.json");
     if (labs && !existsSync(flags)) writeFileSync(flags, JSON.stringify({ flags: { labs: true } }));
-    procs.push(
-      spawn(
-        `${bin}/arugulad`,
-        [...["--listen", "127.0.0.1:0", "--name", name, "--state-dir", state], "--no-manager-env", ...["--tailscale-socket", "/nonexistent/sock"]],
-        { stdio: "ignore", detached: true },
-      ),
+    // The demo's machines: their persona's home, user and prompt.
+    const own = demo?.daemon(name) ?? { args: [], env: {} };
+    const p = spawn(
+      `${bin}/arugulad`,
+      [...["--listen", "127.0.0.1:0", "--name", name, "--state-dir", state], "--no-manager-env", ...["--tailscale-socket", "/nonexistent/sock"], ...own.args],
+      { stdio: "ignore", detached: true, env: { ...process.env, ...own.env } },
     );
+    procs.push(p);
+    if (demo) {
+      const url = `http://127.0.0.1:${await daemonPort(state, p)}`;
+      demo.at(name, url, readFileSync(join(state, "local-token"), "utf8").trim());
+    }
   }
   for (const name of machineNames) {
     const m = (await d.directory()).find((x) => x.name === name);
@@ -473,6 +506,31 @@ const d = await device();
 await startMachines(d);
 if (cloud.length) await startCloud(d);
 const chatPeople = chatOn ? await seedChat(d).catch((e) => (log(`chat: ${String(e)}`), [] as Device[])) : [];
+/** The demo fleet's #general, for its chaos. */
+let demoGeneral = "";
+/** A kept demo (DEV_CONTROL_DIR) is seeded once: a later run brings it back. */
+const seeded = join(dir, "demo.json");
+const demoNew = !!demo && !existsSync(seeded);
+if (demo && !demoNew) console.log(`dev-control: the demo fleet in ${dir} was seeded before; it's as it was left (no chaos)`);
+if (demo && demoNew) {
+  console.log("dev-control: seeding the demo fleet…");
+  try {
+    const team = await teamNamed(d, DEMO_TEAM);
+    const db = join(dir, "control/control.db");
+    demo.avatars(db);
+    demoGeneral = await demo.chat(d, chatPeople, team);
+    const ids = new Map((await d.directory()).map((m) => [m.name, m.id]));
+    // Grants first: an agent block reports its state to the board only
+    // with one (and stops asking for a while after a refusal).
+    await demo.grants(d, team, ids);
+    await demo.panes();
+    const { board } = await demo.project(d, chatPeople, team, db);
+    await demo.attach(d, board, ids);
+    writeFileSync(seeded, JSON.stringify(demoOpts));
+  } catch (e) {
+    fail(`seeding the demo fleet: ${e instanceof Error ? e.stack : String(e)}`);
+  }
+}
 console.log(`
 dev-control: ${base}${host === "127.0.0.1" ? " (no passkeys on an IP address: DEV_CONTROL_HOST=localhost)" : ""}
   Sign in with GitHub (the fake one signs you in as ${login}${logins.length ? `, or asks: ${[login, ...logins].join(", ")}` : ""});
@@ -482,6 +540,11 @@ dev-control: ${base}${host === "127.0.0.1" ? " (no passkeys on an IP address: DE
   ${chatOn ? `Chat is on: team Acme (${[login, ...chatPeople.map((o) => o.login)].join(", ")}) with #general${chatPeople.length ? " and a DM" : ""}; ${chatPeople.length ? `${chatPeople.map((o) => o.login).join(", ")}'s browsers are approved by their own devices.` : "DEV_CONTROL_LOGINS=sam for a second person."}` : "No chat in control (DEV_CONTROL_CHAT=1: team Acme with chat on)."}
   Edit web/src, wait for "web rebuilt", reload. State: ${dir}. Ctrl-C stops.
 `);
+if (demo)
+  console.log(`  Demo fleet (seed ${demoOpts!.seed}${demoOpts!.chaos ? ", chaos" : ""}${demoOpts!.load ? `, load ${demoOpts!.load}` : ""}): ${demo.people.join(", ")} on ${machineNames.join(", ")}.
+  Throwaway: ${throwaway ? "everything goes on Ctrl-C" : `kept in ${dir}`}.
+`);
+if (demo && demoNew && demoOpts!.chaos) void demo.chaos([d, ...chatPeople], demoGeneral);
 // Leaving browsers alone: stay up for the web build and the machines.
 if (approveAll) await Promise.all([approveBrowsers(d), ...chatPeople.map((o) => approveBrowsers(o, o.login))]);
 else setInterval(() => {}, 1 << 30);
