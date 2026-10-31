@@ -13,7 +13,7 @@
 // is all they see.
 
 import { Fragment, type ComponentChildren } from "preact";
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
 import { chat, type PaneQuote } from "../chat-store";
 import type { ChatMessage, ChatRoom } from "../proto";
 import { AgentsChip } from "./agents-chip";
@@ -271,6 +271,7 @@ export function RoomBody({
   useSubscribe((fn) => chat.subscribe(fn));
   // "Reply in thread" opens the thread where this room is shown (#106).
   const { nav } = usePlatformApi();
+  const tokens = useRoomTokens(room.id);
   useEffect(() => {
     setThreadNav(nav);
   }, [nav]);
@@ -464,6 +465,7 @@ export function RoomBody({
                     if (!on) composeRef.current?.focus();
                   }}
                   relative={embedded}
+                  tokens={tokens}
                 />
               </Fragment>
             );
@@ -506,6 +508,7 @@ export function RoomMessage({
   setEditing,
   inThread = false,
   relative = false,
+  tokens = NO_TOKENS,
 }: {
   room: ChatRoom;
   m: ChatMessage;
@@ -519,6 +522,9 @@ export function RoomMessage({
   /** On a page about something else (an issue's, a run's): the head says
    * how long ago, as the page's timeline does (UI audit #182). */
   relative?: boolean;
+  /** The room's people by the token that mentions them (`useRoomTokens`),
+   * worked out once by the list, not by each message (#438). */
+  tokens?: Map<string, string>;
 }) {
   const head =
     !prev || prev.author !== m.author || prev.agent?.machine !== m.agent?.machine || prev.via !== m.via || m.at - prev.at > 5 * 60_000;
@@ -528,10 +534,7 @@ export function RoomMessage({
   const forMe = m.mentions.includes(chat.me);
   // A token reached someone if it names me and I'm mentioned, or names one
   // of the room's people whom control recorded in `mentions` (#438).
-  const api = usePlatformApi();
-  useSubscribe((fn) => api.subscribe(fn));
-  const named = mentionables(api, room.id);
-  const reached = named.filter((p) => m.mentions.includes(p.who)).map((p) => p.token);
+  const reached = m.mentions.length ? [...tokens].filter(([, who]) => m.mentions.includes(who)).map(([t]) => t) : [];
   // The same function while it's for the same people: Markdown parses again for a new one.
   const landed = useCallback((t: string) => (chat.isMe(t) ? forMe : reached.includes(t.toLowerCase())), [forMe, reached.join(" ")]);
   const [copied, setCopied] = useState(false);
@@ -867,6 +870,18 @@ type Mentionable = {
   machine?: string;
   session?: boolean;
 };
+
+const NO_TOKENS = new Map<string, string>();
+
+/** The room's people, by the token that mentions each (not me), for the
+ * messages in one list to share. The same map while the people are. */
+export function useRoomTokens(room: string): Map<string, string> {
+  const api = usePlatformApi();
+  useSubscribe((fn) => api.subscribe(fn));
+  const found = mentionables(api, room);
+  const key = found.map((p) => `${p.token}\n${p.who}`).join("\n");
+  return useMemo(() => new Map(found.map((p) => [p.token, p.who])), [key]);
+}
 
 function mentionables(api: PlatformApi, room: string): Mentionable[] {
   const out: Mentionable[] = [];

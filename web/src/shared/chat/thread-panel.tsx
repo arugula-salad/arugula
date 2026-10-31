@@ -9,7 +9,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 import { chat, type ChatStore } from "../chat-store";
 import type { ChatRoom } from "../proto";
 import { useSubscribe } from "../ui/hooks";
-import { RoomCompose, RoomMessage, roomLabel, threadComposeRef } from "./room";
+import { RoomCompose, RoomMessage, roomLabel, threadComposeRef, useRoomTokens } from "./room";
 import { usePlatformApi } from "../platform-api";
 import { newFrom, repliesOf } from "./threads";
 import { useStickToBottom } from "./stick";
@@ -20,6 +20,7 @@ const NEAR_BOTTOM = 80;
 export function ThreadPanel({ store, room, parent, phone, focus, close }: { store: ChatStore; room: ChatRoom; parent: number; phone: boolean; focus?: number; close: () => void }) {
   useSubscribe((fn) => store.subscribe(fn));
   const api = usePlatformApi();
+  const tokens = useRoomTokens(room.id);
   const t = store.threads.get(room.id, parent);
   const first = t?.parent ?? null;
   const replies = t?.replies ?? [];
@@ -142,7 +143,7 @@ export function ThreadPanel({ store, room, parent, phone, focus, close }: { stor
           </button>
         )}
         {first && (
-          <RoomMessage room={room} m={first} reply={(q) => threadComposeRef.current?.reply(q)} setError={setError} editing={editing === first.seq} setEditing={(on) => setEditing(on ? first.seq : null)} inThread />
+          <RoomMessage room={room} m={first} reply={(q) => threadComposeRef.current?.reply(q)} setError={setError} editing={editing === first.seq} setEditing={(on) => setEditing(on ? first.seq : null)} inThread tokens={tokens} />
         )}
         {first && (
           <div class="msg-day thread-count" role="separator" data-thread-count>
@@ -163,6 +164,7 @@ export function ThreadPanel({ store, room, parent, phone, focus, close }: { stor
                 room={room}
                 m={m}
                 prev={joined}
+                tokens={tokens}
                 reply={(q) => threadComposeRef.current?.reply(q)}
                 setError={setError}
                 editing={editing === m.seq}
