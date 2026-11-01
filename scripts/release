@@ -18,11 +18,6 @@
 #                                  passed rare-nightly.yml's jobs, which
 #                                  ci/green doesn't count (#305): GitHub has
 #                                  its ci/rare/<sha> tag
-#   release upload TAG FILE...     attach files to TAG's release (a draft, made if new)
-#   release sums TAG               SHA256SUMS of the release's tarballs and zips
-#                                  (each under its new and its old name)
-#   release publish TAG            its notes from docs/releases/, then published
-#                                  as latest
 #   release homebrew TAG           bump the formula in the Homebrew tap
 #   release tap-files TAG DIR [SUMS]  what `homebrew` commits, into DIR
 #                                  (the formula, formula_renames.json)
@@ -33,11 +28,23 @@
 #   release sidecars TARGET DIR    the latest daemon release's arugulad and
 #                                  arugula for TARGET, checked against its
 #                                  SHA256SUMS, into DIR (Windows: with ConPTY)
-#   release app-upload TAG FILE... attach files to the app's release (a draft)
-#   release app-publish TAG        SHA256SUMS and latest.json, notes from
-#                                  docs/releases/app-X.md, published (never as
-#                                  latest), and copied to the rolling app-latest
-#                                  release the site and the updater read
+#
+# Publishing, which chant does (#1986): release.yml and app-release.yml cut
+# the tag's release with `chant release cut` and publish it with `chant
+# release publish` (release/daemon and release/app, the members that declare
+# what each publishes). These are the steps around it:
+#   release cut-commit TAG         the commit chant cuts TAG's release from:
+#                                  TAG's own when it has a ci/green tag, else
+#                                  the commit its bump is on (chant's cut
+#                                  reads ci/green, for an app-v* tag too)
+#   release sums TAG DIR           SHA256SUMS in DIR of TAG's files there: a
+#                                  daemon release's four tarballs and Windows
+#                                  zip, or an app release's every download
+#   release draft TAG              TAG's GitHub release as a draft, titled, with
+#                                  its notes from docs/releases/ as TAG has
+#                                  them (a daemon release's without the headline
+#                                  section); the publish fills and publishes it
+#   release check-latest           releases/latest is still a daemon release
 #
 # Both lanes:
 #   release check-green TAG [LANE] TAG's commit passed CI: GitHub has its
@@ -79,18 +86,16 @@
 #                                  (scripts/ci-hub-changed)
 #
 # GH_TOKEN (bump --rare) starts and watches a run of rare-nightly.yml;
-# GH_TOKEN (upload, sums) writes releases (in CI, the job token with
-# contents: write; by hand, your gh login); HOMEBREW_TAP_KEY (homebrew) is
+# GH_TOKEN (draft, check-latest, sidecars) reads and writes releases (in CI,
+# the job token with contents: write; by hand, your gh login);
+# HOMEBREW_TAP_KEY (homebrew) is
 # an SSH deploy key for the tap (without it, your own key is used).
 set -euo pipefail
 
 repo=${GITHUB_REPOSITORY:-arugula-salad/arugula}
 tap=git@github.com:arugula-salad/homebrew-tap.git
-# The rolling release with the newest app: its downloads under fixed names,
-# and the updater's latest.json (tauri.conf.json's endpoint).
-app_latest=app-latest
 # Every download an app release has (the updater's .app.tar.gz and .sig
-# files come too when TAURI_SIGNING_PRIVATE_KEY is set).
+# files come too: release/app/chant.config.ts names them all).
 app_downloads="arugula-desktop-linux-{x86_64,aarch64}.{deb,rpm,AppImage} arugula-desktop-macos-{arm64,x86_64}.{zip,dmg} arugula-desktop-windows-x86_64-setup.exe"
 
 # A daemon release's headline section in its notes (docs/releases/X.Y.Z.md):
@@ -99,8 +104,7 @@ app_downloads="arugula-desktop-linux-{x86_64,aarch64}.{deb,rpm,AppImage} arugula
 headlines='```whats-new'
 without_headlines() { sed '/^```whats-new$/,/^```$/d'; }
 
-# The release for a tag, made if it isn't there yet (both build jobs may
-# race to make it; the loser finds the winner's).
+# The release for a tag, made as a draft if it isn't there yet.
 ensure_release() {
   local tag=$1 title notes
   gh release view "$tag" -R "$repo" >/dev/null 2>&1 && return
@@ -110,8 +114,8 @@ ensure_release() {
     *) title="Arugula ${tag#v}"
       notes="Download the desktop app at https://arugula.io (it installs the daemon). Servers and headless machines: curl -fsSL https://arugula.io/install.sh | sh" ;;
   esac
-  # A draft until `publish`: a release with only the first job's files
-  # would be "latest" and break every other download link meanwhile.
+  # A draft until chant's publish fills it and publishes it, so no one sees
+  # a release without its files.
   gh release create "$tag" -R "$repo" --verify-tag --draft --latest=false --title "$title" --notes "$notes" >/dev/null 2>&1 \
     || gh release view "$tag" -R "$repo" >/dev/null
 }
@@ -124,33 +128,6 @@ check_latest() {
     v*) echo "releases/latest is still $t" ;;
     *) echo "releases/latest is $t, not a daemon release: fix it with gh release edit vX.Y.Z --latest" >&2; exit 1 ;;
   esac
-}
-
-# The Tauri updater's manifest (M46) for app version V, from the .sig files
-# in DIR: each platform's download (at BASE) and its signature from the
-# updater key. Without signatures (no TAURI_SIGNING_PRIVATE_KEY in the
-# build jobs) it lists no platforms, and apps find nothing to update to.
-updater() {
-  python3 - "$1" "$2" "$3" <<'PY'
-import json, os, sys, datetime
-v, base, d = sys.argv[1:]
-files = {
-    "darwin-aarch64": "arugula-desktop-macos-arm64.app.tar.gz",
-    "darwin-x86_64": "arugula-desktop-macos-x86_64.app.tar.gz",
-    "linux-x86_64": "arugula-desktop-linux-x86_64.AppImage",
-    "linux-aarch64": "arugula-desktop-linux-aarch64.AppImage",
-    "windows-x86_64": "arugula-desktop-windows-x86_64-setup.exe",
-}
-platforms = {}
-for p, f in files.items():
-    sig = os.path.join(d, f + ".sig")
-    if os.path.exists(sig):
-        platforms[p] = {"signature": open(sig).read().strip(), "url": f"{base}/{f}"}
-if not platforms:
-    print("no updater signatures: the TAURI_SIGNING_PRIVATE_KEY secret isn't set", file=sys.stderr)
-json.dump({"version": v, "pub_date": datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds"),
-           "platforms": platforms}, sys.stdout, indent=2)
-PY
 }
 
 # A release starts from a commit CI passed (#503, docs/development.md). The
@@ -645,80 +622,63 @@ case "${1:-}" in
     echo "$out: arugulad $v for $target, from $tag"
     "$out/arugulad" --version 2>/dev/null || true
     ;;
-  upload)
-    tag=$2; shift 2
-    ensure_release "$tag"
-    # --clobber replaces an asset of the same name (a re-run).
-    gh release upload "$tag" -R "$repo" --clobber "$@"
-    ;;
-  publish)
-    # Last: the notes from docs/releases/X.md, then out of draft as latest.
-    # Without the headline section, which is the app's (What's new).
-    tag=$2; notes=docs/releases/${tag#v}.md
-    if [ -f "$notes" ]; then
-      body=$(mktemp)
-      without_headlines <"$notes" >"$body"
-      gh release edit "$tag" -R "$repo" --notes-file "$body"
-      rm -f "$body"
-    fi
-    gh release edit "$tag" -R "$repo" --draft=false --latest
-    check_latest
-    ;;
-  app-upload)
-    tag=$2; shift 2
-    ensure_release "$tag"
-    gh release upload "$tag" -R "$repo" --clobber "$@"
-    ;;
-  app-publish)
-    tag=$2; v=${tag#app-v}
-    dir=$(mktemp -d)
-    gh release download "$tag" -R "$repo" -p 'arugula-desktop-*' -D "$dir"
-    for f in $(eval "echo $app_downloads"); do
-      [ -f "$dir/$f" ] || { echo "the release has no $f" >&2; exit 1; }
-    done
-    (cd "$dir" && sha256sum -- arugula-desktop-* > SHA256SUMS && cat SHA256SUMS)
-    gh release upload "$tag" -R "$repo" --clobber "$dir/SHA256SUMS"
-    # The updater's manifest, pointing at this release's own files (which
-    # never change, so a copy of it anywhere stays right).
-    updater "$v" "https://github.com/$repo/releases/download/$tag" "$dir" >"$dir/latest.json"
-    gh release upload "$tag" -R "$repo" --clobber "$dir/latest.json"
-    notes=docs/releases/app-$v.md
-    if [ -f "$notes" ]; then gh release edit "$tag" -R "$repo" --notes-file "$notes"; fi
-    gh release edit "$tag" -R "$repo" --draft=false --latest=false
-    # The rolling release: made once (its tag follows the newest app's
-    # commit), then its files replaced. Never latest.
-    sha=$(gh api "repos/$repo/git/ref/tags/$tag" --jq .object.sha)
-    gh api "repos/$repo/git/tags/$sha" --jq .object.sha >/dev/null 2>&1 && sha=$(gh api "repos/$repo/git/tags/$sha" --jq .object.sha)
-    # With TAG_TOKEN when it's set: the workflow's GITHUB_TOKEN can't move
-    # this tag (#526). A person's own gh login can.
-    tag_api() { if [ -n "${TAG_TOKEN:-}" ]; then GH_TOKEN=$TAG_TOKEN gh api "$@"; else gh api "$@"; fi; }
-    if gh api "repos/$repo/git/ref/tags/$app_latest" >/dev/null 2>&1; then
-      tag_api -X PATCH "repos/$repo/git/refs/tags/$app_latest" -f sha="$sha" -F force=true >/dev/null
-    else
-      tag_api -X POST "repos/$repo/git/refs" -f ref="refs/tags/$app_latest" -f sha="$sha" >/dev/null
-    fi
-    gh release view "$app_latest" -R "$repo" >/dev/null 2>&1 \
-      || gh release create "$app_latest" -R "$repo" --verify-tag --latest=false --title "Arugula app (latest)" \
-        --notes "The newest desktop app, always: its downloads keep these names. Each version's own release is app-vX.Y.Z." >/dev/null
-    # latest.json points at the downloads in $tag.
-    r=$dir/rolling; mkdir "$r"
-    cp "$dir"/arugula-desktop-* "$dir/latest.json" "$r/"
-    (cd "$r" && sha256sum -- arugula-desktop-* > SHA256SUMS)
-    gh release upload "$app_latest" -R "$repo" --clobber "$r"/*
-    gh release edit "$app_latest" -R "$repo" --latest=false --notes "The newest desktop app, always: $v ($tag). Its downloads keep these names." >/dev/null
-    check_latest
+  cut-commit)
+    # The commit `chant release cut --at` takes for TAG (#1986). chant's cut
+    # refuses a commit without a ci/green tag, and the commit `bump` tags
+    # only moves versions on top of a green one, so that's its parent, as
+    # check-green reads it. chant reads ci/green alone, for an app-v* tag
+    # too: an app commit with only ci/green-app is refused there.
+    tag=${2:?usage: release cut-commit TAG}
+    sha=$(git rev-parse --verify -q "$tag^{commit}") || { echo "no commit for $tag here" >&2; exit 1; }
+    [ "$(green "$sha" daemon)" = green ] || sha=$(parent_if_bump "$tag" "$sha")
+    echo "$sha"
     ;;
   sums)
-    ensure_release "$2"
-    dir=$(mktemp -d)
-    gh release download "$2" -R "$repo" -p 'arugula-[0-9]*.tar.gz' -p 'arugula-[0-9]*.zip' -D "$dir"
-    n=$(find "$dir" -name "arugula-[0-9]*.tar.gz" | wc -l | tr -d " ")
-    [ "$n" = 4 ] || { echo "expected 4 tarballs, found $n" >&2; exit 1; }
-    # Windows' zip (install.ps1's, M59).
-    w=$(find "$dir" -name "arugula-[0-9]*-x86_64-pc-windows-msvc.zip" | wc -l | tr -d " ")
-    [ "$w" = 1 ] || { echo "expected the Windows zip, found $w" >&2; exit 1; }
-    (cd "$dir" && sha256sum -- arugula-[0-9]*.tar.gz arugula-[0-9]*.zip > SHA256SUMS && cat SHA256SUMS)
-    gh release upload "$2" -R "$repo" --clobber "$dir/SHA256SUMS"
+    # SHA256SUMS of what the build jobs left in DIR, before `chant release
+    # publish` attaches them with it; stops when one is missing.
+    tag=${2:?usage: release sums TAG DIR}; dir=${3:?usage: release sums TAG DIR}
+    case "$tag" in
+      app-v*)
+        for f in $(eval "echo $app_downloads"); do
+          [ -f "$dir/$f" ] || { echo "the release has no $f" >&2; exit 1; }
+        done
+        (cd "$dir" && sha256sum -- arugula-desktop-* > SHA256SUMS && cat SHA256SUMS)
+        ;;
+      *)
+        n=$(find "$dir" -name "arugula-[0-9]*.tar.gz" | wc -l | tr -d " ")
+        [ "$n" = 4 ] || { echo "expected 4 tarballs, found $n" >&2; exit 1; }
+        # Windows' zip (install.ps1's, M59).
+        w=$(find "$dir" -name "arugula-[0-9]*-x86_64-pc-windows-msvc.zip" | wc -l | tr -d " ")
+        [ "$w" = 1 ] || { echo "expected the Windows zip, found $w" >&2; exit 1; }
+        (cd "$dir" && sha256sum -- arugula-[0-9]*.tar.gz arugula-[0-9]*.zip > SHA256SUMS && cat SHA256SUMS)
+        ;;
+    esac
+    ;;
+  draft)
+    # Before `chant release publish` (#1986): TAG's release, made as a draft
+    # with its title, and its notes from docs/releases/ as TAG's commit has
+    # them (the bump commits them). chant's forge target finds the draft,
+    # attaches the files and publishes it, so the release appears whole.
+    # A daemon release's notes leave out the headline section, which is the
+    # web client's (What's new). A release that's out already is left alone.
+    tag=${2:?usage: release draft TAG}
+    ensure_release "$tag"
+    if [ "$(gh release view "$tag" -R "$repo" --json isDraft --jq .isDraft)" != true ]; then
+      echo "$tag's release is published already"; exit 0
+    fi
+    case "$tag" in app-v*) notes=docs/releases/app-${tag#app-v}.md ;; *) notes=docs/releases/${tag#v}.md ;; esac
+    body=$(mktemp)
+    if git show "$tag:$notes" >"$body" 2>/dev/null; then
+      without_headlines <"$body" >"$body.out"
+      gh release edit "$tag" -R "$repo" --notes-file "$body.out" >/dev/null
+      echo "$tag's draft has the notes in $notes"
+    else
+      echo "$tag has no $notes: the draft keeps its default notes"
+    fi
+    rm -f "$body" "$body.out"
+    ;;
+  check-latest)
+    check_latest
     ;;
   tap-files)
     # What `homebrew` commits, into a checkout of the tap at DIR; SUMS is

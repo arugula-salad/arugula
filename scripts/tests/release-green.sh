@@ -4,7 +4,8 @@
 # fails, and ARUGULA_RELEASE_SKIP_GREEN=1 lets it through. Each lane reads
 # its own tags (#307): an app-v* tag ci/green-app, a server check
 # ci/green-server; `last-green LANE` names a lane's newest green commit. `check-rare`
-# (#305) the same for the ci/rare tag rare-nightly.yml writes. Against a local
+# (#305) the same for the ci/rare tag rare-nightly.yml writes, and
+# `cut-commit` (#1986) the commit chant cuts a tag's release from. Against a local
 # bare repository standing in for GitHub (GITHUB_SERVER_URL), so nothing
 # reaches the network.
 #
@@ -88,5 +89,17 @@ last "$one" daemon
 last "$two" app
 last "$three" server
 last '' nightly
+
+cut() { # WANT TAG: `cut-commit TAG` prints WANT, the commit chant cuts from (#1986)
+  local got
+  got=$("$release" cut-commit "$2" 2>"$tmp/out") || got=''
+  if [ "$got" = "$1" ]; then printf 'ok    cut-commit %s: %s\n' "$2" "${got:0:12}"
+  else bad "cut-commit $2: got '$got', wanted '$1': $(cat "$tmp/out")"; fi
+}
+# A green commit is its own; one that isn't, and isn't a bump, is too, for
+# chant's cut to refuse.
+cut "$one" v1.0.0
+cut "$three" v1.0.1
+cut '' v9.9.9
 
 exit $fail
