@@ -78,10 +78,28 @@ for d in "${downloads[@]}"; do
     arugula-desktop-linux-*) a=${d#arugula-desktop-linux-}; step="just desktop-linux ${a%%.*}" ;;
     arugula-desktop-macos-arm64.*) step="just desktop-macos aarch64" ;;
     arugula-desktop-macos-*) a=${d#arugula-desktop-macos-}; step="just desktop-macos ${a%%.*}" ;;
-    arugula-desktop-windows-*) step="scripts/release app-upload \"\\\$GITHUB_REF_NAME\" dist/$d\\*" ;;
+    # Built in the job itself; this is the step that hands it to publish.
+    arugula-desktop-windows-*)
+      grep -Eq "^ *path: dist/$d\\*\$" "$awf" || bad "$awf doesn't hand $d to its publish job (expected: path: dist/$d*)"
+      continue ;;
     *) bad "$d: no rule for how app-release.yml makes it; add one here"; continue ;;
   esac
   app_runs "$step" || bad "$awf doesn't make $d (expected: run: $step)"
+done
+
+# What chant publishes (#1986): release/daemon's forge target attaches a
+# tarball for each target, and release/app's targets every download.
+dcfg=release/daemon/chant.config.ts
+acfg=release/app/chant.config.ts
+for t in "${targets[@]}"; do
+  grep -q "\"$t\"" "$dcfg" || bad "$dcfg doesn't publish $t's tarball"
+done
+for d in "${downloads[@]}"; do
+  grep -q "\"$d\"" "$acfg" || bad "$acfg doesn't publish $d"
+done
+# And nothing that isn't made.
+for t in $(sed -n 's/^const targets = \[\(.*\)\];$/\1/p' "$dcfg" | tr -d '",'); do
+  printf '%s\n' "${targets[@]}" | grep -qx "$t" || bad "$dcfg publishes $t, which just dist doesn't make"
 done
 
 # scripts/release counts exactly these tarballs before it writes SHA256SUMS.

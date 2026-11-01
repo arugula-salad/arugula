@@ -1,8 +1,11 @@
 # A `v*` tag, the daemon's release: build Linux (x86_64, arm64, static) and
 # macOS (arm64, and x86_64 cross-compiled for Intel Macs) binaries, and a
-# zip of arugulad and arugula for Windows (install.ps1's), attach them
-# to the tag's release with SHA256SUMS, publish it as latest, bump the
-# Homebrew formula, send the editor extension to the marketplaces, build
+# zip of arugulad and arugula for Windows (install.ps1's), then publish
+# them through chant (#1986): `chant release cut` records release/daemon's
+# release of the tag, and `chant release publish` attaches them to the
+# tag's release with SHA256SUMS and publishes it as latest
+# (release/daemon/chant.config.ts). Then bump the Homebrew formula, send
+# the editor extension to the marketplaces, build
 # the hosted workspace's E2B templates (M177, one per size: M266), and
 # deploy the hosted control from the x86_64 static build (M133): its
 # platform first (M140), then its hub, only when something the hub is
@@ -69,9 +72,16 @@ jobs:
       - run: just dist
       # The editor extension, from the daemon that carries it (#529).
       - run: '"$CARGO_TARGET_DIR/x86_64-unknown-linux-musl/release/arugulad" _vsix dist'
-      - run: scripts/release upload "$GITHUB_REF_NAME" dist/*.tar.gz dist/*.vsix
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      # For the publish job, which publishes what the build jobs made.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-linux-x86_64
+          path: |
+            dist/*.tar.gz
+            dist/*.vsix
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 0
 
   # The arm64 tarball, cross-compiled with Zig: nothing deploys from it, so
   # it holds back only publish.
@@ -92,9 +102,13 @@ jobs:
       - run: scripts/release check-version "$GITHUB_REF_NAME"
       - run: just static aarch64
       - run: just dist
-      - run: scripts/release upload "$GITHUB_REF_NAME" dist/*.tar.gz
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-linux-aarch64
+          path: dist/*.tar.gz
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 0
 
   macos:
     runs-on: [self-hosted, macos-arm64]
@@ -106,9 +120,13 @@ jobs:
       - run: just build
       - run: just build-macos-x86_64
       - run: just dist
-      - run: scripts/release upload "$GITHUB_REF_NAME" dist/*.tar.gz
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-macos
+          path: dist/*.tar.gz
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 0
 
   # GitHub's runner: Jake has no Windows machine (M54, #217).
   windows:
@@ -141,23 +159,85 @@ jobs:
       # arugulad and arugula, with Microsoft's ConPTY: the zip
       # (install.ps1's, M59).
       - run: scripts/windows-dist "${GITHUB_REF_NAME#v}"
-      - run: scripts/release upload "$GITHUB_REF_NAME" dist/arugula-*-x86_64-pc-windows-msvc.zip
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-windows
+          path: dist/arugula-*-x86_64-pc-windows-msvc.zip
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 0
 
-  publish:
-    needs: [linux, linux-arm64, macos, windows]
-    runs-on: arugula-amd64
+  # The release chant publishes (#1986): `chant release cut`'s dry run,
+  # beside the builds, so a cut chant would refuse shows within a minute
+  # instead of after them. The commit is the one CI passed
+  # (`scripts/release cut-commit`: the tag's, or the one its bump is on).
+  # publish cuts it for real, just before it publishes. Only publish waits
+  # for this job.
+  cut:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      commit: ${{ steps.cut.outputs.commit }}
     steps:
       - uses: actions/checkout@v4
-      - uses: ./.github/actions/setup
         with:
-          rust: "false"
-          packages: gh
-      - run: scripts/release sums "$GITHUB_REF_NAME"
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: git fetch -q origin chant/lifecycle:chant/lifecycle
+      - id: cut
+        working-directory: release/daemon
+        run: |
+          sha=$(../../scripts/release cut-commit "$GITHUB_REF_NAME")
+          echo "commit=$sha" >> "$GITHUB_OUTPUT"
+          npx --yes @intentius/chant@0.124.63 release cut "$GITHUB_REF_NAME" --at "$sha"
+
+  # Publishes what the build jobs made, through chant
+  # (release/daemon/chant.config.ts): from a checkout of the cut's commit,
+  # as `chant release publish` asks, with the files in dist/release
+  # (gitignored). The draft step titles the release and gives it its notes
+  # first; the publish attaches the tarballs, the Windows zip, the
+  # extension, SHA256SUMS and chant's provenance statement to the draft and
+  # publishes it as latest. Run again, it resumes from chant's record and
+  # publishes nothing twice. The Homebrew formula stays a step of its own:
+  # chant's homebrew target pushes with a token, and the tap has an SSH
+  # deploy key (HOMEBREW_TAP_KEY).
+  publish:
+    needs: [cut, linux, linux-arm64, macos, windows]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.cut.outputs.commit }}
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: git fetch -q origin chant/lifecycle:chant/lifecycle
+      - run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: release-*
+          merge-multiple: true
+          path: dist/release
+      - run: scripts/release sums "$GITHUB_REF_NAME" dist/release
+      - run: scripts/release draft "$GITHUB_REF_NAME"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      - run: scripts/release publish "$GITHUB_REF_NAME"
+      # The cut records the release on chant/lifecycle and pushes it (a cut
+      # that's there already is left as it is); the publish reads it.
+      - working-directory: release/daemon
+        run: |
+          npx --yes @intentius/chant@0.124.63 release cut "$GITHUB_REF_NAME" --at "$(git rev-parse HEAD)" --yes
+          npx --yes @intentius/chant@0.124.63 release publish "$GITHUB_REF_NAME" --yes
+        env:
+          ARUGULA_RELEASE_TAG: ${{ github.ref_name }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - run: scripts/release check-latest
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - run: scripts/release homebrew "$GITHUB_REF_NAME"
@@ -292,6 +372,8 @@ jobs:
   # The editor extension as arugula.arugula-editor (#529), once the
   # release is out. A version that's already there is skipped, so most
   # releases publish nothing: bump the extension's package.json to ship it.
+  # Not through chant's marketplace targets yet (#1986): they read a token
+  # from VSCE_PAT and OVSX_PAT, and this job has none to give them.
   # No stored secrets, both through the workflow's OIDC token:
   # - Open VSX: a trusted publisher on arugula-editor (this repo,
   #   release.yml).

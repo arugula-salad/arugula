@@ -4,16 +4,20 @@
 # against its SHA256SUMS: `scripts/release sidecars`), which the app installs
 # on a machine with none. Then it builds the app: a .deb, an .rpm and an
 # AppImage for each Linux arch, a .dmg and a zipped app for each macOS arch, an
-# installer for Windows. `app-publish` writes SHA256SUMS and the updater's
-# latest.json, publishes the release (never as latest: releases/latest is
-# the daemon's), and copies it all to the rolling `app-latest` release, where
-# the site's download links and the updater's endpoint point.
+# installer for Windows. Then it publishes them through chant (#1986):
+# `chant release cut` records release/app's release of the tag, and `chant
+# release publish` (release/app/chant.config.ts) attaches them with
+# SHA256SUMS to the tag's release, published never as latest
+# (releases/latest is the daemon's), and replaces the rolling `app-latest`
+# release, where the site's download links and the updater's endpoint
+# point, with them and the updater's latest.json.
 #
 # Cut one only when crates/desktop changes: set its version in
 # crates/desktop/Cargo.toml, then `git tag -a app-vX.Y.Z`.
 #
 # Secrets the app uses when they're set, and skips (saying which) when not:
-# TAURI_SIGNING_PRIVATE_KEY and _PASSWORD (updater signatures),
+# TAURI_SIGNING_PRIVATE_KEY and _PASSWORD (updater signatures; the publish
+# needs them, since latest.json lists every platform's),
 # APPLE_CERTIFICATE, APPLE_CERTIFICATE_PASSWORD, APPLE_SIGNING_IDENTITY,
 # APPLE_ID, APPLE_PASSWORD, APPLE_TEAM_ID (Developer ID signing and
 # notarization, #177), APPLE_PROVISIONING_PROFILE (the Developer ID
@@ -58,9 +62,13 @@ jobs:
           ARUGULA_DESKTOP_BINARIES: ${{ runner.temp }}/sidecars
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-      - run: scripts/release app-upload "$GITHUB_REF_NAME" dist/arugula-desktop-*
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-app-linux-x86_64
+          path: dist/arugula-desktop-*
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 0
 
   # GitHub's arm runner, free for a public repo (#287): the same container
   # build, natively.
@@ -80,9 +88,13 @@ jobs:
           ARUGULA_DESKTOP_BINARIES: ${{ runner.temp }}/sidecars
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-      - run: scripts/release app-upload "$GITHUB_REF_NAME" dist/arugula-desktop-*
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-app-linux-aarch64
+          path: dist/arugula-desktop-*
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 0
 
   macos:
     runs-on: [self-hosted, macos-arm64]
@@ -113,9 +125,13 @@ jobs:
           APPLE_PROVISIONING_PROFILE: ${{ secrets.APPLE_PROVISIONING_PROFILE }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-      - run: scripts/release app-upload "$GITHUB_REF_NAME" dist/arugula-desktop-*
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-app-macos
+          path: dist/arugula-desktop-*
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 0
 
   # GitHub's runner: Jake has no Windows machine (M54, #217).
   windows:
@@ -163,22 +179,86 @@ jobs:
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-      - run: scripts/release app-upload "$GITHUB_REF_NAME" dist/arugula-desktop-windows-x86_64-setup.exe*
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-app-windows
+          path: dist/arugula-desktop-windows-x86_64-setup.exe*
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 0
 
-  publish:
-    needs: [linux, linux-arm64, macos, windows]
-    runs-on: arugula-amd64
+  # The release chant publishes (#1986): `chant release cut`'s dry run,
+  # beside the builds, so a cut chant would refuse shows within a minute
+  # instead of after them. The commit is the one CI passed
+  # (`scripts/release cut-commit`). chant's cut reads ci/green, every
+  # phase, not the app's lane: a commit with only ci/green-app is refused
+  # here, and the release stops before anything is published. publish cuts
+  # it for real, just before it publishes. Only publish waits for this job.
+  cut:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      commit: ${{ steps.cut.outputs.commit }}
     steps:
       - uses: actions/checkout@v4
-      - uses: ./.github/actions/setup
         with:
-          rust: "false"
-          packages: gh
-      - run: scripts/release app-publish "$GITHUB_REF_NAME"
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: git fetch -q origin chant/lifecycle:chant/lifecycle
+      - id: cut
+        working-directory: release/app
+        run: |
+          sha=$(../../scripts/release cut-commit "$GITHUB_REF_NAME")
+          echo "commit=$sha" >> "$GITHUB_OUTPUT"
+          npx --yes @intentius/chant@0.124.63 release cut "$GITHUB_REF_NAME" --at "$sha"
+
+  # Publishes what the build jobs made, through chant
+  # (release/app/chant.config.ts), from a checkout of the cut's commit with
+  # the files in dist/release (gitignored). The draft step titles the
+  # release and gives it its notes first. The publish attaches every
+  # download, the updater's bundles and signatures, SHA256SUMS and chant's
+  # provenance statement to the draft and publishes it, never as latest;
+  # then it replaces app-latest with a new release of the same files and
+  # latest.json, whose URLs point at this tag's release. Moving app-latest
+  # takes TAG_TOKEN: GITHUB_TOKEN gets 403 there (#526), as it does tagging
+  # commits for chant-ci-green.
+  publish:
+    needs: [cut, linux, linux-arm64, macos, windows]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.cut.outputs.commit }}
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: git fetch -q origin chant/lifecycle:chant/lifecycle
+      - run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: release-app-*
+          merge-multiple: true
+          path: dist/release
+      - run: scripts/release sums "$GITHUB_REF_NAME" dist/release
+      - run: scripts/release draft "$GITHUB_REF_NAME"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # Moving app-latest: GITHUB_TOKEN gets 403 there (#526), as it
-          # does tagging commits for chant-ci-green.
+      # The cut records the release on chant/lifecycle and pushes it (a cut
+      # that's there already is left as it is); the publish reads it.
+      - working-directory: release/app
+        run: |
+          npx --yes @intentius/chant@0.124.63 release cut "$GITHUB_REF_NAME" --at "$(git rev-parse HEAD)" --yes
+          npx --yes @intentius/chant@0.124.63 release publish "$GITHUB_REF_NAME" --yes
+        env:
+          ARUGULA_RELEASE_TAG: ${{ github.ref_name }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG_TOKEN: ${{ secrets.CI_GREEN_TOKEN }}
+      - run: scripts/release check-latest
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

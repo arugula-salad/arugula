@@ -371,7 +371,7 @@ daemon's update check read it.
    What's new panel shows them after the update, and the format is in
    `scripts/whats-new.mjs` (`just whats-new` checks them).
    `scripts/release bump` refuses notes without one (a dry run says so and
-   goes on), and `publish` leaves it out of the GitHub release.
+   goes on), and `scripts/release draft` leaves it out of the GitHub release.
 2. `just release` (a patch; `just release minor`, `just release major`)
    bumps the version on top of the newest commit on main that passed CI
    (below), copies the client fixtures to
@@ -395,11 +395,13 @@ daemon's update check read it.
    `.github/workflows/release.yml` builds the Linux tarballs in the home
    cloud (`arugula-amd64`, [CI](#ci)), the
    macOS ones on jake-mini (Apple silicon natively, Intel cross-compiled
-   with `just build-macos-x86_64`) and the Windows zip on GitHub's runner,
-   attaches them and `SHA256SUMS` to the GitHub release, publishes it as
-   latest, and bumps the formula in `arugula-salad/homebrew-tap`
-   (`scripts/release`; the tap's deploy key is the `HOMEBREW_TAP_KEY`
-   secret). Then it publishes the editor extension, attached as
+   with `just build-macos-x86_64`) and the Windows zip on GitHub's runner.
+   chant publishes them (#1986, [below](#publishing-through-chant)): it
+   attaches them, the editor extension and `SHA256SUMS` to the GitHub
+   release and publishes it as latest. Then the workflow bumps the formula
+   in `arugula-salad/homebrew-tap` (`scripts/release homebrew`; the tap's
+   deploy key is the `HOMEBREW_TAP_KEY` secret) and publishes the editor
+   extension, attached as
    `arugula-editor-*.vsix`, to Open VSX (a trusted publisher on the
    `arugula` namespace) and the Visual Studio Marketplace (an Entra app
    that trusts the `marketplace` environment, #934), both by the
@@ -434,6 +436,47 @@ daemon's update check read it.
 Instead of step 2, a release can run as a deploy, approved from an
 owner's phone: [control-ops.md](control-ops.md#releasing-arugula-as-a-deploy-m221).
 
+<a id="publishing-through-chant"></a>**Publishing through chant (#1986).**
+Each lane is a `kind: chant` member of `chant.workspace.json` whose
+`chant.config.ts` declares what its release publishes (`release.publish`):
+`release/daemon` (`daemon-release`) for `v*` tags and `release/app`
+(`app-release`) for `app-v*` tags. They're apart from #1983's `ops/`
+member, which releases control and the platform to production from
+`ci/green-server`: a member publishes every target it declares on each of
+its releases, and the three ship on different tags and lanes.
+
+The workflows build as before, and each build job hands its files to the
+`publish` job as an Actions artifact. A `cut` job beside the builds runs
+`chant release cut TAG --at SHA` in the member, which records the release
+on `chant/lifecycle`; SHA is `scripts/release cut-commit TAG`, the tag's
+commit when it has a `ci/green` tag, else the one its bump is on. The
+`publish` job checks out that commit (`chant release publish` publishes
+only from a clean checkout of the release's commit), puts the files in
+`dist/release/` (gitignored), writes `SHA256SUMS` (`scripts/release
+sums`), makes the draft release with its title and notes (`scripts/release
+draft`), and runs `chant release publish TAG --yes`. chant attaches the
+files and `release.intoto.json`, its provenance statement, to the draft
+and publishes it; the app's publish then swaps `app-latest`. Run again
+after a failure, it resumes from its record on `chant/lifecycle` and
+publishes nothing twice. A forge target's tag is fixed in its declaration,
+so the workflows name the release's own tag in `ARUGULA_RELEASE_TAG`, and
+the GitHub release stays `vX.Y.Z` or `app-vX.Y.Z`, where the downloads
+have always been; chant's own tag (`release/daemon-release/vX.Y.Z`) is
+made in the job's checkout and never pushed. The workflows pin chant
+0.124.63, the first with the Homebrew, marketplace and Tauri updater
+targets and the forge target's `latest`.
+
+Still the workflows' own steps: the Homebrew formula (chant's `homebrew`
+target pushes with a GitHub token, and the tap has an SSH deploy key) and
+the editor marketplaces (chant's `marketplace` targets read tokens from
+`VSCE_PAT` and `OVSX_PAT`; release.yml's `extension` job publishes with the
+workflow's OIDC token and stores no secret).
+
+chant's cut reads `ci/green` alone, for an app release too, and has no
+`ARUGULA_RELEASE_SKIP_GREEN`: an app tag on a commit with only
+`ci/green-app`, or any release with the variable set, is refused at the
+cut, before anything is published.
+
 **The app (`app-v*`)**, only when `crates/desktop` changes:
 
 1. Notes go in `docs/releases/app-X.Y.Z.md`, merged to main.
@@ -448,13 +491,14 @@ owner's phone: [control-ops.md](control-ops.md#releasing-arugula-as-a-deploy-m22
    and Arugula from the latest daemon release (checked against its
    `SHA256SUMS`) for the app to carry, builds and signs the apps (Linux in
    the home cloud, macOS on jake-mini, notarized with the Developer ID when its
-   secrets are set, Windows on GitHub's runner), and publishes the release
-   with its own `SHA256SUMS` and the updater's `latest.json`. It's never
-   marked latest.
-3. It copies the downloads, `SHA256SUMS` and `latest.json` to the rolling
-   `app-latest` release, whose tag follows the newest app's commit. The
-   site's download buttons and the updater's endpoint
-   (`tauri.conf.json`) point there, so they get the new app at once.
+   secrets are set, Windows on GitHub's runner), and chant publishes the
+   release with its own `SHA256SUMS` ([below](#publishing-through-chant)).
+   It's never marked latest.
+3. chant then replaces the rolling `app-latest` release with a new one
+   holding the same downloads, `SHA256SUMS` and the updater's
+   `latest.json`, whose URLs point at the `app-vX.Y.Z` release. The site's
+   download buttons and the updater's endpoint (`tauri.conf.json`) point
+   at `app-latest`, so they get the new app at once.
 4. Apps from before the split (0.23 and older) have no updater key, so they
    never check: their people install the new app once, by hand.
 
@@ -467,7 +511,7 @@ passed (`ci.green.require` and `ci.green.lanes` in chant.workspace.json;
 
 | Tag | Ships | Phases it needs | Read by |
 | --- | --- | --- | --- |
-| `ci/green/<sha>` | the daemon, the CLI, the web client it embeds, the editor extension | all eight | `just release`, `check-version` |
+| `ci/green/<sha>` | the daemon, the CLI, the web client it embeds, the editor extension | all eight | `just release`, `check-version`, `chant release cut` (both lanes) |
 | `ci/green-daemon/<sha>` | the same | the same as `ci/green` | nothing yet |
 | `ci/green-server/<sha>` | control, the platform, the hosted workspace templates | lint, build, test, e2e | `scripts/release last-green server` |
 | `ci/green-app/<sha>` | the desktop app | lint, build, e2e, claims, windows-desktop | `just release --app`, `check-app-version` |
@@ -550,13 +594,14 @@ nothing is pushed and you run it again. `just release COMMIT` releases an
 older green commit on main instead. `scripts/tests/release-bump.sh` (`just
 test-scripts`) runs it against a local repository.
 
-`scripts/release` (`check-version`, `sums`, `publish`, `homebrew` for the
-daemon; `check-app-version`, `sidecars`, `app-upload`, `app-publish` for the
-app) checks that `releases/latest` is still a daemon release after each
+`scripts/release` (`check-version` and `homebrew` for the daemon;
+`check-app-version` and `sidecars` for the app; `cut-commit`, `sums`,
+`draft` and `check-latest` around chant's publish) checks with
+`check-latest` that `releases/latest` is still a daemon release after each
 publish. `scripts/tests/release-targets.sh` (`just test-scripts`) fails if the
 daemon's workflow builds an app, or if the downloads the app's workflow
-makes, the ones `scripts/release` requires and the ones the site links
-drift apart.
+makes, the ones `scripts/release` requires, the ones the chant members
+publish and the ones the site links drift apart.
 
 <a id="ci"></a>CI's Linux jobs run in two places. check.yml's (the push checks)
 run in the home cloud (`runs-on: arugula-amd64`): Actions Runner
