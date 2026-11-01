@@ -597,6 +597,7 @@ pub fn grant(app: &App, item: &WorkItem) -> Result<(), Refused> {
         cap: "runs.start".into(),
         grant: g,
         revokes: item.revokes.clone(),
+        passkey_log: item.passkey_log.clone(),
     };
     crate::hosted::runs::allows(app, &start).map_err(|r| Refused(r.code, r.says.into()))
 }

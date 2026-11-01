@@ -3,21 +3,26 @@
 //! platform's start goes ahead, with every owner's device asleep.
 //!
 //! The platform sends the grant with each start (`runs.start`). The machine
-//! checks it with what it pinned at enrollment, not the platform's word
-//! ([`check`]): an owner of its project signed it (the team's roster and
-//! members' certificates it holds, or its account's chain), for its own
-//! project and the delegation it was enrolled under, that delegation isn't
-//! revoked, it covers what's asked, it hasn't expired, and no owner
-//! revoked it.
+//! checks it with what it pinned at enrollment and each refresh, not the
+//! platform's word ([`check`]): an owner of its project signed it, for its
+//! own project and the delegation it was enrolled under, that delegation
+//! isn't revoked, it covers what's asked, it hasn't expired, and no owner
+//! revoked it. A v2 grant (DK6, aru-126) is an owner's passkey assertion
+//! over its bytes, checked against that owner's passkey log as the machine
+//! pinned it from control (the platform's copy, carried with the start,
+//! only takes keys away); a v1, from before, an owner's browser's device
+//! signature (the team's roster and members' certificates it holds, or its
+//! account's chain), until it expires.
 //!
-//! Revokes are S37's: signed by an owner's device, relayed by the platform
-//! (`runs.revoke`, and with every start). Each takes back every grant of
-//! the project under its delegation made by its time. The machine checks a
-//! revoke's signature once, when it first hears it, and **keeps** the
-//! newest (`<state>/run-grant-revokes.json`): after that it counts without
-//! being checked again, so the platform can't bring a grant back by leaving
-//! the revoke out, or by dropping its signer's certificate from what it
-//! sends. A machine that never heard a revoke honours the grant until it
+//! Revokes are S37's: an owner's (a passkey's since DK6, a device's
+//! before), relayed by the platform (`runs.revoke`, and with every start).
+//! Each takes back every grant of the project under its delegation made by
+//! its time, v1 or v2. The machine checks a revoke's signature once, when
+//! it first hears it, and **keeps** the newest
+//! (`<state>/run-grant-revokes.json`): after that it counts without being
+//! checked again, so the platform can't bring a grant back by leaving the
+//! revoke out, or by dropping its signer's certificate or passkey from what
+//! it sends. A machine that never heard a revoke honours the grant until it
 //! expires.
 //!
 //! The kept file fails closed: once a revoke was kept (a marker beside it
@@ -44,7 +49,8 @@ use arugula_e2e::{
     cert::LegacyAppChildren,
     hosted::{Owner, Owners},
     now_ms,
-    project_grant::{self, GrantRefusal, GrantRevoke, ProjectGrant, Revokes, Running},
+    passkey::{Log, Origins},
+    project_grant::{self, GrantRefusal, GrantRevoke, ProjectGrant, Revokes, Running, Signers},
 };
 use tracing::{info, warn};
 
@@ -100,6 +106,28 @@ pub(crate) fn legacy_app_children(saved: &Saved) -> &LegacyAppChildren {
     saved.hosted.as_ref().and_then(|p| p.legacy_app_children.as_ref()).unwrap_or(NONE)
 }
 
+/// No passkey logs pinned.
+static NO_LOGS: std::collections::BTreeMap<String, Log> = std::collections::BTreeMap::new();
+/// No origins pinned: no passkey counts.
+static NO_ORIGINS: Origins = Origins::new();
+
+/// Who may sign for the machine's project and what it checks them by
+/// (DK6): `owners`, with the passkey logs and origins it pinned from
+/// control (as a deploy's box does, DK4: each log only ever extended, the
+/// origins only shrunk; none pinned, no passkey counts), and for a v1 the
+/// browsers the desktop app's old windows approved.
+pub fn signers<'a>(saved: &'a Saved, owners: &'a Owners<'a>) -> Signers<'a> {
+    let pin = saved.hosted.as_ref();
+    Signers {
+        pinned: arugula_e2e::deploy::Pinned {
+            owners,
+            passkey_logs: pin.map_or(&NO_LOGS, |p| &p.passkey_logs),
+            origins: pin.and_then(|p| p.passkey_origins.as_ref()).unwrap_or(&NO_ORIGINS),
+        },
+        children: legacy_app_children(saved),
+    }
+}
+
 /// Whether the platform may do `s.cap` on this machine under `s.grant` at
 /// `now`, with the revokes it sent (checked now) and the ones `kept` here
 /// (checked when they were kept).
@@ -113,8 +141,8 @@ pub fn check(saved: &Saved, s: &RunStart, kept: &[GrantRevoke], now: u64) -> Res
     }
     let owners = owners(saved).ok_or(GrantRefusal::Unsigned)?;
     let revokes = Revokes { delegation: &pin.revocations, sent: &s.revokes, kept };
-    let children = legacy_app_children(saved);
-    project_grant::check(&s.grant, &pin.delegation, revokes, &owners, children, &s.cap, now)?;
+    let signers = signers(saved, &owners);
+    project_grant::check(&s.grant, &pin.delegation, revokes, &signers, s.passkey_log.as_ref(), &s.cap, now)?;
     Ok(())
 }
 
@@ -131,17 +159,18 @@ fn read_kept(dir: &Path) -> anyhow::Result<Vec<GrantRevoke>> {
 
 /// Keep the revokes among `revokes` that are about this machine (its
 /// project and delegation) and that one of its project's owners signed,
-/// checked now: the newest one, as it covers what any older one did.
+/// checked at `now`: the newest one, as it covers what any older one did.
 /// Whether it kept one.
-fn keep(dir: &Path, saved: &Saved, revokes: &[GrantRevoke]) -> anyhow::Result<bool> {
+fn keep(dir: &Path, saved: &Saved, revokes: &[GrantRevoke], now: u64) -> anyhow::Result<bool> {
     let (Some(pin), Some(owners)) = (&saved.hosted, owners(saved)) else { return Ok(false) };
     let delegation = pin.delegation.id();
+    let signers = signers(saved, &owners);
     let Some(newest) = revokes
         .iter()
         .filter(|r| {
             r.project == pin.cert.project
                 && r.delegation == delegation
-                && r.signed_for(&pin.delegation.owner, &owners, legacy_app_children(saved))
+                && r.signed_for(&pin.delegation.owner, &signers, now)
         })
         .max_by_key(|r| r.at)
     else {
@@ -169,7 +198,8 @@ fn saved(app: &crate::server::App) -> Option<Saved> {
 pub fn allows(app: &crate::server::App, s: &RunStart) -> Result<(), Refused> {
     let Some(saved) = saved(app) else { return Err(NOT_HOSTED) };
     let dir = app.control.state_dir();
-    if let Err(e) = keep(dir, &saved, &s.revokes) {
+    let now = now_ms();
+    if let Err(e) = keep(dir, &saved, &s.revokes, now) {
         warn!(error = %format!("{e:#}"), "hosted: can't keep a standing grant's revoke");
     }
     let kept = match read_kept(dir) {
@@ -179,14 +209,14 @@ pub fn allows(app: &crate::server::App, s: &RunStart) -> Result<(), Refused> {
             return Err(UNREADABLE);
         }
     };
-    check(&saved, s, &kept, now_ms())
+    check(&saved, s, &kept, now)
 }
 
 /// Keep what's about this machine among `revokes` (they come with each
 /// pull, M212), checked as a relayed revoke is.
 pub fn keep_revokes(app: &crate::server::App, revokes: &[GrantRevoke]) {
     let Some(saved) = saved(app) else { return };
-    if let Err(e) = keep(app.control.state_dir(), &saved, revokes) {
+    if let Err(e) = keep(app.control.state_dir(), &saved, revokes, now_ms()) {
         warn!(error = %format!("{e:#}"), "hosted: can't keep a standing grant's revoke");
     }
 }
@@ -230,7 +260,8 @@ pub fn start(app: &crate::server::App, s: &RunStart) -> OpAnswer {
 pub fn revoke(app: &crate::server::App, r: &RunRevoke) -> OpAnswer {
     let Some(saved) = saved(app) else { return refused(NOT_HOSTED) };
     let stop = r.revoke.running == Running::Stop;
-    match keep(app.control.state_dir(), &saved, std::slice::from_ref(&r.revoke)) {
+    let now = now_ms();
+    match keep(app.control.state_dir(), &saved, std::slice::from_ref(&r.revoke), now) {
         Ok(true) => {
             info!(
                 delegation = r.revoke.delegation,
@@ -249,7 +280,7 @@ pub fn revoke(app: &crate::server::App, r: &RunRevoke) -> OpAnswer {
                 .hosted
                 .as_ref()
                 .zip(owners(&saved))
-                .is_some_and(|(p, o)| r.revoke.signed_for(&p.delegation.owner, &o, legacy_app_children(&saved)));
+                .is_some_and(|(p, o)| r.revoke.signed_for(&p.delegation.owner, &signers(&saved, &o), now));
             if signed { OpAnswer::Done { url: None } } else { refused(GrantRefusal::Unsigned.into()) }
         }
         Err(e) => OpAnswer::Failed { error: format!("{e:#}") },
@@ -317,7 +348,7 @@ pub(crate) mod tests {
     }
 
     fn grant(d: &Delegation, by: &DeviceKeys, made: u64) -> ProjectGrant {
-        let mut g = ProjectGrant::new(d, made, None);
+        let mut g = ProjectGrant::new(d, made, Some(made + 1_000_000));
         g.sign_with(by);
         g
     }
@@ -330,6 +361,7 @@ pub(crate) mod tests {
             cap: "runs.start".into(),
             grant: g.clone(),
             revokes: vec![],
+            passkey_log: None,
         }
     }
 
@@ -363,12 +395,12 @@ pub(crate) mod tests {
         // A revoke nobody in the project signed isn't kept, nor one for
         // another delegation.
         let spite = GrantRevoke::new(&g.project, &g.delegation, Running::Stop, 30, &DeviceKeys::generate());
-        assert!(!keep(&dir, &saved, &[spite]).unwrap());
+        assert!(!keep(&dir, &saved, &[spite], 30).unwrap());
         let elsewhere = GrantRevoke::new(&g.project, "another", Running::Stop, 30, &root);
-        assert!(!keep(&dir, &saved, &[elsewhere]).unwrap());
+        assert!(!keep(&dir, &saved, &[elsewhere], 30).unwrap());
         assert!(read_kept(&dir).unwrap().is_empty());
-        assert!(keep(&dir, &saved, std::slice::from_ref(&r)).unwrap());
-        assert!(!keep(&dir, &saved, std::slice::from_ref(&r)).unwrap(), "once");
+        assert!(keep(&dir, &saved, std::slice::from_ref(&r), 30).unwrap());
+        assert!(!keep(&dir, &saved, std::slice::from_ref(&r), 30).unwrap(), "once");
         // The platform leaves it out of the next start: still revoked.
         assert_eq!(check(&saved, &start(&g), &read_kept(&dir).unwrap(), 40).unwrap_err().code, "grant_revoked");
         // A grant made after it isn't.
@@ -376,8 +408,8 @@ pub(crate) mod tests {
         assert_eq!(check(&saved, &start(&g2), &read_kept(&dir).unwrap(), 60), Ok(()));
         // A newer revoke takes its place; an older one doesn't.
         let r2 = GrantRevoke::new(&g.project, &g.delegation, Running::Finish, 55, &root);
-        assert!(keep(&dir, &saved, &[r.clone(), r2.clone()]).unwrap());
-        assert!(!keep(&dir, &saved, std::slice::from_ref(&r)).unwrap());
+        assert!(keep(&dir, &saved, &[r.clone(), r2.clone()], 30).unwrap());
+        assert!(!keep(&dir, &saved, std::slice::from_ref(&r), 30).unwrap());
         assert_eq!(read_kept(&dir).unwrap(), [r2]);
         assert_eq!(check(&saved, &start(&g2), &read_kept(&dir).unwrap(), 60).unwrap_err().code, "grant_revoked");
     }
@@ -390,7 +422,7 @@ pub(crate) mod tests {
         let dir = super::super::scratch("run-grant-refresh");
         let g = grant(&d, &root, 10);
         let r = GrantRevoke::new(&g.project, &g.delegation, Running::Finish, 30, &phone);
-        assert!(keep(&dir, &saved, std::slice::from_ref(&r)).unwrap());
+        assert!(keep(&dir, &saved, std::slice::from_ref(&r), 30).unwrap());
         let mut refreshed = saved.clone();
         refreshed.certs.retain(|c| c.device != phone.id());
         // Sent again with the start, it no longer checks out; kept, it counts.
@@ -406,7 +438,7 @@ pub(crate) mod tests {
         assert!(read_kept(&dir).unwrap().is_empty(), "never had one");
         let g = grant(&d, &root, 10);
         let r = GrantRevoke::new(&g.project, &g.delegation, Running::Finish, 30, &root);
-        assert!(keep(&dir, &saved, &[r]).unwrap());
+        assert!(keep(&dir, &saved, &[r], 30).unwrap());
         std::fs::write(dir.join(FILE), "not json").unwrap();
         assert!(read_kept(&dir).is_err(), "corrupt");
         std::fs::remove_file(dir.join(FILE)).unwrap();
@@ -445,5 +477,80 @@ pub(crate) mod tests {
         let g = grant(&d, &root, 10);
         saved.hosted.as_mut().unwrap().revocations.push(DelegationRevoke::new(&d, 30, &root));
         assert_eq!(check(&saved, &start(&g), &[], 40).unwrap_err().code, "delegation_revoked");
+    }
+
+    /// DK6: a v2 grant counts by the passkey log the machine pinned from
+    /// control (none pinned: refused), the v1 beside it still counts, and a
+    /// passkey revoke heard once is kept: it takes back both, and holds
+    /// after its passkey is removed.
+    #[test]
+    fn a_passkey_grant_and_its_revoke() {
+        use arugula_e2e::passkey::{Assertion, Change, Draft, EDDSA, NO_AAGUID, origins_of_sites};
+        use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD as B64};
+        use sha2::{Digest as _, Sha256};
+        let (mut saved, d, root, _) = machine();
+        // A passkey here is an Ed25519 key like a device's.
+        let pk = DeviceKeys::generate();
+        let sign = |challenge: &str| {
+            let cd = serde_json::json!({ "type": "webauthn.get", "challenge": challenge, "origin": "https://c.test" })
+                .to_string();
+            let mut data = Sha256::digest(b"c.test").to_vec();
+            data.extend_from_slice(&[0x05, 0, 0, 0, 0]);
+            let mut msg = data.clone();
+            msg.extend_from_slice(&Sha256::digest(cd.as_bytes()));
+            Assertion {
+                id: "pk".into(),
+                client_data_json: B64.encode(cd.as_bytes()),
+                authenticator_data: B64.encode(&data),
+                signature: B64.encode(pk.signature(&msg)),
+            }
+        };
+        let mut g = ProjectGrant::v2(&d, "acct1", 10, 1_000);
+        g.passkey = Some(sign(&g.passkey_challenge()));
+        assert_eq!(check(&saved, &start(&g), &[], 20).unwrap_err().code, "grant_passkey_log", "none pinned");
+        let added = Draft {
+            account: "acct1".into(),
+            event: Change::Added,
+            credential: "pk".into(),
+            rp: "c.test".into(),
+            alg: EDDSA,
+            key: pk.sign_public().to_vec(),
+            aaguid: NO_AAGUID.into(),
+            at: 1,
+            by: "signup".into(),
+        }
+        .after(None);
+        let log = Log { account: "acct1".into(), events: vec![added], began: None };
+        let pin = saved.hosted.as_mut().unwrap();
+        pin.passkey_logs = [("acct1".to_owned(), log.clone())].into();
+        pin.passkey_origins = Some(origins_of_sites(["https://c.test"]));
+        let v1 = grant(&d, &root, 10);
+        assert_eq!(check(&saved, &start(&g), &[], 20), Ok(()));
+        assert_eq!(check(&saved, &start(&v1), &[], 20), Ok(()));
+        let mut r = GrantRevoke::v3(&g.project, &g.delegation, Running::Finish, 30, "acct1");
+        r.passkey = Some(sign(&r.passkey_challenge()));
+        let dir = super::super::scratch("run-grant-passkey");
+        let forged = GrantRevoke { passkey: Some(sign("other")), ..r.clone() };
+        assert!(!keep(&dir, &saved, &[forged], 30).unwrap());
+        assert!(keep(&dir, &saved, std::slice::from_ref(&r), 30).unwrap());
+        for g in [&g, &v1] {
+            assert_eq!(check(&saved, &start(g), &read_kept(&dir).unwrap(), 40).unwrap_err().code, "grant_revoked");
+        }
+        // The passkey removed since: the v1 is still revoked by what was kept.
+        let mut gone = log.clone();
+        let e = gone.events[0].removal(35, "reset").placed_after(gone.events.last());
+        gone.events.push(e);
+        saved.hosted.as_mut().unwrap().passkey_logs = [("acct1".to_owned(), gone)].into();
+        assert_eq!(check(&saved, &start(&v1), &read_kept(&dir).unwrap(), 40).unwrap_err().code, "grant_revoked");
+        // A paused box that pulls the revoke only now, after its passkey
+        // was removed, still keeps it: it's checked at its own time (30).
+        let paused = super::super::scratch("run-grant-passkey-paused");
+        assert!(keep(&paused, &saved, std::slice::from_ref(&r), 40).unwrap());
+        assert_eq!(check(&saved, &start(&v1), &read_kept(&paused).unwrap(), 40).unwrap_err().code, "grant_revoked");
+        // One dated after the removal isn't.
+        let mut late = GrantRevoke::v3(&g.project, &g.delegation, Running::Finish, 36, "acct1");
+        late.passkey = Some(sign(&late.passkey_challenge()));
+        assert!(!late.signed_for(&d.owner, &signers(&saved, &owners(&saved).unwrap()), 40));
+        assert_eq!(check(&saved, &start(&g), &[], 40).unwrap_err().code, "grant_passkey", "its passkey removed");
     }
 }

@@ -266,7 +266,7 @@ pub enum DaemonOp {
     /// Start under the project's standing grant, on a hosted machine
     /// (M211; [`crate::runs`]).
     #[serde(rename = "runs.start")]
-    RunStart(crate::runs::RunStart),
+    RunStart(Box<crate::runs::RunStart>),
     /// The project's standing grant was revoked (M211).
     #[serde(rename = "runs.revoke")]
     RunRevoke(crate::runs::RunRevoke),

@@ -222,10 +222,12 @@ pub struct HostedPin {
     /// then no app window counts here.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub legacy_app_children: Option<arugula_e2e::cert::LegacyAppChildren>,
-    /// A deploy's box (DK4): the passkey logs of its project's people, by
-    /// account, as control sent them, each only ever extended by a refresh
-    /// (`arugula_e2e::passkey::extends`): what a deploy's approval is checked
-    /// against (`arugula_e2e::deploy::check_apply`).
+    /// The passkey logs of its project's people, by account, as control
+    /// sent them, each only ever extended by a refresh
+    /// (`arugula_e2e::passkey::extends`): what a deploy's approval (DK4,
+    /// `arugula_e2e::deploy::check_apply`) and the project's standing grant
+    /// for runs and its revokes (DK6, `arugula_e2e::project_grant::check`)
+    /// are checked against. Before DK6 only a deploy's box got them.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub passkey_logs: BTreeMap<String, arugula_e2e::passkey::Log>,
     /// With them: which origins may use each RP's passkeys, the first set

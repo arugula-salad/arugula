@@ -1,5 +1,5 @@
 //! The standing project grant (M211, "One standing grant per project starts
-//! runs", aru-099): an owner's device signs, once per project, that the
+//! runs", aru-099): a project owner signs, once per project, that the
 //! platform may start and instruct runs on the project's hosted workspaces
 //! (`arugula_e2e::project_grant`). The platform keeps it and relays it; it
 //! can't make or widen one, and hosted `arugulad` checks each one it's
@@ -8,25 +8,31 @@
 //! | Route | Who |
 //! |---|---|
 //! | `GET /api/projects/{project}/runs/grant` | members |
-//! | `POST /api/projects/{project}/runs/grant` (an owner's browser's signed grant) | owners |
-//! | `POST /api/projects/{project}/runs/grant/revoke` (any owner's browser's signed revoke) | owners |
+//! | `POST /api/projects/{project}/runs/grant` (an owner's passkey-signed grant, v2) | owners |
+//! | `POST /api/projects/{project}/runs/grant/revoke` (any owner's passkey-signed revoke, v3) | owners |
 //! | `POST /api/projects/{project}/runs/start` | owners and editors |
 //!
-//! - **What the platform checks** when a grant arrives: it's well formed,
-//!   for this project and its owner, freshly made, expires within
-//!   [`MAX_DAYS`], names the project's live delegation (the hub's word,
-//!   `HubPort::live_delegation`), wasn't revoked before it got here, and
-//!   the project has no live one under that delegation (revoke it first).
-//!   One that expired, or names a delegation that isn't live any more, is
-//!   superseded. It asks the hub whether a browser of one of the project's
-//!   owners signed it, all the way back to that owner's root
-//!   (`HubPort::owner_browser_signed`), and refuses one a CLI or the
-//!   desktop app signed; it holds no device keys itself (aru-079), and the
-//!   machines check again: they're what's trusted here.
+//! - **Signed with a passkey** (DK6, #387, aru-126): a grant is v2 and a
+//!   revoke v3, each one user-verified passkey assertion over its bytes,
+//!   from a passkey in the poster's published passkey log (DK3), from one
+//!   of control's sites or the platform page (`Config::passkey_origins`),
+//!   checked here as a deploy's approval is (`arugula_e2e::passkey::verify`,
+//!   at the platform's clock). No device signs either, and which device the
+//!   person used plays no part. A v1 grant or a device's revoke, from a
+//!   page loaded before DK6, is refused ([`OLD_GRANT`]: reload); v1 grants
+//!   already kept still go to the machines until they expire.
+//! - **What the platform checks** when a grant arrives: it's a v2, well
+//!   formed, for this project and its owner, by the poster (an owner now),
+//!   freshly made, expires within [`MAX_DAYS`], its passkey checks out,
+//!   names the project's live delegation (the hub's word,
+//!   `HubPort::live_delegation`), and wasn't revoked before it got here. It
+//!   takes the place of the project's live grant: renewing is signing a new
+//!   one, with one passkey prompt. It holds no passkey or device key itself
+//!   (aru-079), and the machines check again: they're what's trusted here.
 //! - **Offered** ([`GrantView::offer`]) once the project has a hosted
 //!   workspace and no live grant, or one under an old delegation; renewing
-//!   is offered when it expires within [`RENEW_DAYS`]. The shell (control's
-//!   page, the phone) signs it, where the device keys are.
+//!   is offered when it expires within [`RENEW_DAYS`]. Control's page (here
+//!   or on the phone) signs it, where the account's passkeys are.
 //! - **A revoke** takes back every grant of the project under its
 //!   delegation made by its time. It stops new starts here at once, and
 //!   goes to every hosted machine of the project (`runs.revoke`), which
@@ -35,13 +41,14 @@
 //!   grant until it expires. `running: stop` asks for runs going to stop
 //!   as well (M212).
 //! - **A start** (`runs.start`) sends the live grant and the project's
-//!   revokes to the workspace's machine, which answers. It starts
-//!   nothing: runs start with `POST /api/projects/{project}/runs` (M214),
-//!   and the machine pulls them, each checked the same way (M212).
+//!   revokes to the workspace's machine, with a v2's granter's passkey log
+//!   as the hub publishes it (the machine takes only its removals), and the
+//!   machine answers. It starts nothing: runs start with `POST
+//!   /api/projects/{project}/runs` (M214), and the machine pulls them, each
+//!   checked the same way (M212).
 //!
-//! No agent signs or revokes a grant: these take a person's browser or
-//! phone, never a CLI's key (an agent on its machine can read it) or a
-//! machine's `cloud.drive`.
+//! No agent signs or revokes a grant: these take a person's passkey, which
+//! no agent holds, never a CLI's key or a machine's `cloud.drive`.
 
 use std::sync::Arc;
 
@@ -52,7 +59,8 @@ use arugula_control_wire::{
 };
 use arugula_e2e::{
     now_ms,
-    project_grant::{CAPS, GrantRefusal, GrantRevoke, ProjectGrant, Running},
+    passkey::Assertion,
+    project_grant::{CAPS, GrantRefusal, GrantRevoke, ProjectGrant, REVOKE_PASSKEY, Running, V2},
     team::TeamRole,
 };
 use axum::{
@@ -215,14 +223,19 @@ pub async fn sign(
     let project = owner_only(&app, &account, &project).await?;
     let g = b.grant;
     let now = now_ms();
-    if !g.well_formed() || g.sig.is_empty() {
+    if g.v != V2 {
+        return Err(old_format());
+    }
+    if !g.well_formed() {
         return Err(err(StatusCode::BAD_REQUEST, "that isn't a well-formed standing grant"));
     }
     let owner = owner_of(&app, &project)?;
     if g.project != project || g.owner != owner {
         return Err(err(StatusCode::BAD_REQUEST, "that grant is for another project"));
     }
-    browser_signed(&app, &owner, &g.by, &g.body(), &g.sig).await?;
+    if g.account != account {
+        return Err(err(StatusCode::BAD_REQUEST, "that grant is another account's"));
+    }
     if g.caps.len() != CAPS.len() {
         return Err(err(StatusCode::BAD_REQUEST, "a project's standing grant gives runs.start and runs.instruct"));
     }
@@ -239,6 +252,7 @@ pub async fn sign(
             ));
         }
     }
+    passkey_signed(&app, &account, &g.passkey_challenge(), g.passkey.as_ref(), now).await?;
     let live = app.hub.live_delegation(&project, &owner).await.map_err(|e| {
         err(StatusCode::SERVICE_UNAVAILABLE, &format!("can't ask control for the project's delegation: {e:#}"))
     })?;
@@ -252,10 +266,7 @@ pub async fn sign(
     match app.db.add_run_grant(&g, &account, now)? {
         Added::Kept => {}
         Added::LiveAlready => {
-            return Err(err(
-                StatusCode::CONFLICT,
-                "this project has a standing grant: revoke it before signing another",
-            ));
+            return Err(err(StatusCode::CONFLICT, "another grant for this project came in at the same moment"));
         }
         Added::Revoked => {
             return Err(err(
@@ -265,7 +276,7 @@ pub async fn sign(
         }
         Added::Seen => return Err(err(StatusCode::CONFLICT, "that grant is here already")),
     }
-    info!(%account, %project, grant = g.id, by = g.by, "kept a project's standing grant");
+    info!(%account, %project, grant = g.id, "kept a project's standing grant, signed with a passkey");
     app.analytics.capture(&account, "run grant signed", json!({ "days": g.expires.map(|e| (e - g.made) / DAY_MS) }));
     let kept = app.db.run_grant(&project, &g.id)?.ok_or_else(|| err(StatusCode::NOT_FOUND, "no such grant"))?;
     Ok((StatusCode::CREATED, Json(kept.into())))
@@ -279,14 +290,22 @@ pub async fn revoke(
 ) -> Result<Json<serde_json::Value>, ApiError> {
     let project = owner_only(&app, &account, &project).await?;
     let r = b.revoke;
-    if r.project != project || r.sig.is_empty() || GrantRevoke::parse(&r.body(), &r.sig).as_ref() != Some(&r) {
+    if r.v != REVOKE_PASSKEY {
+        return Err(old_format());
+    }
+    let bytes_only = GrantRevoke { passkey: None, ..r.clone() };
+    if r.project != project || !r.well_formed() || GrantRevoke::parse(&r.body(), "") != Some(bytes_only) {
         return Err(err(StatusCode::BAD_REQUEST, "that isn't a revoke of this project's grants"));
     }
-    if r.at.saturating_sub(now_ms()) > SKEW_MS {
+    if r.account != account {
+        return Err(err(StatusCode::BAD_REQUEST, "that revoke is another account's"));
+    }
+    let now = now_ms();
+    if r.at.saturating_sub(now) > SKEW_MS {
         return Err(err(StatusCode::BAD_REQUEST, "that revoke's time is too far from control's clock"));
     }
-    browser_signed(&app, &owner_of(&app, &project)?, &r.by, &r.body(), &r.sig).await?;
-    let n = app.db.revoke_run_grants(&r, now_ms())?;
+    passkey_signed(&app, &account, &r.passkey_challenge(), r.passkey.as_ref(), now).await?;
+    let n = app.db.revoke_run_grants(&r, now)?;
     if n == 0 {
         return Err(err(StatusCode::CONFLICT, "that revoke covers no grant here that isn't revoked already"));
     }
@@ -301,24 +320,53 @@ pub async fn revoke(
     Ok(Json(json!({ "revoked": n, "machines": machines.len(), "told": told })))
 }
 
-/// The reason code when a grant or a revoke isn't a browser owner's.
-pub const NEEDS_BROWSER: &str = "needs_browser";
+/// Why a grant or a revoke was refused: it's in a format the platform no
+/// longer takes (a v1 grant or a device's revoke), from a page loaded
+/// before DK6.
+pub const OLD_GRANT: &str = "old_grant";
 
-/// `sig` over `body` is a browser's (one all the way back) of one of the
-/// project's owners, as the hub holds them: a CLI's or the desktop app's
-/// key is refused, as every hosted machine refuses it.
-async fn browser_signed(app: &Platform, owner: &str, by: &str, body: &str, sig: &str) -> Result<(), ApiError> {
-    let ok = app.hub.owner_browser_signed(owner, by, body, sig).await.map_err(|e| {
-        err(StatusCode::SERVICE_UNAVAILABLE, &format!("can't ask control about the signing device: {e:#}"))
-    })?;
-    if !ok {
-        return Err(refusal(
-            StatusCode::FORBIDDEN,
-            NEEDS_BROWSER,
-            "sign the standing grant (and revoke it) from a browser or a phone of one of the project's owners: a CLI's or the desktop app's key may be a program's",
-        ));
+fn old_format() -> ApiError {
+    refusal(
+        StatusCode::BAD_REQUEST,
+        OLD_GRANT,
+        "standing grants are signed (and revoked) with a passkey now: reload the page and do it again",
+    )
+}
+
+/// `assertion` is `account`'s passkey over `challenge` (a v2 grant's or a
+/// v3 revoke's bytes, hashed), user verified, checked against the
+/// account's published passkey log at the platform's `now` (never a time
+/// the grant says), from one of control's sites or the platform page: the
+/// check a deploy's approval gets (`crate::approvals::verify`, DK4).
+/// Refused as [`crate::approvals::PASSKEY`] when it doesn't hold.
+async fn passkey_signed(
+    app: &Platform,
+    account: &str,
+    challenge: &str,
+    assertion: Option<&Assertion>,
+    now: u64,
+) -> Result<(), ApiError> {
+    let no = |why: &str| refusal(StatusCode::FORBIDDEN, crate::approvals::PASSKEY, why);
+    let Some(a) = assertion else {
+        return Err(no("a standing grant (and its revoke) is confirmed with a passkey: confirm it with one"));
+    };
+    let log = app.hub.passkey_log(account).await?;
+    if log.events.is_empty() {
+        return Err(no("your account has no passkey: add one, then allow runs with it"));
     }
-    Ok(())
+    arugula_e2e::passkey::verify(&log, account, a, challenge, now, &app.cfg.passkey_origins())
+        .map(|_| ())
+        .map_err(|r| no(&format!("the passkey didn't confirm it: {r}")))
+}
+
+/// The passkey log of a v2 grant's granter, as the hub publishes it, for
+/// the machine (it takes only its removals). `None` for a v1, or when the
+/// hub doesn't answer: the machine goes by what it pinned.
+pub async fn granter_log(app: &Platform, g: &ProjectGrant) -> Option<arugula_e2e::passkey::Log> {
+    if g.v != V2 {
+        return None;
+    }
+    app.hub.passkey_log(&g.account).await.ok()
 }
 
 /// The refusal codes a machine answers, as `&'static str` for the reply.
@@ -350,7 +398,7 @@ pub async fn start(
         return Err(refusal(
             StatusCode::CONFLICT,
             "no_grant",
-            "this project has no live standing grant for runs (none, revoked or expired): an owner signs one from a device",
+            "this project has no live standing grant for runs (none, revoked or expired): an owner allows runs with a passkey",
         ));
     };
     let w = app
@@ -360,14 +408,15 @@ pub async fn start(
     let Some(machine) = w.machine.clone() else {
         return Err(err(StatusCode::CONFLICT, "that cloud workspace's box hasn't enrolled yet"));
     };
-    let op = DaemonOp::RunStart(RunStart {
+    let op = DaemonOp::RunStart(Box::new(RunStart {
         project: project.clone(),
         workspace: w.id.clone(),
         run: None,
         cap: cap.clone(),
         grant: g.grant.clone(),
         revokes: app.db.run_grant_revokes(&project)?,
-    });
+        passkey_log: granter_log(&app, &g.grant).await,
+    }));
     let answer = app.hub.daemon_op(&machine, &op).await.map_err(|e| err(StatusCode::BAD_GATEWAY, &format!("{e:#}")))?;
     match answer {
         OpAnswer::Done { .. } => {

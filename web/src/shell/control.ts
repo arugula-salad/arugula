@@ -30,7 +30,7 @@ import {
 } from "./e2e/keys.ts";
 import { newKeyPair } from "./e2e/noise.ts";
 import { acceptHosted, signDelegation, signRevoke, type Delegation, type DelegationRevoke, type HostedProof } from "./e2e/hosted.ts";
-import { expiresIn, signGrant, signGrantRevoke, type GrantRevoke, type ProjectGrant } from "./e2e/run-grant.ts";
+import { expiresIn, grantBody, grantRevokeBody, newGrant, newGrantRevoke, passkeyChallenge, type GrantRevoke, type PasskeyAssertion, type ProjectGrant } from "./e2e/run-grant.ts";
 import type { E2ETarget } from "./client";
 import { desktopApp } from "../shared/desktop";
 import { platformFetch, refusalOf } from "../shared/maintenance";
@@ -630,6 +630,31 @@ export async function agreeWith(o: PasskeyToConfirm["options"]) {
     authenticatorData: b64u(a.authenticatorData),
     signature: b64u(a.signature),
   };
+}
+
+/** One of the account's passkeys, the person verified, over `challenge`
+ * (SHA-256 of a platform action's bytes, aru-126: the standing grant for
+ * runs and its revoke, DK6): its assertion, which is the action's
+ * signature. Only the account's own passkeys are offered: a password
+ * manager may keep others for this site. Call it from a click. */
+export async function passkeyOver(challenge: Uint8Array<ArrayBuffer>): Promise<PasskeyAssertion> {
+  const mine = await api<{ passkeys: { id: string }[] }>("/api/me/passkeys").then(
+    (r) => r.passkeys.map((p) => ({ type: "public-key" as const, id: unb64u(p.id) })),
+    () => [],
+  );
+  const got = (await navigator.credentials.get({
+    publicKey: {
+      challenge,
+      ...(mine.length ? { allowCredentials: mine } : {}),
+      // Control's passkeys are made for its page's host (no port).
+      rpId: location.hostname,
+      userVerification: "required",
+      timeout: 5 * 60 * 1000,
+    },
+  })) as PublicKeyCredential | null;
+  if (!got) throw new Error("no passkey chosen");
+  const a = got.response as AuthenticatorAssertionResponse;
+  return { id: b64u(got.rawId), clientDataJSON: b64u(a.clientDataJSON), authenticatorData: b64u(a.authenticatorData), signature: b64u(a.signature) };
 }
 
 /** What another of the account's passkeys signs to remove one (DK10,
@@ -1880,33 +1905,25 @@ export class ControlSession {
   }
 
   /** As an owner, let the platform start and instruct runs on every
-   * hosted workspace of `d`'s project for `days`, signed by this device.
-   * `after`: a revoke this replaces, which it must be made after. */
-  async signRunGrant(d: Delegation, days: number, after?: GrantRevoke): Promise<void> {
-    const made = Math.max(Date.now(), (after?.at ?? 0) + 1);
-    const grant = await signGrant(d, this.keys, expiresIn(days, made), undefined, made);
+   * hosted workspace of `d`'s project for `days`, confirmed with one of
+   * this account's passkeys over the grant's bytes (v2, DK6): no device
+   * key signs it. It takes the place of the project's grant, if it has one
+   * (renewing). Call it from a click. */
+  async signRunGrant(d: Delegation, days: number): Promise<void> {
+    const made = Date.now();
+    const g = await newGrant(d, this.account, expiresIn(days, made), undefined, made);
+    const grant = { ...g, passkey: await passkeyOver(await passkeyChallenge(grantBody(g))) };
     await api(`/api/projects/${encodeURIComponent(d.project)}/runs/grant`, { grant }, platformFetch);
   }
 
-  /** As an owner, take back every grant of `project` under each of
-   * `delegations` made by now (the live one, as the hub says, and the one
-   * the platform's grant names): no new runs; `stop` stops the ones going
-   * too. A revoke names no grant, so the platform can't point it
-   * elsewhere. The revokes signed, for a renewal. */
-  async revokeRunGrants(project: string, delegations: string[], stop: boolean): Promise<GrantRevoke[]> {
-    const out: GrantRevoke[] = [];
-    const at = Date.now();
-    for (const d of [...new Set(delegations)]) {
-      const revoke = await signGrantRevoke(project, d, stop ? "stop" : "finish", this.keys, at);
-      try {
-        await api(`/api/projects/${encodeURIComponent(project)}/runs/grant/revoke`, { revoke }, platformFetch);
-        out.push(revoke);
-      } catch (e) {
-        // It covered no grant under that delegation: nothing to take back.
-        if (!(e instanceof HttpError && e.status === 409)) throw e;
-      }
-    }
-    return out;
+  /** As an owner, take back every grant of `project` under `delegation`
+   * made by now, v1 or v2, confirmed with a passkey (v3, DK6): no new runs;
+   * `stop` stops the ones going too. A revoke names no grant, so the
+   * platform can't point it elsewhere. Call it from a click. */
+  async revokeRunGrants(project: string, delegation: string, stop: boolean): Promise<void> {
+    const r = newGrantRevoke(project, delegation, stop ? "stop" : "finish", this.account);
+    const revoke = { ...r, passkey: await passkeyOver(await passkeyChallenge(grantRevokeBody(r))) };
+    await api(`/api/projects/${encodeURIComponent(project)}/runs/grant/revoke`, { revoke }, platformFetch);
   }
 
   /** The teams this browser pinned and checked, for a machine of this

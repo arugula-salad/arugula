@@ -4051,6 +4051,31 @@ platform would do itself, and only appends to a run's or a deploy's log:
   running, and billing. Use `--delete-box`.
 - Run `stuck` from a build other than the one the platform runs. It
   refuses a database at other migrations.
+- Write a `run_grants` row, or change one's bytes, expiry or signature.
+  Only a project owner allows runs, with their passkey (DK6): a row you
+  write is refused by every box.
+
+**Standing grants for runs, v1 and v2 (DK6, #387).** Since DK6 an owner
+allows runs with a passkey (`arugula project grant v2`; its revoke
+`arugula project grant revoke v3`), and the platform takes no other kind.
+Grants a device signed before (`arugula project grant v1`) keep starting
+runs until they expire, and their boxes keep checking them as they did, by
+the device's chain. To see which are still live, and when the last one
+goes (DK8, #389, drops their checks then), read-only on the platform's
+database:
+
+```sql
+SELECT id, project_id, expires_at FROM run_grants
+WHERE body LIKE 'arugula project grant v1%' AND revoked_at IS NULL AND superseded_at IS NULL
+ORDER BY expires_at DESC;
+```
+
+A box's refusal says which check failed (`grant_passkey`,
+`grant_passkey_log`, `grant_not_an_owner`, as well as the ones from
+before). A box pins its people's passkey logs from control at enrollment
+and every refresh (a minute), so a passkey added in the last minute counts
+on it after its next refresh; a v2 whose passkey was removed since is
+refused at once, as the log the platform sends with each start says so.
 
 ### Public previews
 

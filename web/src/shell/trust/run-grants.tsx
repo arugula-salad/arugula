@@ -1,10 +1,12 @@
 // Runs on hosted workspaces (M211), under Hosted machines in Devices and
 // machines: for each project this account owns that has a delegation, its
-// standing grant ("One standing grant per project starts runs"). Allow
-// runs signs it with this device (here or on the phone) for a number of
-// days; Renew signs a revoke and a new one; Revoke signs a revoke of every
-// grant the project has under its delegation, and can stop the runs going
-// too. The platform keeps them; the hosted machines check them.
+// standing grant ("One standing grant per project starts runs"). Since DK6
+// (#387, aru-126) each is confirmed with one of the account's passkeys over
+// its bytes, not signed by this device: Allow runs makes a grant for a
+// number of days; Renew makes a new one, which takes the old one's place
+// (one passkey prompt); Revoke takes back every grant the project has under
+// its delegation, and can stop the runs going too. The platform keeps them;
+// the hosted machines check them against the account's passkey log.
 
 import { useEffect, useState } from "preact/hooks";
 import { Time } from "../../shared/ui/time";
@@ -46,10 +48,11 @@ export function RunGrants({ s }: { s: ControlSession }) {
   };
   useEffect(() => void load().catch((e: Error) => setErr(e.message)), []);
   if (!rows?.length) return err ? <p class="control-error">{err}</p> : null;
-  // Only a browser or a phone (one all the way back to the account's root)
-  // signs or revokes a standing grant: not the desktop app, whose keys may
-  // be a program's. Every hosted workspace refuses the rest too.
-  const mine = s.canApprove("browser");
+  // A passkey of this account's confirms a grant or a revoke: an account
+  // with none is told how to add one; a window with no WebAuthn (the Linux
+  // app's) sends you to a browser.
+  const webauthn = typeof PublicKeyCredential !== "undefined";
+  const mine = webauthn && s.passkeys > 0;
   const act = (id: string, f: () => Promise<unknown>) => async () => {
     setBusy(id);
     setErr("");
@@ -61,9 +64,6 @@ export function RunGrants({ s }: { s: ControlSession }) {
     }
     setBusy("");
   };
-  // The live delegation as control says, and the one the platform's grant
-  // names: a revoke covers the project's grants under each.
-  const delegationsOf = (r: Row) => [r.delegationId, ...(r.view?.grant ? [r.view.grant.grant.delegation] : [])];
   const daysOf = (r: Row) => days[r.id] ?? GRANT_DAYS;
   const pick = (r: Row) => (
     <select aria-label="How long" data-run-grant-days={r.id} value={daysOf(r)} onChange={(e) => setDays({ ...days, [r.id]: Number((e.target as HTMLSelectElement).value) })}>
@@ -116,10 +116,7 @@ export function RunGrants({ s }: { s: ControlSession }) {
                         class="secondary small"
                         disabled={!!busy || !mine}
                         data-renew-run-grant={r.id}
-                        onClick={act(r.id, async () => {
-                          const [after] = r.view?.stale ? [] : await s.revokeRunGrants(r.id, [g.grant.delegation], false);
-                          await s.signRunGrant(r.delegation, daysOf(r), after);
-                        })}
+                        onClick={act(r.id, () => s.signRunGrant(r.delegation, daysOf(r)))}
                       >
                         {r.view?.stale ? "Sign again" : "Renew"}
                       </button>{" "}
@@ -129,7 +126,7 @@ export function RunGrants({ s }: { s: ControlSession }) {
                     <input type="checkbox" data-stop-running checked={!!stop[r.id]} onChange={(e) => setStop({ ...stop, [r.id]: (e.target as HTMLInputElement).checked })} /> also
                     stop the runs going
                   </label>{" "}
-                  <button class="secondary danger small" disabled={!!busy || !mine} data-revoke-run-grant={r.id} onClick={act(r.id, () => s.revokeRunGrants(r.id, delegationsOf(r), !!stop[r.id]))}>
+                  <button class="secondary danger small" disabled={!!busy || !mine} data-revoke-run-grant={r.id} onClick={act(r.id, () => s.revokeRunGrants(r.id, g.grant.delegation, !!stop[r.id]))}>
                     Revoke
                   </button>
                 </span>
@@ -146,16 +143,22 @@ export function RunGrants({ s }: { s: ControlSession }) {
         })}
       </ul>
       <p class="dim control-explain">
-        <b>Allow runs</b> signs, with this device, a standing grant: for as long as you pick, the platform may start runs and instruct them on
-        every cloud workspace of the project, running whatever command the project's runs start, with none of your devices awake. Each
-        workspace checks the signature. Deploys still ask you every time. <b>Revoke</b> stops new runs; the ones going finish unless you stop
-        them too. A workspace that's asleep when you revoke is told later; one that's never told keeps honouring the grant until it expires.
+        <b>Allow runs</b> asks for one of your passkeys to confirm a standing grant: for as long as you pick, the platform may start runs and
+        instruct them on every cloud workspace of the project, running whatever command the project's runs start, with none of your devices
+        awake. Each workspace checks your passkey against your account's published passkeys. <b>Renew</b> confirms a new one in its place.
+        Deploys still ask you every time. <b>Revoke</b> (a passkey too) stops new runs; the ones going finish unless you stop them too. A
+        workspace that's asleep when you revoke is told later; one that's never told keeps honouring the grant until it expires.
       </p>
-      {mine ? null : (
+      {!webauthn ? (
         <p class="dim" data-run-grant-elsewhere>
-          Sign or revoke these from a browser or a phone of yours: the desktop app doesn't.
+          This window can't use passkeys: allow, renew or revoke runs from a browser or a phone of yours.
         </p>
-      )}
+      ) : s.passkeys === 0 ? (
+        <p class="dim" data-run-grant-no-passkey>
+          Runs are allowed and revoked with a passkey, and your account has none. Add one first (the account menu, Sign-in and account), then
+          allow runs here.
+        </p>
+      ) : null}
       {err ? <p class="control-error">{err}</p> : null}
     </>
   );

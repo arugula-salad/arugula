@@ -1,12 +1,11 @@
 //! `arugula runs grant` (`cmd::runs` has the rest of `arugula runs`): a project's standing grant for runs on Arugula
 //! control (M211, "One standing grant per project starts runs"). `show` says
 //! whether the project has one and its past ones. An owner signs and
-//! revokes one on control's page, from a browser or a phone: the platform
-//! may then start and instruct runs on the project's hosted workspaces,
-//! under the project's delegation, with every device asleep. This CLI
-//! can't: its key is a file an agent on this machine can read, so neither
-//! the platform nor any hosted machine takes a grant or a revoke it signed.
-//! `sign` and `revoke` say so.
+//! revokes one on control's page with a passkey (DK6): the platform may
+//! then start and instruct runs on the project's hosted workspaces, under
+//! the project's delegation, with every device asleep. This CLI can't: it
+//! holds no passkey (and its key is a file an agent on this machine can
+//! read). `sign` and `revoke` say so.
 
 use anyhow::bail;
 use arugula_e2e::now_ms;
@@ -19,14 +18,14 @@ use crate::{control::Enrolled, util::print_json};
 pub enum GrantCmd {
     /// Whether the project has a standing grant, and its past ones.
     Show,
-    /// Not here: an owner signs it from a browser or a phone, on control's
-    /// page (this says so).
+    /// Not here: an owner signs it with a passkey, on control's page (this
+    /// says so).
     Sign {
         /// How many days it lasts (1 to 366).
         #[arg(long, default_value_t = 90, value_parser = clap::value_parser!(u64).range(1..=366))]
         days: u64,
     },
-    /// Not here: an owner revokes it from a browser or a phone (this says so).
+    /// Not here: an owner revokes it with a passkey (this says so).
     Revoke {
         /// Stop the runs going too.
         #[arg(long)]
@@ -44,9 +43,9 @@ pub struct Which {
 const DAY_MS: u64 = 24 * 60 * 60 * 1000;
 
 /// What `sign` and `revoke` say.
-const SIGN_ELSEWHERE: &str = "sign or revoke a project's standing grant from a browser or a phone of yours, on Control \
-     (Devices and machines, Runs on cloud workspaces): this CLI's key is a file an agent on this machine can read, so \
-     the platform and its cloud workspaces don't take a grant or a revoke it signed";
+const SIGN_ELSEWHERE: &str = "sign or revoke a project's standing grant with a passkey, on Control's page in a browser \
+     or on a phone (Devices and machines, Runs on cloud workspaces): this CLI holds no passkey, so the platform and its \
+     cloud workspaces don't take a grant or a revoke from it";
 
 pub fn run(cmd: Option<GrantCmd>, which: Which, json_out: bool) -> anyhow::Result<i32> {
     if matches!(cmd, Some(GrantCmd::Sign { .. } | GrantCmd::Revoke { .. })) {
@@ -93,22 +92,26 @@ fn shown(v: &Value) -> String {
     if g.is_null() {
         out.push_str("No standing grant: runs don't start on this project's cloud workspaces.\n");
         if v["offer"] == true {
-            out.push_str("It has cloud workspaces: an owner signs one on Control, from a browser or a phone.\n");
+            out.push_str("It has cloud workspaces: an owner allows runs on Control, with a passkey.\n");
         }
     } else {
         let expires =
             g["expires"].as_u64().map_or_else(|| "until revoked".to_owned(), |e| format!("until {}", when(e)));
+        // v2 (DK6): a passkey of the account it names; v1: a device.
+        let signer = match g["account"].as_str() {
+            Some(a) if !a.is_empty() => format!("with a passkey of account {a}"),
+            _ => format!("by device {}", g["by"].as_str().unwrap_or_default()),
+        };
         out.push_str(&format!(
             "Standing grant {}: the platform may start and instruct runs (any command the project's runs start) on \
-             every cloud workspace of the project, {expires}.\nSigned by device {} {}.\n",
+             every cloud workspace of the project, {expires}.\nSigned {signer} {}.\n",
             g["id"].as_str().unwrap_or_default(),
-            g["by"].as_str().unwrap_or_default(),
             g["made"].as_u64().map(day).unwrap_or_default(),
         ));
         if v["stale"] == true {
             out.push_str("It names a delegation that isn't the project's live one: sign it again on Control.\n");
         } else if v["renew"] == true {
-            out.push_str("It expires soon: revoke it and sign it again to keep runs starting.\n");
+            out.push_str("It expires soon: renew it on Control to keep runs starting.\n");
         }
     }
     for p in v["past"].as_array().into_iter().flatten() {
@@ -156,7 +159,7 @@ mod tests {
     fn sign_and_revoke_send_you_to_a_browser() {
         for cmd in [GrantCmd::Sign { days: 30 }, GrantCmd::Revoke { stop: true }] {
             let e = run(Some(cmd), Which { project: None }, false).unwrap_err().to_string();
-            assert!(e.contains("from a browser or a phone"), "{e}");
+            assert!(e.contains("with a passkey"), "{e}");
         }
     }
 
@@ -171,5 +174,8 @@ mod tests {
         let s = shown(&live);
         assert!(s.contains("Standing grant abc") && s.contains("device dev1") && s.contains("until revoked"), "{s}");
         assert!(s.contains("grant old, runs stopped"), "{s}");
+        let v2 = json!({ "id": "def", "account": "acct1", "by": "", "made": 1, "expires": null, "v": 2 });
+        let s = shown(&json!({ "grant": { "grant": v2 }, "past": [] }));
+        assert!(s.contains("with a passkey of account acct1"), "{s}");
     }
 }

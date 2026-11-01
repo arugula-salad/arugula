@@ -1,9 +1,11 @@
 // A project's standing grant for runs (M211), in its settings: whether the
 // platform may start and instruct runs on the project's hosted workspaces
-// with every device asleep, signed by which device and when, and what was
-// revoked. Signing and revoking are trust, done by a device ("The platform
-// page is on app.arugula.io, not on the keys' origin"), so they're on
-// control's page (here or on the phone), and this links there. The grant
+// with every device asleep, confirmed by whose passkey (DK6; a device
+// signed the ones from before) and when, and what was revoked. Allowing
+// and revoking take a passkey of the account's, made for control's site,
+// so they're on control's page (here or on the phone), and this links
+// there. (Moving them here, by WebAuthn's related origins as DK5 does for
+// deploys, is a follow-up.) The grant
 // in place is a card: its bar ok, or warn when workspaces enrolled since
 // refuse it or it expires soon. Shown on every project, with nothing in
 // place too (UI audit #166: a project's settings show every section).
@@ -20,6 +22,8 @@ interface Grant {
   made: number;
   expires: number | null;
   by: string;
+  /** v2 (DK6): the owner whose passkey confirmed it. */
+  account?: string;
 }
 
 interface View {
@@ -65,8 +69,8 @@ export function RunGrant({ project }: { project: string }) {
       more={
         <p>
           A standing grant lets the platform start runs and instruct them on every cloud workspace of this project, running whatever command
-          the project's runs start, with every device asleep, until it expires or is revoked. A project owner's device signs it, and each
-          workspace checks that signature before it starts anything. Deploys still ask an owner every time.
+          the project's runs start, with every device asleep, until it expires or is revoked. A project owner confirms it with a passkey, and each
+          workspace checks that owner's passkey before it starts anything. Deploys still ask an owner every time.
         </p>
       }
     >
@@ -85,7 +89,9 @@ export function RunGrant({ project }: { project: string }) {
                 )}
               </span>
             </div>
-            <span class="dim">A project owner's device signed it <Time at={g.made} on />.</span>
+            <span class="dim">
+              {g.account ? "A project owner confirmed it with a passkey" : "A project owner's device signed it"} <Time at={g.made} on />.
+            </span>
             {v.stale ? (
               <span class="settings-warn">It's for an earlier delegation, so workspaces enrolled since refuse it: sign it again.</span>
             ) : v.renew ? (
@@ -96,11 +102,11 @@ export function RunGrant({ project }: { project: string }) {
       ) : null}
       {v.role === "owner" ? (
         <p class="dim settings-note">
-          {g ? (v.stale || v.renew ? "Sign it again, or revoke it," : "Revoke it") : v.offer ? "This project has cloud workspaces. Allow runs on them" : "Allow runs"} on{" "}
-          {sign}, under Devices and machines, on a computer or your phone: your devices sign it there.
+          {g ? (v.stale || v.renew ? "Renew it, or revoke it," : "Revoke it") : v.offer ? "This project has cloud workspaces. Allow runs on them" : "Allow runs"} on{" "}
+          {sign}, under Devices and machines, on a computer or your phone: you confirm it there with a passkey.
         </p>
       ) : (
-        <p class="dim settings-note">A project owner allows runs, or revokes them, from a device.</p>
+        <p class="dim settings-note">A project owner allows runs, or revokes them, with a passkey.</p>
       )}
       {v.past.length ? (
         <ul class="platform-list dim settings-past" data-run-grants-past>

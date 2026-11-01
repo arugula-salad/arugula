@@ -13,7 +13,13 @@
 //!   control signs, all of it, and its artifact with its digest, before
 //!   its end is reported; with no bucket, the run runs and its log stays
 //!   in its pane;
-//! - a run the box's crash interrupts fails, and never runs again (M223).
+//! - a run the box's crash interrupts fails, and never runs again (M223);
+//! - DK6: a run starts under a passkey-signed grant (v2), checked against
+//!   the passkey log the box pinned from control, as does one under a
+//!   device-signed v1 until it expires; a passkey revoke stops new runs
+//!   under both; a v2 from a non-owner, with a removed or unknown passkey,
+//!   or from an origin the box didn't pin is refused; and a log the
+//!   platform carries can't add a key.
 
 use std::{
     collections::BTreeMap,
@@ -153,7 +159,8 @@ impl Fake {
     /// The project's standing grant, signed by its owner's device, or by
     /// someone else's.
     fn grant(&self, by: &DeviceKeys) -> ProjectGrant {
-        let mut g = ProjectGrant::new(&self.delegation, arugula_e2e::now_ms(), None);
+        let mut g =
+            ProjectGrant::new(&self.delegation, arugula_e2e::now_ms(), Some(arugula_e2e::now_ms() + 86_400_000));
         g.sign_with(by);
         g
     }
@@ -177,8 +184,19 @@ impl Fake {
             last_seq: 1,
             grant: Some(grant),
             revokes: vec![],
+            passkey_log: None,
             deploy: None,
         }
+    }
+
+    /// A v2 grant (DK6) by `account`, good for a day, confirmed by the key
+    /// `by` as the passkey `pk` (the account's passkey when it's the root's)
+    /// from `origin`.
+    fn passkey_grant(&self, account: &str, by: &DeviceKeys, origin: &str) -> ProjectGrant {
+        let now = arugula_e2e::now_ms();
+        let mut g = ProjectGrant::v2(&self.delegation, account, now, now + 86_400_000);
+        g.passkey = Some(passkey_over(by, "pk", &g.passkey_challenge(), origin));
+        g
     }
 
     /// The reports of `run`, each checked against the box's key.
@@ -832,6 +850,7 @@ fn deploy_item_with(
         last_seq: 2,
         grant: None,
         revokes: vec![],
+        passkey_log: None,
         deploy: Some(DeployWork {
             deploy: dep.into(),
             operation: op,
@@ -850,6 +869,140 @@ fn deploy_item_with(
             approval_id: None,
         }),
     }
+}
+
+/// An assertion by the key `by` as the passkey `id`, over `challenge`, from
+/// `origin`, for `c.test`, the person verified.
+fn passkey_over(by: &DeviceKeys, id: &str, challenge: &str, origin: &str) -> arugula_e2e::passkey::Assertion {
+    use base64::Engine as _;
+    let b64 = base64::engine::general_purpose::URL_SAFE_NO_PAD;
+    let cd = json!({ "type": "webauthn.get", "challenge": challenge, "origin": origin }).to_string();
+    let mut data = Sha256::digest(b"c.test").to_vec();
+    data.extend_from_slice(&[0x05, 0, 0, 0, 0]);
+    let mut signed = data.clone();
+    signed.extend_from_slice(&Sha256::digest(cd.as_bytes()));
+    arugula_e2e::passkey::Assertion {
+        id: id.into(),
+        client_data_json: b64.encode(cd.as_bytes()),
+        authenticator_data: b64.encode(&data),
+        signature: b64.encode(by.signature(&signed)),
+    }
+}
+
+/// DK6 (#387): the project's standing grant signed with a passkey. A run
+/// starts under a v2 grant on a hosted box, checked against the passkey
+/// log the box pinned from control; a run under a device-signed v1 grant
+/// still starts until it expires; refused: a v2 by an account that isn't
+/// an owner, one with a passkey that isn't in the pinned log, one from an
+/// origin the box didn't pin, one whose passkey the platform's carried log
+/// removes, and one by a key that log adds (it can't add one); and a
+/// passkey revoke (v3) stops new runs under both.
+#[test]
+fn a_hosted_machine_runs_under_a_passkey_grant() {
+    let rt = tokio::runtime::Builder::new_multi_thread().worker_threads(2).enable_all().build().unwrap();
+    let f = Fake::new();
+    let url = serve(&rt, f.clone());
+    let marks: PathBuf = std::env::temp_dir().join(format!("arugula-hosted-passkey-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&marks);
+    std::fs::create_dir_all(&marks).unwrap();
+    let _d = arugulad!("hostedpasskey")
+        .no_wisp()
+        .no_tailscale()
+        .args(["--hosted"])
+        .env("ARUGULA_HOSTED_TICKET", "ticket-1")
+        .env("ARUGULA_CONTROL_URL", &url)
+        .env("ARUGULA_WORK_PULL_MS", "150")
+        .env("ARUGULA_HOSTED_RUN_USER", "")
+        .env("ARUGULA_HOSTED_SESSION_USERS", "")
+        .env("RUST_LOG", "info")
+        .args(["--log-file", &marks.join("arugulad.log").to_string_lossy()])
+        .wait_secs(30)
+        .start();
+    wait(&marks, &f, "the box enrolled", || !f.device().is_empty());
+    let here = "https://c.test";
+    let ran_to = |n: &str| marks.join(n);
+
+    // A v2 grant, the account's passkey over its bytes: the run runs. So
+    // does one under a device-signed v1 (made before DK6), until it expires.
+    let a = run_id('a');
+    let v2 = f.passkey_grant("acct1", &f.root, here);
+    let mut item = f.item(&a, &format!("echo ran >> {}", ran_to("a").display()), v2.clone());
+    item.passkey_log = Some(f.passkey_log());
+    f.items.lock().unwrap().push(item);
+    let b = run_id('b');
+    let v1 = f.grant(&f.root);
+    f.items.lock().unwrap().push(f.item(&b, &format!("echo ran >> {}", ran_to("b").display()), v1.clone()));
+    wait(&marks, &f, "runs a and b ran", || f.reports_of(&a).len() == 2 && f.reports_of(&b).len() == 2);
+    assert_eq!((states(&f.reports_of(&a)), states(&f.reports_of(&b))), (ran(1), ran(1)));
+    assert_eq!((lines(&ran_to("a")), lines(&ran_to("b"))), (1, 1));
+
+    // Refused, each before anything runs.
+    let stranger = DeviceKeys::generate();
+    let mut removed = f.passkey_log();
+    let gone = removed.events[0].removal(arugula_e2e::now_ms() - 1, "reset").placed_after(removed.events.last());
+    removed.events.push(gone);
+    // A key the platform's copy of the log adds (`by signup` needs no
+    // proof): never taken.
+    let mut added = f.passkey_log();
+    let k9 = arugula_e2e::passkey::Draft {
+        account: "acct1".into(),
+        event: arugula_e2e::passkey::Change::Added,
+        credential: "pk9".into(),
+        rp: "c.test".into(),
+        alg: arugula_e2e::passkey::EDDSA,
+        key: stranger.sign_public().to_vec(),
+        aaguid: arugula_e2e::passkey::NO_AAGUID.into(),
+        at: 2,
+        by: "signup".into(),
+    }
+    .after(added.events.last());
+    added.events.push(k9);
+    let mut by_k9 = ProjectGrant::v2(&f.delegation, "acct1", arugula_e2e::now_ms(), arugula_e2e::now_ms() + 86_400_000);
+    by_k9.passkey = Some(passkey_over(&stranger, "pk9", &by_k9.passkey_challenge(), here));
+    let refused = [
+        ('c', f.passkey_grant("someone", &stranger, here), None, "grant_not_an_owner"),
+        ('d', f.passkey_grant("acct1", &stranger, here), None, "grant_passkey"),
+        ('e', f.passkey_grant("acct1", &f.root, "https://app.test"), None, "grant_passkey"),
+        ('f', f.passkey_grant("acct1", &f.root, here), Some(removed), "grant_passkey"),
+        ('1', by_k9, Some(added), "grant_passkey"),
+    ];
+    let mut ids = vec![];
+    for (n, g, carried, code) in refused {
+        let run = run_id(n);
+        let mut item = f.item(&run, &format!("echo ran >> {}", ran_to("refused").display()), g);
+        item.passkey_log = carried;
+        f.items.lock().unwrap().push(item);
+        ids.push((run, code));
+    }
+    wait(&marks, &f, "the refused runs reported", || ids.iter().all(|(r, _)| f.reports_of(r).len() == 1));
+    for (run, code) in &ids {
+        let r = &f.reports_of(run)[0];
+        assert_eq!((r.from.as_str(), r.to.as_str()), ("pending", "failed"), "{run}");
+        assert!(r.detail.contains(code), "{run}: {}", r.detail);
+    }
+    assert_eq!(lines(&ran_to("refused")), 0);
+
+    // A passkey revoke (v3), with every pull: new runs under the v1 and the
+    // v2 alike are refused.
+    let mut r = GrantRevoke::v3(PROJECT, &f.delegation.id(), Running::Finish, arugula_e2e::now_ms(), "acct1");
+    r.passkey = Some(passkey_over(&f.root, "pk", &r.passkey_challenge(), here));
+    f.revokes.lock().unwrap().push(r);
+    let (h, i) = (run_id('2'), run_id('3'));
+    let mut item = f.item(&h, &format!("echo ran >> {}", ran_to("revoked").display()), v2);
+    item.passkey_log = Some(f.passkey_log());
+    item.revokes = f.revokes.lock().unwrap().clone();
+    f.items.lock().unwrap().push(item);
+    let mut item = f.item(&i, &format!("echo ran >> {}", ran_to("revoked").display()), v1);
+    item.revokes = f.revokes.lock().unwrap().clone();
+    f.items.lock().unwrap().push(item);
+    wait(&marks, &f, "runs h and i refused", || f.reports_of(&h).len() == 1 && f.reports_of(&i).len() == 1);
+    for run in [&h, &i] {
+        let rep = &f.reports_of(run)[0];
+        assert_eq!((rep.from.as_str(), rep.to.as_str()), ("pending", "failed"));
+        assert!(rep.detail.contains("grant_revoked"), "{}", rep.detail);
+    }
+    assert_eq!(lines(&ran_to("revoked")), 0);
+    let _ = std::fs::remove_dir_all(&marks);
 }
 
 /// Every file under `dir` whose bytes hold `needle`.

@@ -201,13 +201,14 @@ pub struct Enrollment {
     /// `None` from a control from before: the box keeps what it pinned.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub legacy_app_children: Option<LegacyAppChildren>,
-    /// A deploy's box (DK4, aru-126): the passkey logs of the project's
-    /// people (its team's members, or its account), as the hub publishes
-    /// them, by account. The box pins each, and takes a later one only as
-    /// the pinned one with more after it (`arugula_e2e::passkey::extends`):
-    /// what it checks a deploy's approval against
-    /// (`arugula_e2e::deploy::check_apply`). `None` from a control from
-    /// before, or for a box that isn't a deploy's.
+    /// The passkey logs of the project's people (its team's members, or its
+    /// account), as the hub publishes them, by account (aru-126). The box
+    /// pins each, and takes a later one only as the pinned one with more
+    /// after it (`arugula_e2e::passkey::extends`): what it checks a deploy's
+    /// approval against (`arugula_e2e::deploy::check_apply`, DK4) and the
+    /// project's standing grant for runs and its revokes
+    /// (`arugula_e2e::project_grant::check`, DK6). `None` from a control
+    /// from before (before DK6, sent to deploys' boxes only).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub passkey_logs: Option<std::collections::BTreeMap<String, arugula_e2e::passkey::Log>>,
     /// With them: which origins may use each RP's passkeys (control's
