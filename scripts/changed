@@ -33,7 +33,7 @@ if [ "$ref" = refs/heads/main ]; then
   [ "$(git rev-parse --is-shallow-repository)" = true ] && depth=(--depth=1)
   git fetch -q --no-tags ${depth[@]+"${depth[@]}"} origin "+refs/heads/chant/lifecycle:refs/remotes/origin/chant/lifecycle" "+refs/tags/ci/*:refs/tags/ci/*" 2>/dev/null ||
     yes "can't fetch chant/lifecycle and the ci/ tags"
-  chant=${ARUGULA_CHANT:-npx --yes @intentius/chant@0.124.61}
+  chant=${ARUGULA_CHANT:-npx --yes @intentius/chant@0.124.62}
   base=$($chant ci base 2>/dev/null) || yes "chant ci base found no commit that passed CI"
 else
   # CI's checkout is shallow: fetch enough of this branch and of main to

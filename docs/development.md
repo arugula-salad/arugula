@@ -227,11 +227,12 @@ and the job finds that run by its commit.
 chant's tick retries a red job on main once (docs/testing.md). If it
 fails again, the failure is deterministic: chant's record for the commit
 (`_ci/<sha>.json` on the `chant/lifecycle` branch) has the job under
-`retried` and `failure`, and ci-red's "main is red" issue says it's red
-after its retry. Then revert the commit that broke it within about 30
+`retried` and `failure`, and the tick sends `ci.red`, naming the phase and
+the run (docs/testing.md). Then revert the commit that broke it within about 30
 minutes, and bring the change back in a new pull request with the fix.
 Don't fix forward while others land on top of the red. When main's
-newest commit wasn't built alone, the tick's bisect names the culprit.
+newest commit wasn't built alone, the tick's bisect names the culprit, and
+the tick sends `ci.culprit`.
 One deterministic `desktop-xvfb` mismatch kept main red for 11 or 12 runs,
 until 5756aaa21, while other work landed. A failure that passes on the
 retry is a flaky test, which goes in the quarantine (testing.md,
@@ -501,8 +502,8 @@ deploy driver (which checks `ci/green` for both lanes before it runs
 
 ```sh
 git fetch origin --tags
-sha=$(npx @intentius/chant@0.124.61 ci last-green)               # the daemon's
-sha=$(npx @intentius/chant@0.124.61 ci last-green --lane app)    # the app's
+sha=$(npx @intentius/chant@0.124.62 ci last-green)               # the daemon's
+sha=$(npx @intentius/chant@0.124.62 ci last-green --lane app)    # the app's
 ```
 
 `scripts/release last-green [daemon|app|server]` answers the same from

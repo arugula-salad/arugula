@@ -1,7 +1,7 @@
 {
   "name": "arugula",
   "schema": 1,
-  "minReader": "0.124.61",
+  "minReader": "0.124.62",
   "members": [
     {
       "name": "daemon",
@@ -235,7 +235,8 @@
         "server": { "require": ["lint", "build", "test", "e2e"] },
         "daemon": { "require": ["lint", "build", "test", "e2e", "claims", "macos", "windows", "windows-desktop"] },
         "app": { "require": ["lint", "build", "e2e", "claims", "windows-desktop"] }
-      }
+      },
+      "notify": { "slack": "ARUGULA_CI_SLACK_WEBHOOK", "events": ["ci.red", "ci.culprit", "ci.green"] }
     }
   },
   "agents": [

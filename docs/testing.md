@@ -183,23 +183,30 @@ its `_ci` records. A check run is matched by name, so no other workflow
 that runs on main's commits may have a job named like a required one, not
 even one that's skipped there (binaries.yml's PR-only desktop-xvfb is
 named `desktop-xvfb (pull request)` for that). `npx
-@intentius/chant@0.124.61 ci last-green` (after `git fetch --tags`) prints
+@intentius/chant@0.124.62 ci last-green` (after `git fetch --tags`) prints
 the newest green commit, and `--lane server` (or `app`, `daemon`) the
 newest of a lane's.
 
-`.github/workflows/ci-red.yml` runs `scripts/ci-red` every hour and after
-each `chant-ci-green` run, so a red main gets heard: when main has gone 6
-hours (`ARUGULA_RED_HOURS`) without a green commit, when a commit gets a
-`ci/revoked` tag, or at once when chant's record for main's newest decided
-commit says red after its one retry (`chant ci list`, pinned like
-chant-ci-green.yml's; the comment names the failed phase, job and run, and a
-later one names the bisect's culprit; if chant can't be read the script logs
-it and uses the tags alone), it opens an issue titled
-"main is red", or comments on the open one, once per red stretch or
-revocation; GitHub notifies the repo's watchers and anyone the
-`ARUGULA_RED_MENTION` variable names. It closes the issue once main has a
-green commit newer than everything it reported. `scripts/tests/ci-red.sh`
-(`just test-scripts`) runs it with a fake gh.
+chant's tick tells people about a red main at once (chant#4645): `ci.green`
+in `chant.workspace.json` has `notify`, which names the environment
+variable that holds where to send (`ARUGULA_CI_SLACK_WEBHOOK`, for a Slack
+incoming webhook), and chant-ci-green.yml gives the tick's step the
+repository secret of the same name. The tick sends `ci.red` when main's
+newest decided commit is red after its one retry, or its green tag is
+revoked, naming the phase and the run; `ci.culprit` when the bisect names
+the commit that broke it; and `ci.green` when main is green again after a
+`ci.red`. Each is sent once, marked in the commit's `_ci/<sha>.json` record
+(`notified`). With the secret unset the tick marks them all the same and
+sends nothing.
+
+`.github/workflows/ci-red.yml` runs `scripts/ci-red` every hour, for a red
+that nothing decides, such as runs that never finish: when main has gone 6
+hours (`ARUGULA_RED_HOURS`) without a green commit, it opens an issue
+titled "main is red", or comments on the open one, once per red stretch;
+GitHub notifies the repo's watchers and anyone the `ARUGULA_RED_MENTION`
+variable names. It closes the issue once main has a green commit again and
+isn't too long red. `scripts/tests/ci-red.sh` (`just test-scripts`) runs it
+with a fake gh.
 
 The same workflow runs `scripts/ci-nightly-red` for the scheduled
 workflows (forges-nightly, macos-vm, macos-intel, testnet-break,
