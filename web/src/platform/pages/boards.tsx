@@ -19,7 +19,7 @@ import { StateChip } from "../../shared/ui/state-chip";
 import { names } from "../links";
 import { follow, go, pathOf } from "../router";
 import { SectionHead } from "../section-head";
-import { session, type PlatformProject } from "../session";
+import { controlOrigin, session, type PlatformProject } from "../session";
 import { issueTone, toneClass } from "../swarm";
 import { toast } from "../toast";
 import { mayWrite } from "./issues";
@@ -198,6 +198,11 @@ export function BoardPage({ project, board }: { project: string; board: string }
           <p class="dim">
             <a href={all} onClick={(e) => follow(e, all)}>
               {p.name}'s boards
+            </a>
+            {/* The swarm is the shell's, on control's page (#466). */}
+            {" · "}
+            <a href={`${controlOrigin()}/#swarm=board:${board}`} data-board-workers title="This board's agents in the swarm, by the lane of their row">
+              Workers
             </a>
           </p>
         }

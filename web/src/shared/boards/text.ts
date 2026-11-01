@@ -234,9 +234,10 @@ export function boardGroup(on?: OnIssue | null): string {
   return board ? board.title || "Untitled board" : NO_BOARD;
 }
 
-/** Clusters in the order they are laid out: the biggest first, then by name; [`NO_BOARD`] after all the others. */
-export function clusterOrder(a: [string, number], b: [string, number]): number {
-  return +(a[0] === NO_BOARD) - +(b[0] === NO_BOARD) || b[1] - a[1] || a[0].localeCompare(b[0]);
+/** Clusters in the order they are laid out: the biggest first, then by name; [`NO_BOARD`] after all the others. With `order` (a board focus's lanes, #466), those named come first in that order. */
+export function clusterOrder(a: [string, number], b: [string, number], order?: string[] | null): number {
+  const at = (n: string) => (order?.includes(n) ? order.indexOf(n) : order?.length ?? 0);
+  return at(a[0]) - at(b[0]) || +(a[0] === NO_BOARD) - +(b[0] === NO_BOARD) || b[1] - a[1] || a[0].localeCompare(b[0]);
 }
 
 /** The longest goal the platform takes (`GOAL_MAX`, control-wire). */

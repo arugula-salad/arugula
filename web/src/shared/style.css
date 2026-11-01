@@ -4216,6 +4216,33 @@ a.work-chip:hover {
   border-radius: 2px;
   margin-right: 6px;
 }
+/* A board's focus (#466): which board, the way back, and its lanes with their counts. */
+.swarm-board {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  margin-top: 6px;
+  font: 600 13px/1.2 var(--f-ui);
+}
+.swarm-lanes {
+  flex-basis: 100%;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 8px;
+}
+.swarm-lane {
+  padding: 4px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--panel-radius);
+  background: var(--panel);
+  font: 500 12px/1.3 var(--f-mono);
+  color: var(--ink);
+}
+.swarm-lane[data-workers="0"] {
+  color: var(--mute);
+  border-style: dashed;
+}
 .swarm-hint {
   font: 400 11px/1.4 var(--f-mono);
   color: var(--mute);
