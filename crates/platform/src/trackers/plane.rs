@@ -469,6 +469,10 @@ impl TrackerProvider for Plane {
                     break;
                 }
             }
+            // Ids past the cap would take those items out of the module in the mirror.
+            if cursor.is_some() {
+                return Err(TrackerError::Unavailable("the module has more items than it reads".into()));
+            }
             Ok(ids)
         })
     }
@@ -544,6 +548,22 @@ mod tests {
         assert_eq!(i.label_ids, ["l1", "l2"]);
         // Not expanded: no guessing at its state.
         assert!(item(&json!({ "id": "u1", "sequence_id": 7, "state": "uuid" })).is_err());
+    }
+
+    /// A module with more pages than are read is an error, not the ids so far.
+    #[tokio::test]
+    async fn a_module_with_more_pages_than_are_read_is_an_error() {
+        use axum::{Json, Router, routing::get};
+        let page =
+            || async { Json(json!({ "results": [{ "id": "i1" }], "next_cursor": "c", "next_page_results": true })) };
+        let app = Router::new().route("/api/v1/workspaces/w/projects/p/modules/{m}/module-issues/", get(page));
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        let server = tokio::spawn(async move { axum::serve(listener, app).await });
+        let plane = Plane::new(reqwest::Client::new(), &base, "plane-key-for-test");
+        let got = plane.module_items("w", "p", "m1").await;
+        server.abort();
+        assert!(matches!(&got, Err(TrackerError::Unavailable(why)) if why.contains("more items")), "{got:?}");
     }
 
     #[test]
