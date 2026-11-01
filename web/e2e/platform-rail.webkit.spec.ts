@@ -41,15 +41,17 @@ test("the rail is down the platform page's left, its places in order, and the ba
   const rail = alice.locator(".ws-rail");
   await expect(rail).toBeVisible();
   const labels = await rail.locator(".ws-rail-button .ws-rail-label").allTextContents();
-  expect(labels.slice(0, 3)).toEqual(["Projects", "Panes", "Swarm"]);
-  expect(labels.at(-1)).toBe("Settings");
+  expect(labels.slice(0, 3), `the rail's places: ${labels}`).toEqual(["Projects", "Panes", "Swarm"]);
+  expect(labels.at(-1), `the rail's places: ${labels}`).toBe("Settings");
   for (const hook of ["projects", "panes", "swarm", "chat", "docs"]) await expect(rail.locator(`[data-open-${hook}]`)).toHaveCount(1);
   const box = (await rail.boundingBox())!;
-  expect(box.x).toBe(0);
-  expect(box.y).toBe(0);
-  expect(box.height).toBeGreaterThan(300);
+  const at = `the rail at ${JSON.stringify(box)}, the window ${JSON.stringify(alice.viewportSize())}`;
+  expect(box.x, at).toBe(0);
+  expect(box.y, at).toBe(0);
+  expect(box.height, at).toBeGreaterThan(300);
   // Beside the bar, not above it.
-  expect((await alice.locator("[data-platform-bar]").boundingBox())!.x).toBeGreaterThanOrEqual(box.width);
+  const barBox = (await alice.locator("[data-platform-bar]").boundingBox())!;
+  expect(barBox.x, `the bar at ${JSON.stringify(barBox)}; ${at}`).toBeGreaterThanOrEqual(box.width);
   const bar = alice.locator("[data-platform-bar]");
   await expect(bar.locator("[data-platform-shell]")).toHaveCount(0);
   await expect(bar.locator("[data-platform-wordmark]")).toHaveCount(0);
