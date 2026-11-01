@@ -353,6 +353,22 @@ lints the daemon with neither, and with each alone.
   back with its fix in a new pull request. Don't fix forward while others
   land on top (docs/development.md, "When main goes red").
 
+## What Arugula builds, and what it waits on chant for
+
+Arugula is built on chant, as terragucci and sql-yodeler are. A feature
+goes in chant core when other products on chant would share it, else in a
+chant lexicon when it belongs to one target, else in Arugula. Arugula
+keeps people and machines: identity, where things run, triggers and
+schedules, the inbox and push, secret values, and its own words and UI.
+Releases, approval rules, environments and promotion, plans and stale
+checks, and CI verdicts are chant's.
+
+A pull request that builds something this rule puts in chant, instead of
+waiting for chant, adds a row to #1988 (epic: Arugula on chant) with the
+chant issue it waits on, filed if there's none, and a reason from
+Arugula's users; convenience isn't one. When chant ships it, the row's
+child issue drops Arugula's copy.
+
 ## Binaries
 
 No screenshots, recordings, builds or archives in the repo, on any branch:
