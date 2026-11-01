@@ -10,7 +10,7 @@
     "live": {
       "type": "boolean",
       "title": "Live session signals",
-      "description": "Off by default. Claude Code tells the Arugula pane it runs in about its session as it runs (the context window's fill and size, the model and effort, compactions) and shows them in its status line. Needs Claude Code 2.1.286 or later and an arugula CLI with `session-signal`. Verified in a terminal; the desktop app, VS Code and hosted sessions aren't yet.",
+      "description": "Off by default. Claude Code tells the Arugula pane it runs in about its session as it runs (the context window's fill and size, the model and effort, compactions) and shows them in its status line. Needs Claude Code 2.1.286 or later and an arugula CLI with `session-signal`. Verified in a terminal, agent blocks, VS Code's Claude Code and the desktop app started from a pane; sessions started from control on hosted boxes don't report yet.",
       "default": false
     }
   }

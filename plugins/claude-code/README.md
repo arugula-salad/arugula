@@ -107,7 +107,11 @@ signals. Loading it now means this plugin with `live` on.
 | Agent block on a hosted box (arugula-dev-6), ACP adapter 0.85.0, loaded through `CLAUDE_CODE_PLUGIN_DIRS` | 2.1.286 (the SDK's) | yes | yes | yes | yes (`/compact`) | proven: the block's own id |
 | VS Code extension's bundled Claude Code, started as the extension starts it (`stream-json`, `CLAUDE_CODE_ENTRYPOINT=claude-vscode`) | 2.1.314 | yes | yes (effort too) | yes | yes | proven for the pane in `ARUGULA_PANE` |
 | VS Code's UI | | | | | | not run: needs a GUI |
-| Desktop app, macOS and Windows 11 | | | | | | not run: needs a GUI (checklist below) |
+| Desktop app, Windows 11 (Claude 4.4212, in a VM) | 2.1.309 (the app's) | yes | yes | yes | yes (`/compact`) | proven for the pane it was started from; status shown under the message box |
+| Desktop app, macOS 26.6 (Claude 4.4212, in a tart VM) | 2.1.309 (the app's) | yes | yes | yes | yes (`/compact`) | proven for the pane it was started from; status shown (`arugula %6 ● live · 8% of 1M · 1 compacted`) |
+
+Started from the Start menu or the Dock instead, the desktop app sent nothing,
+as it should.
 
 - **Hosted agent block.** The box's daemon and CLI were 0.64.0, older than
   `session-signal`, so the run used a throwaway daemon built from main on the
@@ -154,11 +158,24 @@ The kit is a zip of this folder with `.claude-plugin/plugin.json` and
    the dev socket. On Windows: `$env:ARUGULA_PANE`, and `where.exe arugula`
    finds `arugula.exe`.
 3. Quit the desktop app completely (macOS: Cmd-Q; Windows: quit from the
-   tray), then start it from that pane so it inherits the pane's environment:
-   macOS `/Applications/Claude.app/Contents/MacOS/Claude &`; Windows, Claude's
-   exe from PowerShell (where its Start menu shortcut points).
-4. Settings > Plugins > upload the zip. It lists as `arugula`.
+   tray), then start it from that pane so it inherits the pane's environment.
+   - **macOS:** not `Claude &`. Started that way, the pane's shell exits about
+     a second later (Claude's own shell takes the pane's terminal), and Claude
+     is left pointing at a pane that's gone. Start it in a session of its own
+     instead: `perl -MPOSIX -e 'exit 0 if fork; POSIX::setsid() or die; exec @ARGV' /Applications/Claude.app/Contents/MacOS/Claude`.
+     If the app was downloaded with Safari and never opened from Finder, clear
+     its quarantine first (`xattr -dr com.apple.quarantine /Applications/Claude.app`):
+     otherwise macOS runs a translocated copy for the sign-in callback, and
+     that copy doesn't have the pane's environment.
+   - **Windows:** `Start-Process claude-desktop.exe` from the pane's
+     PowerShell (the app is an MSIX package with that command alias).
+4. Settings > Plugins > upload the zip. It lists as `arugula`. The upload is
+   account-wide: it shows up in your other Claude desktop apps too, so remove
+   it there when you're done testing.
 5. Settings > Plugins > arugula > Settings: turn on **Live session signals**.
+   If there's no Settings tab right after the upload, restart the app (from
+   the pane again) and it appears. Saving it writes
+   `pluginConfigs."arugula@inline".options.live` to `~/.claude/settings.json`.
    The command hooks (attention, `arugula hook`, `arugula ask`, `arugula
    inbox`) and the MCP server come along with the plugin too: that's
    expected, and they talk to the dev daemon the same way.
