@@ -1,0 +1,44 @@
+{
+  "schema": 1,
+  "commit": "b0ca8ca97ff73d70e1c23c16a6dd37d1702a7325",
+  "branch": "main",
+  "state": "pending",
+  "at": "2026-11-01T00:08:44Z",
+  "phases": {
+    "lint": {
+      "verdict": "pending",
+      "build": "newest",
+      "runs": []
+    },
+    "build": {
+      "verdict": "pending",
+      "build": "newest",
+      "runs": []
+    },
+    "test": {
+      "verdict": "pending",
+      "build": "newest",
+      "runs": []
+    },
+    "e2e": {
+      "verdict": "pending",
+      "build": "newest",
+      "runs": []
+    },
+    "claims": {
+      "verdict": "pending",
+      "build": "newest",
+      "runs": []
+    },
+    "macos": {
+      "verdict": "pending",
+      "build": "newest",
+      "runs": []
+    },
+    "windows": {
+      "verdict": "pending",
+      "build": "newest",
+      "runs": []
+    }
+  }
+}
