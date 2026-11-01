@@ -566,9 +566,11 @@ function AgentBlock({ client, id, s }: { client: Client; id: PaneId; s: AgentSta
   // M29: who answered last, and whether this person may answer at all.
   const answered = client.info(id)?.answered ?? null;
   // #450: what Claude Code says from inside (its arugula-live mod) wins over
-  // what its transcript says, and its own cost over the estimate.
+  // what its transcript says. Its own cost wins over the estimate whenever
+  // it reports one: the mod's, else claude-agent-acp's (the SDK's figure).
   const ctx = client.info(id)?.live ?? s.context ?? null;
-  const own = ctx?.source === "live" ? (ctx.cost_usd ?? null) : null;
+  const adapter = !!s.server?.name?.includes("claude-agent-acp") && !!s.cost && (s.cost.currency ?? "USD") === "USD" ? s.cost.total : null;
+  const own = (ctx?.source === "live" ? ctx.cost_usd : null) ?? adapter;
   const can = !archived && mayAnswer(client, id);
   // The daemon says an error twice, as a note and as the error: the strip
   // by the composer says it, so the note it repeats doesn't (UI audit #178).

@@ -3,11 +3,13 @@
 // terminal's header while Claude Code runs there, and wins over the
 // transcript on an agent block, with Claude Code's own cost. Where the
 // figures come from is in the strip's popover. The signals are posted here
-// as the mod's CLI call would.
+// as the mod's CLI call would. Claude Code's own cost wins over the estimate
+// whenever it reports one: the mod's, or claude-agent-acp's.
 
-import { mkdtempSync, rmSync, symlinkSync } from "node:fs";
+import { mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { expect, test, type Page } from "@playwright/test";
 import { menu, paneEl, panes, reset, seedConversation, SLEEP } from "./helpers";
 
@@ -93,5 +95,42 @@ test("an agent block's strip: the mod's figures win over its transcript's", asyn
   } finally {
     rmSync(join(claude, "projects"), { recursive: true, force: true });
     rmSync(s.cwd, { recursive: true, force: true });
+  }
+});
+
+test("claude-agent-acp's own cost wins over the estimate", async ({ page }) => {
+  // The scripted fake, named as claude-agent-acp, writes a transcript the
+  // daemon prices (the estimate) and reports $0.37 for the turn, as the
+  // adapter passes on the SDK's figure.
+  const fake = fileURLToPath(new URL("../../crates/daemon/tests/fake_acp.py", import.meta.url));
+  const dir = mkdtempSync(join(tmpdir(), "arugula-e2e-acp-cost-"));
+  const script = join(dir, "turns.json");
+  writeFileSync(script, JSON.stringify({ turns: [[{ title: "Adapter cost" }, { usage: 60_000, model: "claude-sonnet-5-5" }, { say: "Done.", ms: 1 }]], then: [{ say: "Done." }] }));
+  try {
+    await reset(page);
+    const config = {
+      agent: "claude",
+      command: ["env", "FAKE_ACP_NAME=@agentclientprotocol/claude-agent-acp", "python3", fake, "--demo", script],
+      cwd: dir,
+      prompt: "go",
+    };
+    expect(await page.evaluate((c) => window.__arugula.client.api("/api/blocks", { type: "agent", config: c }), config)).toBe(true);
+    const block = (await (await page.waitForFunction(() => window.__arugula.client.state!.panes.find((p) => p.type === "agent")?.id ?? null)).jsonValue()) as number;
+    const bar = paneEl(page, block).locator(".agent-bar");
+    const cost = bar.locator("[data-estimate]");
+    await expect(cost).toHaveAttribute("data-cost", "claude", { timeout: 20_000 });
+    await expect(cost.locator("button")).toHaveText("$0.37 Claude Code's figure");
+    // The estimate from its transcript is there too, below it.
+    await expect(cost).not.toHaveAttribute("data-estimate", "");
+    await cost.locator("button").click();
+    const pop = page.locator("[data-estimate-pop]");
+    await expect(pop).toContainText("Claude Code's own figure for this session");
+    await expect(pop.locator('[data-estimate-row="session"]')).toBeVisible();
+    // The window, as the adapter reported it.
+    await expect(bar.locator("[data-fill]")).toHaveAttribute("title", /^60k of 1M tokens\. 1M window, as Claude Code reported it/);
+    await expect(bar.locator(".agent-cost")).toHaveCount(0);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+    rmSync(join(process.env.CLAUDE_CONFIG_DIR!, "projects", dir.replace(/[/.]/g, "-")), { recursive: true, force: true });
   }
 });
