@@ -89,13 +89,25 @@ test("make an account with a passkey, sign out, sign back in", async ({ page }) 
   await expect(page.locator("[data-only-passkey]")).toContainText("add another passkey first");
   // With a second passkey, one can be removed, after a dialog: a
   // double-click on Remove only opens it. Adding it takes the first one's
-  // say-so, with a click of its own; control keeps none before.
+  // say-so, with a click of its own; control keeps none before. That's all
+  // it takes: this browser's device doesn't sign for it (DK11, #470).
+  const finished: Record<string, unknown>[] = [];
+  page.on("request", (r) => {
+    if (r.url().endsWith("/auth/passkey/register/finish")) finished.push(r.postDataJSON() as Record<string, unknown>);
+  });
   await page.locator("[data-add-passkey]").click();
   await expect(page.locator("[data-passkey-confirm]")).toBeVisible();
   expect(((await page.evaluate(() => fetch("/api/me/passkeys").then((r) => r.json()))) as { passkeys: unknown[] }).passkeys).toHaveLength(1);
   await page.locator("[data-passkey-confirm-go]").click();
   await expect(page.locator("[data-passkeys] li")).toHaveCount(2);
   await expect(page.locator("[data-only-passkey]")).toHaveCount(0);
+  expect(finished).toHaveLength(1);
+  expect(finished[0]).toHaveProperty("step_up");
+  expect(finished[0]).not.toHaveProperty("device");
+  const added = (await page.evaluate((a) => fetch(`/api/accounts/${a}/passkeys/log`).then((r) => r.json()), first.account)) as {
+    events: { event: string; credential: string; by: string; proof?: { id: string } }[];
+  };
+  expect(added.events.at(-1)).toMatchObject({ event: "added", by: "passkey", proof: { id: added.events[0].credential } });
   const [gone, kept] = await page.locator("[data-remove-passkey]").evaluateAll((els) => els.map((e) => e.getAttribute("data-remove-passkey")!));
   await page.locator("[data-remove-passkey]").first().dblclick();
   await new Promise((r) => setTimeout(r, 1000));

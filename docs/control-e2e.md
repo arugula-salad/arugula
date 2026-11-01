@@ -32,7 +32,10 @@ They don't say you meant anything. Approving a deploy, granting a project
 standing runs and changing a team's owners each take a passkey: one
 user-verified assertion over the action's bytes, whatever device you're on
 ([aru-126](decisions/aru-126-device-keys-are-the-machine-plane-s-passkeys-approve.md)).
-An agent has no passkey, so it never approves those.
+An agent has no passkey, so it never approves those. Adding or removing a
+passkey takes another of yours, and no device signs for it either (DK11);
+only an account's first passkey may be vouched for by one of its browsers
+([Page-only actions](#page-only-actions-need-a-browser-and-a-passkey)).
 
 | Kind | What it is | Reaches your machines | First device | May approve a new |
 |---|---|---|---|---|
@@ -1714,12 +1717,14 @@ anyone. Never from the desktop app's window (`sessions.via = app`), and:
   with user verification, over the new passkey's event in the account's
   passkey log (SHA-256 of its body, `arugula passkey log v1`: the account,
   the new passkey's id, key and AAGUID, DK3), which keeps the assertion as
-  the event's proof, and with a browser or a
-  phone, one of them (a browser all the way back) also signs the account,
-  the new passkey's id and the registration's challenge
-  (`arugula add passkey device v1`);
-- an account with none: a browser or a phone of its signs, as above, or
-  the session is a GitHub sign-in from the last ten minutes. Either is
+  the event's proof. That's all it takes (DK11, #470, aru-126): no device
+  signs, so it doesn't matter which device the page is or which devices
+  approved it. The cost, accepted: a stolen session and a stolen synced
+  passkey together can add another passkey;
+- an account with none: a browser or a phone of its, one all the way back
+  to the root, signs the account, the new passkey's id and the
+  registration's challenge (`arugula add passkey device v1`), or the
+  session is a GitHub sign-in from the last ten minutes. Either is
   enough only for an account that never had a passkey (its passkey log is
   empty; for an account made before the log began, also no passkey
   sign-in on record), or once a reset (the passkey reset below, or
@@ -1734,7 +1739,7 @@ anyone. Never from the desktop app's window (`sessions.via = app`), and:
   start that sign-in is still exchanged, and its token revoked, so it
   signs nobody in anywhere;
 - every device of the account gets a push ("A passkey was added to your
-  account") naming the device that signed for it, or else how the session
+  account") naming the device that signed for a first one, or else how the session
   signed in and its User-Agent (what a session says its device is is a
   claim), and the passkey keeps both.
 

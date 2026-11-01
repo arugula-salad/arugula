@@ -25,7 +25,8 @@
 //!   passkey log (DK3: SHA-256 of its body, `arugula passkey log v1`), asked
 //!   for once the new one is made (`/auth/passkey/register/step-up`, with
 //!   its attestation); the assertion is kept in the log as the event's
-//!   proof;
+//!   proof. That alone: no device signs, whichever device the page is
+//!   (DK11, #470, aru-126);
 //! - an account with none needs one of its browsers or phones (a browser
 //!   all the way back to its root) to sign for it, or a GitHub sign-in from
 //!   the last ten minutes ([`REAUTH_MS`]); the page says which device it is
@@ -183,8 +184,8 @@ fn from_app(info: &SessionInfo) -> Result<(), ApiError> {
 }
 
 /// The account's browsers and phones that are ones all the way back to its
-/// root (`api::browser_all_the_way`): one of them signs for a passkey
-/// added to an account that has any.
+/// root (`api::browser_all_the_way`): one of them may sign for a first
+/// passkey (never for a second: DK11).
 fn browser_devices(app: &App, account: &str) -> anyhow::Result<Vec<arugula_e2e::Cert>> {
     let Some(root) = app.db.account(account)?.and_then(|a| a.root) else { return Ok(vec![]) };
     let (certs, _) = app.db.devices(account)?;
@@ -199,9 +200,9 @@ fn browser_devices(app: &App, account: &str) -> anyhow::Result<Vec<arugula_e2e::
         .collect())
 }
 
-/// What one of the account's browsers or phones signs to add a passkey:
-/// the account, the new passkey's id and the registration's challenge. The
-/// page's `addPasskeyDeviceBody` is the same text.
+/// What one of the account's browsers or phones signs to add a first
+/// passkey: the account, the new passkey's id and the registration's
+/// challenge. The page's `addPasskeyDeviceBody` is the same text.
 pub fn add_passkey_device_body(account: &str, credential: &str, challenge: &str) -> String {
     format!("arugula add passkey device v1\naccount {account}\ncredential {credential}\nchallenge {challenge}\n")
 }
@@ -286,11 +287,11 @@ pub async fn register_start(
     {
         crate::reset::passkeys_were_reset(&app, a);
     }
-    // Signed in: one more for the account, confirmed with a passkey it has,
-    // or (with none) a fresh GitHub sign-in.
-    let (have, browsers) = match &account {
-        Some(a) => (app.db.passkey_ids(a)?, browser_devices(&app, a)?),
-        None => (vec![], vec![]),
+    // Signed in: one more for the account, confirmed with a passkey it has
+    // (and that alone, DK11), or (with none) a fresh GitHub sign-in.
+    let have = match &account {
+        Some(a) => app.db.passkey_ids(a)?,
+        None => vec![],
     };
     let body = body.map(|Json(b)| b);
     // A first passkey: this page's device signs for it if it's a browser
@@ -299,14 +300,16 @@ pub async fn register_start(
     // approved before it had a kind of its own don't count, so an account
     // whose browsers all came that way signs in with GitHub again.
     let this_page = body.as_ref().and_then(|b| b.device.as_deref());
-    let page_signs = this_page.is_some_and(|d| browsers.iter().any(|c| c.device == d));
+    let page_signs = match (&account, this_page) {
+        (Some(a), Some(d)) if have.is_empty() => browser_devices(&app, a)?.iter().any(|c| c.device == d),
+        _ => false,
+    };
     // DK10: a first one, by either, only for an account that never had one,
     // or after a reset.
     let first_may = match (&account, have.is_empty()) {
         (Some(a), true) => first_passkey(&app, a)?.is_some(),
         _ => true,
     };
-    let first_by_github = have.is_empty() && first_may && session.as_ref().is_some_and(|(_, i)| fresh_github(i));
     if let Some((_, info)) = &session {
         from_app(info)?;
         // (Before asking for GitHub again: it wouldn't do.)
@@ -344,11 +347,10 @@ pub async fn register_start(
         "timeout": CHALLENGE_TTL_MS,
         // Once it's made, one of these confirms it (`register_step_up`).
         "step_up": if have.is_empty() { None } else { Some("passkey") },
-        // And one of the account's browsers or phones signs for it
-        // (`add_passkey_device_body`).
-        // (Asked whenever this page can; needed unless a GitHub sign-in
-        // vouches for a first one.)
-        "device_sig": page_signs || (!browsers.is_empty() && !first_by_github),
+        // A first one: this page's device signs for it
+        // (`add_passkey_device_body`) when it may; else a fresh GitHub
+        // sign-in vouches. Never asked for a second (DK11).
+        "device_sig": page_signs,
     })))
 }
 
@@ -417,8 +419,8 @@ pub struct Registration {
     /// (`register_step_up`'s challenge).
     #[serde(default)]
     step_up: Option<Assertion>,
-    /// For an account with a browser or a phone: one of them signing for
-    /// this one ([`add_passkey_device_body`]).
+    /// For a first passkey: one of the account's browsers or phones signing
+    /// for it ([`add_passkey_device_body`]). Ignored for a second (DK11).
     #[serde(default)]
     device: Option<DeviceSig>,
 }
@@ -636,8 +638,8 @@ async fn register(
         return Err(bad("credential id mismatch"));
     }
     // One more for a signed-in account: its own session still (not the
-    // desktop app's window), and confirmed: a browser or a phone of its
-    // signs, a passkey it has agrees, or (with neither) a fresh GitHub
+    // desktop app's window), and confirmed: a passkey it has agrees, or for
+    // a first one, a browser or a phone of its signs or a fresh GitHub
     // sign-in.
     let added_by = match &account {
         Some(a) => {
@@ -702,9 +704,9 @@ async fn register(
 }
 
 /// What let a passkey be added to a signed-in account: the device of the
-/// account's that signed for it, if one did, and the step-up, if one
-/// agreed: its `added` event, signed (the proof), for its place in the log.
-/// Neither: a fresh GitHub sign-in.
+/// account's that signed for a first one, if one did, or the step-up for
+/// another: its `added` event, signed (the proof), for its place in the
+/// log. Neither: a fresh GitHub sign-in.
 struct Vouch {
     device: Option<String>,
     proof: Option<Box<Event>>,
@@ -718,8 +720,9 @@ struct Vouch {
 /// for it (`device`), or the session is a GitHub sign-in from the last ten
 /// minutes. One more: a passkey it has agrees (`step_up`: UV, over the
 /// event [`register_step_up`] made for this account and this passkey, its
-/// key and AAGUID as made), and with a browser or a phone, one of them
-/// signs too.
+/// key and AAGUID as made), and that's all it takes (DK11, #470,
+/// aru-126): no device signs, so the page's device and how it was
+/// approved play no part. A `device` sent with it is ignored.
 #[allow(clippy::too_many_arguments)]
 fn confirm_adding(
     app: &App,
@@ -732,19 +735,6 @@ fn confirm_adding(
     device: Option<&DeviceSig>,
 ) -> Result<Vouch, ApiError> {
     let credential = made.id.as_str();
-    let browsers = browser_devices(app, account)?;
-    let signed = match device {
-        Some(d) => browsers.iter().find(|c| {
-            c.device == d.id
-                && arugula_e2e::cert::verify_hex(
-                    &c.sign,
-                    add_passkey_device_body(account, credential, challenge).as_bytes(),
-                    &d.sig,
-                )
-        }),
-        None => None,
-    };
-    let device = signed.map(|c| c.device.clone());
     let have = app.db.passkey_ids(account)?;
     // A first one: a browser or a phone signed for it, or the session is a
     // fresh GitHub sign-in.
@@ -752,21 +742,26 @@ fn confirm_adding(
         // DK10: by either, only for an account that never had one, or
         // after a reset.
         let Some(after_reset) = first_passkey(app, account)? else { return Err(take_a_reset()) };
-        if signed.is_some() {
-            return Ok(Vouch { device, proof: None, github: "github" });
+        let signed = match device {
+            Some(d) => browser_devices(app, account)?.into_iter().find(|c| {
+                c.device == d.id
+                    && arugula_e2e::cert::verify_hex(
+                        &c.sign,
+                        add_passkey_device_body(account, credential, challenge).as_bytes(),
+                        &d.sig,
+                    )
+            }),
+            None => None,
+        };
+        if let Some(c) = signed {
+            return Ok(Vouch { device: Some(c.device), proof: None, github: "github" });
         }
         if !fresh_github(info) {
             return Err(reauth());
         }
-        return Ok(Vouch { device, proof: None, github: if after_reset { "reset" } else { "github" } });
+        return Ok(Vouch { device: None, proof: None, github: if after_reset { "reset" } else { "github" } });
     }
-    if !browsers.is_empty() && signed.is_none() {
-        return Err(refusal(
-            StatusCode::FORBIDDEN,
-            "device_sig",
-            "add a passkey from a browser or a phone that's one of your devices: it signs for the new passkey",
-        ));
-    }
+    // One more: a passkey it has agrees, and nothing else is asked (DK11).
     let no = || refusal(StatusCode::FORBIDDEN, "step_up", "confirm with one of your passkeys to add another");
     let a = step_up.ok_or_else(no)?;
     let (cd, _) = client_data(site, &a.client_data, "webauthn.get")?;
@@ -791,7 +786,7 @@ fn confirm_adding(
         return Err(no());
     }
     app.db.passkey_used(&a.id, count, now_ms())?;
-    Ok(Vouch { device, proof: Some(Box::new(event.with_proof(a.e2e()))), github: "github" })
+    Ok(Vouch { device: None, proof: Some(Box::new(event.with_proof(a.e2e()))), github: "github" })
 }
 
 /// Every device of the account hears that a passkey was added: by the
@@ -2115,6 +2110,83 @@ mod tests {
         assert!(sign(&app, &h, &page, &edge, 53).await.is_err(), "what the window let in after");
         assert_eq!(sign(&app, &h, &page, &firefox, 52).await.unwrap(), "acct-g");
         assert_eq!(app.db.passkeys("acct-g").unwrap()[0].added_device.as_deref(), Some(firefox.id().as_str()));
+    }
+
+    /// DK11 (#470, aru-126): a second passkey takes one the account has,
+    /// and only that. The page here is a browser an app window let in
+    /// (so not one all the way back to the root), beside a CLI and an app
+    /// device, and its GitHub sign-in is stale: no device signs, and none
+    /// needs to. Neither a passkey nor a device's signature, or a device's
+    /// signature alone (even the root browser's), is refused.
+    #[tokio::test]
+    async fn a_second_passkey_takes_only_a_passkey_whatever_the_page_is() {
+        use arugula_e2e::{Cert, DeviceKeys, Kind};
+        let app = App::for_tests(ORIGIN).start();
+        let h = signed_in(&app, "acct-k", auth::Via::Github, REAUTH_MS + 60_000);
+        let root = DeviceKeys::generate();
+        let mut rc = Cert::new(&root, "acct-k", Kind::Browser, "Safari on iPhone");
+        rc.sign_with(&root);
+        app.db.put_device(&rc, true, now_ms()).unwrap();
+        let put = |kind, name: &str, by: &DeviceKeys| {
+            let k = DeviceKeys::generate();
+            let mut c = Cert::new(&k, "acct-k", kind, name);
+            c.sign_with(by);
+            app.db.put_device(&c, true, now_ms()).unwrap();
+            k
+        };
+        let window = put(Kind::Browser, "Arugula app on jake-mini", &root);
+        let chrome = put(Kind::Browser, "Chrome on Mac", &window);
+        let cli = put(Kind::Cli, "arugula on geek", &root);
+        let appk = put(Kind::App, "Arugula app on jake-air", &root);
+        let via_cli = put(Kind::Cli, "arugula on box", &appk);
+        let can: Vec<String> = browser_devices(&app, "acct-k").unwrap().into_iter().map(|c| c.device).collect();
+        assert_eq!(can, [root.id()], "the page's browser isn't one all the way back");
+        app.db
+            .set_session_device(&auth::hash(auth::cookie(&h, auth::SESSION_COOKIE).unwrap()), "acct-k", &chrome.id())
+            .unwrap();
+        let mine = Authn::new(70);
+        app.db.add_passkey(&mine.id(), "acct-k", EDDSA, &mine.key.verifying_key().to_bytes(), 1).unwrap();
+        let sig = |k: &DeviceKeys, cred: &str, ch: &str| DeviceSig {
+            id: k.id(),
+            sig: hex::encode(k.signature(add_passkey_device_body("acct-k", cred, ch).as_bytes())),
+        };
+        let new = Authn::new(71);
+        let opts = start_on(&app, &h, Some(&chrome.id())).await.unwrap();
+        assert_eq!((opts["step_up"].clone(), opts["device_sig"].clone()), (json!("passkey"), json!(false)));
+        let ch = opts["challenge"].as_str().unwrap().to_owned();
+        // Neither: refused, asking for a passkey.
+        let r = register(&app, &h, new.create(&ch, None)).await;
+        assert_eq!(r.map_err(reason).err(), Some(Some("step_up")), "neither a passkey nor a device");
+        // A device's signature alone, the root browser's: still a passkey.
+        let opts = start_on(&app, &h, Some(&root.id())).await.unwrap();
+        assert_eq!(opts["device_sig"], false, "not asked for a second, even of a page that could sign");
+        let ch = opts["challenge"].as_str().unwrap().to_owned();
+        let mut r = new.create(&ch, None);
+        r.device = Some(sig(&root, &new.id(), &ch));
+        assert_eq!(register(&app, &h, r).await.map_err(reason).err(), Some(Some("step_up")), "a device alone");
+        // The first passkey's assertion alone: added, from Chrome, with the
+        // CLI's or the app's devices nowhere in it, and a CLI's signature
+        // sent along changes nothing.
+        for (seed, device) in [(71, None), (72, Some(&cli)), (73, Some(&via_cli))] {
+            let new = Authn::new(seed);
+            let opts = start_on(&app, &h, Some(&chrome.id())).await.unwrap();
+            let ch = opts["challenge"].as_str().unwrap().to_owned();
+            let c = step_up(&app, &h, &new).await.unwrap()["challenge"].as_str().unwrap().to_owned();
+            let mut r = new.create(&ch, Some(mine.get(&c, UP | UV, json!({}))));
+            r.device = device.map(|k| sig(k, &new.id(), &ch));
+            assert_eq!(register(&app, &h, r).await.unwrap().0, "acct-k", "seed {seed}");
+            // In the log by the passkey, its assertion the proof; no device
+            // is named as having added it.
+            let log = app.db.passkey_log("acct-k").unwrap();
+            let added = log.events.last().unwrap();
+            assert_eq!((added.credential.as_str(), added.by.as_str()), (new.id().as_str(), "passkey"));
+            assert_eq!(added.proof.as_ref().map(|p| p.id.clone()), Some(mine.id()));
+            assert_eq!(added.challenge(), c);
+            assert_eq!(arugula_e2e::passkey::check_chain(&log), Ok(()));
+            let kept = app.db.passkeys("acct-k").unwrap().into_iter().find(|p| p.id == new.id()).unwrap();
+            assert_eq!(kept.added_device, None);
+        }
+        assert_eq!(app.db.passkey_count("acct-k").unwrap(), 4);
     }
 
     /// The desktop app's window signing in with a passkey stays the app's
