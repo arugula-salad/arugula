@@ -522,13 +522,14 @@ export const ADD_PASSKEY_HASH = "#add-passkey";
  * one waits for one of them to agree ([`PasskeyToConfirm`]). For one with
  * none and no GitHub sign-in from the last few minutes, the page goes
  * through GitHub's sign-in again first, and comes back to `#add-passkey`. */
-/** What one of the account's browsers or phones signs to add a passkey
- * (`add_passkey_device_body`): the account, the new passkey's id and the
- * registration's challenge. */
+/** What one of the account's browsers or phones signs to add a first
+ * passkey (`add_passkey_device_body`): the account, the new passkey's id
+ * and the registration's challenge. A second takes a passkey alone
+ * (DK11). */
 export const addPasskeyDeviceBody = (account: string, credential: string, challenge: string) =>
   `arugula add passkey device v1\naccount ${account}\ncredential ${credential}\nchallenge ${challenge}\n`;
 
-/** This page's device, to sign for a passkey added to its account. */
+/** This page's device, to sign for a first passkey added to its account. */
 export interface PasskeySigner {
   account: string;
   id: string;
@@ -559,9 +560,10 @@ export async function passkeyRegister(name?: string, device?: PasskeySigner): Pr
     }
     throw e;
   }
+  // `device_sig`: control asks this page's device to sign for a first
+  // passkey only when it may; a second takes one of the account's
+  // passkeys and nothing else (DK11).
   const { step_up, device_sig, ...opts } = o;
-  // An account with a browser or a phone: this one signs for the passkey.
-  if (device_sig && !device) throw new Error("Add a passkey from a browser or a phone that's one of your devices.");
   const cred = (await navigator.credentials.create({
     publicKey: {
       ...opts,
