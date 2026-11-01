@@ -169,6 +169,68 @@ export function Teams({ s, close }: { s: ControlSession; close: () => void }) {
   );
 }
 
+/** For an owner whose account has no passkey: making or removing an owner
+ * takes one (DK7, aru-126), so say so where they'd try, and offer one. */
+function NoPasskeyForOwners({ s }: { s: ControlSession }) {
+  const [err, setErr] = useState("");
+  const can = typeof PublicKeyCredential !== "undefined";
+  return (
+    <p class="dim control-explain" data-owners-need-passkey>
+      Making someone an owner, or removing an owner, takes your passkey: it shows a person, not a program on one of your devices, made the change. You have none yet.{" "}
+      {can ? (
+        <button class="link" data-add-passkey onClick={() => s.addPasskey().catch((e: Error) => setErr(e.name === "NotAllowedError" ? "Cancelled." : e.message))}>
+          Add a passkey
+        </button>
+      ) : (
+        "Add one from a browser or a phone, under Sign-in and account."
+      )}
+      {err ? <span class="control-error"> {err}</span> : null}
+    </p>
+  );
+}
+
+/** A role change to or from owner (DK7): it takes this owner's passkey
+ * over the new version, asked for from this dialog's button. */
+function OwnerChange({ s, t, change, close }: { s: ControlSession; t: Team; change: { account: string; role: TeamRole }; close: () => void }) {
+  const [err, setErr] = useState("");
+  const [busy, setBusy] = useState(false);
+  const m = t.roster.members.find((x) => x.account === change.account);
+  const who = t.names?.[change.account] ?? m?.name ?? "them";
+  const making = change.role === "owner";
+  const go = async () => {
+    setBusy(true);
+    setErr("");
+    try {
+      await s.changeTeam(t.team, (ms) => ms.map((x) => (x.account === change.account ? { ...x, role: change.role } : x)));
+      close();
+    } catch (e) {
+      setErr((e as Error).name === "NotAllowedError" ? "Cancelled." : (e as Error).message);
+    }
+    setBusy(false);
+  };
+  return (
+    <Modal close={close}>
+      <h2>{making ? `Make ${who} an owner of ${t.roster.name}?` : `Keep ${who} in ${t.roster.name} ${roleAs(change.role)}, not an owner?`}</h2>
+      <p>
+        {making
+          ? "Owners invite people, change roles, take machines out, lock the team and approve its deploys."
+          : "They stop inviting people, changing roles and approving the team's deploys."}{" "}
+        Changing who the owners are takes your passkey, so everyone can check a person made the change.
+      </p>
+      {s.passkeys === 0 ? <NoPasskeyForOwners s={s} /> : null}
+      {err ? <p class="control-error" data-owner-change-error>{err}</p> : null}
+      <div class="prompt-buttons">
+        <button class="secondary" onClick={close}>
+          Cancel
+        </button>
+        <button class="primary" data-owner-change-go disabled={busy || s.passkeys === 0} onClick={() => void go()}>
+          Confirm with a passkey
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
 function TeamSection({
   s,
   t,
@@ -196,6 +258,8 @@ function TeamSection({
   const [confirming, setConfirming] = useState<string | null>(null);
   // The member whose Remove was clicked: a dialog asks.
   const [removing, setRemoving] = useState<string | null>(null);
+  // A role change to or from owner: a dialog asks for the passkey (DK7).
+  const [owning, setOwning] = useState<{ account: string; role: TeamRole } | null>(null);
   const owner = t.role === "owner";
   // A member's machine an owner is taking out of the team (#332).
   const [takingOut, setTakingOut] = useState<string | null>(null);
@@ -276,6 +340,7 @@ function TeamSection({
       <h4 class="control-subgroup" data-team-members-head>
         Members <span class="dim">· {t.roster.members.length}</span>
       </h4>
+      {owner && s.passkeys === 0 ? <NoPasskeyForOwners s={s} /> : null}
       <ul class="control-devices control-rows" data-team-members={t.team}>
         {t.roster.members.map((m) => (
           <li key={m.account} data-member={m.account}>
@@ -290,6 +355,9 @@ function TeamSection({
                 aria-label={`${t.names?.[m.account] ?? m.name}'s role`}
                 onChange={(e) => {
                   const r = (e.target as HTMLSelectElement).value as TeamRole;
+                  // To or from owner takes a passkey (DK7): a dialog asks,
+                  // so the passkey comes from a click of its own.
+                  if (r === "owner" || m.role === "owner") return setOwning({ account: m.account, role: r });
                   act(() => s.changeTeam(t.team, (ms) => ms.map((x) => (x.account === m.account ? { ...x, role: r } : x))));
                 }}
               >
@@ -318,8 +386,14 @@ function TeamSection({
           }}
         >
           <p>They lose the team's machines at once. To come back, they need a new invite.</p>
+          {t.roster.members.find((m) => m.account === removing)?.role === "owner" ? (
+            <p class="dim" data-owner-passkey-note>
+              They're an owner: removing one takes your passkey, which your browser asks for next.
+            </p>
+          ) : null}
         </ConfirmRemove>
       ) : null}
+      {owning ? <OwnerChange s={s} t={t} change={owning} close={() => setOwning(null)} /> : null}
       <h4 class="control-subgroup" data-team-machines-head>
         Machines <span class="dim">· {machines.length}</span>
       </h4>

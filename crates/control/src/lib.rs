@@ -106,6 +106,8 @@ mod roots;
 mod routes;
 #[cfg(test)]
 mod routing_wire;
+#[cfg(test)]
+mod team_owners_wire;
 mod teams;
 mod telemetry;
 #[cfg(test)]

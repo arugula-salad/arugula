@@ -1177,10 +1177,12 @@ the desktop app's sign-in, add a passkey, enroll or approve a device,
 approve a machine's join, make recovery codes, or approve a deploy: those
 need control's page in a browser, by its cookie, and adding a passkey or
 approving a deploy needs a passkey too (a deploy, a passkey alone: DK4). A CLI device approves only CLIs
-and machines (no command does today), never a browser. Its key also can't make a team's owner or editor, and the app's can't
-make an owner (it makes editors); neither removes a browser or a phone:
-daemons and pages refuse those papers unless a browser all the way back to
-the account's root signed them. The desktop app's
+and machines (no command does today), never a browser. Its key also can't make a team's editor (the app's can);
+neither removes a browser or a phone: daemons and pages refuse those papers
+unless a browser all the way back to the account's root signed them. Making
+or removing a team's owner takes the owner's passkey over the new roster
+version, whichever of their devices signs it (DK7, #388): control keeps the
+assertion beside the version. The desktop app's
 window is an `app` device: it reaches your machines and approves machines,
 CLIs and apps, but not browsers, phones or recovery codes. (Deploys are
 approved with a passkey, on whatever device: DK4.)

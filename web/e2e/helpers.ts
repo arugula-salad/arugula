@@ -197,6 +197,20 @@ export function seedConversation(claude: string, word: string, title: string, mo
   return { id, cwd };
 }
 
+/** A passkey for the account signed in on `page`, from a virtual
+ *  authenticator that verifies the person and stays on the page: making
+ *  or removing a team's owner takes one (DK7). Control must be on a name
+ *  (`localhost`): WebAuthn refuses an IP address. Chromium only. */
+export async function withPasskey(page: Page) {
+  const cdp = await page.context().newCDPSession(page);
+  await cdp.send("WebAuthn.enable");
+  await cdp.send("WebAuthn.addVirtualAuthenticator", {
+    options: { protocol: "ctap2", transport: "internal", hasResidentKey: true, hasUserVerification: true, isUserVerified: true },
+  });
+  await page.evaluate(() => window.__arugula.control!.addPasskey());
+  await expect.poll(() => page.evaluate(() => window.__arugula.control!.passkeys)).toBeGreaterThan(0);
+}
+
 /** Opens one of the control overlay's panels ("devices", "account",
  * "teams", ...) once the overlay listens for the event: sent before that,
  * it's lost. Checking and sending in one evaluate means the overlay can't

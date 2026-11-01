@@ -85,11 +85,13 @@ const REFRESH: Duration = Duration::from_secs(60);
 /// How long [`Control::refresh_now`] waits by default (#232).
 pub const REFRESH_WAIT: Duration = Duration::from_secs(10);
 /// What this daemon tells control it understands, so control offers only
-/// what every daemon checking a team can take (presigned invites' rosters).
+/// what every daemon checking a team can take (presigned invites' rosters,
+/// an owner a CLI or the app made, DK7).
 /// `ARUGULA_FEATURES` says otherwise (tests play an older daemon with "").
 /// (`chat-import`, M124, went with the import, native #203.)
 fn features() -> String {
-    std::env::var("ARUGULA_FEATURES").unwrap_or_else(|_| "presigned-invites,owner-moves,join-secret".into())
+    std::env::var("ARUGULA_FEATURES")
+        .unwrap_or_else(|_| "presigned-invites,owner-moves,join-secret,owner-passkeys".into())
 }
 
 /// Whether `features` names `feature`.
@@ -5361,6 +5363,66 @@ pub(crate) mod tests {
         assert!(a["t1"].locked);
         let b = take_shared(&a, &none, &pins, shared(false, None), &mut seen, 1).0;
         assert!(b["t1"].locked, "control unlocked a shared team by its plain word");
+    }
+
+    /// DK7 (#388): a team machine takes a version that makes an owner signed
+    /// by an owner's CLI or desktop app (control asked that owner's passkey
+    /// for it; a machine doesn't), after versions from before DK7, and the
+    /// new owners' devices come in as owners here. A CLI making an editor
+    /// still stops at that version.
+    #[test]
+    fn a_team_machine_takes_an_owner_made_from_a_cli_or_the_app() {
+        let (ok, oc) = device("o", Kind::Browser);
+        let (_, ec) = device("e", Kind::Browser);
+        let (_, fc) = device("f", Kind::Browser);
+        let (_, gc) = device("g", Kind::Browser);
+        let by_o = |kind: Kind| {
+            let k = DeviceKeys::generate();
+            let mut c = Cert::new(&k, "o", kind, "x");
+            c.sign_with(&ok);
+            (k, c)
+        };
+        let ((cli_k, cli), (app_k, app)) = (by_o(Kind::Cli), by_o(Kind::App));
+        let pin = TeamPin { team: "t1".into(), founder: "o".into(), founder_root: oc.device.clone() };
+        let mut s = saved_for("https://c.example", "o");
+        s.team = Some(pin.clone());
+        let certs: AccountCerts = [
+            ("o".to_owned(), (vec![oc.clone(), cli, app], vec![])),
+            ("e".to_owned(), (vec![ec.clone()], vec![])),
+            ("f".to_owned(), (vec![fc.clone()], vec![])),
+            ("g".to_owned(), (vec![gc.clone()], vec![])),
+        ]
+        .into();
+        let answer = |rosters: Vec<Roster>| wire::TeamAnswer {
+            team: Some(pin.clone()),
+            locked: false,
+            lock: None,
+            rosters,
+            certs: certs.clone(),
+            names: Default::default(),
+        };
+        let o = member("o", &oc, TeamRole::Owner);
+        let (e, f) = (member("e", &ec, TeamRole::Owner), member("f", &fc, TeamRole::Owner));
+        // From before DK7: e an editor, by the browser. Then the CLI makes e
+        // an owner, and the app f.
+        let v1 = signed_roster(1, vec![o.clone(), member("e", &ec, TeamRole::Editor)], &ok);
+        let v2 = signed_roster(2, vec![o.clone(), e.clone()], &cli_k);
+        let v3 = signed_roster(3, vec![o.clone(), e.clone(), f.clone()], &app_k);
+        take_team(&mut s, &pin, answer(vec![v1, v2, v3]), 1);
+        assert_eq!(s.roster.as_ref().map(|r| r.version), Some(3), "the owners the CLI and the app made");
+        let dir = std::env::temp_dir().join(format!("arugula-dk7-owners-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let acl = Arc::new(Acl::open(&dir));
+        let built = Enrolled::build(s.clone(), Arc::new(DeviceKeys::generate()), &acl, false);
+        for c in [&ec, &fc] {
+            let p = built.others.iter().find(|(x, _)| x.device == c.device).map(|(_, p)| p.clone());
+            assert_eq!(p, Some(Principal::Owner), "{} is an owner here", c.account);
+        }
+        // The CLI making g an editor: not taken.
+        let v4 = signed_roster(4, vec![o, e, f, member("g", &gc, TeamRole::Editor)], &cli_k);
+        take_team(&mut s, &pin, answer(vec![v4]), 2);
+        assert_eq!(s.roster.as_ref().map(|r| r.version), Some(3), "a CLI's editor");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// A team member's removed device stays removed when control leaves

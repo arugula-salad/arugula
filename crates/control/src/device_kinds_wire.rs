@@ -197,12 +197,13 @@ async fn only_a_browser_removes_a_browser() {
     assert_eq!(st, 200, "{v}");
 }
 
-/// A team's owner or editor is made only from a browser or a phone all the
-/// way back: a roster or an invite that raises anyone, from the desktop
-/// app (or one of its devices from before it had a kind), is refused. Its
-/// viewer invites go through.
+/// A team's editor is made only from a browser or a phone all the way
+/// back, or the desktop app (or one of its devices from before it had a
+/// kind): never a CLI. An owner is made from any of an owner's devices, with
+/// that owner's passkey (DK7, `team_owners_wire`): without one, refused
+/// from the browser too. Viewer invites go through from any.
 #[tokio::test]
-async fn only_a_browser_makes_a_teams_owner_or_editor() {
+async fn only_a_browser_or_the_app_makes_a_teams_editor() {
     use arugula_e2e::team::{AskInvite, TeamRole};
 
     use crate::routing_wire::{member, roster};
@@ -224,12 +225,10 @@ async fn only_a_browser_makes_a_teams_owner_or_editor() {
     let cookie = session(&c.app, "a1");
     let path = format!("/api/teams/{team}/roster");
     let promote = |by: &DeviceKeys| json!({ "roster": roster(team, 2, vec![member("a1", &root, TeamRole::Owner), member("b1", &bob, TeamRole::Owner)], by) });
-    let (st, _) = c.as_person(&cookie, "POST", &path, Some(promote(&app))).await;
-    assert_eq!(st, 403, "the app");
-    let (st, v) = c.as_person(&cookie, "POST", &path, Some(promote(&old_app))).await;
-    assert_eq!((st, v["reason"].as_str()), (403, Some("needs_browser")), "an old app device: {v}");
-    let (st, v) = c.as_person(&cookie, "POST", &path, Some(promote(&root))).await;
-    assert_eq!(st, 200, "the browser: {v}");
+    for by in [&app, &old_app, &root] {
+        let (st, v) = c.as_person(&cookie, "POST", &path, Some(promote(by))).await;
+        assert_eq!((st, v["reason"].as_str()), (403, Some("passkey_required")), "no passkey: {v}");
+    }
 
     let ask = |role: TeamRole, by: &DeviceKeys| {
         let k = DeviceKeys::generate();
@@ -246,29 +245,29 @@ async fn only_a_browser_makes_a_teams_owner_or_editor() {
         json!({ "role": role, "ask": a })
     };
     let invites = format!("/api/teams/{team}/invites");
-    for by in [&app, &old_app] {
+    // An owner's Ask me first link, from any device: admitting someone
+    // with it takes the owner's passkey.
+    let cli = device(&c, &root, "a1", Kind::Cli, "Arugula CLI");
+    for by in [&app, &old_app, &cli, &root] {
         let (st, v) = c.as_person(&cookie, "POST", &invites, Some(ask(TeamRole::Owner, by))).await;
-        assert_eq!(st, 400, "an owner's invite from the app: {v}");
+        assert_eq!(st, 200, "an owner's invite: {v}");
         let (st, v) = c.as_person(&cookie, "POST", &invites, Some(ask(TeamRole::Viewer, by))).await;
         assert_eq!(st, 200, "a viewer's: {v}");
     }
-    let (st, v) = c.as_person(&cookie, "POST", &invites, Some(ask(TeamRole::Owner, &root))).await;
-    assert_eq!(st, 200, "an owner's from the browser: {v}");
 
     // The app makes editors (Jake, 2026-10-22); a CLI doesn't.
-    let cli = device(&c, &root, "a1", Kind::Cli, "Arugula CLI");
     for (by, want) in [(&app, 200), (&old_app, 200), (&cli, 400)] {
         let (st, v) = c.as_person(&cookie, "POST", &invites, Some(ask(TeamRole::Editor, by))).await;
         assert_eq!(st, want, "an editor's invite: {v}");
     }
     let to = |version, role, by: &DeviceKeys| json!({ "roster": roster(team, version, vec![member("a1", &root, TeamRole::Owner), member("b1", &bob, role)], by) });
-    assert_eq!(c.as_person(&cookie, "POST", &path, Some(to(3, TeamRole::Viewer, &root))).await.0, 200);
-    let (st, v) = c.as_person(&cookie, "POST", &path, Some(to(4, TeamRole::Editor, &cli))).await;
+    assert_eq!(c.as_person(&cookie, "POST", &path, Some(to(2, TeamRole::Viewer, &root))).await.0, 200);
+    let (st, v) = c.as_person(&cookie, "POST", &path, Some(to(3, TeamRole::Editor, &cli))).await;
     assert_eq!(st, 403, "a CLI making an editor: {v}");
-    let (st, v) = c.as_person(&cookie, "POST", &path, Some(to(4, TeamRole::Editor, &app))).await;
+    let (st, v) = c.as_person(&cookie, "POST", &path, Some(to(3, TeamRole::Editor, &app))).await;
     assert_eq!(st, 200, "the app making an editor: {v}");
-    let (st, _) = c.as_person(&cookie, "POST", &path, Some(to(5, TeamRole::Owner, &app))).await;
-    assert_eq!(st, 403, "but not an owner");
+    let (st, v) = c.as_person(&cookie, "POST", &path, Some(to(4, TeamRole::Owner, &app))).await;
+    assert_eq!((st, v["reason"].as_str()), (403, Some("passkey_required")), "an owner, with no passkey: {v}");
 }
 
 /// The desktop app founds a team (just its owner in it).
@@ -391,8 +390,9 @@ async fn the_apps_window_doesnt_delete_remove_passkeys_or_sign_out_everywhere() 
 
 /// What the desktop app's window (from before it had a kind) approved,
 /// both stored and approved by control before #1343 shipped (`legacy_app`),
-/// counts again: that browser approves a browser and recovery codes,
-/// removes a browser and makes a team's owner. The window itself doesn't;
+/// counts again: that browser approves a browser and recovery codes and
+/// removes a browser (a team's owner is made with a passkey now, from any
+/// device: DK7). The window itself doesn't;
 /// nor a browser it certified after the cutoff, or one a window stored
 /// after let in, or one a window asked before and approved after let in;
 /// nor a recovery code it made before the cutoff, approving a browser now.
@@ -490,12 +490,12 @@ async fn a_grandfathered_app_window_counts_on_the_way() {
     c.app.db.add_team(&t, 1, &serde_json::to_string(&v1).unwrap(), now_ms()).unwrap();
     let path = format!("/api/teams/{team}/roster");
     let promote = |by: &DeviceKeys| json!({ "roster": roster(team, 2, vec![member("a1", &root, TeamRole::Owner), member("b1", &bob, TeamRole::Owner)], by) });
-    for (by, who) in refused {
+    // Which of them signs plays no part any more (DK7): each is asked for
+    // the owner's passkey, and none brings one.
+    for (by, who) in refused.into_iter().chain([(&firefox, "what the window approved before")]) {
         let (st, v) = c.as_person(&cookie, "POST", &path, Some(promote(by))).await;
-        assert_eq!((st, v["reason"].as_str()), (403, Some("needs_browser")), "{who}: {v}");
+        assert_eq!((st, v["reason"].as_str()), (403, Some("passkey_required")), "{who}: {v}");
     }
-    let (st, v) = c.as_person(&cookie, "POST", &path, Some(promote(&firefox))).await;
-    assert_eq!(st, 200, "{v}");
 }
 
 /// root → window W → browser X → browser Y, W and X stored and approved

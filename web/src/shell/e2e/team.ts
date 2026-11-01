@@ -146,7 +146,9 @@ export async function askOk(
   for (const o of r.members.filter((m) => m.role === "owner")) {
     const [c, rv] = certs[o.account] ?? [[], []];
     const d = (await evaluate({ account: o.account, root: o.root }, c, rv)).get(i.by);
-    // One for an owner or an editor, only from a browser all the way back.
+    // One for an editor, only from a browser all the way back or the app
+    // (`raiseOk`); one for an owner, from any device (DK7: the roster that
+    // admits them takes the owner's passkey).
     const ok = !!d && (await raiseOk(i.role === "viewer" ? null : i.role, d, () => browserChained({ account: o.account, root: o.root }, c, i.by)));
     if (d && approves(d.kind) && ok && (await verify(d.sign, askInviteBody(i), i.sig))) return o.account;
   }
@@ -268,12 +270,35 @@ export function raised(r: Roster, prev: Roster | null, signer: string): TeamRole
 export const raises = (r: Roster, prev: Roster | null, signer: string) => raised(r, prev, signer) !== null;
 
 /** Whether `signer` may sign a paper raising someone to `role`
- * (`team::raise_ok`): an owner only from a browser all the way back, an
- * editor from that or the desktop app's device, never a CLI. */
+ * (`team::raise_ok`): an owner from any device that approves (DK7: control
+ * takes a version that changes the owners only with an owner's passkey
+ * over it, `ownerChallenge`), an editor from a browser all the way back or
+ * the desktop app's device, never a CLI. */
 export async function raiseOk(role: TeamRole | null, signer: Cert, chained: () => Promise<boolean>): Promise<boolean> {
-  if (!role || role === "viewer") return true;
-  if (role === "editor" && fromApp(signer)) return true;
+  if (!role || role === "viewer" || role === "owner") return true;
+  if (fromApp(signer)) return true;
   return chained();
+}
+
+/** Whether `r` changes who the team's owners are since `prev`
+ * (`Roster::changes_owners`): someone made an owner or no longer one, or an
+ * owner's entry moved to another root. Control takes such a version only
+ * with an owner's passkey over it (DK7). */
+export function changesOwners(r: Roster, prev: Roster): boolean {
+  const owners = (x: Roster) =>
+    x.members
+      .filter((m) => m.role === "owner")
+      .map((m) => `${m.account} ${m.root}`)
+      .sort()
+      .join("\n");
+  return owners(r) !== owners(prev);
+}
+
+/** What an owner's passkey signs for a version that changes the owners
+ * (`Roster::owner_challenge`): SHA-256 of its bytes, which name the device
+ * that signed it, so sign it first. */
+export async function ownerChallenge(r: Roster): Promise<Uint8Array<ArrayBuffer>> {
+  return new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(rosterBody(r))));
 }
 
 /** Whether `r` may follow `prev` (or start the team, as `pin` says). */
@@ -281,8 +306,9 @@ export async function follows(r: Roster, prev: Roster | null, pin: TeamPin, cert
   const spent = r.spent ?? [];
   if (!wellFormed(r) || r.team !== pin.team) return false;
   if (prev && r.version <= prev.version) return false;
-  // And may raise someone to `raised` (`raise_ok`): an owner only from a
-  // browser all the way back, an editor from that or the desktop app.
+  // And may raise someone to `raised` (`raise_ok`): an editor only from a
+  // browser all the way back or the desktop app (an owner from any of an
+  // owner's devices: control asks a passkey for that, DK7).
   const signedBy = async (account: string, root: string, device: string, body: string, sig: string, raised: TeamRole | null) => {
     const [c, rv] = certs[account] ?? [[], []];
     const d = (await evaluate({ account, root }, c, rv)).get(device);

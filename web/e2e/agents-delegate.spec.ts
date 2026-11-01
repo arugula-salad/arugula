@@ -16,10 +16,11 @@ import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { expect, test, type Page } from "@playwright/test";
-import { closeContexts } from "./helpers";
+import { closeContexts, withPasskey } from "./helpers";
 import { TeamControl, call, home, live, show } from "./team-fixture";
 
-const t = new TeamControl("delegate");
+// On localhost: Alice makes Bob an owner with her passkey (DK7).
+const t = new TeamControl("delegate", { localhost: true });
 
 test.describe.configure({ mode: "serial" });
 test.afterAll(async ({ browser }) => {
@@ -63,6 +64,8 @@ test("Acme's team box offers fixer; Bob is an owner of Acme too", async ({ brows
   test.setTimeout(180_000);
   await t.start();
   alice = await t.person(browser, "alice");
+  // Admitting Bob as an owner takes her passkey (DK7).
+  await withPasskey(alice);
   await alice.evaluate(() => window.__arugula.control!.createTeam("Acme"));
   const team = await alice.evaluate(() => window.__arugula.control!.teams[0].team);
   const link = await alice.evaluate((tm) => window.__arugula.control!.invite(tm, "owner", true), team);

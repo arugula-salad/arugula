@@ -647,7 +647,7 @@
         "prev": "v1-bob-viewer",
         "roster": "v2-makes-mallory-an-owner-by-alices-CLI"
       },
-      "output": {"ok": false}
+      "output": {"ok": true}
     },
     {
       "about": "alice's app makes mallory an owner",
@@ -674,7 +674,7 @@
         "prev": "v1-bob-viewer",
         "roster": "v2-makes-mallory-an-owner-by-alices-app"
       },
-      "output": {"ok": false}
+      "output": {"ok": true}
     },
     {
       "about": "a browser alice's CLI made: never trusted makes mallory an owner",
@@ -1187,7 +1187,7 @@
         "prev": "v1-bob-viewer",
         "roster": "v2-moves-alices-own-entry-to-another-root-by-alices-CLI"
       },
-      "output": {"ok": false}
+      "output": {"ok": true}
     },
     {
       "about": "alice's app moves alice's own entry to another root",
@@ -1214,7 +1214,7 @@
         "prev": "v1-bob-viewer",
         "roster": "v2-moves-alices-own-entry-to-another-root-by-alices-app"
       },
-      "output": {"ok": false}
+      "output": {"ok": true}
     },
     {
       "about": "a browser alice's CLI made: never trusted moves alice's own entry to another root",
@@ -1376,7 +1376,7 @@
         "prev": null,
         "roster": "v1-founded-by-app-with-owner"
       },
-      "output": {"ok": false}
+      "output": {"ok": true}
     },
     {
       "about": "a CLI swaps an editor's account for another root",

@@ -11,7 +11,7 @@ import { createServer, type Server } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test, type Browser, type Page } from "@playwright/test";
-import { controlPanel, ready, run, closeContexts } from "./helpers";
+import { controlPanel, ready, run, closeContexts, withPasskey } from "./helpers";
 import { ANY, controlPort, listen } from "./ports";
 import { labs } from "./labs";
 
@@ -61,14 +61,15 @@ test.beforeAll(async () => {
     spawn(
       "../target/debug/arugula-control",
       [
-        ...["--listen", ANY, "--public-url", "http://127.0.0.1:0", "--db", db],
+        ...["--listen", ANY, "--public-url", "http://localhost:0", "--db", db],
         ...["--github-client-id", "id", "--github-client-secret", "s", "--static-dir", "dist"],
         ...["--github-url", github, "--github-api", github],
       ],
       { stdio: "ignore" },
     ),
   );
-  base = `http://127.0.0.1:${await controlPort(db, procs.at(-1))}`;
+  // localhost, not 127.0.0.1: WebAuthn (Alice's passkey, DK7) needs a name.
+  base = `http://localhost:${await controlPort(db, procs.at(-1))}`;
   for (let i = 0; i < 100; i++) {
     try {
       if ((await fetch(`${base}/control.json`)).ok) break;
@@ -143,7 +144,9 @@ test("a founder deletes their account: members lose the team's machines at once,
   const seed = link.split("#pinvite=")[1].split(".")[1];
   await bob.evaluate(([t, s]) => window.__arugula.control!.redeem(t, s), [team, seed]);
   await teamMachine(alice, "acmebox", team);
-  // Alice makes Bob an owner, and he puts his own box in Acme too.
+  // Alice makes Bob an owner (with her passkey, DK7), and he puts his own
+  // box in Acme too.
+  await withPasskey(alice);
   await alice.evaluate(async (t) => {
     const c = window.__arugula.control!;
     await c.refresh();

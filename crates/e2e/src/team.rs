@@ -23,6 +23,19 @@
 //! (`v: 2`) adds them, carries that key's signature over who they are, and
 //! marks the invite spent; the one-time key signs that version too. Control never holds the one-time key, so it
 //! can't redeem an invite for an account of its own.
+//!
+//! **Owner changes take a passkey** (DK7, #388, aru-126). A device's
+//! signature is what a team machine checks ([`Roster::follows`]), and any
+//! device of an owner that approves may sign any version: which kind it is
+//! plays no part in making or removing an owner. A version that changes who
+//! the owners are ([`Roster::changes_owners`]) also needs a user-verified
+//! passkey assertion over its bytes ([`Roster::owner_challenge`]) from an
+//! owner of the version before ([`OwnerProof`]). The hub asks for it and
+//! keeps it beside the version, where anyone can check it against the
+//! account's published passkey log; a machine doesn't (aru-056: the device
+//! chain decides who reaches a machine, and a team owner's devices reach
+//! its machines as an owner whatever made them one). Editors are made as
+//! before ([`raise_ok`]), with no passkey.
 
 use std::collections::HashMap;
 
@@ -201,10 +214,10 @@ impl AskInvite {
         self.sig = hex::encode(keys.signature(self.body().as_bytes()));
     }
 
-    /// Signed by `by`, a device that may approve. One for an owner or an
-    /// editor also needs `by` to be a browser all the way back to its
-    /// account's root ([`AskInvite::raises`], `Trust::browser_chained`),
-    /// as the roster that admits them does.
+    /// Signed by `by`, a device that may approve. One for an editor also
+    /// needs `by` to be a browser all the way back to its account's root
+    /// or the desktop app's ([`raise_ok`]), as the roster that admits them
+    /// does; one for an owner, an owner's passkey on that roster (DK7).
     pub fn signed_by(&self, by: &Cert) -> bool {
         by.device == self.by && by.kind.approves() && verify_hex(&by.sign, self.body().as_bytes(), &self.sig)
     }
@@ -417,16 +430,75 @@ fn rank(r: TeamRole) -> u8 {
 }
 
 /// Whether `signer` may sign a paper that raises someone to `raised`:
-/// anything for none; an editor, a browser all the way back to its root
-/// (`browser_chained`) or the desktop app's device; an owner, only such a
-/// browser. Never a CLI's key: an agent on its machine can read it. (The
-/// app's key may be a program's too, but an editor can't make owners,
-/// approve deploys or sign a project's grant.)
+/// anything for none, and for an owner (DK7, aru-126: the hub takes a
+/// version that changes the owners only with an owner's passkey over it,
+/// an [`OwnerProof`], so a device's kind no longer stands in for a
+/// person); an editor, a browser all the way back to its root
+/// (`browser_chained`) or the desktop app's device, unchanged. Never a
+/// CLI's key for an editor: an agent on its machine can read it.
 pub fn raise_ok(raised: Option<TeamRole>, signer: &Cert, browser_chained: impl FnOnce() -> bool) -> bool {
     match raised {
-        None | Some(TeamRole::Viewer) => true,
+        None | Some(TeamRole::Viewer) | Some(TeamRole::Owner) => true,
         Some(TeamRole::Editor) => signer.from_app() || browser_chained(),
-        Some(TeamRole::Owner) => browser_chained(),
+    }
+}
+
+/// A passkey's word that a person meant a roster version's owner change
+/// (DK7, #388, aru-126): one user-verified WebAuthn assertion whose
+/// challenge is SHA-256 of the version's bytes ([`Roster::owner_challenge`]),
+/// from a passkey of `account`, an owner of the version before. The hub
+/// keeps it beside the version with when it took it (`at`, the hub's
+/// clock: when [`OwnerProof::checks`] asks the passkey to have been live)
+/// and hands it out with the rosters, so anyone can check it against the
+/// account's published passkey log ([`crate::passkey`]).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+pub struct OwnerProof {
+    /// The owner (of the version before) whose passkey it is.
+    pub account: String,
+    /// Its assertion; `passkey.id` is the credential.
+    pub passkey: crate::passkey::Assertion,
+    /// When the hub took it (ms).
+    pub at: u64,
+}
+
+/// Why an [`OwnerProof`] doesn't check out.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OwnerProofRefusal {
+    /// Its account wasn't an owner of the version before.
+    NotAnOwner,
+    /// The account's passkey log doesn't bear it out.
+    Passkey(crate::passkey::Refusal),
+}
+
+impl OwnerProofRefusal {
+    /// In words, for a person.
+    pub fn says(self) -> String {
+        match self {
+            OwnerProofRefusal::NotAnOwner => "only one of the team's owners changes who its owners are".into(),
+            OwnerProofRefusal::Passkey(r) => format!("the passkey doesn't check out: {r}"),
+        }
+    }
+}
+
+impl OwnerProof {
+    /// Whether it's the passkey of `account`, an owner in `prev`, over
+    /// exactly `roster`'s bytes, live in `account`'s passkey `log` at its
+    /// `at`, from an origin `origins` allows for that passkey's RP
+    /// (control's sites), with the person verified
+    /// (`crate::passkey::verify`).
+    pub fn checks<'a>(
+        &self,
+        roster: &Roster,
+        prev: &Roster,
+        log: &'a crate::passkey::Log,
+        origins: &crate::passkey::Origins,
+    ) -> Result<crate::passkey::Verified<'a>, OwnerProofRefusal> {
+        if prev.member(&self.account).is_none_or(|m| m.role != TeamRole::Owner) {
+            return Err(OwnerProofRefusal::NotAnOwner);
+        }
+        crate::passkey::verify(log, &self.account, &self.passkey, &roster.owner_challenge(), self.at, origins)
+            .map_err(OwnerProofRefusal::Passkey)
     }
 }
 
@@ -489,11 +561,40 @@ impl Roster {
         Trust { account: account.to_owned(), root: m.root.clone() }.evaluate(c, r)
     }
 
+    /// Whether this version changes who the team's owners are since
+    /// `prev`: someone made an owner or no longer one (removed, or now an
+    /// editor or a viewer), or an owner's entry moved to another root
+    /// (another identity for that account). The hub takes one only with an
+    /// [`OwnerProof`] (DK7). A first version has nothing before it: its
+    /// founder is its owner.
+    pub fn changes_owners(&self, prev: &Roster) -> bool {
+        fn owners(r: &Roster) -> Vec<(&str, &str)> {
+            let mut o: Vec<(&str, &str)> = r
+                .members
+                .iter()
+                .filter(|m| m.role == TeamRole::Owner)
+                .map(|m| (m.account.as_str(), m.root.as_str()))
+                .collect();
+            o.sort_unstable();
+            o
+        }
+        owners(self) != owners(prev)
+    }
+
+    /// The WebAuthn challenge an [`OwnerProof`]'s passkey signs: SHA-256 of
+    /// [`Roster::body`] (which names the signing device, so the device
+    /// signs first), base64url without padding, as a deploy approval's is.
+    pub fn owner_challenge(&self) -> String {
+        use base64::Engine as _;
+        use sha2::{Digest as _, Sha256};
+        base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(Sha256::digest(self.body().as_bytes()))
+    }
+
     /// Whether this version adds or promotes anyone but `signer` to owner
     /// or editor since `prev` (from nothing, for a first version): a member
     /// whose account and root weren't there with at least that role; or
-    /// moves `signer`'s own entry to another root. Only a browser all the
-    /// way back to its root signs that.
+    /// moves `signer`'s own entry to another root. [`raise_ok`] says which
+    /// devices sign that.
     pub fn raises(&self, prev: Option<&Roster>, signer: &str) -> bool {
         self.raised(prev, signer).is_some()
     }
@@ -689,12 +790,14 @@ mod tests {
         r
     }
 
-    /// A CLI's or the app's key may be a program's: neither makes an owner,
-    /// by a roster or by a presigned invite, and a CLI doesn't make an
-    /// editor either (the app does). Both still add viewers and take people
-    /// out; a browser all the way to its root does everything.
+    /// A CLI's key may be a program's: it doesn't make an editor, by a
+    /// roster or by a presigned invite (the app does). An owner is made by
+    /// any device of an owner (DK7: the hub asks that owner's passkey for
+    /// it, [`OwnerProof`]), so a team machine takes a version a CLI or the
+    /// app signed that makes one. Both add viewers and take people out; a
+    /// browser all the way to its root does everything.
     #[test]
-    fn only_a_browser_makes_an_owner_or_an_editor() {
+    fn a_cli_makes_no_editor_and_any_owners_device_makes_an_owner() {
         let (alice, bob, mallory) = (person("alice"), person("bob"), person("mallory"));
         let pin = TeamPin { team: "t1".into(), founder: "alice".into(), founder_root: alice.cert.device.clone() };
         let device = |kind: Kind, by: &DeviceKeys| {
@@ -722,16 +825,18 @@ mod tests {
             r
         };
         let alice_m = member(&alice, TeamRole::Owner);
-        for (role, who) in [(TeamRole::Owner, &mallory), (TeamRole::Editor, &mallory), (TeamRole::Editor, &bob)] {
+        for (role, who) in [
+            (TeamRole::Owner, &mallory),
+            (TeamRole::Owner, &bob),
+            (TeamRole::Editor, &mallory),
+            (TeamRole::Editor, &bob),
+        ] {
             let members = vec![alice_m.clone(), member(who, role)];
-            assert!(!signed(members.clone(), &cli_k).follows(Some(&v1), &pin, &all), "{role:?} by a CLI");
-            // The app makes editors (Jake, 2026-10-22), never owners.
-            assert_eq!(
-                signed(members.clone(), &app_k).follows(Some(&v1), &pin, &all),
-                role == TeamRole::Editor,
-                "{role:?} {} by the app",
-                who.account
-            );
+            let owner = role == TeamRole::Owner;
+            assert_eq!(signed(members.clone(), &cli_k).follows(Some(&v1), &pin, &all), owner, "{role:?} by a CLI");
+            // The app makes editors (Jake, 2026-10-22), and owners (DK7).
+            assert!(signed(members.clone(), &app_k).follows(Some(&v1), &pin, &all), "{role:?} by the app");
+            // Not one of the account's devices at all.
             assert!(!signed(members.clone(), &laundered_k).follows(Some(&v1), &pin, &all), "by a browser a CLI made");
             assert!(signed(members, &alice.keys).follows(Some(&v1), &pin, &all), "by the browser");
         }
@@ -743,18 +848,13 @@ mod tests {
         v1e.sign_with(&alice.keys);
         assert!(!signed(vec![alice_m.clone(), swapped], &cli_k).follows(Some(&v1e), &pin, &all));
         // The CLI's (or the app's) owner moving her own entry to another
-        // root: an owner's raise.
+        // root: an owner's raise, and an owner change, so the hub asks her
+        // passkey for it; a machine takes it.
         let elsewhere = Member { root: mallory.cert.device.clone(), ..alice_m.clone() };
-        assert!(!signed(vec![elsewhere.clone(), member(&bob, TeamRole::Viewer)], &cli_k).follows(
-            Some(&v1),
-            &pin,
-            &all
-        ));
-        assert!(!signed(vec![elsewhere.clone(), member(&bob, TeamRole::Viewer)], &app_k).follows(
-            Some(&v1),
-            &pin,
-            &all
-        ));
+        for k in [&cli_k, &app_k] {
+            let moved = signed(vec![elsewhere.clone(), member(&bob, TeamRole::Viewer)], k);
+            assert!(moved.follows(Some(&v1), &pin, &all) && moved.changes_owners(&v1));
+        }
         assert!(signed(vec![elsewhere, member(&bob, TeamRole::Viewer)], &alice.keys).raises(Some(&v1), "alice"));
         // A team the app founds, with only its owner in it: fine.
         let mut founded = roster(1, vec![alice_m.clone()], &alice);
@@ -790,7 +890,8 @@ mod tests {
         assert!(redeem(&v1, &inv, &k, &mallory).follows(Some(&v1), &pin, &all), "the app's editor invite");
         assert!(
             raise_ok(Some(TeamRole::Editor), &Cert::new(&app_k, "alice", Kind::App, "x"), || false)
-                && !raise_ok(Some(TeamRole::Owner), &Cert::new(&app_k, "alice", Kind::App, "x"), || false)
+                && raise_ok(Some(TeamRole::Owner), &Cert::new(&app_k, "alice", Kind::App, "x"), || false)
+                && raise_ok(Some(TeamRole::Owner), &Cert::new(&cli_k, "alice", Kind::Cli, "x"), || false)
                 && !raise_ok(Some(TeamRole::Editor), &Cert::new(&cli_k, "alice", Kind::Cli, "x"), || false)
         );
         assert!(
@@ -805,6 +906,148 @@ mod tests {
             }
             .raises()
         );
+    }
+
+    /// DK7: who the owners are changes when someone becomes an owner, stops
+    /// being one (removed or made an editor) or an owner's root moves;
+    /// editors and viewers coming and going, and a rename, don't.
+    #[test]
+    fn an_owner_change_is_a_change_of_who_the_owners_are() {
+        let (alice, bob, carol) = (person("alice"), person("bob"), person("carol"));
+        let v1 = roster(1, vec![member(&alice, TeamRole::Owner), member(&bob, TeamRole::Editor)], &alice);
+        let next = |members: Vec<Member>| roster(2, members, &alice);
+        let alice_m = member(&alice, TeamRole::Owner);
+        for (what, members, changes) in [
+            ("bob made an owner", vec![alice_m.clone(), member(&bob, TeamRole::Owner)], true),
+            ("bob made a viewer", vec![alice_m.clone(), member(&bob, TeamRole::Viewer)], false),
+            ("bob removed", vec![alice_m.clone()], false),
+            (
+                "carol in as an editor",
+                vec![alice_m.clone(), member(&bob, TeamRole::Editor), member(&carol, TeamRole::Editor)],
+                false,
+            ),
+            (
+                "carol in as an owner",
+                vec![alice_m.clone(), member(&bob, TeamRole::Editor), member(&carol, TeamRole::Owner)],
+                true,
+            ),
+            ("alice an editor", vec![member(&alice, TeamRole::Editor), member(&bob, TeamRole::Owner)], true),
+            (
+                "alice's root moved",
+                vec![Member { root: carol.cert.device.clone(), ..alice_m.clone() }, member(&bob, TeamRole::Editor)],
+                true,
+            ),
+            // The same owners in another order.
+            ("reordered", vec![member(&bob, TeamRole::Editor), alice_m.clone()], false),
+        ] {
+            assert_eq!(next(members).changes_owners(&v1), changes, "{what}");
+        }
+        let mut renamed = v1.clone();
+        renamed.name = "Other".into();
+        assert!(!renamed.changes_owners(&v1));
+        // Removing one of two owners.
+        let two = roster(2, vec![alice_m.clone(), member(&bob, TeamRole::Owner)], &alice);
+        assert!(roster(3, vec![alice_m], &alice).changes_owners(&two));
+    }
+
+    /// DK7: an owner change's passkey proof is an owner's (of the version
+    /// before), over exactly that version's bytes, from a passkey live in
+    /// that owner's log, user verified, from control's site. Nothing about
+    /// the device that signed the version.
+    #[test]
+    fn an_owner_proof_is_an_owners_passkey_over_the_version() {
+        use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD as B64};
+        use ed25519_dalek::Signer as _;
+        use sha2::{Digest as _, Sha256};
+
+        use crate::passkey::{self, Assertion, Change, Draft, Log, Refusal};
+
+        let (alice, bob) = (person("alice"), person("bob"));
+        let key = |n: u8| ed25519_dalek::SigningKey::from_bytes(&[n; 32]);
+        let log_of = |account: &str, n: u8| {
+            let d = Draft {
+                account: account.into(),
+                event: Change::Added,
+                credential: format!("pk-{account}"),
+                rp: "control.test".into(),
+                alg: passkey::EDDSA,
+                key: key(n).verifying_key().to_bytes().to_vec(),
+                aaguid: passkey::NO_AAGUID.into(),
+                at: 10,
+                by: "signup".into(),
+            };
+            Log { account: account.into(), events: vec![d.after(None)], began: None }
+        };
+        let assert = |account: &str, n: u8, challenge: &str, flags: u8, origin: &str| {
+            let cd = serde_json::to_vec(
+                &serde_json::json!({ "type": "webauthn.get", "challenge": challenge, "origin": origin }),
+            )
+            .unwrap();
+            let mut data = Sha256::digest(b"control.test").to_vec();
+            data.push(flags);
+            data.extend_from_slice(&0u32.to_be_bytes());
+            let mut msg = data.clone();
+            msg.extend_from_slice(&Sha256::digest(&cd));
+            Assertion {
+                id: format!("pk-{account}"),
+                client_data_json: B64.encode(&cd),
+                authenticator_data: B64.encode(&data),
+                signature: B64.encode(key(n).sign(&msg).to_bytes()),
+            }
+        };
+        let origins = passkey::origins_of_sites(["https://control.test"]);
+        let v1 = roster(1, vec![member(&alice, TeamRole::Owner), member(&bob, TeamRole::Editor)], &alice);
+        let v2 = roster(2, vec![member(&alice, TeamRole::Owner), member(&bob, TeamRole::Owner)], &alice);
+        let (alice_log, bob_log) = (log_of("alice", 1), log_of("bob", 2));
+        let proof = |account: &str, n: u8, challenge: &str, flags: u8, origin: &str| OwnerProof {
+            account: account.into(),
+            passkey: assert(account, n, challenge, flags, origin),
+            at: 100,
+        };
+        let good = proof("alice", 1, &v2.owner_challenge(), passkey::UP | passkey::UV, "https://control.test");
+        assert!(good.checks(&v2, &v1, &alice_log, &origins).is_ok());
+        // Bob, an editor before it, can't make himself an owner.
+        let bobs = proof("bob", 2, &v2.owner_challenge(), passkey::UP | passkey::UV, "https://control.test");
+        assert_eq!(bobs.checks(&v2, &v1, &bob_log, &origins).err(), Some(OwnerProofRefusal::NotAnOwner));
+        // Over another version's bytes.
+        let mut other = v2.clone();
+        other.members[1].account = "mallory".into();
+        assert_eq!(
+            good.checks(&other, &v1, &alice_log, &origins).err(),
+            Some(OwnerProofRefusal::Passkey(Refusal::Challenge))
+        );
+        // Another account's passkey, or a passkey not in alice's log.
+        let as_bob = OwnerProof { account: "alice".into(), ..bobs.clone() };
+        assert_eq!(
+            as_bob.checks(&v2, &v1, &alice_log, &origins).err(),
+            Some(OwnerProofRefusal::Passkey(Refusal::NotLive))
+        );
+        assert_eq!(good.checks(&v2, &v1, &bob_log, &origins).err(), Some(OwnerProofRefusal::Passkey(Refusal::Account)));
+        // Not user-verified, or from another site.
+        let unverified = proof("alice", 1, &v2.owner_challenge(), passkey::UP, "https://control.test");
+        assert_eq!(
+            unverified.checks(&v2, &v1, &alice_log, &origins).err(),
+            Some(OwnerProofRefusal::Passkey(Refusal::User))
+        );
+        let elsewhere = proof("alice", 1, &v2.owner_challenge(), passkey::UP | passkey::UV, "https://evil.test");
+        assert_eq!(
+            elsewhere.checks(&v2, &v1, &alice_log, &origins).err(),
+            Some(OwnerProofRefusal::Passkey(Refusal::Origin))
+        );
+        // Before the passkey was added.
+        let early = OwnerProof { at: 5, ..good.clone() };
+        assert_eq!(
+            early.checks(&v2, &v1, &alice_log, &origins).err(),
+            Some(OwnerProofRefusal::Passkey(Refusal::NotLive))
+        );
+        // The device that signed the version plays no part: a CLI's
+        // signature, the same proof over its bytes.
+        let cli_keys = DeviceKeys::generate();
+        let mut by_cli = v2.clone();
+        by_cli.sign_with(&cli_keys);
+        let over_cli = proof("alice", 1, &by_cli.owner_challenge(), passkey::UP | passkey::UV, "https://control.test");
+        assert!(over_cli.checks(&by_cli, &v1, &alice_log, &origins).is_ok());
+        assert_ne!(by_cli.owner_challenge(), v2.owner_challenge(), "the signing device is in the bytes");
     }
 
     #[test]

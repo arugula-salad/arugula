@@ -345,6 +345,12 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
     if !has("joins", "replaced")? {
         conn.execute_batch("ALTER TABLE joins ADD COLUMN replaced TEXT NOT NULL DEFAULT ''")?;
     }
+    // DK7 (#388): a roster version that changed the team's owners keeps the
+    // owner's passkey proof beside it (`team::OwnerProof`, JSON). NULL for
+    // every other version, and for those from before.
+    if !has("rosters", "owner_proof")? {
+        conn.execute_batch("ALTER TABLE rosters ADD COLUMN owner_proof TEXT")?;
+    }
     if !has("joins", "proven")? {
         conn.execute_batch("ALTER TABLE joins ADD COLUMN proven INTEGER NOT NULL DEFAULT 0")?;
     }
@@ -2130,10 +2136,25 @@ impl Db {
     /// Fails with [`Taken`] when that version is already there. The
     /// platform's `team_members` follows it through the change feed.
     pub fn add_roster(&self, team: &str, version: u64, body: &str) -> anyhow::Result<()> {
+        self.add_roster_proven(team, version, body, None)
+    }
+
+    /// [`Db::add_roster`], with the owner's passkey proof of an owner change
+    /// kept beside it (DK7: `team::OwnerProof`, JSON).
+    pub fn add_roster_proven(
+        &self,
+        team: &str,
+        version: u64,
+        body: &str,
+        owner_proof: Option<&str>,
+    ) -> anyhow::Result<()> {
         let mut c = self.c();
         let tx = c.transaction()?;
-        tx.execute("INSERT INTO rosters (team, version, body) VALUES (?1, ?2, ?3)", params![team, version, body])
-            .map_err(taken)?;
+        tx.execute(
+            "INSERT INTO rosters (team, version, body, owner_proof) VALUES (?1, ?2, ?3, ?4)",
+            params![team, version, body, owner_proof],
+        )
+        .map_err(taken)?;
         if let Some(name) =
             serde_json::from_str::<serde_json::Value>(body).ok().and_then(|v| v["name"].as_str().map(str::to_owned))
         {
@@ -2142,6 +2163,19 @@ impl Db {
         changed(&tx, ChangeKind::TeamRoster, team)?;
         tx.commit()?;
         Ok(())
+    }
+
+    /// The owner proofs kept beside a team's versions after `since` (DK7),
+    /// by version, oldest first: only the versions that changed its owners
+    /// since DK7 have one.
+    pub fn owner_proofs(&self, team: &str, since: u64) -> anyhow::Result<Vec<(u64, String)>> {
+        let c = self.c();
+        let mut q = c.prepare(
+            "SELECT version, owner_proof FROM rosters
+             WHERE team = ?1 AND version > ?2 AND owner_proof IS NOT NULL ORDER BY version",
+        )?;
+        let rows = q.query_map(params![team, since], |r| Ok((r.get::<_, i64>(0)? as u64, r.get(1)?)))?;
+        Ok(rows.collect::<Result<_, _>>()?)
     }
 
     /// A team's rosters after `since`, oldest first (the whole chain for 0).
