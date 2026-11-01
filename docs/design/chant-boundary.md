@@ -94,7 +94,7 @@ aru-104 decided that Arugula's own release ships through chant: the chant-fly dr
 
 The hold is gone. `--actor github:<login>` puts a handle in the ledger, and path A's other objection (chant 0.108.1, from before releases and environments) went with the move to 0.124.61. What path B waited on has shipped too: `release cut --at` (0.124.34), and since 31 Oct a green lane per deployable, so a release of control and platform can start from the newest `ci/green-server` commit without waiting on the app's phases. So the rescope is to finish what aru-104 decided, and treat `arugula-release` as the stopgap.
 
-The work is in #1988's children: #1983 (control and the platform through chant, with #308 as chant's promote; it needs a yes on staging first), #1986 (publishing through `chant release publish`, waiting partly on INTENTIUS/chant#4676 for targets), #1985 (the drivers hand chant approvals, stale checks and the ledger remote as INTENTIUS/chant#4646, #4648 and #4647 ship, and plan before the phone signs), and #1987 (whether quarantine and the main-is-red timer belong in chant).
+The work is in #1988's children: #1983 (control and the platform through chant, with #308 as its one command; production only for now, with staging later), #1986 (publishing through `chant release publish`, waiting partly on INTENTIUS/chant#4676 for targets), #1985 (the drivers hand chant approvals, stale checks and the ledger remote as INTENTIUS/chant#4646, #4648 and #4647 ship, and plan before the phone signs), and #1987 (whether quarantine and the main-is-red timer belong in chant).
 
 The images in this note show the 22 Oct plan and weren't redrawn.
 
