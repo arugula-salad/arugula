@@ -569,7 +569,12 @@ connection: string,
  * How many children the board is too full to show, the oldest done
  * ones first.
  */
-left_out: number, };
+left_out: number, 
+/**
+ * Whether the epic is started in the tracker (Plane's `started` group),
+ * read from its mirrored item; not whether the board is open.
+ */
+started: boolean, };
 
 /**
  * Where a row stands. `None` says nothing.

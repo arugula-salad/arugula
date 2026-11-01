@@ -184,7 +184,8 @@ pub struct Move<'a> {
 
 pub(super) const BOARD_COLS: &str = "id, project_id, title, created_by, created_at, updated_at, goal, done_note, \
                           closed_at, closed_by, created_by_agent, closed_by_agent, source_key, source_url, \
-                          source_name, source_left_out";
+                          source_name, source_left_out, \
+                          (SELECT i.state_group = 'started' FROM forge_items i WHERE i.id = boards.source_item)";
 pub(super) const ENTRY_COLS: &str =
     "id, rev, note, status, target_kind, target, pane, created_at, updated_at, agent, zone_id, work_item, source";
 const ATTACHED_COLS: &str = "id, row_id, role, target_kind, target, pane, agent, created_at, released_at";
@@ -209,7 +210,7 @@ pub(super) fn board_row(r: &Row) -> Result<Board> {
     })
 }
 
-/// The epic a board follows, from its `source_*` columns (12 to 15).
+/// The epic a board follows, from its `source_*` columns (12 to 15, and 16: the epic's state).
 fn source_of(r: &Row) -> Result<Option<BoardSource>> {
     let Some(key) = r.get::<Option<String>>(12)? else { return Ok(None) };
     Ok(Some(BoardSource {
@@ -218,6 +219,7 @@ fn source_of(r: &Row) -> Result<Option<BoardSource>> {
         url: r.get::<Option<String>>(13)?.unwrap_or_default(),
         connection: r.get::<Option<String>>(14)?.unwrap_or_default(),
         left_out: r.get::<u64>(15)?.min(u64::from(u32::MAX)) as u32,
+        started: r.get::<Option<bool>>(16)?.unwrap_or(false),
     }))
 }
 

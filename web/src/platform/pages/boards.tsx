@@ -12,7 +12,7 @@ import { useEffect, useState } from "preact/hooks";
 import type { ProjectBoard } from "../../shared/proto";
 import { BoardPanel } from "../../shared/boards/view";
 import { BoardError, boards } from "../../shared/boards/store";
-import { epicLine, firstLine } from "../../shared/boards/text";
+import { epicLine, firstLine, NOT_STARTED } from "../../shared/boards/text";
 import { useSubscribe } from "../../shared/ui/hooks";
 import { PageHeader } from "../../shared/ui/page-header";
 import { StateChip } from "../../shared/ui/state-chip";
@@ -241,7 +241,7 @@ function BoardStats({ list }: { list: ProjectBoard[] }) {
 }
 
 /** One board in a list, a card as an issue's is, its bar the board's state (open ok, closed muted): its title, the goal's first line (a closed board has the done note's instead), its progress and its state. */
-function BoardItem({ p, b }: { p: PlatformProject; b: ProjectBoard }) {
+function BoardItem({ p, b, waiting }: { p: PlatformProject; b: ProjectBoard; waiting?: boolean }) {
   const to = pathOf({ page: "board", project: p.id, board: b.id }, names);
   const closed = b.closed_at != null;
   const e = epicLine(b.progress);
@@ -255,6 +255,11 @@ function BoardItem({ p, b }: { p: PlatformProject; b: ProjectBoard }) {
         </a>
         <StateChip tone={issueTone(tone)}>{closed ? "Done" : "Open"}</StateChip>
       </div>
+      {waiting && (
+        <p class="board-card-line dim" data-board-not-started>
+          {NOT_STARTED}
+        </p>
+      )}
       {line && <p class="board-card-line dim">{line}</p>}
       <div class="board-card-progress dim" data-board-progress>
         {b.progress.total > 0 && (
@@ -268,17 +273,34 @@ function BoardItem({ p, b }: { p: PlatformProject; b: ProjectBoard }) {
   );
 }
 
-/** A project's boards, open ones first and the closed ones folded under "Done (N)". `data` is the attribute the open list carries. */
+/** A project's boards: the ones people made, then the open ones that follow a Plane epic under "From Plane" (those whose epic is started first, the rest marked), and the closed ones folded under "Done (N)". `data` is the attribute the open list carries. */
 function BoardItems({ p, list, data }: { p: PlatformProject; list: ProjectBoard[]; data: "data-boards" | "data-project-boards" }) {
   const open = list.filter((b) => b.closed_at == null);
   const done = list.filter((b) => b.closed_at != null);
+  const made = open.filter((b) => !b.source);
+  const plane = open.filter((b) => b.source);
+  const started = plane.filter((b) => b.source?.started);
+  const waiting = plane.filter((b) => b.source?.started);
   return (
     <>
       <ul class="board-list sw-cards" {...{ [data]: true }}>
-        {open.map((b) => (
+        {made.map((b) => (
           <BoardItem key={b.id} p={p} b={b} />
         ))}
       </ul>
+      {plane.length > 0 && (
+        <section class="board-plane-group" aria-labelledby={`plane-boards-${p.id}`} data-boards-plane>
+          <h3 id={`plane-boards-${p.id}`}>From Plane</h3>
+          <ul class="board-list sw-cards">
+            {started.map((b) => (
+              <BoardItem key={b.id} p={p} b={b} />
+            ))}
+            {waiting.map((b) => (
+              <BoardItem key={b.id} p={p} b={b} waiting />
+            ))}
+          </ul>
+        </section>
+      )}
       {done.length > 0 && (
         <details class="board-done-list" data-boards-done>
           <summary>Done ({done.length})</summary>

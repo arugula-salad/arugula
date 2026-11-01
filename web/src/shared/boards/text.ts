@@ -3,7 +3,7 @@
 // typed as a pointer. Plain functions, for the view and its tests
 // (scripts/boards.test.mjs).
 
-import type { BoardAsk, BoardAttachment, BoardBlockState, BoardBlockWord, BoardGroup, BoardLane, BoardMark, BoardProgress, BoardLive, BoardLiveState, BoardPointer, BoardProof, BoardRow, BoardRowRelation, BoardView, BoardWorkItem, BoardZone, RelationKind, OnIssue } from "../proto";
+import type { BoardSource, BoardAsk, BoardAttachment, BoardBlockState, BoardBlockWord, BoardGroup, BoardLane, BoardMark, BoardProgress, BoardLive, BoardLiveState, BoardPointer, BoardProof, BoardRow, BoardRowRelation, BoardView, BoardWorkItem, BoardZone, RelationKind, OnIssue } from "../proto";
 import type { Tone } from "../ui/state-chip";
 
 /** A row's lane as its glyph. A row asking for input shows `?` instead. */
@@ -432,4 +432,22 @@ export function checkTone(c: { status: string; conclusion: string | null }): Ton
   if (c.status !== "completed") return "warn";
   if (c.conclusion === "success") return "ok";
   return c.conclusion === "failure" || c.conclusion === "timed_out" || c.conclusion === "cancelled" || c.conclusion === "action_required" ? "danger" : "muted";
+}
+
+/** What a board from a Plane epic says while the epic is still in backlog or unstarted. */
+export const NOT_STARTED = "Not started in Plane";
+
+/** The board header's word for where a board comes from: `From Plane · ARUGU-10`. */
+export function sourceLine(s: Pick<BoardSource, "key">): string {
+  return `From Plane · ${s.key}`;
+}
+
+/** Whether a source's link is safe to show as one. */
+export function sourceLinked(s: Pick<BoardSource, "url">): boolean {
+  return s.url.startsWith("https://");
+}
+
+/** The header's note on a board too full for all its done children. */
+export function leftOutLine(n: number): string {
+  return `${n} done ${n === 1 ? "child" : "children"} left out`;
 }

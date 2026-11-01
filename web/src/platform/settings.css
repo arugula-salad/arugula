@@ -1115,6 +1115,15 @@ html[data-corners="square"] .platform input.sw-switch {
   flex: 1 1 10rem;
   min-width: 0;
 }
+.platform .plane-epics {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  max-width: 28rem;
+}
+.platform .plane-epics .dim {
+  font-size: 0.85em;
+}
 .platform .plane-connect-buttons {
   display: flex;
   justify-content: flex-end;

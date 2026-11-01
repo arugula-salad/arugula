@@ -174,6 +174,29 @@ async fn a_child_in_an_earlier_page_than_its_epic_is_found_when_the_epic_arrives
     assert_eq!(w.rows(&id).await, [lane("Next", 11)]);
 }
 
+/// Whether a board's epic is started comes from the epic's state in Plane,
+/// not from the board being open: a backlog epic's board is open too.
+#[tokio::test]
+async fn a_board_says_whether_its_epic_is_started() {
+    let w = world().await;
+    let all = vec![epic(10, "Launch", "started", 3_000), epic(20, "Later", "backlog", 3_000)];
+    w.arrive(all.clone(), &all).await;
+    let mut got: Vec<_> = w
+        .boards()
+        .await
+        .iter()
+        .map(|b| {
+            (
+                b["source"]["key"].as_str().unwrap().to_owned(),
+                b["source"]["started"].as_bool(),
+                b["closed_at"].is_null(),
+            )
+        })
+        .collect();
+    got.sort();
+    assert_eq!(got, [("ARUGU-10".to_owned(), Some(true), true), ("ARUGU-20".to_owned(), Some(false), true)]);
+}
+
 /// A child moved from one epic to another leaves the first board and joins
 /// the second, though the mirror only knows its new parent; a deleted
 /// child leaves its board.

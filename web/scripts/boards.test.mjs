@@ -3,7 +3,7 @@
 // the board routes' paths. Run with `node --experimental-strip-types`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { holdsRow, stalledFor, settledFacts, LANE_GLYPH, cardTone, checkTone, checkWord, groupMove, liveTone, prsOf, answerReady, askWaitingLine, assigneesLine, chipOf, counted, debounced, earlierLine, epicLine, firstLine, groupLine, isCard, laneCount, liveWord, marksOf, readyCount, relationLine, UNSEEN_BLOCKER, needsYou, needsYouLine, parsePointer, pointerHref, pointerLabel, pointerToSend, proofMark, rowGlyph, sections, stepActive, workLabel, workChip, onIssueChip, boardGroup, clusterOrder, NO_BOARD } from "../src/shared/boards/text.ts";
+import { holdsRow, stalledFor, settledFacts, LANE_GLYPH, cardTone, checkTone, checkWord, groupMove, liveTone, prsOf, answerReady, askWaitingLine, assigneesLine, chipOf, counted, debounced, earlierLine, epicLine, firstLine, groupLine, isCard, laneCount, liveWord, marksOf, readyCount, relationLine, UNSEEN_BLOCKER, needsYou, needsYouLine, parsePointer, pointerHref, pointerLabel, pointerToSend, proofMark, rowGlyph, sections, stepActive, workLabel, workChip, onIssueChip, boardGroup, clusterOrder, NO_BOARD, sourceLine, sourceLinked, leftOutLine } from "../src/shared/boards/text.ts";
 import { parse, pathOf } from "../src/platform/paths.ts";
 
 const P = "prj_8f2ec0ffee00112233445566778899aa";
@@ -331,4 +331,13 @@ test("folds: everything starts open, a toggle is kept per board, and a bad or bl
   assert.deepEqual(loadFolds("brd_a"), {});
   saveFolds("brd_a", { x: true });
   delete globalThis.localStorage;
+});
+
+test("a board from a Plane epic says where from, links only an https url, and counts what it left out", () => {
+  assert.equal(sourceLine({ key: "ARUGU-10" }), "From Plane · ARUGU-10");
+  assert.equal(sourceLinked({ url: "https://app.plane.so/a/browse/ARUGU-10/" }), true);
+  assert.equal(sourceLinked({ url: "javascript:alert(1)" }), false);
+  assert.equal(sourceLinked({ url: "" }), false);
+  assert.equal(leftOutLine(1), "1 done child left out");
+  assert.equal(leftOutLine(3), "3 done children left out");
 });

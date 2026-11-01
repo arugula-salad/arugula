@@ -627,6 +627,11 @@
           "description": "`plane`.",
           "type": "string"
         },
+        "started": {
+          "default": false,
+          "description": "Whether the epic is started in the tracker (Plane's `started` group),\nread from its mirrored item; not whether the board is open.",
+          "type": "boolean"
+        },
         "url": {
           "description": "Where the epic is in the tracker's web app.",
           "type": "string"
