@@ -4,7 +4,7 @@
 
 **Updated 28 Oct 2026** (Arugula 781b391d, chant 0.124.56 at b1b9e44a1). Since this was written, Arugula's own release moved to an `arugula-release` driver (#1372, M221) instead of either release path below. The chant contract asks were checked against chant's source and the gaps filed upstream, and the boundary gained a CI row. Marked inline as *(28 Oct)*.
 
-**Updated 1 Nov 2026** (Arugula c75976ce, chant 0.124.62; Arugula pins 0.124.61). Chant shipped all four of Arugula's CI asks (#4643, #4662, #4645, #4644), so the CI row moved toward chant. The contract asks from 28 Oct (#4646, #4647, #4648, #4649) are still open with no replies. The release section is rescoped: see "Rescope" below, which replaces "Rough order". Marked inline as *(1 Nov)*.
+**Updated 1 Nov 2026** (Arugula c75976ce, chant 0.124.62; Arugula pins 0.124.61). Chant shipped all four of Arugula's CI asks (#4643, #4662, #4645, #4644), so the CI row moved toward chant. The contract asks from 28 Oct (#4646, #4647, #4648, #4649) are still open with no replies. The release section is rescoped back to what aru-104 decided, Arugula's release through chant: see "Rescope" below, which replaces "Rough order". Marked inline as *(1 Nov)*.
 
 The platform tab asks one question that matters most for chant: "For plans and reviews, which is the source of truth, chant records in the repo or platform objects?" Its recommendation is platform objects for the work, chant records for decisions and releases, linked both ways. I agree with that, and this note tries to pin down exactly where the line falls so step 7 doesn't build some things twice.
 
@@ -86,17 +86,19 @@ It doesn't lock anyone in, since chant still deploys from a laptop or CI without
 
 A proposal, for lex00 and Jake to settle.
 
-The line above says releases are chant records, and Arugula's own release isn't one. The `arugula-release` driver runs `scripts/release` with no chant op, so the platform has the plan and the approval and chant has nothing. Two other things lean against the line: native #308 (promote control and platform from the newest `ci/green-server`) would build promotion in Arugula, which the terragucci paragraph says belongs in chant; and six of the seven drivers never call chant.
+aru-104 decided that Arugula's own release ships through chant: the chant-fly driver runs a chant release, approved from the owner's phone, and that was step 7's gate. Arugula was meant to be chant's first real release user (path B says so). It isn't yet. #1121 was held over the approver's email on a public ledger, and M221's `arugula-release` driver went around the hold: it runs `scripts/release` with no chant op, so the platform has the plan and the approval and chant has no record of Arugula's releases.
 
-In order, smallest first:
+The hold is gone. `--actor github:<login>` puts a handle in the ledger, and path A's other objection (chant 0.108.1, from before releases and environments) went with the move to 0.124.61. What path B waited on has shipped too: `release cut --at` (0.124.34), and since 31 Oct a green lane per deployable, so a release of control and platform can start from the newest `ci/green-server` commit without waiting on the app's phases. So the rescope is to finish what aru-104 decided, and treat `arugula-release` as the stopgap.
 
-1. Arugula's release writes a chant release record. After `scripts/release`, the `arugula-release` driver records the release in chant's ledger on origin, the approver as `github:<login>`, relayed by arugula, with a note naming the platform's approval. This needs nothing from chant and is the part of #1121 worth keeping.
-2. #308 picks and doesn't promote. It finds the newest `ci/green-server` commit and starts an `arugula-release` deploy of control and platform from it, with no environments, order or approval rules of its own. Staging, if it's wanted, is path B, in chant.
-3. Path A is dropped. Path B stays the way to get staging and promotion by digest for control, when that's wanted, and not before.
-4. Plan first, then sign the digest. Still the first fix to step 7's flow.
-5. chant's asks, in this order: #4646 (device signatures), so a phone approval counts on signed-only gates; #4648 (a stale read), so a laptop or CI apply makes a plan stale; #4649 (work items from squash merges), for `release candidates`; #4647 (the ledger's remote), only if the ledger should leave origin.
-6. One chant driver for every target moves to step 8, with planter's. planter's four landed as their own drivers, so folding them in is step 8's work anyway.
-7. aru-104 gets a decision that supersedes its release clause, which still says Arugula's release ships through chant-fly.
+In order:
+
+1. Arugula's release runs through chant. An `ops/` chant member (#1121's, without its email problem) declares control and platform as Fly components, cut with `release cut --at` from the newest `ci/green-server` commit, promoted by digest from staging to production behind a gate. The deploy runs it through the chant-fly driver, which was built for this. aru-104 stands as decided.
+2. #308 becomes that promote. A one-command promote is `chant components promote`, run as a deploy, and Arugula writes only the command that starts it. No environments, order or approval rules of Arugula's own.
+3. What chant can't release yet stays on `arugula-release` for now: the binaries, Homebrew, the editor extension and the Tauri app have no chant target. Ask chant which of those it means to cover (a GitHub release target would cover most). Retire `arugula-release` once they're covered, or keep it for those alone.
+4. Plan first, then sign the digest. With the release in chant, the phone should approve chant's plan, which is step 7's first fix anyway.
+5. chant's asks, in this order: #4646 (device signatures), so the phone's approval counts on a signed-only production gate; #4648 (a stale read), so a laptop or CI apply makes a plan stale; #4649 (work items from squash merges), so `release candidates` and release notes name the PRs; #4647 (the ledger's remote), only if the ledger should leave origin.
+6. Staging: path B needs a second Fly environment for control and platform. That's the real cost of this rescope and needs a yes before item 1 starts.
+7. One chant driver for every target moves to step 8, with planter's four.
 
 The images in this note show the 22 Oct plan and weren't redrawn.
 
