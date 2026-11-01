@@ -6,7 +6,8 @@
 // prompt; agent blocks in every state an agent is in (working, asking to
 // run something, asking a question, failed, done), each with the context
 // strip (#397) at its own fill, one compacted at low fill and one near
-// full; and in control, chat (#general and a DM), a board with rows in
+// full, and a task list (#445) with steps in every column of the swarm's
+// plan board, one waiting on a blocker and one with no list; and in control, chat (#general and a DM), a board with rows in
 // each lane, a linked repo's open PR, and a Doc.
 //
 // The agents are the scripted fake ACP agent (crates/daemon/tests/
@@ -131,6 +132,9 @@ type Role = "working" | "near-full" | "permission" | "question" | "failed" | "co
 interface Task {
   prompt: string;
   title: string;
+  /** Its steps as Claude Code's task list would have them (#445): each
+   * step's words and its words while in progress. */
+  plan: [string, string][];
   project: string;
   /** The first turn's steps, before the role's ending. */
   steps: Step[];
@@ -145,6 +149,7 @@ const TASKS: Task[] = [
   {
     prompt: "Add retries with backoff to the webhook sender, and a test for the give-up path",
     title: "Webhook retries with backoff",
+    plan: [["Read how the sender delivers", "Reading the sender"], ["Wrap delivery in retries with backoff", "Wrapping delivery in retries"], ["Test the give-up path", "Testing the give-up path"], ["Run the webhook tests", "Running the webhook tests"]],
     project: "api",
     steps: [
       { think: "The sender gives up on the first 5xx. I'll wrap the call and keep the attempt count on the delivery row." },
@@ -159,6 +164,7 @@ const TASKS: Task[] = [
   {
     prompt: "Migrate the orders table to the new money columns without downtime",
     title: "Orders money columns",
+    plan: [["Add the money columns", "Adding the money columns"], ["Backfill in batches of 5,000", "Backfilling in batches"], ["Switch reads behind ORDERS_MONEY_V2", "Switching reads over"], ["Drop the old columns", "Dropping the old columns"]],
     project: "billing",
     steps: [
       { think: "Two steps: add the new columns and backfill in batches, then switch reads over behind the flag." },
@@ -172,6 +178,7 @@ const TASKS: Task[] = [
   {
     prompt: "Bump Node to 22 in CI and fix whatever breaks",
     title: "Node 22 in CI",
+    plan: [["Bump Node in the CI workflow", "Bumping Node in CI"], ["Update engines in package.json", "Updating engines"], ["Fix what breaks in the tests", "Fixing what breaks"]],
     project: "shop",
     steps: [
       { tool: "Read .github/workflows/ci.yml", kind: "read" },
@@ -184,6 +191,7 @@ const TASKS: Task[] = [
   {
     prompt: "Product search is slow on big catalogs. Cache the results.",
     title: "Cache product search",
+    plan: [["Profile the facet counts", "Profiling the facet counts"], ["Pick where results are cached", "Picking a cache"], ["Key results by catalog version", "Keying by catalog version"], ["Drop the cache on publish", "Dropping the cache on publish"]],
     project: "shop",
     steps: [
       { think: "The query itself is fine; it's the facet counts. Results can be cached per catalog version." },
@@ -204,6 +212,7 @@ const TASKS: Task[] = [
   {
     prompt: "The upload test fails about one run in ten. Find out why and fix it.",
     title: "Flaky upload test",
+    plan: [["Reproduce the failure", "Reproducing the failure"], ["Give each test its own bucket", "Separating the buckets"], ["Run it 200 times in a row", "Running it 200 times"]],
     project: "api",
     steps: [
       { tool: "Read tests/upload.rs", kind: "read" },
@@ -220,6 +229,7 @@ const TASKS: Task[] = [
   {
     prompt: "Write the release notes for 2.4 from the merged PRs",
     title: "Release notes for 2.4",
+    plan: [["List the merged PRs", "Listing the merged PRs"], ["Group them by feature", "Grouping by feature"], ["Write CHANGELOG.md", "Writing the notes"]],
     project: "shop",
     steps: [
       { tool: "gh pr list --state merged --base main", kind: "execute" },
@@ -231,6 +241,7 @@ const TASKS: Task[] = [
   {
     prompt: "Refactor the auth middleware so each route says what it needs",
     title: "Per-route auth",
+    plan: [["Map which routes need what", "Mapping the routes"], ["Add Public, Session and Admin", "Adding the route levels"], ["Check it in the middleware", "Checking in the middleware"], ["Remove the old guard", "Removing the old guard"]],
     project: "api",
     steps: [
       { tool: "Read src/auth/middleware.rs", kind: "read" },
@@ -243,6 +254,7 @@ const TASKS: Task[] = [
   {
     prompt: "Our Terraform plan shows drift on the queue. Reconcile it.",
     title: "Queue drift",
+    plan: [["Plan the queue module", "Planning the queue module"], ["Find the hand-made change", "Finding the drift"], ["Put the timeout in the module", "Updating the module"], ["Apply and check the plan is clean", "Applying the module"]],
     project: "infra",
     steps: [
       { tool: "terraform plan -target=module.queue", kind: "execute", ms: 900 },
@@ -255,6 +267,7 @@ const TASKS: Task[] = [
   {
     prompt: "Make the worker drain its queue before it shuts down",
     title: "Graceful worker shutdown",
+    plan: [["Read the worker's main loop", "Reading the main loop"], ["Stop taking jobs on SIGTERM", "Handling SIGTERM"], ["Wait up to 30s for running jobs", "Draining running jobs"], ["Test the drain", "Testing the drain"]],
     project: "worker",
     steps: [
       { tool: "Read cmd/worker/main.go", kind: "read" },
@@ -264,6 +277,21 @@ const TASKS: Task[] = [
     summary: "On SIGTERM the worker stops taking jobs and waits up to 30s for the ones it has.",
   },
 ];
+
+/** Where each role's agent is in its task list (#445), so the plan board
+ * has steps in every column: a step per entry, by the task's own steps;
+ * `after` makes a pending one blocked on another (ids from 1). The
+ * permission and question roles wait on you, so their step in progress
+ * is in Review; the overflow role has no list. */
+const PLANS: Record<Role, { status: "pending" | "in_progress" | "completed"; after?: string[] }[] | null> = {
+  working: [{ status: "completed" }, { status: "in_progress" }, { status: "pending" }, { status: "pending" }],
+  "near-full": [{ status: "completed" }, { status: "completed" }, { status: "in_progress" }, { status: "pending", after: ["3"] }],
+  permission: [{ status: "completed" }, { status: "completed" }, { status: "in_progress" }, { status: "pending" }],
+  question: [{ status: "completed" }, { status: "in_progress" }, { status: "pending", after: ["2"] }, { status: "pending" }],
+  failed: [{ status: "completed" }, { status: "in_progress" }, { status: "pending", after: ["2"] }],
+  compacted: [{ status: "completed" }, { status: "completed" }, { status: "completed" }, { status: "completed" }],
+  overflow: null,
+};
 
 /** What each role's agent's context looks like (#397's strip). */
 const FILLS: Record<Role, { model: string; usage: Step[] }> = {
@@ -576,6 +604,9 @@ HISTFILE=~/.bash_history
     const window = fill.model.includes("[1m]") ? 1_000_000 : 200_000;
     const tokens = Number((fill.usage.at(-1) as { usage: number }).usage);
     const first: Step[] = [{ title: task.title }, ...task.steps, ...fill.usage.map((u) => ({ ...u, model: fill.model }))];
+    // #445: its task list, as far as the role has got.
+    const plan = PLANS[role];
+    if (plan) first.push({ tasks: task.plan.slice(0, plan.length).map(([subject, active], i) => ({ subject, active, ...plan[i] })) });
     const busy = (cmd: string): Step => ({ busy: cmd, kind: "execute", secs: this.opts.chaos ? this.r.int(40, 150) : null });
     let now: Agent["now"] = "idle";
     switch (role) {

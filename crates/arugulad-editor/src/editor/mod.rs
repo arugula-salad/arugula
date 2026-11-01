@@ -479,6 +479,7 @@ impl Block for Editor {
             editor: self.link.lock().unwrap().as_ref().map(|l| l.info()),
             on_issue: None,
             stopped: false,
+            plan: None,
         }
     }
 

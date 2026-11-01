@@ -47,6 +47,12 @@ pub trait AgentSessions: Send + Sync + Debug {
     /// The conversation each of our panes' Claude Code holds now, by pane,
     /// with its folder. `panes`: the processes of our panes, by pid.
     fn live(&self, panes: HashMap<u32, PaneId>) -> HashMap<PaneId, (String, Option<String>)>;
+    /// The conversation's own task list (#445), as last read: the read
+    /// happens off the mux task, so a change shows on a later call.
+    /// `transcript`: where it is, when its hooks said.
+    fn plan(&self, _session: &str, _transcript: Option<&std::path::Path>) -> Option<arugula_proto::Plan> {
+        None
+    }
 }
 
 /// Something outside the mux that makes a terminal wait on you (#699): a

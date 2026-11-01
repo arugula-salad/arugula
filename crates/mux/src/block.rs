@@ -127,6 +127,8 @@ pub struct Summary {
     /// Its program ended: an agent block whose agent stopped. It isn't
     /// running then (UI audit #154).
     pub stopped: bool,
+    /// An agent block's session's own task list (#445).
+    pub plan: Option<arugula_proto::Plan>,
 }
 
 /// An open permission request or question in a block (M24's `ask` reason).

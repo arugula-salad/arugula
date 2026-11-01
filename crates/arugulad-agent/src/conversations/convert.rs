@@ -23,7 +23,7 @@ use std::{
 
 use serde_json::Value;
 
-use super::{branch, context::Context, spend::Spend};
+use super::{branch, context::Context, plan::Plans, spend::Spend};
 use crate::agent::{
     images,
     transcript::{Entry, Tool},
@@ -117,6 +117,11 @@ impl Follow {
         self.open.as_ref().unwrap_or(&self.c).spend.clone()
     }
 
+    /// The session's own task list so far (#445).
+    pub fn plan(&self) -> Option<arugula_proto::Plan> {
+        self.open.as_ref().unwrap_or(&self.c).plan.summary()
+    }
+
     /// The entries so far. `finished`: as for [`entries`].
     pub fn entries(&self, finished: bool) -> Vec<Entry> {
         self.open.as_ref().unwrap_or(&self.c).entries(finished)
@@ -176,6 +181,8 @@ struct Converter {
     /// Only `context` (and `spend`) is wanted: lines aren't converted to
     /// entries.
     context_only: bool,
+    /// The session's own task list (#445).
+    plan: Plans,
 }
 
 impl Converter {
@@ -185,9 +192,14 @@ impl Converter {
             if line.is_empty() {
                 continue;
             }
-            // The context and the spend read only replies and compactions:
-            // a tool's output, often the most of a transcript, isn't parsed.
-            if self.context_only && !mentions(line, b"\"assistant\"") && !mentions(line, b"compact_boundary") {
+            // The context and the spend read only replies and compactions,
+            // and the plan its tools' calls and their results: a tool's
+            // output, often the most of a transcript, isn't parsed.
+            if self.context_only
+                && !mentions(line, b"\"assistant\"")
+                && !mentions(line, b"compact_boundary")
+                && !self.plan.wants(line)
+            {
                 continue;
             }
             if let Ok(v) = serde_json::from_slice::<Value>(line) {
@@ -219,6 +231,7 @@ impl Converter {
     fn line(&mut self, v: &Value) {
         self.context.line(v);
         self.spend.line(v);
+        self.plan.line(v);
         if self.context_only {
             return;
         }
@@ -607,6 +620,16 @@ mod tests {
         only.lines(&fixture("shapes/compaction.jsonl"));
         assert!(only.out.is_empty());
         assert_eq!(only.context.summary(), Some(ctx));
+    }
+
+    #[test]
+    fn a_followed_transcript_says_its_plan() {
+        // #445: an agent block's session, followed for its context only.
+        let mut only = Converter { context_only: true, ..Default::default() };
+        only.lines(&fixture("shapes/todo-write.jsonl"));
+        let p = only.plan.summary().expect("a plan");
+        assert_eq!(p.steps.len(), 3);
+        assert_eq!(p.steps[1].status, arugula_proto::StepStatus::InProgress);
     }
 
     #[test]

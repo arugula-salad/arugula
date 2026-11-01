@@ -1170,6 +1170,56 @@ pub struct PaneInfo {
     /// (#372): the chip on its sidebar row and its swarm card.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub on_issue: Option<OnIssue>,
+    /// The steps its Claude Code session tracks with its todo and task
+    /// tools, from its transcript (#445): the swarm's plan board. A
+    /// terminal's while that conversation runs in it; an agent block's.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub plan: Option<Plan>,
+}
+
+/// A session's own task list (#445), as it last wrote it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct Plan {
+    /// In the session's order; the most recent 60 of a longer list.
+    pub steps: Vec<PlanStep>,
+    /// The model the session answers with, short (`Opus 5.5`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+    /// When the list last changed (ms).
+    pub at_ms: u64,
+}
+
+/// One step of a [`Plan`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct PlanStep {
+    /// The task's id (`TaskCreate`'s), or its place in a `TodoWrite` list
+    /// from 1.
+    pub id: String,
+    pub text: String,
+    /// Its wording while in progress (`activeForm`: "Running the tests").
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub active: Option<String>,
+    pub status: StepStatus,
+    /// Steps it waits on that aren't done yet, by id (`addBlockedBy`): a
+    /// pending step with any is blocked.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub blocked_by: Vec<String>,
+    /// The agent it's given to (`owner`: a teammate's name), if not the
+    /// session itself.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub owner: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[serde(rename_all = "snake_case")]
+pub enum StepStatus {
+    #[default]
+    Pending,
+    InProgress,
+    Completed,
 }
 
 /// The issue a block was started on, and the boards with a row it is

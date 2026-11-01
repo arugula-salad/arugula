@@ -18,14 +18,15 @@
 pub mod branch;
 pub mod context;
 pub mod convert;
+pub mod plan;
 pub mod spend;
 
 use std::{
     collections::HashMap,
     io::{Read, Seek, SeekFrom},
     path::{Path, PathBuf},
-    sync::{Mutex, OnceLock},
-    time::UNIX_EPOCH,
+    sync::{Arc, Mutex, OnceLock},
+    time::{Duration, Instant, UNIX_EPOCH},
 };
 
 use arugula_proto::PaneId;
@@ -352,10 +353,79 @@ pub fn transcript_of(dirs: &Dirs, session: &str) -> Option<PathBuf> {
 }
 
 /// The mux's `AgentSessions`: the conversations in Claude Code's folders.
+#[derive(Debug, Default)]
+pub struct Sessions {
+    /// Each conversation's task list as last read (#445), by id.
+    plans: Arc<Mutex<HashMap<String, PlanRead>>>,
+}
+
+/// A conversation's transcript, followed for its task list.
 #[derive(Debug)]
-pub struct Sessions;
+struct PlanRead {
+    file: Option<plan::PlanFile>,
+    /// A read is under way, off the mux task.
+    reading: bool,
+    /// When it was last read, and last asked for.
+    read_at: Option<Instant>,
+    asked_at: Instant,
+    plan: Option<arugula_proto::Plan>,
+}
+
+/// A task list is read again at most this often.
+const PLAN_EVERY: Duration = Duration::from_secs(2);
+/// One nobody has asked for in this long is forgotten.
+const PLAN_KEPT: Duration = Duration::from_secs(600);
+
+impl Sessions {
+    /// The list as last read; a read of what's new starts in the background
+    /// when it's due.
+    fn plan_of(&self, session: &str, transcript: Option<&Path>) -> Option<arugula_proto::Plan> {
+        let now = Instant::now();
+        let mut all = self.plans.lock().unwrap();
+        all.retain(|_, r| now.duration_since(r.asked_at) < PLAN_KEPT);
+        let r = all.entry(session.to_owned()).or_insert(PlanRead {
+            file: None,
+            reading: false,
+            read_at: None,
+            asked_at: now,
+            plan: None,
+        });
+        r.asked_at = now;
+        let plan = r.plan.clone();
+        if r.reading || r.read_at.is_some_and(|t| now.duration_since(t) < PLAN_EVERY) {
+            return plan;
+        }
+        r.reading = true;
+        let mut file = r.file.take();
+        let (plans, id, given) = (self.plans.clone(), session.to_owned(), transcript.map(Path::to_path_buf));
+        // A first read of a long transcript takes a while: never on the
+        // mux's task.
+        std::thread::spawn(move || {
+            let path = given.filter(|p| p.is_file()).or_else(|| transcript_of(&Dirs::from_env(), &id));
+            if let Some(path) = path
+                && file.as_ref().is_none_or(|f| f.path() != path)
+            {
+                file = Some(plan::PlanFile::new(path));
+            }
+            let mut plan = None;
+            if let Some(f) = file.as_mut() {
+                let _ = f.read();
+                plan = f.summary();
+            }
+            let mut all = plans.lock().unwrap();
+            if let Some(r) = all.get_mut(&id) {
+                (r.file, r.plan, r.reading, r.read_at) = (file, plan, false, Some(Instant::now()));
+            }
+        });
+        plan
+    }
+}
 
 impl crate::mux::AgentSessions for Sessions {
+    fn plan(&self, session: &str, transcript: Option<&Path>) -> Option<arugula_proto::Plan> {
+        self.plan_of(session, transcript)
+    }
+
     fn transcript(&self, id: &str) -> Option<PathBuf> {
         let mut ix = Index::new(Dirs::from_env());
         ix.find(id).ok().map(|c| c.path)

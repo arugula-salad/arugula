@@ -13,6 +13,7 @@
 import type { WorkKind } from "../../shared/proto";
 import { KINDS } from "./model";
 import { clusterOrder } from "../../shared/boards/text";
+import type { PlanOf } from "./plan-model";
 
 /** M61: an unread thread, and one that mentions you. */
 export const UNREAD = "#e6ebf4";
@@ -74,6 +75,9 @@ export interface FieldPane {
    * is for them. */
   unread?: number;
   mention?: boolean;
+  /** An agent session's task list and what it waits on (#445): the plan
+   * board's. Null for panes that aren't agents. */
+  plan?: PlanOf | null;
 }
 
 /** What the swarm draws its panes with (M41's themes): the field (blocks)

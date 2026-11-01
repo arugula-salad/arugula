@@ -530,7 +530,7 @@ impl crate::agent::Agents for AgentBlock {
     }
 
     fn sessions(&self) -> Arc<dyn crate::mux::AgentSessions> {
-        Arc::new(crate::conversations::Sessions)
+        Arc::new(crate::conversations::Sessions::default())
     }
 
     fn conversation_titles(&self, ids: &[String]) -> std::collections::HashMap<String, String> {
@@ -3425,7 +3425,9 @@ impl Block for Agent {
                 })
                 .collect(),
         });
-        crate::block::Summary { title: g.shown_title(), on_issue, stopped, ..Default::default() }
+        // #445: its session's task list, from the transcript it follows.
+        let plan = if g.cfg.import.is_some() && !g.frozen { g.follow.plan() } else { g.live_ctx.plan() };
+        crate::block::Summary { title: g.shown_title(), on_issue, stopped, plan, ..Default::default() }
     }
 
     fn state(&self) -> Value {

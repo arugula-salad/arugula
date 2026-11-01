@@ -98,6 +98,25 @@ impl Daemon {
         for (id, agent) in agents {
             self.watch_named(id, agent);
         }
+        // #445: each running Claude Code conversation's own task list.
+        let mut plans = std::collections::HashMap::new();
+        for (id, m) in &self.meta {
+            if let Some(s) = m.session.as_ref().filter(|s| s.running && s.agent == "claude")
+                && self.panes.contains_key(id)
+                && let Some(p) = self.config.sessions.plan(&s.id, s.transcript.as_deref().map(std::path::Path::new))
+            {
+                plans.insert(*id, p);
+            }
+        }
+        if plans != self.plans {
+            let ids: Vec<PaneId> = plans.keys().chain(self.plans.keys()).copied().collect();
+            for id in ids {
+                if plans.get(&id) != self.plans.get(&id) {
+                    self.mark(id);
+                }
+            }
+            self.plans = plans;
+        }
     }
 
     /// Write the layout and pane details if anything changed since the last
@@ -223,6 +242,7 @@ impl Daemon {
             started_by: meta.started_by.clone(),
             app: meta.app.clone(),
             on_issue: None,
+            plan: self.plans.get(&p.id).cloned(),
             running,
             policy: meta.policy,
             current: status.current.map(info_of),
@@ -306,6 +326,7 @@ impl Daemon {
             on_issue: s.on_issue,
             diff: None,
             claude_ide: false,
+            plan: s.plan,
         }
     }
 

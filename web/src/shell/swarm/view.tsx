@@ -28,17 +28,19 @@ import { NvimIcon } from "../ui/shell/icons";
 import { PointChoices, pointOf, proposalLine } from "../ui/point-choices";
 import { finished, needsYou, NEEDS_YOU } from "../../shared/needs-you";
 import { onIssueChip } from "../../shared/boards/text";
+import { planOf } from "./plan-of";
 import { activityOf, bundleOf, cardTitle, headlineOf, holdStill, shortHost, whatItDoes, shortPaths, shownNow, wantsYou, followable, editorAt, GROUPING_LABEL, GROUPINGS, groupOf, isPresence, kindOf, KIND_LABEL, KINDS, REASON_COL, reasonOf, type GroupBy } from "./model";
 
 const BY_KEY = "arugula.swarm.by";
 const THEME_KEY = "arugula.swarm.theme";
 /** How the swarm is drawn. Blocks is the field; the city is 3D; the hive is a
- * cell per pane and the timeline a lane per pane over time. */
-export type Theme = "blocks" | "city" | "hive" | "timeline";
+ * cell per pane and the timeline a lane per pane over time; the plan is the
+ * steps inside agent sessions (#445). */
+export type Theme = "blocks" | "city" | "hive" | "timeline" | "plan";
 /** Every theme, offered to everyone under Theme: a setting of the swarm's,
  * kept in this browser. They left Labs (the `swarm-themes` flag is
  * retired); all but blocks are chunks of their own, fetched when picked. */
-export const THEMES: Theme[] = ["blocks", "city", "hive", "timeline"];
+export const THEMES: Theme[] = ["blocks", "city", "hive", "timeline", "plan"];
 
 /** A done card leaves the rail by itself after this long. */
 
@@ -201,7 +203,9 @@ export function SwarmView({
           ? import("./hive").then(({ Hive }) => (cv, h) => new Hive(cv, h))
           : theme === "timeline"
             ? import("./timeline").then(({ Timeline }) => (cv, h) => new Timeline(cv, h))
-            : Promise.resolve((cv, h) => new Field(cv, h));
+            : theme === "plan"
+              ? import("./plan").then(({ PlanBoard }) => (cv, h) => new PlanBoard(cv, h))
+              : Promise.resolve((cv, h) => new Field(cv, h));
     void make
       .then((mk) => {
         if (!gone) begin(mk(canvas.current!, hooks));
@@ -253,6 +257,7 @@ export function SwarmView({
           people,
           unread: p.unread,
           mention: p.mention,
+          plan: planOf(p),
         };
       });
     field.current?.set(fed.current);
@@ -577,6 +582,7 @@ const ARIA: Record<Theme, string> = {
   city: "Every pane as a building, each cluster a block",
   hive: "Every pane as a cell, each cluster a comb",
   timeline: "Every pane as a lane of its commands over the last 40 minutes",
+  plan: "The steps inside each agent session, by status",
 };
 
 /** What to do with each theme: [laptop, phone]. */
@@ -595,6 +601,7 @@ const HINT: Record<Theme, [string, string]> = {
   ],
   hive: ["Scroll to zoom. Drag to pan. Click a cell to open its pane.", "Pinch to zoom, drag to pan. Tap a cell to open its pane."],
   timeline: ["Drag to scroll back or down, scroll to zoom. Click a lane to open its pane.", "Drag to scroll, pinch to zoom. Tap a lane to open its pane."],
+  plan: ["Drag to scroll, scroll to zoom. Click a step to open its session.", "Drag to scroll, pinch to zoom. Tap a step to open its session."],
 };
 
 /** How to read a theme (M41, M42): what each thing it draws means. */
@@ -629,6 +636,15 @@ const KEYS: Record<Exclude<Theme, "blocks">, [string, string][]> = {
     ["Thin line", "Runs until stopped: a server, log tail, studio app or editor."],
     ["Band", "Needs you: from when it started waiting until now, with how long past the now edge."],
     ["Dot", "A teammate has it open; ringed while they type, faintly while they drive it. A grey lane: its machine isn't connected."],
+  ],
+  plan: [
+    ["Card", "A step from an agent session's own task list (Claude Code's todo and task tools). Agents only; other panes aren't here."],
+    ["Column", "Its status. Review: in progress while its session waits on you, saying why. Blocked: waiting on another step."],
+    ["Left edge", "The session's model: orange Opus, blue Sonnet, green Haiku, grey another or not known yet."],
+    ["Border", "In progress: its session's output, pulsing while it prints. Review: the reason's colour, glowing wider the longer it waits."],
+    ["Faded", "Done: a session's last finished step, saying how many came before it."],
+    ["No plan", "Agent sessions that haven't written a task list, below the board."],
+    ["Greyed", "Its machine isn't connected."],
   ],
 };
 

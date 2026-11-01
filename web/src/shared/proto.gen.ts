@@ -3436,7 +3436,13 @@ app?: string | null,
  * The issue an agent block was started on, and the boards it is on
  * (#372): the chip on its sidebar row and its swarm card.
  */
-on_issue?: OnIssue | null, };
+on_issue?: OnIssue | null, 
+/**
+ * The steps its Claude Code session tracks with its todo and task
+ * tools, from its transcript (#445): the swarm's plan board. A
+ * terminal's while that conversation runs in it; an agent block's.
+ */
+plan?: Plan | null, };
 
 export type PaneOp = { "op": "set_policy", policy: Policy, } | { "op": "purge" } | { "op": "set_integration", on: boolean, } | { "op": "attention", state: Attention, } | { "op": "take_control" } | { "op": "request_control" } | { "op": "give_control", to: string, } | { "op": "release_control" } | { "op": "set_pair", on: boolean, } | { "op": "request_trust" } | { "op": "grant_trust", to: string, minutes: number, } | { "op": "revoke_trust", to: string, } | { "op": "set_private", on: boolean, };
 
@@ -3444,6 +3450,47 @@ export type PaneOp = { "op": "set_policy", policy: Policy, } | { "op": "purge" }
  * A pinned file against the tree read (chant's asset `state`).
  */
 export type PinState = "pinned" | "drifted" | "missing" | "stale";
+
+/**
+ * A session's own task list (#445), as it last wrote it.
+ */
+export type Plan = { 
+/**
+ * In the session's order; the most recent 60 of a longer list.
+ */
+steps: Array<PlanStep>, 
+/**
+ * The model the session answers with, short (`Opus 5.5`).
+ */
+model?: string | null, 
+/**
+ * When the list last changed (ms).
+ */
+at_ms: number, };
+
+/**
+ * One step of a [`Plan`].
+ */
+export type PlanStep = { 
+/**
+ * The task's id (`TaskCreate`'s), or its place in a `TodoWrite` list
+ * from 1.
+ */
+id: string, text: string, 
+/**
+ * Its wording while in progress (`activeForm`: "Running the tests").
+ */
+active?: string | null, status: StepStatus, 
+/**
+ * Steps it waits on that aren't done yet, by id (`addBlockedBy`): a
+ * pending step with any is blocked.
+ */
+blocked_by?: Array<string>, 
+/**
+ * The agent it's given to (`owner`: a teammate's name), if not the
+ * session itself.
+ */
+owner?: string | null, };
 
 /**
  * The signed-in person, as the hub knows them.
@@ -4697,6 +4744,8 @@ roles?: Array<[number, Role]> | null,
  * client sees.
  */
 presence?: Array<Presence>, };
+
+export type StepStatus = "pending" | "in_progress" | "completed";
 
 export type TabView = { id: number, name: string | null, root: Node, cols: number, rows: number, owner: number | null, zoom: number | null, 
 /**

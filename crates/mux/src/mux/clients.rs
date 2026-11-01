@@ -734,6 +734,7 @@ impl Daemon {
                 answered: None,
                 work: None,
                 on_issue: None,
+                plan: None,
                 project: None,
                 branch: None,
                 head: None,

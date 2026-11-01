@@ -29,7 +29,7 @@ async function swarm(page: Page) {
 
 test("with labs the swarm has the theme picker", async ({ page }) => {
   await swarm(page);
-  await expect(page.locator("[data-theme-pick]")).toHaveCount(4);
+  await expect(page.locator("[data-theme-pick]")).toHaveCount(5);
   await expect(page.locator(".swarm")).toHaveAttribute("data-theme", "blocks");
   // The rest of the bar is still there.
   await expect(page.locator('[data-g="machine"]')).toBeVisible();

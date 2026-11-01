@@ -463,6 +463,9 @@ struct Daemon {
     /// The last link to a PR or an issue each terminal printed
     /// (`PaneInfo.link`).
     links: HashMap<PaneId, String>,
+    /// Each terminal's Claude Code task list, while its conversation runs
+    /// there (`PaneInfo.plan`, #445).
+    plans: HashMap<PaneId, arugula_proto::Plan>,
     /// Terminals brought back at startup that didn't keep running across
     /// it (`PaneInfo.restored`).
     restored: std::collections::HashSet<PaneId>,
@@ -663,6 +666,7 @@ pub fn start(
         turn_typed: Default::default(),
         hooked: Default::default(),
         links: Default::default(),
+        plans: Default::default(),
         restored: Default::default(),
         hold: Default::default(),
         clients: HashMap::new(),

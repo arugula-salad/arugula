@@ -4170,6 +4170,11 @@ a.work-chip:hover {
   border-radius: 2px;
   margin-right: 6px;
 }
+/* #445: the plan board draws agents' steps, not kinds; its key says how
+   to read it. */
+.swarm[data-theme="plan"] .swarm-legend {
+  display: none;
+}
 .swarm-hint {
   font: 400 11px/1.4 var(--f-mono);
   color: var(--mute);

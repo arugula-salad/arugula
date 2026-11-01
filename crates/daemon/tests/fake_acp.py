@@ -97,6 +97,13 @@ A step is one of:
   {"compact": TRIGGER, "pre": N, "post": M}
                                         a compact_boundary entry there
   {"fail": MESSAGE}                     the turn fails with MESSAGE
+  {"tasks": [{"subject": S, "active": A, "status": ST, "after": [ID]}]}
+                                        the session's task list (#445) as
+                                        Claude Code's task tools leave it:
+                                        TaskCreate for each new one (ids from
+                                        1, in order), TaskUpdate for a status
+                                        or a blocker that changed, written to
+                                        the transcript as calls and results
 """
 
 import json
@@ -438,6 +445,42 @@ def transcript(sid, s, entry):
         f.write(json.dumps({**base, **entry}) + "\n")
 
 
+def plan_steps(sid, s, tag, tasks):
+    """Bring the session's task list to `tasks` with the calls Claude Code's
+    task tools make, each a tool_use and its result in the transcript."""
+    have = s.setdefault("tasks", [])
+    k = 0
+
+    def call(name, inp, text, extra):
+        nonlocal k
+        k += 1
+        tid = f"toolu_plan_{sid[:8]}_{tag}_{k}"
+        transcript(sid, s, {"type": "assistant", "message": {
+            "id": f"msg-{tid}", "role": "assistant", "model": s.get("model", "claude-opus-5-5"),
+            "content": [{"type": "tool_use", "id": tid, "name": name, "input": inp}]}})
+        transcript(sid, s, {"type": "user", "message": {"role": "user", "content": [
+            {"tool_use_id": tid, "type": "tool_result", "content": text}]}, "toolUseResult": extra})
+
+    for j, t in enumerate(tasks):
+        tid = str(j + 1)
+        if j >= len(have):
+            call("TaskCreate", {"subject": t["subject"], "description": t["subject"], "activeForm": t.get("active", t["subject"])},
+                 f"Task #{tid} created successfully: {t['subject']}", {"task": {"id": tid, "subject": t["subject"]}})
+            have.append({"status": "pending", "after": []})
+        h = have[j]
+        new = [a for a in t.get("after", []) if a not in h["after"]]
+        if new:
+            call("TaskUpdate", {"taskId": tid, "addBlockedBy": new}, f"Updated task #{tid} blockedBy",
+                 {"success": True, "taskId": tid, "updatedFields": ["blockedBy"]})
+            h["after"] += new
+        want = t.get("status", "pending")
+        if want != h["status"]:
+            call("TaskUpdate", {"taskId": tid, "status": want}, f"Updated task #{tid} status",
+                 {"success": True, "taskId": tid, "updatedFields": ["status"], "statusChange": {"from": h["status"], "to": want}})
+            h["status"] = want
+    save(sid, s)
+
+
 def demo_turn(mid, sid, s, n):
     """One turn of --demo's script. Returns the stop reason, or None when it
     answered the prompt itself (a failed turn)."""
@@ -502,6 +545,7 @@ def demo_turn(mid, sid, s, n):
             update(sid, s, {"sessionUpdate": "tool_call_update", "toolCallId": tid, "status": "completed"})
         elif "usage" in st:
             tokens = st["usage"]
+            s["model"] = st.get("model", "claude-opus-5-5")
             transcript(sid, s, {"type": "assistant", "message": {
                 "id": f"msg-{sid}-{n}-{i}", "role": "assistant", "model": st.get("model", "claude-opus-5-5"),
                 "content": [{"type": "text", "text": "…"}],
@@ -511,6 +555,8 @@ def demo_turn(mid, sid, s, n):
             transcript(sid, s, {"type": "system", "subtype": "compact_boundary", "content": "Conversation compacted",
                                 "compactMetadata": {"trigger": st["compact"], "preTokens": st.get("pre"),
                                                     "postTokens": st.get("post")}})
+        elif "tasks" in st:
+            plan_steps(sid, s, f"{n}-{i}", st["tasks"])
         elif "fail" in st:
             save(sid, s)
             send({"id": mid, "error": {"code": -32603, "message": st["fail"]}})
