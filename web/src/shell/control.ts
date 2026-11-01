@@ -44,6 +44,8 @@ import {
   redeemInvite,
   askBody,
   askOk,
+  changesOwners,
+  ownerChallenge,
   ownersAsHeld,
   signAskInvite,
   signInvite,
@@ -593,6 +595,13 @@ export async function passkeyRegister(name?: string, device?: PasskeySigner): Pr
   await finishRegister(finish, prf);
   return null;
 }
+
+/** Why a team's owners can't be changed here (DK7): it takes a passkey,
+ * and the account has none. */
+export const OWNERS_NEED_PASSKEY =
+  "Making someone an owner, or removing one, takes your passkey, and this account has none yet. Add one under Sign-in and account (Add a passkey), then try again.";
+/** Or this window can't ask for one (the Linux app window has no WebAuthn). */
+export const OWNERS_NEED_WEBAUTHN = "This window can't ask for a passkey: change the team's owners from a browser or a phone.";
 
 /** One of the account's passkeys agrees to the one made (`p`): control
  * keeps it then. Call it from a click. */
@@ -2021,8 +2030,32 @@ export class ControlSession {
       this.keys,
     );
     if (!(await follows(next, prev, t.pin, t.certs))) throw new Error("that change doesn't check out (are you an owner here?)");
-    await api(`/api/teams/${team}/roster`, { roster: next });
+    // One that changes who the owners are takes this owner's passkey over
+    // its bytes too (DK7, aru-126), whichever device signed it.
+    const passkey = changesOwners(next, prev) ? await this.confirmOwners(next) : undefined;
+    await api(`/api/teams/${team}/roster`, passkey ? { roster: next, passkey } : { roster: next });
     await this.refresh();
+  }
+
+  /** This account's passkey over a roster version that changes the team's
+   * owners (`Roster::owner_challenge`, DK7): control takes such a version
+   * only with it. Asked the way a deploy's approval asks (user verification
+   * required, only the account's own passkeys). Call it from a click. */
+  private async confirmOwners(r: Roster) {
+    if (this.passkeys === 0) throw new Error(OWNERS_NEED_PASSKEY);
+    if (typeof PublicKeyCredential === "undefined") throw new Error(OWNERS_NEED_WEBAUTHN);
+    const mine = await api<{ passkeys: { id: string }[] }>("/api/me/passkeys").then(
+      (x) => x.passkeys,
+      () => [],
+    );
+    return agreeWith({
+      challenge: b64u(await ownerChallenge(r)),
+      // Control's passkeys are made for the host its page is on.
+      rpId: location.hostname,
+      userVerification: "required",
+      timeout: 5 * 60 * 1000,
+      allowCredentials: mine.map((p) => ({ type: "public-key" as const, id: p.id })),
+    });
   }
 
   /** The root changes and removed signers shown for `team` were seen:

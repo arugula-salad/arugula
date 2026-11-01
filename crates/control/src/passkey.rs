@@ -1112,6 +1112,35 @@ pub fn verify_for(
     Ok(Ok(()))
 }
 
+/// A team roster version's owner change, as the hub takes it (DK7, #388,
+/// aru-126): `proof` is a passkey of its account, an owner of `prev`, over
+/// exactly `roster`'s bytes ([`arugula_e2e::team::OwnerProof::checks`]:
+/// live in the account's passkey log at the proof's `at`, the person
+/// verified), from one of control's own sites (a team's page is control's,
+/// never the platform's); and here its counter didn't go backwards. Why
+/// not (its refusal code, and in words), or `Ok`.
+pub(crate) fn owner_change(
+    app: &App,
+    proof: &arugula_e2e::team::OwnerProof,
+    roster: &arugula_e2e::team::Roster,
+    prev: &arugula_e2e::team::Roster,
+) -> anyhow::Result<Result<(), (&'static str, String)>> {
+    use arugula_e2e::team::OwnerProofRefusal;
+    let log = app.db.passkey_log(&proof.account)?;
+    let v = match proof.checks(roster, prev, &log, &site_origins(&app.cfg.sites)) {
+        Ok(v) => v,
+        Err(r @ OwnerProofRefusal::NotAnOwner) => return Ok(Err(("not_an_owner", r.says()))),
+        Err(r @ OwnerProofRefusal::Passkey(_)) => return Ok(Err(("passkey", r.says()))),
+    };
+    if let Some(pk) = app.db.passkey(&proof.passkey.id)? {
+        if let Err(e) = counted(&pk, v.count) {
+            return Ok(Err(("passkey", e.1)));
+        }
+        app.db.passkey_used(&proof.passkey.id, v.count, now_ms())?;
+    }
+    Ok(Ok(()))
+}
+
 /// `GET /api/accounts/{id}/passkeys/log` (DK3): the account's passkey log,
 /// for anyone checking a stored assertion against it. Public: its keys are
 /// public keys, and a log anyone may read and keep a copy of is what makes

@@ -1,6 +1,8 @@
 //! `team`: who is in a team and as what, signed by its owners, so control
 //! can't add a member: who may sign a paper that makes someone an owner or
-//! an editor (`raise_ok`, `Roster::raised`), which roster may follow which
+//! an editor (`raise_ok`, `Roster::raised`), which versions change the
+//! owners and what an owner's passkey signs for them (`owners`, DK7), which
+//! roster may follow which
 //! (`Roster::follows`, presigned invites included), and the papers beside
 //! them (*Ask me first* invites, a daemon's team join, a machine's move).
 
@@ -20,6 +22,7 @@ use crate::harness::{
 pub const FILES: &[Spec] = &[
     Spec { module: "team", name: "raise_ok", run: run_raise_ok, make: raise_ok_table },
     Spec { module: "team", name: "raised", run: run_raised, make: raised },
+    Spec { module: "team", name: "owners", run: run_owners, make: owners },
     Spec { module: "team", name: "follows", run: run_follows, make: follows },
     Spec { module: "team", name: "bodies", run: run_bodies, make: bodies },
     Spec { module: "team", name: "ask_invite", run: run_ask, make: ask_invite },
@@ -87,11 +90,13 @@ fn raise_ok_table() -> Example {
         "raise_ok",
         run_raise_ok,
         "The decision table for who may sign a paper (a roster, a presigned invite, an Ask me first invite) that \
-         raises someone to a role: making no one more than a viewer, any device that approves; an editor, a \
-         browser all the way back to its root (browser_chained) or the desktop app's device (from_app: an app \
-         certificate, or a browser one the app named); an owner, only such a browser. Never a CLI's key, which an \
-         agent on its machine can read. browser_chained is Trust::browser_chained for the signer (cert/browser_chained); \
-         this table takes it as given.",
+         raises someone to a role: making no one more than a viewer, any device that approves; an editor or an \
+         owner, a browser all the way back to its root (browser_chained) or the desktop app's device (from_app: an \
+         app certificate, or a browser one the app named), never a CLI's key, which an agent on its machine can \
+         read (a roster a machine takes stays taken after that key is revoked). A version that changes who the \
+         owners are counts as making an owner (follows; and the hub asks an owner's passkey for it, DK7: see \
+         owners). browser_chained is Trust::browser_chained for the signer (cert/browser_chained); this table \
+         takes it as given.",
         &["arugula_e2e::team::raise_ok"],
     )
     .shapes(
@@ -114,8 +119,7 @@ fn raise_ok_table() -> Example {
                 let from_app = kind == "app" || name.starts_with("Arugula app");
                 let ok = match raised {
                     None | Some("viewer") => true,
-                    Some("editor") => from_app || chained,
-                    _ => chained,
+                    _ => from_app || chained,
                 };
                 let about = format!(
                     "raising to {}, signed by {kind} \"{name}\", {} a browser all the way to its root",
@@ -297,6 +301,91 @@ fn raised() -> Example {
     ex
 }
 
+// ---- owners ----
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct OwnersIn {
+    prev: String,
+    roster: String,
+}
+
+fn run_owners(ctx: &Ctx, v: &Value) -> anyhow::Result<Value> {
+    let i: OwnersIn = input(v)?;
+    let prev: Roster = ctx.get(&i.prev)?;
+    let r: Roster = ctx.get(&i.roster)?;
+    Ok(json!({ "changes_owners": r.changes_owners(&prev), "challenge": r.owner_challenge() }))
+}
+
+fn owners() -> Example {
+    let mut ex = Example::new(
+        "team",
+        "owners",
+        run_owners,
+        "DK7 (aru-126): whether a roster version changes who the team's owners are since the version before \
+         (someone made an owner, an owner removed or made an editor or a viewer, or an owner's entry moved to \
+         another root), and the WebAuthn challenge an owner's passkey signs for such a version: SHA-256 of its \
+         bytes (bodies), base64url without padding. The hub takes a version that changes the owners only with \
+         that assertion, from an owner of the version before, checked against their passkey log (passkey). \
+         Editors and viewers coming and going, a rename and the order of members change no owners.",
+        &["arugula_e2e::team::Roster::changes_owners", "arugula_e2e::team::Roster::owner_challenge"],
+    )
+    .shapes(
+        "prev: the version before's label; roster: the new version's label",
+        "changes_owners: whether its owners (account and root) differ; challenge: its owner_challenge",
+    );
+    let alice = person(&mut ex, "alice", 1);
+    let bob = person(&mut ex, "bob", 2);
+    let mallory = person(&mut ex, "mallory", 3);
+    use TeamRole::{Editor, Owner, Viewer};
+    let a = member(&alice, Owner);
+    let k = &alice.keys;
+    let mut renamed = roster(2, 2_000, vec![a.clone(), member(&bob, Editor)], k);
+    renamed.name = "Other".into();
+    renamed.sign_with(k);
+    let rosters = [
+        ("v1", roster(1, 1_000, vec![a.clone(), member(&bob, Editor)], k)),
+        ("v1-two-owners", roster(1, 1_000, vec![a.clone(), member(&bob, Owner)], k)),
+        ("v2-bob-owner", roster(2, 2_000, vec![a.clone(), member(&bob, Owner)], k)),
+        ("v2-bob-viewer", roster(2, 2_000, vec![a.clone(), member(&bob, Viewer)], k)),
+        ("v2-bob-removed", roster(2, 2_000, vec![a.clone()], k)),
+        ("v2-mallory-editor", roster(2, 2_000, vec![a.clone(), member(&bob, Editor), member(&mallory, Editor)], k)),
+        ("v2-mallory-owner", roster(2, 2_000, vec![a.clone(), member(&bob, Editor), member(&mallory, Owner)], k)),
+        ("v2-alice-editor", roster(2, 2_000, vec![member(&alice, Editor), member(&bob, Owner)], k)),
+        (
+            "v2-alice-elsewhere",
+            roster(2, 2_000, vec![Member { root: mallory.cert.device.clone(), ..a.clone() }, member(&bob, Editor)], k),
+        ),
+        ("v2-reordered", roster(2, 2_000, vec![member(&bob, Editor), a.clone()], k)),
+        ("v2-renamed", renamed),
+    ];
+    for (l, r) in &rosters {
+        ex.object(l, r);
+    }
+    let get = |l: &str| rosters.iter().find(|(x, _)| *x == l).map(|(_, r)| r.clone()).unwrap();
+    for (about, prev, r) in [
+        ("an editor made an owner", "v1", "v2-bob-owner"),
+        ("an editor made a viewer", "v1", "v2-bob-viewer"),
+        ("an editor removed", "v1", "v2-bob-removed"),
+        ("an editor added", "v1", "v2-mallory-editor"),
+        ("an owner added", "v1", "v2-mallory-owner"),
+        ("the only owner made an editor, another an owner", "v1", "v2-alice-editor"),
+        ("an owner's entry moved to another root", "v1", "v2-alice-elsewhere"),
+        ("the same members in another order", "v1", "v2-reordered"),
+        ("a rename", "v1", "v2-renamed"),
+        ("one of two owners made an editor", "v1-two-owners", "v1"),
+        ("one of two owners removed", "v1-two-owners", "v2-bob-removed"),
+    ] {
+        let (p, n) = (get(prev), get(r));
+        ex.case(
+            about,
+            json!({ "prev": prev, "roster": r }),
+            json!({ "changes_owners": n.changes_owners(&p), "challenge": n.owner_challenge() }),
+        );
+    }
+    ex
+}
+
 // ---- follows ----
 
 #[derive(Deserialize)]
@@ -360,7 +449,9 @@ fn follows() -> Example {
          says). It must be well formed (v1 without spent or redeem, or v2; ids one word of at most 120 bytes; a \
          name of 1 to 80 bytes, no control character; at least one owner), of the pinned team, newer, and signed \
          by a device trusted now of an owner of the version before (the founder for a first), one that approves \
-         and may raise what this version raises (raise_ok). Or, for someone who isn't an owner, it redeems a \
+         and may raise what this version raises (raise_ok; a version that changes who the owners are, removing \
+         or demoting one or moving one's root too, as one that makes an owner: DK7). Or, for someone who isn't an \
+         owner, it redeems a \
          presigned invite: exactly the version before plus the invitee at the end, the invite marked spent and \
          never spent before, one version on, no earlier than the version before and no later than the invite \
          expires; the invite of this team, not for an owner, signed by an owner then who may raise to its role; \
@@ -496,12 +587,13 @@ fn follows() -> Example {
             vec![Member { root: mallory.cert.device.clone(), ..a.clone() }, member(&bob, Viewer)],
         ),
     ] {
+        // An editor or an owner (or an owner's root moved) only from a
+        // browser or the app, never a CLI (DK7, Jake, 2026-10-31).
         let raises = what.contains("owner") || what.contains("editor") || what.contains("own entry");
-        let editor_only = what.contains("editor");
         for (dev, k, ok) in [
             ("alice's browser", ak, true),
             ("alice's CLI", &cli, !raises),
-            ("alice's app", &app, !raises || editor_only),
+            ("alice's app", &app, true),
             ("a browser alice's CLI made: never trusted", &laundered, false),
         ] {
             let label = format!(
@@ -522,7 +614,20 @@ fn follows() -> Example {
     add("a CLI founds a team with only its owner", &base, None, "v1-founded-by-cli", true);
     add("a CLI founds a team with an editor in it", &base, None, "v1-founded-by-cli-with-editor", false);
     add("the app founds a team with an editor in it", &base, None, "v1-founded-by-app-with-editor", true);
-    add("the app founds a team with a second owner", &base, None, "v1-founded-by-app-with-owner", false);
+    add("the app founds a team with a second owner", &base, None, "v1-founded-by-app-with-owner", true);
+    // Removing or demoting an owner changes who the owners are too: from a
+    // browser or the app, never a CLI (DK7).
+    let two_owners = roster(1, 1_000, vec![a.clone(), member(&bob, Owner)], ak);
+    put(&mut ex, "v1-two-owners", &two_owners);
+    for (what, members) in
+        [("removes an owner", vec![a.clone()]), ("demotes an owner", vec![a.clone(), member(&bob, Editor)])]
+    {
+        for (dev, k, ok) in [("alice's CLI", &cli, false), ("alice's app", &app, true)] {
+            let label = format!("v2-{}-by-{}", what.replace(' ', "-"), dev.replace(' ', "-").replace('\'', ""));
+            put(&mut ex, &label, &signed(members.clone(), k));
+            add(&format!("{dev} {what}"), &base, Some("v1-two-owners"), &label, ok);
+        }
+    }
     let mut bob_editor = v1b.clone();
     bob_editor.members[1].role = Editor;
     bob_editor.sign_with(ak);
@@ -880,8 +985,8 @@ fn ask_invite() -> Example {
         "An Ask me first invite (#762): an owner's device signs it, naming a one-time key whose private half is \
          only in the link; whoever uses the link proves they hold it by signing their account and root with that \
          key, and an owner then admits them with the next roster. signed_by: by its by, a device that approves \
-         (one that raises also needs a browser all the way to the root, as raise_ok says: that's checked beside \
-         it). proves: the one-time key's signature over exactly that account and root, so control can't move a \
+         (one for an owner or an editor also needs a browser all the way to the root or the app's device, as \
+         raise_ok says: that's checked beside it; admitting an owner also takes an owner's passkey). proves: the one-time key's signature over exactly that account and root, so control can't move a \
          proof to an account of its own. Its domain is its own, so it never reads as a presigned invite.",
         &[
             "arugula_e2e::team::AskInvite::signed_by",

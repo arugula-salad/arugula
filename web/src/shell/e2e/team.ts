@@ -146,7 +146,8 @@ export async function askOk(
   for (const o of r.members.filter((m) => m.role === "owner")) {
     const [c, rv] = certs[o.account] ?? [[], []];
     const d = (await evaluate({ account: o.account, root: o.root }, c, rv)).get(i.by);
-    // One for an owner or an editor, only from a browser all the way back.
+    // One for an owner or an editor, only from a browser all the way back
+    // or the app (`raiseOk`).
     const ok = !!d && (await raiseOk(i.role === "viewer" ? null : i.role, d, () => browserChained({ account: o.account, root: o.root }, c, i.by)));
     if (d && approves(d.kind) && ok && (await verify(d.sign, askInviteBody(i), i.sig))) return o.account;
   }
@@ -268,12 +269,35 @@ export function raised(r: Roster, prev: Roster | null, signer: string): TeamRole
 export const raises = (r: Roster, prev: Roster | null, signer: string) => raised(r, prev, signer) !== null;
 
 /** Whether `signer` may sign a paper raising someone to `role`
- * (`team::raise_ok`): an owner only from a browser all the way back, an
- * editor from that or the desktop app's device, never a CLI. */
+ * (`team::raise_ok`): an editor or an owner only from a browser all the way
+ * back or the desktop app's device, never a CLI. A version that changes the
+ * owners counts as making one (`follows`), and control takes it only with
+ * an owner's passkey over it too (DK7, `ownerChallenge`). */
 export async function raiseOk(role: TeamRole | null, signer: Cert, chained: () => Promise<boolean>): Promise<boolean> {
   if (!role || role === "viewer") return true;
-  if (role === "editor" && fromApp(signer)) return true;
+  if (fromApp(signer)) return true;
   return chained();
+}
+
+/** Whether `r` changes who the team's owners are since `prev`
+ * (`Roster::changes_owners`): someone made an owner or no longer one, or an
+ * owner's entry moved to another root. Control takes such a version only
+ * with an owner's passkey over it (DK7). */
+export function changesOwners(r: Roster, prev: Roster): boolean {
+  const owners = (x: Roster) =>
+    x.members
+      .filter((m) => m.role === "owner")
+      .map((m) => `${m.account} ${m.root}`)
+      .sort()
+      .join("\n");
+  return owners(r) !== owners(prev);
+}
+
+/** What an owner's passkey signs for a version that changes the owners
+ * (`Roster::owner_challenge`): SHA-256 of its bytes, which name the device
+ * that signed it, so sign it first. */
+export async function ownerChallenge(r: Roster): Promise<Uint8Array<ArrayBuffer>> {
+  return new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(rosterBody(r))));
 }
 
 /** Whether `r` may follow `prev` (or start the team, as `pin` says). */
@@ -281,8 +305,8 @@ export async function follows(r: Roster, prev: Roster | null, pin: TeamPin, cert
   const spent = r.spent ?? [];
   if (!wellFormed(r) || r.team !== pin.team) return false;
   if (prev && r.version <= prev.version) return false;
-  // And may raise someone to `raised` (`raise_ok`): an owner only from a
-  // browser all the way back, an editor from that or the desktop app.
+  // And may raise someone to `raised` (`raise_ok`): an owner or an editor
+  // only from a browser all the way back or the desktop app.
   const signedBy = async (account: string, root: string, device: string, body: string, sig: string, raised: TeamRole | null) => {
     const [c, rv] = certs[account] ?? [[], []];
     const d = (await evaluate({ account, root }, c, rv)).get(device);
@@ -293,7 +317,10 @@ export async function follows(r: Roster, prev: Roster | null, pin: TeamPin, cert
   const signers: Pick<Member, "account" | "root">[] = prev
     ? prev.members.filter((m) => m.role === "owner")
     : [{ account: pin.founder, root: pin.founder_root }];
-  for (const m of signers) if (await signedBy(m.account, m.root, r.by, body, r.sig, raised(r, prev, m.account))) return !r.redeem;
+  // A version that changes who the owners are (removing, demoting or moving
+  // one too) is signed as one that makes an owner (DK7).
+  const ownersChange = !!prev && changesOwners(r, prev);
+  for (const m of signers) if (await signedBy(m.account, m.root, r.by, body, r.sig, ownersChange ? "owner" : raised(r, prev, m.account))) return !r.redeem;
   // A presigned invite (`Roster::follows`): the version before, plus the
   // invitee at the end, the invite spent, signed by the one-time key.
   if (!prev || !r.redeem) return false;

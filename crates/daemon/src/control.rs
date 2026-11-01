@@ -85,11 +85,13 @@ const REFRESH: Duration = Duration::from_secs(60);
 /// How long [`Control::refresh_now`] waits by default (#232).
 pub const REFRESH_WAIT: Duration = Duration::from_secs(10);
 /// What this daemon tells control it understands, so control offers only
-/// what every daemon checking a team can take (presigned invites' rosters).
+/// what every daemon checking a team can take (presigned invites' rosters,
+/// an owner the desktop app made, DK7).
 /// `ARUGULA_FEATURES` says otherwise (tests play an older daemon with "").
 /// (`chat-import`, M124, went with the import, native #203.)
 fn features() -> String {
-    std::env::var("ARUGULA_FEATURES").unwrap_or_else(|_| "presigned-invites,owner-moves,join-secret".into())
+    std::env::var("ARUGULA_FEATURES")
+        .unwrap_or_else(|_| "presigned-invites,owner-moves,join-secret,owner-passkeys".into())
 }
 
 /// Whether `features` names `feature`.
@@ -5361,6 +5363,85 @@ pub(crate) mod tests {
         assert!(a["t1"].locked);
         let b = take_shared(&a, &none, &pins, shared(false, None), &mut seen, 1).0;
         assert!(b["t1"].locked, "control unlocked a shared team by its plain word");
+    }
+
+    /// DK7 (#388; Jake, 2026-10-31): a team machine takes a version that
+    /// makes an owner signed by an owner's desktop app (control asked that
+    /// owner's passkey for it too), after versions from before DK7, and the
+    /// new owner's devices come in as owners here. One a CLI signed that
+    /// makes an owner, or moves an owner's root, it never takes, whatever
+    /// control says of a passkey: an agent can read a CLI's key, and what a
+    /// machine takes stays taken after the key is revoked.
+    #[test]
+    fn a_team_machine_takes_an_owner_change_from_the_app_never_a_cli() {
+        let (ok, oc) = device("o", Kind::Browser);
+        let (_, ec) = device("e", Kind::Browser);
+        let (_, fc) = device("f", Kind::Browser);
+        let (_, mc) = device("m", Kind::Browser);
+        let by_o = |kind: Kind| {
+            let k = DeviceKeys::generate();
+            let mut c = Cert::new(&k, "o", kind, "x");
+            c.sign_with(&ok);
+            (k, c)
+        };
+        let ((cli_k, cli), (app_k, app)) = (by_o(Kind::Cli), by_o(Kind::App));
+        let pin = TeamPin { team: "t1".into(), founder: "o".into(), founder_root: oc.device.clone() };
+        let mut s = saved_for("https://c.example", "o");
+        s.team = Some(pin.clone());
+        let certs: AccountCerts = [
+            ("o".to_owned(), (vec![oc.clone(), cli, app], vec![])),
+            ("e".to_owned(), (vec![ec.clone()], vec![])),
+            ("f".to_owned(), (vec![fc.clone()], vec![])),
+        ]
+        .into();
+        let answer = |rosters: Vec<Roster>| wire::TeamAnswer {
+            team: Some(pin.clone()),
+            locked: false,
+            lock: None,
+            rosters,
+            certs: certs.clone(),
+            names: Default::default(),
+        };
+        let o = member("o", &oc, TeamRole::Owner);
+        // From before DK7: e an editor, f a viewer, by the browser.
+        let v1 = signed_roster(
+            1,
+            vec![o.clone(), member("e", &ec, TeamRole::Editor), member("f", &fc, TeamRole::Viewer)],
+            &ok,
+        );
+        take_team(&mut s, &pin, answer(vec![v1]), 1);
+        // The CLI makes e an owner: not taken.
+        let by_cli = signed_roster(
+            2,
+            vec![o.clone(), member("e", &ec, TeamRole::Owner), member("f", &fc, TeamRole::Viewer)],
+            &cli_k,
+        );
+        take_team(&mut s, &pin, answer(vec![by_cli]), 2);
+        assert_eq!(s.roster.as_ref().map(|r| r.version), Some(1), "an owner a CLI made");
+        // Nor the CLI moving o's own entry to another root (m's, say).
+        let moved = signed_roster(
+            2,
+            vec![
+                member("o", &mc, TeamRole::Owner),
+                member("e", &ec, TeamRole::Editor),
+                member("f", &fc, TeamRole::Viewer),
+            ],
+            &cli_k,
+        );
+        take_team(&mut s, &pin, answer(vec![moved]), 3);
+        assert_eq!(s.roster.as_ref().map(|r| r.version), Some(1), "an owner's root a CLI moved");
+        // The app makes e an owner: taken, and e's devices are owners here.
+        let by_app =
+            signed_roster(2, vec![o, member("e", &ec, TeamRole::Owner), member("f", &fc, TeamRole::Viewer)], &app_k);
+        take_team(&mut s, &pin, answer(vec![by_app]), 4);
+        assert_eq!(s.roster.as_ref().map(|r| r.version), Some(2), "an owner the app made");
+        let dir = std::env::temp_dir().join(format!("arugula-dk7-owners-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let acl = Arc::new(Acl::open(&dir));
+        let built = Enrolled::build(s.clone(), Arc::new(DeviceKeys::generate()), &acl, false);
+        let p = built.others.iter().find(|(x, _)| x.device == ec.device).map(|(_, p)| p.clone());
+        assert_eq!(p, Some(Principal::Owner), "e is an owner here");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// A team member's removed device stays removed when control leaves

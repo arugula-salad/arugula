@@ -745,6 +745,7 @@ path = "/api/teams/{id}/roster"
 process = "hub"
 auth = "session"
 clients = ["page"]
+note = "The next version, signed by an owner's device; one that changes who the owners are also carries the signed-in owner's passkey assertion over its bytes (DK7), kept beside it"
 
 [[route]]
 method = "GET"
@@ -752,7 +753,7 @@ path = "/api/teams/{id}/rosters"
 process = "hub"
 auth = "session"
 clients = ["page"]
-note = "the versions after the one a member's page last checked"
+note = "the versions after the one a member's page last checked, with the owner proofs kept beside those that changed the owners (DK7)"
 
 [[route]]
 method = "POST"

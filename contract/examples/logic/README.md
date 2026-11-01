@@ -60,7 +60,8 @@ check its signatures byte for byte.
   revocations included). Also why a certificate is refused (`refusal`) and
   whether a device is a browser all the way to its root (`browser_chained`).
 - `team/`: who may sign a paper that raises someone (`raise_ok`, the decision
-  table; `raised`), which roster may follow which (`follows`, presigned
+  table; `raised`), which versions change the owners and what an owner's
+  passkey signs for one (`owners`), which roster may follow which (`follows`, presigned
   invites and every way to bend one included), the papers' `bodies`, *Ask me
   first* invites (`ask_invite`), a daemon's team `join`, a machine's `move`,
   and a member's `devices`.
