@@ -13,6 +13,8 @@ export const FONT_FAMILY = '"JetBrains Mono", "Fira Code", ui-monospace, Menlo, 
 export const FONT_SIZE = 14;
 /** Rows of scrollback a pane keeps; snapshots bring no more than this. */
 export const SCROLLBACK = 10000;
+/** About what xterm parses between chances for the page to draw. */
+const WRITE_PIECE = 64 * 1024;
 const enc = new TextEncoder();
 
 /** Touch-first devices draw with the DOM renderer: xterm's WebGL renderer
@@ -782,6 +784,14 @@ export class TerminalView {
 
   write(data: Uint8Array, done?: () => void) {
     this.term.write(data, done);
+  }
+
+  /** A long write in pieces. xterm yields to the page between writes, never
+   * inside one, and it takes split escapes and UTF-8 as they come. */
+  writeInPieces(data: Uint8Array, done?: () => void) {
+    let at = 0;
+    for (; data.length - at > WRITE_PIECE; at += WRITE_PIECE) this.term.write(data.subarray(at, at + WRITE_PIECE));
+    this.term.write(data.subarray(at), done);
   }
 
   /** Before a snapshot of the screen alone, after falling behind: keep the
