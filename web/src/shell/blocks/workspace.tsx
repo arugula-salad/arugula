@@ -642,7 +642,7 @@ export const workspaceBlock: BlockRenderer = (client, id): BlockView => {
     },
     title: () => `${state?.name ?? "workspace"} (chant)`,
     text: () => plain(state),
-    focus: () => host.querySelector<HTMLElement>("button")?.focus(),
+    focus: () => host.querySelector<HTMLElement>("button")?.focus({ preventScroll: true }),
     dispose: () => {
       off();
       render(null, host);

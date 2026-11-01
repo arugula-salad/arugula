@@ -118,7 +118,7 @@ registerBlock("file", (client, id): BlockView => {
     },
     title: () => (state ? `${state.name}${state.line ? `:${state.line}` : ""}` : "file"),
     text: () => state?.text ?? "",
-    focus: () => host.querySelector<HTMLElement>(".cm-content")?.focus(),
+    focus: () => host.querySelector<HTMLElement>(".cm-content")?.focus({ preventScroll: true }),
     dispose: () => {
       render(null, host);
       host.remove();

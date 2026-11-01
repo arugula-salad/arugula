@@ -93,7 +93,7 @@ registerBlock("invite", (client: Client, id): BlockView => {
     },
     title: () => (state?.waiting ? `Invites (${state.waiting})` : "Invites"),
     text: () => (state?.drafts ?? []).map((d) => `${d.id} ${d.status}: ${d.name} (${d.role}): ${d.note}`).join("\n"),
-    focus: () => host.querySelector<HTMLElement>("button")?.focus(),
+    focus: () => host.querySelector<HTMLElement>("button")?.focus({ preventScroll: true }),
     dispose: () => {
       render(null, host);
       host.remove();

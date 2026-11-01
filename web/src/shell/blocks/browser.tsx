@@ -217,7 +217,7 @@ registerBlock("browser", (client, id): BlockView => {
     },
     title: () => state?.title ?? (state ? shown(state) : "browser"),
     text: () => (state ? `${state.title ?? ""}\n${shown(state)}`.trim() : ""),
-    focus: () => host.querySelector<HTMLElement>("iframe, input")?.focus(),
+    focus: () => host.querySelector<HTMLElement>("iframe, input")?.focus({ preventScroll: true }),
     dispose: () => {
       render(null, host);
       host.remove();

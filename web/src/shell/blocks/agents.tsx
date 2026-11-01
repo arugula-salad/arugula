@@ -287,7 +287,7 @@ export const agentsBlock: BlockRenderer = (client, id): BlockView => {
     },
     title: () => "Team agents",
     text: () => plain(state),
-    focus: () => host.querySelector<HTMLElement>("button")?.focus(),
+    focus: () => host.querySelector<HTMLElement>("button")?.focus({ preventScroll: true }),
     dispose: () => {
       off();
       render(null, host);

@@ -135,7 +135,7 @@ registerBlock("doc", (client: Client, id): BlockView => {
     },
     title: () => state?.title || "Doc",
     text: () => (state ? markdown(state) : ""),
-    focus: () => host.querySelector<HTMLElement>(".doc-page")?.focus(),
+    focus: () => host.querySelector<HTMLElement>(".doc-page")?.focus({ preventScroll: true }),
     dispose: () => {
       off();
       images.close();

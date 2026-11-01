@@ -326,7 +326,7 @@ registerBlock("team_chat", (client: Client, id): BlockView => {
       return room ? roomLabel(room, shellPlatformApi(client)) : "Chat";
     },
     text: () => host.textContent ?? "",
-    focus: () => host.querySelector<HTMLElement>("textarea, input, button")?.focus(),
+    focus: () => host.querySelector<HTMLElement>("textarea, input, button")?.focus({ preventScroll: true }),
     dispose() {
       render(null, host);
       host.remove();

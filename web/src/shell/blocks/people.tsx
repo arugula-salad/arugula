@@ -232,7 +232,7 @@ registerBlock("people", (_client: Client, _id: PaneId): BlockView => {
     },
     title: () => "People",
     text: () => host.textContent ?? "",
-    focus: () => host.querySelector<HTMLElement>("button, input")?.focus(),
+    focus: () => host.querySelector<HTMLElement>("button, input")?.focus({ preventScroll: true }),
     dispose() {
       render(null, host);
       host.remove();
