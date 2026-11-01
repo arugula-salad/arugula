@@ -196,7 +196,10 @@ async fn the_inbox_as_operations() {
 /// Plane's two connections, one in the team's project (`ALL`, "Allcorp
 /// Secret Roadmap") and one in eve's (`EVE`): their items, newest first.
 fn plane_world(app: &crate::Platform, team: &str, eve: &str) {
-    use crate::{db::trackers::NewConnection, trackers::fake::item};
+    use crate::{
+        db::trackers::NewConnection,
+        trackers::{Item, fake::item},
+    };
     let put = |project: &str, id: &str, key: &str, name: &str, items: Vec<crate::trackers::Item>| {
         let n = NewConnection {
             id: id.into(),
@@ -211,7 +214,7 @@ fn plane_world(app: &crate::Platform, team: &str, eve: &str) {
         app.db
             .tracker_mirror(id, None, |tx| {
                 for it in &items {
-                    crate::db::trackers::upsert_item(tx, id, c.mirror_id, it, 1)?;
+                    crate::db::trackers::upsert_item(tx, id, c.mirror_id, it, &it.label_ids, 1)?;
                 }
                 Ok(())
             })
@@ -223,11 +226,20 @@ fn plane_world(app: &crate::Platform, team: &str, eve: &str) {
         "ALL",
         "Allcorp Secret Roadmap",
         vec![
-            item(2212, "Fix login timeout, after ALL-7", "started", 50),
+            Item {
+                label_ids: vec!["agent".into(), "bug".into()],
+                ..item(2212, "Fix login timeout, after ALL-7", "started", 50)
+            },
             item(7, "Docs for sign in", "completed", 45),
-            item(8, "Login page copy", "unstarted", 5),
+            Item { item_type: None, ..item(8, "Login page copy", "unstarted", 5) },
         ],
     );
+    // The modules aren't on the item: the sync sets them.
+    let boards = [("item-2212".to_owned(), vec!["Boards".to_owned(), "Docs".to_owned()])].into();
+    app.db
+        .tracker_mirror("tc_all", None, |tx| crate::db::trackers::set_modules(tx, "tc_all", &boards))
+        .unwrap()
+        .unwrap();
     put(team, "tc_ops", "OPS", "Ops", vec![item(8, "Ops rota", "started", 3)]);
     put(eve, "tc_eve", "EVE", "Eve's Plane", vec![item(1, "Eve's login plan", "started", 60)]);
 }
@@ -241,6 +253,36 @@ fn numbers(v: &Value) -> Vec<(String, u64)> {
             (i["identifier"].as_str().or(i["repo"].as_str()).unwrap_or("?").to_owned(), i["number"].as_u64().unwrap())
         })
         .collect()
+}
+
+/// A Plane item reads with its type, its labels and its modules by name, in
+/// a list and on its own (#475); one without them reads no type and empty
+/// lists.
+#[tokio::test]
+async fn a_plane_item_reads_with_its_type_labels_and_modules() {
+    let hub = Arc::new(TestHub::default());
+    let (gh, app, base) = serve(&hub).await;
+    let (team, eve) = world(&hub, &gh, &app).await;
+    plane_world(&app, &team, &eve);
+
+    let (s, v) = op(&base, "bob", "tracker.get", json!({ "project": team, "key": "ALL", "number": 2212 })).await;
+    assert_eq!(s, 200, "{v}");
+    let i = &v["result"]["item"];
+    assert_eq!(
+        (&i["type"], &i["labels"], &i["modules"]),
+        (&json!("Task"), &json!(["agent", "bug"]), &json!(["Boards", "Docs"]))
+    );
+
+    let (_, v) = op(&base, "bob", "item.list", json!({ "project": team, "tracker": "ALL", "q": "ALL-2212" })).await;
+    let i = &v["result"]["items"][0];
+    assert_eq!(
+        (&i["type"], &i["labels"], &i["modules"]),
+        (&json!("Task"), &json!(["agent", "bug"]), &json!(["Boards", "Docs"]))
+    );
+
+    let (_, v) = op(&base, "bob", "tracker.get", json!({ "project": team, "key": "ALL", "number": 8 })).await;
+    let i = &v["result"]["item"];
+    assert_eq!((i.get("type"), &i["labels"], &i["modules"]), (None, &json!([]), &json!([])));
 }
 
 /// A project's Plane items are listed beside its GitHub ones, found by

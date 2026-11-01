@@ -62,10 +62,26 @@ async fn world() -> World {
     assert_eq!(s, 200, "{made}");
     let connection = made["id"].as_str().unwrap().to_owned();
     backfilled(&app, &project, &connection).await;
+    // The backfill read the fields for the labels' names; these tests start with none kept.
+    app.db.c().execute("UPDATE tracker_connections SET fields = NULL, fields_at = NULL", params![]).unwrap();
+    fake.reset_fields_read();
     World { hub, fake, app, base, project, connection }
 }
 
 impl World {
+    /// The labels and the modules (JSON) the mirror holds for item `number`.
+    fn row_lists(&self, number: u64) -> (String, String) {
+        self.app
+            .db
+            .c()
+            .query_row(
+                "SELECT labels, modules FROM forge_items WHERE number = ?1 AND provider = 'plane'",
+                params![number],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap()
+    }
+
     async fn grant(&self) {
         let g = call(
             &self.base,
@@ -475,6 +491,8 @@ async fn a_create_sets_type_module_labels_and_state_by_name() {
         )
         .unwrap();
     assert_eq!((state.as_str(), kind.as_deref()), ("In Progress", Some("Epic")));
+    // The module is put in after the read that made the row: the row has it all the same (#475).
+    assert_eq!(w.row_lists(4), (r#"["agent"]"#.to_owned(), r#"["Boards"]"#.to_owned()));
     // An id works too, and a group is its first state.
     let (s, _) = w.person("alice", json!({ "kind": "create", "title": "B", "state": "st-review" })).await;
     assert_eq!(s, 200);
@@ -537,6 +555,27 @@ async fn an_edit_moves_the_state_and_changes_labels() {
     assert_eq!(s, 200, "{v}");
     assert_eq!(w.fake.sent().len(), n + 1);
     assert_eq!(w.fake.modules_of("item-2"), ["mod-boards"]);
+    assert_eq!(w.row_lists(2).1, r#"["Boards"]"#, "an edit that only names a module");
+    // Again: the row doesn't list it twice.
+    let (s, _) = w.person("alice", json!({ "kind": "edit", "item": "ARUGU-2", "module": "Boards" })).await;
+    assert_eq!(s, 200);
+    assert_eq!(w.row_lists(2).1, r#"["Boards"]"#);
+}
+
+/// The reconcile reads each module's items and sets the rows' modules, also
+/// for an item that didn't change; an item taken out of its module loses it.
+#[tokio::test]
+async fn the_reconcile_sets_the_rows_modules_and_labels() {
+    let w = world().await;
+    w.fake.set_in_module("mod-boards", "item-1", true);
+    let due = arugula_e2e::now_ms() + RECONCILE_MS + 1;
+    assert!(connect::reconcile(&w.app, due).await.unwrap().is_some());
+    assert_eq!(w.row_lists(1).1, r#"["Boards"]"#);
+    assert_eq!(w.row_lists(2).1, "[]");
+
+    w.fake.set_in_module("mod-boards", "item-1", false);
+    assert!(connect::reconcile(&w.app, due + 2 * RECONCILE_MS).await.unwrap().is_some());
+    assert_eq!(w.row_lists(1).1, "[]");
 }
 
 /// A reopen goes to the default state and says which; without a default,
@@ -696,6 +735,7 @@ async fn a_failed_module_leaves_the_item_made_and_says_so() {
     let text = v["text"].as_str().unwrap();
     assert!(text.starts_with("created ARUGU-4 in Plane; couldn't add it to module Boards: "), "{text}");
     assert_eq!((w.items(), w.fake.sent().iter().filter(|s| s.kind == "create").count()), (4, 1));
+    assert_eq!(w.row_lists(4).1, "[]", "it isn't in the module, so the row doesn't say it is");
 
     // Through approval too: it is sent, not failed, so it can't be approved again.
     let path = format!("/api/projects/{}/trackers/{}", w.project, w.connection);

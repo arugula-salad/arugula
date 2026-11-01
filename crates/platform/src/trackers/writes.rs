@@ -56,7 +56,7 @@ use crate::{
     chat::name_of,
     db::{
         projects::TRACKERS_WRITE,
-        trackers::{Connection, PendingWrite, Target, key_name},
+        trackers::{self as rows, Connection, PendingWrite, Target, key_name},
     },
     forge::links::membership,
     grants::{AgentScope, agent_label, agent_may, agent_names, owner_reads},
@@ -421,18 +421,21 @@ async fn parent_id(
     }
 }
 
-/// Put `item` in the module, once it is written. A failure doesn't undo the
-/// write, so it comes back as a sentence for the answer, not an error that
-/// would have the write sent again.
+/// Put `item` in the module, once it is written: the module's name when it
+/// is in it, and a failure as a sentence for the answer. A failure doesn't
+/// undo the write, so it isn't an error that would have the write sent
+/// again.
 async fn in_module(
     provider: &dyn TrackerProvider,
     c: &Connection,
     module: Option<&super::Named>,
     item: &Item,
-) -> Option<String> {
-    let m = module?;
-    let put = provider.add_to_module(&c.workspace_slug, &c.source_project_id, &m.id, &item.id).await;
-    put.err().map(|e| format!("couldn't add it to module {}: {e}", m.name))
+) -> (Option<String>, Option<String>) {
+    let Some(m) = module else { return (None, None) };
+    match provider.add_to_module(&c.workspace_slug, &c.source_project_id, &m.id, &item.id).await {
+        Ok(()) => (Some(m.name.clone()), None),
+        Err(e) => (None, Some(format!("couldn't add it to module {}: {e}", m.name))),
+    }
 }
 
 /// Send `w` (already resolved) to the tracker as `who`, with the footer;
@@ -454,7 +457,7 @@ pub async fn send(
             app.db.tracker_target(project, fi)?.ok_or_else(|| err(StatusCode::NOT_FOUND, "no such Plane work item"))?;
         Ok(t.source_item_id)
     };
-    let (done, state, note) = match w {
+    let (done, state, note, module) = match w {
         TrackerWrite::Create { title, body, state, module, parent, item_type, labels, .. } => {
             let wanted = Wanted {
                 state: state.as_deref(),
@@ -477,13 +480,13 @@ pub async fn send(
                 labels: picked.labels,
             };
             let made = provider.create(ws, pid, &new).await.map_err(tracker_error)?;
-            let note = in_module(provider, c, picked.module.as_ref(), &made).await;
-            (made, None, note)
+            let (module, note) = in_module(provider, c, picked.module.as_ref(), &made).await;
+            (made, None, note, module)
         }
         TrackerWrite::Comment { item, text } => {
             let id = source(item)?;
             provider.comment(ws, pid, &id, &html(&with_footer(text, footer))).await.map_err(tracker_error)?;
-            (provider.get(ws, pid, &id).await.map_err(tracker_error)?, None, None)
+            (provider.get(ws, pid, &id).await.map_err(tracker_error)?, None, None, None)
         }
         TrackerWrite::Close { item, close_as } => {
             let group = match close_as {
@@ -495,7 +498,7 @@ pub async fn send(
             })
             .await?;
             let id = source(item)?;
-            (provider.set_state(ws, pid, &id, &to.id).await.map_err(tracker_error)?, Some(to.name), None)
+            (provider.set_state(ws, pid, &id, &to.id).await.map_err(tracker_error)?, Some(to.name), None, None)
         }
         TrackerWrite::Reopen { item } => {
             let to = fields::find(app, c, provider, |f| {
@@ -505,7 +508,7 @@ pub async fn send(
             })
             .await?;
             let id = source(item)?;
-            (provider.set_state(ws, pid, &id, &to.id).await.map_err(tracker_error)?, Some(to.name), None)
+            (provider.set_state(ws, pid, &id, &to.id).await.map_err(tracker_error)?, Some(to.name), None, None)
         }
         TrackerWrite::Edit { item, title, body, state, module, parent, item_type, labels, labels_remove } => {
             let wanted = Wanted {
@@ -539,13 +542,19 @@ pub async fn send(
                 _ => provider.edit(ws, pid, &id, &edit).await,
             }
             .map_err(tracker_error)?;
-            let note = in_module(provider, c, picked.module.as_ref(), &written).await;
-            (written, moved.map(|s| s.name), note)
+            let (module, note) = in_module(provider, c, picked.module.as_ref(), &written).await;
+            (written, moved.map(|s| s.name), note, module)
         }
     };
     let changed = ingest_page(app, &c.id, c.mirror_id, None, std::slice::from_ref(&done), now_ms())?;
     if let Some(ids) = &changed {
         crate::boards::items_changed(app, ids);
+    }
+    // The item's own read doesn't say its modules, and the module was put after it: the row says so.
+    if let Some(name) = &module
+        && let Some(Some(row)) = app.db.tracker_mirror(&c.id, None, |tx| rows::add_module(tx, &c.id, &done.id, name))?
+    {
+        crate::boards::items_changed(app, &[row]);
     }
     let fi = app
         .db

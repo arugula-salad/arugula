@@ -152,6 +152,16 @@ pub async fn refresh(
     Ok(fields)
 }
 
+/// The names of the labels `ids` in the fields kept for the connection,
+/// however old: an id they lack has no name to give and is left out.
+pub fn label_names(app: &Platform, connection: &str, ids: &[Vec<String>]) -> Result<Vec<Vec<String>>, ApiError> {
+    let kept = app.db.tracker_fields(connection)?;
+    let fields: Option<Fields> = kept.and_then(|(json, _)| serde_json::from_str(&json).ok());
+    let labels = fields.map(|f| f.labels).unwrap_or_default();
+    let name = |id: &String| labels.iter().find(|l| l.id == *id).map(|l| l.name.clone());
+    Ok(ids.iter().map(|of| of.iter().filter_map(name).collect()).collect())
+}
+
 /// The kept fields when they are fresh.
 fn kept(app: &Platform, connection: &str) -> Result<Option<Fields>, ApiError> {
     let Some((json, at)) = app.db.tracker_fields(connection)? else { return Ok(None) };

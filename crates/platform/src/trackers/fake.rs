@@ -145,6 +145,11 @@ impl FakeTracker {
         self.state.lock().unwrap().fields_read
     }
 
+    /// Start counting the fields' reads again.
+    pub fn reset_fields_read(&self) {
+        self.state.lock().unwrap().fields_read = 0;
+    }
+
     /// The ids of an item's labels.
     pub fn labels_of(&self, item: &str) -> Vec<String> {
         self.state.lock().unwrap().labels.get(item).cloned().unwrap_or_default()
@@ -154,6 +159,15 @@ impl FakeTracker {
     pub fn modules_of(&self, item: &str) -> Vec<String> {
         let s = self.state.lock().unwrap();
         s.in_modules.iter().filter(|(_, i)| i == item).map(|(m, _)| m.clone()).collect()
+    }
+
+    /// Put an item in a module (ids) as if a person did, or take it out.
+    pub fn set_in_module(&self, module: &str, item: &str, is_in: bool) {
+        let mut s = self.state.lock().unwrap();
+        s.in_modules.retain(|(m, i)| !(m == module && i == item));
+        if is_in {
+            s.in_modules.push((module.into(), item.into()));
+        }
     }
 
     /// Whether putting an item in a module fails.
@@ -189,6 +203,7 @@ pub fn item(sequence_id: u64, title: &str, group: &str, updated_at: u64) -> Item
         sequence_id,
         title: title.into(),
         item_type: Some("Task".into()),
+        label_ids: vec![],
         state_name: group.to_owned(),
         state_group: group.into(),
         parent_id: None,
@@ -285,6 +300,7 @@ impl TrackerProvider for Keyed {
                 made.item_type = Some(t.name.clone());
             }
             made.parent_id = new.parent_id.clone();
+            made.label_ids = new.labels.clone();
             s.items.push(made.clone());
             s.labels.insert(made.id.clone(), new.labels.clone());
             s.sent.push(Sent {
@@ -367,7 +383,6 @@ impl TrackerProvider for Keyed {
                 it.parent_id = edit.parent_id.clone();
             }
             it.updated_at = at;
-            let out = it.clone();
             let have = s.labels.entry(id.to_owned()).or_default();
             for l in &edit.labels_add {
                 if !have.contains(l) {
@@ -375,6 +390,10 @@ impl TrackerProvider for Keyed {
                 }
             }
             have.retain(|l| !edit.labels_remove.contains(l));
+            let have = have.clone();
+            let it = s.items.iter_mut().find(|i| i.id == id).ok_or(TrackerError::NotFound)?;
+            it.label_ids = have;
+            let out = it.clone();
             s.sent.push(Sent {
                 kind: "edit".into(),
                 item: Some(id.into()),
@@ -419,6 +438,18 @@ impl TrackerProvider for Keyed {
                 ..Default::default()
             });
             Ok(())
+        })
+    }
+
+    fn module_items<'a>(
+        &'a self,
+        workspace: &'a str,
+        _: &'a str,
+        module: &'a str,
+    ) -> BoxFuture<'a, Result<Vec<String>>> {
+        Box::pin(async move {
+            let s = self.check(workspace)?;
+            Ok(s.in_modules.iter().filter(|(m, _)| m == module).map(|(_, i)| i.clone()).collect())
         })
     }
 

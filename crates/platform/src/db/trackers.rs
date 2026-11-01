@@ -534,17 +534,27 @@ pub(crate) fn erase_account(c: &impl Sql, account: &str, now: u64) -> Result<()>
 }
 
 /// Write a work item as `connection`'s row, keyed on the tracker's id for
-/// it: unless the row is newer. The row's `fi_` id when it was written.
-pub fn upsert_item(c: &impl Sql, connection: &str, mirror_id: i64, it: &Item, now: u64) -> Result<Option<String>> {
+/// it: unless the row is newer. `labels` are the names of the item's
+/// labels. Its modules are set by [`set_modules`] and [`add_module`], not
+/// here. The row's `fi_` id when it was written.
+pub fn upsert_item(
+    c: &impl Sql,
+    connection: &str,
+    mirror_id: i64,
+    it: &Item,
+    labels: &[String],
+    now: u64,
+) -> Result<Option<String>> {
     let id = format!("fi_{}", hex::encode(arugula_e2e::random::<16>()));
     c.query_row(
         "INSERT INTO forge_items (id, repo_id, number, kind, state, title, created_at, updated_at, synced_at,
-             provider, connection_id, source_item_id, item_type, state_name, state_group, parent_source_id)
-         VALUES (?1, ?2, ?3, 'issue', ?4, ?5, ?6, ?7, ?8, 'plane', ?9, ?10, ?11, ?12, ?13, ?14)
+             provider, connection_id, source_item_id, item_type, state_name, state_group, parent_source_id, labels)
+         VALUES (?1, ?2, ?3, 'issue', ?4, ?5, ?6, ?7, ?8, 'plane', ?9, ?10, ?11, ?12, ?13, ?14, ?15)
          ON CONFLICT (connection_id, source_item_id) DO UPDATE SET number = excluded.number, state = excluded.state,
              title = excluded.title, created_at = excluded.created_at, updated_at = excluded.updated_at,
              synced_at = excluded.synced_at, item_type = excluded.item_type, state_name = excluded.state_name,
-             state_group = excluded.state_group, parent_source_id = excluded.parent_source_id
+             state_group = excluded.state_group, parent_source_id = excluded.parent_source_id,
+             labels = excluded.labels
          WHERE excluded.updated_at > forge_items.updated_at
          RETURNING id",
         params![
@@ -561,11 +571,60 @@ pub fn upsert_item(c: &impl Sql, connection: &str, mirror_id: i64, it: &Item, no
             it.item_type,
             it.state_name,
             it.state_group,
-            it.parent_id
+            it.parent_id,
+            json_list(labels)
         ],
         |r| r.get(0),
     )
     .optional()
+}
+
+fn json_list(names: &[String]) -> String {
+    serde_json::to_string(names).unwrap_or_else(|_| "[]".to_owned())
+}
+
+/// Set the modules (names) of each of a connection's rows to what `by_item`
+/// says for its tracker id, none for one it lacks: the `fi_` ids of the rows
+/// that changed.
+pub fn set_modules(
+    c: &impl Sql,
+    connection: &str,
+    by_item: &std::collections::HashMap<String, Vec<String>>,
+) -> Result<Vec<String>> {
+    let rows: Vec<(String, String, String)> = c.query_map(
+        "SELECT id, source_item_id, modules FROM forge_items WHERE connection_id = ?1",
+        params![connection],
+        |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+    )?;
+    let mut changed = vec![];
+    for (id, source, have) in rows {
+        let want = json_list(by_item.get(&source).map_or(&[][..], Vec::as_slice));
+        if want != have {
+            c.execute("UPDATE forge_items SET modules = ?1 WHERE id = ?2", params![want, id])?;
+            changed.push(id);
+        }
+    }
+    Ok(changed)
+}
+
+/// Add the module `name` to the modules of the connection's row for the
+/// tracker's item: its `fi_` id when the row changed.
+pub fn add_module(c: &impl Sql, connection: &str, source_item: &str, name: &str) -> Result<Option<String>> {
+    let row: Option<(String, String)> = c
+        .query_row(
+            "SELECT id, modules FROM forge_items WHERE connection_id = ?1 AND source_item_id = ?2",
+            params![connection, source_item],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .optional()?;
+    let Some((id, have)) = row else { return Ok(None) };
+    let mut modules: Vec<String> = serde_json::from_str(&have).unwrap_or_default();
+    if modules.iter().any(|m| m == name) {
+        return Ok(None);
+    }
+    modules.push(name.to_owned());
+    c.execute("UPDATE forge_items SET modules = ?1 WHERE id = ?2", params![json_list(&modules), id])?;
+    Ok(Some(id))
 }
 
 /// Remove a connection's row for the tracker's item `source_item`: its
@@ -596,6 +655,10 @@ pub struct TrackerItem {
     pub state_name: String,
     pub state_group: String,
     pub item_type: Option<String>,
+    /// The names of its labels.
+    pub labels: Vec<String>,
+    /// The names of the modules it is in.
+    pub modules: Vec<String>,
     pub created_at: u64,
     pub updated_at: u64,
 }
@@ -614,7 +677,12 @@ pub struct TrackerFilter<'a> {
 }
 
 const ITEM_COLUMNS: &str = "i.id, i.repo_id, i.connection_id, i.number, i.title, i.state, i.state_name, \
-     i.state_group, i.item_type, i.updated_at, i.created_at";
+     i.state_group, i.item_type, i.updated_at, i.created_at, i.labels, i.modules";
+
+/// A JSON list of names.
+fn names(json: &str) -> Vec<String> {
+    serde_json::from_str(json).unwrap_or_default()
+}
 
 fn item_row(r: &Row) -> Result<TrackerItem> {
     Ok(TrackerItem {
@@ -629,6 +697,8 @@ fn item_row(r: &Row) -> Result<TrackerItem> {
         item_type: r.get(8)?,
         updated_at: r.get(9)?,
         created_at: r.get(10)?,
+        labels: names(&r.get::<String>(11)?),
+        modules: names(&r.get::<String>(12)?),
     })
 }
 
