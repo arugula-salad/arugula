@@ -280,7 +280,7 @@ function BoardItems({ p, list, data }: { p: PlatformProject; list: ProjectBoard[
   const made = open.filter((b) => !b.source);
   const plane = open.filter((b) => b.source);
   const started = plane.filter((b) => b.source?.started);
-  const waiting = plane.filter((b) => b.source?.started);
+  const waiting = plane.filter((b) => !b.source?.started);
   return (
     <>
       <ul class="board-list sw-cards" {...{ [data]: true }}>
