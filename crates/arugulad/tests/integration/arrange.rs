@@ -177,6 +177,11 @@ async fn view(ws: &mut Ws, tab: u32, (cols, rows): (u16, u16), zoom: Option<u32>
     send(ws, ClientMsg::View { tab, cols, rows, zoom, claim: true, typed: false, asked: false }).await;
 }
 
+/// "Use this window's size": the one claim that takes a connected holder's.
+async fn ask(ws: &mut Ws, tab: u32, (cols, rows): (u16, u16), zoom: Option<u32>) {
+    send(ws, ClientMsg::View { tab, cols, rows, zoom, claim: true, typed: false, asked: true }).await;
+}
+
 #[tokio::test]
 async fn a_focus_is_the_holders_and_never_traps_the_next_client() {
     let d: Daemon = arugulad!("focus-holder").env("PS1", "$ ").start();
@@ -195,18 +200,22 @@ async fn a_focus_is_the_holders_and_never_traps_the_next_client() {
     let s = state_where(&mut desktop, |s| s.tabs[0].focus == Some(ids[0])).await;
     assert_eq!(s.tabs[0].layout.panes.len(), 1);
 
-    // The phone claims the tab and opens another pane: its zoom wins.
+    // The phone asks for the tab (the button) and opens another pane: its
+    // zoom wins.
     let (mut phone, _) = connect_async(d.ws("/ws")).await.unwrap();
     let In::Msg(ServerMsg::Hello { .. }) = recv(&mut phone).await else { panic!("expected hello") };
-    view(&mut phone, tab, (60, 59), Some(ids[1])).await;
+    ask(&mut phone, tab, (60, 59), Some(ids[1])).await;
     let s = state_where(&mut phone, |s| s.tabs[0].focus.is_none() && s.tabs[0].zoom == Some(ids[1])).await;
     assert_eq!(s.tabs[0].layout.panes.iter().map(|p| p.0).collect::<Vec<_>>(), vec![ids[1]]);
     // Tapping a third pane isn't blocked either.
     view(&mut phone, tab, (60, 59), Some(ids[2])).await;
     state_where(&mut phone, |s| s.tabs[0].layout.panes.iter().map(|p| p.0).collect::<Vec<_>>() == vec![ids[2]]).await;
 
-    // The desktop focuses again: it takes the tab back first (same person),
-    // and its focus holds.
+    // The desktop's focus doesn't take the tab from the connected phone (#473).
+    send(&mut desktop, ClientMsg::Intent { id: Some(5), intent: Intent::Focus { tab, pane: Some(ids[0]) } }).await;
+    while !matches!(recv(&mut desktop).await, In::Msg(ServerMsg::Error { id: Some(5), .. })) {}
+    // Asking for the tab back, its focus holds.
+    ask(&mut desktop, tab, (120, 40), None).await;
     intent(&mut desktop, Intent::Focus { tab, pane: Some(ids[0]) }).await;
     let s = state_where(&mut desktop, |s| s.tabs[0].focus == Some(ids[0])).await;
     assert_eq!((s.tabs[0].cols, s.tabs[0].rows), (120, 40), "the tab has the desktop's size");

@@ -84,17 +84,15 @@ pub enum ClientMsg {
     Detach { panes: Vec<PaneId> },
     /// The client is showing `tab` in a `cols`x`rows` cell area, optionally
     /// with one pane zoomed to fill it. With `claim` (the client opened or
-    /// switched to the tab, or typed in it), that becomes the tab's size;
-    /// otherwise it only does if the client already owns the tab's size or
-    /// nobody does. A claim with `typed` (made because the client typed)
-    /// waits until the owner has been idle a few seconds, so two editors
-    /// typing in turn don't resize the pane at every turn (#333). An older
-    /// daemon ignores `typed` and takes any claim at once.
+    /// switched to the tab), that becomes the tab's size if nobody else holds
+    /// it: the tab has no owner, or its owner's client has gone. A client
+    /// that already owns the tab's size keeps it up to date with a plain view.
     ///
-    /// Between people (#1502): a claim, switching or typing, only takes the
-    /// size from nobody or from a window of the same person. Taking it from
-    /// another person's window needs `asked`, which only the "Use this
-    /// window's size" button sets. Typing still reaches the owner's size.
+    /// While another connected client holds the size (#473), a claim doesn't
+    /// take it, whoever that is: only `asked`, which the "Use this window's
+    /// size" button sets, does. Typing, mouse and focus reports, showing a tab
+    /// and zooming don't. `typed` is from older clients, whose typing claimed
+    /// the size; the daemon ignores it.
     View {
         tab: TabId,
         cols: u16,

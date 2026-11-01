@@ -528,58 +528,97 @@ async fn the_tab_takes_the_claiming_clients_size() {
     type_line(&mut a, "stty size").await;
     read_until(&mut a, None, "30 101").await;
 
-    // Another client's unclaimed view doesn't take over; a claimed one does.
+    // Another client's unclaimed view doesn't take over; "use this size" does.
     let (mut b, _) = connect_state(&d).await;
     send(&mut b, ClientMsg::View { tab, cols: 60, rows: 20, zoom: None, claim: false, typed: false, asked: false })
         .await;
-    send(&mut b, ClientMsg::View { tab, cols: 61, rows: 20, zoom: None, claim: true, typed: false, asked: false })
-        .await;
+    send(&mut b, ClientMsg::View { tab, cols: 61, rows: 20, zoom: None, claim: true, typed: false, asked: true }).await;
     // Other state (prompts, directories) may come first; wait for the size.
     let state = until(&mut a, |m| match m {
         In::Msg(ServerMsg::State { state }) if state.tabs[0].cols != 101 => Some(state.clone()),
         _ => None,
     })
     .await;
-    assert_eq!((state.tabs[0].cols, state.tabs[0].rows), (61, 20), "B's claim, not its plain view");
+    assert_eq!((state.tabs[0].cols, state.tabs[0].rows), (61, 20), "B's ask, not its plain view");
     assert_ne!(state.tabs[0].owner, None);
 }
 
-/// #333: a second window's typing doesn't take the size from a window
-/// still typing there (it would resize the pane at every turn); showing
-/// the tab or "use this size" still does.
-#[tokio::test]
-async fn typing_waits_for_the_size_owner_to_stop() {
-    let d = start().await;
-    let (mut a, state) = connect_state(&d).await;
-    let tab = state.tabs[0].id;
-    send(
-        &mut a,
-        ClientMsg::Attach { panes: vec![AttachPane::new(1, None)], zstd: false, acks: false, kitty_keys: false },
-    )
-    .await;
-    send(&mut a, ClientMsg::View { tab, cols: 101, rows: 30, zoom: None, claim: true, typed: false, asked: false })
-        .await;
-    until(&mut a, |m| matches!(m, In::Msg(ServerMsg::Size { pane: 1, cols: 101, rows: 30 })).then_some(())).await;
-    type_line(&mut a, "stty size").await;
-    read_until(&mut a, None, "30 101").await;
-
-    let (mut b, _) = connect_state(&d).await;
-    // B types while A has only just typed: A keeps the size...
-    send(&mut b, ClientMsg::View { tab, cols: 61, rows: 20, zoom: None, claim: true, typed: true, asked: false }).await;
-    // ...and B's "use this size", sent after it, is the next size A sees.
-    send(&mut b, ClientMsg::View { tab, cols: 62, rows: 20, zoom: None, claim: true, typed: false, asked: false })
-        .await;
-    let state = until(&mut a, |m| match m {
-        In::Msg(ServerMsg::State { state }) if state.tabs[0].cols != 101 => Some(state.clone()),
+/// What `ws` sees of the tab after everything it sent before.
+async fn tab_size(ws: &mut Ws, tab: u32) -> ((u16, u16), bool) {
+    // An error comes back in order, after what it sent before; any state
+    // before it may be older.
+    send(ws, ClientMsg::Intent { id: Some(7), intent: Intent::ClosePane { pane: 999 } }).await;
+    until(ws, |m| matches!(m, In::Msg(ServerMsg::Error { id: Some(7), .. })).then_some(())).await;
+    send(ws, ClientMsg::Subscribe { summary: false }).await;
+    let t = until(ws, |m| match m {
+        In::Msg(ServerMsg::State { state }) => state.tabs.iter().find(|t| t.id == tab).cloned(),
         _ => None,
     })
     .await;
-    assert_eq!((state.tabs[0].cols, state.tabs[0].rows), (62, 20), "B's typing took the size from A");
+    ((t.cols, t.rows), t.owner.is_some())
 }
 
-/// #1502: switching to a tab or typing in it takes the size from nobody or
-/// from the same person's window, never from another person's. Only "use
-/// this size" (`asked`) does. The daemon decides, so these are raw `View`s
+/// #473: while another screen holds a tab's size, only "use this size"
+/// (`asked`) takes it: not input (a key, a mouse report, a focus report),
+/// not showing the tab again, not zooming. Two clients, A (desktop) and B
+/// (phone), on one tab. Once A is gone, showing the tab takes it.
+#[tokio::test(flavor = "multi_thread")]
+async fn only_the_button_takes_the_size_from_a_connected_holder() {
+    let d = start().await;
+    let (mut a, state) = connect_state(&d).await;
+    let tab = state.tabs[0].id;
+    let view = |cols, claim, asked| ClientMsg::View { tab, cols, rows: 20, zoom: None, claim, typed: false, asked };
+    send(&mut a, view(101, true, false)).await;
+    assert_eq!(tab_size(&mut a, tab).await, ((101, 20), true));
+
+    let (mut b, _) = connect_state(&d).await;
+    send(
+        &mut b,
+        ClientMsg::Attach { panes: vec![AttachPane::new(1, None)], zstd: false, acks: false, kitty_keys: false },
+    )
+    .await;
+    // B's input, however it is shaped, and a view that claims with `typed`
+    // as an older client sends it, leave A's size.
+    for data in ["x", "\x1b[<0;5;5M", "\x1b[I"] {
+        let f = Frame { kind: FrameKind::Input, pane: 1, offset: 0, data: data.as_bytes().to_vec() };
+        b.send(Message::Binary(f.encode().into())).await.unwrap();
+    }
+    send(&mut b, ClientMsg::View { tab, cols: 61, rows: 20, zoom: None, claim: true, typed: true, asked: false }).await;
+    assert_eq!(tab_size(&mut b, tab).await.0, (101, 20), "B's input and typed claim");
+
+    // Switching away and back (the claim of showing the tab) and zooming.
+    send(&mut b, view(62, true, false)).await;
+    send(&mut b, ClientMsg::View { tab, cols: 63, rows: 20, zoom: Some(1), claim: true, typed: false, asked: false })
+        .await;
+    assert_eq!(tab_size(&mut b, tab).await.0, (101, 20), "B showing the tab");
+
+    // The holder's own resize still counts.
+    send(&mut a, view(102, false, false)).await;
+    assert_eq!(tab_size(&mut b, tab).await.0, (102, 20), "A's resize");
+
+    // The button takes it, and then A is the one asking.
+    send(&mut b, view(64, true, true)).await;
+    assert_eq!(tab_size(&mut b, tab).await.0, (64, 20), "asking took it");
+    send(&mut a, view(103, true, false)).await;
+    assert_eq!(tab_size(&mut a, tab).await.0, (64, 20), "A showing the tab, B holds");
+
+    // A holder that has gone holds nothing: B takes it from A.
+    send(&mut a, view(104, true, true)).await;
+    assert_eq!(tab_size(&mut a, tab).await.0, (104, 20));
+    drop(a);
+    for _ in 0..50 {
+        send(&mut b, view(65, true, false)).await;
+        if tab_size(&mut b, tab).await.0 == (65, 20) {
+            return;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    panic!("B never took the size after A left");
+}
+
+/// #1502: switching to a tab or typing in it takes the size from nobody,
+/// never from another person's window (nor, since #473, the same person's).
+/// Only "use this size" (`asked`) does. The daemon decides, so these are raw `View`s
 /// as an older or hostile client sends them.
 #[tokio::test(flavor = "multi_thread")]
 async fn only_asking_takes_the_size_from_another_person() {
@@ -600,42 +639,29 @@ async fn only_asking_takes_the_size_from_another_person() {
     let (mut f, _) = connect_async(req).await.unwrap();
     let In::Msg(ServerMsg::Hello { .. }) = recv(&mut f).await else { panic!("expected hello") };
 
-    // What `ws` sees of the tab after everything it sent before.
-    async fn size(ws: &mut Ws, tab: u32) -> ((u16, u16), bool) {
-        // An error comes back in order, after what it sent before; any state
-        // before it may be older.
-        send(ws, ClientMsg::Intent { id: Some(7), intent: Intent::ClosePane { pane: 999 } }).await;
-        until(ws, |m| matches!(m, In::Msg(ServerMsg::Error { id: Some(7), .. })).then_some(())).await;
-        send(ws, ClientMsg::Subscribe { summary: false }).await;
-        let t = until(ws, |m| match m {
-            In::Msg(ServerMsg::State { state }) => state.tabs.iter().find(|t| t.id == tab).cloned(),
-            _ => None,
-        })
-        .await;
-        ((t.cols, t.rows), t.owner.is_some())
-    }
+    let size = tab_size;
     let view = |cols, claim, typed, asked| ClientMsg::View { tab, cols, rows: 20, zoom: None, claim, typed, asked };
 
     send(&mut a, view(101, true, false, false)).await;
     assert_eq!(size(&mut a, tab).await, ((101, 20), true));
 
-    // The same person's second window takes it, as before: that's moving
-    // from desktop to phone.
+    // The same person's second window doesn't either (#473): that takes
+    // the button too.
     let (mut a2, _) = connect_state(&d).await;
     send(&mut a2, view(102, true, false, false)).await;
-    assert_eq!(size(&mut a2, tab).await.0, (102, 20));
+    assert_eq!(size(&mut a2, tab).await.0, (101, 20));
 
     // Another person's switch and typing are refused, however they ask
     // for it without `asked`.
     send(&mut f, view(61, true, false, false)).await;
     send(&mut f, view(62, true, true, false)).await;
-    assert_eq!(size(&mut f, tab).await.0, (102, 20), "A's size holds");
+    assert_eq!(size(&mut f, tab).await.0, (101, 20), "A's size holds");
 
     // The button takes it.
     send(&mut f, view(63, true, false, true)).await;
     assert_eq!(size(&mut f, tab).await.0, (63, 20), "asking took it");
 
-    // A's switch back is now the other person's window to take from.
+    // A's switch back doesn't take it from F.
     send(&mut a, view(103, true, false, false)).await;
     assert_eq!(size(&mut a, tab).await.0, (63, 20), "F's size holds against A");
 

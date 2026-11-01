@@ -16,7 +16,7 @@
 import { OPS, opPath } from "../ops";
 import { Client, paneIds } from "../client";
 import { directory } from "../hosts";
-import type { OpenRequest, PaneId, RemoteRef, RunRequest, RunResponse, TabId } from "../../shared/proto";
+import type { OpenRequest, PaneId, RemoteRef, RunRequest, RunResponse } from "../../shared/proto";
 import { registerBlock, type BlockView } from "./view";
 import type { TerminalView } from "../terminal-view";
 
@@ -77,13 +77,6 @@ class RemoteHosts {
       const client = new Client(directory.base(host));
       client.only = new Set();
       const l: HostLink = { client, views: new Map(), trying: null };
-      // Typing in a pane there makes this window the one whose size counts,
-      // here and there (once whoever has it stops typing, #333). Nothing
-      // else on this connection claims.
-      client.claim = (tab: TabId) => {
-        const t = client.tabView(tab);
-        for (const [p, vs] of l.views) if (t && paneIds(t).includes(p)) vs.forEach((v) => v.claimed());
-      };
       client.connect();
       this.hosts.set(host, l);
       this.timer ??= window.setInterval(this.tick, 1000);
@@ -271,11 +264,10 @@ class RemoteView implements BlockView {
   }
 
   /** Tell its host the size of its place here. That's the tab's size
-   * there only if nobody else's is, or if `claim` (it was typed into
-   * here): owning the home tab here isn't a claim on the host's, or two
-   * windows showing the same remote pane take its size from each other
-   * at every layout (#333). */
-  private push(claim = false) {
+   * there only if nobody else's is: owning the home tab here isn't a
+   * claim on the host's, or two windows showing the same remote pane take
+   * its size from each other at every layout (#333). */
+  private push() {
     const c = this.client;
     const at = this.at;
     if (!c?.connected || !at || !this.size) return;
@@ -283,21 +275,14 @@ class RemoteView implements BlockView {
     if (!t) return;
     const zoom = paneIds(t).length > 1 ? at.pane : null;
     const key = `${c.clientId}:${t.id}:${this.size.cols}x${this.size.rows}:${zoom}`;
-    if (key === this.pushed && !claim) return;
+    if (key === this.pushed) return;
     this.pushed = key;
-    c.view(t.id, this.size.cols, this.size.rows, zoom, claim, claim);
+    c.view(t.id, this.size.cols, this.size.rows, zoom, false);
   }
 
   layout(cols: number, rows: number) {
     this.size = { cols, rows };
     this.push();
-  }
-
-  /** Typed into on its host's connection: this window sizes it now. */
-  claimed() {
-    const tab = this.home.tabOfPane(this.id);
-    if (tab && tab.owner !== this.home.clientId) this.home.claim(tab.id, true);
-    this.push(true);
   }
 
   closing() {
