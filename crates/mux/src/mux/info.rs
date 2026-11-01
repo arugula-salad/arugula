@@ -82,6 +82,10 @@ impl Daemon {
             if agent.as_deref() != Some("claude") && self.hooked.remove(id) {
                 self.mark(*id);
             }
+            // Nor does what it said of its session (#450).
+            if agent.as_deref() != Some("claude") && self.live.remove(id).is_some() {
+                self.mark(*id);
+            }
         }
         // Claude Code without hooks: its session files say which
         // conversation each holds (#146).
@@ -237,6 +241,7 @@ impl Daemon {
             answered: self.answered.get(&p.id).cloned(),
             inbox: self.inbox.contains_key(&p.id),
             unhooked,
+            live: self.live.get(&p.id).cloned().map(Box::new),
             link: self.links.get(&p.id).cloned(),
             restored: self.restored.contains(&p.id),
             driver: self.drivers.get(&p.id).cloned(),
@@ -285,6 +290,8 @@ impl Daemon {
             answered: self.answered.get(&id).cloned(),
             inbox: false,
             unhooked: false,
+            // The mod in an agent block's Claude Code, if it has one.
+            live: self.live.get(&id).cloned().map(Box::new),
             link: None,
             restored: false,
             driver: None,

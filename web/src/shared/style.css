@@ -1681,9 +1681,50 @@ a.work-chip:hover {
   white-space: nowrap;
 }
 
-.agent-context > :not(:first-child)::before {
+.agent-context-btn > :not(:first-child)::before {
   content: "·";
   margin-right: 6px;
+}
+
+/* #450: the strip is a quiet button that opens where its figures come
+   from, in an agent block's bar (above the bar's plain-button look,
+   block-chrome.css) and a terminal's header. */
+.agent-context .agent-context-btn.agent-context-btn:not(.primary):not(.secondary) {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: auto;
+  min-width: 0;
+  line-height: 1.4;
+  padding: 1px 6px;
+  border: 1px solid transparent;
+  border-radius: var(--btn-radius);
+  background: none;
+  color: var(--dim);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.agent-context .agent-context-btn.agent-context-btn:not(.primary):not(.secondary):hover:not(:disabled),
+.agent-context .agent-context-btn.agent-context-btn.on:not(.primary):not(.secondary) {
+  border-color: var(--line);
+  background: none;
+  color: var(--fg);
+}
+
+/* A terminal's header: just the fill and the mark. */
+.agent-context.slim {
+  flex: none;
+}
+
+.agent-context.slim .agent-context-bar {
+  width: 32px;
+}
+
+[data-context-pop] th {
+  color: var(--dim);
+  white-space: nowrap;
 }
 
 .agent-context-fill {

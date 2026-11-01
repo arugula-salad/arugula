@@ -565,6 +565,10 @@ function AgentBlock({ client, id, s }: { client: Client; id: PaneId; s: AgentSta
   const call = (method: string, args: unknown) => void client.api(`/api/blocks/${id}/call/${method}`, args, `couldn't ${method}`);
   // M29: who answered last, and whether this person may answer at all.
   const answered = client.info(id)?.answered ?? null;
+  // #450: what Claude Code says from inside (its arugula-live mod) wins over
+  // what its transcript says, and its own cost over the estimate.
+  const ctx = client.info(id)?.live ?? s.context ?? null;
+  const own = ctx?.source === "live" ? (ctx.cost_usd ?? null) : null;
   const can = !archived && mayAnswer(client, id);
   // The daemon says an error twice, as a note and as the error: the strip
   // by the composer says it, so the note it repeats doesn't (UI audit #178).
@@ -596,10 +600,10 @@ function AgentBlock({ client, id, s }: { client: Client; id: PaneId; s: AgentSta
           </span>
         )}
         <span class="agent-spacer" />
-        {s.context && <ContextStrip c={s.context} />}
-        {s.estimate && <CostEstimate e={s.estimate} />}
+        {ctx && <ContextStrip c={ctx} />}
+        {(s.estimate || own != null) && <CostEstimate e={s.estimate} claude={own} />}
         {/* What an agent with no transcript we read says it cost: its own estimate. */}
-        {s.cost && !s.estimate && (
+        {s.cost && !s.estimate && own == null && (
           <span class="agent-cost" title={`What the agent reports this session cost: its own estimate, not a bill. ${s.turns} turns, ${s.tokens.total} tokens.`}>
             ≈ {money(s.cost.total, s.cost.currency)}
             {s.cost.last_turn != null && s.turns > 1 ? ` (last ${money(s.cost.last_turn, s.cost.currency)})` : ""}
@@ -766,6 +770,17 @@ registerBlock("agent", (client, id): BlockView => {
   let state: AgentState | null = null;
   const draw = () => render(<AgentBlock client={client} id={id} s={state} />, host);
   draw();
+  // #450: what Claude Code says from inside comes on the pane, not the
+  // block's state: draw again when it changes.
+  const said = () => JSON.stringify(client.info(id)?.live ?? null);
+  let live = said();
+  const off = client.subscribe(() => {
+    const now = said();
+    if (now !== live) {
+      live = now;
+      draw();
+    }
+  });
   return {
     host,
     setVisible: (v) => (host.style.display = v ? "" : "none"),
@@ -777,6 +792,7 @@ registerBlock("agent", (client, id): BlockView => {
     text: () => (state ? plain(state) : ""),
     focus: () => host.querySelector<HTMLElement>(".agent-composer textarea")?.focus(),
     dispose: () => {
+      off();
       render(null, host);
       host.remove();
     },

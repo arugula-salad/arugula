@@ -30,11 +30,12 @@
 //! window is unknown, only an exceeded window makes one an overflow; a
 //! mark is judged again once the window is known.
 //!
-//! **From inside the session** (#396, a spike): the Claude Code mod's
+//! **From inside the session** (#396, #450): the Claude Code mod's
 //! signals ([`Context::signal`]) feed the same summary for a terminal pane,
 //! with what a transcript doesn't say: the window as the engine has it
-//! (not guessed from the model's name), the effort, and a compaction as it
-//! happens.
+//! (not guessed from the model's name), the effort, a compaction as it
+//! happens, and Claude Code's own cost. Its summary says `source: live`,
+//! with the versions; a transcript's says `source: transcript`.
 
 use serde_json::{Value, json};
 
@@ -232,6 +233,16 @@ pub struct Context {
     engine_window: Option<u64>,
     /// The effort of the last model request (#396): only the mod says.
     effort: Option<String>,
+    /// The mod has spoken (#450): Claude Code's version, the mod's, and
+    /// what Claude Code says the session has cost.
+    live: Option<Live>,
+}
+
+#[derive(Clone, Default)]
+struct Live {
+    claude_version: Option<String>,
+    mod_version: Option<String>,
+    cost_usd: Option<f64>,
 }
 
 impl Context {
@@ -277,6 +288,13 @@ impl Context {
     pub fn signal(&mut self, s: &arugula_proto::api::SessionSignal, at: u64) {
         if s.agent_id.is_some() {
             return;
+        }
+        let live = self.live.get_or_insert_default();
+        let text = |v: &Option<String>| v.as_deref().filter(|v| !v.is_empty()).map(str::to_owned);
+        live.claude_version = text(&s.claude_version).or(live.claude_version.take());
+        live.mod_version = text(&s.mod_version).or(live.mod_version.take());
+        if let Some(c) = s.cost_usd.filter(|c| c.is_finite() && *c >= 0.0) {
+            live.cost_usd = Some(c);
         }
         if let Some(m) = s.model.as_deref().filter(|m| !m.is_empty()) {
             self.model = Some(m.to_owned());
@@ -399,9 +417,18 @@ impl Context {
             "overflows": marks.iter().filter(|m| kind(m) == Kind::Overflow).count(),
             "last": last,
         });
-        // Only the mod says (#396); a transcript's summary is as it was.
+        // Only the mod says (#396, #450).
         if let Some(e) = &self.effort {
             summary["effort"] = json!(e);
+        }
+        match &self.live {
+            Some(l) => {
+                summary["source"] = json!("live");
+                summary["claude_version"] = json!(l.claude_version);
+                summary["mod_version"] = json!(l.mod_version);
+                summary["cost_usd"] = json!(l.cost_usd);
+            }
+            None => summary["source"] = json!("transcript"),
         }
         Some(summary)
     }
@@ -446,6 +473,8 @@ mod tests {
         assert_eq!(s["tokens"], 120_002);
         assert_eq!(s["window"], 200_000);
         assert_eq!(s["window_from"], "model");
+        assert_eq!(s["source"], "transcript");
+        assert!(s.get("cost_usd").is_none());
         assert_eq!(s["model"], "Opus 4.5");
         assert_eq!(s["compactions"], 0);
         assert_eq!(s["estimated"], false);
@@ -653,6 +682,8 @@ mod tests {
         );
         let s = c.summary().expect("a summary");
         assert_eq!(s["window"], 1_000_000);
+        assert_eq!(s["window_from"], "engine");
+        assert_eq!(s["source"], "live");
         assert_eq!(s["effort"], "high");
         assert_eq!(s["last"]["kind"], "compacted");
         assert_eq!(s["last"]["at_ms"], 3);
@@ -667,6 +698,37 @@ mod tests {
         let s = read(&[assistant("claude-opus-4-6", 1, 189_999, 0), boundary("auto", 190_000, 12_000)]);
         assert_eq!(s["last"]["kind"], "compacted");
         assert!(s["window"].is_null());
+    }
+
+    #[test]
+    fn the_mods_figures_say_they_are_live() {
+        // #450: Claude Code's own cost and versions come with its signals,
+        // and a later signal without them keeps what was said.
+        use arugula_proto::api::SessionSignal;
+        let mut c = Context::default();
+        c.signal(
+            &SessionSignal {
+                event: "usage".into(),
+                tokens: Some(52_000),
+                window: Some(1_000_000),
+                cost_usd: Some(1.25),
+                claude_version: Some("2.1.316".into()),
+                mod_version: Some("0.2.0".into()),
+                ..Default::default()
+            },
+            1,
+        );
+        c.signal(
+            &SessionSignal { event: "step".into(), model: Some("claude-sonnet-5-5".into()), ..Default::default() },
+            2,
+        );
+        let s = c.summary().unwrap();
+        assert_eq!(s["source"], "live");
+        assert_eq!(s["cost_usd"], 1.25);
+        assert_eq!(s["claude_version"], "2.1.316");
+        assert_eq!(s["mod_version"], "0.2.0");
+        assert_eq!(s["tokens"], 52_000);
+        assert_eq!(s["model"], "Sonnet 5.5");
     }
 
     #[test]

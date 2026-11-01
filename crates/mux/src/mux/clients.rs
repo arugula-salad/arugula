@@ -389,6 +389,7 @@ impl Daemon {
                     self.status_pushed.remove(&pane);
                     self.turn_typed.remove(&pane);
                     self.hooked.remove(&pane);
+                    self.live.remove(&pane);
                     self.links.remove(&pane);
                     self.restored.remove(&pane);
                     if let Some(a) = self.asks.remove(&pane) {
@@ -744,6 +745,7 @@ impl Daemon {
                 diff: None,
                 resumes: None,
                 unhooked: false,
+                live: None,
                 link: None,
                 ..info
             };

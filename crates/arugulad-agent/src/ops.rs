@@ -107,14 +107,14 @@ impl Handle<AgentBlock> for ConversationOpen {
 }
 
 /// What Claude Code in each terminal pane said of its session from inside
-/// it (#396, a spike): the mod's signals, read into the same context an
-/// agent block reads from its transcript (#397). Kept in memory only, and
-/// logged; nothing shows it yet.
+/// it (#396): the mod's signals, read into the same context an agent block
+/// reads from its transcript (#397). Kept in memory only, logged, and given
+/// to the mux for the pane's `live` (#450), which the strip shows.
 static SIGNALED: std::sync::LazyLock<std::sync::Mutex<HashMap<PaneId, crate::conversations::context::Context>>> =
     std::sync::LazyLock::new(Default::default);
 
 impl Handle<AgentBlock> for PaneSessionSignal {
-    async fn handle(_: &Cx<'_>, id: PaneId, s: SessionSignal) -> Result<SessionSignaled, OpError> {
+    async fn handle(cx: &Cx<'_>, id: PaneId, s: SessionSignal) -> Result<SessionSignaled, OpError> {
         let context = {
             let mut panes = SIGNALED.lock().unwrap_or_else(|p| p.into_inner());
             // A new session in the pane (`/clear`, a new `claude`) starts over.
@@ -133,6 +133,8 @@ impl Handle<AgentBlock> for PaneSessionSignal {
             context = %context,
             "session signal"
         );
+        let live = (!context.is_null()).then(|| context.clone());
+        cx.app.mux.send(crate::mux::Cmd::Api(Api::Live(id, live)));
         Ok(SessionSignaled { daemon_version: arugula_core::version::get().to_owned(), context })
     }
 }

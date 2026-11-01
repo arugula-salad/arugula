@@ -3348,6 +3348,13 @@ inbox?: boolean,
  */
 unhooked?: boolean, 
 /**
+ * What Claude Code running in it says of its session from inside it
+ * (#450, the arugula-live mod, through `arugula session-signal`): the
+ * agent block's `context` shape, with `source: live`, its versions and
+ * Claude Code's own cost. Only while Claude Code runs there.
+ */
+live?: import("./context").AgentContext | null, 
+/**
  * The last link to a pull request or an issue it printed (`gh pr
  * create`'s), by its shape (`arugula_mux::osc::forge_link`): the web
  * client's hint that a click opens it as a block.

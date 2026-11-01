@@ -13,6 +13,7 @@ import { len } from "../panes/geometry";
 import { layoutRefusal, ordinal, toggleFocus } from "../panes/layout";
 import { BranchIcon, MoreIcon, NVIM_GLYPH } from "./icons";
 import { HintChip } from "../hints";
+import { ContextStrip } from "../../blocks/agent-context";
 
 /** What kind of pane it is, in a word. */
 export function paneType(info: PaneInfo | undefined): string {
@@ -165,6 +166,8 @@ export function PaneHeader({
           {branch}
         </span>
       )}
+      {/* #450: Claude Code running here, as it says from inside (its mod). */}
+      {info?.live && info.type !== "agent" && <ContextStrip c={info.live} slim />}
       <span class="pane-header-fill" />
       <HintChip client={client} pane={id} />
       {sizedElsewhere && (
