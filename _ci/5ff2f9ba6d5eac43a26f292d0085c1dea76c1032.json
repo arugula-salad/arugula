@@ -2,11 +2,11 @@
   "schema": 1,
   "commit": "5ff2f9ba6d5eac43a26f292d0085c1dea76c1032",
   "branch": "main",
-  "state": "pending",
-  "at": "2026-10-31T02:30:08Z",
+  "state": "unbuilt",
+  "at": "2026-11-01T02:20:15Z",
   "phases": {
     "lint": {
-      "verdict": "pending",
+      "verdict": "unbuilt",
       "build": "newest",
       "runs": [
         {
@@ -15,7 +15,8 @@
           "conclusion": "success",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/41158303272/job/124409909040"
         }
-      ]
+      ],
+      "reason": "aged-out"
     },
     "build": {
       "verdict": "unbuilt",
