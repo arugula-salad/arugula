@@ -11,7 +11,15 @@ export interface AgentContext {
   model: string | null;
   /** Tokens the last assistant entry held; null until it has said. */
   tokens: number | null;
-  window: number;
+  /** `tokens` is an estimate (#444): right after a compaction, what it kept
+   *  plus what every request carries, until the next turn says. */
+  estimated?: boolean;
+  /** Null when it can't be told (#444): a model whose 1M window is an
+   *  option the transcript doesn't record. */
+  window: number | null;
+  /** `engine`: Claude Code said; `model`: Claude Code's default for the
+   *  model; `usage`: it has held more than 200k. */
+  window_from?: "engine" | "model" | "usage" | null;
   compactions: number;
   overflows: number;
   last: {
@@ -21,7 +29,7 @@ export interface AgentContext {
     trigger: string;
     at_ms: number;
     tokens_before: number | null;
-    window_before: number;
+    window_before: number | null;
   } | null;
 }
 
@@ -32,20 +40,46 @@ export function tone(pct: number): "ok" | "warn" | "danger" {
 
 const tokens = (n: number) => (n >= 1_000_000 ? `${+(n / 1_000_000).toFixed(2)}M` : n >= 1000 ? `${Math.round(n / 1000)}k` : `${n}`);
 
+/** Where the window's size comes from, in words. */
+function windowNote(c: AgentContext): string {
+  if (c.window == null) return "The window isn't known: this model runs with 200k, or 1M as its [1m] variant, and the transcript doesn't say which";
+  switch (c.window_from) {
+    case "engine":
+      return `${tokens(c.window)} window, as Claude Code reported it`;
+    case "usage":
+      return `${tokens(c.window)} window: it has held more than 200k`;
+    case "model":
+      return `${tokens(c.window)} window: Claude Code's default for this model`;
+    default:
+      return "";
+  }
+}
+
 export function ContextStrip({ c }: { c: AgentContext }) {
-  const pct = c.tokens == null ? null : Math.min(100, Math.round((c.tokens / c.window) * 100));
+  const pct = c.tokens == null || c.window == null ? null : Math.min(100, Math.round((c.tokens / c.window) * 100));
   const m = c.last;
-  const before = m?.tokens_before == null ? "" : `, ${tokens(m.tokens_before)} of ${tokens(m.window_before)} (${Math.round((m.tokens_before / m.window_before) * 100)}%) before`;
+  const before =
+    m?.tokens_before == null
+      ? ""
+      : m.window_before == null
+        ? `, ${tokens(m.tokens_before)} before`
+        : `, ${tokens(m.tokens_before)} of ${tokens(m.window_before)} (${Math.round((m.tokens_before / m.window_before) * 100)}%) before`;
   const label = m && (m.kind === "overflow" ? "Overflow" : "Compacted");
+  const about = c.estimated ? "About " : "";
+  const estimate = c.estimated ? ". Estimated until the next turn: what the compaction kept, and what every request carries" : "";
+  const note = windowNote(c);
   return (
     <span class="agent-context" data-context>
       {c.model && <span class="agent-context-model">{c.model}</span>}
-      {pct != null && (
-        <span class="agent-context-fill" data-tone={tone(pct)} data-fill={pct} title={`${tokens(c.tokens!)} of ${tokens(c.window)} tokens`}>
-          <span class="agent-context-bar">
-            <span style={{ width: `${pct}%` }} />
-          </span>
-          {pct}%
+      {c.tokens != null && (
+        <span
+          class="agent-context-fill"
+          data-tone={pct == null ? "unknown" : tone(pct)}
+          data-fill={pct ?? ""}
+          title={`${about}${tokens(c.tokens)}${c.window == null ? "" : ` of ${tokens(c.window)}`} tokens${estimate}${note ? `. ${note}` : ""}`}
+        >
+          <span class="agent-context-bar">{pct != null && <span style={{ width: `${pct}%` }} />}</span>
+          {pct != null ? `${pct}%` : tokens(c.tokens)}
         </span>
       )}
       {m && (

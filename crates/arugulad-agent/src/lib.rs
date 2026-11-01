@@ -446,6 +446,9 @@ struct Inner {
     /// The model the agent says it answers with (claude-agent-acp's
     /// `usage_update` `_meta` `_claude/model`), once it has (Arugula #215).
     served_model: Option<String>,
+    /// The context window claude-agent-acp says the session has (#444),
+    /// from a turn's result: what the transcript can't say.
+    engine_window: Option<u64>,
     /// The agent answered the switch to the block's own model (`def.model`):
     /// until then, the model it's on isn't the one it'll answer with.
     model_settled: bool,
@@ -720,6 +723,7 @@ impl Inner {
             subagents: Default::default(),
             config_options: Value::Null,
             served_model: None,
+            engine_window: None,
             model_settled: false,
             adapter: None,
             worn: None,
@@ -1248,6 +1252,16 @@ impl Inner {
                         if claude && self.replay.is_none() && origin != "human" && self.autonomous_at.take().is_some() {
                             self.end_woken(at);
                         }
+                        // #444: the window claude-agent-acp learned from the
+                        // turn's result (the SDK's `modelUsage`), which the
+                        // transcript never says. Its other updates may carry
+                        // a guess.
+                        if claude
+                            && u["cost"].is_object()
+                            && let Some(size) = u["size"].as_u64().filter(|s| *s > 0)
+                        {
+                            self.engine_window = Some(size);
+                        }
                         if let Some(amount) = u["cost"]["amount"].as_f64() {
                             self.cost = Some(amount);
                             self.currency = u["cost"]["currency"].as_str().map(str::to_owned);
@@ -1666,7 +1680,7 @@ impl Inner {
         // #397: the model, the window's fill and the compactions, from the
         // transcript.
         let transcript = if self.cfg.import.is_some() && !self.frozen { &self.follow } else { &self.live_ctx };
-        state["context"] = transcript.context().unwrap_or(Value::Null);
+        state["context"] = transcript.context_with(self.engine_window).unwrap_or(Value::Null);
         // #398: what the session and its subagents cost, estimated from
         // their transcripts' tokens at API list prices.
         state["estimate"] =

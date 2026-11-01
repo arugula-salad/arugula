@@ -109,7 +109,19 @@ impl Follow {
 
     /// What the transcript says of the context window so far.
     pub fn context(&self) -> Option<Value> {
-        self.open.as_ref().unwrap_or(&self.c).context.summary()
+        self.context_with(None)
+    }
+
+    /// The same, with the window Claude Code's engine reported from outside
+    /// the transcript, when it did (#444).
+    pub fn context_with(&self, engine_window: Option<u64>) -> Option<Value> {
+        let c = &self.open.as_ref().unwrap_or(&self.c).context;
+        if engine_window.is_none() {
+            return c.summary();
+        }
+        let mut c = c.clone();
+        c.set_engine_window(engine_window);
+        c.summary()
     }
 
     /// Its responses' tokens so far, to price (#398).

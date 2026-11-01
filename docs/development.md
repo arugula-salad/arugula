@@ -127,7 +127,8 @@ load for perf runs: four made-up people (the first signs in) on their
 laptops and a team build box, terminals running stand-in builds and tests
 at a neutral prompt, agent blocks in every state (working, asking to run
 something, asking a question, failed, done, with the context strip at
-varied fills, one compacted at low fill and one near full), and in control
+varied fills, one compacted at low fill, one near full and one whose
+window can't be told), and in control
 #general and a DM, a board with rows in each lane (a linked repo's open PR
 in Review), and a Doc. It runs on 127.0.0.1:7790 in a throwaway state
 directory, beside a `just dev-control`, and Ctrl-C removes all of it. The

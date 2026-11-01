@@ -30,22 +30,45 @@ const tooLong = (base: Base, n: string) => ({
 });
 
 const OPUS = "claude-opus-5-5";
-const cases: { name: string; more: (b: Base) => object[]; pct: number; tone: string; mark: string | null; fill: string }[] = [
-  { name: "normal fill", more: (b) => [used(b, "1", OPUS, 60_000)], pct: 30, tone: "ok", mark: null, fill: "60k of 200k" },
-  { name: "near full", more: (b) => [used(b, "1", OPUS, 180_000)], pct: 90, tone: "danger", mark: null, fill: "180k of 200k" },
-  { name: "warm", more: (b) => [used(b, "1", OPUS, 140_000)], pct: 70, tone: "warn", mark: null, fill: "140k of 200k" },
+/** A model with 200k and no long variant, for the tones. */
+const OPUS_45 = "claude-opus-4-5";
+const cases: { name: string; more: (b: Base) => object[]; model: string; pct: number | null; tone: string; mark: string | null; fill: string; shows?: string }[] = [
+  { name: "normal fill", more: (b) => [used(b, "1", OPUS_45, 60_000)], model: "Opus 4.5", pct: 30, tone: "ok", mark: null, fill: "60k of 200k" },
+  { name: "near full", more: (b) => [used(b, "1", OPUS_45, 180_000)], model: "Opus 4.5", pct: 90, tone: "danger", mark: null, fill: "180k of 200k" },
+  { name: "warm", more: (b) => [used(b, "1", OPUS_45, 140_000)], model: "Opus 4.5", pct: 70, tone: "warn", mark: null, fill: "140k of 200k" },
   {
     name: "auto-compacted at low fill",
     more: (b) => [used(b, "1", `${OPUS}[1m]`, 250_000), boundary(b, "1", "auto", 250_000, 20_000), used(b, "2", `${OPUS}[1m]`, 30_000)],
-    pct: 3, tone: "ok", mark: "compacted", fill: "30k of 1M",
+    model: "Opus 5.5", pct: 3, tone: "ok", mark: "compacted", fill: "30k of 1M",
   },
   {
     name: "auto-compacted at 90%",
-    more: (b) => [used(b, "1", OPUS, 180_000), boundary(b, "1", "auto", 180_000, 20_000), used(b, "2", OPUS, 25_000)],
-    pct: 13, tone: "ok", mark: "overflow", fill: "25k of 200k",
+    more: (b) => [used(b, "1", OPUS_45, 180_000), boundary(b, "1", "auto", 180_000, 20_000), used(b, "2", OPUS_45, 25_000)],
+    model: "Opus 4.5", pct: 13, tone: "ok", mark: "overflow", fill: "25k of 200k",
   },
-  { name: "window exceeded", more: (b) => [used(b, "1", OPUS, 150_000), tooLong(b, "1")], pct: 75, tone: "warn", mark: "overflow", fill: "150k of 200k" },
-  { name: "a 1M model", more: (b) => [used(b, "1", `${OPUS}[1m]`, 500_000)], pct: 50, tone: "ok", mark: null, fill: "500k of 1M" },
+  { name: "window exceeded", more: (b) => [used(b, "1", OPUS_45, 150_000), tooLong(b, "1")], model: "Opus 4.5", pct: 75, tone: "warn", mark: "overflow", fill: "150k of 200k" },
+  { name: "a 1M model", more: (b) => [used(b, "1", `${OPUS}[1m]`, 500_000)], model: "Opus 5.5", pct: 50, tone: "ok", mark: null, fill: "500k of 1M" },
+  // #444: Sonnet 5.5 runs with 1M in Claude Code, though its transcript
+  // never says so; a compaction at 190k is just a compaction.
+  {
+    name: "a 1M Sonnet 5.5 session",
+    more: (b) => [used(b, "1", "claude-sonnet-5-5", 40_000), used(b, "2", "claude-sonnet-5-5", 189_000), boundary(b, "1", "auto", 190_000, 13_000), used(b, "3", "claude-sonnet-5-5", 52_000)],
+    model: "Sonnet 5.5", pct: 5, tone: "ok", mark: "compacted", fill: "52k of 1M",
+  },
+  // #444: Sonnet 4.6 has 1M only as its [1m] variant, which the transcript
+  // doesn't record: tokens, no share, and no overflow.
+  {
+    name: "an unknown window",
+    more: (b) => [used(b, "1", "claude-sonnet-4-6", 170_000), boundary(b, "1", "auto", 170_000, 13_000), used(b, "2", "claude-sonnet-4-6", 120_000)],
+    model: "Sonnet 4.6", pct: null, tone: "unknown", mark: "compacted", fill: "120k", shows: "120k",
+  },
+  // #444: right after a compaction, what it kept and what every request
+  // carries (the first turn's 45k), not the kept 13k alone.
+  {
+    name: "right after a compaction",
+    more: (b) => [used(b, "1", OPUS, 45_000), used(b, "2", OPUS, 330_000), boundary(b, "1", "auto", 330_000, 13_000)],
+    model: "Opus 5.5", pct: 6, tone: "ok", mark: "compacted", fill: "About 58k of 1M",
+  },
 ];
 
 async function open(page: Page, title: string) {
@@ -72,12 +95,16 @@ export function contextStripTests() {
       seeded.push(seedConversation(claude, c.name.replace(/\W/g, ""), title, c.more).cwd);
       const el = await open(page, title);
       const strip = el.locator(".agent-bar [data-context]");
-      await expect(strip.locator(".agent-context-model")).toHaveText("Opus 5.5");
+      await expect(strip.locator(".agent-context-model")).toHaveText(c.model);
       const fill = strip.locator("[data-fill]");
-      await expect(fill).toHaveAttribute("data-fill", `${c.pct}`);
+      await expect(fill).toHaveAttribute("data-fill", `${c.pct ?? ""}`);
       await expect(fill).toHaveAttribute("data-tone", c.tone);
-      await expect(fill).toHaveAttribute("title", `${c.fill} tokens`);
-      await expect(fill).toContainText(`${c.pct}%`);
+      await expect(fill).toHaveAttribute("title", new RegExp(`^${c.fill} tokens`));
+      await expect(fill).toContainText(c.shows ?? `${c.pct}%`);
+      if (c.pct == null) {
+        await expect(fill).toHaveAttribute("title", /The window isn't known/);
+        await expect(fill.locator(".agent-context-bar > span")).toHaveCount(0);
+      }
       if (c.mark) {
         await expect(strip.locator("[data-mark]")).toHaveAttribute("data-mark", c.mark);
         await expect(strip.locator("[data-mark]")).toHaveText(c.mark === "overflow" ? "Overflow" : "Compacted");
