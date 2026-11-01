@@ -3985,13 +3985,42 @@
         "readOnlyHint": true,
         "title": "Read a deploy"
       },
-      "description": "Read a deploy in Arugula control (with this machine's deploys.plan grant over its project): where it goes, what it deploys, its plan's text, its state (planned, pending: waiting for an owner's approval, approved, running, succeeded, failed, denied, stale) and its log. Reading never approves: an owner approves on their phone or in a browser.",
+      "description": "Read a deploy in Arugula control (with this machine's deploys.plan grant over its project): where it goes, what it deploys, its plan's text, its state (planned, pending: waiting for an owner's approval, approved, running, succeeded, failed, denied, stale) and its log. With until: \"decided\", wait while it's pending until an owner approves or denies it (or it stops waiting otherwise), up to timeout seconds (default 100, at most 600); then it returns still waiting: call again rather than polling. Reading never approves: an owner approves on their phone or in a browser.",
       "inputSchema": {
+        "$defs": {
+          "Until": {
+            "description": "What `read_deploy` waits for.",
+            "enum": [
+              "decided"
+            ],
+            "type": "string"
+          }
+        },
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
           "id": {
             "description": "The deploy (dep_…), from plan_deploy.",
             "type": "string"
+          },
+          "timeout": {
+            "default": null,
+            "description": "Seconds to wait with until (default 100, at most 600).",
+            "format": "double",
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "until": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/Until"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "decided: wait while it's pending, until an owner approves or denies\nit (or it stops waiting otherwise), up to timeout."
           }
         },
         "required": [
@@ -8525,13 +8554,42 @@
         "readOnlyHint": true,
         "title": "Read a deploy"
       },
-      "description": "Read a deploy in Arugula control (with this machine's deploys.plan grant over its project): where it goes, what it deploys, its plan's text, its state (planned, pending: waiting for an owner's approval, approved, running, succeeded, failed, denied, stale) and its log. Reading never approves: an owner approves on their phone or in a browser.",
+      "description": "Read a deploy in Arugula control (with this machine's deploys.plan grant over its project): where it goes, what it deploys, its plan's text, its state (planned, pending: waiting for an owner's approval, approved, running, succeeded, failed, denied, stale) and its log. With until: \"decided\", wait while it's pending until an owner approves or denies it (or it stops waiting otherwise), up to timeout seconds (default 100, at most 600); then it returns still waiting: call again rather than polling. Reading never approves: an owner approves on their phone or in a browser.",
       "inputSchema": {
+        "$defs": {
+          "Until": {
+            "description": "What `read_deploy` waits for.",
+            "enum": [
+              "decided"
+            ],
+            "type": "string"
+          }
+        },
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
           "id": {
             "description": "The deploy (dep_…), from plan_deploy.",
             "type": "string"
+          },
+          "timeout": {
+            "default": null,
+            "description": "Seconds to wait with until (default 100, at most 600).",
+            "format": "double",
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "until": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/Until"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "decided: wait while it's pending, until an owner approves or denies\nit (or it stops waiting otherwise), up to timeout."
           }
         },
         "required": [
@@ -12786,13 +12844,42 @@
         "readOnlyHint": true,
         "title": "Read a deploy"
       },
-      "description": "Read a deploy in Arugula control (with this machine's deploys.plan grant over its project): where it goes, what it deploys, its plan's text, its state (planned, pending: waiting for an owner's approval, approved, running, succeeded, failed, denied, stale) and its log. Reading never approves: an owner approves on their phone or in a browser.",
+      "description": "Read a deploy in Arugula control (with this machine's deploys.plan grant over its project): where it goes, what it deploys, its plan's text, its state (planned, pending: waiting for an owner's approval, approved, running, succeeded, failed, denied, stale) and its log. With until: \"decided\", wait while it's pending until an owner approves or denies it (or it stops waiting otherwise), up to timeout seconds (default 100, at most 600); then it returns still waiting: call again rather than polling. Reading never approves: an owner approves on their phone or in a browser.",
       "inputSchema": {
+        "$defs": {
+          "Until": {
+            "description": "What `read_deploy` waits for.",
+            "enum": [
+              "decided"
+            ],
+            "type": "string"
+          }
+        },
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
           "id": {
             "description": "The deploy (dep_…), from plan_deploy.",
             "type": "string"
+          },
+          "timeout": {
+            "default": null,
+            "description": "Seconds to wait with until (default 100, at most 600).",
+            "format": "double",
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "until": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/Until"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "decided: wait while it's pending, until an owner approves or denies\nit (or it stops waiting otherwise), up to timeout."
           }
         },
         "required": [
@@ -17326,13 +17413,42 @@
         "readOnlyHint": true,
         "title": "Read a deploy"
       },
-      "description": "Read a deploy in Arugula control (with this machine's deploys.plan grant over its project): where it goes, what it deploys, its plan's text, its state (planned, pending: waiting for an owner's approval, approved, running, succeeded, failed, denied, stale) and its log. Reading never approves: an owner approves on their phone or in a browser.",
+      "description": "Read a deploy in Arugula control (with this machine's deploys.plan grant over its project): where it goes, what it deploys, its plan's text, its state (planned, pending: waiting for an owner's approval, approved, running, succeeded, failed, denied, stale) and its log. With until: \"decided\", wait while it's pending until an owner approves or denies it (or it stops waiting otherwise), up to timeout seconds (default 100, at most 600); then it returns still waiting: call again rather than polling. Reading never approves: an owner approves on their phone or in a browser.",
       "inputSchema": {
+        "$defs": {
+          "Until": {
+            "description": "What `read_deploy` waits for.",
+            "enum": [
+              "decided"
+            ],
+            "type": "string"
+          }
+        },
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
           "id": {
             "description": "The deploy (dep_…), from plan_deploy.",
             "type": "string"
+          },
+          "timeout": {
+            "default": null,
+            "description": "Seconds to wait with until (default 100, at most 600).",
+            "format": "double",
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "until": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/Until"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "decided: wait while it's pending, until an owner approves or denies\nit (or it stops waiting otherwise), up to timeout."
           }
         },
         "required": [
@@ -19386,13 +19502,42 @@
         "readOnlyHint": true,
         "title": "Read a deploy"
       },
-      "description": "Read a deploy in Arugula control (with this machine's deploys.plan grant over its project): where it goes, what it deploys, its plan's text, its state (planned, pending: waiting for an owner's approval, approved, running, succeeded, failed, denied, stale) and its log. Reading never approves: an owner approves on their phone or in a browser.",
+      "description": "Read a deploy in Arugula control (with this machine's deploys.plan grant over its project): where it goes, what it deploys, its plan's text, its state (planned, pending: waiting for an owner's approval, approved, running, succeeded, failed, denied, stale) and its log. With until: \"decided\", wait while it's pending until an owner approves or denies it (or it stops waiting otherwise), up to timeout seconds (default 100, at most 600); then it returns still waiting: call again rather than polling. Reading never approves: an owner approves on their phone or in a browser.",
       "inputSchema": {
+        "$defs": {
+          "Until": {
+            "description": "What `read_deploy` waits for.",
+            "enum": [
+              "decided"
+            ],
+            "type": "string"
+          }
+        },
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
           "id": {
             "description": "The deploy (dep_…), from plan_deploy.",
             "type": "string"
+          },
+          "timeout": {
+            "default": null,
+            "description": "Seconds to wait with until (default 100, at most 600).",
+            "format": "double",
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "until": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/Until"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "decided: wait while it's pending, until an owner approves or denies\nit (or it stops waiting otherwise), up to timeout."
           }
         },
         "required": [
@@ -21272,13 +21417,42 @@
         "readOnlyHint": true,
         "title": "Read a deploy"
       },
-      "description": "Read a deploy in Arugula control (with this machine's deploys.plan grant over its project): where it goes, what it deploys, its plan's text, its state (planned, pending: waiting for an owner's approval, approved, running, succeeded, failed, denied, stale) and its log. Reading never approves: an owner approves on their phone or in a browser.",
+      "description": "Read a deploy in Arugula control (with this machine's deploys.plan grant over its project): where it goes, what it deploys, its plan's text, its state (planned, pending: waiting for an owner's approval, approved, running, succeeded, failed, denied, stale) and its log. With until: \"decided\", wait while it's pending until an owner approves or denies it (or it stops waiting otherwise), up to timeout seconds (default 100, at most 600); then it returns still waiting: call again rather than polling. Reading never approves: an owner approves on their phone or in a browser.",
       "inputSchema": {
+        "$defs": {
+          "Until": {
+            "description": "What `read_deploy` waits for.",
+            "enum": [
+              "decided"
+            ],
+            "type": "string"
+          }
+        },
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
           "id": {
             "description": "The deploy (dep_…), from plan_deploy.",
             "type": "string"
+          },
+          "timeout": {
+            "default": null,
+            "description": "Seconds to wait with until (default 100, at most 600).",
+            "format": "double",
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "until": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/Until"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "decided: wait while it's pending, until an owner approves or denies\nit (or it stops waiting otherwise), up to timeout."
           }
         },
         "required": [

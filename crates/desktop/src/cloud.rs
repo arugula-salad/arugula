@@ -426,6 +426,21 @@ fn associated_domains() -> &'static [String] {
     &[]
 }
 
+/// The app's platform as its pages read it (`__arugulaApp.platform`):
+/// Windows apart from Linux since DK5 (#386), since the platform page
+/// approves a deploy with a passkey in a WebView2 window (Windows Hello) and
+/// hands it to the browser from a WebKitGTK one, which has no WebAuthn
+/// (S46 q3). Linux alone draws its own window buttons (`WindowButtons`).
+pub fn page_platform() -> &'static str {
+    if cfg!(target_os = "macos") {
+        "macos"
+    } else if cfg!(target_os = "windows") {
+        "windows"
+    } else {
+        "linux"
+    }
+}
+
 /// Script for every page in the app's windows: the name control's page
 /// gives this device, whether the app is signed in to the machine's control
 /// (`signed_in`: the daemon's page offers signing in when it isn't, #1580),
@@ -451,7 +466,7 @@ pub fn init_script(signed_in: bool) -> String {
            }});\n\
          }}",
         serde_json::to_string(&device_name()).unwrap(),
-        if cfg!(target_os = "macos") { "macos" } else { "linux" },
+        page_platform(),
     );
     // Windows keeps its system titlebar.
     let drag = if cfg!(any(target_os = "macos", target_os = "linux")) {
@@ -680,6 +695,12 @@ mod tests {
         let script = init_script(false);
         assert!(script.contains("if (true && "), "the button stays hidden: {script}");
         assert!(script.contains("signedIn: false"), "{script}");
+        // Windows apart from Linux (DK5): one has passkeys, the other none.
+        assert!(script.contains(&format!("platform: {:?},", page_platform())), "{script}");
+        #[cfg(target_os = "windows")]
+        assert_eq!(page_platform(), "windows");
+        #[cfg(target_os = "linux")]
+        assert_eq!(page_platform(), "linux");
     }
 
     /// The control the app was signed in to before a move, not this one,

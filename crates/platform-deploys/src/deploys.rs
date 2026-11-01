@@ -63,9 +63,17 @@
 //! run, before its `expires`.
 //!
 //! **Asking** records the deploy's `requested` event and pushes each of the
-//! project's owners a card (`deploy` in the push: a tap opens the deploy on
-//! the platform page, where Approve and Deny go to control's page, which
-//! asks for the passkey; DK5 moves that to the platform page).
+//! project's owners a card, the asker too when they're one ("you asked"):
+//! `deploy` in the push, and a tap opens the deploy on the platform page.
+//!
+//! **Approved where it's read** (DK5, #386): the platform page asks for the
+//! passkey itself, with control's host as the RP (related origins: control
+//! serves `/.well-known/webauthn` listing the page's origin, aru-126), and
+//! posts the assertion here. Where a browser or provider can't use a related
+//! origin, the page offers control's `#deploy=` dialog instead. Before it
+//! asks, it reads [`can_decide`]: whether the reader may decide it now, and
+//! if not, why and what to do, so nobody gets a passkey prompt that would
+//! be refused.
 //!
 //! [`db::deploys`]: crate::db::deploys
 //! [`db::deploys::EventKind::allows`]: crate::db::deploys::EventKind::allows
@@ -116,16 +124,28 @@ pub const DEPLOY: &str = "/api/deploys/{id}";
 pub const DEPLOY_REQUEST: &str = "/api/deploys/{id}/request";
 pub const DEPLOY_APPROVE: &str = "/api/deploys/{id}/approve";
 pub const DEPLOY_DENY: &str = "/api/deploys/{id}/deny";
+pub const DEPLOY_CAN_DECIDE: &str = "/api/deploys/{id}/can-decide";
 pub const ENVIRONMENT_SECRET: &str = "/api/environments/{id}/secrets/{name}";
 
 /// Why an approval was refused, for clients to act on.
 pub const AGENT: &str = "agent";
 pub const NOT_A_DEVICE: &str = "not_a_device";
 pub const STALE: &str = "stale";
+/// Why the reader can't decide a deploy now ([`can_decide`]), beside
+/// [`STALE`] and [`NOT_AN_OWNER`]: it isn't waiting for approval; a newer
+/// deploy to the environment was asked for; its approval ran out before it
+/// was applied; the reader's account has no passkey.
+pub const NOT_PENDING: &str = "not_pending";
+pub const SUPERSEDED: &str = "superseded";
+pub const EXPIRED: &str = "expired";
+pub const NO_PASSKEY: &str = "no_passkey";
 
 /// Approvals and denies per account, per hour: each asks the hub for the
 /// account's passkey log.
 const APPROVALS: (&str, usize) = ("deploy-approve", 120);
+/// Eligibility reads per account, per hour: a card asks once as it shows,
+/// and each asks the hub for the account's passkey log.
+const CAN_DECIDE: (&str, usize) = ("deploy-can-decide", 600);
 /// Plans and asks per account, per hour (a person's).
 const DEPLOY_WRITES: (&str, usize) = ("deploy-write", 600);
 /// Asks per project, per hour, by each asker (a person, or an agent's
@@ -647,10 +667,11 @@ pub async fn request_route(State(app): State<Arc<Platform>>, s: Person, Path(id)
     request(&app, &Actor::person(&s.account), &id).await
 }
 
-/// Push each owner a card for the deploy waiting on them: not a person who
-/// asked themselves (they're looking at it), but an agent's owner, yes.
-/// The push names the environment and the source, never the plan's text;
-/// a tap opens the deploy. In the background: a failure is only logged.
+/// Push each owner a card for the deploy waiting on them, an agent's owner
+/// and an owner who asked themselves included (DK5): the asker's says "you
+/// asked", and a tap opens the deploy where they approve it, on whichever
+/// device is at hand. The push names the environment and the source, never
+/// the plan's text. In the background: a failure is only logged.
 async fn push_owners(app: &Platform, by: &Actor, d: &Deploy, env: &Environment, p: &IssueProject) {
     let to = match owners(app, p).await {
         Ok(to) => to,
@@ -689,22 +710,28 @@ async fn push_owners(app: &Platform, by: &Actor, d: &Deploy, env: &Environment, 
         let t = crate::drivers::titles::title(env, &d.source, d.subject.as_deref(), d.expected_version.as_deref());
         format!("Approve {t}?")
     };
-    let msg = json!({
-        "deploy": d.id,
-        "title": title,
-        "body": format!("{}: {} {short} from {}, asked by {asked}", p.name, d.source.kind.as_str(), d.source.place),
-        "tag": format!("deploy-{}", d.id),
-        "control": true,
-    });
-    let to: Vec<String> = to
-        .into_iter()
-        .filter(|a| !matches!(by, Actor::Person(me) if me == a) && crate::notify::notice_goes(app, a))
-        .collect();
+    let what = format!("{}: {} {short} from {}", p.name, d.source.kind.as_str(), d.source.place);
+    let msg = |body: String| {
+        json!({
+            "deploy": d.id,
+            "title": title,
+            "body": body,
+            "tag": format!("deploy-{}", d.id),
+            "control": true,
+        })
+    };
+    let (theirs, yours) = (msg(format!("{what}, asked by {asked}")), msg(format!("{what}; you asked")));
+    let me = match by {
+        Actor::Person(me) => Some(me.clone()),
+        _ => None,
+    };
+    let to: Vec<String> = to.into_iter().filter(|a| crate::notify::notice_goes(app, a)).collect();
     let hub = app.hub.clone();
     let id = d.id.clone();
     tokio::spawn(async move {
         for account in to {
-            if let Err(e) = hub.push_with(&account, &msg, PushOptions::default()).await {
+            let msg = if me.as_deref() == Some(account.as_str()) { &yours } else { &theirs };
+            if let Err(e) = hub.push_with(&account, msg, PushOptions::default()).await {
                 warn!(deploy = %id, %account, error = %e, "the deploy's push didn't go");
             }
         }
@@ -851,6 +878,105 @@ pub async fn waiting(State(app): State<Arc<Platform>>, s: Person) -> J {
         out.push(deploy_json(&app, &d, &env, &p, true).await?);
     }
     Ok(Json(json!({ "deploys": out })))
+}
+
+/// The passkeys live in `log` at `at`, by credential id, oldest first: what
+/// the page may offer the browser (`allowCredentials`). Not a check of the
+/// log's chain: the approval's [`verify`] makes that.
+fn live_passkeys(log: &arugula_e2e::passkey::Log, at: u64) -> Vec<String> {
+    use arugula_e2e::passkey::Change;
+    let mut live: Vec<String> = vec![];
+    for e in log.events.iter().filter(|e| e.at <= at) {
+        match e.event {
+            Change::Added if !live.contains(&e.credential) => live.push(e.credential.clone()),
+            Change::Added => {}
+            Change::Removed => live.retain(|c| c != &e.credential),
+        }
+    }
+    live
+}
+
+/// `GET /api/deploys/{id}/can-decide`: whether the reader may approve or
+/// deny it now (DK5), asked before the page raises a passkey prompt that
+/// would be refused. In order: it's waiting for approval (not only planned,
+/// decided, applied or ended), not stale, not superseded by a newer ask and
+/// its approval hasn't run out; the reader owns its project by the roster
+/// read now; and their account has a passkey in its published log.
+///
+/// `{deploy, can, reason, why, do, passkeys, rp}`: when `can` is false,
+/// `reason` is a code ([`NOT_PENDING`], [`STALE`], [`SUPERSEDED`],
+/// [`EXPIRED`], [`NOT_AN_OWNER`], [`NO_PASSKEY`]), `why` says it and `do`
+/// what to do instead (`newer`: the deploy that superseded it). When it's
+/// true, `passkeys` are the account's live passkeys' credential ids and `rp`
+/// the RP ID they're bound to (control's host, aru-078), for the page's
+/// `navigator.credentials.get`. A browser's session only, as the approve
+/// route takes.
+pub async fn can_decide(State(app): State<Arc<Platform>>, s: BrowserPerson, Path(id): Path<String>) -> J {
+    use crate::db::deploys::State as S;
+    app.limits.check_account(CAN_DECIDE, &s.account)?;
+    let (d, env, p, _) = deploy_as(&app, &s.account, &id, false).await?;
+    let rp = arugula_e2e::passkey::origins_of_sites([app.cfg.public_url.as_str()]).into_keys().next();
+    let no = |reason: &str, why: String, todo: &str| json!({ "deploy": d.id, "can": false, "reason": reason, "why": why, "do": todo, "passkeys": [], "rp": rp });
+    let stale = || {
+        no(STALE, format!("Another deploy was applied to {} after this one was planned.", env.name), "Plan it again.")
+    };
+    let answer = match d.state {
+        S::Pending => None,
+        S::Stale => {
+            let history = app.db.deploy_history(&d.id)?;
+            let staled = history.iter().rev().find(|e| e.kind == EventKind::Staled.as_str());
+            let v = staled.and_then(|e| e.detail_json().ok()).unwrap_or_default();
+            Some(if v["why"] == "superseded" {
+                let mut a = no(
+                    SUPERSEDED,
+                    format!("A newer deploy to {} was asked for after this one.", env.name),
+                    "Decide the newer one instead.",
+                );
+                a["newer"] = v["after"].clone();
+                a
+            } else {
+                stale()
+            })
+        }
+        S::Expired => Some(no(EXPIRED, "Its approval ran out before it was applied.".into(), "Plan it again and ask.")),
+        S::Planned => {
+            Some(no(NOT_PENDING, "Nobody has asked for its approval yet.".into(), "Ask for its approval first."))
+        }
+        S::Approved | S::Denied => {
+            Some(no(NOT_PENDING, format!("It was {} already.", d.state.as_str()), "Nothing: it's decided."))
+        }
+        S::Running | S::Succeeded | S::Failed | S::Canceled => Some(no(
+            NOT_PENDING,
+            format!("It's {}, past approval.", d.state.as_str()),
+            "Nothing: it isn't waiting for anyone.",
+        )),
+    };
+    if let Some(v) = answer {
+        return Ok(Json(v));
+    }
+    // The stale rule on a pending one: something was applied since its plan.
+    if let Err(Refusal::Stale { .. }) = app.db.may_approve(&d.id)? {
+        return Ok(Json(stale()));
+    }
+    // The roster now, as the approval's check reads it.
+    if role(&app, &s.account, &p, true).await? != Some(TeamRole::Owner) {
+        return Ok(Json(no(
+            NOT_AN_OWNER,
+            format!("Only the owners of {} approve or deny its deploys.", p.name),
+            "Ask one of the project's owners.",
+        )));
+    }
+    let passkeys = live_passkeys(&app.hub.passkey_log(&s.account).await?, now_ms());
+    if passkeys.is_empty() {
+        return Ok(Json(no(
+            NO_PASSKEY,
+            "Deploys are approved and denied with a passkey, and your account has none.".into(),
+            "Add one on Control (the account menu, Sign-in and account), then come back.",
+        )));
+    }
+    Ok(Json(json!({
+        "deploy": d.id, "can": true, "reason": null, "why": null, "do": null, "passkeys": passkeys, "rp": rp,
+    })))
 }
 
 /// What an owner's page sends to approve or deny: the approval's fields

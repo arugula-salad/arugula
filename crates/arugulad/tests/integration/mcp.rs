@@ -2673,6 +2673,8 @@ async fn a_machines_forwarded_call_runs_here() {
 #[derive(Clone, Default)]
 struct FakeDeploys {
     granted: Arc<std::sync::atomic::AtomicBool>,
+    /// An owner approved it: reads say so from then on (DK5's wait).
+    decided: Arc<std::sync::atomic::AtomicBool>,
     asked: Arc<std::sync::Mutex<Vec<(String, Value)>>>,
 }
 
@@ -2708,7 +2710,15 @@ async fn fake_deploys(f: FakeDeploys) -> String {
         match path.as_str() {
             "POST /api/daemon/projects/prj_0a/deploys" => Json(fake_deploy("planned")).into_response(),
             p if p == format!("POST /api/daemon/deploys/{DEP}/request") => Json(fake_deploy("pending")).into_response(),
-            p if p == format!("GET /api/daemon/deploys/{DEP}") => Json(fake_deploy("pending")).into_response(),
+            p if p == format!("GET /api/daemon/deploys/{DEP}") => {
+                if f.decided.load(std::sync::atomic::Ordering::SeqCst) {
+                    let mut d = fake_deploy("approved");
+                    d["approvals"] = json!([{ "decision": "once", "name": "a1", "device_name": "" }]);
+                    Json(d).into_response()
+                } else {
+                    Json(fake_deploy("pending")).into_response()
+                }
+            }
             _ => (StatusCode::NOT_FOUND, Json(json!({ "error": "no such route" }))).into_response(),
         }
     }
@@ -2793,6 +2803,22 @@ async fn an_agent_plans_a_deploy_and_asks_and_never_approves() {
             "source": { "kind": "commit", "ref": "ab".repeat(20), "where": "acme/app" } })
     );
     assert!(!asked.iter().any(|(p, _)| p.contains("approve") || p.contains("deny")), "{asked:?}");
+
+    // DK5: until decided waits while it's pending, says still waiting at its
+    // timeout, and returns once an owner has decided.
+    let r = call(&s, "read_deploy", json!({ "id": DEP, "until": "decided", "timeout": 1 })).await;
+    assert_eq!(r["state"], "still waiting", "{r}");
+    assert!(r["summary"].as_str().unwrap().contains("call read_deploy with until: decided again"), "{r}");
+    let f = fake.clone();
+    tokio::spawn(async move {
+        tokio::time::sleep(Duration::from_secs(4)).await;
+        f.decided.store(true, std::sync::atomic::Ordering::SeqCst);
+    });
+    let started = std::time::Instant::now();
+    let r = call(&s, "read_deploy", json!({ "id": DEP, "until": "decided", "timeout": 60 })).await;
+    assert_eq!((&r["state"], &r["deploy"]["state"]), (&json!("approved"), &json!("approved")), "{r}");
+    assert!(r["summary"].as_str().unwrap().contains("Approved by a1 with a passkey"), "{r}");
+    assert!(started.elapsed() < Duration::from_secs(30), "returned once decided: {:?}", started.elapsed());
     s.cancel().await.unwrap();
     drop(d);
 }

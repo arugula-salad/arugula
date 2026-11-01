@@ -3337,7 +3337,7 @@ path = "/api/deploys/{id}/approve"
 process = "platform"
 auth = "session"
 clients = ["page"]
-note = "Approves it once: an owner, from a browser's session only (a CLI's login is refused), with a signature by one of their browser devices (browsers back to the account's root) over the operation, checked against the devices the hub keeps, and a passkey's assertion over the approval's bytes, which the hub checks. The stale rule is checked in the same transaction."
+note = "Approves it once: an owner by the roster now, from a browser's session only (a CLI's login is refused), with a user-verified passkey assertion over the approval's bytes (v2, DK4), from control's page or the platform page (related origins, DK5), checked against the account's published passkey log. No device signs it. The stale rule is checked in the same transaction."
 
 [[route]]
 method = "POST"
@@ -3345,7 +3345,15 @@ path = "/api/deploys/{id}/deny"
 process = "platform"
 auth = "session"
 clients = ["page"]
-note = "Denies it, signed and confirmed with a passkey as an approval is."
+note = "Denies it, confirmed with a passkey as an approval is."
+
+[[route]]
+method = "GET"
+path = "/api/deploys/{id}/can-decide"
+process = "platform"
+auth = "session"
+clients = ["page"]
+note = "Whether the reader may approve or deny it now (DK5), asked before the page raises a passkey prompt: pending, not stale or superseded or expired, an owner by the roster now, with a passkey in the account's log; else why and what to do. A browser's session only."
 
 # A machine's agents: plan, ask and read, never approve. The owner's role is
 # the ceiling, and the machine needs its owner's `deploys.plan` grant over the

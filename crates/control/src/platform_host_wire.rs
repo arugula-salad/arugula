@@ -284,6 +284,29 @@ async fn the_real_platform_build_works_under_its_csp() {
     }
 }
 
+/// DK5 (#386): the platform page approves a deploy with control's passkey
+/// in place, under its own strict CSP. WebAuthn needs nothing from the CSP
+/// (the browser fetches control's `/.well-known/webauthn` itself, not the
+/// page), so none is loosened: scripts are the page's own only, it calls
+/// its own origin only, and nothing frames it (a framed ceremony is what
+/// related origins refuse anyway). No Permissions-Policy takes
+/// `publickey-credentials-get` away, and control lists the page's origin.
+#[tokio::test]
+async fn the_platform_page_may_ask_for_a_passkey_under_its_csp() {
+    let c = control(|_| {}).await;
+    let a = c.get(APP, Method::GET, "/deploys/dep_0123456789abcdef0123456789abcdef").await;
+    assert!(a.is_the_platforms(), "{:?}", a.headers);
+    let csp = a.header("content-security-policy");
+    for d in ["script-src 'self';", "connect-src 'self';", "frame-ancestors 'none'", "object-src 'none'"] {
+        assert!(csp.contains(d), "{d}: {csp}");
+    }
+    assert!(!csp.contains("unsafe-eval") && !csp.contains("script-src 'self' 'unsafe-inline'"), "{csp}");
+    assert!(!a.header("permissions-policy").contains("publickey-credentials-get"), "{:?}", a.headers);
+    let w = c.get("control.test", Method::GET, "/.well-known/webauthn").await;
+    assert_eq!(w.status, 200);
+    assert_eq!(serde_json::from_str::<Value>(&w.body).unwrap()["origins"], serde_json::json!(["http://app.test"]));
+}
+
 /// An `on…=` attribute in the page's HTML, which the CSP would refuse.
 fn handler(html: &str) -> bool {
     html.split(char::is_whitespace)

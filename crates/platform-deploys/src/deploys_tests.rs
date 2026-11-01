@@ -30,7 +30,10 @@ use crate::{
         projects::{DEPLOYS_PLAN, ISSUES_WRITE},
         sql::Sql as _,
     },
-    deploys::{AGENT, NOT_A_DEVICE, NOT_AN_OWNER, OLD_APPROVAL, OTHER_OPERATION, PASSKEY, STALE},
+    deploys::{
+        AGENT, EXPIRED, NO_PASSKEY, NOT_A_DEVICE, NOT_AN_OWNER, NOT_PENDING, OLD_APPROVAL, OTHER_OPERATION, PASSKEY,
+        STALE, SUPERSEDED,
+    },
     grants::AGENT_UNGRANTED,
     hub::DeviceTrust,
 };
@@ -942,6 +945,106 @@ async fn the_waiting_list_is_the_owners() {
     assert_eq!((st, &w["deploys"][0]["id"], &w["deploys"][0]["may_approve"]), (200, &json!(id), &json!(true)), "{w}");
     let (_, w) = call(&base, "b", "GET", "/api/deploys/waiting", None).await;
     assert_eq!(w["deploys"], json!([]), "b edits t and doesn't own it");
+}
+
+/// DK5: `can-decide` answers before the page raises a passkey prompt, with
+/// a reason for each way the approval would be refused: no passkey, not an
+/// owner, superseded, decided, only planned, stale and expired. When it can,
+/// it names the account's live passkeys and their RP.
+#[tokio::test]
+async fn can_decide_says_why_not_before_the_passkey_prompt() {
+    let (hub, app, base, t, _) = seeded().await;
+    let env = production(&base, &t).await;
+    let can = |who: &'static str, id: String| {
+        let base = base.clone();
+        async move { call(&base, who, "GET", &format!("/api/deploys/{id}/can-decide"), None).await }
+    };
+    let reason = |v: &Value| (v["can"].clone(), v["reason"].as_str().map(str::to_owned));
+    let (first, _) = asked(&base, "b", &t, &env, "aaaa1111").await;
+
+    // a owns t and has no passkey yet.
+    let (st, v) = can("a", first.clone()).await;
+    assert_eq!((st, reason(&v)), (200, (json!(false), Some(NO_PASSKEY.into()))), "{v}");
+    assert!(v["do"].as_str().unwrap().contains("Add one on Control"), "{v}");
+    devices(&hub, "a");
+    let (st, v) = can("a", first.clone()).await;
+    assert_eq!(
+        (st, &v["can"], &v["passkeys"], &v["rp"]),
+        (200, &json!(true), &json!(["pk-a"]), &json!("control.example")),
+        "{v}"
+    );
+
+    // Not an owner: b edits, x views; c isn't in the team at all.
+    for who in ["b", "x"] {
+        let (st, v) = can(who, first.clone()).await;
+        assert_eq!((st, reason(&v)), (200, (json!(false), Some(NOT_AN_OWNER.into()))), "{who}: {v}");
+    }
+    assert_eq!(can("c", first.clone()).await.0, 404);
+    // An owner made an editor since: by the roster now.
+    hub.team("t", &[("a", TeamRole::Editor), ("b", TeamRole::Owner), ("x", TeamRole::Viewer)]);
+    crate::cache::catch_up(&app).await.unwrap();
+    assert_eq!(reason(&can("a", first.clone()).await.1), (json!(false), Some(NOT_AN_OWNER.into())));
+    hub.team("t", &[("a", TeamRole::Owner), ("b", TeamRole::Editor), ("x", TeamRole::Viewer)]);
+    crate::cache::catch_up(&app).await.unwrap();
+
+    // A newer ask supersedes it, and says which.
+    let (second, second_op) = asked(&base, "a", &t, &env, "bbbb2222").await;
+    let (_, v) = can("a", first.clone()).await;
+    assert_eq!((reason(&v), &v["newer"]), ((json!(false), Some(SUPERSEDED.into())), &json!(second)), "{v}");
+
+    // Planned, not asked: not pending.
+    let (_, d) = call(&base, "a", "POST", &format!("/api/projects/{t}/deploys"), plan_body(&env, "cccc3333")).await;
+    let third = d["id"].as_str().unwrap().to_owned();
+    let (_, v) = can("a", third.clone()).await;
+    assert_eq!(reason(&v), (json!(false), Some(NOT_PENDING.into())), "{v}");
+    assert!(v["why"].as_str().unwrap().contains("Nobody has asked"), "{v}");
+
+    // Decided: not pending, approved already.
+    let approve = format!("/api/deploys/{second}/approve");
+    let (st, d) = call(&base, "a", "POST", &approve, Some(signed("a", &second, &second_op, Decision::Once))).await;
+    assert_eq!(st, 200, "{d}");
+    let (_, v) = can("a", second.clone()).await;
+    assert_eq!(reason(&v), (json!(false), Some(NOT_PENDING.into())), "{v}");
+    assert!(v["why"].as_str().unwrap().contains("approved already"), "{v}");
+
+    // Stale: the second one's run applies it, after the third was planned.
+    app.db.link_deploy_run_for_tests(&second, "run_1");
+    app.db.record_deploy(&second, EventKind::Started, &Actor::run("run_1"), now_ms(), json!({})).unwrap().unwrap();
+    assert_eq!(reason(&can("a", third.clone()).await.1), (json!(false), Some(STALE.into())));
+
+    // Expired: its approval ran out before it was applied (a's own project).
+    let mine = crate::projects::personal_project(&app, "a").await.unwrap().unwrap();
+    let env = production(&base, &mine).await;
+    let (fourth, _) = asked(&base, "a", &mine, &env, "dddd4444").await;
+    app.db.record_deploy(&fourth, EventKind::Expired, &Actor::Platform, now_ms(), json!({})).unwrap().unwrap();
+    assert_eq!(reason(&can("a", fourth).await.1), (json!(false), Some(EXPIRED.into())));
+
+    // Its passkey removed from the log: none again.
+    let (fifth, _) = asked(&base, "a", &mine, &env, "eeee5555").await;
+    assert_eq!(can("a", fifth.clone()).await.1["can"], json!(true));
+    hub.passkey_removed("pk-a", 1);
+    assert_eq!(reason(&can("a", fifth).await.1), (json!(false), Some(NO_PASSKEY.into())));
+}
+
+/// DK5: an owner who asks for approval themselves gets the push too, saying
+/// they asked, so the approval can be made from whichever device has it.
+#[tokio::test]
+async fn an_owner_who_asks_gets_the_push_too() {
+    let (hub, _app, base, t, _) = seeded().await;
+    let env = production(&base, &t).await;
+    let (id, _) = asked(&base, "a", &t, &env, "deadbeef").await;
+    let push = tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        loop {
+            if let Some(p) = hub.pushes().into_iter().find(|(_, m, _)| m["deploy"] == json!(id)) {
+                return p;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+        }
+    })
+    .await
+    .expect("a push for the deploy");
+    assert_eq!(push.0, "a");
+    assert!(push.1["body"].as_str().unwrap().ends_with("; you asked"), "{}", push.1);
 }
 
 /// In the database: an approval's row is written only with its event, when

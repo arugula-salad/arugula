@@ -16,7 +16,14 @@
 //!   platform page). A plan is the owner's, labelled as their agent on this
 //!   machine, never past their role (an owner or an editor plans).
 //!
+//! - **Waiting for a decision** (DK5): `read_deploy` with `until: decided`
+//!   reads the deploy again, less often as it goes, until an owner approves
+//!   or denies it (or it stops waiting otherwise), or its timeout (at most
+//!   10 minutes) says "still waiting", as `wait` does on a pane.
+//!
 //! An agent a guest stands behind may not use them: they act as the owner.
+
+use std::time::{Duration, Instant};
 
 use arugula_control_wire::deploys::{
     DeployPlan, DeploySource, agent_deploy, agent_deploy_request, agent_project_deploys, deploy_id, full_commit,
@@ -34,7 +41,7 @@ pub(crate) const READ_TOOL: &str = "read_deploy";
 
 pub(crate) const PLAN_DESCRIPTION: &str = "Plan a deploy of a commit to one of a project's environments in Arugula control, and ask the project's owners to approve it. Agents plan and ask; they never approve: an owner approves (or denies) it on their phone or in a browser, with a passkey, and only then is it applied. The platform makes the plan from the environment's driver and returns its text, which is what the owner reads. Needs this machine's deploys.plan grant over the project, given by your person (an owner or editor there); without it the platform refuses and says how to give it. Returns the deploy (dep_…), waiting for approval; read_deploy follows it.";
 
-pub(crate) const READ_DESCRIPTION: &str = "Read a deploy in Arugula control (with this machine's deploys.plan grant over its project): where it goes, what it deploys, its plan's text, its state (planned, pending: waiting for an owner's approval, approved, running, succeeded, failed, denied, stale) and its log. Reading never approves: an owner approves on their phone or in a browser.";
+pub(crate) const READ_DESCRIPTION: &str = "Read a deploy in Arugula control (with this machine's deploys.plan grant over its project): where it goes, what it deploys, its plan's text, its state (planned, pending: waiting for an owner's approval, approved, running, succeeded, failed, denied, stale) and its log. With until: \"decided\", wait while it's pending until an owner approves or denies it (or it stops waiting otherwise), up to timeout seconds (default 100, at most 600); then it returns still waiting: call again rather than polling. Reading never approves: an owner approves on their phone or in a browser.";
 
 #[derive(Deserialize, JsonSchema)]
 pub struct PlanDeployArgs {
@@ -57,7 +64,28 @@ pub struct PlanDeployArgs {
 pub struct ReadDeployArgs {
     /// The deploy (dep_…), from plan_deploy.
     pub id: String,
+    /// decided: wait while it's pending, until an owner approves or denies
+    /// it (or it stops waiting otherwise), up to timeout.
+    #[serde(default)]
+    pub until: Option<Until>,
+    /// Seconds to wait with until (default 100, at most 600).
+    #[serde(default)]
+    pub timeout: Option<f64>,
 }
+
+/// What `read_deploy` waits for.
+#[derive(Deserialize, JsonSchema, Clone, Copy, PartialEq, Eq, Debug)]
+#[serde(rename_all = "lowercase")]
+pub enum Until {
+    Decided,
+}
+
+/// The longest `until: decided` waits in one call.
+const DECIDED_MAX: Duration = Duration::from_secs(600);
+/// Its first read again, and the most it waits between reads: the routes
+/// are counted per machine (600 an hour), and a person takes minutes.
+const DECIDED_FIRST: Duration = Duration::from_secs(3);
+const DECIDED_EVERY: Duration = Duration::from_secs(30);
 
 /// What a refusal says to an agent.
 fn said(e: CloudRefused) -> String {
@@ -160,11 +188,12 @@ fn history(d: &Value) -> String {
         .collect();
     for a in d["approvals"].as_array().into_iter().flatten() {
         let what = if a["decision"] == "deny" { "Denied" } else { "Approved" };
-        out.push(format!(
-            "{what} by {} on {}",
-            a["name"].as_str().filter(|n| !n.is_empty()).unwrap_or("an owner"),
-            a["device_name"].as_str().unwrap_or("a device")
-        ));
+        let who = a["name"].as_str().filter(|n| !n.is_empty()).unwrap_or("an owner");
+        // Since DK4 a passkey alone: no device signs it.
+        match a["device_name"].as_str().filter(|n| !n.is_empty()) {
+            Some(device) => out.push(format!("{what} by {who} on {device}")),
+            None => out.push(format!("{what} by {who} with a passkey")),
+        }
     }
     out.join("\n")
 }
@@ -220,9 +249,46 @@ pub(crate) async fn read_deploy(c: &Call<'_>, a: ReadDeployArgs) -> Out {
     if !deploy_id(id) {
         return Err(format!("id: a deploy is dep_ and 32 hex characters, not {id:?}"));
     }
-    let d = deploys_call(c, Method::GET, &agent_deploy(id), None).await?;
+    let mut d = deploys_call(c, Method::GET, &agent_deploy(id), None).await?;
+    if a.until == Some(Until::Decided) && d["state"] == "pending" {
+        let limit = Call::limit(a.timeout).min(DECIDED_MAX);
+        let started = Instant::now();
+        let poll = async {
+            let mut every = DECIDED_FIRST;
+            loop {
+                tokio::time::sleep(every).await;
+                every = (every * 3 / 2).min(DECIDED_EVERY);
+                match c.app().control.cloud(Method::GET, &agent_deploy(id), None).await {
+                    Ok(d) if d["state"] != "pending" => return Ok::<_, String>(d),
+                    Ok(_) | Err(CloudRefused::Said { status: 429, .. }) => {}
+                    Err(e) => return Err(said(e)),
+                }
+            }
+        };
+        match c.waiting(&format!("waiting for {id} to be decided"), limit, poll).await {
+            Some(r) => d = r?,
+            None => {
+                let secs = started.elapsed().as_secs();
+                let d = deploys_call(c, Method::GET, &agent_deploy(id), None).await.unwrap_or(d);
+                if d["state"] == "pending" {
+                    let s = format!(
+                        "{}\nStill waiting for an owner after {secs}s: call read_deploy with until: decided again.",
+                        line(&d)
+                    );
+                    return done(s, json!({ "state": "still waiting", "deploy": d }));
+                }
+                return done(decided(&d), json!({ "state": d["state"], "deploy": d }));
+            }
+        }
+        return done(decided(&d), json!({ "state": d["state"], "deploy": d }));
+    }
     let s = format!("{}\n{}\nLog:\n{}", line(&d), plan_text(&d), history(&d));
     done(s, json!({ "deploy": d }))
+}
+
+/// A deploy that stopped waiting, as `until: decided` says it.
+fn decided(d: &Value) -> String {
+    format!("{}\nLog:\n{}", line(d), history(d))
 }
 
 #[cfg(test)]

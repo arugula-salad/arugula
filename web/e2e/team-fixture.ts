@@ -24,10 +24,11 @@ export class TeamControl {
   private gh?: Server;
 
   /** `localhost`: control on a domain name, where WebAuthn makes passkeys
-   * (on 127.0.0.1 it refuses them). */
+   * (on 127.0.0.1 it refuses them). `host`: another name for it, such as
+   * `arugula.localhost`, whose subdomains may use its passkeys. */
   constructor(
     private what: string,
-    private opts: { localhost?: boolean } = {},
+    private opts: { localhost?: boolean; host?: string } = {},
   ) {}
 
   temp(what: string) {
@@ -37,7 +38,7 @@ export class TeamControl {
   }
 
   private get host() {
-    return this.opts.localhost ? "localhost" : "127.0.0.1";
+    return this.opts.host ?? (this.opts.localhost ? "localhost" : "127.0.0.1");
   }
 
   /** `extra`: more arguments for control. */
