@@ -411,7 +411,7 @@ pub struct AttentionRequest {
 }
 
 /// What Claude Code says about its session from inside it (#396, a spike):
-/// the Claude Code mod in `plugins/claude-code/mod` sends one per event,
+/// the Claude Code mod in `plugins/claude-code/hooks/live.ts` sends one per event,
 /// through `arugula session-signal`. `event` is `start`, `usage` (the
 /// engine's `session.measure`: the window's fill), `step` (a model request:
 /// its model and effort) or `compact` (a compaction, after it ran).

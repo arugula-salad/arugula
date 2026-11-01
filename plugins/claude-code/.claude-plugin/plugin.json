@@ -1,9 +1,17 @@
 {
   "name": "arugula",
-  "description": "Arugula's MCP tools, the hooks that put Claude Code's questions, permission prompts and follow-ups on cards, and a skill for using them. Calls the arugula CLI you installed.",
+  "description": "Arugula's MCP tools, the hooks that put Claude Code's questions, permission prompts and follow-ups on cards, a skill for using them, and, opt in, live session signals for the pane. Calls the arugula CLI you installed.",
   "author": { "name": "Arugula", "url": "https://arugula.io" },
   "homepage": "https://arugula.io",
   "repository": "https://github.com/arugula-salad/arugula",
   "license": "MIT OR Apache-2.0",
-  "keywords": ["arugula", "terminal", "mcp", "hooks"]
+  "keywords": ["arugula", "terminal", "mcp", "hooks"],
+  "userConfig": {
+    "live": {
+      "type": "boolean",
+      "title": "Live session signals",
+      "description": "Off by default. Claude Code tells the Arugula pane it runs in about its session as it runs (the context window's fill and size, the model and effort, compactions) and shows them in its status line. Needs Claude Code 2.1.286 or later and an arugula CLI with `session-signal`. Verified in a terminal; the desktop app, VS Code and hosted sessions aren't yet.",
+      "default": false
+    }
+  }
 }

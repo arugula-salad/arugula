@@ -111,6 +111,13 @@ installed, so that has to be on your PATH. In Claude Code:
 Already set up the hooks by hand? Each still runs once: the plugin's copy stands
 aside. [plugins/claude-code](plugins/claude-code/README.md) has the details.
 
+The plugin also has **live session signals**, off by default: Claude Code tells
+the pane it runs in its context window's fill and size, its model and effort,
+and each compaction as it happens, and shows them in its status line. Turn them
+on at install, or later in `/config` ("Live session signals"). They need Claude
+Code 2.1.286 or later, and so far they're verified in a terminal only, not in
+the desktop app, VS Code or hosted sessions.
+
 ## Docs
 
 **[docs.arugula.io](https://docs.arugula.io/)** has the docs for using Arugula: [panes](https://docs.arugula.io/panes/),

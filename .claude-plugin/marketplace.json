@@ -6,7 +6,7 @@
     {
       "name": "arugula",
       "source": "./plugins/claude-code",
-      "description": "Arugula's MCP tools, the hooks that put Claude Code's questions, permission prompts and follow-ups on cards, and a skill for using them."
+      "description": "Arugula's MCP tools, the hooks that put Claude Code's questions, permission prompts and follow-ups on cards, a skill for using them, and, opt in, live session signals for the pane."
     }
   ]
 }
