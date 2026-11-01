@@ -152,15 +152,18 @@ device nobody trusted. Now:
 - **What only a browser all the way back does** (`Trust::browser_chained`:
   the device and every device that certified it, the root included, are
   `browser`): remove a browser, a phone or a recovery code. A team's
-  editor (a roster, a presigned or Ask me first invite) comes from that or
-  the desktop app's device, never a CLI (`team::raise_ok`; Jake,
-  2026-10-22). Daemons and pages ignore such a paper from anything else. A
-  CLI or the app still adds viewers, removes machines, CLIs and apps, and
-  moves machines.
-- **A team's owners change with a passkey** (DK7, #388, aru-126). Any
-  device of an owner that approves signs a roster version that makes or
+  editor or owner (a roster, a presigned or Ask me first invite), and any
+  roster version that changes who the owners are (removing, demoting or
+  moving one too), comes from that or the desktop app's device, never a
+  CLI (`team::raise_ok`; Jake, 2026-10-22, and for owners 2026-10-31:
+  an agent can read a CLI's key, and a roster a machine takes stays taken
+  after the key is revoked). Daemons and pages ignore such a paper from
+  anything else. A CLI or the app still adds viewers, removes machines,
+  CLIs and apps, and moves machines.
+- **A team's owners change with a passkey too** (DK7, #388, aru-126). A
+  browser or the app of an owner signs a roster version that makes or
   removes an owner (or moves an owner's entry to another root), and its
-  machines check only that signature, as for any version. Control takes
+  machines check that signature, as for any version. Control takes
   such a version (`Roster::changes_owners`) only with a user-verified
   passkey assertion over its bytes (`Roster::owner_challenge`) from the
   signed-in account, an owner of the version before, checked against that
@@ -169,7 +172,7 @@ device nobody trusted. Now:
   (`owner_proofs`), so anyone can check it. Versions from before carry
   none and count as they are. A machine from before this (no
   `owner-passkeys` feature) takes an owner only from a browser all the way
-  back, so control holds an owner a CLI or the app made until every
+  back, so control holds an owner the app made until every
   machine checking the team says it understands one.
 - The app's devices from before it had a kind are `browser` certificates
   it named ("Arugula app on …"). Control holds them to `Cert::is_browser`

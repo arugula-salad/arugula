@@ -119,10 +119,10 @@ check("Rust trusts what we signed", JSON.stringify(rust) === JSON.stringify([roo
   await both("nor a member name with a space in it", v1, await signRedeem(odd(v2, (x) => (x.members[1].name = "bob b")), seed), false);
   await both("nor the same invite again", v2, await redeemInvite(v2, inv, seed, { account: "carol", root: bob.id, name: "carol" }), false);
 
-  // A CLI's key may be a program's: it makes no editor, by a roster or a
-  // presigned invite; the app makes editors (Jake, 2026-10-22). Either
-  // makes an owner (DK7: control asks the owner's passkey for that, which
-  // a machine doesn't check).
+  // A CLI's key may be a program's: it makes no editor or owner, nor
+  // changes an owner at all, by a roster or a presigned invite; the app
+  // makes editors (Jake, 2026-10-22) and owners (DK7, with the owner's
+  // passkey at control; Jake, 2026-10-31).
   const aliceCli = await generateKeys();
   const aliceApp = await generateKeys();
   const under = async (k: typeof alice, kind: Cert["kind"]): Promise<Cert> => {
@@ -133,13 +133,18 @@ check("Rust trusts what we signed", JSON.stringify(rust) === JSON.stringify([roo
   tc.alice[0].push(await under(aliceCli, "cli"), await under(aliceApp, "app"));
   const withBob = (role: "owner" | "editor" | "viewer") => ({ ...v1, version: 2, members: [...v1.members, { account: "bob", root: bob.id, role, name: "bob" }] });
   for (const [k, by, editors] of [[aliceCli, "a CLI", false], [aliceApp, "the app", true]] as const) {
-    await both(`${by} makes an owner`, v1, await signRoster(withBob("owner"), k), true);
+    await both(`${by} ${editors ? "makes" : "can't make"} an owner`, v1, await signRoster(withBob("owner"), k), editors);
     await both(`${by} ${editors ? "makes" : "can't make"} an editor`, v1, await signRoster(withBob("editor"), k), editors);
     await both(`${by} adds a viewer`, v1, await signRoster(withBob("viewer"), k), true);
   }
   await both("a browser makes an owner", v1, await signRoster(withBob("owner"), alice), true);
   const moved = { ...v1, version: 2, members: [{ account: "alice", root: bob.id, role: "owner" as const, name: "alice" }] };
-  await both("a CLI moves its owner's own entry to another root", v1, await signRoster(moved, aliceCli), true);
+  await both("a CLI can't move its owner's own entry to another root", v1, await signRoster(moved, aliceCli), false);
+  await both("the app moves its owner's own entry to another root", v1, await signRoster(moved, aliceApp), true);
+  const twoOwners = await signRoster(withBob("owner"), alice);
+  const dropBob = { ...v1, version: 3 };
+  await both("a CLI can't remove an owner", twoOwners, await signRoster(dropBob, aliceCli), false);
+  await both("the app removes an owner", twoOwners, await signRoster(dropBob, aliceApp), true);
   const fromCli = await signInvite({ team: pin.team, role: "editor", expires: Date.now() + 86_400_000, key }, aliceCli);
   await both("a CLI's presigned editor invite doesn't admit", v1, await redeemInvite(v1, fromCli, seed, { account: "bob", root: bob.id, name: "bob" }), false);
   const fromApp = await signInvite({ team: pin.team, role: "editor", expires: Date.now() + 86_400_000, key }, aliceApp);

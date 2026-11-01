@@ -1,7 +1,8 @@
 //! DK7 (#388, aru-126): a team's owners change only with the passkey of an
-//! owner of the version before, over the new version's bytes, whichever of
-//! that owner's devices signs it; editors and viewers change as before.
-//! Over HTTP, against control's own passkey log.
+//! owner of the version before, over the new version's bytes, signed by
+//! that owner's browser or desktop app, never a CLI (Jake, 2026-10-31);
+//! editors and viewers change as before. Over HTTP, against control's own
+//! passkey log.
 
 use arugula_e2e::{
     DeviceKeys, Kind,
@@ -89,17 +90,16 @@ fn with_passkey(c: &Control, r: &Roster, pk: Option<(&str, &ed25519_dalek::Signi
     b
 }
 
-/// An owner made from a CLI or the desktop app, with the owner's passkey
-/// over that version: taken, and its proof kept beside it for anyone to
-/// check against the published log. Without a passkey, refused; with one
-/// over another version's bytes, or a non-owner's, refused. Removing an
-/// owner takes one too; an editor or a viewer, none.
+/// An owner made from the desktop app, with the owner's passkey over that
+/// version: taken, and its proof kept beside it for anyone to check against
+/// the published log. Without a passkey, refused; with one over another
+/// version's bytes, or a non-owner's, refused. Removing an owner takes one
+/// too; an editor or a viewer, none.
 #[tokio::test]
-async fn an_owner_made_from_a_cli_takes_the_owners_passkey() {
+async fn an_owner_made_from_the_app_takes_the_owners_passkey() {
     let c = control(|_| {}).await;
     let root = person(&c.app, "jake", "a1");
     let bob = person(&c.app, "bob", "b1");
-    let cli = device(&c, &root, "a1", Kind::Cli, "Arugula CLI");
     let app = device(&c, &root, "a1", Kind::App, "Arugula app on box");
     let jakes = site_passkey(&c, "a1", "pk-a1", 1);
     let bobs = site_passkey(&c, "b1", "pk-b1", 2);
@@ -112,12 +112,12 @@ async fn an_owner_made_from_a_cli_takes_the_owners_passkey() {
     let (st, v) = c.as_person(&jake, "POST", &path(), Some(with_passkey(&c, &v2, None))).await;
     assert_eq!(st, 200, "{v}");
 
-    // The CLI makes Bob an owner.
-    let v3 = roster(TEAM, 3, vec![member("a1", &root, TeamRole::Owner), member("b1", &bob, TeamRole::Owner)], &cli);
+    // The app makes Bob an owner.
+    let v3 = roster(TEAM, 3, vec![member("a1", &root, TeamRole::Owner), member("b1", &bob, TeamRole::Owner)], &app);
     let (st, v) = c.as_person(&jake, "POST", &path(), Some(with_passkey(&c, &v3, None))).await;
     assert_eq!((st, v["reason"].as_str()), (403, Some("passkey_required")), "no passkey: {v}");
-    // Over another version's bytes: the app's, which Jake didn't confirm.
-    let other = roster(TEAM, 3, vec![member("a1", &root, TeamRole::Owner), member("b1", &bob, TeamRole::Owner)], &app);
+    // Over another version's bytes: the browser's, which Jake didn't confirm.
+    let other = roster(TEAM, 3, vec![member("a1", &root, TeamRole::Owner), member("b1", &bob, TeamRole::Owner)], &root);
     let mut b = json!({ "roster": v3 });
     b["passkey"] = assertion(&c, "pk-a1", &jakes, &other.owner_challenge());
     let (st, v) = c.as_person(&jake, "POST", &path(), Some(b)).await;
@@ -129,7 +129,7 @@ async fn an_owner_made_from_a_cli_takes_the_owners_passkey() {
     let (st, v) = c.as_person(&jake, "POST", &path(), Some(with_passkey(&c, &v3, Some(("pk-b1", &bobs))))).await;
     assert_eq!((st, v["reason"].as_str()), (403, Some("passkey")), "another account's passkey: {v}");
     let (st, v) = c.as_person(&jake, "POST", &path(), Some(with_passkey(&c, &v3, Some(("pk-a1", &jakes))))).await;
-    assert_eq!(st, 200, "the CLI's owner, with Jake's passkey: {v}");
+    assert_eq!(st, 200, "the app's owner, with Jake's passkey: {v}");
     let now: Roster = serde_json::from_str(&c.app.db.latest_roster(TEAM).unwrap().unwrap()).unwrap();
     assert_eq!(now.member("b1").map(|m| m.role), Some(TeamRole::Owner), "the platform reads the roster now");
 
@@ -155,16 +155,53 @@ async fn an_owner_made_from_a_cli_takes_the_owners_passkey() {
     assert_eq!(st, 200, "{v}");
 }
 
-/// A machine checking the team from before DK7 refuses an owner a CLI or
-/// the app made (and every version after), so control holds one back
-/// until every such machine is updated, and says which; from a browser
-/// all the way back, it goes through (those machines take that).
+/// A CLI's key never changes a team's owners (Jake, 2026-10-31, DK7): an
+/// agent can read it, and a roster a machine takes stays taken after the
+/// key is revoked. So control refuses one a CLI signed, as machines would,
+/// even with the owner's good passkey over it: making an owner, moving an
+/// owner's root, removing one. Nothing is stored.
 #[tokio::test]
-async fn an_owner_from_a_cli_waits_for_machines_from_before() {
+async fn a_cli_never_changes_the_owners_even_with_a_passkey() {
     let c = control(|_| {}).await;
     let root = person(&c.app, "jake", "a1");
     let bob = person(&c.app, "bob", "b1");
+    let other_root = DeviceKeys::generate();
     let cli = device(&c, &root, "a1", Kind::Cli, "Arugula CLI");
+    let jakes = site_passkey(&c, "a1", "pk-a1", 1);
+    let v1 = roster(TEAM, 1, vec![member("a1", &root, TeamRole::Owner), member("b1", &bob, TeamRole::Owner)], &root);
+    team(&c, &root, &v1);
+    let jake = session(&c.app, "a1");
+    for (what, members) in [
+        ("bob made an editor", vec![member("a1", &root, TeamRole::Owner), member("b1", &bob, TeamRole::Editor)]),
+        ("bob removed", vec![member("a1", &root, TeamRole::Owner)]),
+        ("jake's root moved", vec![member("a1", &other_root, TeamRole::Owner), member("b1", &bob, TeamRole::Owner)]),
+    ] {
+        let r = roster(TEAM, 2, members, &cli);
+        let (st, v) = c.as_person(&jake, "POST", &path(), Some(with_passkey(&c, &r, Some(("pk-a1", &jakes))))).await;
+        assert_eq!((st, v["reason"].as_str()), (403, Some("needs_browser")), "{what}: {v}");
+    }
+    // Bob back as an editor, then the CLI making him an owner again.
+    let v2 = roster(TEAM, 2, vec![member("a1", &root, TeamRole::Owner), member("b1", &bob, TeamRole::Editor)], &root);
+    let (st, v) = c.as_person(&jake, "POST", &path(), Some(with_passkey(&c, &v2, Some(("pk-a1", &jakes))))).await;
+    assert_eq!(st, 200, "the browser demotes him: {v}");
+    let v3 = roster(TEAM, 3, vec![member("a1", &root, TeamRole::Owner), member("b1", &bob, TeamRole::Owner)], &cli);
+    let (st, v) = c.as_person(&jake, "POST", &path(), Some(with_passkey(&c, &v3, Some(("pk-a1", &jakes))))).await;
+    assert_eq!((st, v["reason"].as_str()), (403, Some("needs_browser")), "the CLI's owner: {v}");
+    let now: Roster = serde_json::from_str(&c.app.db.latest_roster(TEAM).unwrap().unwrap()).unwrap();
+    assert_eq!(now.version, 2, "nothing stored");
+    assert_eq!(c.app.db.owner_proofs(TEAM, 2).unwrap(), vec![]);
+}
+
+/// A machine checking the team from before DK7 refuses an owner the app
+/// made (and every version after), so control holds one back until every
+/// such machine is updated, and says which; from a browser all the way
+/// back, it goes through (those machines take that).
+#[tokio::test]
+async fn an_owner_from_the_app_waits_for_machines_from_before() {
+    let c = control(|_| {}).await;
+    let root = person(&c.app, "jake", "a1");
+    let bob = person(&c.app, "bob", "b1");
+    let app = device(&c, &root, "a1", Kind::App, "Arugula app on box");
     let jakes = site_passkey(&c, "a1", "pk-a1", 1);
     let v1 = roster(TEAM, 1, vec![member("a1", &root, TeamRole::Owner), member("b1", &bob, TeamRole::Editor)], &root);
     team(&c, &root, &v1);
@@ -176,7 +213,7 @@ async fn an_owner_from_a_cli_waits_for_machines_from_before() {
     let by = |version, k: &DeviceKeys| {
         roster(TEAM, version, vec![member("a1", &root, TeamRole::Owner), member("b1", &bob, TeamRole::Owner)], k)
     };
-    let v2 = by(2, &cli);
+    let v2 = by(2, &app);
     let (st, v) = c.as_person(&jake, "POST", &path(), Some(with_passkey(&c, &v2, Some(("pk-a1", &jakes))))).await;
     assert_eq!(st, 409, "{v}");
     assert!(v["error"].as_str().unwrap().contains("oldbox needs an update"), "{v}");
@@ -184,13 +221,53 @@ async fn an_owner_from_a_cli_waits_for_machines_from_before() {
     let (st, v) = c.as_person(&jake, "POST", &path(), Some(with_passkey(&c, &v2, Some(("pk-a1", &jakes))))).await;
     assert_eq!(st, 200, "from the browser: {v}");
 
-    // Updated: the CLI demotes and promotes again.
+    // Updated: the browser demotes, and the app promotes again.
     c.app.db.set_daemon_features(&old.id(), "presigned-invites,owner-moves,join-secret,owner-passkeys").unwrap();
     let v3 = roster(TEAM, 3, vec![member("a1", &root, TeamRole::Owner), member("b1", &bob, TeamRole::Editor)], &root);
     let (st, v) = c.as_person(&jake, "POST", &path(), Some(with_passkey(&c, &v3, Some(("pk-a1", &jakes))))).await;
     assert_eq!(st, 200, "{v}");
-    let v4 = by(4, &cli);
+    let v4 = by(4, &app);
     let (st, v) = c.as_person(&jake, "POST", &path(), Some(with_passkey(&c, &v4, Some(("pk-a1", &jakes))))).await;
+    assert_eq!(st, 200, "{v}");
+}
+
+/// A new team's one member is its founder: the account signed in, with
+/// its own first device. Not someone else as the sole owner, nor the
+/// founder under another root.
+#[tokio::test]
+async fn a_team_is_founded_by_the_one_signed_in() {
+    let c = control(|_| {}).await;
+    let root = person(&c.app, "jake", "a1");
+    let bob = person(&c.app, "bob", "b1");
+    let jake = session(&c.app, "a1");
+    let new = |id: &str, members| json!({ "roster": roster(id, 1, members, &root) });
+    let (st, v) = c
+        .as_person(
+            &jake,
+            "POST",
+            "/api/teams",
+            Some(new("00112233aabbccd1", vec![member("b1", &bob, TeamRole::Owner)])),
+        )
+        .await;
+    assert_eq!(st, 400, "bob as its owner: {v}");
+    let elsewhere = DeviceKeys::generate();
+    let (st, v) = c
+        .as_person(
+            &jake,
+            "POST",
+            "/api/teams",
+            Some(new("00112233aabbccd2", vec![member("a1", &elsewhere, TeamRole::Owner)])),
+        )
+        .await;
+    assert_eq!(st, 400, "jake under another root: {v}");
+    let (st, v) = c
+        .as_person(
+            &jake,
+            "POST",
+            "/api/teams",
+            Some(new("00112233aabbccd3", vec![member("a1", &root, TeamRole::Owner)])),
+        )
+        .await;
     assert_eq!(st, 200, "{v}");
 }
 

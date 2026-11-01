@@ -197,13 +197,13 @@ async fn only_a_browser_removes_a_browser() {
     assert_eq!(st, 200, "{v}");
 }
 
-/// A team's editor is made only from a browser or a phone all the way
-/// back, or the desktop app (or one of its devices from before it had a
-/// kind): never a CLI. An owner is made from any of an owner's devices, with
-/// that owner's passkey (DK7, `team_owners_wire`): without one, refused
-/// from the browser too. Viewer invites go through from any.
+/// A team's owner or editor is made only from a browser or a phone all the
+/// way back, or the desktop app (or one of its devices from before it had a
+/// kind): never a CLI. An owner also takes that owner's passkey (DK7,
+/// `team_owners_wire`): without one, refused from the browser too. Viewer
+/// invites go through from any.
 #[tokio::test]
-async fn only_a_browser_or_the_app_makes_a_teams_editor() {
+async fn only_a_browser_or_the_app_makes_a_teams_owner_or_editor() {
     use arugula_e2e::team::{AskInvite, TeamRole};
 
     use crate::routing_wire::{member, roster};
@@ -229,6 +229,9 @@ async fn only_a_browser_or_the_app_makes_a_teams_editor() {
         let (st, v) = c.as_person(&cookie, "POST", &path, Some(promote(by))).await;
         assert_eq!((st, v["reason"].as_str()), (403, Some("passkey_required")), "no passkey: {v}");
     }
+    let cli = device(&c, &root, "a1", Kind::Cli, "Arugula CLI");
+    let (st, v) = c.as_person(&cookie, "POST", &path, Some(promote(&cli))).await;
+    assert_eq!((st, v["reason"].as_str()), (403, Some("needs_browser")), "the CLI: {v}");
 
     let ask = |role: TeamRole, by: &DeviceKeys| {
         let k = DeviceKeys::generate();
@@ -245,12 +248,11 @@ async fn only_a_browser_or_the_app_makes_a_teams_editor() {
         json!({ "role": role, "ask": a })
     };
     let invites = format!("/api/teams/{team}/invites");
-    // An owner's Ask me first link, from any device: admitting someone
-    // with it takes the owner's passkey.
-    let cli = device(&c, &root, "a1", Kind::Cli, "Arugula CLI");
-    for by in [&app, &old_app, &cli, &root] {
+    // An owner's Ask me first link: from a browser or the app, never a CLI
+    // (admitting someone with it takes the owner's passkey too).
+    for (by, want) in [(&app, 200), (&old_app, 200), (&cli, 400), (&root, 200)] {
         let (st, v) = c.as_person(&cookie, "POST", &invites, Some(ask(TeamRole::Owner, by))).await;
-        assert_eq!(st, 200, "an owner's invite: {v}");
+        assert_eq!(st, want, "an owner's invite: {v}");
         let (st, v) = c.as_person(&cookie, "POST", &invites, Some(ask(TeamRole::Viewer, by))).await;
         assert_eq!(st, 200, "a viewer's: {v}");
     }
@@ -391,8 +393,9 @@ async fn the_apps_window_doesnt_delete_remove_passkeys_or_sign_out_everywhere() 
 /// What the desktop app's window (from before it had a kind) approved,
 /// both stored and approved by control before #1343 shipped (`legacy_app`),
 /// counts again: that browser approves a browser and recovery codes and
-/// removes a browser (a team's owner is made with a passkey now, from any
-/// device: DK7). The window itself doesn't;
+/// removes a browser, and signs for a team's owner (who also takes a
+/// passkey now, DK7; the window, as the app's device, does that too). The
+/// window itself doesn't do the rest;
 /// nor a browser it certified after the cutoff, or one a window stored
 /// after let in, or one a window asked before and approved after let in;
 /// nor a recovery code it made before the cutoff, approving a browser now.
@@ -490,9 +493,18 @@ async fn a_grandfathered_app_window_counts_on_the_way() {
     c.app.db.add_team(&t, 1, &serde_json::to_string(&v1).unwrap(), now_ms()).unwrap();
     let path = format!("/api/teams/{team}/roster");
     let promote = |by: &DeviceKeys| json!({ "roster": roster(team, 2, vec![member("a1", &root, TeamRole::Owner), member("b1", &bob, TeamRole::Owner)], by) });
-    // Which of them signs plays no part any more (DK7): each is asked for
-    // the owner's passkey, and none brings one.
-    for (by, who) in refused.into_iter().chain([(&firefox, "what the window approved before")]) {
+    // What a window let in after it shouldn't have: not as browsers. A
+    // window itself counts as the app's device, and what it approved before
+    // as a browser: those are asked for the owner's passkey next (DK7), and
+    // bring none.
+    for (by, who) in [(&edge, "what it certified after"), (&chrome, "what that let in"), (&opera, "a late approval's")]
+    {
+        let (st, v) = c.as_person(&cookie, "POST", &path, Some(promote(by))).await;
+        assert_eq!((st, v["reason"].as_str()), (403, Some("needs_browser")), "{who}: {v}");
+    }
+    for (by, who) in
+        [(&window, "the window"), (&late, "a window stored after"), (&firefox, "what the window approved before")]
+    {
         let (st, v) = c.as_person(&cookie, "POST", &path, Some(promote(by))).await;
         assert_eq!((st, v["reason"].as_str()), (403, Some("passkey_required")), "{who}: {v}");
     }

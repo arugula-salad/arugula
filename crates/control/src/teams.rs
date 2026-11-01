@@ -57,10 +57,10 @@ const PRESIGNED_MAX_MS: u64 = 86_400 * 1000 + 10 * 60 * 1000;
 /// team's owners says it understands (#332).
 pub const OWNER_MOVES: &str = "owner-moves";
 
-/// What a daemon that takes an owner made by any of an owner's devices
-/// says it understands (DK7, #388): the hub asks that owner's passkey for
-/// it instead. One from before refuses a version a CLI or the app signed
-/// that makes an owner, and then every later one.
+/// What a daemon that takes an owner made from the desktop app says it
+/// understands (DK7, #388; the hub asks the owner's passkey for it). One
+/// from before refuses a version the app signed that makes an owner, and
+/// then every later one.
 pub const OWNER_PASSKEYS: &str = "owner-passkeys";
 
 /// Whether a daemon said it understands `feature`.
@@ -243,7 +243,8 @@ pub async fn create(State(app): State<Arc<App>>, s: Session, Json(b): Json<NewTe
         return Err(err(StatusCode::BAD_REQUEST, "a new team starts at version 1 with a fresh id"));
     }
     // Others come in by invite: by asking, or with a link's key.
-    if r.members.len() != 1 {
+    // Just its founder, the one signed in, with their own first device.
+    if r.members.len() != 1 || r.members[0].account != s.account || r.members[0].root != root {
         return Err(err(StatusCode::BAD_REQUEST, "a new team has just you in it; invite the others"));
     }
     app.limits.check_account(crate::limit::TEAMS, &s.account)?;
@@ -373,9 +374,6 @@ pub async fn set_roster(
     }
     let accounts: Vec<&str> = prev.members.iter().chain(&b.roster.members).map(|m| m.account.as_str()).collect();
     let certs = certs_for(&app, accounts.into_iter())?;
-    if !b.roster.follows(Some(&prev), &pin(&t), &certs) {
-        return Err(err(StatusCode::FORBIDDEN, "a new roster is the next version, signed by an owner's device"));
-    }
     // The owner whose device signed it (none for an invite's redeem).
     let signer = prev
         .members
@@ -385,37 +383,40 @@ pub async fn set_roster(
         .filter(|_| b.roster.redeem.is_none());
     let signer_certs =
         |m: &arugula_e2e::team::Member| certs.get(&m.account).map(|(c, _)| c.as_slice()).unwrap_or_default();
-    // One that makes an editor, from a browser or a phone all the way back
-    // or the desktop app (`follows` asks that of the kinds; here the app's
-    // devices from before it had a kind count too). Making an owner takes a
-    // passkey instead (below), from whichever device signs.
-    if b.roster.redeem.is_none() {
-        let strong = match signer {
-            Some(m) => raise_ok_here(
-                &app,
-                &Trust { account: m.account.clone(), root: m.root.clone() },
-                signer_certs(m),
-                &b.roster.by,
-                b.roster.raised(Some(&prev), &m.account),
-            )?,
-            None => false,
-        };
-        if !strong {
-            return Err(refusal(
-                StatusCode::FORBIDDEN,
-                arugula_e2e::Refusal::NeedsBrowser.code(),
-                "only a browser, a phone or the desktop app makes someone an editor: the CLI adds viewers",
-            ));
-        }
+    let owners_change = b.roster.changes_owners(&prev);
+    // One that makes an editor, or changes who the owners are, from a
+    // browser or a phone all the way back or the desktop app, never a CLI
+    // (`follows` asks that of the kinds, as machines do: DK7, Jake,
+    // 2026-10-31; here the app's devices from before it had a kind count
+    // too). Said before the rest, so the CLI hears why.
+    let strong = match signer {
+        Some(m) => raise_ok_here(
+            &app,
+            &Trust { account: m.account.clone(), root: m.root.clone() },
+            signer_certs(m),
+            &b.roster.by,
+            if owners_change { Some(TeamRole::Owner) } else { b.roster.raised(Some(&prev), &m.account) },
+        )?,
+        // An invite's redeem, or no owner's device at all: `follows` says.
+        None => true,
+    };
+    if !strong {
+        return Err(refusal(
+            StatusCode::FORBIDDEN,
+            arugula_e2e::Refusal::NeedsBrowser.code(),
+            "only a browser, a phone or the desktop app makes someone an editor or changes the owners: the CLI adds viewers",
+        ));
     }
-    // DK7 (#388, aru-126): one that changes who the owners are only with the
-    // passkey of an owner of the version before (the one signed in), over
-    // its bytes. Kept beside it, for anyone to check. Which device signed
-    // it plays no part.
-    let owner_proof = if b.roster.changes_owners(&prev) {
+    if !b.roster.follows(Some(&prev), &pin(&t), &certs) {
+        return Err(err(StatusCode::FORBIDDEN, "a new roster is the next version, signed by an owner's device"));
+    }
+    // DK7 (#388, aru-126): one that changes who the owners are also takes
+    // the passkey of an owner of the version before (the one signed in),
+    // over its bytes. Kept beside it, for anyone to check.
+    let owner_proof = if owners_change {
         // A machine from before DK7 takes an owner made only by a browser
         // all the way back, and would refuse this version and every later
-        // one: from a CLI or the app, only once every machine checking the
+        // one: from the desktop app, only once every machine checking the
         // team's rosters understands it. Asked first, so a passkey isn't
         // spent on a version that can't go.
         if let Some(m) = signer
@@ -429,7 +430,7 @@ pub async fn set_roster(
                     StatusCode::CONFLICT,
                     &format!(
                         "{}; or make them an owner from a browser or a phone",
-                        need_update(&old, "an owner is made from the CLI or the desktop app")
+                        need_update(&old, "an owner is made from the desktop app")
                     ),
                 ));
             }
@@ -571,13 +572,12 @@ fn is_key(k: &str) -> bool {
 }
 
 /// Whether `device` of the account `trust` names may sign a paper raising
-/// someone to `raised` (`team::raise_ok`), here: an editor's from a
-/// browser or a phone all the way back (`Cert::is_browser` on every link)
-/// or the desktop app's device (Jake, 2026-10-22), never from a CLI; an
-/// owner's from any (DK7: the roster that makes one takes an owner's
-/// passkey). An app window from before it had a kind counts just above a
-/// browser it approved back then (`legacy_app`, of the account `trust`
-/// names).
+/// someone to `raised` (`team::raise_ok`), here: an editor's or an owner's
+/// from a browser or a phone all the way back (`Cert::is_browser` on every
+/// link) or the desktop app's device (Jake, 2026-10-22; for owners, DK7,
+/// 2026-10-31), never from a CLI. An app window from before it had a kind
+/// counts just above a browser it approved back then (`legacy_app`, of the
+/// account `trust` names).
 fn raise_ok_here(
     app: &App,
     trust: &Trust,
@@ -591,8 +591,8 @@ fn raise_ok_here(
 }
 
 /// Whether one of `account`'s own devices (from `root`) signed `ask`: for
-/// an editor, a browser or a phone all the way back, or the desktop app.
-/// (For an owner, any: admitting them takes an owner's passkey, DK7.)
+/// an owner or an editor, a browser or a phone all the way back, or the
+/// desktop app (admitting an owner also takes an owner's passkey, DK7).
 fn ask_signed_by(app: &App, account: &str, root: &str, ask: &AskInvite) -> anyhow::Result<bool> {
     let (c, rv) = certs_of(app, account)?;
     let trust = Trust { account: account.to_owned(), root: root.to_owned() };
