@@ -16,7 +16,7 @@ import type { FleetPane } from "../../fleet";
 import { directory } from "../../hosts";
 import { OPS, opPath } from "../../ops";
 import { gateKey, type ActRequest, type PaneInfo } from "../../../shared/proto";
-import { needsYou, NEEDS_YOU } from "../../../shared/needs-you";
+import { needsYou, NEEDS_YOU, placeOf, sortNeedsYou } from "../../../shared/needs-you";
 import { agentDisplay, cardTitle, kindOf, reasonOf, shortHost, whatItDoes } from "../../swarm/model";
 import { AskCard, type Ask } from "../../../shared/ask";
 import { PermissionBody, PermissionButtons, permissionTarget, VIEWER_NOTE } from "../answer-card";
@@ -54,7 +54,9 @@ const ownersOnly = (info: PaneInfo) => info.ask?.source === "invite" || info.ask
 
 /** Everything that wants you: the shown machine's panes from its own
  * client (live, and it's the one that can act), every other machine's from
- * the fleet's summaries. Waiting first, then newest first. */
+ * the fleet's summaries. In the order every needs-you list shares (#451):
+ * asks, then failures, each oldest first, so a new one doesn't move the
+ * rows above it. */
 export function attentionItems(client: Client): AttentionItem[] {
   const out: AttentionItem[] = [];
   const current = directory.current;
@@ -96,8 +98,7 @@ export function attentionItems(client: Client): AttentionItem[] {
     const viewer = ownersOnly(p.info) ? !!roles : fleet?.role(p) === "viewer";
     out.push({ p, here: false, waiting: p.info.attention === "needs_input", viewer });
   }
-  const since = (i: AttentionItem) => i.p.info.reason?.since_ms ?? i.p.info.ask?.at_ms ?? 0;
-  return out.sort((a, b) => Number(b.waiting) - Number(a.waiting) || since(b) - since(a));
+  return sortNeedsYou(out, (i) => placeOf(i.p.info, i.p.key));
 }
 
 /** How many need you, on every machine: the bell's and the footer's. */

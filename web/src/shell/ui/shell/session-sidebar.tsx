@@ -11,7 +11,7 @@ import type { Attention, PaneInfo, Session, SessionId, TabId } from "../../../sh
 import { AttentionBadge } from "../attention";
 import { onIssueChip } from "../../../shared/boards/text";
 import { platformHref } from "../../platform-links";
-import { needsYou, NEEDS_YOU } from "../../../shared/needs-you";
+import { needsYou, NEEDS_YOU, placeOf, sortNeedsYou } from "../../../shared/needs-you";
 import { sessionItems, sessionMenuHint } from "../commands";
 import { openFresh } from "../open-fresh";
 import { closePlace, currentPlace, openOverview } from "../places";
@@ -64,9 +64,10 @@ export function summarize(client: Client, session: Session): SessionSummary {
   });
   const pick = (s: Attention) => infos.find((i) => i.attention === s);
   // What needs you, as the bell counts it: an ask first, then a failure
-  // (a PR's failed checks are `done`, but need you: UI audit #154).
-  const needs = infos.filter(needsYou);
-  const top = needs.find((i) => i.attention === "needs_input") ?? needs[0] ?? pick("working") ?? pick("done");
+  // (a PR's failed checks are `done`, but need you: UI audit #154), in
+  // the order every needs-you list shares (#451).
+  const needs = sortNeedsYou(infos.filter(needsYou), (i) => placeOf(i, i.id));
+  const top = needs[0] ?? pick("working") ?? pick("done");
   const attention = top?.attention ?? "idle";
   const repos = [...new Set(infos.flatMap((i) => (i.project ? [i.project.name] : [])))];
   const branches = [...new Set(infos.flatMap((i) => (i.branch ? [i.branch] : [])))];

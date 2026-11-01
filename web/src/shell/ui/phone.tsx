@@ -28,7 +28,7 @@ import { PointChoices, pointOf } from "./point-choices";
 import { shareSession } from "./people";
 import { accountHeader, useAccount } from "./app-bar";
 import { docShareItems } from "./doc-share";
-import { needsYou } from "../../shared/needs-you";
+import { needsYou, placeOf, sortNeedsYou } from "../../shared/needs-you";
 
 export function PhoneHeader({ client }: { client: Client }) {
   const [open, setOpen] = useState(false);
@@ -79,13 +79,12 @@ function Sheet({ client, close }: { client: Client; close: () => void }) {
     if (!next.delete(id)) next.add(id);
     setUnfolded(next);
   };
-  // Gates first (M34): a release waiting for a person is the most likely
-  // reason to have opened this on a phone.
   // What needs you, as the bell counts it: not what only finished (UI
-  // audit #154).
-  const wanting = state.panes
-    .filter(needsYou)
-    .sort((a, b) => Number(b.reason?.kind === "gate") - Number(a.reason?.kind === "gate"));
+  // audit #154). In the order the swarm's rail and the drawer share
+  // (#451): gates first (M34: a release waiting for a person is the most
+  // likely reason to have opened this on a phone), the other asks, then
+  // the failures, each oldest first.
+  const wanting = sortNeedsYou(state.panes.filter(needsYou), (p) => placeOf(p, p.id));
   const act = (fn: () => void) => () => {
     fn();
     close();
