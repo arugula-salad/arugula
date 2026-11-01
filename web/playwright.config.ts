@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -9,8 +10,6 @@ import "./e2e/scrub-env.ts";
 // shares one, and so one page key, which browsers carry as a header.
 import { labs } from "./e2e/labs.ts";
 import { keyHeaders } from "./e2e/local-token.ts";
-// Flaky specs CI leaves out for a while (.config/quarantine.toml).
-import { e2eGrep } from "../scripts/quarantine.mjs";
 
 // Directories for the run, made once (workers load this config too, and
 // inherit them) and removed when the runner exits, after the daemon (#62).
@@ -130,14 +129,24 @@ const set = process.env.E2E_SET;
 const WEBKIT = /\.webkit\.spec\.ts$/;
 const chrome = set && SETS[set] ? { testMatch: SETS[set] } : { testIgnore: set === "rest" ? [WEBKIT, ...Object.values(SETS)] : WEBKIT };
 
-// The quarantined specs (.config/quarantine.toml, docs/testing.md): CI's
-// runs leave them out; E2E_QUARANTINED=1 runs only them, as
+// The quarantined specs (chant.workspace.json's ci.green.quarantine,
+// docs/testing.md "Quarantine"), as chant prints the e2e phase's pattern:
+// CI's runs leave them out; E2E_QUARANTINED=1 runs only them, as
 // quarantine-nightly.yml does. A run of your own runs them with the rest.
-const quarantined = e2eGrep();
+// Asked once, before the workers start: they inherit it.
+function quarantined(only: boolean): RegExp {
+  const env = only ? "E2E_QUARANTINE_ONLY" : "E2E_QUARANTINE";
+  process.env[env] ??= execFileSync(
+    fileURLToPath(new URL("../scripts/chant", import.meta.url)),
+    ["ci", "quarantine", "filter", "--phase", "e2e", "--runner", "playwright", ...(only ? ["--only"] : [])],
+    { cwd: fileURLToPath(new URL("..", import.meta.url)), encoding: "utf8", stdio: ["ignore", "pipe", "inherit"] },
+  ).trim();
+  return new RegExp(process.env[env]!);
+}
 const quarantine = process.env.E2E_QUARANTINED
-  ? { grep: quarantined.length ? quarantined : [/$^/] }
-  : process.env.CI && quarantined.length
-    ? { grepInvert: quarantined }
+  ? { grep: quarantined(true) }
+  : process.env.CI
+    ? { grepInvert: quarantined(false) }
     : {};
 
 export default defineConfig({
