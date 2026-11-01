@@ -195,18 +195,20 @@ async fn a_focus_is_the_holders_and_never_traps_the_next_client() {
     let s = state_where(&mut desktop, |s| s.tabs[0].focus == Some(ids[0])).await;
     assert_eq!(s.tabs[0].layout.panes.len(), 1);
 
-    // The phone claims the tab and opens another pane: its zoom wins.
+    // The phone shows the tab and picks another pane without the button
+    // (#473): the desktop's focus ends, and the size and owner stay.
     let (mut phone, _) = connect_async(d.ws("/ws")).await.unwrap();
     let In::Msg(ServerMsg::Hello { .. }) = recv(&mut phone).await else { panic!("expected hello") };
     view(&mut phone, tab, (60, 59), Some(ids[1])).await;
-    let s = state_where(&mut phone, |s| s.tabs[0].focus.is_none() && s.tabs[0].zoom == Some(ids[1])).await;
-    assert_eq!(s.tabs[0].layout.panes.iter().map(|p| p.0).collect::<Vec<_>>(), vec![ids[1]]);
-    // Tapping a third pane isn't blocked either.
+    let s = state_where(&mut phone, |s| s.tabs[0].focus.is_none()).await;
+    assert_eq!((s.tabs[0].cols, s.tabs[0].rows, s.tabs[0].zoom), (120, 40, None), "the desktop's size stays");
+    assert_eq!(s.tabs[0].layout.panes.len(), 3, "every pane is reachable");
+    // Tapping a third pane isn't blocked either, nor does it take the size.
     view(&mut phone, tab, (60, 59), Some(ids[2])).await;
-    state_where(&mut phone, |s| s.tabs[0].layout.panes.iter().map(|p| p.0).collect::<Vec<_>>() == vec![ids[2]]).await;
+    let s = state_where(&mut phone, |s| s.tabs[0].focus.is_none()).await;
+    assert_eq!((s.tabs[0].cols, s.tabs[0].rows), (120, 40));
 
-    // The desktop focuses again: it takes the tab back first (same person),
-    // and its focus holds.
+    // The desktop, still the holder, focuses again and its focus holds.
     intent(&mut desktop, Intent::Focus { tab, pane: Some(ids[0]) }).await;
     let s = state_where(&mut desktop, |s| s.tabs[0].focus == Some(ids[0])).await;
     assert_eq!((s.tabs[0].cols, s.tabs[0].rows), (120, 40), "the tab has the desktop's size");

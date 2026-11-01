@@ -7,7 +7,7 @@ use crate::{
     pane::{Start, ToClient, Want},
     store::{PaneLog, PaneMeta},
 };
-use arugula_core::{Claim, Effect, Intent, Role};
+use arugula_core::{Effect, Intent, Role};
 use arugula_proto::{
     Activity, Attention, ClientId, ClientMsg, Delta, Driver, EventKind, MachineId, Owner, PaneId, PaneInfo, PaneOp,
     Presence, ServerMsg, SessionId, State, TabId,
@@ -57,7 +57,7 @@ impl Daemon {
                     }
                 }
             }
-            ClientMsg::View { tab, cols, rows, zoom, claim, typed, asked } => {
+            ClientMsg::View { tab, cols, rows, zoom, claim, typed: _, asked } => {
                 match zoom {
                     Some(z) => self.zoomed.insert(client, z),
                     None => self.zoomed.remove(&client),
@@ -78,14 +78,13 @@ impl Daemon {
                 if !editor {
                     return;
                 }
-                let claim = match (claim, typed) {
-                    (false, _) => Claim::No,
-                    (true, true) => Claim::Typed,
-                    (true, false) => Claim::Yes,
-                };
-                let claim = self.between_people(client, who.id(), tab, claim, asked);
-                let now = std::time::Instant::now();
-                if let Ok(true) = self.hold.view(&mut self.mux, client, tab, (cols, rows), zoom, claim, now) {
+                // `typed` is from older clients, whose typing claimed the size.
+                let take = self.may_take(client, tab, claim, asked);
+                // Showing the tab or picking a pane without the size: the
+                // holder's focus ends, as it would if this screen took the
+                // size, but the size stays (#439).
+                let freed = claim && !take && self.mux.end_focus_for(client, tab);
+                if matches!(self.mux.view(client, tab, cols, rows, zoom, take), Ok(true)) || freed {
                     self.changed();
                 }
             }
@@ -493,25 +492,15 @@ impl Daemon {
         }
     }
 
-    /// A claim on `tab`'s size from `client` (`who`), after the rule between
-    /// people (#1502, DECISIONS.md "Size arbitration"). Switching to a tab or
-    /// typing in it takes the size from nobody or from the same person's
-    /// window, never from another person's; that takes `asked` (the button).
-    /// An owner whose client has gone is nobody's.
-    fn between_people(&self, client: ClientId, who: &str, tab: TabId, claim: Claim, asked: bool) -> Claim {
-        let other = self
-            .mux
-            .tab(tab)
-            .ok()
-            .and_then(|t| t.owner)
-            .filter(|o| *o != client)
-            .and_then(|o| self.clients.get(&o))
-            .is_some_and(|o| o.principal.id() != who);
-        match claim {
-            Claim::Yes if other && asked => Claim::Yes,
-            _ if other => Claim::No,
-            c => c,
-        }
+    /// Whether a claim on `tab`'s size from `client` takes it (#473, DECISIONS.md
+    /// "Size arbitration"). While another connected client holds the size, only
+    /// `asked` (the button) takes it: typing, mouse and focus reports, showing
+    /// the tab and zooming don't, whoever the holder is. An owner whose client
+    /// has gone is nobody's.
+    fn may_take(&self, client: ClientId, tab: TabId, claim: bool, asked: bool) -> bool {
+        let held =
+            self.mux.tab(tab).ok().and_then(|t| t.owner).is_some_and(|o| o != client && self.clients.contains_key(&o));
+        claim && (asked || !held)
     }
 
     /// A focus is its holder's view, so `client` takes the tab first, under
@@ -522,28 +511,24 @@ impl Daemon {
         if owner.is_none_or(|o| o == client) {
             return Ok(());
         }
-        let who = self.clients.get(&client).map(|c| c.principal.id().to_owned()).unwrap_or_default();
-        let claim = self.between_people(client, &who, tab, Claim::Yes, false);
-        if claim != Claim::Yes {
+        if !self.may_take(client, tab, true, false) {
             return Err("someone else is using this tab's size: ask for it first".to_owned());
         }
         let size = self.view_size.get(&client).copied().ok_or("show the tab first")?;
         let zoom = self.zoomed.get(&client).copied();
-        let now = std::time::Instant::now();
-        if self.hold.view(&mut self.mux, client, tab, size, zoom, claim, now).map_err(|e| e.to_string())? {
+        if self.mux.view(client, tab, size.0, size.1, zoom, true).map_err(|e| e.to_string())? {
             self.changed();
         }
         Ok(())
     }
 
-    /// An ssh guest's (`who`, a principal id) window (M65) sizes the pane's tab, zoomed to it.
+    /// An ssh guest's window (M65) sizes the pane's tab, zoomed to it.
     #[cfg(feature = "labs")]
-    pub(super) fn guest_view(&mut self, client: ClientId, who: &str, pane: PaneId, (cols, rows): (u16, u16)) {
+    pub(super) fn guest_view(&mut self, client: ClientId, pane: PaneId, (cols, rows): (u16, u16)) {
         let Ok(tab) = self.mux.tab_of(pane) else { return };
-        // A guest never asks, so they never take another person's size.
-        let claim = self.between_people(client, who, tab, Claim::Yes, false);
-        let now = std::time::Instant::now();
-        if let Ok(true) = self.hold.view(&mut self.mux, client, tab, (cols, rows), Some(pane), claim, now) {
+        // A guest never asks, so they never take a connected holder's size.
+        let claim = self.may_take(client, tab, true, false);
+        if let Ok(true) = self.mux.view(client, tab, cols, rows, Some(pane), claim) {
             self.changed();
         }
     }

@@ -478,9 +478,6 @@ struct Daemon {
     /// Terminals brought back at startup that didn't keep running across
     /// it (`PaneInfo.restored`).
     restored: std::collections::HashSet<PaneId>,
-    /// Who's been typing in the tabs whose size they own: another client's
-    /// typing waits for them to stop before taking the size (#333).
-    hold: arugula_core::SizeHold,
     clients: HashMap<ClientId, Subscriber>,
     /// The pane each client's focused window is looking at.
     focus: HashMap<ClientId, PaneId>,
@@ -678,7 +675,6 @@ pub fn start(
         live_pid: HashMap::new(),
         links: Default::default(),
         restored: Default::default(),
-        hold: Default::default(),
         clients: HashMap::new(),
         focus: HashMap::new(),
         refused: HashMap::new(),
@@ -1466,9 +1462,6 @@ impl Daemon {
                         }
                         None => {}
                     }
-                }
-                if focus_report(&data).is_none() {
-                    self.hold.typed(&self.mux, c, pane, std::time::Instant::now());
                 }
                 let name = self.driver_for(c).name;
                 self.input(pane, data, Some(name))

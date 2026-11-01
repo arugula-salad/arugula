@@ -63,14 +63,15 @@ export function TabArea({ client, tab, cell, phone }: { client: Client; tab: Tab
   }, [client, tab.id, tab.focus, holder]);
 
   // Tell the daemon what we show. Showing a tab (or another pane, on a
-  // phone) claims its size; resizing the window only updates a size we own.
+  // phone) claims its size, which the daemon grants only if no other screen
+  // holds it; resizing the window only updates a size we own.
   const size = useRef({ cols, rows, zoom });
   size.current = { cols, rows, zoom };
   const shown = useRef<{ tab: TabId; zoom: PaneId | null } | null>(null);
   useEffect(() => {
-    client.claim = (t, typed, asked) => {
+    client.claim = (t, asked) => {
       const s = size.current;
-      if (s.cols) client.view(t, s.cols, s.rows, s.zoom, true, typed, asked);
+      if (s.cols) client.view(t, s.cols, s.rows, s.zoom, true, asked);
     };
   }, [client]);
   useEffect(() => {
@@ -129,7 +130,7 @@ export function TabArea({ client, tab, cell, phone }: { client: Client; tab: Tab
   // Said in a pane's header, the active one's, where it covers nothing
   // (UI audit #171); a phone, with no headers, keeps the note.
   const chipOn = elsewhere && headers ? (active ?? tab.layout.panes[0]?.[0] ?? null) : null;
-  const claimHere = () => client.claim(tab.id, false, true);
+  const claimHere = () => client.claim(tab.id, true);
 
   // A viewer on a phone (a read-only link's page, or someone who only
   // watches) can't size the tab to the phone, so the owner's whole tab

@@ -1,7 +1,7 @@
-// #333: two windows with edit rights on one pane used to resize it back
+// #333, #473: two windows with edit rights on one pane used to resize it back
 // and forth (every resize is a SIGWINCH and a redraw) at every turn of
 // typing, and whenever a window was focused. The size now stays with the
-// window that has it until it stops typing for a few seconds.
+// window that has it until the other presses "Use this window's size".
 
 import { expect, test, type Page } from "@playwright/test";
 import { active, closeContexts, open, ready, reset, run, tab, text, type } from "./helpers";
@@ -17,10 +17,9 @@ test("two windows typing in turn don't resize the pane at every turn", async ({ 
   const b = await (await browser.newContext({ viewport: { width: 760, height: 480 } })).newPage();
   await open(b);
   await ready(b, pane);
-  // B showed the tab last, so the size is B's; A asks for it back.
-  await expect.poll(async () => (await tab(a)).owner).toBe(await me(b));
-  await a.locator("[data-sized-elsewhere]").getByRole("button", { name: "Use this window's size" }).click();
-  await expect.poll(async () => (await tab(a)).owner).toBe(await me(a));
+  // A had the tab first, and B showing it doesn't take it.
+  await expect(b.locator("[data-sized-elsewhere]").getByRole("button", { name: "Use this window's size" })).toBeVisible();
+  expect((await tab(a)).owner).toBe(await me(a));
   const sized = await tab(a);
 
   // Every size the tab has from now on (each one resizes the PTY).
@@ -54,9 +53,13 @@ test("two windows typing in turn don't resize the pane at every turn", async ({ 
   expect(await sizes(), "the pane was resized while they took turns").toEqual([`${sized.cols}x${sized.rows}`]);
   expect((await tab(a)).owner).toBe(await me(a));
 
-  // Once A has left the keyboard for a while, B's typing takes the size.
+  // However long A has left the keyboard, B's typing doesn't take it: the
+  // button does.
   await b.waitForTimeout(3500);
-  await type(b, pane, "echo b-takes\n");
+  await type(b, pane, "echo b-stays\n");
+  await expect.poll(() => text(a, pane)).toContain("b-stays");
+  expect((await tab(a)).owner).toBe(await me(a));
+  await b.locator("[data-sized-elsewhere]").getByRole("button", { name: "Use this window's size" }).click();
   await expect.poll(async () => (await tab(a)).owner).toBe(await me(b));
   expect(await sizes()).toHaveLength(2);
 });

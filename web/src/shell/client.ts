@@ -434,11 +434,10 @@ export class Client {
     this.send({ type: "focus", pane });
   }
 
-  /** Set by the UI: make this client's size the tab's size. `typed`: for
-   * typing, which the daemon holds off while the size's owner is still
-   * typing (#333). `asked`: the person pressed "Use this window's size",
-   * the only claim that takes the size from another person (#1502). */
-  claim: (tab: TabId, typed?: boolean, asked?: boolean) => void = () => {};
+  /** Set by the UI: make this client's size the tab's size. `asked`: the
+   * person pressed "Use this window's size", the only claim that takes the
+   * size from another connected screen (#473). */
+  claim: (tab: TabId, asked?: boolean) => void = () => {};
 
   private link: Link | undefined;
   private retry = 0;
@@ -1174,15 +1173,11 @@ export class Client {
     return id;
   }
 
-  view(tab: TabId, cols: number, rows: number, zoom: PaneId | null, claim: boolean, typed = false, asked = false) {
-    this.send({ type: "view", tab, cols, rows, zoom, claim, typed, ...(asked ? { asked } : {}) });
+  view(tab: TabId, cols: number, rows: number, zoom: PaneId | null, claim: boolean, asked = false) {
+    this.send({ type: "view", tab, cols, rows, zoom, claim, ...(asked ? { asked } : {}) });
   }
 
   input(pane: PaneId, data: Uint8Array) {
-    const tab = this.tabOfPane(pane);
-    // Typing here makes this window the one whose size counts, once
-    // whoever has it stops typing for a moment.
-    if (tab && tab.owner !== this.clientId) this.claim(tab.id, true);
     data = this.applyModifiers(data);
     if (this.link?.open) this.link.sendBinary(encodeFrame(FrameKind.Input, pane, data));
   }

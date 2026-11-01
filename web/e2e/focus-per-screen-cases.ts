@@ -33,37 +33,42 @@ export function focusPerScreenTests(profile: Phone) {
     await expect.poll(() => focus(desktop)).toBe(one);
     await expect.poll(() => shownIds(desktop)).toEqual([one]);
 
-    // The phone opens the tab, then another pane, and sees it.
+    // The phone opens the tab, then picks panes, with no button: the
+    // desktop's focus ends and every pane is there, and the size stays the
+    // desktop's (#473).
     const phone = await (await browser.newContext(profile)).newPage();
     await open(phone);
-    await tap(phone, two);
-    await expect.poll(() => shownIds(phone)).toEqual([two]);
-    expect(await focus(phone)).toBeNull();
-    await tap(phone, three);
-    await expect.poll(() => shownIds(phone)).toEqual([three]);
-    await tap(phone, one);
-    await expect.poll(() => shownIds(phone)).toEqual([one]);
+    const held = (await tab(desktop)).owner;
+    // Columns only: the desktop's own rows follow its chrome as a focus comes and goes.
+    const sized = async () => (await tab(desktop)).cols;
+    const size = await sized();
+    await expect.poll(() => focus(desktop)).toBeNull();
+    await expect.poll(() => shownIds(phone)).toHaveLength(3);
+    for (const p of [two, three, one]) {
+      await tap(phone, p);
+      await expect.poll(() => shownIds(phone)).toHaveLength(3);
+    }
+    expect((await tab(desktop)).owner).toBe(held);
+    expect(await sized()).toBe(size);
 
-    // The desktop focuses again without being refused: it takes the tab
-    // back. The phone is then the one it traps no longer: its tap wins.
+    // The desktop, still the holder, focuses again. The phone is not
+    // trapped by it: its tap ends it.
     await desktop.evaluate((p) => window.__arugula.client.setActive(p), two);
     await toolbar.locator("[data-pane-focus]").click();
     await expect.poll(() => focus(desktop)).toBe(two);
     await expect.poll(() => shownIds(desktop)).toEqual([two]);
     await tap(phone, three);
-    await expect.poll(() => shownIds(phone)).toEqual([three]);
     await expect.poll(() => focus(desktop)).toBeNull();
+    await expect.poll(() => shownIds(phone)).toHaveLength(3);
+    expect((await tab(desktop)).owner).toBe(held);
+    expect(await sized()).toBe(size);
 
-    // Restoring on the desktop (which took the tab to focus) hides nothing
-    // from the phone: it sees every pane, and a tap still opens one.
+    // Restoring on the desktop hides nothing from the phone.
     await toolbar.locator("[data-pane-focus]").click();
     await expect.poll(() => focus(desktop)).toBe(two);
     await toolbar.locator("[data-pane-focus]").click();
     await expect.poll(() => focus(desktop)).toBeNull();
     await expect.poll(() => shownIds(phone)).toHaveLength(3);
-    await tap(phone, two);
-    await expect.poll(() => shownIds(phone)).toEqual([two]);
-    expect(await focus(desktop)).toBeNull();
 
     // With the phone gone, the desktop focuses and restores as ever.
     await phone.context().close();
