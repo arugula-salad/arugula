@@ -12483,6 +12483,43 @@ html[data-workspace="new"] .thread-panel {
   background: color-mix(in srgb, var(--info) 12%, var(--surface));
 }
 
+/* #468: a deploy waiting for you on the phone: the whole row is the tap. */
+.deploys-waiting-note {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 44px;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  border-radius: 0;
+  background: color-mix(in srgb, var(--info) 14%, var(--surface));
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.deploys-waiting-dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--info);
+}
+
+.deploys-waiting-said {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.deploys-waiting-go {
+  flex: none;
+  color: var(--dim);
+}
+
 .ws-group-stale {
   font-weight: 400;
 }

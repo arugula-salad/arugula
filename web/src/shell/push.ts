@@ -1,6 +1,7 @@
 // Web Push: let the daemon notify this device when a pane needs you.
 
 import { OPS, opPath } from "./ops";
+import type { PushStanding } from "./push-health";
 
 /** `insecure`: plain http, where browsers have no push. `install`: iOS in
  * a Safari tab, which has push only once added to the Home Screen (#96). */
@@ -44,7 +45,9 @@ export async function registerWorker(
 export async function pushState(): Promise<PushState> {
   if (backend?.state) return backend.state();
   if (!isSecureContext) return "insecure";
-  if (!supported()) return ios() && !standalone() ? "install" : "unsupported";
+  // #468: an iPhone in a Safari tab has no push, whatever it offers.
+  if (ios() && !standalone()) return "install";
+  if (!supported()) return "unsupported";
   if (Notification.permission === "denied") return "denied";
   const reg = await navigator.serviceWorker.getRegistration();
   const sub = await reg?.pushManager.getSubscription();
@@ -73,6 +76,10 @@ export interface PushBackend {
   prefs(): Promise<PushPrefs>;
   setPrefs(p: Partial<PushPrefs>): Promise<PushPrefs>;
   state?(): Promise<PushState>;
+  /** #468: how the account's subscriptions stand, and this device's. */
+  check?(): Promise<PushStanding>;
+  /** #468: a test notification to every subscription the account has. */
+  test?(): Promise<PushStanding>;
   note?: string;
 }
 let backend: PushBackend | null = null;
@@ -91,6 +98,28 @@ export const pushPrefs = () => backend?.prefs() ?? Promise.resolve(null);
 export const setPushPrefs = (p: Partial<PushPrefs>) => backend?.setPrefs(p) ?? Promise.resolve(null);
 /** When this device is notified, if not always ("while the app is open"). */
 export const pushNote = () => backend?.note ?? null;
+/** How the account's subscriptions stand, where the backend can say (control). */
+export const pushCheck = () => backend?.check?.() ?? Promise.resolve(null);
+/** Send every subscription of the account a test, where the backend can (control). */
+export const pushTest = () => backend?.test?.() ?? Promise.resolve(null);
+export const canTestPush = () => !!backend?.test;
+
+/** This browser's own push subscription, if it has one. */
+export async function currentSubscription(): Promise<PushSubscription | null> {
+  if (!("serviceWorker" in navigator) || !("PushManager" in window)) return null;
+  try {
+    const reg = await navigator.serviceWorker.getRegistration();
+    return (await reg?.pushManager.getSubscription()) ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/** A subscription's parts as control takes them. */
+export function subscriptionParts(sub: PushSubscription): { endpoint: string; p256dh: string; auth: string } | null {
+  const j = sub.toJSON() as { endpoint?: string; keys?: { p256dh?: string; auth?: string } };
+  return j.endpoint && j.keys?.p256dh && j.keys.auth ? { endpoint: j.endpoint, p256dh: j.keys.p256dh, auth: j.keys.auth } : null;
+}
 
 /** The desktop app's notifications (crates/desktop/src/notices.rs): the app
  * makes the subscription's keys and keeps them, control takes it at its own
@@ -104,6 +133,8 @@ export function desktopPush(
     unsubscribe(endpoint: string): Promise<unknown>;
     prefs(): Promise<PushPrefs>;
     setPrefs(p: Partial<PushPrefs>): Promise<PushPrefs>;
+    check(endpoint: string | null): Promise<PushStanding>;
+    test(endpoint: string | null): Promise<PushStanding>;
   },
 ): PushBackend {
   return {
@@ -124,6 +155,8 @@ export function desktopPush(
     },
     prefs: () => control.prefs(),
     setPrefs: (p) => control.setPrefs(p),
+    check: () => control.check(null),
+    test: () => control.test(null),
   };
 }
 

@@ -24,6 +24,7 @@ import { DocShareLayer } from "./doc-share";
 import { ConversationsLayer } from "./conversations";
 import { PickerLayer } from "./picker";
 import { InstallHint } from "./notify";
+import { DeploysWaitingNote } from "./deploys-waiting";
 import { GettingStartedLayer, useFirstRun } from "./welcome";
 import { machineSettingsItems } from "./commands";
 import { PaletteLayer } from "./palette";
@@ -207,6 +208,8 @@ export function App({ client, cell }: { client: Client; cell: Cell }) {
     <div class={phone ? "app phone" : "app"}>
       {/* A computer gets here only before a machine answers. */}
       {state && phone && <PhoneHeader client={client} />}
+      {/* #468: a deploy waiting for you, one tap away. */}
+      {phone && <DeploysWaitingNote />}
       {state && <ControlBanner client={client} />}
       <LinkNote />
       <MovingNote />

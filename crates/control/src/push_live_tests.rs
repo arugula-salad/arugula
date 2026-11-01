@@ -383,3 +383,67 @@ async fn subscriptions_and_pushes_are_bounded() {
     assert_eq!((got.sent, got.failed > 0), (0, true));
     assert_eq!(push_account(&c.app, "a2ada", msg.as_bytes(), PushOptions::default()).await.unwrap().sent, 1);
 }
+
+/// *Send a test notification* (#468): `POST /api/push/test` goes to every
+/// subscription the account has, whatever it chose to hear, and says how
+/// they stand: how many, how many the platform's pushes (a deploy's) may
+/// go to, and whether control has this device's. `/api/push/check` says
+/// the same without sending. A subscription whose device control no longer
+/// approves is one a deploy's push skips, and both say so.
+#[tokio::test]
+async fn a_test_notification_goes_to_every_subscription_and_says_how_they_stand() {
+    use crate::push::push_account;
+    use arugula_platform_api::hub::PushOptions;
+
+    let c = control(|_| {}).await;
+    let jake = person(&c.app, "jake", "a1jake");
+    let jc = session(&c.app, "a1jake");
+    let phone = subscribe(&c, &jc, "a1jake", &jake, 21).await;
+    // The laptop's subscription, from a device control then stops approving.
+    let laptop_keys = DeviceKeys::generate();
+    let mut laptop = arugula_e2e::Cert::new(&laptop_keys, "a1jake", arugula_e2e::Kind::Browser, "laptop");
+    laptop.sign_with(&laptop_keys);
+    c.app.db.put_device(&laptop, true, now_ms()).unwrap();
+    let old = subscribe(&c, &jc, "a1jake", &laptop_keys, 22).await;
+    c.app.db.put_device(&laptop, false, now_ms()).unwrap();
+    let mut ps = Stream::open(&c, &phone.endpoint, &phone.listen).await.unwrap();
+
+    let check = |endpoint: Option<&str>| {
+        let body = json!({ "endpoint": endpoint });
+        let (c, jc) = (&c, &jc);
+        async move { c.as_person(jc, "POST", "/api/push/check", Some(body)).await }
+    };
+    let (st, v) = check(Some(&phone.endpoint)).await;
+    assert_eq!(st, 200, "{v}");
+    assert_eq!((v["subscriptions"].as_u64(), v["usable"].as_u64()), (Some(2), Some(1)));
+    assert_eq!(v["this_device"], "usable");
+    assert_eq!(check(Some(&old.endpoint)).await.1["this_device"], "unusable");
+    let elsewhere = format!("{}/api/push/live/{}", c.base, "cd".repeat(16));
+    assert_eq!(check(Some(&elsewhere)).await.1["this_device"], "missing", "control doesn't have it");
+    assert_eq!(check(None).await.1["this_device"], Value::Null);
+
+    // A deploy's push: the approved device's alone.
+    let deploy = json!({ "title": "Approve a deploy to prod?", "body": "b", "tag": "deploy-dep_1", "deploy": "dep_1" });
+    let got = push_account(&c.app, "a1jake", deploy.to_string().as_bytes(), PushOptions::default()).await.unwrap();
+    assert_eq!((got.sent, got.failed), (1, 0));
+    assert_eq!(phone.open(&ps.next(SOON).await.unwrap())["deploy"], "dep_1");
+
+    // The test: both, though Jake turned projects off; the phone shows it.
+    let (st, _) = c.as_person(&jc, "POST", "/api/push/prefs", Some(json!({ "projects": false }))).await;
+    assert_eq!(st, 200);
+    let (st, v) = c.as_person(&jc, "POST", "/api/push/test", Some(json!({ "endpoint": phone.endpoint }))).await;
+    assert_eq!(st, 200, "{v}");
+    assert_eq!((v["subscriptions"].as_u64(), v["usable"].as_u64()), (Some(2), Some(1)));
+    assert_eq!((v["sent"].as_u64(), v["gone"].as_u64(), v["failed"].as_u64()), (Some(2), Some(0), Some(0)));
+    assert_eq!(v["this_device"], "usable");
+    let n = phone.open(&ps.next(SOON).await.expect("the phone hears the test"));
+    assert_eq!(
+        (n["title"].as_str(), n["tag"].as_str(), n["control"].as_bool()),
+        (Some("Arugula test notification"), Some("push-test"), Some(true))
+    );
+    assert_eq!(n["body"], "Notifications reach this device. Sent to 2 subscriptions.");
+
+    // Someone signed out can't ask.
+    let res = c.http.post(format!("{}/api/push/test", c.base)).json(&json!({})).send().await.unwrap();
+    assert_eq!(res.status(), 401);
+}

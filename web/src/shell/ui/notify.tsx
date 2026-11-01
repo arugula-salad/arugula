@@ -5,7 +5,23 @@
 import { OPS, opPath } from "../ops";
 import { useEffect, useState } from "preact/hooks";
 import type { Client } from "../client";
-import { disablePush, enablePush, ios, onPushBackend, pushNote, pushPrefs, pushState, setPushPrefs, standalone, type PushPrefs, type PushState } from "../push";
+import {
+  canTestPush,
+  disablePush,
+  enablePush,
+  ios,
+  onPushBackend,
+  pushCheck,
+  pushNote,
+  pushPrefs,
+  pushState,
+  pushTest,
+  setPushPrefs,
+  standalone,
+  type PushPrefs,
+  type PushState,
+} from "../push";
+import { HOME_SCREEN, blockerOf, healthOf, standingSaid, testSaid, type PushStanding } from "../push-health";
 import type { MenuItem } from "../../shared/ui/menu";
 import { CopyText } from "../../shared/ui/copy";
 import { openGettingStarted } from "./welcome";
@@ -13,20 +29,63 @@ import { openGettingStarted } from "./welcome";
 let push: PushState = "unsupported";
 /** What control pushes the account about; null off control, or not yet asked. */
 let prefs: PushPrefs | null = null;
+/** #468: how the account's subscriptions stand (control's), once asked. */
+let standing: PushStanding | null = null;
+/** What the last test notification did, in words; null before one. */
+let tested: string | null = null;
+let testing = false;
 const listeners = new Set<() => void>();
+const changed = () => listeners.forEach((fn) => fn());
 /** Ask again when another backend takes over (the desktop app's). */
 const reload = () =>
   void pushState().then((s) => {
     push = s;
-    listeners.forEach((fn) => fn());
+    changed();
     if (s === "on") void loadPrefs();
+    void loadStanding();
   });
 reload();
 onPushBackend(reload);
 
 async function loadPrefs() {
   prefs = await pushPrefs().catch(() => null);
-  listeners.forEach((fn) => fn());
+  changed();
+}
+
+/** Control's word on the account's subscriptions (#468). Asking may hand
+ * this device's over again (main.tsx), so the state is read after. */
+async function loadStanding() {
+  if (!canTestPush()) return;
+  standing = await pushCheck().catch(() => standing);
+  changed();
+}
+
+/** The browser's notification permission, when it has one. */
+const permission = () => ("Notification" in window ? Notification.permission : null);
+
+/** What's wrong with this device's notifications (#468), or null. */
+export const notifyHealth = () => healthOf(push, standing, permission());
+
+/** *Send a test notification* (#468): to every subscription the account
+ * has; what became of it shows beside the button and as a toast. */
+export async function sendTestPush(client: Client) {
+  if (testing) return;
+  testing = true;
+  changed();
+  try {
+    const r = await pushTest();
+    if (r) {
+      standing = r;
+      tested = testSaid(r);
+      client.toast(tested);
+    }
+  } catch (e) {
+    tested = String(e instanceof Error ? e.message : e);
+    client.toast(tested);
+  } finally {
+    testing = false;
+    changed();
+  }
 }
 
 export const pushNow = () => push;
@@ -45,18 +104,7 @@ export function serveCommand(): string {
 
 /** Why this device can't be notified, when it can't. */
 export function notifyBlocker(s: PushState = push): string | null {
-  switch (s) {
-    case "insecure":
-      return "Notifications need HTTPS";
-    case "install":
-      return "Add it to your Home Screen first (Share › Add to Home Screen), then open it from there";
-    case "denied":
-      return "Notifications are blocked for this site in your browser's settings";
-    case "unsupported":
-      return "This browser can't show notifications";
-    default:
-      return null;
-  }
+  return blockerOf(s);
 }
 
 /** Turn this device's notifications on or off, as the menu's switch does. */
@@ -72,7 +120,8 @@ export async function toggleNotify(client: Client) {
   } catch (e) {
     client.toast(String(e));
   }
-  listeners.forEach((fn) => fn());
+  void loadStanding();
+  changed();
   client.emit();
 }
 
@@ -104,16 +153,27 @@ async function setKind(client: Client, key: keyof PushPrefs, on: boolean) {
   client.emit();
 }
 
-export function notificationItems(client: Client): MenuItem[] {
-  const blocked = notifyBlocker();
-  // Plain http: the fix is Tailscale, a button in Getting started's phone step.
-  if (push === "insecure") return [{ label: `${blocked}…`, run: () => openGettingStarted("phone") }];
-  if (blocked) return [{ label: blocked, disabled: true, run: () => {} }];
+/** #468: *Send a test notification*, on control: to every subscription the
+ * account has, with how many there are. */
+function testItem(client: Client): MenuItem[] {
+  if (!canTestPush()) return [];
+  return [
+    {
+      label: testing ? "Sending a test notification…" : "Send a test notification",
+      hint: standing ? `${standingSaid(standing)} The test goes to every one.` : "To every device of yours with notifications on",
+      disabled: testing,
+      run: () => void sendTestPush(client),
+    },
+  ];
+}
+
+/** This device's switch, then (on control, while it's on) what to push
+ * about, for every device that's on. Notices about the account (a device
+ * waiting, a new agent token) always go. */
+function switchItems(client: Client): MenuItem[] {
   // The desktop app's: only while it runs (crates/desktop/src/notices.rs).
   const note = pushNote();
   const device: MenuItem = { label: note ? `Notify this device (${note})` : "Notify this device", checked: push === "on", run: () => void toggleNotify(client) };
-  // On control, what to push about, for every device that's on. Notices
-  // about the account (a device waiting, a new agent token) always go.
   const p = push === "on" ? prefs : null;
   if (!p) return [device];
   return [
@@ -125,6 +185,18 @@ export function notificationItems(client: Client): MenuItem[] {
       run: () => void setKind(client, key, !p[key]),
     })),
   ];
+}
+
+export function notificationItems(client: Client): MenuItem[] {
+  const blocked = notifyBlocker();
+  // Plain http: the fix is Tailscale, a button in Getting started's phone step.
+  if (push === "insecure") return [{ label: `${blocked}…`, run: () => openGettingStarted("phone") }];
+  if (blocked) return [{ label: blocked, disabled: true, run: () => {} }, ...testItem(client)];
+  const [device, ...kinds] = switchItems(client);
+  // #468: what's wrong with this device's, said plainly (on control).
+  const health = canTestPush() ? notifyHealth() : null;
+  const said: MenuItem[] = health ? [{ label: health, disabled: true, run: () => {} }] : [];
+  return [device, ...said, ...kinds, ...testItem(client)];
 }
 
 /** M29: someone other than the owner chooses which agents they're told
@@ -153,7 +225,12 @@ export function NotifySection({ client, session }: { client: Client; session: nu
   const [, setTick] = useState(0);
   useEffect(() => subscribePush(() => setTick((t) => t + 1)), []);
   const blocked = notifyBlocker();
-  const items = [...(blocked ? [] : notificationItems(client)), ...(session !== null ? agentNotifyItems(client, session) : [])];
+  // The toggles; the health line and the test are drawn as themselves below.
+  const items = [
+    ...(blocked ? [] : switchItems(client)),
+    ...(session !== null ? agentNotifyItems(client, session) : []),
+  ];
+  const health = blocked || !canTestPush() ? null : notifyHealth();
   return (
     <section class="sheet-notify">
       <h2>Notifications</h2>
@@ -164,6 +241,11 @@ export function NotifySection({ client, session }: { client: Client; session: nu
         </p>
       )}
       {push === "insecure" && <CopyText text={serveCommand()} data-serve-command />}
+      {health && (
+        <p class="sheet-note" data-notify-health>
+          {health}
+        </p>
+      )}
       {items.map(
         (item) =>
           typeof item === "object" &&
@@ -172,6 +254,16 @@ export function NotifySection({ client, session }: { client: Client; session: nu
               <span class="sheet-check">{item.checked ? "●" : "○"}</span> {item.label}
             </button>
           ),
+      )}
+      {canTestPush() && (
+        <>
+          <button class="sheet-item" data-push-test disabled={testing} onClick={() => void sendTestPush(client)}>
+            {testing ? "Sending a test notification…" : "Send a test notification"}
+          </button>
+          <p class="sheet-note" data-push-standing>
+            {tested ?? (standing ? standingSaid(standing) : "")}
+          </p>
+        </>
       )}
     </section>
   );
@@ -229,9 +321,7 @@ export function InstallHint() {
           </button>
         </>
       ) : (
-        <span>
-          Add it to your Home Screen (Share › Add to Home Screen) and open it from there: that's where notifications work.
-        </span>
+        <span>{HOME_SCREEN} (Share › Add to Home Screen), and open it from there.</span>
       )}
       <button class="install-hint-close" aria-label="Dismiss" onClick={dismiss}>
         ×

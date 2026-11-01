@@ -98,7 +98,7 @@ use axum::{
 };
 use serde::Deserialize;
 use serde_json::{Value, json};
-use tracing::warn;
+use tracing::{info, warn};
 
 use crate::{
     Platform,
@@ -725,7 +725,12 @@ async fn push_owners(app: &Platform, by: &Actor, d: &Deploy, env: &Environment, 
         Actor::Person(me) => Some(me.clone()),
         _ => None,
     };
+    let owners = to.len();
     let to: Vec<String> = to.into_iter().filter(|a| crate::notify::notice_goes(app, a)).collect();
+    // What went to the hub (#468): which deploy, to how many owners, and
+    // how many were held back by do not disturb (`notify::notice_goes`). The
+    // hub logs what became of each.
+    info!(deploy = %d.id, accounts = to.len(), paused = owners - to.len(), "deploy: push handed to the hub");
     let hub = app.hub.clone();
     let id = d.id.clone();
     tokio::spawn(async move {
