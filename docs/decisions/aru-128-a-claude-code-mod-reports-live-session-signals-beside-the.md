@@ -144,6 +144,40 @@ be marked an overflow. The mod's `window` overrides the guess
   conversation alone (13k), not the fill the next turn reports (52k): hold the
   fill until the next usage instead.
 
+## Follow-up: one hooks.json holds both (#449, 2026-10-31)
+
+Condition 4's check, run with a copy of `plugins/claude-code/hooks/hooks.json`
+plus `"modules": ["./register.ts"]` (the mod) in one plugin, each version
+installed alone (npm prefix, its own `CLAUDE_CONFIG_DIR`), a `claude -p` turn
+against a stub API, and `arugula` a stub that logs its calls:
+
+- **With mods (2.1.286, 2.1.296, 2.1.316):** both run. The command hooks
+  (SessionStart, UserPromptSubmit, Stop: `inbox`, `hook`, `attention done`)
+  fire as they do without the module, and the mod sends `start`, `step` and
+  `usage`. The same from `--plugin-dir` and from a marketplace install.
+- **Without mods (2.1.144, 2.1.200):** `modules` is ignored without a word,
+  even in the debug log; `claude plugin validate` passes and a marketplace
+  install works. All 12 hooks register and run.
+- **Mods behind a rollout flag (about 2.1.250 to 2.1.285):** `modules` is
+  skipped (`hooks modules not loaded: rollout flag
+  (tengu_plugin_hooks_modules) is off`) and the hooks run. Where that
+  server-side flag was on, the mod would fail to load there (2.1.250's engine
+  doesn't know `session.start`); that case couldn't be forced here.
+- **A module that fails to load** (a syntax error, a throw in `register`, an
+  event the engine doesn't know) never takes the command hooks with it
+  (2.1.316): `Registered 12 hooks` all the same, and the failure is one line
+  (`<plugin>: hooks module did not load: ...`), in the debug log for an
+  installed plugin and on stderr for a `--plugin-dir` one under `claude -p`.
+- **Event names are checked at load.** The engine refuses the whole module for
+  one `on(...)` name it doesn't know, or one that isn't a string literal, so
+  `try` around `on` can't soften it: the names stay pinned, and a missing
+  event means no mod (and no status line), never broken hooks.
+
+So the condition is met: one `hooks.json` works on every version tried, and
+`arugula-live` folds into the arugula plugin as an option that's off by
+default (#447): no second plugin to install, and with the option off the
+module loads and hooks nothing.
+
 Where: `plugins/claude-code/mod/` (the mod), `crates/cli/src/hook.rs`
 (`session_signal`), `crates/arugulad-agent/src/ops.rs` (`PaneSessionSignal`),
 `crates/arugulad-agent/src/conversations/context.rs` (`Context::signal`).
