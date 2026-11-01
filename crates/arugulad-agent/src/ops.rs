@@ -11,8 +11,11 @@ use std::collections::HashMap;
 
 use arugula_proto::{
     PaneId,
-    api::{ConversationList, ConversationRow, ConversationsQuery, OpenConversationRequest, OpenConversationResponse},
-    op::ops::{ConversationOpen, ConversationsList},
+    api::{
+        ConversationList, ConversationRow, ConversationsQuery, OpenConversationRequest, OpenConversationResponse,
+        SessionSignal, SessionSignaled,
+    },
+    op::ops::{ConversationOpen, ConversationsList, PaneSessionSignal},
 };
 use axum::http::StatusCode;
 use futures_util::future::BoxFuture;
@@ -100,6 +103,37 @@ impl Handle<AgentBlock> for ConversationOpen {
             Via::Mcp(_) => None,
         };
         Ok(open_conversation_as(cx.app, who, req).await?)
+    }
+}
+
+/// What Claude Code in each terminal pane said of its session from inside
+/// it (#396, a spike): the mod's signals, read into the same context an
+/// agent block reads from its transcript (#397). Kept in memory only, and
+/// logged; nothing shows it yet.
+static SIGNALED: std::sync::LazyLock<std::sync::Mutex<HashMap<PaneId, crate::conversations::context::Context>>> =
+    std::sync::LazyLock::new(Default::default);
+
+impl Handle<AgentBlock> for PaneSessionSignal {
+    async fn handle(_: &Cx<'_>, id: PaneId, s: SessionSignal) -> Result<SessionSignaled, OpError> {
+        let context = {
+            let mut panes = SIGNALED.lock().unwrap_or_else(|p| p.into_inner());
+            // A new session in the pane (`/clear`, a new `claude`) starts over.
+            if s.event == "start" {
+                panes.remove(&id);
+            }
+            let c = panes.entry(id).or_default();
+            c.signal(&s, crate::store::now_ms());
+            c.summary().unwrap_or(Value::Null)
+        };
+        tracing::info!(
+            target: "arugulad_agent::session_signal",
+            pane = id,
+            event = %s.event,
+            signal = %serde_json::to_string(&s).unwrap_or_default(),
+            context = %context,
+            "session signal"
+        );
+        Ok(SessionSignaled { daemon_version: arugula_core::version::get().to_owned(), context })
     }
 }
 

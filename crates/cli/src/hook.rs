@@ -222,6 +222,45 @@ fn driven(attended: Option<&str>, entrypoint: Option<&str>) -> bool {
     }
 }
 
+/// `arugula session-signal` (#396, a spike): what the Claude Code mod in
+/// `plugins/claude-code/mod` says about its session from inside it (a
+/// `SessionSignal` on stdin), for the daemon to read into the pane's
+/// context. Prints `{cli_version, daemon_version, context}` for the mod's
+/// status line, or `{error}`; exits 0 when the daemon took it, 3 outside an
+/// Arugula pane, 1 when it didn't.
+pub fn session_signal(sock: Target) -> i32 {
+    use arugula_proto::{api::SessionSignal, op::ops::PaneSessionSignal};
+    let mut input = String::new();
+    let _ = std::io::stdin().take(1 << 20).read_to_string(&mut input);
+    let say = |v: serde_json::Value| println!("{v}");
+    let Some(pane) = crate::util::env_pane() else {
+        say(serde_json::json!({ "error": "not in an Arugula pane" }));
+        return 3;
+    };
+    let signal: SessionSignal = match serde_json::from_str(&input) {
+        Ok(s) => s,
+        Err(e) => {
+            say(serde_json::json!({ "error": format!("not a session signal: {e}") }));
+            return 1;
+        }
+    };
+    match call::<PaneSessionSignal>(&sock, &pane, &signal) {
+        Ok(got) => {
+            say(serde_json::json!({
+                "pane": pane,
+                "cli_version": env!("CARGO_PKG_VERSION"),
+                "daemon_version": got.daemon_version,
+                "context": got.context,
+            }));
+            0
+        }
+        Err(e) => {
+            say(serde_json::json!({ "error": format!("{e:#}"), "cli_version": env!("CARGO_PKG_VERSION") }));
+            1
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use serde_json::json;

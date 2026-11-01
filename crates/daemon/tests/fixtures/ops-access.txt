@@ -64,6 +64,7 @@ pane.ports GET /api/panes/{id}/ports Owner drives=false credential=false
 pane.process GET /api/panes/{id}/process Pane(Viewer) drives=false credential=false
 pane.prompt POST /api/panes/{id}/prompt Pane(Editor) drives=true credential=false
 pane.send POST /api/panes/{id}/send Pane(Editor) drives=true credential=false
+pane.session_signal POST /api/panes/{id}/session-signal Pane(Editor) drives=false credential=false
 pane.wait GET /api/panes/{id}/wait Pane(Viewer) drives=false credential=false
 panes.list GET /api/panes Owner drives=false credential=false
 push.key GET /api/push/key Anyone drives=false credential=false

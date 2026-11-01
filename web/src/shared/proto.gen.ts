@@ -5134,6 +5134,7 @@ export const OPS = {
   "pane.process": { method: "GET", path: "/api/panes/{id}/process" },
   "pane.prompt": { method: "POST", path: "/api/panes/{id}/prompt" },
   "pane.send": { method: "POST", path: "/api/panes/{id}/send" },
+  "pane.session_signal": { method: "POST", path: "/api/panes/{id}/session-signal" },
   "pane.wait": { method: "GET", path: "/api/panes/{id}/wait" },
   "panes.list": { method: "GET", path: "/api/panes" },
   "push.key": { method: "GET", path: "/api/push/key" },
