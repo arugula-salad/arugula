@@ -104,6 +104,7 @@ fn item(v: &Value) -> Result<Item> {
         parent_id: v["parent"].as_str().map(str::to_owned),
         created_at: millis(&v["created_at"]),
         updated_at: millis(&v["updated_at"]),
+        description: v["description_stripped"].as_str().map(str::to_owned),
     })
 }
 
@@ -412,9 +413,14 @@ impl TrackerProvider for Plane {
             let labels = named(&absent_is_empty(self.list_all(workspace, project_id, "labels").await)?);
             // Types aren't enabled for every project.
             let types = absent_is_empty(self.list_all(workspace, project_id, "work-item-types").await)?;
+            let epic_types = types
+                .iter()
+                .filter(|t| t["is_active"].as_bool() != Some(false) && t["is_epic"].as_bool() == Some(true))
+                .filter_map(|t| t["name"].as_str().map(str::to_owned))
+                .collect();
             let types =
                 named(&types.into_iter().filter(|t| t["is_active"].as_bool() != Some(false)).collect::<Vec<_>>());
-            Ok(Fields { states: states.into_iter().map(|(_, s)| s).collect(), modules, types, labels })
+            Ok(Fields { states: states.into_iter().map(|(_, s)| s).collect(), modules, types, labels, epic_types })
         })
     }
 
@@ -519,10 +525,6 @@ impl TrackerProvider for Plane {
             Ok(Relations { blocked_by: ids("blocked_by"), blocking: ids("blocking") })
         })
     }
-
-    fn children<'a>(&'a self, _: &'a str, _: &'a str, _: &'a str) -> BoxFuture<'a, Result<Vec<Item>>> {
-        Box::pin(async { Err(TrackerError::NotYet("reading a Plane epic's children")) })
-    }
 }
 
 #[cfg(test)]
@@ -536,7 +538,7 @@ mod tests {
         let v = json!({
             "id": "u1", "sequence_id": 7, "name": "Fix it", "parent": "u0",
             "state": { "name": "Done", "group": "completed" }, "type": { "name": "Bug" },
-            "labels": ["l1", { "id": "l2" }],
+            "labels": ["l1", { "id": "l2" }], "description_stripped": "Fix the thing.",
             "created_at": "2026-10-01T10:00:00Z", "updated_at": "2026-10-02T10:00:00.5Z",
         });
         let i = item(&v).unwrap();
@@ -546,6 +548,7 @@ mod tests {
         );
         assert_eq!(i.updated_at - i.created_at, 86_400_500);
         assert_eq!(i.label_ids, ["l1", "l2"]);
+        assert_eq!(i.description.as_deref(), Some("Fix the thing."));
         // Not expanded: no guessing at its state.
         assert!(item(&json!({ "id": "u1", "sequence_id": 7, "state": "uuid" })).is_err());
     }

@@ -549,6 +549,7 @@ pub async fn send(
     let changed = ingest_page(app, &c.id, c.mirror_id, None, std::slice::from_ref(&done), now_ms())?;
     if let Some(ids) = &changed {
         crate::boards::items_changed(app, ids);
+        crate::boards::epics::from_epics(app, &c.id, ids).await;
     }
     // The item's own read doesn't say its modules, and the module was put after it: the row says so.
     if let Some(name) = &module

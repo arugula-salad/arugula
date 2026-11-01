@@ -470,6 +470,17 @@
         "project": {
           "type": "string"
         },
+        "source": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/BoardSource"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The tracker's epic it follows, when it was made from one (Plane's,\n#483); absent for a board a person made."
+        },
         "title": {
           "type": "string"
         },
@@ -591,6 +602,41 @@
       },
       "required": [
         "stall_minutes"
+      ],
+      "type": "object"
+    },
+    "BoardSource": {
+      "description": "The epic a board follows: its children are the board's rows, and the\nconnection made the board, not a person.",
+      "properties": {
+        "connection": {
+          "description": "The connection that made the board, as the project calls it.",
+          "type": "string"
+        },
+        "key": {
+          "description": "The epic's key in the tracker, such as `ARUGU-10`.",
+          "type": "string"
+        },
+        "left_out": {
+          "default": 0,
+          "description": "How many children the board is too full to show, the oldest done\nones first.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "provider": {
+          "description": "`plane`.",
+          "type": "string"
+        },
+        "url": {
+          "description": "Where the epic is in the tracker's web app.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "provider",
+        "key",
+        "url",
+        "connection"
       ],
       "type": "object"
     },

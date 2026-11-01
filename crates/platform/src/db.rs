@@ -31,6 +31,7 @@ pub mod agent_tokens;
 pub mod billing;
 pub mod boards;
 pub mod boards_asks;
+pub mod boards_epics;
 pub mod boards_lanes;
 pub mod boards_relations;
 pub mod boards_work;

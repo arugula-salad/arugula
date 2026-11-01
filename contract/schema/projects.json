@@ -1328,6 +1328,11 @@
           "minimum": 0,
           "type": "integer"
         },
+        "epics_as_boards": {
+          "default": true,
+          "description": "Whether each open epic has a board that follows it (#483). On unless\nturned off; off, the boards stay and stop following.",
+          "type": "boolean"
+        },
         "has_webhook_secret": {
           "description": "A webhook secret is kept for it.",
           "type": "boolean"
@@ -1707,6 +1712,14 @@
           "default": null,
           "type": [
             "string",
+            "null"
+          ]
+        },
+        "epics_as_boards": {
+          "default": null,
+          "description": "Whether each open epic has a board that follows it.",
+          "type": [
+            "boolean",
             "null"
           ]
         },

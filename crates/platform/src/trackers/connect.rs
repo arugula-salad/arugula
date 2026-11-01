@@ -98,6 +98,7 @@ fn wire(app: &Platform, c: &Connection) -> Result<TrackerConnection, ApiError> {
         backfilled_at: c.backfilled_at,
         items: app.db.tracker_item_count(c.mirror_id)?,
         waiting_writes: app.db.tracker_writes_waiting_count(&c.id)?,
+        epics_as_boards: c.epics_as_boards,
     })
 }
 
@@ -217,8 +218,16 @@ pub async fn settings(
 ) -> Result<Json<TrackerConnection>, ApiError> {
     crate::boards::gate(&app, &account).await?;
     let project = changer(&app, &account, &project).await?;
-    if b.agent_writes.is_none() && b.write_policy.is_none() && b.attribution.is_none() && b.webhook_secret.is_none() {
-        return Err(err(StatusCode::UNPROCESSABLE_ENTITY, "write_policy, attribution, agent_writes or webhook_secret"));
+    if b.agent_writes.is_none()
+        && b.write_policy.is_none()
+        && b.attribution.is_none()
+        && b.webhook_secret.is_none()
+        && b.epics_as_boards.is_none()
+    {
+        return Err(err(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "write_policy, attribution, agent_writes, webhook_secret or epics_as_boards",
+        ));
     }
     if b.agent_writes.as_deref().is_some_and(|w| !matches!(w, "approve" | "allow")) {
         return Err(err(StatusCode::UNPROCESSABLE_ENTITY, "agent_writes: approve or allow"));
@@ -269,6 +278,18 @@ pub async fn settings(
         }
         info!(%account, %project, connection = %id, %attribution, "changed what a Plane write's footer says");
     }
+    if let Some(on) = b.epics_as_boards {
+        let was = app.db.tracker_connection(&project, &id)?.is_some_and(|c| c.epics_as_boards);
+        if !app.db.set_tracker_epics_as_boards(&project, &id, on)? {
+            return Err(not_connected());
+        }
+        info!(%account, %project, connection = %id, on, "changed whether Plane epics have boards");
+        // Turned on: the epics the switch missed get their boards, in the background.
+        if on && !was {
+            let (again, id) = (app.clone(), id.clone());
+            tokio::spawn(async move { crate::boards::epics::first_pass(&again, &id).await });
+        }
+    }
     let c =
         app.db.tracker_connection(&project, &id)?.ok_or_else(|| err(StatusCode::NOT_FOUND, "no such connection"))?;
     Ok(Json(wire(&app, &c)?))
@@ -313,10 +334,11 @@ pub fn ingest_page(
 ) -> anyhow::Result<Option<Vec<String>>> {
     let ids: Vec<Vec<String>> = items.iter().map(|it| it.label_ids.clone()).collect();
     let labels = fields::label_names(app, connection, &ids).map_err(|e| anyhow::anyhow!("{}", e.1))?;
+    let epics = fields::epic_flags(app, connection, items).map_err(|e| anyhow::anyhow!("{}", e.1))?;
     app.db.tracker_mirror(connection, lease, |tx| {
         let mut changed = vec![];
-        for (it, labels) in items.iter().zip(&labels) {
-            changed.extend(rows::upsert_item(tx, connection, mirror_id, it, labels, now)?);
+        for ((it, labels), epic) in items.iter().zip(&labels).zip(&epics) {
+            changed.extend(rows::upsert_item(tx, connection, mirror_id, it, labels, *epic, now)?);
         }
         Ok(changed)
     })
@@ -396,6 +418,17 @@ async fn mirror_modules(
     Ok(Some(()))
 }
 
+/// Set which of the connection's rows are epics by the types Plane flags,
+/// for rows written before the types were known (#483); the boards follow
+/// the rows that changed.
+async fn mirror_epic_flags(app: &Platform, connection: &str, f: &super::Fields) -> anyhow::Result<()> {
+    let flagged = app.db.tracker_mirror(connection, None, |tx| rows::set_epic_flags(tx, connection, &f.epic_types))?;
+    if let Some(changed) = flagged.filter(|c| !c.is_empty()) {
+        crate::boards::epics::from_epics(app, connection, &changed).await;
+    }
+    Ok(())
+}
+
 /// What one backfill turn did.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Turn {
@@ -416,6 +449,8 @@ pub async fn tick(app: &Platform, now: u64) -> anyhow::Result<Option<Turn>> {
     let connection = job.id.clone();
     match turn(app, &job, now).await {
         Ok(Some(Finish::Done)) => {
+            // Every epic read, whichever page it came on: its board and its children.
+            crate::boards::epics::first_pass(app, &connection).await;
             let written = app.db.tracker_item_count(job.mirror_id)? as usize;
             Ok(Some(Turn::Done { connection, written }))
         }
@@ -449,6 +484,9 @@ async fn turn(app: &Platform, job: &Backfill, now: u64) -> anyhow::Result<Option
             None
         }
     };
+    if let Some(f) = &fields {
+        mirror_epic_flags(app, &job.id, f).await?;
+    }
     let mut cursor = job.cursor.clone();
     for _ in 0..PAGES {
         if !app.db.renew_backfill(job, now_ms())? {
@@ -459,6 +497,7 @@ async fn turn(app: &Platform, job: &Backfill, now: u64) -> anyhow::Result<Option
             return Ok(None);
         };
         crate::boards::items_changed(app, &changed);
+        crate::boards::epics::from_epics(app, &job.id, &changed).await;
         if mirror_relations(app, job, &*provider, &page.items, now).await?.is_none() {
             return Ok(None);
         }
@@ -555,6 +594,9 @@ async fn reconcile_turn(app: &Platform, job: &Backfill, now: u64) -> anyhow::Res
             None
         }
     };
+    if let Some(f) = &fields {
+        mirror_epic_flags(app, &job.id, f).await?;
+    }
     let (mut cursor, mut total) = (None::<String>, 0);
     for _ in 0..RECONCILE_PAGES {
         if !app.db.renew_backfill(job, now_ms())? {
@@ -565,6 +607,7 @@ async fn reconcile_turn(app: &Platform, job: &Backfill, now: u64) -> anyhow::Res
             return Ok(None);
         };
         crate::boards::items_changed(app, &changed);
+        crate::boards::epics::from_epics(app, &job.id, &changed).await;
         if mirror_relations(app, job, &*provider, &page.items, now).await?.is_none() {
             return Ok(None);
         }

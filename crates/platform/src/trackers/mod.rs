@@ -32,6 +32,8 @@ pub mod connect;
 #[cfg(any(test, feature = "testing"))]
 pub mod connect_tests;
 pub mod done;
+#[cfg(test)]
+mod epics_tests;
 #[cfg(any(test, feature = "testing"))]
 pub mod fake;
 pub mod fields;
@@ -85,7 +87,8 @@ pub struct ProjectInfo {
     pub name: String,
 }
 
-/// A work item, as the mirror keeps it: never its body.
+/// A work item, as the mirror keeps it: never its body (`description` is
+/// only what an epic's board reads once, to make its goal).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Item {
     /// The tracker's own id (Plane's uuid).
@@ -106,6 +109,9 @@ pub struct Item {
     /// Milliseconds since the epoch, the tracker's.
     pub created_at: u64,
     pub updated_at: u64,
+    /// The description as plain text, when the tracker's answer carried it.
+    /// The mirror doesn't keep it.
+    pub description: Option<String>,
 }
 
 impl Item {
@@ -199,6 +205,10 @@ pub struct Fields {
     /// Empty when the project doesn't have item types.
     pub types: Vec<Named>,
     pub labels: Vec<Named>,
+    /// The names of the types Plane flags `is_epic`. Empty for a project
+    /// without types, and for fields kept before this was read.
+    #[serde(default)]
+    pub epic_types: Vec<String>,
 }
 
 /// A tracker's API, for one key. Object-safe and async, as the platform's
@@ -279,13 +289,6 @@ pub trait TrackerProvider: Send + Sync {
     ) -> BoxFuture<'a, Result<Relations>> {
         Box::pin(async { Err(TrackerError::NotYet("reading an item's relations")) })
     }
-    /// The items whose parent is `epic`.
-    fn children<'a>(
-        &'a self,
-        workspace: &'a str,
-        project_id: &'a str,
-        epic: &'a str,
-    ) -> BoxFuture<'a, Result<Vec<Item>>>;
 }
 
 /// Makes a provider from a key.
