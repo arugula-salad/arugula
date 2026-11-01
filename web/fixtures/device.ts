@@ -21,7 +21,7 @@ import type { WakeSaid } from "../src/shell/e2e/relaymux.ts";
 import { mint } from "../src/shell/blocks/through-control.ts";
 import { generateKeys, signText, type DeviceKeys } from "../src/shell/e2e/keys.ts";
 import { acceptHosted, signDelegation, signRevoke, type Delegation, type DelegationRevoke, type HostedProof } from "../src/shell/e2e/hosted.ts";
-import { signGrant, signGrantRevoke, type ProjectGrant } from "../src/shell/e2e/run-grant.ts";
+import { expiresIn, GRANT_DAYS, grantBody, grantRevokeBody, newGrant, newGrantRevoke, passkeyChallenge, type ProjectGrant } from "../src/shell/e2e/run-grant.ts";
 import { approvalBody, DEFAULT_LIFE_MS } from "../src/shell/e2e/deploy.ts";
 import { askBody, askOk, inviteKey, newInviteKey, signAskInvite, signRoster, teamJoinBody, word, type AccountCerts, type AskInvite, type Roster, type TeamPin, type TeamRole } from "../src/shell/e2e/team.ts";
 
@@ -460,14 +460,17 @@ export class Device {
     return n;
   }
 
-  /** As an owner, sign the project's standing grant for runs (M211) under
-   * its live delegation, as control's page does. */
+  /** As an owner, grant the project's standing grant for runs (M211) under
+   * its live delegation, as control's page does: one passkey assertion over
+   * its bytes (grant v2, #1953), for GRANT_DAYS. */
   async signRunGrant(team?: string): Promise<{ project: string; grant: string }> {
     const p = await this.project(team);
     const { key, delegations } = await this.api<{ key: string; delegations: { delegation: Delegation; revoke: DelegationRevoke | null }[] }>("/api/hosted/delegations");
     const live = delegations.find((x) => x.delegation.project === p.id && x.delegation.key === key && !x.revoke);
     if (!live) throw new Error(`project ${p.id} has no live delegation`);
-    const grant = await signGrant(live.delegation, this.keys);
+    const made = Date.now();
+    const g = await newGrant(live.delegation, this.account, expiresIn(GRANT_DAYS, made), undefined, made);
+    const grant = { ...g, passkey: await this.assert(b64url(await passkeyChallenge(grantBody(g)))) };
     await this.api(`/api/projects/${p.id}/runs/grant`, { grant });
     return { project: p.id, grant: grant.id };
   }
@@ -478,7 +481,9 @@ export class Device {
     const p = await this.project(team);
     const v = await this.api<{ grant: { grant: ProjectGrant } | null }>(`/api/projects/${p.id}/runs/grant`);
     if (!v.grant) throw new Error(`project ${p.id} has no standing grant`);
-    const revoke = await signGrantRevoke(p.id, v.grant.grant.delegation, stop ? "stop" : "finish", this.keys);
+    // A v3 revoke (#1953): the account's passkey over its bytes.
+    const r = newGrantRevoke(p.id, v.grant.grant.delegation, stop ? "stop" : "finish", this.account);
+    const revoke = { ...r, passkey: await this.assert(b64url(await passkeyChallenge(grantRevokeBody(r)))) };
     const r = await this.api<{ told: number }>(`/api/projects/${p.id}/runs/grant/revoke`, { revoke });
     return { project: p.id, grant: v.grant.grant.id, told: r.told };
   }
