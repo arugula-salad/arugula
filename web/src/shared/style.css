@@ -11796,6 +11796,49 @@ html[data-workspace="new"] :is(.chat, .swarm, .swarm-shell > .bar) {
   left: var(--rail-w, 56px);
 }
 
+/* Wall mode (#446, swarm/wall.ts): the swarm fills the screen, over the
+   workspace's rail and the shared bar, which stay where they are (the
+   panes under it keep their size); the bar's controls and the how-to
+   hint go, the brand and the counts stay to be read across a room. After
+   the wall-idle while, the cursor and the Exit button hide (a fade, which
+   reduced motion's rule below takes away). Every theme and view in the
+   swarm gets it from here. */
+html[data-wall] .swarm-shell > .bar {
+  display: none;
+}
+html[data-wall] .swarm[data-wall] {
+  inset: 0;
+}
+.swarm[data-wall] .swarm-bar {
+  right: var(--rail);
+}
+.swarm[data-wall] .swarm-bar > :not(.swarm-brand, .swarm-stats),
+.swarm[data-wall] .swarm-hint {
+  display: none;
+}
+.swarm-wall-ctl {
+  position: absolute;
+  z-index: 7;
+  top: 16px;
+  right: calc(var(--rail) + 20px);
+  transition: opacity 0.4s ease;
+}
+.swarm-wall-ctl button {
+  border: 1px solid var(--line);
+  background: var(--panel);
+  padding: var(--space-2) 12px;
+  border-radius: var(--chip-radius);
+  font: 500 12px/1 var(--f-mono);
+}
+.swarm[data-wall-idle],
+.swarm[data-wall-idle] * {
+  cursor: none !important;
+}
+.swarm[data-wall-idle] .swarm-wall-ctl {
+  opacity: 0;
+  pointer-events: none;
+}
+
 /* Not a chat block (#123): it's in its slot, not beside the rail. */
 html[data-workspace="new"] .block-team-chat .chat {
   left: auto;

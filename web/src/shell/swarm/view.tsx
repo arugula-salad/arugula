@@ -26,6 +26,8 @@ import { diffLine, fleetTarget, openInEditor, wholePath } from "../open-in-edito
 import { GateWhy } from "../ui/gate-why";
 import { NvimIcon } from "../ui/shell/icons";
 import { PointChoices, pointOf, proposalLine } from "../ui/point-choices";
+import { ariaKeys, keyHint, useBinding } from "../ui/keys";
+import { useWall } from "./wall";
 import { finished, needsYou, NEEDS_YOU } from "../../shared/needs-you";
 import { onIssueChip } from "../../shared/boards/text";
 import { activityOf, bundleOf, cardTitle, headlineOf, holdStill, shortHost, whatItDoes, shortPaths, shownNow, wantsYou, followable, editorAt, GROUPING_LABEL, GROUPINGS, groupOf, isPresence, kindOf, KIND_LABEL, KINDS, REASON_COL, reasonOf, type GroupBy } from "./model";
@@ -148,6 +150,29 @@ export function SwarmView({
     hover: () => {},
     menu: () => {},
   });
+
+  // Wall mode (#446): the swarm alone, fit to the screen it fills. Not on
+  // a phone, whose strip of cards is the rail.
+  const wall = useWall(() => {
+    field.current?.resize();
+    if (wall.on) field.current?.fitAll();
+  });
+  useBinding(
+    phone
+      ? null
+      : {
+          id: "swarm.wall",
+          label: "Wall mode",
+          keys: { mac: ["key:w"], other: ["key:w"] },
+          when: (e) => !e.repeat && !following && swarmHasKeys(e),
+          run: () => wall.toggle(),
+        },
+    [phone, wall.on, following],
+  );
+  // A window narrowed to a phone's leaves it.
+  useEffect(() => {
+    if (phone && wall.on) wall.exit();
+  }, [phone]);
 
   const panes = fleet.panes;
   const bundles = bundlesOf(panes);
@@ -319,11 +344,13 @@ export function SwarmView({
     const key = (e: KeyboardEvent) => {
       if (e.key !== "Escape" || escapeTaken(e) || (e.target as HTMLElement).closest?.("input, textarea, select")) return;
       if (following) setFollowing(null);
+      // Wall mode first (#446): Escape leaves it, not the swarm.
+      else if (wall.on) wall.exit();
       else back();
     };
     window.addEventListener("keydown", key);
     return () => window.removeEventListener("keydown", key);
-  }, [following, back]);
+  }, [following, back, wall.on]);
 
   // A notification's deep link: the pane, and its card.
   useEffect(() => {
@@ -398,7 +425,13 @@ export function SwarmView({
   const clusters = field.current?.clusters ?? [];
 
   return (
-    <div class={`swarm${phone ? " phone" : ""}`} data-swarm={by} data-theme={theme}>
+    <div
+      class={`swarm${phone ? " phone" : ""}`}
+      data-swarm={by}
+      data-theme={theme}
+      data-wall={wall.on ? "" : undefined}
+      data-wall-idle={wall.idle ? "" : undefined}
+    >
       <canvas
         key={theme}
         ref={canvas}
@@ -455,6 +488,16 @@ export function SwarmView({
           <button data-fit onClick={() => field.current?.fitAll()}>
             Fit
           </button>
+          {!phone && (
+            <button
+              data-wall-enter
+              title={`Fill this screen with the swarm, for a TV or a second monitor (${keyHint("swarm.wall") ?? "W"})`}
+              aria-keyshortcuts={ariaKeys(keyHint("swarm.wall"))}
+              onClick={wall.enter}
+            >
+              Wall mode
+            </button>
+          )}
           {!inBar && (
             <button data-swarm-back title="Back to the panes (Escape)" onClick={back}>
               Panes
@@ -546,6 +589,14 @@ export function SwarmView({
           ))}
         </div>
       </div>
+
+      {wall.on && (
+        <div class="swarm-wall-ctl" onPointerEnter={() => wall.hold(true)} onPointerLeave={() => wall.hold(false)}>
+          <button data-wall-exit title="Back to the swarm with its controls (Escape)" onClick={wall.exit}>
+            Exit wall mode
+          </button>
+        </div>
+      )}
 
       {following && <FollowView fleet={fleet} pkey={following} close={() => setFollowing(null)} back={back} />}
       <MenuLayer />
@@ -989,6 +1040,14 @@ function AnsweredCard({ d, fleet, close }: { d: Done; fleet: Fleet; close: () =>
       )}
     </div>
   );
+}
+
+/** `w` is the swarm's unless something is typed into (a field, a
+ * terminal's, whose keys are its program's) or a dialog is over it. */
+function swarmHasKeys(e: KeyboardEvent): boolean {
+  if (document.querySelector(".prompt-backdrop")) return false;
+  const t = e.target as Element | null;
+  return !t?.closest?.("input, textarea, select, [contenteditable]:not([contenteditable='false'])");
 }
 
 /** A tap on a tile opens its pane and closes the swarm on pointerup; the
