@@ -79,8 +79,12 @@ impl Daemon {
                     return;
                 }
                 // `typed` is from older clients, whose typing claimed the size.
-                let claim = self.may_take(client, tab, claim, asked);
-                if let Ok(true) = self.mux.view(client, tab, cols, rows, zoom, claim) {
+                let take = self.may_take(client, tab, claim, asked);
+                // Showing the tab or picking a pane without the size: the
+                // holder's focus ends, as it would if this screen took the
+                // size, but the size stays (#439).
+                let freed = claim && !take && self.mux.end_focus_for(client, tab);
+                if matches!(self.mux.view(client, tab, cols, rows, zoom, take), Ok(true)) || freed {
                     self.changed();
                 }
             }

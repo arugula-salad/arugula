@@ -658,6 +658,18 @@ impl Mux {
         Ok(true)
     }
 
+    /// A screen that doesn't hold `tab`'s size showed it or picked a pane
+    /// in it (#473, #439): a focus the holder set ends, and the size stays.
+    pub fn end_focus_for(&mut self, client: ClientId, tab: TabId) -> bool {
+        let Some(t) = self.tabs.get_mut(&tab) else { return false };
+        if t.owner == Some(client) || t.focus.is_none() {
+            return false;
+        }
+        (t.focus, t.focus_by) = (None, None);
+        self.rev += 1;
+        true
+    }
+
     /// A client went away: its tabs keep their size until someone else
     /// views them.
     pub fn release(&mut self, client: ClientId) -> bool {
