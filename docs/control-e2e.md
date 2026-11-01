@@ -12,6 +12,73 @@ while every machine is asleep (chat, Cloud workspaces, Shared Docs,
 billing), is held in control, much of it in plain text. [What control
 stores](#what-control-stores) lists every table of both.
 
+## Device keys
+
+**Device keys decide who reaches a machine; passkeys decide what a person
+meant.**
+
+Each browser, phone, terminal, desktop app window and machine you use has
+a key pair of its own. When a machine joins your account it pins the
+account's first device (the *root*), and from then on it lets in only keys
+whose certificates chain back to that root, each signed by a device the
+account already had. The machine checks the chain itself; control stores
+and hands out the certificates but holds no key, so it can't add a reader
+([aru-055](decisions/aru-055-control-can-refuse-service-but-can-t-read.md),
+[aru-056](decisions/aru-056-trust-is-a-chain-of-device-approvals.md)).
+That's their whole job: who may open a channel to a machine, and who may
+add or remove a device.
+
+They don't say you meant anything. Approving a deploy, granting a project
+standing runs and changing a team's owners each take a passkey: one
+user-verified assertion over the action's bytes, whatever device you're on
+([aru-126](decisions/aru-126-device-keys-are-the-machine-plane-s-passkeys-approve.md)).
+An agent has no passkey, so it never approves those.
+
+| Kind | What it is | Reaches your machines | First device | May approve a new |
+|---|---|---|---|---|
+| `browser` | control's page in a browser or on a phone, including keys a passkey re-derives ([aru-061](decisions/aru-061-a-passkey-with-prf-is-a-device-one-wherever-it-syncs.md)) | yes | yes | anything |
+| `cli` | `arugula login` in a terminal | yes | older accounts only | CLI, machine |
+| `app` | the desktop app's window | yes | no | app, CLI, machine |
+| `recovery` | a code on paper from your first sign-in | no | no | one browser, CLI, app or code, then it's spent; never a machine |
+| `daemon` | a machine | it's what's reached | no | nothing |
+
+Removing a device follows the same line: only a browser whose every link
+back to the root is a browser (or a recovery code) removes a browser, a
+phone or a recovery code; a CLI or the app removes CLIs, apps and machines.
+On a team's machines, only such a browser or the app makes an editor or an
+owner, never a CLI (the app keeps this, as DK7 decided).
+
+**Why your CLI can't approve a browser.** The CLI's key is a file
+(`~/.config/arugula/device.key`) that any program you run can read, agents
+included, and the app's keys reach its window through a loopback port that
+any program on the computer can listen on. If either could approve a
+browser, an agent on one machine could make itself one. Then it could
+approve more browsers, mint recovery codes, remove your real browsers and,
+on team machines, make owners, and nothing you still hold could take it
+back out, since only a browser removes a browser. Held to CLIs and
+machines, a stolen CLI key can do what it already could (reach your
+machines), and everything it adds is something your browser can see and
+remove. A browser's keys aren't out of a program's reach either (they sit
+in the browser's profile), but they take more than reading a file. Your
+machines enforce this themselves (`Kind::certifies`, `Trust::evaluate` in
+`crates/e2e/src/cert.rs`), and control refuses such an approval first
+(`needs_browser`).
+
+**Getting back in.** Recovery codes let in one device each and keep your
+machines joined ([Recovery](#keys)). With no device and no code left, a
+fresh GitHub sign-in starts a device reset: 48 hours any device can cancel,
+then a new root, so each machine has to be joined again on the machine
+([aru-119](decisions/aru-119-an-account-can-reset-its-devices-from-a-fresh-github-sign-in.md)).
+It removes your passkeys too, so after a total loss one reset brings both
+back. Passkeys alone have their own way back, a passkey reset, which leaves
+devices and machines alone ([Page-only actions](#page-only-actions-need-a-browser-and-a-passkey)).
+
+Joining a machine and approving a new browser carry a secret control never
+sees, so control can't swap in a key of its own
+([aru-058](decisions/aru-058-a-machine-s-join-link-carries-a-secret-the-account-isn-t.md),
+[aru-059](decisions/aru-059-a-new-browser-shows-a-code-without-its-answer-it-asks-to.md)).
+The rest of this page has the details.
+
 ## Summary
 
 - **One channel type:** every client–daemon stream is a Noise channel,

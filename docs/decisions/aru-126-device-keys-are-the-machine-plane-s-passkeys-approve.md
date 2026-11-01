@@ -116,6 +116,14 @@ device-keys board, Arugula native #382 to #390).
   devices are in use, 48 hours, cancellable by any device or working
   passkey. Without this, holding the GitHub account would be enough to
   approve a deploy.
+- **A second passkey takes a passkey, not a device** (DK9, #390; Jake,
+  2026-11-01; decided, to be built). Adding a passkey to an account that
+  has one takes a user-verified assertion from one of its passkeys over
+  the new one's `added` event, and no longer a signature from one of the
+  account's browsers (`device_sig`, `add_passkey_device_body`): the
+  existing passkey's confirmation is the proof. The cost, accepted: whoever
+  holds a stolen session and a stolen synced passkey can add another
+  passkey. A first passkey stays as above.
 
 Where: `crates/platform/src/approvals.rs`, `crates/e2e/src/deploy.rs`,
 `crates/e2e/src/cert.rs`, `crates/control/src/passkey.rs`.
