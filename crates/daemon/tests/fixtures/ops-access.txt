@@ -7,6 +7,7 @@ agent_can.get GET /api/agent-can Owner drives=false credential=false
 agents.get GET /api/hosts/self/agents Owner drives=false credential=false
 agents.refresh POST /api/hosts/self/agents/refresh Owner drives=false credential=false
 conversation.open POST /api/conversations/open Owner drives=false credential=false
+conversation.session_signal POST /api/conversations/session-signal Owner drives=false credential=false
 conversations.list GET /api/conversations Owner drives=false credential=false
 doc.delete DELETE /api/docs/{id} Owner drives=false credential=false
 doc.open POST /api/docs/open Owner drives=false credential=false

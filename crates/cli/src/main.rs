@@ -292,8 +292,8 @@ enum Command {
     /// The Claude Code mod in `plugins/claude-code/hooks/live.ts` runs it with a signal
     /// on stdin (the window's fill, the model and effort, a compaction) and
     /// reads the session's context, the pane it shows on and both versions
-    /// back. It's kept by Claude Code's session id, from a pane or not
-    /// (#453); with neither a session id nor a pane: exit 3.
+    /// back. It's kept by Claude Code's session id, from a pane or not;
+    /// with neither a session id nor a pane: exit 3.
     #[command(hide = true)]
     SessionSignal,
     /// The commands Claude Code's hooks and Arugula's clients run.
