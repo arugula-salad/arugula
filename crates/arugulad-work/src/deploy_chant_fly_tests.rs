@@ -21,40 +21,49 @@ fn image(n: char) -> String {
     format!("registry.fly.io/acme-web:deployment-{n}@sha256:{}", n.to_string().repeat(64))
 }
 
-/// A fake chant, after `@intentius/chant` 0.124.40 as the M220 rig ran it
-/// (arugula-salad/deploy-smoke): each command first reads chant's ledger
-/// (`chant/lifecycle`) from origin, and refuses when it isn't here and
-/// origin can't be reached (chant's `requireLifecycleLedger`); origin, as
-/// GitHub answers for a private repository, answers only a git that has
-/// GITHUB_TOKEN, and any other remote (the driver's stand-in) answers.
+/// A fake chant, after `@intentius/chant` 0.124.63 (and, with
+/// $FAKE_CHANT_VERSION older, 0.124.40 as the M220 rig ran it,
+/// arugula-salad/deploy-smoke): `--version` says which. Each command first
+/// reads chant's ledger (`chant/lifecycle`) from its remote, and refuses
+/// when it isn't here and the remote can't be reached (chant's
+/// `requireLifecycleLedger`). The remote is origin, or from 0.124.63 the one
+/// `CHANT_LIFECYCLE_REMOTE` names (chant#4647), which must be one of the
+/// repository's. origin, as GitHub answers for a private repository,
+/// answers only a git that has GITHUB_TOKEN, and any other remote (the
+/// driver's stand-in) answers.
 /// `run release --json` stops at its gate (exit 3) until a resolution of
 /// this commit's plan is in the ledger: it writes a pending fact
 /// (`_gates/release.jsonl`, its `planDigest`) and prints its run record
 /// (`gate: {name, since}`, `approve`), as chant does; then it deploys (a
 /// new image) and records the release. `approve` resolves the gate for the
 /// plan given (`--plan` must be the pending one's); `components release`
-/// records a release again. Each push goes to origin when it's reachable,
-/// a warning otherwise. Each call goes in $FAKE_LOG with which tokens it
-/// saw.
+/// records a release again. Each push goes to the remote when it's
+/// reachable, a warning otherwise. Each call goes in $FAKE_LOG with which
+/// tokens it saw and which remote it used.
 const FAKE_CHANT: &str = r#"#!/bin/bash
 set -e
 fly=no; [ "$FLY_API_TOKEN" = "$FAKE_TOKEN" ] && fly=yes
 gh=no; [ -n "$GITHUB_TOKEN" ] && gh=yes
 fd3=no; (: >&3) 2>/dev/null && fd3=yes
-echo "chant $* | fly:$fly gh:$gh fd3:$fd3 user:$USER" >> "$FAKE_LOG"
+version=${FAKE_CHANT_VERSION:-0.124.63}
+remote=origin
+case "$version" in 0.124.4*) ;; *) [ -n "$CHANT_LIFECYCLE_REMOTE" ] && remote=$CHANT_LIFECYCLE_REMOTE ;; esac
+echo "chant $* | fly:$fly gh:$gh fd3:$fd3 user:$USER remote:$remote" >> "$FAKE_LOG"
+[ "$1" = --version ] && { echo "$version"; exit 0; }
+git remote get-url "$remote" >/dev/null 2>&1 || { echo "CHANT_LIFECYCLE_REMOTE names the remote \"$remote\", which this repository doesn't have" >&2; exit 1; }
 export LC_ALL=C
 B=refs/heads/chant/lifecycle
 now() { date -u +%Y-%m-%dT%H:%M:%S.000Z; }
-reachable() { [ -n "$GITHUB_TOKEN" ] || [ "$(git remote get-url origin)" != "$FAKE_ORIGIN" ]; }
+reachable() { [ -n "$GITHUB_TOKEN" ] || [ "$(git remote get-url "$remote")" != "$FAKE_ORIGIN" ]; }
 ledger() {
   local had err
   had=$(git rev-parse -q --verify $B || true)
   if reachable; then
-    err=$(git fetch -q origin chant/lifecycle:chant/lifecycle 2>&1) && return 0
+    err=$(git fetch -q "$remote" chant/lifecycle:chant/lifecycle 2>&1) && return 0
     case "$err" in *"couldn't find remote ref"*) return 0 ;; esac
   fi
   [ -n "$had" ] && return 0
-  echo "the chant/lifecycle ledger branch is not in this checkout and could not be fetched from \"origin\", so what is on it cannot be read. Refusing rather than treating an unreadable ledger as an empty one." >&2
+  echo "the chant/lifecycle ledger branch is not in this checkout and could not be fetched from \"$remote\", so what is on it cannot be read. Refusing rather than treating an unreadable ledger as an empty one." >&2
   return 1
 }
 append() {
@@ -73,8 +82,8 @@ append() {
   unset GIT_INDEX_FILE
 }
 push() {
-  if reachable && git push -q origin chant/lifecycle:chant/lifecycle 2>/dev/null; then return 0; fi
-  echo "warning: The push to the remote did not land: the push of chant/lifecycle to \"origin\" failed" >&2
+  if reachable && git push -q "$remote" chant/lifecycle:chant/lifecycle 2>/dev/null; then return 0; fi
+  echo "warning: The push to the remote did not land: the push of chant/lifecycle to \"$remote\" failed" >&2
 }
 # macOS may have no sha256sum (its Tart VMs don't): shasum there.
 sha256() { if command -v sha256sum >/dev/null; then sha256sum; else shasum -a 256; fi; }
@@ -359,7 +368,11 @@ fn chant_fly_releases_through_chants_gate_and_links_its_ledger() {
     // GitHub's but the driver's own git; npm and chant approve neither.
     for l in r.log() {
         let (call, saw) = l.split_once(" | ").unwrap();
-        let want = if call.starts_with("npm") || call.starts_with("chant approve") || call == "flyctl version" {
+        let want = if call.starts_with("npm")
+            || call.starts_with("chant approve")
+            || call == "flyctl version"
+            || call == "chant --version"
+        {
             "fly:no gh:no"
         } else {
             "fly:yes gh:no"
@@ -369,7 +382,7 @@ fn chant_fly_releases_through_chants_gate_and_links_its_ledger() {
         // Only the driver holds its result pipe: what it runs starts without it.
         assert!(!saw.contains("fd3:yes"), "fd 3 reached a program the driver ran: {l}");
     }
-    assert!(r.log().iter().filter(|l| l.starts_with("chant")).all(|l| l.ends_with("user:arugula")));
+    assert!(r.log().iter().filter(|l| l.starts_with("chant")).all(|l| l.contains(" user:arugula ")));
     assert!(!ran.out.contains(TOKEN) && !ran.out.contains(GH), "{}", ran.out);
     assert!(!ran.out.contains("\"chant_ledger\""), "the result isn't on its output: {}", ran.out);
 
@@ -390,9 +403,14 @@ fn chant_fly_releases_through_chants_gate_and_links_its_ledger() {
     // chant had no GitHub token, and origin (like a private repository on
     // GitHub) answers none without one: on this first deploy there was no
     // chant/lifecycle to read, and chant read and wrote its ledger through
-    // the driver's stand-in, which takes that branch only.
+    // the driver's stand-in, which takes that branch only. chant 0.124.63
+    // is told it by name (CHANT_LIFECYCLE_REMOTE), and origin stays origin.
     assert!(!ran.out.contains("could not be fetched") && !ran.out.contains("did not land"), "{}", ran.out);
     let home = r.dir.join("home");
+    assert_eq!(remotes(&home), ["arugula-ledger", "origin"]);
+    for l in r.log().iter().filter(|l| l.starts_with("chant") && !l.starts_with("chant --version")) {
+        assert!(l.ends_with(" remote:arugula-ledger"), "{l}");
+    }
     assert!(
         !Command::new("git")
             .args(["-C", "src", "push", "-q", "../ledger.git", "HEAD:refs/heads/main"])
@@ -417,6 +435,28 @@ fn chant_fly_releases_through_chants_gate_and_links_its_ledger() {
         ran.result.unwrap()["chant_ledger"],
         format!("https://github.com/acme/app/blob/{tip2}/github/releases.jsonl#L2")
     );
+}
+
+/// The remotes of the box's checkout (`~/src`).
+fn remotes(home: &Path) -> Vec<String> {
+    let mut v: Vec<String> = sh(&home.join("src"), "git remote").lines().map(str::to_owned).collect();
+    v.sort();
+    v
+}
+
+/// A chant older than 0.124.63 knows no ledger remote but origin: its git
+/// reaches the stand-in through origin's URL, rewritten for chant only.
+#[test]
+fn chant_fly_points_an_older_chant_at_the_stand_in_through_origin() {
+    needs_node!();
+    let r = rig("chant-fly-old-chant");
+    let ran = r.apply(SETTINGS, None, &[("FAKE_CHANT_VERSION", "0.124.40")]);
+    assert_eq!(ran.code, 0, "{}", ran.out);
+    assert!(!ran.out.contains("could not be fetched") && !ran.out.contains("did not land"), "{}", ran.out);
+    assert_eq!(remotes(&r.dir.join("home")), ["origin"]);
+    let origin = sh(&r.dir.join("home/src"), "git remote get-url origin");
+    assert!(origin.ends_with("origin/acme/app.git"), "the checkout's own origin isn't rewritten: {origin}");
+    assert!(ran.result.unwrap()["chant_ledger"].is_string());
 }
 
 /// chant's gate is approved for the plan its run recorded, from the
@@ -447,6 +487,13 @@ fn chant_fly_does_what_its_settings_say() {
     assert_eq!(ran.code, 0, "{}", ran.out);
     assert!(r.calls().contains(&"npm ci --no-fund --no-audit".to_owned()), "{:?}", r.calls());
     assert!(r.log().iter().any(|l| l.starts_with("chant run") && l.contains("fly:yes gh:yes")), "{:?}", r.log());
+    // With its own token, chant keeps its ledger on origin: no stand-in.
+    assert_eq!(remotes(&r.dir.join("home")), ["origin"]);
+    assert!(
+        r.log().iter().filter(|l| l.starts_with("chant run")).all(|l| l.ends_with(" remote:origin")),
+        "{:?}",
+        r.log()
+    );
 
     // A gate the plan doesn't name, or another op's: never approved.
     for (name, settings, gate_op, says) in [

@@ -56,7 +56,7 @@ pub struct RollBack {
 ///   scripts (otherwise `--ignore-scripts`);
 /// - `chant_github` (`true`, optional): chant's op gets `GITHUB_TOKEN` too
 ///   (an op that pushes, such as a release that tags). Without it, chant
-///   reads and writes its ledger through a stand-in for origin on the box,
+///   reads and writes its ledger through a stand-in remote on the box,
 ///   and the driver pushes it;
 /// - `chant_digest` (`plan` or `image`, default `plan`): what the release
 ///   record's digest is. `image`: it must be the digest of the image Fly
