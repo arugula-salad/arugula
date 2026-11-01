@@ -92,7 +92,14 @@ export function TabArea({ client, tab, cell, phone }: { client: Client; tab: Tab
   useEffect(() => {
     if (stale() || inDialog()) return;
     const now = client.active(tab.id) ?? null;
-    if (!phone && now !== null && client.pointerActive !== now) client.viewOf(now)?.focus();
+    if (phone || now === null) return;
+    // Not from where a click already put it (#472): a pointer activation
+    // leaves focus on what was pressed, and moving it mid-press can scroll
+    // the pane under the pointer.
+    const host = client.viewOf(now)?.host;
+    const at = document.activeElement;
+    if (host && at && host.contains(at)) return;
+    client.viewOf(now)?.focus();
   }, [client, tab.id, active, phone]);
   // ...and comes back to it after menus and buttons, unless something else
   // (a rename box) is using the keyboard.
@@ -107,7 +114,7 @@ export function TabArea({ client, tab, cell, phone }: { client: Client; tab: Tab
       el === document.body ||
       (el.closest(".menu, .bar button, .tab, .pane-toolbar button, .pane-header button") && !el.matches(":focus-visible"));
     const now = client.active(tab.id) ?? null;
-    if (!phone && now !== null && idle && client.pointerActive !== now) client.viewOf(now)?.focus();
+    if (!phone && now !== null && idle) client.viewOf(now)?.focus();
   }, [client, rev, active, phone]);
 
   const gridW = tab.cols * cell.width;

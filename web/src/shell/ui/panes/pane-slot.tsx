@@ -138,7 +138,7 @@ export function PaneSlot({
       class={active ? "pane active" : "pane"}
       data-pane={id}
       style={px(rect, cell)}
-      onPointerDownCapture={() => client.setActive(id, true)}
+      onPointerDownCapture={() => client.setActive(id)}
       onMouseDownCapture={rightDown}
       onContextMenu={menu}
     >
