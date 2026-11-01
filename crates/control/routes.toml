@@ -886,6 +886,22 @@ auth = "session"
 clients = ["page"]
 
 [[route]]
+method = "POST"
+path = "/api/push/check"
+process = "hub"
+auth = "session"
+clients = ["page"]
+note = "How the account's push subscriptions stand, and this device's (#468)"
+
+[[route]]
+method = "POST"
+path = "/api/push/test"
+process = "hub"
+auth = "session"
+clients = ["page"]
+note = "A test notification to every subscription; PUSH_TESTS a person an hour (#468)"
+
+[[route]]
 method = "GET"
 path = "/api/me/prefs"
 process = "hub"

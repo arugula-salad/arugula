@@ -683,6 +683,8 @@ fn routes() -> Routes {
         .route("/api/push/subscribe", post(push::subscribe))
         .route("/api/push/unsubscribe", post(push::unsubscribe))
         .route("/api/push/prefs", get(push::prefs).post(push::set_prefs))
+        .route("/api/push/check", post(push::check))
+        .route("/api/push/test", post(push::test))
         .route("/api/me/prefs", get(prefs::get).post(prefs::set))
         .route("/api/push/live/{id}", get(push_live::live))
         .route(wire::PUSH_SUBS, get(push::daemon_subs))

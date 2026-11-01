@@ -33,7 +33,7 @@ import { directory } from "./hosts";
 import { App } from "./ui/app";
 import { openTeamChat, remotes } from "./blocks";
 import { measureCell } from "./ui/cells";
-import { desktopPush, enableControlPush, registerWorker, setPushBackend } from "./push";
+import { currentSubscription, desktopPush, enableControlPush, registerWorker, setPushBackend, subscriptionParts } from "./push";
 import { setReadOnlyLink } from "./ui/link-note";
 import { ControlSession, detectControl, restoreInvite, showMoving } from "./control";
 import { useControl } from "./trust/common";
@@ -125,6 +125,25 @@ if (session) {
     },
     prefs: () => session.pushPrefs(),
     setPrefs: (p) => session.setPushPrefs(p),
+    // #468: a subscription this browser still has but control has none of
+    // (or one from a key it no longer approves) is handed over again, signed
+    // by this device's key now: nothing reached it, and the switch said on.
+    check: async () => {
+      const sub = await currentSubscription();
+      const parts = sub && subscriptionParts(sub);
+      const s = await session.pushCheck(parts?.endpoint ?? null);
+      if (!parts || (s.this_device !== "missing" && s.this_device !== "unusable") || Notification.permission !== "granted") return s;
+      try {
+        await session.subscribePush(parts);
+        return await session.pushCheck(parts.endpoint);
+      } catch {
+        return s;
+      }
+    },
+    test: async () => {
+      const sub = await currentSubscription();
+      return session.pushTest((sub && subscriptionParts(sub)?.endpoint) ?? null);
+    },
   });
   // The desktop app has no Web Push: it shows what control pushes itself,
   // while it runs, once it says it can (an app from before doesn't).
@@ -138,6 +157,8 @@ if (session) {
             unsubscribe: (endpoint) => session.unsubscribePush(endpoint),
             prefs: () => session.pushPrefs(),
             setPrefs: (p) => session.setPushPrefs(p),
+            check: (endpoint) => session.pushCheck(endpoint),
+            test: (endpoint) => session.pushTest(endpoint),
           }),
         ),
       () => {},

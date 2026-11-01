@@ -1,9 +1,10 @@
 // The count on the bar's Inbox (UI audit #170), as control's bell counts
 // what needs you: the inbox page's "unseen" (its entries not yet seen, and
-// the threads with news chat doesn't list). The entries are read when the
-// bar comes up, when the reader comes back to the window, and whenever the
-// inbox page reads them (it hands them here); the threads are chat's,
-// live.
+// the threads with news chat doesn't list), and the deploys waiting for the
+// reader's approval (#468), which the inbox shows first. The entries and
+// the deploys are read when the bar comes up, when the reader comes back to
+// the window, and whenever the inbox page reads them (it hands them here);
+// the threads are chat's, live.
 
 import { useEffect } from "preact/hooks";
 import type { InboxEntry } from "../shared/proto.gen";
@@ -14,6 +15,8 @@ import { useSubscribe } from "../shared/ui/hooks";
 import { session } from "./session";
 
 let entries: InboxEntry[] | null = null;
+/** Deploys waiting for the reader's approval (`/api/deploys/waiting`). */
+let waiting = 0;
 const listeners = new Set<() => void>();
 
 /** Whether an entry counts as seen: marked so, or one that's done (a PR
@@ -27,14 +30,29 @@ export function noteInbox(list: InboxEntry[]) {
   listeners.forEach((fn) => fn());
 }
 
-async function load() {
-  try {
-    const r = await platformFetch("/api/inbox", { credentials: "same-origin" });
-    if (r.ok) noteInbox(((await r.json()) as { entries: InboxEntry[] }).entries);
-  } catch {
-    // The count waits for the next read; the page says what went wrong.
-  }
+/** How many deploys wait for the reader, as the inbox page just read them. */
+export function noteWaitingDeploys(n: number) {
+  waiting = n;
+  listeners.forEach((fn) => fn());
 }
+
+async function load() {
+  const read = async <T,>(path: string): Promise<T | null> => {
+    try {
+      const r = await platformFetch(path, { credentials: "same-origin" });
+      return r.ok ? ((await r.json()) as T) : null;
+    } catch {
+      // The count waits for the next read; the page says what went wrong.
+      return null;
+    }
+  };
+  const [inbox, deploys] = await Promise.all([read<{ entries: InboxEntry[] }>("/api/inbox"), read<{ deploys: unknown[] }>("/api/deploys/waiting")]);
+  if (deploys) noteWaitingDeploys(deploys.deploys.length);
+  if (inbox) noteInbox(inbox.entries);
+}
+
+/** Deploys waiting for the reader's approval, or 0 before it's known. */
+export const deploysWaiting = () => waiting;
 
 /** The inbox page's "unseen", or 0 before it's known. */
 export function inboxUnseen(): number {
@@ -43,7 +61,8 @@ export function inboxUnseen(): number {
   return entries.filter((e) => !isSeen(e)).length + threads;
 }
 
-/** The count, beside the bar's Inbox: nothing while nothing's unseen. */
+/** The count, beside the bar's Inbox: nothing while nothing's unseen and
+ * no deploy waits. */
 export function InboxCount() {
   useSubscribe((fn) => {
     listeners.add(fn);
@@ -60,11 +79,13 @@ export function InboxCount() {
     document.addEventListener("visibilitychange", back);
     return () => document.removeEventListener("visibilitychange", back);
   }, [ready]);
-  const n = inboxUnseen();
+  const unseen = inboxUnseen();
+  const n = unseen + waiting;
   if (!n) return null;
-  const title = `${n} unseen in your inbox`;
+  const said = [waiting ? `${waiting} ${waiting === 1 ? "deploy waits" : "deploys wait"} for your approval` : "", unseen ? `${unseen} unseen in your inbox` : ""];
+  const title = said.filter(Boolean).join("; ");
   return (
-    <span class="thread-unread place-unread" title={title} data-inbox-count={n}>
+    <span class={waiting ? "thread-unread place-unread mention" : "thread-unread place-unread"} title={title} data-inbox-count={n} data-inbox-deploys={waiting || undefined}>
       <span class="thread-unread-dot" aria-hidden="true" />
       <span aria-hidden="true">{n > 99 ? "99+" : n}</span>
       <span class="place-unread-said">{title}</span>

@@ -36,6 +36,7 @@ import { desktopApp } from "../shared/desktop";
 import { platformFetch, refusalOf } from "../shared/maintenance";
 import { automated, counting, startCounting, stopCounting, type PageCounts } from "../shared/telemetry";
 import type { PushPrefs } from "./push";
+import type { PushStanding } from "./push-health";
 import {
   follows,
   inviteKey,
@@ -2245,6 +2246,17 @@ export class ControlSession {
   /** Turn some kinds on or off; the rest stay. */
   async setPushPrefs(prefs: Partial<PushPrefs>) {
     return api<PushPrefs>("/api/push/prefs", prefs);
+  }
+
+  /** #468: how the account's push subscriptions stand, and whether control
+   * has this device's (`endpoint`) and may use it. */
+  async pushCheck(endpoint: string | null) {
+    return api<PushStanding>("/api/push/check", { endpoint });
+  }
+
+  /** #468: a test notification to every subscription the account has. */
+  async pushTest(endpoint: string | null) {
+    return api<PushStanding>("/api/push/test", { endpoint });
   }
 
   /** The account's prefs for its pages (hints seen, Tips, What's new:

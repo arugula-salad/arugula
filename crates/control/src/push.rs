@@ -348,6 +348,7 @@ pub fn notify_with(
         msg.insert(k.into(), v);
     }
     let msg = Value::Object(msg).to_string();
+    let tag = tag.to_owned();
     tokio::spawn(async move {
         for account in accounts {
             let subs = match app.db.push_subs(&account) {
@@ -357,26 +358,119 @@ pub fn notify_with(
                     continue;
                 }
             };
+            let mut said = Outcomes::default();
             for sub in subs {
-                let Ok(sub) = serde_json::from_value::<PushSub>(sub) else { continue };
-                if let Err(e) = send_own(&app, &sub, msg.as_bytes()).await {
-                    warn!(error = e.1, %account, "control's notice didn't go");
-                }
+                let Ok(sub) = serde_json::from_value::<PushSub>(sub) else {
+                    said.note(Outcome::Skipped);
+                    continue;
+                };
+                said.note(send_one(&app, &account, &sub, msg.as_bytes(), HOUR).await);
             }
+            said.log(&account, &tag, "control's notice");
         }
     });
 }
 
-async fn send_own(app: &App, sub: &PushSub, msg: &[u8]) -> Result<(), ApiError> {
-    app.limits.check_account(crate::limit::ACCOUNT_PUSHES, &sub.account)?;
-    app.limits.check_all(crate::limit::PUSHES)?;
-    let bad = |_| err(StatusCode::BAD_REQUEST, "subscription keys");
-    let (ua, auth) = (B64.decode(&sub.p256dh).map_err(bad)?, B64.decode(&sub.auth).map_err(bad)?);
-    let body = arugula_e2e::push::encrypt(msg, &ua, &auth, &arugula_e2e::push::ephemeral(), &arugula_e2e::random())
-        .map_err(|e| err(StatusCode::BAD_REQUEST, &e.to_string()))?;
-    let status = post(app, &sub.endpoint, body, 3600, Some("high")).await?;
-    info!(account = sub.account, status, "control's notice sent");
-    Ok(())
+/// What became of a push to one subscription, as the logs say it: never
+/// its endpoint, keys or what it said.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Outcome {
+    /// Its push service took it.
+    Sent,
+    /// Its push service says it's gone: forgotten.
+    Gone,
+    /// Its push service refused it or didn't answer, or a limit held it.
+    Failed,
+    /// Not sent: not from one of the account's approved devices that
+    /// isn't revoked, or unreadable.
+    Skipped,
+}
+
+impl Outcome {
+    fn word(self) -> &'static str {
+        match self {
+            Outcome::Sent => "sent",
+            Outcome::Gone => "gone",
+            Outcome::Failed => "error",
+            Outcome::Skipped => "skipped",
+        }
+    }
+}
+
+/// One push's outcomes, a subscription each, for its one log line (#468).
+#[derive(Debug, Default)]
+pub(crate) struct Outcomes(Vec<Outcome>);
+
+impl Outcomes {
+    fn note(&mut self, o: Outcome) {
+        self.0.push(o);
+    }
+
+    fn count(&self, o: Outcome) -> u32 {
+        u32::try_from(self.0.iter().filter(|x| **x == o).count()).unwrap_or(u32::MAX)
+    }
+
+    /// `sent,gone,skipped`: each subscription's, in the order tried.
+    pub(crate) fn said(&self) -> String {
+        if self.0.is_empty() {
+            return "none".into();
+        }
+        self.0.iter().map(|o| o.word()).collect::<Vec<_>>().join(",")
+    }
+
+    fn pushed(&self) -> Pushed {
+        Pushed { sent: self.count(Outcome::Sent), gone: self.count(Outcome::Gone), failed: self.count(Outcome::Failed) }
+    }
+
+    /// One info line: whose, which push (its tag), how many subscriptions,
+    /// and what became of each.
+    fn log(&self, account: &str, tag: &str, what: &str) {
+        info!(%account, tag, subscriptions = self.0.len(), outcomes = %self.said(), "{what}: pushed");
+    }
+}
+
+/// Whether the platform's pushes (all but chat's) may go to `sub`: signed
+/// by one of the account's approved devices that isn't revoked, at a push
+/// service (or a live endpoint). Asked at each push, since a device can be
+/// removed or revoked after it subscribed.
+fn usable(
+    app: &App,
+    account: &str,
+    sub: &PushSub,
+    revoked: &std::collections::HashSet<String>,
+) -> anyhow::Result<bool> {
+    let Some((cert, true)) = app.db.device(account, &sub.device)? else { return Ok(false) };
+    Ok(sub.signed_by(&cert) && !revoked.contains(&sub.device) && allowed_endpoint(app, &sub.endpoint))
+}
+
+fn revoked_devices(app: &App, account: &str) -> anyhow::Result<std::collections::HashSet<String>> {
+    Ok(app.db.revocations(account)?.into_iter().map(|r| r.device).collect())
+}
+
+/// Encrypt `msg` for `sub` (RFC 8291) and post it, kept by its push
+/// service for `ttl` seconds.
+async fn send_one(app: &App, account: &str, sub: &PushSub, msg: &[u8], ttl: u32) -> Outcome {
+    let sent = async {
+        app.limits.check_account(crate::limit::ACCOUNT_PUSHES, account)?;
+        app.limits.check_all(crate::limit::PUSHES)?;
+        let bad = |_| err(StatusCode::BAD_REQUEST, "subscription keys");
+        let (ua, auth) = (B64.decode(&sub.p256dh).map_err(bad)?, B64.decode(&sub.auth).map_err(bad)?);
+        let body = arugula_e2e::push::encrypt(msg, &ua, &auth, &arugula_e2e::push::ephemeral(), &arugula_e2e::random())
+            .map_err(|e| err(StatusCode::BAD_REQUEST, &e.to_string()))?;
+        post(app, &sub.endpoint, body, ttl, Some("high")).await
+    };
+    match sent.await {
+        Ok(404 | 410) => Outcome::Gone,
+        Ok(200..=299) => Outcome::Sent,
+        Ok(status) => {
+            warn!(%account, status, "a push service refused a push");
+            Outcome::Failed
+        }
+        Err(e) => {
+            warn!(%account, error = e.1, "a push didn't go");
+            Outcome::Failed
+        }
+    }
 }
 
 /// Push `msg` to an account's devices for the platform (`HubPort::push`,
@@ -387,48 +481,98 @@ async fn send_own(app: &App, sub: &PushSub, msg: &[u8]) -> Result<(), ApiError> 
 /// Waits for each push service, and says what they did.
 /// Nothing goes for a kind the account turned off ([`Kind::of_platform`]).
 pub(crate) async fn push_account(app: &App, account: &str, msg: &[u8], options: PushOptions) -> anyhow::Result<Pushed> {
-    let kind = serde_json::from_slice(msg).map_or(Kind::Projects, |m| Kind::of_platform(&m));
+    let parsed: Option<Value> = serde_json::from_slice(msg).ok();
+    let kind = parsed.as_ref().map_or(Kind::Projects, Kind::of_platform);
+    let tag = parsed.as_ref().and_then(|m| m.get("tag")).and_then(Value::as_str).unwrap_or_default();
     if muted(app, account, kind)? {
+        info!(%account, tag, kind = ?kind, "the platform's push: held back, the account turned it off");
         return Ok(Pushed::default());
     }
-    let revoked: std::collections::HashSet<String> =
-        app.db.revocations(account)?.into_iter().map(|r| r.device).collect();
+    let revoked = revoked_devices(app, account)?;
     let ttl = options.ttl.map_or(HOUR, |t| u32::try_from(t.as_secs()).unwrap_or(u32::MAX));
-    let mut out = Pushed::default();
+    let mut said = Outcomes::default();
     for value in app.db.push_subs(account)? {
-        let Ok(sub) = serde_json::from_value::<PushSub>(value) else { continue };
+        let Ok(sub) = serde_json::from_value::<PushSub>(value) else {
+            said.note(Outcome::Skipped);
+            continue;
+        };
         // Every one, as `notify_with` sends them: each was checked when it
         // was stored (`subscribe`).
-        if !options.any_subscription {
-            let Some((cert, true)) = app.db.device(account, &sub.device)? else { continue };
-            if !sub.signed_by(&cert) || revoked.contains(&sub.device) || !allowed_endpoint(app, &sub.endpoint) {
-                continue;
-            }
+        if !options.any_subscription && !usable(app, account, &sub, &revoked)? {
+            said.note(Outcome::Skipped);
+            continue;
         }
-        let sent = async {
-            app.limits.check_account(crate::limit::ACCOUNT_PUSHES, account)?;
-            app.limits.check_all(crate::limit::PUSHES)?;
-            let bad = |_| err(StatusCode::BAD_REQUEST, "subscription keys");
-            let (ua, auth) = (B64.decode(&sub.p256dh).map_err(bad)?, B64.decode(&sub.auth).map_err(bad)?);
-            let body =
-                arugula_e2e::push::encrypt(msg, &ua, &auth, &arugula_e2e::push::ephemeral(), &arugula_e2e::random())
-                    .map_err(|e| err(StatusCode::BAD_REQUEST, &e.to_string()))?;
-            post(app, &sub.endpoint, body, ttl, Some("high")).await
-        };
-        match sent.await {
-            Ok(404 | 410) => out.gone += 1,
-            Ok(200..=299) => out.sent += 1,
-            Ok(status) => {
-                warn!(%account, status, "the platform's push was refused");
-                out.failed += 1;
-            }
-            Err(e) => {
-                warn!(%account, error = e.1, "the platform's push didn't go");
-                out.failed += 1;
-            }
-        }
+        said.note(send_one(app, account, &sub, msg, ttl).await);
     }
-    Ok(out)
+    said.log(account, tag, "the platform's push");
+    Ok(said.pushed())
+}
+
+/// What `/api/push/check` and `/api/push/test` are asked about: this
+/// device's subscription, when it has one, to say whether control has it.
+#[derive(Deserialize, Default)]
+pub struct Check {
+    #[serde(default)]
+    endpoint: Option<String>,
+}
+
+/// How the account's subscriptions stand: how many, how many the
+/// platform's pushes (deploys, the inbox, runs) may go to, and, when the
+/// page says which is this device's, whether control has it and may use
+/// it (`usable`, `unusable` or `missing`).
+fn standing(app: &App, account: &str, mine: Option<&str>) -> anyhow::Result<(Vec<PushSub>, Value)> {
+    let revoked = revoked_devices(app, account)?;
+    let mut subs = Vec::new();
+    for value in app.db.push_subs(account)? {
+        let Ok(sub) = serde_json::from_value::<PushSub>(value) else { continue };
+        let ok = usable(app, account, &sub, &revoked)?;
+        subs.push((sub, ok));
+    }
+    let this = mine.filter(|e| !e.is_empty()).map(|e| match subs.iter().find(|(s, _)| s.endpoint == e) {
+        Some((_, true)) => "usable",
+        Some((_, false)) => "unusable",
+        None => "missing",
+    });
+    let v = json!({
+        "subscriptions": subs.len(),
+        "usable": subs.iter().filter(|(_, ok)| *ok).count(),
+        "this_device": this,
+    });
+    Ok((subs.into_iter().map(|(s, _)| s).collect(), v))
+}
+
+/// `POST /api/push/check {endpoint?}`: how the account's subscriptions
+/// stand (`standing`), for the page's notification settings (#468).
+pub async fn check(State(app): State<Arc<App>>, s: Session, Json(b): Json<Check>) -> R {
+    Ok(Json(standing(&app, &s.account, b.endpoint.as_deref())?.1))
+}
+
+/// `POST /api/push/test {endpoint?}`: *Send a test notification* (#468): a
+/// notice to every subscription the account has, whatever it chose to
+/// hear, and what became of them: `standing`'s, with how many were `sent`,
+/// `gone` (and forgotten) and `failed`. A push service keeps it ten
+/// minutes, so a phone that's off doesn't show it much later.
+pub async fn test(State(app): State<Arc<App>>, s: Session, Json(b): Json<Check>) -> R {
+    app.limits.check_account(crate::limit::PUSH_TESTS, &s.account)?;
+    let (subs, mut v) = standing(&app, &s.account, b.endpoint.as_deref())?;
+    let n = subs.len();
+    let msg = json!({
+        "title": "Arugula test notification",
+        "body": format!("Notifications reach this device. Sent to {n} {}.", if n == 1 { "subscription" } else { "subscriptions" }),
+        "tag": "push-test",
+        "control": true,
+    })
+    .to_string();
+    let mut said = Outcomes::default();
+    for sub in &subs {
+        said.note(send_one(&app, &s.account, sub, msg.as_bytes(), 600).await);
+    }
+    said.log(&s.account, "push-test", "a test notification");
+    let p = said.pushed();
+    v["sent"] = json!(p.sent);
+    v["gone"] = json!(p.gone);
+    v["failed"] = json!(p.failed);
+    Ok(Json(v))
 }
 
 pub async fn daemon_send(State(app): State<Arc<App>>, d: DaemonAuth, Json(b): Json<PushRequest>) -> R {

@@ -1680,6 +1680,18 @@ leaves it. So:
   Notices about the account always go: control's own, and the platform's
   `agent-token-…` and `client-secret-reads-…`. Control can tell the kinds
   apart without reading a daemon's push: it knows who sent it.
+- **Checking it (#468):** the platform's pushes other than chat's go only
+  to a subscription signed by one of the account's approved devices that
+  isn't revoked, so a subscription from a key control no longer approves
+  is skipped. `POST /api/push/check {endpoint?}` says how many
+  subscriptions the account has, how many those pushes may go to, and
+  whether control has this device's and may use it; the page hands this
+  device's over again, signed by its key now, when control has none it can
+  use. *Send a test notification* (`POST /api/push/test`) goes to every
+  subscription, whatever the account chose to hear, and says what became
+  of it. Control logs one line per push (account, tag, how many
+  subscriptions, and each one's outcome: sent, gone, error or skipped),
+  never an endpoint, key or what it said.
 
 This is confirmed by construction: the daemon's existing RFC 8291 encrypt
 plus a separate VAPID signer is exactly what the RFC allows. The push work adds the

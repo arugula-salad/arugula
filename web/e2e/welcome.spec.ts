@@ -112,10 +112,10 @@ test.describe("phone", () => {
     const page = await ctx.newPage();
     await reset(page);
     const hint = page.locator("[data-install-hint]");
-    await expect(hint).toContainText("Add it to your Home Screen");
+    await expect(hint).toContainText("Add Arugula to your Home Screen");
     await page.locator(".sheet-button").click();
     await sheetTab(page, "More");
-    await expect(page.locator("[data-notify-blocked]")).toHaveText(/^Add it to your Home Screen first \(Share › Add to Home Screen\), then open it from there\.$/);
+    await expect(page.locator("[data-notify-blocked]")).toHaveText(/^Add Arugula to your Home Screen to get notifications \(Share › Add to Home Screen\), then open it from there\.$/);
     await expect(page.getByRole("button", { name: "Notify this device" })).toHaveCount(0);
     await page.locator(".sheet-backdrop").click({ position: { x: 5, y: 600 } });
     await hint.getByRole("button", { name: "Dismiss" }).click();

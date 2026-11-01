@@ -62,6 +62,12 @@ test("push on through control: Choose what to be told about", async ({ browser }
   await expect(alice.getByRole("menu")).toContainText("Push: Chat");
   await expect(alice.getByRole("menu")).toContainText("Push: Projects");
   await expect(alice.locator("[data-hint]")).toHaveCount(0);
+
+  // #468: control has this device's subscription, so nothing's said of it;
+  // Send a test notification goes to every subscription, and says so.
+  await expect(alice.getByRole("menu")).not.toContainText("subscription");
+  await (await menuItem(alice, "Send a test notification")).click();
+  await expect.poll(() => alice.evaluate(() => window.__arugula.client.error)).toBe("Sent a test to 1 of 1 subscription.");
 });
 
 test("a GitHub-only account on a device that makes passkeys: Add a passkey", async ({ browser }) => {
