@@ -411,6 +411,88 @@ test("a board with groups shows each as a section with its four lanes, and the r
   await expect(alice.locator("[data-board-zone] h2")).toHaveText(["Doing", "Review", "Next", "Done"]);
 });
 
+test("a group heading folds its rows, a board without groups folds by lane, and it's kept per board and viewer (#480)", async () => {
+  test.setTimeout(120_000);
+  const made = async (title: string, groups: string[]) => {
+    const b = await api(alice, "POST", `/api/projects/${project}/boards`, { title });
+    expect(b.status).toBe(200);
+    const id = b.body!.board.id as string;
+    const entries = `/api/boards/${id}/entries`;
+    let ids: string[] = [];
+    for (const g of groups) ids = ((await api(alice, "PUT", entries, { entry: "zone", title: g })).body!.groups as { id: string }[]).map((x) => x.id);
+    const notes = groups.length ? groups.flatMap((_, i) => [`${groups[i]} one`, `${groups[i]} two`].map((note) => [note, ids[i]] as const)) : ([["Plain one", undefined], ["Plain two", undefined]] as const);
+    for (const [note, zone] of notes) expect((await api(alice, "PUT", entries, { entry: "row", note, zone })).status).toBe(200);
+    return `/p/${project}/boards/${id}`;
+  };
+  const one = await made("Fold one", ["Alpha", "Beta"]);
+  const two = await made("Fold two", ["Alpha", "Beta"]);
+  const plain = await made("Fold plain", []);
+  const fold = (g: string) => alice.locator("[data-board-group]").filter({ has: alice.locator("[data-board-group-title]", { hasText: g }) });
+  const heading = (g: string) => fold(g).locator("button[data-board-fold]").first();
+
+  await platform(alice, one);
+  await expect(alice.locator("[data-board-group-title]")).toHaveText(["Alpha", "Beta"], { timeout: 15_000 });
+  // Everything starts open; a group heading is a button.
+  await expect(heading("Alpha")).toHaveAttribute("aria-expanded", "true");
+  await expect(fold("Alpha").locator("[data-board-row]")).toHaveCount(2);
+  // Folded, it hides its rows (and its lanes), says its count, and leaves the other group open.
+  await heading("Alpha").click();
+  await expect(heading("Alpha")).toHaveAttribute("aria-expanded", "false");
+  await expect(heading("Alpha")).toHaveText("Alpha · 2");
+  await expect(fold("Alpha").locator("[data-board-zone]")).toHaveCount(0);
+  await expect(fold("Beta").locator("[data-board-row]")).toHaveCount(2);
+  // Lanes inside a group don't fold.
+  await expect(fold("Beta").locator("[data-board-zone] button[data-board-fold]")).toHaveCount(0);
+
+  // Kept: a reload shows it still folded, and another board with the same group names is untouched.
+  await alice.reload();
+  await expect(heading("Alpha")).toHaveAttribute("aria-expanded", "false", { timeout: 15_000 });
+  await expect(heading("Alpha")).toHaveText("Alpha · 2");
+  await expect(fold("Beta").locator("[data-board-row]")).toHaveCount(2);
+  await platform(alice, two);
+  await expect(heading("Alpha")).toHaveAttribute("aria-expanded", "true", { timeout: 15_000 });
+  await expect(fold("Alpha").locator("[data-board-row]")).toHaveCount(2);
+  // Per viewer: it is this browser's, not the board's (Bob, on his own storage, sees the first board open).
+  await platform(bob, one);
+  await expect(bob.locator("[data-board-group-title]").first()).toBeVisible({ timeout: 15_000 });
+  await expect(bob.locator("[data-board-group]").filter({ hasText: "Alpha" }).locator("[data-board-row]")).toHaveCount(2);
+
+  // From the keyboard: focus the heading, Enter opens it again.
+  await platform(alice, one);
+  await heading("Alpha").focus();
+  await alice.keyboard.press("Enter");
+  await expect(heading("Alpha")).toHaveAttribute("aria-expanded", "true");
+  await expect(fold("Alpha").locator("[data-board-row]")).toHaveCount(2);
+  await alice.reload();
+  await expect(heading("Alpha")).toHaveAttribute("aria-expanded", "true", { timeout: 15_000 });
+
+  // No groups: the lane headings fold, kept the same way.
+  await platform(alice, plain);
+  const lane = (title: string) => alice.locator("[data-board-zone]").filter({ has: alice.getByRole("heading", { name: title, exact: true }) });
+  const rows = alice.locator("[data-board-row]");
+  await expect(rows).toHaveCount(2, { timeout: 15_000 });
+  const withRows = alice.locator("[data-board-zone]").filter({ has: alice.locator("[data-board-row]") });
+  const name = (await withRows.first().getByRole("heading").textContent())!.trim();
+  await lane(name).locator("button[data-board-fold]").click();
+  await expect(lane(name).locator("button[data-board-fold]")).toHaveAttribute("aria-expanded", "false");
+  await expect(rows).toHaveCount(0);
+  await alice.reload();
+  await expect(lane(name).locator("button[data-board-fold]")).toHaveAttribute("aria-expanded", "false", { timeout: 15_000 });
+  await expect(rows).toHaveCount(0);
+  await lane(name).locator("button[data-board-fold]").click();
+  await expect(rows).toHaveCount(2);
+
+  // On a phone: a heading folds it, it stays folded after a reload, and nothing scrolls sideways.
+  await alice.setViewportSize({ width: 390, height: 780 });
+  await platform(alice, one);
+  await heading("Beta").click();
+  await expect(heading("Beta")).toHaveText("Beta · 2");
+  await alice.reload();
+  await expect(heading("Beta")).toHaveAttribute("aria-expanded", "false", { timeout: 15_000 });
+  expect(await alice.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
+  await alice.setViewportSize({ width: 1280, height: 800 });
+});
+
 test("a board's cards carry their lane's tone, its groups are managed on the page, and a row moves to another group", async () => {
   test.setTimeout(120_000);
   const made = await api(alice, "POST", `/api/projects/${project}/boards`, { title: "Managed" });

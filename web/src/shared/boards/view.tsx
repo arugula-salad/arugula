@@ -37,6 +37,7 @@ import { agentShort } from "../agent-label";
 import { day } from "../time";
 import { BoardError, STALE_REV, boards, type ForgeChecks } from "./store";
 import "./boards.css";
+import { groupFold, isFolded, laneFold, loadFolds, saveFolds, type Folds } from "./folds";
 import { PICK_DELAY_MS, cardTone, checkTone, checkWord, groupMove, liveTone, prsOf, PICK_LIMIT, assigneesLine, blockClass, GOAL_MAX, answerReady, askWaitingLine, blockFacts, chipOf, settledFacts, debounced, earlierLine, epicLine, holdsRow, groupLine, isCard, laneCount, liveClass, liveWord, marksOf, needsYou, pointerHref, pointerLabel, pointerText, pointerToSend, proofMark, readyCount, relationLine, RELATION_KINDS, sections, stepActive, workLabel } from "./text";
 
 const STALE_SAID = "That changed while you were editing, so the board is read again. Make your change again if it still applies.";
@@ -73,6 +74,14 @@ export function BoardPanel({
   const [editing, setEditing] = useState<string | null>(null);
   /** The row whose drawer is open. */
   const [drawer, setDrawer] = useState<string | null>(null);
+  /** The headings this viewer folded, kept in this browser per board. */
+  const [folds, setFolds] = useState<Folds>(() => loadFolds(id));
+  useEffect(() => setFolds(loadFolds(id)), [id]);
+  const toggleFold = (key: string) => {
+    const next = { ...folds, [key]: !isFolded(folds, key) };
+    setFolds(next);
+    saveFolds(id, next);
+  };
   /** The group a Delete waits on. */
   const [dropping, setDropping] = useState<BoardGroup | null>(null);
   // Chat says when the thread's object changed; it's on while chat is.
@@ -218,19 +227,29 @@ export function BoardPanel({
         </p>
       )}
       {sections(view).map((s) => {
+        const grouped = !!view.groups?.length;
+        const key = groupFold(s.group?.id ?? null);
+        const folded = grouped && isFolded(folds, key);
         const lanes = (
           <div class="board-lanes">
             {s.lanes.map((z) => (
-              <Lane key={z.id} z={z} project={view.board.project} editing={editing} setEditing={setEditing} act={act} id={id} platform={platform} groups={write ? (view.groups ?? []) : []} moveRow={moveRow} open={setDrawer} />
+              <Lane key={z.id} z={z} fold={grouped ? undefined : { folded: isFolded(folds, laneFold(z.id)), toggle: () => toggleFold(laneFold(z.id)) }} project={view.board.project} editing={editing} setEditing={setEditing} act={act} id={id} platform={platform} groups={write ? (view.groups ?? []) : []} moveRow={moveRow} open={setDrawer} />
             ))}
           </div>
         );
         // No groups: the lanes alone, as before.
-        if (!view.groups?.length) return lanes;
+        if (!grouped) return lanes;
+        const title = s.group?.title ?? "No group";
+        const rows = s.lanes.reduce((n, z) => n + z.rows.length, 0);
         return (
           <section class="board-group" key={s.group?.id ?? "none"} data-board-group={s.group?.id ?? "none"}>
             <header class="board-group-head">
-              <h2 data-board-group-title>{s.group?.title ?? "No group"}</h2>
+              <h2 data-board-group-title>
+                <button type="button" class="board-fold" aria-expanded={!folded} data-board-fold={key} onClick={() => toggleFold(key)}>
+                  {title}
+                  {folded && ` · ${rows}`}
+                </button>
+              </h2>
               {s.group && (
                 <span class="board-group-progress dim" data-board-group-progress>
                   {groupLine(s.group.progress)}
@@ -242,7 +261,7 @@ export function BoardPanel({
                 </button>
               )}
             </header>
-            {lanes}
+            {!folded && lanes}
           </section>
         );
       })}
@@ -478,6 +497,7 @@ function Answered({ asked }: { asked: BoardAnsweredAsk[] }) {
 
 function Lane({
   z,
+  fold,
   project,
   editing,
   setEditing,
@@ -489,6 +509,8 @@ function Lane({
   open,
 }: {
   z: BoardZone;
+  /** The lane heading as a button, on a board without groups; on one with groups only the groups fold. */
+  fold?: { folded: boolean; toggle: () => void };
   project: string;
   editing: string | null;
   setEditing: (e: string | null) => void;
@@ -504,17 +526,27 @@ function Lane({
   return (
     <section class="board-zone" data-board-zone={z.id} data-zone-kind={z.kind ?? undefined}>
       <header class="board-zone-head">
-        <h2>{z.title}</h2>
+        <h2>
+          {fold ? (
+            <button type="button" class="board-fold" aria-expanded={!fold.folded} data-board-fold={laneFold(z.id)} onClick={fold.toggle}>
+              {z.title}
+            </button>
+          ) : (
+            z.title
+          )}
+        </h2>
         <span class="board-count dim" data-board-count>
           {n.total}
           {n.proven > 0 && ` · ${n.proven} proven`}
         </span>
       </header>
-      <ul class="board-rows sw-cards">
-        {z.rows.map((r) => (
-          <Row key={r.id} r={r} editing={editing === r.id} setEditing={setEditing} act={act} id={id} project={project} platform={platform} groups={groups} moveRow={moveRow} open={open} />
-        ))}
-      </ul>
+      {!fold?.folded && (
+        <ul class="board-rows sw-cards">
+          {z.rows.map((r) => (
+            <Row key={r.id} r={r} editing={editing === r.id} setEditing={setEditing} act={act} id={id} project={project} platform={platform} groups={groups} moveRow={moveRow} open={open} />
+          ))}
+        </ul>
+      )}
     </section>
   );
 }

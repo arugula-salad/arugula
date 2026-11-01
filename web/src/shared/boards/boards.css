@@ -812,3 +812,41 @@
   gap: 6px;
   margin-top: 6px;
 }
+
+/* A group's or lane's heading as a button (#480): it looks as the heading did, with a chevron that turns when the rows under it are folded away. */
+.board-fold {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.4em;
+  max-width: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  text-align: left;
+  text-transform: inherit;
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+
+.board-fold::before {
+  content: "▾";
+  content: "▾" / "";
+  flex: none;
+  font-size: 0.8em;
+  opacity: 0.6;
+}
+
+.board-fold[aria-expanded="false"]::before {
+  content: "▸";
+  content: "▸" / "";
+}
+
+.board-fold:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 3px;
+}

@@ -312,3 +312,23 @@ test("a stalled row says how long, takes the warn tone, and a block holds its ro
   assert.equal(holdsRow({ role: "proof", block: { state: "working" } }), false);
   assert.equal(holdsRow({ role: "work" }), false, "a reader who can't see the block sees no claim");
 });
+
+test("folds: everything starts open, a toggle is kept per board, and a bad or blocked store reads as none (#480)", async () => {
+  const { FOLD_DONE_BY_DEFAULT, groupFold, isFolded, laneFold, loadFolds, saveFolds } = await import("../src/shared/boards/folds.ts");
+  const mem = new Map();
+  globalThis.localStorage = { getItem: (k) => mem.get(k) ?? null, setItem: (k, v) => void mem.set(k, v) };
+  assert.equal(FOLD_DONE_BY_DEFAULT, false);
+  assert.equal(isFolded({}, groupFold("zon_1")), false);
+  assert.equal(isFolded({}, laneFold("lane_done")), false);
+  saveFolds("brd_a", { [groupFold("zon_1")]: true, [laneFold("lane_next")]: false });
+  assert.deepEqual(loadFolds("brd_a"), { "group:zon_1": true, "lane:lane_next": false });
+  assert.deepEqual(loadFolds("brd_b"), {}, "another board is untouched");
+  mem.set("arugula.board.folds.brd_c", "not json");
+  assert.deepEqual(loadFolds("brd_c"), {});
+  mem.set("arugula.board.folds.brd_d", JSON.stringify({ a: true, b: "yes", c: 1 }));
+  assert.deepEqual(loadFolds("brd_d"), { a: true });
+  globalThis.localStorage = { getItem: () => { throw new Error("blocked"); }, setItem: () => { throw new Error("blocked"); } };
+  assert.deepEqual(loadFolds("brd_a"), {});
+  saveFolds("brd_a", { x: true });
+  delete globalThis.localStorage;
+});
