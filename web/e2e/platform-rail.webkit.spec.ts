@@ -33,6 +33,20 @@ test("Alice, a team with chat on, a machine, and the platform page", async ({ br
   await t.addMachine(alice, "alices");
   await home(alice);
   await show(alice, "alices");
+  // No session on app.localhost yet: the page's first /api/projects is a 401 and
+  // it hops to control's sign-in and back (platform/session.ts). Playwright's
+  // WebKit on Linux throws a bare "Assertion error" at that hop (#482), so take
+  // it on a throwaway page; its session is in the context for alice's.
+  const hop = await alice.context().newPage();
+  try {
+    await Promise.all([
+      hop.waitForResponse((r) => new URL(r.url()).pathname === "/api/projects" && r.ok(), { timeout: 30_000 }),
+      hop.goto(`${app}/`),
+    ]);
+  } catch {
+    // the throw, if it comes, is this page's
+  }
+  await hop.close().catch(() => {});
   await alice.goto(`${app}/`);
   await expect(alice.locator("[data-platform-bar]")).toBeVisible({ timeout: 15_000 });
 });
