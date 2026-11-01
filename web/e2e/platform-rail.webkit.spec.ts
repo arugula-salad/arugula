@@ -35,7 +35,13 @@ test("Alice, a team with chat on, a machine, and the platform page", async ({ br
   await t.addMachine(alice, "alices");
   await home(alice);
   await show(alice, "alices");
-  await alice.goto(`${app}/`);
+  // No session on app.localhost yet: the page's first /api/projects is a 401, and
+  // it hops to control's sign-in and back (platform/session.ts). Wait out the
+  // hop, until /api/projects answers 200, before asking Playwright about the page (#482).
+  await Promise.all([
+    alice.waitForResponse((r) => new URL(r.url()).pathname === "/api/projects" && r.ok(), { timeout: 30_000 }),
+    alice.goto(`${app}/`),
+  ]);
   await expect(alice.locator("[data-platform-bar]")).toBeVisible({ timeout: 15_000 });
 });
 
