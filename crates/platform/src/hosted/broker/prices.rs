@@ -246,7 +246,8 @@ mod tests {
         assert!(close(usd("claude-haiku-4-5", both), 1.25), "the split wins over the total");
         let fast = json!({ "output_tokens": 1_000_000, "speed": "fast" });
         assert!(close(usd("claude-opus-5-5", fast.clone()), 40.0));
-        assert!(close(usd("claude-opus-5", fast), 25.0), "no fast mode, no double");
+        assert!(close(usd("claude-opus-5", fast.clone()), 50.0), "Opus 5 has fast mode too");
+        assert!(close(usd("claude-opus-4-7", fast), 25.0), "no fast mode, no double");
         let (p, known) = price_of("claude-next-9");
         assert!(!known);
         assert_eq!(p.prefix, "claude-fable-5-1");
@@ -262,42 +263,53 @@ mod tests {
         );
         assert_eq!(reservation("claude-opus-5-5", 0, Some(1000), true), micros(1000.0 * 20.0 * 2.0 / 1e6));
         assert_eq!(reservation("claude-next", 0, None, false), micros(128_000.0 * 50.0 / 1e6), "the dearest row");
+        // A row with a long prompt's rates reserves at them.
+        assert_eq!(reservation("claude-haiku-5-5", 0, Some(1000), false), micros(1000.0 * 2.5 / 1e6));
         assert_eq!(micros(1.234_567_8), 1_234_568);
         assert_eq!(micros(f64::NAN), 0);
     }
 
-    /// Hosted calls are charged at exactly the rows they were before the
-    /// table moved to `arugula-prices` (#398): every row, fast mode and the
-    /// fallback as main's `prices.rs` had them. A price change is a billing
-    /// change, made on purpose, here as well as in the table.
+    /// The rows hosted calls are charged at, as Anthropic's pricing page
+    /// listed them on 2026-10-31: a price change is a billing change, made
+    /// on purpose, here as well as in the table.
     #[test]
-    fn prices_are_mains_table() {
+    fn prices_are_the_table() {
         let rows: Vec<(&str, f64, f64, f64)> =
             arugula_prices::PRICES.iter().map(|p| (p.prefix, p.input, p.output, p.cache_read)).collect();
         assert_eq!(
             rows,
             [
                 ("claude-fable-5-1", 10.0, 50.0, 0.25),
-                ("claude-fable-5", 10.0, 50.0, 0.25),
-                ("claude-mythos-5", 10.0, 50.0, 0.25),
+                ("claude-fable-5", 10.0, 50.0, 1.0),
+                ("claude-mythos-5-1", 10.0, 50.0, 0.25),
+                ("claude-mythos-5", 10.0, 50.0, 1.0),
                 ("claude-opus-5-5", 4.0, 20.0, 0.2),
                 ("claude-opus-5", 5.0, 25.0, 0.5),
+                ("claude-opus-4-8", 5.0, 25.0, 0.5),
                 ("claude-opus-4", 5.0, 25.0, 0.5),
-                ("claude-sonnet-5-5", 2.0, 10.0, 0.2),
+                ("claude-sonnet-5-5", 2.0, 10.0, 0.1),
                 ("claude-sonnet-5", 2.0, 10.0, 0.2),
                 ("claude-sonnet-4", 3.0, 15.0, 0.3),
+                ("claude-haiku-5-5", 0.1, 0.5, 0.01),
                 ("claude-haiku-4-5", 1.0, 5.0, 0.1),
             ]
         );
-        assert!(arugula_prices::PRICES.iter().all(|p| p.over.is_none()), "no long-prompt rates");
-        assert_eq!(FAST, ["claude-opus-5-5"]);
+        let haiku = arugula_prices::lookup("claude-haiku-5-5").unwrap().over.unwrap();
+        assert_eq!((haiku.above, haiku.input, haiku.output, haiku.cache_read), (100_000, 0.5, 2.5, 0.05));
+        let retired: Vec<(&str, f64, f64, f64)> =
+            arugula_prices::RETIRED.iter().map(|p| (p.prefix, p.input, p.output, p.cache_read)).collect();
+        assert_eq!(
+            retired,
+            [
+                ("claude-opus-4-1", 15.0, 75.0, 1.5),
+                ("claude-opus-4-0", 15.0, 75.0, 1.5),
+                ("claude-opus-4-2025", 15.0, 75.0, 1.5),
+            ]
+        );
+        assert_eq!(FAST, ["claude-opus-5-5", "claude-opus-5", "claude-opus-4-8"]);
         assert_eq!(dearest().prefix, "claude-fable-5-1");
-        // Models with no row are still charged as the dearest.
-        for m in ["claude-haiku-5-5", "claude-mythos-5-1-x", "claude-next-9"] {
-            let known = price_of(m).1;
-            assert_eq!(known, m.starts_with("claude-mythos-5"), "{m}");
-        }
-        assert_eq!(price_of("claude-haiku-5-5").0.prefix, "claude-fable-5-1");
+        assert!(price_of("claude-haiku-5-5").1);
+        assert!(!price_of("claude-next-9").1);
     }
 
     /// Server-sent events split anywhere, a JSON body, and a body with no

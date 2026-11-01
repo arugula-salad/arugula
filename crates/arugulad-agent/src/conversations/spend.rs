@@ -401,7 +401,7 @@ mod tests {
         let e = est(&response("m1", "claude-sonnet-5-5", u, 2));
         assert_eq!(e["tokens"]["cache_read"], 90_000);
         assert_eq!(e["tokens"]["cache_write"], 30_000);
-        let want = (2.0 * 2.0 + 300.0 * 10.0 + 90_000.0 * 0.2 + 10_000.0 * 2.0 * 1.25 + 20_000.0 * 2.0 * 2.0) / 1e6;
+        let want = (2.0 * 2.0 + 300.0 * 10.0 + 90_000.0 * 0.1 + 10_000.0 * 2.0 * 1.25 + 20_000.0 * 2.0 * 2.0) / 1e6;
         assert!(close(e["usd"].as_f64().unwrap(), want), "{e}");
     }
 
@@ -410,6 +410,10 @@ mod tests {
         let u = json!({"input_tokens": 5, "output_tokens": 2000, "cache_read_input_tokens": 700_000});
         let e = est(&response("m1", "claude-opus-5-5[1m]", u, 1));
         assert!(close(e["usd"].as_f64().unwrap(), (5.0 * 4.0 + 2000.0 * 20.0 + 700_000.0 * 0.2) / 1e6));
+        // Haiku 5.5's prompts over 100k are its dearer rates.
+        let u = json!({"input_tokens": 1, "output_tokens": 1000, "cache_read_input_tokens": 150_000});
+        let e = est(&response("m1", "claude-haiku-5-5", u, 1));
+        assert!(close(e["usd"].as_f64().unwrap(), (1.0 * 0.5 + 1000.0 * 2.5 + 150_000.0 * 0.05) / 1e6));
     }
 
     #[test]
