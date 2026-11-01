@@ -1,0 +1,65 @@
+{
+  "schema": 1,
+  "commit": "486e7474c32baeeb300605838235244b57394bdc",
+  "branch": "main",
+  "state": "unbuilt",
+  "at": "2026-11-01T12:04:50Z",
+  "phases": {
+    "lint": {
+      "verdict": "unbuilt",
+      "build": "newest",
+      "runs": [],
+      "reason": "superseded",
+      "coveredBy": "59cfb5ea4573b890f7b7b57bf1b361781a2690fa"
+    },
+    "build": {
+      "verdict": "unbuilt",
+      "build": "newest",
+      "runs": [],
+      "reason": "superseded",
+      "coveredBy": "59cfb5ea4573b890f7b7b57bf1b361781a2690fa"
+    },
+    "test": {
+      "verdict": "unbuilt",
+      "build": "newest",
+      "runs": [],
+      "reason": "superseded",
+      "coveredBy": "59cfb5ea4573b890f7b7b57bf1b361781a2690fa"
+    },
+    "e2e": {
+      "verdict": "unbuilt",
+      "build": "newest",
+      "runs": [],
+      "reason": "superseded",
+      "coveredBy": "59cfb5ea4573b890f7b7b57bf1b361781a2690fa"
+    },
+    "claims": {
+      "verdict": "unbuilt",
+      "build": "newest",
+      "runs": [],
+      "reason": "superseded",
+      "coveredBy": "59cfb5ea4573b890f7b7b57bf1b361781a2690fa"
+    },
+    "macos": {
+      "verdict": "unbuilt",
+      "build": "newest",
+      "runs": [],
+      "reason": "superseded",
+      "coveredBy": "59cfb5ea4573b890f7b7b57bf1b361781a2690fa"
+    },
+    "windows": {
+      "verdict": "unbuilt",
+      "build": "newest",
+      "runs": [],
+      "reason": "superseded",
+      "coveredBy": "59cfb5ea4573b890f7b7b57bf1b361781a2690fa"
+    },
+    "windows-desktop": {
+      "verdict": "unbuilt",
+      "build": "newest",
+      "runs": [],
+      "reason": "superseded",
+      "coveredBy": "59cfb5ea4573b890f7b7b57bf1b361781a2690fa"
+    }
+  }
+}
