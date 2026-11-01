@@ -22,7 +22,7 @@ import { mint } from "../src/shell/blocks/through-control.ts";
 import { generateKeys, signText, type DeviceKeys } from "../src/shell/e2e/keys.ts";
 import { acceptHosted, signDelegation, signRevoke, type Delegation, type DelegationRevoke, type HostedProof } from "../src/shell/e2e/hosted.ts";
 import { signGrant, signGrantRevoke, type ProjectGrant } from "../src/shell/e2e/run-grant.ts";
-import { approvalBody, signApproval, DEFAULT_LIFE_MS } from "../src/shell/e2e/deploy.ts";
+import { approvalBody, DEFAULT_LIFE_MS } from "../src/shell/e2e/deploy.ts";
 import { askBody, askOk, inviteKey, newInviteKey, signAskInvite, signRoster, teamJoinBody, word, type AccountCerts, type AskInvite, type Roster, type TeamPin, type TeamRole } from "../src/shell/e2e/team.ts";
 
 const subtle = globalThis.crypto.subtle;
@@ -423,15 +423,13 @@ export class Device {
     return { deploy: r.id, op: r.operation.hash, state: r.state };
   }
 
-  /** As an owner, approve a deploy once: this device signs its operation,
-   * and the passkey confirms the approval's bytes, as a phone does. */
+  /** As an owner, approve a deploy once: one passkey assertion over the
+   * approval's own bytes (approval v2, #1943), as a phone does. */
   async approveDeploy(id: string, lifeMs = DEFAULT_LIFE_MS): Promise<{ deploy: string; state: string }> {
     const d = await this.api<{ operation: { hash: string } }>(`/api/deploys/${id}`);
-    const unsigned = { deploy: id, op: d.operation.hash, account: this.account, decision: "once" as const, expires: Date.now() + lifeMs, by: this.keys.id };
-    const a = await signApproval(unsigned, this.keys.sign.privateKey);
-    const challenge = b64url(await sha256(approvalBody(unsigned)));
-    const passkey = await this.assert(challenge);
-    const r = await this.api<{ id: string; state: string }>(`/api/deploys/${id}/approve`, { op: a.op, expires: a.expires, by: a.by, sig: a.sig, passkey });
+    const a = { v: 2, deploy: id, op: d.operation.hash, account: this.account, decision: "once" as const, expires: Date.now() + lifeMs };
+    const passkey = await this.assert(b64url(await sha256(approvalBody(a))));
+    const r = await this.api<{ id: string; state: string }>(`/api/deploys/${id}/approve`, { op: a.op, expires: a.expires, passkey });
     return { deploy: r.id, state: r.state };
   }
 
