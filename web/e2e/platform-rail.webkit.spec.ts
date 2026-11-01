@@ -14,8 +14,6 @@ test.describe.configure({ mode: "serial" });
 // Playwright's WebKit stops loading the page once the service worker is
 // registered (real Safari doesn't), so none here.
 test.use({ serviceWorkers: "block" });
-// #482 (diagnostic): a trace for the failing run; CI uploads web/test-results/.
-test.use({ trace: "retain-on-failure" });
 test.afterAll(async ({ browser }) => {
   await closeContexts({ browser });
   t.stop();
