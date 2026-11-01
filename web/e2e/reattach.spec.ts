@@ -75,10 +75,9 @@ test("output produced while no browser is attached is complete", async ({ browse
   rmSync(dir, { recursive: true, force: true });
 });
 
-// #333: typing takes the size only once the window that has it has left
-// the keyboard for SIZE_HOLD (3 s); until then the other types into it.
-test("two clients see the same output; typing takes the size once its owner is idle", async ({ browser }) => {
-  const hold = 3_500;
+// #473: typing doesn't take a tab's size from the window that holds it,
+// however idle that window is: only "Use this window's size" does.
+test("two clients see the same output; typing doesn't take the size, the button does", async ({ browser }) => {
   const a = await (await browser.newContext({ viewport: { width: 1000, height: 640 } })).newPage();
   await reset(a);
   const b = await (await browser.newContext({ viewport: { width: 760, height: 500 } })).newPage();
@@ -86,30 +85,30 @@ test("two clients see the same output; typing takes the size once its owner is i
   const pane = (await panes(a))[0];
   await ready(b, pane);
 
-  // B opened the tab last, so the size is B's until it has been idle a while.
-  await a.waitForTimeout(hold);
+  // A had the tab first, so the size is A's, and B draws at it.
   await run(a, pane, "clear; echo from-a-$((3*3))", "from-a-9");
   await expect.poll(() => text(b, pane)).toContain("from-a-9");
   const sizeA = (await size(a, pane))!;
   await expect.poll(() => size(b, pane)).toEqual(sizeA);
   await run(a, pane, "tput cols", `\n${sizeA[0]}`);
 
-  // B types straight after A: A keeps the size, and B types into it.
+  // B types straight after A, and again once A has long been idle: A keeps
+  // the size, and B types into it.
   await run(b, pane, "echo from-b-$((4*4)); tput cols", "from-b-16");
   await expect.poll(() => text(a, pane)).toContain("from-b-16");
   expect(await text(b, pane)).toContain(`from-b-16\n${sizeA[0]}`);
+  await b.waitForTimeout(3_500);
+  await type(b, pane, "echo from-b-$((5*5))\n");
+  await expect.poll(() => text(a, pane)).toContain("from-b-25");
   expect(await size(a, pane)).toEqual(sizeA);
   expect(await size(b, pane)).toEqual(sizeA);
 
-  // Once A has been idle past the hold, B's typing takes the size, and A
-  // draws at it rather than resizing the pane back.
-  await b.waitForTimeout(hold);
-  await type(b, pane, "echo from-b-$((5*5))\n");
+  // The button takes it, and A draws at B's size.
+  await b.locator("[data-sized-elsewhere]").getByRole("button", { name: "Use this window's size" }).click();
   await expect.poll(async () => (await size(b, pane))![0]).toBeLessThan(sizeA[0]);
   const sizeB = (await size(b, pane))!;
   await expect.poll(() => size(a, pane)).toEqual(sizeB);
   await run(b, pane, "tput cols", `\n${sizeB[0]}`);
-  await expect.poll(() => text(a, pane)).toContain("from-b-25");
   await Promise.all([a.context().close(), b.context().close()]);
 });
 
