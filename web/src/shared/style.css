@@ -1701,6 +1701,11 @@ a.work-chip:hover {
   color: var(--danger);
 }
 
+/* #444: the window isn't known, so the fill is tokens, not a share. */
+.agent-context-fill[data-tone="unknown"] {
+  color: var(--dim);
+}
+
 .agent-context-bar {
   width: 44px;
   height: 4px;

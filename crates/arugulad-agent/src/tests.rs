@@ -644,3 +644,19 @@ fn a_model_word_names_one_of_its_models() {
     g.on_in(&u(json!({ "sessionUpdate": "config_option_update", "configOptions": now })), 2100);
     assert_eq!(g.model_name().as_deref(), Some("Opus 5.5"), "switched");
 }
+
+#[test]
+fn the_adapters_window_from_a_result_is_the_sessions() {
+    // #444: the transcript never says the window; claude-agent-acp's
+    // result `usage_update` has the SDK's. Mid-turn ones may carry a guess.
+    let mut g = rebuilt();
+    let u = |update: Value| json!({ "jsonrpc": "2.0", "method": "session/update", "params": { "update": update } });
+    let result = json!({ "sessionUpdate": "usage_update", "used": 5, "size": 1_000_000, "cost": { "amount": 1.0 } });
+    g.on_in(&u(result.clone()), 2000);
+    assert_eq!(g.engine_window, None, "not claude-agent-acp's");
+    g.agent_info = json!({ "name": "@agentclientprotocol/claude-agent-acp" });
+    g.on_in(&u(json!({ "sessionUpdate": "usage_update", "used": 5, "size": 200_000 })), 2100);
+    assert_eq!(g.engine_window, None, "a mid-turn update's size may be a guess");
+    g.on_in(&u(result), 2200);
+    assert_eq!(g.engine_window, Some(1_000_000));
+}

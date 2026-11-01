@@ -5,8 +5,8 @@
 // and editors (e2e/stand-ins.ts, the swarm tests' fakes) at a neutral
 // prompt; agent blocks in every state an agent is in (working, asking to
 // run something, asking a question, failed, done), each with the context
-// strip (#397) at its own fill, one compacted at low fill and one near
-// full; and in control, chat (#general and a DM), a board with rows in
+// strip (#397) at its own fill, one compacted at low fill, one near
+// full and one whose window the transcript can't tell (#444); and in control, chat (#general and a DM), a board with rows in
 // each lane, a linked repo's open PR, and a Doc.
 //
 // The agents are the scripted fake ACP agent (crates/daemon/tests/
@@ -124,6 +124,8 @@ const OPUS = "claude-opus-5-5";
 const OPUS_1M = "claude-opus-5-5[1m]";
 const SONNET = "claude-sonnet-5-5";
 const HAIKU = "claude-haiku-5-5";
+/** 200k, or 1M as its `[1m]` variant, which a transcript doesn't record. */
+const SONNET_46 = "claude-sonnet-4-6";
 
 type Step = Record<string, unknown>;
 type Role = "working" | "near-full" | "permission" | "question" | "failed" | "compacted" | "overflow";
@@ -266,17 +268,20 @@ const TASKS: Task[] = [
 ];
 
 /** What each role's agent's context looks like (#397's strip). */
+// Opus, Sonnet and Haiku 5.5 run with 1M in Claude Code, marked or not.
 const FILLS: Record<Role, { model: string; usage: Step[] }> = {
   working: { model: OPUS, usage: [{ usage: 62_000 }] },
-  "near-full": { model: OPUS, usage: [{ usage: 186_000 }] },
+  "near-full": { model: OPUS, usage: [{ usage: 880_000 }] },
   permission: { model: SONNET, usage: [{ usage: 141_000 }] },
-  question: { model: OPUS, usage: [{ usage: 44_000 }] },
+  // Its window can't be told (#444): tokens, no share.
+  question: { model: SONNET_46, usage: [{ usage: 44_000 }] },
   failed: { model: HAIKU, usage: [{ usage: 97_000 }] },
-  // Compacted on its own at a quarter of a 1M window: not an overflow.
-  compacted: { model: OPUS_1M, usage: [{ usage: 250_000 }, { compact: "auto", pre: 250_000, post: 20_000 }, { usage: 31_000 }] },
-  // Compacted at 90% of the window (an overflow), then a long turn that
-  // filled it again: the strip reads full, not the dip after compacting.
-  overflow: { model: OPUS, usage: [{ usage: 181_000 }, { compact: "auto", pre: 181_000, post: 21_000 }, { usage: 166_000 }] },
+  // Compacted on its own at a quarter of a 1M window: not an overflow. No
+  // turn since, so the fill is an estimate: what it kept, and what the
+  // first turn carried.
+  compacted: { model: OPUS_1M, usage: [{ usage: 48_000 }, { usage: 250_000 }, { compact: "auto", pre: 250_000, post: 20_000 }] },
+  // Compacted at 90% of the window (an overflow), then a turn.
+  overflow: { model: OPUS, usage: [{ usage: 905_000 }, { compact: "auto", pre: 905_000, post: 21_000 }, { usage: 64_000 }] },
 };
 
 const CHAT: { who: number; text: string }[] = [
@@ -573,8 +578,10 @@ HISTFILE=~/.bash_history
   private async agent(machine: string, task: Task, role: Role, split = true) {
     const url = this.urls.get(machine)!;
     const fill = FILLS[role];
-    const window = fill.model.includes("[1m]") ? 1_000_000 : 200_000;
-    const tokens = Number((fill.usage.at(-1) as { usage: number }).usage);
+    // For its growth: the daemon shows Sonnet 4.6's as unknown.
+    const window = fill.model === SONNET_46 ? 200_000 : 1_000_000;
+    const end = fill.usage.at(-1)!;
+    const tokens = Number("usage" in end ? end.usage : end.post);
     const first: Step[] = [{ title: task.title }, ...task.steps, ...fill.usage.map((u) => ({ ...u, model: fill.model }))];
     const busy = (cmd: string): Step => ({ busy: cmd, kind: "execute", secs: this.opts.chaos ? this.r.int(40, 150) : null });
     let now: Agent["now"] = "idle";
