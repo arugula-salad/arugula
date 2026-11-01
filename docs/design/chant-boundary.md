@@ -6,25 +6,9 @@
 
 **Updated 1 Nov 2026** (Arugula c75976ce, chant 0.124.62; Arugula pins 0.124.61). Chant shipped all four of Arugula's CI asks (#4643, #4662, #4645, #4644), so the CI row moved toward chant. The contract asks from 28 Oct (#4646, #4647, #4648, #4649) are still open with no replies. The release section is rescoped back to what aru-104 decided, Arugula's release through chant: see "Rescope" below, which replaces "Rough order". Marked inline as *(1 Nov)*.
 
-## Where Arugula went around chant *(1 Nov)*
+## Where Arugula is today *(1 Nov)*
 
-Arugula keeps moving while chant catches up, so this note keeps going stale. This table is the part to keep current. When Arugula builds something chant should own, the PR that builds it adds a row here naming the gap and the chant issue. When chant ships, the row says what Arugula drops. The prose below explains the line, and the table records where Arugula is today.
-
-| What Arugula does itself | What chant lacks | chant issue | Arugula moves back when |
-|---|---|---|---|
-| Its own release: the `arugula-release` driver runs `scripts/release`, with no chant op or record (M221, #1372) | Nothing for control and platform any more (the email hold on #1121 is gone with `--actor github:<login>`). A target for the binaries, Homebrew, the editor extension and the Tauri app | None filed for the targets | Control and platform: when Arugula adopts path B ("Rescope"). The rest: when chant has a target |
-| Approvals: the platform checks the passkey and relays the approval to chant unsigned | Accepting a signature made outside chant | [#4646](https://github.com/INTENTIUS/chant/issues/4646) | chant checks the phone's signature at the gate |
-| Stale plans: the platform's own rule, counting only its own deploys (`deploys.rs:15-35`) | A read for whether a plan is stale | [#4648](https://github.com/INTENTIUS/chant/issues/4648) | The platform asks chant before it asks a person |
-| The chant-fly driver gives chant a stand-in `origin` and pushes the ledger itself | A configurable ledger remote | [#4647](https://github.com/INTENTIUS/chant/issues/4647) | The driver sets the remote |
-| Release notes by hand in `docs/releases/X.Y.Z.md` | Work items from squash-merge PR numbers | [#4649](https://github.com/INTENTIUS/chant/issues/4649) | `release candidates` names the PRs |
-| Promotion of control and platform (native #308) | Nothing: `components promote` exists | None | #308 is written as a chant promote ("Rescope", item 2) |
-| Red-main alerts: `scripts/ci-red` | Shipped in 0.124.61 (notify events) | [#4645](https://github.com/INTENTIUS/chant/issues/4645), closed | #1956 merges, once the Slack secret is set. The 6-hour "main is red" timer stays Arugula's |
-| Flaky tests: quarantine and its nightly | Not asked | None | Decide whether chant should own it |
-| *Done:* path filters diffed against the last `ci/green` tag | `ci base` (0.124.61) | [#4643](https://github.com/INTENTIUS/chant/issues/4643), closed | Moved back (#1947) |
-| *Done:* one green for everything | Green lanes (0.124.61) | [#4662](https://github.com/INTENTIUS/chant/issues/4662), closed | Moved back (#1964) |
-| *Done:* a merge queue of its own (#1721) | Merge queue support (0.124.61) | [#4644](https://github.com/INTENTIUS/chant/issues/4644), closed | Moved back (#1954); the queue is off by choice |
-
-Not gaps, by the line below: the platform's identity, triggers and schedules, inbox and push, where things run, and secret values.
+This note gives the reasoning for the line. Where Arugula stands against it, place by place, is tracked in arugula-salad/arugula#1988 (epic: Arugula on chant). Each row there gives what Arugula does today, where the feature belongs, and the issues on each side. The chant side's issues carry `epic:arugula`, and AGENTS.md carries the placement rule (#1989). When Arugula builds around chant, the epic gets a row and this note doesn't need to change.
 
 The platform tab asks one question that matters most for chant: "For plans and reviews, which is the source of truth, chant records in the repo or platform objects?" Its recommendation is platform objects for the work, chant records for decisions and releases, linked both ways. I agree with that, and this note tries to pin down exactly where the line falls so step 7 doesn't build some things twice.
 
@@ -110,15 +94,7 @@ aru-104 decided that Arugula's own release ships through chant: the chant-fly dr
 
 The hold is gone. `--actor github:<login>` puts a handle in the ledger, and path A's other objection (chant 0.108.1, from before releases and environments) went with the move to 0.124.61. What path B waited on has shipped too: `release cut --at` (0.124.34), and since 31 Oct a green lane per deployable, so a release of control and platform can start from the newest `ci/green-server` commit without waiting on the app's phases. So the rescope is to finish what aru-104 decided, and treat `arugula-release` as the stopgap.
 
-In order:
-
-1. Arugula's release runs through chant. An `ops/` chant member (#1121's, without its email problem) declares control and platform as Fly components, cut with `release cut --at` from the newest `ci/green-server` commit, promoted by digest from staging to production behind a gate. The deploy runs it through the chant-fly driver, which was built for this. aru-104 stands as decided.
-2. #308 becomes that promote. A one-command promote is `chant components promote`, run as a deploy, and Arugula writes only the command that starts it. No environments, order or approval rules of Arugula's own.
-3. What chant can't release yet stays on `arugula-release` for now: the binaries, Homebrew, the editor extension and the Tauri app have no chant target. Ask chant which of those it means to cover (a GitHub release target would cover most). Retire `arugula-release` once they're covered, or keep it for those alone.
-4. Plan first, then sign the digest. With the release in chant, the phone should approve chant's plan, which is step 7's first fix anyway.
-5. chant's asks, in this order: #4646 (device signatures), so the phone's approval counts on a signed-only production gate; #4648 (a stale read), so a laptop or CI apply makes a plan stale; #4649 (work items from squash merges), so `release candidates` and release notes name the PRs; #4647 (the ledger's remote), only if the ledger should leave origin.
-6. Staging: path B needs a second Fly environment for control and platform. That's the real cost of this rescope and needs a yes before item 1 starts.
-7. One chant driver for every target moves to step 8, with planter's four.
+The work is in #1988's children: #1983 (control and the platform through chant, with #308 as chant's promote; it needs a yes on staging first), #1986 (publishing through `chant release publish`, waiting partly on INTENTIUS/chant#4676 for targets), #1985 (the drivers hand chant approvals, stale checks and the ledger remote as INTENTIUS/chant#4646, #4648 and #4647 ship, and plan before the phone signs), and #1987 (whether quarantine and the main-is-red timer belong in chant).
 
 The images in this note show the 22 Oct plan and weren't redrawn.
 
