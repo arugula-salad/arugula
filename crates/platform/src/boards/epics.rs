@@ -12,7 +12,7 @@
 //!   came after. **[`first_pass`]** reads the whole mirror: when the
 //!   backfill finishes and when the switch goes on.
 //! - **A board follows its epic:** its title; closed when the epic is
-//!   completed or cancelled or deleted, open again when the epic is (if the
+//!   completed, cancelled or deleted, or is no longer an epic, open again when the epic is (if the
 //!   connection closed it); and the rows the sync added are the epic's
 //!   children, found by the mirror's `parent_source_id`. A child that moved
 //!   to another epic is taken off the old board by the rows' `source`, since
@@ -42,14 +42,15 @@ use crate::{
 /// The most characters of a goal.
 const GOAL_MAX: usize = arugula_control_wire::boards::GOAL_MAX;
 
-/// The goal an epic's description makes: its first paragraph, as plain text.
+/// The goal an epic's description makes: its first line, as plain text
+/// (Plane's stripped description joins paragraphs with a single newline).
 pub fn goal_of(description: &str) -> String {
-    let paragraph = description
-        .split("\n\n")
-        .map(|p| p.split_whitespace().collect::<Vec<_>>().join(" "))
-        .find(|p| !p.is_empty())
+    let line = description
+        .lines()
+        .map(|l| l.split_whitespace().collect::<Vec<_>>().join(" "))
+        .find(|l| !l.is_empty())
         .unwrap_or_default();
-    paragraph.chars().filter(|c| !c.is_control()).take(GOAL_MAX).collect()
+    line.chars().filter(|c| !c.is_control()).take(GOAL_MAX).collect()
 }
 
 /// The note a board closes with.
@@ -114,6 +115,14 @@ async fn run(app: &Platform, connection: &str, ids: Option<&[String]>) -> anyhow
             if app.db.follow_epic(&board.id, &board.title, Follow::Closed("The epic was deleted in Plane"), now_ms())? {
                 super::changed(app, &board.project, &board.id);
             }
+        }
+    }
+    // An item that stopped being an epic: its board closes and nothing follows it.
+    let stopped: Vec<String> = nodes.iter().filter(|n| !n.is_epic).map(|n| n.id.clone()).collect();
+    for (board, _) in app.db.epic_boards(&c.project_id, &stopped)? {
+        let note = "The item is no longer an epic in Plane";
+        if app.db.follow_epic(&board.id, &board.title, Follow::Closed(note), now_ms())? {
+            super::changed(app, &board.project, &board.id);
         }
     }
     for n in nodes.into_iter().filter(|n| n.is_epic) {
@@ -202,8 +211,15 @@ mod tests {
     use super::*;
 
     #[test]
-    fn the_goal_is_the_first_paragraph_in_plain_text_and_at_most_the_limit() {
-        assert_eq!(goal_of("\n\nShip it\non time.\n\nNot this."), "Ship it on time.");
+    fn the_goal_is_the_first_line_in_plain_text_and_at_most_the_limit() {
+        assert_eq!(goal_of("\n\nShip it   on time.\n\nNot this."), "Ship it on time.");
+        assert_eq!(
+            goal_of(
+                "Checks whether Arugula's mirror sees a Plane epic and its children.\nSecond paragraph, which \
+                 shouldn't become the goal."
+            ),
+            "Checks whether Arugula's mirror sees a Plane epic and its children."
+        );
         assert_eq!(goal_of(""), "");
         assert_eq!(goal_of(&"x".repeat(GOAL_MAX + 10)).chars().count(), GOAL_MAX);
     }

@@ -108,6 +108,15 @@ fn item(v: &Value) -> Result<Item> {
     })
 }
 
+/// The names of the active types Plane flags `is_epic`.
+fn epic_types(types: &[Value]) -> Vec<String> {
+    types
+        .iter()
+        .filter(|t| t["is_active"].as_bool() != Some(false) && t["is_epic"].as_bool() == Some(true))
+        .filter_map(|t| t["name"].as_str().map(str::to_owned))
+        .collect()
+}
+
 impl Plane {
     pub fn new(http: reqwest::Client, base: &str, key: &str) -> Self {
         // An invalid header value (a newline) is a key Plane would refuse.
@@ -413,11 +422,7 @@ impl TrackerProvider for Plane {
             let labels = named(&absent_is_empty(self.list_all(workspace, project_id, "labels").await)?);
             // Types aren't enabled for every project.
             let types = absent_is_empty(self.list_all(workspace, project_id, "work-item-types").await)?;
-            let epic_types = types
-                .iter()
-                .filter(|t| t["is_active"].as_bool() != Some(false) && t["is_epic"].as_bool() == Some(true))
-                .filter_map(|t| t["name"].as_str().map(str::to_owned))
-                .collect();
+            let epic_types = epic_types(&types);
             let types =
                 named(&types.into_iter().filter(|t| t["is_active"].as_bool() != Some(false)).collect::<Vec<_>>());
             Ok(Fields { states: states.into_iter().map(|(_, s)| s).collect(), modules, types, labels, epic_types })
@@ -551,6 +556,17 @@ mod tests {
         assert_eq!(i.description.as_deref(), Some("Fix the thing."));
         // Not expanded: no guessing at its state.
         assert!(item(&json!({ "id": "u1", "sequence_id": 7, "state": "uuid" })).is_err());
+    }
+
+    #[test]
+    fn the_types_plane_flags_as_epics_are_found_by_its_flag() {
+        let types = [
+            json!({ "id": "t1", "name": "Task", "is_epic": false }),
+            json!({ "id": "t2", "name": "Initiative", "is_epic": true }),
+            json!({ "id": "t3", "name": "Retired", "is_epic": true, "is_active": false }),
+            json!({ "id": "t4", "name": "Epic" }),
+        ];
+        assert_eq!(epic_types(&types), ["Initiative"]);
     }
 
     /// A module with more pages than are read is an error, not the ids so far.

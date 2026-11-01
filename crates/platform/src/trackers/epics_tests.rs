@@ -384,3 +384,27 @@ async fn a_full_board_leaves_out_the_oldest_done_children_and_counts_them() {
     assert_eq!(rows, [lane("Next", 14), lane("Doing", 13), lane("Done", 12)], "the oldest done child is out");
     assert_eq!(w.boards().await[0]["source"]["left_out"], 1);
 }
+
+/// An item whose type changes to one that is no epic closes its board with
+/// a note, and its children are no longer followed.
+#[tokio::test]
+async fn an_item_that_stops_being_an_epic_closes_its_board() {
+    let w = world().await;
+    let all = vec![epic(10, "Launch", "started", 3_000), child(11, 10, "backlog", 2_000)];
+    w.arrive(all.clone(), &all).await;
+    let id = w.only().await;
+
+    let mut task = item(10, "Launch", "started", 4_000);
+    task.description = None;
+    w.arrive(vec![task.clone(), all[1].clone()], &[task.clone()]).await;
+    let b = &w.boards().await[0];
+    assert_eq!(
+        (b["done_note"].as_str(), b["closed_at"].is_u64()),
+        (Some("The item is no longer an epic in Plane"), true)
+    );
+
+    // A new child isn't added to it any more.
+    let more = vec![task, all[1].clone(), child(12, 10, "started", 5_000)];
+    w.arrive(more.clone(), &more[2..]).await;
+    assert_eq!(w.rows(&id).await, [lane("Next", 11)]);
+}
