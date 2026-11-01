@@ -647,6 +647,16 @@ through every spec after it, so later specs ran on a busier machine than
 they do alone (#258). Every spec that uses `browser` has
 `test.afterAll(closeContexts)` (from `helpers.ts`); a new one should too.
 
+`a11y-shell.spec.ts` and `a11y-platform.spec.ts` (#401) run axe
+(`@axe-core/playwright`, WCAG 2.0 to 2.2 at A and AA, target-size on) on
+the main places of a machine's page and the platform page, at 1440 and
+400 px, light and dark (`colorScheme` with the Appearance pick "System").
+What a place already does wrong is listed in `web/e2e/a11y-known.json`,
+each line with why; a violation not listed fails, and so does a listed one
+that no longer turns up, so a fix takes its line out. `A11Y_DUMP=DIR` writes
+each place's violations to DIR as JSON, to write lines from. The helpers
+are in `web/e2e/a11y.ts`.
+
 A check that should hold in Chrome and WebKit goes in a plain module both
 projects' specs import, since a spec importing another spec registers its
 tests twice. The command palette (#139) is the example:
