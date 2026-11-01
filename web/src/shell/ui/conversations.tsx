@@ -19,6 +19,7 @@ import type { OpenConversationRequest, OpenConversationResponse, PaneId } from "
 import { getFleet } from "./hosts";
 import { countView } from "../../shared/telemetry";
 import { Time } from "../../shared/ui/time";
+import { COST_NOTE, costLabel, type Estimate } from "../blocks/agent-context";
 
 export interface Conversation {
   id: string;
@@ -34,6 +35,9 @@ export interface Conversation {
   forked_from?: string;
   archived: boolean;
   live?: { pid: number; pane?: PaneId; block?: PaneId; place: string; status: string };
+  /** What it and its subagents cost at API list prices (#398), once the
+   *  daemon has read it. */
+  estimate?: Estimate;
   /** The agent block that has it open. */
   block: PaneId | null;
 }
@@ -306,6 +310,11 @@ function Picker({ client, where, phone, close }: { client: Client; where: Conver
       <div class={phone ? "picker conversations phone" : "picker conversations"} onKeyDown={onKey}>
         <div class="picker-where">
           <span class="picker-host">Claude Code conversations</span>
+          {hosts?.some((h) => h.list.some((c) => c.estimate)) && (
+            <span class="conv-cost-note" title={COST_NOTE}>
+              ≈ costs at API prices
+            </span>
+          )}
           <label class="check">
             <input type="checkbox" checked={liveOnly} onChange={(e) => setLiveOnly(e.currentTarget.checked)} />
             Open now
@@ -371,6 +380,11 @@ function Picker({ client, where, phone, close }: { client: Client; where: Conver
                 <span class="picker-label conv-title">{c.title}</span>
                 {c.live && <span class="conv-live" title={c.live.place}>● {c.live.pane !== undefined ? `%${c.live.pane}` : "open"}</span>}
                 {c.block !== null && <span class="host-tag">%{c.block}</span>}
+                {c.estimate && (
+                  <span class="conv-cost" data-cost={c.estimate.usd ?? ""} title={`${COST_NOTE}${c.estimate.subagents.length ? ` With its subagents.` : ""}`}>
+                    {costLabel(c.estimate)}
+                  </span>
+                )}
                 <Time class="conv-when" at={Math.min(c.updated_ms, Date.now())} />
               </li>
             );

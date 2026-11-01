@@ -40,6 +40,7 @@ arugula-core = { path = "crates/core" }
 arugula-e2e = { path = "crates/e2e" }
 arugula-forge-github = { path = "crates/forge-github" }
 arugula-mux = { path = "crates/mux" }
+arugula-prices = { path = "crates/prices" }
 arugula-proto = { path = "crates/proto" }
 arugula-vt = { path = "crates/vt" }
 # The daemon's crates (#232). The binary, crates/arugulad, picks their

@@ -265,6 +265,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "arugula-prices"
+version = "0.0.0"
+dependencies = [
+ "serde_json",
+]
+
+[[package]]
 name = "arugula-proto"
 version = "0.0.0"
 dependencies = [
@@ -353,6 +360,7 @@ dependencies = [
  "arugula-core",
  "arugula-e2e",
  "arugula-mux",
+ "arugula-prices",
  "arugula-proto",
  "arugulad-base",
  "axum",

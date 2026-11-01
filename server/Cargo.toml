@@ -10,9 +10,10 @@
 #
 # What both sides use stays in the root workspace and is reached here by
 # path: the wire between daemons and control (arugula-control-wire), the
-# end-to-end crypto (arugula-e2e), the GitHub reader (arugula-forge-github)
-# and the protocol crates under it (arugula-proto, arugula-core). Their
-# `workspace = true` fields come from the root's Cargo.toml.
+# end-to-end crypto (arugula-e2e), Claude's list prices (arugula-prices), the
+# GitHub reader (arugula-forge-github) and the protocol crates under it
+# (arugula-proto, arugula-core). Their `workspace = true` fields come from
+# the root's Cargo.toml.
 #
 # Build it with `--manifest-path server/Cargo.toml` from the checkout (the
 # justfile's `server_cargo`), or from here; the justfile builds it into the
@@ -47,6 +48,7 @@ arugula-control-wire = { path = "../crates/control-wire" }
 arugula-core = { path = "../crates/core" }
 arugula-e2e = { path = "../crates/e2e" }
 arugula-forge-github = { path = "../crates/forge-github" }
+arugula-prices = { path = "../crates/prices" }
 # The hub's and the platform's libraries (#314); the binaries are
 # crates/arugula-control and crates/arugula-platform.
 arugula-control-base = { path = "../crates/control" }

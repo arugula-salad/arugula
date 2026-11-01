@@ -1,76 +1,31 @@
 //! What a Claude call costs at Anthropic's list prices, and how its usage
 //! is read from the answer as it streams by: studio's lobby's
-//! `lobby/metering.mjs` (studio-018, studio-058), ported as it is, so a
-//! cap counts the same dollars on the platform as it did in the lobby.
+//! `lobby/metering.mjs` (studio-018, studio-058), ported, so a cap counts
+//! the same dollars on the platform as it did in the lobby.
 //!
-//! - Prices are USD per million tokens, in one table keyed by model id
-//!   prefix, most specific first ([`PRICES`]).
+//! - The table is `arugula-prices`' ([`arugula_prices::PRICES`]), the one
+//!   the daemon's cost estimates use too (#398): USD per million tokens,
+//!   keyed by model id prefix, most specific first, cache writes at 1.25×
+//!   and 2× input, a row's rates for a long prompt, fast mode doubling the
+//!   models that have it.
 //! - A model the table doesn't name is priced as the dearest row, and
 //!   logged once, so a new model is only ever over-counted, never given
 //!   away.
-//! - Cache writes cost 1.25× input for the five-minute cache and 2× for
-//!   the hour; cache reads have their own column.
-//! - Fast mode doubles the price of the models that have it ([`FAST`]).
 
 use std::{
     collections::HashSet,
     sync::{Mutex, OnceLock},
 };
 
+pub use arugula_prices::{FAST, Price, Usage, dearest};
 use serde_json::Value;
 use tracing::info;
 
-/// One row of [`PRICES`]: a model id prefix, then USD per million input,
-/// output and cache-read tokens.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct Price {
-    pub prefix: &'static str,
-    pub input: f64,
-    pub output: f64,
-    pub cache_read: f64,
-}
-
-const fn row(prefix: &'static str, input: f64, output: f64, cache_read: f64) -> Price {
-    Price { prefix, input, output, cache_read }
-}
-
-/// Anthropic's API prices as of 2026-09-28, the lobby's table row for row
-/// (`PRICES` in studio's `lobby/metering.mjs`). Check it against
-/// Anthropic's pricing page whenever a model is added or its price
-/// changes: a stale row over- or under-charges every account on the
-/// platform's key, and the lobby's copy goes when it calls the broker
-/// (M236).
-pub const PRICES: [Price; 10] = [
-    row("claude-fable-5-1", 10.0, 50.0, 0.25),
-    row("claude-fable-5", 10.0, 50.0, 0.25),
-    row("claude-mythos-5", 10.0, 50.0, 0.25),
-    row("claude-opus-5-5", 4.0, 20.0, 0.2),
-    row("claude-opus-5", 5.0, 25.0, 0.5),
-    row("claude-opus-4", 5.0, 25.0, 0.5),
-    row("claude-sonnet-5-5", 2.0, 10.0, 0.2),
-    row("claude-sonnet-5", 2.0, 10.0, 0.2),
-    row("claude-sonnet-4", 3.0, 15.0, 0.3),
-    row("claude-haiku-4-5", 1.0, 5.0, 0.1),
-];
-
-/// The models whose fast mode doubles their price.
-pub const FAST: [&str; 1] = ["claude-opus-5-5"];
-
-/// What one web search the server tool makes costs: $10 per thousand
-/// (`usage.server_tool_use.web_search_requests`). Web fetch costs only the
-/// tokens it adds.
-pub const WEB_SEARCH_USD: f64 = 0.01;
-
-/// What a model the table doesn't name is priced as: the row with the
-/// dearest output, never a cheaper one.
-pub fn dearest() -> Price {
-    PRICES.into_iter().reduce(|a, b| if b.output > a.output { b } else { a }).expect("a price table")
-}
-
 /// The price row for a model id, and whether the table named it. An
-/// unknown id is logged the first time it's seen.
+/// unknown id is priced as the dearest row, and logged the first time it's
+/// seen.
 pub fn price_of(model: &str) -> (Price, bool) {
-    if let Some(p) = PRICES.into_iter().find(|p| model.starts_with(p.prefix)) {
+    if let Some(p) = arugula_prices::lookup(model) {
         return (p, true);
     }
     static SEEN: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
@@ -80,88 +35,34 @@ pub fn price_of(model: &str) -> (Price, bool) {
         info!(
             model = if model.is_empty() { "a response with no model" } else { model },
             priced_as = d.prefix,
-            "a model isn't in the broker's price table; priced as the dearest until it names it"
+            "a model isn't in the price table; priced as the dearest until it names it"
         );
     }
     (dearest(), false)
-}
-
-/// What a Messages API response said it used: its `usage`, as the API
-/// reports it.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct Usage {
-    pub input: u64,
-    pub output: u64,
-    /// Five-minute cache writes.
-    pub cache_write: u64,
-    /// One-hour cache writes.
-    pub cache_write_1h: u64,
-    pub cache_read: u64,
-    /// `usage.server_tool_use.web_search_requests`.
-    pub web_searches: u64,
-    /// `usage.speed == "fast"`.
-    pub fast: bool,
-}
-
-/// A count from the API: a positive number, else nothing.
-fn n(v: Option<&Value>) -> u64 {
-    match v.and_then(Value::as_f64) {
-        Some(f) if f.is_finite() && f > 0.0 => f as u64,
-        _ => 0,
-    }
-}
-
-impl Usage {
-    /// From a response's `usage` object, as the lobby reads one: the
-    /// one-hour writes from `cache_creation`, and the five-minute ones
-    /// from there when it says, else what's left of
-    /// `cache_creation_input_tokens`.
-    pub fn from_json(u: &Value) -> Usage {
-        let created = u.get("cache_creation");
-        let hour = n(created.and_then(|c| c.get("ephemeral_1h_input_tokens")));
-        let five = match created.and_then(|c| c.get("ephemeral_5m_input_tokens")) {
-            Some(v) => n(Some(v)),
-            None => n(u.get("cache_creation_input_tokens")).saturating_sub(hour),
-        };
-        Usage {
-            input: n(u.get("input_tokens")),
-            output: n(u.get("output_tokens")),
-            cache_write: five,
-            cache_write_1h: hour,
-            cache_read: n(u.get("cache_read_input_tokens")),
-            web_searches: n(u.get("server_tool_use").and_then(|s| s.get("web_search_requests"))),
-            fast: u.get("speed").and_then(Value::as_str) == Some("fast"),
-        }
-    }
 }
 
 /// USD for one response of `model` that used `usage`, and the row it was
 /// priced at.
 pub fn cost_of(model: &str, usage: &Usage) -> (f64, &'static str) {
     let (row, _) = price_of(model);
-    let times = if usage.fast && FAST.contains(&row.prefix) { 2.0 } else { 1.0 };
-    let tokens = usage.input as f64 * row.input
-        + usage.output as f64 * row.output
-        + usage.cache_write as f64 * row.input * 1.25
-        + usage.cache_write_1h as f64 * row.input * 2.0
-        + usage.cache_read as f64 * row.cache_read;
-    (tokens * times / 1e6 + usage.web_searches as f64 * WEB_SEARCH_USD, row.prefix)
+    (arugula_prices::cost(&row, usage), row.prefix)
 }
 
 /// What a Messages request is reserved at before it goes out, in
 /// millionths of a dollar: as if every byte of its body below
 /// `max_tokens` were a third of a token of input written to the one-hour
 /// cache (the dearest input there is), and it used all of `max_tokens`,
-/// at `model`'s prices (the dearest row for a model the table doesn't
-/// name), doubled in fast mode. With no `max_tokens` (Anthropic refuses
-/// those), `NO_MAX` of them.
+/// at `model`'s dearest rates (a long prompt's, for a row that has them;
+/// the dearest row for a model the table doesn't name), doubled in fast
+/// mode. With no `max_tokens` (Anthropic refuses those), `NO_MAX` of them.
 pub fn reservation(model: &str, body_bytes: usize, max_tokens: Option<u64>, fast: bool) -> u64 {
     const NO_MAX: u64 = 128_000;
     let (row, _) = price_of(model);
+    let (input_usd, output_usd) = row.dearest_rates();
     let input = (body_bytes as u64).div_ceil(3) as f64;
     let output = max_tokens.unwrap_or(NO_MAX) as f64;
     let times = if fast && FAST.contains(&row.prefix) { 2.0 } else { 1.0 };
-    micros((input * row.input * 2.0 + output * row.output) * times / 1e6)
+    micros((input * input_usd * 2.0 + output * output_usd) * times / 1e6)
 }
 
 /// Dollars as the ledger keeps them: millionths, rounded.
@@ -363,6 +264,40 @@ mod tests {
         assert_eq!(reservation("claude-next", 0, None, false), micros(128_000.0 * 50.0 / 1e6), "the dearest row");
         assert_eq!(micros(1.234_567_8), 1_234_568);
         assert_eq!(micros(f64::NAN), 0);
+    }
+
+    /// Hosted calls are charged at exactly the rows they were before the
+    /// table moved to `arugula-prices` (#398): every row, fast mode and the
+    /// fallback as main's `prices.rs` had them. A price change is a billing
+    /// change, made on purpose, here as well as in the table.
+    #[test]
+    fn prices_are_mains_table() {
+        let rows: Vec<(&str, f64, f64, f64)> =
+            arugula_prices::PRICES.iter().map(|p| (p.prefix, p.input, p.output, p.cache_read)).collect();
+        assert_eq!(
+            rows,
+            [
+                ("claude-fable-5-1", 10.0, 50.0, 0.25),
+                ("claude-fable-5", 10.0, 50.0, 0.25),
+                ("claude-mythos-5", 10.0, 50.0, 0.25),
+                ("claude-opus-5-5", 4.0, 20.0, 0.2),
+                ("claude-opus-5", 5.0, 25.0, 0.5),
+                ("claude-opus-4", 5.0, 25.0, 0.5),
+                ("claude-sonnet-5-5", 2.0, 10.0, 0.2),
+                ("claude-sonnet-5", 2.0, 10.0, 0.2),
+                ("claude-sonnet-4", 3.0, 15.0, 0.3),
+                ("claude-haiku-4-5", 1.0, 5.0, 0.1),
+            ]
+        );
+        assert!(arugula_prices::PRICES.iter().all(|p| p.over.is_none()), "no long-prompt rates");
+        assert_eq!(FAST, ["claude-opus-5-5"]);
+        assert_eq!(dearest().prefix, "claude-fable-5-1");
+        // Models with no row are still charged as the dearest.
+        for m in ["claude-haiku-5-5", "claude-mythos-5-1-x", "claude-next-9"] {
+            let known = price_of(m).1;
+            assert_eq!(known, m.starts_with("claude-mythos-5"), "{m}");
+        }
+        assert_eq!(price_of("claude-haiku-5-5").0.prefix, "claude-fable-5-1");
     }
 
     /// Server-sent events split anywhere, a JSON body, and a body with no

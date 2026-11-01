@@ -282,6 +282,8 @@ async fn list_conversations(app: &App, q: ConversationsQuery) -> Result<Conversa
         })
         .take(q.limit.unwrap_or(500))
         .map(|mut c| {
+            // #398: its estimate, once the pricing thread has read it.
+            c.estimate = crate::conversations::spend::Listed::global().get(&c.path, (c.size, c.updated_ms));
             let block = blocks.get(&c.id).copied();
             c.live = c.live.take().map(|l| l.ours(|p| ours.contains(&p)));
             // The adapter of the block that has it, when its scope didn't

@@ -12,7 +12,10 @@ the binary, not the daemon:
   chant workspace's member, `background.rs` and `turnwork.rs` the turns a
   background task wakes and the work a turn leaves;
 - `src/conversations/`: the Claude Code conversations in Claude Code's
-  folders (M33), which an agent block imports and follows;
+  folders (M33), which an agent block imports and follows; `context.rs`
+  reads a transcript's model, context fill and compactions (#397), and
+  `spend.rs` what the session and its subagents cost, estimated from their
+  tokens at API list prices (`arugula-prices`, #398);
 - `src/ops.rs`: listing and opening them (`ConversationsList`,
   `ConversationOpen`) as `Handle<AgentBlock>`, routed with `op_of`, and
   MCP's `list` kind `conversations` and `show` kind `conversation`.

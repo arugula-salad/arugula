@@ -3,7 +3,7 @@
 // numbers come from the transcript the daemon reads, so each state here is
 // a seeded Claude Code conversation, opened from the pane menu.
 
-import { rmSync } from "node:fs";
+import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { expect, test, type Page } from "@playwright/test";
 import { menu, paneEl, panes, reset, seedConversation, type Base } from "./helpers";
@@ -87,4 +87,102 @@ export function contextStripTests() {
       }
     });
   }
+}
+
+// #398: the estimate beside the strip, from the same transcripts and the
+// subagents' beside them, at Anthropic's API list prices.
+
+const reply = (base: Base, n: string, model: string, usage: Record<string, unknown>) => ({
+  ...base("assistant", `c-${n}`, "a2"),
+  message: { id: `cm-${n}`, role: "assistant", model, content: [{ type: "text", text: `reply ${n}` }], usage },
+});
+
+const costCases: { name: string; more: (b: Base) => object[]; label: string; usd: string; subagent?: boolean }[] = [
+  // 100k in at $4, 50k out at $20.
+  { name: "a plain session", more: (b) => [reply(b, "1", OPUS, { input_tokens: 100_000, output_tokens: 50_000 })], label: "≈ $1.40", usd: "1.4" },
+  {
+    // 2M cache reads at $0.20, 500k five-minute writes at $2.50, 10k out at $10.
+    name: "a cache-heavy session",
+    more: (b) => [reply(b, "1", "claude-sonnet-5-5", { input_tokens: 2, cache_read_input_tokens: 2_000_000, cache_creation_input_tokens: 500_000, output_tokens: 10_000 })],
+    label: "≈ $1.75",
+    usd: "1.75",
+  },
+  {
+    // A 1M window costs the same per token: 800k reads at $0.20, 20k out at $20.
+    name: "a 1M session",
+    more: (b) => [reply(b, "1", `${OPUS}[1m]`, { input_tokens: 0, cache_read_input_tokens: 800_000, output_tokens: 20_000 })],
+    label: "≈ $0.56",
+    usd: "0.56",
+  },
+  { name: "an unknown model", more: (b) => [reply(b, "1", "claude-next-9", { input_tokens: 1000, output_tokens: 500 })], label: "2k tokens", usd: "" },
+  // 100k in at $4, and a subagent's 100k out at Haiku 4.5's $5.
+  { name: "a session with a subagent", more: (b) => [reply(b, "1", OPUS, { input_tokens: 100_000, output_tokens: 0 })], label: "≈ $0.90", usd: "0.9", subagent: true },
+];
+
+/** A subagent's transcript beside the session's, as Claude Code writes it. */
+function seedSubagent(cwd: string, id: string) {
+  const dir = join(claude, "projects", cwd.replace(/[/.]/g, "-"), id, "subagents");
+  mkdirSync(dir, { recursive: true });
+  const line = {
+    type: "assistant", uuid: "s1", parentUuid: null, isSidechain: true, agentId: "e2e1", sessionId: id, timestamp: new Date().toISOString(),
+    message: { id: "sm-1", role: "assistant", model: "claude-haiku-4-5-20251001", content: [{ type: "text", text: "found" }], usage: { input_tokens: 0, output_tokens: 100_000 } },
+  };
+  writeFileSync(join(dir, "agent-e2e1.jsonl"), JSON.stringify(line) + "\n");
+  writeFileSync(join(dir, "agent-e2e1.meta.json"), JSON.stringify({ agentType: "Explore", description: "Find the price table" }));
+}
+
+export function costTests() {
+  test.afterAll(() => {
+    rmSync(join(claude, "projects"), { recursive: true, force: true });
+    for (const cwd of seeded) rmSync(cwd, { recursive: true, force: true });
+  });
+
+  for (const c of costCases) {
+    test(`the cost estimate, ${c.name}`, async ({ page }) => {
+      const title = `Cost ${c.name}`;
+      const s = seedConversation(claude, c.name.replace(/\W/g, ""), title, c.more);
+      seeded.push(s.cwd);
+      if (c.subagent) seedSubagent(s.cwd, s.id);
+      const el = await open(page, title);
+      const est = el.locator(".agent-bar [data-estimate]");
+      await expect(est).toHaveAttribute("data-estimate", c.usd);
+      const btn = est.locator("button");
+      await expect(btn).toContainText(c.label);
+      await expect(btn).toContainText(c.usd ? "at API prices" : "no price");
+      await expect(btn).toHaveAttribute("title", /token counts at Anthropic's API list prices\. Not a bill/);
+      await btn.click();
+      const pop = el.locator("[data-estimate-pop]");
+      await expect(pop).toContainText("Not a bill");
+      await expect(pop.locator('[data-estimate-row="session"]')).toContainText(c.subagent ? "≈ $0.40" : c.label);
+      if (c.subagent) {
+        await expect(pop.locator('[data-estimate-row="e2e1"]')).toContainText("Find the price table");
+        await expect(pop.locator('[data-estimate-row="e2e1"]')).toContainText("Explore");
+        await expect(pop.locator('[data-estimate-row="e2e1"]')).toContainText("≈ $0.50");
+        await expect(pop.locator('[data-estimate-row="total"]')).toContainText("≈ $0.90");
+      } else {
+        await expect(pop.locator('[data-estimate-row="total"]')).toHaveCount(0);
+      }
+      if (!c.usd) await expect(pop).toContainText("No list price for claude-next-9");
+      await page.keyboard.press("Escape");
+      await expect(pop).toHaveCount(0);
+    });
+  }
+
+  test("the conversations list shows a conversation's estimate once it's read", async ({ page }) => {
+    const title = "Cost in the list";
+    const s = seedConversation(claude, "costlist", title, (b) => [reply(b, "1", OPUS, { input_tokens: 100_000, output_tokens: 0 })]);
+    seeded.push(s.cwd);
+    seedSubagent(s.cwd, s.id);
+    await reset(page);
+    const [term] = await panes(page);
+    const dialog = page.getByRole("dialog", { name: "Claude Code conversations" });
+    // The daemon prices it off the listing's path: a later listing has it.
+    await expect(async () => {
+      if (await dialog.isVisible()) await dialog.getByRole("button", { name: "Cancel" }).click();
+      await menu(page, paneEl(page, term), "Claude Code conversations…");
+      await dialog.locator(".picker-filter").fill(title);
+      await expect(dialog.locator("[data-conversation] .conv-cost")).toHaveText("≈ $0.90", { timeout: 1000 });
+    }).toPass({ timeout: 20_000 });
+    await expect(dialog.locator("[data-conversation] .conv-cost")).toHaveAttribute("title", /API list prices\. Not a bill.* With its subagents/);
+  });
 }
