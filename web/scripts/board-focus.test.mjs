@@ -10,7 +10,7 @@ const B = "brd_0123456789abcdef0123456789abcdef";
 const row = (id, lane, extra = {}) => ({ id, lane, pointer: { kind: "none" }, note: "", attachments: [], ...extra });
 const view = (zones) => ({
   board: { id: B, title: "Launch" },
-  zones: zones.map(([title, rows]) => ({ id: `z_${title}`, title, rows })),
+  zones: zones.map(([title, rows]) => ({ id: `lane_${title.toLowerCase()}`, title, rows })),
 });
 const pane = (host, id, row) => ({ key: `${host}:${id}`, host, id, on_issue: row ? { issue: "#1", boards: [{ project: "prj", board: B, title: "Launch", row }] } : null });
 const hostOf = (m) => ({ m_ws: "workstation", m_b1: "build-01" })[m];
@@ -45,7 +45,7 @@ test("when both say where, the attachment wins, and a pane is never in two lanes
   const f = boardFocus(view(z), [pane("workstation", 4, "row_a")], hostOf);
   assert.equal(f.placed.get("workstation:4").name, "Review");
   assert.equal(f.placed.get("workstation:4").row.id, "row_r");
-  assert.deepEqual(f.lanes.map((l) => [l.name, l.keys]), [["Next", []], ["Review", ["workstation:4"]]]);
+  assert.deepEqual(f.lanes.map((l) => [l.name, l.keys]), [["Review", ["workstation:4"]], ["Next", []]]);
 });
 
 test("a released or proof attachment, an unknown machine, or another board's row places no one", () => {
@@ -55,11 +55,11 @@ test("a released or proof attachment, an unknown machine, or another board's row
   assert.equal(f.placed.size, 0);
 });
 
-test("lanes come in the board's order with their counts; one with rows and no worker says so, one without rows is left out", () => {
+test("lanes come in Doing, Review, Next, Done order (#479) with their counts; one with rows and no worker says so, one without rows is left out", () => {
   const f = boardFocus(view(lanes), [pane("workstation", 1, "row_b"), pane("build-01", 2, "row_c")], hostOf);
-  assert.deepEqual(f.lanes.map((l) => l.label), ["Next · 1 row · no one on it", "Doing · 2 rows · 2 workers", "Done · 1 row · no one on it"]);
+  assert.deepEqual(f.lanes.map((l) => l.label), ["Doing · 2 rows · 2 workers", "Next · 1 row · no one on it", "Done · 1 row · no one on it"]);
   const one = boardFocus(view(lanes), [pane("workstation", 1, "row_a")], hostOf);
-  assert.equal(one.lanes[0].label, "Next · 1 row · 1 worker");
+  assert.equal(one.lanes[1].label, "Next · 1 row · 1 worker");
 });
 
 test("a row's chip is its issue and a short title, or its note", () => {

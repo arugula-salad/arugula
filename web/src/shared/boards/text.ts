@@ -79,6 +79,18 @@ export function proofMark(r: Pick<BoardRow, "lane" | "pointer" | "proof" | "mark
   return { proven: true, words: p.by === "ci" ? "proven by CI" : "proven" };
 }
 
+/** The lanes in the order every board draws them: the most actionable first, what waits for review right after (#479). The server sends them Next, Doing, Review, Done; the board page, the block and the swarm's board focus all order them with [`inLaneOrder`]. */
+export const LANE_ORDER: BoardLane[] = ["doing", "review", "next", "done"];
+
+/** A board's zones in [`LANE_ORDER`]; a zone that is no lane goes last, in the order it came. */
+export function inLaneOrder<Z extends { id: string }>(zones: Z[]): Z[] {
+  const at = (z: Z) => {
+    const i = LANE_ORDER.findIndex((l) => z.id === `lane_${l}`);
+    return i < 0 ? LANE_ORDER.length : i;
+  };
+  return [...zones].sort((a, b) => at(a) - at(b));
+}
+
 /** A board's sections, top to bottom: each group with the four lanes of its
  * rows, then the rows with no group (only if there are any). A board with
  * no groups is one section without a group, its lanes as they came. */
@@ -86,8 +98,8 @@ export type Section = { group: BoardGroup | null; lanes: BoardZone[] };
 
 export function sections(v: Pick<BoardView, "zones" | "groups">): Section[] {
   const groups = v.groups ?? [];
-  if (!groups.length) return [{ group: null, lanes: v.zones }];
-  const of = (keep: (r: BoardRow) => boolean): BoardZone[] => v.zones.map((z) => ({ ...z, rows: z.rows.filter(keep) }));
+  if (!groups.length) return [{ group: null, lanes: inLaneOrder(v.zones) }];
+  const of = (keep: (r: BoardRow) => boolean): BoardZone[] => inLaneOrder(v.zones).map((z) => ({ ...z, rows: z.rows.filter(keep) }));
   const out: Section[] = groups.map((g) => ({ group: g, lanes: of((r) => r.group === g.id) }));
   const loose = of((r) => !r.group || !groups.some((g) => g.id === r.group));
   if (loose.some((z) => z.rows.length)) out.push({ group: null, lanes: loose });

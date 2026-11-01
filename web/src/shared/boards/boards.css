@@ -644,7 +644,7 @@
   align-items: flex-start;
 }
 
-/* The title and the state chip wrap together beside the menu button: the chip drops under the title when they don't fit, and the button stays top-right. */
+/* The title beside the menu button, which stays top-right. */
 .board-card-lead {
   display: flex;
   flex: 1 1 0;
