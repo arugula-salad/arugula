@@ -9,6 +9,9 @@ import { Modal } from "../../shared/ui/modal";
 import { signedAppIn, type AppLogin, type ControlSession, type ShareOffer, type Team } from "../control";
 import type { TeamRole } from "../e2e/team.ts";
 import { roleAs, roleLabel } from "../ui/roles";
+import { when } from "../../shared/time";
+import { describeAgent } from "./account";
+import { addingPasskey } from "./adding-passkey";
 import { AddedAt, clearHash, dropHash } from "./common";
 
 /** M48: the desktop app asks to sign in as this account. Allowing hands a
@@ -91,6 +94,8 @@ export function AppLoginPrompt({ s, id }: { s: ControlSession; id: string }) {
 export function ConfirmPasskey({ s }: { s: ControlSession }) {
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
+  // What's being added (#471): a passkey's confirmation is all it takes.
+  const p = s.passkeyToConfirm;
   return (
     <Modal close={() => s.dropPasskey()}>
       <h2>Confirm the new passkey</h2>
@@ -98,6 +103,11 @@ export function ConfirmPasskey({ s }: { s: ControlSession }) {
         Your new passkey is made. Confirm it with a passkey you already have: nobody adds one to your account without one of yours. Every device
         of yours hears that it was added.
       </p>
+      {p ? (
+        <p data-passkey-adding={p.provider ?? ""} title={when(p.made)}>
+          {addingPasskey(p.provider, describeAgent(navigator.userAgent), p.made)}
+        </p>
+      ) : null}
       {err ? <p class="control-error">{err}</p> : null}
       <div class="prompt-buttons">
         <button class="secondary" onClick={() => s.dropPasskey()}>Cancel</button>

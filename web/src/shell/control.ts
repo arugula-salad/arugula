@@ -510,6 +510,10 @@ export async function passkeySignIn(): Promise<boolean> {
 export interface PasskeyToConfirm {
   finish: Record<string, unknown>;
   prf: PrfOut | undefined;
+  /** What keeps the new one, as control names it from its AAGUID (null
+   * when it doesn't know), and when it was made: the prompt says (#471). */
+  provider: string | null;
+  made: number;
   options: { challenge: string; rpId: string; userVerification: UserVerificationRequirement; timeout: number; allowCredentials: { type: "public-key"; id: string }[] };
 }
 
@@ -588,11 +592,12 @@ export async function passkeyRegister(name?: string, device?: PasskeySigner): Pr
   if (step_up === "passkey") {
     // Its attestation too: the step-up signs the new passkey's event in
     // the account's passkey log (DK3), its key and AAGUID in it.
-    const options = await api<PasskeyToConfirm["options"]>("/auth/passkey/register/step-up", {
+    const made = Date.now();
+    const { provider = null, ...options } = await api<PasskeyToConfirm["options"] & { provider?: string | null }>("/auth/passkey/register/step-up", {
       id: finish.id,
       attestationObject: finish.attestationObject,
     });
-    return { finish, prf, options };
+    return { finish, prf, provider, made, options };
   }
   await finishRegister(finish, prf);
   return null;
