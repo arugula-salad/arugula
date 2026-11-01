@@ -67,9 +67,11 @@ and hooks nothing. To turn it on:
 
 **Where it works.** It needs Claude Code 2.1.286 or later (mods), and an
 `arugula` CLI with `session-signal`; with an older CLI the status line says
-to update Arugula. It's verified **in a terminal** (Linux). The desktop app,
-VS Code and hosted (cloud) sessions aren't verified yet (#448). Outside an
-Arugula pane it does nothing.
+to update Arugula. It acts only where `ARUGULA_PANE` is set, and it reaches
+the daemon through the `arugula` on PATH, which finds it through
+`ARUGULA_SOCK` (set in every Arugula pane and agent block; tmux windows lack
+it) or the default socket (the named pipe on Windows). Outside an Arugula
+pane it does nothing. Where it's been tested is below.
 
 **Older Claude Code.** One `hooks.json` holds both the command hooks and the
 module (#449): a Claude Code without mods ignores `modules` and runs the
@@ -92,3 +94,84 @@ To work on it: `claude --plugin-dir plugins/claude-code --settings
 '{"pluginConfigs":{"arugula@inline":{"options":{"live":true}}}}'` in a pane
 of a dev daemon. Why it sits beside the hooks and how far it goes:
 `docs/decisions/aru-128-*.md`.
+
+### Where it was tested (#448)
+
+These runs used the module as it was before it joined this plugin (the
+separate `arugula-live` plugin, #1942): the same four events, the same
+signals. Loading it now means this plugin with `live` on.
+
+| Surface | Claude Code | start | step | usage | compact | Right pane |
+| --- | --- | --- | --- | --- | --- | --- |
+| Terminal, `claude` and `claude -p` (#1942) | 2.1.316 | yes | yes | yes | yes | proven |
+| Agent block on a hosted box (arugula-dev-6), ACP adapter 0.85.0, loaded through `CLAUDE_CODE_PLUGIN_DIRS` | 2.1.286 (the SDK's) | yes | yes | yes | yes (`/compact`) | proven: the block's own id |
+| VS Code extension's bundled Claude Code, started as the extension starts it (`stream-json`, `CLAUDE_CODE_ENTRYPOINT=claude-vscode`) | 2.1.314 | yes | yes (effort too) | yes | yes | proven for the pane in `ARUGULA_PANE` |
+| VS Code's UI | | | | | | not run: needs a GUI |
+| Desktop app, macOS and Windows 11 | | | | | | not run: needs a GUI (checklist below) |
+
+- **Hosted agent block.** The box's daemon and CLI were 0.64.0, older than
+  `session-signal`, so the run used a throwaway daemon built from main on the
+  box. An agent block's environment is the daemon's plus `ARUGULA_PANE` (the
+  block's id), `ARUGULA_SOCK` and the daemon's folder first on PATH, and the
+  ACP adapter hands all of it to Claude Code: the block's Claude Code reached
+  that daemon and that block, never the box's own daemon. The adapter has no
+  status row, so the status line goes nowhere there.
+- **VS Code.** The extension starts Claude Code with its own environment plus
+  `claudeCode.environmentVariables`, so `CLAUDE_CODE_PLUGIN_DIRS` there loads
+  a plugin folder. The status line came back to the host as `ui_status`
+  messages (`arugula %1 ● live · 4% of 1M · v0.66.5`), which the extension's
+  mod surface draws.
+
+What doesn't reach a pane, for now:
+
+- **A hosted session's agent** (M255, a session from control running as
+  `sesN`) starts under `env -i`: no `ARUGULA_PANE`, no `ARUGULA_SOCK`, no
+  plugin folder, and the daemon's socket is closed to it, so it stays silent.
+  Tabs from `cloud open_tab` run as the box's user and are covered above. A
+  box's blocks load the plugin only if their daemon's environment (its spec,
+  or the platform) names it.
+- **VS Code and the desktop app** have no pane of their own. Claude Code there
+  inherits the app's environment, which has `ARUGULA_PANE` only when the app
+  itself was started from an Arugula pane (VS Code only when that start opened
+  its first window: `code .` into a running VS Code keeps the old
+  environment), and then every session in the app reports to that one pane.
+  Arugula's VS Code editor block drops `ARUGULA_PANE` on purpose, so Claude
+  Code inside it is silent.
+- **Windows:** the module runs `arugula` with no shell, so `arugula.exe` must
+  be on the PATH the app started with (a `.cmd` or `.ps1` shim won't do).
+
+### Desktop app checklist (macOS, then Windows 11)
+
+The kit is a zip of this folder with `.claude-plugin/plugin.json` and
+`hooks/` at its root, the shape Settings > Plugins takes.
+
+1. Install an `arugula` with `session-signal` (main after #1942, or the first
+   release with it). `arugula session-signal </dev/null` answers JSON
+   (`{"error":"not in an Arugula pane"}` outside a pane), not
+   `unrecognized subcommand`.
+2. Start a dev daemon (`just dev`, or `arugulad --state-dir <dir>`) and open a
+   terminal pane in it. `echo $ARUGULA_PANE $ARUGULA_SOCK` shows the pane and
+   the dev socket. On Windows: `$env:ARUGULA_PANE`, and `where.exe arugula`
+   finds `arugula.exe`.
+3. Quit the desktop app completely (macOS: Cmd-Q; Windows: quit from the
+   tray), then start it from that pane so it inherits the pane's environment:
+   macOS `/Applications/Claude.app/Contents/MacOS/Claude &`; Windows, Claude's
+   exe from PowerShell (where its Start menu shortcut points).
+4. Settings > Plugins > upload the zip. It lists as `arugula`.
+5. Settings > Plugins > arugula > Settings: turn on **Live session signals**.
+   The command hooks (attention, `arugula hook`, `arugula ask`, `arugula
+   inbox`) and the MCP server come along with the plugin too: that's
+   expected, and they talk to the dev daemon the same way.
+6. In the Code tab, start a local session in any folder. Send `Reply with
+   just ok`, then `/compact`.
+7. Look for the status text `arugula %N ● live · …% of … · v…` (N is the
+   pane from step 2), with `1 compacted` after the `/compact`, and in the dev
+   daemon's log `session signal pane=N` lines with `event=start`,
+   `event=step` (model, effort), `event=usage` (tokens, window, cost) and
+   `event=compact`.
+8. Negative check: quit, start the app from the Dock or Start menu, open a
+   session. No status text, no signal lines, no error.
+
+Record which events arrived and whether the status showed. A session that
+starts before the app's window attaches (Podium's note) may send `start`
+before there's a status row to draw it; the daemon logs it all the same.

@@ -115,8 +115,9 @@ The plugin also has **live session signals**, off by default: Claude Code tells
 the pane it runs in its context window's fill and size, its model and effort,
 and each compaction as it happens, and shows them in its status line. Turn them
 on at install, or later in `/config` ("Live session signals"). They need Claude
-Code 2.1.286 or later, and so far they're verified in a terminal only, not in
-the desktop app, VS Code or hosted sessions.
+Code 2.1.286 or later. They're verified in a terminal, in an agent block and
+with VS Code's Claude Code, but not yet in the desktop app; the plugin's README
+says where they reach a pane.
 
 ## Docs
 
