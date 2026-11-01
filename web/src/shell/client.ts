@@ -1000,12 +1000,17 @@ export class Client {
     this.emit();
   }
 
-  setActive(pane: PaneId) {
+  /** The pane a pointer last activated: the browser has put focus where it
+   * landed, so the shell doesn't move it to the view's first control. */
+  pointerActive: PaneId | null = null;
+
+  setActive(pane: PaneId, byPointer = false) {
     const tab = this.tabOfPane(pane);
     if (!tab) return;
     if (this.tab !== tab.id) this.selectTab(tab.id);
     if (this.activePane.get(tab.id) !== pane) {
       this.activePane.set(tab.id, pane);
+      this.pointerActive = byPointer ? pane : null;
       this.emit();
     }
   }

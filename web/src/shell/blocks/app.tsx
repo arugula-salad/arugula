@@ -247,7 +247,7 @@ export const appBlock: BlockRenderer = (client, id): BlockView => {
     },
     title: () => state?.title ?? state?.app ?? "app",
     text: () => (state ? `${state.title ?? state.app}\n${state.box_url}` : ""),
-    focus: () => host.querySelector<HTMLElement>("iframe")?.focus(),
+    focus: () => host.querySelector<HTMLElement>("iframe")?.focus({ preventScroll: true }),
     dispose: () => {
       render(null, host);
       host.remove();

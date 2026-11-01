@@ -155,7 +155,7 @@ registerBlock("editor", (client, id): BlockView => {
     },
     title: () => (state ? (state.file ? `${state.file.split("/").pop()} — ${state.name}` : state.name || "editor") : "editor"),
     text: () => (state ? `${state.file ?? state.folder}${state.line ? `:${state.line}` : ""}\n${state.lines.join("\n")}`.trim() : ""),
-    focus: () => host.querySelector<HTMLElement>("iframe")?.focus(),
+    focus: () => host.querySelector<HTMLElement>("iframe")?.focus({ preventScroll: true }),
     dispose: () => {
       offAppearance();
       render(null, host);

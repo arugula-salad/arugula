@@ -388,7 +388,7 @@ registerBlock("diff", (client, id): BlockView => {
     },
     title: () => `Changes: ${state?.name ?? "…"}`,
     text: () => (state ? asText(state) : ""),
-    focus: () => host.querySelector<HTMLElement>("button")?.focus(),
+    focus: () => host.querySelector<HTMLElement>("button")?.focus({ preventScroll: true }),
     dispose: () => {
       lastFile.delete(id);
       render(null, host);

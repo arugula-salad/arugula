@@ -1059,7 +1059,7 @@ registerBlock("forge", (client, id): BlockView => {
             ? `#${state.number} ${(state.pr?.item ?? state.issue?.item)?.title ?? state.repo}`
             : `${state?.repo ?? (state?.kind === "issue" ? "issue" : "pull request")}#${state?.number ?? ""}`,
     text: () => (isNativeIssue(state) ? nativeIssueText(state) : plain(state)),
-    focus: () => host.querySelector<HTMLElement>("button")?.focus(),
+    focus: () => host.querySelector<HTMLElement>("button")?.focus({ preventScroll: true }),
     dispose: () => {
       off();
       render(null, host);
