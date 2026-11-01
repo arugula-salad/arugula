@@ -67,6 +67,16 @@ pub struct DocFillArgs {
 }
 
 #[derive(Deserialize, JsonSchema)]
+pub struct DocChecklistArgs {
+    /// The Doc block (from doc new).
+    pub block: PaneArg,
+    /// The section that groups these tests (s1, s2, ...).
+    pub section: String,
+    /// Tests, each with a stable id, test text, and an owner (role label and agent block id).
+    pub items: Vec<crate::docs::checklist::Planned>,
+}
+
+#[derive(Deserialize, JsonSchema)]
 pub struct DocAssetArgs {
     /// The Doc block (from doc new).
     pub block: PaneArg,
@@ -127,6 +137,12 @@ Every fence is checked before anything is written: a bad chart, tile or drawing 
         flag: None,
     },
     Kind {
+        name: "checklist",
+        description: "Put an interactive test checklist in a Doc section. Each item has id, text and owner: {role, pane}, where pane is an agent block on this machine. The person can tick passes or report failures with notes and screenshots; failed reports go automatically to that owner's durable prompt queue. Group tests with the Doc's sections; doc fill can add context without replacing results. At most 100 items per Doc; section bodies and checklists share the 64 KB limit. Read results back with read_output on the Doc. Calling again preserves results and can reassign future reports. Existing reports keep the recipient the person saw when reporting; the person reports again to send to a replacement owner. An item with feedback cannot be removed or have its id or text changed; use a new section for a different test. Delivery is at least once: a repeated report id is the same feedback, not a new task. Role labels belong to this checklist, not a workspace-wide role registry.",
+        schema: schema_for_type::<DocChecklistArgs>,
+        flag: None,
+    },
+    Kind {
         name: "share",
         description: r##"Ask the user to share a finished Doc (its block) with a link anyone can open, without an account. A card asks them on the Doc and nothing is published until they tap Share; this returns {status: "waiting"} at once. Call share again on the same block to learn the outcome: shared (with the url, which you can give the user), declined, lapsed (a card nobody answered in a day) or failed (with why). A Doc already shared answers shared. Asking again after a decline raises a new card. Don't ask more than once for a Doc unless the user wants it."##,
         schema: schema_for_type::<DocShareArgs>,
@@ -170,6 +186,10 @@ fn run<'a>(call: &'a Call<'a>, kind: Option<&'static str>, args: Value) -> BoxFu
             },
             Some("fill") => match parse(args) {
                 Ok(a) => doc_fill(call, a).await,
+                Err(e) => Err(e),
+            },
+            Some("checklist") => match parse(args) {
+                Ok(a) => doc_checklist(call, a).await,
                 Err(e) => Err(e),
             },
             Some("asset") => match parse(args) {
@@ -297,6 +317,22 @@ async fn doc_fill(call: &Call<'_>, a: DocFillArgs) -> Out {
         format!("Filled {} of Doc %{block} ({} bytes)", a.section, out["bytes"]),
         json!({ "block": block, "section": a.section, "bytes": out["bytes"] }),
     )
+}
+
+async fn doc_checklist(call: &Call<'_>, a: DocChecklistArgs) -> Out {
+    let block = a.block.id()?;
+    let p = call.drivable(block).await?;
+    if p.info.kind != BlockType::Doc {
+        return Err(format!("%{block} isn't a Doc"));
+    }
+    // Assigning a recipient creates a future route into its prompt queue.
+    // Being allowed to edit the Doc alone does not grant that authority.
+    for item in &a.items {
+        call.drivable(item.owner.pane).await?;
+    }
+    let b = call.app().mux.api(|r| Api::Block(block, r)).await.flatten().ok_or_else(|| format!("no block %{block}"))?;
+    let out = b.call_by("doc_checklist", json!({ "section": a.section, "items": a.items }), Some(&call.by())).await?;
+    done(format!("Checklist saved in {} of Doc %{block}; read_output reads the person's results", a.section), out)
 }
 
 /// `doc share`: ask the owner to share a Doc this caller may drive, or

@@ -362,6 +362,10 @@ test.describe("a viewer", () => {
     // They can't write: the owner's tool is refused, and the Doc is the same.
     const r = await friend.request.post(`/api/blocks/${doc}/call/doc_fill`, { data: { section: "s1", markdown: "Rewritten." } });
     expect(r.status()).toBe(403);
+    for (const method of ["doc_checklist", "doc_feedback"]) {
+      const response = await friend.request.post(`/api/blocks/${doc}/call/${method}`, { data: {} });
+      expect(response.status()).toBe(403);
+    }
     await seeEmbeds(friend, doc);
     await friend.close();
   });

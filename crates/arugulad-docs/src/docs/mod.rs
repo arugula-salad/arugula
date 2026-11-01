@@ -48,13 +48,14 @@
 
 mod ask;
 mod assets;
+pub(crate) mod checklist;
 pub(crate) mod embeds;
 pub mod library;
 pub mod link;
 
 use std::{
     path::{Path, PathBuf},
-    sync::{Arc, Mutex, Weak},
+    sync::{Arc, Mutex, Weak, atomic::AtomicBool},
 };
 
 use arugula_proto::{BlockType, fs::READ_MAX};
@@ -164,6 +165,8 @@ struct Entry {
     /// Bumped when the body is written, so clients can mark a fill (a
     /// refill too).
     rev: u64,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    tasks: Vec<checklist::Item>,
 }
 
 #[derive(Debug, Default)]
@@ -211,6 +214,8 @@ pub struct Doc {
     shares: tokio::sync::Mutex<()>,
     /// An agent's ask to share, and its card (#1067).
     card: ask::Card,
+    /// A retry task exists only while checklist feedback is waiting.
+    checklist_delivery: AtomicBool,
 }
 
 impl Doc {
@@ -229,6 +234,7 @@ impl Doc {
         }
         if restoring {
             state.assets = assets::load(&dir.join(assets::FOLDER));
+            checklist::prune_restored_screenshots(&dir, &mut state);
             state.shared = link.current().map(|(_, e)| SharedAt { made: e.made, updated: e.updated });
         }
         Arc::new_cyclic(|me| Doc {
@@ -241,6 +247,7 @@ impl Doc {
             link,
             shares: tokio::sync::Mutex::new(()),
             card: Default::default(),
+            checklist_delivery: AtomicBool::new(false),
         })
     }
 
@@ -301,7 +308,7 @@ impl Doc {
             st.title = outline.title;
             st.entries = planned
                 .into_iter()
-                .map(|s| Entry { id: s.id, heading: s.heading, intent: s.intent, body: None, rev: 0 })
+                .map(|s| Entry { id: s.id, heading: s.heading, intent: s.intent, body: None, rev: 0, tasks: vec![] })
                 .collect();
             st.rev += 1;
         }
@@ -330,7 +337,8 @@ impl Doc {
             // Before the first write: a bad fence leaves the section, on
             // disk and in the state, exactly as it was.
             embeds::check(md, &st.assets).map_err(|e| format!("section {section}: {e}; the section is unchanged"))?;
-            if md.len() > SECTION_MAX {
+            let tasks_size = checklist::stored_size(&st.entries[at].tasks);
+            if md.len() + tasks_size > SECTION_MAX {
                 return Err(format!(
                     "section {section} is {} bytes; the cap is {SECTION_MAX} (64 KB): split it or shorten it",
                     md.len()
@@ -341,9 +349,9 @@ impl Doc {
                 .iter()
                 .enumerate()
                 .filter(|(i, _)| *i != at)
-                .map(|(_, e)| e.body.as_ref().map_or(0, String::len))
+                .map(|(_, e)| e.body.as_ref().map_or(0, String::len) + checklist::stored_size(&e.tasks))
                 .sum();
-            if (others + md.len()) as u64 > READ_MAX {
+            if (others + md.len() + tasks_size) as u64 > READ_MAX {
                 return Err(format!(
                     "the Doc would be {} bytes; the cap is {READ_MAX} (1 MiB): shorten a section",
                     others + md.len()
@@ -366,6 +374,9 @@ impl Doc {
     /// `doc_asset_put`: a picture, by name; a name already kept is replaced.
     async fn asset_put(&self, name: &str, data: &str) -> Result<Value, String> {
         assets::check_name(name)?;
+        if assets::is_checklist_screenshot(name) {
+            return Err("checklist screenshots are saved with feedback, not doc_asset_put".into());
+        }
         // The base64 of the cap, and a little over, before it is decoded.
         if data.len() > ASSET_MAX / 3 * 4 + 8 {
             return Err(format!("{name} is too big; the cap is {ASSET_MAX} bytes (2 MB): shrink it"));
@@ -385,7 +396,9 @@ impl Doc {
             if let Some(a) = st.assets.iter().find(|a| a.name != name && a.name.eq_ignore_ascii_case(name)) {
                 return Err(format!("the Doc has {} already: use that name to replace it", a.name));
             }
-            if st.assets.len() >= ASSETS_MAX && !st.assets.iter().any(|a| a.name == name) {
+            if st.assets.iter().filter(|a| !assets::is_checklist_screenshot(&a.name)).count() >= ASSETS_MAX
+                && !st.assets.iter().any(|a| a.name == name)
+            {
                 return Err(format!("a Doc has at most {ASSETS_MAX} assets: replace one by its name"));
             }
         }
@@ -455,7 +468,14 @@ impl Doc {
             title: title.clone(),
             entries: entries
                 .into_iter()
-                .map(|e| link::ManifestEntry { id: e.id, heading: e.heading, intent: e.intent, body: e.body })
+                .map(|e| {
+                    let body = if e.tasks.is_empty() {
+                        e.body.clone()
+                    } else {
+                        Some(format!("{}\n\n{}", e.body.as_deref().unwrap_or_default(), checklist::markdown(&e.tasks)))
+                    };
+                    link::ManifestEntry { id: e.id, heading: e.heading, intent: e.intent, body }
+                })
                 .collect(),
             assets,
         };
@@ -578,7 +598,8 @@ fn load(dir: &Path) -> Result<Loaded, String> {
             Err(e) => return Err(format!("can't read {}: {e}", path.display())),
         };
         let rev = u64::from(body.is_some());
-        entries.push(Entry { id: s.id, heading: s.heading, intent: s.intent, body, rev });
+        let tasks = checklist::load(dir, &s.id)?;
+        entries.push(Entry { id: s.id, heading: s.heading, intent: s.intent, body, rev, tasks });
     }
     Ok(Loaded { title: outline.title, entries })
 }
@@ -594,8 +615,13 @@ fn markdown(title: &str, entries: &[Entry]) -> String {
                 out.push_str(embeds::plain(b).trim_end());
                 out.push('\n');
             }
+            None if !e.tasks.is_empty() => {}
             None if e.intent.is_empty() => out.push_str("_(coming)_\n"),
             None => out.push_str(&format!("_(coming: {})_\n", e.intent)),
+        }
+        if !e.tasks.is_empty() {
+            out.push('\n');
+            out.push_str(&checklist::markdown(&e.tasks));
         }
     }
     out
@@ -658,6 +684,27 @@ impl Block for Doc {
     fn call_by(&self, method: &str, args: Value, by: Option<&str>) -> BoxFuture<'static, Result<Value, String>> {
         let me = self.me.upgrade();
         match method {
+            "doc_checklist" => {
+                let section = args["section"].as_str().unwrap_or_default().to_owned();
+                let items = serde_json::from_value::<Vec<checklist::Planned>>(args["items"].clone()).map_err(|e| {
+                    format!("doc_checklist needs {{section, items: [{{id, text, owner: {{role, pane}}}}]}}: {e}")
+                });
+                Box::pin(async move { me.ok_or("closed")?.checklist(&section, items?).await })
+            }
+            "doc_feedback" => {
+                if by.is_some_and(|by| by.starts_with("mcp:")) {
+                    return Box::pin(async { Err("only the owner can report checklist results".into()) });
+                }
+                let req = serde_json::from_value::<checklist::Feedback>(args).map_err(|e| {
+                    format!("doc_feedback needs {{section, item, revision, status, note?, screenshot?}}: {e}")
+                });
+                Box::pin(async move {
+                    let me = me.ok_or("closed")?;
+                    let answer = me.feedback(req?).await?;
+                    let _ = me.deliver_checklists().await;
+                    Ok(answer)
+                })
+            }
             // #1067: an agent's ask. Not in `link::METHODS`: it raises a
             // card and reads one, and uploads nothing.
             "doc_share_ask" => {
@@ -733,6 +780,7 @@ impl Block for Doc {
 #[cfg(test)]
 mod tests {
     use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::time::Duration;
 
     use super::*;
 
@@ -774,6 +822,275 @@ mod tests {
 
     fn entries(d: &Doc) -> Vec<Value> {
         d.state()["entries"].as_array().unwrap().clone()
+    }
+
+    fn checklist_plan(pane: u32) -> Value {
+        json!({ "section": "s1", "items": [{ "id": "phone", "text": "Phone layout fits", "owner": { "role": "frontend", "pane": pane } }] })
+    }
+
+    fn feedback(revision: u64, status: &str, note: &str) -> Value {
+        json!({ "section": "s1", "item": "phone", "revision": revision, "status": status, "note": note })
+    }
+
+    #[tokio::test]
+    async fn checklist_results_survive_restore_and_are_readable_as_markdown() {
+        let dir = temp("checklist-restore");
+        let (d, _) = doc(&dir, false);
+        outline(&d, 1).await.unwrap();
+        d.call("doc_checklist", checklist_plan(77)).await.unwrap();
+        d.call("doc_feedback", feedback(0, "passed", "")).await.unwrap();
+        assert!(d.text().contains("- [x] Phone layout fits"));
+        d.call("doc_feedback", feedback(1, "failed", "The buttons overlap on a phone.")).await.unwrap();
+        fill(&d, "s1", "Test on a phone.").await.unwrap();
+        let (back, _) = doc(&dir, true);
+        assert_eq!(back.state()["entries"][0]["tasks"], d.state()["entries"][0]["tasks"]);
+        assert!(back.text().contains("The buttons overlap on a phone."));
+        assert!(back.text().contains("waiting to send to owner"));
+        assert!(back.text().contains("owner: frontend, agent %77"));
+        // A refilled body does not replace the person's results.
+        assert_eq!(back.state()["entries"][0]["tasks"][0]["status"], "failed");
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[tokio::test]
+    async fn checklist_feedback_checks_revisions_and_keeps_results_when_reassigned() {
+        let dir = temp("checklist-revision");
+        let (d, _) = doc(&dir, false);
+        outline(&d, 1).await.unwrap();
+        d.call("doc_checklist", checklist_plan(77)).await.unwrap();
+        assert!(d.call_by("doc_feedback", feedback(0, "passed", ""), Some("mcp:agent")).await.is_err());
+        for args in [
+            feedback(4, "passed", ""),
+            feedback(0, "failed", ""),
+            json!({ "section": "s1", "item": "phone", "revision": 0, "status": "failed", "screenshot": "../outside.png" }),
+        ] {
+            assert!(d.call("doc_feedback", args).await.is_err());
+        }
+        assert_eq!(d.state()["entries"][0]["tasks"][0]["revision"], 0);
+        d.call("doc_feedback", feedback(0, "failed", "A failure.")).await.unwrap();
+        assert!(d.call("doc_feedback", feedback(0, "passed", "")).await.unwrap_err().contains("another device"));
+        let mut replacement = checklist_plan(77);
+        replacement["items"][0]["text"] = json!("A different test");
+        assert!(d.call("doc_checklist", replacement).await.unwrap_err().contains("keep its id and text"));
+        d.call("doc_checklist", checklist_plan(78)).await.unwrap();
+        let item = d.state()["entries"][0]["tasks"][0].clone();
+        assert_eq!(item["owner"]["pane"], 78);
+        assert_eq!(item["note"], "A failure.");
+        assert_eq!(item["status"], "failed");
+        assert_eq!(item["revision"], 2);
+        assert_eq!(item["report_revision"], 1);
+        assert_eq!(item["report_owner"]["pane"], 77, "a definition change cannot redirect a saved report");
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[tokio::test]
+    async fn checklist_caps_and_corrupt_sidecars_never_replace_the_saved_result() {
+        let dir = temp("checklist-caps");
+        let (d, _) = doc(&dir, false);
+        outline(&d, 1).await.unwrap();
+        d.call("doc_checklist", checklist_plan(77)).await.unwrap();
+        for (key, value) in [("id", "../escape"), ("text", ""), ("text", "two\nlines")] {
+            let mut args = checklist_plan(77);
+            args["items"][0][key] = json!(value);
+            assert!(d.call("doc_checklist", args).await.is_err());
+        }
+        let mut duplicate = checklist_plan(77);
+        let repeated = duplicate["items"][0].clone();
+        duplicate["items"].as_array_mut().unwrap().push(repeated);
+        assert!(d.call("doc_checklist", duplicate).await.is_err());
+        assert!(d.call("doc_feedback", feedback(0, "failed", &"x".repeat(4001))).await.is_err());
+        let mut report = feedback(0, "failed", "Keep the evidence.");
+        report["image"] = json!(b64(&png("evidence")));
+        d.call("doc_feedback", report).await.unwrap();
+        let image = d.state()["entries"][0]["tasks"][0]["screenshot"].as_str().unwrap().to_owned();
+        let path = dir.join(FOLDER).join("s1.tasks.json");
+        std::fs::write(&path, "broken").unwrap();
+        let (back, _) = doc(&dir, true);
+        assert!(back.state()["error"].as_str().unwrap().contains("doesn't parse"));
+        assert!(back.call("doc_checklist", checklist_plan(77)).await.is_err());
+        assert_eq!(std::fs::read_to_string(path).unwrap(), "broken");
+        assert!(
+            dir.join(FOLDER).join("assets").join(image).exists(),
+            "a corrupt sidecar cannot make its screenshot eligible for cleanup"
+        );
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[tokio::test]
+    async fn checklist_screenshots_do_not_spend_the_docs_picture_budget_or_leak_on_retry() {
+        let dir = temp("checklist-images");
+        let (d, _) = doc(&dir, false);
+        outline(&d, 2).await.unwrap();
+        for n in 0..20 {
+            let name = if n == 0 { "checklist-plan.png".into() } else { format!("chart-{n}.png") };
+            put(&d, &name, &png("chart")).await.unwrap();
+        }
+        for (section, count) in [("s1", 20), ("s2", 5)] {
+            let items: Vec<Value> = (0..count).map(|n| json!({ "id": format!("test-{n}"), "text": format!("Test {n}"), "owner": { "role": "frontend", "pane": 77 } })).collect();
+            d.call("doc_checklist", json!({ "section": section, "items": items })).await.unwrap();
+            for n in 0..count {
+                d.call("doc_feedback", json!({ "section": section, "item": format!("test-{n}"), "revision": 0, "status": "failed", "image": b64(&png(&format!("{section}-{n}"))) })).await.unwrap();
+            }
+        }
+        assert_eq!(d.state()["assets"].as_array().unwrap().len(), 45, "25 screenshots coexist with 20 Doc pictures");
+        let before = d.state();
+        let request = |revision, image: String| json!({ "section": "s1", "item": "test-0", "revision": revision, "status": "failed", "image": image });
+        let e = d.call("doc_feedback", request(0, b64(&png("stale")))).await.unwrap_err();
+        assert!(e.contains("another device"));
+        assert_eq!(d.state(), before, "a stale upload changes neither results nor assets");
+        assert_eq!(std::fs::read_dir(dir.join(FOLDER).join("assets")).unwrap().count(), 45);
+        d.call("doc_feedback", request(1, b64(&png("s1-0")))).await.unwrap();
+        assert_eq!(d.state()["assets"].as_array().unwrap().len(), 45, "identical bytes reuse their immutable asset");
+        let old = d.state()["entries"][0]["tasks"][0]["screenshot"].as_str().unwrap().to_owned();
+        d.call("doc_feedback", request(2, b64(&png("replacement")))).await.unwrap();
+        assert_eq!(d.state()["assets"].as_array().unwrap().len(), 45);
+        assert!(!dir.join(FOLDER).join("assets").join(old).exists(), "an unreferenced old screenshot is reclaimed");
+        assert!(put(&d, "one-too-many.png", &png("chart")).await.unwrap_err().contains("at most 20"));
+        let reserved = d.state()["entries"][0]["tasks"][0]["screenshot"].as_str().unwrap().to_owned();
+        assert!(put(&d, &reserved, &png("overwrite")).await.unwrap_err().contains("saved with feedback"));
+        let orphan = dir.join(FOLDER).join("assets").join(format!("checklist-{}.png", "0".repeat(64)));
+        std::fs::write(&orphan, png("interrupted save")).unwrap();
+        let (restored, _) = doc(&dir, true);
+        assert!(!orphan.exists(), "restore reclaims an image written before an interrupted verdict save");
+        assert!(
+            dir.join(FOLDER).join("assets/checklist-plan.png").exists(),
+            "cleanup preserves ordinary named pictures"
+        );
+        assert_eq!(restored.state()["assets"].as_array().unwrap().len(), 45);
+        for n in 0..2 {
+            assert_eq!(restored.state()["entries"][n]["tasks"], d.state()["entries"][n]["tasks"]);
+        }
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[tokio::test]
+    async fn a_failed_verdict_write_removes_its_new_screenshot_and_preserves_the_old_report() {
+        let dir = temp("checklist-image-io");
+        let (d, _) = doc(&dir, false);
+        outline(&d, 1).await.unwrap();
+        d.call("doc_checklist", checklist_plan(77)).await.unwrap();
+        let request = |revision, image: String| json!({ "section": "s1", "item": "phone", "revision": revision, "status": "failed", "image": image });
+        d.call("doc_feedback", request(0, b64(&png("first")))).await.unwrap();
+        let before = d.state();
+        let saved = std::fs::read(dir.join(FOLDER).join("s1.tasks.json")).unwrap();
+        std::fs::create_dir(dir.join(FOLDER).join("s1.tasks.tmp")).unwrap();
+        assert!(d.call("doc_feedback", request(1, b64(&png("replacement")))).await.is_err());
+        assert_eq!(d.state(), before);
+        assert_eq!(std::fs::read(dir.join(FOLDER).join("s1.tasks.json")).unwrap(), saved);
+        assert_eq!(std::fs::read_dir(dir.join(FOLDER).join("assets")).unwrap().count(), 1);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    struct FeedbackAgent(Arc<Mutex<Vec<String>>>);
+    impl Block for FeedbackAgent {
+        fn kind(&self) -> BlockType {
+            BlockType::Agent
+        }
+        fn config(&self) -> Value {
+            json!({})
+        }
+        fn state(&self) -> Value {
+            json!({})
+        }
+        fn text(&self) -> String {
+            String::new()
+        }
+        fn close(&self) {}
+        fn call_by(&self, method: &str, args: Value, by: Option<&str>) -> BoxFuture<'static, Result<Value, String>> {
+            assert_eq!(by, Some("Checklist feedback"), "relayed context must not appear as the owner's own prompt");
+            self.call(method, args)
+        }
+        fn call(&self, method: &str, args: Value) -> BoxFuture<'static, Result<Value, String>> {
+            assert_eq!(method, "send");
+            self.0.lock().unwrap().push(args["text"].as_str().unwrap().to_owned());
+            Box::pin(async { Ok(json!({})) })
+        }
+    }
+
+    #[tokio::test]
+    async fn a_saved_failure_is_delivered_to_its_owner_after_restore_and_only_once_after_receipt() {
+        use std::sync::atomic::AtomicBool;
+        let dir = temp("checklist-delivery");
+        let (d, _) = doc(&dir, false);
+        outline(&d, 1).await.unwrap();
+        d.call("doc_checklist", checklist_plan(77)).await.unwrap();
+        d.call("doc_feedback", feedback(0, "failed", "The result is wrong.")).await.unwrap();
+        d.call("doc_checklist", checklist_plan(78)).await.unwrap();
+        drop(d);
+        let messages = Arc::new(Mutex::new(Vec::new()));
+        let agent: Arc<dyn Block> = Arc::new(FeedbackAgent(messages.clone()));
+        let online = Arc::new(AtomicBool::new(false));
+        let (ctx, _seen, mut commands) = ctx_with_cmds(&dir, true);
+        let on = online.clone();
+        let responder = tokio::spawn(async move {
+            while let Some(cmd) = commands.recv().await {
+                match cmd {
+                    crate::mux::Cmd::Api(crate::mux::Api::Panes(reply)) => {
+                        let panes = if on.load(Ordering::SeqCst) {
+                            vec![serde_json::from_value(json!({ "session": 1, "session_name": "Test", "tab": 1, "id": 77, "epoch": 1, "running": false, "type": "agent", "policy": { "kind": "none" } })).unwrap()]
+                        } else {
+                            vec![]
+                        };
+                        let _ = reply.send(panes);
+                    }
+                    crate::mux::Cmd::Api(crate::mux::Api::Block(id, reply)) => {
+                        assert_eq!(id, 77);
+                        let _ = reply.send(Some(agent.clone()));
+                    }
+                    _ => panic!("unexpected checklist command"),
+                }
+            }
+        });
+        let (back, _) = doc(&dir, true);
+        back.attach(ctx.clone(), None);
+        back.deliver_checklists().await.unwrap();
+        assert!(messages.lock().unwrap().is_empty());
+        assert_eq!(back.state()["entries"][0]["tasks"][0]["sent"], 0);
+        online.store(true, Ordering::SeqCst);
+        back.deliver_checklists().await.unwrap();
+        let delivered = messages.lock().unwrap().clone();
+        assert_eq!(delivered.len(), 1);
+        assert!(delivered[0].contains("Test failure for frontend"));
+        assert!(delivered[0].contains("Relayed checklist feedback"));
+        assert!(delivered[0].contains("The result is wrong."));
+        back.close();
+        drop(back);
+        let (again, _) = doc(&dir, true);
+        again.attach(ctx, None);
+        assert!(
+            !again.checklist_delivery.load(Ordering::SeqCst),
+            "a restored Doc without pending reports starts no retry task"
+        );
+        again.deliver_checklists().await.unwrap();
+        assert_eq!(messages.lock().unwrap().len(), 1, "the saved receipt prevents another send after restart");
+        again.call("doc_feedback", feedback(2, "passed", "Fixed now.")).await.unwrap();
+        assert_eq!(messages.lock().unwrap().len(), 2, "the original recipient hears that its failure is resolved");
+        assert!(messages.lock().unwrap()[1].contains("Test result updated: passed"));
+        again.deliver_checklists().await.unwrap();
+        assert_eq!(messages.lock().unwrap().len(), 2);
+        tokio::time::timeout(Duration::from_secs(2), async {
+            while again.checklist_delivery.load(Ordering::SeqCst) {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap();
+        // Save directly so only the background worker can deliver it.
+        again.call("doc_checklist", checklist_plan(77)).await.unwrap();
+        again.feedback(serde_json::from_value(feedback(4, "failed", "Failed again.")).unwrap()).await.unwrap();
+        tokio::time::timeout(Duration::from_secs(2), async {
+            loop {
+                if messages.lock().unwrap().len() == 3 && !again.checklist_delivery.load(Ordering::SeqCst) {
+                    break;
+                }
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap();
+        again.close();
+        responder.abort();
+        std::fs::remove_dir_all(dir).unwrap();
     }
 
     #[tokio::test]

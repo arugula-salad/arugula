@@ -3277,12 +3277,33 @@ impl Agent {
     fn send(&self, args: &Value, by: Option<&str>) -> Result<Value, String> {
         let text = args["text"].as_str().map(str::trim).unwrap_or_default();
         let files = strings(&args["files"]);
-        if text.is_empty() && files.is_empty() {
+        // A Doc's failure screenshot already lives on the daemon: keep a
+        // bounded image directly, without pretending its asset path is an
+        // upload token. This path works on Windows too.
+        let image = args
+            .get("image")
+            .map(|data| -> Result<Vec<u8>, String> {
+                const MAX: usize = 2 * 1024 * 1024;
+                let data = data.as_str().ok_or("image must be base64")?;
+                if data.len() > MAX / 3 * 4 + 8 {
+                    return Err("the image is over 2 MB".into());
+                }
+                let bytes = images::decode(data).ok_or("not a PNG, JPEG, GIF or WebP image")?;
+                if bytes.len() > MAX {
+                    return Err("the image is over 2 MB".into());
+                }
+                Ok(bytes)
+            })
+            .transpose()?;
+        if text.is_empty() && files.is_empty() && image.is_none() {
             return Err("send needs {\"text\": …}".into());
         }
         // A follow-up from someone (M29): the transcript says whose as it's
         // sent (`send_prompt`).
         let mut q = Queued { text: text.to_owned(), images: vec![], by: by.map(str::to_owned) };
+        if let Some(bytes) = image {
+            q.images.push(images::keep(&self.ctx.dir, &bytes).map_err(|e| format!("can't keep the image: {e}"))?);
+        }
         attach(&self.ctx, &mut q, &files)?;
         let mut g = self.inner.lock().unwrap();
         if matches!(g.status, Status::Exited | Status::Stopped) {

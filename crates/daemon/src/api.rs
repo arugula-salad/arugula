@@ -871,6 +871,15 @@ async fn call(
         may_drive(&app, &who, id).await?;
     }
     if let Some(b) = app.mux.api(|r| Api::Block(id, r)).await.flatten() {
+        // Test feedback may enqueue work as this machine's owner. A shared
+        // viewer, co-owner or agent must not turn a Doc into a way to drive
+        // an unrelated agent block as the owner.
+        if b.kind() == arugula_proto::BlockType::Doc
+            && method == "doc_feedback"
+            && (!owner || foreign(&app, &dev) || crate::invite::agent(&headers))
+        {
+            return Err(ApiError(StatusCode::FORBIDDEN, "only the owner can report checklist results".into()));
+        }
         // An agent's invites (#234) are the owner's, and not for an agent
         // on the owner's CLI either (as a forge's drafts, a courtesy).
         if b.kind() == arugula_proto::BlockType::Invite && (!owner || crate::invite::agent(&headers)) {

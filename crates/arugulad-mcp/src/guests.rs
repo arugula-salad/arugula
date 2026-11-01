@@ -72,6 +72,7 @@ pub const OWNERS: &[Entry] = &[
     ("show", Some("board")),
     ("doc", Some("list")),
     ("doc", Some("open")),
+    ("doc", Some("checklist")),
     // With the owner's forge logins, private repos too.
     ("show", Some("pr")),
     ("show", Some("issue")),
