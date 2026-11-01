@@ -28,7 +28,7 @@ import { NvimIcon } from "../ui/shell/icons";
 import { PointChoices, pointOf, proposalLine } from "../ui/point-choices";
 import { ariaKeys, keyHint, useBinding } from "../ui/keys";
 import { useWall } from "./wall";
-import { finished, needsYou, NEEDS_YOU } from "../../shared/needs-you";
+import { finished, needsYou, needsYouRank, NEEDS_YOU, sortNeedsYou } from "../../shared/needs-you";
 import { onIssueChip } from "../../shared/boards/text";
 import { activityOf, bundleOf, cardTitle, headlineOf, holdStill, shortHost, whatItDoes, shortPaths, shownNow, wantsYou, followable, editorAt, GROUPING_LABEL, GROUPINGS, groupOf, isPresence, kindOf, KIND_LABEL, KINDS, REASON_COL, reasonOf, type GroupBy } from "./model";
 
@@ -78,7 +78,9 @@ export interface Bundle {
 
 
 
-/** What's on the rail: the bundles that fit, and the rest waiting. */
+/** What's on the rail: the bundles that fit, and the rest waiting, in the
+ * order every needs-you list shares (`byNeedsYou`): asks, then failures,
+ * then what finished, each oldest first. */
 export function bundlesOf(panes: FleetPane[]): Bundle[] {
   const out = new Map<string, Bundle>();
   for (const p of panes) {
@@ -91,7 +93,7 @@ export function bundlesOf(panes: FleetPane[]): Bundle[] {
       b.since = Math.min(b.since, r.since_ms);
     } else out.set(key, { key, reason: r, panes: [p], since: r.since_ms });
   }
-  return [...out.values()].sort((a, b) => a.since - b.since || a.key.localeCompare(b.key));
+  return sortNeedsYou([...out.values()], (b) => ({ rank: Math.min(...b.panes.map((p) => needsYouRank(p.info))), since: b.since, key: b.key }));
 }
 
 /** A card answered by someone, kept a while for its follow-up box. */

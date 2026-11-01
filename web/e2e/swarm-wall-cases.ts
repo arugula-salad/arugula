@@ -5,7 +5,10 @@
 // Escape, its Exit button and leaving fullscreen bring the chrome back; a
 // reload comes back out of it; with nobody there the cursor and the Exit
 // button hide (a short wait here, `window.__arugulaWallIdleMs`), never
-// while the pointer is on the button. In every theme.
+// while the pointer is on the button. In every theme. And (#451) its rail
+// puts what waits on a person above what only finished: an ask that comes
+// after three finished builds goes to the top, a failure after it, and the
+// finished cards keep their order below.
 
 import { expect, test, type Page } from "@playwright/test";
 import { FakeFleet } from "./fake-fleet";
@@ -167,6 +170,43 @@ export function swarmWallTests() {
     await expect.poll(fade).toBeLessThan(0.001);
     await page.emulateMedia({ reducedMotion: "no-preference" });
     await expect.poll(fade).toBeGreaterThan(0.1);
+  });
+
+  test("on the wall, an ask that comes after finished cards goes above them, a failure between (#451)", async ({ page }) => {
+    test.setTimeout(60_000);
+    // A wall's size: room for five cards on the rail.
+    await page.setViewportSize({ width: 1920, height: 1080 });
+    await swarm(page);
+    await page.locator("[data-wall-enter]").click();
+    await expect(page.locator(".swarm")).toHaveAttribute("data-wall", "");
+    // Nothing on the rail from another case.
+    await page.evaluate(async () => {
+      const f = window.__arugula.fleet;
+      for (const p of f.panes) if (p.info.reason) await f.request(p.host, "POST", "/api/attention/act", { action: "dismiss", pane: p.id }).catch(() => {});
+    });
+    const cards = page.locator(".swarm-card[data-bundle]");
+    await expect(cards).toHaveCount(0, { timeout: 10_000 });
+    const kinds = () => cards.evaluateAll((cs) => cs.map((c) => c.getAttribute("data-kind")));
+    const order = () => cards.evaluateAll((cs) => cs.map((c) => c.getAttribute("data-panes")));
+    // Three builds finish, a few hundred milliseconds apart.
+    const built: number[] = [];
+    for (let i = 0; i < 3; i++) built.push(await fake.finish("workstation"));
+    await expect.poll(kinds, { timeout: 20_000 }).toEqual(["done", "done", "done"]);
+    const finished = await order();
+    expect(finished.toSorted()).toEqual(built.map((id) => `workstation:${id}`).toSorted());
+    // Then Claude Code asks, and a test run fails: the ask at the top, the
+    // failure under it, the finished cards as they were (a finished card
+    // leaves after 15 s, so this all lands well inside that).
+    const asked = await fake.agentQuestion("workstation", "infra");
+    await expect.poll(kinds, { timeout: 10_000 }).toEqual(["ask", "done", "done", "done"]);
+    const [failed] = await fake.trouble("workstation", 1);
+    await expect.poll(kinds, { timeout: 10_000 }).toEqual(["ask", "failed", "done", "done", "done"]);
+    const now = await order();
+    expect(now[0]).toBe(`workstation:${asked}`);
+    expect(now[1]).toBe(`workstation:${failed}`);
+    expect(now.slice(2)).toEqual(finished);
+    await page.keyboard.press("Escape");
+    for (const id of [...built, asked, failed]) await fake.close("workstation", id);
   });
 
   test("every theme has it", async ({ page }) => {
