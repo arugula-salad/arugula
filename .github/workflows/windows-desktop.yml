@@ -17,6 +17,7 @@ on:
 
 # Written by chant ci workflow from ci.green's build (#4169); edit ci.green and run it again.
 concurrency:
+  # A job skipped by changed paths diffs against `chant ci base --phase windows`, not github.event.before, which a newer push may have kept from being built (#4643).
   group: chant-build-windows-${{ github.ref }}
   cancel-in-progress: false
 

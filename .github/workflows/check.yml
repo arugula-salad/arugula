@@ -63,6 +63,7 @@ on:
 # (gh-readonly-queue/main/pr-…), so it's a group of its own too.
 # Written by chant ci workflow from ci.green's build (#4169); edit ci.green and run it again.
 concurrency:
+  # A job skipped by changed paths diffs against `chant ci base --phase build`, not github.event.before, which a newer push may have kept from being built (#4643).
   group: chant-build-lint-build-test-e2e-claims-macos-${{ github.ref }}
   cancel-in-progress: false
 
