@@ -917,19 +917,36 @@
       "type": "object"
     },
     "GrantRevoke": {
-      "description": "The project's grants taken back, by any owner's device: every grant for\nthe project under `delegation` made at or before `at`. It names no\ngrant, so whoever relays it can't point it at another one; a grant made\nafter it is a new one.",
+      "description": "The project's grants taken back, by any owner: every grant for the\nproject under `delegation` made at or before `at`, v1 or v2. It names\nno grant, so whoever relays it can't point it at another one; a grant\nmade after it is a new one.",
       "properties": {
+        "account": {
+          "description": "[`REVOKE_PASSKEY`]: the revoking owner's account, in the bytes.",
+          "type": "string"
+        },
         "at": {
           "format": "uint64",
           "minimum": 0,
           "type": "integer"
         },
         "by": {
+          "default": "",
+          "description": "[`REVOKE_DEVICE`]: the signing device. Empty in a passkey's.",
           "type": "string"
         },
         "delegation": {
           "description": "The delegation whose grants it takes back.",
           "type": "string"
+        },
+        "passkey": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Assertion"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "[`REVOKE_PASSKEY`]: the passkey's assertion over\n[`GrantRevoke::passkey_challenge`]."
         },
         "project": {
           "type": "string"
@@ -939,15 +956,22 @@
         },
         "sig": {
           "default": "",
+          "description": "[`REVOKE_DEVICE`]: its signature, hex. Empty in a passkey's.",
           "type": "string"
+        },
+        "v": {
+          "description": "Its format, [`REVOKE_DEVICE`] or [`REVOKE_PASSKEY`]: absent is a\ndevice's (every revoke from before DK6).",
+          "format": "uint8",
+          "maximum": 255,
+          "minimum": 0,
+          "type": "integer"
         }
       },
       "required": [
         "project",
         "delegation",
         "running",
-        "at",
-        "by"
+        "at"
       ],
       "type": "object"
     },
@@ -1368,10 +1392,15 @@
       "type": "object"
     },
     "ProjectGrant": {
-      "description": "An owner's device saying the platform may start and instruct runs on\n`project`'s hosted workspaces, under `delegation`.",
+      "description": "A project owner saying the platform may start and instruct runs on\n`project`'s hosted workspaces, under `delegation`.",
       "properties": {
+        "account": {
+          "description": "v2: the granting owner's account, in the bytes. Empty in v1.",
+          "type": "string"
+        },
         "by": {
-          "description": "The signing device.",
+          "default": "",
+          "description": "v1: the signing device. Empty in v2, which no device signs.",
           "type": "string"
         },
         "caps": {
@@ -1387,7 +1416,7 @@
         },
         "expires": {
           "default": null,
-          "description": "When it stops counting (ms); `None`: never.",
+          "description": "When it stops counting (ms); `None`: never (v1 only).",
           "format": "uint64",
           "minimum": 0,
           "type": [
@@ -1404,15 +1433,34 @@
           "type": "integer"
         },
         "owner": {
-          "description": "`team:<id>` or `account:<id>`, as the signing device saw it.",
+          "description": "`team:<id>` or `account:<id>`, as the granter saw it.",
           "type": "string"
+        },
+        "passkey": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Assertion"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "v2: the passkey's assertion over [`ProjectGrant::passkey_challenge`],\nits signature. Kept beside the bytes, not in them."
         },
         "project": {
           "type": "string"
         },
         "sig": {
           "default": "",
+          "description": "v1: its Ed25519 signature over [`ProjectGrant::body`], hex. Empty\nin v2.",
           "type": "string"
+        },
+        "v": {
+          "description": "Its format, [`V1`] or [`V2`]: absent is v1 (every grant from before\nDK6).",
+          "format": "uint8",
+          "maximum": 255,
+          "minimum": 0,
+          "type": "integer"
         }
       },
       "required": [
@@ -1421,8 +1469,7 @@
         "owner",
         "delegation",
         "caps",
-        "made",
-        "by"
+        "made"
       ],
       "type": "object"
     },
@@ -2701,6 +2748,17 @@
         "op_hash": {
           "description": "Their SHA-256, hex: the machine checks the bytes against it.",
           "type": "string"
+        },
+        "passkey_log": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Log"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "A v2 grant's granter's passkey log, as the platform read it from the\nhub (DK6, as `crate::runs::RunStart::passkey_log`): the machine takes\nonly its removals."
         },
         "project": {
           "type": "string"

@@ -120,7 +120,13 @@ fn signed_domains_never_change() {
         at: 1,
         by: "d".into(),
         sig: String::new(),
+        account: String::new(),
+        passkey: None,
+        v: crate::project_grant::REVOKE_DEVICE,
     };
+    let grant_v2 =
+        crate::project_grant::ProjectGrant { account: "a".into(), v: 2, by: String::new(), ..project_grant.clone() };
+    let revoke_v3 = crate::project_grant::GrantRevoke::v3("p", "d", crate::project_grant::Running::Finish, 1, "a");
     let pin = TeamPin { team: "t".into(), founder: "a".into(), founder_root: "r".into() };
     let lock = TeamLock { team: "t".into(), locked: true, version: 1, at: 1, by: "d".into(), sig: String::new() };
 
@@ -153,6 +159,9 @@ fn signed_domains_never_change() {
         // The standing project grant and its revoke (M211; the revoke is v2).
         (first_line(project_grant.body()), "61727567756c612070726f6a656374206772616e74207631"),
         (first_line(grant_revoke.body()), "61727567756c612070726f6a656374206772616e74207265766f6b65207632"),
+        // DK6's: a passkey assertion over each is its whole signature.
+        (first_line(grant_v2.body()), "61727567756c612070726f6a656374206772616e74207632"),
+        (first_line(revoke_v3.body()), "61727567756c612070726f6a656374206772616e74207265766f6b65207633"),
     ];
     for (got, want) in cases {
         assert_eq!(got, text(want), "a frozen domain changed (#504)");

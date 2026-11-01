@@ -233,6 +233,11 @@ pub struct WorkItem {
     pub grant: Option<ProjectGrant>,
     #[serde(default)]
     pub revokes: Vec<GrantRevoke>,
+    /// A v2 grant's granter's passkey log, as the platform read it from the
+    /// hub (DK6, as `crate::runs::RunStart::passkey_log`): the machine takes
+    /// only its removals.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub passkey_log: Option<arugula_e2e::passkey::Log>,
     /// A deploy's run (M219): the deploy it applies, with its owner's
     /// approval, which the machine checks itself before it starts.
     #[serde(default, skip_serializing_if = "Option::is_none")]

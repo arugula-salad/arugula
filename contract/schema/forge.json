@@ -76,6 +76,40 @@
       "description": "`hosted.archive` (Arugula #209), control to a hosted machine through\nits relay: send every open agent block's transcript now, as closing it\nwould, and answer once each send is done. The platform asks just before\nit rebuilds the box, so a session that moves to the new box starts\nfrom its conversation, not without it.",
       "type": "object"
     },
+    "Assertion": {
+      "additionalProperties": false,
+      "description": "A passkey's assertion, as the page got it from\n`navigator.credentials.get`: each base64url.",
+      "properties": {
+        "authenticatorData": {
+          "type": "string"
+        },
+        "clientDataJSON": {
+          "type": "string"
+        },
+        "id": {
+          "description": "The credential's id (`rawId`).",
+          "type": "string"
+        },
+        "signature": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "clientDataJSON",
+        "authenticatorData",
+        "signature"
+      ],
+      "type": "object"
+    },
+    "Change": {
+      "description": "What happened to a passkey.",
+      "enum": [
+        "added",
+        "removed"
+      ],
+      "type": "string"
+    },
     "DaemonOp": {
       "description": "An op control asks a machine for, by its name (`op`). Only the platform\nasks, through the hub, and only for a person's own action.",
       "oneOf": [
@@ -164,6 +198,91 @@
           "type": "object"
         }
       ]
+    },
+    "Event": {
+      "additionalProperties": false,
+      "description": "One event of an account's log.",
+      "properties": {
+        "aaguid": {
+          "description": "The authenticator's AAGUID, 32 hex, [`NO_AAGUID`] when unknown.",
+          "type": "string"
+        },
+        "account": {
+          "type": "string"
+        },
+        "alg": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "at": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "by": {
+          "description": "What let it happen ([`By`]).",
+          "type": "string"
+        },
+        "credential": {
+          "description": "The passkey's credential id, base64url.",
+          "type": "string"
+        },
+        "event": {
+          "$ref": "#/$defs/Change"
+        },
+        "hash": {
+          "description": "SHA-256 of the body and proof line, hex.",
+          "type": "string"
+        },
+        "key": {
+          "description": "Its public key, base64url.",
+          "type": "string"
+        },
+        "keyFormat": {
+          "description": "How `key` is encoded: `sec1` (P-256, uncompressed), `raw` (Ed25519)\nor `spki` (RSA).",
+          "type": "string"
+        },
+        "prev": {
+          "description": "The hash of the event before, or [`ZERO`].",
+          "type": "string"
+        },
+        "proof": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Assertion"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "On a `by passkey` event, the signer's assertion over [`Event::challenge`]."
+        },
+        "rp": {
+          "description": "The RP ID it was made for; for a backfilled event, possibly each of\ncontrol's sites, space-separated.",
+          "type": "string"
+        },
+        "seq": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "account",
+        "seq",
+        "prev",
+        "event",
+        "credential",
+        "rp",
+        "alg",
+        "keyFormat",
+        "key",
+        "aaguid",
+        "at",
+        "by",
+        "hash"
+      ],
+      "type": "object"
     },
     "ForgePoke": {
       "description": "`{\"t\": \"forge.poke\", \"poke\": {…}}`, control to daemon.",
@@ -333,19 +452,36 @@
       "type": "object"
     },
     "GrantRevoke": {
-      "description": "The project's grants taken back, by any owner's device: every grant for\nthe project under `delegation` made at or before `at`. It names no\ngrant, so whoever relays it can't point it at another one; a grant made\nafter it is a new one.",
+      "description": "The project's grants taken back, by any owner: every grant for the\nproject under `delegation` made at or before `at`, v1 or v2. It names\nno grant, so whoever relays it can't point it at another one; a grant\nmade after it is a new one.",
       "properties": {
+        "account": {
+          "description": "[`REVOKE_PASSKEY`]: the revoking owner's account, in the bytes.",
+          "type": "string"
+        },
         "at": {
           "format": "uint64",
           "minimum": 0,
           "type": "integer"
         },
         "by": {
+          "default": "",
+          "description": "[`REVOKE_DEVICE`]: the signing device. Empty in a passkey's.",
           "type": "string"
         },
         "delegation": {
           "description": "The delegation whose grants it takes back.",
           "type": "string"
+        },
+        "passkey": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Assertion"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "[`REVOKE_PASSKEY`]: the passkey's assertion over\n[`GrantRevoke::passkey_challenge`]."
         },
         "project": {
           "type": "string"
@@ -355,15 +491,51 @@
         },
         "sig": {
           "default": "",
+          "description": "[`REVOKE_DEVICE`]: its signature, hex. Empty in a passkey's.",
           "type": "string"
+        },
+        "v": {
+          "description": "Its format, [`REVOKE_DEVICE`] or [`REVOKE_PASSKEY`]: absent is a\ndevice's (every revoke from before DK6).",
+          "format": "uint8",
+          "maximum": 255,
+          "minimum": 0,
+          "type": "integer"
         }
       },
       "required": [
         "project",
         "delegation",
         "running",
-        "at",
-        "by"
+        "at"
+      ],
+      "type": "object"
+    },
+    "Log": {
+      "additionalProperties": false,
+      "description": "An account's log, oldest first.",
+      "properties": {
+        "account": {
+          "type": "string"
+        },
+        "began": {
+          "description": "When this hub began keeping logs (ms): removals before then are in\nno log. Said by the hub, not hashed; `None` when it doesn't say.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "events": {
+          "items": {
+            "$ref": "#/$defs/Event"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "account",
+        "events"
       ],
       "type": "object"
     },
@@ -552,10 +724,15 @@
       "type": "object"
     },
     "ProjectGrant": {
-      "description": "An owner's device saying the platform may start and instruct runs on\n`project`'s hosted workspaces, under `delegation`.",
+      "description": "A project owner saying the platform may start and instruct runs on\n`project`'s hosted workspaces, under `delegation`.",
       "properties": {
+        "account": {
+          "description": "v2: the granting owner's account, in the bytes. Empty in v1.",
+          "type": "string"
+        },
         "by": {
-          "description": "The signing device.",
+          "default": "",
+          "description": "v1: the signing device. Empty in v2, which no device signs.",
           "type": "string"
         },
         "caps": {
@@ -571,7 +748,7 @@
         },
         "expires": {
           "default": null,
-          "description": "When it stops counting (ms); `None`: never.",
+          "description": "When it stops counting (ms); `None`: never (v1 only).",
           "format": "uint64",
           "minimum": 0,
           "type": [
@@ -588,15 +765,34 @@
           "type": "integer"
         },
         "owner": {
-          "description": "`team:<id>` or `account:<id>`, as the signing device saw it.",
+          "description": "`team:<id>` or `account:<id>`, as the granter saw it.",
           "type": "string"
+        },
+        "passkey": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Assertion"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "v2: the passkey's assertion over [`ProjectGrant::passkey_challenge`],\nits signature. Kept beside the bytes, not in them."
         },
         "project": {
           "type": "string"
         },
         "sig": {
           "default": "",
+          "description": "v1: its Ed25519 signature over [`ProjectGrant::body`], hex. Empty\nin v2.",
           "type": "string"
+        },
+        "v": {
+          "description": "Its format, [`V1`] or [`V2`]: absent is v1 (every grant from before\nDK6).",
+          "format": "uint8",
+          "maximum": 255,
+          "minimum": 0,
+          "type": "integer"
         }
       },
       "required": [
@@ -605,8 +801,7 @@
         "owner",
         "delegation",
         "caps",
-        "made",
-        "by"
+        "made"
       ],
       "type": "object"
     },
@@ -631,6 +826,17 @@
         },
         "grant": {
           "$ref": "#/$defs/ProjectGrant"
+        },
+        "passkey_log": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Log"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "A v2 grant's (DK6): its granter's passkey log, as the platform read\nit from the hub. The machine takes only its removals after the log\nit pinned from control, never a key it adds\n(`arugula_e2e::project_grant::check`). `None` for a v1, from a\nplatform from before DK6, or when the hub didn't answer."
         },
         "project": {
           "type": "string"

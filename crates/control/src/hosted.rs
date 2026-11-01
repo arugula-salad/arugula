@@ -331,10 +331,11 @@ fn enrollment(app: &App, h: &HostedRow) -> anyhow::Result<Enrollment> {
     if let Some(p) = &people {
         e.legacy_app_children = Some(legacy_app_children(&app.db, p)?);
     }
-    // A deploy's box checks the approval it applies against its people's
-    // passkey logs, as published (DK3), and the origins a platform action
-    // may come from (DK4, aru-126): it pins both.
-    if h.purpose.as_deref() == Some(arugula_control_wire::hosted::DEPLOY) {
+    // Every box pins its people's passkey logs, as published (DK3), and the
+    // origins a platform action may come from (aru-126): a deploy's box
+    // checks the approval it applies against them (DK4), and any box the
+    // project's standing grant for runs and its revokes (DK6).
+    {
         let accounts: Vec<String> = match &people {
             Some(People::Team { roster, .. }) => roster.members.iter().map(|m| m.account.clone()).collect(),
             Some(People::Account { trust, .. }) => vec![trust.account.clone()],

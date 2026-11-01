@@ -7,8 +7,8 @@
 //!   `done`, or `cant` with the refusal's code. It carries no operation:
 //!   one that names a run (M212) has the machine pull its work at once
 //!   (`crate::work`), where the run comes with its grant, checked again.
-//! - `runs.revoke` ([`RunRevoke`], M211): an owner's device revoked the
-//!   project's grants made by then. The machine checks the revoke once and
+//! - `runs.revoke` ([`RunRevoke`], M211): an owner revoked the project's
+//!   grants made by then (with a passkey since DK6, a device before). The machine checks the revoke once and
 //!   keeps it (so the platform can't take it back by leaving it out later)
 //!   and refuses those grants from then on.
 
@@ -32,6 +32,13 @@ pub struct RunStart {
     /// The project's revokes the platform holds.
     #[serde(default)]
     pub revokes: Vec<GrantRevoke>,
+    /// A v2 grant's (DK6): its granter's passkey log, as the platform read
+    /// it from the hub. The machine takes only its removals after the log
+    /// it pinned from control, never a key it adds
+    /// (`arugula_e2e::project_grant::check`). `None` for a v1, from a
+    /// platform from before DK6, or when the hub didn't answer.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub passkey_log: Option<arugula_e2e::passkey::Log>,
 }
 
 /// A revoke of the project's grants, for every hosted machine of its

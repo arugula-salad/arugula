@@ -294,6 +294,12 @@ pub async fn work(app: &Platform, m: &HostedMachine, takes: &[String]) -> Result
             (Some(g), State::Pending) => app.db.run_grant(&run.project, g)?.map(|g| g.grant),
             _ => None,
         };
+        // A v2's granter's passkey log as the hub publishes it (DK6): the
+        // box takes only its removals, as a deploy's box does.
+        let passkey_log = match &grant {
+            Some(g) => crate::run_grant::granter_log(app, g).await,
+            None => None,
+        };
         items.push(WorkItem {
             run: run.id,
             project: run.project,
@@ -304,6 +310,7 @@ pub async fn work(app: &Platform, m: &HostedMachine, takes: &[String]) -> Result
             last_seq: run.last_seq,
             grant,
             revokes: revokes.clone(),
+            passkey_log,
             deploy,
         });
     }

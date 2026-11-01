@@ -772,64 +772,84 @@ team roster is the one control serves, as for team machines.
 ### Runs on hosted machines: the standing project grant
 
 Scheduled and event runs start on a project's hosted workspaces with every
-owner's device asleep (platform step 7). An owner's device signs, per
-project, that the platform may ("One standing grant per project starts
-runs", aru-099; `arugula_e2e::project_grant`, `crates/platform/src/run_grant.rs`,
-`crates/daemon/src/hosted/runs.rs`). It's S37's standing grant with a
-project as its resource.
+owner's device asleep (platform step 7). An owner confirms, per project,
+with a passkey, that the platform may ("One standing grant per project
+starts runs", aru-099 as amended, aru-126; `arugula_e2e::project_grant`,
+`crates/platform/src/run_grant.rs`, `crates/daemon/src/hosted/runs.rs`).
+It's S37's standing grant with a project as its resource.
 
 - **What it allows.** The platform may start runs, and instruct them, on
   every hosted workspace of the project, running whatever command the
   project's runs start, until the grant expires or is revoked. It never
   covers a deploy.
-- **The grant.** An owner's browser or phone, one that's a browser all
-  the way back to its account's root (`Owners::browser_signed`; recovery
-  codes count on the way), signs `arugula project grant v1`: its id, the project and its
-  owner, the project's live delegation, `resource hosted`, `to platform`,
-  the powers (`runs.instruct`, `runs.start`), when, when it expires, and
-  which device. The page and the CLI give 90 days unless the owner picks
-  (at most 366); the platform refuses one with no expiry or a longer one.
-  Devices and machines… has *Runs on hosted workspaces* under *Hosted
-  machines*: *Allow runs* signs it, on a computer or the phone, and
-  *Renew* signs a revoke and a new grant when it's about to expire (or
-  *Sign again* when the project's delegation changed). Not the CLI or the
-  desktop app: their keys may be a program's on their computer, so
-  `arugula runs grant sign` and `revoke` send you to the page, and the
-  app's window has those buttons off. The platform's project settings
-  show it, and offer it once the project has a hosted workspace.
+- **The grant (v2, DK6, #387).** `arugula project grant v2`: its id, the
+  project and its owner, the project's live delegation, `resource hosted`,
+  `to platform`, the powers (`runs.instruct`, `runs.start`), when, when it
+  expires, and the granting owner's account. Its signature is one
+  user-verified passkey assertion whose WebAuthn challenge is SHA-256 of
+  those bytes, from a passkey in the account's published passkey log
+  (DK3), as a deploy's approval is (DK4). No device signs it, and which
+  device the person used plays no part (aru-126). The page gives 90 days
+  unless the owner picks (at most 366); the platform refuses one with no
+  expiry or a longer one. Devices and machines… has *Runs on hosted
+  workspaces* under *Hosted machines*: *Allow runs* asks for a passkey, on
+  a computer or the phone, and *Renew* confirms a new grant, which takes
+  the old one's place (one prompt), when it's about to expire or the
+  project's delegation changed. An account with no passkey is told to add
+  one first; a window with no WebAuthn (the Linux app's) is sent to a
+  browser. The CLI holds no passkey, so `arugula runs grant sign` and
+  `revoke` send you to the page. The platform's project settings show it,
+  and offer it once the project has a hosted workspace.
+- **Before DK6: v1.** An owner's browser or phone, one that's a browser
+  all the way back to its account's root (`Owners::browser_signed`), signed
+  `arugula project grant v1` (the same lines, `by <device>` in place of the
+  account) with its device key, and revoked with `arugula project grant
+  revoke v2`. The platform takes neither now (a page loaded before gets
+  `old_grant`: reload). The v1 grants it holds still go to the machines,
+  which check them as before, until they expire; DK8 (#389) drops those
+  checks once the last has.
 - **The platform keeps it, and can't make or widen it.** It stores the
-  signed bytes and the signature (`run_grants`), one live grant a project
-  (not revoked, expired or superseded), and reads the grant back from
-  those bytes only. It takes a grant only if it names the project's live
-  delegation (the hub's word), and only if the hub says a browser of one
-  of the project's owners signed it, all the way back
-  (`HubPort::owner_browser_signed`, with `Cert::is_browser` on every link),
-  and the same of a revoke. One that expired, or names a delegation that
-  isn't live any more, is superseded by the next. It holds no device keys
-  itself; the hosted machines check again.
+  bytes and the assertion (`run_grants`), one live grant a project (not
+  revoked, expired or superseded), and reads the grant back from those
+  bytes only. It takes a grant only from one of the project's owners now,
+  for that owner's own account, if it names the project's live delegation
+  (the hub's word), and if its passkey checks out against the account's
+  published passkey log at the platform's clock, from one of control's
+  sites or the platform page (`Config::passkey_origins`), and the same of
+  a revoke. A new grant supersedes the live one. It holds no passkey or
+  device key itself; the hosted machines check again.
 - **Each start carries it.** The platform asks the workspace's machine
-  over the relay (`runs.start`, a typed op), with the grant and the
-  newest revoke of the project's grants. The machine checks, with what it
-  pinned at enrollment (the team's roster and members' certificates, or
-  the account's chain): the grant is signed by a browser of one of the
-  project's owners, trusted now and a browser all the way back; it's for the machine's own project and
+  over the relay (`runs.start`, a typed op), with the grant, the newest
+  revoke of the project's grants, and (a v2's) the granter's passkey log
+  as the hub publishes it. The machine checks, with what it pinned at
+  enrollment and each refresh (the team's roster and members'
+  certificates, or the account's chain; and since DK6 its people's
+  passkey logs and the origins, as a deploy's box does): a v2's account is
+  an owner of the project now and its passkey checks out against that
+  account's pinned log at the machine's clock, from an origin it pinned
+  (a v1's signer is a browser of one of the project's owners, trusted now
+  and a browser all the way back); it's for the machine's own project and
   owner and names the delegation it was enrolled under; that delegation
   isn't revoked; it covers what's asked; it hasn't expired; no owner's
-  revoke covers it. If any check fails, nothing starts and the refusal's
-  code comes back.
-- **Revoking.** Any owner's browser (all the way back, as for the grant)
-  signs `arugula project grant revoke v2`
-  (the project, a delegation, `running finish` or `running stop`, when, by).
-  It names no grant: it takes back every grant of the project under that
-  delegation made at or before its time, so whoever relays it can't point
-  it at another grant, and a grant signed after it is a new one. The
-  platform stops starting at once, and relays it to every hosted machine
-  of the project (`runs.revoke`), and again with every later start. A
-  machine checks a revoke's signature once, when it first hears it, and
-  keeps the newest (`<state>/run-grant-revokes.json`): after that it counts
-  without being checked again, so the platform can't bring a grant back by
-  leaving the revoke out, or by dropping its signer's certificate from what
-  it sends. The kept file fails closed: once one was kept, a missing or
+  revoke covers it. Of the log the platform carries, only removals after
+  the pinned one count: an `added` event by sign-up or GitHub needs no
+  proof, so a key only that log has never approves. A pinned log is only
+  ever extended, and the origins only shrink. If any check fails, nothing
+  starts and the refusal's code comes back.
+- **Revoking.** Any owner confirms `arugula project grant revoke v3`
+  with a passkey (the project, a delegation, `running finish` or `running
+  stop`, when, the account). It names no grant: it takes back every grant
+  of the project under that delegation made at or before its time, v1 or
+  v2, so whoever relays it can't point it at another grant, and a grant
+  made after it is a new one. The platform stops starting at once, and
+  relays it to every hosted machine of the project (`runs.revoke`), and
+  again with every later start. A machine checks a revoke once, when it
+  first hears it, and keeps the newest
+  (`<state>/run-grant-revokes.json`): after that it counts without being
+  checked again, so the platform can't bring a grant back by leaving the
+  revoke out, or by dropping its signer's certificate or passkey from
+  what it sends. Device revokes from before DK6 still count, kept or
+  relayed. The kept file fails closed: once one was kept, a missing or
   unreadable file refuses every start. It's in arugulad's state directory,
   which runs must never be able to write (M212). `running stop` also stops
   the runs going: each machine stops everything they started, and they
@@ -843,7 +863,10 @@ chooses. A machine that heard a revoke keeps it; one that never heard it
 (control dropped it) honours the grant until it expires, which is why it
 expires. **What it can't:** make a grant, widen one (another power, a
 later expiry, another project or delegation), point a revoke at another
-grant, or bring back one a machine has heard revoked.
+grant, or bring back one a machine has heard revoked. Against whoever
+runs control a v2 is tamper-evident, not tamper-proof (aru-126): control
+sends a box the passkey logs it pins at enrollment, so it could pin a key
+of its own on a box it enrolls; the hash-chained log makes that visible.
 
 **Running one** (M212; `crates/platform/src/work.rs`,
 `crates/arugulad-work/src/lib.rs`). A run is S37's operation (`arugula op v1`,
@@ -1018,7 +1041,7 @@ or whoever runs yours) does:
 | lies about who **@name** is when you share with them | believed on the first share unless you verify them; after that the share stops, saying their key changed |
 | enrolls a **hosted machine** into a project an owner delegated | can read what runs in it: it runs the box (labelled "Hosted: the operator can read"). Only that project's people reach it, and nobody accepts it after the delegation is revoked |
 | enrolls a hosted machine into a project nobody delegated | refused by every client: no owner's device signed for that project |
-| starts runs on a project's hosted workspaces | only under an owner's signed standing grant, which each machine checks; refused once a machine has heard it revoked, and by every machine once it expires |
+| starts runs on a project's hosted workspaces | only under an owner's standing grant, confirmed with their passkey (signed by their browser before DK6), which each machine checks; refused once a machine has heard it revoked, and by every machine once it expires |
 | serves a **modified web client** | can read what that client shows and use its keys while it runs |
 
 The last row is the important limit. The browser client at control's
@@ -1724,9 +1747,10 @@ refused a window approving a browser. The platform gets the list with an
 account's devices (`DeviceTrust::legacy_app_children`); a hosted box pins
 the first list control sends (`Enrollment::legacy_app_children`), and each
 later refresh only shrinks it, never adds; a box that has none counts no
-window. A box checks a standing grant (and its revokes, M253) against the
-list it pinned, as the hub does. (A deploy's approval it checks against the
-passkey logs and origins it pinned instead, DK4.) The page gets it from `GET /api/devices` (`legacy_app_children`)
+window. A box checks a v1 standing grant (and a device's revoke, M253)
+against the list it pinned, as the hub did. (A deploy's approval, DK4, and a
+v2 standing grant and its revoke, DK6, it checks against the passkey logs
+and origins it pinned instead.) The page gets it from `GET /api/devices` (`legacy_app_children`)
 to show what control will take (Approve, recovery codes, standing grants).
 Daemons' and pages' own checks of team papers keep #1343's rule.
 
@@ -2005,7 +2029,7 @@ Every table is listed in `crates/control/tables.toml`, and a test fails when one
 | `client_apps` | metadata | A registered client's app (studio's `app-xxxxxxxx`) and the project it's in (M236), so its owners are the project's members: the client, the app's id and title, the project, and who put it there and when. | The client reads it to list and open its apps, with every machine asleep. | partly: deleting an account forgets it as `added_by`; its personal project's apps go with the project. |  |
 | `client_secret_grants` | metadata | A project's own secret a registered client may send for one of its apps, to one host (M236): the project, the client, the secret's name, the app, the host, who asked (an owner, through the client) and when, who let it and when, and how many reads and the last. Never a value. | Studio's egress broker reads the secret on its apps' behalf, with every machine asleep. | partly: deleting an account forgets it as `granted_by` and `requested_by`; its personal project's grants go with the project. |  |
 | `client_secret_events` | metadata | What happened to a client's reach into a project's secrets (M236): asked for, granted and revoked by an owner, read by the client for one of its apps and host, ended when the app moved or went, with when. Never a value. Kept 90 days. | Written as the client reads, with every machine asleep, for the project's owners to see. | partly: deleting an account forgets it as the owner who granted or revoked; its personal project's events go with the project. |  |
-| `run_grants` | metadata | A project's standing grant for runs (M211): the bytes a project owner's device signed (that the platform may start and instruct runs on the project's hosted workspaces, under its delegation, until it expires) and the signature, its id, the delegation and signing device it names, when it was made and when it expires, who sent it and when, and when a newer grant replaced it; and once revoked (a revoke takes back every grant of the project under its delegation made by its time), the revoke's signed bytes, signature and time, when the platform took it, and whether the runs going were to stop. | Scheduled and event runs start under it with every owner's device asleep, and the platform sends it to the hosted machine with each start. | partly: it stops naming the account as who sent it. The grants of its personal project and its disbanded teams' projects are deleted. A grant its devices signed stays, and hosted machines stop accepting it once those devices aren't an owner's. |  |
+| `run_grants` | metadata | A project's standing grant for runs (M211): the bytes a project owner confirmed with a passkey (DK6; before, signed with a device) (that the platform may start and instruct runs on the project's hosted workspaces, under its delegation, until it expires) and the passkey's assertion (or the device's signature), its id, the delegation and the granting account (or signing device) it names, when it was made and when it expires, who sent it and when, and when a newer grant replaced it; and once revoked (a revoke takes back every grant of the project under its delegation made by its time), the revoke's bytes, its assertion (or signature) and time, when the platform took it, and whether the runs going were to stop. | Scheduled and event runs start under it with every owner's device asleep, and the platform sends it to the hosted machine with each start. | partly: it stops naming the account as who sent it. The grants of its personal project and its disbanded teams' projects are deleted. A grant it made stays, and hosted machines stop accepting it once the account isn't an owner (or, a v1, once its devices aren't an owner's). |  |
 
 ### Who else sees it
 

@@ -235,7 +235,8 @@ pub fn saved_from(got: hosted::Enrollment, keys: &DeviceKeys, prev: Option<&Save
     Ok(out)
 }
 
-/// What a deploy's box pins of its people's passkeys (DK4, aru-126), from
+/// What a box pins of its people's passkeys (aru-126: a deploy's box for
+/// its approval, DK4; every box for the standing grant for runs, DK6), from
 /// what it held (`held`) and what control sent now:
 /// - each account's passkey log, once it holds together
 ///   (`arugula_e2e::passkey::check_chain`), and after that only a log that
