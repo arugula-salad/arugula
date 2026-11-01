@@ -36,7 +36,7 @@
 
 use anyhow::{Result, bail};
 use arugula_control_wire::{
-    boards::{AttachRole, BlockState, BlockWord, Board, Category, Diffstat, EntryKind, Pointer, Status},
+    boards::{AttachRole, BlockState, BlockWord, Board, BoardSource, Category, Diffstat, EntryKind, Pointer, Status},
     chat::ChatAgent,
 };
 
@@ -61,7 +61,7 @@ fn new_board_id() -> String {
 }
 
 /// A new row's id: `row_` and 32 hex characters.
-fn new_row_id() -> String {
+pub(super) fn new_row_id() -> String {
     format!("row_{}", hex::encode(arugula_e2e::random::<16>()))
 }
 
@@ -113,6 +113,9 @@ pub struct Entry {
     /// The work item of the row's issue (`work_item_refs`); none for a note,
     /// a PR and the rest.
     pub work_item: Option<String>,
+    /// `plane` for a row the epic's sync added; none: a person's (or their
+    /// agent's).
+    pub source: Option<String>,
 }
 
 /// One group as stored.
@@ -179,13 +182,14 @@ pub struct Move<'a> {
     pub rev: Option<u64>,
 }
 
-const BOARD_COLS: &str = "id, project_id, title, created_by, created_at, updated_at, goal, done_note, closed_at, \
-                          closed_by, created_by_agent, closed_by_agent";
+pub(super) const BOARD_COLS: &str = "id, project_id, title, created_by, created_at, updated_at, goal, done_note, \
+                          closed_at, closed_by, created_by_agent, closed_by_agent, source_key, source_url, \
+                          source_name, source_left_out";
 pub(super) const ENTRY_COLS: &str =
-    "id, rev, note, status, target_kind, target, pane, created_at, updated_at, agent, zone_id, work_item";
+    "id, rev, note, status, target_kind, target, pane, created_at, updated_at, agent, zone_id, work_item, source";
 const ATTACHED_COLS: &str = "id, row_id, role, target_kind, target, pane, agent, created_at, released_at";
 
-fn board_row(r: &Row) -> Result<Board> {
+pub(super) fn board_row(r: &Row) -> Result<Board> {
     Ok(Board {
         id: r.get(0)?,
         project: r.get(1)?,
@@ -201,7 +205,20 @@ fn board_row(r: &Row) -> Result<Board> {
         created_by_agent: machine_of(r.get(10)?),
         closed_by_agent: machine_of(r.get(11)?),
         progress: Default::default(),
+        source: source_of(r)?,
     })
+}
+
+/// The epic a board follows, from its `source_*` columns (12 to 15).
+fn source_of(r: &Row) -> Result<Option<BoardSource>> {
+    let Some(key) = r.get::<Option<String>>(12)? else { return Ok(None) };
+    Ok(Some(BoardSource {
+        provider: "plane".to_owned(),
+        key,
+        url: r.get::<Option<String>>(13)?.unwrap_or_default(),
+        connection: r.get::<Option<String>>(14)?.unwrap_or_default(),
+        left_out: r.get::<u64>(15)?.min(u64::from(u32::MAX)) as u32,
+    }))
 }
 
 /// A machine stored on a board, not yet named.
@@ -295,6 +312,7 @@ pub(super) fn entry_row(r: &Row) -> Result<Entry> {
         agent: r.get(9)?,
         zone: r.get(10)?,
         work_item: r.get(11)?,
+        source: r.get(12)?,
     })
 }
 
@@ -531,7 +549,7 @@ impl Db {
         let mut rows = c.query_map(
             &format!("SELECT {ENTRY_COLS}, position FROM board_entries WHERE board_id = ?1 AND kind = 'row'"),
             params![id],
-            |r| Ok((entry_row(r)?, r.get::<u64>(12)?)),
+            |r| Ok((entry_row(r)?, r.get::<u64>(13)?)),
         )?;
         // By group, in the groups' order (a row with none, or in a group that
         // isn't there, last), then as the board has them.
@@ -937,8 +955,9 @@ impl Db {
             tx.execute("DELETE FROM board_entries WHERE id = ?1", params![id])?;
             renumber(&tx, &group_ids(&tx, board)?)?;
         } else {
-            if entry(&tx, board, id)?.is_none() {
-                return Ok(Err(Refused::Missing("no such row")));
+            let Some(row) = entry(&tx, board, id)? else { return Ok(Err(Refused::Missing("no such row"))) };
+            if row.source.is_some() {
+                return bad(super::boards_epics::follows_the_epic(&tx, board, &row.pointer)?);
             }
             tx.execute("DELETE FROM board_attachments WHERE row_id = ?1", params![id])?;
             tx.execute("DELETE FROM board_asks WHERE row_id = ?1", params![id])?;
@@ -1373,10 +1392,12 @@ impl Db {
     /// The `fi_` and `iss_` ids that any row of any board of `project` points
     /// at: what makes an issue triaged.
     pub fn project_board_targets(&self, project: &str) -> Result<std::collections::HashSet<String>> {
+        // A board made from an epic counts its epic as triaged (#483).
         let rows: Vec<String> = self.c().query_map(
             &format!(
                 "SELECT DISTINCT e.target FROM {POINTED} e JOIN boards b ON b.id = e.board_id
-                 WHERE b.project_id = ?1 AND e.target_kind IN ('forge_item', 'issue')"
+                 WHERE b.project_id = ?1 AND e.target_kind IN ('forge_item', 'issue')
+                 UNION SELECT source_item FROM boards WHERE project_id = ?1 AND source_item IS NOT NULL"
             ),
             params![project],
             |r| r.get(0),

@@ -770,6 +770,14 @@ pub struct TrackerConnection {
     pub items: u64,
     /// Agents' writes waiting for a person to approve.
     pub waiting_writes: u64,
+    /// Whether each open epic has a board that follows it (#483). On unless
+    /// turned off; off, the boards stay and stop following.
+    #[serde(default = "yes")]
+    pub epics_as_boards: bool,
+}
+
+fn yes() -> bool {
+    true
 }
 
 /// `POST /api/projects/{project}/trackers`: connect a Plane project. A
@@ -818,6 +826,9 @@ pub struct TrackerSettings {
     pub attribution: Option<String>,
     #[serde(default)]
     pub webhook_secret: Option<String>,
+    /// Whether each open epic has a board that follows it.
+    #[serde(default)]
+    pub epics_as_boards: Option<bool>,
 }
 
 impl std::fmt::Debug for TrackerSettings {
@@ -827,6 +838,7 @@ impl std::fmt::Debug for TrackerSettings {
             .field("write_policy", &self.write_policy)
             .field("attribution", &self.attribution)
             .field("webhook_secret", &self.webhook_secret.as_ref().map(|_| "<redacted>"))
+            .field("epics_as_boards", &self.epics_as_boards)
             .finish()
     }
 }

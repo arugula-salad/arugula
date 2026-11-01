@@ -601,6 +601,31 @@ pub struct Board {
     /// How many of its issues are closed.
     #[serde(default)]
     pub progress: BoardProgress,
+    /// The tracker's epic it follows, when it was made from one (Plane's,
+    /// #483); absent for a board a person made.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub source: Option<BoardSource>,
+}
+
+/// The epic a board follows: its children are the board's rows, and the
+/// connection made the board, not a person.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "BoardSource"))]
+pub struct BoardSource {
+    /// `plane`.
+    pub provider: String,
+    /// The epic's key in the tracker, such as `ARUGU-10`.
+    pub key: String,
+    /// Where the epic is in the tracker's web app.
+    pub url: String,
+    /// The connection that made the board, as the project calls it.
+    pub connection: String,
+    /// How many children the board is too full to show, the oldest done
+    /// ones first.
+    #[serde(default)]
+    pub left_out: u32,
 }
 
 /// A board's work, counted: the rows with a primary item (an issue or a

@@ -214,7 +214,7 @@ fn plane_world(app: &crate::Platform, team: &str, eve: &str) {
         app.db
             .tracker_mirror(id, None, |tx| {
                 for it in &items {
-                    crate::db::trackers::upsert_item(tx, id, c.mirror_id, it, &it.label_ids, 1)?;
+                    crate::db::trackers::upsert_item(tx, id, c.mirror_id, it, &it.label_ids, false, 1)?;
                 }
                 Ok(())
             })

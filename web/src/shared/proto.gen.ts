@@ -545,6 +545,33 @@ export type BoardSettings = {
 stall_minutes: number, };
 
 /**
+ * The epic a board follows: its children are the board's rows, and the
+ * connection made the board, not a person.
+ */
+export type BoardSource = { 
+/**
+ * `plane`.
+ */
+provider: string, 
+/**
+ * The epic's key in the tracker, such as `ARUGU-10`.
+ */
+key: string, 
+/**
+ * Where the epic is in the tracker's web app.
+ */
+url: string, 
+/**
+ * The connection that made the board, as the project calls it.
+ */
+connection: string, 
+/**
+ * How many children the board is too full to show, the oldest done
+ * ones first.
+ */
+left_out: number, };
+
+/**
  * Where a row stands. `None` says nothing.
  */
 export type BoardStatus = "none" | "open" | "working" | "needs_input" | "done" | "failed";
@@ -3596,7 +3623,12 @@ closed_by_agent?: ChatAgent,
 /**
  * How many of its issues are closed.
  */
-progress: BoardProgress, };
+progress: BoardProgress, 
+/**
+ * The tracker's epic it follows, when it was made from one (Plane's,
+ * #483); absent for a board a person made.
+ */
+source?: BoardSource, };
 
 /**
  * A Doc, without its sections: a list's row, and a view's head.
@@ -4853,7 +4885,12 @@ items: number,
 /**
  * Agents' writes waiting for a person to approve.
  */
-waiting_writes: number, };
+waiting_writes: number, 
+/**
+ * Whether each open epic has a board that follows it (#483). On unless
+ * turned off; off, the boards stay and stop following.
+ */
+epics_as_boards: boolean, };
 
 export type TrackerConnections = { 
 /**
@@ -4901,7 +4938,11 @@ export type TrackerPendingWrites = { project: string, writes: Array<TrackerPendi
  * [`TrackerConnection`]. A webhook secret is sealed like the key and never
  * shown back; an empty one removes it.
  */
-export type TrackerSettings = { agent_writes: string | null, write_policy: TrackerWritePolicy | null, attribution: string | null, webhook_secret: string | null, };
+export type TrackerSettings = { agent_writes: string | null, write_policy: TrackerWritePolicy | null, attribution: string | null, webhook_secret: string | null, 
+/**
+ * Whether each open epic has a board that follows it.
+ */
+epics_as_boards: boolean | null, };
 
 /**
  * A write to a tracker's work item, the same for people and agents. `item`

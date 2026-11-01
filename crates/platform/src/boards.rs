@@ -111,6 +111,7 @@ use refs::{IssueKey, Refs, Source, references};
 pub mod agent;
 pub mod asks;
 pub mod auto;
+pub mod epics;
 pub mod lanes;
 pub mod refs;
 pub mod relations;

@@ -58,13 +58,15 @@ pub struct Connection {
     pub has_webhook_secret: bool,
     /// When a delivery with a good signature last arrived.
     pub last_delivery_at: Option<u64>,
+    /// Each open epic has a board that follows it (#483).
+    pub epics_as_boards: bool,
 }
 
 const COLUMNS: &str = "c.id, c.project_id, c.provider, c.workspace_slug, c.source_project_id, c.identifier, c.name, \
      c.mirror_id, c.write_policy, c.attribution, c.linked_by, c.created_at, c.unlinked_at, c.purge_after, \
      c.backfilled_at, EXISTS (SELECT 1 FROM project_secrets s WHERE s.project_id = c.project_id \
          AND s.name = 'tracker/plane/' || c.id || '/webhook'), \
-     c.last_delivery_at";
+     c.last_delivery_at, c.epics_as_boards";
 
 fn row(r: &Row) -> Result<Connection> {
     Ok(Connection {
@@ -85,6 +87,7 @@ fn row(r: &Row) -> Result<Connection> {
         backfilled_at: r.get(14)?,
         has_webhook_secret: r.get(15)?,
         last_delivery_at: r.get(16)?,
+        epics_as_boards: r.get(17)?,
     })
 }
 
@@ -244,6 +247,16 @@ impl Db {
         let n = self.c().execute(
             "UPDATE tracker_connections SET attribution = ?1 WHERE project_id = ?2 AND id = ?3 AND unlinked_at IS NULL",
             params![attribution, project, id],
+        )?;
+        Ok(n == 1)
+    }
+
+    /// Turn the epics-as-boards switch on or off, on a live connection:
+    /// whether there was one.
+    pub fn set_tracker_epics_as_boards(&self, project: &str, id: &str, on: bool) -> Result<bool> {
+        let n = self.c().execute(
+            "UPDATE tracker_connections SET epics_as_boards = ?1 WHERE project_id = ?2 AND id = ?3 AND unlinked_at IS NULL",
+            params![on, project, id],
         )?;
         Ok(n == 1)
     }
@@ -535,26 +548,29 @@ pub(crate) fn erase_account(c: &impl Sql, account: &str, now: u64) -> Result<()>
 
 /// Write a work item as `connection`'s row, keyed on the tracker's id for
 /// it: unless the row is newer. `labels` are the names of the item's
-/// labels. Its modules are set by [`set_modules`] and [`add_module`], not
-/// here. The row's `fi_` id when it was written.
+/// labels, and `epic` says its type is one Plane flags as an epic. Its
+/// modules are set by [`set_modules`] and [`add_module`], not here. The
+/// row's `fi_` id when it was written.
 pub fn upsert_item(
     c: &impl Sql,
     connection: &str,
     mirror_id: i64,
     it: &Item,
     labels: &[String],
+    epic: bool,
     now: u64,
 ) -> Result<Option<String>> {
     let id = format!("fi_{}", hex::encode(arugula_e2e::random::<16>()));
     c.query_row(
         "INSERT INTO forge_items (id, repo_id, number, kind, state, title, created_at, updated_at, synced_at,
-             provider, connection_id, source_item_id, item_type, state_name, state_group, parent_source_id, labels)
-         VALUES (?1, ?2, ?3, 'issue', ?4, ?5, ?6, ?7, ?8, 'plane', ?9, ?10, ?11, ?12, ?13, ?14, ?15)
+             provider, connection_id, source_item_id, item_type, state_name, state_group, parent_source_id, labels,
+             is_epic)
+         VALUES (?1, ?2, ?3, 'issue', ?4, ?5, ?6, ?7, ?8, 'plane', ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)
          ON CONFLICT (connection_id, source_item_id) DO UPDATE SET number = excluded.number, state = excluded.state,
              title = excluded.title, created_at = excluded.created_at, updated_at = excluded.updated_at,
              synced_at = excluded.synced_at, item_type = excluded.item_type, state_name = excluded.state_name,
              state_group = excluded.state_group, parent_source_id = excluded.parent_source_id,
-             labels = excluded.labels
+             labels = excluded.labels, is_epic = excluded.is_epic
          WHERE excluded.updated_at > forge_items.updated_at
          RETURNING id",
         params![
@@ -572,7 +588,8 @@ pub fn upsert_item(
             it.state_name,
             it.state_group,
             it.parent_id,
-            json_list(labels)
+            json_list(labels),
+            epic
         ],
         |r| r.get(0),
     )
@@ -581,6 +598,26 @@ pub fn upsert_item(
 
 fn json_list(names: &[String]) -> String {
     serde_json::to_string(names).unwrap_or_else(|_| "[]".to_owned())
+}
+
+/// Set `is_epic` of each of a connection's rows to whether its type is one
+/// of `epic_types` (names): the `fi_` ids of the rows that changed. For
+/// rows written before the types were known.
+pub fn set_epic_flags(c: &impl Sql, connection: &str, epic_types: &[String]) -> Result<Vec<String>> {
+    let rows: Vec<(String, Option<String>, bool)> = c.query_map(
+        "SELECT id, item_type, is_epic FROM forge_items WHERE connection_id = ?1",
+        params![connection],
+        |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+    )?;
+    let mut changed = vec![];
+    for (id, kind, have) in rows {
+        let want = kind.is_some_and(|k| epic_types.contains(&k));
+        if want != have {
+            c.execute("UPDATE forge_items SET is_epic = ?1 WHERE id = ?2", params![want, id])?;
+            changed.push(id);
+        }
+    }
+    Ok(changed)
 }
 
 /// Set the modules (names) of each of a connection's rows to what `by_item`
@@ -758,6 +795,93 @@ impl Db {
             &super::sql::list(&args),
             item_row,
         )
+    }
+}
+
+// ---- epics (#483)
+
+/// A mirrored work item as the epics-as-boards sync reads it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Node {
+    /// The `fi_` id.
+    pub id: String,
+    /// The tracker's own id for it.
+    pub source_item_id: String,
+    pub number: u64,
+    pub title: String,
+    /// `open` or `closed`.
+    pub state: String,
+    /// `completed` or `cancelled` once it is closed.
+    pub state_group: String,
+    pub is_epic: bool,
+    /// The tracker's id for its parent.
+    pub parent_source_id: Option<String>,
+    pub updated_at: u64,
+}
+
+const NODE_COLUMNS: &str = "i.id, i.source_item_id, i.number, i.title, i.state, i.state_group, i.is_epic, \
+     i.parent_source_id, i.updated_at";
+
+fn node_row(r: &Row) -> Result<Node> {
+    Ok(Node {
+        id: r.get(0)?,
+        source_item_id: r.get(1)?,
+        number: r.get(2)?,
+        title: r.get(3)?,
+        state: r.get(4)?,
+        state_group: r.get::<Option<String>>(5)?.unwrap_or_default(),
+        is_epic: r.get(6)?,
+        parent_source_id: r.get(7)?,
+        updated_at: r.get(8)?,
+    })
+}
+
+impl Db {
+    /// The connection's rows among `ids` (`fi_`), or all of them.
+    pub fn tracker_nodes(&self, connection: &str, ids: Option<&[String]>) -> Result<Vec<Node>> {
+        let c = self.c();
+        match ids {
+            None => c.query_map(
+                &format!("SELECT {NODE_COLUMNS} FROM forge_items i WHERE i.connection_id = ?1 ORDER BY i.number"),
+                params![connection],
+                node_row,
+            ),
+            Some([]) => Ok(vec![]),
+            Some(ids) => c.query_map(
+                &format!(
+                    "SELECT {NODE_COLUMNS} FROM forge_items i WHERE i.connection_id = ?1 AND {} ORDER BY i.number",
+                    super::chat::in_json(&c, "i.id", 2)
+                ),
+                params![connection, super::chat::json_list(ids)?],
+                node_row,
+            ),
+        }
+    }
+
+    /// The connection's rows whose parent is the tracker's item
+    /// `parent_source_id`.
+    pub fn children_of(&self, connection: &str, parent_source_id: &str) -> Result<Vec<Node>> {
+        self.c().query_map(
+            &format!(
+                "SELECT {NODE_COLUMNS} FROM forge_items i
+                 WHERE i.connection_id = ?1 AND i.parent_source_id = ?2 ORDER BY i.number"
+            ),
+            params![connection, parent_source_id],
+            node_row,
+        )
+    }
+
+    /// The connection's row for the tracker's item.
+    pub fn tracker_node(&self, connection: &str, source_item: &str) -> Result<Option<Node>> {
+        self.c()
+            .query_row(
+                &format!(
+                    "SELECT {NODE_COLUMNS} FROM forge_items i WHERE i.connection_id = ?1 AND i.source_item_id = ?2"
+                ),
+                params![connection, source_item],
+                node_row,
+            )
+            .optional()
     }
 }
 
