@@ -2,8 +2,10 @@
 # `scripts/release bump` (`just release`, #524): it commits a version bump on
 # top of the newest green commit on main, tags it, and pushes the tag with
 # main, the bump merged in; check-green lets that tag through on its
-# parent's ci/green tag. Against a local bare repository standing in for
-# GitHub (GITHUB_SERVER_URL), so nothing reaches the network.
+# parent's ci/green tag. A daemon release also needs the commit's ci/rare
+# tag (#305), and --rare starts rare-nightly.yml on it and waits. Against a
+# local bare repository standing in for GitHub (GITHUB_SERVER_URL) and a
+# fake gh, so nothing reaches the network.
 #
 #   scripts/tests/release-bump.sh
 set -euo pipefail
@@ -20,6 +22,30 @@ export GIT_AUTHOR_NAME=test GIT_AUTHOR_EMAIL=test@example.invalid GIT_COMMITTER_
 unset ARUGULA_RELEASE_SKIP_GREEN
 forge=$GITHUB_SERVER_URL/$GITHUB_REPOSITORY.git
 git init -q --bare "$tmp/forge/arugula.git"
+
+# gh, for --rare: `workflow run` records its arguments in $tmp/gh-calls and
+# starts a run ($tmp/gh-running, "ID URL", which `run list` prints); `run
+# watch` ends it, and when FAKE_RARE is success, the run tags the commit it
+# was started on ci/rare/<sha> on the forge, as rare-nightly.yml's last job
+# does.
+mkdir "$tmp/bin"
+cat >"$tmp/bin/gh" <<'EOF'
+#!/usr/bin/env bash
+case "$1 $2" in
+  "run list") cat "$FAKE/gh-running" 2>/dev/null || true ;;
+  "workflow run")
+    printf '%s\n' "$*" >>"$FAKE/gh-calls"
+    echo "77 https://github.com/forge/arugula/actions/runs/77" >"$FAKE/gh-running" ;;
+  "run watch")
+    sha=$(tail -1 "$FAKE/gh-calls" | sed -n 's/.*-f sha=\([0-9a-f]*\).*/\1/p')
+    : >"$FAKE/gh-running"
+    if [ "${FAKE_RARE:-}" = success ]; then git push -q "$FORGE" "$sha:refs/tags/ci/rare/$sha"; exit 0; fi
+    exit 1 ;;
+  *) echo "fake gh: $*" >&2; exit 1 ;;
+esac
+EOF
+chmod +x "$tmp/bin/gh"
+export PATH=$tmp/bin:$PATH FAKE=$tmp FORGE=$forge ARUGULA_RELEASE_POLL=0
 git init -q -b main "$tmp/work"
 cd "$tmp/work"
 
@@ -96,6 +122,7 @@ has "dry run: the newest green commit" "v0.1.1: 0.1.0 -> 0.1.1 on ${two:0:12}"
 has "dry run: what it would change" "Cargo.toml"
 has "dry run: says so" "Dry run: nothing committed, tagged or pushed."
 has "dry run: the merges it would leave out" "  ${three:0:7} "
+has "dry run: the rare jobs haven't passed on it" "${two:0:12} has no ci/rare tag"
 if [ -z "$(remote refs/tags/v0.1.1)" ] && [ "$(remote refs/heads/main)" = "$notes" ]; then ok "dry run: nothing pushed"
 else bad "dry run pushed something"; fi
 if [ "$(git worktree list | wc -l | tr -d ' ')" = 1 ]; then ok "dry run: its worktree is gone"
@@ -144,9 +171,21 @@ git commit -qam "Arugula 0.1.1"
 git push -q "$forge" HEAD:main
 ARUGULA_RELEASE_TRAILER=$'two\nlines' run 2 "a trailer of two lines" bump --dry-run
 ARUGULA_RELEASE_TRAILER="no colon" run 2 "a trailer that isn't Key: value" bump --dry-run
+# two hasn't passed the rare jobs (#305): no daemon release, and --rare
+# starts them on it and waits; a run that fails releases nothing.
+run 1 "no ci/rare tag: stops" bump --older
+has "no ci/rare tag: says how" "just release --rare"
+if [ -z "$(remote refs/tags/v0.1.2)" ]; then ok "no ci/rare tag: nothing pushed"; else bad "it pushed v0.1.2 without the rare jobs"; fi
+FAKE_RARE=failure run 1 "--rare: the run fails" bump --older --rare
+has "--rare: the run it started" "actions/runs/77"
+if grep -qx "workflow run rare-nightly.yml -R forge/arugula --ref main -f sha=$two" "$tmp/gh-calls"; then ok "--rare: started rare-nightly.yml on two"
+else bad "--rare started: $(cat "$tmp/gh-calls" 2>/dev/null)"; fi
+if [ -z "$(remote refs/tags/v0.1.2)" ]; then ok "--rare, failed: nothing pushed"; else bad "it pushed v0.1.2 after the rare jobs failed"; fi
 # As the arugula-release deploy driver runs it (M221): its trailer on the
-# bump, the tag and the merge.
-ARUGULA_RELEASE_TRAILER="Arugula-Deploy: dep_m221" run 0 "release v0.1.2 over main's 0.1.1" bump --older
+# bump, the tag and the merge. (The driver never passes --rare; here it
+# runs the rare jobs first, which pass.)
+ARUGULA_RELEASE_TRAILER="Arugula-Deploy: dep_m221" FAKE_RARE=success run 0 "release v0.1.2 over main's 0.1.1" bump --older --rare
+has "v0.1.2: after the rare jobs passed" "${two:0:12} passed the rare jobs (ci/rare/$two)"
 has "v0.1.2: from main's version" "v0.1.2: 0.1.0 -> 0.1.2 on ${two:0:12}"
 has "v0.1.2: the line the deploy driver reads" "pushed v0.1.2 ("
 tag=$(git rev-parse "v0.1.2^{commit}")
@@ -170,6 +209,7 @@ if at "$main" Cargo.lock | grep -A1 '"serde"' | grep -q '0.1.0' && at "$main" cr
 else bad "the bump moved serde or the app"; fi
 if [ -z "$(git diff "$main^1" "$main" -- src)" ]; then ok "main: the merge changes no code"; else bad "the merge changed src"; fi
 run 0 "check-green v0.1.2" check-green v0.1.2
+run 0 "check-rare v0.1.2 (on its parent)" check-rare v0.1.2
 
 # check-green looks past a commit only when it bumps versions.
 git tag -a not-a-bump -m x "$four"

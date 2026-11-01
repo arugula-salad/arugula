@@ -6,8 +6,13 @@
 #
 # The daemon (v*):
 #   release check-version TAG      the tag matches the workspace version, on a
-#                                  green commit (check-green), and the
-#                                  release's client fixtures are copied
+#                                  green commit (check-green) that passed the
+#                                  rare jobs (check-rare), and the release's
+#                                  client fixtures are copied
+#   release check-rare TAG         TAG's commit (or the one its bump is on)
+#                                  passed rare-nightly.yml's jobs, which
+#                                  ci/green doesn't count (#305): GitHub has
+#                                  its ci/rare/<sha> tag
 #   release upload TAG FILE...     attach files to TAG's release (a draft, made if new)
 #   release sums TAG               SHA256SUMS of the release's tarballs and zips
 #                                  (each under its new and its old name)
@@ -35,7 +40,7 @@
 #                                  (#503), or it only bumps versions on top of
 #                                  a commit that did (`bump`).
 #                                  ARUGULA_RELEASE_SKIP_GREEN=1 skips it.
-#   release bump [patch|minor|major] [--app] [COMMIT|--older] [--dry-run]
+#   release bump [patch|minor|major] [--app] [COMMIT|--older] [--rare] [--dry-run]
 #                                  (`just release`) commit a version bump on
 #                                  top of the newest green commit on main (or
 #                                  COMMIT), tag it vX.Y.Z (--app: app-vX.Y.Z),
@@ -43,6 +48,10 @@
 #                                  into it (#524). When main has newer commits
 #                                  that aren't green, it lists them and stops;
 #                                  --older releases without them (#1679).
+#                                  A daemon release stops too when the commit
+#                                  has no ci/rare tag (check-rare); --rare
+#                                  starts the rare jobs on it, waits for them
+#                                  and goes on if they pass.
 #                                  --dry-run makes the bump in a
 #                                  throwaway worktree, shows it, and stops.
 #                                  ARUGULA_RELEASE_TRAILER, when set (one line,
@@ -56,6 +65,7 @@
 #                                  that differ only by a bump match
 #                                  (scripts/ci-hub-changed)
 #
+# GH_TOKEN (bump --rare) starts and watches a run of rare-nightly.yml;
 # GH_TOKEN (upload, sums) writes releases (in CI, the job token with
 # contents: write; by hand, your gh login); HOMEBREW_TAP_KEY (homebrew) is
 # an SSH deploy key for the tap (without it, your own key is used).
@@ -149,6 +159,20 @@ green() {
   esac
 }
 
+# The tag's commit, or its parent when the commit only bumps versions on
+# top of it (`bump`'s, whose own CI may not have finished). A release
+# workflow's checkout is shallow, so it fetches the parent first.
+parent_if_bump() {
+  local tag=$1 sha=$2
+  git rev-parse -q --verify "$sha^" >/dev/null || git fetch -q --depth=2 origin "$sha" 2>/dev/null || true
+  if bump_only "$sha"; then
+    echo "$tag is on ${sha:0:12}, which only bumps versions: checking its parent" >&2
+    git rev-parse "$sha^"
+  else
+    echo "$sha"
+  fi
+}
+
 check_green() {
   local tag=$1 sha v
   if [ "${ARUGULA_RELEASE_SKIP_GREEN:-}" = 1 ]; then
@@ -157,16 +181,11 @@ check_green() {
   fi
   sha=$(git rev-parse --verify -q "$tag^{commit}") || { echo "no commit for $tag here" >&2; exit 1; }
   v=$(green "$sha")
-  # `bump` tags a commit that only moves versions on top of a green one, and
-  # that commit's own CI may not have finished: its parent's verdict counts.
-  # A release workflow's checkout is shallow, so fetch the parent first.
+  # `bump` tags a commit that only moves versions on top of a green one: its
+  # parent's verdict counts.
   if [ "$v" = none ]; then
-    git rev-parse -q --verify "$sha^" >/dev/null || git fetch -q --depth=2 origin "$sha" 2>/dev/null || true
-    if bump_only "$sha"; then
-      echo "$tag is on ${sha:0:12}, which only bumps versions: checking its parent"
-      sha=$(git rev-parse "$sha^")
-      v=$(green "$sha")
-    fi
+    sha=$(parent_if_bump "$tag" "$sha")
+    v=$(green "$sha")
   fi
   case "$v" in
     revoked)
@@ -177,6 +196,67 @@ check_green() {
       echo "$tag is on ${sha:0:12}, which has no ci/green tag (yet: CI may still be running): release from \`chant ci last-green\`, or set ARUGULA_RELEASE_SKIP_GREEN=1" >&2
       exit 1 ;;
   esac
+}
+
+# The jobs that rarely fail (#305: test-postgres, core, testnet, stack and
+# the WebKit specs) left check.yml for rare-nightly.yml, which ci/green
+# doesn't count, so a daemon release needs them to have passed on its
+# commit too. A run of rare-nightly.yml whose jobs all passed tags the
+# commit it tested ci/rare/<sha> (with CI_GREEN_TOKEN: the ci/ tags are
+# protected), read here as ci/green is: from GitHub, with git alone, so
+# release.yml and the arugula-release deploy driver need no API token.
+rare_workflow=rare-nightly.yml
+
+# rare SHA: GitHub has SHA's ci/rare tag.
+rare() {
+  local refs
+  refs=$(git ls-remote "$url" "refs/tags/ci/rare/$1") || { echo "can't read the ci/ tags at $url" >&2; exit 1; }
+  [ -n "$refs" ]
+}
+
+# run_rare SHA: start the rare jobs on SHA, unless a run of them on it is
+# going already, wait for it, and fail unless SHA has its ci/rare tag after.
+# With gh (GH_TOKEN, or your gh login: actions: write). A run's name says
+# which commit it tests ("rare-nightly SHA"): a dispatched run's head is
+# main's, and it checks out its `sha` input.
+run_rare() {
+  local sha=$1 id='' link=''
+  running() {
+    gh run list -R "$repo" -w "$rare_workflow" -b main -L 50 --json displayTitle,status,databaseId,url \
+      --jq ".[] | select(.displayTitle == \"rare-nightly $sha\" and .status != \"completed\") | \"\(.databaseId) \(.url)\"" | head -1
+  }
+  read -r id link <<<"$(running)" || true
+  if [ -z "$id" ]; then
+    echo "starting the rare jobs on ${sha:0:12} ($rare_workflow)"
+    gh workflow run "$rare_workflow" -R "$repo" --ref main -f sha="$sha" >/dev/null || return 1
+    # The new run is listed a few seconds after it's asked for.
+    for _ in $(seq 1 24); do
+      read -r id link <<<"$(running)" || true
+      [ -z "$id" ] || break
+      sleep "${ARUGULA_RELEASE_POLL:-5}"
+    done
+    [ -n "$id" ] || { echo "the rare jobs' run on ${sha:0:12} didn't show up after 2 min" >&2; return 1; }
+  fi
+  echo "waiting for the rare jobs on ${sha:0:12}: $link"
+  gh run watch "$id" -R "$repo" --exit-status --interval 30 >/dev/null || true
+  if rare "$sha"; then echo "${sha:0:12} passed the rare jobs (ci/rare/$sha)"
+  else echo "the rare jobs didn't pass on ${sha:0:12}: $link" >&2; return 1; fi
+}
+
+# check_rare TAG: TAG's commit (or its parent, under a bump that only moves
+# versions) has a ci/rare tag. ARUGULA_RELEASE_SKIP_GREEN=1 skips this too:
+# it's for a release CI can't vouch for at all.
+check_rare() {
+  local tag=$1 sha
+  if [ "${ARUGULA_RELEASE_SKIP_GREEN:-}" = 1 ]; then
+    echo "ARUGULA_RELEASE_SKIP_GREEN=1: not checking that $tag's commit passed the rare jobs" >&2
+    return
+  fi
+  sha=$(git rev-parse --verify -q "$tag^{commit}") || { echo "no commit for $tag here" >&2; exit 1; }
+  rare "$sha" || sha=$(parent_if_bump "$tag" "$sha")
+  if rare "$sha"; then echo "$tag is on ${sha:0:12}, which passed the rare jobs (ci/rare/$sha)"; return; fi
+  echo "$tag is on ${sha:0:12}, which has no ci/rare tag: the rare jobs ($rare_workflow) haven't passed on it. \`just release --rare\` starts them on the newest green commit and waits" >&2
+  exit 1
 }
 
 # The version fields a bump moves (#524), in a manifest (toml), a lock file
@@ -316,6 +396,7 @@ case "${1:-}" in
     [ -n "$(ls crates/proto/fixtures/releases/"$v"/*.jsonl 2>/dev/null)" ] \
       || { echo "no crates/proto/fixtures/releases/$v: run \`just release-fixtures\` and commit it" >&2; exit 1; }
     check_green "$2"
+    check_rare "$2"
     ;;
   check-app-version)
     # The app has its own version (#393). Without cargo or mise.
@@ -326,19 +407,23 @@ case "${1:-}" in
   check-green)
     check_green "$2"
     ;;
+  check-rare)
+    check_rare "$2"
+    ;;
   bump)
     # A version bump on top of the newest green commit on main, tagged, so a
     # release needn't wait for its bump to pass CI (#524), like chant's `just
     # release`. The tag's commit only bumps versions, which check-green lets
     # through on its parent's ci/green tag. main gets the bump merged in.
     shift
-    part=patch lane=daemon commit='' dry=0 older=0
+    part=patch lane=daemon commit='' dry=0 older=0 start_rare=0
     for a in "$@"; do
       case "$a" in
         major|minor|patch) part=$a ;;
         --app) lane=app ;;
         --dry-run|-n) dry=1 ;;
         --older) older=1 ;;
+        --rare) start_rare=1 ;;
         -*) echo "release bump: unknown flag $a" >&2; exit 2 ;;
         *) if [ -n "$commit" ]; then echo "release bump: two commits ($commit, $a)" >&2; exit 2; fi; commit=$a ;;
       esac
@@ -412,6 +497,20 @@ case "${1:-}" in
       else echo "$notes has no headline section (a \`\`\`whats-new block, scripts/whats-new.mjs): add one first" >&2; exit 1; fi
     fi
     echo "$tag: $at_sha -> $new on ${sha:0:12} ($(git log -1 --format=%s "$sha")), the newest green commit; main is at ${main:0:12}"
+    # A daemon release needs the rare jobs (#305) to have passed on the
+    # commit too; --rare starts them and waits. A dry run only says.
+    if [ "$lane" = daemon ]; then
+      if rare "$sha"; then
+        echo "${sha:0:12} passed the rare jobs (ci/rare/$sha)"
+      elif [ "$dry" = 1 ]; then
+        echo "${sha:0:12} has no ci/rare tag: the release needs the rare jobs to pass on it first (\`just release --rare\`)"
+      elif [ "$start_rare" = 1 ]; then
+        run_rare "$sha" || { echo "no release" >&2; exit 1; }
+      else
+        echo "${sha:0:12} has no ci/rare tag: the rare jobs ($rare_workflow) haven't passed on it. \`just release --rare\` starts them and waits, then releases" >&2
+        exit 1
+      fi
+    fi
     wt=$(mktemp -d "${TMPDIR:-/tmp}/arugula-release.XXXXXX")
     top=$(git rev-parse --show-toplevel)
     git worktree add -q --detach "$wt" "$sha"

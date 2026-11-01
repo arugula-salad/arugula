@@ -1,0 +1,97 @@
+# What .github/actions/setup is for Linux's pods, for our Macs' throwaway
+# Tart VMs (home-cloud's mac_runner, `runs-on: [self-hosted, macos-arm64]`):
+# the toolchain, the compile cache and the caches a fresh VM starts
+# without. check.yml's macos (test) and rare-nightly.yml's webkit both set
+# up through it, so the two jobs stay one setup (#305). The steps skip what
+# the golden image has (Rust, mise, just, Node 24 and pnpm 12), so they
+# still run on GitHub's macos-15 if a job goes back there (#868).
+name: macos-setup
+description: Toolchain and caches for a job on our Macs' Tart VMs
+inputs:
+  cache-key:
+    description: The build, Ghostty and Playwright caches' key; jobs that build different things keep different caches
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: bash 4.4+ (macOS ships 3.2; the shell integration tests need PS0)
+      shell: bash
+      run: brew list bash >/dev/null 2>&1 || brew install bash
+    - name: Rust (rust-toolchain.toml's)
+      shell: bash
+      run: rustup toolchain install "$(sed -n 's/^channel = "\(.*\)"/\1/p' rust-toolchain.toml)" --profile minimal -c rustfmt,clippy
+    - name: mise (it brings the Zig libghostty needs, from .mise.toml)
+      shell: bash
+      run: |
+        command -v mise >/dev/null || curl -fsSL https://mise.run | sh
+        echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+    - name: What the image has
+      id: have
+      shell: bash
+      run: |
+        case "$(node --version 2>/dev/null)" in v24.*) echo node=true ;; *) echo node=false ;; esac >> "$GITHUB_OUTPUT"
+        case "$(pnpm --version 2>/dev/null)" in 12.*) echo pnpm=true ;; *) echo pnpm=false ;; esac >> "$GITHUB_OUTPUT"
+        if command -v just >/dev/null; then echo just=true; else echo just=false; fi >> "$GITHUB_OUTPUT"
+    - uses: taiki-e/install-action@v2
+      if: steps.have.outputs.just != 'true'
+      with:
+        tool: just
+    # Linux's: Node 24 and pnpm 12 (.github/actions/setup).
+    - uses: actions/setup-node@v4
+      if: steps.have.outputs.node != 'true'
+      with:
+        node-version: 24
+    - uses: pnpm/action-setup@v4
+      if: steps.have.outputs.pnpm != 'true'
+      with:
+        version: 12
+    # The compile cache Linux's jobs share (.github/actions/setup, #868):
+    # a fresh VM starts with no build at all.
+    - uses: taiki-e/install-action@v2
+      if: env.SCCACHE_WEBDAV_PASSWORD != ''
+      with:
+        tool: sccache@0.18.0
+    - name: Compile through sccache
+      if: env.SCCACHE_WEBDAV_PASSWORD != ''
+      shell: bash
+      run: |
+        # Without it when it's down: sccache won't start (the setup action's).
+        if ! curl -fsS -o /dev/null --max-time 10 -X PROPFIND -H 'Depth: 0' \
+            -u "arugula-ci:$SCCACHE_WEBDAV_PASSWORD" https://ci-cache.inevitable.fyi/; then
+          echo "::warning::ci-cache didn't answer: compiling without sccache"
+          exit 0
+        fi
+        {
+          echo "RUSTC_WRAPPER=sccache"
+          echo "SCCACHE_WEBDAV_ENDPOINT=https://ci-cache.inevitable.fyi"
+          echo "SCCACHE_WEBDAV_USERNAME=arugula-ci"
+          echo "SCCACHE_WEBDAV_KEY_PREFIX=arugula"
+          echo "CARGO_INCREMENTAL=0"
+          echo "SCCACHE_IGNORE_SERVER_IO_ERROR=1"
+        } >> "$GITHUB_ENV"
+    # test and webkit build different things (test: the tests, with the
+    # dev-dependencies' features): a cache each.
+    - uses: Swatinem/rust-cache@v2
+      with:
+        key: ${{ inputs.cache-key }}
+    # Ghostty's checkout and Zig's caches (.github/actions/setup's, #868).
+    - name: Ghostty's cache
+      shell: bash
+      run: echo "LIBGHOSTTY_VT_SYS_CACHE_DIR=$HOME/.cache/libghostty-vt-sys" >> "$GITHUB_ENV"
+    - uses: actions/cache@v4
+      with:
+        path: ~/.cache/libghostty-vt-sys
+        key: ghostty-${{ runner.os }}-${{ runner.arch }}-${{ inputs.cache-key }}-${{ hashFiles('vendor/libghostty-vt-sys/**', '.mise.toml') }}
+    # mise's Zig (for libghostty) and nextest, kept between runs: Zig's
+    # community mirror answered 429 once and failed the job (#524).
+    - uses: actions/cache@v4
+      with:
+        path: ~/.local/share/mise/installs
+        key: mise-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.mise.toml') }}
+    # Playwright's browsers: a fresh VM has none.
+    - uses: actions/cache@v4
+      with:
+        path: ~/Library/Caches/ms-playwright
+        key: playwright-${{ runner.os }}-${{ runner.arch }}-${{ inputs.cache-key }}-${{ hashFiles('web/pnpm-lock.yaml') }}
+    - shell: bash
+      run: just bootstrap
