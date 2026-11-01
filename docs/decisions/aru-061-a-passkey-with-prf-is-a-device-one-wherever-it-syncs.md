@@ -46,5 +46,12 @@ whose signature is missing or wrong, gives way to an ordinary approval.
 Why: the approval (#761) is the step people trip on, and a synced passkey
 already lets its holder sign in. The cost is written down: whoever holds
 the synced passkey is that device, on every machine it reaches.
+
+**Kept after aru-126, with its cost** (DK9, #390; Jake, 2026-11-01).
+Since passkeys approve the platform's actions (aru-126), a passkey with
+PRF is both the person's approver and a browser-class device wherever it
+syncs: whoever holds it can approve a deploy, reach the account's machines
+and approve new browsers. PRF stays because it spares the approval step a
+new or wiped browser would otherwise take.
 Where: `web/src/shell/e2e/keys.ts` (`adoptPrfKeys`, `PRF_SALTS`), `web/src/shell/control.ts` (`takePrfKeys`, `rejoin`, `savePin`, `usePasskey`), `crates/control/src/passkey.rs`, `crates/control/src/api.rs` (`pin`), `crates/e2e/src/cert.rs` (`device_pin_body`), [docs/control-e2e.md](docs/control-e2e.md#prf-re-deriving-a-browsers-keys).
 From: #764, #765.

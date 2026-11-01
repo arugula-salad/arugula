@@ -46,7 +46,7 @@ Removing a device follows the same line: only a browser whose every link
 back to the root is a browser (or a recovery code) removes a browser, a
 phone or a recovery code; a CLI or the app removes CLIs, apps and machines.
 On a team's machines, only such a browser or the app makes an editor or an
-owner, never a CLI.
+owner, never a CLI (the app keeps this, as DK7 decided).
 
 **Why your CLI can't approve a browser.** The CLI's key is a file
 (`~/.config/arugula/device.key`) that any program you run can read, agents
@@ -69,8 +69,9 @@ machines joined ([Recovery](#keys)). With no device and no code left, a
 fresh GitHub sign-in starts a device reset: 48 hours any device can cancel,
 then a new root, so each machine has to be joined again on the machine
 ([aru-119](decisions/aru-119-an-account-can-reset-its-devices-from-a-fresh-github-sign-in.md)).
-Passkeys have their own way back, a passkey reset, which leaves devices and
-machines alone ([Page-only actions](#page-only-actions-need-a-browser-and-a-passkey)).
+It removes your passkeys too, so after a total loss one reset brings both
+back. Passkeys alone have their own way back, a passkey reset, which leaves
+devices and machines alone ([Page-only actions](#page-only-actions-need-a-browser-and-a-passkey)).
 
 Joining a machine and approving a new browser carry a secret control never
 sees, so control can't swap in a key of its own
