@@ -1,7 +1,7 @@
 // One board (boards, step 2; lanes, aru-125), wherever it's drawn: the
 // platform page's `/p/:project/boards/:board`, and a board block in a daemon
 // workspace (a pin onto it, `shell/blocks/board.tsx`). The four lanes in
-// order (Next, Doing, Review, Done: nobody makes or moves them, the work
+// order (Doing, Review, Next, Done: nobody makes or moves them, the work
 // does), each with its rows; a board whose author made groups (phases, waves)
 // shows each as a section with its progress and the four lanes of its rows
 // under it, the rows with no group last. A row's marks say what its lane
@@ -646,11 +646,6 @@ function Row({
                 <span class="board-card-name board-title" data-board-title>
                   {title}
                 </span>
-              )}
-              {r.live && (
-                <StateChip tone={liveTone(r.live.state)} data-board-live={r.live.state}>
-                  {liveWord(r.live)}
-                </StateChip>
               )}
             </div>
             <button type="button" class="board-more" aria-label="Row actions" data-board-row-menu onClick={more}>

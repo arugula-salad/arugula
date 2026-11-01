@@ -176,13 +176,14 @@ test("a board with groups is a section for each, its lanes under it, and the row
   assert.deepEqual(got.map((s) => s.group?.title ?? null), ["One", "Two", null]);
   assert.deepEqual(got.map((s) => s.lanes.length), [4, 4, 4], "four lanes in each");
   assert.deepEqual(got.map((s) => s.lanes.flatMap((z) => z.rows.map((r) => r.id))), [["a", "d"], ["b"], ["c"]]);
-  assert.deepEqual(got[0].lanes.map((z) => z.id), lanes.map((z) => z.id));
+  assert.deepEqual(got[0].lanes.map((z) => z.id), ["lane_doing", "lane_review", "lane_next", "lane_done"], "Doing, Review, Next, Done (#479)");
   // Nothing ungrouped: no last section. A row in a group that's gone is ungrouped.
   assert.equal(sections({ zones: lanes.map((z) => ({ ...z, rows: z.rows.filter((r) => r.group) })), groups }).length, 2);
   assert.equal(sections({ zones: [{ id: "lane_next", title: "Next", rows: [row("x", "zon_9")] }], groups }).at(-1).lanes[0].rows[0].id, "x");
-  // No groups (or none from an old platform): the lanes as they came.
-  assert.deepEqual(sections({ zones: lanes, groups: [] }), [{ group: null, lanes }]);
-  assert.deepEqual(sections({ zones: lanes }), [{ group: null, lanes }]);
+  // No groups (or none from an old platform): the lanes in the board's order.
+  const ordered = ["lane_doing", "lane_review", "lane_next", "lane_done"].map((id) => lanes.find((z) => z.id === id));
+  assert.deepEqual(sections({ zones: lanes, groups: [] }), [{ group: null, lanes: ordered }]);
+  assert.deepEqual(sections({ zones: lanes }), [{ group: null, lanes: ordered }]);
   assert.equal(groupLine({ done: 1, total: 2 }), "1 of 2 done");
   assert.equal(groupLine({ done: 0, total: 0 }), "no work yet");
 });

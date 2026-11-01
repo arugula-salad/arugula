@@ -149,7 +149,7 @@ function boardView(id: string, p: Placing, machineOf: (host: string) => string) 
   });
   return {
     board: { id, project: "prj_e2e", title: "Launch", goal: "", created_by: "", created_at: 1 },
-    zones: LANES.map(([lane, title]) => ({ id: `zone_${lane}`, rev: 1, title, kind: "lane", rows: p.rows.filter((r) => r[1] === lane).map(row) })),
+    zones: LANES.map(([lane, title]) => ({ id: `lane_${lane}`, rev: 1, title, kind: "lane", rows: p.rows.filter((r) => r[1] === lane).map(row) })),
     groups: [],
   };
 }
@@ -206,9 +206,9 @@ test("a board focus clusters its agents by the lane of their row, and a row that
   await clickName("Launch");
   await expect.poll(() => new URL(page.url()).hash).toBe("#swarm=board:brd_e2e");
 
-  // The focus: the board's lanes, with the agents in them. A: Doing (on_issue). B: Doing (attachment only). F: Review (the attachment wins over on_issue's Next).
+  // The focus: the board's lanes (Doing, Review, Next, Done: the stub sends them Next first), with the agents in them. A: Doing (on_issue). B: Doing (attachment only). F: Review (the attachment wins over on_issue's Next).
   await expect(page.locator("[data-swarm-board] b")).toHaveText("Board: Launch");
-  await expect(page.locator("[data-lane]")).toHaveText(["Next · 1 row · no one on it", "Doing · 2 rows · 2 workers", "Review · 1 row · 1 worker"]);
+  await expect(page.locator("[data-lane]")).toHaveText(["Doing · 2 rows · 2 workers", "Review · 1 row · 1 worker", "Next · 1 row · no one on it"]);
   await expect.poll(() => sizes(page), { timeout: 10_000 }).toEqual({ Doing: 2, Review: 1 });
   // The other board's agent and the one on none are not here.
   await expect.poll(() => page.evaluate(() => window.__arugula.fleet.panes.length)).toBeGreaterThanOrEqual(15);
@@ -244,7 +244,7 @@ test("a board focus clusters its agents by the lane of their row, and a row that
   const reloaded = await page.evaluate(() => ((window as unknown as { __nav?: number }).__nav = 1));
   placing.rows[2][1] = "review";
   await page.evaluate(() => (window.__arugula.chat as unknown as { objectChanged(t: string): void }).objectChanged("brd_e2e"));
-  await expect(page.locator("[data-lane]")).toHaveText(["Next · 1 row · no one on it", "Doing · 1 row · 1 worker", "Review · 2 rows · 2 workers"], { timeout: 10_000 });
+  await expect(page.locator("[data-lane]")).toHaveText(["Doing · 1 row · 1 worker", "Review · 2 rows · 2 workers", "Next · 1 row · no one on it"], { timeout: 10_000 });
   await expect.poll(() => sizes(page), { timeout: 10_000 }).toEqual({ Doing: 1, Review: 2 });
   expect(await page.evaluate(() => (window as unknown as { __nav?: number }).__nav)).toBe(reloaded);
   // The clusters follow the board's lanes, not their size: Review now has more workers than Doing, and still comes after it, to its right.
@@ -294,7 +294,7 @@ test.describe("a board focus on a phone", () => {
     await swarm(page);
     for (const h of ["workstation", "build-01", "build-02"]) ids[h] = await hostId(page)(h);
     await page.evaluate(() => (location.hash = "swarm=board:brd_e2e"));
-    await expect(page.locator("[data-lane]")).toHaveText(["Next · 1 row · no one on it", "Doing · 2 rows · 2 workers", "Review · 1 row · 1 worker"], { timeout: 30_000 });
+    await expect(page.locator("[data-lane]")).toHaveText(["Doing · 2 rows · 2 workers", "Review · 1 row · 1 worker", "Next · 1 row · no one on it"], { timeout: 30_000 });
     await expect.poll(() => sizes(page), { timeout: 10_000 }).toEqual({ Doing: 2, Review: 1 });
     // No sideways scroll.
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);

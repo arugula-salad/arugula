@@ -127,7 +127,7 @@ test("a board Launch has the four lanes and takes the first issue from Triage as
   boardPath = new URL(alice.url()).pathname;
 
   // Always the four lanes, in order, and no way to make, rename or move a zone.
-  await expect(alice.locator("[data-board-zone] h2")).toHaveText(["Next", "Doing", "Review", "Done"]);
+  await expect(alice.locator("[data-board-zone] h2")).toHaveText(["Doing", "Review", "Next", "Done"]);
   await expect(alice.locator("[data-board-add-zone], [data-board-add-proofs], [data-board-zone-menu]")).toHaveCount(0);
 
   await alice.locator("[data-platform-triage]").click();
@@ -143,7 +143,7 @@ test("a board Launch has the four lanes and takes the first issue from Triage as
   await expect(zone(alice, "Next").locator(card)).toHaveCount(1, { timeout: 15_000 });
   await expect(card.locator(".board-card-title .board-title")).toHaveText(FIRST);
   await expect(card.locator("[data-board-ptr]")).toHaveText(/^#\d+$/);
-  await expect(card.locator("[data-board-live]")).toHaveAttribute("data-board-live", "open");
+  await expect(card.locator("[data-board-live]")).toHaveCount(0);
   await expect(card.locator("[data-board-who]")).toHaveText("alice");
 });
 
@@ -164,7 +164,7 @@ test("a row is added through the picker, and editing its note keeps what it poin
   const card = row(alice, SECOND);
   await expect(card).toHaveCount(1, { timeout: 15_000 });
   await expect(card.locator("[data-board-ptr]")).toHaveText(/^#\d+$/);
-  await expect(card.locator("[data-board-live]")).toHaveAttribute("data-board-live", "open");
+  await expect(card.locator("[data-board-live]")).toHaveCount(0);
   const ptr = await card.locator("[data-board-ptr]").textContent();
 
   // Only the note changes; the pointer isn't sent, so the row stays on the
@@ -178,7 +178,7 @@ test("a row is added through the picker, and editing its note keeps what it poin
   await expect(edited.locator("[data-board-note]")).toHaveText("needs the 0.40 entry", { timeout: 15_000 });
   await expect(edited.locator("[data-board-title]")).toHaveText(SECOND);
   await expect(edited.locator("[data-board-ptr]")).toHaveText(ptr!);
-  await expect(edited.locator("[data-board-live]")).toHaveAttribute("data-board-live", "open");
+  await expect(edited.locator("[data-board-live]")).toHaveCount(0);
 });
 
 test("New issue… makes a native issue and a card row for it in Next", async () => {
@@ -192,7 +192,7 @@ test("New issue… makes a native issue and a card row for it in Next", async ()
   const card = row(alice, NEW);
   await expect(now.locator(card)).toHaveCount(1, { timeout: 15_000 });
   await expect(card.locator("[data-board-ptr]")).toHaveText(/^#\d+$/);
-  await expect(card.locator("[data-board-live]")).toHaveAttribute("data-board-live", "open");
+  await expect(card.locator("[data-board-live]")).toHaveCount(0);
   await expect(card.locator("[data-board-note]")).toHaveCount(0);
 
   await platform(alice, `/p/${project}/issues`);
@@ -399,7 +399,7 @@ test("a board with groups shows each as a section with its four lanes, and the r
   await expect(alice.locator("[data-board-group-title]")).toHaveText(["Decide", "Build", "No group"], { timeout: 15_000 });
   const groupOf = (title: string) => alice.locator("[data-board-group]").filter({ has: alice.locator("[data-board-group-title]", { hasText: title }) });
   // Each group has the four lanes, and its rows are in them.
-  for (const title of ["Decide", "Build", "No group"]) await expect(groupOf(title).locator("[data-board-zone] h2")).toHaveText(["Next", "Doing", "Review", "Done"]);
+  for (const title of ["Decide", "Build", "No group"]) await expect(groupOf(title).locator("[data-board-zone] h2")).toHaveText(["Doing", "Review", "Next", "Done"]);
   await expect(groupOf("Decide").locator("[data-board-row]")).toHaveCount(1);
   await expect(groupOf("Decide").locator("[data-board-note]")).toHaveText("Pick a name");
   await expect(groupOf("Build").locator("[data-board-note]")).toHaveText("Wire it up");
@@ -408,7 +408,7 @@ test("a board with groups shows each as a section with its four lanes, and the r
   // A board without groups is as before: lanes only.
   await platform(alice, boardPath);
   await expect(alice.locator("[data-board-group]")).toHaveCount(0);
-  await expect(alice.locator("[data-board-zone] h2")).toHaveText(["Next", "Doing", "Review", "Done"]);
+  await expect(alice.locator("[data-board-zone] h2")).toHaveText(["Doing", "Review", "Next", "Done"]);
 });
 
 test("a board's cards carry their lane's tone, its groups are managed on the page, and a row moves to another group", async () => {
@@ -448,7 +448,7 @@ test("a board's cards carry their lane's tone, its groups are managed on the pag
   // The bar is the lane's tone; a row that waits on Alice takes the attention tone, and the header counts it.
   const card = row(alice, SHIPPED);
   await expect(zone(alice, "Done").locator(card)).toHaveClass(/\bsw-card\b.*\bsw-ok\b/);
-  await expect(card.locator(".chip")).toContainText(/closed/i);
+  await expect(card.locator(".chip")).toHaveCount(0);
   // Its title is the issue's page, and its `#N` is dim text, not a link.
   await expect(card.locator("[data-board-title]")).toHaveAttribute("href", /\/issues\/iss_[0-9a-f]+$/);
   await expect(card.locator("[data-board-ptr]")).toHaveText(/^#\d+$/);

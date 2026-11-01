@@ -4,7 +4,7 @@
 // test (scripts/board-focus.test.mjs).
 
 import type { BoardLane, BoardRow, BoardView, OnIssue } from "../../shared/proto";
-import { pointerLabel, isCard } from "../../shared/boards/text.ts";
+import { inLaneOrder, pointerLabel, isCard } from "../../shared/boards/text.ts";
 
 /** What a pane tells of itself: where it is, and the boards its agent is on. */
 export interface FocusPane {
@@ -63,7 +63,7 @@ export function boardFocus(view: Pick<BoardView, "board" | "zones">, panes: Focu
       }
     }
   }
-  const lanes = view.zones
+  const lanes = inLaneOrder(view.zones)
     .filter((z) => z.rows.length)
     .map((z): FocusLane => {
       const keys = [...placed].filter(([, at]) => at.name === z.title).map(([k]) => k);
