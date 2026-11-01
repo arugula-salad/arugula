@@ -2,7 +2,8 @@
 # `scripts/release bump` (`just release`, #524): it commits a version bump on
 # top of the newest green commit on main, tags it, and pushes the tag with
 # main, the bump merged in; check-green lets that tag through on its
-# parent's ci/green tag. A daemon release also needs the commit's ci/rare
+# parent's ci/green tag. An app release (--app) reads the app's lane,
+# ci/green-app (#307). A daemon release also needs the commit's ci/rare
 # tag (#305), and --rare starts rare-nightly.yml on it and waits. Against a
 # local bare repository standing in for GitHub (GITHUB_SERVER_URL) and a
 # fake gh, so nothing reaches the network.
@@ -98,6 +99,9 @@ git tag -a "ci/green/$(git rev-parse HEAD~4)" -m green HEAD~4
 git tag -a "ci/green/$two" -m green "$two"
 git tag -a "ci/green/$three" -m green "$three"
 git tag -a "ci/revoked/$three" -m revoked "$three"
+# The app's lane (#307): one, two and three passed its phases; three's
+# re-run failed a phase the app doesn't need, so it stays app-green.
+for c in "$(git rev-parse HEAD~4)" "$two" "$three"; do git tag -a "ci/green-app/$c" -m green "$c"; done
 git push -q "$forge" main --tags
 
 run() { # WANT NAME ARGS...: scripts/release ARGS exits WANT
@@ -144,13 +148,15 @@ has "minor: the dry run says so too" "main has no docs/releases/0.2.0.md"
 run 1 "a commit that isn't green" bump "$four" --dry-run
 run 2 "an unknown flag" bump --force
 
-# The app first: only crates/desktop moves, and main merges it.
+# The app first: only crates/desktop moves, and main merges it. It reads
+# ci/green-app, so it's on three, which the daemon's lane revoked.
 run 0 "release app-v0.2.0" bump minor --app --older
+has "app-v0.2.0: the newest app-green commit" "app-v0.2.0: 0.1.0 -> 0.2.0 on ${three:0:12}"
 tag=$(git rev-parse "app-v0.2.0^{commit}")
-if [ "$(git rev-parse "$tag^")" = "$two" ]; then ok "app-v0.2.0 is a bump on two"; else bad "app-v0.2.0's parent isn't two"; fi
+if [ "$(git rev-parse "$tag^")" = "$three" ]; then ok "app-v0.2.0 is a bump on three"; else bad "app-v0.2.0's parent isn't three"; fi
 if [ "$(remote refs/tags/app-v0.2.0)" = "$(git rev-parse app-v0.2.0)" ]; then ok "app-v0.2.0 pushed"; else bad "app-v0.2.0 isn't on the forge"; fi
-if [ "$(git diff --name-only "$two" "$tag" | tr '\n' ' ')" = "crates/desktop/Cargo.lock crates/desktop/Cargo.toml crates/desktop/THIRD_PARTY.md docs/releases/app-0.2.0.md " ]; then ok "the app's bump's files"
-else bad "the app's bump changed: $(git diff --name-only "$two" "$tag")"; fi
+if [ "$(git diff --name-only "$three" "$tag" | tr '\n' ' ')" = "crates/desktop/Cargo.lock crates/desktop/Cargo.toml crates/desktop/THIRD_PARTY.md docs/releases/app-0.2.0.md " ]; then ok "the app's bump's files"
+else bad "the app's bump changed: $(git diff --name-only "$three" "$tag")"; fi
 main=$(remote refs/heads/main)
 if git fetch -q "$forge" main && [ "$(git rev-parse FETCH_HEAD^1)" = "$notes" ] && [ "$(git rev-parse FETCH_HEAD^2)" = "$tag" ]; then ok "main: the bump merged into it"
 else bad "main ($main) isn't notes + the bump"; fi
@@ -159,6 +165,8 @@ if at "$main" crates/desktop/Cargo.toml | grep -q '^version = "0.2.0"' && at "$m
 else bad "main after the app's release: $(at "$main" crates/desktop/Cargo.toml)"; fi
 run 0 "check-green app-v0.2.0 (on its parent)" check-green app-v0.2.0
 has "check-green: says why" "only bumps versions: checking its parent"
+has "check-green: the app's tag" "(ci/green-app/$three)"
+run 1 "check-green app-v0.2.0 as the daemon's: three is revoked there" check-green app-v0.2.0 daemon
 run 1 "app-v0.2.0's commit again" bump minor --app --dry-run
 has "again: says so" "is already released in app-v0.2.0"
 

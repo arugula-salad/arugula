@@ -154,7 +154,12 @@ tag, and one that passed and then failed a re-run gets `ci/revoked/<sha>`
 lint; build, static and clippy; test and test-2; the e2e shards;
 desktop-xvfb (since 2026-10-28: it failed unseen while it wasn't
 required); macos (test); and Windows' workspace, workspace-clippy and
-desktop. rare-nightly.yml's jobs aren't among them (#305), so they keep
+desktop. The same tick also tags each lane in `ci.green.lanes` (#307):
+`ci/green-server/<sha>` and `ci/green-app/<sha>` need only the phases
+their deployable ships from, and `ci/green-daemon/<sha>` needs them all,
+as `ci/green` does; a lane's revocation is `ci/revoked-<lane>/<sha>`.
+development.md ("Releasing") lists each lane's phases, and the release
+that reads it. rare-nightly.yml's jobs aren't among them (#305), so they keep
 check.yml's names, and its builds and its WebKit job have names of their
 own (rare-build, rare-static, webkit). A skipped run counts as
 passed. Every phase builds the newest commit (`"build": "newest"`, #1675):
@@ -179,7 +184,8 @@ that runs on main's commits may have a job named like a required one, not
 even one that's skipped there (binaries.yml's PR-only desktop-xvfb is
 named `desktop-xvfb (pull request)` for that). `npx
 @intentius/chant@0.124.61 ci last-green` (after `git fetch --tags`) prints
-the newest green commit.
+the newest green commit, and `--lane server` (or `app`, `daemon`) the
+newest of a lane's.
 
 `.github/workflows/ci-red.yml` runs `scripts/ci-red` every hour and after
 each `chant-ci-green` run, so a red main gets heard: when main has gone 6

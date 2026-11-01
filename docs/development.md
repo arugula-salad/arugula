@@ -204,6 +204,10 @@ branch first. The `full-check` label runs check.yml on the branch
 run counts only for the commit it ran on, so after another push remove
 the label and add it again.
 
+A phase added to `ci.green` goes in `require` and in each lane in
+`ci.green.lanes` whose deployable it checks; "Releasing" has the lanes
+and why each needs what it does.
+
 binaries.yml's `ci-branch-run` job enforces it, and its `queue` waits
 for that job. The list of files is in `scripts/ci-branch-run`
 (`touches`), which `scripts/tests/ci-branch-run.sh` tests. The job reads
@@ -429,9 +433,11 @@ owner's phone: [control-ops.md](control-ops.md#releasing-arugula-as-a-deploy-m22
 
 1. Notes go in `docs/releases/app-X.Y.Z.md`, merged to main.
 2. `just release --app` (with `minor` or `major` as above) bumps
-   `crates/desktop`'s version (its own numbering, not the daemon's) and
+   `crates/desktop`'s version (its own numbering, not the daemon's) on top
+   of the newest commit on main with a `ci/green-app` tag (below) and
    tags `app-vX.Y.Z` in the same way; by hand, set it in
-   `crates/desktop/Cargo.toml`, and once CI passes, `git tag -a app-vX.Y.Z
+   `crates/desktop/Cargo.toml`, and once the app's lane passes (`chant ci
+   last-green --lane app`), `git tag -a app-vX.Y.Z
    -m "arugula app X.Y.Z" "$sha" && git push origin app-vX.Y.Z`.
    `.github/workflows/app-release.yml` downloads arugulad
    and Arugula from the latest daemon release (checked against its
@@ -447,24 +453,65 @@ owner's phone: [control-ops.md](control-ops.md#releasing-arugula-as-a-deploy-m22
 4. Apps from before the split (0.23 and older) have no updater key, so they
    never check: their people install the new app once, by hand.
 
-Both start from a commit CI passed (#503). Each commit on main whose
-required checks passed gets a `ci/green/<sha>` tag from
-`.github/workflows/chant-ci-green.yml`
-([testing.md](testing.md#what-runs-where) says which checks), and the
-newest is:
+<a id="green-lanes"></a>Both start from a commit CI passed (#503), and each
+deployable reads a green tag of its own (#307), so it waits only on the
+checks for what it ships. `.github/workflows/chant-ci-green.yml` tags each
+commit on main from the same runs, one tag per lane whose phases all
+passed (`ci.green.require` and `ci.green.lanes` in chant.workspace.json;
+[testing.md](testing.md#what-runs-where) says what each job runs):
+
+| Tag | Ships | Phases it needs | Read by |
+| --- | --- | --- | --- |
+| `ci/green/<sha>` | the daemon, the CLI, the web client it embeds, the editor extension | all eight | `just release`, `check-version` |
+| `ci/green-daemon/<sha>` | the same | the same as `ci/green` | nothing yet |
+| `ci/green-server/<sha>` | control, the platform, the hosted workspace templates | lint, build, test, e2e | `scripts/release last-green server` |
+| `ci/green-app/<sha>` | the desktop app | lint, build, e2e, claims, windows-desktop | `just release --app`, `check-app-version` |
+
+The phases and their jobs: lint (lint, changes, suite-changed), build
+(build, static, clippy), test (test, test-2), e2e (the twelve shards),
+claims (desktop-xvfb), macos (`macos (test)`), windows (windows.yml's
+workspace and workspace-clippy) and windows-desktop (windows-desktop.yml's
+desktop, a phase of its own so the app's lane can need it without the
+workspace's Windows jobs).
+
+The server runs on Linux only, so its lane leaves out macos, both Windows
+phases and claims. It needs the whole of test and build: test, test-2
+and clippy each check both workspaces in one job (the server's and the
+root's), so there's no server half to need alone. It needs every e2e
+shard too, since control's specs are spread over them. The app's lane
+leaves out test, macos and the workspace's Windows jobs: the app carries
+the daemon of the latest daemon release (`scripts/release sidecars`), which
+passed those already. It keeps e2e for the specs that read
+`crates/desktop/dist` (control.spec.ts and the journey's app.ts), and build
+for static (desktop-xvfb's binaries) and clippy (`just desktop-check`). No
+job on main's pushes builds the macOS app; app-release.yml does, and fails
+the release if it doesn't build.
+
+A lane-green commit that later fails a phase its lane needs gets
+`ci/revoked-<lane>/<sha>`; failing a phase the lane doesn't need leaves its
+lane tag alone. `ci/green` is the daemon's tag until the arugula-release
+deploy driver (which checks `ci/green` for both lanes before it runs
+`scripts/release bump`) and the rest that read it move to
+`ci/green-daemon`. The newest green commit, from the local tags:
 
 ```sh
 git fetch origin --tags
-sha=$(npx @intentius/chant@0.124.61 ci last-green)
+sha=$(npx @intentius/chant@0.124.61 ci last-green)               # the daemon's
+sha=$(npx @intentius/chant@0.124.61 ci last-green --lane app)    # the app's
 ```
 
-`just green` lists the newest of them, newest first (`just green 50` for
-more). The tags page on GitHub sorts them by name, not by date.
+`scripts/release last-green [daemon|app|server]` answers the same from
+GitHub with git alone, as `just release` picks it; `last-green server` is
+the commit a server promote (#308) starts from. `just green` lists the
+newest of them, newest first (`just green 50` for more, `just green 20 app`
+for a lane's). The tags page on GitHub sorts them by name, not by date.
 
 `chant ci last-green` reads `origin/main` and the local tags, so `origin`
-must be GitHub. `scripts/release check-version` and `check-app-version`
-refuse a tag on a commit with no `ci/green` tag, or with a `ci/revoked`
-one (a re-run failed after it passed). A commit that changes nothing but
+must be GitHub. `scripts/release check-version` refuses a tag on a commit
+with no `ci/green` tag, or with a `ci/revoked` one (a re-run failed after
+it passed); `check-app-version` does the same with `ci/green-app` and
+`ci/revoked-app`. `scripts/release check-green TAG [LANE]` checks one
+lane's (an `app-v*` tag's is the app's, any other the daemon's). A commit that changes nothing but
 Arugula's own versions (in the manifests, the lock files and the
 THIRD_PARTY.md files), release notes and its copy of the client fixtures counts as its parent: that's
 the commit `just release` tags.

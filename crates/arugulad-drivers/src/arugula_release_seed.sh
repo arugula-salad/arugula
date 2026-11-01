@@ -38,6 +38,10 @@ git add -A
 git commit -qm notes
 git tag -a "ci/green/$(git rev-parse HEAD~3)" -m green HEAD~3
 git tag -a "ci/green/$two" -m green "$two"
+# Their app lane's tags too, as chant's tick makes them beside ci/green
+# (#307): an app release (`bump --app`) reads ci/green-app.
+git tag -a "ci/green-app/$(git rev-parse HEAD~3)" -m green HEAD~3
+git tag -a "ci/green-app/$two" -m green "$two"
 # two passed the rare jobs too (rare-nightly.yml's ci/rare tag, #305),
 # which a daemon release needs.
 git tag "ci/rare/$two" "$two"

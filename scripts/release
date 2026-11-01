@@ -4,6 +4,11 @@
 # (.github/workflows/app-release.yml). `releases/latest` is always the
 # daemon's: install.sh, install.ps1 and the daemon's update check read it.
 #
+# Each reads its own green tag (#307): the daemon's ci/green/<sha> (every
+# phase; chant's ci/green-daemon/<sha> is the same verdict), the app's
+# ci/green-app/<sha>, and the server's ci/green-server/<sha>
+# (chant.workspace.json's ci.green.lanes, docs/development.md).
+#
 # The daemon (v*):
 #   release check-version TAG      the tag matches the workspace version, on a
 #                                  green commit (check-green) that passed the
@@ -24,7 +29,7 @@
 #
 # The app (app-v*):
 #   release check-app-version TAG  the tag matches crates/desktop's version, on
-#                                  a green commit (check-green)
+#                                  a commit with a ci/green-app tag (check-green)
 #   release sidecars TARGET DIR    the latest daemon release's arugulad and
 #                                  arugula for TARGET, checked against its
 #                                  SHA256SUMS, into DIR (Windows: with ConPTY)
@@ -35,15 +40,23 @@
 #                                  release the site and the updater read
 #
 # Both lanes:
-#   release check-green TAG        TAG's commit passed CI: GitHub has its
-#                                  ci/green/<sha> tag and no ci/revoked/<sha>
-#                                  (#503), or it only bumps versions on top of
-#                                  a commit that did (`bump`).
+#   release check-green TAG [LANE] TAG's commit passed CI: GitHub has its
+#                                  green tag and no revoked one (#503), or it
+#                                  only bumps versions on top of a commit that
+#                                  did (`bump`). LANE is daemon (ci/green/<sha>,
+#                                  ci/revoked/<sha>), app (ci/green-app/<sha>)
+#                                  or server (ci/green-server/<sha>); without
+#                                  it, app for an app-v* tag, else daemon.
 #                                  ARUGULA_RELEASE_SKIP_GREEN=1 skips it.
+#   release last-green [LANE]      the newest commit on main with LANE's green
+#                                  tag and no revoked one (default daemon), as
+#                                  `bump` picks it; `last-green server` is the
+#                                  server's newest deployable commit
 #   release bump [patch|minor|major] [--app] [COMMIT|--older] [--rare] [--dry-run]
 #                                  (`just release`) commit a version bump on
 #                                  top of the newest green commit on main (or
-#                                  COMMIT), tag it vX.Y.Z (--app: app-vX.Y.Z),
+#                                  COMMIT; --app: the newest with ci/green-app),
+#                                  tag it vX.Y.Z (--app: app-vX.Y.Z),
 #                                  and push the tag with main, the bump merged
 #                                  into it (#524). When main has newer commits
 #                                  that aren't green, it lists them and stops;
@@ -144,19 +157,52 @@ PY
 # tick in chant-ci-green.yml tags each commit on main whose required checks
 # passed ci/green/<sha> (chant.workspace.json's ci.green), and one that a
 # re-run later failed ci/revoked/<sha>; `chant ci last-green` names the
-# newest. Read from GitHub itself, whatever this checkout's remotes are.
+# newest. Each lane in ci.green.lanes (#307) gets its own pair from the same
+# runs, ci/green-<lane>/<sha> and ci/revoked-<lane>/<sha>, for the phases
+# that lane needs. Read from GitHub itself, whatever this checkout's remotes
+# are.
 url=${GITHUB_SERVER_URL:-https://github.com}/$repo.git
 
-# green SHA prints green, revoked or none, from GitHub's ci/ tags.
+# lane_tags LANE sets green_tag and revoked_tag to LANE's tag prefixes. The
+# daemon's lane reads the plain ci/green, which needs every phase (chant's
+# ci/green-daemon is the same verdict), until the arugula-release driver and
+# everything else reading ci/green move.
+lane_tags() {
+  case "$1" in
+    daemon) green_tag=ci/green revoked_tag=ci/revoked ;;
+    app|server) green_tag=ci/green-$1 revoked_tag=ci/revoked-$1 ;;
+    *) echo "no release lane $1: daemon, app or server" >&2; exit 2 ;;
+  esac
+}
+
+# The lane a tag is for: app-v* is the app's, anything else the daemon's.
+tag_lane() { case "$1" in app-v*) echo app ;; *) echo daemon ;; esac; }
+
+# green SHA LANE prints green, revoked or none, from GitHub's ci/ tags.
 green() {
-  local refs
-  refs=$(git ls-remote "$url" "refs/tags/ci/green/$1" "refs/tags/ci/revoked/$1") ||
+  local refs green_tag revoked_tag
+  lane_tags "$2"
+  refs=$(git ls-remote "$url" "refs/tags/$green_tag/$1" "refs/tags/$revoked_tag/$1") ||
     { echo "can't read the ci/ tags at $url" >&2; exit 1; }
   case "$refs" in
-    *"refs/tags/ci/revoked/$1"*) echo revoked ;;
-    *"refs/tags/ci/green/$1"*) echo green ;;
+    *"refs/tags/$revoked_tag/$1"*) echo revoked ;;
+    *"refs/tags/$green_tag/$1"*) echo green ;;
     *) echo none ;;
   esac
+}
+
+# newest_green LANE MAIN CI: the newest of MAIN's last 200 first-parent
+# commits with LANE's green tag and no revoked one, in CI (`git ls-remote`'s
+# ci/ tags); nothing when there's none.
+newest_green() {
+  local green_tag revoked_tag c
+  lane_tags "$1"
+  for c in $(git rev-list --first-parent --max-count 200 "$2"); do
+    case "$3" in
+      *"refs/tags/$revoked_tag/$c"*) ;;
+      *"refs/tags/$green_tag/$c"*) echo "$c"; return ;;
+    esac
+  done
 }
 
 # The tag's commit, or its parent when the commit only bumps versions on
@@ -174,26 +220,28 @@ parent_if_bump() {
 }
 
 check_green() {
-  local tag=$1 sha v
+  local tag=$1 lane=${2:-} sha v green_tag revoked_tag
+  [ -n "$lane" ] || lane=$(tag_lane "$tag")
+  lane_tags "$lane"
   if [ "${ARUGULA_RELEASE_SKIP_GREEN:-}" = 1 ]; then
     echo "ARUGULA_RELEASE_SKIP_GREEN=1: not checking that $tag's commit passed CI" >&2
     return
   fi
   sha=$(git rev-parse --verify -q "$tag^{commit}") || { echo "no commit for $tag here" >&2; exit 1; }
-  v=$(green "$sha")
+  v=$(green "$sha" "$lane")
   # `bump` tags a commit that only moves versions on top of a green one: its
   # parent's verdict counts.
   if [ "$v" = none ]; then
     sha=$(parent_if_bump "$tag" "$sha")
-    v=$(green "$sha")
+    v=$(green "$sha" "$lane")
   fi
   case "$v" in
     revoked)
-      echo "$tag is on ${sha:0:12}, which passed CI and then failed a re-run (ci/revoked/$sha): release from \`chant ci last-green\`" >&2
+      echo "$tag is on ${sha:0:12}, which passed the $lane lane's CI and then failed a re-run ($revoked_tag/$sha): release from \`scripts/release last-green $lane\`" >&2
       exit 1 ;;
-    green) echo "$tag is on ${sha:0:12}, which passed CI (ci/green/$sha)" ;;
+    green) echo "$tag is on ${sha:0:12}, which passed the $lane lane's CI ($green_tag/$sha)" ;;
     *)
-      echo "$tag is on ${sha:0:12}, which has no ci/green tag (yet: CI may still be running): release from \`chant ci last-green\`, or set ARUGULA_RELEASE_SKIP_GREEN=1" >&2
+      echo "$tag is on ${sha:0:12}, which has no $green_tag tag (yet: CI may still be running): release from \`scripts/release last-green $lane\`, or set ARUGULA_RELEASE_SKIP_GREEN=1" >&2
       exit 1 ;;
   esac
 }
@@ -395,17 +443,27 @@ case "${1:-}" in
     # (#200).
     [ -n "$(ls crates/proto/fixtures/releases/"$v"/*.jsonl 2>/dev/null)" ] \
       || { echo "no crates/proto/fixtures/releases/$v: run \`just release-fixtures\` and commit it" >&2; exit 1; }
-    check_green "$2"
+    check_green "$2" daemon
     check_rare "$2"
     ;;
   check-app-version)
     # The app has its own version (#393). Without cargo or mise.
     d=$(sed -n 's/^version = "\(.*\)"/\1/p' crates/desktop/Cargo.toml | head -1)
     [ "$2" = "app-v$d" ] || { echo "tag $2 doesn't match crates/desktop's version $d" >&2; exit 1; }
-    check_green "$2"
+    check_green "$2" app
     ;;
   check-green)
-    check_green "$2"
+    check_green "$2" "${3:-}"
+    ;;
+  last-green)
+    # What #308's server promote starts from: `last-green server`.
+    lane=${2:-daemon}
+    lane_tags "$lane"
+    git fetch -q "$url" main
+    ci=$(git ls-remote "$url" 'refs/tags/ci/*') || { echo "can't read the ci/ tags at $url" >&2; exit 1; }
+    sha=$(newest_green "$lane" FETCH_HEAD "$ci")
+    [ -n "$sha" ] || { echo "no commit among main's last 200 has a $green_tag tag without a $revoked_tag one" >&2; exit 1; }
+    echo "$sha"
     ;;
   check-rare)
     check_rare "$2"
@@ -414,7 +472,8 @@ case "${1:-}" in
     # A version bump on top of the newest green commit on main, tagged, so a
     # release needn't wait for its bump to pass CI (#524), like chant's `just
     # release`. The tag's commit only bumps versions, which check-green lets
-    # through on its parent's ci/green tag. main gets the bump merged in.
+    # through on its parent's green tag. main gets the bump merged in. Green
+    # is the lane's (#307): ci/green for the daemon, ci/green-app for --app.
     shift
     part=patch lane=daemon commit='' dry=0 older=0 start_rare=0
     for a in "$@"; do
@@ -438,23 +497,21 @@ case "${1:-}" in
     esac
     git fetch -q "$url" main
     main=$(git rev-parse FETCH_HEAD)
-    # The ci/ tags, read once.
+    # The ci/ tags, read once; the lane's green and revoked tags.
     ci=$(git ls-remote "$url" 'refs/tags/ci/*') || { echo "can't read the ci/ tags at $url" >&2; exit 1; }
+    lane_tags "$lane"
     is_green() {
-      case "$ci" in *"refs/tags/ci/revoked/$1"*) return 1 ;; *"refs/tags/ci/green/$1"*) return 0 ;; *) return 1 ;; esac
+      case "$ci" in *"refs/tags/$revoked_tag/$1"*) return 1 ;; *"refs/tags/$green_tag/$1"*) return 0 ;; *) return 1 ;; esac
     }
     if [ -n "$commit" ] && [ "$older" = 1 ]; then echo "release bump: COMMIT or --older, not both" >&2; exit 2; fi
     if [ -n "$commit" ]; then
       sha=$(git rev-parse --verify -q "$commit^{commit}") || { echo "$commit isn't a commit here" >&2; exit 1; }
       git merge-base --is-ancestor "$sha" "$main" || { echo "${sha:0:12} isn't on main" >&2; exit 1; }
-      is_green "$sha" || { echo "${sha:0:12} has no ci/green tag, or has a ci/revoked one" >&2; exit 1; }
+      is_green "$sha" || { echo "${sha:0:12} has no $green_tag tag, or has a $revoked_tag one" >&2; exit 1; }
     else
-      sha='' skipped=0
-      for c in $(git rev-list --first-parent --max-count 200 "$main"); do
-        if is_green "$c"; then sha=$c; break; fi
-        skipped=$((skipped + 1))
-      done
-      [ -n "$sha" ] || { echo "no commit among main's last 200 has a ci/green tag without a ci/revoked one" >&2; exit 1; }
+      sha=$(newest_green "$lane" "$main" "$ci")
+      [ -n "$sha" ] || { echo "no commit among main's last 200 has a $green_tag tag without a $revoked_tag one" >&2; exit 1; }
+      skipped=$(git rev-list --first-parent --count "$sha..$main")
       # A release from an older commit leaves these out (#1679): say which,
       # and stop unless asked for it. A dry run lists them and goes on.
       if [ "$skipped" != 0 ]; then
@@ -720,7 +777,8 @@ PY
     vers blank "$k"
     ;;
   *)
-    sed -n '2,54p' "$0" >&2
+    # The usage, down to the environment it reads.
+    sed -n '2,/^# GH_TOKEN/p' "$0" | sed '$d' >&2
     exit 2
     ;;
 esac

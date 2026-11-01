@@ -5,8 +5,9 @@
 # hand. The workflow runs on every push to main and desktop-changed asks
 # scripts/app-changed, the same question check.yml's desktop-check asks, so
 # a push that leaves the app alone still reports `desktop`, as skipped.
-# ci.green's windows phase (chant.workspace.json, #503) counts a skipped
-# run as passed, and can't count a run that never happened.
+# ci.green's windows-desktop phase (chant.workspace.json, #503; its own,
+# so the app's lane needs it without windows.yml's jobs, #307) counts a
+# skipped run as passed, and can't count a run that never happened.
 name: windows-desktop
 # Written by chant ci workflow from ci.green's build (#4169); edit ci.green and run it again.
 on:
@@ -17,8 +18,8 @@ on:
 
 # Written by chant ci workflow from ci.green's build (#4169); edit ci.green and run it again.
 concurrency:
-  # A job skipped by changed paths diffs against `chant ci base --phase windows`, not github.event.before, which a newer push may have kept from being built (#4643).
-  group: chant-build-windows-${{ github.ref }}
+  # A job skipped by changed paths diffs against `chant ci base --phase windows-desktop`, not github.event.before, which a newer push may have kept from being built (#4643).
+  group: chant-build-windows-desktop-${{ github.ref }}
   cancel-in-progress: false
 
 permissions:

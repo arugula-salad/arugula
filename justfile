@@ -481,7 +481,8 @@ shellcheck:
     shellcheck -s sh testnet/editors/box/entrypoint.sh testnet/sshd/entrypoint.sh testnet/sshd-systemd/keys.sh testnet/git/entrypoint.sh testnet/tailnet/entrypoint.sh
 
 # Release without waiting for a version bump to pass CI (#524): commit the
-# bump on top of the newest commit on main with a ci/green tag, tag it, and
+# bump on top of the newest commit on main with a ci/green tag (--app:
+# ci/green-app, #307), tag it, and
 # push the tag with main, the bump merged in (docs/development.md). A
 # daemon release also needs the commit's ci/rare tag (rare-nightly.yml,
 # #305): --rare starts those jobs on it and waits for them first.
@@ -490,10 +491,11 @@ release *args:
     scripts/release bump {{args}}
 
 # The newest commits on main that passed CI (their ci/green tags), newest
-# first; a tag CI revoked since is gone here too.
-green n="20":
+# first; a tag CI revoked since is gone here too. LANE (server, daemon,
+# app) lists a lane's ci/green-LANE tags instead (#307).
+green n="20" lane="":
     @git fetch -q --force --prune https://github.com/arugula-salad/arugula.git '+refs/tags/ci/*:refs/tags/ci/*'
-    @git log --no-walk --tags='ci/green/*' --date=format-local:'%Y-%m-%d %H:%M' --format='%h %cd %s' | head -n {{n}}
+    @git log --no-walk --tags='ci/green{{ if lane == "" { "" } else { "-" + lane } }}/*' --date=format-local:'%Y-%m-%d %H:%M' --format='%h %cd %s' | head -n {{n}}
 
 # All tests, the root workspace's and the server's. The Rust ones run under
 # cargo-nextest (.config/nextest.toml, server/.config/nextest.toml), which
