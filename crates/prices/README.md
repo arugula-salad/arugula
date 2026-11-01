@@ -8,7 +8,7 @@ session and its subagents cost from their transcripts, #398,
 workspace and reached from the server's by path, like
 `arugula-control-wire`.
 
-Start at `src/lib.rs`: `PRICES`, `lookup`, `Usage` and
+Start at `src/lib.rs`: `PRICES` (and `RETIRED`), `lookup`, `Usage` and
 `cost`. A model the table doesn't name has no price here; the broker charges
 it as the dearest row, and an estimate shows its tokens without dollars.
 

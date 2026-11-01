@@ -101,11 +101,11 @@ const costCases: { name: string; more: (b: Base) => object[]; label: string; usd
   // 100k in at $4, 50k out at $20.
   { name: "a plain session", more: (b) => [reply(b, "1", OPUS, { input_tokens: 100_000, output_tokens: 50_000 })], label: "≈ $1.40", usd: "1.4" },
   {
-    // 2M cache reads at $0.20, 500k five-minute writes at $2.50, 10k out at $10.
+    // 2M cache reads at $0.10, 500k five-minute writes at $2.50, 10k out at $10.
     name: "a cache-heavy session",
     more: (b) => [reply(b, "1", "claude-sonnet-5-5", { input_tokens: 2, cache_read_input_tokens: 2_000_000, cache_creation_input_tokens: 500_000, output_tokens: 10_000 })],
-    label: "≈ $1.75",
-    usd: "1.75",
+    label: "≈ $1.55",
+    usd: "1.55",
   },
   {
     // A 1M window costs the same per token: 800k reads at $0.20, 20k out at $20.
