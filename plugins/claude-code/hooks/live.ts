@@ -1,5 +1,5 @@
-// arugula-live (#396, a spike): Claude Code tells the Arugula pane it runs
-// in about its session, from inside it, as things happen:
+// Live session signals (#396, #447; aru-128): Claude Code tells the Arugula
+// pane it runs in about its session, from inside it, as things happen:
 //
 // - `usage`: the window's fill and size as the engine has them, after each
 //   turn (`session.measure`), with the session's cost;
@@ -9,19 +9,35 @@
 //   before and after (`session.compact`);
 // - `start`: a new session in the pane, with Claude Code's version.
 //
-// Each goes to the daemon through the installed CLI, `arugula
+// Opt in: the plugin's `live` option (plugin.json's userConfig), off by
+// default. Off, register() adds no hook at all. The command hooks in
+// hooks.json beside this module don't depend on it: a Claude Code without
+// mods ignores `modules`, and one that can't load this module still runs
+// them (#449).
+//
+// Each signal goes to the daemon through the installed CLI, `arugula
 // session-signal`, with the signal on stdin (aru-039: the plugin calls the
 // CLI you installed, which finds the daemon on every platform, Windows'
 // named pipe included). The CLI answers both versions and the pane's
 // context, which the status line shows. Outside an Arugula pane
 // (no ARUGULA_PANE) it does nothing at all.
 //
+// The mod API is early access. The engine checks every `on(...)` name when
+// it loads the module and refuses the whole module for one it doesn't know,
+// so these four names are pinned (a test in crates/cli/src/hooks.rs holds
+// them): session.start, turn.step, session.measure (not the old
+// session.usage) and session.compact. An event whose input or result comes
+// in another shape is passed on untouched and named once on the status line.
 // It hooks no `classic.*` event: a Team or Enterprise login's guard skips a
-// user mod's classic hooks (#395), and none of this needs them.
+// user mod's classic hooks (#395), and none of this needs them. Every hook
+// passes its event on, and a failure in one passes it on too.
 
 import type { Register, EngineInterface } from 'claude-code'
 
-const MOD_VERSION = '0.1.0'
+// This module's own version, sent with every signal as `mod_version`. The
+// plugin itself carries none (it follows main, aru-039); bump this when the
+// signals change.
+const MOD_VERSION = '0.2.0'
 
 type Signal = {
   event: 'start' | 'usage' | 'step' | 'compact'
@@ -51,6 +67,10 @@ let claudeVersion: string | undefined
 let model: string | undefined
 let effort: string | undefined
 let queue: Promise<void> = Promise.resolve()
+// Events that came in a shape this module doesn't know: named on the status
+// line, so a Claude Code update that moved them says so instead of going
+// quiet.
+const changed = new Set<string>()
 
 function tokensShort(n: number): string {
   return n >= 1_000_000 ? `${n / 1_000_000}M` : `${Math.round(n / 1000)}k`
@@ -58,19 +78,37 @@ function tokensShort(n: number): string {
 
 function show($: EngineInterface, a: Answer): void {
   if (a.error !== undefined) {
-    $.ui.status(`arugula %${pane} \u25cb ${a.error.split('\n')[0]?.slice(0, 80)}`)
+    $.ui.status(`arugula %${pane} ○ ${a.error.split('\n')[0]?.slice(0, 80)}`)
     return
   }
-  const parts = [`arugula %${a.pane ?? pane} \u25cf live`]
+  const parts = [`arugula %${a.pane ?? pane} ● live`]
   const c = a.context
   if (c && c.tokens && c.window) parts.push(`${Math.round((100 * c.tokens) / c.window)}% of ${tokensShort(c.window)}`)
   if (c && c.compactions) parts.push(`${c.compactions} compacted`)
   if (a.cli_version && a.daemon_version && a.cli_version !== a.daemon_version) {
-    parts.push(`cli ${a.cli_version} \u2260 daemon ${a.daemon_version}`)
+    parts.push(`cli ${a.cli_version} ≠ daemon ${a.daemon_version}`)
   } else if (a.daemon_version) {
     parts.push(`v${a.daemon_version}`)
   }
-  $.ui.status(parts.join(' \u00b7 '))
+  if (changed.size) parts.push(`${[...changed].join(', ')} changed in Claude Code ${claudeVersion ?? ''}`.trim())
+  $.ui.status(parts.join(' · '))
+}
+
+// The CLI's answer to a signal, or why there's none. An `arugula` from
+// before `session-signal` (older than this plugin) says so in clap's words.
+function answerOf(r: { exitCode: number; stdout: string; stderr: string }): Answer {
+  let answer: Answer = {}
+  try {
+    answer = (r.stdout.trim() ? JSON.parse(r.stdout) : {}) as Answer
+  } catch {
+    answer = {}
+  }
+  if (r.exitCode !== 0 && answer.error === undefined) {
+    answer.error = /unrecognized subcommand|unexpected argument/.test(r.stderr)
+      ? `live ${MOD_VERSION} needs a newer arugula CLI: update Arugula`
+      : r.stderr.trim() || `exit ${r.exitCode}`
+  }
+  return answer
 }
 
 async function deliver($: EngineInterface, s: Signal): Promise<void> {
@@ -82,9 +120,7 @@ async function deliver($: EngineInterface, s: Signal): Promise<void> {
       claude_version: claudeVersion,
       mod_version: MOD_VERSION,
     })
-    const r = await $.process.run(['arugula', 'session-signal'], { stdin: body, timeoutMs: 5000 })
-    answer = (r.stdout.trim() ? JSON.parse(r.stdout) : {}) as Answer
-    if (r.exitCode !== 0 && answer.error === undefined) answer.error = r.stderr.trim() || `exit ${r.exitCode}`
+    answer = answerOf(await $.process.run(['arugula', 'session-signal'], { stdin: body, timeoutMs: 5000 }))
   } catch (err) {
     // No `arugula` on PATH, or it hung.
     answer = { error: err instanceof Error ? err.message : String(err) }
@@ -99,7 +135,21 @@ function send($: EngineInterface, s: Signal): void {
   queue = queue.then(() => deliver($, s))
 }
 
-export const register: Register = on => {
+// Notes an event that came in a shape this module doesn't read, once, on
+// the status line (in an Arugula pane: elsewhere this module is silent).
+function shapeChanged($: EngineInterface, event: string): void {
+  if (!pane || changed.has(event)) return
+  changed.add(event)
+  show($, { pane: Number(pane) })
+}
+
+const isNum = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v)
+
+export const register: Register = (on, options) => {
+  // Off unless the person turned it on (`/config`, or `claude plugin
+  // configure arugula@arugula`). A value set from a shell arrives as text.
+  if (options.live !== true && options.live !== 'true') return
+
   on('session.start', async ($, e, next) => {
     const res = await next(e)
     pane = await $.env.get('ARUGULA_PANE')
@@ -110,7 +160,9 @@ export const register: Register = on => {
   }).catch(($, e, next) => next(e))
 
   on('turn.step', async function* ($, e, next) {
-    if (!e.agentId) {
+    if (typeof e.model !== 'string') {
+      shapeChanged($, 'turn.step')
+    } else if (!e.agentId) {
       const ef = e.effort === undefined ? undefined : String(e.effort)
       if (e.model !== model || ef !== effort) {
         model = e.model
@@ -124,12 +176,15 @@ export const register: Register = on => {
   })
 
   on('session.measure', async ($, e, next) => {
-    if (e.changed.includes('context') || e.changed.includes('cost')) {
+    const ctx = e.context as { tokens?: unknown; window?: unknown } | undefined
+    if (!Array.isArray(e.changed) || !ctx || !isNum(ctx.tokens) || !isNum(ctx.window)) {
+      shapeChanged($, 'session.measure')
+    } else if (e.changed.includes('context') || e.changed.includes('cost')) {
       send($, {
         event: 'usage',
-        tokens: e.context.tokens,
-        window: e.context.window,
-        cost_usd: e.cost?.usd,
+        tokens: ctx.tokens,
+        window: ctx.window,
+        cost_usd: isNum(e.cost?.usd) ? e.cost.usd : undefined,
         model,
         effort,
       })
@@ -140,6 +195,10 @@ export const register: Register = on => {
   on('session.compact', async ($, e, next) => {
     const res = await next(e)
     if (e.trigger !== 'precompute' && res.skip === undefined) {
+      if (!isNum(res.tokensBefore) || !isNum(res.tokensAfter)) {
+        shapeChanged($, 'session.compact')
+        return res
+      }
       const { context } = await $.session.usage()
       send($, {
         event: 'compact',

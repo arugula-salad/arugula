@@ -900,7 +900,7 @@ function Agents({ client, setup, manual, refresh, close }: { client: Client | nu
                 <p class="start-dim">Or only the MCP server, or only the hooks:</p>
                 <CopyText text="claude mcp add arugula -- arugula mcp" data-mcp-command />
                 <CopyText text="arugula hooks install" data-hooks-command />
-                <ClaudePlugin />
+                <ClaudePlugin live />
               </>
             ) : (
               <>
@@ -918,7 +918,7 @@ function Agents({ client, setup, manual, refresh, close }: { client: Client | nu
                 </ul>
                 <UseClaude setup={setup} refresh={refresh} />
                 {/* Where the hooks are offered, the plugin too (Discovery 10). */}
-                {cl?.installed !== false && (!cl?.tools || cl.hooks === false) && <ClaudePlugin />}
+                {cl?.installed !== false && (!cl?.tools || cl.hooks === false) && <ClaudePlugin live />}
               </>
             )}
             <p class="start-dim">

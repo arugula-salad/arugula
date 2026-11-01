@@ -1,7 +1,0 @@
-{
-  "name": "arugula-live",
-  "version": "0.1.0",
-  "description": "Spike (#396): tells the Arugula pane Claude Code runs in about its session from inside it: the window's fill, model and effort, and compactions as they happen. Not wired into the arugula plugin; load it with --plugin-dir.",
-  "author": { "name": "Arugula", "url": "https://arugula.io" },
-  "license": "MIT OR Apache-2.0"
-}

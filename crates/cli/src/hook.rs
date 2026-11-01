@@ -223,7 +223,7 @@ fn driven(attended: Option<&str>, entrypoint: Option<&str>) -> bool {
 }
 
 /// `arugula session-signal` (#396, a spike): what the Claude Code mod in
-/// `plugins/claude-code/mod` says about its session from inside it (a
+/// `plugins/claude-code/hooks/live.ts` says about its session from inside it (a
 /// `SessionSignal` on stdin), for the daemon to read into the pane's
 /// context. Prints `{cli_version, daemon_version, context}` for the mod's
 /// status line, or `{error}`; exits 0 when the daemon took it, 3 outside an

@@ -1,5 +1,6 @@
 {
-  "description": "What `arugula hooks install` writes (crates/cli/src/hooks.rs HOOKS_SNIPPET, held to it by a test), plus a check that says so once when the arugula CLI isn't on PATH. A copy here stands aside when settings.json has the same hook.",
+  "description": "What `arugula hooks install` writes (crates/cli/src/hooks.rs HOOKS_SNIPPET, held to it by a test), plus a check that says so once when the arugula CLI isn't on PATH. A copy here stands aside when settings.json has the same hook. `modules` is the live session signals mod (live.ts), which does nothing unless the plugin's `live` option is on; a Claude Code without mods ignores it and runs the hooks (#449).",
+  "modules": ["./live.ts"],
   "hooks": {
     "Notification": [{ "hooks": [{ "type": "command", "command": "arugula attention needs-input" }] }],
     "Stop": [

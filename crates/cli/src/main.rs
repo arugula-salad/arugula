@@ -289,7 +289,7 @@ enum Command {
     Inbox,
     /// What Claude Code says about its session from inside it.
     ///
-    /// The Claude Code mod in `plugins/claude-code/mod` runs it with a signal
+    /// The Claude Code mod in `plugins/claude-code/hooks/live.ts` runs it with a signal
     /// on stdin (the window's fill, the model and effort, a compaction) and
     /// reads the pane's context and both versions back. Outside an Arugula
     /// pane: exit 3.
