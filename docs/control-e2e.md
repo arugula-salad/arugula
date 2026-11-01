@@ -807,7 +807,14 @@ It's S37's standing grant with a project as its resource.
   revoke v2`. The platform takes neither now (a page loaded before gets
   `old_grant`: reload). The v1 grants it holds still go to the machines,
   which check them as before, until they expire; DK8 (#389) drops those
-  checks once the last has.
+  checks once the last has. A device key could still sign a v1 the
+  platform won't take, so a machine bounds every grant itself: none made
+  ahead of its clock (10 minutes' slack), none that never expires or lasts
+  over 366 days, and no v1 at all from 2027-11-02T00:00:00Z
+  (`project_grant::V1_LAST_MS`). A passkey revoke is checked at its own
+  time (not ahead of the machine's clock), against the passkey log of any
+  of the project's people the machine pinned: a paused machine that hears
+  it after its signer removed that passkey, or left, still takes it.
 - **The platform keeps it, and can't make or widen it.** It stores the
   bytes and the assertion (`run_grants`), one live grant a project (not
   revoked, expired or superseded), and reads the grant back from those

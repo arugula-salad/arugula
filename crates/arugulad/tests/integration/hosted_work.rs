@@ -159,7 +159,8 @@ impl Fake {
     /// The project's standing grant, signed by its owner's device, or by
     /// someone else's.
     fn grant(&self, by: &DeviceKeys) -> ProjectGrant {
-        let mut g = ProjectGrant::new(&self.delegation, arugula_e2e::now_ms(), None);
+        let mut g =
+            ProjectGrant::new(&self.delegation, arugula_e2e::now_ms(), Some(arugula_e2e::now_ms() + 86_400_000));
         g.sign_with(by);
         g
     }

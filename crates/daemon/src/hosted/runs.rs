@@ -348,7 +348,7 @@ pub(crate) mod tests {
     }
 
     fn grant(d: &Delegation, by: &DeviceKeys, made: u64) -> ProjectGrant {
-        let mut g = ProjectGrant::new(d, made, None);
+        let mut g = ProjectGrant::new(d, made, Some(made + 1_000_000));
         g.sign_with(by);
         g
     }
@@ -541,8 +541,16 @@ pub(crate) mod tests {
         let e = gone.events[0].removal(35, "reset").placed_after(gone.events.last());
         gone.events.push(e);
         saved.hosted.as_mut().unwrap().passkey_logs = [("acct1".to_owned(), gone)].into();
-        assert!(!r.signed_for(&d.owner, &signers(&saved, &owners(&saved).unwrap()), 40), "no longer checks out");
         assert_eq!(check(&saved, &start(&v1), &read_kept(&dir).unwrap(), 40).unwrap_err().code, "grant_revoked");
+        // A paused box that pulls the revoke only now, after its passkey
+        // was removed, still keeps it: it's checked at its own time (30).
+        let paused = super::super::scratch("run-grant-passkey-paused");
+        assert!(keep(&paused, &saved, std::slice::from_ref(&r), 40).unwrap());
+        assert_eq!(check(&saved, &start(&v1), &read_kept(&paused).unwrap(), 40).unwrap_err().code, "grant_revoked");
+        // One dated after the removal isn't.
+        let mut late = GrantRevoke::v3(&g.project, &g.delegation, Running::Finish, 36, "acct1");
+        late.passkey = Some(sign(&late.passkey_challenge()));
+        assert!(!late.signed_for(&d.owner, &signers(&saved, &owners(&saved).unwrap()), 40));
         assert_eq!(check(&saved, &start(&g), &[], 40).unwrap_err().code, "grant_passkey", "its passkey removed");
     }
 }

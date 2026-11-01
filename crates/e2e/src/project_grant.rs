@@ -47,7 +47,11 @@
 //! A v1 grant it already holds still counts until it expires (at most 366
 //! days after it was made; the page offered 30, 90 or 365), checked as it
 //! was ([`Owners::browser_signed`]), and a device revoke kept or relayed
-//! still counts; DK8 (#389) drops them once every v1 has expired.
+//! still counts; DK8 (#389) drops them once every v1 has expired. A box
+//! bounds them itself, since a device key can still sign a v1 the platform
+//! won't take: none that never expires or lasts over 366 days
+//! ([`MAX_LIFE_MS`]), and none at all from [`V1_LAST_MS`]
+//! (2027-11-02T00:00:00Z). A v2's times are bounded the same way.
 //!
 //! - **Who grants.** An owner of the project now, by the roster (or the
 //!   account) the checker holds, with one of that account's passkeys that's
@@ -113,6 +117,21 @@ pub const REVOKE_DEVICE: u8 = 2;
 /// DK6's revoke (`arugula project grant revoke v3`): a passkey assertion
 /// over its bytes. It covers v1 grants as much as v2 ones.
 pub const REVOKE_PASSKEY: u8 = 3;
+
+const DAY_MS: u64 = 24 * 60 * 60 * 1000;
+/// A grant's longest life, `expires - made`: 366 days, the platform's
+/// `MAX_DAYS`. A box refuses a longer one, or one that never expires,
+/// whoever signed it.
+pub const MAX_LIFE_MS: u64 = 366 * DAY_MS;
+/// How far ahead of a box's clock a grant's `made`, or a revoke's `at`, may
+/// be: the platform's slack for the page's clock.
+pub const SKEW_MS: u64 = 10 * 60 * 1000;
+/// From this moment no v1 grant counts on any box, whatever it says:
+/// 2027-11-02T00:00:00Z, DK6's ship date (2026-11-01) and 366 days, the
+/// longest a v1 the platform took could last. A device key can still sign a
+/// v1 the platform no longer takes, and a `made` can be backdated, so the
+/// box needs a date of its own. DK8 (#389) drops v1 altogether by then.
+pub const V1_LAST_MS: u64 = 1_825_113_600_000;
 
 fn v1() -> u8 {
     V1
@@ -347,6 +366,30 @@ pub struct Signers<'a> {
     pub children: &'a LegacyAppChildren,
 }
 
+/// A revoke's signer (DK6): `assertion` is a passkey of `account`'s, over
+/// `challenge`, live in the passkey log the box pinned for it **at `at`**,
+/// the revoke's own time, which may not be ahead of the box's clock (`now`)
+/// by more than [`SKEW_MS`]. So a revoke a paused box first hears after its
+/// signer removed that passkey, or left the project, still counts. The box
+/// keeps no roster history, so it can't read the owner role at `at`: it
+/// takes a revoke from any account whose log it pinned (the project's
+/// people, now or before). That's the safe direction: a revoke only takes
+/// grants away, the platform took this one only from an owner (checked
+/// then), and a platform that relayed someone else's could as well stop
+/// starting runs.
+fn revoker_passkey(
+    account: &str,
+    challenge: &str,
+    assertion: Option<&Assertion>,
+    pinned: &Pinned,
+    at: u64,
+    now: u64,
+) -> bool {
+    let (Some(assertion), Some(held)) = (assertion, pinned.passkey_logs.get(account)) else { return false };
+    at <= now.saturating_add(SKEW_MS)
+        && crate::passkey::verify(held, account, assertion, challenge, at, pinned.origins).is_ok()
+}
+
 /// `account` is an owner of the project as `pinned` says, and `assertion`
 /// is a passkey of its, over `challenge`, that checks out against its
 /// passkey log as pinned at `now` ([`crate::passkey::verify`]), from an
@@ -527,9 +570,10 @@ impl GrantRevoke {
     }
 
     /// Signed for the project `owner` names (by any of its owners, not
-    /// only the one who granted), trusted now: a device's by a browser all
-    /// the way back; a passkey's by an owner's passkey as `signers` pinned
-    /// it, at `now`.
+    /// only the one who granted): a device's by a browser all the way back,
+    /// trusted now; a passkey's by a passkey of one of the project's people
+    /// as `signers` pinned it, live at the revoke's own `at`
+    /// ([`revoker_passkey`]).
     pub fn signed_for(&self, owner: &str, signers: &Signers, now: u64) -> bool {
         if !self.well_formed() {
             return false;
@@ -540,15 +584,14 @@ impl GrantRevoke {
             }
             _ => {
                 Owner::parse(owner) == Some(signers.pinned.owners.owner())
-                    && owner_passkey(
+                    && revoker_passkey(
                         &self.account,
                         &self.passkey_challenge(),
                         self.passkey.as_ref(),
                         &signers.pinned,
-                        None,
+                        self.at,
                         now,
                     )
-                    .is_ok()
             }
         }
     }
@@ -583,9 +626,12 @@ pub enum GrantRefusal {
     /// now, from an origin the machine didn't pin, over other bytes, the
     /// person not verified, a bad signature.
     Passkey,
+    /// Its times aren't a grant's: made ahead of the box's clock, no
+    /// expiry, or longer than [`MAX_LIFE_MS`].
+    Lifetime,
     /// It doesn't give what's asked.
     NotCovered,
-    /// Its expiry has passed.
+    /// Its expiry has passed, or it's a v1 and [`V1_LAST_MS`] has.
     Expired,
     /// An owner revoked the delegation it's under.
     DelegationRevoked,
@@ -594,7 +640,7 @@ pub enum GrantRefusal {
 }
 
 impl GrantRefusal {
-    pub const ALL: [GrantRefusal; 11] = [
+    pub const ALL: [GrantRefusal; 12] = [
         GrantRefusal::Form,
         GrantRefusal::WrongProject,
         GrantRefusal::WrongDelegation,
@@ -602,6 +648,7 @@ impl GrantRefusal {
         GrantRefusal::NotAnOwner,
         GrantRefusal::PasskeyLog,
         GrantRefusal::Passkey,
+        GrantRefusal::Lifetime,
         GrantRefusal::NotCovered,
         GrantRefusal::Expired,
         GrantRefusal::DelegationRevoked,
@@ -617,6 +664,7 @@ impl GrantRefusal {
             GrantRefusal::NotAnOwner => "grant_not_an_owner",
             GrantRefusal::PasskeyLog => "grant_passkey_log",
             GrantRefusal::Passkey => "grant_passkey",
+            GrantRefusal::Lifetime => "grant_lifetime",
             GrantRefusal::NotCovered => "grant_not_covered",
             GrantRefusal::Expired => "grant_expired",
             GrantRefusal::DelegationRevoked => "delegation_revoked",
@@ -640,6 +688,9 @@ impl GrantRefusal {
             }
             GrantRefusal::Passkey => {
                 "the standing grant's passkey doesn't check out against the signer's passkey log as this machine pinned it (it takes a passkey added since its last refresh, a minute at most, at the next)"
+            }
+            GrantRefusal::Lifetime => {
+                "the standing grant was made ahead of this machine's clock, never expires, or lasts longer than 366 days"
             }
             GrantRefusal::NotCovered => "the standing grant doesn't cover this",
             GrantRefusal::Expired => "the standing grant has expired: an owner signs it again",
@@ -668,7 +719,9 @@ pub struct Revokes<'a> {
 /// `d`, is signed by one of the project's owners as `signers` says (which
 /// the machine got from its own checks, not the platform's word: a v1 by
 /// an owner's browser, a v2 by an owner's passkey in the log it pinned,
-/// of `carried` only removals taken), covers `cap`, hasn't expired; `d`
+/// of `carried` only removals taken), has a grant's times (made by `now`
+/// with [`SKEW_MS`] of slack, expiring within [`MAX_LIFE_MS`] of it, and a
+/// v1 only before [`V1_LAST_MS`]), covers `cap`, hasn't expired; `d`
 /// isn't revoked; and no revoke takes it back (a kept one, or a sent one
 /// that checks out). Revokes that don't check out are ignored: the
 /// platform may send junk, and only a refusal comes of it.
@@ -690,6 +743,15 @@ pub fn check(
     }
     if g.delegation != d.id() {
         return Err(GrantRefusal::WrongDelegation);
+    }
+    // Bounded on the box itself, not only where the platform takes it: a
+    // device key can sign a v1 that never expires, which the platform no
+    // longer takes but a box would.
+    if g.made > now.saturating_add(SKEW_MS) || g.expires.is_none_or(|e| e.saturating_sub(g.made) > MAX_LIFE_MS) {
+        return Err(GrantRefusal::Lifetime);
+    }
+    if g.v == V1 && now >= V1_LAST_MS {
+        return Err(GrantRefusal::Expired);
     }
     g.signed(signers, carried, now)?;
     if !g.caps.iter().any(|c| c == cap) {
@@ -771,7 +833,7 @@ mod tests {
     }
 
     fn grant(d: &Delegation, by: &DeviceKeys) -> ProjectGrant {
-        let mut g = ProjectGrant::new(d, 100, None);
+        let mut g = ProjectGrant::new(d, 100, Some(10_000));
         g.sign_with(by);
         g
     }
@@ -911,10 +973,12 @@ mod tests {
             Err(GrantRefusal::Expired)
         );
         assert_eq!(check(&short, &d, Revokes::default(), &s1(&owners, NONE), None, "runs.start", 149), Ok(()));
-        let longer = ProjectGrant { expires: None, ..short.clone() };
+        // Made to last for ever: refused on the box, whoever signed it.
+        let mut longer = ProjectGrant { expires: None, ..short.clone() };
+        longer.sign_with(&w.owner.keys);
         assert_eq!(
             check(&longer, &d, Revokes::default(), &s1(&owners, NONE), None, "runs.start", 200),
-            Err(GrantRefusal::Unsigned)
+            Err(GrantRefusal::Lifetime)
         );
         // An unknown power, signed or not, isn't well formed.
         let mut odd = ProjectGrant { caps: vec!["deploys.apply".into(), "runs.start".into()], ..g.clone() };
@@ -967,13 +1031,13 @@ mod tests {
         );
         // It names no grant: every grant of the project under the
         // delegation made by then is revoked, and one made after isn't.
-        let mut before = ProjectGrant::new(&d, 140, None);
+        let mut before = ProjectGrant::new(&d, 140, Some(10_000));
         before.sign_with(&w.other_owner.keys);
         assert_eq!(
             check(&before, &d, sent(std::slice::from_ref(&r)), &s1(&owners, NONE), None, "runs.start", 200),
             Err(GrantRefusal::Revoked)
         );
-        let mut after = ProjectGrant::new(&d, 151, None);
+        let mut after = ProjectGrant::new(&d, 151, Some(10_000));
         after.sign_with(&w.owner.keys);
         assert_eq!(
             check(&after, &d, sent(std::slice::from_ref(&r)), &s1(&owners, NONE), None, "runs.start", 200),
@@ -1428,11 +1492,15 @@ mod tests {
         let mut after = ProjectGrant::v2(&d, &w.owner.account, 151, 10_000);
         after.passkey = Some(k.k1.over(&after.passkey_challenge(), HERE, UV));
         assert_eq!(check(&after, &d, sent(std::slice::from_ref(&r)), &s, None, "runs.start", 200), Ok(()));
-        // Not an editor's, nor one with no passkey, nor one moved to another
-        // delegation or made harsher, nor a device's signature as a v3.
+        // Not one with no passkey, a stranger's, one dated ahead of the
+        // box's clock, one moved to another delegation or made harsher, nor
+        // a device's signature as a v3.
+        let mut ahead = GrantRevoke::v3(&v2.project, &v2.delegation, Running::Finish, 200 + SKEW_MS + 1, "own2");
+        ahead.passkey = Some(k.k3.over(&ahead.passkey_challenge(), HERE, UV));
         let not = [
-            passkey_revoke(&v2, &w.editor.account, &k.k4, 150),
             GrantRevoke { passkey: None, ..r.clone() },
+            passkey_revoke(&v2, "stranger", &Pk::new(9), 150),
+            ahead,
             GrantRevoke { delegation: "other".into(), ..r.clone() },
             GrantRevoke { running: Running::Stop, ..r.clone() },
             GrantRevoke { at: 300, ..r.clone() },
@@ -1441,18 +1509,79 @@ mod tests {
         for bad in not {
             assert!(!bad.revokes(&v2, &s, 200), "{bad:?}");
         }
-        // Kept, it counts after the revoker's passkey is removed; sent
-        // again, it doesn't check out.
+        // The box keeps no roster history, so any of the project's people
+        // whose log it pinned revokes (a revoke only takes away; the
+        // platform took it only from an owner).
+        assert!(passkey_revoke(&v2, &w.editor.account, &k.k4, 150).revokes(&v2, &s, 200));
+        // Its passkey is checked at the revoke's own time: removed since,
+        // the revoke still counts, sent or kept, on a box that hears it
+        // only now.
         let mut later = k.logs.clone();
         let own2 = later.get_mut(&w.other_owner.account).unwrap();
         *own2 = removed(own2, &k.k3, 180);
         let s_later = s2(&owners, &later, &origins);
-        assert_eq!(check(&v2, &d, sent(std::slice::from_ref(&r)), &s_later, None, "runs.start", 200), Ok(()));
+        assert_eq!(
+            check(&v2, &d, sent(std::slice::from_ref(&r)), &s_later, None, "runs.start", 200),
+            Err(GrantRefusal::Revoked)
+        );
         let kept = Revokes { kept: std::slice::from_ref(&r), ..Default::default() };
         assert_eq!(check(&v2, &d, kept, &s_later, None, "runs.start", 200), Err(GrantRefusal::Revoked));
+        // One dated after the passkey's removal doesn't.
+        let late = passkey_revoke(&v2, &w.other_owner.account, &k.k3, 190);
+        assert!(!late.revokes(&v2, &s_later, 200));
         // A device's revoke (M211) still takes back a v2.
         let old = GrantRevoke::new(&v2.project, &v2.delegation, Running::Finish, 150, &w.other_owner.keys);
         assert!(old.revokes(&v2, &s, 200));
+    }
+
+    /// DK6: a box bounds a grant's times itself. A v1 shaped as Jake's
+    /// live one (made 2026-10-23, for 90 days) counts until it expires; a
+    /// v1 that never expires, lasts over 366 days, or is used from
+    /// [`V1_LAST_MS`] on, doesn't, whoever signed it. A v2 made ahead of the
+    /// box's clock, or longer than 366 days, doesn't either.
+    #[test]
+    fn a_box_bounds_a_grants_times() {
+        let w = world();
+        let owners = Owners::Team { roster: &w.roster, certs: &w.certs };
+        let d = delegation("team:t1", &w.owner.keys, 10);
+        let made = 1_792_756_800_000; // 2026-10-23T12:00:00Z
+        let v1 = |made: u64, expires: Option<u64>| {
+            let mut g = ProjectGrant::new(&d, made, expires);
+            g.sign_with(&w.owner.keys);
+            g
+        };
+        let at =
+            |g: &ProjectGrant, now: u64| check(g, &d, Revokes::default(), &s1(&owners, NONE), None, "runs.start", now);
+        let jakes = v1(made, Some(made + 90 * DAY_MS));
+        for now in [made + 9 * DAY_MS, made + 89 * DAY_MS] {
+            assert_eq!(at(&jakes, now), Ok(()));
+        }
+        assert_eq!(at(&jakes, made + 90 * DAY_MS), Err(GrantRefusal::Expired));
+        assert_eq!(at(&v1(made, None), made + DAY_MS), Err(GrantRefusal::Lifetime), "never expires");
+        assert_eq!(at(&v1(made, Some(made + MAX_LIFE_MS + 1)), made + DAY_MS), Err(GrantRefusal::Lifetime));
+        assert_eq!(at(&v1(made, Some(made + MAX_LIFE_MS)), made + DAY_MS), Ok(()), "366 days");
+        // Signed (or backdated) to last past the hard date: not after it.
+        let last = v1(V1_LAST_MS - 100 * DAY_MS, Some(V1_LAST_MS + 100 * DAY_MS));
+        assert_eq!(at(&last, V1_LAST_MS - 1), Ok(()));
+        assert_eq!(at(&last, V1_LAST_MS), Err(GrantRefusal::Expired));
+        // A v2 is bounded the same, and may not be made ahead of the clock.
+        let k = keys(&w);
+        let origins = origins_of_sites([HERE]);
+        let s = s2(&owners, &k.logs, &origins);
+        let v2 = |made: u64, expires: u64| confirmed2(ProjectGrant::v2(&d, &w.owner.account, made, expires), &k.k1);
+        let at2 = |g: &ProjectGrant, now: u64| check(g, &d, Revokes::default(), &s, None, "runs.start", now);
+        assert_eq!(at2(&v2(1_000, 1_000 + MAX_LIFE_MS), 2_000), Ok(()));
+        assert_eq!(at2(&v2(1_000, 1_000 + MAX_LIFE_MS + 1), 2_000), Err(GrantRefusal::Lifetime));
+        assert_eq!(at2(&v2(1_000 + SKEW_MS, 2 * SKEW_MS), 1_000), Ok(()), "within the clocks' slack");
+        assert_eq!(at2(&v2(1_001 + SKEW_MS, 2 * SKEW_MS), 1_000), Err(GrantRefusal::Lifetime), "made ahead");
+        // A v2 isn't held to the v1 date.
+        let late = v2(V1_LAST_MS, V1_LAST_MS + DAY_MS);
+        assert_eq!(at2(&late, V1_LAST_MS + 1), Ok(()));
+    }
+
+    fn confirmed2(mut g: ProjectGrant, pk: &Pk) -> ProjectGrant {
+        g.passkey = Some(pk.over(&g.passkey_challenge(), HERE, UV));
+        g
     }
 
     #[test]
@@ -1538,8 +1667,13 @@ mod fixed {
         assert_eq!(got, want, "ARUGULA_WRITE_FIXTURE=1 writes it again, if the formats changed on purpose");
         let t = Trust { account: "acct1".into(), root: root.device.clone() };
         let owners = Owners::Account { trust: &t, certs: std::slice::from_ref(&root), revocations: &[] };
-        assert_eq!(check(&g, &d, Revokes::default(), &s1(&owners, NONE), None, "runs.start", 3500), Ok(()));
+        // `g` never expires: the box refuses it (DK6). `e` expires.
+        assert_eq!(
+            check(&g, &d, Revokes::default(), &s1(&owners, NONE), None, "runs.start", 3500),
+            Err(GrantRefusal::Lifetime)
+        );
+        assert_eq!(check(&e, &d, Revokes::default(), &s1(&owners, NONE), None, "runs.start", 3500), Ok(()));
         let sent = Revokes { sent: std::slice::from_ref(&r), ..Default::default() };
-        assert_eq!(check(&g, &d, sent, &s1(&owners, NONE), None, "runs.start", 3500), Err(GrantRefusal::Revoked));
+        assert_eq!(check(&e, &d, sent, &s1(&owners, NONE), None, "runs.start", 3500), Err(GrantRefusal::Revoked));
     }
 }
