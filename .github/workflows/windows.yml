@@ -36,7 +36,7 @@ jobs:
       - uses: actions/cache@v4
         with:
           path: ~/.npm
-          key: npm-chant-0.124.61
+          key: npm-chant-0.124.63
       - id: ask
         run: if scripts/suite-changed "${{ github.event.before }}"; then echo run=true >> "$GITHUB_OUTPUT"; else echo run=false >> "$GITHUB_OUTPUT"; fi
 
@@ -70,7 +70,9 @@ jobs:
       # several daemons at once (#524): its first start on a fresh runner
       # is the slow one.
       - run: pwsh -NoLogo -NoProfile -Command Get-Date
-      - run: cargo nextest run --workspace
+      # Leaving out the quarantined tests, the test phase's (docs/testing.md,
+      # "Quarantine"), as the Linux and macOS runs do.
+      - run: q=$(scripts/chant ci quarantine filter --phase test --runner nextest) && cargo nextest run --workspace -E "$q"
       # nextest doesn't run doctests.
       - run: cargo test --workspace --doc
 

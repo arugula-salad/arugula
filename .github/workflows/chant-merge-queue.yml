@@ -28,4 +28,4 @@ jobs:
       - name: Wait for the required phases on the group's commit
         env:
           GITHUB_TOKEN: ${{ github.token }}
-        run: npx --yes @intentius/chant@0.124.61 ci verdict --wait
+        run: npx --yes @intentius/chant@0.124.63 ci verdict --wait

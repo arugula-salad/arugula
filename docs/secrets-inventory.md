@@ -335,8 +335,8 @@ Copies in Jake's `~/.config`, each `0600`:
 
 - **Org-level Actions secrets and variables**: listing them needs a token
   with `admin:org`, which the agent's doesn't have. Workflows here read
-  `ARUGULA_RELEASE_SKIP_GREEN`, `ARUGULA_HUB_DEPLOY`, `ARUGULA_RED_MENTION`
-  and `ARUGULA_RED_HOURS` as variables that no repo sets, so they may be
+  `ARUGULA_RELEASE_SKIP_GREEN`, `ARUGULA_HUB_DEPLOY` and
+  `ARUGULA_RED_MENTION` as variables that no repo sets, so they may be
   there.
 - **Infisical `redone`**: not visible to Jake's account; its names above
   come from redone's code.

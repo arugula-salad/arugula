@@ -40,7 +40,7 @@ jobs:
       - uses: actions/cache@v4
         with:
           path: ~/.npm
-          key: npm-chant-0.124.61
+          key: npm-chant-0.124.63
       - id: ask
         run: if scripts/app-changed "${{ github.event.before }}"; then echo run=true >> "$GITHUB_OUTPUT"; else echo run=false >> "$GITHUB_OUTPUT"; fi
 

@@ -1,8 +1,10 @@
-# The quarantined tests (.config/quarantine.toml), alone, every night on
-# main: CI's runs leave them out, so this is where they still run, and
-# where one that's fixed shows it (docs/testing.md, "Quarantine"). It gates
-# nothing: ci/green doesn't read it, and its job is named like no check
-# chant requires. A red run here says a quarantined test still fails.
+# The quarantined tests (chant.workspace.json's ci.green.quarantine), alone,
+# every night on main: CI's runs leave them out, so this is where they still
+# run, and where one that's fixed shows it (docs/testing.md, "Quarantine";
+# chant's "The scheduled run"). It gates nothing: ci/green doesn't read it,
+# and its job is named like no check chant requires. A red run here says a
+# quarantined test still fails; `chant ci quarantine report` sends
+# ci.quarantine-passed through ci.green.notify for each that passed.
 name: quarantine-nightly
 on:
   schedule:
@@ -41,7 +43,7 @@ jobs:
         id: any
         run: |
           set -euo pipefail
-          tests="$(node scripts/quarantine.mjs nextest root)$(node scripts/quarantine.mjs nextest server)$(node scripts/quarantine.mjs e2e)"
+          tests="$(scripts/chant ci quarantine filter --phase test --runner list)$(scripts/chant ci quarantine filter --phase e2e --runner list)"
           if [ -n "$tests" ]; then echo "run=true" >> "$GITHUB_OUTPUT"; else echo "::notice::Nothing is quarantined"; echo "run=false" >> "$GITHUB_OUTPUT"; fi
       # reboot.rs drives Chromium (its watcher); the specs run in it.
       - name: Playwright's Chromium
@@ -60,18 +62,30 @@ jobs:
         env:
           ARUGULA_REQUIRE_SYSTEMD: "1"
           E2E_CHROMIUM: "1"
-      - name: What's quarantined, and until when
-        if: always()
+      # Each quarantined test as passed, flaky, failed or not run, and
+      # ci.quarantine-passed for each that passed (the secret is the one
+      # chant-ci-green.yml's tick sends through).
+      - name: What became of each, and who is told
+        if: always() && steps.any.outputs.run == 'true'
+        env:
+          ARUGULA_CI_SLACK_WEBHOOK: ${{ secrets.ARUGULA_CI_SLACK_WEBHOOK }}
         run: |
+          set -euo pipefail
+          report() { # PHASE FILE...: chant's report on the files that are there
+            local phase=$1 args=() f
+            shift
+            for f in "$@"; do [ -f "$f" ] && args+=(--junit "$f"); done
+            [ ${#args[@]} -gt 0 ] || { echo "no JUnit for $phase"; return 0; }
+            scripts/chant ci quarantine report --phase "$phase" "${args[@]}"
+          }
           {
-            echo '### Quarantined (.config/quarantine.toml)'
+            echo '### Quarantined (chant.workspace.json)'
             echo '```'
-            grep -v -e '^#' -e '^$' .config/quarantine.toml || true
+            report test "$CARGO_TARGET_DIR/nextest/ci/junit.xml" "$CARGO_TARGET_DIR/nextest/ci/junit-server.xml"
+            report e2e web/junit.xml
+            scripts/chant ci quarantine check 2>&1 || true
             echo '```'
-            echo '```'
-            node scripts/quarantine.mjs check 2>&1 || true
-            echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
+          } | tee -a "$GITHUB_STEP_SUMMARY"
       - name: Failed specs' screenshots
         if: failure()
         uses: actions/upload-artifact@v4
