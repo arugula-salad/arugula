@@ -223,3 +223,17 @@ async fn a_plane_that_is_down_is_tried_again() {
     assert_eq!(w.run(t + 2 * RETRY_MS).await, 0);
     assert_eq!(w.fake.sent().len(), 1);
 }
+
+/// With the project's content off the mirror keeps no body (#467), and the
+/// webhook's own names the Plane item: the title and branch name nothing.
+#[tokio::test]
+async fn the_webhooks_body_moves_the_plane_item_with_content_off() {
+    let w = start().await;
+    w.app.db.c().execute("UPDATE linked_repos SET mirror_content = ?1 WHERE repo_id = 88", params![false]).unwrap();
+    let p = pr(70, "Plumbing", "Does it.\n\nARUGU-2");
+    deliver(&w.app, "opened", &p, 9, false, BOB).await;
+    deliver(&w.app, "closed", &p, 10, true, BOB).await;
+    assert_eq!(w.jobs().len(), 1);
+    assert_eq!(w.run(now()).await, 1);
+    assert_eq!(w.group(2).as_deref(), Some("completed"));
+}

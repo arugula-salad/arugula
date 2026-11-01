@@ -662,6 +662,34 @@ async fn the_poller_closes_the_issue_a_merged_pr_names() {
     assert_eq!(closed[0].detail, json!({ "reason": "completed", "pr": "acme/app#5" }));
 }
 
+/// The same, with the project's content off (#467): the mirror keeps no
+/// body, so the poller reads the merged PR's body once from GitHub for the
+/// closer. Neither the title nor the branch names the issue, and the body is
+/// not kept.
+#[tokio::test]
+async fn the_poller_reads_the_body_of_a_merged_pr_when_content_is_off() {
+    let (gh, app, _base, _hub) = serve().await;
+    let t = now_ms();
+    link(&app, REPO, t);
+    let project = app.db.personal_project("alice", 1).unwrap();
+    app.db.c().execute("UPDATE linked_repos SET project_id = ?1 WHERE repo_id = ?2", params![project, REPO]).unwrap();
+    let new = |title| crate::db::issues::NewIssue { project: &project, title, body: "", labels: &[], assignees: &[] };
+    let by = crate::db::issues::Actor::person("alice");
+    let named = app.db.create_issue(&new("Named"), by, 1).unwrap().unwrap();
+    {
+        let mut merged = pr(5, "Plumbing", "closed", t, "abc");
+        merged["merged_at"] = json!(iso(t));
+        merged["body"] = json!(format!("Does it.\n\nArugula #{}", named.number));
+        gh.lock().unwrap().prs.insert(5, merged);
+    }
+    assert!(!app.db.linked_repo(REPO).unwrap().unwrap().mirror_content);
+    let turn = poller::tick(&app, t).await.unwrap();
+    assert!(matches!(turn, Some(poller::Turn::Done { backfill: true, .. })), "{turn:?}");
+    assert_eq!(app.db.issue(&named.id).unwrap().unwrap().state.as_str(), "closed");
+    let kept: i64 = app.db.c().query_row("SELECT count(*) FROM forge_content", params![], |r| r.get(0)).unwrap();
+    assert_eq!(kept, 0, "the body is used, not kept");
+}
+
 /// A PR merged while the webhook was missed (Arugula #437): the poller's
 /// backfill reads it and queues the move of the Plane item its title names,
 /// and the queue's worker sends it to Done, once.

@@ -18,6 +18,17 @@
 //! A Plane item is not moved here: after the native closes, this queues a job
 //! for each ([`crate::trackers::done`]), so a slow or failing Plane never
 //! delays or fails the webhook, and the job retries and sends once.
+//!
+//! The body is read from the content the mirror keeps, which is kept only
+//! while the project mirrors content (`db/content.rs`). With that off a PR
+//! has no body here, so a merge brings its own: the webhook's payload has it,
+//! and the poller reads it once from GitHub for a PR it just saw merged
+//! ([`merged_with`]). It is used for this pass only: never stored, never
+//! logged. One limit: a PR the poller saw merged whose one read failed (the
+//! budget, GitHub's error) is named by its title and branch only, as the
+//! next turn does not look at it again.
+
+use std::collections::HashMap;
 
 use arugula_e2e::now_ms;
 use serde_json::Value;
@@ -38,20 +49,29 @@ use crate::{
 pub const APP: &str = "github:arugula";
 
 /// A `pull_request` webhook, after the mirror wrote it: the issues the PR
-/// closes if it is merged now. Its body is read from the content the same
-/// delivery wrote, so this runs after [`super::ingest::webhook`].
+/// closes if it is merged now. Its body is the mirror's, which the same
+/// delivery wrote, so this runs after [`super::ingest::webhook`]; the
+/// delivery's own stands in when the mirror keeps none.
 pub async fn webhook(p: &Platform, event: &str, v: &Value) {
     if event != "pull_request" {
         return;
     }
     if let (Some(repo), Some(number)) = (v["repository"]["id"].as_u64(), v["pull_request"]["number"].as_u64()) {
-        merged(p, repo, &[number]).await;
+        let bodies: HashMap<u64, String> =
+            v["pull_request"]["body"].as_str().map(|b| (number, b.to_owned())).into_iter().collect();
+        merged_with(p, repo, &[number], &bodies).await;
     }
 }
 
 /// The PRs of `repo` among these `numbers` that are merged: each closes the
 /// open native issues of the repo's project that it names.
 pub async fn merged(p: &Platform, repo: u64, numbers: &[u64]) {
+    merged_with(p, repo, numbers, &HashMap::new()).await;
+}
+
+/// [`merged`], with the body of some PRs (by number) to read where the
+/// mirror keeps none.
+pub async fn merged_with(p: &Platform, repo: u64, numbers: &[u64], bodies: &HashMap<u64, String>) {
     let link = match p.db.linked_repo(repo) {
         Ok(Some(l)) if l.unlinked_at.is_none() => l,
         Ok(_) => return,
@@ -61,7 +81,10 @@ pub async fn merged(p: &Platform, repo: u64, numbers: &[u64]) {
         Ok(prs) => prs,
         Err(e) => return warn!(error = %e, "closing issues: reading merged PRs"),
     };
-    for pr in prs {
+    for mut pr in prs {
+        if pr.body.is_none() {
+            pr.body = bodies.get(&pr.number).cloned();
+        }
         if let Err(e) = close_for(p, &link.project_id, (repo, &link.full_name), &pr).await {
             warn!(repo, number = pr.number, error = format!("{e:#}"), "closing the issues a merged PR names");
         }

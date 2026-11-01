@@ -260,6 +260,32 @@ impl<'p> Poll<'p> {
         r.map_err(|e| Self::refused(path, e))
     }
 
+    /// The body of each PR among `self.prs` that is merged and whose body the
+    /// mirror does not keep (the project's content is off), read once from
+    /// GitHub for the closer (#467). Never stored. One that can't be read is
+    /// left out, and the budget ends the reads.
+    async fn merged_bodies(&self) -> HashMap<u64, String> {
+        let id = self.job.repo_id;
+        let mut out = HashMap::new();
+        let prs = match self.p.db.merged_prs(id, &self.prs) {
+            Ok(prs) => prs,
+            Err(e) => {
+                warn!(repo = id, error = %e, "forge mirror: finding the merged PRs without a body");
+                return out;
+            }
+        };
+        for pr in prs.into_iter().filter(|pr| pr.body.is_none()) {
+            match self.read(&format!("repositories/{id}/pulls/{}", pr.number)).await {
+                Ok(v) => out.extend(v["body"].as_str().map(|b| (pr.number, b.to_owned()))),
+                Err(Stop::Gh { path, error, .. }) => {
+                    warn!(repo = id, number = pr.number, path, error = %error, "forge mirror: reading a merged PR's body");
+                }
+                Err(_) => break,
+            }
+        }
+        out
+    }
+
     /// Every page of a short list (an item's reviews, a head's checks):
     /// GitHub's list, or the one under `key` (`check_runs`).
     async fn all(&self, path: &str, key: Option<&str>) -> Result<Vec<Value>, Stop> {
@@ -691,7 +717,8 @@ pub async fn tick(p: &Platform, now: u64) -> anyhow::Result<Option<Turn>> {
     let out = poll.run().await;
     // Whatever it wrote before it stopped, as a turn that ran out of pages did.
     crate::boards::auto::auto_attach_prs(p, repo, &poll.prs);
-    super::closes::merged(p, repo, &poll.prs).await;
+    let bodies = poll.merged_bodies().await;
+    super::closes::merged_with(p, repo, &poll.prs, &bodies).await;
     let (job, fixed, drift) = (poll.job, poll.fixed, poll.drift);
     gh.ingest.stats.drift(repo, now, drift);
     match out {

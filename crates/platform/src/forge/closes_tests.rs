@@ -240,3 +240,34 @@ async fn the_webhook_route_closes_on_merge() {
     }
     assert_eq!(closed_events(&app, &issue).len(), 1);
 }
+
+/// Whether the repo's content is kept, and what it holds.
+fn kept(app: &Platform) -> (bool, i64) {
+    let on = app.db.linked_repo(88).unwrap().unwrap().mirror_content;
+    let rows = app.db.c().query_row("SELECT count(*) FROM forge_content", params![], |r| r.get(0)).unwrap();
+    (on, rows)
+}
+
+/// With the project's content off the mirror keeps no body (#467), so the
+/// webhook's own is what names the issue: the title names nothing and the
+/// branch is `chore/x`. The body is not kept by the merge. The GitHub issue
+/// with the same number (the world's #2) does not stand in the way of
+/// `Arugula #2`, and a bare `#2` still closes nothing.
+#[tokio::test]
+async fn the_webhooks_body_closes_the_issue_with_content_off() {
+    let (base, app, team, _) = start().await;
+    let (a, b) = (native(&base, &team, "A").await, native(&base, &team, "B").await);
+    assert_eq!(b.1, 2, "the number of a GitHub issue the mirror has");
+    assert_eq!(kept(&app), (false, 0));
+
+    let body = format!("Does it.\n\nArugula #{}", a.1);
+    open_and_merge(&app, &pr(70, "Plumbing", &body), BOB).await;
+    assert_eq!(closed_events(&app, &a.0).len(), 1);
+    assert_eq!(kept(&app), (false, 0), "the body is used, not kept");
+
+    open_and_merge(&app, &pr(71, "Plumbing", "closes #2"), BOB).await;
+    assert!(closed_events(&app, &b.0).is_empty(), "a bare #2 is the GitHub issue's");
+    open_and_merge(&app, &pr(72, "Plumbing", "Arugula #2"), BOB).await;
+    assert_eq!(closed_events(&app, &b.0).len(), 1, "named as Arugula's, whatever GitHub has at #2");
+    assert_eq!(kept(&app), (false, 0));
+}
