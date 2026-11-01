@@ -3,7 +3,7 @@
   "commit": "9562832749ff13f65a096ca3015b5faed4502ee2",
   "branch": "main",
   "state": "unbuilt",
-  "at": "2026-10-31T10:17:17Z",
+  "at": "2026-11-01T03:04:44Z",
   "phases": {
     "lint": {
       "verdict": "unbuilt",
@@ -48,6 +48,13 @@
       "coveredBy": "0b9922b3d929e85a229bc2096d82ff7a374e9661"
     },
     "windows": {
+      "verdict": "unbuilt",
+      "build": "newest",
+      "runs": [],
+      "reason": "superseded",
+      "coveredBy": "0b9922b3d929e85a229bc2096d82ff7a374e9661"
+    },
+    "windows-desktop": {
       "verdict": "unbuilt",
       "build": "newest",
       "runs": [],

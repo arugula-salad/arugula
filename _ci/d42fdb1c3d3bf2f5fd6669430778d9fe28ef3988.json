@@ -2,8 +2,8 @@
   "schema": 1,
   "commit": "d42fdb1c3d3bf2f5fd6669430778d9fe28ef3988",
   "branch": "main",
-  "state": "pending",
-  "at": "2026-10-31T22:49:04Z",
+  "state": "unbuilt",
+  "at": "2026-11-01T03:04:44Z",
   "phases": {
     "lint": {
       "verdict": "unbuilt",
@@ -48,7 +48,14 @@
       "coveredBy": "396af818604f2d84a822accb9305ecc8a90b3daf"
     },
     "windows": {
-      "verdict": "pending",
+      "verdict": "unbuilt",
+      "build": "newest",
+      "runs": [],
+      "reason": "superseded",
+      "coveredBy": "396af818604f2d84a822accb9305ecc8a90b3daf"
+    },
+    "windows-desktop": {
+      "verdict": "unbuilt",
       "build": "newest",
       "runs": [
         {
@@ -57,7 +64,8 @@
           "conclusion": "cancelled",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/41248797295/job/124677775467"
         }
-      ]
+      ],
+      "reason": "cancelled"
     }
   }
 }
