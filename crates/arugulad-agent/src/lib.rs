@@ -206,7 +206,7 @@ pub struct Config {
 pub struct Import {
     /// Its transcript.
     pub path: String,
-    /// `terminal`, `desktop` or `other`.
+    /// `terminal`, `desktop`, `vscode` or `other`.
     #[serde(default)]
     pub source: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -519,11 +519,14 @@ impl crate::features::Feature for AgentBlock {
     }
 
     fn routes(&self, r: axum::Router<Arc<crate::server::App>>) -> axum::Router<Arc<crate::server::App>> {
-        use arugula_proto::op::ops::{ConversationOpen, ConversationsList, PaneSessionSignal};
+        use arugula_proto::op::ops::{
+            ConversationOpen, ConversationSessionSignal, ConversationsList, PaneSessionSignal,
+        };
         use arugulad_base::ops::OpRoutes;
         r.op_of::<ConversationsList, AgentBlock>()
             .op_of::<ConversationOpen, AgentBlock>()
             .op_of::<PaneSessionSignal, AgentBlock>()
+            .op_of::<ConversationSessionSignal, AgentBlock>()
     }
 }
 

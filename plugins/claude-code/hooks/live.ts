@@ -1,5 +1,5 @@
-// Live session signals (#396, #447; aru-128): Claude Code tells the Arugula
-// pane it runs in about its session, from inside it, as things happen:
+// Live session signals (#396, #447, #453; aru-128): Claude Code tells
+// Arugula about its session, from inside it, as things happen:
 //
 // - `usage`: the window's fill and size as the engine has them, after each
 //   turn (`session.measure`), with the session's cost;
@@ -7,7 +7,7 @@
 //   (`turn.step`);
 // - `compact`: a compaction once it ran, with its trigger and the tokens
 //   before and after (`session.compact`);
-// - `start`: a new session in the pane, with Claude Code's version.
+// - `start`: a new session, with Claude Code's version.
 //
 // Opt in: the plugin's `live` option (plugin.json's userConfig), off by
 // default. Off, register() adds no hook at all. The command hooks in
@@ -18,9 +18,14 @@
 // Each signal goes to the daemon through the installed CLI, `arugula
 // session-signal`, with the signal on stdin (aru-039: the plugin calls the
 // CLI you installed, which finds the daemon on every platform, Windows'
-// named pipe included). The CLI answers both versions and the pane's
-// context, which the status line shows. Outside an Arugula pane
-// (no ARUGULA_PANE) it does nothing at all.
+// named pipe included). Each signal carries Claude Code's session id, and
+// the daemon keeps it by that (#453): the conversations list shows every
+// session's figures, and a pane's strip shows the session running in that
+// pane. So it reports from anywhere, a pane or none: VS Code, the desktop
+// app, the editor block. The CLI adds the pane its environment names
+// (ARUGULA_PANE), if any, and answers the pane it shows on, both versions
+// and the session's context, which the status line shows. On Windows the
+// engine runs `arugula` without a shell: `arugula.exe` must be on PATH.
 //
 // The mod API is early access. The engine checks every `on(...)` name when
 // it loads the module and refuses the whole module for one it doesn't know,
@@ -37,7 +42,7 @@ import type { Register, EngineInterface } from 'claude-code'
 // This module's own version, sent with every signal as `mod_version`. The
 // plugin itself carries none (it follows main, aru-039); bump this when the
 // signals change.
-const MOD_VERSION = '0.2.0'
+const MOD_VERSION = '0.3.0'
 
 type Signal = {
   event: 'start' | 'usage' | 'step' | 'compact'
@@ -53,7 +58,8 @@ type Signal = {
 }
 
 type Answer = {
-  pane?: number
+  pane?: number | null
+  session_id?: string | null
   cli_version?: string
   daemon_version?: string
   context?: { tokens?: number | null; window?: number; compactions?: number } | null
@@ -62,7 +68,7 @@ type Answer = {
 
 // The module's own state starts over on a reload, which is fine: the daemon
 // keeps the context, and the next turn says it all again.
-let pane: string | undefined
+let session: string | undefined
 let claudeVersion: string | undefined
 let model: string | undefined
 let effort: string | undefined
@@ -76,12 +82,19 @@ function tokensShort(n: number): string {
   return n >= 1_000_000 ? `${n / 1_000_000}M` : `${Math.round(n / 1000)}k`
 }
 
+// Where the figures show: the pane it runs in, else its conversation.
+function where(a: Answer): string {
+  if (typeof a.pane === 'number') return `arugula %${a.pane}`
+  const id = a.session_id ?? session
+  return id ? `arugula ${id.slice(0, 8)}` : 'arugula'
+}
+
 function show($: EngineInterface, a: Answer): void {
   if (a.error !== undefined) {
-    $.ui.status(`arugula %${pane} ○ ${a.error.split('\n')[0]?.slice(0, 80)}`)
+    $.ui.status(`${where(a)} ○ ${a.error.split('\n')[0]?.slice(0, 80)}`)
     return
   }
-  const parts = [`arugula %${a.pane ?? pane} ● live`]
+  const parts = [`${where(a)} ● live`]
   const c = a.context
   if (c && c.tokens && c.window) parts.push(`${Math.round((100 * c.tokens) / c.window)}% of ${tokensShort(c.window)}`)
   if (c && c.compactions) parts.push(`${c.compactions} compacted`)
@@ -114,9 +127,10 @@ function answerOf(r: { exitCode: number; stdout: string; stderr: string }): Answ
 async function deliver($: EngineInterface, s: Signal): Promise<void> {
   let answer: Answer
   try {
+    session = await $.session.id()
     const body = JSON.stringify({
       ...s,
-      session_id: await $.session.id(),
+      session_id: session,
       claude_version: claudeVersion,
       mod_version: MOD_VERSION,
     })
@@ -131,16 +145,15 @@ async function deliver($: EngineInterface, s: Signal): Promise<void> {
 // One at a time, in order: a compaction's signal never overtakes the usage
 // before it.
 function send($: EngineInterface, s: Signal): void {
-  if (!pane) return
   queue = queue.then(() => deliver($, s))
 }
 
 // Notes an event that came in a shape this module doesn't read, once, on
-// the status line (in an Arugula pane: elsewhere this module is silent).
+// the status line.
 function shapeChanged($: EngineInterface, event: string): void {
-  if (!pane || changed.has(event)) return
+  if (changed.has(event)) return
   changed.add(event)
-  show($, { pane: Number(pane) })
+  show($, {})
 }
 
 const isNum = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v)
@@ -152,8 +165,6 @@ export const register: Register = (on, options) => {
 
   on('session.start', async ($, e, next) => {
     const res = await next(e)
-    pane = await $.env.get('ARUGULA_PANE')
-    if (!pane) return res
     claudeVersion = (await $.session.version()).version
     send($, { event: 'start' })
     return res

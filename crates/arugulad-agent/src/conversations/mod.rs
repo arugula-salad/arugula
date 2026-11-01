@@ -18,6 +18,7 @@
 pub mod branch;
 pub mod context;
 pub mod convert;
+pub mod signals;
 pub mod spend;
 
 use std::{
@@ -43,6 +44,9 @@ pub enum Source {
     Terminal,
     /// The desktop app's Code tab.
     Desktop,
+    /// VS Code's Claude Code extension (#453), and the editors on it.
+    #[serde(rename = "vscode")]
+    VsCode,
     /// Anything else: `claude -p`, SDK clients, agent blocks.
     Other,
 }
@@ -52,6 +56,7 @@ impl Source {
         match entrypoint {
             "cli" => Self::Terminal,
             "claude-desktop" => Self::Desktop,
+            "claude-vscode" => Self::VsCode,
             _ => Self::Other,
         }
     }
@@ -135,6 +140,10 @@ pub struct Conversation {
     /// ([`spend`], #398): filled in by a listing once it's been worked out.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub estimate: Option<Value>,
+    /// What Claude Code said of it from inside, live (#453, [`signals`]):
+    /// the agent block's `context` shape, filled in by a listing.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub context: Option<Value>,
 }
 
 /// What the start and end of a transcript say.
@@ -312,6 +321,7 @@ impl Index {
                 archived: rec.archived,
                 live: live.get(&h.id).cloned(),
                 estimate: None,
+                context: None,
             });
         }
         out.sort_by(|a, b| b.updated_ms.cmp(&a.updated_ms).then_with(|| a.id.cmp(&b.id)));
@@ -364,6 +374,10 @@ impl crate::mux::AgentSessions for Sessions {
     fn live(&self, panes: HashMap<u32, PaneId>) -> HashMap<PaneId, (String, Option<String>)> {
         live_in_panes(&Dirs::from_env(), &Ours { panes, ..Default::default() })
     }
+
+    fn through(&self, client: u32) -> Option<u32> {
+        signals::tmux_pane(client)
+    }
 }
 
 /// The conversation each of our panes' Claude Code holds now, by pane
@@ -372,9 +386,9 @@ pub fn live_in_panes(dirs: &Dirs, ours: &Ours) -> HashMap<PaneId, (String, Optio
     live(&dirs.claude.join("sessions"), ours).into_iter().filter_map(|(sid, l)| Some((l.pane?, (sid, l.cwd)))).collect()
 }
 
-/// Is a conversation on the default list (`all`: everything)? Terminal and
-/// desktop ones, unarchived, whose folder is still there; a desktop one
-/// whose scratch workspace went with it stays.
+/// Is a conversation on the default list (`all`: everything)? Terminal,
+/// desktop and VS Code ones (#453), unarchived, whose folder is still
+/// there; a desktop one whose scratch workspace went with it stays.
 pub fn shown(c: &Conversation, all: bool) -> bool {
     all || (c.source != Source::Other && !c.archived && (c.cwd_exists || c.source == Source::Desktop))
 }
@@ -738,6 +752,31 @@ mod tests {
         assert_eq!(c.created_ms, convert::at_ms("2026-10-02T00:00:00Z"));
         // A desktop session's scratch folder goes with it: still listed.
         assert!(!c.cwd_exists && shown(c, false));
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn vs_codes_sessions_are_on_the_default_list() {
+        // #453: VS Code's Claude Code (`claude-vscode`) is listed as such,
+        // like a terminal's; `claude -p` and SDK runs only with everything.
+        let root = tmp("vscode");
+        let work = root.join("work");
+        let proj = root.join("claude/projects/-work");
+        std::fs::create_dir_all(&work).unwrap();
+        std::fs::create_dir_all(&proj).unwrap();
+        for (id, entry) in [("v1", "claude-vscode"), ("p1", "sdk-cli")] {
+            let line = json!({"type":"user","cwd":work,"entrypoint":entry,"timestamp":"2026-11-01T00:00:00Z","message":{"role":"user","content":"hello"}});
+            std::fs::write(proj.join(format!("{id}.jsonl")), format!("{line}\n")).unwrap();
+        }
+        let mut ix = Index::new(Dirs { claude: root.join("claude"), desktop: root.join("d") });
+        let all = ix.scan();
+        let v = all.iter().find(|c| c.id == "v1").unwrap();
+        assert_eq!(v.source, Source::VsCode);
+        assert_eq!(serde_json::to_value(v.source).unwrap(), "vscode");
+        assert!(shown(v, false));
+        let p = all.iter().find(|c| c.id == "p1").unwrap();
+        assert_eq!(p.source, Source::Other);
+        assert!(!shown(p, false) && shown(p, true));
         std::fs::remove_dir_all(&root).unwrap();
     }
 

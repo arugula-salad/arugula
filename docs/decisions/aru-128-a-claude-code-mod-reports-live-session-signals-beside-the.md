@@ -50,6 +50,7 @@ constrains:
   - "path:plugins/claude-code/mod"
   - "path:crates/arugulad-agent/src/conversations/context.rs"
   - "path:crates/cli/src/hook.rs"
+  - "path:crates/arugulad-agent/src/conversations/signals.rs"
 ---
 
 # A Claude Code mod reports live session signals beside the hooks, through the CLI
@@ -177,6 +178,42 @@ So the condition is met: one `hooks.json` works on every version tried, and
 `arugula-live` folds into the arugula plugin as an option that's off by
 default (#447): no second plugin to install, and with the option off the
 module loads and hooks nothing.
+
+## Follow-up: keyed by session, the pane optional (#453, 2026-11-01)
+
+Condition 5 kept signals per pane, and the mod sent nothing outside one, so
+VS Code's Claude Code and the desktop app reported only when the app was
+started from a pane, and then every session in the app landed on that one
+pane; the editor block's Claude Code (no `ARUGULA_PANE`, on purpose) was
+silent. Jake decided: **a session with no pane reports to its
+conversation.** So:
+
+- The mod sends from anywhere, with Claude Code's session id
+  (`$.session.id()`); the CLI finds the daemon with no pane as every command
+  does (`ARUGULA_SOCK`, else the default socket or named pipe).
+- `arugula session-signal` posts `conversation.session_signal` (`POST
+  /api/conversations/session-signal`, owner only): the signal, the pane its
+  environment names, and its own pid. Against a daemon without that route it
+  falls back to `pane.session_signal`, which stays for older CLIs.
+- The daemon keeps a context per session id (`conversations/signals.rs`, in
+  memory, the 256 most recent), lists it as each conversation's `context`,
+  and gives it to the mux as a pane's `live` only for the pane the session
+  runs in: the CLI's pid (or a parent of it below the pane's shell) is in the
+  pane's terminal foreground job (`procinfo::in_foreground`), the foreground
+  the mux reads to tell Claude Code runs there. When that foreground is a
+  `tmux` client, the session counts when it's in the foreground of the
+  `tmux` pane the client shows (asked of its server with `list-clients`);
+  the mux checks again each refresh and drops the figures once it isn't.
+  An agent block takes its own `session_id`. A signal without a pid (an
+  older CLI) goes to its pane as before.
+- VS Code's sessions (`claude-vscode`) are their own source, `vscode`, on
+  the default conversations list.
+- The command hooks still trust `ARUGULA_PANE`: #469.
+
+Where (#453): `plugins/claude-code/hooks/live.ts`, `crates/cli/src/hook.rs`,
+`crates/arugulad-agent/src/ops.rs` (`session_signal`),
+`crates/arugulad-agent/src/conversations/signals.rs`,
+`crates/mux/src/procinfo.rs` (`in_foreground`).
 
 Where: `plugins/claude-code/mod/` (the mod), `crates/cli/src/hook.rs`
 (`session_signal`), `crates/arugulad-agent/src/ops.rs` (`PaneSessionSignal`),

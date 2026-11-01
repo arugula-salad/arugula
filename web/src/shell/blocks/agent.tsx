@@ -110,7 +110,7 @@ export interface AgentState {
   wearing?: boolean;
   /** A Claude Code conversation this block opened (M33). */
   import: {
-    source: "terminal" | "desktop" | "other";
+    source: "terminal" | "desktop" | "vscode" | "other";
     path: string;
     title: string | null;
     /** Continued here: from now on it's this block's. */
@@ -636,7 +636,7 @@ function AgentBlock({ client, id, s }: { client: Client; id: PaneId; s: AgentSta
       <WornBar s={s} />
       {opened && (
         <div class="agent-import">
-          A Claude Code conversation from {s.import!.source === "desktop" ? "the desktop app" : s.import!.source === "terminal" ? "a terminal" : "elsewhere"}
+          A Claude Code conversation from {s.import!.source === "desktop" ? "the desktop app" : s.import!.source === "terminal" ? "a terminal" : s.import!.source === "vscode" ? "VS Code" : "elsewhere"}
           {s.import!.held ? `, ${s.import!.held.place}: this follows it as it goes. Fork it to go on here.` : ". Continue it to go on here."}
         </div>
       )}

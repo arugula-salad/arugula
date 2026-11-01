@@ -217,8 +217,11 @@ pub enum Api {
     Hook(PaneId, serde_json::Value),
     /// What Claude Code running in a pane says of its session from inside
     /// it (#450, its arugula-live mod), as the agent block's `context`
-    /// reads (`PaneInfo.live`); `None` forgets it.
-    Live(PaneId, Option<serde_json::Value>),
+    /// reads (`PaneInfo.live`); `None` forgets it. With the pid of the
+    /// Claude Code that said it (#453), kept while that runs in front of
+    /// the pane, through a `tmux` client too; without, while the pane runs
+    /// Claude Code itself.
+    Live(PaneId, Option<serde_json::Value>, Option<u32>),
     /// `arugula inbox` (Claude Code's background `Stop` hook): wait for a
     /// follow-up. One waiter per pane; a newer one replaces it. The reply
     /// carries a token (to drop exactly this one) and where it will come.
@@ -467,6 +470,8 @@ struct Daemon {
     /// What Claude Code in each pane said of its session from inside it
     /// (#450), while it runs there (`PaneInfo.live`).
     live: HashMap<PaneId, serde_json::Value>,
+    /// The Claude Code process each pane's `live` came from (#453).
+    live_pid: HashMap<PaneId, u32>,
     /// The last link to a PR or an issue each terminal printed
     /// (`PaneInfo.link`).
     links: HashMap<PaneId, String>,
@@ -670,6 +675,7 @@ pub fn start(
         turn_typed: Default::default(),
         hooked: Default::default(),
         live: HashMap::new(),
+        live_pid: HashMap::new(),
         links: Default::default(),
         restored: Default::default(),
         hold: Default::default(),

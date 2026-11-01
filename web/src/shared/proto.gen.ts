@@ -5084,6 +5084,7 @@ export const OPS = {
   "agents.get": { method: "GET", path: "/api/hosts/self/agents" },
   "agents.refresh": { method: "POST", path: "/api/hosts/self/agents/refresh" },
   "conversation.open": { method: "POST", path: "/api/conversations/open" },
+  "conversation.session_signal": { method: "POST", path: "/api/conversations/session-signal" },
   "conversations.list": { method: "GET", path: "/api/conversations" },
   "doc.delete": { method: "DELETE", path: "/api/docs/{id}" },
   "doc.open": { method: "POST", path: "/api/docs/open" },

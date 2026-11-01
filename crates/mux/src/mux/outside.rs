@@ -47,6 +47,14 @@ pub trait AgentSessions: Send + Sync + Debug {
     /// The conversation each of our panes' Claude Code holds now, by pane,
     /// with its folder. `panes`: the processes of our panes, by pid.
     fn live(&self, panes: HashMap<u32, PaneId>) -> HashMap<PaneId, (String, Option<String>)>;
+    /// The process of the pane a terminal multiplexer's client shows now
+    /// (`tmux attach`: its active pane's shell), when `client` is one
+    /// (#453): a pane's figures from Claude Code there stay while it's in
+    /// front ([`crate::procinfo::in_front`]).
+    fn through(&self, client: u32) -> Option<u32> {
+        let _ = client;
+        None
+    }
 }
 
 /// Something outside the mux that makes a terminal wait on you (#699): a

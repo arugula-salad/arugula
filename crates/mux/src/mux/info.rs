@@ -82,9 +82,22 @@ impl Daemon {
             if agent.as_deref() != Some("claude") && self.hooked.remove(id) {
                 self.mark(*id);
             }
-            // Nor does what it said of its session (#450).
-            if agent.as_deref() != Some("claude") && self.live.remove(id).is_some() {
-                self.mark(*id);
+            // Nor does what it said of its session (#450), unless it still
+            // runs in front of the pane through a `tmux` client there (#453).
+            if agent.as_deref() != Some("claude") && self.live.contains_key(id) {
+                let leader = self.panes.get(id).and_then(|h| h.pid_now());
+                let kept = match (leader, self.live_pid.get(id)) {
+                    (Some(l), Some(pid)) => {
+                        let sessions = &self.config.sessions;
+                        crate::procinfo::alive(*pid) && crate::procinfo::in_front(l, *pid, |c| sessions.through(c))
+                    }
+                    _ => false,
+                };
+                if !kept {
+                    self.live.remove(id);
+                    self.live_pid.remove(id);
+                    self.mark(*id);
+                }
             }
         }
         // Claude Code without hooks: its session files say which

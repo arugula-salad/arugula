@@ -140,6 +140,8 @@ impl Request for crate::api::AttentionRequest {}
 
 impl Request for crate::api::SessionSignal {}
 
+impl Request for crate::api::ConversationSignal {}
+
 impl Request for crate::api::PromptRequest {}
 
 impl Request for crate::api::AskRequest {}
@@ -313,6 +315,7 @@ macro_rules! every_op {
         $m!($crate::op::ops::ConversationsList);
         $m!($crate::op::ops::ConversationOpen);
         $m!($crate::op::ops::PaneSessionSignal);
+        $m!($crate::op::ops::ConversationSessionSignal);
         $m!($crate::op::ops::MachinesList);
         $m!($crate::op::ops::MachineReset);
         $m!($crate::op::ops::PushKeyGet);
@@ -1157,6 +1160,23 @@ pub mod ops {
         const ACCESS: Access = Access::Pane(Role::Editor);
         type Path = PaneId;
         type Req = crate::api::SessionSignal;
+        type Res = crate::api::SessionSignaled;
+    }
+
+    /// `POST /api/conversations/session-signal` (#453): the same signal
+    /// keyed by Claude Code's session id, with the pane optional: what
+    /// `arugula session-signal` sends, from a terminal pane or from no pane
+    /// at all (an editor, the desktop app). Answers the session's context
+    /// and the pane it shows on, if any.
+    pub struct ConversationSessionSignal;
+
+    impl Op for ConversationSessionSignal {
+        const NAME: &'static str = "conversation.session_signal";
+        const METHOD: Method = Method::Post;
+        const PATH: &'static str = "/api/conversations/session-signal";
+        const ACCESS: Access = Access::Owner;
+        type Path = ();
+        type Req = crate::api::ConversationSignal;
         type Res = crate::api::SessionSignaled;
     }
 

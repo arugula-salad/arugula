@@ -3,7 +3,8 @@
 // reads them from the session's transcript (`state.context`), or Claude
 // Code says them from inside (#450, the arugula-live mod: a pane's `live`),
 // which wins; a terminal running Claude Code with the mod gets a slim strip
-// in its header too. Where the figures come from is in its popover.
+// in its header too, and so does a conversation's row in the conversations
+// list (#453). Where the figures come from is in its popover.
 
 import { render, type ComponentChildren } from "preact";
 import { useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
@@ -97,7 +98,8 @@ function Layer({ host, children }: { host: HTMLElement; children: ComponentChild
   return null;
 }
 
-/** `slim`: a terminal's header, without the model (its popover has it). */
+/** `slim`: a terminal's header or a conversation's row, without the model
+ *  (its popover has it). */
 export function ContextStrip({ c, slim = false }: { c: AgentContext; slim?: boolean }) {
   const pop = usePop();
   const pct = c.tokens == null || c.window == null ? null : Math.min(100, Math.round((c.tokens / c.window) * 100));
@@ -133,7 +135,7 @@ export function ContextStrip({ c, slim = false }: { c: AgentContext; slim?: bool
         )}
       </button>
       {pop.open && wrap(
-        <div class="agent-estimate-pop" role="dialog" aria-label="Context window" data-context-pop style={pop.style} onPointerDown={pop.stop} onDblClick={pop.stop}>
+        <div class={slim ? "agent-estimate-pop layered" : "agent-estimate-pop"} role="dialog" aria-label="Context window" data-context-pop style={pop.style} onPointerDown={pop.stop} onDblClick={pop.stop}>
           <table>
             <tbody>
               {c.model && (

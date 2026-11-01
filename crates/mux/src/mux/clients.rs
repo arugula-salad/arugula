@@ -390,6 +390,7 @@ impl Daemon {
                     self.turn_typed.remove(&pane);
                     self.hooked.remove(&pane);
                     self.live.remove(&pane);
+                    self.live_pid.remove(&pane);
                     self.links.remove(&pane);
                     self.restored.remove(&pane);
                     if let Some(a) = self.asks.remove(&pane) {

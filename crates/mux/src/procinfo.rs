@@ -31,6 +31,83 @@ pub fn ppid(pid: u32) -> Option<u32> {
     imp::ppid(pid).filter(|p| *p > 0)
 }
 
+/// A process's process group (none on Windows).
+pub fn pgid(pid: u32) -> Option<u32> {
+    imp::pgid(pid).filter(|p| *p > 0)
+}
+
+/// Whether `pid` runs in the foreground of the terminal whose own process
+/// (a pane's shell, or what it runs) is `leader` (#453): it, or a process
+/// it descends from below `leader`, is in the terminal's foreground job.
+/// `claude` typed at the pane's prompt is; an editor or the desktop app
+/// started from it isn't (detached, or a job in the background), nor is
+/// anything under a `tmux` server started there ([`in_front`] looks
+/// through a `tmux` client).
+pub fn in_foreground(leader: u32, pid: u32) -> bool {
+    in_foreground_of(leader, pid, foreground(leader), ppid, pgid)
+}
+
+/// [`in_foreground`], and through a terminal multiplexer in front (#453):
+/// when the terminal's foreground job is a client of one (`tmux attach`),
+/// `through` names the process of the pane that client shows now (its
+/// active pane's shell), and `pid` counts when it's in that terminal's
+/// foreground too. A pane in a window behind it doesn't. Up to three deep.
+pub fn in_front(leader: u32, pid: u32, through: impl Fn(u32) -> Option<u32>) -> bool {
+    in_front_of(leader, pid, foreground, ppid, pgid, through)
+}
+
+/// [`in_front`], with the process table's answers as functions.
+pub fn in_front_of(
+    leader: u32,
+    pid: u32,
+    fg_of: impl Fn(u32) -> Option<u32>,
+    ppid: impl Fn(u32) -> Option<u32>,
+    pgid: impl Fn(u32) -> Option<u32>,
+    through: impl Fn(u32) -> Option<u32>,
+) -> bool {
+    let mut leader = leader;
+    for _ in 0..3 {
+        let fg = fg_of(leader);
+        if in_foreground_of(leader, pid, fg, &ppid, &pgid) {
+            return true;
+        }
+        match fg.and_then(&through) {
+            Some(inner) if inner != leader => leader = inner,
+            _ => return false,
+        }
+    }
+    false
+}
+
+/// [`in_foreground`], with the process table's answers as functions.
+pub fn in_foreground_of(
+    leader: u32,
+    pid: u32,
+    fg: Option<u32>,
+    ppid: impl Fn(u32) -> Option<u32>,
+    pgid: impl Fn(u32) -> Option<u32>,
+) -> bool {
+    let Some(fg) = fg else { return false };
+    let mut p = pid;
+    for _ in 0..64 {
+        // Up to the terminal's own process without passing the foreground
+        // job: a job in the background, or the shell itself. (What the
+        // terminal runs itself, `arugula run claude`, is its own group, the
+        // foreground one, so its children matched above.)
+        if p == leader {
+            return false;
+        }
+        if p == fg || pgid(p) == Some(fg) {
+            return true;
+        }
+        match ppid(p) {
+            Some(q) if q > 1 => p = q,
+            _ => return false,
+        }
+    }
+    false
+}
+
 /// A process's command line.
 pub fn argv(pid: u32) -> Option<Vec<String>> {
     imp::argv(pid).map(|raw| raw.iter().map(|a| String::from_utf8_lossy(a).into_owned()).collect())
@@ -147,6 +224,11 @@ mod imp {
         stat_field(pid, 1)?.parse().ok()
     }
 
+    pub fn pgid(pid: u32) -> Option<u32> {
+        // pgrp is field 5.
+        stat_field(pid, 2)?.parse().ok()
+    }
+
     pub fn foreground(pid: u32) -> Option<u32> {
         // tpgid is field 8.
         let t: i32 = stat_field(pid, 5)?.parse().ok()?;
@@ -252,6 +334,10 @@ mod imp {
 
     pub fn ppid(pid: u32) -> Option<u32> {
         Some(bsdinfo(pid)?.pbi_ppid)
+    }
+
+    pub fn pgid(pid: u32) -> Option<u32> {
+        Some(bsdinfo(pid)?.pbi_pgid)
     }
 
     pub fn foreground(pid: u32) -> Option<u32> {
@@ -463,6 +549,11 @@ mod imp {
             )
         };
         (status >= 0).then_some(info)
+    }
+
+    /// No process groups: [`super::in_foreground`] walks the parents.
+    pub fn pgid(_: u32) -> Option<u32> {
+        None
     }
 
     pub fn ppid(pid: u32) -> Option<u32> {
@@ -737,6 +828,89 @@ mod windows_tests {
 #[cfg(all(test, unix))]
 mod tests {
     use super::*;
+
+    /// #453: a pane's shell (100) runs `claude` (200) in the foreground; a
+    /// VS Code started from it (300, detached, its own group) runs two
+    /// more (310, 320); the desktop app (400) is a background job of the
+    /// shell, and a `tmux` server (500) left the pane's terminal. Each
+    /// Claude Code's signal comes from its `arugula` child (x1).
+    #[test]
+    fn only_the_foreground_job_is_in_the_pane() {
+        let tree: std::collections::HashMap<u32, (u32, u32)> = [
+            // pid: (parent, group)
+            (100, (1, 100)),
+            (200, (100, 200)),
+            (201, (200, 200)),
+            (300, (1, 300)),
+            (310, (300, 300)),
+            (311, (310, 300)),
+            (320, (300, 300)),
+            (321, (320, 300)),
+            (400, (100, 400)),
+            (401, (400, 400)),
+            (500, (1, 500)),
+            (510, (500, 510)),
+            (511, (510, 510)),
+            // A CLI its Claude Code detached (a group of its own).
+            (202, (200, 202)),
+        ]
+        .into();
+        let ppid = |p: u32| tree.get(&p).map(|t| t.0);
+        let pgid = |p: u32| tree.get(&p).map(|t| t.1);
+        let fg = |pid: u32, fg: Option<u32>| in_foreground_of(100, pid, fg, ppid, pgid);
+        assert!(fg(201, Some(200)), "claude at the prompt");
+        assert!(fg(202, Some(200)), "its parent is in the foreground job");
+        for pid in [311, 321, 401, 511] {
+            assert!(!fg(pid, Some(200)), "{pid} isn't the pane's");
+        }
+        // The shell at its prompt: nothing it started is in front.
+        assert!(!fg(401, Some(100)));
+        assert!(!fg(201, None));
+    }
+
+    /// #453: the pane's shell (100) has a `tmux` client (200) in front. The
+    /// `tmux` server (300) has two panes: 310, the client's active one, runs
+    /// `claude` (311, its CLI 312); 320, in a window behind it, runs another
+    /// (321, its CLI 322). Only the active pane's counts for the pane.
+    #[test]
+    fn through_tmux_only_the_pane_it_shows() {
+        let tree: std::collections::HashMap<u32, (u32, u32)> = [
+            (100, (1, 100)),
+            (200, (100, 200)),
+            (300, (1, 300)),
+            (310, (300, 310)),
+            (311, (310, 311)),
+            (312, (311, 311)),
+            (320, (300, 320)),
+            (321, (320, 321)),
+            (322, (321, 321)),
+        ]
+        .into();
+        let ppid = |p: u32| tree.get(&p).map(|t| t.0);
+        let pgid = |p: u32| tree.get(&p).map(|t| t.1);
+        // Each terminal's foreground job: the pane's is the client; each
+        // tmux pane's, its claude.
+        let fg = |leader: u32| match leader {
+            100 => Some(200),
+            310 => Some(311),
+            320 => Some(321),
+            _ => None,
+        };
+        let shows = |client: u32| (client == 200).then_some(310);
+        let front = |pid: u32| in_front_of(100, pid, fg, ppid, pgid, shows);
+        assert!(front(312), "claude in the pane tmux shows");
+        assert!(!front(322), "claude in a window behind it");
+        // Without a multiplexer to look through, neither.
+        assert!(!in_front_of(100, 312, fg, ppid, pgid, |_| None));
+        // The client's own children are in front as before.
+        assert!(in_front_of(100, 200, fg, ppid, pgid, shows));
+    }
+
+    #[test]
+    fn our_own_group() {
+        let me = std::process::id();
+        assert_eq!(pgid(me), Some(nix::unistd::getpgrp().as_raw() as u32));
+    }
 
     #[test]
     fn reads_our_own_process() {
