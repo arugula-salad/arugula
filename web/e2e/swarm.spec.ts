@@ -132,6 +132,153 @@ test("an agent on an issue wears its chip in the swarm, which clusters by board 
   for (const [h, i] of [["workstation", a], ["build-01", b], ["build-02", c], ["workstation", d]] as const) await fake.close(h, i);
 });
 
+/** A made-up board view (the platform's `GET /api/boards/:id`) of the board "Launch": a row is `[id, lane, number, title]`. */
+type Lane = "next" | "doing" | "review" | "done";
+interface Placing {
+  rows: [string, Lane, number, string][];
+  /** Row id to the agent block attached to it: `[host, pane]`. */
+  attached: Record<string, [string, number]>;
+}
+const LANES: [Lane, string][] = [["next", "Next"], ["doing", "Doing"], ["review", "Review"], ["done", "Done"]];
+
+function boardView(id: string, p: Placing, machineOf: (host: string) => string) {
+  const row = ([rid, lane, n, title]: Placing["rows"][number]) => ({
+    id: rid, rev: 1, pointer: { kind: "issue", id: `iss_${rid}` }, note: "", status: "none", lane,
+    attachments: p.attached[rid] ? [{ id: `att_${rid}`, role: "work", pointer: { kind: "block", machine: machineOf(p.attached[rid][0]), pane: `%${p.attached[rid][1]}` } }] : [],
+    live: { state: "open", kind: "native", number: n, title }, created_at: 1, updated_at: 1,
+  });
+  return {
+    board: { id, project: "prj_e2e", title: "Launch", goal: "", created_by: "", created_at: 1 },
+    zones: LANES.map(([lane, title]) => ({ id: `zone_${lane}`, rev: 1, title, kind: "lane", rows: p.rows.filter((r) => r[1] === lane).map(row) })),
+    groups: [],
+  };
+}
+
+/** Serve the board view `current()` says, as the platform would. */
+async function serveBoard(page: Page, id: string, current: () => unknown) {
+  await page.route(`**/api/boards/${id}`, (route) => route.fulfill({ json: current() }));
+}
+
+/** The swarm clusters by name, with how many tiles each holds. */
+const sizes = (page: Page) =>
+  page.evaluate(() => Object.fromEntries((window.__arugula.swarm as { clusters: { name: string; n: number }[] }).clusters.map((c) => [c.name, c.n])));
+
+/** What the board's agents are: A on a row in Doing by `on_issue`; B on a row in Doing only by the row's attachment; F says Next by `on_issue` but its row in Review has it attached. Others are on another board or none. */
+async function boardAgents() {
+  const A = await fake.agentOn("workstation", "#12", { title: "Launch", id: "brd_e2e", row: "row_b" });
+  const B = await fake.agentOn("build-01", "#13");
+  const F = await fake.agentOn("build-02", "#14", { title: "Launch", id: "brd_e2e", row: "row_a" });
+  const other = await fake.agentOn("workstation", "#15", { title: "Later", id: "brd_other", row: "row_z" });
+  const none = await fake.agentOn("build-01", "#16");
+  return { A, B, F, other, none, all: [["workstation", A], ["build-01", B], ["build-02", F], ["workstation", other], ["build-01", none]] as [string, number][] };
+}
+
+const hostId = (page: Page) => (host: string) => page.evaluate((h) => window.__arugula.fleet.list.find((x) => x.name === h)?.id ?? h, host);
+
+test("a board focus clusters its agents by the lane of their row, and a row that moves takes its agent along (#466)", async ({ page }, testInfo) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  const ag = await boardAgents();
+  const ids: Record<string, string> = {};
+  const placing: Placing = {
+    rows: [["row_a", "next", 11, "Write the changelog"], ["row_b", "doing", 12, "Fix the installer"], ["row_c", "doing", 13, "Tidy the docs"], ["row_r", "review", 14, "Cut the release"]],
+    attached: { row_c: ["build-01", ag.B], row_r: ["build-02", ag.F] },
+  };
+  await serveBoard(page, "brd_e2e", () => boardView("brd_e2e", placing, (h) => ids[h]));
+  await swarm(page);
+  for (const h of ["workstation", "build-01", "build-02"]) ids[h] = await hostId(page)(h);
+  await expect.poll(() => page.evaluate((k) => window.__arugula.fleet.panes.find((p) => p.key === k)?.info.on_issue?.boards?.[0]?.row ?? null, `build-02:${ag.F}`)).toBe("row_a");
+
+  // In Cluster by → Board, a board's name focuses it; "No board" only dives in.
+  await page.locator('[data-g="board"]').click();
+  await expect.poll(() => clusters(page), { timeout: 10_000 }).toEqual(["Later", "Launch", "No board"]);
+  const clickName = async (name: string) => {
+    await expect
+      .poll(async () => {
+        const box = (await page.evaluate(() => (window.__arugula.swarm as unknown as { labelBoxes: { name: string; x0: number; x1: number; y0: number; y1: number }[] }).labelBoxes)).find((b) => b.name === name);
+        if (box) await page.mouse.click((box.x0 + box.x1) / 2, (box.y0 + box.y1) / 2);
+        return !!box;
+      }, { timeout: 15_000 })
+      .toBe(true);
+  };
+  await clickName("No board");
+  await page.waitForTimeout(300);
+  expect(new URL(page.url()).hash).toBe("#swarm");
+  await clickName("Launch");
+  await expect.poll(() => new URL(page.url()).hash).toBe("#swarm=board:brd_e2e");
+
+  // The focus: the board's lanes, with the agents in them. A: Doing (on_issue). B: Doing (attachment only). F: Review (the attachment wins over on_issue's Next).
+  await expect(page.locator("[data-swarm-board] b")).toHaveText("Board: Launch");
+  await expect(page.locator("[data-lane]")).toHaveText(["Next · 1 row · no one on it", "Doing · 2 rows · 2 workers", "Review · 1 row · 1 worker"]);
+  await expect.poll(() => sizes(page), { timeout: 10_000 }).toEqual({ Doing: 2, Review: 1 });
+  // The other board's agent and the one on none are not here.
+  await expect.poll(() => page.evaluate(() => window.__arugula.fleet.panes.length)).toBeGreaterThanOrEqual(15);
+  await expect(page.locator('[data-stat="panes"]')).toHaveText("3");
+  await expect(page.locator(".swarm-field")).toBeVisible();
+  await page.locator("[data-fit]").click();
+  await page.waitForTimeout(1800);
+  await page.screenshot({ path: testInfo.outputPath("board-focus-desktop.png") });
+
+  // The tile wears its row: `#12 · Fix the installer`.
+  await expect
+    .poll(() => page.evaluate((k) => (window.__arugula.swarm as unknown as { tiles: Map<string, { label: string }> }).tiles.get(k)?.label ?? "", `workstation:${ag.A}`))
+    .toContain("#12 · Fix the installer");
+
+  // A row moves lane, as the board's own push says it did: no reload.
+  const reloaded = await page.evaluate(() => ((window as unknown as { __nav?: number }).__nav = 1));
+  placing.rows[2][1] = "review";
+  await page.evaluate(() => (window.__arugula.chat as unknown as { objectChanged(t: string): void }).objectChanged("brd_e2e"));
+  await expect(page.locator("[data-lane]")).toHaveText(["Next · 1 row · no one on it", "Doing · 1 row · 1 worker", "Review · 2 rows · 2 workers"], { timeout: 10_000 });
+  await expect.poll(() => sizes(page), { timeout: 10_000 }).toEqual({ Doing: 1, Review: 2 });
+  expect(await page.evaluate(() => (window as unknown as { __nav?: number }).__nav)).toBe(reloaded);
+
+  // Another theme only changes how the clusters are drawn.
+  await page.locator('[data-theme-pick="hive"]').click();
+  await expect.poll(() => clusters(page), { timeout: 15_000 }).toEqual(["Doing", "Review"]);
+  await page.locator('[data-theme-pick="timeline"]').click();
+  await expect.poll(() => clusters(page), { timeout: 15_000 }).toEqual(["Doing", "Review"]);
+  await page.locator('[data-theme-pick="blocks"]').click();
+
+  // All panes: back to every pane.
+  await page.locator("[data-swarm-all]").click();
+  await expect(page.locator("[data-swarm-board]")).toHaveCount(0);
+  expect(new URL(page.url()).hash).toBe("#swarm");
+  await expect.poll(() => page.evaluate(() => window.__arugula.fleet.panes.length)).toBeGreaterThanOrEqual(15);
+  await expect(page.locator('[data-stat="panes"]')).not.toHaveText("3");
+  for (const [h, i] of ag.all) await fake.close(h, i);
+});
+
+test("a board that can't be read says so, and shows no one", async ({ page }) => {
+  await page.route("**/api/boards/brd_nope", (route) => route.fulfill({ status: 404, json: { error: "no such board" } }));
+  await page.goto("/#swarm=board:brd_nope");
+  await expect(page.locator("[data-swarm-board-missing]")).toContainText("no such board", { timeout: 20_000 });
+  await expect(page.locator('[data-stat="panes"]')).toHaveText("0");
+});
+
+test.describe("a board focus on a phone", () => {
+  const { userAgent, deviceScaleFactor, isMobile, hasTouch } = devices["Pixel 7"];
+  test.use({ viewport: { width: 390, height: 844 }, userAgent, deviceScaleFactor, isMobile, hasTouch });
+
+  test("the same lanes fit the phone's width (#466)", async ({ page }, testInfo) => {
+    const ag = await boardAgents();
+    const ids: Record<string, string> = {};
+    const placing: Placing = {
+      rows: [["row_a", "next", 11, "Write the changelog"], ["row_b", "doing", 12, "Fix the installer"], ["row_c", "doing", 13, "Tidy the docs"], ["row_r", "review", 14, "Cut the release"]],
+      attached: { row_c: ["build-01", ag.B], row_r: ["build-02", ag.F] },
+    };
+    await serveBoard(page, "brd_e2e", () => boardView("brd_e2e", placing, (h) => ids[h]));
+    await swarm(page);
+    for (const h of ["workstation", "build-01", "build-02"]) ids[h] = await hostId(page)(h);
+    await page.evaluate(() => (location.hash = "swarm=board:brd_e2e"));
+    await expect(page.locator("[data-lane]")).toHaveText(["Next · 1 row · no one on it", "Doing · 2 rows · 2 workers", "Review · 1 row · 1 worker"], { timeout: 30_000 });
+    await expect.poll(() => sizes(page), { timeout: 10_000 }).toEqual({ Doing: 2, Review: 1 });
+    // No sideways scroll.
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    await page.waitForTimeout(1500);
+    await page.screenshot({ path: testInfo.outputPath("board-focus-phone.png") });
+    for (const [h, i] of ag.all) await fake.close(h, i);
+  });
+});
+
 test("Panes and Escape lead back to the panes (#551)", async ({ page }) => {
   await swarm(page);
   // The rail beside the swarm: its Panes.

@@ -221,6 +221,8 @@ test("Alice sets the board's goal, and it shows under the title with the issues'
   await expect(page.locator("[data-board-progress]")).toHaveText("0 of 3 done", { timeout: 15_000 });
   await expect(page.locator("[data-board-goal]")).toHaveCount(0);
   await expect(page.locator("[data-board-progress] [role=progressbar]")).toHaveAttribute("aria-valuemax", "3");
+  // Workers opens the swarm on this board, on control's page (#466).
+  await expect(page.locator("[data-board-workers]")).toHaveAttribute("href", new RegExp(`/#swarm=board:${/brd_[0-9a-f]+/.exec(boardPath)![0]}$`));
   await page.locator("[data-board-goal-edit]").click();
   await page.locator("[data-board-goal-input]").fill(GOAL);
   await page.locator("[data-board-goal-save]").click();

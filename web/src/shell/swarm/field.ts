@@ -190,6 +190,8 @@ export interface FieldHooks {
   hover(key: string | null, x: number, y: number): void;
   /** A right-click on a pane. */
   menu?(key: string, e: MouseEvent): void;
+  /** A click on a cluster's name: true when the view took it (#466), else the scene dives in. */
+  name?(name: string): boolean;
   /** M42: commands that finished in the last `sinceS` seconds, on every
    * connected host (each daemon's `/api/history`), for the timeline. */
   history?(sinceS: number): Promise<HistoryRun[]>;
@@ -625,7 +627,7 @@ export class Field implements SwarmScene {
     const sx = e.clientX - r.left;
     const sy = e.clientY - r.top;
     const g = this.labelAt(sx, sy);
-    if (g) return this.dive(g);
+    if (g) return this.hooks.name?.(g) ? undefined : this.dive(g);
     const t = this.paneAt(sx, sy);
     if (t) this.hooks.open(t.key);
   }

@@ -818,7 +818,7 @@ export class City implements SwarmScene {
       const b = this.pick(e);
       if (b) return this.hooks.open(b.key);
       const name = this.blockAt(e);
-      if (name) this.dive(name);
+      if (name && !this.hooks.name?.(name)) this.dive(name);
     });
     on("contextmenu", (e) => {
       const b = this.pick(e);

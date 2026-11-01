@@ -159,12 +159,12 @@ export class FakeFleet {
 
   /** An agent block (the scripted fake ACP agent) started on `issue` (#372),
    * and, with `board`, on that board's row: its pane. */
-  async agentOn(machine: string, issue: string, board?: { title: string }): Promise<number> {
+  async agentOn(machine: string, issue: string, board?: { title: string; id?: string; row?: string }): Promise<number> {
     const m = this.get(machine);
     const fake = resolve(import.meta.dirname, "../../crates/daemon/tests/fake_acp.py");
     const config = { agent: "acp", command: ["python3", fake], cwd: this.dir("api"), prompt: "hello", work: { issue } };
     const pane = (await post(m.url, "/api/blocks", { type: "agent", config })).block as number;
-    if (board) await post(m.url, `/api/blocks/${pane}/call/set_work`, { boards: [{ project: "prj_e2e", board: "brd_e2e", title: board.title, row: "row_e2e" }] });
+    if (board) await post(m.url, `/api/blocks/${pane}/call/set_work`, { boards: [{ project: "prj_e2e", board: board.id ?? "brd_e2e", title: board.title, row: board.row ?? "row_e2e" }] });
     return pane;
   }
 
