@@ -39,7 +39,8 @@
 # (merge_group, once the queue is on: docs/development.md, "Merging through
 # the queue"): a pull request with main and whatever is queued ahead of it,
 # everything run (scripts/changed runs it all for any event but a push),
-# with `queue` the one verdict the queue waits for. Only someone who may
+# and chant-merge-queue.yml's chant-verdict judges the group from its check
+# runs (ci.green's mergeQueue, chant#4644). Only someone who may
 # merge queues a pull request, so its code reaches our machines no sooner
 # than a merge would bring it.
 name: check
@@ -375,28 +376,6 @@ jobs:
         env:
           ARUGULA_DESKTOP_IMAGE_REPO: ghcr.io/arugula-salad/arugula-desktop-xvfb
           ARUGULA_DESKTOP_IMAGE_PUSH: ${{ github.ref == 'refs/heads/main' && '1' || '' }}
-
-  # The merge queue's verdict on a group: every job above passed or was
-  # skipped (a skipped job is one the group didn't need). The queue's
-  # ruleset requires this check by name, so a job added above goes into
-  # `needs` too. Only merge groups: main's pushes are judged by chant
-  # (chant.workspace.json), and a pull request reports binaries.yml's job
-  # of this name instead.
-  queue:
-    needs: [lint, changes, build, static, clippy, test, test-2, e2e, desktop-xvfb, macos]
-    if: always() && github.event_name == 'merge_group'
-    runs-on: ubuntu-latest
-    steps:
-      - name: Every job passed or was skipped
-        env:
-          RESULTS: ${{ toJSON(needs.*.result) }}
-          NEEDS: ${{ toJSON(needs) }}
-        run: |
-          echo "$NEEDS" | jq -r 'to_entries[] | "\(.key): \(.value.result)"'
-          if echo "$RESULTS" | jq -e 'any(.[]; . != "success" and . != "skipped")' >/dev/null; then
-            echo "::error::a job failed or was cancelled: the group doesn't merge"
-            exit 1
-          fi
 
   # What changed since main's newest green commit (#868, #1675; on a
   # branch, since it left main): suite, the suites' inputs
