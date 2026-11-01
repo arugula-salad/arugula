@@ -4,6 +4,8 @@
 
 **Updated 28 Oct 2026** (Arugula 781b391d, chant 0.124.56 at b1b9e44a1). Since this was written, Arugula's own release moved to an `arugula-release` driver (#1372, M221) instead of either release path below. The chant contract asks were checked against chant's source and the gaps filed upstream, and the boundary gained a CI row. Marked inline as *(28 Oct)*.
 
+**Updated 1 Nov 2026** (Arugula c75976ce, chant 0.124.62; Arugula pins 0.124.61). Chant shipped all four of Arugula's CI asks (#4643, #4662, #4645, #4644), so the CI row moved toward chant. The contract asks from 28 Oct (#4646, #4647, #4648, #4649) are still open with no replies. The release section is rescoped: see "Rescope" below, which replaces "Rough order". Marked inline as *(1 Nov)*.
+
 The platform tab asks one question that matters most for chant: "For plans and reviews, which is the source of truth, chant records in the repo or platform objects?" Its recommendation is platform objects for the work, chant records for decisions and releases, linked both ways. I agree with that, and this note tries to pin down exactly where the line falls so step 7 doesn't build some things twice.
 
 It helps to think of Arugula as one of several platforms built on chant. terragucci is another: a Terraform automation product that runs chant inside the customer's CI. If the line works for both, it's probably in the right place. So the note describes the line once, then checks it against Arugula and terragucci.
@@ -39,6 +41,7 @@ chant is the record of what was decided, planned, approved and released, kept in
 | Secret values | Never holds them; records provenance only | Sealed per project, passed per run | The forge's secrets plus OIDC |
 | Telling people | Notify events | Inbox and push | PR notes and issues |
 | CI verdicts and green commits *(28 Oct)* | `ci tick`: `ci/green` and `ci/revoked` tags, `build: newest` with bisect, per-commit `_ci/<sha>.json` records, `release candidates` | Its own workflows, merge queue (#1721), quarantine and red-main alerts; releases start from `ci/green` (`scripts/release`) | The forge's CI, with chant's verdicts |
+| CI verdicts *(1 Nov)* | Also: green lanes, a tag per deployable with its own required phases (`ci/green-server/`, `ci/green-app/`, `ci/green-daemon/`); `ci base`, the last commit built and judged, for path filters; notify events (`ci.red`, `ci.culprit`, `ci.green`); merge queue support (`merge_group`, a verdict job, group runs counted toward green) | Its own workflows, the advisory PR gate (#306), quarantine, and the 6-hour "main is red" timer. `scripts/release check-green` reads the lane for what it releases. The queue is set up but off (#1954). Moving red-main alerts to chant's events is #1956, waiting on the Slack secret | Same |
 
 terragucci shows the risk on the other side of the line: its CI features were built for Terraform only, so chant's own CI never got them. [INTENTIUS/chant#4287](https://github.com/INTENTIUS/chant/issues/4287) moves the general ones into chant. The same thing would happen if Arugula built approval rules or promotion itself, so those belong in chant.
 
@@ -53,7 +56,7 @@ Any platform drives chant through the same calls. #1359 already depends on most 
 | Run an Op | `chant run <op> --json`, exit 0 done, exit 3 gated with `planDigest` | None | As is |
 | Plan only | In #1359 planning happens after approval | Plan first, so the approver sees the real plan and digest | Already possible: the run stops at the gate with the plan's digest in a pending fact, and `chant approve --plan <digest>` binds to it (`chant run pending --plan`). What's missing is Arugula's flow: the phone approves before the run. |
 | Approve | `chant approve … --relayed-by arugula`, unsigned | Pass the approver's signature; chant checks it | `--sign` takes only a local ssh key (ws-080). A signature made elsewhere (device key, passkey) isn't accepted: [INTENTIUS/chant#4646](https://github.com/INTENTIUS/chant/issues/4646) |
-| Ledger push | To origin, with the approver's email (why #1121 is held) | Configurable remote, handle instead of email | Handle: `--actor github:<login>` exists. Remote: still origin, else the first remote (`lifecycle/git.ts:994`): [INTENTIUS/chant#4647](https://github.com/INTENTIUS/chant/issues/4647) |
+| Ledger push | To origin, with the approver's email (why #1121 is held) | Configurable remote, handle instead of email | Handle: `--actor github:<login>` exists. Remote: still origin, else the first remote (`lifecycle/git.ts:994`): [INTENTIUS/chant#4647](https://github.com/INTENTIUS/chant/issues/4647). *(1 Nov)* With a handle, the email reason for holding #1121 is gone, and Arugula's commits already carry their authors on the same public repo. The remote matters only if the ledger shouldn't live on origin at all |
 | Find the release | Scan `releases.jsonl` by git sha | A read call by run id | Covered: `chant ledger releases --where runId=<id> --json` |
 | Stale check | Not asked | A read call: anything applied since this digest? | Partly: `chant ledger applies --since` has the data, with no plan-level read: [INTENTIUS/chant#4648](https://github.com/INTENTIUS/chant/issues/4648) |
 | Roll back | `chant components release <env> …` | None | As is |
@@ -71,13 +74,35 @@ Any platform drives chant through the same calls. #1359 already depends on most 
 
 *(28 Oct)* Where these stand: the driver now approves chant's gate only for the plan digest chant recorded ("no plan, no approval", `work_deploy_chant_fly.mjs:310-321`), so the plan can't change between the run and the approval. But the phone still approves before chant plans, so the first point stands. The second, third and fourth are unchanged: the relayed approval is unsigned (`:321`), the stale rule counts only Arugula's applies (`deploys.rs:20-31`), and there are three drivers (`chant-fly`, `apps-platform`, `arugula-release`, `deploys.rs:78-80`).
 
+*(1 Nov)* Still as on 28 Oct at c75976ce: the driver approves only chant's recorded digest, after the phone approved a description; the relay is unsigned (`deploy_chant_fly.mjs:321`); the stale rule counts only Arugula's deploys (`deploys.rs:15-35`). The driver count went up: planter's four landed (M233), so there are seven (`deploys.rs:81-91`), and only `chant-fly` calls chant.
+
 ## Does it force a workflow?
 
 A little. Every deploy is planned by a person or agent, approved by one owner, and run on an Arugula box. There's no deploy on merge or on a green commit, no promotion between environments, and no per-environment rules like "prod needs two approvers". Most of that reads as v1 scope rather than a stance, and some of it (E2B only, GitHub only) is stated as such.
 
 It doesn't lock anyone in, since chant still deploys from a laptop or CI without the platform. Reading environments, promotion order and approval rules (quorum, approver roles) from chant would let Arugula support those workflows without designing them itself.
 
+## Rescope *(1 Nov)*
+
+A proposal, for lex00 and Jake to settle.
+
+The line above says releases are chant records, and Arugula's own release isn't one. The `arugula-release` driver runs `scripts/release` with no chant op, so the platform has the plan and the approval and chant has nothing. Two other things lean against the line: native #308 (promote control and platform from the newest `ci/green-server`) would build promotion in Arugula, which the terragucci paragraph says belongs in chant; and six of the seven drivers never call chant.
+
+In order, smallest first:
+
+1. Arugula's release writes a chant release record. After `scripts/release`, the `arugula-release` driver records the release in chant's ledger on origin, the approver as `github:<login>`, relayed by arugula, with a note naming the platform's approval. This needs nothing from chant and is the part of #1121 worth keeping.
+2. #308 picks and doesn't promote. It finds the newest `ci/green-server` commit and starts an `arugula-release` deploy of control and platform from it, with no environments, order or approval rules of its own. Staging, if it's wanted, is path B, in chant.
+3. Path A is dropped. Path B stays the way to get staging and promotion by digest for control, when that's wanted, and not before.
+4. Plan first, then sign the digest. Still the first fix to step 7's flow.
+5. chant's asks, in this order: #4646 (device signatures), so a phone approval counts on signed-only gates; #4648 (a stale read), so a laptop or CI apply makes a plan stale; #4649 (work items from squash merges), for `release candidates`; #4647 (the ledger's remote), only if the ledger should leave origin.
+6. One chant driver for every target moves to step 8, with planter's. planter's four landed as their own drivers, so folding them in is step 8's work anyway.
+7. aru-104 gets a decision that supersedes its release clause, which still says Arugula's release ships through chant-fly.
+
+The images in this note show the 22 Oct plan and weren't redrawn.
+
 ## Rough order
+
+*(1 Nov)* Replaced by "Rescope" above. Kept as written on 22 Oct.
 
 ![Proposed rollout by owner: chant and Arugula changes before the step 7 gate, during step 7 execution, and in step 8.](https://share.files.inevitable.fyi/2026-10-22/arugula-chant-rollout.png)
 
