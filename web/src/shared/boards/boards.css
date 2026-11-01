@@ -850,3 +850,18 @@
   outline-offset: 2px;
   border-radius: 3px;
 }
+
+/* A board from a Plane epic: where it comes from, under the title, and the group of them on a list. */
+.board-source {
+  margin: 4px 0;
+  font-size: 0.85em;
+}
+
+.board-plane-group {
+  margin-bottom: 12px;
+}
+
+.board-plane-group h3 {
+  margin: 16px 0 8px;
+  font-size: 1em;
+}

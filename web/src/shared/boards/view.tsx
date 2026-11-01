@@ -38,7 +38,7 @@ import { day } from "../time";
 import { BoardError, STALE_REV, boards, type ForgeChecks } from "./store";
 import "./boards.css";
 import { groupFold, isFolded, laneFold, loadFolds, saveFolds, type Folds } from "./folds";
-import { PICK_DELAY_MS, cardTone, checkTone, checkWord, groupMove, liveTone, prsOf, PICK_LIMIT, assigneesLine, blockClass, GOAL_MAX, answerReady, askWaitingLine, blockFacts, chipOf, settledFacts, debounced, earlierLine, epicLine, holdsRow, groupLine, isCard, laneCount, liveClass, liveWord, marksOf, needsYou, pointerHref, pointerLabel, pointerText, pointerToSend, proofMark, readyCount, relationLine, RELATION_KINDS, sections, stepActive, workLabel } from "./text";
+import { PICK_DELAY_MS, cardTone, checkTone, checkWord, groupMove, liveTone, prsOf, PICK_LIMIT, assigneesLine, blockClass, GOAL_MAX, answerReady, askWaitingLine, blockFacts, chipOf, settledFacts, debounced, earlierLine, epicLine, holdsRow, groupLine, isCard, laneCount, liveClass, liveWord, marksOf, needsYou, pointerHref, pointerLabel, pointerText, pointerToSend, proofMark, readyCount, relationLine, RELATION_KINDS, sections, sourceLine, sourceLinked, leftOutLine, stepActive, workLabel } from "./text";
 
 const STALE_SAID = "That changed while you were editing, so the board is read again. Make your change again if it still applies.";
 
@@ -325,6 +325,18 @@ function Epic({ b, act, id, write, view }: { b: ProjectBoard; act: Act; id: stri
   };
   return (
     <div class="board-epic">
+      {b.source && (
+        <p class="dim board-source" data-board-source={b.source.key}>
+          {sourceLinked(b.source) ? (
+            <a href={b.source.url} target="_blank" rel="noreferrer">
+              {sourceLine(b.source)}
+            </a>
+          ) : (
+            sourceLine(b.source)
+          )}
+          {b.source.left_out > 0 && <span data-board-left-out> · {leftOutLine(b.source.left_out)}</span>}
+        </p>
+      )}
       {goalOpen ? (
         <div class="board-form" data-board-goal-form>
           <textarea value={goal} rows={4} maxLength={GOAL_MAX} aria-label="Goal" data-board-goal-input autoFocus onInput={(ev) => setGoal(ev.currentTarget.value)} />

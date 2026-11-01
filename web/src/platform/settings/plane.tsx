@@ -17,6 +17,7 @@ import type { PlatformProject } from "../session";
 import { names } from "../links";
 import { follow, pathOf } from "../router";
 import { ATTRIBUTIONS, CUSTOM, KINDS, PRESETS, attributionHelp, presetOf } from "./plane-policy";
+import { useBoards } from "../pages/boards";
 import { Section } from "./section";
 
 /** A call to the platform: its JSON, or its `{error}` thrown. */
@@ -110,6 +111,11 @@ function WebhookCell({ c, changes, busy, save }: { c: TrackerConnection; changes
   );
 }
 
+/** How many epics a connection's boards follow. */
+export function epicsLine(n: number): string {
+  return n === 0 ? "No epics yet" : `Following ${n} ${n === 1 ? "epic" : "epics"}`;
+}
+
 export function PlaneConnections({ p }: { p: PlatformProject }) {
   const [conns, setConns] = useState<TrackerConnection[] | null>(null);
   const [workspace, setWorkspace] = useState("");
@@ -148,6 +154,9 @@ export function PlaneConnections({ p }: { p: PlatformProject }) {
       setProject("");
     });
   };
+  const list = useBoards(p.id);
+  // The open boards each connection's epics made; a connection's name is what the board's source carries.
+  const following = (c: TrackerConnection) => (Array.isArray(list) ? list.filter((b) => b.closed_at == null && b.source?.connection === c.name).length : null);
   const connected = (conns ?? []).filter((c) => c.purge_after === null).length;
   const waiting = (conns ?? []).reduce((n, c) => n + (c.purge_after === null ? c.waiting_writes : 0), 0);
   const triage = pathOf({ page: "triage", project: p.id }, names);
@@ -200,6 +209,7 @@ export function PlaneConnections({ p }: { p: PlatformProject }) {
                 <th scope="col">Items</th>
                 <th scope="col">Agent writes</th>
                 <th scope="col">Webhook</th>
+                <th scope="col">Epics</th>
                 <th scope="col">
                   <span class="settings-hidden">Disconnect</span>
                 </th>
@@ -277,6 +287,33 @@ export function PlaneConnections({ p }: { p: PlatformProject }) {
                   <td data-col="Webhook">
                     {c.purge_after === null && (
                       <WebhookCell c={c} changes={changes} busy={busy} save={(webhook_secret) => act(() => call("PATCH", `${base}/${c.id}`, { webhook_secret }))} />
+                    )}
+                  </td>
+                  <td data-col="Epics">
+                    {c.purge_after === null && (
+                      <div class="plane-epics" data-plane-epics={c.id}>
+                        <label class="settings-switch">
+                          <input
+                            type="checkbox"
+                            role="switch"
+                            class="sw-switch"
+                            data-plane-epics-switch={c.id}
+                            checked={c.epics_as_boards}
+                            disabled={busy || !changes}
+                            onChange={(e) => {
+                              const epics_as_boards = e.currentTarget.checked;
+                              void act(() => call("PATCH", `${base}/${c.id}`, { epics_as_boards }));
+                            }}
+                          />
+                          <span>Epics become boards</span>
+                        </label>
+                        <span class="dim">Each open epic in this Plane project gets a board that keeps itself up to date. Off, the boards stay but stop following.</span>
+                        {list !== "off" && following(c) !== null && (
+                          <span class="dim" data-plane-epics-count>
+                            {epicsLine(following(c)!)}
+                          </span>
+                        )}
+                      </div>
                     )}
                   </td>
                   <td class="settings-row-act">

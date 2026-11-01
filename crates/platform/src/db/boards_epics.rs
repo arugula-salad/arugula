@@ -68,7 +68,7 @@ pub struct Synced {
 }
 
 fn board_with_source(r: &Row) -> Result<(Board, String)> {
-    Ok((super::boards::board_row(r)?, r.get(16)?))
+    Ok((super::boards::board_row(r)?, r.get(17)?))
 }
 
 /// Delete a row with what is attached to it.

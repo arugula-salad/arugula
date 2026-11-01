@@ -626,6 +626,10 @@ pub struct BoardSource {
     /// ones first.
     #[serde(default)]
     pub left_out: u32,
+    /// Whether the epic is started in the tracker (Plane's `started` group),
+    /// read from its mirrored item; not whether the board is open.
+    #[serde(default)]
+    pub started: bool,
 }
 
 /// A board's work, counted: the rows with a primary item (an issue or a
