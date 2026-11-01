@@ -1,0 +1,65 @@
+# One shard of the Playwright specs (E2E_SET=rest), on the run-debug
+# binaries .github/actions/setup fetched (`fetch: run-debug`). check.yml's
+# e2e and pull-request.yml's run this, each from its own matrix.
+#
+# Shards by recorded time (web/scripts/e2e-shard.mjs, e2e/durations.json),
+# not Playwright's --shard by count: six of those ran 155-316 s (#868).
+# Twelve since #259: on GitHub's runners a shard more costs no pod time,
+# and seven ran ~5.8 min of specs each while test and macOS end at ~10.
+# Twelve is about the floor: control.spec.ts alone is ~170 s of the ~190 s
+# each gets, so more shards wouldn't end any sooner. The count is the
+# caller's matrix's (strategy.job-total). A stale durations.json
+# unbalances them (a 125 s spec weighed as 7 s held one 2 min longer):
+# refresh it when a shard runs well over the rest. Each keeps its JSON
+# report so `just e2e-durations RUN` can refresh the times.
+name: e2e-shard
+description: Shard N of M of the Playwright specs, on this run's debug binaries
+inputs:
+  shard:
+    description: This shard, from 1 (matrix.shard)
+    required: true
+  total:
+    description: How many shards (strategy.job-total)
+    required: true
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      run: scripts/ci-env use
+    - shell: bash
+      run: just bootstrap
+    - name: Playwright's browsers
+      shell: bash
+      run: just browsers
+    - name: The Playwright specs, shard ${{ inputs.shard }} of ${{ inputs.total }}
+      shell: bash
+      run: |
+        port=$(scripts/free-port)
+        cd web
+        mapfile -t files < <(node scripts/e2e-shard.mjs "$SHARD" "$TOTAL")
+        # No files would run every spec in every shard.
+        [ ${#files[@]} -gt 0 ] || { echo "e2e-shard listed nothing" >&2; exit 1; }
+        E2E_PORT=$port pnpm exec playwright test "${files[@]}"
+      env:
+        SHARD: ${{ inputs.shard }}
+        TOTAL: ${{ inputs.total }}
+        E2E_CHROMIUM: "1"
+        E2E_SET: rest
+        E2E_TIMINGS: ${{ runner.temp }}/e2e-timings.json
+    - name: The shard's times
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: e2e-timings-${{ inputs.shard }}
+        path: ${{ runner.temp }}/e2e-timings.json
+        retention-days: 30
+        if-no-files-found: ignore
+    # A failed spec's screenshot (playwright.config.ts), kept a week.
+    - name: Failed specs' screenshots
+      if: failure()
+      uses: actions/upload-artifact@v4
+      with:
+        name: e2e-failures-${{ inputs.shard }}
+        path: web/test-results/
+        retention-days: 7
+        if-no-files-found: ignore
