@@ -13,7 +13,7 @@ use std::sync::Arc;
 
 use arugula_control_common::Principal;
 use arugula_e2e::{
-    Cert, DeviceKeys, Kind, Revocation,
+    DeviceKeys,
     deploy::{Approval, Decision, Operation},
     now_ms,
     team::{Member, Roster, TeamRole},
@@ -35,46 +35,28 @@ use crate::{
         STALE, SUPERSEDED,
     },
     grants::AGENT_UNGRANTED,
-    hub::DeviceTrust,
 };
 
-/// An account's devices: a phone (its root), a CLI on its machine, and a
-/// browser it removed; and its passkey, `pk-<account>`. Since DK4 only the
-/// passkey approves: the devices are there to show they play no part.
+/// An account's devices, a phone and a CLI on its machine, and its passkey,
+/// `pk-<account>`, in the hub's passkey log. Since DK4 only the passkey
+/// approves, and the platform never asks the hub for devices: the keys are
+/// for v1 approvals from before the switch, and a CLI's login.
 pub struct Devices {
     pub phone: DeviceKeys,
     cli: DeviceKeys,
 }
 
 pub fn devices(hub: &TestHub, account: &str) -> Devices {
-    let phone = DeviceKeys::generate();
-    let mut root = Cert::new(&phone, account, Kind::Browser, "Pixel");
-    root.sign_with(&phone);
-    let cli = DeviceKeys::generate();
-    let mut cli_cert = Cert::new(&cli, account, Kind::Cli, "geek's CLI");
-    cli_cert.sign_with(&phone);
-    let removed = DeviceKeys::generate();
-    let mut removed_cert = Cert::new(&removed, account, Kind::Browser, "an old laptop");
-    removed_cert.sign_with(&phone);
-    let revocation = Revocation::new(account, &removed.id(), &phone);
     hub.passkey(&format!("pk-{account}"), account, passkey_key(account).verifying_key().to_bytes());
-    // Team t's roster as `seeded` has it (a owns it, b edits, x views),
-    // signed by a's phone, which made a its owner.
-    if account == "a" {
-        let roots = [("a", phone.id()), ("b", "b-root".to_owned()), ("x", "x-root".to_owned())];
-        let members = [(&roots[0], TeamRole::Owner), (&roots[1], TeamRole::Editor), (&roots[2], TeamRole::Viewer)];
-        hub.rosters("t", vec![roster(1, &members.map(|((a, r), role)| (*a, r.as_str(), role)), &phone)]);
-    }
-    hub.devices(
-        account,
-        DeviceTrust {
-            root: phone.id(),
-            certs: vec![root, cli_cert, removed_cert],
-            revocations: vec![revocation],
-            legacy_app_children: vec![],
-        },
-    );
-    Devices { phone, cli }
+    Devices { phone: DeviceKeys::generate(), cli: DeviceKeys::generate() }
+}
+
+/// Team t's roster as `seeded` has it (a owns it, b edits, x views), as a
+/// deploy's box pins it.
+pub fn team_t() -> Roster {
+    let members =
+        [("a", "a-root", TeamRole::Owner), ("b", "b-root", TeamRole::Editor), ("x", "x-root", TeamRole::Viewer)];
+    roster(1, &members, &DeviceKeys::generate())
 }
 
 /// A version of team t's roster, signed by `by`.
@@ -664,7 +646,6 @@ async fn a_passkey_removed_from_the_log_no_longer_approves() {
     let (st, v) = call(&base, "a", "POST", &approve, Some(signed("a", &id, &op, Decision::Once))).await;
     assert_eq!((st, v["reason"].as_str()), (403, Some(PASSKEY)), "{v}");
     assert!(v["error"].as_str().is_some_and(|e| e.contains("wasn't one of the account's then")), "{v}");
-    assert_eq!(hub.calls_of("verify_passkey"), 0, "not asked for a verdict");
     assert_eq!(state(&base, &id).await, json!("pending"));
 }
 
@@ -702,7 +683,6 @@ async fn every_approval_needs_the_owners_passkey() {
     assert_eq!(state(&base, &id).await, json!("pending"));
     assert!(app.db.deploy_approvals(&id).unwrap().is_empty());
     assert!(hub.calls_of("passkey_log") >= 3, "checked against the hub's published log (DK3)");
-    assert_eq!(hub.calls_of("verify_passkey"), 0, "not asked for a verdict");
 
     let (st, d) = call(&base, "a", "POST", &approve, Some(signed("a", &id, &op, Decision::Once))).await;
     assert_eq!(
@@ -716,43 +696,18 @@ async fn every_approval_needs_the_owners_passkey() {
     assert!(detail["passkey"]["client_data_json"].as_str().is_some_and(|c| !c.is_empty()));
 }
 
-/// DK4 (aru-126): no device plays a part. An owner whose every device came
-/// in through a CLI's or the app's certificate (a CLI-rooted chain, a
-/// browser a CLI certified, the app's window and what it let in), and whose
-/// owner role a CLI's key gave, approves with their passkey; the platform
-/// doesn't ask the hub for devices or rosters. The owner role is read now:
-/// one made an editor since doesn't approve. A personal project's owner is
-/// its account.
+/// DK4 (aru-126): no device plays a part, and the platform has no way to
+/// ask the hub for one: an owner approves with their passkey. The owner
+/// role is read now: one made an editor since doesn't approve. A personal
+/// project's owner is its account.
 #[tokio::test]
-async fn an_owner_whose_browser_a_cli_certified_approves_with_a_passkey() {
+async fn an_owner_now_approves_with_a_passkey() {
     let (hub, app, base, t, _) = seeded().await;
-    let a = devices(&hub, "a");
-    let b = devices(&hub, "b");
+    devices(&hub, "a");
+    devices(&hub, "b");
     let env = production(&base, &t).await;
     let (id, op) = asked(&base, "a", &t, &env, "deadbeef").await;
     let approve = format!("/api/deploys/{id}/approve");
-    let cert = |keys: &DeviceKeys, kind, name: &str, by: &DeviceKeys| {
-        let mut c = Cert::new(keys, "a", kind, name);
-        c.sign_with(by);
-        c
-    };
-    // a's root is a CLI; its browser, a CLI certified it; the app's window
-    // let another in.
-    let cli_root = DeviceKeys::generate();
-    let (browser, window, let_in) = (DeviceKeys::generate(), DeviceKeys::generate(), DeviceKeys::generate());
-    let certs = vec![
-        cert(&cli_root, Kind::Cli, "the first CLI", &cli_root),
-        cert(&browser, Kind::Browser, "Firefox", &cli_root),
-        cert(&window, Kind::App, "Arugula app on jake-air", &browser),
-        cert(&let_in, Kind::Browser, "Safari", &window),
-    ];
-    hub.devices("a", DeviceTrust { root: cli_root.id(), certs, revocations: vec![], legacy_app_children: vec![] });
-    // b's CLI made a an owner of t.
-    let (ar, br) = (cli_root.id(), b.phone.id());
-    let v1 = roster(1, &[("b", &br, TeamRole::Owner), ("a", &ar, TeamRole::Editor)], &b.phone);
-    let both = [("b", br.as_str(), TeamRole::Owner), ("a", ar.as_str(), TeamRole::Owner)];
-    hub.rosters("t", vec![v1, roster(2, &both, &b.cli)]);
-    let _ = a;
 
     // Made an editor since: not an owner now.
     hub.team("t", &[("a", TeamRole::Editor), ("b", TeamRole::Owner), ("x", TeamRole::Viewer)]);
@@ -764,7 +719,6 @@ async fn an_owner_whose_browser_a_cli_certified_approves_with_a_passkey() {
 
     let (st, d) = call(&base, "a", "POST", &approve, Some(signed("a", &id, &op, Decision::Once))).await;
     assert_eq!((st, &d["state"]), (200, &json!("approved")), "{d}");
-    assert_eq!((hub.calls_of("device_trust"), hub.calls_of("team_rosters")), (0, 0), "no device or roster asked");
 
     // A personal project: its account is its owner.
     let mine = crate::projects::personal_project(&app, "a").await.unwrap().unwrap();

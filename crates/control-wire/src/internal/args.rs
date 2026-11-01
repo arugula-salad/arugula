@@ -7,7 +7,7 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use super::{Deleted, GithubUser, HostedMachine, PasskeyAssertion, Principal, PushOptions, UserToken};
+use super::{Deleted, GithubUser, HostedMachine, Principal, PushOptions, UserToken};
 use crate::{
     forge::{DaemonOp, Poke},
     hosted::SetupReport,
@@ -159,15 +159,6 @@ pub struct DelegationArgs {
 
 #[derive(Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
-pub struct SignedArgs {
-    pub owner: String,
-    pub device: String,
-    pub body: String,
-    pub sig: String,
-}
-
-#[derive(Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct OpArgs {
     pub daemon: String,
     pub op: DaemonOp,
@@ -292,14 +283,6 @@ pub struct PreviewArgs {
     pub id: String,
     #[serde(default)]
     pub workspace: String,
-}
-
-#[derive(Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
-pub struct PasskeyArgs {
-    pub account: String,
-    pub challenge: String,
-    pub assertion: PasskeyAssertion,
 }
 
 #[derive(Serialize, Deserialize)]

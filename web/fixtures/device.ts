@@ -427,7 +427,7 @@ export class Device {
    * approval's own bytes (approval v2, #1943), as a phone does. */
   async approveDeploy(id: string, lifeMs = DEFAULT_LIFE_MS): Promise<{ deploy: string; state: string }> {
     const d = await this.api<{ operation: { hash: string } }>(`/api/deploys/${id}`);
-    const a = { v: 2, deploy: id, op: d.operation.hash, account: this.account, decision: "once" as const, expires: Date.now() + lifeMs };
+    const a = { v: 2 as const, deploy: id, op: d.operation.hash, account: this.account, decision: "once" as const, expires: Date.now() + lifeMs };
     const passkey = await this.assert(b64url(await sha256(approvalBody(a))));
     const r = await this.api<{ id: string; state: string }>(`/api/deploys/${id}/approve`, { op: a.op, expires: a.expires, passkey });
     return { deploy: r.id, state: r.state };

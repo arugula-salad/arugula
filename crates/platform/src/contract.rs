@@ -121,21 +121,6 @@ async fn principals(f: &dyn Fixture) {
     let theirs = Principal::Daemon { account: "acct-pb".into(), daemon: "dmn-pa".into() };
     assert!(resolve(theirs).await.is_none(), "another account's machine");
 
-    // M218: an account's devices as the hub keeps them, its first approved
-    // one its root; nothing for an account that isn't.
-    let t = hub.device_trust("acct-pa").await.unwrap().expect("an account with a device");
-    assert_eq!(t.root, cli);
-    assert!(t.certs.iter().any(|c| c.device == cli) && t.revocations.is_empty());
-    assert_eq!(hub.device_trust("acct-none").await.unwrap(), None);
-    // M218: a passkey assertion the hub doesn't know is refused, saying why.
-    let unknown = crate::hub::PasskeyAssertion {
-        id: "pk-none".into(),
-        client_data_json: String::new(),
-        authenticator_data: String::new(),
-        signature: String::new(),
-    };
-    let v = hub.verify_passkey("acct-pa", "challenge", &unknown).await.unwrap();
-    assert!(!v.ok && !v.why.is_empty(), "{v:?}");
     // DK3: an account's passkey log, its own; empty for one with none.
     let log = hub.passkey_log("acct-pa").await.unwrap();
     assert_eq!((log.account.as_str(), log.events.len()), ("acct-pa", 0));
@@ -204,12 +189,6 @@ async fn teams(f: &dyn Fixture) {
     members.sort_by_key(|(a, _)| *a);
     assert_eq!(members, [("acct-ta", Owner), ("acct-tb", Editor), ("acct-tc", Viewer)], "only members with an account");
     assert_eq!(t.members.iter().find(|m| m.account == "acct-tb").unwrap().name, "acct-tb");
-    // M218: the rosters as signed, oldest first; none for a team that isn't.
-    let rosters = hub.team_rosters("t-one").await.unwrap();
-    assert_eq!(rosters.iter().map(|r| r.version).collect::<Vec<_>>(), [1]);
-    assert!(rosters[0].member("acct-gone").is_some(), "as signed, not as filtered");
-    assert!(hub.team_rosters("t-none").await.unwrap().is_empty());
-
     f.roster("t-one", "Uno", "acct-ta", &[("acct-ta", Owner), ("acct-tb", Editor)]).unwrap();
     let t = &hub.teams(&ids(&["t-one"])).await.unwrap()[0];
     assert_eq!((t.version, t.name.as_str(), t.members.len()), (2, "Uno", 2), "the latest roster");

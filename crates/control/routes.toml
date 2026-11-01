@@ -2436,7 +2436,7 @@ path = "/api/projects/{project}/runs/grant"
 process = "platform"
 auth = "session"
 clients = ["page"]
-note = "An owner's browser's signed grant, kept as signed: it must name the project's live delegation (HubPort::live_delegation), expire within 366 days, and be signed by a browser of one of the project's owners that's a browser all the way back (HubPort::owner_browser_signed; hosted machines check again). Never a CLI's or the desktop app's key. One live grant a project. Not a machine's cloud.drive: agents never sign one."
+note = "An owner's grant, kept as signed: it must name the project's live delegation (HubPort::live_delegation), expire within 366 days, and be signed with a passkey of one of the project's owners (v2, DK6: a user-verified assertion over its bytes, checked against the account's published passkey log; hosted machines check again). One live grant a project. Not a machine's cloud.drive: agents never sign one."
 
 [[route]]
 method = "POST"
@@ -2444,7 +2444,7 @@ path = "/api/projects/{project}/runs/grant/revoke"
 process = "platform"
 auth = "session"
 clients = ["page"]
-note = "Any owner's browser's signed revoke (a browser all the way back, as for the grant) of every grant of the project under a delegation made by its time: no new starts, and every hosted machine of the project is told (runs.revoke)."
+note = "Any owner's revoke, signed with their passkey as for the grant (v3, DK6), of every grant of the project under a delegation made by its time: no new starts, and every hosted machine of the project is told (runs.revoke)."
 
 [[route]]
 method = "POST"

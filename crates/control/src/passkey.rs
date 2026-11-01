@@ -1032,8 +1032,8 @@ fn site_origins<'a>(sites: impl IntoIterator<Item = &'a Site>) -> Origins {
 /// deploy's approval or deny, DK4, aru-126): control's own sites'
 /// ([`site_origins`]), and the platform page's for the RP of control's
 /// public URL, the related origin `/.well-known/webauthn` lists (S46 q1).
-/// Only [`verify_for`] and what a deploy's box pins take it: the platform
-/// page can't sign anyone in to control.
+/// Only what a deploy's box pins takes it: the platform page can't sign
+/// anyone in to control.
 pub(crate) fn platform_origins(app: &App) -> Origins {
     let mut o = site_origins(&app.cfg.sites);
     if let Some(p) = &app.cfg.platform_host {
@@ -1075,41 +1075,6 @@ fn counted(pk: &Passkey, count: u32) -> Result<(), ApiError> {
         return Err(err(StatusCode::UNAUTHORIZED, "this passkey's counter went backwards; it may have been copied"));
     }
     Ok(())
-}
-
-/// A passkey's assertion over a challenge the platform made (M218: a
-/// deploy's approval, whose challenge is SHA-256 of the approval's bytes),
-/// checked for the platform (`HubPort::verify_passkey`) against `account`'s
-/// passkey log, as the platform itself now checks it
-/// (`arugula_e2e::passkey::verify`): live now, a `webauthn.get` from one of
-/// control's own sites or the platform page ([`platform_origins`], DK4)
-/// over exactly `challenge` (base64url), the person verified (UV), the
-/// signature; and here its counter didn't go backwards. Nothing is signed
-/// in. Why not, or `Ok`.
-pub fn verify_for(
-    app: &App,
-    account: &str,
-    challenge: &str,
-    a: &arugula_platform_api::hub::PasskeyAssertion,
-) -> anyhow::Result<Result<(), String>> {
-    let log = app.db.passkey_log(account)?;
-    let assertion = arugula_e2e::passkey::Assertion {
-        id: a.id.clone(),
-        client_data_json: a.client_data_json.clone(),
-        authenticator_data: a.authenticator_data.clone(),
-        signature: a.signature.clone(),
-    };
-    let v = match arugula_e2e::passkey::verify(&log, account, &assertion, challenge, now_ms(), &platform_origins(app)) {
-        Ok(v) => v,
-        Err(r) => return Ok(Err(r.says())),
-    };
-    if let Some(pk) = app.db.passkey(&a.id)? {
-        if let Err(e) = counted(&pk, v.count) {
-            return Ok(Err(e.1));
-        }
-        app.db.passkey_used(&a.id, v.count, now_ms())?;
-    }
-    Ok(Ok(()))
 }
 
 /// A team roster version's owner change, as the hub takes it (DK7, #388,
@@ -1194,11 +1159,26 @@ mod tests {
         ])
     }
 
-    /// M218: the platform's check of a passkey over a deploy approval's
-    /// bytes. Its owner's passkey, over that challenge, with UV, from
-    /// control's site: yes. Anything else: why not. Nobody is signed in.
+    /// A deploy approval's passkey checked against the account's log with
+    /// [`platform_origins`], as the platform and a deploy's box check it
+    /// (DK4): why not, or `Ok`.
+    fn platform_check(
+        app: &App,
+        account: &str,
+        challenge: &str,
+        a: &arugula_e2e::passkey::Assertion,
+    ) -> Result<(), String> {
+        let log = app.db.passkey_log(account).unwrap();
+        arugula_e2e::passkey::verify(&log, account, a, challenge, now_ms(), &platform_origins(app))
+            .map(|_| ())
+            .map_err(|r| r.says())
+    }
+
+    /// M218: a passkey over a deploy approval's bytes. Its owner's passkey,
+    /// over that challenge, with UV, from control's site: yes. Anything
+    /// else: why not. Nobody is signed in.
     #[test]
-    fn verify_for_checks_whose_what_and_how() {
+    fn a_platform_passkey_checks_whose_what_and_how() {
         use ed25519_dalek::Signer as _;
         let app = App::for_tests("https://control.test");
         let key = ed25519_dalek::SigningKey::from_bytes(&[9; 32]);
@@ -1211,7 +1191,7 @@ mod tests {
             data.extend_from_slice(&0u32.to_be_bytes());
             let mut msg = data.clone();
             msg.extend_from_slice(&Sha256::digest(client.as_bytes()));
-            arugula_platform_api::hub::PasskeyAssertion {
+            arugula_e2e::passkey::Assertion {
                 id: id.into(),
                 client_data_json: B64.encode(client.as_bytes()),
                 authenticator_data: B64.encode(&data),
@@ -1219,7 +1199,7 @@ mod tests {
             }
         };
         let site = "https://control.test";
-        let check = |account: &str, a| verify_for(&app, account, &challenge, &a).unwrap();
+        let check = |account: &str, a| platform_check(&app, account, &challenge, &a);
         assert_eq!(check("acct-a", make("pk1", &challenge, site, UP | UV)), Ok(()));
         assert!(check("acct-b", make("pk1", &challenge, site, UP | UV)).is_err(), "another account's");
         assert!(check("acct-a", make("pk1", "b3RoZXI", site, UP | UV)).is_err(), "another challenge");
@@ -1237,7 +1217,7 @@ mod tests {
         app.cfg.platform_host =
             Some(crate::platform_host::PlatformHost { host: "app.test".into(), origin: page.into() });
         app.db.add_passkey("pk1", "acct-a", EDDSA, &key.verifying_key().to_bytes(), 1).unwrap();
-        let check = |a| verify_for(&app, "acct-a", &challenge, &a).unwrap();
+        let check = |a| platform_check(&app, "acct-a", &challenge, &a);
         assert_eq!(check(make("pk1", &challenge, page, UP | UV)), Ok(()));
         assert_eq!(check(make("pk1", &challenge, site, UP | UV)), Ok(()));
         assert!(check(make("pk1", &challenge, "https://other.test", UP | UV)).is_err());
@@ -1417,13 +1397,7 @@ mod tests {
             assert!(login(&app, &h, a).is_ok(), "signing in at the new site, with sites {sites:?}");
             let ch = B64.encode(Sha256::digest(b"an approval"));
             let a = assert_as(&old_key, &old_id, &ch, "http://control.test", "control.test");
-            let pa = arugula_platform_api::hub::PasskeyAssertion {
-                id: a.id.clone(),
-                client_data_json: a.client_data.clone(),
-                authenticator_data: a.authenticator_data.clone(),
-                signature: a.signature.clone(),
-            };
-            assert_eq!(verify_for(&app, "acct-s", &ch, &pa).unwrap(), Ok(()), "the platform's check, sites {sites:?}");
+            assert_eq!(platform_check(&app, "acct-s", &ch, &a.e2e()), Ok(()), "the platform's check, sites {sites:?}");
         }
     }
 

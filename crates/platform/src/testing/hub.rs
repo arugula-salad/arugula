@@ -75,10 +75,6 @@ struct State {
     op_hook: Option<OpHook>,
     /// It runs GitHub's authorization for a send (M168).
     authorizes: bool,
-    /// Accounts' devices (M218).
-    devices: BTreeMap<String, crate::hub::DeviceTrust>,
-    /// Teams' rosters, as signed (M218).
-    rosters: BTreeMap<String, Vec<arugula_e2e::team::Roster>>,
     /// Passkeys by credential id: their account and Ed25519 public key
     /// (M218).
     passkeys: BTreeMap<String, (String, [u8; 32])>,
@@ -91,9 +87,6 @@ struct State {
     delegated: BTreeSet<String>,
     /// Projects' live delegation ids (M211), by project.
     delegation_ids: BTreeMap<String, String>,
-    /// Devices whose signatures aren't a browser owner's (M211's grants):
-    /// every other one is.
-    not_browsers: BTreeSet<String>,
     enrollments: Vec<crate::hosted::enroll::EnrollAsk>,
     enrolled: BTreeMap<String, String>,
     taken: BTreeSet<String>,
@@ -195,11 +188,6 @@ impl TestHub {
     }
 
     /// `project`'s live delegation is now `id` (M211), or it has none.
-    /// `device` isn't a browser owner's, for grants and their revokes.
-    pub fn not_a_browser(&self, device: &str) {
-        self.state.lock().unwrap().not_browsers.insert(device.into());
-    }
-
     pub fn set_delegation(&self, project: &str, id: Option<&str>) {
         let mut s = self.state.lock().unwrap();
         match id {
@@ -298,11 +286,6 @@ impl TestHub {
     }
 
     /// Whether it runs GitHub's authorization for a send.
-    /// A team's signed rosters, oldest first, as the hub keeps them (M218).
-    pub fn rosters(&self, team: &str, rosters: Vec<arugula_e2e::team::Roster>) {
-        self.state.lock().unwrap().rosters.insert(team.into(), rosters);
-    }
-
     /// A passkey of an account's, Ed25519, as the hub keeps it (M218).
     pub fn passkey(&self, id: &str, account: &str, public: [u8; 32]) {
         let mut s = self.state.lock().unwrap();
@@ -337,11 +320,6 @@ impl TestHub {
         let added = log.events.iter().rev().find(|e| e.credential == id).expect("its event").clone();
         let removed = added.removal(at, "session").placed_after(log.events.last());
         log.events.push(removed);
-    }
-
-    /// An account's devices as the hub keeps them (M218).
-    pub fn devices(&self, account: &str, trust: crate::hub::DeviceTrust) {
-        self.state.lock().unwrap().devices.insert(account.into(), trust);
     }
 
     pub fn authorizes(&self, on: bool) {
@@ -628,17 +606,6 @@ impl HubPort for TestHub {
         done(self.state.lock().unwrap().delegation_ids.get(project).cloned())
     }
 
-    fn owner_browser_signed<'a>(
-        &'a self,
-        _owner: &'a str,
-        device: &'a str,
-        _body: &'a str,
-        _sig: &'a str,
-    ) -> BoxFuture<'a, HubResult<bool>> {
-        self.called("owner_browser_signed");
-        done(!self.state.lock().unwrap().not_browsers.contains(device))
-    }
-
     fn hosted_enrolled<'a>(
         &'a self,
         workspaces: &'a [String],
@@ -698,62 +665,10 @@ impl HubPort for TestHub {
         done(())
     }
 
-    fn device_trust<'a>(&'a self, account: &'a str) -> BoxFuture<'a, HubResult<Option<crate::hub::DeviceTrust>>> {
-        self.called("device_trust");
-        done(self.state.lock().unwrap().devices.get(account).cloned())
-    }
-
-    fn team_rosters<'a>(&'a self, team: &'a str) -> BoxFuture<'a, HubResult<Vec<arugula_e2e::team::Roster>>> {
-        self.called("team_rosters");
-        done(self.state.lock().unwrap().rosters.get(team).cloned().unwrap_or_default())
-    }
-
     fn passkey_log<'a>(&'a self, account: &'a str) -> BoxFuture<'a, HubResult<arugula_e2e::passkey::Log>> {
         self.called("passkey_log");
         let log = self.state.lock().unwrap().passkey_logs.get(account).cloned();
         done(log.unwrap_or_else(|| arugula_e2e::passkey::Log { account: account.into(), ..Default::default() }))
-    }
-
-    /// The hub's checks (`passkey::verify_for`), for Ed25519 passkeys on
-    /// `https://control.example`: whose it is, the ceremony, the challenge,
-    /// UV and the signature.
-    fn verify_passkey<'a>(
-        &'a self,
-        account: &'a str,
-        challenge: &'a str,
-        a: &'a crate::hub::PasskeyAssertion,
-    ) -> BoxFuture<'a, HubResult<crate::hub::PasskeyVerdict>> {
-        use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD as B64};
-        use sha2::Digest as _;
-        self.called("verify_passkey");
-        let verdict = (|| {
-            let (whose, public) = self.state.lock().unwrap().passkeys.get(&a.id).cloned().ok_or("not registered")?;
-            if whose != account {
-                return Err("not theirs");
-            }
-            let raw = B64.decode(&a.client_data_json).map_err(|_| "client data")?;
-            let cd: Value = serde_json::from_slice(&raw).map_err(|_| "client data")?;
-            if cd["type"] != "webauthn.get" || cd["challenge"] != challenge || cd["origin"] != "https://control.example"
-            {
-                return Err("another ceremony, challenge or site");
-            }
-            let data = B64.decode(&a.authenticator_data).map_err(|_| "authenticator data")?;
-            if data.len() < 37 || data[32] & 0x05 != 0x05 {
-                return Err("no user verification");
-            }
-            let sig: [u8; 64] = B64.decode(&a.signature).ok().and_then(|s| s.try_into().ok()).ok_or("signature")?;
-            let mut msg = data.clone();
-            msg.extend_from_slice(&sha2::Sha256::digest(&raw));
-            ed25519_dalek::VerifyingKey::from_bytes(&public)
-                .ok()
-                .filter(|k| k.verify_strict(&msg, &ed25519_dalek::Signature::from_bytes(&sig)).is_ok())
-                .ok_or("bad signature")?;
-            Ok(())
-        })();
-        done(match verdict {
-            Ok(()) => crate::hub::PasskeyVerdict { ok: true, why: String::new() },
-            Err(why) => crate::hub::PasskeyVerdict { ok: false, why: why.into() },
-        })
     }
 }
 

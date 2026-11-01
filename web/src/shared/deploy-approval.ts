@@ -13,8 +13,8 @@
 //   where <place>
 //   planned <planned event's hash>
 //
-// v1 (before DK4), which the platform no longer takes, named the signing
-// device too (`by <device id>`, last) and carried its Ed25519 signature.
+// v1 (before DK4) named a signing device too. The platform no longer takes
+// one, and nothing here makes or checks one.
 //
 // The platform sends the operation's bytes and their hash, and the deploy's
 // `planned` event as stored; the page hashes the bytes itself and reads
@@ -48,12 +48,8 @@ export interface Approval {
   account: string;
   decision: Decision;
   expires: number;
-  /** 2 (DK4) or, absent, 1. */
-  v?: number;
-  /** v1 only: the signing device's id. */
-  by?: string;
-  /** v1 only: its Ed25519 signature, hex. */
-  sig?: string;
+  /** Always 2 (DK4). */
+  v: 2;
 }
 
 /** S37: an approval defaults to 24 hours. */
@@ -99,15 +95,13 @@ export async function sha256Hex(text: string): Promise<string> {
   return hex(new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text))));
 }
 
-/** The bytes an approval is over: a v2's (DK4), or a v1's, which names its
- * device. */
-export function approvalBody(a: Omit<Approval, "sig">): string {
-  const head = `deploy ${a.deploy}\nop ${a.op}\naccount ${a.account}\ndecision ${a.decision}\nexpires ${a.expires}\n`;
-  return a.v === 2 ? `arugula deploy approval v2\n${head}` : `arugula deploy approval v1\n${head}by ${a.by}\n`;
+/** The bytes an approval is over (v2, DK4). */
+export function approvalBody(a: Approval): string {
+  return `arugula deploy approval v2\ndeploy ${a.deploy}\nop ${a.op}\naccount ${a.account}\ndecision ${a.decision}\nexpires ${a.expires}\n`;
 }
 
 /** The WebAuthn challenge an approval's passkey signs: SHA-256 of its bytes. */
-export async function approvalChallenge(a: Omit<Approval, "sig">): Promise<Uint8Array<ArrayBuffer>> {
+export async function approvalChallenge(a: Approval): Promise<Uint8Array<ArrayBuffer>> {
   return new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(approvalBody(a))));
 }
 
@@ -239,7 +233,7 @@ export const sameSite = (rpId: string, host: string = globalThis.location?.hostn
  * host than `rpId` it's a related-origin request (control's
  * `/.well-known/webauthn` lists the platform page); where the browser or
  * the provider can't make one, it throws {@link NotHere}. */
-export async function passkeyOver(a: Omit<Approval, "sig">, rpId: string, allow: string[] = []): Promise<Assertion> {
+export async function passkeyOver(a: Approval, rpId: string, allow: string[] = []): Promise<Assertion> {
   const challenge = await approvalChallenge(a);
   const asked = Date.now();
   let cred: PublicKeyCredential | null;

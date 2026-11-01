@@ -1406,7 +1406,7 @@ becomes the platform's:
 | plan, approve, apply | a deploy to the app's environment, planned and asked by the agent, approved on the phone, applied by its driver |
 | `set_secret` | the project's secret for the app, sealed by the platform, projected into Infisical |
 | an ntfy topic | nothing: the project's owners get a phone card for each deploy |
-| `auto-approve-updates` | nothing: every deploy waits for an owner's device |
+| `auto-approve-updates` | nothing: every deploy waits for an owner's passkey |
 
 redone's pods are gone and `redone.arugula.io` redirects since 2026-10-23
 ([Retired domains](#retired-domains-m239)). Its `rdn_` tokens work on the

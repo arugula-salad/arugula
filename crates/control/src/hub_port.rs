@@ -303,45 +303,6 @@ impl HubPort for InProcess {
         Box::pin(async move { Ok(self.app()?.relay.ask(daemon, op).await) })
     }
 
-    fn device_trust<'a>(
-        &'a self,
-        account: &'a str,
-    ) -> BoxFuture<'a, HubResult<Option<arugula_platform_api::hub::DeviceTrust>>> {
-        Box::pin(async move {
-            let app = self.app()?;
-            let Some(root) = app.db.account(account)?.and_then(|a| a.root) else { return Ok(None) };
-            let (certs, _) = app.db.devices(account)?;
-            Ok(Some(arugula_platform_api::hub::DeviceTrust {
-                root,
-                certs,
-                revocations: app.db.revocations(account)?,
-                legacy_app_children: crate::legacy_app::children(&app.db, account)?,
-            }))
-        })
-    }
-
-    fn team_rosters<'a>(&'a self, team: &'a str) -> BoxFuture<'a, HubResult<Vec<arugula_e2e::team::Roster>>> {
-        Box::pin(async move {
-            let app = self.app()?;
-            app.db.rosters(team, 0)?.iter().map(|b| teams::parse(b)).collect()
-        })
-    }
-
-    fn verify_passkey<'a>(
-        &'a self,
-        account: &'a str,
-        challenge: &'a str,
-        assertion: &'a arugula_platform_api::hub::PasskeyAssertion,
-    ) -> BoxFuture<'a, HubResult<arugula_platform_api::hub::PasskeyVerdict>> {
-        Box::pin(async move {
-            let app = self.app()?;
-            Ok(match crate::passkey::verify_for(&app, account, challenge, assertion)? {
-                Ok(()) => arugula_platform_api::hub::PasskeyVerdict { ok: true, why: String::new() },
-                Err(why) => arugula_platform_api::hub::PasskeyVerdict { ok: false, why },
-            })
-        })
-    }
-
     fn passkey_log<'a>(&'a self, account: &'a str) -> BoxFuture<'a, HubResult<arugula_e2e::passkey::Log>> {
         Box::pin(async move { self.app()?.db.passkey_log(account) })
     }
@@ -435,26 +396,6 @@ impl HubPort for InProcess {
         Box::pin(async move {
             let app = self.app()?;
             crate::hosted::live_delegation_id(&app.db, &app.hosted_key.public(), project, owner)
-        })
-    }
-
-    fn owner_browser_signed<'a>(
-        &'a self,
-        owner: &'a str,
-        device: &'a str,
-        body: &'a str,
-        sig: &'a str,
-    ) -> BoxFuture<'a, HubResult<bool>> {
-        Box::pin(async move {
-            let app = self.app()?;
-            let Some(o) = arugula_e2e::hosted::Owner::parse(owner) else { return Ok(false) };
-            let Some(people) = crate::hosted::people(&app.db, &o)? else { return Ok(false) };
-            // Here the desktop app's devices from before it had a kind are
-            // refused too (`Cert::is_browser` on every link), but just above
-            // a browser one approved back then (`legacy_app`): the check a
-            // hosted machine makes against the set it pinned.
-            let children = crate::hosted::legacy_app_children(&app.db, &people)?;
-            Ok(people.owners().browser_signed(owner, device, body, sig, &children))
         })
     }
 }
@@ -907,50 +848,6 @@ mod tests {
                 Some(arugula_platform_api::hub::LinkedAccount { account: "acct-pl".into(), github_id: 77 })
             );
             assert_eq!(f.hub().linked_account("studio", "77").await.unwrap(), None, "per product");
-        }
-    }
-
-    /// What an account's grandfathered app windows approved
-    /// (`legacy_app::children`) reaches the platform with its devices, in
-    /// process and over HTTP; and a standing grant's signature from such a
-    /// browser counts. The window's own doesn't, nor one from what it
-    /// certified after the cutoff, nor through a window stored after.
-    #[tokio::test]
-    async fn the_hub_says_which_app_windows_are_grandfathered() {
-        use contract::Fixture as _;
-
-        use crate::legacy_app::APP_KIND_SHIPPED_MS as CUTOFF;
-        for f in [Fixture::new().await, Fixture::over_http().await] {
-            let now = arugula_e2e::now_ms();
-            f.app.db.account_for("github", "gh-l", "l", "acct-l", now).unwrap();
-            let root = DeviceKeys::generate();
-            let mut rc = Cert::new(&root, "acct-l", Kind::Browser, "Safari on iPhone");
-            rc.sign_with(&root);
-            f.app.db.put_device(&rc, true, 1).unwrap();
-            let put = |name: &str, by: &DeviceKeys, at: u64| {
-                let k = DeviceKeys::generate();
-                let mut c = Cert::new(&k, "acct-l", Kind::Browser, name);
-                c.sign_with(by);
-                f.app.db.put_device(&c, true, at).unwrap();
-                k
-            };
-            let window = put("Arugula app on jake-air", &root, CUTOFF - 1);
-            let firefox = put("Firefox on Mac", &window, CUTOFF - 1);
-            let late = put("Arugula app on jake-mini", &root, CUTOFF);
-            let chrome = put("Chrome on Mac", &late, CUTOFF - 1);
-            let edge = put("Edge", &window, now);
-            let t = f.hub().device_trust("acct-l").await.unwrap().unwrap();
-            assert_eq!(t.legacy_app_children, vec![firefox.id()]);
-
-            let signed = |k: &DeviceKeys| hex::encode(k.signature(b"a grant"));
-            let ok = |k: &DeviceKeys| {
-                let (hub, id, sig) = (f.hub(), k.id(), signed(k));
-                async move { hub.owner_browser_signed("account:acct-l", &id, "a grant", &sig).await.unwrap() }
-            };
-            assert!(ok(&firefox).await, "through a grandfathered window");
-            assert!(!ok(&window).await, "the window itself");
-            assert!(!ok(&chrome).await, "through a window stored after");
-            assert!(!ok(&edge).await, "what the window certified after");
         }
     }
 

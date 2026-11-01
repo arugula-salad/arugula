@@ -24,7 +24,6 @@ import { parse, pathOf } from "../src/platform/paths.ts";
 import { deployTitle, staleNote, waitedText } from "../src/shared/deploys.ts";
 
 const f = JSON.parse(readFileSync(new URL("./deploy.fixture.json", import.meta.url), "utf8"));
-const hexOf = (s) => Uint8Array.from(s.match(/../g).map((b) => parseInt(b, 16)));
 
 test("the operation's bytes are Rust's, read and hashed the same", async () => {
   assert.equal(await sha256Hex(f.operation.body), f.operation.hash);
@@ -69,13 +68,6 @@ test("a v2 approval is Rust's bytes, and its passkey's challenge their SHA-256",
   assert.equal(approvalBody(a), f.approval_v2_body);
   const b64u = (b) => btoa(String.fromCharCode(...b)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
   assert.equal(b64u(await approvalChallenge(a)), f.approval_v2_challenge);
-});
-
-test("a v1 approval (before DK4) still reads as Rust's bytes, and its signature checks", async () => {
-  const { sig, ...a } = f.approval;
-  assert.equal(approvalBody(a), f.approval_body);
-  const key = await crypto.subtle.importKey("raw", hexOf(f.sign), { name: "Ed25519" }, false, ["verify"]);
-  assert.ok(await crypto.subtle.verify("Ed25519", key, hexOf(sig), new TextEncoder().encode(f.approval_body)));
 });
 
 test("a deploy's push opens its card on the platform page", () => {
