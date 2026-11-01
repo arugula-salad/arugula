@@ -283,8 +283,10 @@ pub fn rows(event: &str, v: &Value) -> Option<(u64, Rows)> {
             let it = pr_row(repo, full_name, &v["pull_request"])?;
             r.events.extend(review_event(repo, it.number, &v["review"]));
             // A review doesn't always move the PR's updated_at: timed from
-            // that, a review on a quiet PR looked hours late.
-            r.at = Some(it.updated_at.max(ms(&v["review"]["submitted_at"]).unwrap_or(0)));
+            // that, a review on a quiet PR looked hours late. A dismissal
+            // or an edit carries no time of its own (submitted_at is the
+            // review's), so it isn't timed.
+            r.at = (action == "submitted").then(|| it.updated_at.max(ms(&v["review"]["submitted_at"]).unwrap_or(0)));
             r.items.push(it);
         }
         "pull_request_review_comment" if action == "created" => {
@@ -503,6 +505,8 @@ mod tests {
         quiet["review"]["submitted_at"] = json!("2026-10-03T00:00:00Z");
         let at = rows("pull_request_review", &quiet).unwrap().1.at.unwrap();
         assert_eq!(at - r.at.unwrap(), 86_400_000, "timed from the review, not the PR's last change");
+        quiet["action"] = json!("dismissed");
+        assert_eq!(rows("pull_request_review", &quiet).unwrap().1.at, None, "a dismissal has no time of its own");
         assert!(!format!("{r:?}").contains("secret"));
         let comment = json!({ "action": "created", "repository": repo, "issue": { "number": 5, "pull_request": {} },
             "comment": { "id": 3, "body": "secret", "user": { "login": "dan", "id": 4 }, "created_at": "2026-10-02T00:00:00Z" } });
