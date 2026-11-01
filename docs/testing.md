@@ -183,7 +183,7 @@ its `_ci` records. A check run is matched by name, so no other workflow
 that runs on main's commits may have a job named like a required one, not
 even one that's skipped there (binaries.yml's PR-only desktop-xvfb is
 named `desktop-xvfb (pull request)` for that). `npx
-@intentius/chant@0.124.61 ci last-green` (after `git fetch --tags`) prints
+@intentius/chant@0.124.62 ci last-green` (after `git fetch --tags`) prints
 the newest green commit, and `--lane server` (or `app`, `daemon`) the
 newest of a lane's.
 
