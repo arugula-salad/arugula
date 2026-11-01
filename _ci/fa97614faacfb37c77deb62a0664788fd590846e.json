@@ -3,7 +3,7 @@
   "commit": "fa97614faacfb37c77deb62a0664788fd590846e",
   "branch": "main",
   "state": "red",
-  "at": "2026-10-31T10:17:17Z",
+  "at": "2026-11-01T02:42:16Z",
   "phases": {
     "lint": {
       "verdict": "pass",
@@ -54,7 +54,7 @@
       ]
     },
     "test": {
-      "verdict": "fail",
+      "verdict": "pass",
       "build": "newest",
       "runs": [
         {
@@ -68,18 +68,6 @@
           "id": 124441470955,
           "conclusion": "success",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/41167751875/job/124441470955"
-        },
-        {
-          "name": "test-postgres",
-          "id": 124441471057,
-          "conclusion": "failure",
-          "url": "https://github.com/arugula-salad/arugula/actions/runs/41167751875/job/124441471057"
-        },
-        {
-          "name": "core",
-          "id": 124441470927,
-          "conclusion": "success",
-          "url": "https://github.com/arugula-salad/arugula/actions/runs/41167751875/job/124441470927"
         }
       ]
     },
@@ -166,18 +154,6 @@
       "build": "newest",
       "runs": [
         {
-          "name": "testnet",
-          "id": 124442136249,
-          "conclusion": "success",
-          "url": "https://github.com/arugula-salad/arugula/actions/runs/41167751875/job/124442136249"
-        },
-        {
-          "name": "stack",
-          "id": 124442508828,
-          "conclusion": "success",
-          "url": "https://github.com/arugula-salad/arugula/actions/runs/41167751875/job/124442508828"
-        },
-        {
           "name": "desktop-xvfb",
           "id": 124441470942,
           "conclusion": "success",
@@ -194,12 +170,6 @@
           "id": 124441471029,
           "conclusion": "success",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/41167751875/job/124441471029"
-        },
-        {
-          "name": "macos (webkit)",
-          "id": 124441470944,
-          "conclusion": "success",
-          "url": "https://github.com/arugula-salad/arugula/actions/runs/41167751875/job/124441470944"
         }
       ]
     },
@@ -229,12 +199,12 @@
     }
   },
   "failure": {
-    "phase": "test",
+    "phase": "e2e",
     "run": {
-      "name": "test-postgres",
-      "id": 124441471057,
+      "name": "e2e (11)",
+      "id": 124442136361,
       "conclusion": "failure",
-      "url": "https://github.com/arugula-salad/arugula/actions/runs/41167751875/job/124441471057"
+      "url": "https://github.com/arugula-salad/arugula/actions/runs/41167751875/job/124442136361"
     }
   },
   "retried": {
