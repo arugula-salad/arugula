@@ -389,6 +389,8 @@ mod tests {
                 identifier: None,
                 state_name: None,
                 state_group: None,
+                item_type: None,
+                modules: vec![],
                 url: None,
                 kind: "pr".into(),
                 state: "open".into(),

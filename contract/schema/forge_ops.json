@@ -584,6 +584,14 @@
             "null"
           ]
         },
+        "modules": {
+          "default": [],
+          "description": "The names of the modules a Plane item is in; its `labels` are names too.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
         "number": {
           "description": "A Plane item's sequence id (`ALL-2212` is 2212).",
           "format": "uint64",
@@ -631,6 +639,13 @@
         },
         "title": {
           "type": "string"
+        },
+        "type": {
+          "description": "A Plane item's type (`Epic`, `Task`), when its project has types.",
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "updated_at": {
           "format": "uint64",

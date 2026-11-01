@@ -95,6 +95,9 @@ pub struct Item {
     pub title: String,
     /// The item type's name (`Epic`, `Task`), when the project has types.
     pub item_type: Option<String>,
+    /// The ids of its labels. Its modules aren't here: Plane's work item
+    /// doesn't say them, so the sync reads each module's items instead.
+    pub label_ids: Vec<String>,
     pub state_name: String,
     /// `backlog`, `unstarted`, `started`, `completed` or `cancelled`.
     pub state_group: String,
@@ -251,6 +254,13 @@ pub trait TrackerProvider: Send + Sync {
         module: &'a str,
         item: &'a str,
     ) -> BoxFuture<'a, Result<()>>;
+    /// The ids of the items in `module`, all its pages.
+    fn module_items<'a>(
+        &'a self,
+        workspace: &'a str,
+        project_id: &'a str,
+        module: &'a str,
+    ) -> BoxFuture<'a, Result<Vec<String>>>;
     /// The item numbered `sequence` in the project (`ARUGU-7` is 7), for a
     /// parent the mirror doesn't hold yet.
     fn by_sequence<'a>(

@@ -8,8 +8,12 @@
 //!   (`per_page` 100, `expand=state,type`, `order_by=-updated_at`, `cursor`;
 //!   `results`, `next_cursor`, `next_page_results`), each item's `id`,
 //!   `sequence_id`, `name`, `state` (`name`, `group`), `type` (`name`),
-//!   `parent`, `created_at`, `updated_at`;
-//! - `GET …/work-items/{item}/` with the same `expand`.
+//!   `labels` (ids), `parent`, `created_at`, `updated_at`;
+//! - `GET …/work-items/{item}/` with the same `expand`;
+//! - `GET …/modules/{module}/module-issues/` (`per_page` 100, `cursor`;
+//!   `results`, each an item with its `id`), the items in a module. A work
+//!   item's own answer doesn't say its modules, so the sync reads this
+//!   for each module instead (#475).
 //!
 //! The writes (#359), each followed by a read of the item, since Plane's
 //! answer to a write doesn't expand the state:
@@ -49,6 +53,8 @@ const PER_PAGE: u32 = 100;
 const PROJECT_PAGES: usize = 20;
 /// Most pages read of one list of a project's fields.
 const FIELD_PAGES: usize = 5;
+/// Most pages read of one module's items.
+const MODULE_PAGES: usize = 50;
 /// How long Plane has to answer one request.
 const TIMEOUT: Duration = Duration::from_secs(30);
 
@@ -75,6 +81,12 @@ fn millis(v: &Value) -> u64 {
     v.as_str().and_then(|s| s.parse::<jiff::Timestamp>().ok()).map_or(0, |t| t.as_millisecond().max(0) as u64)
 }
 
+/// The ids of the labels in a work item (bare ids, or objects with one).
+fn label_ids(v: &Value) -> Vec<String> {
+    let label = |l: &Value| l.as_str().or_else(|| l["id"].as_str()).map(str::to_owned);
+    v["labels"].as_array().into_iter().flatten().filter_map(label).collect()
+}
+
 /// A work item as Plane has it, with its state expanded.
 fn item(v: &Value) -> Result<Item> {
     let odd = || TrackerError::Unavailable("Plane's work item wasn't what was expected".into());
@@ -86,6 +98,7 @@ fn item(v: &Value) -> Result<Item> {
         sequence_id: v["sequence_id"].as_u64().ok_or_else(odd)?,
         title: v["name"].as_str().unwrap_or_default().to_owned(),
         item_type: v["type"]["name"].as_str().map(str::to_owned),
+        label_ids: label_ids(v),
         state_name: state.get("name").and_then(Value::as_str).unwrap_or_default().to_owned(),
         state_group: state.get("group").and_then(Value::as_str).ok_or_else(odd)?.to_owned(),
         parent_id: v["parent"].as_str().map(str::to_owned),
@@ -192,9 +205,7 @@ impl Plane {
             segment(project_id)?,
             segment(id)?
         );
-        let v = self.get(&path, &[]).await?;
-        let label = |l: &Value| l.as_str().or_else(|| l["id"].as_str()).map(str::to_owned);
-        Ok(v["labels"].as_array().into_iter().flatten().filter_map(label).collect())
+        Ok(label_ids(&self.get(&path, &[]).await?))
     }
 }
 
@@ -425,6 +436,43 @@ impl TrackerProvider for Plane {
         })
     }
 
+    fn module_items<'a>(
+        &'a self,
+        workspace: &'a str,
+        project_id: &'a str,
+        module: &'a str,
+    ) -> BoxFuture<'a, Result<Vec<String>>> {
+        Box::pin(async move {
+            let path = format!(
+                "/api/v1/workspaces/{}/projects/{}/modules/{}/module-issues/",
+                segment(workspace)?,
+                segment(project_id)?,
+                segment(module)?
+            );
+            let mut cursor: Option<String> = None;
+            let mut ids = vec![];
+            for _ in 0..MODULE_PAGES {
+                let mut q = vec![("per_page", PER_PAGE.to_string())];
+                q.extend(cursor.take().map(|c| ("cursor", c)));
+                let v = self.get(&path, &q).await?;
+                // Each entry is the item, or a link row with the item's id as `issue`.
+                let one = |e: &Value| e["issue"].as_str().or_else(|| e["id"].as_str()).map(str::to_owned);
+                match v.as_array() {
+                    Some(bare) => {
+                        ids.extend(bare.iter().filter_map(one));
+                        break;
+                    }
+                    None => ids.extend(v["results"].as_array().into_iter().flatten().filter_map(one)),
+                }
+                cursor = next(&v);
+                if cursor.is_none() {
+                    break;
+                }
+            }
+            Ok(ids)
+        })
+    }
+
     fn by_sequence<'a>(
         &'a self,
         workspace: &'a str,
@@ -484,6 +532,7 @@ mod tests {
         let v = json!({
             "id": "u1", "sequence_id": 7, "name": "Fix it", "parent": "u0",
             "state": { "name": "Done", "group": "completed" }, "type": { "name": "Bug" },
+            "labels": ["l1", { "id": "l2" }],
             "created_at": "2026-10-01T10:00:00Z", "updated_at": "2026-10-02T10:00:00.5Z",
         });
         let i = item(&v).unwrap();
@@ -492,6 +541,7 @@ mod tests {
             (7, "closed", Some("Bug"), Some("u0"))
         );
         assert_eq!(i.updated_at - i.created_at, 86_400_500);
+        assert_eq!(i.label_ids, ["l1", "l2"]);
         // Not expanded: no guessing at its state.
         assert!(item(&json!({ "id": "u1", "sequence_id": 7, "state": "uuid" })).is_err());
     }

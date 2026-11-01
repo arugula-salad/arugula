@@ -29,7 +29,7 @@
 //!
 //! [`keys`]: crate::keys
 
-use std::{sync::Arc, time::Duration};
+use std::{collections::HashMap, sync::Arc, time::Duration};
 
 use arugula_control_common::{ApiError, err};
 use arugula_control_wire::projects::{ConnectTracker, TrackerConnection, TrackerConnections, TrackerSettings};
@@ -311,10 +311,12 @@ pub fn ingest_page(
     items: &[super::Item],
     now: u64,
 ) -> anyhow::Result<Option<Vec<String>>> {
+    let ids: Vec<Vec<String>> = items.iter().map(|it| it.label_ids.clone()).collect();
+    let labels = fields::label_names(app, connection, &ids).map_err(|e| anyhow::anyhow!("{}", e.1))?;
     app.db.tracker_mirror(connection, lease, |tx| {
         let mut changed = vec![];
-        for it in items {
-            changed.extend(rows::upsert_item(tx, connection, mirror_id, it, now)?);
+        for (it, labels) in items.iter().zip(&labels) {
+            changed.extend(rows::upsert_item(tx, connection, mirror_id, it, labels, now)?);
         }
         Ok(changed)
     })
@@ -346,6 +348,48 @@ async fn mirror_relations(
     }
     changed.sort();
     changed.dedup();
+    if !changed.is_empty() {
+        crate::boards::items_changed(app, &changed);
+    }
+    Ok(Some(()))
+}
+
+/// Read the items of each of the project's modules and set the modules of
+/// the connection's rows to what they say (#475): Plane's work item doesn't
+/// say its modules. One read per module, all its pages, and a row's modules
+/// follow even when the item itself didn't change. A module that can't be
+/// read leaves every row as it was, since a partial map would take items
+/// out of modules. `None` when the claim was lost.
+async fn mirror_modules(
+    app: &Platform,
+    job: &Backfill,
+    provider: &dyn super::TrackerProvider,
+    modules: &[super::Named],
+) -> anyhow::Result<Option<()>> {
+    let mut by_item: HashMap<String, Vec<String>> = HashMap::new();
+    for m in modules {
+        if !app.db.renew_backfill(job, now_ms())? {
+            return Ok(None);
+        }
+        match provider.module_items(&job.workspace_slug, &job.source_project_id, &m.id).await {
+            Ok(ids) => {
+                for id in ids {
+                    by_item.entry(id).or_default().push(m.name.clone());
+                }
+            }
+            // Gone since the fields were read: it has no items.
+            Err(TrackerError::NotFound) => {}
+            Err(e) => {
+                warn!(connection = %job.id, error = %e, "couldn't read a Plane module's items; modules stay as they were");
+                return Ok(Some(()));
+            }
+        }
+    }
+    let Some(changed) =
+        app.db.tracker_mirror(&job.id, Some(&job.lease), |tx| rows::set_modules(tx, &job.id, &by_item))?
+    else {
+        return Ok(None);
+    };
     if !changed.is_empty() {
         crate::boards::items_changed(app, &changed);
     }
@@ -397,6 +441,14 @@ async fn turn(app: &Platform, job: &Backfill, now: u64) -> anyhow::Result<Option
     let key = keys::open(&app.db, master, &job.project_id, &key_name(&job.id))?
         .ok_or_else(|| anyhow::anyhow!("the connection's key isn't kept"))?;
     let provider = app.trackers.plane(&key);
+    // The labels' names and the modules the items are put in. A failure leaves the old ones.
+    let fields = match fields::refresh(app, &job.id, &job.workspace_slug, &job.source_project_id, &*provider).await {
+        Ok(f) => Some(f),
+        Err(e) => {
+            warn!(connection = %job.id, error = %e, "couldn't read a Plane project's fields");
+            None
+        }
+    };
     let mut cursor = job.cursor.clone();
     for _ in 0..PAGES {
         if !app.db.renew_backfill(job, now_ms())? {
@@ -412,6 +464,11 @@ async fn turn(app: &Platform, job: &Backfill, now: u64) -> anyhow::Result<Option
         }
         cursor = page.next;
         if cursor.is_none() {
+            if let Some(f) = &fields
+                && mirror_modules(app, job, &*provider, &f.modules).await?.is_none()
+            {
+                return Ok(None);
+            }
             let done = app.db.finish_backfill(job, &Finish::Done, now_ms())?;
             return Ok(done.then_some(Finish::Done));
         }
@@ -491,9 +548,13 @@ async fn reconcile_turn(app: &Platform, job: &Backfill, now: u64) -> anyhow::Res
     let provider = app.trackers.plane(&key);
     let since = app.db.tracker_newest(job.mirror_id)?.map(|t| t.saturating_sub(OVERLAP_MS));
     // What writes may name (#422). A failure leaves the old ones: a write reads them again when it needs to.
-    if let Err(e) = fields::refresh(app, &job.id, &job.workspace_slug, &job.source_project_id, &*provider).await {
-        warn!(connection = %job.id, error = %e, "couldn't read a Plane project's fields");
-    }
+    let fields = match fields::refresh(app, &job.id, &job.workspace_slug, &job.source_project_id, &*provider).await {
+        Ok(f) => Some(f),
+        Err(e) => {
+            warn!(connection = %job.id, error = %e, "couldn't read a Plane project's fields");
+            None
+        }
+    };
     let (mut cursor, mut total) = (None::<String>, 0);
     for _ in 0..RECONCILE_PAGES {
         if !app.db.renew_backfill(job, now_ms())? {
@@ -517,6 +578,11 @@ async fn reconcile_turn(app: &Platform, job: &Backfill, now: u64) -> anyhow::Res
     }
     if cursor.is_some() {
         warn!(connection = %job.id, pages = RECONCILE_PAGES, "a Plane reconcile hit its page cap with more changed");
+    }
+    if let Some(f) = &fields
+        && mirror_modules(app, job, &*provider, &f.modules).await?.is_none()
+    {
+        return Ok(None);
     }
     Ok(app.db.finish_reconcile(job, now_ms())?.then_some(total))
 }

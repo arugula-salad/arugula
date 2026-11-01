@@ -177,7 +177,7 @@ pub(crate) const READ: &[Kind] = &[
     },
     Kind {
         name: "issue",
-        description: "An issue: its state, title, author, labels, assignees, what happened to it and its waiting drafts. A native issue (\"#N\" or \"iss_…\"): it, its timeline and its newest comments. A Plane item (\"IDENT-N\", such as ALL-2212): its title, state and url; its body and comments aren't mirrored.",
+        description: "An issue: its state, title, author, labels, assignees, what happened to it and its waiting drafts. A native issue (\"#N\" or \"iss_…\"): it, its timeline and its newest comments. A Plane item (\"IDENT-N\", such as ALL-2212): its title, state, type, labels, modules and url; its body and comments aren't mirrored.",
         schema: schema_for_type::<IssueItemArgs>,
         flag: None,
     },

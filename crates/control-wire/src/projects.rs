@@ -210,6 +210,12 @@ pub struct ForgeItem {
     pub state_name: Option<String>,
     #[serde(default)]
     pub state_group: Option<String>,
+    /// A Plane item's type (`Epic`, `Task`), when its project has types.
+    #[serde(default, rename = "type", skip_serializing_if = "Option::is_none")]
+    pub item_type: Option<String>,
+    /// The names of the modules a Plane item is in; its `labels` are names too.
+    #[serde(default)]
+    pub modules: Vec<String>,
     /// A Plane item's page in Plane.
     #[serde(default)]
     pub url: Option<String>,
