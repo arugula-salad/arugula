@@ -5,8 +5,8 @@
 # builds, in the same profile, and saves the target dir under the key the
 # release reads (shared-key windows-release). The workspace's libraries are
 # 0.0.0 (#1036), so a release finds them built, not just the dependencies.
-# Not in ci/green (chant's windows phase counts workspace and desktop only):
-# nothing waits for it.
+# Not in ci/green (chant's windows phases count workspace, workspace-clippy
+# and desktop only): nothing waits for it.
 name: windows-release-cache
 on:
   push:
