@@ -154,11 +154,13 @@ export function SwarmView({
     hover(key: string | null, x: number, y: number): Promise<void> | void;
     menu(key: string, e: MouseEvent): void;
     name(name: string): boolean;
+    order(): string[] | null;
   }>({
     open: () => {},
     hover: () => {},
     menu: () => {},
     name: () => false,
+    order: () => null,
   });
 
   // Wall mode (#446): the swarm alone, fit to the screen it fills. Not on
@@ -221,6 +223,7 @@ export function SwarmView({
       hover: (key, x, y) => void handlers.current.hover(key, x, y),
       menu: (key, e) => handlers.current.menu(key, e),
       name: (name) => handlers.current.name(name),
+      order: () => handlers.current.order(),
       history: (sinceS) => historyOf(fleet, sinceS),
     };
     let scene: SwarmScene | null = null;
@@ -437,7 +440,7 @@ export function SwarmView({
     openSwarmBoard(on.board);
     return true;
   };
-  handlers.current = { open: openKey, hover: hoverPane, menu: paneMenu, name: nameClicked };
+  handlers.current = { open: openKey, hover: hoverPane, menu: paneMenu, name: nameClicked, order: () => (board && lanes ? lanes.lanes.map((l) => l.name) : null) };
   // Every machine the host menu lists, not only those with panes here.
   const machines = fleet.list.length;
   const busy = panes.filter((p) => activityOf(p) > 0.3).length;

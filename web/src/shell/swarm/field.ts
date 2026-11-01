@@ -192,6 +192,8 @@ export interface FieldHooks {
   menu?(key: string, e: MouseEvent): void;
   /** A click on a cluster's name: true when the view took it (#466), else the scene dives in. */
   name?(name: string): boolean;
+  /** Cluster names in the order to lay them out (a board focus's lanes, #466); none for the usual order. */
+  order?(): string[] | null;
   /** M42: commands that finished in the last `sinceS` seconds, on every
    * connected host (each daemon's `/api/history`), for the timeline. */
   history?(sinceS: number): Promise<HistoryRun[]>;
@@ -363,18 +365,24 @@ export class Field implements SwarmScene {
     const placedBefore = this.groups.size;
     const counts = new Map<string, number>();
     for (const t of this.tiles.values()) counts.set(t.group, (counts.get(t.group) ?? 0) + 1);
-    const names = [...counts.keys()].sort((a, b) => clusterOrder([a, counts.get(a)!], [b, counts.get(b)!]));
+    const order = this.hooks.order?.() ?? null;
+    const names = [...counts.keys()].sort((a, b) => clusterOrder([a, counts.get(a)!], [b, counts.get(b)!], order));
     const placed: Group[] = [];
     // Spread the clusters to the view's shape: wide on a laptop, tall on a
     // phone held upright.
     const tall = this.W > 0 && this.W - this.hooks.railW() < this.H - this.hooks.railH() - this.hooks.top();
     const [sx, sy] = tall ? [0.75, 1.5] : [1.25, 0.8];
+    // A board's lanes read in a line: left to right, or top to bottom upright.
+    let along = 0;
     names.forEach((name, i) => {
       const n = counts.get(name)!;
       const r = 11 * Math.sqrt(n) + 34;
       let tx = 0;
       let ty = 0;
-      if (i > 0) {
+      if (order) {
+        along += i ? placed[i - 1].r + r + (tall ? 150 : 110) : 0;
+        [tx, ty] = tall ? [0, along] : [along, 0];
+      } else if (i > 0) {
         for (let d = 60; d < 6000; d += 14) {
           const a = i * 2.39996 + d * 0.004;
           tx = Math.cos(a) * d * sx;
@@ -399,7 +407,8 @@ export class Field implements SwarmScene {
 
   /** Cluster names and sizes, as drawn (for tests and the phone's list). */
   get clusters(): { name: string; n: number; need: number }[] {
-    return [...this.groups].map(([name, g]) => ({ name, n: g.n, need: g.need }));
+    const order = this.hooks.order?.() ?? null;
+    return [...this.groups].map(([name, g]) => ({ name, n: g.n, need: g.need })).sort((a, b) => clusterOrder([a.name, a.n], [b.name, b.n], order));
   }
 
   /** Where a tile is on the screen now (tests click it). */

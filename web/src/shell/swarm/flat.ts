@@ -347,7 +347,7 @@ export abstract class Flat implements SwarmScene {
       a.push(p);
     }
     return [...m.entries()]
-      .sort((a, b) => clusterOrder([a[0], a[1].length], [b[0], b[1].length]))
+      .sort((a, b) => clusterOrder([a[0], a[1].length], [b[0], b[1].length], this.hooks.order?.()))
       .map(([name, ps]) => ({ name, ps: ps.sort((a, b) => (a.sub ?? "").localeCompare(b.sub ?? "") || a.where.localeCompare(b.where) || (a.id ?? 0) - (b.id ?? 0) || a.key.localeCompare(b.key)) }));
   }
 }

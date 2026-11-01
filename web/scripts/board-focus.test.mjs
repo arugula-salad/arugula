@@ -4,6 +4,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { boardFocus, rowChip } from "../src/shell/swarm/board-focus.ts";
+import { clusterOrder } from "../src/shared/boards/text.ts";
 
 const B = "brd_0123456789abcdef0123456789abcdef";
 const row = (id, lane, extra = {}) => ({ id, lane, pointer: { kind: "none" }, note: "", attachments: [], ...extra });
@@ -68,4 +69,12 @@ test("a row's chip is its issue and a short title, or its note", () => {
   assert.equal(rowChip({ pointer: { kind: "issue", id: "iss_1" }, live: long, note: "" }), "#12 · Make the installer ask…");
   assert.equal(rowChip({ pointer: { kind: "none" }, note: "\nTalk to Jake\nmore" }), "Talk to Jake");
   assert.equal(rowChip({ pointer: { kind: "none" }, note: "" }), "a row");
+});
+
+test("clusters follow the lanes' order when given one, else the biggest first", () => {
+  const sort = (c, order) => [...c].sort((a, b) => clusterOrder(a, b, order)).map((x) => x[0]);
+  const c = [["Review", 3], ["Doing", 1], ["Next", 2]];
+  assert.deepEqual(sort(c), ["Review", "Next", "Doing"]);
+  assert.deepEqual(sort(c, ["Next", "Doing", "Review"]), ["Next", "Doing", "Review"]);
+  assert.deepEqual(sort([...c, ["No board", 9]], ["Next", "Doing", "Review"]), ["Next", "Doing", "Review", "No board"]);
 });

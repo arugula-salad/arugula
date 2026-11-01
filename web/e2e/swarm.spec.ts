@@ -230,6 +230,14 @@ test("a board focus clusters its agents by the lane of their row, and a row that
   await expect(page.locator("[data-lane]")).toHaveText(["Next · 1 row · no one on it", "Doing · 1 row · 1 worker", "Review · 2 rows · 2 workers"], { timeout: 10_000 });
   await expect.poll(() => sizes(page), { timeout: 10_000 }).toEqual({ Doing: 1, Review: 2 });
   expect(await page.evaluate(() => (window as unknown as { __nav?: number }).__nav)).toBe(reloaded);
+  // The clusters follow the board's lanes, not their size: Review now has more workers than Doing, and still comes after it, to its right.
+  await expect.poll(() => page.evaluate(() => [...document.querySelectorAll(".swarm-clusters [data-cluster]")].map((e) => e.getAttribute("data-cluster")))).toEqual(["Doing", "Review"]);
+  await expect
+    .poll(async () => {
+      const at = Object.fromEntries((await page.evaluate(() => (window.__arugula.swarm as unknown as { labelBoxes: { name: string; x0: number }[] }).labelBoxes)).map((b) => [b.name, b.x0]));
+      return at.Doing !== undefined && at.Review !== undefined && at.Doing < at.Review;
+    })
+    .toBe(true);
 
   // Another theme only changes how the clusters are drawn.
   await page.locator('[data-theme-pick="hive"]').click();
