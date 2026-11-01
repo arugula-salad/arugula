@@ -1765,9 +1765,8 @@ doesn't change that, as a removed device's past approvals stand on any
 chain; the device that signs must still be one the account trusts now,
 and a removed device approves nothing new. Rows approved before `approved_at` came
 have none; after the cutoff those were approved under #1343's rule, which
-refused a window approving a browser. The platform gets the list with an
-account's devices (`DeviceTrust::legacy_app_children`); a hosted box pins
-the first list control sends (`Enrollment::legacy_app_children`), and each
+refused a window approving a browser. The platform never asks for the
+list (DK8, #389); a hosted box pins the first list control sends (`Enrollment::legacy_app_children`), and each
 later refresh only shrinks it, never adds; a box that has none counts no
 window. A box checks a v1 standing grant (and a device's revoke, M253)
 against the list it pinned, as the hub did. (A deploy's approval, DK4, and a

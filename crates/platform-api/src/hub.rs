@@ -254,22 +254,6 @@ pub trait HubPort: Send + Sync {
         Box::pin(async { anyhow::bail!("this hub doesn't say projects' delegations") })
     }
 
-    /// Whether `sig` is `device`'s over `body`, and `device` is a browser
-    /// (all the way back to its account's root, as control holds it) of
-    /// one of the owners `owner` (`team:<id>` or `account:<id>`) names:
-    /// what a project's standing grant and its revokes take (M211). A hub
-    /// from before can't say.
-    fn owner_browser_signed<'a>(
-        &'a self,
-        owner: &'a str,
-        device: &'a str,
-        body: &'a str,
-        sig: &'a str,
-    ) -> BoxFuture<'a, HubResult<bool>> {
-        let _ = (owner, device, body, sig);
-        Box::pin(async { anyhow::bail!("this hub doesn't check owners' signatures") })
-    }
-
     /// Whether these machines are working (M180): busy from the start of
     /// an agent turn or a foreground command to its end, as each hosted
     /// daemon last said on its relay socket. Machines that aren't on the
@@ -286,42 +270,6 @@ pub trait HubPort: Send + Sync {
     fn machines_online<'a>(&'a self, machines: &'a [String]) -> BoxFuture<'a, HubResult<Vec<String>>> {
         let _ = machines;
         Box::pin(async { anyhow::bail!("this hub doesn't say which machines are online") })
-    }
-
-    /// What an account's devices are (M218): its root (the first device it
-    /// approved, which its daemons pin), its approved device certificates
-    /// and its revocations, as the hub keeps them. The platform decides
-    /// from these which devices count (`arugula_e2e::Trust::evaluate`), so
-    /// a certificate the hub kept that doesn't chain to the root never
-    /// does. `None` when there's no such account, or it has no root yet. A
-    /// hub from before M218 doesn't have it.
-    fn device_trust<'a>(&'a self, account: &'a str) -> BoxFuture<'a, HubResult<Option<DeviceTrust>>> {
-        let _ = account;
-        Box::pin(async { anyhow::bail!("this hub doesn't say an account's devices") })
-    }
-
-    /// Every version of a team's roster the hub keeps, oldest first, as
-    /// signed (M218: whose device made an approver an owner). Empty when
-    /// there's no such team. A hub from before M218 can't say.
-    fn team_rosters<'a>(&'a self, team: &'a str) -> BoxFuture<'a, HubResult<Vec<arugula_e2e::team::Roster>>> {
-        let _ = team;
-        Box::pin(async { anyhow::bail!("this hub doesn't say a team's rosters") })
-    }
-
-    /// Check a passkey's assertion for the platform (M218): the passkey is
-    /// registered to `account` (the hub keeps passkeys' public keys: they're
-    /// bound to control's own site), the ceremony is a `webauthn.get` from
-    /// control's page over exactly `challenge` (base64url, no padding), the
-    /// person was verified (UV), and the signature and counter check out.
-    /// It signs nobody in. A hub from before M218 can't.
-    fn verify_passkey<'a>(
-        &'a self,
-        account: &'a str,
-        challenge: &'a str,
-        assertion: &'a PasskeyAssertion,
-    ) -> BoxFuture<'a, HubResult<PasskeyVerdict>> {
-        let _ = (account, challenge, assertion);
-        Box::pin(async { anyhow::bail!("this hub doesn't check passkeys for the platform") })
     }
 
     /// The account's passkey log (DK3, aru-126): every passkey added to or
@@ -374,6 +322,6 @@ pub trait HubPort: Send + Sync {
 }
 
 pub use arugula_control_wire::internal::{
-    Account, Change, ChangeKind, ChangePage, Daemon, DeviceTrust, Flags, LinkedAccount, Member, Meter,
-    PasskeyAssertion, PasskeyVerdict, ProductLink, PushOptions, Pushed, Resolved, Team,
+    Account, Change, ChangeKind, ChangePage, Daemon, Flags, LinkedAccount, Member, Meter, PasskeyAssertion,
+    ProductLink, PushOptions, Pushed, Resolved, Team,
 };

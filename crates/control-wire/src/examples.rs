@@ -48,7 +48,6 @@ fn types() -> BTreeMap<&'static str, Again> {
         "internal.ChangePage" => internal::ChangePage,
         "internal.ChangesArgs" => internal::ChangesArgs,
         "internal.Deleted" => internal::Deleted,
-        "internal.DeviceTrust" => internal::DeviceTrust,
         "internal.IdsArgs" => internal::IdsArgs,
         "internal.Meter" => internal::Meter,
         "internal.NoArgs" => internal::NoArgs,

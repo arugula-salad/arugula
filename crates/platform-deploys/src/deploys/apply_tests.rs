@@ -292,7 +292,7 @@ async fn an_approved_deploy_is_applied_by_its_run_with_its_secrets_once() {
     // passkey log and the origins as it pins them, and the log the work
     // carried.
     use crate::HubPort as _;
-    let roster = hub.team_rosters("t").await.unwrap().pop().unwrap();
+    let roster = crate::deploys_tests::team_t();
     let certs = arugula_e2e::team::AccountCerts::new();
     let owners = Owners::Team { roster: &roster, certs: &certs };
     let logs = [("a".to_owned(), hub.passkey_log("a").await.unwrap())].into();
@@ -498,7 +498,7 @@ async fn a_v1_approval_from_before_the_switch_still_applies() {
     let dw = w.items[0].deploy.as_ref().unwrap();
     assert_eq!(dw.approval, v1);
     use crate::HubPort as _;
-    let roster = hub.team_rosters("t").await.unwrap().pop().unwrap();
+    let roster = crate::deploys_tests::team_t();
     let certs = arugula_e2e::team::AccountCerts::new();
     let owners = Owners::Team { roster: &roster, certs: &certs };
     let logs = [("a".to_owned(), hub.passkey_log("a").await.unwrap())].into();

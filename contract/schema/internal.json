@@ -314,61 +314,6 @@
         }
       ]
     },
-    "Cert": {
-      "properties": {
-        "account": {
-          "type": "string"
-        },
-        "approver": {
-          "description": "The device that signed this; the device itself for the root.",
-          "type": "string"
-        },
-        "created": {
-          "format": "uint64",
-          "minimum": 0,
-          "type": "integer"
-        },
-        "device": {
-          "type": "string"
-        },
-        "kind": {
-          "$ref": "#/$defs/Kind"
-        },
-        "name": {
-          "type": "string"
-        },
-        "noise": {
-          "description": "X25519 public key, hex (zeros for a recovery code).",
-          "type": "string"
-        },
-        "sig": {
-          "default": "",
-          "description": "Ed25519 signature by the approver over [`Cert::body`], hex; empty\nuntil approved.",
-          "type": "string"
-        },
-        "sign": {
-          "description": "Ed25519 public key, hex.",
-          "type": "string"
-        },
-        "v": {
-          "format": "uint32",
-          "minimum": 0,
-          "type": "integer"
-        }
-      },
-      "required": [
-        "v",
-        "account",
-        "device",
-        "kind",
-        "name",
-        "noise",
-        "sign",
-        "created",
-        "approver"
-      ],
-      "type": "object"
-    },
     "Change": {
       "description": "What happened to a passkey.",
       "enum": [
@@ -705,42 +650,6 @@
       },
       "required": [
         "deleted"
-      ],
-      "type": "object"
-    },
-    "DeviceTrust": {
-      "description": "An account's devices (`HubPort::device_trust`).",
-      "properties": {
-        "certs": {
-          "description": "Its approved certificates.",
-          "items": {
-            "$ref": "#/$defs/Cert"
-          },
-          "type": "array"
-        },
-        "legacy_app_children": {
-          "default": [],
-          "description": "Its browsers and phones that a grandfathered app window approved:\nboth rows stored and approved by the hub before the app had a kind\nof its own (by the hub's own record of when), removed since or not,\nas a removed device's past approvals stand on any chain. The window\ncounts as the link just above one of them, nowhere else\n(`arugula_e2e::cert::legacy_app_link`); the device that signs must\nstill be trusted now. Empty from a hub that\ndoesn't send it, which only refuses more.",
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        },
-        "revocations": {
-          "items": {
-            "$ref": "#/$defs/Revocation"
-          },
-          "type": "array"
-        },
-        "root": {
-          "description": "The root device's id.",
-          "type": "string"
-        }
-      },
-      "required": [
-        "root",
-        "certs",
-        "revocations"
       ],
       "type": "object"
     },
@@ -1394,28 +1303,6 @@
       },
       "type": "object"
     },
-    "Kind": {
-      "oneOf": [
-        {
-          "enum": [
-            "browser",
-            "cli",
-            "daemon"
-          ],
-          "type": "string"
-        },
-        {
-          "const": "recovery",
-          "description": "A recovery code: approves a new device when every other is lost.",
-          "type": "string"
-        },
-        {
-          "const": "app",
-          "description": "The desktop app's window. Its keys reach it through whatever\nlistens on the computer's loopback port, so, like a CLI's, they may\nbe a program's on that computer, not the person's. It connects and\napproves machines, CLIs and other apps, but never a browser (see\n[`Kind::certifies`]). Older readers don't know this word: control\nleaves `app` certificates out of what it answers a client that\ndoesn't say it knows them (`app-devices`, see control's `compat.rs`).",
-          "type": "string"
-        }
-      ]
-    },
     "LinkedAccount": {
       "description": "A product's user's link (M232, `HubPort::linked_account`). A link is\nnever authorization.",
       "properties": {
@@ -1687,27 +1574,8 @@
       ],
       "type": "object"
     },
-    "PasskeyArgs": {
-      "properties": {
-        "account": {
-          "type": "string"
-        },
-        "assertion": {
-          "$ref": "#/$defs/PasskeyAssertion"
-        },
-        "challenge": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "account",
-        "challenge",
-        "assertion"
-      ],
-      "type": "object"
-    },
     "PasskeyAssertion": {
-      "description": "A passkey's assertion, as the page got it from `navigator.credentials.get`\n(`HubPort::verify_passkey`): each base64url, no padding.",
+      "description": "A passkey's assertion, as the page got it from `navigator.credentials.get`\n(a deploy's approval, checked by the platform against the account's\npasskey log): each base64url, no padding.",
       "properties": {
         "authenticatorData": {
           "type": "string"
@@ -1728,22 +1596,6 @@
         "clientDataJSON",
         "authenticatorData",
         "signature"
-      ],
-      "type": "object"
-    },
-    "PasskeyVerdict": {
-      "description": "What the hub found of a passkey's assertion: good, or why not.",
-      "properties": {
-        "ok": {
-          "type": "boolean"
-        },
-        "why": {
-          "default": "",
-          "type": "string"
-        }
-      },
-      "required": [
-        "ok"
       ],
       "type": "object"
     },
@@ -2293,42 +2145,6 @@
       ],
       "type": "object"
     },
-    "Revocation": {
-      "description": "A device taken off the account, signed by one of its devices.",
-      "properties": {
-        "account": {
-          "type": "string"
-        },
-        "at": {
-          "format": "uint64",
-          "minimum": 0,
-          "type": "integer"
-        },
-        "by": {
-          "type": "string"
-        },
-        "device": {
-          "type": "string"
-        },
-        "sig": {
-          "type": "string"
-        },
-        "v": {
-          "format": "uint32",
-          "minimum": 0,
-          "type": "integer"
-        }
-      },
-      "required": [
-        "v",
-        "account",
-        "device",
-        "at",
-        "by",
-        "sig"
-      ],
-      "type": "object"
-    },
     "RunRevoke": {
       "description": "A revoke of the project's grants, for every hosted machine of its\nproject.",
       "properties": {
@@ -2781,29 +2597,6 @@
         "failed"
       ],
       "type": "string"
-    },
-    "SignedArgs": {
-      "properties": {
-        "body": {
-          "type": "string"
-        },
-        "device": {
-          "type": "string"
-        },
-        "owner": {
-          "type": "string"
-        },
-        "sig": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "owner",
-        "device",
-        "body",
-        "sig"
-      ],
-      "type": "object"
     },
     "StandingArgs": {
       "properties": {

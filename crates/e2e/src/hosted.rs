@@ -380,9 +380,8 @@ impl Owners<'_> {
     /// device on each link ([`Cert::is_browser`]), or the desktop app's
     /// window from before it had a kind just above a browser it approved
     /// back then (`children`, by account, [`legacy_app_link`]): never as
-    /// the device that signs, nor above anything else. The hub's check
-    /// (`owner_browser_signed`), and a hosted machine's against the set it
-    /// pinned, as for a deploy's approval (`deploy::check_apply`); one that
+    /// the device that signs, nor above anything else. A hosted machine's
+    /// check of a v1 standing grant against the set it pinned; one that
     /// pinned none counts no app window.
     pub fn browser_signed(
         &self,

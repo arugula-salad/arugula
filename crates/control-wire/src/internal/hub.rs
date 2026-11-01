@@ -55,7 +55,8 @@ pub struct ProductLink {
 }
 
 /// A passkey's assertion, as the page got it from `navigator.credentials.get`
-/// (`HubPort::verify_passkey`): each base64url, no padding.
+/// (a deploy's approval, checked by the platform against the account's
+/// passkey log): each base64url, no padding.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct PasskeyAssertion {
@@ -66,36 +67,6 @@ pub struct PasskeyAssertion {
     #[serde(rename = "authenticatorData")]
     pub authenticator_data: String,
     pub signature: String,
-}
-
-/// What the hub found of a passkey's assertion: good, or why not.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
-pub struct PasskeyVerdict {
-    pub ok: bool,
-    #[serde(default)]
-    pub why: String,
-}
-
-/// An account's devices (`HubPort::device_trust`).
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
-pub struct DeviceTrust {
-    /// The root device's id.
-    pub root: String,
-    /// Its approved certificates.
-    pub certs: Vec<arugula_e2e::Cert>,
-    pub revocations: Vec<arugula_e2e::Revocation>,
-    /// Its browsers and phones that a grandfathered app window approved:
-    /// both rows stored and approved by the hub before the app had a kind
-    /// of its own (by the hub's own record of when), removed since or not,
-    /// as a removed device's past approvals stand on any chain. The window
-    /// counts as the link just above one of them, nowhere else
-    /// (`arugula_e2e::cert::legacy_app_link`); the device that signs must
-    /// still be trusted now. Empty from a hub that
-    /// doesn't send it, which only refuses more.
-    #[serde(default)]
-    pub legacy_app_children: Vec<String>,
 }
 
 /// How a push goes (`HubPort::push_with`). The default is what

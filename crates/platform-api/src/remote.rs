@@ -52,8 +52,8 @@ use arugula_control_wire::{
 };
 
 use arugula_control_wire::internal::{
-    Account, BoxMember, BoxPost, BoxPosted, ChangePage, Daemon, Deleted, DeviceTrust, Flags, GithubUser, HostedMachine,
-    Meter, Outcome, PushOptions, Pushed, Resolved, Team, TokenAnswer, UserToken,
+    Account, BoxMember, BoxPost, BoxPosted, ChangePage, Daemon, Deleted, Flags, GithubUser, HostedMachine, Meter,
+    Outcome, PushOptions, Pushed, Resolved, Team, TokenAnswer, UserToken,
 };
 
 use crate::{
@@ -283,38 +283,6 @@ impl HubPort for HttpHub {
         Box::pin(self.0.call("machines_online", IdsArgs { ids: machines.to_vec() }))
     }
 
-    fn owner_browser_signed<'a>(
-        &'a self,
-        owner: &'a str,
-        device: &'a str,
-        body: &'a str,
-        sig: &'a str,
-    ) -> BoxFuture<'a, HubResult<bool>> {
-        Box::pin(self.0.call(
-            "owner_browser_signed",
-            SignedArgs { owner: owner.into(), device: device.into(), body: body.into(), sig: sig.into() },
-        ))
-    }
-
-    fn device_trust<'a>(&'a self, account: &'a str) -> BoxFuture<'a, HubResult<Option<DeviceTrust>>> {
-        Box::pin(self.0.call("device_trust", AccountArgs { account: account.to_owned() }))
-    }
-
-    fn team_rosters<'a>(&'a self, team: &'a str) -> BoxFuture<'a, HubResult<Vec<arugula_e2e::team::Roster>>> {
-        Box::pin(self.0.call("team_rosters", TeamArgs { team: team.to_owned() }))
-    }
-
-    fn verify_passkey<'a>(
-        &'a self,
-        account: &'a str,
-        challenge: &'a str,
-        assertion: &'a crate::hub::PasskeyAssertion,
-    ) -> BoxFuture<'a, HubResult<crate::hub::PasskeyVerdict>> {
-        let a =
-            PasskeyArgs { account: account.to_owned(), challenge: challenge.to_owned(), assertion: assertion.clone() };
-        Box::pin(self.0.call("verify_passkey", a))
-    }
-
     fn passkey_log<'a>(&'a self, account: &'a str) -> BoxFuture<'a, HubResult<arugula_e2e::passkey::Log>> {
         Box::pin(self.0.call("passkey_log", AccountArgs { account: account.to_owned() }))
     }
@@ -431,12 +399,6 @@ async fn hub_call(State(s): State<Arc<Serving<dyn HubPort>>>, Path(method): Path
                 let a: OpArgs = args(&body)?;
                 answer(hub.daemon_op(&a.daemon, &a.op).await?)?
             }
-            "device_trust" => answer(hub.device_trust(&args::<AccountArgs>(&body)?.account).await?)?,
-            "team_rosters" => answer(hub.team_rosters(&args::<TeamArgs>(&body)?.team).await?)?,
-            "verify_passkey" => {
-                let a: PasskeyArgs = args(&body)?;
-                answer(hub.verify_passkey(&a.account, &a.challenge, &a.assertion).await?)?
-            }
             "passkey_log" => answer(hub.passkey_log(&args::<AccountArgs>(&body)?.account).await?)?,
             "hosted_enrollment" => answer(hub.hosted_enrollment(&args::<EnrollAsk>(&body)?).await?)?,
             "hosted_enrolled" => answer(hub.hosted_enrolled(&args::<WorkspacesArgs>(&body)?.workspaces).await?)?,
@@ -446,10 +408,6 @@ async fn hub_call(State(s): State<Arc<Serving<dyn HubPort>>>, Path(method): Path
             "live_delegation" => {
                 let a: DelegationArgs = args(&body)?;
                 answer(hub.live_delegation(&a.project, &a.owner).await?)?
-            }
-            "owner_browser_signed" => {
-                let a: SignedArgs = args(&body)?;
-                answer(hub.owner_browser_signed(&a.owner, &a.device, &a.body, &a.sig).await?)?
             }
             "product_links" => answer(hub.product_links(&args::<AccountArgs>(&body)?.account).await?)?,
             "client_account" => {
