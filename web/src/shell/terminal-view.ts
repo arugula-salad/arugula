@@ -164,6 +164,9 @@ export class TerminalView {
     this.term.attachCustomKeyEventHandler((e) => this.keys(e));
     this.takeFiles();
     this.term.open(this.host);
+    // Whoever focuses it (a click puts focus in the textarea itself, and the
+    // shell then leaves it there, #472), it's the one in use.
+    this.term.textarea?.addEventListener("focus", () => this.touchWebgl());
     this.mirrorTextarea();
     this.touchScroll();
     this.offAppearance = onAppearance(() => {
