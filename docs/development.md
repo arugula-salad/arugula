@@ -245,14 +245,18 @@ does that instead. A queued pull request is tested as a merge group:
 main, the pull requests queued ahead of it, and it. It merges only if
 the group passes.
 
-check.yml runs on `merge_group`. A group runs every job, since
-`scripts/changed` skips nothing for any event but a push. Its `queue`
-job is the group's verdict: every job passed or was skipped. On a pull
-request, binaries.yml's job of the same name stands in for it, once
-`binaries`, `quick` and `ci-branch-run` have passed. binaries.yml has no `merge_group`
-trigger, because its `queue`, skipped on a group, would count as
+`chant.workspace.json` sets `ci.green.mergeQueue` (chant#4644), so `chant
+ci workflow` puts `merge_group` on check.yml, windows.yml and
+windows-desktop.yml and writes `chant-merge-queue.yml`. A group runs every
+job, since `scripts/changed` skips nothing for any event but a push.
+`chant-merge-queue.yml`'s `chant-verdict` job is the group's verdict: `chant
+ci verdict --wait` passes once every phase `ci.green` requires passed on
+the group's commit, judged as the tick judges main. On a pull request,
+binaries.yml's job of the same name stands in for it, once `binaries`,
+`quick` and `ci-branch-run` have passed. binaries.yml has no `merge_group`
+trigger, because its `chant-verdict`, skipped on a group, would count as
 passed. On a pull request that changes the desktop app, binaries.yml
-also runs `just desktop-xvfb`, and `queue` waits for it. The `full-check`
+also runs `just desktop-xvfb`, and `chant-verdict` waits for it. The `full-check`
 label on a pull request runs check.yml on its branch (full-check.yml).
 Only someone who may merge can queue a pull request, so a group's code
 reaches the home cloud's runners no sooner than a merge would bring it.
@@ -266,16 +270,17 @@ The queue is off until Jake turns it on. In the repository's
    size* 1, *Maximum* 5, *Wait time* 0; *Only merge non-failing pull
    requests*; *Status check timeout* 90 minutes (a run is ~35 min, plus
    pods' queues).
-2. **Require status checks to pass**: add `queue`, from GitHub
+2. **Require status checks to pass**: add `chant-verdict`, from GitHub
    Actions. It stands for `binaries`, `quick` and `ci-branch-run` too: if they're
    required on their own now, take them out, or a group waits for checks
    no workflow reports on it.
 
 Then a pull request's *Merge when ready* queues it. A rollup's queue
 entry is the lead's `just rollup-check`, on main as it will be.
-Main's push runs check.yml once more after the merge, and chant's
-`ci/green` tags still come from that run (chant.workspace.json). The
-Windows workflows don't run on groups.
+The queue lands the commit its group tested, so the group's check runs are
+on main's commit already and chant's tick counts them. Main's push runs
+check.yml once more after the merge; a job that run skips or a newer push
+cancels doesn't replace the group's result (chant#4644).
 
 `just testnet up ssh` starts a local stack in Docker (`testnet/`, #200): a
 bastion and a box with no Arugula that only ssh reaches. `just testnet

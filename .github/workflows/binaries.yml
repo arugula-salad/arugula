@@ -154,12 +154,14 @@ jobs:
         run: scripts/ci-branch-run gate "$PR" "$SHA"
 
   # The merge queue's check on a pull request (docs/development.md,
-  # "Merging through the queue"): its ruleset requires `queue` by name, on
-  # the pull request before it's queued and on its merge group after.
-  # Here it's binaries, quick and ci-branch-run; the group's is check.yml's, the whole
-  # suite. So this workflow has no merge_group trigger: its `queue`,
-  # skipped on a group, would count as passed there.
-  queue:
+  # "Merging through the queue"): its ruleset requires `chant-verdict` by
+  # name, on the pull request before it's queued and on its merge group
+  # after. Here it's binaries, quick and ci-branch-run; the group's is
+  # chant-merge-queue.yml's, which chant writes (chant#4644) and which judges
+  # the group by ci.green's required phases. So this workflow has no
+  # merge_group trigger: its chant-verdict, skipped on a group, would count
+  # as passed there.
+  chant-verdict:
     # desktop-xvfb is skipped on most pull requests: a skipped job doesn't stop
     # this, only a failed or cancelled one. desktop-changes is here too, so
     # its failing can't pass as desktop-xvfb skipped.
