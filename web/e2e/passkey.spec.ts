@@ -97,6 +97,9 @@ test("make an account with a passkey, sign out, sign back in", async ({ page }) 
   });
   await page.locator("[data-add-passkey]").click();
   await expect(page.locator("[data-passkey-confirm]")).toBeVisible();
+  // It says what's being added (#471): Chrome's virtual authenticator has
+  // an AAGUID control doesn't know.
+  await expect(page.locator("[data-passkey-adding]")).toHaveText(/^Adding: a passkey from an unknown passkey provider, made just now in Chrome on \w+\.$/);
   expect(((await page.evaluate(() => fetch("/api/me/passkeys").then((r) => r.json()))) as { passkeys: unknown[] }).passkeys).toHaveLength(1);
   await page.locator("[data-passkey-confirm-go]").click();
   await expect(page.locator("[data-passkeys] li")).toHaveCount(2);

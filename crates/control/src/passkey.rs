@@ -396,6 +396,9 @@ pub async fn register_step_up(
     let challenge = event.challenge();
     app.passkeys.issue_as(challenge.clone(), Purpose::AddPasskey { event: Box::new(event) });
     Ok(Json(json!({
+        // What keeps the new one, from its AAGUID (null when unknown): the
+        // prompt says what the confirming passkey vouches for (#471).
+        "provider": provider(&made.aaguid),
         "challenge": challenge,
         "rpId": rp_id(app.cfg.site(&headers)),
         "userVerification": "required",
@@ -1485,13 +1488,15 @@ mod tests {
     struct Authn {
         key: ed25519_dalek::SigningKey,
         id: Vec<u8>,
+        /// What it says it is: zeros, as many won't say.
+        aaguid: [u8; 16],
     }
 
     const ORIGIN: &str = "http://control.test";
 
     impl Authn {
         fn new(seed: u8) -> Self {
-            Authn { key: ed25519_dalek::SigningKey::from_bytes(&[seed; 32]), id: vec![seed; 16] }
+            Authn { key: ed25519_dalek::SigningKey::from_bytes(&[seed; 32]), id: vec![seed; 16], aaguid: [0; 16] }
         }
 
         fn id(&self) -> String {
@@ -1508,7 +1513,7 @@ mod tests {
             let mut data = Sha256::digest(b"control.test").to_vec();
             data.push(UP | UV | AT);
             data.extend_from_slice(&0u32.to_be_bytes());
-            data.extend_from_slice(&[0; 16]);
+            data.extend_from_slice(&self.aaguid);
             data.extend_from_slice(&(self.id.len() as u16).to_be_bytes());
             data.extend_from_slice(&self.id);
             let cose = Cbor::Map(vec![
@@ -1708,6 +1713,20 @@ mod tests {
         .await;
         assert_eq!(r.err().map(|e| e.0), Some(StatusCode::CONFLICT));
         assert!(app.db.passkey(&late.id()).unwrap().is_none(), "and it wasn't added");
+    }
+
+    /// The step-up names what keeps the new passkey, from its AAGUID, so
+    /// its prompt can say what's being added (#471); null when unknown.
+    #[tokio::test]
+    async fn the_step_up_names_the_new_passkeys_provider() {
+        let app = App::for_tests(ORIGIN).start();
+        let mine = Authn::new(7);
+        let h = signed_in(&app, "acct-a", auth::Via::Passkey, 0);
+        app.db.add_passkey(&mine.id(), "acct-a", EDDSA, &mine.key.verifying_key().to_bytes(), 1).unwrap();
+        let mut new = Authn::new(9);
+        new.aaguid = hex::decode("bada5566a7aa401fbd9645619a55120d").unwrap().try_into().unwrap();
+        assert_eq!(step_up(&app, &h, &new).await.unwrap()["provider"], "1Password");
+        assert!(step_up(&app, &h, &Authn::new(10)).await.unwrap()["provider"].is_null(), "zeros: unknown");
     }
 
     /// The page's session, from its headers.
