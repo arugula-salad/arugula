@@ -482,8 +482,8 @@ export class Device {
     const v = await this.api<{ grant: { grant: ProjectGrant } | null }>(`/api/projects/${p.id}/runs/grant`);
     if (!v.grant) throw new Error(`project ${p.id} has no standing grant`);
     // A v3 revoke (#1953): the account's passkey over its bytes.
-    const r = newGrantRevoke(p.id, v.grant.grant.delegation, stop ? "stop" : "finish", this.account);
-    const revoke = { ...r, passkey: await this.assert(b64url(await passkeyChallenge(grantRevokeBody(r)))) };
+    const unsigned = newGrantRevoke(p.id, v.grant.grant.delegation, stop ? "stop" : "finish", this.account);
+    const revoke = { ...unsigned, passkey: await this.assert(b64url(await passkeyChallenge(grantRevokeBody(unsigned)))) };
     const r = await this.api<{ told: number }>(`/api/projects/${p.id}/runs/grant/revoke`, { revoke });
     return { project: p.id, grant: v.grant.grant.id, told: r.told };
   }
