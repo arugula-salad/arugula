@@ -215,7 +215,24 @@ test("a board focus clusters its agents by the lane of their row, and a row that
   await expect(page.locator('[data-stat="panes"]')).toHaveText("3");
   await expect(page.locator(".swarm-field")).toBeVisible();
   await page.locator("[data-fit]").click();
-  await page.waitForTimeout(1800);
+  // Once settled, each tile is under its own lane's name.
+  await expect
+    .poll(
+      () =>
+        page.evaluate(
+          ([a, b, f]) => {
+            const sw = window.__arugula.swarm as unknown as { labelBoxes: { name: string; x0: number; x1: number }[]; screenOf(k: string): { x: number } | null };
+            const box = (n: string) => sw.labelBoxes.find((b) => b.name === n);
+            return [["Doing", a], ["Doing", b], ["Review", f]].map(([lane, key]) => {
+              const b = box(lane), t = sw.screenOf(key);
+              return !!b && !!t && t.x >= b.x0 && t.x <= b.x1;
+            });
+          },
+          [`workstation:${ag.A}`, `build-01:${ag.B}`, `build-02:${ag.F}`] as const,
+        ),
+      { timeout: 20_000 },
+    )
+    .toEqual([true, true, true]);
   await page.screenshot({ path: testInfo.outputPath("board-focus-desktop.png") });
 
   // The tile wears its row: `#12 · Fix the installer`.
