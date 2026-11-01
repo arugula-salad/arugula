@@ -98,6 +98,52 @@ test("an agent block's strip: the mod's figures win over its transcript's", asyn
   }
 });
 
+// #453: keyed by Claude Code's session id, with the pane optional. A
+// session with no pane (VS Code's Claude Code, the desktop app) shows its
+// figures where conversations are listed; one from an app started in a pane
+// (its pid isn't in the pane's foreground job) does too, and not on that pane.
+test("a session with no pane shows its live figures in the conversations list", async ({ page }) => {
+  const claude = process.env.CLAUDE_CONFIG_DIR!;
+  const title = "Live from no pane";
+  const away = "Live from an app started in a pane";
+  const s = seedConversation(claude, "livenopane", title);
+  const t = seedConversation(claude, "liveapp", away);
+  const post = (body: object) =>
+    page.evaluate((b) => window.__arugula.client.api("/api/conversations/session-signal", b), { ...VERSIONS, ...body });
+  try {
+    await reset(page);
+    const [term] = await panes(page);
+    await post({ session_id: s.id, event: "step", model: "claude-opus-5-5", effort: "high" });
+    await post({ session_id: s.id, event: "usage", tokens: 300_000, window: 1_000_000, cost_usd: 2.5 });
+    // Started from the terminal, running elsewhere: this test's own process
+    // isn't in the pane's foreground job.
+    await post({ session_id: t.id, event: "usage", tokens: 20_000, window: 200_000, pane: term, pid: process.pid });
+    await menu(page, paneEl(page, term), "Claude Code conversations…");
+    const dialog = page.getByRole("dialog", { name: "Claude Code conversations" });
+    const row = dialog.locator(`[data-conversation="${s.id}"]`);
+    const strip = row.locator("[data-conv-context] [data-context]");
+    await expect(strip).toHaveAttribute("data-source", "live");
+    await expect(strip.locator("[data-fill]")).toHaveAttribute("data-fill", "30");
+    await expect(row.locator(".conv-cost")).toHaveText("$2.50");
+    await expect(row.locator(".conv-cost")).toHaveAttribute("data-cost-from", "claude");
+    // The strip opens its popover, not the conversation.
+    await strip.locator("button").click();
+    const pop = page.locator("[data-context-pop]");
+    await expect(pop).toContainText("Opus 5.5, high effort");
+    await expect(pop.locator("[data-context-source]")).toHaveText("Live from Claude Code (Claude Code 2.1.316, arugula-live 0.2.0), as it runs.");
+    await expect(dialog).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(pop).toHaveCount(0);
+    await expect(dialog.locator(`[data-conversation="${t.id}"] [data-conv-context] [data-fill]`)).toHaveAttribute("data-fill", "10");
+    // The terminal it was started from shows none of it.
+    await expect(page.locator(`[data-pane-header="${term}"] [data-context]`)).toHaveCount(0);
+  } finally {
+    rmSync(join(claude, "projects"), { recursive: true, force: true });
+    rmSync(s.cwd, { recursive: true, force: true });
+    rmSync(t.cwd, { recursive: true, force: true });
+  }
+});
+
 test("claude-agent-acp's own cost wins over the estimate", async ({ page }) => {
   // The scripted fake, named as claude-agent-acp, writes a transcript the
   // daemon prices (the estimate) and reports $0.37 for the turn, as the

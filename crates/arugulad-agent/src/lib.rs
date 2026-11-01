@@ -519,11 +519,14 @@ impl crate::features::Feature for AgentBlock {
     }
 
     fn routes(&self, r: axum::Router<Arc<crate::server::App>>) -> axum::Router<Arc<crate::server::App>> {
-        use arugula_proto::op::ops::{ConversationOpen, ConversationsList, PaneSessionSignal};
+        use arugula_proto::op::ops::{
+            ConversationOpen, ConversationSessionSignal, ConversationsList, PaneSessionSignal,
+        };
         use arugulad_base::ops::OpRoutes;
         r.op_of::<ConversationsList, AgentBlock>()
             .op_of::<ConversationOpen, AgentBlock>()
             .op_of::<PaneSessionSignal, AgentBlock>()
+            .op_of::<ConversationSessionSignal, AgentBlock>()
     }
 }
 

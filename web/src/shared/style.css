@@ -1801,6 +1801,12 @@ a.work-chip:hover {
   color: var(--dim);
 }
 
+/* A slim strip's popover is drawn on the page's body: over the panes, and
+   over the conversations picker its row is in (#453). */
+.agent-estimate-pop.layered {
+  z-index: 96;
+}
+
 .agent-estimate-pop {
   position: fixed;
   z-index: 40;
@@ -5121,6 +5127,12 @@ button.diff-why-run {
   flex: none;
   font-size: 11px;
   color: var(--ok);
+}
+
+/* #453: a conversation's live figures, the slim strip. */
+.conv-context {
+  flex: none;
+  display: inline-flex;
 }
 
 .conv-cost-note {

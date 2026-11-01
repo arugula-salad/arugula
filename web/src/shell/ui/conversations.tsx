@@ -10,6 +10,12 @@
 // once and shows up as it answers. One that's asleep isn't woken to be
 // asked, and one that doesn't answer in a few seconds says so. Opening
 // one of another host's opens it on that host and shows it there.
+//
+// A conversation whose Claude Code runs the arugula-live mod (#453) shows
+// its live figures in its row, as a terminal's header does (#450): the
+// slim strip, its popover saying "Live from Claude Code", and Claude
+// Code's own cost over the estimate. From any pane or none: VS Code, the
+// desktop app, the editor block.
 
 import { OPS, opPath } from "../ops";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
@@ -19,7 +25,7 @@ import type { OpenConversationRequest, OpenConversationResponse, PaneId } from "
 import { getFleet } from "./hosts";
 import { countView } from "../../shared/telemetry";
 import { Time } from "../../shared/ui/time";
-import { COST_NOTE, costLabel, type Estimate } from "../blocks/agent-context";
+import { CLAUDE_COST_NOTE, COST_NOTE, ContextStrip, costLabel, usd, type AgentContext, type Estimate } from "../blocks/agent-context";
 
 export interface Conversation {
   id: string;
@@ -38,6 +44,9 @@ export interface Conversation {
   /** What it and its subagents cost at API list prices (#398), once the
    *  daemon has read it. */
   estimate?: Estimate;
+  /** What Claude Code said of it from inside, live (#453): the arugula-live
+   *  mod's figures, from a pane or none. */
+  context?: AgentContext;
   /** The agent block that has it open. */
   block: PaneId | null;
 }
@@ -380,10 +389,22 @@ function Picker({ client, where, phone, close }: { client: Client; where: Conver
                 <span class="picker-label conv-title">{c.title}</span>
                 {c.live && <span class="conv-live" title={c.live.place}>● {c.live.pane !== undefined ? `%${c.live.pane}` : "open"}</span>}
                 {c.block !== null && <span class="host-tag">%{c.block}</span>}
-                {c.estimate && (
-                  <span class="conv-cost" data-cost={c.estimate.usd ?? ""} title={`${COST_NOTE}${c.estimate.subagents.length ? ` With its subagents.` : ""}`}>
-                    {costLabel(c.estimate)}
+                {c.context && (
+                  // Its popover, not the row: a click on the strip opens that.
+                  <span class="conv-context" data-conv-context onClick={(e) => e.stopPropagation()}>
+                    <ContextStrip c={c.context} slim />
                   </span>
+                )}
+                {c.context?.cost_usd != null ? (
+                  <span class="conv-cost" data-cost={c.context.cost_usd} data-cost-from="claude" title={CLAUDE_COST_NOTE}>
+                    {usd(c.context.cost_usd)}
+                  </span>
+                ) : (
+                  c.estimate && (
+                    <span class="conv-cost" data-cost={c.estimate.usd ?? ""} title={`${COST_NOTE}${c.estimate.subagents.length ? ` With its subagents.` : ""}`}>
+                      {costLabel(c.estimate)}
+                    </span>
+                  )
                 )}
                 <Time class="conv-when" at={Math.min(c.updated_ms, Date.now())} />
               </li>

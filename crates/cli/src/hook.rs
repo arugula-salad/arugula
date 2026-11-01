@@ -222,21 +222,25 @@ fn driven(attended: Option<&str>, entrypoint: Option<&str>) -> bool {
     }
 }
 
-/// `arugula session-signal` (#396, a spike): what the Claude Code mod in
-/// `plugins/claude-code/hooks/live.ts` says about its session from inside it (a
-/// `SessionSignal` on stdin), for the daemon to read into the pane's
-/// context. Prints `{cli_version, daemon_version, context}` for the mod's
-/// status line, or `{error}`; exits 0 when the daemon took it, 3 outside an
-/// Arugula pane, 1 when it didn't.
+/// `arugula session-signal` (#396, #453): what the Claude Code mod in
+/// `plugins/claude-code/hooks/live.ts` says about its session from inside it
+/// (a `SessionSignal` on stdin), for the daemon to keep by Claude Code's
+/// session id, with the pane optional. It adds the pane its environment
+/// names (`ARUGULA_PANE`), if any, and its own pid: the daemon shows the
+/// session on that pane only when this runs in the pane's foreground job.
+/// With no pane it finds the daemon all the same (`ARUGULA_SOCK`, else the
+/// default socket). Prints `{pane, session_id, cli_version, daemon_version,
+/// context}` for the mod's status line, or `{error}`; exits 0 when the
+/// daemon took it, 3 when there's nothing to key it by (no session id and
+/// no pane), 1 when it didn't.
 pub fn session_signal(sock: Target) -> i32 {
-    use arugula_proto::{api::SessionSignal, op::ops::PaneSessionSignal};
+    use arugula_proto::{
+        api::{ConversationSignal, SessionSignal, SessionSignaled},
+        op::ops::{ConversationSessionSignal, PaneSessionSignal},
+    };
     let mut input = String::new();
     let _ = std::io::stdin().take(1 << 20).read_to_string(&mut input);
     let say = |v: serde_json::Value| println!("{v}");
-    let Some(pane) = crate::util::env_pane() else {
-        say(serde_json::json!({ "error": "not in an Arugula pane" }));
-        return 3;
-    };
     let signal: SessionSignal = match serde_json::from_str(&input) {
         Ok(s) => s,
         Err(e) => {
@@ -244,10 +248,38 @@ pub fn session_signal(sock: Target) -> i32 {
             return 1;
         }
     };
-    match call::<PaneSessionSignal>(&sock, &pane, &signal) {
+    let pane = crate::util::env_pane();
+    let session = signal.session_id.clone().filter(|s| !s.is_empty());
+    let by_pane = |signal: &SessionSignal| -> Option<anyhow::Result<SessionSignaled>> {
+        pane.map(|p| call::<PaneSessionSignal>(&sock, &p, signal).map(|got| SessionSignaled { pane: Some(p), ..got }))
+    };
+    let got = match &session {
+        Some(_) => {
+            let req = ConversationSignal { signal: signal.clone(), pane, pid: Some(std::process::id()) };
+            match crate::http::send_op::<ConversationSessionSignal>(&sock, &(), &req) {
+                // A daemon from before #453 has no such route: its pane, as
+                // it was.
+                Ok(r) if matches!(r.status, 404 | 405) => match by_pane(&signal) {
+                    Some(got) => got,
+                    None => Err(anyhow::anyhow!("this Arugula daemon is too old to take a signal from outside a pane")),
+                },
+                Ok(r) => r.parse::<SessionSignaled>(),
+                Err(e) => Err(e),
+            }
+        }
+        None => match by_pane(&signal) {
+            Some(got) => got,
+            None => {
+                say(serde_json::json!({ "error": "no session id, and not in an Arugula pane" }));
+                return 3;
+            }
+        },
+    };
+    match got {
         Ok(got) => {
             say(serde_json::json!({
-                "pane": pane,
+                "pane": got.pane,
+                "session_id": session,
                 "cli_version": env!("CARGO_PKG_VERSION"),
                 "daemon_version": got.daemon_version,
                 "context": got.context,

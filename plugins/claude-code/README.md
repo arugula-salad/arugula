@@ -8,8 +8,10 @@ One install sets Claude Code up for Arugula:
   attention, as cards on the web, the phone and the swarm.
 - **A skill** (`arugula`): when and how to use the tools.
 - **Live session signals, opt in** (off by default): a Claude Code mod that
-  tells the pane its session's context window fill and size, model and
-  effort, and compactions as they happen, with a status line. See below.
+  tells Arugula its session's context window fill and size, model and
+  effort, cost, and compactions as they happen, with a status line. Each
+  session's figures show on its conversation, and on the pane it runs in.
+  See below.
 
 It calls the `arugula` CLI you installed, so install Arugula first
 (<https://arugula.io>) and make sure `arugula` is on your PATH. Then, in
@@ -50,10 +52,25 @@ fails when they differ. Check the plugin and the marketplace with
 ## Live session signals (opt in)
 
 `hooks/live.ts` is a Claude Code mod (an in-process hooks module, listed
-under `modules` in `hooks/hooks.json`) that tells the pane's daemon about
-the session as it runs: the window's fill and size, the model and effort,
-the cost, and each compaction, through `arugula session-signal`. Claude
-Code's status line shows it: `arugula %1 ● live · 5% of 1M · v0.66.5`.
+under `modules` in `hooks/hooks.json`) that tells the daemon about the
+session as it runs: the window's fill and size, the model and effort, the
+cost, and each compaction, through `arugula session-signal`.
+
+The daemon keeps them by Claude Code's session id (#453), so every session
+has its own figures, wherever it runs:
+
+- **Its conversation.** The conversations list (a pane's menu, *Claude Code
+  conversations…*) shows them in the session's row: the fill and any
+  compaction, Claude Code's own cost, and a popover with the model and
+  effort that says "Live from Claude Code".
+- **The pane it runs in.** A terminal running `claude` gets the same slim
+  strip in its header, and an agent block uses them in its bar. A pane shows
+  only the session running in its foreground: VS Code or the desktop app
+  started from a pane doesn't put its sessions on that pane.
+
+Claude Code's status line says where they went: `arugula %1 ● live · 5% of
+1M · v0.66.5` in pane %1, or `arugula 3f2a9c1e ● live · …` (the session's
+id) when they show only on the conversation.
 
 It's the plugin's `live` option, **off by default**. Off, the module loads
 and hooks nothing. To turn it on:
@@ -67,11 +84,23 @@ and hooks nothing. To turn it on:
 
 **Where it works.** It needs Claude Code 2.1.286 or later (mods), and an
 `arugula` CLI with `session-signal`; with an older CLI the status line says
-to update Arugula. It acts only where `ARUGULA_PANE` is set, and it reaches
-the daemon through the `arugula` on PATH, which finds it through
-`ARUGULA_SOCK` (set in every Arugula pane and agent block; tmux windows lack
-it) or the default socket (the named pipe on Windows). Outside an Arugula
-pane it does nothing. Where it's been tested is below.
+to update Arugula. It reports from anywhere Claude Code runs on a machine
+with an Arugula daemon, in a pane or not. It reaches the daemon through the
+`arugula` on PATH, which finds it through `ARUGULA_SOCK` (set in every
+Arugula pane and agent block; tmux windows lack it) or the default socket
+(the named pipe on Windows). With no daemon to reach, the status line says
+so. On Windows the module runs `arugula` with no shell, so the real
+`arugula.exe` must be on the PATH Claude Code (or the app it's in) started
+with: a `.cmd` or `.ps1` shim won't do. Where it's been tested is below.
+
+How a pane knows its session: the CLI sends the pane its environment names
+(`ARUGULA_PANE`) and its own process id, and the daemon puts the session on
+that pane only when that process is in the pane's foreground job (its
+process group is the terminal's foreground group, or on Windows it descends
+from the pane's foreground process). A `claude` typed at the prompt is; an
+app started from the pane (detached, or a job in the background) and a
+`tmux` server started there aren't. An older `arugula` without the session
+id route sends to the pane as before.
 
 **Older Claude Code.** One `hooks.json` holds both the command hooks and the
 module (#449): a Claude Code without mods ignores `modules` and runs the
@@ -101,17 +130,23 @@ These runs used the module as it was before it joined this plugin (the
 separate `arugula-live` plugin, #1942): the same four events, the same
 signals. Loading it now means this plugin with `live` on.
 
-| Surface | Claude Code | start | step | usage | compact | Right pane |
-| --- | --- | --- | --- | --- | --- | --- |
-| Terminal, `claude` and `claude -p` (#1942) | 2.1.316 | yes | yes | yes | yes | proven |
-| Agent block on a hosted box (arugula-dev-6), ACP adapter 0.85.0, loaded through `CLAUDE_CODE_PLUGIN_DIRS` | 2.1.286 (the SDK's) | yes | yes | yes | yes (`/compact`) | proven: the block's own id |
-| VS Code extension's bundled Claude Code, started as the extension starts it (`stream-json`, `CLAUDE_CODE_ENTRYPOINT=claude-vscode`) | 2.1.314 | yes | yes (effort too) | yes | yes | proven for the pane in `ARUGULA_PANE` |
-| VS Code's UI | | | | | | not run: needs a GUI |
-| Desktop app, Windows 11 (Claude 4.4212, in a VM) | 2.1.309 (the app's) | yes | yes | yes | yes (`/compact`) | proven for the pane it was started from; status shown under the message box |
-| Desktop app, macOS 26.6 (Claude 4.4212, in a tart VM) | 2.1.309 (the app's) | yes | yes | yes | yes (`/compact`) | proven for the pane it was started from; status shown (`arugula %6 ● live · 8% of 1M · 1 compacted`) |
+| Surface | Claude Code | start | step | usage | compact | Reached (#448) | Shows on (#453) |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| Terminal, `claude` and `claude -p` (#1942) | 2.1.316 | yes | yes | yes | yes | proven | its conversation and the pane it runs in |
+| Agent block on a hosted box (arugula-dev-6), ACP adapter 0.85.0, loaded through `CLAUDE_CODE_PLUGIN_DIRS` | 2.1.286 (the SDK's) | yes | yes | yes | yes (`/compact`) | proven: the block's own id | its conversation and its block |
+| VS Code extension's bundled Claude Code, started as the extension starts it (`stream-json`, `CLAUDE_CODE_ENTRYPOINT=claude-vscode`) | 2.1.314 | yes | yes (effort too) | yes | yes | proven for the pane in `ARUGULA_PANE` | its conversation |
+| VS Code's UI | | | | | | not run: needs a GUI | its conversation |
+| Desktop app, Windows 11 (Claude 4.4212, in a VM) | 2.1.309 (the app's) | yes | yes | yes | yes (`/compact`) | proven for the pane it was started from; status shown under the message box | its conversation |
+| Desktop app, macOS 26.6 (Claude 4.4212, in a tart VM) | 2.1.309 (the app's) | yes | yes | yes | yes (`/compact`) | proven for the pane it was started from; status shown (`arugula %6 ● live · 8% of 1M · 1 compacted`) | its conversation |
 
-Started from the Start menu or the Dock instead, the desktop app sent nothing,
-as it should.
+The last column is where the figures show since #453, which keys them by
+the session: a terminal's `claude` (2.1.316, a throwaway daemon, in a pane
+and outside any pane) was run again for it; the others report the same
+signals from the same places, so they reach their conversations.
+
+Started from the Start menu or the Dock instead, the desktop app sent nothing
+before #453, as it should then; since #453 it reports to its conversations,
+started from anywhere, given a daemon to reach.
 
 - **Hosted agent block.** The box's daemon and CLI were 0.64.0, older than
   `session-signal`, so the run used a throwaway daemon built from main on the
@@ -126,7 +161,18 @@ as it should.
   messages (`arugula %1 ● live · 4% of 1M · v0.66.5`), which the extension's
   mod surface draws.
 
-What doesn't reach a pane, for now:
+What shows only on its conversation, not on a pane:
+
+- **VS Code and the desktop app** have no pane of their own (#453). Each of
+  their sessions reports to its own conversation, whether the app was
+  started from the Dock, the Start menu or an Arugula pane: started from a
+  pane, its sessions no longer land on that pane. Arugula's VS Code editor
+  block drops `ARUGULA_PANE` on purpose, and Claude Code inside it reports to
+  its conversation the same way.
+- **Claude Code in `tmux`** inside a pane: the `tmux` server isn't in the
+  pane's foreground, so its sessions show on their conversations.
+
+What doesn't reach Arugula at all, for now:
 
 - **A hosted session's agent** (M255, a session from control running as
   `sesN`) starts under `env -i`: no `ARUGULA_PANE`, no `ARUGULA_SOCK`, no
@@ -134,15 +180,6 @@ What doesn't reach a pane, for now:
   Tabs from `cloud open_tab` run as the box's user and are covered above. A
   box's blocks load the plugin only if their daemon's environment (its spec,
   or the platform) names it.
-- **VS Code and the desktop app** have no pane of their own. Claude Code there
-  inherits the app's environment, which has `ARUGULA_PANE` only when the app
-  itself was started from an Arugula pane (VS Code only when that start opened
-  its first window: `code .` into a running VS Code keeps the old
-  environment), and then every session in the app reports to that one pane.
-  Arugula's VS Code editor block drops `ARUGULA_PANE` on purpose, so Claude
-  Code inside it is silent.
-- **Windows:** the module runs `arugula` with no shell, so `arugula.exe` must
-  be on the PATH the app started with (a `.cmd` or `.ps1` shim won't do).
 
 ### Desktop app checklist (macOS, then Windows 11)
 
@@ -150,9 +187,9 @@ The kit is a zip of this folder with `.claude-plugin/plugin.json` and
 `hooks/` at its root, the shape Settings > Plugins takes.
 
 1. Install an `arugula` with `session-signal` (main after #1942, or the first
-   release with it). `arugula session-signal </dev/null` answers JSON
-   (`{"error":"not in an Arugula pane"}` outside a pane), not
-   `unrecognized subcommand`.
+   release with it; #453 for sessions outside a pane).
+   `arugula session-signal </dev/null` answers JSON
+   (`{"error":"not a session signal: …"}`), not `unrecognized subcommand`.
 2. Start a dev daemon (`just dev`, or `arugulad --state-dir <dir>`) and open a
    terminal pane in it. `echo $ARUGULA_PANE $ARUGULA_SOCK` shows the pane and
    the dev socket. On Windows: `$env:ARUGULA_PANE`, and `where.exe arugula`
@@ -181,13 +218,16 @@ The kit is a zip of this folder with `.claude-plugin/plugin.json` and
    expected, and they talk to the dev daemon the same way.
 6. In the Code tab, start a local session in any folder. Send `Reply with
    just ok`, then `/compact`.
-7. Look for the status text `arugula %N ● live · …% of … · v…` (N is the
-   pane from step 2), with `1 compacted` after the `/compact`, and in the dev
-   daemon's log `session signal pane=N` lines with `event=start`,
+7. Look for the status text `arugula <session> ● live · …% of … · v…` (the
+   session's id: the app doesn't run in the pane, so its figures go to its
+   conversation, #453), with `1 compacted` after the `/compact`, and in the
+   dev daemon's log `session signal session=<id>` lines with `event=start`,
    `event=step` (model, effort), `event=usage` (tokens, window, cost) and
-   `event=compact`.
-8. Negative check: quit, start the app from the Dock or Start menu, open a
-   session. No status text, no signal lines, no error.
+   `event=compact`, each `shows_on=None`. The conversations list in the dev
+   daemon's page shows the session's figures in its row.
+8. Quit, start the app from the Dock or Start menu, open a session. It
+   reaches the default daemon (not the dev one, whose socket it doesn't
+   know): with none running, the status text says it can't reach one.
 
 Record which events arrived and whether the status showed. A session that
 starts before the app's window attaches (Podium's note) may send `start`

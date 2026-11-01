@@ -18,6 +18,7 @@
 pub mod branch;
 pub mod context;
 pub mod convert;
+pub mod signals;
 pub mod spend;
 
 use std::{
@@ -135,6 +136,10 @@ pub struct Conversation {
     /// ([`spend`], #398): filled in by a listing once it's been worked out.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub estimate: Option<Value>,
+    /// What Claude Code said of it from inside, live (#453, [`signals`]):
+    /// the agent block's `context` shape, filled in by a listing.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub context: Option<Value>,
 }
 
 /// What the start and end of a transcript say.
@@ -312,6 +317,7 @@ impl Index {
                 archived: rec.archived,
                 live: live.get(&h.id).cloned(),
                 estimate: None,
+                context: None,
             });
         }
         out.sort_by(|a, b| b.updated_ms.cmp(&a.updated_ms).then_with(|| a.id.cmp(&b.id)));

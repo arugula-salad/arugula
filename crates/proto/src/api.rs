@@ -451,13 +451,35 @@ pub struct SessionSignal {
     pub mod_version: Option<String>,
 }
 
-/// What the daemon makes of a [`SessionSignal`]: the pane's context, in the
-/// agent block's `context` shape (#397), and its own version.
+/// A [`SessionSignal`] for its conversation (#453): keyed by Claude Code's
+/// session id (required here), with the pane optional. `arugula
+/// session-signal` adds `pane` (its `ARUGULA_PANE`, if any) and `pid` (its
+/// own process id): the session shows on that pane only when the CLI runs
+/// in the pane's foreground job, so an editor or desktop app started from a
+/// pane doesn't lump its sessions onto it.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+pub struct ConversationSignal {
+    #[serde(flatten)]
+    pub signal: SessionSignal,
+    /// The pane Claude Code was started in, as its environment says.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pane: Option<PaneId>,
+    /// The process id of whoever sent it (the CLI, Claude Code's child).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pid: Option<u32>,
+}
+
+/// What the daemon makes of a [`SessionSignal`]: the session's context, in
+/// the agent block's `context` shape (#397), and its own version.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SessionSignaled {
     pub daemon_version: String,
     #[serde(default)]
     pub context: serde_json::Value,
+    /// The pane or agent block it shows on (#453), if any: else only its
+    /// conversation does.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pane: Option<PaneId>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
