@@ -183,23 +183,32 @@ its `_ci` records. A check run is matched by name, so no other workflow
 that runs on main's commits may have a job named like a required one, not
 even one that's skipped there (binaries.yml's PR-only desktop-xvfb is
 named `desktop-xvfb (pull request)` for that). `npx
-@intentius/chant@0.124.61 ci last-green` (after `git fetch --tags`) prints
+@intentius/chant@0.124.63 ci last-green` (after `git fetch --tags`) prints
 the newest green commit, and `--lane server` (or `app`, `daemon`) the
 newest of a lane's.
 
 `.github/workflows/ci-red.yml` runs `scripts/ci-red` every hour and after
-each `chant-ci-green` run, so a red main gets heard: when main has gone 6
-hours (`ARUGULA_RED_HOURS`) without a green commit, when a commit gets a
+each `chant-ci-green` run, so a red main gets heard: when a commit gets a
 `ci/revoked` tag, or at once when chant's record for main's newest decided
 commit says red after its one retry (`chant ci list`, pinned like
 chant-ci-green.yml's; the comment names the failed phase, job and run, and a
 later one names the bisect's culprit; if chant can't be read the script logs
 it and uses the tags alone), it opens an issue titled
-"main is red", or comments on the open one, once per red stretch or
-revocation; GitHub notifies the repo's watchers and anyone the
+"main is red", or comments on the open one, once per revocation or red
+commit; GitHub notifies the repo's watchers and anyone the
 `ARUGULA_RED_MENTION` variable names. It closes the issue once main has a
 green commit newer than everything it reported. `scripts/tests/ci-red.sh`
 (`just test-scripts`) runs it with a fake gh.
+
+Main red for hours with nothing decided, such as runs that never finish,
+is chant's tick's to tell (chant#4678): `ci.green.notify` in
+`chant.workspace.json` has `staleAfter: 6`, so when the oldest commit above
+main's newest green one is 6 hours old the tick sends `ci.stale`, once per
+red stretch, and `ci.green` when a newer commit goes green. It sends them
+to the Slack incoming webhook in the `ARUGULA_CI_SLACK_WEBHOOK` secret,
+which chant-ci-green.yml gives the tick's step. The tick runs every 15
+minutes even when nothing else does, and marks what it sent in
+`_ci/branch/main.json` on `chant/lifecycle`.
 
 The same workflow runs `scripts/ci-nightly-red` for the scheduled
 workflows (forges-nightly, macos-vm, macos-intel, testnet-break,
@@ -239,48 +248,57 @@ arugula-salad/site).
 ## Quarantine
 
 A test that fails on both tries on unrelated commits turns main red for
-everyone. Until someone fixes it, it can go in the quarantine,
-`.config/quarantine.toml`: CI's runs leave it out, and
+everyone. Until someone fixes it, it can go in chant's quarantine,
+`ci.green.quarantine` in `chant.workspace.json` (chant's docs: `chant ci`,
+"Quarantine"): CI's runs leave it out, and
 `.github/workflows/quarantine-nightly.yml` runs the quarantined tests
-alone every night, where a red run says one still fails and a green one
-that it may be fixed. That run gates nothing. `just test` and `just e2e`
-on your own machine still run them with the rest.
+alone every night, where a red run says one still fails. That run gates
+nothing. `chant ci quarantine report` there sends `ci.quarantine-passed`
+through `ci.green.notify` for each test that passed, so someone can check
+its issue and take it out. `just test` and `just e2e` on your own machine
+still run them with the rest.
 
-Each entry names the test, the issue that tracks the fix, the day it comes
-back and why:
+Each entry is under its phase and names the test, the issue that tracks
+the fix, the last day it stays out (`until`, UTC, at most `maxDays`, 14,
+from today) and why. Without entries there's no `quarantine` key at all,
+since chant refuses an empty one:
 
-```toml
-[[rust]]
-test = "arugulad::integration ssh::ssh_installs_runs_forwards_the_agent_pushes_and_saved_hosts_work"
-issue = "1234"           # a number or a URL
-until = "2026-11-10"     # at most 14 days out
-why = "Fails twice on unrelated commits (2ac1e89ba, c2b452072)."
-
-[[e2e]]
-spec = "web/e2e/chat-control.spec.ts"
-title = "polish: ↑ edits the last message and Esc cancels, ..."   # the test's own title, whole
-issue = "1235"
-until = "2026-11-10"
-why = "..."
+```json
+"quarantine": {
+  "maxDays": 14,
+  "phases": {
+    "test": [
+      { "test": "ssh::ssh_installs_runs_forwards_the_agent_pushes_and_saved_hosts_work", "issue": "1234", "until": "2026-11-10", "why": "Fails twice on unrelated commits (2ac1e89ba, c2b452072)." }
+    ],
+    "e2e": [
+      { "file": "chat-control.spec.ts", "test": "polish: ↑ edits the last message and Esc cancels, ...", "issue": "1235", "until": "2026-11-10", "why": "..." }
+    ]
+  }
+}
 ```
 
-A Rust test is named as nextest prints it in CI's log: the binary id, a
-space, the test's name. To add one, add its entry and run `just
-quarantine`, which writes the entries into `default-filter` in each
-workspace's nextest config (`.config/nextest.toml`,
-`server/.config/nextest.toml`: CI's profile skips them, and nextest says
-how many it skipped) and checks the manifest. Playwright's config reads the
-manifest itself and, under `CI`, leaves the specs out (`grepInvert`);
-`E2E_QUARANTINED=1` runs only them. To take one out, delete its entry
-and run `just quarantine` again.
+A Rust test goes under `test` and is named without its binary id: the
+name nextest prints after the binary (`ssh::...`). Every nextest run in CI
+leaves out the test phase's entries, in both workspaces and on macOS and
+Windows too: `just test-run` (and `test-platform-postgres`) under CI's
+profile, and windows.yml, pass `chant ci quarantine filter --phase test
+--runner nextest` as `-E`, through `scripts/chant`, which runs the pinned
+chant. One filterset serves both workspaces only without binary ids,
+since nextest refuses a binary id that isn't in the workspace it runs. A
+spec goes under `e2e`, with `file` its path from `web/e2e` and `test` its
+title. Playwright's config asks chant for the e2e phase's pattern under
+`CI` and leaves those out (`grepInvert`); `E2E_QUARANTINED=1` runs only
+them. Don't quarantine a test in a serial spec (`describe.configure` mode
+`"serial"`): its later tests depend on it. Fix it, or make its timing
+report-only through `web/e2e/timing.ts`. To take one out, delete its
+entry.
 
-`scripts/quarantine.mjs check`, in `just test-scripts` and so in lint, fails
-when an entry has no issue, is past its `until` or more than 14 days out,
-names a test that isn't there, names one in a serial spec (its later
-tests depend on it: fix it, or make its timing report-only through
-`web/e2e/timing.ts`), or the nextest configs don't match the manifest. So an expired quarantine turns lint red: fix the test and delete
-the entry, or delete the test. A new `until` needs a reason in the issue.
-`scripts/tests/quarantine.sh` tests the script.
+`just quarantine`, in `just test-scripts` and so in lint, runs `chant ci
+quarantine check`, which fails when an entry is past its `until` or more
+than 14 days out, and fails on a Rust test named with its binary id. The
+test phase's filter fails the same way, so an expired quarantine turns
+lint and the phase's jobs red: fix the test and delete the entry, or
+delete the test. A new `until` needs a reason in the issue.
 
 ## The daemon's integration tests
 

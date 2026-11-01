@@ -1,23 +1,25 @@
 #!/usr/bin/env bash
-# Tells people when main stays red, or a green commit is revoked (#524),
-# through one GitHub issue titled "main is red": GitHub notifies the repo's
-# watchers (and anyone in ARUGULA_RED_MENTION) when it's opened or
-# commented on. .github/workflows/ci-red.yml runs it every hour.
+# Tells people when a green commit on main is revoked, or main is red
+# after chant's retry (#524), through one GitHub issue titled "main is
+# red": GitHub notifies the repo's watchers (and anyone in
+# ARUGULA_RED_MENTION) when it's opened or commented on.
+# .github/workflows/ci-red.yml runs it every hour.
 #
-#   main has had commits for more than ARUGULA_RED_HOURS hours (6) and none
-#   of them has a ci/green tag      open the issue, or comment on it once
-#                                   per red stretch (it names the stretch's
-#                                   first commit)
 #   a ci/revoked tag from the last two days the issue doesn't name yet
-#                                   the same, naming it
+#                                   open the issue, or comment on it,
+#                                   naming it
 #   main's newest decided commit is red after chant's one retry (#1678)
 #                                   the same, at once, naming the failed
 #                                   phase, the commit and the run; and once
 #                                   the bisect names the culprit, one more
 #                                   comment naming it
 #   main's newest green commit is newer than every revocation and red commit
-#   the issue names, and main isn't too long red
+#   the issue names
 #                                   comment that it's green and close it
+#
+# Main red for hours with nothing decided (runs that never finish) is
+# chant's tick's to tell: ci.stale, from ci.green.notify's staleAfter in
+# chant.workspace.json (chant#4678), and ci.green when the stretch ends.
 #
 # It reads main and the ci/ tags from this checkout (fetch them all first:
 # the workflow's checkout has fetch-depth 0) and writes with gh (GH_TOKEN,
@@ -28,11 +30,10 @@
 set -euo pipefail
 
 repo=${GITHUB_REPOSITORY:-arugula-salad/arugula}
-hours=${ARUGULA_RED_HOURS:-6}
 mention=${ARUGULA_RED_MENTION:-}
 now=${ARUGULA_RED_NOW:-$(date +%s)}
 # Pinned like chant-ci-green.yml's (#1675). Tests put a fake in its place.
-chant=${ARUGULA_RED_CHANT:-npx --yes @intentius/chant@0.124.61}
+chant=${ARUGULA_RED_CHANT:-npx --yes @intentius/chant@0.124.63}
 title="main is red"
 main=$(git rev-parse --verify "${ARUGULA_RED_MAIN:-origin/main}^{commit}")
 short() { git rev-parse --short=12 "$1"; }
@@ -43,19 +44,6 @@ green=''
 for c in $(git rev-list --first-parent --max-count 200 "$main"); do
   if has_tag green "$c" && ! has_tag revoked "$c"; then green=$c; break; fi
 done
-
-# The red stretch: main's commits since the newest green one, from the
-# oldest, which has been waiting longest.
-red_since=''
-if [ "$green" != "$main" ]; then
-  if [ -n "$green" ]; then red_since=$(git rev-list --first-parent --reverse "$green..$main" | head -1)
-  else red_since=$(git rev-list --first-parent --reverse --max-count 200 "$main" | head -1); fi
-fi
-too_long=0
-if [ -n "$red_since" ]; then
-  age=$(( (now - $(git log -1 --format=%ct "$red_since")) / 3600 ))
-  [ "$age" -lt "$hours" ] || too_long=1
-fi
 
 # The newest issue with the title, open or closed, and what it says.
 issue='' state='' said=''
@@ -98,11 +86,6 @@ if ! fast_read; then
 fi
 
 news=''
-if [ "$too_long" = 1 ] && [[ "$said" != *"red since $red_since"* ]]; then
-  if [ -n "$green" ]; then last="the newest green one is $(short "$green") ($(subject "$green"))"
-  else last="none of main's last 200 is green"; fi
-  news+="- No commit on main has passed CI for ${age} hours: red since $red_since ($(subject "$red_since")); $last."$'\n'
-fi
 red_named=''
 if [ "$state" = OPEN ]; then
   red_named=$(grep -oE 'red after one retry: [0-9a-f]{40}' <<<"$said" | sed 's/.*: //' || true)
@@ -141,16 +124,18 @@ if [ -n "$news" ]; then
 fi
 
 # Nothing new. An open issue closes once main is green past everything it
-# names.
+# names (and past the "red since" commit of an issue this script's old
+# 6-hour timer opened).
 if [ "$state" = OPEN ]; then
-  if [ "$too_long" = 1 ]; then echo "#$issue stays open: red since $(short "$red_since")"; exit 0; fi
+  [ -n "$green" ] || { echo "#$issue stays open: no green commit on main"; exit 0; }
   while read -r sha; do
     [ -n "$sha" ] || continue
-    if [ -z "$green" ] || ! git merge-base --is-ancestor "$sha" "$green" 2>/dev/null; then
+    if ! git merge-base --is-ancestor "$sha" "$green" 2>/dev/null; then
       echo "#$issue stays open: no green commit after $(short "$sha") yet"; exit 0
     fi
   done < <({ grep -oE 'ci/revoked/[0-9a-f]{40}' <<<"$said" | sed 's|ci/revoked/||' || true
-             grep -oE 'red after one retry: [0-9a-f]{40}' <<<"$said" | sed 's/.*: //' || true; } | sort -u)
+             grep -oE 'red after one retry: [0-9a-f]{40}' <<<"$said" | sed 's/.*: //' || true
+             grep -oE 'red since [0-9a-f]{40}' <<<"$said" | sed 's/.* //' || true; } | sort -u)
   gh issue comment "$issue" -R "$repo" --body "Green again: $(short "$green") ($(subject "$green")) passed CI. $footer"
   gh issue close "$issue" -R "$repo" >/dev/null
   echo "closed #$issue"

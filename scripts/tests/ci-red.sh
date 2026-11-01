@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
-# scripts/ci-red (#524): it opens one "main is red" issue when main has had
-# no green commit for hours or a green commit is revoked, comments on it
-# once per new thing, and closes it when main is green again. It also opens
-# or comments at once when chant's record says the newest decided commit is
-# red after its retry, and again when the bisect names the culprit (#1678).
+# scripts/ci-red (#524): it opens one "main is red" issue when a green
+# commit is revoked, comments on it once per new thing, and closes it when
+# main is green again. It also opens or comments at once when chant's
+# record says the newest decided commit is red after its retry, and again
+# when the bisect names the culprit (#1678). Hours without a green commit
+# are chant's ci.stale now (chant#4678), so it says nothing of those.
 # With a fake gh that records what it's asked to write and a fake chant that
 # prints a canned `ci list --json`, against a local repository.
 #
@@ -38,7 +39,7 @@ cat >"$tmp/bin/chant" <<'EOF'
 cat "$FAKE/list.json"
 EOF
 chmod +x "$tmp/bin/chant"
-export PATH=$tmp/bin:$PATH FAKE=$tmp ARUGULA_RED_CHANT=$tmp/bin/chant GITHUB_REPOSITORY=forge/arugula ARUGULA_RED_MAIN=main ARUGULA_RED_HOURS=6
+export PATH=$tmp/bin:$PATH FAKE=$tmp ARUGULA_RED_CHANT=$tmp/bin/chant GITHUB_REPOSITORY=forge/arugula ARUGULA_RED_MAIN=main
 unset ARUGULA_RED_MENTION
 export GIT_AUTHOR_NAME=test GIT_AUTHOR_EMAIL=test@example.invalid GIT_COMMITTER_NAME=test GIT_COMMITTER_EMAIL=test@example.invalid
 git init -q -b main "$tmp/work"
@@ -65,22 +66,21 @@ calls() { # NAME WANT: the gh writes were WANT (a regex over them, one line)
   if [[ "$got" =~ $2 ]]; then ok "$1"; else bad "$1: gh was asked: ${got:-nothing}; $(cat "$tmp/out")"; fi
 }
 
-run "red for 5 hours" 5
-calls "red for 5 hours: nothing yet" '^$'
-run "red for 7 hours" 8
-calls "red for 7 hours: opens the issue" "^issue create -R forge/arugula --title main is red --body .*red since $two"
-grep -o "red since $two" "$tmp/calls" >"$tmp/said"
-echo "7 OPEN" >"$tmp/issue"
-run "still red" 9
-calls "still red: says it once" '^$'
+run "red for 8 hours" 8
+calls "red for 8 hours: nothing (chant's ci.stale)" '^$'
 
-# two passes and then fails a re-run; three passes.
+# two passes and then fails a re-run.
 git tag "ci/green/$two" "$two"
 git tag "ci/revoked/$two" "$two"
-git tag "ci/green/$three" "$three"
 run "a revocation" 10
-calls "a revocation: comments on the open issue" "^issue comment 7 -R forge/arugula --body .*ci/revoked/$two"
-echo "ci/revoked/$two" >>"$tmp/said"
+calls "a revocation: opens the issue" "^issue create -R forge/arugula --title main is red --body .*ci/revoked/$two"
+echo "ci/revoked/$two" >"$tmp/said"
+echo "7 OPEN" >"$tmp/issue"
+run "still revoked" 10
+calls "still revoked: says it once" '^$'
+if grep -q "stays open: no green commit after" "$tmp/out"; then ok "stays open while nothing past the revocation is green"; else bad "should stay open: $(cat "$tmp/out")"; fi
+# three passes.
+git tag "ci/green/$three" "$three"
 four=$(commit four 11)
 run "green, past the revocation" 11
 calls "green again: comments and closes" "^issue comment 7 .*Green again: ${three:0:12}.* issue close 7 -R forge/arugula $"
@@ -91,15 +91,19 @@ git tag "ci/green/$four" "$four"
 run "old revocation" 60
 calls "old revocation: nothing" '^$'
 
-# The issue is closed and something new is red: a new issue, with the
-# mention.
+# An issue the old 6-hour timer opened ("red since") closes once a commit
+# past that one is green.
 five=$(commit five 61)
-ARUGULA_RED_MENTION="@someone" run "red again" 70
-calls "red again: a new issue" "^issue create .*red since $five.*@someone"
+echo "red since $five" >"$tmp/said"
+echo "7 OPEN" >"$tmp/issue"
+run "an old timer's issue" 70
+calls "an old timer's issue: stays open" '^$'
 
 # chant's records (#1678). The newest decided commit goes red after its one
-# retry: the issue opens at once, though main has been red for 1 hour.
+# retry: the issue opens at once, with the mention.
 git tag "ci/green/$five" "$five"
+run "an old timer's issue, green" 71
+calls "an old timer's issue, green: comments and closes" "^issue comment 7 .*Green again: ${five:0:12}.* issue close 7 -R forge/arugula $"
 six=$(commit six 100)
 record() { # SHA JSON: SHA's _ci record on chant/lifecycle
   local blob tree parent=()
@@ -120,8 +124,8 @@ record "$six" '{"state":"red","retried":{"nextest":{"run":9,"at":"x"}},"failure"
 list '{"state":"red"}'
 echo "7 CLOSED" >"$tmp/issue"
 : >"$tmp/said"
-run "red after retry" 101
-calls "red after retry: opens the issue at once" "^issue create .*red after one retry: $six\. Failed phase: test, job \"nextest\", run https://example.invalid/run/9"
+ARUGULA_RED_MENTION="@someone" run "red after retry" 101
+calls "red after retry: opens the issue at once" "^issue create .*red after one retry: $six\. Failed phase: test, job \"nextest\", run https://example.invalid/run/9.*@someone"
 grep -o "red after one retry: $six" "$tmp/calls" >"$tmp/said"
 echo "8 OPEN" >"$tmp/issue"
 run "red after retry, next hour" 102
@@ -178,6 +182,6 @@ run "chant fails" 108
 calls "chant fails: nothing from the records" '^$'
 if grep -q "chant's records not read" "$tmp/out"; then ok "chant fails: logged"; else bad "chant fails: not logged: $(cat "$tmp/out")"; fi
 run "chant fails, red for 8 hours" 114
-calls "chant fails: the 6 hour rule still opens the issue" "^issue create .*red since $eight"
+calls "chant fails, red for 8 hours: nothing (chant's ci.stale)" '^$'
 
 exit $fail

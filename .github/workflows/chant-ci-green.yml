@@ -49,4 +49,5 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
           GIT_COMMITTER_NAME: github-actions[bot]
           GIT_COMMITTER_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
-        run: npx --yes @intentius/chant@0.124.61 ci tick
+          ARUGULA_CI_SLACK_WEBHOOK: ${{ secrets.ARUGULA_CI_SLACK_WEBHOOK }}
+        run: npx --yes @intentius/chant@0.124.63 ci tick

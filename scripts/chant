@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+# chant at the version CI pins (package.json's, chant-ci-green.yml's), for
+# the jobs that read the quarantine (chant.workspace.json's
+# ci.green.quarantine, docs/testing.md "Quarantine"): the test runs, the
+# Playwright config, lint and quarantine-nightly.yml. ARUGULA_CHANT runs
+# another (a command, e.g. node_modules/.bin/chant), as in scripts/changed.
+#
+#   scripts/chant ARGS...
+set -euo pipefail
+# shellcheck disable=SC2086
+exec ${ARUGULA_CHANT:-npx --yes @intentius/chant@0.124.63} "$@"
