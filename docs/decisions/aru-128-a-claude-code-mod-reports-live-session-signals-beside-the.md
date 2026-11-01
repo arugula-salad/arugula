@@ -200,9 +200,15 @@ conversation.** So:
   and gives it to the mux as a pane's `live` only for the pane the session
   runs in: the CLI's pid (or a parent of it below the pane's shell) is in the
   pane's terminal foreground job (`procinfo::in_foreground`), the foreground
-  the mux reads to tell Claude Code runs there. An agent block takes its own
-  `session_id`. A signal without a pid (an older CLI) goes to its pane as
-  before.
+  the mux reads to tell Claude Code runs there. When that foreground is a
+  `tmux` client, the session counts when it's in the foreground of the
+  `tmux` pane the client shows (asked of its server with `list-clients`);
+  the mux checks again each refresh and drops the figures once it isn't.
+  An agent block takes its own `session_id`. A signal without a pid (an
+  older CLI) goes to its pane as before.
+- VS Code's sessions (`claude-vscode`) are their own source, `vscode`, on
+  the default conversations list.
+- The command hooks still trust `ARUGULA_PANE`: #469.
 
 Where (#453): `plugins/claude-code/hooks/live.ts`, `crates/cli/src/hook.rs`,
 `crates/arugulad-agent/src/ops.rs` (`session_signal`),

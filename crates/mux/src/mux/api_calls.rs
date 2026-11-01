@@ -323,13 +323,20 @@ impl Daemon {
                 let _ = reply.send(self.ask_reply(pane, id, answer, by));
             }
             Api::Hook(pane, hook) => self.hook(pane, &hook),
-            Api::Live(pane, live) => {
+            Api::Live(pane, live, pid) => {
                 let changed = match live {
                     Some(v) if self.panes.contains_key(&pane) || self.blocks.contains_key(&pane) => {
+                        match pid {
+                            Some(pid) => self.live_pid.insert(pane, pid),
+                            None => self.live_pid.remove(&pane),
+                        };
                         self.live.insert(pane, v.clone()) != Some(v)
                     }
                     Some(_) => false,
-                    None => self.live.remove(&pane).is_some(),
+                    None => {
+                        self.live_pid.remove(&pane);
+                        self.live.remove(&pane).is_some()
+                    }
                 };
                 if changed {
                     self.mark(pane);

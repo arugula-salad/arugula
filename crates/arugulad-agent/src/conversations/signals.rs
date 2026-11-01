@@ -13,6 +13,12 @@
 //! session (its `session_id`). A signal without a pid (an older `arugula`,
 //! through `pane.session_signal`) goes to its pane as it always did.
 //!
+//! **Through `tmux`**: when the pane's foreground job is a `tmux` client,
+//! a session counts for the pane when it's in the foreground of the `tmux`
+//! pane that client shows now ([`tmux_pane`]); one in a window behind it
+//! doesn't. The pane keeps its figures while that stays so (the mux asks
+//! again, [`arugula_mux::procinfo::in_front`]).
+//!
 //! Kept in memory only (lost on a restart, as a pane's attention is), at
 //! most [`KEEP`] sessions, the quietest forgotten first.
 
@@ -119,9 +125,99 @@ impl Signals {
     }
 }
 
+/// The shell of the `tmux` pane a `tmux` client shows now, when `client`
+/// is one: asked of its server (`list-clients`), found by the socket the
+/// client was started with (`-L` or `-S`, and its `TMUX_TMPDIR`), with the
+/// client's own `tmux`. None for anything else, or a server that doesn't
+/// answer within a moment.
+pub fn tmux_pane(client: u32) -> Option<u32> {
+    use crate::procinfo;
+    if !procinfo::comm(client)?.starts_with("tmux") {
+        return None;
+    }
+    let exe = procinfo::exe(client)?;
+    let socket = tmux_socket(&procinfo::argv(client)?);
+    let mut cmd = std::process::Command::new(exe);
+    cmd.args(&socket).args(["list-clients", "-F", "#{client_pid} #{pane_pid}"]).env_remove("TMUX");
+    match procinfo::env_var(client, "TMUX_TMPDIR") {
+        Some(d) => cmd.env("TMUX_TMPDIR", d),
+        None => cmd.env_remove("TMUX_TMPDIR"),
+    };
+    let out = run_briefly(cmd, std::time::Duration::from_millis(500))?;
+    tmux_client_pane(&out, client)
+}
+
+/// The server options in a `tmux` client's command line: `-L NAME` or
+/// `-S PATH` (joined or not), up to its command.
+fn tmux_socket(argv: &[String]) -> Vec<String> {
+    let mut out = vec![];
+    let mut args = argv.iter().skip(1);
+    while let Some(a) = args.next() {
+        if a == "--" || !a.starts_with('-') || a.len() < 2 {
+            break;
+        }
+        // Flags bundle (`-2u`); one that takes a value takes the rest, or
+        // the next argument.
+        for (i, c) in a.char_indices().skip(1) {
+            if "cfLST".contains(c) {
+                let rest = &a[i + c.len_utf8()..];
+                let value = if rest.is_empty() { args.next().cloned() } else { Some(rest.to_owned()) };
+                if let (Some(v), true) = (value, c == 'L' || c == 'S') {
+                    out.extend([format!("-{c}"), v]);
+                }
+                break;
+            }
+        }
+    }
+    out
+}
+
+/// `client`'s pane in `list-clients -F '#{client_pid} #{pane_pid}'`.
+fn tmux_client_pane(out: &str, client: u32) -> Option<u32> {
+    out.lines().find_map(|l| {
+        let (c, p) = l.trim().split_once(' ')?;
+        (c.parse::<u32>().ok()? == client).then(|| p.trim().parse().ok()).flatten()
+    })
+}
+
+/// A command's output, if it finishes within `limit`; else it's killed.
+fn run_briefly(mut cmd: std::process::Command, limit: std::time::Duration) -> Option<String> {
+    use std::{io::Read, process::Stdio};
+    let mut child = cmd.stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::null()).spawn().ok()?;
+    let deadline = std::time::Instant::now() + limit;
+    loop {
+        match child.try_wait() {
+            Ok(Some(status)) if status.success() => break,
+            Ok(Some(_)) | Err(_) => return None,
+            Ok(None) if std::time::Instant::now() >= deadline => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return None;
+            }
+            Ok(None) => std::thread::sleep(std::time::Duration::from_millis(5)),
+        }
+    }
+    let mut s = String::new();
+    child.stdout.take()?.read_to_string(&mut s).ok()?;
+    Some(s)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_tmux_clients_server_and_pane() {
+        let argv = |s: &str| s.split(' ').map(str::to_owned).collect::<Vec<_>>();
+        assert_eq!(tmux_socket(&argv("tmux -L work attach -t main")), ["-L", "work"]);
+        assert_eq!(tmux_socket(&argv("tmux -2u -S/tmp/s attach")), ["-S", "/tmp/s"]);
+        assert_eq!(tmux_socket(&argv("tmux -f /x.conf -L w a")), ["-L", "w"]);
+        assert!(tmux_socket(&argv("tmux attach -L nope")).is_empty());
+        assert!(tmux_socket(&argv("tmux")).is_empty());
+        let out = "4100 5100\n4200 5200\n";
+        assert_eq!(tmux_client_pane(out, 4200), Some(5200));
+        assert_eq!(tmux_client_pane(out, 4300), None);
+    }
 
     fn usage(session: &str, tokens: u64) -> SessionSignal {
         SessionSignal {

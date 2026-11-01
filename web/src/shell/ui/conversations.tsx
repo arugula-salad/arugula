@@ -1,5 +1,5 @@
 // Claude Code conversations (M33): every one on the daemon's machine, from
-// a terminal or the desktop app's Code tab, grouped by folder, newest
+// a terminal, the desktop app's Code tab or VS Code, grouped by folder, newest
 // first. Picking one shows it as an agent block (stopped, its transcript
 // as it grows), or goes to the block that has it already. Opened from a
 // pane's menu, the agent dialog and the phone's sheet. On a phone it is a
@@ -32,7 +32,7 @@ export interface Conversation {
   cwd: string;
   cwd_exists: boolean;
   branch?: string;
-  source: "terminal" | "desktop" | "other";
+  source: "terminal" | "desktop" | "vscode" | "other";
   title: string;
   first_prompt?: string;
   last_prompt?: string;
@@ -107,7 +107,7 @@ function homeOf(list: Conversation[]): string | null {
   return null;
 }
 
-const SOURCE = { terminal: "Terminal", desktop: "Desktop", other: "Other" } as const;
+const SOURCE = { terminal: "Terminal", desktop: "Desktop", vscode: "VS Code", other: "Other" } as const;
 
 /** One host's conversations, or why there are none. */
 interface HostConvs {

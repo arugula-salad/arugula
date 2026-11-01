@@ -98,9 +98,14 @@ How a pane knows its session: the CLI sends the pane its environment names
 that pane only when that process is in the pane's foreground job (its
 process group is the terminal's foreground group, or on Windows it descends
 from the pane's foreground process). A `claude` typed at the prompt is; an
-app started from the pane (detached, or a job in the background) and a
-`tmux` server started there aren't. An older `arugula` without the session
-id route sends to the pane as before.
+app started from the pane (detached, or a job in the background) isn't.
+**`tmux`:** when the pane's foreground is a `tmux` client, the daemon asks
+that client's server (`tmux list-clients`, on the socket the client was
+started with) which `tmux` pane it shows, and a `claude` in that pane's
+foreground counts for the Arugula pane; one in a window behind it doesn't,
+and switching windows takes the figures off the strip within a few seconds.
+An older `arugula` without the session id route sends to the pane as
+before.
 
 **Older Claude Code.** One `hooks.json` holds both the command hooks and the
 module (#449): a Claude Code without mods ignores `modules` and runs the
@@ -169,8 +174,8 @@ What shows only on its conversation, not on a pane:
   pane, its sessions no longer land on that pane. Arugula's VS Code editor
   block drops `ARUGULA_PANE` on purpose, and Claude Code inside it reports to
   its conversation the same way.
-- **Claude Code in `tmux`** inside a pane: the `tmux` server isn't in the
-  pane's foreground, so its sessions show on their conversations.
+- **Claude Code in a `tmux` window** that the pane's `tmux` client isn't
+  showing.
 
 What doesn't reach Arugula at all, for now:
 

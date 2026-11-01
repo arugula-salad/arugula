@@ -165,7 +165,7 @@ function AgentDialog({ client, where, close }: { client: Client; where: AgentWhe
           >
             pick up a Claude Code conversation
           </button>{" "}
-          from a terminal or the desktop app.
+          from a terminal, VS Code or the desktop app.
         </p>
 
         <label>

@@ -206,7 +206,7 @@ pub struct Config {
 pub struct Import {
     /// Its transcript.
     pub path: String,
-    /// `terminal`, `desktop` or `other`.
+    /// `terminal`, `desktop`, `vscode` or `other`.
     #[serde(default)]
     pub source: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]

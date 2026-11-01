@@ -6,7 +6,7 @@
 // as the mod's CLI call would. Claude Code's own cost wins over the estimate
 // whenever it reports one: the mod's, or claude-agent-acp's.
 
-import { mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -102,12 +102,16 @@ test("an agent block's strip: the mod's figures win over its transcript's", asyn
 // session with no pane (VS Code's Claude Code, the desktop app) shows its
 // figures where conversations are listed; one from an app started in a pane
 // (its pid isn't in the pane's foreground job) does too, and not on that pane.
+// VS Code's sessions are on the default list, as VS Code's.
 test("a session with no pane shows its live figures in the conversations list", async ({ page }) => {
   const claude = process.env.CLAUDE_CONFIG_DIR!;
   const title = "Live from no pane";
-  const away = "Live from an app started in a pane";
+  const away = "Live from VS Code started in a pane";
   const s = seedConversation(claude, "livenopane", title);
   const t = seedConversation(claude, "liveapp", away);
+  // As VS Code's Claude Code writes it.
+  const tPath = join(claude, "projects", t.cwd.replace(/[/.]/g, "-"), `${t.id}.jsonl`);
+  writeFileSync(tPath, readFileSync(tPath, "utf8").replaceAll('"entrypoint":"cli"', '"entrypoint":"claude-vscode"'));
   const post = (body: object) =>
     page.evaluate((b) => window.__arugula.client.api("/api/conversations/session-signal", b), { ...VERSIONS, ...body });
   try {
@@ -134,7 +138,9 @@ test("a session with no pane shows its live figures in the conversations list", 
     await expect(dialog).toBeVisible();
     await page.keyboard.press("Escape");
     await expect(pop).toHaveCount(0);
-    await expect(dialog.locator(`[data-conversation="${t.id}"] [data-conv-context] [data-fill]`)).toHaveAttribute("data-fill", "10");
+    const app = dialog.locator(`[data-conversation="${t.id}"]`);
+    await expect(app.locator(".conv-source")).toHaveText("VS Code");
+    await expect(app.locator("[data-conv-context] [data-fill]")).toHaveAttribute("data-fill", "10");
     // The terminal it was started from shows none of it.
     await expect(page.locator(`[data-pane-header="${term}"] [data-context]`)).toHaveCount(0);
   } finally {

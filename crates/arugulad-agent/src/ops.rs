@@ -139,12 +139,26 @@ async fn session_signal(
     let Some(key) = Signals::key(&s, pane) else {
         return Err(bad("no session id and no pane: nothing to keep it by"));
     };
+    // The Claude Code that sent it: the CLI's parent.
+    let claude = pid.and_then(crate::procinfo::ppid);
     let hint = match pane {
         None => Hint::None,
         Some(p) => match app.mux.api(|r| Api::Pane(p, r)).await.flatten() {
             Some(h) => {
                 let leader = h.pid_now();
-                let front = pid.map(|pid| leader.is_some_and(|l| crate::procinfo::in_foreground(l, pid)));
+                // In the pane's foreground job, or in the pane a `tmux`
+                // client there shows (which asks `tmux`).
+                let front = match pid {
+                    None => None,
+                    Some(pid) => Some(match leader {
+                        Some(l) => crate::task::spawn_blocking(move || {
+                            crate::procinfo::in_front(l, pid, crate::conversations::signals::tmux_pane)
+                        })
+                        .await
+                        .unwrap_or(false),
+                        None => false,
+                    }),
+                };
                 Hint::Terminal(p, front)
             }
             None => match app.mux.api(|r| Api::Block(p, r)).await.flatten() {
@@ -172,7 +186,9 @@ async fn session_signal(
     );
     if let Some(p) = at.pane() {
         let live = (!context.is_null()).then(|| context.clone());
-        app.mux.send(crate::mux::Cmd::Api(Api::Live(p, live)));
+        // A terminal keeps it while that Claude Code is in front (#453).
+        let by = matches!(at, crate::conversations::signals::Place::Pane(_)).then_some(claude).flatten();
+        app.mux.send(crate::mux::Cmd::Api(Api::Live(p, live, by)));
     }
     Ok(SessionSignaled { daemon_version: arugula_core::version::get().to_owned(), context, pane: at.pane() })
 }
