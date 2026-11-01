@@ -157,7 +157,23 @@ type Phase =
   | { kind: "bad"; why: string }
   | { kind: "cannot"; cd: CanDecide }
   | { kind: "elsewhere"; why: string }
-  | { kind: "ready"; ok: Checked; cd: CanDecide; rp: string };
+  | { kind: "ready"; ok: Checked; cd: CanDecide; rp: string; deploy: string; hash: string };
+
+/** A ready phase is for exactly this deploy and these bytes: what was
+ * checked is what would be signed (the router reuses the page for another
+ * deploy, and a ready phase must never outlive the one it checked). */
+export const readyFor = (p: { kind: string; deploy?: string; hash?: string }, d: { id: string; operation: { hash: string } }) =>
+  p.kind === "ready" && p.deploy === d.id && p.hash === d.operation.hash;
+
+/** A deploy's title from what the operation signs alone (its environment):
+ * where Approve is offered, the commit's subject and a release's expected
+ * version, which the platform read and nobody signed, show labelled below
+ * instead (`data-deploy-reading`). */
+export const checkedTitle = (d: Deploy) => `Deploy ${d.source.ref.slice(0, 8)} to ${d.environment.name}`;
+
+/** The title a deploy's card and page show: the checked one while it waits
+ * for approval. */
+export const shownTitle = (d: Deploy) => (d.state === "pending" ? checkedTitle(d) : deployTitle(d));
 
 /** A pending deploy's Approve and Deny, on this page (DK5): the operation
  * checked against its hash and shown, then whether the reader may decide
@@ -169,7 +185,12 @@ export function DeployDecide({ d, onDecided }: { d: Deploy; onDecided: (after: D
   const [err, setErr] = useState("");
   useEffect(() => {
     let gone = false;
+    // Another deploy, or other bytes: nothing checked before stands.
+    setPhase({ kind: "checking" });
+    setErr("");
     const set = (p: Phase) => void (gone || setPhase(p));
+    const deploy = d.id;
+    const hash = d.operation.hash;
     void (async () => {
       const ok = await checkDeploy(d);
       if (typeof ok === "string") return set({ kind: "bad", why: ok });
@@ -182,20 +203,21 @@ export function DeployDecide({ d, onDecided }: { d: Deploy; onDecided: (after: D
       if (!cd.can) return set({ kind: "cannot", cd });
       const rp = cd.rp || new URL(controlOrigin()).hostname;
       const not = await passkeysNotHere(rp);
-      set(not ? { kind: "elsewhere", why: not } : { kind: "ready", ok, cd, rp });
+      set(not ? { kind: "elsewhere", why: not } : { kind: "ready", ok, cd, rp, deploy, hash });
     })();
     return () => void (gone = true);
   }, [d.id, d.operation.hash]);
   const decide = async (decision: Decision) => {
-    if (phase.kind !== "ready") return;
+    // Only what was checked and shown: this deploy, these bytes.
+    if (phase.kind !== "ready" || !readyFor(phase, d)) return;
     setBusy(true);
     setErr("");
     try {
       const account = session.me?.account;
       if (!account) throw new Error("sign in first");
-      const a: Approval = { v: 2, deploy: d.id, op: d.operation.hash, account, decision, expires: Date.now() + DEFAULT_LIFE_MS };
+      const a: Approval = { v: 2, deploy: phase.deploy, op: phase.hash, account, decision, expires: Date.now() + DEFAULT_LIFE_MS };
       const passkey = await passkeyOver(a, phase.rp, phase.cd.passkeys);
-      const after = await post<Deploy>(`/api/deploys/${d.id}/${decision === "once" ? "approve" : "deny"}`, { op: a.op, expires: a.expires, passkey });
+      const after = await post<Deploy>(`/api/deploys/${phase.deploy}/${decision === "once" ? "approve" : "deny"}`, { op: a.op, expires: a.expires, passkey });
       onDecided(after, decision);
     } catch (e) {
       if (e instanceof NotHere) setPhase({ kind: "elsewhere", why: e.message });
@@ -204,17 +226,29 @@ export function DeployDecide({ d, onDecided }: { d: Deploy; onDecided: (after: D
     setBusy(false);
   };
   const href = approveHref(d.id);
-  // The operation folded, where Approve isn't offered here; open beside it.
+  // The plan and the operation folded, where Approve isn't offered here;
+  // open beside it, as checked.
   const folded = (
-    <details class="deploy-op">
+    <>
+      {d.plan_text ? (
+        <details class="deploy-op" data-deploy-plan-text>
+          <summary>{d.roll_back ? "The plan: a rollback" : "The plan"}</summary>
+          <pre>{d.plan_text}</pre>
+        </details>
+      ) : null}
+      <details class="deploy-op">
       <summary>The operation an approval signs</summary>
       <pre data-deploy-op>{d.operation.body}</pre>
       <p class="dim">
         Its hash <code class="deploy-digest">{d.operation.hash}</code>
       </p>
     </details>
+    </>
   );
-  switch (phase.kind) {
+  // A ready phase another deploy's (for the moment before the effect runs)
+  // reads as checking.
+  const shown: Phase = phase.kind === "ready" && !readyFor(phase, d) ? { kind: "checking" } : phase;
+  switch (shown.kind) {
     case "checking":
       return (
         <>
@@ -229,7 +263,7 @@ export function DeployDecide({ d, onDecided }: { d: Deploy; onDecided: (after: D
         <>
           {folded}
           <p class="control-error" data-deploy-decide="bad" data-deploy-mismatch>
-            Don't approve this: {phase.why}.
+            Don't approve this: {shown.why}.
           </p>
         </>
       );
@@ -237,13 +271,13 @@ export function DeployDecide({ d, onDecided }: { d: Deploy; onDecided: (after: D
       return (
         <>
           {folded}
-          <p class="deploy-note" data-deploy-decide="cannot" data-deploy-cannot={phase.cd.reason ?? ""}>
-            {phase.cd.why} {phase.cd.do}
-            {phase.cd.newer ? (
+          <p class="deploy-note" data-deploy-decide="cannot" data-deploy-cannot={shown.cd.reason ?? ""}>
+            {shown.cd.why} {shown.cd.do}
+            {shown.cd.newer ? (
               <>
                 {" "}
-                <a href={`/deploys/${phase.cd.newer}`} onClick={(e) => follow(e, `/deploys/${phase.cd.newer}`)} data-deploy-newer>
-                  {phase.cd.newer.slice(0, 12)}
+                <a href={`/deploys/${shown.cd.newer}`} onClick={(e) => follow(e, `/deploys/${shown.cd.newer}`)} data-deploy-newer>
+                  {shown.cd.newer.slice(0, 12)}
                 </a>
               </>
             ) : null}
@@ -260,7 +294,7 @@ export function DeployDecide({ d, onDecided }: { d: Deploy; onDecided: (after: D
               Approve on Control
             </a>
             <p class="dim deploy-why" data-deploy-why-elsewhere>
-              {phase.why.charAt(0).toUpperCase() + phase.why.slice(1)}.{" "}
+              {shown.why.charAt(0).toUpperCase() + shown.why.slice(1)}.{" "}
               {app ? "This opens Control's page in your browser, where your passkey approves or denies it." : "Control's page asks for your passkey, and approves or denies it there."}
             </p>
           </div>
@@ -268,13 +302,19 @@ export function DeployDecide({ d, onDecided }: { d: Deploy; onDecided: (after: D
       );
     }
     case "ready": {
-      const { ok } = phase;
+      const { ok } = shown;
       return (
         <div class="deploy-decide" data-deploy-decide="ready">
           <p>
             <b>{d.project.name}</b>: {ok.op.source.kind} <code title={ok.op.source.ref}>{shortRef(ok.op.source.ref)}</code> to <b>{ok.op.name}</b> from{" "}
             <code>{ok.op.source.where}</code>, planned by {ok.planner}.
           </p>
+          {d.subject || d.expected_version ? (
+            // Not signed: beside the checked facts, never in place of them (#333).
+            <p class="dim" data-deploy-reading>
+              The platform reads this as: {deployTitle(d)}
+            </p>
+          ) : null}
           {ok.plan.rollBack ? (
             <p class="control-error" data-deploy-roll-back={ok.plan.rollBack.deploy}>
               This is a rollback to <code>{ok.plan.rollBack.deploy}</code>
@@ -287,6 +327,8 @@ export function DeployDecide({ d, onDecided }: { d: Deploy; onDecided: (after: D
             </p>
           ) : null}
           <div class="deploy-op">
+            <p class="dim">What its driver will do (the plan you sign):</p>
+            <pre data-deploy-plan-signed>{ok.plan.text}</pre>
             <p class="dim">The operation your passkey confirms:</p>
             <pre data-deploy-op-signed>{d.operation.body}</pre>
             <p class="dim">
@@ -344,8 +386,8 @@ export function DeployCard({
     setAfter({ d: x, said: decision === "once" ? "Approved. Its driver run can apply it now." : "Denied. It won't be applied." });
     onDecided?.(x);
   };
-  // A pending one's operation is `DeployDecide`'s: open beside Approve,
-  // signed; folded otherwise.
+  // A pending one's plan and operation are `DeployDecide`'s: open beside
+  // Approve, as checked; folded otherwise.
   const deciding = d.state === "pending";
   const path = `/deploys/${d.id}`;
   const project = pathOf({ page: "project", project: d.project.id }, names);
@@ -356,10 +398,10 @@ export function DeployCard({
           <h2>
             {link ? (
               <a href={path} onClick={(e) => follow(e, path)}>
-                {deployTitle(d)}
+                {shownTitle(d)}
               </a>
             ) : (
-              <>{deployTitle(d)}</>
+              <>{shownTitle(d)}</>
             )}
           </h2>
           <DeployState state={d.state} />
@@ -392,7 +434,7 @@ export function DeployCard({
           by {planner(d)}, <Time at={d.created_at} />
         </dd>
       </dl>
-      {d.plan_text ? (
+      {d.plan_text && !deciding ? (
         <details class="deploy-op" open={planOpen ?? !link} data-deploy-plan-text>
           <summary>{d.roll_back ? "The plan: a rollback" : "The plan"}</summary>
           <pre>{d.plan_text}</pre>
@@ -418,7 +460,7 @@ export function DeployCard({
           {after.said}
         </p>
       ) : d.state === "pending" ? (
-        <DeployDecide d={d} onDecided={decided} />
+        <DeployDecide key={`${d.id} ${d.operation.hash}`} d={d} onDecided={decided} />
       ) : null}
     </article>
   );
@@ -439,7 +481,15 @@ export function DeployPage({ id }: { id: string }) {
   const [d, setD] = useState<Deploy | null>(null);
   const [error, setError] = useState("");
   useEffect(() => {
-    get<Deploy>(`/api/deploys/${id}`).then(setD, (e: Error) => setError(e.message));
+    // Another deploy: the last one's never shows while this one loads.
+    setD(null);
+    setError("");
+    let gone = false;
+    get<Deploy>(`/api/deploys/${id}`).then(
+      (x) => gone || setD(x),
+      (e: Error) => gone || setError(e.message),
+    );
+    return () => void (gone = true);
   }, [id]);
   // The bar is in its project once that's known (UI audit #159).
   useEffect(() => void (d && where.deployIn(d.id, d.project.id)), [d]);
@@ -449,7 +499,7 @@ export function DeployPage({ id }: { id: string }) {
   return (
     <section class="platform-section sw-page deploy-page" data-deploy-page={d.id}>
       <PageHeader
-        title={deployTitle(d)}
+        title={shownTitle(d)}
         named
         back={{ href: deploys, label: "Deploys", onClick: (e) => follow(e, deploys) }}
         state={<DeployState state={d.state} />}

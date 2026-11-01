@@ -89,6 +89,39 @@ test("the push's page approves a deploy in place with a passkey, and says why wh
   const op = await api(alice, "GET", `/api/deploys/${first}`);
   await expect(card.locator("[data-deploy-op-signed]")).toHaveText(op.body.operation.body);
   await expect(card.locator("[data-deploy-op-hash]")).toHaveText(op.body.operation.hash);
+  // The checked plan shows open beside the buttons, in the inbox's card too.
+  await expect(card.locator("[data-deploy-plan-signed]")).toHaveText(op.body.plan_text);
+  await alice.goto(`${app}/inbox`);
+  const inboxCard = alice.locator(`[data-inbox-group=deploys] [data-deploy-card="${first}"]`);
+  await expect(inboxCard.locator('[data-deploy-decide="ready"] [data-deploy-plan-signed]')).toHaveText(op.body.plan_text);
+
+  // Another deploy on the same page (the router keeps the page): nothing
+  // checked for the first one stands while the other loads and is checked.
+  const staging = await api(alice, "POST", `/api/projects/${project}/environments`, { name: "staging", driver: "fake" });
+  const other = await asked(alice, project, staging.body.id, "d");
+  const otherOp = (await api(alice, "GET", `/api/deploys/${other}`)).body.operation.hash;
+  await alice.goto(`${app}/deploys/${first}`);
+  await expect(card.locator('[data-deploy-decide="ready"]')).toBeVisible();
+  let release!: () => void;
+  const held = new Promise<void>((r) => (release = r));
+  await alice.route(`**/api/deploys/${other}/can-decide`, async (r) => {
+    await held;
+    await r.continue();
+  });
+  await alice.evaluate((p) => {
+    history.pushState(null, "", p);
+    dispatchEvent(new PopStateEvent("popstate"));
+  }, `/deploys/${other}`);
+  const otherCard = alice.locator(`[data-deploy-card="${other}"]`);
+  await expect(otherCard.locator('[data-deploy-decide="checking"]')).toBeVisible();
+  await expect(alice.locator("[data-deploy-approve], [data-deploy-deny]")).toHaveCount(0);
+  await expect(card).toHaveCount(0);
+  release();
+  await expect(otherCard.locator("[data-deploy-op-hash]")).toHaveText(otherOp);
+  await alice.unroute(`**/api/deploys/${other}/can-decide`);
+  await alice.goto(`${app}/deploys/${first}`);
+  await expect(card.locator('[data-deploy-decide="ready"]')).toBeVisible();
+
   await card.locator("[data-deploy-approve]").click();
   await expect(card.locator("[data-deploy-done]")).toContainText("Approved");
   await expect(alice.locator("[data-deploy-state-chip]").first()).toHaveAttribute("data-deploy-state-chip", "approved");
