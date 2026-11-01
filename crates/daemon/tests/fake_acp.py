@@ -532,7 +532,8 @@ def prompt(mid, p):
         if stop is None:
             return
         s["cost"] = round(s.get("cost", 0) + 0.37, 4)
-        update(sid, s, {"sessionUpdate": "usage_update", "used": 10, "size": 1000,
+        # The window as claude-agent-acp reports a 1M model's (#444).
+        update(sid, s, {"sessionUpdate": "usage_update", "used": 10, "size": 1000000,
                         "cost": {"amount": s["cost"], "currency": "USD"}})
         save(sid, s)
         send({"id": mid, "result": {"stopReason": stop, "usage": {"inputTokens": 1, "outputTokens": 2, "totalTokens": 3}}})

@@ -323,6 +323,18 @@ impl Daemon {
                 let _ = reply.send(self.ask_reply(pane, id, answer, by));
             }
             Api::Hook(pane, hook) => self.hook(pane, &hook),
+            Api::Live(pane, live) => {
+                let changed = match live {
+                    Some(v) if self.panes.contains_key(&pane) || self.blocks.contains_key(&pane) => {
+                        self.live.insert(pane, v.clone()) != Some(v)
+                    }
+                    Some(_) => false,
+                    None => self.live.remove(&pane).is_some(),
+                };
+                if changed {
+                    self.mark(pane);
+                }
+            }
             Api::Inbox(pane, hook, reply) => {
                 self.hook(pane, &hook);
                 let _ = reply.send(self.wait_inbox(pane));
