@@ -1,7 +1,9 @@
 // A deploy's approval (M218), on control's page, where the account's
-// passkeys are made (their RP is control's host). The platform page's
-// Approve and Deny come here as `#deploy=dep_…`; so does a tap on the push,
-// through the platform page. (DK5 moves the dialog to the platform page.)
+// passkeys are made (their RP is control's host). Since DK5 (#386) the
+// platform page approves in place, and comes here (`#deploy=dep_…`) only
+// where its browser can't use control's passkeys (related origins: the
+// 1Password extension, Firefox before 152; the Linux app's window, which has
+// no WebAuthn, opens it in the browser).
 //
 // The page reads the deploy, hashes the operation's bytes itself and shows
 // them, and hashes its `planned` event again, so where it goes, what it
@@ -11,10 +13,11 @@
 // signature. No device key signs it (aru-126). The platform checks the
 // assertion against the account's published passkey log and that the
 // account owns the project now. Whatever drives this browser can't make the
-// assertion without the person.
+// assertion without the person. The checks and the ceremony are shared
+// with the platform page (../../shared/deploy-approval.ts).
 
 import { useEffect, useState } from "preact/hooks";
-import { deployStateText, deployTitle, plannerText, shortRef, staleNote } from "../../shared/deploys";
+import { deployStateText, deployTitle, shortRef, staleNote } from "../../shared/deploys";
 import { DeployAsked } from "../../shared/ui/deploy-asked";
 import { deployTone } from "../../shared/tones";
 import { Modal } from "../../shared/ui/modal";
@@ -22,136 +25,41 @@ import { StateChip } from "../../shared/ui/state-chip";
 import { api, type ControlSession } from "../control";
 import {
   DEFAULT_LIFE_MS,
-  actorOf,
-  approvalChallenge,
-  checkPlan,
-  eventCanonical,
-  parseOperation,
-  sha256Hex,
+  checkDeploy,
+  passkeyOver,
   type Approval,
-  type CheckedPlan,
+  type Assertion,
+  type Checked,
   type Decision,
-  type DeployEvent,
-  type Operation,
-} from "../e2e/deploy.ts";
+  type DeployToCheck,
+} from "../../shared/deploy-approval.ts";
 import { platformHref } from "../platform-links";
 import { clearHash } from "./common";
 
 export const DEPLOY_HASH = /^#deploy=(dep_[0-9a-f]{32})$/;
 
-interface Deploy {
-  id: string;
-  project: { id: string; name: string };
-  environment: { id: string; name: string; driver: string };
-  source: { kind: string; ref: string; where: string };
-  plan: string;
-  /** The plan's text (M220): what its digest is over. */
-  plan_text: string | null;
-  state: string;
-  planned_by: string;
-  planned_by_name: string;
-  agent: { machine: string; machine_name: string } | null;
+interface Deploy extends DeployToCheck {
   /** The platform's reading of the commit (#333): not in the signed
    * operation, so only ever shown as the platform's. */
   subject?: string | null;
   expected_version?: string | null;
   requested_at?: number | null;
-  operation: { body: string; hash: string };
-  planned_event: DeployEvent | null;
+  state: string;
   stale: { deploy: string; seq: number; why?: string } | null;
   may_approve: boolean;
 }
 
-/** What the page shows, read from hashed bytes: the operation, and who
- * planned it from its `planned` event. */
-interface Checked {
-  op: Operation;
-  planner: string;
-  /** The plan's text, which hashes to the operation's `plan` (M220). */
-  plan: CheckedPlan;
-}
+const check = checkDeploy;
 
-/** The deploy's operation and its `planned` event check out: the bytes hash
- * to what the platform says and say what the deploy says, and the event
- * hashes to the one the operation names. What to show, or why not. */
-async function check(d: Deploy): Promise<Checked | string> {
-  const op = parseOperation(d.operation.body);
-  if (!op || (await sha256Hex(d.operation.body)) !== d.operation.hash) return "its operation's bytes don't match their hash";
-  if (
-    op.project !== d.project.id ||
-    op.environment !== d.environment.id ||
-    op.name !== d.environment.name ||
-    op.plan !== d.plan ||
-    op.source.kind !== d.source.kind ||
-    op.source.ref !== d.source.ref ||
-    op.source.where !== d.source.where
-  ) {
-    return "its operation says something other than the deploy";
-  }
-  const e = d.planned_event;
-  if (!e || e.kind !== "planned" || e.deploy !== d.id || e.environment !== op.environment) return "its plan isn't in the log";
-  if ((await sha256Hex(eventCanonical(e))) !== e.hash || e.hash !== op.planned) return "its plan's event doesn't match the operation";
-  let detail: { plan?: string; source?: { kind?: string; ref?: string; where?: string } };
-  try {
-    detail = JSON.parse(e.detail);
-  } catch {
-    return "its plan's event can't be read";
-  }
-  if (detail.plan !== op.plan || detail.source?.kind !== op.source.kind || detail.source?.ref !== op.source.ref || detail.source?.where !== op.source.where) {
-    return "its plan's event says another plan";
-  }
-  const who = actorOf(e.actor);
-  if (!who || who.account !== d.planned_by || (who.machine ?? null) !== (d.agent?.machine ?? null)) return "who planned it doesn't match its log";
-  const name = d.planned_by_name || "someone";
-  // What the driver will do, as the operation's plan digest binds it: the
-  // text must hash to it, or it isn't what's being signed (M220).
-  const plan = await checkPlan(d.plan_text, op.plan);
-  if (typeof plan === "string") return plan;
-  if (plan.driver !== d.environment.driver) return "its plan names another driver than its environment's";
-  return { op, plan, planner: plannerText(name, who.machine ? { machine: who.machine, machine_name: d.agent?.machine_name } : null) };
-}
-
-const unb64u = (s: string) => Uint8Array.from(atob(s.replace(/-/g, "+").replace(/_/g, "/")), (c) => c.charCodeAt(0));
-const b64u = (b: ArrayBuffer) =>
-  btoa(String.fromCharCode(...new Uint8Array(b)))
-    .replace(/\+/g, "-")
-    .replace(/\//g, "_")
-    .replace(/=+$/, "");
-
-/** What the platform takes of a passkey's assertion: the approval's
- * signature, checked against the account's passkey log. */
-interface Assertion {
-  id: string;
-  clientDataJSON: string;
-  authenticatorData: string;
-  signature: string;
-}
-
-/** Ask for a passkey (user verification required), its challenge SHA-256
- * of the approval's own bytes: its assertion. */
+/** Ask for one of the account's own passkeys (a password manager may keep
+ * others for this site: one control refused to keep, or another account's)
+ * on control's own host, which is their RP: its assertion over `a`. */
 async function passkey(a: Approval): Promise<Assertion> {
-  const challenge = await approvalChallenge(a);
-  // Only the account's own passkeys: a password manager may keep others
-  // for this site (one control refused to keep, or another account's).
   const mine = await api<{ passkeys: { id: string }[] }>("/api/me/passkeys").then(
-    (r) => r.passkeys.map((p) => ({ type: "public-key" as const, id: unb64u(p.id) })),
+    (r) => r.passkeys.map((p) => p.id),
     () => [],
   );
-  const cred = (await navigator.credentials.get({
-    publicKey: {
-      challenge,
-      ...(mine.length ? { allowCredentials: mine } : {}),
-      // Control's passkeys are made for the host its page is on (its
-      // `rp_id`: the host, no port), which is this page's: nothing to ask,
-      // and no sign-in challenge issued for nothing.
-      rpId: location.hostname,
-      userVerification: "required",
-      timeout: 5 * 60 * 1000,
-    },
-  })) as PublicKeyCredential | null;
-  if (!cred) throw new Error("no passkey chosen");
-  const r = cred.response as AuthenticatorAssertionResponse;
-  return { id: b64u(cred.rawId), clientDataJSON: b64u(r.clientDataJSON), authenticatorData: b64u(r.authenticatorData), signature: b64u(r.signature) };
+  return passkeyOver(a, location.hostname, mine);
 }
 
 export function DeployPrompt({ s, id }: { s: ControlSession; id: string }) {

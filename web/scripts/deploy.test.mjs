@@ -6,7 +6,19 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { actorOf, approvalBody, approvalChallenge, checkPlan, eventCanonical, parseOperation, sha256Hex } from "../src/shell/e2e/deploy.ts";
+import {
+  NotHere,
+  actorOf,
+  approvalBody,
+  approvalChallenge,
+  checkDeploy,
+  checkPlan,
+  eventCanonical,
+  parseOperation,
+  refusedHow,
+  sameSite,
+  sha256Hex,
+} from "../src/shared/deploy-approval.ts";
 import { platformTap } from "../src/shell/tap.ts";
 import { parse, pathOf } from "../src/platform/paths.ts";
 import { deployTitle, staleNote, waitedText } from "../src/shared/deploys.ts";
@@ -128,4 +140,81 @@ test("a stale deploy says why, by what overtook it (#334)", () => {
   assert.equal(staleNote({ why: "applied" }, "release"), applied);
   // An old event has no why: it was an apply.
   assert.equal(staleNote({}, "release"), applied);
+});
+
+/** A deploy as the platform answers it, its bytes consistent: the plan's
+ * text, its `planned` event and the operation over both. */
+async function aDeploy() {
+  const ref = "a".repeat(40);
+  const plan_text = `arugula deploy plan v1\ndriver fake\nenvironment production\nsource commit ${ref}\nwhere acme/app\n`;
+  const plan = await sha256Hex(plan_text);
+  const e = {
+    environment: "env_1",
+    seq: 1,
+    deploy: "dep_1",
+    kind: "planned",
+    actor: "person acc_a",
+    at: 1_700_000_000_000,
+    detail: JSON.stringify({ plan, source: { kind: "commit", ref, where: "acme/app" } }),
+    prev_hash: "0".repeat(64),
+    hash: "",
+  };
+  e.hash = await sha256Hex(eventCanonical(e));
+  const body = `arugula deploy op v1\nproject prj_1\nenvironment env_1\nname production\nplan ${plan}\nsource commit ${ref}\nwhere acme/app\nplanned ${e.hash}\n`;
+  return {
+    id: "dep_1",
+    project: { id: "prj_1", name: "Acme" },
+    environment: { id: "env_1", name: "production", driver: "fake" },
+    source: { kind: "commit", ref, where: "acme/app" },
+    plan,
+    plan_text,
+    planned_by: "acc_a",
+    planned_by_name: "Ada",
+    agent: null,
+    operation: { body, hash: await sha256Hex(body) },
+    planned_event: e,
+  };
+}
+
+// DK5: the platform page checks what it signs as control's dialog does, and
+// offers Approve only over bytes that check out.
+test("a deploy is offered for approval only when its bytes check out", async () => {
+  const ok = await checkDeploy(await aDeploy());
+  assert.equal(typeof ok, "object", String(ok));
+  assert.equal(ok.op.name, "production");
+  assert.equal(ok.planner, "Ada");
+  // Bytes that aren't their hash, an operation that names another place, a
+  // planned event that isn't the one named, someone else as the planner.
+  const d = await aDeploy();
+  d.operation.hash = "0".repeat(64);
+  assert.equal(await checkDeploy(d), "its operation's bytes don't match their hash");
+  const other = await aDeploy();
+  other.environment.name = "staging";
+  assert.equal(await checkDeploy(other), "its operation says something other than the deploy");
+  const event = await aDeploy();
+  event.planned_event.at += 1;
+  assert.equal(await checkDeploy(event), "its plan's event doesn't match the operation");
+  const who = await aDeploy();
+  who.planned_by = "acc_b";
+  assert.equal(await checkDeploy(who), "who planned it doesn't match its log");
+  const none = await aDeploy();
+  none.planned_event = null;
+  assert.equal(await checkDeploy(none), "its plan isn't in the log");
+});
+
+// DK5 (S46 q1): where control's passkeys can't be used on this page, the
+// page offers control's dialog instead; a person turning the prompt down is
+// only that.
+test("a refused passkey prompt says whether to go round by Control", () => {
+  assert.ok(refusedHow("SecurityError", 4000, false) instanceof NotHere);
+  assert.ok(refusedHow("NotAllowedError", 200, false) instanceof NotHere, "too fast for a person: a manager without related origins");
+  const person = refusedHow("NotAllowedError", 8000, false);
+  assert.ok(person && !(person instanceof NotHere), "a person said no");
+  assert.ok(!(refusedHow("NotAllowedError", 200, true) instanceof NotHere), "on control's own site there's no way round");
+  assert.equal(refusedHow("AbortError", 10, false), null);
+  // Control's host, or a parent of this page's host: no related origins needed.
+  assert.ok(sameSite("control.arugula.io", "control.arugula.io"));
+  assert.ok(sameSite("localhost", "app.localhost"));
+  assert.ok(!sameSite("control.arugula.io", "app.arugula.io"));
+  assert.ok(!sameSite("arugula.io", "evilarugula.io"));
 });

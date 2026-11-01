@@ -4,12 +4,32 @@
 // inbox lists the deploys waiting for the reader, and a project's
 // environments their history (`DeployRow`).
 //
-// Approving takes a passkey over the approval's bytes (DK4), and this page
-// doesn't ask for one yet (DK5): Approve and Deny open the deploy on
-// control's page (`#deploy=dep_…`), which shows the same operation and asks
-// for the passkey there.
+// Approving takes a passkey over the approval's bytes (DK4), and since DK5
+// (#386) this page asks for it in place: a push opens the deploy here, and
+// its card approves or denies it on one screen (`DeployDecide`). The page
+// first checks the operation's bytes against their hash and its planned
+// event, as control's dialog does (../../shared/deploy-approval.ts), and
+// asks the platform whether the reader may decide it now
+// (`/api/deploys/{id}/can-decide`), so it shows why not instead of a button
+// that would fail. The passkey is control's (its RP is control's host,
+// aru-078): this page uses it as a related origin, which control's
+// `/.well-known/webauthn` lists. Where that can't work (the 1Password
+// extension, Firefox before 152, the Linux app's window with no WebAuthn),
+// it offers control's `#deploy=` dialog instead, and says why.
 
 import { useEffect, useState } from "preact/hooks";
+import {
+  DEFAULT_LIFE_MS,
+  NotHere,
+  checkDeploy,
+  passkeyOver,
+  passkeysNotHere,
+  type Approval,
+  type Checked,
+  type Decision,
+  type DeployEvent,
+} from "../../shared/deploy-approval";
+import { desktopPlatform, openOutside } from "../../shared/desktop";
 import { platformFetch, refusalOf } from "../../shared/maintenance";
 import { deployEventState, deployStateText, deployTitle, plannerText, staleNote } from "../../shared/deploys";
 import { DeployAsked } from "../../shared/ui/deploy-asked";
@@ -17,7 +37,7 @@ import { CopyButton } from "../../shared/ui/copy";
 import { PageHeader } from "../../shared/ui/page-header";
 import { StateChip } from "../../shared/ui/state-chip";
 import { Time } from "../../shared/ui/time";
-import { controlOrigin } from "../session";
+import { controlOrigin, session } from "../session";
 import { names } from "../links";
 import { follow, followRow, pathOf } from "../router";
 import { lastMoved, shortRef, type DeploySummary } from "../deploys-text";
@@ -47,6 +67,8 @@ export interface Deploy {
   /** When approval was last asked for, or null. */
   requested_at?: number | null;
   operation: { body: string; hash: string };
+  /** Its `planned` event as stored, which the page hashes again. */
+  planned_event?: DeployEvent | null;
   stale: { deploy: string; seq: number; why?: string } | null;
   may_approve: boolean;
   approvals: {
@@ -91,15 +113,240 @@ export const DeployState = ({ state }: { state: string }) => (
   </StateChip>
 );
 
-/** Where Approve and Deny go: the deploy on control's page. */
+async function post<T>(path: string, body: unknown): Promise<T> {
+  const r = await platformFetch(path, {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  const v = (await r.json().catch(() => ({}))) as T & { error?: string; reason?: string };
+  if (!r.ok) throw new Error(refusalOf(r.status, v));
+  return v;
+}
+
+/** The way round: the deploy on control's page (`#deploy=`), whose dialog
+ * asks for the passkey on control's own host. */
 export const approveHref = (id: string) => `${controlOrigin()}/#deploy=${id}`;
+
+/** Control's dialog, from a click: in the person's browser from the Linux
+ * app's window, which has no WebAuthn on any page (S46 q3); a plain link
+ * elsewhere. */
+function toControl(e: MouseEvent, href: string) {
+  if (desktopPlatform() === "linux" && openOutside(href)) e.preventDefault();
+}
+
+/** What `GET /api/deploys/{id}/can-decide` answers (DK5). */
+export interface CanDecide {
+  can: boolean;
+  /** Why not, as a code: not_pending, stale, superseded, expired,
+   * not_an_owner, no_passkey. */
+  reason: string | null;
+  why: string | null;
+  do: string | null;
+  /** The account's live passkeys' credential ids, when it can. */
+  passkeys: string[];
+  /** Their RP ID: control's host. */
+  rp: string | null;
+  /** A superseded one's newer deploy. */
+  newer?: string | null;
+}
+
+type Phase =
+  | { kind: "checking" }
+  | { kind: "bad"; why: string }
+  | { kind: "cannot"; cd: CanDecide }
+  | { kind: "elsewhere"; why: string }
+  | { kind: "ready"; ok: Checked; cd: CanDecide; rp: string };
+
+/** A pending deploy's Approve and Deny, on this page (DK5): the operation
+ * checked against its hash and shown, then whether the reader may decide
+ * it, then the passkey. Control's dialog where this page can't use
+ * control's passkeys. */
+export function DeployDecide({ d, onDecided }: { d: Deploy; onDecided: (after: Deploy, decision: Decision) => void }) {
+  const [phase, setPhase] = useState<Phase>({ kind: "checking" });
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  useEffect(() => {
+    let gone = false;
+    const set = (p: Phase) => void (gone || setPhase(p));
+    void (async () => {
+      const ok = await checkDeploy(d);
+      if (typeof ok === "string") return set({ kind: "bad", why: ok });
+      let cd: CanDecide;
+      try {
+        cd = await get<CanDecide>(`/api/deploys/${d.id}/can-decide`);
+      } catch (e) {
+        return set({ kind: "cannot", cd: { can: false, reason: "error", why: (e as Error).message, do: null, passkeys: [], rp: null } });
+      }
+      if (!cd.can) return set({ kind: "cannot", cd });
+      const rp = cd.rp || new URL(controlOrigin()).hostname;
+      const not = await passkeysNotHere(rp);
+      set(not ? { kind: "elsewhere", why: not } : { kind: "ready", ok, cd, rp });
+    })();
+    return () => void (gone = true);
+  }, [d.id, d.operation.hash]);
+  const decide = async (decision: Decision) => {
+    if (phase.kind !== "ready") return;
+    setBusy(true);
+    setErr("");
+    try {
+      const account = session.me?.account;
+      if (!account) throw new Error("sign in first");
+      const a: Approval = { v: 2, deploy: d.id, op: d.operation.hash, account, decision, expires: Date.now() + DEFAULT_LIFE_MS };
+      const passkey = await passkeyOver(a, phase.rp, phase.cd.passkeys);
+      const after = await post<Deploy>(`/api/deploys/${d.id}/${decision === "once" ? "approve" : "deny"}`, { op: a.op, expires: a.expires, passkey });
+      onDecided(after, decision);
+    } catch (e) {
+      if (e instanceof NotHere) setPhase({ kind: "elsewhere", why: e.message });
+      else setErr((e as Error).message);
+    }
+    setBusy(false);
+  };
+  const href = approveHref(d.id);
+  // The operation folded, where Approve isn't offered here; open beside it.
+  const folded = (
+    <details class="deploy-op">
+      <summary>The operation an approval signs</summary>
+      <pre data-deploy-op>{d.operation.body}</pre>
+      <p class="dim">
+        Its hash <code class="deploy-digest">{d.operation.hash}</code>
+      </p>
+    </details>
+  );
+  switch (phase.kind) {
+    case "checking":
+      return (
+        <>
+          {folded}
+          <p class="dim deploy-why" data-deploy-decide="checking">
+            Checking it before your passkey…
+          </p>
+        </>
+      );
+    case "bad":
+      return (
+        <>
+          {folded}
+          <p class="control-error" data-deploy-decide="bad" data-deploy-mismatch>
+            Don't approve this: {phase.why}.
+          </p>
+        </>
+      );
+    case "cannot":
+      return (
+        <>
+          {folded}
+          <p class="deploy-note" data-deploy-decide="cannot" data-deploy-cannot={phase.cd.reason ?? ""}>
+            {phase.cd.why} {phase.cd.do}
+            {phase.cd.newer ? (
+              <>
+                {" "}
+                <a href={`/deploys/${phase.cd.newer}`} onClick={(e) => follow(e, `/deploys/${phase.cd.newer}`)} data-deploy-newer>
+                  {phase.cd.newer.slice(0, 12)}
+                </a>
+              </>
+            ) : null}
+          </p>
+        </>
+      );
+    case "elsewhere": {
+      const app = desktopPlatform() === "linux";
+      return (
+        <>
+          {folded}
+          <div class="deploy-actions" data-deploy-decide="elsewhere">
+            <a class="primary" href={href} onClick={(e) => toControl(e, href)} data-deploy-on-control>
+              Approve on Control
+            </a>
+            <p class="dim deploy-why" data-deploy-why-elsewhere>
+              {phase.why.charAt(0).toUpperCase() + phase.why.slice(1)}.{" "}
+              {app ? "This opens Control's page in your browser, where your passkey approves or denies it." : "Control's page asks for your passkey, and approves or denies it there."}
+            </p>
+          </div>
+        </>
+      );
+    }
+    case "ready": {
+      const { ok } = phase;
+      return (
+        <div class="deploy-decide" data-deploy-decide="ready">
+          <p>
+            <b>{d.project.name}</b>: {ok.op.source.kind} <code title={ok.op.source.ref}>{shortRef(ok.op.source.ref)}</code> to <b>{ok.op.name}</b> from{" "}
+            <code>{ok.op.source.where}</code>, planned by {ok.planner}.
+          </p>
+          {ok.plan.rollBack ? (
+            <p class="control-error" data-deploy-roll-back={ok.plan.rollBack.deploy}>
+              This is a rollback to <code>{ok.plan.rollBack.deploy}</code>
+              {ok.plan.rollBack.image ? (
+                <>
+                  , running the image <code>{ok.plan.rollBack.image}</code> again
+                </>
+              ) : null}
+              .
+            </p>
+          ) : null}
+          <div class="deploy-op">
+            <p class="dim">The operation your passkey confirms:</p>
+            <pre data-deploy-op-signed>{d.operation.body}</pre>
+            <p class="dim">
+              Its hash <code class="deploy-digest" data-deploy-op-hash>{d.operation.hash}</code>
+            </p>
+          </div>
+          {err ? (
+            <p class="control-error" data-deploy-error>
+              {err}
+            </p>
+          ) : null}
+          <div class="deploy-actions">
+            <button class="secondary" data-deploy-deny disabled={busy} onClick={() => void decide("deny")}>
+              Deny with passkey
+            </button>
+            <button class="primary" data-deploy-approve disabled={busy} onClick={() => void decide("once")}>
+              Approve with passkey
+            </button>
+            <p class="dim deploy-why">
+              Or{" "}
+              <a href={href} onClick={(e) => toControl(e, href)} data-deploy-on-control>
+                approve on Control
+              </a>
+              , if your passkey isn't offered here.
+            </p>
+          </div>
+        </div>
+      );
+    }
+  }
+}
 
 /** One deploy's card. `link`: its heading opens the deploy's own page.
  * The plan's text is open on the deploy's own page, or with `planOpen`.
  * On the deploy's own page its heading and state are the page's
  * (`headless`); elsewhere it's a card in the swarm's language, its bar
- * its state's tone (UI audit #167). */
-export function DeployCard({ d, link, planOpen, headless }: { d: Deploy; link?: boolean; planOpen?: boolean; headless?: boolean }) {
+ * its state's tone (UI audit #167). A pending one is approved or denied
+ * on it (DK5); `onDecided` hears the deploy after. */
+export function DeployCard({
+  d: given,
+  link,
+  planOpen,
+  headless,
+  onDecided,
+}: {
+  d: Deploy;
+  link?: boolean;
+  planOpen?: boolean;
+  headless?: boolean;
+  onDecided?: (after: Deploy) => void;
+}) {
+  const [after, setAfter] = useState<{ d: Deploy; said: string } | null>(null);
+  const d = after && after.d.id === given.id ? after.d : given;
+  const decided = (x: Deploy, decision: Decision) => {
+    setAfter({ d: x, said: decision === "once" ? "Approved. Its driver run can apply it now." : "Denied. It won't be applied." });
+    onDecided?.(x);
+  };
+  // A pending one's operation is `DeployDecide`'s: open beside Approve,
+  // signed; folded otherwise.
+  const deciding = d.state === "pending";
   const path = `/deploys/${d.id}`;
   const project = pathOf({ page: "project", project: d.project.id }, names);
   return (
@@ -151,29 +398,27 @@ export function DeployCard({ d, link, planOpen, headless }: { d: Deploy; link?: 
           <pre>{d.plan_text}</pre>
         </details>
       ) : null}
-      <details class="deploy-op">
-        <summary>The operation an approval signs</summary>
-        <pre data-deploy-op>{d.operation.body}</pre>
-        <p class="dim">
-          Its hash <code class="deploy-digest">{d.operation.hash}</code>
-        </p>
-      </details>
+      {deciding ? null : (
+        <details class="deploy-op">
+          <summary>The operation an approval signs</summary>
+          <pre data-deploy-op>{d.operation.body}</pre>
+          <p class="dim">
+            Its hash <code class="deploy-digest">{d.operation.hash}</code>
+          </p>
+        </details>
+      )}
       {d.stale ? (
         <p class="deploy-note" data-deploy-stale={d.stale.why}>
           {staleNote(d.stale, d.environment.name)}{" "}
           <a href={`/deploys/${d.stale.deploy}`}>{d.stale.deploy.slice(0, 12)}</a>
         </p>
       ) : null}
-      {d.may_approve ? (
-        <div class="deploy-actions">
-          <a class="secondary" href={approveHref(d.id)} data-deploy-deny>
-            Deny
-          </a>
-          <a class="primary" href={approveHref(d.id)} data-deploy-approve>
-            Approve
-          </a>
-          <p class="dim deploy-why">Opens on Control, where you confirm with your passkey.</p>
-        </div>
+      {after && after.d.id === given.id ? (
+        <p class="deploy-note" data-deploy-done>
+          {after.said}
+        </p>
+      ) : d.state === "pending" ? (
+        <DeployDecide d={d} onDecided={decided} />
       ) : null}
     </article>
   );
@@ -209,7 +454,7 @@ export function DeployPage({ id }: { id: string }) {
         back={{ href: deploys, label: "Deploys", onClick: (e) => follow(e, deploys) }}
         state={<DeployState state={d.state} />}
       />
-      <DeployCard d={d} headless />
+      <DeployCard d={d} headless onDecided={setD} />
       {endedWhy(d) || (d.state === "failed" && d.run) ? (
         // Why it failed, and the run that has its log (UI audit #146).
         <p class="deploy-note" data-deploy-why>

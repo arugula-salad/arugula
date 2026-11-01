@@ -47,6 +47,7 @@ impl features::Feature for Feature {
             .route(deploys::DEPLOY_REQUEST, post(deploys::request_route))
             .route(deploys::DEPLOY_APPROVE, post(deploys::approve))
             .route(deploys::DEPLOY_DENY, post(deploys::deny))
+            .route(deploys::DEPLOY_CAN_DECIDE, get(deploys::can_decide))
             .route(deploys::ENVIRONMENT_SECRET, post(deploys::set_secret))
             .route(deploys::catalog::PROJECT_DRIVERS, get(deploys::catalog::drivers))
             // A machine's agents plan and ask; never approve.

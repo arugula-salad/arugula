@@ -15,14 +15,16 @@
 //   *Attach file…* (M70). They're in ui/keys.ts's table.
 
 /** `signedIn`: whether the app is signed in to the machine's control
- * (#1580); absent from apps before it. */
-type AppInfo = { name?: string; platform?: "macos" | "linux"; signedIn?: boolean };
+ * (#1580); absent from apps before it. `platform`: "windows" since DK5
+ * (#386), where WebView2 has passkeys; apps before it said "linux" there,
+ * whose WebKitGTK window has none. */
+type AppInfo = { name?: string; platform?: "macos" | "linux" | "windows"; signedIn?: boolean };
 
 export function desktopApp(): AppInfo | null {
   return (globalThis as { __arugulaApp?: AppInfo }).__arugulaApp ?? null;
 }
 
-export function desktopPlatform(): "macos" | "linux" | null {
+export function desktopPlatform(): "macos" | "linux" | "windows" | null {
   return desktopApp()?.platform ?? null;
 }
 
