@@ -4,11 +4,21 @@
 // desktop app keeps one window per page (#288). The bar has no wordmark,
 // Control or Chat of its own.
 
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 import { closeContexts } from "./helpers";
 import { TeamControl, home, show } from "./team-fixture";
 
 const t = new TeamControl("rail377");
+
+// The box in the page's own coordinates. This spec failed on Linux runners with
+// a bare "Assertion error" from inside Playwright (#482), so the geometry is
+// read in the page, not through boundingBox() and viewportSize().
+const boxOf = (loc: Locator) =>
+  loc.evaluate((el) => {
+    const r = el.getBoundingClientRect();
+    return { x: r.x, y: r.y, width: r.width, height: r.height };
+  });
+const windowOf = (page: Page) => page.evaluate(() => ({ width: innerWidth, height: innerHeight }));
 
 test.describe.configure({ mode: "serial" });
 // Playwright's WebKit stops loading the page once the service worker is
@@ -44,13 +54,13 @@ test("the rail is down the platform page's left, its places in order, and the ba
   expect(labels.slice(0, 3), `the rail's places: ${labels}`).toEqual(["Projects", "Panes", "Swarm"]);
   expect(labels.at(-1), `the rail's places: ${labels}`).toBe("Settings");
   for (const hook of ["projects", "panes", "swarm", "chat", "docs"]) await expect(rail.locator(`[data-open-${hook}]`)).toHaveCount(1);
-  const box = (await rail.boundingBox())!;
-  const at = `the rail at ${JSON.stringify(box)}, the window ${JSON.stringify(alice.viewportSize())}`;
+  const box = await boxOf(rail);
+  const at = `the rail at ${JSON.stringify(box)}, the window ${JSON.stringify(await windowOf(alice))}`;
   expect(box.x, at).toBe(0);
   expect(box.y, at).toBe(0);
   expect(box.height, at).toBeGreaterThan(300);
   // Beside the bar, not above it.
-  const barBox = (await alice.locator("[data-platform-bar]").boundingBox())!;
+  const barBox = await boxOf(alice.locator("[data-platform-bar]"));
   expect(barBox.x, `the bar at ${JSON.stringify(barBox)}; ${at}`).toBeGreaterThanOrEqual(box.width);
   const bar = alice.locator("[data-platform-bar]");
   await expect(bar.locator("[data-platform-shell]")).toHaveCount(0);
@@ -70,7 +80,7 @@ test("Chat is lit on chat, and Projects is not", async () => {
   await expect(chat).toHaveAttribute("aria-current", "page");
   await expect(alice.locator(".ws-rail [data-open-projects]")).not.toHaveClass(/\bhere\b/);
   // The rail is on the chat page too, in the same place.
-  expect((await alice.locator(".ws-rail").boundingBox())!.x).toBe(0);
+  expect((await boxOf(alice.locator(".ws-rail"))).x).toBe(0);
   await expect(alice.locator("[data-platform-bar] [data-platform-chat]")).toHaveCount(0);
 });
 
@@ -96,13 +106,13 @@ test("Panes lands on control's page in this tab, with the rail in the same spot,
   await expect(alice.locator("[data-platform-bar]")).toBeVisible({ timeout: 15_000 });
   const panes = alice.locator(".ws-rail [data-open-panes]");
   expect(await panes.getAttribute("target")).toBeNull();
-  const spot = (await alice.locator(".ws-rail").boundingBox())!;
+  const spot = await boxOf(alice.locator(".ws-rail"));
   const pages = alice.context().pages().length;
   await panes.click();
   await alice.waitForURL((u) => u.origin === t.base, { timeout: 15_000 });
   expect(alice.context().pages().length).toBe(pages);
   await expect(alice.locator(".ws-rail")).toBeVisible({ timeout: 15_000 });
-  const there = (await alice.locator(".ws-rail").boundingBox())!;
+  const there = await boxOf(alice.locator(".ws-rail"));
   expect({ x: there.x, y: there.y, w: there.width }).toEqual({ x: spot.x, y: spot.y, w: spot.width });
   // Back to Chat from control's rail: a browser opens the platform page in its tab.
   const [chatPage] = await Promise.all([alice.context().waitForEvent("page"), alice.locator(".ws-rail [data-open-chat]").click()]);
