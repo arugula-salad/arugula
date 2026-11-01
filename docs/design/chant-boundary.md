@@ -6,6 +6,26 @@
 
 **Updated 1 Nov 2026** (Arugula c75976ce, chant 0.124.62; Arugula pins 0.124.61). Chant shipped all four of Arugula's CI asks (#4643, #4662, #4645, #4644), so the CI row moved toward chant. The contract asks from 28 Oct (#4646, #4647, #4648, #4649) are still open with no replies. The release section is rescoped back to what aru-104 decided, Arugula's release through chant: see "Rescope" below, which replaces "Rough order". Marked inline as *(1 Nov)*.
 
+## Where Arugula went around chant *(1 Nov)*
+
+Arugula keeps moving while chant catches up, so this note keeps going stale. This table is the part to keep current. When Arugula builds something chant should own, the PR that builds it adds a row here naming the gap and the chant issue. When chant ships, the row says what Arugula drops. The prose below explains the line, and the table records where Arugula is today.
+
+| What Arugula does itself | What chant lacks | chant issue | Arugula moves back when |
+|---|---|---|---|
+| Its own release: the `arugula-release` driver runs `scripts/release`, with no chant op or record (M221, #1372) | Nothing for control and platform any more (the email hold on #1121 is gone with `--actor github:<login>`). A target for the binaries, Homebrew, the editor extension and the Tauri app | None filed for the targets | Control and platform: when Arugula adopts path B ("Rescope"). The rest: when chant has a target |
+| Approvals: the platform checks the passkey and relays the approval to chant unsigned | Accepting a signature made outside chant | [#4646](https://github.com/INTENTIUS/chant/issues/4646) | chant checks the phone's signature at the gate |
+| Stale plans: the platform's own rule, counting only its own deploys (`deploys.rs:15-35`) | A read for whether a plan is stale | [#4648](https://github.com/INTENTIUS/chant/issues/4648) | The platform asks chant before it asks a person |
+| The chant-fly driver gives chant a stand-in `origin` and pushes the ledger itself | A configurable ledger remote | [#4647](https://github.com/INTENTIUS/chant/issues/4647) | The driver sets the remote |
+| Release notes by hand in `docs/releases/X.Y.Z.md` | Work items from squash-merge PR numbers | [#4649](https://github.com/INTENTIUS/chant/issues/4649) | `release candidates` names the PRs |
+| Promotion of control and platform (native #308) | Nothing: `components promote` exists | None | #308 is written as a chant promote ("Rescope", item 2) |
+| Red-main alerts: `scripts/ci-red` | Shipped in 0.124.61 (notify events) | [#4645](https://github.com/INTENTIUS/chant/issues/4645), closed | #1956 merges, once the Slack secret is set. The 6-hour "main is red" timer stays Arugula's |
+| Flaky tests: quarantine and its nightly | Not asked | None | Decide whether chant should own it |
+| *Done:* path filters diffed against the last `ci/green` tag | `ci base` (0.124.61) | [#4643](https://github.com/INTENTIUS/chant/issues/4643), closed | Moved back (#1947) |
+| *Done:* one green for everything | Green lanes (0.124.61) | [#4662](https://github.com/INTENTIUS/chant/issues/4662), closed | Moved back (#1964) |
+| *Done:* a merge queue of its own (#1721) | Merge queue support (0.124.61) | [#4644](https://github.com/INTENTIUS/chant/issues/4644), closed | Moved back (#1954); the queue is off by choice |
+
+Not gaps, by the line below: the platform's identity, triggers and schedules, inbox and push, where things run, and secret values.
+
 The platform tab asks one question that matters most for chant: "For plans and reviews, which is the source of truth, chant records in the repo or platform objects?" Its recommendation is platform objects for the work, chant records for decisions and releases, linked both ways. I agree with that, and this note tries to pin down exactly where the line falls so step 7 doesn't build some things twice.
 
 It helps to think of Arugula as one of several platforms built on chant. terragucci is another: a Terraform automation product that runs chant inside the customer's CI. If the line works for both, it's probably in the right place. So the note describes the line once, then checks it against Arugula and terragucci.
