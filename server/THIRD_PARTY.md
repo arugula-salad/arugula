@@ -3067,7 +3067,7 @@ Used by:
 - [regex-automata 0.4.18](https://github.com/rust-lang/regex)
 - [regex-syntax 0.8.11](https://github.com/rust-lang/regex)
 - [rustls-native-certs 0.8.4](https://github.com/rustls/rustls-native-certs)
-- [rustls 0.23.45](https://github.com/rustls/rustls)
+- [rustls 0.23.46](https://github.com/rustls/rustls)
 - [scopeguard 1.2.0](https://github.com/bluss/scopeguard)
 - [security-framework-sys 2.17.0](https://github.com/kornelski/rust-security-framework)
 - [security-framework 3.7.0](https://github.com/kornelski/rust-security-framework)
