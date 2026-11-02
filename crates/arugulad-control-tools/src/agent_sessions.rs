@@ -1,8 +1,9 @@
-//! A person's agent and agent sessions (Fleet 3, aru-121): `session_start`
-//! and `session_reply`. With its owner's grants over a project, this
-//! machine's agents start an agent session there as the owner
-//! (`sessions.start`) and answer a session's question or prompt it
-//! (`sessions.reply`), without a browser.
+//! A person's agent and agent sessions (Fleet 3, aru-121): `session_start`,
+//! `session_reply` and `session_stop`. With its owner's grants over a
+//! project, this machine's agents start an agent session there as the owner
+//! (`sessions.start`), answer a session's question or prompt it
+//! (`sessions.reply`) and stop one their owner asked for (either grant),
+//! without a browser.
 //!
 //! Like the thread tools, they live on control's platform, never here: each
 //! is a `/api/daemon/sessions…` route signed with this machine's key, and
@@ -26,8 +27,8 @@
 use std::time::{Duration, Instant};
 
 use arugula_control_wire::sessions::{
-    AGENT_SESSIONS, AGENT_SESSIONS_WAIT, AgentSessionStart, SESSION_WAIT_MAX, agent_project_sessions, agent_session,
-    agent_session_reply,
+    AGENT_SESSIONS, AGENT_SESSIONS_WAIT, AgentSessionStart, AgentSessionStop, SESSION_WAIT_MAX, STOP_REASON_MAX,
+    agent_project_sessions, agent_session, agent_session_reply, agent_session_stop,
 };
 use reqwest::Method;
 use schemars::JsonSchema;
@@ -42,6 +43,7 @@ use crate::{control::CloudRefused, mux::Api};
 
 pub(crate) const START_TOOL: &str = "session_start";
 pub(crate) const REPLY_TOOL: &str = "session_reply";
+pub(crate) const STOP_TOOL: &str = "session_stop";
 pub(crate) const READ_TOOL: &str = "read_session";
 
 /// `list`'s kind.
@@ -86,6 +88,17 @@ pub struct SessionReplyArgs {
     pub session: String,
     /// The answer or the prompt, in markdown.
     pub text: String,
+}
+
+pub(crate) const STOP_DESCRIPTION: &str = "Stop an agent session in Arugula control (ses_…) now: it cancels the turn under way and ends the session, as the Stop button on its card does, and says so in its thread (\"Stopped by <your person>'s agent on <machine>: <reason>\"). Only a session your person asked for (you started it, or they did), with their sessions.start or sessions.reply grant over its project. Stopping is always safe and never needs a person. A session that has ended already is left as it is.";
+
+#[derive(Deserialize, JsonSchema)]
+pub struct SessionStopArgs {
+    /// The session: its id (ses_…).
+    pub session: String,
+    /// Why, in at most 280 characters: the thread's note says it.
+    #[serde(default)]
+    pub reason: Option<String>,
 }
 
 #[derive(Deserialize, JsonSchema, Default)]
@@ -318,6 +331,27 @@ pub(crate) async fn session_reply(c: &Call<'_>, a: SessionReplyArgs) -> Out {
         _ => {
             format!("Posted in session {ses}'s thread, but your person only views its project: it took no prompt.")
         }
+    };
+    done(s, v)
+}
+
+/// `session_stop`.
+pub(crate) async fn session_stop(c: &Call<'_>, a: SessionStopArgs) -> Out {
+    owners_sessions(c, STOP_TOOL).await?;
+    let ses = a.session.trim();
+    if !ses.starts_with("ses_") {
+        return Err(format!("session: its id, ses_…, not {ses:?}"));
+    }
+    let reason = a.reason.as_deref().map(str::trim).filter(|r| !r.is_empty());
+    if reason.is_some_and(|r| r.chars().count() > STOP_REASON_MAX) {
+        return Err(format!("reason: at most {STOP_REASON_MAX} characters"));
+    }
+    let v = sessions_call(c, &agent_session_stop(ses), json!(AgentSessionStop { reason: reason.map(str::to_owned) }))
+        .await?;
+    let s = match v["card"]["state"].as_str() {
+        Some("stopped") => format!("Session {ses} is stopped: its turn is cancelled, and the thread says you did it."),
+        Some(state) => format!("Session {ses} is {state} already; nothing changed."),
+        None => format!("Asked to stop session {ses}."),
     };
     done(s, v)
 }

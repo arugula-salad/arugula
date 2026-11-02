@@ -175,6 +175,7 @@ const ACTING_RULES: &[&str] = &[
     "mcp__arugula__plan_deploy",
     "mcp__arugula__session_start",
     "mcp__arugula__session_reply",
+    "mcp__arugula__session_stop",
 ];
 
 #[derive(Subcommand)]
