@@ -1089,6 +1089,13 @@
           "description": "`pr` or `issue` (a mirrored one), `native` for a native issue, or\n`run`.",
           "type": "string"
         },
+        "labels": {
+          "description": "The item's labels (#547): a native issue's, a mirrored item's, a\nPlane item's. A run has none.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
         "number": {
           "description": "A run has none: 0.",
           "format": "uint64",

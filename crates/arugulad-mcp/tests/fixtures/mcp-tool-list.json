@@ -8225,6 +8225,14 @@
               "null"
             ]
           },
+          "label": {
+            "default": null,
+            "description": "With board: only the rows whose item has this label (#547); several,\ncomma-separated, match any. Case doesn't matter.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "lane": {
             "anyOf": [
               {
@@ -8235,6 +8243,14 @@
               }
             ],
             "description": "With board: only the rows in this lane."
+          },
+          "person": {
+            "default": null,
+            "description": "With board: only the rows assigned to this person, by login or\nname, as the board shows it; several, comma-separated, match any.",
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "project": {
             "default": null,
@@ -17252,6 +17268,14 @@
               "null"
             ]
           },
+          "label": {
+            "default": null,
+            "description": "With board: only the rows whose item has this label (#547); several,\ncomma-separated, match any. Case doesn't matter.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "lane": {
             "anyOf": [
               {
@@ -17262,6 +17286,14 @@
               }
             ],
             "description": "With board: only the rows in this lane."
+          },
+          "person": {
+            "default": null,
+            "description": "With board: only the rows assigned to this person, by login or\nname, as the board shows it; several, comma-separated, match any.",
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "project": {
             "default": null,
@@ -21682,6 +21714,14 @@
               "null"
             ]
           },
+          "label": {
+            "default": null,
+            "description": "With board: only the rows whose item has this label (#547); several,\ncomma-separated, match any. Case doesn't matter.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "lane": {
             "anyOf": [
               {
@@ -21692,6 +21732,14 @@
               }
             ],
             "description": "With board: only the rows in this lane."
+          },
+          "person": {
+            "default": null,
+            "description": "With board: only the rows assigned to this person, by login or\nname, as the board shows it; several, comma-separated, match any.",
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "project": {
             "default": null,

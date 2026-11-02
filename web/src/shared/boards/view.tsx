@@ -39,7 +39,7 @@ import { BoardError, STALE_REV, boards, type ForgeChecks } from "./store";
 import { DocLink, DocPicker } from "./docs";
 import "./boards.css";
 import { groupFold, groupLaneFold, isFolded, laneFold, loadFolds, saveFolds, type Folds } from "./folds";
-import { PICK_DELAY_MS, cardTone, checkTone, checkWord, groupMove, liveTone, prsOf, PICK_LIMIT, assigneesLine, blockClass, GOAL_MAX, answerReady, askWaitingLine, blockFacts, chipOf, settledFacts, debounced, earlierLine, epicLine, holdsRow, groupLine, isCard, laneCount, liveClass, liveWord, marksOf, needsYou, pointerHref, pointerLabel, pointerText, pointerToSend, proofMark, readyCount, relationLine, RELATION_KINDS, sections, sourceLine, sourceLinked, leftOutLine, stepActive, workLabel, rowMatches, findLine } from "./text";
+import { PICK_DELAY_MS, cardTone, checkTone, checkWord, groupMove, liveTone, prsOf, PICK_LIMIT, assigneesLine, blockClass, GOAL_MAX, answerReady, askWaitingLine, blockFacts, chipOf, settledFacts, debounced, earlierLine, epicLine, holdsRow, groupLine, isCard, laneCount, liveClass, liveWord, marksOf, needsYou, pointerHref, pointerLabel, pointerText, pointerToSend, proofMark, readyCount, relationLine, RELATION_KINDS, sections, sourceLine, sourceLinked, leftOutLine, stepActive, workLabel, type BoardFilter, rowPasses, filtering, filterChoices, filterHash, parseFilterHash, topAndMore, initialsOf, findLine } from "./text";
 
 const STALE_SAID = "That changed while you were editing, so the board is read again. Make your change again if it still applies.";
 
@@ -55,6 +55,7 @@ export function BoardPanel({
   back,
   write = true,
   menu,
+  keepInUrl = false,
 }: {
   id: string;
   /** False for a block that isn't on screen: it reads nothing then. */
@@ -67,6 +68,8 @@ export function BoardPanel({
   write?: boolean;
   /** The Copy link button's ▾ items, given the board's team link (the block adds "Open in browser ↗"). */
   menu?: (link: string) => MenuItem[];
+  /** Keep the find text and the Label and Person menus in the URL's hash (#547), so a link keeps them. The shell's block keeps them in memory. */
+  keepInUrl?: boolean;
 }) {
   const { toast } = usePlatformApi();
   const [view, setView] = useState<BoardView | null>(null);
@@ -86,9 +89,25 @@ export function BoardPanel({
   /** The group a Delete waits on. */
   const [dropping, setDropping] = useState<BoardGroup | null>(null);
   /** The find box's text; `null` while the box is closed (#546). */
-  const [find, setFind] = useState<string | null>(null);
+  const [find, setFind] = useState<string | null>(() => (keepInUrl ? (parseFilterHash(location.hash)?.q ?? null) : null));
+  /** The Label and Person menus' values (#547): any of a menu's matches, and every menu and the text have to. */
+  const [labels, setLabels] = useState<string[]>(() => (keepInUrl ? (parseFilterHash(location.hash)?.labels ?? []) : []));
+  const [people, setPeople] = useState<string[]>(() => (keepInUrl ? (parseFilterHash(location.hash)?.people ?? []) : []));
   const findBox = useRef<HTMLInputElement>(null);
-  useEffect(() => setFind(null), [id]);
+  // Another board starts with no filter; the first one keeps what its link said.
+  const was = useRef(id);
+  useEffect(() => {
+    if (was.current === id) return;
+    was.current = id;
+    setFind(null);
+    setLabels([]);
+    setPeople([]);
+  }, [id]);
+  // A menu's value opens the bar, which is where it shows.
+  useEffect(() => {
+    if (find === null && (labels.length || people.length)) setFind("");
+  }, [labels, people]);
+  const closeFind = () => (setFind(null), setLabels([]), setPeople([]));
   // `/` opens the find box, from anywhere that isn't a field.
   useEffect(() => {
     if (!shown) return;
@@ -106,6 +125,12 @@ export function BoardPanel({
   useEffect(() => {
     if (finding) findBox.current?.focus();
   }, [finding]);
+  const filter: BoardFilter = { q: find ?? "", labels, people };
+  useEffect(() => {
+    if (!keepInUrl || !shown) return;
+    const h = filterHash(filter);
+    if (location.hash.replace(/^#/, "") !== h) history.replaceState(history.state, "", location.pathname + location.search + (h ? `#${h}` : ""));
+  }, [keepInUrl, shown, find, labels, people]);
   // Chat says when the thread's object changed; it's on while chat is.
   useSubscribe((fn) => chat.subscribe(fn));
   const seen = useRef(0);
@@ -227,8 +252,10 @@ export function BoardPanel({
   };
   // A find narrows the view to the rows it matches; the saved folds stay as they are.
   const query = (find ?? "").trim();
-  const narrowed: BoardView = query ? { ...view, zones: view.zones.map((z) => ({ ...z, rows: z.rows.filter((r) => rowMatches(r, query)) })) } : view;
+  const narrows = filtering(filter);
+  const narrowed: BoardView = narrows ? { ...view, zones: view.zones.map((z) => ({ ...z, rows: z.rows.filter((r) => rowPasses(r, filter)) })) } : view;
   const every = view.zones.reduce((n, z) => n + z.rows.length, 0);
+  const allRows = view.zones.flatMap((z) => z.rows);
   const found = narrowed.zones.flatMap((z) => z.rows);
   const firstMatch = sections(narrowed).flatMap((s) => s.lanes.flatMap((z) => z.rows))[0];
   const opened = drawer ? view.zones.flatMap((z) => z.rows).find((r) => r.id === drawer) : undefined;
@@ -264,16 +291,18 @@ export function BoardPanel({
             autoComplete="off"
             onInput={(e) => setFind(e.currentTarget.value)}
             onKeyDown={(e) => {
-              if (e.key === "Escape") (e.preventDefault(), setFind(null));
+              if (e.key === "Escape") (e.preventDefault(), closeFind());
               else if (e.key === "Enter" && firstMatch) (e.preventDefault(), setDrawer(firstMatch.id));
             }}
           />
-          {query && (
+          <FilterMenu name="label" title="Label" choices={filterChoices(allRows, "labels")} picked={labels} set={setLabels} />
+          <FilterMenu name="person" title="Person" choices={filterChoices(allRows, "assignees")} picked={people} set={setPeople} />
+          {narrows && (
             <span class="board-find-count dim" role="status" data-board-find-count>
               {findLine(found.length, every)}
             </span>
           )}
-          <button type="button" aria-label="Close the find box" data-board-find-close onClick={() => setFind(null)}>
+          <button type="button" aria-label="Close the find box" data-board-find-close onClick={closeFind}>
             ×
           </button>
         </div>
@@ -284,9 +313,9 @@ export function BoardPanel({
           {STALE_SAID}
         </p>
       )}
-      {query && found.length === 0 && (
+      {narrows && found.length === 0 && (
         <p class="board-none dim" data-board-find-none>
-          No row matches “{query}”.
+          {query ? `No row matches “${query}”.` : "No row matches the filter."}
         </p>
       )}
       {sections(narrowed).map((s) => {
@@ -294,15 +323,15 @@ export function BoardPanel({
         const key = groupFold(s.group?.id ?? null);
         const held = s.lanes.reduce((n, z) => n + z.rows.length, 0);
         // A find hides what doesn't match, and opens a heading that holds a match without saving it.
-        if (query && held === 0) return null;
-        const folded = grouped && !query && isFolded(folds, key);
+        if (narrows && held === 0) return null;
+        const folded = grouped && !narrows && isFolded(folds, key);
         const lanes = (
           <div class="board-lanes">
             {s.lanes.map((z) => {
-              if (query && z.rows.length === 0) return null;
+              if (narrows && z.rows.length === 0) return null;
               const laneKey = grouped ? groupLaneFold(s.group?.id ?? null, z.id) : laneFold(z.id);
               return (
-              <Lane key={z.id} z={z} fold={{ key: laneKey, folded: !query && isFolded(folds, laneKey), toggle: () => toggleFold(laneKey) }} project={view.board.project} editing={editing} setEditing={setEditing} act={act} id={id} platform={platform} groups={write ? (view.groups ?? []) : []} moveRow={moveRow} open={setDrawer} />
+              <Lane key={z.id} z={z} fold={{ key: laneKey, folded: !narrows && isFolded(folds, laneKey), toggle: () => toggleFold(laneKey) }} project={view.board.project} editing={editing} setEditing={setEditing} act={act} id={id} platform={platform} groups={write ? (view.groups ?? []) : []} moveRow={moveRow} open={setDrawer} />
               );
             })}
           </div>
@@ -694,6 +723,81 @@ function Chip({ a, platform, facts = "settled" }: { a: BoardAttachment; platform
   );
 }
 
+/** A card's assignees as initials in small circles: two, then `+N`. Named in full for a screen reader and on hover. */
+function Owners({ who, all }: { who: string[]; all?: boolean }) {
+  const list = who.filter(Boolean);
+  if (!list.length) return null;
+  const { top, more } = topAndMore(list, all ? list.length : 2);
+  return (
+    <span class="board-who" role="img" aria-label={assigneesLine(list)} title={list.join(", ")} data-board-who={list.join(", ")}>
+      {top.map((w) => (
+        <span key={w} class="board-avatar" aria-hidden="true" data-board-avatar>
+          {initialsOf(w)}
+        </span>
+      ))}
+      {more > 0 && (
+        <span class="board-avatar more" aria-hidden="true" data-board-avatar-more>
+          +{more}
+        </span>
+      )}
+    </span>
+  );
+}
+
+/** An item's labels as chips: three, then `+N`; on a phone (its CSS) only the `+N` of all of them. The drawer lists every one. */
+function Labels({ labels, all }: { labels: string[]; all?: boolean }) {
+  if (!labels.length) return null;
+  const { top, more } = topAndMore(labels, all ? labels.length : 3);
+  return (
+    <div class={all ? "board-labels" : "board-line board-labels"} data-board-labels>
+      <span class="board-labels-top">
+        {top.map((l) => (
+          <span key={l} class="ws-tag board-label" data-board-label={l}>
+            {l}
+          </span>
+        ))}
+        {more > 0 && (
+          <span class="ws-tag board-label more" title={labels.slice(top.length).join(", ")} data-board-label-more>
+            +{more}
+          </span>
+        )}
+      </span>
+      {!all && (
+        <span class="ws-tag board-label more board-labels-all" title={labels.join(", ")} data-board-labels-all>
+          +{labels.length}
+        </span>
+      )}
+    </div>
+  );
+}
+
+/** A filter menu of the find bar (#547): its values with how many rows have each, several at once. */
+function FilterMenu({ name, title, choices, picked, set }: { name: string; title: string; choices: { value: string; count: number }[]; picked: string[]; set: (v: string[]) => void }) {
+  // A value picked from a link that no row has now still shows, so it can be cleared.
+  const have = new Set(choices.map((c) => c.value.toLowerCase()));
+  const shown = [...choices, ...picked.filter((p) => !have.has(p.toLowerCase())).map((value) => ({ value, count: 0 }))];
+  if (!shown.length) return null;
+  const on = (v: string) => picked.some((p) => p.toLowerCase() === v.toLowerCase());
+  const toggle = (v: string) => set(on(v) ? picked.filter((p) => p.toLowerCase() !== v.toLowerCase()) : [...picked, v]);
+  return (
+    <details class="board-facet" data-board-facet={name}>
+      <summary data-board-facet-button={name}>
+        {title}
+        {picked.length > 0 && <span class="board-facet-n"> · {picked.length}</span>}
+      </summary>
+      <div class="board-facet-list" role="group" aria-label={title}>
+        {shown.map((c) => (
+          <label key={c.value} class="board-facet-item">
+            <input type="checkbox" checked={on(c.value)} data-board-facet-value={c.value} onChange={() => toggle(c.value)} />
+            <span>{c.value}</span>
+            <span class="dim"> {c.count}</span>
+          </label>
+        ))}
+      </div>
+    </details>
+  );
+}
+
 function Row({
   r,
   project,
@@ -720,7 +824,6 @@ function Row({
   const label = pointerLabel(r.pointer, r.live);
   const href = pointerHref(r, platform);
   const card = isCard(r.live);
-  const who = card ? assigneesLine(r.live!.assignees) : "";
   const mark = proofMark(r);
   const marks = marksOf(r);
   const earlier = r.attachments.filter((a) => marks.earlier.has(a.id));
@@ -789,11 +892,7 @@ function Row({
           </div>
           <div class="board-line board-sub dim">
             {label && <span class="board-ptr" data-board-ptr>{label}</span>}
-            {card && who && (
-              <span class="board-who dim" data-board-who>
-                {who}
-              </span>
-            )}
+            {card && <Owners who={r.live!.assignees ?? []} />}
             {r.agent && (
               <span class="board-agent dim" data-row-agent>
                 {agentShort(r.agent)}
@@ -801,6 +900,7 @@ function Row({
             )}
             {proofTag}
           </div>
+          {card && <Labels labels={r.live!.labels ?? []} />}
           {(marks.merged || marks.cancelled || marks.after || marks.stalled || marks.blocked.length > 0) && (
             <div class="board-line board-marks" data-board-marks>
               {marks.merged && (
@@ -954,6 +1054,13 @@ function Drawer({ r, platform, close, project, others, write, act, id }: { r: Bo
         )}
       </div>
       {r.note && <p class="dim">{r.note}</p>}
+      {((r.live?.labels?.length ?? 0) > 0 || (r.live?.assignees?.length ?? 0) > 0) && (
+        <div class="board-line board-drawer-tags" data-board-drawer-tags>
+          <Owners who={r.live?.assignees ?? []} all />
+          {r.live?.assignees?.length ? <span class="dim" data-board-drawer-owners>{r.live.assignees.join(', ')}</span> : null}
+          <Labels labels={r.live?.labels ?? []} all />
+        </div>
+      )}
       {readable && (
         <section data-board-drawer-body>
           {!read ? (

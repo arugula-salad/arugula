@@ -469,6 +469,8 @@ pub struct IssueState {
     pub category: Category,
     /// Accounts; a list that doesn't parse reads as none.
     pub assignees: Vec<String>,
+    /// Its labels; a list that doesn't parse reads as none.
+    pub labels: Vec<String>,
 }
 
 impl Db {
@@ -1098,7 +1100,7 @@ impl Db {
         let c = self.c();
         c.query_map(
             &format!(
-                "SELECT id, number, title, closed_at IS NOT NULL, assignees, close_reason FROM issues
+                "SELECT id, number, title, closed_at IS NOT NULL, assignees, close_reason, labels FROM issues
                  WHERE project_id = ?1 AND {}",
                 in_json(&c, "id", 2)
             ),
@@ -1112,6 +1114,7 @@ impl Db {
                     closed,
                     category: native_category(closed, r.get::<Option<String>>(5)?.as_deref()),
                     assignees: serde_json::from_str(&r.get::<String>(4)?).unwrap_or_default(),
+                    labels: serde_json::from_str(&r.get::<String>(6)?).unwrap_or_default(),
                 })
             },
         )

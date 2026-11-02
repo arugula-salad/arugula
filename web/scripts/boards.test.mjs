@@ -3,7 +3,7 @@
 // the board routes' paths. Run with `node --experimental-strip-types`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { holdsRow, stalledFor, settledFacts, LANE_GLYPH, cardTone, checkTone, checkWord, groupMove, liveTone, prsOf, answerReady, askWaitingLine, assigneesLine, chipOf, counted, debounced, earlierLine, epicLine, firstLine, groupLine, isCard, laneCount, liveWord, marksOf, readyCount, relationLine, UNSEEN_BLOCKER, needsYou, needsYouLine, parsePointer, pointerHref, pointerLabel, pointerToSend, proofMark, rowGlyph, sections, stepActive, workLabel, workChip, onIssueChip, boardGroup, clusterOrder, NO_BOARD, sourceLine, sourceLinked, leftOutLine, docWords, docHref, onBoardWords, pointerText, rowMatches, findLine, boardMatches } from "../src/shared/boards/text.ts";
+import { holdsRow, stalledFor, settledFacts, LANE_GLYPH, cardTone, checkTone, checkWord, groupMove, liveTone, prsOf, answerReady, askWaitingLine, assigneesLine, chipOf, counted, debounced, earlierLine, epicLine, firstLine, groupLine, isCard, laneCount, liveWord, marksOf, readyCount, relationLine, UNSEEN_BLOCKER, needsYou, needsYouLine, parsePointer, pointerHref, pointerLabel, pointerToSend, proofMark, rowGlyph, sections, stepActive, workLabel, workChip, onIssueChip, boardGroup, clusterOrder, NO_BOARD, sourceLine, sourceLinked, leftOutLine, docWords, docHref, onBoardWords, pointerText, rowMatches, findLine, boardMatches, rowHasLabel, rowHasPerson, rowPasses, filtering, filterChoices, filterHash, parseFilterHash, topAndMore, initialsOf } from "../src/shared/boards/text.ts";
 import { parse, pathOf } from "../src/platform/paths.ts";
 
 const P = "prj_8f2ec0ffee00112233445566778899aa";
@@ -412,7 +412,7 @@ test("a find box matches a row by number, tracker key or words, and every word h
   assert.equal(rowMatches(b, "#13 unfold"), false);
   assert.equal(rowMatches(note, "launch"), true, "a note row has its note");
   assert.equal(rowMatches(note, "#1"), false);
-  assert.equal(rowMatches({ ...a, labels: ["boards"] }, "boards"), true, "labels are read where the row carries them");
+  assert.equal(rowMatches(row("Search", 1, { labels: ["boards"] }), "boards"), true, "plain words read the labels");
   assert.equal(rowMatches(row("Run", 0), "#0"), false, "a run has no number");
   assert.equal(findLine(7, 89), "7 of 89 rows");
   assert.equal(findLine(1, 1), "1 of 1 row");
@@ -426,4 +426,54 @@ test("a boards list filters by title, epic key or goal, open and closed alike (#
   assert.equal(boardMatches(b, "ship editor"), true);
   assert.equal(boardMatches(b, "ship docs"), false);
   assert.equal(boardMatches({ title: "Done one", goal: "", source: undefined }, "arugu"), false);
+});
+
+test("label: and @ in the find box are a label and a person; the menus are OR within and AND across (#547)", () => {
+  const row = (title, labels, assignees) => ({ pointer: { kind: "issue", id: "iss_1" }, note: "", live: { title, number: 4, kind: "native", state: "open", labels, assignees } });
+  const a = row("Search", ["boards", "ui"], ["Ana Diaz"]);
+  const b = row("Fold", ["docs"], ["bob"]);
+  const c = row("Bare", undefined, undefined);
+  assert.equal(rowMatches(a, "label:boards"), true);
+  assert.equal(rowMatches(a, "LABEL:UI"), true, "any case");
+  assert.equal(rowMatches(a, "label:board"), false, "a label is whole");
+  assert.equal(rowMatches(b, "label:boards"), false);
+  assert.equal(rowMatches(c, "label:boards"), false, "no labels, no match");
+  assert.equal(rowMatches(a, "@ana"), true, "part of a name");
+  assert.equal(rowMatches(a, "@ana_diaz"), true, "a space reads as _");
+  assert.equal(rowMatches(a, "@bob"), false);
+  assert.equal(rowMatches(c, "@bob"), false);
+  assert.equal(rowMatches(a, "label:boards @ana search"), true, "words together");
+  assert.equal(rowMatches(a, "label:boards @bob"), false, "every word has to hold");
+  assert.equal(rowMatches(a, "label:"), false, "a bare label: is text");
+  assert.equal(rowHasLabel(a, " Boards "), true);
+  assert.equal(rowHasPerson(a, ""), false);
+  const f = (labels, people, q = "") => ({ q, labels, people });
+  assert.deepEqual([a, b, c].map((r) => rowPasses(r, f([], []))), [true, true, true], "no filter keeps all");
+  assert.deepEqual([a, b, c].map((r) => rowPasses(r, f(["boards", "docs"], []))), [true, true, false], "any label of the menu");
+  assert.deepEqual([a, b, c].map((r) => rowPasses(r, f(["boards", "docs"], ["bob"]))), [false, true, false], "the menus both hold");
+  assert.deepEqual([a, b, c].map((r) => rowPasses(r, f(["boards", "docs"], ["bob", "ana"], "fold"))), [false, true, false], "and the text");
+  assert.equal(filtering(f([], [])), false);
+  assert.equal(filtering(f([], [], " x ")), true);
+  assert.equal(filtering(f(["a"], [])), true);
+  assert.deepEqual(filterChoices([a, b, row("x", ["Docs", "ui"], ["bob"]), c], "labels"), [
+    { value: "docs", count: 2 }, { value: "ui", count: 2 }, { value: "boards", count: 1 },
+  ].sort((x, y) => y.count - x.count || x.value.localeCompare(y.value)), "most common first, each once");
+  assert.deepEqual(filterChoices([a, b], "assignees").map((x) => x.value), ["Ana Diaz", "bob"]);
+});
+
+test("a filter lives in the URL hash, and the chips fold into +N (#547)", () => {
+  const f = { q: "fold", labels: ["boards", "needs work"], people: ["Ana Diaz"] };
+  const h = filterHash(f);
+  assert.equal(h, "q=fold&label=boards&label=needs+work&person=Ana+Diaz");
+  assert.deepEqual(parseFilterHash("#" + h), f);
+  assert.equal(filterHash({ q: " ", labels: [], people: [] }), "");
+  assert.equal(parseFilterHash(""), null);
+  assert.equal(parseFilterHash("#other=1"), null, "a hash that names no filter is none");
+  assert.deepEqual(parseFilterHash("#label=x&label="), { q: "", labels: ["x"], people: [] });
+  assert.deepEqual(topAndMore(["a", "b", "c", "d", "e"], 3), { top: ["a", "b", "c"], more: 2 });
+  assert.deepEqual(topAndMore(["a"], 3), { top: ["a"], more: 0 });
+  assert.equal(initialsOf("Ana Diaz"), "AD");
+  assert.equal(initialsOf("alice"), "A");
+  assert.equal(initialsOf("bob-the_builder x"), "BT");
+  assert.equal(initialsOf(""), "?");
 });

@@ -375,6 +375,11 @@ title: string,
  */
 assignees?: Array<string>, 
 /**
+ * The item's labels (#547): a native issue's, a mirrored item's, a
+ * Plane item's. A run has none.
+ */
+labels?: Array<string>, 
+/**
  * `plane` for a tracker's item; absent for GitHub, native issues and runs.
  */
 provider?: string | null, 
