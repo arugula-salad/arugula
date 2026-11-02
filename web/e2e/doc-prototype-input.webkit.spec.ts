@@ -38,13 +38,24 @@ const post: Post = async (path, body) => {
   return JSON.parse(text) as { block?: number };
 };
 
+// The tests share one daemon, so the last test's Doc and its frame would
+// still be in the session: on the phone, `bring` swaps panes, and FRAME could
+// find the old frame just before it goes. Each test closes its own Doc.
+let last: number | undefined;
+test.afterEach(async () => {
+  if (last !== undefined) await post(`/api/panes/${last}/close`, {}).catch(() => null);
+  last = undefined;
+});
+
 async function padDoc(page: import("@playwright/test").Page) {
   await open(page);
   const term = await page.evaluate(() => window.__arugula.client.state!.panes[0].id);
   await ready(page, term);
   const doc = await newDoc(post, term);
+  last = doc;
   await fillPad(post, doc);
   await bring(page, doc);
+  await expect(page.locator(FRAME)).toHaveCount(1);
   // The frame is lazy: it loads once it is near the screen.
   await page.locator(FRAME).scrollIntoViewIfNeeded();
   await expect(page.frameLocator(FRAME).locator("#pad")).toBeVisible({ timeout: 15_000 });
