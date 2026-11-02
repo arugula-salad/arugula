@@ -14,7 +14,7 @@ mod close;
 mod flags;
 mod fs;
 mod hosts;
-mod input;
+pub(crate) mod input;
 mod inspect;
 mod notify;
 mod nvim;
