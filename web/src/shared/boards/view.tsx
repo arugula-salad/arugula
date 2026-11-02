@@ -22,13 +22,13 @@
 // to make again.
 
 import { useEffect, useId, useRef, useState } from "preact/hooks";
-import type { RelationKind, BoardAsk, BoardAnsweredAsk, BoardAttachment, BoardGroup, BoardPointer, ForgeText, ProjectBoard, BoardRow, BoardView, BoardWorkItem, BoardZone } from "../proto";
+import type { RelationKind, BoardLane, BoardAsk, BoardAnsweredAsk, BoardAttachment, BoardGroup, BoardPointer, ForgeText, ProjectBoard, BoardRow, BoardView, BoardWorkItem, BoardZone } from "../proto";
 import { chat } from "../chat-store";
 import { usePlatformApi } from "../platform-api";
 import { Markdown } from "../ui/markdown";
 import { ConfirmRemove } from "../ui/confirm";
 import { StateChip } from "../ui/state-chip";
-import { useSubscribe } from "../ui/hooks";
+import { usePhone, useSubscribe } from "../ui/hooks";
 import { CopyLinkButton } from "../ui/copy-link";
 import { askText, openMenu, type MenuItem } from "../ui/menu";
 import { issues } from "../issues/store";
@@ -39,9 +39,12 @@ import { BoardError, STALE_REV, boards, type ForgeChecks } from "./store";
 import { DocLink, DocPicker } from "./docs";
 import "./boards.css";
 import { groupFold, groupLaneFold, isFolded, laneFold, loadFolds, saveFolds, type Folds } from "./folds";
-import { PICK_DELAY_MS, cardTone, checkTone, checkWord, groupMove, liveTone, prsOf, PICK_LIMIT, assigneesLine, blockClass, GOAL_MAX, answerReady, askWaitingLine, blockFacts, chipOf, settledFacts, debounced, earlierLine, epicLine, holdsRow, groupLine, isCard, laneCount, liveClass, liveWord, marksOf, needsYou, pointerHref, pointerLabel, pointerText, pointerToSend, proofMark, readyCount, relationLine, RELATION_KINDS, sections, sourceLine, sourceLinked, leftOutLine, stepActive, workLabel, rowMatches, findLine } from "./text";
+import { MOVE_LANES, closeName, doneRefusal, laneOfZone, laneSetLine, PICK_DELAY_MS, cardTone, checkTone, checkWord, groupMove, liveTone, prsOf, PICK_LIMIT, assigneesLine, blockClass, GOAL_MAX, answerReady, askWaitingLine, blockFacts, chipOf, settledFacts, debounced, earlierLine, epicLine, holdsRow, groupLine, isCard, laneCount, liveClass, liveWord, marksOf, needsYou, pointerHref, pointerLabel, pointerText, pointerToSend, proofMark, readyCount, relationLine, RELATION_KINDS, sections, sourceLine, sourceLinked, leftOutLine, stepActive, workLabel, rowMatches, findLine } from "./text";
 
 const STALE_SAID = "That changed while you were editing, so the board is read again. Make your change again if it still applies.";
+
+/** What a card carries while it's dragged to another lane (#494). */
+const ROW_DRAG = "text/x-arugula-board-row";
 
 const menuAt = (e: MouseEvent, items: MenuItem[]) => {
   const at = (e.currentTarget as HTMLElement).getBoundingClientRect();
@@ -68,7 +71,8 @@ export function BoardPanel({
   /** The Copy link button's ▾ items, given the board's team link (the block adds "Open in browser ↗"). */
   menu?: (link: string) => MenuItem[];
 }) {
-  const { toast } = usePlatformApi();
+  const { toast, teams } = usePlatformApi();
+  const nameOf = (account: string) => teams().flatMap((t) => t.roster.members).find((m) => m.account === account)?.name;
   const [view, setView] = useState<BoardView | null>(null);
   const [missing, setMissing] = useState<string | null>(null);
   const [stale, setStale] = useState(false);
@@ -85,6 +89,9 @@ export function BoardPanel({
   };
   /** The group a Delete waits on. */
   const [dropping, setDropping] = useState<BoardGroup | null>(null);
+  /** The row a move to Done waits on: its issue is closed once the person confirms (#494). */
+  const [closing, setClosing] = useState<BoardRow | null>(null);
+  const [closeReason, setCloseReason] = useState("completed");
   /** The find box's text; `null` while the box is closed (#546). */
   const [find, setFind] = useState<string | null>(null);
   const findBox = useRef<HTMLInputElement>(null);
@@ -214,6 +221,16 @@ export function BoardPanel({
     if (to) void act(() => boards.move(id, g.id, g.rev, to));
   };
   const moveRow = (r: BoardRow, zone: string | null) => void act(() => boards.move(id, r.id, r.rev, { zone }));
+  /** Move a row to a lane by hand (#494). Done closes its native issue after a confirm; any other item is closed where it lives, and the row says so. */
+  const moveLane = (row: string, lane: BoardLane) => {
+    const r = view.zones.flatMap((z) => z.rows).find((x) => x.id === row);
+    if (!r || r.lane === lane) return;
+    if (lane !== "done") return void act(() => boards.setLane(id, r.id, lane));
+    const why = doneRefusal(r);
+    if (why) return void toast(why);
+    setCloseReason("completed");
+    setClosing(r);
+  };
   const groupMenu = (e: MouseEvent, g: BoardGroup) => {
     const all = view.groups ?? [];
     const at = all.findIndex((x) => x.id === g.id);
@@ -302,7 +319,7 @@ export function BoardPanel({
               if (query && z.rows.length === 0) return null;
               const laneKey = grouped ? groupLaneFold(s.group?.id ?? null, z.id) : laneFold(z.id);
               return (
-              <Lane key={z.id} z={z} fold={{ key: laneKey, folded: !query && isFolded(folds, laneKey), toggle: () => toggleFold(laneKey) }} project={view.board.project} editing={editing} setEditing={setEditing} act={act} id={id} platform={platform} groups={write ? (view.groups ?? []) : []} moveRow={moveRow} open={setDrawer} />
+              <Lane key={z.id} z={z} fold={{ key: laneKey, folded: !query && isFolded(folds, laneKey), toggle: () => toggleFold(laneKey) }} project={view.board.project} editing={editing} setEditing={setEditing} act={act} id={id} platform={platform} groups={write ? (view.groups ?? []) : []} moveRow={moveRow} moveLane={write ? moveLane : undefined} open={setDrawer} />
               );
             })}
           </div>
@@ -372,7 +389,25 @@ export function BoardPanel({
           <p>Its rows go with it. Their issues and PRs stay where they are.</p>
         </ConfirmRemove>
       )}
-      {opened && <Drawer r={opened} platform={platform} close={() => setDrawer(null)} project={view.board.project} others={view.zones.flatMap((z) => z.rows)} write={write} act={act} id={id} />}
+      {closing && (
+        <ConfirmRemove
+          title={`Close ${closeName(closing)}?`}
+          label="Close"
+          go={() => (setClosing(null), void act(() => boards.setLane(id, closing.id, "done", closeReason)))}
+          cancel={() => setClosing(null)}
+        >
+          <p>Moving a row to Done closes its issue. Moving it out of Done opens it again.</p>
+          <label class="dim">
+            Reason{" "}
+            <select data-board-close-reason value={closeReason} onChange={(e) => setCloseReason(e.currentTarget.value)}>
+              <option value="completed">Completed</option>
+              <option value="not_planned">Not planned</option>
+              <option value="duplicate">Duplicate</option>
+            </select>
+          </label>
+        </ConfirmRemove>
+      )}
+      {opened && <Drawer r={opened} platform={platform} close={() => setDrawer(null)} project={view.board.project} others={view.zones.flatMap((z) => z.rows)} write={write} act={act} id={id} moveLane={moveLane} nameOf={nameOf} />}
     </div>
   );
 }
@@ -613,6 +648,7 @@ function Lane({
   platform,
   groups,
   moveRow,
+  moveLane,
   open,
 }: {
   z: BoardZone;
@@ -627,11 +663,37 @@ function Lane({
   /** The groups a row may move to; none for a reader who can't write. */
   groups: BoardGroup[];
   moveRow: (r: BoardRow, zone: string | null) => void;
+  /** Move a row to a lane by hand (#494); none for a reader who can't write. */
+  moveLane?: (row: string, lane: BoardLane) => void;
   open: (row: string) => void;
 }) {
   const n = laneCount(z);
+  // A card dragged over the lane (#494): the lane takes it.
+  const [over, setOver] = useState(false);
+  const lane = laneOfZone(z.id);
+  const takes = (e: DragEvent) => !!moveLane && !!lane && !!e.dataTransfer?.types.includes(ROW_DRAG);
+  const drop = (e: DragEvent) => {
+    if (!takes(e)) return;
+    e.preventDefault();
+    setOver(false);
+    const row = e.dataTransfer?.getData(ROW_DRAG);
+    if (row && lane) moveLane!(row, lane);
+  };
   return (
-    <section class="board-zone" data-board-zone={z.id} data-zone-kind={z.kind ?? undefined}>
+    <section
+      class={`board-zone${over ? " drop-over" : ""}`}
+      data-board-zone={z.id}
+      data-zone-kind={z.kind ?? undefined}
+      data-drop-over={over ? "" : undefined}
+      onDragOver={(e) => {
+        if (!takes(e)) return;
+        e.preventDefault();
+        if (e.dataTransfer) e.dataTransfer.dropEffect = "move";
+        setOver(true);
+      }}
+      onDragLeave={(e) => !e.currentTarget.contains(e.relatedTarget as Node | null) && setOver(false)}
+      onDrop={drop}
+    >
       <header class="board-zone-head">
         <h2>
           <button type="button" class="board-fold" aria-expanded={!fold.folded} data-board-fold={fold.key} onClick={fold.toggle}>
@@ -646,7 +708,7 @@ function Lane({
       {!fold.folded && (
         <ul class="board-rows sw-cards">
           {z.rows.map((r) => (
-            <Row key={r.id} r={r} editing={editing === r.id} setEditing={setEditing} act={act} id={id} project={project} platform={platform} groups={groups} moveRow={moveRow} open={open} />
+            <Row key={r.id} r={r} editing={editing === r.id} setEditing={setEditing} act={act} id={id} project={project} platform={platform} groups={groups} moveRow={moveRow} moveLane={moveLane} open={open} />
           ))}
         </ul>
       )}
@@ -704,6 +766,7 @@ function Row({
   platform,
   groups,
   moveRow,
+  moveLane,
   open,
 }: {
   r: BoardRow;
@@ -715,8 +778,12 @@ function Row({
   platform: (path: string) => string | undefined;
   groups: BoardGroup[];
   moveRow: (r: BoardRow, zone: string | null) => void;
+  moveLane?: (row: string, lane: BoardLane) => void;
   open: (row: string) => void;
 }) {
+  const phone = usePhone();
+  const { teams } = usePlatformApi();
+  const setBy = laneSetLine(r, (a) => teams().flatMap((t) => t.roster.members).find((m) => m.account === a)?.name);
   const label = pointerLabel(r.pointer, r.live);
   const href = pointerHref(r, platform);
   const card = isCard(r.live);
@@ -746,6 +813,9 @@ function Row({
             },
           ]
         : []),
+      ...(moveLane
+        ? [{ label: "Move to", submenu: MOVE_LANES.filter((l) => l.lane !== r.lane).map((l) => ({ label: l.title, run: () => moveLane(r.id, l.lane) })) }]
+        : []),
       "separator",
       { label: "Delete the row", danger: true, run: () => void act(() => boards.remove(id, r.id)) },
     ]);
@@ -761,7 +831,7 @@ function Row({
   const title = card ? r.live!.title : label || "Note";
   const external = r.pointer.kind === "forge_item" || r.pointer.kind === "link";
   return (
-    <li class={`board-card sw-card sw-${tone}`} data-board-row={r.id} data-lane={r.lane} data-status={r.status} data-tone={tone} data-needs-you={r.ask?.mine ? "" : undefined} tabIndex={editing ? undefined : 0} onClick={editing ? undefined : body} onKeyDown={editing ? undefined : key}>
+    <li class={`board-card sw-card sw-${tone}`} data-board-row={r.id} data-lane={r.lane} data-status={r.status} data-tone={tone} data-needs-you={r.ask?.mine ? "" : undefined} data-lane-set={r.lane_set ? r.lane_set.lane : undefined} draggable={!!moveLane && !phone && !editing} onDragStart={(e) => e.dataTransfer?.setData(ROW_DRAG, r.id)} tabIndex={editing ? undefined : 0} onClick={editing ? undefined : body} onKeyDown={editing ? undefined : key}>
       {editing ? (
         <RowForm
           project={project}
@@ -800,6 +870,11 @@ function Row({
               </span>
             )}
             {proofTag}
+            {setBy && (
+              <span class="ws-tag board-lane-set" data-board-lane-set title="A person moved this row. It follows its work again once the work changes.">
+                {setBy}
+              </span>
+            )}
           </div>
           {(marks.merged || marks.cancelled || marks.after || marks.stalled || marks.blocked.length > 0) && (
             <div class="board-line board-marks" data-board-marks>
@@ -914,7 +989,7 @@ async function readRow(r: BoardRow): Promise<Read> {
 }
 
 /** The drawer: a row's item, read-only, beside the board (a sheet on a phone). Its title, state and link out; the body, the latest comments, the PRs' checks, the attachments and the proof's evidence. */
-function Drawer({ r, platform, close, project, others, write, act, id }: { r: BoardRow; platform: (path: string) => string | undefined; close: () => void; project: string; others: BoardRow[]; write: boolean; act: (write: () => Promise<BoardView>) => Promise<boolean>; id: string }) {
+function Drawer({ r, platform, close, project, others, write, act, id, moveLane, nameOf }: { r: BoardRow; platform: (path: string) => string | undefined; close: () => void; project: string; others: BoardRow[]; write: boolean; act: (write: () => Promise<BoardView>) => Promise<boolean>; id: string; moveLane: (row: string, lane: BoardLane) => void; nameOf: (account: string) => string | undefined }) {
   const [read, setRead] = useState<Read | null>(null);
   const ref = useRef<HTMLDivElement>(null);
   const href = pointerHref(r, platform);
@@ -945,6 +1020,38 @@ function Drawer({ r, platform, close, project, others, write, act, id }: { r: Bo
           ×
         </button>
       </header>
+      <div class="board-line board-drawer-lane">
+        {write ? (
+          <label class="dim">
+            Lane{" "}
+            <select
+              data-board-drawer-lane
+              value={r.lane}
+              onChange={(e) => {
+                const lane = e.currentTarget.value as BoardLane;
+                // The row's lane is what the board says: a move that waits on a confirm, or is refused, leaves it.
+                e.currentTarget.value = r.lane;
+                moveLane(r.id, lane);
+              }}
+            >
+              {MOVE_LANES.map((l) => (
+                <option key={l.lane} value={l.lane}>
+                  {l.title}
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : (
+          <span class="dim" data-board-drawer-lane-name>
+            {MOVE_LANES.find((l) => l.lane === r.lane)?.title}
+          </span>
+        )}
+        {laneSetLine(r, nameOf) && (
+          <span class="ws-tag board-lane-set" data-board-lane-set>
+            {laneSetLine(r, nameOf)}
+          </span>
+        )}
+      </div>
       <div class="board-line">
         {r.live && <StateChip tone={liveTone(r.live.state)}>{liveWord(r.live)}</StateChip>}
         {href && (
