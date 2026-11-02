@@ -13684,3 +13684,58 @@ html[data-workspace="new"] .thread-panel {
   gap: 6px;
   min-width: 0;
 }
+
+/* A prototype in a Doc (#506): a frame on the page's width, as tall as the
+   fence line says. It has no background of its own: the page inside is its own,
+   in the Doc's colour scheme, and the border shows where it ends. */
+.md .doc-prototype-box {
+  position: relative;
+  margin: 0 0 0.7em;
+}
+
+.md .doc-prototype-label {
+  position: absolute;
+  top: 0;
+  right: 0;
+  z-index: 1;
+  padding: 1px 8px;
+  font-size: 11px;
+  color: var(--dim, inherit);
+  background: var(--raised, rgba(128, 128, 128, 0.2));
+  border-radius: 0 var(--field-radius) 0 var(--field-radius);
+  pointer-events: none;
+}
+
+.md .doc-prototype-run {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  padding: 12px 14px;
+  margin: 0 0 0.7em;
+  border: 1px solid var(--line, rgba(128, 128, 128, 0.35));
+  border-radius: var(--field-radius);
+}
+
+.md .doc-prototype-run-title {
+  font-weight: 600;
+}
+
+.md .doc-prototype {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  border: 1px solid var(--line, rgba(128, 128, 128, 0.35));
+  border-radius: var(--field-radius);
+  margin: 0 0 0.7em;
+  background: transparent;
+}
+
+.doc .md .doc-prototype-box,
+.doc .md .doc-prototype-run {
+  margin: 0 0 1em;
+}
+
+.md .doc-prototype-box .doc-prototype {
+  margin: 0;
+}
