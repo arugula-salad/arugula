@@ -2,48 +2,64 @@
   "schema": 1,
   "commit": "6362ec0c65975fd17182f485b9bf5af6f2b6fce5",
   "branch": "main",
-  "state": "pending",
-  "at": "2026-11-02T04:32:14Z",
+  "state": "unbuilt",
+  "at": "2026-11-02T04:42:10Z",
   "phases": {
     "lint": {
-      "verdict": "pending",
+      "verdict": "unbuilt",
       "build": "newest",
-      "runs": []
+      "runs": [],
+      "reason": "superseded",
+      "coveredBy": "9e499225f120ebb03077948bd24cbe9ccf6ffffd"
     },
     "build": {
-      "verdict": "pending",
+      "verdict": "unbuilt",
       "build": "newest",
-      "runs": []
+      "runs": [],
+      "reason": "superseded",
+      "coveredBy": "9e499225f120ebb03077948bd24cbe9ccf6ffffd"
     },
     "test": {
-      "verdict": "pending",
+      "verdict": "unbuilt",
       "build": "newest",
-      "runs": []
+      "runs": [],
+      "reason": "superseded",
+      "coveredBy": "9e499225f120ebb03077948bd24cbe9ccf6ffffd"
     },
     "e2e": {
-      "verdict": "pending",
+      "verdict": "unbuilt",
       "build": "newest",
-      "runs": []
+      "runs": [],
+      "reason": "superseded",
+      "coveredBy": "9e499225f120ebb03077948bd24cbe9ccf6ffffd"
     },
     "claims": {
-      "verdict": "pending",
+      "verdict": "unbuilt",
       "build": "newest",
-      "runs": []
+      "runs": [],
+      "reason": "superseded",
+      "coveredBy": "9e499225f120ebb03077948bd24cbe9ccf6ffffd"
     },
     "macos": {
-      "verdict": "pending",
+      "verdict": "unbuilt",
       "build": "newest",
-      "runs": []
+      "runs": [],
+      "reason": "superseded",
+      "coveredBy": "9e499225f120ebb03077948bd24cbe9ccf6ffffd"
     },
     "windows": {
-      "verdict": "pending",
+      "verdict": "unbuilt",
       "build": "newest",
-      "runs": []
+      "runs": [],
+      "reason": "superseded",
+      "coveredBy": "9e499225f120ebb03077948bd24cbe9ccf6ffffd"
     },
     "windows-desktop": {
-      "verdict": "pending",
+      "verdict": "unbuilt",
       "build": "newest",
-      "runs": []
+      "runs": [],
+      "reason": "superseded",
+      "coveredBy": "9e499225f120ebb03077948bd24cbe9ccf6ffffd"
     }
   }
 }
