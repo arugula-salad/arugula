@@ -3,6 +3,7 @@
 // breadcrumb, whose menu switches sessions and holds the session's
 // commands.
 
+import { closeView } from "../../views/route";
 import { Fragment } from "preact";
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 import { paneIds, type Client } from "../../client";
@@ -218,7 +219,16 @@ export function SessionSidebar({
           onKeyDown={onKey}
         />
       </label>
-      <div class="ws-session-list" id="ws-session-list" role="listbox" aria-label="Sessions">
+      <div
+        class="ws-session-list"
+        id="ws-session-list"
+        role="listbox"
+        aria-label="Sessions"
+        onClickCapture={(e) => {
+          // Picking a session shows its tab, the one under a View too.
+          if ((e.target as HTMLElement).closest('[role="option"]')) closeView();
+        }}
+      >
         {GROUPS.map((g) => {
           const rows = shown.filter((r) => r.group === g.id);
           if (!rows.length) return null;

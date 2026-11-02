@@ -49,8 +49,8 @@ export function Rail({ client }: { client: Client }) {
   const host = directory.current || "this machine";
   const projects = platformHref("/");
   const panes = () => {
-    if (at !== "panes") closePlace(at);
-    else client.viewOf(client.active() ?? -1)?.focus();
+    closePlace(at);
+    if (at === "panes") client.viewOf(client.active() ?? -1)?.focus();
   };
   const settings = (e: MouseEvent) => {
     countView("settings");

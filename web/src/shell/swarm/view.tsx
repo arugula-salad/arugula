@@ -19,6 +19,7 @@ import { ANSWERED_MS, answeredLine, FollowUpBox, PermissionBody, PermissionButto
 import { Avatar } from "../ui/people";
 import { escapeTaken, MenuLayer, openMenu } from "../../shared/ui/menu";
 import { usePhone, useSubscribe } from "../../shared/ui/hooks";
+import { MOTION } from "../views/motion";
 import { Field, type FieldHooks, type FieldPane, type HistoryRun, type SwarmScene } from "./field";
 import { FollowView, appName } from "./follow";
 import { DiffCard } from "../ui/diff-card";
@@ -33,6 +34,12 @@ import { NO_BOARD, boardGroup, onIssueChip } from "../../shared/boards/text";
 import { boardFocus, rowChip } from "./board-focus";
 import { useBoardView } from "./board-live";
 import { closeSwarmBoard, openSwarmBoard } from "./route";
+import type { Client } from "../client";
+import type { Cell } from "../ui/cells";
+import { addressFor, hostOf, viewsAvailable } from "../views/links";
+import { leaves, parseAddress, type Address, type Box, type ViewNode } from "../views/model";
+import { ViewStage } from "../views/stage";
+import type { SurfaceApi } from "../views/surface";
 import { activityOf, bundleOf, cardTitle, headlineOf, holdStill, shortHost, whatItDoes, shortPaths, shownNow, wantsYou, followable, editorAt, GROUPING_LABEL, GROUPINGS, groupOf, isPresence, kindOf, KIND_LABEL, KINDS, REASON_COL, reasonOf, type GroupBy } from "./model";
 
 const BY_KEY = "arugula.swarm.by";
@@ -46,6 +53,10 @@ export type Theme = "blocks" | "city" | "hive" | "timeline";
 export const THEMES: Theme[] = ["blocks", "city", "hive", "timeline"];
 
 /** A done card leaves the rail by itself after this long. */
+
+/** The View stage's size, kept beside what the field leaves for it. */
+const stageWidth = () => Math.round(Math.min(innerWidth * 0.4, 640));
+const stageHeight = () => Math.round(innerHeight * 0.42);
 
 function savedBy(): GroupBy {
   try {
@@ -113,8 +124,13 @@ export function SwarmView({
   focus,
   board,
   inBar,
+  main,
+  cell,
 }: {
   fleet: Fleet;
+  /** The page's main client and cell size, for the View stage (#503). */
+  main?: Client;
+  cell?: Cell;
   back: () => void;
   /** Under the bar every place shares, whose Panes goes back: no button
    * of its own for that. */
@@ -141,6 +157,18 @@ export function SwarmView({
   const [following, setFollowing] = useState<string | null>(null);
   const [, tick] = useState(0);
   const canvas = useRef<HTMLCanvasElement>(null);
+  // #503: the View stage, and what's on its way to it while it opens.
+  const canView = !!main && !!cell && viewsAvailable();
+  const [stageOpen, setStageOpen] = useState(false);
+  const surface = useRef<SurfaceApi | null>(null);
+  const hovered = useRef<string | null>(null);
+  const onStage = useRef<((s: SurfaceApi) => void) | null>(null);
+  const stageShown = useRef(false);
+  const toStage = (go: (s: SurfaceApi) => void) => {
+    if (surface.current) return go(surface.current);
+    onStage.current = go;
+    setStageOpen(true);
+  };
   const field = useRef<SwarmScene | null>(null);
   /** What the scene was last fed, for a city that loads after. */
   const fed = useRef<FieldPane[]>([]);
@@ -155,12 +183,16 @@ export function SwarmView({
     menu(key: string, e: MouseEvent): void;
     name(name: string): boolean;
     order(): string[] | null;
+    grab(keys: string[], e: PointerEvent): boolean;
+    send(keys: string[]): void;
   }>({
     open: () => {},
     hover: () => {},
     menu: () => {},
     name: () => false,
     order: () => null,
+    grab: () => false,
+    send: () => {},
   });
 
   // Wall mode (#446): the swarm alone, fit to the screen it fills. Not on
@@ -169,6 +201,12 @@ export function SwarmView({
     field.current?.resize();
     if (wall.on) field.current?.fitAll();
   });
+  // Wall mode hides the stage (views.css), so it takes no room there.
+  stageShown.current = stageOpen && !wall.on;
+  useEffect(() => {
+    field.current?.resize();
+    field.current?.fitAll();
+  }, [stageOpen]);
   useBinding(
     phone
       ? null
@@ -212,8 +250,10 @@ export function SwarmView({
   // made again when the theme changes, fed on every change.
   useLayoutEffect(() => {
     const hooks: FieldHooks = {
-      railW: () => (innerWidth < 760 ? 0 : 330),
-      railH: () => (innerWidth < 760 ? 196 : 0),
+      // The stage takes room from the field too, or it would cover the
+      // blocks it's there to take.
+      railW: () => (innerWidth < 760 ? 0 : 330 + (stageShown.current ? stageWidth() + 14 : 0)),
+      railH: () => (innerWidth < 760 ? 196 + (stageShown.current ? stageHeight() + 8 : 0) : 0),
       top: () => (bar.current?.getBoundingClientRect().bottom ?? 60) + 10,
       cardRect: (b) => rail.current?.querySelector<HTMLElement>(`[data-bundle="${CSS.escape(b)}"]`)?.getBoundingClientRect() ?? null,
       open: (key) => {
@@ -223,6 +263,7 @@ export function SwarmView({
       hover: (key, x, y) => void handlers.current.hover(key, x, y),
       menu: (key, e) => handlers.current.menu(key, e),
       name: (name) => handlers.current.name(name),
+      grab: (keys, e) => handlers.current.grab(keys, e),
       order: () => handlers.current.order(),
       history: (sinceS) => historyOf(fleet, sinceS),
     };
@@ -359,6 +400,20 @@ export function SwarmView({
   // Escape leaves (#551), as Panes does: after closing a menu or the
   // editor followed, and not from a field being typed in. Listening from
   // the first draw, not the next frame.
+  // #503: V sends what's swept, or the block under the pointer, to the View.
+  useEffect(() => {
+    const send = (e: KeyboardEvent) => {
+      if (e.key.toLowerCase() !== "v" || e.ctrlKey || e.metaKey || e.altKey || (e.target as HTMLElement).closest?.("input, textarea, select, [contenteditable], .view-leaf")) return;
+      const swept = (field.current as Field | null)?.swept ?? [];
+      const keys = swept.length ? swept : hovered.current ? [hovered.current] : [];
+      if (!keys.length) return;
+      e.preventDefault();
+      handlers.current.send(keys);
+    };
+    window.addEventListener("keydown", send);
+    return () => window.removeEventListener("keydown", send);
+  }, []);
+  hovered.current = peek?.key ?? null;
   useLayoutEffect(() => {
     const key = (e: KeyboardEvent) => {
       if (e.key !== "Escape" || escapeTaken(e) || (e.target as HTMLElement).closest?.("input, textarea, select")) return;
@@ -424,6 +479,7 @@ export function SwarmView({
     if (!p) return e.preventDefault();
     openMenu(e, [
       ...(isPresence(p) ? [] : [{ label: "Open", run: () => openKey(key) }]),
+      ...(canView && !isPresence(p) && !p.stale ? [{ label: "Add to view", run: () => sendKeys([key]) }] : []),
       ...(followable(p) ? [{ label: "Follow", run: () => setFollowing(key) }] : []),
       // #1731: or its nvim, as the Editor preference says.
       ...(canEdit(fleet, p) ? [{ label: "Open in editor", run: () => void openInEditor(fleetTarget(fleet, p.host, p.id, back, () => void editIn(fleet, p, back))) }] : []),
@@ -440,7 +496,36 @@ export function SwarmView({
     openSwarmBoard(on.board);
     return true;
   };
-  handlers.current = { open: openKey, hover: hoverPane, menu: paneMenu, name: nameClicked, order: () => (board && lanes ? lanes.lanes.map((l) => l.name) : null) };
+  // What a tile's key means to a View, and where a pane's tile is now.
+  const addressOfKey = (key: string): Address | null => {
+    const p = byKey(key);
+    return p && !isPresence(p) && !p.stale ? addressFor(p.host, p.id) : null;
+  };
+  const tileBox = (key: string): Box | null => {
+    const s = field.current?.screenOf(key);
+    return s ? { x: s.x - 12 * MOTION.lift, y: s.y - 7.5 * MOTION.lift, w: 24 * MOTION.lift, h: 15 * MOTION.lift } : null;
+  };
+  const keyOf = (a: Address): string | null => {
+    const at = parseAddress(a);
+    const host = at && hostOf(at.machine);
+    return host && at ? `${host}:${at.pane}` : null;
+  };
+  const boxOfAddress = (a: Address): Box | null => {
+    const k = keyOf(a);
+    return k ? tileBox(k) : null;
+  };
+  const grab = (keys: string[], e: PointerEvent): boolean => {
+    if (!canView) return false;
+    const list = keys.flatMap((k) => addressOfKey(k) ?? []);
+    if (!list.length) return false;
+    toStage((s) => s.carry(list, e, boxOfAddress));
+    return true;
+  };
+  const sendKeys = (keys: string[]) => {
+    const list = keys.flatMap((k) => addressOfKey(k) ?? []);
+    if (list.length) toStage((s) => s.send(list, boxOfAddress));
+  };
+  handlers.current = { open: openKey, hover: hoverPane, menu: paneMenu, name: nameClicked, order: () => (board && lanes ? lanes.lanes.map((l) => l.name) : null), grab, send: sendKeys };
   // Every machine the host menu lists, not only those with panes here.
   const machines = fleet.list.length;
   const busy = panes.filter((p) => activityOf(p) > 0.3).length;
@@ -525,6 +610,11 @@ export function SwarmView({
           <button data-fit onClick={() => field.current?.fitAll()}>
             Fit
           </button>
+          {canView && (
+            <button data-view-stage-toggle aria-pressed={stageOpen} title="Build a view: hold a block and fling it here. Shift-drag sweeps several." onClick={() => setStageOpen((o) => !o)}>
+              View
+            </button>
+          )}
           {!phone && (
             <button
               data-wall-enter
@@ -578,6 +668,26 @@ export function SwarmView({
           </div>
         )}
       </div>
+      {stageOpen && main && cell && (
+        <ViewStage
+          main={main}
+          cell={cell}
+          top={Math.max(60, (bar.current?.getBoundingClientRect().bottom ?? 96) - (canvas.current?.getBoundingClientRect().top ?? 0) + 8)}
+          width={stageWidth()}
+          height={stageHeight()}
+          onClose={() => setStageOpen(false)}
+          homeOf={boxOfAddress}
+          onTree={(t: ViewNode | null) => (field.current as Field | null)?.setHeld?.(new Set(leaves(t).flatMap((a) => keyOf(a) ?? [])))}
+          onReady={(api) => {
+            surface.current = api;
+            if (api && onStage.current) {
+              const go = onStage.current;
+              onStage.current = null;
+              go(api);
+            }
+          }}
+        />
+      )}
       {fleet.notice && <div class="swarm-notice">{fleet.notice}</div>}
 
       <aside class="swarm-rail" aria-label="Needs you" ref={rail}>
@@ -687,7 +797,7 @@ const PROJECTS = "A pane's project is the git repository it's in; one outside a 
 const TIP_KEY = "arugula.swarm.tipSeen";
 
 const HINT: Record<Theme, [string, string]> = {
-  blocks: ["Scroll to zoom. Drag to pan. Click a cluster name to dive in, a pane to open it.", "Pinch to zoom, drag to pan. Tap a pane to open it."],
+  blocks: ["Scroll to zoom. Drag to pan. Click a cluster name to dive in, a pane to open it. Hold a pane to put it in a view.", "Pinch to zoom, drag to pan. Tap a pane to open it. Hold one to put it in a view."],
   city: [
     "Drag to orbit, right-drag to pan, scroll to zoom. Click a block's name to fly to it, a building to open it.",
     "Drag to orbit, pinch to zoom. Tap a building to open it.",

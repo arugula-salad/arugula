@@ -36,6 +36,7 @@ export function PaneSlot({
   cell,
   active,
   phone,
+  inView,
 }: {
   client: Client;
   id: PaneId;
@@ -43,6 +44,9 @@ export function PaneSlot({
   cell: Cell;
   active: boolean;
   phone: boolean;
+  /** In a View (#503): it isn't this layout's to move, so no grip, and the
+   * View's menu in place of the tab's. */
+  inView?: (e: MouseEvent) => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   // A terminal's entry (for terminal-only features), and the view of any
@@ -123,6 +127,7 @@ export function PaneSlot({
     // A text box's own menu (an agent's composer): on a phone, its Paste
     // is the one that can paste an image (Chrome refuses ours).
     if (editable(e.target)) return;
+    if (inView) return inView(e);
     const items = () => paneItems(client, id, phone, isWorkspace ? workspaceDir : null);
     // A remote pane's menu doesn't depend on this daemon's features.
     if (info?.type === "remote") openMenu(e, items());
@@ -165,7 +170,7 @@ export function PaneSlot({
       )}
       {/* A big tip over this pane (shell/hints): a computer's alone. */}
       {!phone && <HintPaneModal client={client} pane={id} />}
-      {!phone && (
+      {!phone && !inView && (
         <div
           class="grip"
           title="Drag to move this pane"

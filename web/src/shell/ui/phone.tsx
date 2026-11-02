@@ -11,6 +11,10 @@ import { useSubscribe } from "../../shared/ui/hooks";
 import { AttentionBadge } from "./attention";
 import { HostCrumb, HostSection } from "./hosts";
 import { openSwarm } from "../swarm/route";
+import { paneTitle } from "../views/links";
+import { viewName } from "../views/model";
+import { openView } from "../views/route";
+import { listViews } from "../views/store";
 import { hasBoards, hasChat, openBoards, openChat } from "./places";
 import { ChatTabBadge, openChanges, openIssue, openPort, openPr } from "../blocks";
 import { startAgent } from "./agent-dialog";
@@ -284,6 +288,11 @@ function Sheet({ client, close }: { client: Client; close: () => void }) {
                   <button data-open-swarm onClick={act(openSwarm)}>
                     Swarm
                   </button>
+                  {listViews().map(({ id, doc }) => (
+                    <button key={id} data-open-view={id} onClick={act(() => openView(id))}>
+                      {viewName(doc, paneTitle)}
+                    </button>
+                  ))}
                   <button data-open-palette onClick={act(() => openPalette(client, true))}>
                     Commands
                   </button>

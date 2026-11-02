@@ -1,0 +1,476 @@
+/* Views (#503): the blocks are fixed to the window and placed by springs
+   (surface.tsx), so a leaf, a card under the pointer and a block in flight are
+   the same element. Colours and type are the swarm's. */
+
+.view-page {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+}
+
+.view-bar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 32px;
+  padding: 0 8px;
+  border-bottom: 1px solid var(--line-strong);
+  background: var(--chrome-panel, var(--surface));
+  font-size: 12px;
+}
+
+.view-bar button {
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  color: var(--subtle);
+  padding: 2px 8px;
+  font: inherit;
+  cursor: pointer;
+}
+
+.view-bar button:hover:not(:disabled) {
+  border-color: var(--line-strong);
+  color: var(--fg);
+}
+
+.view-bar button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.view-bar-fill {
+  flex: 1;
+}
+
+.view-mark {
+  font: 800 13px/1 var(--f-display);
+  letter-spacing: 0.1em;
+  color: var(--accent);
+}
+
+.view-bar .view-name {
+  color: var(--fg);
+  font-weight: 500;
+  max-width: 40ch;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  cursor: text;
+}
+
+.view-rename {
+  width: 28ch;
+  max-width: 50%;
+  background: var(--surface);
+  color: var(--fg);
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  padding: 1px 6px;
+  font: inherit;
+}
+
+.view-area {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+}
+
+.view-empty {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 16px;
+  text-align: center;
+  color: var(--dim);
+}
+
+.view-empty p {
+  margin: 0;
+}
+
+/* The tabs' row: Views first, then the session's tabs. */
+.ws-tabs:has(.view-tabs) {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+}
+
+.ws-tabs:has(.view-tabs) > .tabstrip {
+  flex: 1;
+  min-width: 0;
+}
+
+.view-tabs {
+  flex: none;
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  max-width: 40%;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.view-tab {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 200px;
+  height: 100%;
+  padding: 0 10px;
+  background: none;
+  border: 1px solid transparent;
+  border-bottom: 0;
+  border-radius: var(--field-radius, 4px) var(--field-radius, 4px) 0 0;
+  color: var(--subtle);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.view-tab:hover {
+  color: var(--fg);
+}
+
+.view-tab.selected {
+  background: var(--chrome-selected, var(--raised));
+  border-color: var(--chrome-selected-line, var(--line));
+  color: var(--fg);
+  box-shadow: inset 0 2px 0 var(--accent);
+}
+
+.view-tab-mark {
+  color: var(--accent);
+}
+
+.view-tab-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* With a View shown, the tab under it isn't what's selected. */
+.ws-tabs:has(.view-tab.selected) .tab.selected {
+  background: var(--chrome-panel, none);
+  border-color: var(--line-strong);
+  color: var(--subtle);
+  box-shadow: none;
+}
+
+/* A block. */
+.view-leaf {
+  position: fixed;
+  left: 0;
+  top: 0;
+  z-index: 8;
+  overflow: hidden;
+  background: var(--bg);
+  border: 1px solid rgb(var(--c) / 0.4);
+  will-change: transform;
+}
+
+.view-leaf.active {
+  border-color: rgb(var(--c) / 0.95);
+}
+
+.view-leaf.flying {
+  z-index: 30;
+  box-shadow:
+    0 10px 34px rgb(0 0 0 / 0.6),
+    0 0 16px rgb(var(--c) / 0.55);
+}
+
+.view-leaf-head {
+  position: absolute;
+  inset: 0 0 auto;
+  height: 26px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 4px 0 7px;
+  background: var(--surface);
+  border-bottom: 1px solid rgb(var(--c) / 0.6);
+  color: var(--subtle);
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.view-leaf.active .view-leaf-head {
+  color: var(--fg);
+}
+
+.view-leaf-n {
+  font: 400 10px var(--f-mono);
+  color: var(--dim);
+}
+
+.view-leaf-type {
+  flex: none;
+  display: flex;
+  color: rgb(var(--c));
+}
+
+.view-leaf-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-weight: 500;
+}
+
+.view-leaf-status {
+  flex: none;
+  font-size: 11px;
+  color: var(--dim);
+}
+
+.view-leaf-status.needs_input {
+  color: var(--warn);
+}
+
+.view-leaf-status.done {
+  color: var(--ok);
+}
+
+.view-leaf-host {
+  flex: none;
+  margin-left: auto;
+  font: 400 10px var(--f-mono);
+  color: var(--dim);
+}
+
+.view-leaf-size {
+  flex: none;
+  background: var(--raised);
+  border: 1px solid var(--line-strong);
+  border-radius: 4px;
+  color: var(--fg);
+  padding: 0 6px;
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.view-leaf-button {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  background: none;
+  border: 0;
+  border-radius: 3px;
+  color: var(--dim);
+  font: 600 14px/1 var(--f-ui);
+  cursor: pointer;
+}
+
+.view-leaf-button:hover {
+  background: var(--raised);
+  color: var(--fg);
+}
+
+.view-leaf-body {
+  position: absolute;
+  inset: 26px 0 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  background: var(--letterbox);
+}
+
+.view-leaf-body.panned {
+  align-items: flex-start;
+  justify-content: flex-start;
+  overflow: auto;
+  overscroll-behavior: contain;
+  touch-action: pan-x pan-y;
+}
+
+.view-leaf-body.panned .view-term {
+  transform-origin: top left;
+}
+
+.view-term {
+  position: relative;
+  flex: none;
+  transform-origin: center;
+}
+
+.view-term.fill {
+  flex: 1;
+  align-self: stretch;
+}
+
+/* PaneSlot places a pane by cells in a tab; here its box is the leaf's. */
+.view-term > .pane {
+  inset: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+}
+
+.view-gone {
+  align-self: center;
+  margin: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 12px;
+  text-align: center;
+  color: var(--subtle);
+  font-size: 13px;
+}
+
+.view-gone p {
+  margin: 0;
+}
+
+.view-gone.quiet {
+  color: var(--dim);
+}
+
+.view-gone button {
+  background: var(--raised);
+  border: 1px solid var(--line-strong);
+  border-radius: 4px;
+  color: var(--fg);
+  padding: 3px 10px;
+  font: inherit;
+  cursor: pointer;
+}
+
+.view-divider {
+  position: fixed;
+  z-index: 9;
+  touch-action: none;
+}
+
+.view-divider.h {
+  cursor: col-resize;
+}
+
+.view-divider.v {
+  cursor: row-resize;
+}
+
+.view-divider:hover {
+  background: rgb(185 140 255 / 0.45);
+}
+
+.view-zone {
+  position: fixed;
+  z-index: 25;
+  pointer-events: none;
+  border: 1.5px solid var(--accent);
+  background: rgb(185 140 255 / 0.16);
+  box-shadow: 0 0 22px rgb(185 140 255 / 0.5);
+  transition:
+    left 90ms,
+    top 90ms,
+    width 90ms,
+    height 90ms;
+}
+
+.view-trails {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  z-index: 7;
+  pointer-events: none;
+}
+
+body.view-carrying,
+body.view-carrying * {
+  cursor: grabbing !important;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.view-solo-bar {
+  position: fixed;
+  z-index: 10;
+  bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+  right: 12px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 2px 6px;
+  background: var(--raised);
+  border: 1px solid var(--line-strong);
+  border-radius: 16px;
+  font-size: 12px;
+}
+
+.view-solo-bar button {
+  width: 32px;
+  height: 32px;
+  background: none;
+  border: 0;
+  color: var(--fg);
+  font-size: 18px;
+}
+
+/* The stage in the swarm. */
+.view-stage {
+  position: absolute;
+  z-index: 7;
+  top: var(--stage-top);
+  bottom: 56px;
+  right: calc(var(--rail) + 14px);
+  width: var(--stage-w);
+  display: flex;
+  flex-direction: column;
+  background: rgb(10 13 20 / 0.86);
+  border: 1px solid var(--line);
+  transition:
+    border-color 120ms,
+    box-shadow 120ms;
+}
+
+.view-stage.awake {
+  border-color: rgb(185 140 255 / 0.75);
+  box-shadow:
+    0 0 34px rgb(185 140 255 / 0.28),
+    inset 0 0 40px rgb(185 140 255 / 0.06);
+}
+
+.view-stage .view-bar {
+  background: none;
+  border-bottom-color: var(--line);
+}
+
+.swarm.phone .view-stage {
+  left: 8px;
+  right: 8px;
+  width: auto;
+  top: auto;
+  bottom: 204px;
+  height: var(--stage-h);
+}
+
+.swarm[data-wall] .view-stage {
+  display: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .view-zone,
+  .view-stage {
+    transition: none;
+  }
+}

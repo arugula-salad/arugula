@@ -91,6 +91,7 @@ Not here: what each milestone built (the archive), how to build and test
 - [aru-082](docs/decisions/aru-082-platform-urls-are-ids-with-cosmetic-slugs.md): Platform URLs are ids with cosmetic slugs
 - [aru-083](docs/decisions/aru-083-secrets-stay-in-fragments.md): Secrets stay in fragments
 - [aru-127](docs/decisions/aru-127-hints-come-from-facts-once-per-account.md): Hints come from facts, once per account
+- [aru-129](docs/decisions/aru-129-a-view-is-the-account-s-layout-of-references.md): A View is the account's layout of references
 
 ## Agents and blocks
 

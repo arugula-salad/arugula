@@ -10,6 +10,7 @@
 // A folded top-right corner: its thread has messages you haven't read
 // (yellow: one mentions you).
 
+import { MOTION } from "../views/motion";
 import type { WorkKind } from "../../shared/proto";
 import { KINDS } from "./model";
 import { clusterOrder } from "../../shared/boards/text";
@@ -192,6 +193,9 @@ export interface FieldHooks {
   menu?(key: string, e: MouseEvent): void;
   /** A click on a cluster's name: true when the view took it (#466), else the scene dives in. */
   name?(name: string): boolean;
+  /** A block held long enough to pick up (#503), with the rest of a sweep:
+   * true when the View's stage took it, and the pointer is its now. */
+  grab?(keys: string[], e: PointerEvent): boolean;
   /** Cluster names in the order to lay them out (a board focus's lanes, #466); none for the usual order. */
   order?(): string[] | null;
   /** M42: commands that finished in the last `sinceS` seconds, on every
@@ -247,6 +251,14 @@ export class Field implements SwarmScene {
   private cx: CanvasRenderingContext2D;
   private tiles = new Map<string, Tile>();
   private groups = new Map<string, Group>();
+  /** #503: a press waiting to be a hold, what's swept, and what's held. */
+  private holdTimer: number | undefined;
+  private lastMove: PointerEvent | null = null;
+  private lasso: { x0: number; y0: number; x1: number; y1: number } | null = null;
+  private selected = new Set<string>();
+  private sweepBase = new Set<string>();
+  private sweepTile: string | null = null;
+  private held = new Set<string>();
   /** Cluster names as last drawn. */
   private labels: Label[] = [];
   private W = 0;
@@ -531,6 +543,7 @@ export class Field implements SwarmScene {
       this.ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
       this.downAt = { x: e.clientX, y: e.clientY };
       this.moved = false;
+      this.pressed(e);
       if (this.ptrs.size === 2) {
         const [a, b] = [...this.ptrs.values()];
         this.pinch0 = Math.hypot(a.x - b.x, a.y - b.y);
@@ -540,6 +553,8 @@ export class Field implements SwarmScene {
     cv.addEventListener("pointermove", (e) => {
       const prev = this.ptrs.get(e.pointerId);
       if (!prev) return this.hover(e);
+      this.lastMove = e;
+      if (this.lasso) return this.sweep(e);
       if (this.ptrs.size === 2) {
         this.ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
         const [a, b] = [...this.ptrs.values()];
@@ -553,6 +568,8 @@ export class Field implements SwarmScene {
       const dy = e.clientY - prev.y;
       this.ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
       if (this.downAt && Math.hypot(e.clientX - this.downAt.x, e.clientY - this.downAt.y) > 4) {
+        // Moving before the hold is up pans, as it always has.
+        clearTimeout(this.holdTimer);
         this.moved = true;
         this.userMoved = true;
         cv.classList.add("panning");
@@ -565,8 +582,17 @@ export class Field implements SwarmScene {
       this.wake();
     });
     const up = (e: PointerEvent) => {
+      clearTimeout(this.holdTimer);
       this.ptrs.delete(e.pointerId);
       cv.classList.remove("panning");
+      if (this.lasso) {
+        const k = this.sweepTile;
+        if (k) this.selected.has(k) ? this.selected.delete(k) : this.selected.add(k);
+        this.sweepTile = null;
+        this.moved = true;
+        this.lasso = null;
+        this.wake();
+      }
       // A right-click is the menu's, not a tap: opening the pane on it
       // would also drop the menu item's click (swallowClick).
       if (!this.moved && this.ptrs.size === 0 && e.type === "pointerup" && e.button === 0) this.click(e);
@@ -599,6 +625,83 @@ export class Field implements SwarmScene {
       },
       { passive: false },
     );
+  }
+
+  // ---- picking blocks up (#503)
+
+  /** A press: on a block, a hold picks it up; on empty space, Shift or a hold
+   * starts a sweep. Moving first pans (see the move handler). */
+  private pressed(e: PointerEvent) {
+    clearTimeout(this.holdTimer);
+    if (!this.hooks.grab || this.ptrs.size !== 1 || e.button !== 0) return;
+    this.lastMove = e;
+    const r = this.cv.getBoundingClientRect();
+    const t = this.paneAt(e.clientX - r.left, e.clientY - r.top);
+    const wait = e.pointerType === "touch" ? MOTION.touchGrabMs : MOTION.grabMs;
+    if (t && !e.shiftKey) {
+      this.holdTimer = window.setTimeout(() => {
+        const keys = this.selected.has(t.key) ? [t.key, ...[...this.selected].filter((k) => k !== t.key)] : [t.key];
+        if (!this.hooks.grab?.(keys, this.lastMove ?? e)) return;
+        try {
+          this.cv.releasePointerCapture(e.pointerId);
+        } catch {
+          // already let go
+        }
+        this.ptrs.clear();
+        this.downAt = null;
+        this.moved = true;
+        this.selected.clear();
+        this.hooks.hover(null, 0, 0);
+        this.wake();
+      }, wait);
+      return;
+    }
+    const start = () => {
+      // Shift adds to what's selected, and a click with it toggles a block.
+      this.sweepBase = e.shiftKey ? new Set(this.selected) : new Set();
+      this.sweepTile = e.shiftKey && t ? t.key : null;
+      this.selected = new Set(this.sweepBase);
+      this.lasso = { x0: e.clientX - r.left, y0: e.clientY - r.top, x1: e.clientX - r.left, y1: e.clientY - r.top };
+      this.moved = true;
+      this.wake();
+    };
+    if (e.shiftKey) start();
+    else {
+      if (this.selected.size) {
+        this.selected.clear();
+        this.wake();
+      }
+      this.holdTimer = window.setTimeout(start, Math.max(wait, 200));
+    }
+  }
+
+  /** The sweep follows the pointer, and selects what it covers. */
+  private sweep(e: PointerEvent) {
+    const l = this.lasso;
+    if (!l) return;
+    const r = this.cv.getBoundingClientRect();
+    l.x1 = e.clientX - r.left;
+    l.y1 = e.clientY - r.top;
+    const [x0, x1] = [Math.min(l.x0, l.x1), Math.max(l.x0, l.x1)];
+    const [y0, y1] = [Math.min(l.y0, l.y1), Math.max(l.y0, l.y1)];
+    if (x1 - x0 > 4 || y1 - y0 > 4) this.sweepTile = null;
+    this.selected = new Set(this.sweepBase);
+    for (const t of this.tiles.values()) {
+      const s = this.toScreen(t.x, t.y);
+      if (!t.fly && s.x >= x0 && s.x <= x1 && s.y >= y0 && s.y <= y1) this.selected.add(t.key);
+    }
+    this.wake();
+  }
+
+  /** What the View on the stage holds: those tiles say so. */
+  setHeld(keys: Set<string>) {
+    this.held = keys;
+    this.wake();
+  }
+
+  /** What a sweep selected, for a key to send. */
+  get swept(): string[] {
+    return [...this.selected];
   }
 
   private paneAt(sx: number, sy: number): Tile | null {
@@ -923,6 +1026,28 @@ export class Field implements SwarmScene {
       cx.fillStyle = `rgba(${col},${0.9 - prog * 0.6})`;
       cx.fillRect(f.sx - ww / 2, f.sy - hh / 2, ww, hh);
       cx.shadowBlur = 0;
+    }
+
+    // What a sweep selected, and what the View on the stage holds.
+    if (this.selected.size || this.held.size) {
+      for (const t of this.tiles.values()) {
+        const on = this.selected.has(t.key);
+        if (!on && !this.held.has(t.key)) continue;
+        const s = this.toScreen(t.x, t.y);
+        cx.strokeStyle = on ? "#e6ebf4" : "rgba(185,140,255,.9)";
+        cx.lineWidth = on ? 2 : 1;
+        cx.setLineDash(on ? [] : [3, 2]);
+        cx.strokeRect(s.x - w / 2 - 2, s.y - h / 2 - 2, w + 4, h + 4);
+      }
+      cx.setLineDash([]);
+    }
+    if (this.lasso) {
+      const l = this.lasso;
+      cx.fillStyle = "rgba(185,140,255,.1)";
+      cx.strokeStyle = "rgba(185,140,255,.9)";
+      cx.lineWidth = 1;
+      cx.fillRect(l.x0, l.y0, l.x1 - l.x0, l.y1 - l.y0);
+      cx.strokeRect(l.x0, l.y0, l.x1 - l.x0, l.y1 - l.y0);
     }
 
     // Cluster names, placed so no two overlap (a phone held upright puts

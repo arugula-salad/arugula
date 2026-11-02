@@ -24,6 +24,7 @@ import { useLayoutEffect } from "preact/hooks";
 import type { Client } from "../client";
 import { desktopPlatform, openInNewWindow } from "../../shared/desktop";
 import { swarmRoute } from "../swarm/route";
+import { viewRoute } from "../views/route";
 import { agentsRoute } from "./agents-route";
 import { docsRoute } from "./docs-route";
 import { nextNeedingYou, togglePalette } from "./palette";
@@ -202,7 +203,7 @@ const table: Binding[] = [
  * reading order, when the workspace shows panes and has that many. */
 function jumpTarget(e: KeyboardEvent): number | null {
   const w = workspace;
-  if (!w || w.phone || !w.client.state || swarmRoute() || agentsRoute() || docsRoute()) return null;
+  if (!w || w.phone || !w.client.state || swarmRoute() || agentsRoute() || docsRoute() || viewRoute()) return null;
   // Not from under a dialog (the palette, the picker, a prompt).
   if (document.querySelector(".prompt-backdrop")) return null;
   const n = Number(e.code.slice("Digit".length));
@@ -215,7 +216,7 @@ function jumpTarget(e: KeyboardEvent): number | null {
  * layout (with `one`, also a tab of one pane). */
 function focusTarget(one = false) {
   const w = workspace;
-  if (!w || w.phone || !w.client.state || swarmRoute() || agentsRoute() || docsRoute()) return null;
+  if (!w || w.phone || !w.client.state || swarmRoute() || agentsRoute() || docsRoute() || viewRoute()) return null;
   // Not from under a dialog, nor over the session overview (M111).
   if (document.querySelector(".prompt-backdrop") || location.hash.startsWith("#overview")) return null;
   const tab = w.client.tabView();
