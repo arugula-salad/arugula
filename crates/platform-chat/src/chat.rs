@@ -1240,6 +1240,22 @@ async fn ask_daemon(app: &Platform, machine: &str, op: &arugula_control_wire::fo
     mention_answer(answer.as_ref().ok().and_then(|r| r.as_ref().ok()))
 }
 
+/// Asks a machine's daemon which of its sessions an agent may mention
+/// (#577). `None`: it is offline, didn't answer in time, or is too old to
+/// know the op.
+async fn ask_sessions(
+    app: &Platform,
+    machine: &str,
+    ask: arugula_control_wire::forge::AgentSessionsAsk,
+) -> Option<(bool, Vec<arugula_control_wire::forge::MachineSession>)> {
+    use arugula_control_wire::forge::{DaemonOp, OpAnswer};
+    let op = DaemonOp::AgentSessions(ask);
+    match tokio::time::timeout(DAEMON_ANSWERS_WITHIN, app.hub.daemon_op(machine, &op)).await {
+        Ok(Ok(OpAnswer::Sessions { shared, sessions })) => Some((shared, sessions)),
+        _ => None,
+    }
+}
+
 /// Tells the agents ([`plan_tells`]) in the background (#419): the post
 /// returns without them, so a daemon that takes seconds to answer, or
 /// doesn't, holds nobody. A platform that isn't running as an `Arc` (a test

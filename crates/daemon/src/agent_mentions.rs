@@ -25,6 +25,9 @@
 //!
 //! The owner can turn it off for the machine (`sharing.json`'s
 //! `agent_mentions`); the op is then refused (`cant`), and nothing is kept.
+//! What the owner shows of the sessions (`agent_sessions`, #577) also decides
+//! the names an unknown `@geek/name` answers with, and the `agents.sessions`
+//! op lists them ([`sessions_for`]).
 //! The text is framed as a teammate's ([`framed`]): it is information, never
 //! the person's approval, and never a slash command.
 
@@ -36,8 +39,9 @@ use std::{
 
 use arugula_control_wire::{
     chat::{MENTION_STATE, MentionTurn, PutMentionState},
-    forge::{AgentMention, OpAnswer, Routed, RoutedStep},
+    forge::{AgentMention, AgentSessionsAsk, MachineSession, OpAnswer, Routed, RoutedStep, SESSIONS_LISTED},
 };
+use arugula_proto::sharing::AgentSessions;
 use arugula_proto::{Driver, PaneId};
 use serde::{Deserialize, Serialize};
 use tracing::{debug, warn};
@@ -374,6 +378,9 @@ pub(crate) trait Daemon {
     /// The name of the tab each of our panes is in, for those whose tab has
     /// one (#491).
     async fn tab_names(&self) -> Vec<(PaneId, String)>;
+    /// What each of our panes was last up to, and the issue it works on
+    /// (#577).
+    async fn activity(&self) -> Vec<(PaneId, Activity)>;
     /// A follow-up for the session in `pane`, through the hooks inbox.
     /// Whether it went straight in (false: it was only queued for the
     /// session's hook, #571). `tag` is the mention it is: the mux says when
@@ -382,6 +389,15 @@ pub(crate) trait Daemon {
     /// Whether Claude Code runs in `pane` and none of its hooks were ever
     /// heard (#571): a follow-up queued for it won't be read.
     async fn unhooked(&self, pane: PaneId) -> bool;
+}
+
+/// What a pane was last up to (#577), for `agents.sessions`.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(crate) struct Activity {
+    /// How long ago it last printed, or last wanted someone, when known.
+    pub ms_ago: Option<u64>,
+    /// The issue its agent block was started on, as its starter wrote it.
+    pub issue: Option<String>,
 }
 
 /// Whether a follow-up that [`Daemon::follow_up`] answered with `now` went
@@ -408,6 +424,21 @@ impl Daemon for App {
     async fn tab_names(&self) -> Vec<(PaneId, String)> {
         let panes = self.mux.api(Api::Panes).await.unwrap_or_default();
         panes.into_iter().filter_map(|p| Some((p.info.id, p.tab_name?))).collect()
+    }
+
+    async fn activity(&self) -> Vec<(PaneId, Activity)> {
+        let now = arugula_e2e::now_ms();
+        let panes = self.mux.api(Api::Panes).await.unwrap_or_default();
+        panes
+            .into_iter()
+            .map(|p| {
+                // Its last output; a block prints none, so the last time it
+                // wanted someone (#577).
+                let at = p.info.activity.map(|a| a.last_ms).filter(|t| *t > 0).or(p.info.reason.map(|r| r.since_ms));
+                let issue = p.info.on_issue.map(|i| i.issue);
+                (p.info.id, Activity { ms_ago: at.map(|t| now.saturating_sub(t)), issue })
+            })
+            .collect()
     }
 
     async fn follow_up(&self, pane: PaneId, text: String, by: Driver, tag: MentionTag) -> Result<bool, String> {
@@ -502,6 +533,75 @@ async fn named(app: &impl Daemon, pane: PaneId) -> Option<String> {
     app.sessions().await.into_iter().find(|(p, _)| *p == pane).map(|(_, n)| n)
 }
 
+/// The sessions' and their tabs' names as a mention could spell them, each
+/// once (#576).
+fn listed_names(sessions: &[(PaneId, String)], tabs: &[(PaneId, String)]) -> Vec<String> {
+    let mut names: Vec<String> = vec![];
+    for n in sessions
+        .iter()
+        .map(|(_, n)| n)
+        .chain(tabs.iter().filter(|(p, _)| sessions.iter().any(|(s, _)| s == p)).map(|(_, n)| n))
+    {
+        let n = slug(n);
+        if !n.is_empty() && !names.contains(&n) {
+            names.push(n);
+        }
+    }
+    names
+}
+
+/// The name `@machine/name` reaches `pane` by, as [`deliver`]'s step 1 reads
+/// it (#577): its session's name when it is the only session called that,
+/// else its tab's when that names it alone and no session is called so. None
+/// when no name would reach it, or reach it alone.
+fn reached_by(pane: PaneId, sessions: &[(PaneId, String)], tabs: &[(PaneId, String)]) -> Option<String> {
+    let mine = sessions.iter().find(|(p, _)| *p == pane).map(|(_, n)| slug(n)).filter(|n| !n.is_empty());
+    if let Some(n) = mine.filter(|n| sessions.iter().filter(|(_, o)| slug(o) == *n).count() == 1) {
+        return Some(n);
+    }
+    let tab = tabs.iter().find(|(p, _)| *p == pane).map(|(_, t)| slug(t)).filter(|t| !t.is_empty())?;
+    let by_tab =
+        |t: &String| tabs.iter().filter(|(p, n)| slug(n) == *t && sessions.iter().any(|(s, _)| s == p)).count();
+    (!sessions.iter().any(|(_, n)| slug(n) == tab) && by_tab(&tab) == 1).then_some(tab)
+}
+
+/// `agents.sessions` (#577): the sessions a teammate's agent may mention,
+/// the newest active first, as far as the owner shows them. The names are
+/// the ones [`deliver`] matches, so each reaches its session. Never the
+/// asker's own session (#575).
+pub(crate) async fn sessions_for(app: &impl Daemon, ask: &AgentSessionsAsk) -> OpAnswer {
+    use arugula_proto::sharing;
+    let shown = sharing::sessions_shown(app.state_dir());
+    if shown == AgentSessions::None {
+        return OpAnswer::Sessions { shared: false, sessions: vec![] };
+    }
+    let (sessions, tabs, activity) = (app.sessions().await, app.tab_names().await, app.activity().await);
+    let author = ask.from_session.as_deref().map(slug).filter(|a| !a.is_empty());
+    let mut out: Vec<MachineSession> = sessions
+        .iter()
+        .filter(|(_, n)| author.as_ref().is_none_or(|a| slug(n) != *a))
+        .filter_map(|(pane, _)| {
+            let name = reached_by(*pane, &sessions, &tabs)?;
+            let note = activity.iter().find(|(p, _)| p == pane).map(|(_, a)| a.clone()).unwrap_or_default();
+            Some(MachineSession {
+                name,
+                tab: tabs.iter().find(|(p, _)| p == pane).map(|(_, t)| t.clone()),
+                active_ms_ago: note.ms_ago,
+                working_on: note.issue.filter(|_| shown == AgentSessions::Work),
+            })
+        })
+        .collect();
+    out.sort_by(|a, b| {
+        (a.active_ms_ago.is_none(), a.active_ms_ago, &a.name).cmp(&(
+            b.active_ms_ago.is_none(),
+            b.active_ms_ago,
+            &b.name,
+        ))
+    });
+    out.truncate(SESSIONS_LISTED);
+    OpAnswer::Sessions { shared: true, sessions: out }
+}
+
 /// `agents.mention`: route it, or say why not. The answer says which step
 /// took it (#502), for the sender's status line.
 pub(crate) async fn deliver(app: &impl Daemon, m: &AgentMention) -> OpAnswer {
@@ -542,17 +642,11 @@ pub(crate) async fn deliver(app: &impl Daemon, m: &AgentMention) -> OpAnswer {
             return routed(RoutedStep::Named, name, None, handed(app, *pane, now).await);
         }
         state.keep(m);
-        let mut names: Vec<String> = vec![];
-        for n in sessions
-            .iter()
-            .map(|(_, n)| n)
-            .chain(tabs.iter().filter(|(p, _)| sessions.iter().any(|(s, _)| s == p)).map(|(_, n)| n))
-        {
-            let n = slug(n);
-            if !n.is_empty() && !names.contains(&n) {
-                names.push(n);
-            }
-        }
+        let mut names = if arugula_proto::sharing::sessions_shown(app.state_dir()) == AgentSessions::None {
+            vec![]
+        } else {
+            listed_names(&sessions, &tabs)
+        };
         names.truncate(NAMES_LISTED);
         return OpAnswer::Done {
             url: None,
@@ -626,6 +720,8 @@ mod tests {
         queueing: Vec<PaneId>,
         /// Panes whose hooks were never heard.
         unhooked: Vec<PaneId>,
+        /// What each pane was last up to (#577).
+        acts: Vec<(PaneId, Activity)>,
     }
 
     impl Fake {
@@ -643,6 +739,7 @@ mod tests {
                 tagged: Mutex::default(),
                 queueing: vec![],
                 unhooked: vec![],
+                acts: vec![],
             }
         }
     }
@@ -657,6 +754,15 @@ mod tests {
         /// Panes in tabs of these names.
         fn tabbed(mut self, tabs: &[(PaneId, &str)]) -> Self {
             self.tabs = tabs.iter().map(|(p, n)| (*p, (*n).to_owned())).collect();
+            self
+        }
+
+        /// How long ago each pane printed, and the issue it works on (#577).
+        fn active(mut self, acts: &[(PaneId, u64, Option<&str>)]) -> Self {
+            self.acts = acts
+                .iter()
+                .map(|(p, ago, i)| (*p, Activity { ms_ago: Some(*ago), issue: i.map(str::to_owned) }))
+                .collect();
             self
         }
 
@@ -708,6 +814,10 @@ mod tests {
 
         async fn tab_names(&self) -> Vec<(PaneId, String)> {
             self.tabs.clone()
+        }
+
+        async fn activity(&self) -> Vec<(PaneId, Activity)> {
+            self.acts.clone()
         }
 
         async fn follow_up(&self, pane: PaneId, text: String, by: Driver, tag: MentionTag) -> Result<bool, String> {
@@ -1014,6 +1124,105 @@ mod tests {
         assert_eq!(deliver(&d, &m).await, nowhere("ux-improvements", &["billing", "ux-improvements"]));
         assert!(d.sent.lock().unwrap().is_empty());
         assert_eq!(d.state.unread().len(), 2);
+    }
+
+    fn listed(a: OpAnswer) -> (bool, Vec<MachineSession>) {
+        match a {
+            OpAnswer::Sessions { shared, sessions } => (shared, sessions),
+            other => panic!("{other:?}"),
+        }
+    }
+
+    fn ask(from: Option<&str>) -> AgentSessionsAsk {
+        AgentSessionsAsk { room: "ch_x".into(), from_session: from.map(str::to_owned) }
+    }
+
+    fn machine_with_sessions(name: &str) -> Fake {
+        Fake::new(name, &[1, 2, 3])
+            .named(&[(1, "Slow ness"), (2, "UX Improvements"), (3, "Billing")])
+            .tabbed(&[(1, "Views"), (2, "Views"), (3, "Money")])
+            .active(&[(1, 180_000, Some("#540")), (2, 5_000, None), (3, 60_000, Some("#12"))])
+    }
+
+    /// The names are slugs, the newest active first; `names` drops what each
+    /// works on; `work` keeps it (#577).
+    #[tokio::test]
+    async fn the_sessions_listed_are_slugged_newest_first_and_work_follows_the_setting() {
+        let d = machine_with_sessions("sessions-list");
+        let (shared, got) = listed(sessions_for(&d, &ask(None)).await);
+        assert!(shared);
+        let names: Vec<_> = got.iter().map(|s| s.name.as_str()).collect();
+        assert_eq!(names, ["ux-improvements", "billing", "slow-ness"]);
+        assert_eq!(got[2].tab.as_deref(), Some("Views"));
+        assert_eq!(got[2].active_ms_ago, Some(180_000));
+        assert!(got.iter().all(|s| s.working_on.is_none()), "names only by default");
+        arugula_proto::sharing::set_agent_sessions(&d.dir, AgentSessions::Work).unwrap();
+        let (_, got) = listed(sessions_for(&d, &ask(None)).await);
+        let on: Vec<_> = got.iter().map(|s| s.working_on.as_deref()).collect();
+        assert_eq!(on, [None, Some("#12"), Some("#540")]);
+    }
+
+    /// `none` and mentions off show nothing, and say so (#577).
+    #[tokio::test]
+    async fn no_session_is_listed_when_the_owner_shows_none() {
+        let d = machine_with_sessions("sessions-none");
+        arugula_proto::sharing::set_agent_sessions(&d.dir, AgentSessions::None).unwrap();
+        assert_eq!(listed(sessions_for(&d, &ask(None)).await), (false, vec![]));
+        arugula_proto::sharing::set_agent_sessions(&d.dir, AgentSessions::Work).unwrap();
+        arugula_proto::sharing::set_agent_mentions(&d.dir, false).unwrap();
+        assert_eq!(listed(sessions_for(&d, &ask(None)).await), (false, vec![]));
+    }
+
+    #[tokio::test]
+    async fn the_asking_session_is_not_listed() {
+        let d = machine_with_sessions("sessions-asker");
+        let (_, got) = listed(sessions_for(&d, &ask(Some("UX improvements"))).await);
+        let names: Vec<_> = got.iter().map(|s| s.name.as_str()).collect();
+        assert_eq!(names, ["billing", "slow-ness"]);
+    }
+
+    /// A name that would be ambiguous isn't offered; a session without a
+    /// usable name is reached by its own tab's, or not at all; at most 20.
+    #[tokio::test]
+    async fn only_names_that_reach_one_session_are_listed() {
+        let d = Fake::new("sessions-ambiguous", &[1, 2, 3, 4])
+            .named(&[(1, "Twin"), (2, "twin"), (3, "Loner"), (4, "Twin")])
+            .tabbed(&[(2, "Solo"), (3, "Loner")]);
+        let (_, got) = listed(sessions_for(&d, &ask(None)).await);
+        let names: Vec<_> = got.iter().map(|s| s.name.as_str()).collect();
+        assert_eq!(names, ["loner", "solo"], "pane 2 by its tab; panes 1 and 4 by none");
+        let many: Vec<(PaneId, String)> = (1..=30).map(|i| (i, format!("s{i}"))).collect();
+        let mut d = Fake::new("sessions-many", &[]);
+        d.names = many;
+        assert_eq!(listed(sessions_for(&d, &ask(None)).await).1.len(), 20);
+    }
+
+    /// With `none`, a mention of a session that isn't there lists no names
+    /// (#576, #577).
+    #[tokio::test]
+    async fn an_unknown_session_lists_no_names_when_the_owner_shows_none() {
+        let d = Fake::new("unknown-none", &[4]).named(&[(4, "Billing")]);
+        arugula_proto::sharing::set_agent_sessions(&d.dir, AgentSessions::None).unwrap();
+        let m = AgentMention { session: Some("ux".into()), ..mention() };
+        assert_eq!(deliver(&d, &m).await, nowhere("ux", &[]));
+        arugula_proto::sharing::set_agent_sessions(&d.dir, AgentSessions::Names).unwrap();
+        assert_eq!(deliver(&d, &m).await, nowhere("ux", &["billing"]));
+    }
+
+    /// The ticket's done-when: a name from the list reaches its session.
+    #[tokio::test]
+    async fn a_listed_name_reaches_its_session() {
+        let d = machine_with_sessions("sessions-roundtrip");
+        let (_, got) = listed(sessions_for(&d, &ask(Some("Billing"))).await);
+        assert_eq!(got.len(), 2);
+        for s in &got {
+            let m = AgentMention { session: Some(s.name.clone()), parent: None, ..mention() };
+            let OpAnswer::Done { routed: Some(r), .. } = deliver(&d, &m).await else { panic!("no route") };
+            assert_eq!(r.step, RoutedStep::Named, "{} should name a session", s.name);
+        }
+        assert_eq!(d.got(1).len(), 1);
+        assert_eq!(d.got(2).len(), 1);
+        assert!(d.got(3).is_empty());
     }
 
     /// Tabs' names are names a mention could have used; at most ten.
