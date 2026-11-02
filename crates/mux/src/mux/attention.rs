@@ -35,6 +35,20 @@ pub(super) struct TermAsk {
 }
 
 /// Claude Code's session and subagent, from a hook's input: `session/agent`.
+/// The conversation a hook names, if it is the pane's own (#512). A
+/// subagent's hook (`agent_id`) and one from a `claude -p` or SDK run
+/// started inside the pane (it inherits the pane's environment, so its
+/// hooks reach the pane too) say nothing of the person's conversation.
+/// The hook's input doesn't tell a nested run apart, so the session
+/// file does (`nested`), asked only when the id isn't the one already kept.
+fn top_level<'a>(hook: &'a serde_json::Value, kept: Option<&str>, nested: impl Fn(&str) -> bool) -> Option<&'a str> {
+    let id = hook["session_id"].as_str()?;
+    if hook["agent_id"].as_str().is_some() || (kept != Some(id) && nested(id)) {
+        return None;
+    }
+    Some(id)
+}
+
 fn session_key(hook: &serde_json::Value) -> String {
     format!("{}/{}", hook["session_id"].as_str().unwrap_or(""), hook["agent_id"].as_str().unwrap_or(""))
 }
@@ -682,10 +696,12 @@ impl Daemon {
     /// The conversation Claude Code in a pane holds, from any of its hooks
     /// (#146): every hook's input names it.
     fn note_session(&mut self, pane: PaneId, hook: &serde_json::Value) {
-        let Some(id) = hook["session_id"].as_str() else { return };
         if !self.panes.contains_key(&pane) {
             return;
         }
+        let kept = self.meta.get(&pane).and_then(|m| m.session.as_ref()).filter(|s| s.running);
+        let sessions = self.config.sessions.clone();
+        let Some(id) = top_level(hook, kept.map(|s| s.id.as_str()), |id| sessions.nested(id)) else { return };
         if !crate::resume::valid_id(id) {
             warn!(pane, "a hook gave a session id that isn't one; not keeping it");
             return;
@@ -897,7 +913,25 @@ impl super::CardsCx for Daemon {
 
 #[cfg(test)]
 mod tests {
-    use super::push_reason;
+    use super::{push_reason, top_level};
+
+    #[test]
+    fn a_nested_run_in_the_pane_is_not_the_panes_conversation() {
+        use serde_json::json;
+        let nested = |id: &str| id == "inner";
+        let hook = |id: &str| json!({"session_id": id, "hook_event_name": "PreToolUse"});
+        // The first hook of the pane's own conversation, then of a `claude -p`
+        // it started: the second is turned away, the first kept.
+        assert_eq!(top_level(&hook("top"), None, nested), Some("top"));
+        assert_eq!(top_level(&hook("inner"), Some("top"), nested), None);
+        // The kept one isn't looked up again.
+        assert_eq!(top_level(&hook("top"), Some("top"), |_| panic!("asked")), Some("top"));
+        // A person's new conversation in the pane replaces it.
+        assert_eq!(top_level(&hook("next"), Some("top"), nested), Some("next"));
+        // A subagent's hook names the same session but isn't it.
+        let sub = json!({"session_id": "top", "agent_id": "a1"});
+        assert_eq!(top_level(&sub, None, nested), None);
+    }
 
     /// What the daemon's `gate::reason` makes of these gates (kept in step by
     /// hand: the daemon's tests build the same one): the first gate, with how

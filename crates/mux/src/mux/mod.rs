@@ -179,6 +179,10 @@ pub enum Api {
     Panes(oneshot::Sender<Vec<PaneSummary>>),
     Run(RunRequest, oneshot::Sender<Result<PaneId, String>>),
     Pane(PaneId, oneshot::Sender<Option<PaneHandle>>),
+    /// The Claude Code conversation running in a terminal now, by its id,
+    /// as its hooks said (#512), or its session files when the hooks
+    /// haven't spoken.
+    Conversation(PaneId, oneshot::Sender<Option<String>>),
     Attention(PaneId, Attention, Option<String>, oneshot::Sender<bool>),
     /// Every pane that wants you and why (M24), within what someone may
     /// read (`None`: the owner).

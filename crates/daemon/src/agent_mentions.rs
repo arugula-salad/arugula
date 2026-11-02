@@ -341,6 +341,7 @@ impl Daemon for App {
 pub(crate) async fn session_names(app: &App, only: Option<PaneId>) -> Vec<(PaneId, String)> {
     let mut out = vec![];
     let mut terminals = HashMap::new();
+    let mut hooked = vec![];
     for p in app.mux.api(Api::Panes).await.unwrap_or_default() {
         let id = p.info.id;
         if only.is_some_and(|o| o != id) {
@@ -350,15 +351,24 @@ pub(crate) async fn session_names(app: &App, only: Option<PaneId>) -> Vec<(PaneI
             if let Some(t) = p.info.title.as_deref().map(str::trim).filter(|t| !t.is_empty()) {
                 out.push((id, t.to_owned()));
             }
-        } else if p.info.kind == arugula_proto::BlockType::Terminal
-            && let Some(pid) = app.mux.api(|r| Api::Pane(id, r)).await.flatten().and_then(|h| h.pid_now())
-        {
-            terminals.insert(pid, id);
+        } else if p.info.kind == arugula_proto::BlockType::Terminal {
+            // The mux knows the pane's conversation from Claude Code's hooks
+            // (#512). Process discovery is for a pane without them.
+            if let Some(sid) = app.mux.api(|r| Api::Conversation(id, r)).await.flatten() {
+                hooked.push((id, sid));
+            } else if let Some(pid) = app.mux.api(|r| Api::Pane(id, r)).await.flatten().and_then(|h| h.pid_now()) {
+                terminals.insert(pid, id);
+            }
         }
     }
-    if !terminals.is_empty() {
+    if !terminals.is_empty() || !hooked.is_empty() {
         let found = crate::task::spawn_blocking(move || {
-            let live = crate::agent::sessions().live(terminals);
+            let mut live: HashMap<PaneId, (String, Option<String>)> =
+                if terminals.is_empty() { HashMap::new() } else { crate::agent::sessions().live(terminals) };
+            // Discovery finds every pane's Claude Code on Linux (by scope),
+            // not only the ones asked for (#512).
+            only_pane(&mut live, only);
+            live.extend(hooked.into_iter().map(|(pane, sid)| (pane, (sid, None))));
             let ids: Vec<String> = live.values().map(|(sid, _)| sid.clone()).collect();
             let titles = crate::agent::conversation_titles(&ids);
             live.into_iter()
@@ -372,9 +382,16 @@ pub(crate) async fn session_names(app: &App, only: Option<PaneId>) -> Vec<(PaneI
     out
 }
 
+/// Keep only `only`'s conversation, when it is set (#512): process
+/// discovery can return other panes' (on Linux each process is placed by its
+/// own `arugula-pane-*` scope), and a name for one pane must not be another's.
+fn only_pane<V>(live: &mut HashMap<PaneId, V>, only: Option<PaneId>) {
+    live.retain(|p, _| only.is_none_or(|o| o == *p));
+}
+
 /// The name of the session in `pane` (#429), for a post to carry.
 pub async fn session_name(app: &App, pane: PaneId) -> Option<String> {
-    session_names(app, Some(pane)).await.into_iter().next().map(|(_, n)| n)
+    session_names(app, Some(pane)).await.into_iter().find(|(p, _)| *p == pane).map(|(_, n)| n)
 }
 
 /// The answer for a mention a session took (#502): which step, and which
@@ -467,6 +484,17 @@ mod tests {
     use std::{path::PathBuf, sync::Mutex};
 
     use super::*;
+
+    #[test]
+    fn one_panes_name_is_never_anothers() {
+        // #512: discovery for pane 1 also placed panes 2 and 3's processes.
+        let mut live = HashMap::from([(1, "mine"), (2, "theirs"), (3, "other")]);
+        only_pane(&mut live, Some(1));
+        assert_eq!(live, HashMap::from([(1, "mine")]));
+        let mut all = HashMap::from([(1, "a"), (2, "b")]);
+        only_pane(&mut all, None);
+        assert_eq!(all.len(), 2);
+    }
 
     /// A daemon with a state dir, and panes that take follow-ups or not.
     struct Fake {
