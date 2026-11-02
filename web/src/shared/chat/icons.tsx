@@ -11,6 +11,18 @@ export function BookmarkIcon({ on, size = 14 }: { on?: boolean; size?: number })
   );
 }
 
+/** Add a reaction: a smiley, on the hover bar and the reaction row (#501; ☺
+ * read as `@` at text size). */
+export function ReactIcon({ size = 14 }: { size?: number }) {
+  return (
+    <svg viewBox="0 0 16 16" width={size} height={size} aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.4">
+      <circle cx="8" cy="8" r="6.2" />
+      <path d="M5.4 9.6c.6 1.1 1.5 1.6 2.6 1.6s2-.5 2.6-1.6" stroke-linecap="round" />
+      <path d="M5.9 6.2v.6M10.1 6.2v.6" stroke-linecap="round" stroke-width="1.8" />
+    </svg>
+  );
+}
+
 export function SearchIcon({ size = 14 }: { size?: number }) {
   return (
     <svg viewBox="0 0 16 16" width={size} height={size} aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round">
