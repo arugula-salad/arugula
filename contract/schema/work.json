@@ -234,6 +234,11 @@
           "type": "string"
         },
         {
+          "const": "queued",
+          "description": "The session (`session`) has it queued, but its hooks aren't\nlistening to take it (#571).",
+          "type": "string"
+        },
+        {
           "const": "offline",
           "description": "The machine is offline, or didn't answer.",
           "type": "string"
