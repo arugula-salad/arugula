@@ -20,6 +20,11 @@
 //!   on control's own scheme and port (control serves block origins on its
 //!   page's listener). The domain is control's, from its `/control.json`
 //!   (`cloud::block_domain`), never a guess.
+//! - **On control's prototype runner** (#506, #609): exactly
+//!   `proto.<domain>`, on control's own scheme and port, as control's
+//!   `blocks::host` serves it. A Doc's ```prototype section frames it, and
+//!   it is blank opened on its own (it waits for its parent's message).
+//!   One label, `proto`: nothing under it, and no other name.
 //! - **On the daemon's own block listener, dev scheme**:
 //!   `http://b-<id>-<key>.localhost:<port>`, always loopback.
 //!
@@ -31,10 +36,20 @@
 
 use tauri::Url;
 
-/// Whether `url` is a block's origin the window's frames load: on
-/// `control`'s block `domain`, or on the daemon's dev block scheme.
+/// Whether `url` is an origin the window's frames load: a block's, on
+/// `control`'s block `domain` or on the daemon's dev block scheme, or the
+/// prototype runner's, `proto.<domain>`.
 pub fn is_block(url: &Url, control: Option<&Url>, domain: Option<&str>) -> bool {
-    dev_block(url) || control.zip(domain).is_some_and(|(c, d)| control_block(url, c, d))
+    dev_block(url) || control.zip(domain).is_some_and(|(c, d)| control_block(url, c, d) || proto_frame(url, c, d))
+}
+
+/// `proto.<domain>` and nothing else, on control's scheme and port. `Url`
+/// has lower-cased the host; a trailing dot doesn't match, as with
+/// `control_block` (control builds the frame's address without one).
+fn proto_frame(url: &Url, control: &Url, domain: &str) -> bool {
+    url.scheme() == control.scheme()
+        && url.port_or_known_default() == control.port_or_known_default()
+        && url.host_str().and_then(|h| h.strip_prefix("proto.")) == Some(domain)
 }
 
 /// `b-<16..61 hex>.<domain>`, on control's scheme and port.
@@ -108,6 +123,28 @@ mod tests {
         // Not without a control, or a domain it said.
         assert!(!is_block(&url(&format!("https://b-{KEY}.arugula.run/")), None, Some("arugula.run")));
         assert!(!is_block(&url(&format!("https://b-{KEY}.arugula.run/")), Some(&c), None));
+    }
+
+    #[test]
+    fn the_prototype_runner_is_one_label_on_controls_domain() {
+        let c = url("https://control.arugula.io");
+        let frame = |s: &str| is_block(&url(s), Some(&c), Some("arugula.run"));
+        assert!(frame("https://proto.arugula.run/"));
+        assert!(frame("https://PROTO.arugula.run/runner?x=1#y"));
+        assert!(frame("https://proto.arugula.run:443/"));
+        assert!(!frame("https://x.proto.arugula.run/"));
+        assert!(!frame("https://protos.arugula.run/"));
+        assert!(!frame("https://proto.arugula.run.evil.example/"));
+        assert!(!frame("https://protoarugula.run/"));
+        assert!(!frame("https://proto.evil.example/"));
+        assert!(!frame("http://proto.arugula.run/"));
+        assert!(!frame("https://proto.arugula.run:8443/"));
+        assert!(!is_block(&url("https://proto.arugula.run/"), None, Some("arugula.run")));
+        assert!(!is_block(&url("https://proto.arugula.run/"), Some(&c), None));
+        // On a control with its own port, the runner is on it.
+        let l = url("https://control.arugula.io:8443");
+        assert!(is_block(&url("https://proto.arugula.run:8443/"), Some(&l), Some("arugula.run")));
+        assert!(!is_block(&url("https://proto.arugula.run/"), Some(&l), Some("arugula.run")));
     }
 
     #[test]
