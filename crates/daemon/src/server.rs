@@ -97,6 +97,7 @@ impl App {
         hands: Arc<crate::hand::Hands>,
         rules: Arc<crate::rules::Rules>,
     ) -> Arc<Self> {
+        let agent_mentions = crate::agent_mentions::State::open(control.state_dir());
         Arc::new(Self {
             access,
             identify,
@@ -115,7 +116,7 @@ impl App {
             next_client: AtomicU64::new(1),
             tailnet_seen: Default::default(),
             hooks_heard: Default::default(),
-            agent_mentions: Default::default(),
+            agent_mentions,
         })
     }
 

@@ -364,6 +364,8 @@ interface OpenPrompt {
   notice?: { text: string; link: { label: string; href: string } };
   /** Answers to pick with a tap, once they're known (#150). */
   choices?: PromptChoice[];
+  /** The choice the arrow keys are on, among those the input leaves. */
+  active?: number;
   done: (value: string | null) => void;
 }
 
@@ -412,6 +414,13 @@ export function tellSetup(title: string, text: string, link: { label: string; hr
   });
 }
 
+/** The choices the input leaves: those whose label or hint has what was
+ * typed, any case. */
+function shownChoices(p: OpenPrompt): PromptChoice[] {
+  const q = p.value.trim().toLowerCase();
+  return (p.choices ?? []).filter((c) => !q || `${c.label} ${c.hint ?? ""}`.toLowerCase().includes(q));
+}
+
 /** Answer the open prompt (null: cancelled). */
 function finishPrompt(v: string | null) {
   const p = prompt;
@@ -438,9 +447,14 @@ export function PromptLayer() {
     input.current?.focus();
     input.current?.select();
   }, [prompt]);
+  useLayoutEffect(() => {
+    form.current?.querySelector(".prompt-choices .active")?.scrollIntoView({ block: "nearest" });
+  });
   if (!prompt) return null;
   const p = prompt;
   const finish = finishPrompt;
+  const shown = shownChoices(p);
+  const active = p.active !== undefined && p.active < shown.length ? p.active : undefined;
   return (
     <div
       class="prompt-backdrop"
@@ -454,7 +468,7 @@ export function PromptLayer() {
         aria-label={p.title}
         onSubmit={(e) => {
           e.preventDefault();
-          finish(input.current?.value ?? "");
+          finish(active === undefined ? (input.current?.value ?? "") : shown[active].value);
         }}
       >
         {p.notice ? (
@@ -474,15 +488,26 @@ export function PromptLayer() {
             ref={input}
             value={p.value}
             // Kept as typed: the page re-renders as panes change.
-            onInput={(e) => (p.value = (e.target as HTMLInputElement).value)}
+            onInput={(e) => {
+              p.value = (e.target as HTMLInputElement).value;
+              p.active = undefined;
+              setTick((t) => t + 1);
+            }}
+            onKeyDown={(e) => {
+              if ((e.key !== "ArrowDown" && e.key !== "ArrowUp") || shown.length === 0) return;
+              e.preventDefault();
+              const step = e.key === "ArrowDown" ? 1 : -1;
+              p.active = active === undefined ? (step > 0 ? 0 : shown.length - 1) : (active + step + shown.length) % shown.length;
+              setTick((t) => t + 1);
+            }}
             placeholder={p.placeholder}
           />
         </label>
         )}
         {p.choices && (
           <div class="prompt-choices" role="group" aria-label="Choices">
-            {p.choices.map((c) => (
-              <button type="button" class={c.strong ? "strong" : undefined} title={c.title} onClick={() => finish(c.value)}>
+            {shown.map((c, i) => (
+              <button type="button" class={[c.strong && "strong", i === active && "active"].filter(Boolean).join(" ") || undefined} title={c.title} onClick={() => finish(c.value)}>
                 {c.label}
                 {c.hint && <span class="dim"> {c.hint}</span>}
               </button>

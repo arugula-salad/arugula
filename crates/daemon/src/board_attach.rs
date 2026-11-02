@@ -14,6 +14,7 @@ use arugula_control_wire::boards::{
     AttachBlock, BlockAttached, CLAIMED, CheckClaim, ClaimChecked, IssueRef, agent_project_attach_block,
     agent_project_claim_check,
 };
+use arugula_control_wire::issues::{agent_issue, agent_project_issue};
 use std::sync::Arc;
 
 use arugula_proto::{PaneId, flags};
@@ -102,6 +103,70 @@ pub async fn keep(
         b.call("set_work", serde_json::json!({ "boards": boards })).await?;
     }
     Ok(boards)
+}
+
+/// [`keep`] for an issue found from a branch's name: the block is on it only
+/// if a board has a row for it, so a block with none keeps no issue, and one
+/// refused (a row another machine's block holds, no grant) says nothing. The
+/// boards, none when it isn't on one.
+pub async fn keep_inferred(app: &App, home: Option<String>, issue: &str, pane: PaneId) -> Vec<WorkBoard> {
+    let boards = match attach(app, home, issue, pane, false).await {
+        Ok(b) => b,
+        Err(why) => {
+            debug!(pane, issue, "a branch's issue isn't attached: {why}");
+            return vec![];
+        }
+    };
+    if !boards.is_empty()
+        && let Some(b) = app.mux.api(|r| Api::Block(pane, r)).await.flatten()
+        && let Err(why) = b.call("set_work", serde_json::json!({ "issue": issue, "boards": boards })).await
+    {
+        debug!(pane, issue, "a branch's issue isn't kept: {why}");
+        return vec![];
+    }
+    boards
+}
+
+/// The project that holds `issue` (#430), and the issue as `#N` in it. `#N`
+/// is looked up in each project this machine's boards grants reach; if more
+/// than one has it, the one linked to the agent's repo (`cwd`) wins, else it
+/// is refused, naming them. `iss_…` names its project. `None` for the other
+/// forms (`owner/repo#N`, `IDENT-N`) and when no project has it: the caller
+/// falls back to the repo's project, then its own.
+pub async fn issue_project(app: &App, issue: &str, cwd: Option<&str>) -> Result<Option<(String, String)>, String> {
+    if issue.starts_with("iss_") {
+        let v = app
+            .control
+            .cloud(Method::GET, &agent_issue(issue), None)
+            .await
+            .map_err(|e| format!("issue {issue}: {e}"))?;
+        return match (v["project"].as_str(), v["number"].as_u64()) {
+            (Some(p), Some(n)) => Ok(Some((p.to_owned(), format!("#{n}")))),
+            _ => Err(format!("issue {issue}: Arugula control named no project or number")),
+        };
+    }
+    let Some(IssueRef::Number(n)) = IssueRef::parse(issue) else { return Ok(None) };
+    let reach = crate::mcp::registry::boards_reach(app).await;
+    let mut holders = vec![];
+    for p in &reach.projects {
+        if app.control.cloud(Method::GET, &agent_project_issue(&p.id, n), None).await.is_ok() {
+            holders.push(p);
+        }
+    }
+    match holders.as_slice() {
+        [] => Ok(None),
+        [only] => Ok(Some((only.id.clone(), format!("#{n}")))),
+        many => match many.iter().find(|p| Some(p.id.as_str()) == cwd) {
+            Some(p) => Ok(Some((p.id.clone(), format!("#{n}")))),
+            None => {
+                let names: Vec<_> = many.iter().map(|p| format!("{} ({})", p.name, p.id)).collect();
+                Err(format!(
+                    "#{n} is an issue of several projects ({}): pass its iss_ id, or start the agent in the repo of the one you mean",
+                    names.join(", ")
+                ))
+            }
+        },
+    }
 }
 
 /// [`keep`], in the background, for a block opened through the API

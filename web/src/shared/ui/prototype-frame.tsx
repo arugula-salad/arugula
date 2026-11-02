@@ -16,9 +16,10 @@
 // On the shared viewer, where the reader is a stranger, nothing is framed until
 // they click "Run prototype". In the Doc block and on project Docs it runs at once.
 
-import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
+import { useContext, useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 import { useScheme } from "./drawing";
 import { checkPrototype, prototypeInfo } from "./embeds";
+import { ProtoScope, useBridge } from "./prototype-bridge";
 import { escapeFrom, htmlMessage, readyFrom, schemeMessage } from "./prototype-messages";
 import runner from "./runner.html?raw";
 
@@ -63,6 +64,10 @@ export const OWN_LOADS = 2;
  * the pane area is CSS-scaled, and a transform makes `fixed` relative to it. */
 const canFull = typeof HTMLElement !== "undefined" && "showPopover" in HTMLElement.prototype;
 
+/** A reader's click to run, kept per Doc and section (`ProtoScope`) so a new
+ * version of the section (#509) doesn't ask again. */
+const armedKeys = new Set<string>();
+
 export function Prototype({ html, alt }: { html: string; alt: string }) {
   const { origin, click } = useMode();
   const scheme = useScheme();
@@ -71,7 +76,13 @@ export function Prototype({ html, alt }: { html: string; alt: string }) {
   const handed = useRef(false);
   const schemeNow = useRef(scheme);
   schemeNow.current = scheme;
-  const [armed, setArmed] = useState(false);
+  const scope = useContext(ProtoScope);
+  const armKey = scope ? `${scope.doc}/${scope.section}` : null;
+  const [armed, arm] = useState(() => armKey !== null && armedKeys.has(armKey));
+  const setArmed = (on: boolean) => {
+    if (on && armKey !== null) armedKeys.add(armKey);
+    arm(on);
+  };
   const [left, setLeft] = useState(false);
   const [round, setRound] = useState(0);
   const [full, setFull] = useState(false);
@@ -79,6 +90,7 @@ export function Prototype({ html, alt }: { html: string; alt: string }) {
   const { title, height } = prototypeInfo(alt);
   const why = checkPrototype(html);
   const live = !why && origin !== null && (!click || armed) && !left;
+  const copied = useBridge(frame, live);
   // A layout effect: the listener is there before the frame's first task, in
   // which the runner says it is ready.
   useLayoutEffect(() => {
@@ -177,6 +189,11 @@ export function Prototype({ html, alt }: { html: string; alt: string }) {
           Prototype · sandboxed
         </span>
       </span>
+      {copied && (
+        <span class="doc-prototype-copied" data-prototype-copied role="status">
+          Copied
+        </span>
+      )}
       <iframe
         key={`${round}:${html}`}
         ref={frame}

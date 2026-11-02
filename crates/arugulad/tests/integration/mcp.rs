@@ -2832,6 +2832,8 @@ async fn an_agent_plans_a_deploy_and_asks_and_never_approves() {
 #[derive(Clone, Default)]
 struct FakeBoards {
     calls: Arc<std::sync::Mutex<Vec<(String, Value)>>>,
+    /// Whether #31 blocks #12's row: it shows the relation and leaves the Ready line.
+    related: Arc<std::sync::atomic::AtomicBool>,
 }
 
 #[cfg(feature = "labs")]
@@ -2885,7 +2887,24 @@ async fn fake_boards(f: FakeBoards) -> String {
                 { "id": "brd_1", "project": "prj_1", "title": "Launch", "created_by": "a1", "created_at": 1,
                   "updated_at": 1 }] }))
             .into_response(),
-            ("GET", "/api/daemon/boards/brd_1") => Json(view()).into_response(),
+            ("GET", "/api/daemon/boards/brd_1") => {
+                let mut v = view();
+                if f.related.load(std::sync::atomic::Ordering::SeqCst) {
+                    v["zones"][0]["rows"][0]["relations"] = json!([{ "id": "rel_1", "kind": "blocks", "direction": "in",
+                        "source": "agent", "item": "fi_31", "removable": true }]);
+                } else {
+                    v["ready"] = json!(["row_1"]);
+                }
+                Json(v).into_response()
+            }
+            ("POST", "/api/daemon/projects/prj_1/relations") => {
+                f.related.store(true, std::sync::atomic::Ordering::SeqCst);
+                Json(json!({ "id": "rel_1" })).into_response()
+            }
+            ("DELETE", "/api/daemon/projects/prj_1/relations/rel_1") => {
+                f.related.store(false, std::sync::atomic::Ordering::SeqCst);
+                Json(json!({})).into_response()
+            }
             ("POST", "/api/daemon/projects/prj_1/boards" | "/api/daemon/boards/brd_1/close") => {
                 let mut v = view();
                 if b["title"].is_string() {
@@ -3098,6 +3117,20 @@ async fn an_agent_reads_and_writes_a_board_where_the_flag_is_on() {
     )
     .await;
     assert!(attached["summary"].as_str().unwrap().contains("attached as proof to #12"), "{attached}");
+    // Relate as an agent sends it: #31 blocks #12, so #12's row leaves the Ready line; `to` as a list of one
+    // is taken too.
+    let relate = json!({ "kind": "relate", "board": "brd_1", "item": "#31", "relation": "blocks", "to": "#12" });
+    let related = call(&s, "board_write", relate).await;
+    let text = related["summary"].as_str().unwrap();
+    assert!(text.contains("Related: #31 blocks #12.") && text.contains("0 ready."), "{related}");
+    let unrelated = call(
+        &s,
+        "board_write",
+        json!({ "kind": "unrelate", "board": "brd_1", "item": "#31", "relation": "blocks", "to": ["#12"] }),
+    )
+    .await;
+    let text = unrelated["summary"].as_str().unwrap();
+    assert!(text.contains("Took off the relation between #31 and #12.") && text.contains("1 ready."), "{unrelated}");
     call(&s, "board_write", json!({ "kind": "note", "board": "brd_1", "item": "#12", "text": "ok", "rev": 2 })).await;
     let stale = refused(
         &s,
@@ -3625,6 +3658,184 @@ async fn an_agent_started_on_an_issue_is_on_its_row() {
     assert_eq!(r["issue"]["boards"], json!([]), "{r}");
     assert!(r["issue"]["said"].as_str().unwrap().contains("boards are off"), "{r}");
     assert_eq!(control.attached.lock().unwrap().len(), asked);
+
+    s.cancel().await.unwrap();
+    let _ = Command::new("git").args(["worktree", "prune"]).current_dir(&repo).status();
+    let _ = std::fs::remove_dir_all(&tmp);
+}
+
+/// A fake control's platform with two projects whose boards this machine
+/// writes (#430): `prj_1` "Launch crew" holds #12 and #7 (and #5, which no board has a row for), `prj_2` "Other
+/// crew" holds #7 and is the one `acme/linked` is linked to. A caller with no
+/// linked repo is in the personal `prj_me`, which this machine doesn't write.
+/// Every attach as it came: the project, then the body.
+#[cfg(feature = "labs")]
+#[derive(Clone, Default)]
+struct FakeHomes {
+    machine: Arc<std::sync::Mutex<String>>,
+    attached: Arc<std::sync::Mutex<Vec<(String, Value)>>>,
+}
+
+/// An `iss_` id of #12 in `prj_1`.
+#[cfg(feature = "labs")]
+const ISS_12: &str = "iss_0123456789abcdef0123456789abcdef";
+
+#[cfg(feature = "labs")]
+async fn fake_homes(f: FakeHomes) -> String {
+    use axum::{
+        Json, Router,
+        extract::{Path, Query, State},
+        http::StatusCode,
+        response::IntoResponse,
+        routing::{get, post, put},
+    };
+    async fn reach() -> Json<Value> {
+        let p = |id: &str, name: &str| json!({ "id": id, "name": name, "powers": ["boards.write"], "boards": 1 });
+        Json(json!({ "projects": [p("prj_1", "Launch crew"), p("prj_2", "Other crew")] }))
+    }
+    async fn home(Query(q): Query<std::collections::HashMap<String, String>>) -> Json<Value> {
+        let project = if q.get("repo").map(String::as_str) == Some("acme/linked") { "prj_2" } else { "prj_me" };
+        Json(json!({ "project": project, "home": "native" }))
+    }
+    async fn issue(Path((project, number)): Path<(String, u64)>) -> axum::response::Response {
+        match (project.as_str(), number) {
+            ("prj_1", 12 | 7 | 5) | ("prj_2", 7) => {
+                Json(json!({ "project": project, "number": number })).into_response()
+            }
+            _ => StatusCode::NOT_FOUND.into_response(),
+        }
+    }
+    async fn by_id(Path(id): Path<String>) -> axum::response::Response {
+        match id == ISS_12 {
+            true => Json(json!({ "id": id, "project": "prj_1", "number": 12 })).into_response(),
+            false => StatusCode::NOT_FOUND.into_response(),
+        }
+    }
+    async fn attach(
+        State(f): State<FakeHomes>,
+        Path(project): Path<String>,
+        Json(b): Json<Value>,
+    ) -> axum::response::Response {
+        assert_eq!(b["machine"], f.machine.lock().unwrap().as_str(), "the block is the signer's: {b}");
+        f.attached.lock().unwrap().push((project.clone(), b.clone()));
+        let on = match (project.as_str(), b["issue"].as_str().unwrap_or_default()) {
+            ("prj_1", "#12" | "#7") => json!([{ "board": "brd_1", "title": "Launch", "row": "row_1" }]),
+            ("prj_2", "#7") => json!([{ "board": "brd_2", "title": "Other", "row": "row_2" }]),
+            _ => json!([]),
+        };
+        Json(json!({ "on": on })).into_response()
+    }
+    let app = Router::new()
+        .route("/control.json", get(|| async { Json(json!({ "daemon_auth": 2 })) }))
+        .route("/api/daemon/trust", get(|| async { Json(json!({ "certs": [], "revocations": [] })) }))
+        .route("/api/daemon/peers", get(|| async { Json(json!({})) }))
+        .route("/api/daemon/push-subs", get(|| async { Json(json!({ "subs": [] })) }))
+        .route("/api/daemon/access", post(|| async { Json(json!({})) }))
+        .route("/api/daemon/issue-home", get(home))
+        .route(arugula_control_wire::issues::AGENT_PROJECT_ISSUE, get(issue))
+        .route(arugula_control_wire::issues::AGENT_ISSUE, get(by_id))
+        .route(arugula_control_wire::boards::AGENT_BOARD_REACH, get(reach))
+        .route(arugula_control_wire::boards::AGENT_PROJECT_ATTACH_BLOCK, post(attach))
+        .route(
+            arugula_control_wire::boards::AGENT_PROJECT_CLAIM_CHECK,
+            post(|| async { Json(json!({ "held": null })) }),
+        )
+        .route(arugula_control_wire::boards::AGENT_BLOCK_STATE, put(|| async { Json(json!({})) }))
+        .with_state(f);
+    let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let at = format!("http://{}", l.local_addr().unwrap());
+    tokio::spawn(async move { axum::serve(l, app).await.unwrap() });
+    at
+}
+
+/// #430: an agent started on an issue is attached in the project that holds
+/// the issue, not the caller's: the caller here is in no linked repo, and
+/// this machine writes the boards of two projects. `iss_…` names its
+/// project; a `#N` two projects hold goes to the one linked to the agent's
+/// repo, else is refused naming both; with no `issue`, a worktree's branch
+/// `fix/12-…` is on #12 if a board has a row for it, and says so, and a
+/// branch that names no row, or isn't one, is on nothing and no error.
+#[cfg(all(unix, feature = "labs"))]
+#[tokio::test(flavor = "multi_thread")]
+async fn an_agent_is_attached_in_the_project_of_its_issue() {
+    let control = FakeHomes::default();
+    let url = fake_homes(control.clone()).await;
+    let machine = control.machine.clone();
+    let d = Daemon::child_in(&["--wisp-token-file", "/nonexistent"], &[], |state| {
+        let keys = arugula_e2e::DeviceKeys::load_or_create(&state.join("daemon.key")).unwrap();
+        *machine.lock().unwrap() = keys.id();
+        let cert = arugula_e2e::Cert::new(&keys, "a1", arugula_e2e::Kind::Daemon, "test");
+        let saved = json!({ "url": url, "trust": { "account": "a1", "root": keys.id() }, "cert": cert });
+        std::fs::write(state.join("control.json"), saved.to_string()).unwrap();
+        arugula_proto::flags::set(state, "boards", true).unwrap();
+    });
+    let s = bridge(&d, Client::named("claude-code")).await;
+    let agent = |extra: Value| {
+        let mut a = json!({ "agent": "acp", "command": format!("python3 {}", agentd::fake()), "prompt": "hello" });
+        a.as_object_mut().unwrap().extend(extra.as_object().unwrap().clone());
+        a
+    };
+    let last = || control.attached.lock().unwrap().last().cloned().unwrap();
+    // A clone linked to `acme/linked` (prj_2) through a second remote; its
+    // origin is a local one the worktrees branch from.
+    let tmp = std::env::temp_dir().join(format!("arugula-430-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&tmp);
+    std::fs::create_dir_all(&tmp).unwrap();
+    let tmp = tmp.canonicalize().unwrap();
+    git(&tmp, &["init", "-q", "--bare", "-b", "main", "origin.git"]);
+    git(&tmp, &["init", "-q", "-b", "main", "work"]);
+    let repo = tmp.join("work");
+    git(&repo, &["commit", "-q", "--allow-empty", "-m", "one"]);
+    git(&repo, &["remote", "add", "origin", tmp.join("origin.git").to_str().unwrap()]);
+    git(&repo, &["remote", "add", "gh", "https://github.com/acme/linked.git"]);
+    git(&repo, &["push", "-q", "origin", "main"]);
+
+    // The lead is in no linked repo, the agent works in a linked one, and
+    // #12 is an issue of the other project: it is attached there. (The
+    // daemon takes a moment to join the fake control.)
+    let deadline = std::time::Instant::now() + Duration::from_secs(20);
+    let r = loop {
+        let r = call_raw(&s, "start_agent", agent(json!({ "issue": "#12", "cwd": repo }))).await;
+        let r = r.structured_content.unwrap_or_default();
+        if r["issue"]["boards"][0]["title"] == "Launch" {
+            break r;
+        }
+        assert!(std::time::Instant::now() < deadline, "never attached: {r}");
+        tokio::time::sleep(Duration::from_millis(300)).await;
+    };
+    assert_eq!(last().0, "prj_1", "{r}");
+
+    // iss_…: its project and number, whatever the cwd.
+    let r = call(&s, "start_agent", agent(json!({ "issue": ISS_12 }))).await;
+    assert_eq!(r["issue"]["issue"], "#12", "{r}");
+    assert_eq!(r["issue"]["boards"][0]["title"], "Launch", "{r}");
+    assert_eq!((last().0, last().1["issue"].clone()), ("prj_1".to_owned(), json!("#12")));
+    let gone = refused(&s, "start_agent", agent(json!({ "issue": "iss_ffffffffffffffffffffffffffffffff" }))).await;
+    assert!(gone.contains("iss_ffff"), "{gone}");
+
+    // #7 is in both projects: the agent's repo decides, else it is refused.
+    let r = call(&s, "start_agent", agent(json!({ "issue": "#7", "cwd": repo }))).await;
+    assert_eq!(r["issue"]["boards"][0]["title"], "Other", "{r}");
+    assert_eq!(last().0, "prj_2");
+    let both = refused(&s, "start_agent", agent(json!({ "issue": "#7" }))).await;
+    assert!(both.contains("prj_1") && both.contains("prj_2"), "{both}");
+
+    // A worktree's branch names #12, and a board has its row.
+    let r = call(&s, "start_agent", agent(json!({ "cwd": repo, "worktree": { "branch": "fix/12-lexer" } }))).await;
+    assert_eq!(r["issue"]["issue"], "#12", "{r}");
+    assert_eq!(r["issue"]["boards"][0]["title"], "Launch", "{r}");
+    assert!(r["issue"]["said"].as_str().unwrap().contains("from the branch fix/12-lexer"), "{r}");
+    let block = r["block"].as_u64().unwrap();
+    d.wait_for("its work", || d.state(block)["work"]["issue"] == "#12");
+    assert_eq!(d.state(block)["work"]["boards"][0]["row"], "row_1");
+    assert_eq!(last().0, "prj_1");
+
+    // #5 has no row, #99 and #3 are no issue, and the rest aren't branches of one: nothing attached, no error.
+    for branch in ["chore/5-x", "feat/99-x", "feat/3-x", "wip/12-x", "fix/12", "fix/x-12", "fix/+12-x"] {
+        let r = call(&s, "start_agent", agent(json!({ "cwd": repo, "worktree": { "branch": branch } }))).await;
+        assert!(r.get("issue").is_none(), "{branch}: {r}");
+        assert_eq!(d.state(r["block"].as_u64().unwrap())["work"], Value::Null, "{branch}");
+    }
 
     s.cancel().await.unwrap();
     let _ = Command::new("git").args(["worktree", "prune"]).current_dir(&repo).status();

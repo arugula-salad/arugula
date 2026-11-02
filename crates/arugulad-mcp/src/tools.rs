@@ -371,7 +371,7 @@ pub struct StartAgentArgs {
     /// Work in a git worktree of its own that Arugula makes on a new branch, in the repo that holds cwd (`.claude/worktrees/BRANCH` where the repo keeps its worktrees, else `.arugula/worktrees/BRANCH`). Refused if the branch or worktree exists. The agent runs there; closing the block removes the worktree and branch only when nothing is uncommitted or unpushed and the branch is merged into its base, else keeps them and says why (close never forces).
     #[serde(default)]
     pub worktree: Option<WorktreeArgs>,
-    /// The issue it works on: `#N`, `owner/repo#N` or `IDENT-N`. The block keeps it, and its header says it (`#N · board`). With this machine's boards.write grant over the issue's project, the block is attached to that issue's row on every board of the project, which moves the row to Doing; without it the answer says so. A worktree's branch, when you give none, starts with the issue's number (`feat/357-…`). Not for a chat.
+    /// The issue it works on: `#N`, `owner/repo#N`, `IDENT-N` or a native issue's `iss_…` id. The block keeps it, and its header says it (`#N · board`). With this machine's boards.write grant over the issue's project, the block is attached to that issue's row on every board of the project, which moves the row to Doing; without it the answer says so. The project is the one that holds `#N` (of those this machine's boards grants reach; the one linked to cwd's repo if several do), else the one linked to cwd's repo, else the caller's. A worktree's branch, when you give none, starts with the issue's number (`feat/357-…`). Without issue, a worktree branch named `feat/N-…` (or fix, docs, chore, perf, refactor) is on `#N` when a board has a row for it. Not for a chat.
     #[serde(default)]
     pub issue: Option<String>,
     /// With issue: take the row over when another machine's agent already works it. Without it, an issue another machine's agent holds refuses the start, naming who holds it; with it, that agent is folded under "earlier agents" and this one holds the row.
@@ -2888,7 +2888,7 @@ impl ToolCall<'_, '_> {
         )
     }
 
-    async fn start_agent(&self, a: StartAgentArgs) -> Out {
+    async fn start_agent(&self, mut a: StartAgentArgs) -> Out {
         if a.prompt.trim().is_empty() {
             return Err("give the agent a prompt".into());
         }
@@ -2915,7 +2915,10 @@ impl ToolCall<'_, '_> {
         }
         let issue = match a.issue.as_deref().map(str::trim).filter(|i| !i.is_empty()) {
             Some(i) => {
-                IssueRef::parse(i).ok_or_else(|| format!("issue {i:?}: an issue is #N, owner/repo#N or IDENT-N"))?;
+                if !i.starts_with("iss_") {
+                    IssueRef::parse(i)
+                        .ok_or_else(|| format!("issue {i:?}: an issue is #N, owner/repo#N, IDENT-N or iss_…"))?;
+                }
                 Some(i.to_owned())
             }
             None => None,
@@ -2932,9 +2935,16 @@ impl ToolCall<'_, '_> {
             AgentKind::Codex => "codex",
             AgentKind::Acp => "acp",
         };
+        // #430: the project the row is in is the issue's, not the caller's.
+        let (issue, project, inferred) = self.issue_of_start(&a, issue).await?;
+        a.issue = issue.clone();
         let owned = match &a.worktree {
             Some(w) => Some(self.make_worktree(&a, w, host.is_some()).await?),
             None => None,
+        };
+        let home = match (&issue, &inferred) {
+            (None, None) => None,
+            _ => project.or(self.current_project(None).await.ok()),
         };
         let mut config = json!({ "agent": agent, "prompt": a.prompt });
         if let Some(o) = &owned {
@@ -2992,11 +3002,10 @@ impl ToolCall<'_, '_> {
         };
         // A row another machine's agent holds refuses the start before a pane
         // opens; the 409 at attach still catches a race.
-        if let (Some(i), false) = (&issue, a.take) {
-            let home = self.current_project(None).await.ok();
-            if let Some(held) = arugulad_base::board_attach::held(self.app, home, i).await {
-                return Err(format!("{held}; no agent was started"));
-            }
+        if let (Some(i), false) = (&issue, a.take)
+            && let Some(held) = arugulad_base::board_attach::held(self.app, home.clone(), i).await
+        {
+            return Err(format!("{held}; no agent was started"));
         }
         let block = match self.open(req).await {
             Ok(b) => b,
@@ -3011,8 +3020,8 @@ impl ToolCall<'_, '_> {
         };
         let mut tail =
             owned.as_ref().map(|w| format!(", in worktree {} (branch {})", w.path, w.branch)).unwrap_or_default();
-        let on = match &issue {
-            Some(i) => match self.on_issue(i, block, a.take).await {
+        let on = match (&issue, &inferred) {
+            (Some(i), _) => match self.on_issue(i, block, a.take, home).await {
                 Ok(on) => Some(on),
                 Err(held) => {
                     // The row is held: this agent isn't started.
@@ -3020,7 +3029,8 @@ impl ToolCall<'_, '_> {
                     return Err(held);
                 }
             },
-            None => None,
+            (None, Some((i, branch))) => self.on_inferred(i, branch, block, home).await,
+            (None, None) => None,
         };
         if let Some(on) = &on {
             tail.push_str(&format!(". {}", on.said));
@@ -3042,24 +3052,16 @@ impl ToolCall<'_, '_> {
         issue: &str,
         block: arugula_proto::PaneId,
         take: bool,
+        home: Option<String>,
     ) -> Result<results::StartedOn, String> {
         use arugulad_base::board_attach::NotKept;
-        let home = self.current_project(None).await.ok();
         Ok(match arugulad_base::board_attach::keep(self.app, home, issue, block, take).await {
             Ok(boards) if boards.is_empty() => results::StartedOn {
                 issue: issue.to_owned(),
                 boards: vec![],
                 said: format!("It is on {issue}, but no board of the project has a row for it, so it is on none."),
             },
-            Ok(boards) => {
-                let names: Vec<_> = boards.iter().map(|b| format!("{:?}", b.title)).collect();
-                let said = format!("It is on {issue}: attached to its row on {}.", names.join(", "));
-                let boards = boards
-                    .into_iter()
-                    .map(|b| results::StartedBoard { board: b.board, title: b.title, row: b.row })
-                    .collect();
-                results::StartedOn { issue: issue.to_owned(), boards, said }
-            }
+            Ok(boards) => started_on(issue, "", boards),
             Err(NotKept::Claimed(why)) => return Err(format!("{why}; no agent was started")),
             Err(NotKept::Why(why)) => results::StartedOn {
                 issue: issue.to_owned(),
@@ -3067,6 +3069,61 @@ impl ToolCall<'_, '_> {
                 said: format!("It is on {issue}, but not attached to a row: {why}."),
             },
         })
+    }
+
+    /// `start_agent` with no `issue`: the issue a worktree's branch names
+    /// (`feat/357-…`), attached if a board has a row for it. Nothing is said
+    /// of one that isn't, or that can't be attached.
+    async fn on_inferred(
+        &self,
+        issue: &str,
+        branch: &str,
+        block: arugula_proto::PaneId,
+        home: Option<String>,
+    ) -> Option<results::StartedOn> {
+        let boards = arugulad_base::board_attach::keep_inferred(self.app, home, issue, block).await;
+        (!boards.is_empty()).then(|| started_on(issue, &format!(" (from the branch {branch})"), boards))
+    }
+
+    /// `start_agent`'s issue, resolved (#430): `iss_…` becomes `#N`; the
+    /// project that holds it, if one does, else the one linked to the
+    /// agent's repo (its `cwd`), which also holds the project of the issue a
+    /// worktree's branch names, when there is no `issue` and a project holds
+    /// that issue.
+    async fn issue_of_start(
+        &self,
+        a: &StartAgentArgs,
+        issue: Option<String>,
+    ) -> Result<(Option<String>, Option<String>, Option<(String, String)>), String> {
+        if issue.is_none() && a.worktree.is_none() {
+            return Ok((None, None, None));
+        }
+        let dir = match (&a.cwd, self.own_pane()) {
+            (Some(c), _) => Some(c.clone()),
+            (None, Some(p)) => self.readable(p).await.ok().and_then(|p| p.info.cwd),
+            (None, None) => None,
+        };
+        let repo_project = match &dir {
+            Some(d) => self.native_home_of(d).await,
+            None => None,
+        };
+        let by = async |issue: &str| {
+            arugulad_base::board_attach::issue_project(self.app, issue, repo_project.as_deref()).await
+        };
+        match issue {
+            Some(i) => match by(&i).await? {
+                Some((p, n)) => Ok((Some(n), Some(p), None)),
+                None => Ok((Some(i), repo_project, None)),
+            },
+            None => {
+                let branch = a.worktree.as_ref().map(|w| w.branch.trim()).unwrap_or_default();
+                let Some(n) = issue_of_branch(branch) else { return Ok((None, None, None)) };
+                Ok(match by(&format!("#{n}")).await {
+                    Ok(Some((p, i))) => (None, Some(p), Some((i, branch.to_owned()))),
+                    _ => (None, None, None),
+                })
+            }
+        }
     }
 
     /// `start_agent {worktree}`: the new branch's worktree, in the repo that
@@ -3435,6 +3492,24 @@ fn run_lands_on_machine(req: &RunRequest) -> bool {
 
 /// Whether `start_agent` may start this agent ([`confine`]), and a worn
 /// recipe on this host only.
+/// The issue a branch name says it is on (#430): `feat/357-…`, with `feat`,
+/// `fix`, `docs`, `chore`, `perf` or `refactor` before the number.
+fn issue_of_branch(branch: &str) -> Option<u64> {
+    let (kind, rest) = branch.split_once('/')?;
+    ["feat", "fix", "docs", "chore", "perf", "refactor"].contains(&kind).then_some(())?;
+    let (n, _) = rest.split_once('-')?;
+    (!n.is_empty() && n.bytes().all(|b| b.is_ascii_digit())).then(|| n.parse().ok()).flatten().filter(|n| *n > 0)
+}
+
+/// A start on `issue` that is on `boards`; `how` says where the issue came from.
+fn started_on(issue: &str, how: &str, boards: Vec<arugulad_base::board_attach::WorkBoard>) -> results::StartedOn {
+    let names: Vec<_> = boards.iter().map(|b| format!("{:?}", b.title)).collect();
+    let said = format!("It is on {issue}{how}: attached to its row on {}.", names.join(", "));
+    let boards =
+        boards.into_iter().map(|b| results::StartedBoard { board: b.board, title: b.title, row: b.row }).collect();
+    results::StartedOn { issue: issue.to_owned(), boards, said }
+}
+
 /// The branch a worktree is made on when `start_agent` is given an issue and
 /// no branch: `feat/357-` and up to six words of `text` (the title, else the
 /// prompt).

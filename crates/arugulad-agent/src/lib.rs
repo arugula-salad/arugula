@@ -3382,11 +3382,15 @@ impl Agent {
 
     /// Keep the boards this block is on (`start_agent` with an `issue`): its
     /// chip. The issue is the block's from its start; only the boards come
-    /// later, with control's answer.
+    /// later, with control's answer. An `issue` makes the block's own: for one
+    /// found from its branch, once a row is.
     fn set_work(&self, args: &Value) -> Result<Value, String> {
         let boards: Vec<board_attach::WorkBoard> =
             serde_json::from_value(args["boards"].clone()).map_err(|e| format!("set_work takes boards: {e}"))?;
         let mut g = self.inner.lock().unwrap();
+        if let Some(issue) = args["issue"].as_str() {
+            g.cfg.work.get_or_insert_with(Default::default).issue = issue.to_owned();
+        }
         let work = g.cfg.work.as_mut().ok_or("this block wasn't started on an issue")?;
         work.boards = boards;
         drop(g);
