@@ -294,6 +294,33 @@ async fn tools_through_the_stdio_bridge() {
 /// `outputSchema`, and a client may refuse an answer that doesn't fit it. So
 /// what the real server sends fits what the real server lists, in each shape
 /// `run` answers with, and in the others.
+/// What `send_input` types arrives as the text, then the Enter on its own
+/// (#573): a TUI such as Claude Code reads one burst as a paste, so an Enter
+/// in it stays unsubmitted. A shell would submit either way, so the pane
+/// runs a program that prints each read it gets.
+#[tokio::test(flavor = "multi_thread")]
+async fn send_input_enter_is_a_write_of_its_own() {
+    let d = Daemon::child_env(&["--wisp-token-file", "/nonexistent"], &[]);
+    let s = bridge(&d, Client::named("claude-code")).await;
+    let script = d.sessions.join("reads.py");
+    std::fs::write(
+        &script,
+        "import os, sys, tty\ntty.setraw(0)\nsys.stdout.write('READY\\r\\n'); sys.stdout.flush()\n\
+         while True:\n    b = os.read(0, 4096)\n    sys.stdout.write('GOT %r\\r\\n' % b); sys.stdout.flush()\n",
+    )
+    .unwrap();
+    let r = call(&s, "run", json!({ "command": format!("python3 {}", script.display()) })).await;
+    let p = r["pane"].as_u64().unwrap();
+    call(&s, "wait", json!({ "pane": p, "until": "match", "pattern": "READY", "timeout": 20 })).await;
+    call(&s, "send_input", json!({ "pane": p, "text": "hello" })).await;
+    call(&s, "wait", json!({ "pane": p, "until": "match", "pattern": "GOT b'\\\\r'", "timeout": 10 })).await;
+    let screen = call(&s, "read_output", json!({ "pane": p, "screen": true })).await;
+    let screen = screen["text"].as_str().unwrap();
+    let text = screen.find("GOT b'hello'").unwrap_or_else(|| panic!("the text is one read: {screen}"));
+    let enter = screen.find("GOT b'\\r'").unwrap_or_else(|| panic!("the Enter is one read: {screen}"));
+    assert!(text < enter, "{screen}");
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn what_a_tool_answers_fits_the_output_schema_it_lists() {
     let d = Daemon::child();

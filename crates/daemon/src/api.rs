@@ -937,12 +937,7 @@ async fn call(
     match method.as_str() {
         "send" => {
             let req: SendRequest = serde_json::from_value(args).map_err(|e| bad(e.to_string()))?;
-            p.mark_input();
-            let mut data = req.text.into_bytes();
-            if req.enter {
-                data.push(b'\r');
-            }
-            app.mux.send(Cmd::Input { client: None, pane: id, data });
+            crate::ops::input::send_text(&app, id, &p, &req.text, req.enter, None).await;
             Ok(Json(serde_json::json!({})))
         }
         "keys" => {

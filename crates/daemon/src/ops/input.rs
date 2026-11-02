@@ -3,6 +3,8 @@
 //! only. `authz::check` made the pane's role and trust check before a
 //! handler runs.
 
+use std::time::Duration;
+
 use arugula_proto::{
     PaneId,
     api::{AttentionRequest, Empty, FollowUpRequest, FollowedUp, KeysRequest, MouseRequest, SendRequest},
@@ -17,14 +19,39 @@ use crate::{
     mux::{Api, Cmd},
 };
 
+/// How long the Enter waits after the text (#573), so the program has read
+/// the text before the Enter reaches it.
+const ENTER_AFTER: Duration = Duration::from_millis(30);
+
+/// Type `text` into a pane, and with `enter` press Enter as a write of its
+/// own after a short pause (#573). Answers once the Enter is in, so one
+/// caller's next send or keys can't overtake it. `by` is who typed it, for
+/// the record, when it isn't the owner.
+pub async fn send_text(
+    app: &crate::server::App,
+    id: PaneId,
+    p: &arugula_mux::pane::PaneHandle,
+    text: &str,
+    enter: bool,
+    by: Option<String>,
+) {
+    p.mark_input();
+    let (data, enter) = keys::send_text(text, enter, p.status().modes);
+    let write = |data: Vec<u8>| match &by {
+        Some(by) => app.mux.send(Cmd::Api(Api::InputBy(id, data, by.clone()))),
+        None => app.mux.send(Cmd::Input { client: None, pane: id, data }),
+    };
+    write(data);
+    if let Some(data) = enter {
+        tokio::time::sleep(ENTER_AFTER).await;
+        write(data);
+    }
+}
+
 impl Handle for PaneSend {
     async fn handle(cx: &Cx<'_>, id: PaneId, req: SendRequest) -> Result<Empty, OpError> {
-        pane(cx.app, id).await?.mark_input();
-        let mut data = req.text.into_bytes();
-        if req.enter {
-            data.push(b'\r');
-        }
-        cx.app.mux.send(Cmd::Input { client: None, pane: id, data });
+        let p = pane(cx.app, id).await?;
+        send_text(cx.app, id, &p, &req.text, req.enter, None).await;
         Ok(Empty {})
     }
 }
