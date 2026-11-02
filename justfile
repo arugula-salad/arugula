@@ -79,6 +79,12 @@ proto-ts mode="write":
 contract-schema mode="write":
     {{ if mode == "write" { "ARUGULA_WRITE_SCHEMA=1" } else { "" } }} cargo test -q -p arugula-control-wire --features schema schema::
 
+# Write the native client's OpenAPI document (contract/openapi/native.json,
+# #599) from contract/api/native.json, routes.toml and contract/schema/.
+# Without `write`, check it's current and every route in scope is classified.
+api-contract mode="write":
+    node scripts/api-contract.mjs {{ if mode == "write" { "" } else { "--check" } }}
+
 # Write DECISIONS.md, the index of the decision records in docs/decisions/.
 # Without `write`, check it's current.
 decisions mode="write":
@@ -928,6 +934,7 @@ check: test mux-guard workspace-guard
     cd web && pnpm run paths
     just proto-ts check
     just contract-schema check
+    just api-contract check
     just decisions check
     just whats-new
     just control-tables check
@@ -998,6 +1005,7 @@ rollup-check:
     step lint test-scripts just test-scripts
     step lint proto-ts just proto-ts check
     step lint contract-schema just contract-schema check
+    step lint api-contract just api-contract check
     step lint decisions just decisions check
     step lint whats-new just whats-new
     step lint gitleaks scripts/ci-gitleaks
