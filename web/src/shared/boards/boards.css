@@ -935,3 +935,43 @@
   margin: 16px 0 8px;
   font-size: 1em;
 }
+
+/* The find box (#546): under the header, a phone's button opens it. */
+.board-find {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.board-find input {
+  flex: 1 1 auto;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+.board-find-count {
+  white-space: nowrap;
+}
+
+.board-find-open {
+  display: none;
+}
+
+@media (max-width: 700px) {
+  .board-find-open {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 40px;
+    height: 40px;
+    font-size: 1.3em;
+  }
+}
+
+/* The filter box over a list of boards (#546). */
+.board-filter {
+  width: 100%;
+  max-width: 480px;
+  box-sizing: border-box;
+  margin-bottom: 12px;
+}

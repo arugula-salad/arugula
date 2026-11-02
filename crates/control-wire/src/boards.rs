@@ -1692,6 +1692,34 @@ impl Pointer {
 }
 
 impl Row {
+    /// Whether the row answers a find (#546), case-insensitive. Each word of
+    /// `q` has to hold: `#541` is the item's number, `541` is that or text,
+    /// `ARUGU-12` a tracker key or text, anything else text in the item's
+    /// title or the row's note. An empty `q` matches every row. The web's
+    /// `rowMatches` (`shared/boards/text.ts`) says the same.
+    pub fn matches(&self, q: &str) -> bool {
+        let q = q.to_lowercase();
+        let number = self.live.as_ref().map(|l| l.number).filter(|n| *n > 0);
+        let key =
+            self.live.as_ref().and_then(|l| Some(format!("{}-{}", l.identifier.as_ref()?, number?).to_lowercase()));
+        let text = format!("{}\n{}", self.live.as_ref().map_or("", |l| l.title.as_str()), self.note).to_lowercase();
+        q.split_whitespace().all(|w| {
+            if let Some(n) = w.strip_prefix('#').filter(|n| !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit())) {
+                return number.is_some_and(|x| n.parse() == Ok(x));
+            }
+            if w.bytes().all(|b| b.is_ascii_digit()) {
+                return number.is_some_and(|x| w.parse() == Ok(x)) || text.contains(w);
+            }
+            let keyed = w.split_once('-').is_some_and(|(k, n)| {
+                k.starts_with(|c: char| c.is_ascii_alphabetic())
+                    && k.bytes().all(|b| b.is_ascii_alphanumeric())
+                    && !n.is_empty()
+                    && n.bytes().all(|b| b.is_ascii_digit())
+            });
+            (keyed && key.as_deref() == Some(w)) || text.contains(w)
+        })
+    }
+
     /// How the row's item is written to address it: `#N` for a native or a
     /// GitHub issue or PR, `IDENT-N` for a Plane item, else the pointer's
     /// short label.
@@ -2027,6 +2055,38 @@ mod tests {
         for no in ["372", "#", "#0", "#x", "a/b/c#1", "/r#1", "o/#1", "-5", "1A-5", "A-", "A B-5", "#1234567890"] {
             assert_eq!(IssueRef::parse(no), None, "{no}");
         }
+    }
+
+    #[test]
+    fn a_find_matches_a_row_by_number_key_or_words() {
+        let item = |title: &str, number: u64, identifier: Option<&str>, note: &str| {
+            let mut r = row(Pointer::Issue { id: "iss_1".into() }, Lane::Next, note);
+            r.live = Some(Live {
+                state: LiveState::Open,
+                kind: "native".into(),
+                repo: None,
+                number,
+                title: title.into(),
+                assignees: vec![],
+                provider: None,
+                identifier: identifier.map(Into::into),
+                state_name: None,
+                url: None,
+                category: None,
+            });
+            r
+        };
+        let a = item("Search the board", 541, None, "");
+        let b = item("Plane epics fold", 12, Some("ARUGU"), "folded lanes unfold on a match");
+        assert!(a.matches("") && a.matches("  "), "an empty find keeps every row");
+        assert!(a.matches("#541") && a.matches("541"));
+        assert!(!a.matches("#54") && !a.matches("#12"), "a number is the whole number");
+        assert!(b.matches("arugu-12") && b.matches("ARUGU-12"));
+        assert!(!b.matches("ARUGU-13") && !a.matches("ARUGU-541"));
+        assert!(a.matches("SEARCH board") && !a.matches("search lane"));
+        assert!(b.matches("unfold match") && b.matches("#12 unfold") && !b.matches("#13 unfold"));
+        let note = row(Pointer::None, Lane::Next, "Remember the Launch checklist");
+        assert!(note.matches("launch") && !note.matches("#1"));
     }
 
     fn row(pointer: Pointer, lane: Lane, note: &str) -> Row {
