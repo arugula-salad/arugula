@@ -51,6 +51,7 @@ mod assets;
 pub(crate) mod embeds;
 pub mod library;
 pub mod link;
+pub mod shape;
 
 use std::{
     path::{Path, PathBuf},

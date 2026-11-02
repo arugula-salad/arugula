@@ -1,6 +1,7 @@
 //! `arugula issue` on a project's own issues on Arugula control's platform
 //! (M199, platform step 6): `new`, `list`, `show`, `comment`, `close`,
-//! `reopen`, `edit` and `export`, as this CLI's account (`arugula login`),
+//! `reopen`, `edit`, `export` and `open-on-github` (M205), as this CLI's
+//! account (`arugula login`),
 //! with no block and no daemon. `agent` starts one in a worktree, so it
 //! needs this machine's daemon. An issue's comments are its thread's
 //! messages (M196).
@@ -30,11 +31,12 @@ use std::{collections::HashMap, io::Read, path::PathBuf};
 use anyhow::{Context, bail};
 use arugula_control_wire::{
     chat::{ChatAgent, ChatMessage, ChatMessages, ChatOpenTarget, ChatPost, ChatPosted, ChatRoom, ChatTargetKind},
+    forge_ops::{DraftRef, Op},
     issues::{
         Issue, IssueEvent, IssueEvents, IssueHome, IssueList, IssueListEdit, IssuePatch, IssuePatched, IssueQuery,
         NewIssue,
     },
-    projects::Projects,
+    projects::{DraftCreated, FORGE_DRAFTS, NewDraft, Projects},
 };
 use serde::de::DeserializeOwned;
 use serde_json::{Value, json};
@@ -110,6 +112,21 @@ pub enum Cmd {
     },
     /// Change an issue's title, body, labels or assignees.
     Edit(EditArgs),
+    /// Open a native issue on GitHub, as you, on a repo linked to its project.
+    ///
+    /// It's sent through one of your machines. Once it's there, the native issue stays (it says where it now
+    /// lives), and new comments cross both ways. `--repo` picks the repo
+    /// when the project links more than one.
+    #[command(name = "open-on-github")]
+    OpenOnGithub {
+        target: String,
+        /// `OWNER/REPO`, linked to the issue's project. Default: its one
+        /// linked repo.
+        #[arg(long)]
+        repo: Option<String>,
+        #[command(flatten)]
+        home: Home,
+    },
     /// Every native issue in a project, with its timeline and comments.
     ///
     /// JSON (the default) or Markdown, to stdout or a file.
@@ -665,9 +682,15 @@ pub fn comment(here: &Here, r: &Ref, body: &str, json_out: bool) -> anyhow::Resu
 /// `show`, `list`, `close`, `reopen`, `edit` and `export` on native issues.
 /// `None`: `show` of GitHub's, for its block.
 pub fn run(cmd: &Cmd, json_out: bool) -> Option<anyhow::Result<i32>> {
+    // Open on GitHub (M205) names a native issue, whatever the issue home.
+    let native_home;
     let (home, r) = match cmd {
         Cmd::Show { target, home } | Cmd::Close { target, home, .. } | Cmd::Reopen { target, home } => {
             (home, Some(Ref::parse(target)))
+        }
+        Cmd::OpenOnGithub { target, home, .. } => {
+            native_home = Home { native: true, github: false, ..home.clone() };
+            (&native_home, Some(Ref::parse(target)))
         }
         Cmd::Edit(a) => (&a.home, Some(Ref::parse(&a.target))),
         Cmd::List(a) if a.repo.is_some() || a.review_requested.is_some() => {
@@ -699,6 +722,7 @@ pub fn run(cmd: &Cmd, json_out: bool) -> Option<anyhow::Result<i32>> {
         }
         Cmd::Edit(a) => edit(&here, &r, a, json_out),
         Cmd::Export { format, output, force, .. } => export(&here, format, output.as_ref(), *force),
+        Cmd::OpenOnGithub { repo, .. } => open_on_github(&here, &r, repo.as_deref(), json_out),
     })
 }
 
@@ -962,6 +986,36 @@ fn edit_with(here: &Here, r: &Ref, patches: Vec<IssuePatch>, json_out: bool) -> 
     Ok(0)
 }
 
+/// `issue open-on-github` (M205): the issue as a draft on its linked repo,
+/// sent as this CLI's person through one of their machines (a terminal has
+/// no browser for GitHub's authorization). One that can't go now waits as
+/// the draft, and says so.
+fn open_on_github(here: &Here, r: &Ref, repo: Option<&str>, json_out: bool) -> anyhow::Result<i32> {
+    not_for_agents()?;
+    let issue = here.issue(r)?;
+    if let Some(g) = &issue.github {
+        bail!("#{} is on GitHub already: https://github.com/{}/issues/{}", issue.number, g.repo, g.number);
+    }
+    let new = NewDraft {
+        repo: repo.unwrap_or_default().to_owned(),
+        kind: "issue".into(),
+        native_issue: Some(issue.id.clone()),
+        ..Default::default()
+    };
+    let made: DraftCreated = send(&here.e, "POST", FORGE_DRAFTS, &new)?;
+    let id = made.draft.id;
+    here.wrote_in(&issue.project);
+    let sent = super::forge_ops::call(Op::DraftSend(DraftRef { draft: id.clone() }))
+        .map_err(|e| anyhow::anyhow!("{e:#}; it waits as draft {id}: `arugula draft send {id}` sends it"))?;
+    if json_out {
+        print_json(&sent);
+    } else {
+        let url = sent["url"].as_str().unwrap_or("sent");
+        println!("#{} is on GitHub: {url}", issue.number);
+    }
+    Ok(0)
+}
+
 fn export(here: &Here, format: &str, output: Option<&PathBuf>, force: bool) -> anyhow::Result<i32> {
     if let Some(file) = output.filter(|f| f.exists() && !force) {
         bail!("{} is there already: --force to replace it", file.display());
@@ -1186,6 +1240,8 @@ mod tests {
             &["arugula", "issue", "edit", "#3", "--title", "T", "--add-label", "a", "--remove-label", "b"],
             &["arugula", "issue", "edit", "#3", "--labels", "a,b", "--assignees", "me"],
             &["arugula", "issue", "export", "--format", "md", "-o", "x.md"],
+            &["arugula", "issue", "open-on-github", "#3"],
+            &["arugula", "issue", "open-on-github", &id, "--repo", "acme/app"],
             &["arugula", "issue", "agent", "#3"],
             &["arugula", "issue", "agent", "%3", "--agent", "codex"],
             &["arugula", "issue", "#3"],

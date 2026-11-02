@@ -219,6 +219,9 @@ struct Poll<'p> {
     /// The PRs it wrote or fixed, for the boards to attach (#368) once
     /// their content is in.
     prs: Vec<u64>,
+    /// The issues whose rows it changed: an exported one's comments are
+    /// read (M205).
+    issues: Vec<u64>,
 }
 
 impl<'p> Poll<'p> {
@@ -342,6 +345,7 @@ impl<'p> Poll<'p> {
         let changed: Vec<&ItemRow> =
             items.iter().zip(&wrote).filter(|(_, (w, ..))| w.fixed()).map(|(it, _)| it).collect();
         self.prs.extend(changed.iter().filter(|it| it.kind == "pr").map(|it| it.number));
+        self.issues.extend(changed.iter().filter(|it| it.kind == "issue").map(|it| it.number));
         crate::features::chat().merged_seen(self.p, self.job.repo_id, &changed);
         let before = now.saturating_sub(GRACE_MS);
         for (wrote, at, which, kind, started) in wrote {
@@ -713,12 +717,14 @@ pub async fn tick(p: &Platform, now: u64) -> anyhow::Result<Option<Turn>> {
     // repo linked again missed its webhooks while it wasn't), from then on.
     let drift_from = job.reconciled_at.filter(|r| job.backfilled_at.is_some() && *r >= job.linked_at);
     let pages = gh.ingest.settings.pages.max(1);
-    let mut poll = Poll { p, job, gh: client, drift_from, now, pages, fixed: 0, drift: 0, prs: vec![] };
+    let mut poll = Poll { p, job, gh: client, drift_from, now, pages, fixed: 0, drift: 0, prs: vec![], issues: vec![] };
     let out = poll.run().await;
     // Whatever it wrote before it stopped, as a turn that ran out of pages did.
     crate::boards::auto::auto_attach_prs(p, repo, &poll.prs);
     let bodies = poll.merged_bodies().await;
     super::closes::merged_with(p, repo, &poll.prs, &bodies).await;
+    // M205: an exported issue's comments whose webhook never came.
+    super::export::polled(p, (repo, poll.job.installation_id, &poll.job.full_name), &poll.issues).await;
     let (job, fixed, drift) = (poll.job, poll.fixed, poll.drift);
     gh.ingest.stats.drift(repo, now, drift);
     match out {

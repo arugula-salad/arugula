@@ -714,7 +714,7 @@ read the issue's project now, and never for a machine's agents
 
 Agents use them through MCP: `forge_read` (kinds `pr`, `issue`, `items`,
 `checks`, `inbox`, `drafts`, `draft`) and `forge_draft` (kinds `comment`, `review`,
-`issue`, `discard`). MCP has no send. `read_forge` on a block of a linked
+`issue`, `open_on_github`, `discard`). MCP has no send. `read_forge` on a block of a linked
 repo reads the platform's item too (`platform` in its answer), and `draft`
 on one keeps the draft on the platform (M170).
 
@@ -824,6 +824,38 @@ block's card at once never post it twice. Two ways, then a clear refusal:
 A block's card on a linked repo sends a platform draft from its machine
 with the owner's login, as its own drafts go, and tells the platform
 (`POST /api/forge/drafts/{id}/machine`: `start`, then `sent` or `failed`).
+
+**Open on GitHub (M205, native #62; aru-089, aru-130).** A person sends one
+native issue to a repo linked to its project, as a new GitHub issue, as
+themselves. It's a draft (`POST /api/forge/drafts` with `kind: "issue"` and
+`native_issue: "iss_…"`; `repo` may be empty for the project's one linked
+repo), sent the way above: the issue page's *Open on GitHub* (owners and
+editors, on the platform page) with GitHub's authorization in the browser,
+`arugula issue open-on-github #N [--repo OWNER/REPO]` through one of their
+machines. An agent drafts it (`forge_draft` kind `open_on_github`, with its
+machine's `issues.write` grant over the project) and its person sends it.
+The title and body are the issue's when it's sent; one export per issue,
+and none once it's there. Sent, the issue's GitHub origin is set, its
+timeline gets `exported`, and its page says *Lives on GitHub as
+OWNER/REPO#N*. The native issue stays as it was, with its number and
+thread; nothing else of it is kept in step with GitHub.
+
+After that, comments cross for that pair only, each once
+(`issue_github_comments`, by GitHub's comment id):
+- a person's new comment in the issue's thread (not a reply kept in a
+  sub-thread) is a draft sent as them at once through one of their
+  machines; with none awake it waits in their drafts, and the post's answer
+  says so (`github` in `ChatPosted`). An agent's is a draft for its person;
+- a comment on the GitHub issue (its `issue_comment` webhook, or the
+  poller's next turn over the issue when the webhook never came) lands in
+  the thread with no author and `via: "github:<login>"`, shown as the
+  login, *on GitHub*. Nobody is pushed for it. Only a public repo's: the
+  thread is the whole project's, and a private repo's text reaches only
+  those GitHub lets read it (aru-086), so its comments stay on GitHub;
+- GitHub's copy of a comment that went out isn't brought back, even when
+  its webhook comes before the send's answer (it's matched to its draft by
+  its text), and what came in is never sent. Edits, deletions and comments
+  from before the export don't cross.
 
 **Agents and deploys (M218).** `deploys.plan` over a project lets a
 machine's agents plan its deploys and ask its owners to approve them:

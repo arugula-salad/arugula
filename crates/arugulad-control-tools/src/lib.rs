@@ -219,7 +219,7 @@ fn forge_draft_def() -> Def {
     Def {
         name: "forge_draft",
         title: "Draft on a linked repo",
-        description: "Draft a comment, a review or a new issue on a GitHub repo linked to the user's projects in Arugula control, with no block open, or discard a draft. Nothing reaches GitHub in an agent's name: the draft waits for a person to send (from the web page, their phone or the arugula CLI) or discard. Returns the draft at once; forge_read kind draft shows what became of it. Native issues in Arugula control aren't drafted: issue_write writes to them at once.",
+        description: "Draft a comment, a review or a new issue on a GitHub repo linked to the user's projects in Arugula control, with no block open, or discard a draft. Nothing reaches GitHub in an agent's name: the draft waits for a person to send (from the web page, their phone or the arugula CLI) or discard. Returns the draft at once; forge_read kind draft shows what became of it. Native issues in Arugula control aren't drafted (issue_write writes to them at once), except opening one on GitHub (kind open_on_github), which its person sends.",
         args: Args::Kinds { kinds: table(forge_ops::DRAFT), default: None },
         read_only: false,
         destructive: true,

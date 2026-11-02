@@ -47,7 +47,9 @@ test("a closed Doc is on the Docs page on an iPhone, and Open shows it again", a
   await page.locator("[data-open-docs]").tap();
   const row = page.locator("[data-doc]").filter({ hasText: "Quarterly plan" });
   await expect(row).toHaveCount(1);
-  await row.locator("[data-open-doc]").tap();
+  // A phone has no room beside the list: the tap opens its preview.
+  await row.tap();
+  await page.locator("[data-list-preview] [data-open-doc]").tap();
 
   await expect(page.locator("[data-docs-page]")).toHaveCount(0);
   const block = page.locator("[data-doc-block]");

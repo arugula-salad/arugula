@@ -81,7 +81,7 @@ pub enum IssueCmd {
         home: native::Home,
     },
     /// A project's own issues on Arugula control: show, list,
-    /// close, reopen, edit, export.
+    /// close, reopen, edit, export, open-on-github.
     #[command(flatten)]
     Native(native::Cmd),
 }

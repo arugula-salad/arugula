@@ -1455,6 +1455,17 @@
     },
     "ChatPosted": {
       "properties": {
+        "github": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ChatToGithub"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "A comment on a native issue that's on GitHub (M205): what became\nof its copy there. `None` anywhere else."
+        },
         "mentions": {
           "description": "The accounts it mentions, and the agents (`machine:<id>`, M198).",
           "items": {
@@ -2308,6 +2319,38 @@
         "threads",
         "unread",
         "mentions"
+      ],
+      "type": "object"
+    },
+    "ChatToGithub": {
+      "description": "A comment on an exported native issue, on its way to GitHub (M205): a\nperson's is sent as them through one of their machines, and waits as a\ndraft when none can; an agent's is a draft that waits for its person.",
+      "properties": {
+        "draft": {
+          "description": "The draft (`dft_…`) that carries it.",
+          "type": "string"
+        },
+        "sent": {
+          "description": "On GitHub now.",
+          "type": "boolean"
+        },
+        "url": {
+          "description": "Its comment there, once sent.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "why": {
+          "description": "Why it isn't there yet.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "draft",
+        "sent"
       ],
       "type": "object"
     },

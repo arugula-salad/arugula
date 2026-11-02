@@ -923,11 +923,15 @@ pub struct DraftRow {
     pub updated_at: u64,
     pub item: Option<String>,
     pub item_title: Option<String>,
+    /// The native issue it's for (M205): the issue itself, sent as a new
+    /// GitHub issue, or (with `native_seq`) one of its comments.
+    pub native_issue: Option<String>,
+    pub native_seq: Option<i64>,
 }
 
 const DRAFT_COLUMNS: &str = "d.id, d.project_id, d.author, d.agent_name, d.agent_machine, d.repo_id, l.full_name, \
      d.number, d.kind, d.event, d.title, d.body, d.state, d.sent_at, d.sent_url, d.error, d.created_at, d.updated_at, \
-     i.id, i.title";
+     i.id, i.title, d.native_issue, d.native_seq";
 
 const DRAFT_FROM: &str = "drafts d JOIN linked_repos l ON l.repo_id = d.repo_id \
      LEFT JOIN forge_items i ON i.repo_id = d.repo_id AND i.number = d.number";
@@ -954,6 +958,8 @@ fn draft_row(r: &Row) -> anyhow::Result<DraftRow> {
         updated_at: r.get(17)?,
         item: r.get(18)?,
         item_title: r.get(19)?,
+        native_issue: r.get(20)?,
+        native_seq: r.get(21)?,
     })
 }
 
@@ -972,6 +978,9 @@ pub struct NewDraftRow<'a> {
     pub title: Option<&'a str>,
     pub body: &'a str,
     pub import_key: Option<&'a str>,
+    /// The native issue it's for, and the comment (M205).
+    pub native_issue: Option<&'a str>,
+    pub native_seq: Option<i64>,
     pub now: u64,
 }
 
@@ -1047,8 +1056,8 @@ impl Db {
         let c = self.c();
         let n = c.execute(
             "INSERT INTO drafts (id, project_id, author, agent_name, agent_machine, repo_id, number, kind, event, title,
-                 body, import_key, created_at, updated_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?13)
+                 body, import_key, created_at, updated_at, native_issue, native_seq)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?13, ?14, ?15)
              ON CONFLICT (import_key) DO NOTHING",
             params![
                 id,
@@ -1063,7 +1072,9 @@ impl Db {
                 d.title,
                 d.body,
                 d.import_key,
-                d.now
+                d.now,
+                d.native_issue,
+                d.native_seq
             ],
         )?;
         let row = if n == 1 {
@@ -1170,6 +1181,36 @@ impl Db {
             .optional()?;
         tx.commit()?;
         Ok(state)
+    }
+}
+
+/// Open on GitHub (M205): the draft that sends a native issue.
+impl Db {
+    /// The export drafts of native issue `issue` that haven't gone (waiting
+    /// or failed, and maybe being sent), oldest first.
+    pub fn export_drafts(&self, issue: &str) -> anyhow::Result<Vec<DraftRow>> {
+        self.c().query_map(
+            &format!(
+                "SELECT {DRAFT_COLUMNS} FROM {DRAFT_FROM}
+                 WHERE d.native_issue = ?1 AND d.kind = 'issue' AND d.state IN ('waiting', 'failed')
+                 ORDER BY d.created_at, d.id"
+            ),
+            params![issue],
+            draft_row,
+        )
+    }
+
+    /// An export draft's title and body as its issue's are now, before it's
+    /// sent: only while it waits (or failed) and no send holds it.
+    pub fn refresh_export_draft(&self, id: &str, title: &str, body: &str, now: u64) -> anyhow::Result<()> {
+        let held = now.saturating_sub(SENDING_MS);
+        self.c().execute(
+            "UPDATE drafts SET title = ?2, body = ?3, updated_at = ?4
+             WHERE id = ?1 AND kind = 'issue' AND native_issue IS NOT NULL AND state IN ('waiting', 'failed')
+               AND (sent_at IS NULL OR sent_at < ?5)",
+            params![id, title, body, now, held],
+        )?;
+        Ok(())
     }
 }
 

@@ -679,10 +679,139 @@ impl Db {
     }
 }
 
+/// Which way a comment crossed between an exported issue's thread and its
+/// GitHub issue (M205, `issue_github_comments`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Crossed {
+    /// GitHub's, brought into the thread.
+    In,
+    /// A person's, sent to GitHub.
+    Out,
+}
+
+impl Crossed {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Crossed::In => "in",
+            Crossed::Out => "out",
+        }
+    }
+}
+
+/// A comment draft of an exported issue on its way out, or just sent, that
+/// no GitHub comment is linked to yet (M205): what a GitHub comment
+/// arriving now may be the copy of.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Outgoing {
+    pub draft: String,
+    pub seq: i64,
+    pub body: String,
+}
+
+/// Open on GitHub (M205): an issue's origin, and the comments that cross.
+impl Db {
+    /// Set `id`'s GitHub origin as `by`, once, and write its `exported`
+    /// event in the same transaction: the issue and the event. `None` when
+    /// it has an origin already, or there's no such issue.
+    pub fn set_issue_github(&self, id: &str, to: &GithubOrigin, by: Actor, at: u64) -> Result<Option<(Issue, Event)>> {
+        let mut c = self.c();
+        let tx = c.immediate()?;
+        let n = tx.execute(
+            "UPDATE issues SET github_repo = ?2, github_repo_id = ?3, github_number = ?4, updated_at = ?5
+             WHERE id = ?1 AND github_number IS NULL",
+            params![id, to.repo, to.repo_id, to.number, at],
+        )?;
+        if n != 1 {
+            return Ok(None);
+        }
+        let issue = tx.query_row(&format!("SELECT {COLS} FROM issues WHERE id = ?1"), params![id], issue_row)?;
+        let event = add_event(&tx, id, EventKind::Exported, by, at, json!({ "repo": to.repo, "number": to.number }))?;
+        tx.commit()?;
+        Ok(Some((issue, event)))
+    }
+
+    /// The native issue exported to issue `number` of repo `repo_id`, if
+    /// one was.
+    pub fn exported_issue(&self, repo_id: u64, number: u64) -> Result<Option<Issue>> {
+        self.c()
+            .query_row(
+                &format!(
+                    "SELECT {COLS} FROM issues WHERE github_repo_id = ?1 AND github_number = ?2 ORDER BY id LIMIT 1"
+                ),
+                params![repo_id, number],
+                issue_row,
+            )
+            .optional()
+    }
+
+    /// Claim GitHub's comment `github_id` for `issue`, crossing `way`, with
+    /// its message's number when it's known: `false` when it crossed (or is
+    /// crossing) already, so nothing brings it back.
+    pub fn claim_github_comment(
+        &self,
+        github_id: u64,
+        issue: &str,
+        seq: Option<i64>,
+        way: Crossed,
+        at: u64,
+    ) -> Result<bool> {
+        Ok(self.c().execute(
+            "INSERT INTO issue_github_comments (github_id, issue_id, seq, way, at) VALUES (?1, ?2, ?3, ?4, ?5)
+             ON CONFLICT (github_id) DO NOTHING",
+            params![github_id, issue, seq, way.as_str(), at],
+        )? == 1)
+    }
+
+    /// The message a claimed comment became.
+    pub fn github_comment_landed(&self, github_id: u64, seq: i64) -> Result<()> {
+        self.c().execute("UPDATE issue_github_comments SET seq = ?2 WHERE github_id = ?1", params![github_id, seq])?;
+        Ok(())
+    }
+
+    /// Let go of a claim whose message couldn't be posted: the next
+    /// webhook or poll tries again.
+    pub fn unclaim_github_comment(&self, github_id: u64) -> Result<()> {
+        self.c()
+            .execute("DELETE FROM issue_github_comments WHERE github_id = ?1 AND seq IS NULL", params![github_id])?;
+        Ok(())
+    }
+
+    /// The GitHub comments that crossed for `issue`, by id: which way, and
+    /// the message.
+    pub fn github_comments(&self, issue: &str) -> Result<HashMap<u64, (Crossed, Option<i64>)>> {
+        Ok(self
+            .c()
+            .query_map(
+                "SELECT github_id, way, seq FROM issue_github_comments WHERE issue_id = ?1",
+                params![issue],
+                |r| Ok((r.get::<u64>(0)?, r.get::<String>(1)?, r.get::<Option<i64>>(2)?)),
+            )?
+            .into_iter()
+            .map(|(id, way, seq)| (id, (if way == "out" { Crossed::Out } else { Crossed::In }, seq)))
+            .collect())
+    }
+
+    /// `issue`'s comment drafts being sent now, or sent since `since`, that
+    /// no GitHub comment is linked to yet ([`Outgoing`]), oldest first.
+    pub fn outgoing_comments(&self, issue: &str, held_since: u64, since: u64) -> Result<Vec<Outgoing>> {
+        self.c().query_map(
+            "SELECT d.id, d.native_seq, d.body FROM drafts d
+             WHERE d.native_issue = ?1 AND d.kind = 'comment' AND d.native_seq IS NOT NULL
+               AND ((d.state IN ('waiting', 'failed') AND d.sent_at >= ?2) OR (d.state = 'sent' AND d.updated_at >= ?3))
+               AND NOT EXISTS (SELECT 1 FROM issue_github_comments g
+                               WHERE g.issue_id = d.native_issue AND g.seq = d.native_seq AND g.way = 'out')
+             ORDER BY d.created_at, d.id",
+            params![issue, held_since, since],
+            |r| Ok(Outgoing { draft: r.get(0)?, seq: r.get(1)?, body: r.get(2)? }),
+        )
+    }
+}
+
 /// What deleting an account takes from issues, inside the platform's
 /// `account_deleted` transaction, after [`super::projects::erase_account`]:
-/// - the issues of the projects that went with it, their timelines and
-///   their inbox entries (M202);
+/// - the issues of the projects that went with it, their timelines,
+///   their inbox entries (M202) and the comments that crossed to GitHub
+///   (M205);
 /// - elsewhere its issues and events keep their rows, numbers and text,
 ///   with no author or actor (and no agent);
 /// - it's taken off assignees, and out of assignment events.
@@ -695,6 +824,11 @@ pub(crate) fn erase_account(c: &impl Sql, d: &Deleted) -> Result<()> {
     )?;
     c.execute(
         "DELETE FROM inbox_items WHERE item IN (SELECT id FROM issues WHERE project_id NOT IN (SELECT id FROM projects))",
+        params![],
+    )?;
+    c.execute(
+        "DELETE FROM issue_github_comments WHERE issue_id IN
+             (SELECT id FROM issues WHERE project_id NOT IN (SELECT id FROM projects))",
         params![],
     )?;
     c.execute("DELETE FROM issues WHERE project_id NOT IN (SELECT id FROM projects)", params![])?;

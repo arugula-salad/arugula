@@ -15,8 +15,8 @@ use std::{collections::HashMap, sync::Arc};
 use arugula_core::PaneId;
 use arugula_proto::{
     BlockType,
-    api::{DocOpenRequest, DocOpened, DocRow, DocShared, Empty, OpenRequest},
-    op::ops::{DocDelete, DocOpen, DocsList},
+    api::{DocOpenRequest, DocOpened, DocPreview, DocRow, DocShared, Empty, OpenRequest},
+    op::ops::{DocDelete, DocOpen, DocPreviewGet, DocsList},
 };
 use axum::http::StatusCode;
 
@@ -37,6 +37,8 @@ use crate::{
 
 /// Said to an agent and to a team's other owner who asks to delete a Doc.
 pub const DELETE_OWNER_ONLY: &str = "only the owner can delete a Doc";
+/// How much of a Doc its list's preview shows.
+const PREVIEW_PARAGRAPHS: usize = 4;
 
 /// The blocks that show a Doc, by the Doc's id.
 pub(crate) async fn open_blocks(app: &App) -> HashMap<String, PaneId> {
@@ -87,18 +89,23 @@ impl Handle<Docs> for DocsList {
             .map_err(|e| OpError::Failed(e.to_string()))?;
         Ok(metas
             .into_iter()
-            .map(|m| DocRow {
-                open: open.get(&m.id).copied(),
-                shared: links.get(&m.id).map(|(link, e)| DocShared {
-                    made: e.made,
-                    updated: e.updated,
-                    link: link.clone(),
-                }),
-                id: m.id,
-                title: m.title,
-                made: m.made,
-                updated: m.updated,
-                by: m.by,
+            .map(|m| {
+                let shape = m.shape.unwrap_or_default();
+                DocRow {
+                    open: open.get(&m.id).copied(),
+                    shared: links.get(&m.id).map(|(link, e)| DocShared {
+                        made: e.made,
+                        updated: e.updated,
+                        link: link.clone(),
+                    }),
+                    id: m.id,
+                    title: m.title,
+                    made: m.made,
+                    updated: m.updated,
+                    by: m.by,
+                    summary: shape.summary,
+                    sections: shape.sections,
+                }
             })
             .collect())
     }
@@ -119,6 +126,8 @@ impl McpOp<Docs> for DocsList {
 
     fn answer(_: &Call<'_>, _: &ListArgs, _: &(), docs: Vec<DocRow>) -> Out {
         let n = docs.len();
+        // An agent has `doc open` for a Doc's outline: the list stays short.
+        let docs: Vec<_> = docs.into_iter().map(|d| DocRow { sections: vec![], ..d }).collect();
         done(format!("{n} Docs; doc open shows one in a block"), serde_json::json!({ "docs": docs }))
     }
 }
@@ -172,6 +181,17 @@ impl Handle<Docs> for DocOpen {
             Via::Mcp(_) => None,
         };
         Ok(DocOpened { pane: open_doc(cx.app, who, req).await?.0 })
+    }
+}
+
+impl Handle<Docs> for DocPreviewGet {
+    async fn handle(cx: &Cx<'_>, id: String, _: Empty) -> Result<DocPreview, OpError> {
+        let meta = checked(cx.app, &id)?;
+        let dir = library::dir(cx.app.control.state_dir(), &meta.id).map_err(OpError::Failed)?;
+        let opening = crate::task::spawn_blocking(move || crate::docs::shape::opening(&dir, PREVIEW_PARAGRAPHS))
+            .await
+            .map_err(|e| OpError::Failed(e.to_string()))?;
+        Ok(DocPreview { opening })
     }
 }
 

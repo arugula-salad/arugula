@@ -1801,6 +1801,53 @@ async fn open_object(app: &Platform, account: &str, target: &str) -> J<ChatRoom>
     Ok(Json(listed(app, &facts, account, &room, 0)?))
 }
 
+/// A comment GitHub has on an exported native issue's GitHub issue (M205,
+/// `forge::export`), into the issue's thread, made if nobody has opened it
+/// yet: no author, `via` `github:<login>`, no mentions, nobody pushed. Cut
+/// to a message's size, saying so. The message's number.
+pub(crate) fn github_comment(app: &Platform, issue: &str, login: &str, text: &str) -> anyhow::Result<i64> {
+    let obj = objects::resolve(app, issue).map_err(|e| anyhow::anyhow!("{}", e.1))?;
+    let scope = objects::project_scope(&obj.project);
+    let room = match app.db.chat_room_on(&scope, issue)? {
+        Some(r) => r,
+        None => {
+            let room = Room {
+                id: new_id("ob_"),
+                scope: scope.clone(),
+                kind: "object".into(),
+                name: obj.name.clone(),
+                machine: None,
+                target: Some(issue.to_owned()),
+                created_by: String::new(),
+                created: now_ms(),
+                archived: None,
+                last_seq: 0,
+            };
+            match app.db.add_chat_room(&room, &[], Some(&obj.project)) {
+                Ok(()) => {
+                    app.chat.room(&app.db, &room.id);
+                    room
+                }
+                Err(e) if e.is::<Taken>() => {
+                    app.db.chat_room_on(&scope, issue)?.ok_or_else(|| anyhow::anyhow!("no thread on {issue}"))?
+                }
+                Err(e) => return Err(e),
+            }
+        }
+    };
+    const CUT: &str = "\n\n… (cut short here: the rest is on GitHub)";
+    let text = if text.len() > wire::MAX_TEXT {
+        let mut at = wire::MAX_TEXT - CUT.len();
+        while !text.is_char_boundary(at) {
+            at -= 1;
+        }
+        format!("{}{CUT}", &text[..at])
+    } else {
+        text.to_owned()
+    };
+    crate::sessions::review::post(app, &room, 0, "", &format!("github:{login}"), &text)
+}
+
 /// `GET /api/chat/rooms/{id}`: the room, and who sees it.
 pub async fn room(State(app): State<Arc<Platform>>, s: Person, Path(id): Path<String>) -> J<ChatRoomDetail> {
     gate(&app, &s.account).await?;
@@ -2282,7 +2329,18 @@ pub(crate) async fn post_replied(
         }
     }
     let replied = sessions::posted(app, &room, &s.account, agent, via.is_some(), seq, b.parent, text).await;
-    Ok((ChatPosted { seq, mentions: stored, unreached, unreached_why, pushed }, replied))
+    // M205: a comment on a native issue that's on GitHub goes there too,
+    // as its person's (an agent's waits as a draft for them); one kept in
+    // a sub-thread stays here, and so does what a product posted.
+    let to_github = room.kind == "object" && via.is_none() && (b.parent.is_none() || also) && !text.is_empty();
+    let github = match room.target.as_deref().filter(|t| to_github && t.starts_with("iss_")) {
+        Some(issue) => {
+            let machine = agent.map(|a| a.machine.as_str());
+            crate::forge::export::posted(app, issue, &s.account, machine, seq, text).await
+        }
+        None => None,
+    };
+    Ok((ChatPosted { seq, mentions: stored, unreached, unreached_why, pushed, github }, replied))
 }
 
 /// A reply being pushed (#106): its thread, whether it was also sent to the

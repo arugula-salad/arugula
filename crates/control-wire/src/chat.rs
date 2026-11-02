@@ -819,6 +819,28 @@ pub struct ChatPosted {
     /// Whom control pushed (not those with the room open, muted, or pushed
     /// for it in the last minute).
     pub pushed: Vec<ChatPushed>,
+    /// A comment on a native issue that's on GitHub (M205): what became
+    /// of its copy there. `None` anywhere else.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub github: Option<ChatToGithub>,
+}
+
+/// A comment on an exported native issue, on its way to GitHub (M205): a
+/// person's is sent as them through one of their machines, and waits as a
+/// draft when none can; an agent's is a draft that waits for its person.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct ChatToGithub {
+    /// The draft (`dft_…`) that carries it.
+    pub draft: String,
+    /// On GitHub now.
+    pub sent: bool,
+    /// Its comment there, once sent.
+    pub url: Option<String>,
+    /// Why it isn't there yet.
+    pub why: Option<String>,
 }
 
 /// `PATCH /api/chat/rooms/{id}/messages/{seq}`: the author's new text.

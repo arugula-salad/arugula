@@ -32,6 +32,9 @@ runs:
     - name: The contract's JSON Schema is current (contract/schema/)
       shell: bash
       run: just contract-schema check
+    - name: The native client's OpenAPI document is current (contract/openapi/)
+      shell: bash
+      run: just api-contract check
     - name: DECISIONS.md lists the decision records (docs/decisions/)
       shell: bash
       run: just decisions check

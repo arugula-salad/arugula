@@ -75,6 +75,7 @@ Not here: what each milestone built (the archive), how to build and test
 - [aru-113](docs/decisions/aru-113-accounts-link-by-numeric-github-id-old-sign-ins.md): Accounts link by numeric GitHub id; old sign-ins run 90 days beside the new
 - [aru-121](docs/decisions/aru-121-a-person-s-agent-starts-and-answers-sessions-by-grant.md): A person's agent starts and answers sessions as them, by grant
 - [aru-126](docs/decisions/aru-126-device-keys-are-the-machine-plane-s-passkeys-approve.md): Device keys are the machine plane's; the platform's approvals are passkeys
+- [aru-131](docs/decisions/aru-131-the-iphone-app-is-a-browser-device-and-sees-one-api.md): The iPhone app is a browser device, and sees one API
 
 ## Clients
 
@@ -165,6 +166,7 @@ Not here: what each milestone built (the archive), how to build and test
 - [aru-124](docs/decisions/aru-124-plane-is-a-source-of-a-project-s-issues.md): Plane is a source of a project's issues, mirrored beside GitHub's
 - [aru-125](docs/decisions/aru-125-boards-are-rows-of-work-and-lanes-follow-the-work.md): Boards are rows of work, and lanes follow the work
 - [aru-129](docs/decisions/aru-129-a-doc-s-prototype-runs-in-a-frame-on-control-s-proto-origin.md): A Doc's prototype runs in a frame on control's proto origin
+- [aru-130](docs/decisions/aru-130-an-issue-opened-on-github-stays-native-and-only-new-comments-cross.md): An issue opened on GitHub stays native, and only new comments cross
 
 ## Build and release
 

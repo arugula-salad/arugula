@@ -11,6 +11,7 @@ conversation.session_signal POST /api/conversations/session-signal Owner drives=
 conversations.list GET /api/conversations Owner drives=false credential=false
 doc.delete DELETE /api/docs/{id} Owner drives=false credential=false
 doc.open POST /api/docs/open Owner drives=false credential=false
+doc.preview GET /api/docs/{id}/preview Owner drives=false credential=false
 doc_link.delete DELETE /api/doc-links/{id} Owner drives=false credential=false
 doc_link.get GET /api/doc-links/{id} Owner drives=false credential=true
 docs.list GET /api/docs Owner drives=false credential=false

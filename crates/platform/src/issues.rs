@@ -151,7 +151,12 @@ pub async fn place(app: &Platform, by: Actor<'_>, asked: &str, write: bool) -> R
 
 /// An issue by its id, and its project as `by` sees it: 404 unless they
 /// may read it.
-async fn issue_place(app: &Platform, by: Actor<'_>, id: &str, write: bool) -> Result<(db::Issue, Place), ApiError> {
+pub(crate) async fn issue_place(
+    app: &Platform,
+    by: Actor<'_>,
+    id: &str,
+    write: bool,
+) -> Result<(db::Issue, Place), ApiError> {
     let issue = app.db.issue(id)?.ok_or_else(no_issue)?;
     let place = match place(app, by, &issue.project, write).await {
         Err(e) if e.0 == StatusCode::NOT_FOUND => return Err(no_issue()),

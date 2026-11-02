@@ -151,6 +151,7 @@ pub fn new_draft(repo: &str, number: u64, d: &Draft) -> Option<NewDraft> {
         body,
         agent: Some(d.by.clone()),
         import_key: Some(import_key(repo, number, &d.id)),
+        native_issue: None,
     })
 }
 
