@@ -6838,6 +6838,11 @@
             "type": "string"
           },
           {
+            "const": "no_such_session",
+            "description": "The session it named isn't there (`asked`), or is more than one:\nno other session got it, and it waits in the inbox. `names` are the\nones there are (#576).",
+            "type": "string"
+          },
+          {
             "const": "offline",
             "description": "The machine is offline, or didn't answer.",
             "type": "string"
@@ -6865,6 +6870,13 @@
           "machine_name": {
             "description": "What the machine was called when it was told.",
             "type": "string"
+          },
+          "names": {
+            "description": "With `no_such_session`: the names it could have used (#576).",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
           },
           "reply": {
             "description": "With `answered`: the number of the agent's reply.",

@@ -25,6 +25,8 @@ pub struct MentionStatus {
     pub state: String,
     pub session: Option<String>,
     pub asked: Option<String>,
+    /// With `asked`: the names it could have used (#576).
+    pub names: Vec<String>,
     pub reply: Option<i64>,
     pub at: u64,
 }
@@ -47,11 +49,11 @@ impl Db {
     /// Set the status, replacing any the message had for the machine.
     pub fn set_chat_mention_status(&self, s: &MentionStatus) -> Result<()> {
         self.c().execute(
-            "INSERT INTO chat_mention_status (room, seq, machine, machine_name, root, state, session, asked, reply, at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
+            "INSERT INTO chat_mention_status (room, seq, machine, machine_name, root, state, session, asked, reply, at, names)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
              ON CONFLICT (room, seq, machine) DO UPDATE SET machine_name = excluded.machine_name,
              root = excluded.root, state = excluded.state, session = excluded.session, asked = excluded.asked,
-             reply = excluded.reply, at = excluded.at",
+             reply = excluded.reply, at = excluded.at, names = excluded.names",
             params![
                 s.room,
                 s.seq,
@@ -62,20 +64,21 @@ impl Db {
                 s.session,
                 s.asked,
                 s.reply,
-                s.at as i64
+                s.at as i64,
+                names_json(&s.names)
             ],
         )?;
         Ok(())
     }
 
     /// Settle a mention that was `sending`: the daemon's answer (`state`,
-    /// `session`, `asked`, `at`). Only a `sending` one changes, so an agent's
+    /// `session`, `asked`, `names`, `at`). Only a `sending` one changes, so an agent's
     /// reply that got in first (`answered`) stays. Whether it changed.
     pub fn finish_chat_mention(&self, s: &MentionStatus) -> Result<bool> {
         let n = self.c().execute(
-            "UPDATE chat_mention_status SET state = ?4, session = ?5, asked = ?6, at = ?7
+            "UPDATE chat_mention_status SET state = ?4, session = ?5, asked = ?6, at = ?7, names = ?8
              WHERE room = ?1 AND seq = ?2 AND machine = ?3 AND state = 'sending'",
-            params![s.room, s.seq, s.machine, s.state, s.session, s.asked, s.at as i64],
+            params![s.room, s.seq, s.machine, s.state, s.session, s.asked, s.at as i64, names_json(&s.names)],
         )?;
         Ok(n == 1)
     }
@@ -97,7 +100,7 @@ impl Db {
         let mut c = self.c();
         let tx = c.transaction()?;
         let rows: Vec<MentionStatus> = tx.query_map(
-            "SELECT room, seq, machine, machine_name, root, state, session, asked, reply, at
+            "SELECT room, seq, machine, machine_name, root, state, session, asked, reply, at, names
              FROM chat_mention_status WHERE machine = ?1 AND at >= ?2
              AND (state = 'offline' OR (state = 'sending' AND at < ?4))
              ORDER BY at, room, seq LIMIT ?3",
@@ -152,7 +155,7 @@ impl Db {
     /// machine's name.
     pub fn chat_mention_statuses(&self, room: &str, from: i64, to: i64) -> Result<Vec<MentionStatus>> {
         self.c().query_map(
-            "SELECT room, seq, machine, machine_name, root, state, session, asked, reply, at
+            "SELECT room, seq, machine, machine_name, root, state, session, asked, reply, at, names
              FROM chat_mention_status WHERE room = ?1 AND seq >= ?2 AND seq <= ?3
              ORDER BY seq, machine_name, machine",
             params![room, from, to],
@@ -203,7 +206,13 @@ fn status_row(r: &super::sql::Row) -> Result<MentionStatus> {
         asked: r.get(7)?,
         reply: r.get(8)?,
         at: r.get::<i64>(9)? as u64,
+        names: r.get::<Option<String>>(10)?.and_then(|j| serde_json::from_str(&j).ok()).unwrap_or_default(),
     })
+}
+
+/// `names` as stored: a JSON array, or NULL for none.
+fn names_json(names: &[String]) -> Option<String> {
+    (!names.is_empty()).then(|| serde_json::to_string(names).unwrap_or_default())
 }
 
 /// A message's statuses go with its content.
@@ -226,6 +235,7 @@ mod tests {
             state: state.into(),
             session: None,
             asked: None,
+            names: vec![],
             reply: None,
             at,
         }

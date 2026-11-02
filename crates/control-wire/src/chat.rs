@@ -485,6 +485,10 @@ pub struct ChatMentionStatus {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "ts", ts(optional))]
     pub asked: Option<String>,
+    /// With `no_such_session`: the names it could have used (#576).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[cfg_attr(feature = "ts", ts(optional, as = "Option<Vec<String>>"))]
+    pub names: Vec<String>,
     /// With `answered`: the number of the agent's reply.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "ts", ts(optional))]
@@ -508,6 +512,10 @@ pub enum ChatMentionState {
     /// The session (`session`) has it queued, but its hooks aren't
     /// listening to take it (#571).
     Queued,
+    /// The session it named isn't there (`asked`), or is more than one:
+    /// no other session got it, and it waits in the inbox. `names` are the
+    /// ones there are (#576).
+    NoSuchSession,
     /// The machine is offline, or didn't answer.
     Offline,
     /// The machine's agent replied in the thread (`reply`).

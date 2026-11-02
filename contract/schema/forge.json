@@ -820,11 +820,18 @@
       "description": "How a daemon routed an `agents.mention` (#502): which of its four steps\ntook it.",
       "properties": {
         "asked": {
-          "description": "The session the message named (`@geek/slowness`), when the daemon\nfound no such session and the message went to another or waits.",
+          "description": "The session the message named (`@geek/slowness`), when the daemon\nfound no such session (or more than one): the message waits.",
           "type": [
             "string",
             "null"
           ]
+        },
+        "names": {
+          "description": "With `asked`: the names a mention could have used (sessions and\ntabs, at most 10), since no session was called that (#576).",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
         },
         "queued": {
           "description": "The session's hook wasn't waiting, so the mention only sits in its\nqueue (#571). A daemon from before it says nothing: handed over.",

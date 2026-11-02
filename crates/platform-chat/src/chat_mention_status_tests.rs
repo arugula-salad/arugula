@@ -37,6 +37,7 @@ fn done(step: RoutedStep, session: Option<&str>, asked: Option<&str>) -> OpAnswe
             session: session.map(str::to_owned),
             asked: asked.map(str::to_owned),
             queued: false,
+            names: vec![],
         }),
     }
 }
@@ -46,6 +47,20 @@ fn queued(step: RoutedStep, session: &str, asked: Option<&str>) -> OpAnswer {
     match done(step, Some(session), asked) {
         OpAnswer::Done { url, routed: Some(r) } => OpAnswer::Done { url, routed: Some(Routed { queued: true, ..r }) },
         other => other,
+    }
+}
+
+/// A mention that named a session none of the daemon's is called (#576).
+fn no_such(asked: &str, names: &[&str]) -> OpAnswer {
+    OpAnswer::Done {
+        url: None,
+        routed: Some(Routed {
+            step: RoutedStep::Inbox,
+            session: None,
+            asked: Some(asked.into()),
+            queued: false,
+            names: names.iter().map(|n| (*n).to_owned()).collect(),
+        }),
     }
 }
 
@@ -103,9 +118,11 @@ async fn each_answer_is_its_own_line_for_everyone() {
             json!("views"),
             json!("slowness"),
         ),
-        // 4: nobody took it.
-        (done(RoutedStep::Inbox, None, Some("slowness")), json!("waiting"), Value::Null, json!("slowness")),
+        // 4: nobody took it, and no session was named: it waits.
         (done(RoutedStep::Inbox, None, None), json!("waiting"), Value::Null, Value::Null),
+        // 4: it named a session that isn't there: not "waiting" (#576).
+        (no_such("slowness", &["views", "deploy"]), json!("no_such_session"), Value::Null, json!("slowness")),
+        (no_such("slowness", &[]), json!("no_such_session"), Value::Null, json!("slowness")),
         // The owner's switch is off, or the daemon doesn't know the op.
         (OpAnswer::Cant { why: "off".into() }, json!("offline"), Value::Null, Value::Null),
         (OpAnswer::Unknown, json!("offline"), Value::Null, Value::Null),
@@ -129,6 +146,11 @@ async fn each_answer_is_its_own_line_for_everyone() {
                 (session.clone(), asked.clone(), Value::Null),
                 "{answer:?} as {who} saw it"
             );
+            let names = match &answer {
+                OpAnswer::Done { routed: Some(r), .. } if !r.names.is_empty() => json!(r.names),
+                _ => Value::Null,
+            };
+            assert_eq!(field("names"), names, "{answer:?} as {who} saw it");
         }
         hears(&a_live, &format!("\"type\":\"reacted\",\"room\":\"ch_general\",\"seq\":{seq}"), Duration::from_secs(5))
             .await;
@@ -193,6 +215,7 @@ async fn the_agents_reply_in_the_thread_answers_it() {
             state: "delivered".into(),
             session: None,
             asked: None,
+            names: vec![],
             reply: None,
             at: 1,
         })
