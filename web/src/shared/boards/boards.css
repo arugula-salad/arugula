@@ -237,8 +237,65 @@
 }
 
 .board-who {
+  display: inline-flex;
+  align-items: center;
   min-width: 0;
-  overflow-wrap: anywhere;
+}
+
+/* Initials in a small circle (#547). */
+.board-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  box-sizing: border-box;
+  padding: 0 3px;
+  border-radius: 9px;
+  background: var(--raised);
+  color: var(--fg);
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.board-who {
+  gap: 2px;
+}
+
+/* A card's labels: three chips and a +N; on a phone, only the +N of all of them. */
+.board-labels {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+}
+
+.board-labels-top {
+  display: contents;
+}
+
+.board-label {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.board-labels-all {
+  display: none;
+}
+
+@media (max-width: 390px) {
+  .board-card .board-labels-top {
+    display: none;
+  }
+
+  .board-card .board-labels-all {
+    display: inline;
+  }
+}
+
+.board-drawer-tags {
+  margin: 8px 0;
 }
 
 .board-proof.proven {
@@ -970,6 +1027,69 @@
 
 .board-find-open {
   display: none;
+}
+
+/* The Label and Person menus beside it (#547): a list of checkboxes that stays open while you pick. */
+.board-facet {
+  position: relative;
+  flex: 0 0 auto;
+}
+
+.board-facet summary {
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: var(--chip-radius);
+  background: var(--raised);
+  font-size: 0.9em;
+  white-space: nowrap;
+}
+
+.board-facet-list {
+  position: absolute;
+  z-index: 5;
+  top: calc(100% + 4px);
+  left: 0;
+  min-width: 160px;
+  max-height: 50vh;
+  overflow: auto;
+  padding: 6px;
+  border: 1px solid var(--border, currentColor);
+  border-radius: 6px;
+  background: var(--bg);
+}
+
+.board-facet-item input {
+  flex: 0 0 auto;
+  width: auto;
+  margin: 0;
+}
+
+.board-facet-item {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 6px;
+  padding: 4px 2px;
+  white-space: nowrap;
+}
+
+@media (max-width: 700px) {
+  .board-find {
+    flex-wrap: wrap;
+  }
+
+  .board-find input {
+    flex-basis: 100%;
+  }
+
+  .board-facet[open] {
+    flex-basis: 100%;
+  }
+
+  .board-facet-list {
+    position: static;
+    margin-top: 4px;
+  }
 }
 
 @media (max-width: 700px) {

@@ -107,6 +107,14 @@ pub struct ReadBoardArgs {
     /// With board: only the rows in this group (its title, or zon_…).
     #[serde(default)]
     pub group: Option<String>,
+    /// With board: only the rows whose item has this label (#547); several,
+    /// comma-separated, match any. Case doesn't matter.
+    #[serde(default)]
+    pub label: Option<String>,
+    /// With board: only the rows assigned to this person, by login or
+    /// name, as the board shows it; several, comma-separated, match any.
+    #[serde(default)]
+    pub person: Option<String>,
 }
 
 /// A board's lane, to read only its rows.
@@ -1123,14 +1131,20 @@ fn docs_line(v: &BoardView) -> Option<String> {
     Some(parts.join(". "))
 }
 
-/// A board with only the rows `board_read` asked for (`q`, `lane`, `group`),
-/// and the line that says how many: `Showing 7 of 89 rows (q: "plane")`.
+/// The words of a comma-separated list, trimmed, without the empty ones.
+fn listed(s: &Option<String>) -> Vec<String> {
+    s.as_deref().unwrap_or("").split(',').map(|w| w.trim().to_owned()).filter(|w| !w.is_empty()).collect()
+}
+
+/// A board with only the rows `board_read` asked for (`q`, `lane`, `group`,
+/// `label`, `person`), and the line that says how many: `Showing 7 of 89 rows (q: "plane")`.
 /// `None` when it asked for none. A group with no row left is dropped, and
 /// the ready set keeps only the rows that are.
 fn narrowed(v: &BoardView, a: &ReadBoardArgs) -> Result<Option<(BoardView, String)>, String> {
     let given = |s: &Option<String>| s.as_deref().map(str::trim).filter(|s| !s.is_empty()).map(str::to_owned);
     let (q, group) = (given(&a.q), given(&a.group));
-    if q.is_none() && a.lane.is_none() && group.is_none() {
+    let (labels, people) = (listed(&a.label), listed(&a.person));
+    if q.is_none() && a.lane.is_none() && group.is_none() && labels.is_empty() && people.is_empty() {
         return Ok(None);
     }
     let group_id = group.as_deref().map(|g| find_group(v, g).map(|g| g.id.clone())).transpose()?;
@@ -1139,6 +1153,8 @@ fn narrowed(v: &BoardView, a: &ReadBoardArgs) -> Result<Option<(BoardView, Strin
         lane.is_none_or(|l| r.lane == l)
             && group_id.as_ref().is_none_or(|g| r.group.as_ref() == Some(g))
             && q.as_deref().is_none_or(|q| r.matches(q))
+            && (labels.is_empty() || labels.iter().any(|l| r.has_label(l)))
+            && (people.is_empty() || people.iter().any(|p| r.has_person(p)))
     };
     let all = rows(v).count();
     let mut out = v.clone();
@@ -1159,6 +1175,12 @@ fn narrowed(v: &BoardView, a: &ReadBoardArgs) -> Result<Option<(BoardView, Strin
     }
     if let Some(g) = &group {
         by.push(format!("group: {g}"));
+    }
+    if !labels.is_empty() {
+        by.push(format!("label: {}", labels.join(" or ")));
+    }
+    if !people.is_empty() {
+        by.push(format!("person: {}", people.join(" or ")));
     }
     Ok(Some((out, format!("Showing {shown} of {all} rows ({})", by.join(", ")))))
 }
@@ -1451,6 +1473,14 @@ mod tests {
                 json!([]),
             );
             r["lane"] = lane.into();
+            match n {
+                41 => r["live"]["labels"] = json!(["boards", "ui"]),
+                42 => {
+                    r["live"]["labels"] = json!(["boards"]);
+                    r["live"]["assignees"] = json!(["Ana Diaz"]);
+                }
+                _ => r["live"]["assignees"] = json!(["bob"]),
+            }
             if let Some(g) = group {
                 r["group"] = g.into();
             }
@@ -1473,6 +1503,8 @@ mod tests {
             q: q.map(Into::into),
             lane,
             group: group.map(Into::into),
+            label: None,
+            person: None,
         }
     }
 
@@ -1504,6 +1536,36 @@ mod tests {
         assert!(ids(&n).is_empty() && n.groups.is_empty());
         let no = narrowed(&v, &ask(None, None, Some("Wave 9"))).err().unwrap();
         assert!(no.contains("Wave 9") && no.contains("Wave 1"), "{no}");
+    }
+
+    /// board_read with label or person answers the rows whose item has one of
+    /// them, and the rest still have to hold.
+    #[test]
+    fn board_read_narrows_by_label_and_person() {
+        let v = big();
+        let by = |label: Option<&str>, person: Option<&str>, q: Option<&str>| {
+            let mut a = ask(q, None, None);
+            (a.label, a.person) = (label.map(Into::into), person.map(Into::into));
+            narrowed(&v, &a).unwrap().unwrap()
+        };
+        let (n, line) = by(Some("Boards"), None, None);
+        assert_eq!(ids(&n), ["row_1", "row_2"], "a label, in any case");
+        assert_eq!(line, "Showing 2 of 3 rows (label: Boards)");
+        let (n, _) = by(Some("ui, nothing"), None, None);
+        assert_eq!(ids(&n), ["row_1"], "any of several labels");
+        let (n, line) = by(None, Some("ana diaz"), None);
+        assert_eq!(ids(&n), ["row_2"], "a person by name");
+        assert_eq!(line, "Showing 1 of 3 rows (person: ana diaz)");
+        let (n, _) = by(None, Some("bob,ana"), None);
+        assert_eq!(ids(&n), ["row_2", "row_3"], "any of several people");
+        let (n, _) = by(Some("boards"), Some("bob"), None);
+        assert!(ids(&n).is_empty(), "label and person both have to hold");
+        let (n, _) = by(Some("boards"), None, Some("search"));
+        assert_eq!(ids(&n), ["row_2"], "and the text with them");
+        let (n, _) = by(None, None, Some("label:ui @none"));
+        assert!(ids(&n).is_empty());
+        let (n, _) = by(None, None, Some("label:ui"));
+        assert_eq!(ids(&n), ["row_1"], "label: in the text");
     }
 
     /// A board of rows by item, for the tests of addressing: each is

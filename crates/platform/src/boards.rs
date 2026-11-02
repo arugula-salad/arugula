@@ -410,6 +410,7 @@ fn live_item(i: &ForgeItem, repo: &str, checks: &[&CheckState]) -> wire::Live {
         number: i.number,
         title: i.title.clone(),
         assignees,
+        labels: serde_json::from_str(&i.labels).unwrap_or_default(),
         provider: None,
         identifier: None,
         state_name: None,
@@ -428,6 +429,7 @@ fn live_plane(i: &TrackerItem, c: &ReadableConnection) -> wire::Live {
         number: i.number,
         title: i.title.clone(),
         assignees: vec![],
+        labels: i.labels.clone(),
         provider: Some("plane".to_owned()),
         identifier: Some(c.identifier.clone()),
         state_name: Some(i.state_name.clone()),
@@ -451,6 +453,7 @@ fn live_run(run: &Run) -> wire::Live {
         number: 0,
         title: format!("{} run", run.trigger.as_str()),
         assignees: vec![],
+        labels: vec![],
         provider: None,
         identifier: None,
         state_name: None,
@@ -520,7 +523,7 @@ async fn chips(
             .collect();
         let people =
             if accounts.is_empty() { HashMap::new() } else { app.cache.accounts(&*app.hub, &accounts).await? };
-        for db::IssueState { id, number, title, closed, category, assignees: who } in found {
+        for db::IssueState { id, number, title, closed, category, assignees: who, labels } in found {
             let state = if closed { wire::LiveState::Closed } else { wire::LiveState::Open };
             let assignees = who
                 .into_iter()
@@ -539,6 +542,7 @@ async fn chips(
                     number,
                     title,
                     assignees,
+                    labels,
                     provider: None,
                     identifier: None,
                     state_name: None,

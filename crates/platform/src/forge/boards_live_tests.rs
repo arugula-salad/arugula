@@ -145,3 +145,63 @@ async fn a_row_on_an_issue_or_pr_names_its_assignees() {
     assert!(rows["fi_a1"].0["assignees"].is_null(), "a stale row reads as no one: {rows:?}");
     assert_eq!(rows[issue.as_str()].0["assignees"], json!(["bob", "carol"]), "{rows:?}");
 }
+
+/// A row carries its item's labels (#547): a native issue's, a mirrored
+/// item's and a Plane item's. A stale mirror row (not a list) reads as none.
+#[tokio::test]
+async fn a_row_carries_its_items_labels() {
+    let hub = Arc::new(TestHub::default());
+    let (gh, app, base) = serve(&hub).await;
+    let (team, _) = world(&hub, &gh, &app).await;
+    hub.flag("team:t1", true);
+    hub.flag_named("team:t1", FLAG, true);
+
+    let (_, b) =
+        call(&base, "bob", "POST", &format!("/api/projects/{team}/boards"), Some(json!({ "title": "Launch" }))).await;
+    let id = b["board"]["id"].as_str().unwrap().to_owned();
+    let (s, issue) = call(
+        &base,
+        "bob",
+        "POST",
+        &format!("/api/projects/{team}/issues"),
+        Some(json!({ "title": "Fix login", "labels": ["boards", "ui"] })),
+    )
+    .await;
+    assert_eq!(s, 200, "{issue}");
+    let issue = issue["id"].as_str().unwrap().to_owned();
+    app.db
+        .c()
+        .execute(
+            "INSERT INTO tracker_connections (id, project_id, provider, workspace_slug, source_project_id, identifier,
+                 name, mirror_id, created_at)
+             VALUES ('trk_1', ?1, 'plane', 'acme', 'p1', 'ARUGU', 'Arugula', -1, 1)",
+            params![team],
+        )
+        .unwrap();
+    app.db
+        .c()
+        .execute(
+            "INSERT INTO forge_items (id, repo_id, number, kind, state, title, provider, connection_id, state_name,
+                 state_group, labels, created_at, updated_at, synced_at)
+             VALUES ('fi_pl', -1, 1, 'issue', 'open', 't', 'plane', 'trk_1', 'Todo', 'unstarted', '[\"tracker\"]', 1, 1, 1)",
+            params![],
+        )
+        .unwrap();
+    for ptr in [
+        json!({ "kind": "forge_item", "id": "fi_a3" }),
+        json!({ "kind": "forge_item", "id": "fi_a1" }),
+        json!({ "kind": "forge_item", "id": "fi_pl" }),
+        json!({ "kind": "issue", "id": issue }),
+    ] {
+        let (s, v) = put(&base, &id, json!({ "entry": "row", "note": "n", "pointer": ptr })).await;
+        assert_eq!(s, 200, "{v}");
+    }
+    app.db.c().execute("UPDATE forge_items SET labels = '[\"docs\",\"ci\"]' WHERE id = 'fi_a3'", params![]).unwrap();
+    app.db.c().execute("UPDATE forge_items SET labels = 'null' WHERE id = 'fi_a1'", params![]).unwrap();
+
+    let rows = live(&base, "bob", &id).await;
+    assert_eq!(rows[issue.as_str()].0["labels"], json!(["boards", "ui"]), "{rows:?}");
+    assert_eq!(rows["fi_a3"].0["labels"], json!(["docs", "ci"]), "{rows:?}");
+    assert_eq!(rows["fi_pl"].0["labels"], json!(["tracker"]), "{rows:?}");
+    assert!(rows["fi_a1"].0["labels"].is_null(), "a stale row reads as none: {rows:?}");
+}

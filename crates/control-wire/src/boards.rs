@@ -929,6 +929,10 @@ pub struct Live {
     /// issue's names. A run has none.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub assignees: Vec<String>,
+    /// The item's labels (#547): a native issue's, a mirrored item's, a
+    /// Plane item's. A run has none.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub labels: Vec<String>,
     /// `plane` for a tracker's item; absent for GitHub, native issues and runs.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub provider: Option<String>,
@@ -1735,15 +1739,24 @@ impl Row {
     /// Whether the row answers a find (#546), case-insensitive. Each word of
     /// `q` has to hold: `#541` is the item's number, `541` is that or text,
     /// `ARUGU-12` a tracker key or text, anything else text in the item's
-    /// title or the row's note. An empty `q` matches every row. The web's
+    /// title, a label or the row's note; `label:ui` is a label, whole, and `@ana` a
+    /// person assigned. An empty `q` matches every row. The web's
     /// `rowMatches` (`shared/boards/text.ts`) says the same.
     pub fn matches(&self, q: &str) -> bool {
         let q = q.to_lowercase();
         let number = self.live.as_ref().map(|l| l.number).filter(|n| *n > 0);
         let key =
             self.live.as_ref().and_then(|l| Some(format!("{}-{}", l.identifier.as_ref()?, number?).to_lowercase()));
-        let text = format!("{}\n{}", self.live.as_ref().map_or("", |l| l.title.as_str()), self.note).to_lowercase();
+        let labels = self.live.as_ref().map_or(String::new(), |l| l.labels.join("\n"));
+        let text =
+            format!("{}\n{}\n{labels}", self.live.as_ref().map_or("", |l| l.title.as_str()), self.note).to_lowercase();
         q.split_whitespace().all(|w| {
+            if let Some(l) = w.strip_prefix("label:").filter(|l| !l.is_empty()) {
+                return self.has_label(l);
+            }
+            if let Some(p) = w.strip_prefix('@').filter(|p| !p.is_empty()) {
+                return self.has_person(p);
+            }
             if let Some(n) = w.strip_prefix('#').filter(|n| !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit())) {
                 return number.is_some_and(|x| n.parse() == Ok(x));
             }
@@ -1757,6 +1770,21 @@ impl Row {
                     && n.bytes().all(|b| b.is_ascii_digit())
             });
             (keyed && key.as_deref() == Some(w)) || text.contains(w)
+        })
+    }
+
+    /// Whether the row's item has this label, case-insensitive and whole.
+    pub fn has_label(&self, label: &str) -> bool {
+        self.live.as_ref().is_some_and(|l| l.labels.iter().any(|x| x.eq_ignore_ascii_case(label.trim())))
+    }
+
+    /// Whether the row's item is assigned to a person whose name or login
+    /// holds `who`, case-insensitive; a space in a name reads as `_`, as the
+    /// text render writes it.
+    pub fn has_person(&self, who: &str) -> bool {
+        let who = who.trim().to_lowercase().replace(char::is_whitespace, "_");
+        self.live.as_ref().is_some_and(|l| {
+            l.assignees.iter().any(|a| a.to_lowercase().replace(char::is_whitespace, "_").contains(&who))
         })
     }
 
@@ -1797,6 +1825,14 @@ fn fit(s: &str, max: usize) -> String {
     cut.truncate(cut.trim_end().len());
     cut.push('…');
     cut
+}
+
+/// ` [boards, ui]`, or empty for none.
+fn labels_suffix(labels: &[String]) -> String {
+    if labels.is_empty() {
+        return String::new();
+    }
+    format!(" [{}]", labels.join(", "))
 }
 
 /// ` (@a, @b)`, or empty for none.
@@ -1886,11 +1922,12 @@ fn lane_text<'a>(out: &mut String, title: &str, rows: impl Iterator<Item = &'a R
             _ => "",
         };
         let room = TEXT_WIDTH - lead.chars().count();
-        let who = r.live.as_ref().map(|l| assignees_suffix(&l.assignees)).unwrap_or_default();
+        let who =
+            r.live.as_ref().map(|l| labels_suffix(&l.labels) + &assignees_suffix(&l.assignees)).unwrap_or_default();
         let note = if who.is_empty() || room < who.chars().count() + 8 {
             fit(&format!("{mark}{}", r.note), room)
         } else {
-            // The note gives way, so the assignees stay whole.
+            // The note gives way, so the labels and assignees stay whole.
             format!("{}{who}", fit(&format!("{mark}{}", r.note), room - who.chars().count()))
         };
         *out += format!("{lead}{note}").trim_end();
@@ -2108,6 +2145,7 @@ mod tests {
                 number,
                 title: title.into(),
                 assignees: vec![],
+                labels: vec![],
                 provider: None,
                 identifier: identifier.map(Into::into),
                 state_name: None,
@@ -2219,6 +2257,7 @@ mod tests {
             number: 7,
             title: "t".into(),
             assignees: vec![],
+            labels: vec![],
             provider: None,
             identifier: None,
             state_name: None,
@@ -2353,6 +2392,7 @@ Done: People can sign up.
                 number: 4,
                 title: "Fix login".into(),
                 assignees: who.iter().map(|w| (*w).to_owned()).collect(),
+                labels: vec![],
                 provider: None,
                 identifier: None,
                 state_name: None,
@@ -2373,6 +2413,32 @@ Done: People can sign up.
         );
         assert!(text.starts_with(&want), "{text}");
         assert!(text.lines().all(|l| l.chars().count() <= TEXT_WIDTH), "{text}");
+    }
+
+    /// A row's labels follow its note as `[boards, ui]`, before its
+    /// assignees, and find it as `label:ui` and `@ana` do (#547).
+    #[test]
+    fn a_row_shows_and_finds_its_labels() {
+        let mut r = row(Pointer::Issue { id: "iss_1a2b3c4d5e6f7a8b".into() }, Lane::Next, "Fix login");
+        r.live = Some(Live {
+            state: LiveState::Open,
+            kind: "native".into(),
+            repo: None,
+            number: 4,
+            title: "Fix login".into(),
+            assignees: vec!["Ana Diaz".into()],
+            labels: vec!["boards".into(), "ui".into()],
+            provider: None,
+            identifier: None,
+            state_name: None,
+            url: None,
+            category: None,
+        });
+        let text = render(&view(lanes(vec![(Lane::Next, vec![r.clone()])])));
+        assert!(text.contains("Fix login [boards, ui] (@Ana_Diaz)\n"), "{text}");
+        assert!(r.matches("label:UI") && r.matches("boards") && r.matches("@ana label:boards #4"));
+        assert!(!r.matches("label:bo") && !r.matches("@bob") && !r.matches("label:ui @bob"));
+        assert!(r.matches("@ana_di"), "a space in a name reads as _");
     }
 
     /// A block's row carries what its machine reported under it, and the

@@ -144,7 +144,7 @@ test("a board Launch has the four lanes and takes the first issue from Triage as
   await expect(card.locator(".board-card-title .board-title")).toHaveText(FIRST);
   await expect(card.locator("[data-board-ptr]")).toHaveText(/^#\d+$/);
   await expect(card.locator("[data-board-live]")).toHaveCount(0);
-  await expect(card.locator("[data-board-who]")).toHaveText("alice");
+  await expect(card.locator("[data-board-who]")).toHaveAttribute("aria-label", "alice");
 });
 
 test("a row is added through the picker, and editing its note keeps what it points at", async () => {
