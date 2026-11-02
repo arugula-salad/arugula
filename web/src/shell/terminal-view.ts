@@ -128,6 +128,7 @@ export class TerminalView {
   private offAppearance: () => void;
   /** Palette colors programs set (OSC 4), by index. */
   private custom = new Map<number, string>();
+  private paletteDue = false;
   /** Kitty keyboard flags of the primary and alternate screens, which keep
    * separate stacks; the stream (and a snapshot, as `CSI = u`) sets them. */
   private kitty = { normal: new KittyFlags(), alternate: new KittyFlags() };
@@ -399,23 +400,39 @@ export class TerminalView {
     p.registerOscHandler(4, (data) => {
       const parts = data.split(";");
       if (parts.length % 2) return true;
+      let changed = false;
       for (let i = 0; i < parts.length; i += 2) {
         const index = Number(parts[i]);
         const spec = parts[i + 1];
         if (spec === "?" || !Number.isInteger(index) || index < 0 || index > 255) continue;
         const color = parseColor(spec);
         if (!color) continue;
-        if (color === ghosttyDefault(index)) this.custom.delete(index);
-        else this.custom.set(index, color);
+        if (color === ghosttyDefault(index)) changed = this.custom.delete(index) || changed;
+        else if (this.custom.get(index) !== color) {
+          this.custom.set(index, color);
+          changed = true;
+        }
       }
-      this.applyTheme();
+      if (changed) this.paletteChanged();
       return true;
     });
     p.registerOscHandler(104, (data) => {
+      const before = this.custom.size;
       if (!data) this.custom.clear();
       else for (const i of data.split(";")) this.custom.delete(Number(i));
-      this.applyTheme();
+      if (this.custom.size !== before) this.paletteChanged();
       return true;
+    });
+  }
+
+  /** Once for all the colors in what's being parsed: setting a theme takes
+   * a fraction of a millisecond, and a snapshot brings 256 colors. */
+  private paletteChanged() {
+    if (this.paletteDue) return;
+    this.paletteDue = true;
+    queueMicrotask(() => {
+      this.paletteDue = false;
+      this.applyTheme();
     });
   }
 

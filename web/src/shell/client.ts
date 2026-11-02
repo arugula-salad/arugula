@@ -1455,8 +1455,9 @@ export class Client {
 
   // ---- terminals loading behind the shown tab
 
-  /** Terminals not asked for yet: every one parses its history on this
-   * thread, 40 ms or so each, so asked for at once they hold up the page. */
+  /** Terminals not asked for yet: each snapshot is written on this thread,
+   * without yielding unless it's in pieces, so asked for at once they hold up
+   * the page and the tab on screen waits its turn. */
   private loadingBehind = new Set<PaneId>();
   /** Snapshots asked for and not yet written: the next waits for these. */
   private snapshotsDue = new Set<PaneId>();
