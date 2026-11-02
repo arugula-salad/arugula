@@ -280,6 +280,8 @@ pub(super) fn pointer_cols(p: &Pointer) -> (Option<&'static str>, Option<&str>, 
         Pointer::Workspace { id } => (Some("workspace"), Some(id), None),
         Pointer::Block { machine, pane } => (Some("block"), Some(machine), Some(pane)),
         Pointer::Link { url } => (Some("link"), Some(url), None),
+        // A Doc is linked to a board or a row (`board_docs`), never a pointer of one.
+        Pointer::Doc { .. } | Pointer::MachineDoc { .. } => (None, None, None),
     }
 }
 
@@ -823,6 +825,7 @@ impl Db {
                         )?;
                     }
                     tx.execute("UPDATE board_attachments SET row_id = ?2 WHERE row_id = ?1", params![from, id])?;
+                    super::boards_docs::fold_rows(&tx, &id, from)?;
                     super::boards_asks::absorb(&tx, from, &id)?;
                     tx.execute("DELETE FROM board_entries WHERE id = ?1", params![from])?;
                 }
@@ -940,6 +943,7 @@ impl Db {
                     )));
                 }
             }
+            super::boards_docs::delete_of_group(&tx, board, id)?;
             tx.execute(
                 "DELETE FROM board_attachments WHERE row_id IN
                      (SELECT id FROM board_entries WHERE board_id = ?1 AND kind = 'row' AND zone_id = ?2)",
@@ -961,6 +965,7 @@ impl Db {
             if row.source.is_some() {
                 return bad(super::boards_epics::follows_the_epic(&tx, board, &row.pointer)?);
             }
+            super::boards_docs::delete_of_rows(&tx, &[id.to_owned()])?;
             tx.execute("DELETE FROM board_attachments WHERE row_id = ?1", params![id])?;
             tx.execute("DELETE FROM board_asks WHERE row_id = ?1", params![id])?;
             tx.execute("DELETE FROM board_entries WHERE id = ?1", params![id])?;
@@ -1365,6 +1370,11 @@ pub(crate) fn erase_account(c: &impl Sql, d: &Deleted) -> Result<()> {
         params![],
     )?;
     c.execute(
+        "DELETE FROM board_docs WHERE board_id IN
+             (SELECT id FROM boards WHERE project_id NOT IN (SELECT id FROM projects))",
+        params![],
+    )?;
+    c.execute(
         "DELETE FROM board_asks WHERE board_id IN
              (SELECT id FROM boards WHERE project_id NOT IN (SELECT id FROM projects))",
         params![],
@@ -1382,6 +1392,7 @@ pub(crate) fn erase_account(c: &impl Sql, d: &Deleted) -> Result<()> {
     c.execute("DELETE FROM work_items WHERE project_id NOT IN (SELECT id FROM projects)", params![])?;
     super::boards_asks::erase_account(c, d)?;
     super::boards_relations::erase_account(c, d)?;
+    super::boards_docs::erase_account(c, d)?;
     c.execute("DELETE FROM board_settings WHERE project_id NOT IN (SELECT id FROM projects)", params![])?;
     c.execute("DELETE FROM boards WHERE project_id NOT IN (SELECT id FROM projects)", params![])?;
     c.execute("UPDATE boards SET created_by = '' WHERE created_by = ?1", params![d.account])?;

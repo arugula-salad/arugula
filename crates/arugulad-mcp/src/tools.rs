@@ -538,6 +538,9 @@ pub struct OpenPrArgs {
     /// Beside this pane. Default: the caller's own pane (an agent block, or the terminal pane `arugula mcp` runs in).
     #[serde(default)]
     pub beside: Option<PaneArg>,
+    /// Hold its merge while you finish: why, in a few words (shown as "Held by you: …"). Shows the block and holds it in one call; draft kind merge or release lets it go.
+    #[serde(default)]
+    pub hold: Option<String>,
 }
 
 #[derive(Deserialize, JsonSchema)]
@@ -630,6 +633,20 @@ pub struct PrMergeArgs {
     /// merge, rebase, rebase-merge, squash or fast-forward-only (default merge).
     #[serde(default)]
     pub style: Option<String>,
+}
+
+#[derive(Deserialize, JsonSchema)]
+pub struct PrHoldArgs {
+    /// The PR block (from show).
+    pub block: PaneArg,
+    /// Why the merge waits, in a few words: the user reads it where the Merge button was.
+    pub reason: String,
+}
+
+#[derive(Deserialize, JsonSchema)]
+pub struct PrReleaseArgs {
+    /// The PR block (from show).
+    pub block: PaneArg,
 }
 
 /// `delegate`'s jobs.
@@ -755,8 +772,20 @@ const DRAFT: &[Kind] = &[
     },
     Kind {
         name: "merge",
-        description: "Merging a PR block's pull request.",
+        description: "Merging a PR block's pull request. It also lets go of your hold on it.",
         schema: schema_for_type::<PrMergeArgs>,
+        flag: None,
+    },
+    Kind {
+        name: "hold",
+        description: "Hold a PR block's merge until you say it's ready (you're mid-turn, or waiting on other CI): the block shows \"Held by you: reason\" in place of its Merge button, on the user's screen only; nothing goes to the forge. The user can still choose Merge anyway. It ends when you draft the merge or release, your pane closes, 24 hours pass, or the PR is merged or closed.",
+        schema: schema_for_type::<PrHoldArgs>,
+        flag: None,
+    },
+    Kind {
+        name: "release",
+        description: "Let go of your hold on a PR block's merge. Drafting the merge does this too.",
+        schema: schema_for_type::<PrReleaseArgs>,
         flag: None,
     },
     Kind {
@@ -1540,7 +1569,7 @@ impl ToolCall<'_, '_> {
                 Err(e) => Err(e),
             },
             ("show", Some("pr")) => match parse::<OpenPrArgs>(args) {
-                Ok(a) => self.open_forge(ForgeOpen { pr: Some(a.pr), ..Default::default() }, a.dir, a.beside).await,
+                Ok(a) => self.show_pr(a).await,
                 Err(e) => Err(e),
             },
             ("show", Some("issue")) => match parse::<OpenIssueArgs>(args) {
@@ -1584,6 +1613,14 @@ impl ToolCall<'_, '_> {
             },
             ("draft", Some("merge")) => match parse::<PrMergeArgs>(args) {
                 Ok(a) => self.pr_write(&a.block, Write::Merge { style: a.style }).await,
+                Err(e) => Err(e),
+            },
+            ("draft", Some("hold")) => match parse::<PrHoldArgs>(args) {
+                Ok(a) => self.pr_hold(&a.block, a.reason).await,
+                Err(e) => Err(e),
+            },
+            ("draft", Some("release")) => match parse::<PrReleaseArgs>(args) {
+                Ok(a) => self.pr_release(&a.block).await,
                 Err(e) => Err(e),
             },
             ("draft", Some("issue")) => match parse::<IssueNewArgs>(args) {
@@ -2787,6 +2824,57 @@ impl ToolCall<'_, '_> {
         )
     }
 
+    /// `show` kind `pr`, held in the same call when `hold` is given.
+    async fn show_pr(&self, a: OpenPrArgs) -> Out {
+        let hold = a.hold.filter(|h| !h.trim().is_empty());
+        let what = ForgeOpen { pr: Some(a.pr), ..Default::default() };
+        let mut out = self.open_forge(what, a.dir, a.beside).await?;
+        if let (Some(reason), Some(block)) = (hold, out["block"].as_u64().and_then(|b| PaneId::try_from(b).ok())) {
+            let b = self.app.mux.api(|r| Api::Block(block, r)).await.flatten().ok_or("the block closed")?;
+            self.hold_on(block, &b, reason).await?;
+            let said = out["summary"].as_str().unwrap_or_default().to_owned();
+            out["summary"] = json!(format!("{said} (held: draft kind merge or release lets it go)"));
+        }
+        Ok(out)
+    }
+
+    /// The caller holds a PR block's merge.
+    async fn pr_hold(&self, block: &PaneArg, reason: String) -> Out {
+        let (id, b) = self.forge(block).await?;
+        let out = self.hold_on(id, &b, reason).await?;
+        done(
+            format!(
+                "Held %{id}'s merge: the user sees why instead of Merge, and can still choose Merge anyway. draft kind merge or release lets it go"
+            ),
+            out,
+        )
+    }
+
+    async fn hold_on(&self, id: PaneId, b: &Arc<dyn crate::block::Block>, reason: String) -> Result<Value, String> {
+        let pane = self.own_pane().ok_or("a hold is an agent's: call it from your own agent block or pane")?;
+        let by = self.holder_title(pane).await;
+        let args = json!({ "pane": pane, "reason": reason, "by": by });
+        b.call_by("hold", args, Some(&self.by())).await.map_err(|e| format!("holding %{id}: {e}"))
+    }
+
+    /// What "Held by …" calls the caller: its block's title, else its kind.
+    async fn holder_title(&self, pane: PaneId) -> String {
+        let block = self.app.mux.api(|r| Api::Block(pane, r)).await.flatten();
+        let title = block.and_then(|b| {
+            let t = b.config()["title"].as_str().map(str::to_owned).or_else(|| b.summary().title);
+            t.map(|t| t.trim().to_owned()).filter(|t| !t.is_empty() && t.chars().count() <= 80)
+        });
+        title.unwrap_or_else(|| format!("%{pane}"))
+    }
+
+    /// The caller lets go of a PR block's merge.
+    async fn pr_release(&self, block: &PaneArg) -> Out {
+        let (id, b) = self.forge(block).await?;
+        let out = b.call_by("release", json!({}), Some(&self.by())).await?;
+        let word = if out["released"] == true { "Released" } else { "Nothing was held on" };
+        done(format!("{word} %{id}'s merge"), out)
+    }
+
     /// A new issue drafted again, on its block, after the user asked for
     /// changes.
     async fn redraft_issue(&self, block: &PaneArg, title: String, body: String) -> Out {
@@ -3551,6 +3639,14 @@ mod tests {
         assert!(e.contains("it takes nothing else"), "{e}");
         let (k, a) = kind("draft", json!({ "kind": "merge", "block": 4 })).unwrap();
         assert_eq!((k, a), (Some("merge"), json!({ "block": 4 })), "kind is taken out");
+        // #495: hold and release are draft's kinds, and show pr takes a hold.
+        let (k, a) = kind("draft", json!({ "kind": "hold", "block": 4, "reason": "e2e" })).unwrap();
+        assert_eq!((k, a), (Some("hold"), json!({ "block": 4, "reason": "e2e" })));
+        let (k, a) = kind("draft", json!({ "kind": "release", "block": 4 })).unwrap();
+        assert_eq!((k, a), (Some("release"), json!({ "block": 4 })));
+        assert!(kind("show", json!({ "kind": "pr", "pr": "o/r#1", "hold": "e2e" })).is_ok());
+        let e = kind("draft", json!({ "kind": "release", "block": 4, "reason": "x" })).unwrap_err();
+        assert!(e.contains("reason isn't an argument of draft kind release"), "{e}");
         // history isn't a group: its kind is its own argument, passed on.
         let (k, a) = kind("history", json!({ "kind": "answer" })).unwrap();
         assert_eq!((k, a), (None, json!({ "kind": "answer" })));

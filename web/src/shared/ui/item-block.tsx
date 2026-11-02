@@ -49,8 +49,8 @@ export type ItemFact =
   | { kind: "text"; text: string; title?: string };
 
 /** The one thing the reader should do next. `warn` waits on you, `danger`
- * is broken, `ok` is ready. */
-export type NextStep = { tone: "warn" | "danger" | "ok"; text: string; actions?: ComponentChildren };
+ * is broken, `ok` is ready, `info` is a note (the merge is held). */
+export type NextStep = { tone: "warn" | "danger" | "ok" | "info"; text: string; actions?: ComponentChildren };
 
 export type ItemTab = {
   id: string;
@@ -206,7 +206,7 @@ function Fact({ fact }: { fact: ItemFact }) {
   }
 }
 
-const STRIP_ICON = { warn: "●", danger: "✕", ok: "✓" } as const;
+const STRIP_ICON = { warn: "●", danger: "✕", ok: "✓", info: "○" } as const;
 
 /** The body, folded to a few lines. More shows only when something is
  * folded away. */

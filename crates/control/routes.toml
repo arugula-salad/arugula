@@ -2029,6 +2029,22 @@ clients = ["page", "cli"]
 note = "Disconnects a Plane project (Arugula #356): its secrets go at once, its mirrored items after the grace period."
 
 [[route]]
+method = "GET"
+path = "/api/projects/{project}/trackers/{connection}/history"  # wire::projects::TRACKER_HISTORY
+process = "platform"
+auth = "cloud_driver"
+clients = ["page"]
+note = "What Arugula changed in a connected Plane project lately (Arugula #441): moves to Done after a merged PR, those that failed for good, and the agent writes a person decided. The newest 20, for the project's members, behind the boards Labs flag."
+
+[[route]]
+method = "POST"
+path = "/api/projects/{project}/trackers/{connection}/moves/{job}/retry"  # wire::projects::TRACKER_MOVE_RETRY
+process = "platform"
+auth = "session"
+clients = ["page"]
+note = "Queues a failed move to Done again (Arugula #441): an owner or editor, behind the boards Labs flag. A job that isn't that connection's failed move is a 404."
+
+[[route]]
 method = "POST"
 path = "/api/projects/{project}/trackers/{connection}/writes"  # wire::projects::TRACKER_WRITES
 process = "platform"
@@ -2347,6 +2363,14 @@ process = "platform"
 auth = "daemon"
 clients = ["daemon"]
 note = "A machine's agent replies in a session's thread as its owner (aru-121, MCP's session_reply), with `sessions.reply` over its project: answers its open question, or queues a prompt (never approves a permission). Says which."
+
+[[route]]
+method = "POST"
+path = "/api/daemon/sessions/{ses}/stop"  # wire::sessions::AGENT_SESSION_STOP
+process = "platform"
+auth = "daemon"
+clients = ["daemon"]
+note = "A machine's agent stops a session its owner asked for (#504, MCP's session_stop), with `sessions.reply` or `sessions.start` over its project: the card's Stop, with a line in the thread saying whose agent and why. Never another person's session."
 
 [[route]]
 method = "GET"
@@ -2886,6 +2910,38 @@ note = "Takes an attachment off its row: owners and editors."
 
 [[route]]
 method = "POST"
+path = "/api/boards/{id}/docs"  # wire::boards::BOARD_DOCS
+process = "platform"
+auth = "session"
+clients = ["page", "cli"]
+note = "Links a Doc (a project Doc of the board's project, or a machine's Doc block) to the board's Docs strip, or with `row` to that row: owners and editors. One linked there already is not linked again; at most 20 in each."
+
+[[route]]
+method = "DELETE"
+path = "/api/boards/{id}/docs/{doc}"  # wire::boards::BOARD_DOC
+process = "platform"
+auth = "session"
+clients = ["page", "cli"]
+note = "Takes a Doc off the board's Docs strip or a row: owners and editors."
+
+[[route]]
+method = "POST"
+path = "/api/boards/{id}/docs/{doc}/move"  # wire::boards::BOARD_DOC_MOVE
+process = "platform"
+auth = "session"
+clients = ["page", "cli"]
+note = "Moves a Doc along its Docs strip or row: owners and editors."
+
+[[route]]
+method = "GET"
+path = "/api/projects/{project}/docs/{doc}/boards"  # wire::boards::PROJECT_DOC_BOARDS
+process = "platform"
+auth = "session"
+clients = ["page"]
+note = "The boards of the project that list a project Doc, in the strip or on a row: members. Empty with boards off."
+
+[[route]]
+method = "POST"
 path = "/api/boards/{id}/rows/{row}/ask"  # wire::boards::BOARD_ROW_ASK
 process = "platform"
 auth = "session"
@@ -3211,6 +3267,30 @@ process = "platform"
 auth = "daemon"
 clients = ["daemon"]
 note = "An attachment the same machine's agents made (`boards.write`); anything else is 403."
+
+[[route]]
+method = "POST"
+path = "/api/daemon/boards/{id}/docs"  # wire::boards::AGENT_BOARD_DOCS
+process = "platform"
+auth = "daemon"
+clients = ["daemon"]
+note = "Links a Doc to the board's Docs strip (`boards.write`): a project Doc, or one on the signing machine."
+
+[[route]]
+method = "DELETE"
+path = "/api/daemon/boards/{id}/docs/{doc}"  # wire::boards::AGENT_BOARD_DOC
+process = "platform"
+auth = "daemon"
+clients = ["daemon"]
+note = "A Doc the same machine's agents linked (`boards.write`); anything else is 403."
+
+[[route]]
+method = "POST"
+path = "/api/daemon/boards/{id}/docs/{doc}/move"  # wire::boards::AGENT_BOARD_DOC_MOVE
+process = "platform"
+auth = "daemon"
+clients = ["daemon"]
+note = "Moves a Doc along the board's Docs strip (`boards.write`)."
 
 [[route]]
 method = "POST"

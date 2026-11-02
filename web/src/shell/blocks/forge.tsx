@@ -722,7 +722,7 @@ function PrBlock({ client, id, s }: { client: Client; id: PaneId; s: ForgeState 
   const waiting = open ? s.drafts.filter((d) => d.status === "waiting") : [];
   const asked = s.wants.some((w) => w.kind === "review");
   const canComment = mayWrite && open;
-  const next = pr && it && open ? nextStep(s, pr, mayWrite, busy, { review, call, merge, confirming, confirmMerge, waiting }) : null;
+  const next = pr && it && open ? nextStep(s, pr, mayWrite, busy, { review, call, merge, confirming, confirmMerge, waiting, focus: (pane) => client.focusPane(pane) }) : null;
   const source: ItemSource = {
     kind: s.provider,
     live: s.error ? null : s.watching ? "following" : "paused",
@@ -774,7 +774,7 @@ function PrBlock({ client, id, s }: { client: Client; id: PaneId; s: ForgeState 
                 <>
                   {canComment && <button class="secondary small" onClick={() => void comment()}>Comment</button>}
                   {canComment && !asked && <button class="secondary small" onClick={() => void review("comment")}>Review</button>}
-                  {canComment && (confirming ? <ConfirmMerge style={confirming} go={confirmMerge} /> : <button class="secondary small" onClick={() => void merge()}>Merge ▾</button>)}
+                  {canComment && (confirming ? <ConfirmMerge style={confirming} go={confirmMerge} hold={s.hold?.reason} /> : <button class="secondary small" data-merge-anyway={s.hold ? "" : undefined} onClick={() => void merge()}>{s.hold ? "Merge anyway…" : "Merge ▾"}</button>)}
                   {mayOwn && (
                     <button class="secondary small" data-forge-diff disabled={busy !== null} onClick={() => void call("diff", {}, "couldn't show the changes")}>
                       Diff
@@ -801,11 +801,18 @@ function PrBlock({ client, id, s }: { client: Client; id: PaneId; s: ForgeState 
 }
 
 /** The merge button once a method is picked (#427): the one click that merges. */
-function ConfirmMerge({ style, go }: { style: string; go: () => Promise<void> }) {
+function ConfirmMerge({ style, go, hold }: { style: string; go: () => Promise<void>; hold?: string }) {
   return (
-    <button class="primary danger small" data-merge-confirm onClick={() => void go()}>
-      Confirm {mergeWord(style)}
-    </button>
+    <>
+      {hold && (
+        <span class="dim" data-merge-held>
+          Held: {hold}
+        </span>
+      )}
+      <button class="primary danger small" data-merge-confirm onClick={() => void go()}>
+        Confirm {mergeWord(style)}
+      </button>
+    </>
   );
 }
 
@@ -831,14 +838,14 @@ const FAILED: CheckState[] = ["failure"];
 const RUNNING: CheckState[] = ["queued", "running"];
 
 /** The one thing to do next, the first that applies: conflicts, a check
- * failed, your review asked for, a draft of yours waiting, ready to merge.
- * None for anything but an open PR. */
+ * failed, your review asked for, a draft of yours waiting, held by the agent
+ * (#495), ready to merge. None for anything but an open PR. */
 function nextStep(
   s: ForgeState,
   pr: Pr,
   mayWrite: boolean,
   busy: string | null,
-  on: { review: (e: "approve" | "request_changes") => Promise<void>; call: (m: string, a: unknown, f: string) => Promise<unknown>; merge: () => Promise<void>; confirming: string | null; confirmMerge: () => Promise<void>; waiting: Draft[] },
+  on: { review: (e: "approve" | "request_changes") => Promise<void>; call: (m: string, a: unknown, f: string) => Promise<unknown>; merge: () => Promise<void>; confirming: string | null; confirmMerge: () => Promise<void>; waiting: Draft[]; focus: (pane: PaneId) => void },
 ): NextStep | null {
   const it = pr.item;
   if (it.mergeable === false) return { tone: "danger", text: `Conflicts with ${it.base.branch}` };
@@ -886,6 +893,20 @@ function nextStep(
   if (draft) {
     const more = on.waiting.length - 1;
     return { tone: "warn", text: `Your ${draftKind(draft)} draft${more > 0 ? ` and ${more} more` : ""}` };
+  }
+  // The agent that opened it isn't ready for the merge. Merge anyway… in the
+  // footer still goes ahead, with the reason.
+  if (s.hold) {
+    const { hold } = s;
+    return {
+      tone: "info",
+      text: `Held by ${hold.by}: ${hold.reason}`,
+      actions: (
+        <button class="secondary small" data-hold-pane onClick={() => on.focus(hold.pane)}>
+          Go to {hold.by}
+        </button>
+      ),
+    };
   }
   const settled = !it.draft && it.mergeable === true && !it.blocked && !pr.checks.some((c) => [...FAILED, ...RUNNING].includes(c.state));
   if (settled && mayWrite) {

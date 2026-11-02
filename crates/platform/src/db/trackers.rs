@@ -976,6 +976,25 @@ impl Db {
         )
     }
 
+    /// A connection's writes a person has decided (sent, dropped or failed
+    /// to send), newest decision first, each with when and by whom (an
+    /// account id). Those still waiting aren't here.
+    pub fn tracker_writes_decided(
+        &self,
+        connection: &str,
+        limit: usize,
+    ) -> Result<Vec<(PendingWrite, u64, Option<String>)>> {
+        self.c().query_map(
+            &format!(
+                "SELECT {WRITE_COLUMNS}, decided_at, decided_by FROM tracker_writes
+                 WHERE connection_id = ?1 AND state IN ('sent', 'dropped', 'failed') AND decided_at IS NOT NULL
+                 ORDER BY decided_at DESC, id LIMIT {limit}"
+            ),
+            params![connection],
+            |r| Ok((write_row(r)?, r.get(11)?, r.get(12)?)),
+        )
+    }
+
     pub fn tracker_write(&self, project: &str, id: &str) -> Result<Option<PendingWrite>> {
         self.c()
             .query_row(

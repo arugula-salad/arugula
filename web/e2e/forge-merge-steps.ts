@@ -90,7 +90,7 @@ export function mergeSpecs(tag: string) {
     repoReads = 0;
     pullNotModified = 0;
     merges.length = 0;
-    Object.assign(item, { state: "open", merged: false, merged_at: null, merged_by: null });
+    Object.assign(item, { state: "open", merged: false, merged_at: null, merged_by: null, mergeable_state: "blocked" });
   });
 
   const open = (page: Page) =>
@@ -102,6 +102,57 @@ export function mergeSpecs(tag: string) {
           .then((r) => r.block),
       [origin, REPO, N] as const,
     );
+
+  // #495: the agent that opened the PR holds its merge. The block's own
+  // method stands in for the agent's MCP call; the holder is another block.
+  const hold = (page: Page, block: number, holder: number) =>
+    page.evaluate(
+      ([block, holder]) =>
+        window.__arugula.client
+          .request("POST", `/api/blocks/${block}/call/hold`, { pane: holder, reason: "waiting on e2e", by: "fix-login" })
+          .then((r) => r.status),
+      [block, holder] as const,
+    );
+  const release = (page: Page, block: number) =>
+    page.evaluate((block) => window.__arugula.client.request("POST", `/api/blocks/${block}/call/release`, {}).then((r) => r.status), block);
+
+  test(`${tag}: a held PR shows who holds it and no Merge button, and release brings the button back`, async ({ page }) => {
+    item.mergeable_state = "clean"; // not blocked by branch protection: "Ready to merge"
+    await reset(page);
+    const holder = await open(page); // first, so the PR block opens in front of it
+    const block = await open(page);
+    const el = page.locator(`[data-forge-block="${block}"]`);
+    await expect(el.locator("[data-merge]")).toBeVisible();
+    expect(await hold(page, block, holder)).toBe(200);
+    await expect(el.locator('[data-item-next="info"]')).toContainText("Held by fix-login: waiting on e2e");
+    await expect(el.locator("[data-merge]")).toHaveCount(0);
+    await expect(el.locator("[data-hold-pane]")).toBeVisible();
+    expect(await release(page, block)).toBe(200);
+    await expect(el.locator("[data-merge]")).toBeVisible();
+    await expect(el.locator('[data-item-next="info"]')).toHaveCount(0);
+    expect(merges).toEqual([]);
+  });
+
+  test(`${tag}: Merge anyway… on a held PR shows the reason at the confirm, and still merges`, async ({ page }) => {
+    item.mergeable_state = "clean";
+    await reset(page);
+    const holder = await open(page); // first, so the PR block opens in front of it
+    const block = await open(page);
+    const el = page.locator(`[data-forge-block="${block}"]`);
+    const foot = el.locator("[data-item-foot]");
+    await expect(el.locator("[data-merge]")).toBeVisible();
+    expect(await hold(page, block, holder)).toBe(200);
+    await expect(el.locator("[data-merge]")).toHaveCount(0);
+    await foot.getByRole("button", { name: "Merge anyway…" }).click();
+    await page.locator(".prompt-choices button", { hasText: "Squash" }).click();
+    await expect(foot.locator("[data-merge-held]")).toContainText("waiting on e2e");
+    const confirm = foot.locator("[data-merge-confirm]");
+    await expect(confirm).toHaveText("Confirm squash");
+    expect(merges).toEqual([]);
+    await confirm.click();
+    await expect.poll(() => merges.length).toBe(1);
+    await expect(el.locator("[data-item-pill]")).toHaveText("Merged");
+  });
 
   test(`${tag}: after a failed first ask and an unchanged PR, Merge ▾ still offers only Squash`, async ({ page }) => {
     await reset(page);
