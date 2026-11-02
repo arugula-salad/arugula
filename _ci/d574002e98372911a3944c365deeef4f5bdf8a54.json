@@ -3,7 +3,7 @@
   "commit": "d574002e98372911a3944c365deeef4f5bdf8a54",
   "branch": "main",
   "state": "pending",
-  "at": "2026-11-02T06:01:10Z",
+  "at": "2026-11-02T06:01:52Z",
   "phases": {
     "lint": {
       "verdict": "unbuilt",
@@ -13,14 +13,18 @@
       "coveredBy": "39f2257ae56187009e44ee862fb3f2269f4ba03b"
     },
     "build": {
-      "verdict": "pending",
-      "build": "newest",
-      "runs": []
-    },
-    "test": {
-      "verdict": "pending",
+      "verdict": "unbuilt",
       "build": "newest",
       "runs": [],
+      "reason": "superseded",
+      "coveredBy": "39f2257ae56187009e44ee862fb3f2269f4ba03b"
+    },
+    "test": {
+      "verdict": "unbuilt",
+      "build": "newest",
+      "runs": [],
+      "reason": "superseded",
+      "coveredBy": "39f2257ae56187009e44ee862fb3f2269f4ba03b",
       "culprit": "257c474301cf6b5ebee375dd65c913805f892f35"
     },
     "e2e": {
@@ -29,14 +33,18 @@
       "runs": []
     },
     "claims": {
-      "verdict": "pending",
-      "build": "newest",
-      "runs": []
-    },
-    "macos": {
-      "verdict": "pending",
+      "verdict": "unbuilt",
       "build": "newest",
       "runs": [],
+      "reason": "superseded",
+      "coveredBy": "39f2257ae56187009e44ee862fb3f2269f4ba03b"
+    },
+    "macos": {
+      "verdict": "unbuilt",
+      "build": "newest",
+      "runs": [],
+      "reason": "superseded",
+      "coveredBy": "39f2257ae56187009e44ee862fb3f2269f4ba03b",
       "culprit": "257c474301cf6b5ebee375dd65c913805f892f35"
     },
     "windows": {
@@ -46,13 +54,13 @@
       "culprit": "257c474301cf6b5ebee375dd65c913805f892f35"
     },
     "windows-desktop": {
-      "verdict": "pending",
+      "verdict": "pass",
       "build": "newest",
       "runs": [
         {
           "name": "desktop",
           "id": 125119960063,
-          "conclusion": null,
+          "conclusion": "success",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/41396732694/job/125119960063"
         }
       ]
