@@ -25,12 +25,15 @@
 //! the person's approval, and never a slash command.
 
 use std::{
-    collections::{HashMap, VecDeque},
+    collections::{HashMap, HashSet, VecDeque},
+    path::{Path, PathBuf},
     sync::Mutex,
 };
 
 use arugula_control_wire::forge::{AgentMention, OpAnswer, Routed, RoutedStep};
 use arugula_proto::{Driver, PaneId};
+use serde::{Deserialize, Serialize};
+use tracing::warn;
 
 use crate::{mux::Api, server::App};
 
@@ -48,26 +51,166 @@ struct Threads {
     order: VecDeque<(String, i64)>,
 }
 
-/// What the daemon keeps of mentions, in memory (#419 will persist it).
+/// The file in the state dir that keeps what [`State`] holds across a
+/// restart (#419).
+const FILE: &str = "mentions.json";
+
+/// [`FILE`]'s content: the same three records, in the order they are
+/// bounded by, and the name each pane's session had when it posted.
+#[derive(Default, Serialize, Deserialize)]
+struct Saved {
+    #[serde(default)]
+    posted: HashMap<String, PaneId>,
+    /// Oldest first.
+    #[serde(default)]
+    threads: Vec<SavedThread>,
+    /// The session name seen in a pane when it posted.
+    #[serde(default)]
+    names: HashMap<PaneId, String>,
+    #[serde(default)]
+    unread: Vec<AgentMention>,
+}
+
+#[derive(Serialize, Deserialize)]
+struct SavedThread {
+    room: String,
+    root: i64,
+    pane: PaneId,
+}
+
+/// What the daemon keeps of mentions: in memory, and in [`FILE`] when it
+/// was opened on a state dir (#419).
+///
+/// Pane ids are stable across a restart (the mux saves its layout and its
+/// next id, and never reuses one), so they are what is kept. A pane that
+/// was restored may be a stranger by now, though (the terminal's Claude Code
+/// conversation changed, or the pane went), so what a load found waits to
+/// be vetted against the live sessions before it routes ([`State::vet`]).
 #[derive(Default)]
 pub struct State {
+    /// Where it is kept; `None` keeps it in memory only.
+    file: Option<PathBuf>,
     /// The pane that last posted in each room.
     posted: Mutex<HashMap<String, PaneId>>,
     /// The pane that posted in each thread, by room and root message.
     threads: Mutex<Threads>,
     /// Mentions that found no session.
     unread: Mutex<Vec<AgentMention>>,
+    /// The name of the session in each pane that posted, when it had one.
+    names: Mutex<HashMap<PaneId, String>>,
+    /// Panes a load found that no live session has vouched for yet.
+    unvetted: Mutex<HashSet<PaneId>>,
 }
 
 impl State {
+    /// What `dir` kept, or nothing: a missing or unreadable file is an empty
+    /// state, never a failed start.
+    pub fn open(dir: &Path) -> Self {
+        let path = dir.join(FILE);
+        let saved = match std::fs::read(&path) {
+            Ok(b) => serde_json::from_slice::<Saved>(&b).unwrap_or_else(|e| {
+                warn!(error = %e, "ignoring the saved agent mentions");
+                Saved::default()
+            }),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Saved::default(),
+            Err(e) => {
+                warn!(error = %e, "can't read the saved agent mentions");
+                Saved::default()
+            }
+        };
+        let s = State { file: Some(path), ..State::default() };
+        let mut panes: HashSet<PaneId> = saved.posted.values().copied().collect();
+        panes.extend(saved.threads.iter().map(|t| t.pane));
+        *s.posted.lock().unwrap() = saved.posted;
+        for t in saved.threads {
+            s.insert_thread(&t.room, t.root, t.pane);
+        }
+        let extra = saved.unread.len().saturating_sub(MAX_UNREAD);
+        *s.unread.lock().unwrap() = saved.unread.into_iter().skip(extra).collect();
+        *s.names.lock().unwrap() = saved.names;
+        *s.unvetted.lock().unwrap() = panes;
+        s
+    }
+
+    /// Whether a restart left panes no live session has vouched for.
+    fn unvetted(&self) -> bool {
+        !self.unvetted.lock().unwrap().is_empty()
+    }
+
+    /// Forget the panes a load found that aren't a live session now, or
+    /// whose session isn't the one that posted; the rest are vouched for.
+    fn vet(&self, sessions: &[(PaneId, String)]) {
+        let mut unvetted = self.unvetted.lock().unwrap();
+        if unvetted.is_empty() {
+            return;
+        }
+        let names = self.names.lock().unwrap();
+        let gone: HashSet<PaneId> = unvetted
+            .drain()
+            .filter(|p| {
+                let now = sessions.iter().find(|(id, _)| id == p).map(|(_, n)| n);
+                now.is_none() || names.get(p).is_some_and(|was| Some(was) != now)
+            })
+            .collect();
+        drop(names);
+        drop(unvetted);
+        if gone.is_empty() {
+            return;
+        }
+        self.posted.lock().unwrap().retain(|_, p| !gone.contains(p));
+        {
+            let mut t = self.threads.lock().unwrap();
+            t.by.retain(|_, p| !gone.contains(p));
+            let Threads { by, order } = &mut *t;
+            order.retain(|k| by.contains_key(k));
+        }
+        self.names.lock().unwrap().retain(|p, _| !gone.contains(p));
+        self.save();
+    }
+
+    /// Write it down. A failure is logged: routing goes on in memory.
+    fn save(&self) {
+        let Some(path) = &self.file else { return };
+        let t = self.threads.lock().unwrap();
+        let saved = Saved {
+            posted: self.posted.lock().unwrap().clone(),
+            threads: t
+                .order
+                .iter()
+                .filter_map(|k| Some(SavedThread { room: k.0.clone(), root: k.1, pane: *t.by.get(k)? }))
+                .collect(),
+            names: self.names.lock().unwrap().clone(),
+            unread: self.unread.lock().unwrap().clone(),
+        };
+        drop(t);
+        let bytes = serde_json::to_vec_pretty(&saved).unwrap_or_default();
+        if let Err(e) = arugula_mux::store::write_atomic(path, &bytes) {
+            warn!(error = %e, "can't save the agent mentions");
+        }
+    }
+
     /// `pane` posted in `room`.
     pub fn note_post(&self, room: &str, pane: PaneId) {
         self.posted.lock().unwrap().insert(room.to_owned(), pane);
+        self.save();
+    }
+
+    /// The session in `pane` has this name: a restart keeps `pane` for its
+    /// mentions only while that is still the name there.
+    pub fn note_session(&self, pane: PaneId, name: &str) {
+        if self.names.lock().unwrap().insert(pane, name.to_owned()).as_deref() != Some(name) {
+            self.save();
+        }
     }
 
     /// `pane` posted in the thread of `root` in `room` (a top-level post is
     /// its own thread's root): replies there are for it.
     pub fn note_thread(&self, room: &str, root: i64, pane: PaneId) {
+        self.insert_thread(room, root, pane);
+        self.save();
+    }
+
+    fn insert_thread(&self, room: &str, root: i64, pane: PaneId) {
         let mut t = self.threads.lock().unwrap();
         let key = (room.to_owned(), root);
         if t.by.insert(key.clone(), pane).is_some() {
@@ -93,7 +236,14 @@ impl State {
 
     /// An agent read `room`: what it held for it is read.
     pub fn read(&self, room: &str) {
-        self.unread.lock().unwrap().retain(|m| m.room != room);
+        let mut u = self.unread.lock().unwrap();
+        let before = u.len();
+        u.retain(|m| m.room != room);
+        let changed = u.len() != before;
+        drop(u);
+        if changed {
+            self.save();
+        }
     }
 
     /// The mentions no session took, oldest first.
@@ -106,6 +256,8 @@ impl State {
         u.push(m.clone());
         let extra = u.len().saturating_sub(MAX_UNREAD);
         u.drain(..extra);
+        drop(u);
+        self.save();
     }
 }
 
@@ -276,6 +428,11 @@ pub(crate) async fn deliver(app: &impl Daemon, m: &AgentMention) -> OpAnswer {
         }
         asked = Some(want);
     }
+    // A restart left panes that may be strangers now: only the live
+    // sessions that posted keep their place.
+    if state.unvetted() {
+        state.vet(&app.sessions().await);
+    }
     // 2. The session that posted in the thread it is under.
     let mut ended = None;
     let thread = m.parent.and_then(|root| {
@@ -350,6 +507,15 @@ mod tests {
         fn tabbed(mut self, tabs: &[(PaneId, &str)]) -> Self {
             self.tabs = tabs.iter().map(|(p, n)| (*p, (*n).to_owned())).collect();
             self
+        }
+
+        /// The same daemon after a restart: what it kept in the state dir,
+        /// and whatever panes and sessions are live now.
+        fn restarted(mut self, live: &[PaneId], names: &[(PaneId, &str)]) -> Self {
+            self.state = State::open(&self.dir);
+            self.live = live.to_vec();
+            self.sent = Mutex::default();
+            self.named(names)
         }
 
         /// What `pane` was sent, in order.
@@ -715,5 +881,81 @@ mod tests {
         d.state.note_post("ch_x", 4);
         deliver(&d, &AgentMention { session: Some("views".into()), ..mention() }).await;
         assert!(d.got(4)[0].contains("no session on this machine is called views"));
+    }
+
+    #[tokio::test]
+    async fn a_restarted_daemon_still_routes_to_the_last_posters_pane() {
+        let mut f = Fake::new("restart", &[4, 9]).named(&[(4, "ux"), (9, "docs")]);
+        f.state = State::open(&f.dir);
+        f.state.note_post("ch_x", 4);
+        f.state.note_session(4, "ux");
+        f.state.note_thread("ch_x", 3, 9);
+        f.state.note_session(9, "docs");
+        let f = f.restarted(&[4, 9], &[(4, "ux"), (9, "docs")]);
+        // A reply in the thread goes to its session, a top-level mention to
+        // the room's last poster.
+        let m = mention();
+        assert!(
+            matches!(deliver(&f, &m).await, OpAnswer::Done { routed: Some(r), .. } if r.step == RoutedStep::Thread)
+        );
+        assert_eq!(f.got(9).len(), 1);
+        let top = AgentMention { parent: None, ..mention() };
+        assert!(
+            matches!(deliver(&f, &top).await, OpAnswer::Done { routed: Some(r), .. } if r.step == RoutedStep::Room)
+        );
+        assert_eq!(f.got(4).len(), 1);
+    }
+
+    #[tokio::test]
+    async fn after_a_restart_a_pane_that_is_gone_or_is_another_session_gets_nothing() {
+        let mut f = Fake::new("stranger", &[4, 9]).named(&[(4, "ux"), (9, "docs")]);
+        f.state = State::open(&f.dir);
+        f.state.note_post("ch_x", 4);
+        f.state.note_session(4, "ux");
+        f.state.note_thread("ch_x", 3, 9);
+        f.state.note_session(9, "docs");
+        // Pane 4 is gone from the sessions (its id stays alive as a
+        // terminal here); 9 now holds another conversation.
+        let f = f.restarted(&[4, 9], &[(9, "billing")]);
+        let a = deliver(&f, &mention()).await;
+        assert!(matches!(a, OpAnswer::Done { routed: Some(r), .. } if r.step == RoutedStep::Inbox));
+        assert!(f.got(4).is_empty() && f.got(9).is_empty());
+        // And it stays forgotten, on disk too.
+        let again = State::open(&f.dir);
+        assert!(again.poster("ch_x").is_none() && again.thread_poster("ch_x", 3).is_none());
+        assert_eq!(again.unread().len(), 1);
+    }
+
+    #[test]
+    fn the_unread_list_survives_a_restart_and_a_read_is_kept() {
+        let f = Fake::new("unread", &[]);
+        let s = State::open(&f.dir);
+        s.keep(&mention());
+        s.keep(&AgentMention { room: "ch_y".into(), ..mention() });
+        drop(s);
+        let s = State::open(&f.dir);
+        assert_eq!(s.unread().len(), 2);
+        s.read("ch_x");
+        assert_eq!(State::open(&f.dir).unread().len(), 1);
+    }
+
+    #[test]
+    fn a_missing_or_corrupt_file_is_an_empty_state_and_the_bounds_hold() {
+        let f = Fake::new("corrupt", &[]);
+        assert!(State::open(&f.dir).unread().is_empty());
+        std::fs::write(f.dir.join(FILE), b"{ not json").unwrap();
+        assert!(State::open(&f.dir).unread().is_empty());
+        let saved = Saved {
+            threads: (0..MAX_THREADS as i64 + 5)
+                .map(|i| SavedThread { room: "ch_x".into(), root: i, pane: 4 })
+                .collect(),
+            unread: (0..MAX_UNREAD as i64 + 5).map(|seq| AgentMention { seq, ..mention() }).collect(),
+            ..Saved::default()
+        };
+        std::fs::write(f.dir.join(FILE), serde_json::to_vec(&saved).unwrap()).unwrap();
+        let s = State::open(&f.dir);
+        assert_eq!(s.unread().len(), MAX_UNREAD);
+        assert_eq!(s.unread()[0].seq, 5);
+        assert!(s.thread_poster("ch_x", 0).is_none() && s.thread_poster("ch_x", 504).is_some());
     }
 }

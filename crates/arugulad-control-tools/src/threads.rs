@@ -421,6 +421,7 @@ pub(crate) async fn post_thread(c: &Call<'_>, a: PostThreadArgs) -> Out {
     if let Some(pane) = pane
         && let Some(name) = arugulad_base::agent_mentions::session_name(c.app(), pane).await
     {
+        c.app().agent_mentions.note_session(pane, &name);
         body["session"] = json!(name);
     }
     let v = threads_call(c, Method::POST, &agent_messages(room), Some(body)).await?;
