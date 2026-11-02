@@ -641,8 +641,8 @@ deploy driver (which checks `ci/green` for both lanes before it runs
 
 ```sh
 git fetch origin --tags
-sha=$(npx @intentius/chant@0.124.63 ci last-green --lane daemon) # the daemon's
-sha=$(npx @intentius/chant@0.124.63 ci last-green --lane app)    # the app's
+sha=$(npx @intentius/chant@0.124.64 ci last-green --lane daemon) # the daemon's
+sha=$(npx @intentius/chant@0.124.64 ci last-green --lane app)    # the app's
 ```
 
 `scripts/release last-green [daemon|app|server]` answers the same from
