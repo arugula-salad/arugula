@@ -978,20 +978,23 @@ mod tests {
         let dirs = Dirs { claude: root.clone(), ..Dirs::from_env() };
         let sessions = root.join("sessions");
         std::fs::create_dir_all(&sessions).unwrap();
-        let put = |name: &str, pid: u32, sid: &str, started: u64| {
-            let v = json!({"pid": pid, "sessionId": sid, "procStart": proc_start(pid), "kind": "interactive",
+        let put_at = |name: &str, pid: u32, start: &str, sid: &str, started: u64| {
+            let v = json!({"pid": pid, "sessionId": sid, "procStart": start, "kind": "interactive",
                 "entrypoint": "cli", "status": "idle", "startedAt": started, "cwd": "/w"});
             std::fs::write(sessions.join(name), v.to_string()).unwrap();
         };
+        let put = |name: &str, pid: u32, sid: &str, started: u64| put_at(name, pid, &proc_start(pid), sid, started);
         // Pane 1: a conversation that ended there (its file stays), then
         // the one running now, which started a newer one of its own (a
         // `claude -p`) that is under it.
         let (gone_shell, gone) = spawn("sh -c 'echo $$; sleep 30; true' & wait", 1);
+        // Read before it's killed: once it's reaped, /proc has no record of it.
+        let gone_start = proc_start(gone[0]);
         crate::procinfo::kill(gone[0]);
         let (one, p1) = spawn("sh -c 'echo $$; sh -c \"echo \\$\\$; sleep 30; true\"; true' & wait", 2);
         // Pane 2: one conversation.
         let (two, p2) = spawn("sh -c 'echo $$; sleep 30; true' & wait", 1);
-        put("ended.json", gone[0], "ended-in-one", 500);
+        put_at("ended.json", gone[0], &gone_start, "ended-in-one", 500);
         put("one.json", p1[0], "running-in-one", 1000);
         put("child.json", p1[1], "child-of-one", 9000);
         put("two.json", p2[0], "running-in-two", 2000);
