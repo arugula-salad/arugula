@@ -82,6 +82,9 @@ pub struct Live {
     /// The directory it runs in (#146: where to resume it).
     #[serde(skip)]
     pub cwd: Option<String>,
+    /// When it started, in ms since the epoch (`startedAt`; 0 if unsaid).
+    #[serde(skip)]
+    pub started: u64,
 }
 
 impl Live {
@@ -382,8 +385,43 @@ impl crate::mux::AgentSessions for Sessions {
 
 /// The conversation each of our panes' Claude Code holds now, by pane
 /// (#146: the session to resume when its hooks didn't say).
+///
+/// A pane can have several live session files under it: the Claude Code
+/// the person runs, and the ones that one starts (a `claude -p` or SDK
+/// session of a tool or a workflow, #512). The pane's is the one that isn't
+/// under another of its sessions; of those, the newest.
 pub fn live_in_panes(dirs: &Dirs, ours: &Ours) -> HashMap<PaneId, (String, Option<String>)> {
-    live(&dirs.claude.join("sessions"), ours).into_iter().filter_map(|(sid, l)| Some((l.pane?, (sid, l.cwd)))).collect()
+    let mut by_pane: HashMap<PaneId, Vec<(String, Live)>> = HashMap::new();
+    for (sid, l) in live(&dirs.claude.join("sessions"), ours) {
+        if let Some(pane) = l.pane {
+            by_pane.entry(pane).or_default().push((sid, l));
+        }
+    }
+    by_pane
+        .into_iter()
+        .filter_map(|(pane, all)| {
+            let pids: Vec<u32> = all.iter().map(|(_, l)| l.pid).collect();
+            all.into_iter()
+                .filter(|(_, l)| !pids.iter().any(|p| *p != l.pid && is_under(l.pid, *p)))
+                // The session id breaks a tie in the start time, so the
+                // pick doesn't depend on the directory's order.
+                .max_by(|(a, x), (b, y)| (x.started, a).cmp(&(y.started, b)))
+                .map(|(sid, l)| (pane, (sid, l.cwd)))
+        })
+        .collect()
+}
+
+/// Does `pid` descend from `ancestor`?
+fn is_under(pid: u32, ancestor: u32) -> bool {
+    let mut p = pid;
+    for _ in 0..64 {
+        match crate::procinfo::ppid(p).filter(|p| *p > 1) {
+            Some(parent) if parent == ancestor => return true,
+            Some(parent) => p = parent,
+            None => return false,
+        }
+    }
+    false
 }
 
 /// Is a conversation on the default list (`all`: everything)? Terminal,
@@ -525,6 +563,7 @@ fn live(dir: &Path, ours: &Ours) -> HashMap<String, Live> {
             block,
             place: String::new(),
             cwd: v["cwd"].as_str().map(str::to_owned),
+            started: v["startedAt"].as_u64().unwrap_or(0),
         };
         l.place = l.place();
         out.insert(session.to_owned(), l);
@@ -656,6 +695,7 @@ mod tests {
             block: None,
             place: String::new(),
             cwd: None,
+            started: 0,
         };
         let theirs = l.clone().ours(|p| p == 3);
         assert_eq!((theirs.pane, theirs.block), (None, None));
@@ -909,6 +949,64 @@ mod tests {
         assert_eq!(l["in-pane"].pane.filter(|p| *p == 7), None);
         crate::procinfo::kill(claude);
         shell.wait().unwrap();
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    // Unix: starts processes with sh and reads their ancestry.
+    #[cfg(unix)]
+    #[test]
+    fn a_pane_resolves_to_the_conversation_running_in_it() {
+        // Spawns `sh -c <script>` and reads the pids it prints, one per line.
+        fn spawn(script: &str, n: usize) -> (std::process::Child, Vec<u32>) {
+            let mut sh = std::process::Command::new("sh")
+                .args(["-c", script])
+                .stdout(std::process::Stdio::piped())
+                .stderr(std::process::Stdio::null())
+                .spawn()
+                .unwrap();
+            let mut out = std::io::BufReader::new(sh.stdout.take().unwrap());
+            let pids = (0..n)
+                .map(|_| {
+                    let mut line = String::new();
+                    std::io::BufRead::read_line(&mut out, &mut line).unwrap();
+                    line.trim().parse().unwrap()
+                })
+                .collect();
+            (sh, pids)
+        }
+        let root = tmp("panes");
+        let dirs = Dirs { claude: root.clone(), ..Dirs::from_env() };
+        let sessions = root.join("sessions");
+        std::fs::create_dir_all(&sessions).unwrap();
+        let put = |name: &str, pid: u32, sid: &str, started: u64| {
+            let v = json!({"pid": pid, "sessionId": sid, "procStart": proc_start(pid), "kind": "interactive",
+                "entrypoint": "cli", "status": "idle", "startedAt": started, "cwd": "/w"});
+            std::fs::write(sessions.join(name), v.to_string()).unwrap();
+        };
+        // Pane 1: a conversation that ended there (its file stays), then
+        // the one running now, which started a newer one of its own (a
+        // `claude -p`) that is under it.
+        let (gone_shell, gone) = spawn("sh -c 'echo $$; sleep 30; true' & wait", 1);
+        crate::procinfo::kill(gone[0]);
+        let (one, p1) = spawn("sh -c 'echo $$; sh -c \"echo \\$\\$; sleep 30; true\"; true' & wait", 2);
+        // Pane 2: one conversation.
+        let (two, p2) = spawn("sh -c 'echo $$; sleep 30; true' & wait", 1);
+        put("ended.json", gone[0], "ended-in-one", 500);
+        put("one.json", p1[0], "running-in-one", 1000);
+        put("child.json", p1[1], "child-of-one", 9000);
+        put("two.json", p2[0], "running-in-two", 2000);
+        let ours = Ours { panes: [(one.id(), 1), (two.id(), 2), (gone_shell.id(), 1)].into(), ..Default::default() };
+        let got = live_in_panes(&dirs, &ours);
+        assert_eq!(got[&1].0, "running-in-one");
+        assert_eq!(got[&2].0, "running-in-two");
+        assert_eq!(got.len(), 2);
+        for pid in [p1[0], p1[1], p2[0]] {
+            crate::procinfo::kill(pid);
+        }
+        let (mut one, mut two, mut gone_shell) = (one, two, gone_shell);
+        for sh in [&mut one, &mut two, &mut gone_shell] {
+            sh.wait().unwrap();
+        }
         std::fs::remove_dir_all(&root).unwrap();
     }
 
