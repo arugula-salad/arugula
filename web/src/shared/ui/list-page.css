@@ -1,0 +1,526 @@
+/* A list page (./list-page.tsx). Everything here goes by the room the page
+   has, not the window's: a page can be narrow on a wide screen. Colors are
+   the palette's, so it reads the same under every theme. */
+
+.list-page {
+  --list-w: clamp(400px, 44%, 640px);
+  container: list-page / inline-size;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+}
+
+.list-split {
+  position: relative;
+  display: grid;
+  grid-template-columns: min(var(--list-w), calc(100% - 380px)) minmax(0, 1fr);
+  height: 100%;
+  min-height: 0;
+}
+
+.list-pane {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  border-right: 1px solid var(--line);
+}
+
+.list-head {
+  padding: var(--space-4) var(--space-5) 0;
+}
+
+.list-head .page-head {
+  margin: 0;
+}
+
+.list-head .page-title h1 {
+  font: 800 30px/1 var(--f-display);
+  letter-spacing: 0.01em;
+  text-transform: uppercase;
+}
+
+.list-where {
+  align-self: flex-end;
+  font: 500 11px/1.5 var(--f-mono);
+  color: var(--dim);
+}
+
+/* The counts are the filters. */
+.list-counts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  margin: var(--space-3) 0 0 calc(-1 * var(--space-2));
+}
+
+.list-count {
+  padding: var(--space-1) var(--space-2);
+  border: 0;
+  border-bottom: 2px solid transparent;
+  border-radius: var(--btn-radius);
+  background: none;
+  color: var(--dim);
+  font: 500 11px/1.2 var(--f-mono);
+  text-align: left;
+}
+
+.list-count b {
+  display: block;
+  font: 700 19px/1.05 var(--f-mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--fg);
+}
+
+button.list-count {
+  cursor: pointer;
+}
+
+button.list-count:hover {
+  background: var(--raised);
+}
+
+.list-count[aria-pressed="true"] {
+  border-bottom-color: var(--accent);
+  border-radius: var(--btn-radius) var(--btn-radius) 0 0;
+  color: var(--fg);
+}
+
+.list-count.live b {
+  color: var(--accent);
+}
+
+.list-count.warn b {
+  color: var(--warn);
+}
+
+.list-count.bad b {
+  color: var(--danger);
+}
+
+.list-tools {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 10px var(--space-5);
+  border-bottom: 1px solid var(--line);
+}
+
+.list-search {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--line);
+  border-radius: var(--field-radius);
+  background: var(--surface);
+}
+
+.list-search:focus-within {
+  border-color: var(--accent);
+}
+
+.list-search input {
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  outline: 0;
+  background: none;
+  color: var(--fg);
+  font: inherit;
+}
+
+.list-search kbd {
+  padding: 0 var(--space-1);
+  border: 1px solid var(--line-strong);
+  border-radius: 3px;
+  color: var(--dim);
+  font: 500 10px/1.4 var(--f-mono);
+}
+
+.list-status {
+  margin: 0;
+  padding: var(--space-4) var(--space-5);
+  overflow: auto;
+}
+
+.list-rows {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding-bottom: var(--space-5);
+  outline: 0;
+}
+
+.list-group {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  justify-content: space-between;
+  padding: 10px var(--space-5) var(--space-1);
+  background: var(--bg);
+  color: var(--dim);
+  font: 700 13px/1 var(--f-display);
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.list-group span {
+  font: 500 10px/1.3 var(--f-mono);
+  letter-spacing: 0;
+}
+
+/* The row. A bar only where it differs from its neighbours. */
+.list-row {
+  --c: transparent;
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 2px 14px;
+  padding: var(--space-2) var(--space-5);
+  border-bottom: 1px solid color-mix(in srgb, var(--line) 55%, transparent);
+  cursor: pointer;
+  scroll-margin-top: 32px;
+}
+
+.list-row::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 7px;
+  bottom: 7px;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: var(--c);
+}
+
+.list-row.live {
+  --c: var(--accent);
+}
+
+.list-row.warn {
+  --c: var(--warn);
+}
+
+.list-row.bad {
+  --c: var(--danger);
+}
+
+.list-row:hover {
+  background: color-mix(in srgb, var(--raised) 45%, transparent);
+}
+
+.list-row[aria-selected="true"] {
+  background: color-mix(in srgb, var(--accent) 11%, transparent);
+}
+
+.list-row[aria-selected="true"]:not(.bad, .warn)::before {
+  background: var(--accent);
+  box-shadow: 0 0 10px var(--accent);
+}
+
+.list-rows:focus-visible .list-row[aria-selected="true"] {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.list-row-top {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.list-row-title {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 13.5px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.list-row-age {
+  justify-self: end;
+  color: var(--dim);
+  font: 500 11px/1.6 var(--f-mono);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.list-row-detail {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--dim);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.list-row-mark {
+  justify-self: end;
+  align-self: center;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--dim);
+  font: 500 10.5px/1 var(--f-mono);
+  white-space: nowrap;
+}
+
+.list-tag {
+  flex: none;
+  font: 500 10.5px/1.3 var(--f-mono);
+  color: var(--dim);
+}
+
+.list-tag.live {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.list-tag.info {
+  color: var(--info);
+}
+
+.list-tag svg {
+  width: 10px;
+  height: 10px;
+  vertical-align: -1px;
+}
+
+/* The preview. */
+.list-preview {
+  container: list-preview / inline-size;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  background: var(--surface);
+}
+
+.list-back {
+  align-self: flex-start;
+  margin: var(--space-3) var(--space-5) 0;
+}
+
+.list-preview-head {
+  padding: var(--space-4) var(--space-6) var(--space-3);
+  border-bottom: 1px solid var(--line);
+}
+
+.list-preview-head h2 {
+  margin: 0;
+  font: 700 26px/1.08 var(--f-display);
+  overflow-wrap: anywhere;
+}
+
+.list-preview-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-3);
+  margin-top: 6px;
+  color: var(--dim);
+  font: 500 11px/1.4 var(--f-mono);
+}
+
+.list-preview-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: var(--space-3);
+}
+
+.list-preview-hint {
+  margin-left: auto;
+  color: var(--dim);
+  font: 500 11px/1.4 var(--f-mono);
+}
+
+.list-preview-hint kbd {
+  padding: 0 var(--space-1);
+  border: 1px solid var(--line-strong);
+  border-radius: 3px;
+  font: inherit;
+  font-size: 10px;
+}
+
+.list-preview-body {
+  flex: 1;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 230px;
+  align-content: start;
+  gap: 28px;
+  min-height: 0;
+  padding: 14px var(--space-6) 30px;
+  overflow: auto;
+}
+
+.list-preview-words {
+  min-width: 0;
+}
+
+.list-preview-words p {
+  max-width: 62ch;
+  margin: 0 0 10px;
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+.list-preview-words p:first-child {
+  color: var(--subtle);
+}
+
+.list-preview-aside {
+  min-width: 0;
+  font-size: 12px;
+}
+
+.list-preview-aside h3 {
+  margin: 0 0 var(--space-2);
+  color: var(--dim);
+  font: 700 13px/1 var(--f-display);
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+/* The divider: wide enough to grab, a line only when it's asked for. */
+.list-handle {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: min(var(--list-w), calc(100% - 380px));
+  z-index: 3;
+  width: 24px;
+  margin-left: -12px;
+  cursor: col-resize;
+  outline: 0;
+  touch-action: none;
+}
+
+.list-handle::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 11px;
+  width: 1px;
+  transition: background 0.12s;
+}
+
+.list-handle:is(:hover, :focus-visible, .dragging)::after {
+  background: var(--accent);
+  box-shadow: 0 0 8px var(--accent);
+}
+
+/* Too little room beside the text: the outline goes under it. */
+@container list-preview (max-width: 720px) {
+  .list-preview-body {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--space-5);
+  }
+
+  .list-preview-head h2 {
+    font-size: 23px;
+  }
+
+  .list-preview-hint {
+    display: none;
+  }
+}
+
+/* Too little room for both: the list alone, and a row opens its preview. */
+@container list-page (max-width: 760px) {
+  .list-split {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .list-pane {
+    border-right: 0;
+  }
+
+  .list-preview,
+  .list-handle {
+    display: none;
+  }
+
+  .list-page.detail .list-pane {
+    display: none;
+  }
+
+  .list-page.detail .list-preview {
+    display: flex;
+  }
+}
+
+@container list-page (max-width: 480px) {
+  .list-row-mark {
+    display: none;
+  }
+
+  .list-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .list-handle::after {
+    transition: none;
+  }
+}
+
+/* A Doc's mark and outline (shell/ui/docs-page.tsx): grey, brighter where a
+   section has a figure. Accent stays for what's live. */
+.doc-shape {
+  display: flex;
+  align-items: stretch;
+  gap: 1px;
+  height: 9px;
+}
+
+.doc-shape i {
+  display: block;
+  min-width: 2px;
+  border-radius: 1px;
+  background: color-mix(in srgb, var(--fg) 30%, transparent);
+}
+
+.doc-shape i.fig {
+  background: var(--fg);
+}
+
+.doc-outline {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.doc-outline li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 44px;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 0;
+}
+
+.doc-outline span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.doc-outline i {
+  display: block;
+  height: 4px;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--fg) 30%, transparent);
+}
+
+.doc-outline i.fig {
+  background: var(--fg);
+}

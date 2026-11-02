@@ -466,7 +466,8 @@ test.describe("the owner's menus", () => {
     const id = (await listed()).find((x) => x.shared && x.open == null)!.id;
     const mine = page.locator(`[data-doc="${id}"]`);
     await expect(mine.locator("[data-doc-shared]")).toBeVisible();
-    await mine.locator("[data-open-doc]").click();
+    await mine.click();
+    await page.locator("[data-list-preview] [data-open-doc]").click();
 
     // Reopened: its content, and its share menu is back, not Share link….
     await expect(page.locator("[data-docs-page]")).toHaveCount(0);
@@ -481,7 +482,9 @@ test.describe("the owner's menus", () => {
 
     // Delete warns about the link, then unshares it at control and removes the Doc.
     await page.locator(".ws-rail [data-open-docs]").click();
-    await page.locator(`[data-doc="${id}"] [data-delete-doc]`).click();
+    await page.locator(`[data-doc="${id}"]`).click();
+    await page.locator("[data-list-preview] [data-doc-more]").click();
+    await page.getByRole("menuitem", { name: "Delete…" }).click();
     await expect(page.locator("[data-delete-shared]")).toHaveText("Its link stops working.");
     expect(await meta()).toBe(200);
     await page.locator("[data-confirm-remove]").click();

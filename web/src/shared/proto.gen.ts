@@ -1832,6 +1832,12 @@ link?: string | null, session?: string | null, split?: number | null, };
 export type DocOpened = { pane: number, };
 
 /**
+ * `GET /api/docs/ID/preview` (#588): a Doc's first paragraphs, as plain
+ * text, without opening it in a block.
+ */
+export type DocPreview = { opening: Array<string>, };
+
+/**
  * One Doc in the library (#1493): `GET /api/docs`. `open` is the block
  * that shows it now, `shared` its link's dates and id (never its key).
  */
@@ -1840,7 +1846,21 @@ export type DocRow = { id: string, title: string, made: number, updated: number,
  * Who made it: an agent (`mcp:NAME`), a person's driver name, or
  * `migrated` for a Doc that predates the library.
  */
-by: string, open?: number | null, shared?: DocShared | null, };
+by: string, open?: number | null, shared?: DocShared | null, 
+/**
+ * Its opening line, as plain text (#588). Empty until it has one.
+ */
+summary: string, 
+/**
+ * Its sections, for the list's picture of its shape and its outline.
+ */
+sections: Array<DocSectionShape>, };
+
+/**
+ * One section of a Doc, as the Docs list shows it (#588). A fenced block is
+ * a figure and not words, or a prototype's code reads as a long essay.
+ */
+export type DocSectionShape = { heading: string, words: number, figures: number, };
 
 /**
  * When a Doc was shared with a link, and last updated.
@@ -5363,6 +5383,7 @@ export const OPS = {
   "conversations.list": { method: "GET", path: "/api/conversations" },
   "doc.delete": { method: "DELETE", path: "/api/docs/{id}" },
   "doc.open": { method: "POST", path: "/api/docs/open" },
+  "doc.preview": { method: "GET", path: "/api/docs/{id}/preview" },
   "doc_link.delete": { method: "DELETE", path: "/api/doc-links/{id}" },
   "doc_link.get": { method: "GET", path: "/api/doc-links/{id}" },
   "docs.list": { method: "GET", path: "/api/docs" },
