@@ -898,6 +898,11 @@
           "const": "answered",
           "description": "The machine's agent replied in the thread (`reply`).",
           "type": "string"
+        },
+        {
+          "const": "chain",
+          "description": "Not delivered (#575): an agent's post, in a chain of agents' replies\nor past the thread's rate limit. A person's message restarts it.",
+          "type": "string"
         }
       ]
     },

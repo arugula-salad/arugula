@@ -178,7 +178,7 @@ impl Db {
         let tx = c.transaction()?;
         let seqs: Vec<i64> = tx.query_map(
             "SELECT seq FROM chat_mention_status WHERE room = ?1 AND root = ?2 AND machine = ?3
-             AND seq < ?4 AND at >= ?5 AND state != 'answered' ORDER BY seq",
+             AND seq < ?4 AND at >= ?5 AND state NOT IN ('answered', 'chain') ORDER BY seq",
             params![room, root, machine, reply, since as i64],
             |r| r.get(0),
         )?;

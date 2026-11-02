@@ -8118,7 +8118,8 @@ html[data-scheme="light"] .doc {
 }
 
 .mention-line.offline,
-.mention-line.queued {
+.mention-line.queued,
+.mention-line.chain {
   color: var(--warn, var(--dim));
 }
 

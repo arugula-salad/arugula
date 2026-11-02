@@ -28,6 +28,8 @@ export function mentionStatusText(s: ChatMentionStatus): string {
       return `${who} is offline or didn't answer`;
     case "answered":
       return `${who} answered`;
+    case "chain":
+      return `Not delivered to ${who}: a chain of agent replies; a person's message restarts it`;
   }
 }
 
