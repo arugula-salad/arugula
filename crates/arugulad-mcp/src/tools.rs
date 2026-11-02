@@ -2089,11 +2089,8 @@ impl ToolCall<'_, '_> {
         }
         let handle =
             self.app.mux.api(|r| Api::Pane(pane, r)).await.flatten().ok_or_else(|| format!("no pane %{pane}"))?;
-        let mut data = a.text.clone().unwrap_or_default().into_bytes();
-        if a.text.is_some() && a.enter.unwrap_or(true) {
-            data.push(b'\r');
-        }
         let modes = handle.status().modes;
+        let mut data = Vec::new();
         for k in &a.keys {
             let bytes = crate::keys::key(k, modes);
             if bytes.is_empty() {
@@ -2101,9 +2098,15 @@ impl ToolCall<'_, '_> {
             }
             data.extend(bytes);
         }
-        handle.mark_input();
         let offset = handle.status().end;
-        self.app.mux.send(crate::mux::Cmd::Api(Api::InputBy(pane, data, self.by())));
+        // The text and its Enter first (#573), then the keys.
+        if let Some(text) = &a.text {
+            crate::ops::input::send_text(self.app, pane, &handle, text, a.enter.unwrap_or(true), Some(self.by())).await;
+        }
+        if !data.is_empty() {
+            handle.mark_input();
+            self.app.mux.send(crate::mux::Cmd::Api(Api::InputBy(pane, data, self.by())));
+        }
         done(
             format!("Typed into %{pane}; its output from here starts at offset {offset}"),
             results::Typed { pane, next_offset: offset },

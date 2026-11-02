@@ -937,7 +937,7 @@ async fn call(
     match method.as_str() {
         "send" => {
             let req: SendRequest = serde_json::from_value(args).map_err(|e| bad(e.to_string()))?;
-            crate::ops::input::send_text(&app, id, &p, &req.text, req.enter);
+            crate::ops::input::send_text(&app, id, &p, &req.text, req.enter, None).await;
             Ok(Json(serde_json::json!({})))
         }
         "keys" => {

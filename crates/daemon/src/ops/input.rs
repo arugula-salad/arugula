@@ -3,11 +3,7 @@
 //! only. `authz::check` made the pane's role and trust check before a
 //! handler runs.
 
-use std::{
-    collections::HashMap,
-    sync::{LazyLock, Mutex},
-    time::{Duration, Instant},
-};
+use std::time::Duration;
 
 use arugula_proto::{
     PaneId,
@@ -27,61 +23,35 @@ use crate::{
 /// the text before the Enter reaches it.
 const ENTER_AFTER: Duration = Duration::from_millis(30);
 
-/// Until when each pane has an Enter still to come. A later send waits
-/// behind it, or its text would land before the earlier line's Enter.
-static BUSY: LazyLock<Mutex<HashMap<PaneId, Instant>>> = LazyLock::new(Default::default);
-
 /// Type `text` into a pane, and with `enter` press Enter as a write of its
-/// own after a short pause (#573). Returns at once; the Enter follows, and
-/// so does anything sent to the pane meanwhile.
-pub(crate) fn send_text(
+/// own after a short pause (#573). Answers once the Enter is in, so one
+/// caller's next send or keys can't overtake it. `by` is who typed it, for
+/// the record, when it isn't the owner.
+pub async fn send_text(
     app: &crate::server::App,
     id: PaneId,
     p: &arugula_mux::pane::PaneHandle,
     text: &str,
     enter: bool,
+    by: Option<String>,
 ) {
     p.mark_input();
     let (data, enter) = keys::send_text(text, enter, p.status().modes);
-    let now = Instant::now();
-    let behind = {
-        let mut busy = BUSY.lock().unwrap();
-        busy.retain(|_, until| *until > now);
-        // Past the Enter ahead by more than a timer tick, or the two could swap.
-        let start = busy.get(&id).map(|until| *until + Duration::from_millis(10));
-        if let Some(at) = enter.as_ref().map(|_| start.unwrap_or(now) + ENTER_AFTER) {
-            busy.insert(id, at);
-        }
-        start
+    let write = |data: Vec<u8>| match &by {
+        Some(by) => app.mux.send(Cmd::Api(Api::InputBy(id, data, by.clone()))),
+        None => app.mux.send(Cmd::Input { client: None, pane: id, data }),
     };
-    let mux = app.mux.clone();
-    // Now, or after what's ahead of it.
-    let later = match behind {
-        None => {
-            mux.send(Cmd::Input { client: None, pane: id, data });
-            None
-        }
-        Some(start) => Some((start, data)),
-    };
-    if later.is_none() && enter.is_none() {
-        return;
+    write(data);
+    if let Some(data) = enter {
+        tokio::time::sleep(ENTER_AFTER).await;
+        write(data);
     }
-    crate::task::spawn(async move {
-        if let Some((start, data)) = later {
-            tokio::time::sleep_until(start.into()).await;
-            mux.send(Cmd::Input { client: None, pane: id, data });
-        }
-        if let Some(data) = enter {
-            tokio::time::sleep(ENTER_AFTER).await;
-            mux.send(Cmd::Input { client: None, pane: id, data });
-        }
-    });
 }
 
 impl Handle for PaneSend {
     async fn handle(cx: &Cx<'_>, id: PaneId, req: SendRequest) -> Result<Empty, OpError> {
         let p = pane(cx.app, id).await?;
-        send_text(cx.app, id, &p, &req.text, req.enter);
+        send_text(cx.app, id, &p, &req.text, req.enter, None).await;
         Ok(Empty {})
     }
 }
