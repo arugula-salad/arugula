@@ -105,9 +105,32 @@ test("what's kept comes back the same, and only a real View decodes", () => {
   const good = { t: { d: "h", s: [0.5, 0.5], c: ["m.1", { d: "v", s: [0.25, 0.75], c: ["m.2", "m.3"] }] }, at: 5, n: "mine" };
   assert.deepEqual(decode(JSON.parse(JSON.stringify(encode(good)))), good);
   assert.deepEqual(decode(encode({ t: "m.1", at: 5 })), { t: "m.1", at: 5 });
-  for (const bad of [null, 3, "m.1", {}, { t: "nope", at: 1 }, { t: "m.1" }, { t: ["x", [1, 1], "m.1", "m.2"], at: 1 }, { t: ["h", [1], "m.1", "m.2"], at: 1 }, { t: ["h", [1, 1], "m.1"], at: 1 }]) {
+  for (const bad of [null, 3, "m.1", {}, { t: "", at: 1 }, { t: 7, at: 1 }, { t: "m.1" }, { t: ["x", [1, 1], "m.1", "m.2"], at: 1 }, { t: ["h", [1], "m.1", "m.2"], at: 1 }, { t: ["h", [1, 1], "m.1"], at: 1 }]) {
     assert.equal(decode(bad), null, JSON.stringify(bad));
   }
+});
+
+test("a leaf this client doesn't know stays in the View, through every edit", () => {
+  const unknown = "control.board:brd_0123456789abcdef";
+  assert.equal(parseAddress(unknown), null, "this client can't open it");
+  const kept = { t: ["h", [0.5, 0.5], unknown, "m.1"], at: 5 };
+  const doc = decode(kept);
+  assert.ok(doc, "it's still a View");
+  assert.deepEqual(leaves(doc.t), [unknown, "m.1"]);
+  assert.deepEqual(encode(doc), kept, "saved back unchanged");
+
+  // Other leaves come and go around it.
+  const added = insert(doc.t, "m.1", "bottom", "m.2");
+  assert.deepEqual(leaves(added), [unknown, "m.1", "m.2"]);
+  const removed = remove(added, "m.1");
+  assert.deepEqual(leaves(remove(removed, "m.2")), [unknown]);
+  assert.deepEqual(decode(JSON.parse(JSON.stringify(encode({ t: removed, at: 5 })))).t, removed);
+
+  // It lands and splits like any other, and alone it's still a View.
+  assert.ok(arrange(doc.t, box).leaves.has(unknown));
+  assert.deepEqual(decode({ t: unknown, at: 5 }), { t: unknown, at: 5 });
+  // Only taking it out takes it out.
+  assert.deepEqual(leaves(remove(doc.t, unknown)), ["m.1"]);
 });
 
 test("a View is named from what's in it until someone names it", () => {

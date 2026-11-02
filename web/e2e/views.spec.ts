@@ -128,6 +128,40 @@ test("a block carried or sent home doesn't resize its terminal", async ({ page }
   expect(await cols()).toBeGreaterThan(40);
 });
 
+test("a leaf this client doesn't know draws a placeholder, and survives edits", async ({ page }) => {
+  await reset(page);
+  const pane = await active(page);
+  await ready(page, pane);
+  const unknown = "control.board:brd_0123456789abcdef";
+  // As a newer client on this account would have left it.
+  const leaf = await page.evaluate(
+    ([pane, unknown]) => {
+      const w = window.__arugula as unknown as { hosts: { current: string; find(n: string): { id?: string } | undefined } };
+      const a = `${w.hosts.find(w.hosts.current)?.id ?? w.hosts.current}.${pane}`;
+      const all = JSON.parse(localStorage.getItem("arugula.seen") ?? "{}");
+      all["view:newer"] = { t: ["h", [0.5, 0.5], unknown, a], at: 1 };
+      localStorage.setItem("arugula.seen", JSON.stringify(all));
+      return a;
+    },
+    [pane, unknown] as const,
+  );
+  const kept = () => page.evaluate(() => JSON.parse(localStorage.getItem("arugula.seen") ?? "{}")["view:newer"]?.t ?? null);
+  // A hash alone doesn't reload the page, and prefs load with it.
+  await page.goto("/#view=newer");
+  await page.reload();
+  await expect(leaves(page)).toHaveCount(2);
+  await expect(page.locator(`[data-view-gone="${unknown}"]`)).toContainText("can't show this block");
+  await expect(page.locator(`[data-view-leaf="${leaf}"] .xterm`)).toBeVisible();
+
+  // Taking the other leaf out saves the View, with the unknown one as it was.
+  await page.locator(`[data-view-remove="${leaf}"]`).click();
+  await expect(leaves(page)).toHaveCount(1);
+  await expect.poll(kept).toBe(unknown);
+  // Only its own Remove takes it out.
+  await page.locator(`[data-view-gone="${unknown}"]`).getByRole("button", { name: "Remove" }).click();
+  await expect.poll(kept).toBeNull();
+});
+
 test("a pane closed elsewhere shows where it was, and Remove takes the leaf", async ({ page }) => {
   await reset(page);
   const keep = await active(page);

@@ -50,6 +50,11 @@ browser's localStorage with no control, through `shared/seen.ts`.
 tree: "<machine>.<pane>" | ["h" | "v", [shares...], ...children]
 ```
 
+A leaf of a kind this client doesn't know (say one naming something in control,
+written by a newer client) is kept as it is, draws as a placeholder, and is saved
+back unchanged, so an older client can edit the View without losing it. Only its
+own Remove takes it out.
+
 `<machine>` is control's device id when there is one, so renaming a machine
 doesn't break a View; without control, the host's name. Shares are fractions, so
 a View fits any window. A pref's value is at most 512 bytes: 9 leaves (the limit

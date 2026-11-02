@@ -30,6 +30,8 @@ import {
   zoneAt,
   zoneBox,
   MAX_LEAVES,
+  UNKNOWN_LEAF,
+  UNKNOWN_LEAF_NOTE,
   type Address,
   type Box,
   type Divider,
@@ -698,7 +700,7 @@ function Leaf({ a, n, s, place, hidden }: { a: Address; n: number; s: Shared; pl
         shared: !!client?.state?.roles,
         graceOver,
       })
-    : "This leaf isn't a pane's address.";
+    : UNKNOWN_LEAF_NOTE;
 
   // A terminal keeps its tab's size and is drawn scaled in the leaf; other
   // blocks fill it.
@@ -754,7 +756,7 @@ function Leaf({ a, n, s, place, hidden }: { a: Address; n: number; s: Shared; pl
 
   const fleetish = { info: info ?? {} } as unknown as FleetPane;
   const rgb = info ? KINDS[kindOf(fleetish)] : KINDS.shell;
-  const title = (client && client.title(pane)) || info?.command || `%${pane}`;
+  const title = !at ? UNKNOWN_LEAF : (client && client.title(pane)) || info?.command || `%${pane}`;
   const { word: type, glyph } = paneGlyph(client as Client, pane, info);
   const status = paneStatus(info);
   const isActive = s.active === a;
@@ -762,7 +764,7 @@ function Leaf({ a, n, s, place, hidden }: { a: Address; n: number; s: Shared; pl
   const menu = (e: MouseEvent) => {
     e.preventDefault();
     const items: MenuItem[] = [
-      { header: `${title} · ${host ?? at?.machine ?? ""}` },
+      { header: at ? `${title} · ${host ?? at.machine}` : title },
       { label: "Remove from view", run: () => s.remove(a) },
       ...(info && client ? (["separator", { label: "Close pane", danger: true, hint: "Closes it where it lives, not just here", run: () => client.intent({ op: "close_pane", pane }) }] as MenuItem[]) : []),
     ];
@@ -776,7 +778,7 @@ function Leaf({ a, n, s, place, hidden }: { a: Address; n: number; s: Shared; pl
       data-view-leaf={a}
       data-kind-rgb={rgb.join(",")}
       style={{ "--c": rgb.join(" "), display: hidden ? "none" : undefined }}
-      aria-label={`${title} on ${host ?? at?.machine ?? "an unknown machine"}`}
+      aria-label={at ? `${title} on ${host ?? at.machine}` : title}
       onPointerDownCapture={() => s.setActive(a)}
     >
       <header
@@ -820,7 +822,7 @@ function Leaf({ a, n, s, place, hidden }: { a: Address; n: number; s: Shared; pl
             {status.word}
           </span>
         )}
-        <span class="view-leaf-host">{host ?? at?.machine}</span>
+        {at && <span class="view-leaf-host">{host ?? at.machine}</span>}
         {elsewhere && (
           <button class="view-leaf-size" data-sized-elsewhere title="Another window set this tab's size" disabled={!cells} onClick={takeSize}>
             Use this size

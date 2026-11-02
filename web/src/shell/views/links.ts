@@ -8,7 +8,7 @@ import { PaneLinks } from "../blocks/pane-links";
 import { directory } from "../hosts";
 import { getFleet } from "../ui/hosts";
 import { cleanTitle } from "../../shared/titles";
-import { addressOf, parseAddress, type Address } from "./model";
+import { addressOf, parseAddress, UNKNOWN_LEAF, type Address } from "./model";
 
 /** A pane nobody shows stays drawn this long, so going from the swarm's stage
  * to its View doesn't load it again. */
@@ -47,7 +47,7 @@ export const viewLinks = new PaneLinks<object>((machine) => {
  * fleet's summaries say. */
 export function paneTitle(a: Address): string {
   const at = parseAddress(a);
-  if (!at) return a;
+  if (!at) return UNKNOWN_LEAF;
   const host = hostOf(at.machine);
   const p = host === null ? undefined : getFleet()?.panes.find((x) => x.host === host && x.id === at.pane);
   const live = viewLinks.client(at.machine);

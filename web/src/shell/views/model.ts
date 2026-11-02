@@ -4,7 +4,9 @@
 // shaped this way.
 
 /** A leaf: `<machine>.<pane>`, control's device id or the host's name, then
- * the pane's number. The same form as `#swarm=<daemon>.N`. */
+ * the pane's number. The same form as `#swarm=<daemon>.N`. A leaf of a kind
+ * this client doesn't know (one a newer client wrote) stays in the View as it
+ * is, and draws as a placeholder: see `decode`. */
 export type Address = string;
 
 export type ViewNode = Address | ViewSplit;
@@ -230,7 +232,8 @@ export function fits(doc: ViewDoc): boolean {
 }
 
 function fromWire(n: unknown): ViewNode | null {
-  if (typeof n === "string") return parseAddress(n) ? n : null;
+  // Any leaf a newer client may have written: kept, and saved back unchanged.
+  if (typeof n === "string") return n ? n : null;
   if (!Array.isArray(n)) return null;
   const [d, s, ...rest] = n as [unknown, unknown, ...unknown[]];
   if ((d !== "h" && d !== "v") || !Array.isArray(s) || rest.length < 2 || s.length !== rest.length) return null;
@@ -240,7 +243,7 @@ function fromWire(n: unknown): ViewNode | null {
 }
 
 /** A kept value, or null when it isn't a View (a pref can hold anything an
- * older page wrote). */
+ * older page wrote). A leaf it can't read doesn't make it "not a View". */
 export function decode(v: unknown): ViewDoc | null {
   if (!v || typeof v !== "object") return null;
   const { n, t, at } = v as { n?: unknown; t?: unknown; at?: unknown };
@@ -281,6 +284,10 @@ export function sizeAsk(s: {
   if (s.owner === null || !s.present) return "claim";
   return s.ownPage ? "ask" : "none";
 }
+
+/** What a leaf of a kind this client doesn't know is called, and says. */
+export const UNKNOWN_LEAF = "Unknown block";
+export const UNKNOWN_LEAF_NOTE = "This version of Arugula can't show this block. Update to see it.";
 
 /** What a leaf shows instead of its pane, when it can't show it. */
 export function placeholder(s: {
