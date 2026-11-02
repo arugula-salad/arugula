@@ -302,12 +302,15 @@ pub struct TurnStat {
 /// A prompt waiting for the agent: its text, images (M71) by name in the
 /// block's folder, and whose it is when that isn't the block's owner
 /// (M29): the transcript says so when it's sent, not when it's queued, so
-/// a follow-up queued mid-turn is credited to its own author (M255).
+/// a follow-up queued mid-turn is credited to its own author (M255). A
+/// mention (#611) carries its tag, so its turn reports `working` when it is
+/// sent and `read` when it ends (#540).
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Queued {
     pub text: String,
     pub images: Vec<String>,
     pub by: Option<String>,
+    pub mention: Option<mux::MentionTag>,
 }
 
 impl Queued {
@@ -397,6 +400,8 @@ struct Inner {
     /// they end, so `wait --idle` waits.
     background: background::Background,
     queue: VecDeque<Queued>,
+    /// The mention whose turn is running (#611), told `read` when it ends.
+    mention_turn: Option<mux::MentionTag>,
     cost: Option<f64>,
     currency: Option<String>,
     turns: Vec<TurnStat>,
@@ -699,6 +704,7 @@ impl Inner {
             autonomous_at: None,
             background: Default::default(),
             queue: VecDeque::new(),
+            mention_turn: None,
             cost: None,
             currency: None,
             turns: vec![],
@@ -769,6 +775,9 @@ impl Inner {
         let mut e = json!({ "e": "queue", "text": q.text, "images": q.images, "front": front });
         if let Some(by) = &q.by {
             e["by"] = json!(by);
+        }
+        if let Some(m) = &q.mention {
+            e["mention"] = json!({ "room": m.room, "seq": m.seq });
         }
         self.note(e);
     }
@@ -888,6 +897,7 @@ impl Inner {
                     text: e["text"].as_str().unwrap_or_default().to_owned(),
                     images: strings(&e["images"]),
                     by: e["by"].as_str().map(str::to_owned),
+                    mention: mention_of(&e["mention"]),
                 };
                 match e["front"].as_bool() {
                     Some(true) => self.queue.push_front(q),
@@ -1058,7 +1068,8 @@ impl Inner {
                             .filter_map(|c| c["text"].as_str())
                             .collect::<Vec<_>>()
                             .join("\n");
-                        let sent = Queued { text, images: blocks.iter().filter_map(image).collect(), by: None };
+                        let sent =
+                            Queued { text, images: blocks.iter().filter_map(image).collect(), by: None, mention: None };
                         let mut by = None;
                         if self.queue.front().is_some_and(|q| q.is(&sent)) {
                             by = self.queue.pop_front().and_then(|q| q.by);
@@ -1183,7 +1194,7 @@ impl Inner {
                         if let Some(Entry::User { text, images, .. }) = self.t.entries.last().cloned() {
                             self.t.entries.pop();
                             // Whose it is was said as it went the first time.
-                            fx.push(Effect::Retry(Queued { text, images, by: None }));
+                            fx.push(Effect::Retry(Queued { text, images, by: None, mention: None }));
                         }
                     }
                     (Purpose::Prompt, result) => {
@@ -1813,7 +1824,7 @@ impl Agent {
             return;
         }
         if let Some(p) = inner.cfg.prompt.take() {
-            inner.enqueue(&Queued { text: p, images: vec![], by: None }, false);
+            inner.enqueue(&Queued { text: p, images: vec![], by: None, mention: None }, false);
         }
         if inner.cfg.import.is_some() {
             if let Some(t) = inner.cfg.import.as_ref().and_then(|i| i.title.clone()) {
@@ -2672,6 +2683,9 @@ fn act(ctx: &AgentCtx, g: &mut Inner, f: Effect) {
         }
         Effect::TurnEnded => {
             end_hosted_turn(ctx, g);
+            if let Some(tag) = g.mention_turn.take() {
+                ctx.mention_turn(tag, mux::Turn::Ended);
+            }
             // In history as an entry of its own: the prompt. Not a command
             // and no exit code: a turn that stopped early isn't a failure of
             // anything that ran.
@@ -3024,7 +3038,17 @@ fn send_next(ctx: &AgentCtx, g: &mut Inner) {
         g.next_run = g.carry_run.is_none().then_some(run);
     }
     g.send_prompt(&q, prompt);
+    // #611: a mention's turn starts as it is sent, not as it is queued.
+    if let Some(tag) = q.mention.clone() {
+        ctx.mention_turn(tag.clone(), mux::Turn::Started);
+        g.mention_turn = Some(tag);
+    }
     start_run(ctx, g, &q.text);
+}
+
+/// The mention a `send` or a logged queue entry carries (#611).
+fn mention_of(v: &Value) -> Option<mux::MentionTag> {
+    Some(mux::MentionTag { room: v["room"].as_str()?.to_owned(), seq: v["seq"].as_i64()? })
 }
 
 impl Agent {
@@ -3282,7 +3306,8 @@ impl Agent {
         }
         // A follow-up from someone (M29): the transcript says whose as it's
         // sent (`send_prompt`).
-        let mut q = Queued { text: text.to_owned(), images: vec![], by: by.map(str::to_owned) };
+        let mention = mention_of(&args["mention"]);
+        let mut q = Queued { text: text.to_owned(), images: vec![], by: by.map(str::to_owned), mention };
         attach(&self.ctx, &mut q, &files)?;
         let mut g = self.inner.lock().unwrap();
         if matches!(g.status, Status::Exited | Status::Stopped) {

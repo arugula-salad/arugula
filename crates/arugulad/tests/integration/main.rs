@@ -90,6 +90,7 @@ mod local_auth;
 mod machines;
 mod mcp;
 mod memory;
+mod mention_agent_block;
 mod pipe;
 mod program_status;
 mod prompt;
