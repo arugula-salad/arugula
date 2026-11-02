@@ -115,7 +115,7 @@ impl McpOp<Docs> for DocsList {
     const SURFACE: Surface = Surface::Kind {
         tool: "doc",
         kind: "list",
-        description: "The Docs kept on this machine, newest first: id, title, made, updated, who made it, the block that shows it now (open) and whether it is shared. Any Doc an earlier session wrote is here, open or not; doc open shows one in a block, which you can then fill.",
+        description: "The kept Docs, newest first: id, title, made, updated, author, the block showing it now (open), whether it is shared. Any earlier session's Doc is here; open shows one.",
     };
     type Args = ListArgs;
     type Answer = serde_json::Value;
