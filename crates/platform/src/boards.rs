@@ -84,6 +84,7 @@ use axum::{
     http::StatusCode,
 };
 
+use crate::db::boards_docs as db_docs;
 use crate::{
     Platform,
     auth::{Machine, Person},
@@ -105,7 +106,6 @@ use crate::{
     trackers,
 };
 use arugula_control_wire::boards::Category;
-use crate::db::boards_docs as db_docs;
 use lanes::{Fact, Pr, Primary, github_category, plane_category};
 use refs::{IssueKey, Refs, Source, references};
 
@@ -1124,9 +1124,9 @@ fn group_id_ok(id: &str) -> Result<(), ApiError> {
 /// or an agent block is attached, and a workspace is neither.
 fn primary_ok(p: &wire::Pointer) -> Result<(), ApiError> {
     match p {
-        wire::Pointer::Doc { .. } | wire::Pointer::MachineDoc { .. } => Err(bad(
-            "a row's item is an issue or a PR: link it to the board's Docs, or to a row's",
-        )),
+        wire::Pointer::Doc { .. } | wire::Pointer::MachineDoc { .. } => {
+            Err(bad("a row's item is an issue or a PR: link it to the board's Docs, or to a row's"))
+        }
         wire::Pointer::Run { .. } | wire::Pointer::Block { .. } | wire::Pointer::Workspace { .. } => Err(bad(
             "a row's item is an issue or a PR (a note row may carry a link): attach a run or an agent block to the row \
              that it is for, with attach",

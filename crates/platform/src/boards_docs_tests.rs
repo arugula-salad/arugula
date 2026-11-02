@@ -205,7 +205,11 @@ async fn a_doc_is_linked_to_a_row_and_is_never_its_item_or_an_attachment() {
     let (st, v) = link_row(&base, "a", &id, &row, doc_ptr.clone()).await;
     assert_eq!(st, 200, "{v}");
     let doc0 = &row_in(&v, &row)["docs"][0];
-    assert_eq!((&doc0["title"], &doc0["written"], &doc0["sections"]), (&json!("The spike"), &json!(1), &json!(2)), "{v}");
+    assert_eq!(
+        (&doc0["title"], &doc0["written"], &doc0["sections"]),
+        (&json!("The spike"), &json!(1), &json!(2)),
+        "{v}"
+    );
     assert!(row_in(&v, &row)["attachments"].as_array().is_none_or(Vec::is_empty), "no attachment: {v}");
     assert!(v["docs"].as_array().unwrap().is_empty(), "not in the strip: {v}");
     // Once on a row; the strip is a list of its own.
@@ -252,10 +256,15 @@ async fn row_docs_are_once_per_row_in_their_own_order_and_go_with_the_row() {
     }
     let (_, v) = link_row(&base, "a", &id, &r1, ptr(&b)).await;
     let (_, v2) = link_row(&base, "a", &id, &r1, ptr(&c)).await;
-    assert_eq!((titles(&v2), row_titles(&v2, &r1), row_titles(&v2, &r2)), (vec!["A"], vec!["A".into(), "B".into(), "C".into()], vec!["A".into()]), "{v}");
+    assert_eq!(
+        (titles(&v2), row_titles(&v2, &r1), row_titles(&v2, &r2)),
+        (vec!["A"], vec!["A".into(), "B".into(), "C".into()], vec!["A".into()]),
+        "{v}"
+    );
 
     // Moving: within the row only.
-    let (first, last) = (row_in(&v2, &r1)["docs"][0]["id"].as_str().unwrap(), row_in(&v2, &r1)["docs"][2]["id"].as_str().unwrap());
+    let (first, last) =
+        (row_in(&v2, &r1)["docs"][0]["id"].as_str().unwrap(), row_in(&v2, &r1)["docs"][2]["id"].as_str().unwrap());
     let strip = v2["docs"][0]["id"].as_str().unwrap();
     let mv = |doc: &str, before: Option<&str>| {
         let (path, body) = (format!("/api/boards/{id}/docs/{doc}/move"), json!({ "before": before }));
@@ -286,7 +295,8 @@ async fn row_docs_are_once_per_row_in_their_own_order_and_go_with_the_row() {
     assert_eq!(st, 200, "{v}");
     assert_eq!(titles(&v), ["A"], "{v}");
     assert_eq!(row_titles(&v, &r2).len() as u64, BOARD_DOCS_MAX, "{v}");
-    let n: u64 = app.db.c().query_row("SELECT count(*) FROM board_docs WHERE row_id = ?1", params![r1], |r| r.get(0)).unwrap();
+    let n: u64 =
+        app.db.c().query_row("SELECT count(*) FROM board_docs WHERE row_id = ?1", params![r1], |r| r.get(0)).unwrap();
     assert_eq!(n, 0);
 }
 
@@ -462,8 +472,7 @@ async fn an_agent_links_its_machines_docs() {
     // On a row; the agent can take off its own.
     let (_, v) = put(&base, "a", &id, json!({ "entry": "row", "note": "the plan" })).await;
     let row = v["zones"][0]["rows"][0]["id"].as_str().unwrap().to_owned();
-    let (st, v) =
-        geek(&base, "POST", &agent_board_docs(&id), Some(json!({ "pointer": mine, "row": row }))).await;
+    let (st, v) = geek(&base, "POST", &agent_board_docs(&id), Some(json!({ "pointer": mine, "row": row }))).await;
     assert_eq!(st, 200, "{v}");
     let on_row = &row_in(&v, &row)["docs"][0];
     assert_eq!((&on_row["title"], &on_row["agent"]["machine"]), (&json!("Perf notes"), &json!("geek")), "{v}");
