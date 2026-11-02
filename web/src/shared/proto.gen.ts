@@ -358,6 +358,20 @@ lane: BoardLane,
  */
 by: string, at: number, };
 
+/**
+ * The session that leads a board: the machine it runs on and its name there,
+ * as that machine's daemon matches it (#414).
+ */
+export type BoardLead = { machine: string, 
+/**
+ * The machine's name now; empty while it can't be told.
+ */
+machine_name: string, session: string, 
+/**
+ * When the session took the lead.
+ */
+at: number, };
+
 export type BoardList = { project: string, boards: Array<ProjectBoard>, };
 
 /**
@@ -3183,7 +3197,12 @@ export type NewBoard = { title: string,
 /**
  * What the board is for; left out: none.
  */
-goal?: string, };
+goal?: string, 
+/**
+ * With an agent's write: the session that makes it leads the new board
+ * (#414). A person's write ignores it.
+ */
+lead_session?: string, };
 
 /**
  * A new issue, before and after it reached the forge.
@@ -3851,7 +3870,12 @@ progress: BoardProgress,
  * The tracker's epic it follows, when it was made from one (Plane's,
  * #483); absent for a board a person made.
  */
-source?: BoardSource, };
+source?: BoardSource, 
+/**
+ * The session that leads the board (#414): a post on the board's thread
+ * reaches it. Absent when no session does.
+ */
+lead?: BoardLead, };
 
 /**
  * A Doc, without its sections: a list's row, and a view's head.

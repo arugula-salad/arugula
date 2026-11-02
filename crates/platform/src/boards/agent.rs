@@ -127,6 +127,18 @@ pub async fn reopen(State(app): State<Arc<Platform>>, d: Machine, Path(id): Path
     Ok(Json(super::reopen(&app, actor(&d), &id).await?))
 }
 
+/// `POST /api/daemon/boards/{id}/lead`: the calling session takes the lead,
+/// or the lead is released (#414).
+pub async fn lead(
+    State(app): State<Arc<Platform>>,
+    d: Machine,
+    Path(id): Path<String>,
+    Json(l): Json<wire::LeadBoard>,
+) -> J<wire::BoardView> {
+    app.limits.check_daemon(AGENT_BOARD_WRITES, &d.daemon)?;
+    Ok(Json(super::lead(&app, actor(&d), &id, &l).await?))
+}
+
 /// `PUT /api/daemon/boards/{id}/entries`: add a row, or set a row's note or
 /// (its own machine's) pointer; 409 `stale_rev` when the row moved on.
 pub async fn put(

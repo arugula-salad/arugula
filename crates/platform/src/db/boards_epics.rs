@@ -67,8 +67,9 @@ pub struct Synced {
     pub changed: bool,
 }
 
+/// A board and its `source_item`, the column after [`BOARD_COLS`]' twenty.
 fn board_with_source(r: &Row) -> Result<(Board, String)> {
-    Ok((super::boards::board_row(r)?, r.get(17)?))
+    Ok((super::boards::board_row(r)?, r.get(20)?))
 }
 
 /// Delete a row with what is attached to it.

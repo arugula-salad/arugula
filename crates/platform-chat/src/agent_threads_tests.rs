@@ -14,7 +14,7 @@ use crate::{
     chat_tests::call,
     db::{
         issues::{Actor, NewIssue},
-        projects::{ISSUES_WRITE, THREADS_POST, THREADS_READ},
+        projects::{BOARDS_WRITE, ISSUES_WRITE, THREADS_POST, THREADS_READ},
     },
     grants::AGENT_UNGRANTED,
 };
@@ -707,4 +707,167 @@ async fn agents_are_told_at_most_ten_times_per_thread_per_machine_in_a_window() 
     let now = arugula_e2e::now_ms();
     assert!(!app.chat.agent_told("ch_general", root, "geek", now));
     assert!(app.chat.agent_told("ch_general", root, "geek", now + crate::chat::AGENT_TOLD_WINDOW_MS));
+}
+
+/// A board in t led by geek's session "Ux" (#414), whose thread b has open:
+/// the board's id and its room's, and the id of geek's `threads.read` grant.
+/// geek has threads and boards in t, and answers what it is told; "mini"
+/// (a's other machine) has threads in t.
+async fn led_board(hub: &crate::testing::hub::TestHub, base: &str, t: &str) -> (String, String, String) {
+    use arugula_control_wire::boards::AGENT_BOARD_LEAD;
+    hub.daemon("mini", "a", Some("t"));
+    let mut read = String::new();
+    for (machine, power) in [
+        ("geek", THREADS_POST),
+        ("geek", THREADS_READ),
+        ("geek", BOARDS_WRITE),
+        ("mini", THREADS_POST),
+        ("mini", THREADS_READ),
+    ] {
+        let (st, g) =
+            call(base, "a", "POST", "/api/grants", give(machine, power, json!({ "kind": "project", "id": t }))).await;
+        assert_eq!(st, 200, "{g}");
+        if (machine, power) == ("geek", THREADS_READ) {
+            read = g["id"].as_str().unwrap().to_owned();
+        }
+    }
+    hub.flag_named("team:t", crate::boards::FLAG, true);
+    hub.answers_ops("geek", OpAnswer::Done { url: None, routed: None });
+    let (st, b) =
+        call(base, "b", "POST", &format!("/api/projects/{t}/boards"), Some(json!({ "title": "Launch" }))).await;
+    assert_eq!(st, 200, "{b}");
+    let id = b["board"]["id"].as_str().unwrap().to_owned();
+    let path = AGENT_BOARD_LEAD.replace("{id}", &id);
+    let (st, v) = geek(base, "POST", &path, Some(json!({ "session": "Ux" }))).await;
+    assert_eq!((st, &v["board"]["lead"]["session"]), (200, &json!("Ux")), "{v}");
+    let (st, room) =
+        call(base, "b", "POST", "/api/chat/targets", Some(json!({ "kind": "object", "target": id }))).await;
+    assert_eq!(st, 200, "{room}");
+    (id, room["id"].as_str().unwrap().to_owned(), read)
+}
+
+/// `machine`'s agent posts `text` as `session` in the thread of `object`, under `parent` if any: the response.
+async fn agent_posts(
+    base: &str,
+    machine: &str,
+    object: &str,
+    session: Value,
+    text: &str,
+    parent: Option<i64>,
+) -> Value {
+    let r = reqwest::Client::new()
+        .post(format!("{base}{}", agent_messages(object)))
+        .header("x-test-daemon", format!("a {machine}"))
+        .json(&json!({ "text": text, "session": session, "parent": parent }))
+        .send()
+        .await
+        .unwrap();
+    let v = r.json::<Value>().await.unwrap();
+    assert!(v["seq"].is_number(), "{v}");
+    v
+}
+
+/// `(session, from_session)` of the mentions asked of geek, once there are `n`.
+async fn lead_told(hub: &crate::testing::hub::TestHub, n: usize) -> Vec<(Option<String>, Option<String>)> {
+    waits_for_told(hub, n).await;
+    asked_of(hub, "geek").into_iter().map(|a| (a.session, a.from_session)).collect()
+}
+
+/// A post on a board's thread is told to the machine of the session that
+/// leads the board, naming that session (#414): a person's, an agent of
+/// another machine's, at the top and in a reply; an explicit
+/// `@geek-box/billing` wins. Its status line says it was delivered.
+#[tokio::test]
+async fn a_post_on_a_boards_thread_is_told_to_the_session_that_leads_it() {
+    let (hub, _app, base, t, _u) = seeded().await;
+    let (board, room, _) = led_board(&hub, &base, &t).await;
+    let some = |s: &str| Some(s.to_owned());
+
+    let path = format!("/api/chat/rooms/{room}/messages");
+    let (_, v) = call(&base, "b", "POST", &path, say("who owns the rollout?")).await;
+    let root = v["seq"].as_i64().unwrap();
+    assert_eq!(lead_told(&hub, 1).await, [(some("Ux"), None)]);
+    let told = asked_of(&hub, "geek");
+    assert_eq!((told[0].room.as_str(), told[0].target.as_deref()), (room.as_str(), Some(board.as_str())));
+    assert_eq!(told[0].author, "b");
+
+    // Editing the post keeps the lead mentioned, and tells nobody again.
+    let (st, v) = call(&base, "b", "PATCH", &format!("{path}/{root}"), say("who owns the rollout, really?")).await;
+    assert_eq!((st, &v["mentions"]), (200, &json!(["machine:geek"])), "{v}");
+
+    // A reply in the thread.
+    call(&base, "b", "POST", &path, Some(json!({ "text": "and the date?", "parent": root }))).await;
+    assert_eq!(lead_told(&hub, 2).await[1], (some("Ux"), None));
+
+    // Another machine's agent asks, as a session of its own.
+    let v = agent_posts(&base, "mini", &board, json!("Mini"), "blocked on the lead's call", None).await;
+    assert_eq!(lead_told(&hub, 3).await[2], (some("Ux"), some("Mini")));
+    assert_eq!(v["mention_status"][0]["state"], "sending", "{v}");
+
+    // A session named in the text is the one addressed, and the machine is told once.
+    call(&base, "b", "POST", &path, say("@geek-box/billing take this")).await;
+    let all = lead_told(&hub, 4).await;
+    assert_eq!((all.len(), &all[3]), (4, &(some("billing"), None)));
+}
+
+/// An agent posting on a board it leads isn't woken by its own post (#575's
+/// `from_session`): not at the top, not in a reply, and not when it can't be
+/// told apart from the lead (no session named). Another session of the same
+/// machine is told, and a lead that left (or the board's thread of a
+/// machine without `threads.read`) is told nothing.
+#[tokio::test]
+async fn the_session_that_leads_a_board_is_not_told_its_own_post() {
+    let (hub, _app, base, t, _u) = seeded().await;
+    let (board, room, read) = led_board(&hub, &base, &t).await;
+    let some = |s: &str| Some(s.to_owned());
+
+    let root = agent_posts(&base, "geek", &board, json!("ux"), "status: on track", None).await["seq"].as_i64().unwrap();
+    agent_posts(&base, "geek", &board, json!("ux"), "details", Some(root)).await;
+    agent_posts(&base, "geek", &board, Value::Null, "from an old daemon", None).await;
+    tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+    assert_eq!(asked_of(&hub, "geek").len(), 0, "the lead's own posts wake nobody");
+
+    agent_posts(&base, "geek", &board, json!("Beta"), "a question from another session", None).await;
+    assert_eq!(lead_told(&hub, 1).await, [(some("Ux"), some("Beta"))]);
+
+    // The lead's machine loses threads.read: the board's lead gets nothing more.
+    let (st, v) = call(&base, "a", "POST", &format!("/api/grants/{read}/revoke"), None).await;
+    assert_eq!(st, 200, "{v}");
+    call(&base, "b", "POST", &format!("/api/chat/rooms/{room}/messages"), say("anyone?")).await;
+    tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+    assert_eq!(asked_of(&hub, "geek").len(), 1);
+}
+
+/// A lead that's offline shows `offline` on the post's status line, like a
+/// mention (#414); a board nobody leads tells nobody (#394's rules only).
+#[tokio::test]
+async fn an_offline_lead_says_so_and_a_board_without_one_tells_nobody() {
+    let (hub, _app, base, t, _u) = seeded().await;
+    let (board, room, _) = led_board(&hub, &base, &t).await;
+    hub.answers_ops("geek", OpAnswer::Offline);
+    let path = format!("/api/chat/rooms/{room}/messages");
+    let (_, v) = call(&base, "b", "POST", &path, say("anyone there?")).await;
+    let seq = v["seq"].as_i64().unwrap();
+    for _ in 0..100 {
+        let (_, v) = call(&base, "b", "GET", &path, None).await;
+        let m = v["messages"].as_array().unwrap().iter().find(|m| m["seq"] == seq).unwrap().clone();
+        if m["mention_status"][0]["state"] != "sending" {
+            assert_eq!(
+                (&m["mention_status"][0]["state"], &m["mention_status"][0]["machine_name"]),
+                (&json!("offline"), &json!("geek-box")),
+                "{m}"
+            );
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    }
+
+    // Released: the next post tells nobody.
+    let before = asked_of(&hub, "geek").len();
+    let lead = arugula_control_wire::boards::AGENT_BOARD_LEAD.replace("{id}", &board);
+    let (st, v) = geek(&base, "POST", &lead, Some(json!({ "release": true }))).await;
+    assert_eq!((st, v["board"].get("lead")), (200, None), "{v}");
+    call(&base, "b", "POST", &path, say("hello?")).await;
+    tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+    assert_eq!(asked_of(&hub, "geek").len(), before);
 }
