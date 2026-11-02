@@ -32,7 +32,6 @@
 //! | `POST` [`ASK`] [`ChatAskAnswer`]: [`ChatAsk`] | its asker |
 //! | `POST` [`AGENT_SESSIONS`] [`AgentSessionStart`]: [`AgentSessionStarted`] | a machine's agents, with `sessions.start` |
 //! | `POST` [`AGENT_SESSION_REPLY`] [`AgentSessionReply`]: [`AgentSessionReplied`] | a machine's agents, with `sessions.reply` |
-//! | `POST` [`AGENT_SESSION_STOP`] [`AgentSessionStop`]: [`SessionView`] | a machine's agents, with `sessions.start` or `sessions.reply`, for a session their owner asked |
 //! | `GET` [`PROJECT_SESSIONS`] [`SessionWaveQuery`]: [`SessionWave`] | the project's members |
 //! | `GET` [`AGENT_PROJECT_SESSIONS`] [`SessionWaveQuery`]: [`SessionWave`] | a machine's agents, with a session or thread read |
 //! | `GET` [`AGENT_SESSION`]: [`AgentSessionRead`] | a machine's agents, with a session or thread read |
@@ -150,10 +149,6 @@ pub const AGENT_SESSIONS: &str = "/api/daemon/sessions";
 /// thread (`sessions.reply`, aru-121): an answer to its question, or a
 /// prompt.
 pub const AGENT_SESSION_REPLY: &str = "/api/daemon/sessions/{ses}/reply";
-/// `POST` [`AgentSessionStop`]: a machine's agent stops a session its
-/// owner asked for (`sessions.start` or `sessions.reply`), as the card's
-/// Stop does. Answers the session's [`SessionView`].
-pub const AGENT_SESSION_STOP: &str = "/api/daemon/sessions/{ses}/stop";
 
 /// `GET` [`SessionWaveQuery`]: a project's sessions, a wave view's rows
 /// ([`SessionWave`], Fleet 5).
@@ -187,14 +182,6 @@ pub fn agent_session(ses: &str) -> String {
 pub fn agent_session_reply(ses: &str) -> String {
     AGENT_SESSION_REPLY.replace("{ses}", ses)
 }
-
-/// [`AGENT_SESSION_STOP`] for session `ses`.
-pub fn agent_session_stop(ses: &str) -> String {
-    AGENT_SESSION_STOP.replace("{ses}", ses)
-}
-
-/// The longest [`AgentSessionStop::reason`], in characters.
-pub const STOP_REASON_MAX: usize = 280;
 
 /// What an ask's message has for `via`, before what it asks of: `repo`,
 /// or the session's id.
@@ -779,16 +766,6 @@ pub struct AgentSessionReplied {
     pub permission: bool,
     #[serde(default)]
     pub why: Option<String>,
-}
-
-/// [`AGENT_SESSION_STOP`]'s body.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
-pub struct AgentSessionStop {
-    /// Why, in at most [`STOP_REASON_MAX`] characters: the thread's note
-    /// says it.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub reason: Option<String>,
 }
 
 /// [`PROJECT_SESSIONS`]' query: each that's set narrows the wave.

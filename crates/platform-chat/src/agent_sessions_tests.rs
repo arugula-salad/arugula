@@ -7,7 +7,7 @@
 
 use arugula_control_wire::{
     chat::agent_messages,
-    sessions::{AGENT_SESSIONS, agent_session_reply, agent_session_stop},
+    sessions::{AGENT_SESSIONS, agent_session_reply},
 };
 use serde_json::{Value, json};
 
@@ -246,88 +246,4 @@ async fn session_powers_are_a_machines_over_a_project() {
         assert!(!crate::grants::is_token_power(power), "{power}");
         assert!(crate::grants::is_agent_power(power), "{power}");
     }
-}
-
-/// `who` asks @arugula in the channel, and the box takes the session.
-async fn asked(
-    app: &Platform,
-    base: &str,
-    project: &str,
-    keys: &arugula_e2e::DeviceKeys,
-    who: &str,
-    text: &str,
-) -> (i64, Session) {
-    let p = post_in(base, ROOM, who, text, None).await["seq"].as_i64().unwrap();
-    let s = session_of(app, project, p).expect("a session");
-    take(app, keys, &s.id);
-    (p, s)
-}
-
-/// An agent stops a session only for its own person's asking, and by grant
-/// (sessions.start or sessions.reply, asked every call): none, or a session
-/// someone else asked for, is refused and the session runs on; the asker's
-/// agent with sessions.reply alone ends it as the card's Stop does (the
-/// session leaves its box's work, the box's next report is refused so it
-/// stops the agent) and the thread says whose agent did, and why. Stopped
-/// already, it answers so and changes nothing.
-#[tokio::test]
-async fn an_agent_stops_only_its_owners_session_by_grant() {
-    let (hub, app, base, t, _u, keys) = platform(&["https://github.com/o/app"]).await;
-    joined(&hub, &app).await;
-    let (_, mine) = asked(&app, &base, &t, &keys, "a", "@arugula fix the canary").await;
-    let (_, theirs) = asked(&app, &base, &t, &keys, "b", "@arugula fix the docs").await;
-    assert_eq!((mine.asker.as_str(), theirs.asker.as_str()), ("a", "b"));
-    let running = |id: &str| app.db.session_work("hw_dev").unwrap().iter().any(|w| w.session == id);
-    assert!(running(&mine.id) && running(&theirs.id), "both are on the box's work");
-    let stop = agent_session_stop(&mine.id);
-    let state = |id: &str| app.db.session(id).unwrap().unwrap().state;
-
-    // 1. No grant: refused, though it's a's own.
-    let (st, v) = geek(&base, "POST", &stop, Some(json!({}))).await;
-    assert_eq!((st, v["reason"].as_str()), (403, Some(AGENT_UNGRANTED)), "{v}");
-    assert_eq!(state(&mine.id), State::Working);
-
-    // 2. A grant, but b's session: refused, saying why.
-    let reply_grant = grant(&base, &t, SESSIONS_REPLY).await;
-    let (st, v) = geek(&base, "POST", &agent_session_stop(&theirs.id), Some(json!({}))).await;
-    assert_eq!(st, 403, "{v}");
-    assert!(v["error"].as_str().unwrap().contains("asked for by someone else"), "{v}");
-    assert_eq!(state(&theirs.id), State::Working);
-    assert!(running(&theirs.id), "b's session is still on the box's work");
-
-    // A reason over 280 characters is refused.
-    let (st, _) = geek(&base, "POST", &stop, Some(json!({ "reason": "x".repeat(281) }))).await;
-    assert_eq!(st, 413);
-    assert_eq!(state(&mine.id), State::Working);
-
-    // 4. The asker's agent, sessions.reply only: stopped, and the box told.
-    let (st, v) = geek(&base, "POST", &stop, Some(json!({ "reason": "started by mistake" }))).await;
-    assert_eq!((st, &v["card"]["state"]), (200, &json!("stopped")), "{v}");
-    assert_eq!(state(&mine.id), State::Stopped);
-    assert!(!running(&mine.id), "a stopped session leaves the box's work");
-    let r = report(&app, &keys, &mine.id, State::Done, json!({})).await;
-    assert_eq!((&r["kind"], &r["now"]), (&json!("refused"), &json!("stopped")), "the box is told to stop: {r}");
-    let (_, ms) =
-        call(&base, "a", "GET", &format!("/api/chat/rooms/{ROOM}/messages?thread={}", mine.parent_seq), None).await;
-    let note = ms["messages"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .any(|m| m["via"] == "system" && m["text"] == "Stopped by a's agent on geek-box: started by mistake");
-    assert!(note, "the thread says whose agent stopped it: {ms}");
-
-    // Stopped already: its state, nothing changed, no second note.
-    let before = app.db.session_events(&mine.id).unwrap().len();
-    let (st, v) = geek(&base, "POST", &stop, Some(json!({ "reason": "again" }))).await;
-    assert_eq!((st, &v["card"]["state"]), (200, &json!("stopped")), "{v}");
-    assert_eq!(app.db.session_events(&mine.id).unwrap().len(), before);
-
-    // sessions.start serves as well, and a revoked grant refuses the next.
-    let (_, other) = asked(&app, &base, &t, &keys, "a", "@arugula tidy the README").await;
-    assert_eq!(call(&base, "a", "POST", &format!("/api/grants/{reply_grant}/revoke"), None).await.0, 200);
-    let (st, _) = geek(&base, "POST", &agent_session_stop(&other.id), Some(json!({}))).await;
-    assert_eq!(st, 403);
-    grant(&base, &t, SESSIONS_START).await;
-    let (st, v) = geek(&base, "POST", &agent_session_stop(&other.id), Some(json!({}))).await;
-    assert_eq!((st, &v["card"]["state"]), (200, &json!("stopped")), "{v}");
 }

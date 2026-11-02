@@ -491,24 +491,15 @@ pub async fn stop(
     Person { account }: Person,
     Path(id): Path<String>,
 ) -> Result<Json<SessionView>, ApiError> {
-    let s = actor(&app, &account, &id).await?;
+    let mut s = actor(&app, &account, &id).await?;
     let detail = serde_json::json!({ "by": account, "reason": "stopped from its card" }).to_string();
-    let after = stop_now(&app, s, &detail).await?;
-    Ok(Json(view(&app, &after, true, &account).await?))
-}
-
-/// Move `s` to `stopped` (control's move, from whatever state it's in; once
-/// more if it moved meanwhile), `detail` the event's: a person's stop from
-/// the card, and an agent's.
-pub(crate) async fn stop_now(app: &Platform, mut s: Session, detail: &str) -> Result<Session, ApiError> {
-    let id = s.id.clone();
     for _ in 0..2 {
         if s.state.terminal() {
             return Err(refused(&Refused::Moved { now: s.state }));
         }
-        let m = Move::Control { from: s.state, to: State::Stopped, at: now_ms(), detail };
-        match record(app, &id, &m)? {
-            Ok((after, _)) => return Ok(after),
+        let m = Move::Control { from: s.state, to: State::Stopped, at: now_ms(), detail: &detail };
+        match record(&app, &id, &m)? {
+            Ok((after, _)) => return Ok(Json(view(&app, &after, true, &account).await?)),
             Err(Refused::Moved { .. }) => s = app.db.session(&id)?.ok_or_else(no_session)?,
             Err(r) => return Err(refused(&r)),
         }
