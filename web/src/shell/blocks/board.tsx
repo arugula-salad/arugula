@@ -56,7 +56,9 @@ export function boardIdIn(typed: string): string | null {
   return /\bbrd_[0-9a-f]{32}\b/i.exec(typed)?.[0].toLowerCase() ?? null;
 }
 
-/** Every board in the reader's projects, as choices: "Project · Board". */
+/** The open boards in the reader's projects, as choices: "Project · Board".
+ * Those people made come first, then those from Plane epics (started ones
+ * first), marked with the epic's key: "Project · ARUGU-10 · Launch". */
 async function boardChoices(): Promise<PromptChoice[]> {
   const r = await platformFetch("/api/projects", { credentials: "same-origin" });
   if (!r.ok) return [];
@@ -65,20 +67,25 @@ async function boardChoices(): Promise<PromptChoice[]> {
     projects.map((p) =>
       boards
         .list(p.id)
-        .then((l) => l.boards.map((b) => ({ value: b.id, label: `${p.name} · ${b.title}` })))
+        .then((l) =>
+          l.boards
+            .filter((b) => b.closed_at == null)
+            .map((b) => ({ value: b.id, label: `${p.name} · ${b.source ? `${b.source.key} · ` : ""}${b.title}`, rank: b.source ? (b.source.started ? 1 : 2) : 0 })),
+        )
         .catch(() => []),
     ),
   );
-  return lists.flat();
+  // A stable sort keeps each group in the order the projects gave.
+  return lists.flat().sort((a, b) => a.rank - b.rank);
 }
 
-/** "Pin a board…": a block for one of the reader's boards, beside `from`. */
+/** "Board…": a block for one of the reader's boards, beside `from`. */
 export async function pinBoard(client: Client, o: { from: PaneId }) {
   if (getControlSession()?.phase !== "ready") {
     return client.toast("A board is read as you, through Arugula control: open this machine through control's page, signed in");
   }
   const choices = boardChoices();
-  const v = (await askText("Pin a board", "", "board, or its link", choices))?.trim();
+  const v = (await askText("Board", "", "board, or its link", choices))?.trim();
   if (!v) return;
   const typed = v.toLowerCase();
   const all = await choices.catch(() => []);
