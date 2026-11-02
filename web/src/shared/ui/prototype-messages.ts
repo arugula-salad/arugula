@@ -13,6 +13,10 @@ export const HTML = "arugula.html";
  * else about it is touched. The only message it takes after the page. */
 export const SCHEME = "arugula.scheme";
 
+/** From the prototype's page to its parent: Esc was pressed inside the frame
+ * (a keydown there never reaches the Doc's page), so Full window can close (#507). */
+export const ESCAPE = "arugula.escape";
+
 export type Scheme = "light" | "dark";
 
 export interface HtmlMessage {
@@ -31,6 +35,11 @@ export interface SchemeMessage {
  * counts, and what the prototype itself posts later isn't `READY` to it. */
 export function readyFrom(e: { source: unknown; data: unknown }, win: unknown): boolean {
   return !!win && e.source === win && (e.data as { type?: unknown } | null)?.type === READY;
+}
+
+/** Whether `e` is the frame `win` saying Esc was pressed in it. */
+export function escapeFrom(e: { source: unknown; data: unknown }, win: unknown): boolean {
+  return !!win && e.source === win && (e.data as { type?: unknown } | null)?.type === ESCAPE;
 }
 
 export const schemeMessage = (colorScheme: Scheme): SchemeMessage => ({ type: SCHEME, colorScheme });
