@@ -19,7 +19,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 import { useScheme } from "./drawing";
 import { checkPrototype, prototypeInfo } from "./embeds";
-import { htmlMessage, readyFrom, schemeMessage } from "./prototype-messages";
+import { escapeFrom, htmlMessage, readyFrom, schemeMessage } from "./prototype-messages";
 import runner from "./runner.html?raw";
 
 /** The frame's whole sandbox: scripts, and nothing that would give it a way out. */
@@ -57,6 +57,12 @@ function useMode(): Mode {
  * prototype navigating itself. */
 export const OWN_LOADS = 2;
 
+/** Full window rides on the top layer (#507): the box itself is a manual
+ * popover, so the same iframe is drawn over the window without moving in the
+ * DOM, which would reload it and lose its state. `position: fixed` wouldn't do:
+ * the pane area is CSS-scaled, and a transform makes `fixed` relative to it. */
+const canFull = typeof HTMLElement !== "undefined" && "showPopover" in HTMLElement.prototype;
+
 export function Prototype({ html, alt }: { html: string; alt: string }) {
   const { origin, click } = useMode();
   const scheme = useScheme();
@@ -68,6 +74,8 @@ export function Prototype({ html, alt }: { html: string; alt: string }) {
   const [armed, setArmed] = useState(false);
   const [left, setLeft] = useState(false);
   const [round, setRound] = useState(0);
+  const [full, setFull] = useState(false);
+  const box = useRef<HTMLDivElement>(null);
   const { title, height } = prototypeInfo(alt);
   const why = checkPrototype(html);
   const live = !why && origin !== null && (!click || armed) && !left;
@@ -95,6 +103,23 @@ export function Prototype({ html, alt }: { html: string; alt: string }) {
     }
     if (handed.current) frame.current?.contentWindow?.postMessage(schemeMessage(scheme), "*");
   }, [scheme]);
+  // The top layer follows `full`; Esc closes it, from the page or from the frame.
+  useEffect(() => {
+    const el = box.current;
+    if (!canFull || !el) return;
+    const open = el.matches(":popover-open");
+    if (full && !open) el.showPopover();
+    if (!full && open) el.hidePopover();
+    if (!full) return;
+    const key = (e: KeyboardEvent) => e.key === "Escape" && setFull(false);
+    const msg = (e: MessageEvent) => escapeFrom(e, frame.current?.contentWindow) && setFull(false);
+    addEventListener("keydown", key);
+    addEventListener("message", msg);
+    return () => {
+      removeEventListener("keydown", key);
+      removeEventListener("message", msg);
+    };
+  }, [full, live]);
   if (why || origin === null) {
     return (
       <div class="chart-note" data-prototype-note>
@@ -134,9 +159,23 @@ export function Prototype({ html, alt }: { html: string; alt: string }) {
   }
   // Remounted when the text or a reload changes: the page is handed over once.
   return (
-    <div class="doc-prototype-box">
-      <span class="doc-prototype-label" data-prototype-label>
-        Prototype · sandboxed
+    <div class="doc-prototype-box" ref={box} data-prototype-box {...(canFull ? { popover: "manual" } : {})}>
+      <span class="doc-prototype-bar">
+        {canFull && (
+          <button
+            type="button"
+            class="doc-prototype-full"
+            {...(full ? { "data-prototype-full-close": "" } : { "data-prototype-full": "" })}
+            aria-label={full ? "Close full window" : "Full window"}
+            title={full ? "Close (Esc)" : "Full window"}
+            onClick={() => setFull(!full)}
+          >
+            {full ? "✕" : "⤢ Full window"}
+          </button>
+        )}
+        <span class="doc-prototype-label" data-prototype-label>
+          Prototype · sandboxed
+        </span>
       </span>
       <iframe
         key={`${round}:${html}`}
@@ -148,9 +187,12 @@ export function Prototype({ html, alt }: { html: string; alt: string }) {
         allow=""
         loading="lazy"
         referrerpolicy="no-referrer"
-        style={{ height: `${height}px` }}
+        style={{ height: full ? "100%" : `${height}px` }}
         onLoad={() => {
-          if (++loads.current > OWN_LOADS) setLeft(true);
+          if (++loads.current > OWN_LOADS) {
+            setFull(false);
+            setLeft(true);
+          }
         }}
         {...(origin ? { src: `${origin}/` } : { srcdoc: runner })}
       />

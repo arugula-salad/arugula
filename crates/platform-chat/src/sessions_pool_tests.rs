@@ -656,7 +656,7 @@ async fn move_to_requeues_on_the_chosen_box() {
     hub.on_ops(std::sync::Arc::new(|_, op| {
         Box::pin(async move {
             match op {
-                DaemonOp::HostedArchiveBlocks(b) if b.blocks == [7] => OpAnswer::Done { url: None },
+                DaemonOp::HostedArchiveBlocks(b) if b.blocks == [7] => OpAnswer::Done { url: None, routed: None },
                 _ => OpAnswer::Unknown,
             }
         })
