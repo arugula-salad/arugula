@@ -194,6 +194,9 @@ test("a Doc in a tab nobody has opened fetches no picture until it's shown", asy
   const doc = await newDoc(post(page), term);
   await putAsset(post(page), doc, "flow.png", png(2, 2));
   await fill(post(page), doc, "s1", "![The flow](assets/flow.png)");
+  // Shown here, it fetches the picture: done before anything counts, or
+  // this page's own fetch is taken for the next one's.
+  await expect(page.locator(`[data-doc-block="${doc}"] img.doc-image`)).toBeVisible({ timeout: 15_000 });
   await page.evaluate((p) => window.__arugula.client.setActive(p), first);
 
   const calls = watchAssetCalls(page);

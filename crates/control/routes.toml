@@ -2365,6 +2365,14 @@ clients = ["daemon"]
 note = "A machine's agent replies in a session's thread as its owner (aru-121, MCP's session_reply), with `sessions.reply` over its project: answers its open question, or queues a prompt (never approves a permission). Says which."
 
 [[route]]
+method = "POST"
+path = "/api/daemon/sessions/{ses}/stop"  # wire::sessions::AGENT_SESSION_STOP
+process = "platform"
+auth = "daemon"
+clients = ["daemon"]
+note = "A machine's agent stops a session its owner asked for (#504, MCP's session_stop), with `sessions.reply` or `sessions.start` over its project: the card's Stop, with a line in the thread saying whose agent and why. Never another person's session."
+
+[[route]]
 method = "GET"
 path = "/api/projects/{project}/sessions"  # wire::sessions::PROJECT_SESSIONS
 process = "platform"
