@@ -10,6 +10,7 @@
 
 import { expect, test, type Page } from "@playwright/test";
 import { fill, newDoc, type Post } from "./doc-steps";
+import { DOMAIN, rig, share, visitor, type Rig } from "./doc-share-rig";
 import { panes, reset } from "./helpers";
 
 test.use({ permissions: ["clipboard-read", "clipboard-write"] });
@@ -162,4 +163,49 @@ test("a message from another window gets no answer, and the caps are enforced", 
   expect(r.fits).toBe("ok");
   expect(r.full).toBe("store full");
   expect(r.tooLong).toBe("text too long");
+});
+
+// A shared link's chunks hold no browser storage (#1064), so there the store
+// is memory: it works for the visit, writes nothing, and resets on reload.
+test.describe("on a shared link", () => {
+  test.describe.configure({ mode: "serial" });
+  let r: Rig;
+  test.beforeAll(async () => {
+    test.setTimeout(120_000);
+    r = await rig(DOMAIN);
+  });
+  test.afterAll(async () => {
+    await r?.dispose();
+  });
+
+  test("the store works for the visit and is gone after a reload, and nothing is written to the browser", async ({ browser }) => {
+    const [{ id: term }] = (await (await fetch(`${r.mini}/api/panes`)).json()) as { id: number }[];
+    const doc = await newDoc(r.post, term, "Sliders");
+    await fill(r.post, doc, "s1", page1);
+    const url = await share(r, doc);
+    const v = await visitor(browser);
+    try {
+      const run = async () => {
+        await v.page.locator("[data-prototype-run-button]").click();
+        const inside = v.page.frameLocator("[data-prototype-frame]");
+        await expect(inside.locator("#out")).toHaveText("ready", { timeout: 15_000 });
+        return inside;
+      };
+      await v.page.goto(url);
+      let inside = await run();
+      await inside.locator("#s").fill("12");
+      // Set, then get, in the same visit.
+      await expect
+        .poll(() => inside.locator("html").evaluate(() => (window as unknown as { arugula: { store: { get(k: string): Promise<unknown> } } }).arugula.store.get("s")))
+        .toBe(12);
+      expect(await v.page.evaluate(() => Object.keys(localStorage))).toEqual([]);
+
+      await v.page.reload();
+      inside = await run();
+      await expect(inside.locator("#s")).toHaveValue("50");
+      expect(await v.page.evaluate(() => Object.keys(localStorage))).toEqual([]);
+    } finally {
+      await v.ctx.close();
+    }
+  });
 });

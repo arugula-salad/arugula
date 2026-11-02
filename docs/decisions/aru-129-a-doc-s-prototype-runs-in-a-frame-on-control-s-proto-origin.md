@@ -98,7 +98,12 @@ iframe also has `referrerpolicy="no-referrer"`, `allow=""` and
   `localStorage` on the parent's origin, `arugula.proto.<doc>.<section>`
   (the Doc's id; a share link's id on the viewer): a key of at most 128
   characters, a value of at most 8 KB as JSON, 64 KB a section, else
-  `store full`. Nothing is shared between viewers or Docs.
+  `store full`. Nothing is shared between viewers or Docs. On a shared
+  link the store is memory only: it works for the visit and resets on
+  reload, because the page behind a link holds no browser storage in its
+  chunks (#1064). The default backend is memory (`prototype-bridge.ts`);
+  only the app and the platform page set the browser's
+  (`prototype-storage.ts`).
 - **Fonts** are `data:` only, and there are no Google Fonts: a font request
   would be the frame's one network call, and the CSP holds the line at
   none. Inline the font as a `data:` URL.

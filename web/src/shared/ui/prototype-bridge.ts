@@ -3,6 +3,11 @@
 // nor storage; `runner.html`'s shim posts requests (`prototype-messages.ts`)
 // and this answers them. Only the frame the Doc made is heard, only the
 // message shapes there, and nothing else is reachable.
+//
+// Where the settings are kept is a backend the page sets (`setStoreBackend`).
+// The default is memory, for the visit: the share page's chunks hold no
+// browser storage (#1064), so a shared link's settings reset on reload.
+// The app and the platform page set the browser's (`prototype-storage.ts`).
 
 import { createContext } from "preact";
 import { useContext, useEffect, useRef, useState } from "preact/hooks";
@@ -15,10 +20,26 @@ export const ProtoScope = createContext<{ doc: string; section: string } | null>
 
 const storeKey = (s: { doc: string; section: string }) => `arugula.proto.${s.doc}.${s.section}`;
 
+/** Where a section's JSON is kept; either may throw (storage refused). */
+export interface StoreBackend {
+  get(key: string): string | null;
+  set(key: string, value: string): void;
+}
+
+const kept = new Map<string, string>();
+/** Memory only: gone with the page. */
+const memory: StoreBackend = { get: (k) => kept.get(k) ?? null, set: (k, v) => void kept.set(k, v) };
+let backend: StoreBackend = memory;
+
+/** Said once by a page that may keep settings across visits. */
+export function setStoreBackend(b: StoreBackend) {
+  backend = b;
+}
+
 type Section = Record<string, unknown>;
 
 function load(k: string): Section {
-  const raw = localStorage.getItem(k);
+  const raw = backend.get(k);
   const v = raw ? JSON.parse(raw) : {};
   return v && typeof v === "object" && !Array.isArray(v) ? (v as Section) : {};
 }
@@ -41,7 +62,7 @@ export function storeCall(scope: { doc: string; section: string } | null, r: Ext
     if (json.length > VALUE_MAX) return { ok: false, error: "value too big" };
     const next = { ...all, [r.key]: JSON.parse(json) };
     if (JSON.stringify(next).length > SECTION_MAX) return { ok: false, error: "store full" };
-    localStorage.setItem(k, JSON.stringify(next));
+    backend.set(k, JSON.stringify(next));
     return { ok: true };
   } catch {
     return none;
