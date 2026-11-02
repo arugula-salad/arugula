@@ -305,7 +305,9 @@ pub(crate) trait Daemon {
     /// one (#491).
     async fn tab_names(&self) -> Vec<(PaneId, String)>;
     /// A follow-up for the session in `pane`, through the hooks inbox.
-    async fn follow_up(&self, pane: PaneId, text: String, by: Driver) -> Result<(), String>;
+    /// Whether it went straight in (false: it was only queued for the
+    /// session's hook, #571).
+    async fn follow_up(&self, pane: PaneId, text: String, by: Driver) -> Result<bool, String>;
 }
 
 impl Daemon for App {
@@ -326,9 +328,9 @@ impl Daemon for App {
         panes.into_iter().filter_map(|p| Some((p.info.id, p.tab_name?))).collect()
     }
 
-    async fn follow_up(&self, pane: PaneId, text: String, by: Driver) -> Result<(), String> {
+    async fn follow_up(&self, pane: PaneId, text: String, by: Driver) -> Result<bool, String> {
         match self.mux.api(|r| Api::FollowUp(pane, text, by, r)).await {
-            Some(r) => r.map(|_| ()),
+            Some(r) => r,
             None => Err("daemon is shutting down".into()),
         }
     }
@@ -396,9 +398,13 @@ pub async fn session_name(app: &App, pane: PaneId) -> Option<String> {
 
 /// The answer for a mention a session took (#502): which step, and which
 /// session by name. `asked` is the session the message named, when it
-/// didn't get there by that name.
-fn routed(step: RoutedStep, session: Option<String>, asked: Option<&str>) -> OpAnswer {
-    OpAnswer::Done { url: None, routed: Some(Routed { step, session, asked: asked.map(str::to_owned) }) }
+/// didn't get there by that name. `handed` is false when the session's hook
+/// wasn't waiting and the mention only sits in its queue (#571).
+fn routed(step: RoutedStep, session: Option<String>, asked: Option<&str>, handed: bool) -> OpAnswer {
+    OpAnswer::Done {
+        url: None,
+        routed: Some(Routed { step, session, asked: asked.map(str::to_owned), queued: !handed }),
+    }
 }
 
 /// The name of the session in `pane`, as the sender reads it.
@@ -433,9 +439,9 @@ pub(crate) async fn deliver(app: &impl Daemon, m: &AgentMention) -> OpAnswer {
         }
         match hits.as_slice() {
             [pane] => {
-                if app.follow_up(*pane, framed(m, &notes), by.clone()).await.is_ok() {
+                if let Ok(handed) = app.follow_up(*pane, framed(m, &notes), by.clone()).await {
                     let name = sessions.iter().find(|(p, _)| p == pane).map(|(_, n)| n.clone());
-                    return routed(RoutedStep::Named, name, None);
+                    return routed(RoutedStep::Named, name, None, handed);
                 }
                 notes.push(format!("(the session {want} could not take it, so it came to you instead)"));
             }
@@ -456,8 +462,8 @@ pub(crate) async fn deliver(app: &impl Daemon, m: &AgentMention) -> OpAnswer {
         state.thread_poster(&m.room, root).or_else(|| m.target.as_deref().and_then(|t| state.thread_poster(t, root)))
     });
     if let Some(pane) = thread {
-        if app.follow_up(pane, framed(m, &notes), by.clone()).await.is_ok() {
-            return routed(RoutedStep::Thread, named(app, pane).await, asked.as_deref());
+        if let Ok(handed) = app.follow_up(pane, framed(m, &notes), by.clone()).await {
+            return routed(RoutedStep::Thread, named(app, pane).await, asked.as_deref(), handed);
         }
         ended = Some(pane);
     }
@@ -470,13 +476,13 @@ pub(crate) async fn deliver(app: &impl Daemon, m: &AgentMention) -> OpAnswer {
         if ended.is_some() {
             notes.push("(the session that started this thread has ended; you were its room's last poster)".into());
         }
-        if app.follow_up(pane, framed(m, &notes), by).await.is_ok() {
-            return routed(RoutedStep::Room, named(app, pane).await, asked.as_deref());
+        if let Ok(handed) = app.follow_up(pane, framed(m, &notes), by).await {
+            return routed(RoutedStep::Room, named(app, pane).await, asked.as_deref(), handed);
         }
     }
     // 4. The inbox.
     state.keep(m);
-    routed(RoutedStep::Inbox, None, asked.as_deref())
+    routed(RoutedStep::Inbox, None, asked.as_deref(), true)
 }
 
 #[cfg(test)]
@@ -506,6 +512,8 @@ mod tests {
         /// The panes' tabs' names.
         tabs: Vec<(PaneId, String)>,
         sent: Mutex<Vec<(PaneId, String, Driver)>>,
+        /// Live panes whose hook isn't listening: a follow-up only queues.
+        queueing: Vec<PaneId>,
     }
 
     impl Fake {
@@ -520,6 +528,7 @@ mod tests {
                 names: vec![],
                 tabs: vec![],
                 sent: Mutex::default(),
+                queueing: vec![],
             }
         }
     }
@@ -534,6 +543,12 @@ mod tests {
         /// Panes in tabs of these names.
         fn tabbed(mut self, tabs: &[(PaneId, &str)]) -> Self {
             self.tabs = tabs.iter().map(|(p, n)| (*p, (*n).to_owned())).collect();
+            self
+        }
+
+        /// Panes whose hook isn't waiting, so a follow-up only queues (#571).
+        fn queueing(mut self, panes: &[PaneId]) -> Self {
+            self.queueing = panes.to_vec();
             self
         }
 
@@ -575,12 +590,12 @@ mod tests {
             self.tabs.clone()
         }
 
-        async fn follow_up(&self, pane: PaneId, text: String, by: Driver) -> Result<(), String> {
+        async fn follow_up(&self, pane: PaneId, text: String, by: Driver) -> Result<bool, String> {
             if !self.live.contains(&pane) {
                 return Err(format!("no terminal %{pane}"));
             }
             self.sent.lock().unwrap().push((pane, text, by));
-            Ok(())
+            Ok(!self.queueing.contains(&pane))
         }
     }
 
@@ -629,7 +644,7 @@ mod tests {
         d.state.note_post("ch_x", 4);
         d.state.note_post("ch_x", 9);
         d.state.note_post("ch_other", 4);
-        assert_eq!(deliver(&d, &mention()).await, routed(RoutedStep::Room, None, None));
+        assert_eq!(deliver(&d, &mention()).await, routed(RoutedStep::Room, None, None, true));
         let sent = d.sent.lock().unwrap();
         assert_eq!(sent.len(), 1);
         assert_eq!((sent[0].0, sent[0].2.name.as_str()), (9, "Aaron's agent on mini"));
@@ -656,7 +671,7 @@ mod tests {
     #[tokio::test]
     async fn without_a_session_it_waits_in_the_inbox() {
         let d = Fake::new("inbox", &[4]);
-        assert_eq!(deliver(&d, &mention()).await, routed(RoutedStep::Inbox, None, None));
+        assert_eq!(deliver(&d, &mention()).await, routed(RoutedStep::Inbox, None, None, true));
         d.state.note_post("ch_x", 7);
         deliver(&d, &AgentMention { seq: 8, ..mention() }).await;
         assert!(d.sent.lock().unwrap().is_empty());
@@ -674,7 +689,7 @@ mod tests {
         assert!(matches!(deliver(&d, &mention()).await, OpAnswer::Cant { .. }));
         assert!(d.sent.lock().unwrap().is_empty() && d.state.unread().is_empty());
         arugula_proto::sharing::set_agent_mentions(&d.dir, true).unwrap();
-        assert_eq!(deliver(&d, &mention()).await, routed(RoutedStep::Room, None, None));
+        assert_eq!(deliver(&d, &mention()).await, routed(RoutedStep::Room, None, None, true));
         assert_eq!(d.sent.lock().unwrap().len(), 1);
     }
     /// Two sessions of one machine each started a thread in the room; a
@@ -783,7 +798,7 @@ mod tests {
         d.state.note_post("ch_x", 4);
         d.state.note_thread("ch_x", 3, 4);
         let m = AgentMention { parent: Some(3), session: Some("ux-improvements".into()), ..mention() };
-        assert_eq!(deliver(&d, &m).await, routed(RoutedStep::Named, Some("UX Improvements".into()), None));
+        assert_eq!(deliver(&d, &m).await, routed(RoutedStep::Named, Some("UX Improvements".into()), None, true));
         assert_eq!((d.got(4).len(), d.got(9).len(), d.got(11).len()), (0, 1, 0));
         assert!(!d.got(9)[0].contains("came to you instead"));
         // The exact name, however it is written, finds only that session.
@@ -825,6 +840,28 @@ mod tests {
             "{}",
             d.got(4)[0]
         );
+    }
+
+    /// A session whose hook isn't waiting only has the mention queued, and
+    /// the answer says so (#571); one that took it straight in doesn't.
+    #[tokio::test]
+    async fn a_mention_only_queued_is_not_handed_over() {
+        let names = [(4, "Billing"), (9, "UX Improvements")];
+        let queued = |a: OpAnswer| match a {
+            OpAnswer::Done { routed: Some(r), .. } => r.queued,
+            other => panic!("not routed: {other:?}"),
+        };
+        let d = Fake::new("queued-named", &[4, 9]).named(&names).queueing(&[9]);
+        let m = AgentMention { session: Some("ux-improvements".into()), ..mention() };
+        assert!(queued(deliver(&d, &m).await), "a named session with no hook waiting");
+        let m = AgentMention { session: Some("billing".into()), ..mention() };
+        assert!(!queued(deliver(&d, &m).await), "a named session that took it");
+        let d = Fake::new("queued-thread", &[9]).named(&names).queueing(&[9]);
+        d.state.note_thread("ch_x", 3, 9);
+        assert!(queued(deliver(&d, &mention()).await), "the thread's session");
+        let d = Fake::new("queued-room", &[9]).named(&names).queueing(&[9]);
+        d.state.note_post("ch_x", 9);
+        assert!(queued(deliver(&d, &mention()).await), "the room's last poster");
     }
 
     /// The sender's status line (#502) is made of the answer: each step says
@@ -873,7 +910,10 @@ mod tests {
             .tabbed(&[(4, "Billing tab"), (9, "Slowness"), (11, "Other")]);
         d.state.note_post("ch_x", 4);
         let m = AgentMention { session: Some("slowness".into()), ..mention() };
-        assert_eq!(deliver(&d, &m).await, routed(RoutedStep::Named, Some("Chant fountain lexicon trim".into()), None));
+        assert_eq!(
+            deliver(&d, &m).await,
+            routed(RoutedStep::Named, Some("Chant fountain lexicon trim".into()), None, true)
+        );
         assert_eq!((d.got(4).len(), d.got(9).len(), d.got(11).len()), (0, 1, 0));
         assert!(!d.got(9)[0].contains("came to you instead"));
     }

@@ -826,6 +826,10 @@
             "null"
           ]
         },
+        "queued": {
+          "description": "The session's hook wasn't waiting, so the mention only sits in its\nqueue (#571). A daemon from before it says nothing: handed over.",
+          "type": "boolean"
+        },
         "session": {
           "description": "The session it went to, by its name, when it went to one.",
           "type": [

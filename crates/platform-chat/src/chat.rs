@@ -790,14 +790,7 @@ impl Shower {
                 .get(&(m.room.clone(), m.seq))
                 .into_iter()
                 .flatten()
-                .map(|s| ChatMentionStatus {
-                    machine: s.machine.clone(),
-                    machine_name: s.machine_name.clone(),
-                    state: mention_state(&s.state),
-                    session: s.session.clone(),
-                    asked: s.asked.clone(),
-                    reply: s.reply,
-                })
+                .map(shown_status)
                 .collect(),
             // An agent reads them at its machine's address.
             files: self
@@ -889,11 +882,24 @@ fn mention_status_of(db: &Db, ms: &[&Message]) -> anyhow::Result<HashMap<(String
     Ok(out)
 }
 
+/// A stored status as the reader sees it.
+fn shown_status(s: &MentionStatus) -> ChatMentionStatus {
+    ChatMentionStatus {
+        machine: s.machine.clone(),
+        machine_name: s.machine_name.clone(),
+        state: mention_state(&s.state),
+        session: s.session.clone(),
+        asked: s.asked.clone(),
+        reply: s.reply,
+    }
+}
+
 /// A stored status's state.
 fn mention_state(state: &str) -> ChatMentionState {
     match state {
         "fell_back" => ChatMentionState::FellBack,
         "waiting" => ChatMentionState::Waiting,
+        "queued" => ChatMentionState::Queued,
         "sending" => ChatMentionState::Sending,
         // Tried again when the machine connected, and still not told.
         "offline" | "missed" => ChatMentionState::Offline,
@@ -911,6 +917,9 @@ fn mention_answer(
     match answer {
         Some(OpAnswer::Done { routed: Some(r), .. }) => match r.step {
             RoutedStep::Inbox => ("waiting", None, r.asked.clone()),
+            // A session took it, but its hook wasn't waiting (#571): it
+            // sits in a queue until the hook reads it.
+            _ if r.queued => ("queued", r.session.clone(), r.asked.clone()),
             // The message named a session the daemon didn't find: said so,
             // wherever it went instead.
             _ if r.asked.is_some() => ("fell_back", r.session.clone(), r.asked.clone()),
@@ -2340,7 +2349,15 @@ pub(crate) async fn post_replied(
         }
         None => None,
     };
-    Ok((ChatPosted { seq, mentions: stored, unreached, unreached_why, pushed, github }, replied))
+    // What is known now (#571): `sending`, unless a daemon answered first.
+    let mention_status = match app.db.chat_mention_statuses(&room.id, seq, seq) {
+        Ok(rows) => rows.iter().map(shown_status).collect(),
+        Err(e) => {
+            tracing::warn!(error = %e, "chat: reading a mention's status");
+            vec![]
+        }
+    };
+    Ok((ChatPosted { seq, mentions: stored, unreached, unreached_why, pushed, mention_status, github }, replied))
 }
 
 /// A reply being pushed (#106): its thread, whether it was also sent to the

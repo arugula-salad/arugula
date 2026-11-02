@@ -949,7 +949,7 @@ export type ChatLive = { "type": "hello", stream: string, } | { "type": "message
 /**
  * How far a [`ChatMentionStatus`] has got.
  */
-export type ChatMentionState = "sending" | "delivered" | "fell_back" | "waiting" | "offline" | "answered";
+export type ChatMentionState = "sending" | "delivered" | "fell_back" | "waiting" | "queued" | "offline" | "answered";
 
 /**
  * Where a message's `@machine` mention got to (#502), as control knows it:
@@ -1212,7 +1212,13 @@ pushed: Array<ChatPushed>,
  * A comment on a native issue that's on GitHub (M205): what became
  * of its copy there. `None` anywhere else.
  */
-github?: ChatToGithub, };
+github?: ChatToGithub, 
+/**
+ * Where each machine's agent mention in it has got to by now (#571):
+ * `sending` for one whose daemon hasn't answered. Empty for a post that
+ * mentions none.
+ */
+mention_status?: Array<ChatMentionStatus>, };
 
 /**
  * Who's around, for one reader: themselves and everyone who shares a team

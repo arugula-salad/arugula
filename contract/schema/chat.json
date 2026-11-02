@@ -880,6 +880,11 @@
           "type": "string"
         },
         {
+          "const": "queued",
+          "description": "The session (`session`) has it queued, but its hooks aren't\nlistening to take it (#571).",
+          "type": "string"
+        },
+        {
           "const": "offline",
           "description": "The machine is offline, or didn't answer.",
           "type": "string"
@@ -1465,6 +1470,13 @@
             }
           ],
           "description": "A comment on a native issue that's on GitHub (M205): what became\nof its copy there. `None` anywhere else."
+        },
+        "mention_status": {
+          "description": "Where each machine's agent mention in it has got to by now (#571):\n`sending` for one whose daemon hasn't answered. Empty for a post that\nmentions none.",
+          "items": {
+            "$ref": "#/$defs/ChatMentionStatus"
+          },
+          "type": "array"
         },
         "mentions": {
           "description": "The accounts it mentions, and the agents (`machine:<id>`, M198).",

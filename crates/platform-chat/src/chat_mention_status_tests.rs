@@ -32,7 +32,20 @@ async fn geek_in_t(base: &str, t: &str) {
 fn done(step: RoutedStep, session: Option<&str>, asked: Option<&str>) -> OpAnswer {
     OpAnswer::Done {
         url: None,
-        routed: Some(Routed { step, session: session.map(str::to_owned), asked: asked.map(str::to_owned) }),
+        routed: Some(Routed {
+            step,
+            session: session.map(str::to_owned),
+            asked: asked.map(str::to_owned),
+            queued: false,
+        }),
+    }
+}
+
+/// A session that has the mention in its queue, its hook not waiting (#571).
+fn queued(step: RoutedStep, session: &str, asked: Option<&str>) -> OpAnswer {
+    match done(step, Some(session), asked) {
+        OpAnswer::Done { url, routed: Some(r) } => OpAnswer::Done { url, routed: Some(Routed { queued: true, ..r }) },
+        other => other,
     }
 }
 
@@ -79,6 +92,10 @@ async fn each_answer_is_its_own_line_for_everyone() {
         (done(RoutedStep::Thread, Some("views"), None), json!("delivered"), json!("views"), Value::Null),
         // An older daemon says nothing of how: delivered, to no one in particular.
         (OpAnswer::Done { url: None, routed: None }, json!("delivered"), Value::Null, Value::Null),
+        // Taken, but only queued: its hooks aren't listening (#571). Said so
+        // even when it also fell back from a name.
+        (queued(RoutedStep::Named, "slowness", None), json!("queued"), json!("slowness"), Value::Null),
+        (queued(RoutedStep::Room, "views", Some("slowness")), json!("queued"), json!("views"), json!("slowness")),
         // 3: a fallback tells the sender the name missed.
         (
             done(RoutedStep::Room, Some("views"), Some("slowness")),
@@ -129,6 +146,27 @@ async fn an_unreachable_machine_is_offline_and_a_plain_message_has_no_line() {
     assert_eq!((s[0]["state"].clone(), s[0]["machine_name"].clone()), (json!("offline"), json!("geek-box")), "{s}");
     let plain = post(&base, "b", "just people talking", None).await;
     assert_eq!(status(&base, "b", plain, None).await, json!([]));
+}
+
+/// The post's own answer carries the statuses known when it answers (#571):
+/// the machine's line is there, `sending` or already settled (which one is
+/// a race), and a post that mentions no machine has none. The outcome is
+/// what the message shows once it settles.
+#[tokio::test]
+async fn a_post_answers_with_the_statuses_known_so_far() {
+    let (hub, _app, base, t, _u) = seeded().await;
+    geek_in_t(&base, &t).await;
+    hub.answers_ops("geek", queued(RoutedStep::Named, "slowness", None));
+    let (st, v) = call(&base, "b", "POST", ROOM, Some(json!({ "text": "@geek-box/slowness hi" }))).await;
+    assert_eq!(st, 200, "{v}");
+    let known = v["mention_status"].as_array().unwrap();
+    assert_eq!(known.len(), 1, "{v}");
+    assert_eq!((known[0]["machine"].clone(), known[0]["machine_name"].clone()), (json!("geek"), json!("geek-box")));
+    assert!(["sending", "queued"].contains(&known[0]["state"].as_str().unwrap()), "{v}");
+    let seq = v["seq"].as_i64().unwrap();
+    assert_eq!(status(&base, "b", seq, None).await[0]["state"], "queued");
+    let (_, plain) = call(&base, "b", "POST", ROOM, Some(json!({ "text": "no machines here" }))).await;
+    assert!(plain.get("mention_status").is_none(), "{plain}");
 }
 
 /// The machine's agent replying in the thread answers the mention under it

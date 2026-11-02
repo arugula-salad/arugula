@@ -505,6 +505,9 @@ pub enum ChatMentionState {
     FellBack,
     /// No session took it: it waits in the machine's inbox.
     Waiting,
+    /// The session (`session`) has it queued, but its hooks aren't
+    /// listening to take it (#571).
+    Queued,
     /// The machine is offline, or didn't answer.
     Offline,
     /// The machine's agent replied in the thread (`reply`).
@@ -824,6 +827,12 @@ pub struct ChatPosted {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "ts", ts(optional))]
     pub github: Option<ChatToGithub>,
+    /// Where each machine's agent mention in it has got to by now (#571):
+    /// `sending` for one whose daemon hasn't answered. Empty for a post that
+    /// mentions none.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[cfg_attr(feature = "ts", ts(optional, as = "Option<Vec<ChatMentionStatus>>"))]
+    pub mention_status: Vec<ChatMentionStatus>,
 }
 
 /// A comment on an exported native issue, on its way to GitHub (M205): a

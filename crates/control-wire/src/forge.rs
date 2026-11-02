@@ -376,6 +376,10 @@ pub struct Routed {
     /// found no such session and the message went to another or waits.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub asked: Option<String>,
+    /// The session's hook wasn't waiting, so the mention only sits in its
+    /// queue (#571). A daemon from before it says nothing: handed over.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub queued: bool,
 }
 
 /// Which of the daemon's steps took an `agents.mention`.
