@@ -3,16 +3,16 @@
   "commit": "c48d620dcb15bbbd652c4a10e28dad993d780805",
   "branch": "main",
   "state": "pending",
-  "at": "2026-11-02T23:50:17Z",
+  "at": "2026-11-02T23:52:45Z",
   "phases": {
     "lint": {
-      "verdict": "pending",
+      "verdict": "pass",
       "build": "newest",
       "runs": [
         {
           "name": "lint",
           "id": 125629298266,
-          "conclusion": null,
+          "conclusion": "success",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/41547593108/job/125629298266"
         },
         {
@@ -36,7 +36,7 @@
         {
           "name": "build",
           "id": 125629502178,
-          "conclusion": null,
+          "conclusion": "success",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/41547593108/job/125629502178"
         },
         {
@@ -75,7 +75,80 @@
     "e2e": {
       "verdict": "pending",
       "build": "newest",
-      "runs": []
+      "runs": [
+        {
+          "name": "e2e (1)",
+          "id": 125630504111,
+          "conclusion": null,
+          "url": "https://github.com/arugula-salad/arugula/actions/runs/41547593108/job/125630504111"
+        },
+        {
+          "name": "e2e (10)",
+          "id": 125630504019,
+          "conclusion": null,
+          "url": "https://github.com/arugula-salad/arugula/actions/runs/41547593108/job/125630504019"
+        },
+        {
+          "name": "e2e (11)",
+          "id": 125630504075,
+          "conclusion": null,
+          "url": "https://github.com/arugula-salad/arugula/actions/runs/41547593108/job/125630504075"
+        },
+        {
+          "name": "e2e (12)",
+          "id": 125630504151,
+          "conclusion": null,
+          "url": "https://github.com/arugula-salad/arugula/actions/runs/41547593108/job/125630504151"
+        },
+        {
+          "name": "e2e (2)",
+          "id": 125630504044,
+          "conclusion": null,
+          "url": "https://github.com/arugula-salad/arugula/actions/runs/41547593108/job/125630504044"
+        },
+        {
+          "name": "e2e (3)",
+          "id": 125630504145,
+          "conclusion": null,
+          "url": "https://github.com/arugula-salad/arugula/actions/runs/41547593108/job/125630504145"
+        },
+        {
+          "name": "e2e (4)",
+          "id": 125630504006,
+          "conclusion": null,
+          "url": "https://github.com/arugula-salad/arugula/actions/runs/41547593108/job/125630504006"
+        },
+        {
+          "name": "e2e (5)",
+          "id": 125630504321,
+          "conclusion": null,
+          "url": "https://github.com/arugula-salad/arugula/actions/runs/41547593108/job/125630504321"
+        },
+        {
+          "name": "e2e (6)",
+          "id": 125630504036,
+          "conclusion": null,
+          "url": "https://github.com/arugula-salad/arugula/actions/runs/41547593108/job/125630504036"
+        },
+        {
+          "name": "e2e (7)",
+          "id": 125630504167,
+          "conclusion": null,
+          "url": "https://github.com/arugula-salad/arugula/actions/runs/41547593108/job/125630504167"
+        },
+        {
+          "name": "e2e (8)",
+          "id": 125630504250,
+          "conclusion": null,
+          "url": "https://github.com/arugula-salad/arugula/actions/runs/41547593108/job/125630504250"
+        },
+        {
+          "name": "e2e (9)",
+          "id": 125630504063,
+          "conclusion": null,
+          "url": "https://github.com/arugula-salad/arugula/actions/runs/41547593108/job/125630504063"
+        }
+      ]
     },
     "claims": {
       "verdict": "pending",
@@ -103,13 +176,13 @@
       "culprit": "8a8022c8ea5b7719fe05a3a715a05f586f4ea2f7"
     },
     "windows": {
-      "verdict": "pending",
+      "verdict": "pass",
       "build": "newest",
       "runs": [
         {
           "name": "workspace",
           "id": 125627030771,
-          "conclusion": null,
+          "conclusion": "success",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/41547593114/job/125627030771"
         },
         {
