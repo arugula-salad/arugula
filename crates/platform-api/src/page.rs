@@ -43,13 +43,21 @@ pub const CSP: &str = "default-src 'self'; script-src 'self'; style-src 'self' '
 /// (`'wasm-unsafe-eval'`, not JS `eval`: the camera's trackers); and the
 /// page may connect to the relay's socket, LiveKit Cloud's (any `wss:`
 /// host, per project) and https (Krisp's models, the relay's assets).
-pub fn csp(presence: Option<&str>) -> Cow<'static, str> {
-    match presence {
+///
+/// `proto` (control's proto origin, when it has a block domain): the one
+/// frame the page may have, a Doc's prototype (#506), in place of
+/// `frame-src 'none'`.
+pub fn csp(presence: Option<&str>, proto: Option<&str>) -> Cow<'static, str> {
+    let base = match presence {
         None => Cow::Borrowed(CSP),
         Some(o) => Cow::Owned(
             CSP.replacen("script-src 'self';", &format!("script-src 'self' {o} blob: 'wasm-unsafe-eval';"), 1)
                 .replacen("connect-src 'self';", "connect-src 'self' wss: https:;", 1),
         ),
+    };
+    match proto {
+        None => base,
+        Some(p) => Cow::Owned(base.replacen("frame-src 'none';", &format!("frame-src {p};"), 1)),
     }
 }
 

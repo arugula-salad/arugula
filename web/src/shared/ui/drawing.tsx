@@ -16,7 +16,7 @@ import { checkSvg, svgUrl } from "./embeds";
 const scheme = (): Scheme => (document.documentElement.dataset.scheme === "light" ? "light" : "dark");
 
 /** `html[data-scheme]`, as the app's appearance or the share viewer sets it. */
-function useScheme(): Scheme {
+export function useScheme(): Scheme {
   const [s, set] = useState(scheme);
   useEffect(() => {
     const mo = new MutationObserver(() => set(scheme()));

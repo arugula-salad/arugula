@@ -12,160 +12,22 @@
 // name to loopback, so control's one listener answers `docs.blocks.localhost`
 // with no DNS or certificate.
 
-import { spawn, type ChildProcess } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
-import type { AddressInfo } from "node:net";
-import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
-import { expect, test, type Browser, type BrowserContext, type Page } from "@playwright/test";
-import { Device } from "../fixtures/device.ts";
-import { fakeGithub } from "../fixtures/fakes.ts";
+import { mkdirSync, readdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
+import { expect, test, type Page } from "@playwright/test";
 import { hex } from "../src/shared/docs/colours";
 import { example } from "./doc-examples";
-import { newDoc, png, putAsset, fill, seeEmbeds, type Post } from "./doc-steps";
+import { attacker, newDoc, png, putAsset, fill, prototype, prototypeRan, seeEmbeds, type Post } from "./doc-steps";
+import { DOMAIN, prototypeInViewer, rig, share, visitor, type Rig } from "./doc-share-rig";
 import { closeContexts, menu, reset, panes, paneEl } from "./helpers";
-import { labs } from "./labs";
 import { pixel7 } from "./phones";
-import { ANY, controlPort, daemonPort } from "./ports";
 import "./local-token";
 
 test.afterAll(closeContexts);
 
-const DOMAIN = "blocks.localhost";
 const MARK = "ZEBRA-QUARTZ-4471";
 const SHOTS = process.env.DOC_LINK_SHOTS;
-
-interface Rig {
-  control: string;
-  mini: string;
-  state: string;
-  /** The account's headless device; none for a rig the page signed in. */
-  me: Device;
-  post: Post & ((path: string, data: unknown) => Promise<{ block?: number; url?: string }>);
-  /** Where a link is opened: the viewer's base. */
-  viewer: string;
-  /** Where control's database and its logs' files are. */
-  dbDir: string;
-  daemon: ChildProcess;
-  dispose: () => Promise<void>;
-}
-
-async function up(url: string) {
-  for (let i = 0; i < 100; i++) {
-    try {
-      if ((await fetch(url)).status < 500) return;
-    } catch {
-      // not yet
-    }
-    await new Promise((r) => setTimeout(r, 100));
-  }
-  throw new Error(`${url} didn't come up`);
-}
-
-/** A control (with a block domain or without), a machine joined to it,
- * and the owner's headless device. */
-async function rig(blockDomain: string | null, browser?: Page): Promise<Rig> {
-  const procs: ChildProcess[] = [];
-  const dirs: string[] = [];
-  const temp = (what: string) => {
-    const d = mkdtempSync(join(tmpdir(), `arugula-e2e-docshare-${what}-`));
-    dirs.push(d);
-    return d;
-  };
-  const gh = fakeGithub(0);
-  await new Promise((r) => gh.once("listening", r));
-  const github = `http://127.0.0.1:${(gh.address() as AddressInfo).port}`;
-  const db = join(temp("db"), "control.db");
-  mkdirSync(join(db, ".."), { recursive: true });
-  procs.push(
-    spawn(
-      "../target/debug/arugula-control",
-      [
-        ...["--listen", ANY, "--public-url", "http://127.0.0.1:0", "--db", db, ...(blockDomain ? ["--block-domain", blockDomain] : [])],
-        ...["--github-client-id", "id", "--github-client-secret", "s", "--static-dir", "dist"],
-        ...["--github-url", github, "--github-api", github],
-        // The database is on the machine's disk, which a CI pod shares
-        // with its node, and other pods can fill that past the guard's 80%.
-        "--no-disk-guard",
-      ],
-      { stdio: process.env.E2E_CONTROL_LOG ? "inherit" : "ignore" },
-    ),
-  );
-  const port = await controlPort(db, procs.at(-1));
-  const control = `http://127.0.0.1:${port}`;
-  await up(`${control}/control.json`);
-
-  // The account is a headless device's, or (with `browser`) the one the page
-  // signs in as, which approves the machine as a person would.
-  const me = browser ? undefined : await Device.signIn({ control, login: "jake" });
-  if (browser) {
-    await browser.goto(`${control}/`);
-    await browser.locator("[data-signin=github]").click();
-    await browser.locator("[data-stored-codes]").check();
-    await browser.locator("[data-saved-codes]").click();
-  }
-  const state = labs(temp("mini"));
-  const joining = spawn("../target/debug/arugulad", ["join", control, "--name", "mini", "--state-dir", state, ...(me ? ["--account", me.keys.id] : [])], {
-    stdio: ["ignore", "pipe", "ignore"],
-  });
-  procs.push(joining);
-  const code = await new Promise<string>((res) => {
-    let out = "";
-    joining.stdout!.on("data", (d) => {
-      out += d;
-      const m = out.match(me ? /#join=([A-Z0-9.-]+)\s/ : /(http\S+#join=[A-Z0-9.-]+)/);
-      if (m) res(m[1]);
-    });
-  });
-  const exited = new Promise<number | null>((r) => joining.on("exit", r));
-  if (me) await me.approveJoin(code);
-  else {
-    await browser!.goto(code);
-    await browser!.locator("[data-approve-join]").click();
-  }
-  expect(await exited).toBe(0);
-  const d = spawn(
-    "../target/debug/arugulad",
-    [
-      ...["--listen", ANY, "--name", "mini", "--state-dir", state],
-      ...["--shell", "bash --norc --noprofile", "--no-manager-env", "--tailscale-socket", "/nonexistent/sock", "--no-claude-ide"],
-    ],
-    { stdio: "ignore" },
-  );
-  procs.push(d);
-  const mini = `http://127.0.0.1:${await daemonPort(state, d)}`;
-  await up(`${mini}/api/host`);
-  if (me) await me.waitOnline("mini");
-  else {
-    await expect
-      .poll(async () => ((await (await browser!.context().request.get(`${control}/api/directory`)).json()) as { daemons: { online: boolean }[] }).daemons.map((x) => x.online), { timeout: 30_000 })
-      .toEqual([true]);
-  }
-
-  const post: Rig["post"] = async (path, data) => {
-    const r = await fetch(mini + path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(data) });
-    const text = await r.text();
-    if (!r.ok) throw new Error(`${path}: ${r.status} ${text}`);
-    return JSON.parse(text);
-  };
-  const viewer = blockDomain ? `http://docs.${blockDomain}:${port}` : `${control}/d`;
-  return {
-    control,
-    mini,
-    state,
-    me: me as Device,
-    post,
-    daemon: d,
-    viewer,
-    dbDir: dirname(db),
-    dispose: async () => {
-      for (const p of procs) p.kill("SIGKILL");
-      gh.close();
-      for (const dir of dirs) rmSync(dir, { recursive: true, force: true });
-    },
-  };
-}
 
 /** A Doc with a title, text and a picture (s1), a chart (s2), and a drawing
  * (s3) left for later. */
@@ -178,20 +40,6 @@ async function doc(r: Rig): Promise<number> {
   await fill(r.post, d, "s1", `Findings ${MARK}\n\n![a red square](assets/red.png)`);
   await fill(r.post, d, "s2", example("bar-chart.md"));
   return d;
-}
-
-const share = (r: Rig, d: number, method = "doc_share") => r.post(`/api/blocks/${d}/call/${method}`, {}).then((v) => v.url!);
-
-/** The link in a fresh context: nothing carried over, so what shows is
- * what the link gives anyone. */
-async function visitor(browser: Browser, opts: Parameters<Browser["newContext"]>[0] = {}): Promise<{ ctx: BrowserContext; page: Page; seen: string[]; violations: string[] }> {
-  const ctx = await browser.newContext({ storageState: { cookies: [], origins: [] }, extraHTTPHeaders: {}, ...opts });
-  const page = await ctx.newPage();
-  const seen: string[] = [];
-  const violations: string[] = [];
-  page.on("request", (q) => seen.push(q.url()));
-  page.on("console", (m) => /Content Security Policy|Refused to/i.test(m.text()) && violations.push(m.text()));
-  return { ctx, page, seen, violations };
 }
 
 /** What the page draws: its title, text, picture, chart and (when filled) drawing. */
@@ -298,6 +146,21 @@ for (const mode of [DOMAIN, null] as const) {
         }
       }
     });
+
+    // #506: a ```prototype section needs a frame that runs its inline script, which
+    // the page's `script-src 'self'` would stop in a srcdoc frame (it inherits
+    // it): the frame is the proto origin's page, which the page's CSP names.
+    // With no block domain there is none, and the section says so.
+    for (const scheme of ["light", "dark"] as const) {
+      test(`a prototype runs in a frame on the proto origin and gets out of nowhere, ${scheme}`, async ({ browser }) => {
+        const a = await attacker();
+        try {
+          await prototypeInViewer(r, browser, a, scheme);
+        } finally {
+          a.close();
+        }
+      });
+    }
 
     // #254: callouts and stat tiles, through the link, light and dark.
     test("the link draws callouts and stat tiles in either scheme", async ({ browser }) => {
@@ -782,5 +645,43 @@ test.describe("Shared Docs… in the account menu", () => {
     await page.locator("[data-confirm-remove]").click();
     await expect(row).toHaveCount(0);
     expect((await fetch(`${url.split("#")[0]}/data/meta`)).status).toBe(404);
+  });
+});
+
+test.describe("a Doc block on control's own page", () => {
+  test.describe.configure({ mode: "serial" });
+  let r: Rig;
+  let page: Page;
+  test.beforeAll(async ({ browser }) => {
+    test.setTimeout(180_000);
+    const ctx = await browser.newContext({ storageState: { cookies: [], origins: [] } });
+    page = await ctx.newPage();
+    r = await rig(DOMAIN, page);
+  });
+  test.afterAll(async () => {
+    await r?.dispose();
+  });
+
+  // #506: the shell control serves has `default-src 'self'`, so a srcdoc frame's
+  // scripts would die there too: its Doc block frames the proto origin control's
+  // /control.json names, like the share page and the platform page.
+  test("a prototype in a Doc block on control's own page runs in a frame on the proto origin", async () => {
+    const a = await attacker();
+    try {
+      const [{ id: term }] = (await (await fetch(`${r.mini}/api/panes`)).json()) as { id: number }[];
+      const d = await newDoc(r.post, term, "Probe doc");
+      await fill(r.post, d, "s1", prototype(a));
+      await page.goto(`${r.control}/`);
+      await expect.poll(() => page.evaluate(() => !!window.__arugula?.client.e2e && window.__arugula.client.connected), { timeout: 30_000 }).toBe(true);
+      await page.evaluate((id) => window.__arugula.client.setActive(id), d);
+      await expect(page.locator(`[data-doc-block="${d}"] .doc-title`)).toHaveText("Probe doc", { timeout: 20_000 });
+      const proto = `http://proto.${DOMAIN}:${new URL(r.control).port}`;
+      await expect(page.locator("[data-prototype-frame]")).toHaveAttribute("src", `${proto}/`);
+      await expect(page.locator("[data-prototype-run]")).toHaveCount(0);
+      const scheme = (await page.evaluate(() => document.documentElement.dataset.scheme)) === "light" ? "light" : "dark";
+      await prototypeRan(page, a, scheme);
+    } finally {
+      a.close();
+    }
   });
 });

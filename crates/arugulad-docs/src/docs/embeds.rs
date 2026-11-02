@@ -16,6 +16,10 @@
 //! - ```` ```svg [alt] ````: one drawing, as SVG text. Its root is `<svg`
 //!   with the `xmlns` an `<img>` needs. The client shows it only through
 //!   `<img>`, which runs no script, so nothing here sanitises it.
+//! - ```` ```prototype [title] [height=N] ````: one page (#506), which the client runs
+//!   in a sandboxed frame: inline scripts and styles only, so a `<script src>`,
+//!   a `<link href>`, an `<iframe>`, `<object>`, `<embed>`, `<base>` or
+//!   `<meta http-equiv>` is refused, as is a second document.
 //! - ```` ```stats ````: a JSON list of 1 to 6 tiles (#254), each a `label`
 //!   and a `value` as text, with an optional `delta` and its `tone` (`up`,
 //!   `down` or `flat`) and no other keys.
@@ -123,6 +127,9 @@ fn paints(svg: &str) -> Vec<(&str, &str)> {
 /// what is inside, and `lines` the span it takes, both fence lines included.
 pub struct Fence {
     pub lang: String,
+    /// The rest of the opening line: a drawing's alt text, a prototype's
+    /// title and `height=`.
+    pub alt: String,
     pub code: String,
     pub lines: std::ops::Range<usize>,
 }
@@ -156,8 +163,10 @@ fn fences_in(lines: &[&str]) -> Vec<Fence> {
             i += 1;
         }
         i += 1;
-        let lang = info.split_whitespace().next().unwrap_or_default();
-        out.push(Fence { lang: lang.to_owned(), code: code.join("\n"), lines: start..i.min(lines.len()) });
+        let mut words = info.split_whitespace();
+        let lang = words.next().unwrap_or_default();
+        let alt = words.collect::<Vec<_>>().join(" ");
+        out.push(Fence { lang: lang.to_owned(), alt, code: code.join("\n"), lines: start..i.min(lines.len()) });
     }
     out
 }
@@ -180,6 +189,7 @@ pub fn check(md: &str, assets: &[Asset]) -> Result<(), String> {
             "chart" => check_chart(&f.code).map(|_| ())?,
             "svg" => check_svg(&f.code)?,
             "stats" => check_stats(&f.code).map(|_| ())?,
+            "prototype" => check_prototype(&f.code)?,
             _ => {}
         }
     }
@@ -284,6 +294,7 @@ pub fn plain(md: &str) -> String {
             "chart" => out.push(summary(&f.code)),
             "svg" => out.push("[drawing]".to_owned()),
             "stats" => out.push(stats_summary(&f.code)),
+            "prototype" => out.push(prototype_summary(&f.alt)),
             // Code is as it was written, pictures in it included.
             _ => out.extend(lines[f.lines.clone()].iter().map(|l| (*l).to_owned())),
         }
@@ -612,6 +623,125 @@ pub fn check_svg(svg: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// A prototype's fence line after `prototype`: the title and the height. `height=N`
+/// is any one word of it (the first), clamped to 120..=2000, 480 without;
+/// the rest, joined by single spaces, is the title.
+pub fn prototype_info(alt: &str) -> (String, u32) {
+    let (mut title, mut height) = (Vec::new(), None);
+    for w in alt.split_whitespace() {
+        match w.strip_prefix("height=").filter(|n| !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit())) {
+            Some(n) if height.is_none() => height = Some(n.parse::<u64>().unwrap_or(u64::MAX)),
+            _ => title.push(w),
+        }
+    }
+    (title.join(" "), height.map_or(PROTOTYPE_HEIGHT, |h| h.clamp(120, 2000) as u32))
+}
+
+/// A prototype's default height, in pixels.
+pub const PROTOTYPE_HEIGHT: u32 = 480;
+
+/// `[prototype: Views motion]`; `[prototype]` without a title.
+fn prototype_summary(alt: &str) -> String {
+    match prototype_info(alt).0 {
+        t if t.is_empty() => "[prototype]".to_owned(),
+        t => format!("[prototype: {t}]"),
+    }
+}
+
+/// The attribute names of each `<name …>` tag in `lower` (ASCII-lowercased
+/// HTML): a tag is `<name` and then a space, `/` or `>`; its end is the first
+/// `>` outside quotes. The client reads them the same way (`tagAttrs` in
+/// `web/src/shared/ui/embeds.ts`).
+fn tag_attrs<'a>(lower: &'a str, name: &str) -> Vec<Vec<&'a str>> {
+    let open = format!("<{name}");
+    let b = lower.as_bytes();
+    let mut out = Vec::new();
+    for (at, _) in lower.match_indices(&open) {
+        let mut i = at + open.len();
+        if !b.get(i).is_some_and(|c| c.is_ascii_whitespace() || matches!(c, b'/' | b'>')) {
+            continue;
+        }
+        let mut names = Vec::new();
+        while i < b.len() && b[i] != b'>' {
+            if b[i].is_ascii_whitespace() || b[i] == b'/' {
+                i += 1;
+                continue;
+            }
+            let start = i;
+            while i < b.len() && !b[i].is_ascii_whitespace() && !matches!(b[i], b'=' | b'>' | b'/') {
+                i += 1;
+            }
+            names.push(&lower[start..i]);
+            while i < b.len() && b[i].is_ascii_whitespace() {
+                i += 1;
+            }
+            if b.get(i) == Some(&b'=') {
+                i += 1;
+                while i < b.len() && b[i].is_ascii_whitespace() {
+                    i += 1;
+                }
+                match b.get(i) {
+                    Some(&q @ (b'"' | b'\'')) => {
+                        i += 1;
+                        while i < b.len() && b[i] != q {
+                            i += 1;
+                        }
+                        i += 1;
+                    }
+                    _ => {
+                        while i < b.len() && !b[i].is_ascii_whitespace() && b[i] != b'>' {
+                            i += 1;
+                        }
+                    }
+                }
+            }
+        }
+        out.push(names);
+    }
+    out
+}
+
+/// A prototype's page (#506): one document, inline, which the client runs in a
+/// sandboxed frame with a CSP that loads nothing, so what the page would fetch
+/// is refused here with one line saying to inline it.
+pub fn check_prototype(html: &str) -> Result<(), String> {
+    let bad = |why: String| format!("prototype: {why}");
+    if html.len() > SECTION_MAX {
+        return Err(bad(format!("{} bytes; the cap is {SECTION_MAX} (64 KB)", html.len())));
+    }
+    if html.trim().is_empty() {
+        return Err(bad("the fence is empty: put one page in it".into()));
+    }
+    let lower = html.to_ascii_lowercase();
+    for open in ["<html", "<!doctype"] {
+        let n = lower.match_indices(open).filter(|(at, _)| {
+            lower.as_bytes().get(at + open.len()).is_none_or(|c| c.is_ascii_whitespace() || matches!(c, b'/' | b'>'))
+        });
+        if n.count() > 1 {
+            return Err(bad(format!("one document only: found a second {open}; put a single page in the fence")));
+        }
+    }
+    if tag_attrs(&lower, "script").iter().any(|a| a.contains(&"src")) {
+        return Err(bad(
+            "<script src> can't load anything: inline it, with the code between <script> and </script>".into()
+        ));
+    }
+    if tag_attrs(&lower, "link").iter().any(|a| a.contains(&"href")) {
+        return Err(bad(
+            "<link href> can't load anything: inline it, with the styles between <style> and </style>".into()
+        ));
+    }
+    for tag in ["iframe", "object", "embed", "base"] {
+        if !tag_attrs(&lower, tag).is_empty() {
+            return Err(bad(format!("<{tag}> isn't allowed: the page is one document, so inline what it would show")));
+        }
+    }
+    if tag_attrs(&lower, "meta").iter().any(|a| a.contains(&"http-equiv")) {
+        return Err(bad("<meta http-equiv> isn't allowed: the frame sets its own policy, so remove it".into()));
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use std::path::PathBuf;
@@ -804,6 +934,83 @@ mod tests {
         // Through a fence, with its alt text after the language.
         assert_eq!(check(&format!("```svg A box\n{}\n```", svg("<rect/>"))), Ok(()));
         assert!(check("```svg\n<p>hi</p>\n```").is_err());
+    }
+
+    #[test]
+    fn a_prototype_is_one_inline_page_under_the_cap() {
+        for good in [
+            "<p>hi</p><script>document.body.append('x')</script><style>p{color:red}</style>",
+            "<!DOCTYPE html>\n<HTML lang=en><body>one</body></HTML>",
+            // Neither a tag nor an attribute: a script's text, a name that only starts like one.
+            "<script>var s = 'src'; var h = 'href';</script>",
+            "<script data-src=\"x\">1</script><link rel=icon><linkage href=x></linkage><basefont><embedded-thing>",
+            "<script title=\"a > src=b\">1</script>",
+        ] {
+            assert_eq!(check_prototype(good), Ok(()), "{good}");
+        }
+        for (bad, says) in [
+            ("".to_owned(), "the fence is empty"),
+            ("  \n ".to_owned(), "the fence is empty"),
+            ("x".repeat(SECTION_MAX + 1), "the cap is 65536"),
+            ("<html></html><html></html>".to_owned(), "found a second <html"),
+            ("<!doctype html><p>a</p><!DOCTYPE html>".to_owned(), "found a second <!doctype"),
+            ("<script src=\"a.js\"></script>".to_owned(), "<script src> can't load anything: inline it"),
+            ("<SCRIPT\n  type=module\n  SRC = 'a.js'>".to_owned(), "<script src>"),
+            ("<script async src=a.js></script>".to_owned(), "<script src>"),
+            ("<link rel=stylesheet href=a.css>".to_owned(), "<link href> can't load anything: inline it"),
+            ("<LINK HREF=\"a.css\" rel=stylesheet/>".to_owned(), "<link href>"),
+            ("<iframe src=a></iframe>".to_owned(), "<iframe> isn't allowed"),
+            ("<IFrame srcdoc='x'>".to_owned(), "<iframe>"),
+            ("<object data=a></object>".to_owned(), "<object> isn't allowed"),
+            ("<embed src=a>".to_owned(), "<embed> isn't allowed"),
+            ("<base href=\"/\">".to_owned(), "<base> isn't allowed"),
+            ("<meta http-equiv=refresh content=\"0;url=/\">".to_owned(), "<meta http-equiv> isn't allowed"),
+            ("<META HTTP-EQUIV='content-security-policy' content=''>".to_owned(), "<meta http-equiv>"),
+        ] {
+            let e = check_prototype(&bad).expect_err(&bad);
+            assert!(e.starts_with("prototype: ") && e.contains(says) && !e.contains('\n'), "{e}");
+        }
+        // A meta that is not http-equiv, and a link that is not a href, are fine.
+        assert_eq!(check_prototype("<meta name=viewport content=\"width=device-width\"><link rel=preload>"), Ok(()));
+        // The cap is on the fence's text, and the limit itself passes.
+        assert_eq!(check_prototype(&"x".repeat(SECTION_MAX)), Ok(()));
+        // Through a fence, with its title after the language.
+        assert_eq!(check("```prototype Views motion height=300\n<p>hi</p>\n```"), Ok(()));
+        assert!(check("```prototype\n<iframe></iframe>\n```").is_err());
+        // A fence that is not html isn't read as one.
+        assert_eq!(check("```text\n<script src=x>\n```"), Ok(()));
+        // An html fence is code, whatever is in it.
+        assert_eq!(check("```html\n<script src=x></iframe><iframe>\n```"), Ok(()));
+    }
+
+    #[test]
+    fn a_prototype_reads_its_title_and_height_from_the_fence_line() {
+        for (alt, want) in [
+            ("", ("", 480)),
+            ("Views motion", ("Views motion", 480)),
+            ("height=720 Views motion", ("Views motion", 720)),
+            ("Views  height=720  motion", ("Views motion", 720)),
+            ("height=5", ("", 120)),
+            ("height=99999", ("", 2000)),
+            ("height=99999999999999999999999", ("", 2000)),
+            ("height=120", ("", 120)),
+            ("height=2000", ("", 2000)),
+            // Only the first counts, and only whole digits.
+            ("height=300 height=900", ("height=900", 300)),
+            ("height=abc height=", ("height=abc height=", 480)),
+        ] {
+            assert_eq!(prototype_info(alt), (want.0.to_owned(), want.1), "{alt}");
+        }
+    }
+
+    #[test]
+    fn a_prototype_is_a_line_in_text() {
+        assert_eq!(
+            plain("a\n```prototype Views motion height=600\n<p>x</p>\n```\nb"),
+            "a\n[prototype: Views motion]\nb"
+        );
+        assert_eq!(plain("```prototype\n<p>x</p>\n```"), "[prototype]");
+        assert_eq!(plain("```prototype height=300\n<p>x</p>\n```"), "[prototype]");
     }
 
     #[test]

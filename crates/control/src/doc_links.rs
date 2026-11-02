@@ -327,6 +327,15 @@ fn text(status: StatusCode, msg: &'static str) -> Response {
     r
 }
 
+/// [`CSP`], and with the runner's origin (a Doc's html section, #506)
+/// the one frame it may have: nothing else in it changes.
+pub fn csp(proto: Option<&str>) -> String {
+    match proto {
+        Some(p) => CSP.replacen("frame-ancestors", &format!("frame-src {p}; frame-ancestors"), 1),
+        None => CSP.to_owned(),
+    }
+}
+
 /// What every answer of the viewer carries, whatever it is.
 fn secure(h: &mut HeaderMap) {
     h.insert(header::CONTENT_SECURITY_POLICY, HeaderValue::from_static(CSP));
@@ -355,6 +364,11 @@ pub fn serve(
 ) -> Response {
     let mut res = answer(app, method, headers, peer, path, query);
     secure(res.headers_mut());
+    // The page's prototypes frame the proto origin, and only it.
+    let proto = crate::blocks::proto_url(&app.cfg.public_url, app.cfg.block_domain.as_deref());
+    if let Some(v) = proto.and_then(|p| HeaderValue::from_str(&csp(Some(&p))).ok()) {
+        res.headers_mut().insert(header::CONTENT_SECURITY_POLICY, v);
+    }
     res
 }
 

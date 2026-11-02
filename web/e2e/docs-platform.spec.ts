@@ -8,6 +8,7 @@
 // app.localhost`), as platform.spec.ts runs it.
 
 import { expect, test, type Page } from "@playwright/test";
+import { attacker, prototype, prototypeRan } from "./doc-steps";
 import { closeContexts } from "./helpers";
 import { TeamControl, home } from "./team-fixture";
 
@@ -33,7 +34,9 @@ const CHART = '```chart\n{"type": "bar", "x": "week", "y": "shipped", "rows": [{
 
 test("an owner makes a Doc from the project's Docs and writes it", async ({ browser }) => {
   test.setTimeout(180_000);
-  await t.start(["--platform-host", "app.localhost"]);
+  // A block domain too, for a Doc's prototype (#506): the platform page's
+  // CSP has `script-src 'self'`, so its frame is control's proto origin.
+  await t.start(["--platform-host", "app.localhost", "--block-domain", "blocks.localhost"]);
   app = t.base.replace("//127.0.0.1", "//app.localhost");
   alice = await t.person(browser, "alice");
   await alice.evaluate(() => window.__arugula.control!.createTeam("Acme"));
@@ -106,6 +109,31 @@ test("a viewer reads it on a phone, with no form, and has the next section live"
   await platform(bob, docPath.replace(/\/docs\/.*$/, "/docs"));
   await expect(bob.locator("[data-docs] [data-doc-link]")).toHaveText(["Release plan"], { timeout: 15_000 });
   await expect(bob.locator("[data-doc-new]")).toHaveCount(0);
+});
+
+// #506: a prototype on the platform page runs in a frame on the proto
+// origin the hub named in its answers, and gets out of nowhere. Alice writes
+// it, Bob reads it on a phone.
+test("a prototype runs in a frame on the platform page and gets out of nowhere", async () => {
+  test.setTimeout(90_000);
+  const a = await attacker();
+  try {
+    const mine = alice.locator("[data-doc-page]");
+    await mine.locator("[data-doc-heading-input]").fill("Prototype");
+    await mine.locator("[data-doc-markdown-input]").fill(prototype(a));
+    await mine.locator("[data-doc-save]").click();
+    const scheme = async (p: Page) => ((await p.evaluate(() => document.documentElement.dataset.scheme)) === "light" ? "light" : "dark");
+    await prototypeRan(alice, a, await scheme(alice));
+    await expect(alice.locator("[data-prototype-frame]")).toHaveAttribute("src", /^http:\/\/proto\.blocks\.localhost:\d+\/$/);
+    await expect(alice.locator("[data-prototype-note]")).toHaveCount(0);
+
+    await platform(bob, docPath);
+    await expect(bob.locator("[data-doc-page] .doc-title")).toHaveText("Release plan", { timeout: 15_000 });
+    await prototypeRan(bob, a, await scheme(bob));
+    expect(a.hits).toEqual([]);
+  } finally {
+    a.close();
+  }
 });
 
 test("an owner deletes it", async () => {

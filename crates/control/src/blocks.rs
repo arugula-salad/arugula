@@ -106,6 +106,9 @@ pub enum Host {
     Block(String),
     /// `docs.<block domain>`: shared Docs' viewer (`doc_links.rs`).
     Docs,
+    /// `proto.<block domain>`: the page a Doc's prototype runs in
+    /// (`runner_page`, #506).
+    Proto,
     /// Under the block domain, but no block's (the bare domain, another
     /// label, a key that isn't one): nothing here.
     Nothing,
@@ -153,6 +156,9 @@ pub fn host(domain: &str, headers: &HeaderMap) -> Host {
     if label == "docs" {
         return Host::Docs;
     }
+    if label == "proto" {
+        return Host::Proto;
+    }
     // `b-` and the daemon's site key (32 hex digits today; a label holds
     // at most 63 characters).
     match label.strip_prefix("b-") {
@@ -175,6 +181,7 @@ pub async fn split(axum::extract::State(app): axum::extract::State<Arc<App>>, re
             let peer = req.extensions().get::<ConnectInfo<SocketAddr>>().map(|c| c.0);
             crate::doc_links::serve(&app, req.method(), req.headers(), peer, req.uri().path(), req.uri().query())
         }
+        Host::Proto => runner_page(&app, req.method(), req.uri().path()),
         Host::Block(key) => serve(&app, key, req).await,
     };
     let h = res.headers_mut();
@@ -183,6 +190,63 @@ pub async fn split(axum::extract::State(app): axum::extract::State<Arc<App>>, re
     h.insert(header::REFERRER_POLICY, HeaderValue::from_static("no-referrer"));
     h.insert(header::STRICT_TRANSPORT_SECURITY, HeaderValue::from_static("max-age=31536000"));
     res
+}
+
+/// The runner of a Doc's prototype (`web/src/shared/ui/runner.html`,
+/// #506): static text, the same page the daemon's app frames by `srcdoc`.
+const RUNNER: &str = include_str!("../../../web/src/shared/ui/runner.html");
+
+/// What the runner is served under. `sandbox allow-scripts` keeps it
+/// opaque even opened on its own; the page and the prototype it becomes run
+/// inline code and load nothing; only control's pages and the viewer may
+/// frame it.
+fn proto_csp(ancestors: &[String]) -> String {
+    format!(
+        "sandbox allow-scripts; default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; \
+         img-src data: blob:; font-src data:; base-uri 'none'; form-action 'none'; frame-ancestors {}",
+        ancestors.join(" ")
+    )
+}
+
+/// Who may frame the runner: control's sites, the platform page's origin
+/// and the docs viewer's.
+fn proto_ancestors(app: &App) -> Vec<String> {
+    let mut out: Vec<String> = app.cfg.sites.iter().map(|s| s.origin.clone()).collect();
+    out.extend(app.cfg.platform_host.iter().map(|p| p.origin.clone()));
+    out.push(crate::doc_links::viewer_url(&app.cfg.public_url, app.cfg.block_domain.as_deref()));
+    out
+}
+
+/// `proto.<block domain>`: the one page, at `/`, and a 404 for everything
+/// else. No cookie is set (`split` strips one anyway) and nothing is read.
+fn runner_page(app: &App, method: &Method, path: &str) -> Response {
+    if path != "/" {
+        return plain(StatusCode::NOT_FOUND, "not found");
+    }
+    if !matches!(*method, Method::GET | Method::HEAD) {
+        let mut r = StatusCode::METHOD_NOT_ALLOWED.into_response();
+        r.headers_mut().insert(header::ALLOW, HeaderValue::from_static("GET, HEAD"));
+        return r;
+    }
+    let mut r = Response::new(Body::from(RUNNER));
+    let h = r.headers_mut();
+    h.insert(header::CONTENT_TYPE, HeaderValue::from_static(HTML));
+    h.insert(header::CACHE_CONTROL, HeaderValue::from_static("no-cache"));
+    if let Ok(v) = HeaderValue::from_str(&proto_csp(&proto_ancestors(app))) {
+        h.insert(header::CONTENT_SECURITY_POLICY, v);
+    }
+    r
+}
+
+/// Where the runner is, for the pages that frame it: `proto.<block
+/// domain>` on control's scheme and port. `None` without a block domain.
+pub fn proto_url(public_url: &str, block_domain: Option<&str>) -> Option<String> {
+    let d = block_domain?;
+    let u = url::Url::parse(public_url).ok()?;
+    Some(match u.port() {
+        Some(p) => format!("{}://proto.{d}:{p}", u.scheme()),
+        None => format!("{}://proto.{d}", u.scheme()),
+    })
 }
 
 async fn serve(app: &Arc<App>, key: String, req: Request) -> Response {
@@ -593,9 +657,30 @@ mod tests {
         ] {
             assert_eq!(host(d, &h(&nothing)), Host::Nothing, "{nothing}");
         }
+        // The proto page's host (#506): a fixed label like `docs`, case-blind, a port allowed.
+        for proto in ["proto.arugula.run", "PROTO.arugula.run.", "proto.arugula.run:8443"] {
+            assert_eq!(host(d, &h(proto)), Host::Proto, "{proto}");
+        }
+        for nothing in ["x.proto.arugula.run", "protos.arugula.run"] {
+            assert_eq!(host(d, &h(nothing)), Host::Nothing, "{nothing}");
+        }
+        assert_eq!(host(d, &h("proto.control.arugula.io")), Host::Control);
         for control in ["control.arugula.io", "notarugula.run", &format!("b-{KEY}.arugula.run.evil.example")] {
             assert_eq!(host(d, &h(control)), Host::Control, "{control}");
         }
+    }
+
+    #[test]
+    fn proto_url_is_the_proto_label_on_controls_scheme_and_port() {
+        assert_eq!(
+            proto_url("https://control.arugula.run", Some("arugula.run")).as_deref(),
+            Some("https://proto.arugula.run")
+        );
+        assert_eq!(
+            proto_url("https://c.example:8443", Some("arugula.run")).as_deref(),
+            Some("https://proto.arugula.run:8443")
+        );
+        assert_eq!(proto_url("http://127.0.0.1:7690", None), None, "no block domain, no proto origin");
     }
 
     /// M186 (aru-097): the provider's own preview URLs are never used.

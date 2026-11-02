@@ -164,6 +164,7 @@ Not here: what each milestone built (the archive), how to build and test
 - [aru-120](docs/decisions/aru-120-a-shared-doc-s-page-loads-its-fonts-from-its-own-origin.md): A shared Doc's page loads its fonts from its own origin
 - [aru-124](docs/decisions/aru-124-plane-is-a-source-of-a-project-s-issues.md): Plane is a source of a project's issues, mirrored beside GitHub's
 - [aru-125](docs/decisions/aru-125-boards-are-rows-of-work-and-lanes-follow-the-work.md): Boards are rows of work, and lanes follow the work
+- [aru-129](docs/decisions/aru-129-a-doc-s-prototype-runs-in-a-frame-on-control-s-proto-origin.md): A Doc's prototype runs in a frame on control's proto origin
 
 ## Build and release
 

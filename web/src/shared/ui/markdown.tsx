@@ -20,6 +20,7 @@ import type { ComponentChildren } from "preact";
 import { useMemo } from "preact/hooks";
 import { Chart } from "./chart";
 import { Drawing } from "./drawing";
+import { Prototype } from "./prototype-frame";
 import { bodyLines, readFence } from "./embeds";
 import { inline, type ForgeInline, type IsMe } from "./markup";
 import { Stats } from "./stats";
@@ -98,6 +99,7 @@ function fenced(lines: string[], i: number, strip: number, k: number, fx: Ctx): 
   if (fx.embeds && f.lang === "chart") return { node: <Chart key={k} source={code} />, next: f.next };
   if (fx.embeds && f.lang === "stats") return { node: <Stats key={k} source={code} />, next: f.next };
   if (fx.embeds && f.lang === "svg") return { node: <Drawing key={k} svg={code} alt={f.alt} />, next: f.next };
+  if (fx.embeds && f.lang === "prototype") return { node: <Prototype key={k} html={code} alt={f.alt} />, next: f.next };
   if (fx.chat) return { node: <fx.chat.Code key={k} code={code} lang={f.lang ?? ""} />, next: f.next };
   return { node: <pre key={k}>{code}</pre>, next: f.next };
 }
