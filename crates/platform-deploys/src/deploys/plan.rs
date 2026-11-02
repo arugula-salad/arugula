@@ -100,6 +100,15 @@ fn fail(db: &Db, deploy: &str, why: &str, now: u64) -> Result<()> {
     if db.end_deploy_plan(deploy, Err(why), now)? {
         info!(deploy, why, "a deploy's plan didn't plan it");
     }
+    // Its run, if it's still going, ends too: nothing will take what it
+    // finds.
+    if let Some(run) = db.deploy_plan(deploy)?.and_then(|p| p.run)
+        && let Some(r) = db.run(&run)?
+        && !r.state.terminal()
+    {
+        let detail = json!({ "reason": format!("its deploy's plan ended: {why}") }).to_string();
+        let _ = db.move_run(&r.id, &Move::Control { from: r.state, to: RunState::Failed, at: now, detail: &detail })?;
+    }
     Ok(())
 }
 
