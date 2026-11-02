@@ -4,6 +4,8 @@
 // calls' effect); the page shows the outline with every intent, then each
 // fill as it lands, with no reload.
 
+import { createServer, type Server } from "node:http";
+import type { AddressInfo } from "node:net";
 import { deflateSync } from "node:zlib";
 import { expect, type Page } from "@playwright/test";
 import type { PaneId, SessionId } from "../src/shared/proto";
@@ -328,4 +330,89 @@ export async function imagesInPlace(page: Page, post: Post, doc: number) {
   expect(await page.evaluate(() => (window as unknown as { __kept?: Map<string, string> }).__kept?.size)).toBe(0);
   expect(await page.evaluate((d) => window.__arugulaDocImages?.(d), doc)).toBeUndefined();
   expect(await blobs(page)).toBe(0);
+}
+
+// #506: a ```prototype section runs its own script in a sandboxed frame, and
+// can't get out. The prototype below writes into its own DOM (proof it ran),
+// then tries every way out; the checks are on the effects (no request
+// reached `Attacker`, the page above didn't change or move), not only on what
+// the script saw.
+
+/** A server the prototype tries to reach: every request it gets is `hits`. */
+export interface Attacker {
+  url: string;
+  hits: string[];
+  close: () => void;
+}
+
+export async function attacker(): Promise<Attacker> {
+  const hits: string[] = [];
+  const srv: Server = createServer((q, r) => {
+    hits.push(q.url ?? "");
+    r.writeHead(200, { "access-control-allow-origin": "*", "content-type": "text/plain" });
+    r.end("hit");
+  });
+  await new Promise<void>((res) => srv.listen(0, "127.0.0.1", res));
+  return { url: `http://127.0.0.1:${(srv.address() as AddressInfo).port}`, hits, close: () => void srv.close() };
+}
+
+/** The html fence: a title and a height on its line, a page that says it ran,
+ * and every way out. `#tries` is what it saw, as JSON, once it is done. */
+export const prototype = (a: Attacker, title = "Probe") => `\`\`\`prototype height=300 ${title}
+<!doctype html>
+<html>
+<body>
+<p id="out">waiting</p>
+<p id="tries"></p>
+<img src="${a.url}/img" alt="">
+<script>
+document.getElementById("out").textContent = "ran";
+const tries = {};
+tries.scheme = getComputedStyle(document.documentElement).colorScheme;
+tries.origin = String(self.origin);
+try { parent.document.body.setAttribute("data-pwned", "1"); tries.parent = "reached"; } catch (e) { tries.parent = "blocked"; }
+try { top.location = "${a.url}/nav"; tries.top = "attempted"; } catch (e) { tries.top = "blocked"; }
+try { tries.cookie = document.cookie === "" ? "empty" : "read"; } catch (e) { tries.cookie = "blocked"; }
+try { tries.storage = String(localStorage.length); } catch (e) { tries.storage = "blocked"; }
+try { window.open("${a.url}/popup"); tries.popup = "attempted"; } catch (e) { tries.popup = "blocked"; }
+fetch("${a.url}/fetch").then(() => (tries.fetch = "reached"), () => (tries.fetch = "blocked")).then(() => {
+  document.getElementById("tries").textContent = JSON.stringify(tries);
+  document.body.dataset.done = "1";
+});
+</script>
+</body>
+</html>
+\`\`\`
+`;
+
+/** Check the prototype in `section` of `page` ran in its frame and got
+ * nowhere: it wrote into its own DOM, in the page's colour scheme, in a frame
+ * with the sandbox and the height the fence line asked for; and none of its
+ * ways out had an effect. `where`: the frame's selector. */
+export async function prototypeRan(page: Page, a: Attacker, scheme: "light" | "dark", where = "[data-prototype-frame]") {
+  const url = page.url();
+  const iframe = page.locator(where);
+  await expect(iframe).toHaveCount(1, { timeout: 15_000 });
+  await iframe.scrollIntoViewIfNeeded();
+  await expect(iframe).toHaveAttribute("sandbox", "allow-scripts");
+  await expect(iframe).toHaveAttribute("allow", "");
+  await expect(iframe).toHaveAttribute("loading", "lazy");
+  await expect(iframe).toHaveAttribute("referrerpolicy", "no-referrer");
+  await expect(page.locator("[data-prototype-label]")).toHaveText("Prototype · sandboxed");
+  await expect(iframe).toHaveAttribute("title", "Probe");
+  expect(await iframe.evaluate((f) => f.getBoundingClientRect().height)).toBe(300);
+  const inside = page.frameLocator(where);
+  await expect(inside.locator("#out")).toHaveText("ran", { timeout: 15_000 });
+  await expect(inside.locator("body[data-done]")).toHaveCount(1, { timeout: 15_000 });
+  const tries = JSON.parse((await inside.locator("#tries").textContent()) ?? "{}");
+  expect(tries).toMatchObject({ scheme, origin: "null", parent: "blocked", storage: "blocked", fetch: "blocked" });
+  // An opaque origin has no cookies: Chrome throws, WebKit reads an empty string.
+  expect(["blocked", "empty"]).toContain(tries.cookie);
+  // What it tried had no effect: the page above is the one we had, unchanged,
+  // and nothing reached the server it named, not by fetch, image, navigation or popup.
+  await page.waitForTimeout(500);
+  expect(a.hits, "nothing reached the attacker").toEqual([]);
+  await expect(page.locator("[data-pwned]")).toHaveCount(0);
+  expect(page.url(), "the page didn't move").toBe(url);
+  expect(page.context().pages().length, "no popup").toBe(1);
 }

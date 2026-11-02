@@ -21,6 +21,12 @@ const CSP: &str = "default-src 'none'; script-src 'self'; style-src 'self' 'unsa
                    font-src 'self'; connect-src 'self'; worker-src 'none'; base-uri 'none'; form-action 'none'; \
                    frame-ancestors 'none'";
 
+/// The same on the docs host, which frames the runner for a Doc's html
+/// sections (#506) and nothing else.
+const DOCS_CSP: &str = "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src data:; \
+                        font-src 'self'; connect-src 'self'; worker-src 'none'; base-uri 'none'; form-action 'none'; \
+                        frame-src http://proto.blocks.test; frame-ancestors 'none'";
+
 struct Control {
     app: Arc<App>,
     base: String,
@@ -531,7 +537,7 @@ async fn the_docs_host_answers_nothing_but_the_viewer_and_sets_no_cookie() {
     }
     for r in &all {
         assert!(!r.headers().contains_key(header::SET_COOKIE), "{}", r.url());
-        assert_eq!(r.headers()[header::CONTENT_SECURITY_POLICY], CSP, "{}", r.url());
+        assert_eq!(r.headers()[header::CONTENT_SECURITY_POLICY], DOCS_CSP, "{}", r.url());
     }
     // The session still works afterwards: nothing on the docs host ended it.
     assert_eq!(c.as_person(&cookie, "GET", "/api/me", None).await.0, 200);
@@ -561,7 +567,7 @@ async fn the_viewer_has_its_headers_its_page_its_files_and_etags() {
     ] {
         let r = c.view(&path).await;
         let h = r.headers();
-        assert_eq!(h[header::CONTENT_SECURITY_POLICY], CSP, "{path}");
+        assert_eq!(h[header::CONTENT_SECURITY_POLICY], DOCS_CSP, "{path}");
         assert_eq!(h[header::REFERRER_POLICY], "no-referrer", "{path}");
         assert_eq!(h[header::X_CONTENT_TYPE_OPTIONS], "nosniff", "{path}");
         assert_eq!(h[header::X_FRAME_OPTIONS], "DENY", "{path}");
@@ -595,7 +601,7 @@ async fn the_viewer_has_its_headers_its_page_its_files_and_etags() {
             assert_eq!(r.status(), 304, "{path} {sent}");
             assert_eq!(r.headers()[header::ETAG], tag.as_str());
             assert_eq!(r.headers()[header::CACHE_CONTROL], "no-cache");
-            assert_eq!(r.headers()[header::CONTENT_SECURITY_POLICY], CSP);
+            assert_eq!(r.headers()[header::CONTENT_SECURITY_POLICY], DOCS_CSP);
             assert!(r.bytes().await.unwrap().is_empty());
         }
         let r = c.at(DOCS, reqwest::Method::GET, &path).header(header::IF_NONE_MATCH, "\"nope\"").send().await.unwrap();
@@ -704,6 +710,23 @@ async fn viewing_is_limited_per_address_and_counted_per_open() {
     assert_eq!(c.view(&format!("/{link}/data/0")).await.status(), 429);
     assert_eq!(c.view(&format!("/{link}/data/meta")).await.status(), 429);
     assert_eq!(c.view(&format!("/{link}")).await.status(), 200);
+}
+
+/// A Doc's html section runs in a frame on the proto origin (#506): the
+/// viewer's CSP names that origin as its only frame, and no CSP is looser
+/// for it. With no block domain there is no such origin, and no frame.
+#[tokio::test]
+async fn the_viewer_frames_only_the_proto_origin() {
+    let c = control(|_| {}).await;
+    let csp = |r: &reqwest::Response| r.headers()[header::CONTENT_SECURITY_POLICY].to_str().unwrap().to_owned();
+    let page = c.view(&format!("/{}", id(120))).await;
+    assert_eq!(csp(&page), DOCS_CSP);
+    assert_eq!(DOCS_CSP.replace("frame-src http://proto.blocks.test; ", ""), CSP, "nothing else moved");
+    // A miss gets it too.
+    assert_eq!(csp(&c.view("/nothing").await), DOCS_CSP);
+    let off = control(|a| a.cfg.block_domain = None).await;
+    let r = off.at("control.test", reqwest::Method::GET, &format!("/d/{}", id(120))).send().await.unwrap();
+    assert!(!csp(&r).contains("frame-src"), "{}", csp(&r));
 }
 
 #[tokio::test]

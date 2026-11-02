@@ -8,6 +8,7 @@
 import type { PlatformMe, PlatformProject, PlatformProjects } from "../shared/proto.gen";
 import { chat } from "../shared/chat-store";
 import { platformFetch, refusalOf } from "../shared/maintenance";
+import { setProtoOrigin } from "../shared/ui/prototype-frame";
 import { finishSignIn, signIn, triedJustNow } from "./signin";
 
 export type { PlatformProject };
@@ -56,6 +57,9 @@ export const session = {
       const r = await platformFetch("/api/projects", { credentials: "same-origin" });
       const said = r.headers.get("x-arugula-hub");
       if (said && /^https?:\/\/[^/]+$/.test(said)) hub = said;
+      // Where a Doc's prototype runs (#506): control's proto origin, if it has one.
+      const proto = r.headers.get("x-arugula-proto");
+      setProtoOrigin(proto && /^https?:\/\/[^/]+$/.test(proto) ? proto : null);
       const v = (await r.json().catch(() => ({}))) as PlatformProjects & { error?: string; reason?: string };
       if (r.status === 401) {
         // Off through the hub, unless that's just been tried.

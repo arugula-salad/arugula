@@ -9,7 +9,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ChildProcess } from "node:child_process";
 import { expect, test } from "@playwright/test";
-import { bring, brokenEmbeds, fillEmbeds, fillsInPlace, imagesInPlace, newDoc, seeEmbeds, type Post } from "./doc-steps";
+import { attacker, bring, brokenEmbeds, fill, fillEmbeds, prototype, prototypeRan, fillsInPlace, imagesInPlace, newDoc, seeEmbeds, type Post } from "./doc-steps";
 import { open, ready } from "./helpers";
 import { daemon, iphone } from "./phones";
 
@@ -61,4 +61,20 @@ test("a picture shows in WebKit, a replaced one with no reload, and other images
   await ready(page, term);
   const doc = await newDoc(post, term);
   await imagesInPlace(page, post, doc);
+});
+
+// #506: a prototype runs in WebKit's sandboxed srcdoc frame and gets out of nowhere.
+test("a prototype runs its script in WebKit and gets out of nowhere", async ({ page }) => {
+  const a = await attacker();
+  try {
+    await open(page);
+    const term = await page.evaluate(() => window.__arugula.client.state!.panes[0].id);
+    await ready(page, term);
+    const doc = await newDoc(post, term);
+    await bring(page, doc);
+    await fill(post, doc, "s1", prototype(a));
+    await prototypeRan(page, a, "dark");
+  } finally {
+    a.close();
+  }
 });

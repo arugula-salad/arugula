@@ -231,6 +231,32 @@ async fn the_platform_page_lets_arugula_stream_in_only_with_an_app() {
     assert!(!scripts.contains("'unsafe-inline'") && !scripts.contains("'unsafe-eval'"), "{csp}");
 }
 
+/// A Doc's prototype on the platform page (#506) runs in a frame on
+/// control's proto origin, which the page's CSP names as its one frame in
+/// place of `'none'`; nothing else in the CSP moves. The hub says where it is,
+/// as it says where it is itself. With no block domain there is no such place:
+/// `frame-src 'none'` stays and nothing is said.
+#[tokio::test]
+async fn the_platform_page_frames_only_the_proto_origin() {
+    let c = control(|a| a.cfg.block_domain = Some("blocks.test".into())).await;
+    let a = c.get(APP, Method::GET, "/p/prj_1/chat/ch_1").await;
+    let want = arugula_platform_api::page::CSP.replacen("frame-src 'none';", "frame-src http://proto.blocks.test;", 1);
+    assert_eq!(a.header("content-security-policy"), want);
+    assert_eq!(a.header("x-arugula-proto"), "http://proto.blocks.test");
+    let scripts = want.split(';').find(|d| d.trim_start().starts_with("script-src")).unwrap();
+    assert_eq!(scripts.trim(), "script-src 'self'", "scripts are as they were");
+    // The API answers say it too, where the page reads it.
+    let a = c.get(APP, Method::GET, "/api/projects").await;
+    assert_eq!(a.header("x-arugula-proto"), "http://proto.blocks.test");
+    assert!(a.header("content-security-policy").contains("frame-src http://proto.blocks.test;"));
+
+    let off = control(|_| {}).await;
+    let a = off.get(APP, Method::GET, "/p/prj_1/chat/ch_1").await;
+    assert_eq!(a.header("content-security-policy"), arugula_platform_api::page::CSP);
+    assert!(a.header("content-security-policy").contains("frame-src 'none';"));
+    assert!(!a.headers.contains_key("x-arugula-proto"));
+}
+
 /// Control's own site is as it was: the shell's page under control's CSP,
 /// and `/control.json` says where the platform page is.
 #[tokio::test]

@@ -14,6 +14,8 @@ import { render, type ComponentChildren } from "preact";
 // CSS, which turns the app's cascade around.
 import "./doc-view.css";
 import { DocBlock, type DocState } from "../shared/docs/doc-render";
+import { protoOfViewer } from "../shared/ui/prototype-messages";
+import { setProtoOrigin } from "../shared/ui/prototype-frame";
 import { Broken, keyFromHash, openSnapshot, toBase64, type Opened } from "./doc-link";
 
 type View =
@@ -163,6 +165,10 @@ const light = matchMedia("(prefers-color-scheme: light)");
 const scheme = () => (document.documentElement.dataset.scheme = light.matches ? "light" : "dark");
 scheme();
 light.addEventListener("change", scheme);
+// A prototype can't run under this page's CSP by srcdoc: its frame is the
+// proto origin's runner (#506), or, with no block domain, a note. A stranger's
+// code runs only when the reader clicks "Run prototype".
+setProtoOrigin(protoOfViewer(location), true);
 
 const root = document.getElementById("root")!;
 const draw = (view: View) => {
