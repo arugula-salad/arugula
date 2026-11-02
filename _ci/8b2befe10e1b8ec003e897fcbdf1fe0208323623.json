@@ -1,0 +1,64 @@
+{
+  "schema": 1,
+  "commit": "8b2befe10e1b8ec003e897fcbdf1fe0208323623",
+  "branch": "main",
+  "state": "pending",
+  "at": "2026-11-02T03:35:08Z",
+  "phases": {
+    "lint": {
+      "verdict": "pending",
+      "build": "newest",
+      "runs": [
+        {
+          "name": "suite-changed",
+          "id": 125080305410,
+          "conclusion": null,
+          "url": "https://github.com/arugula-salad/arugula/actions/runs/41383722338/job/125080305410"
+        }
+      ]
+    },
+    "build": {
+      "verdict": "pending",
+      "build": "newest",
+      "runs": []
+    },
+    "test": {
+      "verdict": "pending",
+      "build": "newest",
+      "runs": [],
+      "culprit": "cc82a471d9024c696ee2d6978caca4650880f0ac"
+    },
+    "e2e": {
+      "verdict": "pending",
+      "build": "newest",
+      "runs": []
+    },
+    "claims": {
+      "verdict": "pending",
+      "build": "newest",
+      "runs": []
+    },
+    "macos": {
+      "verdict": "pending",
+      "build": "newest",
+      "runs": []
+    },
+    "windows": {
+      "verdict": "pending",
+      "build": "newest",
+      "runs": []
+    },
+    "windows-desktop": {
+      "verdict": "pending",
+      "build": "newest",
+      "runs": [
+        {
+          "name": "desktop",
+          "id": 125080011768,
+          "conclusion": null,
+          "url": "https://github.com/arugula-salad/arugula/actions/runs/41383722312/job/125080011768"
+        }
+      ]
+    }
+  }
+}
