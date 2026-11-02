@@ -3211,10 +3211,10 @@ async fn an_agent_reads_and_writes_a_board_where_the_flag_is_on() {
 }
 
 /// `link_doc` links a project Doc (pdc_…) or a Doc kept on this machine to a
-/// board: in the strip, or with `row` on a row as a reference. A machine's Doc
+/// board: in the strip, or with `row` on a row. A machine's Doc
 /// goes with this machine's id and the title it has here; an id nothing on
 /// this machine has is refused before anything goes out. `unlink_doc` takes
-/// a strip entry (bdc_…) or a reference (att_…) off, and nothing else.
+/// a Doc (bdc_…) off, and nothing else.
 #[cfg(feature = "labs")]
 #[tokio::test(flavor = "multi_thread")]
 async fn an_agent_links_docs_to_a_board() {
@@ -3270,15 +3270,15 @@ async fn an_agent_links_docs_to_a_board() {
         json!({ "pointer": { "kind": "machine_doc", "machine": keys.id(), "doc": local, "title": "Perf notes" } })
     );
 
-    // On a row, by its item, as a reference.
+    // On a row, by its item.
     let on_row =
         call(&s, "board_write", json!({ "kind": "link_doc", "board": "brd_1", "doc": pdc, "row": "#12" })).await;
     assert!(on_row["summary"].as_str().unwrap().contains("Linked the Doc to #12"), "{on_row}");
     assert_eq!(
         posts()[2],
         (
-            "POST /api/daemon/boards/brd_1/attachments".to_owned(),
-            json!({ "row": "row_1", "pointer": { "kind": "doc", "id": pdc }, "role": "reference" })
+            "POST /api/daemon/boards/brd_1/docs".to_owned(),
+            json!({ "pointer": { "kind": "doc", "id": pdc }, "row": "row_1" })
         )
     );
 
@@ -3293,11 +3293,16 @@ async fn an_agent_links_docs_to_a_board() {
     );
     assert_eq!(posts().len(), 3, "nothing went out for them");
 
-    // Unlink: a strip entry, a reference; nothing else.
+    // Unlink: a Doc by its bdc_ id; nothing else.
     call(&s, "board_write", json!({ "kind": "unlink_doc", "board": "brd_1", "id": "bdc_1" })).await;
     assert!(posts().iter().any(|(a, _)| a == "DELETE /api/daemon/boards/brd_1/docs/bdc_1"), "{:?}", posts());
-    let refusal = refused(&s, "board_write", json!({ "kind": "unlink_doc", "board": "brd_1", "id": "att_1" })).await;
-    assert!(refusal.contains("only the attachments its own machine made"), "the platform's refusal: {refusal}");
+    let n = posts().len();
+    assert!(
+        refused(&s, "board_write", json!({ "kind": "unlink_doc", "board": "brd_1", "id": "att_1" }))
+            .await
+            .contains("bdc_")
+    );
+    assert_eq!(posts().len(), n, "an attachment is not a Doc: nothing went out");
     assert!(
         refused(&s, "board_write", json!({ "kind": "unlink_doc", "board": "brd_1", "id": "row_1" }))
             .await

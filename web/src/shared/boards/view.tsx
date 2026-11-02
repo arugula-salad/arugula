@@ -764,7 +764,16 @@ function Row({
           )}
           {current.length > 0 && (
             <div class="board-line board-chips" data-board-attachments>
-              {current.map((a) => (a.role === "reference" ? <DocLink key={a.id} d={{ ...a.doc!, pointer: a.pointer }} project={project} platform={platform} /> : <Chip key={a.id} a={a} platform={platform} />))}
+              {current.map((a) => (
+                <Chip key={a.id} a={a} platform={platform} />
+              ))}
+            </div>
+          )}
+          {(r.docs ?? []).length > 0 && (
+            <div class="board-line board-chips" data-board-row-docs>
+              {(r.docs ?? []).map((d) => (
+                <DocLink key={d.id} d={d} project={project} platform={platform} />
+              ))}
             </div>
           )}
           {earlier.length > 0 && (
@@ -856,7 +865,6 @@ function Drawer({ r, platform, close, project, others, write, act, id }: { r: Bo
   }, []);
   const title = isCard(r.live) ? r.live.title : pointerLabel(r.pointer, r.live) || "Note";
   const evidence = r.attachments.filter((a) => a.role === "proof");
-  const attached = r.attachments.filter((a) => a.role !== "reference");
   const readable = r.pointer.kind === "issue" || (r.pointer.kind === "forge_item" && r.live?.provider !== "plane");
   const external = r.pointer.kind === "forge_item" || r.pointer.kind === "link";
   return (
@@ -931,10 +939,10 @@ function Drawer({ r, platform, close, project, others, write, act, id }: { r: Bo
       )}
       {(r.relations?.length || (write && itemId(r))) && <Relations r={r} project={project} others={others} write={write} act={act} id={id} />}
       <RowDocs r={r} project={project} platform={platform} write={write} act={act} id={id} />
-      {attached.length > 0 && (
+      {r.attachments.length > 0 && (
         <section data-board-drawer-attachments>
           <h3>Attached</h3>
-          {attached.map((a) => (
+          {r.attachments.map((a) => (
             <div key={a.id} class="board-drawer-attached">
               <Chip a={a} platform={platform} facts="all" />
               {write && holdsRow(a) && (
@@ -963,18 +971,18 @@ function Drawer({ r, platform, close, project, others, write, act, id }: { r: Bo
   );
 }
 
-/** A row's Docs (#517): the ones attached to it as references, its spike or research. They move no lane and prove nothing. Writers link a project Doc and take one off. */
+/** A row's Docs (#517): its spike or research. They move no lane and prove nothing. Writers link a project Doc and take one off. */
 function RowDocs({ r, project, platform, write, act, id }: { r: BoardRow; project: string; platform: (path: string) => string | undefined; write: boolean; act: Act; id: string }) {
   const [picking, setPicking] = useState(false);
-  const refs = r.attachments.filter((a) => a.role === "reference");
+  const refs = r.docs ?? [];
   if (!refs.length && !write) return null;
-  const taken = new Set(refs.flatMap((a) => (a.pointer.kind === "doc" ? [a.pointer.id] : [])));
+  const taken = new Set(refs.flatMap((d) => (d.pointer.kind === "doc" ? [d.pointer.id] : [])));
   return (
     <section data-board-drawer-docs>
       <h3>Docs</h3>
       <div class="board-line board-chips">
-        {refs.map((a) => (
-          <DocLink key={a.id} d={{ ...a.doc!, pointer: a.pointer }} project={project} platform={platform} remove={write ? () => void act(() => boards.detach(id, a.id)) : undefined} />
+        {refs.map((d) => (
+          <DocLink key={d.id} d={d} project={project} platform={platform} remove={write ? () => void act(() => boards.removeDoc(id, d.id)) : undefined} />
         ))}
         {write && !picking && (
           <button type="button" class="board-add" data-board-drawer-doc-add onClick={() => setPicking(true)}>
@@ -982,7 +990,7 @@ function RowDocs({ r, project, platform, write, act, id }: { r: BoardRow; projec
           </button>
         )}
       </div>
-      {picking && <DocPicker project={project} taken={taken} pick={(p) => act(() => boards.attach(id, r.id, "reference", p))} close={() => setPicking(false)} />}
+      {picking && <DocPicker project={project} taken={taken} pick={(p) => act(() => boards.addDoc(id, p, r.id))} close={() => setPicking(false)} />}
     </section>
   );
 }

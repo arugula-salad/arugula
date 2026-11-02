@@ -1,6 +1,5 @@
-//! A board's Docs (Arugula #517): a strip of Docs under the goal
-//! (`board_docs`), and a Doc on one row as a `reference` attachment.
-//! A Doc is a project Doc of the board's own project (`pdc_…`), or a Doc
+//! A board's Docs (Arugula #517): a strip of Docs under the goal, and Docs
+//! on one row (`board_docs`, `row_id`). A Doc is a project Doc of the board's own project (`pdc_…`), or a Doc
 //! block on a machine, which an agent of that machine links
 //! (`MachineDoc`: the title is a snapshot, since the machine may be off).
 //!
@@ -11,9 +10,8 @@
 //! already answers the board as it is. A closed board's Docs stay
 //! editable, as its rows do.
 //!
-//! **What a Doc is not:** a `reference` is read by nothing that works out
-//! a lane, the ready set, progress or a proof ([`super::assess`] takes
-//! only `work` and `proof`).
+//! **What a Doc is not:** a row's Doc is no attachment: nothing that works
+//! out a lane, the ready set, progress or a proof ever reads it.
 
 use std::{collections::HashMap, sync::Arc};
 
@@ -72,53 +70,20 @@ pub(super) fn doc_ok(
     }
 }
 
-/// What a project Doc's chip says, from its head; a Doc that is gone says so.
-pub(super) fn project_chip(head: Option<&db::Head>) -> wire::DocChip {
-    match head {
-        Some(h) => wire::DocChip {
-            title: h.title.clone(),
-            sections: Some(h.sections),
-            written: Some(h.written),
-            missing: false,
-            machine_name: None,
-        },
-        None => wire::DocChip {
-            title: wire::DOC_GONE.to_owned(),
-            sections: None,
-            written: None,
-            missing: true,
-            machine_name: None,
-        },
-    }
-}
-
-/// The strip as a read answers it. `names` are the machines' names by id.
-pub(super) fn view(strip: Vec<db::Strip>, names: &HashMap<String, String>) -> Vec<wire::BoardDoc> {
+/// The Docs of a strip or a row as a read answers them: a project Doc by its
+/// title and sections now (one that is gone says so), a machine Doc by the
+/// title it had and its machine's name. `names` are the machines' names by id.
+pub(super) fn view(docs: Vec<db::Strip>, names: &HashMap<String, String>) -> Vec<wire::BoardDoc> {
     let name = |m: &str| names.get(m).filter(|n| !n.is_empty()).cloned().unwrap_or_else(|| "a machine".to_owned());
-    strip
-        .into_iter()
+    docs.into_iter()
         .map(|s| {
-            let (chip, machine_name) = match &s.pointer {
-                wire::Pointer::MachineDoc { machine, title, .. } => (
-                    wire::DocChip {
-                        title: title.clone(),
-                        sections: None,
-                        written: None,
-                        missing: false,
-                        machine_name: None,
-                    },
-                    Some(name(machine)),
-                ),
-                _ => (project_chip(s.head.as_ref()), None),
-            };
-            wire::BoardDoc {
+            let mut d = wire::BoardDoc {
                 id: s.id,
-                pointer: s.pointer,
-                title: chip.title,
-                sections: chip.sections,
-                written: chip.written,
-                missing: chip.missing,
-                machine_name,
+                title: s.title,
+                sections: None,
+                written: None,
+                missing: false,
+                machine_name: None,
                 added_by: s.added_by,
                 agent: s.agent.map(|m| arugula_control_wire::chat::ChatAgent {
                     machine_name: names.get(&m).cloned().unwrap_or_default(),
@@ -126,17 +91,27 @@ pub(super) fn view(strip: Vec<db::Strip>, names: &HashMap<String, String>) -> Ve
                     session: None,
                 }),
                 created_at: s.created_at,
+                pointer: s.pointer,
+            };
+            match (&d.pointer, s.head) {
+                (wire::Pointer::MachineDoc { machine, .. }, _) => d.machine_name = Some(name(machine)),
+                (_, Some(h)) => (d.title, d.sections, d.written) = (h.title, Some(h.sections), Some(h.written)),
+                (_, None) => (d.title, d.missing) = (wire::DOC_GONE.to_owned(), true),
             }
+            d
         })
         .collect()
 }
 
-/// Link a Doc to the board's strip, last. One linked already is not linked
-/// again.
+/// Link a Doc to the board's strip, or with `a.row` to that row, last. One
+/// linked there already is not linked again.
 pub async fn add(app: &Platform, by: Actor<'_>, id: &str, a: &wire::AddDoc) -> Result<wire::BoardView, ApiError> {
     let board = board_place(app, by, id, true).await?;
+    if let Some(row) = &a.row {
+        id_ok(row, "row").map_err(|_| bad("expected a row id that starts row_"))?;
+    }
     let pointer = doc_ok(app, by, &board.project, &a.pointer)?;
-    let said = match app.db.add_board_doc(id, &pointer, by.account, by.agent, now_ms())? {
+    let said = match app.db.add_board_doc(id, a.row.as_deref(), &pointer, by.account, by.agent, now_ms())? {
         Ok(db::Added::New(_)) => None,
         Ok(db::Added::Already(_)) => {
             Some("that Doc is linked to this board already: it was not linked again".to_owned())

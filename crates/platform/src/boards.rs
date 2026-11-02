@@ -105,6 +105,7 @@ use crate::{
     trackers,
 };
 use arugula_control_wire::boards::Category;
+use crate::db::boards_docs as db_docs;
 use lanes::{Fact, Pr, Primary, github_category, plane_category};
 use refs::{IssueKey, Refs, Source, references};
 
@@ -825,7 +826,7 @@ async fn read(app: &Platform, account: &str, id: &str) -> Result<wire::BoardView
     let stored = app.db.board_stored(id)?.ok_or_else(no_board)?;
     let mut machines: Vec<String> = stored.rows.iter().filter_map(|e| e.agent.clone()).collect();
     machines.extend(stored.attachments.iter().filter_map(|a| match &a.pointer {
-        wire::Pointer::Block { machine, .. } | wire::Pointer::MachineDoc { machine, .. } => Some(machine.clone()),
+        wire::Pointer::Block { machine, .. } => Some(machine.clone()),
         _ => None,
     }));
     let strip = app.db.board_docs(id)?;
@@ -867,15 +868,14 @@ async fn read(app: &Platform, account: &str, id: &str) -> Result<wire::BoardView
         }
     };
     let asks = asks::Asks::load(app, account, &project, id).await?;
-    let doc_ids: Vec<&str> = stored
-        .attachments
-        .iter()
-        .filter_map(|a| match &a.pointer {
-            wire::Pointer::Doc { id } => Some(id.as_str()),
-            _ => None,
-        })
-        .collect();
-    let heads = app.db.project_doc_heads(&project, &doc_ids)?;
+    let mut row_docs: HashMap<String, Vec<db_docs::Strip>> = HashMap::new();
+    let mut strip_only = vec![];
+    for d in strip {
+        match d.row.clone() {
+            Some(r) => row_docs.entry(r).or_default().push(d),
+            None => strip_only.push(d),
+        }
+    }
     let mut zones: Vec<wire::Zone> = wire::Lane::ALL
         .iter()
         .map(|l| wire::Zone {
@@ -914,32 +914,7 @@ async fn read(app: &Platform, account: &str, id: &str) -> Result<wire::BoardView
             .map(|a| {
                 let (live, block) = chip(&a.pointer);
                 let released = a.released_at.is_some();
-                let doc = match &a.pointer {
-                    wire::Pointer::Doc { id } => Some(docs::project_chip(heads.get(id))),
-                    wire::Pointer::MachineDoc { machine, title, .. } => Some(wire::DocChip {
-                        title: title.clone(),
-                        sections: None,
-                        written: None,
-                        missing: false,
-                        machine_name: Some(
-                            names
-                                .get(machine)
-                                .filter(|n| !n.is_empty())
-                                .cloned()
-                                .unwrap_or_else(|| "a machine".to_owned()),
-                        ),
-                    }),
-                    _ => None,
-                };
-                wire::Attachment {
-                    id: a.id.clone(),
-                    role: a.role,
-                    pointer: a.pointer.clone(),
-                    live,
-                    block,
-                    released,
-                    doc,
-                }
+                wire::Attachment { id: a.id.clone(), role: a.role, pointer: a.pointer.clone(), live, block, released }
             })
             .collect();
         if let Some(g) = groups.iter_mut().find(|g| Some(&g.id) == e.zone.as_ref())
@@ -976,6 +951,7 @@ async fn read(app: &Platform, account: &str, id: &str) -> Result<wire::BoardView
             },
             lane: a.lane,
             attachments,
+            docs: docs::view(row_docs.remove(&e.id).unwrap_or_default(), &names),
             proof: a.proof,
             group: e.zone.clone(),
             marks,
@@ -993,7 +969,7 @@ async fn read(app: &Platform, account: &str, id: &str) -> Result<wire::BoardView
             updated_at: e.updated_at,
         });
     }
-    Ok(wire::BoardView { board, zones, groups, docs: docs::view(strip, &names), ready, said: None })
+    Ok(wire::BoardView { board, zones, groups, docs: docs::view(strip_only, &names), ready, said: None })
 }
 
 /// The board `id`, in `project`, changed: pages showing it read it again
@@ -1149,7 +1125,7 @@ fn group_id_ok(id: &str) -> Result<(), ApiError> {
 fn primary_ok(p: &wire::Pointer) -> Result<(), ApiError> {
     match p {
         wire::Pointer::Doc { .. } | wire::Pointer::MachineDoc { .. } => Err(bad(
-            "a row's item is an issue or a PR: attach a Doc to the row as a reference, or link it to the board's Docs",
+            "a row's item is an issue or a PR: link it to the board's Docs, or to a row's",
         )),
         wire::Pointer::Run { .. } | wire::Pointer::Block { .. } | wire::Pointer::Workspace { .. } => Err(bad(
             "a row's item is an issue or a PR (a note row may carry a link): attach a run or an agent block to the row \
@@ -1500,30 +1476,14 @@ pub async fn attach(app: &Platform, by: Actor<'_>, id: &str, a: &wire::AttachRow
         return Err(bad(match a.role {
             wire::AttachRole::Work => "work attached to a row is a PR, an agent block or a run",
             wire::AttachRole::Proof => "proof attached to a row is a run or a link",
-            wire::AttachRole::Reference => "a reference attached to a row is a Doc",
         }));
     }
     pointer_ok(&a.pointer)?;
-    let mut a = a.clone();
-    if a.role == wire::AttachRole::Reference {
-        a.pointer = docs::doc_ok(app, by, &board.project, &a.pointer)?;
-    }
-    let a = &a;
     let stored = app.db.board_stored(id)?.ok_or_else(no_board)?;
     if !stored.rows.iter().any(|r| r.id == a.row) {
         return Err(refused(Refused::Missing("no such row")));
     }
-    // A Doc may be a reference on several rows, but once on each.
-    let said = if a.role == wire::AttachRole::Reference {
-        stored
-            .attachments
-            .iter()
-            .any(|x| x.row == a.row && x.role == a.role && x.pointer == a.pointer)
-            .then(|| format!("that Doc is a reference on row {} already: it was not attached again", a.row))
-    } else {
-        already(&stored, &a.pointer)
-    };
-    if let Some(said) = said {
+    if let Some(said) = already(&stored, &a.pointer) {
         let mut v = read(app, by.account, id).await?;
         v.said = Some(said);
         return Ok(v);

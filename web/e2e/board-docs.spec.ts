@@ -174,7 +174,7 @@ test("a Doc on a row is in its drawer, moves no lane, and the Doc says which boa
 test("Bob, a viewer on a phone, sees the Docs and none of the buttons", async () => {
   test.setTimeout(90_000);
   // Alice links one again for him to see.
-  expect((await api(alice, "POST", `/api/boards/${board}/attachments`, { row: rowId, role: "reference", pointer: { kind: "machine_doc", machine: "mch_0123", doc: "00112233445566ff", title: "Perf notes" } })).status).toBe(200);
+  expect((await api(alice, "POST", `/api/boards/${board}/docs`, { row: rowId, pointer: { kind: "machine_doc", machine: "mch_0123", doc: "00112233445566ff", title: "Perf notes" } })).status).toBe(200);
   await platform(bob, `/p/${project}/boards/${board}`);
   await expect(strip(bob)).toBeVisible({ timeout: 15_000 });
   await expect(chip(strip(bob), PLAN)).toBeVisible();

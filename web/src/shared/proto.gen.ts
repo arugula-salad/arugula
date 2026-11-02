@@ -219,7 +219,7 @@ can_answer: boolean, created_at: number, };
 /**
  * What an attachment is for.
  */
-export type BoardAttachRole = "work" | "proof" | "reference";
+export type BoardAttachRole = "work" | "proof";
 
 /**
  * Something attached to a row.
@@ -242,11 +242,7 @@ block?: BoardBlockState | null,
  * A block that a newer agent took the row from (`take`): it is an
  * earlier agent whatever it reports, and holds no claim.
  */
-released?: boolean, 
-/**
- * A `reference` attachment's Doc, as the strip shows it.
- */
-doc?: BoardDocChip, };
+released?: boolean, };
 
 /**
  * What a daemon says of one of its own agent blocks, and all it says
@@ -290,7 +286,7 @@ export type BoardCategory = "triage" | "backlog" | "unstarted" | "started" | "co
 export type BoardDiffstat = { files: number, added: number, removed: number, };
 
 /**
- * One Doc in a board's strip.
+ * One Doc of a board: in its strip, or on one row (a row's [`Row::docs`]).
  */
 export type BoardDoc = { 
 /**
@@ -317,25 +313,6 @@ added_by: string,
  * The machine whose agent linked it, if one did.
  */
 agent?: ChatAgent, created_at: number, };
-
-/**
- * What a chip for a Doc says: its title, and for a project Doc how many
- * sections it has and how many are written.
- */
-export type BoardDocChip = { 
-/**
- * A project Doc's title now ("a deleted Doc" once it is gone), or a
- * machine Doc's as it was when linked.
- */
-title: string, sections?: number, written?: number, 
-/**
- * A project Doc that was deleted.
- */
-missing?: boolean, 
-/**
- * A machine Doc's machine, by name.
- */
-machine_name?: string, };
 
 /**
  * Zone (a group, in a database; a lane, on the wire) or row.
@@ -537,6 +514,11 @@ lane: BoardLane,
  * Work and proof attached to the row, oldest first.
  */
 attachments: Array<BoardAttachment>, 
+/**
+ * The Docs linked to the row (#517): its spike or research, in order.
+ * They move no lane and prove nothing.
+ */
+docs?: Array<BoardDoc>, 
 /**
  * Set only on a Done row that is proven.
  */

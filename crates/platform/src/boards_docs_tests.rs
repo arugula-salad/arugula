@@ -1,9 +1,9 @@
 //! A board's Docs (Arugula #517) through the platform's routes: the strip
-//! (link, unlink, move, the limit), a Doc on a row as a reference that moves
+//! (link, unlink, move, the limit), a Doc on a row that moves
 //! no lane and proves nothing, a Doc of another project refused, a deleted
 //! Doc read as missing, and what the Doc's page says of its boards.
 
-use arugula_control_wire::boards::{BOARD_DOCS_MAX, agent_board_attachments, agent_board_doc, agent_board_docs};
+use arugula_control_wire::boards::{BOARD_DOCS_MAX, agent_board_doc, agent_board_docs};
 use serde_json::{Value, json};
 
 use super::{
@@ -50,6 +50,17 @@ async fn doc(base: &str, who: &str, project: &str, title: &str, sections: usize,
 
 async fn link(base: &str, who: &str, board: &str, pointer: Value) -> (u16, Value) {
     call(base, who, "POST", &format!("/api/boards/{board}/docs"), Some(json!({ "pointer": pointer }))).await
+}
+
+/// Link a Doc to a row.
+async fn link_row(base: &str, who: &str, board: &str, row: &str, pointer: Value) -> (u16, Value) {
+    call(base, who, "POST", &format!("/api/boards/{board}/docs"), Some(json!({ "pointer": pointer, "row": row }))).await
+}
+
+/// The titles of a row's Docs.
+fn row_titles(v: &Value, row: &str) -> Vec<String> {
+    let docs = row_in(v, row).get("docs").and_then(Value::as_array).cloned().unwrap_or_default();
+    docs.iter().map(|d| d["title"].as_str().unwrap().to_owned()).collect()
 }
 
 fn titles(v: &Value) -> Vec<&str> {
@@ -156,9 +167,7 @@ async fn another_projects_doc_is_refused() {
 
     let (st, v) = link(&base, "a", &id, json!({ "kind": "doc", "id": theirs })).await;
     assert_eq!(st, 404, "{v}");
-    let (st, v) =
-        attach(&base, "a", &id, json!({ "row": row, "role": "reference", "pointer": { "kind": "doc", "id": theirs } }))
-            .await;
+    let (st, v) = link_row(&base, "a", &id, &row, json!({ "kind": "doc", "id": theirs })).await;
     assert_eq!(st, 404, "{v}");
     assert_eq!(
         link(&base, "a", &id, json!({ "kind": "doc", "id": "pdc_00000000000000000000000000000000" })).await.0,
@@ -174,10 +183,10 @@ async fn another_projects_doc_is_refused() {
     assert_eq!(n, 0);
 }
 
-/// A reference is a Doc on a row: it takes only a Doc, and a Doc takes only
-/// a reference; it is never a row's item.
+/// A Doc is never an attachment or a row's item; linked to a row it is that
+/// row's, once, in its order, and an editor takes it off.
 #[tokio::test]
-async fn only_a_doc_is_a_reference_and_a_doc_is_only_a_reference() {
+async fn a_doc_is_linked_to_a_row_and_is_never_its_item_or_an_attachment() {
     let (hub, _app, base, t, _u) = seeded().await;
     hub.flag_named("team:t", FLAG, true);
     let id = board(&base, &t).await;
@@ -190,40 +199,101 @@ async fn only_a_doc_is_a_reference_and_a_doc_is_only_a_reference() {
         let (st, v) = attach(&base, "a", &id, json!({ "row": row, "role": role, "pointer": doc_ptr })).await;
         assert_eq!(st, 400, "{role}: {v}");
     }
-    let link_ptr = json!({ "kind": "link", "url": "https://example.com/x" });
-    let (st, v) = attach(&base, "a", &id, json!({ "row": row, "role": "reference", "pointer": link_ptr })).await;
-    assert_eq!(st, 400, "{v}");
     let (st, v) = put(&base, "a", &id, json!({ "entry": "row", "pointer": doc_ptr })).await;
     assert_eq!(st, 400, "a Doc is not a row's item: {v}");
 
-    let (st, v) = attach(&base, "a", &id, json!({ "row": row, "role": "reference", "pointer": doc_ptr })).await;
+    let (st, v) = link_row(&base, "a", &id, &row, doc_ptr.clone()).await;
     assert_eq!(st, 200, "{v}");
-    let att = &row_in(&v, &row)["attachments"][0];
-    assert_eq!(
-        (&att["role"], &att["doc"]["title"], &att["doc"]["written"]),
-        (&json!("reference"), &json!("The spike"), &json!(1)),
-        "{v}"
-    );
+    let doc0 = &row_in(&v, &row)["docs"][0];
+    assert_eq!((&doc0["title"], &doc0["written"], &doc0["sections"]), (&json!("The spike"), &json!(1), &json!(2)), "{v}");
+    assert!(row_in(&v, &row)["attachments"].as_array().is_none_or(Vec::is_empty), "no attachment: {v}");
+    assert!(v["docs"].as_array().unwrap().is_empty(), "not in the strip: {v}");
     // Once on a row; the strip is a list of its own.
-    let (_, v) = attach(&base, "a", &id, json!({ "row": row, "role": "reference", "pointer": doc_ptr })).await;
-    assert_eq!(row_in(&v, &row)["attachments"].as_array().unwrap().len(), 1, "{v}");
+    let (_, v) = link_row(&base, "a", &id, &row, doc_ptr.clone()).await;
+    assert_eq!(row_titles(&v, &row), ["The spike"], "{v}");
     assert!(v["said"].as_str().unwrap().contains("already"), "{v}");
     let (_, v) = link(&base, "a", &id, doc_ptr.clone()).await;
-    assert_eq!(titles(&v), ["The spike"], "{v}");
+    assert_eq!((titles(&v), row_titles(&v, &row)), (vec!["The spike"], vec!["The spike".to_owned()]), "{v}");
+    // A row that isn't there.
+    assert_eq!(link_row(&base, "a", &id, "row_00000000000000000000000000000000", doc_ptr.clone()).await.0, 404);
 
-    // A viewer attaches nothing; an editor takes it off.
-    let (st, _) = attach(&base, "x", &id, json!({ "row": row, "role": "reference", "pointer": doc_ptr })).await;
-    assert_eq!(st, 403);
-    let att_id = row_in(&v, &row)["attachments"][0]["id"].as_str().unwrap().to_owned();
-    let (st, v) = call(&base, "b", "DELETE", &format!("/api/boards/{id}/attachments/{att_id}"), None).await;
+    // A viewer links nothing; an editor takes it off, by the same route as the strip's.
+    assert_eq!(link_row(&base, "x", &id, &row, doc_ptr.clone()).await.0, 403);
+    let entry = row_in(&v, &row)["docs"][0]["id"].as_str().unwrap().to_owned();
+    let (st, v) = call(&base, "b", "DELETE", &format!("/api/boards/{id}/docs/{entry}"), None).await;
     assert_eq!(st, 200, "{v}");
-    assert!(row_in(&v, &row)["attachments"].as_array().unwrap().is_empty(), "{v}");
+    assert!(row_titles(&v, &row).is_empty() && titles(&v) == ["The spike"], "the strip's stays: {v}");
 }
 
-/// A reference moves no lane, is no work, proves nothing and doesn't change
+/// A Doc is once in the strip and once on each row (the strip's NULL row
+/// counts as one place); a row's Docs have their own order and limit, move
+/// only among themselves, and go with the row.
+#[tokio::test]
+async fn row_docs_are_once_per_row_in_their_own_order_and_go_with_the_row() {
+    let (hub, app, base, t, _u) = seeded().await;
+    hub.flag_named("team:t", FLAG, true);
+    let id = board(&base, &t).await;
+    let (a, b, c) = (
+        doc(&base, "a", &t, "A", 1, 1).await,
+        doc(&base, "a", &t, "B", 1, 1).await,
+        doc(&base, "a", &t, "C", 1, 1).await,
+    );
+    let (_, v) = put(&base, "a", &id, json!({ "entry": "row", "note": "one" })).await;
+    let r1 = v["zones"][0]["rows"][0]["id"].as_str().unwrap().to_owned();
+    let (_, v) = put(&base, "a", &id, json!({ "entry": "row", "note": "two" })).await;
+    let r2 = v["zones"][0]["rows"][1]["id"].as_str().unwrap().to_owned();
+    let ptr = |d: &str| json!({ "kind": "doc", "id": d });
+
+    // The same Doc on two rows and in the strip, three places; twice in none.
+    for _ in 0..2 {
+        link(&base, "a", &id, ptr(&a)).await;
+        link_row(&base, "a", &id, &r1, ptr(&a)).await;
+        link_row(&base, "a", &id, &r2, ptr(&a)).await;
+    }
+    let (_, v) = link_row(&base, "a", &id, &r1, ptr(&b)).await;
+    let (_, v2) = link_row(&base, "a", &id, &r1, ptr(&c)).await;
+    assert_eq!((titles(&v2), row_titles(&v2, &r1), row_titles(&v2, &r2)), (vec!["A"], vec!["A".into(), "B".into(), "C".into()], vec!["A".into()]), "{v}");
+
+    // Moving: within the row only.
+    let (first, last) = (row_in(&v2, &r1)["docs"][0]["id"].as_str().unwrap(), row_in(&v2, &r1)["docs"][2]["id"].as_str().unwrap());
+    let strip = v2["docs"][0]["id"].as_str().unwrap();
+    let mv = |doc: &str, before: Option<&str>| {
+        let (path, body) = (format!("/api/boards/{id}/docs/{doc}/move"), json!({ "before": before }));
+        let base = base.clone();
+        async move { call(&base, "a", "POST", &path, Some(body)).await }
+    };
+    let (st, v) = mv(last, Some(first)).await;
+    assert_eq!((st, row_titles(&v, &r1)), (200, vec!["C".to_owned(), "A".into(), "B".into()]), "{v}");
+    assert_eq!(mv(last, Some(strip)).await.0, 404, "not before a Doc of another place");
+    assert_eq!(titles(&v), ["A"], "{v}");
+
+    // The limit is per row.
+    for i in 0..BOARD_DOCS_MAX {
+        let new = crate::db::project_docs::NewDoc {
+            project: &t,
+            title: &format!("Doc {i}"),
+            made_by: "a",
+            made_by_session: None,
+            sections: &[],
+        };
+        let d = app.db.create_project_doc(&new, 1, 100).unwrap().unwrap().id;
+        let (st, v) = link_row(&base, "a", &id, &r2, ptr(&d)).await;
+        assert_eq!(st, if i + 1 < BOARD_DOCS_MAX { 200 } else { 400 }, "{i}: {v}");
+    }
+
+    // A row's Docs go with it; the strip's and the other row's stay.
+    let (st, v) = call(&base, "a", "DELETE", &format!("/api/boards/{id}/entries/{r1}"), None).await;
+    assert_eq!(st, 200, "{v}");
+    assert_eq!(titles(&v), ["A"], "{v}");
+    assert_eq!(row_titles(&v, &r2).len() as u64, BOARD_DOCS_MAX, "{v}");
+    let n: u64 = app.db.c().query_row("SELECT count(*) FROM board_docs WHERE row_id = ?1", params![r1], |r| r.get(0)).unwrap();
+    assert_eq!(n, 0);
+}
+
+/// A row's Doc moves no lane, is no work, proves nothing and doesn't change
 /// the board's progress or its ready set.
 #[tokio::test]
-async fn a_reference_never_moves_a_lane_or_proves() {
+async fn a_row_doc_never_moves_a_lane_or_proves() {
     let (hub, app, base, t, _u) = seeded().await;
     hub.flag_named("team:t", FLAG, true);
     let id = board(&base, &t).await;
@@ -255,9 +325,7 @@ async fn a_reference_never_moves_a_lane_or_proves() {
     let d = doc(&base, "a", &t, "The spike", 1, 1).await;
     let mut after = Value::Null;
     for row in [&open_row, &shut_row] {
-        let (st, v) =
-            attach(&base, "a", &id, json!({ "row": row, "role": "reference", "pointer": { "kind": "doc", "id": d } }))
-                .await;
+        let (st, v) = link_row(&base, "a", &id, row, json!({ "kind": "doc", "id": d })).await;
         assert_eq!(st, 200, "{v}");
         after = v;
     }
@@ -283,7 +351,7 @@ async fn a_deleted_doc_reads_as_missing() {
     let (_, v) = put(&base, "a", &id, json!({ "entry": "row", "note": "the plan" })).await;
     let row = v["zones"][0]["rows"][0]["id"].as_str().unwrap().to_owned();
     link(&base, "a", &id, json!({ "kind": "doc", "id": d })).await;
-    attach(&base, "a", &id, json!({ "row": row, "role": "reference", "pointer": { "kind": "doc", "id": d } })).await;
+    link_row(&base, "a", &id, &row, json!({ "kind": "doc", "id": d })).await;
 
     let (st, _) = call(&base, "a", "DELETE", &format!("/api/projects/{t}/docs/{d}"), None).await;
     assert_eq!(st, 200);
@@ -292,7 +360,7 @@ async fn a_deleted_doc_reads_as_missing() {
     let strip = &v["docs"][0];
     assert_eq!((&strip["title"], &strip["missing"]), (&json!("a deleted Doc"), &json!(true)), "{v}");
     assert!(strip.get("sections").is_none(), "{v}");
-    let chip = &row_in(&v, &row)["attachments"][0]["doc"];
+    let chip = &row_in(&v, &row)["docs"][0];
     assert_eq!((&chip["title"], &chip["missing"]), (&json!("a deleted Doc"), &json!(true)), "{v}");
     // It can still be taken off.
     let entry = strip["id"].as_str().unwrap();
@@ -320,7 +388,7 @@ async fn a_doc_says_which_boards_it_is_on() {
     let (_, v) = put(&base, "a", &two, json!({ "entry": "row", "note": "b" })).await;
     let r2 = v["zones"][0]["rows"][1]["id"].as_str().unwrap().to_owned();
     for r in [&r1, &r2] {
-        attach(&base, "a", &two, json!({ "row": r, "role": "reference", "pointer": { "kind": "doc", "id": d } })).await;
+        link_row(&base, "a", &two, r, json!({ "kind": "doc", "id": d })).await;
     }
     let (st, v) = on("x", d.clone()).await;
     assert_eq!(st, 200, "{v}");
@@ -391,20 +459,18 @@ async fn an_agent_links_its_machines_docs() {
     let (st, v) = geek(&base, "DELETE", &agent_board_doc(&id, &entry), None).await;
     assert_eq!((st, titles(&v)), (200, vec!["The plan"]), "{v}");
 
-    // On a row, as a reference; the agent can take off its own.
+    // On a row; the agent can take off its own.
     let (_, v) = put(&base, "a", &id, json!({ "entry": "row", "note": "the plan" })).await;
     let row = v["zones"][0]["rows"][0]["id"].as_str().unwrap().to_owned();
-    let (st, v) = geek(
-        &base,
-        "POST",
-        &agent_board_attachments(&id),
-        Some(json!({ "row": row, "role": "reference", "pointer": mine })),
-    )
-    .await;
+    let (st, v) =
+        geek(&base, "POST", &agent_board_docs(&id), Some(json!({ "pointer": mine, "row": row }))).await;
     assert_eq!(st, 200, "{v}");
-    let att = &row_in(&v, &row)["attachments"][0];
-    assert_eq!((&att["role"], &att["doc"]["title"]), (&json!("reference"), &json!("Perf notes")), "{v}");
-    assert!(att["doc"]["machine_name"].is_string(), "{v}");
+    let on_row = &row_in(&v, &row)["docs"][0];
+    assert_eq!((&on_row["title"], &on_row["agent"]["machine"]), (&json!("Perf notes"), &json!("geek")), "{v}");
+    assert!(on_row["machine_name"].is_string(), "{v}");
+    let entry = on_row["id"].as_str().unwrap();
+    let (st, v) = geek(&base, "DELETE", &agent_board_doc(&id, entry), None).await;
+    assert_eq!((st, row_titles(&v, &row)), (200, Vec::<String>::new()), "{v}");
 }
 
 /// A closed board keeps its rows editable, and so its Docs.

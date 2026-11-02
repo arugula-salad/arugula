@@ -1,10 +1,16 @@
 {
   "$defs": {
     "AddDoc": {
-      "description": "[`BOARD_DOCS`]' body: the Doc to link, a [`Pointer::Doc`] or a\n[`Pointer::MachineDoc`] (a machine's agent links its own machine's).",
+      "description": "[`BOARD_DOCS`]' body: the Doc to link, a [`Pointer::Doc`] or a\n[`Pointer::MachineDoc`] (a machine's agent links its own machine's), to\nthe board's strip, or with `row` (`row_…`) to that row.",
       "properties": {
         "pointer": {
           "$ref": "#/$defs/Pointer"
+        },
+        "row": {
+          "type": [
+            "string",
+            "null"
+          ]
         }
       },
       "required": [
@@ -177,11 +183,6 @@
           "const": "proof",
           "description": "Evidence that the work is done: a run or a link.",
           "type": "string"
-        },
-        {
-          "const": "reference",
-          "description": "A Doc about the row (its spike). It never moves a lane, and it isn't\nproof.",
-          "type": "string"
         }
       ]
     },
@@ -223,17 +224,6 @@
             }
           ],
           "description": "A `Block` pointer's block as its machine last reported it."
-        },
-        "doc": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/DocChip"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "description": "A `reference` attachment's Doc, as the strip shows it."
         },
         "id": {
           "description": "`att_` and 32 hex characters.",
@@ -529,7 +519,7 @@
       "type": "object"
     },
     "BoardDoc": {
-      "description": "One Doc in a board's strip.",
+      "description": "One Doc of a board: in its strip, or on one row (a row's [`Row::docs`]).",
       "properties": {
         "added_by": {
           "description": "The account that linked it (the owner, for an agent).",
@@ -937,46 +927,6 @@
       ],
       "type": "object"
     },
-    "DocChip": {
-      "description": "What a chip for a Doc says: its title, and for a project Doc how many\nsections it has and how many are written.",
-      "properties": {
-        "machine_name": {
-          "description": "A machine Doc's machine, by name.",
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "missing": {
-          "description": "A project Doc that was deleted.",
-          "type": "boolean"
-        },
-        "sections": {
-          "format": "uint32",
-          "minimum": 0,
-          "type": [
-            "integer",
-            "null"
-          ]
-        },
-        "title": {
-          "description": "A project Doc's title now (\"a deleted Doc\" once it is gone), or a\nmachine Doc's as it was when linked.",
-          "type": "string"
-        },
-        "written": {
-          "format": "uint32",
-          "minimum": 0,
-          "type": [
-            "integer",
-            "null"
-          ]
-        }
-      },
-      "required": [
-        "title"
-      ],
-      "type": "object"
-    },
     "DocOnBoard": {
       "description": "A board that lists a project Doc.",
       "properties": {
@@ -1346,7 +1296,7 @@
       ]
     },
     "MoveDoc": {
-      "description": "[`BOARD_DOC_MOVE`]'s body: the Doc it goes before; none: last.",
+      "description": "[`BOARD_DOC_MOVE`]'s body: the Doc it goes before, in the same strip or\nrow; none: last.",
       "properties": {
         "before": {
           "default": null,
@@ -1973,6 +1923,13 @@
           "format": "uint64",
           "minimum": 0,
           "type": "integer"
+        },
+        "docs": {
+          "description": "The Docs linked to the row (#517): its spike or research, in order.\nThey move no lane and prove nothing.",
+          "items": {
+            "$ref": "#/$defs/BoardDoc"
+          },
+          "type": "array"
         },
         "group": {
           "description": "The group (`zon_…`) the row belongs to, if any.",

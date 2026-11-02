@@ -23,7 +23,7 @@
 //!   refuses those (aru-123). **Nobody sets a lane:** it follows the work
 //!   (aru-125). An agent can't answer an ask.
 //! - **Docs (#517):** `link_doc` puts a Doc in the board's Docs strip, or
-//!   with `row` on one row as a reference (it never moves a lane or proves
+//!   with `row` on one row (it never moves a lane or proves
 //!   anything); `unlink_doc` takes one off. A Doc is a project Doc
 //!   (`pdc_…`) or one kept on this machine (`doc list` has its id), which
 //!   is linked with this machine's id and the title it has now.
@@ -225,8 +225,8 @@ pub struct LinkDocArgs {
 pub struct UnlinkDocArgs {
     /// The board (brd_…).
     pub board: String,
-    /// What to take off: a Docs strip entry's id (bdc_…) or a row's
-    /// reference (att_…), as board_read shows them. One your machine linked.
+    /// What to take off: a Doc's id (bdc_…), on the board's strip or on a
+    /// row, as board_read shows it. One your machine linked.
     pub id: String,
     #[serde(default)]
     pub verbose: bool,
@@ -409,13 +409,13 @@ pub(crate) const WRITE: &[Kind] = &[
     },
     Kind {
         name: "link_doc",
-        description: "Link a Doc to a board: a project Doc (pdc_…) or one kept on this machine (its id from doc list). It goes in the board's Docs strip, or with row on one row as a reference (its spike or research). A Doc never moves a lane, is no work and is no proof. One linked already is not linked again; a board lists at most 20.",
+        description: "Link a Doc to a board: a project Doc (pdc_…) or one kept on this machine (its id from doc list). It goes in the board's Docs strip, or with row on one row (its spike or research). A Doc never moves a lane, is no work and is no proof. One linked already is not linked again; a board lists at most 20.",
         schema: schema_for_type::<LinkDocArgs>,
         flag: Some(arugula_proto::flags::BOARDS),
     },
     Kind {
         name: "unlink_doc",
-        description: "Take a Doc you linked off a board: the strip entry's bdc_… id or the row reference's att_… id (board_read has them).",
+        description: "Take a Doc you linked off a board, from its strip or a row: its bdc_… id (board_read has them).",
         schema: schema_for_type::<UnlinkDocArgs>,
         flag: Some(arugula_proto::flags::BOARDS),
     },
@@ -1026,31 +1026,24 @@ async fn link_doc(c: &Call<'_>, a: LinkDocArgs) -> Out {
         Pointer::MachineDoc { machine, doc: doc.to_owned(), title }
     };
     let Some(item) = a.row.as_deref().map(str::trim).filter(|r| !r.is_empty()) else {
-        let body = serde_json::to_value(AddDoc { pointer }).map_err(|e| e.to_string())?;
+        let body = serde_json::to_value(AddDoc { pointer, row: None }).map_err(|e| e.to_string())?;
         let v = boards_call(c, Method::POST, &agent_board_docs(&a.board), Some(body)).await?;
         return board_done("Linked a Doc to the board's Docs", v, a.verbose);
     };
     let view = read_view(c, &a.board).await?;
     let row = find_row(&view, item)?;
-    let body =
-        serde_json::to_value(AttachRow { row: row.id.clone(), pointer, role: AttachRole::Reference, take: false })
-            .map_err(|e| e.to_string())?;
-    let v = boards_call(c, Method::POST, &agent_board_attachments(&a.board), Some(body)).await?;
+    let body = serde_json::to_value(AddDoc { pointer, row: Some(row.id.clone()) }).map_err(|e| e.to_string())?;
+    let v = boards_call(c, Method::POST, &agent_board_docs(&a.board), Some(body)).await?;
     let after = view_of(v)?;
     let said = after.said.as_deref().map(|s| format!(" Note: {s}.")).unwrap_or_default();
     one_row(&after, &format!("Linked the Doc to {}.{said}", row.item_label()), &row.id, a.verbose)
 }
 
-/// The board's Docs, with the ids `unlink_doc` takes; empty for none.
+/// The board's Docs and its rows', with the ids `unlink_doc` takes; empty for none.
 fn docs_line(v: &BoardView) -> Option<String> {
     let strip: Vec<String> = v.docs.iter().map(|d| format!("{} ({})", d.title, d.id)).collect();
     let refs: Vec<String> = rows(v)
-        .flat_map(|r| {
-            r.attachments.iter().filter(|a| a.role == AttachRole::Reference).map(move |a| {
-                let title = a.doc.as_ref().map_or("a Doc", |d| d.title.as_str());
-                format!("{title} ({}, on {})", a.id, r.item_label())
-            })
-        })
+        .flat_map(|r| r.docs.iter().map(move |d| format!("{} ({}, on {})", d.title, d.id, r.item_label())))
         .collect();
     if strip.is_empty() && refs.is_empty() {
         return None;
@@ -1060,7 +1053,7 @@ fn docs_line(v: &BoardView) -> Option<String> {
         parts.push(format!("Docs: {}", strip.join("; ")));
     }
     if !refs.is_empty() {
-        parts.push(format!("References: {}", refs.join("; ")));
+        parts.push(format!("Row Docs: {}", refs.join("; ")));
     }
     Some(parts.join(". "))
 }
@@ -1153,17 +1146,10 @@ pub(crate) async fn board_write(c: &Call<'_>, kind: &str, a: Value) -> Out {
         "unlink_doc" => {
             let a: UnlinkDocArgs = args(a)?;
             let id = a.id.trim();
-            let path = match id {
-                _ if id.starts_with("bdc_") => agent_board_doc(&a.board, id),
-                _ if id.starts_with("att_") => agent_board_attachment(&a.board, id),
-                _ => {
-                    return Err(
-                        "unlink_doc takes a strip entry's bdc_… id or a reference's att_… id (board_read has them)"
-                            .into(),
-                    );
-                }
-            };
-            let v = boards_call(c, Method::DELETE, &path, None).await?;
+            if !id.starts_with("bdc_") {
+                return Err("unlink_doc takes a Doc's bdc_… id (board_read has them)".into());
+            }
+            let v = boards_call(c, Method::DELETE, &agent_board_doc(&a.board, id), None).await?;
             let view = view_of(v)?;
             answer(format!("Took {id} off the board.\n{}", progress(&view)), &view, a.verbose)
         }
@@ -1367,19 +1353,21 @@ mod tests {
     }
 
     /// board_read names a board's Docs with the ids unlink_doc takes: the
-    /// strip's, and each row's references.
+    /// strip's, and each row's.
     #[test]
     fn a_boards_docs_are_named_with_their_ids() {
-        let reference = json!({ "id": "att_7", "role": "reference", "pointer": { "kind": "doc", "id": "pdc_1" },
-                                "doc": { "title": "Spike", "sections": 2, "written": 1 } });
-        let mut v =
-            board(json!([row("row_1", json!({ "kind": "issue", "id": "iss_1" }), native(12), json!([reference]))]));
-        assert_eq!(docs_line(&v), Some("References: Spike (att_7, on #12)".to_owned()));
+        let doc = json!({ "id": "bdc_7", "title": "Spike", "added_by": "a1", "created_at": 1,
+                          "pointer": { "kind": "doc", "id": "pdc_1" }, "sections": 2, "written": 1 });
+        let mut with = row("row_1", json!({ "kind": "issue", "id": "iss_1" }), native(12), json!([]));
+        with["docs"] = json!([doc]);
+        let mut v = board(json!([with]));
+        assert_eq!(docs_line(&v), Some("Row Docs: Spike (bdc_7, on #12)".to_owned()));
         v.docs = serde_json::from_value(json!([{ "id": "bdc_2", "title": "Plan", "added_by": "a1", "created_at": 1,
                                                  "pointer": { "kind": "doc", "id": "pdc_2" } }]))
         .unwrap();
-        assert_eq!(docs_line(&v), Some("Docs: Plan (bdc_2). References: Spike (att_7, on #12)".to_owned()));
+        assert_eq!(docs_line(&v), Some("Docs: Plan (bdc_2). Row Docs: Spike (bdc_7, on #12)".to_owned()));
         assert!(wire::render(&v).contains("Docs: Plan"), "{}", wire::render(&v));
+        assert!(wire::render(&v).contains("docs Spike"), "{}", wire::render(&v));
         assert_eq!(docs_line(&board(json!([]))), None);
     }
 

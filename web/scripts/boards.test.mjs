@@ -350,7 +350,7 @@ test("a board from a Plane epic says where from, links only an https url, and co
   assert.equal(leftOutLine(3), "3 done children left out");
 });
 
-test("a Doc's chip says its written sections, or the machine it is on; a reference is no PR", () => {
+test("a Doc's chip says its written sections, or the machine it is on; only work is a PR", () => {
   const doc = { kind: "doc", id: "pdc_0123456789abcdef0123456789abcdef" };
   assert.equal(docWords({ pointer: doc, sections: 5, written: 3 }), "3/5");
   assert.equal(docWords({ pointer: doc, sections: 2 }), "0/2");
@@ -367,9 +367,9 @@ test("a Doc's chip says its written sections, or the machine it is on; a referen
   assert.equal(onBoardWords({ strip: true, rows: 0 }), "Docs strip");
   assert.equal(onBoardWords({ strip: false, rows: 1 }), "1 row");
   assert.equal(onBoardWords({ strip: true, rows: 2 }), "Docs strip, 2 rows");
-  // Only work is a row's PR: a Doc attached as a reference is none.
+  // Only work is a row's PR: proof is none.
   const pr = { kind: "forge_item", id: "fi_1" };
   const live = { state: "open", kind: "pr", repo: "a/b", number: 1, title: "t" };
-  const row = { pointer: { kind: "none" }, live: null, attachments: [{ id: "att_1", role: "reference", pointer: { kind: "forge_item", id: "fi_9" }, live }, { id: "att_2", role: "work", pointer: pr, live }] };
+  const row = { pointer: { kind: "none" }, live: null, attachments: [{ id: "att_1", role: "proof", pointer: { kind: "forge_item", id: "fi_9" }, live }, { id: "att_2", role: "work", pointer: pr, live }] };
   assert.deepEqual(prsOf(row).map((p) => p.id), ["fi_1"]);
 });

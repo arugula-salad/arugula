@@ -188,8 +188,7 @@ pub(super) const BOARD_COLS: &str = "id, project_id, title, created_by, created_
                           (SELECT i.state_group = 'started' FROM forge_items i WHERE i.id = boards.source_item)";
 pub(super) const ENTRY_COLS: &str =
     "id, rev, note, status, target_kind, target, pane, created_at, updated_at, agent, zone_id, work_item, source";
-const ATTACHED_COLS: &str =
-    "id, row_id, role, target_kind, target, pane, agent, created_at, released_at, machine, title";
+const ATTACHED_COLS: &str = "id, row_id, role, target_kind, target, pane, agent, created_at, released_at";
 
 pub(super) fn board_row(r: &Row) -> Result<Board> {
     Ok(Board {
@@ -281,8 +280,8 @@ pub(super) fn pointer_cols(p: &Pointer) -> (Option<&'static str>, Option<&str>, 
         Pointer::Workspace { id } => (Some("workspace"), Some(id), None),
         Pointer::Block { machine, pane } => (Some("block"), Some(machine), Some(pane)),
         Pointer::Link { url } => (Some("link"), Some(url), None),
-        Pointer::Doc { id } => (Some("doc"), Some(id), None),
-        Pointer::MachineDoc { doc, .. } => (Some("machine_doc"), Some(doc), None),
+        // A Doc is linked to a board or a row (`board_docs`), never a pointer of one.
+        Pointer::Doc { .. } | Pointer::MachineDoc { .. } => (None, None, None),
     }
 }
 
@@ -298,8 +297,7 @@ pub(super) fn pointer_of(kind: Option<String>, target: Option<String>, pane: Opt
         (Some("workspace"), Some(id), _) => Pointer::Workspace { id },
         (Some("block"), Some(machine), Some(pane)) => Pointer::Block { machine, pane },
         (Some("link"), Some(url), _) => Pointer::Link { url },
-        (Some("doc"), Some(id), _) => Pointer::Doc { id },
-        (Some("forge_item" | "issue" | "run" | "workspace" | "block" | "link" | "doc"), ..) => {
+        (Some("forge_item" | "issue" | "run" | "workspace" | "block" | "link"), ..) => {
             bail!("a board row's pointer is missing its target")
         }
         (Some(_), ..) => Pointer::None,
@@ -330,21 +328,13 @@ fn attached_row(r: &Row) -> Result<Attached> {
     let role = match r.get::<String>(2)?.as_str() {
         "work" => AttachRole::Work,
         "proof" => AttachRole::Proof,
-        "reference" => AttachRole::Reference,
         k => bail!("a board attachment of role {k:?}"),
-    };
-    let kind: String = r.get(3)?;
-    let pointer = match (kind.as_str(), r.get::<Option<String>>(9)?) {
-        ("machine_doc", Some(machine)) => {
-            Pointer::MachineDoc { machine, doc: r.get(4)?, title: r.get::<Option<String>>(10)?.unwrap_or_default() }
-        }
-        _ => pointer_of(Some(kind), r.get(4)?, r.get(5)?)?,
     };
     Ok(Attached {
         id: r.get(0)?,
         row: r.get(1)?,
         role,
-        pointer,
+        pointer: pointer_of(r.get(3)?, r.get(4)?, r.get(5)?)?,
         agent: r.get(6)?,
         created_at: r.get(7)?,
         released_at: r.get(8)?,
@@ -671,11 +661,7 @@ impl Db {
              JOIN boards b ON b.id = a.board_id WHERE b.project_id = ?1",
             params![project],
             |r| {
-                let role = match r.get::<String>(2)?.as_str() {
-                    "proof" => AttachRole::Proof,
-                    "reference" => AttachRole::Reference,
-                    _ => AttachRole::Work,
-                };
+                let role = if r.get::<String>(2)? == "proof" { AttachRole::Proof } else { AttachRole::Work };
                 Ok(Thing {
                     board: r.get(0)?,
                     row: r.get(1)?,
@@ -839,6 +825,7 @@ impl Db {
                         )?;
                     }
                     tx.execute("UPDATE board_attachments SET row_id = ?2 WHERE row_id = ?1", params![from, id])?;
+                    super::boards_docs::fold_rows(&tx, &id, from)?;
                     super::boards_asks::absorb(&tx, from, &id)?;
                     tx.execute("DELETE FROM board_entries WHERE id = ?1", params![from])?;
                 }
@@ -956,6 +943,7 @@ impl Db {
                     )));
                 }
             }
+            super::boards_docs::delete_of_group(&tx, board, id)?;
             tx.execute(
                 "DELETE FROM board_attachments WHERE row_id IN
                      (SELECT id FROM board_entries WHERE board_id = ?1 AND kind = 'row' AND zone_id = ?2)",
@@ -977,6 +965,7 @@ impl Db {
             if row.source.is_some() {
                 return bad(super::boards_epics::follows_the_epic(&tx, board, &row.pointer)?);
             }
+            super::boards_docs::delete_of_rows(&tx, &[id.to_owned()])?;
             tx.execute("DELETE FROM board_attachments WHERE row_id = ?1", params![id])?;
             tx.execute("DELETE FROM board_asks WHERE row_id = ?1", params![id])?;
             tx.execute("DELETE FROM board_entries WHERE id = ?1", params![id])?;
@@ -1017,16 +1006,11 @@ impl Db {
         let (Some(kind), Some(target), pane) = pointer_cols(pointer) else {
             return bad("an attachment points at something");
         };
-        let (machine, title) = match pointer {
-            Pointer::MachineDoc { machine, title, .. } => (Some(machine.as_str()), Some(title.as_str())),
-            _ => (None, None),
-        };
         let id = new_attachment_id();
         tx.execute(
-            "INSERT INTO board_attachments (id, board_id, row_id, role, target_kind, target, pane, agent, created_at,
-                                            machine, title)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
-            params![id, board, row, role.as_str(), kind, target, pane, agent, at, machine, title],
+            "INSERT INTO board_attachments (id, board_id, row_id, role, target_kind, target, pane, agent, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+            params![id, board, row, role.as_str(), kind, target, pane, agent, at],
         )?;
         touch(&tx, board, at)?;
         tx.commit()?;

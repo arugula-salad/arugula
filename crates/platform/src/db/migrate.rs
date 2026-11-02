@@ -616,7 +616,7 @@ const SQLITE: &[Migration] = &[
         version: 87,
         name: "board_docs",
         sql: include_str!("../../migrations/sqlite/0087_board_docs.sql"),
-        additive: false,
+        additive: true,
     },
 ];
 
@@ -1144,7 +1144,7 @@ const POSTGRES: &[Migration] = &[
         version: 87,
         name: "board_docs",
         sql: include_str!("../../migrations/postgres/0087_board_docs.sql"),
-        additive: false,
+        additive: true,
     },
 ];
 

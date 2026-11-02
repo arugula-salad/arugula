@@ -54,13 +54,14 @@ pub const BOARD_ENTRY_MOVE: &str = "/api/boards/{id}/entries/{entry}/move";
 pub const BOARD_ATTACHMENTS: &str = "/api/boards/{id}/attachments";
 /// `DELETE`: take an attachment off its row; answered [`BoardView`].
 pub const BOARD_ATTACHMENT: &str = "/api/boards/{id}/attachments/{attachment}";
-/// `POST` [`AddDoc`]: link a Doc to the board's Docs strip (owners and
-/// editors); answered [`BoardView`]. A Doc linked already answers the board
-/// as it is.
+/// `POST` [`AddDoc`]: link a Doc to the board's Docs strip, or with `row` to
+/// that row (owners and editors); answered [`BoardView`]. A Doc linked
+/// already answers the board as it is. A Doc on a row never moves its lane
+/// and isn't proof.
 pub const BOARD_DOCS: &str = "/api/boards/{id}/docs";
-/// `DELETE`: take a Doc off the strip; answered [`BoardView`].
+/// `DELETE`: take a Doc off the strip or a row; answered [`BoardView`].
 pub const BOARD_DOC: &str = "/api/boards/{id}/docs/{doc}";
-/// `POST` [`MoveDoc`]: move a Doc along the strip; answered [`BoardView`].
+/// `POST` [`MoveDoc`]: move a Doc along its strip or row; answered [`BoardView`].
 pub const BOARD_DOC_MOVE: &str = "/api/boards/{id}/docs/{doc}/move";
 /// `GET`: the boards that list a project Doc, in the strip or on a row,
 /// [`DocBoards`] (members; empty with boards off).
@@ -288,7 +289,7 @@ pub const BOARDS_MAX: u64 = 100;
 pub const GROUPS_MAX: u64 = 30;
 pub const ROWS_MAX: u64 = 500;
 pub const ATTACHMENTS_MAX: u64 = 20;
-/// The most Docs in a board's strip.
+/// The most Docs in a board's strip, and on one row.
 pub const BOARD_DOCS_MAX: u64 = 20;
 /// How long, in minutes, a Doing row's blocks may sit idle before it is
 /// stalled: the default, and the most a project may set (a week).
@@ -452,9 +453,6 @@ pub enum AttachRole {
     Work,
     /// Evidence that the work is done: a run or a link.
     Proof,
-    /// A Doc about the row (its spike). It never moves a lane, and it isn't
-    /// proof.
-    Reference,
 }
 
 impl AttachRole {
@@ -462,18 +460,16 @@ impl AttachRole {
         match self {
             AttachRole::Work => "work",
             AttachRole::Proof => "proof",
-            AttachRole::Reference => "reference",
         }
     }
 
     /// Whether `p` may be attached for this role: a `work` attachment is a
     /// PR (a mirrored item), an agent block or a run; a `proof` one is a run
-    /// or a link; a `reference` one is a Doc, and only a `reference` takes one.
+    /// or a link.
     pub fn takes(self, p: &Pointer) -> bool {
         match self {
             AttachRole::Work => matches!(p, Pointer::ForgeItem { .. } | Pointer::Block { .. } | Pointer::Run { .. }),
             AttachRole::Proof => matches!(p, Pointer::Run { .. } | Pointer::Link { .. }),
-            AttachRole::Reference => matches!(p, Pointer::Doc { .. } | Pointer::MachineDoc { .. }),
         }
     }
 }
@@ -514,40 +510,12 @@ pub struct Attachment {
     /// earlier agent whatever it reports, and holds no claim.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub released: bool,
-    /// A `reference` attachment's Doc, as the strip shows it.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[cfg_attr(feature = "ts", ts(optional))]
-    pub doc: Option<DocChip>,
-}
-
-/// What a chip for a Doc says: its title, and for a project Doc how many
-/// sections it has and how many are written.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "BoardDocChip"))]
-pub struct DocChip {
-    /// A project Doc's title now ("a deleted Doc" once it is gone), or a
-    /// machine Doc's as it was when linked.
-    pub title: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[cfg_attr(feature = "ts", ts(optional))]
-    pub sections: Option<u32>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[cfg_attr(feature = "ts", ts(optional))]
-    pub written: Option<u32>,
-    /// A project Doc that was deleted.
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    pub missing: bool,
-    /// A machine Doc's machine, by name.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[cfg_attr(feature = "ts", ts(optional))]
-    pub machine_name: Option<String>,
 }
 
 /// What a deleted project Doc is called.
 pub const DOC_GONE: &str = "a deleted Doc";
 
-/// One Doc in a board's strip.
+/// One Doc of a board: in its strip, or on one row (a row's [`Row::docs`]).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "BoardDoc"))]
@@ -580,15 +548,20 @@ pub struct BoardDoc {
 }
 
 /// [`BOARD_DOCS`]' body: the Doc to link, a [`Pointer::Doc`] or a
-/// [`Pointer::MachineDoc`] (a machine's agent links its own machine's).
+/// [`Pointer::MachineDoc`] (a machine's agent links its own machine's), to
+/// the board's strip, or with `row` (`row_…`) to that row.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "BoardAddDoc"))]
 pub struct AddDoc {
     pub pointer: Pointer,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub row: Option<String>,
 }
 
-/// [`BOARD_DOC_MOVE`]'s body: the Doc it goes before; none: last.
+/// [`BOARD_DOC_MOVE`]'s body: the Doc it goes before, in the same strip or
+/// row; none: last.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "BoardMoveDoc"))]
@@ -1523,6 +1496,10 @@ pub struct Row {
     /// Work and proof attached to the row, oldest first.
     #[serde(default)]
     pub attachments: Vec<Attachment>,
+    /// The Docs linked to the row (#517): its spike or research, in order.
+    /// They move no lane and prove nothing.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub docs: Vec<BoardDoc>,
     /// Set only on a Done row that is proven.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "ts", ts(optional))]
@@ -1858,16 +1835,15 @@ fn lane_text<'a>(out: &mut String, title: &str, rows: impl Iterator<Item = &'a R
                 .attachments
                 .iter()
                 .map(|a| {
-                    let role = match a.role {
-                        AttachRole::Proof => "proof ",
-                        AttachRole::Reference => "doc ",
-                        AttachRole::Work => "",
-                    };
-                    let label = a.doc.as_ref().map_or_else(|| a.pointer.label(), |d| d.title.clone());
-                    format!("{role}{label}")
+                    let role = if a.role == AttachRole::Proof { "proof " } else { "" };
+                    format!("{role}{}", a.pointer.label())
                 })
                 .collect();
             *out += &format!("      {}\n", fit(&format!("with {}", with.join(", ")), TEXT_WIDTH - 6));
+        }
+        if !r.docs.is_empty() {
+            let docs: Vec<&str> = r.docs.iter().map(|d| d.title.as_str()).collect();
+            *out += &format!("      {}\n", fit(&format!("docs {}", docs.join(", ")), TEXT_WIDTH - 6));
         }
         if let Some(a) = &r.ask {
             let by = if a.raised { "the board".to_owned() } else { format!("for {}", a.who_name) };
@@ -2057,6 +2033,7 @@ mod tests {
             status: Status::None,
             lane,
             attachments: vec![],
+            docs: vec![],
             proof: None,
             group: None,
             marks: vec![],
@@ -2153,7 +2130,6 @@ mod tests {
             live: Some(live),
             block: Some(block),
             released: false,
-            doc: None,
         }];
         let v = view(lanes(vec![(Lane::Doing, vec![r])]));
         let mut json = serde_json::to_value(&v).unwrap();
@@ -2207,7 +2183,6 @@ mod tests {
             live: None,
             block: None,
             released: false,
-            doc: None,
         }];
         let mut proof_att = row(Pointer::Issue { id: "iss_cc22".into() }, Lane::Done, "Docs");
         proof_att.attachments = vec![Attachment {
@@ -2217,7 +2192,6 @@ mod tests {
             live: None,
             block: None,
             released: false,
-            doc: None,
         }];
         let zones = lanes(vec![
             (Lane::Next, vec![row(Pointer::None, Lane::Next, "Decide the name"), row(Pointer::None, Lane::Next, "")]),

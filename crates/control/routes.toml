@@ -2890,7 +2890,7 @@ path = "/api/boards/{id}/docs"  # wire::boards::BOARD_DOCS
 process = "platform"
 auth = "session"
 clients = ["page", "cli"]
-note = "Links a Doc (a project Doc of the board's project, or a machine's Doc block) to the board's Docs strip: owners and editors. One linked already is not linked again; at most 20."
+note = "Links a Doc (a project Doc of the board's project, or a machine's Doc block) to the board's Docs strip, or with `row` to that row: owners and editors. One linked there already is not linked again; at most 20 in each."
 
 [[route]]
 method = "DELETE"
@@ -2898,7 +2898,7 @@ path = "/api/boards/{id}/docs/{doc}"  # wire::boards::BOARD_DOC
 process = "platform"
 auth = "session"
 clients = ["page", "cli"]
-note = "Takes a Doc off the board's Docs strip: owners and editors."
+note = "Takes a Doc off the board's Docs strip or a row: owners and editors."
 
 [[route]]
 method = "POST"
@@ -2906,7 +2906,7 @@ path = "/api/boards/{id}/docs/{doc}/move"  # wire::boards::BOARD_DOC_MOVE
 process = "platform"
 auth = "session"
 clients = ["page", "cli"]
-note = "Moves a Doc along the board's Docs strip: owners and editors."
+note = "Moves a Doc along its Docs strip or row: owners and editors."
 
 [[route]]
 method = "GET"

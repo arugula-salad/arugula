@@ -71,9 +71,9 @@ export const boards = {
   },
   /** Attach work (a PR, an agent block, a run) or proof (a run, a link) to a row. */
   attach: (id: string, row: string, role: BoardAttachRole, pointer: BoardPointer) => call<BoardView>("POST", `/api/boards/${enc(id)}/attachments`, { row, role, pointer }),
-  /** Link a project Doc to the board's Docs strip (owners and editors). One linked already comes back with a `said`. */
-  addDoc: (id: string, pointer: BoardPointer) => call<BoardView>("POST", `/api/boards/${enc(id)}/docs`, { pointer }),
-  /** Take a Doc off the strip, by its `bdc_` id. */
+  /** Link a project Doc to the board's Docs strip, or with `row` to that row (owners and editors). One linked there already comes back with a `said`. */
+  addDoc: (id: string, pointer: BoardPointer, row?: string) => call<BoardView>("POST", `/api/boards/${enc(id)}/docs`, row ? { pointer, row } : { pointer }),
+  /** Take a Doc off the strip or a row, by its `bdc_` id. */
   removeDoc: (id: string, doc: string) => call<BoardView>("DELETE", `/api/boards/${enc(id)}/docs/${enc(doc)}`),
   /** A project's Docs, for the picker (the Docs page's list). */
   docs: (project: string) => call<ProjectDocList>("GET", `/api/projects/${enc(project)}/docs`),
