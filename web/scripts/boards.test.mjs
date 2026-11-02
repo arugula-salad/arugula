@@ -3,7 +3,7 @@
 // the board routes' paths. Run with `node --experimental-strip-types`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { holdsRow, stalledFor, settledFacts, LANE_GLYPH, cardTone, checkTone, checkWord, groupMove, liveTone, prsOf, answerReady, askWaitingLine, assigneesLine, chipOf, counted, debounced, earlierLine, epicLine, firstLine, groupLine, isCard, laneCount, liveWord, marksOf, readyCount, relationLine, UNSEEN_BLOCKER, needsYou, needsYouLine, parsePointer, pointerHref, pointerLabel, pointerToSend, proofMark, rowGlyph, sections, stepActive, workLabel, workChip, onIssueChip, boardGroup, clusterOrder, NO_BOARD, sourceLine, sourceLinked, leftOutLine, docWords, docHref, onBoardWords, pointerText } from "../src/shared/boards/text.ts";
+import { holdsRow, stalledFor, settledFacts, LANE_GLYPH, cardTone, checkTone, checkWord, groupMove, liveTone, prsOf, answerReady, askWaitingLine, assigneesLine, chipOf, counted, debounced, earlierLine, epicLine, firstLine, groupLine, isCard, laneCount, liveWord, marksOf, readyCount, relationLine, UNSEEN_BLOCKER, needsYou, needsYouLine, parsePointer, pointerHref, pointerLabel, pointerToSend, proofMark, rowGlyph, sections, stepActive, workLabel, workChip, onIssueChip, boardGroup, clusterOrder, NO_BOARD, sourceLine, sourceLinked, leftOutLine, docWords, docHref, onBoardWords, pointerText, rowMatches, findLine, boardMatches } from "../src/shared/boards/text.ts";
 import { parse, pathOf } from "../src/platform/paths.ts";
 
 const P = "prj_8f2ec0ffee00112233445566778899aa";
@@ -389,4 +389,41 @@ test("a Doc's chip says its written sections, or the machine it is on; only work
   const live = { state: "open", kind: "pr", repo: "a/b", number: 1, title: "t" };
   const row = { pointer: { kind: "none" }, live: null, attachments: [{ id: "att_1", role: "proof", pointer: { kind: "forge_item", id: "fi_9" }, live }, { id: "att_2", role: "work", pointer: pr, live }] };
   assert.deepEqual(prsOf(row).map((p) => p.id), ["fi_1"]);
+});
+
+test("a find box matches a row by number, tracker key or words, and every word has to hold (#546)", () => {
+  const row = (title, number, extra = {}, note = "") => ({ pointer: { kind: "issue", id: "iss_1" }, note, live: { title, number, kind: "native", state: "open", ...extra } });
+  const a = row("Search the board", 541);
+  const b = row("Plane epics fold", 12, { identifier: "ARUGU", provider: "plane" }, "folded lanes unfold on a match");
+  const note = { pointer: { kind: "none" }, note: "Remember the Launch checklist" };
+  assert.equal(rowMatches(a, ""), true, "an empty find keeps every row");
+  assert.equal(rowMatches(a, "  "), true);
+  assert.equal(rowMatches(a, "#541"), true);
+  assert.equal(rowMatches(a, "541"), true);
+  assert.equal(rowMatches(a, "#54"), false, "a number is the whole number, not a prefix");
+  assert.equal(rowMatches(a, "#12"), false);
+  assert.equal(rowMatches(b, "arugu-12"), true, "a tracker key, in any case");
+  assert.equal(rowMatches(b, "ARUGU-13"), false);
+  assert.equal(rowMatches(a, "ARUGU-541"), false, "a native issue has no tracker key");
+  assert.equal(rowMatches(a, "SEARCH BOARD"), true, "words in any order, any case");
+  assert.equal(rowMatches(a, "search lane"), false, "every word has to appear");
+  assert.equal(rowMatches(b, "unfold match"), true, "the note is read");
+  assert.equal(rowMatches(b, "#12 unfold"), true, "a number and a word together");
+  assert.equal(rowMatches(b, "#13 unfold"), false);
+  assert.equal(rowMatches(note, "launch"), true, "a note row has its note");
+  assert.equal(rowMatches(note, "#1"), false);
+  assert.equal(rowMatches({ ...a, labels: ["boards"] }, "boards"), true, "labels are read where the row carries them");
+  assert.equal(rowMatches(row("Run", 0), "#0"), false, "a run has no number");
+  assert.equal(findLine(7, 89), "7 of 89 rows");
+  assert.equal(findLine(1, 1), "1 of 1 row");
+});
+
+test("a boards list filters by title, epic key or goal, open and closed alike (#546)", () => {
+  const b = { title: "Launch", goal: "Ship the editor", source: { key: "ARUGU-10" } };
+  assert.equal(boardMatches(b, ""), true);
+  assert.equal(boardMatches(b, "launch"), true);
+  assert.equal(boardMatches(b, "arugu-10"), true);
+  assert.equal(boardMatches(b, "ship editor"), true);
+  assert.equal(boardMatches(b, "ship docs"), false);
+  assert.equal(boardMatches({ title: "Done one", goal: "", source: undefined }, "arugu"), false);
 });

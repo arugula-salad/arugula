@@ -39,7 +39,7 @@ import { BoardError, STALE_REV, boards, type ForgeChecks } from "./store";
 import { DocLink, DocPicker } from "./docs";
 import "./boards.css";
 import { groupFold, groupLaneFold, isFolded, laneFold, loadFolds, saveFolds, type Folds } from "./folds";
-import { PICK_DELAY_MS, cardTone, checkTone, checkWord, groupMove, liveTone, prsOf, PICK_LIMIT, assigneesLine, blockClass, GOAL_MAX, answerReady, askWaitingLine, blockFacts, chipOf, settledFacts, debounced, earlierLine, epicLine, holdsRow, groupLine, isCard, laneCount, liveClass, liveWord, marksOf, needsYou, pointerHref, pointerLabel, pointerText, pointerToSend, proofMark, readyCount, relationLine, RELATION_KINDS, sections, sourceLine, sourceLinked, leftOutLine, stepActive, workLabel } from "./text";
+import { PICK_DELAY_MS, cardTone, checkTone, checkWord, groupMove, liveTone, prsOf, PICK_LIMIT, assigneesLine, blockClass, GOAL_MAX, answerReady, askWaitingLine, blockFacts, chipOf, settledFacts, debounced, earlierLine, epicLine, holdsRow, groupLine, isCard, laneCount, liveClass, liveWord, marksOf, needsYou, pointerHref, pointerLabel, pointerText, pointerToSend, proofMark, readyCount, relationLine, RELATION_KINDS, sections, sourceLine, sourceLinked, leftOutLine, stepActive, workLabel, rowMatches, findLine } from "./text";
 
 const STALE_SAID = "That changed while you were editing, so the board is read again. Make your change again if it still applies.";
 
@@ -85,6 +85,27 @@ export function BoardPanel({
   };
   /** The group a Delete waits on. */
   const [dropping, setDropping] = useState<BoardGroup | null>(null);
+  /** The find box's text; `null` while the box is closed (#546). */
+  const [find, setFind] = useState<string | null>(null);
+  const findBox = useRef<HTMLInputElement>(null);
+  useEffect(() => setFind(null), [id]);
+  // `/` opens the find box, from anywhere that isn't a field.
+  useEffect(() => {
+    if (!shown) return;
+    const slash = (e: KeyboardEvent) => {
+      if (e.key !== "/" || e.ctrlKey || e.metaKey || e.altKey || e.defaultPrevented) return;
+      if ((e.target as Element | null)?.closest("input, textarea, select, [contenteditable]")) return;
+      e.preventDefault();
+      setFind((q) => q ?? "");
+      findBox.current?.focus();
+    };
+    window.addEventListener("keydown", slash);
+    return () => window.removeEventListener("keydown", slash);
+  }, [shown]);
+  const finding = find !== null;
+  useEffect(() => {
+    if (finding) findBox.current?.focus();
+  }, [finding]);
   // Chat says when the thread's object changed; it's on while chat is.
   useSubscribe((fn) => chat.subscribe(fn));
   const seen = useRef(0);
@@ -204,6 +225,12 @@ export function BoardPanel({
       { label: "Delete the group…", danger: true, run: () => setDropping(g) },
     ]);
   };
+  // A find narrows the view to the rows it matches; the saved folds stay as they are.
+  const query = (find ?? "").trim();
+  const narrowed: BoardView = query ? { ...view, zones: view.zones.map((z) => ({ ...z, rows: z.rows.filter((r) => rowMatches(r, query)) })) } : view;
+  const every = view.zones.reduce((n, z) => n + z.rows.length, 0);
+  const found = narrowed.zones.flatMap((z) => z.rows);
+  const firstMatch = sections(narrowed).flatMap((s) => s.lanes.flatMap((z) => z.rows))[0];
   const opened = drawer ? view.zones.flatMap((z) => z.rows).find((r) => r.id === drawer) : undefined;
 
   return (
@@ -219,24 +246,63 @@ export function BoardPanel({
           view.board.title
         )}
       </h1>
+      <button type="button" class="board-find-open" aria-label="Find a row" data-board-find-open onClick={() => setFind((q) => q ?? "")}>
+        ⌕
+      </button>
       <CopyLinkButton link={shareLink} menu={shareLink ? menu?.(shareLink) : undefined} />
       </div>
+      {finding && (
+        <div class="board-find" role="search" data-board-find>
+          <input
+            ref={findBox}
+            type="text"
+            inputMode="search"
+            value={find}
+            placeholder="Find a row: #541, ARUGU-12 or words"
+            aria-label="Find a row"
+            data-board-find-input
+            autoComplete="off"
+            onInput={(e) => setFind(e.currentTarget.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Escape") (e.preventDefault(), setFind(null));
+              else if (e.key === "Enter" && firstMatch) (e.preventDefault(), setDrawer(firstMatch.id));
+            }}
+          />
+          {query && (
+            <span class="board-find-count dim" role="status" data-board-find-count>
+              {findLine(found.length, every)}
+            </span>
+          )}
+          <button type="button" aria-label="Close the find box" data-board-find-close onClick={() => setFind(null)}>
+            ×
+          </button>
+        </div>
+      )}
       <Epic b={view.board} act={act} id={id} write={write} view={view} platform={platform} />
       {stale && (
         <p class="board-stale" role="status" data-board-stale>
           {STALE_SAID}
         </p>
       )}
-      {sections(view).map((s) => {
+      {query && found.length === 0 && (
+        <p class="board-none dim" data-board-find-none>
+          No row matches “{query}”.
+        </p>
+      )}
+      {sections(narrowed).map((s) => {
         const grouped = !!view.groups?.length;
         const key = groupFold(s.group?.id ?? null);
-        const folded = grouped && isFolded(folds, key);
+        const held = s.lanes.reduce((n, z) => n + z.rows.length, 0);
+        // A find hides what doesn't match, and opens a heading that holds a match without saving it.
+        if (query && held === 0) return null;
+        const folded = grouped && !query && isFolded(folds, key);
         const lanes = (
           <div class="board-lanes">
             {s.lanes.map((z) => {
+              if (query && z.rows.length === 0) return null;
               const laneKey = grouped ? groupLaneFold(s.group?.id ?? null, z.id) : laneFold(z.id);
               return (
-              <Lane key={z.id} z={z} fold={{ key: laneKey, folded: isFolded(folds, laneKey), toggle: () => toggleFold(laneKey) }} project={view.board.project} editing={editing} setEditing={setEditing} act={act} id={id} platform={platform} groups={write ? (view.groups ?? []) : []} moveRow={moveRow} open={setDrawer} />
+              <Lane key={z.id} z={z} fold={{ key: laneKey, folded: !query && isFolded(folds, laneKey), toggle: () => toggleFold(laneKey) }} project={view.board.project} editing={editing} setEditing={setEditing} act={act} id={id} platform={platform} groups={write ? (view.groups ?? []) : []} moveRow={moveRow} open={setDrawer} />
               );
             })}
           </div>
@@ -244,7 +310,7 @@ export function BoardPanel({
         // No groups: the lanes alone, as before.
         if (!grouped) return lanes;
         const title = s.group?.title ?? "No group";
-        const rows = s.lanes.reduce((n, z) => n + z.rows.length, 0);
+        const rows = held;
         return (
           <section class="board-group" key={s.group?.id ?? "none"} data-board-group={s.group?.id ?? "none"}>
             <header class="board-group-head">
