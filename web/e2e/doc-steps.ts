@@ -367,6 +367,7 @@ export const prototype = (a: Attacker, title = "Probe") => `\`\`\`prototype heig
 <img src="${a.url}/img" alt="">
 <script>
 document.getElementById("out").textContent = "ran";
+window.__kept = "kept";
 const tries = {};
 tries.scheme = getComputedStyle(document.documentElement).colorScheme;
 tries.origin = String(self.origin);

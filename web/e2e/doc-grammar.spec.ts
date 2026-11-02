@@ -13,7 +13,7 @@ import { expect, test } from "@playwright/test";
 import { cssVar, HUES, hex, NAMES, resolve, usesNames } from "../src/shared/docs/colours";
 import { buildChart, checkChart, checkSpec, niceTicks, parseChart, summary, type El, type Spec } from "../src/shared/ui/chart";
 import { assetName, checkEmbeds, checkPrototype, checkSvg, fences, prototypeInfo, imageRefs, plain, svgUrl } from "../src/shared/ui/embeds";
-import { HTML, READY, htmlMessage, protoOfViewer, readyFrom } from "../src/shared/ui/prototype-messages";
+import { HTML, READY, SCHEME, htmlMessage, schemeMessage, protoOfViewer, readyFrom } from "../src/shared/ui/prototype-messages";
 import { checkStats, statsSummary, toneOf } from "../src/shared/ui/stats";
 import { example, examples, expected } from "./doc-examples";
 
@@ -392,6 +392,7 @@ test("the frame hears only its own window say it is ready, and the viewer finds 
   expect(readyFrom({ source: frame, data: { type: HTML } }, frame), "another message").toBe(false);
   expect(readyFrom({ source: frame, data: "arugula.ready" }, frame), "not an object").toBe(false);
   expect(readyFrom({ source: frame, data: null }, frame)).toBe(false);
+  expect(schemeMessage("light")).toEqual({ type: "arugula.scheme", colorScheme: "light" });
   expect(htmlMessage("<p>x</p>", "dark")).toEqual({ type: "arugula.html", html: "<p>x</p>", colorScheme: "dark" });
   expect(protoOfViewer({ protocol: "https:", host: "docs.arugula.run" })).toBe("https://proto.arugula.run");
   expect(protoOfViewer({ protocol: "http:", host: "docs.blocks.localhost:7690" })).toBe("http://proto.blocks.localhost:7690");
@@ -400,4 +401,5 @@ test("the frame hears only its own window say it is ready, and the viewer finds 
   const runner = readFileSync(new URL("../src/shared/ui/runner.html", import.meta.url), "utf8");
   expect(runner).toContain(`m.type !== "${HTML}"`);
   expect(runner).toContain(`type: "${READY}"`);
+  expect(runner).toContain(`m.type!=='${SCHEME}'`);
 });

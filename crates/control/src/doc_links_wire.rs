@@ -740,6 +740,14 @@ async fn control_says_where_docs_are_viewed() {
         off.at("control.test", reqwest::Method::GET, "/control.json").send().await.unwrap().json().await.unwrap();
     assert_eq!((j["doc_links"].as_u64(), j["doc_viewer"].as_str()), (Some(1), Some("http://control.test/d")));
 
+    // And where a Doc's prototypes run (#506), only with a block domain.
+    let j: Value =
+        c.at("control.test", reqwest::Method::GET, "/control.json").send().await.unwrap().json().await.unwrap();
+    assert_eq!(j["proto"].as_str(), Some("http://proto.blocks.test"));
+    let j: Value =
+        off.at("control.test", reqwest::Method::GET, "/control.json").send().await.unwrap().json().await.unwrap();
+    assert!(j.get("proto").is_none(), "no block domain, no proto origin: {j}");
+
     use crate::doc_links::viewer_url;
     assert_eq!(viewer_url("https://control.arugula.run", Some("arugula.run")), "https://docs.arugula.run");
     assert_eq!(viewer_url("https://c.example:8443", Some("arugula.run")), "https://docs.arugula.run:8443");

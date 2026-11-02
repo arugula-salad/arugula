@@ -19,7 +19,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 import { useScheme } from "./drawing";
 import { checkPrototype, prototypeInfo } from "./embeds";
-import { htmlMessage, readyFrom } from "./prototype-messages";
+import { htmlMessage, readyFrom, schemeMessage } from "./prototype-messages";
 import runner from "./runner.html?raw";
 
 /** The frame's whole sandbox: scripts, and nothing that would give it a way out. */
@@ -62,6 +62,9 @@ export function Prototype({ html, alt }: { html: string; alt: string }) {
   const scheme = useScheme();
   const frame = useRef<HTMLIFrameElement>(null);
   const loads = useRef(0);
+  const handed = useRef(false);
+  const schemeNow = useRef(scheme);
+  schemeNow.current = scheme;
   const [armed, setArmed] = useState(false);
   const [left, setLeft] = useState(false);
   const [round, setRound] = useState(0);
@@ -73,16 +76,25 @@ export function Prototype({ html, alt }: { html: string; alt: string }) {
   useLayoutEffect(() => {
     if (!live) return;
     // The first time the frame says it is ready, and no other.
-    let sent = false;
+    handed.current = false;
     const on = (e: MessageEvent) => {
-      if (sent || !readyFrom(e, frame.current?.contentWindow)) return;
-      sent = true;
+      if (handed.current || !readyFrom(e, frame.current?.contentWindow)) return;
+      handed.current = true;
       // An opaque origin has no name to target: "*", for this one message.
-      frame.current!.contentWindow!.postMessage(htmlMessage(html, scheme), "*");
+      frame.current!.contentWindow!.postMessage(htmlMessage(html, schemeNow.current), "*");
     };
     addEventListener("message", on);
     return () => removeEventListener("message", on);
-  }, [live, html, scheme, origin, round]);
+  }, [live, html, origin, round]);
+  // A light/dark switch after the page was handed over reaches it without a reload.
+  const first = useRef(true);
+  useEffect(() => {
+    if (first.current) {
+      first.current = false;
+      return;
+    }
+    if (handed.current) frame.current?.contentWindow?.postMessage(schemeMessage(scheme), "*");
+  }, [scheme]);
   if (why || origin === null) {
     return (
       <div class="chart-note" data-prototype-note>
@@ -120,14 +132,14 @@ export function Prototype({ html, alt }: { html: string; alt: string }) {
       </div>
     );
   }
-  // Remounted when the text, the scheme or a reload changes: the page is handed over once.
+  // Remounted when the text or a reload changes: the page is handed over once.
   return (
     <div class="doc-prototype-box">
       <span class="doc-prototype-label" data-prototype-label>
         Prototype · sandboxed
       </span>
       <iframe
-        key={`${round}:${scheme}:${html}`}
+        key={`${round}:${html}`}
         ref={frame}
         class="doc-prototype"
         data-prototype-frame

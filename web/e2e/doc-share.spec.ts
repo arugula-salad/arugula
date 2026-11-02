@@ -18,7 +18,7 @@ import { join } from "node:path";
 import { expect, test, type Page } from "@playwright/test";
 import { hex } from "../src/shared/docs/colours";
 import { example } from "./doc-examples";
-import { attacker, newDoc, png, putAsset, fill, seeEmbeds, type Post } from "./doc-steps";
+import { attacker, newDoc, png, putAsset, fill, prototype, prototypeRan, seeEmbeds, type Post } from "./doc-steps";
 import { DOMAIN, prototypeInViewer, rig, share, visitor, type Rig } from "./doc-share-rig";
 import { closeContexts, menu, reset, panes, paneEl } from "./helpers";
 import { pixel7 } from "./phones";
@@ -645,5 +645,43 @@ test.describe("Shared Docs… in the account menu", () => {
     await page.locator("[data-confirm-remove]").click();
     await expect(row).toHaveCount(0);
     expect((await fetch(`${url.split("#")[0]}/data/meta`)).status).toBe(404);
+  });
+});
+
+test.describe("a Doc block on control's own page", () => {
+  test.describe.configure({ mode: "serial" });
+  let r: Rig;
+  let page: Page;
+  test.beforeAll(async ({ browser }) => {
+    test.setTimeout(180_000);
+    const ctx = await browser.newContext({ storageState: { cookies: [], origins: [] } });
+    page = await ctx.newPage();
+    r = await rig(DOMAIN, page);
+  });
+  test.afterAll(async () => {
+    await r?.dispose();
+  });
+
+  // #506: the shell control serves has `default-src 'self'`, so a srcdoc frame's
+  // scripts would die there too: its Doc block frames the proto origin control's
+  // /control.json names, like the share page and the platform page.
+  test("a prototype in a Doc block on control's own page runs in a frame on the proto origin", async () => {
+    const a = await attacker();
+    try {
+      const [{ id: term }] = (await (await fetch(`${r.mini}/api/panes`)).json()) as { id: number }[];
+      const d = await newDoc(r.post, term, "Probe doc");
+      await fill(r.post, d, "s1", prototype(a));
+      await page.goto(`${r.control}/`);
+      await expect.poll(() => page.evaluate(() => !!window.__arugula?.client.e2e && window.__arugula.client.connected), { timeout: 30_000 }).toBe(true);
+      await page.evaluate((id) => window.__arugula.client.setActive(id), d);
+      await expect(page.locator(`[data-doc-block="${d}"] .doc-title`)).toHaveText("Probe doc", { timeout: 20_000 });
+      const proto = `http://proto.${DOMAIN}:${new URL(r.control).port}`;
+      await expect(page.locator("[data-prototype-frame]")).toHaveAttribute("src", `${proto}/`);
+      await expect(page.locator("[data-prototype-run]")).toHaveCount(0);
+      const scheme = (await page.evaluate(() => document.documentElement.dataset.scheme)) === "light" ? "light" : "dark";
+      await prototypeRan(page, a, scheme);
+    } finally {
+      a.close();
+    }
   });
 });

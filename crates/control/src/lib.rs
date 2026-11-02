@@ -829,6 +829,8 @@ async fn control_json(
         // Shared Docs (#1064), and where they are opened.
         doc_links: Some(1),
         doc_viewer: Some(doc_links::viewer_url(&app.cfg.public_url, app.cfg.block_domain.as_deref())),
+        // Where a Doc's prototypes run (#506), for the shell this serves.
+        proto: blocks::proto_url(&app.cfg.public_url, app.cfg.block_domain.as_deref()),
         // Where the platform page is (M151), when it has a host.
         platform: app.cfg.platform_host.as_ref().map(|p| p.origin.clone()),
         // What a project delegation names (M178).

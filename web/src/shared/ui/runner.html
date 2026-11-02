@@ -28,8 +28,16 @@
     // writes can come before it.
     document.write(
       '<!doctype html><meta http-equiv="Content-Security-Policy" content="' + POLICY + '">' +
-        '<meta name="color-scheme" content="' + scheme + '">' +
-        "<style>:root{color-scheme:" + scheme + "}</style>" +
+        '<meta id="arugula-scheme-meta" name="color-scheme" content="' + scheme + '">' +
+        '<style id="arugula-scheme-style">:root{color-scheme:' + scheme + "}</style>" +
+        // The page's one listener: the parent can change the scheme later. (Opening
+        // the document dropped this page's own.) It takes only that message, only from the parent.
+        "<script>addEventListener('message',function(e){" +
+        "if(e.source!==parent)return;var m=e.data;" +
+        "if(!m||m.type!=='arugula.scheme')return;" +
+        "var s=m.colorScheme==='dark'?'dark':'light';" +
+        "var a=document.getElementById('arugula-scheme-meta'),b=document.getElementById('arugula-scheme-style');" +
+        "if(a)a.content=s;if(b)b.textContent=':root{color-scheme:'+s+'}'})</scr" + "ipt>" +
         m.html,
     );
     document.close();

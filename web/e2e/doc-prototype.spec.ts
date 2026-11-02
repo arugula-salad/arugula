@@ -36,6 +36,15 @@ test("a prototype runs its own script in a sandboxed frame and gets out of nowhe
     await expect(page.locator("[data-prototype-frame]")).not.toHaveAttribute("src", /.*/);
     await prototypeRan(page, a, "dark");
 
+    // A switch while it is open reaches the page without reloading it: its own
+    // state is still there, and only its colour scheme moved.
+    await page.evaluate(() => (document.documentElement.dataset.scheme = "light"));
+    const inside = page.frameLocator("[data-prototype-frame]");
+    await expect.poll(() => inside.locator("html").evaluate((el) => getComputedStyle(el).colorScheme)).toBe("light");
+    expect(await inside.locator("html").evaluate(() => (window as unknown as { __kept?: string }).__kept)).toBe("kept");
+    await expect(inside.locator("#arugula-scheme-meta")).toHaveAttribute("content", "light");
+    await expect(inside.locator("#out")).toHaveText("ran");
+
     await page.evaluate(() => localStorage.setItem("arugula-appearance", JSON.stringify({ palette: "latte", finish: "flat", corners: "square" })));
     await page.reload();
     await expect.poll(() => page.evaluate(() => window.__arugula?.client.state !== null)).toBe(true);
@@ -126,9 +135,23 @@ test("the runner takes its page from its parent only, and only once", async ({ p
   await expect(frame.locator("#first")).toHaveText("first");
   expect(await frame.locator("html").evaluate((el) => getComputedStyle(el).colorScheme)).toBe("dark");
   expect(await frame.locator("html").evaluate(() => document.title)).toBe("ran");
-  await send("<p id=second>second</p>", "light");
+  // The one message it takes after the page: a scheme, from its parent. A sibling's is ignored.
+  await page.evaluate(() => {
+    const f = document.createElement("iframe");
+    f.name = "sibling2";
+    f.setAttribute("sandbox", "allow-scripts");
+    f.srcdoc = `<script>parent.frames[0].postMessage({ type: "arugula.scheme", colorScheme: "light" }, "*")</script>`;
+    document.body.append(f);
+  });
+  await page.waitForTimeout(800);
+  expect(await frame.locator("html").evaluate((el) => getComputedStyle(el).colorScheme), "a sibling can't change it").toBe("dark");
+  await page.evaluate(() => (window as unknown as { __host: HTMLIFrameElement }).__host.contentWindow!.postMessage({ type: "arugula.scheme", colorScheme: "light" }, "*"));
+  await expect.poll(() => frame.locator("html").evaluate((el) => getComputedStyle(el).colorScheme)).toBe("light");
+  // Nothing else is taken from the parent but that, once the page is the prototype's.
+  await send("<p id=second>second</p>", "dark");
   await page.waitForTimeout(300);
   await expect(frame.locator("#second")).toHaveCount(0);
+  expect(await frame.locator("html").evaluate((el) => getComputedStyle(el).colorScheme), "only a scheme message changes it").toBe("light");
   await expect(frame.locator("#first")).toHaveCount(1);
 });
 
