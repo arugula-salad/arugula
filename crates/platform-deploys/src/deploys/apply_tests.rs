@@ -862,7 +862,8 @@ async fn chant_fly_planned(
     let end = json!({ "exit": if ok { 0 } else { 1 }, "result": result }).to_string();
     let to = if ok { RunState::Succeeded } else { RunState::Failed };
     work::report(app, &m.m, &m.report(&run, RunState::Running, to, now_ms(), &end)).await.unwrap();
-    settle(app).await;
+    // The plan's job looks again (it follows its run every few seconds).
+    settle_at(app, now_ms() + 2 * FOLLOW_MS).await;
     (id, op, app.db.run(&run.id).unwrap().unwrap())
 }
 
