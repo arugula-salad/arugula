@@ -2772,7 +2772,7 @@
         "readOnlyHint": false,
         "title": "Draft on a linked repo"
       },
-      "description": "Draft a comment, a review or a new issue on a GitHub repo linked to the user's projects in Arugula control, with no block open, or discard a draft. Nothing reaches GitHub in an agent's name: the draft waits for a person to send (from the web page, their phone or the arugula CLI) or discard. Returns the draft at once; forge_read kind draft shows what became of it. Native issues in Arugula control aren't drafted: issue_write writes to them at once.\n- comment {body, item}: A comment on a PR or issue.\n- review {event, item, body?}: A review of a PR: approve, request_changes or comment.\n- issue {repo, title, body?}: A new issue on a linked repo.\n- discard {draft}: Discard a waiting draft (yours, or one on a repo the user reads).",
+      "description": "Draft a comment, a review or a new issue on a GitHub repo linked to the user's projects in Arugula control, with no block open, or discard a draft. Nothing reaches GitHub in an agent's name: the draft waits for a person to send (from the web page, their phone or the arugula CLI) or discard. Returns the draft at once; forge_read kind draft shows what became of it. Native issues in Arugula control aren't drafted (issue_write writes to them at once), except opening one on GitHub (kind open_on_github), which its person sends.\n- comment {body, item}: A comment on a PR or issue.\n- review {event, item, body?}: A review of a PR: approve, request_changes or comment.\n- issue {repo, title, body?}: A new issue on a linked repo.\n- open_on_github {issue, project?, repo?}: Draft opening a native issue on GitHub, as a new issue on a repo linked to its project, for the user to send. Once they've sent it the native issue stays, says where it lives, and new comments cross both ways (an agent's comment there is a draft for them too). Needs the machine's issues.write grant over the issue's project.\n- discard {draft}: Discard a waiting draft (yours, or one on a repo the user reads).",
       "inputSchema": {
         "$defs": {
           "Event": {
@@ -2801,6 +2801,10 @@
           "event": {
             "$ref": "#/$defs/Event"
           },
+          "issue": {
+            "description": "open_on_github: The native issue: \"#N\" (in the current project) or \"iss_…\".",
+            "type": "string"
+          },
           "item": {
             "description": "comment: The PR or issue: OWNER/NAME#N, or its link on github.com. review: The PR: OWNER/NAME#N, or its link on github.com.",
             "type": "string"
@@ -2811,13 +2815,26 @@
               "comment",
               "review",
               "issue",
+              "open_on_github",
               "discard"
             ],
             "type": "string"
           },
+          "project": {
+            "default": null,
+            "description": "open_on_github: Its project for \"#N\": its id (prj_…) or personal. Default: the one\nthis clone's GitHub repo is linked to, else the user's personal\nproject.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "repo": {
-            "description": "issue: The linked repo, OWNER/NAME.",
-            "type": "string"
+            "default": null,
+            "description": "issue: The linked repo, OWNER/NAME. open_on_github: The linked repo it goes to, OWNER/NAME. Default: its project's one\nlinked repo.",
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "title": {
             "type": "string"
@@ -7148,7 +7165,7 @@
         "readOnlyHint": false,
         "title": "Draft on a linked repo"
       },
-      "description": "Draft a comment, a review or a new issue on a GitHub repo linked to the user's projects in Arugula control, with no block open, or discard a draft. Nothing reaches GitHub in an agent's name: the draft waits for a person to send (from the web page, their phone or the arugula CLI) or discard. Returns the draft at once; forge_read kind draft shows what became of it. Native issues in Arugula control aren't drafted: issue_write writes to them at once.\n- comment {body, item}: A comment on a PR or issue.\n- review {event, item, body?}: A review of a PR: approve, request_changes or comment.\n- issue {repo, title, body?}: A new issue on a linked repo.\n- discard {draft}: Discard a waiting draft (yours, or one on a repo the user reads).",
+      "description": "Draft a comment, a review or a new issue on a GitHub repo linked to the user's projects in Arugula control, with no block open, or discard a draft. Nothing reaches GitHub in an agent's name: the draft waits for a person to send (from the web page, their phone or the arugula CLI) or discard. Returns the draft at once; forge_read kind draft shows what became of it. Native issues in Arugula control aren't drafted (issue_write writes to them at once), except opening one on GitHub (kind open_on_github), which its person sends.\n- comment {body, item}: A comment on a PR or issue.\n- review {event, item, body?}: A review of a PR: approve, request_changes or comment.\n- issue {repo, title, body?}: A new issue on a linked repo.\n- open_on_github {issue, project?, repo?}: Draft opening a native issue on GitHub, as a new issue on a repo linked to its project, for the user to send. Once they've sent it the native issue stays, says where it lives, and new comments cross both ways (an agent's comment there is a draft for them too). Needs the machine's issues.write grant over the issue's project.\n- discard {draft}: Discard a waiting draft (yours, or one on a repo the user reads).",
       "inputSchema": {
         "$defs": {
           "Event": {
@@ -7177,6 +7194,10 @@
           "event": {
             "$ref": "#/$defs/Event"
           },
+          "issue": {
+            "description": "open_on_github: The native issue: \"#N\" (in the current project) or \"iss_…\".",
+            "type": "string"
+          },
           "item": {
             "description": "comment: The PR or issue: OWNER/NAME#N, or its link on github.com. review: The PR: OWNER/NAME#N, or its link on github.com.",
             "type": "string"
@@ -7187,13 +7208,26 @@
               "comment",
               "review",
               "issue",
+              "open_on_github",
               "discard"
             ],
             "type": "string"
           },
+          "project": {
+            "default": null,
+            "description": "open_on_github: Its project for \"#N\": its id (prj_…) or personal. Default: the one\nthis clone's GitHub repo is linked to, else the user's personal\nproject.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "repo": {
-            "description": "issue: The linked repo, OWNER/NAME.",
-            "type": "string"
+            "default": null,
+            "description": "issue: The linked repo, OWNER/NAME. open_on_github: The linked repo it goes to, OWNER/NAME. Default: its project's one\nlinked repo.",
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "title": {
             "type": "string"
@@ -11815,7 +11849,7 @@
         "readOnlyHint": false,
         "title": "Draft on a linked repo"
       },
-      "description": "Draft a comment, a review or a new issue on a GitHub repo linked to the user's projects in Arugula control, with no block open, or discard a draft. Nothing reaches GitHub in an agent's name: the draft waits for a person to send (from the web page, their phone or the arugula CLI) or discard. Returns the draft at once; forge_read kind draft shows what became of it. Native issues in Arugula control aren't drafted: issue_write writes to them at once.\n- comment {body, item}: A comment on a PR or issue.\n- review {event, item, body?}: A review of a PR: approve, request_changes or comment.\n- issue {repo, title, body?}: A new issue on a linked repo.\n- discard {draft}: Discard a waiting draft (yours, or one on a repo the user reads).",
+      "description": "Draft a comment, a review or a new issue on a GitHub repo linked to the user's projects in Arugula control, with no block open, or discard a draft. Nothing reaches GitHub in an agent's name: the draft waits for a person to send (from the web page, their phone or the arugula CLI) or discard. Returns the draft at once; forge_read kind draft shows what became of it. Native issues in Arugula control aren't drafted (issue_write writes to them at once), except opening one on GitHub (kind open_on_github), which its person sends.\n- comment {body, item}: A comment on a PR or issue.\n- review {event, item, body?}: A review of a PR: approve, request_changes or comment.\n- issue {repo, title, body?}: A new issue on a linked repo.\n- open_on_github {issue, project?, repo?}: Draft opening a native issue on GitHub, as a new issue on a repo linked to its project, for the user to send. Once they've sent it the native issue stays, says where it lives, and new comments cross both ways (an agent's comment there is a draft for them too). Needs the machine's issues.write grant over the issue's project.\n- discard {draft}: Discard a waiting draft (yours, or one on a repo the user reads).",
       "inputSchema": {
         "$defs": {
           "Event": {
@@ -11844,6 +11878,10 @@
           "event": {
             "$ref": "#/$defs/Event"
           },
+          "issue": {
+            "description": "open_on_github: The native issue: \"#N\" (in the current project) or \"iss_…\".",
+            "type": "string"
+          },
           "item": {
             "description": "comment: The PR or issue: OWNER/NAME#N, or its link on github.com. review: The PR: OWNER/NAME#N, or its link on github.com.",
             "type": "string"
@@ -11854,13 +11892,26 @@
               "comment",
               "review",
               "issue",
+              "open_on_github",
               "discard"
             ],
             "type": "string"
           },
+          "project": {
+            "default": null,
+            "description": "open_on_github: Its project for \"#N\": its id (prj_…) or personal. Default: the one\nthis clone's GitHub repo is linked to, else the user's personal\nproject.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "repo": {
-            "description": "issue: The linked repo, OWNER/NAME.",
-            "type": "string"
+            "default": null,
+            "description": "issue: The linked repo, OWNER/NAME. open_on_github: The linked repo it goes to, OWNER/NAME. Default: its project's one\nlinked repo.",
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "title": {
             "type": "string"
@@ -16191,7 +16242,7 @@
         "readOnlyHint": false,
         "title": "Draft on a linked repo"
       },
-      "description": "Draft a comment, a review or a new issue on a GitHub repo linked to the user's projects in Arugula control, with no block open, or discard a draft. Nothing reaches GitHub in an agent's name: the draft waits for a person to send (from the web page, their phone or the arugula CLI) or discard. Returns the draft at once; forge_read kind draft shows what became of it. Native issues in Arugula control aren't drafted: issue_write writes to them at once.\n- comment {body, item}: A comment on a PR or issue.\n- review {event, item, body?}: A review of a PR: approve, request_changes or comment.\n- issue {repo, title, body?}: A new issue on a linked repo.\n- discard {draft}: Discard a waiting draft (yours, or one on a repo the user reads).",
+      "description": "Draft a comment, a review or a new issue on a GitHub repo linked to the user's projects in Arugula control, with no block open, or discard a draft. Nothing reaches GitHub in an agent's name: the draft waits for a person to send (from the web page, their phone or the arugula CLI) or discard. Returns the draft at once; forge_read kind draft shows what became of it. Native issues in Arugula control aren't drafted (issue_write writes to them at once), except opening one on GitHub (kind open_on_github), which its person sends.\n- comment {body, item}: A comment on a PR or issue.\n- review {event, item, body?}: A review of a PR: approve, request_changes or comment.\n- issue {repo, title, body?}: A new issue on a linked repo.\n- open_on_github {issue, project?, repo?}: Draft opening a native issue on GitHub, as a new issue on a repo linked to its project, for the user to send. Once they've sent it the native issue stays, says where it lives, and new comments cross both ways (an agent's comment there is a draft for them too). Needs the machine's issues.write grant over the issue's project.\n- discard {draft}: Discard a waiting draft (yours, or one on a repo the user reads).",
       "inputSchema": {
         "$defs": {
           "Event": {
@@ -16220,6 +16271,10 @@
           "event": {
             "$ref": "#/$defs/Event"
           },
+          "issue": {
+            "description": "open_on_github: The native issue: \"#N\" (in the current project) or \"iss_…\".",
+            "type": "string"
+          },
           "item": {
             "description": "comment: The PR or issue: OWNER/NAME#N, or its link on github.com. review: The PR: OWNER/NAME#N, or its link on github.com.",
             "type": "string"
@@ -16230,13 +16285,26 @@
               "comment",
               "review",
               "issue",
+              "open_on_github",
               "discard"
             ],
             "type": "string"
           },
+          "project": {
+            "default": null,
+            "description": "open_on_github: Its project for \"#N\": its id (prj_…) or personal. Default: the one\nthis clone's GitHub repo is linked to, else the user's personal\nproject.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "repo": {
-            "description": "issue: The linked repo, OWNER/NAME.",
-            "type": "string"
+            "default": null,
+            "description": "issue: The linked repo, OWNER/NAME. open_on_github: The linked repo it goes to, OWNER/NAME. Default: its project's one\nlinked repo.",
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "title": {
             "type": "string"

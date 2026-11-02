@@ -251,6 +251,18 @@ pub trait Chat: Send + Sync + 'static {
     fn daemon_came<'a>(&'a self, _app: &'a Platform, _machine: &'a str) -> BoxFuture<'a, ()> {
         Box::pin(async {})
     }
+    /// A comment GitHub has on an exported native issue's GitHub issue
+    /// (M205, `forge::export`), into the issue's thread as GitHub's: no
+    /// author, `via` `github:<login>`, nobody pushed. The message's number.
+    fn github_comment<'a>(
+        &'a self,
+        _app: &'a Platform,
+        _issue: &'a str,
+        _login: &'a str,
+        _text: &'a str,
+    ) -> BoxFuture<'a, anyhow::Result<i64>> {
+        Box::pin(async { anyhow::bail!("no chat here") })
+    }
     /// Before a grant of `power` over `scope` is given (#122): the rooms
     /// it lets agents into, and who reaches them now. `None` when it lets
     /// agents into none.

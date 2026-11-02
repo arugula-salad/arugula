@@ -87,7 +87,7 @@ fn not_linked(repo: &str) -> ApiError {
 
 /// As the wire says it, with each machine's name where the hub still has
 /// the machine.
-pub(super) async fn wire_drafts(app: &Platform, rows: Vec<DraftRow>) -> Result<Vec<wire::ForgeDraft>, ApiError> {
+pub(crate) async fn wire_drafts(app: &Platform, rows: Vec<DraftRow>) -> Result<Vec<wire::ForgeDraft>, ApiError> {
     let mut ids: Vec<String> = rows.iter().filter_map(|d| d.agent_machine.clone()).collect();
     ids.sort();
     ids.dedup();
@@ -121,6 +121,7 @@ pub(super) async fn wire_drafts(app: &Platform, rows: Vec<DraftRow>) -> Result<V
                 sent_at,
                 sent_url: d.sent_url,
                 error: d.error,
+                native_issue: d.native_issue,
             }
         })
         .collect())
@@ -160,6 +161,10 @@ pub async fn create(
     d: Drafter,
     Json(b): Json<wire::NewDraft>,
 ) -> Result<Json<wire::DraftCreated>, ApiError> {
+    // Open on GitHub (M205): the issue's own title and body.
+    if let Some(native) = b.native_issue.as_deref() {
+        return super::export::draft(&app, &d, &b, native).await.map(Json);
+    }
     checked(&b)?;
     let agent = b.agent.as_deref().map(str::trim).filter(|a| !a.is_empty());
     let agent = match (&d.machine, agent) {
@@ -195,6 +200,8 @@ pub async fn create(
         title: b.title.as_deref().map(str::trim),
         body: &b.body,
         import_key: import_key.as_deref(),
+        native_issue: None,
+        native_seq: None,
         now: now_ms(),
     };
     let (row, created) = match app.db.add_draft(&checked.readable, &new) {

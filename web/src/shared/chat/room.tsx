@@ -15,9 +15,9 @@
 import { Fragment, type ComponentChildren } from "preact";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
 import { chat, type PaneQuote } from "../chat-store";
-import type { ChatMessage, ChatRoom } from "../proto";
+import type { ChatMessage, ChatPosted, ChatRoom } from "../proto";
 import { AgentsChip } from "./agents-chip";
-import { authorLabel, isSystemLine, machineMentions } from "./agents";
+import { authorLabel, githubLogin, isSystemLine, machineMentions } from "./agents";
 import { ChatMarkdown } from "./chat-markdown";
 import { mentionToken } from "../ui/markup";
 import { MsgAvatar } from "./avatar";
@@ -115,6 +115,8 @@ export function roomSigil(r: ChatRoom): string {
 
 /** A message's picture: its author's, or its agent's machine's (M197). */
 export function AuthorAvatar({ m }: { m: ChatMessage }) {
+  const gh = githubLogin(m);
+  if (gh) return <MsgAvatar who={`github:${gh}`} name={gh} dot />;
   return m.agent ? (
     <MsgAvatar who={`agent:${m.agent.machine}`} name={m.agent.machine_name || "agent"} account={m.author || undefined} agent={m.agent.machine} dot />
   ) : (
@@ -134,6 +136,16 @@ function RoomAgents({ room }: { room: string }) {
       <AgentsChip room={room} />
     </div>
   );
+}
+
+/** What a comment on an issue opened on GitHub (M205) says of its copy
+ * there, under the box: sent, or why not and where it waits. */
+function githubNote(posted: ChatPosted): string[] {
+  const g = posted.github;
+  if (!g) return [];
+  if (g.sent) return ["Also on GitHub, as you."];
+  if (g.draft) return [`Not on GitHub yet: ${g.why ?? "it wasn't sent"} It waits in your drafts, to send from there.`];
+  return [`Kept here only: ${g.why ?? "it can't go to GitHub"}`];
 }
 
 // ---- the room
@@ -649,7 +661,12 @@ export function RoomMessage({
                 imported
               </span>
             )}
-            {m.via && !said && (
+            {githubLogin(m) && (
+              <span class="msg-badge via-badge" title={`Written on GitHub by ${githubLogin(m)}, on the issue this one was opened as there`} data-via="github">
+                on GitHub
+              </span>
+            )}
+            {m.via && !said && !githubLogin(m) && (
               <span
                 class="msg-badge via-badge"
                 title={answerVia(m, name)?.title ?? `Posted for ${name} by ${m.via}, where they wrote it`}
@@ -1080,7 +1097,7 @@ export function RoomCompose({
       const posted = thread
         ? await chat.reply(room.id, thread.parent, text, also, files.ids)
         : await chat.post(room.id, text, quote, files.ids, paused && anyway);
-      setMissed(posted.unreached.map((w) => `Nobody here called ${w} can read this room`));
+      setMissed([...posted.unreached.map((w) => `Nobody here called ${w} can read this room`), ...githubNote(posted)]);
       setText("");
       chat.composed(room.id, thread?.parent);
       setQuote(undefined);

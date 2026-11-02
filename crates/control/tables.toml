@@ -1082,7 +1082,7 @@ name = "drafts"
 plane = "platform"
 process = "platform"
 holds = "plaintext"
-what = "A comment, review or new issue for a linked repo, waiting for a person to send it: the project, the person it's for (and the agent and machine that wrote it, if one did), the target, the text, its state, and where it landed once sent."
+what = "A comment, review or new issue for a linked repo, waiting for a person to send it: the project, the person it's for (and the agent and machine that wrote it, if one did), the target, the text, its state, and where it landed once sent. A native issue opened on GitHub, and a comment on one, name the native issue (and the comment) it carries (M205)."
 why_asleep = "A person sends a draft from a phone with every machine asleep."
 with_account = "deleted"
 note = "Its drafts, and those in projects that go with it."
@@ -1173,6 +1173,17 @@ what = "A native issue's timeline: opened, edited, closed, reopened, labelled, a
 why_asleep = "An issue's timeline shows with every machine asleep."
 with_account = "partly"
 note = "Those of issues that go, go. The rest stay, naming no actor, and it's taken out of assignment events."
+seen_by = ["litestream"]
+
+[[table]]
+name = "issue_github_comments"
+plane = "platform"
+process = "platform"
+holds = "metadata"
+what = "A comment that crossed between a native issue opened on GitHub and its GitHub issue (M205): GitHub's comment id, the native issue, the message in its thread, and which way it went (GitHub's brought in, or a person's sent). No text: the text is the message's, and GitHub's."
+why_asleep = "A comment on either side reaches the other once, and never comes back, with every machine asleep."
+with_account = "partly"
+note = "Those of issues that go, go. The rest name no person."
 seen_by = ["litestream"]
 
 [[table]]

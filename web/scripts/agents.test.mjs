@@ -3,7 +3,7 @@
 // switches read of the grants. Run with `node --experimental-strip-types`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { agentLines, agentOwners, authorLabel, chipLabel, isSystemLine, machineMentions, sessionSlug } from "../src/shared/chat/agents.ts";
+import { agentLines, agentOwners, authorLabel, chipLabel, githubLogin, isSystemLine, machineMentions, sessionSlug } from "../src/shared/chat/agents.ts";
 import {
   boardsLevel,
   boardsMove,
@@ -32,6 +32,16 @@ test("an agent's message is its owner's agent's, on its machine", () => {
   assert.equal(authorLabel(msg({ agent: { machine: "d1", machine_name: "geek" } })), "Jake's agent on geek");
   assert.equal(authorLabel(msg({ agent: { machine: "d1", machine_name: "" } })), "Jake's agent on a machine that left");
   assert.equal(authorLabel(msg({ author: "", name: "" })), "a deleted account");
+});
+
+test("a comment from GitHub on an issue opened there is its login's, and only with no author (M205)", () => {
+  const gh = msg({ author: "", name: "", via: "github:dana-gh" });
+  assert.equal(githubLogin(gh), "dana-gh");
+  assert.equal(authorLabel(gh), "dana-gh");
+  // A person's message posted via a product isn't GitHub's.
+  assert.equal(githubLogin(msg({ via: "github:dana-gh" })), null);
+  assert.equal(githubLogin(msg({})), null);
+  assert.equal(isSystemLine(gh), false);
 });
 
 test("what an agent session said is the session's, not a person's (Arugula #215)", () => {
