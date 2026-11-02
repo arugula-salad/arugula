@@ -146,6 +146,17 @@ fn routes() -> Routes {
                 .put(crate::project_docs::put_route)
                 .delete(crate::project_docs::delete_route),
         )
+        .route(project_docs::PROJECT_DOC_ASSET, get(crate::project_docs::asset_route))
+        .route(project_docs::PROJECT_DOC_MOVE, post(crate::project_docs::move_route))
+        .route(
+            project_docs::MACHINE_DOC,
+            put(crate::project_docs_machine::put_route).delete(crate::project_docs_machine::delete_route),
+        )
+        .route(
+            project_docs::MACHINE_DOC_ASSET,
+            put(crate::project_docs_machine::asset_route)
+                .layer(axum::extract::DefaultBodyLimit::max(project_docs::ASSET_MAX + 1)),
+        )
         .route("/github/webhook", post(forge::webhook))
         .route("/plane/webhook/{connection}", post(trackers::webhook::webhook))
         .route("/api/projects/{project}/workspaces", get(hosted::routes::list).post(hosted::routes::create))

@@ -18,6 +18,12 @@
 //! Native Docs come with chat, as native issues do (`chat_on`): their live
 //! updates are chat's.
 //!
+//! **Pictures and moves** (#418): members read a Doc's pictures
+//! ([`asset_route`]); a person who may write in two projects moves a Doc
+//! from one to the other ([`move_doc`], never a session), keeping its id,
+//! pictures and where it came from. A machine copies its Docs up to its
+//! owner's personal project in [`machine`](crate::project_docs_machine).
+//!
 //! **Live:** a write pushes an object change on the Doc's thread
 //! ([`changed`]), as a board's does, so pages showing it read it again.
 //!
@@ -31,7 +37,8 @@ use arugula_e2e::{now_ms, team::TeamRole};
 use axum::{
     Json,
     extract::{Path, State},
-    http::StatusCode,
+    http::{HeaderValue, StatusCode, header},
+    response::{IntoResponse as _, Response},
 };
 use serde_json::{Value, json};
 
@@ -64,27 +71,27 @@ impl By<'_> {
 }
 
 /// A project as someone acting on its Docs sees it.
-struct Place {
-    project: String,
-    role: TeamRole,
+pub(crate) struct Place {
+    pub project: String,
+    pub role: TeamRole,
 }
 
 fn no_project() -> ApiError {
     err(StatusCode::NOT_FOUND, "no such project")
 }
 
-fn no_doc() -> ApiError {
+pub(crate) fn no_doc() -> ApiError {
     err(StatusCode::NOT_FOUND, "no such Doc")
 }
 
-fn bad(msg: &str) -> ApiError {
+pub(crate) fn bad(msg: &str) -> ApiError {
     err(StatusCode::BAD_REQUEST, msg)
 }
 
 /// The project `asked` names (its id, or [`PERSONAL`]) as `account` sees
 /// it: 404 for a stranger; with `write`, the team's roster comes from the
 /// hub, not the cache, and a viewer is refused.
-async fn place(app: &Platform, account: &str, asked: &str, write: bool) -> Result<Place, ApiError> {
+pub(crate) async fn place(app: &Platform, account: &str, asked: &str, write: bool) -> Result<Place, ApiError> {
     if !chat_on(app, account).await? {
         return Err(refusal(
             StatusCode::FORBIDDEN,
@@ -143,7 +150,7 @@ fn may_write(by: By<'_>, place: &Place, doc: &db::Stored) -> Result<(), ApiError
     Ok(())
 }
 
-fn refused(r: Refused) -> ApiError {
+pub(crate) fn refused(r: Refused) -> ApiError {
     match r {
         Refused::Missing(what) => err(StatusCode::NOT_FOUND, what),
         Refused::Bad(why) => bad(&why),
@@ -164,15 +171,15 @@ fn one_line(s: &str, what: &str, max: usize, empty: bool) -> Result<String, ApiE
     Ok(s.to_owned())
 }
 
-fn title_ok(t: &str) -> Result<String, ApiError> {
+pub(crate) fn title_ok(t: &str) -> Result<String, ApiError> {
     one_line(t, "title", wire::TITLE_MAX, false)
 }
 
-fn heading_ok(h: &str) -> Result<String, ApiError> {
+pub(crate) fn heading_ok(h: &str) -> Result<String, ApiError> {
     one_line(h, "heading", wire::HEADING_MAX, false)
 }
 
-fn intent_ok(i: &str) -> Result<String, ApiError> {
+pub(crate) fn intent_ok(i: &str) -> Result<String, ApiError> {
     one_line(i, "intent", wire::INTENT_MAX, true)
 }
 
@@ -184,7 +191,7 @@ fn id_ok(id: &str) -> Result<(), ApiError> {
     }
 }
 
-fn doc_wire(d: &db::Stored) -> wire::Doc {
+pub(crate) fn doc_wire(d: &db::Stored) -> wire::Doc {
     wire::Doc {
         id: d.id.clone(),
         project: d.project.clone(),
@@ -200,6 +207,7 @@ fn doc_wire(d: &db::Stored) -> wire::Doc {
         rev: d.rev,
         created_at: d.created_at,
         updated_at: d.updated_at,
+        machine: d.machine.clone(),
     }
 }
 
@@ -210,7 +218,13 @@ fn view(app: &Platform, by: By<'_>, place: &Place, d: &db::Stored) -> Result<wir
         .into_iter()
         .map(|s| wire::Section { id: s.id, heading: s.heading, intent: s.intent, body: s.body, rev: s.rev })
         .collect();
-    Ok(wire::DocView { doc: doc_wire(d), sections, writer: may_write(by, place, d).is_ok() })
+    let assets = app
+        .db
+        .project_doc_assets(&d.id)?
+        .into_iter()
+        .map(|a| wire::Asset { name: a.name, mime: a.mime, size: a.size, rev: a.rev })
+        .collect();
+    Ok(wire::DocView { doc: doc_wire(d), sections, assets, writer: may_write(by, place, d).is_ok() })
 }
 
 /// The Doc `id`, in `project`, changed: pages showing it read it again,
@@ -290,6 +304,45 @@ pub async fn write(
     view(app, by, &place, &doc)
 }
 
+/// A picture of a Doc, its type and bytes, as `by` may read the Doc: 404
+/// for a stranger, as for the Doc.
+pub async fn asset(
+    app: &Platform,
+    by: By<'_>,
+    project: &str,
+    id: &str,
+    name: &str,
+) -> Result<(String, Vec<u8>), ApiError> {
+    id_ok(id)?;
+    let (_, doc) = doc_in(app, by, project, id, false).await?;
+    app.db.project_doc_asset(&doc.id, name)?.ok_or_else(|| err(StatusCode::NOT_FOUND, "no such picture"))
+}
+
+/// Move a Doc to the project `to` names, for `account` who may write in
+/// both (a personal project counts). It keeps its id, sections, pictures
+/// and key, and pages on both projects read again. Never a session's.
+pub async fn move_doc(
+    app: &Platform,
+    account: &str,
+    project: &str,
+    id: &str,
+    to: &str,
+) -> Result<wire::DocView, ApiError> {
+    id_ok(id)?;
+    let by = By::Person(account);
+    let (from, doc) = doc_in(app, by, project, id, true).await?;
+    may_write(by, &from, &doc)?;
+    let target = place(app, account, to, true).await?;
+    if target.project == from.project {
+        return view(app, by, &from, &doc);
+    }
+    let moved =
+        app.db.move_project_doc(id, &from.project, &target.project, now_ms(), wire::DOCS_MAX)?.map_err(refused)?;
+    changed(app, &from.project, id);
+    changed(app, &target.project, id);
+    view(app, by, &target, &moved)
+}
+
 /// Delete a Doc: owners and editors, never a session.
 pub async fn delete(app: &Platform, account: &str, project: &str, id: &str) -> Result<(), ApiError> {
     id_ok(id)?;
@@ -336,6 +389,35 @@ pub async fn put_route(
     Json(w): Json<wire::DocWrite>,
 ) -> J<wire::DocView> {
     Ok(Json(write(&app, By::Person(&s.account), &project, &id, &w).await?))
+}
+
+/// `GET /api/projects/{project}/docs/{id}/assets/{name}`: a picture, shown
+/// inline and never run (`nosniff`, a CSP that allows nothing).
+pub async fn asset_route(
+    State(app): State<Arc<Platform>>,
+    s: Person,
+    Path((project, id, name)): Path<(String, String, String)>,
+) -> Result<Response, ApiError> {
+    let (mime, bytes) = asset(&app, By::Person(&s.account), &project, &id, &name).await?;
+    let mut r = bytes.into_response();
+    let h = r.headers_mut();
+    h.insert(header::CONTENT_TYPE, HeaderValue::from_str(&mime).map_err(|_| no_doc())?);
+    h.insert(header::CACHE_CONTROL, HeaderValue::from_static("private, max-age=300"));
+    h.insert(header::X_CONTENT_TYPE_OPTIONS, HeaderValue::from_static("nosniff"));
+    h.insert(header::CONTENT_SECURITY_POLICY, HeaderValue::from_static("default-src 'none'; sandbox"));
+    h.insert("cross-origin-resource-policy", HeaderValue::from_static("same-origin"));
+    Ok(r)
+}
+
+/// `POST /api/projects/{project}/docs/{id}/move`: to another project
+/// (owners and editors of both).
+pub async fn move_route(
+    State(app): State<Arc<Platform>>,
+    s: Person,
+    Path((project, id)): Path<(String, String)>,
+    Json(m): Json<wire::MoveDoc>,
+) -> J<wire::DocView> {
+    Ok(Json(move_doc(&app, &s.account, &project, &id, &m.to).await?))
 }
 
 /// `DELETE /api/projects/{project}/docs/{id}` (owners and editors).
