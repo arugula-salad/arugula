@@ -37,7 +37,9 @@
         "if(!m||m.type!=='arugula.scheme')return;" +
         "var s=m.colorScheme==='dark'?'dark':'light';" +
         "var a=document.getElementById('arugula-scheme-meta'),b=document.getElementById('arugula-scheme-style');" +
-        "if(a)a.content=s;if(b)b.textContent=':root{color-scheme:'+s+'}'})</scr" + "ipt>" +
+        "if(a)a.content=s;if(b)b.textContent=':root{color-scheme:'+s+'}'});" +
+        // Esc in the frame never reaches the Doc's page: say so (#507), for Full window.
+        "addEventListener('keydown',function(e){if(e.key==='Escape')parent.postMessage({type:'arugula.escape'},'*')})</scr" + "ipt>" +
         m.html,
     );
     document.close();

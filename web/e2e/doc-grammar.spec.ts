@@ -13,7 +13,7 @@ import { expect, test } from "@playwright/test";
 import { cssVar, HUES, hex, NAMES, resolve, usesNames } from "../src/shared/docs/colours";
 import { buildChart, checkChart, checkSpec, niceTicks, parseChart, summary, type El, type Spec } from "../src/shared/ui/chart";
 import { assetName, checkEmbeds, checkPrototype, checkSvg, fences, prototypeInfo, imageRefs, plain, svgUrl } from "../src/shared/ui/embeds";
-import { HTML, READY, SCHEME, htmlMessage, schemeMessage, protoOfViewer, readyFrom } from "../src/shared/ui/prototype-messages";
+import { ESCAPE, HTML, READY, SCHEME, htmlMessage, schemeMessage, protoOfViewer, readyFrom } from "../src/shared/ui/prototype-messages";
 import { checkStats, statsSummary, toneOf } from "../src/shared/ui/stats";
 import { example, examples, expected } from "./doc-examples";
 
@@ -402,4 +402,5 @@ test("the frame hears only its own window say it is ready, and the viewer finds 
   expect(runner).toContain(`m.type !== "${HTML}"`);
   expect(runner).toContain(`type: "${READY}"`);
   expect(runner).toContain(`m.type!=='${SCHEME}'`);
+  expect(runner).toContain(`type:'${ESCAPE}'`);
 });

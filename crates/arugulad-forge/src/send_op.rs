@@ -96,7 +96,7 @@ pub async fn forge_send(app: &Arc<crate::server::App>, s: ForgeSend) -> OpAnswer
                 url = sent.url,
                 "a draft sent for its person, as control asked"
             );
-            OpAnswer::Done { url: sent.url }
+            OpAnswer::Done { url: sent.url, routed: None }
         }
         Err(Error::Login(why)) => {
             warn!(draft = s.draft, why, "can't send a draft for control: no gh login");

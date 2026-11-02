@@ -246,7 +246,7 @@ pub fn start(app: &crate::server::App, s: &RunStart) -> OpAnswer {
             if s.run.is_some() {
                 crate::work::nudge();
             }
-            OpAnswer::Done { url: None }
+            OpAnswer::Done { url: None, routed: None }
         }
         Err(r) => {
             info!(grant = s.grant.id, code = r.code, "hosted: refused a start under the project's standing grant");
@@ -272,7 +272,7 @@ pub fn revoke(app: &crate::server::App, r: &RunRevoke) -> OpAnswer {
             if stop {
                 crate::work::stop_revoked(app);
             }
-            OpAnswer::Done { url: None }
+            OpAnswer::Done { url: None, routed: None }
         }
         // Not this machine's, not an owner's, or an older one than it has.
         Ok(false) => {
@@ -281,7 +281,7 @@ pub fn revoke(app: &crate::server::App, r: &RunRevoke) -> OpAnswer {
                 .as_ref()
                 .zip(owners(&saved))
                 .is_some_and(|(p, o)| r.revoke.signed_for(&p.delegation.owner, &signers(&saved, &o), now));
-            if signed { OpAnswer::Done { url: None } } else { refused(GrantRefusal::Unsigned.into()) }
+            if signed { OpAnswer::Done { url: None, routed: None } } else { refused(GrantRefusal::Unsigned.into()) }
         }
         Err(e) => OpAnswer::Failed { error: format!("{e:#}") },
     }

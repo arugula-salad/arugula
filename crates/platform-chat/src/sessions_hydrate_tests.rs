@@ -584,7 +584,7 @@ async fn a_rebuild_archives_the_old_boxs_conversation_first() {
                 text: body.into(),
             };
             match app.hosted_transcript("hw_dev", &machine, &post).await.unwrap() {
-                crate::Archived::Kept { .. } => OpAnswer::Done { url: None },
+                crate::Archived::Kept { .. } => OpAnswer::Done { url: None, routed: None },
                 refused => OpAnswer::Failed { error: format!("{refused:?}") },
             }
         })

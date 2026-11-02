@@ -1510,6 +1510,8 @@ mod tests {
                 "add",
                 "attach",
                 "detach",
+                "link_doc",
+                "unlink_doc",
                 "ask",
                 "relate",
                 "unrelate",
