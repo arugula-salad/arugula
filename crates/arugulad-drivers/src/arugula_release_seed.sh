@@ -25,22 +25,27 @@ printf '[[package]]\nname = "arugula-desktop"\nversion = "0.1.0"\n\n' >crates/de
 echo one >src/code
 git add -A
 git commit -qm one
+one=$(git rev-parse HEAD)
+# two has the notes for 0.1.1 and the app's 0.2.0, and the client fixtures
+# for 0.1.1: a release is its commit as it is (#1986), so what it needs is
+# in the commit.
 echo two >src/code
-git commit -qam two
+for n in 0.1.1 app-0.2.0; do echo "notes $n" >"docs/releases/$n.md"; done
+# A daemon release's notes have a headline section (scripts/whats-new.mjs).
+printf '\n```whats-new\n[]\n```\n' >>docs/releases/0.1.1.md
+mkdir -p crates/proto/fixtures/releases/0.1.1
+cp crates/proto/fixtures/session.jsonl crates/proto/fixtures/releases/0.1.1/
+git add -A
+git commit -qm two
 two=$(git rev-parse HEAD)
 echo three >src/code
 git commit -qam three
 three=$(git rev-parse HEAD)
-for n in 0.1.1 app-0.2.0; do echo "notes $n" >"docs/releases/$n.md"; done
-# A daemon release's notes have a headline section (scripts/whats-new.mjs).
-printf '\n```whats-new\n[]\n```\n' >>docs/releases/0.1.1.md
-git add -A
-git commit -qm notes
-git tag -a "ci/green/$(git rev-parse HEAD~3)" -m green HEAD~3
+git tag -a "ci/green/$one" -m green "$one"
 git tag -a "ci/green/$two" -m green "$two"
 # Their app lane's tags too, as chant's tick makes them beside ci/green
 # (#307): an app release (`bump --app`) reads ci/green-app.
-git tag -a "ci/green-app/$(git rev-parse HEAD~3)" -m green HEAD~3
+git tag -a "ci/green-app/$one" -m green "$one"
 git tag -a "ci/green-app/$two" -m green "$two"
 # two passed the rare jobs too (rare-nightly.yml's ci/rare tag, #305),
 # which a daemon release needs.

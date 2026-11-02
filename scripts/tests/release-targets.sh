@@ -78,10 +78,28 @@ for d in "${downloads[@]}"; do
     arugula-desktop-linux-*) a=${d#arugula-desktop-linux-}; step="just desktop-linux ${a%%.*}" ;;
     arugula-desktop-macos-arm64.*) step="just desktop-macos aarch64" ;;
     arugula-desktop-macos-*) a=${d#arugula-desktop-macos-}; step="just desktop-macos ${a%%.*}" ;;
-    arugula-desktop-windows-*) step="scripts/release app-upload \"\\\$GITHUB_REF_NAME\" dist/$d\\*" ;;
+    # Built in the job itself; this is the step that hands it to publish.
+    arugula-desktop-windows-*)
+      grep -Eq "^ *path: dist/$d\\*\$" "$awf" || bad "$awf doesn't hand $d to its publish job (expected: path: dist/$d*)"
+      continue ;;
     *) bad "$d: no rule for how app-release.yml makes it; add one here"; continue ;;
   esac
   app_runs "$step" || bad "$awf doesn't make $d (expected: run: $step)"
+done
+
+# What chant publishes (#1986): release/daemon's forge target attaches a
+# tarball for each target, and release/app's targets every download.
+dcfg=release/daemon/chant.config.ts
+acfg=release/app/chant.config.ts
+for t in "${targets[@]}"; do
+  grep -q "\"$t\"" "$dcfg" || bad "$dcfg doesn't publish $t's tarball"
+done
+for d in "${downloads[@]}"; do
+  grep -q "\"$d\"" "$acfg" || bad "$acfg doesn't publish $d"
+done
+# And nothing that isn't made.
+for t in $(sed -n 's/^const targets = \[\(.*\)\];$/\1/p' "$dcfg" | tr -d '",'); do
+  printf '%s\n' "${targets[@]}" | grep -qx "$t" || bad "$dcfg publishes $t, which just dist doesn't make"
 done
 
 # scripts/release counts exactly these tarballs before it writes SHA256SUMS.
@@ -89,26 +107,32 @@ done
 n=$(sed -n 's/.*\[ "\$n" = \([0-9]*\) \].*/\1/p' scripts/release)
 [ "$n" = "${#targets[@]}" ] || bad "scripts/release expects ${n:-?} tarballs; just dist makes ${#targets[@]}"
 
-# The Homebrew formula has a URL for each target, and scripts/release fills
-# in every checksum placeholder the formula has (and no others).
+# The Homebrew formula's template (chant's homebrew target, #1986) has a
+# URL and, under it, a checksum for each target's tarball, and no
+# placeholder chant doesn't fill: {{version}}, and {{url:NAME}} and
+# {{sha256:NAME}} for a tarball the target attaches.
 formula=packaging/homebrew/arugula.rb.in
 for t in "${targets[@]}"; do
-  grep -q "arugula-@VERSION@-$t\.tar\.gz" "$formula" || bad "$formula has no URL for $t"
+  name="arugula-@VERSION@-$t.tar.gz"
+  grep -qF "url \"{{url:$name}}\"" "$formula" || bad "$formula has no URL for $t"
+  above=$(grep -B1 -F "sha256 \"{{sha256:$name}}\"" "$formula" | head -1)
+  grep -qF "{{url:$name}}" <<<"$above" || bad "$formula has no checksum for $t under its URL"
 done
-in_formula=$(grep -o '@SHA_[A-Z0-9_]*@' "$formula" | sort -u)
-# "@PLACEHOLDER@ target", for each `s=$(sha target); sed+=(-e "s/@PLACEHOLDER@/$s/")`.
-# shellcheck disable=SC2016 # a literal $(sha …) in scripts/release
-in_release=$(sed -n 's/.*s=\$(sha \([a-z0-9_-]*\)); sed+=(-e "s\/\(@SHA_[A-Z0-9_]*@\)\/.*/\2 \1/p' scripts/release | sort -u)
-[ -n "$in_release" ] || bad "can't find the checksums scripts/release fills in"
-filled=$(cut -d' ' -f1 <<<"$in_release" | sort -u)
-[ "$in_formula" = "$filled" ] || bad "checksum placeholders differ: formula has $(tr '\n' ' ' <<<"$in_formula"), scripts/release fills $(tr '\n' ' ' <<<"$filled")"
-# Each placeholder sits under its own target's URL: the sha it's filled
-# with is for the tarball on the line above it.
-while read -r ph t; do
+while read -r ph; do
   [ -n "$ph" ] || continue
-  above=$(grep -B1 "sha256 \"$ph\"" "$formula" | head -1)
-  grep -q "arugula-@VERSION@-$t\.tar\.gz" <<<"$above" || bad "$ph is filled with $t's checksum but sits under another URL in $formula"
-done <<<"$in_release"
+  case "$ph" in
+    '{{version}}') ;;
+    '{{url:arugula-@VERSION@-'*'.tar.gz}}'|'{{sha256:arugula-@VERSION@-'*'.tar.gz}}')
+      t=${ph#*arugula-@VERSION@-}; t=${t%.tar.gz\}\}}
+      printf '%s\n' "${targets[@]}" | grep -qx "$t" || bad "$formula names $t's tarball, which just dist doesn't make" ;;
+    *) bad "$formula has $ph, which chant's homebrew target doesn't fill" ;;
+  esac
+done < <(grep -o '{{[^}]*}}' "$formula" | sort -u)
+grep -q 'assets: tarballs,' "$dcfg" || bad "$dcfg's homebrew target doesn't attach the tarballs"
+# shellcheck disable=SC2016 # a literal ${dist} in the member's config
+grep -qF 'template: `${dist}/arugula.rb`' "$dcfg" || bad "$dcfg's homebrew target doesn't read the formula release.yml writes"
+# shellcheck disable=SC2016 # a literal $GITHUB_REF_NAME in the workflow
+grep -Eq '^ *- run: scripts/release formula "\$GITHUB_REF_NAME" dist/release$' "$wf" || bad "$wf doesn't write the formula's template for the publish"
 
 # install.sh installs every target.
 for t in "${targets[@]}"; do
@@ -157,28 +181,19 @@ for t in x86_64-unknown-linux-musl x86_64-pc-windows-msvc; do
   [ "$got" = "./$n/LICENSE-MIT ./$n/arugula$x ./$n/arugulad$x " ] || bad "$n.$e holds $got"
 done
 
-# The Homebrew tap's files: the formula (named arugula now, every checksum
-# filled), the old formula gone, and formula_renames.json moving `illogical`
-# installs to `arugula` (keeping any other renames).
-tap=$work/tap
-mkdir -p "$tap/Formula"
-echo old >"$tap/Formula/illogical.rb"
-echo '{"other": "thing"}' >"$tap/formula_renames.json"
-for t in "${targets[@]}"; do printf '%064d  arugula-1.2.3-%s.tar.gz\n' "${#t}" "$t"; done >"$work/SHA256SUMS"
-if scripts/release tap-files v1.2.3 "$tap" "$work/SHA256SUMS" >/dev/null; then
-  f=$tap/Formula/arugula.rb
-  grep -q '^class Arugula < Formula$' "$f" || bad "the tap's formula isn't class Arugula"
-  ! grep -q '@[A-Z_]*@' "$f" || bad "the tap's formula has placeholders left: $(grep -o '@[A-Z_]*@' "$f" | tr '\n' ' ')"
-  [ "$(grep -c 'sha256 "[0-9a-f]\{64\}"' "$f")" = "${#targets[@]}" ] || bad "the tap's formula hasn't a checksum for each target"
-  [ ! -e "$tap/Formula/illogical.rb" ] || bad "the tap keeps Formula/illogical.rb, so brew won't rename it"
-  python3 -I -c 'import json, sys; r = json.load(open(sys.argv[1])); sys.exit(r != {"illogical": "arugula", "other": "thing"})' "$tap/formula_renames.json" \
-    || bad "the tap's formula_renames.json is $(cat "$tap/formula_renames.json")"
+# What `scripts/release formula` writes for chant: the template with the
+# version in the tarballs' names, and nothing of its own left.
+if scripts/release formula v1.2.3 "$work/formula" >/dev/null; then
+  f=$work/formula/arugula.rb
+  grep -q '^class Arugula < Formula$' "$f" || bad "the formula isn't class Arugula"
+  ! grep -q '@[A-Z_]*@' "$f" || bad "the formula has placeholders left: $(grep -o '@[A-Z_]*@' "$f" | tr '\n' ' ')"
+  for t in "${targets[@]}"; do
+    grep -qF "{{sha256:arugula-1.2.3-$t.tar.gz}}" "$f" || bad "the formula for 1.2.3 doesn't name $t's tarball"
+  done
 else
-  bad "scripts/release tap-files failed"
+  bad "scripts/release formula failed"
 fi
-# A release missing a target's tarball stops it.
-grep -v aarch64-apple-darwin "$work/SHA256SUMS" >"$work/SHORT"
-! scripts/release tap-files v1.2.3 "$work/tap2" "$work/SHORT" >/dev/null 2>&1 || bad "scripts/release tap-files wrote a formula with a checksum missing"
+! scripts/release formula app-v1.2 "$work/formula2" >/dev/null 2>&1 || bad "scripts/release formula took a tag that isn't a version"
 
 [ "$fail" = 0 ] && echo "release targets: all agree"
 exit "$fail"

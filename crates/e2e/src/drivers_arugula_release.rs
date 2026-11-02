@@ -5,9 +5,9 @@
 //! A deploy's source is a commit of [`REPO`]: one on its `main` that passed
 //! CI (its `ci/green/<sha>` tag, and no `ci/revoked/<sha>`). The box runs
 //! `scripts/release bump` as that commit has it, which is what `just
-//! release` runs: it bumps the version on top of the commit, tags it, and
-//! pushes the tag and `main` (the bump merged into it) in one atomic push.
-//! The tag's release workflow then builds, signs and publishes: its
+//! release` runs: it tags the commit itself with the lane's next version and
+//! pushes the tag (#1986: no commit moves the version; the release's build
+//! stamps it). The tag's release workflow then builds, signs and publishes: its
 //! secrets (the updater key, Apple's, the marketplaces') stay in GitHub
 //! Actions. The box follows that workflow to its end, for at most
 //! [`FOLLOW_MINUTES`].
@@ -177,16 +177,16 @@ pub fn plan_lines(source_kind: &str, source_ref: &str, source_where: &str, setti
     );
     t.push_str(&format!(
         "does: run scripts/release bump {bump}{flag} {source_ref}, as that commit has it (what just release runs): \
-         a {bump} bump of {what}, from the higher of the commit's version and {BRANCH}'s; the run's log and the \
-         deploy's name the script's blob id\n"
+         a {bump} bump of {what}, from the higher of the lane's newest tag and the commit's version; the run's log \
+         and the deploy's name the script's blob id\n"
     ));
     t.push_str(&format!(
-        "does: stop if {BRANCH} has no {notes} for the new version, the tag is there already, or the commit is in a \
-         release already\n"
+        "does: stop if the commit has no {notes} for the new version, the tag is there already, or the commit is in \
+         a release already\n"
     ));
     t.push_str(&format!(
-        "does: commit the bump on top of the commit, tag it {prefix}X.Y.Z, and push the tag and {BRANCH} (the bump \
-         merged into it) in one atomic push over https\n"
+        "does: tag the commit itself {prefix}X.Y.Z, with no version-bump commit (the release workflow stamps the \
+         version into its build), and push the tag over https; {BRANCH} doesn't move\n"
     ));
     t.push_str(&format!(
         "does: follow the tag's release workflow ({workflow}) for at most {FOLLOW_MINUTES} minutes; the release is \
@@ -264,7 +264,7 @@ mod tests {
         for says in [
             format!("run scripts/release bump minor --app {sha}"),
             "docs/releases/app-X.Y.Z.md".into(),
-            "tag it app-vX.Y.Z".into(),
+            "tag the commit itself app-vX.Y.Z".into(),
             ".github/workflows/app-release.yml".into(),
             "no roll back".into(),
             "writes arugula-salad/arugula's contents and nothing else".into(),
@@ -272,7 +272,10 @@ mod tests {
             assert!(app.contains(&says), "{says:?} in {app}");
         }
         let daemon = plan_lines("commit", &sha, REPO, &settings(&s(&[])).unwrap());
-        assert!(daemon.contains(&format!("bump patch {sha}, as")) && daemon.contains("tag it vX.Y.Z"), "{daemon}");
+        assert!(
+            daemon.contains(&format!("bump patch {sha}, as")) && daemon.contains("tag the commit itself vX.Y.Z"),
+            "{daemon}"
+        );
         assert!(plan_lines("commit", &sha, "acme/app", &Settings::new()).starts_with("refused "));
     }
 

@@ -1220,19 +1220,21 @@ commit of `arugula-salad/arugula`, by its full id. Its box:
 1. clones `main` and checks the commit is on it, with a `ci/green/<sha>`
    tag and no `ci/revoked/<sha>` one (the platform asked GitHub the same
    before it minted the run's tokens);
-2. runs `scripts/release bump <bump> [--app] <sha>`, which stops if main
-   has no `docs/releases/X.Y.Z.md`, the tag exists, or the commit is in a
-   release already. Otherwise it commits the bump, tags it, and pushes the
-   tag and main in one atomic push. Each of the three carries
-   `Arugula-Deploy: dep_…`, and a deploy whose id is on main already is
-   refused;
+2. runs `scripts/release bump <bump> [--app] <sha>`, which stops if the
+   commit has no `docs/releases/X.Y.Z.md` (or, for the daemon, its client
+   fixtures), the tag exists, or the commit is in a release already.
+   Otherwise it tags the commit itself `vX.Y.Z` (no version-bump commit
+   since #1986: the release's build stamps the version) and pushes the
+   tag, whose message carries `Arugula-Deploy: dep_…`. A deploy of a
+   commit that's released already is refused, and so is one whose id is on
+   main already (a release from before #1986 committed it there);
 3. revokes its write token, then follows the tag's release workflow for
    up to 45 minutes with its read token, and revokes that. The run
    succeeds once the
    workflow's `publish` job succeeded and the release is out. It reports
    the tag, the commits, `scripts/release`'s blob id, the release's page,
-   the workflow's run and the jobs that failed (today `template` and `extension` fail on every
-   release; they don't fail the deploy). The release's `control` job
+   the workflow's run and the jobs that failed (today `template` fails on
+   every release; it doesn't fail the deploy). The release's `control` job
    deploys the hub only when the hub changed, as for any tag
    ("Deploys" above).
 
@@ -1252,10 +1254,9 @@ before.
 **Set up once:**
 
 - The App (`arugula-io`) gets **Contents: write** on its installation in
-  arugula-salad (it already reads Actions), and a **bypass** on the
-  "binaries check" ruleset, whose required status check would otherwise
-  refuse the push (the push to main is the bump merged in, not a PR).
-  Nothing else.
+  arugula-salad (it already reads Actions), to push the tag. Its bypass on
+  the "binaries check" ruleset was for the push to main a release made
+  before #1986; a release now pushes only its tag. Nothing else.
 - The platform's `ARUGULA_PLATFORM_RELEASE_PROJECT` names Arugula's
   project id (`prj_…`; comma separated for more). No other project can
   make an `arugula-release` environment, plan with it, or have its token

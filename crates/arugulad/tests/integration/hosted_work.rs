@@ -1459,8 +1459,8 @@ fn a_deploy_box_applies_an_apps_platform_deploy() {
 /// M221: Arugula's own release on a deploy's box, through the daemon: its
 /// minted token comes on the driver's standard input, `arugulad
 /// _arugula-release` runs the commit's real `scripts/release bump` against
-/// a bare repository standing in for GitHub, which tags v0.1.1 and pushes
-/// it with main; the write token is revoked; the release workflow is
+/// a bare repository standing in for GitHub, which tags the commit itself
+/// v0.1.1 and pushes the tag (#1986); the write token is revoked; the release workflow is
 /// followed with the read token (a fake API shaped as GitHub's), which is
 /// revoked after; the run succeeds and reports the tag on its result pipe.
 /// Neither token is ever on disk or in the pane.
@@ -1579,7 +1579,7 @@ fn a_deploy_box_releases_arugula() {
         "both tokens revoked from the box, the write one first"
     );
     let bare = marks.join("remotes/arugula-salad/arugula.git");
-    assert_eq!(git(&bare, &["rev-parse", "v0.1.1^{commit}^"]), two, "v0.1.1 is a bump on the commit");
+    assert_eq!(git(&bare, &["rev-parse", "v0.1.1^{commit}"]), two, "v0.1.1 is on the commit itself");
     assert!(git(&bare, &["cat-file", "-p", "v0.1.1"]).contains(&format!("Arugula-Deploy: {dep}")));
     std::thread::sleep(Duration::from_millis(300));
     for token in [TOKEN, READ] {

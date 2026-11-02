@@ -196,6 +196,23 @@
       ]
     },
     {
+      "name": "daemon-release",
+      "dir": "release/daemon",
+      "kind": "chant",
+      "because": "the daemon's release (v* tags): release.yml cuts it from the tag's commit in the daemon's green lane and publishes the tarballs, the Windows zip, the editor extension and SHA256SUMS to the tag's GitHub release, as latest, the Homebrew formula to the tap and the extension to the VS Code Marketplace and Open VSX, with chant release publish (#1986)",
+      "links": [
+        { "member": "daemon", "output": "arugulad" },
+        { "member": "cli", "output": "arugula" }
+      ]
+    },
+    {
+      "name": "app-release",
+      "dir": "release/app",
+      "kind": "chant",
+      "because": "the desktop app's release (app-v* tags): app-release.yml cuts it from the tag's commit in the app's green lane and publishes the apps to the tag's GitHub release, never latest, and to the rolling app-latest release with the updater's latest.json, with chant release publish (#1986)",
+      "links": [{ "member": "desktop", "output": "app" }]
+    },
+    {
       "name": "testnet",
       "dir": "testnet",
       "kind": "other",

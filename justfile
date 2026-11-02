@@ -486,12 +486,13 @@ shellcheck:
     shellcheck -x scripts/ci-* scripts/free-port testnet/*.sh testnet/forges/*.sh testnet/hosts/*.sh testnet/editors/*.sh testnet/macos/*.sh
     shellcheck -s sh testnet/editors/box/entrypoint.sh testnet/sshd/entrypoint.sh testnet/sshd-systemd/keys.sh testnet/git/entrypoint.sh testnet/tailnet/entrypoint.sh
 
-# Release without waiting for a version bump to pass CI (#524): commit the
-# bump on top of the newest commit on main with a ci/green tag (--app:
-# ci/green-app, #307), tag it, and
-# push the tag with main, the bump merged in (docs/development.md). A
-# daemon release also needs the commit's ci/rare tag (rare-nightly.yml,
-# #305): --rare starts those jobs on it and waits for them first.
+# Tag the newest commit on main with a ci/green tag (--app: ci/green-app,
+# #307) as it is, with the lane's next version, and push the tag (#1986:
+# no commit moves the version; the release's build stamps it). The commit
+# needs the release's notes and, for the daemon, its client fixtures
+# (`just release-fixtures X.Y.Z`; docs/development.md). A daemon release
+# also needs the commit's ci/rare tag (rare-nightly.yml, #305): --rare
+# starts those jobs on it and waits for them first.
 # just release [patch|minor|major] [--app] [COMMIT|--older] [--rare] [--dry-run]
 release *args:
     scripts/release bump {{args}}
@@ -736,8 +737,9 @@ vsix:
 # Publish the extension as `arugula.arugula-editor` (#529): to the Visual
 # Studio Marketplace (VSCE_PAT, an Azure DevOps token with Marketplace
 # Manage) and Open VSX (OVSX_PAT), or just one: `just publish-vsix ovsx`.
-# release.yml does this on every `v*` tag; this is the same by hand, for
-# whoever holds the tokens. A version already there is skipped, so it can
+# release.yml does this on every `v*` tag, through chant's marketplace
+# targets with the run's OIDC identity (#1986); this is the same by hand,
+# with tokens, for whoever holds them. A version already there is skipped, so it can
 # run again after one of them fails.
 publish-vsix to="both":
     #!/usr/bin/env bash
@@ -1165,12 +1167,14 @@ record-fixtures *names:
     {{cargo}} build -p arugulad
     {{cargo}} run -q -p arugula-testkit --bin record-fixtures -- --daemon {{target_dir}}/debug/arugulad --record crates/proto/fixtures {{names}}
 
-# Copy the client fixtures to crates/proto/fixtures/releases/VERSION, as each
-# release does (docs/development.md): the daemon's tests replay the last two.
-release-fixtures:
+# Copy the client fixtures to crates/proto/fixtures/releases/VERSION, the
+# daemon release about to be tagged, to merge with its notes
+# (docs/development.md): the daemon's tests replay the last two.
+release-fixtures version:
     #!/usr/bin/env bash
     set -euo pipefail
-    v=$({{cargo}} pkgid -p arugulad | sed 's/.*[#@]//')
+    v={{version}}
+    [[ "$v" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "release-fixtures: VERSION is X.Y.Z" >&2; exit 2; }
     d=crates/proto/fixtures/releases/$v
     rm -rf "$d" && mkdir -p "$d"
     cp crates/proto/fixtures/*.jsonl "$d/"
