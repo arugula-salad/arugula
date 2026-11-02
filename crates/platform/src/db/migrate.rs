@@ -615,7 +615,7 @@ const SQLITE: &[Migration] = &[
     Migration {
         version: 87,
         name: "chat_mention_status",
-        sql: include_str!("../../migrations/sqlite/0087_chat_mention_status.sql"),
+        sql: include_str!("../../migrations/sqlite/0088_chat_mention_status.sql"),
         additive: true,
     },
 ];
@@ -1143,7 +1143,7 @@ const POSTGRES: &[Migration] = &[
     Migration {
         version: 87,
         name: "chat_mention_status",
-        sql: include_str!("../../migrations/postgres/0087_chat_mention_status.sql"),
+        sql: include_str!("../../migrations/postgres/0088_chat_mention_status.sql"),
         additive: true,
     },
 ];
