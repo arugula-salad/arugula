@@ -406,9 +406,10 @@ pane: string, } | { "kind": "link", url: string, };
 /**
  * A board's work, counted: the rows with a primary item (an issue or a
  * PR; a note row is never counted). `done` is those in the Done lane, and
- * `proven` those of them with a proof.
+ * `proven` those of them with a proof; `review` and `doing` are those in
+ * the Review and Doing lanes.
  */
-export type BoardProgress = { done: number, total: number, proven: number, };
+export type BoardProgress = { done: number, total: number, proven: number, review: number, doing: number, };
 
 /**
  * The mark on a Done row that is proven. A Done row without one is not

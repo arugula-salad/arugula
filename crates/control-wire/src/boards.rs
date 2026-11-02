@@ -634,7 +634,8 @@ pub struct BoardSource {
 
 /// A board's work, counted: the rows with a primary item (an issue or a
 /// PR; a note row is never counted). `done` is those in the Done lane, and
-/// `proven` those of them with a proof.
+/// `proven` those of them with a proof; `review` and `doing` are those in
+/// the Review and Doing lanes.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "BoardProgress"))]
@@ -643,6 +644,10 @@ pub struct BoardProgress {
     pub total: u32,
     #[serde(default)]
     pub proven: u32,
+    #[serde(default)]
+    pub review: u32,
+    #[serde(default)]
+    pub doing: u32,
 }
 
 /// `PATCH`: what to change; a field left out stays. An empty goal clears it.
@@ -2070,7 +2075,7 @@ mod tests {
         assert!(plain.starts_with("Next "), "{plain}");
         v.board.goal =
             "\nShip the thing to everyone, and make it easy to find the thing again later on\nsecond line".into();
-        v.board.progress = BoardProgress { done: 3, total: 5, proven: 2 };
+        v.board.progress = BoardProgress { done: 3, total: 5, proven: 2, ..Default::default() };
         v.board.closed_at = Some(9);
         v.board.done_note = "People can sign up.\nMore.".into();
         let text = render(&v);
@@ -2217,7 +2222,7 @@ Done: People can sign up.
                 id: "zon_1".into(),
                 rev: 1,
                 title: "Decide".into(),
-                progress: BoardProgress { done: 1, total: 1, proven: 0 },
+                progress: BoardProgress { done: 1, total: 1, ..Default::default() },
             },
             Group { id: "zon_2".into(), rev: 1, title: "Build".into(), progress: BoardProgress::default() },
         ];
@@ -2281,10 +2286,7 @@ Done: People can sign up.
             "id": "brd_1", "project": "prj_1", "title": "Launch", "created_by": "a", "created_at": 1, "updated_at": 2
         });
         let b: Board = serde_json::from_value(old).unwrap();
-        assert_eq!(
-            (b.goal.as_str(), b.closed_at, b.progress),
-            ("", None, BoardProgress { done: 0, total: 0, proven: 0 })
-        );
+        assert_eq!((b.goal.as_str(), b.closed_at, b.progress), ("", None, BoardProgress::default()));
     }
 
     /// A row from a control before lanes has no lane, attachments or proof,

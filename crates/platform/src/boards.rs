@@ -780,7 +780,8 @@ async fn block_states(app: &Platform, project: &str, blocks: &[(String, String)]
 }
 
 /// Fill each board's progress: its rows with an issue or a PR as their item,
-/// the ones in the Done lane, and the ones of those that are proven. A lane
+/// the ones in the Done, Review and Doing lanes, and the ones of the done
+/// that are proven. A lane
 /// is worked out from the facts whoever reads, so a row the reader can't
 /// read counts as it does for everyone. One read of the project's rows and
 /// attachments, and one per kind of item.
@@ -805,6 +806,8 @@ async fn progress(app: &Platform, project: &str, boards: &mut [wire::Board]) -> 
             let a = assess(&t.pointer, &attached, &facts);
             b.progress.total += 1;
             b.progress.done += u32::from(a.lane == wire::Lane::Done);
+            b.progress.review += u32::from(a.lane == wire::Lane::Review);
+            b.progress.doing += u32::from(a.lane == wire::Lane::Doing);
             b.progress.proven += u32::from(a.proof.is_some());
         }
     }
