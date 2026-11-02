@@ -3,7 +3,7 @@
   "commit": "64c5dacd70bfbf06d3c05bda62645a535af28d3f",
   "branch": "main",
   "state": "pending",
-  "at": "2026-11-02T02:15:42Z",
+  "at": "2026-11-02T02:27:36Z",
   "phases": {
     "lint": {
       "verdict": "pass",
@@ -11,15 +11,15 @@
       "runs": [
         {
           "name": "lint",
-          "id": 125054872523,
+          "id": 125061873248,
           "conclusion": "success",
-          "url": "https://github.com/arugula-salad/arugula/actions/runs/41375366024/job/125054872523"
+          "url": "https://github.com/arugula-salad/arugula/actions/runs/41375366024/job/125061873248"
         },
         {
           "name": "changes",
-          "id": 125054872405,
+          "id": 125061870381,
           "conclusion": "success",
-          "url": "https://github.com/arugula-salad/arugula/actions/runs/41375366024/job/125054872405"
+          "url": "https://github.com/arugula-salad/arugula/actions/runs/41375366024/job/125061870381"
         },
         {
           "name": "suite-changed",
@@ -35,21 +35,21 @@
       "runs": [
         {
           "name": "build",
-          "id": 125054995748,
+          "id": 125061830077,
           "conclusion": "success",
-          "url": "https://github.com/arugula-salad/arugula/actions/runs/41375366024/job/125054995748"
+          "url": "https://github.com/arugula-salad/arugula/actions/runs/41375366024/job/125061830077"
         },
         {
           "name": "static",
-          "id": 125054995712,
+          "id": 125061829451,
           "conclusion": "success",
-          "url": "https://github.com/arugula-salad/arugula/actions/runs/41375366024/job/125054995712"
+          "url": "https://github.com/arugula-salad/arugula/actions/runs/41375366024/job/125061829451"
         },
         {
           "name": "clippy",
-          "id": 125054995783,
+          "id": 125061829861,
           "conclusion": "success",
-          "url": "https://github.com/arugula-salad/arugula/actions/runs/41375366024/job/125054995783"
+          "url": "https://github.com/arugula-salad/arugula/actions/runs/41375366024/job/125061829861"
         }
       ]
     },
@@ -59,18 +59,17 @@
       "runs": [
         {
           "name": "test",
-          "id": 125054995732,
+          "id": 125061854998,
           "conclusion": "success",
-          "url": "https://github.com/arugula-salad/arugula/actions/runs/41375366024/job/125054995732"
+          "url": "https://github.com/arugula-salad/arugula/actions/runs/41375366024/job/125061854998"
         },
         {
           "name": "test-2",
-          "id": 125054995993,
-          "conclusion": "failure",
-          "url": "https://github.com/arugula-salad/arugula/actions/runs/41375366024/job/125054995993"
+          "id": 125061828729,
+          "conclusion": null,
+          "url": "https://github.com/arugula-salad/arugula/actions/runs/41375366024/job/125061828729"
         }
       ],
-      "reason": "retrying",
       "culprit": "cc82a471d9024c696ee2d6978caca4650880f0ac"
     },
     "e2e": {
@@ -79,75 +78,75 @@
       "runs": [
         {
           "name": "e2e (1)",
-          "id": 125055788658,
+          "id": 125061830183,
           "conclusion": "success",
-          "url": "https://github.com/arugula-salad/arugula/actions/runs/41375366024/job/125055788658"
+          "url": "https://github.com/arugula-salad/arugula/actions/runs/41375366024/job/125061830183"
         },
         {
           "name": "e2e (10)",
-          "id": 125055788517,
+          "id": 125061831363,
           "conclusion": "success",
-          "url": "https://github.com/arugula-salad/arugula/actions/runs/41375366024/job/125055788517"
+          "url": "https://github.com/arugula-salad/arugula/actions/runs/41375366024/job/125061831363"
         },
         {
           "name": "e2e (11)",
-          "id": 125055788666,
+          "id": 125061831748,
           "conclusion": "success",
-          "url": "https://github.com/arugula-salad/arugula/actions/runs/41375366024/job/125055788666"
+          "url": "https://github.com/arugula-salad/arugula/actions/runs/41375366024/job/125061831748"
         },
         {
           "name": "e2e (12)",
-          "id": 125055788596,
+          "id": 125061831222,
           "conclusion": "success",
-          "url": "https://github.com/arugula-salad/arugula/actions/runs/41375366024/job/125055788596"
+          "url": "https://github.com/arugula-salad/arugula/actions/runs/41375366024/job/125061831222"
         },
         {
           "name": "e2e (2)",
-          "id": 125055788900,
+          "id": 125061830525,
           "conclusion": "success",
-          "url": "https://github.com/arugula-salad/arugula/actions/runs/41375366024/job/125055788900"
+          "url": "https://github.com/arugula-salad/arugula/actions/runs/41375366024/job/125061830525"
         },
         {
           "name": "e2e (3)",
-          "id": 125055788505,
+          "id": 125061830760,
           "conclusion": "success",
-          "url": "https://github.com/arugula-salad/arugula/actions/runs/41375366024/job/125055788505"
+          "url": "https://github.com/arugula-salad/arugula/actions/runs/41375366024/job/125061830760"
         },
         {
           "name": "e2e (4)",
-          "id": 125055788574,
+          "id": 125061830440,
           "conclusion": "success",
-          "url": "https://github.com/arugula-salad/arugula/actions/runs/41375366024/job/125055788574"
+          "url": "https://github.com/arugula-salad/arugula/actions/runs/41375366024/job/125061830440"
         },
         {
           "name": "e2e (5)",
-          "id": 125055788580,
+          "id": 125061830318,
           "conclusion": "success",
-          "url": "https://github.com/arugula-salad/arugula/actions/runs/41375366024/job/125055788580"
+          "url": "https://github.com/arugula-salad/arugula/actions/runs/41375366024/job/125061830318"
         },
         {
           "name": "e2e (6)",
-          "id": 125055788460,
+          "id": 125061831270,
           "conclusion": "success",
-          "url": "https://github.com/arugula-salad/arugula/actions/runs/41375366024/job/125055788460"
+          "url": "https://github.com/arugula-salad/arugula/actions/runs/41375366024/job/125061831270"
         },
         {
           "name": "e2e (7)",
-          "id": 125055788521,
+          "id": 125061830652,
           "conclusion": "success",
-          "url": "https://github.com/arugula-salad/arugula/actions/runs/41375366024/job/125055788521"
+          "url": "https://github.com/arugula-salad/arugula/actions/runs/41375366024/job/125061830652"
         },
         {
           "name": "e2e (8)",
-          "id": 125055788578,
+          "id": 125061831446,
           "conclusion": "success",
-          "url": "https://github.com/arugula-salad/arugula/actions/runs/41375366024/job/125055788578"
+          "url": "https://github.com/arugula-salad/arugula/actions/runs/41375366024/job/125061831446"
         },
         {
           "name": "e2e (9)",
-          "id": 125055788635,
+          "id": 125061831507,
           "conclusion": "success",
-          "url": "https://github.com/arugula-salad/arugula/actions/runs/41375366024/job/125055788635"
+          "url": "https://github.com/arugula-salad/arugula/actions/runs/41375366024/job/125061831507"
         }
       ]
     },
@@ -157,9 +156,9 @@
       "runs": [
         {
           "name": "desktop-xvfb",
-          "id": 125054995853,
+          "id": 125061871718,
           "conclusion": "success",
-          "url": "https://github.com/arugula-salad/arugula/actions/runs/41375366024/job/125054995853"
+          "url": "https://github.com/arugula-salad/arugula/actions/runs/41375366024/job/125061871718"
         }
       ]
     },
@@ -169,9 +168,9 @@
       "runs": [
         {
           "name": "macos (test)",
-          "id": 125054995848,
+          "id": 125061830153,
           "conclusion": "success",
-          "url": "https://github.com/arugula-salad/arugula/actions/runs/41375366024/job/125054995848"
+          "url": "https://github.com/arugula-salad/arugula/actions/runs/41375366024/job/125061830153"
         }
       ]
     },
