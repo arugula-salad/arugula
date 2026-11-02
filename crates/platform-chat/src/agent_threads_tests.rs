@@ -833,7 +833,8 @@ async fn the_session_that_leads_a_board_is_not_told_its_own_post() {
     // The lead's machine loses threads.read: the board's lead gets nothing more.
     let (st, v) = call(&base, "a", "POST", &format!("/api/grants/{read}/revoke"), None).await;
     assert_eq!(st, 200, "{v}");
-    call(&base, "b", "POST", &format!("/api/chat/rooms/{room}/messages"), say("anyone?")).await;
+    let (_, v) = call(&base, "b", "POST", &format!("/api/chat/rooms/{room}/messages"), say("anyone?")).await;
+    assert_eq!(v["mentions"], json!([]), "a lead that can't read the thread isn't mentioned: {v}");
     tokio::time::sleep(std::time::Duration::from_millis(300)).await;
     assert_eq!(asked_of(&hub, "geek").len(), 1);
 }
