@@ -258,11 +258,10 @@ test("closing one of the board's issues moves its row to Done, not yet proven, u
   await expect(zone(alice, "Next").locator("[data-board-row]")).toHaveCount(2);
   await expect(row(alice, FIRST).locator("[data-board-proof]")).toHaveAttribute("data-board-proof", "not-proven");
   await expect(row(alice, FIRST).locator("[data-board-proof]")).toHaveText("not proven yet");
-  // There is no PROOFS zone to fold, and a row has no menu to move it.
+  // There is no PROOFS zone to fold. The row's menu offers a move by hand
+  // (#494), but nobody needed it: the lane followed the issue.
   await expect(alice.locator('[data-zone-kind="proofs"]')).toHaveCount(0);
-  await row(alice, FIRST).locator("[data-board-row-menu]").click();
-  await expect(alice.getByRole("menuitem", { name: /^Move/ })).toHaveCount(0);
-  await alice.keyboard.press("Escape");
+  await expect(row(alice, FIRST)).not.toHaveAttribute("data-lane-set");
 
   // Evidence attached to the Done row is the mark that proves it.
   const att = await api(alice, "POST", `/api/boards/${id}/attachments`, {

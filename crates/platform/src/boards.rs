@@ -682,6 +682,25 @@ fn assess(pointer: &wire::Pointer, attached: &[Attach<'_>], facts: &Facts) -> As
     Assessed { lane, proof: lanes::proof((pointer, item.as_ref()), &work, evidence), merged_not_closed, cancelled }
 }
 
+/// The lane a row shows, and the override behind it (#494). A person's lane
+/// holds only while the work still derives the lane it did when they set it:
+/// once that changes, the row goes back to following the work.
+fn shown(derived: wire::Lane, set: Option<&db::LaneSet>) -> (wire::Lane, Option<&db::LaneSet>) {
+    match set.filter(|s| s.holds(derived)) {
+        Some(s) => (s.lane, Some(s)),
+        None => (derived, None),
+    }
+}
+
+/// Drop the override of `row` that `derived` has outgrown, so it can't come
+/// back if the work returns to the lane it was set in.
+fn forget_stale(app: &Platform, board: &str, row: &str, derived: wire::Lane, set: Option<&db::LaneSet>) {
+    let Some(set) = set.filter(|s| !s.holds(derived)) else { return };
+    if let Err(e) = app.db.clear_stale_lane(board, row, set.at) {
+        tracing::warn!(error = %e, "boards: clearing a lane that was set by hand");
+    }
+}
+
 /// A row's marks (see [`wire::Mark`]), from what [`assess`] found:
 /// `merged_not_closed`; `cancelled`; `after` the
 /// first open PR of the row (its own, then those attached) that is stacked
@@ -816,10 +835,12 @@ async fn progress(app: &Platform, project: &str, boards: &mut [wire::Board]) -> 
                 .filter_map(|a| a.role.map(|r| (r, &a.pointer, false)))
                 .collect();
             let a = assess(&t.pointer, &attached, &facts);
+            forget_stale(app, &b.id, &t.row, a.lane, t.lane_set.as_ref());
+            let (lane, _) = shown(a.lane, t.lane_set.as_ref());
             b.progress.total += 1;
-            b.progress.done += u32::from(a.lane == wire::Lane::Done);
-            b.progress.review += u32::from(a.lane == wire::Lane::Review);
-            b.progress.doing += u32::from(a.lane == wire::Lane::Doing);
+            b.progress.done += u32::from(lane == wire::Lane::Done);
+            b.progress.review += u32::from(lane == wire::Lane::Review);
+            b.progress.doing += u32::from(lane == wire::Lane::Doing);
             b.progress.proven += u32::from(a.proof.is_some());
         }
     }
@@ -902,8 +923,11 @@ async fn read(app: &Platform, account: &str, id: &str) -> Result<wire::BoardView
     for e in &stored.rows {
         let mine: Vec<&db::Attached> = stored.attachments.iter().filter(|a| a.row == e.id).collect();
         let attached: Vec<Attach<'_>> = mine.iter().map(|a| (a.role, &a.pointer, a.released_at.is_some())).collect();
-        let a = assess(&e.pointer, &attached, &facts);
+        let mut a = assess(&e.pointer, &attached, &facts);
         let stalled = stall_of(&mine, a.lane, &facts, &blocks, now, minutes);
+        forget_stale(app, id, &e.id, a.lane, e.lane_set.as_ref());
+        let (lane, set) = shown(a.lane, e.lane_set.as_ref());
+        a.lane = lane;
         let (row_live, row_block) = chip(&e.pointer);
         // The attachments of a replaced agent come last.
         let mut ordered = mine.clone();
@@ -957,6 +981,7 @@ async fn read(app: &Platform, account: &str, id: &str) -> Result<wire::BoardView
                 (None, s) => s,
             },
             lane: a.lane,
+            lane_set: set.map(|s| wire::LaneSet { lane: s.lane, by: s.by.clone(), at: s.at }),
             attachments,
             docs: docs::view(row_docs.remove(&e.id).unwrap_or_default(), &names),
             proof: a.proof,
@@ -1143,7 +1168,8 @@ fn primary_ok(p: &wire::Pointer) -> Result<(), ApiError> {
 }
 
 /// Refuse what sets a lane: a lane for a group, a kind, or a status. A
-/// question for a person is an ask (#367), not `needs_input`.
+/// question for a person is an ask (#367), not `needs_input`. A person's
+/// one way to move a row is [`set_lane`], which no agent has.
 fn refuse_lane_writes(p: &wire::PutEntry) -> Result<(), ApiError> {
     if let Some(z) = &p.zone {
         group_id_ok(z)?;
@@ -1570,6 +1596,95 @@ pub async fn move_entry(
     read(app, by.account, id).await
 }
 
+/// The lane `row` derives from its work now, as the board reads it before a
+/// person's lane.
+async fn derived_lane(
+    app: &Platform,
+    project: &str,
+    stored: &db::Stored,
+    row: &db::Entry,
+) -> Result<wire::Lane, ApiError> {
+    let mine: Vec<&db::Attached> = stored.attachments.iter().filter(|a| a.row == row.id).collect();
+    let attached: Vec<Attach<'_>> = mine.iter().map(|a| (a.role, &a.pointer, a.released_at.is_some())).collect();
+    let ids = Ids::of(std::iter::once(&row.pointer).chain(mine.iter().map(|a| &a.pointer)));
+    let blocks = block_states(app, project, &ids.blocks).await?;
+    let facts = facts(app, project, &ids, &blocks)?;
+    Ok(assess(&row.pointer, &attached, &facts).lane)
+}
+
+/// Move a row to `s.lane` as a person (#494), the escape hatch for a lane
+/// that is wrong or stale; lanes follow the work otherwise.
+///
+/// - Done closes the row's native issue (as `s.reason` says, completed when
+///   none) and sets nothing; a GitHub or Plane item is closed there, and a
+///   row with no issue has nothing to close (422).
+/// - Next, Doing and Review set a lane that shows while the work still
+///   derives the lane it did now ([`db::LaneSet`]). On a closed native issue
+///   the move reopens it first; a closed GitHub or Plane item is reopened
+///   there (422). Moving a row to the lane it derives takes the override off.
+///
+/// Owners and editors; closing or reopening is `issues::change`, under the
+/// same role. No agent moves a row.
+pub async fn set_lane(
+    app: &Platform,
+    account: &str,
+    id: &str,
+    row: &str,
+    s: &wire::SetLane,
+) -> Result<wire::BoardView, ApiError> {
+    let by = Actor::person(account);
+    let board = board_place(app, by, id, true).await?;
+    id_ok(row, "row").map_err(|_| bad("expected a row id that starts row_"))?;
+    if s.reason.is_some() && s.lane != wire::Lane::Done {
+        return Err(bad("a reason goes with moving a row to Done"));
+    }
+    let stored = app.db.board_stored(id)?.ok_or_else(no_board)?;
+    let entry = stored.rows.iter().find(|r| r.id == row).ok_or_else(|| err(StatusCode::NOT_FOUND, "no such row"))?;
+    let unprocessable = |why: &str| err(StatusCode::UNPROCESSABLE_ENTITY, why);
+    let mut derived = derived_lane(app, &board.project, &stored, entry).await?;
+    let set = match (s.lane, &entry.pointer) {
+        (wire::Lane::Done, wire::Pointer::Issue { id: issue }) => {
+            if derived != wire::Lane::Done {
+                let patch = arugula_control_wire::issues::IssuePatch {
+                    state: Some("closed".to_owned()),
+                    reason: s.reason.clone(),
+                    ..Default::default()
+                };
+                crate::issues::change(app, by, issue, &patch).await?;
+            }
+            None
+        }
+        (wire::Lane::Done, wire::Pointer::ForgeItem { .. }) => {
+            return Err(unprocessable("close it in GitHub/Plane to move it to Done"));
+        }
+        (wire::Lane::Done, _) => {
+            return Err(unprocessable("a row with no issue can't be moved to Done: link its issue first"));
+        }
+        (lane, pointer) => {
+            if derived == wire::Lane::Done {
+                match pointer {
+                    wire::Pointer::Issue { id: issue } => {
+                        let patch = arugula_control_wire::issues::IssuePatch {
+                            state: Some("open".to_owned()),
+                            ..Default::default()
+                        };
+                        crate::issues::change(app, by, issue, &patch).await?;
+                        derived = derived_lane(app, &board.project, &stored, entry).await?;
+                    }
+                    _ => return Err(unprocessable("reopen it in GitHub/Plane to move it out of Done")),
+                }
+            }
+            if derived == wire::Lane::Done {
+                return Err(err(StatusCode::CONFLICT, "the row is still Done: its work closes it"));
+            }
+            (lane != derived).then(|| db::LaneSet { lane, basis: derived, by: account.to_owned(), at: now_ms() })
+        }
+    };
+    app.db.set_lane(id, row, set.as_ref(), now_ms())?;
+    changed(app, &board.project, id);
+    read(app, account, id).await
+}
+
 /// Delete a row, with what is attached to it, or a group with its rows. An
 /// agent deletes only rows its own machine added, and a group only when
 /// every row in it is one.
@@ -1697,6 +1812,17 @@ pub async fn move_route(
     Json(m): Json<wire::MoveEntry>,
 ) -> J<wire::BoardView> {
     Ok(Json(move_entry(&app, Actor::person(&s.account), &id, &entry, &m).await?))
+}
+
+/// `PUT /api/boards/{id}/rows/{row}/lane`: a person moves a row to a lane
+/// (owners and editors); see [`set_lane`].
+pub async fn set_lane_route(
+    State(app): State<Arc<Platform>>,
+    s: Person,
+    Path((id, row)): Path<(String, String)>,
+    Json(l): Json<wire::SetLane>,
+) -> J<wire::BoardView> {
+    Ok(Json(set_lane(&app, &s.account, &id, &row, &l).await?))
 }
 
 /// `DELETE /api/boards/{id}/entries/{entry}`: a row and what is attached to
