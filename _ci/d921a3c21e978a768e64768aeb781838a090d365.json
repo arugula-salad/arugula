@@ -3,12 +3,14 @@
   "commit": "d921a3c21e978a768e64768aeb781838a090d365",
   "branch": "main",
   "state": "pending",
-  "at": "2026-11-02T06:55:03Z",
+  "at": "2026-11-02T06:57:54Z",
   "phases": {
     "lint": {
-      "verdict": "pending",
+      "verdict": "unbuilt",
       "build": "newest",
-      "runs": []
+      "runs": [],
+      "reason": "superseded",
+      "coveredBy": "8dc2565ee3dbafa2ad3c05ff73047ec8b1965a50"
     },
     "build": {
       "verdict": "pending",

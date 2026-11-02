@@ -3,7 +3,7 @@
   "commit": "3349beaf0e8f90790055be2c88241bf179f7ca89",
   "branch": "main",
   "state": "pending",
-  "at": "2026-11-02T06:54:17Z",
+  "at": "2026-11-02T06:57:54Z",
   "phases": {
     "lint": {
       "verdict": "pending",
@@ -43,13 +43,13 @@
       "runs": []
     },
     "windows": {
-      "verdict": "pending",
+      "verdict": "pass",
       "build": "newest",
       "runs": [
         {
           "name": "workspace",
           "id": 125136611986,
-          "conclusion": null,
+          "conclusion": "success",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/41402274696/job/125136611986"
         },
         {
