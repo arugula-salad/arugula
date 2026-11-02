@@ -272,6 +272,8 @@ rm "$tmp/refuse-main"
 # job's summary, never a failure.
 GITHUB_ACTIONS=true GITHUB_STEP_SUMMARY=$tmp/summary run 0 "check-fixtures v0.1.3: none on main" check-fixtures v0.1.3
 has "check-fixtures v0.1.3: an Actions warning" "::warning::main has no crates/proto/fixtures/releases/0.1.3"
+# The backticks are the message's, not a command (SC2016).
+# shellcheck disable=SC2016
 if grep -qF 'run `just release-fixtures 0.1.3` and merge it to main' "$tmp/summary"; then ok "check-fixtures v0.1.3: in the summary"
 else bad "check-fixtures v0.1.3: summary: $(cat "$tmp/summary" 2>/dev/null)"; fi
 git checkout -q main
