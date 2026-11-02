@@ -151,7 +151,7 @@ async fn progress_counts_the_rows_in_done_and_those_proven() {
 }
 
 /// A row in each lane counts in its own: Next in none, Doing, Review and
-/// Done each in theirs.
+/// Done each in theirs (two in Doing, so a count can't be taken for another).
 #[tokio::test]
 async fn progress_counts_the_rows_in_review_and_doing_too() {
     let hub = Arc::new(TestHub::default());
@@ -168,14 +168,16 @@ async fn progress_counts_the_rows_in_review_and_doing_too() {
             params![team],
         )
         .unwrap();
-        // A Plane item that is started: Doing.
-        c.execute(
-            "INSERT INTO forge_items (id, repo_id, number, kind, state, title, provider, connection_id, state_name,
-                 state_group, created_at, updated_at, synced_at)
-             VALUES ('fi_pl1', -1, 1, 'issue', 'open', 't', 'plane', 'trk_1', 'started', 'started', 1, 1, 1)",
-            &[],
-        )
-        .unwrap();
+        // Two Plane items that are started: Doing.
+        for (id, number) in [("fi_pl1", 1u64), ("fi_pl2", 2)] {
+            c.execute(
+                "INSERT INTO forge_items (id, repo_id, number, kind, state, title, provider, connection_id, state_name,
+                     state_group, created_at, updated_at, synced_at)
+                 VALUES (?1, -1, ?2, 'issue', 'open', 't', 'plane', 'trk_1', 'started', 'started', 1, 1, 1)",
+                params![id, number],
+            )
+            .unwrap();
+        }
     }
     let next = issue(&base, &app, &team, "Next", false).await;
     let done = issue(&base, &app, &team, "Done", true).await;
@@ -183,15 +185,15 @@ async fn progress_counts_the_rows_in_review_and_doing_too() {
         call(&base, "bob", "POST", &format!("/api/projects/{team}/boards"), Some(json!({ "title": "L" }))).await;
     let id = b["board"]["id"].as_str().unwrap().to_owned();
     // fi_a1 is an open PR: Review.
-    for (kind, ptr) in [("issue", next.as_str()), ("forge_item", "fi_pl1"), ("forge_item", "fi_a1"), ("issue", done.as_str())]
+    for (kind, ptr) in [("issue", next.as_str()), ("forge_item", "fi_pl1"), ("forge_item", "fi_pl2"), ("forge_item", "fi_a1"), ("issue", done.as_str())]
     {
         row(&base, &id, kind, ptr).await;
     }
     let (_, v) = call(&base, "bob", "GET", &format!("/api/boards/{id}"), None).await;
-    assert_eq!(progress(&v["board"]), (1, 4, 0), "{v}");
-    assert_eq!(in_flight(&v["board"]), (1, 1), "{v}");
+    assert_eq!(progress(&v["board"]), (1, 5, 0), "{v}");
+    assert_eq!(in_flight(&v["board"]), (1, 2), "{v}");
     let (_, l) = call(&base, "bob", "GET", &format!("/api/projects/{team}/boards"), None).await;
-    assert_eq!(in_flight(&l["boards"][0]), (1, 1), "the list says what the view does");
+    assert_eq!(in_flight(&l["boards"][0]), (1, 2), "the list says what the view does");
 }
 
 #[tokio::test]
