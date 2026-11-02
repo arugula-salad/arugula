@@ -12,7 +12,8 @@ import { readFileSync } from "node:fs";
 import { expect, test } from "@playwright/test";
 import { cssVar, HUES, hex, NAMES, resolve, usesNames } from "../src/shared/docs/colours";
 import { buildChart, checkChart, checkSpec, niceTicks, parseChart, summary, type El, type Spec } from "../src/shared/ui/chart";
-import { assetName, checkEmbeds, checkSvg, fences, imageRefs, plain, svgUrl } from "../src/shared/ui/embeds";
+import { assetName, checkEmbeds, checkPrototype, checkSvg, fences, prototypeInfo, imageRefs, plain, svgUrl } from "../src/shared/ui/embeds";
+import { HTML, READY, SCHEME, htmlMessage, schemeMessage, protoOfViewer, readyFrom } from "../src/shared/ui/prototype-messages";
 import { checkStats, statsSummary, toneOf } from "../src/shared/ui/stats";
 import { example, examples, expected } from "./doc-examples";
 
@@ -313,4 +314,92 @@ test("a chart's colors name a hue for each series; without them, the brand order
   ] as const) {
     expect(checkSpec({ type: "bar", x: "m", y: ["a", "b"], colors, rows: [{ m: 1, a: 1, b: 2 }] })).toContain(says);
   }
+});
+
+// #506: a prototype is one inline page. The same rules as the daemon's
+// `check_prototype`, line for line (its unit tests have the same lists).
+test("a prototype is one inline page under the cap", () => {
+  for (const good of [
+    "<p>hi</p><script>document.body.append('x')</script><style>p{color:red}</style>",
+    "<!DOCTYPE html>\n<HTML lang=en><body>one</body></HTML>",
+    "<script>var s = 'src'; var h = 'href';</script>",
+    '<script data-src="x">1</script><link rel=icon><linkage href=x></linkage><basefont><embedded-thing>',
+    '<script title="a > src=b">1</script>',
+    '<meta name=viewport content="width=device-width"><link rel=preload>',
+    "x".repeat(64 * 1024),
+  ]) {
+    expect(checkPrototype(good), good.slice(0, 40)).toBeNull();
+  }
+  for (const [bad, says] of [
+    ["", "the fence is empty"],
+    ["  \n ", "the fence is empty"],
+    ["x".repeat(64 * 1024 + 1), "the cap is 65536"],
+    ["<html></html><html></html>", "found a second <html"],
+    ["<!doctype html><p>a</p><!DOCTYPE html>", "found a second <!doctype"],
+    ['<script src="a.js"></script>', "<script src> can't load anything: inline it"],
+    ["<SCRIPT\n  type=module\n  SRC = 'a.js'>", "<script src>"],
+    ["<script async src=a.js></script>", "<script src>"],
+    ["<link rel=stylesheet href=a.css>", "<link href> can't load anything: inline it"],
+    ['<LINK HREF="a.css" rel=stylesheet/>', "<link href>"],
+    ["<iframe src=a></iframe>", "<iframe> isn't allowed"],
+    ["<IFrame srcdoc='x'>", "<iframe>"],
+    ["<object data=a></object>", "<object> isn't allowed"],
+    ["<embed src=a>", "<embed> isn't allowed"],
+    ['<base href="/">', "<base> isn't allowed"],
+    ['<meta http-equiv=refresh content="0;url=/">', "<meta http-equiv> isn't allowed"],
+    ["<META HTTP-EQUIV='content-security-policy' content=''>", "<meta http-equiv>"],
+  ]) {
+    const why = checkPrototype(bad);
+    expect(why, bad.slice(0, 40)).toContain(says);
+    expect(why, bad.slice(0, 40)).toMatch(/^prototype: /);
+    expect(why, bad.slice(0, 40)).not.toContain("\n");
+  }
+  expect(checkEmbeds("```prototype Views motion height=300\n<p>hi</p>\n```")).toBeNull();
+  expect(checkEmbeds("```prototype\n<iframe></iframe>\n```")).toContain("prototype: <iframe>");
+  expect(checkEmbeds("```text\n<script src=x>\n```")).toBeNull();
+  // An html fence stays code, whatever is in it.
+  expect(checkEmbeds("```html\n<script src=x></script><iframe>\n```")).toBeNull();
+  expect(plain("```html\n<p>x</p>\n```")).toBe("```html\n<p>x</p>\n```");
+});
+
+test("a prototype's title and height come from the fence line, clamped, 480 by default", () => {
+  for (const [alt, want] of [
+    ["", { title: "", height: 480 }],
+    ["Views motion", { title: "Views motion", height: 480 }],
+    ["height=720 Views motion", { title: "Views motion", height: 720 }],
+    ["Views  height=720  motion", { title: "Views motion", height: 720 }],
+    ["height=5", { title: "", height: 120 }],
+    ["height=99999", { title: "", height: 2000 }],
+    ["height=99999999999999999999999", { title: "", height: 2000 }],
+    ["height=120", { title: "", height: 120 }],
+    ["height=2000", { title: "", height: 2000 }],
+    ["height=300 height=900", { title: "height=900", height: 300 }],
+    ["height=abc height=", { title: "height=abc height=", height: 480 }],
+  ] as const) {
+    expect(prototypeInfo(alt), alt).toEqual(want);
+  }
+  expect(fences("```prototype Views motion height=600\n<p>x</p>\n```").map((f) => [f.lang, f.alt])).toEqual([["prototype", "Views motion height=600"]]);
+  expect(plain("a\n```prototype Views motion height=600\n<p>x</p>\n```\nb")).toBe("a\n[prototype: Views motion]\nb");
+  expect(plain("```prototype\n<p>x</p>\n```")).toBe("[prototype]");
+  expect(plain("```prototype height=300\n<p>x</p>\n```")).toBe("[prototype]");
+});
+
+test("the frame hears only its own window say it is ready, and the viewer finds the proto origin", () => {
+  const frame = {};
+  expect(readyFrom({ source: frame, data: { type: READY } }, frame)).toBe(true);
+  expect(readyFrom({ source: {}, data: { type: READY } }, frame), "another window").toBe(false);
+  expect(readyFrom({ source: null, data: { type: READY } }, null), "no frame yet").toBe(false);
+  expect(readyFrom({ source: frame, data: { type: HTML } }, frame), "another message").toBe(false);
+  expect(readyFrom({ source: frame, data: "arugula.ready" }, frame), "not an object").toBe(false);
+  expect(readyFrom({ source: frame, data: null }, frame)).toBe(false);
+  expect(schemeMessage("light")).toEqual({ type: "arugula.scheme", colorScheme: "light" });
+  expect(htmlMessage("<p>x</p>", "dark")).toEqual({ type: "arugula.html", html: "<p>x</p>", colorScheme: "dark" });
+  expect(protoOfViewer({ protocol: "https:", host: "docs.arugula.run" })).toBe("https://proto.arugula.run");
+  expect(protoOfViewer({ protocol: "http:", host: "docs.blocks.localhost:7690" })).toBe("http://proto.blocks.localhost:7690");
+  expect(protoOfViewer({ protocol: "https:", host: "control.arugula.run" }), "/d on control's own origin").toBeNull();
+  // The runner spells the names this module has.
+  const runner = readFileSync(new URL("../src/shared/ui/runner.html", import.meta.url), "utf8");
+  expect(runner).toContain(`m.type !== "${HTML}"`);
+  expect(runner).toContain(`type: "${READY}"`);
+  expect(runner).toContain(`m.type!=='${SCHEME}'`);
 });

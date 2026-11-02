@@ -246,6 +246,7 @@ pub(super) fn fold_rows(c: &impl Sql, board: &str, into: &str, from: &str, at: u
         params![into, from],
     )?;
     c.execute("UPDATE board_attachments SET row_id = ?1 WHERE row_id = ?2", params![into, from])?;
+    super::boards_docs::fold_rows(c, into, from)?;
     boards_asks::absorb(c, from, into)?;
     if !drop.note.is_empty() {
         let note = if keep.note.is_empty() { drop.note } else { format!("{}\n{}", keep.note, drop.note) };

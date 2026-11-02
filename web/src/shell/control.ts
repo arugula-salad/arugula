@@ -81,6 +81,9 @@ export interface ControlInfo {
   /** Blocks get origins of their own, `https://b-<site_key>.<this>` (M50);
    * absent when control doesn't serve blocks. */
   block_domain?: string;
+  /** Where a Doc's prototypes run (#506), `https://proto.<block_domain>`;
+   * absent without a block domain. */
+  proto?: string;
   /** The platform page's origin (M151), `https://app.arugula.io`: chat and
    * hosted workspaces are there. Null or absent when control has none. */
   platform?: string | null;

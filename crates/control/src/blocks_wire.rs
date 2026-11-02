@@ -221,6 +221,57 @@ async fn controls_own_host_is_as_before_and_says_where_blocks_are() {
     assert!(csp.contains("frame-src 'self' https:;"), "{csp}");
 }
 
+/// `proto.<block domain>` serves the one page a Doc's prototype runs in
+/// (#506), under its own CSP, framed only by control's origins and the docs
+/// viewer, and nothing else: any other path is a 404, no cookie is set or read.
+#[tokio::test]
+async fn the_proto_origin_serves_one_static_page_under_its_csp() {
+    let c = control(|_| {}).await;
+    let proto = format!("proto.{DOMAIN}");
+    c.app.db.account_for("github", "gh-1", "sam", "a1", now_ms()).unwrap();
+    let cookie = c.session("a1");
+    let res = c.at(&proto, reqwest::Method::GET, "/").header(header::COOKIE, &cookie).send().await.unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+    let h = res.headers().clone();
+    assert_eq!(
+        h[header::CONTENT_SECURITY_POLICY],
+        "sandbox allow-scripts; default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; \
+         img-src data: blob:; font-src data:; base-uri 'none'; form-action 'none'; \
+         frame-ancestors http://control.test http://docs.blocks.test"
+    );
+    assert!(h[header::CONTENT_TYPE].to_str().unwrap().starts_with("text/html"));
+    assert!(!h.contains_key(header::SET_COOKIE));
+    assert_eq!(h[header::X_CONTENT_TYPE_OPTIONS], "nosniff");
+    assert_eq!(h[header::REFERRER_POLICY], "no-referrer");
+    assert!(h.get(header::X_FRAME_OPTIONS).is_none(), "control's DENY would keep it out of the frame");
+    // The page the web client frames by srcdoc too: one source.
+    let page = res.text().await.unwrap();
+    assert_eq!(page, include_str!("../../../web/src/shared/ui/runner.html"));
+    assert!(page.contains("arugula.html") && !page.contains("Arugula control"), "{page}");
+
+    // Nothing else is served here.
+    for path in
+        ["/index.html", "/x", "//", "/control.json", "/api/me", "/.arugula/boot.js", "/.arugula/relay", "/assets/a.js"]
+    {
+        for method in [reqwest::Method::GET, reqwest::Method::POST] {
+            let r = c.at(&proto, method.clone(), path).header(header::COOKIE, &cookie).send().await.unwrap();
+            assert_eq!(r.status(), StatusCode::NOT_FOUND, "{method} {path}");
+            assert!(!r.text().await.unwrap().contains("Arugula control"), "{path}");
+        }
+    }
+    // The page takes reads only.
+    let r = c.at(&proto, reqwest::Method::POST, "/").send().await.unwrap();
+    assert_eq!(r.status(), StatusCode::METHOD_NOT_ALLOWED);
+    let r = c.at(&proto, reqwest::Method::HEAD, "/").send().await.unwrap();
+    assert_eq!(r.status(), StatusCode::OK);
+    // Another label isn't the page, and with no block domain neither is this one.
+    let r = c.at(&format!("x.proto.{DOMAIN}"), reqwest::Method::GET, "/").send().await.unwrap();
+    assert_eq!(r.status(), StatusCode::NOT_FOUND);
+    let off = control(|a| a.cfg.block_domain = None).await;
+    let j: Value = off.at(&proto, reqwest::Method::GET, "/control.json").send().await.unwrap().json().await.unwrap();
+    assert_eq!(j["control"], true, "just another host");
+}
+
 // ---- the relay
 
 /// A daemon joined to `account`, as control knows it.

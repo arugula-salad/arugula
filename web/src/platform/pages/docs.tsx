@@ -8,9 +8,11 @@
 // page live, through the Doc's thread (as a board's does).
 
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
-import type { ProjectDoc, ProjectDocView } from "../../shared/proto";
+import type { BoardOfDoc, ProjectDoc, ProjectDocView } from "../../shared/proto";
 import { chat } from "../../shared/chat-store";
 import { DocError, projectDocs } from "../../shared/docs/store";
+import { boards } from "../../shared/boards/store";
+import { onBoardWords } from "../../shared/boards/text";
 import { whoLabel } from "../../shared/issues/text";
 import { useSubscribe } from "../../shared/ui/hooks";
 import { CopyLinkButton } from "../../shared/ui/copy-link";
@@ -131,6 +133,8 @@ export function DocPage({ project, doc }: { project: string; doc: string }) {
   const [fresh, setFresh] = useState(new Map<string, number>());
   const seen = useRef(0);
   const last = useRef<ProjectDocView | null>(null);
+  /** The boards that list this Doc (#517); none when boards are off. */
+  const [onBoards, setOnBoards] = useState<BoardOfDoc[]>([]);
 
   const show = (v: ProjectDocView) => {
     // A section written since the page last had it is highlighted, as in the block.
@@ -142,6 +146,10 @@ export function DocPage({ project, doc }: { project: string; doc: string }) {
   };
   const again = () => {
     const n = ++seen.current;
+    boards.ofDoc(project, doc).then(
+      (b) => n === seen.current && setOnBoards(b.boards),
+      () => n === seen.current && setOnBoards([]),
+    );
     projectDocs.get(project, doc).then(
       (v) => n === seen.current && show(v),
       (e: Error) => n === seen.current && setMissing(e instanceof DocError && e.status === 404 ? "it isn't there, or isn't yours to read" : e.message),
@@ -192,6 +200,23 @@ export function DocPage({ project, doc }: { project: string; doc: string }) {
           }
         />
       ) : null}
+      {onBoards.length > 0 && (
+        <p class="dim project-doc-boards" data-doc-boards>
+          On boards:{" "}
+          {onBoards.map((b, i) => {
+            const to = pathOf({ page: "board", project, board: b.board }, names);
+            return (
+              <span key={b.board}>
+                {i > 0 && ", "}
+                <a href={to} onClick={(e) => follow(e, to)} data-doc-board={b.board}>
+                  {b.title}
+                </a>{" "}
+                ({onBoardWords(b)})
+              </span>
+            );
+          })}
+        </p>
+      )}
       {view?.writer && <DocWriter project={project} view={view} wrote={show} />}
     </section>
   );

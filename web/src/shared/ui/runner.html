@@ -1,0 +1,51 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>prototype</title>
+</head>
+<body>
+<script>
+// The runner of a Doc's prototype (#506). The page is static: it
+// waits for one message from its parent, then replaces itself with the
+// prototype, the frame's policy first. Served by `srcdoc` where the page has
+// no script CSP, and from control's proto origin where it has (the
+// `Host::Proto` page in crates/control/src/blocks.rs); the web client's
+// `prototype-frame.tsx` is the other side, and the message names are
+// `prototype-messages.ts`'s.
+(function () {
+  var POLICY =
+    "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; base-uri 'none'; form-action 'none'";
+  function onmessage(e) {
+    // Only the parent, and only the first: after that, the page is the prototype's.
+    if (e.source !== parent) return;
+    var m = e.data;
+    if (!m || m.type !== "arugula.html" || typeof m.html !== "string") return;
+    removeEventListener("message", onmessage);
+    var scheme = m.colorScheme === "dark" ? "dark" : "light";
+    document.open();
+    // The policy comes first in the same write, so nothing the prototype
+    // writes can come before it.
+    document.write(
+      '<!doctype html><meta http-equiv="Content-Security-Policy" content="' + POLICY + '">' +
+        '<meta id="arugula-scheme-meta" name="color-scheme" content="' + scheme + '">' +
+        '<style id="arugula-scheme-style">:root{color-scheme:' + scheme + "}</style>" +
+        // The page's one listener: the parent can change the scheme later. (Opening
+        // the document dropped this page's own.) It takes only that message, only from the parent.
+        "<script>addEventListener('message',function(e){" +
+        "if(e.source!==parent)return;var m=e.data;" +
+        "if(!m||m.type!=='arugula.scheme')return;" +
+        "var s=m.colorScheme==='dark'?'dark':'light';" +
+        "var a=document.getElementById('arugula-scheme-meta'),b=document.getElementById('arugula-scheme-style');" +
+        "if(a)a.content=s;if(b)b.textContent=':root{color-scheme:'+s+'}'})</scr" + "ipt>" +
+        m.html,
+    );
+    document.close();
+  }
+  addEventListener("message", onmessage);
+  // A frame can't be sent to before its listener is there: say when it is.
+  parent.postMessage({ type: "arugula.ready" }, "*");
+})();
+</script>
+</body>
+</html>

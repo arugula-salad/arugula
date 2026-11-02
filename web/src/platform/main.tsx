@@ -17,6 +17,7 @@ import "./finish.css";
 import "../shared/buttons.css";
 import { apply as applyAppearance } from "../shared/appearance";
 import { setupDesktop } from "../shared/desktop";
+import { setProtoOrigin } from "../shared/ui/prototype-frame";
 import { PlatformApiContext } from "../shared/platform-api";
 import { AppearanceLayer } from "../shared/ui/appearance";
 import { MenuLayer, PromptLayer } from "../shared/ui/menu";
@@ -32,6 +33,9 @@ applyAppearance();
 // In the desktop app: macOS's buttons over the bar's left end, Linux's
 // own buttons in it (the bar's CSS reads this).
 setupDesktop();
+// A Doc's prototype can't run by srcdoc under this page's CSP: until the
+// hub says where its proto page is (session.ts), it shows a note (#506).
+setProtoOrigin(null);
 render(
   <PlatformApiContext.Provider value={platformApi}>
     <PlatformPage />

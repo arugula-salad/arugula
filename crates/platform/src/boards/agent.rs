@@ -173,6 +173,40 @@ pub async fn attach(
     Ok(Json(super::attach(&app, actor(&d), &id, &a).await?))
 }
 
+/// `POST /api/daemon/boards/{id}/docs`: link a Doc to the strip.
+pub async fn add_doc(
+    State(app): State<Arc<Platform>>,
+    d: Machine,
+    Path(id): Path<String>,
+    Json(a): Json<wire::AddDoc>,
+) -> J<wire::BoardView> {
+    app.limits.check_daemon(AGENT_BOARD_WRITES, &d.daemon)?;
+    Ok(Json(super::docs::add(&app, actor(&d), &id, &a).await?))
+}
+
+/// `DELETE /api/daemon/boards/{id}/docs/{doc}`: a Doc this machine's agents
+/// linked.
+pub async fn remove_doc(
+    State(app): State<Arc<Platform>>,
+    d: Machine,
+    Path((id, doc)): Path<(String, String)>,
+) -> J<wire::BoardView> {
+    app.limits.check_daemon(AGENT_BOARD_WRITES, &d.daemon)?;
+    Ok(Json(super::docs::remove(&app, actor(&d), &id, &doc).await?))
+}
+
+/// `POST /api/daemon/boards/{id}/docs/{doc}/move`: move a Doc along the
+/// strip.
+pub async fn move_doc(
+    State(app): State<Arc<Platform>>,
+    d: Machine,
+    Path((id, doc)): Path<(String, String)>,
+    Json(m): Json<wire::MoveDoc>,
+) -> J<wire::BoardView> {
+    app.limits.check_daemon(AGENT_BOARD_WRITES, &d.daemon)?;
+    Ok(Json(super::docs::move_doc(&app, actor(&d), &id, &doc, &m).await?))
+}
+
 /// `DELETE /api/daemon/boards/{id}/attachments/{attachment}`: an attachment
 /// this machine's agents made.
 pub async fn detach(

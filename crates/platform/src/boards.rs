@@ -84,6 +84,7 @@ use axum::{
     http::StatusCode,
 };
 
+use crate::db::boards_docs as db_docs;
 use crate::{
     Platform,
     auth::{Machine, Person},
@@ -111,6 +112,7 @@ use refs::{IssueKey, Refs, Source, references};
 pub mod agent;
 pub mod asks;
 pub mod auto;
+pub mod docs;
 pub mod epics;
 pub mod lanes;
 pub mod refs;
@@ -288,6 +290,12 @@ fn pointer_ok(p: &wire::Pointer) -> Result<(), ApiError> {
             name_ok(pane, "pane")
         }
         wire::Pointer::Link { url } => link_ok(url),
+        wire::Pointer::Doc { id } => id_ok(id, "pdc"),
+        wire::Pointer::MachineDoc { machine, doc, title } => {
+            name_ok(machine, "machine")?;
+            name_ok(doc, "Doc")?;
+            title_ok(title).map(|_| ())
+        }
     }
 }
 
@@ -824,6 +832,12 @@ async fn read(app: &Platform, account: &str, id: &str) -> Result<wire::BoardView
         wire::Pointer::Block { machine, .. } => Some(machine.clone()),
         _ => None,
     }));
+    let strip = app.db.board_docs(id)?;
+    machines.extend(strip.iter().filter_map(|d| match &d.pointer {
+        wire::Pointer::MachineDoc { machine, .. } => Some(machine.clone()),
+        _ => None,
+    }));
+    machines.extend(strip.iter().filter_map(|d| d.agent.clone()));
     machines.sort();
     machines.dedup();
     let names: HashMap<String, String> = if machines.is_empty() {
@@ -857,6 +871,14 @@ async fn read(app: &Platform, account: &str, id: &str) -> Result<wire::BoardView
         }
     };
     let asks = asks::Asks::load(app, account, &project, id).await?;
+    let mut row_docs: HashMap<String, Vec<db_docs::Strip>> = HashMap::new();
+    let mut strip_only = vec![];
+    for d in strip {
+        match d.row.clone() {
+            Some(r) => row_docs.entry(r).or_default().push(d),
+            None => strip_only.push(d),
+        }
+    }
     let mut zones: Vec<wire::Zone> = wire::Lane::ALL
         .iter()
         .map(|l| wire::Zone {
@@ -932,6 +954,7 @@ async fn read(app: &Platform, account: &str, id: &str) -> Result<wire::BoardView
             },
             lane: a.lane,
             attachments,
+            docs: docs::view(row_docs.remove(&e.id).unwrap_or_default(), &names),
             proof: a.proof,
             group: e.zone.clone(),
             marks,
@@ -949,7 +972,7 @@ async fn read(app: &Platform, account: &str, id: &str) -> Result<wire::BoardView
             updated_at: e.updated_at,
         });
     }
-    Ok(wire::BoardView { board, zones, groups, ready, said: None })
+    Ok(wire::BoardView { board, zones, groups, docs: docs::view(strip_only, &names), ready, said: None })
 }
 
 /// The board `id`, in `project`, changed: pages showing it read it again
@@ -1104,6 +1127,9 @@ fn group_id_ok(id: &str) -> Result<(), ApiError> {
 /// or an agent block is attached, and a workspace is neither.
 fn primary_ok(p: &wire::Pointer) -> Result<(), ApiError> {
     match p {
+        wire::Pointer::Doc { .. } | wire::Pointer::MachineDoc { .. } => {
+            Err(bad("a row's item is an issue or a PR: link it to the board's Docs, or to a row's"))
+        }
         wire::Pointer::Run { .. } | wire::Pointer::Block { .. } | wire::Pointer::Workspace { .. } => Err(bad(
             "a row's item is an issue or a PR (a note row may carry a link): attach a run or an agent block to the row \
              that it is for, with attach",
@@ -1703,6 +1729,9 @@ pub async fn detach_route(
 #[cfg(test)]
 #[path = "boards_asks_tests.rs"]
 mod asks_tests;
+#[cfg(test)]
+#[path = "boards_docs_tests.rs"]
+mod docs_tests;
 #[cfg(test)]
 #[path = "boards_relations_tests.rs"]
 mod relations_tests;
