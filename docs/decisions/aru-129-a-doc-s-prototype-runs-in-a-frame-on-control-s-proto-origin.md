@@ -112,3 +112,11 @@ iframe also has `referrerpolicy="no-referrer"`, `allow=""` and
 - **Fonts** are `data:` only, and there are no Google Fonts: a font request
   would be the frame's one network call, and the CSP holds the line at
   none. Inline the font as a `data:` URL.
+- **A refill reloads the frame; a share changes only on Update (#509).**
+  The frame is keyed on its page, so a refill replaces it for everyone with
+  the Doc open. A shared link is a snapshot and a refill never republishes
+  it: the Doc block says "Shared copy is older · Update" and one tap makes
+  the next version on the same link. The viewer looks at the link's
+  version every 30 s while visible (5 min after an hour with no change)
+  and swaps a newer one in place; a reader's click to run is kept per
+  section across the swap.

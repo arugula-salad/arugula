@@ -23,7 +23,7 @@ type View =
   | { kind: "gone" }
   | { kind: "broken" }
   | { kind: "offline" }
-  | { kind: "doc"; state: DocState; load: (name: string, rev: number) => Promise<string | null> };
+  | { kind: "doc"; ver: number; state: DocState; load: (name: string, rev: number) => Promise<string | null> };
 
 /** What control serves for the page's own path, `…/<id>`. */
 function base(): { id: string; at: string } {
@@ -33,7 +33,7 @@ function base(): { id: string; at: string } {
 
 const IMAGES = new Set(["image/png", "image/jpeg", "image/gif", "image/webp"]);
 
-function viewOf(o: Opened): View {
+function viewOf(o: Opened, ver: number, was: DocState | null): View {
   const { manifest, blobs } = o;
   const urls = new Map<string, string>();
   manifest.assets.forEach((a, i) => {
@@ -41,11 +41,16 @@ function viewOf(o: Opened): View {
   });
   const state: DocState = {
     title: manifest.title,
-    entries: manifest.entries.map((e) => ({ ...e, rev: e.body === null ? 0 : 1 })),
+    // A section whose body changed gets a new rev, so its body is a new
+    // element, as a refill is in the app (#509).
+    entries: manifest.entries.map((e) => {
+      const old = was?.entries.find((w) => w.id === e.id);
+      return { ...e, rev: e.body === null ? 0 : !old || old.body === e.body ? Math.max(old?.rev ?? 0, 1) : old.rev + 1 };
+    }),
     assets: manifest.assets.map((a) => ({ ...a, rev: 1 })),
     rev: 1,
   };
-  return { kind: "doc", state, load: (name) => Promise.resolve(urls.get(name) ?? null) };
+  return { kind: "doc", ver, state, load: (name) => Promise.resolve(urls.get(name) ?? null) };
 }
 
 /** A part's bytes for `ver`, or null if control no longer serves that version. */
@@ -56,7 +61,7 @@ async function part(at: string, n: number, ver: number): Promise<Uint8Array | nu
   return new Uint8Array(await res.arrayBuffer());
 }
 
-async function load(): Promise<View> {
+async function load(was: DocState | null = null): Promise<View> {
   const { id, at } = base();
   const key = keyFromHash(location.hash);
   if (!key || !/^[0-9a-f]{32}$/.test(id)) return { kind: "broken" };
@@ -86,7 +91,7 @@ async function load(): Promise<View> {
         if (attempt === 0) continue;
         return { kind: "gone" };
       }
-      return viewOf(await openSnapshot(key, id, ver as number, got));
+      return viewOf(await openSnapshot(key, id, ver as number, got), ver as number, was);
     }
     return { kind: "gone" };
   } catch (e) {
@@ -171,11 +176,64 @@ light.addEventListener("change", scheme);
 setProtoOrigin(protoOfViewer(location), true);
 
 const root = document.getElementById("root")!;
+let shown: View = { kind: "loading" };
 const draw = (view: View) => {
+  shown = view;
   // The Doc's title, or what the notice says; a preview bot reads the
   // page's own, "A shared Doc", which control can't do better than.
   document.title = view.kind === "doc" ? view.state.title || "Untitled" : view.kind === "loading" ? document.title : NOTICE[view.kind]![0];
   render(<Page view={view} />, root);
 };
+
+// A new version (#509): a person's Update makes `ver + 1` on this link. Look
+// again every 30 s while the page is visible and on coming back to it, and
+// swap the new snapshot in place; after an hour of no change, every 5 min.
+const EVERY = 30_000;
+const SLOW = 5 * 60_000;
+const QUIET = 60 * 60_000;
+let timer: ReturnType<typeof setTimeout> | undefined;
+let changed = Date.now();
+let stopped = false;
+let checking = false;
+
+async function check() {
+  if (stopped || checking || shown.kind !== "doc") return;
+  checking = true;
+  try {
+    const res = await fetch(`${base().at}/data/meta`);
+    if (res.status === 404) {
+      stopped = true;
+      return draw({ kind: "gone" });
+    }
+    if (!res.ok) return;
+    const ver = ((await res.json()) as { ver?: unknown }).ver;
+    if (!Number.isSafeInteger(ver) || (ver as number) <= shown.ver) return;
+    const next = await load(shown.state);
+    // A bad or unreachable answer leaves what the reader has.
+    if (next.kind === "gone") stopped = true;
+    if (next.kind === "doc" ? next.ver > shown.ver : next.kind === "gone") {
+      changed = Date.now();
+      draw(next);
+    }
+  } catch {
+    // Offline: the next look tries again.
+  } finally {
+    checking = false;
+  }
+}
+
+function later() {
+  clearTimeout(timer);
+  if (stopped || document.visibilityState !== "visible") return;
+  timer = setTimeout(() => void check().finally(later), Date.now() - changed > QUIET ? SLOW : EVERY);
+}
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState !== "visible") return clearTimeout(timer);
+  void check().finally(later);
+});
+
 draw({ kind: "loading" });
-void load().then(draw);
+void load().then((v) => {
+  draw(v);
+  later();
+});

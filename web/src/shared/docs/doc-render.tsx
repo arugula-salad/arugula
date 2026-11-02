@@ -46,6 +46,8 @@ export interface DocState {
   /** When it was shared with a link, and last updated (#1066); the link
    * itself is the owner's to ask for (`doc_shares`). */
   shared?: { made: number; updated: number } | null;
+  /** A section was written after the link was last updated (#509). */
+  shared_older?: boolean;
   error?: string;
 }
 
