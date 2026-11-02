@@ -1,5 +1,17 @@
 {
   "$defs": {
+    "AddDoc": {
+      "description": "[`BOARD_DOCS`]' body: the Doc to link, a [`Pointer::Doc`] or a\n[`Pointer::MachineDoc`] (a machine's agent links its own machine's).",
+      "properties": {
+        "pointer": {
+          "$ref": "#/$defs/Pointer"
+        }
+      },
+      "required": [
+        "pointer"
+      ],
+      "type": "object"
+    },
     "AnswerAsk": {
       "additionalProperties": false,
       "description": "[`BOARD_ASK_ANSWER`]'s body: one of the ask's `option`s, or `text` when\nit has none.",
@@ -165,6 +177,11 @@
           "const": "proof",
           "description": "Evidence that the work is done: a run or a link.",
           "type": "string"
+        },
+        {
+          "const": "reference",
+          "description": "A Doc about the row (its spike). It never moves a lane, and it isn't\nproof.",
+          "type": "string"
         }
       ]
     },
@@ -206,6 +223,17 @@
             }
           ],
           "description": "A `Block` pointer's block as its machine last reported it."
+        },
+        "doc": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/DocChip"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "A `reference` attachment's Doc, as the strip shows it."
         },
         "id": {
           "description": "`att_` and 32 hex characters.",
@@ -500,6 +528,77 @@
       ],
       "type": "object"
     },
+    "BoardDoc": {
+      "description": "One Doc in a board's strip.",
+      "properties": {
+        "added_by": {
+          "description": "The account that linked it (the owner, for an agent).",
+          "type": "string"
+        },
+        "agent": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ChatAgent"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The machine whose agent linked it, if one did."
+        },
+        "created_at": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "id": {
+          "description": "`bdc_` and 32 hex characters.",
+          "type": "string"
+        },
+        "machine_name": {
+          "description": "A machine Doc's machine, by name.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "missing": {
+          "description": "A project Doc that was deleted.",
+          "type": "boolean"
+        },
+        "pointer": {
+          "$ref": "#/$defs/Pointer",
+          "description": "[`Pointer::Doc`] or [`Pointer::MachineDoc`]."
+        },
+        "sections": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "title": {
+          "type": "string"
+        },
+        "written": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "pointer",
+        "title",
+        "added_by",
+        "created_at"
+      ],
+      "type": "object"
+    },
     "BoardList": {
       "properties": {
         "boards": {
@@ -650,6 +749,14 @@
       "properties": {
         "board": {
           "$ref": "#/$defs/Board"
+        },
+        "docs": {
+          "default": [],
+          "description": "The Docs strip, in order. Empty for a board with none; an old client\nignores it.",
+          "items": {
+            "$ref": "#/$defs/BoardDoc"
+          },
+          "type": "array"
         },
         "groups": {
           "default": [],
@@ -812,6 +919,89 @@
         "files",
         "added",
         "removed"
+      ],
+      "type": "object"
+    },
+    "DocBoards": {
+      "description": "[`PROJECT_DOC_BOARDS`]' answer: the project's boards that list the Doc,\nopen ones first.",
+      "properties": {
+        "boards": {
+          "items": {
+            "$ref": "#/$defs/DocOnBoard"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "boards"
+      ],
+      "type": "object"
+    },
+    "DocChip": {
+      "description": "What a chip for a Doc says: its title, and for a project Doc how many\nsections it has and how many are written.",
+      "properties": {
+        "machine_name": {
+          "description": "A machine Doc's machine, by name.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "missing": {
+          "description": "A project Doc that was deleted.",
+          "type": "boolean"
+        },
+        "sections": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "title": {
+          "description": "A project Doc's title now (\"a deleted Doc\" once it is gone), or a\nmachine Doc's as it was when linked.",
+          "type": "string"
+        },
+        "written": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "title"
+      ],
+      "type": "object"
+    },
+    "DocOnBoard": {
+      "description": "A board that lists a project Doc.",
+      "properties": {
+        "board": {
+          "type": "string"
+        },
+        "rows": {
+          "description": "How many rows carry it as a reference.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "strip": {
+          "description": "In the board's Docs strip.",
+          "type": "boolean"
+        },
+        "title": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "board",
+        "title",
+        "strip",
+        "rows"
       ],
       "type": "object"
     },
@@ -1155,6 +1345,19 @@
         }
       ]
     },
+    "MoveDoc": {
+      "description": "[`BOARD_DOC_MOVE`]'s body: the Doc it goes before; none: last.",
+      "properties": {
+        "before": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
     "MoveEntry": {
       "description": "[`BOARD_ENTRY_MOVE`]'s body. A row moves to a group (`zone`) or, with\n`zone: null`, out of its group; with `zone` absent it stays where it is.\nIt goes before `before` (a row of the place it goes to), last without\none. A group moves among groups:\n`before` is a group, `zone` is absent. A lane is never set (aru-125): a\n`zone` that is a lane is refused.",
       "properties": {
@@ -1262,7 +1465,7 @@
       "type": "object"
     },
     "Pointer": {
-      "description": "What a row points at. `None` is free text. The ids are the platform's:\n`fi_…` (a mirrored PR or issue), `iss_…`, `run_…`, `hw_…`.",
+      "description": "What a row points at. `None` is free text. The ids are the platform's:\n`fi_…` (a mirrored PR or issue), `iss_…`, `run_…`, `hw_…`, `pdc_…` (a\nproject Doc).",
       "oneOf": [
         {
           "properties": {
@@ -1376,6 +1579,48 @@
           "required": [
             "kind",
             "url"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "A project Doc (`pdc_…`) of the board's own project. Only a Doc strip\nor a `reference` attachment carries one.",
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "kind": {
+              "const": "doc",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "id"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "A Doc block on a machine. `title` is a snapshot from when it was\nlinked, since the machine may be off.",
+          "properties": {
+            "doc": {
+              "type": "string"
+            },
+            "kind": {
+              "const": "machine_doc",
+              "type": "string"
+            },
+            "machine": {
+              "type": "string"
+            },
+            "title": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "machine",
+            "doc",
+            "title"
           ],
           "type": "object"
         }

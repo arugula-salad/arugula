@@ -217,6 +217,11 @@ fn view(app: &Platform, by: By<'_>, place: &Place, d: &db::Stored) -> Result<wir
 /// through its thread's readers (as a board's).
 pub fn changed(app: &Platform, project: &str, id: &str) {
     app.chat.object_changed(&app.db, &format!("project:{project}"), id);
+    // The boards that list it (#517) show its title and sections.
+    match app.db.boards_on_doc(id) {
+        Ok(boards) => crate::boards::boards_changed(app, &boards),
+        Err(e) => tracing::warn!(error = %e, "project docs: finding the boards that list a Doc"),
+    }
 }
 
 /// The Doc's page on the platform's page.

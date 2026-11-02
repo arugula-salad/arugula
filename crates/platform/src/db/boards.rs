@@ -188,7 +188,7 @@ pub(super) const BOARD_COLS: &str = "id, project_id, title, created_by, created_
                           (SELECT i.state_group = 'started' FROM forge_items i WHERE i.id = boards.source_item)";
 pub(super) const ENTRY_COLS: &str =
     "id, rev, note, status, target_kind, target, pane, created_at, updated_at, agent, zone_id, work_item, source";
-const ATTACHED_COLS: &str = "id, row_id, role, target_kind, target, pane, agent, created_at, released_at";
+const ATTACHED_COLS: &str = "id, row_id, role, target_kind, target, pane, agent, created_at, released_at, machine, title";
 
 pub(super) fn board_row(r: &Row) -> Result<Board> {
     Ok(Board {
@@ -280,6 +280,8 @@ pub(super) fn pointer_cols(p: &Pointer) -> (Option<&'static str>, Option<&str>, 
         Pointer::Workspace { id } => (Some("workspace"), Some(id), None),
         Pointer::Block { machine, pane } => (Some("block"), Some(machine), Some(pane)),
         Pointer::Link { url } => (Some("link"), Some(url), None),
+        Pointer::Doc { id } => (Some("doc"), Some(id), None),
+        Pointer::MachineDoc { doc, .. } => (Some("machine_doc"), Some(doc), None),
     }
 }
 
@@ -295,7 +297,8 @@ pub(super) fn pointer_of(kind: Option<String>, target: Option<String>, pane: Opt
         (Some("workspace"), Some(id), _) => Pointer::Workspace { id },
         (Some("block"), Some(machine), Some(pane)) => Pointer::Block { machine, pane },
         (Some("link"), Some(url), _) => Pointer::Link { url },
-        (Some("forge_item" | "issue" | "run" | "workspace" | "block" | "link"), ..) => {
+        (Some("doc"), Some(id), _) => Pointer::Doc { id },
+        (Some("forge_item" | "issue" | "run" | "workspace" | "block" | "link" | "doc"), ..) => {
             bail!("a board row's pointer is missing its target")
         }
         (Some(_), ..) => Pointer::None,
@@ -326,13 +329,21 @@ fn attached_row(r: &Row) -> Result<Attached> {
     let role = match r.get::<String>(2)?.as_str() {
         "work" => AttachRole::Work,
         "proof" => AttachRole::Proof,
+        "reference" => AttachRole::Reference,
         k => bail!("a board attachment of role {k:?}"),
+    };
+    let kind: String = r.get(3)?;
+    let pointer = match (kind.as_str(), r.get::<Option<String>>(9)?) {
+        ("machine_doc", Some(machine)) => {
+            Pointer::MachineDoc { machine, doc: r.get(4)?, title: r.get::<Option<String>>(10)?.unwrap_or_default() }
+        }
+        _ => pointer_of(Some(kind), r.get(4)?, r.get(5)?)?,
     };
     Ok(Attached {
         id: r.get(0)?,
         row: r.get(1)?,
         role,
-        pointer: pointer_of(r.get(3)?, r.get(4)?, r.get(5)?)?,
+        pointer,
         agent: r.get(6)?,
         created_at: r.get(7)?,
         released_at: r.get(8)?,
@@ -659,7 +670,11 @@ impl Db {
              JOIN boards b ON b.id = a.board_id WHERE b.project_id = ?1",
             params![project],
             |r| {
-                let role = if r.get::<String>(2)? == "proof" { AttachRole::Proof } else { AttachRole::Work };
+                let role = match r.get::<String>(2)?.as_str() {
+                    "proof" => AttachRole::Proof,
+                    "reference" => AttachRole::Reference,
+                    _ => AttachRole::Work,
+                };
                 Ok(Thing {
                     board: r.get(0)?,
                     row: r.get(1)?,
@@ -1001,11 +1016,16 @@ impl Db {
         let (Some(kind), Some(target), pane) = pointer_cols(pointer) else {
             return bad("an attachment points at something");
         };
+        let (machine, title) = match pointer {
+            Pointer::MachineDoc { machine, title, .. } => (Some(machine.as_str()), Some(title.as_str())),
+            _ => (None, None),
+        };
         let id = new_attachment_id();
         tx.execute(
-            "INSERT INTO board_attachments (id, board_id, row_id, role, target_kind, target, pane, agent, created_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
-            params![id, board, row, role.as_str(), kind, target, pane, agent, at],
+            "INSERT INTO board_attachments (id, board_id, row_id, role, target_kind, target, pane, agent, created_at,
+                                            machine, title)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+            params![id, board, row, role.as_str(), kind, target, pane, agent, at, machine, title],
         )?;
         touch(&tx, board, at)?;
         tx.commit()?;
@@ -1365,6 +1385,11 @@ pub(crate) fn erase_account(c: &impl Sql, d: &Deleted) -> Result<()> {
         params![],
     )?;
     c.execute(
+        "DELETE FROM board_docs WHERE board_id IN
+             (SELECT id FROM boards WHERE project_id NOT IN (SELECT id FROM projects))",
+        params![],
+    )?;
+    c.execute(
         "DELETE FROM board_asks WHERE board_id IN
              (SELECT id FROM boards WHERE project_id NOT IN (SELECT id FROM projects))",
         params![],
@@ -1382,6 +1407,7 @@ pub(crate) fn erase_account(c: &impl Sql, d: &Deleted) -> Result<()> {
     c.execute("DELETE FROM work_items WHERE project_id NOT IN (SELECT id FROM projects)", params![])?;
     super::boards_asks::erase_account(c, d)?;
     super::boards_relations::erase_account(c, d)?;
+    super::boards_docs::erase_account(c, d)?;
     c.execute("DELETE FROM board_settings WHERE project_id NOT IN (SELECT id FROM projects)", params![])?;
     c.execute("DELETE FROM boards WHERE project_id NOT IN (SELECT id FROM projects)", params![])?;
     c.execute("UPDATE boards SET created_by = '' WHERE created_by = ?1", params![d.account])?;

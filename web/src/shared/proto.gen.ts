@@ -219,7 +219,7 @@ can_answer: boolean, created_at: number, };
 /**
  * What an attachment is for.
  */
-export type BoardAttachRole = "work" | "proof";
+export type BoardAttachRole = "work" | "proof" | "reference";
 
 /**
  * Something attached to a row.
@@ -242,7 +242,11 @@ block?: BoardBlockState | null,
  * A block that a newer agent took the row from (`take`): it is an
  * earlier agent whatever it reports, and holds no claim.
  */
-released?: boolean, };
+released?: boolean, 
+/**
+ * A `reference` attachment's Doc, as the strip shows it.
+ */
+doc?: BoardDocChip, };
 
 /**
  * What a daemon says of one of its own agent blocks, and all it says
@@ -284,6 +288,54 @@ export type BoardCategory = "triage" | "backlog" | "unstarted" | "started" | "co
  * A `git diff --stat` summary line as numbers: nothing of the files.
  */
 export type BoardDiffstat = { files: number, added: number, removed: number, };
+
+/**
+ * One Doc in a board's strip.
+ */
+export type BoardDoc = { 
+/**
+ * `bdc_` and 32 hex characters.
+ */
+id: string, 
+/**
+ * [`Pointer::Doc`] or [`Pointer::MachineDoc`].
+ */
+pointer: BoardPointer, title: string, sections?: number, written?: number, 
+/**
+ * A project Doc that was deleted.
+ */
+missing?: boolean, 
+/**
+ * A machine Doc's machine, by name.
+ */
+machine_name?: string, 
+/**
+ * The account that linked it (the owner, for an agent).
+ */
+added_by: string, 
+/**
+ * The machine whose agent linked it, if one did.
+ */
+agent?: ChatAgent, created_at: number, };
+
+/**
+ * What a chip for a Doc says: its title, and for a project Doc how many
+ * sections it has and how many are written.
+ */
+export type BoardDocChip = { 
+/**
+ * A project Doc's title now ("a deleted Doc" once it is gone), or a
+ * machine Doc's as it was when linked.
+ */
+title: string, sections?: number, written?: number, 
+/**
+ * A project Doc that was deleted.
+ */
+missing?: boolean, 
+/**
+ * A machine Doc's machine, by name.
+ */
+machine_name?: string, };
 
 /**
  * Zone (a group, in a database; a lane, on the wire) or row.
@@ -395,13 +447,14 @@ zone?: string | null, before: string | null, };
 
 /**
  * What a row points at. `None` is free text. The ids are the platform's:
- * `fi_…` (a mirrored PR or issue), `iss_…`, `run_…`, `hw_…`.
+ * `fi_…` (a mirrored PR or issue), `iss_…`, `run_…`, `hw_…`, `pdc_…` (a
+ * project Doc).
  */
 export type BoardPointer = { "kind": "none" } | { "kind": "forge_item", id: string, } | { "kind": "issue", id: string, } | { "kind": "run", id: string, } | { "kind": "workspace", id: string, } | { "kind": "block", machine: string, 
 /**
  * The block's pane, as `%N` or `N`; stored as `N`.
  */
-pane: string, } | { "kind": "link", url: string, };
+pane: string, } | { "kind": "link", url: string, } | { "kind": "doc", id: string, } | { "kind": "machine_doc", machine: string, doc: string, title: string, };
 
 /**
  * A board's work, counted: the rows with a primary item (an issue or a
@@ -592,6 +645,11 @@ export type BoardView = { board: ProjectBoard, zones: Array<BoardZone>,
  * Empty for a board with none; an old client ignores it.
  */
 groups: Array<BoardGroup>, 
+/**
+ * The Docs strip, in order. Empty for a board with none; an old client
+ * ignores it.
+ */
+docs: Array<BoardDoc>, 
 /**
  * The ready set (Arugula #403): the rows (`row_…`) with an issue or a
  * PR as their item that are in Next and have no open blocker.

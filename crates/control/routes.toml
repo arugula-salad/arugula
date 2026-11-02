@@ -2886,6 +2886,38 @@ note = "Takes an attachment off its row: owners and editors."
 
 [[route]]
 method = "POST"
+path = "/api/boards/{id}/docs"  # wire::boards::BOARD_DOCS
+process = "platform"
+auth = "session"
+clients = ["page", "cli"]
+note = "Links a Doc (a project Doc of the board's project, or a machine's Doc block) to the board's Docs strip: owners and editors. One linked already is not linked again; at most 20."
+
+[[route]]
+method = "DELETE"
+path = "/api/boards/{id}/docs/{doc}"  # wire::boards::BOARD_DOC
+process = "platform"
+auth = "session"
+clients = ["page", "cli"]
+note = "Takes a Doc off the board's Docs strip: owners and editors."
+
+[[route]]
+method = "POST"
+path = "/api/boards/{id}/docs/{doc}/move"  # wire::boards::BOARD_DOC_MOVE
+process = "platform"
+auth = "session"
+clients = ["page", "cli"]
+note = "Moves a Doc along the board's Docs strip: owners and editors."
+
+[[route]]
+method = "GET"
+path = "/api/projects/{project}/docs/{doc}/boards"  # wire::boards::PROJECT_DOC_BOARDS
+process = "platform"
+auth = "session"
+clients = ["page"]
+note = "The boards of the project that list a project Doc, in the strip or on a row: members. Empty with boards off."
+
+[[route]]
+method = "POST"
 path = "/api/boards/{id}/rows/{row}/ask"  # wire::boards::BOARD_ROW_ASK
 process = "platform"
 auth = "session"
@@ -3211,6 +3243,30 @@ process = "platform"
 auth = "daemon"
 clients = ["daemon"]
 note = "An attachment the same machine's agents made (`boards.write`); anything else is 403."
+
+[[route]]
+method = "POST"
+path = "/api/daemon/boards/{id}/docs"  # wire::boards::AGENT_BOARD_DOCS
+process = "platform"
+auth = "daemon"
+clients = ["daemon"]
+note = "Links a Doc to the board's Docs strip (`boards.write`): a project Doc, or one on the signing machine."
+
+[[route]]
+method = "DELETE"
+path = "/api/daemon/boards/{id}/docs/{doc}"  # wire::boards::AGENT_BOARD_DOC
+process = "platform"
+auth = "daemon"
+clients = ["daemon"]
+note = "A Doc the same machine's agents linked (`boards.write`); anything else is 403."
+
+[[route]]
+method = "POST"
+path = "/api/daemon/boards/{id}/docs/{doc}/move"  # wire::boards::AGENT_BOARD_DOC_MOVE
+process = "platform"
+auth = "daemon"
+clients = ["daemon"]
+note = "Moves a Doc along the board's Docs strip (`boards.write`)."
 
 [[route]]
 method = "POST"

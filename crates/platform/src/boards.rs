@@ -111,6 +111,7 @@ use refs::{IssueKey, Refs, Source, references};
 pub mod agent;
 pub mod asks;
 pub mod auto;
+pub mod docs;
 pub mod epics;
 pub mod lanes;
 pub mod refs;
@@ -288,6 +289,12 @@ fn pointer_ok(p: &wire::Pointer) -> Result<(), ApiError> {
             name_ok(pane, "pane")
         }
         wire::Pointer::Link { url } => link_ok(url),
+        wire::Pointer::Doc { id } => id_ok(id, "pdc"),
+        wire::Pointer::MachineDoc { machine, doc, title } => {
+            name_ok(machine, "machine")?;
+            name_ok(doc, "Doc")?;
+            title_ok(title).map(|_| ())
+        }
     }
 }
 
@@ -818,9 +825,15 @@ async fn read(app: &Platform, account: &str, id: &str) -> Result<wire::BoardView
     let stored = app.db.board_stored(id)?.ok_or_else(no_board)?;
     let mut machines: Vec<String> = stored.rows.iter().filter_map(|e| e.agent.clone()).collect();
     machines.extend(stored.attachments.iter().filter_map(|a| match &a.pointer {
-        wire::Pointer::Block { machine, .. } => Some(machine.clone()),
+        wire::Pointer::Block { machine, .. } | wire::Pointer::MachineDoc { machine, .. } => Some(machine.clone()),
         _ => None,
     }));
+    let strip = app.db.board_docs(id)?;
+    machines.extend(strip.iter().filter_map(|d| match &d.pointer {
+        wire::Pointer::MachineDoc { machine, .. } => Some(machine.clone()),
+        _ => None,
+    }));
+    machines.extend(strip.iter().filter_map(|d| d.agent.clone()));
     machines.sort();
     machines.dedup();
     let names: HashMap<String, String> = if machines.is_empty() {
@@ -854,6 +867,15 @@ async fn read(app: &Platform, account: &str, id: &str) -> Result<wire::BoardView
         }
     };
     let asks = asks::Asks::load(app, account, &project, id).await?;
+    let doc_ids: Vec<&str> = stored
+        .attachments
+        .iter()
+        .filter_map(|a| match &a.pointer {
+            wire::Pointer::Doc { id } => Some(id.as_str()),
+            _ => None,
+        })
+        .collect();
+    let heads = app.db.project_doc_heads(&project, &doc_ids)?;
     let mut zones: Vec<wire::Zone> = wire::Lane::ALL
         .iter()
         .map(|l| wire::Zone {
@@ -892,7 +914,20 @@ async fn read(app: &Platform, account: &str, id: &str) -> Result<wire::BoardView
             .map(|a| {
                 let (live, block) = chip(&a.pointer);
                 let released = a.released_at.is_some();
-                wire::Attachment { id: a.id.clone(), role: a.role, pointer: a.pointer.clone(), live, block, released }
+                let doc = match &a.pointer {
+                    wire::Pointer::Doc { id } => Some(docs::project_chip(heads.get(id))),
+                    wire::Pointer::MachineDoc { machine, title, .. } => Some(wire::DocChip {
+                        title: title.clone(),
+                        sections: None,
+                        written: None,
+                        missing: false,
+                        machine_name: Some(
+                            names.get(machine).filter(|n| !n.is_empty()).cloned().unwrap_or_else(|| "a machine".to_owned()),
+                        ),
+                    }),
+                    _ => None,
+                };
+                wire::Attachment { id: a.id.clone(), role: a.role, pointer: a.pointer.clone(), live, block, released, doc }
             })
             .collect();
         if let Some(g) = groups.iter_mut().find(|g| Some(&g.id) == e.zone.as_ref())
@@ -946,7 +981,7 @@ async fn read(app: &Platform, account: &str, id: &str) -> Result<wire::BoardView
             updated_at: e.updated_at,
         });
     }
-    Ok(wire::BoardView { board, zones, groups, ready, said: None })
+    Ok(wire::BoardView { board, zones, groups, docs: docs::view(strip, &names), ready, said: None })
 }
 
 /// The board `id`, in `project`, changed: pages showing it read it again
@@ -1101,6 +1136,9 @@ fn group_id_ok(id: &str) -> Result<(), ApiError> {
 /// or an agent block is attached, and a workspace is neither.
 fn primary_ok(p: &wire::Pointer) -> Result<(), ApiError> {
     match p {
+        wire::Pointer::Doc { .. } | wire::Pointer::MachineDoc { .. } => Err(bad(
+            "a row's item is an issue or a PR: attach a Doc to the row as a reference, or link it to the board's Docs",
+        )),
         wire::Pointer::Run { .. } | wire::Pointer::Block { .. } | wire::Pointer::Workspace { .. } => Err(bad(
             "a row's item is an issue or a PR (a note row may carry a link): attach a run or an agent block to the row \
              that it is for, with attach",
@@ -1450,14 +1488,30 @@ pub async fn attach(app: &Platform, by: Actor<'_>, id: &str, a: &wire::AttachRow
         return Err(bad(match a.role {
             wire::AttachRole::Work => "work attached to a row is a PR, an agent block or a run",
             wire::AttachRole::Proof => "proof attached to a row is a run or a link",
+            wire::AttachRole::Reference => "a reference attached to a row is a Doc",
         }));
     }
     pointer_ok(&a.pointer)?;
+    let mut a = a.clone();
+    if a.role == wire::AttachRole::Reference {
+        a.pointer = docs::doc_ok(app, by, &board.project, &a.pointer)?;
+    }
+    let a = &a;
     let stored = app.db.board_stored(id)?.ok_or_else(no_board)?;
     if !stored.rows.iter().any(|r| r.id == a.row) {
         return Err(refused(Refused::Missing("no such row")));
     }
-    if let Some(said) = already(&stored, &a.pointer) {
+    // A Doc may be a reference on several rows, but once on each.
+    let said = if a.role == wire::AttachRole::Reference {
+        stored
+            .attachments
+            .iter()
+            .any(|x| x.row == a.row && x.role == a.role && x.pointer == a.pointer)
+            .then(|| format!("that Doc is a reference on row {} already: it was not attached again", a.row))
+    } else {
+        already(&stored, &a.pointer)
+    };
+    if let Some(said) = said {
         let mut v = read(app, by.account, id).await?;
         v.said = Some(said);
         return Ok(v);
@@ -1700,6 +1754,9 @@ pub async fn detach_route(
 #[cfg(test)]
 #[path = "boards_asks_tests.rs"]
 mod asks_tests;
+#[cfg(test)]
+#[path = "boards_docs_tests.rs"]
+mod docs_tests;
 #[cfg(test)]
 #[path = "boards_relations_tests.rs"]
 mod relations_tests;

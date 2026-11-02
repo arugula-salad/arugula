@@ -1389,10 +1389,21 @@ name = "board_attachments"
 plane = "platform"
 process = "platform"
 holds = "plaintext"
-what = "What is attached to a board's row: work (a PR by its mirrored id, an agent block by machine and pane, or a run) or proof (a run or an https link), with the machine whose agent attached it, if one did."
+what = "What is attached to a board's row: work (a PR by its mirrored id, an agent block by machine and pane, or a run), proof (a run or an https link) or a reference (a Doc: a project Doc by id, or a machine's Doc block by machine and id, with the title it had when linked), with the machine whose agent attached it, if one did."
 why_asleep = "A board shows what a row's work is, and whether it is proven, on a phone with every machine asleep."
 with_account = "partly"
 note = "Those of projects that go with it go. The rest stay: they name no account."
+seen_by = ["litestream"]
+
+[[table]]
+name = "board_docs"
+plane = "platform"
+process = "platform"
+holds = "plaintext"
+what = "A board's Docs strip (Arugula #517), in order: each Doc a project Doc by id, or a machine's Doc block by machine and id with the title it had when linked, who linked it (the account, and the machine whose agent did, if one did) and when."
+why_asleep = "A board lists its research and prototypes, and opens a project Doc, on a phone with every machine asleep."
+with_account = "partly"
+note = "Those of projects that go with it go. The rest stay, with no one who linked them."
 seen_by = ["litestream"]
 
 [[table]]

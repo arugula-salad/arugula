@@ -54,6 +54,17 @@ pub const BOARD_ENTRY_MOVE: &str = "/api/boards/{id}/entries/{entry}/move";
 pub const BOARD_ATTACHMENTS: &str = "/api/boards/{id}/attachments";
 /// `DELETE`: take an attachment off its row; answered [`BoardView`].
 pub const BOARD_ATTACHMENT: &str = "/api/boards/{id}/attachments/{attachment}";
+/// `POST` [`AddDoc`]: link a Doc to the board's Docs strip (owners and
+/// editors); answered [`BoardView`]. A Doc linked already answers the board
+/// as it is.
+pub const BOARD_DOCS: &str = "/api/boards/{id}/docs";
+/// `DELETE`: take a Doc off the strip; answered [`BoardView`].
+pub const BOARD_DOC: &str = "/api/boards/{id}/docs/{doc}";
+/// `POST` [`MoveDoc`]: move a Doc along the strip; answered [`BoardView`].
+pub const BOARD_DOC_MOVE: &str = "/api/boards/{id}/docs/{doc}/move";
+/// `GET`: the boards that list a project Doc, in the strip or on a row,
+/// [`DocBoards`] (members; empty with boards off).
+pub const PROJECT_DOC_BOARDS: &str = "/api/projects/{project}/docs/{doc}/boards";
 /// `GET` [`WorkQuery`]: a project's work items, [`WorkItems`].
 /// `POST` [`NewAsk`]: a person asks a question on a row (owners and
 /// editors). One open ask per row, and only on a row with an issue or a PR.
@@ -92,6 +103,13 @@ pub const AGENT_BOARD_ENTRY_MOVE: &str = "/api/daemon/boards/{id}/entries/{entry
 pub const AGENT_BOARD_ATTACHMENTS: &str = "/api/daemon/boards/{id}/attachments";
 /// `DELETE`: take off an attachment this machine's agents made.
 pub const AGENT_BOARD_ATTACHMENT: &str = "/api/daemon/boards/{id}/attachments/{attachment}";
+
+/// `POST` [`AddDoc`]: an agent links a Doc to the strip (`boards.write`).
+pub const AGENT_BOARD_DOCS: &str = "/api/daemon/boards/{id}/docs";
+/// `DELETE`: take off a Doc this machine's agents linked.
+pub const AGENT_BOARD_DOC: &str = "/api/daemon/boards/{id}/docs/{doc}";
+/// `POST` [`MoveDoc`]: move a Doc along the strip.
+pub const AGENT_BOARD_DOC_MOVE: &str = "/api/daemon/boards/{id}/docs/{doc}/move";
 
 /// `GET`: the projects whose boards this machine's agents reach, and with
 /// which powers, [`BoardReach`].
@@ -230,6 +248,21 @@ pub fn agent_board_attachments(id: &str) -> String {
     format!("/api/daemon/boards/{id}/attachments")
 }
 
+/// [`AGENT_BOARD_DOCS`] for `id`.
+pub fn agent_board_docs(id: &str) -> String {
+    format!("/api/daemon/boards/{id}/docs")
+}
+
+/// [`AGENT_BOARD_DOC`] for `doc` of `id`.
+pub fn agent_board_doc(id: &str, doc: &str) -> String {
+    format!("/api/daemon/boards/{id}/docs/{doc}")
+}
+
+/// [`AGENT_BOARD_DOC_MOVE`] for `doc` of `id`.
+pub fn agent_board_doc_move(id: &str, doc: &str) -> String {
+    format!("/api/daemon/boards/{id}/docs/{doc}/move")
+}
+
 /// [`AGENT_BOARD_ATTACHMENT`] for `attachment` of `id`.
 pub fn agent_board_attachment(id: &str, attachment: &str) -> String {
     format!("/api/daemon/boards/{id}/attachments/{attachment}")
@@ -255,6 +288,8 @@ pub const BOARDS_MAX: u64 = 100;
 pub const GROUPS_MAX: u64 = 30;
 pub const ROWS_MAX: u64 = 500;
 pub const ATTACHMENTS_MAX: u64 = 20;
+/// The most Docs in a board's strip.
+pub const BOARD_DOCS_MAX: u64 = 20;
 /// How long, in minutes, a Doing row's blocks may sit idle before it is
 /// stalled: the default, and the most a project may set (a week).
 pub const STALL_MINUTES_DEFAULT: u32 = 30;
@@ -272,7 +307,8 @@ pub const ASK_OPTION_MAX: usize = 80;
 pub const ASKED_SHOWN: usize = 3;
 
 /// What a row points at. `None` is free text. The ids are the platform's:
-/// `fi_…` (a mirrored PR or issue), `iss_…`, `run_…`, `hw_…`.
+/// `fi_…` (a mirrored PR or issue), `iss_…`, `run_…`, `hw_…`, `pdc_…` (a
+/// project Doc).
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "BoardPointer"))]
@@ -302,6 +338,18 @@ pub enum Pointer {
     /// takes only `https`, no userinfo, at most [`LINK_MAX`] bytes.
     Link {
         url: String,
+    },
+    /// A project Doc (`pdc_…`) of the board's own project. Only a Doc strip
+    /// or a `reference` attachment carries one.
+    Doc {
+        id: String,
+    },
+    /// A Doc block on a machine. `title` is a snapshot from when it was
+    /// linked, since the machine may be off.
+    MachineDoc {
+        machine: String,
+        doc: String,
+        title: String,
     },
 }
 
@@ -404,6 +452,9 @@ pub enum AttachRole {
     Work,
     /// Evidence that the work is done: a run or a link.
     Proof,
+    /// A Doc about the row (its spike). It never moves a lane, and it isn't
+    /// proof.
+    Reference,
 }
 
 impl AttachRole {
@@ -411,16 +462,18 @@ impl AttachRole {
         match self {
             AttachRole::Work => "work",
             AttachRole::Proof => "proof",
+            AttachRole::Reference => "reference",
         }
     }
 
     /// Whether `p` may be attached for this role: a `work` attachment is a
     /// PR (a mirrored item), an agent block or a run; a `proof` one is a run
-    /// or a link.
+    /// or a link; a `reference` one is a Doc, and only a `reference` takes one.
     pub fn takes(self, p: &Pointer) -> bool {
         match self {
             AttachRole::Work => matches!(p, Pointer::ForgeItem { .. } | Pointer::Block { .. } | Pointer::Run { .. }),
             AttachRole::Proof => matches!(p, Pointer::Run { .. } | Pointer::Link { .. }),
+            AttachRole::Reference => matches!(p, Pointer::Doc { .. } | Pointer::MachineDoc { .. }),
         }
     }
 }
@@ -461,6 +514,109 @@ pub struct Attachment {
     /// earlier agent whatever it reports, and holds no claim.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub released: bool,
+    /// A `reference` attachment's Doc, as the strip shows it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub doc: Option<DocChip>,
+}
+
+/// What a chip for a Doc says: its title, and for a project Doc how many
+/// sections it has and how many are written.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "BoardDocChip"))]
+pub struct DocChip {
+    /// A project Doc's title now ("a deleted Doc" once it is gone), or a
+    /// machine Doc's as it was when linked.
+    pub title: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub sections: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub written: Option<u32>,
+    /// A project Doc that was deleted.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub missing: bool,
+    /// A machine Doc's machine, by name.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub machine_name: Option<String>,
+}
+
+/// What a deleted project Doc is called.
+pub const DOC_GONE: &str = "a deleted Doc";
+
+/// One Doc in a board's strip.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "BoardDoc"))]
+pub struct BoardDoc {
+    /// `bdc_` and 32 hex characters.
+    pub id: String,
+    /// [`Pointer::Doc`] or [`Pointer::MachineDoc`].
+    pub pointer: Pointer,
+    pub title: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub sections: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub written: Option<u32>,
+    /// A project Doc that was deleted.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub missing: bool,
+    /// A machine Doc's machine, by name.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub machine_name: Option<String>,
+    /// The account that linked it (the owner, for an agent).
+    pub added_by: String,
+    /// The machine whose agent linked it, if one did.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub agent: Option<ChatAgent>,
+    pub created_at: u64,
+}
+
+/// [`BOARD_DOCS`]' body: the Doc to link, a [`Pointer::Doc`] or a
+/// [`Pointer::MachineDoc`] (a machine's agent links its own machine's).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "BoardAddDoc"))]
+pub struct AddDoc {
+    pub pointer: Pointer,
+}
+
+/// [`BOARD_DOC_MOVE`]'s body: the Doc it goes before; none: last.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "BoardMoveDoc"))]
+pub struct MoveDoc {
+    #[serde(default)]
+    pub before: Option<String>,
+}
+
+/// A board that lists a project Doc.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "BoardOfDoc"))]
+pub struct DocOnBoard {
+    pub board: String,
+    pub title: String,
+    /// In the board's Docs strip.
+    pub strip: bool,
+    /// How many rows carry it as a reference.
+    pub rows: u32,
+}
+
+/// [`PROJECT_DOC_BOARDS`]' answer: the project's boards that list the Doc,
+/// open ones first.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "BoardsOfDoc"))]
+pub struct DocBoards {
+    pub boards: Vec<DocOnBoard>,
 }
 
 impl Attachment {
@@ -1447,6 +1603,10 @@ pub struct BoardView {
     /// Empty for a board with none; an old client ignores it.
     #[serde(default)]
     pub groups: Vec<Group>,
+    /// The Docs strip, in order. Empty for a board with none; an old client
+    /// ignores it.
+    #[serde(default)]
+    pub docs: Vec<BoardDoc>,
     /// The ready set (Arugula #403): the rows (`row_…`) with an issue or a
     /// PR as their item that are in Next and have no open blocker.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -1537,9 +1697,12 @@ impl Pointer {
         let short = |id: &str| id.chars().take(12).collect::<String>();
         match self {
             Pointer::None => String::new(),
-            Pointer::ForgeItem { id } | Pointer::Issue { id } | Pointer::Run { id } | Pointer::Workspace { id } => {
-                short(id)
-            }
+            Pointer::ForgeItem { id }
+            | Pointer::Issue { id }
+            | Pointer::Run { id }
+            | Pointer::Workspace { id }
+            | Pointer::Doc { id } => short(id),
+            Pointer::MachineDoc { title, .. } => title.clone(),
             Pointer::Block { machine, pane } => format!("{machine}/{pane}"),
             Pointer::Link { url } => url.strip_prefix("https://").unwrap_or(url).to_owned(),
         }
@@ -1695,8 +1858,13 @@ fn lane_text<'a>(out: &mut String, title: &str, rows: impl Iterator<Item = &'a R
                 .attachments
                 .iter()
                 .map(|a| {
-                    let role = if a.role == AttachRole::Proof { "proof " } else { "" };
-                    format!("{role}{}", a.pointer.label())
+                    let role = match a.role {
+                        AttachRole::Proof => "proof ",
+                        AttachRole::Reference => "doc ",
+                        AttachRole::Work => "",
+                    };
+                    let label = a.doc.as_ref().map_or_else(|| a.pointer.label(), |d| d.title.clone());
+                    format!("{role}{label}")
                 })
                 .collect();
             *out += &format!("      {}\n", fit(&format!("with {}", with.join(", ")), TEXT_WIDTH - 6));
@@ -1744,6 +1912,10 @@ pub fn render(view: &BoardView) -> String {
     let b = &view.board;
     if !first(&b.goal).is_empty() {
         out += &format!("{}\n", fit(&format!("Goal: {}", first(&b.goal)), TEXT_WIDTH));
+    }
+    if !view.docs.is_empty() {
+        let docs: Vec<&str> = view.docs.iter().map(|d| d.title.as_str()).collect();
+        out += &format!("{}\n", fit(&format!("Docs: {}", docs.join(", ")), TEXT_WIDTH));
     }
     if b.progress.total > 0 {
         let (done, total) = (b.progress.done as usize, b.progress.total as usize);
@@ -1927,7 +2099,7 @@ mod tests {
     }
 
     fn view(zones: Vec<Zone>) -> BoardView {
-        BoardView { board: board(), zones, groups: vec![], ready: vec![], said: None }
+        BoardView { board: board(), zones, groups: vec![], docs: vec![], ready: vec![], said: None }
     }
 
     /// Adds `"added_later"` to every object in `v`.
@@ -1981,6 +2153,7 @@ mod tests {
             live: Some(live),
             block: Some(block),
             released: false,
+            doc: None,
         }];
         let v = view(lanes(vec![(Lane::Doing, vec![r])]));
         let mut json = serde_json::to_value(&v).unwrap();
@@ -2034,6 +2207,7 @@ mod tests {
             live: None,
             block: None,
             released: false,
+            doc: None,
         }];
         let mut proof_att = row(Pointer::Issue { id: "iss_cc22".into() }, Lane::Done, "Docs");
         proof_att.attachments = vec![Attachment {
@@ -2043,6 +2217,7 @@ mod tests {
             live: None,
             block: None,
             released: false,
+            doc: None,
         }];
         let zones = lanes(vec![
             (Lane::Next, vec![row(Pointer::None, Lane::Next, "Decide the name"), row(Pointer::None, Lane::Next, "")]),
