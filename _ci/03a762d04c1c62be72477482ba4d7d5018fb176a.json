@@ -3,16 +3,16 @@
   "commit": "03a762d04c1c62be72477482ba4d7d5018fb176a",
   "branch": "main",
   "state": "pending",
-  "at": "2026-11-02T23:26:07Z",
+  "at": "2026-11-02T23:37:45Z",
   "phases": {
     "lint": {
-      "verdict": "pending",
+      "verdict": "pass",
       "build": "newest",
       "runs": [
         {
           "name": "lint",
           "id": 125618876736,
-          "conclusion": null,
+          "conclusion": "success",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/41544204350/job/125618876736"
         },
         {
@@ -30,25 +30,25 @@
       ]
     },
     "build": {
-      "verdict": "pending",
+      "verdict": "pass",
       "build": "newest",
       "runs": [
         {
           "name": "build",
           "id": 125619105205,
-          "conclusion": null,
+          "conclusion": "success",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/41544204350/job/125619105205"
         },
         {
           "name": "static",
           "id": 125619105139,
-          "conclusion": null,
+          "conclusion": "success",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/41544204350/job/125619105139"
         },
         {
           "name": "clippy",
           "id": 125619105172,
-          "conclusion": null,
+          "conclusion": "success",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/41544204350/job/125619105172"
         }
       ]
@@ -60,31 +60,105 @@
         {
           "name": "test",
           "id": 125619105312,
-          "conclusion": null,
+          "conclusion": "failure",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/41544204350/job/125619105312"
         },
         {
           "name": "test-2",
           "id": 125619105283,
-          "conclusion": null,
+          "conclusion": "failure",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/41544204350/job/125619105283"
         }
       ],
+      "reason": "retrying",
       "culprit": "8a8022c8ea5b7719fe05a3a715a05f586f4ea2f7"
     },
     "e2e": {
-      "verdict": "pending",
+      "verdict": "pass",
       "build": "newest",
-      "runs": []
+      "runs": [
+        {
+          "name": "e2e (1)",
+          "id": 125620583511,
+          "conclusion": "success",
+          "url": "https://github.com/arugula-salad/arugula/actions/runs/41544204350/job/125620583511"
+        },
+        {
+          "name": "e2e (10)",
+          "id": 125620583526,
+          "conclusion": "success",
+          "url": "https://github.com/arugula-salad/arugula/actions/runs/41544204350/job/125620583526"
+        },
+        {
+          "name": "e2e (11)",
+          "id": 125620583448,
+          "conclusion": "success",
+          "url": "https://github.com/arugula-salad/arugula/actions/runs/41544204350/job/125620583448"
+        },
+        {
+          "name": "e2e (12)",
+          "id": 125620583547,
+          "conclusion": "success",
+          "url": "https://github.com/arugula-salad/arugula/actions/runs/41544204350/job/125620583547"
+        },
+        {
+          "name": "e2e (2)",
+          "id": 125620583591,
+          "conclusion": "success",
+          "url": "https://github.com/arugula-salad/arugula/actions/runs/41544204350/job/125620583591"
+        },
+        {
+          "name": "e2e (3)",
+          "id": 125620583480,
+          "conclusion": "success",
+          "url": "https://github.com/arugula-salad/arugula/actions/runs/41544204350/job/125620583480"
+        },
+        {
+          "name": "e2e (4)",
+          "id": 125620583439,
+          "conclusion": "success",
+          "url": "https://github.com/arugula-salad/arugula/actions/runs/41544204350/job/125620583439"
+        },
+        {
+          "name": "e2e (5)",
+          "id": 125620583565,
+          "conclusion": "success",
+          "url": "https://github.com/arugula-salad/arugula/actions/runs/41544204350/job/125620583565"
+        },
+        {
+          "name": "e2e (6)",
+          "id": 125620583509,
+          "conclusion": "success",
+          "url": "https://github.com/arugula-salad/arugula/actions/runs/41544204350/job/125620583509"
+        },
+        {
+          "name": "e2e (7)",
+          "id": 125620583608,
+          "conclusion": "success",
+          "url": "https://github.com/arugula-salad/arugula/actions/runs/41544204350/job/125620583608"
+        },
+        {
+          "name": "e2e (8)",
+          "id": 125620583530,
+          "conclusion": "success",
+          "url": "https://github.com/arugula-salad/arugula/actions/runs/41544204350/job/125620583530"
+        },
+        {
+          "name": "e2e (9)",
+          "id": 125620583535,
+          "conclusion": "success",
+          "url": "https://github.com/arugula-salad/arugula/actions/runs/41544204350/job/125620583535"
+        }
+      ]
     },
     "claims": {
-      "verdict": "pending",
+      "verdict": "pass",
       "build": "newest",
       "runs": [
         {
           "name": "desktop-xvfb",
           "id": 125619105130,
-          "conclusion": null,
+          "conclusion": "success",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/41544204350/job/125619105130"
         }
       ]
@@ -96,10 +170,11 @@
         {
           "name": "macos (test)",
           "id": 125619105275,
-          "conclusion": null,
+          "conclusion": "failure",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/41544204350/job/125619105275"
         }
       ],
+      "reason": "retrying",
       "culprit": "8a8022c8ea5b7719fe05a3a715a05f586f4ea2f7"
     },
     "windows": {
@@ -131,6 +206,20 @@
           "url": "https://github.com/arugula-salad/arugula/actions/runs/41544204385/job/125615845465"
         }
       ]
+    }
+  },
+  "retried": {
+    "test": {
+      "run": 125619105312,
+      "at": "2026-11-02T23:37:45Z"
+    },
+    "test-2": {
+      "run": 125619105283,
+      "at": "2026-11-02T23:37:45Z"
+    },
+    "macos (test)": {
+      "run": 125619105275,
+      "at": "2026-11-02T23:37:45Z"
     }
   }
 }
