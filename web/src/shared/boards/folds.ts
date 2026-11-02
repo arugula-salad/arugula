@@ -17,6 +17,9 @@ export const groupFold = (group: string | null) => `group:${group ?? "none"}`;
 /** The fold key of a lane's heading, by its zone's id. */
 export const laneFold = (zone: string) => `lane:${zone}`;
 
+/** The fold key of a lane's heading inside a group (#496), so Done folds in one group and not another. */
+export const groupLaneFold = (group: string | null, zone: string) => `lane:${group ?? "none"}:${zone}`;
+
 /** Whether the heading with this key is folded. */
 export function isFolded(folds: Folds, key: string): boolean {
   return folds[key] ?? (FOLD_DONE_BY_DEFAULT && key === laneFold("lane_done"));
