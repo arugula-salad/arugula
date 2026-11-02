@@ -235,6 +235,8 @@ impl features::Feature for Feature {
         // Saved messages' reminders (the base follows the hub's change
         // feed and the live bus: `arugula_platform::chat::start`).
         chat::start_reminders(p);
+        // Mentions lost mid-delivery by a restart (#419).
+        chat::start_stale_mentions(p);
     }
 
     fn jobs(&self, p: &Arc<Platform>, w: jobs::Worker) -> jobs::Worker {

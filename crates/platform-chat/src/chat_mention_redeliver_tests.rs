@@ -50,6 +50,22 @@ async fn settled(app: &crate::Platform) {
     panic!("still sending: {:?}", states(app));
 }
 
+/// The machine connects: the platform sends what it missed in the
+/// background, so wait for `want` asks of geek, then for them to settle,
+/// then a moment for any that shouldn't come.
+async fn came(app: &crate::Platform, hub: &TestHub, want: usize) {
+    app.daemon_came("geek").await.unwrap();
+    for _ in 0..200 {
+        if asked(hub) >= want {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(25)).await;
+    }
+    settled(app).await;
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    assert_eq!(asked(hub), want);
+}
+
 fn asked(hub: &TestHub) -> usize {
     hub.ops_asked().iter().filter(|(m, op)| m == "geek" && matches!(op, DaemonOp::AgentMention(_))).count()
 }
@@ -93,15 +109,22 @@ async fn a_missed_mention_is_sent_once_when_the_machine_connects() {
     let (a, b) = tokio::join!(app.daemon_came("geek"), app.daemon_came("geek"));
     a.unwrap();
     b.unwrap();
+    for _ in 0..200 {
+        if asked(&hub) >= 2 {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(25)).await;
+    }
+    settled(&app).await;
+    tokio::time::sleep(Duration::from_millis(200)).await;
     assert_eq!(asked(&hub), 2, "the daemon got the missed mention once");
     assert_eq!(states(&app), [(seq, "delivered".to_owned())]);
     let last = hub.ops_asked().last().unwrap().1.clone();
     let DaemonOp::AgentMention(m) = &last else { panic!() };
     assert_eq!((m.seq, m.text.as_str(), m.author.as_str()), (seq, "@geek-box are you there", "b"));
 
-    app.daemon_came("geek").await.unwrap();
-    app.daemon_came("geek").await.unwrap();
-    assert_eq!(asked(&hub), 2, "a later connect has nothing to send");
+    came(&app, &hub, 2).await;
+    came(&app, &hub, 2).await;
 }
 
 /// Offline again at the connect: `missed`, and not tried a third time.
@@ -111,11 +134,10 @@ async fn a_mention_that_fails_again_is_missed() {
     geek_in_t(&base, &t).await;
     let seq = post(&base, "@geek-box hello").await;
     settled(&app).await;
-    app.daemon_came("geek").await.unwrap();
-    assert_eq!((asked(&hub), states(&app)), (2, vec![(seq, "missed".to_owned())]));
+    came(&app, &hub, 2).await;
+    assert_eq!(states(&app), vec![(seq, "missed".to_owned())]);
     hub.answers_ops("geek", OpAnswer::Done { url: None, routed: None });
-    app.daemon_came("geek").await.unwrap();
-    assert_eq!(asked(&hub), 2, "missed isn't sent again");
+    came(&app, &hub, 2).await;
     let (_, v) = call(&base, "b", "GET", ROOM, None).await;
     let line = v["messages"].as_array().unwrap().iter().find(|m| m["seq"] == seq).unwrap()["mention_status"][0].clone();
     assert_eq!(line["state"], "offline", "{line}");
@@ -141,8 +163,7 @@ async fn only_recent_mentions_up_to_the_cap_are_sent() {
     let before = asked(&hub);
 
     hub.answers_ops("geek", OpAnswer::Done { url: None, routed: None });
-    app.daemon_came("geek").await.unwrap();
-    assert_eq!(asked(&hub) - before, REDELIVER_MAX);
+    came(&app, &hub, before + REDELIVER_MAX).await;
     let got = states(&app);
     let state = |seq: i64| got.iter().find(|(s, _)| *s == seq).map(|(_, s)| s.as_str()).unwrap();
     assert_eq!(state(seqs[0]), "offline", "25 hours old");
@@ -151,8 +172,7 @@ async fn only_recent_mentions_up_to_the_cap_are_sent() {
     assert!(rest[..REDELIVER_MAX].iter().all(|s| state(*s) == "delivered"), "{got:?}");
     assert!(rest[REDELIVER_MAX..].iter().all(|s| state(*s) == "offline"), "{got:?}");
 
-    app.daemon_came("geek").await.unwrap();
-    assert_eq!(asked(&hub) - before, rest.len(), "the rest, once");
+    came(&app, &hub, before + rest.len()).await;
     assert!(
         app.db
             .chat_mention_statuses("ch_general", seqs[1], seqs[1])
@@ -160,4 +180,48 @@ async fn only_recent_mentions_up_to_the_cap_are_sent() {
             .iter()
             .any(|s| s.machine == "other" && s.state == "offline")
     );
+}
+
+/// A mention left `sending` by a restart is sent at the next connect; one
+/// that is only just being sent isn't taken from the task sending it. And
+/// the sweep after a restart makes the lost ones `offline`, and sends those
+/// of a machine already connected.
+#[tokio::test]
+async fn a_mention_lost_while_sending_is_sent_again_and_a_fresh_one_is_not() {
+    let (hub, app, base, t, _u) = seeded().await;
+    geek_in_t(&base, &t).await;
+    let lost = post(&base, "@geek-box lost in a restart").await;
+    let fresh = post(&base, "@geek-box being sent right now").await;
+    settled(&app).await;
+    let before = asked(&hub);
+    let set = |seq: i64, age_ms: u64| {
+        let s = app.db.chat_mention_statuses("ch_general", seq, seq).unwrap().remove(0);
+        let at = arugula_e2e::now_ms() - age_ms;
+        app.db.set_chat_mention_status(&MentionStatus { state: "sending".into(), at, ..s }).unwrap();
+    };
+    set(lost, 3 * 60 * 1000);
+    set(fresh, 1_000);
+
+    hub.answers_ops("geek", OpAnswer::Done { url: None, routed: None });
+    // A stale one and a fresh one: the stale is sent, the fresh isn't.
+    app.daemon_came("geek").await.unwrap();
+    for _ in 0..200 {
+        if asked(&hub) > before {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(25)).await;
+    }
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    assert_eq!(asked(&hub), before + 1);
+    let got = states(&app);
+    let state = |seq: i64| got.iter().find(|(s, _)| *s == seq).map(|(_, s)| s.as_str()).unwrap();
+    assert_eq!((state(lost), state(fresh)), ("delivered", "sending"), "{got:?}");
+
+    // The sweep: lost ones go back to offline (and, geek not online in the
+    // test hub, wait for its connect).
+    set(lost, 3 * 60 * 1000);
+    crate::chat::release_stale(&app).await;
+    let got = states(&app);
+    let state = |seq: i64| got.iter().find(|(s, _)| *s == seq).map(|(_, s)| s.as_str()).unwrap();
+    assert_eq!((state(lost), state(fresh)), ("offline", "sending"), "{got:?}");
 }

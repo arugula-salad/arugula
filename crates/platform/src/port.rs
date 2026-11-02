@@ -287,7 +287,15 @@ impl PlatformPort for Platform {
 
     fn daemon_came<'a>(&'a self, daemon: &'a str) -> BoxFuture<'a, anyhow::Result<()>> {
         Box::pin(async move {
-            crate::features::chat().daemon_came(self, daemon).await;
+            // In the background: the resends wait on daemons for seconds,
+            // and the hub's call must neither wait for them nor cancel them.
+            match self.arc() {
+                Some(app) => {
+                    let daemon = daemon.to_owned();
+                    tokio::spawn(async move { crate::features::chat().daemon_came(&app, &daemon).await });
+                }
+                None => crate::features::chat().daemon_came(self, daemon).await,
+            }
             Ok(())
         })
     }

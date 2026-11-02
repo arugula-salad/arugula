@@ -36,6 +36,10 @@ pub const ANSWERABLE_MS: u64 = 60 * 60 * 1000;
 /// when the machine connects (#419).
 pub const REDELIVER_WITHIN_MS: u64 = 24 * 60 * 60 * 1000;
 
+/// How long a mention may be `sending` before it counts as lost (control
+/// restarted mid-delivery, #419): the daemon is given 5 s to answer.
+pub const STALE_SENDING_MS: u64 = 2 * 60 * 1000;
+
 /// The most mentions sent again at one connect (#419).
 pub const REDELIVER_MAX: usize = 20;
 
@@ -76,10 +80,12 @@ impl Db {
         Ok(n == 1)
     }
 
-    /// Claim the mentions `machine` missed while offline (#419): its
-    /// `offline` ones from `since` on, oldest first, at most `max`. Each
-    /// claimed one is `sending` (at `now`) when this returns, so no other
-    /// connect takes it: the update only applies to a row still `offline`.
+    /// Claim the mentions `machine` missed (#419): its `offline` ones, and
+    /// its `sending` ones older than [`STALE_SENDING_MS`] (lost with a
+    /// restart), from `since` on, oldest first, at most `max`. Each claimed
+    /// one is `sending` (at `now`) when this returns, so no other connect
+    /// takes it: the update only applies to a row still in the state it was
+    /// read in.
     pub fn claim_offline_mentions(
         &self,
         machine: &str,
@@ -87,21 +93,31 @@ impl Db {
         max: usize,
         now: u64,
     ) -> Result<Vec<MentionStatus>> {
+        let stale = now.saturating_sub(STALE_SENDING_MS);
         let mut c = self.c();
         let tx = c.transaction()?;
         let rows: Vec<MentionStatus> = tx.query_map(
             "SELECT room, seq, machine, machine_name, root, state, session, asked, reply, at
-             FROM chat_mention_status WHERE machine = ?1 AND state = 'offline' AND at >= ?2
+             FROM chat_mention_status WHERE machine = ?1 AND at >= ?2
+             AND (state = 'offline' OR (state = 'sending' AND at < ?4))
              ORDER BY at, room, seq LIMIT ?3",
-            params![machine, since as i64, max as i64],
+            params![machine, since as i64, max as i64, stale as i64],
             status_row,
         )?;
         let mut claimed = vec![];
         for mut s in rows {
+            let was = s.state.clone();
             let n = tx.execute(
                 "UPDATE chat_mention_status SET state = 'sending', at = ?4
-                 WHERE room = ?1 AND seq = ?2 AND machine = ?3 AND state = 'offline'",
-                params![s.room, s.seq, s.machine, now as i64],
+                 WHERE room = ?1 AND seq = ?2 AND machine = ?3 AND state = ?5 AND at < ?6",
+                params![
+                    s.room,
+                    s.seq,
+                    s.machine,
+                    now as i64,
+                    was,
+                    if was == "sending" { stale } else { u64::MAX >> 1 } as i64
+                ],
             )?;
             if n == 1 {
                 s.state = "sending".into();
@@ -111,6 +127,25 @@ impl Db {
         }
         tx.commit()?;
         Ok(claimed)
+    }
+
+    /// Mentions `sending` since before `cutoff` were lost with a restart
+    /// (#419): they're `offline` again, to be sent when their machine
+    /// connects. The machines they were for.
+    pub fn release_stale_mentions(&self, cutoff: u64) -> Result<Vec<String>> {
+        let mut c = self.c();
+        let tx = c.transaction()?;
+        let machines: Vec<String> = tx.query_map(
+            "SELECT DISTINCT machine FROM chat_mention_status WHERE state = 'sending' AND at < ?1",
+            params![cutoff as i64],
+            |r| r.get(0),
+        )?;
+        tx.execute(
+            "UPDATE chat_mention_status SET state = 'offline' WHERE state = 'sending' AND at < ?1",
+            params![cutoff as i64],
+        )?;
+        tx.commit()?;
+        Ok(machines)
     }
 
     /// The statuses of messages `from..=to` of a room, by message and then

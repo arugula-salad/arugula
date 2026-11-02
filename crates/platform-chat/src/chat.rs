@@ -94,7 +94,7 @@ use crate::{
         Db, Taken,
         chat::{Message, NewMessage, Page, Room, RoomMeta, Search, UnreadAsk, Word},
         chat_files::ChatFileRow,
-        chat_mention_status::{ANSWERABLE_MS, MentionStatus, REDELIVER_MAX, REDELIVER_WITHIN_MS},
+        chat_mention_status::{ANSWERABLE_MS, MentionStatus, REDELIVER_MAX, REDELIVER_WITHIN_MS, STALE_SENDING_MS},
         chat_reactions::Reaction,
         objects::Holder,
         projects::{ISSUES_WRITE, THREADS_POST, THREADS_READ},
@@ -1150,6 +1150,37 @@ fn settle(app: &Platform, status: &MentionStatus) {
         Ok(true) => announce_status(app, status),
         Ok(false) => {}
         Err(e) => tracing::warn!(error = %e, "chat: storing a mention's status"),
+    }
+}
+
+/// Once, a little after the platform starts (#419): mentions still
+/// `sending` from before it are lost (control restarted mid-delivery). They
+/// go back to `offline`, and those for machines already connected are sent
+/// now; the others, when theirs connects.
+pub fn start_stale_mentions(app: &Arc<Platform>) {
+    let app = Arc::downgrade(app);
+    tokio::spawn(async move {
+        tokio::time::sleep(Duration::from_millis(STALE_SENDING_MS + 5_000)).await;
+        let Some(app) = app.upgrade() else { return };
+        release_stale(&app).await;
+    });
+}
+
+/// [`start_stale_mentions`]' work.
+pub(crate) async fn release_stale(app: &Platform) {
+    let machines = match app.db.release_stale_mentions(now_ms().saturating_sub(STALE_SENDING_MS)) {
+        Ok(m) => m,
+        Err(e) => {
+            tracing::warn!(error = %e, "chat: releasing mentions lost in a restart");
+            return;
+        }
+    };
+    if machines.is_empty() {
+        return;
+    }
+    let online = app.hub.machines_online(&machines).await.unwrap_or_default();
+    for m in online {
+        redeliver(app, &m).await;
     }
 }
 
