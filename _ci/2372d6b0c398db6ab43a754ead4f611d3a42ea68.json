@@ -3,7 +3,7 @@
   "commit": "2372d6b0c398db6ab43a754ead4f611d3a42ea68",
   "branch": "main",
   "state": "red",
-  "at": "2026-11-02T19:31:10Z",
+  "at": "2026-11-02T23:11:37Z",
   "phases": {
     "lint": {
       "verdict": "pass",
@@ -73,7 +73,7 @@
       "culprit": "8a8022c8ea5b7719fe05a3a715a05f586f4ea2f7"
     },
     "e2e": {
-      "verdict": "pending",
+      "verdict": "unbuilt",
       "build": "newest",
       "runs": [
         {
@@ -145,10 +145,11 @@
         {
           "name": "e2e (9)",
           "id": 125452332503,
-          "conclusion": null,
+          "conclusion": "cancelled",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/41494119249/job/125452332503"
         }
-      ]
+      ],
+      "reason": "cancelled"
     },
     "claims": {
       "verdict": "pass",
