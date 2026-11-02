@@ -1042,14 +1042,14 @@
   font: inherit;
 }
 
-/* The find box (#546): under the header, a phone's button opens it. */
+/* The find bar (#546, #614): under the header, always there. */
 .board-find {
   display: flex;
   align-items: center;
   gap: 8px;
 }
 
-.board-find input {
+.board-find > input {
   flex: 1 1 auto;
   min-width: 0;
   box-sizing: border-box;
@@ -1057,10 +1057,6 @@
 
 .board-find-count {
   white-space: nowrap;
-}
-
-.board-find-open {
-  display: none;
 }
 
 /* The Label and Person menus beside it (#547): a list of checkboxes that stays open while you pick. */
@@ -1107,12 +1103,13 @@
   white-space: nowrap;
 }
 
-@media (max-width: 700px) {
+/* A narrow board, whatever the window: the box takes the row, the rest wrap under it, and an open menu's list sits inline. */
+@container (max-width: 519px) {
   .board-find {
     flex-wrap: wrap;
   }
 
-  .board-find input {
+  .board-find > input {
     flex-basis: 100%;
   }
 
@@ -1123,17 +1120,6 @@
   .board-facet-list {
     position: static;
     margin-top: 4px;
-  }
-}
-
-@media (max-width: 700px) {
-  .board-find-open {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    min-width: 40px;
-    height: 40px;
-    font-size: 1.3em;
   }
 }
 
