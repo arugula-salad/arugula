@@ -92,6 +92,12 @@ pub struct TeamArgs {
 
 #[derive(Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+pub struct DaemonArgs {
+    pub daemon: String,
+}
+
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct BlockersArgs {
     pub account: String,
     pub start: bool,

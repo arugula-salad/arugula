@@ -32,6 +32,13 @@ pub struct MentionStatus {
 /// How far back a mention can still be answered.
 pub const ANSWERABLE_MS: u64 = 60 * 60 * 1000;
 
+/// How far back a mention that found its machine offline is sent again
+/// when the machine connects (#419).
+pub const REDELIVER_WITHIN_MS: u64 = 24 * 60 * 60 * 1000;
+
+/// The most mentions sent again at one connect (#419).
+pub const REDELIVER_MAX: usize = 20;
+
 impl Db {
     /// Set the status, replacing any the message had for the machine.
     pub fn set_chat_mention_status(&self, s: &MentionStatus) -> Result<()> {
@@ -57,6 +64,55 @@ impl Db {
         Ok(())
     }
 
+    /// Settle a mention that was `sending`: the daemon's answer (`state`,
+    /// `session`, `asked`, `at`). Only a `sending` one changes, so an agent's
+    /// reply that got in first (`answered`) stays. Whether it changed.
+    pub fn finish_chat_mention(&self, s: &MentionStatus) -> Result<bool> {
+        let n = self.c().execute(
+            "UPDATE chat_mention_status SET state = ?4, session = ?5, asked = ?6, at = ?7
+             WHERE room = ?1 AND seq = ?2 AND machine = ?3 AND state = 'sending'",
+            params![s.room, s.seq, s.machine, s.state, s.session, s.asked, s.at as i64],
+        )?;
+        Ok(n == 1)
+    }
+
+    /// Claim the mentions `machine` missed while offline (#419): its
+    /// `offline` ones from `since` on, oldest first, at most `max`. Each
+    /// claimed one is `sending` (at `now`) when this returns, so no other
+    /// connect takes it: the update only applies to a row still `offline`.
+    pub fn claim_offline_mentions(
+        &self,
+        machine: &str,
+        since: u64,
+        max: usize,
+        now: u64,
+    ) -> Result<Vec<MentionStatus>> {
+        let mut c = self.c();
+        let tx = c.transaction()?;
+        let rows: Vec<MentionStatus> = tx.query_map(
+            "SELECT room, seq, machine, machine_name, root, state, session, asked, reply, at
+             FROM chat_mention_status WHERE machine = ?1 AND state = 'offline' AND at >= ?2
+             ORDER BY at, room, seq LIMIT ?3",
+            params![machine, since as i64, max as i64],
+            status_row,
+        )?;
+        let mut claimed = vec![];
+        for mut s in rows {
+            let n = tx.execute(
+                "UPDATE chat_mention_status SET state = 'sending', at = ?4
+                 WHERE room = ?1 AND seq = ?2 AND machine = ?3 AND state = 'offline'",
+                params![s.room, s.seq, s.machine, now as i64],
+            )?;
+            if n == 1 {
+                s.state = "sending".into();
+                s.at = now;
+                claimed.push(s);
+            }
+        }
+        tx.commit()?;
+        Ok(claimed)
+    }
+
     /// The statuses of messages `from..=to` of a room, by message and then
     /// machine's name.
     pub fn chat_mention_statuses(&self, room: &str, from: i64, to: i64) -> Result<Vec<MentionStatus>> {
@@ -65,20 +121,7 @@ impl Db {
              FROM chat_mention_status WHERE room = ?1 AND seq >= ?2 AND seq <= ?3
              ORDER BY seq, machine_name, machine",
             params![room, from, to],
-            |r| {
-                Ok(MentionStatus {
-                    room: r.get(0)?,
-                    seq: r.get(1)?,
-                    machine: r.get(2)?,
-                    machine_name: r.get(3)?,
-                    root: r.get(4)?,
-                    state: r.get(5)?,
-                    session: r.get(6)?,
-                    asked: r.get(7)?,
-                    reply: r.get(8)?,
-                    at: r.get::<i64>(9)? as u64,
-                })
-            },
+            status_row,
         )
     }
 
@@ -111,6 +154,21 @@ impl Db {
         tx.commit()?;
         Ok(seqs)
     }
+}
+
+fn status_row(r: &super::sql::Row) -> Result<MentionStatus> {
+    Ok(MentionStatus {
+        room: r.get(0)?,
+        seq: r.get(1)?,
+        machine: r.get(2)?,
+        machine_name: r.get(3)?,
+        root: r.get(4)?,
+        state: r.get(5)?,
+        session: r.get(6)?,
+        asked: r.get(7)?,
+        reply: r.get(8)?,
+        at: r.get::<i64>(9)? as u64,
+    })
 }
 
 /// A message's statuses go with its content.

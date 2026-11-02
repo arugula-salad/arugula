@@ -214,6 +214,11 @@
       "description": "How far a [`ChatMentionStatus`] has got.",
       "oneOf": [
         {
+          "const": "sending",
+          "description": "Control hasn't had the machine's daemon's answer yet (#419).",
+          "type": "string"
+        },
+        {
           "const": "delivered",
           "description": "A session took it (`session`), or the daemon didn't say which.",
           "type": "string"

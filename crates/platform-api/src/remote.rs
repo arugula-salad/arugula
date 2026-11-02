@@ -476,6 +476,13 @@ impl PlatformPort for HttpPlatform {
         })
     }
 
+    fn daemon_came<'a>(&'a self, daemon: &'a str) -> BoxFuture<'a, anyhow::Result<()>> {
+        Box::pin(async move {
+            let _: Value = self.0.call("daemon_came", DaemonArgs { daemon: daemon.to_owned() }).await?;
+            Ok(())
+        })
+    }
+
     fn forge_standing<'a>(
         &'a self,
         account: &'a str,
@@ -706,6 +713,10 @@ async fn platform_call(
             "chat_on" => answer(p.chat_on(&args::<AccountArgs>(&body)?.account).await?)?,
             "roster_changed" => {
                 p.roster_changed(&args::<TeamArgs>(&body)?.team).await?;
+                answer(serde_json::json!({}))?
+            }
+            "daemon_came" => {
+                p.daemon_came(&args::<DaemonArgs>(&body)?.daemon).await?;
                 answer(serde_json::json!({}))?
             }
             "forge_standing" => {

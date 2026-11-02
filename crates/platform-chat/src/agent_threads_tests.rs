@@ -91,7 +91,9 @@ async fn an_agent_lists_reads_searches_and_posts_where_granted() {
         call(&base, "b", "POST", "/api/chat/rooms/ch_general/messages", say("@geek-box's agent: look")).await;
     assert_eq!(st, 200, "{asked}");
     assert_eq!((&asked["mentions"], &asked["unreached"]), (&json!(["machine:geek"]), &json!([])));
-    assert_eq!(asked["pushed"], json!([{ "account": "machine:geek", "why": "agent" }]));
+    // The machine is told after the post returns (#419): its status line says how it went.
+    assert_eq!(asked["pushed"], json!([]));
+    assert_eq!(waits_for_told(&hub, 1).await.len(), 1);
     assert!(hub.pushes().is_empty(), "nobody pushed: {:?}", hub.pushes());
     call(&base, "b", "POST", "/api/chat/rooms/ch_general/messages", say("and something else")).await;
 
@@ -176,7 +178,7 @@ async fn an_agent_is_mentioned_only_where_it_reaches() {
     let (_, v) = call(&base, "b", "POST", "/api/chat/rooms/ch_general/messages", say("@a and @GEEK-box")).await;
     assert_eq!((&v["mentions"], &v["unreached"]), (&json!(["a", "machine:geek"]), &json!([])), "{v}");
     let pushed: Vec<&str> = v["pushed"].as_array().unwrap().iter().map(|p| p["account"].as_str().unwrap()).collect();
-    assert_eq!(pushed, ["a", "machine:geek"], "the person is pushed, and the machine told");
+    assert_eq!(pushed, ["a"], "the person is pushed; the machine is told in the background (#419)");
     assert!(hub.pushes().iter().all(|(to, _, _)| to == "a"), "{:?}", hub.pushes());
     let (_, v) = call(&base, "b", "POST", "/api/chat/rooms/dm_bx/messages", say("@geek-box?")).await;
     assert_eq!(v["unreached"], json!(["geek-box"]), "a's grant doesn't reach b and x's DM");
@@ -251,30 +253,73 @@ fn told(hub: &crate::testing::hub::TestHub) -> Vec<(String, i64, Option<i64>, St
         .collect()
 }
 
-/// `@geek-box` with geek connected is told to its daemon, and reached
-/// (`pushed`); with it offline, or its owner's switch off, the word is
-/// `unreached` and the mention is still stored for the agents to read.
+/// The ops asked of geek, once there are `n` (they go after the post returns).
+async fn waits_for_told(
+    hub: &crate::testing::hub::TestHub,
+    n: usize,
+) -> Vec<(String, i64, Option<i64>, String, String)> {
+    for _ in 0..100 {
+        if told(hub).len() >= n {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    }
+    told(hub)
+}
+
+/// The state of the first machine's line under message `seq` of the room, once it isn't `sending`.
+async fn settled_state(base: &str, who: &str, seq: i64) -> String {
+    for _ in 0..100 {
+        let (_, v) = call(base, who, "GET", "/api/chat/rooms/ch_general/messages", None).await;
+        let state = v["messages"]
+            .as_array()
+            .and_then(|m| m.iter().find(|m| m["seq"] == seq))
+            .and_then(|m| m["mention_status"][0]["state"].as_str())
+            .map(str::to_owned);
+        if let Some(s) = state.filter(|s| s != "sending") {
+            return s;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    }
+    panic!("message {seq}'s mention never left `sending`")
+}
+
+/// `@geek-box` with geek connected is told to its daemon after the post
+/// returns; with it offline, or its owner's switch off, the mention is
+/// still stored for the agents to read, and the message's status line says
+/// what happened (#419: no longer `pushed` or `unreached`).
 #[tokio::test]
 async fn a_mention_is_told_to_the_machine_or_says_it_was_not() {
     let (hub, _app, base, t, _u) = seeded().await;
     geek_in_t(&base, &t).await;
     let post = |text: &'static str| call(&base, "b", "POST", "/api/chat/rooms/ch_general/messages", say(text));
 
-    // Offline (the test hub's default): not told, the word unreached.
+    let state_of = |seq: i64| {
+        let base = base.clone();
+        async move { settled_state(&base, "b", seq).await }
+    };
+
+    // Offline (the test hub's default): not told, and the line says so.
     let (_, v) = post("@geek-box are you there").await;
-    assert_eq!((&v["mentions"], &v["unreached"]), (&json!(["machine:geek"]), &json!(["geek-box"])), "{v}");
-    assert_eq!(v["pushed"], json!([]));
+    assert_eq!(
+        (&v["mentions"], &v["unreached"], &v["pushed"]),
+        (&json!(["machine:geek"]), &json!([]), &json!([])),
+        "{v}"
+    );
+    assert_eq!(state_of(v["seq"].as_i64().unwrap()).await, "offline");
 
     // The owner turned mentions off: the daemon says so.
     hub.answers_ops("geek", OpAnswer::Cant { why: "off".into() });
     let (_, v) = post("@geek-box now?").await;
-    assert_eq!((&v["unreached"], &v["pushed"]), (&json!(["geek-box"]), &json!([])), "{v}");
+    assert_eq!((&v["unreached"], &v["pushed"]), (&json!([]), &json!([])), "{v}");
+    assert_eq!(state_of(v["seq"].as_i64().unwrap()).await, "offline");
 
-    // Connected: told, and pushed as the machine.
+    // Connected: told, and delivered.
     hub.answers_ops("geek", OpAnswer::Done { url: None, routed: None });
     let (_, v) = post("@geek-box what is the board for").await;
-    assert_eq!((&v["unreached"], &v["pushed"]), (&json!([]), &json!([{ "account": "machine:geek", "why": "agent" }])));
-    let sent = told(&hub);
+    assert_eq!((&v["unreached"], &v["pushed"]), (&json!([]), &json!([])));
+    assert_eq!(state_of(v["seq"].as_i64().unwrap()).await, "delivered");
+    let sent = waits_for_told(&hub, 1).await;
     let last = sent.last().unwrap();
     assert_eq!((last.0.as_str(), last.2, last.4.as_str()), ("ch_general", None, "@geek-box what is the board for"));
     assert_eq!(last.3, "b", "{sent:?}");
@@ -338,6 +383,12 @@ async fn a_post_names_its_session_and_a_mention_can_address_one() {
         let (_, v) = call(&base, "b", "POST", room, say(text)).await;
         assert_eq!((&v["mentions"], &v["unreached"]), (&json!(["machine:geek"]), &json!([])), "{text}: {v}");
     }
+    for _ in 0..100 {
+        if told_sessions(&hub).len() >= 4 {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    }
     assert_eq!(told_sessions(&hub), [Some("ux-improvements".to_owned()), None, None, Some("billing".to_owned())]);
 }
 
@@ -356,6 +407,7 @@ async fn a_reply_to_an_agents_message_is_told_to_its_machine() {
     let reply = |text: &'static str| call(&base, "b", "POST", room, Some(json!({ "text": text, "parent": root })));
     let (_, v) = reply("more on it").await;
     assert_eq!(v["pushed"], json!([]));
+    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
     assert!(told(&hub).is_empty());
 
     // geek's agent answers in the thread; b's next reply there is for it.
@@ -363,8 +415,8 @@ async fn a_reply_to_an_agents_message_is_told_to_its_machine() {
         geek(&base, "POST", &agent_messages("ch_general"), Some(json!({ "text": "my view", "parent": root }))).await;
     assert_eq!(st, 200, "{v}");
     let (_, v) = reply("thanks, and one more thing").await;
-    assert_eq!(v["pushed"], json!([{ "account": "machine:geek", "why": "agent" }]), "{v}");
-    let sent = told(&hub);
+    assert_eq!(v["pushed"], json!([]), "{v}");
+    let sent = waits_for_told(&hub, 1).await;
     assert_eq!(sent.len(), 1, "{sent:?}");
     assert_eq!((sent[0].2, sent[0].4.as_str()), (Some(root), "thanks, and one more thing"));
 
@@ -372,9 +424,11 @@ async fn a_reply_to_an_agents_message_is_told_to_its_machine() {
     // after b's isn't an answer to the agent's message.
     let (_, v) =
         geek(&base, "POST", &agent_messages("ch_general"), Some(json!({ "text": "ok", "parent": root }))).await;
+    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
     assert_eq!(told(&hub).len(), 1, "{v}");
     let (_, v) = reply("and then b says more").await;
-    assert_eq!(v["pushed"], json!([{ "account": "machine:geek", "why": "agent" }]), "the agent spoke last: {v}");
+    assert_eq!(v["pushed"], json!([]), "{v}");
+    assert_eq!(waits_for_told(&hub, 2).await.len(), 2, "the agent spoke last, so it is told");
     let (_, v) = call(&base, "a", "POST", room, Some(json!({ "text": "a chimes in", "parent": root }))).await;
     assert_eq!(v["pushed"].as_array().map(|p| p.iter().filter(|p| p["why"] == "agent").count()), Some(0), "{v}");
 }
@@ -450,6 +504,7 @@ async fn the_room_offers_the_machines_a_mention_reaches_and_their_sessions() {
     hub.answers_ops("geek", OpAnswer::Done { url: None, routed: None });
     hub.answers_ops("mini", OpAnswer::Done { url: None, routed: None });
     let (_, v) = call(&base, "b", "POST", "/api/chat/rooms/ch_general/messages", say("@geek-box and @mini-box")).await;
-    assert_eq!(v["pushed"], json!([{ "account": "machine:geek", "why": "agent" }]), "{v}");
+    assert_eq!(v["pushed"], json!([]), "{v}");
     assert_eq!(v["unreached"], json!(["mini-box"]), "{v}");
+    assert_eq!(waits_for_told(&hub, 1).await.len(), 1);
 }

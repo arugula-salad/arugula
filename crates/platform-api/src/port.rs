@@ -51,6 +51,15 @@ pub trait PlatformPort: Send + Sync {
     /// for Stripe, as the roster's route always has.
     fn roster_changed<'a>(&'a self, team: &'a str) -> BoxFuture<'a, anyhow::Result<()>>;
 
+    /// A machine's daemon just connected to the relay (#419): what the
+    /// platform held back for it goes now (chat's mentions it missed while
+    /// it was offline). The hub doesn't wait on the answer, and a platform
+    /// from before this has nothing to send.
+    fn daemon_came<'a>(&'a self, daemon: &'a str) -> BoxFuture<'a, anyhow::Result<()>> {
+        let _ = daemon;
+        Box::pin(async { Ok(()) })
+    }
+
     /// Where each repository a daemon watches stands (M161: the App's
     /// `may()` is the platform's): live, so its pokes come, or why not.
     /// `github` is the account's GitHub identity, if it signed in with

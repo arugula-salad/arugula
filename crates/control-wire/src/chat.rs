@@ -497,6 +497,8 @@ pub struct ChatMentionStatus {
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(rename_all = "snake_case")]
 pub enum ChatMentionState {
+    /// Control hasn't had the machine's daemon's answer yet (#419).
+    Sending,
     /// A session took it (`session`), or the daemon didn't say which.
     Delivered,
     /// The session it named wasn't there (`asked`): it went to `session`.

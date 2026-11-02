@@ -220,6 +220,7 @@ fn all_routes() -> Routes {
 /// The platform's router, for any state the hub's router has (the
 /// platform's own is applied here).
 pub fn router<S: Clone + Send + Sync + 'static>(platform: Arc<Platform>) -> Router<S> {
+    platform.adopt();
     // A call after a write in the hub reads the feed first (read your
     // writes: `cache::fresh`).
     all_routes()
