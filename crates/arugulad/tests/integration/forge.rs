@@ -299,10 +299,16 @@ esac
     }
 
     fn daemon(&self) -> Daemon {
+        self.daemon_with(&[])
+    }
+
+    fn daemon_with(&self, extra: &[(&str, &str)]) -> Daemon {
         let path = format!("{}:{}", self.bin.display(), std::env::var("PATH").unwrap_or_default());
+        let mut env = vec![("PATH", path.as_str()), ("ARUGULA_FORGE_POLL_MS", "250,250")];
+        env.extend_from_slice(extra);
         Daemon::child_labs_env(
             &["--wisp-token-file", "/nonexistent", "--owner", OWNER, "--tailscale-socket", "/nonexistent/sock"],
-            &[("PATH", &path), ("ARUGULA_FORGE_POLL_MS", "250,250")],
+            &env,
         )
     }
 }
@@ -604,6 +610,94 @@ fn an_agents_writes_are_drafts_a_person_sends() {
     d.post(&format!("/api/blocks/{block}/call/decline"), json!({ "id": four["draft"] }));
     d.wait_for("no card", || info(&d, block)["ask"].is_null());
     assert_eq!(forge.f.writes().len(), 2, "the dropped merge went out");
+}
+
+/// An agent block's stand-in: another open block, whose pane the hold names.
+fn holder(d: &Daemon, forge: &Forge) -> u64 {
+    open_pr(d, forge)
+}
+
+fn hold_of(d: &Daemon, block: u64) -> Value {
+    d.state(block)["hold"].clone()
+}
+
+/// #495: a PR block with a holder, an agent block's stand-in, and the
+/// daemon and forge under them.
+fn held(tag: &str) -> (Forge, Daemon, u64, u64) {
+    let dir = scratch(tag);
+    let forge = Forge::start(&dir, "someone", None);
+    let d = forge.daemon();
+    let block = open_pr(&d, &forge);
+    read(&d, block);
+    let agent = holder(&d, &forge);
+    hold(&d, block, agent);
+    (forge, d, block, agent)
+}
+
+fn hold(d: &Daemon, block: u64, agent: u64) {
+    d.call(block, "hold", json!({ "pane": agent, "reason": "waiting on e2e", "by": "fix-login" }));
+}
+
+#[test]
+fn an_agent_holds_a_prs_merge_and_the_block_says_so() {
+    let (forge, d, block, agent) = held("hold");
+    let h = hold_of(&d, block);
+    assert_eq!(
+        (h["by"].as_str(), h["pane"].as_u64(), h["reason"].as_str()),
+        (Some("fix-login"), Some(agent), Some("waiting on e2e")),
+        "{h}"
+    );
+    assert!(h["until_ms"].as_u64().unwrap() > 23 * 3600 * 1000, "a day: {h}");
+    // It needs a holder and a reason.
+    let (status, _) = d.raw("POST", &format!("/api/blocks/{block}/call/hold"), Some(json!({ "pane": agent })));
+    assert_ne!(status, 200, "a hold with no reason");
+    assert_eq!(hold_of(&d, block)["reason"], "waiting on e2e", "a bad hold changed the good one");
+    assert!(forge.f.writes().is_empty(), "a hold reached the forge");
+}
+
+/// The agent's own merge draft is "now": the hold goes with it, and the
+/// draft is there for the person.
+#[test]
+fn a_merge_draft_releases_the_hold() {
+    let (forge, d, block, _) = held("hold-merge");
+    // A draft that isn't a merge leaves it.
+    d.call(block, "comment", json!({ "body": "still going", "agent": true }));
+    assert!(!hold_of(&d, block).is_null(), "a comment draft released the hold");
+    let draft = d.call(block, "merge", json!({ "agent": true }));
+    assert_eq!(draft["status"], "waiting", "{draft}");
+    assert!(hold_of(&d, block).is_null(), "the merge draft left the hold: {}", d.state(block));
+    assert!(forge.f.writes().is_empty());
+}
+
+#[test]
+fn release_lets_the_merge_go_and_says_whether_it_was_held() {
+    let (forge, d, block, _) = held("hold-release");
+    assert_eq!(d.call(block, "release", json!({}))["released"], true);
+    assert!(hold_of(&d, block).is_null());
+    assert_eq!(d.call(block, "release", json!({}))["released"], false);
+    assert!(forge.f.writes().is_empty());
+}
+
+#[test]
+fn closing_the_holders_pane_releases_the_hold() {
+    let (_forge, d, block, agent) = held("hold-close");
+    assert!(!hold_of(&d, block).is_null());
+    d.post(&format!("/api/panes/{agent}/close"), json!({}));
+    d.wait_for("the hold to go with its holder", || hold_of(&d, block).is_null());
+}
+
+#[test]
+fn a_hold_lapses_on_its_own() {
+    let dir = scratch("hold-lapse");
+    let forge = Forge::start(&dir, "someone", None);
+    let d = forge.daemon_with(&[("ARUGULA_FORGE_HOLD_MS", "1500")]);
+    let block = open_pr(&d, &forge);
+    read(&d, block);
+    let agent = holder(&d, &forge);
+    d.call(block, "hold", json!({ "pane": agent, "reason": "soon", "by": "a" }));
+    assert!(!hold_of(&d, block).is_null());
+    d.wait_for("the hold to run out", || hold_of(&d, block).is_null());
+    assert!(forge.f.writes().is_empty());
 }
 
 /// MCP's `draft review` with no body and `draft merge` with no style

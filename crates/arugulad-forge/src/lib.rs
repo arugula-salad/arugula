@@ -99,8 +99,8 @@ use arugula_proto::{
     ask::{Ask, AskKind},
     forge::{
         AgentLink, AgentStarted, ChangesAsked, CheckedOut, Diffed, Draft, DraftStatus, Drafted, Drafts, ForgeLive,
-        ForgePin, ForgeState, ForgeWant, ForgeWantKind, NewIssue, RateLimit, Refreshed, Rerun, ReviewEvent, Write,
-        Written,
+        ForgePin, ForgeState, ForgeWant, ForgeWantKind, Hold, NewIssue, RateLimit, Refreshed, Rerun, ReviewEvent,
+        Write, Written,
     },
 };
 use futures_util::future::BoxFuture;
@@ -1134,6 +1134,10 @@ impl ForgeBlock {
             // owner, so "an agent" is all that's known.
             let by = by.filter(|b| b.starts_with("mcp:")).unwrap_or_else(|| "an agent".into());
             info!(pane = self.ctx.id, id, by, what = w.what(), "forge draft");
+            // The agent saying "now" ends its hold (#495).
+            if matches!(w, Write::Merge { .. }) {
+                self.drop_hold();
+            }
             crate::review::log(&self.ctx, &json!({ "e": "drafted", "id": id, "by": by, "write": w }));
             let d = Draft {
                 id: id.clone(),
@@ -1986,15 +1990,100 @@ fn edited(w: &Write, content: &Value) -> Write {
     }
 }
 
+/// How long a hold lasts if its holder doesn't end it (#495): a dead agent
+/// never strands a PR.
+const HOLD_MS: u64 = 24 * 60 * 60 * 1000;
+
+/// [`HOLD_MS`], or `ARUGULA_FORGE_HOLD_MS` (the tests' clock).
+fn hold_ms() -> u64 {
+    std::env::var("ARUGULA_FORGE_HOLD_MS").ok().and_then(|v| v.trim().parse().ok()).unwrap_or(HOLD_MS)
+}
+
+/// How often a held block looks for its holder having gone.
+const HOLD_LOOK: Duration = Duration::from_secs(2);
+
 /// A typed answer, as the block's methods give them.
 fn to_value<T: Serialize>(v: T) -> Result<Value, String> {
     serde_json::to_value(v).map_err(|e| e.to_string())
+}
+
+/// An agent holds the PR's merge until it says it's ready (#495). The hold
+/// is this block's state: nothing goes to the forge, and a person can still
+/// merge.
+impl ForgeBlock {
+    /// `hold {pane, reason, by?}`: `pane` is the holding agent block, `by`
+    /// its title for "Held by …".
+    fn hold(self: &Arc<Self>, args: Value) -> Result<Value, String> {
+        if self.config.lock().unwrap().kind != ItemKind::Pr {
+            return Err("only a pull request can be held".into());
+        }
+        let pane = args["pane"]
+            .as_u64()
+            .and_then(|p| u32::try_from(p).ok())
+            .ok_or("hold needs {\"pane\": the holding block, \"reason\": …}")?;
+        let reason = args["reason"].as_str().map(str::trim).filter(|r| !r.is_empty());
+        let reason = reason.ok_or("say why it's held: {\"reason\": …}")?.to_owned();
+        let by = args["by"].as_str().map(str::trim).filter(|b| !b.is_empty()).map_or(format!("%{pane}"), str::to_owned);
+        let until_ms = now_ms() + hold_ms();
+        {
+            let mut st = self.state.lock().unwrap();
+            if st.pr.as_ref().is_some_and(|p| p.item.state != ItemState::Open) {
+                return Err("that pull request is already merged or closed".into());
+            }
+            st.hold = Some(Hold { by, pane, reason, until_ms });
+        }
+        info!(pane = self.ctx.id, holder = pane, "forge hold");
+        self.ctx.changed();
+        let me = self.me.clone();
+        crate::task::spawn_on(&self.ctx.rt, async move {
+            loop {
+                tokio::time::sleep(HOLD_LOOK).await;
+                let Some(me) = me.upgrade() else { return };
+                if me.state.lock().unwrap().hold.is_none() {
+                    return;
+                }
+                if me.prune_hold(now_ms()) {
+                    me.ctx.changed();
+                    return;
+                }
+            }
+        });
+        to_value(json!({ "held": true, "until_ms": until_ms }))
+    }
+
+    /// `release`: let the merge go.
+    fn release(&self) -> Result<Value, String> {
+        let held = self.drop_hold();
+        if held {
+            self.ctx.changed();
+        }
+        to_value(json!({ "released": held }))
+    }
+
+    /// Clear the hold; whether there was one.
+    fn drop_hold(&self) -> bool {
+        self.state.lock().unwrap().hold.take().is_some()
+    }
+
+    /// Clear the hold if it has run out, its holder's pane has closed or the
+    /// PR has ended; whether it did.
+    fn prune_hold(&self, now: u64) -> bool {
+        let mut st = self.state.lock().unwrap();
+        let Some(h) = &st.hold else { return false };
+        let ended = st.pr.as_ref().is_some_and(|p| p.item.state != ItemState::Open);
+        if h.until_ms <= now || ended || !self.ctx.ours(h.pane) {
+            st.hold = None;
+            return true;
+        }
+        false
+    }
 }
 
 impl ForgeBlock {
     /// The block's state as clients read it: what it keeps, and how it's
     /// kept current now.
     fn view(&self) -> ForgeState {
+        self.prune_hold(now_ms());
         let mut v = self.state.lock().unwrap().clone();
         v.watching = self.live.drawn();
         // M40: webhook or polling, and why.
@@ -2103,6 +2192,8 @@ impl Block for ForgeBlock {
                 let method = method.to_owned();
                 Box::pin(async move { me.ok_or("closed")?.write(&method, args, by).await })
             }
+            "hold" => Box::pin(async move { me.ok_or("closed")?.hold(args) }),
+            "release" => Box::pin(async move { me.ok_or("closed")?.release() }),
             // M37: an agent on this issue, in a worktree and a tab.
             "agent" => Box::pin(async move { me.ok_or("closed")?.agent_on(args).await }),
             // An agent's new issue: a person asks it for changes, and it
