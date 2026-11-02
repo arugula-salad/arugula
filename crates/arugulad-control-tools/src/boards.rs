@@ -1444,7 +1444,12 @@ mod tests {
     /// A board of many rows to read a part of: (id, lane, group, number, title).
     fn big() -> BoardView {
         let row = |id: &str, lane: &str, group: Option<&str>, n: u64, title: &str| {
-            let mut r = row(id, json!({ "kind": "issue", "id": format!("iss_{n}") }), json!({ "state": "open", "kind": "native", "number": n, "title": title }), json!([]));
+            let mut r = row(
+                id,
+                json!({ "kind": "issue", "id": format!("iss_{n}") }),
+                json!({ "state": "open", "kind": "native", "number": n, "title": title }),
+                json!([]),
+            );
             r["lane"] = lane.into();
             if let Some(g) = group {
                 r["group"] = g.into();

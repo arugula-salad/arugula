@@ -100,6 +100,10 @@ test("find: / narrows a 60-row board to a row in a folded lane and Enter opens i
     // Words narrow too; nothing matching says so; Esc closes the box and the board is whole again.
     await box.fill("search BOARD");
     await expect(alice.locator("[data-board-row]")).toHaveCount(1);
+    // A `/` typed in the box is text, not the shortcut.
+    await box.fill("a");
+    await box.press("/");
+    await expect(box).toHaveValue("a/");
     await box.fill("zzz");
     await expect(alice.locator("[data-board-find-none]")).toBeVisible();
     await box.press("Escape");

@@ -1700,10 +1700,8 @@ impl Row {
     pub fn matches(&self, q: &str) -> bool {
         let q = q.to_lowercase();
         let number = self.live.as_ref().map(|l| l.number).filter(|n| *n > 0);
-        let key = self
-            .live
-            .as_ref()
-            .and_then(|l| Some(format!("{}-{}", l.identifier.as_ref()?, number?).to_lowercase()));
+        let key =
+            self.live.as_ref().and_then(|l| Some(format!("{}-{}", l.identifier.as_ref()?, number?).to_lowercase()));
         let text = format!("{}\n{}", self.live.as_ref().map_or("", |l| l.title.as_str()), self.note).to_lowercase();
         q.split_whitespace().all(|w| {
             if let Some(n) = w.strip_prefix('#').filter(|n| !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit())) {
