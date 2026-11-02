@@ -36,6 +36,7 @@ import { whoLabel } from "../issues/text";
 import { agentShort } from "../agent-label";
 import { day } from "../time";
 import { BoardError, STALE_REV, boards, type ForgeChecks } from "./store";
+import { DocLink, DocPicker } from "./docs";
 import "./boards.css";
 import { groupFold, groupLaneFold, isFolded, laneFold, loadFolds, saveFolds, type Folds } from "./folds";
 import { PICK_DELAY_MS, cardTone, checkTone, checkWord, groupMove, liveTone, prsOf, PICK_LIMIT, assigneesLine, blockClass, GOAL_MAX, answerReady, askWaitingLine, blockFacts, chipOf, settledFacts, debounced, earlierLine, epicLine, holdsRow, groupLine, isCard, laneCount, liveClass, liveWord, marksOf, needsYou, pointerHref, pointerLabel, pointerText, pointerToSend, proofMark, readyCount, relationLine, RELATION_KINDS, sections, sourceLine, sourceLinked, leftOutLine, stepActive, workLabel } from "./text";
@@ -220,7 +221,7 @@ export function BoardPanel({
       </h1>
       <CopyLinkButton link={shareLink} menu={shareLink ? menu?.(shareLink) : undefined} />
       </div>
-      <Epic b={view.board} act={act} id={id} write={write} view={view} />
+      <Epic b={view.board} act={act} id={id} write={write} view={view} platform={platform} />
       {stale && (
         <p class="board-stale" role="status" data-board-stale>
           {STALE_SAID}
@@ -311,7 +312,7 @@ export function BoardPanel({
 }
 
 /** A board's goal, progress and closing, under its title. The panel doesn't know whether the person may write (the pin block has no project), so without `write` the controls still show and the platform's refusal comes back as `act`'s toast. */
-function Epic({ b, act, id, write, view }: { b: ProjectBoard; act: Act; id: string; write: boolean; view: BoardView }) {
+function Epic({ b, act, id, write, view, platform }: { b: ProjectBoard; act: Act; id: string; write: boolean; view: BoardView; platform: (path: string) => string | undefined }) {
   const [goalOpen, setGoalOpen] = useState(false);
   const [goal, setGoal] = useState("");
   const [closing, setClosing] = useState(false);
@@ -368,6 +369,7 @@ function Epic({ b, act, id, write, view }: { b: ProjectBoard; act: Act; id: stri
           )}
         </>
       )}
+      <DocsStrip view={view} act={act} id={id} write={write} platform={platform} />
       {b.created_by_agent && (
         <p class="dim" data-board-made-by>
           Made by {whoLabel(b.created_by, b.created_by_agent, nameOf)}
@@ -443,6 +445,28 @@ function Epic({ b, act, id, write, view }: { b: ProjectBoard; act: Act; id: stri
 type Act = (write: () => Promise<BoardView>) => Promise<boolean>;
 
 /** A row's open question: the question, its why folded, the options as buttons with the recommendation marked, and a text box when there are none. Only a person who may answer gets the buttons; a raised ask has none to give. */
+/** The board's Docs, under its goal: research and prototypes that open from here. A reader who can't write sees the chips; with no Docs and no right to link one, nothing. */
+function DocsStrip({ view, act, id, write, platform }: { view: BoardView; act: Act; id: string; write: boolean; platform: (path: string) => string | undefined }) {
+  const [picking, setPicking] = useState(false);
+  const docs = view.docs ?? [];
+  if (!docs.length && !write) return null;
+  const taken = new Set(docs.flatMap((d) => (d.pointer.kind === "doc" ? [d.pointer.id] : [])));
+  return (
+    <div class="board-docs" data-board-docs>
+      <span class="dim board-docs-label">Docs</span>
+      {docs.map((d) => (
+        <DocLink key={d.id} d={d} project={view.board.project} platform={platform} remove={write ? () => void act(() => boards.removeDoc(id, d.id)) : undefined} />
+      ))}
+      {write && !picking && (
+        <button type="button" class="board-add" data-board-doc-add onClick={() => setPicking(true)}>
+          + Doc
+        </button>
+      )}
+      {picking && <DocPicker project={view.board.project} taken={taken} pick={(p) => act(() => boards.addDoc(id, p))} close={() => setPicking(false)} />}
+    </div>
+  );
+}
+
 function AskCard({ a, answer }: { a: BoardAsk; answer: (a: { option: string } | { text: string }) => Promise<boolean> }) {
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
@@ -740,9 +764,7 @@ function Row({
           )}
           {current.length > 0 && (
             <div class="board-line board-chips" data-board-attachments>
-              {current.map((a) => (
-                <Chip key={a.id} a={a} platform={platform} />
-              ))}
+              {current.map((a) => (a.role === "reference" ? <DocLink key={a.id} d={{ ...a.doc!, pointer: a.pointer }} project={project} platform={platform} /> : <Chip key={a.id} a={a} platform={platform} />))}
             </div>
           )}
           {earlier.length > 0 && (
@@ -834,6 +856,7 @@ function Drawer({ r, platform, close, project, others, write, act, id }: { r: Bo
   }, []);
   const title = isCard(r.live) ? r.live.title : pointerLabel(r.pointer, r.live) || "Note";
   const evidence = r.attachments.filter((a) => a.role === "proof");
+  const attached = r.attachments.filter((a) => a.role !== "reference");
   const readable = r.pointer.kind === "issue" || (r.pointer.kind === "forge_item" && r.live?.provider !== "plane");
   const external = r.pointer.kind === "forge_item" || r.pointer.kind === "link";
   return (
@@ -907,10 +930,11 @@ function Drawer({ r, platform, close, project, others, write, act, id }: { r: Bo
         </section>
       )}
       {(r.relations?.length || (write && itemId(r))) && <Relations r={r} project={project} others={others} write={write} act={act} id={id} />}
-      {r.attachments.length > 0 && (
+      <RowDocs r={r} project={project} platform={platform} write={write} act={act} id={id} />
+      {attached.length > 0 && (
         <section data-board-drawer-attachments>
           <h3>Attached</h3>
-          {r.attachments.map((a) => (
+          {attached.map((a) => (
             <div key={a.id} class="board-drawer-attached">
               <Chip a={a} platform={platform} facts="all" />
               {write && holdsRow(a) && (
@@ -936,6 +960,30 @@ function Drawer({ r, platform, close, project, others, write, act, id }: { r: Bo
         </section>
       )}
     </div>
+  );
+}
+
+/** A row's Docs (#517): the ones attached to it as references, its spike or research. They move no lane and prove nothing. Writers link a project Doc and take one off. */
+function RowDocs({ r, project, platform, write, act, id }: { r: BoardRow; project: string; platform: (path: string) => string | undefined; write: boolean; act: Act; id: string }) {
+  const [picking, setPicking] = useState(false);
+  const refs = r.attachments.filter((a) => a.role === "reference");
+  if (!refs.length && !write) return null;
+  const taken = new Set(refs.flatMap((a) => (a.pointer.kind === "doc" ? [a.pointer.id] : [])));
+  return (
+    <section data-board-drawer-docs>
+      <h3>Docs</h3>
+      <div class="board-line board-chips">
+        {refs.map((a) => (
+          <DocLink key={a.id} d={{ ...a.doc!, pointer: a.pointer }} project={project} platform={platform} remove={write ? () => void act(() => boards.detach(id, a.id)) : undefined} />
+        ))}
+        {write && !picking && (
+          <button type="button" class="board-add" data-board-drawer-doc-add onClick={() => setPicking(true)}>
+            + Doc
+          </button>
+        )}
+      </div>
+      {picking && <DocPicker project={project} taken={taken} pick={(p) => act(() => boards.attach(id, r.id, "reference", p))} close={() => setPicking(false)} />}
+    </section>
   );
 }
 

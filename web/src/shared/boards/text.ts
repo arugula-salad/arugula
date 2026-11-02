@@ -291,6 +291,10 @@ export function pointerLabel(p: BoardPointer, live?: BoardLive | null): string {
       return "agent";
     case "link":
       return p.url.replace(/^https:\/\//, "");
+    case "doc":
+      return `Doc ${short(p.id)}`;
+    case "machine_doc":
+      return p.title;
   }
 }
 
@@ -309,7 +313,7 @@ export function assigneesLine(who?: string[] | null): string {
 
 /** The pointer as the id a person edits: none for a block's, which isn't typed. */
 export function pointerText(p: BoardPointer): string {
-  return p.kind === "none" || p.kind === "block" ? "" : p.kind === "link" ? p.url : p.id;
+  return p.kind === "none" || p.kind === "block" || p.kind === "machine_doc" ? "" : p.kind === "link" ? p.url : p.id;
 }
 
 /** An id a person typed as a row's item (`fi_…`, `iss_…`) or an `https://`
@@ -374,6 +378,22 @@ export function liveWord(l: Pick<BoardLive, "state" | "state_name">): string {
   return l.state_name || LIVE_LABEL[l.state];
 }
 
+/** What a Doc's chip says after its title: `3/5` sections written for a project Doc, `on <machine>` for a machine's, nothing for a Doc that is gone. */
+export function docWords(d: { pointer: BoardPointer; sections?: number; written?: number; missing?: boolean; machine_name?: string }): string {
+  if (d.pointer.kind === "machine_doc") return `on ${d.machine_name || "a machine"}`;
+  if (d.missing || !d.sections) return "";
+  return `${d.written ?? 0}/${d.sections}`;
+}
+
+/** Where a board lists a Doc, for the Doc's page: `Docs strip`, `2 rows`, or both. */
+export function onBoardWords(b: { strip: boolean; rows: number }): string {
+  const rows = b.rows === 1 ? "1 row" : `${b.rows} rows`;
+  return [b.strip ? "Docs strip" : "", b.rows > 0 ? rows : ""].filter(Boolean).join(", ");
+}
+
+/** A project Doc's page on the platform page, in the project, by the host's `platform` paths. */
+export const docHref = (project: string, id: string, platform: (path: string) => string | undefined): string | undefined => platform(`/p/${project}/docs/${id}`);
+
 /** Where a row's link goes: an item on its forge, a native issue or a run on
  * the platform page (`platform`, the paths of ids a host knows how to open). */
 export function pointerHref(r: Pick<BoardRow, "pointer" | "live">, platform: (path: string) => string | undefined): string | undefined {
@@ -418,7 +438,7 @@ export function prsOf(r: Pick<BoardRow, "pointer" | "live" | "attachments">): { 
     if (p.kind === "forge_item" && live?.kind === "pr" && !out.some((o) => o.id === p.id)) out.push({ id: p.id, label: pointerLabel(p, live) });
   };
   add(r.pointer, r.live);
-  for (const a of r.attachments) if (a.role !== "proof") add(a.pointer, a.live);
+  for (const a of r.attachments) if (a.role === "work") add(a.pointer, a.live);
   return out;
 }
 

@@ -3,7 +3,7 @@
 // the board routes' paths. Run with `node --experimental-strip-types`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { holdsRow, stalledFor, settledFacts, LANE_GLYPH, cardTone, checkTone, checkWord, groupMove, liveTone, prsOf, answerReady, askWaitingLine, assigneesLine, chipOf, counted, debounced, earlierLine, epicLine, firstLine, groupLine, isCard, laneCount, liveWord, marksOf, readyCount, relationLine, UNSEEN_BLOCKER, needsYou, needsYouLine, parsePointer, pointerHref, pointerLabel, pointerToSend, proofMark, rowGlyph, sections, stepActive, workLabel, workChip, onIssueChip, boardGroup, clusterOrder, NO_BOARD, sourceLine, sourceLinked, leftOutLine } from "../src/shared/boards/text.ts";
+import { holdsRow, stalledFor, settledFacts, LANE_GLYPH, cardTone, checkTone, checkWord, groupMove, liveTone, prsOf, answerReady, askWaitingLine, assigneesLine, chipOf, counted, debounced, earlierLine, epicLine, firstLine, groupLine, isCard, laneCount, liveWord, marksOf, readyCount, relationLine, UNSEEN_BLOCKER, needsYou, needsYouLine, parsePointer, pointerHref, pointerLabel, pointerToSend, proofMark, rowGlyph, sections, stepActive, workLabel, workChip, onIssueChip, boardGroup, clusterOrder, NO_BOARD, sourceLine, sourceLinked, leftOutLine, docWords, docHref, onBoardWords, pointerText } from "../src/shared/boards/text.ts";
 import { parse, pathOf } from "../src/platform/paths.ts";
 
 const P = "prj_8f2ec0ffee00112233445566778899aa";
@@ -348,4 +348,28 @@ test("a board from a Plane epic says where from, links only an https url, and co
   assert.equal(sourceLinked({ url: "" }), false);
   assert.equal(leftOutLine(1), "1 done child left out");
   assert.equal(leftOutLine(3), "3 done children left out");
+});
+
+test("a Doc's chip says its written sections, or the machine it is on; a reference is no PR", () => {
+  const doc = { kind: "doc", id: "pdc_0123456789abcdef0123456789abcdef" };
+  assert.equal(docWords({ pointer: doc, sections: 5, written: 3 }), "3/5");
+  assert.equal(docWords({ pointer: doc, sections: 2 }), "0/2");
+  assert.equal(docWords({ pointer: doc, sections: 0, written: 0 }), "", "a Doc with no sections says nothing");
+  assert.equal(docWords({ pointer: doc, missing: true }), "");
+  const machine = { kind: "machine_doc", machine: "m1", doc: "00112233445566ff", title: "Perf notes" };
+  assert.equal(docWords({ pointer: machine, machine_name: "geek-box" }), "on geek-box");
+  assert.equal(docWords({ pointer: machine }), "on a machine");
+  assert.equal(pointerLabel(machine), "Perf notes");
+  assert.equal(pointerLabel(doc), "Doc 01234567");
+  assert.equal(pointerText(machine), "", "a machine Doc is never typed in");
+  assert.equal(docHref(P, doc.id, (path) => `https://x.test${path}`), `https://x.test/p/${P}/docs/${doc.id}`);
+  assert.equal(docHref(P, doc.id, () => undefined), undefined);
+  assert.equal(onBoardWords({ strip: true, rows: 0 }), "Docs strip");
+  assert.equal(onBoardWords({ strip: false, rows: 1 }), "1 row");
+  assert.equal(onBoardWords({ strip: true, rows: 2 }), "Docs strip, 2 rows");
+  // Only work is a row's PR: a Doc attached as a reference is none.
+  const pr = { kind: "forge_item", id: "fi_1" };
+  const live = { state: "open", kind: "pr", repo: "a/b", number: 1, title: "t" };
+  const row = { pointer: { kind: "none" }, live: null, attachments: [{ id: "att_1", role: "reference", pointer: { kind: "forge_item", id: "fi_9" }, live }, { id: "att_2", role: "work", pointer: pr, live }] };
+  assert.deepEqual(prsOf(row).map((p) => p.id), ["fi_1"]);
 });

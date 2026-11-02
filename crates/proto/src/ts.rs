@@ -230,6 +230,7 @@ fn generate() -> String {
         c.visit::<WorkQuery>();
         c.visit::<WorkItems>();
         c.visit::<BoardSettings>();
+        c.visit::<DocBoards>();
     }
     // A project's Docs (aru-118).
     {

@@ -22,6 +22,11 @@
 //!   another hand added, or delete a group that holds one: the platform
 //!   refuses those (aru-123). **Nobody sets a lane:** it follows the work
 //!   (aru-125). An agent can't answer an ask.
+//! - **Docs (#517):** `link_doc` puts a Doc in the board's Docs strip, or
+//!   with `row` on one row as a reference (it never moves a lane or proves
+//!   anything); `unlink_doc` takes one off. A Doc is a project Doc
+//!   (`pdc_…`) or one kept on this machine (`doc list` has its id), which
+//!   is linked with this machine's id and the title it has now.
 //! - **Rows are addressed by their item** (`#N`, `owner/repo#N`, `IDENT-N`,
 //!   an `iss_`/`fi_` id, or a `row_` id), resolved against the board's rows:
 //!   their primary items first, then what is attached. A reference that
@@ -46,9 +51,9 @@
 //! the owner.
 
 use arugula_control_wire::boards::{
-    self as wire, AGENT_BOARD_REACH, AttachRole, AttachRow, BoardList, BoardView, CloseBoard, EditBoard, IssueRef,
+    self as wire, AGENT_BOARD_REACH, AddDoc, AttachRole, AttachRow, BoardList, BoardView, CloseBoard, EditBoard, IssueRef,
     Live, MoveEntry, NewAsk, NewBoard, NewRelation, Pointer, PutEntry, ResolveItems, Resolved, Row, agent_board,
-    agent_board_attachment, agent_board_attachments, agent_board_close, agent_board_entries, agent_board_entry,
+    agent_board_attachment, agent_board_attachments, agent_board_close, agent_board_doc, agent_board_docs, agent_board_entries, agent_board_entry,
     agent_board_entry_move, agent_board_reopen, agent_board_resolve, agent_board_row_ask, agent_project_boards,
     agent_project_relation, agent_project_relations,
 };
@@ -68,9 +73,9 @@ use crate::{control::CloudRefused, mux::Api};
 pub(crate) const READ_TOOL: &str = "board_read";
 pub(crate) const WRITE_TOOL: &str = "board_write";
 
-pub(crate) const READ_DESCRIPTION: &str = "Read a project's board in Arugula control (an epic when it has a goal; with this machine's boards.read grant over its project). One row is one piece of work: an issue (or a PR with no issue), or a note, with a one-line note and what is attached to it (work: PRs, agent blocks, runs; proof: runs, links). The lanes follow the work and nobody sets them. Lane by the row's primary item: Next (Plane triage, backlog or unstarted; a note), Doing (a Plane started state; or an agent block that isn't closed, or a run running), Review (a PR is open; or a Plane started state with 'review' in its name), Done (the issue is completed or canceled, or the PR merged or closed). A canceled item (a Plane project's cancelled state, or a native issue closed as not planned or a duplicate) is Done, marked cancelled and never proven; any other Done row is proven by CI or by evidence, or not proven yet. Groups are the plan's phases or waves. Returns the board as 72-column text, each row by its item (#N, IDENT-N), and its progress; with verbose: true, also the JSON with ids and revs. With board (brd_…): that board. Without: the project's boards (project, else the one this clone's GitHub repo is linked to, else your person's personal project), to pick one from.";
+pub(crate) const READ_DESCRIPTION: &str = "Read a project's board in Arugula control (an epic when it has a goal; with this machine's boards.read grant over its project). One row is one piece of work: an issue (or a PR with no issue), or a note, with a one-line note and what is attached to it (work: PRs, agent blocks, runs; proof: runs, links). The lanes follow the work and nobody sets them. Lane by the row's primary item: Next (Plane triage, backlog or unstarted; a note), Doing (a Plane started state; or an agent block that isn't closed, or a run running), Review (a PR is open; or a Plane started state with 'review' in its name), Done (the issue is completed or canceled, or the PR merged or closed). A canceled item (a Plane project's cancelled state, or a native issue closed as not planned or a duplicate) is Done, marked cancelled and never proven; any other Done row is proven by CI or by evidence, or not proven yet. Groups are the plan's phases or waves. Returns the board as 72-column text, each row by its item (#N, IDENT-N), its Docs (the research and prototypes linked to it, with the ids unlink_doc takes), and its progress; with verbose: true, also the JSON with ids and revs. With board (brd_…): that board. Without: the project's boards (project, else the one this clone's GitHub repo is linked to, else your person's personal project), to pick one from.";
 
-pub(crate) const WRITE_DESCRIPTION: &str = "Write to a project's board in Arugula control, at once: what you write lands now, labelled as your person's agent on this machine, never as them. Their boards.write grant over the project says you may, never more than their role. One row is one piece of work, addressed by its item (#N, owner/repo#N, IDENT-N or an iss_/fi_ id: a bare #N is the project's native issue when it has one, else the one linked repo's item with that number, and a repo's PR or issue is owner/repo#N; IDENT-N, such as ALL-2212, names a Plane item directly, and forge_read items with provider plane gives its fi_ id), never by a row id. The lanes (Next, Doing, Review, Done) follow the live state of the work: there are no statuses, and you can't set a lane. Lane by the row's primary item: Next (Plane triage, backlog or unstarted), Doing (a Plane started state, or a live agent block or run), Review (an open PR, or a Plane started state with 'review' in its name), Done (completed or canceled, or the PR merged or closed); canceled is Done, marked cancelled, never proven. Add issues with add (up to 50 in one call; each is a row, or is attached or already there, and the answer says which). A PR or an agent block is not a row of its own: attach it to the row of its issue (a PR that names that issue is attached for you). When you need a person's decision, ask with options (ask: who, the question, up to four options, a recommendation, why); they answer on the board and you read the answer in board_read, never by waiting. Groups are your phases or waves: add_group, rename_group, move_group, delete_group, and group puts a row in one. note sets a row's one-line note (pass the rev to refuse a stale write), drop removes a row you added, detach takes off an attachment you made. To say what blocks what, relate two items (relate: the item blocks, relates to, duplicates or was discovered from another; only blocks gates the board's Ready line, and a blocked row stays in its lane and says what blocks it) and unrelate one your machine made; relate needs your person's issues.write grant over the project too. You may also make a board (an epic, with a goal), set its title and goal, close it with a note saying what a person can now do, and open it again. A write answers in a few lines: what changed, the rows' cards and the board's progress; pass verbose: true for the whole board. If one item of a batch fails, the others still land and the answer says which failed and why.";
+pub(crate) const WRITE_DESCRIPTION: &str = "Write to a project's board in Arugula control, at once: what you write lands now, labelled as your person's agent on this machine, never as them. Their boards.write grant over the project says you may, never more than their role. One row is one piece of work, addressed by its item (#N, owner/repo#N, IDENT-N or an iss_/fi_ id: a bare #N is the project's native issue when it has one, else the one linked repo's item with that number, and a repo's PR or issue is owner/repo#N; IDENT-N, such as ALL-2212, names a Plane item directly, and forge_read items with provider plane gives its fi_ id), never by a row id. The lanes (Next, Doing, Review, Done) follow the live state of the work: there are no statuses, and you can't set a lane. Lane by the row's primary item: Next (Plane triage, backlog or unstarted), Doing (a Plane started state, or a live agent block or run), Review (an open PR, or a Plane started state with 'review' in its name), Done (completed or canceled, or the PR merged or closed); canceled is Done, marked cancelled, never proven. Add issues with add (up to 50 in one call; each is a row, or is attached or already there, and the answer says which). A PR or an agent block is not a row of its own: attach it to the row of its issue (a PR that names that issue is attached for you). When you need a person's decision, ask with options (ask: who, the question, up to four options, a recommendation, why); they answer on the board and you read the answer in board_read, never by waiting. Groups are your phases or waves: add_group, rename_group, move_group, delete_group, and group puts a row in one. note sets a row's one-line note (pass the rev to refuse a stale write), drop removes a row you added, detach takes off an attachment you made. To say what blocks what, relate two items (relate: the item blocks, relates to, duplicates or was discovered from another; only blocks gates the board's Ready line, and a blocked row stays in its lane and says what blocks it) and unrelate one your machine made; relate needs your person's issues.write grant over the project too. Link a Doc to a board with link_doc (a project Doc, pdc_…, or one of this machine's, from doc list): in the board's Docs strip, or with row on one row as its spike or research; a Doc moves no lane and is no proof; unlink_doc takes one off. You may also make a board (an epic, with a goal), set its title and goal, close it with a note saying what a person can now do, and open it again. A write answers in a few lines: what changed, the rows' cards and the board's progress; pass verbose: true for the whole board. If one item of a batch fails, the others still land and the answer says which failed and why.";
 
 /// The most a batch takes.
 const BATCH_MAX: usize = wire::RESOLVE_MAX;
@@ -196,6 +201,33 @@ pub struct DetachArgs {
     /// What to take off: what it was attached as (#N, run_…, the link) or
     /// its att_… id. One you made.
     pub what: String,
+    #[serde(default)]
+    pub verbose: bool,
+}
+
+#[derive(Deserialize, JsonSchema)]
+pub struct LinkDocArgs {
+    /// The board (brd_…).
+    pub board: String,
+    /// The Doc: a project Doc (pdc_…, of the board's project), or a Doc kept
+    /// on this machine (its id from doc list: 16 hex digits).
+    pub doc: String,
+    /// The row it is the spike or research of, by its item (#N,
+    /// owner/repo#N, IDENT-N, an iss_/fi_ id or a row_ id). Without it the
+    /// Doc goes in the board's Docs strip.
+    #[serde(default)]
+    pub row: Option<String>,
+    #[serde(default)]
+    pub verbose: bool,
+}
+
+#[derive(Deserialize, JsonSchema)]
+pub struct UnlinkDocArgs {
+    /// The board (brd_…).
+    pub board: String,
+    /// What to take off: a Docs strip entry's id (bdc_…) or a row's
+    /// reference (att_…), as board_read shows them. One your machine linked.
+    pub id: String,
     #[serde(default)]
     pub verbose: bool,
 }
@@ -373,6 +405,18 @@ pub(crate) const WRITE: &[Kind] = &[
         name: "detach",
         description: "Take off an attachment you made, from the row of an item.",
         schema: schema_for_type::<DetachArgs>,
+        flag: Some(arugula_proto::flags::BOARDS),
+    },
+    Kind {
+        name: "link_doc",
+        description: "Link a Doc to a board: a project Doc (pdc_…) or one kept on this machine (its id from doc list). It goes in the board's Docs strip, or with row on one row as a reference (its spike or research). A Doc never moves a lane, is no work and is no proof. One linked already is not linked again; a board lists at most 20.",
+        schema: schema_for_type::<LinkDocArgs>,
+        flag: Some(arugula_proto::flags::BOARDS),
+    },
+    Kind {
+        name: "unlink_doc",
+        description: "Take a Doc you linked off a board: the strip entry's bdc_… id or the row reference's att_… id (board_read has them).",
+        schema: schema_for_type::<UnlinkDocArgs>,
         flag: Some(arugula_proto::flags::BOARDS),
     },
     Kind {
@@ -951,12 +995,82 @@ fn one_row(view: &BoardView, what: &str, row: &str, verbose: bool) -> Out {
     answer(lines.join("\n"), view, verbose)
 }
 
+/// The title of the Doc `id` kept on this machine (`<state>/docs/<id>/
+/// meta.json`, the library's), if it is there.
+async fn local_doc_title(c: &Call<'_>, id: &str) -> Option<String> {
+    let ok = id.len() == 16 && id.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'));
+    if !ok {
+        return None;
+    }
+    let path = c.app().control.state_dir().join("docs").join(id).join("meta.json");
+    let meta: Value = serde_json::from_slice(&tokio::fs::read(path).await.ok()?).ok()?;
+    meta["title"].as_str().map(str::to_owned)
+}
+
+/// `link_doc`: a project Doc, or one of this machine's, in the strip or on
+/// a row.
+async fn link_doc(c: &Call<'_>, a: LinkDocArgs) -> Out {
+    let doc = a.doc.trim();
+    let pointer = if doc.starts_with("pdc_") {
+        Pointer::Doc { id: doc.to_owned() }
+    } else {
+        let title = local_doc_title(c, doc).await.ok_or_else(|| {
+            format!("{doc:?} is neither a project Doc (pdc_…) nor a Doc on this machine: doc list has this machine's")
+        })?;
+        let machine = c
+            .app()
+            .control
+            .enrolled()
+            .map(|e| e.saved.cert.device.clone())
+            .ok_or("this machine hasn't joined Arugula control, where boards live")?;
+        Pointer::MachineDoc { machine, doc: doc.to_owned(), title }
+    };
+    let Some(item) = a.row.as_deref().map(str::trim).filter(|r| !r.is_empty()) else {
+        let body = serde_json::to_value(AddDoc { pointer }).map_err(|e| e.to_string())?;
+        let v = boards_call(c, Method::POST, &agent_board_docs(&a.board), Some(body)).await?;
+        return board_done("Linked a Doc to the board's Docs", v, a.verbose);
+    };
+    let view = read_view(c, &a.board).await?;
+    let row = find_row(&view, item)?;
+    let body = serde_json::to_value(AttachRow { row: row.id.clone(), pointer, role: AttachRole::Reference, take: false })
+        .map_err(|e| e.to_string())?;
+    let v = boards_call(c, Method::POST, &agent_board_attachments(&a.board), Some(body)).await?;
+    let after = view_of(v)?;
+    let said = after.said.as_deref().map(|s| format!(" Note: {s}.")).unwrap_or_default();
+    one_row(&after, &format!("Linked the Doc to {}.{said}", row.item_label()), &row.id, a.verbose)
+}
+
+/// The board's Docs, with the ids `unlink_doc` takes; empty for none.
+fn docs_line(v: &BoardView) -> Option<String> {
+    let strip: Vec<String> = v.docs.iter().map(|d| format!("{} ({})", d.title, d.id)).collect();
+    let refs: Vec<String> = rows(v)
+        .flat_map(|r| {
+            r.attachments.iter().filter(|a| a.role == AttachRole::Reference).map(move |a| {
+                let title = a.doc.as_ref().map_or("a Doc", |d| d.title.as_str());
+                format!("{title} ({}, on {})", a.id, r.item_label())
+            })
+        })
+        .collect();
+    if strip.is_empty() && refs.is_empty() {
+        return None;
+    }
+    let mut parts = vec![];
+    if !strip.is_empty() {
+        parts.push(format!("Docs: {}", strip.join("; ")));
+    }
+    if !refs.is_empty() {
+        parts.push(format!("References: {}", refs.join("; ")));
+    }
+    Some(parts.join(". "))
+}
+
 /// `board_read`.
 pub(crate) async fn board_read(c: &Call<'_>, a: ReadBoardArgs) -> Out {
     owners_boards(c, READ_TOOL).await?;
     if let Some(id) = a.board.as_deref().map(str::trim).filter(|b| !b.is_empty()) {
         let view = read_view(c, id).await?;
-        let s = format!("{}\n{}\nboard_write changes it at once", progress(&view), text(&view));
+        let docs = docs_line(&view).map(|l| format!("\n{l}")).unwrap_or_default();
+        let s = format!("{}\n{}{docs}\nboard_write changes it at once", progress(&view), text(&view));
         return answer(s, &view, a.verbose);
     }
     let chosen = c.chosen_project(a.project.as_deref()).await?;
@@ -1033,6 +1147,19 @@ pub(crate) async fn board_write(c: &Call<'_>, kind: &str, a: Value) -> Out {
             let att = find_attachment(row, &a.what)?;
             let v = boards_call(c, Method::DELETE, &agent_board_attachment(&a.board, &att.id), None).await?;
             one_row(&view_of(v)?, &format!("Took {} off {}.", a.what.trim(), row.item_label()), &row.id, a.verbose)
+        }
+        "link_doc" => link_doc(c, args(a)?).await,
+        "unlink_doc" => {
+            let a: UnlinkDocArgs = args(a)?;
+            let id = a.id.trim();
+            let path = match id {
+                _ if id.starts_with("bdc_") => agent_board_doc(&a.board, id),
+                _ if id.starts_with("att_") => agent_board_attachment(&a.board, id),
+                _ => return Err("unlink_doc takes a strip entry's bdc_… id or a reference's att_… id (board_read has them)".into()),
+            };
+            let v = boards_call(c, Method::DELETE, &path, None).await?;
+            let view = view_of(v)?;
+            answer(format!("Took {id} off the board.\n{}", progress(&view)), &view, a.verbose)
         }
         "ask" => {
             let a: AskArgs = args(a)?;
@@ -1231,6 +1358,22 @@ mod tests {
 
     fn native(n: u64) -> Value {
         json!({ "state": "open", "kind": "native", "number": n, "title": "" })
+    }
+
+    /// board_read names a board's Docs with the ids unlink_doc takes: the
+    /// strip's, and each row's references.
+    #[test]
+    fn a_boards_docs_are_named_with_their_ids() {
+        let reference = json!({ "id": "att_7", "role": "reference", "pointer": { "kind": "doc", "id": "pdc_1" },
+                                "doc": { "title": "Spike", "sections": 2, "written": 1 } });
+        let mut v = board(json!([row("row_1", json!({ "kind": "issue", "id": "iss_1" }), native(12), json!([reference]))]));
+        assert_eq!(docs_line(&v), Some("References: Spike (att_7, on #12)".to_owned()));
+        v.docs = serde_json::from_value(json!([{ "id": "bdc_2", "title": "Plan", "added_by": "a1", "created_at": 1,
+                                                 "pointer": { "kind": "doc", "id": "pdc_2" } }]))
+        .unwrap();
+        assert_eq!(docs_line(&v), Some("Docs: Plan (bdc_2). References: Spike (att_7, on #12)".to_owned()));
+        assert!(wire::render(&v).contains("Docs: Plan"), "{}", wire::render(&v));
+        assert_eq!(docs_line(&board(json!([]))), None);
     }
 
     fn github(repo: &str, kind: &str, n: u64) -> Value {

@@ -5,7 +5,7 @@
 // and the shell's board block read through it. A write that names a stale
 // `rev` is refused with 409 (`stale_rev`): the view reads the board again.
 
-import type { BoardAttachRole, ForgeContent, NativeIssue, BoardList, BoardPointer, BoardPutEntry, BoardView, BoardWorkItems, RelationKind, TrackerConnections, TrackerWriteDone } from "../proto";
+import type { BoardAttachRole, BoardsOfDoc, ForgeContent, ProjectDocList, NativeIssue, BoardList, BoardPointer, BoardPutEntry, BoardView, BoardWorkItems, RelationKind, TrackerConnections, TrackerWriteDone } from "../proto";
 import { chat } from "../chat-store";
 import { platformFetch, refusalOf } from "../maintenance";
 
@@ -71,6 +71,14 @@ export const boards = {
   },
   /** Attach work (a PR, an agent block, a run) or proof (a run, a link) to a row. */
   attach: (id: string, row: string, role: BoardAttachRole, pointer: BoardPointer) => call<BoardView>("POST", `/api/boards/${enc(id)}/attachments`, { row, role, pointer }),
+  /** Link a project Doc to the board's Docs strip (owners and editors). One linked already comes back with a `said`. */
+  addDoc: (id: string, pointer: BoardPointer) => call<BoardView>("POST", `/api/boards/${enc(id)}/docs`, { pointer }),
+  /** Take a Doc off the strip, by its `bdc_` id. */
+  removeDoc: (id: string, doc: string) => call<BoardView>("DELETE", `/api/boards/${enc(id)}/docs/${enc(doc)}`),
+  /** A project's Docs, for the picker (the Docs page's list). */
+  docs: (project: string) => call<ProjectDocList>("GET", `/api/projects/${enc(project)}/docs`),
+  /** The boards that list a project Doc, for the Doc's page: none when boards are off. */
+  ofDoc: (project: string, doc: string) => call<BoardsOfDoc>("GET", `/api/projects/${enc(project)}/docs/${enc(doc)}/boards`),
   /** Answer an ask with one of its options, or with text when it has none: the person it names, or an owner or editor for them. */
   answer: (id: string, ask: string, a: { option: string } | { text: string }) =>
     call<BoardView>("POST", `/api/boards/${enc(id)}/asks/${enc(ask)}/answer`, { option: null, text: null, ...a }),

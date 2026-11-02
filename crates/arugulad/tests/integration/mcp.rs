@@ -2942,6 +2942,14 @@ async fn fake_boards(f: FakeBoards) -> String {
                 Json(v).into_response()
             }
             ("POST", "/api/daemon/boards/brd_1/attachments") => Json(view()).into_response(),
+            ("POST", "/api/daemon/boards/brd_1/docs") => {
+                let mut v = view();
+                let title = b["pointer"]["title"].as_str().unwrap_or("The plan");
+                v["docs"] = json!([{ "id": "bdc_1", "pointer": b["pointer"], "title": title, "added_by": "a1",
+                                     "created_at": 2 }]);
+                Json(v).into_response()
+            }
+            ("DELETE", "/api/daemon/boards/brd_1/docs/bdc_1") => Json(view()).into_response(),
             ("DELETE", "/api/daemon/boards/brd_1/attachments/att_1") => {
                 said(StatusCode::FORBIDDEN, "an agent takes off only the attachments its own machine made", "forbidden")
             }
@@ -3019,6 +3027,8 @@ async fn an_agent_reads_and_writes_a_board_where_the_flag_is_on() {
             "add",
             "attach",
             "detach",
+            "link_doc",
+            "unlink_doc",
             "ask",
             "relate",
             "unrelate",
@@ -3197,6 +3207,82 @@ async fn an_agent_reads_and_writes_a_board_where_the_flag_is_on() {
         "a link goes to the platform as proof: {attaches:?}"
     );
     assert_eq!(attaches[1].1["role"], "work", "a run is work: {attaches:?}");
+    s.cancel().await.unwrap();
+}
+
+/// `link_doc` links a project Doc (pdc_…) or a Doc kept on this machine to a
+/// board: in the strip, or with `row` on a row as a reference. A machine's Doc
+/// goes with this machine's id and the title it has here; an id nothing on
+/// this machine has is refused before anything goes out. `unlink_doc` takes
+/// a strip entry (bdc_…) or a reference (att_…) off, and nothing else.
+#[cfg(feature = "labs")]
+#[tokio::test(flavor = "multi_thread")]
+async fn an_agent_links_docs_to_a_board() {
+    let d = Daemon::child_with(&["--wisp-token-file", "/nonexistent"]);
+    let keys = arugula_e2e::DeviceKeys::load_or_create(&d.state.join("daemon.key")).unwrap();
+    let fake = FakeBoards::default();
+    let url = fake_boards(fake.clone()).await;
+    let cert = arugula_e2e::Cert::new(&keys, "a1", arugula_e2e::Kind::Daemon, "test");
+    let saved = json!({ "url": url, "trust": { "account": "a1", "root": keys.id() }, "cert": cert });
+    std::fs::write(d.state.join("control.json"), saved.to_string()).unwrap();
+    let s = bridge(&d, Client::named("claude-code")).await;
+    arugula_proto::flags::set(&d.state, "boards", true).unwrap();
+    let deadline = std::time::Instant::now() + Duration::from_secs(20);
+    while call_raw(&s, "board_read", json!({ "project": "prj_1" })).await.is_error == Some(true) {
+        assert!(std::time::Instant::now() < deadline, "never joined");
+        tokio::time::sleep(Duration::from_millis(200)).await;
+    }
+    let pdc = "pdc_0123456789abcdef0123456789abcdef";
+    let local = "00112233445566ff";
+    let dir = d.state.join("docs").join(local);
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(
+        dir.join("meta.json"),
+        json!({ "id": local, "title": "Perf notes", "made": 1, "updated": 1, "by": "mcp:test" }).to_string(),
+    )
+    .unwrap();
+    let posts = || -> Vec<(String, Value)> {
+        fake.calls.lock().unwrap().iter().filter(|(a, _)| a.contains("/docs") || a.contains("/attachments")).cloned().collect()
+    };
+
+    // A project Doc, in the strip.
+    let said = call(&s, "board_write", json!({ "kind": "link_doc", "board": "brd_1", "doc": pdc })).await;
+    assert!(said["summary"].as_str().unwrap().contains("Linked a Doc"), "{said}");
+    assert_eq!(
+        posts()[0],
+        ("POST /api/daemon/boards/brd_1/docs".to_owned(), json!({ "pointer": { "kind": "doc", "id": pdc } }))
+    );
+
+    // This machine's Doc: its id and the title it has here.
+    call(&s, "board_write", json!({ "kind": "link_doc", "board": "brd_1", "doc": local })).await;
+    assert_eq!(
+        posts()[1].1,
+        json!({ "pointer": { "kind": "machine_doc", "machine": keys.id(), "doc": local, "title": "Perf notes" } })
+    );
+
+    // On a row, by its item, as a reference.
+    let on_row = call(&s, "board_write", json!({ "kind": "link_doc", "board": "brd_1", "doc": pdc, "row": "#12" })).await;
+    assert!(on_row["summary"].as_str().unwrap().contains("Linked the Doc to #12"), "{on_row}");
+    assert_eq!(
+        posts()[2],
+        (
+            "POST /api/daemon/boards/brd_1/attachments".to_owned(),
+            json!({ "row": "row_1", "pointer": { "kind": "doc", "id": pdc }, "role": "reference" })
+        )
+    );
+
+    // An id this machine doesn't have, and one that is no Doc id, never go out.
+    let unknown = refused(&s, "board_write", json!({ "kind": "link_doc", "board": "brd_1", "doc": "ffffffffffffffff" })).await;
+    assert!(unknown.contains("neither a project Doc") && unknown.contains("doc list"), "{unknown}");
+    assert!(refused(&s, "board_write", json!({ "kind": "link_doc", "board": "brd_1", "doc": "../../etc" })).await.contains("neither"));
+    assert_eq!(posts().len(), 3, "nothing went out for them");
+
+    // Unlink: a strip entry, a reference; nothing else.
+    call(&s, "board_write", json!({ "kind": "unlink_doc", "board": "brd_1", "id": "bdc_1" })).await;
+    assert!(posts().iter().any(|(a, _)| a == "DELETE /api/daemon/boards/brd_1/docs/bdc_1"), "{:?}", posts());
+    let refusal = refused(&s, "board_write", json!({ "kind": "unlink_doc", "board": "brd_1", "id": "att_1" })).await;
+    assert!(refusal.contains("only the attachments its own machine made"), "the platform's refusal: {refusal}");
+    assert!(refused(&s, "board_write", json!({ "kind": "unlink_doc", "board": "brd_1", "id": "row_1" })).await.contains("bdc_"));
     s.cancel().await.unwrap();
 }
 

@@ -446,6 +446,19 @@ export type BoardMoveEntry = { rev: number | null,
 zone?: string | null, before: string | null, };
 
 /**
+ * A board that lists a project Doc.
+ */
+export type BoardOfDoc = { board: string, title: string, 
+/**
+ * In the board's Docs strip.
+ */
+strip: boolean, 
+/**
+ * How many rows carry it as a reference.
+ */
+rows: number, };
+
+/**
  * What a row points at. `None` is free text. The ids are the platform's:
  * `fi_…` (a mirrored PR or issue), `iss_…`, `run_…`, `hw_…`, `pdc_…` (a
  * project Doc).
@@ -741,6 +754,12 @@ export type BoardZone = { id: string, rev: number, title: string, kind?: BoardZo
  * ([`Lane`]). No one makes a zone.
  */
 export type BoardZoneKind = "lane";
+
+/**
+ * [`PROJECT_DOC_BOARDS`]' answer: the project's boards that list the Doc,
+ * open ones first.
+ */
+export type BoardsOfDoc = { boards: Array<BoardOfDoc>, };
 
 /**
  * A side of a PR: which repository (a fork's, for its head), branch and
