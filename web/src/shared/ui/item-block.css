@@ -131,6 +131,12 @@
   --c: var(--ok);
 }
 
+/* Held (#495): a note, not a call to act, so it's dim. */
+.item-next-info {
+  --c: var(--muted);
+  color: var(--dim);
+}
+
 .item-next-icon {
   flex: none;
   color: var(--c);

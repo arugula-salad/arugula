@@ -30,7 +30,7 @@ fn seed(app: &crate::Platform, hub: &TestHub, boards: bool) -> String {
     app.db.team_project("t", "t", 1).unwrap()
 }
 
-async fn put(base: &str, who: &str, board: &str, body: Value) -> (u16, Value) {
+pub(super) async fn put(base: &str, who: &str, board: &str, body: Value) -> (u16, Value) {
     call(base, who, "PUT", &format!("/api/boards/{board}/entries"), Some(body)).await
 }
 
@@ -38,7 +38,7 @@ async fn mv(base: &str, who: &str, board: &str, entry: &str, body: Value) -> (u1
     call(base, who, "POST", &format!("/api/boards/{board}/entries/{entry}/move"), Some(body)).await
 }
 
-async fn attach(base: &str, who: &str, board: &str, body: Value) -> (u16, Value) {
+pub(super) async fn attach(base: &str, who: &str, board: &str, body: Value) -> (u16, Value) {
     call(base, who, "POST", &format!("/api/boards/{board}/attachments"), Some(body)).await
 }
 
@@ -624,7 +624,7 @@ async fn with_the_flag_off_there_are_no_boards() {
 // ---------------------------------------------------------------- agents
 
 /// A call signed by `who`'s machine, as the hub's gate vouches for it.
-async fn signed(base: &str, by: &str, method: &str, path: &str, body: Option<Value>) -> (u16, Value) {
+pub(super) async fn signed(base: &str, by: &str, method: &str, path: &str, body: Option<Value>) -> (u16, Value) {
     let mut req =
         reqwest::Client::new().request(method.parse().unwrap(), format!("{base}{path}")).header("x-test-daemon", by);
     if let Some(b) = body {
@@ -634,7 +634,7 @@ async fn signed(base: &str, by: &str, method: &str, path: &str, body: Option<Val
     (r.status().as_u16(), r.json().await.unwrap_or_default())
 }
 
-async fn geek(base: &str, method: &str, path: &str, body: Option<Value>) -> (u16, Value) {
+pub(super) async fn geek(base: &str, method: &str, path: &str, body: Option<Value>) -> (u16, Value) {
     signed(base, "a geek", method, path, body).await
 }
 
@@ -796,7 +796,7 @@ async fn geek_put(base: &str, board: &str, body: Value) -> (u16, Value) {
 }
 
 /// Give `machine` `boards.write` over project `t`, as its owner `who`.
-async fn grant_write(base: &str, who: &str, machine: &str, t: &str) {
+pub(super) async fn grant_write(base: &str, who: &str, machine: &str, t: &str) {
     let g = call(
         base,
         who,

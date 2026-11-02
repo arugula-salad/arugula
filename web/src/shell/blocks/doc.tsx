@@ -9,7 +9,8 @@
 //
 // A picture (#965) is a file the daemon keeps: the state lists its name and
 // rev and never its bytes, and the page asks for one by name (`doc_asset`, a
-// viewer's call) the first time a section shows that rev.
+// viewer's call) the first time a section shows that rev, which is never
+// before the Doc's pane is on screen.
 
 import { render, type ComponentChildren } from "preact";
 import type { Client } from "../client";
@@ -107,7 +108,11 @@ registerBlock("doc", (client: Client, id): BlockView => {
   const fresh = new Map<string, number>();
   const images = makeImages(client, id);
   open.set(id, images);
+  /** Whether its pane has been on screen: until then there's nothing to
+   * draw, and no picture to fetch, for a Doc in a tab nobody has opened. */
+  let shown = false;
   const draw = () => {
+    if (!shown) return;
     render(
       <div class="review">
         <DocBar client={client} id={id} s={state} />
@@ -117,10 +122,15 @@ registerBlock("doc", (client: Client, id): BlockView => {
     );
   };
   const off = client.subscribe(draw);
-  draw();
   return {
     host,
-    setVisible: (v) => (host.style.display = v ? "" : "none"),
+    setVisible: (v) => {
+      host.style.display = v ? "" : "none";
+      if (v && !shown) {
+        shown = true;
+        draw();
+      }
+    },
     update: (next) => {
       const s = next as DocState;
       // The first state we get is the baseline: only what changes after it

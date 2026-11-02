@@ -1850,10 +1850,12 @@ pub(crate) async fn post_replied(
     app.limits.check_account_per_minute(CHAT_POSTS, &s.account)?;
     app.limits.check_all_per_minute(ALL_CHAT_POSTS)?;
     let people = audience(app, &room).await?;
-    let (mut named, mut unreached) = mentions(app, text, &people, &s.account).await?;
+    // Code is never a mention (#492): every matcher reads the text without it.
+    let plain = without_code(text);
+    let (mut named, mut unreached) = mentions(app, &plain, &people, &s.account).await?;
     // `@channel`, `@here` and keywords are mentions too (#114): stored
     // beside the named, so counts and Activity see them.
-    let extra = alerts::extra(app, &facts, &room, text, &people, &s.account, &named).await?;
+    let extra = alerts::extra(app, &facts, &room, &plain, &people, &s.account, &named).await?;
     unreached.retain(|w| !matches!(w.as_str(), alerts::CHANNEL | alerts::HERE));
     for a in &extra.broadcast {
         if !named.contains(a) {
@@ -1922,7 +1924,7 @@ pub(crate) async fn post_replied(
         Some(a) => format!("{}'s agent on {}", name_of(app, &s.account).await?, a.machine_name),
         None => name_of(app, &s.account).await?,
     };
-    let told = Told { room: &room, seq, parent: b.parent, author: who, text, sessions: at_sessions(text) };
+    let told = Told { room: &room, seq, parent: b.parent, author: who, text, sessions: at_sessions(&plain) };
     pushed.extend(tell_agents(app, &facts, &told, &stored, replying_to, agent, &mut unreached).await);
     let replied = sessions::posted(app, &room, &s.account, agent, via.is_some(), seq, b.parent, text).await;
     Ok((ChatPosted { seq, mentions: stored, unreached, pushed }, replied))
@@ -2157,8 +2159,9 @@ pub async fn edit(
     sizes(text, None)?;
     app.limits.check_account_per_minute(CHAT_POSTS, &s.account)?;
     let people = audience(&app, &room).await?;
-    let (mut named, mut unreached) = mentions(&app, text, &people, &s.account).await?;
-    let extra = alerts::extra(&app, &facts, &room, text, &people, &s.account, &named).await?;
+    let plain = without_code(text);
+    let (mut named, mut unreached) = mentions(&app, &plain, &people, &s.account).await?;
+    let extra = alerts::extra(&app, &facts, &room, &plain, &people, &s.account, &named).await?;
     unreached.retain(|w| !matches!(w.as_str(), alerts::CHANNEL | alerts::HERE));
     named.extend(extra.broadcast.iter().filter(|a| !named.contains(a)).cloned().collect::<Vec<_>>());
     named.extend(extra.keyword);

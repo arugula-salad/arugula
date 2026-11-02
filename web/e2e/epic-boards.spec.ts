@@ -36,6 +36,7 @@ const connection = (epics_as_boards: boolean) => ({
   items: 12,
   purge_after: null,
   waiting_writes: 0,
+  failed_moves: 0,
   has_webhook_secret: false,
   last_delivery_at: null,
   webhook_url: "https://example.test/hook",

@@ -98,12 +98,13 @@ fn wire(app: &Platform, c: &Connection) -> Result<TrackerConnection, ApiError> {
         backfilled_at: c.backfilled_at,
         items: app.db.tracker_item_count(c.mirror_id)?,
         waiting_writes: app.db.tracker_writes_waiting_count(&c.id)?,
+        failed_moves: app.db.plane_moves_failed_count(&c.id)?,
         epics_as_boards: c.epics_as_boards,
     })
 }
 
 /// A member who may change what's connected: not a team's viewer.
-async fn changer(app: &Platform, account: &str, asked: &str) -> Result<String, ApiError> {
+pub(super) async fn changer(app: &Platform, account: &str, asked: &str) -> Result<String, ApiError> {
     let (project, role) = membership(app, account, asked, true).await?;
     if role == TeamRole::Viewer {
         return Err(err(StatusCode::FORBIDDEN, "a viewer can't change a project's connected trackers"));

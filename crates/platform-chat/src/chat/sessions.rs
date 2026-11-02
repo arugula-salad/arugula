@@ -85,7 +85,7 @@ use arugula_e2e::{now_ms, team::TeamRole};
 use axum::http::StatusCode;
 use tracing::{info, warn};
 
-use super::at_words;
+use super::{at_words, without_code};
 use crate::{
     Platform,
     auth::Person,
@@ -200,8 +200,10 @@ pub(crate) fn works_in(room: &Room) -> bool {
     }
 }
 
+/// Whether `text` asks `@arugula`: not in code (#492), which a message
+/// quoting the handle is, and which must never start a session.
 pub(crate) fn asks(text: &str) -> bool {
-    at_words(text).iter().any(|w| w == MENTION)
+    at_words(&without_code(text)).iter().any(|w| w == MENTION)
 }
 
 async fn handle(

@@ -286,6 +286,35 @@ export type BoardCategory = "triage" | "backlog" | "unstarted" | "started" | "co
 export type BoardDiffstat = { files: number, added: number, removed: number, };
 
 /**
+ * One Doc of a board: in its strip, or on one row (a row's [`Row::docs`]).
+ */
+export type BoardDoc = { 
+/**
+ * `bdc_` and 32 hex characters.
+ */
+id: string, 
+/**
+ * [`Pointer::Doc`] or [`Pointer::MachineDoc`].
+ */
+pointer: BoardPointer, title: string, sections?: number, written?: number, 
+/**
+ * A project Doc that was deleted.
+ */
+missing?: boolean, 
+/**
+ * A machine Doc's machine, by name.
+ */
+machine_name?: string, 
+/**
+ * The account that linked it (the owner, for an agent).
+ */
+added_by: string, 
+/**
+ * The machine whose agent linked it, if one did.
+ */
+agent?: ChatAgent, created_at: number, };
+
+/**
  * Zone (a group, in a database; a lane, on the wire) or row.
  */
 export type BoardEntryKind = "zone" | "row";
@@ -394,14 +423,28 @@ export type BoardMoveEntry = { rev: number | null,
 zone?: string | null, before: string | null, };
 
 /**
+ * A board that lists a project Doc.
+ */
+export type BoardOfDoc = { board: string, title: string, 
+/**
+ * In the board's Docs strip.
+ */
+strip: boolean, 
+/**
+ * How many rows carry it as a reference.
+ */
+rows: number, };
+
+/**
  * What a row points at. `None` is free text. The ids are the platform's:
- * `fi_…` (a mirrored PR or issue), `iss_…`, `run_…`, `hw_…`.
+ * `fi_…` (a mirrored PR or issue), `iss_…`, `run_…`, `hw_…`, `pdc_…` (a
+ * project Doc).
  */
 export type BoardPointer = { "kind": "none" } | { "kind": "forge_item", id: string, } | { "kind": "issue", id: string, } | { "kind": "run", id: string, } | { "kind": "workspace", id: string, } | { "kind": "block", machine: string, 
 /**
  * The block's pane, as `%N` or `N`; stored as `N`.
  */
-pane: string, } | { "kind": "link", url: string, };
+pane: string, } | { "kind": "link", url: string, } | { "kind": "doc", id: string, } | { "kind": "machine_doc", machine: string, doc: string, title: string, };
 
 /**
  * A board's work, counted: the rows with a primary item (an issue or a
@@ -471,6 +514,11 @@ lane: BoardLane,
  * Work and proof attached to the row, oldest first.
  */
 attachments: Array<BoardAttachment>, 
+/**
+ * The Docs linked to the row (#517): its spike or research, in order.
+ * They move no lane and prove nothing.
+ */
+docs?: Array<BoardDoc>, 
 /**
  * Set only on a Done row that is proven.
  */
@@ -593,6 +641,11 @@ export type BoardView = { board: ProjectBoard, zones: Array<BoardZone>,
  */
 groups: Array<BoardGroup>, 
 /**
+ * The Docs strip, in order. Empty for a board with none; an old client
+ * ignores it.
+ */
+docs: Array<BoardDoc>, 
+/**
  * The ready set (Arugula #403): the rows (`row_…`) with an issue or a
  * PR as their item that are in Next and have no open blocker.
  */
@@ -683,6 +736,12 @@ export type BoardZone = { id: string, rev: number, title: string, kind?: BoardZo
  * ([`Lane`]). No one makes a zone.
  */
 export type BoardZoneKind = "lane";
+
+/**
+ * [`PROJECT_DOC_BOARDS`]' answer: the project's boards that list the Doc,
+ * open ones first.
+ */
+export type BoardsOfDoc = { boards: Array<BoardOfDoc>, };
 
 /**
  * A side of a PR: which repository (a fork's, for its head), branch and
@@ -2088,7 +2147,11 @@ pin: ForgePin | null,
  * it isn't known (the forge doesn't say, or says only to someone who
  * can push), and Merge then offers what the forge enforces (#427).
  */
-merge_styles?: Array<string>, };
+merge_styles?: Array<string>, 
+/**
+ * The agent that opened the PR is holding its merge (#495).
+ */
+hold?: Hold, };
 
 /**
  * A body, a comment, a review's text or a review comment.
@@ -2316,6 +2379,25 @@ export type HandTool = { name: string, description: string,
  * Its arguments, as a JSON Schema object.
  */
 schema: unknown, };
+
+/**
+ * An agent's hold on a PR block (#495): the merge waits for the agent to
+ * say it's ready. It's a nudge on this machine's block, not a lock and not
+ * on the forge: the person can still merge.
+ */
+export type Hold = { 
+/**
+ * The holding agent block's title, for "Held by …".
+ */
+by: string, 
+/**
+ * The holder's pane, to focus it. The hold ends when it closes.
+ */
+pane: number, reason: string, 
+/**
+ * When it lapses on its own.
+ */
+until_ms: number, };
 
 /**
  * The optional parts of a machine, as `GET /api/host` reports them.
@@ -4892,6 +4974,11 @@ items: number,
  */
 waiting_writes: number, 
 /**
+ * Moves to Done Arugula gave up on after a merged PR (#441), which a
+ * person may retry ([`TRACKER_MOVE_RETRY`]).
+ */
+failed_moves: number, 
+/**
  * Whether each open epic has a board that follows it (#483). On unless
  * turned off; off, the boards stay and stop following.
  */
@@ -4902,6 +4989,52 @@ export type TrackerConnections = {
  * The project's id (`personal` asked is answered with the real one).
  */
 project: string, connections: Array<TrackerConnection>, };
+
+/**
+ * One change in a [`TrackerHistory`].
+ */
+export type TrackerEvent = { 
+/**
+ * When it happened.
+ */
+at: number, 
+/**
+ * `moved` (a merged PR moved an item to Done), `move_failed` (it gave
+ * up: in `failed`), or an agent's write a person decided: `sent`, `dropped` or
+ * `write_failed`.
+ */
+kind: string, 
+/**
+ * What happened, in a sentence.
+ */
+line: string, 
+/**
+ * Who decided it, for a write.
+ */
+by: string | null, 
+/**
+ * Why it failed.
+ */
+error: string | null, 
+/**
+ * A failed move's job, for the retry.
+ */
+job: string | null, };
+
+/**
+ * What Arugula changed in a connection's Plane project: the newest changes
+ * and the moves that failed.
+ */
+export type TrackerHistory = { 
+/**
+ * The newest 20 changes, newest first, other than a failed move.
+ */
+entries: Array<TrackerEvent>, 
+/**
+ * The connection's failed moves (`move_failed`), newest first, up to 100:
+ * each has its `job` for a retry.
+ */
+failed: Array<TrackerEvent>, };
 
 /**
  * A write waiting for a person, as the Triage page shows it.

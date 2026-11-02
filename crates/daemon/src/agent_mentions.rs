@@ -6,8 +6,9 @@
 //! reaches its own session):
 //!
 //! 1. **The session it names** (`@geek/ux-improvements`, [`AgentMention::session`]):
-//!    the live session whose name is that, exactly ([`slug`]). No session of
-//!    that name, or two: it goes on to 2, and says so.
+//!    the live session whose name is that, exactly ([`slug`]); failing that
+//!    (#491), the one live session in a tab of that name, which is the name
+//!    people see. No such session, or two: it goes on to 2, and says so.
 //! 2. **The session that posted in that thread** (`post_thread` notes the
 //!    pane it came from per thread root, [`State::note_thread`]): a
 //!    follow-up through the hooks inbox, as `arugula inbox` takes any.
@@ -148,6 +149,9 @@ pub(crate) trait Daemon {
     /// The names of the sessions live in our panes (#429): an agent block's
     /// title, or the Claude Code conversation's in a terminal.
     async fn sessions(&self) -> Vec<(PaneId, String)>;
+    /// The name of the tab each of our panes is in, for those whose tab has
+    /// one (#491).
+    async fn tab_names(&self) -> Vec<(PaneId, String)>;
     /// A follow-up for the session in `pane`, through the hooks inbox.
     async fn follow_up(&self, pane: PaneId, text: String, by: Driver) -> Result<(), String>;
 }
@@ -163,6 +167,11 @@ impl Daemon for App {
 
     async fn sessions(&self) -> Vec<(PaneId, String)> {
         session_names(self, None).await
+    }
+
+    async fn tab_names(&self) -> Vec<(PaneId, String)> {
+        let panes = self.mux.api(Api::Panes).await.unwrap_or_default();
+        panes.into_iter().filter_map(|p| Some((p.info.id, p.tab_name?))).collect()
     }
 
     async fn follow_up(&self, pane: PaneId, text: String, by: Driver) -> Result<(), String> {
@@ -227,10 +236,17 @@ pub(crate) async fn deliver(app: &impl Daemon, m: &AgentMention) -> OpAnswer {
     // isn't the plain way.
     let mut notes: Vec<String> = vec![];
     // A pane that is gone, or whose queue is full, leaves it to the next.
-    // 1. The session it names, by its exact name.
+    // 1. The session it names, by its exact name, or else by its tab's.
     if let Some(want) = m.session.as_deref().map(slug).filter(|w| !w.is_empty()) {
-        let hits: Vec<PaneId> =
-            app.sessions().await.into_iter().filter(|(_, n)| slug(n) == want).map(|(p, _)| p).collect();
+        let sessions = app.sessions().await;
+        let mut hits: Vec<PaneId> = sessions.iter().filter(|(_, n)| slug(n) == want).map(|(p, _)| *p).collect();
+        if hits.is_empty() {
+            // Sessions in tabs of that name: two in one tab, or one in each
+            // of two tabs, are as much "more than one" as two by name.
+            let tabbed: Vec<PaneId> =
+                app.tab_names().await.into_iter().filter(|(_, n)| slug(n) == want).map(|(p, _)| p).collect();
+            hits = sessions.iter().map(|(p, _)| *p).filter(|p| tabbed.contains(p)).collect();
+        }
         match hits.as_slice() {
             [pane] => {
                 if app.follow_up(*pane, framed(m, &notes), by.clone()).await.is_ok() {
@@ -285,6 +301,8 @@ mod tests {
         live: Vec<PaneId>,
         /// The live sessions' names.
         names: Vec<(PaneId, String)>,
+        /// The panes' tabs' names.
+        tabs: Vec<(PaneId, String)>,
         sent: Mutex<Vec<(PaneId, String, Driver)>>,
     }
 
@@ -293,7 +311,14 @@ mod tests {
             let dir = std::env::temp_dir().join(format!("arugula-mentions-{name}-{}", std::process::id()));
             let _ = std::fs::remove_dir_all(&dir);
             std::fs::create_dir_all(&dir).unwrap();
-            Fake { dir, state: State::default(), live: live.to_vec(), names: vec![], sent: Mutex::default() }
+            Fake {
+                dir,
+                state: State::default(),
+                live: live.to_vec(),
+                names: vec![],
+                tabs: vec![],
+                sent: Mutex::default(),
+            }
         }
     }
 
@@ -301,6 +326,12 @@ mod tests {
         /// Panes named as sessions are, live.
         fn named(mut self, names: &[(PaneId, &str)]) -> Self {
             self.names = names.iter().map(|(p, n)| (*p, (*n).to_owned())).collect();
+            self
+        }
+
+        /// Panes in tabs of these names.
+        fn tabbed(mut self, tabs: &[(PaneId, &str)]) -> Self {
+            self.tabs = tabs.iter().map(|(p, n)| (*p, (*n).to_owned())).collect();
             self
         }
 
@@ -327,6 +358,10 @@ mod tests {
 
         async fn sessions(&self) -> Vec<(PaneId, String)> {
             self.names.clone()
+        }
+
+        async fn tab_names(&self) -> Vec<(PaneId, String)> {
+            self.tabs.clone()
         }
 
         async fn follow_up(&self, pane: PaneId, text: String, by: Driver) -> Result<(), String> {
@@ -579,5 +614,51 @@ mod tests {
             "{}",
             d.got(4)[0]
         );
+    }
+
+    /// #491: `@geek/slowness` is the tab people see; its one session gets it.
+    #[tokio::test]
+    async fn a_tabs_one_session_gets_it() {
+        let d = Fake::new("tab", &[4, 9, 11])
+            .named(&[(4, "Billing"), (9, "Chant fountain lexicon trim"), (11, "UX")])
+            .tabbed(&[(4, "Billing tab"), (9, "Slowness"), (11, "Other")]);
+        d.state.note_post("ch_x", 4);
+        let m = AgentMention { session: Some("slowness".into()), ..mention() };
+        assert_eq!(deliver(&d, &m).await, OpAnswer::Done { url: None });
+        assert_eq!((d.got(4).len(), d.got(9).len(), d.got(11).len()), (0, 1, 0));
+        assert!(!d.got(9)[0].contains("came to you instead"));
+    }
+
+    /// Two sessions in a tab, or one in each of two tabs of that name, route
+    /// to neither: it falls through and says so.
+    #[tokio::test]
+    async fn a_tab_with_two_sessions_is_ambiguous() {
+        let d = Fake::new("tab-two", &[4, 9, 11, 12])
+            .named(&[(4, "Billing"), (9, "A"), (11, "B"), (12, "C")])
+            .tabbed(&[(9, "Views"), (11, "Views"), (12, "Lone"), (4, "Lone")]);
+        d.state.note_post("ch_x", 4);
+        deliver(&d, &AgentMention { session: Some("views".into()), ..mention() }).await;
+        assert_eq!((d.got(9).len(), d.got(11).len(), d.got(4).len()), (0, 0, 1));
+        assert!(d.got(4)[0].contains("more than one session on this machine is called views"));
+        // Two sessions in the "Lone" tab.
+        deliver(&d, &AgentMention { session: Some("lone".into()), ..mention() }).await;
+        assert_eq!((d.got(12).len(), d.got(4).len()), (0, 2));
+    }
+
+    /// A session's own name beats another pane's tab of that name.
+    #[tokio::test]
+    async fn a_session_name_beats_a_tab_name() {
+        let d = Fake::new("tab-beats", &[4, 9]).named(&[(4, "Views"), (9, "Other")]).tabbed(&[(9, "Views")]);
+        deliver(&d, &AgentMention { session: Some("views".into()), ..mention() }).await;
+        assert_eq!((d.got(4).len(), d.got(9).len()), (1, 0));
+    }
+
+    /// A tab with a name but no session in it is no hit.
+    #[tokio::test]
+    async fn a_tab_without_a_session_is_no_hit() {
+        let d = Fake::new("tab-none", &[4]).named(&[(4, "Billing")]).tabbed(&[(7, "Views")]);
+        d.state.note_post("ch_x", 4);
+        deliver(&d, &AgentMention { session: Some("views".into()), ..mention() }).await;
+        assert!(d.got(4)[0].contains("no session on this machine is called views"));
     }
 }
