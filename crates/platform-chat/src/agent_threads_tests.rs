@@ -508,3 +508,52 @@ async fn the_room_offers_the_machines_a_mention_reaches_and_their_sessions() {
     assert_eq!(v["unreached"], json!(["mini-box"]), "{v}");
     assert_eq!(waits_for_told(&hub, 1).await.len(), 1);
 }
+
+/// A word that names a machine of the team but reaches nobody says why
+/// (#572): its agents can't read the room, and the rooms they do read: only
+/// those the poster sees too. A private room the poster isn't in stays unnamed.
+#[tokio::test]
+async fn an_unreached_machine_says_which_rooms_it_reads() {
+    let (hub, _app, base, t, _u) = seeded().await;
+    let channels = format!("/api/chat/teams/{}/channels", "t");
+    let make = |who: &'static str, name: &'static str, private: bool| {
+        let base = base.clone();
+        let channels = channels.clone();
+        async move {
+            let (st, v) = call(&base, who, "POST", &channels, Some(json!({ "name": name, "private": private }))).await;
+            assert_eq!(st, 200, "{v}");
+            v["id"].as_str().unwrap().to_owned()
+        }
+    };
+    // geek's owner (a) is in #vault and not in #bs: b's own private room.
+    let _vault = make("a", "vault", true).await;
+    let bs = make("b", "bs", true).await;
+    let post = |room: String| {
+        let base = base.clone();
+        async move { call(&base, "b", "POST", &format!("/api/chat/rooms/{room}/messages"), say("@geek-box hi")).await.1 }
+    };
+
+    // No grant: reached nobody, and it reads no room.
+    let v = post("ch_general".into()).await;
+    assert_eq!(v["unreached"], json!(["geek-box"]), "{v}");
+    assert_eq!(v["unreached_why"], json!([{ "word": "geek-box", "machine_name": "geek-box", "reads": [] }]), "{v}");
+
+    // Granted over the team: #bs is b's, geek's owner isn't in it. geek reads
+    // the others, but b isn't in #vault: its name isn't b's to see.
+    call(&base, "a", "POST", "/api/grants", give("geek", THREADS_READ, json!({ "kind": "project", "id": t }))).await;
+    hub.answers_ops("geek", OpAnswer::Done { url: None, routed: None });
+    let v = post(bs.clone()).await;
+    assert_eq!(v["unreached"], json!(["geek-box"]), "{v}");
+    assert_eq!(v["unreached_why"][0]["reads"], json!(["#ch_general"]), "{v}");
+    assert!(!v.to_string().contains("vault"), "a private room b isn't in: {v}");
+
+    // Where it reads, nothing changes: reached, no reason.
+    let v = post("ch_general".into()).await;
+    assert_eq!((&v["mentions"], &v["unreached"]), (&json!(["machine:geek"]), &json!([])), "{v}");
+    assert!(v["unreached_why"].is_null() || v["unreached_why"] == json!([]), "{v}");
+
+    // A word that names no machine has no reason.
+    let (_, v) = call(&base, "b", "POST", &format!("/api/chat/rooms/{bs}/messages"), say("@nobody")).await;
+    assert_eq!(v["unreached"], json!(["nobody"]), "{v}");
+    assert!(v["unreached_why"].is_null() || v["unreached_why"] == json!([]), "{v}");
+}

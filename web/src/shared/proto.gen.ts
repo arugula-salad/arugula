@@ -1171,6 +1171,10 @@ mentions: Array<string>,
  */
 unreached: Array<string>, 
 /**
+ * Why, for an `unreached` word that names a machine of the team (#572).
+ */
+unreached_why?: Array<ChatUnreachedWhy>, 
+/**
  * Whom control pushed (not those with the room open, muted, or pushed
  * for it in the last minute).
  */
@@ -1556,6 +1560,12 @@ export type ChatTopicSet = { topic?: string, description?: string, };
  * thread's composer, whose typing nobody is shown).
  */
 export type ChatTyping = { warm: boolean, show: boolean, };
+
+/**
+ * A machine's word that reached nobody (#572): its agents can't read the
+ * room, and `reads` are the rooms they do read that the poster also sees.
+ */
+export type ChatUnreachedWhy = { word: string, machine_name: string, reads: Array<string>, };
 
 /**
  * `POST /api/chat/rooms/{id}/unread`: mark as unread from `seq`: the read
