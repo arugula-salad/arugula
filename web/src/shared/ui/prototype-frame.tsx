@@ -16,7 +16,8 @@
 // On the shared viewer, where the reader is a stranger, nothing is framed until
 // they click "Run prototype". In the Doc block and on project Docs it runs at once.
 
-import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
+import { createContext } from "preact";
+import { useContext, useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 import { useScheme } from "./drawing";
 import { checkPrototype, prototypeInfo } from "./embeds";
 import { htmlMessage, readyFrom, schemeMessage } from "./prototype-messages";
@@ -57,6 +58,12 @@ function useMode(): Mode {
  * prototype navigating itself. */
 export const OWN_LOADS = 2;
 
+/** Which section a prototype is in (`<doc>/<section>`), said by the Doc. A
+ * reader's click to run is kept under it, so a new version of the section
+ * (#509) doesn't ask again. */
+export const ArmKey = createContext<string | null>(null);
+const armedKeys = new Set<string>();
+
 export function Prototype({ html, alt }: { html: string; alt: string }) {
   const { origin, click } = useMode();
   const scheme = useScheme();
@@ -65,7 +72,12 @@ export function Prototype({ html, alt }: { html: string; alt: string }) {
   const handed = useRef(false);
   const schemeNow = useRef(scheme);
   schemeNow.current = scheme;
-  const [armed, setArmed] = useState(false);
+  const armKey = useContext(ArmKey);
+  const [armed, arm] = useState(() => armKey !== null && armedKeys.has(armKey));
+  const setArmed = (on: boolean) => {
+    if (on && armKey !== null) armedKeys.add(armKey);
+    arm(on);
+  };
   const [left, setLeft] = useState(false);
   const [round, setRound] = useState(0);
   const { title, height } = prototypeInfo(alt);

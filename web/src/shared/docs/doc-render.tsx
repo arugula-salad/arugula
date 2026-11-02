@@ -13,6 +13,7 @@ import { useEffect, useMemo, useState } from "preact/hooks";
 import type { PaneId } from "../proto";
 import { plain } from "../ui/embeds";
 import { Markdown } from "../ui/markdown";
+import { ArmKey } from "../ui/prototype-frame";
 import { BlockError, BlockLoading } from "../ui/block-states";
 
 export interface Section {
@@ -42,6 +43,8 @@ export interface DocState {
   /** When it was shared with a link, and last updated (#1066); the link
    * itself is the owner's to ask for (`doc_shares`). */
   shared?: { made: number; updated: number } | null;
+  /** A section was written after the link was last updated (#509). */
+  shared_older?: boolean;
   error?: string;
 }
 
@@ -153,7 +156,9 @@ export function DocBlock({
             {e.body !== null ? (
               // A refill is a new element, so its highlight plays again.
               <div key={e.rev} class={fresh.get(e.id) === e.rev ? "doc-body doc-fresh" : "doc-body"}>
-                <Markdown text={e.body} refs={null} embeds image={image} />
+                <ArmKey.Provider value={`${id}/${e.id}`}>
+                  <Markdown text={e.body} refs={null} embeds image={image} />
+                </ArmKey.Provider>
               </div>
             ) : (
               <div class="doc-pending">

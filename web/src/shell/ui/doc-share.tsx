@@ -99,6 +99,17 @@ function ShareState({ client, id, s }: { client: Client; id: PaneId; s: DocState
           <span class="ws-tag doc-bar-shared" data-doc-bar-shared title={`Shared with a link; the link shows it as it was ${ago(s.shared.updated, Date.now(), "long")} (${when(s.shared.updated)})`}>
             <LinkIcon /> shared
           </span>
+          {s.shared_older && (
+            <button
+              class="ws-tag doc-bar-older"
+              type="button"
+              data-doc-bar-older
+              title="A section changed after the link was updated. One tap makes the link show the Doc as it is; the link stays the same."
+              onClick={() => void run(client, id, "doc_share_update", () => client.toast("The link now shows this Doc as it is"))}
+            >
+              Shared copy is older · Update
+            </button>
+          )}
           {url && <OpenOutside href={url} data-doc-bar-open />}
         </>
       )}

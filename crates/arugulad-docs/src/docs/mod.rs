@@ -175,6 +175,9 @@ struct State {
     rev: u64,
     /// When it was shared with a link and last updated; the link is not here.
     shared: Option<SharedAt>,
+    /// When a section was last written (ms), to tell a shared copy is older
+    /// (#509); on a restart, the newest section file's time.
+    filled: u64,
     /// The folder couldn't be read back: the block shows this and writes
     /// nothing.
     error: Option<String>,
@@ -230,6 +233,7 @@ impl Doc {
         if restoring {
             state.assets = assets::load(&dir.join(assets::FOLDER));
             state.shared = link.current().map(|(_, e)| SharedAt { made: e.made, updated: e.updated });
+            state.filled = newest_section(&dir, &state.entries);
         }
         Arc::new_cyclic(|me| Doc {
             me: me.clone(),
@@ -358,6 +362,8 @@ impl Doc {
             e.body = Some(md.to_owned());
             e.rev += 1;
             st.rev += 1;
+            // After the link's last update, even in the same millisecond.
+            st.filled = now_ms().max(st.shared.map_or(0, |s| s.updated + 1));
         }
         (self.changed)();
         Ok(json!({ "section": section, "bytes": md.len() }))
@@ -535,6 +541,8 @@ impl Doc {
         let mut v = json!({
             "title": st.title, "entries": st.entries, "entries_from": 0, "assets": st.assets, "rev": st.rev,
             "shared": st.shared,
+            // A section was written after the link was last updated (#509).
+            "shared_older": st.shared.is_some_and(|s| st.filled > s.updated),
         });
         if let Some(e) = &st.error {
             v["error"] = json!(e);
@@ -558,6 +566,17 @@ async fn write(dir: PathBuf, name: &str, bytes: Vec<u8>) -> Result<(), String> {
 /// so no file name comes from anything else.
 fn is_id(id: &str) -> bool {
     id.strip_prefix('s').is_some_and(|n| !n.is_empty() && n.len() <= 3 && n.bytes().all(|b| b.is_ascii_digit()))
+}
+
+/// When the newest section file was written (ms); 0 if none can say.
+fn newest_section(dir: &Path, entries: &[Entry]) -> u64 {
+    entries
+        .iter()
+        .filter_map(|e| std::fs::metadata(dir.join(format!("{}.md", e.id))).ok()?.modified().ok())
+        .filter_map(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|d| d.as_millis() as u64)
+        .max()
+        .unwrap_or(0)
 }
 
 /// The folder read back. An error says what to tell the person.
@@ -1492,6 +1511,7 @@ mod share_tests {
         // The state says only when.
         let st = s.doc.state();
         assert_eq!(st["shared"].as_object().unwrap().len(), 2);
+        assert_eq!(st["shared_older"], false, "nothing written since");
         assert!(st["shared"]["made"].as_u64().unwrap() > 0);
         // A second share is refused, saying what to use.
         let e = s.doc.call("doc_share", json!({})).await.unwrap_err();
@@ -1505,11 +1525,15 @@ mod share_tests {
         let first = s.doc.call("doc_share", json!({})).await.unwrap()["url"].as_str().unwrap().to_owned();
         let made = s.doc.state()["shared"]["made"].clone();
         s.doc.call("doc_fill", json!({ "section": "s3", "markdown": "A new section." })).await.unwrap();
+        // A refill makes the shared copy older (#509), and the link is not updated by it.
+        assert_eq!(s.doc.state()["shared_older"], true);
+        assert_eq!(s.fake.served.lock().unwrap()[ID].0, 1, "a fill never republishes");
         let again = s.doc.call("doc_share_update", json!({})).await.unwrap()["url"].as_str().unwrap().to_owned();
         assert_eq!(first, again, "the same URL");
         assert_eq!(s.fake.served.lock().unwrap()[ID].0, 2);
         assert!(s.fake.paths().iter().any(|p| p.starts_with(&format!("PUT /api/doc-links/{ID}/v/2/parts/0"))));
         assert_eq!(s.doc.state()["shared"]["made"], made, "made stays");
+        assert_eq!(s.doc.state()["shared_older"], false, "an Update catches the link up");
         let n = s.fake.served.lock().unwrap()[ID].1;
         let held: Vec<Vec<u8>> =
             (0..n).map(|n| s.fake.parts.lock().unwrap()[&(ID.to_string(), 2, n)].clone()).collect();

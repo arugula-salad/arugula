@@ -5373,6 +5373,16 @@ button.diff-why-run {
   color: var(--on-color);
 }
 
+/* The Doc bar's "Shared copy is older · Update" (#509): a chip you tap. */
+button.doc-bar-older {
+  border: 0;
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+  background: var(--accent);
+  color: var(--on-color);
+}
+
 .ws-tags {
   display: flex;
   gap: 4px;
