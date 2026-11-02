@@ -1958,10 +1958,10 @@ sleeps, and control pushes and searches them itself.
 
 <!-- Written by `just control-tables` from crates/control/tables.toml. Edit that, not this. -->
 
-Control's database has 161 tables in two planes ("Two planes, two trust rules"):
+Control's database has 162 tables in two planes ("Two planes, two trust rules"):
 
 - **The machine plane** (52 tables) is what control needs to route and check: ids, names, addresses, public keys and signed statements. What moves between a client and a machine stays end to end, and control can't read it.
-- **The platform plane** (109 tables) is what has to exist while every machine is asleep: billing and usage, chat and the threads on objects, Shared Docs, Cloud workspaces, linked repos' PRs and issues, and projects' native issues, runs and deploys. Control reads most of it, and says so here.
+- **The platform plane** (110 tables) is what has to exist while every machine is asleep: billing and usage, chat and the threads on objects, Shared Docs, Cloud workspaces, linked repos' PRs and issues, and projects' native issues, runs and deploys. Control reads most of it, and says so here.
 
 Every table is listed in `crates/control/tables.toml`, and a test fails when one isn't. **Holds** is what's in it: metadata (ids, names, addresses, times, counts, public keys, signed statements), ciphertext (encrypted to keys control never holds), or plaintext (what people or their agents wrote, or a secret control can read). **Gone with the account** is what deleting an account does to its rows.
 
@@ -2040,6 +2040,7 @@ Every table is listed in `crates/control/tables.toml`, and a test fails when one
 | `chat_link_previews` | **plaintext** | What control read of a public web page posted in chat, for its preview (title, description, image), by its address (#108). | A preview drawn once for every reader, not fetched per reader, with every machine asleep. | nothing of one: by address, not by who posted it; pruned once old. |  |
 | `chat_preview_hidden` | metadata | The messages whose author took their previews off (#108). | The same message without its preview for everyone, with every machine asleep. | nothing of one: by room and message number. |  |
 | `chat_reactions` | **plaintext** | Who reacted to which message with which emoji, and whether their agent did it (#104). | Reactions shown and changed, with every machine asleep. | yes: the account's own reactions, and every reaction on the messages it wrote. |  |
+| `chat_mention_status` | metadata | Where each @machine mention in chat got to: the session it went to, waiting, offline, or answered by which reply (#502). | A mention's status shown, with every machine asleep. | yes: the status of every mention in the messages it wrote. Names a machine, a session and a message number, never its text. |  |
 | `chat_avatars` | metadata | A GitHub login's public picture as control fetched it, so readers never load it from GitHub themselves (#112). | Pictures in chat, with every machine asleep. | kept: by GitHub login, not account: a public picture, fetched again after a day. |  |
 | `chat_presence` | metadata | When a person's pages were last heard from and last used, whether they chose away or offline (#110), and their live presence choice, off or watching (#341). | Who's around, with every machine asleep. | yes |  |
 | `chat_files` | **plaintext** | Files and images posted in chat, bytes included, with their sniffed type and the message they belong to (#107). | A room's files, served to its readers, with every machine asleep. | yes: the account's uploads, and the files on the messages it wrote. |  |

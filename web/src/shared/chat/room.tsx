@@ -34,6 +34,7 @@ import { AttachButton, attachKey, AttachChips, dragsFiles, filesOf, MessageFiles
 import { PinnedMark, SystemLine } from "./pins-ui";
 // Pins (#119) fill the ⋯ menu's pin hook.
 import "./pins-hooks";
+import { MentionStatus } from "./mention-status";
 import { longPress, mayReact, ReactionChips, ReactMenu } from "./reactions-ui";
 import { findEmoji, rememberEmoji, useEmoji } from "./emoji";
 import { useSubscribe } from "../ui/hooks";
@@ -688,6 +689,7 @@ export function RoomMessage({
             <pre>{m.quote}</pre>
           </div>
         )}
+        <MentionStatus room={room} m={m} />
         <ReactionChips room={room} m={m} open={() => setPanel("react")} setError={setError} />
         {!inThread && <ThreadFooter room={room} m={m} />}
       </div>

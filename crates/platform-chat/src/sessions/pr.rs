@@ -780,7 +780,7 @@ async fn by_machine(
             }
         };
         match answer {
-            OpAnswer::Done { url } => {
+            OpAnswer::Done { url, .. } => {
                 info!(
                     draft = d.id,
                     account,

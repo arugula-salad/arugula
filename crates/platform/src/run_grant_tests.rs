@@ -196,7 +196,7 @@ async fn only_an_owners_passkey_grants_and_revokes() {
     assert_eq!((status, reason(&v).as_deref()), (400, Some(crate::run_grant::OLD_GRANT)), "{v}");
     let unsigned = GrantRevoke { passkey: None, ..revoke(&g, Running::Finish, "alice") };
     assert_eq!(unsign(&base, "alice", &project, &unsigned).await.0, 403);
-    hub.answers_ops("m1", OpAnswer::Done { url: None });
+    hub.answers_ops("m1", OpAnswer::Done { url: None, routed: None });
     assert_eq!(unsign(&base, "alice", &project, &revoke(&g, Running::Finish, "alice")).await.0, 200);
     // A passkey removed since: refused.
     hub.passkey_removed(&pk_id("alice"), now_ms() - 1);
@@ -239,7 +239,7 @@ async fn a_grant_signed_used_and_revoked() {
 
     // A start: the grant, the project's revokes and alice's passkey log go
     // to the machine.
-    hub.answers_ops("m1", OpAnswer::Done { url: None });
+    hub.answers_ops("m1", OpAnswer::Done { url: None, routed: None });
     let (status, v) = start(&base, "bob", &project, "dev").await;
     assert_eq!(status, 200, "{v}");
     assert_eq!((v["started"].as_bool(), v["machine"].as_str()), (Some(true), Some("m1")));
@@ -264,7 +264,7 @@ async fn a_grant_signed_used_and_revoked() {
     // Revoked: by an owner only; every machine hears it; no more starts.
     let r = revoke(&renewed, Running::Stop, "alice");
     assert_eq!(unsign(&base, "bob", &project, &revoke(&renewed, Running::Stop, "bob")).await.0, 403);
-    hub.answers_ops("m1", OpAnswer::Done { url: None });
+    hub.answers_ops("m1", OpAnswer::Done { url: None, routed: None });
     let (status, v) = unsign(&base, "alice", &project, &r).await;
     assert_eq!((status, v["told"].as_u64(), v["revoked"].as_u64()), (200, Some(1), Some(2)), "{v}");
     let Some((m, DaemonOp::RunRevoke(rr))) = hub.ops_asked().last().cloned() else { panic!() };
@@ -300,7 +300,7 @@ async fn a_v1_grant_kept_before_still_starts_until_revoked() {
     let mut v1 = ProjectGrant::new(&d, now_ms(), Some(now_ms() + 90 * DAY));
     v1.sign_with(&keys);
     app.db.add_run_grant(&v1, "alice", now_ms()).unwrap();
-    hub.answers_ops("m1", OpAnswer::Done { url: None });
+    hub.answers_ops("m1", OpAnswer::Done { url: None, routed: None });
     assert_eq!(start(&base, "alice", &project, "dev").await.0, 200);
     let Some((_, DaemonOp::RunStart(s))) = hub.ops_asked().last().cloned() else { panic!() };
     assert_eq!((&s.grant, s.passkey_log.is_none()), (&v1, true));

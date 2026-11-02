@@ -363,6 +363,36 @@ pub struct ForgeSend {
     pub draft_pr: bool,
 }
 
+/// How a daemon routed an `agents.mention` (#502): which of its four steps
+/// took it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+pub struct Routed {
+    pub step: RoutedStep,
+    /// The session it went to, by its name, when it went to one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session: Option<String>,
+    /// The session the message named (`@geek/slowness`), when the daemon
+    /// found no such session and the message went to another or waits.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub asked: Option<String>,
+}
+
+/// Which of the daemon's steps took an `agents.mention`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum RoutedStep {
+    /// The session it names.
+    Named,
+    /// The session that posted in its thread.
+    Thread,
+    /// The session that last posted in its room (a fallback).
+    Room,
+    /// No session took it: the machine's inbox.
+    Inbox,
+}
+
 /// How a machine (or control, for it) answered an op.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
@@ -372,6 +402,10 @@ pub enum OpAnswer {
     Done {
         #[serde(default)]
         url: Option<String>,
+        /// An `agents.mention`'s: how the daemon routed it (#502). A daemon
+        /// from before it says nothing, and control shows only "delivered".
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        routed: Option<Routed>,
     },
     /// The forge refused it, or the call failed: the person's to see.
     Failed { error: String },

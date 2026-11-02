@@ -444,7 +444,7 @@ async fn a_machine_cant_send_a_sessions_pr() {
     let (gh, app, base) = serve(&hub).await;
     let (team, _) = world(&hub, &gh, &app).await;
     hub.daemon("geek", "alice", None);
-    hub.answers_ops("geek", OpAnswer::Done { url: Some("https://github.com/acme/app/pull/7".into()) });
+    hub.answers_ops("geek", OpAnswer::Done { url: Some("https://github.com/acme/app/pull/7".into()), routed: None });
     let ses = pushed_session(&app, &gh, &team).await;
     let path = format!("/api/sessions/{ses}/pr/send");
     let edit = json!({ "edit": { "title": "Add notes", "body": "b" } });

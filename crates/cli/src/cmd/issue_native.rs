@@ -1349,6 +1349,7 @@ mod tests {
             agent: None,
             via: None,
             reactions: vec![],
+            mention_status: vec![],
             files: vec![],
             pinned: false,
             system: None,

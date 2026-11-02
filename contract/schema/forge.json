@@ -549,6 +549,17 @@
               "const": "done",
               "type": "string"
             },
+            "routed": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/Routed"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "An `agents.mention`'s: how the daemon routed it (#502). A daemon\nfrom before it says nothing, and control shows only \"delivered\"."
+            },
             "url": {
               "default": null,
               "type": [
@@ -804,6 +815,57 @@
         "made"
       ],
       "type": "object"
+    },
+    "Routed": {
+      "description": "How a daemon routed an `agents.mention` (#502): which of its four steps\ntook it.",
+      "properties": {
+        "asked": {
+          "description": "The session the message named (`@geek/slowness`), when the daemon\nfound no such session and the message went to another or waits.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "session": {
+          "description": "The session it went to, by its name, when it went to one.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "step": {
+          "$ref": "#/$defs/RoutedStep"
+        }
+      },
+      "required": [
+        "step"
+      ],
+      "type": "object"
+    },
+    "RoutedStep": {
+      "description": "Which of the daemon's steps took an `agents.mention`.",
+      "oneOf": [
+        {
+          "const": "named",
+          "description": "The session it names.",
+          "type": "string"
+        },
+        {
+          "const": "thread",
+          "description": "The session that posted in its thread.",
+          "type": "string"
+        },
+        {
+          "const": "room",
+          "description": "The session that last posted in its room (a fallback).",
+          "type": "string"
+        },
+        {
+          "const": "inbox",
+          "description": "No session took it: the machine's inbox.",
+          "type": "string"
+        }
+      ]
     },
     "RunRevoke": {
       "description": "A revoke of the project's grants, for every hosted machine of its\nproject.",

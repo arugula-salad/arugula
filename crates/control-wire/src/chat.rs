@@ -288,6 +288,11 @@ pub struct ChatMessage {
     /// Empty for a deleted message and for archives brought in.
     #[serde(default)]
     pub reactions: Vec<ChatReaction>,
+    /// Where each machine's agent mention in it got to (#502), one per
+    /// machine, by name. Empty for a message that mentions none.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[cfg_attr(feature = "ts", ts(optional, as = "Option<Vec<ChatMentionStatus>>"))]
+    pub mention_status: Vec<ChatMentionStatus>,
     /// Files and images attached (#107), in the order they were chosen.
     /// Empty for a deleted message: its files went with it.
     #[serde(default)]
@@ -459,6 +464,49 @@ pub struct ChatReaction {
     /// its own (never the owner's, nor the agent's for the owner).
     pub mine: bool,
     pub who: Vec<ChatReactor>,
+}
+
+/// Where a message's `@machine` mention got to (#502), as control knows it:
+/// what the machine's daemon said when it was told, and then whether the
+/// machine's agent answered in the thread.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct ChatMentionStatus {
+    pub machine: String,
+    /// What the machine was called when it was told.
+    pub machine_name: String,
+    pub state: ChatMentionState,
+    /// The session it went to, when the daemon said.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub session: Option<String>,
+    /// The session the message named that the daemon couldn't find.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub asked: Option<String>,
+    /// With `answered`: the number of the agent's reply.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub reply: Option<i64>,
+}
+
+/// How far a [`ChatMentionStatus`] has got.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[serde(rename_all = "snake_case")]
+pub enum ChatMentionState {
+    /// A session took it (`session`), or the daemon didn't say which.
+    Delivered,
+    /// The session it named wasn't there (`asked`): it went to `session`.
+    FellBack,
+    /// No session took it: it waits in the machine's inbox.
+    Waiting,
+    /// The machine is offline, or didn't answer.
+    Offline,
+    /// The machine's agent replied in the thread (`reply`).
+    Answered,
 }
 
 /// Someone who reacted: an account, and the machine's agent if it was
@@ -1175,8 +1223,8 @@ pub enum ChatLive {
         room: String,
         seq: i64,
     },
-    /// Reactions to a message were added or taken back (#104): fetch it
-    /// again. No room list changes with it.
+    /// Reactions to a message were added or taken back (#104), or an agent
+    /// mention's status moved (#502): fetch it again. No room list changes with it.
     Reacted {
         room: String,
         seq: i64,

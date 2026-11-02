@@ -858,6 +858,34 @@ export type ChatLevel = { level: NotifyLevel | null, };
 export type ChatLive = { "type": "hello", stream: string, } | { "type": "message", room: string, seq: number, } | { "type": "pinned", room: string, } | { "type": "changed", room: string, seq: number, } | { "type": "reacted", room: string, seq: number, } | { "type": "reply", room: string, parent: number, seq: number, } | { "type": "threadread", room: string, parent: number, seq: number, } | { "type": "room", room: string, } | { "type": "read", room: string, seq: number, } | { "type": "object", room: string, target: string, } | { "type": "session", room: string, ses: string, } | { "type": "typing", room: string, account: string, name: string, } | { "type": "sidebar", } | { "type": "saved", } | { "type": "resync", };
 
 /**
+ * How far a [`ChatMentionStatus`] has got.
+ */
+export type ChatMentionState = "delivered" | "fell_back" | "waiting" | "offline" | "answered";
+
+/**
+ * Where a message's `@machine` mention got to (#502), as control knows it:
+ * what the machine's daemon said when it was told, and then whether the
+ * machine's agent answered in the thread.
+ */
+export type ChatMentionStatus = { machine: string, 
+/**
+ * What the machine was called when it was told.
+ */
+machine_name: string, state: ChatMentionState, 
+/**
+ * The session it went to, when the daemon said.
+ */
+session?: string, 
+/**
+ * The session the message named that the daemon couldn't find.
+ */
+asked?: string, 
+/**
+ * With `answered`: the number of the agent's reply.
+ */
+reply?: number, };
+
+/**
  * A message as the reader sees it.
  */
 export type ChatMessage = { 
@@ -907,6 +935,11 @@ via?: string,
  * Empty for a deleted message and for archives brought in.
  */
 reactions: Array<ChatReaction>, 
+/**
+ * Where each machine's agent mention in it got to (#502), one per
+ * machine, by name. Empty for a message that mentions none.
+ */
+mention_status?: Array<ChatMentionStatus>, 
 /**
  * Files and images attached (#107), in the order they were chosen.
  * Empty for a deleted message: its files went with it.

@@ -29,7 +29,7 @@ use std::{
     sync::Mutex,
 };
 
-use arugula_control_wire::forge::{AgentMention, OpAnswer};
+use arugula_control_wire::forge::{AgentMention, OpAnswer, Routed, RoutedStep};
 use arugula_proto::{Driver, PaneId};
 
 use crate::{mux::Api, server::App};
@@ -225,7 +225,20 @@ pub async fn session_name(app: &App, pane: PaneId) -> Option<String> {
     session_names(app, Some(pane)).await.into_iter().next().map(|(_, n)| n)
 }
 
-/// `agents.mention`: route it, or say why not.
+/// The answer for a mention a session took (#502): which step, and which
+/// session by name. `asked` is the session the message named, when it
+/// didn't get there by that name.
+fn routed(step: RoutedStep, session: Option<String>, asked: Option<&str>) -> OpAnswer {
+    OpAnswer::Done { url: None, routed: Some(Routed { step, session, asked: asked.map(str::to_owned) }) }
+}
+
+/// The name of the session in `pane`, as the sender reads it.
+async fn named(app: &impl Daemon, pane: PaneId) -> Option<String> {
+    app.sessions().await.into_iter().find(|(p, _)| *p == pane).map(|(_, n)| n)
+}
+
+/// `agents.mention`: route it, or say why not. The answer says which step
+/// took it (#502), for the sender's status line.
 pub(crate) async fn deliver(app: &impl Daemon, m: &AgentMention) -> OpAnswer {
     if !arugula_proto::sharing::agent_mentions(app.state_dir()) {
         return OpAnswer::Cant { why: "the owner turned agent mentions off on this machine".into() };
@@ -235,6 +248,8 @@ pub(crate) async fn deliver(app: &impl Daemon, m: &AgentMention) -> OpAnswer {
     // What the session that gets it is told about how it got here, when it
     // isn't the plain way.
     let mut notes: Vec<String> = vec![];
+    // The session the message named, when step 1 didn't take it.
+    let mut asked: Option<String> = None;
     // A pane that is gone, or whose queue is full, leaves it to the next.
     // 1. The session it names, by its exact name, or else by its tab's.
     if let Some(want) = m.session.as_deref().map(slug).filter(|w| !w.is_empty()) {
@@ -250,7 +265,8 @@ pub(crate) async fn deliver(app: &impl Daemon, m: &AgentMention) -> OpAnswer {
         match hits.as_slice() {
             [pane] => {
                 if app.follow_up(*pane, framed(m, &notes), by.clone()).await.is_ok() {
-                    return OpAnswer::Done { url: None };
+                    let name = sessions.iter().find(|(p, _)| p == pane).map(|(_, n)| n.clone());
+                    return routed(RoutedStep::Named, name, None);
                 }
                 notes.push(format!("(the session {want} could not take it, so it came to you instead)"));
             }
@@ -258,6 +274,7 @@ pub(crate) async fn deliver(app: &impl Daemon, m: &AgentMention) -> OpAnswer {
             _ => notes
                 .push(format!("(more than one session on this machine is called {want}, so it came to you instead)")),
         }
+        asked = Some(want);
     }
     // 2. The session that posted in the thread it is under.
     let mut ended = None;
@@ -266,7 +283,7 @@ pub(crate) async fn deliver(app: &impl Daemon, m: &AgentMention) -> OpAnswer {
     });
     if let Some(pane) = thread {
         if app.follow_up(pane, framed(m, &notes), by.clone()).await.is_ok() {
-            return OpAnswer::Done { url: None };
+            return routed(RoutedStep::Thread, named(app, pane).await, asked.as_deref());
         }
         ended = Some(pane);
     }
@@ -280,12 +297,12 @@ pub(crate) async fn deliver(app: &impl Daemon, m: &AgentMention) -> OpAnswer {
             notes.push("(the session that started this thread has ended; you were its room's last poster)".into());
         }
         if app.follow_up(pane, framed(m, &notes), by).await.is_ok() {
-            return OpAnswer::Done { url: None };
+            return routed(RoutedStep::Room, named(app, pane).await, asked.as_deref());
         }
     }
     // 4. The inbox.
     state.keep(m);
-    OpAnswer::Done { url: None }
+    routed(RoutedStep::Inbox, None, asked.as_deref())
 }
 
 #[cfg(test)]
@@ -418,7 +435,7 @@ mod tests {
         d.state.note_post("ch_x", 4);
         d.state.note_post("ch_x", 9);
         d.state.note_post("ch_other", 4);
-        assert_eq!(deliver(&d, &mention()).await, OpAnswer::Done { url: None });
+        assert_eq!(deliver(&d, &mention()).await, routed(RoutedStep::Room, None, None));
         let sent = d.sent.lock().unwrap();
         assert_eq!(sent.len(), 1);
         assert_eq!((sent[0].0, sent[0].2.name.as_str()), (9, "Aaron's agent on mini"));
@@ -445,7 +462,7 @@ mod tests {
     #[tokio::test]
     async fn without_a_session_it_waits_in_the_inbox() {
         let d = Fake::new("inbox", &[4]);
-        assert_eq!(deliver(&d, &mention()).await, OpAnswer::Done { url: None });
+        assert_eq!(deliver(&d, &mention()).await, routed(RoutedStep::Inbox, None, None));
         d.state.note_post("ch_x", 7);
         deliver(&d, &AgentMention { seq: 8, ..mention() }).await;
         assert!(d.sent.lock().unwrap().is_empty());
@@ -463,7 +480,7 @@ mod tests {
         assert!(matches!(deliver(&d, &mention()).await, OpAnswer::Cant { .. }));
         assert!(d.sent.lock().unwrap().is_empty() && d.state.unread().is_empty());
         arugula_proto::sharing::set_agent_mentions(&d.dir, true).unwrap();
-        assert_eq!(deliver(&d, &mention()).await, OpAnswer::Done { url: None });
+        assert_eq!(deliver(&d, &mention()).await, routed(RoutedStep::Room, None, None));
         assert_eq!(d.sent.lock().unwrap().len(), 1);
     }
     /// Two sessions of one machine each started a thread in the room; a
@@ -572,7 +589,7 @@ mod tests {
         d.state.note_post("ch_x", 4);
         d.state.note_thread("ch_x", 3, 4);
         let m = AgentMention { parent: Some(3), session: Some("ux-improvements".into()), ..mention() };
-        assert_eq!(deliver(&d, &m).await, OpAnswer::Done { url: None });
+        assert_eq!(deliver(&d, &m).await, routed(RoutedStep::Named, Some("UX Improvements".into()), None));
         assert_eq!((d.got(4).len(), d.got(9).len(), d.got(11).len()), (0, 1, 0));
         assert!(!d.got(9)[0].contains("came to you instead"));
         // The exact name, however it is written, finds only that session.
@@ -616,6 +633,44 @@ mod tests {
         );
     }
 
+    /// The sender's status line (#502) is made of the answer: each step says
+    /// which it was, the session's name, and the name that missed.
+    #[tokio::test]
+    async fn each_step_says_how_it_routed() {
+        let step = |a: OpAnswer| match a {
+            OpAnswer::Done { routed: Some(r), .. } => (r.step, r.session, r.asked),
+            other => panic!("not routed: {other:?}"),
+        };
+        let names = [(4, "Billing"), (9, "UX Improvements")];
+        // 1. The session it names.
+        let d = Fake::new("routed-named", &[4, 9]).named(&names);
+        let m = AgentMention { session: Some("ux-improvements".into()), ..mention() };
+        assert_eq!(step(deliver(&d, &m).await), (RoutedStep::Named, Some("UX Improvements".into()), None));
+        // 2. The thread's session: delivered, with no name missed.
+        let d = Fake::new("routed-thread", &[4, 9]).named(&names);
+        d.state.note_thread("ch_x", 3, 9);
+        let m = AgentMention { parent: Some(3), ..mention() };
+        assert_eq!(step(deliver(&d, &m).await), (RoutedStep::Thread, Some("UX Improvements".into()), None));
+        // 3. The room's last poster, because no session has the name asked.
+        let d = Fake::new("routed-room", &[4, 9]).named(&names);
+        d.state.note_post("ch_x", 4);
+        let m = AgentMention { session: Some("slowness".into()), ..mention() };
+        assert_eq!(step(deliver(&d, &m).await), (RoutedStep::Room, Some("Billing".into()), Some("slowness".into())));
+        // 4. The inbox: nobody took it. The name asked is kept.
+        let d = Fake::new("routed-inbox", &[4, 9]).named(&names);
+        let m = AgentMention { session: Some("slowness".into()), ..mention() };
+        assert_eq!(step(deliver(&d, &m).await), (RoutedStep::Inbox, None, Some("slowness".into())));
+        let d = Fake::new("routed-inbox-plain", &[]);
+        assert_eq!(step(deliver(&d, &mention()).await), (RoutedStep::Inbox, None, None));
+        // A pane that can't take it leaves it to the next step, and the
+        // answer says where it landed.
+        let d = Fake::new("routed-gone", &[4]).named(&names);
+        d.state.note_thread("ch_x", 3, 9);
+        d.state.note_post("ch_x", 4);
+        let m = AgentMention { parent: Some(3), ..mention() };
+        assert_eq!(step(deliver(&d, &m).await), (RoutedStep::Room, Some("Billing".into()), None));
+    }
+
     /// #491: `@geek/slowness` is the tab people see; its one session gets it.
     #[tokio::test]
     async fn a_tabs_one_session_gets_it() {
@@ -624,7 +679,7 @@ mod tests {
             .tabbed(&[(4, "Billing tab"), (9, "Slowness"), (11, "Other")]);
         d.state.note_post("ch_x", 4);
         let m = AgentMention { session: Some("slowness".into()), ..mention() };
-        assert_eq!(deliver(&d, &m).await, OpAnswer::Done { url: None });
+        assert_eq!(deliver(&d, &m).await, routed(RoutedStep::Named, Some("Chant fountain lexicon trim".into()), None));
         assert_eq!((d.got(4).len(), d.got(9).len(), d.got(11).len()), (0, 1, 0));
         assert!(!d.got(9)[0].contains("came to you instead"));
     }

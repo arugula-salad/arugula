@@ -37,6 +37,7 @@ pub mod boards_relations;
 pub mod boards_work;
 pub mod chat;
 pub mod chat_files;
+pub mod chat_mention_status;
 pub mod chat_people;
 pub mod chat_pins;
 pub mod chat_reactions;

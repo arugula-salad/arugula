@@ -8089,6 +8089,33 @@ html[data-scheme="light"] .doc {
   color: var(--fg);
 }
 
+/* Where an @machine mention got to (#502): one dim line a machine. */
+.mention-status {
+  margin: 2px 0;
+}
+
+.mention-line {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--dim);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.mention-line.offline {
+  color: var(--warn, var(--dim));
+}
+
+.mention-link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  cursor: pointer;
+}
+
 /* Reactions (#104): chips under a message, and the menu that adds one. */
 .reactions {
   display: flex;
