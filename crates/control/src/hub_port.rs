@@ -16,7 +16,6 @@ use std::{
 };
 
 use arugula_control_common::Principal;
-use arugula_control_wire::forge::Poke;
 use arugula_e2e::Kind;
 use arugula_platform_api::{
     auth::{Asked, Credential},
@@ -269,10 +268,6 @@ impl HubPort for InProcess {
             let app = self.app()?;
             local(&app)?.team_project(team).await
         })
-    }
-
-    fn forge_pokes<'a>(&'a self, pokes: &'a [Poke]) -> BoxFuture<'a, HubResult<u32>> {
-        Box::pin(async move { Ok(crate::forge::relay_pokes(&*self.app()?, pokes)) })
     }
 
     fn github_user<'a>(

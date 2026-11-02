@@ -204,9 +204,6 @@ struct Args {
     github_app_client_id: Option<String>,
     #[arg(long, env = "GITHUB_APP_CLIENT_SECRET", hide_env_values = true)]
     github_app_client_secret: Option<String>,
-    /// How often subscribed daemons hear the webhook path is up (tests).
-    #[arg(long, default_value_t = 60, hide = true)]
-    forge_heartbeat_secs: u64,
 
     /// Where the platform runs (#1150): `in-process`, inside this hub (the
     /// default, and the rollback), or the URL of an `arugula-platform` on
@@ -422,9 +419,8 @@ pub struct App {
     /// under a project's delegation, and nothing else.
     pub hosted_key: arugula_e2e::hosted::HostedKey,
     /// The GitHub App's slug (M40), when control has one; the App itself
-    /// is the platform's (M161). And daemons' subscriptions to its pokes.
+    /// is the platform's (M161).
     pub github_app: Option<String>,
-    pub forge: forge::Watches,
     /// The desktop app's sign-ins in progress (M48).
     pub app_logins: app_login::Tickets,
     /// Daemon signatures (and join proofs) already taken.
@@ -541,7 +537,6 @@ impl App {
             live: Default::default(),
             hosted_key,
             github_app: None,
-            forge: Default::default(),
             app_logins: Default::default(),
             daemon_sigs: Default::default(),
             old_hosts: Default::default(),
@@ -1245,7 +1240,6 @@ async fn run(platforms: Box<dyn Platforms>) -> anyhow::Result<()> {
         live: Default::default(),
         hosted_key,
         github_app,
-        forge: Default::default(),
         app_logins: Default::default(),
         daemon_sigs: Default::default(),
         old_hosts: Default::default(),
@@ -1277,9 +1271,6 @@ async fn run(platforms: Box<dyn Platforms>) -> anyhow::Result<()> {
         tokio::spawn(guest_jump::serve(app.clone(), l));
     }
     tokio::spawn(relay::Relay::log_counts(app.clone()));
-    if app.github_app.is_some() {
-        tokio::spawn(forge::heartbeat(app.clone(), std::time::Duration::from_secs(a.forge_heartbeat_secs.max(1))));
-    }
     // The platform's background work, when it's in process; out of
     // process its own binary runs it.
     if let Some(p) = app.platform.local() {
