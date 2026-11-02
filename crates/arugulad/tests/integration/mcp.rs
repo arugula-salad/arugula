@@ -1894,7 +1894,7 @@ async fn an_agent_drafts_on_a_linked_pr_with_no_block_and_a_person_sees_it() {
         kinds(&tools, "forge_read"),
         ["pr", "issue", "items", "checks", "inbox", "drafts", "draft", "native_issues"]
     );
-    assert_eq!(kinds(&tools, "forge_draft"), ["comment", "review", "issue", "discard"]);
+    assert_eq!(kinds(&tools, "forge_draft"), ["comment", "review", "issue", "open_on_github", "discard"]);
     assert!(tools.iter().all(|t| !t.name.contains("send") || t.name == "send_input"), "a send tool");
 
     let said = refused(&s, "forge_read", json!({ "kind": "pr", "item": "acme/app#1" })).await;
