@@ -102,6 +102,27 @@ export function setPref(k: string, v: unknown) {
   void backend?.save({ [k]: v }).catch(() => {});
 }
 
+/** Every pref whose name starts with `prefix`. */
+export function prefsStarting(prefix: string): [string, unknown][] {
+  return Object.entries(prefs).filter(([k]) => k.startsWith(prefix));
+}
+
+/** Load them again: another device may have changed some. What's here and
+ * not yet there (a save under way) is gone once that save lands, so the
+ * answer simply replaces it. */
+export async function reloadPrefs(): Promise<void> {
+  const from = backend;
+  if (!from || !loaded) return;
+  try {
+    const p = await from.load();
+    if (backend !== from) return;
+    prefs = p;
+    changed();
+  } catch {
+    // It answers next time.
+  }
+}
+
 /** Hint `id` was mentioned already, or we don't know yet. */
 export function seen(id: string): boolean {
   return !loaded || prefs[`seen:${id}`] != null;

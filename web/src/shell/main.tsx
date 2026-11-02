@@ -23,6 +23,7 @@ import "./interaction-chrome.css";
 import "./block-chrome.css";
 import "./phone-sheet.css";
 import "./phone-machines.css";
+import "./views/views.css";
 // The one button set (UI audit #158), last: what it draws, it draws everywhere.
 import "../shared/buttons.css";
 import { apply as applyAppearance } from "../shared/appearance";
@@ -46,6 +47,7 @@ import { unhex } from "./e2e/cert.ts";
 import { usePhone, useSubscribe } from "../shared/ui/hooks";
 import { useEffect, useState } from "preact/hooks";
 import { SwarmView } from "./swarm/view";
+import { setViewClients, viewLinks } from "./views/links";
 import { AppBar, setAccount } from "./ui/app-bar";
 import { fakeSwarm } from "./swarm/fake";
 import { closeSwarm, onSwarmRoute, swarmRoute } from "./swarm/route";
@@ -196,6 +198,8 @@ function makeClient(base: string): Client {
   if (session && base.startsWith("e2e:")) return new Client(base, session.target(base.slice(4)));
   return new Client(base);
 }
+
+if (!linkTarget) setViewClients(makeClient);
 
 // One client for the host shown (M4a); switching hosts closes it and opens
 // one to the other daemon, so hidden hosts hold no connection.
@@ -394,7 +398,7 @@ function Swarm({ client }: { client: Client }) {
   const f = route.focus;
   // A notification through control names its daemon; else it's this page's.
   const host = f ? (f.daemon ? directory.list?.hosts.find((h) => h.id === f.daemon)?.name : (directory.home ?? directory.names[0])) : undefined;
-  const view = (bar: boolean) => <SwarmView fleet={fleet} back={closeSwarm} focus={f && host ? { host, pane: f.pane } : null} board={route.board} inBar={bar} />;
+  const view = (bar: boolean) => <SwarmView fleet={fleet} back={closeSwarm} focus={f && host ? { host, pane: f.pane } : null} board={route.board} inBar={bar} main={client} cell={cell} />;
   // The bar every place shares, over it, once a machine is shown; a phone
   // has its own header, and the swarm its Panes button.
   if (!client.state || phone) return view(false);
@@ -585,6 +589,8 @@ Object.assign(window, {
     hosts: directory,
     /** #17: the connections remote panes use, by host. */
     remotes,
+    /** #503: the connections a View's leaves use, by machine. */
+    viewLinks,
     control: session,
     /** M123: control's chat (rooms, messages, the live stream). */
     chat,

@@ -229,7 +229,7 @@ const GLYPHS: Record<string, string> = {
   people: "M9 5a3 3 0 1 0 0 6a3 3 0 1 0 0-6M3 20c0-3.3 2.7-5.5 6-5.5s6 2.2 6 5.5M16 5.5a2.75 2.75 0 0 1 0 5.5M17.5 14.7c2.1.5 3.5 2.5 3.5 5.3",
 };
 
-function PaneTypeIcon({ type }: { type: string }) {
+export function PaneTypeIcon({ type }: { type: string }) {
   const path = GLYPHS[type] ?? GLYPHS.terminal;
   return <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" data-pane-glyph={type}><path d={path} /></svg>;
 }

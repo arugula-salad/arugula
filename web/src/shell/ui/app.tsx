@@ -3,7 +3,7 @@
 // a phone, its own header (ui/phone). Then the tab's panes (ui/panes/), and
 // the layers over them (menus, dialogs, the palette).
 
-import { useEffect, useLayoutEffect, useState } from "preact/hooks";
+import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 import type { Client } from "../client";
 import type { Cell } from "./cells";
 import { useSubscribe, usePhone } from "../../shared/ui/hooks";
@@ -49,6 +49,9 @@ import { ActivityDrawer } from "./shell/activity";
 import { AttentionDrawer } from "./shell/attention-drawer";
 import { SessionOverview, useOverview } from "./shell/overview";
 import { TabArea } from "./panes/tab-area";
+import { ViewPage } from "../views/page";
+import { ViewTabs } from "../views/tabs";
+import { closeView, useViewRoute } from "../views/route";
 import { DragGhost } from "./panes/drop-overlay";
 import { useHoverToSwitchTabs } from "./panes/drop";
 import { currentPlace } from "./places";
@@ -96,7 +99,18 @@ export function App({ client, cell }: { client: Client; cell: Cell }) {
   useHoverToSwitchTabs(client);
   // The machine menu's "This machine" items are this client's.
   useEffect(() => setMachineItems(() => machineSettingsItems(client)), [client]);
-  useReportFocus(client, phone);
+  const viewId = useViewRoute();
+  useReportFocus(client, phone, !!viewId);
+  // Picking a tab, wherever from (the sidebar, a key, a notification), leaves
+  // the View for it.
+  const shownTab = useRef(client.tab);
+  useEffect(() => {
+    const was = shownTab.current;
+    shownTab.current = client.tab;
+    // Not the first tab of a page opened at a View, nor the next one after a
+    // tab closed somewhere else: nobody picked those.
+    if (was !== null && was !== client.tab && client.tabView(was)) closeView();
+  }, [client.tab]);
   useWorkspaceKeys(client, phone);
   useFirstRun(client);
   useTabTitle(client);
@@ -118,7 +132,9 @@ export function App({ client, cell }: { client: Client; cell: Cell }) {
   const overviewOpen = ws && !!overview && !!state;
   const main = (
     <main class="main" inert={overviewOpen}>
-      {!state ? (
+      {viewId ? (
+        <ViewPage key={viewId} id={viewId} client={client} cell={cell} phone={phone} />
+      ) : !state ? (
         <HostPicker />
       ) : state.sessions.length === 0 ? (
         <NoSessions client={client} phone={phone} />
@@ -174,7 +190,14 @@ export function App({ client, cell }: { client: Client; cell: Cell }) {
             <SessionSidebar client={client} renaming={renaming} setRenaming={setRenaming} />
             <div class="ws-work">
               {session && (
-                <div class="ws-tabs">
+                <div
+                  class="ws-tabs"
+                  onClickCapture={(e) => {
+                    // The tab already selected under a View shows that tab too.
+                    if ((e.target as HTMLElement).closest(".tab")) closeView();
+                  }}
+                >
+                  <ViewTabs />
                   <TabStrip client={client} session={session} renaming={renaming} setRenaming={setRenaming} />
                 </div>
               )}
@@ -189,7 +212,7 @@ export function App({ client, cell }: { client: Client; cell: Cell }) {
               <MaintenanceNote />
               <NewMachineNote />
               <AgentsNudge client={client} />
-              {tab && !overviewOpen && <PaneToolbar client={client} tab={tab} />}
+              {tab && !overviewOpen && !viewId && <PaneToolbar client={client} tab={tab} />}
               {main}
               {session && <ActivityDrawer key={session.id} client={client} session={session.id} />}
               {overviewOpen && <SessionOverview client={client} session={overview?.session} />}
@@ -221,7 +244,7 @@ export function App({ client, cell }: { client: Client; cell: Cell }) {
       {phone && state && <InstallHint />}
       {/* Only where this person's typing reaches the pane: not a viewer's,
           nor a read-only link's (UI audit #149). */}
-      {phone && state && state.sessions.length > 0 && client.panes.has(client.active() ?? -1) && client.mayType(client.active()!) && <KeyBar client={client} />}
+      {phone && !viewId && state && state.sessions.length > 0 && client.panes.has(client.active() ?? -1) && client.mayType(client.active()!) && <KeyBar client={client} />}
       <MenuLayer />
       <PromptLayer />
       <ThreadLayer phone={phone} client={client} />
@@ -300,11 +323,12 @@ function useTabTitle(client: Client) {
 
 /** Tell the daemon which pane this window is looking at, so it doesn't
  * notify you about the pane in front of you. */
-function useReportFocus(client: Client, phone: boolean) {
+function useReportFocus(client: Client, phone: boolean, inView: boolean) {
   const active = client.active();
   useEffect(() => {
     const report = () => {
-      const looking = document.visibilityState === "visible" && (phone || document.hasFocus());
+      // A View's leaves report for themselves: this client's tab isn't shown.
+      const looking = !inView && document.visibilityState === "visible" && (phone || document.hasFocus());
       client.focusPane(looking ? (client.active() ?? null) : null);
     };
     report();
@@ -316,7 +340,7 @@ function useReportFocus(client: Client, phone: boolean) {
       window.removeEventListener("blur", report);
       document.removeEventListener("visibilitychange", report);
     };
-  }, [client, active, phone, client.connected]);
+  }, [client, active, phone, client.connected, inView]);
 }
 
 /** The Agents page (#403): loads Labs only while its route is up. */

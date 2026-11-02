@@ -18,98 +18,15 @@ import { Client, paneIds } from "../client";
 import { directory } from "../hosts";
 import type { OpenRequest, PaneId, RemoteRef, RunRequest, RunResponse } from "../../shared/proto";
 import { registerBlock, type BlockView } from "./view";
+import { PaneLinks } from "./pane-links";
 import type { TerminalView } from "../terminal-view";
 
 /** A pane never seen on its host is taken as gone only after this long:
  * the host's layout can arrive after the home daemon's. */
 const GONE_GRACE_MS = 5000;
-/** A host that dropped off the network closes nothing: its connection
- * just goes quiet. Ask a quiet host to answer this often... */
-const HEARTBEAT_MS = 3000;
-/** ...and give up on a link that said nothing for this long (counted from
- * the ask, see `Client.keepAlive`), or that hasn't connected in this long,
- * and connect again as after any drop. */
-const SILENT_MS = 6000;
-
-interface HostLink {
-  client: Client;
-  /** The views showing each of its panes. */
-  views: Map<PaneId, Set<RemoteView>>;
-  /** When the connect under way started (ms), if one is. */
-  trying: number | null;
-}
-
-/** Every host this page shows remote panes of, and its connection. */
-class RemoteHosts {
-  private hosts = new Map<string, HostLink>();
-  private timer: number | undefined;
-
-  /** Heartbeats, and dropping links that went quiet (as the fleet does). */
-  private tick = () => {
-    const now = Date.now();
-    for (const l of this.hosts.values()) {
-      const c = l.client;
-      if (c.connected) {
-        l.trying = null;
-        c.keepAlive(now, HEARTBEAT_MS, SILENT_MS - HEARTBEAT_MS);
-      } else if (c.linked) {
-        l.trying ??= now;
-        if (now - l.trying > SILENT_MS) {
-          l.trying = null;
-          c.drop("didn't connect in time");
-        }
-      } else {
-        l.trying = null;
-      }
-    }
-  };
-
-  /** Whether `host` can be reached from this page: a host in the home
-   * daemon's list (not control's directory, which has no home daemon). */
-  known(host: string): boolean {
-    return !directory.control && !!directory.find(host);
-  }
-
-  take(host: string, pane: PaneId, view: RemoteView): Client | null {
-    if (!this.known(host)) return null;
-    let link = this.hosts.get(host);
-    if (!link) {
-      const client = new Client(directory.base(host));
-      client.only = new Set();
-      const l: HostLink = { client, views: new Map(), trying: null };
-      client.connect();
-      this.hosts.set(host, l);
-      this.timer ??= window.setInterval(this.tick, 1000);
-      link = l;
-    }
-    (link.views.get(pane) ?? link.views.set(pane, new Set()).get(pane)!).add(view);
-    link.client.want(pane);
-    return link.client;
-  }
-
-  release(host: string, pane: PaneId, view: RemoteView) {
-    const link = this.hosts.get(host);
-    const vs = link?.views.get(pane);
-    if (!link || !vs?.delete(view) || vs.size) return;
-    link.views.delete(pane);
-    link.client.unwant(pane);
-    if (link.views.size === 0) {
-      link.client.close();
-      this.hosts.delete(host);
-      if (this.hosts.size === 0 && this.timer !== undefined) {
-        window.clearInterval(this.timer);
-        this.timer = undefined;
-      }
-    }
-  }
-
-  /** For tests: the connection to `host`, if any. */
-  client(host: string): Client | undefined {
-    return this.hosts.get(host)?.client;
-  }
-}
-
-export const remotes = new RemoteHosts();
+/** Every host this page shows remote panes of, and its connection: only
+ * from a page on the home daemon (control's directory has no home daemon). */
+export const remotes = new PaneLinks<RemoteView>((host) => (!directory.control && directory.find(host) ? new Client(directory.base(host)) : null));
 
 /** A shell on `host` with its place in `home`'s layout: beside `split`,
  * or in a new tab of `session`. */

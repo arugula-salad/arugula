@@ -2,6 +2,7 @@
 // the `+` button's menu and the session menu are built here, and the
 // command palette reads the same lists, so the two can't drift.
 
+import { viewItems } from "../views/menu";
 import { hostMenuShown } from "./hosts";
 import { opPath } from "../ops";
 import { paneIds, type Client } from "../client";
@@ -62,6 +63,7 @@ export function paneItems(client: Client, id: PaneId, phone: boolean, workspace:
       ...focus,
       { label: "Copy working directory", disabled: !cwd, run: () => cwd && void navigator.clipboard?.writeText(cwd) },
       ...threadItems(client, id),
+      ...viewItems(client, id),
     ];
 
   if (info?.type === "remote") {
@@ -70,6 +72,7 @@ export function paneItems(client: Client, id: PaneId, phone: boolean, workspace:
     return [
       ...(at ? [{ header: `%${at.pane} on ${at.host}` } as MenuItem] : []),
       ...focus,
+      ...viewItems(client, id),
       { label: "Split right", run: () => client.intent({ op: "split", pane: id, edge: "right" }) },
       { label: "Split down", run: () => client.intent({ op: "split", pane: id, edge: "bottom" }) },
       ...elsewhere(),
@@ -196,6 +199,7 @@ export function paneItems(client: Client, id: PaneId, phone: boolean, workspace:
     { label: "Split down", run: () => client.intent({ op: "split", pane: id, edge: "bottom" }) },
     ...(tabMachine ? [{ label: "Split (local)", run: () => client.intent({ op: "split", pane: id, edge: "right", local: true }) } as MenuItem] : []),
     ...sub("Open beside", openBeside),
+    ...viewItems(client, id),
     ...sub("Move", [
       moveToTab,
       { id: "picker", label: "Go to directory…", shortcut: keyHint("picker"), run: () => openPicker(client, id, phone) },

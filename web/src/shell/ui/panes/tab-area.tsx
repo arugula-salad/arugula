@@ -11,6 +11,7 @@ import { len, px } from "./geometry";
 import { paneChrome, PIXELS } from "./chrome-geometry";
 import { PaneSlot } from "./pane-slot";
 import { FONT_SIZE } from "../../terminal-view";
+import { viewLinks } from "../../views/links";
 
 /** The smallest a viewer's pane is drawn on a phone: text at 10px. */
 const READABLE = 10 / FONT_SIZE;
@@ -79,7 +80,8 @@ export function TabArea({ client, tab, cell, phone }: { client: Client; tab: Tab
     const prev = shown.current;
     const claim = !prev || prev.tab !== tab.id || prev.zoom !== zoom;
     shown.current = { tab: tab.id, zoom };
-    client.view(tab.id, cols, rows, zoom, claim);
+    // A size this page's own View took (#503) is this page's to take back.
+    client.view(tab.id, cols, rows, zoom, claim, claim && viewLinks.holds(client.base, tab.owner));
   }, [client, tab.id, cols, rows, zoom]);
 
   // Keyboard focus follows the active pane (not on phones: that would pop

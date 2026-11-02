@@ -6,6 +6,7 @@ import { useEffect, useState } from "preact/hooks";
 import type { Client } from "../client";
 import { directory } from "../hosts";
 import { SWARM_ABOUT, closeSwarm, openSwarm, swarmRoute } from "../swarm/route";
+import { closeView } from "../views/route";
 import { agentsRoute, closeAgentsPage, openAgentsPage } from "./agents-route";
 import { closeDocsPage, docsRoute, openDocsPage } from "./docs-route";
 import { getFleet } from "./hosts";
@@ -118,6 +119,8 @@ export function currentPlace(): Place {
 
 /** Back to the panes from wherever you are. */
 export function closePlace(at: Place) {
+  // A View sits where the panes do: going to the panes leaves it.
+  closeView();
   if (at === "agents") closeAgentsPage();
   else if (at === "docs") closeDocsPage();
   else if (at === "swarm") closeSwarm();
