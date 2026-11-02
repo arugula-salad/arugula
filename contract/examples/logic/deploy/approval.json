@@ -1,5 +1,5 @@
 {
-  "about": "A deploy's approval, or its deny, as a fixed text: the deploy, the operation's hash, the approver's account, the decision (once or deny) and when the apply must start by (ms). v2 (DK4, aru-126; `v: 2`) is the only kind made now: no device signs it (no by, no sig), and its signature is a passkey's assertion whose WebAuthn challenge is SHA-256 of the body, base64url without padding. v1 (M218; no `v`) named the signing device too, as its body's last line, and carried that device's Ed25519 signature over the body (sig). well_formed: no field is empty, longer than 200 bytes, or holds anything but printable ASCII without spaces, so the body reads one way only; a v2 has no by and no sig, and no other version is. signed_by: a v1, well formed, and the signature is the given key's; never a v2.",
+  "about": "A deploy's approval, or its deny, as a fixed text: the deploy, the operation's hash, the approver's account, the decision (once or deny) and when the apply must start by (ms). v2 (DK4, aru-126; `v: 2`) is the only kind made now: no device signs it (no by, no sig), and its signature is a passkey's assertion whose WebAuthn challenge is SHA-256 of the body, base64url without padding. v1 (M218; no `v`) named the signing device too, as its body's last line, and carried that device's Ed25519 signature over the body (sig). v3 (#1985; `v: 3`) approves a chant-fly deploy once: its body is chant's gate statement for the gate the deploy's plan stopped at (`chant`), as `arugula:<account>` at `at`, relayed by arugula, with a last line `binding arugula deploy <deploy> op <hash> expires <ms>`; LF-joined, no final newline. well_formed: no field is empty, longer than 200 bytes, or holds anything but printable ASCII without spaces, so the body reads one way only; a v2 has no by and no sig; a v3 neither, approves once, and has its chant gate and a time no earlier than the gate's; no other version is one. signed_by: a v1, well formed, and the signature is the given key's; never a v2 or a v3.",
   "cases": [
     {
       "about": "alice approves the deploy once, v2: her passkey's assertion is its signature",
@@ -51,11 +51,37 @@
       }
     },
     {
-      "about": "version 3: not one",
+      "about": "version 3 without its chant gate: not one",
       "input": {"approval": "v3", "sign": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c"},
       "output": {
-        "body": "arugula deploy approval v3\ndeploy dep_1\nop 1589972dbfdd1a89f71a32f0eabde06d9bdedbd7bdd3fcf6f19080ee5a1b0c99\naccount alice\ndecision once\nexpires 90000\n",
-        "passkey_challenge": "yMcg5I3evEZj1MYyB2O8ptr-f3aP-nD9lvWiiIzE7XM",
+        "body": "",
+        "passkey_challenge": "47DEQpj8HBSa-_TImW-5JCeuQeRkm5NMpJWZG3hSuFU",
+        "signed_by": false,
+        "well_formed": false
+      }
+    },
+    {
+      "about": "v3: alice approves a chant-fly deploy once, over chant's statement",
+      "input": {
+        "approval": "v3-chant",
+        "sign": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c"
+      },
+      "output": {
+        "body": "release\nship\n\njcs1-sha256:abababababababababababababababababababababababababababababababab\narugula:alice\n2026-11-02T10:05:00.000Z\nrelayed-by arugula\nbinding arugula deploy dep_1 op 1589972dbfdd1a89f71a32f0eabde06d9bdedbd7bdd3fcf6f19080ee5a1b0c99 expires 90000",
+        "passkey_challenge": "sxFBcqkkesVWB3JadNjRh7rVK3gu0A6mT2tDwq49u74",
+        "signed_by": false,
+        "well_formed": true
+      }
+    },
+    {
+      "about": "a v3 deny: a deny stays v2",
+      "input": {
+        "approval": "v3-deny",
+        "sign": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c"
+      },
+      "output": {
+        "body": "release\nship\n\njcs1-sha256:abababababababababababababababababababababababababababababababab\narugula:alice\n2026-11-02T10:05:00.000Z\nrelayed-by arugula\nbinding arugula deploy dep_1 op 1589972dbfdd1a89f71a32f0eabde06d9bdedbd7bdd3fcf6f19080ee5a1b0c99 expires 90000",
+        "passkey_challenge": "sxFBcqkkesVWB3JadNjRh7rVK3gu0A6mT2tDwq49u74",
         "signed_by": false,
         "well_formed": false
       }
@@ -272,6 +298,44 @@
       "account": "alice",
       "by": "",
       "decision": "once",
+      "deploy": "dep_1",
+      "expires": 90000,
+      "op": "1589972dbfdd1a89f71a32f0eabde06d9bdedbd7bdd3fcf6f19080ee5a1b0c99",
+      "sig": "",
+      "v": 3
+    },
+    "v3-chant": {
+      "account": "alice",
+      "at": "2026-11-02T10:05:00.000Z",
+      "by": "",
+      "chant": {
+        "chant": "0.124.67",
+        "gate": "ship",
+        "op": "release",
+        "plan": "jcs1-sha256:abababababababababababababababababababababababababababababababab",
+        "recorded": "2026-11-02T10:00:00.000Z",
+        "run": "run-1"
+      },
+      "decision": "once",
+      "deploy": "dep_1",
+      "expires": 90000,
+      "op": "1589972dbfdd1a89f71a32f0eabde06d9bdedbd7bdd3fcf6f19080ee5a1b0c99",
+      "sig": "",
+      "v": 3
+    },
+    "v3-deny": {
+      "account": "alice",
+      "at": "2026-11-02T10:05:00.000Z",
+      "by": "",
+      "chant": {
+        "chant": "0.124.67",
+        "gate": "ship",
+        "op": "release",
+        "plan": "jcs1-sha256:abababababababababababababababababababababababababababababababab",
+        "recorded": "2026-11-02T10:00:00.000Z",
+        "run": "run-1"
+      },
+      "decision": "deny",
       "deploy": "dep_1",
       "expires": 90000,
       "op": "1589972dbfdd1a89f71a32f0eabde06d9bdedbd7bdd3fcf6f19080ee5a1b0c99",

@@ -35,7 +35,9 @@
 
 use std::{path::PathBuf, process::Stdio, sync::Arc, time::Duration};
 
-use arugula_control_wire::work::{DeployWork, ReadyRun, Secret, SecretsAsk, WORK_ARTIFACT, WORK_SECRETS};
+use arugula_control_wire::work::{
+    DeployPlanWork, DeployWork, ReadyRun, Secret, SecretsAsk, WORK_ARTIFACT, WORK_SECRETS,
+};
 use arugula_e2e::{
     deploy::{Pinned, check_apply},
     now_ms,
@@ -444,6 +446,19 @@ pub fn check(app: &App, item: &ReadyRun, d: &DeployWork) -> Result<(), Refused> 
     if !arugula_e2e::drivers::planned(&d.driver, o, &d.settings, d.roll_back.as_ref()) {
         return Err(Refused("plan_driver", "the approved plan isn't this driver's plan for this deploy".into()));
     }
+    // A chant→Fly apply is approved over chant's statement (v3, #1985),
+    // which its driver hands chant; nothing else is.
+    let in_chant = arugula_e2e::deploy::chant::approved_in_chant(&d.driver, d.roll_back.is_some());
+    if in_chant != (d.approval.v == arugula_e2e::deploy::V3) {
+        return Err(Refused(
+            "approval_form",
+            if in_chant {
+                "this deploy is approved over chant's gate statement, and its approval isn't one".into()
+            } else {
+                "an approval over chant's gate statement approves only a chant-fly apply".into()
+            },
+        ));
+    }
     // Each deploy applies on this box once, and a box applies one deploy.
     // A box is new for each deploy, so this alone doesn't stop a replay on
     // another box: the platform consumes the approval when its deploy
@@ -504,14 +519,120 @@ pub fn mark_applied(dir: &std::path::Path, deploy: &str, run: &str) -> bool {
 }
 
 /// Whether the run's operation is the apply of exactly the deploy it
-/// carries (or, for a run that carries none, not an apply at all).
-pub fn matches(op: &Op, d: Option<&DeployWork>) -> Result<(), Refused> {
-    let ok = match (&op.deploy, d) {
-        (None, None) => true,
-        (Some(a), Some(d)) => a.deploy == d.deploy && a.driver == d.driver && a.op == d.approval.op,
+/// carries, or (#1985) the plan of exactly the deploy whose plan it
+/// carries (or, for a run that carries neither, not a deploy's at all).
+pub fn matches(op: &Op, d: Option<&DeployWork>, p: Option<&DeployPlanWork>) -> Result<(), Refused> {
+    let ok = match (&op.deploy, d, p) {
+        (None, None, None) => true,
+        (Some(a), Some(d), None) => !a.plan && a.deploy == d.deploy && a.driver == d.driver && a.op == d.approval.op,
+        (Some(a), None, Some(p)) => {
+            a.plan && a.deploy == p.deploy && a.driver == p.driver && a.op == p.operation.hash()
+        }
         _ => false,
     };
     if ok { Ok(()) } else { Err(Refused("op_deploy", "the operation isn't the apply of the deploy it carries".into())) }
+}
+
+/// The checks a deploy's plan run passes before it starts (#1985): there's
+/// no approval yet, so what this machine checks is that it runs only a
+/// plan, as the deploy's plan says, with nothing but the GitHub token that
+/// pushes chant's ledger. Only a chant→Fly apply plans first.
+pub fn check_plan(app: &App, item: &ReadyRun, p: &DeployPlanWork) -> Result<(), Refused> {
+    if !deploy_box(app) {
+        return Err(Refused("not_deploy_box", "only a box made for a deploy plans one".into()));
+    }
+    if item.state != State::Approved.as_str() {
+        return Err(Refused("approval_state", "a deploy plan's run starts only once the platform approved it".into()));
+    }
+    let Some(e) = app.control.enrolled() else {
+        return Err(Refused("not_hosted", "this machine isn't in control".into()));
+    };
+    let Some(pin) = e.saved.hosted() else {
+        return Err(Refused("not_hosted", "this machine isn't a hosted machine".into()));
+    };
+    let o = &p.operation;
+    if o.project != pin.cert.project || item.project != pin.cert.project {
+        return Err(Refused("plan_operation", "the deploy is another project's".into()));
+    }
+    let fields = [&o.environment, &o.environment_name, &o.plan, &o.source_kind, &o.source_ref, &o.source_where];
+    if !fields.iter().all(|f| word(f)) {
+        return Err(Refused("op_form", "the deploy's fields aren't ones this machine reads".into()));
+    }
+    if !arugula_e2e::deploy::chant::approved_in_chant(&p.driver, false) {
+        return Err(Refused("plan_driver", format!("the {} driver doesn't plan first", printable(&p.driver))));
+    }
+    // Its one token, minted to push chant's ledger: none of the
+    // environment's secrets, Fly's above all.
+    if p.secrets != ["GITHUB_TOKEN"] {
+        return Err(Refused("secret_name", "a deploy's plan gets GITHUB_TOKEN and nothing else".into()));
+    }
+    let settings_ok = arugula_e2e::drivers::settings(&p.driver, &p.settings).is_ok_and(|s| s == p.settings);
+    if !settings_ok || !arugula_e2e::drivers::source_ok(&p.driver, &o.source_kind, &o.source_ref) {
+        return Err(Refused("op_form", "the deploy's settings aren't ones its driver takes".into()));
+    }
+    if !arugula_e2e::drivers::planned(&p.driver, o, &p.settings, None) {
+        return Err(Refused("plan_driver", "the deploy's plan isn't this driver's plan for it".into()));
+    }
+    // A deploy's box runs one run, ever.
+    if any_applied(app.control.state_dir()) {
+        return Err(Refused("deploy_box", "this box was made for one run, and ran it already".into()));
+    }
+    driver_argv(&p.driver)?;
+    Ok(())
+}
+
+/// What a deploy's run drives (its apply), or its plan run (#1985) as one:
+/// the deploy, its operation, driver, settings and secrets, with no
+/// approval but a placeholder the driver never reads (`DEPLOY_PHASE` is
+/// `plan`, and no approver's variable is set).
+pub fn driven(item: &ReadyRun) -> Option<(DeployWork, bool)> {
+    if let Some(d) = &item.deploy {
+        return Some((d.clone(), false));
+    }
+    let p = item.deploy_plan.as_ref()?;
+    let none = arugula_e2e::deploy::Approval::v2(&p.deploy, &p.operation, "", arugula_e2e::deploy::Decision::Deny, 0);
+    Some((
+        DeployWork {
+            deploy: p.deploy.clone(),
+            operation: p.operation.clone(),
+            approval: none,
+            passkey: None,
+            passkey_log: None,
+            driver: p.driver.clone(),
+            secrets: p.secrets.clone(),
+            settings: p.settings.clone(),
+            roll_back: None,
+            approval_id: None,
+        },
+        true,
+    ))
+}
+
+/// What a v3 approval (#1985) hands the chant→Fly driver, as JSON in
+/// `DEPLOY_CHANT`: chant's gate, the statement's time and binding, the
+/// approver's principal, the challenge the passkey signed, and its
+/// assertion as `chant approve --signature` reads one. None of it secret.
+pub fn chant_relay(d: &DeployWork) -> Option<String> {
+    let a = &d.approval;
+    let gate = a.chant.as_ref().filter(|_| a.v == arugula_e2e::deploy::V3)?;
+    let pk = d.passkey.as_ref()?;
+    Some(
+        serde_json::json!({
+            "gate": gate,
+            "at": a.at,
+            "binding": a.binding(),
+            "principal": arugula_e2e::deploy::chant::principal(&a.account),
+            "relay": arugula_e2e::deploy::chant::RELAY,
+            "challenge": a.passkey_challenge(),
+            "signature": {
+                "id": pk.id,
+                "clientDataJSON": pk.client_data_json,
+                "authenticatorData": pk.authenticator_data,
+                "signature": pk.signature,
+            },
+        })
+        .to_string(),
+    )
 }
 
 /// Replaces each secret's exact bytes in a stream with `[redacted NAME]`,
@@ -677,6 +798,7 @@ async fn remove_home(as_: Option<&RunAs>, work: &std::path::Path) {
 fn driver_command(
     run: &str,
     d: &DeployWork,
+    plan: bool,
     argv: &[String],
     as_: Option<&RunAs>,
     dir: &std::path::Path,
@@ -701,17 +823,26 @@ fn driver_command(
         ("DEPLOY_SOURCE_WHERE", o.source_where.clone()),
         ("DEPLOY_PLAN", o.plan.clone()),
         ("DEPLOY_SECRETS", names.join(" ")),
-        // M220: who approved it (chant's approve gate records them), the
-        // settings and the roll back the plan names.
         ("DEPLOY_RUN", run.to_owned()),
-        ("DEPLOY_APPROVER", d.approval.account.clone()),
-        ("DEPLOY_APPROVED_BY", d.approval.by.clone()),
-        ("DEPLOY_APPROVAL", d.approval_id.clone().unwrap_or_default()),
-        ("DEPLOY_OP_HASH", d.approval.op.clone()),
+        // #1985: its plan (before anyone approves it), or its apply.
+        ("DEPLOY_PHASE", if plan { "plan" } else { "apply" }.to_owned()),
         ("DEPLOY_SETTINGS", serde_json::to_string(&d.settings).unwrap_or_default()),
         ("DEPLOY_ROLL_BACK", d.roll_back.as_ref().and_then(|r| serde_json::to_string(r).ok()).unwrap_or_default()),
     ]
     .into_iter()
+    // M220: who approved it (chant's approve gate records them), and for a
+    // chant gate (v3, #1985) what chant is handed: an apply's only.
+    .chain(
+        [
+            ("DEPLOY_APPROVER", d.approval.account.clone()),
+            ("DEPLOY_APPROVED_BY", d.approval.by.clone()),
+            ("DEPLOY_APPROVAL", d.approval_id.clone().unwrap_or_default()),
+            ("DEPLOY_OP_HASH", d.approval.op.clone()),
+            ("DEPLOY_CHANT", chant_relay(d).unwrap_or_default()),
+        ]
+        .into_iter()
+        .filter(|_| !plan),
+    )
     .map(|(k, v)| (k.to_owned(), v))
     .chain(
         // A box that runs the fake driver (tests, testnet) says so: only
@@ -977,7 +1108,8 @@ async fn pane(app: &App, l: &Ledger, d: &DeployWork) -> Result<(u32, Option<u64>
 /// output redacted into the pane, and its end reported.
 pub async fn apply(app: Arc<App>, mut l: Ledger, item: ReadyRun, as_: Option<RunAs>) {
     let dir = app.control.state_dir().to_owned();
-    let Some(d) = item.deploy.clone() else { return };
+    // An apply, or (#1985) a chant→Fly deploy's plan, run the same way.
+    let Some((d, plan)) = driven(&item) else { return };
     let run_id = l.run.clone();
     let finish = |end: Result<i32, String>, result: Option<serde_json::Value>| {
         let (app, run) = (app.clone(), run_id.clone());
@@ -1030,8 +1162,14 @@ pub async fn apply(app: Arc<App>, mut l: Ledger, item: ReadyRun, as_: Option<Run
         "{}\n{}\n",
         printable(&format!("arugula run {} · operation sha256:{}", l.run, l.op_hash)),
         printable(&format!(
-            "deploy {} to {}: {} {} from {}, by the {} driver",
-            d.deploy, o.environment_name, o.source_kind, o.source_ref, o.source_where, d.driver
+            "{} {} to {}: {} {} from {}, by the {} driver",
+            if plan { "the plan of deploy" } else { "deploy" },
+            d.deploy,
+            o.environment_name,
+            o.source_kind,
+            o.source_ref,
+            o.source_where,
+            d.driver
         )),
     );
     let _ = out.write_all(banner.as_bytes()).await;
@@ -1082,7 +1220,7 @@ pub async fn apply(app: Arc<App>, mut l: Ledger, item: ReadyRun, as_: Option<Run
                 return Err(e);
             }
         };
-        let spawned = driver_command(&l.run, &d, &argv, as_.as_ref(), &dir, &pipe).spawn();
+        let spawned = driver_command(&l.run, &d, plan, &argv, as_.as_ref(), &dir, &pipe).spawn();
         let result_r = pipe.spawned();
         let mut child = match spawned {
             Ok(c) => c,
@@ -1091,7 +1229,14 @@ pub async fn apply(app: Arc<App>, mut l: Ledger, item: ReadyRun, as_: Option<Run
                 return Err(format!("its driver didn't start: {e}"));
             }
         };
-        info!(run = l.run, deploy = d.deploy, driver = d.driver, secrets = given.len(), "hosted: applying a deploy");
+        info!(
+            run = l.run,
+            deploy = d.deploy,
+            driver = d.driver,
+            plan,
+            secrets = given.len(),
+            "hosted: running a deploy's driver"
+        );
         // Its secrets on its standard input, a pipe, then closed.
         if let Some(mut stdin) = child.stdin.take() {
             let mut input = secrets_input(&given);
@@ -1161,6 +1306,7 @@ pub async fn apply(app: Arc<App>, mut l: Ledger, item: ReadyRun, as_: Option<Run
     revoke_tokens(std::mem::take(&mut revocable)).await;
     let result = result_of(&said_on_fd);
     let tail_line = match &end {
+        Ok(0) if plan => said("the deploy was planned"),
         Ok(0) => said("the deploy was applied"),
         Ok(code) => said(&format!("the driver exited {code}")),
         Err(why) => said(why),

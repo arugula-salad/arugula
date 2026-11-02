@@ -36,6 +36,8 @@ evidence:
     url: "https://app.arugula.io/issues/iss_77c31cb41c18dcfdec936df832e84e8e"
   - title: "Arugula native #384 (DK3: the hub publishes passkey public keys)"
     url: "https://app.arugula.io/issues/iss_96c5a22e5d567ee2884dbf952eaaf271"
+  - title: "arugula-salad/arugula#1985 (deploy drivers: chant's approvals, stale checks and ledger remote)"
+    url: "https://github.com/arugula-salad/arugula/issues/1985"
 decided_by: "jhgaylor"
 decided_on: "2026-10-30"
 reviews: []
@@ -50,6 +52,9 @@ constrains:
   - "path:crates/e2e/src/cert.rs"
   - "path:crates/e2e/src/deploy.rs"
   - "path:crates/control/src/passkey.rs"
+  - "path:crates/e2e/src/deploy_chant.rs"
+  - "path:crates/platform-deploys/src/deploys/plan.rs"
+  - "path:crates/arugulad-work/src/deploy_chant_fly.mjs"
 ---
 
 # Device keys are the machine plane's; the platform's approvals are passkeys
@@ -124,6 +129,33 @@ device-keys board, Arugula native #382 to #390).
   existing passkey's confirmation is the proof. The cost, accepted: whoever
   holds a stolen session and a stolen synced passkey can add another
   passkey. A first passkey stays as above.
+
+- **A chant-fly deploy plans first, and its approval is chant's** (#1985;
+  lex00, 2026-11-01 and 2026-11-02). Asking for a chant-fly deploy's
+  approval runs its plan first, on a box of its own that gets no
+  FLY_API_TOKEN, only a short-lived GitHub token the platform mints to push
+  `chant/lifecycle`: `chant run <op>` stops at the op's gate and records
+  its pending fact, with chant's plan digest, and the ask is recorded with
+  that gate. An op that needs Fly before its gate fails at planning. The
+  owner's passkey then signs chant's own gate statement for that plan (what
+  `chant approve --statement` prints, INTENTIUS/chant#4646), as
+  `arugula:<account>`, relayed by `arugula`, with a binding line
+  (INTENTIUS/chant#4697, seal version 3) of `arugula deploy <deploy> op
+  <operation hash> expires <ms>`: one assertion is chant's approval and
+  this deploy's, and the same checks as above hold for it (approval v3,
+  `crates/e2e/src/deploy_chant.rs`). The apply runs on another box, which
+  checks the approval against what it pinned, runs `chant plan stale`
+  (INTENTIUS/chant#4648) and refuses a stale plan, checks that the
+  statement chant makes for the approval is the one the passkey signed,
+  and hands the assertion to `chant approve --signature`, which checks it
+  against the passkeys `.chant/trust.json` lists at base. `arugula chant
+  trust-entry` prints a person's live passkeys as those entries; it only
+  prints, and adding them is the repository's protected write. chant
+  0.124.64 or newer (the binding line) is required: the driver refuses an
+  older one. A deny, a roll back (no gate) and every other driver's
+  approval stay v2. The cost, written down: the plan box runs the repo's
+  code with a token that writes the repository's contents before anyone
+  approves, as anyone who can push to it could.
 
 Where: `crates/platform/src/approvals.rs`, `crates/e2e/src/deploy.rs`,
 `crates/e2e/src/cert.rs`, `crates/control/src/passkey.rs`.

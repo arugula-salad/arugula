@@ -564,8 +564,14 @@ impl Db {
         };
         let deploy = match f.deploy {
             None => "",
-            Some(true) => " AND EXISTS (SELECT 1 FROM deploy_runs d WHERE d.run_id = runs.id)",
-            Some(false) => " AND NOT EXISTS (SELECT 1 FROM deploy_runs d WHERE d.run_id = runs.id)",
+            Some(true) => {
+                " AND (EXISTS (SELECT 1 FROM deploy_runs d WHERE d.run_id = runs.id)
+                       OR EXISTS (SELECT 1 FROM deploy_plans p WHERE p.run_id = runs.id))"
+            }
+            Some(false) => {
+                " AND NOT EXISTS (SELECT 1 FROM deploy_runs d WHERE d.run_id = runs.id)
+                  AND NOT EXISTS (SELECT 1 FROM deploy_plans p WHERE p.run_id = runs.id)"
+            }
         };
         c.query_map(
             &format!(

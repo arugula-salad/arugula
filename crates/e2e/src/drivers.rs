@@ -300,25 +300,39 @@ fn chant_fly_does(source_ref: &str, source_where: &str, s: &Settings, roll_back:
     ));
     match roll_back {
         None => {
-            t.push_str(&format!("does: in {dir}, {npm}, then chant run {op}\n"));
-            t.push_str(&format!("does: the repo's chant op {op} runs with FLY_API_TOKEN in its environment\n"));
-            t.push_str(if get(CHANT_GITHUB) == "true" {
-                "does: the repo's chant op runs with GITHUB_TOKEN in its environment too\n"
-            } else {
-                "does: the repo's chant op runs without GITHUB_TOKEN (only the driver's own git fetch and push use it)\n"
-            });
             let gates = match s.get(CHANT_GATES) {
                 Some(g) => format!(
                     "only gate{} {}; any other gate stops the deploy",
                     if g.contains(',') { "s" } else { "" },
                     g.replace(',', ", ")
                 ),
-                None => "each gate of the op it stops at".into(),
+                None => "the op's gate".into(),
             };
             t.push_str(&format!(
-                "does: approve {gates} with chant approve, as the approver (relayed by arugula, noting this \
-                 approval), then chant run {op} again\n"
+                "does: first, before anyone approves it, on a box of its own with GITHUB_TOKEN only (minted for that \
+                 run) and no FLY_API_TOKEN: in {dir}, {npm}, then chant run {op} to its gate ({gates}), and push \
+                 chant's ledger with the gate's pending fact and chant's plan digest\n"
             ));
+            t.push_str(&format!(
+                "does: the owner's passkey signs chant's gate statement for that plan (chant approve --statement), as \
+                 {}<the approver's account>, relayed by {}, with the line binding arugula deploy <this deploy> op \
+                 <its operation hash> expires <when its apply must start>\n",
+                crate::deploy::chant::PRINCIPAL_PREFIX,
+                crate::deploy::chant::RELAY,
+            ));
+            t.push_str(&format!(
+                "does: then, on another box: in {dir}, {npm}; chant plan stale of the approved plan, or stop; chant \
+                 approve --statement, which must be the statement the passkey signed, then chant approve --signature \
+                 with the passkey's assertion, which chant checks against .chant/trust.json; then chant run {op} \
+                 again (any other gate stops the deploy); chant {} or newer\n",
+                crate::deploy::chant::FLOOR
+            ));
+            t.push_str(&format!("does: the repo's chant op {op} runs with FLY_API_TOKEN in its environment then\n"));
+            t.push_str(if get(CHANT_GITHUB) == "true" {
+                "does: the repo's chant op runs with GITHUB_TOKEN in its environment too, then\n"
+            } else {
+                "does: the repo's chant op runs without GITHUB_TOKEN (only the driver's own git fetch and push use it)\n"
+            });
             let digest = if get(CHANT_DIGEST_IS) == "image" {
                 "its digest the digest of the image Fly runs after"
             } else {
@@ -353,7 +367,8 @@ fn chant_fly_does(source_ref: &str, source_where: &str, s: &Settings, roll_back:
     t.push_str(&format!(
         "with: the environment's FLY_API_TOKEN (fly tokens create deploy -a {app} -x 720h), and GITHUB_TOKEN: the \
          environment's own, or else one the platform's GitHub App mints for this run that writes {source_where}'s \
-         contents only, revoked when the run ends; each for this run only\n"
+         contents only, revoked when the run ends; each for this run only, and the plan's run only the minted \
+         GITHUB_TOKEN\n"
     ));
     t
 }

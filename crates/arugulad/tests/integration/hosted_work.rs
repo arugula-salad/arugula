@@ -186,6 +186,7 @@ impl Fake {
             revokes: vec![],
             passkey_log: None,
             deploy: None,
+            deploy_plan: None,
         }
     }
 
@@ -873,9 +874,11 @@ fn deploy_item_with(
     let mut signed = data.clone();
     signed.extend_from_slice(&Sha256::digest(cd.as_bytes()));
     let signature = b64.encode(by.signature(&signed));
-    let run_op =
-        Op { deploy: Some(DeployApply { deploy: dep.into(), driver: driver.into(), op: op.hash() }), ..Op::default() }
-            .encode(&f.device());
+    let run_op = Op {
+        deploy: Some(DeployApply { deploy: dep.into(), driver: driver.into(), op: op.hash(), plan: false }),
+        ..Op::default()
+    }
+    .encode(&f.device());
     ReadyRun {
         run: run.into(),
         project: PROJECT.into(),
@@ -904,6 +907,7 @@ fn deploy_item_with(
             roll_back: None,
             approval_id: None,
         }),
+        deploy_plan: None,
     }
 }
 

@@ -119,7 +119,10 @@ impl Machine {
 }
 
 pub(crate) fn worker(app: &Arc<Platform>) -> Worker {
-    Worker::new().with(Apply { app: app.clone() }).with(Dispatch { app: app.clone() })
+    Worker::new()
+        .with(Apply { app: app.clone() })
+        .with(crate::deploys::plan::Plan { app: app.clone() })
+        .with(Dispatch { app: app.clone() })
 }
 
 /// Every job step due now, a few times over.
@@ -155,10 +158,16 @@ pub(crate) fn box_of(app: &Platform, deploy: &str) -> Option<(String, String)> {
 /// the provider and records its enrollment, the box enrolls as a new
 /// machine, and the job makes its run there: that machine.
 pub(crate) async fn boot(app: &Arc<Platform>, hub: &TestHub, deploy: &str) -> Machine {
+    boot_box(app, hub, deploy).await
+}
+
+/// [`boot`] for the box named `name`: a deploy's (its id), or its plan's
+/// (#1985, `<id>-plan`).
+pub(crate) async fn boot_box(app: &Arc<Platform>, hub: &TestHub, name: &str) -> Machine {
     settle(app).await;
     let now = now_ms();
     drive(app, now).await;
-    let (b, project) = box_of(app, deploy).expect("its box is made");
+    let (b, project) = box_of(app, name).expect("its box is made");
     let m = Machine::new(&project, &b);
     hub.enroll(&b, &m.m.machine);
     drive(app, now + 3_000).await;
@@ -788,8 +797,105 @@ fn chant_fly_end(exit: i32, sha: &str, image: &str, healthy: bool) -> String {
     .to_string()
 }
 
+/// chant's gate as a chant-fly plan run reports it (#1985), recorded a
+/// minute ago.
+fn chant_gate(sha: &str) -> arugula_e2e::deploy::chant::Gate {
+    arugula_e2e::deploy::chant::Gate {
+        chant: "0.124.67".into(),
+        op: "release".into(),
+        gate: "approve-release".into(),
+        environment: None,
+        plan: format!("jcs1-sha256:{}", crate::deploys_tests::digest(sha)),
+        checkpoint: None,
+        run: format!("local-{sha}"),
+        recorded: arugula_e2e::deploy::chant::timestamp(now_ms() - 60_000),
+    }
+}
+
+/// Plan a chant-fly deploy (as b) and ask for its approval: chant plans it
+/// first (#1985) on a box of its own, whose run gets no secret of the
+/// environment's and ends saying `result`; its id, its operation's hash and
+/// the plan's run.
+async fn chant_fly_planned(
+    app: &Arc<Platform>,
+    hub: &TestHub,
+    base: &str,
+    t: &str,
+    env: &str,
+    sha: &str,
+    result: Value,
+) -> (String, String, Run) {
+    let body = json!({
+        "environment": env, "source": { "kind": "commit", "ref": crate::deploys_tests::full(sha), "where": "acme/app" },
+    });
+    let (st, d) = call(base, "b", "POST", &format!("/api/projects/{t}/deploys"), Some(body)).await;
+    assert_eq!(st, 200, "{d}");
+    let id = d["id"].as_str().unwrap().to_owned();
+    let (st, d) = call(base, "b", "POST", &format!("/api/deploys/{id}/request"), None).await;
+    // Nobody's asked yet: chant plans it first.
+    assert_eq!((st, &d["state"], &d["chant"]["state"]), (200, &json!("planned"), &json!("planning")), "{d}");
+    assert!(app.db.deploy_history(&id).unwrap().iter().all(|e| e.kind != "requested"), "not asked yet");
+    let op = d["operation"]["hash"].as_str().unwrap().to_owned();
+    let m = boot_box(app, hub, &format!("{id}-plan")).await;
+    let w = pull(app, &m, &[TAKES_RUN, TAKES_DEPLOY]).await;
+    let item = &w.items[0];
+    assert!(item.deploy.is_none(), "a plan carries no approval");
+    let pw = item.deploy_plan.clone().expect("the deploy whose plan it runs");
+    assert_eq!(
+        (pw.deploy.as_str(), pw.operation.hash(), pw.secrets.clone()),
+        (id.as_str(), op.clone(), vec!["GITHUB_TOKEN".to_owned()])
+    );
+    let run = app.db.run(&item.run).unwrap().unwrap();
+    let (_, o) = Op::decode(&run.op).unwrap();
+    let plan = o.deploy.unwrap();
+    assert!(plan.plan && plan.op == op && plan.deploy == id, "{plan:?}");
+    assert_eq!(run.state, RunState::Approved, "the platform approves a plan run: nobody has anything to approve");
+    work::report(app, &m.m, &m.report(&run, RunState::Approved, RunState::Running, now_ms(), "{}")).await.unwrap();
+    // Its one secret: a GitHub token minted for it, never the
+    // environment's (this platform has no App, so it can't).
+    match ask(app, &m, &run.id).await {
+        SecretsGiven::Refused { why } => assert!(why.starts_with("minting GITHUB_TOKEN"), "{why}"),
+        g => panic!("{g:?}"),
+    }
+    let run = app.db.run(&run.id).unwrap().unwrap();
+    let ok = result.get("chant_gate").is_some();
+    let end = json!({ "exit": if ok { 0 } else { 1 }, "result": result }).to_string();
+    let to = if ok { RunState::Succeeded } else { RunState::Failed };
+    work::report(app, &m.m, &m.report(&run, RunState::Running, to, now_ms(), &end)).await.unwrap();
+    settle(app).await;
+    (id, op, app.db.run(&run.id).unwrap().unwrap())
+}
+
 /// Plan (as b, `roll_back` or not), ask, and approve (a's phone): its id.
-async fn chant_fly_approved(base: &str, hub: &TestHub, t: &str, env: &str, sha: &str, roll_back: bool) -> String {
+/// A release plans first (#1985) and is approved over chant's statement
+/// (v3); a roll back goes through no gate, and is approved with a v2.
+async fn chant_fly_approved(
+    app: &Arc<Platform>,
+    hub: &TestHub,
+    base: &str,
+    t: &str,
+    env: &str,
+    sha: &str,
+    roll_back: bool,
+) -> String {
+    devices(hub, "a");
+    if !roll_back {
+        let gate = chant_gate(sha);
+        let (id, op, _) = chant_fly_planned(app, hub, base, t, env, sha, json!({ "chant_gate": gate })).await;
+        let (_, d) = call(base, "a", "GET", &format!("/api/deploys/{id}"), None).await;
+        assert_eq!(
+            (&d["state"], &d["chant"]["state"], d["may_approve"].as_bool()),
+            (&json!("pending"), &json!("planned"), Some(true)),
+            "{d}"
+        );
+        assert_eq!(d["chant"]["gate"], json!(gate));
+        let at = arugula_e2e::deploy::chant::timestamp(now_ms());
+        let body = crate::deploys_tests::signed_v3("a", &id, &op, &gate, &at);
+        let (st, d) = call(base, "a", "POST", &format!("/api/deploys/{id}/approve"), Some(body)).await;
+        assert_eq!((st, &d["state"]), (200, &json!("approved")), "{d}");
+        assert_eq!((d["approvals"][0]["v"].as_u64(), &d["approvals"][0]["chant"]), (Some(3), &json!(gate)), "{d}");
+        return id;
+    }
     let body = json!({
         "environment": env, "source": { "kind": "commit", "ref": crate::deploys_tests::full(sha), "where": "acme/app" },
         "roll_back": roll_back,
@@ -798,9 +904,8 @@ async fn chant_fly_approved(base: &str, hub: &TestHub, t: &str, env: &str, sha: 
     assert_eq!(st, 200, "{d}");
     let id = d["id"].as_str().unwrap().to_owned();
     let (st, d) = call(base, "b", "POST", &format!("/api/deploys/{id}/request"), None).await;
-    assert_eq!(st, 200, "{d}");
+    assert_eq!((st, &d["state"], d["approval_v"].as_u64()), (200, &json!("pending"), Some(2)), "{d}");
     let op = d["operation"]["hash"].as_str().unwrap().to_owned();
-    devices(hub, "a");
     let (st, d) =
         call(base, "a", "POST", &format!("/api/deploys/{id}/approve"), Some(signed("a", &id, &op, Decision::Once)))
             .await;
@@ -853,11 +958,13 @@ async fn chant_fly_links_chants_ledger_and_rolls_back_to_what_it_kept() {
     assert_eq!(set_secret(&base, "a", &env, "GITHUB_TOKEN").await.0, 200);
 
     // A release that goes well.
-    let good = chant_fly_approved(&base, &hub, &t, &env, "aaa1", false).await;
+    let good = chant_fly_approved(&app, &hub, &base, &t, &env, "aaa1", false).await;
     let image1 = &format!("registry.fly.io/acme-web:deployment-1@sha256:{}", "1".repeat(64));
     let (run, dw) = chant_fly_applied(&app, &hub, &good, &chant_fly_end(0, "aaa1", image1, true)).await;
     assert_eq!(dw.settings["fly_app"], "acme-web");
     assert!(dw.roll_back.is_none());
+    // Its approval is chant's statement (v3), which the box hands chant.
+    assert_eq!((dw.approval.v, dw.approval.chant.as_ref().map(|g| g.gate.as_str())), (3, Some("approve-release")));
     assert!(dw.approval_id.as_deref().is_some_and(|a| a.starts_with("apv_")), "{dw:?}");
     assert_eq!(state(&app, &good), State::Succeeded);
     assert_eq!(
@@ -872,7 +979,7 @@ async fn chant_fly_links_chants_ledger_and_rolls_back_to_what_it_kept() {
     );
 
     // One that went out but isn't healthy: failed, paged, its entry linked.
-    let bad = chant_fly_approved(&base, &hub, &t, &env, "bbb2", false).await;
+    let bad = chant_fly_approved(&app, &hub, &base, &t, &env, "bbb2", false).await;
     let image2 = &format!("registry.fly.io/acme-web:deployment-2@sha256:{}", "2".repeat(64));
     let (run, _) = chant_fly_applied(&app, &hub, &bad, &chant_fly_end(0, "bbb2", image2, false)).await;
     assert_eq!(state(&app, &bad), State::Failed);
@@ -887,7 +994,7 @@ async fn chant_fly_links_chants_ledger_and_rolls_back_to_what_it_kept() {
     });
     let (st, v) = call(&base, "b", "POST", &format!("/api/projects/{t}/deploys"), Some(never)).await;
     assert_eq!(st, 409, "{v}");
-    let back = chant_fly_approved(&base, &hub, &t, &env, "aaa1", true).await;
+    let back = chant_fly_approved(&app, &hub, &base, &t, &env, "aaa1", true).await;
     let (_, d) = call(&base, "a", "GET", &format!("/api/deploys/{back}"), None).await;
     assert_eq!(
         (d["roll_back"]["deploy"].as_str(), d["roll_back"]["to"]["image"].as_str()),
@@ -917,6 +1024,100 @@ async fn chant_fly_links_chants_ledger_and_rolls_back_to_what_it_kept() {
         [(back.as_str(), "succeeded", Some(good.as_str())), (&bad, "failed", None), (&good, "succeeded", None)]
     );
     assert!(h["deploys"].as_array().unwrap().iter().all(|d| d["finished_at"].as_u64() >= d["decided_at"].as_u64()));
+}
+
+/// #1985: a chant-fly deploy's plan that doesn't get to a gate Arugula
+/// signs leaves it planned, saying why, and it can't be asked for again;
+/// while chant plans, nobody is offered to decide it; once planned, a v2
+/// approval of its release (no chant statement) is refused, a deny is v2
+/// still, and its plan's box is gone.
+#[tokio::test]
+async fn a_chant_fly_deploy_is_asked_for_only_once_chant_planned_it() {
+    let (hub, app, base, t, fake) = world().await;
+    let body = json!({
+        "name": "production", "driver": "chant-fly", "secret_names": ["FLY_API_TOKEN", "GITHUB_TOKEN"],
+        "settings": { "fly_app": "acme-web", "chant_dir": "ops", "chant_env": "github", "chant_gates": "approve-release" },
+    });
+    let (st, env) = call(&base, "a", "POST", &format!("/api/projects/{t}/environments"), Some(body)).await;
+    assert_eq!(st, 200, "{env}");
+    let env = env["id"].as_str().unwrap().to_owned();
+    devices(&hub, "a");
+
+    // A gate the settings don't name; from a chant that checks no binding;
+    // a plan run that failed: never asked for.
+    let changed = |sha: &str, k: &str, v: &str| {
+        let mut g = json_gate(sha);
+        g.insert(k.into(), v.into());
+        json!({ "chant_gate": g })
+    };
+    for (sha, result, says) in [
+        ("ccc1", changed("ccc1", "gate", "ship"), "which the environment's chant_gates doesn't name"),
+        ("ccc2", changed("ccc2", "chant", "0.124.63"), "chant 0.124.64 or newer"),
+        ("ccc3", json!({}), "its plan run ended"),
+    ] {
+        let (id, _, run) = chant_fly_planned(&app, &hub, &base, &t, &env, sha, result).await;
+        assert!(run.state.terminal());
+        let (_, d) = call(&base, "a", "GET", &format!("/api/deploys/{id}"), None).await;
+        assert_eq!((&d["state"], &d["chant"]["state"]), (&json!("planned"), &json!("failed")), "{d}");
+        assert!(d["chant"]["why"].as_str().unwrap().contains(says), "{sha}: {d}");
+        let (st, v) = call(&base, "b", "POST", &format!("/api/deploys/{id}/request"), None).await;
+        assert_eq!((st, v["reason"].as_str()), (409, Some(crate::deploys::CHANT_PLAN)), "{v}");
+        assert!(app.db.deploy_history(&id).unwrap().iter().all(|e| e.kind != "requested"));
+    }
+
+    // While chant plans it, nobody is offered to decide it.
+    let body = json!({
+        "environment": env, "source": { "kind": "commit", "ref": crate::deploys_tests::full("ddd1"), "where": "acme/app" },
+    });
+    let (_, d) = call(&base, "b", "POST", &format!("/api/projects/{t}/deploys"), Some(body)).await;
+    let waiting = d["id"].as_str().unwrap().to_owned();
+    call(&base, "b", "POST", &format!("/api/deploys/{waiting}/request"), None).await;
+    let (st, cd) = call(&base, "a", "GET", &format!("/api/deploys/{waiting}/can-decide"), None).await;
+    assert_eq!(
+        (st, cd["can"].as_bool(), cd["reason"].as_str()),
+        (200, Some(false), Some(crate::deploys::NOT_PENDING)),
+        "{cd}"
+    );
+    assert!(cd["why"].as_str().unwrap().contains("chant is planning it"), "{cd}");
+
+    // Planned: asked for with chant's gate. A v2 of its release is refused
+    // (reload: it's approved over chant's statement); a deny is a v2.
+    let gate = chant_gate("eee1");
+    let (id, op, _) = chant_fly_planned(&app, &hub, &base, &t, &env, "eee1", json!({ "chant_gate": gate })).await;
+    let requested = app.db.deploy_history(&id).unwrap().into_iter().find(|e| e.kind == "requested").unwrap();
+    assert_eq!(requested.detail_json().unwrap()["chant"], json!(gate), "the log keeps the gate it was asked for");
+    assert_eq!(requested.actor, "person b", "asked by who asked");
+    let v2 = signed("a", &id, &op, Decision::Once);
+    let (st, v) = call(&base, "a", "POST", &format!("/api/deploys/{id}/approve"), Some(v2)).await;
+    assert_eq!((st, v["reason"].as_str()), (400, Some(crate::deploys::OLD_APPROVAL)), "{v}");
+    // A statement at another time than now: the device's clock is off.
+    let late = arugula_e2e::deploy::chant::timestamp(now_ms() + 3_600_000);
+    let body = crate::deploys_tests::signed_v3("a", &id, &op, &gate, &late);
+    let (st, v) = call(&base, "a", "POST", &format!("/api/deploys/{id}/approve"), Some(body)).await;
+    assert_eq!(st, 400, "{v}");
+    // Signed over another gate than the one asked for: not this statement.
+    let other = arugula_e2e::deploy::chant::Gate { plan: format!("jcs1-sha256:{}", "0".repeat(64)), ..gate.clone() };
+    let at = arugula_e2e::deploy::chant::timestamp(now_ms());
+    let body = crate::deploys_tests::signed_v3("a", &id, &op, &other, &at);
+    let (st, v) = call(&base, "a", "POST", &format!("/api/deploys/{id}/approve"), Some(body)).await;
+    assert_eq!((st, v["reason"].as_str()), (403, Some(crate::deploys::PASSKEY)), "{v}");
+    let (st, d) =
+        call(&base, "a", "POST", &format!("/api/deploys/{id}/deny"), Some(signed("a", &id, &op, Decision::Deny))).await;
+    assert_eq!((st, &d["state"], d["approvals"][0]["v"].as_u64()), (200, &json!("denied"), Some(2)), "{d}");
+
+    // Its plan's box went once it planned.
+    for i in 1..4 {
+        settle_at(&app, now_ms() + i * 40_000).await;
+        drive(&app, now_ms() + i * 40_000 + 5_000).await;
+    }
+    let plan_box = its_box(&app, &format!("{id}-plan"));
+    assert_eq!(plan_box.state, "deleted");
+    let _ = fake;
+}
+
+/// [`chant_gate`] as JSON, for a test to change a field of.
+fn json_gate(sha: &str) -> serde_json::Map<String, Value> {
+    serde_json::to_value(chant_gate(sha)).unwrap().as_object().unwrap().clone()
 }
 
 /// [`world`], with the App against a fake GitHub that has it installed on

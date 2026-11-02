@@ -143,6 +143,16 @@ impl Enrolled {
         }
     }
 
+    /// Control's URL, as this CLI logged in to it.
+    pub fn control_url(&self) -> &str {
+        &self.url
+    }
+
+    /// The account this CLI is logged in as.
+    pub fn account(&self) -> &str {
+        &self.trust.account
+    }
+
     /// A request to control, signed with this CLI's key. It waits out a
     /// maintenance window on control's chat and Cloud routes (M141, `grants`
     /// is one) for up to five minutes, saying so on stderr; which 503s are

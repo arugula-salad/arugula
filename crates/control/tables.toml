@@ -1569,6 +1569,17 @@ note = "Those of deploys that go with its projects go."
 seen_by = ["litestream"]
 
 [[table]]
+name = "deploy_plans"
+plane = "platform"
+process = "platform"
+holds = "metadata"
+what = "A chant-fly deploy's plan (#1985): who asked for its approval and when, its plan run and that run's box, when the run's machine was given its one token (a GitHub token minted to push chant's ledger, once), and the chant gate the plan stopped at (op, gate, chant's plan digest, its run and time) or why it didn't get there. No secret: the token is minted for the run and never kept."
+why_asleep = "A chant-fly deploy's plan runs on a box of its own before anyone approves it, and the ask is recorded once it planned, with every owner's device asleep."
+with_account = "partly"
+note = "Those of deploys that go with its projects go."
+seen_by = ["litestream"]
+
+[[table]]
 name = "platform_migrations"
 plane = "platform"
 process = "platform"

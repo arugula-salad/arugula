@@ -242,6 +242,30 @@ pub struct ReadyRun {
     /// approval, which the machine checks itself before it starts.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub deploy: Option<DeployWork>,
+    /// A chant→Fly deploy's plan run (#1985): the deploy whose plan it
+    /// runs, before anyone approves it. A machine from before it reads
+    /// neither this nor [`ReadyRun::deploy`], and a deploy's box refuses
+    /// that.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub deploy_plan: Option<DeployPlanWork>,
+}
+
+/// What a deploy's plan run plans (#1985): the deploy's operation, its
+/// driver and settings. No approval: the plan comes before one, and its
+/// run gets no secret of the environment's, only a GitHub token the
+/// platform mints to push chant's ledger ([`DeployPlanWork::secrets`]).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+pub struct DeployPlanWork {
+    /// `dep_` and 32 hex characters.
+    pub deploy: String,
+    pub operation: Operation,
+    pub driver: String,
+    /// The secrets it gets: `GITHUB_TOKEN`, minted.
+    #[serde(default)]
+    pub secrets: Vec<String>,
+    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub settings: arugula_e2e::drivers::Settings,
 }
 
 /// What a deploy's run applies (M219), for its machine to check: the
