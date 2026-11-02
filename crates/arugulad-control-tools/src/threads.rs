@@ -457,8 +457,8 @@ pub(crate) async fn post_thread(c: &Call<'_>, a: PostThreadArgs) -> Out {
             let reads: Vec<&str> = w["reads"].as_array().into_iter().flatten().filter_map(Value::as_str).collect();
             let they = match reads.as_slice() {
                 [] => "can't read any room here".to_owned(),
-                [one] => format!("can't read {room}. They read {one}"),
-                [init @ .., last] => format!("can't read {room}. They read {} and {last}", init.join(", ")),
+                [one] => format!("can't read this room. They read {one}"),
+                [init @ .., last] => format!("can't read this room. They read {} and {last}", init.join(", ")),
             };
             summary += &format!(" (@{word} reached nobody: {name}'s agents {they}.)");
         }
