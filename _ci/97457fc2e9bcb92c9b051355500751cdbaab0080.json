@@ -3,7 +3,7 @@
   "commit": "97457fc2e9bcb92c9b051355500751cdbaab0080",
   "branch": "main",
   "state": "pending",
-  "at": "2026-11-02T06:57:54Z",
+  "at": "2026-11-02T07:01:14Z",
   "phases": {
     "lint": {
       "verdict": "unbuilt",
@@ -38,9 +38,11 @@
       "runs": []
     },
     "windows": {
-      "verdict": "pending",
+      "verdict": "unbuilt",
       "build": "newest",
-      "runs": []
+      "runs": [],
+      "reason": "superseded",
+      "coveredBy": "8dc2565ee3dbafa2ad3c05ff73047ec8b1965a50"
     },
     "windows-desktop": {
       "verdict": "unbuilt",
