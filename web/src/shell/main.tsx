@@ -35,6 +35,7 @@ import { openTeamChat, remotes } from "./blocks";
 import { measureCell } from "./ui/cells";
 import { currentSubscription, desktopPush, enableControlPush, registerWorker, setPushBackend, subscriptionParts } from "./push";
 import { setReadOnlyLink } from "./ui/link-note";
+import { setProtoOrigin } from "../shared/ui/prototype-frame";
 import { ControlSession, detectControl, restoreInvite, showMoving } from "./control";
 import { useControl } from "./trust/common";
 import { ControlGate } from "./trust/gate";
@@ -67,6 +68,10 @@ if (info) restoreInvite();
 if (info) showMoving(info);
 // M153: chat is on the platform page, when control has one.
 setPlatformOrigin(info?.platform);
+// #506: served by control, `script-src 'self'` stops a srcdoc frame's scripts, so a
+// Doc's prototype loads from control's proto origin, or says there is none.
+// A page a daemon serves keeps srcdoc.
+if (info) setProtoOrigin(info.proto ?? null);
 // M154: an old link of the platform's (`#chat…`, `#cloud…`, `#cloud-ws…`)
 // lands on its new page there. Keep this forever (./fragments).
 const moved = platformOrigin() ? platformPath(location.hash) : null;
