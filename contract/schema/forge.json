@@ -7,6 +7,13 @@
           "description": "Who wrote it, as people read it: a person's name, or \"Ada's agent\non geek\".",
           "type": "string"
         },
+        "from_session": {
+          "description": "With an agent's post (#575): the name of the session that wrote it.\nThe daemon never gives the message to a session of this name, so an\nagent's mention of its own machine doesn't come back to it. An older\ndaemon ignores it.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "parent": {
           "description": "The message it replies under, when it's in a thread.",
           "format": "int64",

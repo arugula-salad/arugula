@@ -328,6 +328,12 @@ pub struct AgentMention {
     /// daemon ignores it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub session: Option<String>,
+    /// With an agent's post (#575): the name of the session that wrote it.
+    /// The daemon never gives the message to a session of this name, so an
+    /// agent's mention of its own machine doesn't come back to it. An older
+    /// daemon ignores it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub from_session: Option<String>,
 }
 
 /// A draft to send: what it is and where it goes. `account` is its person,

@@ -520,6 +520,9 @@ pub enum ChatMentionState {
     Offline,
     /// The machine's agent replied in the thread (`reply`).
     Answered,
+    /// Not delivered (#575): an agent's post, in a chain of agents' replies
+    /// or past the thread's rate limit. A person's message restarts it.
+    Chain,
 }
 
 /// Someone who reacted: an account, and the machine's agent if it was

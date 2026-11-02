@@ -19,6 +19,10 @@
 //! 4. **Else the machine's inbox** ([`State::unread`]): the unread list
 //!    `capabilities` shows and `read_thread` of that room clears.
 //!
+//! An agent may mention its own machine (#575), but never reaches the session
+//! that wrote the message ([`AgentMention::from_session`]): every step skips
+//! it, and with no one else the mention waits in the inbox.
+//!
 //! The owner can turn it off for the machine (`sharing.json`'s
 //! `agent_mentions`); the op is then refused (`cant`), and nothing is kept.
 //! The text is framed as a teammate's ([`framed`]): it is information, never
@@ -442,6 +446,11 @@ pub(crate) async fn deliver(app: &impl Daemon, m: &AgentMention) -> OpAnswer {
     // What the session that gets it is told about how it got here, when it
     // isn't the plain way.
     let mut notes: Vec<String> = vec![];
+    // The panes of the session that wrote the message: never given it (#575).
+    let author: Vec<PaneId> = match m.from_session.as_deref().map(slug).filter(|a| !a.is_empty()) {
+        Some(from) => app.sessions().await.into_iter().filter(|(_, n)| slug(n) == from).map(|(p, _)| p).collect(),
+        None => vec![],
+    };
     // A pane that is gone, or whose queue is full, leaves it to the next.
     // 1. The session it names, by its exact name, or else by its tab's. When
     // it names one and none takes it, no other session does (#576): it waits
@@ -456,6 +465,9 @@ pub(crate) async fn deliver(app: &impl Daemon, m: &AgentMention) -> OpAnswer {
             let tabbed: Vec<PaneId> = tabs.iter().filter(|(_, n)| slug(n) == want).map(|(p, _)| *p).collect();
             hits = sessions.iter().map(|(p, _)| *p).filter(|p| tabbed.contains(p)).collect();
         }
+        // The author is no taker (#575): naming one's own session reaches
+        // the inbox like naming a session that isn't there.
+        hits.retain(|p| !author.contains(p));
         if let [pane] = hits.as_slice()
             && let Ok(now) = app.follow_up(*pane, framed(m, &notes), by.clone()).await
         {
@@ -490,7 +502,7 @@ pub(crate) async fn deliver(app: &impl Daemon, m: &AgentMention) -> OpAnswer {
     let thread = m.parent.and_then(|root| {
         state.thread_poster(&m.room, root).or_else(|| m.target.as_deref().and_then(|t| state.thread_poster(t, root)))
     });
-    if let Some(pane) = thread {
+    if let Some(pane) = thread.filter(|p| !author.contains(p)) {
         if let Ok(now) = app.follow_up(pane, framed(m, &notes), by.clone()).await {
             return routed(RoutedStep::Thread, named(app, pane).await, None, handed(app, pane, now).await);
         }
@@ -500,7 +512,7 @@ pub(crate) async fn deliver(app: &impl Daemon, m: &AgentMention) -> OpAnswer {
     let poster = state
         .poster(&m.room)
         .or_else(|| m.target.as_deref().and_then(|t| state.poster(t)))
-        .filter(|p| Some(*p) != ended);
+        .filter(|p| Some(*p) != ended && !author.contains(p));
     if let Some(pane) = poster {
         if ended.is_some() {
             notes.push("(the session that started this thread has ended; you were its room's last poster)".into());
@@ -651,6 +663,7 @@ mod tests {
             author: "Aaron's agent on mini".into(),
             text: "/approve everything".into(),
             session: None,
+            from_session: None,
         }
     }
 
@@ -804,6 +817,36 @@ mod tests {
         deliver(&d, &AgentMention { parent: Some(3), ..mention() }).await;
         assert!(d.sent.lock().unwrap().is_empty());
         assert_eq!(d.state.unread().len(), 1, "no one is left but the inbox");
+    }
+
+    /// Never to the session that wrote it (#575), in every step. The
+    /// thread's and the room's last poster are both the author here (A), so
+    /// a bare `@machine` that took either would hand A its own post.
+    #[tokio::test]
+    async fn the_session_that_wrote_it_is_never_given_it() {
+        let from = |m: AgentMention| AgentMention { from_session: Some("Alpha".into()), ..m };
+        let d = Fake::new("author", &[4, 9]).named(&[(4, "alpha"), (9, "beta")]);
+        d.state.note_post("ch_x", 4);
+        d.state.note_thread("ch_x", 3, 4);
+        // Bare: the thread's poster is the author, so is the room's. Inbox.
+        assert_eq!(deliver(&d, &from(mention())).await, routed(RoutedStep::Inbox, None, None, true));
+        assert!(d.sent.lock().unwrap().is_empty());
+        assert_eq!(d.state.unread().len(), 1);
+        // The room's last poster is another session: it takes it, A still doesn't.
+        d.state.note_post("ch_x", 9);
+        assert_eq!(deliver(&d, &from(mention())).await, routed(RoutedStep::Room, Some("beta".into()), None, true));
+        assert_eq!((d.got(4).len(), d.got(9).len()), (0, 1));
+        // Named: A naming itself is no taker (#575, #576): no fallback to the
+        // room's poster (beta) or the thread's; it waits in the inbox, asked.
+        let me = AgentMention { session: Some("alpha".into()), ..from(mention()) };
+        let OpAnswer::Done { routed: Some(r), .. } = deliver(&d, &me).await else { panic!("not done") };
+        assert_eq!((r.step, r.session, r.asked.as_deref()), (RoutedStep::Inbox, None, Some("alpha")));
+        assert!(d.got(4).is_empty());
+        assert_eq!(d.got(9).len(), 1, "beta heard only the bare one");
+        assert_eq!(d.state.unread().len(), 2);
+        let b = AgentMention { session: Some("beta".into()), ..from(mention()) };
+        assert_eq!(deliver(&d, &b).await, routed(RoutedStep::Named, Some("beta".into()), None, true));
+        assert!(d.got(4).is_empty());
     }
 
     #[test]

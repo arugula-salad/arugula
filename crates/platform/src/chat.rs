@@ -14,7 +14,7 @@
 //!   ([`start`]).
 
 use std::{
-    collections::{HashMap, HashSet},
+    collections::{HashMap, HashSet, VecDeque},
     sync::{
         Arc, Mutex,
         atomic::{AtomicU64, Ordering},
@@ -335,7 +335,17 @@ pub struct Hub {
     pushed: Mutex<HashMap<(String, String), u64>>,
     /// When each person last pinged typing in each room ([`typing`]).
     typed: Mutex<HashMap<(String, String), u64>>,
+    /// When agents' posts were told to each machine, per thread (#575):
+    /// the backstop on agents talking to agents ([`Hub::agent_told`]).
+    agent_told: Mutex<HashMap<(String, i64, String), VecDeque<u64>>>,
 }
+
+/// The most deliveries an agent's post may cause for one machine in one
+/// thread inside [`AGENT_TOLD_WINDOW_MS`] (#575).
+pub const AGENT_TOLD_MAX: usize = 10;
+
+/// How long [`AGENT_TOLD_MAX`] counts back.
+pub const AGENT_TOLD_WINDOW_MS: u64 = 10 * 60 * 1000;
 
 /// Event ids are `c-<seq>`, `seq` being the event's row in `chat_events`
 /// (M144), the same on every machine and across restarts. An id from
@@ -367,6 +377,7 @@ impl Default for Hub {
             generation: AtomicU64::new(0),
             pushed: Mutex::new(HashMap::new()),
             typed: Mutex::new(HashMap::new()),
+            agent_told: Mutex::new(HashMap::new()),
         }
     }
 }
@@ -576,6 +587,24 @@ impl Hub {
     /// Moves when who sees what may have changed ([`Hub::changed`]).
     pub fn generation(&self) -> u64 {
         self.generation.load(Ordering::SeqCst)
+    }
+
+    /// An agent's post is about to be told to `machine` in the thread of
+    /// `root` (#575): whether that's within the limit, and if so, counted.
+    pub fn agent_told(&self, room: &str, root: i64, machine: &str, now: u64) -> bool {
+        let mut t = self.agent_told.lock().unwrap();
+        if t.len() > 10_000 {
+            t.retain(|_, v| v.back().is_some_and(|at| now.saturating_sub(*at) < AGENT_TOLD_WINDOW_MS));
+        }
+        let q = t.entry((room.to_owned(), root, machine.to_owned())).or_default();
+        while q.front().is_some_and(|at| now.saturating_sub(*at) >= AGENT_TOLD_WINDOW_MS) {
+            q.pop_front();
+        }
+        if q.len() >= AGENT_TOLD_MAX {
+            return false;
+        }
+        q.push_back(now);
+        true
     }
 
     /// Tell every machine's streams that `account` is typing in `room`

@@ -557,3 +557,154 @@ async fn an_unreached_machine_says_which_rooms_it_reads() {
     assert_eq!(v["unreached"], json!(["nobody"]), "{v}");
     assert!(v["unreached_why"].is_null() || v["unreached_why"] == json!([]), "{v}");
 }
+
+/// The mentions asked of `machine`, whole.
+fn asked_of(hub: &crate::testing::hub::TestHub, machine: &str) -> Vec<arugula_control_wire::forge::AgentMention> {
+    hub.ops_asked()
+        .into_iter()
+        .filter_map(|(m, op)| match op {
+            DaemonOp::AgentMention(a) if m == machine => Some(a),
+            _ => None,
+        })
+        .collect()
+}
+
+/// `machine`'s agent posts `text` as `session` under `parent` (a root if none); the message's number.
+async fn agent_says(base: &str, machine: &str, session: &str, text: &str, parent: Option<i64>) -> i64 {
+    let r = reqwest::Client::new()
+        .post(format!("{base}{}", agent_messages("ch_general")))
+        .header("x-test-daemon", format!("a {machine}"))
+        .json(&json!({ "text": text, "session": session, "parent": parent }))
+        .send()
+        .await
+        .unwrap();
+    let v = r.json::<Value>().await.unwrap();
+    v["seq"].as_i64().unwrap_or_else(|| panic!("{v}"))
+}
+
+/// The state of the first machine's line under reply `seq` in the thread of `root`, once it isn't `sending`.
+async fn thread_state(base: &str, root: i64, seq: i64) -> String {
+    for _ in 0..100 {
+        let path = format!("/api/chat/rooms/ch_general/messages?thread={root}");
+        let (_, v) = call(base, "b", "GET", &path, None).await;
+        let state = v["messages"]
+            .as_array()
+            .and_then(|m| m.iter().find(|m| m["seq"] == seq))
+            .and_then(|m| m["mention_status"][0]["state"].as_str())
+            .map(str::to_owned);
+        if let Some(s) = state.filter(|s| s != "sending") {
+            return s;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    }
+    panic!("message {seq}'s mention never left `sending`")
+}
+
+/// An agent's mention of its own machine is told to it (#575), with the
+/// session that wrote it so the daemon can keep it from that one: named,
+/// bare, and a reply under another session's message. A reply under its own
+/// session's message, or one with no sessions to tell apart, is for no one.
+#[tokio::test]
+async fn an_agents_mention_of_its_own_machine_is_told_with_its_author() {
+    let (hub, _app, base, t, _u) = seeded().await;
+    geek_in_t(&base, &t).await;
+    hub.answers_ops("geek", OpAnswer::Done { url: None, routed: None });
+    let sessions = |hub: &crate::testing::hub::TestHub| {
+        asked_of(hub, "geek").into_iter().map(|a| (a.session, a.from_session)).collect::<Vec<_>>()
+    };
+    let some = |s: &str| Some(s.to_owned());
+
+    // Named, from a post in the room.
+    agent_says(&base, "geek", "Alpha", "@geek-box/beta pick this up", None).await;
+    assert_eq!(waits_for_told(&hub, 1).await.len(), 1);
+    assert_eq!(sessions(&hub), [(some("beta"), some("Alpha"))]);
+
+    // Bare, in a thread Alpha posted in last: control tells the machine and
+    // says who wrote it; the daemon keeps it from Alpha's pane.
+    let root = agent_says(&base, "geek", "Alpha", "my plan", None).await;
+    let seq = agent_says(&base, "geek", "Alpha", "@geek-box anyone?", Some(root)).await;
+    assert_eq!(waits_for_told(&hub, 2).await.len(), 2);
+    assert_eq!(thread_state(&base, root, seq).await, "delivered");
+    assert_eq!(sessions(&hub)[1], (None, some("Alpha")));
+
+    // A plain reply under Alpha's own message is for no one; Beta's is for
+    // the machine (another session may want it), and so is Alpha's under
+    // Beta's. Each in a thread of its own: they would be a chain in one.
+    let own = agent_says(&base, "geek", "Alpha", "another plan", None).await;
+    agent_says(&base, "geek", "Alpha", "carrying on", Some(own)).await;
+    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    assert_eq!(told(&hub).len(), 2, "Alpha's reply under Alpha's message");
+    agent_says(&base, "geek", "Beta", "a thought", Some(own)).await;
+    assert_eq!(waits_for_told(&hub, 3).await.len(), 3);
+    let theirs = agent_says(&base, "geek", "Beta", "beta's plan", None).await;
+    agent_says(&base, "geek", "Alpha", "thanks", Some(theirs)).await;
+    assert_eq!(waits_for_told(&hub, 4).await.len(), 4);
+    assert_eq!(sessions(&hub)[2..], [(None, some("Beta")), (None, some("Alpha"))]);
+
+    // Without a session name on either, nothing says they differ.
+    let unnamed = agent_says(&base, "geek", "", "no name", None).await;
+    agent_says(&base, "geek", "", "still none", Some(unnamed)).await;
+    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    assert_eq!(told(&hub).len(), 4, "no one to tell apart");
+}
+
+/// A chain of agents on one machine stops (#575): A → B → A → B, each
+/// mentioning the machine under a person's message, delivers three and
+/// then says `chain`; the person's next message restarts it.
+#[tokio::test]
+async fn a_chain_of_agents_on_one_machine_stops_and_says_so() {
+    let (hub, _app, base, t, _u) = seeded().await;
+    geek_in_t(&base, &t).await;
+    hub.answers_ops("geek", OpAnswer::Done { url: None, routed: None });
+    let room = "/api/chat/rooms/ch_general/messages";
+    let (_, v) = call(&base, "b", "POST", room, say("@geek-box start")).await;
+    let root = v["seq"].as_i64().unwrap();
+    assert_eq!(waits_for_told(&hub, 1).await.len(), 1);
+
+    let mut states = vec![];
+    for (n, session) in ["Alpha", "Beta", "Alpha", "Beta"].into_iter().enumerate() {
+        let seq = agent_says(&base, "geek", session, &format!("@geek-box/x step {n}"), Some(root)).await;
+        states.push(thread_state(&base, root, seq).await);
+    }
+    assert_eq!(states, ["delivered", "delivered", "delivered", "chain"]);
+    assert_eq!(told(&hub).len(), 4, "start and three steps; the fourth wasn't told");
+
+    // A person's message restarts it, and the agent's next is told again.
+    let (_, v) = call(&base, "b", "POST", room, Some(json!({ "text": "go on", "parent": root }))).await;
+    assert!(v["seq"].as_i64().is_some());
+    assert_eq!(waits_for_told(&hub, 5).await.len(), 5, "b's reply is for the agent that spoke last");
+    let seq = agent_says(&base, "geek", "Alpha", "@geek-box/beta again", Some(root)).await;
+    assert_eq!(thread_state(&base, root, seq).await, "delivered");
+}
+
+/// Another machine's agents are told at most ten times in a thread in ten
+/// minutes (#575), a backstop; the eleventh says `chain`. The count forgets
+/// after the window.
+#[tokio::test]
+async fn agents_are_told_at_most_ten_times_per_thread_per_machine_in_a_window() {
+    let (hub, app, base, t, _u) = seeded().await;
+    geek_in_t(&base, &t).await;
+    hub.daemon("mini", "a", Some("t"));
+    for power in [THREADS_POST, THREADS_READ] {
+        let (st, g) =
+            call(&base, "a", "POST", "/api/grants", give("mini", power, json!({ "kind": "project", "id": t }))).await;
+        assert_eq!(st, 200, "{g}");
+    }
+    hub.answers_ops("geek", OpAnswer::Done { url: None, routed: None });
+    let (_, v) = call(&base, "b", "POST", "/api/chat/rooms/ch_general/messages", say("a thread")).await;
+    let root = v["seq"].as_i64().unwrap();
+    let mut last = String::new();
+    for n in 0..11 {
+        let seq = agent_says(&base, "mini", "Mini", &format!("@geek-box ping {n}"), Some(root)).await;
+        last = thread_state(&base, root, seq).await;
+        if n < 10 {
+            assert_eq!(last, "delivered", "{n}");
+        }
+    }
+    assert_eq!(last, "chain");
+    assert_eq!(asked_of(&hub, "geek").len(), 10);
+
+    let now = arugula_e2e::now_ms();
+    assert!(!app.chat.agent_told("ch_general", root, "geek", now));
+    assert!(app.chat.agent_told("ch_general", root, "geek", now + crate::chat::AGENT_TOLD_WINDOW_MS));
+}
