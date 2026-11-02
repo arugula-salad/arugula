@@ -17,9 +17,13 @@
 #
 # The daemon (v*):
 #   release check-version TAG      TAG's commit can be the daemon's release of
-#                                  TAG's version: it has the release's client
-#                                  fixtures (crates/proto/fixtures/releases/X.Y.Z)
-#                                  and it passed the rare jobs (check-rare)
+#                                  TAG's version: it passed the rare jobs
+#                                  (check-rare)
+#   release check-fixtures TAG     main has TAG's client fixtures
+#                                  (crates/proto/fixtures/releases/X.Y.Z), which
+#                                  `bump` commits there after the tag; a warning
+#                                  (in CI, in the job's summary) when it hasn't,
+#                                  never a failure
 #   release check-rare TAG         TAG's commit passed rare-nightly.yml's jobs,
 #                                  which ci/green doesn't count (#305): GitHub
 #                                  has its ci/rare/<sha> tag
@@ -68,11 +72,15 @@
 #                                  on main (or COMMIT; --app: the newest with
 #                                  ci/green-app) vX.Y.Z (--app: app-vX.Y.Z),
 #                                  the next version after the lane's newest
-#                                  tag, and push the tag. Nothing is committed:
-#                                  the commit must already have the release's
-#                                  notes (docs/releases/) and, for the daemon,
-#                                  its client fixtures (`just release-fixtures
-#                                  X.Y.Z`). When main has newer commits that
+#                                  tag, and push the tag. The commit must
+#                                  already have the release's notes
+#                                  (docs/releases/). For the daemon, it then
+#                                  commits the tag's client fixtures to main
+#                                  (crates/proto/fixtures/releases/X.Y.Z, #200)
+#                                  and pushes that; if main refuses it, the
+#                                  release still stands and it prints the
+#                                  `just release-fixtures X.Y.Z` to run.
+#                                  When main has newer commits that
 #                                  aren't green, it lists them and stops;
 #                                  --older releases without them (#1679).
 #                                  A daemon release stops too when the commit
@@ -376,18 +384,84 @@ newest_tag() {
   printf '%s\n' "$2" | sed -n "s|^[0-9a-f]*	refs/tags/$prefix\([0-9]*\.[0-9]*\.[0-9]*\)\$|\1|p" | sort -V | tail -1
 }
 
+# The daemon release's client fixtures (#200), as later daemons replay
+# them: where they go, and the tag's own (crates/proto/fixtures/*.jsonl at
+# SHA), `git ls-tree`'s lines.
+fixtures_dir() { echo "crates/proto/fixtures/releases/$1"; }
+tag_fixtures() { git ls-tree "$1" crates/proto/fixtures/ | awk -F'\t' '$1 ~ / blob / && $2 ~ /\.jsonl$/'; }
+
+# fixtures_to_main TAG SHA V: after the tag is out, SHA's client fixtures
+# into crates/proto/fixtures/releases/V on main, one commit on top of it,
+# pushed straight there. The version-bump commit used to carry them; since
+# #1986 there's none. The arugula-release deploy driver's token is the
+# arugula-io App's, which the "binaries check" ruleset lets push to main;
+# from a person's shell it's their own login. Built in a scratch index, so
+# the checkout isn't touched. Skipped when main has that set already. When
+# main moves under it, it tries again on the new main, a few times. It never
+# fails the release, which is out already: it warns and says what to run.
+fixtures_to_main() {
+  local tag=$1 sha=$2 v=$3 dir entries how n main idx tree commit meta path err=''
+  dir=$(fixtures_dir "$v")
+  how="run \`just release-fixtures $v\` and merge it to main"
+  entries=$(tag_fixtures "$sha")
+  if [ -z "$entries" ]; then
+    echo "warning: ${sha:0:12} has no crates/proto/fixtures/*.jsonl, so main gets no $dir; $how" >&2
+    return 0
+  fi
+  idx=$(mktemp -d)/index
+  for n in 1 2 3 4 5; do
+    if ! err=$(git fetch -q "$url" main 2>&1); then continue; fi
+    main=$(git rev-parse FETCH_HEAD)
+    rm -f "$idx"
+    GIT_INDEX_FILE=$idx git read-tree "$main"
+    # Not --force-remove with xargs: BSD's and GNU's differ on no input.
+    while IFS= read -r -d '' path; do
+      GIT_INDEX_FILE=$idx git update-index --force-remove -- "$path"
+    done < <(GIT_INDEX_FILE=$idx git ls-files -z -- "$dir")
+    while IFS=$'\t' read -r meta path; do
+      GIT_INDEX_FILE=$idx git update-index --add --cacheinfo "100644,$(echo "$meta" | cut -d' ' -f3),$dir/${path##*/}"
+    done <<<"$entries"
+    # --missing-ok: a partial clone (the driver's) has the trees, not every file.
+    tree=$(GIT_INDEX_FILE=$idx git write-tree --missing-ok)
+    if [ "$tree" = "$(git rev-parse "$main^{tree}")" ]; then
+      echo "main has $dir already, as $tag has it"
+      return 0
+    fi
+    commit=$(git commit-tree "$tree" -p "$main" -m "Fixtures: the client fixtures $tag shipped, in $dir (#200)")
+    if err=$(git push -q "$url" "$commit:refs/heads/main" 2>&1); then
+      echo "committed $dir to main (${commit:0:12})"
+      return 0
+    fi
+  done
+  echo "warning: main refused $dir (tried $n times). $tag is released all the same; $how" >&2
+  [ -z "$err" ] || printf '%s\n' "$err" | sed 's/^/  git: /' >&2
+  return 0
+}
+
 case "${1:-}" in
   check-version)
     # The daemon's release of TAG's version from TAG's commit, as it is: no
     # commit moves the version (#1986), so this checks what the commit has.
+    # Not its client fixtures: `bump` commits those to main after the tag
+    # (check-fixtures).
     tag=${2:?usage: release check-version TAG}
-    v=$(tag_version "$tag")
-    sha=$(git rev-parse --verify -q "$tag^{commit}") || { echo "no commit for $tag here" >&2; exit 1; }
-    # What this release's clients send and see, for later daemons to replay
-    # (#200): copied before the release, with its notes.
-    [ -n "$(git ls-tree --name-only "$sha" "crates/proto/fixtures/releases/$v/")" ] \
-      || { echo "$tag's commit has no crates/proto/fixtures/releases/$v: run \`just release-fixtures $v\` and merge it with the release's notes" >&2; exit 1; }
+    tag_version "$tag" >/dev/null
     check_rare "$tag"
+    ;;
+  check-fixtures)
+    # What this release's clients send and see, for later daemons to replay
+    # (#200), on main once the release is out. Only ever a warning.
+    tag=${2:?usage: release check-fixtures TAG}
+    v=$(tag_version "$tag")
+    dir=$(fixtures_dir "$v")
+    if git fetch -q "$url" main && [ -n "$(git ls-tree --name-only FETCH_HEAD "$dir/")" ]; then
+      echo "main has $dir"
+    else
+      msg="main has no $dir, the client fixtures $tag shipped (scripts/release bump commits them after the tag; that didn't go through): run \`just release-fixtures $v\` and merge it to main"
+      echo "warning: $msg" >&2
+      if [ -n "${GITHUB_ACTIONS:-}" ]; then echo "::warning::$msg"; fi
+      if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then printf '### Client fixtures\n\n%s\n' "$msg" >>"$GITHUB_STEP_SUMMARY"; fi
+    fi
     ;;
   stamp)
     # TAG's version into this checkout's files, before a build (#1986), as
@@ -427,9 +501,10 @@ case "${1:-}" in
     ;;
   bump)
     # The newest green commit on main, tagged with the lane's next version
-    # (#1986): the tag names the commit CI passed, as it is, and nothing is
-    # committed. The release workflow writes the version into its build
-    # (`stamp`). Green is the lane's (#307): ci/green for the daemon,
+    # (#1986): the tag names the commit CI passed, as it is, and no commit
+    # moves the version. For the daemon, the tag's client fixtures then go to
+    # main in a commit of their own. The release workflow writes the version
+    # into its build (`stamp`). Green is the lane's (#307): ci/green for the daemon,
     # ci/green-app for --app, the tags chant's `release cut --lane` reads.
     shift
     part=patch lane=daemon commit='' dry=0 older=0 start_rare=0
@@ -498,18 +573,16 @@ case "${1:-}" in
         echo "${sha:0:12} is already released in $prefix${last% *}" >&2; exit 1
       fi
     fi
-    # What the release needs in the commit itself, since nothing is
-    # committed for it: its notes, and for the daemon the notes' headline
-    # section (the web client's What's new, scripts/whats-new.mjs, read from
-    # the build) and its client fixtures. A dry run lists what's missing.
+    # What the release needs in the commit itself: its notes, and for the
+    # daemon the notes' headline section (the web client's What's new,
+    # scripts/whats-new.mjs, read from the build). Not its client fixtures,
+    # which go to main after the tag (fixtures_to_main). A dry run lists
+    # what's missing.
     missing=()
     if ! git cat-file -e "$sha:$notes" 2>/dev/null; then
       missing+=("${sha:0:12} has no $notes: merge the release's notes, and release once that commit is green")
     elif [ "$lane" = daemon ] && ! git show "$sha:$notes" | grep -x "$headlines" >/dev/null; then
       missing+=("$notes has no headline section (a \`\`\`whats-new block, scripts/whats-new.mjs) at ${sha:0:12}")
-    fi
-    if [ "$lane" = daemon ] && [ -z "$(git ls-tree --name-only "$sha" "crates/proto/fixtures/releases/$new/")" ]; then
-      missing+=("${sha:0:12} has no crates/proto/fixtures/releases/$new: run \`just release-fixtures $new\` and merge it with the notes")
     fi
     echo "$tag: ${cur:-none} -> $new on ${sha:0:12} ($(git log -1 --format=%s "$sha")), the newest green commit; main is at ${main:0:12}"
     if [ "${#missing[@]}" != 0 ]; then
@@ -531,7 +604,11 @@ case "${1:-}" in
       fi
     fi
     if [ "$dry" = 1 ]; then
-      echo "Dry run: would tag ${sha:0:12} $tag and push the tag; nothing tagged or pushed."
+      if [ "$lane" = daemon ]; then
+        echo "Dry run: would tag ${sha:0:12} $tag, push the tag, then commit its client fixtures to main as $(fixtures_dir "$new"); nothing tagged or pushed."
+      else
+        echo "Dry run: would tag ${sha:0:12} $tag and push the tag; nothing tagged or pushed."
+      fi
       exit 0
     fi
     git tag -a "$tag" "$sha" -m "${title/Arugula/arugula}$trailer"
@@ -540,8 +617,17 @@ case "${1:-}" in
       echo "pushing $tag was refused: nothing was pushed; run it again" >&2
       exit 1
     fi
-    # The arugula-release deploy driver (M221) reads this line.
+    # The arugula-release deploy driver (M221) reads this line (the last
+    # that starts `pushed `).
     echo "pushed $tag (${sha:0:12})"
+    # The daemon's client fixtures, which the release no longer needs in
+    # its commit: onto main now (#200). Never a failure from here on.
+    # (Called with ||, so set -e doesn't stop it part way: nothing it does
+    # may fail the run now that the tag is out.)
+    if [ "$lane" = daemon ]; then
+      fixtures_to_main "$tag" "$sha" "$new" ||
+        echo "warning: copying $tag's client fixtures to main failed; run \`just release-fixtures $new\` and merge it to main" >&2
+    fi
     ;;
   sidecars)
     # From the latest daemon release (releases/latest), which this app then

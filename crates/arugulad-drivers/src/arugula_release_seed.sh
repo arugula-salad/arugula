@@ -26,15 +26,13 @@ echo one >src/code
 git add -A
 git commit -qm one
 one=$(git rev-parse HEAD)
-# two has the notes for 0.1.1 and the app's 0.2.0, and the client fixtures
-# for 0.1.1: a release is its commit as it is (#1986), so what it needs is
-# in the commit.
+# two has the notes for 0.1.1 and the app's 0.2.0: a release is its
+# commit as it is (#1986), so what it needs is in the commit. Not a copy of
+# the client fixtures: the release commits that to main after its tag.
 echo two >src/code
 for n in 0.1.1 app-0.2.0; do echo "notes $n" >"docs/releases/$n.md"; done
 # A daemon release's notes have a headline section (scripts/whats-new.mjs).
 printf '\n```whats-new\n[]\n```\n' >>docs/releases/0.1.1.md
-mkdir -p crates/proto/fixtures/releases/0.1.1
-cp crates/proto/fixtures/session.jsonl crates/proto/fixtures/releases/0.1.1/
 git add -A
 git commit -qm two
 two=$(git rev-parse HEAD)

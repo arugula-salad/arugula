@@ -292,9 +292,9 @@ async fn gh() -> Gh {
 
 /// A fake GitHub's repository: Arugula in miniature (the daemon at 0.1.0,
 /// the app at 0.1.0, a client fixture), its real `scripts/release`; two
-/// green commits, the second with notes for 0.1.1 and the app's 0.2.0 and
-/// 0.1.1's client fixtures, and a third CI hasn't passed; and a green
-/// commit only a pull request's ref holds.
+/// green commits, the second with notes for 0.1.1 and the app's 0.2.0,
+/// and a third CI hasn't passed; and a green commit only a pull request's
+/// ref holds.
 #[cfg(unix)]
 const SEED: &str = include_str!("arugula_release_seed.sh");
 
@@ -387,8 +387,9 @@ impl Rig {
 }
 
 /// A patch release from the newest green commit: the real script tags the
-/// commit itself v0.1.1, with the deploy's trailer, and pushes only the tag
-/// (#1986: no bump commit, and main doesn't move); the token is revoked
+/// commit itself v0.1.1, with the deploy's trailer, and pushes the tag
+/// (#1986: no bump commit), then commits the tag's client fixtures to main
+/// with the same token (main's one new commit); the token is revoked
 /// before the API is asked anything; the workflow is followed to its end,
 /// and the release is out though two other jobs failed (as v0.59.0's did).
 /// The same deploy again, or another of the same commit, finds it
@@ -407,7 +408,19 @@ async fn a_release_tags_the_commit_and_follows_its_workflow() {
     assert_eq!((rel.tag.as_str(), rel.version.as_str()), ("v0.1.1", "0.1.1"));
     assert_eq!(r.tag("v0.1.1").as_deref(), Some(rel.commit.as_str()), "the tag is on GitHub");
     assert_eq!(rel.commit, r.two, "on the commit itself");
-    assert_eq!((r.main(), rel.main.as_deref()), (before, None), "main doesn't move");
+    // The fixtures commit, the one thing main gets: the tag's client
+    // fixtures as crates/proto/fixtures/releases/0.1.1, on main as it was.
+    let main = r.main();
+    assert_eq!(git(&r.bare(), &["rev-parse", &format!("{main}^")]), before, "one commit on main");
+    assert_eq!(
+        git(&r.bare(), &["diff", "--name-only", &before, &main]),
+        "crates/proto/fixtures/releases/0.1.1/session.jsonl"
+    );
+    assert_eq!(
+        git(&r.bare(), &["show", &format!("{main}:crates/proto/fixtures/releases/0.1.1/session.jsonl")]),
+        "{\"a session\":1}"
+    );
+    assert_eq!(rel.main, None, "main isn't the release's");
     let trailer = format!("Arugula-Deploy: {}", d.id);
     let msg = git(&r.bare(), &["cat-file", "-p", "v0.1.1"]);
     assert!(msg.lines().any(|l| l == trailer), "{msg}");
@@ -471,7 +484,7 @@ async fn the_apps_lane_tags_app_v() {
 }
 
 /// Nothing is pushed for a commit CI hasn't passed, one CI passed that
-/// isn't on main (a pull request's), a release whose notes and fixtures aren't in it,
+/// isn't on main (a pull request's), a release whose notes aren't in it,
 /// another repository, or without the token.
 // A deploy's box is Linux: git and bash.
 #[cfg(unix)]
@@ -484,7 +497,7 @@ async fn what_it_refuses_pushes_nothing() {
     for (d, why) in [
         (r.deploy(&r.three, "patch", "daemon"), "has no ci/green tag"),
         (r.deploy(&r.pr, "patch", "daemon"), "isn't on arugula-salad/arugula's main"),
-        (r.deploy(&r.two, "minor", "daemon"), "has no crates/proto/fixtures/releases/0.2.0"),
+        (r.deploy(&r.two, "minor", "daemon"), "has no docs/releases/0.2.0.md"),
         (Deploy { place: "acme/arugula".into(), ..r.deploy(&r.two, "patch", "daemon") }, "arugula-salad/arugula only"),
     ] {
         let (got, followed) = apply(&cfg, &d, &tokens()).await;

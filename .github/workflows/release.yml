@@ -82,8 +82,8 @@ jobs:
           cache-key: release-static
           packages: gh
       - run: just bootstrap
-      # The client fixtures and the rare jobs (#305), which the cut doesn't
-      # read; then the tag's version into this checkout.
+      # The rare jobs (#305), which the cut doesn't read; then the tag's
+      # version into this checkout.
       - run: scripts/release check-version "$GITHUB_REF_NAME"
       - run: scripts/release stamp "$GITHUB_REF_NAME"
       - run: just static x86_64
@@ -275,6 +275,24 @@ jobs:
       - run: scripts/release check-latest
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # The release's client fixtures on main (#200). `scripts/release bump`
+  # commits them there right after it pushes the tag (from the
+  # arugula-release deploy, with the arugula-io App's token, which the
+  # "binaries check" ruleset lets push to main), since there's no bump
+  # commit to carry them. This only checks: if main doesn't have
+  # crates/proto/fixtures/releases/X.Y.Z, its summary says to run `just
+  # release-fixtures X.Y.Z`. It never fails, and runs whatever became of
+  # publish.
+  fixtures:
+    needs: [cut, publish]
+    if: ${{ !cancelled() && needs.cut.result == 'success' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - run: scripts/release check-fixtures "$GITHUB_REF_NAME"
 
   # The hosted control (control.arugula.io, M133 #1129), from the tag's
   # own static build, as soon as linux has built it: automatic, with no

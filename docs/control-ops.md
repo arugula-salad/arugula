@@ -1221,11 +1221,14 @@ commit of `arugula-salad/arugula`, by its full id. Its box:
    tag and no `ci/revoked/<sha>` one (the platform asked GitHub the same
    before it minted the run's tokens);
 2. runs `scripts/release bump <bump> [--app] <sha>`, which stops if the
-   commit has no `docs/releases/X.Y.Z.md` (or, for the daemon, its client
-   fixtures), the tag exists, or the commit is in a release already.
-   Otherwise it tags the commit itself `vX.Y.Z` (no version-bump commit
-   since #1986: the release's build stamps the version) and pushes the
-   tag, whose message carries `Arugula-Deploy: dep_…`. A deploy of a
+   commit has no `docs/releases/X.Y.Z.md`, the tag exists, or the commit
+   is in a release already. Otherwise it tags the commit itself `vX.Y.Z`
+   (no version-bump commit since #1986: the release's build stamps the
+   version) and pushes the tag, whose message carries `Arugula-Deploy:
+   dep_…`. For the daemon it then commits the tag's client fixtures to
+   main (`crates/proto/fixtures/releases/X.Y.Z`, #200) and pushes that
+   with the same token; if main refuses it, the run's log says to run
+   `just release-fixtures X.Y.Z` and the release goes on. A deploy of a
    commit that's released already is refused, and so is one whose id is on
    main already (a release from before #1986 committed it there);
 3. revokes its write token, then follows the tag's release workflow for
@@ -1254,9 +1257,10 @@ before.
 **Set up once:**
 
 - The App (`arugula-io`) gets **Contents: write** on its installation in
-  arugula-salad (it already reads Actions), to push the tag. Its bypass on
-  the "binaries check" ruleset was for the push to main a release made
-  before #1986; a release now pushes only its tag. Nothing else.
+  arugula-salad (it already reads Actions), to push the tag, and its
+  bypass on the "binaries check" ruleset, to push a daemon release's
+  client fixtures straight to main after the tag (before #1986 it was for
+  the bump commit). Nothing else.
 - The platform's `ARUGULA_PLATFORM_RELEASE_PROJECT` names Arugula's
   project id (`prj_…`; comma separated for more). No other project can
   make an `arugula-release` environment, plan with it, or have its token

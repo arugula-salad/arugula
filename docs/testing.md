@@ -480,7 +480,7 @@ Recorded from real systems and checked in, so tests see real shapes:
 | `crates/daemon/tests/fixtures/chant/why/` | `graph --intent app/server.mjs --json` and `status local --json` (chant 0.108.1) over a workspace with a committed agent run, an uncommitted line, a decision and a held lease (#619) | `make.sh DIR CHANT OUT` beside them, with the chant from `web/e2e/fixtures/chant-why` |
 | `crates/daemon/tests/fixtures/chant/audit-agents.json` | `chant audit --agents --scope system,user --format json` (chant 0.95.0), with only Claude Code configured | `chant audit --agents` with `HOME` a scratch dir holding only `.claude/CLAUDE.md` and `.claude/settings.json` |
 | `crates/proto/fixtures/` | client fixtures: what a client and the daemon said to each other ([below](#client-fixtures)) | `just record-fixtures [names]` |
-| `crates/proto/fixtures/releases/<version>/` | the client fixtures as each release shipped them | `just release-fixtures X.Y.Z`, with the release's notes |
+| `crates/proto/fixtures/releases/<version>/` | the client fixtures as each release shipped them | `just release` commits them to main after the tag; by hand, `just release-fixtures X.Y.Z` |
 | `crates/e2e/fixtures/certs.json` | device certificates, a revocation and what Rust makes of them (`interop fixtures`), for implementations without a Rust toolchain | `just e2e-vectors` |
 
 Scrub anything personal or secret before checking a recording in;
@@ -596,10 +596,13 @@ fails here, as does a message it waited for that no longer comes.
 
 ### Releases
 
-Each release copies the set to `crates/proto/fixtures/releases/<version>/`
-(`just release-fixtures X.Y.Z`, merged with the release's notes before
-it's tagged; `just release` and `scripts/release check-version` refuse a
-tag on a commit without it).
+Each daemon release copies the set to `crates/proto/fixtures/releases/<version>/`
+on main: `just release` commits the tag's set there right after it pushes
+the tag (the arugula-release deploy does it with the `arugula-io` App's
+token), and skips it when main has it already. If main refuses that push,
+the release stands and it says to run `just release-fixtures X.Y.Z` and
+merge that; release.yml's `fixtures` job says so too in its summary
+([development.md](development.md#releasing)).
 `released_fixtures_still_play` replays the newest two releases' sets, so
 a daemon change that breaks a client still out there fails before it
 ships. Until the first release with fixtures, it says there are none.

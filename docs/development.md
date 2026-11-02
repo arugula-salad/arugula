@@ -370,11 +370,10 @@ keeps whatever version it has; the release workflow's build jobs write the
 tag's version into their own checkout (`scripts/release stamp TAG`) before
 they build, as chant's `scripts/release-pack.sh` does for its packages, so
 the binaries, the tarballs' names and the hub's `/control.json` carry it.
-What a release needs is therefore in the commit before it's tagged.
+What a release needs is therefore in the commit before it's tagged: its
+notes. The copy of its client fixtures comes after the tag (step 2).
 
-1. Notes go in `docs/releases/X.Y.Z.md`, with a copy of the client
-   fixtures for later daemons to replay (#200): `just release-fixtures
-   X.Y.Z` writes `crates/proto/fixtures/releases/X.Y.Z`. Merge both to main.
+1. Notes go in `docs/releases/X.Y.Z.md`. Merge them to main.
    The notes end with a headline section, a ```` ```whats-new ```` block of
    a few items (each a feature id, a title, one line, and maybe a **Try
    it** command or route and who it `needs`): the web client's What's new
@@ -384,8 +383,20 @@ What a release needs is therefore in the commit before it's tagged.
 2. Once that commit (or a later one) is green, `just release` (a patch;
    `just release minor`, `just release major`) tags the newest commit on
    main that passed CI (below) `vX.Y.Z`, the next version after the newest
-   `v*` tag, and pushes the tag. It refuses a commit without the notes,
-   their headline section or the fixtures for X.Y.Z. If main has newer
+   `v*` tag, and pushes the tag. It refuses a commit without the notes or
+   their headline section. Then it copies the tag's client fixtures
+   (`crates/proto/fixtures/*.jsonl`), which later daemons replay (#200),
+   to `crates/proto/fixtures/releases/X.Y.Z` in a commit of their own and
+   pushes that straight to main, as the version-bump commit used to carry
+   them. From the arugula-release deploy that push uses the `arugula-io`
+   App's token, which has a bypass on the "binaries check" ruleset for it;
+   from your shell it's your own login. It skips a set main already has,
+   and tries again a few times if main moves under it. If main still
+   refuses it, the release stands and it prints the command to run
+   instead: `just release-fixtures X.Y.Z` (from the tag, wherever you run
+   it), then merge that to main. release.yml's `fixtures` job checks main
+   after the publish and says the same in its summary when the set is
+   missing; it never fails the release. If main has newer
    commits that aren't green yet, it lists them (the release would leave
    them out) and stops: wait for them, or `just release --older` releases
    without them (#1679). The commit also needs its `ci/rare/<sha>` tag: the
@@ -396,7 +407,8 @@ What a release needs is therefore in the commit before it's tagged.
    what's missing, any commits left out and whether the commit has its
    `ci/rare` tag, and stops. By hand instead: `git tag -a vX.Y.Z -m
    "arugula X.Y.Z" "$sha" && git push origin vX.Y.Z`, with the commit
-   `chant ci last-green --lane daemon` names.
+   `chant ci last-green --lane daemon` names, then `just release-fixtures
+   X.Y.Z` merged to main.
    `.github/workflows/release.yml` cuts the release first (`cut`, [below](#publishing-through-chant)),
    then builds the Linux tarballs in the home cloud (`arugula-amd64`,
    [CI](#ci)), the macOS ones on jake-mini (Apple silicon natively, Intel
@@ -615,14 +627,15 @@ once that release is out (lex00, 2026-10-08, #524).
 
 `just release` (`scripts/release bump`, #524) reads main and the `ci/`
 and release tags from GitHub, whatever your remotes are, and changes
-nothing in your checkout. It takes the next version from the lane's newest
+nothing in your checkout (it builds the fixtures commit in a scratch
+index). It takes the next version from the lane's newest
 tag (or the commit's own version, when that's higher), and refuses a
 commit the lane already released or a tag that exists. `just release
 COMMIT` releases an older green commit on main instead.
 `scripts/tests/release-bump.sh` (`just test-scripts`) runs it against a
 local repository.
 
-`scripts/release` (`check-version` and `formula` for the daemon; `sidecars`
+`scripts/release` (`check-version`, `check-fixtures` and `formula` for the daemon; `sidecars`
 for the app; `stamp`, `sums`, `draft` and `check-latest` around chant's
 publish) checks with `check-latest` that `releases/latest` is still a
 daemon release after each publish. `scripts/tests/release-targets.sh`

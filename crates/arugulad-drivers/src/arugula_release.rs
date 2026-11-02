@@ -27,7 +27,10 @@
 //!    already, so a replay too, a daemon release's commit without the
 //!    `ci/rare/<sha>` tag rare-nightly.yml gives it, #305); else it tags
 //!    the commit itself and pushes the tag (#1986: no version-bump commit;
-//!    the release's build stamps the version). A commit from before #1986
+//!    the release's build stamps the version). For the daemon it then
+//!    commits the tag's client fixtures to `main` with the same token
+//!    (`crates/proto/fixtures/releases/X.Y.Z`, #200); if `main` refuses
+//!    that, it says so in the log and the release goes on. A commit from before #1986
 //!    has the script that committed a bump and pushed `main` with the tag,
 //!    and that still works.
 //! 4. **Revokes the token** at GitHub right after: nothing after needs it.
@@ -214,7 +217,9 @@ pub struct Released {
     /// on top of it).
     pub commit: String,
     /// `main` after the push, when the script pushed it (before #1986, the
-    /// bump merged into it); `None` when it pushed only the tag.
+    /// bump merged into it); `None` from a script since #1986, which
+    /// pushes the tag and, for the daemon, a commit of the client fixtures
+    /// to `main` that its log names and isn't the release's.
     pub main: Option<String>,
     /// The `scripts/release` it ran: its blob id at the commit.
     pub script: String,

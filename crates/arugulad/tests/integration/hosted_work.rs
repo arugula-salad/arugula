@@ -1460,7 +1460,8 @@ fn a_deploy_box_applies_an_apps_platform_deploy() {
 /// minted token comes on the driver's standard input, `arugulad
 /// _arugula-release` runs the commit's real `scripts/release bump` against
 /// a bare repository standing in for GitHub, which tags the commit itself
-/// v0.1.1 and pushes the tag (#1986); the write token is revoked; the release workflow is
+/// v0.1.1 and pushes the tag (#1986), then its client fixtures to main; the
+/// write token is revoked; the release workflow is
 /// followed with the read token (a fake API shaped as GitHub's), which is
 /// revoked after; the run succeeds and reports the tag on its result pipe.
 /// Neither token is ever on disk or in the pane.

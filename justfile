@@ -489,10 +489,11 @@ shellcheck:
 # Tag the newest commit on main with a ci/green tag (--app: ci/green-app,
 # #307) as it is, with the lane's next version, and push the tag (#1986:
 # no commit moves the version; the release's build stamps it). The commit
-# needs the release's notes and, for the daemon, its client fixtures
-# (`just release-fixtures X.Y.Z`; docs/development.md). A daemon release
-# also needs the commit's ci/rare tag (rare-nightly.yml, #305): --rare
-# starts those jobs on it and waits for them first.
+# needs the release's notes (docs/development.md). For the daemon it then
+# commits the tag's client fixtures to main by itself (#200); if main
+# refuses that, it says to run `just release-fixtures X.Y.Z`. A daemon
+# release also needs the commit's ci/rare tag (rare-nightly.yml, #305):
+# --rare starts those jobs on it and waits for them first.
 # just release [patch|minor|major] [--app] [COMMIT|--older] [--rare] [--dry-run]
 release *args:
     scripts/release bump {{args}}
@@ -1167,17 +1168,29 @@ record-fixtures *names:
     {{cargo}} build -p arugulad
     {{cargo}} run -q -p arugula-testkit --bin record-fixtures -- --daemon {{target_dir}}/debug/arugulad --record crates/proto/fixtures {{names}}
 
-# Copy the client fixtures to crates/proto/fixtures/releases/VERSION, the
-# daemon release about to be tagged, to merge with its notes
-# (docs/development.md): the daemon's tests replay the last two.
+# Copy the client fixtures to crates/proto/fixtures/releases/VERSION, to
+# merge to main: the daemon's tests replay the last two releases' sets.
+# `just release` commits them to main itself after the tag; this is for
+# when that push didn't go through (it says so, as does release.yml's
+# fixtures job). From the tag vVERSION when it's here or on GitHub, else
+# from this checkout (docs/development.md).
 release-fixtures version:
     #!/usr/bin/env bash
     set -euo pipefail
     v={{version}}
     [[ "$v" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "release-fixtures: VERSION is X.Y.Z" >&2; exit 2; }
     d=crates/proto/fixtures/releases/$v
+    git rev-parse -q --verify "refs/tags/v$v^{commit}" >/dev/null ||
+      git fetch -q https://github.com/arugula-salad/arugula.git "refs/tags/v$v:refs/tags/v$v" 2>/dev/null || true
     rm -rf "$d" && mkdir -p "$d"
-    cp crates/proto/fixtures/*.jsonl "$d/"
+    if git rev-parse -q --verify "refs/tags/v$v^{commit}" >/dev/null; then
+      echo "v$v's client fixtures:"
+      git ls-tree "v$v" crates/proto/fixtures/ | awk -F'\t' '$1 ~ / blob / && $2 ~ /\.jsonl$/ { print $2 }' |
+        while IFS= read -r f; do git show "v$v:$f" >"$d/${f##*/}"; done
+    else
+      echo "no tag v$v: this checkout's client fixtures:"
+      cp crates/proto/fixtures/*.jsonl "$d/"
+    fi
     ls "$d"
 
 # The certificate vectors checked in for other implementations

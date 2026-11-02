@@ -7,7 +7,8 @@
 //! `scripts/release bump` as that commit has it, which is what `just
 //! release` runs: it tags the commit itself with the lane's next version and
 //! pushes the tag (#1986: no commit moves the version; the release's build
-//! stamps it). The tag's release workflow then builds, signs and publishes: its
+//! stamps it). A daemon release then commits the tag's client fixtures to
+//! `main` (#200), with the same token. The tag's release workflow then builds, signs and publishes: its
 //! secrets (the updater key, Apple's, the marketplaces') stay in GitHub
 //! Actions. The box follows that workflow to its end, for at most
 //! [`FOLLOW_MINUTES`].
@@ -186,7 +187,15 @@ pub fn plan_lines(source_kind: &str, source_ref: &str, source_where: &str, setti
     ));
     t.push_str(&format!(
         "does: tag the commit itself {prefix}X.Y.Z, with no version-bump commit (the release workflow stamps the \
-         version into its build), and push the tag over https; {BRANCH} doesn't move\n"
+         version into its build), and push the tag over https; {}\n",
+        match lane {
+            Lane::Daemon => format!(
+                "then commit the tag's client fixtures to {BRANCH} as crates/proto/fixtures/releases/X.Y.Z, unless \
+                 {BRANCH} has them, and push that over https (if {BRANCH} refuses it, the release stands and the log \
+                 says so)"
+            ),
+            Lane::App => format!("{BRANCH} doesn't move"),
+        }
     ));
     t.push_str(&format!(
         "does: follow the tag's release workflow ({workflow}) for at most {FOLLOW_MINUTES} minutes; the release is \
@@ -276,6 +285,8 @@ mod tests {
             daemon.contains(&format!("bump patch {sha}, as")) && daemon.contains("tag the commit itself vX.Y.Z"),
             "{daemon}"
         );
+        assert!(daemon.contains("commit the tag's client fixtures to main") && !daemon.contains("main doesn't move"));
+        assert!(app.contains("main doesn't move") && !app.contains("fixtures"), "{app}");
         assert!(plan_lines("commit", &sha, "acme/app", &Settings::new()).starts_with("refused "));
     }
 
