@@ -45,7 +45,7 @@ import { answerVia, SaidAvatar, SaidHead, saidOf, SessionCardMessage, sessionOf 
 import { dmLabel } from "./members";
 import { handled } from "./escape";
 import { useStickToBottom } from "./stick";
-import { BookmarkIcon, MachineIcon } from "./icons";
+import { BookmarkIcon, MachineIcon, ReactIcon } from "./icons";
 import { presence } from "./presence";
 import { Time } from "../ui/time";
 
@@ -708,7 +708,7 @@ export function RoomMessage({
               </button>
             ))}
             <button title="Add a reaction" aria-label="Add a reaction" aria-expanded={panel === "react"} data-react-button onClick={() => setPanel(panel === "react" ? null : "react")}>
-              ☺
+              <ReactIcon />
             </button>
           </>
         )}

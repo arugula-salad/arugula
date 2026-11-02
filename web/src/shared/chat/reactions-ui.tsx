@@ -9,6 +9,7 @@ import { chat } from "../chat-store";
 import type { ChatMessage, ChatRoom } from "../proto";
 import { EmojiPicker } from "./emoji-picker";
 import { handled } from "./escape";
+import { ReactIcon } from "./icons";
 import { QUICK, tip } from "./reactions";
 
 /** Whether `room` takes reactions on `m` (an archive's messages and a
@@ -60,11 +61,7 @@ export function ReactionChips({
       ))}
       {may && (
         <button type="button" class="reaction add" title="Add a reaction" aria-label="Add a reaction" data-react-button onClick={open}>
-          <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.4">
-            <circle cx="8" cy="8" r="6.2" />
-            <path d="M5.4 9.6c.6 1.1 1.5 1.6 2.6 1.6s2-.5 2.6-1.6" stroke-linecap="round" />
-            <path d="M5.9 6.2v.6M10.1 6.2v.6" stroke-linecap="round" stroke-width="1.8" />
-          </svg>
+          <ReactIcon />
         </button>
       )}
     </div>
