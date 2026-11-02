@@ -124,7 +124,10 @@ test("cards show labels and owners, the Label menu narrows the board and the URL
     await alice.locator("[data-board-row]").click({ position: { x: 5, y: 5 } });
     await expect(alice.locator("[data-board-drawer-tags] [data-board-label]")).toHaveCount(5);
     await shot(alice, `drawer-${name}`);
-    await alice.keyboard.press("Escape");
+    // Close the drawer with its own button (as the other board specs do)
+    // and wait for it to go: it covers the find box's ×.
+    await alice.locator("[data-board-drawer-close]").click();
+    await expect(alice.locator("[data-board-drawer]")).toHaveCount(0);
     await alice.locator("[data-board-find-close]").click();
   }
 });
