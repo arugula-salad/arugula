@@ -1124,6 +1124,31 @@ html[data-corners="square"] .platform input.sw-switch {
 .platform .plane-epics .dim {
   font-size: 0.85em;
 }
+.platform .plane-history {
+  display: grid;
+  gap: 6px;
+  margin: 16px 0 24px;
+  min-width: 0;
+}
+.platform .plane-history h3 {
+  margin: 0;
+}
+.platform .plane-failed {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+}
+.platform .plane-failed span {
+  flex: 1 1 16rem;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.platform .plane-events {
+  margin: 0;
+  padding-left: 1.2em;
+}
 .platform .plane-connect-buttons {
   display: flex;
   justify-content: flex-end;

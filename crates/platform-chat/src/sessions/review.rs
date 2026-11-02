@@ -39,7 +39,7 @@ use tracing::{info, warn};
 
 use crate::{
     Platform,
-    chat::at_words,
+    chat::{at_words, without_code},
     db::{
         chat::{NewMessage, Room},
         sessions::{Event, Kind, MAX_PROMPT, Move, Role, Session, SessionDetail, State, create_review_in},
@@ -69,13 +69,13 @@ pub const NOTHING_PUSHED: &str =
 
 /// Whether `text` mentions `@codex`.
 pub fn mentions(text: &str) -> bool {
-    at_words(text).iter().any(|w| w == MENTION)
+    at_words(&without_code(text)).iter().any(|w| w == MENTION)
 }
 
 /// Whether `text` asks `@codex` for a review: `@codex` followed by
 /// `review`.
 pub fn asks(text: &str) -> bool {
-    let words: Vec<String> = text
+    let words: Vec<String> = without_code(text)
         .split(|c: char| c.is_whitespace() || matches!(c, ',' | ':' | '.' | '!' | '?' | ';'))
         .filter(|w| !w.is_empty())
         .map(str::to_lowercase)

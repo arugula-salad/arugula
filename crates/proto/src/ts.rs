@@ -160,6 +160,8 @@ fn generate() -> String {
     c.visit::<arugula_control_wire::projects::TrackerWrite>();
     c.visit::<arugula_control_wire::projects::TrackerWriteDone>();
     c.visit::<arugula_control_wire::projects::TrackerPendingWrites>();
+    c.visit::<arugula_control_wire::projects::TrackerHistory>();
+    c.visit::<arugula_control_wire::projects::TrackerEvent>();
     c.visit::<arugula_control_wire::projects::TrackerPendingWrite>();
     // Content mirroring, and bodies on read (M166).
     c.visit::<arugula_control_wire::projects::RepoSettings>();
@@ -230,6 +232,7 @@ fn generate() -> String {
         c.visit::<WorkQuery>();
         c.visit::<WorkItems>();
         c.visit::<BoardSettings>();
+        c.visit::<DocBoards>();
     }
     // A project's Docs (aru-118).
     {

@@ -285,6 +285,50 @@ fn a_page_that_doesnt_show_the_doc_is_sent_nothing_of_it() {
 }
 
 #[test]
+fn a_summaries_only_connection_is_sent_no_blocks() {
+    let (d, pane, _) = shared();
+    let m = Mcp::bridge(&d, Some(pane));
+    let doc = m.call("doc", outline(2)).unwrap()["block"].as_u64().unwrap();
+
+    // As the fleet connects: it says so first, then takes patches.
+    let mut summary = Page::connect_plain(&d, None);
+    summary.send(json!({ "type": "subscribe", "summary": true }));
+    summary.send(json!({ "type": "block_patches" }));
+    summary.sync();
+    let mut page = Page::connect(&d, None);
+    page.show(pane);
+    page.settled(doc);
+
+    // Not the one it could have had on connecting, nor what changes after.
+    m.call("doc", fill(doc, "s1", "One.")).unwrap();
+    assert_eq!(bodies(&page.block(doc))[0].as_deref(), Some("One."));
+    let made = d.post("/api/blocks", json!({ "type": "browser", "config": { "url": "http://localhost:1" } }));
+    let other = made["block"].as_u64().expect("a block anyone is sent, shown or not");
+    page.block(other);
+    let quiet = Duration::from_secs(2);
+    let mut blocks = vec![];
+    while let Some(msg) = summary.recv(quiet) {
+        if msg["type"] == "block" {
+            blocks.push(msg);
+        }
+    }
+    assert_eq!(blocks, Vec::<Value>::new(), "a summaries-only connection reads no block");
+
+    // Asking for everything again brings them.
+    summary.send(json!({ "type": "subscribe", "summary": false }));
+    summary.block(doc);
+
+    // A client that says nothing gets them too, and one that says anything
+    // else gets them first.
+    Page::connect_plain(&d, None).block(doc);
+    let mut asks = Page::connect_plain(&d, None);
+    asks.send(json!({ "type": "ping", "id": 1 }));
+    let first = asks.until("a block or the pong", |m| m["type"] == "block" || m["type"] == "pong");
+    assert_eq!(first["type"], "block", "{first}");
+    drop(m);
+}
+
+#[test]
 fn an_idle_doc_sends_and_writes_nothing() {
     let (d, pane, _) = shared();
     let m = Mcp::bridge(&d, Some(pane));

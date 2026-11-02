@@ -1348,8 +1348,12 @@ A reply answers a question the session waits on (its ask then says
 prompt credited to the owner. Neither power approves anything: while a
 session waits on a permission, the reply is queued for after it, and a
 person allows or denies. The MCP tools are `session_start` (`issue` or
-`room`/`thread`, `prompt`, `project`) and `session_reply` (`session`,
-`text`), both in the permission snippet's ask list; an agent a guest stands
+`room`/`thread`, `prompt`, `project`) `session_reply` (`session`,
+`text`) and `session_stop` (`session`, `reason`: it ends the session now,
+cancelling the turn under way, as the card's Stop does, and the thread says
+"Stopped by <owner>'s agent on <machine>: <reason>"; only for a session the
+owner asked for, with either grant; a session that has ended is left as it is),
+all in the permission snippet's ask list; an agent a guest stands
 behind is refused. They need no `threads.post`: each posts only its ask or
 its reply, labelled as the agent's. The routes are `POST
 /api/daemon/sessions` and `POST /api/daemon/sessions/{ses}/reply`

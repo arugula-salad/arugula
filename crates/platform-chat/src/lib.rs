@@ -52,6 +52,8 @@ mod boards_tests;
 mod boxes_tests;
 pub mod chat;
 #[cfg(test)]
+mod chat_code_tests;
+#[cfg(test)]
 mod chat_files_tests;
 #[cfg(test)]
 mod chat_people_tests;
@@ -213,6 +215,7 @@ impl features::Feature for Feature {
             // A person's agent starts and replies to sessions, by grant (aru-121).
             .route(arugula_control_wire::sessions::AGENT_SESSIONS, post(crate::chat::agent_sessions::start))
             .route(arugula_control_wire::sessions::AGENT_SESSION_REPLY, post(crate::chat::agent_sessions::reply))
+            .route(arugula_control_wire::sessions::AGENT_SESSION_STOP, post(crate::chat::agent_sessions::stop))
             // A wave of sessions, a session's whole answer, and a wait (Fleet 5).
             .route(arugula_control_wire::sessions::PROJECT_SESSIONS, get(crate::sessions::wave::list))
             .route(arugula_control_wire::sessions::AGENT_PROJECT_SESSIONS, get(crate::sessions::wave::agent_list))

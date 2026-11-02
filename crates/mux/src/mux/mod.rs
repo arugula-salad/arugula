@@ -80,6 +80,9 @@ const DONE_AFTER_MS: u64 = 5_000;
 const FAILED_AFTER_MS: u64 = 3_000;
 /// Everything else (activity, directories, commands) at most this often.
 const TICK: Duration = Duration::from_secs(1);
+/// How long a new client has to say what it wants before it's sent its
+/// blocks anyway.
+const BLOCKS_WAIT: Duration = Duration::from_secs(1);
 /// A driver shows as typing this long after their last keystroke (#118).
 const TYPING: Duration = Duration::from_secs(5);
 /// A driver who hasn't typed in a pane this long stops driving it, so the
@@ -565,6 +568,9 @@ struct Daemon {
     sent: HashMap<ClientId, Sent>,
     /// Clients that only want summaries (the swarm, the fleet).
     summary: std::collections::HashSet<ClientId>,
+    /// Clients just connected, and when, that have yet to be sent their
+    /// blocks: a client only says what it wants after its hello.
+    blocks_due: HashMap<ClientId, tokio::time::Instant>,
     /// Clients that take agent blocks' states as patches (#713), with the
     /// blocks each has whole, to patch.
     patched: HashMap<ClientId, std::collections::HashSet<PaneId>>,
@@ -723,6 +729,7 @@ pub fn start(
         flush_due: None,
         sent: HashMap::new(),
         summary: Default::default(),
+        blocks_due: Default::default(),
         patched: Default::default(),
         activity: HashMap::new(),
         last_tick: Instant::now(),
@@ -1000,6 +1007,38 @@ impl Daemon {
         Some(ServerMsg::Block { block: id, state: self.blocks.get(&id)?.state() })
     }
 
+    /// Every block `client` may see, whole.
+    fn send_blocks_to(&self, client: ClientId) {
+        let Some(sub) = self.clients.get(&client) else { return };
+        for id in self.blocks.keys().filter(|id| self.sees(&sub.principal, **id)) {
+            if let Some(msg) = self.block_msg(*id) {
+                let _ = sub.ctrl.send(ToClient::Msg(msg));
+            }
+        }
+    }
+
+    /// A client's first message says whether it wants its blocks: a
+    /// summaries-only one never reads them (a Doc's text, every PR block's
+    /// timeline), and they used to be most of what a page downloaded.
+    /// Anything else gets them first, so they still come before whatever
+    /// answers the message.
+    fn first_message(&mut self, client: ClientId, msg: &ClientMsg) {
+        if self.blocks_due.remove(&client).is_some() && !matches!(msg, ClientMsg::Subscribe { summary: true }) {
+            self.send_blocks_to(client);
+        }
+    }
+
+    /// A client that says nothing still gets its blocks (a CLI that only
+    /// listens).
+    fn tick_blocks_due(&mut self) {
+        let waited: Vec<ClientId> =
+            self.blocks_due.iter().filter(|(_, at)| at.elapsed() >= BLOCKS_WAIT).map(|(c, _)| *c).collect();
+        for client in waited {
+            self.blocks_due.remove(&client);
+            self.send_blocks_to(client);
+        }
+    }
+
     /// A block's new state to everyone who sees it: as a patch to those that
     /// take one and have the rest (#713), else whole. A page is sent an
     /// agent's only while it shows it (#739, [`Daemon::only_shown`]); with
@@ -1011,7 +1050,7 @@ impl Daemon {
             .map(|c| {
                 let only_shown = self.only_shown(c.client, pane);
                 let shows = if only_shown { self.shown_by(c.client).contains(&pane) } else { !pages };
-                (c.client, self.sees(&c.principal, pane) && shows)
+                (c.client, !self.summary.contains(&c.client) && self.sees(&c.principal, pane) && shows)
             })
             .collect();
         for (client, _) in to.iter().filter(|(_, send)| !send) {
@@ -1071,6 +1110,7 @@ impl Daemon {
                 _ = refresh.tick() => self.save(),
                 _ = sleep_until(flush), if self.flush_due.is_some() => self.flush(),
                 _ = tick.tick() => {
+                    self.tick_blocks_due();
                     self.tick_activity();
                     self.tick_drivers();
                     self.tick_inventory();
@@ -1399,14 +1439,12 @@ impl Daemon {
         match cmd {
             Cmd::Connect { sub } => {
                 let state = self.state_for(&sub.principal);
-                let (client, who) = (sub.client, sub.principal.clone());
+                let client = sub.client;
                 self.clients.insert(client, sub.clone());
                 self.send_state(client, state, false, true);
-                for id in self.blocks.keys().filter(|id| self.sees(&who, **id)) {
-                    if let Some(msg) = self.block_msg(*id) {
-                        let _ = sub.ctrl.send(ToClient::Msg(msg));
-                    }
-                }
+                // Not its blocks yet: it may be about to say it takes
+                // summaries only (`first_message`).
+                self.blocks_due.insert(client, tokio::time::Instant::now());
                 // Everyone else sees them arrive.
                 self.soon();
             }
@@ -1415,6 +1453,7 @@ impl Daemon {
                 self.unfollow(client, None);
                 self.sent.remove(&client);
                 self.summary.remove(&client);
+                self.blocks_due.remove(&client);
                 self.patched.remove(&client);
                 self.focus.remove(&client);
                 self.refused.remove(&client);

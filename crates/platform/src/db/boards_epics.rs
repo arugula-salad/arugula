@@ -74,6 +74,7 @@ fn board_with_source(r: &Row) -> Result<(Board, String)> {
 /// Delete a row with what is attached to it.
 fn delete_row(c: &impl Sql, id: &str) -> Result<()> {
     c.execute("DELETE FROM board_attachments WHERE row_id = ?1", params![id])?;
+    super::boards_docs::delete_of_rows(c, &[id.to_owned()])?;
     c.execute("DELETE FROM board_asks WHERE row_id = ?1", params![id])?;
     c.execute("DELETE FROM board_entries WHERE id = ?1", params![id])?;
     Ok(())

@@ -148,7 +148,7 @@ async fn tools_through_the_stdio_bridge() {
 
     // The tools, with honest annotations: grouped by kind (#349).
     let tools = s.list_all_tools().await.unwrap();
-    assert_eq!(tools.len(), 36 - NO_FORGE);
+    assert_eq!(tools.len(), 37 - NO_FORGE);
     // Studio apps and chant workspaces aren't listed without their flags,
     // and a caller who names one is told how to turn it on (#347); a build
     // without Labs says it isn't built. Daemon-side Managoat was removed: its
@@ -404,7 +404,7 @@ async fn stateless_clients_get_the_cache_hints_claude_code_wants() {
     // (and retries it, then gives up: no tools).
     let tools = s.list_tools(None).await.unwrap();
     assert_eq!((tools.ttl_ms, tools.cache_scope), (Some(0), Some(CacheScope::Private)));
-    assert_eq!(tools.tools.len(), 36 - NO_FORGE, "without labs");
+    assert_eq!(tools.tools.len(), 37 - NO_FORGE, "without labs");
     let t = s.list_resource_templates(None).await.unwrap();
     assert_eq!((t.ttl_ms, t.cache_scope), (Some(0), Some(CacheScope::Private)));
     let r = call(&s, "run", json!({ "command": "echo stateless", "wait": true })).await;
@@ -1062,7 +1062,7 @@ async fn labs_lists_all_the_tools() {
     let s = bridge(&d, Client::named("claude-code")).await;
     let names = |tools: &[rmcp::model::Tool]| tools.iter().map(|t| t.name.to_string()).collect::<Vec<_>>();
     let instructions = |s: &Session| s.peer_info().and_then(|i| i.instructions.clone()).unwrap_or_default();
-    assert_eq!(s.list_all_tools().await.unwrap().len(), 36 - NO_FORGE);
+    assert_eq!(s.list_all_tools().await.unwrap().len(), 37 - NO_FORGE);
     assert!(!instructions(&s).contains("read_thread"), "{}", instructions(&s));
 
     // With Labs built in, the `labs` file lists them.
@@ -1070,7 +1070,7 @@ async fn labs_lists_all_the_tools() {
     {
         arugula_testkit::labs(&d.state, true);
         let with = s.list_all_tools().await.unwrap();
-        assert_eq!(with.len(), 40, "{:?}", names(&with));
+        assert_eq!(with.len(), 41, "{:?}", names(&with));
         assert!(with.iter().any(|t| t.name == "delegate"), "delegate isn't listed with labs");
         for (tool, kind) in [("show", "app"), ("show", "workspace")] {
             assert!(kinds(&with, tool).contains(&kind.to_owned()), "{tool} kind {kind} isn't listed with labs");
@@ -1087,7 +1087,7 @@ async fn labs_lists_all_the_tools() {
         // A `fountain` flag from before #942's F5 changes nothing.
         std::fs::write(d.state.join("flags.json"), r#"{"flags":{"fountain":false}}"#).unwrap();
         let without = s.list_all_tools().await.unwrap();
-        assert_eq!(without.len(), 36 - NO_FORGE);
+        assert_eq!(without.len(), 37 - NO_FORGE);
         assert!(!kinds(&without, "show").contains(&"managoat".to_owned()));
         assert!(!kinds(&without, "show").contains(&"workspace".to_owned()));
     }
@@ -1096,7 +1096,7 @@ async fn labs_lists_all_the_tools() {
     {
         arugula_testkit::labs(&d.state, true);
         let with = s.list_all_tools().await.unwrap();
-        assert_eq!(with.len(), 36 - NO_FORGE, "{:?}", names(&with));
+        assert_eq!(with.len(), 37 - NO_FORGE, "{:?}", names(&with));
         assert!(!kinds(&with, "show").contains(&"managoat".to_owned()));
         assert!(!instructions(&s).contains("read_thread"), "{}", instructions(&s));
         arugula_testkit::labs(&d.state, false);
@@ -2942,6 +2942,14 @@ async fn fake_boards(f: FakeBoards) -> String {
                 Json(v).into_response()
             }
             ("POST", "/api/daemon/boards/brd_1/attachments") => Json(view()).into_response(),
+            ("POST", "/api/daemon/boards/brd_1/docs") => {
+                let mut v = view();
+                let title = b["pointer"]["title"].as_str().unwrap_or("The plan");
+                v["docs"] = json!([{ "id": "bdc_1", "pointer": b["pointer"], "title": title, "added_by": "a1",
+                                     "created_at": 2 }]);
+                Json(v).into_response()
+            }
+            ("DELETE", "/api/daemon/boards/brd_1/docs/bdc_1") => Json(view()).into_response(),
             ("DELETE", "/api/daemon/boards/brd_1/attachments/att_1") => {
                 said(StatusCode::FORBIDDEN, "an agent takes off only the attachments its own machine made", "forbidden")
             }
@@ -3019,6 +3027,8 @@ async fn an_agent_reads_and_writes_a_board_where_the_flag_is_on() {
             "add",
             "attach",
             "detach",
+            "link_doc",
+            "unlink_doc",
             "ask",
             "relate",
             "unrelate",
@@ -3197,6 +3207,107 @@ async fn an_agent_reads_and_writes_a_board_where_the_flag_is_on() {
         "a link goes to the platform as proof: {attaches:?}"
     );
     assert_eq!(attaches[1].1["role"], "work", "a run is work: {attaches:?}");
+    s.cancel().await.unwrap();
+}
+
+/// `link_doc` links a project Doc (pdc_…) or a Doc kept on this machine to a
+/// board: in the strip, or with `row` on a row. A machine's Doc
+/// goes with this machine's id and the title it has here; an id nothing on
+/// this machine has is refused before anything goes out. `unlink_doc` takes
+/// a Doc (bdc_…) off, and nothing else.
+#[cfg(feature = "labs")]
+#[tokio::test(flavor = "multi_thread")]
+async fn an_agent_links_docs_to_a_board() {
+    let d = Daemon::child_with(&["--wisp-token-file", "/nonexistent"]);
+    let keys = arugula_e2e::DeviceKeys::load_or_create(&d.state.join("daemon.key")).unwrap();
+    let fake = FakeBoards::default();
+    let url = fake_boards(fake.clone()).await;
+    let cert = arugula_e2e::Cert::new(&keys, "a1", arugula_e2e::Kind::Daemon, "test");
+    let saved = json!({ "url": url, "trust": { "account": "a1", "root": keys.id() }, "cert": cert });
+    std::fs::write(d.state.join("control.json"), saved.to_string()).unwrap();
+    let s = bridge(&d, Client::named("claude-code")).await;
+    arugula_proto::flags::set(&d.state, "boards", true).unwrap();
+    let deadline = std::time::Instant::now() + Duration::from_secs(20);
+    while call_raw(&s, "board_read", json!({ "project": "prj_1" })).await.is_error == Some(true) {
+        assert!(std::time::Instant::now() < deadline, "never joined");
+        tokio::time::sleep(Duration::from_millis(200)).await;
+    }
+    let pdc = "pdc_0123456789abcdef0123456789abcdef";
+    let local = "00112233445566ff";
+    let dir = d.state.join("docs").join(local);
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(
+        dir.join("meta.json"),
+        json!({ "id": local, "title": "Perf notes", "made": 1, "updated": 1, "by": "mcp:test" }).to_string(),
+    )
+    .unwrap();
+    // A path out of the library is no Doc id, even where something is there.
+    std::fs::create_dir_all(d.state.join("0011223344556")).unwrap();
+    std::fs::write(d.state.join("0011223344556").join("meta.json"), json!({ "title": "Not a Doc" }).to_string())
+        .unwrap();
+    let posts = || -> Vec<(String, Value)> {
+        fake.calls
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|(a, _)| a.contains("/docs") || a.contains("/attachments"))
+            .cloned()
+            .collect()
+    };
+
+    // A project Doc, in the strip.
+    let said = call(&s, "board_write", json!({ "kind": "link_doc", "board": "brd_1", "doc": pdc })).await;
+    assert!(said["summary"].as_str().unwrap().contains("Linked a Doc"), "{said}");
+    assert_eq!(
+        posts()[0],
+        ("POST /api/daemon/boards/brd_1/docs".to_owned(), json!({ "pointer": { "kind": "doc", "id": pdc } }))
+    );
+
+    // This machine's Doc: its id and the title it has here.
+    call(&s, "board_write", json!({ "kind": "link_doc", "board": "brd_1", "doc": local })).await;
+    assert_eq!(
+        posts()[1].1,
+        json!({ "pointer": { "kind": "machine_doc", "machine": keys.id(), "doc": local, "title": "Perf notes" } })
+    );
+
+    // On a row, by its item.
+    let on_row =
+        call(&s, "board_write", json!({ "kind": "link_doc", "board": "brd_1", "doc": pdc, "row": "#12" })).await;
+    assert!(on_row["summary"].as_str().unwrap().contains("Linked the Doc to #12"), "{on_row}");
+    assert_eq!(
+        posts()[2],
+        (
+            "POST /api/daemon/boards/brd_1/docs".to_owned(),
+            json!({ "pointer": { "kind": "doc", "id": pdc }, "row": "row_1" })
+        )
+    );
+
+    // An id this machine doesn't have, and one that is no Doc id, never go out.
+    let unknown =
+        refused(&s, "board_write", json!({ "kind": "link_doc", "board": "brd_1", "doc": "ffffffffffffffff" })).await;
+    assert!(unknown.contains("neither a project Doc") && unknown.contains("doc list"), "{unknown}");
+    assert!(
+        refused(&s, "board_write", json!({ "kind": "link_doc", "board": "brd_1", "doc": "../0011223344556" }))
+            .await
+            .contains("neither")
+    );
+    assert_eq!(posts().len(), 3, "nothing went out for them");
+
+    // Unlink: a Doc by its bdc_ id; nothing else.
+    call(&s, "board_write", json!({ "kind": "unlink_doc", "board": "brd_1", "id": "bdc_1" })).await;
+    assert!(posts().iter().any(|(a, _)| a == "DELETE /api/daemon/boards/brd_1/docs/bdc_1"), "{:?}", posts());
+    let n = posts().len();
+    assert!(
+        refused(&s, "board_write", json!({ "kind": "unlink_doc", "board": "brd_1", "id": "att_1" }))
+            .await
+            .contains("bdc_")
+    );
+    assert_eq!(posts().len(), n, "an attachment is not a Doc: nothing went out");
+    assert!(
+        refused(&s, "board_write", json!({ "kind": "unlink_doc", "board": "brd_1", "id": "row_1" }))
+            .await
+            .contains("bdc_")
+    );
     s.cancel().await.unwrap();
 }
 

@@ -10,6 +10,7 @@ import type { Client } from "./client";
 import type { FleetPane } from "./fleet";
 import { directory } from "./hosts";
 import { whatItDoes } from "./swarm/model";
+import { openDoc } from "./ui/docs-route";
 import { openPlatform, platformHref } from "./platform-links";
 import { getFleet } from "./ui/hosts";
 import { getControlSession } from "./ui/people";
@@ -84,6 +85,15 @@ function build(client: Client): PlatformApi {
       if (!h || h.state !== "connected") return toast(`${h?.name ?? "That machine"} is asleep`);
       getFleet()?.touch(h.name);
       directory.select(h.name);
+    },
+    // A Doc on this machine opens in a block here; one on another stays where it is.
+    machineDoc: {
+      here: (machine) => {
+        const fleet = getFleet();
+        const h = fleet?.hostById(machine);
+        return !!h && h.state === "connected" && fleet?.clientOf(h.name) === client;
+      },
+      open: (_machine, doc) => void openDoc(client, doc).then((why) => why && toast(`Couldn't open the Doc: ${why}`)),
     },
     // Chat's page, which draws the bar, isn't the shell's (M155).
     Bar: ({ children }) => <>{children}</>,
