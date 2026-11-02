@@ -9,13 +9,16 @@ mod blocks;
 mod chat_readers;
 mod clients;
 mod config;
+mod followups;
 mod info;
 mod machines;
 mod outside;
 mod who_may;
 
 pub use config::{AtExit, Config};
-pub use outside::{AgentSessions, CardsCall, CardsCx, Notify, PaneCards, PaneGone, People, Usage};
+pub use outside::{
+    AgentSessions, CardsCall, CardsCx, MentionTag, Notify, PaneCards, PaneGone, People, Turn, Turns, Usage,
+};
 
 /// Who answers an invite card: the owner, by any route.
 pub const OWNER_ONLY: &str = "only the session's owner sends or declines an invite";
@@ -237,8 +240,9 @@ pub enum Api {
     InboxGone(PaneId, u64),
     /// A follow-up for Claude Code in a terminal, from `by`: delivered at
     /// once if it waits, else queued for when it does. `Ok(true)`: it
-    /// went straight in.
-    FollowUp(PaneId, String, Driver, oneshot::Sender<Result<bool, String>>),
+    /// went straight in. With the mention it carries (#540), whose turn
+    /// is reported.
+    FollowUp(PaneId, String, Driver, Option<MentionTag>, oneshot::Sender<Result<bool, String>>),
     /// Someone answered a block's approval or question (M29), for its
     /// card, the pane's history and the audit log: `(id, how, headline)`.
     Answered(PaneId, Driver, String, String, String),
@@ -537,7 +541,7 @@ struct Daemon {
     pre: HashMap<PaneId, std::collections::VecDeque<serde_json::Value>>,
     /// Follow-up waiters (`arugula inbox`), and follow-ups waiting for one.
     inbox: HashMap<PaneId, Waiter>,
-    queued: HashMap<PaneId, std::collections::VecDeque<(String, Driver)>>,
+    queued: followups::Followups,
     next_ask: u64,
     /// The next block an intent spawns is this type, with this config,
     /// instead of a terminal.
@@ -713,7 +717,7 @@ pub fn start(
         answered: HashMap::new(),
         pre: HashMap::new(),
         inbox: HashMap::new(),
-        queued: HashMap::new(),
+        queued: followups::Followups::default(),
         next_ask: 1,
         next_block: None,
         last_block_error: None,

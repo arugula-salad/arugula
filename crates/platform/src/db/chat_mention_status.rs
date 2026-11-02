@@ -42,6 +42,20 @@ pub const REDELIVER_WITHIN_MS: u64 = 24 * 60 * 60 * 1000;
 /// restarted mid-delivery, #419): the daemon is given 5 s to answer.
 pub const STALE_SENDING_MS: u64 = 2 * 60 * 1000;
 
+/// Whether the daemon's word on the turn (`working`, then `read`, #540) may
+/// replace a status that is `current`. Only forward, and only for a mention
+/// a session took: `answered` is final (the agent's reply usually comes
+/// before its turn ends), `read` never goes back to `working`, and a
+/// mention that no session took (`no_such_session`, `waiting`, `offline`,
+/// `chain`, `missed`) has no turn to report. `sending` takes it: the
+/// daemon's report can beat its own answer to the push.
+pub fn turn_follows(current: &str, report: &str) -> bool {
+    matches!(
+        (current, report),
+        ("sending" | "delivered" | "queued" | "fell_back", "working" | "read") | ("working", "read")
+    )
+}
+
 /// The most mentions sent again at one connect (#419).
 pub const REDELIVER_MAX: usize = 20;
 
@@ -69,6 +83,45 @@ impl Db {
             ],
         )?;
         Ok(())
+    }
+
+    /// The daemon says where the turn that took a mention is (#540):
+    /// `state` is `working` or `read`. Only a row the machine has for the
+    /// message changes, and only forward ([`turn_follows`]); a `sending`
+    /// one takes `session` from the report, as the push's answer may not
+    /// have settled it yet. `None`: no such row (the report is refused);
+    /// `Some(false)`: there is, and it stays; `Some(true)`: it changed.
+    pub fn report_chat_mention_turn(
+        &self,
+        room: &str,
+        seq: i64,
+        machine: &str,
+        state: &str,
+        session: Option<&str>,
+        at: u64,
+    ) -> Result<Option<bool>> {
+        let mut c = self.c();
+        let tx = c.transaction()?;
+        let now: Option<(String, Option<String>)> = tx
+            .query_map(
+                "SELECT state, session FROM chat_mention_status WHERE room = ?1 AND seq = ?2 AND machine = ?3",
+                params![room, seq, machine],
+                |r| Ok((r.get::<String>(0)?, r.get::<Option<String>>(1)?)),
+            )?
+            .into_iter()
+            .next();
+        let Some((current, had)) = now else { return Ok(None) };
+        if !turn_follows(&current, state) {
+            return Ok(Some(false));
+        }
+        let session = had.or_else(|| session.map(str::to_owned));
+        tx.execute(
+            "UPDATE chat_mention_status SET state = ?4, session = ?5, at = ?6
+             WHERE room = ?1 AND seq = ?2 AND machine = ?3",
+            params![room, seq, machine, state, session, at as i64],
+        )?;
+        tx.commit()?;
+        Ok(Some(true))
     }
 
     /// Settle a mention that was `sending`: the daemon's answer (`state`,
@@ -260,5 +313,35 @@ mod tests {
         assert_eq!(after.iter().filter(|s| s.state == "answered" && s.reply == Some(8)).count(), 2);
         assert!(after.iter().any(|s| s.machine == "m2" && s.state == "delivered"));
         assert!(after.iter().any(|s| s.seq == 9 && s.state == "delivered"));
+    }
+
+    /// The daemon's word on the turn only goes forward (#540).
+    #[test]
+    fn a_turn_report_only_moves_a_mention_forward() {
+        let follows = |a: &str, b: &str| turn_follows(a, b);
+        for taken in ["sending", "delivered", "queued", "fell_back"] {
+            assert!(follows(taken, "working") && follows(taken, "read"), "{taken}");
+        }
+        assert!(follows("working", "read"));
+        assert!(!follows("working", "working") && !follows("read", "working") && !follows("read", "read"));
+        // The agent's reply is final; a mention no session took has no turn.
+        for other in ["answered", "no_such_session", "waiting", "offline", "chain", "missed"] {
+            assert!(!follows(other, "working") && !follows(other, "read"), "{other}");
+        }
+    }
+
+    #[test]
+    fn a_report_changes_only_the_row_the_machine_has() {
+        let db = Db::test();
+        db.set_chat_mention_status(&status(5, 5, "m1", "delivered", 1_000)).unwrap();
+        let report =
+            |machine: &str, seq, state| db.report_chat_mention_turn("r1", seq, machine, state, Some("s"), 2_000);
+        assert_eq!(report("m2", 5, "working").unwrap(), None, "another machine's");
+        assert_eq!(report("m1", 6, "working").unwrap(), None, "another message");
+        assert_eq!(report("m1", 5, "working").unwrap(), Some(true));
+        assert_eq!(report("m1", 5, "working").unwrap(), Some(false));
+        assert_eq!(report("m1", 5, "read").unwrap(), Some(true));
+        let s = &db.chat_mention_statuses("r1", 5, 5).unwrap()[0];
+        assert_eq!((s.state.as_str(), s.session.as_deref(), s.at), ("read", Some("s"), 2_000));
     }
 }

@@ -100,7 +100,7 @@ impl Handle for PaneFollowUp {
             b.call_by("send", serde_json::json!({ "text": req.text }), name).await.map_err(bad)?;
             return Ok(FollowedUp { delivered: true });
         }
-        match app.mux.api(|r| Api::FollowUp(id, req.text, by, r)).await {
+        match app.mux.api(|r| Api::FollowUp(id, req.text, by, None, r)).await {
             Some(Ok(now)) => Ok(FollowedUp { delivered: now }),
             Some(Err(e)) => Err(bad(e).into()),
             None => Err(shutting_down().into()),

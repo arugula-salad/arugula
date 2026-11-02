@@ -258,3 +258,93 @@ async fn the_agents_reply_in_the_thread_answers_it() {
     assert_eq!(states(status(&base, "a", old, Some(root)).await), "delivered", "over an hour old");
     assert_eq!(states(status(&base, "a", other, None).await), "answered", "its own thread's reply answered it");
 }
+
+/// The daemon's word on a delivered mention's turn (#540), as `machine`
+/// (`a geek` and the like) signs it.
+async fn turn(base: &str, daemon: &str, seq: i64, state: &str) -> (u16, Value) {
+    let r = reqwest::Client::new()
+        .put(format!("{base}{}", arugula_control_wire::chat::MENTION_STATE))
+        .header("x-test-daemon", daemon)
+        .json(&json!({ "room": "ch_general", "seq": seq, "session": "slowness", "state": state }))
+        .send()
+        .await
+        .unwrap();
+    (r.status().as_u16(), r.json().await.unwrap_or_default())
+}
+
+/// A delivered mention goes `working`, then `read`, each seen by a second
+/// client over the stream; a machine with no status for the message is
+/// refused and changes nothing.
+#[tokio::test]
+async fn the_daemon_says_working_then_read_and_a_second_client_sees_it() {
+    let (hub, _app, base, t, _u) = seeded().await;
+    geek_in_t(&base, &t).await;
+    hub.daemon("lab", "a", Some("t"));
+    hub.answers_ops("geek", done(RoutedStep::Named, Some("slowness"), None));
+    let seq = post(&base, "b", "@geek-box/slowness why is it slow", None).await;
+    assert_eq!(status(&base, "b", seq, None).await[0]["state"], "delivered");
+    let a_live = open_live(&base, "a", None).await;
+    hears(&a_live, "\"type\":\"hello\"", Duration::from_secs(5)).await;
+
+    for state in ["working", "read"] {
+        assert_eq!(turn(&base, "a geek", seq, state).await.0, 200);
+        hears(&a_live, &format!("\"type\":\"reacted\",\"room\":\"ch_general\",\"seq\":{seq}"), Duration::from_secs(5))
+            .await;
+        for who in ["a", "b"] {
+            let s = status(&base, who, seq, None).await;
+            assert_eq!((s[0]["state"].clone(), s[0]["session"].clone()), (json!(state), json!("slowness")), "{who}");
+        }
+    }
+    // A machine the message didn't mention has no status for it.
+    let (st, v) = turn(&base, "a lab", seq, "working").await;
+    assert_eq!(st, 404, "{v}");
+    let (st, _) = turn(&base, "a geek", seq + 100, "working").await;
+    assert_eq!(st, 404, "no such message");
+    assert_eq!(status(&base, "b", seq, None).await[0]["state"], "read");
+}
+
+/// The trap (#540): the agent replies during its turn, so `answered` comes
+/// before the turn's `read`, which must not turn it back. `working` after
+/// `read` doesn't either, and a mention no session took has no turn.
+#[tokio::test]
+async fn a_late_read_never_undoes_answered() {
+    let (hub, _app, base, t, _u) = seeded().await;
+    geek_in_t(&base, &t).await;
+    hub.answers_ops("geek", done(RoutedStep::Named, Some("slowness"), None));
+    let seq = post(&base, "b", "@geek-box/slowness why is it slow", None).await;
+    let c = reqwest::Client::new();
+    let reply = c
+        .post(format!("{base}{}", agent_messages("ch_general")))
+        .header("x-test-daemon", "a geek")
+        .json(&json!({ "text": "the db", "parent": seq }))
+        .send()
+        .await
+        .unwrap()
+        .json::<Value>()
+        .await
+        .unwrap()["seq"]
+        .as_i64()
+        .unwrap();
+    // The reply came first. Then the turn's own word.
+    for state in ["working", "read"] {
+        assert_eq!(turn(&base, "a geek", seq, state).await.0, 200, "{state} is accepted, and changes nothing");
+        let s = status(&base, "b", seq, None).await;
+        assert_eq!((s[0]["state"].clone(), s[0]["reply"].clone()), (json!("answered"), json!(reply)), "{state}");
+    }
+
+    // `read` stays `read` against a late `working`.
+    hub.answers_ops("geek", done(RoutedStep::Named, Some("slowness"), None));
+    let next = post(&base, "b", "@geek-box/slowness and now", None).await;
+    status(&base, "b", next, None).await;
+    for state in ["read", "working"] {
+        turn(&base, "a geek", next, state).await;
+    }
+    assert_eq!(status(&base, "b", next, None).await[0]["state"], "read");
+
+    // Nobody took it: it waits in the inbox, and has no turn.
+    hub.answers_ops("geek", done(RoutedStep::Inbox, None, None));
+    let waiting = post(&base, "b", "@geek-box anyone", None).await;
+    assert_eq!(status(&base, "b", waiting, None).await[0]["state"], "waiting");
+    assert_eq!(turn(&base, "a geek", waiting, "working").await.0, 200);
+    assert_eq!(status(&base, "b", waiting, None).await[0]["state"], "waiting");
+}

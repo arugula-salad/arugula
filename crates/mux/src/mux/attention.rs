@@ -2,7 +2,7 @@
 //! that make a terminal wait, questions asked in a terminal, hooks and
 //! follow-ups.
 
-use super::{AskReply, Daemon, InboxReply, Replied, SAVE_DEBOUNCE, agent_in, plain_reason};
+use super::{AskReply, Daemon, InboxReply, MentionTag, Replied, SAVE_DEBOUNCE, agent_in, plain_reason};
 use crate::{acl::Principal, store::now_ms};
 use arugula_proto::{
     Action, AskRef, AskWhat, Attention, BlockType, Driver, EventKind, PaneId, Policy, Reason, ReasonKind,
@@ -789,6 +789,10 @@ impl Daemon {
         if event == "UserPromptSubmit" && self.panes.contains_key(&pane) {
             self.emit(Some(pane), EventKind::Prompted);
         }
+        // #540: the turn a mention started ends with the pane's `Stop`.
+        if event == "Stop" {
+            self.queued.stopped(pane, &*self.config.turns);
+        }
         if event == "PreToolUse" {
             let pre = self.pre.entry(pane).or_default();
             pre.push_back(hook.clone());
@@ -814,7 +818,7 @@ impl Daemon {
         let (tx, rx) = oneshot::channel();
         let token = self.next_ask;
         self.next_ask += 1;
-        if let Some((text, by)) = self.queued.get_mut(&pane).and_then(|q| q.pop_front()) {
+        if let Some((text, by)) = self.queued.take(pane, &*self.config.turns) {
             let _ = tx.send(InboxReply::FollowUp { text, by });
             self.emit(Some(pane), EventKind::Prompted);
             return Ok((token, rx));
@@ -829,7 +833,13 @@ impl Daemon {
 
     /// A follow-up for Claude Code in a terminal (M29), recorded as input
     /// from whoever sent it.
-    pub(super) fn follow_up(&mut self, pane: PaneId, text: String, by: Driver) -> Result<bool, String> {
+    pub(super) fn follow_up(
+        &mut self,
+        pane: PaneId,
+        text: String,
+        by: Driver,
+        tag: Option<MentionTag>,
+    ) -> Result<bool, String> {
         let Some(p) = self.panes.get(&pane) else { return Err(format!("no terminal %{pane}")) };
         let text = text.trim().to_owned();
         if text.is_empty() {
@@ -844,20 +854,20 @@ impl Daemon {
             Some(w) => match w.reply.send(InboxReply::FollowUp { text: text.clone(), by: by.clone() }) {
                 Ok(()) => {
                     self.emit(Some(pane), EventKind::Prompted);
+                    self.queued.started(pane, tag, &*self.config.turns);
                     true
                 }
                 Err(InboxReply::FollowUp { text, by }) => {
-                    self.queued.entry(pane).or_default().push_back((text, by));
+                    self.queued.push(pane, text, by, tag);
                     false
                 }
                 Err(_) => false,
             },
             None => {
-                let q = self.queued.entry(pane).or_default();
-                if q.len() >= MAX_QUEUED {
+                if self.queued.full(pane, MAX_QUEUED) {
                     return Err("too many follow-ups waiting: is Claude Code's inbox hook set up?".into());
                 }
-                q.push_back((text, by));
+                self.queued.push(pane, text, by, tag);
                 false
             }
         };

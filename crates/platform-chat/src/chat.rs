@@ -75,7 +75,7 @@ use arugula_control_wire::chat::{
     ChatMessage, ChatMessages, ChatMessagesQuery, ChatMute, ChatNewChannel, ChatNewDm, ChatOpen, ChatOpenTarget,
     ChatPane, ChatPerson, ChatPost, ChatPosted, ChatPushWhy, ChatPushed, ChatReaction, ChatReactor, ChatRead,
     ChatReaderList, ChatReaders, ChatReadersStored, ChatRoom, ChatRoomAgent, ChatRoomChange, ChatRoomDetail, ChatRooms,
-    ChatSearchQuery, ChatUnreachedWhy, NotifyLevel,
+    ChatSearchQuery, ChatUnreachedWhy, MentionTurn, NotifyLevel, PutMentionState,
 };
 use arugula_e2e::{now_ms, team::TeamRole};
 use axum::{
@@ -152,6 +152,10 @@ const CHAT_ROOMS: (&str, usize) = ("chat-room", 120);
 const CHAT_SEARCHES: (&str, usize) = ("chat-search", 600);
 /// Reader lists a daemon sends, per hour.
 const CHAT_READERS: (&str, usize) = ("chat-readers", 600);
+/// Mention turn reports (#540), per machine per hour: two per mention.
+const MENTION_STATES: (&str, usize) = ("chat-mention-states", 600);
+/// The longest session name a report may carry.
+const MAX_SESSION_NAME: usize = 200;
 
 // ---------------------------------------------------------------- who
 
@@ -907,6 +911,8 @@ fn mention_state(state: &str) -> ChatMentionState {
         "offline" | "missed" => ChatMentionState::Offline,
         "answered" => ChatMentionState::Answered,
         "chain" => ChatMentionState::Chain,
+        "working" => ChatMentionState::Working,
+        "read" => ChatMentionState::Read,
         _ => ChatMentionState::Delivered,
     }
 }
@@ -2910,6 +2916,36 @@ pub async fn daemon_readers(
         app.chat.room(&app.db, &r);
     }
     Ok(Json(ChatReadersStored { stored: b.targets.len() }))
+}
+
+/// `PUT /api/daemon/chat/mention-state`: a machine's daemon says its
+/// session's turn that took a mention started (`working`) or ended (`read`,
+/// #540). Only for a message the machine has a status for (404 otherwise),
+/// and only forward (`turn_follows`): an `answered` mention stays so. A
+/// change is told like any other status change.
+pub async fn daemon_mention_state(
+    State(app): State<Arc<Platform>>,
+    d: Machine,
+    Json(b): Json<PutMentionState>,
+) -> J<serde_json::Value> {
+    let (machine, _) = chat_machine(&app, d).await?;
+    app.limits.check_daemon(MENTION_STATES, &machine)?;
+    let state = match b.state {
+        MentionTurn::Working => "working",
+        MentionTurn::Read => "read",
+    };
+    let session = b.session.as_deref().map(|s| s.chars().take(MAX_SESSION_NAME).collect::<String>());
+    match app.db.report_chat_mention_turn(&b.room, b.seq, &machine, state, session.as_deref(), now_ms())? {
+        None => return Err(err(StatusCode::NOT_FOUND, "no such mention for this machine")),
+        Some(false) => {}
+        Some(true) => {
+            let shown = app.db.chat_mention_statuses(&b.room, b.seq, b.seq)?;
+            if let Some(s) = shown.iter().find(|s| s.machine == machine) {
+                announce_status(&app, s);
+            }
+        }
+    }
+    Ok(Json(serde_json::json!({})))
 }
 
 // ---------------------------------------------------------------- accounts

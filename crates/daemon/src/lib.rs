@@ -1048,6 +1048,7 @@ async fn run(mut args: RunArgs, mut kept: std::collections::HashMap<String, pane
     let pane_gone: Arc<dyn mux::PaneGone> = Arc::new(upload::Uploads);
     #[cfg(not(unix))]
     let pane_gone: Arc<dyn mux::PaneGone> = Arc::new(NoUploads);
+    let (turns_tx, turns_rx) = tokio::sync::mpsc::unbounded_channel();
     let config = mux::Config {
         acl: acl.clone(),
         notify: Arc::new(push::Notifier { push: push.clone(), control: control.clone() }),
@@ -1071,6 +1072,7 @@ async fn run(mut args: RunArgs, mut kept: std::collections::HashMap<String, pane
         sessions: agent::sessions(),
         pane_gone,
         usage: Arc::new(telemetry::Hooks),
+        turns: Arc::new(agent_mentions::TurnReports(turns_tx)),
         at_exit: Some(mux::AtExit(Arc::new(|| lab_hooks::labs().at_exit()))),
     };
     // M101: counting starts with the mux; reports, once control is known.
@@ -1124,6 +1126,8 @@ async fn run(mut args: RunArgs, mut kept: std::collections::HashMap<String, pane
         hand::Hands::open(&state_dir),
         rules,
     );
+    // Control hears where the turns that took teammates' mentions are (#540).
+    crate::task::spawn(agent_mentions::keep_telling(app.clone(), turns_rx));
     // Labs' guest ssh server, and (M78) tasks for this machine's agents
     // that a restart interrupted.
     lab_hooks::labs().start(&app);

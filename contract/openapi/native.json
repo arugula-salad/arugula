@@ -6856,6 +6856,16 @@
             "const": "chain",
             "description": "Not delivered (#575): an agent's post, in a chain of agents' replies\nor past the thread's rate limit. A person's message restarts it.",
             "type": "string"
+          },
+          {
+            "const": "working",
+            "description": "The session's turn that took it has started (#540): what only the\nreceiving daemon knows. Like a typing indicator.",
+            "type": "string"
+          },
+          {
+            "const": "read",
+            "description": "That turn has ended (#540). An agent's reply, `answered`, usually\ncomes first and stays.",
+            "type": "string"
           }
         ]
       },
