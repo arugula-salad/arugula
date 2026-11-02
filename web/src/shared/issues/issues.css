@@ -11,6 +11,19 @@
   gap: 8px;
 }
 
+/* Where an issue opened on GitHub lives now (M205): a link, beside its
+   state. */
+.issue-github {
+  color: var(--muted);
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+
+.issue-github:hover {
+  color: var(--fg);
+  text-decoration: underline;
+}
+
 
 /* One control height on the list pages, the button set's (UI audit #163,
    #164): filters, the open/closed toggle and the search box beside

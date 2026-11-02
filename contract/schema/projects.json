@@ -264,6 +264,13 @@
             "null"
           ]
         },
+        "native_issue": {
+          "description": "The native issue it's for (M205): the issue itself (Open on\nGitHub, `kind` `issue`), or one of its comments (`kind` `comment`).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "number": {
           "format": "uint64",
           "minimum": 0,
@@ -1068,6 +1075,13 @@
         "kind": {
           "description": "`comment`, `review` or `issue`.",
           "type": "string"
+        },
+        "native_issue": {
+          "description": "Open on GitHub (M205): a native issue (`iss_…`) to send as a new\nissue, with `kind` `issue`. Its title and body are the issue's, read\nagain when it's sent, and `repo` may be empty for its project's one\nlinked repo. Sending it sets the issue's GitHub origin.",
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "number": {
           "default": null,

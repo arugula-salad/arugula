@@ -43,6 +43,9 @@
 //!   and read through the same check.
 //! - **Sends** ([`send`], M168): a person sends a draft as themselves, with
 //!   a one-use user token or through one of their machines.
+//! - **Open on GitHub** ([`export`], M205): a native issue a person sends
+//!   to a linked repo as a draft, and the comments that cross once it's
+//!   there.
 //!
 //! First-time lookups at GitHub are rate-limited per account
 //! ([`FORGE_LOOKUPS`], counted here).
@@ -71,6 +74,7 @@ pub mod drafts;
 mod drafts_tests;
 #[cfg(test)]
 mod epic_tests;
+pub mod export;
 pub mod inbox;
 #[cfg(test)]
 mod inbox_tests;

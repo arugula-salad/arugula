@@ -928,6 +928,13 @@
             "null"
           ]
         },
+        "native_issue": {
+          "description": "The native issue it's for (M205): the issue itself (Open on\nGitHub, `kind` `issue`), or one of its comments (`kind` `comment`).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "number": {
           "format": "uint64",
           "minimum": 0,

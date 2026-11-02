@@ -165,6 +165,7 @@ Not here: what each milestone built (the archive), how to build and test
 - [aru-124](docs/decisions/aru-124-plane-is-a-source-of-a-project-s-issues.md): Plane is a source of a project's issues, mirrored beside GitHub's
 - [aru-125](docs/decisions/aru-125-boards-are-rows-of-work-and-lanes-follow-the-work.md): Boards are rows of work, and lanes follow the work
 - [aru-129](docs/decisions/aru-129-a-doc-s-prototype-runs-in-a-frame-on-control-s-proto-origin.md): A Doc's prototype runs in a frame on control's proto origin
+- [aru-130](docs/decisions/aru-130-an-issue-opened-on-github-stays-native-and-only-new-comments-cross.md): An issue opened on GitHub stays native, and only new comments cross
 
 ## Build and release
 

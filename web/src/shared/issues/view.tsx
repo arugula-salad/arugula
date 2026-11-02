@@ -7,7 +7,10 @@
 // they are (M197), and the room says when an agent grant reaches it.
 // Owners and editors edit, close, reopen, label and assign, and start an
 // agent session on it (Agent on this, M265: `@arugula` in its thread, as
-// them); everyone in the project comments.
+// them); everyone in the project comments. Where the page can send as the
+// reader (the platform page), an owner or editor opens it on GitHub (M205):
+// a new issue on a repo linked to its project, sent as them. Once it's
+// there the header says where it lives, with a link.
 //
 // The view reads and changes the issue through `IssueApiContext`: the
 // platform's routes as the reader by default, or what the page says it.
@@ -16,7 +19,7 @@
 
 import { createContext, type ComponentChildren, type ComponentType } from "preact";
 import { useContext, useEffect, useRef, useState } from "preact/hooks";
-import type { ChatRoom, IssueAgent, IssueEvent, IssuePatch, IssuePatched, NativeIssue } from "../proto";
+import type { ChatRoom, DraftSent, IssueAgent, IssueEvent, IssuePatch, IssuePatched, NativeIssue } from "../proto";
 import { agentWhere } from "../agent-label";
 import { chat } from "../chat-store";
 import { MsgAvatar } from "../chat/avatar";
@@ -50,6 +53,11 @@ export interface IssueApi {
   /** Agent on this (M265): `@arugula` in its thread as the reader. Absent
    * where the view can't write. */
   agent?(id: string): Promise<IssueAgent>;
+  /** Open on GitHub (M205): send it as the reader as a new issue on
+   * `repo`, one of `repos` (its project's linked repos). Absent where the
+   * page can't send as the reader. */
+  openOnGithub?(id: string, repo: string): Promise<DraftSent>;
+  repos?(project: string): Promise<string[]>;
 }
 
 /** The platform's routes as the reader, unless the page says otherwise. */
@@ -248,6 +256,9 @@ export function IssueView({
         actions={
           <span class="issue-actions">
             {writer && api.agent && issue.state === "open" && <AgentOnThis id={id} agent={api.agent} />}
+            {writer && api.openOnGithub && api.repos && !issue.github && (
+              <OpenOnGithub issue={issue} send={api.openOnGithub} repos={api.repos} sent={again} />
+            )}
             {writer && editing !== "title" && (
               <button class="secondary small" data-issue-edit-title onClick={() => setEditing("title")}>
                 Edit title
@@ -286,6 +297,18 @@ export function IssueView({
               <Chip tone="teal" title={`Opened by an agent ${agentWhere(issue.agent, "a machine")}, through its owner's grant`} data-issue-agent>
                 Agent
               </Chip>
+            )}
+            {issue.github && (
+              <a
+                class="issue-github"
+                href={`https://github.com/${issue.github.repo}/issues/${issue.github.number}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                title="It was opened on GitHub: new comments here go there, and theirs come here"
+                data-issue-github
+              >
+                Lives on GitHub as {issue.github.repo}#{issue.github.number} ↗
+              </a>
             )}
           </div>
         }
@@ -385,6 +408,63 @@ function AgentOnThis({ id, agent }: { id: string; agent: (id: string) => Promise
       onClick={() => void go()}
     >
       Agent on this
+    </button>
+  );
+}
+
+/** Open on GitHub (M205): a menu of the project's linked repos, each
+ * sending it there as the reader, which is the confirmation. GitHub's
+ * authorization in this browser, or one of their machines. */
+function OpenOnGithub({
+  issue,
+  send,
+  repos,
+  sent,
+}: {
+  issue: NativeIssue;
+  send: (id: string, repo: string) => Promise<DraftSent>;
+  repos: (project: string) => Promise<string[]>;
+  sent: () => void;
+}) {
+  const { toast } = usePlatformApi();
+  const [busy, setBusy] = useState(false);
+  const go = async (repo: string) => {
+    setBusy(true);
+    try {
+      const v = await send(issue.id, repo);
+      if (v.authorize) return location.assign(v.authorize);
+      toast(v.draft.state === "sent" ? `On GitHub${v.machine ? `, sent from ${v.machine}` : ""}` : (v.draft.error ?? "Not sent: it waits in your drafts"));
+      sent();
+    } catch (e) {
+      toast((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  const pick = async (e: MouseEvent) => {
+    const at = e.currentTarget as HTMLElement;
+    let list: string[];
+    try {
+      list = await repos(issue.project);
+    } catch (err) {
+      return toast((err as Error).message);
+    }
+    if (!list.length) return toast("Link a GitHub repo to this project first: its issue goes there");
+    const r = at.getBoundingClientRect();
+    openMenu({ clientX: r.left, clientY: r.bottom + 4, preventDefault: () => {} }, [
+      { header: "Open on GitHub, as you" },
+      ...list.map((repo) => ({ label: `New issue on ${repo}`, run: () => void go(repo) })),
+    ]);
+  };
+  return (
+    <button
+      class="secondary small"
+      disabled={busy}
+      title="Send it to a linked GitHub repo as a new issue, as you. It stays here too, and new comments cross both ways."
+      data-issue-open-github
+      onClick={(e) => void pick(e)}
+    >
+      {busy ? "Sending…" : "Open on GitHub"}
     </button>
   );
 }

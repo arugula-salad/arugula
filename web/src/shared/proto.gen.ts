@@ -1203,7 +1203,12 @@ unreached: Array<string>,
  * Whom control pushed (not those with the room open, muted, or pushed
  * for it in the last minute).
  */
-pushed: Array<ChatPushed>, };
+pushed: Array<ChatPushed>, 
+/**
+ * A comment on a native issue that's on GitHub (M205): what became
+ * of its copy there. `None` anywhere else.
+ */
+github?: ChatToGithub, };
 
 /**
  * Who's around, for one reader: themselves and everyone who shares a team
@@ -1569,6 +1574,29 @@ export type ChatThreadRead = { seq: number, };
  * all their unread: the badge on the Threads view.
  */
 export type ChatThreads = { threads: Array<ChatThreadItem>, unread: number, mentions: number, };
+
+/**
+ * A comment on an exported native issue, on its way to GitHub (M205): a
+ * person's is sent as them through one of their machines, and waits as a
+ * draft when none can; an agent's is a draft that waits for its person.
+ */
+export type ChatToGithub = { 
+/**
+ * The draft (`dft_…`) that carries it.
+ */
+draft: string, 
+/**
+ * On GitHub now.
+ */
+sent: boolean, 
+/**
+ * Its comment there, once sent.
+ */
+url: string | null, 
+/**
+ * Why it isn't there yet.
+ */
+why: string | null, };
 
 /**
  * `PUT /api/chat/rooms/{id}/topic`: what a channel's members (or, when
@@ -2096,7 +2124,12 @@ author: string,
  * The agent that wrote it, and the machine it was on (an id, and its
  * name when the machine is still there).
  */
-agent: string | null, machine: string | null, machine_name: string | null, created_at: number, updated_at: number, sent_at: number | null, sent_url: string | null, error: string | null, };
+agent: string | null, machine: string | null, machine_name: string | null, created_at: number, updated_at: number, sent_at: number | null, sent_url: string | null, error: string | null, 
+/**
+ * The native issue it's for (M205): the issue itself (Open on
+ * GitHub, `kind` `issue`), or one of its comments (`kind` `comment`).
+ */
+native_issue?: string, };
 
 export type ForgeDrafts = { drafts: Array<ForgeDraft>, };
 

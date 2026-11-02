@@ -76,6 +76,14 @@ pub struct Gh {
     pub protection: BTreeMap<String, Value>,
     /// An Actions job's log, by its id (404 when not here).
     pub logs: BTreeMap<u64, String>,
+    /// Posts answer as GitHub does (M205): a new issue with its number
+    /// and `…/issues/N`, a comment with its id and `#issuecomment-ID`, from
+    /// 40 and 9000 up. Otherwise every post answers number 12 and its own
+    /// path.
+    pub github_urls: bool,
+    /// The comments on an issue, by (repo id, number), as
+    /// `repositories/{id}/issues/{n}/comments` lists them.
+    pub comments: BTreeMap<(u64, u64), Vec<Value>>,
 }
 
 /// What the platform's real App (`arugula-io`) is granted today: it reads
@@ -294,7 +302,28 @@ async fn post_as(
         let status = StatusCode::from_u16(s).unwrap();
         return (status, Json(json!({ "message": "Resource not accessible by integration" }))).into_response();
     }
+    if h.github_urls {
+        let n = h.posted.len() as u64;
+        let parts: Vec<&str> = path.trim_start_matches("/repos/").split('/').collect();
+        return match parts.as_slice() {
+            [o, r, "issues"] => {
+                let number = 40 + n;
+                Json(json!({ "number": number, "html_url": format!("https://github.com/{o}/{r}/issues/{number}") }))
+            }
+            [o, r, "issues", number, "comments"] => {
+                let id = 9000 + n;
+                Json(json!({ "id": id, "html_url": format!("https://github.com/{o}/{r}/issues/{number}#issuecomment-{id}") }))
+            }
+            _ => Json(json!({ "html_url": format!("https://github.com{path}") })),
+        }
+        .into_response();
+    }
     Json(json!({ "number": 12, "html_url": format!("https://github.com{path}#posted") })).into_response()
+}
+
+/// An issue's comments, by the repo's id.
+async fn issue_comments(State(h): State<Shared>, Path((repo, number)): Path<(u64, u64)>) -> Response {
+    Json(h.lock().unwrap().comments.get(&(repo, number)).cloned().unwrap_or_default()).into_response()
 }
 
 /// A file on a repo's default branch, as GitHub's contents API answers; at
@@ -373,6 +402,7 @@ pub async fn fake_github(h: Shared) -> String {
         .route("/repos/{o}/{r}/branches/{*branch}", get(branch))
         .route("/repos/{o}/{r}/actions/jobs/{job}/logs", get(job_logs))
         .route("/_logs/{job}", get(log_blob))
+        .route("/repositories/{repo}/issues/{n}/comments", get(issue_comments))
         .with_state(h);
     let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let base = format!("http://{}", l.local_addr().unwrap());

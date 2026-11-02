@@ -413,6 +413,13 @@ pub struct NewDraft {
     /// machine gives one.
     #[serde(default)]
     pub import_key: Option<String>,
+    /// Open on GitHub (M205): a native issue (`iss_…`) to send as a new
+    /// issue, with `kind` `issue`. Its title and body are the issue's, read
+    /// again when it's sent, and `repo` may be empty for its project's one
+    /// linked repo. Sending it sets the issue's GitHub origin.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub native_issue: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -483,6 +490,11 @@ pub struct ForgeDraft {
     pub sent_url: Option<String>,
     #[serde(default)]
     pub error: Option<String>,
+    /// The native issue it's for (M205): the issue itself (Open on
+    /// GitHub, `kind` `issue`), or one of its comments (`kind` `comment`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub native_issue: Option<String>,
 }
 
 /// The inbox (M171): the PRs and issues that want something of the

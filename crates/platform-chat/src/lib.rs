@@ -84,6 +84,8 @@ mod hosted_wake_tests;
 #[cfg(test)]
 mod hub_calls_tests;
 #[cfg(test)]
+mod issue_github_tests;
+#[cfg(test)]
 mod issues_tests;
 #[cfg(test)]
 mod notify_tests;
@@ -347,6 +349,16 @@ impl features::Chat for Hooks {
             let posted = chat::post_full(app, author, None, Some(via), &room, b).await?;
             Ok((room, posted.seq))
         })
+    }
+
+    fn github_comment<'a>(
+        &'a self,
+        app: &'a Platform,
+        issue: &'a str,
+        login: &'a str,
+        text: &'a str,
+    ) -> BoxFuture<'a, anyhow::Result<i64>> {
+        Box::pin(async move { chat::github_comment(app, issue, login, text) })
     }
 
     fn grant_notice<'a>(
