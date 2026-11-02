@@ -3,7 +3,7 @@
   "commit": "15200c739dca94cd06cc3f69bcd7666b12b07dda",
   "branch": "main",
   "state": "pending",
-  "at": "2026-11-02T03:40:09Z",
+  "at": "2026-11-02T04:07:27Z",
   "phases": {
     "lint": {
       "verdict": "pass",
@@ -70,8 +70,7 @@
           "url": "https://github.com/arugula-salad/arugula/actions/runs/41383175120/job/125078328126"
         }
       ],
-      "reason": "retrying",
-      "culprit": "cc82a471d9024c696ee2d6978caca4650880f0ac"
+      "reason": "retrying"
     },
     "e2e": {
       "verdict": "pass",
