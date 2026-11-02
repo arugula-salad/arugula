@@ -3,7 +3,7 @@
 // typed as a pointer. Plain functions, for the view and its tests
 // (scripts/boards.test.mjs).
 
-import type { BoardSource, BoardAsk, BoardAttachment, BoardBlockState, BoardBlockWord, BoardGroup, BoardLane, BoardMark, BoardProgress, BoardLive, BoardLiveState, BoardPointer, BoardProof, BoardRow, BoardRowRelation, BoardView, BoardWorkItem, BoardZone, RelationKind, OnIssue } from "../proto";
+import type { BoardSource, BoardAsk, BoardAttachment, BoardBlockState, BoardBlockWord, BoardGroup, BoardLane, BoardMark, BoardProgress, BoardLive, BoardLiveState, BoardPointer, BoardProof, BoardRow, BoardRowRelation, BoardView, BoardWorkItem, BoardZone, ProjectBoard, RelationKind, OnIssue } from "../proto";
 import type { Tone } from "../ui/state-chip";
 
 /** A row's lane as its glyph. A row asking for input shows `?` instead. */
@@ -509,4 +509,39 @@ export function sourceLinked(s: Pick<BoardSource, "url">): boolean {
 /** The header's note on a board too full for all its done children. */
 export function leftOutLine(n: number): string {
   return `${n} done ${n === 1 ? "child" : "children"} left out`;
+}
+
+/** What a row says of itself that a find reads: the item's title (a note row has its pointer's words), the note, and the item's labels when the view carries them. */
+function rowWords(r: Pick<BoardRow, "pointer" | "live" | "note">): string {
+  const title = r.live ? r.live.title : pointerLabel(r.pointer, r.live);
+  const labels = (r as { labels?: string[] }).labels ?? [];
+  return [title, r.note, ...labels].join("\n").toLowerCase();
+}
+
+/** Whether a row answers a find box's text, case-insensitive. A word is `#541` or `541` (the item's number), `ARUGU-12` (a tracker key), or text that appears in the title, the note or a label; every word has to hold. An empty text matches every row. */
+export function rowMatches(r: Pick<BoardRow, "pointer" | "live" | "note">, q: string): boolean {
+  const words = q.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  if (!words.length) return true;
+  const text = rowWords(r);
+  const number = r.live && r.live.number > 0 ? r.live.number : undefined;
+  const key = number !== undefined && r.live?.identifier ? `${r.live.identifier}-${number}`.toLowerCase() : undefined;
+  return words.every((w) => {
+    const hash = /^#(\d+)$/.exec(w);
+    if (hash) return number === Number(hash[1]);
+    if (/^\d+$/.test(w)) return number === Number(w) || text.includes(w);
+    if (/^[a-z][a-z0-9]*-\d+$/.test(w)) return key === w || text.includes(w);
+    return text.includes(w);
+  });
+}
+
+/** The find box's count: `7 of 89 rows`. */
+export function findLine(shown: number, all: number): string {
+  return `${shown} of ${all} ${all === 1 ? "row" : "rows"}`;
+}
+
+/** Whether a board in a list answers the filter box: its title, its epic's key or its goal, every word of it. */
+export function boardMatches(b: Pick<ProjectBoard, "title" | "goal" | "source">, q: string): boolean {
+  const words = q.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  const text = [b.title, b.source?.key ?? "", b.goal].join("\n").toLowerCase();
+  return words.every((w) => text.includes(w));
 }

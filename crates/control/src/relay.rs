@@ -201,7 +201,7 @@ struct Live {
     stop: Arc<tokio::sync::Notify>,
     /// Tells the daemon to fetch its account's certificates now.
     nudge: Arc<tokio::sync::Notify>,
-    /// Text messages for the daemon (M40: forge pokes and heartbeats).
+    /// Text messages for the daemon (ops, guest routes, `forge.watching`).
     text: tokio::sync::mpsc::UnboundedSender<String>,
     /// The typed ops it said it knows (M168).
     ops: Vec<String>,
@@ -603,7 +603,7 @@ async fn daemon_socket(app: Arc<App>, id: String, hosted: bool, ws: WebSocket, t
                             && !app.relay.op_text(&id, t.as_str())
                             && !app.relay.activity.heard(&id, generation, t.as_str())
                         {
-                            crate::forge::from_daemon(&app, &id, generation, t.as_str());
+                            crate::forge::from_daemon(&app, &id, t.as_str());
                         }
                     }
                     Some(Ok(_)) => heard = Instant::now(),
@@ -628,7 +628,6 @@ async fn daemon_socket(app: Arc<App>, id: String, hosted: bool, ws: WebSocket, t
         live.remove(&id);
     }
     drop(live);
-    app.forge.drop_daemon(&id, generation);
     app.guest_routes.drop_daemon(&id, generation);
     app.relay.activity.drop_daemon(&id, generation);
     let _ = seen(&app, &id, hosted, None);

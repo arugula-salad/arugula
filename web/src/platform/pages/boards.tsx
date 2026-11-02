@@ -8,11 +8,11 @@
 // reader the routes answer 404 and the page says boards are off, and the
 // project's home doesn't mention them.
 
-import { useEffect, useState } from "preact/hooks";
+import { useEffect, useRef, useState } from "preact/hooks";
 import type { ProjectBoard } from "../../shared/proto";
 import { BoardPanel } from "../../shared/boards/view";
 import { BoardError, boards } from "../../shared/boards/store";
-import { epicLine, firstLine, NOT_STARTED } from "../../shared/boards/text";
+import { boardMatches, epicLine, firstLine, NOT_STARTED } from "../../shared/boards/text";
 import { useSubscribe } from "../../shared/ui/hooks";
 import { PageHeader } from "../../shared/ui/page-header";
 import { StateChip } from "../../shared/ui/state-chip";
@@ -81,6 +81,35 @@ export function useBoardsOn(): boolean {
   return ids.some((id) => boardsOn.get(id));
 }
 
+/** The filter box above a list of boards (#546): `/` focuses it from anywhere that isn't a field, Esc clears it. */
+function BoardFilter({ q, setQ }: { q: string; setQ: (q: string) => void }) {
+  const box = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    const slash = (e: KeyboardEvent) => {
+      if (e.key !== "/" || e.ctrlKey || e.metaKey || e.altKey || e.defaultPrevented) return;
+      if ((e.target as Element | null)?.closest("input, textarea, select, [contenteditable]")) return;
+      e.preventDefault();
+      box.current?.focus();
+    };
+    window.addEventListener("keydown", slash);
+    return () => window.removeEventListener("keydown", slash);
+  }, []);
+  return (
+    <input
+      ref={box}
+      type="search"
+      class="board-filter"
+      value={q}
+      placeholder="Filter boards by title, epic key or goal  (/)"
+      aria-label="Filter boards"
+      data-boards-filter
+      autoComplete="off"
+      onInput={(e) => setQ(e.currentTarget.value)}
+      onKeyDown={(e) => e.key === "Escape" && (e.preventDefault(), setQ(""), box.current?.blur())}
+    />
+  );
+}
+
 function BoardsOff() {
   return (
     <section class="platform-section sw-page" data-boards-off>
@@ -97,6 +126,7 @@ export function AllBoardsPage() {
   const projects = session.projects;
   const key = projects.map((p) => p.id).join(",");
   const [lists, setLists] = useState<Map<string, ProjectBoard[] | "off"> | null>(null);
+  const [q, setQ] = useState("");
   useEffect(() => {
     setLists(null);
     let live = true;
@@ -115,12 +145,19 @@ export function AllBoardsPage() {
     const l = lists?.get(p.id);
     return Array.isArray(l) && l.length > 0 ? [{ p, list: l }] : [];
   });
+  const kept = shown.filter((s) => s.list.some((b) => boardMatches(b, q)));
   return (
     <section class="platform-section sw-page" data-all-boards-page>
       <PageHeader title="Boards" stats={lists && shown.length > 0 && <BoardStats list={shown.flatMap((s) => s.list)} />} />
       {lists === null && <p class="dim">Loading…</p>}
       {lists && shown.length === 0 && <p class="dim">No boards yet. Make one on a project's Boards page.</p>}
-      {shown.map(({ p, list }) => {
+      {shown.length > 0 && <BoardFilter q={q} setQ={setQ} />}
+      {q.trim() && shown.length > 0 && kept.length === 0 && (
+        <p class="dim" data-boards-filter-none>
+          No board matches “{q.trim()}”.
+        </p>
+      )}
+      {kept.map(({ p, list }) => {
         const all = pathOf({ page: "boards", project: p.id }, names);
         return (
           <div key={p.id} data-all-boards-project={p.id}>
@@ -132,7 +169,7 @@ export function AllBoardsPage() {
                 </a>
               }
             />
-            <BoardItems p={p} list={list} data="data-project-boards" />
+            <BoardItems p={p} list={list} data="data-project-boards" q={q} />
           </div>
         );
       })}
@@ -150,6 +187,7 @@ export function BoardsPage({ project }: { project: string }) {
 function BoardList({ p }: { p: PlatformProject }) {
   const list = useBoards(p.id);
   const [title, setTitle] = useState("");
+  const [q, setQ] = useState("");
   if (list === "off") return <BoardsOff />;
   const make = async (e: Event) => {
     e.preventDefault();
@@ -166,7 +204,8 @@ function BoardList({ p }: { p: PlatformProject }) {
       <PageHeader title="Boards" stats={list && list.length > 0 && <BoardStats list={list} />} />
       {list === null && <p class="dim">Loading…</p>}
       {list?.length === 0 && <p class="dim">No boards yet.</p>}
-      {list && <BoardItems p={p} list={list} data="data-boards" />}
+      {list && list.length > 0 && <BoardFilter q={q} setQ={setQ} />}
+      {list && <BoardItems p={p} list={list} data="data-boards" q={q} />}
       {mayWrite(p) && (
         <form class="board-form" onSubmit={(e) => void make(e)}>
           <input type="text" value={title} maxLength={120} placeholder="a new board's title" aria-label="New board's title" data-board-new-title onInput={(e) => setTitle(e.currentTarget.value)} />
@@ -214,13 +253,15 @@ export function BoardPage({ project, board }: { project: string; board: string }
 /** The project home's list of boards (`list`, from `useBoards`): nothing
  * while the flag is off. */
 export function ProjectBoards({ p, list }: { p: PlatformProject; list: ProjectBoard[] | null | "off" }) {
+  const [q, setQ] = useState("");
   if (list === null || list === "off") return null;
   const all = pathOf({ page: "boards", project: p.id }, names);
   return (
     <>
       <SectionHead title="Boards" all={all} data="project-boards-link" />
       {list.length === 0 && <p class="dim">No boards yet.</p>}
-      <BoardItems p={p} list={list} data="data-project-boards" />
+      {list.length > 0 && <BoardFilter q={q} setQ={setQ} />}
+      <BoardItems p={p} list={list} data="data-project-boards" q={q} />
     </>
   );
 }
@@ -276,7 +317,8 @@ function BoardItem({ p, b, waiting }: { p: PlatformProject; b: ProjectBoard; wai
 }
 
 /** A project's boards: the ones people made, then the open ones that follow a Plane epic under "From Plane" (those whose epic is started first, the rest marked), and the closed ones folded under "Done (N)". `data` is the attribute the open list carries. */
-function BoardItems({ p, list, data }: { p: PlatformProject; list: ProjectBoard[]; data: "data-boards" | "data-project-boards" }) {
+function BoardItems({ p, list: all, data, q = "" }: { p: PlatformProject; list: ProjectBoard[]; data: "data-boards" | "data-project-boards"; q?: string }) {
+  const list = all.filter((b) => boardMatches(b, q));
   const open = list.filter((b) => b.closed_at == null);
   const done = list.filter((b) => b.closed_at != null);
   const made = open.filter((b) => !b.source);
@@ -304,7 +346,7 @@ function BoardItems({ p, list, data }: { p: PlatformProject; list: ProjectBoard[
         </section>
       )}
       {done.length > 0 && (
-        <details class="board-done-list" data-boards-done>
+        <details class="board-done-list" data-boards-done open={q.trim() ? true : undefined}>
           <summary>Done ({done.length})</summary>
           <ul class="board-list sw-cards">
             {done.map((b) => (
