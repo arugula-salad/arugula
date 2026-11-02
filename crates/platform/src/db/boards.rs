@@ -188,7 +188,8 @@ pub(super) const BOARD_COLS: &str = "id, project_id, title, created_by, created_
                           (SELECT i.state_group = 'started' FROM forge_items i WHERE i.id = boards.source_item)";
 pub(super) const ENTRY_COLS: &str =
     "id, rev, note, status, target_kind, target, pane, created_at, updated_at, agent, zone_id, work_item, source";
-const ATTACHED_COLS: &str = "id, row_id, role, target_kind, target, pane, agent, created_at, released_at, machine, title";
+const ATTACHED_COLS: &str =
+    "id, row_id, role, target_kind, target, pane, agent, created_at, released_at, machine, title";
 
 pub(super) fn board_row(r: &Row) -> Result<Board> {
     Ok(Board {

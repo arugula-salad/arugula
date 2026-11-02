@@ -84,8 +84,7 @@ fn cols(p: &Pointer) -> Option<(&'static str, &str, &str, &str)> {
 }
 
 fn strip_row(r: &Row) -> Result<Strip> {
-    let (kind, target, machine, title): (String, String, String, String) =
-        (r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?);
+    let (kind, target, machine, title): (String, String, String, String) = (r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?);
     let (pointer, head) = match kind.as_str() {
         "doc" => {
             let head = r.get::<Option<String>>(8)?.map(|t| Head { title: t, sections: 0, written: 0 });
@@ -97,15 +96,7 @@ fn strip_row(r: &Row) -> Result<Strip> {
         Some(h) => Some(Head { sections: r.get(9)?, written: r.get(10)?, ..h }),
         None => None,
     };
-    Ok(Strip {
-        id: r.get(0)?,
-        pointer,
-        title,
-        head,
-        added_by: r.get(5)?,
-        agent: r.get(6)?,
-        created_at: r.get(7)?,
-    })
+    Ok(Strip { id: r.get(0)?, pointer, title, head, added_by: r.get(5)?, agent: r.get(6)?, created_at: r.get(7)? })
 }
 
 const STRIP_COLS: &str = "b.id, b.target_kind, b.target, b.machine, b.title, b.added_by, b.agent, b.created_at, \
@@ -181,11 +172,10 @@ impl Db {
         if let Some(id) = there {
             return Ok(Ok(Added::Already(id)));
         }
-        let (n, last): (u64, Option<i64>) = tx.query_row(
-            "SELECT count(*), max(position) FROM board_docs WHERE board_id = ?1",
-            params![board],
-            |r| Ok((r.get(0)?, r.get(1)?)),
-        )?;
+        let (n, last): (u64, Option<i64>) =
+            tx.query_row("SELECT count(*), max(position) FROM board_docs WHERE board_id = ?1", params![board], |r| {
+                Ok((r.get(0)?, r.get(1)?))
+            })?;
         if n >= BOARD_DOCS_MAX {
             return bad(format!("a board lists at most {BOARD_DOCS_MAX} Docs"));
         }
@@ -211,11 +201,10 @@ impl Db {
         if tx.execute("DELETE FROM board_docs WHERE board_id = ?1 AND id = ?2", params![board, id])? == 0 {
             return Ok(Err(Refused::Missing("no such Doc on this board")));
         }
-        let rest: Vec<String> = tx.query_map(
-            "SELECT id FROM board_docs WHERE board_id = ?1 ORDER BY position, id",
-            params![board],
-            |r| r.get(0),
-        )?;
+        let rest: Vec<String> =
+            tx.query_map("SELECT id FROM board_docs WHERE board_id = ?1 ORDER BY position, id", params![board], |r| {
+                r.get(0)
+            })?;
         renumber(&tx, &rest)?;
         touch(&tx, board, at)?;
         tx.commit()?;
@@ -235,11 +224,10 @@ impl Db {
         if !lock(&tx, board)? {
             return Ok(Err(Refused::Missing("no such board")));
         }
-        let mut order: Vec<String> = tx.query_map(
-            "SELECT id FROM board_docs WHERE board_id = ?1 ORDER BY position, id",
-            params![board],
-            |r| r.get(0),
-        )?;
+        let mut order: Vec<String> =
+            tx.query_map("SELECT id FROM board_docs WHERE board_id = ?1 ORDER BY position, id", params![board], |r| {
+                r.get(0)
+            })?;
         let Some(from) = order.iter().position(|d| d == id) else {
             return Ok(Err(Refused::Missing("no such Doc on this board")));
         };

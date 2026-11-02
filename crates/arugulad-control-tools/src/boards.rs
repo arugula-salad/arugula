@@ -51,11 +51,11 @@
 //! the owner.
 
 use arugula_control_wire::boards::{
-    self as wire, AGENT_BOARD_REACH, AddDoc, AttachRole, AttachRow, BoardList, BoardView, CloseBoard, EditBoard, IssueRef,
-    Live, MoveEntry, NewAsk, NewBoard, NewRelation, Pointer, PutEntry, ResolveItems, Resolved, Row, agent_board,
-    agent_board_attachment, agent_board_attachments, agent_board_close, agent_board_doc, agent_board_docs, agent_board_entries, agent_board_entry,
-    agent_board_entry_move, agent_board_reopen, agent_board_resolve, agent_board_row_ask, agent_project_boards,
-    agent_project_relation, agent_project_relations,
+    self as wire, AGENT_BOARD_REACH, AddDoc, AttachRole, AttachRow, BoardList, BoardView, CloseBoard, EditBoard,
+    IssueRef, Live, MoveEntry, NewAsk, NewBoard, NewRelation, Pointer, PutEntry, ResolveItems, Resolved, Row,
+    agent_board, agent_board_attachment, agent_board_attachments, agent_board_close, agent_board_doc, agent_board_docs,
+    agent_board_entries, agent_board_entry, agent_board_entry_move, agent_board_reopen, agent_board_resolve,
+    agent_board_row_ask, agent_project_boards, agent_project_relation, agent_project_relations,
 };
 use reqwest::Method;
 use rmcp::handler::server::common::schema_for_type;
@@ -1032,8 +1032,9 @@ async fn link_doc(c: &Call<'_>, a: LinkDocArgs) -> Out {
     };
     let view = read_view(c, &a.board).await?;
     let row = find_row(&view, item)?;
-    let body = serde_json::to_value(AttachRow { row: row.id.clone(), pointer, role: AttachRole::Reference, take: false })
-        .map_err(|e| e.to_string())?;
+    let body =
+        serde_json::to_value(AttachRow { row: row.id.clone(), pointer, role: AttachRole::Reference, take: false })
+            .map_err(|e| e.to_string())?;
     let v = boards_call(c, Method::POST, &agent_board_attachments(&a.board), Some(body)).await?;
     let after = view_of(v)?;
     let said = after.said.as_deref().map(|s| format!(" Note: {s}.")).unwrap_or_default();
@@ -1155,7 +1156,12 @@ pub(crate) async fn board_write(c: &Call<'_>, kind: &str, a: Value) -> Out {
             let path = match id {
                 _ if id.starts_with("bdc_") => agent_board_doc(&a.board, id),
                 _ if id.starts_with("att_") => agent_board_attachment(&a.board, id),
-                _ => return Err("unlink_doc takes a strip entry's bdc_… id or a reference's att_… id (board_read has them)".into()),
+                _ => {
+                    return Err(
+                        "unlink_doc takes a strip entry's bdc_… id or a reference's att_… id (board_read has them)"
+                            .into(),
+                    );
+                }
             };
             let v = boards_call(c, Method::DELETE, &path, None).await?;
             let view = view_of(v)?;
@@ -1366,7 +1372,8 @@ mod tests {
     fn a_boards_docs_are_named_with_their_ids() {
         let reference = json!({ "id": "att_7", "role": "reference", "pointer": { "kind": "doc", "id": "pdc_1" },
                                 "doc": { "title": "Spike", "sections": 2, "written": 1 } });
-        let mut v = board(json!([row("row_1", json!({ "kind": "issue", "id": "iss_1" }), native(12), json!([reference]))]));
+        let mut v =
+            board(json!([row("row_1", json!({ "kind": "issue", "id": "iss_1" }), native(12), json!([reference]))]));
         assert_eq!(docs_line(&v), Some("References: Spike (att_7, on #12)".to_owned()));
         v.docs = serde_json::from_value(json!([{ "id": "bdc_2", "title": "Plan", "added_by": "a1", "created_at": 1,
                                                  "pointer": { "kind": "doc", "id": "pdc_2" } }]))

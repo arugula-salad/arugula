@@ -3,9 +3,7 @@
 //! no lane and proves nothing, a Doc of another project refused, a deleted
 //! Doc read as missing, and what the Doc's page says of its boards.
 
-use arugula_control_wire::boards::{
-    BOARD_DOCS_MAX, agent_board_doc, agent_board_docs, agent_board_attachments,
-};
+use arugula_control_wire::boards::{BOARD_DOCS_MAX, agent_board_attachments, agent_board_doc, agent_board_docs};
 use serde_json::{Value, json};
 
 use super::{
@@ -20,7 +18,8 @@ use crate::{
 
 /// A board of project `t`, made by a.
 async fn board(base: &str, t: &str) -> String {
-    let (st, b) = call(base, "a", "POST", &format!("/api/projects/{t}/boards"), Some(json!({ "title": "Launch" }))).await;
+    let (st, b) =
+        call(base, "a", "POST", &format!("/api/projects/{t}/boards"), Some(json!({ "title": "Launch" }))).await;
     assert_eq!(st, 200, "{b}");
     b["board"]["id"].as_str().unwrap().to_owned()
 }
@@ -37,9 +36,14 @@ async fn doc(base: &str, who: &str, project: &str, title: &str, sections: usize,
             s
         })
         .collect();
-    let (st, d) =
-        call(base, who, "POST", &format!("/api/projects/{project}/docs"), Some(json!({ "title": title, "sections": sections })))
-            .await;
+    let (st, d) = call(
+        base,
+        who,
+        "POST",
+        &format!("/api/projects/{project}/docs"),
+        Some(json!({ "title": title, "sections": sections })),
+    )
+    .await;
     assert_eq!(st, 200, "{d}");
     d["doc"]["id"].as_str().unwrap().to_owned()
 }
@@ -87,6 +91,7 @@ async fn link_move_and_unlink_a_docs_strip() {
     let (_, v) = mv(spike_entry, None).await;
     assert_eq!(titles(&v), ["The plan", "The spike"], "{v}");
     assert_eq!(mv(spike_entry, Some("bdc_nothere")).await.0, 404);
+    assert_eq!(mv(spike_entry, Some(spike_entry)).await.0, 400, "not before itself");
 
     // A viewer reads it and changes nothing.
     let (st, v) = call(&base, "x", "GET", &format!("/api/boards/{id}"), None).await;
@@ -151,10 +156,18 @@ async fn another_projects_doc_is_refused() {
 
     let (st, v) = link(&base, "a", &id, json!({ "kind": "doc", "id": theirs })).await;
     assert_eq!(st, 404, "{v}");
-    let (st, v) = attach(&base, "a", &id, json!({ "row": row, "role": "reference", "pointer": { "kind": "doc", "id": theirs } })).await;
+    let (st, v) =
+        attach(&base, "a", &id, json!({ "row": row, "role": "reference", "pointer": { "kind": "doc", "id": theirs } }))
+            .await;
     assert_eq!(st, 404, "{v}");
-    assert_eq!(link(&base, "a", &id, json!({ "kind": "doc", "id": "pdc_00000000000000000000000000000000" })).await.0, 404);
+    assert_eq!(
+        link(&base, "a", &id, json!({ "kind": "doc", "id": "pdc_00000000000000000000000000000000" })).await.0,
+        404
+    );
     assert_eq!(link(&base, "a", &id, json!({ "kind": "doc", "id": "nonsense" })).await.0, 404);
+    // Nor does its page say which boards it is on.
+    let (st, v) = call(&base, "a", "GET", &format!("/api/projects/{t}/docs/{theirs}/boards"), None).await;
+    assert_eq!(st, 404, "{v}");
     let (_, v) = call(&base, "a", "GET", &format!("/api/boards/{id}"), None).await;
     assert!(v["docs"].as_array().unwrap().is_empty(), "{v}");
     let n: u64 = app.db.c().query_row("SELECT count(*) FROM board_docs", params![], |r| r.get(0)).unwrap();
@@ -186,7 +199,11 @@ async fn only_a_doc_is_a_reference_and_a_doc_is_only_a_reference() {
     let (st, v) = attach(&base, "a", &id, json!({ "row": row, "role": "reference", "pointer": doc_ptr })).await;
     assert_eq!(st, 200, "{v}");
     let att = &row_in(&v, &row)["attachments"][0];
-    assert_eq!((&att["role"], &att["doc"]["title"], &att["doc"]["written"]), (&json!("reference"), &json!("The spike"), &json!(1)), "{v}");
+    assert_eq!(
+        (&att["role"], &att["doc"]["title"], &att["doc"]["written"]),
+        (&json!("reference"), &json!("The spike"), &json!(1)),
+        "{v}"
+    );
     // Once on a row; the strip is a list of its own.
     let (_, v) = attach(&base, "a", &id, json!({ "row": row, "role": "reference", "pointer": doc_ptr })).await;
     assert_eq!(row_in(&v, &row)["attachments"].as_array().unwrap().len(), 1, "{v}");
@@ -214,13 +231,22 @@ async fn a_reference_never_moves_a_lane_or_proves() {
     let shut = issue(&base, "a", &t, "Shut one").await;
     app.db
         .c()
-        .execute("UPDATE issues SET state = 'closed', close_reason = 'completed', closed_at = 5 WHERE id = ?1", params![shut])
+        .execute(
+            "UPDATE issues SET state = 'closed', close_reason = 'completed', closed_at = 5 WHERE id = ?1",
+            params![shut],
+        )
         .unwrap();
     put(&base, "a", &id, json!({ "entry": "row", "pointer": { "kind": "issue", "id": open } })).await;
     let (_, before) = put(&base, "a", &id, json!({ "entry": "row", "pointer": { "kind": "issue", "id": shut } })).await;
     let (open_row, shut_row) = (
-        rows_in(&before).iter().find(|r| r["pointer"]["id"] == open.as_str()).unwrap()["id"].as_str().unwrap().to_owned(),
-        rows_in(&before).iter().find(|r| r["pointer"]["id"] == shut.as_str()).unwrap()["id"].as_str().unwrap().to_owned(),
+        rows_in(&before).iter().find(|r| r["pointer"]["id"] == open.as_str()).unwrap()["id"]
+            .as_str()
+            .unwrap()
+            .to_owned(),
+        rows_in(&before).iter().find(|r| r["pointer"]["id"] == shut.as_str()).unwrap()["id"]
+            .as_str()
+            .unwrap()
+            .to_owned(),
     );
     assert_eq!((lane(&before, &open_row), lane(&before, &shut_row)), ("next".to_owned(), "done".to_owned()));
     assert!(before["zones"][3]["rows"][0]["proof"].is_null(), "shut, not proven: {before}");
@@ -229,7 +255,9 @@ async fn a_reference_never_moves_a_lane_or_proves() {
     let d = doc(&base, "a", &t, "The spike", 1, 1).await;
     let mut after = Value::Null;
     for row in [&open_row, &shut_row] {
-        let (st, v) = attach(&base, "a", &id, json!({ "row": row, "role": "reference", "pointer": { "kind": "doc", "id": d } })).await;
+        let (st, v) =
+            attach(&base, "a", &id, json!({ "row": row, "role": "reference", "pointer": { "kind": "doc", "id": d } }))
+                .await;
         assert_eq!(st, 200, "{v}");
         after = v;
     }
@@ -338,7 +366,10 @@ async fn an_agent_links_its_machines_docs() {
     assert_eq!(st, 200, "{v}");
     let entry = &v["docs"][0];
     assert_eq!(entry["title"], "Perf notes", "trimmed: {v}");
-    assert_eq!(entry["pointer"], json!({ "kind": "machine_doc", "machine": "geek", "doc": "d7", "title": "Perf notes" }));
+    assert_eq!(
+        entry["pointer"],
+        json!({ "kind": "machine_doc", "machine": "geek", "doc": "d7", "title": "Perf notes" })
+    );
     assert_eq!((&entry["agent"]["machine"], &entry["added_by"]), (&json!("geek"), &json!("a")), "{v}");
     assert!(entry.get("missing").is_none(), "a machine Doc isn't missing: {v}");
     assert!(entry["machine_name"].is_string(), "{v}");
@@ -363,7 +394,13 @@ async fn an_agent_links_its_machines_docs() {
     // On a row, as a reference; the agent can take off its own.
     let (_, v) = put(&base, "a", &id, json!({ "entry": "row", "note": "the plan" })).await;
     let row = v["zones"][0]["rows"][0]["id"].as_str().unwrap().to_owned();
-    let (st, v) = geek(&base, "POST", &agent_board_attachments(&id), Some(json!({ "row": row, "role": "reference", "pointer": mine }))).await;
+    let (st, v) = geek(
+        &base,
+        "POST",
+        &agent_board_attachments(&id),
+        Some(json!({ "row": row, "role": "reference", "pointer": mine })),
+    )
+    .await;
     assert_eq!(st, 200, "{v}");
     let att = &row_in(&v, &row)["attachments"][0];
     assert_eq!((&att["role"], &att["doc"]["title"]), (&json!("reference"), &json!("Perf notes")), "{v}");
@@ -377,7 +414,8 @@ async fn a_closed_boards_docs_stay_editable() {
     hub.flag_named("team:t", FLAG, true);
     let id = board(&base, &t).await;
     let d = doc(&base, "a", &t, "The spike", 1, 1).await;
-    let (st, _) = call(&base, "a", "POST", &format!("/api/boards/{id}/close"), Some(json!({ "done_note": "Done." }))).await;
+    let (st, _) =
+        call(&base, "a", "POST", &format!("/api/boards/{id}/close"), Some(json!({ "done_note": "Done." }))).await;
     assert_eq!(st, 200);
     let (st, v) = link(&base, "a", &id, json!({ "kind": "doc", "id": d })).await;
     assert_eq!((st, titles(&v)), (200, vec!["The spike"]), "{v}");

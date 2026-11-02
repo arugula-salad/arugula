@@ -3241,8 +3241,18 @@ async fn an_agent_links_docs_to_a_board() {
         json!({ "id": local, "title": "Perf notes", "made": 1, "updated": 1, "by": "mcp:test" }).to_string(),
     )
     .unwrap();
+    // A path out of the library is no Doc id, even where something is there.
+    std::fs::create_dir_all(d.state.join("0011223344556")).unwrap();
+    std::fs::write(d.state.join("0011223344556").join("meta.json"), json!({ "title": "Not a Doc" }).to_string())
+        .unwrap();
     let posts = || -> Vec<(String, Value)> {
-        fake.calls.lock().unwrap().iter().filter(|(a, _)| a.contains("/docs") || a.contains("/attachments")).cloned().collect()
+        fake.calls
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|(a, _)| a.contains("/docs") || a.contains("/attachments"))
+            .cloned()
+            .collect()
     };
 
     // A project Doc, in the strip.
@@ -3261,7 +3271,8 @@ async fn an_agent_links_docs_to_a_board() {
     );
 
     // On a row, by its item, as a reference.
-    let on_row = call(&s, "board_write", json!({ "kind": "link_doc", "board": "brd_1", "doc": pdc, "row": "#12" })).await;
+    let on_row =
+        call(&s, "board_write", json!({ "kind": "link_doc", "board": "brd_1", "doc": pdc, "row": "#12" })).await;
     assert!(on_row["summary"].as_str().unwrap().contains("Linked the Doc to #12"), "{on_row}");
     assert_eq!(
         posts()[2],
@@ -3272,9 +3283,14 @@ async fn an_agent_links_docs_to_a_board() {
     );
 
     // An id this machine doesn't have, and one that is no Doc id, never go out.
-    let unknown = refused(&s, "board_write", json!({ "kind": "link_doc", "board": "brd_1", "doc": "ffffffffffffffff" })).await;
+    let unknown =
+        refused(&s, "board_write", json!({ "kind": "link_doc", "board": "brd_1", "doc": "ffffffffffffffff" })).await;
     assert!(unknown.contains("neither a project Doc") && unknown.contains("doc list"), "{unknown}");
-    assert!(refused(&s, "board_write", json!({ "kind": "link_doc", "board": "brd_1", "doc": "../../etc" })).await.contains("neither"));
+    assert!(
+        refused(&s, "board_write", json!({ "kind": "link_doc", "board": "brd_1", "doc": "../../etc" }))
+            .await
+            .contains("neither")
+    );
     assert_eq!(posts().len(), 3, "nothing went out for them");
 
     // Unlink: a strip entry, a reference; nothing else.
@@ -3282,7 +3298,11 @@ async fn an_agent_links_docs_to_a_board() {
     assert!(posts().iter().any(|(a, _)| a == "DELETE /api/daemon/boards/brd_1/docs/bdc_1"), "{:?}", posts());
     let refusal = refused(&s, "board_write", json!({ "kind": "unlink_doc", "board": "brd_1", "id": "att_1" })).await;
     assert!(refusal.contains("only the attachments its own machine made"), "the platform's refusal: {refusal}");
-    assert!(refused(&s, "board_write", json!({ "kind": "unlink_doc", "board": "brd_1", "id": "row_1" })).await.contains("bdc_"));
+    assert!(
+        refused(&s, "board_write", json!({ "kind": "unlink_doc", "board": "brd_1", "id": "row_1" }))
+            .await
+            .contains("bdc_")
+    );
     s.cancel().await.unwrap();
 }
 

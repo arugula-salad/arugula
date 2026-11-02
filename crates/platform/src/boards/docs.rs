@@ -42,7 +42,12 @@ fn no_doc() -> ApiError {
 /// A Doc pointer as it is kept: shaped, with a project Doc checked to be in
 /// `project` and a machine Doc's title trimmed. A machine's agent links
 /// only a Doc of its own machine.
-pub(super) fn doc_ok(app: &Platform, by: Actor<'_>, project: &str, p: &wire::Pointer) -> Result<wire::Pointer, ApiError> {
+pub(super) fn doc_ok(
+    app: &Platform,
+    by: Actor<'_>,
+    project: &str,
+    p: &wire::Pointer,
+) -> Result<wire::Pointer, ApiError> {
     match p {
         wire::Pointer::Doc { id } => {
             id_ok(id, "pdc").map_err(|_| no_doc())?;
@@ -57,7 +62,11 @@ pub(super) fn doc_ok(app: &Platform, by: Actor<'_>, project: &str, p: &wire::Poi
             {
                 return Err(err(StatusCode::FORBIDDEN, "an agent links only Docs on its own machine"));
             }
-            Ok(wire::Pointer::MachineDoc { machine: machine.clone(), doc: doc.clone(), title: title_ok(title)?.to_owned() })
+            Ok(wire::Pointer::MachineDoc {
+                machine: machine.clone(),
+                doc: doc.clone(),
+                title: title_ok(title)?.to_owned(),
+            })
         }
         _ => Err(bad("a Doc is a project Doc (pdc_…) or a Doc on a machine")),
     }
@@ -73,7 +82,13 @@ pub(super) fn project_chip(head: Option<&db::Head>) -> wire::DocChip {
             missing: false,
             machine_name: None,
         },
-        None => wire::DocChip { title: wire::DOC_GONE.to_owned(), sections: None, written: None, missing: true, machine_name: None },
+        None => wire::DocChip {
+            title: wire::DOC_GONE.to_owned(),
+            sections: None,
+            written: None,
+            missing: true,
+            machine_name: None,
+        },
     }
 }
 
@@ -85,7 +100,13 @@ pub(super) fn view(strip: Vec<db::Strip>, names: &HashMap<String, String>) -> Ve
         .map(|s| {
             let (chip, machine_name) = match &s.pointer {
                 wire::Pointer::MachineDoc { machine, title, .. } => (
-                    wire::DocChip { title: title.clone(), sections: None, written: None, missing: false, machine_name: None },
+                    wire::DocChip {
+                        title: title.clone(),
+                        sections: None,
+                        written: None,
+                        missing: false,
+                        machine_name: None,
+                    },
                     Some(name(machine)),
                 ),
                 _ => (project_chip(s.head.as_ref()), None),
@@ -117,7 +138,9 @@ pub async fn add(app: &Platform, by: Actor<'_>, id: &str, a: &wire::AddDoc) -> R
     let pointer = doc_ok(app, by, &board.project, &a.pointer)?;
     let said = match app.db.add_board_doc(id, &pointer, by.account, by.agent, now_ms())? {
         Ok(db::Added::New(_)) => None,
-        Ok(db::Added::Already(_)) => Some("that Doc is linked to this board already: it was not linked again".to_owned()),
+        Ok(db::Added::Already(_)) => {
+            Some("that Doc is linked to this board already: it was not linked again".to_owned())
+        }
         Err(r) => return Err(refused(r)),
     };
     if said.is_none() {

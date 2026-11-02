@@ -922,12 +922,24 @@ async fn read(app: &Platform, account: &str, id: &str) -> Result<wire::BoardView
                         written: None,
                         missing: false,
                         machine_name: Some(
-                            names.get(machine).filter(|n| !n.is_empty()).cloned().unwrap_or_else(|| "a machine".to_owned()),
+                            names
+                                .get(machine)
+                                .filter(|n| !n.is_empty())
+                                .cloned()
+                                .unwrap_or_else(|| "a machine".to_owned()),
                         ),
                     }),
                     _ => None,
                 };
-                wire::Attachment { id: a.id.clone(), role: a.role, pointer: a.pointer.clone(), live, block, released, doc }
+                wire::Attachment {
+                    id: a.id.clone(),
+                    role: a.role,
+                    pointer: a.pointer.clone(),
+                    live,
+                    block,
+                    released,
+                    doc,
+                }
             })
             .collect();
         if let Some(g) = groups.iter_mut().find(|g| Some(&g.id) == e.zone.as_ref())
