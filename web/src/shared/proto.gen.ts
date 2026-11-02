@@ -345,6 +345,19 @@ progress: BoardProgress, };
  */
 export type BoardLane = "next" | "doing" | "review" | "done";
 
+/**
+ * A lane a person set on a row ([`Row::lane_set`]).
+ */
+export type BoardLaneSet = { 
+/**
+ * `next`, `doing` or `review`.
+ */
+lane: BoardLane, 
+/**
+ * The account that moved the row.
+ */
+by: string, at: number, };
+
 export type BoardList = { project: string, boards: Array<ProjectBoard>, };
 
 /**
@@ -374,6 +387,11 @@ title: string,
  * issue's names. A run has none.
  */
 assignees?: Array<string>, 
+/**
+ * The item's labels (#547): a native issue's, a mirrored item's, a
+ * Plane item's. A run has none.
+ */
+labels?: Array<string>, 
 /**
  * `plane` for a tracker's item; absent for GitHub, native issues and runs.
  */
@@ -512,6 +530,11 @@ status: BoardStatus,
  */
 lane: BoardLane, 
 /**
+ * Set when a person moved the row and the work hasn't changed its
+ * derived lane since (#494): `lane` is then the row's lane.
+ */
+lane_set?: BoardLaneSet, 
+/**
  * Work and proof attached to the row, oldest first.
  */
 attachments: Array<BoardAttachment>, 
@@ -582,6 +605,12 @@ item?: string,
  * The reader may take it off: an owner or editor, and it was made here.
  */
 removable: boolean, };
+
+/**
+ * [`BOARD_ROW_LANE`]'s body. `reason` goes with `done` on a native issue:
+ * `completed` (when not given), `not_planned` or `duplicate`.
+ */
+export type BoardSetLane = { lane: BoardLane, reason: string | null, };
 
 /**
  * What a project says about its boards (Arugula #404).

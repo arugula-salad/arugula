@@ -233,6 +233,7 @@ export function BoardPage({ project, board }: { project: string; board: string }
         id={board}
         write={mayWrite(p)}
         platform={(path) => path}
+        keepInUrl
         back={
           <p class="dim">
             <a href={all} onClick={(e) => follow(e, all)}>

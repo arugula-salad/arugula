@@ -229,6 +229,7 @@ fn generate() -> String {
         c.visit::<BoardView>();
         c.visit::<PutEntry>();
         c.visit::<MoveEntry>();
+        c.visit::<SetLane>();
         c.visit::<WorkQuery>();
         c.visit::<WorkItems>();
         c.visit::<BoardSettings>();

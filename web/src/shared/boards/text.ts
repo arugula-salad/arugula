@@ -210,6 +210,36 @@ export function laneCount(z: Pick<BoardZone, "rows">): { total: number; proven: 
   return { total: z.rows.length, proven: z.rows.filter((r) => r.proof).length };
 }
 
+/** The lanes a person moves a row to by hand, in the board's order (#494). */
+export const MOVE_LANES: { lane: BoardLane; title: string }[] = [
+  { lane: "next", title: "Next" },
+  { lane: "doing", title: "Doing" },
+  { lane: "review", title: "Review" },
+  { lane: "done", title: "Done" },
+];
+
+/** A lane's id (`lane_done`) as the lane. */
+export function laneOfZone(zone: string): BoardLane | null {
+  return MOVE_LANES.find((l) => `lane_${l.lane}` === zone)?.lane ?? null;
+}
+
+/** Why a row can't be moved to Done from here, or null when it can (a native issue is closed). */
+export function doneRefusal(r: Pick<BoardRow, "pointer">): string | null {
+  if (r.pointer.kind === "issue") return null;
+  if (r.pointer.kind === "forge_item") return "Close it in GitHub/Plane to move it to Done.";
+  return "A row with no issue can't be moved to Done.";
+}
+
+/** The issue a Done move closes, as the dialog names it: `#12`, or "this issue". */
+export function closeName(r: Pick<BoardRow, "live">): string {
+  return r.live?.number ? `#${r.live.number}` : "this issue";
+}
+
+/** The mark of a lane a person set: `set by kim`, null on a row that follows its work. */
+export function laneSetLine(r: Pick<BoardRow, "lane_set">, nameOf: (account: string) => string | undefined): string | null {
+  return r.lane_set ? `set by ${nameOf(r.lane_set.by) || "someone who left"}` : null;
+}
+
 /** An attachment's chip: what it points at, and its state when the reader
  * may see it (an item they can't read says nothing but what it is). */
 export function chipOf(a: Pick<BoardAttachment, "pointer" | "live" | "block" | "role">): { label: string; state: string | null } {
@@ -484,11 +514,22 @@ export function leftOutLine(n: number): string {
 /** What a row says of itself that a find reads: the item's title (a note row has its pointer's words), the note, and the item's labels when the view carries them. */
 function rowWords(r: Pick<BoardRow, "pointer" | "live" | "note">): string {
   const title = r.live ? r.live.title : pointerLabel(r.pointer, r.live);
-  const labels = (r as { labels?: string[] }).labels ?? [];
-  return [title, r.note, ...labels].join("\n").toLowerCase();
+  return [title, r.note, ...(r.live?.labels ?? [])].join("\n").toLowerCase();
 }
 
-/** Whether a row answers a find box's text, case-insensitive. A word is `#541` or `541` (the item's number), `ARUGU-12` (a tracker key), or text that appears in the title, the note or a label; every word has to hold. An empty text matches every row. */
+/** Whether a row's item has this label, case-insensitive and whole (#547). */
+export function rowHasLabel(r: Pick<BoardRow, "live">, label: string): boolean {
+  const l = label.trim().toLowerCase();
+  return !!l && (r.live?.labels ?? []).some((x) => x.toLowerCase() === l);
+}
+
+/** Whether a row's item is assigned to someone whose name or login holds `who`, case-insensitive; a space in a name reads as `_`, as `@alice_diaz` writes it. */
+export function rowHasPerson(r: Pick<BoardRow, "live">, who: string): boolean {
+  const w = who.trim().toLowerCase().replace(/\s+/g, "_");
+  return !!w && (r.live?.assignees ?? []).some((a) => a.toLowerCase().replace(/\s+/g, "_").includes(w));
+}
+
+/** Whether a row answers a find box's text, case-insensitive. A word is `#541` or `541` (the item's number), `ARUGU-12` (a tracker key), `label:boards` (a label) or `@alice` (a person assigned), or text that appears in the title, the note or a label; every word has to hold. An empty text matches every row. */
 export function rowMatches(r: Pick<BoardRow, "pointer" | "live" | "note">, q: string): boolean {
   const words = q.trim().toLowerCase().split(/\s+/).filter(Boolean);
   if (!words.length) return true;
@@ -496,12 +537,74 @@ export function rowMatches(r: Pick<BoardRow, "pointer" | "live" | "note">, q: st
   const number = r.live && r.live.number > 0 ? r.live.number : undefined;
   const key = number !== undefined && r.live?.identifier ? `${r.live.identifier}-${number}`.toLowerCase() : undefined;
   return words.every((w) => {
+    if (w.startsWith("label:") && w.length > 6) return rowHasLabel(r, w.slice(6));
+    if (w.startsWith("@") && w.length > 1) return rowHasPerson(r, w.slice(1));
     const hash = /^#(\d+)$/.exec(w);
     if (hash) return number === Number(hash[1]);
     if (/^\d+$/.test(w)) return number === Number(w) || text.includes(w);
     if (/^[a-z][a-z0-9]*-\d+$/.test(w)) return key === w || text.includes(w);
     return text.includes(w);
   });
+}
+
+/** What narrows a board: the find box's text, and the Label and Person menus. */
+export type BoardFilter = { q: string; labels: string[]; people: string[] };
+
+/** Whether a filter narrows anything. */
+export function filtering(f: BoardFilter): boolean {
+  return !!f.q.trim() || f.labels.length > 0 || f.people.length > 0;
+}
+
+/** Whether a row passes a filter: the text and each menu all hold, and within a menu any value does. */
+export function rowPasses(r: Pick<BoardRow, "pointer" | "live" | "note">, f: BoardFilter): boolean {
+  return rowMatches(r, f.q) && (!f.labels.length || f.labels.some((l) => rowHasLabel(r, l))) && (!f.people.length || f.people.some((p) => rowHasPerson(r, p)));
+}
+
+/** The labels (or people) the rows have, most common first, for a menu: each once, as its first row spells it. */
+export function filterChoices(rows: Pick<BoardRow, "live">[], of: "labels" | "assignees"): { value: string; count: number }[] {
+  const seen = new Map<string, { value: string; count: number }>();
+  for (const r of rows) {
+    for (const v of new Set((r.live?.[of] ?? []).filter(Boolean).map((x) => x.toLowerCase()))) {
+      const first = (r.live![of] ?? []).find((x) => x.toLowerCase() === v)!;
+      const e = seen.get(v);
+      if (e) e.count++;
+      else seen.set(v, { value: first, count: 1 });
+    }
+  }
+  return [...seen.values()].sort((a, b) => b.count - a.count || a.value.localeCompare(b.value));
+}
+
+/** A filter as a URL hash, `q=…&label=boards&person=alice`; empty for none. */
+export function filterHash(f: BoardFilter): string {
+  const p = new URLSearchParams();
+  if (f.q.trim()) p.set("q", f.q.trim());
+  for (const l of f.labels) p.append("label", l);
+  for (const w of f.people) p.append("person", w);
+  return p.toString();
+}
+
+/** A filter from a URL hash (with or without the `#`); `null` when it names none. */
+export function parseFilterHash(hash: string): BoardFilter | null {
+  const p = new URLSearchParams(hash.replace(/^#/, ""));
+  const f = { q: p.get("q") ?? "", labels: p.getAll("label").filter(Boolean), people: p.getAll("person").filter(Boolean) };
+  return filtering(f) ? f : null;
+}
+
+/** At most `max` of `list`, and how many more there are, for chips with a `+N`. */
+export function topAndMore<T>(list: T[], max: number): { top: T[]; more: number } {
+  return { top: list.slice(0, max), more: Math.max(0, list.length - max) };
+}
+
+/** A name's initials, up to two: `Ana Diaz` is `AD`, `alice` is `A`. */
+export function initialsOf(name: string): string {
+  return (
+    name
+      .split(/[\s._-]+/)
+      .filter(Boolean)
+      .slice(0, 2)
+      .map((w) => [...w][0].toUpperCase())
+      .join("") || "?"
+  );
 }
 
 /** The find box's count: `7 of 89 rows`. */

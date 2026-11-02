@@ -144,7 +144,7 @@ test("a board Launch has the four lanes and takes the first issue from Triage as
   await expect(card.locator(".board-card-title .board-title")).toHaveText(FIRST);
   await expect(card.locator("[data-board-ptr]")).toHaveText(/^#\d+$/);
   await expect(card.locator("[data-board-live]")).toHaveCount(0);
-  await expect(card.locator("[data-board-who]")).toHaveText("alice");
+  await expect(card.locator("[data-board-who]")).toHaveAttribute("aria-label", "alice");
 });
 
 test("a row is added through the picker, and editing its note keeps what it points at", async () => {
@@ -258,11 +258,10 @@ test("closing one of the board's issues moves its row to Done, not yet proven, u
   await expect(zone(alice, "Next").locator("[data-board-row]")).toHaveCount(2);
   await expect(row(alice, FIRST).locator("[data-board-proof]")).toHaveAttribute("data-board-proof", "not-proven");
   await expect(row(alice, FIRST).locator("[data-board-proof]")).toHaveText("not proven yet");
-  // There is no PROOFS zone to fold, and a row has no menu to move it.
+  // There is no PROOFS zone to fold. The row's menu offers a move by hand
+  // (#494), but nobody needed it: the lane followed the issue.
   await expect(alice.locator('[data-zone-kind="proofs"]')).toHaveCount(0);
-  await row(alice, FIRST).locator("[data-board-row-menu]").click();
-  await expect(alice.getByRole("menuitem", { name: /^Move/ })).toHaveCount(0);
-  await alice.keyboard.press("Escape");
+  await expect(row(alice, FIRST)).not.toHaveAttribute("data-lane-set");
 
   // Evidence attached to the Done row is the mark that proves it.
   const att = await api(alice, "POST", `/api/boards/${id}/attachments`, {

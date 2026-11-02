@@ -36,7 +36,9 @@
 
 use anyhow::{Result, bail};
 use arugula_control_wire::{
-    boards::{AttachRole, BlockState, BlockWord, Board, BoardSource, Category, Diffstat, EntryKind, Pointer, Status},
+    boards::{
+        AttachRole, BlockState, BlockWord, Board, BoardSource, Category, Diffstat, EntryKind, Lane, Pointer, Status,
+    },
     chat::ChatAgent,
 };
 
@@ -116,6 +118,47 @@ pub struct Entry {
     /// `plane` for a row the epic's sync added; none: a person's (or their
     /// agent's).
     pub source: Option<String>,
+    /// The lane a person moved the row to, if one did (#494).
+    pub lane_set: Option<LaneSet>,
+}
+
+/// A lane a person set on a row: `lane` (never Done), the lane the work
+/// derived when they set it (`basis`), who and when. It shows only while the
+/// derived lane is still the basis ([`LaneSet::holds`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LaneSet {
+    pub lane: Lane,
+    pub basis: Lane,
+    pub by: String,
+    pub at: u64,
+}
+
+impl LaneSet {
+    /// Whether the override still applies to a row whose work derives
+    /// `derived`: the work hasn't changed its lane since.
+    pub fn holds(&self, derived: Lane) -> bool {
+        derived == self.basis && derived != Lane::Done
+    }
+}
+
+fn lane_word(l: Lane) -> &'static str {
+    match l {
+        Lane::Next => "next",
+        Lane::Doing => "doing",
+        Lane::Review => "review",
+        Lane::Done => "done",
+    }
+}
+
+fn lane_of(s: &str) -> Option<Lane> {
+    Lane::ALL.into_iter().find(|l| lane_word(*l) == s)
+}
+
+/// The override in `lane_set`, `lane_set_basis`, `lane_set_by` and
+/// `lane_set_at`. A word this build doesn't know reads as none.
+fn lane_set_of(set: Option<String>, basis: Option<String>, by: Option<String>, at: Option<u64>) -> Option<LaneSet> {
+    let lane = lane_of(&set?).filter(|l| *l != Lane::Done)?;
+    Some(LaneSet { lane, basis: lane_of(&basis?)?, by: by?, at: at? })
 }
 
 /// One group as stored.
@@ -186,8 +229,8 @@ pub(super) const BOARD_COLS: &str = "id, project_id, title, created_by, created_
                           closed_at, closed_by, created_by_agent, closed_by_agent, source_key, source_url, \
                           source_name, source_left_out, \
                           (SELECT i.state_group = 'started' FROM forge_items i WHERE i.id = boards.source_item)";
-pub(super) const ENTRY_COLS: &str =
-    "id, rev, note, status, target_kind, target, pane, created_at, updated_at, agent, zone_id, work_item, source";
+pub(super) const ENTRY_COLS: &str = "id, rev, note, status, target_kind, target, pane, created_at, updated_at, agent, zone_id, work_item, source, \
+     lane_set, lane_set_basis, lane_set_by, lane_set_at";
 const ATTACHED_COLS: &str = "id, row_id, role, target_kind, target, pane, agent, created_at, released_at";
 
 pub(super) fn board_row(r: &Row) -> Result<Board> {
@@ -317,6 +360,7 @@ pub(super) fn entry_row(r: &Row) -> Result<Entry> {
         zone: r.get(10)?,
         work_item: r.get(11)?,
         source: r.get(12)?,
+        lane_set: lane_set_of(r.get(13)?, r.get(14)?, r.get(15)?, r.get(16)?),
     })
 }
 
@@ -435,6 +479,8 @@ pub struct Thing {
     /// `None`: the row's own pointer.
     pub role: Option<AttachRole>,
     pub pointer: Pointer,
+    /// On a row's own pointer: the lane a person set on the row.
+    pub lane_set: Option<LaneSet>,
 }
 
 /// What a lane needs of a mirrored item, and nothing a reader couldn't be
@@ -469,6 +515,8 @@ pub struct IssueState {
     pub category: Category,
     /// Accounts; a list that doesn't parse reads as none.
     pub assignees: Vec<String>,
+    /// Its labels; a list that doesn't parse reads as none.
+    pub labels: Vec<String>,
 }
 
 impl Db {
@@ -553,7 +601,7 @@ impl Db {
         let mut rows = c.query_map(
             &format!("SELECT {ENTRY_COLS}, position FROM board_entries WHERE board_id = ?1 AND kind = 'row'"),
             params![id],
-            |r| Ok((entry_row(r)?, r.get::<u64>(13)?)),
+            |r| Ok((entry_row(r)?, r.get::<u64>(17)?)),
         )?;
         // By group, in the groups' order (a row with none, or in a group that
         // isn't there, last), then as the board has them.
@@ -643,7 +691,8 @@ impl Db {
     pub fn project_things(&self, project: &str) -> Result<Vec<Thing>> {
         let c = self.c();
         let mut out: Vec<Thing> = c.query_map(
-            "SELECT e.board_id, e.id, e.target_kind, e.target, e.pane FROM board_entries e
+            "SELECT e.board_id, e.id, e.target_kind, e.target, e.pane,
+                    e.lane_set, e.lane_set_basis, e.lane_set_by, e.lane_set_at FROM board_entries e
              JOIN boards b ON b.id = e.board_id
              WHERE b.project_id = ?1 AND e.kind = 'row' AND e.target_kind IS NOT NULL",
             params![project],
@@ -653,6 +702,7 @@ impl Db {
                     row: r.get(1)?,
                     role: None,
                     pointer: pointer_of(r.get(2)?, r.get(3)?, r.get(4)?)?,
+                    lane_set: lane_set_of(r.get(5)?, r.get(6)?, r.get(7)?, r.get(8)?),
                 })
             },
         )?;
@@ -667,10 +717,49 @@ impl Db {
                     row: r.get(1)?,
                     role: Some(role),
                     pointer: pointer_of(r.get(3)?, r.get(4)?, r.get(5)?)?,
+                    lane_set: None,
                 })
             },
         )?);
         Ok(out)
+    }
+
+    /// Set the lane a person chose for a row (`None`: take it off), and
+    /// the row's rev with it. `false`: no such row.
+    pub fn set_lane(&self, board: &str, row: &str, set: Option<&LaneSet>, at: u64) -> Result<bool> {
+        let mut c = self.c();
+        let tx = c.immediate()?;
+        let n = tx.execute(
+            "UPDATE board_entries SET lane_set = ?3, lane_set_basis = ?4, lane_set_by = ?5, lane_set_at = ?6,
+                                      rev = rev + 1, updated_at = ?7
+             WHERE board_id = ?1 AND id = ?2 AND kind = 'row'",
+            params![
+                board,
+                row,
+                set.map(|s| lane_word(s.lane)),
+                set.map(|s| lane_word(s.basis)),
+                set.map(|s| s.by.as_str()),
+                set.map(|s| s.at),
+                at
+            ],
+        )?;
+        if n > 0 {
+            touch(&tx, board, at)?;
+        }
+        tx.commit()?;
+        Ok(n > 0)
+    }
+
+    /// Take off the override set at `set_at` that the work has since
+    /// outgrown; one set again meanwhile stays. The rev is left alone: this
+    /// is the board tidying up, not an edit.
+    pub fn clear_stale_lane(&self, board: &str, row: &str, set_at: u64) -> Result<()> {
+        self.c().execute(
+            "UPDATE board_entries SET lane_set = NULL, lane_set_basis = NULL, lane_set_by = NULL, lane_set_at = NULL
+             WHERE board_id = ?1 AND id = ?2 AND kind = 'row' AND lane_set_at = ?3",
+            params![board, row, set_at],
+        )?;
+        Ok(())
     }
 
     /// Add a row or a group last, or change one (see [`Put`]); its id.
@@ -1098,7 +1187,7 @@ impl Db {
         let c = self.c();
         c.query_map(
             &format!(
-                "SELECT id, number, title, closed_at IS NOT NULL, assignees, close_reason FROM issues
+                "SELECT id, number, title, closed_at IS NOT NULL, assignees, close_reason, labels FROM issues
                  WHERE project_id = ?1 AND {}",
                 in_json(&c, "id", 2)
             ),
@@ -1112,6 +1201,7 @@ impl Db {
                     closed,
                     category: native_category(closed, r.get::<Option<String>>(5)?.as_deref()),
                     assignees: serde_json::from_str(&r.get::<String>(4)?).unwrap_or_default(),
+                    labels: serde_json::from_str(&r.get::<String>(6)?).unwrap_or_default(),
                 })
             },
         )
