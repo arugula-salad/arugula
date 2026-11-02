@@ -2029,6 +2029,22 @@ clients = ["page", "cli"]
 note = "Disconnects a Plane project (Arugula #356): its secrets go at once, its mirrored items after the grace period."
 
 [[route]]
+method = "GET"
+path = "/api/projects/{project}/trackers/{connection}/history"  # wire::projects::TRACKER_HISTORY
+process = "platform"
+auth = "cloud_driver"
+clients = ["page"]
+note = "What Arugula changed in a connected Plane project lately (Arugula #441): moves to Done after a merged PR, those that failed for good, and the agent writes a person decided. The newest 20, for the project's members, behind the boards Labs flag."
+
+[[route]]
+method = "POST"
+path = "/api/projects/{project}/trackers/{connection}/moves/{job}/retry"  # wire::projects::TRACKER_MOVE_RETRY
+process = "platform"
+auth = "session"
+clients = ["page"]
+note = "Queues a failed move to Done again (Arugula #441): an owner or editor, behind the boards Labs flag. A job that isn't that connection's failed move is a 404."
+
+[[route]]
 method = "POST"
 path = "/api/projects/{project}/trackers/{connection}/writes"  # wire::projects::TRACKER_WRITES
 process = "platform"

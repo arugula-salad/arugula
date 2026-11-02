@@ -4892,6 +4892,11 @@ items: number,
  */
 waiting_writes: number, 
 /**
+ * Moves to Done Arugula gave up on after a merged PR (#441), which a
+ * person may retry ([`TRACKER_MOVE_RETRY`]).
+ */
+failed_moves: number, 
+/**
  * Whether each open epic has a board that follows it (#483). On unless
  * turned off; off, the boards stay and stop following.
  */
@@ -4902,6 +4907,52 @@ export type TrackerConnections = {
  * The project's id (`personal` asked is answered with the real one).
  */
 project: string, connections: Array<TrackerConnection>, };
+
+/**
+ * One change in a [`TrackerHistory`].
+ */
+export type TrackerEvent = { 
+/**
+ * When it happened.
+ */
+at: number, 
+/**
+ * `moved` (a merged PR moved an item to Done), `move_failed` (it gave
+ * up: in `failed`), or an agent's write a person decided: `sent`, `dropped` or
+ * `write_failed`.
+ */
+kind: string, 
+/**
+ * What happened, in a sentence.
+ */
+line: string, 
+/**
+ * Who decided it, for a write.
+ */
+by: string | null, 
+/**
+ * Why it failed.
+ */
+error: string | null, 
+/**
+ * A failed move's job, for the retry.
+ */
+job: string | null, };
+
+/**
+ * What Arugula changed in a connection's Plane project: the newest changes
+ * and the moves that failed.
+ */
+export type TrackerHistory = { 
+/**
+ * The newest 20 changes, newest first, other than a failed move.
+ */
+entries: Array<TrackerEvent>, 
+/**
+ * The connection's failed moves (`move_failed`), newest first, up to 100:
+ * each has its `job` for a retry.
+ */
+failed: Array<TrackerEvent>, };
 
 /**
  * A write waiting for a person, as the Triage page shows it.

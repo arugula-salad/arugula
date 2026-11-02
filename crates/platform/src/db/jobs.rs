@@ -66,6 +66,13 @@ pub const RETRY_MAX_MS: u64 = 3_600_000;
 /// kind says otherwise.
 pub const MAX_ATTEMPTS: u32 = 8;
 
+/// The `LIKE` pattern for the ids of a connection's `plane_done` jobs, with
+/// the `_` and `%` of the connection's id taken literally.
+fn move_pattern(connection: &str) -> String {
+    let literal = connection.replace('\\', r"\\").replace('%', r"\%").replace('_', r"\_");
+    format!("planedone:%:{literal}:%")
+}
+
 /// How long a job waits after its `attempts`th claim in a row failed.
 pub fn backoff(attempts: u32) -> u64 {
     (RETRY_MS << attempts.saturating_sub(1).min(16)).min(RETRY_MAX_MS)
@@ -529,6 +536,56 @@ impl Db {
         let changed = self.c().execute(
             "UPDATE platform_jobs SET cancel=TRUE,next_at=?2,updated=?2 WHERE id=?1 AND state='pending'",
             params![id, now],
+        )?;
+        Ok(changed == 1)
+    }
+
+    /// A connection's `plane_done` jobs (#441) that moved an item, newest
+    /// first: done, with a checkpoint (a job left alone has none and isn't
+    /// here). Its id is `planedone:{pr}:{connection}:{number}`; the `LIKE`
+    /// narrows to the connection and the caller checks the payload.
+    pub fn plane_moves(&self, connection: &str, limit: usize) -> Result<Vec<JobRow>> {
+        self.c().query_map(
+            &format!(
+                r"SELECT {COLUMNS} FROM platform_jobs
+                  WHERE kind='plane_done' AND id LIKE ?1 ESCAPE '\' AND state='done' AND checkpoint IS NOT NULL
+                  ORDER BY updated DESC, id LIMIT {limit}"
+            ),
+            params![move_pattern(connection)],
+            job_row,
+        )
+    }
+
+    /// A connection's `plane_done` jobs that ended `failed`, newest first.
+    pub fn plane_moves_failed(&self, connection: &str, limit: usize) -> Result<Vec<JobRow>> {
+        self.c().query_map(
+            &format!(
+                r"SELECT {COLUMNS} FROM platform_jobs
+                  WHERE kind='plane_done' AND id LIKE ?1 ESCAPE '\' AND state='failed'
+                  ORDER BY updated DESC, id LIMIT {limit}"
+            ),
+            params![move_pattern(connection)],
+            job_row,
+        )
+    }
+
+    /// How many of a connection's `plane_done` jobs ended `failed`.
+    pub fn plane_moves_failed_count(&self, connection: &str) -> Result<u64> {
+        self.c().query_row(
+            r"SELECT count(*) FROM platform_jobs WHERE kind='plane_done' AND state='failed' AND id LIKE ?1 ESCAPE '\'",
+            params![move_pattern(connection)],
+            |r| r.get(0),
+        )
+    }
+
+    /// Queue a connection's failed `plane_done` job `id` again: pending, with
+    /// no attempts, no error and no lease, due now. `false` if it isn't that
+    /// connection's, or isn't failed (a claim or another retry got there).
+    pub fn retry_plane_move(&self, connection: &str, id: &str, now: u64) -> Result<bool> {
+        let changed = self.c().execute(
+            r"UPDATE platform_jobs SET state='pending',attempts=0,error=NULL,next_at=?3,updated=?3,lease=NULL,lease_until=0
+              WHERE id=?1 AND kind='plane_done' AND state='failed' AND id LIKE ?2 ESCAPE '\'",
+            params![id, move_pattern(connection), now],
         )?;
         Ok(changed == 1)
     }
