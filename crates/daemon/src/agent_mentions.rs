@@ -308,6 +308,17 @@ pub(crate) trait Daemon {
     /// Whether it went straight in (false: it was only queued for the
     /// session's hook, #571).
     async fn follow_up(&self, pane: PaneId, text: String, by: Driver) -> Result<bool, String>;
+    /// Whether Claude Code runs in `pane` and none of its hooks were ever
+    /// heard (#571): a follow-up queued for it won't be read.
+    async fn unhooked(&self, pane: PaneId) -> bool;
+}
+
+/// Whether a follow-up that [`Daemon::follow_up`] answered with `now` went
+/// in, or is queued for a session that will read it (#571). Only a queue no
+/// hook reads is not handed over: a hooked session mid-turn takes it when
+/// its turn ends.
+async fn handed(app: &impl Daemon, pane: PaneId, now: bool) -> bool {
+    now || !app.unhooked(pane).await
 }
 
 impl Daemon for App {
@@ -333,6 +344,11 @@ impl Daemon for App {
             Some(r) => r,
             None => Err("daemon is shutting down".into()),
         }
+    }
+
+    async fn unhooked(&self, pane: PaneId) -> bool {
+        let panes = self.mux.api(Api::Panes).await.unwrap_or_default();
+        panes.iter().any(|p| p.info.id == pane && p.info.unhooked)
     }
 }
 
@@ -398,8 +414,8 @@ pub async fn session_name(app: &App, pane: PaneId) -> Option<String> {
 
 /// The answer for a mention a session took (#502): which step, and which
 /// session by name. `asked` is the session the message named, when it
-/// didn't get there by that name. `handed` is false when the session's hook
-/// wasn't waiting and the mention only sits in its queue (#571).
+/// didn't get there by that name. `handed` is false when the mention only sits
+/// in the queue of a session with no hooks to read it (#571).
 fn routed(step: RoutedStep, session: Option<String>, asked: Option<&str>, handed: bool) -> OpAnswer {
     OpAnswer::Done {
         url: None,
@@ -439,9 +455,9 @@ pub(crate) async fn deliver(app: &impl Daemon, m: &AgentMention) -> OpAnswer {
         }
         match hits.as_slice() {
             [pane] => {
-                if let Ok(handed) = app.follow_up(*pane, framed(m, &notes), by.clone()).await {
+                if let Ok(now) = app.follow_up(*pane, framed(m, &notes), by.clone()).await {
                     let name = sessions.iter().find(|(p, _)| p == pane).map(|(_, n)| n.clone());
-                    return routed(RoutedStep::Named, name, None, handed);
+                    return routed(RoutedStep::Named, name, None, handed(app, *pane, now).await);
                 }
                 notes.push(format!("(the session {want} could not take it, so it came to you instead)"));
             }
@@ -462,8 +478,8 @@ pub(crate) async fn deliver(app: &impl Daemon, m: &AgentMention) -> OpAnswer {
         state.thread_poster(&m.room, root).or_else(|| m.target.as_deref().and_then(|t| state.thread_poster(t, root)))
     });
     if let Some(pane) = thread {
-        if let Ok(handed) = app.follow_up(pane, framed(m, &notes), by.clone()).await {
-            return routed(RoutedStep::Thread, named(app, pane).await, asked.as_deref(), handed);
+        if let Ok(now) = app.follow_up(pane, framed(m, &notes), by.clone()).await {
+            return routed(RoutedStep::Thread, named(app, pane).await, asked.as_deref(), handed(app, pane, now).await);
         }
         ended = Some(pane);
     }
@@ -476,8 +492,8 @@ pub(crate) async fn deliver(app: &impl Daemon, m: &AgentMention) -> OpAnswer {
         if ended.is_some() {
             notes.push("(the session that started this thread has ended; you were its room's last poster)".into());
         }
-        if let Ok(handed) = app.follow_up(pane, framed(m, &notes), by).await {
-            return routed(RoutedStep::Room, named(app, pane).await, asked.as_deref(), handed);
+        if let Ok(now) = app.follow_up(pane, framed(m, &notes), by).await {
+            return routed(RoutedStep::Room, named(app, pane).await, asked.as_deref(), handed(app, pane, now).await);
         }
     }
     // 4. The inbox.
@@ -512,8 +528,10 @@ mod tests {
         /// The panes' tabs' names.
         tabs: Vec<(PaneId, String)>,
         sent: Mutex<Vec<(PaneId, String, Driver)>>,
-        /// Live panes whose hook isn't listening: a follow-up only queues.
+        /// Live panes whose hook isn't listening now: a follow-up only queues.
         queueing: Vec<PaneId>,
+        /// Panes whose hooks were never heard.
+        unhooked: Vec<PaneId>,
     }
 
     impl Fake {
@@ -529,6 +547,7 @@ mod tests {
                 tabs: vec![],
                 sent: Mutex::default(),
                 queueing: vec![],
+                unhooked: vec![],
             }
         }
     }
@@ -549,6 +568,12 @@ mod tests {
         /// Panes whose hook isn't waiting, so a follow-up only queues (#571).
         fn queueing(mut self, panes: &[PaneId]) -> Self {
             self.queueing = panes.to_vec();
+            self
+        }
+
+        /// Panes whose hooks were never heard (#571).
+        fn unhooked(mut self, panes: &[PaneId]) -> Self {
+            self.unhooked = panes.to_vec();
             self
         }
 
@@ -596,6 +621,10 @@ mod tests {
             }
             self.sent.lock().unwrap().push((pane, text, by));
             Ok(!self.queueing.contains(&pane))
+        }
+
+        async fn unhooked(&self, pane: PaneId) -> bool {
+            self.unhooked.contains(&pane)
         }
     }
 
@@ -842,26 +871,33 @@ mod tests {
         );
     }
 
-    /// A session whose hook isn't waiting only has the mention queued, and
-    /// the answer says so (#571); one that took it straight in doesn't.
+    /// A mention queued for a session whose hooks were never heard is
+    /// `queued` (#571); one queued for a hooked session mid-turn is not, it
+    /// reads it when its turn ends; one taken straight in isn't either.
     #[tokio::test]
-    async fn a_mention_only_queued_is_not_handed_over() {
+    async fn a_mention_is_queued_only_for_a_session_without_hooks() {
         let names = [(4, "Billing"), (9, "UX Improvements")];
         let queued = |a: OpAnswer| match a {
             OpAnswer::Done { routed: Some(r), .. } => r.queued,
             other => panic!("not routed: {other:?}"),
         };
-        let d = Fake::new("queued-named", &[4, 9]).named(&names).queueing(&[9]);
+        let d = Fake::new("queued-named", &[4, 9]).named(&names).queueing(&[4, 9]).unhooked(&[9]);
         let m = AgentMention { session: Some("ux-improvements".into()), ..mention() };
-        assert!(queued(deliver(&d, &m).await), "a named session with no hook waiting");
+        assert!(queued(deliver(&d, &m).await), "a named session without hooks");
         let m = AgentMention { session: Some("billing".into()), ..mention() };
+        assert!(!queued(deliver(&d, &m).await), "a named session with hooks, mid-turn");
+        let d = Fake::new("queued-taken", &[9]).named(&names).unhooked(&[9]);
+        let m = AgentMention { session: Some("ux-improvements".into()), ..mention() };
         assert!(!queued(deliver(&d, &m).await), "a named session that took it");
-        let d = Fake::new("queued-thread", &[9]).named(&names).queueing(&[9]);
+        let d = Fake::new("queued-thread", &[9]).named(&names).queueing(&[9]).unhooked(&[9]);
         d.state.note_thread("ch_x", 3, 9);
         assert!(queued(deliver(&d, &mention()).await), "the thread's session");
-        let d = Fake::new("queued-room", &[9]).named(&names).queueing(&[9]);
+        let d = Fake::new("queued-room", &[9]).named(&names).queueing(&[9]).unhooked(&[9]);
         d.state.note_post("ch_x", 9);
         assert!(queued(deliver(&d, &mention()).await), "the room's last poster");
+        let d = Fake::new("queued-room-hooked", &[9]).named(&names).queueing(&[9]);
+        d.state.note_post("ch_x", 9);
+        assert!(!queued(deliver(&d, &mention()).await), "the room's last poster, hooked");
     }
 
     /// The sender's status line (#502) is made of the answer: each step says
