@@ -2,8 +2,8 @@
   "schema": 1,
   "commit": "2372d6b0c398db6ab43a754ead4f611d3a42ea68",
   "branch": "main",
-  "state": "pending",
-  "at": "2026-11-02T18:08:54Z",
+  "state": "red",
+  "at": "2026-11-02T18:25:05Z",
   "phases": {
     "lint": {
       "verdict": "pass",
@@ -66,10 +66,11 @@
         {
           "name": "test-2",
           "id": 125449501383,
-          "conclusion": null,
+          "conclusion": "failure",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/41494119249/job/125449501383"
         }
       ],
+      "reason": "retrying",
       "culprit": "8a8022c8ea5b7719fe05a3a715a05f586f4ea2f7"
     },
     "e2e": {
@@ -151,13 +152,13 @@
       ]
     },
     "claims": {
-      "verdict": "pending",
+      "verdict": "pass",
       "build": "newest",
       "runs": [
         {
           "name": "desktop-xvfb",
           "id": 125449501384,
-          "conclusion": null,
+          "conclusion": "success",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/41494119249/job/125449501384"
         }
       ]
@@ -177,13 +178,13 @@
       "culprit": "8a8022c8ea5b7719fe05a3a715a05f586f4ea2f7"
     },
     "windows": {
-      "verdict": "pending",
+      "verdict": "fail",
       "build": "newest",
       "runs": [
         {
           "name": "workspace",
           "id": 125456964439,
-          "conclusion": null,
+          "conclusion": "failure",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/41494119283/job/125456964439"
         },
         {
@@ -208,6 +209,15 @@
       ]
     }
   },
+  "failure": {
+    "phase": "windows",
+    "run": {
+      "name": "workspace",
+      "id": 125456964439,
+      "conclusion": "failure",
+      "url": "https://github.com/arugula-salad/arugula/actions/runs/41494119283/job/125456964439"
+    }
+  },
   "retried": {
     "workspace": {
       "run": 125448077374,
@@ -216,6 +226,10 @@
     "macos (test)": {
       "run": 125449501294,
       "at": "2026-11-02T18:08:54Z"
+    },
+    "test-2": {
+      "run": 125449501383,
+      "at": "2026-11-02T18:25:05Z"
     }
   }
 }
