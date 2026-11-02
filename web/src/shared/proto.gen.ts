@@ -286,6 +286,35 @@ export type BoardCategory = "triage" | "backlog" | "unstarted" | "started" | "co
 export type BoardDiffstat = { files: number, added: number, removed: number, };
 
 /**
+ * One Doc of a board: in its strip, or on one row (a row's [`Row::docs`]).
+ */
+export type BoardDoc = { 
+/**
+ * `bdc_` and 32 hex characters.
+ */
+id: string, 
+/**
+ * [`Pointer::Doc`] or [`Pointer::MachineDoc`].
+ */
+pointer: BoardPointer, title: string, sections?: number, written?: number, 
+/**
+ * A project Doc that was deleted.
+ */
+missing?: boolean, 
+/**
+ * A machine Doc's machine, by name.
+ */
+machine_name?: string, 
+/**
+ * The account that linked it (the owner, for an agent).
+ */
+added_by: string, 
+/**
+ * The machine whose agent linked it, if one did.
+ */
+agent?: ChatAgent, created_at: number, };
+
+/**
  * Zone (a group, in a database; a lane, on the wire) or row.
  */
 export type BoardEntryKind = "zone" | "row";
@@ -394,14 +423,28 @@ export type BoardMoveEntry = { rev: number | null,
 zone?: string | null, before: string | null, };
 
 /**
+ * A board that lists a project Doc.
+ */
+export type BoardOfDoc = { board: string, title: string, 
+/**
+ * In the board's Docs strip.
+ */
+strip: boolean, 
+/**
+ * How many rows carry it as a reference.
+ */
+rows: number, };
+
+/**
  * What a row points at. `None` is free text. The ids are the platform's:
- * `fi_…` (a mirrored PR or issue), `iss_…`, `run_…`, `hw_…`.
+ * `fi_…` (a mirrored PR or issue), `iss_…`, `run_…`, `hw_…`, `pdc_…` (a
+ * project Doc).
  */
 export type BoardPointer = { "kind": "none" } | { "kind": "forge_item", id: string, } | { "kind": "issue", id: string, } | { "kind": "run", id: string, } | { "kind": "workspace", id: string, } | { "kind": "block", machine: string, 
 /**
  * The block's pane, as `%N` or `N`; stored as `N`.
  */
-pane: string, } | { "kind": "link", url: string, };
+pane: string, } | { "kind": "link", url: string, } | { "kind": "doc", id: string, } | { "kind": "machine_doc", machine: string, doc: string, title: string, };
 
 /**
  * A board's work, counted: the rows with a primary item (an issue or a
@@ -471,6 +514,11 @@ lane: BoardLane,
  * Work and proof attached to the row, oldest first.
  */
 attachments: Array<BoardAttachment>, 
+/**
+ * The Docs linked to the row (#517): its spike or research, in order.
+ * They move no lane and prove nothing.
+ */
+docs?: Array<BoardDoc>, 
 /**
  * Set only on a Done row that is proven.
  */
@@ -593,6 +641,11 @@ export type BoardView = { board: ProjectBoard, zones: Array<BoardZone>,
  */
 groups: Array<BoardGroup>, 
 /**
+ * The Docs strip, in order. Empty for a board with none; an old client
+ * ignores it.
+ */
+docs: Array<BoardDoc>, 
+/**
  * The ready set (Arugula #403): the rows (`row_…`) with an issue or a
  * PR as their item that are in Next and have no open blocker.
  */
@@ -683,6 +736,12 @@ export type BoardZone = { id: string, rev: number, title: string, kind?: BoardZo
  * ([`Lane`]). No one makes a zone.
  */
 export type BoardZoneKind = "lane";
+
+/**
+ * [`PROJECT_DOC_BOARDS`]' answer: the project's boards that list the Doc,
+ * open ones first.
+ */
+export type BoardsOfDoc = { boards: Array<BoardOfDoc>, };
 
 /**
  * A side of a PR: which repository (a fork's, for its head), branch and

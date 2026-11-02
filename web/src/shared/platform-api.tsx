@@ -77,6 +77,8 @@ export interface PlatformApi {
   controlHref?(hash: string): string;
   /** An agent session's own page (M257), where the page has one. */
   sessionHref?(project: string, ses: string): string;
+  /** Docs kept on a machine (#517): the shell opens one in a block when it is on that machine (`here`), and the platform page omits this. */
+  machineDoc?: { here(machine: string): boolean; open(machine: string, doc: string): void };
 }
 
 const none = () => () => {};

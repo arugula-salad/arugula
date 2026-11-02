@@ -1407,6 +1407,17 @@ note = "Those of projects that go with it go. The rest stay: they name no accoun
 seen_by = ["litestream"]
 
 [[table]]
+name = "board_docs"
+plane = "platform"
+process = "platform"
+holds = "plaintext"
+what = "The Docs of a board (Arugula #517), in order, in its strip or on one row: each Doc a project Doc by id, or a machine's Doc block by machine and id with the title it had when linked, who linked it (the account, and the machine whose agent did, if one did) and when."
+why_asleep = "A board lists its research and prototypes, and opens a project Doc, on a phone with every machine asleep."
+with_account = "partly"
+note = "Those of projects that go with it go; a row's go with the row. The rest stay, with no one who linked them."
+seen_by = ["litestream"]
+
+[[table]]
 name = "board_asks"
 plane = "platform"
 process = "platform"
