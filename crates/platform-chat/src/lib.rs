@@ -52,6 +52,8 @@ mod boards_tests;
 mod boxes_tests;
 pub mod chat;
 #[cfg(test)]
+mod chat_code_tests;
+#[cfg(test)]
 mod chat_files_tests;
 #[cfg(test)]
 mod chat_people_tests;
