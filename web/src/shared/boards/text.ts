@@ -79,7 +79,7 @@ export function proofMark(r: Pick<BoardRow, "lane" | "pointer" | "proof" | "mark
   return { proven: true, words: p.by === "ci" ? "proven by CI" : "proven" };
 }
 
-/** The lanes in the order every board draws them: the most actionable first, what waits for review right after (#479). The server sends them Next, Doing, Review, Done; the board page, the block and the swarm's board focus all order them with [`inLaneOrder`]. */
+/** The lanes in the order every board stacks them: the most actionable first, what waits for review right after (#479). The server sends them Next, Doing, Review, Done; the board page, the block and the swarm's board focus all order them with [`inLaneOrder`]. Four across, the board's CSS reads them Next, Doing, Review, Done instead, to match the progress bar; the DOM keeps this order. */
 export const LANE_ORDER: BoardLane[] = ["doing", "review", "next", "done"];
 
 /** A board's zones in [`LANE_ORDER`]; a zone that is no lane goes last, in the order it came. */
@@ -448,11 +448,10 @@ export function pointerHref(r: Pick<BoardRow, "pointer" | "live">, platform: (pa
   return undefined;
 }
 
-/** A card's tone, which is its lane's: Next muted, Doing ok, Review warn and Done ok; a row that waits on the reader takes the attention tone (accent), whatever its lane. */
-export function cardTone(r: Pick<BoardRow, "lane" | "ask"> & Partial<Pick<BoardRow, "marks">>): Tone {
-  if (r.marks?.some((m) => m.kind === "stalled")) return "warn";
-  if (r.ask?.mine) return "accent";
-  return r.lane === "next" ? "muted" : r.lane === "review" ? "warn" : "ok";
+/** A card's tone, which is its lane's and the progress bar's: Next muted, Doing warn, Review accent, Done ok. A stalled row is danger (warn is Doing's); a row that waits on the reader keeps its lane's tone and shows it with a ring instead (`data-needs-you`). */
+export function cardTone(r: Pick<BoardRow, "lane"> & Partial<Pick<BoardRow, "marks">>): Tone {
+  if (r.marks?.some((m) => m.kind === "stalled")) return "danger";
+  return r.lane === "next" ? "muted" : r.lane === "doing" ? "warn" : r.lane === "review" ? "accent" : "ok";
 }
 
 /** A live item's state chip tone, as the lists' chips take it: open and merged ok, checks running warn, failed danger, closed muted. */

@@ -404,6 +404,31 @@ test("a board with groups shows each as a section with its four lanes, and the r
   await expect(groupOf("Build").locator("[data-board-note]")).toHaveText("Wire it up");
   await expect(groupOf("No group").locator("[data-board-note]")).toHaveText("Loose end");
   await expect(groupOf("Decide").locator("[data-board-group-progress]")).toHaveText("no work yet");
+  // The DOM stacks the lanes Doing, Review, Next, Done; four across they are drawn Next, Doing, Review, Done (#610), in every group, and two per row they are in the DOM's order.
+  await alice.setViewportSize({ width: 1600, height: 1000 });
+  const drawn = (g: string) =>
+    groupOf(g).locator("[data-board-zone]").evaluateAll((zs) =>
+      zs
+        .map((z) => ({ h: z.querySelector("h2")!.textContent, ...(({ x, y }) => ({ x: Math.round(x), y: Math.round(y) }))(z.getBoundingClientRect()) }))
+        .sort((a, b) => a.y - b.y || a.x - b.x)
+        .map((z) => z.h),
+    );
+  const rows = (g: string) => groupOf(g).locator("[data-board-zone]").evaluateAll((zs) => new Set(zs.map((z) => Math.round(z.getBoundingClientRect().y))).size);
+  for (const title of ["Decide", "Build", "No group"]) {
+    expect(await rows(title)).toBe(1);
+    expect(await drawn(title)).toEqual(["Next", "Doing", "Review", "Done"]);
+  }
+  if (process.env.SHOTS_610) await alice.locator(".board").screenshot({ path: `${process.env.SHOTS_610}/groups-wide.png` });
+  await alice.evaluate(() => {
+    const board = document.querySelector<HTMLElement>(".board")!;
+    board.style.maxWidth = "none";
+    board.style.width = "800px";
+  });
+  for (const title of ["Decide", "Build", "No group"]) {
+    expect(await rows(title)).toBe(2);
+    expect(await drawn(title)).toEqual(["Doing", "Review", "Next", "Done"]);
+  }
+  if (process.env.SHOTS_610) await alice.locator(".board").screenshot({ path: `${process.env.SHOTS_610}/groups-800.png` });
   // A board without groups is as before: lanes only.
   await platform(alice, boardPath);
   await expect(alice.locator("[data-board-group]")).toHaveCount(0);
@@ -582,7 +607,7 @@ test("a board's cards carry their lane's tone, its groups are managed on the pag
   expect(await px(alice.locator("[data-board-group-title]").first())).toBeGreaterThanOrEqual(22);
   expect(await px(alice.locator("[data-board-zone] h2").first())).toBeLessThan(18);
   expect(await px(alice.locator("[data-board-row] [data-board-title]").first())).toBeLessThanOrEqual(15);
-  // The bar is the lane's tone; a row that waits on Alice takes the attention tone, and the header counts it.
+  // The bar is the lane's tone; a row that waits on Alice keeps its lane's tone with a ring, and the header counts it.
   const card = row(alice, SHIPPED);
   await expect(zone(alice, "Done").locator(card)).toHaveClass(/\bsw-card\b.*\bsw-ok\b/);
   await expect(card.locator(".chip")).toHaveCount(0);
@@ -596,19 +621,21 @@ test("a board's cards carry their lane's tone, its groups are managed on the pag
   await platform(alice, managed);
   await expect(card).toBeVisible({ timeout: 15_000 });
   await expect(alice.locator("[data-board-drawer]")).toHaveCount(0);
-  await expect(row(alice, OPEN)).toHaveClass(/\bsw-accent\b/);
+  await expect(row(alice, OPEN)).toHaveClass(/\bsw-muted\b/);
+  await expect(row(alice, OPEN)).toHaveAttribute("data-needs-you", "");
   await expect(card.locator(".sw-chip")).toContainText("example.com/branch");
   await expect(alice.locator("[data-board-stats]")).toContainText("1 done");
   await expect(alice.locator("[data-board-needs-you]")).toContainText("1 Needs you");
   await row(alice, OPEN).locator("[data-board-ask-option='Yes']").click();
   await expect(row(alice, OPEN)).toHaveClass(/\bsw-muted\b/, { timeout: 15_000 });
   await expect(alice.locator("[data-board-needs-you]")).toHaveCount(0);
-  // A second question, left open: it is in the header's count, and its card takes the attention tone.
+  // A second question, left open: it is in the header's count, and its card keeps its lane's tone and gets the ring.
   const price = await issue("Decide the price");
   expect((await api(alice, "POST", `/api/boards/${id}/rows/${price.id}/ask`, { who: me, question: "Free or paid?", options: ["Free", "Paid"] })).status).toBe(200);
   await platform(alice, managed);
   await expect(alice.locator("[data-board-needs-you]")).toContainText("1 Needs you", { timeout: 15_000 });
-  await expect(row(alice, "Decide the price")).toHaveClass(/\bsw-accent\b/);
+  await expect(row(alice, "Decide the price")).toHaveClass(/\bsw-muted\b/);
+  await expect(row(alice, "Decide the price")).toHaveAttribute("data-needs-you", "");
 
   // Add a group, rename it, move it up, and delete it again.
   const titles = alice.locator("[data-board-group-title]");
@@ -760,7 +787,7 @@ test("a card's title opens the drawer with the item's body, its comments and the
   );
   await platform(alice, managed);
   const card = row(alice, SHIPPED);
-  await expect(card).toHaveClass(/\bsw-warn\b/, { timeout: 15_000 });
+  await expect(card).toHaveClass(/\bsw-accent\b/, { timeout: 15_000 });
   // One chip per agent: its title and its state, once. Its branch and the rest come only when it has stopped, dim beside the chip.
   const working = card.locator('[data-board-block="working"]');
   await expect(working).toHaveText(/^Lexer lane\s*working$/);
