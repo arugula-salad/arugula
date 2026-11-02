@@ -40,7 +40,7 @@ pub const PROJECT_DOC: &str = "/api/projects/{project}/docs/{id}";
 
 /// `GET`: one of a Doc's pictures, the bytes (any member).
 pub const PROJECT_DOC_ASSET: &str = "/api/projects/{project}/docs/{id}/assets/{name}";
-/// `POST` [`MoveDoc`]: move a Doc to another project, [`DocView`] (a person
+/// `POST` [`MoveProjectDoc`]: move a Doc to another project, [`DocView`] (a person
 /// who may write in both; never an agent session).
 pub const PROJECT_DOC_MOVE: &str = "/api/projects/{project}/docs/{id}/move";
 /// `PUT` [`MachineDoc`]: a machine copies one of its Docs up for its owner,
@@ -196,8 +196,8 @@ pub struct DocWrite {
 /// `POST` [`PROJECT_DOC_MOVE`]: where the Doc goes.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "MoveProjectDoc"))]
-pub struct MoveDoc {
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct MoveProjectDoc {
     /// A project's id, or `personal` for the mover's own.
     pub to: String,
 }

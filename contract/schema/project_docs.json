@@ -301,7 +301,7 @@
       ],
       "type": "object"
     },
-    "MoveDoc": {
+    "MoveProjectDoc": {
       "description": "`POST` [`PROJECT_DOC_MOVE`]: where the Doc goes.",
       "properties": {
         "to": {

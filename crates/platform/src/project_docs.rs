@@ -415,7 +415,7 @@ pub async fn move_route(
     State(app): State<Arc<Platform>>,
     s: Person,
     Path((project, id)): Path<(String, String)>,
-    Json(m): Json<wire::MoveDoc>,
+    Json(m): Json<wire::MoveProjectDoc>,
 ) -> J<wire::DocView> {
     Ok(Json(move_doc(&app, &s.account, &project, &id, &m.to).await?))
 }
