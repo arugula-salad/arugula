@@ -1,4 +1,4 @@
--- 0087: where an @machine mention in chat got to (Arugula #502). Times are
+-- 0088: where an @machine mention in chat got to (Arugula #502). Times are
 -- milliseconds since the epoch. `db::chat_mention_status` has the rules.
 
 -- One row per (message, machine mentioned): what the machine's daemon said
