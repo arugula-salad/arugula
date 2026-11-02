@@ -118,7 +118,7 @@ export function boardActivateCases(name: string, newPerson: (browser: Browser, t
     );
     // A person's press lasts a moment: the shell's focus after the pointer-down lands inside it.
     const at = (await card.nth(below).boundingBox())!;
-    await alice.mouse.move(at.x + at.width / 2, at.y + 4);
+    await alice.mouse.move(at.x + 4, at.y + 4);
     await alice.mouse.down();
     await alice.waitForTimeout(200);
     await alice.mouse.up();
