@@ -135,7 +135,7 @@ export function paneItems(client: Client, id: PaneId, phone: boolean, workspace:
     // when control has no arugula.stream app, or chat is off).
     ...(!client.state?.roles && getControlSession()?.phase === "ready" ? [{ label: "People", run: () => void openPeople(client, { from: id }) } as MenuItem] : []),
     // A project's board beside it, with the boards flag.
-    ...(!client.state?.roles && client.flag("boards") ? [{ label: "Pin a board…", run: () => void pinBoard(client, { from: id }) } as MenuItem] : []),
+    ...(!client.state?.roles && client.flag("boards") ? [{ label: "Board…", run: () => void pinBoard(client, { from: id }) } as MenuItem] : []),
     // M33: Claude Code conversations from terminals and the desktop app.
     ...(owner ? [{ label: "Claude Code conversations…", run: () => pickConversation(client, { split: id, cwd: cwd ?? undefined }) } as MenuItem] : []),
     // M35: a studio app's box beside this pane.
@@ -397,7 +397,7 @@ export const COMMANDS: Record<string, (client: Client, args: Record<string, stri
   "palette.open": (client) => openPalette(client),
   /** Getting started at its Agents step: Use Claude Code with Arugula. */
   "getting-started.agents": (client) => openGettingStarted("agents", client),
-  /** Pin a board… beside the shown tab's pane. */
+  /** Board… beside the shown tab's pane. */
   "board.pin": (client) => {
     const pane = client.tab === null ? undefined : client.activePane.get(client.tab);
     if (pane !== undefined) void pinBoard(client, { from: pane });

@@ -1146,6 +1146,9 @@ button.att {
   flex-wrap: wrap;
   gap: 6px;
   margin-top: 10px;
+  /* A long list (dozens of boards) scrolls inside the screen, a phone's too. */
+  max-height: min(280px, 40vh);
+  overflow-y: auto;
 }
 
 .prompt-choices button {
@@ -1159,6 +1162,7 @@ button.att {
 }
 
 .prompt-choices button:hover,
+.prompt-choices button.active,
 .prompt-choices button:focus-visible {
   border-color: var(--accent);
 }
