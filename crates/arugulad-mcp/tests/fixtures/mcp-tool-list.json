@@ -1865,7 +1865,7 @@
           },
           "issue": {
             "default": null,
-            "description": "The issue it works on: `#N`, `owner/repo#N` or `IDENT-N`. The block keeps it, and its header says it (`#N · board`). With this machine's boards.write grant over the issue's project, the block is attached to that issue's row on every board of the project, which moves the row to Doing; without it the answer says so. A worktree's branch, when you give none, starts with the issue's number (`feat/357-…`). Not for a chat.",
+            "description": "The issue it works on: `#N`, `owner/repo#N`, `IDENT-N` or a native issue's `iss_…` id. The block keeps it, and its header says it (`#N · board`). With this machine's boards.write grant over the issue's project, the block is attached to that issue's row on every board of the project, which moves the row to Doing; without it the answer says so. The project is the one that holds `#N` (of those this machine's boards grants reach; the one linked to cwd's repo if several do), else the one linked to cwd's repo, else the caller's. A worktree's branch, when you give none, starts with the issue's number (`feat/357-…`). Without issue, a worktree branch named `feat/N-…` (or fix, docs, chore, perf, refactor) is on `#N` when a board has a row for it. Not for a chat.",
             "type": [
               "string",
               "null"
@@ -6219,7 +6219,7 @@
           },
           "issue": {
             "default": null,
-            "description": "The issue it works on: `#N`, `owner/repo#N` or `IDENT-N`. The block keeps it, and its header says it (`#N · board`). With this machine's boards.write grant over the issue's project, the block is attached to that issue's row on every board of the project, which moves the row to Doing; without it the answer says so. A worktree's branch, when you give none, starts with the issue's number (`feat/357-…`). Not for a chat.",
+            "description": "The issue it works on: `#N`, `owner/repo#N`, `IDENT-N` or a native issue's `iss_…` id. The block keeps it, and its header says it (`#N · board`). With this machine's boards.write grant over the issue's project, the block is attached to that issue's row on every board of the project, which moves the row to Doing; without it the answer says so. The project is the one that holds `#N` (of those this machine's boards grants reach; the one linked to cwd's repo if several do), else the one linked to cwd's repo, else the caller's. A worktree's branch, when you give none, starts with the issue's number (`feat/357-…`). Without issue, a worktree branch named `feat/N-…` (or fix, docs, chore, perf, refactor) is on `#N` when a board has a row for it. Not for a chat.",
             "type": [
               "string",
               "null"
@@ -10853,7 +10853,7 @@
           },
           "issue": {
             "default": null,
-            "description": "The issue it works on: `#N`, `owner/repo#N` or `IDENT-N`. The block keeps it, and its header says it (`#N · board`). With this machine's boards.write grant over the issue's project, the block is attached to that issue's row on every board of the project, which moves the row to Doing; without it the answer says so. A worktree's branch, when you give none, starts with the issue's number (`feat/357-…`). Not for a chat.",
+            "description": "The issue it works on: `#N`, `owner/repo#N`, `IDENT-N` or a native issue's `iss_…` id. The block keeps it, and its header says it (`#N · board`). With this machine's boards.write grant over the issue's project, the block is attached to that issue's row on every board of the project, which moves the row to Doing; without it the answer says so. The project is the one that holds `#N` (of those this machine's boards grants reach; the one linked to cwd's repo if several do), else the one linked to cwd's repo, else the caller's. A worktree's branch, when you give none, starts with the issue's number (`feat/357-…`). Without issue, a worktree branch named `feat/N-…` (or fix, docs, chore, perf, refactor) is on `#N` when a board has a row for it. Not for a chat.",
             "type": [
               "string",
               "null"
@@ -15207,7 +15207,7 @@
           },
           "issue": {
             "default": null,
-            "description": "The issue it works on: `#N`, `owner/repo#N` or `IDENT-N`. The block keeps it, and its header says it (`#N · board`). With this machine's boards.write grant over the issue's project, the block is attached to that issue's row on every board of the project, which moves the row to Doing; without it the answer says so. A worktree's branch, when you give none, starts with the issue's number (`feat/357-…`). Not for a chat.",
+            "description": "The issue it works on: `#N`, `owner/repo#N`, `IDENT-N` or a native issue's `iss_…` id. The block keeps it, and its header says it (`#N · board`). With this machine's boards.write grant over the issue's project, the block is attached to that issue's row on every board of the project, which moves the row to Doing; without it the answer says so. The project is the one that holds `#N` (of those this machine's boards grants reach; the one linked to cwd's repo if several do), else the one linked to cwd's repo, else the caller's. A worktree's branch, when you give none, starts with the issue's number (`feat/357-…`). Without issue, a worktree branch named `feat/N-…` (or fix, docs, chore, perf, refactor) is on `#N` when a board has a row for it. Not for a chat.",
             "type": [
               "string",
               "null"
