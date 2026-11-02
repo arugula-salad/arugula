@@ -34,12 +34,19 @@ use std::{
     sync::Mutex,
 };
 
-use arugula_control_wire::forge::{AgentMention, OpAnswer, Routed, RoutedStep};
+use arugula_control_wire::{
+    chat::{MENTION_STATE, MentionTurn, PutMentionState},
+    forge::{AgentMention, OpAnswer, Routed, RoutedStep},
+};
 use arugula_proto::{Driver, PaneId};
 use serde::{Deserialize, Serialize};
-use tracing::warn;
+use tracing::{debug, warn};
 
-use crate::{mux::Api, server::App};
+use crate::{
+    control::CloudRefused,
+    mux::{Api, MentionTag, Turn, Turns},
+    server::App,
+};
 
 /// The most unread mentions kept; the oldest go first.
 const MAX_UNREAD: usize = 50;
@@ -296,6 +303,65 @@ fn framed(m: &AgentMention, notes: &[String]) -> String {
     )
 }
 
+/// The mention a follow-up carries, so the mux can say when the turn that
+/// takes it starts and ends (#540).
+fn tag_of(m: &AgentMention) -> MentionTag {
+    MentionTag { room: m.room.clone(), seq: m.seq }
+}
+
+/// Tells the task that reports ([`keep_telling`]) where a mention's turn is.
+/// The mux calls it on its own task, so it only queues.
+#[derive(Debug)]
+pub struct TurnReports(pub tokio::sync::mpsc::UnboundedSender<(PaneId, MentionTag, Turn)>);
+
+impl Turns for TurnReports {
+    fn turn(&self, pane: PaneId, tag: &MentionTag, turn: Turn) {
+        let _ = self.0.send((pane, tag.clone(), turn));
+    }
+}
+
+/// How long control has to take one report.
+const REPORT_WITHIN: std::time::Duration = std::time::Duration::from_secs(5);
+
+/// Tells control, one report at a time and in order, where the turns that
+/// took mentions are (#540): `working` when the session's turn started,
+/// `read` when it ended. Best effort: a report control doesn't take, or
+/// can't be reached for, is logged and not sent again, and nothing waits
+/// for it.
+pub async fn keep_telling(
+    app: std::sync::Arc<App>,
+    mut turns: tokio::sync::mpsc::UnboundedReceiver<(PaneId, MentionTag, Turn)>,
+) {
+    while let Some((pane, tag, turn)) = turns.recv().await {
+        if app.control.enrolled().is_none() {
+            continue;
+        }
+        let put = PutMentionState {
+            room: tag.room,
+            seq: tag.seq,
+            session: session_name(&app, pane).await,
+            state: match turn {
+                Turn::Started => MentionTurn::Working,
+                Turn::Ended => MentionTurn::Read,
+            },
+        };
+        let Ok(body) = serde_json::to_value(&put) else { continue };
+        let call = app.control.cloud_now(reqwest::Method::PUT, MENTION_STATE, Some(&body));
+        match tokio::time::timeout(REPORT_WITHIN, call).await {
+            Err(_) => warn!(room = put.room, seq = put.seq, "control didn't take a mention's turn in time"),
+            Ok(Ok(_)) => {}
+            // A control from before this, or one that doesn't know the
+            // message (a mention it didn't send us): nothing to tell.
+            Ok(Err(CloudRefused::OldControl | CloudRefused::Off | CloudRefused::NotJoined)) => {
+                debug!("control doesn't take mention turns")
+            }
+            Ok(Err(e)) => {
+                warn!(room = put.room, seq = put.seq, error = %e, "can't tell control where a mention's turn is")
+            }
+        }
+    }
+}
+
 /// What routing a mention needs of the daemon: its state dir (for the
 /// owner's switch), what it kept, its live sessions' names, and a
 /// follow-up into a pane.
@@ -310,8 +376,9 @@ pub(crate) trait Daemon {
     async fn tab_names(&self) -> Vec<(PaneId, String)>;
     /// A follow-up for the session in `pane`, through the hooks inbox.
     /// Whether it went straight in (false: it was only queued for the
-    /// session's hook, #571).
-    async fn follow_up(&self, pane: PaneId, text: String, by: Driver) -> Result<bool, String>;
+    /// session's hook, #571). `tag` is the mention it is: the mux says when
+    /// the turn that takes it starts and ends (#540).
+    async fn follow_up(&self, pane: PaneId, text: String, by: Driver, tag: MentionTag) -> Result<bool, String>;
     /// Whether Claude Code runs in `pane` and none of its hooks were ever
     /// heard (#571): a follow-up queued for it won't be read.
     async fn unhooked(&self, pane: PaneId) -> bool;
@@ -343,8 +410,8 @@ impl Daemon for App {
         panes.into_iter().filter_map(|p| Some((p.info.id, p.tab_name?))).collect()
     }
 
-    async fn follow_up(&self, pane: PaneId, text: String, by: Driver) -> Result<bool, String> {
-        match self.mux.api(|r| Api::FollowUp(pane, text, by, r)).await {
+    async fn follow_up(&self, pane: PaneId, text: String, by: Driver, tag: MentionTag) -> Result<bool, String> {
+        match self.mux.api(|r| Api::FollowUp(pane, text, by, Some(tag), r)).await {
             Some(r) => r,
             None => Err("daemon is shutting down".into()),
         }
@@ -469,7 +536,7 @@ pub(crate) async fn deliver(app: &impl Daemon, m: &AgentMention) -> OpAnswer {
         // the inbox like naming a session that isn't there.
         hits.retain(|p| !author.contains(p));
         if let [pane] = hits.as_slice()
-            && let Ok(now) = app.follow_up(*pane, framed(m, &notes), by.clone()).await
+            && let Ok(now) = app.follow_up(*pane, framed(m, &notes), by.clone(), tag_of(m)).await
         {
             let name = sessions.iter().find(|(p, _)| p == pane).map(|(_, n)| n.clone());
             return routed(RoutedStep::Named, name, None, handed(app, *pane, now).await);
@@ -503,7 +570,7 @@ pub(crate) async fn deliver(app: &impl Daemon, m: &AgentMention) -> OpAnswer {
         state.thread_poster(&m.room, root).or_else(|| m.target.as_deref().and_then(|t| state.thread_poster(t, root)))
     });
     if let Some(pane) = thread.filter(|p| !author.contains(p)) {
-        if let Ok(now) = app.follow_up(pane, framed(m, &notes), by.clone()).await {
+        if let Ok(now) = app.follow_up(pane, framed(m, &notes), by.clone(), tag_of(m)).await {
             return routed(RoutedStep::Thread, named(app, pane).await, None, handed(app, pane, now).await);
         }
         ended = Some(pane);
@@ -517,7 +584,7 @@ pub(crate) async fn deliver(app: &impl Daemon, m: &AgentMention) -> OpAnswer {
         if ended.is_some() {
             notes.push("(the session that started this thread has ended; you were its room's last poster)".into());
         }
-        if let Ok(now) = app.follow_up(pane, framed(m, &notes), by).await {
+        if let Ok(now) = app.follow_up(pane, framed(m, &notes), by, tag_of(m)).await {
             return routed(RoutedStep::Room, named(app, pane).await, None, handed(app, pane, now).await);
         }
     }
@@ -553,6 +620,8 @@ mod tests {
         /// The panes' tabs' names.
         tabs: Vec<(PaneId, String)>,
         sent: Mutex<Vec<(PaneId, String, Driver)>>,
+        /// The mention each follow-up carried.
+        tagged: Mutex<Vec<(PaneId, MentionTag)>>,
         /// Live panes whose hook isn't listening now: a follow-up only queues.
         queueing: Vec<PaneId>,
         /// Panes whose hooks were never heard.
@@ -571,6 +640,7 @@ mod tests {
                 names: vec![],
                 tabs: vec![],
                 sent: Mutex::default(),
+                tagged: Mutex::default(),
                 queueing: vec![],
                 unhooked: vec![],
             }
@@ -640,10 +710,11 @@ mod tests {
             self.tabs.clone()
         }
 
-        async fn follow_up(&self, pane: PaneId, text: String, by: Driver) -> Result<bool, String> {
+        async fn follow_up(&self, pane: PaneId, text: String, by: Driver, tag: MentionTag) -> Result<bool, String> {
             if !self.live.contains(&pane) {
                 return Err(format!("no terminal %{pane}"));
             }
+            self.tagged.lock().unwrap().push((pane, tag));
             self.sent.lock().unwrap().push((pane, text, by));
             Ok(!self.queueing.contains(&pane))
         }
@@ -689,6 +760,29 @@ mod tests {
         assert_eq!(s.unread().len(), MAX_UNREAD);
         s.read("ch_x");
         assert!(s.unread().is_empty());
+    }
+
+    /// Each way a session can get it hands the mux the mention it is, so the
+    /// mux can say when its turn starts and ends (#540).
+    #[tokio::test]
+    async fn a_follow_up_carries_the_mention_it_is() {
+        let tag = |pane| (pane, MentionTag { room: "ch_x".into(), seq: 7 });
+        // The room's last poster, the thread's poster, the session it names.
+        let d = Fake::new("tag-room", &[4]);
+        d.state.note_post("ch_x", 4);
+        deliver(&d, &mention()).await;
+        assert_eq!(*d.tagged.lock().unwrap(), [tag(4)]);
+        let d = Fake::new("tag-thread", &[5]);
+        d.state.note_thread("ch_x", 3, 5);
+        deliver(&d, &mention()).await;
+        assert_eq!(*d.tagged.lock().unwrap(), [tag(5)]);
+        let d = Fake::new("tag-named", &[6]).named(&[(6, "views")]);
+        deliver(&d, &AgentMention { session: Some("views".into()), ..mention() }).await;
+        assert_eq!(*d.tagged.lock().unwrap(), [tag(6)]);
+        // The inbox takes no turn.
+        let d = Fake::new("tag-inbox", &[]);
+        deliver(&d, &mention()).await;
+        assert!(d.tagged.lock().unwrap().is_empty());
     }
 
     /// The session that last posted in the thread gets it, framed; another

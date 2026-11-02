@@ -523,6 +523,12 @@ pub enum ChatMentionState {
     /// Not delivered (#575): an agent's post, in a chain of agents' replies
     /// or past the thread's rate limit. A person's message restarts it.
     Chain,
+    /// The session's turn that took it has started (#540): what only the
+    /// receiving daemon knows. Like a typing indicator.
+    Working,
+    /// That turn has ended (#540). An agent's reply, `answered`, usually
+    /// comes first and stays.
+    Read,
 }
 
 /// Someone who reacted: an account, and the machine's agent if it was
@@ -1411,6 +1417,38 @@ pub struct ChatReader {
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct ChatReadersStored {
     pub stored: usize,
+}
+
+/// A daemon says how far the session got with a mention it delivered
+/// (`PUT`, #540): [`PutMentionState`], answered `{}`. Signed by the
+/// machine; refused (404) unless the message has a status row for it.
+pub const MENTION_STATE: &str = "/api/daemon/chat/mention-state";
+
+/// What the session's turn that took a mention is doing (#540).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[serde(rename_all = "snake_case")]
+pub enum MentionTurn {
+    /// The turn has started.
+    Working,
+    /// The turn has ended.
+    Read,
+}
+
+/// [`MENTION_STATE`]'s body: a mention (the message `seq` of `room`, for
+/// the signing machine) and where its turn is. `session` is the name of the
+/// session that took it, for the line.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[serde(deny_unknown_fields)]
+pub struct PutMentionState {
+    pub room: String,
+    pub seq: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session: Option<String>,
+    pub state: MentionTurn,
 }
 
 /// The most lists in one [`ChatReaders`], and readers in one list.

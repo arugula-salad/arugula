@@ -326,7 +326,7 @@ impl BlockCtx {
             return Ok(true);
         }
         let (tx, rx) = tokio::sync::oneshot::channel();
-        cmds.send(crate::mux::Cmd::Api(crate::mux::Api::FollowUp(pane, text, by, tx)))
+        cmds.send(crate::mux::Cmd::Api(crate::mux::Api::FollowUp(pane, text, by, None, tx)))
             .map_err(|_| "the daemon is stopping".to_owned())?;
         rx.await.map_err(|_| "the daemon is stopping".to_owned())?
     }

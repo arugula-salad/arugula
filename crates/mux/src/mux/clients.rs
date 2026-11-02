@@ -390,6 +390,7 @@ impl Daemon {
                     self.status_pushed.remove(&pane);
                     self.turn_typed.remove(&pane);
                     self.hooked.remove(&pane);
+                    self.queued.gone(pane);
                     self.live.remove(&pane);
                     self.live_pid.remove(&pane);
                     self.links.remove(&pane);

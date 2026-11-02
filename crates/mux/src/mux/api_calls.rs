@@ -355,8 +355,8 @@ impl Daemon {
                     self.touch(pane);
                 }
             }
-            Api::FollowUp(pane, text, by, reply) => {
-                let _ = reply.send(self.follow_up(pane, text, by));
+            Api::FollowUp(pane, text, by, tag, reply) => {
+                let _ = reply.send(self.follow_up(pane, text, by, tag));
             }
             Api::Answered(pane, by, id, how, headline) => self.record_answer(pane, &by, &id, &how, &headline),
             Api::Who(who, reply) => {

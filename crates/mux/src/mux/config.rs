@@ -75,6 +75,8 @@ pub struct Config {
     pub pane_gone: Arc<dyn super::PaneGone>,
     /// Told of each new terminal and block, to count them.
     pub usage: Arc<dyn super::Usage>,
+    /// Told where the turn that took a mention is (#540).
+    pub turns: Arc<dyn super::Turns>,
 }
 
 /// How a shell takes a command to run.

@@ -903,6 +903,16 @@
           "const": "chain",
           "description": "Not delivered (#575): an agent's post, in a chain of agents' replies\nor past the thread's rate limit. A person's message restarts it.",
           "type": "string"
+        },
+        {
+          "const": "working",
+          "description": "The session's turn that took it has started (#540): what only the\nreceiving daemon knows. Like a typing indicator.",
+          "type": "string"
+        },
+        {
+          "const": "read",
+          "description": "That turn has ended (#540). An agent's reply, `answered`, usually\ncomes first and stays.",
+          "type": "string"
         }
       ]
     },
@@ -2471,6 +2481,21 @@
       ],
       "type": "string"
     },
+    "MentionTurn": {
+      "description": "What the session's turn that took a mention is doing (#540).",
+      "oneOf": [
+        {
+          "const": "working",
+          "description": "The turn has started.",
+          "type": "string"
+        },
+        {
+          "const": "read",
+          "description": "The turn has ended.",
+          "type": "string"
+        }
+      ]
+    },
     "NotifyLevel": {
       "description": "How much of a room reaches the reader's pushes, and how its unread shows\n(#113).",
       "oneOf": [
@@ -2634,6 +2659,34 @@
         "offline"
       ],
       "type": "string"
+    },
+    "PutMentionState": {
+      "additionalProperties": false,
+      "description": "[`MENTION_STATE`]'s body: a mention (the message `seq` of `room`, for\nthe signing machine) and where its turn is. `session` is the name of the\nsession that took it, for the line.",
+      "properties": {
+        "room": {
+          "type": "string"
+        },
+        "seq": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "session": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "state": {
+          "$ref": "#/$defs/MentionTurn"
+        }
+      },
+      "required": [
+        "room",
+        "seq",
+        "state"
+      ],
+      "type": "object"
     },
     "QuietHours": {
       "description": "Quiet hours on some weekdays: from `from` to `to`, in minutes after\nmidnight in the account's time zone. A window that ends at or before it\nstarts runs past midnight, into the next day (its weekday is the day it\nstarts on).",
