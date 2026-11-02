@@ -461,8 +461,10 @@
         "progress": {
           "$ref": "#/$defs/BoardProgress",
           "default": {
+            "doing": 0,
             "done": 0,
             "proven": 0,
+            "review": 0,
             "total": 0
           },
           "description": "How many of its issues are closed."
@@ -519,14 +521,26 @@
       "type": "object"
     },
     "BoardProgress": {
-      "description": "A board's work, counted: the rows with a primary item (an issue or a\nPR; a note row is never counted). `done` is those in the Done lane, and\n`proven` those of them with a proof.",
+      "description": "A board's work, counted: the rows with a primary item (an issue or a\nPR; a note row is never counted). `done` is those in the Done lane, and\n`proven` those of them with a proof; `review` and `doing` are those in\nthe Review and Doing lanes.",
       "properties": {
+        "doing": {
+          "default": 0,
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
         "done": {
           "format": "uint32",
           "minimum": 0,
           "type": "integer"
         },
         "proven": {
+          "default": 0,
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "review": {
           "default": 0,
           "format": "uint32",
           "minimum": 0,
@@ -853,8 +867,10 @@
         "progress": {
           "$ref": "#/$defs/BoardProgress",
           "default": {
+            "doing": 0,
             "done": 0,
             "proven": 0,
+            "review": 0,
             "total": 0
           },
           "description": "Its rows with an issue or a PR, counted as a board's are."

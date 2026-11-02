@@ -264,7 +264,9 @@ function BoardItem({ p, b, waiting }: { p: PlatformProject; b: ProjectBoard; wai
       <div class="board-card-progress dim" data-board-progress>
         {b.progress.total > 0 && (
           <div class="board-bar" role="progressbar" aria-valuemin={0} aria-valuemax={b.progress.total} aria-valuenow={b.progress.done} aria-label={e.words}>
-            <i style={{ width: `${e.pct}%` }} />
+            {e.segments.map((s) => (
+              <i key={s.lane} data-lane={s.lane} style={{ width: `${s.pct}%` }} />
+            ))}
           </div>
         )}
         <span>{e.words}</span>

@@ -19,9 +19,26 @@ test("a lane is a glyph, a row asking for input is a ?, and a lane counts its pr
 });
 
 test("an epic's progress is in words, and a text's first line is what a list shows", () => {
-  assert.deepEqual(epicLine({ done: 3, total: 5, proven: 2 }), { words: "3 of 5 done, 2 proven", pct: 60 });
-  assert.deepEqual(epicLine({ done: 0, total: 2, proven: 0 }), { words: "0 of 2 done", pct: 0 });
-  assert.deepEqual(epicLine({ done: 0, total: 0, proven: 0 }), { words: "No work yet", pct: 0 });
+  const z = { review: 0, doing: 0 };
+  assert.deepEqual(epicLine({ done: 3, total: 5, proven: 2, ...z }), {
+    words: "3 of 5 done, 2 proven",
+    pct: 60,
+    segments: [{ lane: "done", pct: 60 }],
+  });
+  assert.deepEqual(epicLine({ done: 0, total: 2, proven: 0, ...z }), { words: "0 of 2 done", pct: 0, segments: [] });
+  assert.deepEqual(epicLine({ done: 0, total: 0, proven: 0, ...z }), { words: "No work yet", pct: 0, segments: [] });
+  // Every part says its count; a part with none is left out, of the words and of the bar.
+  assert.deepEqual(epicLine({ done: 3, total: 10, proven: 0, review: 2, doing: 1 }), {
+    words: "3 of 10 done, 0 proven · 2 in review · 1 doing",
+    pct: 30,
+    segments: [{ lane: "done", pct: 30 }, { lane: "review", pct: 20 }, { lane: "doing", pct: 10 }],
+  });
+  assert.deepEqual(epicLine({ done: 0, total: 4, proven: 0, review: 0, doing: 1 }), {
+    words: "0 of 4 done · 1 doing",
+    pct: 0,
+    segments: [{ lane: "doing", pct: 25 }],
+  });
+  assert.equal(epicLine({ done: 1, total: 4, proven: 1, review: 3, doing: 0 }).words, "1 of 4 done, 1 proven · 3 in review");
   assert.equal(firstLine("\n  Ship it  \nand more"), "Ship it");
   assert.equal(firstLine(""), "");
 });

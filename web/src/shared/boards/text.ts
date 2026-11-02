@@ -260,12 +260,21 @@ export function firstLine(text: string): string {
   return text.split("\n").map((l) => l.trim()).find(Boolean) ?? "";
 }
 
-/** A board's work that is done, in words, and how much of that is proven;
- * `pct` is for its bar. */
-export function epicLine(p: Pick<BoardProgress, "done" | "total" | "proven">): { words: string; pct: number } {
-  if (!p.total) return { words: "No work yet", pct: 0 };
+/** A board's work that is done, in review and doing, in words, and how much of the done is proven;
+ * `pct` is done's share for its bar, and `segments` the bar's parts in order (a lane with no rows has none). */
+export function epicLine(p: Pick<BoardProgress, "done" | "total" | "proven" | "review" | "doing">): {
+  words: string;
+  pct: number;
+  segments: { lane: "done" | "review" | "doing"; pct: number }[];
+} {
+  if (!p.total) return { words: "No work yet", pct: 0, segments: [] };
+  const share = (n: number) => Math.round((n / p.total) * 100);
   const proven = p.done ? `, ${p.proven} proven` : "";
-  return { words: `${p.done} of ${p.total} done${proven}`, pct: Math.round((p.done / p.total) * 100) };
+  const words = [`${p.done} of ${p.total} done${proven}`, p.review ? `${p.review} in review` : "", p.doing ? `${p.doing} doing` : ""];
+  const segments = (["done", "review", "doing"] as const)
+    .filter((lane) => p[lane] > 0)
+    .map((lane) => ({ lane, pct: share(p[lane]) }));
+  return { words: words.filter(Boolean).join(" · "), pct: share(p.done), segments };
 }
 
 /** The last characters of an id, for a row that says nothing better. */
