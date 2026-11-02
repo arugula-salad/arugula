@@ -1007,6 +1007,58 @@ pub struct DocPreview {
     pub opening: Vec<String>,
 }
 
+/// One section of a Doc as `GET /api/docs/ID/content` has it: the Doc block's
+/// entry. `body` is null while the section is pending.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct DocContentEntry {
+    pub id: String,
+    pub heading: String,
+    pub intent: String,
+    pub body: Option<String>,
+    pub rev: u64,
+}
+
+/// A picture a Doc keeps, as its state lists it; `doc.asset` has the bytes.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct DocContentAsset {
+    pub name: String,
+    pub mime: String,
+    pub size: u64,
+    pub rev: u64,
+}
+
+/// `GET /api/docs/ID/content` (#608): the Doc read from its files, without
+/// opening it in a block, in the shape the Doc block's state has, so the
+/// same renderer draws it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[cfg_attr(feature = "ts", ts(optional_fields = nullable))]
+pub struct DocContent {
+    pub title: String,
+    pub entries: Vec<DocContentEntry>,
+    #[serde(default)]
+    pub assets: Vec<DocContentAsset>,
+    pub rev: u64,
+    /// The Doc's id in the library.
+    #[serde(default)]
+    pub doc: Option<String>,
+    /// The folder couldn't be read back: what to tell the person.
+    #[serde(default)]
+    pub error: Option<String>,
+}
+
+/// `GET /api/docs/ID/assets/NAME` (#608): a picture, as the Doc block's
+/// `doc_asset` answers it. The type is what the bytes say.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct DocAsset {
+    pub mime: String,
+    /// Base64.
+    pub data: String,
+}
+
 /// When a Doc was shared with a link, and last updated.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]

@@ -1,6 +1,7 @@
 //! arugulad-docs: Docs (#963, #1493, #1066). The Doc block (`docs/`), its
 //! library and its links, their operations (`ops.rs`: `docs.list`,
-//! `doc.open`, `doc.delete`, `doc.preview`; `links.rs`: `doc_link.get`, `doc_link.delete`)
+//! `doc.open`, `doc.delete`, `doc.preview`, `doc.read`, `doc.asset`;
+//! `links.rs`: `doc_link.get`, `doc_link.delete`)
 //! and the `doc` MCP tool (`tool.rs`). The binary calls [`register`]; the
 //! daemon (`arugulad-base`) reaches it only through its `features` hooks and
 //! `mcp::registry`, so an edit here rebuilds this crate and the binary, not
@@ -18,7 +19,7 @@ use std::{path::Path, sync::Arc};
 use arugula_proto::{
     BlockType,
     api::SearchHit,
-    op::ops::{DocDelete, DocLinkDelete, DocLinkGet, DocOpen, DocPreviewGet, DocsList},
+    op::ops::{DocAssetGet, DocDelete, DocLinkDelete, DocLinkGet, DocOpen, DocPreviewGet, DocRead, DocsList},
 };
 use axum::Router;
 use futures_util::future::BoxFuture;
@@ -66,6 +67,8 @@ impl arugulad_base::features::Feature for Docs {
             .op_of::<DocOpen, Docs>()
             .op_of::<DocDelete, Docs>()
             .op_of::<DocPreviewGet, Docs>()
+            .op_of::<DocRead, Docs>()
+            .op_of::<DocAssetGet, Docs>()
             .op_of::<DocLinkDelete, Docs>()
     }
 

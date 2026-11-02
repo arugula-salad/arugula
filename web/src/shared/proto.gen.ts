@@ -1827,6 +1827,42 @@ nvim?: number, };
 export type Dir = "row" | "column";
 
 /**
+ * `GET /api/docs/ID/assets/NAME` (#608): a picture, as the Doc block's
+ * `doc_asset` answers it. The type is what the bytes say.
+ */
+export type DocAsset = { mime: string, 
+/**
+ * Base64.
+ */
+data: string, };
+
+/**
+ * `GET /api/docs/ID/content` (#608): the Doc read from its files, without
+ * opening it in a block, in the shape the Doc block's state has, so the
+ * same renderer draws it.
+ */
+export type DocContent = { title: string, entries: Array<DocContentEntry>, assets: Array<DocContentAsset>, rev: number, 
+/**
+ * The Doc's id in the library.
+ */
+doc?: string | null, 
+/**
+ * The folder couldn't be read back: what to tell the person.
+ */
+error?: string | null, };
+
+/**
+ * A picture a Doc keeps, as its state lists it; `doc.asset` has the bytes.
+ */
+export type DocContentAsset = { name: string, mime: string, size: number, rev: number, };
+
+/**
+ * One section of a Doc as `GET /api/docs/ID/content` has it: the Doc block's
+ * entry. `body` is null while the section is pending.
+ */
+export type DocContentEntry = { id: string, heading: string, intent: string, body: string | null, rev: number, };
+
+/**
  * `GET /api/doc-links/ID` (#1066): a shared Doc's URL, with its key.
  */
 export type DocLinkUrl = { url: string, };
@@ -5401,9 +5437,11 @@ export const OPS = {
   "conversation.open": { method: "POST", path: "/api/conversations/open" },
   "conversation.session_signal": { method: "POST", path: "/api/conversations/session-signal" },
   "conversations.list": { method: "GET", path: "/api/conversations" },
+  "doc.asset": { method: "GET", path: "/api/docs/{id}/assets/{name}" },
   "doc.delete": { method: "DELETE", path: "/api/docs/{id}" },
   "doc.open": { method: "POST", path: "/api/docs/open" },
   "doc.preview": { method: "GET", path: "/api/docs/{id}/preview" },
+  "doc.read": { method: "GET", path: "/api/docs/{id}/content" },
   "doc_link.delete": { method: "DELETE", path: "/api/doc-links/{id}" },
   "doc_link.get": { method: "GET", path: "/api/doc-links/{id}" },
   "docs.list": { method: "GET", path: "/api/docs" },
