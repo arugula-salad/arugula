@@ -172,9 +172,10 @@ export function ListPage<T>({ label, header, searchLabel, query, setQuery, group
   useEffect(() => {
     if (detail && (!narrow || selected === undefined)) setDetail(false);
   }, [detail, narrow, selected === undefined]);
-  // The keyboard's arrows work as soon as the page is up.
+  // The keyboard's arrows work as soon as the page is up. Not on a touch
+  // screen: it has no arrows, and it would show the focus ring on the first row.
   useEffect(() => {
-    if (!inField(document.activeElement)) list.current?.focus({ preventScroll: true });
+    if (matchMedia("(pointer: fine)").matches && !inField(document.activeElement)) list.current?.focus({ preventScroll: true });
   }, [list.current === null]);
   useEffect(() => {
     if (select) {
