@@ -259,10 +259,10 @@ test("the swarm's By board groups agents by their first board, and No board goes
   assert.deepEqual(names.sort(clusterOrder).map((n) => n[0]), ["Big", "Alpha", "Zed", NO_BOARD]);
 });
 
-test("a card's bar is its lane's tone, and a row that waits on the reader takes the attention tone", () => {
-  assert.deepEqual(["next", "doing", "review", "done"].map((lane) => cardTone({ lane })), ["muted", "ok", "warn", "ok"]);
-  assert.equal(cardTone({ lane: "review", ask: { mine: true } }), "accent");
-  assert.equal(cardTone({ lane: "review", ask: { mine: false, raised: true } }), "warn");
+test("a card's bar is its lane's tone, the progress bar's, and a row that waits on the reader keeps it", () => {
+  assert.deepEqual(["next", "doing", "review", "done"].map((lane) => cardTone({ lane })), ["muted", "warn", "accent", "ok"]);
+  assert.deepEqual(["next", "doing", "review", "done"].map((lane) => cardTone({ lane, ask: { mine: true } })), ["muted", "warn", "accent", "ok"]);
+  assert.equal(cardTone({ lane: "review", ask: { mine: false, raised: true } }), "accent");
   assert.deepEqual(["open", "checks_running", "checks_failed", "merged", "closed", "other"].map(liveTone), ["accent", "warn", "danger", "ok", "muted", "muted"]);
 });
 
@@ -316,12 +316,12 @@ test("a blocked row says what blocks it, or that it can't say, and the board cou
   assert.equal(relationLine({ kind: "discovered_from", direction: "out", other: live }), "Discovered from #7 Design");
 });
 
-test("a stalled row says how long, takes the warn tone, and a block holds its row until it closes or is released", () => {
+test("a stalled row says how long, takes the danger tone, and a block holds its row until it closes or is released", () => {
   assert.deepEqual(["0", "59", "60", "65", "1440", "3000"].map((m) => stalledFor(0, Number(m) * 60_000)), ["0m", "59m", "1h", "1h5m", "1d", "2d"]);
   const m = marksOf({ marks: [{ kind: "stalled", since: 1_000 }] }, 1_000 + 42 * 60_000);
   assert.deepEqual(m.stalled, { words: "stalled 42m", since: 1_000 });
-  assert.equal(cardTone({ lane: "doing", marks: [{ kind: "stalled", since: 1 }] }), "warn");
-  assert.equal(cardTone({ lane: "doing", marks: [{ kind: "stalled", since: 1 }], ask: { mine: true } }), "warn");
+  assert.equal(cardTone({ lane: "doing", marks: [{ kind: "stalled", since: 1 }] }), "danger");
+  assert.equal(cardTone({ lane: "doing", marks: [{ kind: "stalled", since: 1 }], ask: { mine: true } }), "danger");
   const block = (state) => ({ role: "work", block: { state }, released: false });
   assert.equal(holdsRow(block("idle")), true);
   assert.equal(holdsRow(block("closed")), false);
