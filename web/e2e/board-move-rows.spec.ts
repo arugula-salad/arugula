@@ -15,6 +15,8 @@ import { TeamControl } from "./team-fixture";
 
 const t = new TeamControl("moverows");
 
+test.use({ viewport: { width: 1280, height: 900 } });
+
 test.afterAll(async ({ browser }) => {
   await closeContexts({ browser });
   t.stop();
@@ -97,7 +99,7 @@ test("a row is moved by dragging, from its menu and from the drawer", async ({ b
 
   // ⋯ → Move to → Next on the second: it stays through a reload, marked.
   await card(alice, titles[1]).locator("[data-board-row-menu]").click();
-  await alice.getByRole("menuitem", { name: "Move to" }).hover();
+  await alice.getByRole("menuitem", { name: "Move to" }).click();
   await shot(alice, "1280-menu");
   await alice.getByRole("menuitem", { name: "Next", exact: true }).click();
   await expect(lane(alice, titles[1])).toHaveAttribute("data-board-zone", "lane_next");
@@ -107,7 +109,7 @@ test("a row is moved by dragging, from its menu and from the drawer", async ({ b
   expect(await state(titles[1])).toBe("open");
 
   // The drawer's selector: Doing for the third; out of Done reopens the first.
-  await card(alice, titles[2]).locator("[data-board-title]").click();
+  await card(alice, titles[2]).locator(".board-sub").click({ position: { x: 4, y: 4 } });
   const select = alice.locator("[data-board-drawer-lane]");
   await expect(select).toHaveValue("next");
   await select.selectOption("doing");
@@ -115,7 +117,7 @@ test("a row is moved by dragging, from its menu and from the drawer", async ({ b
   await expect(alice.locator("[data-board-drawer] [data-board-lane-set]")).toContainText("set by");
   await shot(alice, "1280-drawer");
   await alice.locator("[data-board-drawer-close]").click();
-  await card(alice, titles[0]).locator("[data-board-title]").click();
+  await card(alice, titles[0]).locator(".board-sub").click({ position: { x: 4, y: 4 } });
   await alice.locator("[data-board-drawer-lane]").selectOption("review");
   await expect(lane(alice, titles[0])).toHaveAttribute("data-board-zone", "lane_review");
   expect(await state(titles[0])).toBe("open");
@@ -125,6 +127,6 @@ test("a row is moved by dragging, from its menu and from the drawer", async ({ b
   await open(alice);
   await expect(card(alice, titles[1])).not.toHaveAttribute("draggable", "true");
   await shot(alice, "390-board");
-  await card(alice, titles[1]).locator("[data-board-title]").click();
+  await card(alice, titles[1]).locator(".board-sub").click({ position: { x: 4, y: 4 } });
   await shot(alice, "390-drawer");
 });
