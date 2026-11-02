@@ -394,7 +394,9 @@ function Epic({ b, act, id, write, view, platform }: { b: ProjectBoard; act: Act
       <div class="board-progress" data-board-progress>
         {b.progress.total > 0 && (
           <div class="board-bar" role="progressbar" aria-valuemin={0} aria-valuemax={b.progress.total} aria-valuenow={b.progress.done} aria-label={e.words}>
-            <i style={{ width: `${e.pct}%` }} />
+            {e.segments.map((s) => (
+              <i key={s.lane} data-lane={s.lane} style={{ width: `${s.pct}%` }} />
+            ))}
           </div>
         )}
         <span class="dim">{e.words}</span>
