@@ -3,7 +3,7 @@
   "commit": "d0e801951769ba401173ab8695fe93fd186fef77",
   "branch": "main",
   "state": "pending",
-  "at": "2026-11-02T05:43:20Z",
+  "at": "2026-11-02T05:46:03Z",
   "phases": {
     "lint": {
       "verdict": "pass",
@@ -85,7 +85,7 @@
         {
           "name": "e2e (10)",
           "id": 125115776066,
-          "conclusion": null,
+          "conclusion": "success",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/41395089269/job/125115776066"
         },
         {
@@ -151,13 +151,13 @@
       ]
     },
     "claims": {
-      "verdict": "pending",
+      "verdict": "pass",
       "build": "newest",
       "runs": [
         {
           "name": "desktop-xvfb",
           "id": 125114750417,
-          "conclusion": null,
+          "conclusion": "success",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/41395089269/job/125114750417"
         }
       ]
@@ -169,10 +169,11 @@
         {
           "name": "macos (test)",
           "id": 125114750523,
-          "conclusion": null,
+          "conclusion": "failure",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/41395089269/job/125114750523"
         }
       ],
+      "reason": "retrying",
       "culprit": "257c474301cf6b5ebee375dd65c913805f892f35"
     },
     "windows": {
@@ -182,7 +183,7 @@
         {
           "name": "workspace",
           "id": 125114693918,
-          "conclusion": null,
+          "conclusion": "failure",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/41395089305/job/125114693918"
         },
         {
@@ -192,6 +193,7 @@
           "url": "https://github.com/arugula-salad/arugula/actions/runs/41395089305/job/125114693929"
         }
       ],
+      "reason": "retrying",
       "culprit": "257c474301cf6b5ebee375dd65c913805f892f35"
     },
     "windows-desktop": {
@@ -205,6 +207,16 @@
           "url": "https://github.com/arugula-salad/arugula/actions/runs/41395089226/job/125114687853"
         }
       ]
+    }
+  },
+  "retried": {
+    "macos (test)": {
+      "run": 125114750523,
+      "at": "2026-11-02T05:46:03Z"
+    },
+    "workspace": {
+      "run": 125114693918,
+      "at": "2026-11-02T05:46:03Z"
     }
   }
 }
