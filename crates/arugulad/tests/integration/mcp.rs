@@ -3287,7 +3287,7 @@ async fn an_agent_links_docs_to_a_board() {
         refused(&s, "board_write", json!({ "kind": "link_doc", "board": "brd_1", "doc": "ffffffffffffffff" })).await;
     assert!(unknown.contains("neither a project Doc") && unknown.contains("doc list"), "{unknown}");
     assert!(
-        refused(&s, "board_write", json!({ "kind": "link_doc", "board": "brd_1", "doc": "../../etc" }))
+        refused(&s, "board_write", json!({ "kind": "link_doc", "board": "brd_1", "doc": "../0011223344556" }))
             .await
             .contains("neither")
     );
