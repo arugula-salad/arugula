@@ -5,7 +5,7 @@
 // and the shell's board block read through it. A write that names a stale
 // `rev` is refused with 409 (`stale_rev`): the view reads the board again.
 
-import type { BoardAttachRole, BoardsOfDoc, ForgeContent, ProjectDocList, NativeIssue, BoardList, BoardPointer, BoardPutEntry, BoardView, BoardWorkItems, RelationKind, TrackerConnections, TrackerWriteDone } from "../proto";
+import type { BoardAttachRole, BoardLane, BoardsOfDoc, ForgeContent, ProjectDocList, NativeIssue, BoardList, BoardPointer, BoardPutEntry, BoardView, BoardWorkItems, RelationKind, TrackerConnections, TrackerWriteDone } from "../proto";
 import { chat } from "../chat-store";
 import { platformFetch, refusalOf } from "../maintenance";
 
@@ -96,6 +96,9 @@ export const boards = {
   /** Move a row to a group (`zone`, null: none), or a group among groups (`before`, null: last). */
   move: (id: string, entry: string, rev: number, m: { zone?: string | null; before?: string | null }) =>
     call<BoardView>("POST", `/api/boards/${enc(id)}/entries/${enc(entry)}/move`, { rev, before: null, ...m }),
+  /** Move a row to a lane by hand (#494; owners and editors). Next, Doing and Review hold until the row's work changes its lane; Done closes the row's native issue (`reason`: completed, not_planned or duplicate), and moving out of Done reopens it. */
+  setLane: (id: string, row: string, lane: BoardLane, reason?: string) =>
+    call<BoardView>("PUT", `/api/boards/${enc(id)}/rows/${enc(row)}/lane`, { lane, reason: reason ?? null }),
   /** The drawer's reads, through the routes the Issues page and the forge blocks use: a native issue, a mirrored item's body and comments, a PR's checks. */
   issue: (id: string) => call<NativeIssue>("GET", `/api/issues/${enc(id)}`),
   content: (item: string) => call<ForgeContent>("GET", `/api/forge/items/${enc(item)}/content`),

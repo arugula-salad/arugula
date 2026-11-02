@@ -935,3 +935,18 @@
   margin: 16px 0 8px;
   font-size: 1em;
 }
+
+/* A card dragged to another lane (#494): the lane under it takes it. */
+.board-zone.drop-over {
+  outline: 2px dashed var(--accent, currentColor);
+  outline-offset: 2px;
+  border-radius: var(--radius, 6px);
+}
+
+.board-card[draggable="true"] {
+  cursor: grab;
+}
+
+.board-drawer-lane select {
+  font: inherit;
+}

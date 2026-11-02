@@ -2949,6 +2949,14 @@ clients = ["page", "cli"]
 note = "Asks a member of the project a question on a row (Arugula #367): owners and editors, behind the boards Labs flag. One open ask per row (409), and only on a row with an issue or a PR (422)."
 
 [[route]]
+method = "PUT"
+path = "/api/boards/{id}/rows/{row}/lane"  # wire::boards::BOARD_ROW_LANE
+process = "platform"
+auth = "session"
+clients = ["page"]
+note = "Moves a row to a lane by hand (Arugula #494): owners and editors, behind the boards Labs flag. Next, Doing and Review hold until the row's work changes its derived lane; Done closes the row's native issue and moving out of Done reopens it (issues.write). A GitHub or Plane item, or a row with no issue, is 422 for Done. People only: no daemon route."
+
+[[route]]
 method = "POST"
 path = "/api/boards/{id}/asks/{ask}/answer"  # wire::boards::BOARD_ASK_ANSWER
 process = "platform"

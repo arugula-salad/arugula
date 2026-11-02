@@ -210,6 +210,36 @@ export function laneCount(z: Pick<BoardZone, "rows">): { total: number; proven: 
   return { total: z.rows.length, proven: z.rows.filter((r) => r.proof).length };
 }
 
+/** The lanes a person moves a row to by hand, in the board's order (#494). */
+export const MOVE_LANES: { lane: BoardLane; title: string }[] = [
+  { lane: "next", title: "Next" },
+  { lane: "doing", title: "Doing" },
+  { lane: "review", title: "Review" },
+  { lane: "done", title: "Done" },
+];
+
+/** A lane's id (`lane_done`) as the lane. */
+export function laneOfZone(zone: string): BoardLane | null {
+  return MOVE_LANES.find((l) => `lane_${l.lane}` === zone)?.lane ?? null;
+}
+
+/** Why a row can't be moved to Done from here, or null when it can (a native issue is closed). */
+export function doneRefusal(r: Pick<BoardRow, "pointer">): string | null {
+  if (r.pointer.kind === "issue") return null;
+  if (r.pointer.kind === "forge_item") return "Close it in GitHub/Plane to move it to Done.";
+  return "A row with no issue can't be moved to Done.";
+}
+
+/** The issue a Done move closes, as the dialog names it: `#12`, or "this issue". */
+export function closeName(r: Pick<BoardRow, "live">): string {
+  return r.live?.number ? `#${r.live.number}` : "this issue";
+}
+
+/** The mark of a lane a person set: `set by kim`, null on a row that follows its work. */
+export function laneSetLine(r: Pick<BoardRow, "lane_set">, nameOf: (account: string) => string | undefined): string | null {
+  return r.lane_set ? `set by ${nameOf(r.lane_set.by) || "someone who left"}` : null;
+}
+
 /** An attachment's chip: what it points at, and its state when the reader
  * may see it (an item they can't read says nothing but what it is). */
 export function chipOf(a: Pick<BoardAttachment, "pointer" | "live" | "block" | "role">): { label: string; state: string | null } {

@@ -70,6 +70,12 @@ pub const PROJECT_DOC_BOARDS: &str = "/api/projects/{project}/docs/{doc}/boards"
 /// `POST` [`NewAsk`]: a person asks a question on a row (owners and
 /// editors). One open ask per row, and only on a row with an issue or a PR.
 pub const BOARD_ROW_ASK: &str = "/api/boards/{id}/rows/{row}/ask";
+/// `PUT` [`SetLane`]: a person moves a row to another lane (#494), answered
+/// [`BoardView`]. Next, Doing and Review set a lane that holds until the
+/// row's work changes it; Done closes a native issue, and moving out of
+/// Done reopens it. Owners and editors (and issues.write for the close); an
+/// agent never does, so there is no daemon twin.
+pub const BOARD_ROW_LANE: &str = "/api/boards/{id}/rows/{row}/lane";
 /// `POST` [`AnswerAsk`]: the person an ask names answers it, or an owner or
 /// editor for them. A machine and its agents never do.
 pub const BOARD_ASK_ANSWER: &str = "/api/boards/{id}/asks/{ask}/answer";
@@ -209,6 +215,11 @@ pub fn agent_project_relation(project: &str, relation: &str) -> String {
 /// [`BOARD_ROW_ASK`] for `row` of `id`.
 pub fn board_row_ask(id: &str, row: &str) -> String {
     format!("/api/boards/{id}/rows/{row}/ask")
+}
+
+/// [`BOARD_ROW_LANE`] for `row` of `id`.
+pub fn board_row_lane(id: &str, row: &str) -> String {
+    format!("/api/boards/{id}/rows/{row}/lane")
 }
 
 /// [`BOARD_ASK_ANSWER`] for `ask` of `id`.
@@ -1484,6 +1495,30 @@ pub struct BlockAttached {
     pub on: Vec<BlockOn>,
 }
 
+/// A lane a person set on a row ([`Row::lane_set`]).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "BoardLaneSet"))]
+pub struct LaneSet {
+    /// `next`, `doing` or `review`.
+    pub lane: Lane,
+    /// The account that moved the row.
+    pub by: String,
+    pub at: u64,
+}
+
+/// [`BOARD_ROW_LANE`]'s body. `reason` goes with `done` on a native issue:
+/// `completed` (when not given), `not_planned` or `duplicate`.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "BoardSetLane"))]
+#[serde(deny_unknown_fields)]
+pub struct SetLane {
+    pub lane: Lane,
+    #[serde(default)]
+    pub reason: Option<String>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "BoardRow"))]
@@ -1498,6 +1533,11 @@ pub struct Row {
     /// Where the row is, from the live state of its items.
     #[serde(default)]
     pub lane: Lane,
+    /// Set when a person moved the row and the work hasn't changed its
+    /// derived lane since (#494): `lane` is then the row's lane.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub lane_set: Option<LaneSet>,
     /// Work and proof attached to the row, oldest first.
     #[serde(default)]
     pub attachments: Vec<Attachment>,
@@ -2037,6 +2077,7 @@ mod tests {
             note: note.into(),
             status: Status::None,
             lane,
+            lane_set: None,
             attachments: vec![],
             docs: vec![],
             proof: None,

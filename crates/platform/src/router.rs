@@ -117,6 +117,7 @@ fn routes() -> Routes {
         .route(boards::AGENT_BOARD_DOC, axum::routing::delete(crate::boards::agent::remove_doc))
         .route(boards::AGENT_BOARD_DOC_MOVE, post(crate::boards::agent::move_doc))
         .route(boards::BOARD_ROW_ASK, post(crate::boards::asks::ask_route))
+        .route(boards::BOARD_ROW_LANE, put(crate::boards::set_lane_route))
         .route(boards::BOARD_ASK_ANSWER, post(crate::boards::asks::answer_route))
         .route(boards::AGENT_BOARD_ROW_ASK, post(crate::boards::agent::ask))
         .route(boards::AGENT_PROJECT_RELATIONS, post(crate::boards::agent::relate))

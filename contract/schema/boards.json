@@ -1057,6 +1057,30 @@
         }
       ]
     },
+    "LaneSet": {
+      "description": "A lane a person set on a row ([`Row::lane_set`]).",
+      "properties": {
+        "at": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "by": {
+          "description": "The account that moved the row.",
+          "type": "string"
+        },
+        "lane": {
+          "$ref": "#/$defs/Lane",
+          "description": "`next`, `doing` or `review`."
+        }
+      },
+      "required": [
+        "lane",
+        "by",
+        "at"
+      ],
+      "type": "object"
+    },
     "Live": {
       "description": "The item a row points at, as it is now: what the page draws beside the\nrow's own status, and the label of its link.",
       "properties": {
@@ -1962,6 +1986,17 @@
           "default": "next",
           "description": "Where the row is, from the live state of its items."
         },
+        "lane_set": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/LaneSet"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Set when a person moved the row and the work hasn't changed its\nderived lane since (#494): `lane` is then the row's lane."
+        },
         "live": {
           "anyOf": [
             {
@@ -2075,6 +2110,26 @@
         "direction",
         "source",
         "removable"
+      ],
+      "type": "object"
+    },
+    "SetLane": {
+      "additionalProperties": false,
+      "description": "[`BOARD_ROW_LANE`]'s body. `reason` goes with `done` on a native issue:\n`completed` (when not given), `not_planned` or `duplicate`.",
+      "properties": {
+        "lane": {
+          "$ref": "#/$defs/Lane"
+        },
+        "reason": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "lane"
       ],
       "type": "object"
     },
