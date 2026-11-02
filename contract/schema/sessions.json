@@ -192,6 +192,19 @@
       ],
       "type": "object"
     },
+    "AgentSessionStop": {
+      "description": "[`AGENT_SESSION_STOP`]'s body.",
+      "properties": {
+        "reason": {
+          "description": "Why, in at most [`STOP_REASON_MAX`] characters: the thread's note\nsays it.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
     "AgentSessionWait": {
       "description": "[`AGENT_SESSIONS_WAIT`]'s body.",
       "properties": {
