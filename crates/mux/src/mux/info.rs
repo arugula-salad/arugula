@@ -107,11 +107,8 @@ impl Daemon {
             let live = self.config.sessions.live(ours);
             for (id, (sid, cwd)) in live {
                 let claude = agents.iter().any(|(p, a)| *p == id && a.as_deref() == Some("claude"));
-                // Its hooks name the conversation while it runs; the files
-                // fill in when they haven't, or it has stopped (#512).
-                let held = hook_holds(self.meta.get(&id).and_then(|m| m.session.as_ref()));
-                if claude && !held && crate::resume::valid_id(&sid) {
-                    self.set_session(id, "claude", &sid, None, cwd, false);
+                if claude && crate::resume::valid_id(&sid) {
+                    self.set_session(id, "claude", &sid, None, cwd);
                 }
             }
         }
@@ -396,33 +393,5 @@ impl Daemon {
             roles: None,
             presence: Vec::new(),
         }
-    }
-}
-
-/// Does the pane's hooks' conversation still run (#512)? Then Claude Code's
-/// session files don't replace it. A pane with none, or one that stopped
-/// (a restart: the resumed process fires no hook yet), takes the files'.
-fn hook_holds(session: Option<&crate::store::AgentSession>) -> bool {
-    session.is_some_and(|s| s.hooked && s.running)
-}
-
-#[cfg(test)]
-mod hook_tests {
-    use super::hook_holds;
-    use crate::store::AgentSession;
-
-    #[test]
-    fn the_files_fill_in_unless_a_hooked_conversation_runs() {
-        let s = |running, hooked| AgentSession {
-            agent: "claude".into(),
-            id: "x".into(),
-            running,
-            hooked,
-            ..Default::default()
-        };
-        assert!(hook_holds(Some(&s(true, true))));
-        assert!(!hook_holds(None));
-        assert!(!hook_holds(Some(&s(false, true))));
-        assert!(!hook_holds(Some(&s(true, false))));
     }
 }

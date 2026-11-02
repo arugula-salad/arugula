@@ -100,7 +100,6 @@ mod tests {
                 transcript: transcript.map(str::to_owned),
                 cwd: None,
                 running: crate::classify::agent(command) == Some("claude"),
-                hooked: false,
             }),
             ..Default::default()
         }
