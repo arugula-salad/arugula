@@ -1210,6 +1210,9 @@ mod tests {
     }
 
     /// The ticket's done-when: a name from the list reaches its session.
+    /// The panes are terminals' Claude Code sessions, the only ones a
+    /// follow-up reaches today; agent blocks are listed too, and will be
+    /// reachable with #611.
     #[tokio::test]
     async fn a_listed_name_reaches_its_session() {
         let d = machine_with_sessions("sessions-roundtrip");
