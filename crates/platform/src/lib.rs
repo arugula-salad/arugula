@@ -161,9 +161,24 @@ pub struct Platform {
     /// Where connected trackers' APIs come from (Arugula #356): Plane's, or
     /// a test's fake.
     pub trackers: Arc<dyn trackers::Trackers>,
+    /// This platform as the `Arc` it runs in, set when its router is made
+    /// or its background work starts ([`Platform::adopt`]): for work that
+    /// outlives a request (#419).
+    me: std::sync::OnceLock<std::sync::Weak<Platform>>,
 }
 
 impl Platform {
+    /// Note the `Arc` this platform runs in, so [`Platform::arc`] has it.
+    pub fn adopt(self: &Arc<Self>) {
+        let _ = self.me.set(Arc::downgrade(self));
+    }
+
+    /// The `Arc` this platform runs in, to move into a task that outlives
+    /// the request that started it. None before [`Platform::adopt`].
+    pub fn arc(&self) -> Option<Arc<Platform>> {
+        self.me.get().and_then(std::sync::Weak::upgrade)
+    }
+
     /// Whether background work is held ([`Platform::paused`]).
     pub fn is_paused(&self) -> bool {
         self.paused.load(std::sync::atomic::Ordering::Relaxed)
@@ -235,6 +250,7 @@ impl Platform {
             deploy_tokens: Default::default(),
             slots: Default::default(),
             trackers,
+            me: Default::default(),
         }
     }
 }

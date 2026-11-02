@@ -19,6 +19,7 @@ use std::{
 
 use arugula_control_wire::forge::{DaemonOp, OpAnswer, OpAsk, OpDone, Ops};
 use arugula_e2e::{channel::MAX_WIRE, mux::Mux, now_ms};
+use arugula_platform_api::PlatformPort as _;
 use axum::{
     extract::{
         Path, Query, State,
@@ -569,6 +570,16 @@ async fn daemon_socket(app: Arc<App>, id: String, hosted: bool, ws: WebSocket, t
         old.mux.close();
     }
     app.relay.came.notify_waiters();
+    // What the platform held back for this machine goes now (#419): off the
+    // socket's task, and a failure is only logged.
+    {
+        let (app, id) = (app.clone(), id.clone());
+        tokio::spawn(async move {
+            if let Err(e) = app.platform.daemon_came(&id).await {
+                warn!(daemon = %id, error = %e, "the platform didn't take a daemon's connect");
+            }
+        });
+    }
     if app.relay.renudge.lock().unwrap().remove(&id) {
         nudge.notify_one();
     }

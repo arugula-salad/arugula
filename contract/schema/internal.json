@@ -510,6 +510,17 @@
       ],
       "type": "object"
     },
+    "DaemonArgs": {
+      "properties": {
+        "daemon": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "daemon"
+      ],
+      "type": "object"
+    },
     "DaemonOp": {
       "description": "An op control asks a machine for, by its name (`op`). Only the platform\nasks, through the hub, and only for a person's own action.",
       "oneOf": [

@@ -104,6 +104,13 @@ async fn the_same_words_outside_code_still_mention() {
         let v = post_in(&base, ROOM, "b", text, None).await;
         assert_eq!((&v["mentions"], &v["unreached"]), (&json!(["machine:geek"]), &json!([])), "{text}: {v}");
     }
+    // The machine is told after the post returns (#419).
+    for _ in 0..100 {
+        if hub.ops_asked().len() >= 2 {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    }
     assert_eq!(hub.ops_asked().len(), 2, "both told the machine");
     let v = post_in(&base, ROOM, "b", "@arugula fix the canary", None).await;
     let p = v["seq"].as_u64().unwrap();

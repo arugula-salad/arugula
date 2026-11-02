@@ -41,7 +41,8 @@ pub use arugula_platform_api::port::{Archived, Deleted, PlatformPort, PublicPrev
 /// `hosted_plan` and `hosted_setup`; hosted workspaces' agents (M184)
 /// `machine_drives` and `hosted_transcript`; public previews (M187)
 /// `public_preview` and `public_ports`; deploys' runs (M219)
-/// `hosted_secrets`; hud boxes (M237) `box_members` and `box_post`.
+/// `hosted_secrets`; hud boxes (M237) `box_members` and `box_post`; chat's missed
+/// mentions (#419) `daemon_came`.
 impl PlatformPort for Platform {
     fn delete_blockers<'a>(&'a self, account: &'a str, start: bool) -> BoxFuture<'a, anyhow::Result<Vec<String>>> {
         let _ = (account, start);
@@ -282,6 +283,21 @@ impl PlatformPort for Platform {
 
     fn box_members<'a>(&'a self, project: &'a str) -> BoxFuture<'a, anyhow::Result<Option<Vec<BoxMember>>>> {
         Box::pin(crate::boxes::members(self, project))
+    }
+
+    fn daemon_came<'a>(&'a self, daemon: &'a str) -> BoxFuture<'a, anyhow::Result<()>> {
+        Box::pin(async move {
+            // In the background: the resends wait on daemons for seconds,
+            // and the hub's call must neither wait for them nor cancel them.
+            match self.arc() {
+                Some(app) => {
+                    let daemon = daemon.to_owned();
+                    tokio::spawn(async move { crate::features::chat().daemon_came(&app, &daemon).await });
+                }
+                None => crate::features::chat().daemon_came(self, daemon).await,
+            }
+            Ok(())
+        })
     }
 
     fn box_post<'a>(&'a self, post: &'a BoxPost) -> BoxFuture<'a, anyhow::Result<BoxPosted>> {

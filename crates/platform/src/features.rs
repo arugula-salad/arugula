@@ -246,6 +246,11 @@ pub trait Chat: Send + Sync + 'static {
     ) -> BoxFuture<'a, Result<(String, i64), ApiError>> {
         Box::pin(async { Err(no_chat()) })
     }
+    /// A machine's daemon just connected (#419): chat sends it the
+    /// mentions it missed while it was offline.
+    fn daemon_came<'a>(&'a self, _app: &'a Platform, _machine: &'a str) -> BoxFuture<'a, ()> {
+        Box::pin(async {})
+    }
     /// Before a grant of `power` over `scope` is given (#122): the rooms
     /// it lets agents into, and who reaches them now. `None` when it lets
     /// agents into none.

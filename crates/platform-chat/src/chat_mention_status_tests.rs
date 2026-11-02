@@ -43,15 +43,24 @@ async fn post(base: &str, who: &str, text: &str, parent: Option<i64>) -> i64 {
     v["seq"].as_i64().unwrap()
 }
 
-/// What `who` sees under message `seq` of the room (or of its thread).
+/// What `who` sees under message `seq` of the room (or of its thread), once
+/// no line is `sending` (the daemons are told after the post returns, #419).
 async fn status(base: &str, who: &str, seq: i64, thread: Option<i64>) -> Value {
     let path = match thread {
         Some(t) => format!("{ROOM}?thread={t}"),
         None => ROOM.to_owned(),
     };
-    let (_, v) = call(base, who, "GET", &path, None).await;
-    let m = v["messages"].as_array().unwrap().iter().find(|m| m["seq"] == seq).cloned().unwrap();
-    m.get("mention_status").cloned().unwrap_or(json!([]))
+    let mut seen = json!([]);
+    for _ in 0..100 {
+        let (_, v) = call(base, who, "GET", &path, None).await;
+        let m = v["messages"].as_array().unwrap().iter().find(|m| m["seq"] == seq).cloned().unwrap();
+        seen = m.get("mention_status").cloned().unwrap_or(json!([]));
+        if !seen.as_array().unwrap().iter().any(|l| l["state"] == "sending") {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    seen
 }
 
 /// Every way a daemon can answer shows as its own line, to the poster and

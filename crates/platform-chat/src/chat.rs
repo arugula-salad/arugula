@@ -94,7 +94,7 @@ use crate::{
         Db, Taken,
         chat::{Message, NewMessage, Page, Room, RoomMeta, Search, UnreadAsk, Word},
         chat_files::ChatFileRow,
-        chat_mention_status::{ANSWERABLE_MS, MentionStatus},
+        chat_mention_status::{ANSWERABLE_MS, MentionStatus, REDELIVER_MAX, REDELIVER_WITHIN_MS, STALE_SENDING_MS},
         chat_reactions::Reaction,
         objects::Holder,
         projects::{ISSUES_WRITE, THREADS_POST, THREADS_READ},
@@ -894,7 +894,9 @@ fn mention_state(state: &str) -> ChatMentionState {
     match state {
         "fell_back" => ChatMentionState::FellBack,
         "waiting" => ChatMentionState::Waiting,
-        "offline" => ChatMentionState::Offline,
+        "sending" => ChatMentionState::Sending,
+        // Tried again when the machine connected, and still not told.
+        "offline" | "missed" => ChatMentionState::Offline,
         "answered" => ChatMentionState::Answered,
         _ => ChatMentionState::Delivered,
     }
@@ -993,24 +995,48 @@ struct Told<'a> {
     sessions: Vec<(String, String)>,
 }
 
-/// Tells the agents a new message is for (#394): those it mentions
-/// (`stored`'s `machine:<id>`), and the one it replies to. Each machine's
-/// daemon gets it over its connection and routes it to a session; one that
-/// took it is `pushed` as `machine:<id>`. A mention that couldn't be told
-/// (the machine is offline, doesn't know the op, or its owner turned
-/// mentions off) goes back into `unreached` by its name: it is stored,
-/// and the agents read it the next time they look. A failure here never
-/// fails the post.
-async fn tell_agents(
+/// One agent a new message is for, ready to be told (#394, #419).
+struct Tell {
+    machine: String,
+    /// With a status line: the message mentions the machine (a reply to its
+    /// agent is told without one).
+    mentioned: bool,
+    op: arugula_control_wire::forge::DaemonOp,
+}
+
+/// The op that tells `a`'s daemon about `told`. Only a machine the text
+/// named by `@name/session` is given a session (#429).
+fn mention_op(told: &Told<'_>, a: &ChatRoomAgent, mentioned: bool) -> arugula_control_wire::forge::DaemonOp {
+    use arugula_control_wire::forge::{AgentMention, DaemonOp};
+    DaemonOp::AgentMention(AgentMention {
+        room: told.room.id.clone(),
+        target: told.room.target.clone(),
+        room_name: told.room.name.clone(),
+        seq: told.seq,
+        parent: told.parent,
+        author: told.author.clone(),
+        text: told.text.to_owned(),
+        session: told
+            .sessions
+            .iter()
+            .find(|(m, _)| mentioned && *m == a.machine_name.to_lowercase())
+            .map(|(_, s)| s.clone()),
+    })
+}
+
+/// Works out the agents a new message is for (#394): those it mentions
+/// (`stored`'s `machine:<id>`), and the one it replies to. Each mention
+/// gets its status, `sending`, now (#419), so the sender's line shows at
+/// once; [`deliver`] tells the daemons after the post has returned. A
+/// failure here never fails the post.
+async fn plan_tells(
     app: &Platform,
     facts: &Facts,
     told: &Told<'_>,
     stored: &[String],
     replying_to: Option<String>,
     by: Option<&AgentPrincipal>,
-    unreached: &mut Vec<String>,
-) -> Vec<ChatPushed> {
-    use arugula_control_wire::forge::{AgentMention, DaemonOp, OpAnswer};
+) -> Vec<Tell> {
     let mentioned: Vec<&str> = stored.iter().filter_map(|m| m.strip_prefix(wire::AGENT_MENTION)).collect();
     let mut want: Vec<&str> = mentioned.clone();
     want.extend(replying_to.as_deref());
@@ -1030,57 +1056,203 @@ async fn tell_agents(
     let mut out = vec![];
     for a in agents.iter().filter(|a| want.contains(&a.machine.as_str()) && a.powers.iter().any(|p| p == THREADS_READ))
     {
-        let op = DaemonOp::AgentMention(AgentMention {
-            room: told.room.id.clone(),
-            target: told.room.target.clone(),
-            room_name: told.room.name.clone(),
-            seq: told.seq,
-            parent: told.parent,
-            author: told.author.clone(),
-            text: told.text.to_owned(),
-            // Only a machine the text named by `@name/session` is told one.
-            session: told
-                .sessions
-                .iter()
-                .find(|(m, _)| mentioned.contains(&a.machine.as_str()) && *m == a.machine_name.to_lowercase())
-                .map(|(_, s)| s.clone()),
-        });
-        let answer = tokio::time::timeout(Duration::from_secs(5), app.hub.daemon_op(&a.machine, &op)).await;
-        if mentioned.contains(&a.machine.as_str()) {
-            let (state, session, asked) = mention_answer(answer.as_ref().ok().and_then(|r| r.as_ref().ok()));
+        let is_mentioned = mentioned.contains(&a.machine.as_str());
+        if is_mentioned {
             let status = MentionStatus {
                 room: told.room.id.clone(),
                 seq: told.seq,
                 machine: a.machine.clone(),
                 machine_name: a.machine_name.clone(),
                 root: told.parent.unwrap_or(told.seq),
-                state: state.into(),
-                session,
-                asked,
+                state: "sending".into(),
+                session: None,
+                asked: None,
                 reply: None,
                 at: now_ms(),
             };
             match app.db.set_chat_mention_status(&status) {
-                Ok(()) => {
-                    app.chat.publish(&app.db, ChatLive::Reacted { room: status.room.clone(), seq: told.seq }, None);
-                    if let Some(parent) = told.parent {
-                        app.chat.publish(
-                            &app.db,
-                            ChatLive::Reply { room: status.room.clone(), parent, seq: told.seq },
-                            None,
-                        );
-                    }
-                }
+                Ok(()) => announce_status(app, &status),
                 Err(e) => tracing::warn!(error = %e, "chat: storing a mention's status"),
             }
         }
-        if matches!(answer, Ok(Ok(OpAnswer::Done { .. }))) {
-            out.push(ChatPushed { account: format!("{}{}", wire::AGENT_MENTION, a.machine), why: ChatPushWhy::Agent });
-        } else if mentioned.contains(&a.machine.as_str()) {
-            unreached.push(a.machine_name.to_lowercase());
-        }
+        out.push(Tell { machine: a.machine.clone(), mentioned: is_mentioned, op: mention_op(told, a, is_mentioned) });
     }
     out
+}
+
+/// A mention's status changed: pages showing the message (and its thread)
+/// read it again.
+fn announce_status(app: &Platform, s: &MentionStatus) {
+    app.chat.publish(&app.db, ChatLive::Reacted { room: s.room.clone(), seq: s.seq }, None);
+    if s.root != s.seq {
+        app.chat.publish(&app.db, ChatLive::Reply { room: s.room.clone(), parent: s.root, seq: s.seq }, None);
+    }
+}
+
+/// How long a daemon has to answer a mention.
+const DAEMON_ANSWERS_WITHIN: Duration = Duration::from_secs(5);
+
+/// Asks a machine's daemon to take a mention: its answer as a status
+/// (`state`, `session`, `asked`).
+async fn ask_daemon(
+    app: &Platform,
+    machine: &str,
+    op: &arugula_control_wire::forge::DaemonOp,
+) -> (&'static str, Option<String>, Option<String>) {
+    let answer = tokio::time::timeout(DAEMON_ANSWERS_WITHIN, app.hub.daemon_op(machine, op)).await;
+    mention_answer(answer.as_ref().ok().and_then(|r| r.as_ref().ok()))
+}
+
+/// Tells the agents ([`plan_tells`]) in the background (#419): the post
+/// returns without them, so a daemon that takes seconds to answer, or
+/// doesn't, holds nobody. A platform that isn't running as an `Arc` (a test
+/// of a part) tells them before returning.
+async fn deliver_later(app: &Platform, tells: Vec<Tell>, room: String, seq: i64, parent: Option<i64>) {
+    if tells.is_empty() {
+        return;
+    }
+    match app.arc() {
+        Some(app) => {
+            tokio::spawn(async move { deliver(&app, tells, &room, seq, parent).await });
+        }
+        None => deliver(app, tells, &room, seq, parent).await,
+    }
+}
+
+/// Tells each agent's daemon at once, and settles the mentions' statuses
+/// from what they answer. One that was `answered` meanwhile stays so.
+async fn deliver(app: &Platform, tells: Vec<Tell>, room: &str, seq: i64, parent: Option<i64>) {
+    futures_util::future::join_all(tells.into_iter().map(|t| async move {
+        let (state, session, asked) = ask_daemon(app, &t.machine, &t.op).await;
+        if !t.mentioned {
+            return;
+        }
+        let status = MentionStatus {
+            room: room.to_owned(),
+            seq,
+            machine: t.machine,
+            machine_name: String::new(),
+            root: parent.unwrap_or(seq),
+            state: state.into(),
+            session,
+            asked,
+            reply: None,
+            at: now_ms(),
+        };
+        settle(app, &status);
+    }))
+    .await;
+}
+
+/// Store a `sending` mention's outcome, and say so if it changed.
+fn settle(app: &Platform, status: &MentionStatus) {
+    match app.db.finish_chat_mention(status) {
+        Ok(true) => announce_status(app, status),
+        Ok(false) => {}
+        Err(e) => tracing::warn!(error = %e, "chat: storing a mention's status"),
+    }
+}
+
+/// Once, a little after the platform starts (#419): mentions still
+/// `sending` from before it are lost (control restarted mid-delivery). They
+/// go back to `offline`, and those for machines already connected are sent
+/// now; the others, when theirs connects.
+pub fn start_stale_mentions(app: &Arc<Platform>) {
+    let app = Arc::downgrade(app);
+    tokio::spawn(async move {
+        tokio::time::sleep(Duration::from_millis(STALE_SENDING_MS + 5_000)).await;
+        let Some(app) = app.upgrade() else { return };
+        release_stale(&app).await;
+    });
+}
+
+/// [`start_stale_mentions`]' work.
+pub(crate) async fn release_stale(app: &Platform) {
+    let machines = match app.db.release_stale_mentions(now_ms().saturating_sub(STALE_SENDING_MS)) {
+        Ok(m) => m,
+        Err(e) => {
+            tracing::warn!(error = %e, "chat: releasing mentions lost in a restart");
+            return;
+        }
+    };
+    if machines.is_empty() {
+        return;
+    }
+    let online = app.hub.machines_online(&machines).await.unwrap_or_default();
+    for m in online {
+        redeliver(app, &m).await;
+    }
+}
+
+/// A machine's daemon connected (#419): the mentions it missed while it
+/// was offline (the newest [`REDELIVER_MAX`] of the last day) are told to
+/// it again, oldest first, once. Each is claimed first (`sending`), so
+/// another connect, on this machine or another, doesn't take it; then it
+/// is `delivered`, `waiting`... as the daemon answers, or `missed` if it
+/// doesn't, or if the message, the room, the mention or the machine's grant
+/// is gone.
+pub(crate) async fn redeliver(app: &Platform, machine: &str) {
+    let now = now_ms();
+    let claimed =
+        match app.db.claim_offline_mentions(machine, now.saturating_sub(REDELIVER_WITHIN_MS), REDELIVER_MAX, now) {
+            Ok(c) => c,
+            Err(e) => {
+                tracing::warn!(error = %e, "chat: looking for mentions a machine missed");
+                return;
+            }
+        };
+    let mut ready = vec![];
+    for s in claimed {
+        match mention_to_resend(app, &s).await {
+            Ok(op) => ready.push((s, op)),
+            Err(why) => {
+                tracing::info!(room = %s.room, seq = s.seq, %machine, why, "chat: a missed mention isn't sent again");
+                settle(app, &MentionStatus { state: "missed".into(), at: now_ms(), ..s });
+            }
+        }
+    }
+    futures_util::future::join_all(ready.into_iter().map(|(s, op)| async move {
+        let (state, session, asked) = ask_daemon(app, &s.machine, &op).await;
+        // Offline again: it was tried, and isn't kept for a third time.
+        let state = if state == "offline" { "missed" } else { state };
+        settle(app, &MentionStatus { state: state.into(), session, asked, at: now_ms(), ..s });
+    }))
+    .await;
+}
+
+/// The op that told the machine about the mention `s`, made again from the
+/// stored message, or why there is nothing to send.
+async fn mention_to_resend(
+    app: &Platform,
+    s: &MentionStatus,
+) -> Result<arugula_control_wire::forge::DaemonOp, &'static str> {
+    let m = app.db.chat_message(&s.room, s.seq).ok().flatten().filter(|m| m.deleted.is_none()).ok_or("no message")?;
+    if !m.mentions.iter().any(|x| *x == format!("{}{}", wire::AGENT_MENTION, s.machine)) {
+        return Err("no longer mentioned");
+    }
+    let room = app.db.chat_room(&s.room).ok().flatten().filter(|r| r.archived.is_none()).ok_or("no room")?;
+    let facts = Facts::of(app, None, &[&room]).await.map_err(|_| "no facts")?;
+    let agents = room_agents(app, &facts, &room).await.map_err(|_| "no agents")?;
+    let a = agents
+        .iter()
+        .find(|a| a.machine == s.machine && a.powers.iter().any(|p| p == THREADS_READ))
+        .ok_or("no grant")?;
+    let who = match &m.agent {
+        Some(am) => {
+            let on = agents.iter().find(|x| x.machine == *am).map_or(am.as_str(), |x| x.machine_name.as_str());
+            format!("{}'s agent on {on}", name_of(app, &m.author).await.map_err(|_| "no name")?)
+        }
+        None => name_of(app, &m.author).await.map_err(|_| "no name")?,
+    };
+    let told = Told {
+        room: &room,
+        seq: m.seq,
+        parent: m.parent,
+        author: who,
+        text: &m.text,
+        sessions: at_sessions(&without_code(&m.text)),
+    };
+    Ok(mention_op(&told, a, true))
 }
 
 // ---------------------------------------------------------------- live
@@ -1998,7 +2170,7 @@ pub(crate) async fn post_replied(
         Some(parent) => Some(ThreadPush { parent, also, followers: app.db.chat_thread_followers(&room.id, parent)? }),
         None => None,
     };
-    let mut pushed = push(
+    let pushed = push(
         app,
         &facts,
         &room,
@@ -2021,7 +2193,10 @@ pub(crate) async fn post_replied(
         None => name_of(app, &s.account).await?,
     };
     let told = Told { room: &room, seq, parent: b.parent, author: who, text, sessions: at_sessions(&plain) };
-    pushed.extend(tell_agents(app, &facts, &told, &stored, replying_to, agent, &mut unreached).await);
+    // The daemons are told after this returns (#419): an agent's mention
+    // shows in its status line, not in `pushed` or `unreached`.
+    let tells = plan_tells(app, &facts, &told, &stored, replying_to, agent).await;
+    deliver_later(app, tells, room.id.clone(), seq, b.parent).await;
     // An agent replying in a thread answers the mentions of its machine
     // there (#502).
     if let (Some(a), Some(parent)) = (agent, b.parent) {

@@ -10,6 +10,8 @@ import { MachineIcon } from "./icons";
 export function mentionStatusText(s: ChatMentionStatus): string {
   const who = s.machine_name || "the machine";
   switch (s.state) {
+    case "sending":
+      return `Sending to ${who}…`;
     case "delivered":
       return s.session ? `Delivered to ${who}/${s.session}` : `Delivered to ${who}`;
     case "fell_back":

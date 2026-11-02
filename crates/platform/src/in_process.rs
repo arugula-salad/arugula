@@ -116,6 +116,7 @@ impl PlatformArgs for HubArgs {
 /// The platform's background work, in the hub's process or its own: the
 /// base's, then every feature crate's.
 pub fn start(p: &Arc<Platform>) {
+    p.adopt();
     crate::hosted::start(p);
     crate::keys::start(p);
     // The job worker: runs' dispatch (M212) and schedules (M214).

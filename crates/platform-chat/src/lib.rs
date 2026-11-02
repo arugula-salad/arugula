@@ -56,6 +56,8 @@ mod chat_code_tests;
 #[cfg(test)]
 mod chat_files_tests;
 #[cfg(test)]
+mod chat_mention_redeliver_tests;
+#[cfg(test)]
 mod chat_mention_status_tests;
 #[cfg(test)]
 mod chat_people_tests;
@@ -233,6 +235,8 @@ impl features::Feature for Feature {
         // Saved messages' reminders (the base follows the hub's change
         // feed and the live bus: `arugula_platform::chat::start`).
         chat::start_reminders(p);
+        // Mentions lost mid-delivery by a restart (#419).
+        chat::start_stale_mentions(p);
     }
 
     fn jobs(&self, p: &Arc<Platform>, w: jobs::Worker) -> jobs::Worker {
@@ -322,6 +326,10 @@ impl features::Chat for Hooks {
         now: u64,
     ) -> anyhow::Result<features::Routed> {
         sessions::feedback::route(app, seen, v, now)
+    }
+
+    fn daemon_came<'a>(&'a self, app: &'a Platform, machine: &'a str) -> BoxFuture<'a, ()> {
+        Box::pin(chat::redeliver(app, machine))
     }
 
     fn box_post<'a>(

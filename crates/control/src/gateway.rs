@@ -134,6 +134,10 @@ impl PlatformPort for PlatformAt {
         self.port().roster_changed(team)
     }
 
+    fn daemon_came<'a>(&'a self, daemon: &'a str) -> BoxFuture<'a, anyhow::Result<()>> {
+        self.port().daemon_came(daemon)
+    }
+
     fn forge_standing<'a>(
         &'a self,
         account: &'a str,
