@@ -8099,6 +8099,33 @@ html[data-scheme="light"] .doc {
   color: var(--fg);
 }
 
+/* Where an @machine mention got to (#502): one dim line a machine. */
+.mention-status {
+  margin: 2px 0;
+}
+
+.mention-line {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--dim);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.mention-line.offline {
+  color: var(--warn, var(--dim));
+}
+
+.mention-link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  cursor: pointer;
+}
+
 /* Reactions (#104): chips under a message, and the menu that adds one. */
 .reactions {
   display: flex;
@@ -13703,16 +13730,96 @@ html[data-workspace="new"] .thread-panel {
   margin: 0 0 0.7em;
 }
 
-.md .doc-prototype-label {
+.md .doc-prototype-bar {
   position: absolute;
   top: 0;
+  right: 0;
+  z-index: 1;
+  display: flex;
+  align-items: stretch;
+  pointer-events: none;
+}
+
+.md .doc-prototype-label {
+  padding: 1px 8px;
+  font-size: 11px;
+  color: var(--dim, inherit);
+  background: var(--raised, rgba(128, 128, 128, 0.2));
+  border-radius: 0 var(--field-radius) 0 var(--field-radius);
+}
+
+.md .doc-prototype-full {
+  pointer-events: auto;
+  padding: 1px 8px;
+  font: inherit;
+  font-size: 11px;
+  color: var(--dim, inherit);
+  background: var(--raised, rgba(128, 128, 128, 0.2));
+  border: 0;
+  border-radius: var(--field-radius) 0 0 var(--field-radius);
+  cursor: pointer;
+}
+
+/* Full window (#507): the box is a popover, drawn in the top layer. A popover
+ * is display: none until it is open, and the box is the section: show it. */
+.md .doc-prototype-box[popover] {
+  display: block;
+  position: relative;
+  inset: auto;
+  width: auto;
+  height: auto;
+  padding: 0;
+  border: 0;
+  overflow: visible;
+  color: inherit;
+  background: none;
+}
+
+.md .doc-prototype-box[popover]:popover-open,
+.doc-prototype-box[popover]:popover-open {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100dvh;
+  margin: 0;
+  background: var(--bg, canvas);
+}
+
+.md .doc-prototype-box:popover-open .doc-prototype {
+  height: 100%;
+  border: 0;
+  border-radius: 0;
+}
+
+.doc-prototype-box:popover-open .doc-prototype-bar {
+  position: absolute;
+  top: 0;
+  right: 0;
+  z-index: 1;
+  display: flex;
+}
+
+.doc-prototype-box:popover-open .doc-prototype-full {
+  pointer-events: auto;
+  padding: 6px 12px;
+  font: inherit;
+  font-size: 16px;
+  color: inherit;
+  background: var(--raised, rgba(128, 128, 128, 0.35));
+  border: 0;
+  cursor: pointer;
+}
+
+.md .doc-prototype-copied {
+  position: absolute;
+  bottom: 0;
   right: 0;
   z-index: 1;
   padding: 1px 8px;
   font-size: 11px;
   color: var(--dim, inherit);
   background: var(--raised, rgba(128, 128, 128, 0.2));
-  border-radius: 0 var(--field-radius) 0 var(--field-radius);
+  border-radius: var(--field-radius) 0 0 0;
   pointer-events: none;
 }
 

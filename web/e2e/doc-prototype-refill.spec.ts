@@ -77,6 +77,9 @@ test.describe("a shared Doc", () => {
     const inside = v.page.frameLocator("[data-prototype-frame]");
     await expect(inside.locator("#v")).toHaveText("one", { timeout: 15_000 });
     await v.page.evaluate(() => ((window as unknown as { __same: boolean }).__same = true));
+    // A value the prototype stored (#508), to find again after the swap.
+    type Bridge = { arugula: { store: { get(k: string): Promise<unknown>; set(k: string, v: unknown): Promise<unknown> } } };
+    await inside.locator("html").evaluate(() => (window as unknown as Bridge).arugula.store.set("s", 42));
 
     // A refill: the block shows the new version and the older-copy prompt,
     // and the link is as it was.
@@ -97,6 +100,7 @@ test.describe("a shared Doc", () => {
     await v.page.clock.runFor(31_000);
     await expect(inside.locator("#v")).toHaveText("two", { timeout: 15_000 });
     await expect(v.page.locator("[data-prototype-run]")).toHaveCount(0);
+    expect(await inside.locator("html").evaluate(() => (window as unknown as Bridge).arugula.store.get("s"))).toBe(42);
     await expect(v.page.locator("[data-prototype-frame]")).toHaveCount(1);
     expect(await v.page.evaluate(() => (window as unknown as { __same?: boolean }).__same)).toBe(true);
     await v.ctx.close();

@@ -18,6 +18,7 @@ import "../shared/buttons.css";
 import { apply as applyAppearance } from "../shared/appearance";
 import { setupDesktop } from "../shared/desktop";
 import { setProtoOrigin } from "../shared/ui/prototype-frame";
+import "../shared/ui/prototype-storage";
 import { PlatformApiContext } from "../shared/platform-api";
 import { AppearanceLayer } from "../shared/ui/appearance";
 import { MenuLayer, PromptLayer } from "../shared/ui/menu";

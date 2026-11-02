@@ -16,11 +16,11 @@
 // On the shared viewer, where the reader is a stranger, nothing is framed until
 // they click "Run prototype". In the Doc block and on project Docs it runs at once.
 
-import { createContext } from "preact";
 import { useContext, useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 import { useScheme } from "./drawing";
 import { checkPrototype, prototypeInfo } from "./embeds";
-import { htmlMessage, readyFrom, schemeMessage } from "./prototype-messages";
+import { ProtoScope, useBridge } from "./prototype-bridge";
+import { escapeFrom, htmlMessage, readyFrom, schemeMessage } from "./prototype-messages";
 import runner from "./runner.html?raw";
 
 /** The frame's whole sandbox: scripts, and nothing that would give it a way out. */
@@ -58,10 +58,14 @@ function useMode(): Mode {
  * prototype navigating itself. */
 export const OWN_LOADS = 2;
 
-/** Which section a prototype is in (`<doc>/<section>`), said by the Doc. A
- * reader's click to run is kept under it, so a new version of the section
- * (#509) doesn't ask again. */
-export const ArmKey = createContext<string | null>(null);
+/** Full window rides on the top layer (#507): the box itself is a manual
+ * popover, so the same iframe is drawn over the window without moving in the
+ * DOM, which would reload it and lose its state. `position: fixed` wouldn't do:
+ * the pane area is CSS-scaled, and a transform makes `fixed` relative to it. */
+const canFull = typeof HTMLElement !== "undefined" && "showPopover" in HTMLElement.prototype;
+
+/** A reader's click to run, kept per Doc and section (`ProtoScope`) so a new
+ * version of the section (#509) doesn't ask again. */
 const armedKeys = new Set<string>();
 
 export function Prototype({ html, alt }: { html: string; alt: string }) {
@@ -72,7 +76,8 @@ export function Prototype({ html, alt }: { html: string; alt: string }) {
   const handed = useRef(false);
   const schemeNow = useRef(scheme);
   schemeNow.current = scheme;
-  const armKey = useContext(ArmKey);
+  const scope = useContext(ProtoScope);
+  const armKey = scope ? `${scope.doc}/${scope.section}` : null;
   const [armed, arm] = useState(() => armKey !== null && armedKeys.has(armKey));
   const setArmed = (on: boolean) => {
     if (on && armKey !== null) armedKeys.add(armKey);
@@ -80,9 +85,12 @@ export function Prototype({ html, alt }: { html: string; alt: string }) {
   };
   const [left, setLeft] = useState(false);
   const [round, setRound] = useState(0);
+  const [full, setFull] = useState(false);
+  const box = useRef<HTMLDivElement>(null);
   const { title, height } = prototypeInfo(alt);
   const why = checkPrototype(html);
   const live = !why && origin !== null && (!click || armed) && !left;
+  const copied = useBridge(frame, live);
   // A layout effect: the listener is there before the frame's first task, in
   // which the runner says it is ready.
   useLayoutEffect(() => {
@@ -107,6 +115,23 @@ export function Prototype({ html, alt }: { html: string; alt: string }) {
     }
     if (handed.current) frame.current?.contentWindow?.postMessage(schemeMessage(scheme), "*");
   }, [scheme]);
+  // The top layer follows `full`; Esc closes it, from the page or from the frame.
+  useEffect(() => {
+    const el = box.current;
+    if (!canFull || !el) return;
+    const open = el.matches(":popover-open");
+    if (full && !open) el.showPopover();
+    if (!full && open) el.hidePopover();
+    if (!full) return;
+    const key = (e: KeyboardEvent) => e.key === "Escape" && setFull(false);
+    const msg = (e: MessageEvent) => escapeFrom(e, frame.current?.contentWindow) && setFull(false);
+    addEventListener("keydown", key);
+    addEventListener("message", msg);
+    return () => {
+      removeEventListener("keydown", key);
+      removeEventListener("message", msg);
+    };
+  }, [full, live]);
   if (why || origin === null) {
     return (
       <div class="chart-note" data-prototype-note>
@@ -146,10 +171,29 @@ export function Prototype({ html, alt }: { html: string; alt: string }) {
   }
   // Remounted when the text or a reload changes: the page is handed over once.
   return (
-    <div class="doc-prototype-box">
-      <span class="doc-prototype-label" data-prototype-label>
-        Prototype · sandboxed
+    <div class="doc-prototype-box" ref={box} data-prototype-box {...(canFull ? { popover: "manual" } : {})}>
+      <span class="doc-prototype-bar">
+        {canFull && (
+          <button
+            type="button"
+            class="doc-prototype-full"
+            {...(full ? { "data-prototype-full-close": "" } : { "data-prototype-full": "" })}
+            aria-label={full ? "Close full window" : "Full window"}
+            title={full ? "Close (Esc)" : "Full window"}
+            onClick={() => setFull(!full)}
+          >
+            {full ? "✕" : "⤢ Full window"}
+          </button>
+        )}
+        <span class="doc-prototype-label" data-prototype-label>
+          Prototype · sandboxed
+        </span>
       </span>
+      {copied && (
+        <span class="doc-prototype-copied" data-prototype-copied role="status">
+          Copied
+        </span>
+      )}
       <iframe
         key={`${round}:${html}`}
         ref={frame}
@@ -160,9 +204,12 @@ export function Prototype({ html, alt }: { html: string; alt: string }) {
         allow=""
         loading="lazy"
         referrerpolicy="no-referrer"
-        style={{ height: `${height}px` }}
+        style={{ height: full ? "100%" : `${height}px` }}
         onLoad={() => {
-          if (++loads.current > OWN_LOADS) setLeft(true);
+          if (++loads.current > OWN_LOADS) {
+            setFull(false);
+            setLeft(true);
+          }
         }}
         {...(origin ? { src: `${origin}/` } : { srcdoc: runner })}
       />
