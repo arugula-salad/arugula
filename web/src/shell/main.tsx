@@ -36,6 +36,7 @@ import { measureCell } from "./ui/cells";
 import { currentSubscription, desktopPush, enableControlPush, registerWorker, setPushBackend, subscriptionParts } from "./push";
 import { setReadOnlyLink } from "./ui/link-note";
 import { setProtoOrigin } from "../shared/ui/prototype-frame";
+import "../shared/ui/prototype-storage";
 import { ControlSession, detectControl, restoreInvite, showMoving } from "./control";
 import { useControl } from "./trust/common";
 import { ControlGate } from "./trust/gate";

@@ -539,6 +539,11 @@ impl Doc {
         if let Some(e) = &st.error {
             v["error"] = json!(e);
         }
+        // The Doc's library id, which a block's number isn't: a page keeps
+        // a prototype's settings under it (#508).
+        if !self.link.doc.is_empty() {
+            v["doc"] = json!(self.link.doc);
+        }
         v
     }
 }

@@ -92,4 +92,23 @@ iframe also has `referrerpolicy="no-referrer"`, `allow=""` and
   it from its own host (`docs.` becomes `proto.`).
 - **No block domain, no proto origin.** The section shows "Prototypes need
   a block domain on this page." on those pages.
-- **Fonts** are `data:` only. A font host is #508's to decide.
+- **Bridge (#508).** The frame has no clipboard or storage, so
+  `runner.html` writes a shim, `window.arugula = {copy, store: {get, set,
+  all}}`, after the CSP and before the page. Each call is a `postMessage`
+  with an id (`prototype-messages.ts`), answered by `arugula.reply`. The Doc
+  answers only its own frame's `contentWindow` and only those shapes.
+  `copy` (at most 16 KB) is honoured only during a click
+  (`navigator.userActivation.isActive`; a click in the frame activates the
+  page above it), else `needs a click`. The store is the viewer's own
+  `localStorage` on the parent's origin, `arugula.proto.<doc>.<section>`
+  (the Doc's id; a share link's id on the viewer): a key of at most 128
+  characters, a value of at most 8 KB as JSON, 64 KB a section, else
+  `store full`. Nothing is shared between viewers or Docs. On a shared
+  link the store is memory only: it works for the visit and resets on
+  reload, because the page behind a link holds no browser storage in its
+  chunks (#1064). The default backend is memory (`prototype-bridge.ts`);
+  only the app and the platform page set the browser's
+  (`prototype-storage.ts`).
+- **Fonts** are `data:` only, and there are no Google Fonts: a font request
+  would be the frame's one network call, and the CSP holds the line at
+  none. Inline the font as a `data:` URL.

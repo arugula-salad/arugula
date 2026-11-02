@@ -156,7 +156,7 @@ function Page({ view }: { view: View }) {
       </Paper>
     );
   }
-  return <DocBlock id={0} s={view.state} fresh={new Map()} load={view.load} foot={<Made />} />;
+  return <DocBlock id={0} docKey={base().id} s={view.state} fresh={new Map()} load={view.load} foot={<Made />} />;
 }
 
 // The Doc's own look (#253) has a light set and a dark one, which style.css

@@ -1146,6 +1146,9 @@ button.att {
   flex-wrap: wrap;
   gap: 6px;
   margin-top: 10px;
+  /* A long list (dozens of boards) scrolls inside the screen, a phone's too. */
+  max-height: min(280px, 40vh);
+  overflow-y: auto;
 }
 
 .prompt-choices button {
@@ -1159,6 +1162,7 @@ button.att {
 }
 
 .prompt-choices button:hover,
+.prompt-choices button.active,
 .prompt-choices button:focus-visible {
   border-color: var(--accent);
 }
@@ -13798,6 +13802,19 @@ html[data-workspace="new"] .thread-panel {
   background: var(--raised, rgba(128, 128, 128, 0.35));
   border: 0;
   cursor: pointer;
+}
+
+.md .doc-prototype-copied {
+  position: absolute;
+  bottom: 0;
+  right: 0;
+  z-index: 1;
+  padding: 1px 8px;
+  font-size: 11px;
+  color: var(--dim, inherit);
+  background: var(--raised, rgba(128, 128, 128, 0.2));
+  border-radius: var(--field-radius) 0 0 0;
+  pointer-events: none;
 }
 
 .md .doc-prototype-run {

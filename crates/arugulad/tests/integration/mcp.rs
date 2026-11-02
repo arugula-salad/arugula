@@ -2832,6 +2832,8 @@ async fn an_agent_plans_a_deploy_and_asks_and_never_approves() {
 #[derive(Clone, Default)]
 struct FakeBoards {
     calls: Arc<std::sync::Mutex<Vec<(String, Value)>>>,
+    /// Whether #31 blocks #12's row: it shows the relation and leaves the Ready line.
+    related: Arc<std::sync::atomic::AtomicBool>,
 }
 
 #[cfg(feature = "labs")]
@@ -2885,7 +2887,24 @@ async fn fake_boards(f: FakeBoards) -> String {
                 { "id": "brd_1", "project": "prj_1", "title": "Launch", "created_by": "a1", "created_at": 1,
                   "updated_at": 1 }] }))
             .into_response(),
-            ("GET", "/api/daemon/boards/brd_1") => Json(view()).into_response(),
+            ("GET", "/api/daemon/boards/brd_1") => {
+                let mut v = view();
+                if f.related.load(std::sync::atomic::Ordering::SeqCst) {
+                    v["zones"][0]["rows"][0]["relations"] = json!([{ "id": "rel_1", "kind": "blocks", "direction": "in",
+                        "source": "agent", "item": "fi_31", "removable": true }]);
+                } else {
+                    v["ready"] = json!(["row_1"]);
+                }
+                Json(v).into_response()
+            }
+            ("POST", "/api/daemon/projects/prj_1/relations") => {
+                f.related.store(true, std::sync::atomic::Ordering::SeqCst);
+                Json(json!({ "id": "rel_1" })).into_response()
+            }
+            ("DELETE", "/api/daemon/projects/prj_1/relations/rel_1") => {
+                f.related.store(false, std::sync::atomic::Ordering::SeqCst);
+                Json(json!({})).into_response()
+            }
             ("POST", "/api/daemon/projects/prj_1/boards" | "/api/daemon/boards/brd_1/close") => {
                 let mut v = view();
                 if b["title"].is_string() {
@@ -3098,6 +3117,20 @@ async fn an_agent_reads_and_writes_a_board_where_the_flag_is_on() {
     )
     .await;
     assert!(attached["summary"].as_str().unwrap().contains("attached as proof to #12"), "{attached}");
+    // Relate as an agent sends it: #31 blocks #12, so #12's row leaves the Ready line; `to` as a list of one
+    // is taken too.
+    let relate = json!({ "kind": "relate", "board": "brd_1", "item": "#31", "relation": "blocks", "to": "#12" });
+    let related = call(&s, "board_write", relate).await;
+    let text = related["summary"].as_str().unwrap();
+    assert!(text.contains("Related: #31 blocks #12.") && text.contains("0 ready."), "{related}");
+    let unrelated = call(
+        &s,
+        "board_write",
+        json!({ "kind": "unrelate", "board": "brd_1", "item": "#31", "relation": "blocks", "to": ["#12"] }),
+    )
+    .await;
+    let text = unrelated["summary"].as_str().unwrap();
+    assert!(text.contains("Took off the relation between #31 and #12.") && text.contains("1 ready."), "{unrelated}");
     call(&s, "board_write", json!({ "kind": "note", "board": "brd_1", "item": "#12", "text": "ok", "rev": 2 })).await;
     let stale = refused(
         &s,
