@@ -40,6 +40,9 @@ export interface DocState {
   entries: Section[];
   assets?: Asset[];
   rev: number;
+  /** The Doc's id in the library (a block's number isn't stable); the
+   * daemon's block has it, a snapshot doesn't (#508). */
+  doc?: string;
   /** When it was shared with a link, and last updated (#1066); the link
    * itself is the owner's to ask for (`doc_shares`). */
   shared?: { made: number; updated: number } | null;
@@ -158,7 +161,7 @@ export function DocBlock({
             {e.body !== null ? (
               // A refill is a new element, so its highlight plays again.
               <div key={e.rev} class={fresh.get(e.id) === e.rev ? "doc-body doc-fresh" : "doc-body"}>
-                <ProtoScope.Provider value={{ doc: docKey ?? String(id), section: e.id }}>
+                <ProtoScope.Provider value={{ doc: docKey ?? s.doc ?? String(id), section: e.id }}>
                   <Markdown text={e.body} refs={null} embeds image={image} />
                 </ProtoScope.Provider>
               </div>

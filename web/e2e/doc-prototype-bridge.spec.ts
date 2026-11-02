@@ -45,6 +45,9 @@ setTimeout(() => {
 </body>
 \`\`\``;
 
+/** The Doc's id in the library: what its kept settings are under, not the block's number. */
+const libraryId = async (page: Page, block: number) => ((await (await page.request.get(`/api/blocks/${block}`)).json()) as { state: { doc: string } }).state.doc;
+
 const frameOf = (page: Page, doc: number) => page.frameLocator(`[data-doc-block="${doc}"] [data-prototype-frame]`);
 
 test("a click in the frame copies to the clipboard, and a copy with no click is refused", async ({ page }) => {
@@ -80,7 +83,7 @@ test("a kept slider comes back after a reload, and another Doc doesn't see it", 
   await expect(a.locator("#out")).toHaveText("ready", { timeout: 15_000 });
   await expect(b.locator("#out")).toHaveText("ready", { timeout: 15_000 });
   await a.locator("#s").fill("73");
-  await expect.poll(() => page.evaluate((d) => Object.keys(localStorage).filter((k) => k.startsWith("arugula.proto.")).sort().join(), doc)).toBe(`arugula.proto.${doc}.s1`);
+  await expect.poll(async () => page.evaluate(() => Object.keys(localStorage).filter((k) => k.startsWith("arugula.proto.")).sort().join())).toBe(`arugula.proto.${await libraryId(page, doc)}.s1`);
   await expect(b.locator("#s")).toHaveValue("50");
 
   await page.reload();
@@ -89,6 +92,24 @@ test("a kept slider comes back after a reload, and another Doc doesn't see it", 
   await expect(frameOf(page, doc).locator("#s")).toHaveValue("73");
   await expect(frameOf(page, other).locator("#out")).toHaveText("ready", { timeout: 15_000 });
   await expect(frameOf(page, other).locator("#s")).toHaveValue("50");
+});
+
+test("the same Doc reopened in a new block still has its slider", async ({ page }) => {
+  await reset(page);
+  const [term] = await panes(page);
+  const doc = await newDoc(post(page), term);
+  await fill(post(page), doc, "s1", page1);
+  await expect(frameOf(page, doc).locator("#out")).toHaveText("ready", { timeout: 15_000 });
+  await frameOf(page, doc).locator("#s").fill("31");
+  await expect.poll(() => page.evaluate(() => Object.keys(localStorage).filter((k) => k.startsWith("arugula.proto.")).length)).toBe(1);
+  // The block is closed; the Doc stays in the library, and a new block shows it.
+  const library = await libraryId(page, doc);
+  await post(page)(`/api/panes/${doc}/close`, {});
+  await expect(page.locator(`[data-doc-block="${doc}"]`)).toHaveCount(0, { timeout: 15_000 });
+  const again = await post(page)("/api/blocks", { type: "doc", config: { doc: library }, split: term, local: true });
+  expect(again.block).not.toBe(doc);
+  await expect(frameOf(page, again.block!).locator("#out")).toHaveText("ready", { timeout: 15_000 });
+  await expect(frameOf(page, again.block!).locator("#s")).toHaveValue("31");
 });
 
 test("a message from another window gets no answer, and the caps are enforced", async ({ page }) => {
@@ -120,7 +141,7 @@ test("a message from another window gets no answer, and the caps are enforced", 
     doc,
   );
   expect(heard, "the sibling heard nothing").toEqual([]);
-  expect(await page.evaluate((d) => localStorage.getItem(`arugula.proto.${d}.s1`), doc)).toBeNull();
+  expect(await page.evaluate(() => Object.keys(localStorage).filter((k) => k.startsWith("arugula.proto.")))).toEqual([]);
 
   // Oversized keys, values and sections, and unknown shapes.
   const r = await inside.locator("html").evaluate(async () => {
