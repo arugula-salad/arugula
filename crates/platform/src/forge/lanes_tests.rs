@@ -163,7 +163,11 @@ async fn a_row_on_a_private_pr_is_in_review_for_everyone() {
         assert_eq!(lane, "lane_review", "{who}: {v}");
         assert_eq!(r.get("live").is_some(), who == "bob", "{who}: only the reader of acme/app has a chip: {v}");
         assert!(who == "bob" || !v.to_string().contains("secret plan"), "{v}");
-        assert_eq!(v["board"]["progress"], json!({ "done": 0, "total": 1, "proven": 0, "review": 1, "doing": 0 }), "{who}");
+        assert_eq!(
+            v["board"]["progress"],
+            json!({ "done": 0, "total": 1, "proven": 0, "review": 1, "doing": 0 }),
+            "{who}"
+        );
     }
 }
 

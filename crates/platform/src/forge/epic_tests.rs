@@ -185,8 +185,13 @@ async fn progress_counts_the_rows_in_review_and_doing_too() {
         call(&base, "bob", "POST", &format!("/api/projects/{team}/boards"), Some(json!({ "title": "L" }))).await;
     let id = b["board"]["id"].as_str().unwrap().to_owned();
     // fi_a1 is an open PR: Review.
-    for (kind, ptr) in [("issue", next.as_str()), ("forge_item", "fi_pl1"), ("forge_item", "fi_pl2"), ("forge_item", "fi_a1"), ("issue", done.as_str())]
-    {
+    for (kind, ptr) in [
+        ("issue", next.as_str()),
+        ("forge_item", "fi_pl1"),
+        ("forge_item", "fi_pl2"),
+        ("forge_item", "fi_a1"),
+        ("issue", done.as_str()),
+    ] {
         row(&base, &id, kind, ptr).await;
     }
     let (_, v) = call(&base, "bob", "GET", &format!("/api/boards/{id}"), None).await;
