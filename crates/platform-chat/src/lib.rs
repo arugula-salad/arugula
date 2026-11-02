@@ -56,6 +56,8 @@ mod chat_code_tests;
 #[cfg(test)]
 mod chat_files_tests;
 #[cfg(test)]
+mod chat_mention_status_tests;
+#[cfg(test)]
 mod chat_people_tests;
 #[cfg(test)]
 mod chat_pins_tests;

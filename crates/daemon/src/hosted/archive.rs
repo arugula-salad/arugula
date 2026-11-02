@@ -121,7 +121,7 @@ pub async fn flush(only: Option<&[u64]>) -> OpAnswer {
             let kept = sent.iter().filter(|k| **k).count();
             info!(open = n, kept, "hosted: archived the open agents' transcripts before a rebuild");
             if kept == n {
-                OpAnswer::Done { url: None }
+                OpAnswer::Done { url: None, routed: None }
             } else {
                 OpAnswer::Failed { error: format!("{} of {n} transcripts weren't archived", n - kept) }
             }

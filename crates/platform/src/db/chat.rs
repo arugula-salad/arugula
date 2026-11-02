@@ -763,6 +763,7 @@ impl Db {
             params![room, old],
         )?;
         super::chat_reactions::drop_for_message(&tx, room, seq)?;
+        super::chat_mention_status::drop_for_message(&tx, room, seq)?;
         super::chat_files::drop_for_message(&tx, room, seq)?;
         super::chat_pins::drop_for_message(&tx, room, seq)?;
         tx.commit()?;
@@ -1348,6 +1349,7 @@ pub(super) fn drop_rooms_where(tx: &impl Sql, cond: &str, arg: impl super::sql::
             "chat_reads",
             "chat_members",
             "chat_reactions",
+            "chat_mention_status",
             "chat_saved",
             "chat_files",
             "chat_topics",
@@ -1396,6 +1398,12 @@ pub(crate) fn erase_account(tx: &impl Sql, account: &str, machines: &[String], d
     tx.execute(
         "DELETE FROM chat_reactions WHERE account = ?1 OR EXISTS (SELECT 1 FROM chat_messages m
          WHERE m.room = chat_reactions.room AND m.seq = chat_reactions.seq AND m.author = ?1)",
+        params![account],
+    )?;
+    // The status of the mentions in the messages it blanks.
+    tx.execute(
+        "DELETE FROM chat_mention_status WHERE EXISTS (SELECT 1 FROM chat_messages m
+         WHERE m.room = chat_mention_status.room AND m.seq = chat_mention_status.seq AND m.author = ?1)",
         params![account],
     )?;
     // Files on the messages it blanks, and any it uploaded and never posted.
