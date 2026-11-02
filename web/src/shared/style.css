@@ -6956,39 +6956,12 @@ html[data-scheme="light"] .doc {
   border-bottom-color: var(--accent);
 }
 
-.agents-body {
-  flex: 1;
-  overflow: auto;
-  padding: 16px 16px 32px;
-}
-
-.agents-body > * {
-  max-width: 960px;
-  margin: 0 auto;
-}
-
-.agents-lead {
-  margin: 0 8px 14px;
-  max-width: 720px;
-  line-height: 1.5;
-  color: var(--dim);
-}
-
-.agents-lead b {
-  color: var(--fg);
-  font-weight: 600;
-}
-
-.agents-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  align-items: center;
-  margin: 0 8px 16px;
-}
-
+/* What was just done, under the search. */
 .agents-said {
-  color: var(--accent);
+  margin: 0;
+  padding: var(--space-2) var(--space-5) 0;
+  color: var(--dim);
+  font-size: 12px;
 }
 
 .agents-empty {
@@ -7019,59 +6992,9 @@ html[data-scheme="light"] .doc {
   text-decoration: underline;
 }
 
-.agents-section-head {
-  display: flex;
-  gap: 8px;
-  align-items: baseline;
-  margin: 20px 8px 8px;
-  font-size: 14px;
-  font-weight: 600;
-  min-width: 0;
-}
-
-.agents-section-head .dim {
-  font-weight: normal;
-  font-size: 12px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  min-width: 0;
-}
-
-.agents-remove {
-  margin-left: auto;
-  font-size: 12px;
-  color: var(--dim);
-  text-decoration: underline;
-}
-
-.agents-remove:hover {
-  color: var(--fg);
-}
-
 .agents-none {
   margin: 0 8px;
   color: var(--dim);
-}
-
-.agents-cards {
-  list-style: none;
-  margin: 0;
-  padding: 0 8px;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.agents-card {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px 16px;
-  padding: 10px 12px;
-  border-radius: var(--card-radius);
-  background: var(--surface);
-  border: 1px solid var(--line);
 }
 
 /* What went wrong on the Agents and Docs pages, the same red. */
@@ -7081,10 +7004,6 @@ html[data-scheme="light"] .doc {
 
 .agents-loading {
   margin: 0 8px;
-}
-
-.agents-card.waiting {
-  border-color: var(--accent);
 }
 
 /* Chat's sidebar: the machines it doesn't show, and why. */
@@ -7136,91 +7055,59 @@ html[data-scheme="light"] .doc {
   color: var(--danger);
 }
 
-/* Recipes: which machine's, and the places with none yet, compact. */
-.agents-machine {
-  margin: 4px 8px 4px;
-  font-size: 15px;
-}
-
-.agents-empty-list {
-  list-style: none;
-  margin: 4px 0;
-  padding: 0 8px;
-}
-
-.agents-empty-list li {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  padding: 3px 0;
-}
-
-.agents-empties > p {
-  margin: 4px 8px;
-}
-
-/* A secondary small button like the page's others (UI audit #173). */
-.agents-inline-new {
-  flex: none;
-  white-space: nowrap;
-  margin-left: auto;
-}
-
-.agents-inline-new + .agents-remove {
-  margin-left: 8px;
-}
-
-.agents-card-text {
-  flex: 1 1 280px;
-  min-width: 0;
-}
-
-.agents-card-head {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  align-items: baseline;
-}
-
-.agents-card-text p {
-  margin: 2px 0 0;
-  line-height: 1.4;
-  overflow-wrap: anywhere;
-}
-
-.agents-how {
-  display: inline-block;
-  margin-top: 6px;
-  font-size: 11px;
-}
-
-.agents-buttons {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
+/* The recipe form, in the preview's place: its buttons stay in view. */
 .agents-form {
+  flex: 1;
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  margin: 0 8px 16px;
-  padding: 12px 14px;
-  max-width: 760px;
-  border-radius: var(--card-radius);
-  background: var(--surface);
-  border: 1px solid var(--line);
+  min-height: 0;
   text-align: left;
 }
 
-.agents-form-title {
-  margin: 0;
-  font-size: 14px;
+.agents-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 
-.agents-form > .dim {
+/* A preview's words: a heading, what the recipe says, and what it has. */
+.agents-words-head {
+  margin: var(--space-5) 0 var(--space-2);
+  color: var(--dim);
+  font: 700 13px/1 var(--f-display);
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.agents-recipe-prompt {
   margin: 0;
-  font-size: 12px;
+  padding: var(--space-3);
+  border: 1px solid var(--line);
+  border-radius: var(--field-radius);
+  background: var(--bg);
+  font: 12.5px/1.5 var(--f-mono);
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.agents-facts {
+  margin: 0;
+}
+
+.agents-facts dt {
+  margin-top: var(--space-3);
+  color: var(--dim);
+  font: 700 13px/1 var(--f-display);
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.agents-facts dt:first-child {
+  margin-top: 0;
+}
+
+.agents-facts dd {
+  margin: var(--space-1) 0 0;
   overflow-wrap: anywhere;
 }
 
@@ -7262,11 +7149,6 @@ html[data-scheme="light"] .doc {
   padding-top: 4px;
 }
 
-.agents-form .ws-actions {
-  justify-content: flex-start;
-  padding-left: 120px;
-}
-
 .agents-shelf-head .dim {
   overflow: hidden;
   text-overflow: ellipsis;
@@ -7277,10 +7159,6 @@ html[data-scheme="light"] .doc {
 .phone .agents-field {
   grid-template-columns: 1fr;
   gap: 2px;
-}
-
-.phone .agents-form .ws-actions {
-  padding-left: 0;
 }
 
 .agents-recipe-list li code {
