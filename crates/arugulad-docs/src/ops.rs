@@ -92,19 +92,19 @@ impl Handle<Docs> for DocsList {
             .map(|m| {
                 let shape = m.shape.unwrap_or_default();
                 DocRow {
-                open: open.get(&m.id).copied(),
-                shared: links.get(&m.id).map(|(link, e)| DocShared {
-                    made: e.made,
-                    updated: e.updated,
-                    link: link.clone(),
-                }),
-                id: m.id,
-                title: m.title,
-                made: m.made,
-                updated: m.updated,
-                by: m.by,
-                summary: shape.summary,
-                sections: shape.sections,
+                    open: open.get(&m.id).copied(),
+                    shared: links.get(&m.id).map(|(link, e)| DocShared {
+                        made: e.made,
+                        updated: e.updated,
+                        link: link.clone(),
+                    }),
+                    id: m.id,
+                    title: m.title,
+                    made: m.made,
+                    updated: m.updated,
+                    by: m.by,
+                    summary: shape.summary,
+                    sections: shape.sections,
                 }
             })
             .collect())

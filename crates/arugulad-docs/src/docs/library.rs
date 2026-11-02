@@ -350,7 +350,10 @@ fn copy_in(state_dir: &Path, old: &Old, layout_title: Option<&str>, copy: Copy) 
         .filter(|t| !t.trim().is_empty())
         .or_else(|| layout_title.map(str::to_owned).filter(|t| !t.trim().is_empty()))
         .unwrap_or_else(|| "Untitled".to_owned());
-    write_meta(&to, &Meta { id: id.clone(), title, made, updated, by: "migrated".into(), shape: Some(shape::of(&to)) })?;
+    write_meta(
+        &to,
+        &Meta { id: id.clone(), title, made, updated, by: "migrated".into(), shape: Some(shape::of(&to)) },
+    )?;
     Ok(id)
 }
 
@@ -528,7 +531,11 @@ mod tests {
         std::fs::write(a_dir.join("s1.md"), "Three plain words").unwrap();
         touch(&a_dir, Some("Renamed"));
         let shape = read_meta(&a_dir).unwrap().shape.unwrap();
-        assert_eq!((shape.summary.as_str(), shape.sections[0].words), ("Three plain words", 3), "a fill changes its row");
+        assert_eq!(
+            (shape.summary.as_str(), shape.sections[0].words),
+            ("Three plain words", 3),
+            "a fill changes its row"
+        );
         // A Doc from before `shape` gets one when it's listed, and keeps
         // when it last changed.
         let mut old = read_meta(&a_dir).unwrap();

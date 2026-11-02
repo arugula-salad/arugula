@@ -1832,6 +1832,12 @@ link?: string | null, session?: string | null, split?: number | null, };
 export type DocOpened = { pane: number, };
 
 /**
+ * `GET /api/docs/ID/preview` (#588): a Doc's first paragraphs, as plain
+ * text, without opening it in a block.
+ */
+export type DocPreview = { opening: Array<string>, };
+
+/**
  * One Doc in the library (#1493): `GET /api/docs`. `open` is the block
  * that shows it now, `shared` its link's dates and id (never its key).
  */

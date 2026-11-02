@@ -117,8 +117,7 @@ fn bodies(dir: &Path) -> Vec<(String, Option<String>)> {
     struct Outline {
         sections: Vec<Section>,
     }
-    let Some(outline) =
-        std::fs::read(dir.join(OUTLINE)).ok().and_then(|b| serde_json::from_slice::<Outline>(&b).ok())
+    let Some(outline) = std::fs::read(dir.join(OUTLINE)).ok().and_then(|b| serde_json::from_slice::<Outline>(&b).ok())
     else {
         return vec![];
     };
@@ -189,10 +188,15 @@ mod tests {
     /// read as a 27-minute one.
     #[test]
     fn a_fence_is_a_figure_and_its_code_is_not_words() {
-        let dir = doc("fence", &[(
-            "Try it",
-            Some("Two words.\n\n```prototype Tune it\n<div>one two three four five six</div>\n```\n\n![a shot](assets/a.png)\n\n```rust\nlet not_a_figure = 1;\n```\n"),
-        )]);
+        let dir = doc(
+            "fence",
+            &[(
+                "Try it",
+                Some(
+                    "Two words.\n\n```prototype Tune it\n<div>one two three four five six</div>\n```\n\n![a shot](assets/a.png)\n\n```rust\nlet not_a_figure = 1;\n```\n",
+                ),
+            )],
+        );
         let s = of(&dir);
         assert_eq!(s.sections, [DocSectionShape { heading: "Try it".into(), words: 2, figures: 2 }]);
         std::fs::remove_dir_all(dir).unwrap();
@@ -200,10 +204,18 @@ mod tests {
 
     #[test]
     fn the_summary_is_the_first_paragraph_as_plain_text() {
-        let dir = doc("summary", &[
-            ("Empty so far", None),
-            ("Tables first", Some("## A heading\n\n| a | b |\n| - | - |\n\n> [!NOTE]\n> A callout.\n\n- a list\n\n1. a step\n\n---\n\n**Read** the `snake_case` [plan](https://x.test/y)\nacross two lines.\n\nThe second one.")),
-        ]);
+        let dir = doc(
+            "summary",
+            &[
+                ("Empty so far", None),
+                (
+                    "Tables first",
+                    Some(
+                        "## A heading\n\n| a | b |\n| - | - |\n\n> [!NOTE]\n> A callout.\n\n- a list\n\n1. a step\n\n---\n\n**Read** the `snake_case` [plan](https://x.test/y)\nacross two lines.\n\nThe second one.",
+                    ),
+                ),
+            ],
+        );
         let s = of(&dir);
         assert_eq!(s.summary, "Read the snake_case plan across two lines.");
         assert_eq!(s.sections.len(), 2);
