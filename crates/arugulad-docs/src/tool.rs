@@ -10,7 +10,7 @@ use arugula_proto::{
 use arugulad_base::mcp::{
     ops::{call_of, kind_of},
     registry,
-    tools::{Args, Call, Def, Kind, Needs, Out, PaneArg, confine, done, line, parse},
+    tools::{Args, Call, Def, Kind, Needs, NoArgs, Out, PaneArg, confine, done, line, parse},
 };
 use futures_util::future::BoxFuture;
 use rmcp::handler::server::common::schema_for_type;
@@ -80,26 +80,10 @@ pub struct DocAssetArgs {
     pub data: Option<String>,
 }
 
-/// `doc`'s kinds.
-pub static DOC: &[Kind] = &[
-    Kind {
-        name: "new",
-        description: "A Doc: a block beside your pane that holds a report, plan or write-up, with its outline (every section's heading and intent) shown at once. Returns the block and the section ids (s1, s2, …); fill them next, in order.",
-        schema: schema_for_type::<DocNewArgs>,
-        flag: None,
-    },
-    kind_of::<DocsList, Docs>(),
-    Kind {
-        name: "open",
-        description: "Open a Doc from doc list in a block beside your pane, to read or to go on with: returns the block, and you can doc fill it, as after doc new (the sections are the outline's, s1, s2, …; its state has them). A Doc already open in a block is that block, not a second one: the user may have it open beside another pane.",
-        schema: schema_for_type::<DocOpenArgs>,
-        flag: None,
-    },
-    Kind {
-        name: "fill",
-        description: r##"Write one section of a Doc (its block, the section id, its Markdown): headings, paragraphs, lists, **bold**, *italic*, `code`, links and tables. No HTML. A picture is ![alt](assets/<name>) after doc asset has put it there. A section is at most 64 KB, a Doc 40 sections and 1 MiB; filling a section again replaces it.
-
-A callout is a quote whose first line is [!NOTE], [!TIP], [!IMPORTANT], [!WARNING] or [!CAUTION], as on GitHub: "> [!TIP]" then "> Run it twice." Keep them for what the reader mustn't miss.
+/// What `doc fences` returns: the reference for the fences a section can
+/// hold, kept out of `doc`'s description, which an agent sees only the
+/// first 2048 characters of (#606).
+const FENCES: &str = r##"A callout is a quote whose first line is [!NOTE], [!TIP], [!IMPORTANT], [!WARNING] or [!CAUTION], as on GitHub: "> [!TIP]" then "> Run it twice." Keep them for what the reader mustn't miss.
 
 Four kinds of fenced block draw as more than code, in the section that talks about them.
 Stat tiles: a ```stats fence holding a list of 1 to 6 tiles; label and value are text, delta and its tone (up, down or flat) are optional. For example:
@@ -117,19 +101,44 @@ Grey first (stone and ink), one accent per figure. Text stays ink. For example:
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 40" font-size="11" text-anchor="middle"><rect x="2" y="8" width="60" height="24" rx="4" fill="stone-soft" stroke="stone"/><text x="32" y="24" fill="ink">Idea</text><path d="M62 20 H98" stroke="ink"/><rect x="98" y="8" width="60" height="24" rx="4" fill="leaf-soft" stroke="leaf"/><text x="128" y="24" fill="ink">App</text></svg>
 ```
 An interactive or tunable prototype goes in a ```prototype fence (a ```html fence stays code). The fence line holds a title and height=N anywhere (120 to 2000 pixels, 480 by default), as in ```prototype Tuner height=480. It is one self-contained HTML page of at most 64 KB that runs in a sandboxed frame: inline <script> and <style>, no external src or href (so no <script src>, <link>, iframe, object, embed, base or meta http-equiv), no network, and fonts only as data: URLs. Pointer and touch work, and the viewer has a Full window button. Two calls reach out of the frame and return promises that reject with an error: arugula.copy(text) copies up to 16 KB, only from a click inside the frame; arugula.store.get(key), .set(key, value) and .all() keep settings per viewer (a key up to 128 characters, a JSON value up to 8 KB, 64 KB a section), in memory only on a shared link. Call store.all() on load to restore what the viewer set. Fill the section again to update it: every open view changes, and a share gets the new version when the person taps Update.
-Every fence is checked before anything is written: a bad chart, tile, drawing or prototype is refused with one line saying what to fix, and the section stays as it was."##,
+Every fence is checked before anything is written: a bad chart, tile, drawing or prototype is refused with one line saying what to fix, and the section stays as it was."##;
+
+/// `doc`'s kinds.
+pub static DOC: &[Kind] = &[
+    Kind {
+        name: "new",
+        description: "Make a Doc and its outline (each section's heading and intent). Returns the block and section ids (s1, s2, …): fill them in order.",
+        schema: schema_for_type::<DocNewArgs>,
+        flag: None,
+    },
+    kind_of::<DocsList, Docs>(),
+    Kind {
+        name: "open",
+        description: "Open a Doc from list in a block beside your pane, to read or go on with; fill it as after new. A Doc already open is that block, not a second one.",
+        schema: schema_for_type::<DocOpenArgs>,
+        flag: None,
+    },
+    Kind {
+        name: "fill",
+        description: r##"Write one section (block, section id, Markdown): headings, lists, **bold**, *italic*, `code`, links, tables; no HTML. ![alt](assets/<name>) shows a picture put there by asset first. At most 64 KB a section, 40 sections and 1 MiB a Doc; filling again replaces. Callouts, ```stats, ```chart, ```svg and ```prototype (an interactive page, with arugula.copy and arugula.store) draw as more than code: call doc fences for their format before writing one."##,
         schema: schema_for_type::<DocFillArgs>,
         flag: None,
     },
     Kind {
+        name: "fences",
+        description: "The format of callouts and the ```stats, ```chart, ```svg and ```prototype fences: read it first.",
+        schema: schema_for_type::<NoArgs>,
+        flag: None,
+    },
+    Kind {
         name: "asset",
-        description: r##"Put a picture in a Doc (its block, a name, and one of path or data): a PNG, JPEG, GIF or WebP, at most 2 MB, at most 20 per Doc. path is an absolute path to a file you saved; an agent on a machine of its own sends data (base64) instead. What the bytes are decides the type, so the name has to end in the right extension (.png, .jpg, .jpeg, .gif, .webp); an SVG file is refused: draw it with a ```svg fence. Returns assets/<name>; show it in a section with ![what it shows](assets/<name>). Put the asset before the doc fill that names it: a fill naming an asset the Doc doesn't have is refused. Only assets/ images show; an http:// or ../ one is refused. A name already used is replaced. For example: {"kind": "asset", "block": 7, "name": "flow.png", "path": "/tmp/flow.png"}."##,
+        description: r##"Put a picture in a Doc (block, name, path or data): PNG, JPEG, GIF or WebP, up to 2 MB. path is an absolute path; an agent on a machine of its own sends base64 data. The name ends in the file's real extension; an SVG file is refused (use a ```svg fence). Put it before the fill that names it, or that fill is refused."##,
         schema: schema_for_type::<DocAssetArgs>,
         flag: None,
     },
     Kind {
         name: "share",
-        description: r##"Ask the user to share a finished Doc (its block) with a link anyone can open, without an account. A card asks them on the Doc and nothing is published until they tap Share; this returns {status: "waiting"} at once. Call share again on the same block to learn the outcome: shared (with the url, which you can give the user), declined, lapsed (a card nobody answered in a day) or failed (with why). A Doc already shared answers shared. Asking again after a decline raises a new card. Don't ask more than once for a Doc unless the user wants it."##,
+        description: r##"Ask the user to share a finished Doc with a link anyone can open. They decide on a card; this returns {status: "waiting"} at once. Call share again for the outcome: shared (with the url), declined, lapsed (unanswered in a day) or failed (with why). Ask once unless the user wants more."##,
         schema: schema_for_type::<DocShareArgs>,
         flag: None,
     },
@@ -140,7 +149,7 @@ fn def() -> Def {
     Def {
         name: "doc",
         title: "Build a document for the user",
-        description: "Build a Doc, a report, plan or write-up longer than a screen, in a block beside your pane that the user (and anyone the session is shared with) watches fill in. Make the outline first with new, so they see every section at once; then fill each section in order and say one sentence about it in the pane. Docs are kept: to go on with an earlier one, doc list and then doc open. Never write the Doc's files by hand.",
+        description: "Build a Doc, a report, plan or write-up longer than a screen, in a block beside your pane that the user watches fill in. Make the outline with new first, then fill each section in order, saying one sentence about it in the pane. Never write the Doc's files by hand.",
         args: Args::Kinds { kinds: DOC.iter().collect(), default: None },
         read_only: false,
         destructive: false,
@@ -173,6 +182,7 @@ fn run<'a>(call: &'a Call<'a>, kind: Option<&'static str>, args: Value) -> BoxFu
                 Ok(a) => doc_fill(call, a).await,
                 Err(e) => Err(e),
             },
+            Some("fences") => done(FENCES, json!({})),
             Some("asset") => match parse(args) {
                 Ok(a) => doc_asset(call, a).await,
                 Err(e) => Err(e),
@@ -368,11 +378,11 @@ async fn doc_asset(call: &Call<'_>, a: DocAssetArgs) -> Out {
 mod tests {
     use super::*;
 
-    /// #256: `doc fill`'s guide names the Doc's colours, and its drawing,
-    /// which uses them, passes the check.
+    /// #256: `doc fences` names the Doc's colours, and its drawing, which
+    /// uses them, passes the check.
     #[test]
-    fn doc_fill_teaches_the_named_colours() {
-        let fill = DOC.iter().find(|k| k.name == "fill").unwrap().description;
+    fn doc_fences_teaches_the_named_colours() {
+        let fill = FENCES;
         for name in ["leaf", "pepper", "sky", "plum", "sun", "stone", "ink", "paper", "leaf-soft", "\"colors\""] {
             assert!(fill.contains(name), "{name}");
         }
@@ -380,5 +390,19 @@ mod tests {
         let svg = fill.split("```svg Idea to app\n").nth(1).and_then(|s| s.split("\n```").next()).unwrap();
         assert_eq!(crate::docs::embeds::check_svg(svg), Ok(()));
         assert!(svg.contains("fill=\"leaf-soft\"") && !svg.contains('#'), "{svg}");
+        for name in ["arugula.copy", "arugula.store", "```prototype", "```chart", "```stats"] {
+            assert!(fill.contains(name), "{name}");
+        }
+    }
+
+    /// #606: the description is cut at 2048 characters, so the fences' format
+    /// is fetched with `doc fences`: `fill` has to keep naming it.
+    #[test]
+    fn doc_fill_points_to_the_fences() {
+        let fill = DOC.iter().find(|k| k.name == "fill").unwrap().description;
+        for name in ["fences", "prototype", "arugula.copy", "arugula.store"] {
+            assert!(fill.contains(name), "{name}");
+        }
+        assert!(DOC.iter().any(|k| k.name == "fences"));
     }
 }

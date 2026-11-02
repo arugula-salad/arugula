@@ -21,6 +21,12 @@ fn the_tool_list_and_each_schema_are_unchanged() {
 }
 
 #[test]
+fn every_description_and_the_instructions_fit_the_cut() {
+    register();
+    tools::every_description_and_the_instructions_fit_the_cut();
+}
+
+#[test]
 fn annotations_are_honest() {
     register();
     tools::annotations_are_honest();
