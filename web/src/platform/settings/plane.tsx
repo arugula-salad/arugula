@@ -6,10 +6,12 @@
 // is cleared after the form is sent. A connection's Webhook cell (#417) shows
 // the URL to give Plane and takes the webhook's secret after the connection
 // exists, as Plane makes the secret only once it has the URL; the secret is
-// never shown back. A team's viewers see the list only.
+// never shown back. A team's viewers see the list only. Under the table each
+// connected project has its recent changes (#441): what Arugula moved or
+// wrote in Plane, and the moves to Done that failed for good, with a Retry.
 
 import { useEffect, useState } from "preact/hooks";
-import type { TrackerConnection, TrackerConnections } from "../../shared/proto.gen";
+import type { TrackerConnection, TrackerConnections, TrackerEvent, TrackerHistory } from "../../shared/proto.gen";
 import { platformFetch } from "../../shared/maintenance";
 import { ago } from "../../shared/time";
 import { ConfirmRemove } from "../../shared/ui/confirm";
@@ -116,6 +118,47 @@ export function epicsLine(n: number): string {
   return n === 0 ? "No epics yet" : `Following ${n} ${n === 1 ? "epic" : "epics"}`;
 }
 
+/** One entry of a connection's history: what happened, when, and who decided it. */
+export function eventLine(e: Pick<TrackerEvent, "line" | "at" | "by">, now = Date.now()): string {
+  return `${e.line} · ${ago(e.at, now)}${e.by ? ` by ${e.by}` : ""}`;
+}
+
+/** A connection's recent changes: failed moves first, as errors with a Retry for those who change things, then the history. */
+function RecentChanges({ c, history, changes, busy, retry }: { c: TrackerConnection; history: TrackerHistory | undefined; changes: boolean; busy: boolean; retry: (job: string) => void }) {
+  const failed = history?.entries.filter((e) => e.kind === "move_failed") ?? [];
+  const rest = history?.entries.filter((e) => e.kind !== "move_failed") ?? [];
+  return (
+    <section class="plane-history" aria-label={`${c.identifier}: recent changes`} data-plane-history={c.id}>
+      <h3>{c.identifier}: recent changes</h3>
+      {failed.map((e) => (
+        <p class="control-error plane-failed" data-plane-failed-move={e.job ?? undefined}>
+          <span>
+            {e.line}
+            {e.error ? `: ${e.error}` : ""}
+          </span>
+          {changes && e.job && (
+            <button type="button" class="secondary small" data-plane-retry={e.job} disabled={busy} onClick={() => retry(e.job!)}>
+              Retry
+            </button>
+          )}
+        </p>
+      ))}
+      {rest.length > 0 && (
+        <ul class="plane-events">
+          {rest.map((e) => (
+            <li data-plane-event={e.kind}>{eventLine(e)}</li>
+          ))}
+        </ul>
+      )}
+      {history && failed.length === 0 && rest.length === 0 && (
+        <p class="dim" data-plane-history-none>
+          Nothing yet
+        </p>
+      )}
+    </section>
+  );
+}
+
 export function PlaneConnections({ p }: { p: PlatformProject }) {
   const [conns, setConns] = useState<TrackerConnection[] | null>(null);
   const [workspace, setWorkspace] = useState("");
@@ -124,6 +167,7 @@ export function PlaneConnections({ p }: { p: PlatformProject }) {
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
   const [disconnecting, setDisconnecting] = useState<TrackerConnection | null>(null);
+  const [histories, setHistories] = useState<Record<string, TrackerHistory>>({});
   const base = `/api/projects/${encodeURIComponent(p.id)}/trackers`;
   const changes = !p.team || p.team.role !== "viewer";
   const load = () =>
@@ -132,6 +176,17 @@ export function PlaneConnections({ p }: { p: PlatformProject }) {
       (e: Error) => setErr(e.message),
     );
   useEffect(() => void load(), [p.id]);
+  // A connection's history is read again when what it counts changes.
+  const stamp = (conns ?? []).map((c) => `${c.id}:${c.purge_after === null}:${c.failed_moves}:${c.waiting_writes}`).join(",");
+  useEffect(() => {
+    for (const c of conns ?? []) {
+      if (c.purge_after !== null) continue;
+      call<TrackerHistory>("GET", `${base}/${c.id}/history`).then(
+        (h) => setHistories((all) => ({ ...all, [c.id]: h })),
+        () => {},
+      );
+    }
+  }, [p.id, stamp]);
   const act = async (f: () => Promise<unknown>) => {
     setBusy(true);
     setErr("");
@@ -159,6 +214,7 @@ export function PlaneConnections({ p }: { p: PlatformProject }) {
   const following = (c: TrackerConnection) => (Array.isArray(list) ? list.filter((b) => b.closed_at == null && b.source?.connection === c.name).length : null);
   const connected = (conns ?? []).filter((c) => c.purge_after === null).length;
   const waiting = (conns ?? []).reduce((n, c) => n + (c.purge_after === null ? c.waiting_writes : 0), 0);
+  const failedMoves = (conns ?? []).reduce((n, c) => n + (c.purge_after === null ? c.failed_moves : 0), 0);
   const triage = pathOf({ page: "triage", project: p.id }, names);
   return (
     <Section
@@ -193,6 +249,11 @@ export function PlaneConnections({ p }: { p: PlatformProject }) {
             Triage
           </a>
           .
+        </p>
+      )}
+      {failedMoves > 0 && (
+        <p class="control-error" data-plane-failed>
+          {failedMoves} failed: Arugula couldn't move {failedMoves === 1 ? "an item" : "items"} to Done. Retry {failedMoves === 1 ? "it" : "them"} under recent changes.
         </p>
       )}
       <div data-plane-connections>
@@ -329,6 +390,23 @@ export function PlaneConnections({ p }: { p: PlatformProject }) {
           </table>
         ) : null}
       </div>
+      {(conns ?? [])
+        .filter((c) => c.purge_after === null)
+        .map((c) => (
+          <RecentChanges
+            key={c.id}
+            c={c}
+            history={histories[c.id]}
+            changes={changes}
+            busy={busy}
+            retry={(job) =>
+              void act(async () => {
+                const h = await call<TrackerHistory>("POST", `${base}/${c.id}/moves/${job}/retry`);
+                setHistories((all) => ({ ...all, [c.id]: h }));
+              })
+            }
+          />
+        ))}
       {changes ? (
         <form class="plane-connect" aria-label="Connect a Plane project" data-plane-form onSubmit={submit}>
           <h3>Connect a Plane project</h3>

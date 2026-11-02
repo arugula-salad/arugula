@@ -1333,6 +1333,13 @@
           "description": "Whether each open epic has a board that follows it (#483). On unless\nturned off; off, the boards stay and stop following.",
           "type": "boolean"
         },
+        "failed_moves": {
+          "default": 0,
+          "description": "Moves to Done Arugula gave up on after a merged PR (#441), which a\nperson may retry ([`TRACKER_MOVE_RETRY`]).",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
         "has_webhook_secret": {
           "description": "A webhook secret is kept for it.",
           "type": "boolean"
@@ -1451,6 +1458,55 @@
       ],
       "type": "object"
     },
+    "TrackerEvent": {
+      "description": "One change in a [`TrackerHistory`].",
+      "properties": {
+        "at": {
+          "description": "When it happened.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "by": {
+          "default": null,
+          "description": "Who decided it, for a write.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "error": {
+          "default": null,
+          "description": "Why it failed.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "job": {
+          "default": null,
+          "description": "A failed move's job, for the retry.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "kind": {
+          "description": "`moved` (a merged PR moved an item to Done), `move_failed` (it gave\nup), or an agent's write a person decided: `sent`, `dropped` or\n`write_failed`.",
+          "type": "string"
+        },
+        "line": {
+          "description": "What happened, in a sentence.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "at",
+        "kind",
+        "line"
+      ],
+      "type": "object"
+    },
     "TrackerFieldName": {
       "description": "A module, a type or a label of a Plane project.",
       "properties": {
@@ -1544,6 +1600,21 @@
         "types",
         "labels",
         "read_at"
+      ],
+      "type": "object"
+    },
+    "TrackerHistory": {
+      "description": "The newest changes Arugula made to a connection's Plane project, newest\nfirst.",
+      "properties": {
+        "entries": {
+          "items": {
+            "$ref": "#/$defs/TrackerEvent"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "entries"
       ],
       "type": "object"
     },

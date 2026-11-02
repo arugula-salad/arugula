@@ -770,6 +770,10 @@ pub struct TrackerConnection {
     pub items: u64,
     /// Agents' writes waiting for a person to approve.
     pub waiting_writes: u64,
+    /// Moves to Done Arugula gave up on after a merged PR (#441), which a
+    /// person may retry ([`TRACKER_MOVE_RETRY`]).
+    #[serde(default)]
+    pub failed_moves: u64,
     /// Whether each open epic has a board that follows it (#483). On unless
     /// turned off; off, the boards stay and stop following.
     #[serde(default = "yes")]
@@ -859,6 +863,50 @@ pub const PROJECT_TRACKER_WRITES: &str = "/api/projects/{project}/tracker-writes
 pub const PROJECT_TRACKER_WRITE: &str = "/api/projects/{project}/tracker-writes/{write}";
 pub const PROJECT_TRACKER_WRITE_APPROVE: &str = "/api/projects/{project}/tracker-writes/{write}/approve";
 pub const PROJECT_TRACKER_WRITE_DROP: &str = "/api/projects/{project}/tracker-writes/{write}/drop";
+
+/// `GET /api/projects/{project}/trackers/{connection}/history`: what Arugula
+/// changed in a connected Plane project lately ([`TrackerHistory`]), for
+/// anyone who reads the project's connections.
+pub const TRACKER_HISTORY: &str = "/api/projects/{project}/trackers/{connection}/history";
+
+/// `POST /api/projects/{project}/trackers/{connection}/moves/{job}/retry`: queue
+/// a failed move to Done again, for an owner or editor. Answers the
+/// connection's new [`TrackerHistory`]. A job that isn't that connection's
+/// failed move is a 404.
+pub const TRACKER_MOVE_RETRY: &str = "/api/projects/{project}/trackers/{connection}/moves/{job}/retry";
+
+/// The newest changes Arugula made to a connection's Plane project, newest
+/// first.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct TrackerHistory {
+    pub entries: Vec<TrackerEvent>,
+}
+
+/// One change in a [`TrackerHistory`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct TrackerEvent {
+    /// When it happened.
+    pub at: u64,
+    /// `moved` (a merged PR moved an item to Done), `move_failed` (it gave
+    /// up), or an agent's write a person decided: `sent`, `dropped` or
+    /// `write_failed`.
+    pub kind: String,
+    /// What happened, in a sentence.
+    pub line: String,
+    /// Who decided it, for a write.
+    #[serde(default)]
+    pub by: Option<String>,
+    /// Why it failed.
+    #[serde(default)]
+    pub error: Option<String>,
+    /// A failed move's job, for the retry.
+    #[serde(default)]
+    pub job: Option<String>,
+}
 
 /// `POST /api/daemon/projects/{project}/tracker-writes` ([`TrackerWrite`], answered with a
 /// [`TrackerWriteDone`]): a machine's agent writes to a tracker, with `trackers.write` over the

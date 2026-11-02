@@ -1040,3 +1040,176 @@ async fn the_reach_lists_the_policy_and_a_summary() {
     let c = reach().await;
     assert_eq!((c["agent_writes"].as_str(), c["write_policy"]["create"].as_str()), (Some("allow"), Some("allow")));
 }
+
+// ---- history and retry (#441)
+
+impl World {
+    /// A `plane_done` job of `connection` for item `number`, as `state`
+    /// (`done` or `failed`) at `updated`, with `checkpoint` and `error`.
+    fn move_job(
+        &self,
+        connection: &str,
+        number: u64,
+        state: &str,
+        checkpoint: Option<Value>,
+        error: Option<&str>,
+        updated: u64,
+    ) -> String {
+        let id = format!("planedone:fi_pr:{connection}:{number}");
+        let payload = json!({
+            "project": self.project, "connection": connection, "number": number,
+            "pr": "acme/app#123", "merged_by": null,
+        });
+        self.app.db.enqueue_job(&id, crate::db::jobs::JobKind::PlaneDone, &payload, 0, 0).unwrap();
+        self.app
+            .db
+            .c()
+            .execute(
+                "UPDATE platform_jobs SET state = ?2, checkpoint = ?3, error = ?4, attempts = 20, updated = ?5 WHERE id = ?1",
+                params![id, state, checkpoint.map(|c| c.to_string()), error, updated],
+            )
+            .unwrap();
+        id
+    }
+
+    async fn history(&self, who: &str) -> (u16, Value) {
+        let path = format!("/api/projects/{}/trackers/{}/history", self.project, self.connection);
+        call(&self.base, who, "GET", &path, None).await
+    }
+
+    async fn retry(&self, who: &str, connection: &str, job: &str) -> (u16, Value) {
+        let path = format!("/api/projects/{}/trackers/{connection}/moves/{job}/retry", self.project);
+        call(&self.base, who, "POST", &path, None).await
+    }
+
+    async fn listed(&self) -> Value {
+        let (s, c) = call(&self.base, "carol", "GET", &format!("/api/projects/{}/trackers", self.project), None).await;
+        assert_eq!(s, 200, "{c}");
+        c["connections"][0].clone()
+    }
+}
+
+/// The history holds a move that finished, a move that gave up (with its
+/// job and error), and the writes a person decided, newest first. A move
+/// left alone (no checkpoint), a write still waiting and another
+/// connection's job are not in it.
+#[tokio::test]
+async fn the_history_lists_moves_and_decided_writes_newest_first() {
+    let w = world().await;
+    w.settings(json!({ "write_policy": { "create": "approve", "comment": "approve", "edit": "approve", "state": "approve", "fields": "approve" } }))
+        .await;
+    w.grant().await;
+    let comment = |text: &str| json!({ "kind": "comment", "item": "ARUGU-1", "text": text });
+    let mut ids = vec![];
+    for text in ["sent one", "dropped one", "still waiting"] {
+        let (s, v) = w.agent(comment(text)).await;
+        assert_eq!(s, 200, "{v}");
+        ids.push(v["write"].as_str().unwrap().to_owned());
+    }
+    assert_eq!(w.decide("bob", &ids[0], "approve").await.0, 200);
+    assert_eq!(w.decide("alice", &ids[1], "drop").await.0, 200);
+    let base = 1_000_000;
+    for (id, at) in [(&ids[0], base + 500), (&ids[1], base + 400)] {
+        w.app.db.c().execute("UPDATE tracker_writes SET decided_at = ?2 WHERE id = ?1", params![id, at]).unwrap();
+    }
+    let line = "moved ARUGU-2 to Done: merged acme/app#123";
+    w.move_job(&w.connection, 2, "done", Some(json!({ "moved": line, "by": null })), None, base + 200);
+    w.move_job(&w.connection, 3, "done", None, None, base + 600);
+    let failed = w.move_job(&w.connection, 4, "failed", None, Some("Plane refused the key"), base + 300);
+    w.move_job("tc_other", 2, "failed", None, Some("not ours"), base + 700);
+
+    let (s, h) = w.history("carol").await;
+    assert_eq!(s, 200, "a viewer reads it: {h}");
+    let kinds: Vec<_> = h["entries"].as_array().unwrap().iter().map(|e| e["kind"].as_str().unwrap()).collect();
+    assert_eq!(kinds, ["sent", "dropped", "move_failed", "moved"], "{h}");
+    let e = &h["entries"];
+    assert_eq!(
+        (e[0]["at"].as_u64(), e[0]["line"].as_str()),
+        (Some(base + 500), Some("Comment ARUGU-1, approved and sent")),
+        "{h}"
+    );
+    assert_eq!(e[0]["by"].as_str(), Some("bob"), "{h}");
+    assert_eq!((e[1]["line"].as_str(), e[1]["by"].as_str()), (Some("Comment ARUGU-1, dropped"), Some("alice")), "{h}");
+    assert_eq!(
+        (e[2]["line"].as_str(), e[2]["error"].as_str(), e[2]["job"].as_str()),
+        (
+            Some("couldn't move ARUGU-4 to Done: merged acme/app#123"),
+            Some("Plane refused the key"),
+            Some(failed.as_str())
+        ),
+        "{h}"
+    );
+    assert_eq!(
+        (e[3]["line"].as_str(), e[3]["at"].as_u64(), e[3]["job"].is_null()),
+        (Some(line), Some(base + 200), true),
+        "{h}"
+    );
+
+    let (s, _) =
+        call(&w.base, "alice", "GET", &format!("/api/projects/{}/trackers/tc_nope/history", w.project), None).await;
+    assert_eq!(s, 404);
+}
+
+/// Only the newest twenty are answered.
+#[tokio::test]
+async fn the_history_holds_the_newest_twenty() {
+    let w = world().await;
+    for n in 1..=25u64 {
+        let line = format!("moved ARUGU-{n} to Done: merged acme/app#123");
+        w.move_job(&w.connection, n, "done", Some(json!({ "moved": line, "by": null })), None, 1_000 + n);
+    }
+    let (_, h) = w.history("alice").await;
+    let entries = h["entries"].as_array().unwrap();
+    assert_eq!(
+        (entries.len(), entries[0]["at"].as_u64(), entries[19]["at"].as_u64()),
+        (20, Some(1_025), Some(1_006)),
+        "{h}"
+    );
+}
+
+/// The connection list counts the connection's failed moves, and no other's,
+/// even one whose id differs only where this one has an underscore.
+#[tokio::test]
+async fn the_connection_counts_its_failed_moves() {
+    let w = world().await;
+    assert_eq!(w.listed().await["failed_moves"], 0);
+    w.move_job(&w.connection, 2, "failed", None, Some("x"), 10);
+    w.move_job(&w.connection, 3, "failed", None, Some("x"), 11);
+    w.move_job(&w.connection, 4, "done", Some(json!({ "moved": "m", "by": null })), None, 12);
+    w.move_job(&w.connection.replacen('_', "x", 1), 2, "failed", None, Some("x"), 13);
+    w.move_job("tc_other", 2, "failed", None, Some("x"), 14);
+    assert_eq!(w.listed().await["failed_moves"], 2);
+}
+
+/// Retry puts a failed move back to pending with no attempts, no error and
+/// no lease, due now, and answers the new history. A viewer is refused; a
+/// job that isn't failed, isn't this connection's, or isn't there is a 404.
+#[tokio::test]
+async fn retrying_a_failed_move_queues_it_again() {
+    let w = world().await;
+    let failed = w.move_job(&w.connection, 4, "failed", None, Some("Plane refused the key"), 1_000);
+    let done = w.move_job(&w.connection, 5, "done", Some(json!({ "moved": "m", "by": null })), None, 1_000);
+    let other = w.move_job("tc_other", 6, "failed", None, Some("x"), 1_000);
+    let state = |id: &str| w.app.db.platform_job(id).unwrap().unwrap();
+
+    assert_eq!(w.retry("carol", &w.connection, &failed).await.0, 403);
+    assert_eq!(state(&failed).state, "failed", "a viewer changed nothing");
+    for (conn, job) in [(&w.connection, &done), (&w.connection, &other), (&w.connection, &"planedone:nope".to_owned())]
+    {
+        let (s, v) = w.retry("alice", conn, job).await;
+        assert_eq!(s, 404, "{job}: {v}");
+    }
+    assert_eq!(state(&done).state, "done");
+    assert_eq!(state(&other).state, "failed", "another connection's job is left");
+
+    let before = arugula_e2e::now_ms();
+    let (s, h) = w.retry("bob", &w.connection, &failed).await;
+    assert_eq!(s, 200, "{h}");
+    let j = state(&failed);
+    assert_eq!((j.state.as_str(), j.attempts, j.error.clone(), j.lease_until), ("pending", 0, None, 0), "{j:?}");
+    assert!(j.next_at >= before, "due now: {j:?}");
+    let kinds: Vec<_> = h["entries"].as_array().unwrap().iter().map(|e| e["kind"].as_str().unwrap()).collect();
+    assert_eq!(kinds, ["moved"], "it is not failed any more: {h}");
+    assert_eq!(w.listed().await["failed_moves"], 0);
+    assert_eq!(w.retry("bob", &w.connection, &failed).await.0, 404, "twice is a 404");
+}

@@ -57,6 +57,8 @@ fn routes() -> Routes {
             arugula_control_wire::projects::PROJECT_TRACKER,
             axum::routing::patch(trackers::connect::settings).delete(trackers::connect::disconnect),
         )
+        .route(arugula_control_wire::projects::TRACKER_HISTORY, get(trackers::history::history))
+        .route(arugula_control_wire::projects::TRACKER_MOVE_RETRY, post(trackers::history::retry))
         .route(arugula_control_wire::projects::TRACKER_WRITES, post(trackers::writes::person))
         .route(arugula_control_wire::projects::PROJECT_TRACKER_WRITES, get(trackers::writes::waiting))
         .route(arugula_control_wire::projects::PROJECT_TRACKER_WRITE, axum::routing::patch(trackers::writes::edit))
