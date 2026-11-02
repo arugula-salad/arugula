@@ -103,6 +103,82 @@ pub async fn name_of(app: &Platform, account: &str) -> anyhow::Result<String> {
 
 // ---------------------------------------------------------------- mentions
 
+/// `text` with its code blanked (#492): inline code spans and fenced
+/// blocks become spaces, newlines kept, so every byte offset stays and no
+/// `@name` or keyword inside code is matched. Every matcher of a mention
+/// runs on this, never on the stored text, which is unchanged.
+///
+/// As the web client draws code (`markup.tsx`): a fence of three backticks
+/// ends at the next three, and a fence of `~~~` (from a line's start) at a
+/// line that starts with `~~~`; one that never closes is not code. A span
+/// is a run of backticks to the next run of the same length on the same
+/// line (so ``` `` a`b `` ``` is one); one that never closes is text.
+pub fn without_code(text: &str) -> std::borrow::Cow<'_, str> {
+    if !text.contains(['`', '~']) {
+        return text.into();
+    }
+    let b = text.as_bytes();
+    let mut blank = vec![false; b.len()];
+    let mut i = 0;
+    while i < b.len() {
+        let line_start = i == 0 || b[i - 1] == b'\n';
+        let end = if b[i..].starts_with(b"```") {
+            text[i + 3..].find("```").map(|j| i + 3 + j + 3)
+        } else if line_start && b[i..].starts_with(b"~~~") {
+            text[i + 3..].find("\n~~~").map(|j| {
+                let from = i + 3 + j + 1;
+                text[from..].find('\n').map_or(b.len(), |k| from + k)
+            })
+        } else if b[i] == b'`' {
+            let run = b[i..].iter().take_while(|&&c| c == b'`').count();
+            let line = text[i + run..].find('\n').map_or(b.len(), |k| i + run + k);
+            let mut at = i + run;
+            let mut close = None;
+            while at < line {
+                if b[at] != b'`' {
+                    at += 1;
+                    continue;
+                }
+                let n = b[at..line].iter().take_while(|&&c| c == b'`').count();
+                if n == run {
+                    close = Some(at + n);
+                    break;
+                }
+                at += n;
+            }
+            match close {
+                Some(c) => Some(c),
+                None => {
+                    // Not a span: step over the whole run.
+                    i += run;
+                    continue;
+                }
+            }
+        } else {
+            None
+        };
+        match end {
+            Some(e) => {
+                blank[i..e].fill(true);
+                i = e;
+            }
+            None => i += 1,
+        }
+    }
+    if !blank.contains(&true) {
+        return text.into();
+    }
+    let mut out = String::with_capacity(text.len());
+    for (k, c) in text.char_indices() {
+        if blank[k] && c != '\n' {
+            out.extend(std::iter::repeat_n(' ', c.len_utf8()));
+        } else {
+            out.push(c);
+        }
+    }
+    out.into()
+}
+
 /// The `@words` in a text, lowercased: an `@` at the start or after
 /// anything but a letter or digit (not an email address), then letters,
 /// digits, `_`, `-` and `.` (not a trailing one).
@@ -645,6 +721,27 @@ mod tests {
         assert_eq!(at_words("mail jake@example.com"), Vec::<String>::new());
         assert_eq!(at_words("(@jhgaylor) and @jhgaylor again, @"), ["jhgaylor"]);
         assert_eq!(at_words("@ünïcode @a.b."), ["ünïcode", "a.b"]);
+    }
+
+    #[test]
+    fn code_is_blanked_by_length_and_the_rest_is_kept() {
+        let blank = |t: &str| without_code(t).into_owned();
+        assert_eq!(blank("see `@sam` ok"), "see        ok");
+        assert_eq!(blank("no code @sam"), "no code @sam");
+        // Double backticks hold a single one; a span ends on its line.
+        assert_eq!(blank("a ``x`@b`` c"), format!("a {} c", " ".repeat(8)));
+        assert_eq!(blank("`@a\n@b`"), "`@a\n@b`");
+        // Fences, with an info string and across lines; newlines stay.
+        assert_eq!(blank("x\n```rust\n@sam\n```\n@b"), "x\n       \n    \n   \n@b");
+        assert_eq!(blank("x\n~~~\n@sam\n~~~\n@b"), "x\n   \n    \n   \n@b");
+        // Unclosed: text, as the web client draws it.
+        assert_eq!(blank("it costs `5 and @sam"), "it costs `5 and @sam");
+        assert_eq!(blank("``` @sam"), "``` @sam");
+        assert_eq!(blank("~~~\n@sam"), "~~~\n@sam");
+        // Offsets hold across multi-byte text.
+        let t = "é `ü@sam` @b";
+        assert_eq!(blank(t).len(), t.len());
+        assert_eq!(at_words(&without_code(t)), ["b"]);
     }
 
     #[test]

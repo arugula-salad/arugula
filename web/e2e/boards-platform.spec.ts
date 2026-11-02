@@ -877,7 +877,7 @@ test("a Plane connection's agent writes: the middle preset, a kind per row, the 
     id: "tc_0123", provider: "plane", workspace_slug: "acme", source_project_id: "pl-1", identifier: "ARUGU", name: "Arugula",
     agent_writes: "approve", write_policy: { create: "approve", comment: "allow", edit: "allow", state: "approve", fields: "allow" }, attribution: "short",
     has_webhook_secret: false, webhook_url: "http://app.localhost/plane/webhook/tc_0123", last_delivery_at: null, linked_by: null,
-    created_at: Date.now(), unlinked_at: null, purge_after: null, backfilled_at: Date.now(), items: 3, waiting_writes: 0,
+    created_at: Date.now(), unlinked_at: null, purge_after: null, backfilled_at: Date.now(), items: 3, waiting_writes: 0, failed_moves: 0,
   };
   const patches: unknown[] = [];
   await alice.route(new RegExp(`/api/projects/${project}/trackers(/tc_0123)?$`), async (route) => {

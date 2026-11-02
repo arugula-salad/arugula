@@ -24,8 +24,8 @@ import type { ChildProcess } from "node:child_process";
 import { expect, test, type Page } from "@playwright/test";
 import { hex, type Scheme } from "../src/shared/docs/colours";
 import { example } from "./doc-examples";
-import { bring, brokenEmbeds, fill, fillEmbeds, fillsInPlace, imagesInPlace, newDoc, placedEmbeds, png, putAsset, seeEmbeds, sessionOf, type Post, widths } from "./doc-steps";
-import { closeContexts, open, panes, ready, reset } from "./helpers";
+import { bring, brokenEmbeds, fill, fillEmbeds, fillsInPlace, imagesInPlace, newDoc, placedEmbeds, png, putAsset, seeEmbeds, sessionOf, type Post, watchAssetCalls, widths } from "./doc-steps";
+import { closeContexts, open, panes, ready, reset, tabsInSession } from "./helpers";
 import { daemon, pixel7 } from "./phones";
 
 const SHOTS = process.env.DOC_SHOTS;
@@ -177,6 +177,36 @@ test("a picture shows, a replaced one shows with no reload, and other images sta
   const [term] = await panes(page);
   const doc = await newDoc(post(page), term);
   await imagesInPlace(page, post(page), doc);
+});
+
+test("a Doc in a tab nobody has opened fetches no picture until it's shown", async ({ page }) => {
+  await reset(page);
+  const [first] = await panes(page);
+  await page.evaluate(() => {
+    const c = window.__arugula.client;
+    c.intent({ op: "new_tab", session: c.session!, from_pane: null });
+  });
+  await expect.poll(() => tabsInSession(page).then((t) => t.length)).toBe(2);
+  const tabs = await tabsInSession(page);
+  await page.evaluate((t) => window.__arugula.client.selectTab(t), tabs[1]);
+  const [term] = await panes(page);
+  await ready(page, term);
+  const doc = await newDoc(post(page), term);
+  await putAsset(post(page), doc, "flow.png", png(2, 2));
+  await fill(post(page), doc, "s1", "![The flow](assets/flow.png)");
+  await page.evaluate((p) => window.__arugula.client.setActive(p), first);
+
+  const calls = watchAssetCalls(page);
+  await page.reload();
+  await expect.poll(() => page.evaluate(() => window.__arugula?.client.connected && window.__arugula.client.blocks.size)).toBeGreaterThan(0);
+  await ready(page, first);
+  await page.evaluate(() => new Promise((done) => setTimeout(done, 500)));
+  expect(calls).toEqual([]);
+  await expect(page.locator(`[data-doc-block="${doc}"]`)).toHaveCount(0);
+
+  await bring(page, doc);
+  await expect(page.locator(`[data-doc-block="${doc}"] img.doc-image`)).toBeVisible({ timeout: 15_000 });
+  expect(calls).toHaveLength(1);
 });
 
 // What a person reads: the Doc's own colours (#253), in both schemes.

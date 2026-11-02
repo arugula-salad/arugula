@@ -37,6 +37,7 @@ mod epics_tests;
 #[cfg(any(test, feature = "testing"))]
 pub mod fake;
 pub mod fields;
+pub mod history;
 pub mod plane;
 pub mod policy;
 pub mod webhook;
