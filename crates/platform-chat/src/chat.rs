@@ -890,6 +890,7 @@ fn shown_status(s: &MentionStatus) -> ChatMentionStatus {
         state: mention_state(&s.state),
         session: s.session.clone(),
         asked: s.asked.clone(),
+        names: s.names.clone(),
         reply: s.reply,
     }
 }
@@ -900,6 +901,7 @@ fn mention_state(state: &str) -> ChatMentionState {
         "fell_back" => ChatMentionState::FellBack,
         "waiting" => ChatMentionState::Waiting,
         "queued" => ChatMentionState::Queued,
+        "no_such_session" => ChatMentionState::NoSuchSession,
         "sending" => ChatMentionState::Sending,
         // Tried again when the machine connected, and still not told.
         "offline" | "missed" => ChatMentionState::Offline,
@@ -908,25 +910,30 @@ fn mention_state(state: &str) -> ChatMentionState {
     }
 }
 
+/// A mention's status as a daemon's answer gives it: `state`, `session`,
+/// `asked` and `names`.
+type MentionAnswer = (&'static str, Option<String>, Option<String>, Vec<String>);
+
 /// What a daemon's answer to `agents.mention` means for the sender (#502).
 /// A daemon from before the routing says nothing of it: just delivered.
-fn mention_answer(
-    answer: Option<&arugula_control_wire::forge::OpAnswer>,
-) -> (&'static str, Option<String>, Option<String>) {
+fn mention_answer(answer: Option<&arugula_control_wire::forge::OpAnswer>) -> MentionAnswer {
     use arugula_control_wire::forge::{OpAnswer, RoutedStep};
     match answer {
         Some(OpAnswer::Done { routed: Some(r), .. }) => match r.step {
-            RoutedStep::Inbox => ("waiting", None, r.asked.clone()),
+            // The message named a session the daemon didn't find: no other
+            // session got it (#576), and the names there are come with it.
+            RoutedStep::Inbox if r.asked.is_some() => ("no_such_session", None, r.asked.clone(), r.names.clone()),
+            RoutedStep::Inbox => ("waiting", None, None, vec![]),
             // A session took it, but its hook wasn't waiting (#571): it
             // sits in a queue until the hook reads it.
-            _ if r.queued => ("queued", r.session.clone(), r.asked.clone()),
-            // The message named a session the daemon didn't find: said so,
-            // wherever it went instead.
-            _ if r.asked.is_some() => ("fell_back", r.session.clone(), r.asked.clone()),
-            _ => ("delivered", r.session.clone(), None),
+            _ if r.queued => ("queued", r.session.clone(), r.asked.clone(), vec![]),
+            // Before #576 a named session that wasn't there fell back to
+            // another: a daemon from then still says so.
+            _ if r.asked.is_some() => ("fell_back", r.session.clone(), r.asked.clone(), vec![]),
+            _ => ("delivered", r.session.clone(), None, vec![]),
         },
-        Some(OpAnswer::Done { routed: None, .. }) => ("delivered", None, None),
-        _ => ("offline", None, None),
+        Some(OpAnswer::Done { routed: None, .. }) => ("delivered", None, None, vec![]),
+        _ => ("offline", None, None, vec![]),
     }
 }
 
@@ -1140,6 +1147,7 @@ async fn plan_tells(
                 state: "sending".into(),
                 session: None,
                 asked: None,
+                names: vec![],
                 reply: None,
                 at: now_ms(),
             };
@@ -1166,12 +1174,8 @@ fn announce_status(app: &Platform, s: &MentionStatus) {
 const DAEMON_ANSWERS_WITHIN: Duration = Duration::from_secs(5);
 
 /// Asks a machine's daemon to take a mention: its answer as a status
-/// (`state`, `session`, `asked`).
-async fn ask_daemon(
-    app: &Platform,
-    machine: &str,
-    op: &arugula_control_wire::forge::DaemonOp,
-) -> (&'static str, Option<String>, Option<String>) {
+/// (`state`, `session`, `asked`, `names`).
+async fn ask_daemon(app: &Platform, machine: &str, op: &arugula_control_wire::forge::DaemonOp) -> MentionAnswer {
     let answer = tokio::time::timeout(DAEMON_ANSWERS_WITHIN, app.hub.daemon_op(machine, op)).await;
     mention_answer(answer.as_ref().ok().and_then(|r| r.as_ref().ok()))
 }
@@ -1196,7 +1200,7 @@ async fn deliver_later(app: &Platform, tells: Vec<Tell>, room: String, seq: i64,
 /// from what they answer. One that was `answered` meanwhile stays so.
 async fn deliver(app: &Platform, tells: Vec<Tell>, room: &str, seq: i64, parent: Option<i64>) {
     futures_util::future::join_all(tells.into_iter().map(|t| async move {
-        let (state, session, asked) = ask_daemon(app, &t.machine, &t.op).await;
+        let (state, session, asked, names) = ask_daemon(app, &t.machine, &t.op).await;
         if !t.mentioned {
             return;
         }
@@ -1209,6 +1213,7 @@ async fn deliver(app: &Platform, tells: Vec<Tell>, room: &str, seq: i64, parent:
             state: state.into(),
             session,
             asked,
+            names,
             reply: None,
             at: now_ms(),
         };
@@ -1285,10 +1290,10 @@ pub(crate) async fn redeliver(app: &Platform, machine: &str) {
         }
     }
     futures_util::future::join_all(ready.into_iter().map(|(s, op)| async move {
-        let (state, session, asked) = ask_daemon(app, &s.machine, &op).await;
+        let (state, session, asked, names) = ask_daemon(app, &s.machine, &op).await;
         // Offline again: it was tried, and isn't kept for a third time.
         let state = if state == "offline" { "missed" } else { state };
-        settle(app, &MentionStatus { state: state.into(), session, asked, at: now_ms(), ..s });
+        settle(app, &MentionStatus { state: state.into(), session, asked, names, at: now_ms(), ..s });
     }))
     .await;
 }

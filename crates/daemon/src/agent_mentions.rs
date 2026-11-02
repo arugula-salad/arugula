@@ -419,9 +419,12 @@ pub async fn session_name(app: &App, pane: PaneId) -> Option<String> {
 fn routed(step: RoutedStep, session: Option<String>, asked: Option<&str>, handed: bool) -> OpAnswer {
     OpAnswer::Done {
         url: None,
-        routed: Some(Routed { step, session, asked: asked.map(str::to_owned), queued: !handed }),
+        routed: Some(Routed { step, session, asked: asked.map(str::to_owned), queued: !handed, names: vec![] }),
     }
 }
+
+/// The most session names an answer lists when the one asked for isn't there.
+const NAMES_LISTED: usize = 10;
 
 /// The name of the session in `pane`, as the sender reads it.
 async fn named(app: &impl Daemon, pane: PaneId) -> Option<String> {
@@ -439,33 +442,43 @@ pub(crate) async fn deliver(app: &impl Daemon, m: &AgentMention) -> OpAnswer {
     // What the session that gets it is told about how it got here, when it
     // isn't the plain way.
     let mut notes: Vec<String> = vec![];
-    // The session the message named, when step 1 didn't take it.
-    let mut asked: Option<String> = None;
     // A pane that is gone, or whose queue is full, leaves it to the next.
-    // 1. The session it names, by its exact name, or else by its tab's.
+    // 1. The session it names, by its exact name, or else by its tab's. When
+    // it names one and none takes it, no other session does (#576): it waits
+    // in the inbox, and the answer lists the names there are.
     if let Some(want) = m.session.as_deref().map(slug).filter(|w| !w.is_empty()) {
         let sessions = app.sessions().await;
+        let tabs = app.tab_names().await;
         let mut hits: Vec<PaneId> = sessions.iter().filter(|(_, n)| slug(n) == want).map(|(p, _)| *p).collect();
         if hits.is_empty() {
             // Sessions in tabs of that name: two in one tab, or one in each
             // of two tabs, are as much "more than one" as two by name.
-            let tabbed: Vec<PaneId> =
-                app.tab_names().await.into_iter().filter(|(_, n)| slug(n) == want).map(|(p, _)| p).collect();
+            let tabbed: Vec<PaneId> = tabs.iter().filter(|(_, n)| slug(n) == want).map(|(p, _)| *p).collect();
             hits = sessions.iter().map(|(p, _)| *p).filter(|p| tabbed.contains(p)).collect();
         }
-        match hits.as_slice() {
-            [pane] => {
-                if let Ok(now) = app.follow_up(*pane, framed(m, &notes), by.clone()).await {
-                    let name = sessions.iter().find(|(p, _)| p == pane).map(|(_, n)| n.clone());
-                    return routed(RoutedStep::Named, name, None, handed(app, *pane, now).await);
-                }
-                notes.push(format!("(the session {want} could not take it, so it came to you instead)"));
-            }
-            [] => notes.push(format!("(no session on this machine is called {want}, so it came to you instead)")),
-            _ => notes
-                .push(format!("(more than one session on this machine is called {want}, so it came to you instead)")),
+        if let [pane] = hits.as_slice()
+            && let Ok(now) = app.follow_up(*pane, framed(m, &notes), by.clone()).await
+        {
+            let name = sessions.iter().find(|(p, _)| p == pane).map(|(_, n)| n.clone());
+            return routed(RoutedStep::Named, name, None, handed(app, *pane, now).await);
         }
-        asked = Some(want);
+        state.keep(m);
+        let mut names: Vec<String> = vec![];
+        for n in sessions
+            .iter()
+            .map(|(_, n)| n)
+            .chain(tabs.iter().filter(|(p, _)| sessions.iter().any(|(s, _)| s == p)).map(|(_, n)| n))
+        {
+            let n = slug(n);
+            if !n.is_empty() && !names.contains(&n) {
+                names.push(n);
+            }
+        }
+        names.truncate(NAMES_LISTED);
+        return OpAnswer::Done {
+            url: None,
+            routed: Some(Routed { step: RoutedStep::Inbox, session: None, asked: Some(want), queued: false, names }),
+        };
     }
     // A restart left panes that may be strangers now: only the live
     // sessions that posted keep their place.
@@ -479,7 +492,7 @@ pub(crate) async fn deliver(app: &impl Daemon, m: &AgentMention) -> OpAnswer {
     });
     if let Some(pane) = thread {
         if let Ok(now) = app.follow_up(pane, framed(m, &notes), by.clone()).await {
-            return routed(RoutedStep::Thread, named(app, pane).await, asked.as_deref(), handed(app, pane, now).await);
+            return routed(RoutedStep::Thread, named(app, pane).await, None, handed(app, pane, now).await);
         }
         ended = Some(pane);
     }
@@ -493,12 +506,12 @@ pub(crate) async fn deliver(app: &impl Daemon, m: &AgentMention) -> OpAnswer {
             notes.push("(the session that started this thread has ended; you were its room's last poster)".into());
         }
         if let Ok(now) = app.follow_up(pane, framed(m, &notes), by).await {
-            return routed(RoutedStep::Room, named(app, pane).await, asked.as_deref(), handed(app, pane, now).await);
+            return routed(RoutedStep::Room, named(app, pane).await, None, handed(app, pane, now).await);
         }
     }
     // 4. The inbox.
     state.keep(m);
-    routed(RoutedStep::Inbox, None, asked.as_deref(), true)
+    routed(RoutedStep::Inbox, None, None, true)
 }
 
 #[cfg(test)]
@@ -829,46 +842,72 @@ mod tests {
         let m = AgentMention { parent: Some(3), session: Some("ux-improvements".into()), ..mention() };
         assert_eq!(deliver(&d, &m).await, routed(RoutedStep::Named, Some("UX Improvements".into()), None, true));
         assert_eq!((d.got(4).len(), d.got(9).len(), d.got(11).len()), (0, 1, 0));
-        assert!(!d.got(9)[0].contains("came to you instead"));
         // The exact name, however it is written, finds only that session.
         deliver(&d, &AgentMention { session: Some("ux".into()), ..m.clone() }).await;
         assert_eq!((d.got(4).len(), d.got(9).len(), d.got(11).len()), (0, 1, 1));
     }
 
-    /// No session by that name, or an ambiguous one: it goes by the thread
-    /// or the room, and the text says it didn't find the session.
+    /// The answer to a mention that named a session and reached none (#576).
+    fn nowhere(asked: &str, names: &[&str]) -> OpAnswer {
+        OpAnswer::Done {
+            url: None,
+            routed: Some(Routed {
+                step: RoutedStep::Inbox,
+                session: None,
+                asked: Some(asked.into()),
+                queued: false,
+                names: names.iter().map(|n| (*n).to_owned()).collect(),
+            }),
+        }
+    }
+
+    /// No session by that name, or an ambiguous one: no other session gets
+    /// it, not the thread's or the room's. It waits in the inbox, and the
+    /// answer lists the names there are.
     #[tokio::test]
-    async fn an_unknown_session_falls_back_and_says_so() {
+    async fn an_unknown_session_reaches_no_session_and_lists_the_names() {
         let d =
             Fake::new("unknown", &[4, 9, 11]).named(&[(4, "Billing"), (9, "UX Improvements"), (11, "ux improvements")]);
         d.state.note_post("ch_x", 4);
         d.state.note_thread("ch_x", 3, 4);
-        deliver(&d, &AgentMention { parent: Some(3), session: Some("ux".into()), ..mention() }).await;
-        assert_eq!((d.got(4).len(), d.got(9).len(), d.got(11).len()), (1, 0, 0), "prefix is not a match");
-        assert!(d.got(4)[0].contains("(no session on this machine is called ux, so it came to you instead)"));
-        deliver(&d, &AgentMention { parent: Some(3), session: Some("ux-improvements".into()), ..mention() }).await;
-        assert_eq!((d.got(4).len(), d.got(9).len(), d.got(11).len()), (2, 0, 0));
-        assert!(d.got(4)[1].contains("more than one session on this machine is called ux-improvements"));
-        // And with no one to fall back on, the inbox holds it.
-        let none = Fake::new("unknown-inbox", &[9]).named(&[(9, "Billing")]);
-        deliver(&none, &AgentMention { session: Some("ux".into()), ..mention() }).await;
-        assert!(none.sent.lock().unwrap().is_empty());
-        assert_eq!(none.state.unread().len(), 1);
+        let m = AgentMention { parent: Some(3), session: Some("ux".into()), ..mention() };
+        assert_eq!(deliver(&d, &m).await, nowhere("ux", &["billing", "ux-improvements"]), "prefix is not a match");
+        // Two by one name: neither, nor the stranger.
+        let m = AgentMention { session: Some("ux-improvements".into()), ..m };
+        assert_eq!(deliver(&d, &m).await, nowhere("ux-improvements", &["billing", "ux-improvements"]));
+        assert!(d.sent.lock().unwrap().is_empty());
+        assert_eq!(d.state.unread().len(), 2);
     }
 
-    /// The named session ended between the list and the follow-up: the
-    /// thread's session takes it, and the text says so.
+    /// Tabs' names are names a mention could have used; at most ten.
     #[tokio::test]
-    async fn a_named_session_that_ended_meanwhile_falls_back() {
+    async fn the_names_listed_are_sessions_and_tabs_and_at_most_ten() {
+        let d = Fake::new("names", &[1, 2]).named(&[(1, "One"), (2, "Two")]).tabbed(&[
+            (1, "Views"),
+            (2, "One"),
+            (7, "Gone"),
+        ]);
+        let m = AgentMention { session: Some("nope".into()), ..mention() };
+        assert_eq!(deliver(&d, &m).await, nowhere("nope", &["one", "two", "views"]));
+        let many: Vec<(PaneId, String)> = (1..=15).map(|i| (i, format!("s{i}"))).collect();
+        let mut d = Fake::new("names-many", &(1..=15).collect::<Vec<_>>());
+        d.names = many;
+        match deliver(&d, &m).await {
+            OpAnswer::Done { routed: Some(r), .. } => assert_eq!(r.names.len(), 10),
+            other => panic!("{other:?}"),
+        }
+    }
+
+    /// The named session ended between the list and the follow-up: no other
+    /// session takes it either.
+    #[tokio::test]
+    async fn a_named_session_that_ended_meanwhile_reaches_no_other() {
         let d = Fake::new("named-gone", &[4]).named(&[(4, "Billing"), (9, "UX")]);
         d.state.note_thread("ch_x", 3, 4);
+        d.state.note_post("ch_x", 4);
         deliver(&d, &AgentMention { parent: Some(3), session: Some("ux".into()), ..mention() }).await;
-        assert_eq!(d.got(4).len(), 1);
-        assert!(
-            d.got(4)[0].contains("(the session ux could not take it, so it came to you instead)"),
-            "{}",
-            d.got(4)[0]
-        );
+        assert!(d.sent.lock().unwrap().is_empty());
+        assert_eq!(d.state.unread().len(), 1);
     }
 
     /// A mention queued for a session whose hooks were never heard is
@@ -918,13 +957,14 @@ mod tests {
         d.state.note_thread("ch_x", 3, 9);
         let m = AgentMention { parent: Some(3), ..mention() };
         assert_eq!(step(deliver(&d, &m).await), (RoutedStep::Thread, Some("UX Improvements".into()), None));
-        // 3. The room's last poster, because no session has the name asked.
+        // 3. The room's last poster, when no session is named.
         let d = Fake::new("routed-room", &[4, 9]).named(&names);
         d.state.note_post("ch_x", 4);
-        let m = AgentMention { session: Some("slowness".into()), ..mention() };
-        assert_eq!(step(deliver(&d, &m).await), (RoutedStep::Room, Some("Billing".into()), Some("slowness".into())));
-        // 4. The inbox: nobody took it. The name asked is kept.
+        assert_eq!(step(deliver(&d, &mention()).await), (RoutedStep::Room, Some("Billing".into()), None));
+        // 4. The inbox: no session has the name asked (#576), though the
+        // room has a last poster. The name asked is kept.
         let d = Fake::new("routed-inbox", &[4, 9]).named(&names);
+        d.state.note_post("ch_x", 4);
         let m = AgentMention { session: Some("slowness".into()), ..mention() };
         assert_eq!(step(deliver(&d, &m).await), (RoutedStep::Inbox, None, Some("slowness".into())));
         let d = Fake::new("routed-inbox-plain", &[]);
@@ -951,11 +991,10 @@ mod tests {
             routed(RoutedStep::Named, Some("Chant fountain lexicon trim".into()), None, true)
         );
         assert_eq!((d.got(4).len(), d.got(9).len(), d.got(11).len()), (0, 1, 0));
-        assert!(!d.got(9)[0].contains("came to you instead"));
     }
 
     /// Two sessions in a tab, or one in each of two tabs of that name, route
-    /// to neither: it falls through and says so.
+    /// to neither, nor to the room's last poster (#576).
     #[tokio::test]
     async fn a_tab_with_two_sessions_is_ambiguous() {
         let d = Fake::new("tab-two", &[4, 9, 11, 12])
@@ -963,11 +1002,11 @@ mod tests {
             .tabbed(&[(9, "Views"), (11, "Views"), (12, "Lone"), (4, "Lone")]);
         d.state.note_post("ch_x", 4);
         deliver(&d, &AgentMention { session: Some("views".into()), ..mention() }).await;
-        assert_eq!((d.got(9).len(), d.got(11).len(), d.got(4).len()), (0, 0, 1));
-        assert!(d.got(4)[0].contains("more than one session on this machine is called views"));
+        assert!(d.sent.lock().unwrap().is_empty());
         // Two sessions in the "Lone" tab.
         deliver(&d, &AgentMention { session: Some("lone".into()), ..mention() }).await;
-        assert_eq!((d.got(12).len(), d.got(4).len()), (0, 2));
+        assert!(d.sent.lock().unwrap().is_empty());
+        assert_eq!(d.state.unread().len(), 2);
     }
 
     /// A session's own name beats another pane's tab of that name.
@@ -983,8 +1022,9 @@ mod tests {
     async fn a_tab_without_a_session_is_no_hit() {
         let d = Fake::new("tab-none", &[4]).named(&[(4, "Billing")]).tabbed(&[(7, "Views")]);
         d.state.note_post("ch_x", 4);
-        deliver(&d, &AgentMention { session: Some("views".into()), ..mention() }).await;
-        assert!(d.got(4)[0].contains("no session on this machine is called views"));
+        let answer = deliver(&d, &AgentMention { session: Some("views".into()), ..mention() }).await;
+        assert_eq!(answer, nowhere("views", &["billing"]));
+        assert!(d.sent.lock().unwrap().is_empty());
     }
 
     #[tokio::test]

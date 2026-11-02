@@ -114,7 +114,7 @@ export function mentionMachinesTests(what: string, context: { serviceWorkers?: "
     // says when the daemon took it. This harness's sessions are names only,
     // so the daemon routes it to its inbox.
     const line = aliceChat.locator(`.thread-msg .mention-line[data-machine='${machine}']`);
-    await expect(line).toHaveAttribute("data-mention-status", /^(delivered|fell_back|waiting)$/, { timeout: 15_000 });
+    await expect(line).toHaveAttribute("data-mention-status", /^(delivered|fell_back|waiting|no_such_session)$/, { timeout: 15_000 });
     const chip = aliceChat.locator(".thread-msg .mention-machine", { hasText: "@alices/ux-improvements" });
     await expect(chip).toBeVisible();
     await expect(chip.locator(".machine-icon")).toBeVisible();

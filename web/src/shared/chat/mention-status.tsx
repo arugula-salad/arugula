@@ -20,6 +20,10 @@ export function mentionStatusText(s: ChatMentionStatus): string {
       return `Waiting on ${who}: no session took it`;
     case "queued":
       return `Queued for ${s.session ? `${who}/${s.session}` : who}: its hooks aren't listening`;
+    case "no_such_session": {
+      const none = `No session on ${who} is called ${s.asked ?? "that"}`;
+      return s.names?.length ? `${none}: ${s.names.join(", ")}` : none;
+    }
     case "offline":
       return `${who} is offline or didn't answer`;
     case "answered":

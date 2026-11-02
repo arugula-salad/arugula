@@ -373,13 +373,17 @@ pub struct Routed {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub session: Option<String>,
     /// The session the message named (`@geek/slowness`), when the daemon
-    /// found no such session and the message went to another or waits.
+    /// found no such session (or more than one): the message waits.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub asked: Option<String>,
     /// The session's hook wasn't waiting, so the mention only sits in its
     /// queue (#571). A daemon from before it says nothing: handed over.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub queued: bool,
+    /// With `asked`: the names a mention could have used (sessions and
+    /// tabs, at most 10), since no session was called that (#576).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub names: Vec<String>,
 }
 
 /// Which of the daemon's steps took an `agents.mention`.

@@ -949,7 +949,7 @@ export type ChatLive = { "type": "hello", stream: string, } | { "type": "message
 /**
  * How far a [`ChatMentionStatus`] has got.
  */
-export type ChatMentionState = "sending" | "delivered" | "fell_back" | "waiting" | "queued" | "offline" | "answered";
+export type ChatMentionState = "sending" | "delivered" | "fell_back" | "waiting" | "queued" | "no_such_session" | "offline" | "answered";
 
 /**
  * Where a message's `@machine` mention got to (#502), as control knows it:
@@ -969,6 +969,10 @@ session?: string,
  * The session the message named that the daemon couldn't find.
  */
 asked?: string, 
+/**
+ * With `no_such_session`: the names it could have used (#576).
+ */
+names?: Array<string>, 
 /**
  * With `answered`: the number of the agent's reply.
  */
