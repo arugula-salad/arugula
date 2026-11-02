@@ -158,7 +158,7 @@ async fn a_board_from_creation_to_a_stale_write() {
         (v["zones"][0]["rows"][1]["pointer"]["id"].as_str(), v["zones"][0]["rows"][1]["lane"].as_str()),
         (Some(login.as_str()), Some("next"))
     );
-    assert_eq!(v["board"]["progress"], json!({ "done": 0, "total": 1, "proven": 0 }), "a note is never counted");
+    assert_eq!(v["board"]["progress"], json!({ "done": 0, "total": 1, "proven": 0, "review": 0, "doing": 0 }), "a note is never counted");
     // A run, an agent block or a workspace is attached, not a row's item.
     for ptr in [
         json!({ "kind": "run", "id": "run_ab12" }),
@@ -342,8 +342,8 @@ async fn groups_are_the_authors_to_set() {
         json!({ "entry": "row", "zone": decide, "note": "shut", "pointer": { "kind": "issue", "id": shut } }),
     )
     .await;
-    assert_eq!(v["groups"][0]["progress"], json!({ "done": 1, "total": 1, "proven": 0 }), "{v}");
-    assert_eq!(v["groups"][1]["progress"], json!({ "done": 0, "total": 0, "proven": 0 }), "{v}");
+    assert_eq!(v["groups"][0]["progress"], json!({ "done": 1, "total": 1, "proven": 0, "review": 0, "doing": 0 }), "{v}");
+    assert_eq!(v["groups"][1]["progress"], json!({ "done": 0, "total": 0, "proven": 0, "review": 0, "doing": 0 }), "{v}");
     assert_eq!(lane(&v, on(&v, "shut")["id"].as_str().unwrap()), "done", "a lane is the work's, in any group");
 
     // Deleting a group takes its rows with it (loose and shut were in

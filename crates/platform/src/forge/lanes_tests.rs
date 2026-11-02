@@ -163,7 +163,7 @@ async fn a_row_on_a_private_pr_is_in_review_for_everyone() {
         assert_eq!(lane, "lane_review", "{who}: {v}");
         assert_eq!(r.get("live").is_some(), who == "bob", "{who}: only the reader of acme/app has a chip: {v}");
         assert!(who == "bob" || !v.to_string().contains("secret plan"), "{v}");
-        assert_eq!(v["board"]["progress"], json!({ "done": 0, "total": 1, "proven": 0 }), "{who}");
+        assert_eq!(v["board"]["progress"], json!({ "done": 0, "total": 1, "proven": 0, "review": 1, "doing": 0 }), "{who}");
     }
 }
 
@@ -196,7 +196,7 @@ async fn done_is_proven_by_ci_or_evidence_or_not() {
     for p in ["fi_red", "fi_run", "fi_none"] {
         assert!(on(&v, p).1.get("proof").is_none(), "{p} is not proven: {}", on(&v, p).1);
     }
-    assert_eq!(v["board"]["progress"], json!({ "done": 4, "total": 4, "proven": 1 }), "{v}");
+    assert_eq!(v["board"]["progress"], json!({ "done": 4, "total": 4, "proven": 1, "review": 0, "doing": 0 }), "{v}");
 
     // Evidence: a closed issue with a link proves it by evidence, one
     // without isn't proven, and a link on a row that isn't Done proves
@@ -334,7 +334,7 @@ async fn merged_isnt_done_until_the_issue_closes() {
     assert_eq!(on(&v, &login).0, "lane_review", "merged is not done: {v}");
     assert_eq!(on(&v, &login).1["marks"], json!([{ "kind": "merged_not_closed" }]), "{v}");
     assert!(on(&v, &login).1.get("proof").is_none(), "{v}");
-    assert_eq!(v["board"]["progress"], json!({ "done": 0, "total": 1, "proven": 0 }), "{v}");
+    assert_eq!(v["board"]["progress"], json!({ "done": 0, "total": 1, "proven": 0, "review": 1, "doing": 0 }), "{v}");
 
     // The issue closed: Done, proven by the green merge, and no mark.
     app.db
@@ -348,7 +348,7 @@ async fn merged_isnt_done_until_the_issue_closes() {
     assert_eq!(on(&v, &login).0, "lane_done", "{v}");
     assert_eq!(on(&v, &login).1["proof"], json!({ "by": "ci", "pointer": fi("fi_fix") }), "{v}");
     assert!(on(&v, &login).1.get("marks").is_none(), "the issue is closed: {v}");
-    assert_eq!(v["board"]["progress"], json!({ "done": 1, "total": 1, "proven": 1 }), "{v}");
+    assert_eq!(v["board"]["progress"], json!({ "done": 1, "total": 1, "proven": 1, "review": 0, "doing": 0 }), "{v}");
 }
 
 /// A PR stacked on another open PR is `after` it, with that PR's number;
