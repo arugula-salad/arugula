@@ -63,6 +63,10 @@ fn row_titles(v: &Value, row: &str) -> Vec<String> {
     docs.iter().map(|d| d["title"].as_str().unwrap().to_owned()).collect()
 }
 
+fn rand_hex() -> String {
+    hex::encode(arugula_e2e::random::<16>())
+}
+
 fn titles(v: &Value) -> Vec<&str> {
     v["docs"].as_array().unwrap().iter().map(|d| d["title"].as_str().unwrap()).collect()
 }
@@ -289,6 +293,17 @@ async fn row_docs_are_once_per_row_in_their_own_order_and_go_with_the_row() {
         let (st, v) = link_row(&base, "a", &id, &r2, ptr(&d)).await;
         assert_eq!(st, if i + 1 < BOARD_DOCS_MAX { 200 } else { 400 }, "{i}: {v}");
     }
+
+    // The table itself refuses a second copy in the strip (a NULL row is one place), and on a row.
+    let twice = |row: Option<&str>| {
+        app.db.c().execute(
+            "INSERT INTO board_docs (id, board_id, row_id, position, target_kind, target, machine, title, added_by, created_at)
+             VALUES (?1, ?2, ?3, 9, 'doc', ?4, '', '', 'a', 1)",
+            params![format!("bdc_{}", rand_hex()), id, row, a],
+        )
+    };
+    assert!(twice(None).is_err(), "the strip has it");
+    assert!(twice(Some(&r2)).is_err(), "so does the row");
 
     // A row's Docs go with it; the strip's and the other row's stay.
     let (st, v) = call(&base, "a", "DELETE", &format!("/api/boards/{id}/entries/{r1}"), None).await;
