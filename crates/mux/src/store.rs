@@ -125,6 +125,10 @@ pub struct AgentSession {
     /// resumes only then.
     #[serde(default)]
     pub running: bool,
+    /// Its hooks named it, not Claude Code's session files (#512): the
+    /// files don't replace it while it runs.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub hooked: bool,
 }
 
 fn is_terminal(k: &BlockType) -> bool {

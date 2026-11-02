@@ -708,7 +708,7 @@ impl Daemon {
         }
         let transcript = hook["transcript_path"].as_str().map(str::to_owned);
         let cwd = hook["cwd"].as_str().map(str::to_owned);
-        self.set_session(pane, "claude", id, transcript, cwd);
+        self.set_session(pane, "claude", id, transcript, cwd, true);
     }
 
     pub(super) fn set_session(
@@ -718,6 +718,7 @@ impl Daemon {
         id: &str,
         transcript: Option<String>,
         cwd: Option<String>,
+        hooked: bool,
     ) {
         let m = self.meta.entry(pane).or_default();
         let old = m.session.as_ref().filter(|s| s.agent == agent && s.id == id);
@@ -732,8 +733,14 @@ impl Daemon {
         let cwd = cwd.or_else(|| old.and_then(|s| s.cwd.clone()));
         info!(pane, agent, session = id, "agent conversation");
         // Its hooks speak while it runs.
-        m.session =
-            Some(crate::store::AgentSession { agent: agent.into(), id: id.into(), transcript, cwd, running: true });
+        m.session = Some(crate::store::AgentSession {
+            agent: agent.into(),
+            id: id.into(),
+            transcript,
+            cwd,
+            running: true,
+            hooked,
+        });
         // A pane running Claude Code resumes it, unless someone said
         // otherwise.
         if !m.policy_set && m.policy == Policy::Shell {
