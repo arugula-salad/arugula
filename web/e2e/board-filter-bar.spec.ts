@@ -115,6 +115,8 @@ test("a narrow Board block in a wide window filters by label with clicks alone",
 
   await blk.locator('[data-board-facet-button="label"]').click();
   await blk.locator('[data-board-facet-value="docs"]').check();
+  // The open list sits inline, its checkboxes their own size: not stretched like the box.
+  expect((await blk.locator('[data-board-facet-value="docs"]').boundingBox())!.width).toBeLessThan(40);
   await expect(blk.locator("[data-board-row]")).toHaveCount(2);
   await expect(blk.locator("[data-board-find-count]")).toHaveText("2 of 4 rows");
   await shot(alice, "block-narrow-filtered");
