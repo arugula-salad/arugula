@@ -341,6 +341,7 @@ impl Daemon for App {
 pub(crate) async fn session_names(app: &App, only: Option<PaneId>) -> Vec<(PaneId, String)> {
     let mut out = vec![];
     let mut terminals = HashMap::new();
+    let mut hooked = vec![];
     for p in app.mux.api(Api::Panes).await.unwrap_or_default() {
         let id = p.info.id;
         if only.is_some_and(|o| o != id) {
@@ -350,15 +351,21 @@ pub(crate) async fn session_names(app: &App, only: Option<PaneId>) -> Vec<(PaneI
             if let Some(t) = p.info.title.as_deref().map(str::trim).filter(|t| !t.is_empty()) {
                 out.push((id, t.to_owned()));
             }
-        } else if p.info.kind == arugula_proto::BlockType::Terminal
-            && let Some(pid) = app.mux.api(|r| Api::Pane(id, r)).await.flatten().and_then(|h| h.pid_now())
-        {
-            terminals.insert(pid, id);
+        } else if p.info.kind == arugula_proto::BlockType::Terminal {
+            // The mux knows the pane's conversation from Claude Code's hooks
+            // (#512). Process discovery is for a pane without them.
+            if let Some(sid) = app.mux.api(|r| Api::Conversation(id, r)).await.flatten() {
+                hooked.push((id, sid));
+            } else if let Some(pid) = app.mux.api(|r| Api::Pane(id, r)).await.flatten().and_then(|h| h.pid_now()) {
+                terminals.insert(pid, id);
+            }
         }
     }
-    if !terminals.is_empty() {
+    if !terminals.is_empty() || !hooked.is_empty() {
         let found = crate::task::spawn_blocking(move || {
-            let live = crate::agent::sessions().live(terminals);
+            let mut live: HashMap<PaneId, (String, Option<String>)> =
+                if terminals.is_empty() { HashMap::new() } else { crate::agent::sessions().live(terminals) };
+            live.extend(hooked.into_iter().map(|(pane, sid)| (pane, (sid, None))));
             let ids: Vec<String> = live.values().map(|(sid, _)| sid.clone()).collect();
             let titles = crate::agent::conversation_titles(&ids);
             live.into_iter()

@@ -74,6 +74,10 @@ impl Daemon {
             Api::Panes(reply) => {
                 let _ = reply.send(self.summaries());
             }
+            Api::Conversation(pane, reply) => {
+                let id = self.meta.get(&pane).and_then(|m| m.session.as_ref());
+                let _ = reply.send(id.filter(|s| s.running && s.agent == "claude").map(|s| s.id.clone()));
+            }
             Api::Pane(pane, reply) => {
                 let _ = reply.send(self.panes.get(&pane).cloned());
             }

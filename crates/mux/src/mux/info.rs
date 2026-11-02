@@ -107,7 +107,9 @@ impl Daemon {
             let live = self.config.sessions.live(ours);
             for (id, (sid, cwd)) in live {
                 let claude = agents.iter().any(|(p, a)| *p == id && a.as_deref() == Some("claude"));
-                if claude && crate::resume::valid_id(&sid) {
+                // Its hooks name the conversation; the files only fill in
+                // for a pane whose hooks haven't spoken (#512).
+                if claude && !self.hooked.contains(&id) && crate::resume::valid_id(&sid) {
                     self.set_session(id, "claude", &sid, None, cwd);
                 }
             }

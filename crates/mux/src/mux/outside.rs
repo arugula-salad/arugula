@@ -55,6 +55,13 @@ pub trait AgentSessions: Send + Sync + Debug {
         let _ = client;
         None
     }
+    /// Whether a conversation was started by an SDK or `claude -p` run
+    /// (inside a pane's Claude Code, #512), not by a person at its prompt.
+    /// A hook from it says nothing of the pane's own conversation.
+    fn nested(&self, id: &str) -> bool {
+        let _ = id;
+        false
+    }
 }
 
 /// Something outside the mux that makes a terminal wait on you (#699): a
