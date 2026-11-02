@@ -3,9 +3,11 @@
 //! leaves it, and any block can open it again.
 //!
 //! - `<id>` is 16 lower-case hex digits, random. Nothing else is an id.
-//! - `meta.json`: `{id, title, made, updated, by}`. `by` is the `mcp:` agent
-//!   or the person's driver name that made it, or `migrated`. `updated`
-//!   moves on an outline, a fill and an asset.
+//! - `meta.json`: `{id, title, made, updated, by, shape}`. `by` is the `mcp:`
+//!   agent or the person's driver name that made it, or `migrated`. `updated`
+//!   moves on an outline, a fill and an asset, and `shape` ([`super::shape`],
+//!   what its row in the list shows) is worked out again then. A Doc from
+//!   before `shape` gets one the first time it's listed.
 //! - `doc.json`, `sN.md` and `assets/`: the Doc's files, as [`super`] says.
 //!
 //! Nothing here prunes: a Doc stays until the owner deletes it.
@@ -31,6 +33,7 @@ use regex::Regex;
 use serde::{Deserialize, Serialize};
 use tracing::{info, warn};
 
+use super::shape::{self, Shape};
 use crate::store::{now_ms, private_dir, write_atomic};
 
 /// The library's folder, in the state directory.
@@ -51,6 +54,8 @@ pub struct Meta {
     pub made: u64,
     pub updated: u64,
     pub by: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shape: Option<Shape>,
 }
 
 /// Whether `id` is what a Doc is called: 16 lower-case hex digits.
@@ -82,7 +87,14 @@ pub fn make(state_dir: &Path, title: &str, by: &str) -> Result<Meta, String> {
         }
         private_dir(&dir).map_err(|e| format!("can't make the Doc's folder: {e}"))?;
         let now = now_ms();
-        let meta = Meta { id, title: title.trim().to_owned(), made: now, updated: now, by: by.to_owned() };
+        let meta = Meta {
+            id,
+            title: title.trim().to_owned(),
+            made: now,
+            updated: now,
+            by: by.to_owned(),
+            shape: Some(Shape::default()),
+        };
         if let Err(e) = write_meta(&dir, &meta) {
             let _ = std::fs::remove_dir_all(&dir);
             return Err(e);
@@ -111,16 +123,29 @@ pub fn touch(dir: &Path, title: Option<&str>) {
     if let Some(t) = title {
         meta.title = t.trim().to_owned();
     }
+    meta.shape = Some(shape::of(dir));
     if let Err(e) = write_meta(dir, &meta) {
         warn!(doc = meta.id, error = e, "can't update a Doc's meta.json");
     }
+}
+
+/// The Doc's `meta.json`, with a shape: one from before `shape` gets it now.
+fn read_shaped(dir: &Path) -> Option<Meta> {
+    let mut meta = read_meta(dir)?;
+    if meta.shape.is_none() {
+        meta.shape = Some(shape::of(dir));
+        if let Err(e) = write_meta(dir, &meta) {
+            warn!(doc = meta.id, error = e, "can't keep a Doc's shape");
+        }
+    }
+    Some(meta)
 }
 
 /// Every Doc in the library, newest `updated` first. A folder without a
 /// `meta.json` of its own is left out (and left alone).
 pub fn list(state_dir: &Path) -> Vec<Meta> {
     let Ok(entries) = std::fs::read_dir(root(state_dir)) else { return vec![] };
-    let mut out: Vec<Meta> = entries.flatten().filter_map(|e| read_meta(&e.path())).collect();
+    let mut out: Vec<Meta> = entries.flatten().filter_map(|e| read_shaped(&e.path())).collect();
     out.sort_by(|a, b| b.updated.cmp(&a.updated).then(b.made.cmp(&a.made)).then(a.id.cmp(&b.id)));
     out
 }
@@ -325,7 +350,7 @@ fn copy_in(state_dir: &Path, old: &Old, layout_title: Option<&str>, copy: Copy) 
         .filter(|t| !t.trim().is_empty())
         .or_else(|| layout_title.map(str::to_owned).filter(|t| !t.trim().is_empty()))
         .unwrap_or_else(|| "Untitled".to_owned());
-    write_meta(&to, &Meta { id: id.clone(), title, made, updated, by: "migrated".into() })?;
+    write_meta(&to, &Meta { id: id.clone(), title, made, updated, by: "migrated".into(), shape: Some(shape::of(&to)) })?;
     Ok(id)
 }
 
@@ -498,7 +523,21 @@ mod tests {
         assert_eq!(read_meta(&dir(&state, &a.id).unwrap()), Some(a.clone()));
         // `updated` moves; the newest is first.
         std::thread::sleep(std::time::Duration::from_millis(5));
-        touch(&dir(&state, &a.id).unwrap(), Some("Renamed"));
+        let a_dir = dir(&state, &a.id).unwrap();
+        std::fs::write(a_dir.join("doc.json"), r#"{"title":"T","sections":[{"id":"s1","heading":"One"}]}"#).unwrap();
+        std::fs::write(a_dir.join("s1.md"), "Three plain words").unwrap();
+        touch(&a_dir, Some("Renamed"));
+        let shape = read_meta(&a_dir).unwrap().shape.unwrap();
+        assert_eq!((shape.summary.as_str(), shape.sections[0].words), ("Three plain words", 3), "a fill changes its row");
+        // A Doc from before `shape` gets one when it's listed, and keeps
+        // when it last changed.
+        let mut old = read_meta(&a_dir).unwrap();
+        old.shape = None;
+        write_meta(&a_dir, &old).unwrap();
+        assert!(!std::fs::read_to_string(a_dir.join("meta.json")).unwrap().contains("shape"));
+        let listed = list(&state).into_iter().find(|m| m.id == a.id).unwrap();
+        assert_eq!((listed.updated, listed.shape.unwrap().summary.as_str()), (old.updated, "Three plain words"));
+        assert!(read_meta(&a_dir).unwrap().shape.is_some(), "and it's kept");
         let ids: Vec<_> = list(&state).into_iter().map(|m| (m.id, m.title)).collect();
         assert_eq!(ids, [(a.id.clone(), "Renamed".into()), (b.id, "A title".into())]);
         // A folder with no meta.json of its own is left out and left alone.

@@ -8,7 +8,7 @@ here rebuilds this crate and the binary, not the daemon:
   (`embeds.rs`), sharing a link (`link.rs`) and an agent's ask to share
   (`ask.rs`).
 - `src/ops.rs` and `src/links.rs`: the operations (`docs.list`, `doc.open`,
-  `doc.delete`, `doc_link.get`, `doc_link.delete`), as `Handle<Docs>`.
+  `doc.delete`, `doc.preview`, `doc_link.get`, `doc_link.delete`), as `Handle<Docs>`.
 - `src/tool.rs`: the `doc` MCP tool, listed after `show`.
 
 `src/lib.rs` registers it all: a `features::Feature` (the block kind, the

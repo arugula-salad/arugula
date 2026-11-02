@@ -981,6 +981,30 @@ pub struct DocRow {
     pub open: Option<PaneId>,
     #[serde(default)]
     pub shared: Option<DocShared>,
+    /// Its opening line, as plain text (#588). Empty until it has one.
+    #[serde(default)]
+    pub summary: String,
+    /// Its sections, for the list's picture of its shape and its outline.
+    #[serde(default)]
+    pub sections: Vec<DocSectionShape>,
+}
+
+/// One section of a Doc, as the Docs list shows it (#588). A fenced block is
+/// a figure and not words, or a prototype's code reads as a long essay.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct DocSectionShape {
+    pub heading: String,
+    pub words: u32,
+    pub figures: u32,
+}
+
+/// `GET /api/docs/ID/preview` (#588): a Doc's first paragraphs, as plain
+/// text, without opening it in a block.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct DocPreview {
+    pub opening: Vec<String>,
 }
 
 /// When a Doc was shared with a link, and last updated.

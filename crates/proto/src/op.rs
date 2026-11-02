@@ -281,6 +281,7 @@ macro_rules! every_op {
         $m!($crate::op::ops::DocsList);
         $m!($crate::op::ops::DocOpen);
         $m!($crate::op::ops::DocDelete);
+        $m!($crate::op::ops::DocPreviewGet);
         $m!($crate::op::ops::AgentCanGet);
         $m!($crate::op::ops::PaneWait);
         $m!($crate::op::ops::PaneSend);
@@ -382,7 +383,7 @@ pub mod ops {
         Machine, PaneId,
         api::{
             AclSetRequest, Adapters, AgentCan, AgentsInventory, AskAnswer, AskRequest, AttentionRequest,
-            ConversationList, ConversationsQuery, DetectionAnswer, DocLinkUrl, DocOpenRequest, DocOpened, DocRow,
+            ConversationList, ConversationsQuery, DetectionAnswer, DocLinkUrl, DocOpenRequest, DocOpened, DocPreview, DocRow,
             DriverEntry, Empty, FollowUpRequest, FollowedUp, FollowerLinkRequest, GuestInvite, GuestInviteRequest,
             IdeDiffs, IdeDiffsRequest, IdeInfo, IdeMentionRequest, IdeMentioned, InboxAnswer, InstallAdapterRequest,
             InviteRequest, Invited, KeysRequest, LinkRequest, McpTokenRequest, MouseRequest, NotifyPref, NotifyRequest,
@@ -655,6 +656,20 @@ pub mod ops {
         type Path = ();
         type Req = DocOpenRequest;
         type Res = DocOpened;
+    }
+
+    /// `GET /api/docs/ID/preview` (#588): a Doc's first paragraphs, read
+    /// without opening a block, so its list can show them.
+    pub struct DocPreviewGet;
+
+    impl Op for DocPreviewGet {
+        const NAME: &'static str = "doc.preview";
+        const METHOD: Method = Method::Get;
+        const PATH: &'static str = "/api/docs/{id}/preview";
+        const ACCESS: Access = Access::Owner;
+        type Path = String;
+        type Req = Empty;
+        type Res = DocPreview;
     }
 
     /// `DELETE /api/docs/ID` (#1493): unshare a Doc, close its block and
