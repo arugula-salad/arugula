@@ -120,8 +120,9 @@ pub enum ClientMsg {
     Ping { id: u64 },
     /// What this client wants from now on (M23). `summary`: pane summaries
     /// only (the swarm, the fleet): it attaches to nothing, and pane
-    /// objects leave out `epoch`, `policy` and `integration`. Answered
-    /// with a fresh `State` in that shape.
+    /// objects leave out `epoch`, `policy` and `integration`, and it's sent
+    /// no block's state, when this is its first message. Answered with a
+    /// fresh `State` in that shape.
     Subscribe { summary: bool },
     /// Follow an editor (M28): its cursor, selection and the file it shows
     /// come as [`ServerMsg::Follow`] while `on`. Viewer access is enough.
