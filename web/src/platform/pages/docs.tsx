@@ -179,6 +179,7 @@ export function DocPage({ project, doc }: { project: string; doc: string }) {
       {!missing || view ? (
         <DocBlock
           id={0}
+          docKey={doc}
           s={state}
           fresh={fresh}
           load={noImages}

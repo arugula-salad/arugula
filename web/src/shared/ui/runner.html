@@ -12,10 +12,25 @@
 // no script CSP, and from control's proto origin where it has (the
 // `Host::Proto` page in crates/control/src/blocks.rs); the web client's
 // `prototype-frame.tsx` is the other side, and the message names are
-// `prototype-messages.ts`'s.
+// `prototype-messages.ts`'s. Bridge (#508): before the page, `window.arugula`
+// (`copy`, `store.get/set/all`) asks the parent, which answers each request
+// by id. The page has no fonts from a host: `data:` fonts only.
 (function () {
   var POLICY =
     "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; base-uri 'none'; form-action 'none'";
+  // The bridge's shim (#508): requests carry an id, replies come back as
+  // messages, and only the parent's are taken.
+  var SHIM =
+    "<script>(function(){var n=0,w={};" +
+    "addEventListener('message',function(e){if(e.source!==parent)return;var m=e.data;" +
+    "if(!m||m.type!=='arugula.reply'||!w[m.id])return;var f=w[m.id];delete w[m.id];" +
+    "m.ok?f[0](m.value):f[1](new Error(m.error||'refused'))});" +
+    "function ask(t,x){return new Promise(function(a,b){var id=++n;w[id]=[a,b];" +
+    "x.type=t;x.id=id;parent.postMessage(x,'*')})}" +
+    "window.arugula={copy:function(text){return ask('arugula.copy',{text:String(text)})}," +
+    "store:{get:function(key){return ask('arugula.store.get',{key:key})}," +
+    "set:function(key,value){return ask('arugula.store.set',{key:key,value:value})}," +
+    "all:function(){return ask('arugula.store.all',{})}}}})()</scr" + "ipt>";
   function onmessage(e) {
     // Only the parent, and only the first: after that, the page is the prototype's.
     if (e.source !== parent) return;
@@ -38,6 +53,7 @@
         "var s=m.colorScheme==='dark'?'dark':'light';" +
         "var a=document.getElementById('arugula-scheme-meta'),b=document.getElementById('arugula-scheme-style');" +
         "if(a)a.content=s;if(b)b.textContent=':root{color-scheme:'+s+'}'})</scr" + "ipt>" +
+        SHIM +
         m.html,
     );
     document.close();

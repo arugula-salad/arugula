@@ -19,6 +19,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 import { useScheme } from "./drawing";
 import { checkPrototype, prototypeInfo } from "./embeds";
+import { useBridge } from "./prototype-bridge";
 import { htmlMessage, readyFrom, schemeMessage } from "./prototype-messages";
 import runner from "./runner.html?raw";
 
@@ -71,6 +72,7 @@ export function Prototype({ html, alt }: { html: string; alt: string }) {
   const { title, height } = prototypeInfo(alt);
   const why = checkPrototype(html);
   const live = !why && origin !== null && (!click || armed) && !left;
+  const copied = useBridge(frame, live);
   // A layout effect: the listener is there before the frame's first task, in
   // which the runner says it is ready.
   useLayoutEffect(() => {
@@ -138,6 +140,11 @@ export function Prototype({ html, alt }: { html: string; alt: string }) {
       <span class="doc-prototype-label" data-prototype-label>
         Prototype · sandboxed
       </span>
+      {copied && (
+        <span class="doc-prototype-copied" data-prototype-copied role="status">
+          Copied
+        </span>
+      )}
       <iframe
         key={`${round}:${html}`}
         ref={frame}
