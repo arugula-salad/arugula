@@ -15,13 +15,6 @@
 //!   repo and which-repo ask, the owner as the asker and the payer. What's
 //!   different is the card's "started by" ([`super::sessions::agent_asker`])
 //!   and that an agent's reply answers a session's open question.
-//! - **Stop** ([`stop`]): `sessions.start` or `sessions.reply` over the
-//!   session's project, and only for a session its owner asked: an agent
-//!   never ends a session someone else asked for, grants or not. It is the
-//!   card's Stop (the session leaves its box's work, and the box's next
-//!   report is refused so the box stops the agent), with a line in the
-//!   thread saying whose agent did it and why. A session that has ended
-//!   answers its state and stays as it was.
 //! - **Says what happened.** A start answers with the session it made, or
 //!   the platform's lines since in the thread (why not, or the which-repo
 //!   question, which waits on the owner, or on this agent's reply naming
@@ -32,10 +25,7 @@ use std::sync::Arc;
 use arugula_control_common::{ApiError, err};
 use arugula_control_wire::{
     chat::{ChatPost, SYSTEM_VIA},
-    sessions::{
-        AgentSessionReplied, AgentSessionReply, AgentSessionStart, AgentSessionStarted, AgentSessionStop,
-        STOP_REASON_MAX, SessionView, ask_via,
-    },
+    sessions::{AgentSessionReplied, AgentSessionReply, AgentSessionStart, AgentSessionStarted, ask_via},
 };
 use axum::{
     Json,
@@ -44,7 +34,7 @@ use axum::{
 };
 
 use super::{
-    J, agent_object_room, agent_room, name_of, post_replied,
+    J, agent_object_room, agent_room, post_replied,
     session_card::threaded,
     sessions::{AGENT_ON_THIS, MENTION, NOT_HERE, Replied, asks, works_in},
 };
@@ -53,8 +43,7 @@ use crate::{
     auth::Machine,
     db::projects::{SESSIONS_REPLY, SESSIONS_START},
     grants::{AgentScope, agent_may, owner_reads},
-    session_live::{stop_now, view},
-    sessions::{hydrate, review},
+    sessions::hydrate,
 };
 
 /// The longest ask or reply an agent sends, in characters: a person's
@@ -214,49 +203,4 @@ pub async fn reply(
         Some(Replied::Chat) | None => {}
     }
     Ok(Json(out))
-}
-
-/// `POST /api/daemon/sessions/{ses}/stop` [`AgentSessionStop`]: the agent
-/// stops a session its owner asked for, as the card's Stop (module docs).
-pub async fn stop(
-    State(app): State<Arc<Platform>>,
-    d: Machine,
-    Path(ses): Path<String>,
-    Json(b): Json<AgentSessionStop>,
-) -> J<SessionView> {
-    let none = || err(StatusCode::NOT_FOUND, "no such session");
-    let s = app.db.session(&ses)?.ok_or_else(none)?;
-    let scope = AgentScope::Project(s.project.clone());
-    if owner_reads(&app, &d.account, &scope, false).await?.is_none() {
-        return Err(none());
-    }
-    // Either power that started or answers it.
-    let principal = match agent_may(&app, &d, SESSIONS_REPLY, &scope).await {
-        Ok(p) => p,
-        Err(first) => agent_may(&app, &d, SESSIONS_START, &scope).await.map_err(|_| first)?,
-    };
-    if s.asker != d.account {
-        return Err(err(
-            StatusCode::FORBIDDEN,
-            &format!("session {} was asked for by someone else: an agent stops only its own person's sessions", s.id),
-        ));
-    }
-    let reason = b.reason.as_deref().map(str::trim).filter(|r| !r.is_empty());
-    if reason.is_some_and(|r| r.chars().count() > STOP_REASON_MAX) {
-        return Err(err(StatusCode::PAYLOAD_TOO_LARGE, &format!("a reason is at most {STOP_REASON_MAX} characters")));
-    }
-    // Ended already: it says so, and nothing changes.
-    if s.state.terminal() {
-        return Ok(Json(view(&app, &s, false, &d.account).await?));
-    }
-    let who = format!("{}'s agent on {}", name_of(&app, &d.account).await?, principal.machine_name);
-    let note = match reason {
-        Some(r) => format!("Stopped by {who}: {r}"),
-        None => format!("Stopped by {who}"),
-    };
-    let detail = serde_json::json!({ "by": d.account, "reason": note }).to_string();
-    let after = stop_now(&app, s, &detail).await?;
-    let room = app.db.chat_room(&after.room)?.ok_or_else(none)?;
-    review::post(&app, &room, after.parent_seq, "", SYSTEM_VIA, &note)?;
-    Ok(Json(view(&app, &after, false, &d.account).await?))
 }

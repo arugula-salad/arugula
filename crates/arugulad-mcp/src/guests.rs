@@ -97,7 +97,6 @@ pub const OWNERS: &[Entry] = &[
     ("read_deploy", None),
     ("session_start", None),
     ("session_reply", None),
-    ("session_stop", None),
     ("read_session", None),
 ];
 

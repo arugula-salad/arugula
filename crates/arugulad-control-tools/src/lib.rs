@@ -5,7 +5,7 @@
 //! native issues (`issue_write`, M200), boards (`board_read`,
 //! `board_write`), runs (`start_run`, `read_run`, M216), deploys
 //! (`plan_deploy`, `read_deploy`, M252) and agent sessions
-//! (`session_start`, `session_reply`, `session_stop`, aru-121; `read_session`, Fleet 5),
+//! (`session_start`, `session_reply`, aru-121; `read_session`, Fleet 5),
 //! with `list`'s kinds `cloud_workspaces`, `cloud_tabs`, `linked_repos`,
 //! `threads` and `sessions`.
 //!
@@ -58,7 +58,7 @@ use crate::{
 pub fn register() {
     /// What a tool is listed after, its row and its call.
     type Listed = (&'static str, fn() -> Def, registry::Run);
-    let tools: [Listed; 20] = [
+    let tools: [Listed; 19] = [
         ("draft", forge_read_def, run_forge_read),
         ("forge_read", forge_draft_def, run_forge_draft),
         ("device_call", read_cloud_def, run_read_cloud),
@@ -77,8 +77,7 @@ pub fn register() {
         (deploys::READ_TOOL, session_start_def, run_session_start),
         (agent_sessions::START_TOOL, session_reply_def, run_session_reply),
         (agent_sessions::REPLY_TOOL, read_session_def, run_read_session),
-        (agent_sessions::READ_TOOL, session_stop_def, run_session_stop),
-        (agent_sessions::STOP_TOOL, tracker_write_def, run_tracker_write),
+        (agent_sessions::READ_TOOL, tracker_write_def, run_tracker_write),
     ];
     for (after, def, run) in tools {
         registry::tool(registry::Tool { after: Some(after), def, run });
@@ -190,7 +189,6 @@ one!(run_read_deploy, deploys::read_deploy);
 one!(run_session_start, agent_sessions::session_start);
 one!(run_session_reply, agent_sessions::session_reply);
 one!(run_read_session, agent_sessions::read_session);
-one!(run_session_stop, agent_sessions::session_stop);
 one!(run_list_sessions, agent_sessions::list_sessions);
 no_args!(run_list_cloud_workspaces, cloud::list_cloud_workspaces);
 one!(run_list_cloud_tabs, cloud::list_cloud_tabs);
@@ -526,22 +524,6 @@ fn session_reply_def() -> Def {
         read_only: false,
         destructive: false,
         idempotent: false,
-        open_world: true,
-        flag: None,
-        output: None,
-        human: Human::In(agent_sessions::START_TOOL),
-    }
-}
-
-fn session_stop_def() -> Def {
-    Def {
-        name: agent_sessions::STOP_TOOL,
-        title: "Stop an agent session",
-        description: agent_sessions::STOP_DESCRIPTION,
-        args: Args::One(schema_for_type::<agent_sessions::SessionStopArgs>),
-        read_only: false,
-        destructive: true,
-        idempotent: true,
         open_world: true,
         flag: None,
         output: None,

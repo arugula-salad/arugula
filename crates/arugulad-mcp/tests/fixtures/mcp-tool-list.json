@@ -4162,40 +4162,6 @@
       },
       "name": "read_session",
       "title": "Read an agent session"
-    },
-    {
-      "annotations": {
-        "destructiveHint": true,
-        "idempotentHint": true,
-        "openWorldHint": true,
-        "readOnlyHint": false,
-        "title": "Stop an agent session"
-      },
-      "description": "Stop an agent session in Arugula control (ses_…) now: it cancels the turn under way and ends the session, as the Stop button on its card does, and says so in its thread (\"Stopped by <your person>'s agent on <machine>: <reason>\"). Only a session your person asked for (you started it, or they did), with their sessions.start or sessions.reply grant over its project. Stopping is always safe and never needs a person. A session that has ended already is left as it is.",
-      "inputSchema": {
-        "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "properties": {
-          "reason": {
-            "default": null,
-            "description": "Why, in at most 280 characters: the thread's note says it.",
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "session": {
-            "description": "The session: its id (ses_…).",
-            "type": "string"
-          }
-        },
-        "required": [
-          "session"
-        ],
-        "title": "SessionStopArgs",
-        "type": "object"
-      },
-      "name": "session_stop",
-      "title": "Stop an agent session"
     }
   ],
   "block, labs true": [
@@ -8783,40 +8749,6 @@
     {
       "annotations": {
         "destructiveHint": true,
-        "idempotentHint": true,
-        "openWorldHint": true,
-        "readOnlyHint": false,
-        "title": "Stop an agent session"
-      },
-      "description": "Stop an agent session in Arugula control (ses_…) now: it cancels the turn under way and ends the session, as the Stop button on its card does, and says so in its thread (\"Stopped by <your person>'s agent on <machine>: <reason>\"). Only a session your person asked for (you started it, or they did), with their sessions.start or sessions.reply grant over its project. Stopping is always safe and never needs a person. A session that has ended already is left as it is.",
-      "inputSchema": {
-        "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "properties": {
-          "reason": {
-            "default": null,
-            "description": "Why, in at most 280 characters: the thread's note says it.",
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "session": {
-            "description": "The session: its id (ses_…).",
-            "type": "string"
-          }
-        },
-        "required": [
-          "session"
-        ],
-        "title": "SessionStopArgs",
-        "type": "object"
-      },
-      "name": "session_stop",
-      "title": "Stop an agent session"
-    },
-    {
-      "annotations": {
-        "destructiveHint": true,
         "idempotentHint": false,
         "openWorldHint": true,
         "readOnlyHint": false,
@@ -13117,40 +13049,6 @@
       },
       "name": "read_session",
       "title": "Read an agent session"
-    },
-    {
-      "annotations": {
-        "destructiveHint": true,
-        "idempotentHint": true,
-        "openWorldHint": true,
-        "readOnlyHint": false,
-        "title": "Stop an agent session"
-      },
-      "description": "Stop an agent session in Arugula control (ses_…) now: it cancels the turn under way and ends the session, as the Stop button on its card does, and says so in its thread (\"Stopped by <your person>'s agent on <machine>: <reason>\"). Only a session your person asked for (you started it, or they did), with their sessions.start or sessions.reply grant over its project. Stopping is always safe and never needs a person. A session that has ended already is left as it is.",
-      "inputSchema": {
-        "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "properties": {
-          "reason": {
-            "default": null,
-            "description": "Why, in at most 280 characters: the thread's note says it.",
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "session": {
-            "description": "The session: its id (ses_…).",
-            "type": "string"
-          }
-        },
-        "required": [
-          "session"
-        ],
-        "title": "SessionStopArgs",
-        "type": "object"
-      },
-      "name": "session_stop",
-      "title": "Stop an agent session"
     }
   ],
   "full, labs true": [
@@ -17734,40 +17632,6 @@
       },
       "name": "read_session",
       "title": "Read an agent session"
-    },
-    {
-      "annotations": {
-        "destructiveHint": true,
-        "idempotentHint": true,
-        "openWorldHint": true,
-        "readOnlyHint": false,
-        "title": "Stop an agent session"
-      },
-      "description": "Stop an agent session in Arugula control (ses_…) now: it cancels the turn under way and ends the session, as the Stop button on its card does, and says so in its thread (\"Stopped by <your person>'s agent on <machine>: <reason>\"). Only a session your person asked for (you started it, or they did), with their sessions.start or sessions.reply grant over its project. Stopping is always safe and never needs a person. A session that has ended already is left as it is.",
-      "inputSchema": {
-        "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "properties": {
-          "reason": {
-            "default": null,
-            "description": "Why, in at most 280 characters: the thread's note says it.",
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "session": {
-            "description": "The session: its id (ses_…).",
-            "type": "string"
-          }
-        },
-        "required": [
-          "session"
-        ],
-        "title": "SessionStopArgs",
-        "type": "object"
-      },
-      "name": "session_stop",
-      "title": "Stop an agent session"
     },
     {
       "annotations": {
