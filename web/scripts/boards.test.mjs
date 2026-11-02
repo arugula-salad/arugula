@@ -314,12 +314,20 @@ test("a stalled row says how long, takes the warn tone, and a block holds its ro
 });
 
 test("folds: everything starts open, a toggle is kept per board, and a bad or blocked store reads as none (#480)", async () => {
-  const { FOLD_DONE_BY_DEFAULT, groupFold, isFolded, laneFold, loadFolds, saveFolds } = await import("../src/shared/boards/folds.ts");
+  const { FOLD_DONE_BY_DEFAULT, groupFold, groupLaneFold, isFolded, laneFold, loadFolds, saveFolds } = await import("../src/shared/boards/folds.ts");
   const mem = new Map();
   globalThis.localStorage = { getItem: (k) => mem.get(k) ?? null, setItem: (k, v) => void mem.set(k, v) };
   assert.equal(FOLD_DONE_BY_DEFAULT, false);
   assert.equal(isFolded({}, groupFold("zon_1")), false);
   assert.equal(isFolded({}, laneFold("lane_done")), false);
+  assert.equal(groupLaneFold("zon_1", "lane_done"), "lane:zon_1:lane_done");
+  assert.equal(groupLaneFold(null, "lane_done"), "lane:none:lane_done");
+  assert.notEqual(groupLaneFold("zon_1", "lane_done"), laneFold("lane_done"));
+  const inA = { [groupLaneFold("zon_1", "lane_done")]: true };
+  assert.equal(isFolded(inA, groupLaneFold("zon_1", "lane_done")), true);
+  assert.equal(isFolded(inA, groupLaneFold("zon_2", "lane_done")), false, "another group's lane is untouched");
+  assert.equal(isFolded(inA, groupLaneFold(null, "lane_done")), false);
+  assert.equal(isFolded(inA, laneFold("lane_done")), false);
   saveFolds("brd_a", { [groupFold("zon_1")]: true, [laneFold("lane_next")]: false });
   assert.deepEqual(loadFolds("brd_a"), { "group:zon_1": true, "lane:lane_next": false });
   assert.deepEqual(loadFolds("brd_b"), {}, "another board is untouched");

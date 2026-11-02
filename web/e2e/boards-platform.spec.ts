@@ -441,8 +441,8 @@ test("a group heading folds its rows, a board without groups folds by lane, and 
   await expect(heading("Alpha")).toHaveText("Alpha · 2");
   await expect(fold("Alpha").locator("[data-board-zone]")).toHaveCount(0);
   await expect(fold("Beta").locator("[data-board-row]")).toHaveCount(2);
-  // Lanes inside a group don't fold.
-  await expect(fold("Beta").locator("[data-board-zone] button[data-board-fold]")).toHaveCount(0);
+  // Lanes inside a group fold on their own (#496), so they have a button too.
+  await expect(fold("Beta").locator("[data-board-zone] button[data-board-fold]")).not.toHaveCount(0);
 
   // Kept: a reload shows it still folded, and another board with the same group names is untouched.
   await alice.reload();
@@ -489,6 +489,62 @@ test("a group heading folds its rows, a board without groups folds by lane, and 
   await expect(heading("Beta")).toHaveText("Beta · 2");
   await alice.reload();
   await expect(heading("Beta")).toHaveAttribute("aria-expanded", "false", { timeout: 15_000 });
+  expect(await alice.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
+  await alice.setViewportSize({ width: 1280, height: 800 });
+});
+
+test("a lane inside a group folds on its own, in that group only, kept across reloads and a group fold (#496)", async () => {
+  test.setTimeout(120_000);
+  const b = await api(alice, "POST", `/api/projects/${project}/boards`, { title: "Lane folds" });
+  expect(b.status).toBe(200);
+  const id = b.body!.board.id as string;
+  const entries = `/api/boards/${id}/entries`;
+  let ids: string[] = [];
+  for (const g of ["Alpha", "Beta"]) ids = ((await api(alice, "PUT", entries, { entry: "zone", title: g })).body!.groups as { id: string }[]).map((x) => x.id);
+  for (const [i, g] of ["Alpha", "Beta"].entries()) for (const n of ["one", "two"]) expect((await api(alice, "PUT", entries, { entry: "row", note: `${g} ${n}`, zone: ids[i] })).status).toBe(200);
+  const path = `/p/${project}/boards/${id}`;
+  const group = (g: string) => alice.locator("[data-board-group]").filter({ has: alice.locator("[data-board-group-title]", { hasText: g }) });
+  const groupButton = (g: string) => group(g).locator("[data-board-group-title] button[data-board-fold]");
+  // The lane the rows sit in, the same in both groups.
+  let zone = "";
+  const laneIn = (g: string) => group(g).locator(`[data-board-zone="${zone}"]`);
+  const laneButton = (g: string) => laneIn(g).locator("button[data-board-fold]");
+  const rowsIn = (g: string) => group(g).locator("[data-board-row]");
+  const check = async (alphaFolded: boolean) => {
+    await expect(laneButton("Alpha")).toHaveAttribute("aria-expanded", alphaFolded ? "false" : "true", { timeout: 15_000 });
+    await expect(rowsIn("Alpha")).toHaveCount(alphaFolded ? 0 : 2);
+    // The same lane in the other group stays open.
+    await expect(laneButton("Beta")).toHaveAttribute("aria-expanded", "true");
+    await expect(rowsIn("Beta")).toHaveCount(2);
+  };
+
+  await platform(alice, path);
+  await expect(alice.locator("[data-board-group-title]")).toHaveText(["Alpha", "Beta"], { timeout: 15_000 });
+  zone = (await group("Alpha").locator("[data-board-zone]").filter({ has: alice.locator("[data-board-row]") }).getAttribute("data-board-zone"))!;
+  await expect(laneButton("Alpha")).toHaveAttribute("aria-expanded", "true");
+  // 1-2. Fold the lane in Alpha; Beta's is open.
+  await laneButton("Alpha").click();
+  await check(true);
+  // 3. Kept after a reload.
+  await alice.reload();
+  await check(true);
+  // 4. Fold the group and unfold it: the lane is still folded.
+  await groupButton("Alpha").click();
+  await expect(group("Alpha").locator("[data-board-zone]")).toHaveCount(0);
+  await groupButton("Alpha").click();
+  await check(true);
+  // Unfolding the lane opens it again, kept.
+  await laneButton("Alpha").click();
+  await check(false);
+  await alice.reload();
+  await check(false);
+  // On a phone: the same, and nothing scrolls sideways.
+  await alice.setViewportSize({ width: 390, height: 780 });
+  await laneButton("Beta").click();
+  await alice.reload();
+  await expect(laneButton("Beta")).toHaveAttribute("aria-expanded", "false", { timeout: 15_000 });
+  await expect(rowsIn("Beta")).toHaveCount(0);
+  await expect(laneButton("Alpha")).toHaveAttribute("aria-expanded", "true");
   expect(await alice.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
   await alice.setViewportSize({ width: 1280, height: 800 });
 });
