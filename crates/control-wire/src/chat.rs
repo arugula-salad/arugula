@@ -793,6 +793,17 @@ pub struct ChatPushed {
     pub why: ChatPushWhy,
 }
 
+/// A machine's word that reached nobody (#572): its agents can't read the
+/// room, and `reads` are the rooms they do read that the poster also sees.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct ChatUnreachedWhy {
+    pub word: String,
+    pub machine_name: String,
+    pub reads: Vec<String>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
@@ -802,6 +813,9 @@ pub struct ChatPosted {
     pub mentions: Vec<String>,
     /// `@words` that named nobody who sees the room.
     pub unreached: Vec<String>,
+    /// Why, for an `unreached` word that names a machine of the team (#572).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub unreached_why: Vec<ChatUnreachedWhy>,
     /// Whom control pushed (not those with the room open, muted, or pushed
     /// for it in the last minute).
     pub pushed: Vec<ChatPushed>,

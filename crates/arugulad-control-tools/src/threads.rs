@@ -444,8 +444,24 @@ pub(crate) async fn post_thread(c: &Call<'_>, a: PostThreadArgs) -> Out {
         summary += &format!(", with {} file(s)", ids.len());
     }
     if let Some(u) = v["unreached"].as_array().filter(|u| !u.is_empty()) {
-        let words: Vec<&str> = u.iter().filter_map(Value::as_str).collect();
-        summary += &format!(" (@{} reached nobody there)", words.join(", @"));
+        // A word with a reason says it; the rest only that nobody was there.
+        let whys = v["unreached_why"].as_array().map_or(&[][..], Vec::as_slice);
+        let why_of = |w: &str| whys.iter().find(|y| y["word"].as_str() == Some(w));
+        let words: Vec<&str> = u.iter().filter_map(Value::as_str).filter(|w| why_of(w).is_none()).collect();
+        if !words.is_empty() {
+            summary += &format!(" (@{} reached nobody there)", words.join(", @"));
+        }
+        // Why, for a word that named a machine of the team (#572).
+        for w in whys {
+            let (name, word) = (w["machine_name"].as_str().unwrap_or_default(), w["word"].as_str().unwrap_or_default());
+            let reads: Vec<&str> = w["reads"].as_array().into_iter().flatten().filter_map(Value::as_str).collect();
+            let they = match reads.as_slice() {
+                [] => "can't read any room here".to_owned(),
+                [one] => format!("can't read this room. They read {one}"),
+                [init @ .., last] => format!("can't read this room. They read {} and {last}", init.join(", ")),
+            };
+            summary += &format!(" (@{word} reached nobody: {name}'s agents {they}.)");
+        }
     }
     done(summary, v)
 }

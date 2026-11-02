@@ -75,7 +75,7 @@ use arugula_control_wire::chat::{
     ChatMessage, ChatMessages, ChatMessagesQuery, ChatMute, ChatNewChannel, ChatNewDm, ChatOpen, ChatOpenTarget,
     ChatPane, ChatPerson, ChatPost, ChatPosted, ChatPushWhy, ChatPushed, ChatReaction, ChatReactor, ChatRead,
     ChatReaderList, ChatReaders, ChatReadersStored, ChatRoom, ChatRoomAgent, ChatRoomChange, ChatRoomDetail, ChatRooms,
-    ChatSearchQuery, NotifyLevel,
+    ChatSearchQuery, ChatUnreachedWhy, NotifyLevel,
 };
 use arugula_e2e::{now_ms, team::TeamRole};
 use axum::{
@@ -954,6 +954,70 @@ async fn agent_mentions(
     }
     unreached.retain(|w| !agents.iter().any(|a| named(a, w)));
     Ok(out)
+}
+
+/// Why a word that named a machine of the team reached nobody (#572): its
+/// agents can't read `room`. `reads` are the channels of the team they do
+/// read that `poster` sees too, so a private room's name stays with its
+/// members. Words naming no machine (or none of the team's) get no row.
+async fn unreached_why(
+    app: &Platform,
+    facts: &Facts,
+    room: &Room,
+    poster: &str,
+    unreached: &[String],
+) -> anyhow::Result<Vec<ChatUnreachedWhy>> {
+    if unreached.is_empty() {
+        return Ok(vec![]);
+    }
+    let team = match room.scope.strip_prefix("team:") {
+        Some(t) => Some(t.to_owned()),
+        None => objects::project_of(room).and_then(|p| facts.projects.get(p)).and_then(|h| h.team.clone()),
+    };
+    let Some(team) = team else { return Ok(vec![]) };
+    let hub = &*app.hub;
+    let members: Vec<String> =
+        facts.teams.get(&team).map(|t| t.members.iter().map(|m| m.account.clone()).collect()).unwrap_or_default();
+    let mut ids: Vec<String> = vec![];
+    for m in &members {
+        ids.extend(app.cache.machines_for(hub, m).await?);
+    }
+    ids.sort();
+    ids.dedup();
+    let machines: Vec<Daemon> = app
+        .cache
+        .daemons(hub, &ids)
+        .await?
+        .into_values()
+        .filter(|d| d.team.as_deref() == Some(team.as_str()) && !d.name.is_empty())
+        .collect();
+    let mut found: Vec<(&String, &Daemon)> = vec![];
+    for w in unreached {
+        if let Some(d) = machines.iter().find(|d| d.name.to_lowercase() == *w) {
+            found.push((w, d));
+        }
+    }
+    if found.is_empty() {
+        return Ok(vec![]);
+    }
+    let (seen, seen_facts) = rooms_seen(app, poster).await?;
+    let mut reads: HashMap<String, Vec<String>> = HashMap::new();
+    for (r, _) in &seen {
+        if r.kind != "channel" || r.archived.is_some() || r.scope != format!("team:{team}") || r.name.is_empty() {
+            continue;
+        }
+        for a in room_agents(app, &seen_facts, r).await?.iter().filter(|a| hears(a)) {
+            reads.entry(a.machine.clone()).or_default().push(format!("#{}", r.name));
+        }
+    }
+    Ok(found
+        .into_iter()
+        .map(|(w, d)| ChatUnreachedWhy {
+            word: w.clone(),
+            machine_name: d.name.clone(),
+            reads: reads.get(&d.id).cloned().unwrap_or_default(),
+        })
+        .collect())
 }
 
 /// Whether a mention can reach this agent's machine (#394): it reads the
@@ -2180,6 +2244,11 @@ pub(crate) async fn post_replied(
     named.extend(extra.keyword.iter().cloned());
     let mut stored = named.clone();
     stored.extend(agent_mentions(app, &facts, &room, &mut unreached, agent).await?);
+    // The reason is for the answer only: a post doesn't fail for want of it.
+    let unreached_why = unreached_why(app, &facts, &room, &s.account, &unreached).await.unwrap_or_else(|e| {
+        tracing::warn!(error = %e, "chat: why a mention reached nobody");
+        vec![]
+    });
     let replying_to = replying_to_agent(app, &room, b.parent)?;
     let at = now_ms();
     let seq = app.db.add_chat_message(
@@ -2271,7 +2340,7 @@ pub(crate) async fn post_replied(
         }
         None => None,
     };
-    Ok((ChatPosted { seq, mentions: stored, unreached, pushed, github }, replied))
+    Ok((ChatPosted { seq, mentions: stored, unreached, unreached_why, pushed, github }, replied))
 }
 
 /// A reply being pushed (#106): its thread, whether it was also sent to the

@@ -1490,6 +1490,13 @@
             "type": "string"
           },
           "type": "array"
+        },
+        "unreached_why": {
+          "description": "Why, for an `unreached` word that names a machine of the team (#572).",
+          "items": {
+            "$ref": "#/$defs/ChatUnreachedWhy"
+          },
+          "type": "array"
         }
       },
       "required": [
@@ -2377,6 +2384,29 @@
           "type": "boolean"
         }
       },
+      "type": "object"
+    },
+    "ChatUnreachedWhy": {
+      "description": "A machine's word that reached nobody (#572): its agents can't read the\nroom, and `reads` are the rooms they do read that the poster also sees.",
+      "properties": {
+        "machine_name": {
+          "type": "string"
+        },
+        "reads": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "word": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "word",
+        "machine_name",
+        "reads"
+      ],
       "type": "object"
     },
     "ChatUnread": {
