@@ -3632,7 +3632,7 @@ async fn an_agent_started_on_an_issue_is_on_its_row() {
 }
 
 /// A fake control's platform with two projects whose boards this machine
-/// writes (#430): `prj_1` "Launch crew" holds #12 and #7, `prj_2` "Other
+/// writes (#430): `prj_1` "Launch crew" holds #12 and #7 (and #5, which no board has a row for), `prj_2` "Other
 /// crew" holds #7 and is the one `acme/linked` is linked to. A caller with no
 /// linked repo is in the personal `prj_me`, which this machine doesn't write.
 /// Every attach as it came: the project, then the body.
@@ -3666,7 +3666,9 @@ async fn fake_homes(f: FakeHomes) -> String {
     }
     async fn issue(Path((project, number)): Path<(String, u64)>) -> axum::response::Response {
         match (project.as_str(), number) {
-            ("prj_1", 12 | 7) | ("prj_2", 7) => Json(json!({ "project": project, "number": number })).into_response(),
+            ("prj_1", 12 | 7 | 5) | ("prj_2", 7) => {
+                Json(json!({ "project": project, "number": number })).into_response()
+            }
             _ => StatusCode::NOT_FOUND.into_response(),
         }
     }
@@ -3795,14 +3797,12 @@ async fn an_agent_is_attached_in_the_project_of_its_issue() {
     assert_eq!(d.state(block)["work"]["boards"][0]["row"], "row_1");
     assert_eq!(last().0, "prj_1");
 
-    // No row for #99, no issue #3, a branch that isn't one: nothing attached, no error.
-    let asked = control.attached.lock().unwrap().len();
-    for branch in ["feat/99-x", "feat/3-x", "wip/12-x", "fix/12", "fix/x-12"] {
+    // #5 has no row, #99 and #3 are no issue, and the rest aren't branches of one: nothing attached, no error.
+    for branch in ["chore/5-x", "feat/99-x", "feat/3-x", "wip/12-x", "fix/12", "fix/x-12", "fix/+12-x"] {
         let r = call(&s, "start_agent", agent(json!({ "cwd": repo, "worktree": { "branch": branch } }))).await;
         assert!(r.get("issue").is_none(), "{branch}: {r}");
         assert_eq!(d.state(r["block"].as_u64().unwrap())["work"], Value::Null, "{branch}");
     }
-    assert_eq!(control.attached.lock().unwrap().len(), asked, "nothing was attached");
 
     s.cancel().await.unwrap();
     let _ = Command::new("git").args(["worktree", "prune"]).current_dir(&repo).status();

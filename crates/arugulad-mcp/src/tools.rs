@@ -3002,10 +3002,10 @@ impl ToolCall<'_, '_> {
         };
         // A row another machine's agent holds refuses the start before a pane
         // opens; the 409 at attach still catches a race.
-        if let (Some(i), false) = (&issue, a.take) {
-            if let Some(held) = arugulad_base::board_attach::held(self.app, home.clone(), i).await {
-                return Err(format!("{held}; no agent was started"));
-            }
+        if let (Some(i), false) = (&issue, a.take)
+            && let Some(held) = arugulad_base::board_attach::held(self.app, home.clone(), i).await
+        {
+            return Err(format!("{held}; no agent was started"));
         }
         let block = match self.open(req).await {
             Ok(b) => b,

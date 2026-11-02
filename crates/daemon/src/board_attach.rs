@@ -133,13 +133,13 @@ pub async fn keep_inferred(app: &App, home: Option<String>, issue: &str, pane: P
 /// is refused, naming them. `iss_…` names its project. `None` for the other
 /// forms (`owner/repo#N`, `IDENT-N`) and when no project has it: the caller
 /// falls back to the repo's project, then its own.
-pub async fn issue_project(
-    app: &App,
-    issue: &str,
-    cwd: Option<&str>,
-) -> Result<Option<(String, String)>, String> {
+pub async fn issue_project(app: &App, issue: &str, cwd: Option<&str>) -> Result<Option<(String, String)>, String> {
     if issue.starts_with("iss_") {
-        let v = app.control.cloud(Method::GET, &agent_issue(issue), None).await.map_err(|e| format!("issue {issue}: {e}"))?;
+        let v = app
+            .control
+            .cloud(Method::GET, &agent_issue(issue), None)
+            .await
+            .map_err(|e| format!("issue {issue}: {e}"))?;
         return match (v["project"].as_str(), v["number"].as_u64()) {
             (Some(p), Some(n)) => Ok(Some((p.to_owned(), format!("#{n}")))),
             _ => Err(format!("issue {issue}: Arugula control named no project or number")),
