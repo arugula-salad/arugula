@@ -768,6 +768,6 @@ async fn a_machine_answers_an_op_it_said_it_knows() {
     ))
     .await
     .unwrap();
-    assert_eq!(ask.await.unwrap(), OpAnswer::Done { url: Some("u".into()) });
+    assert_eq!(ask.await.unwrap(), OpAnswer::Done { url: Some("u".into()), routed: None });
     drop((o.close(None).await, t.close(None).await));
 }

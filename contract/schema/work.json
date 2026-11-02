@@ -210,6 +210,79 @@
       ],
       "type": "string"
     },
+    "ChatMentionState": {
+      "description": "How far a [`ChatMentionStatus`] has got.",
+      "oneOf": [
+        {
+          "const": "delivered",
+          "description": "A session took it (`session`), or the daemon didn't say which.",
+          "type": "string"
+        },
+        {
+          "const": "fell_back",
+          "description": "The session it named wasn't there (`asked`): it went to `session`.",
+          "type": "string"
+        },
+        {
+          "const": "waiting",
+          "description": "No session took it: it waits in the machine's inbox.",
+          "type": "string"
+        },
+        {
+          "const": "offline",
+          "description": "The machine is offline, or didn't answer.",
+          "type": "string"
+        },
+        {
+          "const": "answered",
+          "description": "The machine's agent replied in the thread (`reply`).",
+          "type": "string"
+        }
+      ]
+    },
+    "ChatMentionStatus": {
+      "description": "Where a message's `@machine` mention got to (#502), as control knows it:\nwhat the machine's daemon said when it was told, and then whether the\nmachine's agent answered in the thread.",
+      "properties": {
+        "asked": {
+          "description": "The session the message named that the daemon couldn't find.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "machine": {
+          "type": "string"
+        },
+        "machine_name": {
+          "description": "What the machine was called when it was told.",
+          "type": "string"
+        },
+        "reply": {
+          "description": "With `answered`: the number of the agent's reply.",
+          "format": "int64",
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "session": {
+          "description": "The session it went to, when the daemon said.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "state": {
+          "$ref": "#/$defs/ChatMentionState"
+        }
+      },
+      "required": [
+        "machine",
+        "machine_name",
+        "state"
+      ],
+      "type": "object"
+    },
     "ChatMessage": {
       "description": "A message as the reader sees it.",
       "properties": {
@@ -270,6 +343,13 @@
             "string",
             "null"
           ]
+        },
+        "mention_status": {
+          "description": "Where each machine's agent mention in it got to (#502), one per\nmachine, by name. Empty for a message that mentions none.",
+          "items": {
+            "$ref": "#/$defs/ChatMentionStatus"
+          },
+          "type": "array"
         },
         "mentions": {
           "description": "The accounts it mentions, and the agents (`machine:<id>`, M198).",
