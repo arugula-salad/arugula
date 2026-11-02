@@ -565,6 +565,21 @@ pub struct ForgePin {
     pub stale: Option<String>,
 }
 
+/// An agent's hold on a PR block (#495): the merge waits for the agent to
+/// say it's ready. It's a nudge on this machine's block, not a lock and not
+/// on the forge: the person can still merge.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct Hold {
+    /// The holding agent block's title, for "Held by …".
+    pub by: String,
+    /// The holder's pane, to focus it. The hold ends when it closes.
+    pub pane: PaneId,
+    pub reason: String,
+    /// When it lapses on its own.
+    pub until_ms: u64,
+}
+
 /// A forge block's state: the PR or issue, what it wants of you, the agent's
 /// drafts, and how it's kept current.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -631,6 +646,10 @@ pub struct ForgeState {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "ts", ts(optional))]
     pub merge_styles: Option<Vec<String>>,
+    /// The agent that opened the PR is holding its merge (#495).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub hold: Option<Hold>,
 }
 
 // ------------------------------------------------------------- the methods

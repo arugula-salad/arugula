@@ -2088,7 +2088,11 @@ pin: ForgePin | null,
  * it isn't known (the forge doesn't say, or says only to someone who
  * can push), and Merge then offers what the forge enforces (#427).
  */
-merge_styles?: Array<string>, };
+merge_styles?: Array<string>, 
+/**
+ * The agent that opened the PR is holding its merge (#495).
+ */
+hold?: Hold, };
 
 /**
  * A body, a comment, a review's text or a review comment.
@@ -2316,6 +2320,25 @@ export type HandTool = { name: string, description: string,
  * Its arguments, as a JSON Schema object.
  */
 schema: unknown, };
+
+/**
+ * An agent's hold on a PR block (#495): the merge waits for the agent to
+ * say it's ready. It's a nudge on this machine's block, not a lock and not
+ * on the forge: the person can still merge.
+ */
+export type Hold = { 
+/**
+ * The holding agent block's title, for "Held by …".
+ */
+by: string, 
+/**
+ * The holder's pane, to focus it. The hold ends when it closes.
+ */
+pane: number, reason: string, 
+/**
+ * When it lapses on its own.
+ */
+until_ms: number, };
 
 /**
  * The optional parts of a machine, as `GET /api/host` reports them.
