@@ -782,8 +782,9 @@ fn card(v: &BoardView, r: &Row) -> Vec<String> {
     if let Some(g) = group {
         head += &format!(" · in {}", g.title);
     }
-    if !r.note.is_empty() {
-        head += &format!(" · {}", short(&r.note, 60));
+    let text = r.text();
+    if !text.is_empty() {
+        head += &format!(" · {}", short(&text, 60));
     }
     let mut out = vec![head];
     if !r.marks.is_empty() {

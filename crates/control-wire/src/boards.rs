@@ -1795,6 +1795,19 @@ impl Row {
         item_label(&self.pointer, self.live.as_ref())
     }
 
+    /// What the text view says of the row: its item's title, then ` · ` and
+    /// the note unless the note only repeats the title. A row with no live
+    /// title (a note row, or an item the reader may not see) says its note.
+    pub fn text(&self) -> String {
+        let title = self.live.as_ref().map_or("", |l| l.title.trim());
+        let note = self.note.trim();
+        match (title.is_empty(), note.is_empty() || note.to_lowercase() == title.to_lowercase()) {
+            (true, _) => note.to_owned(),
+            (false, true) => title.to_owned(),
+            (false, false) => format!("{title} · {note}"),
+        }
+    }
+
     /// Whether the row has a primary item to count: not a note row.
     pub fn counted(&self) -> bool {
         matches!(self.pointer, Pointer::Issue { .. } | Pointer::ForgeItem { .. })
@@ -1925,10 +1938,10 @@ fn lane_text<'a>(out: &mut String, title: &str, rows: impl Iterator<Item = &'a R
         let who =
             r.live.as_ref().map(|l| labels_suffix(&l.labels) + &assignees_suffix(&l.assignees)).unwrap_or_default();
         let note = if who.is_empty() || room < who.chars().count() + 8 {
-            fit(&format!("{mark}{}", r.note), room)
+            fit(&format!("{mark}{}", r.text()), room)
         } else {
             // The note gives way, so the labels and assignees stay whole.
-            format!("{}{who}", fit(&format!("{mark}{}", r.note), room - who.chars().count()))
+            format!("{}{who}", fit(&format!("{mark}{}", r.text()), room - who.chars().count()))
         };
         *out += format!("{lead}{note}").trim_end();
         out.push('\n');
@@ -2408,7 +2421,7 @@ Done: People can sign up.
         )]);
         let text = render(&view(zones));
         let want = format!(
-            "{}\n  ○ #4                 Fix login (@ana, @Bo_Li)\n  ○ #4                 Fix the login redirect for every browser… (@ana)\n  ○ #4                 Fix login\n",
+            "{}\n  ○ #4                 Fix login (@ana, @Bo_Li)\n  ○ #4                 Fix login · Fix the login redirect for ev… (@ana)\n  ○ #4                 Fix login\n",
             head("Next", "3")
         );
         assert!(text.starts_with(&want), "{text}");
@@ -2439,6 +2452,45 @@ Done: People can sign up.
         assert!(r.matches("label:UI") && r.matches("boards") && r.matches("@ana label:boards #4"));
         assert!(!r.matches("label:bo") && !r.matches("@bob") && !r.matches("label:ui @bob"));
         assert!(r.matches("@ana_di"), "a space in a name reads as _");
+    }
+
+    /// A row says its item's title, then its note unless the note repeats the
+    /// title; the labels still fit at 72 columns with the note cut first (#582).
+    #[test]
+    fn a_row_says_its_title_then_its_note() {
+        let live = |title: &str, labels: Vec<String>| Live {
+            state: LiveState::Open,
+            kind: "native".into(),
+            repo: None,
+            number: 498,
+            title: title.into(),
+            assignees: vec![],
+            labels,
+            provider: None,
+            identifier: None,
+            state_name: None,
+            url: None,
+            category: None,
+        };
+        let titled = |note: &str, title: &str, labels: Vec<String>| {
+            let mut r = row(Pointer::Issue { id: "iss_1a2b3c4d5e6f7a8b".into() }, Lane::Next, note);
+            r.live = Some(live(title, labels));
+            r
+        };
+        let text = |r: Row| render(&view(lanes(vec![(Lane::Next, vec![r])])));
+        let bare = text(titled("", "Fix login", vec![]));
+        assert!(bare.contains("#498               Fix login\n"), "{bare}");
+        let both = text(titled("waiting on design", "Fix login", vec![]));
+        assert!(both.contains("#498               Fix login · waiting on design\n"), "{both}");
+        let same = text(titled(" fix LOGIN ", "Fix login", vec![]));
+        assert!(same.contains("#498               Fix login\n"), "{same}");
+        let none = row(Pointer::None, Lane::Next, "Remember the checklist");
+        assert_eq!(none.text(), "Remember the checklist");
+        let long = "a note that runs on well past the end of the line and has to give way";
+        let fitted = text(titled(long, "Fix login", vec!["boards".into(), "ui".into()]));
+        let line = fitted.lines().find(|l| l.contains("#498")).unwrap();
+        assert!(line.contains("Fix login · a note") && line.contains('…'), "{fitted}");
+        assert!(line.ends_with("[boards, ui]") && line.chars().count() <= TEXT_WIDTH, "{fitted}");
     }
 
     /// A block's row carries what its machine reported under it, and the
