@@ -236,6 +236,28 @@ test.describe("the list", () => {
     await expect(page.locator("[data-doc-block]")).toHaveCount(1);
   });
 
+  test("a machine on a daemon older than the page still lists its Docs", async ({ page }) => {
+    // Control serves its newest page to every machine, and a daemon before
+    // 0.66.12 sends a row with no summary or sections, and has no preview.
+    await seed(page);
+    await page.route("**/api/docs", async (route) => {
+      const res = await route.fetch();
+      const rows = (await res.json()) as Record<string, unknown>[];
+      await route.fulfill({ response: res, json: rows.map(({ summary: _summary, sections: _sections, ...old }) => old) });
+    });
+    await page.route("**/api/docs/*/preview", (route) => route.fulfill({ status: 404 }));
+    await page.reload();
+    await goToDocs(page);
+    await expect(page.locator("[data-doc]")).toHaveCount(2);
+    // Search still finds it by title, and its preview still has its buttons.
+    await page.keyboard.press("/");
+    await page.keyboard.type("short");
+    await expect(page.locator("[data-doc]")).toHaveCount(1);
+    const p = await preview(page, "Short note");
+    await p.getByRole("button", { name: "Open" }).click();
+    await expect(page.locator(`[data-doc-block] .doc-title`).filter({ hasText: "Short note" })).toBeVisible();
+  });
+
   test("↑↓ and j/k move, Enter opens, / searches and Esc clears", async ({ page }) => {
     await seed(page);
     const selected = page.locator('[data-doc][aria-selected="true"]');

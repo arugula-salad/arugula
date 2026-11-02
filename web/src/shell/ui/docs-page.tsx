@@ -98,7 +98,9 @@ function Page({ client }: { client: Client }) {
       const res = await client.request(OPS["docs.list"].method, opPath("docs.list"));
       const v = await res.json<DocRow[] & { error?: string }>().catch(() => null);
       if (!res.ok || !Array.isArray(v)) throw new Error(v?.error ?? `HTTP ${res.status}`);
-      setRows(v);
+      // Control serves its newest page to every machine, and a daemon before
+      // 0.66.12 sends neither of these.
+      setRows(v.map((r) => ({ ...r, summary: r.summary ?? "", sections: r.sections ?? [] })));
     } catch (e) {
       setError((e as Error).message);
     }
