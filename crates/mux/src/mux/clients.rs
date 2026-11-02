@@ -33,6 +33,7 @@ impl Daemon {
             return;
         };
         let who = sub.principal.clone();
+        self.first_message(client, &msg);
         match msg {
             ClientMsg::Attach { panes, zstd, acks, kitty_keys: _ } => {
                 for a in panes {
@@ -137,8 +138,9 @@ impl Daemon {
                     for p in self.panes.values() {
                         p.detach(client);
                     }
-                } else {
-                    self.summary.remove(&client);
+                } else if self.summary.remove(&client) {
+                    // Summaries only until now: it has none of them.
+                    self.send_blocks_to(client);
                 }
                 let state = self.state_for(&who);
                 self.send_state(client, state, summary, false);
