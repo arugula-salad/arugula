@@ -112,10 +112,9 @@ pub enum Cmd {
     },
     /// Change an issue's title, body, labels or assignees.
     Edit(EditArgs),
-    /// Open a native issue on GitHub, as you: a new issue on a repo
-    /// linked to its project, sent through one of your machines.
+    /// Open a native issue on GitHub, as you, on a repo linked to its project.
     ///
-    /// Once it's there, the native issue stays (it says where it now
+    /// It's sent through one of your machines. Once it's there, the native issue stays (it says where it now
     /// lives), and new comments cross both ways. `--repo` picks the repo
     /// when the project links more than one.
     #[command(name = "open-on-github")]
