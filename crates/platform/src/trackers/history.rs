@@ -2,9 +2,11 @@
 //! what is already stored, with no table of its own:
 //!
 //! - **A move to Done** ([`super::done`]) is a `plane_done` job. One that
-//!   finished with a checkpoint is `moved`; one that gave up is
-//!   `move_failed`, and its `job` is what Retry names. A job that ended
-//!   without a checkpoint left the item alone, and isn't history.
+//!   finished with a checkpoint is `moved`. One that gave up is
+//!   `move_failed`, and its `job` is what Retry names: those are in
+//!   `failed`, all of them (up to [`FAILED_SHOWN`]), not among the newest
+//!   [`SHOWN`] `entries`. A job that ended without a checkpoint left the
+//!   item alone, and isn't history.
 //! - **An agent's write a person decided** is a `tracker_writes` row:
 //!   `sent`, `dropped` or `write_failed`. A write still waiting is shown
 //!   where it can be approved, and a write that landed at once under the
@@ -35,6 +37,8 @@ use crate::{
 
 /// Most entries an answer holds.
 pub const SHOWN: usize = 20;
+/// Most failed moves an answer holds, so each has its Retry.
+pub const FAILED_SHOWN: usize = 100;
 
 fn missing() -> ApiError {
     err(StatusCode::NOT_FOUND, "no such connection")
@@ -71,24 +75,29 @@ async fn write_line(app: &Platform, project: &str, p: &PendingWrite) -> String {
     format!("{what} {}", target.as_deref().unwrap_or("new item"))
 }
 
-/// `c`'s newest [`SHOWN`] changes, newest first.
+/// `c`'s failed moves, all of them up to [`FAILED_SHOWN`], and its newest
+/// [`SHOWN`] other changes, each newest first.
 pub async fn read(app: &Platform, project: &str, c: &Connection) -> Result<TrackerHistory, ApiError> {
     let db = &app.db;
-    let mut entries = vec![];
-    for job in db.plane_moves(&c.id, SHOWN * 4)? {
+    let mut failed = vec![];
+    for job in db.plane_moves_failed(&c.id, FAILED_SHOWN)? {
         let Ok(m) = serde_json::from_value::<Move>(job.payload.clone()) else { continue };
         if m.connection != c.id {
             continue;
         }
-        if job.state == "failed" {
-            entries.push(TrackerEvent {
-                at: job.updated,
-                kind: "move_failed".into(),
-                line: format!("couldn't move {}-{} to Done: merged {}", c.identifier, m.number, m.pr),
-                by: None,
-                error: job.error.clone().or_else(|| Some("it failed".into())),
-                job: Some(job.id.clone()),
-            });
+        failed.push(TrackerEvent {
+            at: job.updated,
+            kind: "move_failed".into(),
+            line: format!("couldn't move {}-{} to Done: merged {}", c.identifier, m.number, m.pr),
+            by: None,
+            error: job.error.clone().or_else(|| Some("it failed".into())),
+            job: Some(job.id.clone()),
+        });
+    }
+    let mut entries = vec![];
+    for job in db.plane_moves(&c.id, SHOWN * 4)? {
+        let Ok(m) = serde_json::from_value::<Move>(job.payload.clone()) else { continue };
+        if m.connection != c.id {
             continue;
         }
         let Some(line) = job.checkpoint.as_ref().and_then(|v| v["moved"].as_str()) else { continue };
@@ -121,7 +130,7 @@ pub async fn read(app: &Platform, project: &str, c: &Connection) -> Result<Track
     }
     entries.sort_by_key(|e| std::cmp::Reverse(e.at));
     entries.truncate(SHOWN);
-    Ok(TrackerHistory { entries })
+    Ok(TrackerHistory { entries, failed })
 }
 
 /// `GET /api/projects/{project}/trackers/{connection}/history`.

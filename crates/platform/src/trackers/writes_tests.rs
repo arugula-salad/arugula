@@ -13,6 +13,7 @@ use super::{
     connect,
     connect_tests::{KEY, backfilled, connect_as, count, serve},
     fake::{FakeTracker, Sent, default_fields, item},
+    history::FAILED_SHOWN,
     writes::changes_state,
 };
 use crate::{
@@ -1121,7 +1122,7 @@ async fn the_history_lists_moves_and_decided_writes_newest_first() {
     let (s, h) = w.history("carol").await;
     assert_eq!(s, 200, "a viewer reads it: {h}");
     let kinds: Vec<_> = h["entries"].as_array().unwrap().iter().map(|e| e["kind"].as_str().unwrap()).collect();
-    assert_eq!(kinds, ["sent", "dropped", "move_failed", "moved"], "{h}");
+    assert_eq!(kinds, ["sent", "dropped", "moved"], "{h}");
     let e = &h["entries"];
     assert_eq!(
         (e[0]["at"].as_u64(), e[0]["line"].as_str()),
@@ -1131,23 +1132,62 @@ async fn the_history_lists_moves_and_decided_writes_newest_first() {
     assert_eq!(e[0]["by"].as_str(), Some("bob"), "{h}");
     assert_eq!((e[1]["line"].as_str(), e[1]["by"].as_str()), (Some("Comment ARUGU-1, dropped"), Some("alice")), "{h}");
     assert_eq!(
-        (e[2]["line"].as_str(), e[2]["error"].as_str(), e[2]["job"].as_str()),
+        (e[2]["line"].as_str(), e[2]["at"].as_u64(), e[2]["job"].is_null()),
+        (Some(line), Some(base + 200), true),
+        "{h}"
+    );
+    let f = h["failed"].as_array().unwrap();
+    assert_eq!(f.len(), 1, "only this connection's failed move: {h}");
+    assert_eq!(
+        (f[0]["kind"].as_str(), f[0]["line"].as_str(), f[0]["error"].as_str(), f[0]["job"].as_str()),
         (
+            Some("move_failed"),
             Some("couldn't move ARUGU-4 to Done: merged acme/app#123"),
             Some("Plane refused the key"),
             Some(failed.as_str())
         ),
         "{h}"
     );
-    assert_eq!(
-        (e[3]["line"].as_str(), e[3]["at"].as_u64(), e[3]["job"].is_null()),
-        (Some(line), Some(base + 200), true),
-        "{h}"
-    );
 
     let (s, _) =
         call(&w.base, "alice", "GET", &format!("/api/projects/{}/trackers/tc_nope/history", w.project), None).await;
     assert_eq!(s, 404);
+}
+
+/// A failed move stays in `failed`, with its job, however many newer changes
+/// push it out of the newest twenty `entries`; and a failure isn't also in
+/// `entries`. Retry works on it.
+#[tokio::test]
+async fn a_failed_move_is_kept_past_twenty_newer_changes() {
+    let w = world().await;
+    let failed = w.move_job(&w.connection, 2, "failed", None, Some("Plane is down"), 1_000);
+    for n in 3..=24u64 {
+        let line = format!("moved ARUGU-{n} to Done: merged acme/app#123");
+        w.move_job(&w.connection, n, "done", Some(json!({ "moved": line, "by": null })), None, 2_000 + n);
+    }
+    let (s, h) = w.history("alice").await;
+    assert_eq!(s, 200, "{h}");
+    let entries = h["entries"].as_array().unwrap();
+    assert!(entries.len() == 20 && entries.iter().all(|e| e["kind"] == "moved"), "{h}");
+    let f = h["failed"].as_array().unwrap();
+    assert_eq!((f.len(), f[0]["job"].as_str()), (1, Some(failed.as_str())), "{h}");
+    assert_eq!(w.listed().await["failed_moves"], 1);
+
+    let (s, h) = w.retry("alice", &w.connection, &failed).await;
+    assert_eq!((s, h["failed"].as_array().unwrap().len()), (200, 0), "{h}");
+}
+
+/// `failed` is bounded: the newest [`FAILED_SHOWN`] of more.
+#[tokio::test]
+async fn failed_moves_are_bounded() {
+    let w = world().await;
+    for n in 1..=(FAILED_SHOWN as u64 + 1) {
+        w.move_job(&w.connection, n, "failed", None, Some("Plane is down"), 1_000 + n);
+    }
+    let (_, h) = w.history("alice").await;
+    let f = h["failed"].as_array().unwrap();
+    assert_eq!((f.len(), f[0]["at"].as_u64()), (FAILED_SHOWN, Some(1_000 + FAILED_SHOWN as u64 + 1)), "newest first");
+    assert_eq!(w.listed().await["failed_moves"], FAILED_SHOWN as u64 + 1, "the count is of all of them");
 }
 
 /// Only the newest twenty are answered.
@@ -1209,7 +1249,7 @@ async fn retrying_a_failed_move_queues_it_again() {
     assert_eq!((j.state.as_str(), j.attempts, j.error.clone(), j.lease_until), ("pending", 0, None, 0), "{j:?}");
     assert!(j.next_at >= before, "due now: {j:?}");
     let kinds: Vec<_> = h["entries"].as_array().unwrap().iter().map(|e| e["kind"].as_str().unwrap()).collect();
-    assert_eq!(kinds, ["moved"], "it is not failed any more: {h}");
+    assert_eq!((kinds, h["failed"].as_array().unwrap().len()), (vec!["moved"], 0), "it is not failed any more: {h}");
     assert_eq!(w.listed().await["failed_moves"], 0);
     assert_eq!(w.retry("bob", &w.connection, &failed).await.0, 404, "twice is a 404");
 }

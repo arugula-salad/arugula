@@ -540,17 +540,28 @@ impl Db {
         Ok(changed == 1)
     }
 
-    /// A connection's `plane_done` jobs (#441) that moved an item or gave up,
-    /// newest first: a done one with a checkpoint, and a failed one. A job
-    /// left alone has no checkpoint and isn't here. Its id is
-    /// `planedone:{pr}:{connection}:{number}`; the `LIKE` narrows to the
-    /// connection and the caller checks the payload.
+    /// A connection's `plane_done` jobs (#441) that moved an item, newest
+    /// first: done, with a checkpoint (a job left alone has none and isn't
+    /// here). Its id is `planedone:{pr}:{connection}:{number}`; the `LIKE`
+    /// narrows to the connection and the caller checks the payload.
     pub fn plane_moves(&self, connection: &str, limit: usize) -> Result<Vec<JobRow>> {
         self.c().query_map(
             &format!(
                 r"SELECT {COLUMNS} FROM platform_jobs
-                  WHERE kind='plane_done' AND id LIKE ?1 ESCAPE '\'
-                    AND ((state='done' AND checkpoint IS NOT NULL) OR state='failed')
+                  WHERE kind='plane_done' AND id LIKE ?1 ESCAPE '\' AND state='done' AND checkpoint IS NOT NULL
+                  ORDER BY updated DESC, id LIMIT {limit}"
+            ),
+            params![move_pattern(connection)],
+            job_row,
+        )
+    }
+
+    /// A connection's `plane_done` jobs that ended `failed`, newest first.
+    pub fn plane_moves_failed(&self, connection: &str, limit: usize) -> Result<Vec<JobRow>> {
+        self.c().query_map(
+            &format!(
+                r"SELECT {COLUMNS} FROM platform_jobs
+                  WHERE kind='plane_done' AND id LIKE ?1 ESCAPE '\' AND state='failed'
                   ORDER BY updated DESC, id LIMIT {limit}"
             ),
             params![move_pattern(connection)],

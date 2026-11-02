@@ -70,20 +70,22 @@ test("a failed move shows with its error, Retry queues it again and the list fol
     error: "Plane refused the key",
     job: JOB,
   };
-  let entries = [failed, moved, sent];
+  let entries = [moved, sent];
+  let failures = [failed];
   const retries: string[] = [];
-  await alice.route(new RegExp(`/api/projects/${project}/trackers$`), (route) => route.fulfill({ json: { project, connections: [connection(entries.includes(failed) ? 1 : 0)] } }));
-  await alice.route(new RegExp(`/api/projects/${project}/trackers/trk_1/history$`), (route) => route.fulfill({ json: { entries } }));
+  await alice.route(new RegExp(`/api/projects/${project}/trackers$`), (route) => route.fulfill({ json: { project, connections: [connection(failures.length)] } }));
+  await alice.route(new RegExp(`/api/projects/${project}/trackers/trk_1/history$`), (route) => route.fulfill({ json: { entries, failed: failures } }));
   await alice.route(new RegExp(`/api/projects/${project}/trackers/trk_1/moves/.+/retry$`), (route) => {
     retries.push(`${route.request().method()} ${new URL(route.request().url()).pathname}`);
-    entries = [moved, sent];
-    return route.fulfill({ json: { entries } });
+    failures = [];
+    return route.fulfill({ json: { entries, failed: failures } });
   });
 
   for (const [w, h] of [[1280, 900], [390, 844]] as const) {
     await alice.setViewportSize({ width: w, height: h });
     await alice.emulateMedia({ colorScheme: "dark" });
-    entries = [failed, moved, sent];
+    entries = [moved, sent];
+    failures = [failed];
     await alice.goto(`${app}/p/${project}/settings`);
     const block = alice.locator('[data-plane-history="trk_1"]');
     await expect(block.getByRole("heading", { name: "ARUGU: recent changes" })).toBeVisible({ timeout: 15_000 });
@@ -105,6 +107,7 @@ test("a failed move shows with its error, Retry queues it again and the list fol
 
   // Nothing to show.
   entries = [];
+  failures = [];
   await alice.goto(`${app}/p/${project}/settings`);
   await expect(alice.locator('[data-plane-history="trk_1"] [data-plane-history-none]')).toHaveText("Nothing yet", { timeout: 15_000 });
 });

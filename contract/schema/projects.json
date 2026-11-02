@@ -1492,7 +1492,7 @@
           ]
         },
         "kind": {
-          "description": "`moved` (a merged PR moved an item to Done), `move_failed` (it gave\nup), or an agent's write a person decided: `sent`, `dropped` or\n`write_failed`.",
+          "description": "`moved` (a merged PR moved an item to Done), `move_failed` (it gave\nup: in `failed`), or an agent's write a person decided: `sent`, `dropped` or\n`write_failed`.",
           "type": "string"
         },
         "line": {
@@ -1604,9 +1604,18 @@
       "type": "object"
     },
     "TrackerHistory": {
-      "description": "The newest changes Arugula made to a connection's Plane project, newest\nfirst.",
+      "description": "What Arugula changed in a connection's Plane project: the newest changes\nand the moves that failed.",
       "properties": {
         "entries": {
+          "description": "The newest 20 changes, newest first, other than a failed move.",
+          "items": {
+            "$ref": "#/$defs/TrackerEvent"
+          },
+          "type": "array"
+        },
+        "failed": {
+          "default": [],
+          "description": "The connection's failed moves (`move_failed`), newest first, up to 100:\neach has its `job` for a retry.",
           "items": {
             "$ref": "#/$defs/TrackerEvent"
           },

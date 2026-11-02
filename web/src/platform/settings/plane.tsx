@@ -125,8 +125,8 @@ export function eventLine(e: Pick<TrackerEvent, "line" | "at" | "by">, now = Dat
 
 /** A connection's recent changes: failed moves first, as errors with a Retry for those who change things, then the history. */
 function RecentChanges({ c, history, changes, busy, retry }: { c: TrackerConnection; history: TrackerHistory | undefined; changes: boolean; busy: boolean; retry: (job: string) => void }) {
-  const failed = history?.entries.filter((e) => e.kind === "move_failed") ?? [];
-  const rest = history?.entries.filter((e) => e.kind !== "move_failed") ?? [];
+  const failed = history?.failed ?? [];
+  const rest = history?.entries ?? [];
   return (
     <section class="plane-history" aria-label={`${c.identifier}: recent changes`} data-plane-history={c.id}>
       <h3>{c.identifier}: recent changes</h3>

@@ -4918,7 +4918,7 @@ export type TrackerEvent = {
 at: number, 
 /**
  * `moved` (a merged PR moved an item to Done), `move_failed` (it gave
- * up), or an agent's write a person decided: `sent`, `dropped` or
+ * up: in `failed`), or an agent's write a person decided: `sent`, `dropped` or
  * `write_failed`.
  */
 kind: string, 
@@ -4940,10 +4940,19 @@ error: string | null,
 job: string | null, };
 
 /**
- * The newest changes Arugula made to a connection's Plane project, newest
- * first.
+ * What Arugula changed in a connection's Plane project: the newest changes
+ * and the moves that failed.
  */
-export type TrackerHistory = { entries: Array<TrackerEvent>, };
+export type TrackerHistory = { 
+/**
+ * The newest 20 changes, newest first, other than a failed move.
+ */
+entries: Array<TrackerEvent>, 
+/**
+ * The connection's failed moves (`move_failed`), newest first, up to 100:
+ * each has its `job` for a retry.
+ */
+failed: Array<TrackerEvent>, };
 
 /**
  * A write waiting for a person, as the Triage page shows it.

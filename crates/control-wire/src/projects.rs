@@ -875,13 +875,18 @@ pub const TRACKER_HISTORY: &str = "/api/projects/{project}/trackers/{connection}
 /// failed move is a 404.
 pub const TRACKER_MOVE_RETRY: &str = "/api/projects/{project}/trackers/{connection}/moves/{job}/retry";
 
-/// The newest changes Arugula made to a connection's Plane project, newest
-/// first.
+/// What Arugula changed in a connection's Plane project: the newest changes
+/// and the moves that failed.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct TrackerHistory {
+    /// The newest 20 changes, newest first, other than a failed move.
     pub entries: Vec<TrackerEvent>,
+    /// The connection's failed moves (`move_failed`), newest first, up to 100:
+    /// each has its `job` for a retry.
+    #[serde(default)]
+    pub failed: Vec<TrackerEvent>,
 }
 
 /// One change in a [`TrackerHistory`].
@@ -892,7 +897,7 @@ pub struct TrackerEvent {
     /// When it happened.
     pub at: u64,
     /// `moved` (a merged PR moved an item to Done), `move_failed` (it gave
-    /// up), or an agent's write a person decided: `sent`, `dropped` or
+    /// up: in `failed`), or an agent's write a person decided: `sent`, `dropped` or
     /// `write_failed`.
     pub kind: String,
     /// What happened, in a sentence.
