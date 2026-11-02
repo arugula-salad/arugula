@@ -63,6 +63,11 @@ iframe also has `referrerpolicy="no-referrer"`, `allow=""` and
   blob:; font-src data:`) and the Doc's `color-scheme` written first. It
   takes the message only from `parent`, once; the parent sends it only to
   the frame it made, once, and only after `ready`.
+- **Full window is the top layer, not a move (#507).** The frame's box is a
+  manual popover, shown over the window with the same iframe in the same
+  place in the DOM: moving an iframe reloads it. The one other message the
+  page sends is `arugula.escape`, for Esc pressed inside the frame (a
+  keydown there never reaches the Doc), which closes Full window.
 - **Where the page has no script CSP** (the daemon's own app, the desktop
   app), the frame is that page by `srcdoc`, and it runs at once.
 - **Where it has** (control's platform pages, `script-src 'self'`, and the

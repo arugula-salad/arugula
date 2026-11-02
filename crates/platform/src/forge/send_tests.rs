@@ -238,7 +238,7 @@ async fn github_refusing_it_fails_and_a_token_without_write_goes_to_a_machine() 
     assert_eq!((d["state"].as_str(), d["sent_at"].as_str()), (Some("failed"), None), "{d}");
 
     gh.lock().unwrap().refuse = Some(403);
-    hub.answers_ops("geek", OpAnswer::Done { url: Some("https://github.com/acme/app/pull/1#c".into()) });
+    hub.answers_ops("geek", OpAnswer::Done { url: Some("https://github.com/acme/app/pull/1#c".into()), routed: None });
     let o = app.send_draft("alice", &id, Some(UserToken::new(TOKEN.into()))).await.unwrap();
     let sent = o.sent.expect("sent by the machine");
     assert_eq!((sent.via.as_deref(), sent.machine.as_deref()), (Some("machine"), Some("geek-box")));
@@ -258,7 +258,7 @@ async fn agents_draft_people_send() {
     hub.daemon("aaa", "alice", None);
     hub.daemon("bobs", "bob", None);
     hub.answers_ops("aaa", OpAnswer::Unknown);
-    hub.answers_ops("geek", OpAnswer::Done { url: Some("https://github.com/acme/app/pull/1#c".into()) });
+    hub.answers_ops("geek", OpAnswer::Done { url: Some("https://github.com/acme/app/pull/1#c".into()), routed: None });
 
     let id = draft(
         &base,
@@ -339,7 +339,7 @@ async fn with_no_way_it_fails_clearly_and_keeps_the_draft() {
 
     // A machine wakes: it goes.
     hub.daemon("geek", "alice", None);
-    hub.answers_ops("geek", OpAnswer::Done { url: None });
+    hub.answers_ops("geek", OpAnswer::Done { url: None, routed: None });
     let (s, v) = send(&base, "alice", &id, json!({})).await;
     assert_eq!((s, v["draft"]["state"].as_str()), (200, Some("sent")), "{v}");
 
@@ -420,7 +420,7 @@ async fn the_cli_sends_through_the_typed_ops() {
     assert_eq!(get(&base, "alice", &id).await["state"], "waiting");
 
     hub.daemon("geek", "alice", None);
-    hub.answers_ops("geek", OpAnswer::Done { url: Some("https://github.com/acme/app/pull/1#c".into()) });
+    hub.answers_ops("geek", OpAnswer::Done { url: Some("https://github.com/acme/app/pull/1#c".into()), routed: None });
     let (s, v) = op("draft.send", json!({ "draft": id })).await;
     assert_eq!(s, 200, "{v}");
     assert_eq!(v["result"], json!({ "url": "https://github.com/acme/app/pull/1#c", "draft": id }));

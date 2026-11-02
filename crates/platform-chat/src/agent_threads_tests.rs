@@ -86,7 +86,7 @@ async fn an_agent_lists_reads_searches_and_posts_where_granted() {
 
     // b asks geek's agent by name; geek's daemon is connected and takes it, so
     // the word reached someone, and no device is pushed.
-    hub.answers_ops("geek", OpAnswer::Done { url: None });
+    hub.answers_ops("geek", OpAnswer::Done { url: None, routed: None });
     let (st, asked) =
         call(&base, "b", "POST", "/api/chat/rooms/ch_general/messages", say("@geek-box's agent: look")).await;
     assert_eq!(st, 200, "{asked}");
@@ -172,7 +172,7 @@ async fn an_agent_is_mentioned_only_where_it_reaches() {
     let (_, v) = call(&base, "b", "POST", "/api/chat/rooms/ch_general/messages", say("@geek-box hi")).await;
     assert_eq!((&v["mentions"], &v["unreached"]), (&json!([]), &json!(["geek-box"])), "post only: {v}");
     call(&base, "a", "POST", "/api/grants", give("geek", THREADS_READ, json!({ "kind": "project", "id": t }))).await;
-    hub.answers_ops("geek", OpAnswer::Done { url: None });
+    hub.answers_ops("geek", OpAnswer::Done { url: None, routed: None });
     let (_, v) = call(&base, "b", "POST", "/api/chat/rooms/ch_general/messages", say("@a and @GEEK-box")).await;
     assert_eq!((&v["mentions"], &v["unreached"]), (&json!(["a", "machine:geek"]), &json!([])), "{v}");
     let pushed: Vec<&str> = v["pushed"].as_array().unwrap().iter().map(|p| p["account"].as_str().unwrap()).collect();
@@ -271,7 +271,7 @@ async fn a_mention_is_told_to_the_machine_or_says_it_was_not() {
     assert_eq!((&v["unreached"], &v["pushed"]), (&json!(["geek-box"]), &json!([])), "{v}");
 
     // Connected: told, and pushed as the machine.
-    hub.answers_ops("geek", OpAnswer::Done { url: None });
+    hub.answers_ops("geek", OpAnswer::Done { url: None, routed: None });
     let (_, v) = post("@geek-box what is the board for").await;
     assert_eq!((&v["unreached"], &v["pushed"]), (&json!([]), &json!([{ "account": "machine:geek", "why": "agent" }])));
     let sent = told(&hub);
@@ -299,7 +299,7 @@ fn told_sessions(hub: &crate::testing::hub::TestHub) -> Vec<Option<String>> {
 async fn a_post_names_its_session_and_a_mention_can_address_one() {
     let (hub, _app, base, t, _u) = seeded().await;
     geek_in_t(&base, &t).await;
-    hub.answers_ops("geek", OpAnswer::Done { url: None });
+    hub.answers_ops("geek", OpAnswer::Done { url: None, routed: None });
     let room = "/api/chat/rooms/ch_general/messages";
     let path = agent_messages("ch_general");
     let agent =
@@ -347,7 +347,7 @@ async fn a_post_names_its_session_and_a_mention_can_address_one() {
 async fn a_reply_to_an_agents_message_is_told_to_its_machine() {
     let (hub, _app, base, t, _u) = seeded().await;
     geek_in_t(&base, &t).await;
-    hub.answers_ops("geek", OpAnswer::Done { url: None });
+    hub.answers_ops("geek", OpAnswer::Done { url: None, routed: None });
     let room = "/api/chat/rooms/ch_general/messages";
 
     // b starts a thread; a reply under b's own message tells no one.
@@ -447,8 +447,8 @@ async fn the_room_offers_the_machines_a_mention_reaches_and_their_sessions() {
     );
 
     // What is offered is what a mention reaches: geek is pushed, mini isn't.
-    hub.answers_ops("geek", OpAnswer::Done { url: None });
-    hub.answers_ops("mini", OpAnswer::Done { url: None });
+    hub.answers_ops("geek", OpAnswer::Done { url: None, routed: None });
+    hub.answers_ops("mini", OpAnswer::Done { url: None, routed: None });
     let (_, v) = call(&base, "b", "POST", "/api/chat/rooms/ch_general/messages", say("@geek-box and @mini-box")).await;
     assert_eq!(v["pushed"], json!([{ "account": "machine:geek", "why": "agent" }]), "{v}");
     assert_eq!(v["unreached"], json!(["mini-box"]), "{v}");

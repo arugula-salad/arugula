@@ -718,6 +718,17 @@ note = "The account's own reactions, and every reaction on the messages it wrote
 seen_by = ["litestream"]
 
 [[table]]
+name = "chat_mention_status"
+plane = "platform"
+process = "platform"
+holds = "metadata"
+what = "Where each @machine mention in chat got to: the session it went to, waiting, offline, or answered by which reply (#502)."
+why_asleep = "A mention's status shown, with every machine asleep."
+with_account = "deleted"
+note = "The status of every mention in the messages it wrote. Names a machine, a session and a message number, never its text."
+seen_by = ["litestream"]
+
+[[table]]
 name = "chat_avatars"
 plane = "platform"
 process = "platform"

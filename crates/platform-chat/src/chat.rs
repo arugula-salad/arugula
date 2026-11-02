@@ -71,11 +71,11 @@ use std::{
 
 use arugula_control_common::{ApiError, err, refusal};
 use arugula_control_wire::chat::{
-    self as wire, ChatEdit, ChatFound, ChatHit, ChatKind, ChatLevel, ChatLive, ChatMessage, ChatMessages,
-    ChatMessagesQuery, ChatMute, ChatNewChannel, ChatNewDm, ChatOpen, ChatOpenTarget, ChatPane, ChatPerson, ChatPost,
-    ChatPosted, ChatPushWhy, ChatPushed, ChatReaction, ChatReactor, ChatRead, ChatReaderList, ChatReaders,
-    ChatReadersStored, ChatRoom, ChatRoomAgent, ChatRoomChange, ChatRoomDetail, ChatRooms, ChatSearchQuery,
-    NotifyLevel,
+    self as wire, ChatEdit, ChatFound, ChatHit, ChatKind, ChatLevel, ChatLive, ChatMentionState, ChatMentionStatus,
+    ChatMessage, ChatMessages, ChatMessagesQuery, ChatMute, ChatNewChannel, ChatNewDm, ChatOpen, ChatOpenTarget,
+    ChatPane, ChatPerson, ChatPost, ChatPosted, ChatPushWhy, ChatPushed, ChatReaction, ChatReactor, ChatRead,
+    ChatReaderList, ChatReaders, ChatReadersStored, ChatRoom, ChatRoomAgent, ChatRoomChange, ChatRoomDetail, ChatRooms,
+    ChatSearchQuery, NotifyLevel,
 };
 use arugula_e2e::{now_ms, team::TeamRole};
 use axum::{
@@ -94,6 +94,7 @@ use crate::{
         Db, Taken,
         chat::{Message, NewMessage, Page, Room, RoomMeta, Search, UnreadAsk, Word},
         chat_files::ChatFileRow,
+        chat_mention_status::{ANSWERABLE_MS, MentionStatus},
         chat_reactions::Reaction,
         objects::Holder,
         projects::{ISSUES_WRITE, THREADS_POST, THREADS_READ},
@@ -666,6 +667,8 @@ struct Shower {
     agents: HashMap<String, String>,
     /// The reactions on these messages (#104), first reaction first.
     reactions: HashMap<(String, i64), Vec<Reaction>>,
+    /// Where the agent mentions in these messages got to (#502).
+    mention_status: HashMap<(String, i64), Vec<MentionStatus>>,
     /// The files on these messages (#107), in the order they were chosen.
     files: HashMap<(String, i64), Vec<ChatFileRow>>,
     /// Which are system lines or pinned (#119).
@@ -691,6 +694,7 @@ impl Shower {
     async fn of(app: &Platform, reader: &str, ms: &[&Message]) -> anyhow::Result<Self> {
         let hub = &*app.hub;
         let reactions = reactions_of(&app.db, ms)?;
+        let mention_status = mention_status_of(&app.db, ms)?;
         let files = files::files_of(&app.db, ms)?;
         let marks = pins::Marks::of(&app.db, ms)?;
         let threads = threads::summaries(&app.db, reader, ms)?;
@@ -740,6 +744,7 @@ impl Shower {
             machines,
             agents,
             reactions,
+            mention_status,
             files,
             marks,
             threads,
@@ -780,6 +785,20 @@ impl Shower {
             }),
             via: m.via.clone(),
             reactions: self.reacted(m),
+            mention_status: self
+                .mention_status
+                .get(&(m.room.clone(), m.seq))
+                .into_iter()
+                .flatten()
+                .map(|s| ChatMentionStatus {
+                    machine: s.machine.clone(),
+                    machine_name: s.machine_name.clone(),
+                    state: mention_state(&s.state),
+                    session: s.session.clone(),
+                    asked: s.asked.clone(),
+                    reply: s.reply,
+                })
+                .collect(),
             // An agent reads them at its machine's address.
             files: self
                 .files
@@ -849,6 +868,55 @@ fn reactions_of(db: &Db, ms: &[&Message]) -> anyhow::Result<HashMap<(String, i64
         }
     }
     Ok(out)
+}
+
+/// The agent mentions' statuses in `ms`, by (room, seq): one query a room,
+/// over the numbers of the messages that mention a machine.
+fn mention_status_of(db: &Db, ms: &[&Message]) -> anyhow::Result<HashMap<(String, i64), Vec<MentionStatus>>> {
+    let mut span: HashMap<&str, (i64, i64)> = HashMap::new();
+    let mentioning =
+        |m: &&&Message| m.deleted.is_none() && m.mentions.iter().any(|x| x.starts_with(wire::AGENT_MENTION));
+    for m in ms.iter().filter(mentioning) {
+        let e = span.entry(m.room.as_str()).or_insert((m.seq, m.seq));
+        *e = (e.0.min(m.seq), e.1.max(m.seq));
+    }
+    let mut out: HashMap<(String, i64), Vec<MentionStatus>> = HashMap::new();
+    for (room, (from, to)) in span {
+        for s in db.chat_mention_statuses(room, from, to)? {
+            out.entry((s.room.clone(), s.seq)).or_default().push(s);
+        }
+    }
+    Ok(out)
+}
+
+/// A stored status's state.
+fn mention_state(state: &str) -> ChatMentionState {
+    match state {
+        "fell_back" => ChatMentionState::FellBack,
+        "waiting" => ChatMentionState::Waiting,
+        "offline" => ChatMentionState::Offline,
+        "answered" => ChatMentionState::Answered,
+        _ => ChatMentionState::Delivered,
+    }
+}
+
+/// What a daemon's answer to `agents.mention` means for the sender (#502).
+/// A daemon from before the routing says nothing of it: just delivered.
+fn mention_answer(
+    answer: Option<&arugula_control_wire::forge::OpAnswer>,
+) -> (&'static str, Option<String>, Option<String>) {
+    use arugula_control_wire::forge::{OpAnswer, RoutedStep};
+    match answer {
+        Some(OpAnswer::Done { routed: Some(r), .. }) => match r.step {
+            RoutedStep::Inbox => ("waiting", None, r.asked.clone()),
+            // The message named a session the daemon didn't find: said so,
+            // wherever it went instead.
+            _ if r.asked.is_some() => ("fell_back", r.session.clone(), r.asked.clone()),
+            _ => ("delivered", r.session.clone(), None),
+        },
+        Some(OpAnswer::Done { routed: None, .. }) => ("delivered", None, None),
+        _ => ("offline", None, None),
+    }
 }
 
 // ---------------------------------------------------------------- mentions
@@ -978,6 +1046,34 @@ async fn tell_agents(
                 .map(|(_, s)| s.clone()),
         });
         let answer = tokio::time::timeout(Duration::from_secs(5), app.hub.daemon_op(&a.machine, &op)).await;
+        if mentioned.contains(&a.machine.as_str()) {
+            let (state, session, asked) = mention_answer(answer.as_ref().ok().and_then(|r| r.as_ref().ok()));
+            let status = MentionStatus {
+                room: told.room.id.clone(),
+                seq: told.seq,
+                machine: a.machine.clone(),
+                machine_name: a.machine_name.clone(),
+                root: told.parent.unwrap_or(told.seq),
+                state: state.into(),
+                session,
+                asked,
+                reply: None,
+                at: now_ms(),
+            };
+            match app.db.set_chat_mention_status(&status) {
+                Ok(()) => {
+                    app.chat.publish(&app.db, ChatLive::Reacted { room: status.room.clone(), seq: told.seq }, None);
+                    if let Some(parent) = told.parent {
+                        app.chat.publish(
+                            &app.db,
+                            ChatLive::Reply { room: status.room.clone(), parent, seq: told.seq },
+                            None,
+                        );
+                    }
+                }
+                Err(e) => tracing::warn!(error = %e, "chat: storing a mention's status"),
+            }
+        }
         if matches!(answer, Ok(Ok(OpAnswer::Done { .. }))) {
             out.push(ChatPushed { account: format!("{}{}", wire::AGENT_MENTION, a.machine), why: ChatPushWhy::Agent });
         } else if mentioned.contains(&a.machine.as_str()) {
@@ -1926,6 +2022,21 @@ pub(crate) async fn post_replied(
     };
     let told = Told { room: &room, seq, parent: b.parent, author: who, text, sessions: at_sessions(&plain) };
     pushed.extend(tell_agents(app, &facts, &told, &stored, replying_to, agent, &mut unreached).await);
+    // An agent replying in a thread answers the mentions of its machine
+    // there (#502).
+    if let (Some(a), Some(parent)) = (agent, b.parent) {
+        match app.db.answer_chat_mentions(&room.id, parent, &a.machine, seq, at.saturating_sub(ANSWERABLE_MS)) {
+            Ok(answered) => {
+                for m in answered {
+                    app.chat.publish(&app.db, ChatLive::Reacted { room: room.id.clone(), seq: m }, None);
+                    if m != parent {
+                        app.chat.publish(&app.db, ChatLive::Reply { room: room.id.clone(), parent, seq: m }, None);
+                    }
+                }
+            }
+            Err(e) => tracing::warn!(error = %e, "chat: answering a mention"),
+        }
+    }
     let replied = sessions::posted(app, &room, &s.account, agent, via.is_some(), seq, b.parent, text).await;
     Ok((ChatPosted { seq, mentions: stored, unreached, pushed }, replied))
 }

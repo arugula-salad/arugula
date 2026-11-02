@@ -32,7 +32,7 @@ async fn setup() -> (std::sync::Arc<TestHub>, std::sync::Arc<Platform>, String, 
         let (st, g) = call(&base, "a", "POST", "/api/grants", give("geek", power, scope)).await;
         assert_eq!(st, 200, "{g}");
     }
-    hub.answers_ops("geek", OpAnswer::Done { url: None });
+    hub.answers_ops("geek", OpAnswer::Done { url: None, routed: None });
     let (st, v) = call(&base, "a", "PUT", "/api/chat/keywords", Some(json!({ "words": ["deploy"] }))).await;
     assert_eq!(st, 200, "{v}");
     (hub, app, base, t)
