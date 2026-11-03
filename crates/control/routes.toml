@@ -1429,6 +1429,14 @@ clients = ["page"]
 note = "A channel's topic and/or description (#119); a change posts a system line. A team can leave it to its owners."
 
 [[route]]
+method = "POST"
+path = "/api/chat/rooms/{id}/grant-never"
+process = "platform"
+auth = "session"
+clients = ["page"]
+note = "The owner of a machine says its agents are never to be asked to read this room (#578); what waited for them is not granted for good. A machine can't say it of itself."
+
+[[route]]
 method = "GET"
 path = "/api/chat/rooms/{id}/pins"
 process = "platform"

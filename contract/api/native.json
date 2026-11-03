@@ -272,6 +272,13 @@
       "handler": "crates/platform-chat/src/chat/members.rs#remove",
       "response": "ChatRoom"
     },
+    "POST /api/chat/rooms/{id}/grant-never": {
+      "handler": "crates/platform-chat/src/chat/grant_ask.rs#never",
+      "request": "ChatGrantNever",
+      "untyped": [
+        "the answer: {refused}, how many waiting mentions it settled"
+      ]
+    },
     "POST /api/chat/rooms/{id}/read": {
       "handler": "crates/platform-chat/src/chat.rs#read",
       "request": "ChatRead",

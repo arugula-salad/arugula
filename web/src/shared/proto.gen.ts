@@ -970,7 +970,7 @@ export type ChatLive = { "type": "hello", stream: string, } | { "type": "message
 /**
  * How far a [`ChatMentionStatus`] has got.
  */
-export type ChatMentionState = "sending" | "delivered" | "fell_back" | "waiting" | "queued" | "silenced" | "no_such_session" | "offline" | "answered" | "chain" | "working" | "read" | "dropped";
+export type ChatMentionState = "sending" | "delivered" | "fell_back" | "waiting" | "queued" | "silenced" | "no_such_session" | "offline" | "answered" | "chain" | "working" | "read" | "dropped" | "not_granted";
 
 /**
  * Where a message's `@machine` mention got to (#502), as control knows it:
@@ -3349,9 +3349,33 @@ count: number,
 /**
  * `mention`: the room to open (its id), and its name.
  */
-room?: string, room_name?: string, };
+room?: string, room_name?: string, 
+/**
+ * `grant_ask` (#578): what the owner's Grant is a request for.
+ */
+grant?: NoticeGrant, };
 
-export type NoticeKind = "mention";
+/**
+ * What a `grant_ask` card grants (#578): `threads.read` to `machine`'s
+ * agents over a scope, as `POST /api/grants` says it. The grant is the
+ * owner's, made from their own control session; the machine never makes it.
+ */
+export type NoticeGrant = { 
+/**
+ * This machine's id in control, and its name.
+ */
+machine: string, machine_name: string, 
+/**
+ * `project` (with `scope_id`) or `account`.
+ */
+scope_kind: string, scope_id: string, 
+/**
+ * What the scope is called, for the card ("Acme", "your DMs"); empty
+ * when the grant would be over just the room.
+ */
+scope_name: string, };
+
+export type NoticeKind = "mention" | "grant_ask";
 
 /**
  * How much of a room reaches the reader's pushes, and how its unread shows

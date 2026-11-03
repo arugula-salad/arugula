@@ -199,7 +199,7 @@ pub const RUN_OPS: &[&str] = &["runs.start", "runs.revoke"];
 pub const HOSTED_OPS: &[&str] = &["hosted.archive", "hosted.archive_blocks"];
 
 /// The agents' op (Arugula #394) every daemon of this build knows.
-pub const AGENT_OPS: &[&str] = &["agents.mention", "agents.sessions"];
+pub const AGENT_OPS: &[&str] = &["agents.mention", "agents.sessions", "agents.grant_ask"];
 
 /// `{"t": "ops", "ops": [...]}`, daemon to control, on connecting: the
 /// [`DaemonOp`]s it knows. A daemon that never says knows none, and control
@@ -290,6 +290,11 @@ pub enum DaemonOp {
     /// (`sharing.json`'s `agent_sessions`).
     #[serde(rename = "agents.sessions")]
     AgentSessions(AgentSessionsAsk),
+    /// A teammate mentioned this machine in a room its agents can't read
+    /// (#578): the daemon raises a card asking its owner to let them. The
+    /// grant itself is the owner's own act, made over their control session.
+    #[serde(rename = "agents.grant_ask")]
+    AgentGrantAsk(AgentGrantAsk),
 }
 
 impl DaemonOp {
@@ -302,6 +307,7 @@ impl DaemonOp {
             DaemonOp::HostedArchiveBlocks(_) => "hosted.archive_blocks",
             DaemonOp::AgentMention(_) => "agents.mention",
             DaemonOp::AgentSessions(_) => "agents.sessions",
+            DaemonOp::AgentGrantAsk(_) => "agents.grant_ask",
         }
     }
 }
@@ -346,6 +352,32 @@ pub struct AgentMention {
     /// daemon ignores it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub root_line: Option<String>,
+}
+
+/// A mention of this machine that its agents can't read the room for (#578).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+pub struct AgentGrantAsk {
+    pub room: String,
+    pub room_name: String,
+    /// The mention's number in the room.
+    pub seq: i64,
+    /// Who wrote it, as people read it.
+    pub author: String,
+    /// Its first line.
+    pub line: String,
+    /// This machine's id and name, for the card.
+    pub machine: String,
+    pub machine_name: String,
+    /// What a grant of `threads.read` is over, as `POST /api/grants` says it:
+    /// `project` and the project's id, or `account`.
+    pub scope_kind: String,
+    #[serde(default)]
+    pub scope_id: String,
+    /// The scope's name as its owner reads it (the team's, or "your DMs"),
+    /// for the card to say what the grant reaches. Empty: just the room.
+    #[serde(default)]
+    pub scope_name: String,
 }
 
 /// An agent asks which sessions of a machine it may mention (#577).

@@ -539,6 +539,9 @@ pub enum ChatMentionState {
     /// The session dropped it (#613): `why` says how. Final, like
     /// `answered`, which it never replaces.
     Dropped,
+    /// The machine's agents can't read the room (#578): its owner was asked
+    /// to let them. Delivered if they do; final if they said never.
+    NotGranted,
 }
 
 /// Someone who reacted: an account, and the machine's agent if it was
@@ -902,6 +905,17 @@ pub struct ChatEdit {
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct ChatRead {
     pub seq: i64,
+}
+
+/// `POST /api/chat/rooms/{id}/grant-never`: the owner of `daemon` says its
+/// agents are never to be asked to read this room (#578). What waited for
+/// them is `not_granted` for good; a grant over the room undoes it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct ChatGrantNever {
+    /// The machine's id.
+    pub daemon: String,
 }
 
 /// `POST /api/chat/rooms/{id}/unread`: mark as unread from `seq`: the read

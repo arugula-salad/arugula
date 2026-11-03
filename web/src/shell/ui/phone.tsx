@@ -13,6 +13,7 @@ import { HostCrumb, HostSection } from "./hosts";
 import { openSwarm } from "../swarm/route";
 import { hasBoards, hasChat, openBoards, openChat, openRoom } from "./places";
 import { noticeRoom, noticeTitle, sortNotices } from "../../shared/notice";
+import { GrantActs } from "./grant-acts";
 import { ChatTabBadge, openChanges, openIssue, openPort, openPr } from "../blocks";
 import { startAgent } from "./agent-dialog";
 import { pickConversation } from "./conversations";
@@ -115,6 +116,8 @@ function Sheet({ client, close }: { client: Client; close: () => void }) {
                     <button
                       class="sheet-item"
                       onClick={act(() => {
+                        // A grant card is answered by its buttons (#578).
+                        if (n.kind === "grant_ask") return;
                         client.dismissNotice(n.key);
                         const room = noticeRoom(n);
                         if (room) openRoom(room);
@@ -122,9 +125,13 @@ function Sheet({ client, close }: { client: Client; close: () => void }) {
                     >
                       <span class="att needs_input">●</span> <span class="sheet-wants">{noticeTitle(n)}</span>
                     </button>
-                    <button class="sheet-act" data-notice-dismiss={n.key} onClick={() => client.dismissNotice(n.key)}>
-                      Dismiss
-                    </button>
+                    {n.kind === "grant_ask" ? (
+                      <GrantActs n={n} sheet done={() => client.dismissNotice(n.key)} />
+                    ) : (
+                      <button class="sheet-act" data-notice-dismiss={n.key} onClick={() => client.dismissNotice(n.key)}>
+                        Dismiss
+                      </button>
+                    )}
                   </div>
                 ))}
                 {wanting.map((p) => {

@@ -42,10 +42,12 @@ use std::{
 
 use arugula_control_wire::{
     chat::{DropWhy as WireWhy, MENTION_STATE, MentionTurn, PutMentionState},
-    forge::{AgentMention, AgentSessionsAsk, MachineSession, OpAnswer, Routed, RoutedStep, SESSIONS_LISTED},
+    forge::{
+        AgentGrantAsk, AgentMention, AgentSessionsAsk, MachineSession, OpAnswer, Routed, RoutedStep, SESSIONS_LISTED,
+    },
 };
 use arugula_proto::sharing::AgentSessions;
-use arugula_proto::{Driver, Notice, NoticeKind, PaneId};
+use arugula_proto::{Driver, Notice, NoticeGrant, NoticeKind, PaneId};
 use serde::{Deserialize, Serialize};
 use tracing::{debug, warn};
 
@@ -309,7 +311,46 @@ fn inbox_notice(m: &AgentMention) -> Notice {
         count: 1,
         room: Some(m.room.clone()),
         room_name: Some(room.to_owned()),
+        grant: None,
     }
+}
+
+/// The key of a room's grant card (#578): one per room, so a second mention
+/// counts up.
+pub fn grant_key(room: &str) -> String {
+    format!("grant:{room}")
+}
+
+/// `agents.grant_ask` (#578): a teammate mentioned this machine in a room
+/// its agents can't read. The card asks the owner; nothing is kept here and
+/// nothing is granted by this machine. A machine with mentions off asks
+/// nothing.
+pub(crate) async fn grant_ask(app: &impl Daemon, a: &AgentGrantAsk) -> OpAnswer {
+    if !arugula_proto::sharing::agent_mentions(app.state_dir()) {
+        return OpAnswer::Cant { why: "the owner turned agent mentions off on this machine".into() };
+    }
+    let room = a.room_name.trim_start_matches('#');
+    let room = if room.is_empty() { a.room.as_str() } else { room };
+    app.notice(Notice {
+        key: grant_key(&a.room),
+        kind: NoticeKind::GrantAsk,
+        since_ms: arugula_e2e::now_ms(),
+        // The question, and what the grant reaches, is the card's to ask
+        // (`grantQuestion` in the web client).
+        headline: format!("{} mentioned {} in #{room}.", a.author, a.machine_name),
+        count: 1,
+        room: Some(a.room.clone()),
+        room_name: Some(room.to_owned()),
+        grant: Some(NoticeGrant {
+            machine: a.machine.clone(),
+            machine_name: a.machine_name.clone(),
+            scope_kind: a.scope_kind.clone(),
+            scope_id: a.scope_id.clone(),
+            scope_name: a.scope_name.clone(),
+        }),
+    })
+    .await;
+    OpAnswer::Done { url: None, routed: None }
 }
 
 /// Raise the cards again for what the inbox still holds (#551): the mux
@@ -1238,6 +1279,55 @@ mod tests {
         // Naming a session that isn't there waits in the inbox, with a card.
         deliver(&d, &AgentMention { session: Some("nobody".into()), ..mention() }).await;
         assert_eq!(d.notices.lock().unwrap().len(), 1);
+    }
+
+    fn grant_ask_op() -> AgentGrantAsk {
+        AgentGrantAsk {
+            room: "ch_x".into(),
+            room_name: "agents".into(),
+            seq: 7,
+            author: "Ada".into(),
+            line: "are you there?".into(),
+            machine: "m_geek".into(),
+            machine_name: "geek".into(),
+            scope_kind: "project".into(),
+            scope_id: "p1".into(),
+            scope_name: "Acme".into(),
+        }
+    }
+
+    /// A mention of a machine whose agents can't read the room raises one
+    /// card per room that asks the owner (#578); it only asks. A machine with
+    /// mentions off raises none.
+    #[tokio::test]
+    async fn a_grant_ask_raises_one_card_per_room_that_only_asks() {
+        let d = Fake::new("grant-ask", &[]);
+        let done = OpAnswer::Done { url: None, routed: None };
+        assert_eq!(grant_ask(&d, &grant_ask_op()).await, done);
+        assert_eq!(grant_ask(&d, &AgentGrantAsk { seq: 8, ..grant_ask_op() }).await, done);
+        grant_ask(&d, &AgentGrantAsk { room: "ch_y".into(), ..grant_ask_op() }).await;
+        let held = d.notices.lock().unwrap().clone();
+        assert_eq!(
+            held.iter().map(|n| (n.key.as_str(), n.count)).collect::<Vec<_>>(),
+            [("grant:ch_x", 2), ("grant:ch_y", 1)]
+        );
+        assert_eq!(held[0].kind, NoticeKind::GrantAsk);
+        assert_eq!(held[0].headline, "Ada mentioned geek in #agents.");
+        let g = held[0].grant.clone().unwrap();
+        assert_eq!((g.machine.as_str(), g.scope_kind.as_str(), g.scope_id.as_str()), ("m_geek", "project", "p1"));
+        assert_eq!(g.scope_name, "Acme");
+        // The mention itself is kept nowhere here, and no session got it.
+        assert!(d.state.unread().is_empty() && d.sent.lock().unwrap().is_empty());
+        // The mention's own card is another key.
+        assert_ne!(grant_key("ch_x"), notice_key("ch_x"));
+
+        arugula_proto::sharing::set_agent_mentions(&d.dir, false).unwrap();
+        let before = d.notices.lock().unwrap().clone();
+        assert!(matches!(
+            grant_ask(&d, &AgentGrantAsk { room: "ch_z".into(), ..grant_ask_op() }).await,
+            OpAnswer::Cant { .. }
+        ));
+        assert_eq!(d.notices.lock().unwrap().clone(), before, "mentions off: no card");
     }
 
     /// An issue's thread is posted to by its id, and told by the room's.

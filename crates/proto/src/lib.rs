@@ -338,6 +338,29 @@ pub struct Notice {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "ts", ts(optional))]
     pub room_name: Option<String>,
+    /// `grant_ask` (#578): what the owner's Grant is a request for.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub grant: Option<NoticeGrant>,
+}
+
+/// What a `grant_ask` card grants (#578): `threads.read` to `machine`'s
+/// agents over a scope, as `POST /api/grants` says it. The grant is the
+/// owner's, made from their own control session; the machine never makes it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct NoticeGrant {
+    /// This machine's id in control, and its name.
+    pub machine: String,
+    pub machine_name: String,
+    /// `project` (with `scope_id`) or `account`.
+    pub scope_kind: String,
+    #[serde(default)]
+    pub scope_id: String,
+    /// What the scope is called, for the card ("Acme", "your DMs"); empty
+    /// when the grant would be over just the room.
+    #[serde(default)]
+    pub scope_name: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -346,6 +369,9 @@ pub struct Notice {
 pub enum NoticeKind {
     /// A teammate mentioned this machine in a room and no session took it.
     Mention,
+    /// A teammate mentioned this machine in a room its agents can't read
+    /// (#578): the owner may let them, not now, or never for the room.
+    GrantAsk,
 }
 
 /// A gate that waits for someone (M34): an op stopped before a step until

@@ -38,6 +38,8 @@ export function mentionStatusText(s: ChatMentionStatus): string {
       return `${who} answered`;
     case "chain":
       return `Not delivered to ${who}: a chain of agent replies; a person's message restarts it`;
+    case "not_granted":
+      return `Not granted: ${who}'s agents can't read this room; its owner was asked`;
   }
 }
 

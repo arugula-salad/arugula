@@ -1350,6 +1350,7 @@ pub(super) fn drop_rooms_where(tx: &impl Sql, cond: &str, arg: impl super::sql::
             "chat_members",
             "chat_reactions",
             "chat_mention_status",
+            "chat_grant_never",
             "chat_saved",
             "chat_files",
             "chat_topics",
