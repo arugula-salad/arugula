@@ -493,6 +493,10 @@ pub struct ChatMentionStatus {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "ts", ts(optional))]
     pub reply: Option<i64>,
+    /// With `dropped`: why (#613).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub why: Option<DropWhy>,
 }
 
 /// How far a [`ChatMentionStatus`] has got.
@@ -529,6 +533,9 @@ pub enum ChatMentionState {
     /// That turn has ended (#540). An agent's reply, `answered`, usually
     /// comes first and stays.
     Read,
+    /// The session dropped it (#613): `why` says how. Final, like
+    /// `answered`, which it never replaces.
+    Dropped,
 }
 
 /// Someone who reacted: an account, and the machine's agent if it was
@@ -1450,6 +1457,20 @@ pub enum MentionTurn {
     Working,
     /// The turn has ended.
     Read,
+    /// The mention never got a turn, or its turn was cut off (#613).
+    Dropped(DropWhy),
+}
+
+/// Why a mention was dropped (#613).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[serde(rename_all = "snake_case")]
+pub enum DropWhy {
+    /// The person pressed stop while it waited in the session's queue.
+    Stopped,
+    /// The session's process ended in the middle of its turn.
+    Exited,
 }
 
 /// [`MENTION_STATE`]'s body: a mention (the message `seq` of `room`, for

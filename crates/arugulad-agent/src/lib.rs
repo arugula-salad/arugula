@@ -2388,6 +2388,11 @@ async fn run(agent: Agent, mut rx: mpsc::UnboundedReceiver<Msg>) {
                             end_hosted_turn(&ctx, &mut g);
                             g.link = None;
                             g.pid = None;
+                            // #613: a turn cut off by the exit never ends
+                            // with `TurnEnded`: its mention is dropped.
+                            if let Some(tag) = g.mention_turn.take() {
+                                ctx.mention_turn(tag, mux::Turn::Dropped(mux::DropWhy::Exited));
+                            }
                             info!(block = ctx.id, why, "agent server stopped");
                             g.note(json!({ "e": "exit", "why": why }));
                             if ctx.sprite.is_some() && why.contains("machine is gone") {
@@ -3246,6 +3251,12 @@ impl Agent {
         // A held turn's work is done (#606): stopping it is to get on to
         // what's queued, not to drop it.
         if !g.result_in {
+            // #613: a mention in it is told it was dropped. The running
+            // turn's own is not: it ends with `cancelled`, and `TurnEnded`
+            // reports it `read`.
+            for tag in g.queue.iter().filter_map(|q| q.mention.clone()) {
+                self.ctx.mention_turn(tag, mux::Turn::Dropped(mux::DropWhy::Stopped));
+            }
             g.note(json!({ "e": "queue_clear" }));
         }
         // Open questions aren't answered: the agent withdraws them itself

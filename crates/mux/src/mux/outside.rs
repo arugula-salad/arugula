@@ -139,6 +139,17 @@ pub enum Turn {
     Started,
     /// That turn ended: the pane's next `Stop` hook.
     Ended,
+    /// The mention never got a turn, or its turn was cut off (#613).
+    Dropped(DropWhy),
+}
+
+/// Why a mention was dropped (#613).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DropWhy {
+    /// The person pressed stop while it waited in the queue.
+    Stopped,
+    /// The session's process ended in the middle of its turn.
+    Exited,
 }
 
 /// Told as it happens, on the mux task, so it must not block.
