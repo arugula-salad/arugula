@@ -90,8 +90,6 @@ test("cards show labels and owners, the Label menu narrows the board and the URL
     await shot(alice, `cards-${name}`);
 
     // The Label menu: any of its values; the hash holds it; a reload keeps it.
-    if (w < 700) await alice.locator("[data-board-find-open]").click();
-    else await alice.keyboard.press("/");
     await alice.locator('[data-board-facet-button="label"]').click();
     await alice.locator('[data-board-facet-value="docs"]').check();
     await expect(alice.locator("[data-board-row]")).toHaveCount(2);
@@ -113,21 +111,19 @@ test("cards show labels and owners, the Label menu narrows the board and the URL
     await expect(alice.locator("[data-board-find-count]")).toHaveText("2 of 4 rows");
     await expect(alice.locator('[data-board-facet-button="label"]')).toContainText("2");
 
-    // `label:` in the find box is the same filter, and × clears the lot, hash included.
-    await alice.locator("[data-board-find-close]").click();
+    // `label:` in the find box is the same filter, and Clear clears the lot, hash included.
+    await alice.locator("[data-board-find-clear]").click();
     await expect(alice.locator("[data-board-row]")).toHaveCount(4);
     await expect.poll(() => new URL(alice.url()).hash).toBe("");
-    if (w < 700) await alice.locator("[data-board-find-open]").click();
-    else await alice.keyboard.press("/");
     await alice.locator("[data-board-find-input]").fill("label:docs @carol");
     await expect(alice.locator("[data-board-row] [data-board-title]")).toHaveText(["Search the board"]);
     await alice.locator("[data-board-row]").click({ position: { x: 5, y: 5 } });
     await expect(alice.locator("[data-board-drawer-tags] [data-board-label]")).toHaveCount(5);
     await shot(alice, `drawer-${name}`);
     // Close the drawer with its own button (as the other board specs do)
-    // and wait for it to go: it covers the find box's ×.
+    // and wait for it to go: it covers the find bar.
     await alice.locator("[data-board-drawer-close]").click();
     await expect(alice.locator("[data-board-drawer]")).toHaveCount(0);
-    await alice.locator("[data-board-find-close]").click();
+    await alice.locator("[data-board-find-clear]").click();
   }
 });

@@ -177,13 +177,23 @@ pub enum SharingSetting {
     GuestSsh,
     /// Teammates' messages in a thread reaching this machine's agents.
     AgentMentions,
+    /// What a teammate's agent may learn of this machine's sessions (#577):
+    /// `work`, `names` or `none`.
+    AgentSessions,
 }
 
-/// What `arugulad sharing NAME` is told.
+/// What `arugulad sharing NAME` is told: `on` or `off`, or for
+/// `agent-sessions`, `work`, `names` or `none`.
 #[derive(clap::ValueEnum, Clone, Copy, Debug, PartialEq, Eq)]
 pub enum OnOff {
     On,
     Off,
+    /// An agent-sessions setting (#577): names and what each works on.
+    Work,
+    /// An agent-sessions setting (#577): names only.
+    Names,
+    /// An agent-sessions setting (#577): nothing.
+    None,
 }
 
 /// What `arugulad flags NAME` is told to do.

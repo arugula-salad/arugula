@@ -709,6 +709,76 @@ async fn agents_are_told_at_most_ten_times_per_thread_per_machine_in_a_window() 
     assert!(app.chat.agent_told("ch_general", root, "geek", now + crate::chat::AGENT_TOLD_WINDOW_MS));
 }
 
+/// An agent lists a teammate machine's sessions in a room (#577): the
+/// asker reads the room and the target hears it. A machine that can only
+/// post, or isn't granted, is no such machine there; an offline one answers
+/// an empty list and says so; the asker's own session is left out only for
+/// its own machine.
+#[tokio::test]
+async fn an_agent_lists_the_sessions_of_a_machine_that_hears_the_room() {
+    use arugula_control_wire::{
+        chat::agent_machine_sessions,
+        forge::{DaemonOp, MachineSession},
+    };
+    let (hub, _app, base, t, _u) = seeded().await;
+    hub.daemon("mini", "a", Some("t"));
+    hub.daemon("pad", "a", Some("t"));
+    let path = |m: &str| agent_machine_sessions("ch_general", m);
+    let sessions_asked = || -> Vec<(String, Option<String>)> {
+        hub.ops_asked()
+            .into_iter()
+            .filter_map(|(m, op)| match op {
+                DaemonOp::AgentSessions(a) => Some((m, a.from_session)),
+                _ => None,
+            })
+            .collect()
+    };
+
+    // No grant for the asker: it doesn't read the room.
+    let (st, v) = geek(&base, "GET", &path("mini-box"), None).await;
+    assert_eq!((st, v["reason"].as_str()), (403, Some(AGENT_UNGRANTED)), "{v}");
+
+    for (m, power) in [("geek", THREADS_READ), ("mini", THREADS_READ), ("pad", THREADS_POST)] {
+        let (st, g) =
+            call(&base, "a", "POST", "/api/grants", give(m, power, json!({ "kind": "project", "id": t }))).await;
+        assert_eq!(st, 200, "{g}");
+    }
+
+    // pad can only post, nobody is called nope: neither hears the room.
+    for m in ["pad-box", "nope"] {
+        let (st, v) = geek(&base, "GET", &path(m), None).await;
+        assert_eq!(st, 404, "{m}: {v}");
+    }
+    assert!(sessions_asked().is_empty(), "a machine that doesn't hear is never asked");
+
+    // Offline (no daemon answers): empty, and it says so.
+    let (st, v) = geek(&base, "GET", &path("mini-box"), None).await;
+    assert_eq!(st, 200, "{v}");
+    assert_eq!((v["offline"].as_bool(), v["sessions"].clone()), (Some(true), json!([])), "{v}");
+
+    // Online: the daemon's list, as it said it. Another machine's asker
+    // gives its session no mention.
+    let slow = MachineSession {
+        name: "slowness".into(),
+        tab: Some("Views".into()),
+        active_ms_ago: Some(180_000),
+        working_on: Some("#540".into()),
+    };
+    hub.answers_ops("mini", OpAnswer::Sessions { shared: true, sessions: vec![slow] });
+    let (st, v) = geek(&base, "GET", &format!("{}?from_session=Billing", path("@Mini-Box")), None).await;
+    assert_eq!(st, 200, "{v}");
+    assert_eq!(v["offline"], false, "{v}");
+    assert_eq!(v["sessions"][0]["name"], "slowness", "{v}");
+    assert_eq!(v["sessions"][0]["working_on"], "#540", "{v}");
+    assert_eq!(*sessions_asked().last().unwrap(), ("mini".to_owned(), None), "from_session is for its own machine");
+
+    // Asked about its own machine, the asker's session goes with it.
+    hub.answers_ops("geek", OpAnswer::Sessions { shared: false, sessions: vec![] });
+    let (st, v) = geek(&base, "GET", &format!("{}?from_session=Billing", path("geek-box")), None).await;
+    assert_eq!((st, v["shared"].as_bool(), v["offline"].as_bool()), (200, Some(false), Some(false)), "{v}");
+    assert_eq!(*sessions_asked().last().unwrap(), ("geek".to_owned(), Some("Billing".to_owned())));
+}
+
 /// A board in t led by geek's session "Ux" (#414), whose thread b has open:
 /// the board's id and its room's, and the id of geek's `threads.read` grant.
 /// geek has threads and boards in t, and answers what it is told; "mini"

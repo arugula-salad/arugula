@@ -1657,6 +1657,14 @@ clients = ["daemon"]
 note = "Labelled as the owner's agent on the machine; nobody is woken."
 
 [[route]]
+method = "GET"
+path = "/api/daemon/chat/rooms/{id}/agents/{machine}/sessions"  # wire::chat::agent_machine_sessions
+process = "platform"
+auth = "daemon"
+clients = ["daemon"]
+note = "The sessions of a machine that hears the room that an agent may mention (`threads.read`), as its owner shows them (#577)."
+
+[[route]]
 method = "POST"
 path = "/api/daemon/chat/rooms/{id}/files"  # wire::chat::agent_files
 process = "platform"
@@ -3042,6 +3050,22 @@ auth = "session"
 clients = ["page"]
 note = "Deletes a Doc: owners and editors."
 
+[[route]]
+method = "GET"
+path = "/api/projects/{project}/docs/{id}/assets/{name}"  # wire::project_docs::PROJECT_DOC_ASSET
+process = "platform"
+auth = "session"
+clients = ["page"]
+note = "A Doc's picture (PNG, JPEG, GIF or WebP), for any member of its project and no one else (404), always with `nosniff`."
+
+[[route]]
+method = "POST"
+path = "/api/projects/{project}/docs/{id}/move"  # wire::project_docs::PROJECT_DOC_MOVE
+process = "platform"
+auth = "session"
+clients = ["page"]
+note = "Moves a Doc to another project, `{to}` an id or `personal`: owners and editors of both (a personal project counts). It keeps its id, pictures and where it came from. Never an agent session."
+
 # ---- platform: native issues (M195, platform step 6)
 # A project's own issues, for its members: a team's owners and editors
 # change them, its viewers read them; anyone else gets 404. Behind chat's
@@ -3315,6 +3339,30 @@ process = "platform"
 auth = "daemon"
 clients = ["daemon"]
 note = "Moves a Doc along the board's Docs strip (`boards.write`)."
+
+[[route]]
+method = "PUT"
+path = "/api/daemon/docs/{machine_doc}"  # wire::project_docs::MACHINE_DOC
+process = "platform"
+auth = "daemon"
+clients = ["daemon"]
+note = "A machine copies one of its Docs up for its owner (#418): the whole Doc, keyed by this machine and its own Doc id. The first put makes it in the owner's personal project; later ones write it wherever it is now, if the owner may still write there (403 if not). The same content again changes nothing. No grant is checked, and no machine reaches another's."
+
+[[route]]
+method = "DELETE"
+path = "/api/daemon/docs/{machine_doc}"  # wire::project_docs::MACHINE_DOC
+process = "platform"
+auth = "daemon"
+clients = ["daemon"]
+note = "The machine takes its own copy down, wherever it is now (404 if it has none)."
+
+[[route]]
+method = "PUT"
+path = "/api/daemon/docs/{machine_doc}/assets/{name}"  # wire::project_docs::MACHINE_DOC_ASSET
+process = "platform"
+auth = "daemon"
+clients = ["daemon"]
+note = "A picture of the machine's copy, the bytes as the body: PNG, JPEG, GIF or WebP by what they say, named for it, at most 2 MB and 20 to a Doc. The Doc is put first (404)."
 
 [[route]]
 method = "POST"

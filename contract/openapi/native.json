@@ -4376,6 +4376,129 @@
         ]
       }
     },
+    "/api/projects/{project}/docs/{id}/assets/{name}": {
+      "get": {
+        "operationId": "GET_api_projects_project_docs_id_assets_name",
+        "x-arugula-clients": [
+          "page"
+        ],
+        "security": [
+          {
+            "deviceSignature": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "Refused",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Refusal"
+                }
+              }
+            }
+          },
+          "2XX": {
+            "description": "The picture"
+          }
+        },
+        "parameters": [
+          {
+            "name": "project",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/api/projects/{project}/docs/{id}/move": {
+      "post": {
+        "operationId": "POST_api_projects_project_docs_id_move",
+        "x-arugula-clients": [
+          "page"
+        ],
+        "security": [
+          {
+            "deviceSignature": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "Refused",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Refusal"
+                }
+              }
+            }
+          },
+          "2XX": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocView"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "project",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MoveProjectDoc"
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/projects/{project}/drafts": {
       "get": {
         "operationId": "GET_api_projects_project_drafts",
@@ -5666,6 +5789,36 @@
           "question",
           "asked_by",
           "created_at"
+        ],
+        "type": "object"
+      },
+      "Asset": {
+        "description": "One picture of a Doc, without its bytes: the shape a machine Doc's\nstate gives (`DocState.assets`).",
+        "properties": {
+          "mime": {
+            "description": "`image/png`, `image/jpeg`, `image/gif` or `image/webp`: what the\nbytes say.",
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "rev": {
+            "description": "Changes whenever the name is written with other bytes: clients cache\na picture by `name/rev`.",
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "size": {
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "name",
+          "mime",
+          "size",
+          "rev"
         ],
         "type": "object"
       },
@@ -8457,6 +8610,14 @@
             "description": "`pdc_` and 32 hex characters.",
             "type": "string"
           },
+          "machine": {
+            "default": null,
+            "description": "The machine this Doc is a copy from, or null for one made here.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "project": {
             "type": "string"
           },
@@ -8569,6 +8730,14 @@
       "DocView": {
         "description": "`GET` [`PROJECT_DOC`]: a Doc with its sections, in order.",
         "properties": {
+          "assets": {
+            "default": [],
+            "description": "Its pictures, by name.",
+            "items": {
+              "$ref": "#/components/schemas/Asset"
+            },
+            "type": "array"
+          },
           "doc": {
             "$ref": "#/components/schemas/Doc"
           },
@@ -10019,6 +10188,19 @@
             ]
           }
         },
+        "type": "object"
+      },
+      "MoveProjectDoc": {
+        "description": "`POST` [`PROJECT_DOC_MOVE`]: where the Doc goes.",
+        "properties": {
+          "to": {
+            "description": "A project's id, or `personal` for the mover's own.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "to"
+        ],
         "type": "object"
       },
       "NewAsk": {

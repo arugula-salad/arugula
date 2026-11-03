@@ -436,5 +436,6 @@ pub async fn start(
             Err(err(StatusCode::CONFLICT, "that cloud workspace's arugulad is older than runs: rebuild it"))
         }
         OpAnswer::Failed { error } => Err(err(StatusCode::BAD_GATEWAY, &error)),
+        OpAnswer::Sessions { .. } => Err(err(StatusCode::BAD_GATEWAY, "that machine answered another op's answer")),
     }
 }

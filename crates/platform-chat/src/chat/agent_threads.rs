@@ -21,8 +21,8 @@ use std::{collections::HashMap, sync::Arc};
 
 use arugula_control_common::ApiError;
 use arugula_control_wire::chat::{
-    self as wire, AgentMessages, AgentMessagesQuery, AgentReach, AgentRoom, AgentRooms, ChatFound, ChatMessage,
-    ChatPost, ChatPosted, ChatReact, ChatReactQuery, ChatSearchQuery,
+    self as wire, AgentMachineSessions, AgentMessages, AgentMessagesQuery, AgentReach, AgentRoom, AgentRooms,
+    AgentSessionsQuery, ChatFound, ChatMessage, ChatPost, ChatPosted, ChatReact, ChatReactQuery, ChatSearchQuery,
 };
 use axum::{
     Json,
@@ -30,8 +30,8 @@ use axum::{
 };
 
 use super::{
-    Facts, J, MAX_PAGE, PAGE, Shower, agent_object_room, agent_room, agent_scope, files, gate, in_team, listed_as,
-    objects, pins, post_as, reactions, rooms_seen, search_in, threads,
+    Facts, J, MAX_PAGE, PAGE, Shower, agent_object_room, agent_room, agent_scope, ask_sessions, files, gate, hears,
+    in_team, listed_as, objects, pins, post_as, reactions, room_agents, rooms_seen, search_in, threads,
 };
 use crate::{
     Platform,
@@ -227,6 +227,40 @@ pub async fn messages(
     let extras = pins::Extras::of(&app.db, &[&room])?;
     let room = shown(&app, &facts, &d.account, &room, powers, last, &extras)?;
     Ok(Json(AgentMessages { room, messages, more, pins, parent }))
+}
+
+/// `GET /api/daemon/chat/rooms/{id}/agents/{machine}/sessions?from_session=`:
+/// the sessions of a machine of the room that an agent may mention (#577),
+/// as that machine's owner shows them. The asker reads the room
+/// (`threads.read`), and `machine` (its name, as in `@machine`) hears it:
+/// otherwise it is no such machine here (404). An offline machine answers an
+/// empty list and `offline`. `from_session` counts only for the asker's own
+/// machine (#575).
+pub async fn machine_sessions(
+    State(app): State<Arc<Platform>>,
+    d: Machine,
+    Path((id, machine)): Path<(String, String)>,
+    Query(q): Query<AgentSessionsQuery>,
+) -> J<AgentMachineSessions> {
+    gate(&app, &d.account).await?;
+    app.limits.check_daemon(AGENT_READS, &d.daemon)?;
+    let (room, _, _) = room_of(&app, &d, THREADS_READ, &id).await?;
+    let facts = Facts::of(&app, Some(&d.account), &[&room]).await?;
+    let word = machine.trim_start_matches('@').to_lowercase();
+    let target = room_agents(&app, &facts, &room)
+        .await?
+        .into_iter()
+        .find(|a| hears(a) && a.machine_name.to_lowercase() == word)
+        .ok_or_else(|| {
+            arugula_control_common::err(axum::http::StatusCode::NOT_FOUND, "no machine of that name hears this room")
+        })?;
+    let from_session = q.from_session.filter(|_| target.machine == d.daemon);
+    let ask = arugula_control_wire::forge::AgentSessionsAsk { room: room.id.clone(), from_session };
+    let (offline, shared, sessions) = match ask_sessions(&app, &target.machine, ask).await {
+        Some((shared, sessions)) => (false, shared, sessions),
+        None => (true, true, vec![]),
+    };
+    Ok(Json(AgentMachineSessions { machine_name: target.machine_name, offline, shared, sessions }))
 }
 
 /// `POST /api/daemon/chat/rooms/{id}/messages`: an agent's post

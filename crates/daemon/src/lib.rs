@@ -680,16 +680,36 @@ fn sharing_cli(
     let state = |on| if on { "on" } else { "off" };
     let about = "Invite a guest with only OpenSSH to a pane (`arugula share --guest`).";
     let mentions_about = "A teammate's `@<machine>` or reply in a thread reaches this machine's agents.";
+    let sessions_about = "What a teammate's agent learns of this machine's sessions: `work`, `names` or `none`.";
+    // `on`/`off` are for the switches; `work`/`names`/`none` for agent-sessions.
+    let words = switch.is_some_and(|s| !matches!(s, args::OnOff::On | args::OnOff::Off));
+    if words != (name == Some(args::SharingSetting::AgentSessions)) && switch.is_some() {
+        anyhow::bail!("agent-sessions takes work, names or none; the others take on or off");
+    }
     match (name, switch) {
         (None, _) => {
             println!("guest-ssh  {:3}  {about}", state(sharing::guest_ssh(dir)));
             println!("agent-mentions  {:3}  {mentions_about}", state(sharing::agent_mentions(dir)));
+            println!("agent-sessions  {:5}  {sessions_about}", sharing::agent_sessions(dir).word());
         }
         (Some(args::SharingSetting::AgentMentions), None) => println!("{}", state(sharing::agent_mentions(dir))),
         (Some(args::SharingSetting::AgentMentions), Some(s)) => {
             let on = s == args::OnOff::On;
             sharing::set_agent_mentions(dir, on).map_err(|e| anyhow::anyhow!("{e}"))?;
             println!("agent-mentions is {}", state(on));
+            if daemon_running(dir) {
+                println!("  The running daemon follows at once.");
+            }
+        }
+        (Some(args::SharingSetting::AgentSessions), None) => println!("{}", sharing::agent_sessions(dir).word()),
+        (Some(args::SharingSetting::AgentSessions), Some(s)) => {
+            let what = match s {
+                args::OnOff::Work => sharing::AgentSessions::Work,
+                args::OnOff::Names => sharing::AgentSessions::Names,
+                _ => sharing::AgentSessions::None,
+            };
+            sharing::set_agent_sessions(dir, what).map_err(|e| anyhow::anyhow!("{e}"))?;
+            println!("agent-sessions is {}", what.word());
             if daemon_running(dir) {
                 println!("  The running daemon follows at once.");
             }

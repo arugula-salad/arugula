@@ -116,6 +116,13 @@ pr?: number, pr_url?: string,
 pr_block?: number, };
 
 /**
+ * What a teammate's agent may learn of this machine's sessions (#577),
+ * when it asks which ones it can `@machine/name`. Only with agent mentions
+ * on; off, it learns nothing whatever this says.
+ */
+export type AgentSessions = "none" | "names" | "work";
+
+/**
  * The open question or approval behind an `ask` reason.
  */
 export type AskRef = { 
@@ -3196,6 +3203,15 @@ runs_note: string | null,
  */
 ms: number | null, };
 
+/**
+ * `POST` [`PROJECT_DOC_MOVE`]: where the Doc goes.
+ */
+export type MoveProjectDoc = { 
+/**
+ * A project's id, or `personal` for the mover's own.
+ */
+to: string, };
+
 export type NativeIssue = { 
 /**
  * `iss_` and 32 hex characters.
@@ -3947,7 +3963,27 @@ sections: number, written: number,
 /**
  * Counts its changes.
  */
-rev: number, created_at: number, updated_at: number, };
+rev: number, created_at: number, updated_at: number, 
+/**
+ * The machine this Doc is a copy from, or null for one made here.
+ */
+machine: string | null, };
+
+/**
+ * One picture of a Doc, without its bytes: the shape a machine Doc's
+ * state gives (`DocState.assets`).
+ */
+export type ProjectDocAsset = { name: string, 
+/**
+ * `image/png`, `image/jpeg`, `image/gif` or `image/webp`: what the
+ * bytes say.
+ */
+mime: string, size: number, 
+/**
+ * Changes whenever the name is written with other bytes: clients cache
+ * a picture by `name/rev`.
+ */
+rev: number, };
 
 /**
  * `GET` [`PROJECT_DOCS`]: a project's Docs, the latest changed first.
@@ -3983,6 +4019,10 @@ rev: number, };
  * `GET` [`PROJECT_DOC`]: a Doc with its sections, in order.
  */
 export type ProjectDocView = { doc: ProjectDoc, sections: Array<ProjectDocSection>, 
+/**
+ * Its pictures, by name.
+ */
+assets: Array<ProjectDocAsset>, 
 /**
  * Whether the reader may write it.
  */
@@ -4971,6 +5011,11 @@ guest_ssh: boolean,
  */
 agent_mentions?: boolean, 
 /**
+ * What a teammate's agent may learn of this machine's sessions
+ * (#577). Names by default.
+ */
+agent_sessions?: AgentSessions, 
+/**
  * Whether this build has guest ssh. A build without Labs keeps the
  * setting, and nothing follows. Absent: it has.
  */
@@ -4980,7 +5025,7 @@ built?: boolean, };
  * `PUT /api/sharing` (the `sharing.set` operation): the settings to
  * change; one left out stays as it is.
  */
-export type SharingSetRequest = { guest_ssh?: boolean, agent_mentions?: boolean, };
+export type SharingSetRequest = { guest_ssh?: boolean, agent_mentions?: boolean, agent_sessions?: AgentSessions, };
 
 /**
  * A split's area and how long each child is along the split's direction,

@@ -245,6 +245,7 @@ fn generate() -> String {
         c.visit::<DocView>();
         c.visit::<NewDoc>();
         c.visit::<DocWrite>();
+        c.visit::<MoveProjectDoc>();
     }
     c.decls.sort();
     let mut out = String::from(
