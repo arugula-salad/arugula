@@ -21,13 +21,13 @@ use futures_util::{SinkExt, StreamExt};
 use serde_json::{Value, json};
 
 #[derive(Clone, Default)]
-struct Fake {
+pub(super) struct Fake {
     /// What the daemon said on its relay socket.
-    said: Arc<Mutex<Vec<Value>>>,
+    pub(super) said: Arc<Mutex<Vec<Value>>>,
     /// Asks for the relay socket to send.
-    outbox: Arc<Mutex<Vec<String>>>,
+    pub(super) outbox: Arc<Mutex<Vec<String>>>,
     /// The turn reports it PUT, in order.
-    states: Arc<Mutex<Vec<Value>>>,
+    pub(super) states: Arc<Mutex<Vec<Value>>>,
 }
 
 async fn dial(State(f): State<Fake>, up: WebSocketUpgrade) -> Response {
@@ -53,7 +53,7 @@ async fn dial(State(f): State<Fake>, up: WebSocketUpgrade) -> Response {
     })
 }
 
-fn serve(rt: &tokio::runtime::Runtime, f: Fake) -> String {
+pub(super) fn serve(rt: &tokio::runtime::Runtime, f: Fake) -> String {
     rt.block_on(async {
         let state = f.clone();
         let app = Router::new()
@@ -81,7 +81,7 @@ fn serve(rt: &tokio::runtime::Runtime, f: Fake) -> String {
     })
 }
 
-fn enroll(state: &std::path::Path, control: &str) {
+pub(super) fn enroll(state: &std::path::Path, control: &str) {
     let keys = DeviceKeys::load_or_create(&state.join("daemon.key")).unwrap();
     let mut cert = Cert::new(&keys, "a1", Kind::Daemon, "test");
     cert.sign_with(&keys);
@@ -97,11 +97,11 @@ fn mention(id: &str, seq: i64, text: &str) -> String {
     .to_string()
 }
 
-fn answer(f: &Fake, id: &str) -> Option<Value> {
+pub(super) fn answer(f: &Fake, id: &str) -> Option<Value> {
     f.said.lock().unwrap().iter().find(|v| v["t"] == "op.done" && v["id"] == id).map(|v| v["answer"].clone())
 }
 
-fn states(f: &Fake) -> Vec<(i64, String)> {
+pub(super) fn states(f: &Fake) -> Vec<(i64, String)> {
     let all = f.states.lock().unwrap();
     // A dropped one carries its reason: `dropped:stopped` (#613).
     let word = |v: &Value| match v.as_object().and_then(|o| o.iter().next()) {

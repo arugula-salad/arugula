@@ -410,6 +410,13 @@ pub struct AttentionRequest {
     pub why: Option<String>,
 }
 
+/// `arugula mentions on|off %N` (#579): whether teammates' agents may mention
+/// this session. Off lasts as long as the pane.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MentionsRequest {
+    pub on: bool,
+}
+
 /// What Claude Code says about its session from inside it (#396, a spike):
 /// the Claude Code mod in `plugins/claude-code/hooks/live.ts` sends one per event,
 /// through `arugula session-signal`. `event` is `start`, `usage` (the

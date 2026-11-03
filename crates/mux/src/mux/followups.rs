@@ -34,6 +34,35 @@ impl Followups {
         self.queued.entry(pane).or_default().push_back((text, by, tag));
     }
 
+    /// The card to raise for what is held on `pane` (#579): the oldest
+    /// mention's headline, and how many are held. A person's follow-up
+    /// (no mention) is never held.
+    pub(super) fn held(&self, pane: PaneId) -> Option<(String, usize)> {
+        let q = self.queued.get(&pane)?;
+        let mut held = q.iter().filter_map(|(_, _, tag)| tag.as_ref());
+        let first = held.next()?;
+        Some((first.headline.clone(), 1 + held.count()))
+    }
+
+    /// The owner tapped deliver (#579): the oldest held mention comes out of
+    /// the queue to be typed, and its turn starts.
+    pub(super) fn deliver_held(&mut self, pane: PaneId, turns: &dyn Turns) -> Option<String> {
+        let q = self.queued.get_mut(&pane)?;
+        let at = q.iter().position(|(_, _, tag)| tag.is_some())?;
+        let (text, _, tag) = q.remove(at)?;
+        self.started(pane, tag, turns);
+        Some(text)
+    }
+
+    /// The owner dismissed the card (#579): the held mentions are dropped.
+    /// How many.
+    pub(super) fn drop_held(&mut self, pane: PaneId) -> usize {
+        let Some(q) = self.queued.get_mut(&pane) else { return 0 };
+        let before = q.len();
+        q.retain(|(_, _, tag)| tag.is_none());
+        before - q.len()
+    }
+
     /// The hook waits: the oldest waiting follow-up goes to it now, and its
     /// turn starts.
     pub(super) fn take(&mut self, pane: PaneId, turns: &dyn Turns) -> Option<(String, Driver)> {
@@ -90,7 +119,7 @@ mod tests {
     }
 
     fn tag(seq: i64) -> Option<MentionTag> {
-        Some(MentionTag { room: "ch_x".into(), seq })
+        Some(MentionTag { room: "ch_x".into(), seq, headline: format!("held {seq}") })
     }
 
     /// Queued, then taken when the hook waits: working then, read at the
@@ -135,6 +164,27 @@ mod tests {
         f.gone(5);
         f.stopped(5, &heard);
         assert!(heard.all().is_empty());
+    }
+
+    /// Held (#579): only a mention is held, never a person's follow-up;
+    /// deliver takes the oldest mention out and starts its turn; dismiss
+    /// drops the mentions and leaves a person's follow-up.
+    #[test]
+    fn a_held_mention_is_delivered_once_or_dropped_and_a_persons_follow_up_stays() {
+        let (mut f, heard) = (Followups::default(), Heard::default());
+        f.push(4, "hi".into(), by(), None);
+        assert_eq!(f.held(4), None);
+        f.push(4, "one".into(), by(), tag(7));
+        f.push(4, "two".into(), by(), tag(8));
+        assert_eq!(f.held(4), Some(("held 7".into(), 2)));
+        assert!(heard.all().is_empty(), "held is not working");
+        assert_eq!(f.deliver_held(4, &heard).as_deref(), Some("one"));
+        assert_eq!(heard.all(), [(4, 7, Turn::Started)]);
+        assert_eq!(f.held(4), Some(("held 8".into(), 1)));
+        assert_eq!(f.drop_held(4), 1);
+        assert!(heard.all().is_empty(), "a dropped mention is told of to no one");
+        assert_eq!((f.held(4), f.deliver_held(4, &heard)), (None, None));
+        assert_eq!(f.take(4, &heard).map(|(t, _)| t).as_deref(), Some("hi"));
     }
 
     #[test]

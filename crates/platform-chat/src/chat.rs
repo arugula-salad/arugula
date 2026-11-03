@@ -913,6 +913,7 @@ fn mention_state(state: &str) -> ChatMentionState {
         "fell_back" => ChatMentionState::FellBack,
         "waiting" => ChatMentionState::Waiting,
         "queued" => ChatMentionState::Queued,
+        "silenced" => ChatMentionState::Silenced,
         "no_such_session" => ChatMentionState::NoSuchSession,
         "sending" => ChatMentionState::Sending,
         // Tried again when the machine connected, and still not told.
@@ -938,6 +939,8 @@ fn mention_answer(answer: Option<&arugula_control_wire::forge::OpAnswer>) -> Men
         Some(OpAnswer::Done { routed: Some(r), .. }) => match r.step {
             // The message named a session the daemon didn't find: no other
             // session got it (#576), and the names there are come with it.
+            // The session is there but its owner silenced it (#579).
+            RoutedStep::Inbox if r.silenced => ("silenced", None, r.asked.clone(), vec![]),
             RoutedStep::Inbox if r.asked.is_some() => ("no_such_session", None, r.asked.clone(), r.names.clone()),
             RoutedStep::Inbox => ("waiting", None, None, vec![]),
             // A session took it, but its hook wasn't waiting (#571): it

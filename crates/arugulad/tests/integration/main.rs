@@ -93,6 +93,8 @@ mod mcp;
 mod memory;
 mod mention_agent_block;
 mod mention_card;
+#[cfg(unix)]
+mod mention_held;
 mod pipe;
 mod program_status;
 mod prompt;

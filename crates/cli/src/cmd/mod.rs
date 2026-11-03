@@ -35,6 +35,7 @@ pub mod login;
 pub mod ls;
 pub mod machines;
 pub mod mcp;
+pub mod mentions;
 pub mod mouse;
 pub mod open;
 pub mod pr;

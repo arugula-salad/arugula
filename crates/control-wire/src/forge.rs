@@ -430,6 +430,10 @@ pub struct Routed {
     /// tabs, at most 10), since no session was called that (#576).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub names: Vec<String>,
+    /// The session it named is there, but its owner silenced mentions for it
+    /// (#579): the message waits in the inbox. With `asked`.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub silenced: bool,
 }
 
 /// Which of the daemon's steps took an `agents.mention`.
