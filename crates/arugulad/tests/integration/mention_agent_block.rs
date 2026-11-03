@@ -3,11 +3,12 @@
 //! then `read`. Against a fake control (the relay socket sends the
 //! `agents.mention` op and takes the daemon's answer and its turn reports)
 //! and a real daemon with a fake-ACP agent block.
+// `Daemon::stop` is Unix only, and so is every module that uses its helpers.
+#![cfg(unix)]
 
 use std::sync::{Arc, Mutex};
 
 use arugula_e2e::{Cert, DeviceKeys, Kind};
-#[cfg(unix)]
 use arugula_testkit::arugulad;
 use axum::{
     Json, Router,
@@ -91,7 +92,6 @@ pub(super) fn enroll(state: &std::path::Path, control: &str) {
     std::fs::write(state.join("control.json"), saved.to_string()).unwrap();
 }
 
-#[cfg(unix)]
 /// `@machine/worker <text>`, message `seq` of room `ch_x`.
 fn mention(id: &str, seq: i64, text: &str) -> String {
     json!({ "t": "op", "id": id, "op": { "op": "agents.mention", "room": "ch_x", "room_name": "general",
@@ -99,7 +99,6 @@ fn mention(id: &str, seq: i64, text: &str) -> String {
     .to_string()
 }
 
-#[cfg(unix)]
 /// A reply, message `seq` under the thread of `parent` in room `ch_x`, to
 /// the block's agent (#580).
 fn reply(id: &str, seq: i64, parent: i64, text: &str) -> String {
@@ -123,8 +122,6 @@ pub(super) fn states(f: &Fake) -> Vec<(i64, String)> {
     all.iter().map(|s| (s["seq"].as_i64().unwrap(), word(&s["state"]))).collect()
 }
 
-// `Daemon::stop` is Unix only.
-#[cfg(unix)]
 /// A daemon enrolled with the fake control, and a block called "Worker"
 /// whose first turn is `prompt`. The runtime and the folder stay with the
 /// caller, who removes the folder.
@@ -156,7 +153,6 @@ fn boot(name: &str, prompt: &str) -> (tokio::runtime::Runtime, Fake, arugula_tes
     (rt, f, d, block, sessions)
 }
 
-#[cfg(unix)]
 #[test]
 fn a_mention_naming_an_agent_block_is_its_next_prompt_and_its_turn_is_working_then_read() {
     // A block called "Worker", in a turn of three seconds. (Not "slow" and a
@@ -191,7 +187,6 @@ fn a_mention_naming_an_agent_block_is_its_next_prompt_and_its_turn_is_working_th
     let _ = std::fs::remove_dir_all(&sessions);
 }
 
-#[cfg(unix)]
 #[test]
 fn a_stop_drops_the_mentions_waiting_and_reads_the_one_running() {
     let (_rt, f, d, block, sessions) = boot("mentionstop", "stream 20 150");
@@ -220,7 +215,6 @@ fn a_stop_drops_the_mentions_waiting_and_reads_the_one_running() {
     let _ = std::fs::remove_dir_all(&sessions);
 }
 
-#[cfg(unix)]
 #[test]
 fn a_session_that_exits_mid_turn_drops_the_mention_it_was_on() {
     let (_rt, f, d, _block, sessions) = boot("mentionexit", "stream 20 150");
@@ -239,7 +233,6 @@ fn a_session_that_exits_mid_turn_drops_the_mention_it_was_on() {
 /// The first holds both replies of its thread, oldest first; the other thread
 /// waits for the turn after. Every reply is working when its prompt is sent
 /// and read when that turn ends.
-#[cfg(unix)]
 #[test]
 fn replies_waiting_on_an_agent_block_are_one_prompt_per_thread() {
     let (_rt, f, d, block, sessions) = boot("mentionthreads", "stream 20 150");
