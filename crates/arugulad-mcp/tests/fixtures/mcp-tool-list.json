@@ -3537,7 +3537,7 @@
         "readOnlyHint": true,
         "title": "Read a conversation"
       },
-      "description": "Read a conversation in Arugula control that this machine's owner gave its agents a grant for (list kind threads lists them): a team channel, a DM, or an issue's or PR's thread by its id. Paged by seq: pass next_after_seq back as after_seq for what came since. mentions_only reads the messages that @mention this machine's agents. Each message lists its attachments (name, type, size and control's address). It starts with the room's topic and pins. A message with replies says how many; thread (its seq) reads those replies instead of the room, and returns the message as parent. A teammate's @mention of this machine, a reply to your message, or a post on the thread of a board your session leads, is delivered to your session as a message from a teammate (not your person): answer with post_thread in the same thread. One that finds no session waits unread (capabilities says so). A message of yours that @mentions another machine's agent carries a mentions list (machine, state, the session it reached, the name you asked for, the reply's seq): delivered, fell_back, queued (its hooks aren't listening: held as a card for its owner to deliver or drop, never typed in unasked), silenced (its owner silenced that session; it went to the inbox), waiting, no_such_session (the @name matched no session on that machine, so it went to the machine's inbox; names lists the sessions it has), offline, working (the session's turn that took it is running), read (that turn ended), answered, dropped (why: stopped or exited mid-turn; it was not read); read the message again for the outcome. machine (a name as in @machine) instead lists that machine's sessions you can @machine/name in the room: its owner decides what is shown. To find where to post: an unreached mention says why, and machine lists the sessions you can name; don't guess names from history.",
+      "description": "Read a conversation in Arugula control that this machine's owner gave its agents a grant for (list kind threads lists them): a team channel, a DM, or an issue's or PR's thread by its id. Paged by seq: pass next_after_seq back as after_seq for what came since. mentions_only reads the messages that @mention this machine's agents. Each message lists its attachments (name, type, size and control's address). It starts with the room's topic and pins. A message with replies says how many; thread (its seq) reads those replies instead of the room, and returns the message as parent. A teammate's @mention of this machine, a reply to your message, or a post on the thread of a board your session leads, is delivered to your session as a message from a teammate (not your person): answer with post_thread in the same thread. One that finds no session waits unread (capabilities says so). A message of yours that @mentions another machine's agent carries a mentions list (machine, state, the session it reached, the name you asked for, the reply's seq): delivered, fell_back, queued (its hooks aren't listening: held as a card for its owner to deliver or drop, never typed in unasked), silenced (its owner silenced that session; it went to the inbox), waiting, no_such_session (the @name matched no session on that machine, so it went to the machine's inbox; names lists the sessions it has), offline, working (the session's turn that took it is running), read (that turn ended), answered, dropped (why: stopped or exited mid-turn; it was not read); read the message again for the outcome. replies: true instead returns this machine's unread replies to your posts, by thread. machine (a name as in @machine) instead lists that machine's sessions you can @machine/name in the room: its owner decides what is shown. To find where to post: an unreached mention says why, and machine lists the sessions you can name; don't guess names from history.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
@@ -3582,8 +3582,14 @@
             "description": "Only the messages that mention this machine's agents (@ and its\nname).",
             "type": "boolean"
           },
+          "replies": {
+            "default": false,
+            "description": "Instead of a room: this machine's unread replies to its agents'\nposts, grouped by thread (the last 7 days, at most 50).",
+            "type": "boolean"
+          },
           "room": {
-            "description": "The room's id (list kind threads), or an issue's, PR's or hosted\nbox's id (iss_…, fi_…, hw_…) for its thread.",
+            "default": "",
+            "description": "The room's id (list kind threads), or an issue's, PR's or hosted\nbox's id (iss_…, fi_…, hw_…) for its thread. Not needed with\n`replies`.",
             "type": "string"
           },
           "thread": {
@@ -3596,9 +3602,6 @@
             ]
           }
         },
-        "required": [
-          "room"
-        ],
         "title": "ReadThreadArgs",
         "type": "object"
       },
@@ -7939,7 +7942,7 @@
         "readOnlyHint": true,
         "title": "Read a conversation"
       },
-      "description": "Read a conversation in Arugula control that this machine's owner gave its agents a grant for (list kind threads lists them): a team channel, a DM, or an issue's or PR's thread by its id. Paged by seq: pass next_after_seq back as after_seq for what came since. mentions_only reads the messages that @mention this machine's agents. Each message lists its attachments (name, type, size and control's address). It starts with the room's topic and pins. A message with replies says how many; thread (its seq) reads those replies instead of the room, and returns the message as parent. A teammate's @mention of this machine, a reply to your message, or a post on the thread of a board your session leads, is delivered to your session as a message from a teammate (not your person): answer with post_thread in the same thread. One that finds no session waits unread (capabilities says so). A message of yours that @mentions another machine's agent carries a mentions list (machine, state, the session it reached, the name you asked for, the reply's seq): delivered, fell_back, queued (its hooks aren't listening: held as a card for its owner to deliver or drop, never typed in unasked), silenced (its owner silenced that session; it went to the inbox), waiting, no_such_session (the @name matched no session on that machine, so it went to the machine's inbox; names lists the sessions it has), offline, working (the session's turn that took it is running), read (that turn ended), answered, dropped (why: stopped or exited mid-turn; it was not read); read the message again for the outcome. machine (a name as in @machine) instead lists that machine's sessions you can @machine/name in the room: its owner decides what is shown. To find where to post: an unreached mention says why, and machine lists the sessions you can name; don't guess names from history.",
+      "description": "Read a conversation in Arugula control that this machine's owner gave its agents a grant for (list kind threads lists them): a team channel, a DM, or an issue's or PR's thread by its id. Paged by seq: pass next_after_seq back as after_seq for what came since. mentions_only reads the messages that @mention this machine's agents. Each message lists its attachments (name, type, size and control's address). It starts with the room's topic and pins. A message with replies says how many; thread (its seq) reads those replies instead of the room, and returns the message as parent. A teammate's @mention of this machine, a reply to your message, or a post on the thread of a board your session leads, is delivered to your session as a message from a teammate (not your person): answer with post_thread in the same thread. One that finds no session waits unread (capabilities says so). A message of yours that @mentions another machine's agent carries a mentions list (machine, state, the session it reached, the name you asked for, the reply's seq): delivered, fell_back, queued (its hooks aren't listening: held as a card for its owner to deliver or drop, never typed in unasked), silenced (its owner silenced that session; it went to the inbox), waiting, no_such_session (the @name matched no session on that machine, so it went to the machine's inbox; names lists the sessions it has), offline, working (the session's turn that took it is running), read (that turn ended), answered, dropped (why: stopped or exited mid-turn; it was not read); read the message again for the outcome. replies: true instead returns this machine's unread replies to your posts, by thread. machine (a name as in @machine) instead lists that machine's sessions you can @machine/name in the room: its owner decides what is shown. To find where to post: an unreached mention says why, and machine lists the sessions you can name; don't guess names from history.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
@@ -7984,8 +7987,14 @@
             "description": "Only the messages that mention this machine's agents (@ and its\nname).",
             "type": "boolean"
           },
+          "replies": {
+            "default": false,
+            "description": "Instead of a room: this machine's unread replies to its agents'\nposts, grouped by thread (the last 7 days, at most 50).",
+            "type": "boolean"
+          },
           "room": {
-            "description": "The room's id (list kind threads), or an issue's, PR's or hosted\nbox's id (iss_…, fi_…, hw_…) for its thread.",
+            "default": "",
+            "description": "The room's id (list kind threads), or an issue's, PR's or hosted\nbox's id (iss_…, fi_…, hw_…) for its thread. Not needed with\n`replies`.",
             "type": "string"
           },
           "thread": {
@@ -7998,9 +8007,6 @@
             ]
           }
         },
-        "required": [
-          "room"
-        ],
         "title": "ReadThreadArgs",
         "type": "object"
       },
@@ -12638,7 +12644,7 @@
         "readOnlyHint": true,
         "title": "Read a conversation"
       },
-      "description": "Read a conversation in Arugula control that this machine's owner gave its agents a grant for (list kind threads lists them): a team channel, a DM, or an issue's or PR's thread by its id. Paged by seq: pass next_after_seq back as after_seq for what came since. mentions_only reads the messages that @mention this machine's agents. Each message lists its attachments (name, type, size and control's address). It starts with the room's topic and pins. A message with replies says how many; thread (its seq) reads those replies instead of the room, and returns the message as parent. A teammate's @mention of this machine, a reply to your message, or a post on the thread of a board your session leads, is delivered to your session as a message from a teammate (not your person): answer with post_thread in the same thread. One that finds no session waits unread (capabilities says so). A message of yours that @mentions another machine's agent carries a mentions list (machine, state, the session it reached, the name you asked for, the reply's seq): delivered, fell_back, queued (its hooks aren't listening: held as a card for its owner to deliver or drop, never typed in unasked), silenced (its owner silenced that session; it went to the inbox), waiting, no_such_session (the @name matched no session on that machine, so it went to the machine's inbox; names lists the sessions it has), offline, working (the session's turn that took it is running), read (that turn ended), answered, dropped (why: stopped or exited mid-turn; it was not read); read the message again for the outcome. machine (a name as in @machine) instead lists that machine's sessions you can @machine/name in the room: its owner decides what is shown. To find where to post: an unreached mention says why, and machine lists the sessions you can name; don't guess names from history.",
+      "description": "Read a conversation in Arugula control that this machine's owner gave its agents a grant for (list kind threads lists them): a team channel, a DM, or an issue's or PR's thread by its id. Paged by seq: pass next_after_seq back as after_seq for what came since. mentions_only reads the messages that @mention this machine's agents. Each message lists its attachments (name, type, size and control's address). It starts with the room's topic and pins. A message with replies says how many; thread (its seq) reads those replies instead of the room, and returns the message as parent. A teammate's @mention of this machine, a reply to your message, or a post on the thread of a board your session leads, is delivered to your session as a message from a teammate (not your person): answer with post_thread in the same thread. One that finds no session waits unread (capabilities says so). A message of yours that @mentions another machine's agent carries a mentions list (machine, state, the session it reached, the name you asked for, the reply's seq): delivered, fell_back, queued (its hooks aren't listening: held as a card for its owner to deliver or drop, never typed in unasked), silenced (its owner silenced that session; it went to the inbox), waiting, no_such_session (the @name matched no session on that machine, so it went to the machine's inbox; names lists the sessions it has), offline, working (the session's turn that took it is running), read (that turn ended), answered, dropped (why: stopped or exited mid-turn; it was not read); read the message again for the outcome. replies: true instead returns this machine's unread replies to your posts, by thread. machine (a name as in @machine) instead lists that machine's sessions you can @machine/name in the room: its owner decides what is shown. To find where to post: an unreached mention says why, and machine lists the sessions you can name; don't guess names from history.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
@@ -12683,8 +12689,14 @@
             "description": "Only the messages that mention this machine's agents (@ and its\nname).",
             "type": "boolean"
           },
+          "replies": {
+            "default": false,
+            "description": "Instead of a room: this machine's unread replies to its agents'\nposts, grouped by thread (the last 7 days, at most 50).",
+            "type": "boolean"
+          },
           "room": {
-            "description": "The room's id (list kind threads), or an issue's, PR's or hosted\nbox's id (iss_…, fi_…, hw_…) for its thread.",
+            "default": "",
+            "description": "The room's id (list kind threads), or an issue's, PR's or hosted\nbox's id (iss_…, fi_…, hw_…) for its thread. Not needed with\n`replies`.",
             "type": "string"
           },
           "thread": {
@@ -12697,9 +12709,6 @@
             ]
           }
         },
-        "required": [
-          "room"
-        ],
         "title": "ReadThreadArgs",
         "type": "object"
       },
@@ -17040,7 +17049,7 @@
         "readOnlyHint": true,
         "title": "Read a conversation"
       },
-      "description": "Read a conversation in Arugula control that this machine's owner gave its agents a grant for (list kind threads lists them): a team channel, a DM, or an issue's or PR's thread by its id. Paged by seq: pass next_after_seq back as after_seq for what came since. mentions_only reads the messages that @mention this machine's agents. Each message lists its attachments (name, type, size and control's address). It starts with the room's topic and pins. A message with replies says how many; thread (its seq) reads those replies instead of the room, and returns the message as parent. A teammate's @mention of this machine, a reply to your message, or a post on the thread of a board your session leads, is delivered to your session as a message from a teammate (not your person): answer with post_thread in the same thread. One that finds no session waits unread (capabilities says so). A message of yours that @mentions another machine's agent carries a mentions list (machine, state, the session it reached, the name you asked for, the reply's seq): delivered, fell_back, queued (its hooks aren't listening: held as a card for its owner to deliver or drop, never typed in unasked), silenced (its owner silenced that session; it went to the inbox), waiting, no_such_session (the @name matched no session on that machine, so it went to the machine's inbox; names lists the sessions it has), offline, working (the session's turn that took it is running), read (that turn ended), answered, dropped (why: stopped or exited mid-turn; it was not read); read the message again for the outcome. machine (a name as in @machine) instead lists that machine's sessions you can @machine/name in the room: its owner decides what is shown. To find where to post: an unreached mention says why, and machine lists the sessions you can name; don't guess names from history.",
+      "description": "Read a conversation in Arugula control that this machine's owner gave its agents a grant for (list kind threads lists them): a team channel, a DM, or an issue's or PR's thread by its id. Paged by seq: pass next_after_seq back as after_seq for what came since. mentions_only reads the messages that @mention this machine's agents. Each message lists its attachments (name, type, size and control's address). It starts with the room's topic and pins. A message with replies says how many; thread (its seq) reads those replies instead of the room, and returns the message as parent. A teammate's @mention of this machine, a reply to your message, or a post on the thread of a board your session leads, is delivered to your session as a message from a teammate (not your person): answer with post_thread in the same thread. One that finds no session waits unread (capabilities says so). A message of yours that @mentions another machine's agent carries a mentions list (machine, state, the session it reached, the name you asked for, the reply's seq): delivered, fell_back, queued (its hooks aren't listening: held as a card for its owner to deliver or drop, never typed in unasked), silenced (its owner silenced that session; it went to the inbox), waiting, no_such_session (the @name matched no session on that machine, so it went to the machine's inbox; names lists the sessions it has), offline, working (the session's turn that took it is running), read (that turn ended), answered, dropped (why: stopped or exited mid-turn; it was not read); read the message again for the outcome. replies: true instead returns this machine's unread replies to your posts, by thread. machine (a name as in @machine) instead lists that machine's sessions you can @machine/name in the room: its owner decides what is shown. To find where to post: an unreached mention says why, and machine lists the sessions you can name; don't guess names from history.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
@@ -17085,8 +17094,14 @@
             "description": "Only the messages that mention this machine's agents (@ and its\nname).",
             "type": "boolean"
           },
+          "replies": {
+            "default": false,
+            "description": "Instead of a room: this machine's unread replies to its agents'\nposts, grouped by thread (the last 7 days, at most 50).",
+            "type": "boolean"
+          },
           "room": {
-            "description": "The room's id (list kind threads), or an issue's, PR's or hosted\nbox's id (iss_…, fi_…, hw_…) for its thread.",
+            "default": "",
+            "description": "The room's id (list kind threads), or an issue's, PR's or hosted\nbox's id (iss_…, fi_…, hw_…) for its thread. Not needed with\n`replies`.",
             "type": "string"
           },
           "thread": {
@@ -17099,9 +17114,6 @@
             ]
           }
         },
-        "required": [
-          "room"
-        ],
         "title": "ReadThreadArgs",
         "type": "object"
       },
@@ -19821,7 +19833,7 @@
         "readOnlyHint": true,
         "title": "Read a conversation"
       },
-      "description": "Read a conversation in Arugula control that this machine's owner gave its agents a grant for (list kind threads lists them): a team channel, a DM, or an issue's or PR's thread by its id. Paged by seq: pass next_after_seq back as after_seq for what came since. mentions_only reads the messages that @mention this machine's agents. Each message lists its attachments (name, type, size and control's address). It starts with the room's topic and pins. A message with replies says how many; thread (its seq) reads those replies instead of the room, and returns the message as parent. A teammate's @mention of this machine, a reply to your message, or a post on the thread of a board your session leads, is delivered to your session as a message from a teammate (not your person): answer with post_thread in the same thread. One that finds no session waits unread (capabilities says so). A message of yours that @mentions another machine's agent carries a mentions list (machine, state, the session it reached, the name you asked for, the reply's seq): delivered, fell_back, queued (its hooks aren't listening: held as a card for its owner to deliver or drop, never typed in unasked), silenced (its owner silenced that session; it went to the inbox), waiting, no_such_session (the @name matched no session on that machine, so it went to the machine's inbox; names lists the sessions it has), offline, working (the session's turn that took it is running), read (that turn ended), answered, dropped (why: stopped or exited mid-turn; it was not read); read the message again for the outcome. machine (a name as in @machine) instead lists that machine's sessions you can @machine/name in the room: its owner decides what is shown. To find where to post: an unreached mention says why, and machine lists the sessions you can name; don't guess names from history.",
+      "description": "Read a conversation in Arugula control that this machine's owner gave its agents a grant for (list kind threads lists them): a team channel, a DM, or an issue's or PR's thread by its id. Paged by seq: pass next_after_seq back as after_seq for what came since. mentions_only reads the messages that @mention this machine's agents. Each message lists its attachments (name, type, size and control's address). It starts with the room's topic and pins. A message with replies says how many; thread (its seq) reads those replies instead of the room, and returns the message as parent. A teammate's @mention of this machine, a reply to your message, or a post on the thread of a board your session leads, is delivered to your session as a message from a teammate (not your person): answer with post_thread in the same thread. One that finds no session waits unread (capabilities says so). A message of yours that @mentions another machine's agent carries a mentions list (machine, state, the session it reached, the name you asked for, the reply's seq): delivered, fell_back, queued (its hooks aren't listening: held as a card for its owner to deliver or drop, never typed in unasked), silenced (its owner silenced that session; it went to the inbox), waiting, no_such_session (the @name matched no session on that machine, so it went to the machine's inbox; names lists the sessions it has), offline, working (the session's turn that took it is running), read (that turn ended), answered, dropped (why: stopped or exited mid-turn; it was not read); read the message again for the outcome. replies: true instead returns this machine's unread replies to your posts, by thread. machine (a name as in @machine) instead lists that machine's sessions you can @machine/name in the room: its owner decides what is shown. To find where to post: an unreached mention says why, and machine lists the sessions you can name; don't guess names from history.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
@@ -19866,8 +19878,14 @@
             "description": "Only the messages that mention this machine's agents (@ and its\nname).",
             "type": "boolean"
           },
+          "replies": {
+            "default": false,
+            "description": "Instead of a room: this machine's unread replies to its agents'\nposts, grouped by thread (the last 7 days, at most 50).",
+            "type": "boolean"
+          },
           "room": {
-            "description": "The room's id (list kind threads), or an issue's, PR's or hosted\nbox's id (iss_…, fi_…, hw_…) for its thread.",
+            "default": "",
+            "description": "The room's id (list kind threads), or an issue's, PR's or hosted\nbox's id (iss_…, fi_…, hw_…) for its thread. Not needed with\n`replies`.",
             "type": "string"
           },
           "thread": {
@@ -19880,9 +19898,6 @@
             ]
           }
         },
-        "required": [
-          "room"
-        ],
         "title": "ReadThreadArgs",
         "type": "object"
       },
@@ -21703,7 +21718,7 @@
         "readOnlyHint": true,
         "title": "Read a conversation"
       },
-      "description": "Read a conversation in Arugula control that this machine's owner gave its agents a grant for (list kind threads lists them): a team channel, a DM, or an issue's or PR's thread by its id. Paged by seq: pass next_after_seq back as after_seq for what came since. mentions_only reads the messages that @mention this machine's agents. Each message lists its attachments (name, type, size and control's address). It starts with the room's topic and pins. A message with replies says how many; thread (its seq) reads those replies instead of the room, and returns the message as parent. A teammate's @mention of this machine, a reply to your message, or a post on the thread of a board your session leads, is delivered to your session as a message from a teammate (not your person): answer with post_thread in the same thread. One that finds no session waits unread (capabilities says so). A message of yours that @mentions another machine's agent carries a mentions list (machine, state, the session it reached, the name you asked for, the reply's seq): delivered, fell_back, queued (its hooks aren't listening: held as a card for its owner to deliver or drop, never typed in unasked), silenced (its owner silenced that session; it went to the inbox), waiting, no_such_session (the @name matched no session on that machine, so it went to the machine's inbox; names lists the sessions it has), offline, working (the session's turn that took it is running), read (that turn ended), answered, dropped (why: stopped or exited mid-turn; it was not read); read the message again for the outcome. machine (a name as in @machine) instead lists that machine's sessions you can @machine/name in the room: its owner decides what is shown. To find where to post: an unreached mention says why, and machine lists the sessions you can name; don't guess names from history.",
+      "description": "Read a conversation in Arugula control that this machine's owner gave its agents a grant for (list kind threads lists them): a team channel, a DM, or an issue's or PR's thread by its id. Paged by seq: pass next_after_seq back as after_seq for what came since. mentions_only reads the messages that @mention this machine's agents. Each message lists its attachments (name, type, size and control's address). It starts with the room's topic and pins. A message with replies says how many; thread (its seq) reads those replies instead of the room, and returns the message as parent. A teammate's @mention of this machine, a reply to your message, or a post on the thread of a board your session leads, is delivered to your session as a message from a teammate (not your person): answer with post_thread in the same thread. One that finds no session waits unread (capabilities says so). A message of yours that @mentions another machine's agent carries a mentions list (machine, state, the session it reached, the name you asked for, the reply's seq): delivered, fell_back, queued (its hooks aren't listening: held as a card for its owner to deliver or drop, never typed in unasked), silenced (its owner silenced that session; it went to the inbox), waiting, no_such_session (the @name matched no session on that machine, so it went to the machine's inbox; names lists the sessions it has), offline, working (the session's turn that took it is running), read (that turn ended), answered, dropped (why: stopped or exited mid-turn; it was not read); read the message again for the outcome. replies: true instead returns this machine's unread replies to your posts, by thread. machine (a name as in @machine) instead lists that machine's sessions you can @machine/name in the room: its owner decides what is shown. To find where to post: an unreached mention says why, and machine lists the sessions you can name; don't guess names from history.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
@@ -21748,8 +21763,14 @@
             "description": "Only the messages that mention this machine's agents (@ and its\nname).",
             "type": "boolean"
           },
+          "replies": {
+            "default": false,
+            "description": "Instead of a room: this machine's unread replies to its agents'\nposts, grouped by thread (the last 7 days, at most 50).",
+            "type": "boolean"
+          },
           "room": {
-            "description": "The room's id (list kind threads), or an issue's, PR's or hosted\nbox's id (iss_…, fi_…, hw_…) for its thread.",
+            "default": "",
+            "description": "The room's id (list kind threads), or an issue's, PR's or hosted\nbox's id (iss_…, fi_…, hw_…) for its thread. Not needed with\n`replies`.",
             "type": "string"
           },
           "thread": {
@@ -21762,9 +21783,6 @@
             ]
           }
         },
-        "required": [
-          "room"
-        ],
         "title": "ReadThreadArgs",
         "type": "object"
       },

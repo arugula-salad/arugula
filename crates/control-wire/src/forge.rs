@@ -340,6 +340,12 @@ pub struct AgentMention {
     /// daemon ignores it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub from_session: Option<String>,
+    /// With a reply (#580): the first line of the thread's root message,
+    /// about 120 characters at most. The daemon names the thread by it when
+    /// replies come in together; without it, by the root's number. An older
+    /// daemon ignores it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub root_line: Option<String>,
 }
 
 /// An agent asks which sessions of a machine it may mention (#577).

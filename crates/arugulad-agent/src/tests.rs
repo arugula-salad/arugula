@@ -274,7 +274,7 @@ fn a_prompt_queued_while_the_agent_is_down_survives_a_restart() {
     ] {
         inner.rebuild_line(&l);
     }
-    assert_eq!(inner.queue, [Queued { text: "whats this project?".into(), images: vec![], by: None, mention: None }]);
+    assert_eq!(inner.queue, [Queued { text: "whats this project?".into(), images: vec![], by: None, mention: vec![] }]);
     // Sending it takes it off, here as when it's rebuilt.
     inner.rebuild_line(&frame(
         "out",
@@ -488,7 +488,7 @@ fn a_queued_prompt_is_credited_to_its_author_as_it_is_sent() {
     for l in &log_lines()[..5] {
         g.rebuild_line(l);
     }
-    let q = |text: &str, by: &str| Queued { text: text.into(), images: vec![], by: Some(by.into()), mention: None };
+    let q = |text: &str, by: &str| Queued { text: text.into(), images: vec![], by: Some(by.into()), mention: vec![] };
     g.enqueue(&q("first", "Ada"), false);
     g.enqueue(&q("second", "Bo"), false);
     let said = |g: &Inner| -> Vec<String> {
@@ -528,11 +528,60 @@ fn a_queued_prompt_is_credited_to_its_author_as_it_is_sent() {
     assert_eq!(said(&g), ["A follow-up from Ada", "> first", "A follow-up from Bo", "> second"]);
 
     // The owner's own prompt names nobody.
-    let mine = Queued { text: "mine".into(), images: vec![], by: None, mention: None };
+    let mine = Queued { text: "mine".into(), images: vec![], by: None, mention: vec![] };
     g.enqueue(&mine, false);
     g.send_prompt(&mine, vec![json!({ "type": "text", "text": "mine" })]);
     assert_eq!(said(&g).last().map(String::as_str), Some("> mine"));
     assert_eq!(said(&g).len(), 5);
+}
+
+/// #580: replies of one thread that wait together are one queued prompt with
+/// all their tags, oldest first; another thread's wait their turn, and a
+/// restart rebuilds the same queue from the log.
+#[test]
+fn replies_of_one_thread_in_the_queue_are_one_prompt_with_every_tag() {
+    let mut g = Inner::new(Config::default(), None);
+    for l in &log_lines()[..5] {
+        g.rebuild_line(l);
+    }
+    let reply = |seq: i64, root: i64| {
+        let thread = mux::MentionThread {
+            root,
+            head: format!("Thread {root}:"),
+            line: format!("ada: reply {seq}"),
+            tail: "(tail)".into(),
+        };
+        let tag = mux::MentionTag { room: "ch_x".into(), seq, headline: String::new(), thread: Some(thread) };
+        Queued { text: format!("framed {seq}"), images: vec![], by: None, mention: vec![tag] }
+    };
+    let seqs = |q: &Queued| q.mention.iter().map(|t| t.seq).collect::<Vec<_>>();
+    for (seq, root) in [(11, 10), (21, 20), (12, 10)] {
+        g.enqueue(&reply(seq, root), false);
+    }
+    assert_eq!(g.queue.len(), 2);
+    assert_eq!(seqs(&g.queue[0]), [11, 12]);
+    assert_eq!(g.queue[0].text, "Thread 10:\nada: reply 11\nada: reply 12\n\n(tail)");
+    assert_eq!((seqs(&g.queue[1]), g.queue[1].text.as_str()), (vec![21], "framed 21"));
+
+    // The same log, rebuilt, comes out the same.
+    let mut again = Inner::new(Config::default(), None);
+    for l in &log_lines()[..5] {
+        again.rebuild_line(l);
+    }
+    for (seq, root) in [(11, 10), (21, 20), (12, 10)] {
+        let q = reply(seq, root);
+        again.rebuild_line(&frame(
+            "note",
+            json!({ "e": "queue", "text": q.text, "images": [], "front": false, "mention": q.mention[0].to_json() }),
+        ));
+    }
+    assert_eq!(again.queue, g.queue);
+
+    // Sending the first takes it off whole; the other thread stays.
+    let next = g.queue.front().cloned().unwrap();
+    g.send_prompt(&next, vec![json!({ "type": "text", "text": next.text })]);
+    assert_eq!(g.queue.len(), 1);
+    assert_eq!(seqs(&g.queue[0]), [21]);
 }
 
 /// Arugula #215: a turn's result is its final message, exactly, though the

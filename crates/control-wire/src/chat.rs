@@ -1635,6 +1635,35 @@ pub struct AgentMachineSessions {
     pub sessions: Vec<crate::forge::MachineSession>,
 }
 
+/// The replies to this machine's agents' posts that no session has read yet
+/// (`GET`, answered [`AgentReplies`], #580): in the rooms the machine reads,
+/// the last 7 days, at most [`REPLIES_MAX`], grouped by thread.
+pub const AGENT_REPLIES: &str = "/api/daemon/chat/replies";
+
+/// The most replies [`AGENT_REPLIES`] answers.
+pub const REPLIES_MAX: usize = 50;
+
+/// [`AGENT_REPLIES`]' answer: the threads, the one with the oldest unread
+/// reply first.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+pub struct AgentReplies {
+    pub threads: Vec<AgentReplyThread>,
+}
+
+/// One thread's unread replies (#580).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+pub struct AgentReplyThread {
+    pub room: String,
+    pub room_name: String,
+    /// The thread's first message.
+    pub root: ChatMessage,
+    /// The unread replies, oldest first, each with its mention status for
+    /// this machine.
+    pub replies: Vec<ChatMessage>,
+}
+
 /// A page of [`agent_messages`]: as [`ChatMessagesQuery`], and `mentions`
 /// for only those that mention this machine's agents.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]

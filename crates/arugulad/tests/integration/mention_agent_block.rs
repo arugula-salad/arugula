@@ -97,6 +97,15 @@ fn mention(id: &str, seq: i64, text: &str) -> String {
     .to_string()
 }
 
+/// A reply, message `seq` under the thread of `parent` in room `ch_x`, to
+/// the block's agent (#580).
+fn reply(id: &str, seq: i64, parent: i64, text: &str) -> String {
+    json!({ "t": "op", "id": id, "op": { "op": "agents.mention", "room": "ch_x", "room_name": "general",
+        "seq": seq, "parent": parent, "author": "Ada", "text": text, "session": "worker",
+        "root_line": format!("root {parent}") } })
+    .to_string()
+}
+
 pub(super) fn answer(f: &Fake, id: &str) -> Option<Value> {
     f.said.lock().unwrap().iter().find(|v| v["t"] == "op.done" && v["id"] == id).map(|v| v["answer"].clone())
 }
@@ -213,6 +222,44 @@ fn a_session_that_exits_mid_turn_drops_the_mention_it_was_on() {
     d.wait_for("dropped", || states(&f) == [(7, "working".into()), (7, "dropped:exited".into())]);
     std::thread::sleep(std::time::Duration::from_millis(500));
     assert_eq!(states(&f).len(), 2, "nothing is said twice: {:?}", states(&f));
+
+    drop(d);
+    let _ = std::fs::remove_dir_all(&sessions);
+}
+
+/// #580: three replies in two threads reach an agent block as two prompts.
+/// The first holds both replies of its thread, oldest first; the other thread
+/// waits for the turn after. Every reply is working when its prompt is sent
+/// and read when that turn ends.
+#[test]
+fn replies_waiting_on_an_agent_block_are_one_prompt_per_thread() {
+    let (_rt, f, d, block, sessions) = boot("mentionthreads", "stream 20 150");
+
+    for (id, seq, parent, text) in
+        [("m1", 11, 10, "first reply"), ("m2", 21, 20, "elsewhere"), ("m3", 12, 10, "second reply")]
+    {
+        f.outbox.lock().unwrap().push(reply(id, seq, parent, text));
+        d.wait_for("handed over", || answer(&f, id).is_some());
+    }
+    let queued = d.get(&format!("/api/blocks/{block}"))["state"]["queued"].clone();
+    assert_eq!(queued.as_array().map(Vec::len), Some(2), "one waits for each thread: {queued}");
+
+    // The first turn ends by itself; each prompt's turn is quick.
+    let want: Vec<(i64, String)> =
+        [(11, "working"), (12, "working"), (11, "read"), (12, "read"), (21, "working"), (21, "read")]
+            .into_iter()
+            .map(|(s, w)| (s, w.to_owned()))
+            .collect();
+    d.wait_for("every reply working, then read", || states(&f) == want);
+    std::thread::sleep(std::time::Duration::from_millis(500));
+    assert_eq!(states(&f), want, "nothing is said twice");
+
+    let state = d.get(&format!("/api/blocks/{block}"))["state"].to_string();
+    assert!(
+        state.contains("in the thread \\\"root 10\\\":\\nAda: first reply\\nAda: second reply"),
+        "the thread's replies came as one prompt, oldest first: {state}"
+    );
+    assert!(!state.contains("elsewhere\\nAda"), "the other thread's came apart: {state}");
 
     drop(d);
     let _ = std::fs::remove_dir_all(&sessions);

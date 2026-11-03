@@ -1085,6 +1085,20 @@ fn replying_to_agent(
     Ok(last.and_then(|m| Some((m.agent?, m.agent_session))))
 }
 
+/// The longest root line a mention carries (#580), in characters.
+const ROOT_LINE: usize = 120;
+
+/// The first line of the root of the thread a reply goes under (#580), cut
+/// to [`ROOT_LINE`]. None for a post in the room, or a root that's gone.
+fn root_line(app: &Platform, room: &Room, parent: Option<i64>) -> Option<String> {
+    let root = app.db.chat_message(&room.id, parent?).ok()??;
+    let line = root.text.lines().map(str::trim).find(|l| !l.is_empty())?;
+    Some(match line.char_indices().nth(ROOT_LINE) {
+        Some((at, _)) => format!("{}…", line[..at].trim_end()),
+        None => line.to_owned(),
+    })
+}
+
 /// Agents' posts in a row at the end of the thread under `parent`, with no
 /// person's message between (#575). The root counts; a post in the room has
 /// no thread, so none.
@@ -1123,14 +1137,13 @@ struct Told<'a> {
     /// On a board's thread: the machine and session that lead the board
     /// (#414), when this post is for them.
     lead: Option<(String, String)>,
+    /// The first line of the thread's root, for a reply (#580).
+    root_line: Option<String>,
 }
 
 /// One agent a new message is for, ready to be told (#394, #419).
 struct Tell {
     machine: String,
-    /// With a status line: the message mentions the machine (a reply to its
-    /// agent is told without one).
-    mentioned: bool,
     op: arugula_control_wire::forge::DaemonOp,
 }
 
@@ -1192,6 +1205,7 @@ fn mention_op(told: &Told<'_>, session: Option<String>) -> arugula_control_wire:
         text: told.text.to_owned(),
         session,
         from_session: told.from_session.clone(),
+        root_line: told.root_line.clone(),
     })
 }
 
@@ -1253,7 +1267,9 @@ async fn plan_tells(
             (b.machine == a.machine && chain >= CHAIN_LIMIT)
                 || !app.chat.agent_told(&told.room.id, root, &a.machine, now_ms())
         });
-        if is_mentioned {
+        // A reply to its agent has a status too (#580): that's how a read
+        // of unread replies knows which no session took yet.
+        {
             let status = MentionStatus {
                 room: told.room.id.clone(),
                 seq: told.seq,
@@ -1275,11 +1291,7 @@ async fn plan_tells(
         if held {
             continue;
         }
-        out.push(Tell {
-            machine: a.machine.clone(),
-            mentioned: is_mentioned,
-            op: mention_op(told, session_for(told, a, is_mentioned)),
-        });
+        out.push(Tell { machine: a.machine.clone(), op: mention_op(told, session_for(told, a, is_mentioned)) });
     }
     out
 }
@@ -1340,9 +1352,6 @@ async fn deliver_later(app: &Platform, tells: Vec<Tell>, room: String, seq: i64,
 async fn deliver(app: &Platform, tells: Vec<Tell>, room: &str, seq: i64, parent: Option<i64>) {
     futures_util::future::join_all(tells.into_iter().map(|t| async move {
         let (state, session, asked, names) = ask_daemon(app, &t.machine, &t.op).await;
-        if !t.mentioned {
-            return;
-        }
         let status = MentionStatus {
             room: room.to_owned(),
             seq,
@@ -1470,6 +1479,7 @@ async fn mention_to_resend(
         sessions: at_sessions(&without_code(&m.text)),
         from_session: m.agent.as_ref().and(m.agent_session.clone()),
         lead: board_lead(app, &room),
+        root_line: root_line(app, &room, m.parent),
     };
     Ok(mention_op(&told, session_for(&told, a, true)))
 }
@@ -2487,6 +2497,7 @@ pub(crate) async fn post_replied(
         sessions: at_sessions(&plain),
         from_session,
         lead,
+        root_line: root_line(app, &room, b.parent),
     };
     // The daemons are told after this returns (#419): an agent's mention
     // shows in its status line, not in `pushed` or `unreached`.
