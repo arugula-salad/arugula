@@ -41,7 +41,7 @@ use std::{
 };
 
 use arugula_control_wire::{
-    chat::{MENTION_STATE, MentionTurn, PutMentionState},
+    chat::{DropWhy as WireWhy, MENTION_STATE, MentionTurn, PutMentionState},
     forge::{AgentMention, AgentSessionsAsk, MachineSession, OpAnswer, Routed, RoutedStep, SESSIONS_LISTED},
 };
 use arugula_proto::sharing::AgentSessions;
@@ -51,7 +51,7 @@ use tracing::{debug, warn};
 
 use crate::{
     control::CloudRefused,
-    mux::{Api, MentionTag, Turn, Turns},
+    mux::{Api, DropWhy, MentionTag, Turn, Turns},
     server::App,
 };
 
@@ -416,6 +416,10 @@ pub async fn keep_telling(
             state: match turn {
                 Turn::Started => MentionTurn::Working,
                 Turn::Ended => MentionTurn::Read,
+                Turn::Dropped(why) => MentionTurn::Dropped(match why {
+                    DropWhy::Stopped => WireWhy::Stopped,
+                    DropWhy::Exited => WireWhy::Exited,
+                }),
             },
         };
         let Ok(body) = serde_json::to_value(&put) else { continue };

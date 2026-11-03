@@ -983,6 +983,11 @@
           "const": "read",
           "description": "That turn has ended (#540). An agent's reply, `answered`, usually\ncomes first and stays.",
           "type": "string"
+        },
+        {
+          "const": "dropped",
+          "description": "The session dropped it (#613): `why` says how. Final, like\n`answered`, which it never replaces.",
+          "type": "string"
         }
       ]
     },
@@ -1027,6 +1032,17 @@
         },
         "state": {
           "$ref": "#/$defs/ChatMentionState"
+        },
+        "why": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/DropWhy"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "With `dropped`: why (#613)."
         }
       },
       "required": [
@@ -2548,6 +2564,21 @@
       ],
       "type": "object"
     },
+    "DropWhy": {
+      "description": "Why a mention was dropped (#613).",
+      "oneOf": [
+        {
+          "const": "stopped",
+          "description": "The person pressed stop while it waited in the session's queue.",
+          "type": "string"
+        },
+        {
+          "const": "exited",
+          "description": "The session's process ended in the middle of its turn.",
+          "type": "string"
+        }
+      ]
+    },
     "LivePresence": {
       "description": "Live presence (Arugula #341, the `live-presence` Labs flag), kept on the\naccount so every page agrees: `off` (the default), in no arugula.stream\nroom; `watching`, in your teams' rooms, seeing their live faces. Live\n(your camera) isn't kept: it's per window, on top of `watching`.",
       "enum": [
@@ -2604,6 +2635,19 @@
           "const": "read",
           "description": "The turn has ended.",
           "type": "string"
+        },
+        {
+          "additionalProperties": false,
+          "description": "The mention never got a turn, or its turn was cut off (#613).",
+          "properties": {
+            "dropped": {
+              "$ref": "#/$defs/DropWhy"
+            }
+          },
+          "required": [
+            "dropped"
+          ],
+          "type": "object"
         }
       ]
     },

@@ -75,7 +75,7 @@ use arugula_control_wire::chat::{
     ChatMessage, ChatMessages, ChatMessagesQuery, ChatMute, ChatNewChannel, ChatNewDm, ChatOpen, ChatOpenTarget,
     ChatPane, ChatPerson, ChatPost, ChatPosted, ChatPushWhy, ChatPushed, ChatReaction, ChatReactor, ChatRead,
     ChatReaderList, ChatReaders, ChatReadersStored, ChatRoom, ChatRoomAgent, ChatRoomChange, ChatRoomDetail, ChatRooms,
-    ChatSearchQuery, ChatUnreachedWhy, MentionTurn, NotifyLevel, PutMentionState,
+    ChatSearchQuery, ChatUnreachedWhy, DropWhy, MentionTurn, NotifyLevel, PutMentionState,
 };
 use arugula_e2e::{now_ms, team::TeamRole};
 use axum::{
@@ -94,7 +94,10 @@ use crate::{
         Db, Taken,
         chat::{Message, NewMessage, Page, Room, RoomMeta, Search, UnreadAsk, Word},
         chat_files::ChatFileRow,
-        chat_mention_status::{ANSWERABLE_MS, MentionStatus, REDELIVER_MAX, REDELIVER_WITHIN_MS, STALE_SENDING_MS},
+        chat_mention_status::{
+            ANSWERABLE_MS, DROPPED_EXITED, DROPPED_STOPPED, MentionStatus, REDELIVER_MAX, REDELIVER_WITHIN_MS,
+            STALE_SENDING_MS,
+        },
         chat_reactions::Reaction,
         objects::Holder,
         projects::{ISSUES_WRITE, THREADS_POST, THREADS_READ},
@@ -896,6 +899,11 @@ fn shown_status(s: &MentionStatus) -> ChatMentionStatus {
         asked: s.asked.clone(),
         names: s.names.clone(),
         reply: s.reply,
+        why: match s.state.as_str() {
+            DROPPED_STOPPED => Some(DropWhy::Stopped),
+            DROPPED_EXITED => Some(DropWhy::Exited),
+            _ => None,
+        },
     }
 }
 
@@ -913,6 +921,7 @@ fn mention_state(state: &str) -> ChatMentionState {
         "chain" => ChatMentionState::Chain,
         "working" => ChatMentionState::Working,
         "read" => ChatMentionState::Read,
+        DROPPED_STOPPED | DROPPED_EXITED => ChatMentionState::Dropped,
         _ => ChatMentionState::Delivered,
     }
 }
@@ -3017,7 +3026,7 @@ pub async fn daemon_readers(
 
 /// `PUT /api/daemon/chat/mention-state`: a machine's daemon says its
 /// session's turn that took a mention started (`working`) or ended (`read`,
-/// #540). Only for a message the machine has a status for (404 otherwise),
+/// #540), or the mention was dropped (#613). Only for a message the machine has a status for (404 otherwise),
 /// and only forward (`turn_follows`): an `answered` mention stays so. A
 /// change is told like any other status change.
 pub async fn daemon_mention_state(
@@ -3030,6 +3039,8 @@ pub async fn daemon_mention_state(
     let state = match b.state {
         MentionTurn::Working => "working",
         MentionTurn::Read => "read",
+        MentionTurn::Dropped(DropWhy::Stopped) => DROPPED_STOPPED,
+        MentionTurn::Dropped(DropWhy::Exited) => DROPPED_EXITED,
     };
     let session = b.session.as_deref().map(|s| s.chars().take(MAX_SESSION_NAME).collect::<String>());
     match app.db.report_chat_mention_turn(&b.room, b.seq, &machine, state, session.as_deref(), now_ms())? {

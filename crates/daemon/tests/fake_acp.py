@@ -18,7 +18,7 @@ Prompts:
   slowly…        slow, with anything after it (a session's notes)
                  A mention ("Message from … : slowly") is slow too (#611).
   remember WORD  remembers WORD; "recall" says it (across processes)
-  crash          exits with code 3 mid-turn
+  crash          exits with code 3 mid-turn (a mention "…: crash" too, #613)
   env NAME       says NAME from its environment ("ENV NAME=value", or
                  "ENV NAME unset"), #379
   expired        fails the turn as claude-agent-acp does on a stale login:
@@ -698,7 +698,7 @@ def prompt(mid, p):
         update(sid, s, {"sessionUpdate": "tool_call", "toolCallId": f"bg{n}", "title": "Monitor",
                         "kind": "other", "status": "in_progress"})
         msg("All done; the report is above.")
-    elif text == "crash":
+    elif text == "crash" or (text.startswith("Message from ") and ": crash\n" in text):
         msg("bye")
         os._exit(3)
     elif text.startswith("env "):

@@ -28,6 +28,8 @@ export function mentionStatusText(s: ChatMentionStatus): string {
       return `${who}${s.session ? `/${s.session}` : ""}: working…`;
     case "read":
       return `${who}${s.session ? `/${s.session}` : ""}: read`;
+    case "dropped":
+      return `${who}${s.session ? `/${s.session}` : ""}: dropped: ${s.why === "stopped" ? "the session was stopped" : "the session ended mid-turn"}`;
     case "offline":
       return `${who} is offline or didn't answer`;
     case "answered":

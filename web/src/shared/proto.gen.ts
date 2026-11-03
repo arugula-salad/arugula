@@ -970,7 +970,7 @@ export type ChatLive = { "type": "hello", stream: string, } | { "type": "message
 /**
  * How far a [`ChatMentionStatus`] has got.
  */
-export type ChatMentionState = "sending" | "delivered" | "fell_back" | "waiting" | "queued" | "no_such_session" | "offline" | "answered" | "chain" | "working" | "read";
+export type ChatMentionState = "sending" | "delivered" | "fell_back" | "waiting" | "queued" | "no_such_session" | "offline" | "answered" | "chain" | "working" | "read" | "dropped";
 
 /**
  * Where a message's `@machine` mention got to (#502), as control knows it:
@@ -997,7 +997,11 @@ names?: Array<string>,
 /**
  * With `answered`: the number of the agent's reply.
  */
-reply?: number, };
+reply?: number, 
+/**
+ * With `dropped`: why (#613).
+ */
+why?: DropWhy, };
 
 /**
  * A message as the reader sees it.
@@ -2004,6 +2008,11 @@ export type Driver = {
  * Principal id (`owner`, `tailnet:<login>`, `account:<id>`).
  */
 who: string, name: string, };
+
+/**
+ * Why a mention was dropped (#613).
+ */
+export type DropWhy = "stopped" | "exited";
 
 /**
  * Where to put something relative to a pane.
