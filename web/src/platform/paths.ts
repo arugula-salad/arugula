@@ -18,10 +18,8 @@
 //                                  `?q=…`, `?label=…`, `?assignee=…` narrow it
 //   /p/:project/issues/new         a new issue
 //   /p/:project/issues/:issue      an issue (`?msg=N`: at that comment)
-//   /p/:project/triage             its open issues on no board, when the
-//                                  `boards` Labs flag is on (#292)
-//   /p/:project/boards             its boards, when the
-//                                  `boards` Labs flag is on
+//   /p/:project/triage             its open issues on no board (#292)
+//   /p/:project/boards             its boards
 //   /p/:project/boards/:board      a board (`brd_…`)
 //   /docs                          every Doc the reader can read, their own
 //                                  private ones first (#418)

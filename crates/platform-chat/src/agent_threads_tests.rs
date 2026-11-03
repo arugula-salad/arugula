@@ -1016,7 +1016,6 @@ async fn led_board(hub: &crate::testing::hub::TestHub, base: &str, t: &str) -> (
             read = g["id"].as_str().unwrap().to_owned();
         }
     }
-    hub.flag_named("team:t", crate::boards::FLAG, true);
     hub.answers_ops("geek", OpAnswer::Done { url: None, routed: None });
     let (st, b) =
         call(base, "b", "POST", &format!("/api/projects/{t}/boards"), Some(json!({ "title": "Launch" }))).await;

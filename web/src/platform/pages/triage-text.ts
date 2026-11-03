@@ -6,12 +6,11 @@ import type { BoardPointer, BoardWorkItem, ProjectBoard } from "../../shared/pro
 
 export const TRIAGE_LEDE = "Open issues that aren't on a board yet.";
 export const TRIAGE_NONE = "Nothing to triage: every open issue is on a board.";
-export const TRIAGE_OFF = "Boards are a Labs feature, and they're off for you. Triage comes with them: until then, every issue is under All issues.";
 
-/** The place the bar's Issues place becomes: Triage once boards are on. A
- * reader whose boards haven't answered yet (`null`) or are off keeps Issues. */
-export function issuesPlace(boards: readonly unknown[] | null | "off"): "issues" | "triage" {
-  return boards === null || boards === "off" ? "issues" : "triage";
+/** The place the bar's Issues place becomes: Triage. A reader whose
+ * boards haven't answered yet (`null`) keeps Issues until they do. */
+export function issuesPlace(boards: readonly unknown[] | null): "issues" | "triage" {
+  return boards === null ? "issues" : "triage";
 }
 
 /** `OWNER/NAME#N` of a mirrored issue, `ARUGU-12` of a tracker's, `#N` of a native one. */

@@ -67,7 +67,7 @@ const KEEP =
 export function ProjectSettings({ id, link }: { id: string; link?: string }) {
   useSubscribe((fn) => session.subscribe(fn));
   const p = session.project(id);
-  // Plane is Labs with boards (#356): shown once the boards flag is known on.
+  // Plane's connections and the boards' settings show once the boards are read.
   const boards = useBoards(id);
   const [repos, setRepos] = useState<LinkedRepo[] | null>(null);
   const [repo, setRepo] = useState(link ?? "");
@@ -274,8 +274,8 @@ export function ProjectSettings({ id, link }: { id: string; link?: string }) {
               </ConfirmRemove>
             )}
           </Section>
-          {boards !== null && boards !== "off" && <PlaneConnections p={p} />}
-          {boards !== null && boards !== "off" && <BoardSettings p={p} />}
+          {boards !== null && <PlaneConnections p={p} />}
+          {boards !== null && <BoardSettings p={p} />}
           <IssueHomeSetting key={linked} p={p} />
           <Environments p={p} />
           <RunGrant project={p.id} />

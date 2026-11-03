@@ -76,12 +76,12 @@ const HEADS: Record<Column, Head> = {
     head: "Plane writes",
     short: "Plane",
     name: "Plane writes",
-    gives: "create, comment on, close, reopen and edit the work items of its connected Plane project, as you; whether each waits for your approval is set per Plane connection. Plane is in Labs: this does nothing until boards are on for your account",
+    gives: "create, comment on, close, reopen and edit the work items of its connected Plane project, as you; whether each waits for your approval is set per Plane connection",
   },
   boards: {
     head: "Boards",
     name: "boards",
-    gives: "read its boards (read), or read them and add, attach and ask on them (read and write). Boards are in Labs: this does nothing until boards are on for your account",
+    gives: "read its boards (read), or read them and add, attach and ask on them (read and write)",
   },
 };
 

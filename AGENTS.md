@@ -251,7 +251,7 @@ removed").
 
 A flag per feature turns on what a stranger doesn't get (#385, #464, #665):
 `sandbox-providers`, `studio`, `chant-workspaces`, `additional-forges`,
-`agent-delegation`, `boards` (DECISIONS.md "Four Labs flags stay, renamed; the rest
+`agent-delegation` (DECISIONS.md "Four Labs flags stay, renamed; the rest
 graduate or retire"). Their old names, `vms`, `workspaces`, `forges` and
 `agents`, are aliases forever (`flags::ALIASES`, mirrored for control as
 `wire::FLAG_ALIASES`): every name that comes in goes through
@@ -261,7 +261,8 @@ so an old file naming it is ignored: `fountain` (daemon-side Managoat,
 removed: DECISIONS.md "Daemon-side Managoat is removed"), `huddles`
 (DECISIONS.md "Huddles are removed"), and, graduated or retired in the same
 rethink, `chat` (control's, on by team; the import of a machine's old threads went with it), `docs`, `guest-ssh` (now a machine sharing setting, Guest SSH access, in `sharing.json`: `arugula_proto::sharing`, off by default, the owner's alone; the old flag's word is kept once), `swarm-themes`
-(the swarm's views, under Theme); `studio` stays until the platform covers
+(the swarm's views, under Theme), and `boards` (native #191: a project's boards
+and epics are on for everyone; agents' `boards.read`/`boards.write` grants still gate them); `studio` stays until the platform covers
 its connector. They're named
 flags in `flags.json` in the state
 dir (`arugula_proto::flags`: the `FLAGS` registry, `get`, `on`, `set`, `all`;

@@ -271,7 +271,6 @@ async fn a_boards_link_is_a_card_of_the_board_for_its_members() {
     use arugula_control_wire::boards::{AGENT_BOARD_LEAD, agent_board_row_ask};
     let hub = Arc::new(TestHub::default());
     let (app, base) = serve(hub.clone()).await;
-    hub.flag_named("team:t", crate::boards::FLAG, true);
     let (issue, room) = seed(&app, &hub, &base).await;
     let (st, _) = call(&base, "c", "PUT", "/api/chat/teams/u/previews", Some(json!({ "web": false }))).await;
     assert_eq!(st, 200);

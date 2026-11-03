@@ -6,10 +6,7 @@
 use arugula_control_wire::boards::{BOARD_DOCS_MAX, agent_board_doc, agent_board_docs};
 use serde_json::{Value, json};
 
-use super::{
-    FLAG,
-    tests::{attach, geek, grant_write, issue, lane, put, row_in, rows_in},
-};
+use super::tests::{attach, geek, grant_write, issue, lane, put, row_in, rows_in};
 use crate::{
     agents_tests::seeded,
     chat_tests::call,
@@ -75,8 +72,7 @@ fn titles(v: &Value) -> Vec<&str> {
 /// stays once), move one, take one off. A viewer reads and links nothing.
 #[tokio::test]
 async fn link_move_and_unlink_a_docs_strip() {
-    let (hub, _app, base, t, _u) = seeded().await;
-    hub.flag_named("team:t", FLAG, true);
+    let (_hub, _app, base, t, _u) = seeded().await;
     let id = board(&base, &t).await;
     let plan = doc(&base, "a", &t, "The plan", 5, 3).await;
     let spike = doc(&base, "a", &t, "The spike", 1, 1).await;
@@ -132,8 +128,7 @@ async fn link_move_and_unlink_a_docs_strip() {
 /// A board lists at most BOARD_DOCS_MAX Docs.
 #[tokio::test]
 async fn a_strip_holds_at_most_twenty_docs() {
-    let (hub, app, base, t, _u) = seeded().await;
-    hub.flag_named("team:t", FLAG, true);
+    let (_hub, app, base, t, _u) = seeded().await;
     let id = board(&base, &t).await;
     for i in 0..=BOARD_DOCS_MAX {
         let new = crate::db::project_docs::NewDoc {
@@ -161,8 +156,6 @@ async fn a_strip_holds_at_most_twenty_docs() {
 #[tokio::test]
 async fn another_projects_doc_is_refused() {
     let (hub, app, base, t, u) = seeded().await;
-    hub.flag_named("team:t", FLAG, true);
-    hub.flag_named("team:u", FLAG, true);
     hub.flag("team:u", true);
     let id = board(&base, &t).await;
     let theirs = doc(&base, "c", &u, "Their plan", 1, 1).await;
@@ -191,8 +184,7 @@ async fn another_projects_doc_is_refused() {
 /// row's, once, in its order, and an editor takes it off.
 #[tokio::test]
 async fn a_doc_is_linked_to_a_row_and_is_never_its_item_or_an_attachment() {
-    let (hub, _app, base, t, _u) = seeded().await;
-    hub.flag_named("team:t", FLAG, true);
+    let (_hub, _app, base, t, _u) = seeded().await;
     let id = board(&base, &t).await;
     let d = doc(&base, "a", &t, "The spike", 2, 1).await;
     let (_, v) = put(&base, "a", &id, json!({ "entry": "row", "note": "the plan" })).await;
@@ -238,8 +230,7 @@ async fn a_doc_is_linked_to_a_row_and_is_never_its_item_or_an_attachment() {
 /// only among themselves, and go with the row.
 #[tokio::test]
 async fn row_docs_are_once_per_row_in_their_own_order_and_go_with_the_row() {
-    let (hub, app, base, t, _u) = seeded().await;
-    hub.flag_named("team:t", FLAG, true);
+    let (_hub, app, base, t, _u) = seeded().await;
     let id = board(&base, &t).await;
     let (a, b, c) = (
         doc(&base, "a", &t, "A", 1, 1).await,
@@ -319,8 +310,7 @@ async fn row_docs_are_once_per_row_in_their_own_order_and_go_with_the_row() {
 /// the board's progress or its ready set.
 #[tokio::test]
 async fn a_row_doc_never_moves_a_lane_or_proves() {
-    let (hub, app, base, t, _u) = seeded().await;
-    hub.flag_named("team:t", FLAG, true);
+    let (_hub, app, base, t, _u) = seeded().await;
     let id = board(&base, &t).await;
     let open = issue(&base, "a", &t, "Open one").await;
     let shut = issue(&base, "a", &t, "Shut one").await;
@@ -369,8 +359,7 @@ async fn a_row_doc_never_moves_a_lane_or_proves() {
 /// row, and the board still reads.
 #[tokio::test]
 async fn a_deleted_doc_reads_as_missing() {
-    let (hub, _app, base, t, _u) = seeded().await;
-    hub.flag_named("team:t", FLAG, true);
+    let (_hub, _app, base, t, _u) = seeded().await;
     let id = board(&base, &t).await;
     let d = doc(&base, "a", &t, "The spike", 2, 2).await;
     let (_, v) = put(&base, "a", &id, json!({ "entry": "row", "note": "the plan" })).await;
@@ -395,8 +384,7 @@ async fn a_deleted_doc_reads_as_missing() {
 /// The Doc's page asks which boards list it: in the strip, on rows, both.
 #[tokio::test]
 async fn a_doc_says_which_boards_it_is_on() {
-    let (hub, _app, base, t, _u) = seeded().await;
-    hub.flag_named("team:t", FLAG, true);
+    let (_hub, _app, base, t, _u) = seeded().await;
     let (one, two) = (board(&base, &t).await, board(&base, &t).await);
     let d = doc(&base, "a", &t, "The spike", 1, 1).await;
     let other = doc(&base, "a", &t, "Not linked", 1, 1).await;
@@ -426,20 +414,8 @@ async fn a_doc_says_which_boards_it_is_on() {
         "{v}"
     );
     assert_eq!(on("a", other).await.1["boards"], json!([]));
-    // A stranger has no such project, and with boards off nothing is said.
-    hub.flag_named("team:u", FLAG, true);
+    // A stranger has no such project.
     assert_eq!(on("c", d.clone()).await.0, 404);
-}
-
-/// With boards off, the Doc's page hears of no boards, and no route answers.
-#[tokio::test]
-async fn with_boards_off_a_doc_is_on_no_boards() {
-    let (hub, _app, base, t, _u) = seeded().await;
-    hub.flag_named("team:t", FLAG, false);
-    let d = doc(&base, "a", &t, "The spike", 1, 1).await;
-    let (st, v) = call(&base, "a", "GET", &format!("/api/projects/{t}/docs/{d}/boards"), None).await;
-    assert_eq!((st, &v["boards"]), (200, &json!([])), "{v}");
-    assert_eq!(link(&base, "a", "brd_00", json!({ "kind": "doc", "id": d })).await.0, 404);
 }
 
 /// A machine's agent with boards.write links a Doc on its own machine (the
@@ -447,8 +423,7 @@ async fn with_boards_off_a_doc_is_on_no_boards() {
 /// boards.write it is refused. A person sees the machine's name.
 #[tokio::test]
 async fn an_agent_links_its_machines_docs() {
-    let (hub, _app, base, t, _u) = seeded().await;
-    hub.flag_named("team:t", FLAG, true);
+    let (_hub, _app, base, t, _u) = seeded().await;
     let id = board(&base, &t).await;
     let mine = json!({ "kind": "machine_doc", "machine": "geek", "doc": "d7", "title": "  Perf notes  " });
 
@@ -500,8 +475,7 @@ async fn an_agent_links_its_machines_docs() {
 /// A closed board keeps its rows editable, and so its Docs.
 #[tokio::test]
 async fn a_closed_boards_docs_stay_editable() {
-    let (hub, _app, base, t, _u) = seeded().await;
-    hub.flag_named("team:t", FLAG, true);
+    let (_hub, _app, base, t, _u) = seeded().await;
     let id = board(&base, &t).await;
     let d = doc(&base, "a", &t, "The spike", 1, 1).await;
     let (st, _) =

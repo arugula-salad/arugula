@@ -156,6 +156,27 @@ async fn an_agent_starts_one_on_an_issue_and_answers_which_repo() {
     assert_eq!(s.work_item.as_deref(), Some(i.id.as_str()));
     let (st, v) = call(&base, "a", "GET", &format!("/api/sessions/{}", s.id), None).await;
     assert_eq!((st, v["card"]["work"]["number"].as_u64()), (200, Some(i.number)), "{v}");
+    // With the issue on a board, the card names it: no flag asked (boards left Labs, #191).
+    let (st, made) =
+        call(&base, "a", "POST", &format!("/api/projects/{t}/boards"), Some(json!({ "title": "Launch" }))).await;
+    assert_eq!(st, 200, "{made}");
+    let board = made["board"]["id"].as_str().unwrap().to_owned();
+    let pointer = json!({ "kind": "issue", "id": i.id });
+    let (st, v) = call(
+        &base,
+        "a",
+        "PUT",
+        &format!("/api/boards/{board}/entries"),
+        Some(json!({ "entry": "row", "pointer": pointer })),
+    )
+    .await;
+    assert_eq!(st, 200, "{v}");
+    let (st, v) = call(&base, "a", "GET", &format!("/api/sessions/{}", s.id), None).await;
+    assert_eq!(
+        (st, &v["card"]["work"]["board"], &v["card"]["work"]["board_title"]),
+        (200, &json!(board), &json!("Launch")),
+        "{v}"
+    );
 
     // In the channel: the agent's reply naming a repo answers its ask.
     let (st, v) = geek(&base, "POST", AGENT_SESSIONS, Some(json!({ "room": ROOM, "prompt": "tidy the README" }))).await;

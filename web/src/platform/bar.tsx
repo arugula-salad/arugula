@@ -22,7 +22,7 @@ import { setWorkingTeam } from "../shared/live/live";
 import { ChatPlaceUnread, PlaceUnread } from "./thread-unread";
 import { barProject, where } from "./where";
 import { InboxCount } from "./inbox-count";
-import { useBoards, useBoardsOn } from "./pages/boards";
+import { useBoards } from "./pages/boards";
 import { issuesPlace } from "./pages/triage-text";
 
 /** The bar's place a route is under (UI audit #159): a project's cloud
@@ -101,11 +101,9 @@ export function PlatformBar({ children }: { children?: ComponentChildren }) {
   // Live's camera goes to the team of the project on screen (#343).
   const working = p?.team?.id ?? null;
   useEffect(() => setWorkingTeam(working), [working]);
-  // With boards on, Triage takes Issues' place and Boards follows it (#292).
-  // Until they've answered, and with them off, the bar is Issues as ever.
+  // Triage takes Issues' place and Boards follows it (#292). Until boards
+  // have answered, the bar is Issues as ever.
   const boards = useBoards(project);
-  // Every project's boards, with the `boards` flag: on in any of the reader's.
-  const allBoards = useBoardsOn();
   const triage = issuesPlace(boards) === "triage";
   // An id that's none of the reader's lights no place (UI audit #170): the
   // body says it isn't one of theirs.
@@ -184,7 +182,7 @@ export function PlatformBar({ children }: { children?: ComponentChildren }) {
             Projects
           </Place>
         )}
-        {!project && (allBoards || here === "boards") && (
+        {!project && (
           <Place to="/boards" here={here === "boards"} data="boards">
             Boards
           </Place>

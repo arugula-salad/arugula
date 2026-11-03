@@ -111,6 +111,13 @@ that still names it changes nothing:
 - **`swarm-themes`**: the swarm's city, hive and timeline views are
   everyone's, picked under the swarm's Theme and kept in the browser.
 
+- **`boards`** (2026-11-02, Aaron: `boards` graduates too): a project's
+  boards and epics are on for everyone, a primary feature the flag hid from
+  teams and PMs. Its agents' grants (`boards.read`, `boards.write`, and
+  `issues.write` and `trackers.write` for the rest) still decide what a
+  machine's agents may do. A `boards` word left in `flags.json` or in a
+  control push changes nothing (native #191).
+
 **Studio's connector retires later.** The daemon's own studio login and
 personal-access-token connector (linking a studio, `/api/studio…`, its
 token) is to go, with the `studio` flag (then `RETIRED`), and opening apps

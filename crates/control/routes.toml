@@ -1173,7 +1173,7 @@ path = "/plane/webhook/{connection}"
 process = "platform"
 auth = "webhook"
 clients = ["plane"]
-note = "A Plane project's changes (Arugula #358), checked by the platform against the connection's own sealed webhook secret (`X-Plane-Signature`, hex HMAC-SHA256 of the body); a redelivery is a no-op. Behind the boards Labs flag. The URL is set in Plane's webhook settings."
+note = "A Plane project's changes (Arugula #358), checked by the platform against the connection's own sealed webhook secret (`X-Plane-Signature`, hex HMAC-SHA256 of the body); a redelivery is a no-op. The URL is set in Plane's webhook settings."
 
 [[route]]
 method = "POST"
@@ -2053,7 +2053,7 @@ path = "/api/projects/{project}/trackers"  # wire::projects::PROJECT_TRACKERS
 process = "platform"
 auth = "cloud_driver"
 clients = ["page", "cli", "daemon"]
-note = "A project's connected Plane projects (Arugula #356), for its members, behind the boards Labs flag: metadata only, never a key."
+note = "A project's connected Plane projects (Arugula #356), for its members: metadata only, never a key."
 
 [[route]]
 method = "POST"
@@ -2061,7 +2061,7 @@ path = "/api/projects/{project}/trackers"  # wire::projects::PROJECT_TRACKERS
 process = "platform"
 auth = "session"
 clients = ["page", "cli"]
-note = "Connects a Plane project (Arugula #356): an owner or editor, behind the boards Labs flag. Plane is asked with the key first; the key and webhook secret are sealed here and never read back."
+note = "Connects a Plane project (Arugula #356): an owner or editor. Plane is asked with the key first; the key and webhook secret are sealed here and never read back."
 
 [[route]]
 method = "PATCH"
@@ -2085,7 +2085,7 @@ path = "/api/projects/{project}/trackers/{connection}/history"  # wire::projects
 process = "platform"
 auth = "cloud_driver"
 clients = ["page"]
-note = "What Arugula changed in a connected Plane project lately (Arugula #441): moves to Done after a merged PR, those that failed for good, and the agent writes a person decided. The newest 20, for the project's members, behind the boards Labs flag."
+note = "What Arugula changed in a connected Plane project lately (Arugula #441): moves to Done after a merged PR, those that failed for good, and the agent writes a person decided. The newest 20, for the project's members."
 
 [[route]]
 method = "POST"
@@ -2093,7 +2093,7 @@ path = "/api/projects/{project}/trackers/{connection}/moves/{job}/retry"  # wire
 process = "platform"
 auth = "session"
 clients = ["page"]
-note = "Queues a failed move to Done again (Arugula #441): an owner or editor, behind the boards Labs flag. A job that isn't that connection's failed move is a 404."
+note = "Queues a failed move to Done again (Arugula #441): an owner or editor. A job that isn't that connection's failed move is a 404."
 
 [[route]]
 method = "POST"
@@ -2101,7 +2101,7 @@ path = "/api/projects/{project}/trackers/{connection}/writes"  # wire::projects:
 process = "platform"
 auth = "session"
 clients = ["page", "cli"]
-note = "A person's write to a connected Plane project (Arugula #359): create, comment, close, reopen or edit a work item. An owner or editor, behind the boards Labs flag; it lands at once, with a footer naming them. The key is never in the answer."
+note = "A person's write to a connected Plane project (Arugula #359): create, comment, close, reopen or edit a work item. An owner or editor; it lands at once, with a footer naming them. The key is never in the answer."
 
 [[route]]
 method = "GET"
@@ -2851,9 +2851,8 @@ note = "An opted-in machine's forge blocks' attention, items and reasons without
 
 # ---- platform: boards (boards, step 1)
 # A project's boards, for its members: a team's owners and editors change
-# them, its viewers read them; anyone else gets 404. Behind the `boards`
-# Labs flag (the account's, else a team's): without it every route here
-# answers 404. `{project}` is a project's id or `personal`.
+# them, its viewers read them; anyone else gets 404. Boards left Labs
+# (native #191): they are on for everyone. `{project}` is a project's id or `personal`.
 
 [[route]]
 method = "GET"
@@ -2997,7 +2996,7 @@ path = "/api/boards/{id}/rows/{row}/ask"  # wire::boards::BOARD_ROW_ASK
 process = "platform"
 auth = "session"
 clients = ["page", "cli", "native"]
-note = "Asks a member of the project a question on a row (Arugula #367): owners and editors, behind the boards Labs flag. One open ask per row (409), and only on a row with an issue or a PR (422)."
+note = "Asks a member of the project a question on a row (Arugula #367): owners and editors. One open ask per row (409), and only on a row with an issue or a PR (422)."
 
 [[route]]
 method = "PUT"
@@ -3005,7 +3004,7 @@ path = "/api/boards/{id}/rows/{row}/lane"  # wire::boards::BOARD_ROW_LANE
 process = "platform"
 auth = "session"
 clients = ["page", "native"]
-note = "Moves a row to a lane by hand (Arugula #494): owners and editors, behind the boards Labs flag. Next, Doing and Review hold until the row's work changes its derived lane; Done closes the row's native issue and moving out of Done reopens it (issues.write). A GitHub or Plane item, or a row with no issue, is 422 for Done. People only: no daemon route."
+note = "Moves a row to a lane by hand (Arugula #494): owners and editors. Next, Doing and Review hold until the row's work changes its derived lane; Done closes the row's native issue and moving out of Done reopens it (issues.write). A GitHub or Plane item, or a row with no issue, is 422 for Done. People only: no daemon route."
 
 [[route]]
 method = "POST"
@@ -3021,7 +3020,7 @@ path = "/api/projects/{project}/relations"  # wire::boards::PROJECT_RELATIONS
 process = "platform"
 auth = "session"
 clients = ["page"]
-note = "Relates two items of the project (Arugula #403): blocks, relates, duplicate_of or discovered_from, owners and editors, behind the boards Labs flag. Both ends are issues or mirrored items of the project the writer reads (400 otherwise); an edge to itself is 400, the same edge twice and a blocks cycle are 409."
+note = "Relates two items of the project (Arugula #403): blocks, relates, duplicate_of or discovered_from, owners and editors. Both ends are issues or mirrored items of the project the writer reads (400 otherwise); an edge to itself is 400, the same edge twice and a blocks cycle are 409."
 
 [[route]]
 method = "DELETE"
@@ -3239,7 +3238,7 @@ auth = "daemon"
 clients = ["daemon"]
 
 # ---- platform: boards for a machine's agents (boards, step 3)
-# MCP's board tools, signed by the machine, behind the `boards` Labs flag.
+# MCP's board tools, signed by the machine.
 # The owner's role in the project is the ceiling, and the machine needs its
 # grant over it: `boards.read` to read, `boards.write` to change (which
 # reads too), asked on every call. An agent makes boards, sets a board's

@@ -1,8 +1,7 @@
-// `/p/:project/triage` (#292): with boards on, a project's Issues place is
+// `/p/:project/triage` (#292): a project's Issues place is
 // its open issues that sit on no board, each with Add to board…. The list is
 // the platform's work route (crates/platform/src/boards.rs) asked for the
-// untriaged; the issues list stays at All issues. Behind the `boards` Labs
-// flag, as the boards are: the route answers 404 while it's off.
+// untriaged; the issues list stays at All issues.
 
 import { useEffect, useRef, useState } from "preact/hooks";
 import type { BoardWorkItem, BoardWorkItems } from "../../shared/proto";
@@ -19,7 +18,7 @@ import { useBoards } from "./boards";
 import { mayWrite } from "./issues";
 import { Missing } from "./project";
 import { WaitingWrites } from "./tracker-writes";
-import { TRIAGE_LEDE, TRIAGE_NONE, TRIAGE_OFF, itemHref, sourceLabel, targets, without, type Target } from "./triage-text";
+import { TRIAGE_LEDE, TRIAGE_NONE, itemHref, sourceLabel, targets, without, type Target } from "./triage-text";
 
 /** The project's open issues on no board: the newest first, at most 100. */
 async function untriaged(project: string): Promise<BoardWorkItem[]> {
@@ -43,9 +42,8 @@ function Triage({ p }: { p: PlatformProject }) {
   // The boards, read the first time Add to board… is used.
   const where = useRef<Promise<ReturnType<typeof targets>> | null>(null);
   const all = pathOf({ page: "issues", project: p.id }, names);
-  const off = on === "off";
   useEffect(() => {
-    if (on === null || off) return;
+    if (on === null) return;
     let live = true;
     setError(null);
     untriaged(p.id).then(
@@ -53,7 +51,7 @@ function Triage({ p }: { p: PlatformProject }) {
       (e: Error) => live && setError(e.message),
     );
     return () => void (live = false);
-  }, [p.id, on === null || off]);
+  }, [p.id, on === null]);
 
   const add = (i: BoardWorkItem, t: Target) =>
     boards.put(t.board, { entry: "row", pointer: i.pointer }).then(
@@ -94,14 +92,9 @@ function Triage({ p }: { p: PlatformProject }) {
           </>
         }
       />
-      {!off && mayWrite(p) && <WaitingWrites project={p.id} />}
-      {off && (
-        <p class="dim" data-triage-off>
-          {TRIAGE_OFF}
-        </p>
-      )}
+      {mayWrite(p) && <WaitingWrites project={p.id} />}
       {error && <p class="control-error" role="alert">{error}</p>}
-      {!off && !error && items === null && <p class="dim">Loading…</p>}
+      {!error && items === null && <p class="dim">Loading…</p>}
       {items?.length === 0 && (
         <p class="dim" data-triage-none>
           {TRIAGE_NONE}

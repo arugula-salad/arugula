@@ -5778,7 +5778,6 @@ export const FLAGS = [
   { name: "chant-workspaces", title: "Chant workspaces", about: "Chant workspace blocks: a workspace's members, relationships and gates.", default: false, local_only: false },
   { name: "additional-forges", title: "GitLab and Forgejo", about: "PR and issue blocks for GitLab and Forgejo, beside GitHub's.", default: false, local_only: false },
   { name: "agent-delegation", title: "Local agent delegation", about: "Agent recipes, offering them from this machine, your team's agent catalog and tasks between machines.", default: false, local_only: true },
-  { name: "boards", title: "Boards", about: "A project's boards and epics, which need control.", default: false, local_only: false },
   { name: "live-presence", title: "Live presence", about: "Your teammates' live faces on their avatars across Arugula, and yours when you choose Live. Needs control.", default: false, local_only: false },
 ] as const;
 

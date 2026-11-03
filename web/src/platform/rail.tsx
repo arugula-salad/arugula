@@ -30,7 +30,7 @@ export function PlatformRail() {
   const chatTo = chatPath(project);
   const { n, mention } = !unknown && (!project || p) ? chatUnread(chat.rooms, p ? (p.team?.id ?? null) : undefined) : { n: 0, mention: false };
   const place = (to: string) => () => go(to);
-  const items: (RailItem | false)[] = [
+  const items: RailItem[] = [
     {
       label: "Projects",
       tip: "Projects: their issues, boards, runs, deploys and chat",
@@ -73,7 +73,7 @@ export function PlatformRail() {
       onClick: place("/settings"),
     },
   ];
-  return <Rail brand={brand} items={items.filter((i): i is RailItem => !!i)} bottom={bottom} />;
+  return <Rail brand={brand} items={items} bottom={bottom} />;
 }
 
 /** The page's body beside its rail: the rail on a computer, none on a phone. */

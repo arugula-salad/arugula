@@ -1,8 +1,8 @@
 //! A project's boards from agents (boards, step 3; lanes, aru-125): the board
 //! in Arugula control (`brd_…`, an ordered list of rows, each one piece of
 //! work, read as four lanes that follow the work), read with
-//! `board_read` and changed with `board_write`, behind the `boards` Labs
-//! flag (listed only when it is on, and refused when it is off).
+//! `board_read` and changed with `board_write` (listed with the other control
+//! tools; boards left Labs, native #191).
 //!
 //! - **Through the owner's grants.** Each call is a machine-signed route on
 //!   the platform (`/api/daemon/boards/...`,
@@ -479,121 +479,121 @@ pub(crate) const WRITE: &[Kind] = &[
         name: "add",
         description: "Add issues or PRs to a board as rows, up to 50 in one call: #N, owner/repo#N, IDENT-N or an iss_/fi_ id. Each is a row, or is attached to the row of the issue it names (a PR), or is there already; one that fails doesn't stop the rest. Optionally into a group.",
         schema: schema_for_type::<AddArgs>,
-        flag: Some(arugula_proto::flags::BOARDS),
+        flag: None,
     },
     Kind {
         name: "attach",
         description: "Attach work (a PR, an agent block or a run) or proof (a run or a link) to the row of an item, by the item (#N), not a row id.",
         schema: schema_for_type::<AttachArgs>,
-        flag: Some(arugula_proto::flags::BOARDS),
+        flag: None,
     },
     Kind {
         name: "detach",
         description: "Take off an attachment you made, from the row of an item.",
         schema: schema_for_type::<DetachArgs>,
-        flag: Some(arugula_proto::flags::BOARDS),
+        flag: None,
     },
     Kind {
         name: "link_doc",
         description: "Link a Doc to a board: a project Doc (pdc_…) or one kept on this machine (its id from doc list). It goes in the board's Docs strip, or with row on one row (its spike or research). A Doc never moves a lane, is no work and is no proof. One linked already is not linked again; a board lists at most 20.",
         schema: schema_for_type::<LinkDocArgs>,
-        flag: Some(arugula_proto::flags::BOARDS),
+        flag: None,
     },
     Kind {
         name: "unlink_doc",
         description: "Take a Doc you linked off a board, from its strip or a row: its bdc_… id (board_read has them).",
         schema: schema_for_type::<UnlinkDocArgs>,
-        flag: Some(arugula_proto::flags::BOARDS),
+        flag: None,
     },
     Kind {
         name: "ask",
         description: "Ask a person of the project a question on the row of an item (an issue or a PR; one open ask per row), with up to four options or none for free text. They answer on the board, and the answer is the row's asked in board_read: read it there. You can't answer an ask.",
         schema: schema_for_type::<AskArgs>,
-        flag: Some(arugula_proto::flags::BOARDS),
+        flag: None,
     },
     Kind {
         name: "relate",
         description: "Relate two items of the board's project: item blocks, relates to, duplicates (duplicate_of) or was discovered from (discovered_from) to. A blocked row stays in its lane, says what blocks it, and is left out of board_read's Ready line until the blocker is closed. A blocks cycle is refused. Needs the issues.write grant too. Example: {\"kind\":\"relate\",\"board\":\"brd_…\",\"item\":\"#506\",\"relation\":\"blocks\",\"to\":\"#507\"} (relation defaults to blocks; kind is the op).",
         schema: schema_for_type::<RelateArgs>,
-        flag: Some(arugula_proto::flags::BOARDS),
+        flag: None,
     },
     Kind {
         name: "unrelate",
         description: "Take off a relation your machine made (the same item, to and relation as relate). One a person made, or that comes from Plane, stays. Found through a row of the board that has item or to as its item.",
         schema: schema_for_type::<RelateArgs>,
-        flag: Some(arugula_proto::flags::BOARDS),
+        flag: None,
     },
     Kind {
         name: "note",
         description: "Set the one-line note of the row of an item. With rev, a row that changed since is not written and the answer is its current note.",
         schema: schema_for_type::<NoteArgs>,
-        flag: Some(arugula_proto::flags::BOARDS),
+        flag: None,
     },
     Kind {
         name: "group",
         description: "Put the row of an item in a group (a phase, a wave), or out of its group (group: null).",
         schema: schema_for_type::<GroupArgs>,
-        flag: Some(arugula_proto::flags::BOARDS),
+        flag: None,
     },
     Kind {
         name: "drop",
         description: "Remove the row of an item that you added.",
         schema: schema_for_type::<DropArgs>,
-        flag: Some(arugula_proto::flags::BOARDS),
+        flag: None,
     },
     Kind {
         name: "add_group",
         description: "Add a group to a board, last: a named section (a phase, a wave, an area) that rows go in.",
         schema: schema_for_type::<AddGroupArgs>,
-        flag: Some(arugula_proto::flags::BOARDS),
+        flag: None,
     },
     Kind {
         name: "rename_group",
         description: "Rename a group.",
         schema: schema_for_type::<RenameGroupArgs>,
-        flag: Some(arugula_proto::flags::BOARDS),
+        flag: None,
     },
     Kind {
         name: "move_group",
         description: "Move a group among a board's groups.",
         schema: schema_for_type::<MoveGroupArgs>,
-        flag: Some(arugula_proto::flags::BOARDS),
+        flag: None,
     },
     Kind {
         name: "delete_group",
         description: "Delete a group that is empty or holds only rows you added, with its rows.",
         schema: schema_for_type::<DeleteGroupArgs>,
-        flag: Some(arugula_proto::flags::BOARDS),
+        flag: None,
     },
     Kind {
         name: "create_board",
         description: "Make a board in a project, with a goal (an epic); returns it.",
         schema: schema_for_type::<CreateBoardArgs>,
-        flag: Some(arugula_proto::flags::BOARDS),
+        flag: None,
     },
     Kind {
         name: "edit_board",
         description: "Set a board's title and/or goal.",
         schema: schema_for_type::<EditBoardArgs>,
-        flag: Some(arugula_proto::flags::BOARDS),
+        flag: None,
     },
     Kind {
         name: "close_board",
         description: "Close a board with a note saying what a person can now do.",
         schema: schema_for_type::<CloseBoardArgs>,
-        flag: Some(arugula_proto::flags::BOARDS),
+        flag: None,
     },
     Kind {
         name: "reopen_board",
         description: "Open a closed board again, keeping its note.",
         schema: schema_for_type::<BoardArgs>,
-        flag: Some(arugula_proto::flags::BOARDS),
+        flag: None,
     },
     Kind {
         name: "lead_board",
         description: "Take the lead of a board with this session (it needs a name), or with release: true let it go. A post on a board's thread also reaches the session that leads it.",
         schema: schema_for_type::<LeadBoardArgs>,
-        flag: Some(arugula_proto::flags::BOARDS),
+        flag: None,
     },
 ];
 
@@ -660,7 +660,6 @@ fn given(v: impl serde::Serialize) -> Result<Value, String> {
 
 /// They act as this machine's owner: only the owner's own agents may.
 async fn owners_boards(c: &Call<'_>, what: &str) -> Result<(), String> {
-    crate::lab_flags::flag(c.app().control.state_dir(), arugula_proto::flags::BOARDS)?;
     if let Some(me) = c.me()
         && c.app().mux.api(|r| Api::GuestBehind(me, r)).await.flatten().is_some()
     {

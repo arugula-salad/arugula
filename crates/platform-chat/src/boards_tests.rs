@@ -19,7 +19,6 @@ async fn a_boards_thread_is_its_projects() {
     hub.team("u", &[("c", TeamRole::Owner)]);
     for team in ["team:t", "team:u"] {
         hub.flag(team, true);
-        hub.flag_named(team, crate::boards::FLAG, true);
     }
     let p = app.db.team_project("t", "t", 1).unwrap();
     let (st, b) =

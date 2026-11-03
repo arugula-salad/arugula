@@ -5,8 +5,8 @@
 //! blocker carries a `blocked_by` mark and is not in the board's ready set,
 //! and stays in its lane, for a mark is information and not a lane.
 //!
-//! **Who may write:** owners and editors of the project (a viewer reads),
-//! behind the `boards` flag; an agent acts for its owner, whose role is the
+//! **Who may write:** owners and editors of the project (a viewer reads);
+//! an agent acts for its owner, whose role is the
 //! ceiling, and needs its machine's `issues.write` grant over the project
 //! (the edge is on the items, not on a board). Both ends are items of the
 //! project that the writer may read, so an edge can't be used to find out

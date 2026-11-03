@@ -1,5 +1,5 @@
 // Boards link Docs (#517), as a person meets them. Alice owns team Acme, with
-// chat's and boards' Labs flags on, a board Launch with one row, and two
+// chat on, a board Launch with one row, and two
 // project Docs. Under the goal is a Docs strip: "+ Doc" opens a picker of the
 // project's Docs by title with a filter, a pick is a chip with its written
 // sections, and the chip opens the Doc's page, which says it is on the board.
@@ -63,7 +63,7 @@ test("Alice links a project Doc to the board's strip, opens it, and takes it off
   alice = await t.person(browser, "alice", { colorScheme: "dark", viewport: { width: 1280, height: 900 } });
   await alice.evaluate(() => window.__arugula.control!.createTeam("Acme"));
   team = await alice.evaluate(() => window.__arugula.control!.teams[0].team);
-  for (const flag of ["chat", "boards"]) await alice.evaluate(([f, tm]) => window.__arugula.control!.setLabsFlag(f, true, tm), [flag, team] as const);
+  await alice.evaluate((tm) => window.__arugula.control!.setLabsFlag("chat", true, tm), team);
   const link = await alice.evaluate((tm) => window.__arugula.control!.invite(tm, "viewer", true), team);
   bob = await t.person(browser, "bob", { colorScheme: "dark", viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
   await bob.goto(link);

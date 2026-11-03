@@ -42,7 +42,7 @@ export function ProjectHome({ id }: { id: string }) {
   const p = session.project(id);
   if (!p) return <Missing what="That project isn't one of yours (or it's gone)." />;
   const rooms = chat.on ? chat.rooms.filter((r) => (p.team ? r.team === p.team.id : !r.team) && (r.kind === "channel" || r.kind === "dm")) : [];
-  const boardsOn = boards !== null && boards !== "off";
+  const boardsOn = boards !== null;
   const chatPath = pathOf({ page: "chat", project: p.id }, names);
   const settingsPath = pathOf({ page: "project-settings", project: p.id }, names);
   const workspacesPath = pathOf({ page: "workspaces", project: p.id }, names);

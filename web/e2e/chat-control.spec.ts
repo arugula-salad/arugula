@@ -855,7 +855,6 @@ test("a board's link unfurls into a card of the board: its bar, n of m done, who
   test.setTimeout(150_000);
   const shots = join(process.env.TMPDIR ?? tmpdir(), "627-shots");
   mkdirSync(shots, { recursive: true });
-  await alice.evaluate((tm) => window.__arugula.control!.setLabsFlag("boards", true, tm), team);
   await platform(aliceChat, `/chat/${general}`);
   // Alice's personal project, which Bob is not in.
   let board: { status: number; body: any } = { status: 0, body: null };

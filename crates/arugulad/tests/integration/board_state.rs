@@ -1,8 +1,7 @@
 //! An agent block's state goes to control for the board rows that point at
 //! it (boards, step 4; aru-116): needs input, working, idle (with
 //! the turn's work, when it left any) and closed, and nothing else about the
-//! block. Against a fake control; a machine that joined it with the
-//! `boards` flag on. Labs' flag, so a build without Labs has none of this.
+//! block. Against a fake control; a machine that joined it.
 
 use std::{
     sync::{Arc, Mutex},
@@ -68,7 +67,6 @@ async fn an_agent_blocks_state_goes_to_control() {
         let cert = arugula_e2e::Cert::new(&keys, "a1", arugula_e2e::Kind::Daemon, "test");
         let saved = json!({ "url": url, "trust": { "account": "a1", "root": keys.id() }, "cert": cert });
         std::fs::write(state.join("control.json"), saved.to_string()).unwrap();
-        arugula_proto::flags::set(state, "boards", true).unwrap();
     });
     let id = d.open("hello");
     let idle = told(&fake, id, "idle").await;

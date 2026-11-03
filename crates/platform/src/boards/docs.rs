@@ -28,7 +28,6 @@ use super::{J, bad, board_place, changed, id_ok, name_ok, place, read, refused, 
 use crate::{
     Platform,
     auth::Person,
-    chat::flag_on,
     db::{boards_docs as db, issues::Actor},
 };
 
@@ -164,11 +163,8 @@ pub async fn move_doc(
 }
 
 /// The boards of `project` that list its Doc `doc`, as `account` may read
-/// them: none when boards are off for them.
+/// them.
 pub async fn on_boards(app: &Platform, account: &str, project: &str, doc: &str) -> Result<wire::DocBoards, ApiError> {
-    if !flag_on(app, account, super::FLAG).await? {
-        return Ok(wire::DocBoards::default());
-    }
     let project = place(app, Actor::person(account), project, false).await?;
     id_ok(doc, "pdc").map_err(|_| no_doc())?;
     app.db.project_doc(doc)?.filter(|d| d.project == project).ok_or_else(no_doc)?;

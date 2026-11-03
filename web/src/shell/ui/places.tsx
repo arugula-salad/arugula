@@ -54,10 +54,10 @@ export function hasChat(): boolean {
   return !!platformOrigin() && !!chatStore();
 }
 
-/** Whether to offer Boards: with chat (the machine has joined control), the
- * `boards` flag on, and the machine's owner (as Docs). */
+/** Whether to offer Boards: with chat (the machine has joined control) and
+ * the machine's owner (as Docs). */
 export function hasBoards(client: Client): boolean {
-  return hasChat() && client.flag("boards") && !client.state?.roles;
+  return hasChat() && !client.state?.roles;
 }
 
 /** Unread messages in the rooms chat lists, and whether one mentions

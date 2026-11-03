@@ -139,7 +139,6 @@ pub async fn history(
     CloudDriver(Person { account }): CloudDriver,
     Path((project, connection)): Path<(String, String)>,
 ) -> Result<Json<TrackerHistory>, ApiError> {
-    crate::boards::gate(&app, &account).await?;
     let (project, _) = membership(&app, &account, &project, false).await?;
     let c = app.db.tracker_connection(&project, &connection)?.ok_or_else(missing)?;
     Ok(Json(read(&app, &project, &c).await?))
@@ -152,7 +151,6 @@ pub async fn retry(
     Person { account }: Person,
     Path((project, connection, job)): Path<(String, String, String)>,
 ) -> Result<Json<TrackerHistory>, ApiError> {
-    crate::boards::gate(&app, &account).await?;
     let project = changer(&app, &account, &project).await?;
     let c = app.db.tracker_connection(&project, &connection)?.ok_or_else(missing)?;
     if !app.db.retry_plane_move(&c.id, &job, now_ms())? {

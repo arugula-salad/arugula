@@ -1,6 +1,6 @@
 // Issues on boards, phase 1 (#289-#292), as a person meets them. Alice owns
-// team Acme, with chat's and boards' Labs flags on, and three native issues,
-// one hers. The bar says Triage (not Issues) and Boards, and Triage lists the
+// team Acme, with chat on, and three native issues,
+// one hers. With no `boards` flag (they left Labs, #191), the bar says Triage (not Issues) and Boards, and Triage lists the
 // three. She makes the board Launch, which has the four lanes (Next, Doing,
 // Review, Done) and no way to make a zone; Add to board… on the first issue
 // leaves it off Triage and draws it as a card in Next. She adds a row
@@ -71,14 +71,14 @@ const zone = (p: Page, title: string): Locator => p.locator("[data-board-zone]")
 const row = (p: Page, title: string): Locator => p.locator("[data-board-row]").filter({ has: p.locator("[data-board-title]", { hasText: title }) });
 const triaged = (p: Page, title: string): Locator => p.locator("[data-triage-row]").filter({ hasText: title });
 
-test("with boards on, the bar says Triage and Boards, and Triage lists the untriaged", async ({ browser }) => {
+test("with no Labs flag set, the bar has Boards, and Triage lists the untriaged", async ({ browser }) => {
   test.setTimeout(180_000);
   await t.start(["--platform-host", "app.localhost"]);
   app = t.base.replace("//127.0.0.1", "//app.localhost");
   alice = await t.person(browser, "alice");
   await alice.evaluate(() => window.__arugula.control!.createTeam("Acme"));
   team = await alice.evaluate(() => window.__arugula.control!.teams[0].team);
-  for (const flag of ["chat", "boards"]) await alice.evaluate(([f, tm]) => window.__arugula.control!.setLabsFlag(f, true, tm), [flag, team] as const);
+  await alice.evaluate((tm) => window.__arugula.control!.setLabsFlag("chat", true, tm), team);
   // Bob, a viewer.
   const link = await alice.evaluate((tm) => window.__arugula.control!.invite(tm, "viewer", true), team);
   bob = await t.person(browser, "bob", { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
@@ -90,6 +90,8 @@ test("with boards on, the bar says Triage and Boards, and Triage lists the untri
   await expect.poll(() => alice.evaluate(() => window.__arugula.control!.teams[0].roster.members.length), { timeout: 15_000 }).toBe(2);
 
   await platform(alice);
+  // All projects' bar has Boards too, with no flag set (#191).
+  await expect(alice.locator("[data-platform-boards]")).toHaveText("Boards", { timeout: 15_000 });
   await alice.locator("section[data-platform-home] [data-project]", { hasText: "Acme" }).click();
   await expect(alice).toHaveURL(/\/p\/prj_[0-9a-f]+-acme$/);
   project = /\/p\/(prj_[0-9a-f]+)/.exec(alice.url())![1];
@@ -103,6 +105,7 @@ test("with boards on, the bar says Triage and Boards, and Triage lists the untri
 
   await platform(alice, alice.url().replace(app, ""));
   await expect(alice.locator("[data-platform-triage]")).toHaveText("Triage", { timeout: 15_000 });
+  // Boards left Labs (#191): nothing set a `boards` flag on this team or her account (the rail is main's #640: no Boards button).
   await expect(alice.locator("[data-platform-boards]")).toHaveText("Boards");
   await expect(alice.locator("[data-platform-issues]")).toHaveCount(0);
 

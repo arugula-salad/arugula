@@ -60,7 +60,6 @@ fn actor(d: &Machine) -> Actor<'_> {
 /// the tools aren't granted).
 pub async fn reach(State(app): State<Arc<Platform>>, d: Machine) -> J<wire::BoardReach> {
     app.limits.check_daemon(AGENT_BOARD_READS, &d.daemon)?;
-    super::gate(&app, &d.account).await?;
     let mut by: std::collections::BTreeMap<String, Vec<String>> = Default::default();
     for g in app.db.board_grants_of(&d.daemon, &d.account)? {
         by.entry(g.scope_id).or_default().push(g.power);
@@ -269,15 +268,13 @@ pub async fn unrelate(
 /// `PUT /api/daemon/block-state`: the state of one of the signing machine's
 /// own agent blocks. The machine is the signer's, never the body's, so one
 /// machine can't set another's block. Refused (403) unless the machine holds
-/// `boards.write` over a project of its owner's; 404 with the `boards` flag
-/// off for the owner.
+/// `boards.write` over a project of its owner's.
 pub async fn put_block_state(
     State(app): State<Arc<Platform>>,
     d: Machine,
     Json(mut p): Json<wire::PutBlockState>,
 ) -> J<serde_json::Value> {
     app.limits.check_daemon(AGENT_BLOCK_REPORTS, &d.daemon)?;
-    super::gate(&app, &d.account).await?;
     may_report(&app, &d).await?;
     p.pane = super::plain_pane(&p.pane).to_owned();
     super::name_ok(&p.pane, "pane")?;

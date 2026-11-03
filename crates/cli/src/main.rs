@@ -621,9 +621,8 @@ const LABS_COMMANDS: &[(&str, &str)] = &[
     ("machines", flags::SANDBOX_PROVIDERS),
     ("sandboxes", flags::SANDBOX_PROVIDERS),
 ];
-const LABS_OPTIONS: [(&str, &[&str], &str); 6] = [
+const LABS_OPTIONS: [(&str, &[&str], &str); 5] = [
     ("agent", &["recipe"], flags::AGENT_DELEGATION),
-    ("agent", &["issue", "take"], flags::BOARDS),
     ("agent", &["vm", "machine"], flags::SANDBOX_PROVIDERS),
     ("run", &["vm", "vm_tab", "image", "sandbox"], flags::SANDBOX_PROVIDERS),
     ("open", &["machine"], flags::SANDBOX_PROVIDERS),

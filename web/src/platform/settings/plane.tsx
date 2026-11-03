@@ -369,7 +369,7 @@ export function PlaneConnections({ p }: { p: PlatformProject }) {
                           <span>Epics become boards</span>
                         </label>
                         <span class="dim">Each open epic in this Plane project gets a board that keeps itself up to date. Off, the boards stay but stop following.</span>
-                        {list !== "off" && following(c) !== null && (
+                        {following(c) !== null && (
                           <span class="dim" data-plane-epics-count>
                             {epicsLine(following(c)!)}
                           </span>

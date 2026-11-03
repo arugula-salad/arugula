@@ -14,7 +14,7 @@ use super::{
 };
 use crate::{
     Platform,
-    boards::{FLAG, epics},
+    boards::epics,
     chat_tests::{TestHub, call},
     db::{Sql as _, sql::params, trackers as rows},
 };
@@ -33,7 +33,6 @@ async fn world() -> World {
     let hub = Arc::new(TestHub::default());
     let (fake, app, base) = serve(&hub).await;
     hub.team("t1", &[("alice", TeamRole::Owner), ("bob", TeamRole::Editor), ("carol", TeamRole::Viewer)]);
-    hub.flag_named("team:t1", FLAG, true);
     let team = crate::projects::team_project(&app, "t1").await.unwrap().unwrap();
     let (s, made) = connect_as(&base, "bob", &team, KEY, "ARUGU").await;
     assert_eq!(s, 200, "{made}");

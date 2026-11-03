@@ -77,7 +77,7 @@ export const boards = {
   removeDoc: (id: string, doc: string) => call<BoardView>("DELETE", `/api/boards/${enc(id)}/docs/${enc(doc)}`),
   /** A project's Docs, for the picker (the Docs page's list). */
   docs: (project: string) => call<ProjectDocList>("GET", `/api/projects/${enc(project)}/docs`),
-  /** The boards that list a project Doc, for the Doc's page: none when boards are off. */
+  /** The boards that list a project Doc, for the Doc's page. */
   ofDoc: (project: string, doc: string) => call<BoardsOfDoc>("GET", `/api/projects/${enc(project)}/docs/${enc(doc)}/boards`),
   /** Answer an ask with one of its options, or with text when it has none: the person it names, or an owner or editor for them. */
   answer: (id: string, ask: string, a: { option: string } | { text: string }) =>
@@ -107,7 +107,7 @@ export const boards = {
   work(project: string, q: string, limit: number): Promise<BoardWorkItems> {
     return call<BoardWorkItems>("GET", `/api/projects/${enc(project)}/work?q=${enc(q)}&limit=${limit}`);
   },
-  /** The project's live Plane connections (#359), for a zone's New issue…: none when there are none, or boards are off. */
+  /** The project's live Plane connections (#359), for a zone's New issue…: none when there are none. */
   async plane(project: string): Promise<{ id: string; identifier: string }[]> {
     try {
       const v = await call<TrackerConnections>("GET", `/api/projects/${enc(project)}/trackers`);

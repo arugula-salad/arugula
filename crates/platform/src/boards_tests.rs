@@ -8,7 +8,6 @@ use std::sync::Arc;
 use arugula_e2e::team::TeamRole;
 use serde_json::{Value, json};
 
-use super::FLAG;
 use crate::{
     chat_tests::{TestHub, call, serve},
     db::{
@@ -17,16 +16,14 @@ use crate::{
     },
 };
 
-/// Team t: a owns it, v views. Chat is on for it, and boards when `boards`
-/// is. c is in team u, which has neither. t's project id. (The platform
-/// caches flags, so a test sets them before its first request.)
-fn seed(app: &crate::Platform, hub: &TestHub, boards: bool) -> String {
+/// Team t: a owns it, v views. Chat is on for it. c is in team u, which has
+/// no flags. t's project id. (The platform caches flags, so a test sets them
+/// before its first request.)
+fn seed(app: &crate::Platform, hub: &TestHub) -> String {
     hub.team("t", &[("a", TeamRole::Owner), ("v", TeamRole::Viewer)]);
     hub.team("u", &[("c", TeamRole::Owner)]);
     hub.flag("team:t", true);
-    hub.flag_named("team:t", FLAG, boards);
     hub.flag("team:u", true);
-    hub.flag_named("team:u", FLAG, boards);
     app.db.team_project("t", "t", 1).unwrap()
 }
 
@@ -112,7 +109,7 @@ fn run_in(app: &crate::Platform, project: &str, state: &str) -> String {
 async fn a_board_from_creation_to_a_stale_write() {
     let hub = Arc::new(TestHub::default());
     let (app, base) = serve(hub.clone()).await;
-    let p = seed(&app, &hub, true);
+    let p = seed(&app, &hub);
 
     let (st, b) =
         call(&base, "a", "POST", &format!("/api/projects/{p}/boards"), Some(json!({ "title": "Launch" }))).await;
@@ -214,7 +211,7 @@ async fn a_board_from_creation_to_a_stale_write() {
 async fn lanes_follow_the_work_and_refuse_the_rest() {
     let hub = Arc::new(TestHub::default());
     let (app, base) = serve(hub.clone()).await;
-    let p = seed(&app, &hub, true);
+    let p = seed(&app, &hub);
     let (_, b) = call(&base, "a", "POST", &format!("/api/projects/{p}/boards"), Some(json!({ "title": "B" }))).await;
     let id = b["board"]["id"].as_str().unwrap().to_owned();
     let (_, v) = put(&base, "a", &id, json!({ "entry": "row", "note": "the plan" })).await;
@@ -269,7 +266,7 @@ fn group(v: &Value, title: &str) -> String {
 async fn groups_are_the_authors_to_set() {
     let hub = Arc::new(TestHub::default());
     let (app, base) = serve(hub.clone()).await;
-    let p = seed(&app, &hub, true);
+    let p = seed(&app, &hub);
     let (_, b) = call(&base, "a", "POST", &format!("/api/projects/{p}/boards"), Some(json!({ "title": "B" }))).await;
     let id = b["board"]["id"].as_str().unwrap().to_owned();
 
@@ -384,8 +381,7 @@ async fn an_agent_plans_with_groups_under_aru_123() {
     use crate::agents_tests::give;
     use arugula_control_wire::boards::{agent_board_entries, agent_board_entry, agent_board_entry_move};
 
-    let (hub, _app, base, t, _u) = crate::agents_tests::seeded().await;
-    hub.flag_named("team:t", FLAG, true);
+    let (_hub, _app, base, t, _u) = crate::agents_tests::seeded().await;
     let (_, b) =
         call(&base, "a", "POST", &format!("/api/projects/{t}/boards"), Some(json!({ "title": "Launch" }))).await;
     let id = b["board"]["id"].as_str().unwrap().to_owned();
@@ -439,7 +435,7 @@ async fn an_agent_plans_with_groups_under_aru_123() {
 async fn work_and_proof_attach_to_a_row() {
     let hub = Arc::new(TestHub::default());
     let (app, base) = serve(hub.clone()).await;
-    let p = seed(&app, &hub, true);
+    let p = seed(&app, &hub);
     let (_, b) = call(&base, "a", "POST", &format!("/api/projects/{p}/boards"), Some(json!({ "title": "B" }))).await;
     let id = b["board"]["id"].as_str().unwrap().to_owned();
     let login = issue(&base, "a", &p, "Fix login").await;
@@ -561,7 +557,7 @@ async fn work_and_proof_attach_to_a_row() {
 async fn a_pointer_from_a_newer_build_reads_as_none_and_is_kept() {
     let hub = Arc::new(TestHub::default());
     let (app, base) = serve(hub.clone()).await;
-    let p = seed(&app, &hub, true);
+    let p = seed(&app, &hub);
     let (_, b) = call(&base, "a", "POST", &format!("/api/projects/{p}/boards"), Some(json!({ "title": "B" }))).await;
     let id = b["board"]["id"].as_str().unwrap().to_owned();
     let (_, v) = put(&base, "a", &id, json!({ "entry": "row", "note": "proof" })).await;
@@ -602,35 +598,29 @@ async fn a_pointer_from_a_newer_build_reads_as_none_and_is_kept() {
     assert_eq!(kept, ("from_a_newer_build".to_owned(), "x_1".to_owned()));
 }
 
-/// With the flag off for an account (chat on doesn't turn it on), every
-/// route answers 404 as if boards weren't there, a board that exists
-/// included.
+/// Boards left Labs (#191): a team that never touched its flags can make a
+/// board and read it, and so can one whose old `boards` flag says off, which
+/// nothing reads any more.
 #[tokio::test]
-async fn with_the_flag_off_there_are_no_boards() {
+async fn boards_are_there_without_any_labs_flag() {
     let hub = Arc::new(TestHub::default());
     let (app, base) = serve(hub.clone()).await;
-    let p = seed(&app, &hub, false);
-    let id = app.db.create_board(&p, "Launch", "", Actor::person("a"), None, 1, 10).unwrap().unwrap().id;
-
-    for (method, path, body) in [
-        ("GET", format!("/api/projects/{p}/boards"), None),
-        ("POST", format!("/api/projects/{p}/boards"), Some(json!({ "title": "More" }))),
-        ("GET", format!("/api/boards/{id}"), None),
-        ("PUT", format!("/api/boards/{id}/entries"), Some(json!({ "entry": "row", "note": "x" }))),
-        ("POST", format!("/api/boards/{id}/entries/row_0123/move"), Some(json!({}))),
-        ("DELETE", format!("/api/boards/{id}/entries/row_0123"), None),
-        (
-            "POST",
-            format!("/api/boards/{id}/attachments"),
-            Some(
-                json!({ "row": "row_0123", "role": "proof", "pointer": { "kind": "link", "url": "https://x.example/1" } }),
-            ),
-        ),
-        ("DELETE", format!("/api/boards/{id}/attachments/att_0123"), None),
-    ] {
-        assert_eq!(call(&base, "a", method, &path, body).await.0, 404, "{method} {path}");
+    hub.team("n", &[("a", TeamRole::Owner)]);
+    hub.team("o", &[("b", TeamRole::Owner)]);
+    hub.flag_named("team:o", "boards", false);
+    for (team, who) in [("n", "a"), ("o", "b")] {
+        let p = app.db.team_project(team, team, 1).unwrap();
+        let (st, list) = call(&base, who, "GET", &format!("/api/projects/{p}/boards"), None).await;
+        assert_eq!(st, 200, "{team}: {list}");
+        let (st, made) =
+            call(&base, who, "POST", &format!("/api/projects/{p}/boards"), Some(json!({ "title": "Launch" }))).await;
+        assert_eq!(st, 200, "{team}: {made}");
+        let id = made["board"]["id"].as_str().unwrap();
+        let (st, read) = call(&base, who, "GET", &format!("/api/boards/{id}"), None).await;
+        assert_eq!((st, &read["board"]["title"]), (200, &json!("Launch")), "{team}: {read}");
+        let (st, list) = call(&base, who, "GET", &format!("/api/projects/{p}/boards"), None).await;
+        assert_eq!((st, list["boards"].as_array().map(Vec::len)), (200, Some(1)), "{team}: {list}");
     }
-    assert_eq!(app.db.boards(&p).unwrap().len(), 1, "nothing was made");
 }
 
 // ---------------------------------------------------------------- agents
@@ -663,7 +653,6 @@ async fn an_agent_with_boards_write_works_the_rows() {
     };
 
     let (hub, _app, base, t, _u) = crate::agents_tests::seeded().await;
-    hub.flag_named("team:t", FLAG, true);
 
     // A person's board: two rows.
     let (_, b) =
@@ -827,8 +816,7 @@ pub(super) async fn grant_write(base: &str, who: &str, machine: &str, t: &str) {
 async fn an_agent_makes_and_runs_a_board() {
     use arugula_control_wire::boards::{agent_board, agent_board_close, agent_board_reopen, agent_project_boards};
 
-    let (hub, _app, base, t, _u) = crate::agents_tests::seeded().await;
-    hub.flag_named("team:t", FLAG, true);
+    let (_hub, _app, base, t, _u) = crate::agents_tests::seeded().await;
     grant_write(&base, "a", "geek", &t).await;
     let who = json!({ "machine": "geek", "machine_name": "geek-box" });
 
@@ -892,7 +880,6 @@ async fn a_session_leads_a_board() {
     use arugula_control_wire::boards::{LeadBoard, agent_board_lead, agent_project_boards};
 
     let (hub, app, base, t, _u) = crate::agents_tests::seeded().await;
-    hub.flag_named("team:t", FLAG, true);
     hub.daemon("mini", "a", Some("t"));
     grant_write(&base, "a", "geek", &t).await;
     grant_write(&base, "a", "mini", &t).await;
@@ -975,7 +962,6 @@ async fn a_viewers_machine_with_boards_write_makes_no_board() {
     };
 
     let (hub, app, base, t, _u) = crate::agents_tests::seeded().await;
-    hub.flag_named("team:t", FLAG, true);
     hub.daemon("xbox", "x", Some("t"));
     grant_write(&base, "x", "xbox", &t).await;
     let id = app.db.create_board(&t, "Launch", "", Actor::person("a"), None, 1, 10).unwrap().unwrap().id;
@@ -1002,8 +988,7 @@ async fn a_viewers_machine_with_boards_write_makes_no_board() {
 async fn an_agent_repoints_only_its_own_rows() {
     use arugula_control_wire::boards::agent_board_entries;
 
-    let (hub, _app, base, t, _u) = crate::agents_tests::seeded().await;
-    hub.flag_named("team:t", FLAG, true);
+    let (_hub, _app, base, t, _u) = crate::agents_tests::seeded().await;
     grant_write(&base, "a", "geek", &t).await;
     let (_, b) =
         call(&base, "a", "POST", &format!("/api/projects/{t}/boards"), Some(json!({ "title": "Launch" }))).await;
@@ -1024,24 +1009,6 @@ async fn an_agent_repoints_only_its_own_rows() {
     assert_eq!(row_in(&v, &theirs)["pointer"], json!({ "kind": "none" }), "{v}");
 }
 
-/// With the `boards` flag off for the owner, an agent's routes are 404
-/// whatever it was granted.
-#[tokio::test]
-async fn an_agent_finds_no_boards_with_the_flag_off() {
-    use crate::agents_tests::give;
-    use arugula_control_wire::boards::agent_project_boards;
-
-    let (_hub, _app, base, t, _u) = crate::agents_tests::seeded().await;
-    let (st, _) =
-        call(&base, "a", "POST", "/api/grants", give("geek", "boards.read", json!({ "kind": "project", "id": t })))
-            .await;
-    assert_eq!(st, 200);
-    let (st, v) = geek(&base, "GET", &agent_project_boards(&t), None).await;
-    assert_eq!(st, 404, "{v}");
-    let (st, v) = geek(&base, "GET", arugula_control_wire::boards::AGENT_BOARD_REACH, None).await;
-    assert_eq!(st, 404, "{v}");
-}
-
 /// A machine asks which projects its board grants reach: none is an empty
 /// list (not an error), and a grant names the project with its powers and
 /// its boards.
@@ -1050,8 +1017,7 @@ async fn an_agent_asks_which_boards_its_grants_reach() {
     use crate::agents_tests::give;
     use arugula_control_wire::boards::AGENT_BOARD_REACH;
 
-    let (hub, _app, base, t, _u) = crate::agents_tests::seeded().await;
-    hub.flag_named("team:t", FLAG, true);
+    let (_hub, _app, base, t, _u) = crate::agents_tests::seeded().await;
     let (st, v) = geek(&base, "GET", AGENT_BOARD_REACH, None).await;
     assert_eq!((st, &v["projects"]), (200, &json!([])), "{v}");
 
@@ -1078,7 +1044,6 @@ async fn a_machine_reports_its_blocks_and_the_row_shows_it() {
     use arugula_control_wire::boards::AGENT_BLOCK_STATE;
 
     let (hub, _app, base, t, _u) = crate::agents_tests::seeded().await;
-    hub.flag_named("team:t", FLAG, true);
 
     // A board with a row on an issue, geek's pane 7 attached to it.
     let (_, b) =
@@ -1164,8 +1129,7 @@ async fn a_replaced_agent_is_marked_earlier_and_comes_last() {
     use crate::agents_tests::give;
     use arugula_control_wire::boards::AGENT_BLOCK_STATE;
 
-    let (hub, _app, base, t, _u) = crate::agents_tests::seeded().await;
-    hub.flag_named("team:t", FLAG, true);
+    let (_hub, _app, base, t, _u) = crate::agents_tests::seeded().await;
     let (_, b) =
         call(&base, "a", "POST", &format!("/api/projects/{t}/boards"), Some(json!({ "title": "Launch" }))).await;
     let id = b["board"]["id"].as_str().unwrap().to_owned();
@@ -1225,9 +1189,7 @@ async fn a_block_started_on_an_issue_is_attached_to_its_rows() {
     use arugula_control_wire::boards::{AGENT_BLOCK_STATE, agent_project_attach_block as route};
 
     let (hub, _app, base, t, u) = crate::agents_tests::seeded().await;
-    hub.flag_named("team:t", FLAG, true);
     hub.flag("team:u", true);
-    hub.flag_named("team:u", FLAG, true);
 
     // Two issues, #1 and #2; two boards with a row for #1, one with #2. Team
     // u has an issue #1 of its own, and a board on it.
@@ -1299,8 +1261,7 @@ async fn a_block_attached_as_percent_n_is_pane_n() {
     use crate::agents_tests::give;
     use arugula_control_wire::boards::AGENT_BLOCK_STATE;
 
-    let (hub, _app, base, t, _u) = crate::agents_tests::seeded().await;
-    hub.flag_named("team:t", FLAG, true);
+    let (_hub, _app, base, t, _u) = crate::agents_tests::seeded().await;
     let (_, b) =
         call(&base, "a", "POST", &format!("/api/projects/{t}/boards"), Some(json!({ "title": "Launch" }))).await;
     let id = b["board"]["id"].as_str().unwrap().to_owned();
@@ -1339,7 +1300,6 @@ async fn a_second_machines_block_on_a_claimed_row_is_refused_naming_the_holder()
     };
 
     let (hub, _app, base, t, _u) = crate::agents_tests::seeded().await;
-    hub.flag_named("team:t", FLAG, true);
     hub.daemon("bmac", "b", Some("t"));
     let one = issue(&base, "a", &t, "Parser").await;
     let (board, row) = board_on(&base, "a", &t, "Launch", &one).await;
@@ -1447,8 +1407,7 @@ async fn a_second_machines_block_on_a_claimed_row_is_refused_naming_the_holder()
 async fn a_doing_row_with_only_idle_blocks_is_stalled_past_n_minutes() {
     use arugula_control_wire::boards::{AGENT_BLOCK_STATE, PROJECT_BOARD_SETTINGS};
 
-    let (hub, app, base, t, _u) = crate::agents_tests::seeded().await;
-    hub.flag_named("team:t", FLAG, true);
+    let (_hub, app, base, t, _u) = crate::agents_tests::seeded().await;
     let one = issue(&base, "a", &t, "Parser").await;
     let (board, row) = board_on(&base, "a", &t, "Launch", &one).await;
     let (st, granted) = call(
