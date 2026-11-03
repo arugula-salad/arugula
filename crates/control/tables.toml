@@ -653,6 +653,17 @@ note = "As chat_messages: it's rebuilt from them, and merged when an account goe
 seen_by = ["litestream"]
 
 [[table]]
+name = "chat_grant_never"
+plane = "platform"
+process = "platform"
+holds = "metadata"
+what = "A room where a machine's owner said never to let its agents read it, when someone mentioned the machine there (#578)."
+why_asleep = "A later mention there says not granted, and asks no one, with every machine asleep."
+with_account = "deleted"
+note = "Names a room and a machine, never a message. Dropped with the room, and with its machine's account."
+seen_by = ["litestream"]
+
+[[table]]
 name = "chat_keywords"
 plane = "platform"
 process = "platform"
