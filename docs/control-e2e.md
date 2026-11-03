@@ -1004,6 +1004,11 @@ an agent, and a directory, for one hosted machine.
 - **Agent runs** are Claude Code, headless (`claude -p`), with the
   instruction, as `runner` in the run's copy. Its login reaches it on its
   standard input, never on a command line, and its exit is the run's.
+  It's told it runs headless (the end of its turn ends the run), and the
+  daemon's own binary follows what it says (`arugulad _agent-run`, its
+  `stream-json`): a turn that ends with background work it started still
+  running fails the run, exit 75 with the reason (Arugula #552), rather
+  than succeeding with no answer.
 - **Reported, signed.** `running` (with the pane and the operation's
   hash), then `succeeded` or `failed` (the exit code), each signed by the
   machine (`arugula run event v1`) and kept with its signature
