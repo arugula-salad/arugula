@@ -232,6 +232,9 @@ pub enum Api {
     /// `PostToolUse`, `Stop` and `UserPromptSubmit` close a card the
     /// terminal answered first.
     Hook(PaneId, serde_json::Value),
+    /// A tool call ended (#644): a mention waiting for the pane, if there is
+    /// one and the hook is from its own conversation.
+    TakeMention(PaneId, serde_json::Value, oneshot::Sender<Option<(String, arugula_proto::Driver)>>),
     /// What Claude Code running in a pane says of its session from inside
     /// it (#450, its arugula-live mod), as the agent block's `context`
     /// reads (`PaneInfo.live`); `None` forgets it. With the pid of the
@@ -499,6 +502,10 @@ struct Daemon {
     /// Terminals whose owner silenced teammates' agents' mentions (#579),
     /// for as long as the pane lives (`PaneInfo.mentions_off`).
     mentions_off: std::collections::HashSet<PaneId>,
+    /// The session in each pane that heard how a mid-turn mention arrives
+    /// (#644). Not kept across a restart: until its next `SessionStart`, a
+    /// session gets them between turns.
+    mentions_told: HashMap<PaneId, String>,
     /// The card for the mentions held on each terminal whose hooks aren't
     /// listening (#579): typed only when the owner taps deliver.
     held: HashMap<PaneId, Reason>,
@@ -713,6 +720,7 @@ pub fn start(
         turn_typed: Default::default(),
         hooked: Default::default(),
         mentions_off: Default::default(),
+        mentions_told: Default::default(),
         held: Default::default(),
         live: HashMap::new(),
         live_pid: HashMap::new(),

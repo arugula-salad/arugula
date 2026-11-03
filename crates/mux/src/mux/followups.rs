@@ -3,7 +3,8 @@
 //!
 //! A follow-up may carry the mention it is ([`MentionTag`]). The turn that
 //! takes it starts when it is handed to the hook (at once if the hook waits,
-//! else when the hook next waits) and ends at the pane's next `Stop` hook;
+//! else when the hook next waits, or at the next tool call: #644) and ends at
+//! the pane's next `Stop` hook;
 //! [`Turns`] hears both. A follow-up without a tag (a person's) is told of
 //! to no one.
 
@@ -85,6 +86,27 @@ impl Followups {
         Some((text, by))
     }
 
+    /// A tool call just ended in a running turn (#644): the oldest waiting
+    /// mention goes in now, with the others queued from its thread. A
+    /// person's follow-up stays for the inbox hook, which starts a turn of
+    /// its own, and so do other threads' mentions, for the next tool call.
+    pub(super) fn take_mention(&mut self, pane: PaneId, turns: &dyn Turns) -> Option<(String, Driver)> {
+        let q = self.queued.get_mut(&pane)?;
+        let at = q.iter().position(|(_, _, tag)| tag.is_some())?;
+        let (mut text, by, tag) = q.remove(at)?;
+        let mut tags = vec![tag?];
+        let mut rest = VecDeque::new();
+        for (t, b, tag) in std::mem::take(q) {
+            match tag {
+                Some(tag) if absorb(&mut text, &mut tags, &tag) => {}
+                tag => rest.push_back((t, b, tag)),
+            }
+        }
+        *q = rest;
+        self.started_all(pane, tags, turns);
+        Some((text, by))
+    }
+
     /// A follow-up went straight to a hook that was waiting: its turn starts.
     pub(super) fn started(&mut self, pane: PaneId, tag: Option<MentionTag>, turns: &dyn Turns) {
         self.started_all(pane, tag.into_iter().collect(), turns);
@@ -97,7 +119,9 @@ impl Followups {
         for tag in &tags {
             turns.turn(pane, tag, Turn::Started);
         }
-        self.running.insert(pane, tags);
+        // Added to, not replaced: a turn takes several mentions (#644), and
+        // its `Stop` ends all of them.
+        self.running.entry(pane).or_default().extend(tags);
     }
 
     /// The pane's `Stop` hook spoke: the turn that was running has ended.
@@ -190,6 +214,27 @@ mod tests {
     /// Held (#579): only a mention is held, never a person's follow-up;
     /// deliver takes the oldest mention out and starts its turn; dismiss
     /// drops the mentions and leaves a person's follow-up.
+    /// A mention taken at a tool call is working at once, and read at the
+    /// turn's `Stop`, along with any taken earlier in that turn (#644). A
+    /// person's follow-up isn't taken: it waits for the inbox hook.
+    #[test]
+    fn a_tool_call_takes_a_mention_and_leaves_a_persons_follow_up() {
+        let (mut f, turns) = (Followups::default(), Heard::default());
+        assert!(f.take_mention(1, &turns).is_none(), "nothing waits");
+        f.push(1, "from a person".into(), by(), None);
+        assert!(f.take_mention(1, &turns).is_none(), "a person's isn't for a tool call");
+        f.push(1, "one".into(), by(), tag(5));
+        f.push(1, "two".into(), by(), tag(6));
+        assert_eq!(f.take_mention(1, &turns).unwrap().0, "one");
+        assert_eq!(turns.all(), [(1, 5, Turn::Started)]);
+        assert_eq!(f.take_mention(1, &turns).unwrap().0, "two");
+        assert_eq!(turns.all(), [(1, 6, Turn::Started)]);
+        assert!(f.take_mention(1, &turns).is_none());
+        f.stopped(1, &turns);
+        assert_eq!(turns.all(), [(1, 5, Turn::Ended), (1, 6, Turn::Ended)]);
+        assert_eq!(f.take(1, &turns).unwrap().0, "from a person");
+    }
+
     #[test]
     fn a_held_mention_is_delivered_once_or_dropped_and_a_persons_follow_up_stays() {
         let (mut f, heard) = (Followups::default(), Heard::default());
