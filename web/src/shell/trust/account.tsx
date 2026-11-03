@@ -26,7 +26,7 @@ export interface SessionRow {
 }
 
 interface Passkeys {
-  passkeys: { id: string; created: number; agent: string; provider: string | null; used: number | null }[];
+  passkeys: { id: string; created: number; agent: string; provider: string | null; used: number | null; prf: boolean | null; device: string | null }[];
   github: string | null;
   ways: number;
 }
@@ -110,7 +110,7 @@ export function AccountPanel({ s, close, linked, emailBack }: { s: ControlSessio
   // The passkey whose Remove was clicked: a dialog asks, and another of
   // the account's passkeys agrees (DK10, #393): what it signs, fetched as
   // the dialog opens, or why not.
-  const [removing, setRemoving] = useState<{ id: string; name: string } | null>(null);
+  const [removing, setRemoving] = useState<{ id: string; name: string; device: string | null } | null>(null);
   const [removal, setRemoval] = useState<{ id: string; options?: PasskeyRemoval; err?: string } | null>(null);
   const [unlinking, setUnlinking] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -144,8 +144,8 @@ export function AccountPanel({ s, close, linked, emailBack }: { s: ControlSessio
   };
   // DK10: removing a passkey takes another, so the only one stays.
   const onlyPasskey = keys?.passkeys.length === 1;
-  const askToRemove = (id: string, name: string) => {
-    setRemoving({ id, name });
+  const askToRemove = (id: string, name: string, device: string | null) => {
+    setRemoving({ id, name, device });
     setRemoval({ id });
     passkeyRemoval(id).then(
       (options) => setRemoval((r) => (r?.id === id ? { id, options } : r)),
@@ -220,7 +220,7 @@ export function AccountPanel({ s, close, linked, emailBack }: { s: ControlSessio
         <>
           <h3 class="control-group">Passkeys</h3>
           {keys && keys.passkeys.length === 0 ? <p class="dim">None.</p> : null}
-          <ul class="control-devices control-rows" data-passkeys>
+          <ul class="control-devices control-rows control-passkeys" data-passkeys>
             {(keys?.passkeys ?? []).map((k, i) => (
               <li key={k.id} data-passkey={k.id}>
                 <span data-passkey-name>{passkeyName(k, i)}</span>
@@ -233,15 +233,31 @@ export function AccountPanel({ s, close, linked, emailBack }: { s: ControlSessio
                   ) : (
                     ""
                   )}
+                  {k.device && s.trusted.has(k.device) ? <span data-passkey-on-new-computers>, works on new computers</span> : null}
                 </span>
+                <span class="control-row-actions">
+                  {/* #641: not once its device is removed, which never comes
+                      back, and not where the passkey says it can't. */}
+                  {!app && !k.device && k.prf !== false ? (
+                    <button
+                      class="secondary small"
+                      data-passkey-as-device={k.id}
+                      disabled={waiting}
+                      title="A new computer with this passkey reaches your machines with no other device. Whoever can use the passkey reaches them too."
+                      onClick={() => act(() => s.passkeyAsDevice(k.id, k.provider))}
+                    >
+                      Use on new computers
+                    </button>
+                  ) : null}
                 <button
                   class="secondary danger small"
                   data-remove-passkey={k.id}
                   disabled={waiting || onlyPasskey || (keys?.ways ?? 0) <= 1}
                   {...browserButton("Remove")}
                   title={onlyPasskey ? ONLY_PASSKEY : (keys?.ways ?? 0) <= 1 ? "Your only way to sign in" : app ? "Opens in your browser" : undefined}
-                  onClick={() => (app ? toBrowser("remove-passkey") : askToRemove(k.id, passkeyName(k, i)))}
+                  onClick={() => (app ? toBrowser("remove-passkey") : askToRemove(k.id, passkeyName(k, i), k.device && s.trusted.has(k.device) ? k.device : null))}
                 />
+                </span>
               </li>
             ))}
           </ul>
@@ -271,6 +287,9 @@ export function AccountPanel({ s, close, linked, emailBack }: { s: ControlSessio
               }}
             >
               <p>It stops signing you in at once. To use it again, add it as a new passkey.</p>
+              {removing.device ? (
+                <p data-remove-passkey-device>Its device stays one of yours until you remove it under Devices, and only that stops it reaching your machines.</p>
+              ) : null}
               <p class="dim" data-remove-passkey-with>
                 Confirm with another of your passkeys: your browser asks for one when you press Remove.
               </p>

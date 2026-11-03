@@ -13,6 +13,7 @@ import { browserOrLegacyChained, certBody, certifies, DEVICE_SECRET, fromApp, de
 import {
   adoptKeys,
   adoptPrfKeys,
+  keysFromPrf,
   existingKeys,
   forget,
   forgetEnrollment,
@@ -666,6 +667,26 @@ export async function passkeyOver(challenge: Uint8Array<ArrayBuffer>): Promise<P
   if (!got) throw new Error("no passkey chosen");
   const a = got.response as AuthenticatorAssertionResponse;
   return { id: b64u(got.rawId), clientDataJSON: b64u(a.clientDataJSON), authenticatorData: b64u(a.authenticatorData), signature: b64u(a.signature) };
+}
+
+/** #641: the keys passkey `id`'s PRF output makes. Control gets none of
+ * this: the challenge is this page's, and nothing is sent back. Call it
+ * from a click. */
+async function passkeyDeviceKeys(id: string) {
+  const got = (await navigator.credentials.get({
+    publicKey: {
+      challenge: crypto.getRandomValues(new Uint8Array(32)),
+      allowCredentials: [{ type: "public-key", id: unb64u(id) }],
+      rpId: location.hostname,
+      userVerification: "required",
+      timeout: 5 * 60 * 1000,
+      extensions: PRF_ASK,
+    },
+  })) as PublicKeyCredential | null;
+  if (!got) throw new Error("no passkey chosen");
+  const r = prfOf(got)?.results;
+  if (!r?.first || !r.second) throw new Error("This passkey can't do this: whatever keeps it doesn't give the keys it would take. It still signs you in.");
+  return keysFromPrf(r.first, r.second);
 }
 
 /** What another of the account's passkeys signs to remove one (DK10,
@@ -1515,6 +1536,60 @@ export class ControlSession {
       return;
     }
     await this.refreshMe();
+    await this.offerPasskeyDevice();
+  }
+
+  /** #641: the passkey just added, offered as a device of the account, so
+   * a new computer with it needs no other device. */
+  passkeyOffer: { id: string; provider: string | null } | null = null;
+
+  private async offerPasskeyDevice() {
+    if (!this.enrollment || appWindow()) return;
+    const { passkeys } = await api<{ passkeys: { id: string; created: number; provider: string | null; prf: boolean | null; device: string | null }[] }>("/api/me/passkeys").catch(() => ({ passkeys: [] }));
+    const made = passkeys.at(-1);
+    if (!made || made.device || made.prf === false) return;
+    this.passkeyOffer = { id: made.id, provider: made.provider };
+    this.emit();
+  }
+
+  dropPasskeyOffer() {
+    this.passkeyOffer = null;
+    this.emit();
+  }
+
+  /** #641: passkey `id`'s device becomes one of the account's, signed by
+   * this browser, which keeps its own keys. The device signs the root this
+   * browser pinned, so the next browser with the passkey checks that and
+   * takes no word from control (`rejoin`). From a click. */
+  async passkeyAsDevice(id: string, provider: string | null) {
+    if (appWindow()) throw new Error("The desktop app's window can't do this: do it from a browser or a phone.");
+    const e = this.enrollment;
+    if (!e || this.rootMismatch) throw new Error("This browser's account root isn't settled: do this from a device you've used before.");
+    const k = await passkeyDeviceKeys(id);
+    const all = await api<{ certs: Cert[]; revocations: Revocation[] }>("/api/devices");
+    if (all.revocations.some((r) => r.device === k.id)) {
+      throw new Error("This passkey's device was removed from your account, and a removed device doesn't come back. To use a passkey on new computers, add a new one.");
+    }
+    if (k.id !== this.keys.id && !all.certs.some((c) => c.device === k.id)) {
+      const cert: Cert = {
+        v: 1,
+        account: this.account,
+        device: k.id,
+        kind: "browser",
+        name: provider ? `${provider} passkey` : "Passkey",
+        noise: k.noisePub,
+        sign: k.signPub,
+        created: Date.now(),
+        approver: this.keys.id,
+        sig: "",
+      };
+      cert.sig = await signText(this.keys, certBody(cert));
+      await this.approving(api("/api/devices", { cert, passkey_device: true }));
+    }
+    const pin = await signText(k, devicePinBody({ account: e.account, root: e.root }, k.id));
+    await api(`/api/devices/${k.id}/pin`, { pin, passkey: id });
+    this.passkeyOffer = null;
+    await this.refresh();
   }
 
   /** One of the account's passkeys agrees to the one made (from a click). */
@@ -1528,6 +1603,7 @@ export class ControlSession {
       this.emit();
     }
     await this.refreshMe();
+    await this.offerPasskeyDevice();
   }
 
   /** Never mind the passkey made: control never kept it. */

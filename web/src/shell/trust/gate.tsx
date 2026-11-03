@@ -273,6 +273,8 @@ function Waiting({ s }: { s: ControlSession }) {
   return (
     <Center>
       <h1>{inApp() ? "Approve this app as a device" : "Approve this browser"}</h1>
+      {/* #641: a synced passkey needs no other device, so it comes first. */}
+      <PasskeyInstead s={s} lead />
       {mine ? (
         <>
           <p data-waiting-browser={name} data-waiting-passkey={s.fromPasskey ? "" : undefined}>
@@ -302,7 +304,12 @@ function Waiting({ s }: { s: ControlSession }) {
         Here to add a machine to your account or a team? That's a separate approval, and it doesn't need this one. The machine shows a code (in
         Getting started, or where you ran <code>arugulad join</code>): approve that code on a device you already use.
       </p>
-      <PasskeyInstead s={s} />
+      {/* A GitHub-only account has nothing to use yet: what to do next time. */}
+      {s.info.passkeys && !s.passkeys && !s.fromPasskey && !inApp() ? (
+        <p class="dim" data-waiting-next-time>
+          Next time: add a passkey once you're in, and a new computer with it won't need another device.
+        </p>
+      ) : null}
       <RecoveryForm s={s} open={recovering()} />
       {inApp() ? null : <ResetOffer />}
       <SignOuts s={s} />
@@ -349,15 +356,16 @@ function WhyAgain({ s, name }: { s: ControlSession; name: string }) {
 
 /** #764: a passkey whose PRF output gives the device another browser
  * enrolled with it: this browser becomes that device, with no approval. */
-function PasskeyInstead({ s }: { s: ControlSession }) {
+function PasskeyInstead({ s, lead = false }: { s: ControlSession; lead?: boolean }) {
   const [err, setErr] = useState("");
   if (!s.info.passkeys || !s.passkeys || s.fromPasskey || inApp()) return null;
   return (
     <>
-      <button class="secondary" data-use-passkey onClick={() => s.usePasskey().catch((e: Error) => setErr(e.name === "NotAllowedError" ? "Cancelled." : e.message))}>
-        Use your passkey instead
+      <button class={lead ? "primary" : "secondary"} data-use-passkey onClick={() => s.usePasskey().catch((e: Error) => setErr(e.name === "NotAllowedError" ? "Cancelled." : e.message))}>
+        {lead ? "Use your passkey" : "Use your passkey instead"}
       </button>
       {err ? <p class="control-error">{err}</p> : null}
+      {lead ? <p class="dim" data-waiting-or>Or approve it from a device you already use:</p> : null}
     </>
   );
 }

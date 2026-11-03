@@ -233,3 +233,89 @@ test("a passkey with PRF brings the same device back after site data is cleared"
   expect(after.passkey).toBeNull();
   expect(after.id).not.toBe(device);
 });
+
+// #641: a browser that's already a device keeps its own keys when it adds a
+// passkey, and can make the passkey's device one of the account's. Then a new
+// computer with the passkey needs no other device.
+test("a passkey turned on from a working browser opens a new computer with no other device", async ({ page, context }) => {
+  const cdp = await context.newCDPSession(page);
+  await cdp.send("WebAuthn.enable");
+  await cdp.send("WebAuthn.addVirtualAuthenticator", {
+    options: { protocol: "ctap2", ctap2Version: "ctap2_1", transport: "internal", hasResidentKey: true, hasUserVerification: true, isUserVerified: true, hasPrf: true },
+  });
+  const me = () =>
+    page.evaluate(() => {
+      const c = window.__arugula.control!;
+      return { id: c.keys.id, passkey: c.fromPasskey, account: c.account };
+    });
+  const home = page.getByRole("heading", { name: "Add a machine" });
+  const clear = async (signOut: boolean) => {
+    await cdp.send("Storage.clearDataForOrigin", { origin: new URL(page.url()).origin, storageTypes: "indexeddb,local_storage" });
+    if (signOut) await context.clearCookies();
+    await page.goto("/");
+  };
+  // As iCloud Keychain does: no PRF output as the passkey is made, so this
+  // browser's keys are its own.
+  await page.addInitScript(() => {
+    const create = navigator.credentials.create.bind(navigator.credentials);
+    navigator.credentials.create = async (o) => {
+      const c = (await create(o)) as PublicKeyCredential | null;
+      if (c) {
+        const results = c.getClientExtensionResults.bind(c);
+        c.getClientExtensionResults = () => ({ ...results(), prf: { enabled: true } });
+      }
+      return c;
+    };
+  });
+  await page.goto("/");
+  await page.locator("[data-signup=passkey]").click();
+  await page.locator("[data-signup-name]").fill("Pat");
+  await page.locator("[data-signup-go]").click();
+  await expect(home).toBeVisible();
+  await page.locator("[data-stored-codes]").check();
+  await page.locator("[data-saved-codes]").click();
+  const first = await me();
+  expect(first.passkey).toBeNull();
+
+  // Turned on from Sign-in and account: the browser keeps its keys.
+  await controlPanel(page, "account");
+  await page.locator("[data-passkey-as-device]").click();
+  await expect(page.locator("[data-passkey-on-new-computers]")).toBeVisible();
+  await expect(page.locator("[data-passkey-as-device]")).toHaveCount(0);
+  expect((await me()).id).toBe(first.id);
+  const { passkeys } = await page.evaluate(() => fetch("/api/me/passkeys").then((r) => r.json()));
+  const device = passkeys[0].device as string;
+  const devs = await page.evaluate(() => fetch("/api/devices").then((r) => r.json()));
+  expect(devs.certs.find((c: { device: string }) => c.device === device)).toMatchObject({ kind: "browser", name: "Passkey", approver: first.id });
+
+  // A new computer: nothing approves it, and it's in. The waiting page never
+  // shows, and the device's own pin vouched for the root.
+  await clear(true);
+  await page.locator("[data-signin=passkey]").click();
+  await expect(home).toBeVisible();
+  expect(await me()).toMatchObject({ id: device, passkey: "Passkey", account: first.account });
+  const after = await page.evaluate(() => fetch("/api/devices").then((r) => r.json()));
+  expect(after.pending).toHaveLength(0);
+
+  // Signed in with something else (here, a session kept): the waiting page
+  // leads with the passkey, above the code.
+  await clear(false);
+  const use = page.locator("[data-use-passkey]");
+  await expect(use).toHaveText("Use your passkey");
+  await expect(use).toHaveClass(/primary/);
+  await expect(page.locator("[data-waiting-or]")).toBeVisible();
+  const above = await use.evaluate((b) => !!(b.compareDocumentPosition(document.querySelector("[data-device-code]")!) & Node.DOCUMENT_POSITION_FOLLOWING));
+  expect(above).toBe(true);
+  await use.click();
+  await expect(home).toBeVisible();
+  expect(await me()).toMatchObject({ id: device, passkey: "Passkey" });
+
+  // Added now: offered as it's made, and turned on from there.
+  await controlPanel(page, "account");
+  await page.locator("[data-add-passkey]").click();
+  await page.locator("[data-passkey-confirm-go]").click();
+  await expect(page.locator("[data-passkey-offer]")).toBeVisible();
+  await page.locator("[data-passkey-offer-yes]").click();
+  await expect(page.locator("[data-passkey-offer]")).toHaveCount(0);
+  await expect(page.locator("[data-passkey-on-new-computers]")).toHaveCount(2);
+});

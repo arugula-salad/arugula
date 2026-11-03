@@ -465,12 +465,25 @@ browser's device keys, where the passkey gives them:
 - **Which browsers take the keys:** a passkey sign-in on a browser that
   isn't a working device of that account (new, site data cleared, keys
   lost). One that is keeps its own keys. A browser waiting for approval
-  offers *Use your passkey instead*, which signs in again and takes them.
+  offers *Use your passkey* first, which signs in again and takes them.
 - **The first time**, the passkey's keys are a new device, named for what
   keeps the passkey when control knows it from the AAGUID ("iCloud
   Keychain passkey", else "Passkey"). It's approved once like any other
   browser (with its code), unless the authenticator gave PRF as the
   passkey was made, at sign-up: then it's the account's first device.
+- **Or a browser adds it first** (#641). A browser that's already a
+  working device keeps its own keys when it adds a passkey, so it's offered
+  the passkey's device too (*Use on new computers*, under Sign-in and
+  account for a passkey added earlier). One more passkey prompt gives the
+  PRF output, on a challenge of the page's own that goes nowhere; the
+  browser derives the keys in memory, signs the device's certificate
+  (`passkey_device` on `POST /api/devices`, which leaves its own sign-in
+  alone and refuses rather than queues), has the device sign the root it
+  pinned, and forgets them. It's a browser approving a browser, under the
+  same rules (`approval_ok`, `Kind::certifies`), so a CLI or the app can't.
+  The next browser with that passkey goes straight to *Every later time*,
+  and a new computer needs no other device. `passkeys.device` says which
+  device a passkey is, for the page's words only.
 - **The pin.** Once approved, that device signs
   `arugula device pin v1`, the account and the root it pinned
   (`devicePinBody`, `arugula_e2e::cert::device_pin_body`), and control keeps
@@ -1986,7 +1999,7 @@ Every table is listed in `crates/control/tables.toml`, and a test fails when one
 | `issuer_grants` | metadata | A person's yes on the consent screen (M229): the account, the product's client, when. Kept until they unlink the product. | yes |  |
 | `account_link_tombstones` | metadata | When an account last unlinked a product (M229): the client, the account, when. An assertion issued until then never links. Kept a day, far past any assertion's life. | yes |  |
 | `link_alerts` | metadata | The ops counter of bulk link calls (M229): per product's client and kind (unlinks, lookups), how many went over the alert line, and when last. | nothing of one |  |
-| `passkeys` | metadata | A passkey's public key, its sign count, what keeps it, the browser that added it (its User-Agent, the device its sign-in said it is, and that sign-in), whether it gives PRF. | yes |  |
+| `passkeys` | metadata | A passkey's public key, its sign count, what keeps it, the browser that added it (its User-Agent, the device its sign-in said it is, and that sign-in), whether it gives PRF, and the device its PRF keys are, once a browser holding it said (#641). | yes |  |
 | `passkey_before_log` | metadata | Accounts made before the passkey log began that signed in with a passkey then (DK10, #393): noted from the sessions still on record as the hub starts and before it prunes them, so an account whose passkeys were removed before the log still counts as having had one. The account and when it was noted. | yes |  |
 | `devices` | metadata | A device's or machine's certificate (public keys, signed by a device the account trusts), and its approval. | yes |  |
 | `turned_down` | metadata | Which device turned a waiting device down, and when. | yes |  |
