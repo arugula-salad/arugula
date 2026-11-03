@@ -470,6 +470,8 @@ native-ios:
     #!/usr/bin/env bash
     set -euo pipefail
     rustup target add aarch64-apple-ios aarch64-apple-ios-sim >/dev/null
+    # Rust's default is iOS 10, older than aws-lc and libghostty link for.
+    export IPHONEOS_DEPLOYMENT_TARGET=17.0
     cd native/core
     mise exec -- cargo build --release --target aarch64-apple-ios
     mise exec -- cargo build --release --example smoke --target aarch64-apple-ios-sim
@@ -828,7 +830,8 @@ testnet cmd="test" profile="ssh" *claims:
         up) arch=$(docker info --format '{{{{.Architecture}}')
             case "$arch" in arm64) arch=aarch64 ;; amd64) arch=x86_64 ;; esac
             [ -n "${ARUGULA_TESTNET_BINARIES:-}" ] || just static "$arch" >&2 ;;
-        test|break) [ -n "${ARUGULA_CLI:-}" ] || {{cargo}} build -q -p arugula ;;
+        test|break) [ -n "${ARUGULA_CLI:-}" ] || {{cargo}} build -q -p arugula
+                    [ -n "${ARUGULA_NATIVE_PROBE:-}" ] || (cd native/core && mise exec -- cargo build -q --bin arugula-native-probe) ;;
       esac
     fi
     case "{{cmd}}" in
