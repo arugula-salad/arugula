@@ -11,15 +11,21 @@
 //!   thirty sections is a few puts, not thirty. One put per Doc at a time,
 //!   and [`FLYING`] in all; its pictures go after it, those whose `rev` the
 //!   copy hasn't got.
-//! - **Not now:** out of control or out of reach, refused (chat off for the
-//!   account, or the owner may no longer write where the Doc now is) or told
-//!   to slow down (429: nothing more until then), a Doc stays dirty and
-//!   waits for the next refresh with control. Why is said once, at info.
-//!   The dirty Docs are kept in `docs/.copies.json`, so a restart has them,
-//!   and they wait for its first refresh.
-//! - **Once:** after the first refresh of a machine in control (one that
-//!   joins, or was in before it copied), every Doc in the library is marked
-//!   dirty; `docs/.copied-1` says it's done.
+//! - **Chat off:** native Docs come with chat, so while control says chat is
+//!   off for the machine's account or team (as it sends it with the flags,
+//!   as `chat_readers` reads it) nothing is put; Docs still become dirty.
+//! - **Not now:** out of control or out of reach, a Doc stays dirty and
+//!   waits for the next refresh with control. Refused (403: chat off after
+//!   all, or the owner may no longer write where the Doc now is) or told to
+//!   slow down (429), nothing more is put until then: one refusal a refresh,
+//!   however many Docs wait. Why is said once, at info. The dirty Docs are
+//!   kept in `docs/.copies.json`, so a restart has them, and they wait for
+//!   its first refresh.
+//! - **Once:** after the first refresh of a machine in control with chat
+//!   on, every Doc in the library is marked dirty; `docs/.copied-1` names
+//!   the account it was done for, and joining another does it again.
+//! - **Not on a hosted box:** its owner is whoever made the workspace, so a
+//!   session's Docs would land in their personal project; nothing is copied.
 //! - **Where it is:** the answer ([`wire::MachineDocPlaced`]) goes in the
 //!   Doc's `meta.json` as `platform` ([`library::OnPlatform`]), with the
 //!   pictures put. Nothing shows it yet.
@@ -42,7 +48,7 @@ use tracing::{info, warn};
 use super::{assets, library};
 use crate::{
     control::{Answered, Control},
-    store::{now_ms, private_dir, write_atomic},
+    store::{private_dir, write_atomic},
 };
 
 /// How long a Doc is left after its last change before it's put...
@@ -55,8 +61,10 @@ const FLYING: usize = 4;
 
 /// In the library: the Docs not copied since they changed.
 const DIRTY: &str = ".copies.json";
-/// In the library: every Doc there was queued once.
+/// In the library: every Doc there was queued once, for this account.
 const DONE: &str = ".copied-1";
+/// Control's chat setting, sent with the flags: Docs come with chat.
+const CHAT: &str = "chat";
 
 static COPIES: OnceLock<Arc<Copies>> = OnceLock::new();
 
@@ -92,8 +100,8 @@ struct Dirt {
 enum Fail {
     /// Not now: after the next refresh.
     Later(String),
-    /// Slow down (429): nothing more until the next refresh.
-    Slow(String),
+    /// Refused or slow down (403, 429): nothing more until the next refresh.
+    Pause(String),
     /// Not as it is: until it changes again.
     Never(String),
 }
@@ -101,6 +109,9 @@ enum Fail {
 /// Start copying (the daemon's control is made): what was dirty when it
 /// stopped waits for the first refresh.
 pub fn start(control: Arc<Control>) {
+    if crate::agent::hosted::gate().is_some() {
+        return;
+    }
     let state_dir = control.state_dir().to_owned();
     let now = Instant::now();
     let kept = read_dirty(&state_dir);
@@ -165,8 +176,10 @@ impl Copies {
     async fn refreshes(self: Arc<Self>) {
         let mut refreshed = self.control.on_refresh();
         while refreshed.changed().await.is_ok() {
-            if self.control.enrolled().is_some() {
-                self.copy_all();
+            if let Some(account) = self.control.account()
+                && self.chat_on()
+            {
+                self.copy_all(&account);
             }
             let mut q = self.queue.lock().unwrap();
             q.waiting.clear();
@@ -176,19 +189,21 @@ impl Copies {
         }
     }
 
-    /// Every Doc in the library, once.
-    fn copy_all(&self) {
+    fn chat_on(&self) -> bool {
+        arugula_proto::flags::control_says(&self.state_dir, CHAT) == Some(true)
+    }
+
+    /// Every Doc in the library, once for each account the machine joins.
+    fn copy_all(&self, account: &str) {
         let done = library::root(&self.state_dir).join(DONE);
-        if done.exists() {
+        if std::fs::read_to_string(&done).is_ok_and(|a| a.trim() == account) {
             return;
         }
         let ids: Vec<String> = library::list(&self.state_dir).into_iter().map(|m| m.id).collect();
         let n = ids.len();
         // Kept dirty on disk before the marker says so.
         self.mark(ids);
-        if let Err(e) =
-            private_dir(done.parent().unwrap()).and_then(|()| write_atomic(&done, now_ms().to_string().as_bytes()))
-        {
+        if let Err(e) = private_dir(done.parent().unwrap()).and_then(|()| write_atomic(&done, account.as_bytes())) {
             warn!(error = %e, "can't note that this machine's Docs were queued to copy up");
         }
         info!(docs = n, "copying this machine's Docs up to the platform");
@@ -212,7 +227,7 @@ impl Copies {
     /// The Docs to put now, each with its count of changes, and how long
     /// until the next is due.
     fn due(&self) -> (Vec<(String, u64)>, Option<Duration>) {
-        if self.control.enrolled().is_none() {
+        if self.control.enrolled().is_none() || !self.chat_on() {
             return (Vec::new(), None);
         }
         let now = Instant::now();
@@ -251,7 +266,7 @@ impl Copies {
                 q.waiting.insert(id.clone());
                 Some((why, false))
             }
-            Err(Fail::Slow(why)) => {
+            Err(Fail::Pause(why)) => {
                 q.waiting.insert(id.clone());
                 q.paused = true;
                 Some((why, false))
@@ -346,7 +361,7 @@ fn whole(dir: &Path) -> Result<Option<Whole>, Fail> {
 /// What control's answer means for the Doc.
 fn fail(e: anyhow::Error) -> Fail {
     match e.downcast_ref::<Answered>() {
-        Some(Answered(429, why)) => Fail::Slow(why.clone()),
+        Some(Answered(403 | 429, why)) => Fail::Pause(why.clone()),
         Some(Answered(400 | 413, why)) => Fail::Never(why.clone()),
         Some(Answered(_, why)) => Fail::Later(why.clone()),
         None => Fail::Later(e.to_string()),
