@@ -192,30 +192,6 @@
   overflow-wrap: anywhere;
 }
 
-.board-bar {
-  display: flex;
-  height: 6px;
-  border-radius: 3px;
-  background: var(--raised);
-  overflow: hidden;
-}
-
-.board-bar i {
-  display: block;
-  height: 100%;
-  background: var(--ok);
-  transition: width 0.2s;
-}
-
-/* Done ok, Review accent, Doing warn: the lanes' own tones, which a card takes too (cardTone). */
-.board-bar i[data-lane="review"] {
-  background: var(--accent);
-}
-
-.board-bar i[data-lane="doing"] {
-  background: var(--warn);
-}
-
 .board-more {
   flex: none;
   min-width: 32px;

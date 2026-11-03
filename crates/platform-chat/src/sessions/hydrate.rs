@@ -268,6 +268,9 @@ fn card_line(p: &Preview) -> Option<String> {
             Some(w) => format!("{what} {title} ({state}, by {w})"),
             None => format!("{what} {title} ({state})"),
         }),
+        Preview::Board { title, done, total, closed, .. } => {
+            Some(format!("board {title} ({done} of {total} done{})", if *closed { ", closed" } else { "" }))
+        }
         Preview::Web { .. } => None,
     }
 }

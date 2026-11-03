@@ -261,3 +261,131 @@ async fn private_addresses_are_never_fetched_and_the_switches_work() {
     let (st, v) = call(&base, "a", "GET", "/api/chat/teams/u/previews", None).await;
     assert_eq!((st, v["web"].clone()), (200, json!(false)));
 }
+
+/// A board link (#627) is a card of the board at a glance for the project's
+/// members, with its counts, the asks waiting on the reader, its lead and,
+/// once closed, its note; an outsider gets no card.
+#[tokio::test]
+async fn a_boards_link_is_a_card_of_the_board_for_its_members() {
+    use crate::{agents_tests::give, db::projects::BOARDS_WRITE};
+    use arugula_control_wire::boards::{AGENT_BOARD_LEAD, agent_board_row_ask};
+    let hub = Arc::new(TestHub::default());
+    let (app, base) = serve(hub.clone()).await;
+    hub.flag_named("team:t", crate::boards::FLAG, true);
+    let (issue, room) = seed(&app, &hub, &base).await;
+    let (st, _) = call(&base, "c", "PUT", "/api/chat/teams/u/previews", Some(json!({ "web": false }))).await;
+    assert_eq!(st, 200);
+    hub.daemon("geek", "a", Some("t"));
+    let project = app.db.team_project("t", "t", 1).unwrap();
+    let (st, g) = call(
+        &base,
+        "a",
+        "POST",
+        "/api/grants",
+        give("geek", BOARDS_WRITE, json!({ "kind": "project", "id": project })),
+    )
+    .await;
+    assert_eq!(st, 200, "{g}");
+    let geek = |method: &'static str, path: String, body: Option<Value>| {
+        let base = base.clone();
+        async move {
+            let mut req = reqwest::Client::new()
+                .request(method.parse().unwrap(), format!("{base}{path}"))
+                .header("x-test-daemon", "a geek");
+            if let Some(b) = body {
+                req = req.json(&b);
+            }
+            let r = req.send().await.unwrap();
+            (r.status().as_u16(), r.json::<Value>().await.unwrap_or_default())
+        }
+    };
+    let (st, b) = call(
+        &base,
+        "a",
+        "POST",
+        &format!("/api/projects/{project}/boards"),
+        Some(json!({ "title": "Launch", "goal": "\nShip the thing.\nSecond line." })),
+    )
+    .await;
+    assert_eq!(st, 200, "{b}");
+    let id = b["board"]["id"].as_str().unwrap().to_owned();
+    let (st, v) = call(
+        &base,
+        "a",
+        "PUT",
+        &format!("/api/boards/{id}/entries"),
+        Some(json!({ "entry": "row", "note": "the issue", "pointer": { "kind": "issue", "id": issue } })),
+    )
+    .await;
+    assert_eq!(st, 200, "{v}");
+    let row = v["zones"].as_array().unwrap().iter().flat_map(|z| z["rows"].as_array().unwrap()).next().unwrap()["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    // Waiting on b; led by a session of geek's.
+    let ask = json!({ "who": "b", "question": "Ship it?", "options": ["Yes", "No"] });
+    let (st, v) = geek("POST", agent_board_row_ask(&id, &row), Some(ask)).await;
+    assert_eq!(st, 200, "{v}");
+    let (st, v) = geek("POST", AGENT_BOARD_LEAD.replace("{id}", &id), Some(json!({ "session": "Ux" }))).await;
+    assert_eq!(st, 200, "{v}");
+
+    let m = say(&base, "a", &room, &format!("https://app.arugula.io/p/{project}/boards/{id}-launch")).await;
+    let card = |v: &Value| v["previews"][m.to_string()][0].clone();
+    let v = previews(&base, "a", &room, &[m]).await;
+    let c = card(&v);
+    assert_eq!(
+        (&c["kind"], &c["title"], &c["goal"], &c["total"], &c["done"], &c["needs_you"], &c["closed"]),
+        (&json!("board"), &json!("Launch"), &json!("Ship the thing."), &json!(1), &json!(0), &json!(0), &json!(false)),
+        "{v}"
+    );
+    assert_eq!(c["lead"], json!("Ux on geek-box"), "{v}");
+    assert_eq!(c["note"], Value::Null);
+    // The ask is b's: the card counts what waits on the one reading it.
+    // (b is a viewer of t, and isn't in this channel's team: they read it
+    // in a room of their own team's.)
+    let (st, ch) = call(&base, "a", "POST", "/api/chat/teams/t/channels", Some(json!({ "name": "ship" }))).await;
+    assert_eq!(st, 200, "{ch}");
+    let room_t = ch["id"].as_str().unwrap().to_owned();
+    call(&base, "b", "POST", &format!("/api/chat/rooms/{room_t}/join"), None).await;
+    let mt = say(&base, "a", &room_t, &format!("https://app.arugula.io/boards/{id}")).await;
+    let for_b = previews(&base, "b", &room_t, &[mt]).await;
+    assert_eq!(for_b["previews"][mt.to_string()][0]["needs_you"], json!(1), "{for_b}");
+    let for_a = previews(&base, "a", &room_t, &[mt]).await;
+    assert_eq!(for_a["previews"][mt.to_string()][0]["needs_you"], json!(0), "{for_a}");
+
+    // Closing the issue moves the row to Done; closing the board shows its note.
+    app.db
+        .patch_issue(
+            &issue,
+            &Patch { state: Some(State::Closed(CloseReason::Completed)), ..Default::default() },
+            Actor { account: "a", agent: None },
+            20,
+        )
+        .unwrap()
+        .unwrap();
+    let (st, v) = call(
+        &base,
+        "a",
+        "POST",
+        &format!("/api/boards/{id}/close"),
+        Some(json!({ "done_note": "You can log in.\nMore." })),
+    )
+    .await;
+    assert_eq!(st, 200, "{v}");
+    let c = card(&previews(&base, "a", &room, &[m]).await);
+    assert_eq!(
+        (&c["done"], &c["total"], &c["closed"], &c["note"]),
+        (&json!(1), &json!(1), &json!(true), &json!("You can log in.")),
+        "{c}"
+    );
+
+    // Reopened, the board keeps its note but the card doesn't show it.
+    let (st, v) = call(&base, "a", "POST", &format!("/api/boards/{id}/reopen"), None).await;
+    assert_eq!(st, 200, "{v}");
+    let c = card(&previews(&base, "a", &room, &[m]).await);
+    assert_eq!((&c["closed"], &c["note"]), (&json!(false), &Value::Null), "{c}");
+
+    // c is in neither project's team: no card.
+    let v = previews(&base, "c", &room, &[m]).await;
+    assert_eq!(v["previews"], json!({}), "{v}");
+}

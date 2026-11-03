@@ -13090,6 +13090,16 @@ html[data-workspace="new"] .thread-panel {
   color: var(--dim);
 }
 
+.link-card.board-link .board-bar {
+  display: flex;
+  margin: 4px 0 2px;
+}
+
+.link-card-needs {
+  color: var(--warn);
+  font-weight: 600;
+}
+
 .link-card-remove {
   padding: 0;
   border: 0;
