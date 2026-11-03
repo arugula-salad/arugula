@@ -154,7 +154,7 @@ function Wave({ p, filter }: { p: PlatformProject; filter: WaveFilter }) {
       data-sessions={p.id}
     >
       <PageHeader
-        title="Sessions"
+        title="Agents"
         sub="The project's agent sessions, newest first: where each runs, its branch and last push, and what waits on you. Narrow it to a track by its issues' label, or by a tracker issue."
         stats={
           !!w?.sessions.length && (

@@ -55,6 +55,8 @@ test("an owner makes a Doc from the project's Docs and writes it", async ({ brow
   await alice.locator("section[data-platform-home] [data-project]", { hasText: "Acme" }).click();
   await expect(alice.locator("[data-project-home]")).toContainText("No Docs yet", { timeout: 15_000 });
   await alice.locator("[data-project-docs-link]").click();
+  // Docs is one of the project's places (Arugula #635).
+  await expect(alice.locator("[data-platform-bar] [data-platform-docs]")).toHaveAttribute("aria-current", "page");
   await expect(alice).toHaveURL(/\/p\/prj_[0-9a-f]+-acme\/docs$/);
   await expect(alice.locator("[data-docs-none]")).toBeVisible();
 
