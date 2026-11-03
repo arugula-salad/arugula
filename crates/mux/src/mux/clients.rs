@@ -398,6 +398,7 @@ impl Daemon {
                     self.mentions_off.remove(&pane);
                     self.held.remove(&pane);
                     self.queued.gone(pane);
+                    self.mentions_told.remove(&pane);
                     self.live.remove(&pane);
                     self.live_pid.remove(&pane);
                     self.links.remove(&pane);

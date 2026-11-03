@@ -1472,6 +1472,31 @@ pub enum PermitAnswer {
     Withdrawn,
 }
 
+/// The field `arugula hook` adds to a `PostToolUse` of a session a person
+/// drives (#644): it wants a mention that's waiting, if there is one.
+pub const HOOK_TAKES_MENTION: &str = "arugula_takes_mention";
+
+/// The field `arugula hook` adds to a `SessionStart` whose session was told
+/// how a mid-turn mention arrives (`flags::MENTIONS_STEERING`, #644). Only
+/// those sessions take one at a tool call: a session that started before
+/// could read it as injected text, so it keeps getting them between turns.
+pub const HOOK_MENTIONS_TOLD: &str = "arugula_mentions_told";
+
+/// What `POST /api/panes/N/hook` answers. Empty, unless the hook asked
+/// ([`HOOK_TAKES_MENTION`]) and a mention was waiting.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct HookAnswer {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub follow_up: Option<HookFollowUp>,
+}
+
+/// A mention taken at a tool call (#644): its framed text, and who sent it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct HookFollowUp {
+    pub text: String,
+    pub by: crate::Driver,
+}
+
 /// `POST /api/panes/N/inbox` (`arugula inbox`): a follow-up for the agent,
 /// or `replaced` when a newer waiter took over.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

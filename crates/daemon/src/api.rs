@@ -544,10 +544,23 @@ async fn deliver_held(app: &App, pane: PaneId, by: Option<Driver>) -> Result<(),
 }
 
 /// `arugula hook`: one of Claude Code's hook events (M29).
-async fn hook(State(app): AppState, Path(id): Path<PaneId>, Json(hook): Json<serde_json::Value>) -> Res<Json<Empty>> {
+async fn hook(
+    State(app): AppState,
+    Path(id): Path<PaneId>,
+    Json(hook): Json<serde_json::Value>,
+) -> Res<Json<arugula_proto::api::HookAnswer>> {
     app.hooks_heard.lock().unwrap().insert(id, now_ms());
+    // #644: the CLI asks only where a person drives the session, and only
+    // when a tool call ended. An older CLI never asks.
+    use arugula_proto::api::{HookAnswer, HookFollowUp};
+    let take = hook[arugula_proto::api::HOOK_TAKES_MENTION] == true;
+    let asked = take.then(|| hook.clone());
     app.mux.send(Cmd::Api(Api::Hook(id, hook)));
-    Ok(Json(Empty {}))
+    let follow_up = match asked {
+        Some(hook) => app.mux.api(|r| Api::TakeMention(id, hook, r)).await.flatten(),
+        None => None,
+    };
+    Ok(Json(HookAnswer { follow_up: follow_up.map(|(text, by)| HookFollowUp { text, by }) }))
 }
 
 /// Whether a block is an agent's invites (#234): the owner's to answer,
