@@ -84,6 +84,7 @@ test.beforeAll(async ({ browser }) => {
 
   // A Doc with a section.
   await platform(`${project}/docs`);
+  await alice.locator("[data-doc-new-open]").click();
   await alice.locator("[data-doc-new-title]").fill("Release plan");
   await alice.locator("[data-doc-new]").click();
   await expect(alice).toHaveURL(/\/docs\/pdc_[0-9a-f]{32}-release-plan$/, { timeout: 15_000 });
@@ -122,6 +123,7 @@ place("triage", () => `${project}/triage`, (p) => p.locator("[data-triage-row]")
 place("boards", () => `${project}/boards`, (p) => p.locator("[data-board-link]"));
 place("board", () => boardPath, (p) => p.locator("[data-board-row]"));
 place("all-boards", () => "/boards", (p) => p.locator("[data-all-boards-page] [data-board-link]"));
-place("project-docs", () => `${project}/docs`, (p) => p.locator("[data-doc-link]"));
+place("project-docs", () => `${project}/docs`, (p) => p.locator("[data-docs-page] [data-doc]"));
+place("all-docs", () => "/docs", (p) => p.locator("[data-docs-page] [data-doc]"));
 place("project-doc", () => docPath, (p) => p.locator("[data-doc-page] .doc-section[data-section=s1]"));
 place("chat", () => `/chat/${room}`, (p) => p.locator("[data-room-view]").getByText("The release is cut from main."));

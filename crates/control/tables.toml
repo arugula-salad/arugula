@@ -1187,6 +1187,17 @@ note = "Those of issues that go, go. The rest name no person."
 seen_by = ["litestream"]
 
 [[table]]
+name = "issue_github_held"
+plane = "platform"
+process = "platform"
+holds = "plaintext"
+what = "A GitHub comment on an exported issue (M205) with the same text as one of ours being sent there, held until that send ends (Arugula #585): GitHub's comment id, the native issue, its GitHub login and text. The send's answer names our copy, which is kept out; the rest come into the thread as GitHub's."
+why_asleep = "A webhook comes once, whichever machine is awake, and a send's answer can come on another of the platform's machines."
+with_account = "partly"
+note = "Those of issues that go, go. A row lives until its send ends, or (a send that never ended) the issue's next webhook or poll after that."
+seen_by = ["litestream"]
+
+[[table]]
 name = "platform_jobs"
 plane = "platform"
 process = "platform"

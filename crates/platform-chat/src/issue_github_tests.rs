@@ -6,7 +6,10 @@
 //! comments cross both ways through the mirror, each once and never back.
 //! Runs on SQLite and, with `ARUGULA_TEST_POSTGRES_URL`, Postgres.
 
-use std::sync::Arc;
+use std::{
+    sync::{Arc, Mutex},
+    time::Duration,
+};
 
 use arugula_control_wire::forge::{DaemonOp, OpAnswer};
 use arugula_platform::{PlatformPort as _, forge::send::UserToken};
@@ -14,7 +17,7 @@ use serde_json::{Value, json};
 
 use crate::{
     Platform,
-    chat_tests::{TestHub, call},
+    chat_tests::{TestHub, call, hears, open_live},
     db::{Sql as _, sql::params},
     forge::{
         export::{self, AGENT_WAITS},
@@ -87,6 +90,64 @@ fn comment_on(repo: (u64, &str), number: u64, id: u64, login: &str, body: &str) 
         "issue": { "number": number },
         "comment": { "id": id, "body": body, "user": { "login": login, "id": id + 1 } },
     })
+}
+
+/// A GitHub comment a test lands by webhook: its id, login and text.
+type Landing = (u64, &'static str, String);
+
+/// A person's live stream, once it's said hello.
+async fn live(base: &str, who: &str) -> Arc<Mutex<String>> {
+    let heard = open_live(base, who, None).await;
+    hears(&heard, "\"type\":\"hello\"", Duration::from_secs(5)).await;
+    heard
+}
+
+/// How the send of message `seq`'s comment ended (Arugula #584): the
+/// `github` event on its author's live stream `heard`.
+async fn send_ended(heard: &Mutex<String>, room: &str, seq: i64) -> Value {
+    let what = format!(r#""type":"github","room":"{room}","seq":{seq},"#);
+    hears(heard, &what, Duration::from_secs(10)).await;
+    let text = heard.lock().unwrap().clone();
+    let line = text.lines().filter_map(|l| l.strip_prefix("data: ")).find(|l| l.contains(&what)).unwrap();
+    serde_json::from_str::<Value>(line).unwrap()["github"].clone()
+}
+
+/// A post of `text` by `who` whose comment goes to GitHub: the post's
+/// answer (`sending`), then how the send ended on `heard`. Its seq too.
+async fn post_out(base: &str, who: &str, room: &str, heard: &Mutex<String>, text: &str) -> (i64, Value) {
+    let v = post(base, who, room, json!({ "text": text })).await;
+    assert_eq!((v["github"]["sending"].as_bool(), v["github"]["sent"].as_bool()), (Some(true), Some(false)), "{v}");
+    let seq = v["seq"].as_i64().unwrap();
+    let g = send_ended(heard, room, seq).await;
+    assert_eq!(g["draft"], v["github"]["draft"], "{g}");
+    assert_eq!(g["sending"], false, "{g}");
+    (seq, g)
+}
+
+/// Alice opens a new issue on acme/site (public) as its #7, through her
+/// machine `geek`: the issue and its thread.
+async fn exported(hub: &TestHub, base: &str, team: &str, title: &str) -> (String, String) {
+    let id = new_issue(base, "alice", team, title, "").await;
+    hub.daemon("geek", "alice", None);
+    hub.answers_ops("geek", OpAnswer::Done { url: Some("https://github.com/acme/site/issues/7".into()), routed: None });
+    let (_, v) = export_draft(base, "alice", &id, "acme/site").await;
+    let d = v["draft"]["id"].as_str().unwrap().to_owned();
+    let (s, v) = call(base, "alice", "POST", &format!("/api/forge/drafts/{d}/send"), Some(json!({}))).await;
+    assert_eq!(s, 200, "{v}");
+    let room = thread(base, "bob", &id).await;
+    (id, room)
+}
+
+/// The thread's messages as (who, text): an author, or `github:<login>`.
+async fn said(base: &str, room: &str) -> Vec<(String, String)> {
+    messages(base, room)
+        .await
+        .iter()
+        .map(|m| {
+            let who = m["via"].as_str().filter(|v| v.starts_with("github:")).or(m["author"].as_str()).unwrap();
+            (who.to_owned(), m["text"].as_str().unwrap().to_owned())
+        })
+        .collect()
 }
 
 fn crossed(app: &Platform) -> Vec<(u64, String, Option<i64>)> {
@@ -228,14 +289,8 @@ async fn an_agent_only_drafts_the_export() {
 #[tokio::test]
 async fn comments_cross_both_ways_once() {
     let (hub, gh, app, base, team) = start().await;
-    let id = new_issue(&base, "alice", &team, "Flaky login", "").await;
-    hub.daemon("geek", "alice", None);
-    hub.answers_ops("geek", OpAnswer::Done { url: Some("https://github.com/acme/site/issues/7".into()), routed: None });
-    let (_, v) = export_draft(&base, "alice", &id, "acme/site").await;
-    let d = v["draft"]["id"].as_str().unwrap().to_owned();
-    let (s, v) = call(&base, "alice", "POST", &format!("/api/forge/drafts/{d}/send"), Some(json!({}))).await;
-    assert_eq!(s, 200, "{v}");
-    let room = thread(&base, "bob", &id).await;
+    let (id, room) = exported(&hub, &base, &team, "Flaky login").await;
+    let (bob_hears, alice_hears) = (live(&base, "bob").await, live(&base, "alice").await);
 
     // Bob's machine sends his comment; GitHub's webhook for it lands while
     // the send is still out.
@@ -252,10 +307,9 @@ async fn comments_cross_both_ways_once() {
             OpAnswer::Done { url: Some("https://github.com/acme/site/issues/7#issuecomment-501".into()), routed: None }
         })
     }));
-    let v = post(&base, "bob", &room, json!({ "text": "On it" })).await;
-    assert_eq!(v["github"]["sent"], true, "{v}");
-    assert_eq!(v["github"]["url"], "https://github.com/acme/site/issues/7#issuecomment-501");
-    let bobs = v["seq"].as_i64().unwrap();
+    let (bobs, g) = post_out(&base, "bob", &room, &bob_hears, "On it").await;
+    assert_eq!(g["sent"], true, "{g}");
+    assert_eq!(g["url"], "https://github.com/acme/site/issues/7#issuecomment-501");
     assert_eq!(messages(&base, &room).await.len(), 1, "its copy isn't brought back");
     assert_eq!(crossed(&app), [(501, "out".into(), Some(bobs))]);
     // A redelivery of it later: still not.
@@ -292,7 +346,7 @@ async fn comments_cross_both_ways_once() {
     assert_eq!(hub.ops_asked().len(), sends);
 
     // An agent's comment is a draft for its person, and nothing is asked.
-    let got = export::posted(&app, &id, "alice", Some("geek"), 42, "the agent's note").await.unwrap();
+    let got = export::posted(&app, &id, &room, "alice", Some("geek"), 42, "the agent's note").await.unwrap();
     assert_eq!((got.sent, got.why.as_deref()), (false, Some(AGENT_WAITS)));
     assert_eq!(hub.ops_asked().len(), sends);
     let (_, ds) = call(&base, "alice", "GET", "/api/forge/drafts", None).await;
@@ -300,9 +354,12 @@ async fn comments_cross_both_ways_once() {
     assert_eq!((agents[0]["state"].as_str(), agents[0]["native_issue"].as_str()), (Some("waiting"), Some(id.as_str())));
 
     // Alice's machine is away: her comment waits, saying so.
-    let v = post(&base, "alice", &room, json!({ "text": "looking" })).await;
-    assert_eq!(v["github"]["sent"], false, "{v}");
-    assert!(v["github"]["why"].as_str().unwrap().contains("Open this on a device"), "{v}");
+    let (_, g) = post_out(&base, "alice", &room, &alice_hears, "looking").await;
+    assert_eq!(g["sent"], false, "{g}");
+    assert!(g["why"].as_str().unwrap().contains("Open this on a device"), "{g}");
+    // Each send's end was told to its author only.
+    assert_eq!(bob_hears.lock().unwrap().matches(r#""type":"github""#).count(), 1);
+    assert_eq!(alice_hears.lock().unwrap().matches(r#""type":"github""#).count(), 1);
 
     // A webhook that never came: the poller's turn over the issue finds it,
     // and only it (ours and dana's crossed already).
@@ -341,13 +398,14 @@ async fn a_private_repos_comments_stay_on_github() {
     assert_eq!(s, 200, "{v}");
     assert_eq!(issue(&base, "carol", &id).await["github"], json!({ "repo": "acme/app", "number": 3 }));
     let room = thread(&base, "bob", &id).await;
+    let bob_hears = live(&base, "bob").await;
 
     hub.answers_ops(
         "bobs",
         OpAnswer::Done { url: Some("https://github.com/acme/app/issues/3#issuecomment-61".into()), routed: None },
     );
-    let v = post(&base, "bob", &room, json!({ "text": "noted" })).await;
-    assert_eq!(v["github"]["sent"], true, "{v}");
+    let (_, g) = post_out(&base, "bob", &room, &bob_hears, "noted").await;
+    assert_eq!(g["sent"], true, "{g}");
     let v = post(&base, "carol", &room, json!({ "text": "me too" })).await;
     assert_eq!(v["github"]["sent"], false, "{v}");
     assert!(v["github"]["draft"].as_str().unwrap().is_empty(), "no draft: {v}");
@@ -358,4 +416,173 @@ async fn a_private_repos_comments_stay_on_github() {
     assert_eq!(ms.len(), 2, "{ms:?}");
     assert!(ms.iter().all(|m| m["text"] != "private words"));
     assert_eq!(crossed(&app), [(61, "out".into(), Some(ms[0]["seq"].as_i64().unwrap()))]);
+}
+
+/// A person's comment on an exported issue answers once it's stored: its
+/// send through their machine runs after the post (Arugula #584), here held
+/// up until the test lets it go, and how it ended reaches its author, and
+/// only them, on the live stream.
+#[tokio::test]
+async fn a_comments_post_answers_before_its_send_ends() {
+    let (hub, _gh, _app, base, team) = start().await;
+    let (_id, room) = exported(&hub, &base, &team, "Slow machine").await;
+    hub.daemon("bobs", "bob", None);
+    let (asked, go) = (Arc::new(tokio::sync::Notify::new()), Arc::new(tokio::sync::Notify::new()));
+    let (on_asked, on_go) = (asked.clone(), go.clone());
+    hub.on_ops(Arc::new(move |daemon, op| {
+        let (asked, go) = (on_asked.clone(), on_go.clone());
+        Box::pin(async move {
+            let DaemonOp::ForgeSend(s) = op else { return OpAnswer::Unknown };
+            if daemon != "bobs" || s.kind != "comment" {
+                return OpAnswer::Offline;
+            }
+            asked.notify_one();
+            go.notified().await;
+            OpAnswer::Done { url: Some("https://github.com/acme/site/issues/7#issuecomment-90".into()), routed: None }
+        })
+    }));
+    let (bob_hears, alice_hears) = (live(&base, "bob").await, live(&base, "alice").await);
+
+    let v = tokio::time::timeout(Duration::from_secs(5), post(&base, "bob", &room, json!({ "text": "On it" })))
+        .await
+        .expect("the post answers while its send waits on the machine");
+    assert_eq!((v["github"]["sending"].as_bool(), v["github"]["sent"].as_bool()), (Some(true), Some(false)), "{v}");
+    assert!(v["github"]["url"].is_null(), "{v}");
+    let seq = v["seq"].as_i64().unwrap();
+    tokio::time::timeout(Duration::from_secs(5), asked.notified()).await.expect("its machine is asked");
+    // Stored and shown already; nothing said of the send yet.
+    assert_eq!(said(&base, &room).await, [("bob".to_owned(), "On it".to_owned())]);
+    assert!(!bob_hears.lock().unwrap().contains(r#""type":"github""#));
+
+    go.notify_one();
+    let g = send_ended(&bob_hears, &room, seq).await;
+    assert_eq!(
+        g,
+        json!({
+            "draft": v["github"]["draft"],
+            "sending": false,
+            "sent": true,
+            "url": "https://github.com/acme/site/issues/7#issuecomment-90",
+            "why": null,
+        })
+    );
+    // Alice sees the room, and isn't told of Bob's send.
+    hears(&alice_hears, r#""type":"message""#, Duration::from_secs(5)).await;
+    assert!(!alice_hears.lock().unwrap().contains(r#""type":"github""#));
+}
+
+/// Someone on GitHub writes the same words as a comment of ours while it's
+/// being sent (Arugula #585): the send's answer names ours, which is kept
+/// out, and theirs comes in, each once, whichever webhook comes first, and
+/// one that comes after the answer. Only when the answer named no comment
+/// is the first with its text taken for ours, and only in the send's window.
+#[tokio::test]
+async fn the_same_words_on_github_mid_send_both_end_up_right() {
+    let (hub, gh, app, base, team) = start().await;
+    let (id, room) = exported(&hub, &base, &team, "Echoes").await;
+    hub.daemon("bobs", "bob", None);
+    let bob_hears = live(&base, "bob").await;
+    // Per text: GitHub's comments that land while Bob's is being sent, in
+    // order (ours has GitHub's line end), and the id the answer names.
+    let ours = |n: u64, text: &str| (n, "bob-gh", format!("{text}\r\n"));
+    let plan: Vec<(&str, Vec<Landing>, Option<u64>)> = vec![
+        ("+1", vec![(601, "dana-gh", "+1".into()), ours(602, "+1")], Some(602)),
+        ("thanks", vec![ours(603, "thanks"), (604, "erin-gh", "thanks".into())], Some(603)),
+        ("lgtm", vec![(605, "frank-gh", "lgtm".into())], Some(606)),
+        ("done", vec![], None),
+        ("ok", vec![], None),
+    ];
+    let echo = app.clone();
+    hub.on_ops(Arc::new(move |daemon, op| {
+        let (app, plan) = (echo.clone(), plan.clone());
+        Box::pin(async move {
+            let DaemonOp::ForgeSend(s) = op else { return OpAnswer::Unknown };
+            if daemon != "bobs" || s.kind != "comment" {
+                return OpAnswer::Offline;
+            }
+            let (_, land, answer) = plan.iter().find(|(t, ..)| *t == s.body).expect("a planned comment");
+            for (n, login, body) in land {
+                export::webhook(&app, "issue_comment", &comment(7, *n, login, body)).await;
+            }
+            let url = match answer {
+                Some(n) => format!("https://github.com/acme/site/issues/7#issuecomment-{n}"),
+                None => "https://github.com/acme/site/issues/7".into(),
+            };
+            OpAnswer::Done { url: Some(url), routed: None }
+        })
+    }));
+
+    let mut seqs = vec![];
+    for text in ["+1", "thanks", "lgtm"] {
+        let (seq, g) = post_out(&base, "bob", &room, &bob_hears, text).await;
+        assert_eq!(g["sent"], true, "{g}");
+        seqs.push(seq);
+    }
+    // Ours for "lgtm", after the answer named it: kept out.
+    export::webhook(&app, "issue_comment", &comment(7, 606, "bob-gh", "lgtm")).await;
+    // An answer that named no comment: the first "done" after it is ours.
+    let (done, _) = post_out(&base, "bob", &room, &bob_hears, "done").await;
+    export::webhook(&app, "issue_comment", &comment(7, 607, "bob-gh", "done")).await;
+    export::webhook(&app, "issue_comment", &comment(7, 608, "gail-gh", "done")).await;
+    // ... and only in the send's window: past it, the same words are someone's.
+    let (ok, _) = post_out(&base, "bob", &room, &bob_hears, "ok").await;
+    let long_ago = arugula_e2e::now_ms() - crate::db::forge::SENDING_MS - 1_000;
+    app.db.c().execute("UPDATE drafts SET updated_at = ?1 WHERE native_seq = ?2", params![long_ago, ok]).unwrap();
+    export::webhook(&app, "issue_comment", &comment(7, 609, "hal-gh", "ok")).await;
+
+    let pair = |who: &str, text: &str| (who.to_owned(), text.to_owned());
+    let want = [
+        pair("bob", "+1"),
+        pair("github:dana-gh", "+1"),
+        pair("bob", "thanks"),
+        pair("github:erin-gh", "thanks"),
+        pair("bob", "lgtm"),
+        pair("github:frank-gh", "lgtm"),
+        pair("bob", "done"),
+        pair("github:gail-gh", "done"),
+        pair("bob", "ok"),
+        pair("github:hal-gh", "ok"),
+    ];
+    assert_eq!(said(&base, &room).await, want);
+    let ways: Vec<(u64, String)> = crossed(&app).into_iter().map(|(g, w, _)| (g, w)).collect();
+    let way = |n: u64, w: &str| (n, w.to_owned());
+    assert_eq!(
+        ways,
+        [
+            way(601, "in"),
+            way(602, "out"),
+            way(603, "out"),
+            way(604, "in"),
+            way(605, "in"),
+            way(606, "out"),
+            way(607, "out"),
+            way(608, "in"),
+            way(609, "in"),
+        ]
+    );
+    let outs: Vec<(u64, Option<i64>)> =
+        crossed(&app).into_iter().filter(|(_, w, _)| w == "out").map(|(g, _, s)| (g, s)).collect();
+    assert_eq!(outs, [(602, Some(seqs[0])), (603, Some(seqs[1])), (606, Some(seqs[2])), (607, Some(done))]);
+    let held: i64 = app.db.c().query_row("SELECT count(*) FROM issue_github_held", params![], |r| r.get(0)).unwrap();
+    assert_eq!(held, 0, "nothing left held");
+
+    // Again, by the poller, with every one: nothing new.
+    let list: Vec<Value> = [
+        (601, "dana-gh", "+1"),
+        (602, "bob-gh", "+1"),
+        (603, "bob-gh", "thanks"),
+        (604, "erin-gh", "thanks"),
+        (605, "frank-gh", "lgtm"),
+        (606, "bob-gh", "lgtm"),
+        (607, "bob-gh", "done"),
+        (608, "gail-gh", "done"),
+        (609, "hal-gh", "ok"),
+    ]
+    .iter()
+    .map(|(n, login, body)| json!({ "id": n, "body": body, "user": { "login": login } }))
+    .collect();
+    gh.lock().unwrap().comments.insert((88, 7), list);
+    export::polled(&app, (88, 9, "acme/site"), &[7]).await;
+    assert_eq!(said(&base, &room).await, want);
+    let _ = id;
 }

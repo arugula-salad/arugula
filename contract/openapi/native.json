@@ -6949,6 +6949,32 @@
             "type": "object"
           },
           {
+            "description": "How a comment's send to GitHub ended (M205, Arugula #584): message\n`seq` of `room`, a native issue's thread, whose post answered\n`sending`. Sent to its author only.",
+            "properties": {
+              "github": {
+                "$ref": "#/components/schemas/ChatToGithub"
+              },
+              "room": {
+                "type": "string"
+              },
+              "seq": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "type": {
+                "const": "github",
+                "type": "string"
+              }
+            },
+            "required": [
+              "type",
+              "room",
+              "seq",
+              "github"
+            ],
+            "type": "object"
+          },
+          {
             "properties": {
               "type": {
                 "const": "resync",
@@ -7602,7 +7628,7 @@
                 "type": "null"
               }
             ],
-            "description": "A comment on a native issue that's on GitHub (M205): what became\nof its copy there. `None` anywhere else."
+            "description": "A comment on a native issue that's on GitHub (M205): what became\nof its copy there, as far as it's known when the post returns. A\nperson's is `sending` then, and its end comes to them on the live\nstream ([`ChatLive::Github`], Arugula #584). `None` anywhere else."
           },
           "mention_status": {
             "description": "Where each machine's agent mention in it has got to by now (#571):\n`sending` for one whose daemon hasn't answered. Empty for a post that\nmentions none.",
@@ -8386,11 +8412,16 @@
         "type": "object"
       },
       "ChatToGithub": {
-        "description": "A comment on an exported native issue, on its way to GitHub (M205): a\nperson's is sent as them through one of their machines, and waits as a\ndraft when none can; an agent's is a draft that waits for its person.",
+        "description": "A comment on an exported native issue, on its way to GitHub (M205): a\nperson's is sent as them through one of their machines, and waits as a\ndraft when none can; an agent's is a draft that waits for its person.\nA person's post answers while its send is out (`sending`), and the\nsend's end comes after, on the live stream ([`ChatLive::Github`]).",
         "properties": {
           "draft": {
             "description": "The draft (`dft_…`) that carries it.",
             "type": "string"
+          },
+          "sending": {
+            "default": false,
+            "description": "Being sent now, through one of the person's machines: the end comes\non the live stream (Arugula #584).",
+            "type": "boolean"
           },
           "sent": {
             "description": "On GitHub now.",

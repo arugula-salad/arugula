@@ -15,7 +15,7 @@
 import { Fragment, type ComponentChildren } from "preact";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
 import { chat, type PaneQuote } from "../chat-store";
-import type { ChatMessage, ChatPosted, ChatRoom } from "../proto";
+import type { ChatMessage, ChatRoom, ChatToGithub } from "../proto";
 import { AgentsChip } from "./agents-chip";
 import { authorLabel, githubLogin, isSystemLine, machineMentions } from "./agents";
 import { ChatMarkdown } from "./chat-markdown";
@@ -139,10 +139,12 @@ function RoomAgents({ room }: { room: string }) {
 }
 
 /** What a comment on an issue opened on GitHub (M205) says of its copy
- * there, under the box: sent, or why not and where it waits. */
-function githubNote(posted: ChatPosted): string[] {
-  const g = posted.github;
+ * there, under the box: being sent (the post answers first, and the end
+ * comes on chat's stream, Arugula #584), sent, or why not and where it
+ * waits. */
+function githubNote(g: ChatToGithub | undefined): string[] {
   if (!g) return [];
+  if (g.sending) return ["Sending to GitHub, as you…"];
   if (g.sent) return ["Also on GitHub, as you."];
   if (g.draft) return [`Not on GitHub yet: ${g.why ?? "it wasn't sent"} It waits in your drafts, to send from there.`];
   return [`Kept here only: ${g.why ?? "it can't go to GitHub"}`];
@@ -957,6 +959,10 @@ export function RoomCompose({
   const [sending, setSending] = useState(false);
   const [pick, setPick] = useState(0);
   const [missed, setMissed] = useState<string[]>([]);
+  // My last post's comment on its way to GitHub (M205): what the post said,
+  // until the stream says how its send ended.
+  const [toGithub, setToGithub] = useState<{ seq: number; github: ChatToGithub } | null>(null);
+  const notes = [...missed, ...githubNote(toGithub ? (chat.githubOf(room.id, toGithub.seq) ?? toGithub.github) : undefined)];
   const [picking, setPicking] = useState(false);
   const [emoji, setEmoji] = useState(false);
   const [dropping, setDropping] = useState(false);
@@ -1093,11 +1099,13 @@ export function RoomCompose({
     setSending(true);
     setError(null);
     setMissed([]);
+    setToGithub(null);
     try {
       const posted = thread
         ? await chat.reply(room.id, thread.parent, text, also, files.ids)
         : await chat.post(room.id, text, quote, files.ids, paused && anyway);
-      setMissed([...posted.unreached.map((w) => `Nobody here called ${w} can read this room`), ...githubNote(posted)]);
+      setMissed(posted.unreached.map((w) => `Nobody here called ${w} can read this room`));
+      setToGithub(posted.github ? { seq: posted.seq, github: posted.github } : null);
       setText("");
       chat.composed(room.id, thread?.parent);
       setQuote(undefined);
@@ -1123,7 +1131,7 @@ export function RoomCompose({
       }}
     >
       {!thread && <TypingLine room={room.id} />}
-      {missed.map((n) => (
+      {notes.map((n) => (
         <p key={n} class="thread-note unreached">
           {n}
         </p>
@@ -1232,6 +1240,8 @@ export function RoomCompose({
             files.add(pasted);
           }}
           onInput={(e) => {
+            // What became of the last comment's copy on GitHub stays, as
+            // its end may come while the next is being written.
             setMissed([]);
             const v = (e.target as HTMLTextAreaElement).value;
             setText(v);

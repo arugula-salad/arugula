@@ -706,6 +706,19 @@ pub struct Outgoing {
     pub draft: String,
     pub seq: i64,
     pub body: String,
+    /// Its send is out still, so its answer will name its comment (Arugula
+    /// #585); else it was sent and GitHub's answer named none.
+    pub sending: bool,
+}
+
+/// A GitHub comment held while one of ours with its text is being sent
+/// (Arugula #585, `issue_github_held`): ours or someone else's, which the
+/// send's answer says.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Held {
+    pub github_id: u64,
+    pub login: String,
+    pub body: String,
 }
 
 /// Open on GitHub (M205): an issue's origin, and the comments that cross.
@@ -795,15 +808,78 @@ impl Db {
     /// no GitHub comment is linked to yet ([`Outgoing`]), oldest first.
     pub fn outgoing_comments(&self, issue: &str, held_since: u64, since: u64) -> Result<Vec<Outgoing>> {
         self.c().query_map(
-            "SELECT d.id, d.native_seq, d.body FROM drafts d
+            "SELECT d.id, d.native_seq, d.body, d.state FROM drafts d
              WHERE d.native_issue = ?1 AND d.kind = 'comment' AND d.native_seq IS NOT NULL
                AND ((d.state IN ('waiting', 'failed') AND d.sent_at >= ?2) OR (d.state = 'sent' AND d.updated_at >= ?3))
                AND NOT EXISTS (SELECT 1 FROM issue_github_comments g
                                WHERE g.issue_id = d.native_issue AND g.seq = d.native_seq AND g.way = 'out')
              ORDER BY d.created_at, d.id",
             params![issue, held_since, since],
-            |r| Ok(Outgoing { draft: r.get(0)?, seq: r.get(1)?, body: r.get(2)? }),
+            |r| {
+                let state: String = r.get(3)?;
+                Ok(Outgoing { draft: r.get(0)?, seq: r.get(1)?, body: r.get(2)?, sending: state != "sent" })
+            },
         )
+    }
+
+    /// Hold GitHub's comment `github_id` on `issue` ([`Held`]) until the
+    /// send of ours with its text ends: `false` when it's held or crossed
+    /// already.
+    pub fn hold_github_comment(&self, github_id: u64, issue: &str, login: &str, body: &str, at: u64) -> Result<bool> {
+        let mut c = self.c();
+        let tx = c.immediate()?;
+        let crossed = tx
+            .query_row("SELECT 1 FROM issue_github_comments WHERE github_id = ?1", params![github_id], |r| {
+                r.get::<i64>(0)
+            })
+            .optional()?
+            .is_some();
+        let n = if crossed {
+            0
+        } else {
+            tx.execute(
+                "INSERT INTO issue_github_held (github_id, issue_id, login, body, at) VALUES (?1, ?2, ?3, ?4, ?5)
+                 ON CONFLICT (github_id) DO NOTHING",
+                params![github_id, issue, login, body, at],
+            )?
+        };
+        tx.commit()?;
+        Ok(n == 1)
+    }
+
+    /// `issue`'s held GitHub comments, oldest (lowest id) first.
+    pub fn held_github_comments(&self, issue: &str) -> Result<Vec<Held>> {
+        self.c().query_map(
+            "SELECT github_id, login, body FROM issue_github_held WHERE issue_id = ?1 ORDER BY github_id",
+            params![issue],
+            |r| Ok(Held { github_id: r.get(0)?, login: r.get(1)?, body: r.get(2)? }),
+        )
+    }
+
+    /// Let go of held comment `github_id` and claim it, crossing `way`
+    /// (message `seq`, ours, when it's `Out`), in one transaction: `true`
+    /// when this call claimed it, `false` when another settled it first or
+    /// it had crossed already (a send's answer named it meanwhile).
+    pub fn settle_held_comment(
+        &self,
+        github_id: u64,
+        issue: &str,
+        seq: Option<i64>,
+        way: Crossed,
+        at: u64,
+    ) -> Result<bool> {
+        let mut c = self.c();
+        let tx = c.immediate()?;
+        if tx.execute("DELETE FROM issue_github_held WHERE github_id = ?1", params![github_id])? != 1 {
+            return Ok(false);
+        }
+        let n = tx.execute(
+            "INSERT INTO issue_github_comments (github_id, issue_id, seq, way, at) VALUES (?1, ?2, ?3, ?4, ?5)
+             ON CONFLICT (github_id) DO NOTHING",
+            params![github_id, issue, seq, way.as_str(), at],
+        )?;
+        tx.commit()?;
+        Ok(n == 1)
     }
 }
 
@@ -828,6 +904,11 @@ pub(crate) fn erase_account(c: &impl Sql, d: &Deleted) -> Result<()> {
     )?;
     c.execute(
         "DELETE FROM issue_github_comments WHERE issue_id IN
+             (SELECT id FROM issues WHERE project_id NOT IN (SELECT id FROM projects))",
+        params![],
+    )?;
+    c.execute(
+        "DELETE FROM issue_github_held WHERE issue_id IN
              (SELECT id FROM issues WHERE project_id NOT IN (SELECT id FROM projects))",
         params![],
     )?;

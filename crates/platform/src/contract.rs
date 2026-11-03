@@ -80,7 +80,7 @@ pub async fn run(f: &dyn Fixture) {
     push_options(f).await;
     cloud(f).await;
     projects(f).await;
-    pokes(f).await;
+    github(f).await;
     // Last: it prunes the feed.
     changes(f).await;
 }
@@ -391,21 +391,9 @@ async fn cloud(f: &dyn Fixture) {
     assert!(!hub.can_drive_cloud(&m, "acct-cl").await.unwrap(), "a revoked grant");
 }
 
-/// A webhook's pokes (M161): retired in M174, so the hub relays none and
-/// answers 0, never an error, to a platform from before that still hands
-/// them over.
-async fn pokes(f: &dyn Fixture) {
+/// GitHub identities, and what machines on the relay are doing.
+async fn github(f: &dyn Fixture) {
     let hub = f.hub();
-    let poke = arugula_control_wire::forge::Poke {
-        provider: "github".into(),
-        host: "github.com".into(),
-        repo: "jhgaylor/hud".into(),
-        number: Some(1),
-        event: "pull_request".into(),
-        delivery: "d-contract".into(),
-    };
-    assert_eq!(hub.forge_pokes(&[poke]).await.unwrap(), 0);
-    assert_eq!(hub.forge_pokes(&[]).await.unwrap(), 0);
     // M163: who someone is on GitHub; nobody, for an account that isn't.
     assert_eq!(hub.github_user("acct-none").await.unwrap(), None);
     // M235: who signs in with a numeric GitHub id, by the number only (the

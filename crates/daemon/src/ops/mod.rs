@@ -223,6 +223,15 @@ impl FromPath for String {
     }
 }
 
+impl FromPath for (String, String) {
+    async fn from_parts(parts: &mut Parts) -> Result<Self, Response> {
+        Path::<(String, String)>::from_request_parts(parts, &())
+            .await
+            .map(|Path(p)| p)
+            .map_err(IntoResponse::into_response)
+    }
+}
+
 /// Whether `O`'s feature is on here (#347): an operation that names a flag
 /// (`Op::FLAG`) is refused, by every way in, where the machine has it off,
 /// as a route that isn't there (404) that says how to turn it on.

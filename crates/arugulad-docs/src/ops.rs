@@ -1,4 +1,5 @@
-//! `docs.list`, `doc.open` and `doc.delete` (#1493): the Doc library (see
+//! `docs.list`, `doc.open`, `doc.delete` (#1493), `doc.preview` (#588), `doc.read`
+//! and `doc.asset` (#608): the Doc library (see
 //! [`crate::docs::library`]) listed, a Doc opened in a block, and a Doc
 //! deleted. The owner's: `serve` checks that before the handler runs. MCP's
 //! `doc` kind `list` is `docs.list`; its kind `open` is `doc.open` with the
@@ -15,8 +16,8 @@ use std::{collections::HashMap, sync::Arc};
 use arugula_core::PaneId;
 use arugula_proto::{
     BlockType,
-    api::{DocOpenRequest, DocOpened, DocPreview, DocRow, DocShared, Empty, OpenRequest},
-    op::ops::{DocDelete, DocOpen, DocPreviewGet, DocsList},
+    api::{DocAsset, DocContent, DocOpenRequest, DocOpened, DocPreview, DocRow, DocShared, Empty, OpenRequest},
+    op::ops::{DocAssetGet, DocDelete, DocOpen, DocPreviewGet, DocRead, DocsList},
 };
 use axum::http::StatusCode;
 
@@ -192,6 +193,27 @@ impl Handle<Docs> for DocPreviewGet {
             .await
             .map_err(|e| OpError::Failed(e.to_string()))?;
         Ok(DocPreview { opening })
+    }
+}
+
+/// `doc.read` and `doc.asset` (#608) read the Doc from its files with the
+/// block's own loader and ask `open_blocks` nothing: a read never opens a
+/// block, so `docs.list` still has the Doc closed.
+impl Handle<Docs> for DocRead {
+    async fn handle(cx: &Cx<'_>, id: String, _: Empty) -> Result<DocContent, OpError> {
+        let meta = checked(cx.app, &id)?;
+        let state = crate::docs::read(cx.app.control.state_dir().to_owned(), meta.id).await.map_err(OpError::Failed)?;
+        serde_json::from_value(state).map_err(|e| OpError::Failed(e.to_string()))
+    }
+}
+
+impl Handle<Docs> for DocAssetGet {
+    async fn handle(cx: &Cx<'_>, (id, name): (String, String), _: Empty) -> Result<DocAsset, OpError> {
+        let meta = checked(cx.app, &id)?;
+        let got = crate::docs::read_asset(cx.app.control.state_dir().to_owned(), meta.id, name)
+            .await
+            .map_err(|e| OpError::Status(StatusCode::NOT_FOUND, e))?;
+        serde_json::from_value(got).map_err(|e| OpError::Failed(e.to_string()))
     }
 }
 

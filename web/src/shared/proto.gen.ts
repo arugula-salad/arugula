@@ -944,7 +944,7 @@ export type ChatLevel = { level: NotifyLevel | null, };
  * behind, or missed more events than control keeps) gets `resync`: reload
  * the rooms.
  */
-export type ChatLive = { "type": "hello", stream: string, } | { "type": "message", room: string, seq: number, } | { "type": "pinned", room: string, } | { "type": "changed", room: string, seq: number, } | { "type": "reacted", room: string, seq: number, } | { "type": "reply", room: string, parent: number, seq: number, } | { "type": "threadread", room: string, parent: number, seq: number, } | { "type": "room", room: string, } | { "type": "read", room: string, seq: number, } | { "type": "object", room: string, target: string, } | { "type": "session", room: string, ses: string, } | { "type": "typing", room: string, account: string, name: string, } | { "type": "sidebar", } | { "type": "saved", } | { "type": "resync", };
+export type ChatLive = { "type": "hello", stream: string, } | { "type": "message", room: string, seq: number, } | { "type": "pinned", room: string, } | { "type": "changed", room: string, seq: number, } | { "type": "reacted", room: string, seq: number, } | { "type": "reply", room: string, parent: number, seq: number, } | { "type": "threadread", room: string, parent: number, seq: number, } | { "type": "room", room: string, } | { "type": "read", room: string, seq: number, } | { "type": "object", room: string, target: string, } | { "type": "session", room: string, ses: string, } | { "type": "typing", room: string, account: string, name: string, } | { "type": "sidebar", } | { "type": "saved", } | { "type": "github", room: string, seq: number, github: ChatToGithub, } | { "type": "resync", };
 
 /**
  * How far a [`ChatMentionStatus`] has got.
@@ -1214,7 +1214,9 @@ unreached_why?: Array<ChatUnreachedWhy>,
 pushed: Array<ChatPushed>, 
 /**
  * A comment on a native issue that's on GitHub (M205): what became
- * of its copy there. `None` anywhere else.
+ * of its copy there, as far as it's known when the post returns. A
+ * person's is `sending` then, and its end comes to them on the live
+ * stream ([`ChatLive::Github`], Arugula #584). `None` anywhere else.
  */
 github?: ChatToGithub, 
 /**
@@ -1593,12 +1595,19 @@ export type ChatThreads = { threads: Array<ChatThreadItem>, unread: number, ment
  * A comment on an exported native issue, on its way to GitHub (M205): a
  * person's is sent as them through one of their machines, and waits as a
  * draft when none can; an agent's is a draft that waits for its person.
+ * A person's post answers while its send is out (`sending`), and the
+ * send's end comes after, on the live stream ([`ChatLive::Github`]).
  */
 export type ChatToGithub = { 
 /**
  * The draft (`dft_…`) that carries it.
  */
 draft: string, 
+/**
+ * Being sent now, through one of the person's machines: the end comes
+ * on the live stream (Arugula #584).
+ */
+sending: boolean, 
 /**
  * On GitHub now.
  */
@@ -1825,6 +1834,42 @@ ide: string,
 nvim?: number, };
 
 export type Dir = "row" | "column";
+
+/**
+ * `GET /api/docs/ID/assets/NAME` (#608): a picture, as the Doc block's
+ * `doc_asset` answers it. The type is what the bytes say.
+ */
+export type DocAsset = { mime: string, 
+/**
+ * Base64.
+ */
+data: string, };
+
+/**
+ * `GET /api/docs/ID/content` (#608): the Doc read from its files, without
+ * opening it in a block, in the shape the Doc block's state has, so the
+ * same renderer draws it.
+ */
+export type DocContent = { title: string, entries: Array<DocContentEntry>, assets: Array<DocContentAsset>, rev: number, 
+/**
+ * The Doc's id in the library.
+ */
+doc?: string | null, 
+/**
+ * The folder couldn't be read back: what to tell the person.
+ */
+error?: string | null, };
+
+/**
+ * A picture a Doc keeps, as its state lists it; `doc.asset` has the bytes.
+ */
+export type DocContentAsset = { name: string, mime: string, size: number, rev: number, };
+
+/**
+ * One section of a Doc as `GET /api/docs/ID/content` has it: the Doc block's
+ * entry. `body` is null while the section is pending.
+ */
+export type DocContentEntry = { id: string, heading: string, intent: string, body: string | null, rev: number, };
 
 /**
  * `GET /api/doc-links/ID` (#1066): a shared Doc's URL, with its key.
@@ -5434,9 +5479,11 @@ export const OPS = {
   "conversation.open": { method: "POST", path: "/api/conversations/open" },
   "conversation.session_signal": { method: "POST", path: "/api/conversations/session-signal" },
   "conversations.list": { method: "GET", path: "/api/conversations" },
+  "doc.asset": { method: "GET", path: "/api/docs/{id}/assets/{name}" },
   "doc.delete": { method: "DELETE", path: "/api/docs/{id}" },
   "doc.open": { method: "POST", path: "/api/docs/open" },
   "doc.preview": { method: "GET", path: "/api/docs/{id}/preview" },
+  "doc.read": { method: "GET", path: "/api/docs/{id}/content" },
   "doc_link.delete": { method: "DELETE", path: "/api/doc-links/{id}" },
   "doc_link.get": { method: "GET", path: "/api/doc-links/{id}" },
   "docs.list": { method: "GET", path: "/api/docs" },
