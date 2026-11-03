@@ -1108,7 +1108,7 @@ export function RoomCompose({
     setToGithub(null);
     try {
       const posted = thread
-        ? await chat.reply(room.id, thread.parent, text, also, files.ids, threadAgents?.length ? targets(wakes(threadAgents, chosen, text)) : undefined)
+        ? await chat.reply(room.id, thread.parent, text, also, files.ids, threadAgents?.length ? targets(wakes(threadAgents, chosen, text, chat.agents(room.id))) : undefined)
         : await chat.post(room.id, text, quote, files.ids, paused && anyway);
       // `@wake` names a chip here, though it's no machine or person to control.
       const reached = new Set((threadAgents ?? []).map((a) => sessionSlug(a.name)));
@@ -1218,7 +1218,7 @@ export function RoomCompose({
           ))}
         </ul>
       )}
-      {threadAgents && <ToRow agents={threadAgents} chosen={chosen} setChosen={setChosen} text={text} />}
+      {threadAgents && <ToRow agents={threadAgents} chosen={chosen} setChosen={setChosen} text={text} room={agents} />}
       <div class={canQuote ? "compose-box with-tools" : "compose-box"}>
         {quote && (
           <div class="thread-quote pending" data-quote-pending>

@@ -189,7 +189,7 @@ test("what's new in its thread is in the inbox, and Dismiss there reads it", asy
   await expect(alice.locator('[data-inbox-group="threads"]')).toHaveCount(0);
 
   // The list agrees, and so does control after a reload. (The inbox is no
-  // project's, so the bar's Issues there is Alice's own project's.)
+  // project's, so the bar's Triage there is Alice's own project's.)
   await platform(alice, issuePath.replace(/\/issues\/.*$/, "/issues"));
   await expect(alice.locator("[data-issue-row]")).toHaveCount(1, { timeout: 15_000 });
   await expect(alice.locator("[data-issue-row] [data-thread-unread], [data-platform-boards] [data-place-unread]")).toHaveCount(0);

@@ -1335,19 +1335,36 @@ async fn ask_daemon(app: &Platform, machine: &str, op: &arugula_control_wire::fo
     mention_answer(answer.as_ref().ok().and_then(|r| r.as_ref().ok()))
 }
 
-/// Asks a machine's daemon which of its sessions an agent may mention
-/// (#577). `None`: it is offline, didn't answer in time, or is too old to
-/// know the op.
+/// What a machine says of its sessions when it's asked.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum SessionsAnswer {
+    Said {
+        shared: bool,
+        sessions: Vec<arugula_control_wire::forge::MachineSession>,
+    },
+    /// It isn't on control's relay.
+    Offline,
+    /// It's there, or may be, and gave no list: it's too old to know the op,
+    /// has only just connected, or didn't answer in time.
+    NoWord,
+}
+
+/// Asks a machine's daemon which of its sessions an agent may mention (#577).
 async fn ask_sessions(
     app: &Platform,
     machine: &str,
     ask: arugula_control_wire::forge::AgentSessionsAsk,
-) -> Option<(bool, Vec<arugula_control_wire::forge::MachineSession>)> {
+) -> SessionsAnswer {
     use arugula_control_wire::forge::{DaemonOp, OpAnswer};
     let op = DaemonOp::AgentSessions(ask);
     match tokio::time::timeout(DAEMON_ANSWERS_WITHIN, app.hub.daemon_op(machine, &op)).await {
-        Ok(Ok(OpAnswer::Sessions { shared, sessions })) => Some((shared, sessions)),
-        _ => None,
+        Ok(Ok(OpAnswer::Sessions { shared, sessions })) => SessionsAnswer::Said { shared, sessions },
+        Ok(Ok(OpAnswer::Offline)) => SessionsAnswer::Offline,
+        Ok(Ok(OpAnswer::Unknown)) => SessionsAnswer::NoWord,
+        other => {
+            tracing::warn!(machine, answer = ?other.map(|a| a.map_err(|e| e.to_string())).ok(), "chat: no list of a machine's sessions");
+            SessionsAnswer::NoWord
+        }
     }
 }
 
@@ -2446,7 +2463,10 @@ pub(crate) async fn post_replied(
     }
     named.extend(extra.keyword.iter().cloned());
     let mut stored = named.clone();
-    stored.extend(agent_mentions(app, &facts, &room, &mut unreached).await?);
+    let machines_named = agent_mentions(app, &facts, &room, &mut unreached).await?;
+    // A reply that names a machine is for it, not also for the agent it answers.
+    let names_a_machine = !machines_named.is_empty();
+    stored.extend(machines_named);
     // Display only: an agent's session, not a person's word.
     let from_session = agent.and(b.session.as_deref().and_then(session_label));
     // A board's lead is mentioned by every post on its thread (#414).
@@ -2489,7 +2509,7 @@ pub(crate) async fn post_replied(
             }
         }
     }
-    let replying_to = if to.is_some() { None } else { replying_to_agent(app, &room, b.parent)? };
+    let replying_to = if to.is_some() || names_a_machine { None } else { replying_to_agent(app, &room, b.parent)? };
     let chain = if agent.is_some() { agent_chain(app, &room, b.parent)? + 1 } else { 0 };
     let at = now_ms();
     let seq = app.db.add_chat_message(

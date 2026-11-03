@@ -140,6 +140,9 @@ never compiles the daemon, the mux or Ghostty: build them with
   the platform's broker settles hosted calls at it, and the daemon estimates
   what a Claude Code session cost with it (#398).
 - `crates/testkit`: the harness for the daemon's integration tests.
+- `native/ios`: the iPhone app (SwiftUI on `native/core`, aru-132). `just
+  native-phone DEVICE` signs and installs it from a Mac; `ARUGULA_NATIVE_SIM_HOST=MAC
+  just testnet test control native-sim` taps through it on a simulator.
 - `native/core`: what native clients share (signing, channels, panes, the
   terminal; aru-132). Its own workspace, outside `crates/` so it isn't a hub
   input. `just native-check`, and `just native-ios` on a Mac.

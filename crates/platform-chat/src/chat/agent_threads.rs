@@ -31,8 +31,8 @@ use axum::{
 };
 
 use super::{
-    Facts, J, MAX_PAGE, PAGE, Shower, agent_object_room, agent_room, agent_scope, ask_sessions, files, gate, hears,
-    in_team, listed_as, objects, pins, post_as, reactions, room_agents, rooms_seen, search_in, threads,
+    Facts, J, MAX_PAGE, PAGE, SessionsAnswer, Shower, agent_object_room, agent_room, agent_scope, ask_sessions, files,
+    gate, hears, in_team, listed_as, objects, pins, post_as, reactions, room_agents, rooms_seen, search_in, threads,
 };
 use crate::{
     Platform,
@@ -320,8 +320,8 @@ pub async fn machine_sessions(
     let from_session = q.from_session.filter(|_| target.machine == d.daemon);
     let ask = arugula_control_wire::forge::AgentSessionsAsk { room: room.id.clone(), from_session, only: vec![] };
     let (offline, shared, sessions) = match ask_sessions(&app, &target.machine, ask).await {
-        Some((shared, sessions)) => (false, shared, sessions),
-        None => (true, true, vec![]),
+        SessionsAnswer::Said { shared, sessions } => (false, shared, sessions),
+        SessionsAnswer::Offline | SessionsAnswer::NoWord => (true, true, vec![]),
     };
     Ok(Json(AgentMachineSessions { machine_name: target.machine_name, offline, shared, sessions }))
 }

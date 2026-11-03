@@ -6,6 +6,11 @@ license = "MIT OR Apache-2.0"
 description = "What Arugula's native clients share: signing, encrypted channels, pane streams and the terminal"
 publish = false
 
+[lib]
+# rlib for the probe and the smoke test; staticlib for the iPhone app, which
+# links it through its arugula_core.h.
+crate-type = ["rlib", "staticlib"]
+
 [dependencies]
 anyhow = "1"
 arugula-e2e = { path = "../../crates/e2e" }

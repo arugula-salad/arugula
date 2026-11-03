@@ -60,7 +60,8 @@ pub struct Link {
     out: mpsc::Sender<Out>,
     wake: Arc<UnixStream>,
     next: AtomicU32,
-    pub events: mpsc::Receiver<Event>,
+    /// What the machine sends, for one reader at a time.
+    pub events: std::sync::Mutex<mpsc::Receiver<Event>>,
 }
 
 /// A machine's certificate, by the account's own devices: `id` has to chain
@@ -85,6 +86,12 @@ fn ensure_device(trusted: &arugula_e2e::cert::Trusted, me: &str) -> Result<()> {
 impl Link {
     /// Through control's relay to the machine `id`.
     pub fn open(c: &Control, id: &str) -> Result<Self> {
+        Self::open_notifying(c, id, || {})
+    }
+
+    /// The same, calling `notify` from the socket's thread each time an event
+    /// is queued: a UI's cue to look, with no polling.
+    pub fn open_notifying(c: &Control, id: &str, notify: impl Fn() + Send + 'static) -> Result<Self> {
         let cert = machine_cert(c, id)?;
         let path = format!("/api/relay/c/{id}");
         let auth = request_auth(&c.keys, "GET", &path, b"");
@@ -132,11 +139,12 @@ impl Link {
         wake.set_nonblocking(true)?;
         woken.set_nonblocking(true)?;
         std::thread::spawn(move || {
-            let why =
-                io(ws, channel, rx, woken, &events_tx).map_or_else(|e| format!("{e:#}"), |()| "closed".to_owned());
+            let why = io(ws, channel, rx, woken, &events_tx, &notify)
+                .map_or_else(|e| format!("{e:#}"), |()| "closed".to_owned());
             let _ = events_tx.send(Event::Closed(why));
+            notify();
         });
-        Ok(Self { out, wake: Arc::new(wake), next: AtomicU32::new(1), events })
+        Ok(Self { out, wake: Arc::new(wake), next: AtomicU32::new(1), events: std::sync::Mutex::new(events) })
     }
 
     fn put(&self, o: Out) -> Result<()> {
@@ -159,6 +167,11 @@ impl Link {
             acks: false,
             kitty_keys: false,
         })
+    }
+
+    /// The view's size in cells, when it changes.
+    pub fn view(&self, tab: u32, pane: u32, cols: u16, rows: u16) -> Result<()> {
+        self.send(&ClientMsg::View { tab, cols, rows, zoom: Some(pane), claim: true, typed: false, asked: false })
     }
 
     pub fn input(&self, pane: u32, data: &[u8]) -> Result<()> {
@@ -192,6 +205,7 @@ fn io(
     rx: mpsc::Receiver<Out>,
     mut woken: UnixStream,
     events: &mpsc::Sender<Event>,
+    notify: &dyn Fn(),
 ) -> Result<()> {
     let mut waiting = std::collections::HashMap::new();
     loop {
@@ -233,6 +247,7 @@ fn io(
                         Msg::Text(t) => {
                             if let Some(e) = server_event(&t) {
                                 let _ = events.send(e);
+                                notify();
                             }
                         }
                         Msg::Binary(b) => {
@@ -243,6 +258,7 @@ fn io(
                                     _ => continue,
                                 };
                                 let _ = events.send(e);
+                                notify();
                             }
                         }
                         Msg::Response { id, head, body } => {
