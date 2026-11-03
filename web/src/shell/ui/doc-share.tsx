@@ -129,12 +129,13 @@ function ShareState({ client, id, s }: { client: Client; id: PaneId; s: DocState
 docHooks.bar = (client, id, s) => <ShareState client={client} id={id} s={s} />;
 
 docHooks.state = (client, id, s: DocState) => {
-  // When it arrives, and each time it becomes shared or isn't.
+  // When it arrives, and each time it becomes shared or isn't, or its copy
+  // goes older or is updated: the bars and the dialog redraw then, not on every fill.
   const was = seen.get(id);
-  const now = s.shared ? "shared" : "not";
-  if (was === now) return void linkWatchers.forEach((fn) => fn());
+  const now = `${s.shared ? "shared" : "not"}${s.shared_older ? "-older" : ""}`;
+  if (was === now) return;
   seen.set(id, now);
-  void refresh(client, id);
+  if (was?.split("-")[0] !== now.split("-")[0]) void refresh(client, id);
   linkWatchers.forEach((fn) => fn());
 };
 const seen = new Map<PaneId, string>();
@@ -294,7 +295,7 @@ function ShareDialog({ client, id, close }: { client: Client; id: PaneId; close:
             <button class="secondary" type="button" onClick={close}>
               Cancel
             </button>
-            <button class="secondary" type="button" data-doc-share-go disabled={busy} onClick={() => void confirm()}>
+            <button class="primary" type="button" data-doc-share-go disabled={busy} onClick={() => void confirm()}>
               Create link
             </button>
           </div>
