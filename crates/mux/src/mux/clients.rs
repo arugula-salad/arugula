@@ -148,6 +148,11 @@ impl Daemon {
                 self.soon();
             }
             ClientMsg::Follow { pane, on } => self.follow(client, pane, on),
+            ClientMsg::DismissNotice { key } => {
+                if who.is_owner() {
+                    self.clear_notice(&key);
+                }
+            }
             ClientMsg::BlockPatches => {
                 self.patched.insert(client, Default::default());
             }
@@ -626,8 +631,9 @@ impl Daemon {
                     })
                     .collect()
             });
-            let (machines, presence) =
-                people.entry(who.clone()).or_insert_with(|| (self.machines_for(&who), self.presence(&who)));
+            let (machines, presence, notices) = people
+                .entry(who.clone())
+                .or_insert_with(|| (self.machines_for(&who), self.presence(&who), self.notices_for(&who)));
             let Some(sent) = self.sent.get_mut(&client) else { continue };
             let mut delta = Delta::default();
             for (id, v) in view.iter() {
@@ -666,6 +672,10 @@ impl Daemon {
                 sent.presence = presence.clone();
                 delta.presence = Some(presence.clone());
             }
+            if sent.notices != *notices {
+                sent.notices = notices.clone();
+                delta.notices = Some(notices.clone());
+            }
             if !delta.is_empty()
                 && let Some(c) = self.clients.get(&client)
             {
@@ -684,6 +694,7 @@ impl Daemon {
             panes: HashMap::new(),
             machines: state.machines.clone(),
             presence: state.presence.clone(),
+            notices: state.notices.clone(),
         };
         let mut panes = Vec::with_capacity(state.panes.len());
         for p in &state.panes {
@@ -785,6 +796,11 @@ impl Daemon {
         r
     }
 
+    /// The notices `who` sees: the owner's alone (#551).
+    pub(super) fn notices_for(&self, who: &Principal) -> Vec<arugula_proto::Notice> {
+        if who.is_owner() { self.notices_list() } else { Vec::new() }
+    }
+
     pub(super) fn presence(&self, viewer: &Principal) -> Vec<Presence> {
         let mut out: Vec<Presence> = self
             .clients
@@ -877,6 +893,7 @@ impl Daemon {
     pub(super) fn state_for(&self, who: &Principal) -> State {
         let mut st = self.state();
         st.presence = self.presence(who);
+        st.notices = self.notices_for(who);
         if who.is_owner() {
             return st;
         }

@@ -92,6 +92,7 @@ mod machines;
 mod mcp;
 mod memory;
 mod mention_agent_block;
+mod mention_card;
 mod pipe;
 mod program_status;
 mod prompt;

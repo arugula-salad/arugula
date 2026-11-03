@@ -1149,6 +1149,9 @@ async fn run(mut args: RunArgs, mut kept: std::collections::HashMap<String, pane
     );
     // Control hears where the turns that took teammates' mentions are (#540).
     crate::task::spawn(agent_mentions::keep_telling(app.clone(), turns_rx));
+    // What the inbox still holds from before a restart is a card again (#551).
+    let reraised = app.clone();
+    crate::task::spawn(async move { agent_mentions::reraise(&reraised).await });
     // Labs' guest ssh server, and (M78) tasks for this machine's agents
     // that a restart interrupted.
     lab_hooks::labs().start(&app);
