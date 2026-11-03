@@ -3,7 +3,7 @@
   "commit": "56c38df66bef658a5d136b74ee5e6b08a16af05b",
   "branch": "main",
   "state": "pending",
-  "at": "2026-11-03T01:17:57Z",
+  "at": "2026-11-03T01:34:06Z",
   "phases": {
     "lint": {
       "verdict": "unbuilt",
@@ -13,14 +13,18 @@
       "coveredBy": "8b17683ad63eaf5726f122e27850c4d0faf144fd"
     },
     "build": {
-      "verdict": "pending",
+      "verdict": "unbuilt",
       "build": "newest",
-      "runs": []
+      "runs": [],
+      "reason": "superseded",
+      "coveredBy": "ade3c0718fdc7fd79c126814819bf98de0acc4f1"
     },
     "test": {
-      "verdict": "pending",
+      "verdict": "unbuilt",
       "build": "newest",
-      "runs": []
+      "runs": [],
+      "reason": "superseded",
+      "coveredBy": "ade3c0718fdc7fd79c126814819bf98de0acc4f1"
     },
     "e2e": {
       "verdict": "pending",
@@ -28,14 +32,18 @@
       "runs": []
     },
     "claims": {
-      "verdict": "pending",
+      "verdict": "unbuilt",
       "build": "newest",
-      "runs": []
+      "runs": [],
+      "reason": "superseded",
+      "coveredBy": "ade3c0718fdc7fd79c126814819bf98de0acc4f1"
     },
     "macos": {
-      "verdict": "pending",
+      "verdict": "unbuilt",
       "build": "newest",
-      "runs": []
+      "runs": [],
+      "reason": "superseded",
+      "coveredBy": "ade3c0718fdc7fd79c126814819bf98de0acc4f1"
     },
     "windows": {
       "verdict": "unbuilt",
