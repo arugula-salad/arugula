@@ -96,6 +96,9 @@ pub const AGENT_BOARD: &str = "/api/daemon/boards/{id}";
 pub const AGENT_BOARD_CLOSE: &str = "/api/daemon/boards/{id}/close";
 /// `POST`, no body: open a closed board again.
 pub const AGENT_BOARD_REOPEN: &str = "/api/daemon/boards/{id}/reopen";
+/// `POST` [`LeadBoard`]: the calling session takes the board's lead, or the
+/// board's lead is released (#414).
+pub const AGENT_BOARD_LEAD: &str = "/api/daemon/boards/{id}/lead";
 /// `PUT` [`PutEntry`]: add a row or a group, or change a row's note or
 /// pointer (a row the agent's machine added, for a pointer) or a group's
 /// title.
@@ -140,6 +143,11 @@ pub fn agent_board_close(id: &str) -> String {
 /// [`AGENT_BOARD_REOPEN`] for `id`.
 pub fn agent_board_reopen(id: &str) -> String {
     format!("/api/daemon/boards/{id}/reopen")
+}
+
+/// [`AGENT_BOARD_LEAD`] for `id`.
+pub fn agent_board_lead(id: &str) -> String {
+    format!("/api/daemon/boards/{id}/lead")
 }
 
 /// `POST` [`NewAsk`]: an agent asks a person a question on a row
@@ -291,6 +299,9 @@ pub const CLAIMED: &str = "claimed";
 
 /// The longest title, in characters, and the longest note: one line each.
 pub const TITLE_MAX: usize = 120;
+/// A lead session's name, in characters.
+pub const LEAD_SESSION_MAX: usize = 120;
+
 /// A board's goal or done note, in characters.
 pub const GOAL_MAX: usize = 2000;
 pub const NOTE_MAX: usize = 280;
@@ -746,6 +757,26 @@ pub struct Board {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "ts", ts(optional))]
     pub source: Option<BoardSource>,
+    /// The session that leads the board (#414): a post on the board's thread
+    /// reaches it. Absent when no session does.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub lead: Option<BoardLead>,
+}
+
+/// The session that leads a board: the machine it runs on and its name there,
+/// as that machine's daemon matches it (#414).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct BoardLead {
+    pub machine: String,
+    /// The machine's name now; empty while it can't be told.
+    #[serde(default)]
+    pub machine_name: String,
+    pub session: String,
+    /// When the session took the lead.
+    pub at: u64,
 }
 
 /// The epic a board follows: its children are the board's rows, and the
@@ -845,6 +876,25 @@ pub struct NewBoard {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "ts", ts(optional))]
     pub goal: Option<String>,
+    /// With an agent's write: the session that makes it leads the new board
+    /// (#414). A person's write ignores it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub lead_session: Option<String>,
+}
+
+/// `POST` to [`AGENT_BOARD_LEAD`]: the calling session takes the board's
+/// lead (`session`, its name on its machine), or with `release` the lead is
+/// cleared, by the machine of the session that leads or by a person.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct LeadBoard {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub session: Option<String>,
+    #[serde(default)]
+    pub release: bool,
 }
 
 /// Where an item is in its own life, the same words for every source
@@ -1985,8 +2035,14 @@ fn lane_text<'a>(out: &mut String, title: &str, rows: impl Iterator<Item = &'a R
     }
 }
 
+/// The machine a board's lead runs on, as people read it.
+fn machine_label(l: &BoardLead) -> &str {
+    if l.machine_name.is_empty() { &l.machine } else { &l.machine_name }
+}
+
 /// A board as plain text, no wider than [`TEXT_WIDTH`] columns: before the
-/// lanes, `Goal:` with the goal's first line, `Issues` with the board's
+/// lanes, `Goal:` with the goal's first line, `Led by` the session that leads
+/// it when one does, `Issues` with the board's
 /// progress when it has any, and `Done:` with the done note's first line
 /// when it is closed, and `Ready (n):` with the labels of the rows that can
 /// start now when there are any (#403). Then each lane is its title and how many rows it holds
@@ -2011,6 +2067,9 @@ pub fn render(view: &BoardView) -> String {
     let b = &view.board;
     if !first(&b.goal).is_empty() {
         out += &format!("{}\n", fit(&format!("Goal: {}", first(&b.goal)), TEXT_WIDTH));
+    }
+    if let Some(l) = &b.lead {
+        out += &format!("{}\n", fit(&format!("Led by {} on {}", l.session, machine_label(l)), TEXT_WIDTH));
     }
     if !view.docs.is_empty() {
         let docs: Vec<&str> = view.docs.iter().map(|d| d.title.as_str()).collect();
@@ -2366,6 +2425,25 @@ mod tests {
         );
         assert_eq!(text, want);
         assert!(text.lines().all(|l| l.chars().count() <= TEXT_WIDTH), "{text}");
+    }
+
+    /// The session that leads a board is named under its goal, by its
+    /// machine's name (its id while that is unknown), and a board nobody
+    /// leads renders as before (#414).
+    #[test]
+    fn the_text_says_who_leads_the_board() {
+        let mut v = view(lanes(vec![(Lane::Next, vec![row(Pointer::None, Lane::Next, "x")])]));
+        let plain = render(&v);
+        v.board.goal = "Ship it".into();
+        v.board.lead =
+            Some(BoardLead { machine: "m1".into(), machine_name: "geek".into(), session: "ux".into(), at: 5 });
+        let text = render(&v);
+        assert!(text.starts_with("Goal: Ship it\nLed by ux on geek\nNext "), "{text}");
+        v.board.lead.as_mut().unwrap().machine_name.clear();
+        assert!(render(&v).contains("Led by ux on m1\n"));
+        v.board.lead = None;
+        v.board.goal.clear();
+        assert_eq!(render(&v), plain);
     }
 
     /// A board's goal, issue progress and done note head its text, and a

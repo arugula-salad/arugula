@@ -3269,6 +3269,14 @@ clients = ["daemon"]
 note = "Opens a closed board again, keeping its done note (`boards.write`)."
 
 [[route]]
+method = "POST"
+path = "/api/daemon/boards/{id}/lead"  # wire::boards::AGENT_BOARD_LEAD
+process = "platform"
+auth = "daemon"
+clients = ["daemon"]
+note = "The calling session takes the board's lead, or with `release` the lead is cleared by the lead's own machine (`boards.write`); a post on the board's thread then reaches the lead's session (#414)."
+
+[[route]]
 method = "PUT"
 path = "/api/daemon/boards/{id}/entries"  # wire::boards::AGENT_BOARD_ENTRIES
 process = "platform"

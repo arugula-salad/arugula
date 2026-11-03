@@ -1108,6 +1108,9 @@ struct Told<'a> {
     sessions: Vec<(String, String)>,
     /// With an agent's post: the session that wrote it (#575).
     from_session: Option<String>,
+    /// On a board's thread: the machine and session that lead the board
+    /// (#414), when this post is for them.
+    lead: Option<(String, String)>,
 }
 
 /// One agent a new message is for, ready to be told (#394, #419).
@@ -1119,9 +1122,53 @@ struct Tell {
     op: arugula_control_wire::forge::DaemonOp,
 }
 
-/// The op that tells `a`'s daemon about `told`. Only a machine the text
-/// named by `@name/session` is given a session (#429).
-fn mention_op(told: &Told<'_>, a: &ChatRoomAgent, mentioned: bool) -> arugula_control_wire::forge::DaemonOp {
+/// The session leading the board whose thread `room` is (#414): its machine
+/// and the session's name there. None for any other room, or a board nobody
+/// leads.
+fn board_lead(app: &Platform, room: &Room) -> Option<(String, String)> {
+    let board = room.target.as_deref().filter(|t| room.kind == "object" && t.starts_with("brd_"))?;
+    match app.db.board(board) {
+        Ok(b) => b?.lead.map(|l| (l.machine, l.session)),
+        Err(e) => {
+            tracing::warn!(error = %e, "chat: reading a board's lead");
+            None
+        }
+    }
+}
+
+/// The session `a`'s daemon is told to give `told` to: the one the text names
+/// (`@geek/ux`) when `a` is mentioned, else the board's lead's when `a`'s
+/// machine is the one that leads it (#394, #414, #429). None: the daemon works
+/// it out.
+fn session_for(told: &Told<'_>, a: &ChatRoomAgent, mentioned: bool) -> Option<String> {
+    let named =
+        told.sessions.iter().find(|(m, _)| mentioned && *m == a.machine_name.to_lowercase()).map(|(_, s)| s.clone());
+    named.or_else(|| told.lead.as_ref().filter(|(m, _)| *m == a.machine).map(|(_, s)| s.clone()))
+}
+
+/// The machine and session to tell of a post on a board's thread (#414): those
+/// that lead the board, if `room` is its thread, unless the post is the lead's
+/// own (an agent of its machine, as that session or as one that can't be told
+/// apart from it) or its machine can't read the thread.
+async fn lead_told(
+    app: &Platform,
+    facts: &Facts,
+    room: &Room,
+    by: Option<&AgentPrincipal>,
+    from_session: Option<&str>,
+) -> anyhow::Result<Option<(String, String)>> {
+    let Some((machine, session)) = board_lead(app, room) else { return Ok(None) };
+    let own = by.is_some_and(|b| b.machine == machine)
+        && from_session.is_none_or(|f| f.to_lowercase() == session.to_lowercase());
+    if own {
+        return Ok(None);
+    }
+    let agents = room_agents(app, facts, room).await?;
+    Ok(agents.iter().any(|a| a.machine == machine && hears(a)).then_some((machine, session)))
+}
+
+/// The op that tells a daemon about `told`, for `session` ([`session_for`]).
+fn mention_op(told: &Told<'_>, session: Option<String>) -> arugula_control_wire::forge::DaemonOp {
     use arugula_control_wire::forge::{AgentMention, DaemonOp};
     DaemonOp::AgentMention(AgentMention {
         room: told.room.id.clone(),
@@ -1131,11 +1178,7 @@ fn mention_op(told: &Told<'_>, a: &ChatRoomAgent, mentioned: bool) -> arugula_co
         parent: told.parent,
         author: told.author.clone(),
         text: told.text.to_owned(),
-        session: told
-            .sessions
-            .iter()
-            .find(|(m, _)| mentioned && *m == a.machine_name.to_lowercase())
-            .map(|(_, s)| s.clone()),
+        session,
         from_session: told.from_session.clone(),
     })
 }
@@ -1152,6 +1195,10 @@ fn mention_op(told: &Told<'_>, a: &ChatRoomAgent, mentioned: bool) -> arugula_co
 /// machine, and no agent's post is told to a machine more than
 /// `AGENT_TOLD_MAX` times in a thread in `AGENT_TOLD_WINDOW_MS`. A
 /// mention that isn't told says `chain`.
+///
+/// A post on a board's thread is also for the session that leads the board
+/// (#414, `told.lead`): its machine is stored as mentioned by [`post_replied`]
+/// and told, naming the session.
 async fn plan_tells(
     app: &Platform,
     facts: &Facts,
@@ -1216,7 +1263,11 @@ async fn plan_tells(
         if held {
             continue;
         }
-        out.push(Tell { machine: a.machine.clone(), mentioned: is_mentioned, op: mention_op(told, a, is_mentioned) });
+        out.push(Tell {
+            machine: a.machine.clone(),
+            mentioned: is_mentioned,
+            op: mention_op(told, session_for(told, a, is_mentioned)),
+        });
     }
     out
 }
@@ -1381,10 +1432,10 @@ async fn mention_to_resend(
     s: &MentionStatus,
 ) -> Result<arugula_control_wire::forge::DaemonOp, &'static str> {
     let m = app.db.chat_message(&s.room, s.seq).ok().flatten().filter(|m| m.deleted.is_none()).ok_or("no message")?;
+    let room = app.db.chat_room(&s.room).ok().flatten().filter(|r| r.archived.is_none()).ok_or("no room")?;
     if !m.mentions.iter().any(|x| *x == format!("{}{}", wire::AGENT_MENTION, s.machine)) {
         return Err("no longer mentioned");
     }
-    let room = app.db.chat_room(&s.room).ok().flatten().filter(|r| r.archived.is_none()).ok_or("no room")?;
     let facts = Facts::of(app, None, &[&room]).await.map_err(|_| "no facts")?;
     let agents = room_agents(app, &facts, &room).await.map_err(|_| "no agents")?;
     let a = agents
@@ -1406,8 +1457,9 @@ async fn mention_to_resend(
         text: &m.text,
         sessions: at_sessions(&without_code(&m.text)),
         from_session: m.agent.as_ref().and(m.agent_session.clone()),
+        lead: board_lead(app, &room),
     };
-    Ok(mention_op(&told, a, true))
+    Ok(mention_op(&told, session_for(&told, a, true)))
 }
 
 // ---------------------------------------------------------------- live
@@ -2337,6 +2389,19 @@ pub(crate) async fn post_replied(
     named.extend(extra.keyword.iter().cloned());
     let mut stored = named.clone();
     stored.extend(agent_mentions(app, &facts, &room, &mut unreached).await?);
+    // Display only: an agent's session, not a person's word.
+    let from_session = agent.and(b.session.as_deref().and_then(session_label));
+    // A board's lead is mentioned by every post on its thread (#414).
+    let lead = lead_told(app, &facts, &room, agent, from_session.as_deref()).await.unwrap_or_else(|e| {
+        tracing::warn!("couldn't work out a board's lead: {e:#}");
+        None
+    });
+    if let Some((machine, _)) = &lead {
+        let mention = format!("{}{machine}", wire::AGENT_MENTION);
+        if !stored.contains(&mention) {
+            stored.push(mention);
+        }
+    }
     // The reason is for the answer only: a post doesn't fail for want of it.
     let unreached_why = unreached_why(app, &facts, &room, &s.account, &unreached).await.unwrap_or_else(|e| {
         tracing::warn!(error = %e, "chat: why a mention reached nobody");
@@ -2344,8 +2409,6 @@ pub(crate) async fn post_replied(
     });
     let replying_to = replying_to_agent(app, &room, b.parent)?;
     let chain = if agent.is_some() { agent_chain(app, &room, b.parent)? + 1 } else { 0 };
-    // Display only: an agent's session, not a person's word.
-    let from_session = agent.and(b.session.as_deref().and_then(session_label));
     let at = now_ms();
     let seq = app.db.add_chat_message(
         &room.id,
@@ -2403,8 +2466,16 @@ pub(crate) async fn post_replied(
         Some(a) => format!("{}'s agent on {}", name_of(app, &s.account).await?, a.machine_name),
         None => name_of(app, &s.account).await?,
     };
-    let told =
-        Told { room: &room, seq, parent: b.parent, author: who, text, sessions: at_sessions(&plain), from_session };
+    let told = Told {
+        room: &room,
+        seq,
+        parent: b.parent,
+        author: who,
+        text,
+        sessions: at_sessions(&plain),
+        from_session,
+        lead,
+    };
     // The daemons are told after this returns (#419): an agent's mention
     // shows in its status line, not in `pushed` or `unreached`.
     let tells = plan_tells(app, &facts, &told, &stored, replying_to, agent, chain).await;
@@ -2684,6 +2755,13 @@ pub async fn edit(
     named.extend(extra.broadcast.iter().filter(|a| !named.contains(a)).cloned().collect::<Vec<_>>());
     named.extend(extra.keyword);
     named.extend(agent_mentions(&app, &facts, &room, &mut unreached).await?);
+    // The board's lead the post told stays mentioned (#414).
+    if let Some((machine, _)) = board_lead(&app, &room) {
+        let lead = format!("{}{machine}", wire::AGENT_MENTION);
+        if m.mentions.contains(&lead) && !named.contains(&lead) {
+            named.push(lead);
+        }
+    }
     app.db.edit_chat_message(&room.id, seq, text, &named, now_ms())?;
     app.chat.publish(&app.db, ChatLive::Changed { room: room.id.clone(), seq }, None);
     threads::announce(&app, &m);

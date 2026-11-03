@@ -321,13 +321,15 @@ fn link_ok(url: &str) -> Result<(), ApiError> {
     Ok(())
 }
 
-/// Name the machine on each board that an agent made or closed.
+/// Name the machine on each board that an agent made or closed, or whose
+/// lead runs there.
 async fn name_boards(app: &Platform, boards: &mut [wire::Board]) -> Result<(), ApiError> {
     let mut machines: Vec<String> = boards
         .iter()
         .flat_map(|b| [&b.created_by_agent, &b.closed_by_agent])
         .flatten()
         .map(|a| a.machine.clone())
+        .chain(boards.iter().filter_map(|b| b.lead.as_ref()).map(|l| l.machine.clone()))
         .collect();
     machines.sort();
     machines.dedup();
@@ -337,6 +339,9 @@ async fn name_boards(app: &Platform, boards: &mut [wire::Board]) -> Result<(), A
     let names = agent_names(app, &machines).await?;
     for a in boards.iter_mut().flat_map(|b| [&mut b.created_by_agent, &mut b.closed_by_agent]).flatten() {
         a.machine_name = names.get(&a.machine).map(|d| d.name.clone()).unwrap_or_default();
+    }
+    for l in boards.iter_mut().filter_map(|b| b.lead.as_mut()) {
+        l.machine_name = names.get(&l.machine).map(|d| d.name.clone()).unwrap_or_default();
     }
     Ok(())
 }
@@ -1079,9 +1084,49 @@ pub async fn create(
     let goal = new.goal.as_deref().map(|g| text_ok(g, "a goal")).transpose()?.unwrap_or("");
     let board = app
         .db
-        .create_board(&id, title, goal, by, now_ms(), wire::BOARDS_MAX)?
+        .create_board(&id, title, goal, by, session_ok(new.lead_session.as_deref())?, now_ms(), wire::BOARDS_MAX)?
         .ok_or_else(|| bad(&format!("a project has at most {} boards", wire::BOARDS_MAX)))?;
     read(app, by.account, &board.id).await
+}
+
+/// A session's name as a lead: trimmed, one line, at most
+/// [`wire::LEAD_SESSION_MAX`] characters. Empty is none.
+fn session_ok(session: Option<&str>) -> Result<Option<&str>, ApiError> {
+    let Some(s) = session.map(str::trim).filter(|s| !s.is_empty()) else { return Ok(None) };
+    if !one_line(s) || s.chars().count() > wire::LEAD_SESSION_MAX {
+        return Err(bad(&format!("a session's name is one line of at most {} characters", wire::LEAD_SESSION_MAX)));
+    }
+    Ok(Some(s))
+}
+
+/// The calling session takes a board's lead, or its lead is released
+/// (#414). Taking is an agent's: it names the session, and the machine is
+/// the one that signed. Releasing is for the lead's own machine or a
+/// person; releasing a board nobody leads changes nothing.
+pub async fn lead(app: &Platform, by: Actor<'_>, id: &str, l: &wire::LeadBoard) -> Result<wire::BoardView, ApiError> {
+    let board = board_place(app, by, id, true).await?;
+    if l.release {
+        if let (Some(machine), Some(lead)) = (by.agent, &board.lead)
+            && lead.machine != machine
+        {
+            return Err(err(
+                StatusCode::FORBIDDEN,
+                "only the machine of the session that leads this board, or a person, can release it",
+            ));
+        }
+        if board.lead.is_some() && !app.db.set_board_lead(id, None, now_ms())? {
+            return Err(no_board());
+        }
+    } else {
+        let (Some(machine), Some(session)) = (by.agent, session_ok(l.session.as_deref())?) else {
+            return Err(bad("a lead is a session of an agent's machine, and it has a name"));
+        };
+        if !app.db.set_board_lead(id, Some((machine, session)), now_ms())? {
+            return Err(no_board());
+        }
+    }
+    changed(app, &board.project, id);
+    read(app, by.account, id).await
 }
 
 /// A board with its zones and rows in order, as `account` may read it.

@@ -1305,6 +1305,17 @@ off` or the sharing settings in the web client (`sharing.json`); on by
 default. A reply under a thread's newest message, when that is a person's,
 tells no agent. Edits tell nobody.
 
+**A board's lead (#414).** A session leads a board when it makes it, or
+takes it with `board_write` `lead_board` (it needs a name, and `boards.write`);
+the board shows "Led by <session> on <machine>". Every post on the board's
+thread, at the top or in a reply, then reaches that session wherever it
+runs, the same way as a mention of its machine: control tells the machine's
+daemon and names the session, and the message is stored as mentioning the
+machine. An `@machine/session` in the post still wins, the machine needs
+`threads.read` over the board's project, and a lead that is offline shows
+`offline` on the post's status line. The lead isn't told its own posts. Its
+machine, or a person, lets go with `lead_board` and `release: true`.
+
 An agent lists the sessions of a teammate's machine it can `@machine/name`
 (#577) with `read_thread` and `machine`: control (`GET
 /api/daemon/chat/rooms/{room}/agents/{machine}/sessions`) checks that the

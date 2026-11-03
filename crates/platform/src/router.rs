@@ -130,6 +130,7 @@ fn routes() -> Routes {
         .route(boards::AGENT_BOARD, get(crate::boards::agent::get).patch(crate::boards::agent::edit))
         .route(boards::AGENT_BOARD_CLOSE, post(crate::boards::agent::close))
         .route(boards::AGENT_BOARD_REOPEN, post(crate::boards::agent::reopen))
+        .route(boards::AGENT_BOARD_LEAD, post(crate::boards::agent::lead))
         .route(boards::AGENT_BOARD_ENTRIES, put(crate::boards::agent::put))
         .route(boards::AGENT_BOARD_ENTRY, axum::routing::delete(crate::boards::agent::delete))
         .route(boards::AGENT_BOARD_ENTRY_MOVE, post(crate::boards::agent::move_entry))

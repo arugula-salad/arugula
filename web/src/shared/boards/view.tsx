@@ -488,6 +488,11 @@ function Epic({ b, act, id, write, view, platform }: { b: ProjectBoard; act: Act
           )}
         </>
       )}
+      {b.lead && (
+        <p class="dim" data-board-lead>
+          Led by {b.lead.session} on {b.lead.machine_name || b.lead.machine}
+        </p>
+      )}
       <DocsStrip view={view} act={act} id={id} write={write} platform={platform} />
       {b.created_by_agent && (
         <p class="dim" data-board-made-by>
