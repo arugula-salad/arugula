@@ -3,7 +3,7 @@
   "commit": "e06e30dec80fb08d1ee9c05d87fa0480f06cb40f",
   "branch": "main",
   "state": "pending",
-  "at": "2026-11-03T06:47:01Z",
+  "at": "2026-11-03T06:48:09Z",
   "phases": {
     "lint": {
       "verdict": "pending",
@@ -49,7 +49,7 @@
         {
           "name": "workspace",
           "id": 125769186132,
-          "conclusion": null,
+          "conclusion": "failure",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/41591386817/job/125769186132"
         },
         {
@@ -79,6 +79,10 @@
     "workspace-clippy": {
       "run": 125769186057,
       "at": "2026-11-03T06:47:01Z"
+    },
+    "workspace": {
+      "run": 125769186132,
+      "at": "2026-11-03T06:48:09Z"
     }
   }
 }
