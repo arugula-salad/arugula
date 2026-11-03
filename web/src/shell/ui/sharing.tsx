@@ -94,7 +94,7 @@ function SharingDialog({ client, close }: { client: Client; close: () => void })
         </label>
       )}
       <p class="hint">
-        A teammate's <code>@</code>-mention of this machine in a thread, or a reply to one of its agents, is handed to the agent's
+        A teammate's <code>@</code>-mention of this machine in a thread, or a person's reply to one of its agents, is handed to the agent's
         session as a message from a teammate (never as your approval). On unless you turn it off here.
       </p>
       {sharing && (

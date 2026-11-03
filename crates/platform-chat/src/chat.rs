@@ -1078,21 +1078,16 @@ const SESSIONS_SINCE_MS: u64 = 7 * 24 * 60 * 60 * 1000;
 const SESSIONS_OFFERED: usize = 5;
 
 /// The machine whose agent wrote the newest message in the thread a new
-/// reply goes under (#394), and its session when it had one: the reply is
-/// for the machine. None for a post in the room, which has no one message it
+/// reply goes under (#394): a person's reply is for it. None for a post in the room, which has no one message it
 /// answers.
-fn replying_to_agent(
-    app: &Platform,
-    room: &Room,
-    parent: Option<i64>,
-) -> anyhow::Result<Option<(String, Option<String>)>> {
+fn replying_to_agent(app: &Platform, room: &Room, parent: Option<i64>) -> anyhow::Result<Option<String>> {
     let Some(parent) = parent else { return Ok(None) };
     let (newest, _) = app.db.chat_thread_messages(&room.id, parent, Page::Newest, 1)?;
     let last = match newest.into_iter().next() {
         Some(m) => Some(m),
         None => app.db.chat_message(&room.id, parent)?,
     };
-    Ok(last.and_then(|m| Some((m.agent?, m.agent_session))))
+    Ok(last.and_then(|m| m.agent))
 }
 
 /// The longest root line a mention carries (#580), in characters.
@@ -1127,7 +1122,7 @@ fn agent_chain(app: &Platform, room: &Room, parent: Option<i64>) -> anyhow::Resu
 }
 
 /// An agent's post that makes this many agents' posts in a row in a thread
-/// isn't told to its own machine's agents (#575): they restart with a
+/// isn't told to any machine's agents (#575, #642): they restart with a
 /// person's message.
 const CHAIN_LIMIT: u32 = 4;
 
@@ -1227,8 +1222,8 @@ fn mention_op(told: &Told<'_>, session: Option<String>) -> arugula_control_wire:
 ///
 /// An agent's post (#575) may be for its own machine; the daemon keeps it
 /// from the session that wrote it. `chain` is the agents' posts in a row it
-/// ends (0 for a person's): at [`CHAIN_LIMIT`] it isn't told to its own
-/// machine, and no agent's post is told to a machine more than
+/// ends (0 for a person's): at [`CHAIN_LIMIT`] it's told to no machine
+/// (#642) but a board's lead elsewhere, and no agent's post is told to a machine more than
 /// `AGENT_TOLD_MAX` times in a thread in `AGENT_TOLD_WINDOW_MS`. A
 /// mention that isn't told says `chain`.
 ///
@@ -1240,21 +1235,19 @@ async fn plan_tells(
     facts: &Facts,
     told: &Told<'_>,
     stored: &[String],
-    replying_to: Option<(String, Option<String>)>,
+    replying_to: Option<String>,
     by: Option<&AgentPrincipal>,
     chain: u32,
 ) -> Vec<Tell> {
     let mentioned: Vec<&str> = stored.iter().filter_map(|m| m.strip_prefix(wire::AGENT_MENTION)).collect();
     let mut want: Vec<&str> = mentioned.clone();
-    if let Some((machine, session)) = &replying_to {
-        // A reply under its own machine's message is for another session of
-        // it, so both have to be known and differ; with none to tell them
-        // apart, an agent's talk in its own thread is for no one.
-        let own = by.is_some_and(|b| b.machine == *machine)
-            && !(told.from_session.is_some() && session.is_some() && told.from_session != *session);
-        if !own {
-            want.push(machine);
-        }
+    // A person's reply is for the agent it answers. An agent's (#642) is for
+    // no one it doesn't name, or two agents could keep each other going
+    // without either having been asked to.
+    if by.is_none()
+        && let Some(machine) = &replying_to
+    {
+        want.push(machine);
     }
     want.sort();
     want.dedup();
@@ -1273,10 +1266,13 @@ async fn plan_tells(
     {
         let is_mentioned = mentioned.contains(&a.machine.as_str());
         let root = told.parent.unwrap_or(told.seq);
-        let held = by.is_some_and(|b| {
-            (b.machine == a.machine && chain >= CHAIN_LIMIT)
-                || !app.chat.agent_told(&told.room.id, root, &a.machine, now_ms())
-        });
+        // A board's lead hears its agents' reports from other machines
+        // however many come in a row (#414); the rate cap still holds it.
+        let leads_from_afar =
+            told.lead.as_ref().is_some_and(|(m, _)| *m == a.machine) && by.is_some_and(|b| b.machine != a.machine);
+        let held = by.is_some()
+            && ((chain >= CHAIN_LIMIT && !leads_from_afar)
+                || !app.chat.agent_told(&told.room.id, root, &a.machine, now_ms()));
         // A reply to its agent has a status too (#580): that's how a read
         // of unread replies knows which no session took yet.
         {
