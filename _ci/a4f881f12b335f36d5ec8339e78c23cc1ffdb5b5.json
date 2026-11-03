@@ -3,7 +3,7 @@
   "commit": "a4f881f12b335f36d5ec8339e78c23cc1ffdb5b5",
   "branch": "main",
   "state": "pending",
-  "at": "2026-11-03T07:56:42Z",
+  "at": "2026-11-03T07:57:40Z",
   "phases": {
     "lint": {
       "verdict": "pending",
@@ -73,7 +73,7 @@
         {
           "name": "e2e (1)",
           "id": 125793175445,
-          "conclusion": null,
+          "conclusion": "success",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/41598708616/job/125793175445"
         },
         {
@@ -97,7 +97,7 @@
         {
           "name": "e2e (2)",
           "id": 125793175291,
-          "conclusion": null,
+          "conclusion": "success",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/41598708616/job/125793175291"
         },
         {
@@ -115,31 +115,31 @@
         {
           "name": "e2e (5)",
           "id": 125793175282,
-          "conclusion": null,
+          "conclusion": "success",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/41598708616/job/125793175282"
         },
         {
           "name": "e2e (6)",
           "id": 125793175430,
-          "conclusion": null,
+          "conclusion": "success",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/41598708616/job/125793175430"
         },
         {
           "name": "e2e (7)",
           "id": 125793175210,
-          "conclusion": null,
+          "conclusion": "success",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/41598708616/job/125793175210"
         },
         {
           "name": "e2e (8)",
           "id": 125793175299,
-          "conclusion": null,
+          "conclusion": "success",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/41598708616/job/125793175299"
         },
         {
           "name": "e2e (9)",
           "id": 125793175311,
-          "conclusion": null,
+          "conclusion": "success",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/41598708616/job/125793175311"
         }
       ]
