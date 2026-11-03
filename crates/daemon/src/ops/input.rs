@@ -93,6 +93,11 @@ impl Handle for PaneAttention {
 /// `authz` made that check.
 impl Handle for PaneMentions {
     async fn handle(cx: &Cx<'_>, id: PaneId, req: MentionsRequest) -> Result<Empty, OpError> {
+        // Silence is the owner's alone, not an agent's on the owner's CLI
+        // (which could un-silence its own pane).
+        if cx.agent_or_guest() {
+            return Err(OpError::Forbidden("only this machine's owner silences or allows mentions".into()));
+        }
         match cx.app.mux.api(|r| Api::Mentions(id, req.on, r)).await {
             Some(true) => Ok(Empty {}),
             _ => Err(OpError::NoPane(id)),

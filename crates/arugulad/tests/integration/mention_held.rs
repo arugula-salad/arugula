@@ -145,7 +145,18 @@ fn a_mention_for_a_session_without_hooks_is_held_and_only_the_owners_deliver_typ
     assert!(!typed(&root).contains("message 8"), "{}", typed(&root));
 
     // Silenced: not reached, no card, and the sender is told which.
+    // An agent on the owner's CLI can neither silence nor allow.
+    for on in [false, true] {
+        let body = json!({ "on": on }).to_string();
+        let (status, _, text) = d.tcp("POST", &format!("/api/panes/{pane}/mentions"), &agent, Some(&body));
+        assert_eq!(status, 403, "on={on}: {text}");
+        assert_eq!(info(&d, pane)["mentions_off"], Value::Null, "{text}");
+    }
     d.post(&format!("/api/panes/{pane}/mentions"), json!({ "on": false }));
+    let body = json!({ "on": true }).to_string();
+    let (status, _, text) = d.tcp("POST", &format!("/api/panes/{pane}/mentions"), &agent, Some(&body));
+    assert_eq!(status, 403, "{text}");
+    assert_eq!(info(&d, pane)["mentions_off"], true, "an agent can't un-silence its pane");
     assert_eq!(info(&d, pane)["mentions_off"], true);
     f.outbox.lock().unwrap().push(mention("m3", 9));
     d.wait_for("the daemon's answer", || answer(&f, "m3").is_some());
