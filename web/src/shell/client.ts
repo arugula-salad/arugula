@@ -985,6 +985,12 @@ export class Client {
     return this.api("/api/attention/act", req, "couldn't do that");
   }
 
+  /** Take a machine-level notice away (#551): the owner opened or dismissed
+   * it. Every client sees it go. */
+  dismissNotice(key: string) {
+    this.send({ type: "dismiss_notice", key });
+  }
+
   paneOp(pane: PaneId, op: PaneOp) {
     this.send({ type: "pane", pane, op });
   }
@@ -1366,6 +1372,7 @@ export class Client {
       panes: [...byId.values()].sort((a, b) => a.id - b.id),
       machines: d.machines ?? old.machines,
       presence: d.presence ?? old.presence,
+      notices: d.notices ?? old.notices,
     };
     if (added || d.gone?.length) return this.applyState(state, false);
     this.state = state;

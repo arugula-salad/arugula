@@ -55,6 +55,8 @@ impl arugulad_base::features::Feature for Docs {
     fn with_control(&self, control: &Arc<control::Control>) {
         // Doc blocks share through control (#1066).
         docs::link::init(control.clone());
+        // ...and are copied up to the platform (#418).
+        docs::copies::start(control.clone());
     }
 
     fn kinds(&self, kinds: &mut block::BlockKinds, _cx: &arugulad_base::features::KindsCx) {

@@ -49,7 +49,7 @@ export type ActResult = { pane: number, ok: boolean, error?: string, };
 /**
  * Something done about a reason (`POST /api/attention/act`).
  */
-export type Action = "allow" | "deny" | "answer" | "dismiss" | "continue" | "accept" | "reject" | "rerun" | "expire";
+export type Action = "allow" | "deny" | "answer" | "dismiss" | "continue" | "accept" | "reject" | "rerun" | "expire" | "deliver";
 
 /**
  * How much a pane prints (M23).
@@ -970,7 +970,7 @@ export type ChatLive = { "type": "hello", stream: string, } | { "type": "message
 /**
  * How far a [`ChatMentionStatus`] has got.
  */
-export type ChatMentionState = "sending" | "delivered" | "fell_back" | "waiting" | "queued" | "no_such_session" | "offline" | "answered" | "chain" | "working" | "read";
+export type ChatMentionState = "sending" | "delivered" | "fell_back" | "waiting" | "queued" | "silenced" | "no_such_session" | "offline" | "answered" | "chain" | "working" | "read" | "dropped";
 
 /**
  * Where a message's `@machine` mention got to (#502), as control knows it:
@@ -997,7 +997,11 @@ names?: Array<string>,
 /**
  * With `answered`: the number of the agent's reply.
  */
-reply?: number, };
+reply?: number, 
+/**
+ * With `dropped`: why (#613).
+ */
+why?: DropWhy, };
 
 /**
  * A message as the reader sees it.
@@ -1697,7 +1701,7 @@ kitty_keys?: boolean, } | { "type": "ack", pane: number, offset: number, } | { "
 /**
  * The person pressed "Use this window's size" (#1502).
  */
-asked?: boolean, } | { "type": "intent", id: number | null, intent: Intent, } | { "type": "pane", pane: number, op: PaneOp, } | { "type": "focus", pane: number | null, } | { "type": "ping", id: number, } | { "type": "subscribe", summary: boolean, } | { "type": "follow", pane: number, on: boolean, } | { "type": "block_patches" } | { "type": "hand", tools: Array<HandTool>, name?: string, } | { "type": "hand_reply", id: number, result?: unknown, error?: string, };
+asked?: boolean, } | { "type": "intent", id: number | null, intent: Intent, } | { "type": "pane", pane: number, op: PaneOp, } | { "type": "focus", pane: number | null, } | { "type": "dismiss_notice", key: string, } | { "type": "ping", id: number, } | { "type": "subscribe", summary: boolean, } | { "type": "follow", pane: number, on: boolean, } | { "type": "block_patches" } | { "type": "hand", tools: Array<HandTool>, name?: string, } | { "type": "hand_reply", id: number, result?: unknown, error?: string, };
 
 /**
  * A command the shell integration reported.
@@ -1812,7 +1816,11 @@ closed: boolean, };
  * `presence` are whole when present. Anything else (sessions, tabs, options,
  * roles) changes with a new `State`.
  */
-export type Delta = { panes?: Array<{ id: PaneId } & Partial<PaneInfo>>, gone?: Array<number>, machines?: Array<Machine> | null, presence?: Array<Presence> | null, };
+export type Delta = { panes?: Array<{ id: PaneId } & Partial<PaneInfo>>, gone?: Array<number>, machines?: Array<Machine> | null, presence?: Array<Presence> | null, 
+/**
+ * Whole when present, like `presence` (#551).
+ */
+notices?: Array<Notice> | null, };
 
 /**
  * Diagnostic counts: errors, warnings, information.
@@ -2000,6 +2008,11 @@ export type Driver = {
  * Principal id (`owner`, `tailnet:<login>`, `account:<id>`).
  */
 who: string, name: string, };
+
+/**
+ * Why a mention was dropped (#613).
+ */
+export type DropWhy = "stopped" | "exited";
 
 /**
  * Where to put something relative to a pane.
@@ -3311,6 +3324,36 @@ export type NewProjectDocSection = { heading: string, intent: string, markdown: 
 export type Node = { "type": "pane", pane: number, } | { "type": "split", id: number, dir: Dir, children: Array<Child>, };
 
 /**
+ * Attention that belongs to no pane (#551): the machine wants its owner for
+ * something no pane can show (a teammate's mention that no session took).
+ * Kept in the mux beside the panes' attention; the owner's `State` and
+ * `Delta`s carry it, and the web and the phone draw a card from it.
+ */
+export type Notice = { 
+/**
+ * One card per key: `mention:<room>`. Raised again, it updates.
+ */
+key: string, kind: NoticeKind, 
+/**
+ * When it was first raised.
+ */
+since_ms: number, 
+/**
+ * One line, for the latest: "<who> mentioned this machine in #room: <first line>".
+ */
+headline: string, 
+/**
+ * How many times it was raised since it last went ("2 mentions in #agents").
+ */
+count: number, 
+/**
+ * `mention`: the room to open (its id), and its name.
+ */
+room?: string, room_name?: string, };
+
+export type NoticeKind = "mention";
+
+/**
  * How much of a room reaches the reader's pushes, and how its unread shows
  * (#113).
  */
@@ -3677,6 +3720,11 @@ inbox?: boolean,
  * Getting started's "Use Claude Code with Arugula").
  */
 unhooked?: boolean, 
+/**
+ * The owner silenced teammates' agents' mentions for this session
+ * (#579): `arugula mentions off %N`. It lasts as long as the pane.
+ */
+mentions_off?: boolean, 
 /**
  * What Claude Code running in it says of its session from inside it
  * (#450, the arugula-live mod, through `arugula session-signal`): the
@@ -5072,7 +5120,11 @@ roles?: Array<[number, Role]> | null,
  * Who else is here and where they're looking (M13), within what this
  * client sees.
  */
-presence?: Array<Presence>, };
+presence?: Array<Presence>, 
+/**
+ * Attention that belongs to no pane (#551): the owner's alone.
+ */
+notices?: Array<Notice>, };
 
 export type TabView = { id: number, name: string | null, root: Node, cols: number, rows: number, owner: number | null, zoom: number | null, 
 /**
@@ -5566,6 +5618,7 @@ export const OPS = {
   "pane.followup": { method: "POST", path: "/api/panes/{id}/followup" },
   "pane.inbox": { method: "POST", path: "/api/panes/{id}/inbox" },
   "pane.keys": { method: "POST", path: "/api/panes/{id}/keys" },
+  "pane.mentions": { method: "POST", path: "/api/panes/{id}/mentions" },
   "pane.mouse": { method: "POST", path: "/api/panes/{id}/mouse" },
   "pane.nvim_help": { method: "POST", path: "/api/panes/{id}/nvim/help" },
   "pane.nvim_open": { method: "POST", path: "/api/panes/{id}/nvim" },

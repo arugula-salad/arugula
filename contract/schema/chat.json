@@ -146,6 +146,50 @@
       ],
       "type": "object"
     },
+    "AgentReplies": {
+      "description": "[`AGENT_REPLIES`]' answer: the threads, the one with the oldest unread\nreply first.",
+      "properties": {
+        "threads": {
+          "items": {
+            "$ref": "#/$defs/AgentReplyThread"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "threads"
+      ],
+      "type": "object"
+    },
+    "AgentReplyThread": {
+      "description": "One thread's unread replies (#580).",
+      "properties": {
+        "replies": {
+          "description": "The unread replies, oldest first, each with its mention status for\nthis machine.",
+          "items": {
+            "$ref": "#/$defs/ChatMessage"
+          },
+          "type": "array"
+        },
+        "room": {
+          "type": "string"
+        },
+        "room_name": {
+          "type": "string"
+        },
+        "root": {
+          "$ref": "#/$defs/ChatMessage",
+          "description": "The thread's first message."
+        }
+      },
+      "required": [
+        "room",
+        "room_name",
+        "root",
+        "replies"
+      ],
+      "type": "object"
+    },
     "AgentRoom": {
       "description": "A room as a machine's agents see it.",
       "properties": {
@@ -955,6 +999,11 @@
           "type": "string"
         },
         {
+          "const": "silenced",
+          "description": "The session it named (`asked`) is there, but its owner silenced\nmentions for it (#579): it waits in the machine's inbox.",
+          "type": "string"
+        },
+        {
           "const": "no_such_session",
           "description": "The session it named isn't there (`asked`), or is more than one:\nno other session got it, and it waits in the inbox. `names` are the\nones there are (#576).",
           "type": "string"
@@ -982,6 +1031,11 @@
         {
           "const": "read",
           "description": "That turn has ended (#540). An agent's reply, `answered`, usually\ncomes first and stays.",
+          "type": "string"
+        },
+        {
+          "const": "dropped",
+          "description": "The session dropped it (#613): `why` says how. Final, like\n`answered`, which it never replaces.",
           "type": "string"
         }
       ]
@@ -1027,6 +1081,17 @@
         },
         "state": {
           "$ref": "#/$defs/ChatMentionState"
+        },
+        "why": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/DropWhy"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "With `dropped`: why (#613)."
         }
       },
       "required": [
@@ -2548,6 +2613,21 @@
       ],
       "type": "object"
     },
+    "DropWhy": {
+      "description": "Why a mention was dropped (#613).",
+      "oneOf": [
+        {
+          "const": "stopped",
+          "description": "The person pressed stop while it waited in the session's queue.",
+          "type": "string"
+        },
+        {
+          "const": "exited",
+          "description": "The session's process ended in the middle of its turn.",
+          "type": "string"
+        }
+      ]
+    },
     "LivePresence": {
       "description": "Live presence (Arugula #341, the `live-presence` Labs flag), kept on the\naccount so every page agrees: `off` (the default), in no arugula.stream\nroom; `watching`, in your teams' rooms, seeing their live faces. Live\n(your camera) isn't kept: it's per window, on top of `watching`.",
       "enum": [
@@ -2604,6 +2684,19 @@
           "const": "read",
           "description": "The turn has ended.",
           "type": "string"
+        },
+        {
+          "additionalProperties": false,
+          "description": "The mention never got a turn, or its turn was cut off (#613).",
+          "properties": {
+            "dropped": {
+              "$ref": "#/$defs/DropWhy"
+            }
+          },
+          "required": [
+            "dropped"
+          ],
+          "type": "object"
         }
       ]
     },

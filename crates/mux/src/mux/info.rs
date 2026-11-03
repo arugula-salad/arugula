@@ -179,7 +179,7 @@ impl Daemon {
         seen
     }
 
-    fn pane_info(&self, p: &PaneHandle) -> PaneInfo {
+    pub(super) fn pane_info(&self, p: &PaneHandle) -> PaneInfo {
         let meta = self.meta.get(&p.id).cloned().unwrap_or_default();
         let running = p.running();
         let status = p.status();
@@ -254,6 +254,7 @@ impl Daemon {
             answered: self.answered.get(&p.id).cloned(),
             inbox: self.inbox.contains_key(&p.id),
             unhooked,
+            mentions_off: self.mentions_off.contains(&p.id),
             live: self.live.get(&p.id).cloned().map(Box::new),
             link: self.links.get(&p.id).cloned(),
             restored: self.restored.contains(&p.id),
@@ -303,6 +304,7 @@ impl Daemon {
             answered: self.answered.get(&id).cloned(),
             inbox: false,
             unhooked: false,
+            mentions_off: false,
             // The mod in an agent block's Claude Code, if it has one.
             live: self.live.get(&id).cloned().map(Box::new),
             link: None,
@@ -392,6 +394,7 @@ impl Daemon {
             options,
             roles: None,
             presence: Vec::new(),
+            notices: Vec::new(),
         }
     }
 }

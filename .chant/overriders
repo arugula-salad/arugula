@@ -1,0 +1,5 @@
+# Who may let chant cut a release from a commit that isn't green
+# (`chant release cut --override-green`, docs/development.md "release-override").
+# One principal per line, read from main.
+github:lex00
+github:jhgaylor

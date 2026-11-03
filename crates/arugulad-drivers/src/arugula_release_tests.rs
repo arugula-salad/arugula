@@ -116,9 +116,13 @@ fn the_deploy_comes_from_the_command_line_and_its_plan() {
 
 #[test]
 fn what_scripts_release_says_is_read() {
-    let out = "v0.1.1: 0.1.0 -> 0.1.1 on 0123456789ab (two)\npushed v0.1.1 (aaaaaaaaaaaa) and main (bbbbbbbbbbbb)\n";
-    assert_eq!(pushed_line(out), Some(("v0.1.1".into(), "bbbbbbbbbbbb".into())));
+    let out = "v0.1.1: 0.1.0 -> 0.1.1 on 0123456789ab (two)\npushed v0.1.1 (0123456789ab)\n";
+    assert_eq!(pushed_line(out), Some(("v0.1.1".into(), None)));
+    // A commit from before #1986: its script committed a bump and pushed main.
+    let old = "v0.1.1: 0.1.0 -> 0.1.1 on 0123456789ab (two)\npushed v0.1.1 (aaaaaaaaaaaa) and main (bbbbbbbbbbbb)\n";
+    assert_eq!(pushed_line(old), Some(("v0.1.1".into(), Some("bbbbbbbbbbbb".into()))));
     assert_eq!(pushed_line("pushed v1 (a) and main (zz)"), None, "not hex");
+    assert_eq!(pushed_line("pushed v1 (zz)"), None, "not hex");
     assert_eq!(pushed_line("nothing"), None);
     let sha = "d".repeat(40);
     let green = format!("1111\trefs/tags/ci/green/{sha}\n");
@@ -288,9 +292,9 @@ async fn gh() -> Gh {
 
 /// A fake GitHub's repository: Arugula in miniature (the daemon at 0.1.0,
 /// the app at 0.1.0, a client fixture), its real `scripts/release`; two
-/// green commits, a third CI hasn't passed, then notes for 0.1.1 and the
-/// app's 0.2.0 on `main`; and a green commit only a pull request's ref
-/// holds.
+/// green commits, the second with notes for 0.1.1 and the app's 0.2.0,
+/// and a third CI hasn't passed; and a green commit only a pull request's
+/// ref holds.
 #[cfg(unix)]
 const SEED: &str = include_str!("arugula_release_seed.sh");
 
@@ -382,16 +386,18 @@ impl Rig {
     }
 }
 
-/// A patch release from the newest green commit: the real script bumps
-/// it, tags v0.1.1 and pushes it with main (the bump merged in), each with
-/// the deploy's trailer; the token is revoked before the API is asked
-/// anything; the workflow is followed to its end, and the release is out
-/// though two other jobs failed (as v0.59.0's did). The same deploy again is a replay, and
-/// another of the same commit finds it released. No token in any file.
+/// A patch release from the newest green commit: the real script tags the
+/// commit itself v0.1.1, with the deploy's trailer, and pushes the tag
+/// (#1986: no bump commit), then commits the tag's client fixtures to main
+/// with the same token (main's one new commit); the token is revoked
+/// before the API is asked anything; the workflow is followed to its end,
+/// and the release is out though two other jobs failed (as v0.59.0's did).
+/// The same deploy again, or another of the same commit, finds it
+/// released. No token in any file.
 // A deploy's box is Linux: git and bash.
 #[cfg(unix)]
 #[tokio::test]
-async fn a_release_tags_pushes_main_and_follows_its_workflow() {
+async fn a_release_tags_the_commit_and_follows_its_workflow() {
     let r = Rig::new("flow");
     let gh = gh().await;
     let cfg = r.cfg(&gh);
@@ -401,16 +407,24 @@ async fn a_release_tags_pushes_main_and_follows_its_workflow() {
     let rel = released.unwrap();
     assert_eq!((rel.tag.as_str(), rel.version.as_str()), ("v0.1.1", "0.1.1"));
     assert_eq!(r.tag("v0.1.1").as_deref(), Some(rel.commit.as_str()), "the tag is on GitHub");
-    assert_eq!(git(&r.bare(), &["rev-parse", &format!("{}^", rel.commit)]), r.two, "a bump on the commit");
-    assert_eq!(r.main(), rel.main);
-    assert_eq!(git(&r.bare(), &["rev-parse", "main^1"]), before, "main: what it was, the bump merged in");
-    assert_eq!(git(&r.bare(), &["rev-parse", "main^2"]), rel.commit);
+    assert_eq!(rel.commit, r.two, "on the commit itself");
+    // The fixtures commit, the one thing main gets: the tag's client
+    // fixtures as crates/proto/fixtures/releases/0.1.1, on main as it was.
+    let main = r.main();
+    assert_eq!(git(&r.bare(), &["rev-parse", &format!("{main}^")]), before, "one commit on main");
+    assert_eq!(
+        git(&r.bare(), &["diff", "--name-only", &before, &main]),
+        "crates/proto/fixtures/releases/0.1.1/session.jsonl"
+    );
+    assert_eq!(
+        git(&r.bare(), &["show", &format!("{main}:crates/proto/fixtures/releases/0.1.1/session.jsonl")]),
+        "{\"a session\":1}"
+    );
+    assert_eq!(rel.main, None, "main isn't the release's");
     let trailer = format!("Arugula-Deploy: {}", d.id);
-    for what in ["v0.1.1", "main", "main^2"] {
-        let msg = git(&r.bare(), &["cat-file", "-p", what]);
-        assert!(msg.lines().any(|l| l == trailer), "{what}: {msg}");
-    }
-    assert!(git(&r.bare(), &["show", "main:Cargo.toml"]).contains("version = \"0.1.1\""));
+    let msg = git(&r.bare(), &["cat-file", "-p", "v0.1.1"]);
+    assert!(msg.lines().any(|l| l == trailer), "{msg}");
+    assert!(git(&r.bare(), &["show", "v0.1.1:Cargo.toml"]).contains("version = \"0.1.0\""), "no version moved");
     let f = followed.unwrap();
     assert!(f.published, "{f:?}");
     assert_eq!(f.run.as_deref(), Some("https://github.com/arugula-salad/arugula/actions/runs/39845854046"));
@@ -433,23 +447,23 @@ async fn a_release_tags_pushes_main_and_follows_its_workflow() {
     assert_eq!(v["script"], rel.script.as_str());
     assert!(v.to_string().len() < 2048);
 
-    // The same deploy again: a replay, refused before the script runs.
+    // The same deploy again, and another of the same commit: the script
+    // finds the commit released.
     let main = r.main();
-    let (again, followed) = apply(&cfg, &d, &tokens()).await;
-    let e = again.unwrap_err();
-    assert!(!e.pushed && e.why.contains("released already"), "{e:?}");
-    assert!(followed.is_none());
-    // Another deploy of the same commit: the script finds it released.
-    let (again, _) = apply(&cfg, &r.deploy(&r.two, "patch", "daemon"), &tokens()).await;
-    let e = again.unwrap_err();
-    assert!(!e.pushed && e.why.contains("already released in v0.1.1"), "{e:?}");
+    for d in [d.clone(), r.deploy(&r.two, "patch", "daemon")] {
+        let (again, followed) = apply(&cfg, &d, &tokens()).await;
+        let e = again.unwrap_err();
+        assert!(!e.pushed && e.why.contains("already released in v0.1.1"), "{e:?}");
+        assert!(followed.is_none());
+    }
     assert_eq!(r.main(), main, "nothing pushed");
+    assert!(r.tag("v0.1.2").is_none());
 
     assert!(r.holding(TOKEN_V).is_empty(), "no token in any file");
 }
 
-/// The app's lane: a minor bump of crates/desktop, tagged app-v0.2.0, and
-/// its own workflow followed.
+/// The app's lane: the next minor version of crates/desktop, app-v0.2.0, on
+/// the commit, and its own workflow followed.
 // A deploy's box is Linux: git and bash.
 #[cfg(unix)]
 #[tokio::test]
@@ -462,16 +476,15 @@ async fn the_apps_lane_tags_app_v() {
     });
     let (released, followed) = apply(&r.cfg(&gh), &r.deploy(&r.two, "minor", "app"), &tokens()).await;
     let rel = released.unwrap();
-    assert_eq!(rel.tag, "app-v0.2.0");
-    assert!(git(&r.bare(), &["show", "main:crates/desktop/Cargo.toml"]).contains("version = \"0.2.0\""));
-    assert!(git(&r.bare(), &["show", "main:Cargo.toml"]).contains("version = \"0.1.0\""), "the daemon stays");
+    assert_eq!((rel.tag.as_str(), rel.commit.as_str()), ("app-v0.2.0", r.two.as_str()));
+    assert!(r.tag("v0.1.1").is_none(), "the daemon's lane stays");
     let f = followed.unwrap();
     assert_eq!(f.run.as_deref(), Some("https://github.com/arugula-salad/arugula/actions/runs/39845854047"), "{f:?}");
     assert!(f.published);
 }
 
 /// Nothing is pushed for a commit CI hasn't passed, one CI passed that
-/// isn't on main (a pull request's), a release whose notes aren't on main,
+/// isn't on main (a pull request's), a release whose notes aren't in it,
 /// another repository, or without the token.
 // A deploy's box is Linux: git and bash.
 #[cfg(unix)]
@@ -484,7 +497,7 @@ async fn what_it_refuses_pushes_nothing() {
     for (d, why) in [
         (r.deploy(&r.three, "patch", "daemon"), "has no ci/green tag"),
         (r.deploy(&r.pr, "patch", "daemon"), "isn't on arugula-salad/arugula's main"),
-        (r.deploy(&r.two, "minor", "daemon"), "main has no docs/releases/0.2.0.md"),
+        (r.deploy(&r.two, "minor", "daemon"), "has no docs/releases/0.2.0.md"),
         (Deploy { place: "acme/arugula".into(), ..r.deploy(&r.two, "patch", "daemon") }, "arugula-salad/arugula only"),
     ] {
         let (got, followed) = apply(&cfg, &d, &tokens()).await;
@@ -508,7 +521,7 @@ fn released() -> Released {
         tag: "v0.1.1".into(),
         version: "0.1.1".into(),
         commit: "e".repeat(40),
-        main: "f".repeat(40),
+        main: None,
         script: "a".repeat(40),
     }
 }

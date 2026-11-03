@@ -37,7 +37,7 @@
 // - `npm ci`, `chant approve` and `chant components release`: neither.
 // Neither token is ever on a command line or in a file. Without
 // GITHUB_TOKEN, chant's own git reads and writes its ledger through a
-// stand-in for origin here, and the driver pushes it.
+// stand-in remote here, and the driver pushes it.
 //
 // Its result goes on fd 3, which only it holds (every program it runs starts
 // with fd 3 closed): chant's ledger entry, chant's
@@ -141,34 +141,25 @@ if (git(["push", "--dry-run", "-q", "origin", "HEAD:refs/heads/chant/arugula-pus
       `GitHub App, which must be installed on ${where}, or the environment's own) must be able to push`,
   );
 
-// chant reads its ledger from origin before it writes to it, and refuses
-// when it can't (a first deploy, with no chant/lifecycle here yet, would
-// read as unknown, not empty). Without a token of its own it can't reach
-// GitHub, so its git goes to a stand-in for origin instead: a repository
-// here holding chant/lifecycle as origin had it (or none, as origin has
-// none), which takes that branch and nothing else. The driver pushes what
-// chant added to origin itself.
-const chantGit = {};
+// chant reads its ledger from its remote before it writes to it, and
+// refuses when it can't (a first deploy, with no chant/lifecycle here yet,
+// would read as unknown, not empty). Without a token of its own it can't
+// reach GitHub, so its ledger goes to a stand-in instead: a repository here
+// holding chant/lifecycle as origin had it (or none, as origin has none),
+// which takes that branch and nothing else. The driver pushes what chant
+// added to origin itself. How chant is pointed at it depends on chant's
+// version (LEDGER_REMOTE, below).
+let standIn = null;
 if (!chantGithub) {
-  const ledger = join(env.HOME, "ledger.git");
-  run(["git", "init", "-q", "--bare", ledger]);
+  standIn = join(env.HOME, "ledger.git");
+  run(["git", "init", "-q", "--bare", standIn]);
   writeFileSync(
-    join(ledger, "hooks", "update"),
+    join(standIn, "hooks", "update"),
     '#!/bin/sh\n[ "$1" = refs/heads/chant/lifecycle ] || { echo "only chant/lifecycle goes here" >&2; exit 1; }\n',
     { mode: 0o755 },
   );
-  if (before) git(["push", "-q", ledger, `${before}:refs/heads/chant/lifecycle`]);
-  const n = Number(base.GIT_CONFIG_COUNT) || 0;
-  Object.assign(chantGit, {
-    GIT_CONFIG_COUNT: String(n + 1),
-    [`GIT_CONFIG_KEY_${n}`]: `url.${ledger}.insteadOf`,
-    [`GIT_CONFIG_VALUE_${n}`]: originUrl,
-  });
+  if (before) git(["push", "-q", standIn, `${before}:refs/heads/chant/lifecycle`]);
 }
-// chant's own commands get no token; its op gets the Fly token, and
-// GitHub's with `chant_github`.
-const chantBase = { ...base, ...chantGit };
-const forChant = chantGithub ? { ...chantBase, FLY_API_TOKEN, GITHUB_TOKEN } : { ...chantBase, FLY_API_TOKEN };
 
 // The token: a deploy token for one app that expires within 30 days, as
 // far as flyctl can tell (its caveats).
@@ -235,6 +226,40 @@ if (existsSync(join(member, "package-lock.json"))) {
 }
 const pinned = join(member, "node_modules", ".bin", "chant");
 const chant = (args, opts = {}) => run([existsSync(pinned) ? pinned : "chant", ...args], { cwd: member, ...opts });
+
+/** Whether chant `version` (`x.y.z`) is `floor` or newer. */
+function atLeast(version, floor) {
+  const a = version.split(".").map(Number);
+  const b = floor.split(".").map(Number);
+  for (let i = 0; i < 3; i++) if (a[i] !== b[i]) return a[i] > b[i];
+  return true;
+}
+
+// The stand-in as chant's ledger remote. chant 0.124.63 and newer take it
+// by name (CHANT_LIFECYCLE_REMOTE, chant#4647), so origin stays GitHub for
+// everything else chant reads. An older chant knows only origin, so for it
+// origin's URL is rewritten to the stand-in, for chant's git only.
+const LEDGER_REMOTE = "arugula-ledger";
+const chantGit = {};
+if (standIn) {
+  const said = chant(["--version"], { capture: true, check: false });
+  const version = said.status === 0 ? /^\d+\.\d+\.\d+/.exec(said.stdout.trim())?.[0] : undefined;
+  if (version && atLeast(version, "0.124.63")) {
+    git(["remote", "add", LEDGER_REMOTE, standIn]);
+    chantGit.CHANT_LIFECYCLE_REMOTE = LEDGER_REMOTE;
+  } else {
+    const n = Number(base.GIT_CONFIG_COUNT) || 0;
+    Object.assign(chantGit, {
+      GIT_CONFIG_COUNT: String(n + 1),
+      [`GIT_CONFIG_KEY_${n}`]: `url.${standIn}.insteadOf`,
+      [`GIT_CONFIG_VALUE_${n}`]: originUrl,
+    });
+  }
+}
+// chant's own commands get no token; its op gets the Fly token, and
+// GitHub's with `chant_github`.
+const chantBase = { ...base, ...chantGit };
+const forChant = chantGithub ? { ...chantBase, FLY_API_TOKEN, GITHUB_TOKEN } : { ...chantBase, FLY_API_TOKEN };
 
 // Fly: every started machine's checks passing, all on one image.
 function flyHealth() {

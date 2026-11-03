@@ -746,14 +746,21 @@ people's agents. With `agent-delegation` on (M76, #398):
     Claude Code reads it. An edit keeps any keys the form doesn't know, and
     MCP servers written inline in the file. A new recipe never replaces a
     file that's already there.
-  - **Run here** opens an agent block wearing the recipe.
-  - **Offer** and **Stop offering** put it in, or take it out of, the
+  - **Run on <machine>…** opens an agent block wearing the recipe.
+  - **Offer to team** and **Stop offering** put it in, or take it out of, the
     team's catalog.
-  - **Delete** removes the file, after asking, and its offer with it.
+  - **Delete…**, behind the preview's ⋯, removes the file, after asking, and
+    its offer with it. A project added here comes off the page from the same
+    menu; its files stay.
   - Writing and deleting are this machine's own account's.
 - **Team** (`#agents=team`) shows the team's catalog by machine and owner,
-  tasks from other people waiting for you (*Allow once*, *For an hour*,
-  *Deny*), and standing grants with *Revoke*.
+  tasks from other people waiting for you (*Allow once*, *Allow for an hour*,
+  *Deny*, answered from the list without selecting anything), and standing
+  grants with *Revoke*.
+
+Both tabs are list pages: selecting a row shows its preview, with its buttons,
+and the recipe form takes the preview's place. `/` searches, and arrows and
+`j`/`k` move. Under 760 px of room, a tap opens the preview in the list's place.
 
 ### The team's catalog (M77)
 

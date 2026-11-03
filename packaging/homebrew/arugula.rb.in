@@ -1,30 +1,33 @@
-# The Arugula formula, written by scripts/release into the
-# arugula-salad/homebrew-tap repo on each release. Don't edit the copy there.
+# The Arugula formula, which each daemon release commits to the
+# arugula-salad/homebrew-tap repo through chant's homebrew target
+# (release/daemon/chant.config.ts). Don't edit the copy there.
+# `scripts/release formula` puts the version in the tarballs' names, and
+# chant fills in the version, each tarball's URL and its SHA-256.
 class Arugula < Formula
   desc "Terminal multiplexer whose sessions outlive the window, the daemon and the reboot"
   homepage "https://arugula.io"
-  version "@VERSION@"
+  version "{{version}}"
   license any_of: ["MIT", "Apache-2.0"]
 
   on_macos do
     on_intel do
-      url "https://github.com/arugula-salad/arugula/releases/download/v@VERSION@/arugula-@VERSION@-x86_64-apple-darwin.tar.gz"
-      sha256 "@SHA_MAC_INTEL@"
+      url "{{url:arugula-@VERSION@-x86_64-apple-darwin.tar.gz}}"
+      sha256 "{{sha256:arugula-@VERSION@-x86_64-apple-darwin.tar.gz}}"
     end
     on_arm do
-      url "https://github.com/arugula-salad/arugula/releases/download/v@VERSION@/arugula-@VERSION@-aarch64-apple-darwin.tar.gz"
-      sha256 "@SHA_MAC@"
+      url "{{url:arugula-@VERSION@-aarch64-apple-darwin.tar.gz}}"
+      sha256 "{{sha256:arugula-@VERSION@-aarch64-apple-darwin.tar.gz}}"
     end
   end
 
   on_linux do
     on_intel do
-      url "https://github.com/arugula-salad/arugula/releases/download/v@VERSION@/arugula-@VERSION@-x86_64-unknown-linux-musl.tar.gz"
-      sha256 "@SHA_LINUX_X86@"
+      url "{{url:arugula-@VERSION@-x86_64-unknown-linux-musl.tar.gz}}"
+      sha256 "{{sha256:arugula-@VERSION@-x86_64-unknown-linux-musl.tar.gz}}"
     end
     on_arm do
-      url "https://github.com/arugula-salad/arugula/releases/download/v@VERSION@/arugula-@VERSION@-aarch64-unknown-linux-musl.tar.gz"
-      sha256 "@SHA_LINUX_ARM@"
+      url "{{url:arugula-@VERSION@-aarch64-unknown-linux-musl.tar.gz}}"
+      sha256 "{{sha256:arugula-@VERSION@-aarch64-unknown-linux-musl.tar.gz}}"
     end
   end
 

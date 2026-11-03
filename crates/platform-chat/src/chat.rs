@@ -75,7 +75,7 @@ use arugula_control_wire::chat::{
     ChatMessage, ChatMessages, ChatMessagesQuery, ChatMute, ChatNewChannel, ChatNewDm, ChatOpen, ChatOpenTarget,
     ChatPane, ChatPerson, ChatPost, ChatPosted, ChatPushWhy, ChatPushed, ChatReaction, ChatReactor, ChatRead,
     ChatReaderList, ChatReaders, ChatReadersStored, ChatRoom, ChatRoomAgent, ChatRoomChange, ChatRoomDetail, ChatRooms,
-    ChatSearchQuery, ChatUnreachedWhy, MentionTurn, NotifyLevel, PutMentionState,
+    ChatSearchQuery, ChatUnreachedWhy, DropWhy, MentionTurn, NotifyLevel, PutMentionState,
 };
 use arugula_e2e::{now_ms, team::TeamRole};
 use axum::{
@@ -94,7 +94,10 @@ use crate::{
         Db, Taken,
         chat::{Message, NewMessage, Page, Room, RoomMeta, Search, UnreadAsk, Word},
         chat_files::ChatFileRow,
-        chat_mention_status::{ANSWERABLE_MS, MentionStatus, REDELIVER_MAX, REDELIVER_WITHIN_MS, STALE_SENDING_MS},
+        chat_mention_status::{
+            ANSWERABLE_MS, DROPPED_EXITED, DROPPED_STOPPED, MentionStatus, REDELIVER_MAX, REDELIVER_WITHIN_MS,
+            STALE_SENDING_MS,
+        },
         chat_reactions::Reaction,
         objects::Holder,
         projects::{ISSUES_WRITE, THREADS_POST, THREADS_READ},
@@ -896,6 +899,11 @@ fn shown_status(s: &MentionStatus) -> ChatMentionStatus {
         asked: s.asked.clone(),
         names: s.names.clone(),
         reply: s.reply,
+        why: match s.state.as_str() {
+            DROPPED_STOPPED => Some(DropWhy::Stopped),
+            DROPPED_EXITED => Some(DropWhy::Exited),
+            _ => None,
+        },
     }
 }
 
@@ -905,6 +913,7 @@ fn mention_state(state: &str) -> ChatMentionState {
         "fell_back" => ChatMentionState::FellBack,
         "waiting" => ChatMentionState::Waiting,
         "queued" => ChatMentionState::Queued,
+        "silenced" => ChatMentionState::Silenced,
         "no_such_session" => ChatMentionState::NoSuchSession,
         "sending" => ChatMentionState::Sending,
         // Tried again when the machine connected, and still not told.
@@ -913,6 +922,7 @@ fn mention_state(state: &str) -> ChatMentionState {
         "chain" => ChatMentionState::Chain,
         "working" => ChatMentionState::Working,
         "read" => ChatMentionState::Read,
+        DROPPED_STOPPED | DROPPED_EXITED => ChatMentionState::Dropped,
         _ => ChatMentionState::Delivered,
     }
 }
@@ -929,6 +939,8 @@ fn mention_answer(answer: Option<&arugula_control_wire::forge::OpAnswer>) -> Men
         Some(OpAnswer::Done { routed: Some(r), .. }) => match r.step {
             // The message named a session the daemon didn't find: no other
             // session got it (#576), and the names there are come with it.
+            // The session is there but its owner silenced it (#579).
+            RoutedStep::Inbox if r.silenced => ("silenced", None, r.asked.clone(), vec![]),
             RoutedStep::Inbox if r.asked.is_some() => ("no_such_session", None, r.asked.clone(), r.names.clone()),
             RoutedStep::Inbox => ("waiting", None, None, vec![]),
             // A session took it, but its hook wasn't waiting (#571): it
@@ -1073,6 +1085,20 @@ fn replying_to_agent(
     Ok(last.and_then(|m| Some((m.agent?, m.agent_session))))
 }
 
+/// The longest root line a mention carries (#580), in characters.
+const ROOT_LINE: usize = 120;
+
+/// The first line of the root of the thread a reply goes under (#580), cut
+/// to [`ROOT_LINE`]. None for a post in the room, or a root that's gone.
+fn root_line(app: &Platform, room: &Room, parent: Option<i64>) -> Option<String> {
+    let root = app.db.chat_message(&room.id, parent?).ok()??;
+    let line = root.text.lines().map(str::trim).find(|l| !l.is_empty())?;
+    Some(match line.char_indices().nth(ROOT_LINE) {
+        Some((at, _)) => format!("{}…", line[..at].trim_end()),
+        None => line.to_owned(),
+    })
+}
+
 /// Agents' posts in a row at the end of the thread under `parent`, with no
 /// person's message between (#575). The root counts; a post in the room has
 /// no thread, so none.
@@ -1111,14 +1137,13 @@ struct Told<'a> {
     /// On a board's thread: the machine and session that lead the board
     /// (#414), when this post is for them.
     lead: Option<(String, String)>,
+    /// The first line of the thread's root, for a reply (#580).
+    root_line: Option<String>,
 }
 
 /// One agent a new message is for, ready to be told (#394, #419).
 struct Tell {
     machine: String,
-    /// With a status line: the message mentions the machine (a reply to its
-    /// agent is told without one).
-    mentioned: bool,
     op: arugula_control_wire::forge::DaemonOp,
 }
 
@@ -1180,6 +1205,7 @@ fn mention_op(told: &Told<'_>, session: Option<String>) -> arugula_control_wire:
         text: told.text.to_owned(),
         session,
         from_session: told.from_session.clone(),
+        root_line: told.root_line.clone(),
     })
 }
 
@@ -1241,7 +1267,9 @@ async fn plan_tells(
             (b.machine == a.machine && chain >= CHAIN_LIMIT)
                 || !app.chat.agent_told(&told.room.id, root, &a.machine, now_ms())
         });
-        if is_mentioned {
+        // A reply to its agent has a status too (#580): that's how a read
+        // of unread replies knows which no session took yet.
+        {
             let status = MentionStatus {
                 room: told.room.id.clone(),
                 seq: told.seq,
@@ -1263,11 +1291,7 @@ async fn plan_tells(
         if held {
             continue;
         }
-        out.push(Tell {
-            machine: a.machine.clone(),
-            mentioned: is_mentioned,
-            op: mention_op(told, session_for(told, a, is_mentioned)),
-        });
+        out.push(Tell { machine: a.machine.clone(), op: mention_op(told, session_for(told, a, is_mentioned)) });
     }
     out
 }
@@ -1328,9 +1352,6 @@ async fn deliver_later(app: &Platform, tells: Vec<Tell>, room: String, seq: i64,
 async fn deliver(app: &Platform, tells: Vec<Tell>, room: &str, seq: i64, parent: Option<i64>) {
     futures_util::future::join_all(tells.into_iter().map(|t| async move {
         let (state, session, asked, names) = ask_daemon(app, &t.machine, &t.op).await;
-        if !t.mentioned {
-            return;
-        }
         let status = MentionStatus {
             room: room.to_owned(),
             seq,
@@ -1458,6 +1479,7 @@ async fn mention_to_resend(
         sessions: at_sessions(&without_code(&m.text)),
         from_session: m.agent.as_ref().and(m.agent_session.clone()),
         lead: board_lead(app, &room),
+        root_line: root_line(app, &room, m.parent),
     };
     Ok(mention_op(&told, session_for(&told, a, true)))
 }
@@ -2475,6 +2497,7 @@ pub(crate) async fn post_replied(
         sessions: at_sessions(&plain),
         from_session,
         lead,
+        root_line: root_line(app, &room, b.parent),
     };
     // The daemons are told after this returns (#419): an agent's mention
     // shows in its status line, not in `pushed` or `unreached`.
@@ -3017,7 +3040,7 @@ pub async fn daemon_readers(
 
 /// `PUT /api/daemon/chat/mention-state`: a machine's daemon says its
 /// session's turn that took a mention started (`working`) or ended (`read`,
-/// #540). Only for a message the machine has a status for (404 otherwise),
+/// #540), or the mention was dropped (#613). Only for a message the machine has a status for (404 otherwise),
 /// and only forward (`turn_follows`): an `answered` mention stays so. A
 /// change is told like any other status change.
 pub async fn daemon_mention_state(
@@ -3030,6 +3053,8 @@ pub async fn daemon_mention_state(
     let state = match b.state {
         MentionTurn::Working => "working",
         MentionTurn::Read => "read",
+        MentionTurn::Dropped(DropWhy::Stopped) => DROPPED_STOPPED,
+        MentionTurn::Dropped(DropWhy::Exited) => DROPPED_EXITED,
     };
     let session = b.session.as_deref().map(|s| s.chars().take(MAX_SESSION_NAME).collect::<String>());
     match app.db.report_chat_mention_turn(&b.room, b.seq, &machine, state, session.as_deref(), now_ms())? {

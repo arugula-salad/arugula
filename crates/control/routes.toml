@@ -1629,6 +1629,14 @@ auth = "daemon"
 clients = ["daemon"]
 note = "The receiving daemon says a mention's turn is working or read (#540); a status only moves forward, and answered never changes."
 
+[[route]]
+method = "GET"
+path = "/api/daemon/chat/replies"  # wire::chat::AGENT_REPLIES
+process = "platform"
+auth = "daemon"
+clients = ["daemon"]
+note = "A machine's unread replies to its agents' posts, grouped by thread (#580): read_thread with replies."
+
 # A machine's agents in conversations (M198): MCP's thread tools list,
 # read, search and post in the rooms its owner's grants reach (M197:
 # `threads.read`, `threads.post`), asked again on every call. `{id}` is a

@@ -1052,10 +1052,11 @@ async fn run(mut args: RunArgs, mut kept: std::collections::HashMap<String, pane
         acl.clone(),
         args.no_relay,
     );
+    // M185: a hosted box's agent turns ask the platform whose key pays.
+    // First: the feature crates ask whether this is a hosted box.
+    agent::hosted::init(control.clone(), args.hosted);
     // The feature crates' use of control (Doc blocks share through it, #1066).
     features::with_control(&control);
-    // M185: a hosted box's agent turns ask the platform whose key pays.
-    agent::hosted::init(control.clone(), args.hosted);
     // M40: forge blocks' live updates (control's GitHub App, hooks here).
     forges::start(state_dir.clone(), Some(&control), direct_urls.clone());
     // Claude Code's IDE (M28): its relay keeps the connections.
@@ -1148,6 +1149,9 @@ async fn run(mut args: RunArgs, mut kept: std::collections::HashMap<String, pane
     );
     // Control hears where the turns that took teammates' mentions are (#540).
     crate::task::spawn(agent_mentions::keep_telling(app.clone(), turns_rx));
+    // What the inbox still holds from before a restart is a card again (#551).
+    let reraised = app.clone();
+    crate::task::spawn(async move { agent_mentions::reraise(&reraised).await });
     // Labs' guest ssh server, and (M78) tasks for this machine's agents
     // that a restart interrupted.
     lab_hooks::labs().start(&app);

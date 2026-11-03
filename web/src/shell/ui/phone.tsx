@@ -11,7 +11,8 @@ import { useSubscribe } from "../../shared/ui/hooks";
 import { AttentionBadge } from "./attention";
 import { HostCrumb, HostSection } from "./hosts";
 import { openSwarm } from "../swarm/route";
-import { hasBoards, hasChat, openBoards, openChat } from "./places";
+import { hasBoards, hasChat, openBoards, openChat, openRoom } from "./places";
+import { noticeRoom, noticeTitle, sortNotices } from "../../shared/notice";
 import { ChatTabBadge, openChanges, openIssue, openPort, openPr } from "../blocks";
 import { startAgent } from "./agent-dialog";
 import { pickConversation } from "./conversations";
@@ -40,7 +41,7 @@ export function PhoneHeader({ client }: { client: Client }) {
     <>
       <header class="bar phone-bar">
         <button class="sheet-button" aria-expanded={open} onClick={() => setOpen(!open)}>
-          {client.state?.panes.some(needsYou) ? <span class="att needs_input">●</span> : "☰"} <HostCrumb />
+          {client.state?.panes.some(needsYou) || client.state?.notices?.length ? <span class="att needs_input">●</span> : "☰"} <HostCrumb />
           {session && (
             <>
               <span class="crumb">{session.name}</span> ›{" "}
@@ -85,6 +86,8 @@ function Sheet({ client, close }: { client: Client; close: () => void }) {
   // likely reason to have opened this on a phone), the other asks, then
   // the failures, each oldest first.
   const wanting = sortNeedsYou(state.panes.filter(needsYou), (p) => placeOf(p, p.id));
+  // Cards that belong to no pane (#551): a mention no session took.
+  const notices = sortNotices((state.notices ?? []).map((n) => ({ n })));
   const act = (fn: () => void) => () => {
     fn();
     close();
@@ -104,9 +107,26 @@ function Sheet({ client, close }: { client: Client; close: () => void }) {
         <div class="sheet-panel" role="tabpanel" id={`sheet-panel-${tab}`} aria-labelledby={`sheet-tab-${tab}`} data-sheet-panel={tab}>
           {tab === "here" && (
             <>
-            {wanting.length > 0 && (
+            {(wanting.length > 0 || notices.length > 0) && (
               <section class="sheet-card needs-you">
                 <h2>Needs you</h2>
+                {notices.map(({ n }) => (
+                  <div key={n.key} class="sheet-row" data-notice={n.key}>
+                    <button
+                      class="sheet-item"
+                      onClick={act(() => {
+                        client.dismissNotice(n.key);
+                        const room = noticeRoom(n);
+                        if (room) openRoom(room);
+                      })}
+                    >
+                      <span class="att needs_input">●</span> <span class="sheet-wants">{noticeTitle(n)}</span>
+                    </button>
+                    <button class="sheet-act" data-notice-dismiss={n.key} onClick={() => client.dismissNotice(n.key)}>
+                      Dismiss
+                    </button>
+                  </div>
+                ))}
                 {wanting.map((p) => {
                   const may = client.role(client.sessionOfTab(client.tabOfPane(p.id)?.id ?? -1) ?? null) !== "viewer";
                   const rerun = p.reason?.actions.includes("rerun") && may;

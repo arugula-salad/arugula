@@ -8,6 +8,9 @@
 // - One primary button, in the preview. The row itself is the target, and
 //   what's destructive is behind ⋯ there.
 // - The counts are the filters, `/` searches, ↑↓ and j/k move, Enter opens.
+// - What must be answered without selecting anything (a request waiting for
+//   you) has buttons of its own, so it isn't a row of the list: it's a
+//   section above it. Sections below it hold what's beside the list's point.
 //
 // The split goes by the room the page has (container queries, ./list-page.css),
 // never the window's width: a page can be narrow on a wide screen. Too narrow
@@ -73,7 +76,15 @@ export interface ListRowParts {
 
 export interface ListGroup<T> {
   title?: string;
+  /** Beside the title, in its own case: a path, or a machine's state. */
+  detail?: ComponentChildren;
+  /** The title is someone's words (a machine's, a project's): it keeps its case. */
+  named?: boolean;
+  /** When two groups can have one title. */
+  key?: string;
   items: T[];
+  /** Its `data-*` hooks. */
+  attrs?: Record<string, string>;
 }
 
 export interface ListPageProps<T> {
@@ -97,6 +108,15 @@ export interface ListPageProps<T> {
   notice?: ComponentChildren;
   /** In the list's place when it has nothing: loading, none yet, none match. */
   status?: ComponentChildren;
+  /** Over the search, always in view: `ListSection`s to answer at a glance. */
+  above?: ComponentChildren;
+  /** After the rows, scrolling with them: more `ListSection`s. */
+  below?: ComponentChildren;
+  /** In the preview's place whatever's selected, and in the list's when
+   * they don't fit: a form. It says how to leave. */
+  pane?: ComponentChildren;
+  /** The row to select, when the page knows better: one just saved. */
+  select?: string | null;
 }
 
 const inField = (t: EventTarget | null) => !!(t as Element | null)?.closest?.("input, textarea, select, [contenteditable]");
@@ -121,7 +141,7 @@ function store(key: string, px: number | null) {
   }
 }
 
-export function ListPage<T>({ label, header, searchLabel, query, setQuery, groups, keyOf, row, preview, onOpen, splitKey, notice, status }: ListPageProps<T>) {
+export function ListPage<T>({ label, header, searchLabel, query, setQuery, groups, keyOf, row, preview, onOpen, splitKey, notice, status, above, below, pane, select }: ListPageProps<T>) {
   const root = useRef<HTMLDivElement>(null);
   const list = useRef<HTMLDivElement>(null);
   const box = useRef<HTMLInputElement>(null);
@@ -138,7 +158,8 @@ export function ListPage<T>({ label, header, searchLabel, query, setQuery, group
   const flat = groups.flatMap((g) => g.items);
   const selected = flat.find((i) => keyOf(i) === picked) ?? flat[0];
   const selectedKey = selected === undefined ? null : keyOf(selected);
-  const rowId = (key: string) => `list-row-${key}`;
+  // An id can't hold a space, and a key can (a path).
+  const rowId = (key: string) => `list-row-${encodeURIComponent(key)}`;
 
   useEffect(() => {
     const el = root.current;
@@ -151,10 +172,17 @@ export function ListPage<T>({ label, header, searchLabel, query, setQuery, group
   useEffect(() => {
     if (detail && (!narrow || selected === undefined)) setDetail(false);
   }, [detail, narrow, selected === undefined]);
-  // The keyboard's arrows work as soon as the page is up.
+  // The keyboard's arrows work as soon as the page is up. Not on a touch
+  // screen: it has no arrows, and it would show the focus ring on the first row.
   useEffect(() => {
-    if (!inField(document.activeElement)) list.current?.focus({ preventScroll: true });
+    if (matchMedia("(pointer: fine)").matches && !inField(document.activeElement)) list.current?.focus({ preventScroll: true });
   }, [list.current === null]);
+  useEffect(() => {
+    if (select) {
+      scrollTo.current = true;
+      setPicked(select);
+    }
+  }, [select]);
   useLayoutEffect(() => {
     if (scrollTo.current && selectedKey !== null) document.getElementById(rowId(selectedKey))?.scrollIntoView({ block: "nearest" });
     scrollTo.current = false;
@@ -237,7 +265,8 @@ export function ListPage<T>({ label, header, searchLabel, query, setQuery, group
   const pct = total && width ? Math.round((clamp(width) / total) * 100) : 44;
 
   const hovered = (key: string, e: PointerEvent) => {
-    if (e.pointerType !== "mouse" || narrow || key === selectedKey) return;
+    // A form in the preview's place stays, so what's under the pointer can't show.
+    if (e.pointerType !== "mouse" || narrow || pane || key === selectedKey) return;
     clearTimeout(hover.current);
     hover.current = setTimeout(() => {
       if (performance.now() - keyed.current > KEYS_HOLD_MS) setPicked(key);
@@ -276,10 +305,11 @@ export function ListPage<T>({ label, header, searchLabel, query, setQuery, group
 
   const style = width ? ({ "--list-w": `${width}px` } as Record<string, string>) : undefined;
   return (
-    <div ref={root} class={detail ? "list-page detail" : "list-page"} style={style} data-list-page>
+    <div ref={root} class={detail || pane ? "list-page detail" : "list-page"} style={style} data-list-page>
       <div class="list-split">
         <section class="list-pane" aria-label={label}>
           <div class="list-head">{header}</div>
+          {above && <div class="list-above">{above}</div>}
           <div class="list-tools">
             <label class="list-search">
               <input
@@ -299,35 +329,41 @@ export function ListPage<T>({ label, header, searchLabel, query, setQuery, group
             </label>
           </div>
           {notice}
-          {status ?? null}
-          {flat.length > 0 && (
-            <div ref={list} class="list-rows" role="listbox" tabIndex={0} aria-label={label} aria-activedescendant={selectedKey === null ? undefined : rowId(selectedKey)} data-list-rows>
-              {groups.map((g, i) =>
-                g.items.length === 0 ? null : g.title ? (
-                  <div key={g.title} role="group" aria-labelledby={`list-group-${i}`}>
-                    <div class="list-group" id={`list-group-${i}`}>
-                      {g.title}
-                      <span>{g.items.length}</span>
+          <div class="list-scroll">
+            {status ?? null}
+            {flat.length > 0 && (
+              <div ref={list} class="list-rows" role="listbox" tabIndex={0} aria-label={label} aria-activedescendant={selectedKey === null ? undefined : rowId(selectedKey)} data-list-rows>
+                {groups.map((g, i) =>
+                  g.items.length === 0 ? null : g.title ? (
+                    <div key={g.key ?? g.title} role="group" aria-labelledby={`list-group-${i}`} {...g.attrs}>
+                      <div class="list-group" id={`list-group-${i}`}>
+                        <span class={g.named ? "list-group-title named" : "list-group-title"}>
+                          {g.title}
+                          {g.detail && <small>{g.detail}</small>}
+                        </span>
+                        <span class="list-group-n">{g.items.length}</span>
+                      </div>
+                      {g.items.map(draw)}
                     </div>
-                    {g.items.map(draw)}
-                  </div>
-                ) : (
-                  g.items.map(draw)
-                ),
-              )}
-            </div>
-          )}
+                  ) : (
+                    g.items.map(draw)
+                  ),
+                )}
+              </div>
+            )}
+            {below}
+          </div>
         </section>
-        {selected !== undefined && (
+        {(selected !== undefined || pane) && (
           <>
-            <aside class="list-preview" aria-label="Preview" data-list-preview>
-              {detail && (
+            <aside class="list-preview" aria-label={pane ? "Form" : "Preview"} data-list-preview>
+              {detail && !pane && (
                 <button type="button" class="link list-back" data-list-back onClick={() => setDetail(false)}>
                   <span aria-hidden="true">‹ </span>
                   {label}
                 </button>
               )}
-              {preview(selected)}
+              {pane ?? preview(selected as T)}
             </aside>
             <div
               class="list-handle"
@@ -367,10 +403,38 @@ export function ListPreview({ title, facts, actions, children, aside, ...attrs }
         {facts && <div class="list-preview-facts">{facts}</div>}
         {actions && <div class="list-preview-actions">{actions}</div>}
       </header>
-      <div class="list-preview-body">
+      <div class={aside ? "list-preview-body" : "list-preview-body solo"}>
         <div class="list-preview-words">{children}</div>
         {aside && <div class="list-preview-aside">{aside}</div>}
       </div>
     </>
+  );
+}
+
+/** A titled section beside the list, with no selection of its own. */
+export function ListSection({ title, n, children, ...attrs }: { title: string; n?: number; children: ComponentChildren; [hook: `data-${string}`]: string | undefined }) {
+  return (
+    <section class="list-section" aria-label={title} {...attrs}>
+      <div class="list-group">
+        <span class="list-group-title">{title}</span>
+        {n !== undefined && <span class="list-group-n">{n}</span>}
+      </div>
+      {children}
+    </section>
+  );
+}
+
+/** A row of a `ListSection`: it looks like the list's, and it isn't a target,
+ * so it can hold buttons. */
+export function ListItem({ tone, title, detail, actions, children, ...attrs }: { tone?: ListTone; title: ComponentChildren; detail?: ComponentChildren; actions?: ComponentChildren; children?: ComponentChildren; [hook: `data-${string}`]: string | undefined }) {
+  return (
+    <div class={tone ? `list-item ${tone}` : "list-item"} {...attrs}>
+      <div class="list-item-text">
+        <div class="list-item-title">{title}</div>
+        {detail && <div class="list-item-detail">{detail}</div>}
+        {children}
+      </div>
+      {actions && <div class="list-item-actions">{actions}</div>}
+    </div>
   );
 }

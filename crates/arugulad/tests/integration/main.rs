@@ -32,6 +32,7 @@ mod conversations;
 mod crash;
 mod dialout;
 mod doc;
+mod doc_copies;
 mod doc_library;
 mod doc_share_ask;
 #[cfg(feature = "editor")]
@@ -91,6 +92,9 @@ mod machines;
 mod mcp;
 mod memory;
 mod mention_agent_block;
+mod mention_card;
+#[cfg(unix)]
+mod mention_held;
 mod pipe;
 mod program_status;
 mod prompt;

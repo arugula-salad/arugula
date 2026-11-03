@@ -113,6 +113,9 @@ pub enum ClientMsg {
     /// The pane this client is looking at, if its window has focus (`None`
     /// when it doesn't). Attention notifications skip panes someone sees.
     Focus { pane: Option<PaneId> },
+    /// Dismiss a machine-level notice, or open it (#551): the owner's
+    /// alone. A key nothing holds is ignored.
+    DismissNotice { key: String },
     /// Answered with [`ServerMsg::Pong`] once everything sent before it has
     /// been handled (and its `State` sent), so a client can wait for its
     /// own intents to land: an intent that failed answers with an `Error`
@@ -309,6 +312,40 @@ pub enum ReasonKind {
     /// A release or an op waits at a gate for a person to approve it (M34:
     /// a chant gate in a workspace's member).
     Gate,
+}
+
+/// Attention that belongs to no pane (#551): the machine wants its owner for
+/// something no pane can show (a teammate's mention that no session took).
+/// Kept in the mux beside the panes' attention; the owner's `State` and
+/// `Delta`s carry it, and the web and the phone draw a card from it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct Notice {
+    /// One card per key: `mention:<room>`. Raised again, it updates.
+    pub key: String,
+    pub kind: NoticeKind,
+    /// When it was first raised.
+    pub since_ms: u64,
+    /// One line, for the latest: "<who> mentioned this machine in #room: <first line>".
+    #[serde(default)]
+    pub headline: String,
+    /// How many times it was raised since it last went ("2 mentions in #agents").
+    pub count: u32,
+    /// `mention`: the room to open (its id), and its name.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub room: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub room_name: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub enum NoticeKind {
+    /// A teammate mentioned this machine in a room and no session took it.
+    Mention,
 }
 
 /// A gate that waits for someone (M34): an op stopped before a step until
@@ -514,6 +551,10 @@ pub enum Action {
     /// approving it (`chant approve <op> <gate> --expire`), so the next run
     /// stops there again.
     Expire,
+    /// Type a teammate's agent's mention, held on a session whose hooks
+    /// aren't listening, into the terminal and press Enter (#579). The
+    /// owner's alone.
+    Deliver,
 }
 
 /// A command the shell integration reported.
@@ -573,6 +614,15 @@ pub enum EventKind {
         /// Why (M24); none when it went idle or working.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         reason: Option<Reason>,
+    },
+    /// A notice that belongs to no pane was raised or updated (#551). Has
+    /// no `pane`: the owner's events carry it.
+    Notice {
+        notice: Notice,
+    },
+    /// A notice went: dismissed, opened, or what it was about was taken.
+    NoticeGone {
+        key: String,
     },
     /// Someone prompted the agent in the pane (#888): Claude Code's
     /// `UserPromptSubmit` hook (a prompt typed there, or `prompt_agent`'s),
@@ -707,11 +757,18 @@ pub struct Delta {
     pub machines: Option<Vec<Machine>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub presence: Option<Vec<Presence>>,
+    /// Whole when present, like `presence` (#551).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub notices: Option<Vec<Notice>>,
 }
 
 impl Delta {
     pub fn is_empty(&self) -> bool {
-        self.panes.is_empty() && self.gone.is_empty() && self.machines.is_none() && self.presence.is_none()
+        self.panes.is_empty()
+            && self.gone.is_empty()
+            && self.machines.is_none()
+            && self.presence.is_none()
+            && self.notices.is_none()
     }
 }
 
@@ -747,6 +804,9 @@ impl State {
         }
         if let Some(p) = &delta.presence {
             self.presence = p.clone();
+        }
+        if let Some(n) = &delta.notices {
+            self.notices = n.clone();
         }
     }
 }
@@ -824,6 +884,9 @@ pub struct State {
     /// client sees.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub presence: Vec<Presence>,
+    /// Attention that belongs to no pane (#551): the owner's alone.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub notices: Vec<Notice>,
 }
 
 pub type MachineId = u32;
@@ -1098,6 +1161,10 @@ pub struct PaneInfo {
     /// Getting started's "Use Claude Code with Arugula").
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub unhooked: bool,
+    /// The owner silenced teammates' agents' mentions for this session
+    /// (#579): `arugula mentions off %N`. It lasts as long as the pane.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub mentions_off: bool,
     /// What Claude Code running in it says of its session from inside it
     /// (#450, the arugula-live mod, through `arugula session-signal`): the
     /// agent block's `context` shape, with `source: live`, its versions and
@@ -1518,6 +1585,7 @@ mod tests {
             options: Box::new(options),
             roles: Some(vec![(1, arugula_core::Role::Viewer), (4, arugula_core::Role::Editor)]),
             presence: vec![],
+            notices: vec![],
         };
         let msg = ServerMsg::State { state };
         let back: ServerMsg = serde_json::from_str(&serde_json::to_string(&msg).unwrap()).unwrap();

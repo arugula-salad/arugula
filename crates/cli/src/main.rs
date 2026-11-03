@@ -177,6 +177,10 @@ enum Command {
     ///
     /// Once its shell is waiting at its prompt.
     Rerun(cmd::rerun::Args),
+    /// Let teammates' agents mention a session, or silence them.
+    ///
+    /// `off %N` keeps them out of one session for as long as the pane lives.
+    Mentions(cmd::mentions::Args),
     /// Claude Code conversations on this machine.
     ///
     /// From a terminal or the desktop app's Code tab. `open` shows one as an agent
@@ -633,7 +637,7 @@ const GROUPS: &[(&str, &[&str])] = &[
         "Panes",
         &[
             "ls", "run", "attach", "send", "keys", "mouse", "upload", "tail", "wait", "capture", "process", "cd",
-            "rerun", "close", "export", "events", "history", "log", "search", "fs", "synced",
+            "rerun", "mentions", "close", "export", "events", "history", "log", "search", "fs", "synced",
         ],
     ),
     (
@@ -998,6 +1002,7 @@ fn real_main(mut cli: Cli) -> anyhow::Result<i32> {
         Command::Pr(args) => cmd::pr::run(args, ctx),
         Command::Issue(args) => cmd::issue::run(args, ctx),
         Command::Rerun(args) => cmd::rerun::run(args, ctx),
+        Command::Mentions(args) => cmd::mentions::run(args, ctx),
         Command::Agent(args) => cmd::agent::run(*args, ctx),
         Command::Claude { cmd } => cmd::claude::run(cmd, ctx),
         Command::Studio { cmd } => cmd::studio::run(cmd, ctx),

@@ -12,9 +12,10 @@
 //!   its token minted, so no one else's approval can push to Arugula.
 //! - **Apply** runs on the deploy's box (`arugulad _arugula-release`): it
 //!   clones [`REPO`], checks the commit is on `main` and green, runs the
-//!   commit's own `scripts/release bump`, which tags and pushes `main` and
-//!   the tag atomically, revokes the token, and follows the tag's release
-//!   workflow to its end.
+//!   commit's own `scripts/release bump`, which tags the commit itself and
+//!   pushes the tag (#1986: no version-bump commit), and for the daemon
+//!   commits the tag's client fixtures to `main` (#200); then revokes the
+//!   token and follows the tag's release workflow to its end.
 //! - **Its tokens** are minted for the run, once the platform has checked
 //!   with GitHub that the commit is on `main` and green ([`source_checked`]):
 //!   an installation token of the platform's GitHub App, `contents: write`

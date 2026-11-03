@@ -31,6 +31,13 @@
           "description": "What the room is called, for the one reading.",
           "type": "string"
         },
+        "root_line": {
+          "description": "With a reply (#580): the first line of the thread's root message,\nabout 120 characters at most. The daemon names the thread by it when\nreplies come in together; without it, by the root's number. An older\ndaemon ignores it.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "seq": {
           "description": "The message's number in the room.",
           "format": "int64",
@@ -944,6 +951,10 @@
             "string",
             "null"
           ]
+        },
+        "silenced": {
+          "description": "The session it named is there, but its owner silenced mentions for it\n(#579): the message waits in the inbox. With `asked`.",
+          "type": "boolean"
         },
         "step": {
           "$ref": "#/$defs/RoutedStep"

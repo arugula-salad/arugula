@@ -121,10 +121,24 @@ pub(super) async fn fetch(app: &Platform, env: &Environment, source: &Source) ->
             let v = get(format!("contents/{file}?ref={at}")).await?;
             file_text(&v).context("no file")
         };
+        // The lane's newest release tag: since #1986 no commit moves the
+        // version, so the files keep the last one a commit set and the tags
+        // carry on from it. Not there (an older GitHub fake), the files say.
+        let prefix = match lane {
+            Lane::Daemon => "v",
+            Lane::App => "app-v",
+        };
+        let tagged = match get(format!("git/matching-refs/tags/{prefix}")).await {
+            Ok(refs) => newest_tag(&refs, prefix),
+            Err(e) => {
+                warn!(env = %env.id, error = format!("{e:#}"), "deploy: couldn't read the lane's release tags");
+                None
+            }
+        };
         match (read_at(sha).await, read_at(BRANCH).await) {
             (Ok(at_sha), Ok(at_main)) => {
                 let bump = env.settings.get(BUMP).map_or("patch", String::as_str);
-                facts.expected_version = expected_version(lane, &at_sha, &at_main, bump);
+                facts.expected_version = expected_version(lane, &at_sha, &at_main, tagged.as_deref(), bump);
             }
             (a, b) => {
                 let e = a.err().or(b.err()).map(|e| format!("{e:#}"));
@@ -157,23 +171,43 @@ pub fn subject_of(message: &str) -> Option<String> {
 }
 
 /// The version a release of `lane` is expected to tag: the way `bump` in
-/// `scripts/release` works it out. From the higher of the commit's version
-/// and main's, one `bump` (`patch`, `minor` or `major`) up. `None` when a
-/// version isn't there or isn't `x.y.z`.
-pub fn expected_version(lane: Lane, at_commit: &str, at_main: &str, bump: &str) -> Option<String> {
+/// `scripts/release` works it out. From the highest of the lane's newest
+/// release tag (`tagged`, `x.y.z`), the commit's version and main's, one
+/// `bump` (`patch`, `minor` or `major`) up. `None` when a version in the
+/// files isn't there or isn't `x.y.z`.
+pub fn expected_version(
+    lane: Lane,
+    at_commit: &str,
+    at_main: &str,
+    tagged: Option<&str>,
+    bump: &str,
+) -> Option<String> {
     let section = match lane {
         Lane::Daemon => "[workspace.package]",
         Lane::App => "[package]",
     };
     let a = triple(&version_in(at_commit, section)?)?;
     let b = triple(&version_in(at_main, section)?)?;
-    let (major, minor, patch) = a.max(b);
+    let c = tagged.and_then(triple).unwrap_or_default();
+    let (major, minor, patch) = a.max(b).max(c);
     Some(match bump {
         "major" => format!("{}.0.0", major + 1),
         "minor" => format!("{major}.{}.0", minor + 1),
         "patch" => format!("{major}.{minor}.{}", patch + 1),
         _ => return None,
     })
+}
+
+/// The newest `x.y.z` among GitHub's matching refs for `refs/tags/{prefix}`
+/// (`git/matching-refs`), as `newest_tag` in `scripts/release` reads them.
+pub fn newest_tag(refs: &Value, prefix: &str) -> Option<String> {
+    let start = format!("refs/tags/{prefix}");
+    refs.as_array()?
+        .iter()
+        .filter_map(|r| r["ref"].as_str()?.strip_prefix(start.as_str()))
+        .filter_map(|v| triple(v).map(|t| (t, v)))
+        .max_by_key(|(t, _)| *t)
+        .map(|(_, v)| v.to_owned())
 }
 
 /// The first `version = "…"` in a manifest's `section` (`version_at` in

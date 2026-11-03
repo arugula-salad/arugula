@@ -2094,6 +2094,23 @@ async fn fake_threads(f: FakeThreads) -> String {
             }),
         )
         .route(
+            "/api/daemon/chat/replies",
+            get(|| async {
+                let m = |seq: i64, text: &str, agent: Value| {
+                    json!({ "seq": seq, "at": seq, "author": "a2", "name": "Sam", "text": text, "quote": null,
+                            "pane": null, "mentions": [], "edited": null, "deleted": null, "imported": null,
+                            "agent": agent })
+                };
+                let geek = json!({ "machine": "m1", "machine_name": "geek" });
+                Json(json!({ "threads": [
+                    { "room": "ch_general", "room_name": "general", "root": m(1, "Plan for the beta\nmore", geek.clone()),
+                      "replies": [m(4, "one", Value::Null), m(6, "two", Value::Null)] },
+                    { "room": "ch_general", "room_name": "general", "root": m(2, "Deploy?", geek),
+                      "replies": [m(5, "three", Value::Null)] },
+                ] }))
+            }),
+        )
+        .route(
             "/api/daemon/chat/search",
             get(move || {
                 let ms = found();
@@ -2149,6 +2166,18 @@ async fn an_agent_reads_and_posts_in_conversations_through_control() {
     assert_eq!((&read["messages"][0]["seq"], &read["next_after_seq"]), (&json!(1), &json!(1)), "{read}");
     assert_eq!(read["messages"][0]["mentions_you"], true, "{read}");
     assert!(read["summary"].as_str().unwrap().contains("[1] Sam: @geek can you look?"), "{read}");
+    // #580: the unread replies to this machine's agents' posts, by thread; no room.
+    let unread = call(&s, "read_thread", json!({ "replies": true })).await;
+    assert_eq!(unread["threads"].as_array().map(Vec::len), Some(2), "{unread}");
+    assert_eq!(unread["threads"][0]["root"]["seq"], 1, "{unread}");
+    let seqs: Vec<_> = unread["threads"][0]["replies"].as_array().unwrap().iter().map(|m| m["seq"].clone()).collect();
+    assert_eq!(seqs, [json!(4), json!(6)], "{unread}");
+    let said = unread["summary"].as_str().unwrap();
+    assert!(
+        said.contains("3 unread replies in 2 thread(s)")
+            && said.contains("ch_general thread 1 (Sam's agent on geek: Plan for the beta)"),
+        "{said}"
+    );
     let found = call(&s, "search_threads", json!({ "q": "on it*", "team": "t1" })).await;
     assert_eq!(found["found"][0]["message"]["by"], "Jake's agent on geek", "{found}");
 
@@ -2168,6 +2197,7 @@ async fn an_agent_reads_and_posts_in_conversations_through_control() {
     let paths: Vec<&str> = calls.iter().map(|(p, _, _)| p.as_str()).collect();
     assert!(paths.contains(&"/api/daemon/chat/rooms/ch_general/messages?after=0&mentions=true"), "{paths:?}");
     assert!(paths.contains(&"/api/daemon/chat/search?q=on+it*&team=t1"), "{paths:?}");
+    assert!(paths.contains(&"/api/daemon/chat/replies"), "{paths:?}");
     let post = calls.iter().find(|(p, _, _)| p == "/api/daemon/chat/rooms/iss_0123/messages").unwrap();
     assert_eq!(post.2, json!({ "text": "looking, @sam" }));
     assert!(calls.iter().all(|(_, auth, _)| auth.starts_with(&format!("v2 {} ", keys.id()))), "{calls:?}");

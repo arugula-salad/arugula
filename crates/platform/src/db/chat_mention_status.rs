@@ -42,17 +42,25 @@ pub const REDELIVER_WITHIN_MS: u64 = 24 * 60 * 60 * 1000;
 /// restarted mid-delivery, #419): the daemon is given 5 s to answer.
 pub const STALE_SENDING_MS: u64 = 2 * 60 * 1000;
 
-/// Whether the daemon's word on the turn (`working`, then `read`, #540) may
-/// replace a status that is `current`. Only forward, and only for a mention
-/// a session took: `answered` is final (the agent's reply usually comes
-/// before its turn ends), `read` never goes back to `working`, and a
+/// The stored states of a dropped mention (#613): `dropped` and why, in the
+/// one column.
+pub const DROPPED_STOPPED: &str = "dropped_stopped";
+pub const DROPPED_EXITED: &str = "dropped_exited";
+
+/// Whether the daemon's word on the turn (`working`, then `read`, #540, or
+/// `dropped`, #613) may replace a status that is `current`. Only forward,
+/// and only for a mention a session took: `answered` is final (the agent's
+/// reply usually comes before its turn ends), so is a dropped one (a late
+/// `read` from a stale turn can't undo it), `read` never goes back to
+/// `working` or on to `dropped` (its turn ended), and a
 /// mention that no session took (`no_such_session`, `waiting`, `offline`,
 /// `chain`, `missed`) has no turn to report. `sending` takes it: the
 /// daemon's report can beat its own answer to the push.
 pub fn turn_follows(current: &str, report: &str) -> bool {
     matches!(
         (current, report),
-        ("sending" | "delivered" | "queued" | "fell_back", "working" | "read") | ("working", "read")
+        ("sending" | "delivered" | "queued" | "fell_back", "working" | "read" | DROPPED_STOPPED | DROPPED_EXITED)
+            | ("working", "read" | DROPPED_STOPPED | DROPPED_EXITED)
     )
 }
 
@@ -86,7 +94,7 @@ impl Db {
     }
 
     /// The daemon says where the turn that took a mention is (#540):
-    /// `state` is `working` or `read`. Only a row the machine has for the
+    /// `state` is `working`, `read` or a dropped one. Only a row the machine has for the
     /// message changes, and only forward ([`turn_follows`]); a `sending`
     /// one takes `session` from the report, as the push's answer may not
     /// have settled it yet. `None`: no such row (the report is refused);
@@ -216,6 +224,24 @@ impl Db {
         )
     }
 
+    /// The replies in threads `machine`'s agents posted in (#580) that no
+    /// session of it has read: a status that isn't `read`, `answered` or
+    /// dropped, on a reply that isn't deleted, written at or after `since`.
+    /// The newest `max`, newest first.
+    pub fn unread_agent_replies(&self, machine: &str, since: u64, max: usize) -> Result<Vec<MentionStatus>> {
+        self.c().query_map(
+            "SELECT s.room, s.seq, s.machine, s.machine_name, s.root, s.state, s.session, s.asked, s.reply, s.at, s.names
+             FROM chat_mention_status s JOIN chat_messages m ON m.room = s.room AND m.seq = s.seq
+             WHERE s.machine = ?1 AND m.at >= ?2 AND m.parent IS NOT NULL AND m.deleted IS NULL
+             AND s.state NOT IN ('read', 'answered', 'dropped_stopped', 'dropped_exited')
+             AND EXISTS (SELECT 1 FROM chat_messages a WHERE a.room = s.room AND a.agent = s.machine
+                         AND a.seq < s.seq AND (a.seq = s.root OR a.parent = s.root))
+             ORDER BY m.at DESC, s.seq DESC LIMIT ?3",
+            params![machine, since as i64, max as i64],
+            status_row,
+        )
+    }
+
     /// `machine` replied at message `reply`, in the thread of `root`: every
     /// mention of it in that thread, from `since` on and before the reply,
     /// that wasn't answered yet, is. The numbers of the messages changed.
@@ -323,6 +349,18 @@ mod tests {
             assert!(follows(taken, "working") && follows(taken, "read"), "{taken}");
         }
         assert!(follows("working", "read"));
+        // A drop (#613) follows a turn that hasn't ended, and is final.
+        for why in [DROPPED_STOPPED, DROPPED_EXITED] {
+            for before in ["sending", "delivered", "queued", "fell_back", "working"] {
+                assert!(follows(before, why), "{before}");
+            }
+            for before in ["read", "answered", "waiting", "dropped_stopped", "dropped_exited"] {
+                assert!(!follows(before, why), "{before}");
+            }
+            for late in ["working", "read", DROPPED_STOPPED, DROPPED_EXITED] {
+                assert!(!follows(why, late), "{why} then {late}");
+            }
+        }
         assert!(!follows("working", "working") && !follows("read", "working") && !follows("read", "read"));
         // The agent's reply is final; a mention no session took has no turn.
         for other in ["answered", "no_such_session", "waiting", "offline", "chain", "missed"] {
