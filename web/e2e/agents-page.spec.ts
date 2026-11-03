@@ -244,6 +244,28 @@ test("Team: machines are groups, offline is said, and a task waits in view until
   await expect(p.locator("[data-agents-quiet]")).toHaveCount(0);
 });
 
+test("Team: a card with no description still lists, and search doesn't stop on it", async ({ page }) => {
+  // A row here is the card another machine answered with, as it sent it.
+  await team(page);
+  await page.route(/\/api\/a2a\/catalog/, (r) =>
+    r.fulfill({
+      json: {
+        machines: [
+          { machine: "m1", name: "buildbox", owner: "", here: true, online: true, note: null, fetched_ms: null, agents: [{ name: "reviewer" }] },
+          { machine: "m3", name: "danas-laptop", owner: "Dana", here: false, online: true, note: null, fetched_ms: null, agents: [{ name: "fixer" }] },
+        ],
+      },
+    }),
+  );
+  await page.reload();
+  const p = page.locator("[data-agents-page=team]");
+  await expect(p.locator("[data-agent=reviewer]")).toBeVisible();
+  await p.locator("[data-list-search]").fill("fixer");
+  await expect(p.locator("[data-agent]")).toHaveCount(1);
+  await expect(p.locator("[data-agent=fixer]")).toBeVisible();
+  await expect((await preview(page, "data-agent", "fixer")).locator("[data-delegate=fixer]")).toBeVisible();
+});
+
 for (const [width, both] of [[1440, true], [966, true], [700, false], [400, false]] as const) {
   test(`at ${width} px nothing overlaps or scrolls sideways`, async ({ page }) => {
     await team(page);

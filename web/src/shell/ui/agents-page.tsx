@@ -624,7 +624,10 @@ function TeamTab({ client }: { client: Client }) {
     setBusy(true);
     try {
       const c = await json<{ machines: Shelf[] }>(client, "GET", `/api/a2a/catalog${fresh ? "?fresh=1" : ""}`);
-      setShelves(c.machines);
+      // An agent here is the card its machine answered with, as it sent it.
+      const named = (a: Shelf["agents"][number]) => typeof a.name === "string";
+      const said = (a: Shelf["agents"][number]) => ({ ...a, description: typeof a.description === "string" ? a.description : "" });
+      setShelves(c.machines.map((m) => ({ ...m, agents: m.agents.filter(named).map(said) })));
       setWaiting((await json<{ waiting: Waiting[] }>(client, "GET", "/api/a2a/waiting").catch(() => ({ waiting: [] }))).waiting);
       setGrants(await json<Grant[]>(client, "GET", "/api/a2a/grants").catch(() => []));
       setError(null);
