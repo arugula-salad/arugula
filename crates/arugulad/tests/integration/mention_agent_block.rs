@@ -3,6 +3,8 @@
 //! then `read`. Against a fake control (the relay socket sends the
 //! `agents.mention` op and takes the daemon's answer and its turn reports)
 //! and a real daemon with a fake-ACP agent block.
+// `Daemon::stop` is Unix only, and so is every module that uses its helpers.
+#![cfg(unix)]
 
 use std::sync::{Arc, Mutex};
 

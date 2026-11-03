@@ -1463,6 +1463,8 @@ mod tests {
 
     /// The agent's login reaches the run on its standard input, from a file
     /// the outer shell removes: never on a command line.
+    // Its command is read back through `sh`.
+    #[cfg(unix)]
     #[test]
     fn an_agent_runs_claude_with_its_login_on_stdin() {
         let op = Op { instruction: Some("fix the build".into()), ..Op::default() };
