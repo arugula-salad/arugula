@@ -1,10 +1,15 @@
 #!/usr/bin/env bash
-# `scripts/release bump` (`just release`, #524): it commits a version bump on
-# top of the newest green commit on main, tags it, and pushes the tag with
-# main, the bump merged in; check-green lets that tag through on its
-# parent's ci/green tag. An app release (--app) reads the app's lane,
-# ci/green-app (#307). A daemon release also needs the commit's ci/rare
-# tag (#305), and --rare starts rare-nightly.yml on it and waits. Against a
+# `scripts/release bump` (`just release`, #524, #1986): it tags the newest
+# green commit on main as it is, with the lane's next version after its
+# newest tag, and pushes the tag: no commit moves the version. The commit
+# must have the release's notes. For the daemon, it then commits the tag's
+# client fixtures to main in a commit of its own (#200): again on a main
+# that moved under it, not at all when main has them, and only a warning
+# when main refuses it. An app release (--app) reads the app's lane,
+# ci/green-app (#307), and leaves main alone. A daemon release also needs
+# the commit's ci/rare tag (#305), and --rare starts rare-nightly.yml on it
+# and waits. Then `stamp`, which writes a tag's version into a checkout for
+# the release's build, `check-version` and `check-fixtures`. Against a
 # local bare repository standing in for GitHub (GITHUB_SERVER_URL) and a
 # fake gh, so nothing reaches the network.
 #
@@ -53,8 +58,9 @@ cd "$tmp/work"
 # A workspace in miniature: the daemon's crates at 0.1.0, the app at 0.1.0
 # too, and serde, someone else's crate, at 0.1.0 as well (it must stay).
 # The server's workspace (server/) with a crate only its lock file names,
-# arugula-control, at the daemon's version. And a client fixture, which a
-# daemon release copies (#200).
+# arugula-control, at the daemon's version. And a client fixture, which
+# changes after two, so a release of two must copy two's (#200). No commit
+# moves a version.
 mkdir -p crates/daemon crates/core crates/control crates/desktop crates/proto/fixtures docs/releases server src
 echo '{"a session":1}' >crates/proto/fixtures/session.jsonl
 tree() { # DAEMON APP: the daemon's crates at DAEMON, the app at APP
@@ -77,31 +83,40 @@ lock() { # NAME VERSION [SOURCE]
   printf '\n'
 }
 tree 0.1.0 0.1.0
-echo one >src/code
-git add -A && git commit -qm one
-echo two >src/code && git commit -qam two
-two=$(git rev-parse HEAD)
-echo three >src/code && git commit -qam three
-three=$(git rev-parse HEAD)
-echo four >src/code && git commit -qam four
-four=$(git rev-parse HEAD)
-# A daemon release's notes have a headline section (What's new); the app's
-# needn't. 0.1.3's has none.
+# NOTES N [HEADLINE]: the release's notes (a daemon release's with a
+# headline section, the web client's What's new); FIXTURES N: its client
+# fixtures' copy, as `just release-fixtures` makes it.
 # The backticks are the notes' fence, not a command (SC2016).
 # shellcheck disable=SC2016
-for n in 0.1.1 0.1.2; do printf 'notes %s\n\n```whats-new\n[]\n```\n' "$n" >"docs/releases/$n.md"; done
-for n in 0.1.3 app-0.2.0; do echo "notes $n" >"docs/releases/$n.md"; done
-git add -A && git commit -qm notes
-notes=$(git rev-parse HEAD)
+notes() { if [ -n "${2:-}" ]; then printf 'notes %s\n\n```whats-new\n[]\n```\n' "$1"; else echo "notes $1"; fi >"docs/releases/$1.md"; }
+fixtures() { mkdir -p "crates/proto/fixtures/releases/$1" && cp crates/proto/fixtures/session.jsonl "crates/proto/fixtures/releases/$1/"; }
+echo one >src/code
+git add -A && git commit -qm one
+one=$(git rev-parse HEAD)
+# two: what 0.1.1 and the app's 0.2.0 need: their notes, and no copy of
+# the fixtures.
+echo two >src/code && notes 0.1.1 headline && notes app-0.2.0
+git add -A && git commit -qm two
+two=$(git rev-parse HEAD)
+echo three >src/code && echo '{"a session":3}' >crates/proto/fixtures/session.jsonl && git commit -qam three
+three=$(git rev-parse HEAD)
+# four: what 0.1.2 needs, and its fixtures' copy made by hand already.
+echo four >src/code && notes 0.1.2 headline && fixtures 0.1.2
+git add -A && git commit -qm four
+four=$(git rev-parse HEAD)
+# five: 0.1.3's notes, without a headline section.
+echo five >src/code && notes 0.1.3
+git add -A && git commit -qm five
+five=$(git rev-parse HEAD)
 # one and two passed CI; three passed and then failed a re-run; four and
-# the notes haven't passed (yet).
-git tag -a "ci/green/$(git rev-parse HEAD~4)" -m green HEAD~4
+# five haven't passed (yet).
+git tag -a "ci/green/$one" -m green "$one"
 git tag -a "ci/green/$two" -m green "$two"
 git tag -a "ci/green/$three" -m green "$three"
 git tag -a "ci/revoked/$three" -m revoked "$three"
 # The app's lane (#307): one, two and three passed its phases; three's
 # re-run failed a phase the app doesn't need, so it stays app-green.
-for c in "$(git rev-parse HEAD~4)" "$two" "$three"; do git tag -a "ci/green-app/$c" -m green "$c"; done
+for c in "$one" "$two" "$three"; do git tag -a "ci/green-app/$c" -m green "$c"; done
 git push -q "$forge" main --tags
 
 run() { # WANT NAME ARGS...: scripts/release ARGS exits WANT
@@ -115,22 +130,38 @@ has() { # NAME TEXT: the last run's output says TEXT
   if grep -qF -- "$2" "$tmp/out"; then ok "$1"; else bad "$1: no \"$2\" in: $(cat "$tmp/out")"; fi
 }
 remote() { git ls-remote "$forge" "$1" | cut -f1; }
-at() { # REV FILE
-  git fetch -q "$forge" main --tags
-  git show "$1:$2"
+untouched() { # NAME [MAIN]: main is still MAIN (five), and nothing in the checkout changed
+  if [ "$(remote refs/heads/main)" = "${2:-$five}" ] && [ -z "$(git status --porcelain)" ] && [ "$(git rev-parse HEAD)" = "$five" ]; then ok "$1: main and the checkout as they were"
+  else bad "$1: main is $(remote refs/heads/main), or the checkout changed: $(git status --porcelain)"; fi
 }
+# The forge's main refuses pushes while $tmp/refuse-main exists; with
+# $tmp/move-main, the next push to main finds that main moved (someone
+# merged a commit, "moved", just before) and fails, as GitHub's would.
+hook=$tmp/forge/arugula.git/hooks/pre-receive
+cat >"$hook" <<'HOOK'
+#!/usr/bin/env bash
+while read -r old new ref; do
+  [ "$ref" = refs/heads/main ] || continue
+  if [ -e "$FAKE/refuse-main" ]; then echo "main: protected" >&2; exit 1; fi
+  if [ -e "$FAKE/move-main" ]; then
+    rm "$FAKE/move-main"
+    q() { env -u GIT_QUARANTINE_PATH -u GIT_OBJECT_DIRECTORY -u GIT_ALTERNATE_OBJECT_DIRECTORIES git "$@"; }
+    moved=$(q commit-tree "$old^{tree}" -p "$old" -m moved)
+    q update-ref refs/heads/main "$moved" "$old"
+  fi
+done
+HOOK
+chmod +x "$hook"
 
 # A dry run picks two (three is revoked), and changes nothing anywhere.
 run 0 "dry run" bump --dry-run
 has "dry run: the newest green commit" "v0.1.1: 0.1.0 -> 0.1.1 on ${two:0:12}"
-has "dry run: what it would change" "Cargo.toml"
-has "dry run: says so" "Dry run: nothing committed, tagged or pushed."
+has "dry run: says so" "Dry run: would tag ${two:0:12} v0.1.1, push the tag, then commit its client fixtures to main as crates/proto/fixtures/releases/0.1.1; nothing tagged or pushed."
 has "dry run: the merges it would leave out" "  ${three:0:7} "
 has "dry run: the rare jobs haven't passed on it" "${two:0:12} has no ci/rare tag"
-if [ -z "$(remote refs/tags/v0.1.1)" ] && [ "$(remote refs/heads/main)" = "$notes" ]; then ok "dry run: nothing pushed"
-else bad "dry run pushed something"; fi
-if [ "$(git worktree list | wc -l | tr -d ' ')" = 1 ]; then ok "dry run: its worktree is gone"
-else bad "dry run left a worktree: $(git worktree list)"; fi
+if [ -z "$(remote refs/tags/v0.1.1)" ] && ! git rev-parse -q --verify v0.1.1 >/dev/null; then ok "dry run: nothing tagged"
+else bad "dry run tagged something"; fi
+untouched "dry run"
 
 # main's newer commits aren't green: it lists them and stops (#1679),
 # unless --older says to release without them.
@@ -140,99 +171,147 @@ has "newer commits not green: says how" "just release --older"
 if [ -z "$(remote refs/tags/v0.1.1)" ]; then ok "newer commits not green: nothing tagged"; else bad "it tagged v0.1.1 anyway"; fi
 run 2 "--older with a COMMIT" bump --older "$two"
 
-# Without notes on main, no release.
-run 1 "minor: no notes on main" bump minor --older
-has "minor: says which" "main has no docs/releases/0.2.0.md"
+# Without notes in the commit, no release. The fixtures aren't asked for.
+run 1 "minor: no notes in the commit" bump minor --older
+has "minor: says which notes" "${two:0:12} has no docs/releases/0.2.0.md"
+if grep -q fixtures "$tmp/out"; then bad "minor: asks for fixtures: $(cat "$tmp/out")"; else ok "minor: doesn't ask for the fixtures"; fi
 run 0 "minor: a dry run shows the rest" bump minor --dry-run
-has "minor: the dry run says so too" "main has no docs/releases/0.2.0.md"
+has "minor: the dry run says so too" "${two:0:12} has no docs/releases/0.2.0.md"
 run 1 "a commit that isn't green" bump "$four" --dry-run
 run 2 "an unknown flag" bump --force
 
-# The app first: only crates/desktop moves, and main merges it. It reads
-# ci/green-app, so it's on three, which the daemon's lane revoked.
+# The app first. It reads ci/green-app, so it's on three, which the
+# daemon's lane revoked, and the tag is on three itself.
 run 0 "release app-v0.2.0" bump minor --app --older
 has "app-v0.2.0: the newest app-green commit" "app-v0.2.0: 0.1.0 -> 0.2.0 on ${three:0:12}"
-tag=$(git rev-parse "app-v0.2.0^{commit}")
-if [ "$(git rev-parse "$tag^")" = "$three" ]; then ok "app-v0.2.0 is a bump on three"; else bad "app-v0.2.0's parent isn't three"; fi
+has "app-v0.2.0: the line the deploy driver reads" "pushed app-v0.2.0 (${three:0:12})"
+if [ "$(git rev-parse "app-v0.2.0^{commit}")" = "$three" ]; then ok "app-v0.2.0 is on three itself"; else bad "app-v0.2.0 isn't on three"; fi
 if [ "$(remote refs/tags/app-v0.2.0)" = "$(git rev-parse app-v0.2.0)" ]; then ok "app-v0.2.0 pushed"; else bad "app-v0.2.0 isn't on the forge"; fi
-if [ "$(git diff --name-only "$three" "$tag" | tr '\n' ' ')" = "crates/desktop/Cargo.lock crates/desktop/Cargo.toml crates/desktop/THIRD_PARTY.md docs/releases/app-0.2.0.md " ]; then ok "the app's bump's files"
-else bad "the app's bump changed: $(git diff --name-only "$three" "$tag")"; fi
-main=$(remote refs/heads/main)
-if git fetch -q "$forge" main && [ "$(git rev-parse FETCH_HEAD^1)" = "$notes" ] && [ "$(git rev-parse FETCH_HEAD^2)" = "$tag" ]; then ok "main: the bump merged into it"
-else bad "main ($main) isn't notes + the bump"; fi
-if at "$main" crates/desktop/Cargo.toml | grep -q '^version = "0.2.0"' && at "$main" crates/desktop/Cargo.lock | grep -A1 '"arugula-core"' | grep -q '0.1.0' &&
-  at "$main" Cargo.toml | grep -q '^version = "0.1.0"'; then ok "main: the app at 0.2.0, the daemon still at 0.1.0"
-else bad "main after the app's release: $(at "$main" crates/desktop/Cargo.toml)"; fi
-run 0 "check-green app-v0.2.0 (on its parent)" check-green app-v0.2.0
-has "check-green: says why" "only bumps versions: checking its parent"
+untouched "app-v0.2.0"
+run 0 "check-green app-v0.2.0" check-green app-v0.2.0
 has "check-green: the app's tag" "(ci/green-app/$three)"
 run 1 "check-green app-v0.2.0 as the daemon's: three is revoked there" check-green app-v0.2.0 daemon
 run 1 "app-v0.2.0's commit again" bump minor --app --dry-run
 has "again: says so" "is already released in app-v0.2.0"
 
-# main bumps the daemon to 0.1.1 by hand, and that hasn't passed CI: the
-# release from two is 0.1.2, and the merge's conflicts in the version lines
-# resolve to it.
-git fetch -q "$forge" main && git checkout -q FETCH_HEAD
-tree 0.1.1 0.2.0
-git commit -qam "Arugula 0.1.1"
-git push -q "$forge" HEAD:main
 ARUGULA_RELEASE_TRAILER=$'two\nlines' run 2 "a trailer of two lines" bump --dry-run
 ARUGULA_RELEASE_TRAILER="no colon" run 2 "a trailer that isn't Key: value" bump --dry-run
 # two hasn't passed the rare jobs (#305): no daemon release, and --rare
 # starts them on it and waits; a run that fails releases nothing.
 run 1 "no ci/rare tag: stops" bump --older
 has "no ci/rare tag: says how" "just release --rare"
-if [ -z "$(remote refs/tags/v0.1.2)" ]; then ok "no ci/rare tag: nothing pushed"; else bad "it pushed v0.1.2 without the rare jobs"; fi
+if [ -z "$(remote refs/tags/v0.1.1)" ]; then ok "no ci/rare tag: nothing pushed"; else bad "it pushed v0.1.1 without the rare jobs"; fi
 FAKE_RARE=failure run 1 "--rare: the run fails" bump --older --rare
 has "--rare: the run it started" "actions/runs/77"
 if grep -qx "workflow run rare-nightly.yml -R forge/arugula --ref main -f sha=$two" "$tmp/gh-calls"; then ok "--rare: started rare-nightly.yml on two"
 else bad "--rare started: $(cat "$tmp/gh-calls" 2>/dev/null)"; fi
-if [ -z "$(remote refs/tags/v0.1.2)" ]; then ok "--rare, failed: nothing pushed"; else bad "it pushed v0.1.2 after the rare jobs failed"; fi
+if [ -z "$(remote refs/tags/v0.1.1)" ]; then ok "--rare, failed: nothing pushed"; else bad "it pushed v0.1.1 after the rare jobs failed"; fi
 # As the arugula-release deploy driver runs it (M221): its trailer on the
-# bump, the tag and the merge. (The driver never passes --rare; here it
-# runs the rare jobs first, which pass.)
-ARUGULA_RELEASE_TRAILER="Arugula-Deploy: dep_m221" FAKE_RARE=success run 0 "release v0.1.2 over main's 0.1.1" bump --older --rare
-has "v0.1.2: after the rare jobs passed" "${two:0:12} passed the rare jobs (ci/rare/$two)"
-has "v0.1.2: from main's version" "v0.1.2: 0.1.0 -> 0.1.2 on ${two:0:12}"
-has "v0.1.2: the line the deploy driver reads" "pushed v0.1.2 ("
-tag=$(git rev-parse "v0.1.2^{commit}")
-if git cat-file -p v0.1.2 | grep -qx "Arugula-Deploy: dep_m221" && git log -1 --format=%B "$tag" | grep -qx "Arugula-Deploy: dep_m221" &&
-  git fetch -q "$forge" main && git log -1 --format=%B FETCH_HEAD | grep -qx "Arugula-Deploy: dep_m221"; then ok "v0.1.2: the deploy's trailer on the bump, the tag and the merge"
-else bad "v0.1.2: no trailer: $(git cat-file -p v0.1.2)"; fi
-if [ "$(git diff --name-only "$two" "$tag" | tr '\n' ' ')" = "Cargo.lock Cargo.toml THIRD_PARTY.md crates/daemon/Cargo.toml crates/desktop/Cargo.lock crates/desktop/THIRD_PARTY.md crates/proto/fixtures/releases/0.1.2/session.jsonl docs/releases/0.1.2.md server/Cargo.lock server/Cargo.toml server/THIRD_PARTY.md " ]; then ok "the daemon's bump's files, the fixtures' copy and the server's among them"
-else bad "the daemon's bump changed: $(git diff --name-only "$two" "$tag")"; fi
-main=$(remote refs/heads/main)
-if [ "$(at "$main" Cargo.lock | grep -c '"0.1.2"')" = 2 ] && at "$main" Cargo.toml | grep -q '^version = "0.1.2"' &&
-  at "$main" crates/daemon/Cargo.toml | grep -q 'arugula-core = { version = "0.1.2"' &&
-  at "$main" crates/desktop/Cargo.lock | grep -A1 '"arugula-core"' | grep -q '0.1.2' &&
-  ! at "$main" THIRD_PARTY.md | grep -q 'arugula.* 0.1.1'; then ok "main: the daemon's crates at 0.1.2"
-else bad "main isn't at 0.1.2: $(at "$main" Cargo.lock)"; fi
-if at "$main" server/Cargo.toml | grep -q '^version = "0.1.2"' && [ "$(at "$main" server/Cargo.lock | grep -c '"0.1.2"')" = 2 ] &&
-  at "$main" server/Cargo.lock | grep -A1 '"serde"' | grep -q '0.1.0' &&
-  at "$main" server/THIRD_PARTY.md | grep -q 'arugula-control 0.1.2'; then ok "main: the server's workspace at 0.1.2 too"
-else bad "the server's workspace isn't at 0.1.2: $(at "$main" server/Cargo.toml; at "$main" server/Cargo.lock)"; fi
-if at "$main" Cargo.lock | grep -A1 '"serde"' | grep -q '0.1.0' && at "$main" crates/daemon/Cargo.toml | grep -q 'serde = { version = "0.1.0" }' &&
-  at "$main" THIRD_PARTY.md | grep -q 'serde 0.1.0' && at "$main" crates/desktop/Cargo.toml | grep -q '^version = "0.2.0"'; then ok "main: serde and the app keep their versions"
-else bad "the bump moved serde or the app"; fi
-if [ -z "$(git diff "$main^1" "$main" -- src)" ]; then ok "main: the merge changes no code"; else bad "the merge changed src"; fi
-run 0 "check-green v0.1.2" check-green v0.1.2
-run 0 "check-rare v0.1.2 (on its parent)" check-rare v0.1.2
+# tag. (The driver never passes --rare; here it runs the rare jobs first,
+# which pass.) Main moves just as the fixtures go to it.
+touch "$tmp/move-main"
+ARUGULA_RELEASE_TRAILER="Arugula-Deploy: dep_m221" FAKE_RARE=success run 0 "release v0.1.1" bump --older --rare
+has "v0.1.1: after the rare jobs passed" "${two:0:12} passed the rare jobs (ci/rare/$two)"
+has "v0.1.1: the line the deploy driver reads" "pushed v0.1.1 (${two:0:12})"
+if [ "$(git rev-parse "v0.1.1^{commit}")" = "$two" ] && [ "$(remote 'refs/tags/v0.1.1^{}')" = "$two" ]; then ok "v0.1.1 is on two itself, on the forge"
+else bad "v0.1.1 isn't on two: $(git rev-parse "v0.1.1^{commit}")"; fi
+if git cat-file -p v0.1.1 | grep -qx "Arugula-Deploy: dep_m221"; then ok "v0.1.1: the deploy's trailer on the tag"
+else bad "v0.1.1: no trailer: $(git cat-file -p v0.1.1)"; fi
+# The fixtures, two's and not main's, in one commit on main, on top of the
+# commit that moved main; the checkout as it was.
+main1=$(remote refs/heads/main)
+git fetch -q "$forge" main
+moved=$(git rev-parse "$main1^")
+if [ "$(git log -1 --format=%s "$moved")" = moved ] && [ "$(git rev-parse "$moved^")" = "$five" ]; then ok "v0.1.1: the fixtures on the main that moved"
+else bad "v0.1.1: main is $(git log --format='%h %s' -3 "$main1")"; fi
+has "v0.1.1: says it committed them" "committed crates/proto/fixtures/releases/0.1.1 to main (${main1:0:12})"
+if [ "$(git diff --name-only "$moved" "$main1")" = crates/proto/fixtures/releases/0.1.1/session.jsonl ] &&
+  [ "$(git show "$main1:crates/proto/fixtures/releases/0.1.1/session.jsonl")" = '{"a session":1}' ]; then ok "v0.1.1: two's fixtures, nothing else"
+else bad "v0.1.1: the fixtures commit: $(git show --stat "$main1")"; fi
+untouched "v0.1.1" "$main1"
+run 0 "check-green v0.1.1" check-green v0.1.1
+run 0 "check-rare v0.1.1" check-rare v0.1.1
+run 0 "check-version v0.1.1: the rare jobs" check-version v0.1.1
+run 0 "check-fixtures v0.1.1" check-fixtures v0.1.1
+has "check-fixtures v0.1.1: main has them" "main has crates/proto/fixtures/releases/0.1.1"
 
-# check-green looks past a commit only when it bumps versions.
-git tag -a not-a-bump -m x "$four"
-run 1 "check-green: code on top of a red commit" check-green not-a-bump
-git tag -a notes-on-red -m x "$notes"
-run 1 "check-green: notes on top of a red commit" check-green notes-on-red
-has "notes-on-red: the parent's verdict" "is on ${four:0:12}, which has no ci/green tag"
+# The next daemon release counts from the newest v* tag, since the files
+# still say 0.1.0: four, once green and past the rare jobs, is 0.1.2.
+git tag -a "ci/green/$four" -m green "$four" && git tag "ci/rare/$four" "$four" && git push -q "$forge" --tags
+run 0 "release v0.1.2 from the newest tag" bump "$four"
+has "v0.1.2: from v0.1.1, not the files' 0.1.0" "v0.1.2: 0.1.1 -> 0.1.2 on ${four:0:12}"
+if [ "$(git rev-parse "v0.1.2^{commit}")" = "$four" ]; then ok "v0.1.2 is on four"; else bad "v0.1.2 isn't on four"; fi
+# four has its copy already, and so main has: nothing to commit.
+has "v0.1.2: main has the fixtures already" "main has crates/proto/fixtures/releases/0.1.2 already, as v0.1.2 has it"
+untouched "v0.1.2" "$main1"
 
 # Notes without a headline section: no release, but a dry run goes on.
-# (four passes CI after all, so there's something to release.)
-git tag -a "ci/green/$four" -m green "$four" && git push -q "$forge" --tags
-run 1 "v0.1.3: no headline section" bump "$four"
+git tag -a "ci/green/$five" -m green "$five" && git tag "ci/rare/$five" "$five" && git push -q "$forge" --tags
+run 1 "v0.1.3: no headline section" bump "$five"
 has "v0.1.3: says so" "docs/releases/0.1.3.md has no headline section"
 if [ -z "$(remote refs/tags/v0.1.3)" ]; then ok "v0.1.3: nothing pushed"; else bad "v0.1.3 was pushed"; fi
-run 0 "v0.1.3: a dry run shows the rest" bump "$four" --dry-run
+run 0 "v0.1.3: a dry run shows the rest" bump "$five" --dry-run
 has "v0.1.3: the dry run says so too" "docs/releases/0.1.3.md has no headline section"
+
+# six, 0.1.3 with its headline, on main: main refuses the fixtures
+# commit. The release stands, and it says what to run.
+git checkout -q -b six "$main1"
+echo six >src/code && notes 0.1.3 headline
+git add -A && git commit -qm six
+six=$(git rev-parse HEAD)
+git tag -a "ci/green/$six" -m green "$six" && git tag "ci/rare/$six" "$six"
+git push -q "$forge" "$six:refs/heads/main" "refs/tags/ci/green/$six" "refs/tags/ci/rare/$six"
+touch "$tmp/refuse-main"
+run 0 "v0.1.3: main refuses the fixtures" bump "$six"
+has "v0.1.3: pushed" "pushed v0.1.3 (${six:0:12})"
+has "v0.1.3: says what to run" "warning: main refused crates/proto/fixtures/releases/0.1.3 (tried 5 times). v0.1.3 is released all the same; run \`just release-fixtures 0.1.3\` and merge it to main"
+if [ "$(remote 'refs/tags/v0.1.3^{}')" = "$six" ] && [ "$(remote refs/heads/main)" = "$six" ]; then ok "v0.1.3: the tag is out, main as it was"
+else bad "v0.1.3: tag $(remote 'refs/tags/v0.1.3^{}'), main $(remote refs/heads/main)"; fi
+rm "$tmp/refuse-main"
+# check-fixtures, as release.yml's fixtures job runs it: a warning in the
+# job's summary, never a failure.
+GITHUB_ACTIONS=true GITHUB_STEP_SUMMARY=$tmp/summary run 0 "check-fixtures v0.1.3: none on main" check-fixtures v0.1.3
+has "check-fixtures v0.1.3: an Actions warning" "::warning::main has no crates/proto/fixtures/releases/0.1.3"
+# The backticks are the message's, not a command (SC2016).
+# shellcheck disable=SC2016
+if grep -qF 'run `just release-fixtures 0.1.3` and merge it to main' "$tmp/summary"; then ok "check-fixtures v0.1.3: in the summary"
+else bad "check-fixtures v0.1.3: summary: $(cat "$tmp/summary" 2>/dev/null)"; fi
+git checkout -q main
+
+# check-version doesn't read the fixtures: a tag on a commit without the
+# version's copy, that passed the rare jobs; and one that didn't pass them.
+git tag -a v0.1.9 -m x "$four"
+run 0 "check-version v0.1.9: no fixtures needed" check-version v0.1.9
+git tag -a v0.1.8 -m x "$three"
+run 1 "check-version v0.1.8: no rare jobs" check-version v0.1.8
+run 2 "check-version: not a release tag" check-version vnext
+
+# stamp: a tag's version into the checkout, as a release's build does it.
+git checkout -q "$two"
+run 0 "stamp v0.1.7" stamp v0.1.7
+has "stamp v0.1.7: says what" "stamped v0.1.7: 0.1.0 -> 0.1.7 (daemon)"
+if grep -q '^version = "0.1.7"' Cargo.toml && [ "$(grep -c '"0.1.7"' Cargo.lock)" = 2 ] &&
+  grep -q 'arugula-core = { version = "0.1.7"' crates/daemon/Cargo.toml &&
+  grep -A1 '"arugula-core"' crates/desktop/Cargo.lock | grep -q '0.1.7' && grep -q 'arugulad 0.1.7' THIRD_PARTY.md; then ok "stamp v0.1.7: the daemon's crates at 0.1.7"
+else bad "stamp v0.1.7: $(git diff)"; fi
+if grep -q '^version = "0.1.7"' server/Cargo.toml && [ "$(grep -c '"0.1.7"' server/Cargo.lock)" = 2 ] &&
+  grep -q 'arugula-control 0.1.7' server/THIRD_PARTY.md; then ok "stamp v0.1.7: the server's workspace at 0.1.7 too"
+else bad "stamp v0.1.7: the server's workspace: $(git diff -- server)"; fi
+if grep -A1 '"serde"' Cargo.lock | grep -q '0.1.0' && grep -q 'serde = { version = "0.1.0" }' crates/daemon/Cargo.toml &&
+  grep -q 'serde 0.1.0' THIRD_PARTY.md && grep -q '^version = "0.1.0"' crates/desktop/Cargo.toml; then ok "stamp v0.1.7: serde and the app keep their versions"
+else bad "stamp v0.1.7 moved serde or the app"; fi
+if [ "$(git diff --name-only | tr '\n' ' ')" = "Cargo.lock Cargo.toml THIRD_PARTY.md crates/daemon/Cargo.toml crates/desktop/Cargo.lock crates/desktop/THIRD_PARTY.md server/Cargo.lock server/Cargo.toml server/THIRD_PARTY.md " ]; then ok "stamp v0.1.7: only version files"
+else bad "stamp v0.1.7 changed: $(git diff --name-only)"; fi
+before=$(git diff)
+run 0 "stamp v0.1.7 again" stamp v0.1.7
+if [ "$(git diff)" = "$before" ]; then ok "stamp v0.1.7 again: nothing more"; else bad "stamp v0.1.7 again changed more"; fi
+git checkout -q -- .
+run 0 "stamp app-v0.3.0" stamp app-v0.3.0
+if grep -q '^version = "0.3.0"' crates/desktop/Cargo.toml && grep -A1 '"arugula-desktop"' crates/desktop/Cargo.lock | grep -q '0.3.0' &&
+  grep -q '^version = "0.1.0"' Cargo.toml; then ok "stamp app-v0.3.0: the app alone"
+else bad "stamp app-v0.3.0: $(git diff)"; fi
+git checkout -q -- .
+run 2 "stamp: not a release tag" stamp v1.2
+git checkout -q main
 
 exit $fail
