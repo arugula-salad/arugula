@@ -47,7 +47,7 @@ decided_on: "2026-10-31"
 reviews: []
 constrains:
   - "aru-039"
-  - "path:plugins/claude-code/mod"
+  - "path:plugins/claude-code/hooks/live.ts"
   - "path:crates/arugulad-agent/src/conversations/context.rs"
   - "path:crates/cli/src/hook.rs"
   - "path:crates/arugulad-agent/src/conversations/signals.rs"

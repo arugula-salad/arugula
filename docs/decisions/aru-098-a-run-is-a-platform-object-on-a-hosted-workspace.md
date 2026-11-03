@@ -55,7 +55,7 @@ reviews: []
 constrains:
   - "path:crates/platform/src"
   - "path:crates/platform/migrations"
-  - "path:crates/daemon/src/main.rs"
+  - "path:crates/daemon/src/lib.rs"
 ---
 
 # A run is a platform object on a hosted workspace

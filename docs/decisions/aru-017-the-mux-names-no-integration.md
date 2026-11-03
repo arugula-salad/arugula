@@ -37,7 +37,7 @@ constrains:
   - "path:crates/mux/src/mux/outside.rs"
   - "path:crates/mux/src/block.rs"
   - "path:crates/mux/src/mux/config.rs"
-  - "path:crates/daemon/src/main.rs"
+  - "path:crates/daemon/src/lib.rs"
   - "path:crates/mux/README.md"
 ---
 
@@ -58,5 +58,5 @@ daemon's `labs` forwards). `just mux-guard`, run by `just check` and
 Why: a core that can't reach an integration can't depend on one by accident, so
 it stays testable and movable without them, and the order of changes stays
 decided in one task.
-Where: `crates/mux/src/mux/outside.rs`, `crates/mux/src/block.rs` (`BlockKinds`), `crates/mux/src/mux/config.rs` (`Config`), `crates/daemon/src/main.rs` (the wiring), `justfile` (`mux-guard`), `crates/mux/README.md`.
+Where: `crates/mux/src/mux/outside.rs`, `crates/mux/src/block.rs` (`BlockKinds`), `crates/mux/src/mux/config.rs` (`Config`), `crates/daemon/src/lib.rs` (the wiring), `justfile` (`mux-guard`), `crates/mux/README.md`.
 From: [docs/mux-crate.md](docs/mux-crate.md), #459 (the design, #387 item 4), moved in #460 and #701–#705.

@@ -18,6 +18,14 @@ full `just check` unless the task asks for them. New tests are for changes to
 behaviour that ships, and then only for that behaviour, not the code around
 it. When unsure, do the small version and say what you left out.
 
+## Keeping up
+
+[docs/capabilities/](docs/capabilities/README.md) has a record for each major
+feature: where it runs, who owns its state and what proves it. Read the record
+before tracing a feature from scratch, and trust it only as far as its
+`verified_through` commit. You don't need to update a record in your PR: a
+weekly agent keeps them. `just map` prints what the code and CI say now.
+
 ## Crates
 
 Each has a `README.md` with where to start reading.
