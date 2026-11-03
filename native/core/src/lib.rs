@@ -11,6 +11,7 @@
 //! writes a key file: [`device`] takes them as bytes (aru-131).
 
 pub mod control;
+pub mod ffi;
 pub mod link;
 mod net;
 

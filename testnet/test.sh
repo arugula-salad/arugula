@@ -344,6 +344,7 @@ if [ "$PROFILE" = control ]; then
   [ "${ARUGULA_TESTNET_HOSTED:-}" != 1 ] || [ -z "$PREVIEW_DOMAIN" ] || CONTROL_CLAIMS="$CONTROL_CLAIMS public-preview"
   # studio's own lobby as a client (M236), from a studio checkout.
   [ -z "${ARUGULA_TESTNET_STUDIO:-}" ] || CONTROL_CLAIMS="$CONTROL_CLAIMS studio"
+  [ -z "${ARUGULA_NATIVE_SIM_HOST:-}" ] || CONTROL_CLAIMS="$CONTROL_CLAIMS native-sim"
   [ "$PROFILE" != control ] || CLAIMS="$CONTROL_CLAIMS"
 fi
 
@@ -728,6 +729,47 @@ claim_native() {
   done
   # Leave box-bare bare for the ssh profile's claims.
   fresh box-bare || true
+  [ "$ok" = 1 ]
+}
+
+# The iPhone app itself, on a simulator on a Mac (ARUGULA_NATIVE_SIM_HOST, an ssh
+# name, with this branch at ~/src/native-app): it pairs, reads projects, posts
+# in chat and runs a command in a relayed terminal, tapped through by its UI
+# test. Control is tunnelled to the Mac; a headless device approves the pairing.
+# Screenshots land in ARUGULA_NATIVE_SIM_OUT. Broken: nobody approves it.
+claim_native_sim() {
+  local host="${ARUGULA_NATIVE_SIM_HOST:?ssh name of a Mac with Xcode}" fp url port room code tunnel run ok=1
+  local out="${ARUGULA_NATIVE_SIM_OUT:-$WORK/native-sim}" handoff=/tmp/arugula-ui-$$
+  fresh box-systemd || { note "native-sim: couldn't recreate the box"; return 1; }
+  fp="$(signin "native-sim-$$-$RANDOM" | field fingerprint)"
+  [ -n "$fp" ] || { note "native-sim: no device signed in"; return 1; }
+  join_box box-systemd "$fp" || return 1
+  room="$(plat chat-room | field room)"
+  [ -n "$room" ] || { note "native-sim: no room"; return 1; }
+  url="$(tr ' ' '\n' <<< "$CONTROL_VIA" | sed -n "s|^$CONTROL_URL=||p" | head -1)"
+  port="${url##*:}"
+  ssh -o BatchMode=yes -o ExitOnForwardFailure=yes -N -R "$port:127.0.0.1:$port" "$host" &
+  tunnel=$!
+  sleep 2
+  ssh -o BatchMode=yes "$host" "src/native-app/native/ios/test-sim.sh http://127.0.0.1:$port box-systemd $handoff" \
+    > "$WORK/native-sim.out" 2>&1 &
+  run=$!
+  code=""
+  for _ in $(seq 1 600); do
+    code="$(ssh -o BatchMode=yes "$host" "cat $handoff/code 2>/dev/null" || true)"
+    [ -n "$code" ] && break
+    kill -0 "$run" 2>/dev/null || break
+    sleep 2
+  done
+  if [ -z "$code" ]; then note "native-sim: the app showed no code"; ok=0
+  elif [ -z "$BREAK" ]; then dev approve "$code" > /dev/null || { note "native-sim: couldn't approve it"; ok=0; }
+  fi
+  wait "$run" || { note "native-sim: the UI test failed"; tail -30 "$WORK/native-sim.out" >&2; ok=0; }
+  kill "$tunnel" 2>/dev/null || true
+  mkdir -p "$out"
+  scp -q -o BatchMode=yes "$host:$handoff/*.png" "$out/" 2>/dev/null || true
+  # Leave the box as the other claims expect.
+  fresh box-systemd || true
   [ "$ok" = 1 ]
 }
 

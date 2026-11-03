@@ -19,6 +19,7 @@ just testnet test ssh          # the ssh claims run on control's stack too
 just testnet test control relay # M52 end to end
 just testnet test control cli  # M49: the CLI logged in, reaching a direct and a relayed box
 just testnet test control native # a native app, played by native/core: pairs by code, startup call, chat, a relayed terminal, on this release's daemon and an older one
+ARUGULA_NATIVE_SIM_HOST=jake-mini just testnet test control native-sim # the iPhone app itself on a simulator on a Mac, tapped through by its UI test, against this stack
 just testnet test control team # #254: the CLI reaching a team machine of another account
 just testnet test control hosted # M178: a project's delegation, a hosted box enrolled under it
 just testnet test control platform # M140: chat and Cloud through control's own site
