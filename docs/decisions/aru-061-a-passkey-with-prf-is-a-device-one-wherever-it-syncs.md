@@ -53,5 +53,15 @@ PRF is both the person's approver and a browser-class device wherever it
 syncs: whoever holds it can approve a deploy, reach the account's machines
 and approve new browsers. PRF stays because it spares the approval step a
 new or wiped browser would otherwise take.
+**A browser may add the passkey's device itself** (#641; Jake, 2026-11-03).
+Before, a passkey's device took one approval from another device on its
+first use, so the first new computer still needed one, which was the
+complaint this decision set out to answer. Now a working browser can certify
+that device when the passkey is added or later, so a new computer with the
+passkey needs no other device. It's a choice each time, and the prompt names
+the cost above: whoever can use the passkey can do what that browser does,
+including approving new devices and removing others. Nothing else changes: a browser approves it under the usual
+rules, the pin still decides whether a new browser takes the root, and
+control holds no key.
 Where: `web/src/shell/e2e/keys.ts` (`adoptPrfKeys`, `PRF_SALTS`), `web/src/shell/control.ts` (`takePrfKeys`, `rejoin`, `savePin`, `usePasskey`), `crates/control/src/passkey.rs`, `crates/control/src/api.rs` (`pin`), `crates/e2e/src/cert.rs` (`device_pin_body`), [docs/control-e2e.md](docs/control-e2e.md#prf-re-deriving-a-browsers-keys).
 From: #764, #765.

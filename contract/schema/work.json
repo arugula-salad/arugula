@@ -307,6 +307,11 @@
           "const": "dropped",
           "description": "The session dropped it (#613): `why` says how. Final, like\n`answered`, which it never replaces.",
           "type": "string"
+        },
+        {
+          "const": "not_granted",
+          "description": "The machine's agents can't read the room (#578): its owner was asked\nto let them. Delivered if they do; final if they said never.",
+          "type": "string"
         }
       ]
     },

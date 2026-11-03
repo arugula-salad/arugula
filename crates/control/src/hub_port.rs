@@ -405,7 +405,7 @@ fn local(app: &App) -> HubResult<&Arc<dyn arugula_platform_api::in_process::InPr
 /// CLI device's signature (already checked by `auth::verify_daemon`) or a
 /// refusal of it; else the session, with `auth::Session`'s same-origin
 /// check, or its refusal. `None`: a signature of another kind of device,
-/// which no platform route takes.
+/// which no platform route takes. A native app's asks as its person.
 pub async fn who(app: &Arc<App>, parts: &mut Parts) -> Option<Asked> {
     let signed = parts.extensions.get::<auth::Signed>().map(|s| s.0.clone());
     match signed {
@@ -416,6 +416,12 @@ pub async fn who(app: &Arc<App>, parts: &mut Parts) -> Option<Asked> {
             // As a session: it notes the account for analytics.
             let _ = auth::Session::from_request_parts(parts, app).await;
             Some(Asked::Principal(Principal::Cli { account: cert.account, device: cert.device }))
+        }
+        // A native app (aru-131): its person, on their own phone, with no
+        // agent beside its key. `clients::gate` has looked at the route.
+        Some(Ok(cert)) if cert.kind == Kind::Browser => {
+            let _ = auth::Session::from_request_parts(parts, app).await;
+            Some(Asked::Principal(Principal::Person { account: cert.account }))
         }
         Some(Ok(_)) => None,
         Some(Err((status, error))) => Some(Asked::Refused { status, error, by: Credential::Signature }),

@@ -5,6 +5,8 @@
 //! read, `read_thread`, is `agent_mentions`' unit test). Against a fake
 //! control (its relay socket sends the `agents.mention` op) and a real
 //! daemon.
+// `Daemon::stop` is Unix only.
+#![cfg(unix)]
 
 use std::{
     sync::{Arc, Mutex},

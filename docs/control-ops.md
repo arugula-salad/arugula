@@ -157,6 +157,10 @@ arugula-control --public-url https://control.example.com --listen 127.0.0.1:7690
     the URLs. Without it there, nothing can be made public.
   - Abuse and takedown: "Public previews" under "Operating the hosted
     one".
+- **Native apps** (optional, off by default): `ARUGULA_NATIVE_CLIENTS=1` on
+  the hub lets a native app pair by code, and takes its signature on routes
+  whose `routes.toml` row lists `native` (aru-131). No other browser's key
+  signs anything either way.
 - **People blocks** (optional): `ARUGULA_PRESENCE_APP` (an arugula.stream
   app's `app_…` id) and `ARUGULA_PRESENCE_SECRET` (its server secret) on
   the platform let a team's members open a People block: who's around in

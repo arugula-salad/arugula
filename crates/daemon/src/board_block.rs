@@ -5,9 +5,7 @@
 //! platform's board page), so no machine keeps a copy and this daemon
 //! never sees a row. What it keeps is the layout entry: `{board}`.
 //!
-//! Behind the `boards` Labs flag, which gates making one (a saved block
-//! comes back with the flag off, and draws nothing until it is on).
-//! Methods: `state`.
+//! Boards are on for everyone (native #191). Methods: `state`.
 
 use std::sync::Arc;
 

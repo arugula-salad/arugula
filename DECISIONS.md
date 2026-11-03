@@ -92,6 +92,7 @@ Not here: what each milestone built (the archive), how to build and test
 - [aru-082](docs/decisions/aru-082-platform-urls-are-ids-with-cosmetic-slugs.md): Platform URLs are ids with cosmetic slugs
 - [aru-083](docs/decisions/aru-083-secrets-stay-in-fragments.md): Secrets stay in fragments
 - [aru-127](docs/decisions/aru-127-hints-come-from-facts-once-per-account.md): Hints come from facts, once per account
+- [aru-132](docs/decisions/aru-132-the-iphone-app-is-swift-on-a-rust-core-with-no-web-views-yet.md): The iPhone app is Swift on a Rust core, with no web views yet
 
 ## Agents and blocks
 
@@ -127,6 +128,7 @@ Not here: what each milestone built (the archive), how to build and test
 - [aru-122](docs/decisions/aru-122-boards-manage-a-project-s-issues-wherever-they-live.md): Boards manage a project's issues, wherever they live; an epic is a board
 - [aru-123](docs/decisions/aru-123-agents-make-and-run-boards.md): Agents make and run boards, but don't destroy other hands' work
 - [aru-128](docs/decisions/aru-128-a-claude-code-mod-reports-live-session-signals-beside-the.md): A Claude Code mod reports live session signals beside the hooks, through the CLI
+- [aru-133](docs/decisions/aru-133-a-thread-shows-its-agents-and-control-keeps-none-of-their-live-state.md): A thread shows its agents, and control keeps none of their live state
 
 ## Federation and control
 

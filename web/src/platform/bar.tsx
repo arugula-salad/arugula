@@ -28,7 +28,7 @@ import { issuesPlace } from "./pages/triage-text";
 /** The bar's place a route is under (UI audit #159): a project's cloud
  * workspaces and its deploys (Deploy… and a deploy) have places of their
  * own (Discovery 5). */
-type Section = "home" | "issues" | "boards" | "runs" | "sessions" | "workspaces" | "deploys" | "chat" | "inbox" | "settings";
+type Section = "home" | "issues" | "boards" | "docs" | "runs" | "sessions" | "workspaces" | "deploys" | "chat" | "inbox" | "settings";
 export function sectionOf(r: Route): Section | null {
   switch (r.page) {
     case "project":
@@ -49,6 +49,9 @@ export function sectionOf(r: Route): Section | null {
     case "board":
     case "all-boards":
       return "boards";
+    case "docs":
+    case "doc":
+      return "docs";
     case "runs":
     case "run":
       return "runs";
@@ -173,9 +176,20 @@ export function PlatformBar({ children }: { children?: ComponentChildren }) {
         <span class="platform-project-name">{projectName}</span> <span class="caret" aria-hidden="true">▾</span>
       </button>
       <nav class="places" aria-label="Places">
+        {/* All projects is a scope like a project (Arugula #636): these are its places. */}
+        {!project && (
+          <Place to="/" here={r.page === "home"} data="projects">
+            Projects
+          </Place>
+        )}
+        {!project && (
+          <Place to="/boards" here={here === "boards"} data="boards">
+            Boards
+          </Place>
+        )}
         {project && (
           <Place to={pathOf({ page: "project", project }, names)} here={here === "home"} data="home">
-            Project
+            Overview
           </Place>
         )}
         {/* From the start: only chat saying it's off takes Issues away. */}
@@ -191,6 +205,11 @@ export function PlatformBar({ children }: { children?: ComponentChildren }) {
           </Place>
         )}
         {project && (
+          <Place to={pathOf({ page: "docs", project }, names)} here={here === "docs"} data="docs">
+            Docs
+          </Place>
+        )}
+        {project && (
           <Place to={pathOf({ page: "runs", project }, names)} here={here === "runs"} data="runs">
             Runs
             <PlaceUnread project={project} prefix="run_" />
@@ -198,7 +217,7 @@ export function PlatformBar({ children }: { children?: ComponentChildren }) {
         )}
         {project && (
           <Place to={pathOf({ page: "sessions", project }, names)} here={here === "sessions"} data="sessions">
-            Sessions
+            Agents
           </Place>
         )}
         {/* Where the reader may have them (the beta's list), or is in one. */}

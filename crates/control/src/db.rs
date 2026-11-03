@@ -66,6 +66,12 @@ CREATE TABLE IF NOT EXISTS devices (
     created INTEGER NOT NULL,
     PRIMARY KEY (account, id)
 );
+CREATE TABLE IF NOT EXISTS native_devices (
+    account TEXT NOT NULL,
+    device TEXT NOT NULL,
+    paired INTEGER NOT NULL,
+    PRIMARY KEY (account, device)
+);
 CREATE TABLE IF NOT EXISTS turned_down (
     account TEXT NOT NULL,
     device TEXT NOT NULL,
@@ -401,6 +407,12 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
     if !has("passkeys", "prf")? {
         conn.execute_batch("ALTER TABLE passkeys ADD COLUMN prf INTEGER")?;
     }
+    // #641: the device a passkey's PRF keys are, once a browser that holds
+    // the passkey said (for the page's words only: a browser checks the
+    // device's pin, never this).
+    if !has("passkeys", "device")? {
+        conn.execute_batch("ALTER TABLE passkeys ADD COLUMN device TEXT")?;
+    }
     if !has("devices", "pin")? {
         conn.execute_batch("ALTER TABLE devices ADD COLUMN pin TEXT")?;
     }
@@ -575,6 +587,10 @@ pub struct PasskeyRow {
     pub prf: Option<bool>,
     /// The device whose sign-in added it, as that sign-in said, when known.
     pub added_device: Option<String>,
+    /// The device its PRF keys are (#641), as a browser said. A claim: a
+    /// valid pin can be sent with any of the account's passkeys, so it's
+    /// what the page shows and nothing trusts it.
+    pub device: Option<String>,
 }
 
 /// A live session, as [`Db::session_info`] has it.
@@ -1244,6 +1260,15 @@ impl Db {
         Ok(())
     }
 
+    /// The device a passkey's PRF keys are (#641). False if `account` has
+    /// no such passkey.
+    pub fn set_passkey_device(&self, account: &str, id: &str, device: &str) -> anyhow::Result<bool> {
+        let n = self
+            .c()
+            .execute("UPDATE passkeys SET device = ?3 WHERE account = ?1 AND id = ?2", params![account, id, device])?;
+        Ok(n > 0)
+    }
+
     pub fn passkey_used(&self, id: &str, count: u32, now: u64) -> anyhow::Result<()> {
         self.c().execute("UPDATE passkeys SET sign_count = ?2, used = ?3 WHERE id = ?1", params![id, count, now])?;
         Ok(())
@@ -1257,7 +1282,7 @@ impl Db {
     pub fn passkeys(&self, account: &str) -> anyhow::Result<Vec<PasskeyRow>> {
         let c = self.c();
         let mut q = c.prepare(
-            "SELECT id, created, agent, provider, used, prf, added_device FROM passkeys WHERE account = ?1
+            "SELECT id, created, agent, provider, used, prf, added_device, device FROM passkeys WHERE account = ?1
              ORDER BY created",
         )?;
         let rows = q.query_map(params![account], |r| {
@@ -1269,6 +1294,7 @@ impl Db {
                 used: r.get(4)?,
                 prf: r.get(5)?,
                 added_device: r.get(6)?,
+                device: r.get(7)?,
             })
         })?;
         Ok(rows.collect::<Result<_, _>>()?)
@@ -1427,6 +1453,25 @@ impl Db {
     }
 
     /// An approved device of this kind, by its id.
+    /// A `browser` device paired by code as a native app (aru-131), the only
+    /// kind of browser whose signature can count: its key is in a keychain,
+    /// not a page.
+    pub fn put_native_device(&self, account: &str, device: &str, now: u64) -> anyhow::Result<()> {
+        self.c().execute(
+            "INSERT OR IGNORE INTO native_devices (account, device, paired) VALUES (?1, ?2, ?3)",
+            params![account, device, now],
+        )?;
+        Ok(())
+    }
+
+    pub fn is_native_device(&self, device: &str) -> anyhow::Result<bool> {
+        Ok(self
+            .c()
+            .query_row("SELECT 1 FROM native_devices WHERE device = ?1", params![device], |_| Ok(()))
+            .optional()?
+            .is_some())
+    }
+
     pub fn approved_cert(&self, id: &str, kind: Kind) -> anyhow::Result<Option<Cert>> {
         Ok(self
             .c()
@@ -1588,8 +1633,10 @@ impl Db {
             "DELETE FROM devices WHERE account = ?1",
             "DELETE FROM revocations WHERE account = ?1",
             "DELETE FROM turned_down WHERE account = ?1",
+            "DELETE FROM native_devices WHERE account = ?1",
             "DELETE FROM joins WHERE account = ?1",
             "UPDATE sessions SET device = NULL WHERE account = ?1",
+            "UPDATE passkeys SET device = NULL WHERE account = ?1",
             "UPDATE accounts SET root = NULL WHERE id = ?1",
         ] {
             tx.execute(sql, params![account])?;
@@ -2928,6 +2975,7 @@ impl Db {
             "DELETE FROM passkeys WHERE account = ?1",
             "DELETE FROM devices WHERE account = ?1",
             "DELETE FROM turned_down WHERE account = ?1",
+            "DELETE FROM native_devices WHERE account = ?1",
             "DELETE FROM revocations WHERE account = ?1",
             "DELETE FROM recovery_uses WHERE account = ?1",
             "DELETE FROM account_resets WHERE account = ?1",

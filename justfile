@@ -452,6 +452,47 @@ desktop-check:
     cargo fmt --check
     cargo clippy -- -D warnings
 
+# The native clients' shared core (native/core, a workspace of its own):
+# rustfmt, clippy, its tests and its smoke test, on this machine.
+native-check:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd native/core
+    mise exec -- cargo fmt --check
+    mise exec -- cargo clippy --all-targets -- -D warnings
+    mise exec -- cargo test
+    mise exec -- cargo run --example smoke
+
+# The core for iPhones and the iOS simulator, on a Mac with Xcode's iOS SDK
+# (the macos-arm64 runners' Tart images don't have it), and its smoke test on
+# a throwaway simulator when the Mac has the runtime.
+native-ios:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    rustup target add aarch64-apple-ios aarch64-apple-ios-sim >/dev/null
+    # Rust's default is iOS 10, older than aws-lc and libghostty link for.
+    export IPHONEOS_DEPLOYMENT_TARGET=17.0
+    cd native/core
+    mise exec -- cargo build --release --target aarch64-apple-ios
+    mise exec -- cargo build --release --example smoke --target aarch64-apple-ios-sim
+    # The newest iOS runtime, and an iPhone it supports, as "runtime type".
+    pick=$(xcrun simctl list -j runtimes available | python3 -c '
+    import json, sys
+    ios = [r for r in json.load(sys.stdin)["runtimes"] if r["platform"] == "iOS"]
+    phones = [t for r in ios[-1:] for t in r["supportedDeviceTypes"] if t["productFamily"] == "iPhone"]
+    if phones: print(ios[-1]["identifier"], phones[-1]["identifier"])
+    ')
+    if [ -z "$pick" ]; then
+      echo "native-ios: no iOS simulator runtime on this Mac: built, smoke test not run" >&2
+      exit 0
+    fi
+    read -r runtime type <<<"$pick"
+    device=$(xcrun simctl create arugula-native-smoke "$type" "$runtime")
+    trap 'xcrun simctl delete "$device"' EXIT
+    xcrun simctl bootstatus "$device" -b >/dev/null
+    target=$(mise exec -- cargo metadata --format-version 1 --no-deps | sed -nE 's/.*"target_directory":"([^"]+)".*/\1/p')
+    xcrun simctl spawn "$device" "$target/aarch64-apple-ios-sim/release/examples/smoke"
+
 # THIRD_PARTY.md: notices for the Rust crates (cargo-about) and the npm
 # packages bundled into the web client; server/THIRD_PARTY.md for the
 # server's workspace (control and its platform); crates/desktop/THIRD_PARTY.md
@@ -789,7 +830,8 @@ testnet cmd="test" profile="ssh" *claims:
         up) arch=$(docker info --format '{{{{.Architecture}}')
             case "$arch" in arm64) arch=aarch64 ;; amd64) arch=x86_64 ;; esac
             [ -n "${ARUGULA_TESTNET_BINARIES:-}" ] || just static "$arch" >&2 ;;
-        test|break) [ -n "${ARUGULA_CLI:-}" ] || {{cargo}} build -q -p arugula ;;
+        test|break) [ -n "${ARUGULA_CLI:-}" ] || {{cargo}} build -q -p arugula
+                    [ -n "${ARUGULA_NATIVE_PROBE:-}" ] || (cd native/core && mise exec -- cargo build -q --bin arugula-native-probe) ;;
       esac
     fi
     case "{{cmd}}" in

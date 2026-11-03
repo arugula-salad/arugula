@@ -759,7 +759,22 @@ impl Daemon {
     pub(super) fn hook(&mut self, pane: PaneId, hook: &serde_json::Value) {
         self.heard_hook(pane);
         self.note_session(pane, hook);
+        if hook[arugula_proto::api::HOOK_MENTIONS_TOLD] == true {
+            let kept = self.meta.get(&pane).and_then(|m| m.session.as_ref()).filter(|s| s.running);
+            let sessions = self.config.sessions.clone();
+            if let Some(id) = top_level(hook, kept.map(|s| s.id.as_str()), |id| sessions.nested(id)) {
+                self.mentions_told.insert(pane, id.to_owned());
+            }
+        }
         let event = hook["hook_event_name"].as_str().unwrap_or_default();
+        // #645: the tool it last ran, for a thread's strip. The name alone,
+        // of the session's own calls and not a subagent's.
+        if event == "PreToolUse"
+            && hook["agent_id"].is_null()
+            && let Some(tool) = hook["tool_name"].as_str()
+        {
+            self.last_tools.insert(pane, tool.to_owned());
+        }
         let session = session_key(hook);
         let open = self
             .asks
@@ -835,6 +850,26 @@ impl Daemon {
             self.touch(pane);
         }
         Ok((token, rx))
+    }
+
+    /// `arugula hook` on a tool call's end (#644): a mention waiting for
+    /// this pane goes in now, rather than at the end of the turn. Only into
+    /// the pane's own conversation: not a subagent's tool call, which would
+    /// take it to a conversation that ends with the subagent, and not a
+    /// `claude -p` run inside the pane.
+    pub(super) fn take_mention(&mut self, pane: PaneId, hook: &serde_json::Value) -> Option<(String, Driver)> {
+        let kept = self.meta.get(&pane).and_then(|m| m.session.as_ref()).filter(|s| s.running);
+        let sessions = self.config.sessions.clone();
+        let id = top_level(hook, kept.map(|s| s.id.as_str()), |id| sessions.nested(id))?;
+        // A session that started before it was told how these arrive could
+        // read one as injected text: it keeps getting them between turns.
+        if self.mentions_told.get(&pane).map(String::as_str) != Some(id) {
+            return None;
+        }
+        let taken = self.queued.take_mention(pane, &*self.config.turns)?;
+        self.refresh_held(pane);
+        self.touch(pane);
+        Some(taken)
     }
 
     /// A follow-up for Claude Code in a terminal (M29), recorded as input

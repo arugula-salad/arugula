@@ -560,6 +560,19 @@
       ],
       "type": "object"
     },
+    "ChatGrantNever": {
+      "description": "`POST /api/chat/rooms/{id}/grant-never`: the owner of `daemon` says its\nagents are never to be asked to read this room (#578). What waited for\nthem is `not_granted` for good; a grant over the room undoes it.",
+      "properties": {
+        "daemon": {
+          "description": "The machine's id.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "daemon"
+      ],
+      "type": "object"
+    },
     "ChatHit": {
       "properties": {
         "message": {
@@ -1036,6 +1049,11 @@
         {
           "const": "dropped",
           "description": "The session dropped it (#613): `why` says how. Final, like\n`answered`, which it never replaces.",
+          "type": "string"
+        },
+        {
+          "const": "not_granted",
+          "description": "The machine's agents can't read the room (#578): its owner was asked\nto let them. Delivered if they do; final if they said never.",
           "type": "string"
         }
       ]
@@ -1613,10 +1631,40 @@
         },
         "text": {
           "type": "string"
+        },
+        "to": {
+          "description": "In a thread (#647): who this wakes, chosen in the composer, in place\nof the agent it replies to. Agents the text names come too. Empty:\nnobody. Absent: as before this field. Ignored from an agent, and\noutside a thread.",
+          "items": {
+            "$ref": "#/$defs/ChatPostTarget"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
         }
       },
       "required": [
         "text"
+      ],
+      "type": "object"
+    },
+    "ChatPostTarget": {
+      "description": "An agent a message is for (#647), as [`ChatThreadAgent`] names it.",
+      "properties": {
+        "id": {
+          "description": "The machine's id, or a hosted session's `ses_` id.",
+          "type": "string"
+        },
+        "session": {
+          "description": "The session on the machine, when it has a name.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "id"
       ],
       "type": "object"
     },
@@ -2428,6 +2476,114 @@
       ],
       "type": "object"
     },
+    "ChatThreadAgent": {
+      "description": "One agent in a thread (#645): a session on someone's machine, or a hosted\nsession. Never its output, a tool's arguments or a path (aru-051).",
+      "properties": {
+        "hosted": {
+          "type": "boolean"
+        },
+        "id": {
+          "description": "The machine's id, or a hosted session's `ses_` id.",
+          "type": "string"
+        },
+        "lead": {
+          "description": "The agent a message goes to by default (#647): the thread's hosted\nsession, else the agent first in it.",
+          "type": "boolean"
+        },
+        "machine_name": {
+          "description": "The machine's name, or the hosted box's.",
+          "type": "string"
+        },
+        "name": {
+          "description": "The session's name, as its machine called it, or a hosted session's\nshort id. Empty when a machine was told and no session has spoken.",
+          "type": "string"
+        },
+        "owner": {
+          "description": "The owner's account and name; a hosted session's asker.",
+          "type": "string"
+        },
+        "owner_name": {
+          "type": "string"
+        },
+        "read_seq": {
+          "description": "The newest message of the thread it has taken in, or written.",
+          "format": "int64",
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "state": {
+          "$ref": "#/$defs/ChatThreadAgentState"
+        },
+        "tool": {
+          "description": "With the owner's `work`: the name of the tool it last ran.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "waiting": {
+          "description": "Messages told to it that it hasn't taken in yet.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "working_on": {
+          "description": "With the owner's `work`: what it was started on.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "name",
+        "id",
+        "machine_name",
+        "owner",
+        "owner_name",
+        "hosted",
+        "state",
+        "waiting",
+        "lead"
+      ],
+      "type": "object"
+    },
+    "ChatThreadAgentState": {
+      "description": "What an agent in a thread is doing (#645).",
+      "oneOf": [
+        {
+          "enum": [
+            "working",
+            "idle",
+            "needs_you",
+            "offline"
+          ],
+          "type": "string"
+        },
+        {
+          "const": "unknown",
+          "description": "Its machine answered without saying: an older daemon, a session it\ndoesn't show, or one that has ended.",
+          "type": "string"
+        }
+      ]
+    },
+    "ChatThreadAgents": {
+      "description": "[`chat_thread_agents`]' answer: oldest in the thread first.",
+      "properties": {
+        "agents": {
+          "items": {
+            "$ref": "#/$defs/ChatThreadAgent"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "agents"
+      ],
+      "type": "object"
+    },
     "ChatThreadItem": {
       "description": "One thread the reader follows, in [`ChatThreads`].",
       "properties": {
@@ -2652,8 +2808,26 @@
           "description": "What `@machine/name` matches: the session's name, as a slug.",
           "type": "string"
         },
+        "state": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/MachineSessionState"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "What it's doing now (#645); absent from an older daemon."
+        },
         "tab": {
           "description": "The tab it is in, when the tab has a name.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "tool": {
+          "description": "With the owner's `work`: the name of the tool it last ran (#645),\nnever its arguments or output.",
           "type": [
             "string",
             "null"
@@ -2671,6 +2845,15 @@
         "name"
       ],
       "type": "object"
+    },
+    "MachineSessionState": {
+      "description": "What a machine's session is doing (#645).",
+      "enum": [
+        "working",
+        "idle",
+        "needs_input"
+      ],
+      "type": "string"
     },
     "MentionTurn": {
       "description": "What the session's turn that took a mention is doing (#540).",

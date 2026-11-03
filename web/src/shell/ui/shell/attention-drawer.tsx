@@ -31,6 +31,7 @@ import { hooksInstalled, setUpClaude } from "../agents-setup";
 import { addPane } from "./add-pane";
 import { closePlace, currentPlace, openRoom } from "../places";
 import { noticeOpenLabel, noticeRoom, noticeTitle, sortNotices } from "../../../shared/notice";
+import { GrantActs } from "../grant-acts";
 
 // ---- the items
 
@@ -322,6 +323,7 @@ export function AttentionDrawer({ client }: { client: Client }) {
               <span class="ws-att-item-sub">{shortHost(i.host)}</span>
             </span>
             <div class="ws-att-acts">
+              {i.n.kind === "grant_ask" && <GrantActs n={i.n} done={() => dismissNotice(client, i)} />}
               {noticeRoom(i.n) && (
                 <button class="primary" data-notice-open onClick={() => openNotice(client, i)} title="Open the room in chat; this clears the card">
                   {noticeOpenLabel(i.n)}

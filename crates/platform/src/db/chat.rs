@@ -54,7 +54,7 @@ pub struct RoomMeta {
     pub dm_key: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Message {
     pub room: String,
     pub seq: i64,
@@ -1350,6 +1350,7 @@ pub(super) fn drop_rooms_where(tx: &impl Sql, cond: &str, arg: impl super::sql::
             "chat_members",
             "chat_reactions",
             "chat_mention_status",
+            "chat_grant_never",
             "chat_saved",
             "chat_files",
             "chat_topics",
@@ -1384,6 +1385,8 @@ pub(crate) fn erase_account(tx: &impl Sql, account: &str, machines: &[String], d
     for m in machines {
         drop_rooms_where(tx, "scope = 'machine:' || ?1", m)?;
         tx.execute("DELETE FROM chat_readers WHERE machine = ?1", params![m])?;
+        // Its "never for this room" answers (#578).
+        tx.execute("DELETE FROM chat_grant_never WHERE machine = ?1", params![m])?;
     }
     for t in disband {
         drop_rooms_where(tx, "scope = 'team:' || ?1", t)?;

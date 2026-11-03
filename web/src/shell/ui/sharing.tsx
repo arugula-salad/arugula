@@ -10,7 +10,7 @@ import { useEffect, useState } from "preact/hooks";
 import { Modal } from "../../shared/ui/modal";
 import type { Client } from "../client";
 import { OPS, opPath } from "../ops";
-import type { Sharing, SharingSetRequest } from "../../shared/proto.gen";
+import type { AgentSessions, Sharing, SharingSetRequest } from "../../shared/proto.gen";
 
 let shown: Client | null = null;
 const listeners = new Set<() => void>();
@@ -94,7 +94,7 @@ function SharingDialog({ client, close }: { client: Client; close: () => void })
         </label>
       )}
       <p class="hint">
-        A teammate's <code>@</code>-mention of this machine in a thread, or a reply to one of its agents, is handed to the agent's
+        A teammate's <code>@</code>-mention of this machine in a thread, or a person's reply to one of its agents, is handed to the agent's
         session as a message from a teammate (never as your approval). On unless you turn it off here.
       </p>
       {sharing && (
@@ -107,6 +107,24 @@ function SharingDialog({ client, close }: { client: Client; close: () => void })
             onChange={(e) => void set({ agent_mentions: e.currentTarget.checked })}
           />{" "}
           Agents hear their mentions on this machine
+        </label>
+      )}
+      <p class="hint">
+        What people in a thread, and their agents, can see of this machine's agent sessions. Never their output, a tool's arguments or a path.
+      </p>
+      {sharing && (
+        <label class="sharing-switch">
+          What they see{" "}
+          <select
+            data-sharing-agent-sessions
+            value={sharing.agent_sessions ?? "names"}
+            disabled={sharing.agent_mentions === false}
+            onChange={(e) => void set({ agent_sessions: e.currentTarget.value as AgentSessions })}
+          >
+            <option value="work">Name, state, work item and tool name</option>
+            <option value="names">Name and state</option>
+            <option value="none">Nothing</option>
+          </select>
         </label>
       )}
       <div class="prompt-buttons">

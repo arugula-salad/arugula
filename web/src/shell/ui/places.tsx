@@ -205,3 +205,33 @@ export function Places({ client, at }: { client: Client; at: Place }) {
     </div>
   );
 }
+
+/** A machine's own places, in the bar on a computer (Arugula #637): the bar is
+ * what you're in, the machine, then what it has, as a project's is. Docs and
+ * Recipes are offered as the phone's Places are. */
+export function MachinePlaces({ client, at }: { client: Client; at: Place }) {
+  const owner = !client.state?.roles;
+  const recipes = client.flag("agent-delegation") && owner;
+  const panes = at === "panes" || at === "overview";
+  const item = (name: string, hook: string, here: boolean, title: string, go: () => void) => (
+    <button
+      class={here ? "place frame-place here" : "place frame-place"}
+      title={title}
+      aria-current={here ? "page" : undefined}
+      {...{ [`data-machine-${hook}`]: "" }}
+      onClick={go}
+    >
+      {name}
+    </button>
+  );
+  return (
+    <nav class="places" aria-label="This machine's places" data-machine-places>
+      {item("Panes", "panes", panes, "Your panes: back to this session's last tab and pane", () => {
+        if (at !== "panes") closePlace(at);
+        else client.viewOf(client.active() ?? -1)?.focus();
+      })}
+      {owner && item("Docs", "docs", at === "docs", "Docs: the Docs your agents wrote on this machine, to open again", () => at !== "docs" && openDocsPage())}
+      {recipes && item("Recipes", "recipes", at === "agents", "Recipes: this machine's recipes and your team's agents", () => at !== "agents" && openAgentsPage())}
+    </nav>
+  );
+}

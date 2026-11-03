@@ -260,6 +260,25 @@ test("guest ssh is a sharing setting, off by default: the machine's settings tur
   expect(await shown(page, pane)).toEqual(["guest-ssh"]);
 });
 
+test("what a machine shares of its agent sessions is work by default, and the owner can turn it down", async ({ page }) => {
+  await start(page);
+  await page.locator(".ws-head [data-account-menu]").click();
+  await page.getByRole("menuitem", { name: "Guest SSH access…" }).click();
+  const menu = sharingDialog(page).locator("[data-sharing-agent-sessions]");
+  await expect(menu).toHaveValue("work");
+  await expect(menu).toBeEnabled();
+  await menu.selectOption("names");
+  await expect.poll(() => JSON.parse(readFileSync(join(state, "sharing.json"), "utf8")).agent_sessions).toBe("names");
+  await expect(menu).toHaveValue("names");
+  // With mentions off nothing is shared, so the choice is moot.
+  await sharingDialog(page).locator("[data-sharing-agent-mentions]").uncheck();
+  await expect(menu).toBeDisabled();
+  await sharingDialog(page).locator("[data-sharing-agent-mentions]").check();
+  await menu.selectOption("work");
+  await expect.poll(() => JSON.parse(readFileSync(join(state, "sharing.json"), "utf8")).agent_sessions).toBe("work");
+  await sharingDialog(page).getByRole("button", { name: "Done", exact: true }).click();
+});
+
 test("an ssh invite from the pane's menu works with Guest SSH access on, and is refused once it's off", async ({ page }) => {
   expect((await setSharing(true)).ok).toBe(true);
   const pane = await start(page);
@@ -297,7 +316,7 @@ test("Docs are no flag: docs is retired, and the rail offers them with every fla
   expect(r.ok).toBe(false);
   expect(await r.text()).toContain("isn't a flag any more");
   await open(page);
-  await expect(page.locator(".ws-rail [data-open-docs]")).toBeVisible();
+  await expect(page.locator("[data-machine-docs]")).toBeVisible();
   expect((await ask("GET", "/api/docs", undefined)).status).toBe(200);
 });
 

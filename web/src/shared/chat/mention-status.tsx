@@ -13,7 +13,9 @@ export function mentionStatusText(s: ChatMentionStatus): string {
     case "sending":
       return `Sending to ${who}…`;
     case "delivered":
-      return s.session ? `Delivered to ${who}/${s.session}` : `Delivered to ${who}`;
+      // #643: a session that took it at once is `working`, so this one has
+      // it waiting: for its next tool call (#644), or an older daemon's turn end.
+      return s.session ? `${who}/${s.session}: reads this at its next step` : `Delivered to ${who}`;
     case "fell_back":
       return `${who}: went to ${s.session ?? "another session"} (no session called ${s.asked ?? "that"})`;
     case "waiting":
@@ -38,6 +40,8 @@ export function mentionStatusText(s: ChatMentionStatus): string {
       return `${who} answered`;
     case "chain":
       return `Not delivered to ${who}: a chain of agent replies; a person's message restarts it`;
+    case "not_granted":
+      return `Not granted: ${who}'s agents can't read this room; its owner was asked`;
   }
 }
 

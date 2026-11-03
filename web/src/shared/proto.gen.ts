@@ -116,9 +116,10 @@ pr?: number, pr_url?: string,
 pr_block?: number, };
 
 /**
- * What a teammate's agent may learn of this machine's sessions (#577),
- * when it asks which ones it can `@machine/name`. Only with agent mentions
- * on; off, it learns nothing whatever this says.
+ * What teammates and their agents may learn of this machine's sessions
+ * (#577): when an agent asks which ones it can `@machine/name`, and in the
+ * strip at the top of a thread (#646). Only with agent mentions on; off,
+ * they learn nothing whatever this says.
  */
 export type AgentSessions = "none" | "names" | "work";
 
@@ -970,7 +971,7 @@ export type ChatLive = { "type": "hello", stream: string, } | { "type": "message
 /**
  * How far a [`ChatMentionStatus`] has got.
  */
-export type ChatMentionState = "sending" | "delivered" | "fell_back" | "waiting" | "queued" | "silenced" | "no_such_session" | "offline" | "answered" | "chain" | "working" | "read" | "dropped";
+export type ChatMentionState = "sending" | "delivered" | "fell_back" | "waiting" | "queued" | "silenced" | "no_such_session" | "offline" | "answered" | "chain" | "working" | "read" | "dropped" | "not_granted";
 
 /**
  * Where a message's `@machine` mention got to (#502), as control knows it:
@@ -1204,6 +1205,13 @@ files?: Array<string>,
  */
 notify_anyway?: boolean, 
 /**
+ * In a thread (#647): who this wakes, chosen in the composer, in place
+ * of the agent it replies to. Agents the text names come too. Empty:
+ * nobody. Absent: as before this field. Ignored from an agent, and
+ * outside a thread.
+ */
+to?: Array<ChatPostTarget>, 
+/**
  * A reply in the thread of this message (#106): the number of a
  * message of the room that is not itself a reply.
  */
@@ -1216,6 +1224,19 @@ also?: boolean,
 /**
  * An agent's post: the name of the session that wrote it (#429). Kept
  * beside the agent, trimmed and cut short; a person's post ignores it.
+ */
+session?: string, };
+
+/**
+ * An agent a message is for (#647), as [`ChatThreadAgent`] names it.
+ */
+export type ChatPostTarget = { 
+/**
+ * The machine's id, or a hosted session's `ses_` id.
+ */
+id: string, 
+/**
+ * The session on the machine, when it has a name.
  */
 session?: string, };
 
@@ -1588,6 +1609,60 @@ following: boolean,
  * of those mention them.
  */
 read: number, unread: number, mentions: number, };
+
+/**
+ * One agent in a thread (#645): a session on someone's machine, or a hosted
+ * session. Never its output, a tool's arguments or a path (aru-051).
+ */
+export type ChatThreadAgent = { 
+/**
+ * The session's name, as its machine called it, or a hosted session's
+ * short id. Empty when a machine was told and no session has spoken.
+ */
+name: string, 
+/**
+ * The machine's id, or a hosted session's `ses_` id.
+ */
+id: string, 
+/**
+ * The machine's name, or the hosted box's.
+ */
+machine_name: string, 
+/**
+ * The owner's account and name; a hosted session's asker.
+ */
+owner: string, owner_name: string, hosted: boolean, state: ChatThreadAgentState, 
+/**
+ * With the owner's `work`: what it was started on.
+ */
+working_on?: string, 
+/**
+ * With the owner's `work`: the name of the tool it last ran.
+ */
+tool?: string, 
+/**
+ * The newest message of the thread it has taken in, or written.
+ */
+read_seq?: number, 
+/**
+ * Messages told to it that it hasn't taken in yet.
+ */
+waiting: number, 
+/**
+ * The agent a message goes to by default (#647): the thread's hosted
+ * session, else the agent first in it.
+ */
+lead: boolean, };
+
+/**
+ * What an agent in a thread is doing (#645).
+ */
+export type ChatThreadAgentState = "working" | "idle" | "needs_you" | "offline" | "unknown";
+
+/**
+ * [`chat_thread_agents`]' answer: oldest in the thread first.
+ */
+export type ChatThreadAgents = { agents: Array<ChatThreadAgent>, };
 
 /**
  * One thread the reader follows, in [`ChatThreads`].
@@ -3349,9 +3424,33 @@ count: number,
 /**
  * `mention`: the room to open (its id), and its name.
  */
-room?: string, room_name?: string, };
+room?: string, room_name?: string, 
+/**
+ * `grant_ask` (#578): what the owner's Grant is a request for.
+ */
+grant?: NoticeGrant, };
 
-export type NoticeKind = "mention";
+/**
+ * What a `grant_ask` card grants (#578): `threads.read` to `machine`'s
+ * agents over a scope, as `POST /api/grants` says it. The grant is the
+ * owner's, made from their own control session; the machine never makes it.
+ */
+export type NoticeGrant = { 
+/**
+ * This machine's id in control, and its name.
+ */
+machine: string, machine_name: string, 
+/**
+ * `project` (with `scope_id`) or `account`.
+ */
+scope_kind: string, scope_id: string, 
+/**
+ * What the scope is called, for the card ("Acme", "your DMs"); empty
+ * when the grant would be over just the room.
+ */
+scope_name: string, };
+
+export type NoticeKind = "mention" | "grant_ask";
 
 /**
  * How much of a room reaches the reader's pushes, and how its unread shows
@@ -5059,8 +5158,9 @@ guest_ssh: boolean,
  */
 agent_mentions?: boolean, 
 /**
- * What a teammate's agent may learn of this machine's sessions
- * (#577). Names by default.
+ * What teammates and their agents may learn of this machine's sessions
+ * (#577). `work` by default, since a thread's strip shows it (Jake,
+ * 2026-11-03, aru-133).
  */
 agent_sessions?: AgentSessions, 
 /**

@@ -55,9 +55,9 @@ test("the rail is down the platform page's left, its places in order, and the ba
   const rail = alice.locator(".ws-rail");
   await expect(rail).toBeVisible();
   const labels = await rail.locator(".ws-rail-button .ws-rail-label").allTextContents();
-  expect(labels.slice(0, 3), `the rail's places: ${labels}`).toEqual(["Projects", "Panes", "Swarm"]);
+  expect(labels, `the rail's places`).toEqual(["Projects", "Panes", "Swarm", "Chat", "Settings"]);
   expect(labels.at(-1), `the rail's places: ${labels}`).toBe("Settings");
-  for (const hook of ["projects", "panes", "swarm", "chat", "docs"]) await expect(rail.locator(`[data-open-${hook}]`)).toHaveCount(1);
+  for (const hook of ["projects", "panes", "swarm", "chat"]) await expect(rail.locator(`[data-open-${hook}]`)).toHaveCount(1);
   const box = (await rail.boundingBox())!;
   const at = `the rail at ${JSON.stringify(box)}, the window ${JSON.stringify(alice.viewportSize())}`;
   expect(box.x, at).toBe(0);
@@ -96,13 +96,40 @@ test("Projects is lit inside a project, and takes you back to the list", async (
   await expect(projects).toHaveClass(/\bhere\b/);
   await expect(alice.locator(".ws-rail [data-open-chat]")).not.toHaveClass(/\bhere\b/);
   // The bar keeps the project's places and its own Settings.
-  await expect(alice.locator("[data-platform-bar] [data-platform-home]")).toBeVisible();
+  await expect(alice.locator("[data-platform-bar] [data-platform-home]")).toHaveText("Overview");
   await expect(alice.locator("[data-platform-bar] [data-platform-settings]")).toBeVisible();
   // In the page: no reload.
   await alice.evaluate(() => Object.assign(window, { stayed: true }));
   await projects.click();
   await expect(alice).toHaveURL(`${app}/`);
   expect(await alice.evaluate(() => (window as unknown as { stayed?: boolean }).stayed)).toBe(true);
+});
+
+test("the shell's Projects comes back to the page you left, and the list stays a click away (Arugula #638)", async () => {
+  await alice.goto(`${app}/`);
+  await alice.locator("section[data-platform-home] [data-project]", { hasText: "Acme" }).click();
+  await expect(alice).toHaveURL(/\/p\/prj_[0-9a-f]+-acme$/);
+  await alice.locator("[data-platform-bar] [data-platform-runs]").click();
+  await expect(alice).toHaveURL(/\/p\/prj_[0-9a-f]+-acme\/runs$/);
+  const left = alice.url();
+  // What the shell's Projects opens.
+  await alice.goto(`${app}/?back`);
+  await expect(alice).toHaveURL(left);
+  await expect(alice.locator("[data-platform-bar] [data-platform-runs]")).toHaveAttribute("aria-current", "page");
+  // Chat is the rail's own place: being there doesn't change where Projects goes.
+  await alice.locator(".ws-rail [data-open-chat]").click();
+  await expect(alice.locator(".ws-rail [data-open-chat]")).toHaveClass(/\bhere\b/);
+  await alice.goto(`${app}/?back`);
+  await expect(alice).toHaveURL(left);
+  // The rail's own Projects is still the list, and the list is remembered too.
+  await alice.locator(".ws-rail [data-open-projects]").click();
+  await expect(alice).toHaveURL(`${app}/`);
+  await alice.goto(`${app}/?back`);
+  await expect(alice).toHaveURL(`${app}/`);
+  // Somewhere that isn't a path here goes to the list.
+  await alice.evaluate(() => localStorage.setItem("arugula.platform-last-page", "//example.com/"));
+  await alice.goto(`${app}/?back`);
+  await expect(alice).toHaveURL(`${app}/`);
 });
 
 test("Panes lands on control's page in this tab, with the rail in the same spot, and Chat goes back", async () => {

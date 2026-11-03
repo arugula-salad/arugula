@@ -1,5 +1,60 @@
 {
   "$defs": {
+    "AgentGrantAsk": {
+      "description": "A mention of this machine that its agents can't read the room for (#578).",
+      "properties": {
+        "author": {
+          "description": "Who wrote it, as people read it.",
+          "type": "string"
+        },
+        "line": {
+          "description": "Its first line.",
+          "type": "string"
+        },
+        "machine": {
+          "description": "This machine's id and name, for the card.",
+          "type": "string"
+        },
+        "machine_name": {
+          "type": "string"
+        },
+        "room": {
+          "type": "string"
+        },
+        "room_name": {
+          "type": "string"
+        },
+        "scope_id": {
+          "default": "",
+          "type": "string"
+        },
+        "scope_kind": {
+          "description": "What a grant of `threads.read` is over, as `POST /api/grants` says it:\n`project` and the project's id, or `account`.",
+          "type": "string"
+        },
+        "scope_name": {
+          "default": "",
+          "description": "The scope's name as its owner reads it (the team's, or \"your DMs\"),\nfor the card to say what the grant reaches. Empty: just the room.",
+          "type": "string"
+        },
+        "seq": {
+          "description": "The mention's number in the room.",
+          "format": "int64",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "room",
+        "room_name",
+        "seq",
+        "author",
+        "line",
+        "machine",
+        "machine_name",
+        "scope_kind"
+      ],
+      "type": "object"
+    },
     "AgentMention": {
       "description": "A message in a thread for a machine's agents (Arugula #394).",
       "properties": {
@@ -13,6 +68,13 @@
             "string",
             "null"
           ]
+        },
+        "others": {
+          "description": "With a reply (#649): the other agents in the thread, as people read\nthem (\"wake (Aaron's, Mac mini)\"), so a session can see who's here\nbefore it starts on something. An older daemon ignores it.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
         },
         "parent": {
           "description": "The message it replies under, when it's in a thread.",
@@ -78,6 +140,13 @@
             "string",
             "null"
           ]
+        },
+        "only": {
+          "description": "For a thread's strip (#645): only the sessions of these names\n([`session_slug`]), silenced or not, and however many. Empty: the list\na mention picks from. An older daemon ignores it and answers that.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
         },
         "room": {
           "description": "The room the mention would be in.",
@@ -237,6 +306,20 @@
           "properties": {
             "op": {
               "const": "agents.sessions",
+              "type": "string"
+            }
+          },
+          "required": [
+            "op"
+          ],
+          "type": "object"
+        },
+        {
+          "$ref": "#/$defs/AgentGrantAsk",
+          "description": "A teammate mentioned this machine in a room its agents can't read\n(#578): the daemon raises a card asking its owner to let them. The\ngrant itself is the owner's own act, made over their control session.",
+          "properties": {
+            "op": {
+              "const": "agents.grant_ask",
               "type": "string"
             }
           },
@@ -603,8 +686,26 @@
           "description": "What `@machine/name` matches: the session's name, as a slug.",
           "type": "string"
         },
+        "state": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/MachineSessionState"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "What it's doing now (#645); absent from an older daemon."
+        },
         "tab": {
           "description": "The tab it is in, when the tab has a name.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "tool": {
+          "description": "With the owner's `work`: the name of the tool it last ran (#645),\nnever its arguments or output.",
           "type": [
             "string",
             "null"
@@ -622,6 +723,15 @@
         "name"
       ],
       "type": "object"
+    },
+    "MachineSessionState": {
+      "description": "What a machine's session is doing (#645).",
+      "enum": [
+        "working",
+        "idle",
+        "needs_input"
+      ],
+      "type": "string"
     },
     "OpAnswer": {
       "description": "How a machine (or control, for it) answered an op.",

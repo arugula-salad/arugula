@@ -3466,6 +3466,29 @@ a.work-chip:hover {
   grid-template-columns: minmax(0, 1fr) auto auto;
 }
 
+/* A passkey's details go under its name at every width: with a second
+   button (#641), three columns leave the name a word wide. */
+.control-devices.control-passkeys li {
+  grid-template-columns: minmax(0, 1fr) auto;
+  row-gap: 2px;
+}
+.control-devices.control-passkeys li > :nth-child(2) {
+  grid-column: 1;
+  grid-row: 2;
+  justify-self: start;
+}
+.control-devices.control-passkeys li > :nth-child(3) {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+}
+
+.control-row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
 .control-devices li > button {
   justify-self: end;
 }
@@ -10571,7 +10594,19 @@ html[data-desktop="macos"]:not([data-native-tabs]) .ws-rail {
   font-size: 13px;
 }
 
-.ws-head .host-button {
+/* Every shell bar on a computer is the panes' size and looks the same
+   (Arugula #637), so moving between a machine's places doesn't move the bar. */
+.frame .app-bar,
+.swarm-shell .app-bar {
+  height: var(--head-h);
+  align-items: center;
+  gap: 10px;
+  border-bottom: 1px solid var(--line-strong);
+}
+
+.ws-head .host-button,
+.frame .app-bar .host-button,
+.swarm-shell .app-bar .host-button {
   height: 28px;
   padding: 0 8px;
   border: 0;
@@ -10580,7 +10615,8 @@ html[data-desktop="macos"]:not([data-native-tabs]) .ws-rail {
   font-weight: 600;
 }
 
-.ws-head .host-button:hover {
+.ws-head .host-button:hover,
+.frame .app-bar .host-button:hover {
   background: var(--raised);
 }
 
@@ -11403,7 +11439,9 @@ html[data-desktop="macos"]:not([data-native-tabs]) .ws-rail {
    panes (which keep running, and their size). */
 .ws-att {
   position: absolute;
-  z-index: 40;
+  /* Over a machine's Docs and Recipes too (.chat), now their bars have the
+     bell (Arugula #637). */
+  z-index: 47;
   top: 0;
   right: 0;
   bottom: 0;
@@ -12967,6 +13005,16 @@ html[data-workspace="new"] .thread-panel {
 
 .link-card-state.tone-off {
   color: var(--dim);
+}
+
+.link-card.board-link .board-bar {
+  display: flex;
+  margin: 4px 0 2px;
+}
+
+.link-card-needs {
+  color: var(--warn);
+  font-weight: 600;
 }
 
 .link-card-remove {

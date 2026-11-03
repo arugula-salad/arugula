@@ -315,7 +315,7 @@ PROFILE="${1:-ssh}"; shift || true
 CFG="$STATE/ssh_config"
 BREAK="${BREAK:-}"
 SSH_CLAIMS="login jump no-route bare bytes agent linger"
-CONTROL_CLAIMS="signin reach relay unreachable cli team hosted platform platform-page agents links broker hud-box issuer"
+CONTROL_CLAIMS="signin reach relay unreachable cli native team hosted platform platform-page agents links broker hud-box issuer"
 
 need_docker
 
@@ -664,6 +664,71 @@ echo "tail: $(tail -c 200 /tmp/tail.out)"
 rm -f /tmp/ev.out /tmp/tail.out
 [ -n "$ok" ]
 SH
+}
+
+# The native clients' core with no phone (native/core), run on the host. It
+# talks to control at the --via target: its name makes no difference to a
+# signature.
+PROBE="${ARUGULA_NATIVE_PROBE:-${CARGO_TARGET_DIR:-$ROOT/target}/debug/arugula-native-probe}"
+probe() { "$PROBE" "$@"; }
+# The newest x.y.0 release at least a few versions behind, unpacked: a daemon
+# that has never heard of native apps.
+old_release() {
+  local v="${ARUGULA_TESTNET_OLD_RELEASE:-0.60.0}" a dir="$WORK/old-release"
+  a=$(uname -m); [ "$a" = arm64 ] && a=aarch64
+  mkdir -p "$dir"
+  curl -fsSL "https://github.com/arugula-salad/arugula/releases/download/v$v/arugula-$v-$a-unknown-linux-musl.tar.gz" |
+    tar -xz -C "$dir" --strip-components=1 || return 1
+  [ -x "$dir/arugulad" ] && echo "$dir"
+}
+
+# A native app, played by the core: pairs by code from a signed-in device,
+# makes the startup call, reads and posts chat, and reaches a pane through
+# the relay, on this release's daemon and an older one. Broken: its key is
+# swapped for a stranger's once it has paired, so nothing it signs counts.
+claim_native() {
+  local fp url state out pid code room old ok=1 b
+  if ! fresh box-systemd || ! fresh box-bare; then note "native: couldn't recreate the boxes"; return 1; fi
+  fp="$(signin "native-$$-$RANDOM" | field fingerprint)"
+  [ -n "$fp" ] || { note "native: no device signed in"; return 1; }
+  join_box box-systemd "$fp" || return 1
+  old="$(old_release)" || { note "native: couldn't fetch an older release"; return 1; }
+  ARUGULA_TESTNET_BINARIES="$old" join_box box-bare "$fp" || { note "native: the older daemon didn't join"; return 1; }
+  # It really is the older one, or this proves nothing about old daemons.
+  local want have
+  want="$("$old/arugulad" --version)"
+  have="$(s box-bare '.local/bin/arugulad --version' 2>&1)"
+  [ "$want" = "$have" ] || { note "native: box-bare runs $have, not $want"; return 1; }
+  note "native: older daemon: $have"
+  # control's own --via mapping, of the several there are.
+  url="$(tr ' ' '\n' <<< "$CONTROL_VIA" | sed -n "s|^$CONTROL_URL=||p" | head -1)"
+  [ -n "$url" ] || url="$CONTROL_URL"
+  state="$WORK/native.json" out="$WORK/native-pair.out"
+  probe pair "$url" "Arugula on testnet" "$state" > "$out" 2>&1 &
+  pid=$!
+  code=""
+  for _ in $(seq 1 60); do
+    code="$(sed -nE 's/^#join=(.+)$/\1/p' "$out" | head -1)"
+    [ -n "$code" ] && break
+    kill -0 "$pid" 2>/dev/null || break
+    sleep 0.5
+  done
+  [ -n "$code" ] || { note "native: no code"; cat "$out" >&2; return 1; }
+  dev approve "$code" > /dev/null || { note "native: couldn't approve it"; kill "$pid" 2>/dev/null; return 1; }
+  wait "$pid" || { note "native: pairing failed"; cat "$out" >&2; return 1; }
+  [ -z "$BREAK" ] || probe rekey "$state"
+
+  out="$(probe start "$state" 2>&1)" || { note "native: the startup call: $out"; return 1; }
+  grep -q '"projects"' <<< "$out" || { note "native: the startup call has no projects: $out"; ok=0; }
+  room="$(plat chat-room | field room)"
+  [ -n "$room" ] || { note "native: no room"; return 1; }
+  out="$(probe chat "$state" "$room" "NATIVE-$$" 2>&1)" || { note "native: chat: $out"; ok=0; }
+  for b in box-systemd box-bare; do
+    out="$(probe term "$state" "$b" "NATIVE-$b" 2>&1)" || { note "native: the terminal on $b: $out"; ok=0; }
+  done
+  # Leave box-bare bare for the ssh profile's claims.
+  fresh box-bare || true
+  [ "$ok" = 1 ]
 }
 
 claim_cli() {

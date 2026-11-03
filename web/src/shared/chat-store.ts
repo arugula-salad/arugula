@@ -21,6 +21,7 @@ import type {
   ChatPin,
   ChatPins,
   ChatPost,
+  ChatPostTarget,
   ChatPosted,
   ChatRoom,
   ChatRoomAgent,
@@ -847,8 +848,8 @@ export class ChatStore {
 
   /** Reply in the thread of message `parent` (#106). Sent to the channel too
    * (`also`), the room's list reads it back as well. */
-  async reply(id: string, parent: number, text: string, also: boolean, files?: string[] | null): Promise<ChatPosted> {
-    const posted = await this.threads.post(id, parent, text, also, files);
+  async reply(id: string, parent: number, text: string, also: boolean, files?: string[] | null, to?: ChatPostTarget[]): Promise<ChatPosted> {
+    const posted = await this.threads.post(id, parent, text, also, files, to);
     if (also && this.loaded.has(id)) await this.newer(id);
     // The first message's summary, in the room's list.
     if (this.loaded.has(id)) void this.refetch(id, parent);

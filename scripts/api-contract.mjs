@@ -127,6 +127,11 @@ function build() {
     if (isOp && isOut) errors.push(`${key(r)} is both an operation and out of scope`);
   }
 
+  // A route the gate lets a native app call is one the document describes.
+  for (const r of routes) {
+    if (r.clients.includes("native") && !map.operations[key(r)]) errors.push(`${key(r)} lists native in routes.toml but isn't in contract/api/native.json`);
+  }
+
   const schemas = new Map();
   const queue = [];
   const use = (ref, where) => {
@@ -155,8 +160,9 @@ function build() {
         if (!new RegExp(`\\b${bare}\\b`).test(sig)) errors.push(`${k}: ${file}#${fn}'s signature doesn't mention ${bare}`);
       }
     }
+    if (!row.clients.includes("native")) errors.push(`${k}: its row in crates/control/routes.toml doesn't list native`);
     const params = [...row.path.matchAll(/\{(\w+)\}/g)].map((m) => ({ name: m[1], in: "path", required: true, schema: { type: "string" } }));
-    const operation = { operationId: k.replace(/[^A-Za-z0-9]+/g, "_").replace(/_$/, ""), "x-arugula-clients": row.clients, security: [{ deviceSignature: [] }, { sessionCookie: [] }], responses: { default: { description: "Refused", content: { "application/json": { schema: { $ref: "#/components/schemas/Refusal" } } } } } };
+    const operation = { operationId: k.replace(/[^A-Za-z0-9]+/g, "_").replace(/_$/, ""), "x-arugula-clients": row.clients, security: ["join_proof", "poll_token"].includes(row.auth) ? [] : [{ deviceSignature: [] }, { sessionCookie: [] }], responses: { default: { description: "Refused", content: { "application/json": { schema: { $ref: "#/components/schemas/Refusal" } } } } } };
     if (op.query) {
       const schema = use(op.query, k);
       if (schema) params.push({ name: "query", in: "query", style: "form", explode: true, schema });
@@ -175,8 +181,9 @@ function build() {
       if (schema) operation.responses["2XX"] = { description: "Server-sent events, one JSON object each", content: { "text/event-stream": { schema } } };
     } else if (op.bytes) operation.responses["2XX"] = { description: op.bytes };
     else if (op.empty) operation.responses["2XX"] = { description: "OK, with no body" };
+    else if (op.upgrade) operation.responses["101"] = { description: "A WebSocket: Noise frames to and from the machine" };
     else if (op.untyped) operation.responses["2XX"] = { description: "OK" };
-    else errors.push(`${k}: say its response, events, bytes, empty or untyped`);
+    else errors.push(`${k}: say its response, events, bytes, empty, upgrade or untyped`);
     if (op.untyped) operation["x-arugula-untyped"] = op.untyped;
     (paths[row.path] ??= {})[row.method.toLowerCase()] = operation;
   }
@@ -209,7 +216,7 @@ function build() {
     paths: Object.fromEntries(Object.entries(paths).sort(([a], [b]) => (a < b ? -1 : 1))),
     components: {
       securitySchemes: {
-        deviceSignature: { type: "apiKey", in: "header", name: "x-arugula-auth", description: "A device's signature over the request (crates/control/src/auth.rs). A browser-kind device's counts only on routes marked native (#600), which aren't yet." },
+        deviceSignature: { type: "apiKey", in: "header", name: "x-arugula-auth", description: "A device's signature over the request (crates/control/src/auth.rs). A browser-kind device's counts only if it paired as a native app, on routes marked native, with control's --native-clients on (aru-131)." },
         sessionCookie: { type: "apiKey", in: "cookie", name: "session", description: "Control's page's session." },
       },
       schemas: Object.fromEntries([...schemas].sort(([a], [b]) => (a < b ? -1 : 1))),

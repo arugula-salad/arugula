@@ -29,7 +29,7 @@ fn info(d: &arugula_testkit::Daemon, pane: u64) -> Value {
 /// A `claude` that holds the session `sess` (as Claude Code does, in its
 /// config dir's `sessions/`), prints a dot every 100ms (a turn in progress),
 /// and appends each line typed into it to `typed`.
-fn fake_claude(root: &Path, cfg: &Path) -> std::path::PathBuf {
+pub(super) fn fake_claude(root: &Path, cfg: &Path) -> std::path::PathBuf {
     let script = root.join("claude");
     std::fs::write(
         &script,

@@ -23,7 +23,7 @@ import { DEPLOY_HASH, DeployPrompt } from "./deploy";
 import { openPanel, useControl, usedLink, type Panel } from "./common";
 import { AddDevice, Devices } from "./devices";
 import { AddMachine } from "./machines";
-import { AddPasskeyAgain, AdmitPrompt, AppLoginDone, AppLoginPrompt, ConfirmPasskey, InvitePrompt, Joined, Notice, PresignedPrompt, ShareOfferPrompt } from "./prompts";
+import { AddPasskeyAgain, AdmitPrompt, AppLoginDone, AppLoginPrompt, ConfirmPasskey, InvitePrompt, Joined, Notice, PasskeyOffer, PresignedPrompt, ShareOfferPrompt } from "./prompts";
 import { RecoveryCodes } from "./recovery";
 import { Teams } from "./teams";
 
@@ -56,6 +56,7 @@ export function ControlOverlay({ s }: { s: ControlSession }) {
   if (s.phase !== "ready") return null;
   if (s.recoveryCodes) return <RecoveryCodes s={s} />;
   if (s.passkeyToConfirm) return <ConfirmPasskey s={s} />;
+  if (s.passkeyOffer) return <PasskeyOffer s={s} offer={s.passkeyOffer} />;
   if (hash === ADD_PASSKEY_HASH) return <AddPasskeyAgain s={s} />;
   const join = JOIN_HASH.exec(hash);
   if (join) return <JoinPrompt s={s} code={join[1]} device={join[2]} />;

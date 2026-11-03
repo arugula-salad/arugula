@@ -8,7 +8,9 @@ import type { ComponentChildren } from "preact";
 import type { Client } from "../client";
 import { usePhone, useSubscribe } from "../../shared/ui/hooks";
 import { HostButton } from "./hosts";
-import { Places, type Place } from "./places";
+import { MachinePlaces, Places, type Place } from "./places";
+import { AttentionBell } from "./shell/attention-drawer";
+import { ConnectionChip } from "./shell/context-header";
 import { openMenu, useMenuOpenFrom, type MenuItem } from "../../shared/ui/menu";
 import { useRef } from "preact/hooks";
 import { settingsItems } from "./commands";
@@ -71,8 +73,8 @@ export function AppBar({
   all?: boolean;
 }) {
   useSubscribe((fn) => client.subscribe(fn));
-  // The workspace's rail has the places (M108), on a computer once a
-  // machine is shown (app.tsx).
+  // The workspace's rail has the whole app's places (M108), on a computer
+  // once a machine is shown (app.tsx), and the bar this machine's.
   const rail = !usePhone() && !!client.state;
   return (
     <header class="bar app-bar" data-tauri-drag-region inert={inert} data-at={at}>
@@ -80,14 +82,22 @@ export function AppBar({
         <span class="scope-label" data-scope="all" title="This shows every machine. Panes shows one: pick it there.">
           All machines
         </span>
+      ) : rail ? (
+        <>
+          <HostButton path={false} />
+          <ConnectionChip client={client} />
+        </>
       ) : (
         <HostButton />
       )}
       {!rail && <Places client={client} at={at} />}
+      {rail && !all && <MachinePlaces client={client} at={at} />}
       {children}
       <div class="bar-fill" data-tauri-drag-region />
       {client.state && <CommandsButton client={client} />}
       <UpdateChip client={client} />
+      {/* What waits on you, on every machine, in every bar (Arugula #637). */}
+      {rail && <AttentionBell client={client} />}
       {end}
       <AccountButton client={client} />
       <WindowButtons />

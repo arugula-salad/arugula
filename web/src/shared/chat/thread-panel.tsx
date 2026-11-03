@@ -13,6 +13,7 @@ import { RoomCompose, RoomMessage, roomLabel, threadComposeRef, useRoomTokens } 
 import { usePlatformApi } from "../platform-api";
 import { newFrom, repliesOf } from "./threads";
 import { useStickToBottom } from "./stick";
+import { SeenMarks, ThreadAgents, useThreadAgents } from "./thread-agents";
 
 /** How near the bottom still counts as at it, for following new replies. */
 const NEAR_BOTTOM = 80;
@@ -94,6 +95,8 @@ export function ThreadPanel({ store, room, parent, phone, focus, close }: { stor
   const following = !!first?.thread?.following;
   const lastOwn = replies.findLast((m) => m.deleted === null && !!m.author && m.author === chat.me && !m.agent);
   const label = room.kind === "channel" ? `#${room.name}` : roomLabel(room, api);
+  const newest = last ?? first?.seq;
+  const agents = useThreadAgents(room.id, parent, newest);
   const toNewest = () => list.current?.scrollTo({ top: list.current.scrollHeight });
   return (
     <aside
@@ -134,6 +137,7 @@ export function ThreadPanel({ store, room, parent, phone, focus, close }: { stor
           </button>
         )}
       </header>
+      <ThreadAgents agents={agents} newest={newest} phone={phone} />
       <div class="thread-list thread-replies" ref={list} onScroll={onScroll}>
         {t === undefined && !error && <p class="thread-empty">Loading…</p>}
         {error && <p class="thread-error">{error}</p>}
@@ -174,6 +178,7 @@ export function ThreadPanel({ store, room, parent, phone, focus, close }: { stor
                 }}
                 inThread
               />
+              <SeenMarks agents={agents} m={m} />
             </Fragment>
           );
         })}
@@ -186,7 +191,7 @@ export function ThreadPanel({ store, room, parent, phone, focus, close }: { stor
         )}
       </div>
       {room.writable && first ? (
-        <RoomCompose room={room} phone={phone} setQuote={() => {}} setError={setError} name="Reply" thread={{ parent }} editLast={lastOwn ? () => setEditing(lastOwn.seq) : undefined} />
+        <RoomCompose room={room} phone={phone} setQuote={() => {}} setError={setError} name="Reply" thread={{ parent }} threadAgents={agents} editLast={lastOwn ? () => setEditing(lastOwn.seq) : undefined} />
       ) : null}
     </aside>
   );

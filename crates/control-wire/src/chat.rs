@@ -539,6 +539,9 @@ pub enum ChatMentionState {
     /// The session dropped it (#613): `why` says how. Final, like
     /// `answered`, which it never replaces.
     Dropped,
+    /// The machine's agents can't read the room (#578): its owner was asked
+    /// to let them. Delivered if they do; final if they said never.
+    NotGranted,
 }
 
 /// Someone who reacted: an account, and the machine's agent if it was
@@ -779,6 +782,13 @@ pub struct ChatPost {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "ts", ts(optional))]
     pub notify_anyway: Option<bool>,
+    /// In a thread (#647): who this wakes, chosen in the composer, in place
+    /// of the agent it replies to. Agents the text names come too. Empty:
+    /// nobody. Absent: as before this field. Ignored from an agent, and
+    /// outside a thread.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub to: Option<Vec<ChatPostTarget>>,
     /// A reply in the thread of this message (#106): the number of a
     /// message of the room that is not itself a reply.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -904,6 +914,17 @@ pub struct ChatRead {
     pub seq: i64,
 }
 
+/// `POST /api/chat/rooms/{id}/grant-never`: the owner of `daemon` says its
+/// agents are never to be asked to read this room (#578). What waited for
+/// them is `not_granted` for good; a grant over the room undoes it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct ChatGrantNever {
+    /// The machine's id.
+    pub daemon: String,
+}
+
 /// `POST /api/chat/rooms/{id}/unread`: mark as unread from `seq`: the read
 /// mark goes to just before it, backwards if need be (#116). The answer is
 /// the room, as the reader now sees it.
@@ -962,6 +983,87 @@ pub struct ChatSavedItem {
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct ChatSaved {
     pub items: Vec<ChatSavedItem>,
+}
+
+/// An agent a message is for (#647), as [`ChatThreadAgent`] names it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct ChatPostTarget {
+    /// The machine's id, or a hosted session's `ses_` id.
+    pub id: String,
+    /// The session on the machine, when it has a name.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub session: Option<String>,
+}
+
+/// `GET /api/chat/rooms/{id}/threads/{seq}/agents`: the agents in a thread
+/// and what each is doing now (#645), for the strip at its top. Whoever sees
+/// the room may ask. Control keeps none of the live part: it asks each
+/// machine's daemon, and what that shows is the owner's `agent_sessions`.
+pub fn chat_thread_agents(room: &str, seq: i64) -> String {
+    format!("/api/chat/rooms/{room}/threads/{seq}/agents")
+}
+
+/// [`chat_thread_agents`]' answer: oldest in the thread first.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct ChatThreadAgents {
+    pub agents: Vec<ChatThreadAgent>,
+}
+
+/// What an agent in a thread is doing (#645).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[serde(rename_all = "snake_case")]
+pub enum ChatThreadAgentState {
+    Working,
+    Idle,
+    NeedsYou,
+    Offline,
+    /// Its machine answered without saying: an older daemon, a session it
+    /// doesn't show, or one that has ended.
+    Unknown,
+}
+
+/// One agent in a thread (#645): a session on someone's machine, or a hosted
+/// session. Never its output, a tool's arguments or a path (aru-051).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct ChatThreadAgent {
+    /// The session's name, as its machine called it, or a hosted session's
+    /// short id. Empty when a machine was told and no session has spoken.
+    pub name: String,
+    /// The machine's id, or a hosted session's `ses_` id.
+    pub id: String,
+    /// The machine's name, or the hosted box's.
+    pub machine_name: String,
+    /// The owner's account and name; a hosted session's asker.
+    pub owner: String,
+    pub owner_name: String,
+    pub hosted: bool,
+    pub state: ChatThreadAgentState,
+    /// With the owner's `work`: what it was started on.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub working_on: Option<String>,
+    /// With the owner's `work`: the name of the tool it last ran.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub tool: Option<String>,
+    /// The newest message of the thread it has taken in, or written.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub read_seq: Option<i64>,
+    /// Messages told to it that it hasn't taken in yet.
+    pub waiting: u32,
+    /// The agent a message goes to by default (#647): the thread's hosted
+    /// session, else the agent first in it.
+    pub lead: bool,
 }
 
 /// `POST /api/chat/rooms/{id}/threads/{seq}/read`: read the thread up to
@@ -1609,6 +1711,12 @@ pub struct AgentReach {
 /// machine reads `room` and `machine` hears it.
 pub fn agent_machine_sessions(room: &str, machine: &str) -> String {
     format!("{AGENT_ROOMS}/{room}/agents/{machine}/sessions")
+}
+
+/// The agents in a thread, for an agent reading it (`GET`, answered
+/// [`ChatThreadAgents`], #649). Refused unless the machine reads `room`.
+pub fn agent_thread_agents(room: &str, seq: i64) -> String {
+    format!("{AGENT_ROOMS}/{room}/threads/{seq}/agents")
 }
 
 /// [`agent_machine_sessions`]' query.
