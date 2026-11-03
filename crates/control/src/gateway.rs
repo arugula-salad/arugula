@@ -42,7 +42,6 @@ use arugula_control_common::{
     ApiError, internal,
     principal::{self, NotVouched, PrincipalKey, Vouch},
 };
-use arugula_control_wire::forge::Standing;
 use arugula_control_wire::internal::{GithubUser, TokenAnswer};
 use arugula_platform_api::{Deleted, PlatformPort, auth::Asked, in_process::InProcess, remote::HttpPlatform};
 use axum::{
@@ -136,16 +135,6 @@ impl PlatformPort for PlatformAt {
 
     fn daemon_came<'a>(&'a self, daemon: &'a str) -> BoxFuture<'a, anyhow::Result<()>> {
         self.port().daemon_came(daemon)
-    }
-
-    fn forge_standing<'a>(
-        &'a self,
-        account: &'a str,
-        github: Option<&'a GithubUser>,
-        repos: &'a [String],
-        fresh: bool,
-    ) -> BoxFuture<'a, anyhow::Result<Vec<Standing>>> {
-        self.port().forge_standing(account, github, repos, fresh)
     }
 
     fn github_token<'a>(

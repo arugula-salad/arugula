@@ -7,15 +7,13 @@
 //!   site (aru-076), forwarded by the hub's gateway. Signature and dedupe
 //!   are here, and a linked repo's events become the mirror's rows. The
 //!   hub relayed them to daemons as pokes until M174.
-//! - **Who may hear about a repository** ([`standing`]): the account signed
+//! - **Who may read a repository** ([`viewer::access`]): the account signed
 //!   in to control with GitHub, the App is installed where the repository
 //!   lives, and that installation is the person's own account, or GitHub
-//!   says they're a collaborator on it ([`GithubApp::may`], kept by
-//!   [`viewer::access`] in the database, which GitHub's events drop on
-//!   every machine). Both by the
+//!   says they're a collaborator on it ([`GithubApp::may`], kept in the
+//!   database, which GitHub's events drop on every machine). Both by the
 //!   person's numeric GitHub id. Hubs before M174 asked it for each
-//!   daemon's `forge.watch` and heartbeat (`PlatformPort::forge_standing`),
-//!   which stays while one might.
+//!   daemon's `forge.watch` and heartbeat.
 //! - **Hosted boxes** ([`token`]): the hub's `POST /api/daemon/github/token`
 //!   asks for a read-only installation token for one repository
 //!   (`PlatformPort::github_token`), for an account the same rule allows.
@@ -52,7 +50,7 @@
 
 use std::sync::Arc;
 
-use arugula_control_wire::forge::{GithubToken, Standing};
+use arugula_control_wire::forge::GithubToken;
 use axum::http::StatusCode;
 use tracing::info;
 
@@ -255,40 +253,6 @@ impl Args {
 
 /// `OWNER/NAME`, as GitHub spells them (the hub checks them too).
 pub use arugula_platform_api::good_repo;
-
-/// Where each repository stands for an account's daemon: live (pokes come)
-/// or why not. `github`: the account's GitHub identity, if it signed in
-/// with GitHub. `fresh`: a daemon just asked (not the heartbeat), so
-/// lookups GitHub hasn't answered lately count against the account's
-/// limit.
-pub async fn standing(
-    p: &Platform,
-    account: &str,
-    github: Option<&GithubUser>,
-    repos: &[String],
-    fresh: bool,
-) -> Vec<Standing> {
-    let mut out = Vec::new();
-    for repo in repos {
-        let why = match (&p.github, github) {
-            (None, _) => Some(format!("{NO_APP}: the block polls")),
-            (Some(_), None) => Some("sign in to control with GitHub for live updates from GitHub".to_owned()),
-            (Some(gh), Some(u)) => match viewer::access(p, gh, account, u, repo, fresh).await {
-                Ok(viewer::Access::Yes) => None,
-                Ok(viewer::Access::No(why)) => Some(why),
-                Ok(viewer::Access::Busy) => {
-                    Some("too many repositories asked about lately: live updates resume within the hour".to_owned())
-                }
-                Err(e) => {
-                    tracing::warn!(error = format!("{e:#}"), "checking access to a repository");
-                    Some("couldn't check your access to it".to_owned())
-                }
-            },
-        };
-        out.push(Standing { repo: repo.clone(), live: why.is_none(), why });
-    }
-    out
-}
 
 pub use arugula_control_wire::internal::TokenAnswer;
 

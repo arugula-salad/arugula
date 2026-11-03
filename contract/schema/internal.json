@@ -1624,57 +1624,6 @@
       ],
       "type": "object"
     },
-    "Poke": {
-      "description": "What control relays of a webhook event: no more than this.",
-      "properties": {
-        "delivery": {
-          "default": "",
-          "type": "string"
-        },
-        "event": {
-          "default": "",
-          "type": "string"
-        },
-        "host": {
-          "default": "github.com",
-          "description": "A daemon takes `github.com` when it is left out.",
-          "type": "string"
-        },
-        "number": {
-          "format": "uint64",
-          "minimum": 0,
-          "type": [
-            "integer",
-            "null"
-          ]
-        },
-        "provider": {
-          "type": "string"
-        },
-        "repo": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "provider",
-        "repo"
-      ],
-      "type": "object"
-    },
-    "PokesArgs": {
-      "properties": {
-        "pokes": {
-          "items": {
-            "$ref": "#/$defs/Poke"
-          },
-          "type": "array"
-        }
-      },
-      "required": [
-        "pokes"
-      ],
-      "type": "object"
-    },
     "PreviewArgs": {
       "description": "Public previews (M187): a preview's id, or a workspace's.",
       "properties": {
@@ -2622,38 +2571,6 @@
         "failed"
       ],
       "type": "string"
-    },
-    "StandingArgs": {
-      "properties": {
-        "account": {
-          "type": "string"
-        },
-        "fresh": {
-          "type": "boolean"
-        },
-        "github": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/GithubUser"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "repos": {
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        }
-      },
-      "required": [
-        "account",
-        "repos",
-        "fresh"
-      ],
-      "type": "object"
     },
     "Team": {
       "description": "A team, as its latest signed roster says.",

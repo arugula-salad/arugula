@@ -404,7 +404,7 @@ fn count(app: &Platform, sql: &str) -> u64 {
 /// well inside 5 s. No pokes go to the hub (M174).
 #[tokio::test]
 async fn a_pr_opened_is_a_row_at_once() {
-    let (_gh, app, base, hub) = serve().await;
+    let (_gh, app, base, _) = serve().await;
     link(&app, REPO, now_ms());
     let opened = json!({ "action": "opened", "repository": repository(REPO), "sender": { "login": "bob", "id": 2 },
         "pull_request": pr(5, "Fix the thing", "open", now_ms(), "abc") });
@@ -418,7 +418,6 @@ async fn a_pr_opened_is_a_row_at_once() {
     assert!(l.arrival_p95 < 1000, "{l:?}");
     assert!(l.event_p95 < 5000, "GitHub's second, then the row: {l:?}");
     assert_eq!(count(&app, "SELECT count(*) FROM forge_events WHERE kind = 'opened'"), 1);
-    assert!(hub.pokes().is_empty(), "the poke relay is retired");
 }
 
 /// A late redelivery of an older change doesn't overwrite a newer row.
@@ -577,7 +576,7 @@ async fn a_review_is_an_event_and_no_text_is_kept() {
 /// go for it either (M174).
 #[tokio::test]
 async fn an_unlinked_repo_gets_no_rows() {
-    let (_gh, app, base, hub) = serve().await;
+    let (_gh, app, base, _) = serve().await;
     let opened = |repo: u64| {
         json!({ "action": "opened", "repository": repository(repo), "sender": {},
             "pull_request": pr(5, "x", "open", now_ms(), "abc") })
@@ -589,7 +588,6 @@ async fn an_unlinked_repo_gets_no_rows() {
     for t in ["forge_items", "forge_events", "forge_checks"] {
         assert_eq!(count(&app, &format!("SELECT count(*) FROM {t}")), 0, "{t}");
     }
-    assert!(hub.pokes().is_empty());
     // Nor does the poller read it.
     assert_eq!(poller::tick(&app, now_ms()).await.unwrap(), None);
 }

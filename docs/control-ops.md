@@ -1903,19 +1903,17 @@ pins onto the platform's mirror, and since M174 the relay is gone:
   as they do on a tailnet without control. No daemon errors on it.
 - The platform's webhook writes rows and answers `202 {"taken":true}`. It
   hands nothing to the hub.
-- `HubPort::forge_pokes` stays, answering 0, while a platform from before
-  M174 might call it (one rolled back past the hub): its webhooks still
-  answer GitHub 202, not 502. `PlatformPort::forge_standing` stays while
-  a hub from before might call it (the platform deploys first). Both go a
-  release later.
+- `HubPort::forge_pokes` and `PlatformPort::forge_standing`, kept in
+  0.66.11 and 0.66.12 for a mixed deploy, are gone in the release after.
 - `/api/daemon/github/token` (hosted boxes' read token) is not part of the
   relay, and stays.
 - Forgejo and GitLab blocks' own webhooks to the daemon are unchanged.
 
-Deploy order is the usual one, platform first. A new platform with an old
-hub: the hub keeps answering watches as before, but no pokes reach it.
-An old platform (a rollback) with a new hub: its pokes are taken, and go
-nowhere.
+Deploy order is the usual one, platform first. Both sides are on 0.66.11
+or later now, so neither calls the other about watches or pokes. Rolling
+the platform back past 0.66.11 needs the hub rolled back with it: the old
+platform's webhooks would hand the hub pokes it no longer takes, and
+answer GitHub 502.
 
 **The App's write permissions** (M167, #1213). The App gains
 `issues: write` and `pull_requests: write`, and nothing else, so a draft
