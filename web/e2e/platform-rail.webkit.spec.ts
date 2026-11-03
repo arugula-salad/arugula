@@ -55,9 +55,9 @@ test("the rail is down the platform page's left, its places in order, and the ba
   const rail = alice.locator(".ws-rail");
   await expect(rail).toBeVisible();
   const labels = await rail.locator(".ws-rail-button .ws-rail-label").allTextContents();
-  expect(labels.slice(0, 3), `the rail's places: ${labels}`).toEqual(["Projects", "Panes", "Swarm"]);
+  expect(labels, `the rail's places`).toEqual(["Projects", "Panes", "Swarm", "Chat", "Settings"]);
   expect(labels.at(-1), `the rail's places: ${labels}`).toBe("Settings");
-  for (const hook of ["projects", "panes", "swarm", "chat", "docs"]) await expect(rail.locator(`[data-open-${hook}]`)).toHaveCount(1);
+  for (const hook of ["projects", "panes", "swarm", "chat"]) await expect(rail.locator(`[data-open-${hook}]`)).toHaveCount(1);
   const box = (await rail.boundingBox())!;
   const at = `the rail at ${JSON.stringify(box)}, the window ${JSON.stringify(alice.viewportSize())}`;
   expect(box.x, at).toBe(0);

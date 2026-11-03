@@ -300,7 +300,7 @@ test("Docs are no flag: docs is retired, and the rail offers them with every fla
   expect(r.ok).toBe(false);
   expect(await r.text()).toContain("isn't a flag any more");
   await open(page);
-  await expect(page.locator(".ws-rail [data-open-docs]")).toBeVisible();
+  await expect(page.locator("[data-machine-docs]")).toBeVisible();
   expect((await ask("GET", "/api/docs", undefined)).status).toBe(200);
 });
 

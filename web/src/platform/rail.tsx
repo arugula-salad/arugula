@@ -1,7 +1,7 @@
 // The platform page's rail (#377): the same one as the panes page's
-// (shared/ui/rail), down the left of the page on a computer. Projects, Chat
-// and Boards are places in this page; Panes, Swarm and Docs are links to
-// control's page, in this window (no `target`: the desktop app keeps the
+// (shared/ui/rail), down the left of the page on a computer. Projects and Chat
+// are places in this page; Panes and Swarm are links to control's page, in
+// this window (no `target`: the desktop app keeps the
 // platform page and control's in one window each, #288). The bar beside it
 // (./bar) keeps the project and its places.
 
@@ -10,9 +10,8 @@ import { chat } from "../shared/chat-store";
 import { chatUnread } from "../shared/chat/unread";
 import { usePhone, useSubscribe } from "../shared/ui/hooks";
 import { Rail, type RailItem } from "../shared/ui/rail";
-import { BoardsIcon, ChatIcon, DocsIcon, Mark, PanesIcon, ProjectsIcon, SettingsIcon, SwarmIcon } from "../shared/ui/rail-icons";
+import { ChatIcon, Mark, PanesIcon, ProjectsIcon, SettingsIcon, SwarmIcon } from "../shared/ui/rail-icons";
 import { chatPath, sectionOf } from "./bar";
-import { useBoardsOn } from "./pages/boards";
 import { go, useRoute } from "./router";
 import { controlOrigin, session } from "./session";
 import { barProject, where } from "./where";
@@ -27,7 +26,6 @@ export function PlatformRail() {
   // As the bar does: an id that's none of the reader's lights no place.
   const unknown = !!project && !p && session.state === "ready";
   const here = unknown ? null : sectionOf(r);
-  const boards = useBoardsOn();
   const control = controlOrigin();
   const chatTo = chatPath(project);
   const { n, mention } = !unknown && (!project || p) ? chatUnread(chat.rooms, p ? (p.team?.id ?? null) : undefined) : { n: 0, mention: false };
@@ -36,8 +34,9 @@ export function PlatformRail() {
     {
       label: "Projects",
       tip: "Projects: their issues, boards, runs, deploys and chat",
-      // In any project, but Chat and Boards are lit on theirs.
-      here: !unknown && (r.page === "home" || !!project) && here !== "chat" && here !== "boards",
+      // In any project and across All projects' places (the bar's), but Chat
+      // is lit on its own.
+      here: !unknown && (r.page === "home" || !!project || here === "boards" || here === "inbox" || r.page === "docs") && here !== "chat",
       hook: "data-open-projects",
       icon: <ProjectsIcon />,
       href: "/",
@@ -56,17 +55,6 @@ export function PlatformRail() {
       href: chatTo,
       onClick: place(chatTo),
     },
-    // With the `boards` flag, which is a team's: on in any of the reader's projects.
-    (boards || here === "boards") && {
-      label: "Boards",
-      tip: "Boards: your projects' boards and epics",
-      here: here === "boards",
-      hook: "data-open-boards",
-      icon: <BoardsIcon />,
-      href: "/boards",
-      onClick: place("/boards"),
-    },
-    { label: "Docs", tip: "Docs: the Docs your agents wrote, to open again", here: false, hook: "data-open-docs", icon: <DocsIcon />, href: `${control}/#docs` },
   ];
   const brand = (
     <a class="ws-brand" href={`${control}/`} aria-label="Arugula: your machines and sessions" title="Your machines and sessions, on Control" data-open-control>

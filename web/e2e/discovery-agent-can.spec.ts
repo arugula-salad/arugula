@@ -26,7 +26,7 @@ test("the Agents step lists what an agent can do on this machine, and not what i
 test("the Docs page's empty state has the Doc line, and the dialog's folded card fills the prompt", async ({ page }) => {
   await page.route(/\/api\/docs$/, (r) => (r.request().method() === "GET" ? r.fulfill({ json: [] }) : r.fallback()));
   await reset(page);
-  await page.locator(".ws-rail [data-open-docs]").click();
+  await page.locator("[data-machine-docs]").click();
   const empty = page.locator("[data-docs-page] [data-docs-empty]");
   await expect(empty.locator('[data-agent-can="doc"]')).toContainText("Ask it to write a Doc");
   await expect(empty.locator("[data-agent-can]")).toHaveCount(1);

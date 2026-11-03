@@ -461,7 +461,7 @@ test.describe("the owner's menus", () => {
     // Close the pane, as a person does; the Doc stays, and is shared still.
     await menu(page, first, "Close pane");
     await expect(first).toHaveCount(0);
-    await page.locator(".ws-rail [data-open-docs]").click();
+    await page.locator("[data-machine-docs]").click();
     const listed = async () => ((await (await fetch(`${r.mini}/api/docs`)).json()) as { id: string; open?: number | null; shared?: object | null }[]);
     const id = (await listed()).find((x) => x.shared && x.open == null)!.id;
     const mine = page.locator(`[data-doc="${id}"]`);
@@ -481,7 +481,7 @@ test.describe("the owner's menus", () => {
     await page.keyboard.press("Escape");
 
     // Delete warns about the link, then unshares it at control and removes the Doc.
-    await page.locator(".ws-rail [data-open-docs]").click();
+    await page.locator("[data-machine-docs]").click();
     await page.locator(`[data-doc="${id}"]`).click();
     await page.locator("[data-list-preview] [data-doc-more]").click();
     await page.getByRole("menuitem", { name: "Delete…" }).click();
