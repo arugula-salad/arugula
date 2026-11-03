@@ -822,6 +822,14 @@ async fn the_composer_chooses_who_a_reply_wakes() {
     assert!(v["seq"].is_number(), "{v}");
     tokio::time::sleep(wait).await;
     assert_eq!(asked("geek"), 2);
+
+    // Without the field, naming another machine: it, and not the agent it
+    // replies to (an older client).
+    agent_says(&base, "geek", "Alpha", "and again", Some(root)).await;
+    let (_, v) = call(&base, "b", "POST", room, Some(json!({ "text": "@mini-box and you?", "parent": root }))).await;
+    assert_eq!(v["mentions"], json!(["machine:mini"]), "{v}");
+    tokio::time::sleep(wait).await;
+    assert_eq!((asked("geek"), asked("mini")), (2, 3));
 }
 
 /// A session told of a reply hears who else is in the thread (#649).
@@ -905,6 +913,15 @@ async fn a_thread_says_which_agents_are_in_it_and_what_each_is_doing() {
     // mini has no answer ready: as offline, and nothing about it is made up.
     assert_eq!((second.name.as_str(), second.state, second.lead), ("wake", S::Offline, false));
     assert_eq!((second.tool.as_deref(), second.read_seq), (None, Some(minis)));
+
+    // There, and with no list to give (too old, just connected, or too slow):
+    // that isn't offline, so it doesn't say so.
+    for answer in [OpAnswer::Unknown, OpAnswer::Failed { error: "no answer in time".into() }] {
+        hub.answers_ops("mini", answer);
+        let (_, v) = call(&base, "b", "GET", &path, None).await;
+        let got: ChatThreadAgents = serde_json::from_value(v).unwrap();
+        assert_eq!(got.agents[1].state, S::Unknown, "{got:?}");
+    }
 
     // It asked by name, and the machine's own list wasn't what it got.
     let asked: Vec<Vec<String>> = hub
