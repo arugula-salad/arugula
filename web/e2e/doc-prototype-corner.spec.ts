@@ -11,6 +11,7 @@ import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { expect, test, type Page } from "@playwright/test";
 import { bring, fill, newDoc, type Post } from "./doc-steps";
+import { frameAnswers } from "./doc-prototype-input-steps";
 import { panes, reset } from "./helpers";
 import { pixel7 } from "./phones";
 
@@ -31,6 +32,7 @@ const CORNER = `\`\`\`prototype height=300 Corner
 <span id="n">0</span>
 <script>
 var n = 0;
+document.getElementById("corner").onpointermove = function (e) { e.target.dataset.seen = "1"; };
 document.getElementById("corner").onclick = function () { document.getElementById("n").textContent = ++n; };
 </script>
 </body>
@@ -50,17 +52,28 @@ async function cornerDoc(page: Page) {
   await expect(page.locator(FRAME)).toHaveCount(1);
   await expect(page.frameLocator(FRAME).locator("#corner")).toBeVisible();
   // The frame's hit-test data follows its first paint: a press before it goes to the page above.
-  await page.waitForTimeout(500);
+  await frameAnswers(page, "#corner");
 }
 
 /** What the page hits at the corner button's centre is the frame; a click there reaches the button. */
 async function cornerReaches(page: Page, clicks: number) {
   const inside = page.frameLocator(FRAME);
+  await frameAnswers(page, "#corner");
   const at = (await inside.locator("#corner").boundingBox())!;
   const x = at.x + at.width / 2;
   const y = at.y + at.height / 2;
   const hit = await page.evaluate(([px, py]) => document.elementFromPoint(px, py)?.matches("[data-prototype-frame]") ?? document.elementFromPoint(px, py)?.outerHTML.slice(0, 80), [x, y]);
   expect(hit, "the frame is under the corner button, not a chip").toBe(true);
+  // A press before the frame has seen the pointer goes to the page above
+  // (doc-prototype-input-steps.ts' dragOut): move until the button saw it.
+  await inside.locator("#corner").evaluate((el) => delete el.dataset.seen);
+  let nudge = 0;
+  await expect
+    .poll(async () => {
+      await page.mouse.move(x + (nudge++ % 2), y);
+      return inside.locator("#corner").getAttribute("data-seen");
+    }, { message: "the frame saw the pointer" })
+    .toBe("1");
   await page.mouse.click(x, y);
   await expect(inside.locator("#n"), "the click reached the prototype's button").toHaveText(String(clicks));
 }
@@ -75,7 +88,6 @@ async function stripAbove(page: Page) {
 async function run(page: Page, name: string) {
   await cornerDoc(page);
   await page.locator(FRAME).scrollIntoViewIfNeeded();
-  await page.waitForTimeout(300);
   await stripAbove(page);
   await cornerReaches(page, 1);
   if (SHOTS) {
@@ -89,7 +101,6 @@ async function run(page: Page, name: string) {
   await expect.poll(() => box.evaluate((el) => el.matches(":popover-open"))).toBe(true);
   const win = page.viewportSize()!;
   await expect.poll(async () => (await page.locator(FRAME).boundingBox())!.width).toBe(win.width);
-  await page.waitForTimeout(300);
   await stripAbove(page);
   const frame = (await page.locator(FRAME).boundingBox())!;
   expect(frame.y + frame.height, "the page reaches the window's bottom").toBe(win.height);
@@ -100,7 +111,6 @@ async function run(page: Page, name: string) {
   await page.locator("[data-prototype-full-close]").click();
   await expect.poll(() => box.evaluate((el) => el.matches(":popover-open"))).toBe(false);
   expect((await page.locator(FRAME).boundingBox())!.height).toBe(300);
-  await page.waitForTimeout(300);
   await cornerReaches(page, 3);
 }
 
