@@ -1,5 +1,6 @@
-// `/p/:project/docs` and `/p/:project/docs/:doc` (aru-118): a project's
-// Docs, and one. A project Doc is the platform's (crates/platform/src/
+// `/docs`, `/p/:project/docs` and `/p/:project/docs/:doc` (aru-118, #418): every
+// Doc the reader can read (their private ones first), a project's, and one.
+// The lists are on the shared list page, the preview draws the whole Doc. A project Doc is the platform's (crates/platform/src/
 // project_docs.rs): a title and sections of Markdown, in the machine Doc's
 // shape, so it's drawn with the Doc block's renderer (charts and drawings
 // included). Its members read it; owners and editors make, write and
@@ -8,7 +9,7 @@
 // page live, through the Doc's thread (as a board's does).
 
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
-import type { BoardOfDoc, ProjectDoc, ProjectDocView } from "../../shared/proto";
+import type { BoardOfDoc, ProjectDoc, ProjectDocSection, ProjectDocView } from "../../shared/proto";
 import { chat } from "../../shared/chat-store";
 import { DocError, projectDocs } from "../../shared/docs/store";
 import { boards } from "../../shared/boards/store";
@@ -16,6 +17,7 @@ import { onBoardWords } from "../../shared/boards/text";
 import { whoLabel } from "../../shared/issues/text";
 import { useSubscribe } from "../../shared/ui/hooks";
 import { CopyLinkButton } from "../../shared/ui/copy-link";
+import { ListCounts, ListPage, ListPreview, type ListCount, type ListGroup } from "../../shared/ui/list-page";
 import { PageHeader } from "../../shared/ui/page-header";
 import { Time } from "../../shared/ui/time";
 import { DocBlock, type DocState } from "../../shared/docs/doc-render";
@@ -69,47 +71,290 @@ function DocRows({ p, list }: { p: PlatformProject; list: ProjectDoc[] }) {
   );
 }
 
-export function DocsPage({ project }: { project: string }) {
-  useSubscribe((fn) => session.subscribe(fn));
-  const p = session.project(project);
-  if (!p) return <Missing what="That project isn't one of yours (or it's gone)." />;
-  return <DocList p={p} />;
+/** The Doc's shape (as the machine's page draws it, shell/ui/docs-page.tsx):
+ * a segment a section, as long as the section is, brighter where it has a figure. */
+const LONG_DOC = 20_000;
+const MARK_W = 130;
+const wordsIn = (s: ProjectDocSection) => (s.body?.match(/\S+/g) ?? []).length;
+const figuresIn = (s: ProjectDocSection) => (s.body?.match(/^(```(chart|svg|prototype)|!\[)/gm) ?? []).length;
+
+function Shape({ sections }: { sections: ProjectDocSection[] }) {
+  const written = sections.filter((s) => s.body !== null);
+  if (!written.length) return null;
+  const words = written.reduce((n, s) => n + wordsIn(s), 0);
+  const width = Math.max(26, Math.sqrt(Math.min(words, LONG_DOC) / LONG_DOC) * MARK_W);
+  return (
+    <span class="doc-shape" style={{ width: `${Math.round(width)}px` }} aria-hidden="true" data-doc-shape>
+      {written.map((s) => (
+        <i key={s.id} class={figuresIn(s) ? "fig" : undefined} style={{ flex: `${Math.max(wordsIn(s), words * 0.012, 1)} 0 0` }} />
+      ))}
+    </span>
+  );
 }
 
-function DocList({ p }: { p: PlatformProject }) {
-  const list = useDocs(p.id);
+/** The first written section's first line of prose, plain. */
+function openingOf(sections: ProjectDocSection[]): string {
+  for (const s of sections) {
+    for (const line of s.body?.split("\n") ?? []) {
+      const t = line.trim();
+      if (!t || t.startsWith("```") || t.startsWith("#") || t.startsWith("|")) continue;
+      return t
+        .replace(/!?\[([^\]]*)\]\([^)]*\)/g, "$1")
+        .replace(/^([>*+-]|\d+\.)\s+/, "")
+        .replace(/[*_`]/g, "")
+        .slice(0, 200);
+    }
+  }
+  return "";
+}
+
+/** The Docs the page has read whole, by Doc and its rev: their opening and shape. */
+const read = new Map<string, ProjectDocSection[]>();
+const readKey = (d: ProjectDoc) => `${d.id}:${d.rev}`;
+
+interface Row {
+  doc: ProjectDoc;
+  p: PlatformProject;
+  /** In the reader's own project: nobody else reads it. */
+  mine: boolean;
+}
+
+/** The projects' Docs, each with the project it's in; `null` while they load. A
+ * project that can't be read has none. Read again when the tab comes back
+ * or a listed Doc's thread says it changed. */
+function useRows(ps: PlatformProject[]): { rows: Row[] | null; sections: Map<string, ProjectDocSection[]> } {
+  const [lists, setLists] = useState<Map<string, ProjectDoc[]> | null>(null);
+  const [, bump] = useState(0);
+  const key = ps.map((p) => p.id).join(",");
+  useEffect(() => {
+    let live = true;
+    setLists(null);
+    const again = () =>
+      Promise.all(ps.map((p) => projectDocs.list(p.id).then((l): [string, ProjectDoc[]] => [p.id, l.docs], (): [string, ProjectDoc[]] => [p.id, []]))).then((all) => {
+        if (!live) return;
+        setLists(new Map(all));
+      });
+    void again();
+    const back = () => document.visibilityState === "visible" && void again();
+    document.addEventListener("visibilitychange", back);
+    return () => {
+      live = false;
+      document.removeEventListener("visibilitychange", back);
+    };
+  }, [key]);
+  // Each Doc is read whole, a few at a time, for its opening and shape.
+  useEffect(() => {
+    if (!lists) return;
+    let live = true;
+    const todo = ps.flatMap((p) => (lists.get(p.id) ?? []).filter((d) => !read.has(readKey(d))).map((d) => [p.id, d] as const));
+    const worker = async () => {
+      for (let next = todo.shift(); next && live; next = todo.shift()) {
+        const [pid, d] = next;
+        try {
+          read.set(readKey(d), (await projectDocs.get(pid, d.id)).sections);
+          if (live) bump((n) => n + 1);
+        } catch {
+          read.set(readKey(d), []);
+        }
+      }
+    };
+    void Promise.all([worker(), worker(), worker()]);
+    return () => void (live = false);
+  }, [lists]);
+  const rows = lists
+    ? ps.flatMap((p) => (lists.get(p.id) ?? []).map((doc) => ({ doc, p, mine: !p.team })))
+    : null;
+  return { rows, sections: read };
+}
+
+export function DocsPage({ project }: { project?: string }) {
+  useSubscribe((fn) => session.subscribe(fn));
+  const one = project ? session.project(project) : undefined;
+  if (project && !one) return <Missing what="That project isn't one of yours (or it's gone)." />;
+  return <DocList ps={one ? [one] : session.projects} narrowed={!!one} />;
+}
+
+function groupsOf(shown: Row[], narrowed: boolean): ListGroup<Row>[] {
+  const by = new Map<string, ListGroup<Row> & { mine: boolean }>();
+  for (const r of shown) {
+    const g = by.get(r.p.id) ?? { title: r.mine ? "Yours, private" : narrowed ? undefined : r.p.name, items: [], mine: r.mine };
+    g.items.push(r);
+    by.set(r.p.id, g);
+  }
+  const out = [...by.values()];
+  for (const g of out) g.items.sort((a, b) => b.doc.updated_at - a.doc.updated_at);
+  // Their own project's first; the others as the session lists them.
+  return out.sort((a, b) => Number(b.mine) - Number(a.mine));
+}
+
+function DocList({ ps, narrowed }: { ps: PlatformProject[]; narrowed: boolean }) {
+  const { rows, sections } = useRows(ps);
+  const [filter, setFilter] = useState("all");
+  const [query, setQuery] = useState("");
+  const [making, setMaking] = useState(false);
+  const all = rows ?? [];
+  const q = query.trim().toLowerCase();
+  const shown = all.filter(
+    (r) =>
+      (filter === "all" || (filter === "private" && r.mine) || (filter === "shared" && !r.mine)) &&
+      (!q || r.doc.title.toLowerCase().includes(q) || (sections.get(readKey(r.doc)) ?? []).some((s) => s.heading.toLowerCase().includes(q))),
+  );
+  const writable = ps.filter(mayWrite);
+  const counts: ListCount[] = [
+    { key: "all", n: all.length, label: all.length === 1 ? "Doc" : "Docs" },
+    ...(narrowed ? [] : [{ key: "private", n: all.filter((r) => r.mine).length, label: "private" }, { key: "shared", n: all.filter((r) => !r.mine).length, label: "shared" }]),
+  ];
+  const status =
+    rows === null ? (
+      <p class="dim list-status" data-docs-loading>
+        Reading the Docs…
+      </p>
+    ) : all.length === 0 ? (
+      <p class="dim list-status" data-docs-none>
+        No Docs yet.
+      </p>
+    ) : shown.length === 0 ? (
+      <p class="dim list-status" data-docs-none>
+        {q ? "No Doc's title or headings match." : filter === "private" ? "None of your Docs is private." : "No Doc is shared."}
+      </p>
+    ) : undefined;
+  const sub = narrowed ? `${ps[0].name}'s reports, plans and write-ups, by its people and its agent sessions` : "Every Doc you can read, in your projects";
+  return (
+    <div class="docs-list" data-docs-page>
+      <ListPage<Row>
+        label="Docs"
+        splitKey="platform-docs"
+        header={
+          <>
+            <PageHeader
+              title="Docs"
+              sub={sub}
+              actions={
+                writable.length > 0 && (
+                  <button type="button" class="secondary small" aria-expanded={making} data-doc-new-open onClick={() => setMaking(!making)}>
+                    New Doc
+                  </button>
+                )
+              }
+              stats={all.length > 0 && <ListCounts counts={counts} on={filter} pick={(k) => setFilter(k === filter ? "all" : k)} />}
+            />
+            {making && <NewDoc ps={writable} done={() => setMaking(false)} />}
+          </>
+        }
+        searchLabel="Search titles and headings"
+        query={query}
+        setQuery={setQuery}
+        groups={groupsOf(shown, narrowed)}
+        keyOf={(r) => r.doc.id}
+        onOpen={(r) => go(docPath(r))}
+        status={status}
+        row={(r) => {
+          const s = sections.get(readKey(r.doc));
+          return {
+            title: <span data-doc-title>{r.doc.title}</span>,
+            age: <Time at={r.doc.updated_at} title="Updated" />,
+            detail: s ? openingOf(s) : "",
+            mark: s ? <Shape sections={s} /> : undefined,
+            attrs: { "data-doc": r.doc.id, "data-private": String(r.mine) },
+          };
+        }}
+        preview={(r) => <Preview key={r.doc.id} row={r} />}
+      />
+    </div>
+  );
+}
+
+const docPath = (r: Row) => pathOf({ page: "doc", project: r.p.id, doc: r.doc.id }, names);
+
+/** Make a Doc (a title) in one of the projects the reader may write, their own first. */
+function NewDoc({ ps, done }: { ps: PlatformProject[]; done: () => void }) {
   const [title, setTitle] = useState("");
+  const [project, setProject] = useState(ps[0].id);
   const make = async (e: Event) => {
     e.preventDefault();
     if (!title.trim()) return;
     try {
-      const v = await projectDocs.create(p.id, { title: title.trim(), sections: [] });
-      go(pathOf({ page: "doc", project: p.id, doc: v.doc.id }, names));
+      const v = await projectDocs.create(project, { title: title.trim(), sections: [] });
+      go(pathOf({ page: "doc", project, doc: v.doc.id }, names));
     } catch (err) {
       toast(`Couldn't make the Doc: ${(err as Error).message}`);
     }
   };
   return (
-    <section class="platform-section sw-page" data-docs-page>
-      <PageHeader title="Docs" sub={`${p.name}'s reports, plans and write-ups, by its people and its agent sessions`} />
-      {list === null && <p class="dim">Loading…</p>}
-      {list?.length === 0 && (
-        <p class="dim" data-docs-none>
-          No Docs yet.
-        </p>
+    <form class="project-doc-form" onSubmit={(e) => void make(e)}>
+      <input type="text" value={title} maxLength={200} placeholder="a new Doc's title" aria-label="New Doc's title" data-doc-new-title onInput={(e) => setTitle(e.currentTarget.value)} />
+      {ps.length > 1 && (
+        <select value={project} aria-label="In which project" data-doc-new-project onChange={(e) => setProject(e.currentTarget.value)}>
+          {ps.map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.team ? p.name : "Yours, private"}
+            </option>
+          ))}
+        </select>
       )}
-      {list && <DocRows p={p} list={list} />}
-      {mayWrite(p) && (
-        <form class="project-doc-form" onSubmit={(e) => void make(e)}>
-          <input type="text" value={title} maxLength={200} placeholder="a new Doc's title" aria-label="New Doc's title" data-doc-new-title onInput={(e) => setTitle(e.currentTarget.value)} />
-          <button type="submit" class="primary" data-doc-new disabled={!title.trim()}>
-            Make a Doc
-          </button>
-        </form>
-      )}
-    </section>
+      <button type="submit" class="primary" data-doc-new disabled={!title.trim()}>
+        Make a Doc
+      </button>
+      <button type="button" onClick={done}>
+        Cancel
+      </button>
+    </form>
   );
 }
+
+/** The selected Doc, whole, kept live through its thread; Open and Copy link above it. */
+function Preview({ row }: { row: Row }) {
+  useSubscribe((fn) => chat.subscribe(fn));
+  const { doc, p } = row;
+  const [view, setView] = useState<ProjectDocView | null>(null);
+  const seen = useRef(0);
+  useEffect(() => {
+    const again = () => {
+      const n = ++seen.current;
+      projectDocs.get(p.id, doc.id).then(
+        (v) => n === seen.current && setView(v),
+        () => {},
+      );
+    };
+    again();
+    projectDocs.thread(doc.id).catch(() => {});
+    const off = chat.onObject(doc.id, again);
+    return off;
+  }, [doc.id]);
+  const state = useMemo(() => (view ? stateOf(view) : null), [view]);
+  const to = docPath(row);
+  return (
+    <ListPreview
+      data-doc-preview={doc.id}
+      title={doc.title}
+      facts={
+        <>
+          <span>{row.mine ? "Yours, private" : p.name}</span>
+          <span>
+            {doc.written} of {doc.sections} written
+          </span>
+          <span>
+            updated <Time at={doc.updated_at} on />
+          </span>
+          <span>made by {whoLabel(doc.author, doc.agent, nameOf(p))}</span>
+        </>
+      }
+      actions={
+        <>
+          <a class="button primary small" href={to} data-open-doc onClick={(e) => follow(e, to)}>
+            Open
+          </a>
+          <CopyLinkButton link={new URL(to, location.href).href} />
+        </>
+      }
+    >
+      <div class="project-doc docs-preview">
+        <DocBlock id={0} docKey={doc.id} s={state} fresh={NO_FRESH} load={noImages} />
+      </div>
+    </ListPreview>
+  );
+}
+const NO_FRESH = new Map<string, number>();
 
 /** The Doc's view as the Doc block's renderer takes it. */
 function stateOf(v: ProjectDocView): DocState {
