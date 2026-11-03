@@ -249,6 +249,14 @@ pub enum Api {
     /// went straight in. With the mention it carries (#540), whose turn
     /// is reported.
     FollowUp(PaneId, String, Driver, Option<MentionTag>, oneshot::Sender<Result<bool, String>>),
+    /// The owner tapped deliver on a held mention (#579): it leaves the
+    /// pane's queue and comes back as the text to type, and its turn starts.
+    HeldDeliver(PaneId, oneshot::Sender<Result<String, String>>),
+    /// The owner dismissed the held mentions' card (#579): how many went.
+    HeldDrop(PaneId, oneshot::Sender<usize>),
+    /// Silence teammates' agents' mentions for a pane, or not (#579). It
+    /// lasts as long as the pane. False: no such terminal.
+    Mentions(PaneId, bool, oneshot::Sender<bool>),
     /// An agent block's turn for a mention started or ended (#611): the
     /// block says so, and it goes to the same [`Turns`] a terminal's does.
     MentionTurn(PaneId, MentionTag, Turn),
@@ -487,6 +495,12 @@ struct Daemon {
     /// Terminals one of Arugula's Claude Code hooks has spoken from, while
     /// Claude Code runs there (`PaneInfo.unhooked`).
     hooked: std::collections::HashSet<PaneId>,
+    /// Terminals whose owner silenced teammates' agents' mentions (#579),
+    /// for as long as the pane lives (`PaneInfo.mentions_off`).
+    mentions_off: std::collections::HashSet<PaneId>,
+    /// The card for the mentions held on each terminal whose hooks aren't
+    /// listening (#579): typed only when the owner taps deliver.
+    held: HashMap<PaneId, Reason>,
     /// What Claude Code in each pane said of its session from inside it
     /// (#450), while it runs there (`PaneInfo.live`).
     live: HashMap<PaneId, serde_json::Value>,
@@ -697,6 +711,8 @@ pub fn start(
         status_pushed: Default::default(),
         turn_typed: Default::default(),
         hooked: Default::default(),
+        mentions_off: Default::default(),
+        held: Default::default(),
         live: HashMap::new(),
         live_pid: HashMap::new(),
         links: Default::default(),

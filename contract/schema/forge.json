@@ -945,6 +945,10 @@
             "null"
           ]
         },
+        "silenced": {
+          "description": "The session it named is there, but its owner silenced mentions for it\n(#579): the message waits in the inbox. With `asked`.",
+          "type": "boolean"
+        },
         "step": {
           "$ref": "#/$defs/RoutedStep"
         }

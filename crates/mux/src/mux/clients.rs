@@ -395,6 +395,8 @@ impl Daemon {
                     self.status_pushed.remove(&pane);
                     self.turn_typed.remove(&pane);
                     self.hooked.remove(&pane);
+                    self.mentions_off.remove(&pane);
+                    self.held.remove(&pane);
                     self.queued.gone(pane);
                     self.live.remove(&pane);
                     self.live_pid.remove(&pane);
@@ -745,6 +747,7 @@ impl Daemon {
                 diff: None,
                 resumes: None,
                 unhooked: false,
+                mentions_off: false,
                 live: None,
                 link: None,
                 ..info

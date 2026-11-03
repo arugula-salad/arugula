@@ -378,8 +378,12 @@ fn framed(m: &AgentMention, notes: &[String]) -> String {
 
 /// The mention a follow-up carries, so the mux can say when the turn that
 /// takes it starts and ends (#540).
+/// With the card's words for when it is held (#579).
 fn tag_of(m: &AgentMention) -> MentionTag {
-    MentionTag { room: m.room.clone(), seq: m.seq }
+    let room = if m.room_name.is_empty() { m.room.as_str() } else { m.room_name.as_str() };
+    let first: String = m.text.lines().next().unwrap_or_default().trim().chars().take(100).collect();
+    let headline = format!("{}'s agent mentioned this session in #{}: {first}", m.author, room.trim_start_matches('#'));
+    MentionTag { room: m.room.clone(), seq: m.seq, headline }
 }
 
 /// Tells the task that reports ([`keep_telling`]) where a mention's turn is.
@@ -466,6 +470,8 @@ pub(crate) trait Daemon {
     async fn notice(&self, notice: Notice);
     /// Take it away by its key.
     async fn clear_notice(&self, key: &str);
+    /// The panes whose owner silenced teammates' agents' mentions (#579).
+    async fn silenced(&self) -> Vec<PaneId>;
 }
 
 /// What a pane was last up to (#577), for `agents.sessions`.
@@ -550,6 +556,11 @@ impl Daemon for App {
     async fn clear_notice(&self, key: &str) {
         let _ = self.mux.api(|r| Api::ClearNotice(key.to_owned(), r)).await;
     }
+
+    async fn silenced(&self) -> Vec<PaneId> {
+        let panes = self.mux.api(Api::Panes).await.unwrap_or_default();
+        panes.iter().filter(|p| p.info.mentions_off).map(|p| p.info.id).collect()
+    }
 }
 
 /// The names of the sessions live in our panes, or only `pane`'s (#429):
@@ -619,7 +630,14 @@ pub async fn session_name(app: &App, pane: PaneId) -> Option<String> {
 fn routed(step: RoutedStep, session: Option<String>, asked: Option<&str>, handed: bool) -> OpAnswer {
     OpAnswer::Done {
         url: None,
-        routed: Some(Routed { step, session, asked: asked.map(str::to_owned), queued: !handed, names: vec![] }),
+        routed: Some(Routed {
+            step,
+            session,
+            asked: asked.map(str::to_owned),
+            queued: !handed,
+            names: vec![],
+            silenced: false,
+        }),
     }
 }
 
@@ -673,7 +691,9 @@ pub(crate) async fn sessions_for(app: &impl Daemon, ask: &AgentSessionsAsk) -> O
     if shown == AgentSessions::None {
         return OpAnswer::Sessions { shared: false, sessions: vec![] };
     }
-    let (sessions, tabs, activity) = (app.sessions().await, app.tab_names().await, app.activity().await);
+    let silent = app.silenced().await;
+    let sessions: Vec<_> = app.sessions().await.into_iter().filter(|(p, _)| !silent.contains(p)).collect();
+    let (tabs, activity) = (app.tab_names().await, app.activity().await);
     let author = ask.from_session.as_deref().map(slug).filter(|a| !a.is_empty());
     let mut out: Vec<MachineSession> = sessions
         .iter()
@@ -716,6 +736,11 @@ pub(crate) async fn deliver(app: &impl Daemon, m: &AgentMention) -> OpAnswer {
         Some(from) => app.sessions().await.into_iter().filter(|(_, n)| slug(n) == from).map(|(p, _)| p).collect(),
         None => vec![],
     };
+    // The sessions whose owner silenced mentions (#579) are no takers either:
+    // like the author's, they're skipped, and the sender is told which one
+    // when that's why it waits in the inbox.
+    let silent = app.silenced().await;
+    let mut skipped: Option<String> = None;
     // A pane that is gone, or whose queue is full, leaves it to the next.
     // 1. The session it names, by its exact name, or else by its tab's. When
     // it names one and none takes it, no other session does (#576): it waits
@@ -734,6 +759,13 @@ pub(crate) async fn deliver(app: &impl Daemon, m: &AgentMention) -> OpAnswer {
         // the inbox like naming a session that isn't there.
         hits.retain(|p| !author.contains(p));
         if let [pane] = hits.as_slice()
+            && silent.contains(pane)
+        {
+            state.keep(m);
+            app.notice(inbox_notice(m)).await;
+            return silenced_answer(sessions.iter().find(|(p, _)| p == pane).map(|(_, n)| slug(n)));
+        }
+        if let [pane] = hits.as_slice()
             && let Ok(now) = app.follow_up(*pane, framed(m, &notes), by.clone(), tag_of(m)).await
         {
             let name = sessions.iter().find(|(p, _)| p == pane).map(|(_, n)| n.clone());
@@ -741,15 +773,23 @@ pub(crate) async fn deliver(app: &impl Daemon, m: &AgentMention) -> OpAnswer {
         }
         state.keep(m);
         app.notice(inbox_notice(m)).await;
+        let open: Vec<_> = sessions.iter().filter(|(p, _)| !silent.contains(p)).cloned().collect();
         let mut names = if arugula_proto::sharing::sessions_shown(app.state_dir()) == AgentSessions::None {
             vec![]
         } else {
-            listed_names(&sessions, &tabs)
+            listed_names(&open, &tabs)
         };
         names.truncate(NAMES_LISTED);
         return OpAnswer::Done {
             url: None,
-            routed: Some(Routed { step: RoutedStep::Inbox, session: None, asked: Some(want), queued: false, names }),
+            routed: Some(Routed {
+                step: RoutedStep::Inbox,
+                session: None,
+                asked: Some(want),
+                queued: false,
+                names,
+                silenced: false,
+            }),
         };
     }
     // A restart left panes that may be strangers now: only the live
@@ -762,7 +802,11 @@ pub(crate) async fn deliver(app: &impl Daemon, m: &AgentMention) -> OpAnswer {
     let thread = m.parent.and_then(|root| {
         state.thread_poster(&m.room, root).or_else(|| m.target.as_deref().and_then(|t| state.thread_poster(t, root)))
     });
-    if let Some(pane) = thread.filter(|p| !author.contains(p)) {
+    let thread = thread.filter(|p| !author.contains(p));
+    if let Some(pane) = thread.filter(|p| silent.contains(p)) {
+        skipped = named(app, pane).await.map(|n| slug(&n));
+    }
+    if let Some(pane) = thread.filter(|p| !silent.contains(p)) {
         if let Ok(now) = app.follow_up(pane, framed(m, &notes), by.clone(), tag_of(m)).await {
             return routed(RoutedStep::Thread, named(app, pane).await, None, handed(app, pane, now).await);
         }
@@ -773,7 +817,10 @@ pub(crate) async fn deliver(app: &impl Daemon, m: &AgentMention) -> OpAnswer {
         .poster(&m.room)
         .or_else(|| m.target.as_deref().and_then(|t| state.poster(t)))
         .filter(|p| Some(*p) != ended && !author.contains(p));
-    if let Some(pane) = poster {
+    if let Some(pane) = poster.filter(|p| silent.contains(p)) {
+        skipped = skipped.or(named(app, pane).await.map(|n| slug(&n)));
+    }
+    if let Some(pane) = poster.filter(|p| !silent.contains(p)) {
         if ended.is_some() {
             notes.push("(the session that started this thread has ended; you were its room's last poster)".into());
         }
@@ -784,7 +831,26 @@ pub(crate) async fn deliver(app: &impl Daemon, m: &AgentMention) -> OpAnswer {
     // 4. The inbox.
     state.keep(m);
     app.notice(inbox_notice(m)).await;
-    routed(RoutedStep::Inbox, None, None, true)
+    match skipped {
+        Some(name) => silenced_answer(Some(name)),
+        None => routed(RoutedStep::Inbox, None, None, true),
+    }
+}
+
+/// The answer for a mention that waits in the inbox because the session it
+/// was for is silenced (#579): `session` is its name.
+fn silenced_answer(session: Option<String>) -> OpAnswer {
+    OpAnswer::Done {
+        url: None,
+        routed: Some(Routed {
+            step: RoutedStep::Inbox,
+            session: None,
+            asked: session,
+            queued: false,
+            names: vec![],
+            silenced: true,
+        }),
+    }
 }
 
 #[cfg(test)]
@@ -824,6 +890,8 @@ mod tests {
         acts: Vec<(PaneId, Activity)>,
         /// The cards raised in the owner's swarm, as the mux counts them (#551).
         notices: Mutex<Vec<Notice>>,
+        /// Panes whose owner silenced mentions (#579).
+        silenced: Vec<PaneId>,
     }
 
     impl Fake {
@@ -843,6 +911,7 @@ mod tests {
                 unhooked: vec![],
                 acts: vec![],
                 notices: Mutex::default(),
+                silenced: vec![],
             }
         }
     }
@@ -878,6 +947,12 @@ mod tests {
         /// Panes whose hooks were never heard (#571).
         fn unhooked(mut self, panes: &[PaneId]) -> Self {
             self.unhooked = panes.to_vec();
+            self
+        }
+
+        /// Panes whose owner silenced mentions (#579).
+        fn silenced(mut self, panes: &[PaneId]) -> Self {
+            self.silenced = panes.to_vec();
             self
         }
 
@@ -947,6 +1022,10 @@ mod tests {
         async fn clear_notice(&self, key: &str) {
             self.notices.lock().unwrap().retain(|n| n.key != key);
         }
+
+        async fn silenced(&self) -> Vec<PaneId> {
+            self.silenced.clone()
+        }
     }
 
     fn mention() -> AgentMention {
@@ -991,7 +1070,7 @@ mod tests {
     /// mux can say when its turn starts and ends (#540).
     #[tokio::test]
     async fn a_follow_up_carries_the_mention_it_is() {
-        let tag = |pane| (pane, MentionTag { room: "ch_x".into(), seq: 7 });
+        let tag = |pane| (pane, tag_of(&mention()));
         // The room's last poster, the thread's poster, the session it names.
         let d = Fake::new("tag-room", &[4]);
         d.state.note_post("ch_x", 4);
@@ -1277,6 +1356,7 @@ mod tests {
                 asked: Some(asked.into()),
                 queued: false,
                 names: names.iter().map(|n| (*n).to_owned()).collect(),
+                silenced: false,
             }),
         }
     }
@@ -1459,6 +1539,39 @@ mod tests {
         let d = Fake::new("queued-room-hooked", &[9]).named(&names).queueing(&[9]);
         d.state.note_post("ch_x", 9);
         assert!(!queued(deliver(&d, &mention()).await), "the room's last poster, hooked");
+    }
+
+    /// A silenced session (#579) is no taker, like the author: a named
+    /// mention waits in the inbox and says it's silenced; the thread's and the
+    /// room's say so too. It is left out of `agents.sessions` and of the names
+    /// an unknown name lists, and a session beside it still takes it.
+    #[tokio::test]
+    async fn a_silenced_session_is_not_reached_and_the_answer_says_so() {
+        let names = [(4, "Billing"), (9, "UX Improvements")];
+        let d = Fake::new("silenced-named", &[4, 9]).named(&names).silenced(&[9]);
+        let m = AgentMention { session: Some("ux-improvements".into()), ..mention() };
+        let OpAnswer::Done { routed: Some(r), .. } = deliver(&d, &m).await else { panic!("no route") };
+        assert_eq!((r.step, r.silenced, r.asked.as_deref()), (RoutedStep::Inbox, true, Some("ux-improvements")));
+        assert!(d.got(9).is_empty() && d.got(4).is_empty(), "nothing was sent to any session");
+        assert_eq!(d.state.unread().len(), 1, "it waits in the inbox");
+        // Another session's name still reaches it.
+        let m = AgentMention { session: Some("billing".into()), ..mention() };
+        assert_eq!(deliver(&d, &m).await, routed(RoutedStep::Named, Some("Billing".into()), None, true));
+        // Its thread, and its room.
+        let d = Fake::new("silenced-thread", &[9]).named(&names).silenced(&[9]);
+        d.state.note_thread("ch_x", 3, 9);
+        let OpAnswer::Done { routed: Some(r), .. } = deliver(&d, &mention()).await else { panic!("no route") };
+        assert_eq!((r.step, r.silenced, r.asked.as_deref()), (RoutedStep::Inbox, true, Some("ux-improvements")));
+        let d = Fake::new("silenced-room", &[9]).named(&names).silenced(&[9]);
+        d.state.note_post("ch_x", 9);
+        let OpAnswer::Done { routed: Some(r), .. } = deliver(&d, &mention()).await else { panic!("no route") };
+        assert!(r.silenced && d.got(9).is_empty());
+        // The sessions listed, and the names an unknown name lists.
+        let d = Fake::new("silenced-listed", &[4, 9]).named(&names).silenced(&[9]);
+        let (_, got) = listed(sessions_for(&d, &ask(None)).await);
+        assert_eq!(got.iter().map(|s| s.name.as_str()).collect::<Vec<_>>(), ["billing"]);
+        let m = AgentMention { session: Some("nope".into()), ..mention() };
+        assert_eq!(deliver(&d, &m).await, nowhere("nope", &["billing"]));
     }
 
     /// The sender's status line (#502) is made of the answer: each step says

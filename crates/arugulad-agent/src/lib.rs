@@ -3053,7 +3053,7 @@ fn send_next(ctx: &AgentCtx, g: &mut Inner) {
 
 /// The mention a `send` or a logged queue entry carries (#611).
 fn mention_of(v: &Value) -> Option<mux::MentionTag> {
-    Some(mux::MentionTag { room: v["room"].as_str()?.to_owned(), seq: v["seq"].as_i64()? })
+    Some(mux::MentionTag { room: v["room"].as_str()?.to_owned(), seq: v["seq"].as_i64()?, headline: String::new() })
 }
 
 impl Agent {

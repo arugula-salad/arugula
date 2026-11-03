@@ -145,6 +145,7 @@ impl Request for crate::api::MouseRequest {}
 impl Request for crate::api::NvimHelpRequest {}
 
 impl Request for crate::api::AttentionRequest {}
+impl Request for crate::api::MentionsRequest {}
 
 impl Request for crate::api::SessionSignal {}
 
@@ -298,6 +299,7 @@ macro_rules! every_op {
         $m!($crate::op::ops::PaneKeys);
         $m!($crate::op::ops::PaneMouse);
         $m!($crate::op::ops::PaneAttention);
+        $m!($crate::op::ops::PaneMentions);
         $m!($crate::op::ops::PaneFollowUp);
         $m!($crate::op::ops::PanePrompt);
         $m!($crate::op::ops::PaneAsk);
@@ -397,13 +399,13 @@ pub mod ops {
             DocOpened, DocPreview, DocRow, DriverEntry, Empty, FollowUpRequest, FollowedUp, FollowerLinkRequest,
             GuestInvite, GuestInviteRequest, IdeDiffs, IdeDiffsRequest, IdeInfo, IdeMentionRequest, IdeMentioned,
             InboxAnswer, InstallAdapterRequest, InviteRequest, Invited, KeysRequest, LinkRequest, McpTokenRequest,
-            MouseRequest, NotifyPref, NotifyRequest, NvimBlockOpened, NvimBlockRequest, NvimHelpRequest,
-            NvimOpenRequest, NvimOpened, NvimPluginCopies, NvimPluginInstalled, NvimPluginRemoved, NvimTheme,
-            NvimThemed, OpenConversationRequest, OpenConversationResponse, PaneDiff, PaneSummary, PermitAnswer,
-            PermitRequest, Ports, PortsQuery, Process, PromptRequest, PromptResult, PushKey, PushSubscriptions, Rules,
-            RunResponse, SendRequest, Share, ShareRequest, ShellEnv, SigninLink, StudioApps, StudioLoggedIn,
-            StudioLoginRequest, StudioStatus, Subscription, SyncedHost, SyncedRotated, TeamPins, TeamPinsRequest,
-            TokenInfo, WaitRequest, WaitResult, WithdrawRequest,
+            MentionsRequest, MouseRequest, NotifyPref, NotifyRequest, NvimBlockOpened, NvimBlockRequest,
+            NvimHelpRequest, NvimOpenRequest, NvimOpened, NvimPluginCopies, NvimPluginInstalled, NvimPluginRemoved,
+            NvimTheme, NvimThemed, OpenConversationRequest, OpenConversationResponse, PaneDiff, PaneSummary,
+            PermitAnswer, PermitRequest, Ports, PortsQuery, Process, PromptRequest, PromptResult, PushKey,
+            PushSubscriptions, Rules, RunResponse, SendRequest, Share, ShareRequest, ShellEnv, SigninLink, StudioApps,
+            StudioLoggedIn, StudioLoginRequest, StudioStatus, Subscription, SyncedHost, SyncedRotated, TeamPins,
+            TeamPinsRequest, TokenInfo, WaitRequest, WaitResult, WithdrawRequest,
         },
         flags::{FlagInfo, FlagSetRequest},
         hosts::{Demoted, Host, PromoteRequest, SandboxList},
@@ -806,6 +808,20 @@ pub mod ops {
         const ACCESS: Access = Access::Pane(Role::Editor);
         type Path = PaneId;
         type Req = AttentionRequest;
+        type Res = Empty;
+    }
+
+    /// `POST /api/panes/N/mentions` (#579): let teammates' agents mention
+    /// this session, or not (`arugula mentions on|off %N`). The owner's.
+    pub struct PaneMentions;
+
+    impl Op for PaneMentions {
+        const NAME: &'static str = "pane.mentions";
+        const METHOD: Method = Method::Post;
+        const PATH: &'static str = "/api/panes/{id}/mentions";
+        const ACCESS: Access = Access::Owner;
+        type Path = PaneId;
+        type Req = MentionsRequest;
         type Res = Empty;
     }
 
@@ -2004,6 +2020,7 @@ mod tests {
             ("keys", ops::PaneKeys::path(&7)),
             ("mouse", ops::PaneMouse::path(&7)),
             ("attention", ops::PaneAttention::path(&7)),
+            ("mentions", ops::PaneMentions::path(&7)),
             ("session-signal", ops::PaneSessionSignal::path(&7)),
             ("followup", ops::PaneFollowUp::path(&7)),
             ("prompt", ops::PanePrompt::path(&7)),

@@ -38,6 +38,7 @@ fn done(step: RoutedStep, session: Option<&str>, asked: Option<&str>) -> OpAnswe
             asked: asked.map(str::to_owned),
             queued: false,
             names: vec![],
+            silenced: false,
         }),
     }
 }
@@ -60,6 +61,7 @@ fn no_such(asked: &str, names: &[&str]) -> OpAnswer {
             asked: Some(asked.into()),
             queued: false,
             names: names.iter().map(|n| (*n).to_owned()).collect(),
+            silenced: false,
         }),
     }
 }

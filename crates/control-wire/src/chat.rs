@@ -516,6 +516,9 @@ pub enum ChatMentionState {
     /// The session (`session`) has it queued, but its hooks aren't
     /// listening to take it (#571).
     Queued,
+    /// The session it named (`asked`) is there, but its owner silenced
+    /// mentions for it (#579): it waits in the machine's inbox.
+    Silenced,
     /// The session it named isn't there (`asked`), or is more than one:
     /// no other session got it, and it waits in the inbox. `names` are the
     /// ones there are (#576).

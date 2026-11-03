@@ -551,6 +551,10 @@ pub enum Action {
     /// approving it (`chant approve <op> <gate> --expire`), so the next run
     /// stops there again.
     Expire,
+    /// Type a teammate's agent's mention, held on a session whose hooks
+    /// aren't listening, into the terminal and press Enter (#579). The
+    /// owner's alone.
+    Deliver,
 }
 
 /// A command the shell integration reported.
@@ -1157,6 +1161,10 @@ pub struct PaneInfo {
     /// Getting started's "Use Claude Code with Arugula").
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub unhooked: bool,
+    /// The owner silenced teammates' agents' mentions for this session
+    /// (#579): `arugula mentions off %N`. It lasts as long as the pane.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub mentions_off: bool,
     /// What Claude Code running in it says of its session from inside it
     /// (#450, the arugula-live mod, through `arugula session-signal`): the
     /// agent block's `context` shape, with `source: live`, its versions and

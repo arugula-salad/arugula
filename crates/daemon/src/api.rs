@@ -20,9 +20,9 @@ use arugula_proto::{
     op::ops::{
         AdapterInstall, AdaptersList, AgentsGet, AgentsRefresh, ClosePane, FlagSet, FlagsList, ListPanes, MachineReset,
         MachinesList, NotifyGet, NotifySet, PaneAsk, PaneAskWithdraw, PaneAttention, PaneDetection, PaneDiffOf,
-        PaneDrivers, PaneFollowUp, PaneInbox, PaneKeys, PaneMouse, PaneNvimOpen, PanePermit, PanePorts, PaneProcess,
-        PanePrompt, PaneSend, PaneWait, PushKeyGet, PushSubscribe, PushTest, RuleForget, RulesForgetAll, RulesList,
-        SharingGet, SharingSet, ShellEnvGet, ShellEnvRefresh, TelemetryGet, TelemetryNote, TelemetrySet,
+        PaneDrivers, PaneFollowUp, PaneInbox, PaneKeys, PaneMentions, PaneMouse, PaneNvimOpen, PanePermit, PanePorts,
+        PaneProcess, PanePrompt, PaneSend, PaneWait, PushKeyGet, PushSubscribe, PushTest, RuleForget, RulesForgetAll,
+        RulesList, SharingGet, SharingSet, ShellEnvGet, ShellEnvRefresh, TelemetryGet, TelemetryNote, TelemetrySet,
     },
 };
 use axum::{
@@ -60,6 +60,7 @@ pub fn routes() -> Router<Arc<App>> {
         .op::<PaneKeys>()
         .op::<PaneMouse>()
         .op::<PaneAttention>()
+        .op::<PaneMentions>()
         .route("/api/attention", get(attention_list))
         .route("/api/attention/act", post(act))
         .op::<PaneAsk>()
@@ -320,6 +321,17 @@ async fn act(
             }
         }
     }
+    // A teammate's agent's mention held on a session with no hooks (#579):
+    // delivering or dropping it is the machine owner's, at the card. Neither
+    // a guest's, nor an agent's on the owner's CLI, nor a team's other
+    // owner's (who is `Owner` here).
+    if !who.is_owner() || foreign(&app, &dev) || crate::invite::agent(&headers) {
+        for p in &panes {
+            if req.action == arugula_proto::Action::Deliver || holds_mention(&app, *p).await {
+                return Err(ApiError(StatusCode::FORBIDDEN, HELD_OWNER_ONLY.into()));
+            }
+        }
+    }
     // M79: a task's consent card is this machine's own account's, not a
     // team's other owner's (who is `Owner` here too).
     if !who.is_owner() || foreign(&app, &dev) {
@@ -390,6 +402,8 @@ async fn act_one(
             return crate::editors::answer_diff(&app.ide, &app.mux, pane, req.id.clone(), accept, req.text.clone(), by)
                 .await;
         }
+        // A held mention typed into the terminal (#579).
+        Action::Deliver => return deliver_held(app, pane, by).await,
         _ => {}
     }
     // A failed command typed again (M11), once its shell is idle.
@@ -413,6 +427,13 @@ async fn act_one(
         return crate::fs::type_line(app, pane, line, "rerun").await.map_err(|e| e.to_string());
     }
     if req.action == Action::Dismiss {
+        if holds_mention(app, pane).await {
+            if by.as_ref().is_some_and(|d| d.who != "owner") {
+                return Err(HELD_OWNER_ONLY.into());
+            }
+            app.mux.api(|r| Api::HeldDrop(pane, r)).await;
+            return Ok(());
+        }
         return match app.mux.api(|r| Api::Attention(pane, Attention::Idle, None, r)).await {
             Some(true) => Ok(()),
             _ => Err(format!("no pane %{pane}")),
@@ -482,7 +503,7 @@ async fn act_one(
         (Action::Allow, AskWhat::Question) => return Err(format!("%{pane} asks a question: answer it")),
         (Action::Answer, AskWhat::Approve) => return Err(format!("%{pane} asks for approval: allow or deny it")),
         (Action::Expire, _) => return Err(format!("%{pane} isn't waiting at a gate: nothing to expire")),
-        (Action::Dismiss | Action::Continue | Action::Accept | Action::Reject | Action::Rerun, _) => {
+        (Action::Dismiss | Action::Continue | Action::Accept | Action::Reject | Action::Rerun | Action::Deliver, _) => {
             unreachable!("handled above")
         }
     };
@@ -492,6 +513,34 @@ async fn act_one(
     } else {
         answer_terminal(app, pane, method, args, by).await.map(|_| ()).map_err(|e| e.1)
     }
+}
+
+/// What a card holding a teammate's mention says to anyone but the owner.
+const HELD_OWNER_ONLY: &str = "only this machine's owner delivers or drops a mention held for a session";
+
+/// Whether `pane` has a teammate's mention held behind a card (#579).
+async fn holds_mention(app: &App, pane: PaneId) -> bool {
+    let reason = app.mux.api(|r| Api::Reason(pane, r)).await.flatten();
+    reason.is_some_and(|(r, _)| r.actions.contains(&arugula_proto::Action::Deliver))
+}
+
+/// The owner tapped "deliver" on a held mention (#579): the one place a
+/// mention is typed into a terminal. It's typed as `arugula send --enter`
+/// types, after the mux hands it over (its turn is then `working`).
+async fn deliver_held(app: &App, pane: PaneId, by: Option<Driver>) -> Result<(), String> {
+    if by.as_ref().is_some_and(|d| d.who != "owner") {
+        return Err(HELD_OWNER_ONLY.into());
+    }
+    if !holds_mention(app, pane).await {
+        return Err(format!("%{pane} holds no mention (it was delivered, or dismissed)"));
+    }
+    let p = app.mux.api(|r| Api::Pane(pane, r)).await.flatten().ok_or_else(|| format!("no terminal %{pane}"))?;
+    if !p.running() {
+        return Err(format!("nothing is running in %{pane}"));
+    }
+    let text = app.mux.api(|r| Api::HeldDeliver(pane, r)).await.ok_or("daemon is shutting down")??;
+    crate::ops::input::send_text(app, pane, &p, &text, true, None).await;
+    Ok(())
 }
 
 /// `arugula hook`: one of Claude Code's hook events (M29).

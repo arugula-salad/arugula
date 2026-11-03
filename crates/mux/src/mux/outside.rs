@@ -130,6 +130,9 @@ pub trait Usage: Send + Sync + Debug {
 pub struct MentionTag {
     pub room: String,
     pub seq: i64,
+    /// What the card says while it is held for a session with no hooks
+    /// (#579). Empty for a mention that isn't held.
+    pub headline: String,
 }
 
 /// Where the turn that took a tagged follow-up is (#540).

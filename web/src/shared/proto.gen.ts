@@ -49,7 +49,7 @@ export type ActResult = { pane: number, ok: boolean, error?: string, };
 /**
  * Something done about a reason (`POST /api/attention/act`).
  */
-export type Action = "allow" | "deny" | "answer" | "dismiss" | "continue" | "accept" | "reject" | "rerun" | "expire";
+export type Action = "allow" | "deny" | "answer" | "dismiss" | "continue" | "accept" | "reject" | "rerun" | "expire" | "deliver";
 
 /**
  * How much a pane prints (M23).
@@ -970,7 +970,7 @@ export type ChatLive = { "type": "hello", stream: string, } | { "type": "message
 /**
  * How far a [`ChatMentionStatus`] has got.
  */
-export type ChatMentionState = "sending" | "delivered" | "fell_back" | "waiting" | "queued" | "no_such_session" | "offline" | "answered" | "chain" | "working" | "read" | "dropped";
+export type ChatMentionState = "sending" | "delivered" | "fell_back" | "waiting" | "queued" | "silenced" | "no_such_session" | "offline" | "answered" | "chain" | "working" | "read" | "dropped";
 
 /**
  * Where a message's `@machine` mention got to (#502), as control knows it:
@@ -3721,6 +3721,11 @@ inbox?: boolean,
  */
 unhooked?: boolean, 
 /**
+ * The owner silenced teammates' agents' mentions for this session
+ * (#579): `arugula mentions off %N`. It lasts as long as the pane.
+ */
+mentions_off?: boolean, 
+/**
  * What Claude Code running in it says of its session from inside it
  * (#450, the arugula-live mod, through `arugula session-signal`): the
  * agent block's `context` shape, with `source: live`, its versions and
@@ -5613,6 +5618,7 @@ export const OPS = {
   "pane.followup": { method: "POST", path: "/api/panes/{id}/followup" },
   "pane.inbox": { method: "POST", path: "/api/panes/{id}/inbox" },
   "pane.keys": { method: "POST", path: "/api/panes/{id}/keys" },
+  "pane.mentions": { method: "POST", path: "/api/panes/{id}/mentions" },
   "pane.mouse": { method: "POST", path: "/api/panes/{id}/mouse" },
   "pane.nvim_help": { method: "POST", path: "/api/panes/{id}/nvim/help" },
   "pane.nvim_open": { method: "POST", path: "/api/panes/{id}/nvim" },
