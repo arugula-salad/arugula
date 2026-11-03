@@ -273,6 +273,9 @@ fn enroll_passkey_device(app: &Arc<App>, account: &str, c: Cert) -> R {
 
 pub async fn enroll(State(app): State<Arc<App>>, s: PageSession, Json(b): Json<Enroll>) -> R {
     if b.passkey_device {
+        // Refused by `approval_ok` too: a browser's chain never runs through
+        // the app. Said first, as the app's other page-only actions are.
+        s.not_app(&app)?;
         return enroll_passkey_device(&app, &s.account, b.cert);
     }
     let c = b.cert;

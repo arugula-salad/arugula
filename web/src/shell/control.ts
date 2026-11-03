@@ -468,7 +468,7 @@ const prfOf = (cred: PublicKeyCredential): PrfOut | undefined => {
  * every browser with that passkey, so they're one device. Not while this
  * browser is a working device of that account already: it keeps its own.
  * Whether it took them. */
-async function takePrfKeys(prf: PrfOut | undefined, account: string, provider: string | null | undefined): Promise<boolean> {
+async function takePrfKeys(prf: PrfOut | undefined, account: string, provider: string | null | undefined, credential: string): Promise<boolean> {
   // The desktop app's window is an app device: it never takes a passkey's
   // browser keys.
   if (appWindow()) return false;
@@ -478,7 +478,7 @@ async function takePrfKeys(prf: PrfOut | undefined, account: string, provider: s
   const have = await existingKeys();
   if (e && e.account === account && have?.id === e.cert.device) return false;
   try {
-    await adoptPrfKeys(r.first, r.second, provider ? `${provider} passkey` : "Passkey");
+    await adoptPrfKeys(r.first, r.second, provider ? `${provider} passkey` : "Passkey", credential);
   } catch (err) {
     // This browser can't keep them: it's approved as before.
     console.warn("arugula: not using the passkey's keys:", err);
@@ -506,7 +506,7 @@ export async function passkeySignIn(): Promise<boolean> {
     signature: b64u(r.signature),
     prf: !!(prf?.results?.first && prf.results.second),
   });
-  return done.account ? takePrfKeys(prf, done.account, done.provider) : false;
+  return done.account ? takePrfKeys(prf, done.account, done.provider, b64u(cred.rawId)) : false;
 }
 
 /** A passkey made for the account signed in, waiting for one the account
@@ -686,7 +686,12 @@ async function passkeyDeviceKeys(id: string) {
   if (!got) throw new Error("no passkey chosen");
   const r = prfOf(got)?.results;
   if (!r?.first || !r.second) throw new Error("This passkey can't do this: whatever keeps it doesn't give the keys it would take. It still signs you in.");
-  return keysFromPrf(r.first, r.second);
+  try {
+    return await keysFromPrf(r.first, r.second);
+  } finally {
+    new Uint8Array(r.first).fill(0);
+    new Uint8Array(r.second).fill(0);
+  }
 }
 
 /** What another of the account's passkeys signs to remove one (DK10,
@@ -706,7 +711,7 @@ export async function passkeyRemove(id: string, o: PasskeyRemoval): Promise<void
 
 async function finishRegister(body: Record<string, unknown>, prf: PrfOut | undefined) {
   const done = await api<{ account?: string; provider?: string | null }>("/auth/passkey/register/finish", body);
-  if (done.account) await takePrfKeys(prf, done.account, done.provider);
+  if (done.account) await takePrfKeys(prf, done.account, done.provider, String(body.id));
 }
 
 /** What a signed-out page may know about an invite (#103): the team's
@@ -1402,6 +1407,12 @@ export class ControlSession {
     }
     this.enrollment = { control: location.origin, account: this.account, root: all.trust.root, cert: mine };
     await saveEnrollment(this.enrollment);
+    // #641: which passkey this device is, for Sign-in and account to say, on
+    // a device from before control kept that.
+    const from = await prfDevice();
+    if (pin && from?.device === k.id && from.credential) {
+      await api(`/api/devices/${k.id}/pin`, { pin, passkey: from.credential }).catch((err) => console.warn("arugula: couldn't say which passkey this device is:", err));
+    }
     return true;
   }
 
@@ -1412,7 +1423,8 @@ export class ControlSession {
     const e = this.enrollment;
     if (!e) return;
     const pin = await signText(this.keys, devicePinBody({ account: e.account, root: e.root }, this.keys.id));
-    await api(`/api/devices/${this.keys.id}/pin`, { pin }).catch((err) => console.warn("arugula: couldn't save this device's pin:", err));
+    const from = await prfDevice();
+    await api(`/api/devices/${this.keys.id}/pin`, { pin, ...(from?.device === this.keys.id && from.credential ? { passkey: from.credential } : {}) }).catch((err) => console.warn("arugula: couldn't save this device's pin:", err));
   }
 
   /** #764: while waiting, sign in with a passkey instead. If it gives PRF
@@ -1567,7 +1579,8 @@ export class ControlSession {
     if (!e || this.rootMismatch) throw new Error("This browser's account root isn't settled: do this from a device you've used before.");
     const k = await passkeyDeviceKeys(id);
     const all = await api<{ certs: Cert[]; revocations: Revocation[] }>("/api/devices");
-    if (all.revocations.some((r) => r.device === k.id)) {
+    // What this browser has heard too: control could leave one out.
+    if ([...this.revocations, ...all.revocations].some((r) => r.device === k.id)) {
       throw new Error("This passkey's device was removed from your account, and a removed device doesn't come back. To use a passkey on new computers, add a new one.");
     }
     if (k.id !== this.keys.id && !all.certs.some((c) => c.device === k.id)) {

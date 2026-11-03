@@ -307,7 +307,7 @@ function Waiting({ s }: { s: ControlSession }) {
       {/* A GitHub-only account has nothing to use yet: what to do next time. */}
       {s.info.passkeys && !s.passkeys && !s.fromPasskey && !inApp() ? (
         <p class="dim" data-waiting-next-time>
-          Next time: add a passkey once you're in, and a new computer with it won't need another device.
+          Next time: once you're in, add a passkey that syncs and turn on <i>Use on new computers</i>. A computer it syncs to won't need another device.
         </p>
       ) : null}
       <RecoveryForm s={s} open={recovering()} />

@@ -212,6 +212,8 @@ test("a passkey with PRF brings the same device back after site data is cleared"
   expect(await me()).toMatchObject({ id: device, passkey: "Passkey", account: first.account });
   const passkeys = await page.evaluate(() => fetch("/api/me/passkeys").then((r) => r.json()));
   expect(passkeys.passkeys[0].prf).toBe(true);
+  // #641: and which device it is, said by the browser that took its keys.
+  expect(passkeys.passkeys[0].device).toBe(device);
 
   // Cleared again, still signed in: the browser asks to be approved with
   // keys of its own, and the passkey brings the device back instead.
@@ -315,6 +317,7 @@ test("a passkey turned on from a working browser opens a new computer with no ot
   await page.locator("[data-add-passkey]").click();
   await page.locator("[data-passkey-confirm-go]").click();
   await expect(page.locator("[data-passkey-offer]")).toBeVisible();
+  await expect(page.locator("[data-passkey-offer-cost]")).toContainText("approve new devices");
   await page.locator("[data-passkey-offer-yes]").click();
   await expect(page.locator("[data-passkey-offer]")).toHaveCount(0);
   await expect(page.locator("[data-passkey-on-new-computers]")).toHaveCount(2);

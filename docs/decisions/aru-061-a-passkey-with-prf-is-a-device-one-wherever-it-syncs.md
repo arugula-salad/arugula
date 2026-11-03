@@ -59,7 +59,8 @@ first use, so the first new computer still needed one, which was the
 complaint this decision set out to answer. Now a working browser can certify
 that device when the passkey is added or later, so a new computer with the
 passkey needs no other device. It's a choice each time, and the prompt names
-the cost above. Nothing else changes: a browser approves it under the usual
+the cost above: whoever can use the passkey can do what that browser does,
+including approving new devices and removing others. Nothing else changes: a browser approves it under the usual
 rules, the pin still decides whether a new browser takes the root, and
 control holds no key.
 Where: `web/src/shell/e2e/keys.ts` (`adoptPrfKeys`, `PRF_SALTS`), `web/src/shell/control.ts` (`takePrfKeys`, `rejoin`, `savePin`, `usePasskey`), `crates/control/src/passkey.rs`, `crates/control/src/api.rs` (`pin`), `crates/e2e/src/cert.rs` (`device_pin_body`), [docs/control-e2e.md](docs/control-e2e.md#prf-re-deriving-a-browsers-keys).

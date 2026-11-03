@@ -605,6 +605,13 @@ async fn a_browser_adds_a_passkeys_device_and_only_a_browser() {
     let info = c.app.db.session_info(&hash(&token), now_ms()).unwrap().unwrap();
     assert_eq!(info.device.as_deref(), Some(root.id().as_str()));
 
+    // The desktop app's window can't, whoever signed it.
+    let (other, cert) = signed(&root, "a1", Kind::Browser, "Passkey");
+    let app_window = session_via(&c, "a1", Via::App);
+    let (st, v) = c.as_person(&app_window, "POST", "/api/devices", ask(&cert)).await;
+    assert_eq!((st, v["reason"].as_str()), (403, Some("app_window")), "{v}");
+    assert!(c.app.db.device("a1", &other.id()).unwrap().is_none());
+
     // Its pin names the passkey for the page, if it's this account's.
     let trust = Trust { account: "a1".into(), root: root.id() };
     let pin = hex::encode(k.signature(device_pin_body(&trust, &k.id()).as_bytes()));

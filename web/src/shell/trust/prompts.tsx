@@ -140,7 +140,10 @@ export function PasskeyOffer({ s, offer }: { s: ControlSession; offer: { id: str
     <Modal close={() => s.dropPasskeyOffer()}>
       <h2>Use this passkey on new computers?</h2>
       <p data-passkey-offer>A new computer with this passkey will reach your machines straight away, with no other device to approve it.</p>
-      <p class="dim">Whoever can use this passkey reaches them too, so it's only as safe as {offer.provider ?? "whatever keeps it"}. It's listed under Devices, and you can remove it there.</p>
+      <p class="dim" data-passkey-offer-cost>
+        Whoever can use this passkey can then do what this browser does: reach your machines, approve new devices, and remove your others. So it's only as safe as{" "}
+        {offer.provider ?? "whatever keeps it"}. It's listed under Devices, and you can remove it there; this passkey can't be turned on again after that.
+      </p>
       {err ? <p class="control-error">{err}</p> : null}
       <div class="prompt-buttons">
         <button class="secondary" data-passkey-offer-no onClick={() => s.dropPasskeyOffer()}>

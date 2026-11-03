@@ -483,7 +483,10 @@ browser's device keys, where the passkey gives them:
   same rules (`approval_ok`, `Kind::certifies`), so a CLI or the app can't.
   The next browser with that passkey goes straight to *Every later time*,
   and a new computer needs no other device. `passkeys.device` says which
-  device a passkey is, for the page's words only.
+  device a passkey is, as a browser said, for the page's words only: a
+  valid pin can be sent with any of the account's passkeys, so nothing
+  trusts it. Removing a passkey doesn't remove its device, which keeps
+  reaching machines until it's removed under Devices; the dialog says so.
 - **The pin.** Once approved, that device signs
   `arugula device pin v1`, the account and the root it pinned
   (`devicePinBody`, `arugula_e2e::cert::device_pin_body`), and control keeps

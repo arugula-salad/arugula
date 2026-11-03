@@ -581,8 +581,9 @@ pub struct PasskeyRow {
     pub prf: Option<bool>,
     /// The device whose sign-in added it, as that sign-in said, when known.
     pub added_device: Option<String>,
-    /// The device its PRF keys are (#641), once a browser that holds it
-    /// said. What the page shows, not what anything trusts.
+    /// The device its PRF keys are (#641), as a browser said. A claim: a
+    /// valid pin can be sent with any of the account's passkeys, so it's
+    /// what the page shows and nothing trusts it.
     pub device: Option<String>,
 }
 
@@ -1609,6 +1610,7 @@ impl Db {
             "DELETE FROM turned_down WHERE account = ?1",
             "DELETE FROM joins WHERE account = ?1",
             "UPDATE sessions SET device = NULL WHERE account = ?1",
+            "UPDATE passkeys SET device = NULL WHERE account = ?1",
             "UPDATE accounts SET root = NULL WHERE id = ?1",
         ] {
             tx.execute(sql, params![account])?;

@@ -110,7 +110,7 @@ export function AccountPanel({ s, close, linked, emailBack }: { s: ControlSessio
   // The passkey whose Remove was clicked: a dialog asks, and another of
   // the account's passkeys agrees (DK10, #393): what it signs, fetched as
   // the dialog opens, or why not.
-  const [removing, setRemoving] = useState<{ id: string; name: string; device: string | null } | null>(null);
+  const [removing, setRemoving] = useState<{ id: string; name: string; device: "yes" | "maybe" | "no" } | null>(null);
   const [removal, setRemoval] = useState<{ id: string; options?: PasskeyRemoval; err?: string } | null>(null);
   const [unlinking, setUnlinking] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -144,7 +144,7 @@ export function AccountPanel({ s, close, linked, emailBack }: { s: ControlSessio
   };
   // DK10: removing a passkey takes another, so the only one stays.
   const onlyPasskey = keys?.passkeys.length === 1;
-  const askToRemove = (id: string, name: string, device: string | null) => {
+  const askToRemove = (id: string, name: string, device: "yes" | "maybe" | "no") => {
     setRemoving({ id, name, device });
     setRemoval({ id });
     passkeyRemoval(id).then(
@@ -233,7 +233,7 @@ export function AccountPanel({ s, close, linked, emailBack }: { s: ControlSessio
                   ) : (
                     ""
                   )}
-                  {k.device && s.trusted.has(k.device) ? <span data-passkey-on-new-computers>, works on new computers</span> : null}
+                  {k.device && s.trusted.has(k.device) ? <span data-passkey-on-new-computers>, opens your machines wherever it syncs</span> : null}
                 </span>
                 <span class="control-row-actions">
                   {/* #641: not once its device is removed, which never comes
@@ -243,7 +243,7 @@ export function AccountPanel({ s, close, linked, emailBack }: { s: ControlSessio
                       class="secondary small"
                       data-passkey-as-device={k.id}
                       disabled={waiting}
-                      title="A new computer with this passkey reaches your machines with no other device. Whoever can use the passkey reaches them too."
+                      title="A new computer with this passkey reaches your machines with no other device. Whoever can use the passkey can then do what this browser does."
                       onClick={() => act(() => s.passkeyAsDevice(k.id, k.provider))}
                     >
                       Use on new computers
@@ -255,7 +255,7 @@ export function AccountPanel({ s, close, linked, emailBack }: { s: ControlSessio
                   disabled={waiting || onlyPasskey || (keys?.ways ?? 0) <= 1}
                   {...browserButton("Remove")}
                   title={onlyPasskey ? ONLY_PASSKEY : (keys?.ways ?? 0) <= 1 ? "Your only way to sign in" : app ? "Opens in your browser" : undefined}
-                  onClick={() => (app ? toBrowser("remove-passkey") : askToRemove(k.id, passkeyName(k, i), k.device && s.trusted.has(k.device) ? k.device : null))}
+                  onClick={() => (app ? toBrowser("remove-passkey") : askToRemove(k.id, passkeyName(k, i), k.device && s.trusted.has(k.device) ? "yes" : k.prf !== false && !k.device ? "maybe" : "no"))}
                 />
                 </span>
               </li>
@@ -287,8 +287,10 @@ export function AccountPanel({ s, close, linked, emailBack }: { s: ControlSessio
               }}
             >
               <p>It stops signing you in at once. To use it again, add it as a new passkey.</p>
-              {removing.device ? (
+              {removing.device === "yes" ? (
                 <p data-remove-passkey-device>Its device stays one of yours until you remove it under Devices, and only that stops it reaching your machines.</p>
+              ) : removing.device === "maybe" ? (
+                <p data-remove-passkey-device>If it's ever been approved as a device, that stays one of yours until you remove it under Devices: only that stops it reaching your machines.</p>
               ) : null}
               <p class="dim" data-remove-passkey-with>
                 Confirm with another of your passkeys: your browser asks for one when you press Remove.

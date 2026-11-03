@@ -260,18 +260,20 @@ export interface PrfDevice {
   device: string;
   /** Its certificate's name: "iCloud Keychain passkey", or "Passkey". */
   name: string;
+  /** The passkey's id (#641), for the page to say which passkey it is. */
+  credential?: string;
 }
 
 /** #764: this browser's keys from a passkey's PRF output (`noise` and
  * `sign`, at `PRF_SALTS`), replacing any it had, stored as `adoptKeys`
  * stores them. Every browser with that passkey derives the same keys, so
  * they are one device. */
-export async function adoptPrfKeys(noise: BufferSource, sign: BufferSource, name: string): Promise<DeviceKeys> {
+export async function adoptPrfKeys(noise: BufferSource, sign: BufferSource, name: string, credential?: string): Promise<DeviceKeys> {
   const n = await fromSeed("X25519", await seedOf(noise, "arugula device x25519 v1"));
   const s = await fromSeed("Ed25519", await seedOf(sign, "arugula device ed25519 v1"));
   try {
     const keys = await adoptKeys(n.pkcs8, s.pkcs8, n.pub, s.pub);
-    await kv("readwrite", (st) => void st.put({ device: keys.id, name } satisfies PrfDevice, "prf"));
+    await kv("readwrite", (st) => void st.put({ device: keys.id, name, credential } satisfies PrfDevice, "prf"));
     return keys;
   } finally {
     n.pkcs8.fill(0);
@@ -283,13 +285,15 @@ export async function adoptPrfKeys(noise: BufferSource, sign: BufferSource, name
  * a browser with keys of its own uses them to add the passkey's device,
  * and keeps its own. */
 export async function keysFromPrf(noise: BufferSource, sign: BufferSource): Promise<DeviceKeys> {
-  const n = await fromSeed("X25519", await seedOf(noise, "arugula device x25519 v1"));
-  const s = await fromSeed("Ed25519", await seedOf(sign, "arugula device ed25519 v1"));
+  let n: Awaited<ReturnType<typeof fromSeed>> | undefined;
+  let s: Awaited<ReturnType<typeof fromSeed>> | undefined;
   try {
+    n = await fromSeed("X25519", await seedOf(noise, "arugula device x25519 v1"));
+    s = await fromSeed("Ed25519", await seedOf(sign, "arugula device ed25519 v1"));
     return await importKeys(n.pkcs8, s.pkcs8, n.pub, s.pub, false);
   } finally {
-    n.pkcs8.fill(0);
-    s.pkcs8.fill(0);
+    n?.pkcs8.fill(0);
+    s?.pkcs8.fill(0);
   }
 }
 
