@@ -840,7 +840,9 @@ pub struct ChatPosted {
     /// for it in the last minute).
     pub pushed: Vec<ChatPushed>,
     /// A comment on a native issue that's on GitHub (M205): what became
-    /// of its copy there. `None` anywhere else.
+    /// of its copy there, as far as it's known when the post returns. A
+    /// person's is `sending` then, and its end comes to them on the live
+    /// stream ([`ChatLive::Github`], Arugula #584). `None` anywhere else.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "ts", ts(optional))]
     pub github: Option<ChatToGithub>,
@@ -855,12 +857,18 @@ pub struct ChatPosted {
 /// A comment on an exported native issue, on its way to GitHub (M205): a
 /// person's is sent as them through one of their machines, and waits as a
 /// draft when none can; an agent's is a draft that waits for its person.
+/// A person's post answers while its send is out (`sending`), and the
+/// send's end comes after, on the live stream ([`ChatLive::Github`]).
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct ChatToGithub {
     /// The draft (`dft_…`) that carries it.
     pub draft: String,
+    /// Being sent now, through one of the person's machines: the end comes
+    /// on the live stream (Arugula #584).
+    #[serde(default)]
+    pub sending: bool,
     /// On GitHub now.
     pub sent: bool,
     /// Its comment there, once sent.
@@ -1347,6 +1355,14 @@ pub enum ChatLive {
     /// saved, finished or removed one, or a reminder came due): read them
     /// again. Sent to that account only.
     Saved {},
+    /// How a comment's send to GitHub ended (M205, Arugula #584): message
+    /// `seq` of `room`, a native issue's thread, whose post answered
+    /// `sending`. Sent to its author only.
+    Github {
+        room: String,
+        seq: i64,
+        github: ChatToGithub,
+    },
     Resync {},
 }
 

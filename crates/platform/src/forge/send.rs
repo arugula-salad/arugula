@@ -190,10 +190,9 @@ pub async fn send(app: &Platform, account: &str, id: &str, how: How) -> Result<w
 /// End the send holding `id` since `at`, and the draft as the wire says it.
 async fn end(app: &Platform, id: &str, at: u64, e: SendEnd<'_>) -> Result<wire::ForgeDraft, ApiError> {
     let row = app.db.end_send(id, at, e, now_ms())?.ok_or_else(|| err(StatusCode::CONFLICT, "another send took it"))?;
-    if matches!(e, SendEnd::Sent(_)) {
-        // A native issue's (M205): its origin, or its comment's link.
-        super::export::sent(app, &row).await;
-    }
+    // A native issue's (M205): its origin, or its comment's link, and the
+    // GitHub comments held for it settled (Arugula #585).
+    super::export::ended(app, &row).await;
     Ok(wire_drafts(app, vec![row]).await?.remove(0))
 }
 
