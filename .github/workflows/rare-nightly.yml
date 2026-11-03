@@ -62,7 +62,7 @@ jobs:
   # check.yml's build: the debug binaries, web/dist embedded, for testnet's
   # CLI and stack's specs.
   rare-build:
-    runs-on: arugula-amd64
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
         with:
@@ -87,7 +87,7 @@ jobs:
 
   # check.yml's static: the box's binaries, for the test stack.
   rare-static:
-    runs-on: arugula-amd64
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
         with:
@@ -113,7 +113,7 @@ jobs:
   # src/labs/mod.rs): clippy and the tests. The ssh tests, which need
   # Docker, run in check.yml's test.
   core:
-    runs-on: arugula-amd64
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
         with:
@@ -124,6 +124,8 @@ jobs:
           # Ghostty for x86_64-linux-gnu, as check.yml's build and test
           # build it.
           ghostty-key: gnu
+          packages: tmux
+          user-manager: "true"
       - run: just bootstrap
       - run: just check-core
         env:
@@ -134,12 +136,11 @@ jobs:
         run: sccache --show-stats
 
   # The platform's suite again, on Postgres (M143): a postgres:17 container
-  # on the pod's Docker (its dind sidecar), reached as the test stack is,
-  # rather than a `services:` container. It builds only the server
-  # workspace's tests (no Ghostty, no daemon), the same units as check.yml's
-  # test-build, so sccache has them.
+  # on the runner's Docker, reached as the test stack is, rather than a
+  # `services:` container. It builds only the server workspace's tests (no
+  # Ghostty, no daemon).
   test-postgres:
-    runs-on: arugula-amd64
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
         with:
@@ -172,8 +173,8 @@ jobs:
     # rare-static builds, and waits for its musl binaries before it needs
     # them (#1680).
     needs: rare-build
-    runs-on: arugula-amd64
-    # 8-13 min when it works; a hung claim held a pod for 45 min.
+    runs-on: ubuntu-24.04
+    # 8-13 min when it works; a hung claim held a runner for 45 min.
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
@@ -217,7 +218,7 @@ jobs:
   # The specs on the test stack (team-swarm-phones' box behind netem).
   stack:
     needs: [rare-build, rare-static]
-    runs-on: arugula-amd64
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
         with:

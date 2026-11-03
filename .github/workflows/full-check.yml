@@ -2,7 +2,8 @@ name: full-check
 
 # The `full-check` label on a pull request runs check.yml on its branch: what
 # `gh workflow run check.yml --ref BRANCH` does by hand (#1677). Pull requests
-# otherwise run only binaries.yml; check.yml runs on the home cloud's pods.
+# otherwise run only binaries.yml; check.yml's tests run on the home cloud's
+# pods and our Macs.
 # Same-repository branches only: a fork's pull request gets a read-only token
 # here, and its code mustn't reach our machines before a merge would bring it.
 # Add the label again (remove it, add it) for another run. Then, once the
