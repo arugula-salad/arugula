@@ -455,14 +455,12 @@ async fn a_passkey_removed_since_its_approval_isnt_applied() {
     assert!(box_of(&app, &id).is_none() && fake.boxes().is_empty(), "no box was made");
 }
 
-/// DK4's rollout: a v1 approval (a device's signature beside the passkey)
-/// recorded before the switch, its apply still to come, is applied: the job
-/// and the box check it by its passkey, as they check a v2. Its run's
-/// approval names its device.
+/// DK8: a v1 approval (a device's signature beside the passkey), from
+/// before DK4, applies no more, even within its `expires`: the job cancels
+/// its deploy without making a box, and a box refuses it too.
 #[tokio::test]
-async fn a_v1_approval_from_before_the_switch_still_applies() {
-    let (hub, app, _base, t, _fake) = world().await;
-    let base = _base;
+async fn a_v1_approval_applies_no_more() {
+    let (hub, app, base, t, fake) = world().await;
     let env = production(&base, &t).await;
     set_secret(&base, "a", &env, "APP_TOKEN").await;
     let a = devices(&hub, "a");
@@ -490,13 +488,12 @@ async fn a_v1_approval_from_before_the_switch_still_applies() {
         signature: pk.signature.clone(),
     });
     app.db.record_deploy_approval(&recorded, "Pixel", now_ms()).unwrap().unwrap();
-    let m = boot(&app, &hub, &id).await;
-    let dr = app.db.deploy_run(&id).unwrap().expect("its run is made");
-    let run = app.db.run(&dr.run).unwrap().unwrap();
-    assert_eq!(run.state, RunState::Approved, "the job's recheck took it");
-    let w = pull(&app, &m, &[TAKES_RUN, TAKES_DEPLOY]).await;
-    let dw = w.items[0].deploy.as_ref().unwrap();
-    assert_eq!(dw.approval, v1);
+    settle(&app).await;
+    assert_eq!(state(&app, &id), State::Canceled);
+    let why = app.db.deploy_history(&id).unwrap().pop().unwrap().detail_json().unwrap();
+    assert!(why["reason"].as_str().unwrap().contains("before passkey-only approvals"), "{why}");
+    assert!(box_of(&app, &id).is_none() && fake.boxes().is_empty(), "no box was made");
+
     use crate::HubPort as _;
     let roster = crate::deploys_tests::team_t();
     let certs = arugula_e2e::team::AccountCerts::new();
@@ -505,9 +502,9 @@ async fn a_v1_approval_from_before_the_switch_still_applies() {
     let origins = app.cfg.passkey_origins();
     let pinned = Pinned { owners: &owners, passkey_logs: &logs, origins: &origins };
     assert_eq!(
-        check_apply(&dw.approval, &dw.operation, &id, &pinned, Some(&pk), dw.passkey_log.as_ref(), now_ms()),
-        Ok(()),
-        "the box takes it by its passkey"
+        check_apply(&v1, &operation, &id, &pinned, Some(&pk), None, now_ms()),
+        Err(arugula_e2e::deploy::ApplyRefusal::Form),
+        "a box refuses it"
     );
 }
 

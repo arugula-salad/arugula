@@ -1,5 +1,5 @@
 {
-  "about": "What a machine checks before it applies a deploy (M219; DK4, aru-126), from what it pinned rather than the platform's word, in this order, the first failure being the refusal: the approval is well formed (approval_form; a v2, or a v1 made before DK4); for this deploy (approval_deploy); over exactly this operation's hash (approval_operation); once, not a deny (approval_denied); not expired, expires > now (approval_expired); its account an owner of the project, as the machine knows them, its team's roster or its own account (approval_not_an_owner); a passkey assertion with it (approval_passkey, with no `passkey`); the account's passkey log pinned (approval_passkey_log), and the assertion checked against the pinned log at now, as passkey/verify does (approval_passkey, `passkey` saying which check failed: not_live for a key not in the log or removed by now, origin for an origin not pinned for its RP, challenge for other bytes, user without UV); then the log the work carried, if any (the platform's word): it must be the pinned one, older, or one after it, its events the pinned one's first (approval_passkey_log), and only its removals after the pinned log, at or before now, count (approval_passkey, not_live, for the key removed): a key it adds is never taken, since an added event by sign-up or GitHub needs no proof. No device plays a part: which devices the owner has, and who certified them, is never looked at. A v1 is checked by its passkey alone, as a v2 is.",
+  "about": "What a machine checks before it applies a deploy (M219; DK4, aru-126), from what it pinned rather than the platform's word, in this order, the first failure being the refusal: the approval is well formed (approval_form; a v2: a v1, from before DK4, applies no more since DK8); for this deploy (approval_deploy); over exactly this operation's hash (approval_operation); once, not a deny (approval_denied); not expired, expires > now (approval_expired); its account an owner of the project, as the machine knows them, its team's roster or its own account (approval_not_an_owner); a passkey assertion with it (approval_passkey, with no `passkey`); the account's passkey log pinned (approval_passkey_log), and the assertion checked against the pinned log at now, as passkey/verify does (approval_passkey, `passkey` saying which check failed: not_live for a key not in the log or removed by now, origin for an origin not pinned for its RP, challenge for other bytes, user without UV); then the log the work carried, if any (the platform's word): it must be the pinned one, older, or one after it, its events the pinned one's first (approval_passkey_log), and only its removals after the pinned log, at or before now, count (approval_passkey, not_live, for the key removed): a key it adds is never taken, since an added event by sign-up or GitHub needs no proof. No device plays a part: which devices the owner has, and who certified them, is never looked at.",
   "cases": [
     {
       "about": "alice, owner of her account's project, approves with her passkey",
@@ -762,7 +762,7 @@
       "output": {"passkey": "signature", "refused": "approval_passkey"}
     },
     {
-      "about": "a v1 made before DK4, by her CLI: its passkey alone counts",
+      "about": "a v1 made before DK4, by her CLI, with her passkey's assertion over it: applied no more",
       "input": {
         "approval": "v1-by-alice-cli",
         "carried": null,
@@ -782,30 +782,7 @@
         "passkey": "k2-over-v1-by-alice-cli",
         "passkey_logs": {"alice": "alice-log", "bob": "bob-log"}
       },
-      "output": {"ok": true}
-    },
-    {
-      "about": "a v1 with a v2's assertion",
-      "input": {
-        "approval": "v1-by-alice-cli",
-        "carried": null,
-        "deploy": "dep_1",
-        "now": 50000,
-        "op": "op",
-        "origins": {
-          "control.example.invalid": ["https://control.example.invalid"]
-        },
-        "owners": {
-          "account": {
-            "account": "alice",
-            "certs": ["alice", "alice-cli"],
-            "root": "37f29b7074cf8b52"
-          }
-        },
-        "passkey": "k2-over-by-alice",
-        "passkey_logs": {"alice": "alice-log", "bob": "bob-log"}
-      },
-      "output": {"passkey": "challenge", "refused": "approval_passkey"}
+      "output": {"refused": "approval_form"}
     },
     {
       "about": "a v2 with a v1's assertion",
