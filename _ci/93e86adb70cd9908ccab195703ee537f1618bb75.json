@@ -3,7 +3,7 @@
   "commit": "93e86adb70cd9908ccab195703ee537f1618bb75",
   "branch": "main",
   "state": "pending",
-  "at": "2026-11-03T22:41:46Z",
+  "at": "2026-11-03T22:44:16Z",
   "phases": {
     "lint": {
       "verdict": "pass",
@@ -23,9 +23,9 @@
         },
         {
           "name": "suite-changed",
-          "id": 126249757833,
+          "id": 126255349549,
           "conclusion": "success",
-          "url": "https://github.com/arugula-salad/arugula/actions/runs/41731506672/job/126249757833"
+          "url": "https://github.com/arugula-salad/arugula/actions/runs/41731506672/job/126255349549"
         }
       ]
     },
@@ -66,7 +66,7 @@
         {
           "name": "test-2",
           "id": 126250067060,
-          "conclusion": null,
+          "conclusion": "success",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/41731506938/job/126250067060"
         }
       ],
@@ -104,7 +104,7 @@
         {
           "name": "e2e (2)",
           "id": 126251154892,
-          "conclusion": null,
+          "conclusion": "success",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/41731506938/job/126251154892"
         },
         {
@@ -185,18 +185,17 @@
       "runs": [
         {
           "name": "workspace",
-          "id": 126250027651,
-          "conclusion": "failure",
-          "url": "https://github.com/arugula-salad/arugula/actions/runs/41731506672/job/126250027651"
+          "id": 126255266030,
+          "conclusion": null,
+          "url": "https://github.com/arugula-salad/arugula/actions/runs/41731506672/job/126255266030"
         },
         {
           "name": "workspace-clippy",
-          "id": 126250027778,
+          "id": 126255268088,
           "conclusion": "success",
-          "url": "https://github.com/arugula-salad/arugula/actions/runs/41731506672/job/126250027778"
+          "url": "https://github.com/arugula-salad/arugula/actions/runs/41731506672/job/126255268088"
         }
       ],
-      "reason": "retrying",
       "culprit": "63b6c0e8a2f8f0fdd5e948ad2801aa178131bfc4"
     },
     "windows-desktop": {
