@@ -204,7 +204,7 @@ export function Prototype({ html, alt }: { html: string; alt: string }) {
         allow=""
         loading="lazy"
         referrerpolicy="no-referrer"
-        style={{ height: full ? "100%" : `${height}px` }}
+        style={full ? undefined : { height: `${height}px` }}
         onLoad={() => {
           if (++loads.current > OWN_LOADS) {
             setFull(false);

@@ -99,8 +99,11 @@ export async function counterKept(page: Page, close: "button" | "esc" | "esc-in-
   const win = page.viewportSize()!;
   await expect.poll(async () => (await page.locator(FRAME).boundingBox())!.width).toBe(win.width);
   const big = (await page.locator(FRAME).boundingBox())!;
-  expect(big.height, "it covers the window").toBe(win.height);
-  expect([big.x, big.y]).toEqual([0, 0]);
+  // Arugula #620: the close button has a strip of its own; the page takes the rest.
+  const strip = (await page.locator("[data-prototype-box] .doc-prototype-bar").boundingBox())!;
+  expect(big.y, "the page begins under the strip").toBeCloseTo(strip.y + strip.height, 0);
+  expect(big.y + big.height, "it reaches the window's bottom").toBe(win.height);
+  expect([big.x, strip.y]).toEqual([0, 0]);
   expect(big.height).toBeGreaterThan(small.height);
   await expect(inside.locator("#n"), "state kept going in").toHaveText(String(n0 + 1));
   await page.waitForTimeout(300);
@@ -114,8 +117,9 @@ export async function counterKept(page: Page, close: "button" | "esc" | "esc-in-
   }
   await expect.poll(() => box.evaluate((el) => el.matches(":popover-open"))).toBe(false);
   expect((await page.locator(FRAME).boundingBox())!.height, "back to its height").toBe(300);
-  // A press right after the layout moved can reach the page above, not the frame.
-  await page.waitForTimeout(300);
+  // A press right after the layout moved can reach the page above, not the frame (longer since #620's strip: closing
+  // Full window moves the frame by a strip's height as well).
+  await page.waitForTimeout(1500);
   await expect(inside.locator("#n"), "no reload: the counter is where it was").toHaveText(String(n0 + 2));
   await inside.locator("#inc").click();
   await expect(inside.locator("#n"), "and the frame still answers").toHaveText(String(n0 + 3));
