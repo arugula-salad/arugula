@@ -3,7 +3,7 @@
   "commit": "665cdb10ed705245af5afaf697068c829f8504b6",
   "branch": "main",
   "state": "red",
-  "at": "2026-11-03T08:03:51Z",
+  "at": "2026-11-03T08:08:26Z",
   "phases": {
     "lint": {
       "verdict": "pass",
@@ -162,7 +162,7 @@
       ]
     },
     "macos": {
-      "verdict": "pending",
+      "verdict": "fail",
       "build": "newest",
       "runs": [
         {
@@ -171,8 +171,7 @@
           "conclusion": "failure",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/41592022294/job/125772683958"
         }
-      ],
-      "reason": "retrying"
+      ]
     },
     "windows": {
       "verdict": "fail",
