@@ -190,6 +190,7 @@ impl features::Feature for Feature {
                 "/api/daemon/chat/rooms/{id}/messages",
                 get(chat::agent_threads::messages).post(chat::agent_threads::post),
             )
+            .route("/api/daemon/chat/rooms/{id}/threads/{seq}/agents", get(chat::agent_threads::thread_agents))
             .route("/api/daemon/chat/rooms/{id}/agents/{machine}/sessions", get(chat::agent_threads::machine_sessions))
             .route(
                 "/api/daemon/chat/rooms/{id}/files",

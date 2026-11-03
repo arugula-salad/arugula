@@ -1713,6 +1713,12 @@ pub fn agent_machine_sessions(room: &str, machine: &str) -> String {
     format!("{AGENT_ROOMS}/{room}/agents/{machine}/sessions")
 }
 
+/// The agents in a thread, for an agent reading it (`GET`, answered
+/// [`ChatThreadAgents`], #649). Refused unless the machine reads `room`.
+pub fn agent_thread_agents(room: &str, seq: i64) -> String {
+    format!("{AGENT_ROOMS}/{room}/threads/{seq}/agents")
+}
+
 /// [`agent_machine_sessions`]' query.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]

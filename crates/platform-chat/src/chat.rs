@@ -1202,7 +1202,7 @@ async fn lead_told(
 }
 
 /// The op that tells a daemon about `told`, for `session` ([`session_for`]).
-fn mention_op(told: &Told<'_>, session: Option<String>) -> arugula_control_wire::forge::DaemonOp {
+fn mention_op(told: &Told<'_>, session: Option<String>, others: Vec<String>) -> arugula_control_wire::forge::DaemonOp {
     use arugula_control_wire::forge::{AgentMention, DaemonOp};
     DaemonOp::AgentMention(AgentMention {
         room: told.room.id.clone(),
@@ -1214,6 +1214,7 @@ fn mention_op(told: &Told<'_>, session: Option<String>) -> arugula_control_wire:
         text: told.text.to_owned(),
         session,
         from_session: told.from_session.clone(),
+        others,
         root_line: told.root_line.clone(),
     })
 }
@@ -1265,6 +1266,13 @@ async fn plan_tells(
             return vec![];
         }
     };
+    // Who else is in the thread (#649). A post doesn't fail for want of it.
+    let seen = match told.parent.map(|p| app.db.chat_message(&told.room.id, p)) {
+        Some(Ok(Some(first))) => {
+            thread_agents::in_thread(app, told.room, first.seq, first).map(|(_, s)| s).unwrap_or_default()
+        }
+        _ => vec![],
+    };
     let mut out = vec![];
     for a in agents.iter().filter(|a| want.contains(&a.machine.as_str()) && a.powers.iter().any(|p| p == THREADS_READ))
     {
@@ -1301,7 +1309,9 @@ async fn plan_tells(
         if held {
             continue;
         }
-        out.push(Tell { machine: a.machine.clone(), op: mention_op(told, session_for(told, a, is_mentioned)) });
+        let session = session_for(told, a, is_mentioned);
+        let others = thread_agents::others_in(&seen, &agents, &a.machine, session.as_deref());
+        out.push(Tell { machine: a.machine.clone(), op: mention_op(told, session, others) });
     }
     out
 }
@@ -1507,7 +1517,7 @@ async fn mention_to_resend(
         root_line: root_line(app, &room, m.parent),
         to: vec![],
     };
-    Ok(mention_op(&told, session_for(&told, a, true)))
+    Ok(mention_op(&told, session_for(&told, a, true), vec![]))
 }
 
 // ---------------------------------------------------------------- live
