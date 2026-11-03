@@ -60,10 +60,10 @@ test("make a recipe in a project from the form, edit it, offer it, run it, delet
   test.setTimeout(120_000);
   await open(page);
   // The page is a place in the bar, beside Panes and Swarm.
-  await page.locator(".ws-rail [data-open-agents]").click();
+  await page.locator("[data-machine-recipes]").click();
   const p = page.locator("[data-agents-page=recipes]");
   await expect(p).toBeVisible();
-  await expect(page.locator(".ws-rail [data-open-agents]")).toHaveAttribute("aria-current", "page");
+  await expect(page.locator("[data-machine-recipes]")).toHaveAttribute("aria-current", "page");
 
   // A project of ours.
   await p.locator("[data-add-project]").click();

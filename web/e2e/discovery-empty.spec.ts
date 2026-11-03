@@ -52,7 +52,7 @@ test("the bell offers no Set up where the hooks are in", async ({ page }) => {
 test("the Docs page with no Docs offers Start an agent, which opens its dialog", async ({ page }) => {
   await page.route(/\/api\/docs$/, (r) => (r.request().method() === "GET" ? r.fulfill({ json: [] }) : r.fallback()));
   await reset(page);
-  await page.locator(".ws-rail [data-open-docs]").click();
+  await page.locator("[data-machine-docs]").click();
   const empty = page.locator("[data-docs-page] [data-docs-empty]");
   await expect(empty).toContainText("Ask any agent for a Doc");
   await empty.locator("[data-docs-start-agent]").click();

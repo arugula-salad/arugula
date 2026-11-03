@@ -139,7 +139,7 @@ test("a viewer's workspace hides what they can't do, or says why it's off", asyn
     await expect(friend.locator(sel)).toHaveAttribute("title", "Viewers can't change the layout");
   }
   // Docs are the owner's (#1494): a guest has no page.
-  await expect(owner.locator(".ws-rail [data-open-docs]")).toBeVisible();
+  await expect(owner.locator("[data-machine-docs]")).toBeVisible();
   await expect(friend.locator("[data-open-docs]")).toHaveCount(0);
   await friend.evaluate(() => (location.hash = "docs"));
   await friend.waitForTimeout(300);

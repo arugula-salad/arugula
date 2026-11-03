@@ -62,7 +62,7 @@ const askDelete = async (page: Page, title: string) => {
   await page.getByRole("menuitem", { name: "Delete…" }).click();
 };
 const goToDocs = async (page: Page) => {
-  await page.locator(".ws-rail [data-open-docs]").click();
+  await page.locator("[data-machine-docs]").click();
   await expect(page.locator("[data-docs-page]")).toBeVisible();
 };
 const activePane = (page: Page) => page.evaluate(() => window.__arugula.client.active()!);
@@ -97,7 +97,7 @@ const docId = async (title: string) => ((await (await fetch(`${url}/api/docs`)).
 test("with no Doc the page says where they come from", async ({ page }) => {
   await reset(page);
   await goToDocs(page);
-  await expect(page.locator(".ws-rail [data-open-docs]")).toHaveAttribute("aria-current", "page");
+  await expect(page.locator("[data-machine-docs]")).toHaveAttribute("aria-current", "page");
   await expect(page.locator("[data-docs-empty]")).toContainText("Docs your agents write show up here.");
   await expect(page.locator("[data-doc]")).toHaveCount(0);
 });

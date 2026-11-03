@@ -119,7 +119,7 @@ test("on a desktop: no chat or threads, no studio or VMs, no ssh invite", async 
   await expect(page.locator("[data-open-chat]")).toHaveCount(0);
   // The Docs page (#1494) isn't Labs' (native #204): in the rail, and at
   // its address.
-  await expect(page.locator(".ws-rail [data-open-docs]")).toBeVisible();
+  await expect(page.locator("[data-machine-docs]")).toBeVisible();
   await page.goto("/#docs");
   await expect(page.locator("[data-docs-page]")).toBeVisible();
   await open(page);
@@ -300,8 +300,8 @@ test("setting the flag on the running daemon brings it all back, with no restart
   await page.goto("/#swarm");
   await expect(page.locator("[data-theme-pick]")).toHaveCount(4);
 
-  // And the Docs page: in the rail, and at its address.
-  await expect(page.locator(".ws-rail [data-open-docs]")).toBeVisible();
+  // And the Docs page: at its address, and one of the machine's places.
   await page.goto("/#docs");
   await expect(page.locator("[data-docs-page]")).toBeVisible();
+  await expect(page.locator("[data-machine-docs]")).toHaveAttribute("aria-current", "page");
 });

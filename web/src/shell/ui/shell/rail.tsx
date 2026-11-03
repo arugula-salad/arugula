@@ -1,7 +1,8 @@
-// The rail down the left of the workspace (M108, #1023): Arugula's mark
-// (this machine's sessions), Panes, Swarm, Chat (on
-// the platform page, M153), Boards (with the `boards` flag), Docs, Agents and
-// Settings, with Projects (the platform page's `/`) above them all (#376).
+// The rail down the left of the workspace (M108, #1023): the whole app, with
+// the same places as the platform page's (Arugula #640). Arugula's mark (this
+// machine's sessions), Panes, Swarm, Chat (on the platform page, M153) and
+// Settings, with Projects (the platform page's `/`) above them all (#376). A
+// machine's Docs and Recipes are its bar's (MachinePlaces).
 // It stays while the swarm or agents cover the panes, so the way back is
 // always in one place, and Panes goes back to the session's last tab and
 // pane (the routes never change the selection). The rail itself is
@@ -11,15 +12,13 @@ import { useEffect, useState } from "preact/hooks";
 import type { Client } from "../../client";
 import { directory } from "../../hosts";
 import { SWARM_ABOUT, onSwarmRoute, openSwarm } from "../../swarm/route";
-import { openAgentsPage } from "../agents-route";
-import { openDocsPage } from "../docs-route";
 import { settingsItems } from "../commands";
 import { openMenu } from "../../../shared/ui/menu";
 import { Rail as SharedRail, type RailItem } from "../../../shared/ui/rail";
 import { openPlatform, platformHref } from "../../platform-links";
-import { chatUnread, closePlace, currentPlace, hasBoards, hasChat, openBoards, openChat, openOverview, useChatTick, type Place } from "../places";
+import { chatUnread, closePlace, currentPlace, hasChat, openChat, openOverview, useChatTick, type Place } from "../places";
 import { countView } from "../../../shared/telemetry";
-import { AgentsIcon, BoardsIcon, ChatIcon, DocsIcon, Mark, PanesIcon, ProjectsIcon, SettingsIcon, SwarmIcon } from "./icons";
+import { ChatIcon, Mark, PanesIcon, ProjectsIcon, SettingsIcon, SwarmIcon } from "./icons";
 import { focusSessionSearch } from "./prefs";
 
 /** Re-render on any route change, the swarm's too (it closes without a
@@ -43,9 +42,6 @@ export function Rail({ client }: { client: Client }) {
   const at = usePlace(client);
   const threads = hasChat();
   const { n, mention } = threads ? chatUnread() : { n: 0, mention: false };
-  // As places.tsx decides: the machine owner's, Agents with the Labs flag.
-  const agents = client.flag("agent-delegation") && !client.state?.roles;
-  const docs = !client.state?.roles;
   const host = directory.current || "this machine";
   // Back to the page you left there (Arugula #638), or the list on a first visit.
   const PROJECTS_PATH = "/?back";
@@ -72,7 +68,7 @@ export function Rail({ client }: { client: Client }) {
       target: "arugula-platform",
       onClick: () => openPlatform(PROJECTS_PATH),
     },
-    { label: "Panes", tip: "Your panes: back to this session's last tab and pane", here: at === "panes", hook: "data-open-panes", icon: <PanesIcon />, onClick: panes },
+    { label: "Panes", tip: "Your panes: back to this session's last tab and pane", here: at === "panes" || at === "docs" || at === "agents", hook: "data-open-panes", icon: <PanesIcon />, onClick: panes },
     {
       label: "Swarm",
       aria: `Swarm: ${SWARM_ABOUT}`,
@@ -91,30 +87,6 @@ export function Rail({ client }: { client: Client }) {
       icon: <ChatIcon />,
       count: { n, mention },
       onClick: () => openChat(),
-    },
-    hasBoards(client) && {
-      label: "Boards",
-      tip: "Boards: your projects' boards and epics, on the platform page",
-      here: false,
-      hook: "data-open-boards",
-      icon: <BoardsIcon />,
-      onClick: () => openBoards(),
-    },
-    docs && {
-      label: "Docs",
-      tip: "Docs: the Docs your agents wrote, to open again",
-      here: at === "docs",
-      hook: "data-open-docs",
-      icon: <DocsIcon />,
-      onClick: () => at !== "docs" && openDocsPage(),
-    },
-    agents && {
-      label: "Agents",
-      tip: "Agents: this machine's recipes and your team's agents",
-      here: at === "agents",
-      hook: "data-open-agents",
-      icon: <AgentsIcon />,
-      onClick: () => at !== "agents" && openAgentsPage(),
     },
   ];
   const brand = (
