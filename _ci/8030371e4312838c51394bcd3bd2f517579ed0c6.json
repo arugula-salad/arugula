@@ -3,7 +3,7 @@
   "commit": "8030371e4312838c51394bcd3bd2f517579ed0c6",
   "branch": "main",
   "state": "pending",
-  "at": "2026-11-03T07:45:18Z",
+  "at": "2026-11-03T07:47:18Z",
   "phases": {
     "lint": {
       "verdict": "pass",
@@ -60,19 +60,20 @@
         {
           "name": "test",
           "id": 125787579397,
-          "conclusion": null,
+          "conclusion": "failure",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/41597016731/job/125787579397"
         },
         {
           "name": "test-2",
           "id": 125787579405,
-          "conclusion": null,
+          "conclusion": "failure",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/41597016731/job/125787579405"
         }
-      ]
+      ],
+      "reason": "retrying"
     },
     "e2e": {
-      "verdict": "pending",
+      "verdict": "pass",
       "build": "newest",
       "runs": [
         {
@@ -84,7 +85,7 @@
         {
           "name": "e2e (10)",
           "id": 125788854636,
-          "conclusion": null,
+          "conclusion": "success",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/41597016731/job/125788854636"
         },
         {
@@ -114,7 +115,7 @@
         {
           "name": "e2e (4)",
           "id": 125788854603,
-          "conclusion": null,
+          "conclusion": "success",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/41597016731/job/125788854603"
         },
         {
@@ -138,7 +139,7 @@
         {
           "name": "e2e (8)",
           "id": 125788854610,
-          "conclusion": null,
+          "conclusion": "success",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/41597016731/job/125788854610"
         },
         {
@@ -219,6 +220,14 @@
     "workspace-clippy": {
       "run": 125788480769,
       "at": "2026-11-03T07:45:18Z"
+    },
+    "test": {
+      "run": 125787579397,
+      "at": "2026-11-03T07:47:18Z"
+    },
+    "test-2": {
+      "run": 125787579405,
+      "at": "2026-11-03T07:47:18Z"
     }
   }
 }
