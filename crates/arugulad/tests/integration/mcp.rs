@@ -148,7 +148,7 @@ async fn tools_through_the_stdio_bridge() {
 
     // The tools, with honest annotations: grouped by kind (#349).
     let tools = s.list_all_tools().await.unwrap();
-    assert_eq!(tools.len(), 37 - NO_FORGE);
+    assert_eq!(tools.len(), 40 - NO_FORGE);
     // Studio apps and chant workspaces aren't listed without their flags,
     // and a caller who names one is told how to turn it on (#347); a build
     // without Labs says it isn't built. Daemon-side Managoat was removed: its
@@ -431,7 +431,7 @@ async fn stateless_clients_get_the_cache_hints_claude_code_wants() {
     // (and retries it, then gives up: no tools).
     let tools = s.list_tools(None).await.unwrap();
     assert_eq!((tools.ttl_ms, tools.cache_scope), (Some(0), Some(CacheScope::Private)));
-    assert_eq!(tools.tools.len(), 37 - NO_FORGE, "without labs");
+    assert_eq!(tools.tools.len(), 40 - NO_FORGE, "without labs");
     let t = s.list_resource_templates(None).await.unwrap();
     assert_eq!((t.ttl_ms, t.cache_scope), (Some(0), Some(CacheScope::Private)));
     let r = call(&s, "run", json!({ "command": "echo stateless", "wait": true })).await;
@@ -592,7 +592,7 @@ async fn http_with_a_token_until_it_is_revoked() {
         d.post("/api/mcp/tokens", json!({ "name": "watcher", "scope": "read" }))["token"].as_str().unwrap().to_owned();
     let w = http(&d, &ro, Client::named("watcher")).await.unwrap();
     // (read_forge is among the read-only tools only with the forge.)
-    assert_eq!(w.list_all_tools().await.unwrap().len(), 15 - NO_FORGE / 2);
+    assert_eq!(w.list_all_tools().await.unwrap().len(), 16 - NO_FORGE / 2);
     assert!(refused(&w, "run", json!({ "command": "true" })).await.contains("may only read"));
     // Grouped, a write is still a write.
     assert!(refused(&w, "show", json!({ "kind": "port", "port": 1 })).await.contains("may only read"));
@@ -1089,7 +1089,7 @@ async fn labs_lists_all_the_tools() {
     let s = bridge(&d, Client::named("claude-code")).await;
     let names = |tools: &[rmcp::model::Tool]| tools.iter().map(|t| t.name.to_string()).collect::<Vec<_>>();
     let instructions = |s: &Session| s.peer_info().and_then(|i| i.instructions.clone()).unwrap_or_default();
-    assert_eq!(s.list_all_tools().await.unwrap().len(), 37 - NO_FORGE);
+    assert_eq!(s.list_all_tools().await.unwrap().len(), 40 - NO_FORGE);
     assert!(!instructions(&s).contains("read_thread"), "{}", instructions(&s));
 
     // With Labs built in, the `labs` file lists them.
@@ -1105,16 +1105,16 @@ async fn labs_lists_all_the_tools() {
         for (tool, kind) in [("show", "managoat"), ("list", "managoat_agents"), ("list", "managoat_agent")] {
             assert!(!kinds(&with, tool).contains(&kind.to_owned()), "retired {tool} kind {kind} is listed with labs");
         }
-        // A new connection's instructions have no thread text.
+        // A new connection's instructions have no thread-reading text.
         let s2 = bridge(&d, Client::named("claude-code")).await;
-        assert!(!instructions(&s2).contains("thread"), "{}", instructions(&s2));
+        assert!(!instructions(&s2).contains("read_thread"), "{}", instructions(&s2));
         s2.cancel().await.unwrap();
 
         arugula_testkit::labs(&d.state, false);
         // A `fountain` flag from before #942's F5 changes nothing.
         std::fs::write(d.state.join("flags.json"), r#"{"flags":{"fountain":false}}"#).unwrap();
         let without = s.list_all_tools().await.unwrap();
-        assert_eq!(without.len(), 37 - NO_FORGE);
+        assert_eq!(without.len(), 40 - NO_FORGE);
         assert!(!kinds(&without, "show").contains(&"managoat".to_owned()));
         assert!(!kinds(&without, "show").contains(&"workspace".to_owned()));
     }
@@ -1123,7 +1123,7 @@ async fn labs_lists_all_the_tools() {
     {
         arugula_testkit::labs(&d.state, true);
         let with = s.list_all_tools().await.unwrap();
-        assert_eq!(with.len(), 37 - NO_FORGE, "{:?}", names(&with));
+        assert_eq!(with.len(), 40 - NO_FORGE, "{:?}", names(&with));
         assert!(!kinds(&with, "show").contains(&"managoat".to_owned()));
         assert!(!instructions(&s).contains("read_thread"), "{}", instructions(&s));
         arugula_testkit::labs(&d.state, false);
@@ -1147,7 +1147,7 @@ async fn a_flag_turned_on_later_reaches_the_open_session() {
     let caps = call(&s, "capabilities", json!({})).await;
     assert!(caps.get("tool_status").is_none(), "everything is loaded at first: {caps}");
     let has = |tools: &[rmcp::model::Tool], name: &str| tools.iter().any(|t| t.name == name);
-    assert!(!has(&s.list_all_tools().await.unwrap(), "board_read"));
+    assert!(!has(&s.list_all_tools().await.unwrap(), "delegate"));
     assert_eq!(client.list_changed.load(Ordering::Relaxed), 0);
 
     arugula_testkit::labs(&d.state, true);
@@ -1157,12 +1157,12 @@ async fn a_flag_turned_on_later_reaches_the_open_session() {
         tokio::time::sleep(Duration::from_millis(200)).await;
     }
     let caps = call(&s, "capabilities", json!({})).await;
-    let status = caps["tool_status"].as_array().expect("tool_status").iter().find(|t| t["tool"] == "board_read");
-    let status = status.unwrap_or_else(|| panic!("board_read isn't said to be missing: {caps}"));
+    let status = caps["tool_status"].as_array().expect("tool_status").iter().find(|t| t["tool"] == "delegate");
+    let status = status.unwrap_or_else(|| panic!("delegate isn't said to be missing: {caps}"));
     assert_eq!(status["status"], "reconnect", "{status}");
     assert!(status["note"].as_str().unwrap().contains("will pick it up"), "{status}");
 
-    assert!(has(&s.list_all_tools().await.unwrap(), "board_read"), "the next tools/list has the board tools");
+    assert!(has(&s.list_all_tools().await.unwrap(), "delegate"), "the next tools/list has delegate");
     let caps = call(&s, "capabilities", json!({})).await;
     assert!(caps.get("tool_status").is_none(), "listed again, so loaded: {caps}");
     // Read again with the same flags, it is not told twice.
@@ -1892,7 +1892,7 @@ async fn an_agent_drafts_on_a_linked_pr_with_no_block_and_a_person_sees_it() {
     let tools = s.list_all_tools().await.unwrap();
     assert_eq!(
         kinds(&tools, "forge_read"),
-        ["pr", "issue", "items", "checks", "inbox", "drafts", "draft", "native_issues"]
+        ["pr", "issue", "items", "tracker_fields", "checks", "inbox", "drafts", "draft", "native_issues"]
     );
     assert_eq!(kinds(&tools, "forge_draft"), ["comment", "review", "issue", "open_on_github", "discard"]);
     assert!(tools.iter().all(|t| !t.name.contains("send") || t.name == "send_input"), "a send tool");
@@ -3080,7 +3080,8 @@ async fn an_agent_reads_and_writes_a_board() {
             "create_board",
             "edit_board",
             "close_board",
-            "reopen_board"
+            "reopen_board",
+            "lead_board"
         ]
     );
     // show's board kind pins one beside the caller, by its id.

@@ -901,6 +901,26 @@ mod tests {
         fs::remove_dir_all(&d).unwrap();
     }
 
+    /// Boards left Labs (native #191): a file or a push that still names
+    /// `boards` turns nothing on or off and survives a write, the Labs
+    /// list no longer has it, and setting it says why it's gone.
+    #[test]
+    fn boards_left_labs_and_an_old_word_for_them_is_ignored() {
+        assert!(FLAGS.iter().all(|f| f.name != "boards"), "the Labs list doesn't offer boards");
+        let d = dir("boards-retired");
+        fs::write(d.join(FILE), r#"{"flags":{"boards":true,"studio":true}}"#).unwrap();
+        write_control(&d, &pushed(&[("boards", false)], &[("boards", true)])).unwrap();
+        assert_eq!(names(&d), [STUDIO]);
+        assert!(!get(&d, "boards"));
+        set(&d, ADDITIONAL_FORGES, true).unwrap();
+        let v: Value = serde_json::from_str(&fs::read_to_string(d.join(FILE)).unwrap()).unwrap();
+        assert_eq!(v["flags"]["boards"], true, "an older daemon still reads its word");
+        let e = set(&d, "boards", true).unwrap_err();
+        assert_eq!(e.kind(), io::ErrorKind::InvalidInput);
+        assert!(e.to_string().contains("no longer in Labs"), "{e}");
+        fs::remove_dir_all(&d).unwrap();
+    }
+
     /// Huddles were removed (2026-10-18): a `flags.json` an older daemon
     /// wrote with `"huddles": true`, or control still pushing it, loads
     /// without error and turns nothing on.

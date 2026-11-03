@@ -110,20 +110,16 @@ test("a team with chat on, and a machine of Alice's", async ({ browser }) => {
   await expect(alice.locator("[data-chat-control]")).toHaveCount(0);
 
   // The rail's places (#338): with Labs on, every flag is on until a list
-  // says otherwise, so Boards sits between Chat and Docs, and Agents after
-  // Docs; turn the `boards` flag off and it goes.
+  // says otherwise, so Agents sits after Docs; Boards sits between Chat and
+  // Docs with or without a flag (it left Labs, #191), and the old flag
+  // can't be set any more.
   const places = () => alice.locator(".ws-rail > .ws-rail-button .ws-rail-label").allTextContents();
   await expect.poll(places).toEqual(["Projects", "Panes", "Swarm", "Chat", "Boards", "Docs", "Agents", "Settings"]);
-  expect((await call(alice, "PUT", "/api/flags/boards", { on: false })).status).toBe(200);
-  // The page reads the flags as it loads.
-  await home(alice);
-  await show(alice, "alices");
-  await expect.poll(places).toEqual(["Projects", "Panes", "Swarm", "Chat", "Docs", "Agents", "Settings"]);
-  await expect(alice.locator(".ws-rail [data-open-boards]")).toHaveCount(0);
-  expect((await call(alice, "PUT", "/api/flags/boards", { on: true })).status).toBe(200);
+  expect((await call(alice, "PUT", "/api/flags/boards", { on: false })).status).not.toBe(200);
   await home(alice);
   await show(alice, "alices");
   await expect.poll(places).toEqual(["Projects", "Panes", "Swarm", "Chat", "Boards", "Docs", "Agents", "Settings"]);
+  await expect(alice.locator(".ws-rail [data-open-boards]")).toHaveCount(1);
   // Boards opens every project's boards (#339), not the project list.
   const [boards] = await Promise.all([alice.context().waitForEvent("page"), alice.locator(".ws-rail [data-open-boards]").click()]);
   await expect(boards).toHaveURL(`${app}/boards`, { timeout: 15_000 });

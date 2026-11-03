@@ -70,7 +70,7 @@ pub fn every_description_and_the_instructions_fit_the_cut() {
 
 pub fn annotations_are_honest() {
     let all = list(Scope::Full, fl(false));
-    assert_eq!(all.len(), 37 - no_forge());
+    assert_eq!(all.len(), 40 - no_forge());
     let ro: Vec<&str> = all
         .iter()
         .filter(|t| t.annotations.as_ref().and_then(|a| a.read_only_hint) == Some(true))
@@ -89,6 +89,7 @@ pub fn annotations_are_honest() {
         "read_cloud",
         "read_thread",
         "search_threads",
+        "board_read",
         "read_run",
         "read_deploy",
         "read_session",
@@ -185,9 +186,9 @@ pub fn unlisted_tools_are_not_listed_without_labs_but_are_there() {
         assert!(defs(fl(false)).iter().any(|d| d.name == name), "{name} is everyone's");
     }
     assert_eq!(every.len(), 41);
-    assert_eq!(defs(fl(false)).len(), 37 - no_forge());
+    assert_eq!(defs(fl(false)).len(), 40 - no_forge());
     assert_eq!(defs(fl(true)).len(), 41 - no_forge());
-    assert_eq!(every.len(), defs(fl(false)).len() + 4 + no_forge(), "and delegate, the board tools and tracker_write");
+    assert_eq!(every.len(), defs(fl(false)).len() + 1 + no_forge(), "and delegate");
 }
 
 /// docs/mcp-permissions.json allows the read-only tools and asks for the
@@ -229,10 +230,11 @@ pub fn the_card_lists_what_this_machine_offers() {
     }
     // Parts of another's line never show on their own.
     assert!(!all.contains(&"wait".to_owned()) && !all.contains(&"close".to_owned()));
+    assert!(!all.contains(&"board_write".to_owned()), "board_write rides on board_read's line");
     // A flag: delegating (the agent catalog's).
     assert!(all.contains(&"delegate".to_owned()) && !bare.contains(&"delegate".to_owned()));
     // What control and its grants give.
-    for t in ["cloud", "start_run", "read_thread", "issue_write", "board_read", "board_write", "tracker_write"] {
+    for t in ["cloud", "start_run", "read_thread", "issue_write", "board_read", "tracker_write"] {
         assert!(all.contains(&t.to_owned()) && !bare.contains(&t.to_owned()), "{t}");
     }
     if crate::forges::built() {
