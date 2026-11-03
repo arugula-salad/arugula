@@ -312,6 +312,27 @@ fn inbox_notice(m: &AgentMention) -> Notice {
     }
 }
 
+/// Raise the cards again for what the inbox still holds (#551): the mux
+/// keeps none across a restart, the unread mentions do. One per room, with the
+/// room's count and its newest mention's headline.
+pub async fn reraise(app: &App) {
+    reraise_in(app).await;
+}
+
+async fn reraise_in(app: &impl Daemon) {
+    let mut rooms: Vec<(String, u32, AgentMention)> = vec![];
+    // Oldest first: the last one in a room is its newest.
+    for m in app.mentions().unread() {
+        match rooms.iter_mut().find(|(r, ..)| *r == m.room) {
+            Some(e) => (e.1, e.2) = (e.1 + 1, m),
+            None => rooms.push((m.room.clone(), 1, m)),
+        }
+    }
+    for (_, count, m) in rooms {
+        app.notice(Notice { count, ..inbox_notice(&m) }).await;
+    }
+}
+
 /// An agent read `room` (`read_thread`): what the machine's inbox held for it
 /// is read, and so is its card (#551).
 pub async fn read_room(app: &App, room: &str) {
@@ -1009,6 +1030,26 @@ mod tests {
     /// A mention that reaches the inbox raises a card that belongs to no
     /// pane (#551): one per room, counted up by a second, and gone when an
     /// agent reads the room. One that a session took raises none.
+    #[tokio::test]
+    async fn a_restart_raises_the_cards_again_from_the_unread_mentions() {
+        let d = Fake::new("reraise", &[]);
+        d.state.keep(&mention());
+        d.state.keep(&AgentMention { seq: 8, text: "newest".into(), ..mention() });
+        d.state.keep(&AgentMention { room: "ch_y".into(), room_name: "ops".into(), ..mention() });
+        assert!(d.notices.lock().unwrap().is_empty(), "the mux starts with none");
+        reraise_in(&d).await;
+        let held = d.notices.lock().unwrap().clone();
+        assert_eq!(
+            held.iter().map(|n| (n.key.as_str(), n.count)).collect::<Vec<_>>(),
+            [("mention:ch_x", 2), ("mention:ch_y", 1)]
+        );
+        assert_eq!(held[0].headline, "Aaron's agent on mini mentioned this machine in #Device keys: newest");
+        // Nothing unread, no cards.
+        let d = Fake::new("reraise-none", &[]);
+        reraise_in(&d).await;
+        assert!(d.notices.lock().unwrap().is_empty());
+    }
+
     #[tokio::test]
     async fn an_inbox_mention_raises_a_card_and_reading_the_room_clears_it() {
         let d = Fake::new("card", &[4]);
