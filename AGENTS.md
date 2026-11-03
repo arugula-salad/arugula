@@ -140,6 +140,9 @@ never compiles the daemon, the mux or Ghostty: build them with
   the platform's broker settles hosted calls at it, and the daemon estimates
   what a Claude Code session cost with it (#398).
 - `crates/testkit`: the harness for the daemon's integration tests.
+- `native/core`: what native clients share (signing, channels, panes, the
+  terminal; aru-132). Its own workspace, outside `crates/` so it isn't a hub
+  input. `just native-check`, and `just native-ios` on a Mac.
 - `crates/desktop`: the desktop app (Tauri). Outside the Cargo workspace, with
   its own `Cargo.lock`, so it releases on its own (#388).
 - `web/`: the web client (TypeScript, Preact, xterm.js). The daemon embeds its

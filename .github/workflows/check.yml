@@ -182,6 +182,11 @@ jobs:
       - name: The desktop app
         if: needs.changes.outputs.app == 'true'
         run: just desktop-check
+      # A change to the wire crates that breaks the native clients' core
+      # shows up here, on every suite run. It's a workspace of its own.
+      - name: The native clients' core
+        if: needs.changes.outputs.suite == 'true'
+        run: just native-check
       - name: THIRD_PARTY.md is current
         run: just notices-check
       - name: sccache's hits
