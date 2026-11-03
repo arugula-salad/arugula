@@ -243,3 +243,41 @@
   content: "✓ ";
   color: var(--accent);
 }
+
+/* Who a message wakes (#647), above the composer. */
+.thread-to {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 5px;
+  padding: 0 0 6px;
+  font-size: 12px;
+}
+
+.thread-to-label {
+  color: var(--dim);
+}
+
+.thread-to-chip {
+  padding: 1px 9px;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  background: none;
+  color: var(--subtle);
+  font: inherit;
+  cursor: pointer;
+}
+
+.thread-to-chip:hover:not(:disabled) {
+  background: var(--raised);
+}
+
+.thread-to-chip[aria-pressed="true"] {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 22%, var(--surface));
+  color: var(--fg);
+}
+
+.thread-to-chip:disabled {
+  cursor: default;
+}

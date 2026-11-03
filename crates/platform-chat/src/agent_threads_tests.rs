@@ -768,6 +768,62 @@ async fn agents_are_told_at_most_ten_times_per_thread_per_machine_in_a_window() 
     assert!(app.chat.agent_told("ch_general", root, "geek", now + crate::chat::AGENT_TOLD_WINDOW_MS));
 }
 
+/// The composer chooses who a reply wakes (#647): the chosen session and not
+/// the agent it replies to; nobody with an empty list; an agent named in the
+/// text as well. A machine that doesn't hear the room is left out, and without
+/// the field a reply goes to the agent it answers, as ever.
+#[tokio::test]
+async fn the_composer_chooses_who_a_reply_wakes() {
+    let (hub, _app, base, t, _u) = seeded().await;
+    geek_in_t(&base, &t).await;
+    hub.daemon("mini", "a", Some("t"));
+    for power in [THREADS_POST, THREADS_READ] {
+        let (st, g) =
+            call(&base, "a", "POST", "/api/grants", give("mini", power, json!({ "kind": "project", "id": t }))).await;
+        assert_eq!(st, 200, "{g}");
+    }
+    hub.answers_ops("geek", OpAnswer::Done { url: None, routed: None });
+    hub.answers_ops("mini", OpAnswer::Done { url: None, routed: None });
+    let room = "/api/chat/rooms/ch_general/messages";
+    let (_, v) = call(&base, "b", "POST", room, say("a thread")).await;
+    let root = v["seq"].as_i64().unwrap();
+    agent_says(&base, "geek", "Alpha", "my view", Some(root)).await;
+    let says = |text: &str, to: Value| Some(json!({ "text": text, "parent": root, "to": to }));
+    let (asked, wait) = (|m: &str| asked_of(&hub, m).len(), std::time::Duration::from_millis(250));
+
+    // Nobody: not even the agent it replies to.
+    let (st, v) = call(&base, "b", "POST", room, says("just talking", json!([]))).await;
+    assert_eq!(st, 200, "{v}");
+    tokio::time::sleep(wait).await;
+    assert_eq!((asked("geek"), asked("mini")), (0, 0));
+
+    // Chosen: that session, and not the agent it replies to.
+    let (_, v) =
+        call(&base, "b", "POST", room, says("over to you", json!([{ "id": "mini", "session": "wake" }]))).await;
+    assert_eq!(v["mentions"], json!(["machine:mini"]), "{v}");
+    tokio::time::sleep(wait).await;
+    assert_eq!((asked("geek"), asked("mini")), (0, 1));
+    assert_eq!(asked_of(&hub, "mini")[0].session.as_deref(), Some("wake"));
+
+    // A machine that doesn't hear the room isn't told, and isn't stored.
+    let (_, v) = call(&base, "b", "POST", room, says("anyone?", json!([{ "id": "nope" }]))).await;
+    assert_eq!(v["mentions"], json!([]), "{v}");
+
+    // Named in the text as well as chosen: both.
+    let (_, v) =
+        call(&base, "b", "POST", room, says("@geek-box you too", json!([{ "id": "mini", "session": "wake" }]))).await;
+    assert!(v["seq"].is_number(), "{v}");
+    tokio::time::sleep(wait).await;
+    assert_eq!((asked("geek"), asked("mini")), (1, 2));
+
+    // Without the field: the agent it replies to, as before.
+    agent_says(&base, "geek", "Alpha", "still here", Some(root)).await;
+    let (_, v) = call(&base, "b", "POST", room, Some(json!({ "text": "and you?", "parent": root }))).await;
+    assert!(v["seq"].is_number(), "{v}");
+    tokio::time::sleep(wait).await;
+    assert_eq!(asked("geek"), 2);
+}
+
 /// A thread's agents (#645): each session that spoke in it, what its machine
 /// says it's doing, an offline machine as offline, and nothing for a thread
 /// with no agents. Whoever sees the room may ask; a stranger may not.

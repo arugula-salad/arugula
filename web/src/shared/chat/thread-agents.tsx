@@ -8,7 +8,7 @@
 import { useEffect, useState } from "preact/hooks";
 import { chat } from "../chat-store";
 import { usePlatformApi } from "../platform-api";
-import type { ChatMessage, ChatThreadAgent, ChatThreadAgentState } from "../proto";
+import type { ChatMessage, ChatPostTarget, ChatThreadAgent, ChatThreadAgentState } from "../proto";
 import { sessionSlug } from "./agents";
 import "./thread-agents.css";
 
@@ -170,6 +170,70 @@ export function SeenMarks({ agents, m }: { agents: ChatThreadAgent[]; m: ChatMes
       {here.map((a) => (
         <span key={`${a.id}/${a.name}`}>{agentName(a)}</span>
       ))}
+    </div>
+  );
+}
+
+const keyOf = (a: ChatThreadAgent) => `${a.id}/${a.name}`;
+
+/** The agents a message names (#647): by `@session`, `@machine` or
+ * `@machine/session`, as people write them. Not in code, which names nobody. */
+export function namedIn(agents: ChatThreadAgent[], text: string): ChatThreadAgent[] {
+  const plain = text.replace(/```[\s\S]*?```|`[^`\n]*`/g, " ");
+  const words = new Set([...plain.matchAll(/(?:^|[^\w@])@([\w./-]+)/g)].map((m) => m[1].toLowerCase().replace(/[.,]+$/, "")));
+  return agents.filter((a) => {
+    const name = sessionSlug(a.name);
+    const machine = a.machine_name.toLowerCase();
+    return (!!name && words.has(name)) || (!a.hosted && (words.has(machine) || (!!name && words.has(`${machine}/${name}`))));
+  });
+}
+
+/** Who a message wakes (#647): those it names, else those chosen, else the
+ * thread's lead. */
+export function wakes(agents: ChatThreadAgent[], chosen: string[] | null, text: string): ChatThreadAgent[] {
+  const named = namedIn(agents, text);
+  if (named.length) return named;
+  if (chosen) return agents.filter((a) => chosen.includes(keyOf(a)));
+  return agents.filter((a) => a.lead);
+}
+
+/** What a post sends for them. */
+export function targets(list: ChatThreadAgent[]): ChatPostTarget[] {
+  return list.map((a) => (a.hosted || !a.name ? { id: a.id } : { id: a.id, session: a.name }));
+}
+
+/** The To row above a thread's composer (#647): a chip per agent, and Nobody.
+ * Naming an agent in the text picks it, for that message only. */
+export function ToRow({ agents, chosen, setChosen, text }: { agents: ChatThreadAgent[]; chosen: string[] | null; setChosen: (c: string[]) => void; text: string }) {
+  if (!agents.length) return null;
+  const on = wakes(agents, chosen, text);
+  const named = namedIn(agents, text).length > 0;
+  const toggle = (a: ChatThreadAgent) => {
+    const now = on.map(keyOf);
+    setChosen(now.includes(keyOf(a)) ? now.filter((k) => k !== keyOf(a)) : [...now, keyOf(a)]);
+  };
+  return (
+    <div class="thread-to" role="group" aria-label="Who this wakes" data-thread-to>
+      <span class="thread-to-label">To</span>
+      {agents.map((a) => (
+        <button
+          key={keyOf(a)}
+          type="button"
+          class="thread-to-chip"
+          aria-pressed={on.includes(a)}
+          disabled={named}
+          title={named ? "Named in your message" : undefined}
+          data-thread-to-agent={keyOf(a)}
+          onClick={() => toggle(a)}
+        >
+          {agentName(a)}
+          {a.lead && agents.length > 1 ? " · lead" : ""}
+          {a.state === "offline" ? " · offline" : ""}
+        </button>
+      ))}
+      <button type="button" class="thread-to-chip" aria-pressed={on.length === 0} disabled={named} data-thread-to-nobody onClick={() => setChosen([])}>
+        Nobody
+      </button>
     </div>
   );
 }

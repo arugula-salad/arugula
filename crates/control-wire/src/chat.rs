@@ -782,6 +782,13 @@ pub struct ChatPost {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "ts", ts(optional))]
     pub notify_anyway: Option<bool>,
+    /// In a thread (#647): who this wakes, chosen in the composer, in place
+    /// of the agent it replies to. Agents the text names come too. Empty:
+    /// nobody. Absent: as before this field. Ignored from an agent, and
+    /// outside a thread.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub to: Option<Vec<ChatPostTarget>>,
     /// A reply in the thread of this message (#106): the number of a
     /// message of the room that is not itself a reply.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -976,6 +983,19 @@ pub struct ChatSavedItem {
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct ChatSaved {
     pub items: Vec<ChatSavedItem>,
+}
+
+/// An agent a message is for (#647), as [`ChatThreadAgent`] names it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct ChatPostTarget {
+    /// The machine's id, or a hosted session's `ses_` id.
+    pub id: String,
+    /// The session on the machine, when it has a name.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub session: Option<String>,
 }
 
 /// `GET /api/chat/rooms/{id}/threads/{seq}/agents`: the agents in a thread

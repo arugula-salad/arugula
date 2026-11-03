@@ -1145,6 +1145,8 @@ struct Told<'a> {
     lead: Option<(String, String)>,
     /// The first line of the thread's root, for a reply (#580).
     root_line: Option<String>,
+    /// The sessions the composer chose (#647): (machine's id, session).
+    to: Vec<(String, String)>,
 }
 
 /// One agent a new message is for, ready to be told (#394, #419).
@@ -1174,7 +1176,8 @@ fn board_lead(app: &Platform, room: &Room) -> Option<(String, String)> {
 fn session_for(told: &Told<'_>, a: &ChatRoomAgent, mentioned: bool) -> Option<String> {
     let named =
         told.sessions.iter().find(|(m, _)| mentioned && *m == a.machine_name.to_lowercase()).map(|(_, s)| s.clone());
-    named.or_else(|| told.lead.as_ref().filter(|(m, _)| *m == a.machine).map(|(_, s)| s.clone()))
+    let chosen = || told.to.iter().find(|(m, _)| mentioned && *m == a.machine).map(|(_, s)| s.clone());
+    named.or_else(chosen).or_else(|| told.lead.as_ref().filter(|(m, _)| *m == a.machine).map(|(_, s)| s.clone()))
 }
 
 /// The machine and session to tell of a post on a board's thread (#414): those
@@ -1502,6 +1505,7 @@ async fn mention_to_resend(
         from_session: m.agent.as_ref().and(m.agent_session.clone()),
         lead: board_lead(app, &room),
         root_line: root_line(app, &room, m.parent),
+        to: vec![],
     };
     Ok(mention_op(&told, session_for(&told, a, true)))
 }
@@ -2455,7 +2459,27 @@ pub(crate) async fn post_replied(
     // read nothing), but their owners are asked once the post is stored
     // (#578).
     let unheard = grant_ask::unheard(app, &facts, &room, &unreached).await;
-    let replying_to = replying_to_agent(app, &room, b.parent)?;
+    // The composer's choice (#647): these and whoever the text names, not the
+    // agent this replies to. A person's, in a thread, and only agents that
+    // hear the room: the others' owners never granted it.
+    let to = b.to.as_deref().filter(|_| agent.is_none() && b.parent.is_some());
+    let mut chosen: Vec<(String, String)> = vec![];
+    if let Some(to) = to {
+        let hearing = room_agents(app, &facts, &room).await?;
+        for t in to {
+            if !hearing.iter().any(|a| a.machine == t.id && a.powers.iter().any(|p| p == THREADS_READ)) {
+                continue;
+            }
+            let mention = format!("{}{}", wire::AGENT_MENTION, t.id);
+            if !stored.contains(&mention) {
+                stored.push(mention);
+            }
+            if let Some(session) = &t.session {
+                chosen.push((t.id.clone(), session.clone()));
+            }
+        }
+    }
+    let replying_to = if to.is_some() { None } else { replying_to_agent(app, &room, b.parent)? };
     let chain = if agent.is_some() { agent_chain(app, &room, b.parent)? + 1 } else { 0 };
     let at = now_ms();
     let seq = app.db.add_chat_message(
@@ -2524,6 +2548,7 @@ pub(crate) async fn post_replied(
         from_session,
         lead,
         root_line: root_line(app, &room, b.parent),
+        to: chosen,
     };
     // The daemons are told after this returns (#419): an agent's mention
     // shows in its status line, not in `pushed` or `unreached`.
@@ -2547,7 +2572,13 @@ pub(crate) async fn post_replied(
             Err(e) => tracing::warn!(error = %e, "chat: answering a mention"),
         }
     }
-    let replied = sessions::posted(app, &room, &s.account, agent, via.is_some(), seq, b.parent, text).await;
+    // Chosen away from the thread's hosted session (#647), a reply is chat,
+    // unless the text asks for an agent itself.
+    let quiet = to.is_some_and(|t| !t.iter().any(|x| x.id.starts_with("ses_"))) && !sessions::asks(text);
+    let replied = match quiet {
+        true => None,
+        false => sessions::posted(app, &room, &s.account, agent, via.is_some(), seq, b.parent, text).await,
+    };
     // M205: a comment on a native issue that's on GitHub goes there too,
     // as its person's (an agent's waits as a draft for them); one kept in
     // a sub-thread stays here, and so does what a product posted.

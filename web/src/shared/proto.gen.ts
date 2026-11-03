@@ -1204,6 +1204,13 @@ files?: Array<string>,
  */
 notify_anyway?: boolean, 
 /**
+ * In a thread (#647): who this wakes, chosen in the composer, in place
+ * of the agent it replies to. Agents the text names come too. Empty:
+ * nobody. Absent: as before this field. Ignored from an agent, and
+ * outside a thread.
+ */
+to?: Array<ChatPostTarget>, 
+/**
  * A reply in the thread of this message (#106): the number of a
  * message of the room that is not itself a reply.
  */
@@ -1216,6 +1223,19 @@ also?: boolean,
 /**
  * An agent's post: the name of the session that wrote it (#429). Kept
  * beside the agent, trimmed and cut short; a person's post ignores it.
+ */
+session?: string, };
+
+/**
+ * An agent a message is for (#647), as [`ChatThreadAgent`] names it.
+ */
+export type ChatPostTarget = { 
+/**
+ * The machine's id, or a hosted session's `ses_` id.
+ */
+id: string, 
+/**
+ * The session on the machine, when it has a name.
  */
 session?: string, };
 

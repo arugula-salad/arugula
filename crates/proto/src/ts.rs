@@ -108,6 +108,7 @@ fn generate() -> String {
         c.visit::<ChatRooms>();
         c.visit::<ChatRoomDetail>();
         c.visit::<ChatThreadAgents>();
+        c.visit::<ChatPostTarget>();
         c.visit::<ChatMessages>();
         c.visit::<ChatNewChannel>();
         c.visit::<ChatNewDm>();
