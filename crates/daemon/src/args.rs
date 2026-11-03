@@ -177,7 +177,7 @@ pub enum SharingSetting {
     GuestSsh,
     /// Teammates' messages in a thread reaching this machine's agents.
     AgentMentions,
-    /// What a teammate's agent may learn of this machine's sessions (#577):
+    /// What a teammate's agent may learn of this machine's sessions:
     /// `work`, `names` or `none`.
     AgentSessions,
 }
@@ -188,11 +188,11 @@ pub enum SharingSetting {
 pub enum OnOff {
     On,
     Off,
-    /// An agent-sessions setting (#577): names and what each works on.
+    /// An agent-sessions setting: names and what each works on.
     Work,
-    /// An agent-sessions setting (#577): names only.
+    /// An agent-sessions setting: names only.
     Names,
-    /// An agent-sessions setting (#577): nothing.
+    /// An agent-sessions setting: nothing.
     None,
 }
 
