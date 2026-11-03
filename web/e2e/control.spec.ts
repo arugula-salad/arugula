@@ -1233,7 +1233,7 @@ test("the app's Link GitHub opens the browser, and the window asks again when it
 test("Sign-in and account has the account's email for notices (#1609)", async () => {
   await controlPanel(laptop, "account");
   await expect(laptop.locator("[data-email-address]")).toHaveText("No email");
-  await expect(laptop.locator("[data-email]")).toContainText("this control doesn't send email");
+  await expect(laptop.locator("[data-email]")).toContainText("this server doesn't send email");
   await expect(laptop.locator("[data-email-change]")).toHaveCount(0);
   await laptop.locator(".prompt").getByRole("button", { name: "Done" }).click();
 

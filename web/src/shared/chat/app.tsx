@@ -37,7 +37,7 @@ export function ChatApp({ route, fit, scope }: { route: ChatRoute; fit?: ChatFit
   if (maintenance.down) note = <p data-maintenance-note>{MAINTENANCE_SAID}</p>;
   else if (chat.on === null) {
     note = chat.unreachable ? (
-      <p data-chat-unreachable>Can't reach chat on Arugula control. Trying again…</p>
+      <p data-chat-unreachable>Can't reach chat on Arugula cloud. Trying again…</p>
     ) : (
       <p class="dim" data-chat-loading>
         Loading chat…
@@ -46,13 +46,13 @@ export function ChatApp({ route, fit, scope }: { route: ChatRoute; fit?: ChatFit
   } else if (chat.signedOut) {
     note = (
       <p data-chat-signed-out>
-        You're signed out of Arugula control.{" "}
+        You're signed out of Arugula cloud.{" "}
         <button class="primary" onClick={() => location.reload()}>
           Sign in again
         </button>
       </p>
     );
-  } else note = <p>Chat is off for you. A team owner turns it on for the team under Teams, on Control: its channels, messages and threads.</p>;
+  } else note = <p>Chat is off for you. A team owner turns it on for the team under Teams, on your machines page: its channels, messages and threads.</p>;
   return (
     <div class="chat" data-chat data-chat-off={chat.on === false && !chat.signedOut ? "" : undefined}>
       <Bar />

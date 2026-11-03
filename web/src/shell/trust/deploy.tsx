@@ -114,7 +114,7 @@ export function DeployPrompt({ s, id }: { s: ControlSession; id: string }) {
           {ok && (d.subject || d.expected_version) ? (
             // Not signed: beside the checked facts, never in place of them (#333).
             <p class="dim" data-deploy-reading>
-              The platform reads this as: {deployTitle(d)}
+              Arugula reads this as: {deployTitle(d)}
             </p>
           ) : null}
           {ok && d.requested_at ? (

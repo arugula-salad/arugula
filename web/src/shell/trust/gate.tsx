@@ -33,7 +33,7 @@ function HostedTerms() {
 /** Everything before the app: sign in, approval, no machines yet. */
 export function ControlGate({ s }: { s: ControlSession }) {
   useControl(s);
-  if (s.phase === "loading") return <Center>Connecting to Arugula control…</Center>;
+  if (s.phase === "loading") return <Center>Connecting to Arugula cloud…</Center>;
   if (s.phase === "error")
     return (
       <Center>
@@ -62,7 +62,7 @@ export function ControlGate({ s }: { s: ControlSession }) {
           ) : null}
           {s.info.passkeys ? <PasskeyButtons /> : null}
         </div>
-        {!s.info.github && !s.info.passkeys ? <p class="control-error">No sign-in is configured on this control.</p> : null}
+        {!s.info.github && !s.info.passkeys ? <p class="control-error">No sign-in is configured on this server.</p> : null}
         <HostedTerms />
       </Center>
     );
@@ -382,7 +382,7 @@ function Unvouched({ s }: { s: ControlSession }) {
       <Center>
         <h1>The approval doesn't match this browser's code</h1>
         <p data-unvouched="wrong">
-          {by} approved this browser, but its answer doesn't match the code this browser showed: the code was mistyped, or control changed the account
+          {by} approved this browser, but its answer doesn't match the code this browser showed: the code was mistyped, or Arugula cloud changed the account
           it was approved into. This browser doesn't trust it, and that code is used up.
         </p>
         <p>Enroll it again to get a new code. If the old one is listed under <i>Devices and machines</i> on your other device, remove it there.</p>
@@ -396,7 +396,7 @@ function Unvouched({ s }: { s: ControlSession }) {
     <Center>
       <h1>Check your account's fingerprint</h1>
       <p data-unvouched="missing">
-        {by} approved this browser from a page that didn't use its code, so this browser can't tell your account from one control made up. On{" "}
+        {by} approved this browser from a page that didn't use its code, so this browser can't tell your account from one Arugula cloud made up. On{" "}
         {v.by ? "that device" : "a device you use"}, open <i>Devices and machines</i> and check your account's fingerprint there is this one:
       </p>
       <p class="fingerprint" data-unvouched-account={v.root}>

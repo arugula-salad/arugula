@@ -44,7 +44,7 @@ export function SharedDocs({ s, close }: { s: ControlSession; close: () => void 
   const load = async () => {
     try {
       const res = await fetch("/api/doc-links", { credentials: "same-origin" });
-      if (!res.ok) throw new Error(`control said ${res.status}`);
+      if (!res.ok) throw new Error(`Arugula cloud said ${res.status}`);
       const v = (await res.json()) as Row[] | { links: Row[] };
       const list = Array.isArray(v) ? v : v.links;
       setRows(list);
@@ -119,7 +119,7 @@ export function SharedDocs({ s, close }: { s: ControlSession; close: () => void 
         // The machine is there but wouldn't (or didn't know it): control's own.
       }
       const res = await fetch(`/api/doc-links/${r.id}`, { method: "DELETE", credentials: "same-origin" });
-      if (!res.ok) throw new Error(((await res.json().catch(() => ({}))) as { error?: string }).error ?? `control said ${res.status}`);
+      if (!res.ok) throw new Error(((await res.json().catch(() => ({}))) as { error?: string }).error ?? `Arugula cloud said ${res.status}`);
       setErr("");
       await load();
     } catch (e) {
@@ -131,7 +131,7 @@ export function SharedDocs({ s, close }: { s: ControlSession; close: () => void 
     <div data-shared-docs>
       <h2>Shared Docs</h2>
       <p class="hint">
-        Docs you shared with a link. Control keeps them encrypted and can't read them; the link, with its key, is on the machine that shared it.
+        Docs you shared with a link. Arugula cloud keeps them encrypted and can't read them; the link, with its key, is on the machine that shared it.
       </p>
       {err && <p class="control-error">{err}</p>}
       {note && <p class="hint" data-shared-docs-note>{note}</p>}

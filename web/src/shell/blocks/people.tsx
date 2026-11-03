@@ -175,7 +175,7 @@ function PeopleBlock({ s, shown }: { s: PeopleState | null; shown: boolean }) {
   else if (!ready)
     body = (
       <p class="people-none dim" data-people-needs-control>
-        Who's around is your team's, on Arugula control, and you join as yourself. Open this machine through control's page, signed in, to see them here.
+        Who's around is your team's, on Arugula cloud, and you join as yourself. Open this machine in Arugula cloud, signed in, to see them here.
       </p>
     );
   else if (!shown) body = null;
@@ -195,7 +195,7 @@ function PeopleBlock({ s, shown }: { s: PeopleState | null; shown: boolean }) {
 export async function openPeople(client: Client, o: { from: PaneId }) {
   const session = getControlSession();
   if (session?.phase !== "ready") {
-    return client.toast("Who's around is read as you, through Arugula control: open this machine through control's page, signed in");
+    return client.toast("Who's around is read as you, through Arugula cloud: open this machine in Arugula cloud, signed in");
   }
   const teams = session.teams.filter((t) => t.role !== null).map((t) => ({ value: t.team, label: t.roster.name }));
   if (!teams.length) return client.toast("You're in no team yet: People shows who's around in one");

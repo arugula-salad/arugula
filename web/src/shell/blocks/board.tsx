@@ -38,7 +38,7 @@ function BoardBlock({ client, s, shown }: { client: Client; s: BoardState | null
   else
     body = (
       <p class="board-none dim" data-board-needs-control>
-        A board is your project's, on Arugula control, and you read it as yourself. Open this machine through control's page, signed in, to see it here.
+        A board is your project's, on Arugula cloud, and you read it as yourself. Open this machine in Arugula cloud, signed in, to see it here.
       </p>
     );
   return (
@@ -82,7 +82,7 @@ async function boardChoices(): Promise<PromptChoice[]> {
 /** "Board…": a block for one of the reader's boards, beside `from`. */
 export async function pinBoard(client: Client, o: { from: PaneId }) {
   if (getControlSession()?.phase !== "ready") {
-    return client.toast("A board is read as you, through Arugula control: open this machine through control's page, signed in");
+    return client.toast("A board is read as you, through Arugula cloud: open this machine in Arugula cloud, signed in");
   }
   const choices = boardChoices();
   const v = (await askText("Board", "", "board, or its link", choices))?.trim();

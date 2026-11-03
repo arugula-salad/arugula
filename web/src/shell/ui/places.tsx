@@ -162,7 +162,7 @@ export function Places({ client, at }: { client: Client; at: Place }) {
       {hasChat() && (
         <button
           class="place"
-          title="Chat: your teams' channels, messages and threads, on the platform page"
+          title="Chat: your teams' channels, messages and threads"
           data-open-chat
           onClick={() => openChat()}
         >
@@ -173,7 +173,7 @@ export function Places({ client, at }: { client: Client; at: Place }) {
       {hasBoards(client) && (
         <button
           class="place"
-          title="Boards: your projects' boards and epics, on the platform page"
+          title="Boards: your projects' boards and epics"
           data-open-boards
           onClick={() => openBoards()}
         >

@@ -74,7 +74,7 @@ test("an issue opens as a block in geek's workspace, read as Alice", async ({ br
   // open issue nobody is waiting on has no next-step strip.
   await expect(view.locator("[data-item-head] .item-title")).toHaveText(TITLE);
   await expect(view.locator("[data-item-pill]")).toHaveText("Open");
-  await expect(view.locator('[data-item-source="arugula"]')).toHaveAttribute("title", /read as you, through Arugula control/);
+  await expect(view.locator('[data-item-source="arugula"]')).toHaveAttribute("title", /read as you, through Arugula cloud/);
   await expect(view.locator('[data-item-fact="labels"] .item-label')).toHaveText(["bug"]);
   await expect(view.locator("[data-item-tab]")).toHaveText(["Activity"]);
   await expect(view.locator("[data-issue-body]")).toContainText("dry-run finds nothing");

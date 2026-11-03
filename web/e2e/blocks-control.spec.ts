@@ -275,7 +275,7 @@ test("a browser that can't run the block's worker is told so", async () => {
   const [, second] = await blocks("browser");
   await page.evaluate((b) => window.__arugula.client.setActive(b), second);
   const card = paneEl(page, second).locator("[data-block-nowhere]");
-  await expect(card).toContainText("can't show this block through Arugula control", { timeout: 30_000 });
+  await expect(card).toContainText("can't show this block through Arugula cloud", { timeout: 30_000 });
   await expect(card).toContainText("no service workers");
   await expect(card).toContainText("no block site of its own");
   // It never connected, so it says no route.

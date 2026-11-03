@@ -689,8 +689,8 @@ function Cloud({
   const droppedNote = dropped && (
     <div class="start-said" data-start-dropped>
       <p>
-        This machine is no longer in {placeOf(dropped)}: control dropped it (it left, or was removed).
-        {dropped.said ? ` Control says: ${dropped.said}.` : ""}{" "}
+        This machine is no longer in {placeOf(dropped)}: Arugula cloud dropped it (it left, or was removed).
+        {dropped.said ? ` Arugula cloud says: ${dropped.said}.` : ""}{" "}
         {removed
           ? `Its key can't come back, so it made a new one (${removed.new_key}) and asks to join again; the old one is kept at ${removed.kept}.`
           : "Join again to put it back; the approver picks the account or team."}

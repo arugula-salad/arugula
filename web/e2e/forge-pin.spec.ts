@@ -84,7 +84,7 @@ test("a pinned squash-only PR's Merge ▾ offers only Squash", async ({ page }) 
   await expect(page.locator(".prompt-choices button")).toHaveText(["Squash"]);
 });
 
-test("a pinned PR looks as GitHub's does, read through Arugula control", async ({ page }) => {
+test("a pinned PR looks as GitHub's does, read through Arugula cloud", async ({ page }) => {
   await pin(page);
   await reset(page);
   const block = await open(page, "pr", 1);
@@ -110,7 +110,7 @@ test("a pinned PR looks as GitHub's does, read through Arugula control", async (
   await expect(el).not.toContainText("No description");
   // Where it's read is the source icon's tooltip, not a line.
   const source = el.locator("[data-item-source]");
-  await expect(source).toHaveAttribute("title", /read through Arugula control/);
+  await expect(source).toHaveAttribute("title", /read through Arugula cloud/);
   await expect(source).toHaveAttribute("title", /live \(GitHub App\)/);
   await expect(source).not.toHaveAttribute("title", /polls/);
   await expect(el).not.toContainText("read through");
@@ -131,7 +131,7 @@ test("a pinned issue, and a pin whose platform can't be reached shows what it sa
   await expect(el.locator('[data-item-fact="assignees"] [data-name="jake-gh"]')).toBeVisible();
   // Where it's read is the source icon's tooltip, not a tag or a line.
   const source = el.locator("[data-item-source]");
-  await expect(source).toHaveAttribute("title", /read through Arugula control/);
+  await expect(source).toHaveAttribute("title", /read through Arugula cloud/);
   await expect(el.locator("[data-forge-pin], [data-forge-pin-read]")).toHaveCount(0);
 
   stale = "control answered 502";

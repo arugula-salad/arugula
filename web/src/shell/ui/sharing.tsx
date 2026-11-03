@@ -77,7 +77,7 @@ function SharingDialog({ client, close }: { client: Client; close: () => void })
       <p class="hint">
         Lets you invite someone who has only OpenSSH to watch one of this machine's panes, or type in it if you say so: <i>Invite over
         ssh…</i> in the pane's menu, or <code>arugula share --guest</code>. Each invite ends when it expires or you revoke it. Off
-        until you, the owner, turn it on here; control can't.
+        until you, the owner, turn it on here; Arugula cloud can't.
       </p>
       {error && <p class="error">{error}</p>}
       {sharing?.built === false && <p class="hint">This daemon was built without guest ssh: the switch turns nothing on.</p>}
