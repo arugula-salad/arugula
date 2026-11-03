@@ -151,8 +151,14 @@
   display: none;
 }
 
+/* It sits with the panes, on their background and at their inset, so the
+   space around it is even (the panes' padding is the space above it). */
+:where(html:not([data-corners="square"], [data-finish="glass"]) .app.ws) .ws-work:has(> .ws-activity) {
+  background: var(--letterbox);
+}
+
 .ws-activity {
-  margin: 0 8px 6px;
+  margin: 0 8px 8px;
   border: 1px solid var(--line-strong);
   border-radius: var(--field-radius);
   overflow: visible;
