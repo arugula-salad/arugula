@@ -5401,6 +5401,49 @@ button.diff-why-run {
 }
 
 /* The Doc bar's "Shared copy is older · Update" (#509): a chip you tap. */
+/* The Doc bar's link and share buttons (Arugula #650): icons, no text. */
+.doc-bar-share {
+  display: inline-flex;
+  flex: none;
+  gap: 4px;
+  margin-left: auto;
+}
+
+.review-bar button.doc-bar-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 8px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.review-bar button.doc-bar-icon[data-copied] {
+  min-width: 84px;
+}
+
+.doc-bar-icon[data-older] {
+  position: relative;
+}
+
+.doc-bar-icon[data-older]::after {
+  content: "";
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+@media (pointer: coarse) {
+  .review-bar button.doc-bar-icon {
+    min-width: 34px;
+    height: 34px;
+  }
+}
+
 button.doc-bar-older {
   border: 0;
   font: inherit;
