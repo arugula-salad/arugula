@@ -120,7 +120,7 @@ pub(super) fn roster(messages: &[Message], statuses: &[MentionStatus]) -> Vec<Se
 }
 
 /// What a personal agent is doing, from what its machine answered: `None` if
-/// it didn't answer.
+/// it gave no word of this session. Only a machine not on the relay is offline.
 fn state_of(answer: Option<&MachineSession>, offline: bool) -> ChatThreadAgentState {
     if offline {
         return ChatThreadAgentState::Offline;
@@ -209,7 +209,7 @@ pub(super) async fn of_thread(
         let (app, machine) = (app.clone(), machine.to_string());
         asks.spawn(async move { (machine.clone(), ask_sessions(&app, &machine, ask).await) });
     }
-    let live: HashMap<String, Option<(bool, Vec<MachineSession>)>> = asks.join_all().await.into_iter().collect();
+    let live: HashMap<String, SessionsAnswer> = asks.join_all().await.into_iter().collect();
 
     let machines: Vec<String> = wanted.keys().map(|m| m.to_string()).collect();
     let daemons = crate::grants::agent_names(app, &machines).await?;
@@ -248,12 +248,12 @@ pub(super) async fn of_thread(
         ));
     }
     for a in seen {
-        let answer = live.get(&a.machine).and_then(|l| l.as_ref());
+        let answer = live.get(&a.machine);
         let key = session_slug(&a.session);
-        let one = answer.and_then(|(_, list)| match key.is_empty() {
-            true => None,
-            false => list.iter().find(|m| m.name == key),
-        });
+        let one = match answer {
+            Some(SessionsAnswer::Said { sessions, .. }) if !key.is_empty() => sessions.iter().find(|m| m.name == key),
+            _ => None,
+        };
         let d = daemons.get(&a.machine);
         let owner = if a.owner.is_empty() { d.map(|d| d.account.clone()).unwrap_or_default() } else { a.owner };
         let machine_name = match a.machine_name.is_empty() {
@@ -269,7 +269,7 @@ pub(super) async fn of_thread(
                 owner_name: name_of(&owner),
                 owner,
                 hosted: false,
-                state: state_of(one, answer.is_none()),
+                state: state_of(one, answer == Some(&SessionsAnswer::Offline)),
                 working_on: one.and_then(|m| m.working_on.clone()),
                 tool: one.and_then(|m| m.tool.clone()),
                 read_seq: a.read_seq,

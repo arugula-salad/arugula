@@ -8,7 +8,7 @@
 import { useEffect, useState } from "preact/hooks";
 import { chat } from "../chat-store";
 import { usePlatformApi } from "../platform-api";
-import type { ChatMessage, ChatPostTarget, ChatThreadAgent, ChatThreadAgentState } from "../proto";
+import type { ChatMessage, ChatPostTarget, ChatRoomAgent, ChatThreadAgent, ChatThreadAgentState } from "../proto";
 import { sessionSlug } from "./agents";
 import "./thread-agents.css";
 
@@ -176,11 +176,16 @@ export function SeenMarks({ agents, m }: { agents: ChatThreadAgent[]; m: ChatMes
 
 const keyOf = (a: ChatThreadAgent) => `${a.id}/${a.name}`;
 
-/** The agents a message names (#647): by `@session`, `@machine` or
- * `@machine/session`, as people write them. Not in code, which names nobody. */
-export function namedIn(agents: ChatThreadAgent[], text: string): ChatThreadAgent[] {
+/** The words a message `@`s, lowercased. Not in code, which names nobody. */
+function atWords(text: string): Set<string> {
   const plain = text.replace(/```[\s\S]*?```|`[^`\n]*`/g, " ");
-  const words = new Set([...plain.matchAll(/(?:^|[^\w@])@([\w./-]+)/g)].map((m) => m[1].toLowerCase().replace(/[.,]+$/, "")));
+  return new Set([...plain.matchAll(/(?:^|[^\w@])@([\w./-]+)/g)].map((m) => m[1].toLowerCase().replace(/[.,]+$/, "")));
+}
+
+/** The agents a message names (#647): by `@session`, `@machine` or
+ * `@machine/session`, as people write them. */
+export function namedIn(agents: ChatThreadAgent[], text: string): ChatThreadAgent[] {
+  const words = atWords(text);
   return agents.filter((a) => {
     const name = sessionSlug(a.name);
     const machine = a.machine_name.toLowerCase();
@@ -188,11 +193,27 @@ export function namedIn(agents: ChatThreadAgent[], text: string): ChatThreadAgen
   });
 }
 
-/** Who a message wakes (#647): those it names, else those chosen, else the
- * thread's lead. */
-export function wakes(agents: ChatThreadAgent[], chosen: string[] | null, text: string): ChatThreadAgent[] {
+/** Whom else a message names: machines that hear the room but aren't in the
+ * thread yet, or a session of one that hasn't spoken here. Control tells them
+ * from the text, so all this says is what to call them. */
+export function namedOutside(room: ChatRoomAgent[], agents: ChatThreadAgent[], text: string): string[] {
+  const out: string[] = [];
+  for (const word of atWords(text)) {
+    const [machine, session] = word.split("/", 2);
+    const a = room.find((r) => r.mentionable && r.machine_name.toLowerCase() === machine);
+    if (!a) continue;
+    const inThread = agents.some((t) => !t.hosted && t.machine_name.toLowerCase() === machine && (!session || sessionSlug(t.name) === session));
+    if (!inThread) out.push(session ? `${session} on ${a.machine_name}` : a.machine_name);
+  }
+  return out;
+}
+
+/** Who in the thread a message wakes (#647): those it names, else those
+ * chosen, else the thread's lead. Naming anyone at all replaces the choice and
+ * the lead, whether or not they're in the thread yet. */
+export function wakes(agents: ChatThreadAgent[], chosen: string[] | null, text: string, room: ChatRoomAgent[] = []): ChatThreadAgent[] {
   const named = namedIn(agents, text);
-  if (named.length) return named;
+  if (named.length || namedOutside(room, agents, text).length) return named;
   if (chosen) return agents.filter((a) => chosen.includes(keyOf(a)));
   return agents.filter((a) => a.lead);
 }
@@ -203,11 +224,13 @@ export function targets(list: ChatThreadAgent[]): ChatPostTarget[] {
 }
 
 /** The To row above a thread's composer (#647): a chip per agent, and Nobody.
- * Naming an agent in the text picks it, for that message only. */
-export function ToRow({ agents, chosen, setChosen, text }: { agents: ChatThreadAgent[]; chosen: string[] | null; setChosen: (c: string[]) => void; text: string }) {
+ * Naming an agent in the text picks it, for that message only, and one that
+ * isn't in the thread yet gets a chip of its own while it's named. */
+export function ToRow({ agents, chosen, setChosen, text, room = [] }: { agents: ChatThreadAgent[]; chosen: string[] | null; setChosen: (c: string[]) => void; text: string; room?: ChatRoomAgent[] }) {
   if (!agents.length) return null;
-  const on = wakes(agents, chosen, text);
-  const named = namedIn(agents, text).length > 0;
+  const on = wakes(agents, chosen, text, room);
+  const outside = namedOutside(room, agents, text);
+  const named = namedIn(agents, text).length > 0 || outside.length > 0;
   const toggle = (a: ChatThreadAgent) => {
     const now = on.map(keyOf);
     setChosen(now.includes(keyOf(a)) ? now.filter((k) => k !== keyOf(a)) : [...now, keyOf(a)]);
@@ -231,7 +254,12 @@ export function ToRow({ agents, chosen, setChosen, text }: { agents: ChatThreadA
           {a.state === "offline" ? " · offline" : ""}
         </button>
       ))}
-      <button type="button" class="thread-to-chip" aria-pressed={on.length === 0} disabled={named} data-thread-to-nobody onClick={() => setChosen([])}>
+      {outside.map((who) => (
+        <button key={who} type="button" class="thread-to-chip" aria-pressed disabled title="Named in your message" data-thread-to-named>
+          {who}
+        </button>
+      ))}
+      <button type="button" class="thread-to-chip" aria-pressed={on.length === 0 && !outside.length} disabled={named} data-thread-to-nobody onClick={() => setChosen([])}>
         Nobody
       </button>
     </div>

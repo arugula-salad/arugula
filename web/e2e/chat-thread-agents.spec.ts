@@ -192,3 +192,38 @@ test("the To row chooses who a reply wakes", async () => {
   await box.fill("");
   await expect(lead).toHaveAttribute("aria-pressed", "true");
 });
+
+test("naming a machine that isn't in the thread yet replaces the lead", async () => {
+  test.setTimeout(120_000);
+  const root = await post("Who has this one?");
+  agentSays(root, "m_gone", "wake", "I do.");
+  await openThread(root);
+  const panel = chat.locator(`[data-thread-panel="${root}"]`);
+  const box = panel.locator("textarea");
+  const lead = chat.locator('[data-thread-to-agent="m_gone/wake"]');
+  const named = chat.locator("[data-thread-to-named]");
+  const nobody = chat.locator("[data-thread-to-nobody]");
+  await expect(lead).toHaveAttribute("aria-pressed", "true", { timeout: 15_000 });
+  await expect(named).toHaveCount(0);
+
+  // The row says whom it wakes: the machine named, not the lead and not Nobody.
+  await box.fill("@alices/views have a look");
+  await expect(named).toHaveText("views on alices");
+  await expect(named).toHaveAttribute("aria-pressed", "true");
+  await expect(lead).toHaveAttribute("aria-pressed", "false");
+  await expect(lead).toBeDisabled();
+  await expect(nobody).toHaveAttribute("aria-pressed", "false");
+
+  // In code it names nobody, and the lead is back.
+  await box.fill("`@alices` is the machine");
+  await expect(named).toHaveCount(0);
+  await expect(lead).toHaveAttribute("aria-pressed", "true");
+
+  // What's sent chooses nobody, and control tells the machine from the text.
+  await box.fill("@alices have a look");
+  await expect(named).toHaveText("alices");
+  const [sent] = await Promise.all([chat.waitForRequest((r) => r.method() === "POST" && r.url().endsWith(`/api/chat/rooms/${general}/messages`)), box.press("Enter")]);
+  expect((sent.postDataJSON() as { to: unknown[] }).to).toEqual([]);
+  await expect(panel.locator(`.mention-line[data-machine="${machine}"]`)).toHaveCount(1, { timeout: 15_000 });
+  await expect(named).toHaveCount(0);
+});
