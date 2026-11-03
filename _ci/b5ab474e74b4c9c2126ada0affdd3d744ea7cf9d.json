@@ -3,41 +3,73 @@
   "commit": "b5ab474e74b4c9c2126ada0affdd3d744ea7cf9d",
   "branch": "main",
   "state": "pending",
-  "at": "2026-11-03T00:26:59Z",
+  "at": "2026-11-03T00:31:14Z",
   "phases": {
     "lint": {
-      "verdict": "pending",
+      "verdict": "pass",
       "build": "newest",
       "runs": [
         {
           "name": "lint",
           "id": 125644605123,
-          "conclusion": null,
+          "conclusion": "success",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/41551186605/job/125644605123"
         },
         {
           "name": "changes",
           "id": 125644605308,
-          "conclusion": null,
+          "conclusion": "success",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/41551186605/job/125644605308"
         },
         {
           "name": "suite-changed",
-          "id": 125641109501,
+          "id": 125646297094,
           "conclusion": "success",
-          "url": "https://github.com/arugula-salad/arugula/actions/runs/41551186747/job/125641109501"
+          "url": "https://github.com/arugula-salad/arugula/actions/runs/41551186747/job/125646297094"
         }
       ]
     },
     "build": {
       "verdict": "pending",
       "build": "newest",
-      "runs": []
+      "runs": [
+        {
+          "name": "build",
+          "id": 125644874170,
+          "conclusion": null,
+          "url": "https://github.com/arugula-salad/arugula/actions/runs/41551186605/job/125644874170"
+        },
+        {
+          "name": "static",
+          "id": 125644874271,
+          "conclusion": null,
+          "url": "https://github.com/arugula-salad/arugula/actions/runs/41551186605/job/125644874271"
+        },
+        {
+          "name": "clippy",
+          "id": 125644874090,
+          "conclusion": null,
+          "url": "https://github.com/arugula-salad/arugula/actions/runs/41551186605/job/125644874090"
+        }
+      ]
     },
     "test": {
       "verdict": "pending",
       "build": "newest",
-      "runs": []
+      "runs": [
+        {
+          "name": "test",
+          "id": 125644874376,
+          "conclusion": null,
+          "url": "https://github.com/arugula-salad/arugula/actions/runs/41551186605/job/125644874376"
+        },
+        {
+          "name": "test-2",
+          "id": 125644874206,
+          "conclusion": null,
+          "url": "https://github.com/arugula-salad/arugula/actions/runs/41551186605/job/125644874206"
+        }
+      ]
     },
     "e2e": {
       "verdict": "pending",
@@ -47,12 +79,26 @@
     "claims": {
       "verdict": "pending",
       "build": "newest",
-      "runs": []
+      "runs": [
+        {
+          "name": "desktop-xvfb",
+          "id": 125644874099,
+          "conclusion": null,
+          "url": "https://github.com/arugula-salad/arugula/actions/runs/41551186605/job/125644874099"
+        }
+      ]
     },
     "macos": {
       "verdict": "pending",
       "build": "newest",
-      "runs": []
+      "runs": [
+        {
+          "name": "macos (test)",
+          "id": 125644874404,
+          "conclusion": null,
+          "url": "https://github.com/arugula-salad/arugula/actions/runs/41551186605/job/125644874404"
+        }
+      ]
     },
     "windows": {
       "verdict": "pending",
@@ -60,18 +106,17 @@
       "runs": [
         {
           "name": "workspace",
-          "id": 125641321421,
-          "conclusion": "failure",
-          "url": "https://github.com/arugula-salad/arugula/actions/runs/41551186747/job/125641321421"
+          "id": 125646295957,
+          "conclusion": null,
+          "url": "https://github.com/arugula-salad/arugula/actions/runs/41551186747/job/125646295957"
         },
         {
           "name": "workspace-clippy",
-          "id": 125641321422,
-          "conclusion": "failure",
-          "url": "https://github.com/arugula-salad/arugula/actions/runs/41551186747/job/125641321422"
+          "id": 125646295472,
+          "conclusion": null,
+          "url": "https://github.com/arugula-salad/arugula/actions/runs/41551186747/job/125646295472"
         }
-      ],
-      "reason": "retrying"
+      ]
     },
     "windows-desktop": {
       "verdict": "pass",
