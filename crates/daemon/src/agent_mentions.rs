@@ -1021,6 +1021,8 @@ mod tests {
 
         async fn clear_notice(&self, key: &str) {
             self.notices.lock().unwrap().retain(|n| n.key != key);
+        }
+
         async fn silenced(&self) -> Vec<PaneId> {
             self.silenced.clone()
         }
