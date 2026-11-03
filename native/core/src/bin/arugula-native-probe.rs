@@ -84,9 +84,10 @@ fn term(c: &Control, name: &str, marker: &str) -> Result<()> {
         .with_context(|| format!("{name} isn't in the directory: {dir}"))?;
     let id = machine["id"].as_str().context("a machine's id")?;
     let link = Link::open(c, id)?;
+    let events = link.events.lock().unwrap();
     let wait = Duration::from_secs(30);
     // Its hello first: nothing's attached until it has said who's here.
-    match link.events.recv_timeout(wait)? {
+    match events.recv_timeout(wait)? {
         Event::State(_) => {}
         other => bail!("the machine's first word was {other:?}"),
     }
@@ -98,7 +99,7 @@ fn term(c: &Control, name: &str, marker: &str) -> Result<()> {
     let end = Instant::now() + wait;
     let tab = loop {
         ensure!(Instant::now() < end, "pane %{pane} never appeared");
-        if let Event::State(s) = link.events.recv_timeout(wait)?
+        if let Event::State(s) = events.recv_timeout(wait)?
             && let Some(t) = s.tabs.iter().find(|t| t.layout.panes.iter().any(|(p, _)| *p == pane))
         {
             break t.id;
@@ -111,7 +112,7 @@ fn term(c: &Control, name: &str, marker: &str) -> Result<()> {
     let (want, mut seen) = (format!("{marker}-42"), Vec::new());
     let end = Instant::now() + wait;
     while Instant::now() < end {
-        match link.events.recv_timeout(end - Instant::now()) {
+        match events.recv_timeout(end - Instant::now()) {
             Ok(Event::Snapshot { pane: p, data }) if p == pane => {
                 screen.snapshot(&data);
                 seen = data;

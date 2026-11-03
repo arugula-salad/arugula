@@ -452,6 +452,11 @@ desktop-check:
     cargo fmt --check
     cargo clippy -- -D warnings
 
+# The iPhone app on a phone: run on a Mac signed in to the Apple team, from its
+# GUI session's keychain. DEVICE is a `devicectl list devices` id.
+native-phone device:
+    native/ios/gui.sh native/ios/build.sh device {{device}}
+
 # The native clients' shared core (native/core, a workspace of its own):
 # rustfmt, clippy, its tests and its smoke test, on this machine.
 native-check:
@@ -475,6 +480,10 @@ native-ios:
     cd native/core
     mise exec -- cargo build --release --target aarch64-apple-ios
     mise exec -- cargo build --release --example smoke --target aarch64-apple-ios-sim
+    # The iPhone app on it, for the simulator, its UI test included.
+    (cd ../ios && ./build.sh sim && xcodebuild -project Arugula.xcodeproj -scheme Arugula -configuration Debug \
+      -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' -derivedDataPath build/dd \
+      CODE_SIGNING_ALLOWED=NO build-for-testing -quiet)
     # The newest iOS runtime, and an iPhone it supports, as "runtime type".
     pick=$(xcrun simctl list -j runtimes available | python3 -c '
     import json, sys

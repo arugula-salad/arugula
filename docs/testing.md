@@ -36,8 +36,9 @@ or an account skip without it and name what's missing
 | `just forges`, `just testnet-hosts`, `just testnet-editors` | real forges, two hosts and VS Code over Remote-SSH, in Docker ([below](#real-forges-two-hosts-vs-code-over-remote-ssh)) | the forges nightly (`forges-nightly.yml`) |
 | `just macos <test>` | the tart VM's checks: `tools` (real Safari, then launchd with no GUI session, in one VM), Safari in the iOS Simulator, the desktop app ([below](#a-fresh-mac-the-tart-vm-harness)), `journey`: J1 on the real app and Safari, then J2a with Riley in a browser, `journey-j3`: the app installed by hand over an older daemon, and `journey-j4`: an agent installing over ssh, all graphed ([below](#a-new-users-journeys)) | no |
 | `just desktop-check` | rustfmt and clippy for `crates/desktop` | Linux |
+| `just testnet test control native-sim` (with `ARUGULA_NATIVE_SIM_HOST=MAC`) | the iPhone app on a simulator, tapped through by its UI test against the stack: pairing, projects, chat, a relayed terminal | no |
 | `just native-check` | rustfmt, clippy, tests and the smoke test for `native/core` | Linux |
-| `just native-ios` | Builds `native/core` for iOS, and runs its smoke test on a simulator when there is one | no, nightly on jake-mini (`macos-vm.yml`), which has Xcode's iOS SDK |
+| `just native-ios` | Builds `native/core` and the iPhone app for iOS, and runs the core's smoke test on a simulator when there is one | no, nightly on jake-mini (`macos-vm.yml`), which has Xcode's iOS SDK |
 | `just desktop-xvfb` | the Linux desktop app under Xvfb in a container (`packaging/desktop/xvfb/`): `join` (#204), `app` (`bare`, `links` and `nautilus` among its claims), `stale` (#317) and `platform` (M157) (see [The desktop app's tests](#the-desktop-apps-tests)) | Linux |
 | `just desktop-packages ARCH` | the .deb on Ubuntu 22.04 and the .rpm on Fedora 42 install and claim `arugula://` (after `just desktop-linux ARCH`) | no |
 | `testnet/macos/desktop.sh`, `testnet/macos/update.sh`, `testnet/macos/stale-daemon.sh` | the macOS app from its .dmg in a fresh tart VM, its updater, and a daemon older than the app's (#661) | no |
