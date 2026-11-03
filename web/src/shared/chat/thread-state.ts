@@ -4,7 +4,7 @@
 // reads and writes through the store's `call`, so there is one place a
 // request leaves from.
 
-import type { ChatLive, ChatMessage, ChatMessages, ChatPost, ChatPosted, ChatThreads } from "../proto";
+import type { ChatLive, ChatMessage, ChatMessages, ChatPost, ChatPosted, ChatThreadAgents, ChatThreads } from "../proto";
 import { followed, mergeReplies, readTo } from "./threads";
 
 type Call = <T>(method: string, path: string, body?: unknown) => Promise<T>;
@@ -152,6 +152,11 @@ export class ThreadState {
     this.changed();
     await this.call("POST", `/api/chat/rooms/${enc(room)}/threads/${parent}/read`, { seq }).catch(() => {});
     this.soon();
+  }
+
+  /** The agents in a thread and what each is doing (#646). */
+  agents(room: string, parent: number): Promise<ChatThreadAgents> {
+    return this.call<ChatThreadAgents>("GET", `/api/chat/rooms/${enc(room)}/threads/${parent}/agents`);
   }
 
   /** Follow or stop: it shows at once, and the server's answer replaces it. */
