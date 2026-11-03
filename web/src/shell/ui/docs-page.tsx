@@ -7,6 +7,12 @@
 // refuses, and the reason is shown here. With none yet, it offers Start an
 // agent, with the Doc line of *What your agent can do here* and its example.
 //
+// The preview side is the reader (#608): picking a row reads the whole Doc
+// there, drawn as the Doc block draws it, from `doc.read` and `doc.asset`,
+// which open no block. Open beside is for editing or watching an agent
+// fill it. The list reloads when the window is back, and a Doc whose
+// `updated` moved is read again in place.
+//
 // A row's mark is the Doc's shape: a segment a section, as long as the section
 // is, brighter where it has a figure, and the whole as long as the Doc is. So a
 // note and a long plan look different without opening either.
@@ -14,7 +20,8 @@
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import type { Client } from "../client";
 import { opPath, OPS } from "../ops";
-import type { DocLinkUrl, DocPreview, DocRow, DocSectionShape } from "../../shared/proto.gen";
+import { DocBlock, type DocState } from "../../shared/docs/doc-render";
+import type { DocAsset, DocContent, DocLinkUrl, DocRow, DocSectionShape } from "../../shared/proto.gen";
 import { ConfirmRemove } from "../../shared/ui/confirm";
 import { ListCounts, ListPage, ListPreview, type ListCount, type ListGroup } from "../../shared/ui/list-page";
 import { openMenu } from "../../shared/ui/menu";
@@ -26,6 +33,18 @@ import { closeDocsPage, docsRoute, openDoc } from "./docs-route";
 import { startAgent } from "./agent-dialog";
 import { AgentCanCard } from "./agent-can";
 import { LinkIcon } from "./shell/icons";
+
+/** What the reader keeps of a Doc it has read, for the next time it is picked. */
+interface Read {
+  state: DocState | null;
+  /** Its pictures by `name/rev`, each as the data: URL it is shown from. */
+  images: Map<string, string>;
+}
+
+const NO_FRESH = new Map<string, number>();
+
+/** A Doc as the Doc block's renderer takes it. */
+const stateOf = (c: DocContent): DocState => ({ ...c, doc: c.doc ?? undefined, error: c.error ?? undefined });
 
 /** The page, while the route says so and this is the machine's owner. */
 export function DocsPage({ client }: { client: Client }) {
@@ -90,8 +109,8 @@ function Page({ client }: { client: Client }) {
   const [deleting, setDeleting] = useState<DocRow | null>(null);
   const [filter, setFilter] = useState("all");
   const [query, setQuery] = useState("");
-  /** The openings read so far, by Doc and when it last changed. */
-  const openings = useRef(new Map<string, string[]>());
+  /** The Docs read so far, by id. */
+  const reads = useRef(new Map<string, Read>());
 
   const load = async () => {
     try {
@@ -106,6 +125,11 @@ function Page({ client }: { client: Client }) {
     }
   };
   useEffect(() => void load(), []);
+  // This list hears of nothing on its own: back in the window, it asks.
+  useEffect(() => {
+    window.addEventListener("focus", load);
+    return () => window.removeEventListener("focus", load);
+  }, []);
 
   const open = async (r: DocRow) => {
     setBusy(true);
@@ -241,7 +265,7 @@ function Page({ client }: { client: Client }) {
           mark: <Shape sections={r.sections} />,
           attrs: { "data-doc": r.id, "data-shared": String(!!r.shared), "data-open": r.open?.toString() ?? "" },
         })}
-        preview={(r) => <Preview key={r.id} client={client} doc={r} busy={busy} openings={openings.current} open={() => void open(r)} ask={() => setDeleting(r)} fail={setError} />}
+        preview={(r) => <Preview key={r.id} client={client} doc={r} busy={busy} reads={reads.current} open={() => void open(r)} ask={() => setDeleting(r)} fail={setError} />}
       />
       {deleting && (
         <ConfirmRemove title={`Delete “${deleting.title}”?`} label="Delete" cancel={() => setDeleting(null)} go={() => void remove(deleting)}>
@@ -253,22 +277,71 @@ function Page({ client }: { client: Client }) {
   );
 }
 
-/** The selected Doc: what it is, its opening and its outline, and the page's one primary button. */
-function Preview({ client, doc, busy, openings, open, ask, fail }: { client: Client; doc: DocRow; busy: boolean; openings: Map<string, string[]>; open: () => void; ask: () => void; fail: (why: string) => void }) {
-  const key = `${doc.id}:${doc.updated}`;
-  const [opening, setOpening] = useState<string[] | null>(openings.get(key) ?? null);
+/** The selected Doc: what it is, the page's one primary button, and the Doc itself, read in place. */
+function Preview({ client, doc, busy, reads, open, ask, fail }: { client: Client; doc: DocRow; busy: boolean; reads: Map<string, Read>; open: () => void; ask: () => void; fail: (why: string) => void }) {
+  const kept = useMemo(() => {
+    let r = reads.get(doc.id);
+    if (!r) reads.set(doc.id, (r = { state: null, images: new Map() }));
+    return r;
+  }, [doc.id]);
+  const [state, setState] = useState<DocState | null>(kept.state);
   const [copied, setCopied] = useState(false);
+  const reader = useRef<HTMLDivElement>(null);
+
+  // Read it when picked and whenever it changed or the window is back. The
+  // Doc on screen stays until the new one is here, and is replaced only if
+  // it differs, so the scroll stays and nothing flashes.
   useEffect(() => {
-    if (openings.has(key)) return;
     let live = true;
-    void (async () => {
-      const res = await client.request(OPS["doc.preview"].method, opPath("doc.preview", { id: doc.id }));
-      const v = res.ok ? await res.json<DocPreview>().catch(() => null) : null;
-      if (v) openings.set(key, v.opening);
-      if (live) setOpening(v?.opening ?? []);
-    })().catch(() => live && setOpening([]));
-    return () => void (live = false);
-  }, [key]);
+    let latest = 0;
+    const go = async () => {
+      const mine = ++latest;
+      try {
+        const res = await client.request(OPS["doc.read"].method, opPath("doc.read", { id: doc.id }));
+        const v = res.ok ? await res.json<DocContent>().catch(() => null) : null;
+        if (!v || !live || mine !== latest) return;
+        const next = stateOf(v);
+        if (JSON.stringify(next) !== JSON.stringify(kept.state)) setState((kept.state = next));
+      } catch {
+        // The Doc on screen stays.
+      }
+    };
+    void go();
+    window.addEventListener("focus", go);
+    return () => {
+      live = false;
+      window.removeEventListener("focus", go);
+    };
+  }, [doc.id, doc.updated]);
+
+  // A picture, once, by `name/rev`; the name's older revs are done with.
+  const load = useMemo(() => {
+    const asking = new Map<string, Promise<string | null>>();
+    return (name: string, rev: number) => {
+      const key = `${name}/${rev}`;
+      const have = kept.images.get(key);
+      if (have) return Promise.resolve(have);
+      let p = asking.get(key);
+      if (!p) {
+        p = client
+          .request(OPS["doc.asset"].method, opPath("doc.asset", { id: doc.id, name }))
+          .then(async (res) => {
+            const v = res.ok ? await res.json<DocAsset>() : null;
+            if (!v) return null;
+            const url = `data:${v.mime};base64,${v.data}`;
+            for (const k of kept.images.keys()) if (k.startsWith(`${name}/`)) kept.images.delete(k);
+            kept.images.set(key, url);
+            return url;
+          })
+          .catch(() => null)
+          .finally(() => asking.delete(key));
+        asking.set(key, p);
+      }
+      return p;
+    };
+  }, [doc.id]);
+
+  const goTo = (i: number) => reader.current?.querySelectorAll("[data-section]")[i]?.scrollIntoView({ block: "start" });
 
   const copyLink = async () => {
     try {
@@ -341,7 +414,9 @@ function Preview({ client, doc, busy, openings, open, ask, fail }: { client: Cli
             <ol class="doc-outline" data-doc-outline>
               {doc.sections.map((s, i) => (
                 <li key={i}>
-                  <span title={s.heading}>{s.heading}</span>
+                  <button type="button" class="link doc-outline-go" title={s.heading} data-doc-outline-go onClick={() => goTo(i)}>
+                    {s.heading}
+                  </button>
                   <i class={s.figures ? "fig" : undefined} style={{ width: `${Math.max(6, (s.words / biggest) * 100)}%` }} />
                 </li>
               ))}
@@ -350,7 +425,9 @@ function Preview({ client, doc, busy, openings, open, ask, fail }: { client: Cli
         )
       }
     >
-      {opening === null ? <p class="dim">Reading…</p> : opening.length ? opening.map((p, i) => <p key={i}>{p}</p>) : <p class="dim">Nothing written yet.</p>}
+      <div ref={reader} class="docs-reader" data-doc-reader>
+        <DocBlock id={0} docKey={doc.id} s={state} fresh={NO_FRESH} load={load} cached={kept.images} />
+      </div>
     </ListPreview>
   );
 }
