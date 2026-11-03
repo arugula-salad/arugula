@@ -6037,6 +6037,17 @@
           "id": {
             "type": "string"
           },
+          "lead": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BoardLead"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The session that leads the board (#414): a post on the board's thread\nreaches it. Absent when no session does."
+          },
           "progress": {
             "$ref": "#/components/schemas/BoardProgress",
             "default": {
@@ -6149,6 +6160,34 @@
           "title",
           "added_by",
           "created_at"
+        ],
+        "type": "object"
+      },
+      "BoardLead": {
+        "description": "The session that leads a board: the machine it runs on and its name there,\nas that machine's daemon matches it (#414).",
+        "properties": {
+          "at": {
+            "description": "When the session took the lead.",
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "machine": {
+            "type": "string"
+          },
+          "machine_name": {
+            "default": "",
+            "description": "The machine's name now; empty while it can't be told.",
+            "type": "string"
+          },
+          "session": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "machine",
+          "session",
+          "at"
         ],
         "type": "object"
       },
@@ -10245,6 +10284,13 @@
         "properties": {
           "goal": {
             "description": "What the board is for; left out: none.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "lead_session": {
+            "description": "With an agent's write: the session that makes it leads the new board\n(#414). A person's write ignores it.",
             "type": [
               "string",
               "null"
