@@ -1,0 +1,31 @@
+[package]
+name = "arugula-native-core"
+version = "0.0.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+description = "What Arugula's native clients share: signing, encrypted channels, pane streams and the terminal"
+publish = false
+
+[dependencies]
+anyhow = "1"
+arugula-e2e = { path = "../../crates/e2e" }
+arugula-proto = { path = "../../crates/proto" }
+ed25519-dalek = "3"
+# The same pin as crates/vt: the daemon and this client parse a pane's bytes
+# with one engine, which a test here checks.
+libghostty-vt = { git = "https://github.com/Uzaaft/libghostty-rs.git", rev = "8953a74" }
+
+[dev-dependencies]
+# The smoke test runs aws-lc's own code on the target.
+aws-lc-rs = { version = "1.18.1", default-features = false, features = ["aws-lc-sys"] }
+hex = "0.4"
+
+# Its own workspace, out of the root's, so it can't slow down or break the
+# other builds. Not under crates/: every crates/*/Cargo.toml and the root's
+# Cargo.toml are hub inputs (scripts/ci-hub-changed), and a hub deploy drops
+# every relayed terminal.
+[workspace]
+
+# As the root workspace does: Ghostty patched at build time (M9).
+[patch."https://github.com/Uzaaft/libghostty-rs.git"]
+libghostty-vt-sys = { path = "../../vendor/libghostty-vt-sys" }

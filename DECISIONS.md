@@ -92,6 +92,7 @@ Not here: what each milestone built (the archive), how to build and test
 - [aru-082](docs/decisions/aru-082-platform-urls-are-ids-with-cosmetic-slugs.md): Platform URLs are ids with cosmetic slugs
 - [aru-083](docs/decisions/aru-083-secrets-stay-in-fragments.md): Secrets stay in fragments
 - [aru-127](docs/decisions/aru-127-hints-come-from-facts-once-per-account.md): Hints come from facts, once per account
+- [aru-132](docs/decisions/aru-132-the-iphone-app-is-swift-on-a-rust-core-with-no-web-views-yet.md): The iPhone app is Swift on a Rust core, with no web views yet
 
 ## Agents and blocks
 
