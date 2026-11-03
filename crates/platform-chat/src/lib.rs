@@ -58,6 +58,8 @@ mod chat_code_tests;
 #[cfg(test)]
 mod chat_files_tests;
 #[cfg(test)]
+mod chat_grant_ask_tests;
+#[cfg(test)]
 mod chat_mention_redeliver_tests;
 #[cfg(test)]
 mod chat_mention_status_tests;
@@ -161,6 +163,7 @@ impl features::Feature for Feature {
             .route("/api/chat/rooms/{id}/members", post(chat::members::add))
             .route("/api/chat/rooms/{id}/members/{account}", axum::routing::delete(chat::members::remove))
             .route("/api/chat/rooms/{id}/read", post(chat::read))
+            .route("/api/chat/rooms/{id}/grant-never", post(chat::grant_ask::never))
             .route("/api/chat/threads", get(chat::threads::followed))
             .route("/api/chat/rooms/{id}/threads/{seq}/read", post(chat::threads::read))
             .route("/api/chat/rooms/{id}/threads/{seq}/follow", post(chat::threads::follow))
@@ -390,6 +393,8 @@ impl features::Chat for Hooks {
                 let (rooms, before) = *n;
                 chat::agent_notice::announce(app, &rooms, &before).await;
             }
+            // Mentions that waited for this grant are delivered (#578).
+            chat::grant_ask::granted(app).await;
         })
     }
 

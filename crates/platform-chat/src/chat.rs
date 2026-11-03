@@ -95,8 +95,8 @@ use crate::{
         chat::{Message, NewMessage, Page, Room, RoomMeta, Search, UnreadAsk, Word},
         chat_files::ChatFileRow,
         chat_mention_status::{
-            ANSWERABLE_MS, DROPPED_EXITED, DROPPED_STOPPED, MentionStatus, REDELIVER_MAX, REDELIVER_WITHIN_MS,
-            STALE_SENDING_MS,
+            ANSWERABLE_MS, DROPPED_EXITED, DROPPED_STOPPED, GRANT_PENDING, MentionStatus, NOT_GRANTED, REDELIVER_MAX,
+            REDELIVER_WITHIN_MS, STALE_SENDING_MS,
         },
         chat_reactions::Reaction,
         objects::Holder,
@@ -111,6 +111,7 @@ pub(crate) mod agent_sessions;
 pub mod agent_threads;
 pub(crate) mod alerts;
 pub(crate) mod files;
+pub(crate) mod grant_ask;
 mod link_fetch;
 pub(crate) mod members;
 pub(crate) mod objects;
@@ -874,8 +875,9 @@ fn reactions_of(db: &Db, ms: &[&Message]) -> anyhow::Result<HashMap<(String, i64
 /// over the numbers of the messages that mention a machine.
 fn mention_status_of(db: &Db, ms: &[&Message]) -> anyhow::Result<HashMap<(String, i64), Vec<MentionStatus>>> {
     let mut span: HashMap<&str, (i64, i64)> = HashMap::new();
-    let mentioning =
-        |m: &&&Message| m.deleted.is_none() && m.mentions.iter().any(|x| x.starts_with(wire::AGENT_MENTION));
+    // Any message may carry one: a mention of a machine that couldn't read
+    // the room waits for a grant (#578) and isn't in `mentions`.
+    let mentioning = |m: &&&Message| m.deleted.is_none();
     for m in ms.iter().filter(mentioning) {
         let e = span.entry(m.room.as_str()).or_insert((m.seq, m.seq));
         *e = (e.0.min(m.seq), e.1.max(m.seq));
@@ -920,6 +922,7 @@ fn mention_state(state: &str) -> ChatMentionState {
         "offline" | "missed" => ChatMentionState::Offline,
         "answered" => ChatMentionState::Answered,
         "chain" => ChatMentionState::Chain,
+        GRANT_PENDING | NOT_GRANTED => ChatMentionState::NotGranted,
         "working" => ChatMentionState::Working,
         "read" => ChatMentionState::Read,
         DROPPED_STOPPED | DROPPED_EXITED => ChatMentionState::Dropped,
@@ -990,25 +993,14 @@ async fn agent_mentions(
     Ok(out)
 }
 
-/// Why a word that named a machine of the team reached nobody (#572): its
-/// agents can't read `room`. `reads` are the channels of the team they do
-/// read that `poster` sees too, so a private room's name stays with its
-/// members. Words naming no machine (or none of the team's) get no row.
-async fn unreached_why(
-    app: &Platform,
-    facts: &Facts,
-    room: &Room,
-    poster: &str,
-    unreached: &[String],
-) -> anyhow::Result<Vec<ChatUnreachedWhy>> {
-    if unreached.is_empty() {
-        return Ok(vec![]);
-    }
+/// The named machines of the team `room` belongs to, and the team's id:
+/// those of its members' accounts. None for a room with no team.
+async fn team_machines(app: &Platform, facts: &Facts, room: &Room) -> anyhow::Result<Option<(String, Vec<Daemon>)>> {
     let team = match room.scope.strip_prefix("team:") {
         Some(t) => Some(t.to_owned()),
         None => objects::project_of(room).and_then(|p| facts.projects.get(p)).and_then(|h| h.team.clone()),
     };
-    let Some(team) = team else { return Ok(vec![]) };
+    let Some(team) = team else { return Ok(None) };
     let hub = &*app.hub;
     let members: Vec<String> =
         facts.teams.get(&team).map(|t| t.members.iter().map(|m| m.account.clone()).collect()).unwrap_or_default();
@@ -1025,6 +1017,24 @@ async fn unreached_why(
         .into_values()
         .filter(|d| d.team.as_deref() == Some(team.as_str()) && !d.name.is_empty())
         .collect();
+    Ok(Some((team, machines)))
+}
+
+/// Why a word that named a machine of the team reached nobody (#572): its
+/// agents can't read `room`. `reads` are the channels of the team they do
+/// read that `poster` sees too, so a private room's name stays with its
+/// members. Words naming no machine (or none of the team's) get no row.
+async fn unreached_why(
+    app: &Platform,
+    facts: &Facts,
+    room: &Room,
+    poster: &str,
+    unreached: &[String],
+) -> anyhow::Result<Vec<ChatUnreachedWhy>> {
+    if unreached.is_empty() {
+        return Ok(vec![]);
+    }
+    let Some((team, machines)) = team_machines(app, facts, room).await? else { return Ok(vec![]) };
     let mut found: Vec<(&String, &Daemon)> = vec![];
     for w in unreached {
         if let Some(d) = machines.iter().find(|d| d.name.to_lowercase() == *w) {
@@ -1427,12 +1437,20 @@ pub(crate) async fn redeliver(app: &Platform, machine: &str) {
                 return;
             }
         };
+    send_claimed(app, claimed, false).await;
+}
+
+/// Tells the machine's daemon each mention in `claimed` (all `sending`):
+/// `missed` if there is nothing to send, or it is offline again. `granted`:
+/// they waited for a grant (#578), so the message doesn't list the machine
+/// as mentioned; its text must still name it.
+async fn send_claimed(app: &Platform, claimed: Vec<MentionStatus>, granted: bool) {
     let mut ready = vec![];
     for s in claimed {
-        match mention_to_resend(app, &s).await {
+        match mention_to_resend(app, &s, granted).await {
             Ok(op) => ready.push((s, op)),
             Err(why) => {
-                tracing::info!(room = %s.room, seq = s.seq, %machine, why, "chat: a missed mention isn't sent again");
+                tracing::info!(room = %s.room, seq = s.seq, machine = %s.machine, why, "chat: a missed mention isn't sent again");
                 settle(app, &MentionStatus { state: "missed".into(), at: now_ms(), ..s });
             }
         }
@@ -1451,10 +1469,17 @@ pub(crate) async fn redeliver(app: &Platform, machine: &str) {
 async fn mention_to_resend(
     app: &Platform,
     s: &MentionStatus,
+    granted: bool,
 ) -> Result<arugula_control_wire::forge::DaemonOp, &'static str> {
     let m = app.db.chat_message(&s.room, s.seq).ok().flatten().filter(|m| m.deleted.is_none()).ok_or("no message")?;
     let room = app.db.chat_room(&s.room).ok().flatten().filter(|r| r.archived.is_none()).ok_or("no room")?;
-    if !m.mentions.iter().any(|x| *x == format!("{}{}", wire::AGENT_MENTION, s.machine)) {
+    let named = if granted {
+        let name = s.machine_name.to_lowercase();
+        !name.is_empty() && without_code(&m.text).to_lowercase().contains(&format!("@{name}"))
+    } else {
+        m.mentions.iter().any(|x| *x == format!("{}{}", wire::AGENT_MENTION, s.machine))
+    };
+    if !named {
         return Err("no longer mentioned");
     }
     let facts = Facts::of(app, None, &[&room]).await.map_err(|_| "no facts")?;
@@ -2429,6 +2454,10 @@ pub(crate) async fn post_replied(
         tracing::warn!(error = %e, "chat: why a mention reached nobody");
         vec![]
     });
+    // Machines named whose agents can't read the room: not mentioned (they
+    // read nothing), but their owners are asked once the post is stored
+    // (#578).
+    let unheard = grant_ask::unheard(app, &facts, &room, &unreached).await;
     let replying_to = replying_to_agent(app, &room, b.parent)?;
     let chain = if agent.is_some() { agent_chain(app, &room, b.parent)? + 1 } else { 0 };
     let at = now_ms();
@@ -2503,6 +2532,9 @@ pub(crate) async fn post_replied(
     // shows in its status line, not in `pushed` or `unreached`.
     let tells = plan_tells(app, &facts, &told, &stored, replying_to, agent, chain).await;
     deliver_later(app, tells, room.id.clone(), seq, b.parent).await;
+    // A machine named whose agents can't read the room: its owner is asked
+    // to let them (#578).
+    grant_ask::ask(app, &told, &unheard).await;
     // An agent replying in a thread answers the mentions of its machine
     // there (#502).
     if let (Some(a), Some(parent)) = (agent, b.parent) {

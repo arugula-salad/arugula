@@ -1403,6 +1403,60 @@
         ]
       }
     },
+    "/api/chat/rooms/{id}/grant-never": {
+      "post": {
+        "operationId": "POST_api_chat_rooms_id_grant_never",
+        "x-arugula-clients": [
+          "page"
+        ],
+        "security": [
+          {
+            "deviceSignature": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "Refused",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Refusal"
+                }
+              }
+            }
+          },
+          "2XX": {
+            "description": "OK"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChatGrantNever"
+              }
+            }
+          }
+        },
+        "x-arugula-untyped": [
+          "the answer: {refused}, how many waiting mentions it settled"
+        ]
+      }
+    },
     "/api/chat/rooms/{id}/join": {
       "post": {
         "operationId": "POST_api_chat_rooms_id_join",
@@ -6617,6 +6671,19 @@
         ],
         "type": "object"
       },
+      "ChatGrantNever": {
+        "description": "`POST /api/chat/rooms/{id}/grant-never`: the owner of `daemon` says its\nagents are never to be asked to read this room (#578). What waited for\nthem is `not_granted` for good; a grant over the room undoes it.",
+        "properties": {
+          "daemon": {
+            "description": "The machine's id.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "daemon"
+        ],
+        "type": "object"
+      },
       "ChatHit": {
         "properties": {
           "message": {
@@ -7093,6 +7160,11 @@
           {
             "const": "dropped",
             "description": "The session dropped it (#613): `why` says how. Final, like\n`answered`, which it never replaces.",
+            "type": "string"
+          },
+          {
+            "const": "not_granted",
+            "description": "The machine's agents can't read the room (#578): its owner was asked\nto let them. Delivered if they do; final if they said never.",
             "type": "string"
           }
         ]

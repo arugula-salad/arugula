@@ -3,7 +3,7 @@
 // oldest first. Run with `node --experimental-strip-types`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { noticeOpenLabel, noticeRoom, noticeTitle, sortNotices } from "../src/shared/notice.ts";
+import { grantQuestion, noticeOpenLabel, noticeRoom, noticeTitle, sortNotices } from "../src/shared/notice.ts";
 
 const mention = (over = {}) => ({
   key: "mention:ch_x",
@@ -34,4 +34,37 @@ test("cards list oldest first, and a new one goes to the end", () => {
   const b = { n: mention({ key: "mention:a", since_ms: 9 }) };
   const c = { n: mention({ key: "mention:c", since_ms: 9 }) };
   assert.deepEqual(sortNotices([c, b, a]).map((i) => i.n.key), ["mention:b", "mention:a", "mention:c"]);
+});
+
+const ask = (over = {}, grant = {}) => ({
+  key: "grant:ch_x",
+  kind: "grant_ask",
+  since_ms: 10,
+  headline: "Ada mentioned geek in #agents.",
+  count: 1,
+  room: "ch_x",
+  room_name: "agents",
+  grant: { machine: "m_geek", machine_name: "geek", scope_kind: "project", scope_id: "p1", scope_name: "Acme", ...grant },
+  ...over,
+});
+
+test("a grant card says what Grant reaches: the project's channels and issues (#578)", () => {
+  assert.equal(
+    noticeTitle(ask()),
+    "Ada mentioned geek in #agents. Let geek's agents read Acme's channels and issues (including #agents)?",
+  );
+  assert.equal(
+    noticeTitle(ask({ count: 2 })),
+    "2 mentions of geek in #agents. Let geek's agents read Acme's channels and issues (including #agents)?",
+  );
+  assert.equal(noticeRoom(ask()), null);
+});
+
+test("a grant over just the room says only the room; over DMs, all of them", () => {
+  assert.equal(noticeTitle(ask({}, { scope_name: "" })), "Ada mentioned geek in #agents. Let geek's agents read #agents?");
+  assert.equal(grantQuestion(ask({ room_name: "#agents" }, { scope_name: "" })), "Let geek's agents read #agents?");
+  assert.equal(
+    grantQuestion(ask({}, { scope_kind: "account", scope_name: "your DMs" })),
+    "Let geek's agents read all your DMs (including #agents)?",
+  );
 });
