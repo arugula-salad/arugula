@@ -283,9 +283,6 @@ impl HubPort for Timed {
     fn team_project<'a>(&'a self, team: &'a str) -> BoxFuture<'a, HubResult<Option<String>>> {
         timed!(self.0.team_project(team))
     }
-    fn forge_pokes<'a>(&'a self, pokes: &'a [arugula_control_wire::forge::Poke]) -> BoxFuture<'a, HubResult<u32>> {
-        timed!(self.0.forge_pokes(pokes))
-    }
     fn github_user<'a>(&'a self, account: &'a str) -> BoxFuture<'a, HubResult<Option<crate::forge::GithubUser>>> {
         timed!(self.0.github_user(account))
     }

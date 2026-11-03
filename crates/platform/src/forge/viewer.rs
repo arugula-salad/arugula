@@ -305,9 +305,8 @@ pub enum Access {
 /// Whether GitHub gives `user` access to `repo` (`OWNER/NAME`): the answer
 /// kept in the database (asked less than [`KEEP_MS`] ago and not dropped
 /// since), or asked now and kept. The one way the platform asks: the
-/// viewer check, daemons' live updates (`forge::standing`) and hosted
-/// boxes' tokens (`forge::token`), so a drop on any machine reaches them
-/// all. `limit`: a repository not kept counts against the account's
+/// viewer check and hosted boxes' tokens (`forge::token`), so a drop on
+/// any machine reaches them all. `limit`: a repository not kept counts against the account's
 /// [`FORGE_LOOKUPS`].
 pub async fn access(
     app: &Platform,
