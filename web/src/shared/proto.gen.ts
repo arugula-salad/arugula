@@ -116,9 +116,10 @@ pr?: number, pr_url?: string,
 pr_block?: number, };
 
 /**
- * What a teammate's agent may learn of this machine's sessions (#577),
- * when it asks which ones it can `@machine/name`. Only with agent mentions
- * on; off, it learns nothing whatever this says.
+ * What teammates and their agents may learn of this machine's sessions
+ * (#577): when an agent asks which ones it can `@machine/name`, and in the
+ * strip at the top of a thread (#646). Only with agent mentions on; off,
+ * they learn nothing whatever this says.
  */
 export type AgentSessions = "none" | "names" | "work";
 
@@ -5157,8 +5158,9 @@ guest_ssh: boolean,
  */
 agent_mentions?: boolean, 
 /**
- * What a teammate's agent may learn of this machine's sessions
- * (#577). Names by default.
+ * What teammates and their agents may learn of this machine's sessions
+ * (#577). `work` by default, since a thread's strip shows it (Jake,
+ * 2026-11-03, aru-133).
  */
 agent_sessions?: AgentSessions, 
 /**

@@ -23,7 +23,7 @@ options:
     tradeoff: "Clean to model, but it's a second kind of conversation, and existing threads and session cards wouldn't gain anything."
 choice:
   option: "a"
-  reason: "It adds no new object, and it keeps the aru-051 line: control only passes along what the owner's `agent_sessions` setting shows, at the moment someone is looking. A state word shows at `names`, the default. The tool's name and the work item show only at `work`. Output, tool arguments, paths and summaries written by the agent never cross."
+  reason: "It adds no new object, and it keeps the aru-051 line: control only passes along what the owner's `agent_sessions` setting shows, at the moment someone is looking. A state word shows at `names`. The tool's name and the work item show at `work`, the default since Jake chose it on 2026-11-03, so a strip shows what the mock did; an owner can turn it down in Settings or with `arugulad sharing`, and a choice already made stays. Output, tool arguments, paths and summaries written by the agent never cross."
 rejected:
   - option: "b"
     why: "It would store activity nobody asked to see. If polling costs too much, a push can come later without changing what the page reads."

@@ -1605,7 +1605,7 @@ mod tests {
     }
 
     /// The names are slugs, the newest active first; `names` drops what each
-    /// works on; `work` keeps it (#577).
+    /// works on; `work`, the default, keeps it (#577).
     #[tokio::test]
     async fn the_sessions_listed_are_slugged_newest_first_and_work_follows_the_setting() {
         let d = machine_with_sessions("sessions-list");
@@ -1615,11 +1615,11 @@ mod tests {
         assert_eq!(names, ["ux-improvements", "billing", "slow-ness"]);
         assert_eq!(got[2].tab.as_deref(), Some("Views"));
         assert_eq!(got[2].active_ms_ago, Some(180_000));
-        assert!(got.iter().all(|s| s.working_on.is_none()), "names only by default");
-        arugula_proto::sharing::set_agent_sessions(&d.dir, AgentSessions::Work).unwrap();
-        let (_, got) = listed(sessions_for(&d, &ask(None)).await);
         let on: Vec<_> = got.iter().map(|s| s.working_on.as_deref()).collect();
         assert_eq!(on, [None, Some("#12"), Some("#540")]);
+        arugula_proto::sharing::set_agent_sessions(&d.dir, AgentSessions::Names).unwrap();
+        let (_, got) = listed(sessions_for(&d, &ask(None)).await);
+        assert!(got.iter().all(|s| s.working_on.is_none()), "names drops it");
     }
 
     /// A thread's strip asks for its sessions by name (#645): only those,
@@ -1634,7 +1634,9 @@ mod tests {
         assert!(shared);
         let names: Vec<_> = got.iter().map(|s| s.name.as_str()).collect();
         assert_eq!(names, ["billing"]);
-        assert!(got[0].tool.is_none(), "names only by default");
+        arugula_proto::sharing::set_agent_sessions(&d.dir, AgentSessions::Names).unwrap();
+        let (_, got) = listed(sessions_for(&d, &strip).await);
+        assert!(got[0].tool.is_none() && got[0].working_on.is_none(), "names drops them");
         arugula_proto::sharing::set_agent_sessions(&d.dir, AgentSessions::None).unwrap();
         assert_eq!(listed(sessions_for(&d, &strip).await), (false, vec![]), "the owner shows none");
     }

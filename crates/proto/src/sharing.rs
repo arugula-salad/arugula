@@ -57,8 +57,9 @@ pub struct Sharing {
     #[serde(default = "yes")]
     #[cfg_attr(feature = "ts", ts(as = "Option<bool>", optional))]
     pub agent_mentions: bool,
-    /// What a teammate's agent may learn of this machine's sessions
-    /// (#577). Names by default.
+    /// What teammates and their agents may learn of this machine's sessions
+    /// (#577). `work` by default, since a thread's strip shows it (Jake,
+    /// 2026-11-03, aru-133).
     #[serde(default)]
     #[cfg_attr(feature = "ts", ts(as = "Option<AgentSessions>", optional))]
     pub agent_sessions: AgentSessions,
@@ -73,19 +74,22 @@ fn yes() -> bool {
     true
 }
 
-/// What a teammate's agent may learn of this machine's sessions (#577),
-/// when it asks which ones it can `@machine/name`. Only with agent mentions
-/// on; off, it learns nothing whatever this says.
+/// What teammates and their agents may learn of this machine's sessions
+/// (#577): when an agent asks which ones it can `@machine/name`, and in the
+/// strip at the top of a thread (#646). Only with agent mentions on; off,
+/// they learn nothing whatever this says.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(rename_all = "lowercase")]
 pub enum AgentSessions {
     /// No session is named to them.
     None,
-    /// Each session's name, tab and how recently it was active.
-    #[default]
+    /// Each session's name, tab, how recently it was active and whether
+    /// it's working.
     Names,
-    /// Also what each works on (the issue it was started on).
+    /// Also what each works on (the issue it was started on) and the name of
+    /// the tool it last ran. Never output, a tool's arguments or a path.
+    #[default]
     Work,
 }
 
@@ -150,11 +154,14 @@ pub fn agent_mentions(state_dir: &Path) -> bool {
     doc(state_dir).get("agent_mentions").and_then(Value::as_bool).unwrap_or(true)
 }
 
-/// What a teammate's agent may learn of this machine's sessions (#577):
-/// the file's word, else names. Unknown words are names too, the middle
-/// way, so a typo neither opens nor closes it.
+/// What teammates and their agents may learn of this machine's sessions
+/// (#577): the file's word, else the default. A word it doesn't know is
+/// names, the middle way, so a typo neither opens nor closes it.
 pub fn agent_sessions(state_dir: &Path) -> AgentSessions {
-    doc(state_dir).get("agent_sessions").and_then(Value::as_str).and_then(AgentSessions::from_word).unwrap_or_default()
+    match doc(state_dir).get("agent_sessions") {
+        None => AgentSessions::default(),
+        Some(w) => w.as_str().and_then(AgentSessions::from_word).unwrap_or(AgentSessions::Names),
+    }
 }
 
 /// What agents may learn of a machine's sessions, with the owner's two
@@ -258,14 +265,15 @@ mod tests {
     }
 
     #[test]
-    fn agent_sessions_are_names_until_the_owner_says_otherwise() {
+    fn agent_sessions_are_work_until_the_owner_says_otherwise() {
         let d = dir("sessions");
-        assert_eq!(agent_sessions(&d), AgentSessions::Names);
+        assert_eq!(agent_sessions(&d), AgentSessions::Work);
         for what in [AgentSessions::Work, AgentSessions::None, AgentSessions::Names] {
             set_agent_sessions(&d, what).unwrap();
             assert_eq!(agent_sessions(&d), what);
         }
-        // Another key's write keeps it, and a word it doesn't know is the default.
+        // Another key's write keeps it, an owner's own choice stays, and a
+        // word it doesn't know is names.
         set_agent_sessions(&d, AgentSessions::Work).unwrap();
         set_agent_mentions(&d, false).unwrap();
         assert_eq!(agent_sessions(&d), AgentSessions::Work);
