@@ -274,6 +274,14 @@ impl BlockCtx {
         }
     }
 
+    /// Say where the turn that took a mention is (#611): the mux tells the
+    /// same place a terminal's turns go (#540).
+    pub fn mention_turn(&self, tag: crate::mux::MentionTag, turn: crate::mux::Turn) {
+        if let Some(cmds) = &self.cmds {
+            let _ = cmds.send(crate::mux::Cmd::Api(crate::mux::Api::MentionTurn(self.id, tag, turn)));
+        }
+    }
+
     /// Open another block (M36: a diff beside a PR), as the owner.
     pub async fn open(&self, req: arugula_proto::api::OpenRequest) -> Result<PaneId, String> {
         let cmds = self.cmds.as_ref().ok_or("this block can't open others")?;

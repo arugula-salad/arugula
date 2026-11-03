@@ -243,6 +243,9 @@ pub enum Api {
     /// went straight in. With the mention it carries (#540), whose turn
     /// is reported.
     FollowUp(PaneId, String, Driver, Option<MentionTag>, oneshot::Sender<Result<bool, String>>),
+    /// An agent block's turn for a mention started or ended (#611): the
+    /// block says so, and it goes to the same [`Turns`] a terminal's does.
+    MentionTurn(PaneId, MentionTag, Turn),
     /// Someone answered a block's approval or question (M29), for its
     /// card, the pane's history and the audit log: `(id, how, headline)`.
     Answered(PaneId, Driver, String, String, String),

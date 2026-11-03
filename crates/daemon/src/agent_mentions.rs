@@ -442,6 +442,19 @@ impl Daemon for App {
     }
 
     async fn follow_up(&self, pane: PaneId, text: String, by: Driver, tag: MentionTag) -> Result<bool, String> {
+        // An agent block takes it as its next prompt (#611): its own queue
+        // waits for the turn in progress (D4), and says whether it went in.
+        if let Some(b) = self.mux.api(|r| Api::Block(pane, r)).await.flatten()
+            && b.kind() == arugula_proto::BlockType::Agent
+        {
+            let name = (by.who != "owner").then_some(by.name.as_str());
+            let args = serde_json::json!({
+                "text": text,
+                "mention": { "room": tag.room, "seq": tag.seq },
+            });
+            let sent = b.call_by("send", args, name).await?;
+            return Ok(sent["queued"].as_u64() == Some(0));
+        }
         match self.mux.api(|r| Api::FollowUp(pane, text, by, Some(tag), r)).await {
             Some(r) => r,
             None => Err("daemon is shutting down".into()),

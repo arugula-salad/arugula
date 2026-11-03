@@ -355,6 +355,9 @@ impl Daemon {
                     self.touch(pane);
                 }
             }
+            Api::MentionTurn(pane, tag, turn) => {
+                self.config.turns.turn(pane, &tag, turn);
+            }
             Api::FollowUp(pane, text, by, tag, reply) => {
                 let _ = reply.send(self.follow_up(pane, text, by, tag));
             }
