@@ -119,6 +119,7 @@ const READ_RULES: &[&str] = &[
     "mcp__arugula__read_cloud",
     "mcp__arugula__read_thread",
     "mcp__arugula__search_threads",
+    "mcp__arugula__board_read",
     "mcp__arugula__read_run",
     "mcp__arugula__read_deploy",
     "mcp__arugula__read_session",
@@ -171,11 +172,13 @@ const ACTING_RULES: &[&str] = &[
     "mcp__arugula__link_repo",
     "mcp__arugula__post_thread",
     "mcp__arugula__issue_write",
+    "mcp__arugula__board_write",
     "mcp__arugula__start_run",
     "mcp__arugula__plan_deploy",
     "mcp__arugula__session_start",
     "mcp__arugula__session_reply",
     "mcp__arugula__session_stop",
+    "mcp__arugula__tracker_write",
 ];
 
 #[derive(Subcommand)]
@@ -944,6 +947,7 @@ mod tests {
             "mcp__arugula__read_cloud",
             "mcp__arugula__read_thread",
             "mcp__arugula__search_threads",
+            "mcp__arugula__board_read",
             "mcp__arugula__read_run",
             "mcp__arugula__read_deploy",
             "mcp__arugula__read_session",
