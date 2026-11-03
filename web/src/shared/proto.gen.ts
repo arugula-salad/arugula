@@ -116,6 +116,13 @@ pr?: number, pr_url?: string,
 pr_block?: number, };
 
 /**
+ * What a teammate's agent may learn of this machine's sessions (#577),
+ * when it asks which ones it can `@machine/name`. Only with agent mentions
+ * on; off, it learns nothing whatever this says.
+ */
+export type AgentSessions = "none" | "names" | "work";
+
+/**
  * The open question or approval behind an `ask` reason.
  */
 export type AskRef = { 
@@ -4947,6 +4954,11 @@ guest_ssh: boolean,
  */
 agent_mentions?: boolean, 
 /**
+ * What a teammate's agent may learn of this machine's sessions
+ * (#577). Names by default.
+ */
+agent_sessions?: AgentSessions, 
+/**
  * Whether this build has guest ssh. A build without Labs keeps the
  * setting, and nothing follows. Absent: it has.
  */
@@ -4956,7 +4968,7 @@ built?: boolean, };
  * `PUT /api/sharing` (the `sharing.set` operation): the settings to
  * change; one left out stays as it is.
  */
-export type SharingSetRequest = { guest_ssh?: boolean, agent_mentions?: boolean, };
+export type SharingSetRequest = { guest_ssh?: boolean, agent_mentions?: boolean, agent_sessions?: AgentSessions, };
 
 /**
  * A split's area and how long each child is along the split's direction,

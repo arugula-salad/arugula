@@ -1579,6 +1579,38 @@ pub struct AgentReach {
     pub powers: Vec<String>,
 }
 
+/// The sessions of a machine in a room that an agent may mention (`GET`,
+/// [`AgentSessionsQuery`], answered [`AgentMachineSessions`], #577).
+/// `machine` is its name as in `@machine`. Refused unless the asking
+/// machine reads `room` and `machine` hears it.
+pub fn agent_machine_sessions(room: &str, machine: &str) -> String {
+    format!("{AGENT_ROOMS}/{room}/agents/{machine}/sessions")
+}
+
+/// [`agent_machine_sessions`]' query.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+pub struct AgentSessionsQuery {
+    /// The asking session's name, so a machine asked about itself leaves it
+    /// out (#575).
+    #[serde(default)]
+    pub from_session: Option<String>,
+}
+
+/// A machine's sessions an agent may mention in a room (#577).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+pub struct AgentMachineSessions {
+    pub machine_name: String,
+    /// The machine isn't on control's relay now, or didn't answer.
+    #[serde(default)]
+    pub offline: bool,
+    /// False when its owner shows no session names.
+    pub shared: bool,
+    /// Newest active first, at most 20.
+    pub sessions: Vec<crate::forge::MachineSession>,
+}
+
 /// A page of [`agent_messages`]: as [`ChatMessagesQuery`], and `mentions`
 /// for only those that mention this machine's agents.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]

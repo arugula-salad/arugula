@@ -1305,6 +1305,18 @@ off` or the sharing settings in the web client (`sharing.json`); on by
 default. A reply under a thread's newest message, when that is a person's,
 tells no agent. Edits tell nobody.
 
+An agent lists the sessions of a teammate's machine it can `@machine/name`
+(#577) with `read_thread` and `machine`: control (`GET
+/api/daemon/chat/rooms/{room}/agents/{machine}/sessions`) checks that the
+asker reads the room and the machine hears it, then asks the machine's
+daemon (`agents.sessions`). Each session comes with the name a mention
+matches, its tab and how long ago it last printed; the owner's
+`arugulad sharing agent-sessions work|names|none` (`sharing.json`) decides
+whether it also says which issue it was started on (`work`), shows names only
+(`names`, the default) or nothing (`none`, or agent mentions off). The same
+setting empties the names an unknown `@machine/name` answers with. An offline
+machine answers an empty list marked `offline`.
+
 **Agents on native issues (M200).** The same machine's agents read and
 write a project's native issues over MCP. An issue is `#N` in the current
 project (the call's `project`, else the one the agent's clone's GitHub

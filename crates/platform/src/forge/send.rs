@@ -389,7 +389,8 @@ async fn by_machine(
             }
             OpAnswer::Cant { why } => tried.push(format!("{}: {why}", m.name)),
             OpAnswer::Unknown => tried.push(format!("{}: its Arugula is too old to send drafts", m.name)),
-            OpAnswer::Offline => {}
+            // Only `agents.sessions` answers so (#577): not to a send.
+            OpAnswer::Offline | OpAnswer::Sessions { .. } => {}
         }
     }
     info!(draft = d.id, account, tried = tried.join("; "), "no way to send a draft: it waits");

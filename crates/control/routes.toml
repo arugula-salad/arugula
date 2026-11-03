@@ -1657,6 +1657,14 @@ clients = ["daemon"]
 note = "Labelled as the owner's agent on the machine; nobody is woken."
 
 [[route]]
+method = "GET"
+path = "/api/daemon/chat/rooms/{id}/agents/{machine}/sessions"  # wire::chat::agent_machine_sessions
+process = "platform"
+auth = "daemon"
+clients = ["daemon"]
+note = "The sessions of a machine that hears the room that an agent may mention (`threads.read`), as its owner shows them (#577)."
+
+[[route]]
 method = "POST"
 path = "/api/daemon/chat/rooms/{id}/files"  # wire::chat::agent_files
 process = "platform"
