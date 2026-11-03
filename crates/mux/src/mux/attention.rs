@@ -767,6 +767,14 @@ impl Daemon {
             }
         }
         let event = hook["hook_event_name"].as_str().unwrap_or_default();
+        // #645: the tool it last ran, for a thread's strip. The name alone,
+        // of the session's own calls and not a subagent's.
+        if event == "PreToolUse"
+            && hook["agent_id"].is_null()
+            && let Some(tool) = hook["tool_name"].as_str()
+        {
+            self.last_tools.insert(pane, tool.to_owned());
+        }
         let session = session_key(hook);
         let open = self
             .asks

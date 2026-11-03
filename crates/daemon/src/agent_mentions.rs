@@ -43,7 +43,8 @@ use std::{
 use arugula_control_wire::{
     chat::{DropWhy as WireWhy, MENTION_STATE, MentionTurn, PutMentionState},
     forge::{
-        AgentGrantAsk, AgentMention, AgentSessionsAsk, MachineSession, OpAnswer, Routed, RoutedStep, SESSIONS_LISTED,
+        AgentGrantAsk, AgentMention, AgentSessionsAsk, MachineSession, MachineSessionState, OpAnswer, Routed,
+        RoutedStep, SESSIONS_LISTED,
     },
 };
 use arugula_proto::sharing::AgentSessions;
@@ -389,15 +390,7 @@ async fn read_in(app: &impl Daemon, room: &str) {
 /// A session's name as `@machine/session` spells it: lowercase, each run
 /// of anything but letters and digits one `-`, none at the ends.
 pub fn slug(name: &str) -> String {
-    let mut out = String::new();
-    for c in name.chars().flat_map(char::to_lowercase) {
-        if c.is_alphanumeric() {
-            out.push(c);
-        } else if !out.is_empty() && !out.ends_with('-') {
-            out.push('-');
-        }
-    }
-    out.trim_end_matches('-').to_owned()
+    arugula_control_wire::forge::session_slug(name)
 }
 
 /// The text a session is given: a teammate's message, said so first, so
@@ -555,6 +548,10 @@ pub(crate) struct Activity {
     pub ms_ago: Option<u64>,
     /// The issue its agent block was started on, as its starter wrote it.
     pub issue: Option<String>,
+    /// What it's doing now (#645).
+    pub state: Option<MachineSessionState>,
+    /// The name of the tool it last ran, from its hooks (#645).
+    pub tool: Option<String>,
 }
 
 /// Whether a follow-up that [`Daemon::follow_up`] answered with `now` went
@@ -586,6 +583,7 @@ impl Daemon for App {
     async fn activity(&self) -> Vec<(PaneId, Activity)> {
         let now = arugula_e2e::now_ms();
         let panes = self.mux.api(Api::Panes).await.unwrap_or_default();
+        let tools = self.mux.api(Api::LastTools).await.unwrap_or_default();
         panes
             .into_iter()
             .map(|p| {
@@ -593,7 +591,13 @@ impl Daemon for App {
                 // wanted someone (#577).
                 let at = p.info.activity.map(|a| a.last_ms).filter(|t| *t > 0).or(p.info.reason.map(|r| r.since_ms));
                 let issue = p.info.on_issue.map(|i| i.issue);
-                (p.info.id, Activity { ms_ago: at.map(|t| now.saturating_sub(t)), issue })
+                let state = Some(match p.info.attention {
+                    arugula_proto::Attention::Working => MachineSessionState::Working,
+                    arugula_proto::Attention::NeedsInput => MachineSessionState::NeedsInput,
+                    _ => MachineSessionState::Idle,
+                });
+                let tool = tools.get(&p.info.id).cloned();
+                (p.info.id, Activity { ms_ago: at.map(|t| now.saturating_sub(t)), issue, state, tool })
             })
             .collect()
     }
@@ -766,20 +770,33 @@ pub(crate) async fn sessions_for(app: &impl Daemon, ask: &AgentSessionsAsk) -> O
         return OpAnswer::Sessions { shared: false, sessions: vec![] };
     }
     let silent = app.silenced().await;
-    let sessions: Vec<_> = app.sessions().await.into_iter().filter(|(p, _)| !silent.contains(p)).collect();
+    // A thread's strip (#645) asks for the sessions in it by name: a silenced
+    // one is still in the thread, and the list's cap isn't for it.
+    let strip = !ask.only.is_empty();
+    let sessions: Vec<_> = app
+        .sessions()
+        .await
+        .into_iter()
+        .filter(|(p, n)| if strip { ask.only.contains(&slug(n)) } else { !silent.contains(p) })
+        .collect();
     let (tabs, activity) = (app.tab_names().await, app.activity().await);
     let author = ask.from_session.as_deref().map(slug).filter(|a| !a.is_empty());
     let mut out: Vec<MachineSession> = sessions
         .iter()
         .filter(|(_, n)| author.as_ref().is_none_or(|a| slug(n) != *a))
         .filter_map(|(pane, _)| {
-            let name = reached_by(*pane, &sessions, &tabs)?;
+            let name = match strip {
+                true => sessions.iter().find(|(p, _)| p == pane).map(|(_, n)| slug(n))?,
+                false => reached_by(*pane, &sessions, &tabs)?,
+            };
             let note = activity.iter().find(|(p, _)| p == pane).map(|(_, a)| a.clone()).unwrap_or_default();
             Some(MachineSession {
                 name,
                 tab: tabs.iter().find(|(p, _)| p == pane).map(|(_, t)| t.clone()),
                 active_ms_ago: note.ms_ago,
                 working_on: note.issue.filter(|_| shown == AgentSessions::Work),
+                state: note.state,
+                tool: note.tool.filter(|_| shown == AgentSessions::Work),
             })
         })
         .collect();
@@ -790,7 +807,9 @@ pub(crate) async fn sessions_for(app: &impl Daemon, ask: &AgentSessionsAsk) -> O
             &b.name,
         ))
     });
-    out.truncate(SESSIONS_LISTED);
+    if !strip {
+        out.truncate(SESSIONS_LISTED);
+    }
     OpAnswer::Sessions { shared: true, sessions: out }
 }
 
@@ -1007,7 +1026,9 @@ mod tests {
         fn active(mut self, acts: &[(PaneId, u64, Option<&str>)]) -> Self {
             self.acts = acts
                 .iter()
-                .map(|(p, ago, i)| (*p, Activity { ms_ago: Some(*ago), issue: i.map(str::to_owned) }))
+                .map(|(p, ago, i)| {
+                    (*p, Activity { ms_ago: Some(*ago), issue: i.map(str::to_owned), ..Default::default() })
+                })
                 .collect();
             self
         }
@@ -1549,7 +1570,7 @@ mod tests {
     }
 
     fn ask(from: Option<&str>) -> AgentSessionsAsk {
-        AgentSessionsAsk { room: "ch_x".into(), from_session: from.map(str::to_owned) }
+        AgentSessionsAsk { room: "ch_x".into(), from_session: from.map(str::to_owned), only: vec![] }
     }
 
     fn machine_with_sessions(name: &str) -> Fake {
@@ -1575,6 +1596,23 @@ mod tests {
         let (_, got) = listed(sessions_for(&d, &ask(None)).await);
         let on: Vec<_> = got.iter().map(|s| s.working_on.as_deref()).collect();
         assert_eq!(on, [None, Some("#12"), Some("#540")]);
+    }
+
+    /// A thread's strip asks for its sessions by name (#645): only those,
+    /// with what they're doing, the tool only where the owner shows work, and
+    /// a silenced one all the same, since it's still in the thread.
+    #[tokio::test]
+    async fn a_threads_strip_gets_only_the_sessions_it_names() {
+        let d = machine_with_sessions("sessions-strip");
+        let strip =
+            AgentSessionsAsk { room: "ch_x".into(), from_session: None, only: vec!["billing".into(), "gone".into()] };
+        let (shared, got) = listed(sessions_for(&d, &strip).await);
+        assert!(shared);
+        let names: Vec<_> = got.iter().map(|s| s.name.as_str()).collect();
+        assert_eq!(names, ["billing"]);
+        assert!(got[0].tool.is_none(), "names only by default");
+        arugula_proto::sharing::set_agent_sessions(&d.dir, AgentSessions::None).unwrap();
+        assert_eq!(listed(sessions_for(&d, &strip).await), (false, vec![]), "the owner shows none");
     }
 
     /// `none` and mentions off show nothing, and say so (#577).

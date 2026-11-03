@@ -318,7 +318,7 @@ pub async fn machine_sessions(
             arugula_control_common::err(axum::http::StatusCode::NOT_FOUND, "no machine of that name hears this room")
         })?;
     let from_session = q.from_session.filter(|_| target.machine == d.daemon);
-    let ask = arugula_control_wire::forge::AgentSessionsAsk { room: room.id.clone(), from_session };
+    let ask = arugula_control_wire::forge::AgentSessionsAsk { room: room.id.clone(), from_session, only: vec![] };
     let (offline, shared, sessions) = match ask_sessions(&app, &target.machine, ask).await {
         Some((shared, sessions)) => (false, shared, sessions),
         None => (true, true, vec![]),

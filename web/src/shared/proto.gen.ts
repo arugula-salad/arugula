@@ -1590,6 +1590,60 @@ following: boolean,
 read: number, unread: number, mentions: number, };
 
 /**
+ * One agent in a thread (#645): a session on someone's machine, or a hosted
+ * session. Never its output, a tool's arguments or a path (aru-051).
+ */
+export type ChatThreadAgent = { 
+/**
+ * The session's name, as its machine called it, or a hosted session's
+ * short id. Empty when a machine was told and no session has spoken.
+ */
+name: string, 
+/**
+ * The machine's id, or a hosted session's `ses_` id.
+ */
+id: string, 
+/**
+ * The machine's name, or the hosted box's.
+ */
+machine_name: string, 
+/**
+ * The owner's account and name; a hosted session's asker.
+ */
+owner: string, owner_name: string, hosted: boolean, state: ChatThreadAgentState, 
+/**
+ * With the owner's `work`: what it was started on.
+ */
+working_on?: string, 
+/**
+ * With the owner's `work`: the name of the tool it last ran.
+ */
+tool?: string, 
+/**
+ * The newest message of the thread it has taken in, or written.
+ */
+read_seq?: number, 
+/**
+ * Messages told to it that it hasn't taken in yet.
+ */
+waiting: number, 
+/**
+ * The agent a message goes to by default (#647): the thread's hosted
+ * session, else the agent first in it.
+ */
+lead: boolean, };
+
+/**
+ * What an agent in a thread is doing (#645).
+ */
+export type ChatThreadAgentState = "working" | "idle" | "needs_you" | "offline" | "unknown";
+
+/**
+ * [`chat_thread_agents`]' answer: oldest in the thread first.
+ */
+export type ChatThreadAgents = { agents: Array<ChatThreadAgent>, };
+
+/**
  * One thread the reader follows, in [`ChatThreads`].
  */
 export type ChatThreadItem = { room: string, 

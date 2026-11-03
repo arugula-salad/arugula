@@ -11,6 +11,10 @@
   ],
   "out": [
     {
+      "match": "/threads/{seq}/agents",
+      "why": "The strip of a thread's agents is on the web for now (Arugula #646)"
+    },
+    {
       "match": "/secrets",
       "why": "Project secrets stay on the web"
     },

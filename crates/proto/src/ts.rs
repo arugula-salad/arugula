@@ -107,6 +107,7 @@ fn generate() -> String {
         use arugula_control_wire::chat::*;
         c.visit::<ChatRooms>();
         c.visit::<ChatRoomDetail>();
+        c.visit::<ChatThreadAgents>();
         c.visit::<ChatMessages>();
         c.visit::<ChatNewChannel>();
         c.visit::<ChatNewDm>();

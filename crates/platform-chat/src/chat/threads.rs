@@ -88,7 +88,7 @@ pub(super) fn summaries(db: &Db, reader: &str, ms: &[&Message]) -> anyhow::Resul
 /// The first message of the thread `parent` in a room, for a reader whose
 /// floor is `from`: it must be there, not itself a reply, and not from
 /// before they see the room. Deleted is fine: its thread stays.
-pub(super) fn parent_in(app: &Platform, room: &Room, from: u64, parent: i64) -> Result<Message, ApiError> {
+pub(in crate::chat) fn parent_in(app: &Platform, room: &Room, from: u64, parent: i64) -> Result<Message, ApiError> {
     let m = message_in(app, room, parent)?;
     if m.at < from {
         return Err(err(StatusCode::NOT_FOUND, "no such message"));

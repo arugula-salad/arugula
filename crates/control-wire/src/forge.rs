@@ -354,6 +354,16 @@ pub struct AgentMention {
     pub root_line: Option<String>,
 }
 
+/// What a machine's session is doing (#645).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum MachineSessionState {
+    Working,
+    Idle,
+    NeedsInput,
+}
+
 /// A mention of this machine that its agents can't read the room for (#578).
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
@@ -391,6 +401,25 @@ pub struct AgentSessionsAsk {
     /// wrote it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub from_session: Option<String>,
+    /// For a thread's strip (#645): only the sessions of these names
+    /// ([`session_slug`]), silenced or not, and however many. Empty: the list
+    /// a mention picks from. An older daemon ignores it and answers that.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub only: Vec<String>,
+}
+
+/// A session's name as `@machine/name` matches it: lowercase, its letters and
+/// digits, the rest one dash.
+pub fn session_slug(name: &str) -> String {
+    let mut out = String::new();
+    for c in name.chars().flat_map(char::to_lowercase) {
+        if c.is_alphanumeric() {
+            out.push(c);
+        } else if !out.is_empty() && !out.ends_with('-') {
+            out.push('-');
+        }
+    }
+    out.trim_end_matches('-').to_owned()
 }
 
 /// The most sessions an `agents.sessions` answer lists.
@@ -412,6 +441,13 @@ pub struct MachineSession {
     /// With the owner's `work`: the issue it was started on (`#540`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub working_on: Option<String>,
+    /// What it's doing now (#645); absent from an older daemon.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub state: Option<MachineSessionState>,
+    /// With the owner's `work`: the name of the tool it last ran (#645),
+    /// never its arguments or output.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool: Option<String>,
 }
 
 /// A draft to send: what it is and where it goes. `account` is its person,

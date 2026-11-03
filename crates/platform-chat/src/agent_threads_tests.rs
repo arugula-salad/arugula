@@ -768,6 +768,77 @@ async fn agents_are_told_at_most_ten_times_per_thread_per_machine_in_a_window() 
     assert!(app.chat.agent_told("ch_general", root, "geek", now + crate::chat::AGENT_TOLD_WINDOW_MS));
 }
 
+/// A thread's agents (#645): each session that spoke in it, what its machine
+/// says it's doing, an offline machine as offline, and nothing for a thread
+/// with no agents. Whoever sees the room may ask; a stranger may not.
+#[tokio::test]
+async fn a_thread_says_which_agents_are_in_it_and_what_each_is_doing() {
+    use arugula_control_wire::{
+        chat::{ChatThreadAgentState as S, ChatThreadAgents, chat_thread_agents},
+        forge::{DaemonOp, MachineSession, MachineSessionState},
+    };
+    let (hub, _app, base, t, _u) = seeded().await;
+    geek_in_t(&base, &t).await;
+    hub.daemon("mini", "a", Some("t"));
+    for power in [THREADS_POST, THREADS_READ] {
+        let (st, g) =
+            call(&base, "a", "POST", "/api/grants", give("mini", power, json!({ "kind": "project", "id": t }))).await;
+        assert_eq!(st, 200, "{g}");
+    }
+    hub.answers_ops(
+        "geek",
+        OpAnswer::Sessions {
+            shared: true,
+            sessions: vec![MachineSession {
+                name: "ux-work".into(),
+                tab: None,
+                active_ms_ago: Some(5),
+                working_on: Some("#900".into()),
+                state: Some(MachineSessionState::Working),
+                tool: Some("Bash".into()),
+            }],
+        },
+    );
+    let room = "/api/chat/rooms/ch_general/messages";
+    let (_, v) = call(&base, "b", "POST", room, say("a thread")).await;
+    let root = v["seq"].as_i64().unwrap();
+    let path = chat_thread_agents("ch_general", root);
+
+    // No agents yet: an empty list.
+    let (st, v) = call(&base, "b", "GET", &path, None).await;
+    assert_eq!((st, &v["agents"]), (200, &json!([])), "{v}");
+
+    let geeks = agent_says(&base, "geek", "UX Work", "looking", Some(root)).await;
+    let minis = agent_says(&base, "mini", "wake", "me too", Some(root)).await;
+    let (st, v) = call(&base, "b", "GET", &path, None).await;
+    assert_eq!(st, 200, "{v}");
+    let got: ChatThreadAgents = serde_json::from_value(v).unwrap();
+    assert_eq!(got.agents.len(), 2, "{got:?}");
+    let (first, second) = (&got.agents[0], &got.agents[1]);
+    assert_eq!((first.name.as_str(), first.state, first.lead), ("UX Work", S::Working, true));
+    assert_eq!((first.tool.as_deref(), first.working_on.as_deref()), (Some("Bash"), Some("#900")));
+    assert_eq!(first.read_seq, Some(geeks));
+    assert_eq!((first.owner.as_str(), first.hosted), ("a", false));
+    // mini has no answer ready: as offline, and nothing about it is made up.
+    assert_eq!((second.name.as_str(), second.state, second.lead), ("wake", S::Offline, false));
+    assert_eq!((second.tool.as_deref(), second.read_seq), (None, Some(minis)));
+
+    // It asked by name, and the machine's own list wasn't what it got.
+    let asked: Vec<Vec<String>> = hub
+        .ops_asked()
+        .into_iter()
+        .filter_map(|(m, op)| match op {
+            DaemonOp::AgentSessions(a) if m == "geek" => Some(a.only),
+            _ => None,
+        })
+        .collect();
+    assert!(asked.iter().all(|only| only == &["ux-work".to_owned()]), "{asked:?}");
+
+    // Someone who can't see the room can't ask.
+    let (st, _) = call(&base, "stranger", "GET", &path, None).await;
+    assert!(st == 401 || st == 403 || st == 404, "{st}");
+}
+
 /// An agent lists a teammate machine's sessions in a room (#577): the
 /// asker reads the room and the target hears it. A machine that can only
 /// post, or isn't granted, is no such machine there; an offline one answers
@@ -822,6 +893,8 @@ async fn an_agent_lists_the_sessions_of_a_machine_that_hears_the_room() {
         tab: Some("Views".into()),
         active_ms_ago: Some(180_000),
         working_on: Some("#540".into()),
+        state: None,
+        tool: None,
     };
     hub.answers_ops("mini", OpAnswer::Sessions { shared: true, sessions: vec![slow] });
     let (st, v) = geek(&base, "GET", &format!("{}?from_session=Billing", path("@Mini-Box")), None).await;

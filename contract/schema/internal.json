@@ -182,6 +182,13 @@
             "null"
           ]
         },
+        "only": {
+          "description": "For a thread's strip (#645): only the sessions of these names\n([`session_slug`]), silenced or not, and however many. Empty: the list\na mention picks from. An older daemon ignores it and answers that.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
         "room": {
           "description": "The room the mention would be in.",
           "type": "string"

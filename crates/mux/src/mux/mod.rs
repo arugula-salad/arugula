@@ -235,6 +235,8 @@ pub enum Api {
     /// A tool call ended (#644): a mention waiting for the pane, if there is
     /// one and the hook is from its own conversation.
     TakeMention(PaneId, serde_json::Value, oneshot::Sender<Option<(String, arugula_proto::Driver)>>),
+    /// The tool each pane's session last ran (#645).
+    LastTools(oneshot::Sender<HashMap<PaneId, String>>),
     /// What Claude Code running in a pane says of its session from inside
     /// it (#450, its arugula-live mod), as the agent block's `context`
     /// reads (`PaneInfo.live`); `None` forgets it. With the pid of the
@@ -506,6 +508,8 @@ struct Daemon {
     /// (#644). Not kept across a restart: until its next `SessionStart`, a
     /// session gets them between turns.
     mentions_told: HashMap<PaneId, String>,
+    /// The tool each pane's session last ran (#645).
+    last_tools: HashMap<PaneId, String>,
     /// The card for the mentions held on each terminal whose hooks aren't
     /// listening (#579): typed only when the owner taps deliver.
     held: HashMap<PaneId, Reason>,
@@ -721,6 +725,7 @@ pub fn start(
         hooked: Default::default(),
         mentions_off: Default::default(),
         mentions_told: Default::default(),
+        last_tools: Default::default(),
         held: Default::default(),
         live: HashMap::new(),
         live_pid: HashMap::new(),

@@ -124,6 +124,7 @@ pub(crate) mod saved;
 pub mod session_card;
 pub(crate) mod sessions;
 pub(crate) mod sidebar;
+pub mod thread_agents;
 pub(crate) mod threads;
 pub(crate) mod typing;
 
