@@ -199,7 +199,7 @@ name = "passkeys"
 plane = "machine"
 process = "hub"
 holds = "metadata"
-what = "A passkey's public key, its sign count, what keeps it, the browser that added it (its User-Agent, the device its sign-in said it is, and that sign-in), whether it gives PRF."
+what = "A passkey's public key, its sign count, what keeps it, the browser that added it (its User-Agent, the device its sign-in said it is, and that sign-in), whether it gives PRF, and the device its PRF keys are, once a browser holding it said (#641)."
 with_account = "deleted"
 seen_by = ["litestream"]
 
