@@ -96,7 +96,7 @@ test("Projects is lit inside a project, and takes you back to the list", async (
   await expect(projects).toHaveClass(/\bhere\b/);
   await expect(alice.locator(".ws-rail [data-open-chat]")).not.toHaveClass(/\bhere\b/);
   // The bar keeps the project's places and its own Settings.
-  await expect(alice.locator("[data-platform-bar] [data-platform-home]")).toBeVisible();
+  await expect(alice.locator("[data-platform-bar] [data-platform-home]")).toHaveText("Overview");
   await expect(alice.locator("[data-platform-bar] [data-platform-settings]")).toBeVisible();
   // In the page: no reload.
   await alice.evaluate(() => Object.assign(window, { stayed: true }));
