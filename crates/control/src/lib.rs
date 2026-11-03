@@ -82,6 +82,8 @@ mod links;
 mod links_wire;
 mod mail;
 mod maintenance;
+#[cfg(test)]
+mod native_clients_wire;
 mod notice;
 mod passkey;
 mod plans;
@@ -228,6 +230,16 @@ struct Args {
     #[arg(long, default_value_t = 10_000, env = "ARUGULA_RELAY_FREE_MB")]
     relay_free_mb: u64,
 
+    /// Take signatures from devices paired as native apps, on routes whose
+    /// routes.toml row lists `native` (aru-131). Off: they sign nothing, and
+    /// no native app can pair.
+    #[arg(
+        long,
+        env = "ARUGULA_NATIVE_CLIENTS",
+        action = clap::ArgAction::SetTrue,
+        value_parser = clap::builder::BoolishValueParser::new()
+    )]
+    native_clients: bool,
     /// The arugula.stream app People blocks' rooms are in (its `app_…` id)
     /// and its server secret, which signs their room tokens: People blocks
     /// say they're off without both. In process, the
@@ -344,6 +356,8 @@ pub struct Config {
     /// (`--presence-app`): the page loads its elements, and their trackers'
     /// WebAssembly, from it.
     pub presence_origin: Option<String>,
+    /// Native apps may pair and sign (`--native-clients`, aru-131).
+    pub native_clients: bool,
     /// Public previews are `<id>.<this>` (M187, `previews.rs`).
     pub preview_domain: Option<String>,
     /// The platform page's host (M151, `platform_host.rs`), and where its
@@ -517,6 +531,7 @@ impl App {
                 also_redirect: false,
                 block_domain: None,
                 presence_origin: None,
+                native_clients: false,
                 preview_domain: None,
                 platform_host: None,
                 platform_page: Default::default(),
@@ -1208,6 +1223,7 @@ async fn run(platforms: Box<dyn Platforms>) -> anyhow::Result<()> {
             sites,
             also_redirect: a.also_redirect,
             block_domain,
+            native_clients: a.native_clients,
             presence_origin: match a.presence_app.as_deref().filter(|s| !s.is_empty()) {
                 Some(_) => {
                     Some(origin_of(&a.presence_relay.replacen("ws", "http", 1)).context("ARUGULA_PRESENCE_RELAY")?)

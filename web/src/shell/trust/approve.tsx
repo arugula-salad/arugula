@@ -152,6 +152,8 @@ export function JoinPrompt({ s, code: whole, from, device }: { s: ControlSession
         }
       />
     ) : null;
+  // A native app (aru-131), which pairs the CLI's way.
+  if (j?.cert.kind === "browser") return <AppJoin s={s} j={j} cancel={cancel} refused={refused} failed={failed} sealed={sealed} secret={secret} whole={askWhole} />;
   // M49: the Arugula CLI on a machine, asking to be one of your devices.
   if (j?.cert.kind === "cli")
     return <CliJoin s={s} j={j} cancel={cancel} refused={refused} failed={failed} sealed={sealed} secret={secret} whole={askWhole} />;
@@ -472,16 +474,7 @@ function RestOfCode({
  * devices (`arugula login`). Approved, it reaches the account's machines
  * and can approve devices and machines, as this browser can. `sealed`:
  * its link carries a secret (#760), so nothing is compared. */
-function CliJoin({
-  s,
-  j,
-  cancel,
-  refused,
-  failed,
-  sealed,
-  secret,
-  whole,
-}: {
+type DeviceJoin = {
   s: ControlSession;
   j: JoinRequest;
   cancel: () => void;
@@ -490,7 +483,62 @@ function CliJoin({
   sealed: boolean;
   secret: string | null;
   whole: preact.ComponentChildren;
-}) {
+};
+
+/** Arugula's native app on a phone, asking to be one of your devices. */
+function AppJoin({ s, j, cancel, refused, failed, sealed, secret, whole }: DeviceJoin) {
+  const [err, setErr] = useState("");
+  const [busy, setBusy] = useState(false);
+  return (
+    <Modal close={clearHash}>
+      <h2>Add this app?</h2>
+      {err ? (
+        <p class="control-error" data-join-error>
+          {err}
+        </p>
+      ) : null}
+      {sealed ? (
+        <p data-join-app={j.cert.name} data-join-sealed>
+          <b>{j.cert.name}</b> asks to be one of your devices.
+        </p>
+      ) : (
+        <>
+          <p data-join-app={j.cert.name}>
+            <b>{j.cert.name}</b> asks to be one of your devices, with code <b data-join-code={j.code}>{j.code}</b>. Check it's the code the app shows.
+          </p>
+          <p class="dim">Its key: {fingerprint(j.cert.device)}</p>
+        </>
+      )}
+      {whole}
+      <p class="dim">It reaches your machines (directly or through control's relay, end-to-end encrypted), your chat, projects, issues and boards.</p>
+      <div class="prompt-buttons">
+        <button class="secondary" data-cancel-join onClick={cancel}>
+          {refused ? "Close" : "Cancel"}
+        </button>
+        <button
+          class="primary"
+          data-approve-join
+          disabled={busy || (sealed && !secret)}
+          onClick={async () => {
+            setBusy(true);
+            try {
+              await s.approveJoin(j.code, j.cert, null, [], secret);
+              clearHash();
+            } catch (e) {
+              setErr((e as Error).message);
+              setBusy(false);
+              failed(e);
+            }
+          }}
+        >
+          Approve
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
+function CliJoin({ s, j, cancel, refused, failed, sealed, secret, whole }: DeviceJoin) {
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
   // Its name is "Arugula CLI on <host>" unless `--name` said otherwise:

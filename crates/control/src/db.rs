@@ -66,6 +66,12 @@ CREATE TABLE IF NOT EXISTS devices (
     created INTEGER NOT NULL,
     PRIMARY KEY (account, id)
 );
+CREATE TABLE IF NOT EXISTS native_devices (
+    account TEXT NOT NULL,
+    device TEXT NOT NULL,
+    paired INTEGER NOT NULL,
+    PRIMARY KEY (account, device)
+);
 CREATE TABLE IF NOT EXISTS turned_down (
     account TEXT NOT NULL,
     device TEXT NOT NULL,
@@ -1447,6 +1453,25 @@ impl Db {
     }
 
     /// An approved device of this kind, by its id.
+    /// A `browser` device paired by code as a native app (aru-131), the only
+    /// kind of browser whose signature can count: its key is in a keychain,
+    /// not a page.
+    pub fn put_native_device(&self, account: &str, device: &str, now: u64) -> anyhow::Result<()> {
+        self.c().execute(
+            "INSERT OR IGNORE INTO native_devices (account, device, paired) VALUES (?1, ?2, ?3)",
+            params![account, device, now],
+        )?;
+        Ok(())
+    }
+
+    pub fn is_native_device(&self, device: &str) -> anyhow::Result<bool> {
+        Ok(self
+            .c()
+            .query_row("SELECT 1 FROM native_devices WHERE device = ?1", params![device], |_| Ok(()))
+            .optional()?
+            .is_some())
+    }
+
     pub fn approved_cert(&self, id: &str, kind: Kind) -> anyhow::Result<Option<Cert>> {
         Ok(self
             .c()
@@ -1608,6 +1633,7 @@ impl Db {
             "DELETE FROM devices WHERE account = ?1",
             "DELETE FROM revocations WHERE account = ?1",
             "DELETE FROM turned_down WHERE account = ?1",
+            "DELETE FROM native_devices WHERE account = ?1",
             "DELETE FROM joins WHERE account = ?1",
             "UPDATE sessions SET device = NULL WHERE account = ?1",
             "UPDATE passkeys SET device = NULL WHERE account = ?1",
@@ -2949,6 +2975,7 @@ impl Db {
             "DELETE FROM passkeys WHERE account = ?1",
             "DELETE FROM devices WHERE account = ?1",
             "DELETE FROM turned_down WHERE account = ?1",
+            "DELETE FROM native_devices WHERE account = ?1",
             "DELETE FROM revocations WHERE account = ?1",
             "DELETE FROM recovery_uses WHERE account = ?1",
             "DELETE FROM account_resets WHERE account = ?1",
