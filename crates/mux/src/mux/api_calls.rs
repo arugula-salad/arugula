@@ -108,6 +108,13 @@ impl Daemon {
                 let block = self.blocks.contains_key(&pane) && !self.asks.contains_key(&pane);
                 let _ = reply.send(self.live_reason(pane).map(|r| (r, block)));
             }
+            Api::RaiseNotice(n, reply) => {
+                self.raise_notice(n);
+                let _ = reply.send(());
+            }
+            Api::ClearNotice(key, reply) => {
+                let _ = reply.send(self.clear_notice(&key));
+            }
             Api::Machines(reply) => {
                 let _ = reply.send(self.machines.values().cloned().collect());
             }

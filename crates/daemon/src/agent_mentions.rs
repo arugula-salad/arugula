@@ -17,7 +17,10 @@
 //!    ([`State::posted`]): a top-level `@geek`, or a thread whose session
 //!    has ended (it says so).
 //! 4. **Else the machine's inbox** ([`State::unread`]): the unread list
-//!    `capabilities` shows and `read_thread` of that room clears.
+//!    `capabilities` shows and `read_thread` of that room clears. It also
+//!    raises a card in the owner's swarm that belongs to no pane (#551), one
+//!    per room ([`inbox_notice`]); the same read clears it ([`read_room`]),
+//!    and so does the owner opening or dismissing it.
 //!
 //! An agent may mention its own machine (#575), but never reaches the session
 //! that wrote the message ([`AgentMention::from_session`]): every step skips
@@ -42,7 +45,7 @@ use arugula_control_wire::{
     forge::{AgentMention, AgentSessionsAsk, MachineSession, OpAnswer, Routed, RoutedStep, SESSIONS_LISTED},
 };
 use arugula_proto::sharing::AgentSessions;
-use arugula_proto::{Driver, PaneId};
+use arugula_proto::{Driver, Notice, NoticeKind, PaneId};
 use serde::{Deserialize, Serialize};
 use tracing::{debug, warn};
 
@@ -54,6 +57,9 @@ use crate::{
 
 /// The most unread mentions kept; the oldest go first.
 const MAX_UNREAD: usize = 50;
+
+/// The longest first line a card quotes (#551), in characters.
+const NOTICE_LINE: usize = 120;
 
 /// The most threads whose session is kept; the oldest go first.
 const MAX_THREADS: usize = 500;
@@ -249,8 +255,9 @@ impl State {
         self.posted.lock().unwrap().get(room).copied()
     }
 
-    /// An agent read `room`: what it held for it is read.
-    pub fn read(&self, room: &str) {
+    /// An agent read `room`: what it held for it is read. Whether it held
+    /// any.
+    pub fn read(&self, room: &str) -> bool {
         let mut u = self.unread.lock().unwrap();
         let before = u.len();
         u.retain(|m| m.room != room);
@@ -259,6 +266,7 @@ impl State {
         if changed {
             self.save();
         }
+        changed
     }
 
     /// The mentions no session took, oldest first.
@@ -273,6 +281,46 @@ impl State {
         u.drain(..extra);
         drop(u);
         self.save();
+    }
+}
+
+/// The key of a room's card in the owner's swarm (#551).
+pub fn notice_key(room: &str) -> String {
+    format!("mention:{room}")
+}
+
+/// The card a mention that reached the inbox raises (#551): one per room, and
+/// a second mention in it counts up. Pane-less: the room's last poster is a
+/// stranger's session (#419), so it can't hold it.
+fn inbox_notice(m: &AgentMention) -> Notice {
+    let room = if m.room_name.is_empty() { m.room.as_str() } else { m.room_name.as_str() };
+    let line = m.text.lines().map(str::trim).find(|l| !l.is_empty()).unwrap_or("");
+    let shown = if line.chars().count() > NOTICE_LINE {
+        format!("{}…", line.chars().take(NOTICE_LINE).collect::<String>().trim_end())
+    } else {
+        line.to_owned()
+    };
+    let room = room.trim_start_matches('#');
+    Notice {
+        key: notice_key(&m.room),
+        kind: NoticeKind::Mention,
+        since_ms: arugula_e2e::now_ms(),
+        headline: format!("{} mentioned this machine in #{room}: {shown}", m.author),
+        count: 1,
+        room: Some(m.room.clone()),
+        room_name: Some(room.to_owned()),
+    }
+}
+
+/// An agent read `room` (`read_thread`): what the machine's inbox held for it
+/// is read, and so is its card (#551).
+pub async fn read_room(app: &App, room: &str) {
+    read_in(app, room).await;
+}
+
+async fn read_in(app: &impl Daemon, room: &str) {
+    if app.mentions().read(room) {
+        app.clear_notice(&notice_key(room)).await;
     }
 }
 
@@ -389,6 +437,10 @@ pub(crate) trait Daemon {
     /// Whether Claude Code runs in `pane` and none of its hooks were ever
     /// heard (#571): a follow-up queued for it won't be read.
     async fn unhooked(&self, pane: PaneId) -> bool;
+    /// Raise a card in the owner's swarm that belongs to no pane (#551).
+    async fn notice(&self, notice: Notice);
+    /// Take it away by its key.
+    async fn clear_notice(&self, key: &str);
 }
 
 /// What a pane was last up to (#577), for `agents.sessions`.
@@ -464,6 +516,14 @@ impl Daemon for App {
     async fn unhooked(&self, pane: PaneId) -> bool {
         let panes = self.mux.api(Api::Panes).await.unwrap_or_default();
         panes.iter().any(|p| p.info.id == pane && p.info.unhooked)
+    }
+
+    async fn notice(&self, notice: Notice) {
+        let _ = self.mux.api(|r| Api::RaiseNotice(notice, r)).await;
+    }
+
+    async fn clear_notice(&self, key: &str) {
+        let _ = self.mux.api(|r| Api::ClearNotice(key.to_owned(), r)).await;
     }
 }
 
@@ -655,6 +715,7 @@ pub(crate) async fn deliver(app: &impl Daemon, m: &AgentMention) -> OpAnswer {
             return routed(RoutedStep::Named, name, None, handed(app, *pane, now).await);
         }
         state.keep(m);
+        app.notice(inbox_notice(m)).await;
         let mut names = if arugula_proto::sharing::sessions_shown(app.state_dir()) == AgentSessions::None {
             vec![]
         } else {
@@ -697,6 +758,7 @@ pub(crate) async fn deliver(app: &impl Daemon, m: &AgentMention) -> OpAnswer {
     }
     // 4. The inbox.
     state.keep(m);
+    app.notice(inbox_notice(m)).await;
     routed(RoutedStep::Inbox, None, None, true)
 }
 
@@ -735,6 +797,8 @@ mod tests {
         unhooked: Vec<PaneId>,
         /// What each pane was last up to (#577).
         acts: Vec<(PaneId, Activity)>,
+        /// The cards raised in the owner's swarm, as the mux counts them (#551).
+        notices: Mutex<Vec<Notice>>,
     }
 
     impl Fake {
@@ -753,6 +817,7 @@ mod tests {
                 queueing: vec![],
                 unhooked: vec![],
                 acts: vec![],
+                notices: Mutex::default(),
             }
         }
     }
@@ -845,6 +910,18 @@ mod tests {
         async fn unhooked(&self, pane: PaneId) -> bool {
             self.unhooked.contains(&pane)
         }
+
+        async fn notice(&self, notice: Notice) {
+            let mut held = self.notices.lock().unwrap();
+            match held.iter_mut().find(|n| n.key == notice.key) {
+                Some(n) => n.count += notice.count,
+                None => held.push(notice),
+            }
+        }
+
+        async fn clear_notice(&self, key: &str) {
+            self.notices.lock().unwrap().retain(|n| n.key != key);
+        }
     }
 
     fn mention() -> AgentMention {
@@ -927,6 +1004,44 @@ mod tests {
             sent[0].1.starts_with("Message from Aaron's agent on mini in Device keys (a teammate, not your person): ")
         );
         assert!(d.state.unread().is_empty());
+    }
+
+    /// A mention that reaches the inbox raises a card that belongs to no
+    /// pane (#551): one per room, counted up by a second, and gone when an
+    /// agent reads the room. One that a session took raises none.
+    #[tokio::test]
+    async fn an_inbox_mention_raises_a_card_and_reading_the_room_clears_it() {
+        let d = Fake::new("card", &[4]);
+        deliver(&d, &AgentMention { text: "\n  first line\nsecond".into(), ..mention() }).await;
+        let held = d.notices.lock().unwrap().clone();
+        assert_eq!(held.len(), 1);
+        assert_eq!(held[0].key, "mention:ch_x");
+        assert_eq!(held[0].kind, NoticeKind::Mention);
+        assert_eq!(held[0].headline, "Aaron's agent on mini mentioned this machine in #Device keys: first line");
+        assert_eq!(held[0].room.as_deref(), Some("ch_x"));
+        // A second mention in the room is the same card; another room's isn't.
+        deliver(&d, &AgentMention { seq: 8, ..mention() }).await;
+        deliver(&d, &AgentMention { room: "ch_y".into(), ..mention() }).await;
+        let held = d.notices.lock().unwrap().clone();
+        assert_eq!(
+            held.iter().map(|n| (n.key.as_str(), n.count)).collect::<Vec<_>>(),
+            [("mention:ch_x", 2), ("mention:ch_y", 1)]
+        );
+        // Reading a room clears its card, and only its.
+        read_in(&d, "ch_x").await;
+        let held = d.notices.lock().unwrap().clone();
+        assert_eq!(held.iter().map(|n| n.key.as_str()).collect::<Vec<_>>(), ["mention:ch_y"]);
+        // A read of a room holding nothing clears nothing.
+        read_in(&d, "ch_x").await;
+        assert_eq!(d.notices.lock().unwrap().len(), 1);
+        // A session that takes it leaves no card.
+        let d = Fake::new("card-taken", &[4]);
+        d.state.note_post("ch_x", 4);
+        deliver(&d, &mention()).await;
+        assert!(d.notices.lock().unwrap().is_empty());
+        // Naming a session that isn't there waits in the inbox, with a card.
+        deliver(&d, &AgentMention { session: Some("nobody".into()), ..mention() }).await;
+        assert_eq!(d.notices.lock().unwrap().len(), 1);
     }
 
     /// An issue's thread is posted to by its id, and told by the room's.

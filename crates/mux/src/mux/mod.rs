@@ -12,6 +12,7 @@ mod config;
 mod followups;
 mod info;
 mod machines;
+mod notices;
 mod outside;
 mod who_may;
 
@@ -193,6 +194,11 @@ pub enum Api {
     /// Why one pane wants you now, and whether it's a block (else a
     /// terminal).
     Reason(PaneId, oneshot::Sender<Option<(Reason, bool)>>),
+    /// Raise attention that belongs to no pane, or count it into the one
+    /// with its key (#551).
+    RaiseNotice(arugula_proto::Notice, oneshot::Sender<()>),
+    /// Take a notice away by its key; whether one was there.
+    ClearNotice(String, oneshot::Sender<bool>),
     Close(PaneId, oneshot::Sender<bool>),
     /// Open a block of any type; for a guest (M14), their principal: then
     /// it must be an agent beside a pane they edit, and runs on a VM of
@@ -564,6 +570,8 @@ struct Daemon {
     access: watch::Sender<u64>,
     tx: mpsc::UnboundedSender<Cmd>,
     machines: BTreeMap<MachineId, Machine>,
+    /// Attention that belongs to no pane, by key (#551).
+    pane_less: BTreeMap<String, arugula_proto::Notice>,
     next_machine: MachineId,
     save_due: Option<Instant>,
     last_saved: Option<SavedParts>,
@@ -613,7 +621,7 @@ enum Dirty {
 }
 
 /// What one person sees besides panes: machines, and who's here.
-type Seen = (Vec<Machine>, Vec<Presence>);
+type Seen = (Vec<Machine>, Vec<Presence>, Vec<arugula_proto::Notice>);
 
 /// A pane as one client has it.
 type PaneJson = serde_json::Map<String, serde_json::Value>;
@@ -628,6 +636,7 @@ struct Sent {
     panes: HashMap<PaneId, PaneJson>,
     machines: Vec<Machine>,
     presence: Vec<Presence>,
+    notices: Vec<arugula_proto::Notice>,
 }
 
 /// A pane's working directory and foreground command, as the OS showed
@@ -731,6 +740,7 @@ pub fn start(
         tx: tx.clone(),
         access: access.clone(),
         machines: BTreeMap::new(),
+        pane_less: BTreeMap::new(),
         next_machine: 1,
         save_due: None,
         last_saved: None,

@@ -392,6 +392,7 @@ impl Daemon {
             options,
             roles: None,
             presence: Vec::new(),
+            notices: Vec::new(),
         }
     }
 }

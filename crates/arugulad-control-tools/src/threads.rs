@@ -448,7 +448,7 @@ pub(crate) async fn read_thread(c: &Call<'_>, a: ReadThreadArgs) -> Out {
     let path = format!("{}?{}", agent_messages(a.room.trim()), query(&q));
     let v = threads_call(c, Method::GET, &path, None).await?;
     // Reading the room is reading what the machine's inbox held for it.
-    c.app().agent_mentions.read(a.room.trim());
+    arugulad_base::agent_mentions::read_room(c.app(), a.room.trim()).await;
     let me = mention(c);
     let messages: Vec<Value> = v["messages"].as_array().into_iter().flatten().map(|m| message(m, &me)).collect();
     let room = &v["room"];
