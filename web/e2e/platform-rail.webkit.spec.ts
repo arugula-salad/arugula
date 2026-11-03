@@ -105,6 +105,33 @@ test("Projects is lit inside a project, and takes you back to the list", async (
   expect(await alice.evaluate(() => (window as unknown as { stayed?: boolean }).stayed)).toBe(true);
 });
 
+test("the shell's Projects comes back to the page you left, and the list stays a click away (Arugula #638)", async () => {
+  await alice.goto(`${app}/`);
+  await alice.locator("section[data-platform-home] [data-project]", { hasText: "Acme" }).click();
+  await expect(alice).toHaveURL(/\/p\/prj_[0-9a-f]+-acme$/);
+  await alice.locator("[data-platform-bar] [data-platform-runs]").click();
+  await expect(alice).toHaveURL(/\/p\/prj_[0-9a-f]+-acme\/runs$/);
+  const left = alice.url();
+  // What the shell's Projects opens.
+  await alice.goto(`${app}/?back`);
+  await expect(alice).toHaveURL(left);
+  await expect(alice.locator("[data-platform-bar] [data-platform-runs]")).toHaveAttribute("aria-current", "page");
+  // Chat is the rail's own place: being there doesn't change where Projects goes.
+  await alice.locator(".ws-rail [data-open-chat]").click();
+  await expect(alice.locator(".ws-rail [data-open-chat]")).toHaveClass(/\bhere\b/);
+  await alice.goto(`${app}/?back`);
+  await expect(alice).toHaveURL(left);
+  // The rail's own Projects is still the list, and the list is remembered too.
+  await alice.locator(".ws-rail [data-open-projects]").click();
+  await expect(alice).toHaveURL(`${app}/`);
+  await alice.goto(`${app}/?back`);
+  await expect(alice).toHaveURL(`${app}/`);
+  // Somewhere that isn't a path here goes to the list.
+  await alice.evaluate(() => localStorage.setItem("arugula.platform-last-page", "//example.com/"));
+  await alice.goto(`${app}/?back`);
+  await expect(alice).toHaveURL(`${app}/`);
+});
+
 test("Panes lands on control's page in this tab, with the rail in the same spot, and Chat goes back", async () => {
   await alice.goto(`${app}/`);
   await expect(alice.locator("[data-platform-bar]")).toBeVisible({ timeout: 15_000 });

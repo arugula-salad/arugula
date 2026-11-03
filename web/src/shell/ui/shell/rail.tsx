@@ -47,7 +47,9 @@ export function Rail({ client }: { client: Client }) {
   const agents = client.flag("agent-delegation") && !client.state?.roles;
   const docs = !client.state?.roles;
   const host = directory.current || "this machine";
-  const projects = platformHref("/");
+  // Back to the page you left there (Arugula #638), or the list on a first visit.
+  const PROJECTS_PATH = "/?back";
+  const projects = platformHref(PROJECTS_PATH);
   const panes = () => {
     if (at !== "panes") closePlace(at);
     else client.viewOf(client.active() ?? -1)?.focus();
@@ -68,7 +70,7 @@ export function Rail({ client }: { client: Client }) {
       icon: <ProjectsIcon />,
       href: projects,
       target: "arugula-platform",
-      onClick: () => openPlatform("/"),
+      onClick: () => openPlatform(PROJECTS_PATH),
     },
     { label: "Panes", tip: "Your panes: back to this session's last tab and pane", here: at === "panes", hook: "data-open-panes", icon: <PanesIcon />, onClick: panes },
     {

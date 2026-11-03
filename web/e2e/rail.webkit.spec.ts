@@ -41,7 +41,7 @@ test("Projects is the rail's first place, above Panes, and the bar has no Projec
   const panes = alice.locator(".ws-rail [data-open-panes]");
   const [p, n] = await Promise.all([projects.boundingBox(), panes.boundingBox()]);
   expect(p!.y).toBeLessThan(n!.y);
-  await expect(projects).toHaveAttribute("href", `${app}/`);
+  await expect(projects).toHaveAttribute("href", `${app}/?back`);
   // The way to the platform page is the rail's now, not the bar's.
   await expect(alice.locator("[data-open-projects]")).toHaveCount(1);
   await expect(alice.getByText("Projects ↗")).toHaveCount(0);
