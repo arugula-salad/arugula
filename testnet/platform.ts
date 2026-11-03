@@ -32,6 +32,8 @@
 //                 answer labelled as their agent on BOX; once the read grant
 //                 is revoked, the next read_thread is refused:
 //                 {room, machine, posted}
+//   chat-room     chat on, a team and a channel in it (Arugula native #602):
+//                 {room}
 //   agent-mcp-setup
 //                 chat on and a team (M230): {project, account}
 //   agent-mcp PROJECT [--break]
@@ -624,6 +626,8 @@ async function redone(d: Device, token: string, app: string, secret: string) {
 async function main() {
   const d = await Device.load(state);
   switch (cmd) {
+    case "chat-room":
+      return { room: await channel(d) };
     case "chat":
       return chat(d);
     case "hold":
