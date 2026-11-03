@@ -10571,7 +10571,19 @@ html[data-desktop="macos"]:not([data-native-tabs]) .ws-rail {
   font-size: 13px;
 }
 
-.ws-head .host-button {
+/* Every shell bar on a computer is the panes' size and looks the same
+   (Arugula #637), so moving between a machine's places doesn't move the bar. */
+.frame .app-bar,
+.swarm-shell .app-bar {
+  height: var(--head-h);
+  align-items: center;
+  gap: 10px;
+  border-bottom: 1px solid var(--line-strong);
+}
+
+.ws-head .host-button,
+.frame .app-bar .host-button,
+.swarm-shell .app-bar .host-button {
   height: 28px;
   padding: 0 8px;
   border: 0;
@@ -10580,7 +10592,8 @@ html[data-desktop="macos"]:not([data-native-tabs]) .ws-rail {
   font-weight: 600;
 }
 
-.ws-head .host-button:hover {
+.ws-head .host-button:hover,
+.frame .app-bar .host-button:hover {
   background: var(--raised);
 }
 
@@ -11403,7 +11416,9 @@ html[data-desktop="macos"]:not([data-native-tabs]) .ws-rail {
    panes (which keep running, and their size). */
 .ws-att {
   position: absolute;
-  z-index: 40;
+  /* Over a machine's Docs and Recipes too (.chat), now their bars have the
+     bell (Arugula #637). */
+  z-index: 47;
   top: 0;
   right: 0;
   bottom: 0;

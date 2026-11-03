@@ -23,7 +23,7 @@ test("a read-only link is listed, and Revoke ends it", async ({ page, context })
   const ended = () => viewer.evaluate(() => (window as unknown as { __share: { ended: string | null } }).__share.ended);
   await expect.poll(shown).toContain("linked-25");
 
-  await page.locator("[data-crumb-menu]").click();
+  await page.locator(".ws-session-more").first().click();
   await page.getByRole("menuitem", { name: "Share session…" }).click();
   const dialog = page.locator(".share-dialog");
   const row = dialog.locator(`[data-share-live^="share:"][data-share-live-pane="${pane}"]`);

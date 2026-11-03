@@ -40,7 +40,6 @@ test.describe("on a computer", () => {
     const beta = await session(page, "beta");
     await row(page, "beta").locator(".ws-session-main").click();
     await expect.poll(() => shownSession(page)).toBe(beta);
-    await expect(page.locator(".ws-crumb")).toContainText("beta");
     await expect(row(page, "beta")).toHaveAttribute("aria-selected", "true");
 
     // Back: the tab that was shown, not the session's first.
@@ -83,6 +82,23 @@ test.describe("on a computer", () => {
     }
   });
 
+  test("the bar is the machine, then its places, on the panes and its Docs (Arugula #637)", async ({ page }) => {
+    await newWorkspace(page);
+    const places = page.locator("[data-machine-places]");
+    await expect(page.locator(".ws-wordmark")).toHaveCount(0);
+    await expect(places.locator("[data-machine-panes]")).toHaveAttribute("aria-current", "page");
+    await places.locator("[data-machine-docs]").click();
+    await expect.poll(() => page.evaluate(() => location.hash)).toBe("#docs");
+    await expect(page.locator(".app-bar [data-machine-docs]")).toHaveAttribute("aria-current", "page");
+    await expect(page.locator(".app-bar [data-open-attention]")).toBeVisible();
+    await page.locator(".app-bar [data-machine-panes]").click();
+    await expect.poll(() => page.evaluate(() => location.hash)).toBe("");
+    // The sidebar says which session this is; without it, the bar does.
+    await expect(page.locator(".ws-crumb-name")).toHaveCount(0);
+    await page.locator("[data-open-sessions]").click();
+    await expect(page.locator(".ws-crumb-name")).toBeVisible();
+  });
+
   test("macOS reserves the native controls strip once, including with native tabs", async ({ page }) => {
     await newWorkspace(page);
     expect((await page.locator(".ws-head").boundingBox())!.y).toBe(0);
@@ -91,7 +107,7 @@ test.describe("on a computer", () => {
     const brand = (await page.locator(".ws-brand").boundingBox())!;
     expect(header.y).toBe(28);
     expect(brand.y).toBe(header.y);
-    expect((await page.locator(".ws-wordmark").boundingBox())!.y).toBeGreaterThanOrEqual(28);
+    expect((await page.locator(".ws-crumbs").first().boundingBox())!.y).toBeGreaterThanOrEqual(28);
     await page.evaluate(() => {
       document.documentElement.dataset.nativeTabs = "";
       document.documentElement.style.setProperty("--native-tabs", "64px");
@@ -345,13 +361,15 @@ test.describe("states", () => {
     await page.mouse.wheel(0, -400);
     await expect.poll(() => strip.evaluate((el) => el.scrollLeft)).toBeLessThan(before);
 
-    // The long name: cut with an ellipsis in the crumb and the row, whole
-    // where the pointer rests.
+    // The long name: cut with an ellipsis in the row and, with the sidebar
+    // closed, the crumb, whole where the pointer rests.
+    await expect(row(page, long).locator(".ws-session-main")).toHaveAttribute("title", new RegExp(`^${long}`));
+    await expect(page.locator(".ws-crumb-name")).toHaveCount(0);
+    await page.locator("[data-open-sessions]").click();
     const crumb = page.locator(".ws-crumb-name");
     await expect(crumb).toHaveText(long);
     expect(await crumb.evaluate((el) => el.scrollWidth > el.clientWidth && getComputedStyle(el).textOverflow === "ellipsis")).toBe(true);
     await expect(page.locator(".ws-crumb")).toHaveAttribute("title", new RegExp(`^${long}`));
-    await expect(row(page, long).locator(".ws-session-main")).toHaveAttribute("title", new RegExp(`^${long}`));
   });
 });
 
