@@ -133,6 +133,81 @@ pub struct MentionTag {
     /// What the card says while it is held for a session with no hooks
     /// (#579). Empty for a mention that isn't held.
     pub headline: String,
+    /// The thread it is in, when it may be merged with others of it (#580).
+    pub thread: Option<MentionThread>,
+}
+
+/// What it takes to put several mentions of one thread into one follow-up
+/// (#580). The mux only joins these; the words are the daemon's.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MentionThread {
+    /// The thread's root message.
+    pub root: i64,
+    /// The line that names the thread, when several are merged.
+    pub head: String,
+    /// This message, as one reply in the merged text.
+    pub line: String,
+    /// What closes the merged text.
+    pub tail: String,
+}
+
+impl MentionTag {
+    /// As an agent block's `send` and its log carry it.
+    pub fn to_json(&self) -> Value {
+        let mut v = serde_json::json!({ "room": self.room, "seq": self.seq });
+        if let Some(t) = &self.thread {
+            v["thread"] = serde_json::json!({ "root": t.root, "head": t.head, "line": t.line, "tail": t.tail });
+        }
+        v
+    }
+
+    /// The tag [`to_json`](Self::to_json) wrote.
+    pub fn from_json(v: &Value) -> Option<MentionTag> {
+        let t = &v["thread"];
+        let thread = t["root"].as_i64().map(|root| MentionThread {
+            root,
+            head: t["head"].as_str().unwrap_or_default().to_owned(),
+            line: t["line"].as_str().unwrap_or_default().to_owned(),
+            tail: t["tail"].as_str().unwrap_or_default().to_owned(),
+        });
+        Some(MentionTag {
+            room: v["room"].as_str()?.to_owned(),
+            seq: v["seq"].as_i64()?,
+            headline: String::new(),
+            thread,
+        })
+    }
+
+    /// Whether `other` is a message of the same thread: the same room and
+    /// root.
+    fn same_thread(&self, other: &MentionTag) -> bool {
+        match (&self.thread, &other.thread) {
+            (Some(a), Some(b)) => self.room == other.room && a.root == b.root,
+            _ => false,
+        }
+    }
+}
+
+/// Put `next` (a follow-up that carries `tag`) after `tags`' text, when it is
+/// in the same thread as they are (#580): `tags` all stay, so every one
+/// still reports its turn. False, and nothing changed, when it isn't.
+/// `text` is the follow-up of `tags` so far: the first one's own words, and
+/// from the second on, the merged text (oldest first).
+pub fn absorb(text: &mut String, tags: &mut Vec<MentionTag>, tag: &MentionTag) -> bool {
+    if !tags.first().is_some_and(|t| t.same_thread(tag)) {
+        return false;
+    }
+    tags.push(tag.clone());
+    *text = merged(tags);
+    true
+}
+
+/// The follow-up for several messages of one thread, oldest first.
+fn merged(tags: &[MentionTag]) -> String {
+    let threads: Vec<&MentionThread> = tags.iter().filter_map(|t| t.thread.as_ref()).collect();
+    let (Some(first), Some(last)) = (threads.first(), threads.last()) else { return String::new() };
+    let lines = threads.iter().map(|t| t.line.as_str()).collect::<Vec<_>>().join("\n");
+    format!("{}\n{lines}\n\n{}", first.head, last.tail)
 }
 
 /// Where the turn that took a tagged follow-up is (#540).

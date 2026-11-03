@@ -43,6 +43,8 @@ mod agent_grants_tests;
 #[cfg(test)]
 mod agent_issues_tests;
 #[cfg(test)]
+mod agent_replies_tests;
+#[cfg(test)]
 mod agent_sessions_tests;
 #[cfg(test)]
 mod agent_threads_tests;
@@ -179,6 +181,7 @@ impl features::Feature for Feature {
             .route(arugula_control_wire::chat::CHAT_READERS, post(chat::daemon_readers))
             .route(arugula_control_wire::chat::MENTION_STATE, axum::routing::put(chat::daemon_mention_state))
             .route(arugula_control_wire::chat::AGENT_ROOMS, get(chat::agent_threads::rooms))
+            .route(arugula_control_wire::chat::AGENT_REPLIES, get(chat::agent_threads::replies))
             .route(
                 "/api/daemon/chat/rooms/{id}/messages",
                 get(chat::agent_threads::messages).post(chat::agent_threads::post),

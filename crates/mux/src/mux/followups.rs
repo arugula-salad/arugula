@@ -11,7 +11,7 @@ use std::collections::{HashMap, VecDeque};
 
 use arugula_proto::{Driver, PaneId};
 
-use super::{MentionTag, Turn, Turns};
+use super::{MentionTag, Turn, Turns, absorb};
 
 /// A follow-up that waits: its text, whose it is, and its mention.
 type Waiting = (String, Driver, Option<MentionTag>);
@@ -19,8 +19,9 @@ type Waiting = (String, Driver, Option<MentionTag>);
 #[derive(Default)]
 pub(super) struct Followups {
     queued: HashMap<PaneId, VecDeque<Waiting>>,
-    /// The mention whose turn is running in each pane.
-    running: HashMap<PaneId, MentionTag>,
+    /// The mentions whose turn is running in each pane: several when the
+    /// follow-up merged a thread's (#580).
+    running: HashMap<PaneId, Vec<MentionTag>>,
 }
 
 impl Followups {
@@ -64,24 +65,44 @@ impl Followups {
     }
 
     /// The hook waits: the oldest waiting follow-up goes to it now, and its
-    /// turn starts.
+    /// turn starts. When it is a mention, the others queued from its thread
+    /// come with it as one follow-up, oldest first (#580); the other
+    /// threads' wait for the next take, and so does a person's.
     pub(super) fn take(&mut self, pane: PaneId, turns: &dyn Turns) -> Option<(String, Driver)> {
-        let (text, by, tag) = self.queued.get_mut(&pane)?.pop_front()?;
-        self.started(pane, tag, turns);
+        let q = self.queued.get_mut(&pane)?;
+        let (mut text, by, tag) = q.pop_front()?;
+        let Some(first) = tag else { return Some((text, by)) };
+        let mut tags = vec![first];
+        let mut rest = VecDeque::new();
+        for (t, b, tag) in std::mem::take(q) {
+            match tag {
+                Some(tag) if absorb(&mut text, &mut tags, &tag) => {}
+                tag => rest.push_back((t, b, tag)),
+            }
+        }
+        *q = rest;
+        self.started_all(pane, tags, turns);
         Some((text, by))
     }
 
     /// A follow-up went straight to a hook that was waiting: its turn starts.
     pub(super) fn started(&mut self, pane: PaneId, tag: Option<MentionTag>, turns: &dyn Turns) {
-        if let Some(tag) = tag {
-            turns.turn(pane, &tag, Turn::Started);
-            self.running.insert(pane, tag);
+        self.started_all(pane, tag.into_iter().collect(), turns);
+    }
+
+    fn started_all(&mut self, pane: PaneId, tags: Vec<MentionTag>, turns: &dyn Turns) {
+        if tags.is_empty() {
+            return;
         }
+        for tag in &tags {
+            turns.turn(pane, tag, Turn::Started);
+        }
+        self.running.insert(pane, tags);
     }
 
     /// The pane's `Stop` hook spoke: the turn that was running has ended.
     pub(super) fn stopped(&mut self, pane: PaneId, turns: &dyn Turns) {
-        if let Some(tag) = self.running.remove(&pane) {
+        for tag in self.running.remove(&pane).unwrap_or_default() {
             turns.turn(pane, &tag, Turn::Ended);
         }
     }
@@ -97,7 +118,7 @@ impl Followups {
 mod tests {
     use std::sync::Mutex;
 
-    use super::*;
+    use super::{super::MentionThread, *};
 
     #[derive(Debug, Default)]
     struct Heard(Mutex<Vec<(PaneId, i64, Turn)>>);
@@ -119,7 +140,7 @@ mod tests {
     }
 
     fn tag(seq: i64) -> Option<MentionTag> {
-        Some(MentionTag { room: "ch_x".into(), seq, headline: format!("held {seq}") })
+        Some(MentionTag { room: "ch_x".into(), seq, headline: format!("held {seq}"), thread: None })
     }
 
     /// Queued, then taken when the hook waits: working then, read at the
@@ -185,6 +206,49 @@ mod tests {
         assert!(heard.all().is_empty(), "a dropped mention is told of to no one");
         assert_eq!((f.held(4), f.deliver_held(4, &heard)), (None, None));
         assert_eq!(f.take(4, &heard).map(|(t, _)| t).as_deref(), Some("hi"));
+    }
+
+    fn reply(room: &str, seq: i64, root: i64) -> Option<MentionTag> {
+        let thread = MentionThread {
+            root,
+            head: format!("Replies in {room} to \"root {root}\":"),
+            line: format!("ada: reply {seq}"),
+            tail: "(tail)".into(),
+        };
+        Some(MentionTag { room: room.into(), seq, headline: String::new(), thread: Some(thread) })
+    }
+
+    /// Three replies in two threads (#580): the first take holds both of its
+    /// thread's, oldest first; the other thread waits for the next take. Every
+    /// tag is working at its take and read at the Stop after it.
+    #[test]
+    fn replies_of_one_thread_are_one_take_and_each_is_working_then_read() {
+        let (mut f, heard) = (Followups::default(), Heard::default());
+        f.push(4, "r1".into(), by(), reply("ch_x", 11, 10));
+        f.push(4, "s1".into(), by(), reply("ch_x", 21, 20));
+        f.push(4, "hi".into(), by(), None);
+        f.push(4, "r2".into(), by(), reply("ch_x", 12, 10));
+        // Same root number in another room is another thread.
+        f.push(4, "o1".into(), by(), reply("ch_y", 13, 10));
+        let (text, _) = f.take(4, &heard).unwrap();
+        assert_eq!(text, "Replies in ch_x to \"root 10\":\nada: reply 11\nada: reply 12\n\n(tail)");
+        assert_eq!(heard.all(), [(4, 11, Turn::Started), (4, 12, Turn::Started)]);
+        f.stopped(4, &heard);
+        assert_eq!(heard.all(), [(4, 11, Turn::Ended), (4, 12, Turn::Ended)]);
+        // The other thread, then the person's follow-up, then the other room.
+        assert_eq!(f.take(4, &heard).map(|(t, _)| t).as_deref(), Some("s1"));
+        heard.all();
+        assert_eq!(f.take(4, &heard).map(|(t, _)| t).as_deref(), Some("hi"));
+        assert_eq!(f.take(4, &heard).map(|(t, _)| t).as_deref(), Some("o1"));
+        assert!(f.take(4, &heard).is_none());
+    }
+
+    /// A single reply keeps its own words (#580).
+    #[test]
+    fn a_lone_reply_keeps_its_own_framing() {
+        let (mut f, heard) = (Followups::default(), Heard::default());
+        f.push(4, "framed".into(), by(), reply("ch_x", 11, 10));
+        assert_eq!(f.take(4, &heard).map(|(t, _)| t).as_deref(), Some("framed"));
     }
 
     #[test]

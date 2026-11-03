@@ -146,6 +146,50 @@
       ],
       "type": "object"
     },
+    "AgentReplies": {
+      "description": "[`AGENT_REPLIES`]' answer: the threads, the one with the oldest unread\nreply first.",
+      "properties": {
+        "threads": {
+          "items": {
+            "$ref": "#/$defs/AgentReplyThread"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "threads"
+      ],
+      "type": "object"
+    },
+    "AgentReplyThread": {
+      "description": "One thread's unread replies (#580).",
+      "properties": {
+        "replies": {
+          "description": "The unread replies, oldest first, each with its mention status for\nthis machine.",
+          "items": {
+            "$ref": "#/$defs/ChatMessage"
+          },
+          "type": "array"
+        },
+        "room": {
+          "type": "string"
+        },
+        "room_name": {
+          "type": "string"
+        },
+        "root": {
+          "$ref": "#/$defs/ChatMessage",
+          "description": "The thread's first message."
+        }
+      },
+      "required": [
+        "room",
+        "room_name",
+        "root",
+        "replies"
+      ],
+      "type": "object"
+    },
     "AgentRoom": {
       "description": "A room as a machine's agents see it.",
       "properties": {

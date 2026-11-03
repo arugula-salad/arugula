@@ -224,6 +224,24 @@ impl Db {
         )
     }
 
+    /// The replies in threads `machine`'s agents posted in (#580) that no
+    /// session of it has read: a status that isn't `read`, `answered` or
+    /// dropped, on a reply that isn't deleted, written at or after `since`.
+    /// The newest `max`, newest first.
+    pub fn unread_agent_replies(&self, machine: &str, since: u64, max: usize) -> Result<Vec<MentionStatus>> {
+        self.c().query_map(
+            "SELECT s.room, s.seq, s.machine, s.machine_name, s.root, s.state, s.session, s.asked, s.reply, s.at, s.names
+             FROM chat_mention_status s JOIN chat_messages m ON m.room = s.room AND m.seq = s.seq
+             WHERE s.machine = ?1 AND m.at >= ?2 AND m.parent IS NOT NULL AND m.deleted IS NULL
+             AND s.state NOT IN ('read', 'answered', 'dropped_stopped', 'dropped_exited')
+             AND EXISTS (SELECT 1 FROM chat_messages a WHERE a.room = s.room AND a.agent = s.machine
+                         AND a.seq < s.seq AND (a.seq = s.root OR a.parent = s.root))
+             ORDER BY m.at DESC, s.seq DESC LIMIT ?3",
+            params![machine, since as i64, max as i64],
+            status_row,
+        )
+    }
+
     /// `machine` replied at message `reply`, in the thread of `root`: every
     /// mention of it in that thread, from `since` on and before the reply,
     /// that wasn't answered yet, is. The numbers of the messages changed.
