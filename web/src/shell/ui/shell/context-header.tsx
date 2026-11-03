@@ -17,7 +17,7 @@ import { AttentionBell } from "./attention-drawer";
 import { offlineWhy } from "./live";
 import { setSidebarOpen, useSidebar } from "./prefs";
 import { usePlace } from "./rail";
-import { openOverview } from "../places";
+import { MachinePlaces } from "../places";
 
 export type Connection = "direct" | "relayed" | "reconnecting" | "offline" | "waking" | "asleep";
 
@@ -94,23 +94,13 @@ export function ContextHeader({
 }) {
   useSubscribe((fn) => directory.subscribe(fn));
   const sidebar = useSidebar();
+  const at = usePlace(client);
   const state = client.state!;
   const session = state.sessions.find((s) => s.id === client.session) ?? state.sessions[0];
   const tab = client.tabView();
   return (
     <header class="ws-head" data-tauri-drag-region>
-      {sidebar.open && !sidebar.narrow && (
-        // A link, as the platform page's wordmark is (UI audit #170).
-        <a class="ws-wordmark" style={{ width: `${sidebar.width}px` }} href="#overview"
-          aria-label="Arugula Control: session overview" title="This machine’s session overview"
-          onClick={(e) => {
-            e.preventDefault();
-            openOverview();
-          }}>
-          Arugula <span aria-hidden="true">/</span> <strong>Control</strong>
-        </a>
-      )}
-      <nav class="ws-crumbs" aria-label="Where you are" data-tauri-drag-region>
+      <nav class="ws-crumbs" aria-label="This machine" data-tauri-drag-region>
         <SidebarToggle client={client} />
         {/* The machine's name even where there's no menu of others (a
             daemon's own page alone): HostButton draws nothing then. */}
@@ -122,23 +112,24 @@ export function ContextHeader({
           </span>
         )}
         <ConnectionChip client={client} />
-        {session && (
-          <>
-            <span class="ws-crumb-sep" aria-hidden="true">
-              /
-            </span>
-            <SessionButton client={client} session={session} setRenaming={setRenaming} />
-          </>
-        )}
-        {tab && (
-          <span class="ws-crumb-tab" title="This tab" data-tauri-drag-region>
-            <span class="ws-crumb-sep" aria-hidden="true">
-              /
-            </span>
-            <span class="ws-crumb-tab-name">{tabLabel(client, tab)}</span>
-          </span>
-        )}
       </nav>
+      {/* The other places cover this head with a bar of their own (AppBar). */}
+      {(at === "panes" || at === "overview") && <MachinePlaces client={client} at={at} />}
+      {/* The sidebar and tab strip say which session and tab this is; without
+          the sidebar, this does (Arugula #637). */}
+      {(!sidebar.open || sidebar.narrow) && (
+        <nav class="ws-crumbs ws-trail" aria-label="Where you are" data-tauri-drag-region>
+          {session && <SessionButton client={client} session={session} setRenaming={setRenaming} />}
+          {tab && (
+            <span class="ws-crumb-tab" title="This tab" data-tauri-drag-region>
+              <span class="ws-crumb-sep" aria-hidden="true">
+                /
+              </span>
+              <span class="ws-crumb-tab-name">{tabLabel(client, tab)}</span>
+            </span>
+          )}
+        </nav>
+      )}
       <div class="bar-fill" data-tauri-drag-region />
       <CommandsButton client={client} search />
       <UpdateChip client={client} />
