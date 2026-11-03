@@ -43,11 +43,16 @@
 //! a URL. The state gains `shared: {made, updated} | null` and nothing more:
 //! the key is in `<state>/doc-links.json`, never here.
 //!
+//! **A copy on the platform** (#418, [`copies`]): while the machine is in
+//! control, each Doc is copied up to its owner's personal project there,
+//! a few seconds after it changes.
+//!
 //! Docs left Labs (native #204): no flag gates them, and sharing is still
 //! only ever the owner's tap or the card an agent's `share` raises.
 
 mod ask;
 mod assets;
+pub(crate) mod copies;
 pub(crate) mod embeds;
 pub mod library;
 pub mod link;
