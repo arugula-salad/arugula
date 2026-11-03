@@ -265,7 +265,7 @@ const INSTRUCTIONS_HEAD: &str = "Arugula runs commands in durable terminal panes
 const INSTRUCTIONS_TOUR: &str = "wait (until idle or needs_input), \
 don't poll; read_output pages (pass next_offset as offset). show a block, don't describe it; \
 once you open a pull request, or one is ready for review or merge, show it (kind pr), not a link; \
-use draft for the merge. To reach a teammate's agent, post_thread an @machine/session.";
+use draft for the merge.";
 
 /// The hooks paragraph, last.
 const INSTRUCTIONS_HOOKS: &str = "Claude Code hooks put your questions (arugula ask), permission prompts (arugula hook), \
@@ -280,9 +280,8 @@ Run each `arugula ...` command alone, not piped or `&&`-chained, to match allow 
 /// Docs left Labs, native #204), the issues sentence
 /// (`flags::ISSUES_STEERING`) and the boards sentence
 /// (`flags::BOARDS_STEERING`, which says nothing to do where boards are
-/// off, and does no harm). Chat stays out of the steering (#1095), but one
-/// sentence points an agent at post_thread to reach a teammate's agent
-/// (#574); the thread tools' descriptions say the rest.
+/// off, and does no harm). Chat isn't in the instructions (#1095): how to
+/// reach a teammate's agent is in the thread tools' descriptions (#574).
 pub fn instructions() -> String {
     [
         INSTRUCTIONS_HEAD,
