@@ -87,6 +87,11 @@ test("@machine shows a status line under the message, then the agent's reply mak
   await expect(line).toContainText("Waiting on alices: no session took it");
   await expect(line.locator(".machine-icon")).toBeVisible();
 
+  // A session has it, mid-turn: the line says when it will read it.
+  sql(`UPDATE chat_mention_status SET state = 'delivered', session = 'views' WHERE room = '${general}' AND seq = ${seq};`);
+  await chat.reload();
+  await expect(chat.locator(`.mention-line[data-machine="${machine}"]`)).toContainText("alices/views: reads this at its next step", { timeout: 15_000 });
+
   // The agent answers in the thread: the line becomes a link to it.
   const at = Date.now();
   sql(`UPDATE chat_rooms SET last_seq = last_seq + 1 WHERE id = '${general}';
