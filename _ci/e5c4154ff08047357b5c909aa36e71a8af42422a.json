@@ -3,7 +3,7 @@
   "commit": "e5c4154ff08047357b5c909aa36e71a8af42422a",
   "branch": "main",
   "state": "pending",
-  "at": "2026-11-03T02:46:07Z",
+  "at": "2026-11-03T02:47:08Z",
   "phases": {
     "lint": {
       "verdict": "pass",
@@ -150,13 +150,13 @@
       ]
     },
     "claims": {
-      "verdict": "pending",
+      "verdict": "pass",
       "build": "newest",
       "runs": [
         {
           "name": "desktop-xvfb",
           "id": 125692471229,
-          "conclusion": null,
+          "conclusion": "success",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/41567455434/job/125692471229"
         }
       ]
@@ -181,7 +181,7 @@
         {
           "name": "workspace",
           "id": 125692429025,
-          "conclusion": null,
+          "conclusion": "failure",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/41567455446/job/125692429025"
         },
         {
@@ -215,6 +215,10 @@
     "workspace-clippy": {
       "run": 125692429116,
       "at": "2026-11-03T02:46:07Z"
+    },
+    "workspace": {
+      "run": 125692429025,
+      "at": "2026-11-03T02:47:08Z"
     }
   }
 }
