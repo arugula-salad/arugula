@@ -337,6 +337,9 @@ test("/boards lists every project's boards by project, folded under Done the sam
   for (const p of [alice, bob]) {
     await platform(p, "/boards");
     const page = p.locator("[data-all-boards-page]");
+    // All projects has places of its own (Arugula #636), and this is one.
+    await expect(p.locator("[data-platform-bar] [data-platform-boards]")).toHaveAttribute("aria-current", "page");
+    await expect(p.locator("[data-platform-bar] [data-platform-projects]")).toHaveText("Projects");
     const acme = page.locator(`[data-all-boards-project="${project}"]`);
     await expect(acme.locator("h2")).toHaveText("Acme", { timeout: 15_000 });
     // Only Acme has boards: Alice's own project isn't listed.
