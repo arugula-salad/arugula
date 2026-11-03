@@ -1,0 +1,88 @@
+{
+  "schema": 1,
+  "commit": "ed7e9b656c2ada0d6a4daa31585537ea37f74890",
+  "branch": "main",
+  "state": "pending",
+  "at": "2026-11-03T05:51:07Z",
+  "phases": {
+    "lint": {
+      "verdict": "pending",
+      "build": "newest",
+      "runs": [
+        {
+          "name": "suite-changed",
+          "id": 125750844474,
+          "conclusion": "success",
+          "url": "https://github.com/arugula-salad/arugula/actions/runs/41585797086/job/125750844474"
+        }
+      ]
+    },
+    "build": {
+      "verdict": "pending",
+      "build": "newest",
+      "runs": []
+    },
+    "test": {
+      "verdict": "pending",
+      "build": "newest",
+      "runs": []
+    },
+    "e2e": {
+      "verdict": "pending",
+      "build": "newest",
+      "runs": []
+    },
+    "claims": {
+      "verdict": "pending",
+      "build": "newest",
+      "runs": []
+    },
+    "macos": {
+      "verdict": "pending",
+      "build": "newest",
+      "runs": []
+    },
+    "windows": {
+      "verdict": "pending",
+      "build": "newest",
+      "runs": [
+        {
+          "name": "workspace",
+          "id": 125750997738,
+          "conclusion": "failure",
+          "url": "https://github.com/arugula-salad/arugula/actions/runs/41585797086/job/125750997738"
+        },
+        {
+          "name": "workspace-clippy",
+          "id": 125750997704,
+          "conclusion": "failure",
+          "url": "https://github.com/arugula-salad/arugula/actions/runs/41585797086/job/125750997704"
+        }
+      ],
+      "reason": "retrying",
+      "culprit": "5bdb8515408d58d0f2d4ec5d99f0a95ff00f3369"
+    },
+    "windows-desktop": {
+      "verdict": "pending",
+      "build": "newest",
+      "runs": [
+        {
+          "name": "desktop",
+          "id": 125750973749,
+          "conclusion": null,
+          "url": "https://github.com/arugula-salad/arugula/actions/runs/41585797190/job/125750973749"
+        }
+      ]
+    }
+  },
+  "retried": {
+    "workspace": {
+      "run": 125750997738,
+      "at": "2026-11-03T05:51:07Z"
+    },
+    "workspace-clippy": {
+      "run": 125750997704,
+      "at": "2026-11-03T05:51:07Z"
+    }
+  }
+}
