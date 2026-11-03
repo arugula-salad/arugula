@@ -1338,7 +1338,10 @@ async fn ask_daemon(app: &Platform, machine: &str, op: &arugula_control_wire::fo
 /// What a machine says of its sessions when it's asked.
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum SessionsAnswer {
-    Said { shared: bool, sessions: Vec<arugula_control_wire::forge::MachineSession> },
+    Said {
+        shared: bool,
+        sessions: Vec<arugula_control_wire::forge::MachineSession>,
+    },
     /// It isn't on control's relay.
     Offline,
     /// It's there, or may be, and gave no list: it's too old to know the op,
