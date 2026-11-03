@@ -3,7 +3,7 @@
   "commit": "1568ac044dd019fc3e494afb85192bec0b12c3b4",
   "branch": "main",
   "state": "pending",
-  "at": "2026-11-03T08:41:06Z",
+  "at": "2026-11-03T08:54:17Z",
   "phases": {
     "lint": {
       "verdict": "pending",
@@ -32,9 +32,11 @@
       "coveredBy": "4030b5ff3d1e125d2780a402e955ab9db9d015a9"
     },
     "e2e": {
-      "verdict": "pending",
+      "verdict": "unbuilt",
       "build": "newest",
-      "runs": []
+      "runs": [],
+      "reason": "superseded",
+      "coveredBy": "4030b5ff3d1e125d2780a402e955ab9db9d015a9"
     },
     "claims": {
       "verdict": "unbuilt",
