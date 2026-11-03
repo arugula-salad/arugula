@@ -13,6 +13,9 @@
 // phone. A push's tap (`#chat=<room>&msg=<n>` on control's page) opens the
 // room at the message on the platform page.
 
+import { mkdirSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { expect, test, type Page, type Route } from "@playwright/test";
 import { closeContexts, menuItem, paneEl } from "./helpers";
 import { TeamControl, call, home, live, show } from "./team-fixture";
@@ -861,6 +864,61 @@ test("an issue's link unfurls into a card for those who can see it, follows the 
   await expect(again.locator("[data-link-card-object]")).toBeVisible({ timeout: 15_000 });
   await again.locator("[data-link-card-remove]").click();
   await expect(again.locator("[data-link-card]")).toHaveCount(0);
+});
+
+test("a board's link unfurls into a card of the board: its bar, n of m done, who leads it, and no card for Bob outside the project", async () => {
+  test.setTimeout(150_000);
+  const shots = join(process.env.TMPDIR ?? tmpdir(), "627-shots");
+  mkdirSync(shots, { recursive: true });
+  await alice.evaluate((tm) => window.__arugula.control!.setLabsFlag("boards", true, tm), team);
+  await platform(aliceChat, `/chat/${general}`);
+  // Alice's personal project, which Bob is not in.
+  let board: { status: number; body: any } = { status: 0, body: null };
+  await expect
+    .poll(async () => (board = await api(aliceChat, "POST", "/api/projects/personal/boards", { title: "Launch", goal: "People can launch in one click.\nThen invite a team." })).status, { timeout: 15_000 })
+    .toBe(200);
+  const id = (board.body as any).board.id as string;
+  const ids: string[] = [];
+  for (const title of ["Fix the installer", "Tidy the changelog"]) {
+    const made = await api(aliceChat, "POST", "/api/projects/personal/issues", { title, body: "", labels: [], assignees: [] });
+    expect(made.status).toBe(200);
+    ids.push((made.body as any).id);
+    const put = await api(aliceChat, "PUT", `/api/boards/${id}/entries`, { entry: "row", pointer: { kind: "issue", id: ids.at(-1) } });
+    expect(put.status).toBe(200);
+  }
+  expect((await api(aliceChat, "PATCH", `/api/issues/${ids[0]}`, { state: "closed" })).status).toBe(200);
+  const room = aliceChat.locator("[data-chat-control] [data-room-view]");
+  const box = room.getByRole("textbox", { name: "Message #general" });
+  await box.fill(`the plan: ${app}/boards/${id}`);
+  await box.press("Enter");
+  const card = room.locator(".thread-msg").last().locator("[data-link-card-board]");
+  await expect(card).toBeVisible({ timeout: 15_000 });
+  await expect(card).toContainText("Launch");
+  await expect(card.locator("[data-link-card-goal]")).toHaveText("People can launch in one click.");
+  await expect(card.locator("[data-link-card-progress]")).toHaveText("1 of 2 done");
+  // The bar is the board's own: a Done segment of half the width.
+  await expect(card.locator(".board-bar i[data-lane='done']")).toHaveCount(1);
+  expect((await card.boundingBox())!.width).toBeLessThanOrEqual(440);
+  // Light (Latte) and dark (Slate), as the app's appearance keeps them.
+  for (const [scheme, palette] of [["light", "latte"], ["dark", "default"]] as const) {
+    await aliceChat.evaluate((pal) => localStorage.setItem("arugula-appearance", JSON.stringify({ palette: pal, finish: "flat", corners: "soft", density: "cozy" })), palette);
+    await aliceChat.reload();
+    const shown = aliceChat.locator("[data-chat-control] .thread-msg").last().locator("[data-link-card-board]");
+    await expect(shown).toBeVisible({ timeout: 15_000 });
+    await expect(aliceChat.locator("html")).toHaveAttribute("data-scheme", scheme);
+    await shown.screenshot({ path: join(shots, `board-card-${scheme}.png`), animations: "disabled" });
+  }
+  // Clicking opens the board.
+  await aliceChat.locator("[data-chat-control] .thread-msg").last().locator("[data-link-card-board]").click();
+  await expect(aliceChat).toHaveURL(new RegExp(`/boards/${id}`));
+  await platform(aliceChat, `/chat/${general}`);
+
+  // Bob reads #general but is not in the project: the plain link.
+  await platform(bob, `/chat/${general}`);
+  const theirs = bob.locator("[data-chat-control] .thread-msg").last();
+  await expect(theirs).toContainText(`/boards/${id}`, { timeout: 15_000 });
+  await expect(theirs.locator("[data-link-card]")).toHaveCount(0);
+  await expect(theirs).not.toContainText("Launch");
 });
 
 test("a channel is quiet until its bell says all, and a snooze shows Alice a moon on Bob", async () => {
