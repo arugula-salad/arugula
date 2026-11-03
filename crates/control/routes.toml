@@ -1508,6 +1508,14 @@ clients = ["page"]
 note = "The threads the caller follows, most recently active first, with their unread counts (#106)."
 
 [[route]]
+method = "GET"
+path = "/api/chat/rooms/{id}/threads/{seq}/agents"
+process = "platform"
+auth = "session"
+clients = ["page"]
+note = "The agents in the thread of message `seq` and what each is doing, for the strip at its top (#645). Control asks each machine's daemon and keeps none of the live part."
+
+[[route]]
 method = "POST"
 path = "/api/chat/rooms/{id}/threads/{seq}/read"
 process = "platform"

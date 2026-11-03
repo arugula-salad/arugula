@@ -165,6 +165,7 @@ impl features::Feature for Feature {
             .route("/api/chat/rooms/{id}/read", post(chat::read))
             .route("/api/chat/rooms/{id}/grant-never", post(chat::grant_ask::never))
             .route("/api/chat/threads", get(chat::threads::followed))
+            .route("/api/chat/rooms/{id}/threads/{seq}/agents", get(chat::thread_agents::agents))
             .route("/api/chat/rooms/{id}/threads/{seq}/read", post(chat::threads::read))
             .route("/api/chat/rooms/{id}/threads/{seq}/follow", post(chat::threads::follow))
             .route("/api/chat/rooms/{id}/mute", post(chat::mute))

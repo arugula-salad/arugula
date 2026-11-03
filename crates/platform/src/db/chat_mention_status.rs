@@ -221,6 +221,17 @@ impl Db {
         Ok(machines)
     }
 
+    /// The statuses of the messages of one thread (#645), oldest first.
+    pub fn chat_mention_statuses_of_thread(&self, room: &str, root: i64) -> Result<Vec<MentionStatus>> {
+        self.c().query_map(
+            "SELECT room, seq, machine, machine_name, root, state, session, asked, reply, at, names
+             FROM chat_mention_status WHERE room = ?1 AND root = ?2
+             ORDER BY seq, machine_name, machine",
+            params![room, root],
+            status_row,
+        )
+    }
+
     /// The statuses of messages `from..=to` of a room, by message and then
     /// machine's name.
     pub fn chat_mention_statuses(&self, room: &str, from: i64, to: i64) -> Result<Vec<MentionStatus>> {

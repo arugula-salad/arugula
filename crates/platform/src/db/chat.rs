@@ -54,7 +54,7 @@ pub struct RoomMeta {
     pub dm_key: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Message {
     pub room: String,
     pub seq: i64,

@@ -978,6 +978,74 @@ pub struct ChatSaved {
     pub items: Vec<ChatSavedItem>,
 }
 
+/// `GET /api/chat/rooms/{id}/threads/{seq}/agents`: the agents in a thread
+/// and what each is doing now (#645), for the strip at its top. Whoever sees
+/// the room may ask. Control keeps none of the live part: it asks each
+/// machine's daemon, and what that shows is the owner's `agent_sessions`.
+pub fn chat_thread_agents(room: &str, seq: i64) -> String {
+    format!("/api/chat/rooms/{room}/threads/{seq}/agents")
+}
+
+/// [`chat_thread_agents`]' answer: oldest in the thread first.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct ChatThreadAgents {
+    pub agents: Vec<ChatThreadAgent>,
+}
+
+/// What an agent in a thread is doing (#645).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[serde(rename_all = "snake_case")]
+pub enum ChatThreadAgentState {
+    Working,
+    Idle,
+    NeedsYou,
+    Offline,
+    /// Its machine answered without saying: an older daemon, a session it
+    /// doesn't show, or one that has ended.
+    Unknown,
+}
+
+/// One agent in a thread (#645): a session on someone's machine, or a hosted
+/// session. Never its output, a tool's arguments or a path (aru-051).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct ChatThreadAgent {
+    /// The session's name, as its machine called it, or a hosted session's
+    /// short id. Empty when a machine was told and no session has spoken.
+    pub name: String,
+    /// The machine's id, or a hosted session's `ses_` id.
+    pub id: String,
+    /// The machine's name, or the hosted box's.
+    pub machine_name: String,
+    /// The owner's account and name; a hosted session's asker.
+    pub owner: String,
+    pub owner_name: String,
+    pub hosted: bool,
+    pub state: ChatThreadAgentState,
+    /// With the owner's `work`: what it was started on.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub working_on: Option<String>,
+    /// With the owner's `work`: the name of the tool it last ran.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub tool: Option<String>,
+    /// The newest message of the thread it has taken in, or written.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub read_seq: Option<i64>,
+    /// Messages told to it that it hasn't taken in yet.
+    pub waiting: u32,
+    /// The agent a message goes to by default (#647): the thread's hosted
+    /// session, else the agent first in it.
+    pub lead: bool,
+}
+
 /// `POST /api/chat/rooms/{id}/threads/{seq}/read`: read the thread up to
 /// here (a room number; it only moves forward). Answers the thread's first
 /// message, with its [`ChatThread`].

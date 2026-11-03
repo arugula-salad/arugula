@@ -128,6 +128,7 @@ Not here: what each milestone built (the archive), how to build and test
 - [aru-122](docs/decisions/aru-122-boards-manage-a-project-s-issues-wherever-they-live.md): Boards manage a project's issues, wherever they live; an epic is a board
 - [aru-123](docs/decisions/aru-123-agents-make-and-run-boards.md): Agents make and run boards, but don't destroy other hands' work
 - [aru-128](docs/decisions/aru-128-a-claude-code-mod-reports-live-session-signals-beside-the.md): A Claude Code mod reports live session signals beside the hooks, through the CLI
+- [aru-133](docs/decisions/aru-133-a-thread-shows-its-agents-and-control-keeps-none-of-their-live-state.md): A thread shows its agents, and control keeps none of their live state
 
 ## Federation and control
 

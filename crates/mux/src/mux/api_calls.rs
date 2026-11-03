@@ -336,6 +336,9 @@ impl Daemon {
             Api::TakeMention(pane, hook, reply) => {
                 let _ = reply.send(self.take_mention(pane, &hook));
             }
+            Api::LastTools(reply) => {
+                let _ = reply.send(self.last_tools.clone());
+            }
             Api::Live(pane, live, pid) => {
                 let changed = match live {
                     Some(v) if self.panes.contains_key(&pane) || self.blocks.contains_key(&pane) => {
