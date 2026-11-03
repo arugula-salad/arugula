@@ -485,10 +485,18 @@ pub struct ChatMentionStatus {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "ts", ts(optional))]
     pub asked: Option<String>,
+    /// With `no_such_session`: the names it could have used (#576).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[cfg_attr(feature = "ts", ts(optional, as = "Option<Vec<String>>"))]
+    pub names: Vec<String>,
     /// With `answered`: the number of the agent's reply.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "ts", ts(optional))]
     pub reply: Option<i64>,
+    /// With `dropped`: why (#613).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub why: Option<DropWhy>,
 }
 
 /// How far a [`ChatMentionStatus`] has got.
@@ -505,10 +513,32 @@ pub enum ChatMentionState {
     FellBack,
     /// No session took it: it waits in the machine's inbox.
     Waiting,
+    /// The session (`session`) has it queued, but its hooks aren't
+    /// listening to take it (#571).
+    Queued,
+    /// The session it named (`asked`) is there, but its owner silenced
+    /// mentions for it (#579): it waits in the machine's inbox.
+    Silenced,
+    /// The session it named isn't there (`asked`), or is more than one:
+    /// no other session got it, and it waits in the inbox. `names` are the
+    /// ones there are (#576).
+    NoSuchSession,
     /// The machine is offline, or didn't answer.
     Offline,
     /// The machine's agent replied in the thread (`reply`).
     Answered,
+    /// Not delivered (#575): an agent's post, in a chain of agents' replies
+    /// or past the thread's rate limit. A person's message restarts it.
+    Chain,
+    /// The session's turn that took it has started (#540): what only the
+    /// receiving daemon knows. Like a typing indicator.
+    Working,
+    /// That turn has ended (#540). An agent's reply, `answered`, usually
+    /// comes first and stays.
+    Read,
+    /// The session dropped it (#613): `why` says how. Final, like
+    /// `answered`, which it never replaces.
+    Dropped,
 }
 
 /// Someone who reacted: an account, and the machine's agent if it was
@@ -793,6 +823,17 @@ pub struct ChatPushed {
     pub why: ChatPushWhy,
 }
 
+/// A machine's word that reached nobody (#572): its agents can't read the
+/// room, and `reads` are the rooms they do read that the poster also sees.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct ChatUnreachedWhy {
+    pub word: String,
+    pub machine_name: String,
+    pub reads: Vec<String>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
@@ -802,25 +843,42 @@ pub struct ChatPosted {
     pub mentions: Vec<String>,
     /// `@words` that named nobody who sees the room.
     pub unreached: Vec<String>,
+    /// Why, for an `unreached` word that names a machine of the team (#572).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub unreached_why: Vec<ChatUnreachedWhy>,
     /// Whom control pushed (not those with the room open, muted, or pushed
     /// for it in the last minute).
     pub pushed: Vec<ChatPushed>,
     /// A comment on a native issue that's on GitHub (M205): what became
-    /// of its copy there. `None` anywhere else.
+    /// of its copy there, as far as it's known when the post returns. A
+    /// person's is `sending` then, and its end comes to them on the live
+    /// stream ([`ChatLive::Github`], Arugula #584). `None` anywhere else.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "ts", ts(optional))]
     pub github: Option<ChatToGithub>,
+    /// Where each machine's agent mention in it has got to by now (#571):
+    /// `sending` for one whose daemon hasn't answered. Empty for a post that
+    /// mentions none.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[cfg_attr(feature = "ts", ts(optional, as = "Option<Vec<ChatMentionStatus>>"))]
+    pub mention_status: Vec<ChatMentionStatus>,
 }
 
 /// A comment on an exported native issue, on its way to GitHub (M205): a
 /// person's is sent as them through one of their machines, and waits as a
 /// draft when none can; an agent's is a draft that waits for its person.
+/// A person's post answers while its send is out (`sending`), and the
+/// send's end comes after, on the live stream ([`ChatLive::Github`]).
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct ChatToGithub {
     /// The draft (`dft_…`) that carries it.
     pub draft: String,
+    /// Being sent now, through one of the person's machines: the end comes
+    /// on the live stream (Arugula #584).
+    #[serde(default)]
+    pub sending: bool,
     /// On GitHub now.
     pub sent: bool,
     /// Its comment there, once sent.
@@ -1307,6 +1365,14 @@ pub enum ChatLive {
     /// saved, finished or removed one, or a reminder came due): read them
     /// again. Sent to that account only.
     Saved {},
+    /// How a comment's send to GitHub ended (M205, Arugula #584): message
+    /// `seq` of `room`, a native issue's thread, whose post answered
+    /// `sending`. Sent to its author only.
+    Github {
+        room: String,
+        seq: i64,
+        github: ChatToGithub,
+    },
     Resync {},
 }
 
@@ -1377,6 +1443,52 @@ pub struct ChatReader {
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct ChatReadersStored {
     pub stored: usize,
+}
+
+/// A daemon says how far the session got with a mention it delivered
+/// (`PUT`, #540): [`PutMentionState`], answered `{}`. Signed by the
+/// machine; refused (404) unless the message has a status row for it.
+pub const MENTION_STATE: &str = "/api/daemon/chat/mention-state";
+
+/// What the session's turn that took a mention is doing (#540).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[serde(rename_all = "snake_case")]
+pub enum MentionTurn {
+    /// The turn has started.
+    Working,
+    /// The turn has ended.
+    Read,
+    /// The mention never got a turn, or its turn was cut off (#613).
+    Dropped(DropWhy),
+}
+
+/// Why a mention was dropped (#613).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[serde(rename_all = "snake_case")]
+pub enum DropWhy {
+    /// The person pressed stop while it waited in the session's queue.
+    Stopped,
+    /// The session's process ended in the middle of its turn.
+    Exited,
+}
+
+/// [`MENTION_STATE`]'s body: a mention (the message `seq` of `room`, for
+/// the signing machine) and where its turn is. `session` is the name of the
+/// session that took it, for the line.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[serde(deny_unknown_fields)]
+pub struct PutMentionState {
+    pub room: String,
+    pub seq: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session: Option<String>,
+    pub state: MentionTurn,
 }
 
 /// The most lists in one [`ChatReaders`], and readers in one list.
@@ -1489,6 +1601,38 @@ pub struct AgentReach {
     pub name: String,
     /// `threads.read`, `threads.post`, `issues.write`.
     pub powers: Vec<String>,
+}
+
+/// The sessions of a machine in a room that an agent may mention (`GET`,
+/// [`AgentSessionsQuery`], answered [`AgentMachineSessions`], #577).
+/// `machine` is its name as in `@machine`. Refused unless the asking
+/// machine reads `room` and `machine` hears it.
+pub fn agent_machine_sessions(room: &str, machine: &str) -> String {
+    format!("{AGENT_ROOMS}/{room}/agents/{machine}/sessions")
+}
+
+/// [`agent_machine_sessions`]' query.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+pub struct AgentSessionsQuery {
+    /// The asking session's name, so a machine asked about itself leaves it
+    /// out (#575).
+    #[serde(default)]
+    pub from_session: Option<String>,
+}
+
+/// A machine's sessions an agent may mention in a room (#577).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+pub struct AgentMachineSessions {
+    pub machine_name: String,
+    /// The machine isn't on control's relay now, or didn't answer.
+    #[serde(default)]
+    pub offline: bool,
+    /// False when its owner shows no session names.
+    pub shared: bool,
+    /// Newest active first, at most 20.
+    pub sessions: Vec<crate::forge::MachineSession>,
 }
 
 /// A page of [`agent_messages`]: as [`ChatMessagesQuery`], and `mentions`

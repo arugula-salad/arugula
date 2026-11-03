@@ -37,7 +37,8 @@
 use anyhow::{Result, bail};
 use arugula_control_wire::{
     boards::{
-        AttachRole, BlockState, BlockWord, Board, BoardSource, Category, Diffstat, EntryKind, Lane, Pointer, Status,
+        AttachRole, BlockState, BlockWord, Board, BoardLead, BoardSource, Category, Diffstat, EntryKind, Lane, Pointer,
+        Status,
     },
     chat::ChatAgent,
 };
@@ -228,7 +229,8 @@ pub struct Move<'a> {
 pub(super) const BOARD_COLS: &str = "id, project_id, title, created_by, created_at, updated_at, goal, done_note, \
                           closed_at, closed_by, created_by_agent, closed_by_agent, source_key, source_url, \
                           source_name, source_left_out, \
-                          (SELECT i.state_group = 'started' FROM forge_items i WHERE i.id = boards.source_item)";
+                          (SELECT i.state_group = 'started' FROM forge_items i WHERE i.id = boards.source_item), \
+                          lead_machine, lead_session, lead_at";
 pub(super) const ENTRY_COLS: &str = "id, rev, note, status, target_kind, target, pane, created_at, updated_at, agent, zone_id, work_item, source, \
      lane_set, lane_set_basis, lane_set_by, lane_set_at";
 const ATTACHED_COLS: &str = "id, row_id, role, target_kind, target, pane, agent, created_at, released_at";
@@ -250,6 +252,19 @@ pub(super) fn board_row(r: &Row) -> Result<Board> {
         closed_by_agent: machine_of(r.get(11)?),
         progress: Default::default(),
         source: source_of(r)?,
+        lead: lead_of(r)?,
+    })
+}
+
+/// The board's lead, from its `lead_*` columns (17 to 19); the machine's
+/// name is filled in by the reader (`crate::boards`).
+fn lead_of(r: &Row) -> Result<Option<BoardLead>> {
+    let (machine, session, at): (Option<String>, Option<String>, Option<u64>) = (r.get(17)?, r.get(18)?, r.get(19)?);
+    Ok(match (machine, session) {
+        (Some(machine), Some(session)) => {
+            Some(BoardLead { machine, machine_name: String::new(), session, at: at.unwrap_or_default() })
+        }
+        _ => None,
     })
 }
 
@@ -521,14 +536,17 @@ pub struct IssueState {
 
 impl Db {
     /// Make a board in `project` as `by` (a person, or their agent on a
-    /// machine), with `goal` if any. `None`: the project
+    /// machine), with `goal` if any, and led by `lead` (a session of the
+    /// agent's machine) if any. `None`: the project
     /// already has `max` boards. The project is the caller's to have checked.
+    #[allow(clippy::too_many_arguments)]
     pub fn create_board(
         &self,
         project: &str,
         title: &str,
         goal: &str,
         by: Actor<'_>,
+        lead: Option<&str>,
         at: u64,
         max: u64,
     ) -> Result<Option<Board>> {
@@ -551,10 +569,22 @@ impl Db {
         }
         let board = tx.query_row(
             &format!(
-                "INSERT INTO boards (id, project_id, title, goal, created_by, created_by_agent, created_at, updated_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?7) RETURNING {BOARD_COLS}"
+                "INSERT INTO boards (id, project_id, title, goal, created_by, created_by_agent, created_at, updated_at,
+                                     lead_machine, lead_session, lead_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?7, ?8, ?9, ?10) RETURNING {BOARD_COLS}"
             ),
-            params![new_board_id(), project, title, goal, by.account, by.agent, at],
+            params![
+                new_board_id(),
+                project,
+                title,
+                goal,
+                by.account,
+                by.agent,
+                at,
+                lead.and(by.agent),
+                lead,
+                lead.and(by.agent).map(|_| at)
+            ],
             board_row,
         )?;
         tx.commit()?;
@@ -643,6 +673,27 @@ impl Db {
             tx.execute("UPDATE boards SET goal = ?2 WHERE id = ?1", params![id, g])?;
         }
         touch(&tx, id, at)?;
+        tx.commit()?;
+        Ok(true)
+    }
+
+    /// Set the session that leads a board: `lead` is its machine and name,
+    /// none clears it. `false`: no such board. The board's `updated_at` is
+    /// left alone: a lead is not a change to the work.
+    pub fn set_board_lead(&self, id: &str, lead: Option<(&str, &str)>, at: u64) -> Result<bool> {
+        let mut c = self.c();
+        let tx = c.immediate()?;
+        if !lock(&tx, id)? {
+            return Ok(false);
+        }
+        let (machine, session, since) = match lead {
+            Some((m, s)) => (Some(m), Some(s), Some(at)),
+            None => (None, None, None),
+        };
+        tx.execute(
+            "UPDATE boards SET lead_machine = ?2, lead_session = ?3, lead_at = ?4 WHERE id = ?1",
+            params![id, machine, session, since],
+        )?;
         tx.commit()?;
         Ok(true)
     }

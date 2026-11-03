@@ -117,6 +117,36 @@
       ],
       "type": "object"
     },
+    "Asset": {
+      "description": "One picture of a Doc, without its bytes: the shape a machine Doc's\nstate gives (`DocState.assets`).",
+      "properties": {
+        "mime": {
+          "description": "`image/png`, `image/jpeg`, `image/gif` or `image/webp`: what the\nbytes say.",
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "rev": {
+          "description": "Changes whenever the name is written with other bytes: clients cache\na picture by `name/rev`.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "size": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "name",
+        "mime",
+        "size",
+        "rev"
+      ],
+      "type": "object"
+    },
     "Change": {
       "description": "What happened to a passkey.",
       "enum": [
@@ -234,6 +264,21 @@
           "type": "string"
         },
         {
+          "const": "queued",
+          "description": "The session (`session`) has it queued, but its hooks aren't\nlistening to take it (#571).",
+          "type": "string"
+        },
+        {
+          "const": "silenced",
+          "description": "The session it named (`asked`) is there, but its owner silenced\nmentions for it (#579): it waits in the machine's inbox.",
+          "type": "string"
+        },
+        {
+          "const": "no_such_session",
+          "description": "The session it named isn't there (`asked`), or is more than one:\nno other session got it, and it waits in the inbox. `names` are the\nones there are (#576).",
+          "type": "string"
+        },
+        {
           "const": "offline",
           "description": "The machine is offline, or didn't answer.",
           "type": "string"
@@ -241,6 +286,26 @@
         {
           "const": "answered",
           "description": "The machine's agent replied in the thread (`reply`).",
+          "type": "string"
+        },
+        {
+          "const": "chain",
+          "description": "Not delivered (#575): an agent's post, in a chain of agents' replies\nor past the thread's rate limit. A person's message restarts it.",
+          "type": "string"
+        },
+        {
+          "const": "working",
+          "description": "The session's turn that took it has started (#540): what only the\nreceiving daemon knows. Like a typing indicator.",
+          "type": "string"
+        },
+        {
+          "const": "read",
+          "description": "That turn has ended (#540). An agent's reply, `answered`, usually\ncomes first and stays.",
+          "type": "string"
+        },
+        {
+          "const": "dropped",
+          "description": "The session dropped it (#613): `why` says how. Final, like\n`answered`, which it never replaces.",
           "type": "string"
         }
       ]
@@ -262,6 +327,13 @@
           "description": "What the machine was called when it was told.",
           "type": "string"
         },
+        "names": {
+          "description": "With `no_such_session`: the names it could have used (#576).",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
         "reply": {
           "description": "With `answered`: the number of the agent's reply.",
           "format": "int64",
@@ -279,6 +351,17 @@
         },
         "state": {
           "$ref": "#/$defs/ChatMentionState"
+        },
+        "why": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/DropWhy"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "With `dropped`: why (#613)."
         }
       },
       "required": [
@@ -743,6 +826,14 @@
           "description": "`pdc_` and 32 hex characters.",
           "type": "string"
         },
+        "machine": {
+          "default": null,
+          "description": "The machine this Doc is a copy from, or null for one made here.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "project": {
           "type": "string"
         },
@@ -812,6 +903,14 @@
     "DocView": {
       "description": "`GET` [`PROJECT_DOC`]: a Doc with its sections, in order.",
       "properties": {
+        "assets": {
+          "default": [],
+          "description": "Its pictures, by name.",
+          "items": {
+            "$ref": "#/$defs/Asset"
+          },
+          "type": "array"
+        },
         "doc": {
           "$ref": "#/$defs/Doc"
         },
@@ -873,6 +972,21 @@
         }
       },
       "type": "object"
+    },
+    "DropWhy": {
+      "description": "Why a mention was dropped (#613).",
+      "oneOf": [
+        {
+          "const": "stopped",
+          "description": "The person pressed stop while it waited in the session's queue.",
+          "type": "string"
+        },
+        {
+          "const": "exited",
+          "description": "The session's process ended in the middle of its turn.",
+          "type": "string"
+        }
+      ]
     },
     "Event": {
       "additionalProperties": false,

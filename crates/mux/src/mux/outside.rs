@@ -123,3 +123,39 @@ pub trait Usage: Send + Sync + Debug {
     /// `config`.
     fn block_opened(&self, kind: arugula_proto::BlockType, config: &Value);
 }
+
+/// The mention a follow-up carries (#540): the message `seq` of `room` in
+/// Arugula control's chat. The mux only passes it along.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MentionTag {
+    pub room: String,
+    pub seq: i64,
+    /// What the card says while it is held for a session with no hooks
+    /// (#579). Empty for a mention that isn't held.
+    pub headline: String,
+}
+
+/// Where the turn that took a tagged follow-up is (#540).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Turn {
+    /// Claude Code took the follow-up: its turn has started.
+    Started,
+    /// That turn ended: the pane's next `Stop` hook.
+    Ended,
+    /// The mention never got a turn, or its turn was cut off (#613).
+    Dropped(DropWhy),
+}
+
+/// Why a mention was dropped (#613).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DropWhy {
+    /// The person pressed stop while it waited in the queue.
+    Stopped,
+    /// The session's process ended in the middle of its turn.
+    Exited,
+}
+
+/// Told as it happens, on the mux task, so it must not block.
+pub trait Turns: Send + Sync + Debug {
+    fn turn(&self, pane: PaneId, tag: &MentionTag, turn: Turn);
+}

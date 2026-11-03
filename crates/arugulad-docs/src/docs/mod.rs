@@ -43,11 +43,16 @@
 //! a URL. The state gains `shared: {made, updated} | null` and nothing more:
 //! the key is in `<state>/doc-links.json`, never here.
 //!
+//! **A copy on the platform** (#418, [`copies`]): while the machine is in
+//! control, each Doc is copied up to its owner's personal project there,
+//! a few seconds after it changes.
+//!
 //! Docs left Labs (native #204): no flag gates them, and sharing is still
 //! only ever the owner's tap or the card an agent's `share` raises.
 
 mod ask;
 mod assets;
+pub(crate) mod copies;
 pub(crate) mod embeds;
 pub mod library;
 pub mod link;
@@ -555,6 +560,28 @@ impl Doc {
         }
         v
     }
+}
+
+/// A Doc in the library, read from its files as the block reads them when
+/// it opens, and not shown anywhere: no block, no card, and nothing it
+/// writes. For `doc.read` and `doc.asset` (#608), which must not open it.
+fn kept(state_dir: &Path, id: &str) -> Result<Arc<Doc>, String> {
+    let dir = library::dir(state_dir, id)?;
+    let title = library::read_meta(&dir).map(|m| m.title).unwrap_or_default();
+    Ok(Doc::with_link(dir, title, true, Link::none(state_dir.to_owned(), id.to_owned()), Arc::new(|| {})))
+}
+
+/// The state a block of the Doc `id` would have now.
+pub async fn read(state_dir: PathBuf, id: String) -> Result<Value, String> {
+    crate::task::spawn_blocking(move || kept(&state_dir, &id).map(|d| d.state_json()))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+/// The picture `name` of the Doc `id`, as a block's `doc_asset` answers it.
+pub async fn read_asset(state_dir: PathBuf, id: String, name: String) -> Result<Value, String> {
+    let doc = crate::task::spawn_blocking(move || kept(&state_dir, &id)).await.map_err(|e| e.to_string())??;
+    doc.asset(&name).await
 }
 
 /// Write `name` in the Doc's folder, off the async threads.

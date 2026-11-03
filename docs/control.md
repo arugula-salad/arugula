@@ -844,17 +844,26 @@ After that, comments cross for that pair only, each once
 (`issue_github_comments`, by GitHub's comment id):
 - a person's new comment in the issue's thread (not a reply kept in a
   sub-thread) is a draft sent as them at once through one of their
-  machines; with none awake it waits in their drafts, and the post's answer
-  says so (`github` in `ChatPosted`). An agent's is a draft for its person;
+  machines; with none awake it waits in their drafts. The post answers once
+  the message is stored, with `github` in `ChatPosted` saying `sending`;
+  the send runs after, and how it ended (sent with its link, waiting in
+  their drafts, or why it stays here) comes to them alone on chat's live
+  stream as a `github` event (Arugula #584). An agent's is a draft for its
+  person;
 - a comment on the GitHub issue (its `issue_comment` webhook, or the
   poller's next turn over the issue when the webhook never came) lands in
   the thread with no author and `via: "github:<login>"`, shown as the
   login, *on GitHub*. Nobody is pushed for it. Only a public repo's: the
   thread is the whole project's, and a private repo's text reaches only
   those GitHub lets read it (aru-086), so its comments stay on GitHub;
-- GitHub's copy of a comment that went out isn't brought back, even when
-  its webhook comes before the send's answer (it's matched to its draft by
-  its text), and what came in is never sent. Edits, deletions and comments
+- GitHub's copy of a comment that went out isn't brought back: it's the
+  one the send's answer names. When its webhook comes first, a GitHub
+  comment with the text of one of ours being sent is held
+  (`issue_github_held`) until that send ends, since someone may have
+  written the same words meanwhile; the answer names ours, and the rest
+  come in, each once (Arugula #585). Only an answer that named no comment
+  leaves the text to say, and only within the send's two minutes. What
+  came in is never sent. Edits, deletions and comments
   from before the export don't cross.
 
 **Agents and deploys (M218).** `deploys.plan` over a project lets a
@@ -1295,6 +1304,29 @@ The owner turns it off for a machine with `arugulad sharing agent-mentions
 off` or the sharing settings in the web client (`sharing.json`); on by
 default. A reply under a thread's newest message, when that is a person's,
 tells no agent. Edits tell nobody.
+
+**A board's lead (#414).** A session leads a board when it makes it, or
+takes it with `board_write` `lead_board` (it needs a name, and `boards.write`);
+the board shows "Led by <session> on <machine>". Every post on the board's
+thread, at the top or in a reply, then reaches that session wherever it
+runs, the same way as a mention of its machine: control tells the machine's
+daemon and names the session, and the message is stored as mentioning the
+machine. An `@machine/session` in the post still wins, the machine needs
+`threads.read` over the board's project, and a lead that is offline shows
+`offline` on the post's status line. The lead isn't told its own posts. Its
+machine, or a person, lets go with `lead_board` and `release: true`.
+
+An agent lists the sessions of a teammate's machine it can `@machine/name`
+(#577) with `read_thread` and `machine`: control (`GET
+/api/daemon/chat/rooms/{room}/agents/{machine}/sessions`) checks that the
+asker reads the room and the machine hears it, then asks the machine's
+daemon (`agents.sessions`). Each session comes with the name a mention
+matches, its tab and how long ago it last printed; the owner's
+`arugulad sharing agent-sessions work|names|none` (`sharing.json`) decides
+whether it also says which issue it was started on (`work`), shows names only
+(`names`, the default) or nothing (`none`, or agent mentions off). The same
+setting empties the names an unknown `@machine/name` answers with. An offline
+machine answers an empty list marked `offline`.
 
 **Agents on native issues (M200).** The same machine's agents read and
 write a project's native issues over MCP. An issue is `#N` in the current

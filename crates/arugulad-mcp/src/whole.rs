@@ -39,6 +39,35 @@ pub fn the_tool_list_and_each_schema_are_unchanged() {
     assert!(got == want, "the tool list changed; ARUGULA_BLESS=1 rewrites {}", path.display());
 }
 
+/// Claude Code shows an agent only the first 2048 characters of a tool's
+/// description and of the server's instructions, then cuts (#606). Each
+/// description in the rendered list (every scope, with and without labs)
+/// and the instructions fit.
+pub fn every_description_and_the_instructions_fit_the_cut() {
+    const CUT: usize = 2048;
+    // Over the cut today, and filed as #607: each may only shrink, to the
+    // longest it is in any variant. No tool is added here.
+    const OVER: [(&str, usize); 4] = [("board_write", 6111), ("list", 2961), ("forge_read", 2697), ("show", 3097)];
+    let mut wrong = vec![];
+    for scope in [Scope::Full, Scope::Read, Scope::Block(1)] {
+        for labs in [true, false] {
+            for t in list(scope, fl(labs)) {
+                let len = t.description.as_deref().unwrap_or_default().chars().count();
+                let cap = OVER.iter().find(|(n, _)| *n == t.name).map_or(CUT, |(_, cap)| *cap);
+                if len > cap {
+                    wrong.push(format!("{}: {len} characters, at most {cap}", t.name));
+                }
+            }
+        }
+    }
+    let len = crate::instructions().chars().count();
+    if len > CUT {
+        wrong.push(format!("the instructions: {len} characters, at most {CUT}"));
+    }
+    wrong.dedup();
+    assert!(wrong.is_empty(), "text past the cut is lost to an agent: {wrong:?}");
+}
+
 pub fn annotations_are_honest() {
     let all = list(Scope::Full, fl(false));
     assert_eq!(all.len(), 37 - no_forge());
@@ -223,7 +252,10 @@ pub fn doc_is_listed_with_no_flag() {
     else {
         panic!("doc has kinds")
     };
-    assert_eq!(kinds.iter().map(|k| k.name).collect::<Vec<_>>(), ["new", "list", "open", "fill", "asset", "share"]);
+    assert_eq!(
+        kinds.iter().map(|k| k.name).collect::<Vec<_>>(),
+        ["new", "list", "open", "fill", "fences", "asset", "share"]
+    );
     let offers = block_offers(On::none());
     let offer = offers.iter().find(|o| o.kind == "doc").expect("capabilities offers a doc");
     assert_eq!(offer.open, "doc {kind: \"new\"}");

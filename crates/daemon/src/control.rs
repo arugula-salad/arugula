@@ -1352,6 +1352,50 @@ impl Control {
         self.get(&e, path_and_query).await
     }
 
+    /// PUT JSON to control, signed as this machine, if it's in control: its
+    /// answer, or what it said when it refused ([`Answered`]). It doesn't
+    /// wait out a maintenance window: its callers try again after the next
+    /// refresh (a machine's Docs, #418).
+    pub async fn put_signed<T: serde::de::DeserializeOwned>(
+        &self,
+        path: &str,
+        body: &impl Serialize,
+    ) -> anyhow::Result<T> {
+        self.send_signed(reqwest::Method::PUT, path, serde_json::to_vec(body)?, "application/json").await
+    }
+
+    /// [`Control::put_signed`] with a body of bytes as they are (a Doc's
+    /// picture).
+    pub async fn put_signed_bytes<T: serde::de::DeserializeOwned>(
+        &self,
+        path: &str,
+        bytes: Vec<u8>,
+    ) -> anyhow::Result<T> {
+        self.send_signed(reqwest::Method::PUT, path, bytes, "application/octet-stream").await
+    }
+
+    async fn send_signed<T: serde::de::DeserializeOwned>(
+        &self,
+        method: reqwest::Method,
+        path: &str,
+        bytes: Vec<u8>,
+        content_type: &str,
+    ) -> anyhow::Result<T> {
+        let e = self.enrolled().ok_or_else(|| anyhow::anyhow!("this machine isn't in control"))?;
+        let build = || {
+            self.http
+                .request(method.clone(), format!("{}{path}", e.saved.url))
+                .header(AUTH, self.sign(&e, method.as_str(), path, &bytes))
+                .header(reqwest::header::CONTENT_TYPE, content_type)
+                .body(bytes.clone())
+        };
+        let (status, got) = self.patiently(method.as_str(), path, None, build).await?;
+        if !(200..300).contains(&status) {
+            return Err(Answered(status, said(status, &got)).into());
+        }
+        Ok(serde_json::from_slice(&got)?)
+    }
+
     /// Send a request to control and read its answer, waiting out a
     /// maintenance window (M141) for as long as `patience` lasts (`None`:
     /// not at all). `build` makes the request afresh for each try, so each

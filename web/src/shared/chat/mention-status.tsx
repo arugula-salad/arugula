@@ -18,10 +18,26 @@ export function mentionStatusText(s: ChatMentionStatus): string {
       return `${who}: went to ${s.session ?? "another session"} (no session called ${s.asked ?? "that"})`;
     case "waiting":
       return `Waiting on ${who}: no session took it`;
+    case "queued":
+      return `${who}${s.session ? `/${s.session}` : ""}: held: no hooks, waiting for ${who}`;
+    case "silenced":
+      return `Not delivered to ${who}${s.asked ? `/${s.asked}` : ""}: its owner silenced mentions for that session`;
+    case "no_such_session": {
+      const none = `No session on ${who} is called ${s.asked ?? "that"}`;
+      return s.names?.length ? `${none}: ${s.names.join(", ")}` : none;
+    }
+    case "working":
+      return `${who}${s.session ? `/${s.session}` : ""}: working…`;
+    case "read":
+      return `${who}${s.session ? `/${s.session}` : ""}: read`;
+    case "dropped":
+      return `${who}${s.session ? `/${s.session}` : ""}: dropped: ${s.why === "stopped" ? "the session was stopped" : "the session ended mid-turn"}`;
     case "offline":
       return `${who} is offline or didn't answer`;
     case "answered":
       return `${who} answered`;
+    case "chain":
+      return `Not delivered to ${who}: a chain of agent replies; a person's message restarts it`;
   }
 }
 

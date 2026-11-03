@@ -9,13 +9,17 @@ mod blocks;
 mod chat_readers;
 mod clients;
 mod config;
+mod followups;
 mod info;
 mod machines;
+mod notices;
 mod outside;
 mod who_may;
 
 pub use config::{AtExit, Config};
-pub use outside::{AgentSessions, CardsCall, CardsCx, Notify, PaneCards, PaneGone, People, Usage};
+pub use outside::{
+    AgentSessions, CardsCall, CardsCx, DropWhy, MentionTag, Notify, PaneCards, PaneGone, People, Turn, Turns, Usage,
+};
 
 /// Who answers an invite card: the owner, by any route.
 pub const OWNER_ONLY: &str = "only the session's owner sends or declines an invite";
@@ -190,6 +194,11 @@ pub enum Api {
     /// Why one pane wants you now, and whether it's a block (else a
     /// terminal).
     Reason(PaneId, oneshot::Sender<Option<(Reason, bool)>>),
+    /// Raise attention that belongs to no pane, or count it into the one
+    /// with its key (#551).
+    RaiseNotice(arugula_proto::Notice, oneshot::Sender<()>),
+    /// Take a notice away by its key; whether one was there.
+    ClearNotice(String, oneshot::Sender<bool>),
     Close(PaneId, oneshot::Sender<bool>),
     /// Open a block of any type; for a guest (M14), their principal: then
     /// it must be an agent beside a pane they edit, and runs on a VM of
@@ -237,8 +246,20 @@ pub enum Api {
     InboxGone(PaneId, u64),
     /// A follow-up for Claude Code in a terminal, from `by`: delivered at
     /// once if it waits, else queued for when it does. `Ok(true)`: it
-    /// went straight in.
-    FollowUp(PaneId, String, Driver, oneshot::Sender<Result<bool, String>>),
+    /// went straight in. With the mention it carries (#540), whose turn
+    /// is reported.
+    FollowUp(PaneId, String, Driver, Option<MentionTag>, oneshot::Sender<Result<bool, String>>),
+    /// The owner tapped deliver on a held mention (#579): it leaves the
+    /// pane's queue and comes back as the text to type, and its turn starts.
+    HeldDeliver(PaneId, oneshot::Sender<Result<String, String>>),
+    /// The owner dismissed the held mentions' card (#579): how many went.
+    HeldDrop(PaneId, oneshot::Sender<usize>),
+    /// Silence teammates' agents' mentions for a pane, or not (#579). It
+    /// lasts as long as the pane. False: no such terminal.
+    Mentions(PaneId, bool, oneshot::Sender<bool>),
+    /// An agent block's turn for a mention started or ended (#611): the
+    /// block says so, and it goes to the same [`Turns`] a terminal's does.
+    MentionTurn(PaneId, MentionTag, Turn),
     /// Someone answered a block's approval or question (M29), for its
     /// card, the pane's history and the audit log: `(id, how, headline)`.
     Answered(PaneId, Driver, String, String, String),
@@ -474,6 +495,12 @@ struct Daemon {
     /// Terminals one of Arugula's Claude Code hooks has spoken from, while
     /// Claude Code runs there (`PaneInfo.unhooked`).
     hooked: std::collections::HashSet<PaneId>,
+    /// Terminals whose owner silenced teammates' agents' mentions (#579),
+    /// for as long as the pane lives (`PaneInfo.mentions_off`).
+    mentions_off: std::collections::HashSet<PaneId>,
+    /// The card for the mentions held on each terminal whose hooks aren't
+    /// listening (#579): typed only when the owner taps deliver.
+    held: HashMap<PaneId, Reason>,
     /// What Claude Code in each pane said of its session from inside it
     /// (#450), while it runs there (`PaneInfo.live`).
     live: HashMap<PaneId, serde_json::Value>,
@@ -537,7 +564,7 @@ struct Daemon {
     pre: HashMap<PaneId, std::collections::VecDeque<serde_json::Value>>,
     /// Follow-up waiters (`arugula inbox`), and follow-ups waiting for one.
     inbox: HashMap<PaneId, Waiter>,
-    queued: HashMap<PaneId, std::collections::VecDeque<(String, Driver)>>,
+    queued: followups::Followups,
     next_ask: u64,
     /// The next block an intent spawns is this type, with this config,
     /// instead of a terminal.
@@ -557,6 +584,8 @@ struct Daemon {
     access: watch::Sender<u64>,
     tx: mpsc::UnboundedSender<Cmd>,
     machines: BTreeMap<MachineId, Machine>,
+    /// Attention that belongs to no pane, by key (#551).
+    pane_less: BTreeMap<String, arugula_proto::Notice>,
     next_machine: MachineId,
     save_due: Option<Instant>,
     last_saved: Option<SavedParts>,
@@ -606,7 +635,7 @@ enum Dirty {
 }
 
 /// What one person sees besides panes: machines, and who's here.
-type Seen = (Vec<Machine>, Vec<Presence>);
+type Seen = (Vec<Machine>, Vec<Presence>, Vec<arugula_proto::Notice>);
 
 /// A pane as one client has it.
 type PaneJson = serde_json::Map<String, serde_json::Value>;
@@ -621,6 +650,7 @@ struct Sent {
     panes: HashMap<PaneId, PaneJson>,
     machines: Vec<Machine>,
     presence: Vec<Presence>,
+    notices: Vec<arugula_proto::Notice>,
 }
 
 /// A pane's working directory and foreground command, as the OS showed
@@ -681,6 +711,8 @@ pub fn start(
         status_pushed: Default::default(),
         turn_typed: Default::default(),
         hooked: Default::default(),
+        mentions_off: Default::default(),
+        held: Default::default(),
         live: HashMap::new(),
         live_pid: HashMap::new(),
         links: Default::default(),
@@ -713,7 +745,7 @@ pub fn start(
         answered: HashMap::new(),
         pre: HashMap::new(),
         inbox: HashMap::new(),
-        queued: HashMap::new(),
+        queued: followups::Followups::default(),
         next_ask: 1,
         next_block: None,
         last_block_error: None,
@@ -724,6 +756,7 @@ pub fn start(
         tx: tx.clone(),
         access: access.clone(),
         machines: BTreeMap::new(),
+        pane_less: BTreeMap::new(),
         next_machine: 1,
         save_due: None,
         last_saved: None,

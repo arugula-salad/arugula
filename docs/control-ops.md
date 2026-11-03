@@ -1220,19 +1220,24 @@ commit of `arugula-salad/arugula`, by its full id. Its box:
 1. clones `main` and checks the commit is on it, with a `ci/green/<sha>`
    tag and no `ci/revoked/<sha>` one (the platform asked GitHub the same
    before it minted the run's tokens);
-2. runs `scripts/release bump <bump> [--app] <sha>`, which stops if main
-   has no `docs/releases/X.Y.Z.md`, the tag exists, or the commit is in a
-   release already. Otherwise it commits the bump, tags it, and pushes the
-   tag and main in one atomic push. Each of the three carries
-   `Arugula-Deploy: dep_…`, and a deploy whose id is on main already is
-   refused;
+2. runs `scripts/release bump <bump> [--app] <sha>`, which stops if the
+   commit has no `docs/releases/X.Y.Z.md`, the tag exists, or the commit
+   is in a release already. Otherwise it tags the commit itself `vX.Y.Z`
+   (no version-bump commit since #1986: the release's build stamps the
+   version) and pushes the tag, whose message carries `Arugula-Deploy:
+   dep_…`. For the daemon it then commits the tag's client fixtures to
+   main (`crates/proto/fixtures/releases/X.Y.Z`, #200) and pushes that
+   with the same token; if main refuses it, the run's log says to run
+   `just release-fixtures X.Y.Z` and the release goes on. A deploy of a
+   commit that's released already is refused, and so is one whose id is on
+   main already (a release from before #1986 committed it there);
 3. revokes its write token, then follows the tag's release workflow for
    up to 45 minutes with its read token, and revokes that. The run
    succeeds once the
    workflow's `publish` job succeeded and the release is out. It reports
    the tag, the commits, `scripts/release`'s blob id, the release's page,
-   the workflow's run and the jobs that failed (today `template` and `extension` fail on every
-   release; they don't fail the deploy). The release's `control` job
+   the workflow's run and the jobs that failed (today `template` fails on
+   every release; it doesn't fail the deploy). The release's `control` job
    deploys the hub only when the hub changed, as for any tag
    ("Deploys" above).
 
@@ -1252,10 +1257,10 @@ before.
 **Set up once:**
 
 - The App (`arugula-io`) gets **Contents: write** on its installation in
-  arugula-salad (it already reads Actions), and a **bypass** on the
-  "binaries check" ruleset, whose required status check would otherwise
-  refuse the push (the push to main is the bump merged in, not a PR).
-  Nothing else.
+  arugula-salad (it already reads Actions), to push the tag, and its
+  bypass on the "binaries check" ruleset, to push a daemon release's
+  client fixtures straight to main after the tag (before #1986 it was for
+  the bump commit). Nothing else.
 - The platform's `ARUGULA_PLATFORM_RELEASE_PROJECT` names Arugula's
   project id (`prj_…`; comma separated for more). No other project can
   make an `arugula-release` environment, plan with it, or have its token
@@ -1903,19 +1908,17 @@ pins onto the platform's mirror, and since M174 the relay is gone:
   as they do on a tailnet without control. No daemon errors on it.
 - The platform's webhook writes rows and answers `202 {"taken":true}`. It
   hands nothing to the hub.
-- `HubPort::forge_pokes` stays, answering 0, while a platform from before
-  M174 might call it (one rolled back past the hub): its webhooks still
-  answer GitHub 202, not 502. `PlatformPort::forge_standing` stays while
-  a hub from before might call it (the platform deploys first). Both go a
-  release later.
+- `HubPort::forge_pokes` and `PlatformPort::forge_standing`, kept in
+  0.66.11 and 0.66.12 for a mixed deploy, are gone in the release after.
 - `/api/daemon/github/token` (hosted boxes' read token) is not part of the
   relay, and stays.
 - Forgejo and GitLab blocks' own webhooks to the daemon are unchanged.
 
-Deploy order is the usual one, platform first. A new platform with an old
-hub: the hub keeps answering watches as before, but no pokes reach it.
-An old platform (a rollback) with a new hub: its pokes are taken, and go
-nowhere.
+Deploy order is the usual one, platform first. Both sides are on 0.66.11
+or later now, so neither calls the other about watches or pokes. Rolling
+the platform back past 0.66.11 needs the hub rolled back with it: the old
+platform's webhooks would hand the hub pokes it no longer takes, and
+answer GitHub 502.
 
 **The App's write permissions** (M167, #1213). The App gains
 `issues: write` and `pull_requests: write`, and nothing else, so a draft

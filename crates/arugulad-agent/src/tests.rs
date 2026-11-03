@@ -274,7 +274,7 @@ fn a_prompt_queued_while_the_agent_is_down_survives_a_restart() {
     ] {
         inner.rebuild_line(&l);
     }
-    assert_eq!(inner.queue, [Queued { text: "whats this project?".into(), images: vec![], by: None }]);
+    assert_eq!(inner.queue, [Queued { text: "whats this project?".into(), images: vec![], by: None, mention: None }]);
     // Sending it takes it off, here as when it's rebuilt.
     inner.rebuild_line(&frame(
         "out",
@@ -488,7 +488,7 @@ fn a_queued_prompt_is_credited_to_its_author_as_it_is_sent() {
     for l in &log_lines()[..5] {
         g.rebuild_line(l);
     }
-    let q = |text: &str, by: &str| Queued { text: text.into(), images: vec![], by: Some(by.into()) };
+    let q = |text: &str, by: &str| Queued { text: text.into(), images: vec![], by: Some(by.into()), mention: None };
     g.enqueue(&q("first", "Ada"), false);
     g.enqueue(&q("second", "Bo"), false);
     let said = |g: &Inner| -> Vec<String> {
@@ -528,7 +528,7 @@ fn a_queued_prompt_is_credited_to_its_author_as_it_is_sent() {
     assert_eq!(said(&g), ["A follow-up from Ada", "> first", "A follow-up from Bo", "> second"]);
 
     // The owner's own prompt names nobody.
-    let mine = Queued { text: "mine".into(), images: vec![], by: None };
+    let mine = Queued { text: "mine".into(), images: vec![], by: None, mention: None };
     g.enqueue(&mine, false);
     g.send_prompt(&mine, vec![json!({ "type": "text", "text": "mine" })]);
     assert_eq!(said(&g).last().map(String::as_str), Some("> mine"));

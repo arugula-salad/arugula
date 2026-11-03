@@ -38,7 +38,7 @@ use std::collections::BTreeMap;
 use arugula_control_common::Principal;
 pub use arugula_control_wire::activity::MachineActivity;
 use arugula_control_wire::{
-    forge::{DaemonOp, OpAnswer, Poke},
+    forge::{DaemonOp, OpAnswer},
     hosted::{EnrollAsk, EnrollGiven, Enrolled},
 };
 use futures_util::future::BoxFuture;
@@ -161,17 +161,6 @@ pub trait HubPort: Send + Sync {
     ///
     /// [`personal_project`]: HubPort::personal_project
     fn team_project<'a>(&'a self, team: &'a str) -> BoxFuture<'a, HubResult<Option<String>>>;
-
-    /// A GitHub webhook's pokes (M161), which the hub relayed to the
-    /// daemons watching each repository until M174 retired the relay. Now
-    /// it relays nothing and answers 0, and the platform doesn't call it.
-    /// It stays while a deployed platform from before M174 might (a
-    /// platform rolled back past the hub), so that platform's webhooks
-    /// still answer GitHub 202, not 502.
-    fn forge_pokes<'a>(&'a self, pokes: &'a [Poke]) -> BoxFuture<'a, HubResult<u32>> {
-        let _ = pokes;
-        Box::pin(async { Ok(0) })
-    }
 
     /// The account's GitHub identity (M163), if it signed in with GitHub:
     /// its numeric id, which is who it is on GitHub, and the login control

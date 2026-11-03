@@ -7,8 +7,10 @@ use std::time::Duration;
 
 use arugula_proto::{
     PaneId,
-    api::{AttentionRequest, Empty, FollowUpRequest, FollowedUp, KeysRequest, MouseRequest, SendRequest},
-    op::ops::{PaneAttention, PaneFollowUp, PaneKeys, PaneMouse, PaneSend},
+    api::{
+        AttentionRequest, Empty, FollowUpRequest, FollowedUp, KeysRequest, MentionsRequest, MouseRequest, SendRequest,
+    },
+    op::ops::{PaneAttention, PaneFollowUp, PaneKeys, PaneMentions, PaneMouse, PaneSend},
 };
 use axum::http::StatusCode;
 
@@ -87,6 +89,22 @@ impl Handle for PaneAttention {
     }
 }
 
+/// Let teammates' agents mention a session, or not (#579). The owner's:
+/// `authz` made that check.
+impl Handle for PaneMentions {
+    async fn handle(cx: &Cx<'_>, id: PaneId, req: MentionsRequest) -> Result<Empty, OpError> {
+        // Silence is the owner's alone, not an agent's on the owner's CLI
+        // (which could un-silence its own pane).
+        if cx.agent_or_guest() {
+            return Err(OpError::Forbidden("only this machine's owner silences or allows mentions".into()));
+        }
+        match cx.app.mux.api(|r| Api::Mentions(id, req.on, r)).await {
+            Some(true) => Ok(Empty {}),
+            _ => Err(OpError::NoPane(id)),
+        }
+    }
+}
+
 /// A follow-up for the agent in a pane (M29), from whoever may drive it:
 /// an agent block's next prompt, or Claude Code's in a terminal (through
 /// its inbox hook, never typed). Recorded as theirs. `delivered`: it went
@@ -100,7 +118,7 @@ impl Handle for PaneFollowUp {
             b.call_by("send", serde_json::json!({ "text": req.text }), name).await.map_err(bad)?;
             return Ok(FollowedUp { delivered: true });
         }
-        match app.mux.api(|r| Api::FollowUp(id, req.text, by, r)).await {
+        match app.mux.api(|r| Api::FollowUp(id, req.text, by, None, r)).await {
             Some(Ok(now)) => Ok(FollowedUp { delivered: now }),
             Some(Err(e)) => Err(bad(e).into()),
             None => Err(shutting_down().into()),

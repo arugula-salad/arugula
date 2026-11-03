@@ -108,6 +108,13 @@ impl Daemon {
                 let block = self.blocks.contains_key(&pane) && !self.asks.contains_key(&pane);
                 let _ = reply.send(self.live_reason(pane).map(|r| (r, block)));
             }
+            Api::RaiseNotice(n, reply) => {
+                self.raise_notice(n);
+                let _ = reply.send(());
+            }
+            Api::ClearNotice(key, reply) => {
+                let _ = reply.send(self.clear_notice(&key));
+            }
             Api::Machines(reply) => {
                 let _ = reply.send(self.machines.values().cloned().collect());
             }
@@ -355,8 +362,34 @@ impl Daemon {
                     self.touch(pane);
                 }
             }
-            Api::FollowUp(pane, text, by, reply) => {
-                let _ = reply.send(self.follow_up(pane, text, by));
+            Api::MentionTurn(pane, tag, turn) => {
+                self.config.turns.turn(pane, &tag, turn);
+            }
+            Api::FollowUp(pane, text, by, tag, reply) => {
+                let _ = reply.send(self.follow_up(pane, text, by, tag));
+            }
+            Api::HeldDeliver(pane, reply) => {
+                let text = self.queued.deliver_held(pane, &*self.config.turns);
+                self.refresh_held(pane);
+                let _ = reply
+                    .send(text.ok_or_else(|| format!("%{pane} holds no mention (it was delivered, or dismissed)")));
+            }
+            Api::HeldDrop(pane, reply) => {
+                let n = self.queued.drop_held(pane);
+                self.refresh_held(pane);
+                let _ = reply.send(n);
+            }
+            Api::Mentions(pane, on, reply) => {
+                let known = self.panes.contains_key(&pane);
+                if known {
+                    if on {
+                        self.mentions_off.remove(&pane);
+                    } else {
+                        self.mentions_off.insert(pane);
+                    }
+                    self.mark(pane);
+                }
+                let _ = reply.send(known);
             }
             Api::Answered(pane, by, id, how, headline) => self.record_answer(pane, &by, &id, &how, &headline),
             Api::Who(who, reply) => {

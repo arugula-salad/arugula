@@ -52,6 +52,7 @@ pub const TAB: &[Entry] = &[
     ("show", Some("workspace")),
     ("doc", Some("new")),
     ("doc", Some("fill")),
+    ("doc", Some("fences")),
     ("doc", Some("asset")),
     ("doc", Some("share")),
 ];

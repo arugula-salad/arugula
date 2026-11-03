@@ -57,6 +57,11 @@ pub struct Sharing {
     #[serde(default = "yes")]
     #[cfg_attr(feature = "ts", ts(as = "Option<bool>", optional))]
     pub agent_mentions: bool,
+    /// What a teammate's agent may learn of this machine's sessions
+    /// (#577). Names by default.
+    #[serde(default)]
+    #[cfg_attr(feature = "ts", ts(as = "Option<AgentSessions>", optional))]
+    pub agent_sessions: AgentSessions,
     /// Whether this build has guest ssh. A build without Labs keeps the
     /// setting, and nothing follows. Absent: it has.
     #[serde(default = "yes")]
@@ -66,6 +71,42 @@ pub struct Sharing {
 
 fn yes() -> bool {
     true
+}
+
+/// What a teammate's agent may learn of this machine's sessions (#577),
+/// when it asks which ones it can `@machine/name`. Only with agent mentions
+/// on; off, it learns nothing whatever this says.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[serde(rename_all = "lowercase")]
+pub enum AgentSessions {
+    /// No session is named to them.
+    None,
+    /// Each session's name, tab and how recently it was active.
+    #[default]
+    Names,
+    /// Also what each works on (the issue it was started on).
+    Work,
+}
+
+impl AgentSessions {
+    /// The word `sharing.json` and `arugulad sharing` use.
+    pub fn word(self) -> &'static str {
+        match self {
+            AgentSessions::None => "none",
+            AgentSessions::Names => "names",
+            AgentSessions::Work => "work",
+        }
+    }
+
+    pub fn from_word(w: &str) -> Option<Self> {
+        match w {
+            "none" => Some(AgentSessions::None),
+            "names" => Some(AgentSessions::Names),
+            "work" => Some(AgentSessions::Work),
+            _ => None,
+        }
+    }
 }
 
 /// `PUT /api/sharing` (the `sharing.set` operation): the settings to
@@ -79,6 +120,9 @@ pub struct SharingSetRequest {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "ts", ts(optional))]
     pub agent_mentions: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub agent_sessions: Option<AgentSessions>,
 }
 
 /// The file as it is: empty if there's none, or it doesn't parse (logged
@@ -106,6 +150,19 @@ pub fn agent_mentions(state_dir: &Path) -> bool {
     doc(state_dir).get("agent_mentions").and_then(Value::as_bool).unwrap_or(true)
 }
 
+/// What a teammate's agent may learn of this machine's sessions (#577):
+/// the file's word, else names. Unknown words are names too, the middle
+/// way, so a typo neither opens nor closes it.
+pub fn agent_sessions(state_dir: &Path) -> AgentSessions {
+    doc(state_dir).get("agent_sessions").and_then(Value::as_str).and_then(AgentSessions::from_word).unwrap_or_default()
+}
+
+/// What agents may learn of a machine's sessions, with the owner's two
+/// switches together (#576, #577): nothing when mentions are off.
+pub fn sessions_shown(state_dir: &Path) -> AgentSessions {
+    if agent_mentions(state_dir) { agent_sessions(state_dir) } else { AgentSessions::None }
+}
+
 /// Turns Guest SSH access on or off, keeping the rest of the file.
 pub fn set_guest_ssh(state_dir: &Path, on: bool) -> io::Result<()> {
     set(state_dir, "guest_ssh", on)
@@ -116,9 +173,19 @@ pub fn set_agent_mentions(state_dir: &Path, on: bool) -> io::Result<()> {
     set(state_dir, "agent_mentions", on)
 }
 
+/// Sets what agents may learn of the machine's sessions, keeping the rest
+/// of the file (#577).
+pub fn set_agent_sessions(state_dir: &Path, what: AgentSessions) -> io::Result<()> {
+    write(state_dir, "agent_sessions", Value::String(what.word().into()))
+}
+
 fn set(state_dir: &Path, key: &str, on: bool) -> io::Result<()> {
+    write(state_dir, key, Value::Bool(on))
+}
+
+fn write(state_dir: &Path, key: &str, v: Value) -> io::Result<()> {
     let mut m = doc(state_dir);
-    m.insert(key.into(), Value::Bool(on));
+    m.insert(key.into(), v);
     let mut text = serde_json::to_string_pretty(&Value::Object(m)).expect("a JSON object serializes");
     text.push('\n');
     flags::write_atomic(&state_dir.join(FILE), text.as_bytes())
@@ -188,6 +255,23 @@ mod tests {
         flags::write_control(&d, &pushed).unwrap();
         assert!(!guest_ssh(&d) && !migrate(&d).unwrap());
         fs::remove_dir_all(&d).unwrap();
+    }
+
+    #[test]
+    fn agent_sessions_are_names_until_the_owner_says_otherwise() {
+        let d = dir("sessions");
+        assert_eq!(agent_sessions(&d), AgentSessions::Names);
+        for what in [AgentSessions::Work, AgentSessions::None, AgentSessions::Names] {
+            set_agent_sessions(&d, what).unwrap();
+            assert_eq!(agent_sessions(&d), what);
+        }
+        // Another key's write keeps it, and a word it doesn't know is the default.
+        set_agent_sessions(&d, AgentSessions::Work).unwrap();
+        set_agent_mentions(&d, false).unwrap();
+        assert_eq!(agent_sessions(&d), AgentSessions::Work);
+        assert_eq!(sessions_shown(&d), AgentSessions::None, "mentions off shows nothing");
+        std::fs::write(d.join(FILE), r#"{"agent_sessions": "everything"}"#).unwrap();
+        assert_eq!(agent_sessions(&d), AgentSessions::Names);
     }
 
     #[test]

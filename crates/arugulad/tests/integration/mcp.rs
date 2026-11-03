@@ -3088,7 +3088,8 @@ async fn an_agent_reads_and_writes_a_board_where_the_flag_is_on() {
             "create_board",
             "edit_board",
             "close_board",
-            "reopen_board"
+            "reopen_board",
+            "lead_board"
         ]
     );
     // show's board kind pins one beside the caller, by its id.

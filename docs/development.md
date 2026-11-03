@@ -26,8 +26,8 @@ both sides share, `arugula-control-wire`, `arugula-e2e`,
 `arugula-forge-github`, `arugula-proto` and `arugula-core`), and the
 server's (`server/Cargo.toml`: `arugula-control`, `arugula-platform` and
 `arugula-control-common`, which stay in `crates/` and reach the shared
-crates by path). Each has its own `Cargo.lock`; both carry the release's
-version, which `just release` bumps together. `cargo` at the root works on
+crates by path). Each has its own `Cargo.lock`; both carry the same
+version, which a release's build stamps together (`scripts/release stamp`). `cargo` at the root works on
 the root's; for the server's, `scripts/server-cargo build -p
 arugula-control` (or any cargo command) from anywhere in the checkout, or
 plain `cargo` in `server/` or a server crate. `scripts/server-cargo` and the
@@ -340,8 +340,8 @@ delete. Windows isn't covered (the wrapper is a shell script).
 
 Cargo keys each build of a crate by its version, features, profile and
 whether it's a test, and never deletes a build that a change of those
-left behind. Every release bump leaves the daemon's and the CLI's
-behind, and so does each feature combination: `just check-features`,
+left behind. A change of the workspace's version leaves the daemon's and
+the CLI's behind, and so does each feature combination: `just check-features`,
 `cargo build -p arugulad` against `--workspace`, clippy. Each daemon build
 is about 1 GB of incremental cache and a 270 MB binary. On geek a
 worktree used for four days reached 40 GB, 31 GB of it incremental caches
@@ -364,50 +364,68 @@ daemon's update check read it.
 
 **The daemon (`v*`).**
 
-1. Notes go in `docs/releases/X.Y.Z.md`; merge them to main (they needn't
-   pass CI first). They end with a headline section, a ```` ```whats-new ````
-   block of a few items (each a feature id, a title, one line, and maybe
-   a **Try it** command or route and who it `needs`): the web client's
-   What's new panel shows them after the update, and the format is in
-   `scripts/whats-new.mjs` (`just whats-new` checks them).
-   `scripts/release bump` refuses notes without one (a dry run says so and
-   goes on), and `publish` leaves it out of the GitHub release.
-2. `just release` (a patch; `just release minor`, `just release major`)
-   bumps the version on top of the newest commit on main that passed CI
-   (below), copies the client fixtures to
-   `crates/proto/fixtures/releases/X.Y.Z` (for later daemons to replay,
-   #200; the release fails without them), tags it `vX.Y.Z` and pushes the
-   tag with main, the bump merged in. If main has newer commits that
-   aren't green yet, it lists them (the release would leave them out) and
-   stops: wait for them, or `just release --older` releases without them
-   (#1679). The commit also needs its `ci/rare/<sha>` tag: the jobs CI
-   runs nightly instead of on each push passed on it (below). Without
-   one it stops; `just release --rare` starts those jobs on the commit,
-   waits for them (about as long as a check.yml run) and releases if they
-   pass. `just release --dry-run` shows the commit, the version, the
-   bump, any commits left out and whether the commit has its `ci/rare`
-   tag, and stops. By hand instead: set the
-   version in the workspace `Cargo.toml` and in `server/Cargo.toml`, run `just release-fixtures` and
-   commit (`just notices` if dependencies changed; CI fails if
-   THIRD_PARTY.md is stale), push it to main, wait for CI to pass on it, and
-   tag the commit `chant ci last-green` names: `git tag -a vX.Y.Z -m
-   "arugula X.Y.Z" "$sha" && git push origin vX.Y.Z`.
-   `.github/workflows/release.yml` builds the Linux tarballs in the home
-   cloud (`arugula-amd64`, [CI](#ci)), the
-   macOS ones on jake-mini (Apple silicon natively, Intel cross-compiled
-   with `just build-macos-x86_64`) and the Windows zip on GitHub's runner,
-   attaches them and `SHA256SUMS` to the GitHub release, publishes it as
-   latest, and bumps the formula in `arugula-salad/homebrew-tap`
-   (`scripts/release`; the tap's deploy key is the `HOMEBREW_TAP_KEY`
-   secret). Then it publishes the editor extension, attached as
-   `arugula-editor-*.vsix`, to Open VSX (a trusted publisher on the
-   `arugula` namespace) and the Visual Studio Marketplace (an Entra app
-   that trusts the `marketplace` environment, #934), both by the
-   workflow's OIDC token with no secret, skipping a version that's
-   already there, and trying each store even if the other refuses: bump
-   `crates/arugulad-editor/src/editor/ext/package.json` to ship a new one. Its
-   `platform` job deploys control's platform (`arugula-platform`) from the
-   tag's x86_64 static build, once that app exists (the
+A release is a commit CI passed, as it is (#1986): the tag names that
+commit, and no commit moves the version. The workspace's `Cargo.toml`
+keeps whatever version it has; the release workflow's build jobs write the
+tag's version into their own checkout (`scripts/release stamp TAG`) before
+they build, as chant's `scripts/release-pack.sh` does for its packages, so
+the binaries, the tarballs' names and the hub's `/control.json` carry it.
+What a release needs is therefore in the commit before it's tagged: its
+notes. The copy of its client fixtures comes after the tag (step 2).
+
+1. Notes go in `docs/releases/X.Y.Z.md`. Merge them to main.
+   The notes end with a headline section, a ```` ```whats-new ```` block of
+   a few items (each a feature id, a title, one line, and maybe a **Try
+   it** command or route and who it `needs`): the web client's What's new
+   panel shows them after the update, and the format is in
+   `scripts/whats-new.mjs` (`just whats-new` checks them). `scripts/release
+   draft` leaves it out of the GitHub release.
+2. Once that commit (or a later one) is green, `just release` (a patch;
+   `just release minor`, `just release major`) tags the newest commit on
+   main that passed CI (below) `vX.Y.Z`, the next version after the newest
+   `v*` tag, and pushes the tag. It refuses a commit without the notes or
+   their headline section. Then it copies the tag's client fixtures
+   (`crates/proto/fixtures/*.jsonl`), which later daemons replay (#200),
+   to `crates/proto/fixtures/releases/X.Y.Z` in a commit of their own and
+   pushes that straight to main, as the version-bump commit used to carry
+   them. From the arugula-release deploy that push uses the `arugula-io`
+   App's token, which has a bypass on the "binaries check" ruleset for it;
+   from your shell it's your own login. It skips a set main already has,
+   and tries again a few times if main moves under it. If main still
+   refuses it, the release stands and it prints the command to run
+   instead: `just release-fixtures X.Y.Z` (from the tag, wherever you run
+   it), then merge that to main. release.yml's `fixtures` job checks main
+   after the publish and says the same in its summary when the set is
+   missing; it never fails the release. If main has newer
+   commits that aren't green yet, it lists them (the release would leave
+   them out) and stops: wait for them, or `just release --older` releases
+   without them (#1679). The commit also needs its `ci/rare/<sha>` tag: the
+   jobs CI runs nightly instead of on each push passed on it (below).
+   Without one it stops; `just release --rare` starts those jobs on the
+   commit, waits for them (about as long as a check.yml run) and releases
+   if they pass. `just release --dry-run` shows the commit, the version,
+   what's missing, any commits left out and whether the commit has its
+   `ci/rare` tag, and stops. By hand instead: `git tag -a vX.Y.Z -m
+   "arugula X.Y.Z" "$sha" && git push origin vX.Y.Z`, with the commit
+   `chant ci last-green --lane daemon` names, then `just release-fixtures
+   X.Y.Z` merged to main.
+   `.github/workflows/release.yml` cuts the release first (`cut`, [below](#publishing-through-chant)),
+   then builds the Linux tarballs in the home cloud (`arugula-amd64`,
+   [CI](#ci)), the macOS ones on jake-mini (Apple silicon natively, Intel
+   cross-compiled with `just build-macos-x86_64`) and the Windows zip on
+   GitHub's runner. chant publishes them: it attaches them, the editor
+   extension and `SHA256SUMS` to the GitHub release and publishes it as
+   latest, commits the formula to `arugula-salad/homebrew-tap` over SSH
+   with the tap's deploy key (the `HOMEBREW_TAP_KEY` secret), and sends the
+   editor extension to the Visual Studio Marketplace (an Entra app that
+   trusts the `marketplace` environment, #934) and Open VSX (a trusted
+   publisher on the `arugula` namespace), both by the workflow's OIDC
+   token with no secret. A version that's already on a store is skipped,
+   and a store that refuses the upload is a warning that holds back
+   neither the other store nor the release: bump
+   `crates/arugulad-editor/src/editor/ext/package.json` to ship a new one.
+   Its `platform` job deploys control's platform (`arugula-platform`) from
+   the tag's x86_64 static build, once that app exists (the
    `FLY_PLATFORM_API_TOKEN` secret; without it the job deploys nothing and
    succeeds), then its `control` job deploys the hosted control's hub, with
    no approval step, and fails unless control then answers and runs the
@@ -431,30 +449,102 @@ daemon's update check read it.
    this repo's `main`, so a change to them is live within 5 minutes of
    merging.
 
+A build from main (`just build`, `just dist`) reports the version
+`Cargo.toml` has, which stays at the last version a commit set (0.66.12,
+the last bump before #1986), whatever has been released since.
+
 Instead of step 2, a release can run as a deploy, approved from an
 owner's phone: [control-ops.md](control-ops.md#releasing-arugula-as-a-deploy-m221).
+
+<a id="publishing-through-chant"></a>**Publishing through chant (#1986).**
+Each lane is a `kind: chant` member of `chant.workspace.json` whose
+`chant.config.ts` declares what its release publishes (`release.publish`)
+and which green lane it's cut from (`release.lane`): `release/daemon`
+(`daemon-release`, the `daemon` lane) for `v*` tags and `release/app`
+(`app-release`, the `app` lane) for `app-v*` tags. They're apart from
+#1983's `ops/` member, which releases control and the platform to
+production from `ci/green-server`: a member publishes every target it
+declares on each of its releases, and the three ship on different tags and
+lanes.
+
+A `cut` job runs first: `chant release cut TAG --at <the tag's commit>
+--lane daemon|app --yes` in the member, which refuses a commit that isn't
+green in that lane (`ci/green-<lane>/<sha>`, and no
+`ci/revoked-<lane>/<sha>`) and otherwise records the release on
+`chant/lifecycle`. Every build job waits for it, so a refused cut builds
+and deploys nothing. Each build job stamps the tag's version into its
+checkout and hands its files to the `publish` job as an Actions artifact.
+The `publish` job checks out the tag's commit, unstamped (`chant release
+publish` publishes only from a clean checkout of the release's commit),
+puts the files in `dist/release/` (gitignored), writes `SHA256SUMS`
+(`scripts/release sums`) and, for the daemon, the formula's template
+(`scripts/release formula`, from `packaging/homebrew/arugula.rb.in`),
+makes the draft release with its title and notes (`scripts/release
+draft`), and runs `chant release publish TAG --yes`. chant stages every
+target, then reveals them in order: it attaches the files and
+`release.intoto.json`, its provenance statement, to the draft and
+publishes it; for the daemon it then commits the formula and sends the
+extension to the stores; for the app it swaps `app-latest`. Run again
+after a failure, it resumes from its record on `chant/lifecycle` and
+publishes nothing twice. A forge target's tag is fixed in its declaration,
+so the workflows name the release's own tag in `ARUGULA_RELEASE_TAG`, and
+the GitHub release stays `vX.Y.Z` or `app-vX.Y.Z`, where the downloads
+have always been; chant's own tag (`release/daemon-release/vX.Y.Z`) is
+made in the job's checkout and never pushed. The workflows pin chant
+0.124.67, which has lane cuts, the override, the marketplaces' OIDC and the
+tap's SSH key.
+
+Since the publish stages the marketplaces before it reveals anything, a
+store that can't be signed in to (an Entra sign-in that fails, Open VSX no
+longer trusting this workflow) stops the whole publish before the GitHub
+release is out; only a refused upload, at the reveal, is a warning.
+
+The tap's `formula_renames.json` (`illogical` to `arugula`) and the removal
+of `Formula/illogical.rb` were done by every release before #1986, and are
+in the tap for good: chant's homebrew target writes only
+`Formula/arugula.rb`, and leaves them alone.
+
+<a id="release-override"></a>A release from a commit that isn't green (an
+outage, say) goes through chant's override (`--override-green`, #4693),
+never by default. An org admin sets the repository variable
+`ARUGULA_RELEASE_SKIP_GREEN=1`, which makes the `cut` job pass
+`--override-green` (and the build skip `check-rare`), and pushes the tag.
+The first run's cut is refused and records the request on
+`chant/lifecycle`, printing the line to approve it with. A person
+`.chant/overriders` lists approves it, with the reason:
+
+```sh
+git fetch origin chant/lifecycle:chant/lifecycle
+npx @intentius/chant@0.124.67 approve policy-override release-<sha12> \
+  --rule ci-green-daemon --reason "..." --actor github:lex00   # ci-green-app for the app
+```
+
+Then re-run the workflow's failed jobs: the cut spends the override, and
+the release records who overrode it and why. The variable is unset once
+that release is out (lex00, 2026-10-08, #524).
 
 **The app (`app-v*`)**, only when `crates/desktop` changes:
 
 1. Notes go in `docs/releases/app-X.Y.Z.md`, merged to main.
-2. `just release --app` (with `minor` or `major` as above) bumps
-   `crates/desktop`'s version (its own numbering, not the daemon's) on top
-   of the newest commit on main with a `ci/green-app` tag (below) and
-   tags `app-vX.Y.Z` in the same way; by hand, set it in
-   `crates/desktop/Cargo.toml`, and once the app's lane passes (`chant ci
-   last-green --lane app`), `git tag -a app-vX.Y.Z
-   -m "arugula app X.Y.Z" "$sha" && git push origin app-vX.Y.Z`.
-   `.github/workflows/app-release.yml` downloads arugulad
-   and Arugula from the latest daemon release (checked against its
-   `SHA256SUMS`) for the app to carry, builds and signs the apps (Linux in
-   the home cloud, macOS on jake-mini, notarized with the Developer ID when its
-   secrets are set, Windows on GitHub's runner), and publishes the release
-   with its own `SHA256SUMS` and the updater's `latest.json`. It's never
-   marked latest.
-3. It copies the downloads, `SHA256SUMS` and `latest.json` to the rolling
-   `app-latest` release, whose tag follows the newest app's commit. The
-   site's download buttons and the updater's endpoint
-   (`tauri.conf.json`) point there, so they get the new app at once.
+2. `just release --app` (with `minor` or `major` as above) tags the newest
+   commit on main with a `ci/green-app` tag (below) `app-vX.Y.Z`, the next
+   version after the newest `app-v*` tag (its own numbering, not the
+   daemon's), in the same way; by hand, once the app's lane passes
+   (`chant ci last-green --lane app`), `git tag -a app-vX.Y.Z -m "arugula
+   app X.Y.Z" "$sha" && git push origin app-vX.Y.Z`.
+   `.github/workflows/app-release.yml` cuts the release from the app's
+   lane, downloads arugulad and arugula from the latest daemon release
+   (checked against its `SHA256SUMS`) for the app to carry, builds and
+   signs the apps with the tag's version stamped into `crates/desktop`
+   (Linux in the home cloud, macOS on jake-mini, notarized with the
+   Developer ID when its secrets are set, Windows on GitHub's runner), and
+   chant publishes the release with its own `SHA256SUMS`
+   ([above](#publishing-through-chant)). It's never marked latest.
+3. chant then replaces the rolling `app-latest` release with a new one
+   holding the same downloads, `SHA256SUMS` and the updater's
+   `latest.json`, whose URLs point at the `app-vX.Y.Z` release. The site's
+   download buttons and the updater's endpoint (`tauri.conf.json`) point
+   at `app-latest`, so they get the new app at once.
 4. Apps from before the split (0.23 and older) have no updater key, so they
    never check: their people install the new app once, by hand.
 
@@ -467,10 +557,10 @@ passed (`ci.green.require` and `ci.green.lanes` in chant.workspace.json;
 
 | Tag | Ships | Phases it needs | Read by |
 | --- | --- | --- | --- |
-| `ci/green/<sha>` | the daemon, the CLI, the web client it embeds, the editor extension | all eight | `just release`, `check-version` |
-| `ci/green-daemon/<sha>` | the same | the same as `ci/green` | nothing yet |
+| `ci/green/<sha>` | the daemon, the CLI, the web client it embeds, the editor extension | all eight | `just release`, the arugula-release driver |
+| `ci/green-daemon/<sha>` | the same | the same as `ci/green` | `chant release cut --lane daemon` (release.yml) |
 | `ci/green-server/<sha>` | control, the platform, the hosted workspace templates | lint, build, test, e2e | `scripts/release last-green server` |
-| `ci/green-app/<sha>` | the desktop app | lint, build, e2e, claims, windows-desktop | `just release --app`, `check-app-version` |
+| `ci/green-app/<sha>` | the desktop app | lint, build, e2e, claims, windows-desktop | `just release --app`, `chant release cut --lane app` (app-release.yml) |
 
 The phases and their jobs: lint (lint, changes, suite-changed), build
 (build, static, clippy), test (test, test-2), e2e (the twelve shards),
@@ -501,7 +591,7 @@ deploy driver (which checks `ci/green` for both lanes before it runs
 
 ```sh
 git fetch origin --tags
-sha=$(npx @intentius/chant@0.124.61 ci last-green)               # the daemon's
+sha=$(npx @intentius/chant@0.124.61 ci last-green --lane daemon) # the daemon's
 sha=$(npx @intentius/chant@0.124.61 ci last-green --lane app)    # the app's
 ```
 
@@ -512,14 +602,9 @@ newest of them, newest first (`just green 50` for more, `just green 20 app`
 for a lane's). The tags page on GitHub sorts them by name, not by date.
 
 `chant ci last-green` reads `origin/main` and the local tags, so `origin`
-must be GitHub. `scripts/release check-version` refuses a tag on a commit
-with no `ci/green` tag, or with a `ci/revoked` one (a re-run failed after
-it passed); `check-app-version` does the same with `ci/green-app` and
-`ci/revoked-app`. `scripts/release check-green TAG [LANE]` checks one
-lane's (an `app-v*` tag's is the app's, any other the daemon's). A commit that changes nothing but
-Arugula's own versions (in the manifests, the lock files and the
-THIRD_PARTY.md files), release notes and its copy of the client fixtures counts as its parent: that's
-the commit `just release` tags.
+must be GitHub. `scripts/release check-green TAG [LANE]` checks one
+lane's tags from GitHub (an `app-v*` tag's is the app's, any other the
+daemon's); the release workflows leave that check to chant's cut.
 
 A daemon release needs more than `ci/green` (#305). test-postgres, core,
 testnet, stack and the WebKit specs run in
@@ -527,35 +612,36 @@ testnet, stack and the WebKit specs run in
 release candidate, not on each push, so `ci/green` doesn't cover them. A
 run whose jobs all pass tags the commit it tested `ci/rare/<sha>` (with
 `CI_GREEN_TOKEN`, since the `ci/` tags are protected). `scripts/release
-check-version` and `just release` refuse a commit without that tag (or,
-for the bump commit, its parent without it); `scripts/release check-rare
-TAG` checks it alone. To start the jobs on a commit by hand:
+check-version` (release.yml's linux job) and `just release` refuse a commit
+without that tag; `scripts/release check-rare TAG` checks it alone. To start the jobs on a commit by hand:
 `gh workflow run rare-nightly.yml --ref main -f sha=SHA` (a full SHA; the
 run's name, `rare-nightly SHA`, says which). The app's releases
-(`check-app-version`, `just release --app`) don't need it.
+(`just release --app`) don't need it.
 
-`ARUGULA_RELEASE_SKIP_GREEN=1` skips both checks; in the release
-workflows it comes from the repository variable of the same name. The variable stays unset. Only an org admin sets it, to 1,
-for one named release when CI can't go green (an outage, say), and unsets
-it once that release is out (lex00, 2026-10-08, #524).
+`ARUGULA_RELEASE_SKIP_GREEN=1` skips `scripts/release`'s green and rare
+checks; in the release workflows it comes from the repository variable of
+the same name, and turns the cut into an override
+([above](#release-override)). The variable stays unset. Only an org admin
+sets it, to 1, for one named release when CI can't go green, and unsets it
+once that release is out (lex00, 2026-10-08, #524).
 
-`just release` (`scripts/release bump`, #524, after chant's) reads main and
-the `ci/` tags from GitHub, whatever your remotes are, and works in a
-throwaway worktree, so your checkout stays as it is. It takes the version
-from the green commit or main, whichever is higher (main may carry a bump
-that hasn't passed yet), and the notes from main. It refuses a commit the
-lane already released, a tag that exists, and a merge into main that
-conflicts anywhere but the version lines; if main moves while it pushes,
-nothing is pushed and you run it again. `just release COMMIT` releases an
-older green commit on main instead. `scripts/tests/release-bump.sh` (`just
-test-scripts`) runs it against a local repository.
+`just release` (`scripts/release bump`, #524) reads main and the `ci/`
+and release tags from GitHub, whatever your remotes are, and changes
+nothing in your checkout (it builds the fixtures commit in a scratch
+index). It takes the next version from the lane's newest
+tag (or the commit's own version, when that's higher), and refuses a
+commit the lane already released or a tag that exists. `just release
+COMMIT` releases an older green commit on main instead.
+`scripts/tests/release-bump.sh` (`just test-scripts`) runs it against a
+local repository.
 
-`scripts/release` (`check-version`, `sums`, `publish`, `homebrew` for the
-daemon; `check-app-version`, `sidecars`, `app-upload`, `app-publish` for the
-app) checks that `releases/latest` is still a daemon release after each
-publish. `scripts/tests/release-targets.sh` (`just test-scripts`) fails if the
-daemon's workflow builds an app, or if the downloads the app's workflow
-makes, the ones `scripts/release` requires and the ones the site links
+`scripts/release` (`check-version`, `check-fixtures` and `formula` for the daemon; `sidecars`
+for the app; `stamp`, `sums`, `draft` and `check-latest` around chant's
+publish) checks with `check-latest` that `releases/latest` is still a
+daemon release after each publish. `scripts/tests/release-targets.sh`
+(`just test-scripts`) fails if the daemon's workflow builds an app, or if
+the downloads the app's workflow makes, the ones `scripts/release`
+requires, the ones the chant members publish and the ones the site links
 drift apart.
 
 <a id="ci"></a>CI's Linux jobs run in two places. check.yml's (the push checks)

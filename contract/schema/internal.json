@@ -55,6 +55,13 @@
           "description": "Who wrote it, as people read it: a person's name, or \"Ada's agent\non geek\".",
           "type": "string"
         },
+        "from_session": {
+          "description": "With an agent's post (#575): the name of the session that wrote it.\nThe daemon never gives the message to a session of this name, so an\nagent's mention of its own machine doesn't come back to it. An older\ndaemon ignores it.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "parent": {
           "description": "The message it replies under, when it's in a thread.",
           "format": "int64",
@@ -100,6 +107,26 @@
         "seq",
         "author",
         "text"
+      ],
+      "type": "object"
+    },
+    "AgentSessionsAsk": {
+      "description": "An agent asks which sessions of a machine it may mention (#577).",
+      "properties": {
+        "from_session": {
+          "description": "When the asker's session is on this machine (#575): its name, so the\nlist leaves it out, as a mention never reaches the session that\nwrote it.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "room": {
+          "description": "The room the mention would be in.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "room"
       ],
       "type": "object"
     },
@@ -600,6 +627,20 @@
           "properties": {
             "op": {
               "const": "agents.mention",
+              "type": "string"
+            }
+          },
+          "required": [
+            "op"
+          ],
+          "type": "object"
+        },
+        {
+          "$ref": "#/$defs/AgentSessionsAsk",
+          "description": "Which of this machine's sessions a teammate's agent may mention\n(`@<machine>/<session>`, #577). The owner decides what is said\n(`sharing.json`'s `agent_sessions`).",
+          "properties": {
+            "op": {
+              "const": "agents.sessions",
               "type": "string"
             }
           },
@@ -1617,57 +1658,6 @@
       ],
       "type": "object"
     },
-    "Poke": {
-      "description": "What control relays of a webhook event: no more than this.",
-      "properties": {
-        "delivery": {
-          "default": "",
-          "type": "string"
-        },
-        "event": {
-          "default": "",
-          "type": "string"
-        },
-        "host": {
-          "default": "github.com",
-          "description": "A daemon takes `github.com` when it is left out.",
-          "type": "string"
-        },
-        "number": {
-          "format": "uint64",
-          "minimum": 0,
-          "type": [
-            "integer",
-            "null"
-          ]
-        },
-        "provider": {
-          "type": "string"
-        },
-        "repo": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "provider",
-        "repo"
-      ],
-      "type": "object"
-    },
-    "PokesArgs": {
-      "properties": {
-        "pokes": {
-          "items": {
-            "$ref": "#/$defs/Poke"
-          },
-          "type": "array"
-        }
-      },
-      "required": [
-        "pokes"
-      ],
-      "type": "object"
-    },
     "PreviewArgs": {
       "description": "Public previews (M187): a preview's id, or a workspace's.",
       "properties": {
@@ -2615,38 +2605,6 @@
         "failed"
       ],
       "type": "string"
-    },
-    "StandingArgs": {
-      "properties": {
-        "account": {
-          "type": "string"
-        },
-        "fresh": {
-          "type": "boolean"
-        },
-        "github": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/GithubUser"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "repos": {
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        }
-      },
-      "required": [
-        "account",
-        "repos",
-        "fresh"
-      ],
-      "type": "object"
     },
     "Team": {
       "description": "A team, as its latest signed roster says.",

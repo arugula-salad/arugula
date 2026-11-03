@@ -7995,7 +7995,10 @@ html[data-scheme="light"] .doc {
   line-height: 18px;
 }
 
-.mention-line.offline {
+.mention-line.offline,
+.mention-line.queued,
+.mention-line.chain,
+.mention-line.dropped {
   color: var(--warn, var(--dim));
 }
 

@@ -32,7 +32,37 @@ async fn geek_in_t(base: &str, t: &str) {
 fn done(step: RoutedStep, session: Option<&str>, asked: Option<&str>) -> OpAnswer {
     OpAnswer::Done {
         url: None,
-        routed: Some(Routed { step, session: session.map(str::to_owned), asked: asked.map(str::to_owned) }),
+        routed: Some(Routed {
+            step,
+            session: session.map(str::to_owned),
+            asked: asked.map(str::to_owned),
+            queued: false,
+            names: vec![],
+            silenced: false,
+        }),
+    }
+}
+
+/// A session that has the mention in its queue, its hook not waiting (#571).
+fn queued(step: RoutedStep, session: &str, asked: Option<&str>) -> OpAnswer {
+    match done(step, Some(session), asked) {
+        OpAnswer::Done { url, routed: Some(r) } => OpAnswer::Done { url, routed: Some(Routed { queued: true, ..r }) },
+        other => other,
+    }
+}
+
+/// A mention that named a session none of the daemon's is called (#576).
+fn no_such(asked: &str, names: &[&str]) -> OpAnswer {
+    OpAnswer::Done {
+        url: None,
+        routed: Some(Routed {
+            step: RoutedStep::Inbox,
+            session: None,
+            asked: Some(asked.into()),
+            queued: false,
+            names: names.iter().map(|n| (*n).to_owned()).collect(),
+            silenced: false,
+        }),
     }
 }
 
@@ -79,6 +109,10 @@ async fn each_answer_is_its_own_line_for_everyone() {
         (done(RoutedStep::Thread, Some("views"), None), json!("delivered"), json!("views"), Value::Null),
         // An older daemon says nothing of how: delivered, to no one in particular.
         (OpAnswer::Done { url: None, routed: None }, json!("delivered"), Value::Null, Value::Null),
+        // Taken, but only queued: its hooks aren't listening (#571). Said so
+        // even when it also fell back from a name.
+        (queued(RoutedStep::Named, "slowness", None), json!("queued"), json!("slowness"), Value::Null),
+        (queued(RoutedStep::Room, "views", Some("slowness")), json!("queued"), json!("views"), json!("slowness")),
         // 3: a fallback tells the sender the name missed.
         (
             done(RoutedStep::Room, Some("views"), Some("slowness")),
@@ -86,9 +120,11 @@ async fn each_answer_is_its_own_line_for_everyone() {
             json!("views"),
             json!("slowness"),
         ),
-        // 4: nobody took it.
-        (done(RoutedStep::Inbox, None, Some("slowness")), json!("waiting"), Value::Null, json!("slowness")),
+        // 4: nobody took it, and no session was named: it waits.
         (done(RoutedStep::Inbox, None, None), json!("waiting"), Value::Null, Value::Null),
+        // 4: it named a session that isn't there: not "waiting" (#576).
+        (no_such("slowness", &["views", "deploy"]), json!("no_such_session"), Value::Null, json!("slowness")),
+        (no_such("slowness", &[]), json!("no_such_session"), Value::Null, json!("slowness")),
         // The owner's switch is off, or the daemon doesn't know the op.
         (OpAnswer::Cant { why: "off".into() }, json!("offline"), Value::Null, Value::Null),
         (OpAnswer::Unknown, json!("offline"), Value::Null, Value::Null),
@@ -112,6 +148,11 @@ async fn each_answer_is_its_own_line_for_everyone() {
                 (session.clone(), asked.clone(), Value::Null),
                 "{answer:?} as {who} saw it"
             );
+            let names = match &answer {
+                OpAnswer::Done { routed: Some(r), .. } if !r.names.is_empty() => json!(r.names),
+                _ => Value::Null,
+            };
+            assert_eq!(field("names"), names, "{answer:?} as {who} saw it");
         }
         hears(&a_live, &format!("\"type\":\"reacted\",\"room\":\"ch_general\",\"seq\":{seq}"), Duration::from_secs(5))
             .await;
@@ -129,6 +170,27 @@ async fn an_unreachable_machine_is_offline_and_a_plain_message_has_no_line() {
     assert_eq!((s[0]["state"].clone(), s[0]["machine_name"].clone()), (json!("offline"), json!("geek-box")), "{s}");
     let plain = post(&base, "b", "just people talking", None).await;
     assert_eq!(status(&base, "b", plain, None).await, json!([]));
+}
+
+/// The post's own answer carries the statuses known when it answers (#571):
+/// the machine's line is there, `sending` or already settled (which one is
+/// a race), and a post that mentions no machine has none. The outcome is
+/// what the message shows once it settles.
+#[tokio::test]
+async fn a_post_answers_with_the_statuses_known_so_far() {
+    let (hub, _app, base, t, _u) = seeded().await;
+    geek_in_t(&base, &t).await;
+    hub.answers_ops("geek", queued(RoutedStep::Named, "slowness", None));
+    let (st, v) = call(&base, "b", "POST", ROOM, Some(json!({ "text": "@geek-box/slowness hi" }))).await;
+    assert_eq!(st, 200, "{v}");
+    let known = v["mention_status"].as_array().unwrap();
+    assert_eq!(known.len(), 1, "{v}");
+    assert_eq!((known[0]["machine"].clone(), known[0]["machine_name"].clone()), (json!("geek"), json!("geek-box")));
+    assert!(["sending", "queued"].contains(&known[0]["state"].as_str().unwrap()), "{v}");
+    let seq = v["seq"].as_i64().unwrap();
+    assert_eq!(status(&base, "b", seq, None).await[0]["state"], "queued");
+    let (_, plain) = call(&base, "b", "POST", ROOM, Some(json!({ "text": "no machines here" }))).await;
+    assert!(plain.get("mention_status").is_none(), "{plain}");
 }
 
 /// The machine's agent replying in the thread answers the mention under it
@@ -155,6 +217,7 @@ async fn the_agents_reply_in_the_thread_answers_it() {
             state: "delivered".into(),
             session: None,
             asked: None,
+            names: vec![],
             reply: None,
             at: 1,
         })
@@ -196,4 +259,163 @@ async fn the_agents_reply_in_the_thread_answers_it() {
     assert_eq!((s[0]["state"].clone(), s[0]["reply"].clone()), (json!("answered"), json!(reply)), "{s}");
     assert_eq!(states(status(&base, "a", old, Some(root)).await), "delivered", "over an hour old");
     assert_eq!(states(status(&base, "a", other, None).await), "answered", "its own thread's reply answered it");
+}
+
+/// The daemon's word on a delivered mention's turn (#540), as `machine`
+/// (`a geek` and the like) signs it.
+async fn turn(base: &str, daemon: &str, seq: i64, state: &str) -> (u16, Value) {
+    turn_as(base, daemon, seq, json!(state)).await
+}
+
+/// [`turn`], with the state as the wire has it: `{"dropped": "stopped"}`.
+async fn turn_as(base: &str, daemon: &str, seq: i64, state: Value) -> (u16, Value) {
+    let r = reqwest::Client::new()
+        .put(format!("{base}{}", arugula_control_wire::chat::MENTION_STATE))
+        .header("x-test-daemon", daemon)
+        .json(&json!({ "room": "ch_general", "seq": seq, "session": "slowness", "state": state }))
+        .send()
+        .await
+        .unwrap();
+    (r.status().as_u16(), r.json().await.unwrap_or_default())
+}
+
+/// A delivered mention goes `working`, then `read`, each seen by a second
+/// client over the stream; a machine with no status for the message is
+/// refused and changes nothing.
+#[tokio::test]
+async fn the_daemon_says_working_then_read_and_a_second_client_sees_it() {
+    let (hub, _app, base, t, _u) = seeded().await;
+    geek_in_t(&base, &t).await;
+    hub.daemon("lab", "a", Some("t"));
+    hub.answers_ops("geek", done(RoutedStep::Named, Some("slowness"), None));
+    let seq = post(&base, "b", "@geek-box/slowness why is it slow", None).await;
+    assert_eq!(status(&base, "b", seq, None).await[0]["state"], "delivered");
+    let a_live = open_live(&base, "a", None).await;
+    hears(&a_live, "\"type\":\"hello\"", Duration::from_secs(5)).await;
+
+    for state in ["working", "read"] {
+        assert_eq!(turn(&base, "a geek", seq, state).await.0, 200);
+        hears(&a_live, &format!("\"type\":\"reacted\",\"room\":\"ch_general\",\"seq\":{seq}"), Duration::from_secs(5))
+            .await;
+        for who in ["a", "b"] {
+            let s = status(&base, who, seq, None).await;
+            assert_eq!((s[0]["state"].clone(), s[0]["session"].clone()), (json!(state), json!("slowness")), "{who}");
+        }
+    }
+    // A machine the message didn't mention has no status for it.
+    let (st, v) = turn(&base, "a lab", seq, "working").await;
+    assert_eq!(st, 404, "{v}");
+    let (st, _) = turn(&base, "a geek", seq + 100, "working").await;
+    assert_eq!(st, 404, "no such message");
+    assert_eq!(status(&base, "b", seq, None).await[0]["state"], "read");
+}
+
+/// The trap (#540): the agent replies during its turn, so `answered` comes
+/// before the turn's `read`, which must not turn it back. `working` after
+/// `read` doesn't either, and a mention no session took has no turn.
+#[tokio::test]
+async fn a_late_read_never_undoes_answered() {
+    let (hub, _app, base, t, _u) = seeded().await;
+    geek_in_t(&base, &t).await;
+    hub.answers_ops("geek", done(RoutedStep::Named, Some("slowness"), None));
+    let seq = post(&base, "b", "@geek-box/slowness why is it slow", None).await;
+    let c = reqwest::Client::new();
+    let reply = c
+        .post(format!("{base}{}", agent_messages("ch_general")))
+        .header("x-test-daemon", "a geek")
+        .json(&json!({ "text": "the db", "parent": seq }))
+        .send()
+        .await
+        .unwrap()
+        .json::<Value>()
+        .await
+        .unwrap()["seq"]
+        .as_i64()
+        .unwrap();
+    // The reply came first. Then the turn's own word.
+    for state in ["working", "read"] {
+        assert_eq!(turn(&base, "a geek", seq, state).await.0, 200, "{state} is accepted, and changes nothing");
+        let s = status(&base, "b", seq, None).await;
+        assert_eq!((s[0]["state"].clone(), s[0]["reply"].clone()), (json!("answered"), json!(reply)), "{state}");
+    }
+
+    // `read` stays `read` against a late `working`.
+    hub.answers_ops("geek", done(RoutedStep::Named, Some("slowness"), None));
+    let next = post(&base, "b", "@geek-box/slowness and now", None).await;
+    status(&base, "b", next, None).await;
+    for state in ["read", "working"] {
+        turn(&base, "a geek", next, state).await;
+    }
+    assert_eq!(status(&base, "b", next, None).await[0]["state"], "read");
+
+    // Nobody took it: it waits in the inbox, and has no turn.
+    hub.answers_ops("geek", done(RoutedStep::Inbox, None, None));
+    let waiting = post(&base, "b", "@geek-box anyone", None).await;
+    assert_eq!(status(&base, "b", waiting, None).await[0]["state"], "waiting");
+    assert_eq!(turn(&base, "a geek", waiting, "working").await.0, 200);
+    assert_eq!(status(&base, "b", waiting, None).await[0]["state"], "waiting");
+}
+
+/// The trap (#613): `dropped` is final, and only goes forward. It lands
+/// after `working` (a turn cut off) or on a mention that never got a turn
+/// (a stop cleared the queue), shows its reason to every reader, and a
+/// late `read` or `working` from a stale turn can't undo it. It never
+/// replaces `answered` or `read`, nor a mention no session took.
+#[tokio::test]
+async fn a_dropped_mention_stays_dropped_and_never_replaces_an_answer() {
+    let (hub, _app, base, t, _u) = seeded().await;
+    geek_in_t(&base, &t).await;
+    let stopped = json!({ "dropped": "stopped" });
+    let exited = json!({ "dropped": "exited" });
+    let dropped = |s: &Value| (s[0]["state"].clone(), s[0]["why"].clone());
+
+    // A turn cut off: working, then dropped; the stale turn's `read` and
+    // `working`, and a second drop with another reason, change nothing.
+    hub.answers_ops("geek", done(RoutedStep::Named, Some("slowness"), None));
+    let cut = post(&base, "b", "@geek-box/slowness first", None).await;
+    assert_eq!(turn(&base, "a geek", cut, "working").await.0, 200);
+    assert_eq!(turn_as(&base, "a geek", cut, exited.clone()).await.0, 200);
+    assert_eq!(dropped(&status(&base, "b", cut, None).await), (json!("dropped"), json!("exited")));
+    for late in [json!("read"), json!("working"), stopped.clone()] {
+        assert_eq!(turn_as(&base, "a geek", cut, late.clone()).await.0, 200, "{late}");
+        assert_eq!(dropped(&status(&base, "b", cut, None).await), (json!("dropped"), json!("exited")), "{late}");
+    }
+
+    // Never got a turn: dropped from delivered.
+    hub.answers_ops("geek", done(RoutedStep::Named, Some("slowness"), None));
+    let waiting = post(&base, "b", "@geek-box/slowness second", None).await;
+    assert_eq!(turn_as(&base, "a geek", waiting, stopped.clone()).await.0, 200);
+    assert_eq!(dropped(&status(&base, "b", waiting, None).await), (json!("dropped"), json!("stopped")));
+
+    // The agent answered first: dropped doesn't replace it. Nor `read`.
+    hub.answers_ops("geek", done(RoutedStep::Named, Some("slowness"), None));
+    let answered = post(&base, "b", "@geek-box/slowness third", None).await;
+    let reply = reqwest::Client::new()
+        .post(format!("{base}{}", agent_messages("ch_general")))
+        .header("x-test-daemon", "a geek")
+        .json(&json!({ "text": "the db", "parent": answered }))
+        .send()
+        .await
+        .unwrap()
+        .json::<Value>()
+        .await
+        .unwrap()["seq"]
+        .as_i64()
+        .unwrap();
+    assert_eq!(turn_as(&base, "a geek", answered, stopped.clone()).await.0, 200);
+    let s = status(&base, "b", answered, None).await;
+    assert_eq!((s[0]["state"].clone(), s[0]["reply"].clone()), (json!("answered"), json!(reply)));
+
+    // Its turn ended (`read`): a drop after it is for a turn that is over.
+    hub.answers_ops("geek", done(RoutedStep::Named, Some("slowness"), None));
+    let read = post(&base, "b", "@geek-box/slowness fourth", None).await;
+    turn(&base, "a geek", read, "read").await;
+    turn_as(&base, "a geek", read, exited.clone()).await;
+    assert_eq!(status(&base, "b", read, None).await[0]["state"], "read");
+
+    // Nobody took it: it has no turn to drop.
+    hub.answers_ops("geek", done(RoutedStep::Inbox, None, None));
+    let inbox = post(&base, "b", "@geek-box anyone", None).await;
+    turn_as(&base, "a geek", inbox, stopped).await;
+    assert_eq!(status(&base, "b", inbox, None).await[0]["state"], "waiting");
 }

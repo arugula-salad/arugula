@@ -9,9 +9,11 @@ agents.refresh POST /api/hosts/self/agents/refresh Owner drives=false credential
 conversation.open POST /api/conversations/open Owner drives=false credential=false
 conversation.session_signal POST /api/conversations/session-signal Owner drives=false credential=false
 conversations.list GET /api/conversations Owner drives=false credential=false
+doc.asset GET /api/docs/{id}/assets/{name} Owner drives=false credential=false
 doc.delete DELETE /api/docs/{id} Owner drives=false credential=false
 doc.open POST /api/docs/open Owner drives=false credential=false
 doc.preview GET /api/docs/{id}/preview Owner drives=false credential=false
+doc.read GET /api/docs/{id}/content Owner drives=false credential=false
 doc_link.delete DELETE /api/doc-links/{id} Owner drives=false credential=false
 doc_link.get GET /api/doc-links/{id} Owner drives=false credential=true
 docs.list GET /api/docs Owner drives=false credential=false
@@ -58,6 +60,7 @@ pane.drivers GET /api/panes/{id}/drivers Owner drives=false credential=false
 pane.followup POST /api/panes/{id}/followup Pane(Editor) drives=true credential=false
 pane.inbox POST /api/panes/{id}/inbox Pane(Editor) drives=false credential=false
 pane.keys POST /api/panes/{id}/keys Pane(Editor) drives=true credential=false
+pane.mentions POST /api/panes/{id}/mentions Owner drives=false credential=false
 pane.mouse POST /api/panes/{id}/mouse Pane(Editor) drives=true credential=false
 pane.nvim_help POST /api/panes/{id}/nvim/help Owner drives=false credential=false
 pane.nvim_open POST /api/panes/{id}/nvim Owner drives=false credential=false

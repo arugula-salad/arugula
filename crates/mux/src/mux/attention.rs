@@ -2,7 +2,7 @@
 //! that make a terminal wait, questions asked in a terminal, hooks and
 //! follow-ups.
 
-use super::{AskReply, Daemon, InboxReply, Replied, SAVE_DEBOUNCE, agent_in, plain_reason};
+use super::{AskReply, Daemon, InboxReply, MentionTag, Replied, SAVE_DEBOUNCE, agent_in, plain_reason};
 use crate::{acl::Principal, store::now_ms};
 use arugula_proto::{
     Action, AskRef, AskWhat, Attention, BlockType, Driver, EventKind, PaneId, Policy, Reason, ReasonKind,
@@ -202,13 +202,18 @@ impl Daemon {
     /// needs input, else what was recorded when its state changed.
     pub(super) fn live_reason(&self, pane: PaneId) -> Option<Reason> {
         let state = self.attention.get(&pane).copied().unwrap_or_default();
-        if !matches!(state, Attention::NeedsInput | Attention::Done) {
-            return None;
-        }
         if state == Attention::NeedsInput
             && let Some(r) = self.card_of.get(&pane).map(|c| c.0.clone()).or_else(|| self.ask_reason(pane))
         {
             return Some(r);
+        }
+        // A mention held for a session with no hooks (#579) stays while the
+        // screen says it's working.
+        if let Some(r) = self.held.get(&pane) {
+            return Some(r.clone());
+        }
+        if !matches!(state, Attention::NeedsInput | Attention::Done) {
+            return None;
         }
         self.reasons.get(&pane).cloned()
     }
@@ -789,6 +794,10 @@ impl Daemon {
         if event == "UserPromptSubmit" && self.panes.contains_key(&pane) {
             self.emit(Some(pane), EventKind::Prompted);
         }
+        // #540: the turn a mention started ends with the pane's `Stop`.
+        if event == "Stop" {
+            self.queued.stopped(pane, &*self.config.turns);
+        }
         if event == "PreToolUse" {
             let pre = self.pre.entry(pane).or_default();
             pre.push_back(hook.clone());
@@ -814,9 +823,10 @@ impl Daemon {
         let (tx, rx) = oneshot::channel();
         let token = self.next_ask;
         self.next_ask += 1;
-        if let Some((text, by)) = self.queued.get_mut(&pane).and_then(|q| q.pop_front()) {
+        if let Some((text, by)) = self.queued.take(pane, &*self.config.turns) {
             let _ = tx.send(InboxReply::FollowUp { text, by });
             self.emit(Some(pane), EventKind::Prompted);
+            self.refresh_held(pane);
             return Ok((token, rx));
         }
         if let Some(old) = self.inbox.insert(pane, Waiter { token, reply: tx }) {
@@ -829,11 +839,22 @@ impl Daemon {
 
     /// A follow-up for Claude Code in a terminal (M29), recorded as input
     /// from whoever sent it.
-    pub(super) fn follow_up(&mut self, pane: PaneId, text: String, by: Driver) -> Result<bool, String> {
+    pub(super) fn follow_up(
+        &mut self,
+        pane: PaneId,
+        text: String,
+        by: Driver,
+        tag: Option<MentionTag>,
+    ) -> Result<bool, String> {
         let Some(p) = self.panes.get(&pane) else { return Err(format!("no terminal %{pane}")) };
         let text = text.trim().to_owned();
         if text.is_empty() {
             return Err("an empty follow-up".into());
+        }
+        // The owner silenced this session (#579): no mention comes in, held
+        // or not. The daemon routes around it; this is the backstop.
+        if tag.is_some() && self.mentions_off.contains(&pane) {
+            return Err(format!("%{pane}'s owner silenced mentions for this session"));
         }
         info!(pane, who = by.who, "follow-up");
         p.note(format!("follow-up: {text}"), by.name.clone(), HistoryKind::Answer);
@@ -844,25 +865,71 @@ impl Daemon {
             Some(w) => match w.reply.send(InboxReply::FollowUp { text: text.clone(), by: by.clone() }) {
                 Ok(()) => {
                     self.emit(Some(pane), EventKind::Prompted);
+                    self.queued.started(pane, tag, &*self.config.turns);
                     true
                 }
                 Err(InboxReply::FollowUp { text, by }) => {
-                    self.queued.entry(pane).or_default().push_back((text, by));
+                    self.queued.push(pane, text, by, tag);
                     false
                 }
                 Err(_) => false,
             },
             None => {
-                let q = self.queued.entry(pane).or_default();
-                if q.len() >= MAX_QUEUED {
+                if self.queued.full(pane, MAX_QUEUED) {
                     return Err("too many follow-ups waiting: is Claude Code's inbox hook set up?".into());
                 }
-                q.push_back((text, by));
+                self.queued.push(pane, text, by, tag);
                 false
             }
         };
+        self.refresh_held(pane);
         self.touch(pane);
         Ok(now)
+    }
+
+    /// Keep the card for mentions held on `pane` true to its queue (#579).
+    /// A mention queued for a terminal whose hooks aren't listening is never
+    /// typed: it waits behind a card ("deliver" types it, "dismiss" drops
+    /// it). Once the hooks speak, the inbox hook takes it as for any
+    /// session, and the card goes.
+    pub(super) fn refresh_held(&mut self, pane: PaneId) {
+        let held = match self.panes.get(&pane) {
+            Some(p) if self.pane_info(p).unhooked => self.queued.held(pane),
+            _ => None,
+        };
+        match held {
+            Some((headline, n)) => {
+                let more = if n > 1 { format!(" (+{} more)", n - 1) } else { String::new() };
+                let mut reason = plain_reason(ReasonKind::Input, &format!("{headline}{more}"));
+                reason.actions = vec![Action::Deliver, Action::Dismiss];
+                // The card holds whatever the screen says next: a session
+                // mid-turn flips to working, and the mention is still held.
+                if self.held.insert(pane, reason.clone()).is_none() {
+                    let why = reason.headline.clone();
+                    self.set_attention_with(pane, Attention::NeedsInput, &why, Some(reason));
+                } else {
+                    let state = self.attention.get(&pane).copied().unwrap_or_default();
+                    self.emit(Some(pane), EventKind::Attention { state, reason: self.live_reason(pane) });
+                    self.touch(pane);
+                }
+            }
+            None => {
+                if self.held.remove(&pane).is_none() {
+                    return;
+                }
+                let stale = self.reasons.get(&pane).is_some_and(|r| r.actions.contains(&Action::Deliver));
+                if stale && self.attention.get(&pane) == Some(&Attention::NeedsInput) {
+                    self.set_attention(pane, Attention::Idle, "held mention gone");
+                } else {
+                    if stale {
+                        self.reasons.remove(&pane);
+                    }
+                    let state = self.attention.get(&pane).copied().unwrap_or_default();
+                    self.emit(Some(pane), EventKind::Attention { state, reason: self.live_reason(pane) });
+                    self.touch(pane);
+                }
+            }
+        }
     }
 }
 

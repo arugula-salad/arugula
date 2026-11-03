@@ -46,7 +46,9 @@
 
 /* The four lanes: four across when each gets 230px of the board, two per row
    below that, one under 520px. The board is the container, not the window: a
-   board is often a pane. */
+   board is often a pane. The DOM stacks them Doing, Review, Next, Done; four
+   across they read Next, Doing, Review, Done, as the progress bar does (the
+   order below is the picture only: focus and the screen reader keep the DOM's). */
 .board-lanes {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -54,7 +56,30 @@
   align-items: start;
 }
 
-/* Four lanes at 230px and their gaps need 956px; narrower, two per row: Next and Doing, then Review and Done. */
+/* Four lanes at 230px and their gaps need 956px. Four across, the lanes read Next, Doing, Review, Done; a zone that is no lane goes after them. */
+@container (min-width: 956px) {
+  .board-lanes > .board-zone {
+    order: 5;
+  }
+
+  .board-lanes > [data-board-zone="lane_next"] {
+    order: 1;
+  }
+
+  .board-lanes > [data-board-zone="lane_doing"] {
+    order: 2;
+  }
+
+  .board-lanes > [data-board-zone="lane_review"] {
+    order: 3;
+  }
+
+  .board-lanes > [data-board-zone="lane_done"] {
+    order: 4;
+  }
+}
+
+/* Narrower, two per row in the stacked order: Doing and Review, then Next and Done. */
 @container (max-width: 955px) {
   .board-lanes {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -182,7 +207,7 @@
   transition: width 0.2s;
 }
 
-/* Done ok, Review accent, Doing warn: the lanes' own tones (Done and Doing are both ok on a card, which a bar can't tell apart). */
+/* Done ok, Review accent, Doing warn: the lanes' own tones, which a card takes too (cardTone). */
 .board-bar i[data-lane="review"] {
   background: var(--accent);
 }
@@ -730,6 +755,15 @@
   --c: var(--muted);
 }
 
+.board .board-card.sw-danger {
+  --c: var(--danger);
+}
+
+/* A row that waits on the reader keeps its lane's tone; the ring is what sets it apart. */
+.board .board-rows > .board-card[data-needs-you] {
+  box-shadow: 0 0 0 2px var(--accent);
+}
+
 .board .board-rows {
   display: grid;
   gap: 10px;
@@ -1008,14 +1042,14 @@
   font: inherit;
 }
 
-/* The find box (#546): under the header, a phone's button opens it. */
+/* The find bar (#546, #614): under the header, always there. */
 .board-find {
   display: flex;
   align-items: center;
   gap: 8px;
 }
 
-.board-find input {
+.board-find > input {
   flex: 1 1 auto;
   min-width: 0;
   box-sizing: border-box;
@@ -1023,10 +1057,6 @@
 
 .board-find-count {
   white-space: nowrap;
-}
-
-.board-find-open {
-  display: none;
 }
 
 /* The Label and Person menus beside it (#547): a list of checkboxes that stays open while you pick. */
@@ -1073,12 +1103,13 @@
   white-space: nowrap;
 }
 
-@media (max-width: 700px) {
+/* A narrow board, whatever the window: the box takes the row, the rest wrap under it, and an open menu's list sits inline. */
+@container (max-width: 519px) {
   .board-find {
     flex-wrap: wrap;
   }
 
-  .board-find input {
+  .board-find > input {
     flex-basis: 100%;
   }
 
@@ -1089,17 +1120,6 @@
   .board-facet-list {
     position: static;
     margin-top: 4px;
-  }
-}
-
-@media (max-width: 700px) {
-  .board-find-open {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    min-width: 40px;
-    height: 40px;
-    font-size: 1.3em;
   }
 }
 

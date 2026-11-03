@@ -199,7 +199,7 @@ pub const RUN_OPS: &[&str] = &["runs.start", "runs.revoke"];
 pub const HOSTED_OPS: &[&str] = &["hosted.archive", "hosted.archive_blocks"];
 
 /// The agents' op (Arugula #394) every daemon of this build knows.
-pub const AGENT_OPS: &[&str] = &["agents.mention"];
+pub const AGENT_OPS: &[&str] = &["agents.mention", "agents.sessions"];
 
 /// `{"t": "ops", "ops": [...]}`, daemon to control, on connecting: the
 /// [`DaemonOp`]s it knows. A daemon that never says knows none, and control
@@ -285,6 +285,11 @@ pub enum DaemonOp {
     /// them all (`cant`).
     #[serde(rename = "agents.mention")]
     AgentMention(AgentMention),
+    /// Which of this machine's sessions a teammate's agent may mention
+    /// (`@<machine>/<session>`, #577). The owner decides what is said
+    /// (`sharing.json`'s `agent_sessions`).
+    #[serde(rename = "agents.sessions")]
+    AgentSessions(AgentSessionsAsk),
 }
 
 impl DaemonOp {
@@ -296,6 +301,7 @@ impl DaemonOp {
             DaemonOp::HostedArchive(_) => "hosted.archive",
             DaemonOp::HostedArchiveBlocks(_) => "hosted.archive_blocks",
             DaemonOp::AgentMention(_) => "agents.mention",
+            DaemonOp::AgentSessions(_) => "agents.sessions",
         }
     }
 }
@@ -328,6 +334,46 @@ pub struct AgentMention {
     /// daemon ignores it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub session: Option<String>,
+    /// With an agent's post (#575): the name of the session that wrote it.
+    /// The daemon never gives the message to a session of this name, so an
+    /// agent's mention of its own machine doesn't come back to it. An older
+    /// daemon ignores it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub from_session: Option<String>,
+}
+
+/// An agent asks which sessions of a machine it may mention (#577).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+pub struct AgentSessionsAsk {
+    /// The room the mention would be in.
+    pub room: String,
+    /// When the asker's session is on this machine (#575): its name, so the
+    /// list leaves it out, as a mention never reaches the session that
+    /// wrote it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub from_session: Option<String>,
+}
+
+/// The most sessions an `agents.sessions` answer lists.
+pub const SESSIONS_LISTED: usize = 20;
+
+/// A session of a machine a teammate's agent may mention (#577).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+pub struct MachineSession {
+    /// What `@machine/name` matches: the session's name, as a slug.
+    pub name: String,
+    /// The tab it is in, when the tab has a name.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tab: Option<String>,
+    /// How long ago it last printed, in ms; absent when the machine does not
+    /// know.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub active_ms_ago: Option<u64>,
+    /// With the owner's `work`: the issue it was started on (`#540`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub working_on: Option<String>,
 }
 
 /// A draft to send: what it is and where it goes. `account` is its person,
@@ -373,9 +419,21 @@ pub struct Routed {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub session: Option<String>,
     /// The session the message named (`@geek/slowness`), when the daemon
-    /// found no such session and the message went to another or waits.
+    /// found no such session (or more than one): the message waits.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub asked: Option<String>,
+    /// The session's hook wasn't waiting, so the mention only sits in its
+    /// queue (#571). A daemon from before it says nothing: handed over.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub queued: bool,
+    /// With `asked`: the names a mention could have used (sessions and
+    /// tabs, at most 10), since no session was called that (#576).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub names: Vec<String>,
+    /// The session it named is there, but its owner silenced mentions for it
+    /// (#579): the message waits in the inbox. With `asked`.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub silenced: bool,
 }
 
 /// Which of the daemon's steps took an `agents.mention`.
@@ -411,6 +469,13 @@ pub enum OpAnswer {
     Failed { error: String },
     /// This machine can't (no `gh` login, not its owner's): ask another.
     Cant { why: String },
+    /// An `agents.sessions`' answer (#577): the sessions the owner shows,
+    /// newest first. `shared` is false when the owner shows none.
+    Sessions {
+        shared: bool,
+        #[serde(default)]
+        sessions: Vec<MachineSession>,
+    },
     /// It doesn't know the op (a daemon from before it).
     Unknown,
     /// It isn't on control's relay now, or didn't answer in time.

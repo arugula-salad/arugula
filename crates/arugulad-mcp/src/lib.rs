@@ -257,47 +257,41 @@ impl CacheHints for ReadResourceResult {
     }
 }
 
-const INSTRUCTIONS_BASE: &str = "Arugula runs commands in durable terminal panes that the user can watch \
-(on the web and the phone) and take over. capabilities says what this machine offers you (its blocks, \
-the forges the user is signed in to, whether your hooks are live, control and teams): call it first. Use run to start a build or a dev server in a pane (wait: true \
-to wait for it), wait and read_output to follow it (they return \"still running\" with an offset: call \
-again; read_output with screen: true is what a full-screen program shows), list to see what's there (kind \
-conversations: Claude Code conversations from a terminal or the desktop app), attach to put a file (a \
-screenshot) into a terminal or an agent block, show to put a block in front of the user beside a pane, \
-read_forge to read a PR or issue block and draft for a comment, review, merge or new issue the user sends, \
-invite_person to ask the user to bring someone into the session (read_invite says what became of it), \
-start_agent and agent_respond to supervise another agent, \
-cloud and read_cloud for the user's Cloud workspaces in Arugula control (agents on machines in the cloud; \
-list kind cloud_workspaces lists them, and you act as the user there), \
-history for what happened before (kind output: what panes printed). Output is paged: pass next_offset \
-back as offset. show's kinds: port (a dev server in a browser block beside its terminal), changes (a \
-diff), file (at a line), pr, issue, conversation (a Claude Code conversation, to continue or fork); show \
-one instead of describing it, and once you open a pull request, or one is ready for the person's review \
-or merge, show it (kind pr) rather than linking it, and use draft for the merge; wait (until idle or \
-needs_input) instead of polling output. \
-Claude Code hooks put your questions (arugula ask), permission prompts (arugula hook, which anyone allowed can \
-answer), follow-ups (arugula inbox) and attention on cards; without them your questions stay in the terminal. \
-`arugula hooks install` adds them: ask your person first (capabilities says whether yours are live). \
-Run each `arugula ...` command on its own, not in a pipeline or an `&&` chain, so the allow rules match it.";
+/// The first sentence: what Arugula is, and where to start.
+const INSTRUCTIONS_HEAD: &str = "Arugula runs commands in durable terminal panes that the user can watch \
+(on the web and the phone) and take over. capabilities says what this machine offers you: call it first.";
 
-/// The server's instructions, with the Doc sentence (`flags::DOCS_STEERING`,
-/// which `arugula hook` also gives on `SessionStart`, #1486; everyone's since
-/// Docs left Labs, native #204) and the issues sentence
-/// (`flags::ISSUES_STEERING`), then the boards sentence
-/// (`flags::BOARDS_STEERING`, conditional: it says nothing to do where boards
-/// are off). Chat isn't an agent's (#1095): nothing of it
-/// is here.
+/// The tool tour, short: each tool's own description says what it does.
+const INSTRUCTIONS_TOUR: &str = "wait (until idle or needs_input), \
+don't poll; read_output pages (pass next_offset as offset). show a block, don't describe it; \
+once you open a pull request, or one is ready for review or merge, show it (kind pr), not a link; \
+use draft for the merge.";
+
+/// The hooks paragraph, last.
+const INSTRUCTIONS_HOOKS: &str = "Claude Code hooks put your questions (arugula ask), permission prompts (arugula hook), \
+follow-ups (arugula inbox) and attention on cards; without them questions stay in the terminal. \
+`arugula hooks install` adds them: ask first. \
+Run each `arugula ...` command alone, not piped or `&&`-chained, to match allow rules.";
+
+/// The server's instructions. Claude Code shows an agent only their first
+/// 2048 characters (#606), so the steering comes first, then a short tour
+/// and the hooks: the Doc sentence (`flags::DOCS_STEERING`, which
+/// `arugula hook` also gives on `SessionStart`, #1486; everyone's since
+/// Docs left Labs, native #204), the issues sentence
+/// (`flags::ISSUES_STEERING`) and the boards sentence
+/// (`flags::BOARDS_STEERING`, which says nothing to do where boards are
+/// off, and does no harm). Chat isn't in the instructions (#1095): how to
+/// reach a teammate's agent is in the thread tools' descriptions (#574).
 pub fn instructions() -> String {
-    let at = INSTRUCTIONS_BASE.find("Claude Code hooks put").expect("the instructions name the hooks");
-    let mut out = INSTRUCTIONS_BASE[..at].to_owned();
-    out.push_str(flags::DOCS_STEERING);
-    out.push(' ');
-    out.push_str(flags::ISSUES_STEERING);
-    out.push(' ');
-    out.push_str(flags::BOARDS_STEERING);
-    out.push(' ');
-    out.push_str(&INSTRUCTIONS_BASE[at..]);
-    out
+    [
+        INSTRUCTIONS_HEAD,
+        flags::DOCS_STEERING,
+        flags::ISSUES_STEERING,
+        flags::BOARDS_STEERING,
+        INSTRUCTIONS_TOUR,
+        INSTRUCTIONS_HOOKS,
+    ]
+    .join(" ")
 }
 
 impl ServerHandler for McpServer {

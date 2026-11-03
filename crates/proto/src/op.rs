@@ -77,6 +77,14 @@ impl PathArgs for String {
     }
 }
 
+/// A Doc's picture (`/api/docs/{id}/assets/{name}`): two names, filled in
+/// order.
+impl PathArgs for (String, String) {
+    fn fill(&self, template: &str) -> String {
+        fill_hole(&fill_hole(template, &self.0), &self.1)
+    }
+}
+
 /// An index, as a standing rule's (`DELETE /api/rules/{index}`).
 impl PathArgs for usize {
     fn fill(&self, template: &str) -> String {
@@ -137,6 +145,7 @@ impl Request for crate::api::MouseRequest {}
 impl Request for crate::api::NvimHelpRequest {}
 
 impl Request for crate::api::AttentionRequest {}
+impl Request for crate::api::MentionsRequest {}
 
 impl Request for crate::api::SessionSignal {}
 
@@ -282,12 +291,15 @@ macro_rules! every_op {
         $m!($crate::op::ops::DocOpen);
         $m!($crate::op::ops::DocDelete);
         $m!($crate::op::ops::DocPreviewGet);
+        $m!($crate::op::ops::DocRead);
+        $m!($crate::op::ops::DocAssetGet);
         $m!($crate::op::ops::AgentCanGet);
         $m!($crate::op::ops::PaneWait);
         $m!($crate::op::ops::PaneSend);
         $m!($crate::op::ops::PaneKeys);
         $m!($crate::op::ops::PaneMouse);
         $m!($crate::op::ops::PaneAttention);
+        $m!($crate::op::ops::PaneMentions);
         $m!($crate::op::ops::PaneFollowUp);
         $m!($crate::op::ops::PanePrompt);
         $m!($crate::op::ops::PaneAsk);
@@ -383,17 +395,17 @@ pub mod ops {
         Machine, PaneId,
         api::{
             AclSetRequest, Adapters, AgentCan, AgentsInventory, AskAnswer, AskRequest, AttentionRequest,
-            ConversationList, ConversationsQuery, DetectionAnswer, DocLinkUrl, DocOpenRequest, DocOpened, DocPreview,
-            DocRow, DriverEntry, Empty, FollowUpRequest, FollowedUp, FollowerLinkRequest, GuestInvite,
-            GuestInviteRequest, IdeDiffs, IdeDiffsRequest, IdeInfo, IdeMentionRequest, IdeMentioned, InboxAnswer,
-            InstallAdapterRequest, InviteRequest, Invited, KeysRequest, LinkRequest, McpTokenRequest, MouseRequest,
-            NotifyPref, NotifyRequest, NvimBlockOpened, NvimBlockRequest, NvimHelpRequest, NvimOpenRequest, NvimOpened,
-            NvimPluginCopies, NvimPluginInstalled, NvimPluginRemoved, NvimTheme, NvimThemed, OpenConversationRequest,
-            OpenConversationResponse, PaneDiff, PaneSummary, PermitAnswer, PermitRequest, Ports, PortsQuery, Process,
-            PromptRequest, PromptResult, PushKey, PushSubscriptions, Rules, RunResponse, SendRequest, Share,
-            ShareRequest, ShellEnv, SigninLink, StudioApps, StudioLoggedIn, StudioLoginRequest, StudioStatus,
-            Subscription, SyncedHost, SyncedRotated, TeamPins, TeamPinsRequest, TokenInfo, WaitRequest, WaitResult,
-            WithdrawRequest,
+            ConversationList, ConversationsQuery, DetectionAnswer, DocAsset, DocContent, DocLinkUrl, DocOpenRequest,
+            DocOpened, DocPreview, DocRow, DriverEntry, Empty, FollowUpRequest, FollowedUp, FollowerLinkRequest,
+            GuestInvite, GuestInviteRequest, IdeDiffs, IdeDiffsRequest, IdeInfo, IdeMentionRequest, IdeMentioned,
+            InboxAnswer, InstallAdapterRequest, InviteRequest, Invited, KeysRequest, LinkRequest, McpTokenRequest,
+            MentionsRequest, MouseRequest, NotifyPref, NotifyRequest, NvimBlockOpened, NvimBlockRequest,
+            NvimHelpRequest, NvimOpenRequest, NvimOpened, NvimPluginCopies, NvimPluginInstalled, NvimPluginRemoved,
+            NvimTheme, NvimThemed, OpenConversationRequest, OpenConversationResponse, PaneDiff, PaneSummary,
+            PermitAnswer, PermitRequest, Ports, PortsQuery, Process, PromptRequest, PromptResult, PushKey,
+            PushSubscriptions, Rules, RunResponse, SendRequest, Share, ShareRequest, ShellEnv, SigninLink, StudioApps,
+            StudioLoggedIn, StudioLoginRequest, StudioStatus, Subscription, SyncedHost, SyncedRotated, TeamPins,
+            TeamPinsRequest, TokenInfo, WaitRequest, WaitResult, WithdrawRequest,
         },
         flags::{FlagInfo, FlagSetRequest},
         hosts::{Demoted, Host, PromoteRequest, SandboxList},
@@ -672,6 +684,33 @@ pub mod ops {
         type Res = DocPreview;
     }
 
+    /// `GET /api/docs/ID/content` (#608): a whole Doc, read without opening a
+    /// block or changing which block has it, so its list can show it.
+    pub struct DocRead;
+
+    impl Op for DocRead {
+        const NAME: &'static str = "doc.read";
+        const METHOD: Method = Method::Get;
+        const PATH: &'static str = "/api/docs/{id}/content";
+        const ACCESS: Access = Access::Owner;
+        type Path = String;
+        type Req = Empty;
+        type Res = DocContent;
+    }
+
+    /// `GET /api/docs/ID/assets/NAME` (#608): one of a Doc's pictures.
+    pub struct DocAssetGet;
+
+    impl Op for DocAssetGet {
+        const NAME: &'static str = "doc.asset";
+        const METHOD: Method = Method::Get;
+        const PATH: &'static str = "/api/docs/{id}/assets/{name}";
+        const ACCESS: Access = Access::Owner;
+        type Path = (String, String);
+        type Req = Empty;
+        type Res = DocAsset;
+    }
+
     /// `DELETE /api/docs/ID` (#1493): unshare a Doc, close its block and
     /// remove it. The machine's own account's, and never an agent's.
     pub struct DocDelete;
@@ -769,6 +808,20 @@ pub mod ops {
         const ACCESS: Access = Access::Pane(Role::Editor);
         type Path = PaneId;
         type Req = AttentionRequest;
+        type Res = Empty;
+    }
+
+    /// `POST /api/panes/N/mentions` (#579): let teammates' agents mention
+    /// this session, or not (`arugula mentions on|off %N`). The owner's.
+    pub struct PaneMentions;
+
+    impl Op for PaneMentions {
+        const NAME: &'static str = "pane.mentions";
+        const METHOD: Method = Method::Post;
+        const PATH: &'static str = "/api/panes/{id}/mentions";
+        const ACCESS: Access = Access::Owner;
+        type Path = PaneId;
+        type Req = MentionsRequest;
         type Res = Empty;
     }
 
@@ -1967,6 +2020,7 @@ mod tests {
             ("keys", ops::PaneKeys::path(&7)),
             ("mouse", ops::PaneMouse::path(&7)),
             ("attention", ops::PaneAttention::path(&7)),
+            ("mentions", ops::PaneMentions::path(&7)),
             ("session-signal", ops::PaneSessionSignal::path(&7)),
             ("followup", ops::PaneFollowUp::path(&7)),
             ("prompt", ops::PanePrompt::path(&7)),

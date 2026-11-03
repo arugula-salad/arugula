@@ -137,6 +137,36 @@ fn a_doc_survives_its_block_a_restart_and_a_new_block_with_its_picture_and_link(
     w.rt = None;
 }
 
+/// #608: a closed Doc is read whole, a section past the first, its picture
+/// and its prototype too, and the read leaves it closed.
+#[test]
+fn a_read_gives_the_whole_closed_doc_and_its_picture_and_leaves_it_closed() {
+    let w = World::new(&[]);
+    let (d, agent, doc) = (&w.d, w.agent, w.doc);
+    let png = [b"\x89PNG\r\n\x1a\n".as_slice(), b"pretend pixels"].concat();
+    use base64::Engine;
+    let data = base64::engine::general_purpose::STANDARD.encode(&png);
+    agent_mcp(d, agent, "doc", json!({ "kind": "asset", "block": doc, "name": "dot.png", "data": data })).unwrap();
+    let second = "Past the first.\n\n![dot](assets/dot.png)\n\n```prototype Tune it\n<div>hi</div>\n```\n";
+    agent_mcp(d, agent, "doc", json!({ "kind": "fill", "block": doc, "section": "s2", "markdown": second })).unwrap();
+    let id = id_of(d, doc);
+    close(d, doc);
+
+    let read = d.get(&format!("/api/docs/{id}/content"));
+    assert_eq!(read["title"], "Q3 plan");
+    assert_eq!(read["doc"], id.as_str());
+    assert_eq!(bodies(&read), [Some("Secret words.".to_owned()), Some(second.to_owned())]);
+    assert_eq!(read["assets"][0]["name"], "dot.png");
+    let asset = d.get(&format!("/api/docs/{id}/assets/dot.png"));
+    assert_eq!(asset["mime"], "image/png");
+    assert_eq!(asset["data"], data.as_str());
+    assert_eq!(d.raw("GET", &format!("/api/docs/{id}/assets/nope.png"), None).0, 404);
+
+    // Neither opened it: no block shows it, and the list still has it closed.
+    assert!(rows(d).iter().find(|r| r["id"] == id.as_str()).unwrap()["open"].is_null());
+    assert_eq!(d.get("/api/panes").as_array().unwrap().iter().filter(|p| p["type"] == "doc").count(), 0);
+}
+
 /// `doc.open` on an open Doc is the same pane, however many ask and however
 /// close together; a closed Doc opens one block for them all.
 #[test]

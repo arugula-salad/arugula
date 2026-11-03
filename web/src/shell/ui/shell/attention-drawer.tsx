@@ -15,7 +15,7 @@ import { type Client } from "../../client";
 import type { FleetPane } from "../../fleet";
 import { directory } from "../../hosts";
 import { OPS, opPath } from "../../ops";
-import { gateKey, type ActRequest, type PaneInfo } from "../../../shared/proto";
+import { gateKey, type ActRequest, type Notice, type PaneInfo } from "../../../shared/proto";
 import { needsYou, NEEDS_YOU, placeOf, sortNeedsYou } from "../../../shared/needs-you";
 import { agentDisplay, cardTitle, kindOf, reasonOf, shortHost, whatItDoes } from "../../swarm/model";
 import { AskCard, type Ask } from "../../../shared/ask";
@@ -29,7 +29,8 @@ import { openMenu, type MenuItem } from "../../../shared/ui/menu";
 import { agentNotifyItems, notificationItems, pushNow, subscribePush, toggleNotify } from "../notify";
 import { hooksInstalled, setUpClaude } from "../agents-setup";
 import { addPane } from "./add-pane";
-import { closePlace, currentPlace } from "../places";
+import { closePlace, currentPlace, openRoom } from "../places";
+import { noticeOpenLabel, noticeRoom, noticeTitle, sortNotices } from "../../../shared/notice";
 
 // ---- the items
 
@@ -101,9 +102,48 @@ export function attentionItems(client: Client): AttentionItem[] {
   return sortNeedsYou(out, (i) => placeOf(i.p.info, i.p.key));
 }
 
+/** A card that belongs to no pane (#551): a teammate's mention no session
+ * took, on a machine. */
+export interface NoticeItem {
+  n: Notice;
+  host: string;
+  /** On the machine this page shows. */
+  here: boolean;
+}
+
+/** The notices of the shown machine's own state and every other machine's
+ * summary, oldest first. They are the owner's alone: a guest's state has
+ * none. */
+export function attentionNotices(client: Client): NoticeItem[] {
+  const out: NoticeItem[] = [];
+  const current = directory.current;
+  for (const n of client.state?.notices ?? []) out.push({ n, host: current, here: true });
+  for (const h of getFleet()?.list ?? []) {
+    if (h.name === current) continue;
+    for (const n of h.summary?.notices ?? []) out.push({ n, host: h.name, here: false });
+  }
+  return sortNotices(out);
+}
+
 /** How many need you, on every machine: the bell's and the footer's. */
 export function waitingCount(client: Client): number {
-  return attentionItems(client).length;
+  return attentionItems(client).length + attentionNotices(client).length;
+}
+
+/** Open the card's room in chat and take the card away: opening it is
+ * reading it (#551). On another machine the card goes through its own
+ * summary connection. */
+export function openNotice(client: Client, i: NoticeItem) {
+  const room = noticeRoom(i.n);
+  dismissNotice(client, i);
+  if (!room) return;
+  closeAttention(false);
+  openRoom(room);
+}
+
+/** Dismiss the card without opening anything. */
+export function dismissNotice(client: Client, i: NoticeItem) {
+  (i.here ? client : getFleet()?.clientOf(i.host))?.dismissNotice(i.n.key);
 }
 
 /** Re-render on the shown machine's state and the fleet's. */
@@ -229,8 +269,9 @@ export function AttentionDrawer({ client }: { client: Client }) {
   }, [open]);
   if (!open) return null;
   const items = attentionItems(client);
+  const notices = attentionNotices(client);
   const chosen = items.find((i) => i.p.key === sel) ?? items[0];
-  const waiting = items.filter((i) => i.waiting).length;
+  const waiting = items.filter((i) => i.waiting).length + notices.length;
   const onKey = (e: KeyboardEvent) => {
     if (e.key === "Escape") {
       e.preventDefault();
@@ -268,9 +309,30 @@ export function AttentionDrawer({ client }: { client: Client }) {
         </button>
       </header>
       <div class="ws-att-list" role="listbox" aria-label="What needs you" ref={list} tabIndex={-1}>
-        {items.length === 0 && (
+        {items.length === 0 && notices.length === 0 && (
           <Empty client={client} />
         )}
+        {notices.map((i) => (
+          <section class="ws-att-item ws-att-notice" key={i.n.key + i.host} data-att-notice={i.n.key} data-att-notice-kind={i.n.kind}>
+            <span class="ws-dot needs_input" aria-hidden="true" />
+            <span class="ws-att-item-text">
+              <span class="ws-att-item-title" title={i.n.headline}>
+                {noticeTitle(i.n)}
+              </span>
+              <span class="ws-att-item-sub">{shortHost(i.host)}</span>
+            </span>
+            <div class="ws-att-acts">
+              {noticeRoom(i.n) && (
+                <button class="primary" data-notice-open onClick={() => openNotice(client, i)} title="Open the room in chat; this clears the card">
+                  {noticeOpenLabel(i.n)}
+                </button>
+              )}
+              <button class="secondary" data-notice-dismiss onClick={() => dismissNotice(client, i)} title="Dismiss the card; the mention stays in the machine's inbox">
+                Dismiss
+              </button>
+            </div>
+          </section>
+        ))}
         {items.map((i) => (
           <Fragment key={i.p.key}>
             <button

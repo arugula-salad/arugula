@@ -7,6 +7,13 @@
           "description": "Who wrote it, as people read it: a person's name, or \"Ada's agent\non geek\".",
           "type": "string"
         },
+        "from_session": {
+          "description": "With an agent's post (#575): the name of the session that wrote it.\nThe daemon never gives the message to a session of this name, so an\nagent's mention of its own machine doesn't come back to it. An older\ndaemon ignores it.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "parent": {
           "description": "The message it replies under, when it's in a thread.",
           "format": "int64",
@@ -52,6 +59,26 @@
         "seq",
         "author",
         "text"
+      ],
+      "type": "object"
+    },
+    "AgentSessionsAsk": {
+      "description": "An agent asks which sessions of a machine it may mention (#577).",
+      "properties": {
+        "from_session": {
+          "description": "When the asker's session is on this machine (#575): its name, so the\nlist leaves it out, as a mention never reaches the session that\nwrote it.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "room": {
+          "description": "The room the mention would be in.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "room"
       ],
       "type": "object"
     },
@@ -189,6 +216,20 @@
           "properties": {
             "op": {
               "const": "agents.mention",
+              "type": "string"
+            }
+          },
+          "required": [
+            "op"
+          ],
+          "type": "object"
+        },
+        {
+          "$ref": "#/$defs/AgentSessionsAsk",
+          "description": "Which of this machine's sessions a teammate's agent may mention\n(`@<machine>/<session>`, #577). The owner decides what is said\n(`sharing.json`'s `agent_sessions`).",
+          "properties": {
+            "op": {
+              "const": "agents.sessions",
               "type": "string"
             }
           },
@@ -539,6 +580,42 @@
       ],
       "type": "object"
     },
+    "MachineSession": {
+      "description": "A session of a machine a teammate's agent may mention (#577).",
+      "properties": {
+        "active_ms_ago": {
+          "description": "How long ago it last printed, in ms; absent when the machine does not\nknow.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "name": {
+          "description": "What `@machine/name` matches: the session's name, as a slug.",
+          "type": "string"
+        },
+        "tab": {
+          "description": "The tab it is in, when the tab has a name.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "working_on": {
+          "description": "With the owner's `work`: the issue it was started on (`#540`).",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "type": "object"
+    },
     "OpAnswer": {
       "description": "How a machine (or control, for it) answered an op.",
       "oneOf": [
@@ -604,6 +681,30 @@
           "required": [
             "answer",
             "why"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "An `agents.sessions`' answer (#577): the sessions the owner shows,\nnewest first. `shared` is false when the owner shows none.",
+          "properties": {
+            "answer": {
+              "const": "sessions",
+              "type": "string"
+            },
+            "sessions": {
+              "default": [],
+              "items": {
+                "$ref": "#/$defs/MachineSession"
+              },
+              "type": "array"
+            },
+            "shared": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "answer",
+            "shared"
           ],
           "type": "object"
         },
@@ -820,11 +921,22 @@
       "description": "How a daemon routed an `agents.mention` (#502): which of its four steps\ntook it.",
       "properties": {
         "asked": {
-          "description": "The session the message named (`@geek/slowness`), when the daemon\nfound no such session and the message went to another or waits.",
+          "description": "The session the message named (`@geek/slowness`), when the daemon\nfound no such session (or more than one): the message waits.",
           "type": [
             "string",
             "null"
           ]
+        },
+        "names": {
+          "description": "With `asked`: the names a mention could have used (sessions and\ntabs, at most 10), since no session was called that (#576).",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "queued": {
+          "description": "The session's hook wasn't waiting, so the mention only sits in its\nqueue (#571). A daemon from before it says nothing: handed over.",
+          "type": "boolean"
         },
         "session": {
           "description": "The session it went to, by its name, when it went to one.",
@@ -832,6 +944,10 @@
             "string",
             "null"
           ]
+        },
+        "silenced": {
+          "description": "The session it named is there, but its owner silenced mentions for it\n(#579): the message waits in the inbox. With `asked`.",
+          "type": "boolean"
         },
         "step": {
           "$ref": "#/$defs/RoutedStep"

@@ -610,7 +610,7 @@ async fn with_the_flag_off_there_are_no_boards() {
     let hub = Arc::new(TestHub::default());
     let (app, base) = serve(hub.clone()).await;
     let p = seed(&app, &hub, false);
-    let id = app.db.create_board(&p, "Launch", "", Actor::person("a"), 1, 10).unwrap().unwrap().id;
+    let id = app.db.create_board(&p, "Launch", "", Actor::person("a"), None, 1, 10).unwrap().unwrap().id;
 
     for (method, path, body) in [
         ("GET", format!("/api/projects/{p}/boards"), None),
@@ -883,6 +883,85 @@ async fn an_agent_makes_and_runs_a_board() {
     assert!(b["board"].get("created_by_agent").is_none(), "{b}");
 }
 
+/// A session leads a board (#414): the one an agent makes it with, or the one
+/// that takes it; the board names its machine. Another session takes it over,
+/// and only the lead's machine or a person lets it go. A name is needed, and a
+/// person's board takes none.
+#[tokio::test]
+async fn a_session_leads_a_board() {
+    use arugula_control_wire::boards::{LeadBoard, agent_board_lead, agent_project_boards};
+
+    let (hub, app, base, t, _u) = crate::agents_tests::seeded().await;
+    hub.flag_named("team:t", FLAG, true);
+    hub.daemon("mini", "a", Some("t"));
+    grant_write(&base, "a", "geek", &t).await;
+    grant_write(&base, "a", "mini", &t).await;
+    let boards = agent_project_boards(&t);
+    let mk = |body: Value| geek(&base, "POST", &boards, Some(body));
+
+    let (st, b) = mk(json!({ "title": "Epic", "lead_session": "  ux-improvements " })).await;
+    assert_eq!(st, 200, "{b}");
+    let id = b["board"]["id"].as_str().unwrap().to_owned();
+    let lead = &b["board"]["lead"];
+    assert_eq!(
+        (&lead["machine"], &lead["machine_name"], &lead["session"]),
+        (&json!("geek"), &json!("geek-box"), &json!("ux-improvements")),
+        "{b}"
+    );
+    assert!(lead["at"].as_u64().unwrap() > 0, "{b}");
+
+    // No name, a blank one, or a person's make: no lead.
+    for body in [json!({ "title": "A" }), json!({ "title": "B", "lead_session": "  " })] {
+        let (_, b) = mk(body).await;
+        assert!(b["board"].get("lead").is_none(), "{b}");
+    }
+    let body = Some(json!({ "title": "Mine", "lead_session": "ux" }));
+    let (_, b) = call(&base, "a", "POST", &format!("/api/projects/{t}/boards"), body).await;
+    assert!(b["board"].get("lead").is_none(), "{b}");
+
+    // A person reads it, in the list too.
+    let (_, v) = call(&base, "x", "GET", &format!("/api/boards/{id}"), None).await;
+    assert_eq!(v["board"]["lead"]["session"], "ux-improvements", "{v}");
+    let (_, v) = call(&base, "x", "GET", &format!("/api/projects/{t}/boards"), None).await;
+    assert_eq!(v["boards"][0]["lead"]["machine_name"], "geek-box", "{v}");
+
+    // Taking needs a name (and says so); another machine's session takes over.
+    let (st, v) = signed(&base, "a mini", "POST", &agent_board_lead(&id), Some(json!({}))).await;
+    assert_eq!(st, 400, "{v}");
+    let (st, v) = signed(&base, "a mini", "POST", &agent_board_lead(&id), Some(json!({ "session": "Docs" }))).await;
+    assert_eq!(
+        (st, &v["board"]["lead"]["machine"], &v["board"]["lead"]["session"]),
+        (200, &json!("mini"), &json!("Docs")),
+        "{v}"
+    );
+
+    // Only the lead's machine lets go; geek can't.
+    let release = json!({ "release": true });
+    let (st, v) = geek(&base, "POST", &agent_board_lead(&id), Some(release.clone())).await;
+    assert_eq!(st, 403, "{v}");
+    let (_, v) = call(&base, "a", "GET", &format!("/api/boards/{id}"), None).await;
+    assert_eq!(v["board"]["lead"]["session"], "Docs", "{v}");
+    let (st, v) = signed(&base, "a mini", "POST", &agent_board_lead(&id), Some(release.clone())).await;
+    assert_eq!(st, 200, "{v}");
+    assert!(v["board"].get("lead").is_none(), "{v}");
+
+    // A person lets go of any.
+    let (_, v) = signed(&base, "a mini", "POST", &agent_board_lead(&id), Some(json!({ "session": "Docs" }))).await;
+    assert_eq!(v["board"]["lead"]["session"], "Docs", "{v}");
+    let by = Actor::person("a");
+    let released = LeadBoard { session: None, release: true };
+    let v = crate::boards::lead(&app, by, &id, &released).await.unwrap();
+    assert!(v.board.lead.is_none());
+    // And a person can't take one: it is a session's.
+    let took = LeadBoard { session: Some("Docs".into()), release: false };
+    assert!(crate::boards::lead(&app, by, &id, &took).await.is_err());
+
+    // Without boards.write the machine leads nothing.
+    hub.daemon("ro", "a", Some("t"));
+    let (st, v) = signed(&base, "a ro", "POST", &agent_board_lead(&id), Some(json!({ "session": "S" }))).await;
+    assert_eq!(st, 403, "{v}");
+}
+
 async fn xbox(base: &str, method: &str, path: &str, body: Option<Value>) -> (u16, Value) {
     signed(base, "x xbox", method, path, body).await
 }
@@ -899,7 +978,7 @@ async fn a_viewers_machine_with_boards_write_makes_no_board() {
     hub.flag_named("team:t", FLAG, true);
     hub.daemon("xbox", "x", Some("t"));
     grant_write(&base, "x", "xbox", &t).await;
-    let id = app.db.create_board(&t, "Launch", "", Actor::person("a"), 1, 10).unwrap().unwrap().id;
+    let id = app.db.create_board(&t, "Launch", "", Actor::person("a"), None, 1, 10).unwrap().unwrap().id;
 
     let (st, v) = xbox(&base, "POST", &agent_project_boards(&t), Some(json!({ "title": "Mine" }))).await;
     assert_eq!(st, 403, "make a board: {v}");

@@ -75,6 +75,7 @@ Not here: what each milestone built (the archive), how to build and test
 - [aru-113](docs/decisions/aru-113-accounts-link-by-numeric-github-id-old-sign-ins.md): Accounts link by numeric GitHub id; old sign-ins run 90 days beside the new
 - [aru-121](docs/decisions/aru-121-a-person-s-agent-starts-and-answers-sessions-by-grant.md): A person's agent starts and answers sessions as them, by grant
 - [aru-126](docs/decisions/aru-126-device-keys-are-the-machine-plane-s-passkeys-approve.md): Device keys are the machine plane's; the platform's approvals are passkeys
+- [aru-131](docs/decisions/aru-131-the-iphone-app-is-a-browser-device-and-sees-one-api.md): The iPhone app is a browser device, and sees one API
 
 ## Clients
 

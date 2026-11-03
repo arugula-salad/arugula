@@ -177,11 +177,13 @@ impl features::Feature for Feature {
             )
             .route("/api/chat/rooms/{id}/level", post(chat::level))
             .route(arugula_control_wire::chat::CHAT_READERS, post(chat::daemon_readers))
+            .route(arugula_control_wire::chat::MENTION_STATE, axum::routing::put(chat::daemon_mention_state))
             .route(arugula_control_wire::chat::AGENT_ROOMS, get(chat::agent_threads::rooms))
             .route(
                 "/api/daemon/chat/rooms/{id}/messages",
                 get(chat::agent_threads::messages).post(chat::agent_threads::post),
             )
+            .route("/api/daemon/chat/rooms/{id}/agents/{machine}/sessions", get(chat::agent_threads::machine_sessions))
             .route(
                 "/api/daemon/chat/rooms/{id}/files",
                 post(chat::agent_threads::upload)

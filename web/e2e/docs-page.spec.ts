@@ -15,7 +15,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test, type Page } from "@playwright/test";
-import { fill, newDoc, type Post } from "./doc-steps";
+import { fill, newDoc, png, putAsset, type Post } from "./doc-steps";
 import { menu, open, panes, reset, sheetTab } from "./helpers";
 import { daemon, pixel7 } from "./phones";
 
@@ -53,7 +53,7 @@ const row = (page: Page, title: string) => page.locator("[data-doc]").filter({ h
 const preview = async (page: Page, title: string) => {
   await row(page, title).click();
   const p = page.locator("[data-list-preview]");
-  await expect(p.locator("h2")).toHaveText(title);
+  await expect(p.locator(".list-preview-head h2")).toHaveText(title);
   return p;
 };
 const askDelete = async (page: Page, title: string) => {
@@ -233,7 +233,29 @@ test.describe("the list", () => {
     // Reading a closed Doc's preview doesn't open it.
     await expect((await preview(page, "Short note")).locator(".list-preview-words")).toContainText("The opening line of the note.");
     await expect(row(page, "Short note")).toHaveAttribute("data-open", "");
-    await expect(page.locator("[data-doc-block]")).toHaveCount(1);
+    await expect(page.locator(".block-doc [data-doc-block]")).toHaveCount(1);
+  });
+
+  test("a machine on a daemon older than the page still lists its Docs", async ({ page }) => {
+    // Control serves its newest page to every machine, and a daemon before
+    // 0.66.12 sends a row with no summary or sections, and has no preview.
+    await seed(page);
+    await page.route("**/api/docs", async (route) => {
+      const res = await route.fetch();
+      const rows = (await res.json()) as Record<string, unknown>[];
+      await route.fulfill({ response: res, json: rows.map(({ summary: _summary, sections: _sections, ...old }) => old) });
+    });
+    await page.route("**/api/docs/*/preview", (route) => route.fulfill({ status: 404 }));
+    await page.reload();
+    await goToDocs(page);
+    await expect(page.locator("[data-doc]")).toHaveCount(2);
+    // Search still finds it by title, and its preview still has its buttons.
+    await page.keyboard.press("/");
+    await page.keyboard.type("short");
+    await expect(page.locator("[data-doc]")).toHaveCount(1);
+    const p = await preview(page, "Short note");
+    await p.getByRole("button", { name: "Open" }).click();
+    await expect(page.locator(`[data-doc-block] .doc-title`).filter({ hasText: "Short note" })).toBeVisible();
   });
 
   test("↑↓ and j/k move, Enter opens, / searches and Esc clears", async ({ page }) => {
@@ -242,7 +264,7 @@ test.describe("the list", () => {
     await expect(selected).toContainText("Long plan");
     await page.keyboard.press("ArrowDown");
     await expect(selected).toContainText("Short note");
-    await expect(page.locator("[data-list-preview] h2")).toHaveText("Short note");
+    await expect(page.locator("[data-list-preview] .list-preview-head h2")).toHaveText("Short note");
     await page.keyboard.press("k");
     await expect(selected).toContainText("Long plan");
     await page.keyboard.press("j");
@@ -305,8 +327,10 @@ test.describe("the list", () => {
         return;
       }
       const words = (await p.locator(".list-preview-words").boundingBox())!;
-      const outline = (await p.locator(".list-preview-aside").boundingBox())!;
       expect(words.width).toBeGreaterThan(300);
+      // The outline needs room beside the Doc: under 720 px of preview it folds away.
+      if ((await p.boundingBox())!.width <= 720) return expect(p.locator(".list-preview-aside")).toBeHidden();
+      const outline = (await p.locator(".list-preview-aside").boundingBox())!;
       const apart = words.x + words.width <= outline.x || words.y + words.height <= outline.y;
       expect(apart, "the text and the outline don't overlap").toBe(true);
     });
@@ -329,6 +353,78 @@ test.describe("the list", () => {
     await expect.poll(async () => (await pane.boundingBox())?.width).toBe(put);
     await page.locator(".list-handle").dblclick();
     await expect.poll(async () => (await pane.boundingBox())?.width).toBe(start);
+  });
+});
+
+/** The reader (#608): picking a row shows the whole Doc in the preview side. */
+test.describe("the reader", () => {
+  const proto = "```prototype height=120 Tune it\n<!doctype html><html><body><p id=out>ran</p></body></html>\n```";
+  const pad = Array.from({ length: 60 }, (_, i) => `Line ${i} of a long section.`).join("\n\n");
+  /** A closed Doc of three sections: a picture, a prototype, and a long one. */
+  const seed = async (page: Page) => {
+    await reset(page);
+    writeFileSync(join(state, "doc-links.json"), "{}");
+    for (const d of (await (await fetch(`${url}/api/docs`)).json()) as { id: string }[]) await fetch(`${url}/api/docs/${d.id}`, { method: "DELETE" });
+    const [term] = await panes(page);
+    const d = await newDoc(post, term, "Read me");
+    await fill(post, d, "s1", "First section only.");
+    await putAsset(post, d, "dot.png", png(40, 30));
+    await fill(post, d, "s2", `Second: ![A red dot](assets/dot.png)\n\n${proto}`);
+    await fill(post, d, "s3", `Third ${MARK}\n\n${pad}\n\nThe very end.`);
+    await post(`/api/panes/${d}/close`, {});
+    await goToDocs(page);
+    return d;
+  };
+  const reader = (page: Page) => page.locator("[data-list-preview] [data-doc-reader]");
+
+  test("a section past the first, a picture and a prototype show, and the Doc stays closed", async ({ page }) => {
+    await seed(page);
+    const p = await preview(page, "Read me");
+    const r = reader(page);
+    await expect(r.locator('[data-section="s2"]')).toContainText("Second:");
+    await expect(r.locator('[data-section="s3"]')).toContainText(`Third ${MARK}`);
+    await expect(r.locator('[data-section="s2"] img.doc-image')).toHaveJSProperty("naturalWidth", 40);
+    await expect(r.locator("[data-prototype-frame]")).toHaveAttribute("title", "Tune it");
+    // The title is the header's: it isn't said twice.
+    await expect(r.locator(".doc-title")).toBeHidden();
+    await expect(p.locator("[data-open-doc]")).toHaveText("Open beside");
+    // Nothing opened it: the list still has it closed, and no block shows it.
+    await expect(row(page, "Read me")).toHaveAttribute("data-open", "");
+    await expect(page.locator(".block-doc [data-doc-block]")).toHaveCount(0);
+    const rows = (await (await fetch(`${url}/api/docs`)).json()) as { title: string; open: number | null }[];
+    expect(rows.find((x) => x.title === "Read me")!.open).toBeNull();
+  });
+
+  test("the outline scrolls the reader to a section", async ({ page }) => {
+    await page.setViewportSize({ width: 1400, height: 700 });
+    await seed(page);
+    await preview(page, "Read me");
+    const body = page.locator("[data-list-preview] .list-preview-body");
+    await expect(reader(page).locator('[data-section="s3"]')).toBeVisible();
+    expect(await body.evaluate((b) => b.scrollTop)).toBe(0);
+    await page.locator("[data-doc-outline-go]").nth(2).click();
+    await expect.poll(() => body.evaluate((b) => b.scrollTop)).toBeGreaterThan(100);
+    const top = await reader(page).locator('[data-section="s3"]').evaluate((e) => e.getBoundingClientRect().top);
+    const edge = await body.evaluate((b) => b.getBoundingClientRect().top);
+    expect(Math.abs(top - edge)).toBeLessThan(40);
+  });
+
+  test("a fill while it's open shows when the window is back, and the scroll stays", async ({ page }) => {
+    await page.setViewportSize({ width: 1400, height: 700 });
+    await seed(page);
+    const opened = (await post("/api/docs/open", { id: await docId("Read me") })) as { pane?: number };
+    expect(opened.pane, "opened").toBeGreaterThan(0);
+    await page.reload();
+    await expect(page.locator("[data-docs-page]")).toBeVisible();
+    await preview(page, "Read me");
+    const body = page.locator("[data-list-preview] .list-preview-body");
+    await page.locator("[data-doc-outline-go]").nth(2).click();
+    await expect.poll(() => body.evaluate((b) => b.scrollTop)).toBeGreaterThan(100);
+    const at = await body.evaluate((b) => b.scrollTop);
+    await fill(post, opened.pane!, "s1", "First section, rewritten by an agent.");
+    await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+    await expect(reader(page).locator('[data-section="s1"]')).toContainText("rewritten by an agent");
+    expect(Math.abs((await body.evaluate((b) => b.scrollTop)) - at)).toBeLessThan(2);
   });
 });
 
@@ -413,7 +509,7 @@ test.describe("the page drawn", () => {
           await page.locator("[data-doc]").first().tap();
           await expect(page.locator("[data-list-back]")).toBeVisible();
           await expect(page.locator("[data-list-rows]")).toBeHidden();
-          for (const b of await page.locator("[data-list-preview] button").all()) {
+          for (const b of await page.locator("[data-list-preview] .list-preview-actions button").all()) {
             const box = (await b.boundingBox())!;
             expect(box.x + box.width).toBeLessThanOrEqual(width);
           }

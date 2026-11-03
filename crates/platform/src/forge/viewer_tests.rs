@@ -473,7 +473,8 @@ async fn bob_token(p: &Platform, bob: &GithubUser) -> u16 {
 
 /// Whether bob's daemon gets live updates for `acme/app`.
 async fn bob_live(p: &Platform, bob: &GithubUser) -> bool {
-    super::standing(p, "bob", Some(bob), &["acme/app".to_owned()], false).await[0].live
+    let gh = p.github.as_ref().unwrap();
+    viewer::access(p, gh, "bob", bob, "acme/app", false).await.unwrap() == viewer::Access::Yes
 }
 
 /// Two machines on one database: a drop taken by one refuses the other's

@@ -1,5 +1,35 @@
 {
   "$defs": {
+    "AgentMachineSessions": {
+      "description": "A machine's sessions an agent may mention in a room (#577).",
+      "properties": {
+        "machine_name": {
+          "type": "string"
+        },
+        "offline": {
+          "default": false,
+          "description": "The machine isn't on control's relay now, or didn't answer.",
+          "type": "boolean"
+        },
+        "sessions": {
+          "description": "Newest active first, at most 20.",
+          "items": {
+            "$ref": "#/$defs/MachineSession"
+          },
+          "type": "array"
+        },
+        "shared": {
+          "description": "False when its owner shows no session names.",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "machine_name",
+        "shared",
+        "sessions"
+      ],
+      "type": "object"
+    },
     "AgentMessages": {
       "properties": {
         "messages": {
@@ -237,6 +267,20 @@
         "rooms",
         "reach"
       ],
+      "type": "object"
+    },
+    "AgentSessionsQuery": {
+      "description": "[`agent_machine_sessions`]' query.",
+      "properties": {
+        "from_session": {
+          "default": null,
+          "description": "The asking session's name, so a machine asked about itself leaves it\nout (#575).",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
       "type": "object"
     },
     "ChatAddMembers": {
@@ -843,6 +887,32 @@
           "type": "object"
         },
         {
+          "description": "How a comment's send to GitHub ended (M205, Arugula #584): message\n`seq` of `room`, a native issue's thread, whose post answered\n`sending`. Sent to its author only.",
+          "properties": {
+            "github": {
+              "$ref": "#/$defs/ChatToGithub"
+            },
+            "room": {
+              "type": "string"
+            },
+            "seq": {
+              "format": "int64",
+              "type": "integer"
+            },
+            "type": {
+              "const": "github",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "room",
+            "seq",
+            "github"
+          ],
+          "type": "object"
+        },
+        {
           "properties": {
             "type": {
               "const": "resync",
@@ -880,6 +950,21 @@
           "type": "string"
         },
         {
+          "const": "queued",
+          "description": "The session (`session`) has it queued, but its hooks aren't\nlistening to take it (#571).",
+          "type": "string"
+        },
+        {
+          "const": "silenced",
+          "description": "The session it named (`asked`) is there, but its owner silenced\nmentions for it (#579): it waits in the machine's inbox.",
+          "type": "string"
+        },
+        {
+          "const": "no_such_session",
+          "description": "The session it named isn't there (`asked`), or is more than one:\nno other session got it, and it waits in the inbox. `names` are the\nones there are (#576).",
+          "type": "string"
+        },
+        {
           "const": "offline",
           "description": "The machine is offline, or didn't answer.",
           "type": "string"
@@ -887,6 +972,26 @@
         {
           "const": "answered",
           "description": "The machine's agent replied in the thread (`reply`).",
+          "type": "string"
+        },
+        {
+          "const": "chain",
+          "description": "Not delivered (#575): an agent's post, in a chain of agents' replies\nor past the thread's rate limit. A person's message restarts it.",
+          "type": "string"
+        },
+        {
+          "const": "working",
+          "description": "The session's turn that took it has started (#540): what only the\nreceiving daemon knows. Like a typing indicator.",
+          "type": "string"
+        },
+        {
+          "const": "read",
+          "description": "That turn has ended (#540). An agent's reply, `answered`, usually\ncomes first and stays.",
+          "type": "string"
+        },
+        {
+          "const": "dropped",
+          "description": "The session dropped it (#613): `why` says how. Final, like\n`answered`, which it never replaces.",
           "type": "string"
         }
       ]
@@ -908,6 +1013,13 @@
           "description": "What the machine was called when it was told.",
           "type": "string"
         },
+        "names": {
+          "description": "With `no_such_session`: the names it could have used (#576).",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
         "reply": {
           "description": "With `answered`: the number of the agent's reply.",
           "format": "int64",
@@ -925,6 +1037,17 @@
         },
         "state": {
           "$ref": "#/$defs/ChatMentionState"
+        },
+        "why": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/DropWhy"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "With `dropped`: why (#613)."
         }
       },
       "required": [
@@ -1464,7 +1587,14 @@
               "type": "null"
             }
           ],
-          "description": "A comment on a native issue that's on GitHub (M205): what became\nof its copy there. `None` anywhere else."
+          "description": "A comment on a native issue that's on GitHub (M205): what became\nof its copy there, as far as it's known when the post returns. A\nperson's is `sending` then, and its end comes to them on the live\nstream ([`ChatLive::Github`], Arugula #584). `None` anywhere else."
+        },
+        "mention_status": {
+          "description": "Where each machine's agent mention in it has got to by now (#571):\n`sending` for one whose daemon hasn't answered. Empty for a post that\nmentions none.",
+          "items": {
+            "$ref": "#/$defs/ChatMentionStatus"
+          },
+          "type": "array"
         },
         "mentions": {
           "description": "The accounts it mentions, and the agents (`machine:<id>`, M198).",
@@ -1488,6 +1618,13 @@
           "description": "`@words` that named nobody who sees the room.",
           "items": {
             "type": "string"
+          },
+          "type": "array"
+        },
+        "unreached_why": {
+          "description": "Why, for an `unreached` word that names a machine of the team (#572).",
+          "items": {
+            "$ref": "#/$defs/ChatUnreachedWhy"
           },
           "type": "array"
         }
@@ -2316,11 +2453,16 @@
       "type": "object"
     },
     "ChatToGithub": {
-      "description": "A comment on an exported native issue, on its way to GitHub (M205): a\nperson's is sent as them through one of their machines, and waits as a\ndraft when none can; an agent's is a draft that waits for its person.",
+      "description": "A comment on an exported native issue, on its way to GitHub (M205): a\nperson's is sent as them through one of their machines, and waits as a\ndraft when none can; an agent's is a draft that waits for its person.\nA person's post answers while its send is out (`sending`), and the\nsend's end comes after, on the live stream ([`ChatLive::Github`]).",
       "properties": {
         "draft": {
           "description": "The draft (`dft_…`) that carries it.",
           "type": "string"
+        },
+        "sending": {
+          "default": false,
+          "description": "Being sent now, through one of the person's machines: the end comes\non the live stream (Arugula #584).",
+          "type": "boolean"
         },
         "sent": {
           "description": "On GitHub now.",
@@ -2379,6 +2521,29 @@
       },
       "type": "object"
     },
+    "ChatUnreachedWhy": {
+      "description": "A machine's word that reached nobody (#572): its agents can't read the\nroom, and `reads` are the rooms they do read that the poster also sees.",
+      "properties": {
+        "machine_name": {
+          "type": "string"
+        },
+        "reads": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "word": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "word",
+        "machine_name",
+        "reads"
+      ],
+      "type": "object"
+    },
     "ChatUnread": {
       "description": "`POST /api/chat/rooms/{id}/unread`: mark as unread from `seq`: the read\nmark goes to just before it, backwards if need be (#116). The answer is\nthe room, as the reader now sees it.",
       "properties": {
@@ -2404,6 +2569,21 @@
       ],
       "type": "object"
     },
+    "DropWhy": {
+      "description": "Why a mention was dropped (#613).",
+      "oneOf": [
+        {
+          "const": "stopped",
+          "description": "The person pressed stop while it waited in the session's queue.",
+          "type": "string"
+        },
+        {
+          "const": "exited",
+          "description": "The session's process ended in the middle of its turn.",
+          "type": "string"
+        }
+      ]
+    },
     "LivePresence": {
       "description": "Live presence (Arugula #341, the `live-presence` Labs flag), kept on the\naccount so every page agrees: `off` (the default), in no arugula.stream\nroom; `watching`, in your teams' rooms, seeing their live faces. Live\n(your camera) isn't kept: it's per window, on top of `watching`.",
       "enum": [
@@ -2411,6 +2591,70 @@
         "watching"
       ],
       "type": "string"
+    },
+    "MachineSession": {
+      "description": "A session of a machine a teammate's agent may mention (#577).",
+      "properties": {
+        "active_ms_ago": {
+          "description": "How long ago it last printed, in ms; absent when the machine does not\nknow.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "name": {
+          "description": "What `@machine/name` matches: the session's name, as a slug.",
+          "type": "string"
+        },
+        "tab": {
+          "description": "The tab it is in, when the tab has a name.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "working_on": {
+          "description": "With the owner's `work`: the issue it was started on (`#540`).",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "type": "object"
+    },
+    "MentionTurn": {
+      "description": "What the session's turn that took a mention is doing (#540).",
+      "oneOf": [
+        {
+          "const": "working",
+          "description": "The turn has started.",
+          "type": "string"
+        },
+        {
+          "const": "read",
+          "description": "The turn has ended.",
+          "type": "string"
+        },
+        {
+          "additionalProperties": false,
+          "description": "The mention never got a turn, or its turn was cut off (#613).",
+          "properties": {
+            "dropped": {
+              "$ref": "#/$defs/DropWhy"
+            }
+          },
+          "required": [
+            "dropped"
+          ],
+          "type": "object"
+        }
+      ]
     },
     "NotifyLevel": {
       "description": "How much of a room reaches the reader's pushes, and how its unread shows\n(#113).",
@@ -2575,6 +2819,34 @@
         "offline"
       ],
       "type": "string"
+    },
+    "PutMentionState": {
+      "additionalProperties": false,
+      "description": "[`MENTION_STATE`]'s body: a mention (the message `seq` of `room`, for\nthe signing machine) and where its turn is. `session` is the name of the\nsession that took it, for the line.",
+      "properties": {
+        "room": {
+          "type": "string"
+        },
+        "seq": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "session": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "state": {
+          "$ref": "#/$defs/MentionTurn"
+        }
+      },
+      "required": [
+        "room",
+        "seq",
+        "state"
+      ],
+      "type": "object"
     },
     "QuietHours": {
       "description": "Quiet hours on some weekdays: from `from` to `to`, in minutes after\nmidnight in the account's time zone. A window that ends at or before it\nstarts runs past midnight, into the next day (its weekday is the day it\nstarts on).",

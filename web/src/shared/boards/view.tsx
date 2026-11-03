@@ -95,8 +95,8 @@ export function BoardPanel({
   /** The row a move to Done waits on: its issue is closed once the person confirms (#494). */
   const [closing, setClosing] = useState<BoardRow | null>(null);
   const [closeReason, setCloseReason] = useState("completed");
-  /** The find box's text; `null` while the box is closed (#546). */
-  const [find, setFind] = useState<string | null>(() => (keepInUrl ? (parseFilterHash(location.hash)?.q ?? null) : null));
+  /** The find box's text (#546); the bar is always there (#614), so empty is no find. */
+  const [find, setFind] = useState<string>(() => (keepInUrl ? (parseFilterHash(location.hash)?.q ?? "") : ""));
   /** The Label and Person menus' values (#547): any of a menu's matches, and every menu and the text have to. */
   const [labels, setLabels] = useState<string[]>(() => (keepInUrl ? (parseFilterHash(location.hash)?.labels ?? []) : []));
   const [people, setPeople] = useState<string[]>(() => (keepInUrl ? (parseFilterHash(location.hash)?.people ?? []) : []));
@@ -106,33 +106,25 @@ export function BoardPanel({
   useEffect(() => {
     if (was.current === id) return;
     was.current = id;
-    setFind(null);
+    setFind("");
     setLabels([]);
     setPeople([]);
   }, [id]);
-  // A menu's value opens the bar, which is where it shows.
-  useEffect(() => {
-    if (find === null && (labels.length || people.length)) setFind("");
-  }, [labels, people]);
-  const closeFind = () => (setFind(null), setLabels([]), setPeople([]));
-  // `/` opens the find box, from anywhere that isn't a field.
+  /** Clear and Esc: no text, no menu values. */
+  const clearFind = () => (setFind(""), setLabels([]), setPeople([]));
+  // `/` focuses the find box, from anywhere that isn't a field.
   useEffect(() => {
     if (!shown) return;
     const slash = (e: KeyboardEvent) => {
       if (e.key !== "/" || e.ctrlKey || e.metaKey || e.altKey || e.defaultPrevented) return;
       if ((e.target as Element | null)?.closest("input, textarea, select, [contenteditable]")) return;
       e.preventDefault();
-      setFind((q) => q ?? "");
       findBox.current?.focus();
     };
     window.addEventListener("keydown", slash);
     return () => window.removeEventListener("keydown", slash);
   }, [shown]);
-  const finding = find !== null;
-  useEffect(() => {
-    if (finding) findBox.current?.focus();
-  }, [finding]);
-  const filter: BoardFilter = { q: find ?? "", labels, people };
+  const filter: BoardFilter = { q: find, labels, people };
   useEffect(() => {
     if (!keepInUrl || !shown) return;
     const h = filterHash(filter);
@@ -268,7 +260,7 @@ export function BoardPanel({
     ]);
   };
   // A find narrows the view to the rows it matches; the saved folds stay as they are.
-  const query = (find ?? "").trim();
+  const query = find.trim();
   const narrows = filtering(filter);
   const narrowed: BoardView = narrows ? { ...view, zones: view.zones.map((z) => ({ ...z, rows: z.rows.filter((r) => rowPasses(r, filter)) })) } : view;
   const every = view.zones.reduce((n, z) => n + z.rows.length, 0);
@@ -290,40 +282,37 @@ export function BoardPanel({
           view.board.title
         )}
       </h1>
-      <button type="button" class="board-find-open" aria-label="Find a row" data-board-find-open onClick={() => setFind((q) => q ?? "")}>
-        ⌕
-      </button>
       <CopyLinkButton link={shareLink} menu={shareLink ? menu?.(shareLink) : undefined} />
       </div>
-      {finding && (
-        <div class="board-find" role="search" data-board-find>
-          <input
-            ref={findBox}
-            type="text"
-            inputMode="search"
-            value={find}
-            placeholder="Find a row: #541, ARUGU-12 or words"
-            aria-label="Find a row"
-            data-board-find-input
-            autoComplete="off"
-            onInput={(e) => setFind(e.currentTarget.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Escape") (e.preventDefault(), closeFind());
-              else if (e.key === "Enter" && firstMatch) (e.preventDefault(), setDrawer(firstMatch.id));
-            }}
-          />
-          <FilterMenu name="label" title="Label" choices={filterChoices(allRows, "labels")} picked={labels} set={setLabels} />
-          <FilterMenu name="person" title="Person" choices={filterChoices(allRows, "assignees")} picked={people} set={setPeople} />
-          {narrows && (
-            <span class="board-find-count dim" role="status" data-board-find-count>
-              {findLine(found.length, every)}
-            </span>
-          )}
-          <button type="button" aria-label="Close the find box" data-board-find-close onClick={closeFind}>
-            ×
+      <div class="board-find" role="search" data-board-find>
+        <input
+          ref={findBox}
+          type="text"
+          inputMode="search"
+          value={find}
+          placeholder="Find a row: #541, ARUGU-12 or words"
+          aria-label="Find a row"
+          data-board-find-input
+          autoComplete="off"
+          onInput={(e) => setFind(e.currentTarget.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Escape") (e.preventDefault(), clearFind(), e.currentTarget.blur());
+            else if (e.key === "Enter" && firstMatch) (e.preventDefault(), setDrawer(firstMatch.id));
+          }}
+        />
+        <FilterMenu name="label" title="Label" choices={filterChoices(allRows, "labels")} picked={labels} set={setLabels} />
+        <FilterMenu name="person" title="Person" choices={filterChoices(allRows, "assignees")} picked={people} set={setPeople} />
+        {narrows && (
+          <span class="board-find-count dim" role="status" data-board-find-count>
+            {findLine(found.length, every)}
+          </span>
+        )}
+        {narrows && (
+          <button type="button" class="board-find-clear" data-board-find-clear onClick={clearFind}>
+            Clear
           </button>
-        </div>
-      )}
+        )}
+      </div>
       <Epic b={view.board} act={act} id={id} write={write} view={view} platform={platform} />
       {stale && (
         <p class="board-stale" role="status" data-board-stale>
@@ -498,6 +487,11 @@ function Epic({ b, act, id, write, view, platform }: { b: ProjectBoard; act: Act
             </p>
           )}
         </>
+      )}
+      {b.lead && (
+        <p class="dim" data-board-lead>
+          Led by {b.lead.session} on {b.lead.machine_name || b.lead.machine}
+        </p>
       )}
       <DocsStrip view={view} act={act} id={id} write={write} platform={platform} />
       {b.created_by_agent && (

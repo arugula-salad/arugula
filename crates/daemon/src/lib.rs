@@ -680,16 +680,36 @@ fn sharing_cli(
     let state = |on| if on { "on" } else { "off" };
     let about = "Invite a guest with only OpenSSH to a pane (`arugula share --guest`).";
     let mentions_about = "A teammate's `@<machine>` or reply in a thread reaches this machine's agents.";
+    let sessions_about = "What a teammate's agent learns of this machine's sessions: `work`, `names` or `none`.";
+    // `on`/`off` are for the switches; `work`/`names`/`none` for agent-sessions.
+    let words = switch.is_some_and(|s| !matches!(s, args::OnOff::On | args::OnOff::Off));
+    if words != (name == Some(args::SharingSetting::AgentSessions)) && switch.is_some() {
+        anyhow::bail!("agent-sessions takes work, names or none; the others take on or off");
+    }
     match (name, switch) {
         (None, _) => {
             println!("guest-ssh  {:3}  {about}", state(sharing::guest_ssh(dir)));
             println!("agent-mentions  {:3}  {mentions_about}", state(sharing::agent_mentions(dir)));
+            println!("agent-sessions  {:5}  {sessions_about}", sharing::agent_sessions(dir).word());
         }
         (Some(args::SharingSetting::AgentMentions), None) => println!("{}", state(sharing::agent_mentions(dir))),
         (Some(args::SharingSetting::AgentMentions), Some(s)) => {
             let on = s == args::OnOff::On;
             sharing::set_agent_mentions(dir, on).map_err(|e| anyhow::anyhow!("{e}"))?;
             println!("agent-mentions is {}", state(on));
+            if daemon_running(dir) {
+                println!("  The running daemon follows at once.");
+            }
+        }
+        (Some(args::SharingSetting::AgentSessions), None) => println!("{}", sharing::agent_sessions(dir).word()),
+        (Some(args::SharingSetting::AgentSessions), Some(s)) => {
+            let what = match s {
+                args::OnOff::Work => sharing::AgentSessions::Work,
+                args::OnOff::Names => sharing::AgentSessions::Names,
+                _ => sharing::AgentSessions::None,
+            };
+            sharing::set_agent_sessions(dir, what).map_err(|e| anyhow::anyhow!("{e}"))?;
+            println!("agent-sessions is {}", what.word());
             if daemon_running(dir) {
                 println!("  The running daemon follows at once.");
             }
@@ -1032,10 +1052,11 @@ async fn run(mut args: RunArgs, mut kept: std::collections::HashMap<String, pane
         acl.clone(),
         args.no_relay,
     );
+    // M185: a hosted box's agent turns ask the platform whose key pays.
+    // First: the feature crates ask whether this is a hosted box.
+    agent::hosted::init(control.clone(), args.hosted);
     // The feature crates' use of control (Doc blocks share through it, #1066).
     features::with_control(&control);
-    // M185: a hosted box's agent turns ask the platform whose key pays.
-    agent::hosted::init(control.clone(), args.hosted);
     // M40: forge blocks' live updates (control's GitHub App, hooks here).
     forges::start(state_dir.clone(), Some(&control), direct_urls.clone());
     // Claude Code's IDE (M28): its relay keeps the connections.
@@ -1048,6 +1069,7 @@ async fn run(mut args: RunArgs, mut kept: std::collections::HashMap<String, pane
     let pane_gone: Arc<dyn mux::PaneGone> = Arc::new(upload::Uploads);
     #[cfg(not(unix))]
     let pane_gone: Arc<dyn mux::PaneGone> = Arc::new(NoUploads);
+    let (turns_tx, turns_rx) = tokio::sync::mpsc::unbounded_channel();
     let config = mux::Config {
         acl: acl.clone(),
         notify: Arc::new(push::Notifier { push: push.clone(), control: control.clone() }),
@@ -1071,6 +1093,7 @@ async fn run(mut args: RunArgs, mut kept: std::collections::HashMap<String, pane
         sessions: agent::sessions(),
         pane_gone,
         usage: Arc::new(telemetry::Hooks),
+        turns: Arc::new(agent_mentions::TurnReports(turns_tx)),
         at_exit: Some(mux::AtExit(Arc::new(|| lab_hooks::labs().at_exit()))),
     };
     // M101: counting starts with the mux; reports, once control is known.
@@ -1124,6 +1147,11 @@ async fn run(mut args: RunArgs, mut kept: std::collections::HashMap<String, pane
         hand::Hands::open(&state_dir),
         rules,
     );
+    // Control hears where the turns that took teammates' mentions are (#540).
+    crate::task::spawn(agent_mentions::keep_telling(app.clone(), turns_rx));
+    // What the inbox still holds from before a restart is a card again (#551).
+    let reraised = app.clone();
+    crate::task::spawn(async move { agent_mentions::reraise(&reraised).await });
     // Labs' guest ssh server, and (M78) tasks for this machine's agents
     // that a restart interrupted.
     lab_hooks::labs().start(&app);

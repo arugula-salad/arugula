@@ -96,6 +96,9 @@ pub const AGENT_BOARD: &str = "/api/daemon/boards/{id}";
 pub const AGENT_BOARD_CLOSE: &str = "/api/daemon/boards/{id}/close";
 /// `POST`, no body: open a closed board again.
 pub const AGENT_BOARD_REOPEN: &str = "/api/daemon/boards/{id}/reopen";
+/// `POST` [`LeadBoard`]: the calling session takes the board's lead, or the
+/// board's lead is released (#414).
+pub const AGENT_BOARD_LEAD: &str = "/api/daemon/boards/{id}/lead";
 /// `PUT` [`PutEntry`]: add a row or a group, or change a row's note or
 /// pointer (a row the agent's machine added, for a pointer) or a group's
 /// title.
@@ -140,6 +143,11 @@ pub fn agent_board_close(id: &str) -> String {
 /// [`AGENT_BOARD_REOPEN`] for `id`.
 pub fn agent_board_reopen(id: &str) -> String {
     format!("/api/daemon/boards/{id}/reopen")
+}
+
+/// [`AGENT_BOARD_LEAD`] for `id`.
+pub fn agent_board_lead(id: &str) -> String {
+    format!("/api/daemon/boards/{id}/lead")
 }
 
 /// `POST` [`NewAsk`]: an agent asks a person a question on a row
@@ -291,6 +299,9 @@ pub const CLAIMED: &str = "claimed";
 
 /// The longest title, in characters, and the longest note: one line each.
 pub const TITLE_MAX: usize = 120;
+/// A lead session's name, in characters.
+pub const LEAD_SESSION_MAX: usize = 120;
+
 /// A board's goal or done note, in characters.
 pub const GOAL_MAX: usize = 2000;
 pub const NOTE_MAX: usize = 280;
@@ -746,6 +757,26 @@ pub struct Board {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "ts", ts(optional))]
     pub source: Option<BoardSource>,
+    /// The session that leads the board (#414): a post on the board's thread
+    /// reaches it. Absent when no session does.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub lead: Option<BoardLead>,
+}
+
+/// The session that leads a board: the machine it runs on and its name there,
+/// as that machine's daemon matches it (#414).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct BoardLead {
+    pub machine: String,
+    /// The machine's name now; empty while it can't be told.
+    #[serde(default)]
+    pub machine_name: String,
+    pub session: String,
+    /// When the session took the lead.
+    pub at: u64,
 }
 
 /// The epic a board follows: its children are the board's rows, and the
@@ -845,6 +876,25 @@ pub struct NewBoard {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "ts", ts(optional))]
     pub goal: Option<String>,
+    /// With an agent's write: the session that makes it leads the new board
+    /// (#414). A person's write ignores it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub lead_session: Option<String>,
+}
+
+/// `POST` to [`AGENT_BOARD_LEAD`]: the calling session takes the board's
+/// lead (`session`, its name on its machine), or with `release` the lead is
+/// cleared, by the machine of the session that leads or by a person.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct LeadBoard {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub session: Option<String>,
+    #[serde(default)]
+    pub release: bool,
 }
 
 /// Where an item is in its own life, the same words for every source
@@ -1795,6 +1845,19 @@ impl Row {
         item_label(&self.pointer, self.live.as_ref())
     }
 
+    /// What the text view says of the row: its item's title, then ` · ` and
+    /// the note unless the note only repeats the title. A row with no live
+    /// title (a note row, or an item the reader may not see) says its note.
+    pub fn text(&self) -> String {
+        let title = self.live.as_ref().map_or("", |l| l.title.trim());
+        let note = self.note.trim();
+        match (title.is_empty(), note.is_empty() || note.to_lowercase() == title.to_lowercase()) {
+            (true, _) => note.to_owned(),
+            (false, true) => title.to_owned(),
+            (false, false) => format!("{title} · {note}"),
+        }
+    }
+
     /// Whether the row has a primary item to count: not a note row.
     pub fn counted(&self) -> bool {
         matches!(self.pointer, Pointer::Issue { .. } | Pointer::ForgeItem { .. })
@@ -1925,10 +1988,10 @@ fn lane_text<'a>(out: &mut String, title: &str, rows: impl Iterator<Item = &'a R
         let who =
             r.live.as_ref().map(|l| labels_suffix(&l.labels) + &assignees_suffix(&l.assignees)).unwrap_or_default();
         let note = if who.is_empty() || room < who.chars().count() + 8 {
-            fit(&format!("{mark}{}", r.note), room)
+            fit(&format!("{mark}{}", r.text()), room)
         } else {
             // The note gives way, so the labels and assignees stay whole.
-            format!("{}{who}", fit(&format!("{mark}{}", r.note), room - who.chars().count()))
+            format!("{}{who}", fit(&format!("{mark}{}", r.text()), room - who.chars().count()))
         };
         *out += format!("{lead}{note}").trim_end();
         out.push('\n');
@@ -1972,8 +2035,14 @@ fn lane_text<'a>(out: &mut String, title: &str, rows: impl Iterator<Item = &'a R
     }
 }
 
+/// The machine a board's lead runs on, as people read it.
+fn machine_label(l: &BoardLead) -> &str {
+    if l.machine_name.is_empty() { &l.machine } else { &l.machine_name }
+}
+
 /// A board as plain text, no wider than [`TEXT_WIDTH`] columns: before the
-/// lanes, `Goal:` with the goal's first line, `Issues` with the board's
+/// lanes, `Goal:` with the goal's first line, `Led by` the session that leads
+/// it when one does, `Issues` with the board's
 /// progress when it has any, and `Done:` with the done note's first line
 /// when it is closed, and `Ready (n):` with the labels of the rows that can
 /// start now when there are any (#403). Then each lane is its title and how many rows it holds
@@ -1998,6 +2067,9 @@ pub fn render(view: &BoardView) -> String {
     let b = &view.board;
     if !first(&b.goal).is_empty() {
         out += &format!("{}\n", fit(&format!("Goal: {}", first(&b.goal)), TEXT_WIDTH));
+    }
+    if let Some(l) = &b.lead {
+        out += &format!("{}\n", fit(&format!("Led by {} on {}", l.session, machine_label(l)), TEXT_WIDTH));
     }
     if !view.docs.is_empty() {
         let docs: Vec<&str> = view.docs.iter().map(|d| d.title.as_str()).collect();
@@ -2355,6 +2427,25 @@ mod tests {
         assert!(text.lines().all(|l| l.chars().count() <= TEXT_WIDTH), "{text}");
     }
 
+    /// The session that leads a board is named under its goal, by its
+    /// machine's name (its id while that is unknown), and a board nobody
+    /// leads renders as before (#414).
+    #[test]
+    fn the_text_says_who_leads_the_board() {
+        let mut v = view(lanes(vec![(Lane::Next, vec![row(Pointer::None, Lane::Next, "x")])]));
+        let plain = render(&v);
+        v.board.goal = "Ship it".into();
+        v.board.lead =
+            Some(BoardLead { machine: "m1".into(), machine_name: "geek".into(), session: "ux".into(), at: 5 });
+        let text = render(&v);
+        assert!(text.starts_with("Goal: Ship it\nLed by ux on geek\nNext "), "{text}");
+        v.board.lead.as_mut().unwrap().machine_name.clear();
+        assert!(render(&v).contains("Led by ux on m1\n"));
+        v.board.lead = None;
+        v.board.goal.clear();
+        assert_eq!(render(&v), plain);
+    }
+
     /// A board's goal, issue progress and done note head its text, and a
     /// board with none of them renders as before.
     #[test]
@@ -2408,7 +2499,7 @@ Done: People can sign up.
         )]);
         let text = render(&view(zones));
         let want = format!(
-            "{}\n  ○ #4                 Fix login (@ana, @Bo_Li)\n  ○ #4                 Fix the login redirect for every browser… (@ana)\n  ○ #4                 Fix login\n",
+            "{}\n  ○ #4                 Fix login (@ana, @Bo_Li)\n  ○ #4                 Fix login · Fix the login redirect for ev… (@ana)\n  ○ #4                 Fix login\n",
             head("Next", "3")
         );
         assert!(text.starts_with(&want), "{text}");
@@ -2439,6 +2530,45 @@ Done: People can sign up.
         assert!(r.matches("label:UI") && r.matches("boards") && r.matches("@ana label:boards #4"));
         assert!(!r.matches("label:bo") && !r.matches("@bob") && !r.matches("label:ui @bob"));
         assert!(r.matches("@ana_di"), "a space in a name reads as _");
+    }
+
+    /// A row says its item's title, then its note unless the note repeats the
+    /// title; the labels still fit at 72 columns with the note cut first (#582).
+    #[test]
+    fn a_row_says_its_title_then_its_note() {
+        let live = |title: &str, labels: Vec<String>| Live {
+            state: LiveState::Open,
+            kind: "native".into(),
+            repo: None,
+            number: 498,
+            title: title.into(),
+            assignees: vec![],
+            labels,
+            provider: None,
+            identifier: None,
+            state_name: None,
+            url: None,
+            category: None,
+        };
+        let titled = |note: &str, title: &str, labels: Vec<String>| {
+            let mut r = row(Pointer::Issue { id: "iss_1a2b3c4d5e6f7a8b".into() }, Lane::Next, note);
+            r.live = Some(live(title, labels));
+            r
+        };
+        let text = |r: Row| render(&view(lanes(vec![(Lane::Next, vec![r])])));
+        let bare = text(titled("", "Fix login", vec![]));
+        assert!(bare.contains("#498               Fix login\n"), "{bare}");
+        let both = text(titled("waiting on design", "Fix login", vec![]));
+        assert!(both.contains("#498               Fix login · waiting on design\n"), "{both}");
+        let same = text(titled(" fix LOGIN ", "Fix login", vec![]));
+        assert!(same.contains("#498               Fix login\n"), "{same}");
+        let none = row(Pointer::None, Lane::Next, "Remember the checklist");
+        assert_eq!(none.text(), "Remember the checklist");
+        let long = "a note that runs on well past the end of the line and has to give way";
+        let fitted = text(titled(long, "Fix login", vec!["boards".into(), "ui".into()]));
+        let line = fitted.lines().find(|l| l.contains("#498")).unwrap();
+        assert!(line.contains("Fix login · a note") && line.contains('…'), "{fitted}");
+        assert!(line.ends_with("[boards, ui]") && line.chars().count() <= TEXT_WIDTH, "{fitted}");
     }
 
     /// A block's row carries what its machine reported under it, and the

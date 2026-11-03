@@ -484,10 +484,22 @@ fn a_hosted_machine_runs_each_run_once() {
     let bin = marks.join("bin");
     std::fs::create_dir_all(&bin).unwrap();
     let claude = bin.join("claude");
+    // It answers as `stream-json`; asked to wait in the background, it
+    // ends its turn waiting on a timer, as Claude Code 2.1.286 did in
+    // Arugula #552 (and stops the timer as it exits).
     std::fs::write(
         &claude,
         format!(
-            "#!/bin/sh\necho \"$* key:${{ANTHROPIC_API_KEY:-}} oauth:${{CLAUDE_CODE_OAUTH_TOKEN:-}}\" > {}\n",
+            "#!/bin/sh\necho \"$* key:${{ANTHROPIC_API_KEY:-}} oauth:${{CLAUDE_CODE_OAUTH_TOKEN:-}}\" > {}\n\
+             case \"$2\" in\n\
+             *background*) cat <<'EOF'\n\
+             {{\"type\":\"system\",\"subtype\":\"task_started\",\"task_id\":\"b1\",\"description\":\"sleep 420\",\"is_backgrounded\":true}}\n\
+             {{\"type\":\"result\",\"subtype\":\"success\",\"is_error\":false,\"result\":\"The timer will report when the rate limit resets. I'll keep going from there.\"}}\n\
+             {{\"type\":\"system\",\"subtype\":\"task_notification\",\"task_id\":\"b1\",\"status\":\"stopped\"}}\n\
+             EOF\n\
+             ;;\n\
+             *) echo '{{\"type\":\"result\",\"subtype\":\"success\",\"is_error\":false,\"result\":\"the build is fixed\"}}' ;;\n\
+             esac\n",
             marks.join("claude").display()
         ),
     )
@@ -613,13 +625,40 @@ fn a_hosted_machine_runs_each_run_once() {
     let said = std::fs::read_to_string(marks.join("claude")).unwrap();
     // A hosted box's agent: a turn the platform said may run, on M185's
     // placeholder key (the provider's proxy fills in the real one), never
-    // the daemon's own.
-    assert_eq!(
-        said,
-        "-p fix the build --output-format text --dangerously-skip-permissions key:arugula-brokered oauth:\n"
+    // the daemon's own. It's told it runs headless, and says what it does
+    // as it goes (#552).
+    let headless = arugulad_work::agent_run::HEADLESS;
+    let args = format!(
+        "-p fix the build --append-system-prompt {headless} --output-format stream-json --verbose \
+         --dangerously-skip-permissions"
     );
+    assert_eq!(said, format!("{args} key:arugula-brokered oauth:\n"));
     wait(&marks, &f, "the turn ended", || f.turns.lock().unwrap().len() == 2);
     assert_eq!(*f.turns.lock().unwrap(), ["start claude", "end trn_1"]);
+
+    // Arugula #552: an agent that ends its turn waiting on background work
+    // never gives its answer. Its run fails, saying so, rather than
+    // succeeding with exit 0.
+    let w = run_id('5');
+    let waits = Op { instruction: Some("wait in the background".into()), ..Op::default() };
+    f.items.lock().unwrap().push(f.item_of(&w, &waits, f.grant(&f.root)));
+    wait(&marks, &f, "run 5 reported", || f.reports_of(&w).len() == 2);
+    let ended = &f.reports_of(&w)[1];
+    assert_eq!((ended.from.as_str(), ended.to.as_str()), ("running", "failed"));
+    let detail: serde_json::Value = serde_json::from_str(&ended.detail).unwrap();
+    assert_eq!(detail["exit"], json!(arugulad_work::agent_run::LEFT_WAITING), "{detail}");
+    assert_eq!(detail["reason"], json!(arugulad_work::agent_run::LEFT_WAITING_WHY), "{detail}");
+    wait(&marks, &f, "the turn ended", || f.turns.lock().unwrap().len() == 4);
+    // Its log has what it said, as text, and what it left running.
+    let mut log = Vec::new();
+    for u in f.uploads_of(&w).0 {
+        let Upload::Log { n, .. } = u else { unreachable!() };
+        log.extend_from_slice(&f.objects.lock().unwrap()[&format!("{w}/log/{n}")]);
+    }
+    let log = String::from_utf8_lossy(&log);
+    assert!(log.contains("The timer will report when the rate limit resets."), "{log}");
+    assert!(log.contains("Still running when it ended: sleep 420."), "{log}");
+    assert!(!log.contains(r#""type":"#), "no stream-json in the log: {log}");
 
     // On a Claude subscription's token the placeholder is Claude Code's
     // OAuth token, and no API key goes first.
@@ -628,11 +667,8 @@ fn a_hosted_machine_runs_each_run_once() {
     f.items.lock().unwrap().push(f.item_of(&o, &agent, f.grant(&f.root)));
     wait(&marks, &f, "run 4 reported", || f.reports_of(&o).len() == 2);
     let said = std::fs::read_to_string(marks.join("claude")).unwrap();
-    assert_eq!(
-        said,
-        "-p fix the build --output-format text --dangerously-skip-permissions key: oauth:arugula-brokered\n"
-    );
-    wait(&marks, &f, "the turn ended", || f.turns.lock().unwrap().len() == 4);
+    assert_eq!(said, format!("{args} key: oauth:arugula-brokered\n"));
+    wait(&marks, &f, "the turn ended", || f.turns.lock().unwrap().len() == 6);
 
     // M219: a people's workspace never applies a deploy, even one approved
     // by the account's own browser: only a deploy's own box does.
@@ -1423,8 +1459,9 @@ fn a_deploy_box_applies_an_apps_platform_deploy() {
 /// M221: Arugula's own release on a deploy's box, through the daemon: its
 /// minted token comes on the driver's standard input, `arugulad
 /// _arugula-release` runs the commit's real `scripts/release bump` against
-/// a bare repository standing in for GitHub, which tags v0.1.1 and pushes
-/// it with main; the write token is revoked; the release workflow is
+/// a bare repository standing in for GitHub, which tags the commit itself
+/// v0.1.1 and pushes the tag (#1986), then its client fixtures to main; the
+/// write token is revoked; the release workflow is
 /// followed with the read token (a fake API shaped as GitHub's), which is
 /// revoked after; the run succeeds and reports the tag on its result pipe.
 /// Neither token is ever on disk or in the pane.
@@ -1543,7 +1580,7 @@ fn a_deploy_box_releases_arugula() {
         "both tokens revoked from the box, the write one first"
     );
     let bare = marks.join("remotes/arugula-salad/arugula.git");
-    assert_eq!(git(&bare, &["rev-parse", "v0.1.1^{commit}^"]), two, "v0.1.1 is a bump on the commit");
+    assert_eq!(git(&bare, &["rev-parse", "v0.1.1^{commit}"]), two, "v0.1.1 is on the commit itself");
     assert!(git(&bare, &["cat-file", "-p", "v0.1.1"]).contains(&format!("Arugula-Deploy: {dep}")));
     std::thread::sleep(Duration::from_millis(300));
     for token in [TOKEN, READ] {

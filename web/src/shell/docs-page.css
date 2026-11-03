@@ -1,0 +1,69 @@
+/* The Docs page's reader (#608, shell/ui/docs-page.tsx): the preview side
+   holds the whole Doc, drawn by the Doc block's renderer (shared/style.css's
+   .doc) as a sheet that is as tall as it says; the preview body scrolls it.
+   The list page's own rules (shared/ui/list-page.css) are left as they are. */
+
+.docs-reader {
+  min-width: 0;
+}
+
+.docs-reader .doc {
+  flex: none;
+  overflow: visible;
+  border-radius: 10px;
+}
+
+/* The preview's header has the title. */
+.docs-reader .doc-title {
+  display: none;
+}
+
+/* The list's text rules (.list-preview-words p) are for plain paragraphs. */
+.docs-reader .doc-meta {
+  max-width: none;
+  margin: 0;
+  color: var(--doc-ink-faint);
+  font-size: inherit;
+}
+
+.docs-reader .doc p:first-child {
+  color: inherit;
+}
+
+.docs-reader .doc-head {
+  margin-bottom: 24px;
+}
+
+/* The outline stays in view as the Doc scrolls under it. */
+.docs-page .list-preview-aside {
+  position: sticky;
+  top: 0;
+  align-self: start;
+  max-height: calc(100cqh - 40px);
+  overflow-y: auto;
+}
+
+.doc-outline-go {
+  display: block;
+  min-height: 24px;
+  box-sizing: border-box;
+  padding: 4px 0;
+  max-width: 100%;
+  overflow: hidden;
+  color: inherit;
+  font-weight: inherit;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.doc-outline-go:hover:not(:disabled) {
+  color: var(--accent);
+}
+
+/* Under a Doc the outline is no use: it folds away. */
+@container list-preview (max-width: 720px) {
+  .docs-page .list-preview-aside {
+    display: none;
+  }
+}

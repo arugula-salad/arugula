@@ -11,7 +11,6 @@
 use futures_util::future::BoxFuture;
 
 use arugula_control_wire::{
-    forge::Standing,
     hosted::{SetupPlan, SetupReport},
     run_logs::{Upload, UploadGiven, Uploaded},
     transcripts::TranscriptPost,
@@ -59,21 +58,6 @@ pub trait PlatformPort: Send + Sync {
         let _ = daemon;
         Box::pin(async { Ok(()) })
     }
-
-    /// Where each repository a daemon watches stands (M161: the App's
-    /// `may()` is the platform's): live, so its pokes come, or why not.
-    /// `github` is the account's GitHub identity, if it signed in with
-    /// GitHub; `fresh`, that a daemon just asked, not the heartbeat. One
-    /// per repository, in the order asked. A hub since M174 doesn't ask: it
-    /// relays no pokes. It stays while a hub from before might (the
-    /// platform deploys first).
-    fn forge_standing<'a>(
-        &'a self,
-        account: &'a str,
-        github: Option<&'a GithubUser>,
-        repos: &'a [String],
-        fresh: bool,
-    ) -> BoxFuture<'a, anyhow::Result<Vec<Standing>>>;
 
     /// A read-only installation token for one repository, for a hosted
     /// box's `POST /api/daemon/github/token` (M161: the App's key is the

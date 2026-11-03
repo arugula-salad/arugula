@@ -49,7 +49,7 @@ export type ActResult = { pane: number, ok: boolean, error?: string, };
 /**
  * Something done about a reason (`POST /api/attention/act`).
  */
-export type Action = "allow" | "deny" | "answer" | "dismiss" | "continue" | "accept" | "reject" | "rerun" | "expire";
+export type Action = "allow" | "deny" | "answer" | "dismiss" | "continue" | "accept" | "reject" | "rerun" | "expire" | "deliver";
 
 /**
  * How much a pane prints (M23).
@@ -114,6 +114,13 @@ pr?: number, pr_url?: string,
  * The PR block opened beside the agent.
  */
 pr_block?: number, };
+
+/**
+ * What a teammate's agent may learn of this machine's sessions (#577),
+ * when it asks which ones it can `@machine/name`. Only with agent mentions
+ * on; off, it learns nothing whatever this says.
+ */
+export type AgentSessions = "none" | "names" | "work";
 
 /**
  * The open question or approval behind an `ask` reason.
@@ -357,6 +364,20 @@ lane: BoardLane,
  * The account that moved the row.
  */
 by: string, at: number, };
+
+/**
+ * The session that leads a board: the machine it runs on and its name there,
+ * as that machine's daemon matches it (#414).
+ */
+export type BoardLead = { machine: string, 
+/**
+ * The machine's name now; empty while it can't be told.
+ */
+machine_name: string, session: string, 
+/**
+ * When the session took the lead.
+ */
+at: number, };
 
 export type BoardList = { project: string, boards: Array<ProjectBoard>, };
 
@@ -944,12 +965,12 @@ export type ChatLevel = { level: NotifyLevel | null, };
  * behind, or missed more events than control keeps) gets `resync`: reload
  * the rooms.
  */
-export type ChatLive = { "type": "hello", stream: string, } | { "type": "message", room: string, seq: number, } | { "type": "pinned", room: string, } | { "type": "changed", room: string, seq: number, } | { "type": "reacted", room: string, seq: number, } | { "type": "reply", room: string, parent: number, seq: number, } | { "type": "threadread", room: string, parent: number, seq: number, } | { "type": "room", room: string, } | { "type": "read", room: string, seq: number, } | { "type": "object", room: string, target: string, } | { "type": "session", room: string, ses: string, } | { "type": "typing", room: string, account: string, name: string, } | { "type": "sidebar", } | { "type": "saved", } | { "type": "resync", };
+export type ChatLive = { "type": "hello", stream: string, } | { "type": "message", room: string, seq: number, } | { "type": "pinned", room: string, } | { "type": "changed", room: string, seq: number, } | { "type": "reacted", room: string, seq: number, } | { "type": "reply", room: string, parent: number, seq: number, } | { "type": "threadread", room: string, parent: number, seq: number, } | { "type": "room", room: string, } | { "type": "read", room: string, seq: number, } | { "type": "object", room: string, target: string, } | { "type": "session", room: string, ses: string, } | { "type": "typing", room: string, account: string, name: string, } | { "type": "sidebar", } | { "type": "saved", } | { "type": "github", room: string, seq: number, github: ChatToGithub, } | { "type": "resync", };
 
 /**
  * How far a [`ChatMentionStatus`] has got.
  */
-export type ChatMentionState = "sending" | "delivered" | "fell_back" | "waiting" | "offline" | "answered";
+export type ChatMentionState = "sending" | "delivered" | "fell_back" | "waiting" | "queued" | "silenced" | "no_such_session" | "offline" | "answered" | "chain" | "working" | "read" | "dropped";
 
 /**
  * Where a message's `@machine` mention got to (#502), as control knows it:
@@ -970,9 +991,17 @@ session?: string,
  */
 asked?: string, 
 /**
+ * With `no_such_session`: the names it could have used (#576).
+ */
+names?: Array<string>, 
+/**
  * With `answered`: the number of the agent's reply.
  */
-reply?: number, };
+reply?: number, 
+/**
+ * With `dropped`: why (#613).
+ */
+why?: DropWhy, };
 
 /**
  * A message as the reader sees it.
@@ -1200,15 +1229,27 @@ mentions: Array<string>,
  */
 unreached: Array<string>, 
 /**
+ * Why, for an `unreached` word that names a machine of the team (#572).
+ */
+unreached_why?: Array<ChatUnreachedWhy>, 
+/**
  * Whom control pushed (not those with the room open, muted, or pushed
  * for it in the last minute).
  */
 pushed: Array<ChatPushed>, 
 /**
  * A comment on a native issue that's on GitHub (M205): what became
- * of its copy there. `None` anywhere else.
+ * of its copy there, as far as it's known when the post returns. A
+ * person's is `sending` then, and its end comes to them on the live
+ * stream ([`ChatLive::Github`], Arugula #584). `None` anywhere else.
  */
-github?: ChatToGithub, };
+github?: ChatToGithub, 
+/**
+ * Where each machine's agent mention in it has got to by now (#571):
+ * `sending` for one whose daemon hasn't answered. Empty for a post that
+ * mentions none.
+ */
+mention_status?: Array<ChatMentionStatus>, };
 
 /**
  * Who's around, for one reader: themselves and everyone who shares a team
@@ -1579,12 +1620,19 @@ export type ChatThreads = { threads: Array<ChatThreadItem>, unread: number, ment
  * A comment on an exported native issue, on its way to GitHub (M205): a
  * person's is sent as them through one of their machines, and waits as a
  * draft when none can; an agent's is a draft that waits for its person.
+ * A person's post answers while its send is out (`sending`), and the
+ * send's end comes after, on the live stream ([`ChatLive::Github`]).
  */
 export type ChatToGithub = { 
 /**
  * The draft (`dft_…`) that carries it.
  */
 draft: string, 
+/**
+ * Being sent now, through one of the person's machines: the end comes
+ * on the live stream (Arugula #584).
+ */
+sending: boolean, 
 /**
  * On GitHub now.
  */
@@ -1613,6 +1661,12 @@ export type ChatTopicSet = { topic?: string, description?: string, };
  * thread's composer, whose typing nobody is shown).
  */
 export type ChatTyping = { warm: boolean, show: boolean, };
+
+/**
+ * A machine's word that reached nobody (#572): its agents can't read the
+ * room, and `reads` are the rooms they do read that the poster also sees.
+ */
+export type ChatUnreachedWhy = { word: string, machine_name: string, reads: Array<string>, };
 
 /**
  * `POST /api/chat/rooms/{id}/unread`: mark as unread from `seq`: the read
@@ -1647,7 +1701,7 @@ kitty_keys?: boolean, } | { "type": "ack", pane: number, offset: number, } | { "
 /**
  * The person pressed "Use this window's size" (#1502).
  */
-asked?: boolean, } | { "type": "intent", id: number | null, intent: Intent, } | { "type": "pane", pane: number, op: PaneOp, } | { "type": "focus", pane: number | null, } | { "type": "ping", id: number, } | { "type": "subscribe", summary: boolean, } | { "type": "follow", pane: number, on: boolean, } | { "type": "block_patches" } | { "type": "hand", tools: Array<HandTool>, name?: string, } | { "type": "hand_reply", id: number, result?: unknown, error?: string, };
+asked?: boolean, } | { "type": "intent", id: number | null, intent: Intent, } | { "type": "pane", pane: number, op: PaneOp, } | { "type": "focus", pane: number | null, } | { "type": "dismiss_notice", key: string, } | { "type": "ping", id: number, } | { "type": "subscribe", summary: boolean, } | { "type": "follow", pane: number, on: boolean, } | { "type": "block_patches" } | { "type": "hand", tools: Array<HandTool>, name?: string, } | { "type": "hand_reply", id: number, result?: unknown, error?: string, };
 
 /**
  * A command the shell integration reported.
@@ -1762,7 +1816,11 @@ closed: boolean, };
  * `presence` are whole when present. Anything else (sessions, tabs, options,
  * roles) changes with a new `State`.
  */
-export type Delta = { panes?: Array<{ id: PaneId } & Partial<PaneInfo>>, gone?: Array<number>, machines?: Array<Machine> | null, presence?: Array<Presence> | null, };
+export type Delta = { panes?: Array<{ id: PaneId } & Partial<PaneInfo>>, gone?: Array<number>, machines?: Array<Machine> | null, presence?: Array<Presence> | null, 
+/**
+ * Whole when present, like `presence` (#551).
+ */
+notices?: Array<Notice> | null, };
 
 /**
  * Diagnostic counts: errors, warnings, information.
@@ -1805,6 +1863,42 @@ ide: string,
 nvim?: number, };
 
 export type Dir = "row" | "column";
+
+/**
+ * `GET /api/docs/ID/assets/NAME` (#608): a picture, as the Doc block's
+ * `doc_asset` answers it. The type is what the bytes say.
+ */
+export type DocAsset = { mime: string, 
+/**
+ * Base64.
+ */
+data: string, };
+
+/**
+ * `GET /api/docs/ID/content` (#608): the Doc read from its files, without
+ * opening it in a block, in the shape the Doc block's state has, so the
+ * same renderer draws it.
+ */
+export type DocContent = { title: string, entries: Array<DocContentEntry>, assets: Array<DocContentAsset>, rev: number, 
+/**
+ * The Doc's id in the library.
+ */
+doc?: string | null, 
+/**
+ * The folder couldn't be read back: what to tell the person.
+ */
+error?: string | null, };
+
+/**
+ * A picture a Doc keeps, as its state lists it; `doc.asset` has the bytes.
+ */
+export type DocContentAsset = { name: string, mime: string, size: number, rev: number, };
+
+/**
+ * One section of a Doc as `GET /api/docs/ID/content` has it: the Doc block's
+ * entry. `body` is null while the section is pending.
+ */
+export type DocContentEntry = { id: string, heading: string, intent: string, body: string | null, rev: number, };
 
 /**
  * `GET /api/doc-links/ID` (#1066): a shared Doc's URL, with its key.
@@ -1914,6 +2008,11 @@ export type Driver = {
  * Principal id (`owner`, `tailnet:<login>`, `account:<id>`).
  */
 who: string, name: string, };
+
+/**
+ * Why a mention was dropped (#613).
+ */
+export type DropWhy = "stopped" | "exited";
 
 /**
  * Where to put something relative to a pane.
@@ -3117,6 +3216,15 @@ runs_note: string | null,
  */
 ms: number | null, };
 
+/**
+ * `POST` [`PROJECT_DOC_MOVE`]: where the Doc goes.
+ */
+export type MoveProjectDoc = { 
+/**
+ * A project's id, or `personal` for the mover's own.
+ */
+to: string, };
+
 export type NativeIssue = { 
 /**
  * `iss_` and 32 hex characters.
@@ -3163,7 +3271,12 @@ export type NewBoard = { title: string,
 /**
  * What the board is for; left out: none.
  */
-goal?: string, };
+goal?: string, 
+/**
+ * With an agent's write: the session that makes it leads the new board
+ * (#414). A person's write ignores it.
+ */
+lead_session?: string, };
 
 /**
  * A new issue, before and after it reached the forge.
@@ -3209,6 +3322,36 @@ export type NewProjectDoc = { title: string, sections: Array<NewProjectDocSectio
 export type NewProjectDocSection = { heading: string, intent: string, markdown: string | null, };
 
 export type Node = { "type": "pane", pane: number, } | { "type": "split", id: number, dir: Dir, children: Array<Child>, };
+
+/**
+ * Attention that belongs to no pane (#551): the machine wants its owner for
+ * something no pane can show (a teammate's mention that no session took).
+ * Kept in the mux beside the panes' attention; the owner's `State` and
+ * `Delta`s carry it, and the web and the phone draw a card from it.
+ */
+export type Notice = { 
+/**
+ * One card per key: `mention:<room>`. Raised again, it updates.
+ */
+key: string, kind: NoticeKind, 
+/**
+ * When it was first raised.
+ */
+since_ms: number, 
+/**
+ * One line, for the latest: "<who> mentioned this machine in #room: <first line>".
+ */
+headline: string, 
+/**
+ * How many times it was raised since it last went ("2 mentions in #agents").
+ */
+count: number, 
+/**
+ * `mention`: the room to open (its id), and its name.
+ */
+room?: string, room_name?: string, };
+
+export type NoticeKind = "mention";
 
 /**
  * How much of a room reaches the reader's pushes, and how its unread shows
@@ -3578,6 +3721,11 @@ inbox?: boolean,
  */
 unhooked?: boolean, 
 /**
+ * The owner silenced teammates' agents' mentions for this session
+ * (#579): `arugula mentions off %N`. It lasts as long as the pane.
+ */
+mentions_off?: boolean, 
+/**
  * What Claude Code running in it says of its session from inside it
  * (#450, the arugula-live mod, through `arugula session-signal`): the
  * agent block's `context` shape, with `source: live`, its versions and
@@ -3831,7 +3979,12 @@ progress: BoardProgress,
  * The tracker's epic it follows, when it was made from one (Plane's,
  * #483); absent for a board a person made.
  */
-source?: BoardSource, };
+source?: BoardSource, 
+/**
+ * The session that leads the board (#414): a post on the board's thread
+ * reaches it. Absent when no session does.
+ */
+lead?: BoardLead, };
 
 /**
  * A Doc, without its sections: a list's row, and a view's head.
@@ -3858,7 +4011,27 @@ sections: number, written: number,
 /**
  * Counts its changes.
  */
-rev: number, created_at: number, updated_at: number, };
+rev: number, created_at: number, updated_at: number, 
+/**
+ * The machine this Doc is a copy from, or null for one made here.
+ */
+machine: string | null, };
+
+/**
+ * One picture of a Doc, without its bytes: the shape a machine Doc's
+ * state gives (`DocState.assets`).
+ */
+export type ProjectDocAsset = { name: string, 
+/**
+ * `image/png`, `image/jpeg`, `image/gif` or `image/webp`: what the
+ * bytes say.
+ */
+mime: string, size: number, 
+/**
+ * Changes whenever the name is written with other bytes: clients cache
+ * a picture by `name/rev`.
+ */
+rev: number, };
 
 /**
  * `GET` [`PROJECT_DOCS`]: a project's Docs, the latest changed first.
@@ -3894,6 +4067,10 @@ rev: number, };
  * `GET` [`PROJECT_DOC`]: a Doc with its sections, in order.
  */
 export type ProjectDocView = { doc: ProjectDoc, sections: Array<ProjectDocSection>, 
+/**
+ * Its pictures, by name.
+ */
+assets: Array<ProjectDocAsset>, 
 /**
  * Whether the reader may write it.
  */
@@ -4882,6 +5059,11 @@ guest_ssh: boolean,
  */
 agent_mentions?: boolean, 
 /**
+ * What a teammate's agent may learn of this machine's sessions
+ * (#577). Names by default.
+ */
+agent_sessions?: AgentSessions, 
+/**
  * Whether this build has guest ssh. A build without Labs keeps the
  * setting, and nothing follows. Absent: it has.
  */
@@ -4891,7 +5073,7 @@ built?: boolean, };
  * `PUT /api/sharing` (the `sharing.set` operation): the settings to
  * change; one left out stays as it is.
  */
-export type SharingSetRequest = { guest_ssh?: boolean, agent_mentions?: boolean, };
+export type SharingSetRequest = { guest_ssh?: boolean, agent_mentions?: boolean, agent_sessions?: AgentSessions, };
 
 /**
  * A split's area and how long each child is along the split's direction,
@@ -4938,7 +5120,11 @@ roles?: Array<[number, Role]> | null,
  * Who else is here and where they're looking (M13), within what this
  * client sees.
  */
-presence?: Array<Presence>, };
+presence?: Array<Presence>, 
+/**
+ * Attention that belongs to no pane (#551): the owner's alone.
+ */
+notices?: Array<Notice>, };
 
 export type TabView = { id: number, name: string | null, root: Node, cols: number, rows: number, owner: number | null, zoom: number | null, 
 /**
@@ -5381,9 +5567,11 @@ export const OPS = {
   "conversation.open": { method: "POST", path: "/api/conversations/open" },
   "conversation.session_signal": { method: "POST", path: "/api/conversations/session-signal" },
   "conversations.list": { method: "GET", path: "/api/conversations" },
+  "doc.asset": { method: "GET", path: "/api/docs/{id}/assets/{name}" },
   "doc.delete": { method: "DELETE", path: "/api/docs/{id}" },
   "doc.open": { method: "POST", path: "/api/docs/open" },
   "doc.preview": { method: "GET", path: "/api/docs/{id}/preview" },
+  "doc.read": { method: "GET", path: "/api/docs/{id}/content" },
   "doc_link.delete": { method: "DELETE", path: "/api/doc-links/{id}" },
   "doc_link.get": { method: "GET", path: "/api/doc-links/{id}" },
   "docs.list": { method: "GET", path: "/api/docs" },
@@ -5430,6 +5618,7 @@ export const OPS = {
   "pane.followup": { method: "POST", path: "/api/panes/{id}/followup" },
   "pane.inbox": { method: "POST", path: "/api/panes/{id}/inbox" },
   "pane.keys": { method: "POST", path: "/api/panes/{id}/keys" },
+  "pane.mentions": { method: "POST", path: "/api/panes/{id}/mentions" },
   "pane.mouse": { method: "POST", path: "/api/panes/{id}/mouse" },
   "pane.nvim_help": { method: "POST", path: "/api/panes/{id}/nvim/help" },
   "pane.nvim_open": { method: "POST", path: "/api/panes/{id}/nvim" },
