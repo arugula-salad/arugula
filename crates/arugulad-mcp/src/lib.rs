@@ -262,16 +262,16 @@ const INSTRUCTIONS_HEAD: &str = "Arugula runs commands in durable terminal panes
 (on the web and the phone) and take over. capabilities says what this machine offers you: call it first.";
 
 /// The tool tour, short: each tool's own description says what it does.
-const INSTRUCTIONS_TOUR: &str = "wait (until idle or needs_input) \
-instead of polling; read_output pages (pass next_offset back as offset). show a block instead of describing it, \
-and once you open a pull request, or one is ready for review or merge, show it (kind pr) rather than linking it; \
-use draft for the merge.";
+const INSTRUCTIONS_TOUR: &str = "wait (until idle or needs_input), \
+don't poll; read_output pages (pass next_offset as offset). show a block, don't describe it; \
+once you open a pull request, or one is ready for review or merge, show it (kind pr), not a link; \
+use draft for the merge. To reach a teammate's agent, post_thread an @machine/session.";
 
 /// The hooks paragraph, last.
 const INSTRUCTIONS_HOOKS: &str = "Claude Code hooks put your questions (arugula ask), permission prompts (arugula hook), \
 follow-ups (arugula inbox) and attention on cards; without them questions stay in the terminal. \
 `arugula hooks install` adds them: ask first. \
-Run each `arugula ...` command on its own, not in a pipeline or `&&` chain, so the allow rules match.";
+Run each `arugula ...` command alone, not piped or `&&`-chained, to match allow rules.";
 
 /// The server's instructions. Claude Code shows an agent only their first
 /// 2048 characters (#606), so the steering comes first, then a short tour
@@ -280,8 +280,9 @@ Run each `arugula ...` command on its own, not in a pipeline or `&&` chain, so t
 /// Docs left Labs, native #204), the issues sentence
 /// (`flags::ISSUES_STEERING`) and the boards sentence
 /// (`flags::BOARDS_STEERING`, which says nothing to do where boards are
-/// off, and does no harm). Chat isn't an agent's (#1095): nothing of it
-/// is here.
+/// off, and does no harm). Chat stays out of the steering (#1095), but one
+/// sentence points an agent at post_thread to reach a teammate's agent
+/// (#574); the thread tools' descriptions say the rest.
 pub fn instructions() -> String {
     [
         INSTRUCTIONS_HEAD,
