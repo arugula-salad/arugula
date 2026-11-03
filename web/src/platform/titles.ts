@@ -43,7 +43,7 @@ export function titleOf(r: Route, k: Known): string {
       return i ? parts(`#${i.number} ${i.title}`, p) : parts("Issue", p);
     }
     case "triage":
-      return parts("Triage", p);
+      return parts("Boards", p);
     case "boards":
       return parts("Boards", p);
     case "board":

@@ -54,7 +54,9 @@ test("a team's project lists its issues, and an owner opens one", async ({ brows
 
   await platform(alice);
   await alice.locator("section[data-platform-home] [data-project]", { hasText: "Acme" }).click();
-  await alice.locator("[data-platform-issues]").click();
+  // Issues is reached from Boards' "Not on a board" (#656): the bar has no place of its own.
+  await alice.locator("[data-platform-boards]").click();
+  await alice.locator("[data-triage-all]").click();
   await expect(alice).toHaveURL(/\/p\/prj_[0-9a-f]+-acme\/issues$/);
   await expect(alice.locator("[data-issues-none]")).toContainText("No open issues");
 
@@ -116,10 +118,10 @@ test("a viewer reads and comments on a phone, and can't open or close one", asyn
   await view.locator(".thread-compose textarea").fill("Same here on the phone");
   await view.locator(".thread-compose textarea").press("Enter");
   await expect(view.locator(".thread-msg").last()).toContainText("Same here on the phone");
-  // Alice has it with no reload: a dot on its row and a count on Issues.
+  // Alice has it with no reload: a dot on its row and a count on Boards.
   await alice.locator("[data-issues-search]").fill("");
   await expect(alice.locator("[data-issue-row] [data-thread-unread]")).toHaveAttribute("data-thread-unread", "1", { timeout: 15_000 });
-  await expect(alice.locator("[data-platform-issues] [data-place-unread]")).toHaveAttribute("data-place-unread", "1");
+  await expect(alice.locator("[data-platform-boards] [data-place-unread]")).toHaveAttribute("data-place-unread", "1");
   // Control's page has the thread unread too, and its Chat button doesn't
   // count it: chat doesn't list an issue's thread.
   const shell = await alice.context().newPage();
@@ -135,7 +137,7 @@ test("a viewer reads and comments on a phone, and can't open or close one", asyn
   await expect(alice.locator("[data-issue] .thread-msg").last()).toContainText("Same here on the phone", { timeout: 15_000 });
   await alice.locator("[data-issue-back]").click();
   await expect(alice.locator("[data-issue-row]")).toHaveCount(1);
-  await expect(alice.locator("[data-issue-row] [data-thread-unread], [data-platform-issues] [data-place-unread]")).toHaveCount(0);
+  await expect(alice.locator("[data-issue-row] [data-thread-unread], [data-platform-boards] [data-place-unread]")).toHaveCount(0);
   await alice.locator("[data-issue-row] a").first().click();
   await expect(alice.locator("[data-issue] [data-issue-title]")).toHaveText("Search misses hyphenated words");
 
@@ -190,8 +192,8 @@ test("what's new in its thread is in the inbox, and Dismiss there reads it", asy
   // project's, so the bar's Issues there is Alice's own project's.)
   await platform(alice, issuePath.replace(/\/issues\/.*$/, "/issues"));
   await expect(alice.locator("[data-issue-row]")).toHaveCount(1, { timeout: 15_000 });
-  await expect(alice.locator("[data-issue-row] [data-thread-unread], [data-platform-issues] [data-place-unread]")).toHaveCount(0);
+  await expect(alice.locator("[data-issue-row] [data-thread-unread], [data-platform-boards] [data-place-unread]")).toHaveCount(0);
   await alice.reload();
   await expect(alice.locator("[data-issue-row]")).toHaveCount(1, { timeout: 15_000 });
-  await expect(alice.locator("[data-issue-row] [data-thread-unread], [data-platform-issues] [data-place-unread]")).toHaveCount(0);
+  await expect(alice.locator("[data-issue-row] [data-thread-unread], [data-platform-boards] [data-place-unread]")).toHaveCount(0);
 });

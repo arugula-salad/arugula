@@ -1,4 +1,4 @@
-// The Triage page's words and the "Add to board…" menu's model (#292), as
+// The "Not on a board" section's words and the "Add to board…" menu's model (#292), as
 // plain functions: a project's open issues that sit on no board, and where
 // each can go. Run with `node --experimental-strip-types`.
 
@@ -6,12 +6,6 @@ import type { BoardPointer, BoardWorkItem, ProjectBoard } from "../../shared/pro
 
 export const TRIAGE_LEDE = "Open issues that aren't on a board yet.";
 export const TRIAGE_NONE = "Nothing to triage: every open issue is on a board.";
-
-/** The place the bar's Issues place becomes: Triage. A reader whose
- * boards haven't answered yet (`null`) keeps Issues until they do. */
-export function issuesPlace(boards: readonly unknown[] | null): "issues" | "triage" {
-  return boards === null ? "issues" : "triage";
-}
 
 /** `OWNER/NAME#N` of a mirrored issue, `ARUGU-12` of a tracker's, `#N` of a native one. */
 export function sourceLabel(i: Pick<BoardWorkItem, "repo" | "identifier" | "number">): string {

@@ -1,18 +1,12 @@
-// Triage's words and the Add to board… menu's model (#292).
+// The "Not on a board" section's words and the Add to board… menu's model (#292).
 // Run with `node --experimental-strip-types`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { issuesPlace, itemHref, sourceLabel, targets, without } from "../src/platform/pages/triage-text.ts";
+import { itemHref, sourceLabel, targets, without } from "../src/platform/pages/triage-text.ts";
 import { parse, pathOf } from "../src/platform/paths.ts";
 
 const P = "prj_8f2ec0ffee00112233445566778899aa";
 const I = "iss_0123456789abcdef0123456789abcdef";
-
-test("the bar's Issues place becomes Triage only once boards are on", () => {
-  assert.equal(issuesPlace(null), "issues");
-  assert.equal(issuesPlace([]), "triage");
-  assert.equal(issuesPlace([{ id: "brd_1" }]), "triage");
-});
 
 test("a source label is OWNER/NAME#N, or #N for a native issue", () => {
   assert.equal(sourceLabel({ repo: "acme/app", number: 7 }), "acme/app#7");

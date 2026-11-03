@@ -1162,6 +1162,16 @@ html[data-corners="square"] .platform-section {
   color: var(--dim);
 }
 
+/* Not on a board (#656): the Boards page's section between the open boards and
+   Done. */
+.boards-untriaged {
+  margin-top: 24px;
+}
+
+.boards-untriaged .sw-section-head {
+  margin-top: 0;
+}
+
 /* Triage (#292): a row is its label, its title, who has it and Add to
    board…; on a phone the button drops under the title. */
 .triage-row {

@@ -1,7 +1,7 @@
 // Issues on boards, phase 1 (#289-#292), as a person meets them. Alice owns
 // team Acme, with chat on, and three native issues,
-// one hers. With no `boards` flag (they left Labs, #191), the bar says Triage (not Issues) and Boards, and Triage lists the
-// three. She makes the board Launch, which has the four lanes (Next, Doing,
+// one hers. With no `boards` flag (they left Labs, #191), the bar says Boards (no Triage, no Issues), and Boards' "Not on a
+// board" section (#656) lists the three. She makes the board Launch, which has the four lanes (Next, Doing,
 // Review, Done) and no way to make a zone; Add to board… on the first issue
 // leaves it off Triage and draws it as a card in Next. She adds a row
 // through the item picker (type, ArrowDown, Enter), edits only its note, and
@@ -20,11 +20,15 @@
 // a section with its progress and the four lanes of its rows under it, the
 // rows with none last; a board without any looks as it did.
 
+import { mkdirSync } from "node:fs";
 import { expect, test, type Locator, type Page } from "@playwright/test";
 import { closeContexts } from "./helpers";
 import { TeamControl, home } from "./team-fixture";
 
 const t = new TeamControl("boards");
+/** A folder to write the Boards page's screenshot to, when set. */
+const SHOTS = process.env.BOARDS_SHOTS;
+if (SHOTS) mkdirSync(SHOTS, { recursive: true });
 
 test.describe.configure({ mode: "serial" });
 test.afterAll(async ({ browser }) => {
@@ -71,7 +75,7 @@ const zone = (p: Page, title: string): Locator => p.locator("[data-board-zone]")
 const row = (p: Page, title: string): Locator => p.locator("[data-board-row]").filter({ has: p.locator("[data-board-title]", { hasText: title }) });
 const triaged = (p: Page, title: string): Locator => p.locator("[data-triage-row]").filter({ hasText: title });
 
-test("with no Labs flag set, the bar has Boards, and Triage lists the untriaged", async ({ browser }) => {
+test("with no Labs flag set, the bar has Boards and no Triage, and Not on a board lists the untriaged", async ({ browser }) => {
   test.setTimeout(180_000);
   await t.start(["--platform-host", "app.localhost"]);
   app = t.base.replace("//127.0.0.1", "//app.localhost");
@@ -104,14 +108,15 @@ test("with no Labs flag set, the bar has Boards, and Triage lists the untriaged"
   }
 
   await platform(alice, alice.url().replace(app, ""));
-  await expect(alice.locator("[data-platform-triage]")).toHaveText("Triage", { timeout: 15_000 });
   // Boards left Labs (#191): nothing set a `boards` flag on this team or her account (the rail is main's #640: no Boards button).
-  await expect(alice.locator("[data-platform-boards]")).toHaveText("Boards");
-  await expect(alice.locator("[data-platform-issues]")).toHaveCount(0);
+  await expect(alice.locator("[data-platform-boards]")).toHaveText("Boards", { timeout: 15_000 });
+  // Triage and Issues are not places of the bar any more (#656).
+  await expect(alice.locator("[data-platform-triage], [data-platform-issues]")).toHaveCount(0);
 
-  await alice.locator("[data-platform-triage]").click();
-  await expect(alice).toHaveURL(/\/p\/prj_[0-9a-f]+-acme\/triage$/);
-  await expect(alice.locator("[data-triage-row]")).toHaveCount(3, { timeout: 15_000 });
+  await alice.locator("[data-platform-boards]").click();
+  await expect(alice).toHaveURL(/\/p\/prj_[0-9a-f]+-acme\/boards$/);
+  await expect(alice.locator("[data-boards-untriaged] h2")).toHaveText("Not on a board (3)", { timeout: 15_000 });
+  await expect(alice.locator("[data-triage-row]")).toHaveCount(3);
   for (const title of [FIRST, SECOND, THIRD]) await expect(triaged(alice, title)).toBeVisible();
   await expect(triaged(alice, FIRST).locator(".triage-who")).toHaveText("alice");
 
@@ -120,7 +125,7 @@ test("with no Labs flag set, the bar has Boards, and Triage lists the untriaged"
   await expect(alice.locator("[data-issue-row]")).toHaveCount(3);
 });
 
-test("a board Launch has the four lanes and takes the first issue from Triage as a card in Next", async () => {
+test("a board Launch has the four lanes and takes the first issue from Not on a board as a card in Next", async () => {
   test.setTimeout(90_000);
   await alice.locator("[data-platform-boards]").click();
   await expect(alice).toHaveURL(/\/p\/prj_[0-9a-f]+-acme\/boards$/);
@@ -133,12 +138,26 @@ test("a board Launch has the four lanes and takes the first issue from Triage as
   await expect(alice.locator("[data-board-zone] h2")).toHaveText(["Doing", "Review", "Next", "Done"]);
   await expect(alice.locator("[data-board-add-zone], [data-board-add-proofs], [data-board-zone-menu]")).toHaveCount(0);
 
-  await alice.locator("[data-platform-triage]").click();
-  await expect(alice.locator("[data-triage-row]")).toHaveCount(3, { timeout: 15_000 });
+  // Boards lists Launch, then "Not on a board (3)". Add to board… moves the first issue: the row
+  // leaves the section AND the board's card moves, both without a reload (#656).
+  await alice.locator("[data-platform-boards]").click();
+  const launch = alice.locator(".board-card", { has: alice.locator("[data-board-link]", { hasText: "Launch" }) });
+  await expect(launch).toHaveCount(1, { timeout: 15_000 });
+  await expect(alice.locator("[data-boards-untriaged] h2")).toHaveText("Not on a board (3)", { timeout: 15_000 });
+  const order = await alice.evaluate(() => {
+    const at = (q: string) => document.querySelector(q)!;
+    const before = (a: Element, b: Element) => !!(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
+    return before(at("[data-boards]"), at("[data-boards-untriaged]"));
+  });
+  expect(order).toBe(true);
+  const progress = launch.locator("[data-board-progress]");
+  await expect(progress).toContainText("No work yet");
   await triaged(alice, FIRST).locator("[data-triage-add]").click();
   await alice.getByRole("menuitem", { name: "Launch" }).click();
   await expect(triaged(alice, FIRST)).toHaveCount(0);
   await expect(alice.locator("[data-triage-row]")).toHaveCount(2);
+  await expect(alice.locator("[data-boards-untriaged] h2")).toHaveText("Not on a board (2)");
+  await expect(progress).toContainText("0 of 1 done", { timeout: 15_000 });
 
   await alice.locator("[data-platform-boards]").click();
   await alice.locator("[data-board-link]", { hasText: "Launch" }).click();
@@ -206,7 +225,7 @@ test("New issue… makes a native issue and a card row for it in Next", async ()
 test("a viewer on a phone sees what is untriaged and the board's cards, with no sideways scroll", async () => {
   test.setTimeout(90_000);
   await home(bob);
-  await platform(bob, `/p/${project}/triage`);
+  await platform(bob, `/p/${project}/boards`);
   await expect(bob.locator("[data-triage-row]")).toHaveCount(1, { timeout: 15_000 });
   await expect(triaged(bob, THIRD)).toBeVisible();
   await expect(bob.locator("[data-triage-add]")).toHaveCount(0);
@@ -215,6 +234,36 @@ test("a viewer on a phone sees what is untriaged and the board's cards, with no 
   for (const title of [FIRST, SECOND, NEW]) await expect(row(bob, title)).toHaveCount(1, { timeout: 15_000 });
   const wide = await bob.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
   expect(wide).toBeLessThanOrEqual(0);
+});
+
+test("/triage opens the Boards page scrolled to Not on a board, and /boards counts it per project (#656)", async () => {
+  test.setTimeout(90_000);
+  // A window short enough that the section is below the fold on /boards.
+  await alice.setViewportSize({ width: 1100, height: 260 });
+  await platform(alice, `/p/${project}/boards`);
+  const head = alice.locator("[data-boards-untriaged] h2");
+  await expect(head).toHaveText("Not on a board (1)", { timeout: 15_000 });
+  await expect(head).not.toBeInViewport();
+
+  await platform(alice, `/p/${project}/triage`);
+  await expect(alice.locator("[data-boards-page]")).toBeVisible();
+  await expect(alice.locator("#triage")).toBeInViewport({ timeout: 15_000 });
+  await expect(alice.locator("[data-platform-boards]")).toHaveAttribute("aria-current", "page");
+  await alice.setViewportSize({ width: 1280, height: 720 });
+
+  // Every project's Boards: "1 not on a board", linking to the section.
+  await platform(alice, "/boards");
+  const link = alice.locator(`[data-all-boards-untriaged="${project}"]`);
+  await expect(link).toHaveText("1 not on a board", { timeout: 15_000 });
+  await link.click();
+  await expect(alice).toHaveURL(/\/p\/prj_[0-9a-f]+-acme\/triage$/);
+  await expect(alice.locator("[data-triage-row]")).toHaveCount(1);
+  if (SHOTS) {
+    await alice.emulateMedia({ colorScheme: "light" });
+    await platform(alice, `/p/${project}/boards`);
+    await expect(alice.locator("[data-boards-untriaged] h2")).toBeVisible({ timeout: 15_000 });
+    await alice.screenshot({ path: `${SHOTS}/boards-not-on-a-board-light.png`, animations: "disabled" });
+  }
 });
 
 test("Alice sets the board's goal, and it shows under the title with the issues' progress", async () => {
