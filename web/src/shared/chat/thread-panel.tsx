@@ -191,7 +191,7 @@ export function ThreadPanel({ store, room, parent, phone, focus, close }: { stor
         )}
       </div>
       {room.writable && first ? (
-        <RoomCompose room={room} phone={phone} setQuote={() => {}} setError={setError} name="Reply" thread={{ parent }} editLast={lastOwn ? () => setEditing(lastOwn.seq) : undefined} />
+        <RoomCompose room={room} phone={phone} setQuote={() => {}} setError={setError} name="Reply" thread={{ parent }} threadAgents={agents} editLast={lastOwn ? () => setEditing(lastOwn.seq) : undefined} />
       ) : null}
     </aside>
   );

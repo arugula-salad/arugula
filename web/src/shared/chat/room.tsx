@@ -15,9 +15,10 @@
 import { Fragment, type ComponentChildren } from "preact";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
 import { chat, type PaneQuote } from "../chat-store";
-import type { ChatMessage, ChatRoom, ChatToGithub } from "../proto";
+import type { ChatMessage, ChatRoom, ChatThreadAgent, ChatToGithub } from "../proto";
 import { AgentsChip } from "./agents-chip";
-import { authorLabel, githubLogin, isSystemLine, machineMentions } from "./agents";
+import { authorLabel, githubLogin, isSystemLine, machineMentions, sessionSlug } from "./agents";
+import { targets, ToRow, wakes } from "./thread-agents";
 import { ChatMarkdown } from "./chat-markdown";
 import { mentionToken } from "../ui/markup";
 import { MsgAvatar } from "./avatar";
@@ -936,6 +937,7 @@ export function RoomCompose({
   name,
   editLast,
   thread,
+  threadAgents,
   still,
 }: {
   room: ChatRoom;
@@ -949,12 +951,16 @@ export function RoomCompose({
   /** Writes a reply in the thread of this message (#106), with a draft of
    * its own and "Also send to the channel". */
   thread?: { parent: number };
+  /** The agents in that thread: a message chooses who it wakes (#647). */
+  threadAgents?: ChatThreadAgent[];
   /** Doesn't take focus when it opens (`RoomBody`'s `embedded`). */
   still?: boolean;
 }) {
   const key = thread ? `chat.draft:thread:${room.id}:${thread.parent}` : `chat.draft:room:${room.id}`;
   const handle = thread ? threadComposeRef : composeRef;
   const [also, setAlso] = useState(false);
+  // Who it wakes, once chosen: until then the thread's lead (#647).
+  const [chosen, setChosen] = useState<string[] | null>(null);
   const [text, setText] = useState(() => draftOf(key));
   const [sending, setSending] = useState(false);
   const [pick, setPick] = useState(0);
@@ -1102,9 +1108,12 @@ export function RoomCompose({
     setToGithub(null);
     try {
       const posted = thread
-        ? await chat.reply(room.id, thread.parent, text, also, files.ids)
+        ? await chat.reply(room.id, thread.parent, text, also, files.ids, threadAgents?.length ? targets(wakes(threadAgents, chosen, text)) : undefined)
         : await chat.post(room.id, text, quote, files.ids, paused && anyway);
-      setMissed(posted.unreached.map((w) => `Nobody here called ${w} can read this room`));
+      // `@wake` names a chip here, though it's no machine or person to control.
+      const reached = new Set((threadAgents ?? []).map((a) => sessionSlug(a.name)));
+      setMissed(posted.unreached.filter((w) => !reached.has(w.toLowerCase())).map((w) => `Nobody here called ${w} can read this room`));
+      setChosen(null);
       setToGithub(posted.github ? { seq: posted.seq, github: posted.github } : null);
       setText("");
       chat.composed(room.id, thread?.parent);
@@ -1209,6 +1218,7 @@ export function RoomCompose({
           ))}
         </ul>
       )}
+      {threadAgents && <ToRow agents={threadAgents} chosen={chosen} setChosen={setChosen} text={text} />}
       <div class={canQuote ? "compose-box with-tools" : "compose-box"}>
         {quote && (
           <div class="thread-quote pending" data-quote-pending>

@@ -81,6 +81,18 @@ test("a team with chat on, a machine granted the room, and #general", async ({ b
   general = (await chat.locator("[data-room-view]").getAttribute("data-room-view"))!;
   machine = await alice.evaluate(() => window.__arugula.fleet.host("alices")!.id!);
   account = await alice.evaluate(() => window.__arugula.control!.teams[0].roster.members.find((m) => m.name === "alice")!.account);
+  const project = await chat.evaluate(async (tm) => {
+    const v = (await (await fetch("/api/projects")).json()) as { projects: { id: string; team?: { id: string } }[] };
+    return v.projects.find((p) => p.team?.id === tm)!.id;
+  }, team);
+  for (const power of ["threads.read", "threads.post"]) {
+    const status = await chat.evaluate(
+      async ([d, p, id]) =>
+        (await fetch("/api/grants", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ daemon: d, power: p, scope: { kind: "project", id } }) })).status,
+      [machine, power, project] as const,
+    );
+    expect(status).toBe(200);
+  }
 });
 
 test("no agents, no strip; one agent is a line; several are cards; a phone folds them", async () => {
@@ -95,8 +107,8 @@ test("no agents, no strip; one agent is a line; several are cards; a phone folds
   // One agent: a line, with its name, whose it is and what it's doing.
   agentSays(root, machine, "views", "On it.");
   const me = await post("Is the token check in scope?", root);
-  sql(`INSERT INTO chat_mention_status (room, seq, machine, machine_name, root, state, session, at)
-    VALUES ('${general}', ${me}, '${machine}', 'alices', ${root}, 'delivered', 'views', ${Date.now()});`);
+  // A reply to the agent is told to its machine, whose daemon has no session
+  // to give it to: it waits.
   await openThread(root);
   const one = chat.locator('[data-thread-agents="one"]');
   await expect(one).toContainText("views", { timeout: 15_000 });
@@ -111,7 +123,7 @@ test("no agents, no strip; one agent is a line; several are cards; a phone folds
   await expect(detail).toContainText("Never its output, tool arguments or paths.");
 
   // It took the message in: its mark is under it, and nothing waits.
-  sql(`UPDATE chat_mention_status SET state = 'working' WHERE room = '${general}' AND seq = ${me};`);
+  sql(`UPDATE chat_mention_status SET state = 'working', session = 'views' WHERE room = '${general}' AND seq = ${me};`);
   await openThread(root);
   await expect(chat.locator(`[data-thread-panel="${root}"] [data-thread-seen]`)).toContainText("views", { timeout: 15_000 });
   await expect(one).not.toContainText("waiting");
@@ -136,4 +148,47 @@ test("no agents, no strip; one agent is a line; several are cards; a phone folds
   await expect(many.locator("[data-thread-agent]")).toHaveCount(0);
   await sum.click();
   await expect(many.locator("[data-thread-agent]")).toHaveCount(2);
+});
+
+test("the To row chooses who a reply wakes", async () => {
+  test.setTimeout(120_000);
+  await chat.setViewportSize({ width: 1180, height: 720 });
+  const root = await post("Who has this?");
+  await openThread(root);
+  await expect(chat.locator("[data-thread-to]")).toHaveCount(0);
+
+  agentSays(root, machine, "views", "I do.");
+  agentSays(root, "m_gone", "wake", "Me too.");
+  await openThread(root);
+  const panel = chat.locator(`[data-thread-panel="${root}"]`);
+  const box = panel.locator("textarea");
+  const lead = chat.locator(`[data-thread-to-agent="${machine}/views"]`);
+  const other = chat.locator('[data-thread-to-agent="m_gone/wake"]');
+  const nobody = chat.locator("[data-thread-to-nobody]");
+  const line = panel.locator(`.mention-line[data-machine="${machine}"]`);
+
+  // The lead by default, and its status line says it was told.
+  await expect(lead).toHaveAttribute("aria-pressed", "true", { timeout: 15_000 });
+  await expect(lead).toContainText("lead");
+  await expect(other).toContainText("offline");
+  await box.fill("over to you");
+  await box.press("Enter");
+  await expect(line).toHaveCount(1, { timeout: 15_000 });
+
+  // Nobody: posted, and nobody told. It's for that message: the lead is back.
+  await nobody.click();
+  await expect(lead).toHaveAttribute("aria-pressed", "false");
+  await box.fill("just talking");
+  await box.press("Enter");
+  await expect(panel.getByText("just talking")).toBeVisible();
+  await expect(line).toHaveCount(1);
+  await expect(lead).toHaveAttribute("aria-pressed", "true");
+
+  // Naming one in the text picks it, for that message, and the chips say so.
+  await box.fill("@wake what do you think?");
+  await expect(other).toHaveAttribute("aria-pressed", "true");
+  await expect(lead).toHaveAttribute("aria-pressed", "false");
+  await expect(lead).toBeDisabled();
+  await box.fill("");
+  await expect(lead).toHaveAttribute("aria-pressed", "true");
 });
