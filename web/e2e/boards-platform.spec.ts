@@ -71,7 +71,7 @@ const zone = (p: Page, title: string): Locator => p.locator("[data-board-zone]")
 const row = (p: Page, title: string): Locator => p.locator("[data-board-row]").filter({ has: p.locator("[data-board-title]", { hasText: title }) });
 const triaged = (p: Page, title: string): Locator => p.locator("[data-triage-row]").filter({ hasText: title });
 
-test("with no Labs flag set, the rail and the bar have Boards, and Triage lists the untriaged", async ({ browser }) => {
+test("with no Labs flag set, the bar has Boards, and Triage lists the untriaged", async ({ browser }) => {
   test.setTimeout(180_000);
   await t.start(["--platform-host", "app.localhost"]);
   app = t.base.replace("//127.0.0.1", "//app.localhost");
@@ -90,6 +90,8 @@ test("with no Labs flag set, the rail and the bar have Boards, and Triage lists 
   await expect.poll(() => alice.evaluate(() => window.__arugula.control!.teams[0].roster.members.length), { timeout: 15_000 }).toBe(2);
 
   await platform(alice);
+  // All projects' bar has Boards too, with no flag set (#191).
+  await expect(alice.locator("[data-platform-boards]")).toHaveText("Boards", { timeout: 15_000 });
   await alice.locator("section[data-platform-home] [data-project]", { hasText: "Acme" }).click();
   await expect(alice).toHaveURL(/\/p\/prj_[0-9a-f]+-acme$/);
   project = /\/p\/(prj_[0-9a-f]+)/.exec(alice.url())![1];
@@ -103,9 +105,8 @@ test("with no Labs flag set, the rail and the bar have Boards, and Triage lists 
 
   await platform(alice, alice.url().replace(app, ""));
   await expect(alice.locator("[data-platform-triage]")).toHaveText("Triage", { timeout: 15_000 });
-  // Boards left Labs (#191): nothing set a `boards` flag on this team or her account.
+  // Boards left Labs (#191): nothing set a `boards` flag on this team or her account (the rail is main's #640: no Boards button).
   await expect(alice.locator("[data-platform-boards]")).toHaveText("Boards");
-  await expect(alice.locator("[data-open-boards]")).toBeVisible();
   await expect(alice.locator("[data-platform-issues]")).toHaveCount(0);
 
   await alice.locator("[data-platform-triage]").click();
