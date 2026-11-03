@@ -1,6 +1,6 @@
 // The Copy link button (#411) on a board's page and a project Doc's page: one
 // click copies the page's team link and says "Copied ✓" in place. Alice owns
-// team Acme, with chat's and boards' Labs flags on; her board and Doc are
+// team Acme, with chat on; her board and Doc are
 // made through the platform's API. A local control (team-fixture.ts,
 // `--platform-host app.localhost`), as boards-platform.spec.ts. Chrome reads
 // the link back from the clipboard; WebKit can't read it in a test, so
@@ -63,7 +63,7 @@ export function copyLinkSpecs(name: string, clipboard: boolean, shots = false) {
     if (clipboard) await alice.context().grantPermissions(["clipboard-read", "clipboard-write"], { origin: app });
     await alice.evaluate(() => window.__arugula.control!.createTeam("Acme"));
     const team = await alice.evaluate(() => window.__arugula.control!.teams[0].team);
-    for (const flag of ["chat", "boards"]) await alice.evaluate(([f, tm]) => window.__arugula.control!.setLabsFlag(f, true, tm), [flag, team] as const);
+    await alice.evaluate((tm) => window.__arugula.control!.setLabsFlag("chat", true, tm), team);
 
     await alice.goto(`${app}/`);
     await expect(alice.locator("[data-platform-bar], [data-chat]").first()).toBeVisible({ timeout: 15_000 });

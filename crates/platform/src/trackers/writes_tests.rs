@@ -40,7 +40,6 @@ async fn geek(base: &str, method: &str, path: &str, body: Option<Value>) -> (u16
 }
 
 struct World {
-    hub: Arc<TestHub>,
     fake: FakeTracker,
     app: Arc<Platform>,
     base: String,
@@ -54,7 +53,6 @@ async fn world() -> World {
     let hub = Arc::new(TestHub::default());
     let (fake, app, base) = serve(&hub).await;
     hub.team("t1", &[("alice", TeamRole::Owner), ("bob", TeamRole::Editor), ("carol", TeamRole::Viewer)]);
-    hub.flag_named("team:t1", crate::boards::FLAG, true);
     hub.daemon("geek", "alice", Some("t1"));
     crate::projects::follow(&app).await.unwrap();
     crate::cache::catch_up(&app).await.unwrap();
@@ -66,7 +64,7 @@ async fn world() -> World {
     // The backfill read the fields for the labels' names; these tests start with none kept.
     app.db.c().execute("UPDATE tracker_connections SET fields = NULL, fields_at = NULL", params![]).unwrap();
     fake.reset_fields_read();
-    World { hub, fake, app, base, project, connection }
+    World { fake, app, base, project, connection }
 }
 
 impl World {
@@ -878,10 +876,6 @@ async fn the_fields_are_read_by_members_through_the_operation() {
     assert_eq!((s, w.fake.fields_read()), (200, 1), "the one connection, and kept");
     assert_eq!(ask("bob", json!({ "project": w.project, "tracker": "NOPE" })).await.0, 404);
     assert_eq!(ask("eve", json!({ "project": w.project })).await.0, 404);
-    // Boards are Labs: off, there is nothing to read.
-    w.hub.flag_named("team:t1", crate::boards::FLAG, false);
-    w.app.cache.drop_all();
-    assert_eq!(ask("bob", json!({ "project": w.project })).await.0, 404);
 }
 
 // ---- the policy and the footer (#423)

@@ -36,7 +36,7 @@ use std::{
 };
 
 use arugula_control_wire::boards::{AGENT_BLOCK_STATE, BlockState, BlockWord, Diffstat, PutBlockState};
-use arugula_proto::{Attention, BlockType, EventKind, PaneId, api::Work, flags};
+use arugula_proto::{Attention, BlockType, EventKind, PaneId, api::Work};
 use reqwest::Method;
 use tokio::sync::broadcast::error::RecvError;
 use tracing::{debug, warn};
@@ -195,10 +195,9 @@ pub async fn keep_reporting(app: Arc<App>) {
     }
 }
 
-/// Whether this machine reports now: the `boards` flag is on here, and it
-/// has joined control.
+/// Whether this machine reports now: it has joined control.
 fn enabled(app: &App) -> bool {
-    crate::lab_flags::flags(app.control.state_dir()).has(flags::BOARDS) && app.control.enrolled().is_some()
+    app.control.enrolled().is_some()
 }
 
 async fn is_agent(app: &App, id: PaneId) -> bool {

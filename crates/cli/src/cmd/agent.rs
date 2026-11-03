@@ -43,8 +43,8 @@ pub struct Args {
     #[arg(long)]
     title: Option<String>,
     /// The issue it works on (`#N`, `owner/repo#N` or `IDENT-N`): the block
-    /// is attached to that issue's row on the boards of its project (Labs:
-    /// boards; with this machine's boards.write grant) and says it in its
+    /// is attached to that issue's row on the boards of its project (with this
+    /// machine's boards.write grant) and says it in its
     /// header.
     #[arg(long, value_name = "ISSUE", hide = true, conflicts_with_all = ["chat", "resume", "fork"])]
     issue: Option<String>,

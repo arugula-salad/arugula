@@ -378,7 +378,7 @@ export function DocPage({ project, doc }: { project: string; doc: string }) {
   const [fresh, setFresh] = useState(new Map<string, number>());
   const seen = useRef(0);
   const last = useRef<ProjectDocView | null>(null);
-  /** The boards that list this Doc (#517); none when boards are off. */
+  /** The boards that list this Doc (#517). */
   const [onBoards, setOnBoards] = useState<BoardOfDoc[]>([]);
 
   const show = (v: ProjectDocView) => {

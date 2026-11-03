@@ -26,9 +26,8 @@
 //! in the routes that call them. The person's role is still the ceiling on
 //! each: a viewer's machine makes nothing.
 //!
-//! **Gating:** the `boards` Labs flag ([`FLAG`], resolved as chat's is).
-//! With it off for the account, every route here answers 404, as if boards
-//! weren't there.
+//! Boards are on for everyone: they left Labs (#191), and the old `boards`
+//! flag is read by nothing here.
 //!
 //! **Lanes** (aru-125): a board is rows, a row is one piece of work, and
 //! nobody sets its lane. A read answers the board as four synthetic zones
@@ -88,7 +87,6 @@ use crate::db::boards_docs as db_docs;
 use crate::{
     Platform,
     auth::{Machine, Person},
-    chat::flag_on,
     db::{
         boards::{self as db, Put, Refused},
         forge::{CheckState, ForgeItem},
@@ -120,16 +118,10 @@ pub mod relations;
 pub mod resolve;
 pub mod work;
 
-/// The Labs flag boards are behind.
-pub const FLAG: &str = "boards";
 /// The reason a refusal gives for a write made on a stale rev.
 pub const STALE_REV: &str = "stale_rev";
 
 type J<T> = Result<Json<T>, ApiError>;
-
-fn nothing() -> ApiError {
-    err(StatusCode::NOT_FOUND, "not found")
-}
 
 fn no_project() -> ApiError {
     err(StatusCode::NOT_FOUND, "no such project")
@@ -143,20 +135,13 @@ fn bad(msg: &str) -> ApiError {
     err(StatusCode::BAD_REQUEST, msg)
 }
 
-/// 404 unless boards are on for `account`. Plane connections (Arugula
-/// #356) are behind the same flag: issues on boards are Labs.
-pub(crate) async fn gate(app: &Platform, account: &str) -> Result<(), ApiError> {
-    if flag_on(app, account, FLAG).await? { Ok(()) } else { Err(nothing()) }
-}
-
 /// The project `asked` names (its id, or [`PERSONAL`]) as `account` sees
-/// it: 404 for a stranger or when boards are off; with `write`, 403 for a
+/// it: 404 for a stranger; with `write`, 403 for a
 /// viewer, and the team's roster comes from the hub, not the cache. An
 /// agent also needs its machine's grant over the project (`boards.read`, or
 /// `boards.write` to change; a write reads too).
 async fn place(app: &Platform, by: Actor<'_>, asked: &str, write: bool) -> Result<String, ApiError> {
     let account = by.account;
-    gate(app, account).await?;
     let id = if asked == PERSONAL {
         crate::projects::personal_project(app, account).await?.ok_or_else(no_project)?
     } else {
@@ -192,7 +177,6 @@ async fn place(app: &Platform, by: Actor<'_>, asked: &str, write: bool) -> Resul
 /// A board by its id as `account` sees it: 404 unless they may read it
 /// (or, with `write`, change it).
 async fn board_place(app: &Platform, by: Actor<'_>, id: &str, write: bool) -> Result<wire::Board, ApiError> {
-    gate(app, by.account).await?;
     let board = app.db.board(id)?.ok_or_else(no_board)?;
     match place(app, by, &board.project, write).await {
         Err(e) if e.0 == StatusCode::NOT_FOUND => Err(no_board()),

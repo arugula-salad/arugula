@@ -98,8 +98,8 @@ export function PlatformBar({ children }: { children?: ComponentChildren }) {
   // Live's camera goes to the team of the project on screen (#343).
   const working = p?.team?.id ?? null;
   useEffect(() => setWorkingTeam(working), [working]);
-  // With boards on, Triage takes Issues' place and Boards follows it (#292).
-  // Until they've answered, and with them off, the bar is Issues as ever.
+  // Triage takes Issues' place and Boards follows it (#292). Until boards
+  // have answered, the bar is Issues as ever.
   const boards = useBoards(project);
   const triage = issuesPlace(boards) === "triage";
   // An id that's none of the reader's lights no place (UI audit #170): the

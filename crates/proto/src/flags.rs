@@ -92,8 +92,6 @@ pub const ADDITIONAL_FORGES: &str = "additional-forges";
 /// Agent recipes offered from this machine, the team's agent catalog and
 /// A2A tasks. Was `agents`.
 pub const AGENT_DELEGATION: &str = "agent-delegation";
-/// Boards: a project's boards and epics, which are control's.
-pub const BOARDS: &str = "boards";
 /// Live presence: teammates' live faces on their avatars across Arugula,
 /// from arugula.stream (Arugula #341), which needs control.
 pub const LIVE_PRESENCE: &str = "live-presence";
@@ -113,11 +111,10 @@ pub const DOCS_STEERING: &str = "In Arugula, a report, plan or write-up longer t
 /// voice.
 pub const ISSUES_STEERING: &str = "In Arugula, a new issue (a bug, a follow-up, a ticket for later) goes in Arugula's own issues with issue_write (kind create), not `gh issue create` or a GitHub draft, unless the user asks for GitHub; forge_read (kind native_issues) lists them.";
 
-/// What agents are told about boards, in one wording: the MCP server's
-/// instructions carry it (`arugulad-mcp`'s `instructions()`). Boards are a
-/// Labs flag per account, so it is conditional on purpose and says nothing
-/// useful, and does no harm, where they're off. `arugula hook` doesn't give
-/// it. The plugin's skill says the same in its voice.
+/// What every agent is told about boards, in one wording: the MCP server's
+/// instructions carry it (`arugulad-mcp`'s `instructions()`). Boards have no
+/// flag since they left Labs (native #191), so neither does this. `arugula
+/// hook` doesn't give it. The plugin's skill says the same in its voice.
 pub const BOARDS_STEERING: &str = "To run more than one ticket in a project, use a board: make one with board_write (with a goal) unless board_read lists a fitting one, add each ticket as a row, grouped by phase. Don't set statuses or add a row for a PR: a row's lane follows its work, and a PR naming the issue (Arugula #N, Closes #N, (#N)) attaches to its row and closes a native issue on merge (to link without closing, write `part of Arugula #N`). Attach an agent block, run or proof with board_write attach. Keep a row's note as its one-line status; at the goal, close the board with a note on what people can now do.";
 
 /// One flag.
@@ -166,7 +163,6 @@ pub const FLAGS: &[Flag] = &[
         "Local agent delegation",
         "Agent recipes, offering them from this machine, your team's agent catalog and tasks between machines.",
     ),
-    row(BOARDS, "Boards", "A project's boards and epics, which need control."),
     row(
         LIVE_PRESENCE,
         "Live presence",
@@ -197,6 +193,13 @@ pub const RETIRED: &[(&str, &str)] = &[
     (
         "guest-ssh",
         "Guest SSH access is a sharing setting now, off until the machine's owner turns it on: `arugulad sharing guest-ssh on`, or Guest SSH access… in the machine menu",
+    ),
+    // Graduated (native #191): boards are on for everyone. Their grants
+    // (`boards.read`, `boards.write`) still decide what a machine's agents
+    // may do.
+    (
+        "boards",
+        "Boards are no longer in Labs: every account has them, and an agent's grants (boards.read, boards.write) decide what it may do",
     ),
     // Never a flag, but the name it would have now.
     (

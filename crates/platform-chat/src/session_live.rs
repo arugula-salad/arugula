@@ -380,10 +380,7 @@ pub(crate) async fn view(app: &Platform, s: &Session, may: bool, reader: &str) -
     let work = match s.work_item.as_deref() {
         Some(item) => match app.db.issue(item)? {
             Some(i) => {
-                let rows = match arugula_platform::chat::flag_on(app, reader, arugula_platform::boards::FLAG).await {
-                    Ok(true) => app.db.rows_of_issue(item)?,
-                    _ => vec![],
-                };
+                let rows = app.db.rows_of_issue(item)?;
                 let first = rows.into_iter().next();
                 Some(SessionWork {
                     issue: i.id,

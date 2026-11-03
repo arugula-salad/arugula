@@ -137,7 +137,6 @@ async fn a_pr_never_reaches_another_projects_board() {
     let (team, eve) = world(&hub, &gh, &app).await;
     for owner in ["team:t1", "account:eve"] {
         hub.flag(owner, true);
-        hub.flag_named(owner, crate::boards::FLAG, true);
     }
     let board = |who: &str, project: &str| {
         let (who, project) = (who.to_owned(), project.to_owned());

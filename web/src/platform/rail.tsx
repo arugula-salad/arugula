@@ -12,7 +12,6 @@ import { usePhone, useSubscribe } from "../shared/ui/hooks";
 import { Rail, type RailItem } from "../shared/ui/rail";
 import { BoardsIcon, ChatIcon, DocsIcon, Mark, PanesIcon, ProjectsIcon, SettingsIcon, SwarmIcon } from "../shared/ui/rail-icons";
 import { chatPath, sectionOf } from "./bar";
-import { useBoardsOn } from "./pages/boards";
 import { go, useRoute } from "./router";
 import { controlOrigin, session } from "./session";
 import { barProject, where } from "./where";
@@ -27,12 +26,11 @@ export function PlatformRail() {
   // As the bar does: an id that's none of the reader's lights no place.
   const unknown = !!project && !p && session.state === "ready";
   const here = unknown ? null : sectionOf(r);
-  const boards = useBoardsOn();
   const control = controlOrigin();
   const chatTo = chatPath(project);
   const { n, mention } = !unknown && (!project || p) ? chatUnread(chat.rooms, p ? (p.team?.id ?? null) : undefined) : { n: 0, mention: false };
   const place = (to: string) => () => go(to);
-  const items: (RailItem | false)[] = [
+  const items: RailItem[] = [
     {
       label: "Projects",
       tip: "Projects: their issues, boards, runs, deploys and chat",
@@ -56,8 +54,7 @@ export function PlatformRail() {
       href: chatTo,
       onClick: place(chatTo),
     },
-    // With the `boards` flag, which is a team's: on in any of the reader's projects.
-    (boards || here === "boards") && {
+    {
       label: "Boards",
       tip: "Boards: your projects' boards and epics",
       here: here === "boards",
@@ -85,7 +82,7 @@ export function PlatformRail() {
       onClick: place("/settings"),
     },
   ];
-  return <Rail brand={brand} items={items.filter((i): i is RailItem => !!i)} bottom={bottom} />;
+  return <Rail brand={brand} items={items} bottom={bottom} />;
 }
 
 /** The page's body beside its rail: the rail on a computer, none on a phone. */

@@ -1,8 +1,6 @@
 //! Connecting a Plane project to a project (Arugula #356), and reading its
 //! items in.
 //!
-//! - **Behind the `boards` Labs flag** ([`crate::boards::gate`]): every
-//!   route is a 404 while boards are off for the account.
 //! - **Who connects.** A project's owner or editor, through a person's
 //!   route (not a machine's or an agent's): the key is theirs to give and
 //!   nobody's to read back.
@@ -119,7 +117,6 @@ pub async fn list(
     CloudDriver(Person { account }): CloudDriver,
     Path(project): Path<String>,
 ) -> Result<Json<TrackerConnections>, ApiError> {
-    crate::boards::gate(&app, &account).await?;
     let (project, _) = membership(&app, &account, &project, false).await?;
     let connections = app.db.tracker_connections(&project)?.iter().map(|c| wire(&app, c)).collect::<Result<_, _>>()?;
     Ok(Json(TrackerConnections { project, connections }))
@@ -133,7 +130,6 @@ pub async fn connect(
     Path(project): Path<String>,
     Json(b): Json<ConnectTracker>,
 ) -> Result<Json<TrackerConnection>, ApiError> {
-    crate::boards::gate(&app, &account).await?;
     let project = changer(&app, &account, &project).await?;
     let (workspace, asked) = (b.workspace_slug.trim(), b.project.trim());
     if !good_name(workspace) || !good_name(asked) {
@@ -217,7 +213,6 @@ pub async fn settings(
     Path((project, id)): Path<(String, String)>,
     Json(b): Json<TrackerSettings>,
 ) -> Result<Json<TrackerConnection>, ApiError> {
-    crate::boards::gate(&app, &account).await?;
     let project = changer(&app, &account, &project).await?;
     if b.agent_writes.is_none()
         && b.write_policy.is_none()
@@ -304,7 +299,6 @@ pub async fn disconnect(
     Person { account }: Person,
     Path((project, id)): Path<(String, String)>,
 ) -> Result<Json<TrackerConnection>, ApiError> {
-    crate::boards::gate(&app, &account).await?;
     let project = changer(&app, &account, &project).await?;
     let gone = app
         .db

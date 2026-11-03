@@ -57,7 +57,6 @@ export function boardActivateCases(name: string, newPerson: (browser: Browser, t
     alice = await newPerson(browser, t);
     await alice.evaluate(() => window.__arugula.control!.createTeam("Acme"));
     const team = await alice.evaluate(() => window.__arugula.control!.teams[0].team);
-    await alice.evaluate((tm) => window.__arugula.control!.setLabsFlag("boards", true, tm), team);
     await home(alice);
     await t.addMachine(alice, "alices", team);
     await expect.poll(() => live(alice, ["alices"]), { timeout: 30_000 }).toBe(true);

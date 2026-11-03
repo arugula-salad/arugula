@@ -11,7 +11,7 @@
 
 use std::sync::Arc;
 
-use arugula_proto::{BlockType, flags};
+use arugula_proto::BlockType;
 use futures_util::future::BoxFuture;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -40,9 +40,6 @@ pub struct BoardKind;
 
 impl BlockKind for BoardKind {
     fn create(&self, ctx: BlockCtx, config: Value) -> Result<Arc<dyn Block>, String> {
-        if !ctx.restoring {
-            arugula_mux::labs::flag(&ctx.state_dir, flags::BOARDS)?;
-        }
         let config: Config = serde_json::from_value(config).map_err(|e| format!("board config: {e}"))?;
         let b = Arc::new(BoardBlock { ctx, config: config.checked()? });
         // Pages already connected hear of a new block's state only when it

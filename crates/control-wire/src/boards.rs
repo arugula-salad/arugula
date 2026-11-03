@@ -13,7 +13,7 @@
 //! (`brd_`, M196).
 //!
 //! A project in a path is its id (`prj_…`), or `personal` for the reader's
-//! own. Behind the `boards` Labs flag: with it off, every path answers 404.
+//! own. Boards are on for everyone (they left Labs, native #191).
 //!
 //! **Revs.** A row's `rev` counts changes to its pointer and note. A write
 //! that changes those names the `rev` it read; if the row moved on, it is

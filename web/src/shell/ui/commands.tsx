@@ -134,8 +134,8 @@ export function paneItems(client: Client, id: PaneId, phone: boolean, workspace:
     // Who's around in a team, live, on arugula.stream (the block says so
     // when control has no arugula.stream app, or chat is off).
     ...(!client.state?.roles && getControlSession()?.phase === "ready" ? [{ label: "People", run: () => void openPeople(client, { from: id }) } as MenuItem] : []),
-    // A project's board beside it, with the boards flag.
-    ...(!client.state?.roles && client.flag("boards") ? [{ label: "Board…", run: () => void pinBoard(client, { from: id }) } as MenuItem] : []),
+    // A project's board beside it.
+    ...(!client.state?.roles ? [{ label: "Board…", run: () => void pinBoard(client, { from: id }) } as MenuItem] : []),
     // M33: Claude Code conversations from terminals and the desktop app.
     ...(owner ? [{ label: "Claude Code conversations…", run: () => pickConversation(client, { split: id, cwd: cwd ?? undefined }) } as MenuItem] : []),
     // M35: a studio app's box beside this pane.

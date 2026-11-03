@@ -5,7 +5,6 @@
 
 use serde_json::{Value, json};
 
-use super::FLAG;
 use super::tests::{issue, row_in};
 use crate::db::sql::Sql as _;
 use crate::{
@@ -30,8 +29,7 @@ async fn geek(base: &str, method: &str, path: &str, body: Option<Value>) -> (u16
 /// `boards.write`) and a board with a row on an issue and a note row:
 /// (base, app, board, issue row, note row).
 async fn world() -> (String, std::sync::Arc<crate::Platform>, String, String, String) {
-    let (hub, app, base, t, _u) = seeded().await;
-    hub.flag_named("team:t", FLAG, true);
+    let (_hub, app, base, t, _u) = seeded().await;
     let (st, g) =
         call(&base, "a", "POST", "/api/grants", give("geek", "boards.write", json!({ "kind": "project", "id": t })))
             .await;

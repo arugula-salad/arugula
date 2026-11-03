@@ -10,7 +10,6 @@ const I = "iss_0123456789abcdef0123456789abcdef";
 
 test("the bar's Issues place becomes Triage only once boards are on", () => {
   assert.equal(issuesPlace(null), "issues");
-  assert.equal(issuesPlace("off"), "issues");
   assert.equal(issuesPlace([]), "triage");
   assert.equal(issuesPlace([{ id: "brd_1" }]), "triage");
 });

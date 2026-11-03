@@ -9,7 +9,6 @@ use serde_json::{Value, json};
 
 use super::{links_tests::serve, viewer_tests::world};
 use crate::{
-    boards::FLAG,
     chat_tests::{TestHub, call},
     db::{Sql as _, sql::params},
 };
@@ -30,7 +29,6 @@ async fn one_list_of_issues_prs_and_runs_per_reader() {
     let (_gh, app, base) = serve(&hub).await;
     let (team, _) = world(&hub, &_gh, &app).await;
     hub.flag("team:t1", true);
-    hub.flag_named("team:t1", FLAG, true);
     {
         let c = app.db.c();
         // Another open issue on the private repo, a new one on the public
@@ -120,7 +118,6 @@ async fn untriaged_is_open_issues_no_board_of_this_project_points_at() {
     let (_gh, app, base) = serve(&hub).await;
     let (team, eve) = world(&hub, &_gh, &app).await;
     hub.flag("team:t1", true);
-    hub.flag_named("team:t1", FLAG, true);
     {
         let c = app.db.c();
         for (id, repo, number, state, at) in
@@ -217,16 +214,5 @@ async fn untriaged_is_open_issues_no_board_of_this_project_points_at() {
     assert_eq!(ids(&v), [&c], "{v:?}");
     // A stranger.
     let (s, _) = work(&base, "eve", &team, "").await;
-    assert_eq!(s, 404);
-}
-
-#[tokio::test]
-async fn work_is_not_there_with_boards_off() {
-    let hub = Arc::new(TestHub::default());
-    let (_gh, app, base) = serve(&hub).await;
-    let (team, _) = world(&hub, &_gh, &app).await;
-    hub.flag("team:t1", true);
-    hub.flag_named("team:t1", FLAG, false);
-    let (s, _) = work(&base, "alice", &team, "").await;
     assert_eq!(s, 404);
 }

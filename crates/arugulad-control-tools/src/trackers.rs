@@ -1,7 +1,7 @@
 //! A project's connected Plane project, from agents (Arugula #359):
 //! `tracker_write` creates, comments on, closes, reopens and edits its work
-//! items, behind the `boards` Labs flag (listed only when it is on, and
-//! refused when it is off).
+//! items (listed with the other control tools; boards left Labs, native
+//! #191).
 //!
 //! - **Through the owner's grants.** A call is a machine-signed route on the
 //!   platform (`/api/daemon/projects/{project}/tracker-writes`,
@@ -142,31 +142,31 @@ pub(crate) const WRITE: &[Kind] = &[
         name: "create",
         description: "Create a work item in a connected Plane project (may wait for a person).",
         schema: schema_for_type::<CreateArgs>,
-        flag: Some(arugula_proto::flags::BOARDS),
+        flag: None,
     },
     Kind {
         name: "comment",
         description: "Comment on a work item (may wait for a person).",
         schema: schema_for_type::<CommentArgs>,
-        flag: Some(arugula_proto::flags::BOARDS),
+        flag: None,
     },
     Kind {
         name: "close",
         description: "Close a work item as completed or cancelled (may wait for a person).",
         schema: schema_for_type::<CloseArgs>,
-        flag: Some(arugula_proto::flags::BOARDS),
+        flag: None,
     },
     Kind {
         name: "reopen",
         description: "Open a closed work item again (may wait for a person).",
         schema: schema_for_type::<ReopenArgs>,
-        flag: Some(arugula_proto::flags::BOARDS),
+        flag: None,
     },
     Kind {
         name: "edit",
         description: "Change a work item: its title, body, state, module, parent, type or labels (may wait for a person).",
         schema: schema_for_type::<EditArgs>,
-        flag: Some(arugula_proto::flags::BOARDS),
+        flag: None,
     },
 ];
 
@@ -187,7 +187,6 @@ fn said(e: CloudRefused) -> String {
 
 /// They act as this machine's owner: only the owner's own agents may.
 async fn owners_trackers(c: &Call<'_>) -> Result<(), String> {
-    crate::lab_flags::flag(c.app().control.state_dir(), arugula_proto::flags::BOARDS)?;
     if let Some(me) = c.me()
         && c.app().mux.api(|r| Api::GuestBehind(me, r)).await.flatten().is_some()
     {
@@ -283,7 +282,7 @@ pub(super) async fn trackers_reach(app: &crate::server::App) -> TrackersReach {
             return TrackersReach {
                 live: false,
                 projects: vec![],
-                note: "Plane connections are in Labs: turn on boards for your account".into(),
+                note: "This Arugula control has no Plane connections: it needs updating".into(),
             };
         }
         Ok(Err(e)) => return TrackersReach { live: false, projects: vec![], note: said(e) },

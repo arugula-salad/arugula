@@ -33,7 +33,6 @@ mod trackers;
 
 use std::time::Duration;
 
-use arugula_proto::flags;
 use futures_util::future::BoxFuture;
 use rmcp::handler::server::common::schema_for_type;
 use serde_json::Value;
@@ -41,7 +40,7 @@ use serde_json::Value;
 // What the code here names as `crate::…`: the mux's modules and the daemon's,
 // as it named them when it was the daemon's.
 use arugula_mux::mux;
-use arugulad_base::{control, fs, lab_flags, mcp, server};
+use arugulad_base::{control, fs, mcp, server};
 
 use crate::{
     mcp::{
@@ -362,7 +361,7 @@ fn issue_write_def() -> Def {
 }
 
 // Boards, step 3: a project's board, through the owner's
-// grants, behind the `boards` flag.
+// grants.
 fn board_read_def() -> Def {
     Def {
         name: boards::READ_TOOL,
@@ -373,7 +372,7 @@ fn board_read_def() -> Def {
         destructive: false,
         idempotent: true,
         open_world: true,
-        flag: Some(flags::BOARDS),
+        flag: None,
         output: None,
         human: line(
             "read your project's board and keep its rows current",
@@ -393,14 +392,13 @@ fn board_write_def() -> Def {
         destructive: true,
         idempotent: false,
         open_world: true,
-        flag: Some(flags::BOARDS),
+        flag: None,
         output: None,
         human: Human::In(boards::READ_TOOL),
     }
 }
 
-// #359: a project's connected Plane project, through the owner's grants,
-// behind the `boards` flag.
+// #359: a project's connected Plane project, through the owner's grants.
 fn tracker_write_def() -> Def {
     Def {
         name: trackers::WRITE_TOOL,
@@ -411,7 +409,7 @@ fn tracker_write_def() -> Def {
         destructive: true,
         idempotent: false,
         open_world: true,
-        flag: Some(flags::BOARDS),
+        flag: None,
         output: None,
         human: line(
             "write to your project's Plane work items, with your approval where you ask for it",

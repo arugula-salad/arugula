@@ -279,9 +279,8 @@ Run each `arugula ...` command on its own, not in a pipeline or `&&` chain, so t
 /// `arugula hook` also gives on `SessionStart`, #1486; everyone's since
 /// Docs left Labs, native #204), the issues sentence
 /// (`flags::ISSUES_STEERING`) and the boards sentence
-/// (`flags::BOARDS_STEERING`, which says nothing to do where boards are
-/// off, and does no harm). Chat isn't an agent's (#1095): nothing of it
-/// is here.
+/// (`flags::BOARDS_STEERING`; everyone's since boards left Labs, native
+/// #191). Chat isn't an agent's (#1095): nothing of it is here.
 pub fn instructions() -> String {
     [
         INSTRUCTIONS_HEAD,

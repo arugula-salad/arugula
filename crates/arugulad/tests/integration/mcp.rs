@@ -3030,8 +3030,8 @@ async fn fake_boards(f: FakeBoards) -> String {
     at
 }
 
-/// The board tools (boards, step 3) are listed and work only with the
-/// `boards` flag on; board_read lists a project's boards and reads one as
+/// The board tools (boards, step 3) are listed and work with no flag (boards
+/// left Labs, native #191); board_read lists a project's boards and reads one as
 /// lanes, rows and 72-column text, the JSON only when verbose; board_write
 /// (#366) adds a batch of issues by their items, one failing without
 /// stopping the rest, attaches a PR to the row of its issue, addresses rows by
@@ -3040,7 +3040,7 @@ async fn fake_boards(f: FakeBoards) -> String {
 /// refusals through, in answers of a few lines.
 #[cfg(feature = "labs")]
 #[tokio::test(flavor = "multi_thread")]
-async fn an_agent_reads_and_writes_a_board_where_the_flag_is_on() {
+async fn an_agent_reads_and_writes_a_board() {
     let d = Daemon::child_with(&["--wisp-token-file", "/nonexistent"]);
     let keys = arugula_e2e::DeviceKeys::load_or_create(&d.state.join("daemon.key")).unwrap();
     let fake = FakeBoards::default();
@@ -3050,15 +3050,7 @@ async fn an_agent_reads_and_writes_a_board_where_the_flag_is_on() {
     std::fs::write(d.state.join("control.json"), saved.to_string()).unwrap();
     let s = bridge(&d, Client::named("claude-code")).await;
 
-    // Off: neither tool is listed, and a call is refused saying why.
-    arugula_proto::flags::set(&d.state, "boards", false).unwrap();
     let names = |tools: Vec<rmcp::model::Tool>| tools.into_iter().map(|t| t.name.to_string()).collect::<Vec<_>>();
-    let off = names(s.list_all_tools().await.unwrap());
-    assert!(!off.iter().any(|n| n.starts_with("board_")), "{off:?}");
-    assert!(!kinds(&s.list_all_tools().await.unwrap(), "show").contains(&"board".to_owned()));
-    assert!(refused(&s, "board_read", json!({ "project": "prj_1" })).await.contains("boards"));
-
-    arugula_proto::flags::set(&d.state, "boards", true).unwrap();
     // The daemon takes a moment to join the fake control.
     let deadline = std::time::Instant::now() + Duration::from_secs(20);
     while call_raw(&s, "board_read", json!({ "project": "prj_1" })).await.is_error == Some(true) {
@@ -3286,7 +3278,6 @@ async fn an_agent_links_docs_to_a_board() {
     let saved = json!({ "url": url, "trust": { "account": "a1", "root": keys.id() }, "cert": cert });
     std::fs::write(d.state.join("control.json"), saved.to_string()).unwrap();
     let s = bridge(&d, Client::named("claude-code")).await;
-    arugula_proto::flags::set(&d.state, "boards", true).unwrap();
     let deadline = std::time::Instant::now() + Duration::from_secs(20);
     while call_raw(&s, "board_read", json!({ "project": "prj_1" })).await.is_error == Some(true) {
         assert!(std::time::Instant::now() < deadline, "never joined");
@@ -3484,7 +3475,6 @@ async fn a_start_on_an_issue_another_agent_holds_is_refused_without_a_pane() {
         let cert = arugula_e2e::Cert::new(&keys, "a1", arugula_e2e::Kind::Daemon, "test");
         let saved = json!({ "url": url, "trust": { "account": "a1", "root": keys.id() }, "cert": cert });
         std::fs::write(state.join("control.json"), saved.to_string()).unwrap();
-        arugula_proto::flags::set(state, "boards", true).unwrap();
     });
     let s = bridge(&d, Client::named("claude-code")).await;
     let agent = |extra: Value| {
@@ -3569,7 +3559,6 @@ async fn an_agent_started_on_an_issue_is_on_its_row() {
         let cert = arugula_e2e::Cert::new(&keys, "a1", arugula_e2e::Kind::Daemon, "test");
         let saved = json!({ "url": url, "trust": { "account": "a1", "root": keys.id() }, "cert": cert });
         std::fs::write(state.join("control.json"), saved.to_string()).unwrap();
-        arugula_proto::flags::set(state, "boards", true).unwrap();
     });
     let s = bridge(&d, Client::named("claude-code")).await;
     let agent = |extra: Value| {
@@ -3677,14 +3666,6 @@ async fn an_agent_started_on_an_issue_is_on_its_row() {
     assert_eq!(r["issue"]["boards"], json!([]), "{r}");
     assert!(r["issue"]["said"].as_str().unwrap().contains("boards.write"), "{r}");
     assert_eq!(d.state(r["block"].as_u64().unwrap())["work"], json!({ "issue": "#12" }));
-
-    // Boards off here: the issue is kept, and nothing is asked of control.
-    arugula_proto::flags::set(&d.state, "boards", false).unwrap();
-    let asked = control.attached.lock().unwrap().len();
-    let r = call(&s, "start_agent", agent(json!({ "issue": "#12" }))).await;
-    assert_eq!(r["issue"]["boards"], json!([]), "{r}");
-    assert!(r["issue"]["said"].as_str().unwrap().contains("boards are off"), "{r}");
-    assert_eq!(control.attached.lock().unwrap().len(), asked);
 
     s.cancel().await.unwrap();
     let _ = Command::new("git").args(["worktree", "prune"]).current_dir(&repo).status();
@@ -3794,7 +3775,6 @@ async fn an_agent_is_attached_in_the_project_of_its_issue() {
         let cert = arugula_e2e::Cert::new(&keys, "a1", arugula_e2e::Kind::Daemon, "test");
         let saved = json!({ "url": url, "trust": { "account": "a1", "root": keys.id() }, "cert": cert });
         std::fs::write(state.join("control.json"), saved.to_string()).unwrap();
-        arugula_proto::flags::set(state, "boards", true).unwrap();
     });
     let s = bridge(&d, Client::named("claude-code")).await;
     let agent = |extra: Value| {

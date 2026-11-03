@@ -4,7 +4,6 @@
 
 use serde_json::{Value, json};
 
-use super::FLAG;
 use super::tests::issue;
 use crate::{
     agents_tests::{give, seeded},
@@ -26,8 +25,7 @@ async fn geek(base: &str, method: &str, path: &str, body: Option<Value>) -> (u16
 
 #[tokio::test]
 async fn an_agent_relates_with_issues_write_and_takes_off_only_its_own() {
-    let (hub, _app, base, t, _u) = seeded().await;
-    hub.flag_named("team:t", FLAG, true);
+    let (_hub, _app, base, t, _u) = seeded().await;
     let (a, b) = (issue(&base, "a", &t, "Design").await, issue(&base, "a", &t, "Build").await);
     let body = json!({ "from": a, "to": b, "kind": "blocks" });
 

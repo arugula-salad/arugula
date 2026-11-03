@@ -1455,7 +1455,7 @@
         "readOnlyHint": false,
         "title": "Show the user a block"
       },
-      "description": "Show the user something as a block beside a pane (beside; default the caller's own pane), instead of describing it. kind says what.\n- port {port, beside?, path?}: A browser block on a port of the machine a pane runs on (a dev server), beside that pane, so the user sees it next to its terminal.\n- changes {beside?, repo?, rev_a?, rev_b?}: A diff block: what changed in a pane's git repository (the working tree against HEAD, or against rev_a, or rev_a..rev_b), as a file list with +/- the user can open to hunks and files, live while they look. Returns the files; read_output on the block gives the unified diff.\n- file {path, beside?, line?}: A file block: a file on a pane's machine, read-only, scrolled to a line and followed live, for the user to look at.\n- pr {pr, beside?, dir?, hold?}: A pull request on the user's Forgejo or GitHub, or a GitLab merge request: its checks, reviews and timeline, read with the user's own tea, gh (or glab) login, and what it waits on them for (a review asked of them, red checks, changes requested) as attention on the phone and the swarm. Returns the PR as text; draft writes to it.\n- issue {issue, beside?, dir?, project?}: An issue on the user's Forgejo or GitHub: its labels, assignees, the pull requests that refer to it and its timeline, read with the user's own tea or gh login; one assigned to them or mentioning them is attention on the phone and the swarm. From the block the user can start an agent on it in a worktree of its own. Returns the issue as text.\n- conversation {id, beside?, then?}: A Claude Code conversation (list kind conversations) as an agent block, stopped, with its transcript; then: continue (refused while it's open somewhere else) or fork (a new session with its history; the original is left alone). send_input to the block goes on.\n- chat {beside?, pinned?, room?}: Team chat as a block beside a pane: the user's channels, direct messages, threads and Activity, with everything the chat page has. Pinned to a room (room, pinned) it is that room alone. It reads as the user, through Arugula control, so it shows nothing on a machine that has not joined it. Read and post in rooms with read_thread and post_thread.",
+      "description": "Show the user something as a block beside a pane (beside; default the caller's own pane), instead of describing it. kind says what.\n- port {port, beside?, path?}: A browser block on a port of the machine a pane runs on (a dev server), beside that pane, so the user sees it next to its terminal.\n- changes {beside?, repo?, rev_a?, rev_b?}: A diff block: what changed in a pane's git repository (the working tree against HEAD, or against rev_a, or rev_a..rev_b), as a file list with +/- the user can open to hunks and files, live while they look. Returns the files; read_output on the block gives the unified diff.\n- file {path, beside?, line?}: A file block: a file on a pane's machine, read-only, scrolled to a line and followed live, for the user to look at.\n- pr {pr, beside?, dir?, hold?}: A pull request on the user's Forgejo or GitHub, or a GitLab merge request: its checks, reviews and timeline, read with the user's own tea, gh (or glab) login, and what it waits on them for (a review asked of them, red checks, changes requested) as attention on the phone and the swarm. Returns the PR as text; draft writes to it.\n- issue {issue, beside?, dir?, project?}: An issue on the user's Forgejo or GitHub: its labels, assignees, the pull requests that refer to it and its timeline, read with the user's own tea or gh login; one assigned to them or mentioning them is attention on the phone and the swarm. From the block the user can start an agent on it in a worktree of its own. Returns the issue as text.\n- conversation {id, beside?, then?}: A Claude Code conversation (list kind conversations) as an agent block, stopped, with its transcript; then: continue (refused while it's open somewhere else) or fork (a new session with its history; the original is left alone). send_input to the block goes on.\n- chat {beside?, pinned?, room?}: Team chat as a block beside a pane: the user's channels, direct messages, threads and Activity, with everything the chat page has. Pinned to a room (room, pinned) it is that room alone. It reads as the user, through Arugula control, so it shows nothing on a machine that has not joined it. Read and post in rooms with read_thread and post_thread.\n- board {board, beside?}: A project's board as a block beside a pane: its zones and rows (issues, PRs, runs, agent blocks), live, read and changed as the user through Arugula control, so it shows nothing on a machine that has not joined it. Read and write it with board_read and board_write.",
       "inputSchema": {
         "$defs": {
           "ConversationThen": {
@@ -1490,7 +1490,11 @@
                 "type": "null"
               }
             ],
-            "description": "port, file, pr, issue, conversation, chat: Beside this pane. Default: the caller's own pane (an agent block, or the terminal pane `arugula mcp` runs in). changes: The pane whose repository it is (its directory, on its machine). Default: the caller's own pane (an agent block, or the terminal pane `arugula mcp` runs in)."
+            "description": "port, file, pr, issue, conversation, chat, board: Beside this pane. Default: the caller's own pane (an agent block, or the terminal pane `arugula mcp` runs in). changes: The pane whose repository it is (its directory, on its machine). Default: the caller's own pane (an agent block, or the terminal pane `arugula mcp` runs in)."
+          },
+          "board": {
+            "description": "board: The board: its id (brd_..., board_read lists a project's boards).",
+            "type": "string"
           },
           "cloud_workspace": {
             "description": "A cloud workspace (its hw_… id or its name, from list kind cloud_workspaces): do this on its machine instead of here, through Arugula control. Its panes and blocks are that machine's: pass cloud_workspace again to reach them.",
@@ -1529,7 +1533,8 @@
               "pr",
               "issue",
               "conversation",
-              "chat"
+              "chat",
+              "board"
             ],
             "type": "string"
           },
@@ -2613,7 +2618,7 @@
         "readOnlyHint": true,
         "title": "Read a linked repo's PRs and issues"
       },
-      "description": "Read PRs and issues on GitHub repos linked to the user's projects in Arugula control (list kind linked_repos lists them), with no block open: a PR, an issue, a list of them, a PR's checks, or drafts waiting for a person. As the user (the owner of this machine), and only what GitHub lets them read. For a repo that isn't linked, show (kind pr or issue) opens a block instead. Also Arugula's own (native) issues: kind issue with item \"#N\" (in the current project) or \"iss_…\", and kind native_issues (with this machine's threads.read grant).\n- pr {item}: A pull request: its state, title, author, labels, reviewers, branches, what happened to it (reviews, pushes) and its waiting drafts. Metadata only, no body or comments.\n- issue {item, project?}: An issue: its state, title, author, labels, assignees, what happened to it and its waiting drafts. A native issue (\"#N\" or \"iss_…\"): it, its timeline and its newest comments. A Plane item (\"IDENT-N\", such as ALL-2212): its title, state, type, labels, modules and url; its body and comments aren't mirrored.\n- items {author?, item_kind?, limit?, project?, provider?, q?, repo?, review_requested?, state?, tracker?}: The PRs and issues of one linked repo, or of a project's linked repos and its connected Plane projects' work items (provider plane, with identifier ALL and number so ALL-2212), last updated first; provider, tracker, item_kind, state, author, review_requested and q narrow it (q as IDENT-N finds that Plane item first). Repos the user can't read on GitHub are named as withheld.\n- checks {item}: A pull request's checks on its head commit: each one's status and conclusion.\n- inbox {done?, limit?}: The user's inbox: PRs and issues on their linked repos that want something of them (a review requested, their checks failed, changes requested, a mention, assigned, merged or ready, a draft waiting), newest first, each with whether they've seen it.\n- drafts {item?, project?, state?}: Drafts waiting for a person to send: on a PR or issue, a repo or a project, or the user's own.\n- draft {draft}: One draft: what it says and what became of it (waiting, sent with its link, discarded or failed).\n- native_issues {assignee?, author?, before?, labels?, limit?, project?, q?, state?}: Arugula's own (native) issues of a project in Arugula control (the current one unless project names it), newest first; state, labels, assignee, author and q (search words) narrow it. issue_write writes to them at once.",
+      "description": "Read PRs and issues on GitHub repos linked to the user's projects in Arugula control (list kind linked_repos lists them), with no block open: a PR, an issue, a list of them, a PR's checks, or drafts waiting for a person. As the user (the owner of this machine), and only what GitHub lets them read. For a repo that isn't linked, show (kind pr or issue) opens a block instead. Also Arugula's own (native) issues: kind issue with item \"#N\" (in the current project) or \"iss_…\", and kind native_issues (with this machine's threads.read grant).\n- pr {item}: A pull request: its state, title, author, labels, reviewers, branches, what happened to it (reviews, pushes) and its waiting drafts. Metadata only, no body or comments.\n- issue {item, project?}: An issue: its state, title, author, labels, assignees, what happened to it and its waiting drafts. A native issue (\"#N\" or \"iss_…\"): it, its timeline and its newest comments. A Plane item (\"IDENT-N\", such as ALL-2212): its title, state, type, labels, modules and url; its body and comments aren't mirrored.\n- items {author?, item_kind?, limit?, project?, provider?, q?, repo?, review_requested?, state?, tracker?}: The PRs and issues of one linked repo, or of a project's linked repos and its connected Plane projects' work items (provider plane, with identifier ALL and number so ALL-2212), last updated first; provider, tracker, item_kind, state, author, review_requested and q narrow it (q as IDENT-N finds that Plane item first). Repos the user can't read on GitHub are named as withheld.\n- tracker_fields {connection?, project?, tracker?}: What a connected Plane project offers a work item, for tracker_write: its states (name, group, which one a new item starts in), modules, types and labels. Name them in create and edit.\n- checks {item}: A pull request's checks on its head commit: each one's status and conclusion.\n- inbox {done?, limit?}: The user's inbox: PRs and issues on their linked repos that want something of them (a review requested, their checks failed, changes requested, a mention, assigned, merged or ready, a draft waiting), newest first, each with whether they've seen it.\n- drafts {item?, project?, state?}: Drafts waiting for a person to send: on a PR or issue, a repo or a project, or the user's own.\n- draft {draft}: One draft: what it says and what became of it (waiting, sent with its link, discarded or failed).\n- native_issues {assignee?, author?, before?, labels?, limit?, project?, q?, state?}: Arugula's own (native) issues of a project in Arugula control (the current one unless project names it), newest first; state, labels, assignee, author and q (search words) narrow it. issue_write writes to them at once.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
@@ -2640,6 +2645,14 @@
             "minimum": 0,
             "type": [
               "integer",
+              "null"
+            ]
+          },
+          "connection": {
+            "default": null,
+            "description": "tracker_fields: Or its id (tc_…, from capabilities' trackers).",
+            "type": [
+              "string",
               "null"
             ]
           },
@@ -2674,6 +2687,7 @@
               "pr",
               "issue",
               "items",
+              "tracker_fields",
               "checks",
               "inbox",
               "drafts",
@@ -2702,7 +2716,7 @@
           },
           "project": {
             "default": null,
-            "description": "issue: A native issue's project for \"#N\", or a Plane item's for IDENT-N: its\nid (prj_…) or personal.\nDefault: the one this clone's GitHub repo is linked to, else the\nuser's personal project. items: The project's id (prj_…). Default: the repo's project, else the\nuser's personal one. drafts: The project's id (prj_…): all of its drafts. native_issues: The project's id (prj_…) or personal. Default: the current project.",
+            "description": "issue: A native issue's project for \"#N\", or a Plane item's for IDENT-N: its\nid (prj_…) or personal.\nDefault: the one this clone's GitHub repo is linked to, else the\nuser's personal project. items, tracker_fields: The project's id (prj_…). Default: the repo's project, else the\nuser's personal one. drafts: The project's id (prj_…): all of its drafts. native_issues: The project's id (prj_…) or personal. Default: the current project.",
             "type": [
               "string",
               "null"
@@ -2750,7 +2764,7 @@
           },
           "tracker": {
             "default": null,
-            "description": "items: A Plane connection's key, such as ALL: only its items.",
+            "description": "items: A Plane connection's key, such as ALL: only its items. tracker_fields: A Plane connection's key, such as ARUGU. Not needed when the project\nhas one connection.",
             "type": [
               "string",
               "null"
@@ -3836,6 +3850,341 @@
     },
     {
       "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": true,
+        "title": "Read a board"
+      },
+      "description": "Read a project's board in Arugula control (an epic when it has a goal; with this machine's boards.read grant over its project). One row is one piece of work: an issue (or a PR with no issue), or a note, with a one-line note and what is attached to it (work: PRs, agent blocks, runs; proof: runs, links). The lanes follow the work and nobody sets them. Lane by the row's primary item: Next (Plane triage, backlog or unstarted; a note), Doing (a Plane started state; or an agent block that isn't closed, or a run running), Review (a PR is open; or a Plane started state with 'review' in its name), Done (the issue is completed or canceled, or the PR merged or closed). A canceled item (a Plane project's cancelled state, or a native issue closed as not planned or a duplicate) is Done, marked cancelled and never proven; any other Done row is proven by CI or by evidence, or not proven yet. Groups are the plan's phases or waves. Returns the board as 72-column text, each row by its item (#N, IDENT-N), its Docs (the research and prototypes linked to it, with the ids unlink_doc takes), and its progress; with verbose: true, also the JSON with ids and revs. With board (brd_…): that board, or only its matching rows with q (an item's number #541, a Plane key ARUGU-12, or words in the title or note), lane (next, doing, review or done) and group (its title or zon_…), under a line that says how many of the rows are shown. Without: the project's boards (project, else the one this clone's GitHub repo is linked to, else your person's personal project), to pick one from.",
+      "inputSchema": {
+        "$defs": {
+          "LaneArg": {
+            "description": "A board's lane, to read only its rows.",
+            "enum": [
+              "next",
+              "doing",
+              "review",
+              "done"
+            ],
+            "type": "string"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "`board_read`.",
+        "properties": {
+          "board": {
+            "default": null,
+            "description": "The board (brd_…). Without it: the project's boards.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "group": {
+            "default": null,
+            "description": "With board: only the rows in this group (its title, or zon_…).",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "label": {
+            "default": null,
+            "description": "With board: only the rows whose item has this label (#547); several,\ncomma-separated, match any. Case doesn't matter.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "lane": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/LaneArg"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "With board: only the rows in this lane."
+          },
+          "person": {
+            "default": null,
+            "description": "With board: only the rows assigned to this person, by login or\nname, as the board shows it; several, comma-separated, match any.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "project": {
+            "default": null,
+            "description": "The project's id (prj_…) or personal, to list its boards. Default:\nthe current project.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "q": {
+            "default": null,
+            "description": "With board: only the rows that match, every word of it. `#541` or\n`541` is an item's number, `ARUGU-12` a Plane key, anything else\ntext in its title or note; case doesn't matter.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "verbose": {
+            "default": false,
+            "description": "Also the JSON: ids, revs and every attachment. Default: the text and\nthe progress.",
+            "type": "boolean"
+          }
+        },
+        "title": "ReadBoardArgs",
+        "type": "object"
+      },
+      "name": "board_read",
+      "title": "Read a board"
+    },
+    {
+      "annotations": {
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true,
+        "readOnlyHint": false,
+        "title": "Write to a board"
+      },
+      "description": "Write to a project's board in Arugula control, at once: what you write lands now, labelled as your person's agent on this machine, never as them. Their boards.write grant over the project says you may, never more than their role. One row is one piece of work, addressed by its item (#N, owner/repo#N, IDENT-N or an iss_/fi_ id: a bare #N is the project's native issue when it has one, else the one linked repo's item with that number, and a repo's PR or issue is owner/repo#N; IDENT-N, such as ALL-2212, names a Plane item directly, and forge_read items with provider plane gives its fi_ id), never by a row id. The lanes (Next, Doing, Review, Done) follow the live state of the work: there are no statuses, and you can't set a lane. Lane by the row's primary item: Next (Plane triage, backlog or unstarted), Doing (a Plane started state, or a live agent block or run), Review (an open PR, or a Plane started state with 'review' in its name), Done (completed or canceled, or the PR merged or closed); canceled is Done, marked cancelled, never proven. Add issues with add (up to 50 in one call; each is a row, or is attached or already there, and the answer says which). A PR or an agent block is not a row of its own: attach it to the row of its issue (a PR that names that issue is attached for you). When you need a person's decision, ask with options (ask: who, the question, up to four options, a recommendation, why); they answer on the board and you read the answer in board_read, never by waiting. Groups are your phases or waves: add_group, rename_group, move_group, delete_group, and group puts a row in one. note sets a row's one-line note (pass the rev to refuse a stale write), drop removes a row you added, detach takes off an attachment you made. To say what blocks what, relate two items (relate {board, item, relation, to}, for example {\"kind\":\"relate\",\"board\":\"brd_…\",\"item\":\"#506\",\"relation\":\"blocks\",\"to\":\"#507\"}: the item blocks, relates to, duplicates or was discovered from another; only blocks gates the board's Ready line, and a blocked row stays in its lane and says what blocks it) and unrelate one your machine made; relate needs your person's issues.write grant over the project too. Link a Doc to a board with link_doc (a project Doc, pdc_…, or one of this machine's, from doc list): in the board's Docs strip, or with row on one row as its spike or research; a Doc moves no lane and is no proof; unlink_doc takes one off. You may also make a board (an epic, with a goal), set its title and goal, close it with a note saying what a person can now do, and open it again. The session that makes a board leads it (when it has a name); lead_board takes the lead with this session, or with release: true lets it go (only the lead's own machine or a person can). A post on a board's thread also reaches the session leading it, wherever it runs. A write answers in a few lines: what changed, the rows' cards and the board's progress; pass verbose: true for the whole board. If one item of a batch fails, the others still land and the answer says which failed and why.\n- add {board, items, group?, verbose?}: Add issues or PRs to a board as rows, up to 50 in one call: #N, owner/repo#N, IDENT-N or an iss_/fi_ id. Each is a row, or is attached to the row of the issue it names (a PR), or is there already; one that fails doesn't stop the rest. Optionally into a group.\n- attach {board, item, to, role?, take?, verbose?}: Attach work (a PR, an agent block or a run) or proof (a run or a link) to the row of an item, by the item (#N), not a row id.\n- detach {board, item, what, verbose?}: Take off an attachment you made, from the row of an item.\n- link_doc {board, doc, row?, verbose?}: Link a Doc to a board: a project Doc (pdc_…) or one kept on this machine (its id from doc list). It goes in the board's Docs strip, or with row on one row (its spike or research). A Doc never moves a lane, is no work and is no proof. One linked already is not linked again; a board lists at most 20.\n- unlink_doc {board, id, verbose?}: Take a Doc you linked off a board, from its strip or a row: its bdc_… id (board_read has them).\n- ask {board, item, question, who, options?, recommend?, verbose?, why?}: Ask a person of the project a question on the row of an item (an issue or a PR; one open ask per row), with up to four options or none for free text. They answer on the board, and the answer is the row's asked in board_read: read it there. You can't answer an ask.\n- relate {board, item, to, relation?, verbose?}: Relate two items of the board's project: item blocks, relates to, duplicates (duplicate_of) or was discovered from (discovered_from) to. A blocked row stays in its lane, says what blocks it, and is left out of board_read's Ready line until the blocker is closed. A blocks cycle is refused. Needs the issues.write grant too. Example: {\"kind\":\"relate\",\"board\":\"brd_…\",\"item\":\"#506\",\"relation\":\"blocks\",\"to\":\"#507\"} (relation defaults to blocks; kind is the op).\n- unrelate {board, item, to, relation?, verbose?}: Take off a relation your machine made (the same item, to and relation as relate). One a person made, or that comes from Plane, stays. Found through a row of the board that has item or to as its item.\n- note {board, item, text, rev?, verbose?}: Set the one-line note of the row of an item. With rev, a row that changed since is not written and the answer is its current note.\n- group {board, item, group?, verbose?}: Put the row of an item in a group (a phase, a wave), or out of its group (group: null).\n- drop {board, item, verbose?}: Remove the row of an item that you added.\n- add_group {board, title, verbose?}: Add a group to a board, last: a named section (a phase, a wave, an area) that rows go in.\n- rename_group {board, group, title, verbose?}: Rename a group.\n- move_group {board, group, before?, verbose?}: Move a group among a board's groups.\n- delete_group {board, group, verbose?}: Delete a group that is empty or holds only rows you added, with its rows.\n- create_board {title, goal?, project?, verbose?}: Make a board in a project, with a goal (an epic); returns it.\n- edit_board {board, goal?, title?, verbose?}: Set a board's title and/or goal.\n- close_board {board, done_note, verbose?}: Close a board with a note saying what a person can now do.\n- reopen_board {board, verbose?}: Open a closed board again, keeping its note.\n- lead_board {board, release?, verbose?}: Take the lead of a board with this session (it needs a name), or with release: true let it go. A post on a board's thread also reaches the session that leads it.",
+      "inputSchema": {
+        "$defs": {
+          "AttachRoleArg": {
+            "description": "What an attachment is for.",
+            "enum": [
+              "work",
+              "proof"
+            ],
+            "type": "string"
+          },
+          "RelationKindArg": {
+            "enum": [
+              "blocks",
+              "relates",
+              "duplicate_of",
+              "discovered_from"
+            ],
+            "type": "string"
+          },
+          "StringOrList": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            ],
+            "description": "A string, or a list of strings: what agents send for `to`."
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "before": {
+            "default": null,
+            "description": "move_group: Put it just before this group (default: last).",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "board": {
+            "description": "add, attach, detach, link_doc, unlink_doc, ask, note, group, drop, add_group, rename_group, move_group, delete_group, edit_board, close_board, reopen_board, lead_board: The board (brd_…). relate, unrelate: The board (brd_…): its project is the one the items are in.",
+            "type": "string"
+          },
+          "doc": {
+            "description": "link_doc: The Doc: a project Doc (pdc_…, of the board's project), or a Doc kept\non this machine (its id from doc list: 16 hex digits).",
+            "type": "string"
+          },
+          "done_note": {
+            "description": "close_board: What a person can now do, not empty.",
+            "type": "string"
+          },
+          "goal": {
+            "default": null,
+            "description": "create_board: What the board is for, in a paragraph (at most 2000 characters): a\nboard with a goal is an epic. (A board has four lanes, made by no one.) edit_board: An empty goal clears it.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "group": {
+            "default": null,
+            "description": "add: The group to put new rows in (its title, or zon_…). Default: none. group: The group to put it in (its title, or zon_…); null takes it out of\nits group. rename_group, move_group: The group (its title, or zon_…). delete_group: The group (its title, or zon_…): empty, or holding only rows you\nadded.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "description": "unlink_doc: What to take off: a Doc's id (bdc_…), on the board's strip or on a\nrow, as board_read shows it. One your machine linked.",
+            "type": "string"
+          },
+          "item": {
+            "description": "attach: The row, by its item: #N, owner/repo#N, IDENT-N, or an iss_/fi_ id. detach, note, group: The row, by its item. ask: The row, by its item (an issue or a PR; one open ask per row). A note\nrow is refused. relate, unrelate: The first item of the relation: an issue or PR of the project, as\n#N, owner/repo#N, IDENT-N, or an iss_… / fi_… id. It is not a row. drop: The row, by its item: one you added.",
+            "type": "string"
+          },
+          "items": {
+            "description": "add: Up to 50 issues or PRs: #N (a native issue, else a GitHub one),\nowner/repo#N, IDENT-N (Plane), or an iss_… / fi_… id. Each becomes a\nrow, or is attached to the row of the issue it names (a PR), or is\nthere already. One that fails doesn't stop the rest.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "kind": {
+            "description": "Which one (see the tool's description).",
+            "enum": [
+              "add",
+              "attach",
+              "detach",
+              "link_doc",
+              "unlink_doc",
+              "ask",
+              "relate",
+              "unrelate",
+              "note",
+              "group",
+              "drop",
+              "add_group",
+              "rename_group",
+              "move_group",
+              "delete_group",
+              "create_board",
+              "edit_board",
+              "close_board",
+              "reopen_board",
+              "lead_board"
+            ],
+            "type": "string"
+          },
+          "options": {
+            "default": [],
+            "description": "ask: Up to four answers, each at most 80 characters, as buttons. None: they\ntype an answer.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "project": {
+            "default": null,
+            "description": "create_board: The project's id (prj_…) or personal. Default: the current project.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "question": {
+            "description": "ask: One line, at most 200 characters.",
+            "type": "string"
+          },
+          "recommend": {
+            "default": null,
+            "description": "ask: One of the options, marked as what you would pick.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "relation": {
+            "$ref": "#/$defs/RelationKindArg",
+            "description": "relate, unrelate: blocks (the first must be closed before the second can start),\nrelates, duplicate_of or discovered_from. Only blocks gates. Not\n`kind`: that names the op. Default blocks."
+          },
+          "release": {
+            "default": false,
+            "description": "lead_board: Release the lead instead of taking it: only the machine of the\nsession that leads, or a person, can.",
+            "type": "boolean"
+          },
+          "rev": {
+            "default": null,
+            "description": "note: The row's rev (board_read verbose, or the last write's card). If the\nrow has changed since, nothing is written and the answer is its\ncurrent note. Without it, the note is written.",
+            "format": "uint64",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "role": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/AttachRoleArg"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "attach: work moves the row's lane (PRs, blocks and runs are work, the\ndefault); proof marks a Done row proven (a link is proof, the\ndefault, and so may be a run)."
+          },
+          "row": {
+            "default": null,
+            "description": "link_doc: The row it is the spike or research of, by its item (#N,\nowner/repo#N, IDENT-N, an iss_/fi_ id or a row_ id). Without it the\nDoc goes in the board's Docs strip.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "take": {
+            "default": false,
+            "description": "attach: For an agent block as work: take the row over when another machine's\nblock holds it. Without it that attach is refused, naming who holds\nthe row; with it the old block is folded under \"earlier agents\".",
+            "type": "boolean"
+          },
+          "text": {
+            "description": "note: The new note, one line, at most 280 characters.",
+            "type": "string"
+          },
+          "title": {
+            "default": null,
+            "description": "add_group: The group's title: one line, at most 120 characters. It goes last. create_board: One line, at most 120 characters.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "to": {
+            "$ref": "#/$defs/StringOrList",
+            "description": "attach: What to attach: a PR (#N, owner/repo#N or fi_…), a run (run_…), an\nhttps:// link, or an agent block (block:MACHINE/PANE, the pane as %N or N).\nA string, or a list of them. relate, unrelate: The second item, written the same way. `item` blocks, relates to,\nduplicates or was discovered from it. One item: a list of one is\ntaken as that item."
+          },
+          "verbose": {
+            "default": false,
+            "description": "create_board: The whole board in the answer. Default: a few lines.",
+            "type": "boolean"
+          },
+          "what": {
+            "description": "detach: What to take off: what it was attached as (#N, run_…, the link) or\nits att_… id. One you made.",
+            "type": "string"
+          },
+          "who": {
+            "description": "ask: The person it is for: an account of the project (the issues'\nassignees and a board's people are named in board_read).",
+            "type": "string"
+          },
+          "why": {
+            "default": null,
+            "description": "ask: Why you ask, at most 2000 characters. Folded on the card.",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "kind"
+        ],
+        "type": "object"
+      },
+      "name": "board_write",
+      "title": "Write to a board"
+    },
+    {
+      "annotations": {
         "destructiveHint": true,
         "idempotentHint": false,
         "openWorldHint": true,
@@ -4222,6 +4571,145 @@
       },
       "name": "session_stop",
       "title": "Stop an agent session"
+    },
+    {
+      "annotations": {
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true,
+        "readOnlyHint": false,
+        "title": "Write to Plane"
+      },
+      "description": "Write to the Plane project connected to a project in Arugula control: create a work item, comment on one, close it (completed or cancelled), reopen it (into the project's default state), or edit it. Your person's trackers.write grant over the project says you may, never more than their role. A write may wait: the connection decides which kinds (create, comment, edit, state change, field change) wait for a person to approve, edit or drop in the project's Triage, and the answer says which applied. A waiting write says \"waiting for a person to approve it\" with its id; nothing has reached Plane yet, and you can't approve it yourself. What is sent may end with a \"via Arugula\" line, as the connection says. Create and edit also take state, module, type and labels by name (any case) or id, and parent as IDENT-N: an unknown name is refused with the project's real ones, and forge_read tracker_fields lists them. Items are named by their fi_ id (forge_read lists them) or IDENT-N, like ARUGU-7. Assignees are not supported. Examples and what waits: https://docs.arugula.io/plane-agents/\n- create {title, body?, connection?, labels?, module?, parent?, project?, state?, tracker?, type?}: Create a work item in a connected Plane project (may wait for a person).\n- comment {item, text, project?}: Comment on a work item (may wait for a person).\n- close {as, item, project?}: Close a work item as completed or cancelled (may wait for a person).\n- reopen {item, project?}: Open a closed work item again (may wait for a person).\n- edit {item, body?, labels?, labels_remove?, module?, parent?, project?, state?, title?, type?}: Change a work item: its title, body, state, module, parent, type or labels (may wait for a person).",
+      "inputSchema": {
+        "$defs": {
+          "CloseAs": {
+            "enum": [
+              "completed",
+              "cancelled"
+            ],
+            "type": "string"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "as": {
+            "$ref": "#/$defs/CloseAs",
+            "description": "close: completed or cancelled."
+          },
+          "body": {
+            "default": null,
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "connection": {
+            "default": null,
+            "description": "create: The Plane connection to create the item in (tc_…, from capabilities'\ntrackers). Not needed when the project has one connection.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "item": {
+            "description": "comment: The work item: its fi_ id, or IDENT-N.",
+            "type": "string"
+          },
+          "kind": {
+            "description": "Which one (see the tool's description).",
+            "enum": [
+              "create",
+              "comment",
+              "close",
+              "reopen",
+              "edit"
+            ],
+            "type": "string"
+          },
+          "labels": {
+            "default": [],
+            "description": "create: Labels to give it, by name or id. edit: Labels to add, by name or id.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "labels_remove": {
+            "default": [],
+            "description": "edit: Labels to take off, by name or id.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "module": {
+            "default": null,
+            "description": "create: The module to put it in, by name or id. edit: Put it in this module, by name or id.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "parent": {
+            "default": null,
+            "description": "create: Its parent, such as an epic: IDENT-N, like ARUGU-7. edit: Its parent: IDENT-N, like ARUGU-7.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "project": {
+            "default": null,
+            "description": "create: The project's id (prj_…) or personal. Default: the current project.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "state": {
+            "default": null,
+            "description": "create: The state it starts in: its name (any case) or id, or a state group\n(backlog, unstarted, started, completed, cancelled): the first state\nof it. edit: Move it to this state: its name (any case) or id, or a state group.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "text": {
+            "type": "string"
+          },
+          "title": {
+            "default": null,
+            "description": "create: One line, at most 255 characters.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "tracker": {
+            "default": null,
+            "description": "create: Or its identifier, like ARUGU, in any case.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "type": {
+            "default": null,
+            "description": "create, edit: Its type, such as Epic, by name or id.",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "kind"
+        ],
+        "type": "object"
+      },
+      "name": "tracker_write",
+      "title": "Write to Plane"
     }
   ],
   "block, labs true": [
@@ -10556,7 +11044,7 @@
         "readOnlyHint": false,
         "title": "Show the user a block"
       },
-      "description": "Show the user something as a block beside a pane (beside; default the caller's own pane), instead of describing it. kind says what.\n- port {port, beside?, path?}: A browser block on a port of the machine a pane runs on (a dev server), beside that pane, so the user sees it next to its terminal.\n- changes {beside?, repo?, rev_a?, rev_b?}: A diff block: what changed in a pane's git repository (the working tree against HEAD, or against rev_a, or rev_a..rev_b), as a file list with +/- the user can open to hunks and files, live while they look. Returns the files; read_output on the block gives the unified diff.\n- file {path, beside?, line?}: A file block: a file on a pane's machine, read-only, scrolled to a line and followed live, for the user to look at.\n- pr {pr, beside?, dir?, hold?}: A pull request on the user's Forgejo or GitHub, or a GitLab merge request: its checks, reviews and timeline, read with the user's own tea, gh (or glab) login, and what it waits on them for (a review asked of them, red checks, changes requested) as attention on the phone and the swarm. Returns the PR as text; draft writes to it.\n- issue {issue, beside?, dir?, project?}: An issue on the user's Forgejo or GitHub: its labels, assignees, the pull requests that refer to it and its timeline, read with the user's own tea or gh login; one assigned to them or mentioning them is attention on the phone and the swarm. From the block the user can start an agent on it in a worktree of its own. Returns the issue as text.\n- conversation {id, beside?, then?}: A Claude Code conversation (list kind conversations) as an agent block, stopped, with its transcript; then: continue (refused while it's open somewhere else) or fork (a new session with its history; the original is left alone). send_input to the block goes on.\n- chat {beside?, pinned?, room?}: Team chat as a block beside a pane: the user's channels, direct messages, threads and Activity, with everything the chat page has. Pinned to a room (room, pinned) it is that room alone. It reads as the user, through Arugula control, so it shows nothing on a machine that has not joined it. Read and post in rooms with read_thread and post_thread.",
+      "description": "Show the user something as a block beside a pane (beside; default the caller's own pane), instead of describing it. kind says what.\n- port {port, beside?, path?}: A browser block on a port of the machine a pane runs on (a dev server), beside that pane, so the user sees it next to its terminal.\n- changes {beside?, repo?, rev_a?, rev_b?}: A diff block: what changed in a pane's git repository (the working tree against HEAD, or against rev_a, or rev_a..rev_b), as a file list with +/- the user can open to hunks and files, live while they look. Returns the files; read_output on the block gives the unified diff.\n- file {path, beside?, line?}: A file block: a file on a pane's machine, read-only, scrolled to a line and followed live, for the user to look at.\n- pr {pr, beside?, dir?, hold?}: A pull request on the user's Forgejo or GitHub, or a GitLab merge request: its checks, reviews and timeline, read with the user's own tea, gh (or glab) login, and what it waits on them for (a review asked of them, red checks, changes requested) as attention on the phone and the swarm. Returns the PR as text; draft writes to it.\n- issue {issue, beside?, dir?, project?}: An issue on the user's Forgejo or GitHub: its labels, assignees, the pull requests that refer to it and its timeline, read with the user's own tea or gh login; one assigned to them or mentioning them is attention on the phone and the swarm. From the block the user can start an agent on it in a worktree of its own. Returns the issue as text.\n- conversation {id, beside?, then?}: A Claude Code conversation (list kind conversations) as an agent block, stopped, with its transcript; then: continue (refused while it's open somewhere else) or fork (a new session with its history; the original is left alone). send_input to the block goes on.\n- chat {beside?, pinned?, room?}: Team chat as a block beside a pane: the user's channels, direct messages, threads and Activity, with everything the chat page has. Pinned to a room (room, pinned) it is that room alone. It reads as the user, through Arugula control, so it shows nothing on a machine that has not joined it. Read and post in rooms with read_thread and post_thread.\n- board {board, beside?}: A project's board as a block beside a pane: its zones and rows (issues, PRs, runs, agent blocks), live, read and changed as the user through Arugula control, so it shows nothing on a machine that has not joined it. Read and write it with board_read and board_write.",
       "inputSchema": {
         "$defs": {
           "ConversationThen": {
@@ -10591,7 +11079,11 @@
                 "type": "null"
               }
             ],
-            "description": "port, file, pr, issue, conversation, chat: Beside this pane. Default: the caller's own pane (an agent block, or the terminal pane `arugula mcp` runs in). changes: The pane whose repository it is (its directory, on its machine). Default: the caller's own pane (an agent block, or the terminal pane `arugula mcp` runs in)."
+            "description": "port, file, pr, issue, conversation, chat, board: Beside this pane. Default: the caller's own pane (an agent block, or the terminal pane `arugula mcp` runs in). changes: The pane whose repository it is (its directory, on its machine). Default: the caller's own pane (an agent block, or the terminal pane `arugula mcp` runs in)."
+          },
+          "board": {
+            "description": "board: The board: its id (brd_..., board_read lists a project's boards).",
+            "type": "string"
           },
           "cloud_workspace": {
             "description": "A cloud workspace (its hw_… id or its name, from list kind cloud_workspaces): do this on its machine instead of here, through Arugula control. Its panes and blocks are that machine's: pass cloud_workspace again to reach them.",
@@ -10630,7 +11122,8 @@
               "pr",
               "issue",
               "conversation",
-              "chat"
+              "chat",
+              "board"
             ],
             "type": "string"
           },
@@ -11714,7 +12207,7 @@
         "readOnlyHint": true,
         "title": "Read a linked repo's PRs and issues"
       },
-      "description": "Read PRs and issues on GitHub repos linked to the user's projects in Arugula control (list kind linked_repos lists them), with no block open: a PR, an issue, a list of them, a PR's checks, or drafts waiting for a person. As the user (the owner of this machine), and only what GitHub lets them read. For a repo that isn't linked, show (kind pr or issue) opens a block instead. Also Arugula's own (native) issues: kind issue with item \"#N\" (in the current project) or \"iss_…\", and kind native_issues (with this machine's threads.read grant).\n- pr {item}: A pull request: its state, title, author, labels, reviewers, branches, what happened to it (reviews, pushes) and its waiting drafts. Metadata only, no body or comments.\n- issue {item, project?}: An issue: its state, title, author, labels, assignees, what happened to it and its waiting drafts. A native issue (\"#N\" or \"iss_…\"): it, its timeline and its newest comments. A Plane item (\"IDENT-N\", such as ALL-2212): its title, state, type, labels, modules and url; its body and comments aren't mirrored.\n- items {author?, item_kind?, limit?, project?, provider?, q?, repo?, review_requested?, state?, tracker?}: The PRs and issues of one linked repo, or of a project's linked repos and its connected Plane projects' work items (provider plane, with identifier ALL and number so ALL-2212), last updated first; provider, tracker, item_kind, state, author, review_requested and q narrow it (q as IDENT-N finds that Plane item first). Repos the user can't read on GitHub are named as withheld.\n- checks {item}: A pull request's checks on its head commit: each one's status and conclusion.\n- inbox {done?, limit?}: The user's inbox: PRs and issues on their linked repos that want something of them (a review requested, their checks failed, changes requested, a mention, assigned, merged or ready, a draft waiting), newest first, each with whether they've seen it.\n- drafts {item?, project?, state?}: Drafts waiting for a person to send: on a PR or issue, a repo or a project, or the user's own.\n- draft {draft}: One draft: what it says and what became of it (waiting, sent with its link, discarded or failed).\n- native_issues {assignee?, author?, before?, labels?, limit?, project?, q?, state?}: Arugula's own (native) issues of a project in Arugula control (the current one unless project names it), newest first; state, labels, assignee, author and q (search words) narrow it. issue_write writes to them at once.",
+      "description": "Read PRs and issues on GitHub repos linked to the user's projects in Arugula control (list kind linked_repos lists them), with no block open: a PR, an issue, a list of them, a PR's checks, or drafts waiting for a person. As the user (the owner of this machine), and only what GitHub lets them read. For a repo that isn't linked, show (kind pr or issue) opens a block instead. Also Arugula's own (native) issues: kind issue with item \"#N\" (in the current project) or \"iss_…\", and kind native_issues (with this machine's threads.read grant).\n- pr {item}: A pull request: its state, title, author, labels, reviewers, branches, what happened to it (reviews, pushes) and its waiting drafts. Metadata only, no body or comments.\n- issue {item, project?}: An issue: its state, title, author, labels, assignees, what happened to it and its waiting drafts. A native issue (\"#N\" or \"iss_…\"): it, its timeline and its newest comments. A Plane item (\"IDENT-N\", such as ALL-2212): its title, state, type, labels, modules and url; its body and comments aren't mirrored.\n- items {author?, item_kind?, limit?, project?, provider?, q?, repo?, review_requested?, state?, tracker?}: The PRs and issues of one linked repo, or of a project's linked repos and its connected Plane projects' work items (provider plane, with identifier ALL and number so ALL-2212), last updated first; provider, tracker, item_kind, state, author, review_requested and q narrow it (q as IDENT-N finds that Plane item first). Repos the user can't read on GitHub are named as withheld.\n- tracker_fields {connection?, project?, tracker?}: What a connected Plane project offers a work item, for tracker_write: its states (name, group, which one a new item starts in), modules, types and labels. Name them in create and edit.\n- checks {item}: A pull request's checks on its head commit: each one's status and conclusion.\n- inbox {done?, limit?}: The user's inbox: PRs and issues on their linked repos that want something of them (a review requested, their checks failed, changes requested, a mention, assigned, merged or ready, a draft waiting), newest first, each with whether they've seen it.\n- drafts {item?, project?, state?}: Drafts waiting for a person to send: on a PR or issue, a repo or a project, or the user's own.\n- draft {draft}: One draft: what it says and what became of it (waiting, sent with its link, discarded or failed).\n- native_issues {assignee?, author?, before?, labels?, limit?, project?, q?, state?}: Arugula's own (native) issues of a project in Arugula control (the current one unless project names it), newest first; state, labels, assignee, author and q (search words) narrow it. issue_write writes to them at once.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
@@ -11741,6 +12234,14 @@
             "minimum": 0,
             "type": [
               "integer",
+              "null"
+            ]
+          },
+          "connection": {
+            "default": null,
+            "description": "tracker_fields: Or its id (tc_…, from capabilities' trackers).",
+            "type": [
+              "string",
               "null"
             ]
           },
@@ -11775,6 +12276,7 @@
               "pr",
               "issue",
               "items",
+              "tracker_fields",
               "checks",
               "inbox",
               "drafts",
@@ -11803,7 +12305,7 @@
           },
           "project": {
             "default": null,
-            "description": "issue: A native issue's project for \"#N\", or a Plane item's for IDENT-N: its\nid (prj_…) or personal.\nDefault: the one this clone's GitHub repo is linked to, else the\nuser's personal project. items: The project's id (prj_…). Default: the repo's project, else the\nuser's personal one. drafts: The project's id (prj_…): all of its drafts. native_issues: The project's id (prj_…) or personal. Default: the current project.",
+            "description": "issue: A native issue's project for \"#N\", or a Plane item's for IDENT-N: its\nid (prj_…) or personal.\nDefault: the one this clone's GitHub repo is linked to, else the\nuser's personal project. items, tracker_fields: The project's id (prj_…). Default: the repo's project, else the\nuser's personal one. drafts: The project's id (prj_…): all of its drafts. native_issues: The project's id (prj_…) or personal. Default: the current project.",
             "type": [
               "string",
               "null"
@@ -11851,7 +12353,7 @@
           },
           "tracker": {
             "default": null,
-            "description": "items: A Plane connection's key, such as ALL: only its items.",
+            "description": "items: A Plane connection's key, such as ALL: only its items. tracker_fields: A Plane connection's key, such as ARUGU. Not needed when the project\nhas one connection.",
             "type": [
               "string",
               "null"
@@ -12937,6 +13439,341 @@
     },
     {
       "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": true,
+        "title": "Read a board"
+      },
+      "description": "Read a project's board in Arugula control (an epic when it has a goal; with this machine's boards.read grant over its project). One row is one piece of work: an issue (or a PR with no issue), or a note, with a one-line note and what is attached to it (work: PRs, agent blocks, runs; proof: runs, links). The lanes follow the work and nobody sets them. Lane by the row's primary item: Next (Plane triage, backlog or unstarted; a note), Doing (a Plane started state; or an agent block that isn't closed, or a run running), Review (a PR is open; or a Plane started state with 'review' in its name), Done (the issue is completed or canceled, or the PR merged or closed). A canceled item (a Plane project's cancelled state, or a native issue closed as not planned or a duplicate) is Done, marked cancelled and never proven; any other Done row is proven by CI or by evidence, or not proven yet. Groups are the plan's phases or waves. Returns the board as 72-column text, each row by its item (#N, IDENT-N), its Docs (the research and prototypes linked to it, with the ids unlink_doc takes), and its progress; with verbose: true, also the JSON with ids and revs. With board (brd_…): that board, or only its matching rows with q (an item's number #541, a Plane key ARUGU-12, or words in the title or note), lane (next, doing, review or done) and group (its title or zon_…), under a line that says how many of the rows are shown. Without: the project's boards (project, else the one this clone's GitHub repo is linked to, else your person's personal project), to pick one from.",
+      "inputSchema": {
+        "$defs": {
+          "LaneArg": {
+            "description": "A board's lane, to read only its rows.",
+            "enum": [
+              "next",
+              "doing",
+              "review",
+              "done"
+            ],
+            "type": "string"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "`board_read`.",
+        "properties": {
+          "board": {
+            "default": null,
+            "description": "The board (brd_…). Without it: the project's boards.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "group": {
+            "default": null,
+            "description": "With board: only the rows in this group (its title, or zon_…).",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "label": {
+            "default": null,
+            "description": "With board: only the rows whose item has this label (#547); several,\ncomma-separated, match any. Case doesn't matter.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "lane": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/LaneArg"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "With board: only the rows in this lane."
+          },
+          "person": {
+            "default": null,
+            "description": "With board: only the rows assigned to this person, by login or\nname, as the board shows it; several, comma-separated, match any.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "project": {
+            "default": null,
+            "description": "The project's id (prj_…) or personal, to list its boards. Default:\nthe current project.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "q": {
+            "default": null,
+            "description": "With board: only the rows that match, every word of it. `#541` or\n`541` is an item's number, `ARUGU-12` a Plane key, anything else\ntext in its title or note; case doesn't matter.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "verbose": {
+            "default": false,
+            "description": "Also the JSON: ids, revs and every attachment. Default: the text and\nthe progress.",
+            "type": "boolean"
+          }
+        },
+        "title": "ReadBoardArgs",
+        "type": "object"
+      },
+      "name": "board_read",
+      "title": "Read a board"
+    },
+    {
+      "annotations": {
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true,
+        "readOnlyHint": false,
+        "title": "Write to a board"
+      },
+      "description": "Write to a project's board in Arugula control, at once: what you write lands now, labelled as your person's agent on this machine, never as them. Their boards.write grant over the project says you may, never more than their role. One row is one piece of work, addressed by its item (#N, owner/repo#N, IDENT-N or an iss_/fi_ id: a bare #N is the project's native issue when it has one, else the one linked repo's item with that number, and a repo's PR or issue is owner/repo#N; IDENT-N, such as ALL-2212, names a Plane item directly, and forge_read items with provider plane gives its fi_ id), never by a row id. The lanes (Next, Doing, Review, Done) follow the live state of the work: there are no statuses, and you can't set a lane. Lane by the row's primary item: Next (Plane triage, backlog or unstarted), Doing (a Plane started state, or a live agent block or run), Review (an open PR, or a Plane started state with 'review' in its name), Done (completed or canceled, or the PR merged or closed); canceled is Done, marked cancelled, never proven. Add issues with add (up to 50 in one call; each is a row, or is attached or already there, and the answer says which). A PR or an agent block is not a row of its own: attach it to the row of its issue (a PR that names that issue is attached for you). When you need a person's decision, ask with options (ask: who, the question, up to four options, a recommendation, why); they answer on the board and you read the answer in board_read, never by waiting. Groups are your phases or waves: add_group, rename_group, move_group, delete_group, and group puts a row in one. note sets a row's one-line note (pass the rev to refuse a stale write), drop removes a row you added, detach takes off an attachment you made. To say what blocks what, relate two items (relate {board, item, relation, to}, for example {\"kind\":\"relate\",\"board\":\"brd_…\",\"item\":\"#506\",\"relation\":\"blocks\",\"to\":\"#507\"}: the item blocks, relates to, duplicates or was discovered from another; only blocks gates the board's Ready line, and a blocked row stays in its lane and says what blocks it) and unrelate one your machine made; relate needs your person's issues.write grant over the project too. Link a Doc to a board with link_doc (a project Doc, pdc_…, or one of this machine's, from doc list): in the board's Docs strip, or with row on one row as its spike or research; a Doc moves no lane and is no proof; unlink_doc takes one off. You may also make a board (an epic, with a goal), set its title and goal, close it with a note saying what a person can now do, and open it again. The session that makes a board leads it (when it has a name); lead_board takes the lead with this session, or with release: true lets it go (only the lead's own machine or a person can). A post on a board's thread also reaches the session leading it, wherever it runs. A write answers in a few lines: what changed, the rows' cards and the board's progress; pass verbose: true for the whole board. If one item of a batch fails, the others still land and the answer says which failed and why.\n- add {board, items, group?, verbose?}: Add issues or PRs to a board as rows, up to 50 in one call: #N, owner/repo#N, IDENT-N or an iss_/fi_ id. Each is a row, or is attached to the row of the issue it names (a PR), or is there already; one that fails doesn't stop the rest. Optionally into a group.\n- attach {board, item, to, role?, take?, verbose?}: Attach work (a PR, an agent block or a run) or proof (a run or a link) to the row of an item, by the item (#N), not a row id.\n- detach {board, item, what, verbose?}: Take off an attachment you made, from the row of an item.\n- link_doc {board, doc, row?, verbose?}: Link a Doc to a board: a project Doc (pdc_…) or one kept on this machine (its id from doc list). It goes in the board's Docs strip, or with row on one row (its spike or research). A Doc never moves a lane, is no work and is no proof. One linked already is not linked again; a board lists at most 20.\n- unlink_doc {board, id, verbose?}: Take a Doc you linked off a board, from its strip or a row: its bdc_… id (board_read has them).\n- ask {board, item, question, who, options?, recommend?, verbose?, why?}: Ask a person of the project a question on the row of an item (an issue or a PR; one open ask per row), with up to four options or none for free text. They answer on the board, and the answer is the row's asked in board_read: read it there. You can't answer an ask.\n- relate {board, item, to, relation?, verbose?}: Relate two items of the board's project: item blocks, relates to, duplicates (duplicate_of) or was discovered from (discovered_from) to. A blocked row stays in its lane, says what blocks it, and is left out of board_read's Ready line until the blocker is closed. A blocks cycle is refused. Needs the issues.write grant too. Example: {\"kind\":\"relate\",\"board\":\"brd_…\",\"item\":\"#506\",\"relation\":\"blocks\",\"to\":\"#507\"} (relation defaults to blocks; kind is the op).\n- unrelate {board, item, to, relation?, verbose?}: Take off a relation your machine made (the same item, to and relation as relate). One a person made, or that comes from Plane, stays. Found through a row of the board that has item or to as its item.\n- note {board, item, text, rev?, verbose?}: Set the one-line note of the row of an item. With rev, a row that changed since is not written and the answer is its current note.\n- group {board, item, group?, verbose?}: Put the row of an item in a group (a phase, a wave), or out of its group (group: null).\n- drop {board, item, verbose?}: Remove the row of an item that you added.\n- add_group {board, title, verbose?}: Add a group to a board, last: a named section (a phase, a wave, an area) that rows go in.\n- rename_group {board, group, title, verbose?}: Rename a group.\n- move_group {board, group, before?, verbose?}: Move a group among a board's groups.\n- delete_group {board, group, verbose?}: Delete a group that is empty or holds only rows you added, with its rows.\n- create_board {title, goal?, project?, verbose?}: Make a board in a project, with a goal (an epic); returns it.\n- edit_board {board, goal?, title?, verbose?}: Set a board's title and/or goal.\n- close_board {board, done_note, verbose?}: Close a board with a note saying what a person can now do.\n- reopen_board {board, verbose?}: Open a closed board again, keeping its note.\n- lead_board {board, release?, verbose?}: Take the lead of a board with this session (it needs a name), or with release: true let it go. A post on a board's thread also reaches the session that leads it.",
+      "inputSchema": {
+        "$defs": {
+          "AttachRoleArg": {
+            "description": "What an attachment is for.",
+            "enum": [
+              "work",
+              "proof"
+            ],
+            "type": "string"
+          },
+          "RelationKindArg": {
+            "enum": [
+              "blocks",
+              "relates",
+              "duplicate_of",
+              "discovered_from"
+            ],
+            "type": "string"
+          },
+          "StringOrList": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            ],
+            "description": "A string, or a list of strings: what agents send for `to`."
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "before": {
+            "default": null,
+            "description": "move_group: Put it just before this group (default: last).",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "board": {
+            "description": "add, attach, detach, link_doc, unlink_doc, ask, note, group, drop, add_group, rename_group, move_group, delete_group, edit_board, close_board, reopen_board, lead_board: The board (brd_…). relate, unrelate: The board (brd_…): its project is the one the items are in.",
+            "type": "string"
+          },
+          "doc": {
+            "description": "link_doc: The Doc: a project Doc (pdc_…, of the board's project), or a Doc kept\non this machine (its id from doc list: 16 hex digits).",
+            "type": "string"
+          },
+          "done_note": {
+            "description": "close_board: What a person can now do, not empty.",
+            "type": "string"
+          },
+          "goal": {
+            "default": null,
+            "description": "create_board: What the board is for, in a paragraph (at most 2000 characters): a\nboard with a goal is an epic. (A board has four lanes, made by no one.) edit_board: An empty goal clears it.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "group": {
+            "default": null,
+            "description": "add: The group to put new rows in (its title, or zon_…). Default: none. group: The group to put it in (its title, or zon_…); null takes it out of\nits group. rename_group, move_group: The group (its title, or zon_…). delete_group: The group (its title, or zon_…): empty, or holding only rows you\nadded.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "description": "unlink_doc: What to take off: a Doc's id (bdc_…), on the board's strip or on a\nrow, as board_read shows it. One your machine linked.",
+            "type": "string"
+          },
+          "item": {
+            "description": "attach: The row, by its item: #N, owner/repo#N, IDENT-N, or an iss_/fi_ id. detach, note, group: The row, by its item. ask: The row, by its item (an issue or a PR; one open ask per row). A note\nrow is refused. relate, unrelate: The first item of the relation: an issue or PR of the project, as\n#N, owner/repo#N, IDENT-N, or an iss_… / fi_… id. It is not a row. drop: The row, by its item: one you added.",
+            "type": "string"
+          },
+          "items": {
+            "description": "add: Up to 50 issues or PRs: #N (a native issue, else a GitHub one),\nowner/repo#N, IDENT-N (Plane), or an iss_… / fi_… id. Each becomes a\nrow, or is attached to the row of the issue it names (a PR), or is\nthere already. One that fails doesn't stop the rest.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "kind": {
+            "description": "Which one (see the tool's description).",
+            "enum": [
+              "add",
+              "attach",
+              "detach",
+              "link_doc",
+              "unlink_doc",
+              "ask",
+              "relate",
+              "unrelate",
+              "note",
+              "group",
+              "drop",
+              "add_group",
+              "rename_group",
+              "move_group",
+              "delete_group",
+              "create_board",
+              "edit_board",
+              "close_board",
+              "reopen_board",
+              "lead_board"
+            ],
+            "type": "string"
+          },
+          "options": {
+            "default": [],
+            "description": "ask: Up to four answers, each at most 80 characters, as buttons. None: they\ntype an answer.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "project": {
+            "default": null,
+            "description": "create_board: The project's id (prj_…) or personal. Default: the current project.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "question": {
+            "description": "ask: One line, at most 200 characters.",
+            "type": "string"
+          },
+          "recommend": {
+            "default": null,
+            "description": "ask: One of the options, marked as what you would pick.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "relation": {
+            "$ref": "#/$defs/RelationKindArg",
+            "description": "relate, unrelate: blocks (the first must be closed before the second can start),\nrelates, duplicate_of or discovered_from. Only blocks gates. Not\n`kind`: that names the op. Default blocks."
+          },
+          "release": {
+            "default": false,
+            "description": "lead_board: Release the lead instead of taking it: only the machine of the\nsession that leads, or a person, can.",
+            "type": "boolean"
+          },
+          "rev": {
+            "default": null,
+            "description": "note: The row's rev (board_read verbose, or the last write's card). If the\nrow has changed since, nothing is written and the answer is its\ncurrent note. Without it, the note is written.",
+            "format": "uint64",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "role": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/AttachRoleArg"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "attach: work moves the row's lane (PRs, blocks and runs are work, the\ndefault); proof marks a Done row proven (a link is proof, the\ndefault, and so may be a run)."
+          },
+          "row": {
+            "default": null,
+            "description": "link_doc: The row it is the spike or research of, by its item (#N,\nowner/repo#N, IDENT-N, an iss_/fi_ id or a row_ id). Without it the\nDoc goes in the board's Docs strip.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "take": {
+            "default": false,
+            "description": "attach: For an agent block as work: take the row over when another machine's\nblock holds it. Without it that attach is refused, naming who holds\nthe row; with it the old block is folded under \"earlier agents\".",
+            "type": "boolean"
+          },
+          "text": {
+            "description": "note: The new note, one line, at most 280 characters.",
+            "type": "string"
+          },
+          "title": {
+            "default": null,
+            "description": "add_group: The group's title: one line, at most 120 characters. It goes last. create_board: One line, at most 120 characters.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "to": {
+            "$ref": "#/$defs/StringOrList",
+            "description": "attach: What to attach: a PR (#N, owner/repo#N or fi_…), a run (run_…), an\nhttps:// link, or an agent block (block:MACHINE/PANE, the pane as %N or N).\nA string, or a list of them. relate, unrelate: The second item, written the same way. `item` blocks, relates to,\nduplicates or was discovered from it. One item: a list of one is\ntaken as that item."
+          },
+          "verbose": {
+            "default": false,
+            "description": "create_board: The whole board in the answer. Default: a few lines.",
+            "type": "boolean"
+          },
+          "what": {
+            "description": "detach: What to take off: what it was attached as (#N, run_…, the link) or\nits att_… id. One you made.",
+            "type": "string"
+          },
+          "who": {
+            "description": "ask: The person it is for: an account of the project (the issues'\nassignees and a board's people are named in board_read).",
+            "type": "string"
+          },
+          "why": {
+            "default": null,
+            "description": "ask: Why you ask, at most 2000 characters. Folded on the card.",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "kind"
+        ],
+        "type": "object"
+      },
+      "name": "board_write",
+      "title": "Write to a board"
+    },
+    {
+      "annotations": {
         "destructiveHint": true,
         "idempotentHint": false,
         "openWorldHint": true,
@@ -13323,6 +14160,145 @@
       },
       "name": "session_stop",
       "title": "Stop an agent session"
+    },
+    {
+      "annotations": {
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true,
+        "readOnlyHint": false,
+        "title": "Write to Plane"
+      },
+      "description": "Write to the Plane project connected to a project in Arugula control: create a work item, comment on one, close it (completed or cancelled), reopen it (into the project's default state), or edit it. Your person's trackers.write grant over the project says you may, never more than their role. A write may wait: the connection decides which kinds (create, comment, edit, state change, field change) wait for a person to approve, edit or drop in the project's Triage, and the answer says which applied. A waiting write says \"waiting for a person to approve it\" with its id; nothing has reached Plane yet, and you can't approve it yourself. What is sent may end with a \"via Arugula\" line, as the connection says. Create and edit also take state, module, type and labels by name (any case) or id, and parent as IDENT-N: an unknown name is refused with the project's real ones, and forge_read tracker_fields lists them. Items are named by their fi_ id (forge_read lists them) or IDENT-N, like ARUGU-7. Assignees are not supported. Examples and what waits: https://docs.arugula.io/plane-agents/\n- create {title, body?, connection?, labels?, module?, parent?, project?, state?, tracker?, type?}: Create a work item in a connected Plane project (may wait for a person).\n- comment {item, text, project?}: Comment on a work item (may wait for a person).\n- close {as, item, project?}: Close a work item as completed or cancelled (may wait for a person).\n- reopen {item, project?}: Open a closed work item again (may wait for a person).\n- edit {item, body?, labels?, labels_remove?, module?, parent?, project?, state?, title?, type?}: Change a work item: its title, body, state, module, parent, type or labels (may wait for a person).",
+      "inputSchema": {
+        "$defs": {
+          "CloseAs": {
+            "enum": [
+              "completed",
+              "cancelled"
+            ],
+            "type": "string"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "as": {
+            "$ref": "#/$defs/CloseAs",
+            "description": "close: completed or cancelled."
+          },
+          "body": {
+            "default": null,
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "connection": {
+            "default": null,
+            "description": "create: The Plane connection to create the item in (tc_…, from capabilities'\ntrackers). Not needed when the project has one connection.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "item": {
+            "description": "comment: The work item: its fi_ id, or IDENT-N.",
+            "type": "string"
+          },
+          "kind": {
+            "description": "Which one (see the tool's description).",
+            "enum": [
+              "create",
+              "comment",
+              "close",
+              "reopen",
+              "edit"
+            ],
+            "type": "string"
+          },
+          "labels": {
+            "default": [],
+            "description": "create: Labels to give it, by name or id. edit: Labels to add, by name or id.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "labels_remove": {
+            "default": [],
+            "description": "edit: Labels to take off, by name or id.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "module": {
+            "default": null,
+            "description": "create: The module to put it in, by name or id. edit: Put it in this module, by name or id.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "parent": {
+            "default": null,
+            "description": "create: Its parent, such as an epic: IDENT-N, like ARUGU-7. edit: Its parent: IDENT-N, like ARUGU-7.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "project": {
+            "default": null,
+            "description": "create: The project's id (prj_…) or personal. Default: the current project.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "state": {
+            "default": null,
+            "description": "create: The state it starts in: its name (any case) or id, or a state group\n(backlog, unstarted, started, completed, cancelled): the first state\nof it. edit: Move it to this state: its name (any case) or id, or a state group.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "text": {
+            "type": "string"
+          },
+          "title": {
+            "default": null,
+            "description": "create: One line, at most 255 characters.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "tracker": {
+            "default": null,
+            "description": "create: Or its identifier, like ARUGU, in any case.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "type": {
+            "default": null,
+            "description": "create, edit: Its type, such as Epic, by name or id.",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "kind"
+        ],
+        "type": "object"
+      },
+      "name": "tracker_write",
+      "title": "Write to Plane"
     }
   ],
   "full, labs true": [
@@ -19412,7 +20388,7 @@
         "readOnlyHint": true,
         "title": "Read a linked repo's PRs and issues"
       },
-      "description": "Read PRs and issues on GitHub repos linked to the user's projects in Arugula control (list kind linked_repos lists them), with no block open: a PR, an issue, a list of them, a PR's checks, or drafts waiting for a person. As the user (the owner of this machine), and only what GitHub lets them read. For a repo that isn't linked, show (kind pr or issue) opens a block instead. Also Arugula's own (native) issues: kind issue with item \"#N\" (in the current project) or \"iss_…\", and kind native_issues (with this machine's threads.read grant).\n- pr {item}: A pull request: its state, title, author, labels, reviewers, branches, what happened to it (reviews, pushes) and its waiting drafts. Metadata only, no body or comments.\n- issue {item, project?}: An issue: its state, title, author, labels, assignees, what happened to it and its waiting drafts. A native issue (\"#N\" or \"iss_…\"): it, its timeline and its newest comments. A Plane item (\"IDENT-N\", such as ALL-2212): its title, state, type, labels, modules and url; its body and comments aren't mirrored.\n- items {author?, item_kind?, limit?, project?, provider?, q?, repo?, review_requested?, state?, tracker?}: The PRs and issues of one linked repo, or of a project's linked repos and its connected Plane projects' work items (provider plane, with identifier ALL and number so ALL-2212), last updated first; provider, tracker, item_kind, state, author, review_requested and q narrow it (q as IDENT-N finds that Plane item first). Repos the user can't read on GitHub are named as withheld.\n- checks {item}: A pull request's checks on its head commit: each one's status and conclusion.\n- inbox {done?, limit?}: The user's inbox: PRs and issues on their linked repos that want something of them (a review requested, their checks failed, changes requested, a mention, assigned, merged or ready, a draft waiting), newest first, each with whether they've seen it.\n- drafts {item?, project?, state?}: Drafts waiting for a person to send: on a PR or issue, a repo or a project, or the user's own.\n- draft {draft}: One draft: what it says and what became of it (waiting, sent with its link, discarded or failed).\n- native_issues {assignee?, author?, before?, labels?, limit?, project?, q?, state?}: Arugula's own (native) issues of a project in Arugula control (the current one unless project names it), newest first; state, labels, assignee, author and q (search words) narrow it. issue_write writes to them at once.",
+      "description": "Read PRs and issues on GitHub repos linked to the user's projects in Arugula control (list kind linked_repos lists them), with no block open: a PR, an issue, a list of them, a PR's checks, or drafts waiting for a person. As the user (the owner of this machine), and only what GitHub lets them read. For a repo that isn't linked, show (kind pr or issue) opens a block instead. Also Arugula's own (native) issues: kind issue with item \"#N\" (in the current project) or \"iss_…\", and kind native_issues (with this machine's threads.read grant).\n- pr {item}: A pull request: its state, title, author, labels, reviewers, branches, what happened to it (reviews, pushes) and its waiting drafts. Metadata only, no body or comments.\n- issue {item, project?}: An issue: its state, title, author, labels, assignees, what happened to it and its waiting drafts. A native issue (\"#N\" or \"iss_…\"): it, its timeline and its newest comments. A Plane item (\"IDENT-N\", such as ALL-2212): its title, state, type, labels, modules and url; its body and comments aren't mirrored.\n- items {author?, item_kind?, limit?, project?, provider?, q?, repo?, review_requested?, state?, tracker?}: The PRs and issues of one linked repo, or of a project's linked repos and its connected Plane projects' work items (provider plane, with identifier ALL and number so ALL-2212), last updated first; provider, tracker, item_kind, state, author, review_requested and q narrow it (q as IDENT-N finds that Plane item first). Repos the user can't read on GitHub are named as withheld.\n- tracker_fields {connection?, project?, tracker?}: What a connected Plane project offers a work item, for tracker_write: its states (name, group, which one a new item starts in), modules, types and labels. Name them in create and edit.\n- checks {item}: A pull request's checks on its head commit: each one's status and conclusion.\n- inbox {done?, limit?}: The user's inbox: PRs and issues on their linked repos that want something of them (a review requested, their checks failed, changes requested, a mention, assigned, merged or ready, a draft waiting), newest first, each with whether they've seen it.\n- drafts {item?, project?, state?}: Drafts waiting for a person to send: on a PR or issue, a repo or a project, or the user's own.\n- draft {draft}: One draft: what it says and what became of it (waiting, sent with its link, discarded or failed).\n- native_issues {assignee?, author?, before?, labels?, limit?, project?, q?, state?}: Arugula's own (native) issues of a project in Arugula control (the current one unless project names it), newest first; state, labels, assignee, author and q (search words) narrow it. issue_write writes to them at once.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
@@ -19439,6 +20415,14 @@
             "minimum": 0,
             "type": [
               "integer",
+              "null"
+            ]
+          },
+          "connection": {
+            "default": null,
+            "description": "tracker_fields: Or its id (tc_…, from capabilities' trackers).",
+            "type": [
+              "string",
               "null"
             ]
           },
@@ -19473,6 +20457,7 @@
               "pr",
               "issue",
               "items",
+              "tracker_fields",
               "checks",
               "inbox",
               "drafts",
@@ -19501,7 +20486,7 @@
           },
           "project": {
             "default": null,
-            "description": "issue: A native issue's project for \"#N\", or a Plane item's for IDENT-N: its\nid (prj_…) or personal.\nDefault: the one this clone's GitHub repo is linked to, else the\nuser's personal project. items: The project's id (prj_…). Default: the repo's project, else the\nuser's personal one. drafts: The project's id (prj_…): all of its drafts. native_issues: The project's id (prj_…) or personal. Default: the current project.",
+            "description": "issue: A native issue's project for \"#N\", or a Plane item's for IDENT-N: its\nid (prj_…) or personal.\nDefault: the one this clone's GitHub repo is linked to, else the\nuser's personal project. items, tracker_fields: The project's id (prj_…). Default: the repo's project, else the\nuser's personal one. drafts: The project's id (prj_…): all of its drafts. native_issues: The project's id (prj_…) or personal. Default: the current project.",
             "type": [
               "string",
               "null"
@@ -19549,7 +20534,7 @@
           },
           "tracker": {
             "default": null,
-            "description": "items: A Plane connection's key, such as ALL: only its items.",
+            "description": "items: A Plane connection's key, such as ALL: only its items. tracker_fields: A Plane connection's key, such as ARUGU. Not needed when the project\nhas one connection.",
             "type": [
               "string",
               "null"
@@ -19922,6 +20907,102 @@
       },
       "name": "search_threads",
       "title": "Search conversations"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": true,
+        "title": "Read a board"
+      },
+      "description": "Read a project's board in Arugula control (an epic when it has a goal; with this machine's boards.read grant over its project). One row is one piece of work: an issue (or a PR with no issue), or a note, with a one-line note and what is attached to it (work: PRs, agent blocks, runs; proof: runs, links). The lanes follow the work and nobody sets them. Lane by the row's primary item: Next (Plane triage, backlog or unstarted; a note), Doing (a Plane started state; or an agent block that isn't closed, or a run running), Review (a PR is open; or a Plane started state with 'review' in its name), Done (the issue is completed or canceled, or the PR merged or closed). A canceled item (a Plane project's cancelled state, or a native issue closed as not planned or a duplicate) is Done, marked cancelled and never proven; any other Done row is proven by CI or by evidence, or not proven yet. Groups are the plan's phases or waves. Returns the board as 72-column text, each row by its item (#N, IDENT-N), its Docs (the research and prototypes linked to it, with the ids unlink_doc takes), and its progress; with verbose: true, also the JSON with ids and revs. With board (brd_…): that board, or only its matching rows with q (an item's number #541, a Plane key ARUGU-12, or words in the title or note), lane (next, doing, review or done) and group (its title or zon_…), under a line that says how many of the rows are shown. Without: the project's boards (project, else the one this clone's GitHub repo is linked to, else your person's personal project), to pick one from.",
+      "inputSchema": {
+        "$defs": {
+          "LaneArg": {
+            "description": "A board's lane, to read only its rows.",
+            "enum": [
+              "next",
+              "doing",
+              "review",
+              "done"
+            ],
+            "type": "string"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "`board_read`.",
+        "properties": {
+          "board": {
+            "default": null,
+            "description": "The board (brd_…). Without it: the project's boards.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "group": {
+            "default": null,
+            "description": "With board: only the rows in this group (its title, or zon_…).",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "label": {
+            "default": null,
+            "description": "With board: only the rows whose item has this label (#547); several,\ncomma-separated, match any. Case doesn't matter.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "lane": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/LaneArg"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "With board: only the rows in this lane."
+          },
+          "person": {
+            "default": null,
+            "description": "With board: only the rows assigned to this person, by login or\nname, as the board shows it; several, comma-separated, match any.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "project": {
+            "default": null,
+            "description": "The project's id (prj_…) or personal, to list its boards. Default:\nthe current project.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "q": {
+            "default": null,
+            "description": "With board: only the rows that match, every word of it. `#541` or\n`541` is an item's number, `ARUGU-12` a Plane key, anything else\ntext in its title or note; case doesn't matter.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "verbose": {
+            "default": false,
+            "description": "Also the JSON: ids, revs and every attachment. Default: the text and\nthe progress.",
+            "type": "boolean"
+          }
+        },
+        "title": "ReadBoardArgs",
+        "type": "object"
+      },
+      "name": "board_read",
+      "title": "Read a board"
     },
     {
       "annotations": {

@@ -3,15 +3,13 @@
 // grouped by project, where the rail's Boards goes. A board is the platform's object
 // (crates/platform/src/boards.rs): zones of rows, each pointing at an issue,
 // a PR, a run, a workspace or an agent block, with a note and a status.
-// The view is shared with the board block (../../shared/boards/view). The
-// whole of it is behind the `boards` Labs flag: while it's off for the
-// reader the routes answer 404 and the page says boards are off, and the
-// project's home doesn't mention them.
+// The view is shared with the board block (../../shared/boards/view).
+// Boards are on for everyone (they left Labs, #191).
 
 import { useEffect, useRef, useState } from "preact/hooks";
 import type { ProjectBoard } from "../../shared/proto";
 import { BoardPanel } from "../../shared/boards/view";
-import { BoardError, boards } from "../../shared/boards/store";
+import { boards } from "../../shared/boards/store";
 import { boardMatches, epicLine, firstLine, NOT_STARTED } from "../../shared/boards/text";
 import { useSubscribe } from "../../shared/ui/hooks";
 import { PageHeader } from "../../shared/ui/page-header";
@@ -39,46 +37,21 @@ function readBoards(project: string): Promise<ProjectBoard[]> {
   return r;
 }
 
-/** The project's boards, `null` while they load, or `"off"` when the
- * `boards` flag isn't on for the reader (the routes answer 404). Asked of
- * no project (`undefined`), it reads nothing. */
-export function useBoards(project: string | undefined): ProjectBoard[] | null | "off" {
-  const [list, setList] = useState<ProjectBoard[] | null | "off">(null);
+/** The project's boards, `null` while they load, none when they can't be
+ * read. Asked of no project (`undefined`), it reads nothing. */
+export function useBoards(project: string | undefined): ProjectBoard[] | null {
+  const [list, setList] = useState<ProjectBoard[] | null>(null);
   useEffect(() => {
     setList(null);
     if (!project) return;
     let live = true;
     readBoards(project).then(
       (l) => live && setList(l),
-      (e: Error) => live && setList(e instanceof BoardError && e.status === 404 ? "off" : []),
+      () => live && setList([]),
     );
     return () => void (live = false);
   }, [project]);
   return list;
-}
-
-/** Whether boards are on for the reader in any of their projects: the
- * rail's Boards shows only then (#377). The flag is a team's, so it asks
- * each project (the list says 404 for one that's off), and keeps what it
- * learnt for the next page. */
-const boardsOn = new Map<string, boolean>();
-export function useBoardsOn(): boolean {
-  useSubscribe((fn) => session.subscribe(fn));
-  const ids = session.projects.map((p) => p.id);
-  const key = ids.join(",");
-  const [, tick] = useState(0);
-  useEffect(() => {
-    let live = true;
-    for (const id of ids) {
-      if (boardsOn.has(id)) continue;
-      readBoards(id).then(
-        () => boardsOn.set(id, true),
-        (e: Error) => boardsOn.set(id, !(e instanceof BoardError && e.status === 404)),
-      ).then(() => live && tick((t) => t + 1));
-    }
-    return () => void (live = false);
-  }, [key]);
-  return ids.some((id) => boardsOn.get(id));
 }
 
 /** The filter box above a list of boards (#546): `/` focuses it from anywhere that isn't a field, Esc clears it. */
@@ -110,22 +83,13 @@ function BoardFilter({ q, setQ }: { q: string; setQ: (q: string) => void }) {
   );
 }
 
-function BoardsOff() {
-  return (
-    <section class="platform-section sw-page" data-boards-off>
-      <PageHeader title="Boards" />
-      <p class="dim">Boards are a Labs feature, and they're off for you. A team owner turns them on in the team's Labs, on control's page.</p>
-    </section>
-  );
-}
-
 /** `/boards`: the boards of every project the reader belongs to, by
- * project. A project with none, or with boards off, isn't listed. */
+ * project. A project with none isn't listed. */
 export function AllBoardsPage() {
   useSubscribe((fn) => session.subscribe(fn));
   const projects = session.projects;
   const key = projects.map((p) => p.id).join(",");
-  const [lists, setLists] = useState<Map<string, ProjectBoard[] | "off"> | null>(null);
+  const [lists, setLists] = useState<Map<string, ProjectBoard[]> | null>(null);
   const [q, setQ] = useState("");
   useEffect(() => {
     setLists(null);
@@ -133,14 +97,13 @@ export function AllBoardsPage() {
     void Promise.all(
       projects.map((p) =>
         readBoards(p.id).then(
-          (l): [string, ProjectBoard[] | "off"] => [p.id, l],
-          (e: Error): [string, ProjectBoard[] | "off"] => [p.id, e instanceof BoardError && e.status === 404 ? "off" : []],
+          (l): [string, ProjectBoard[]] => [p.id, l],
+          (): [string, ProjectBoard[]] => [p.id, []],
         ),
       ),
     ).then((all) => live && setLists(new Map(all)));
     return () => void (live = false);
   }, [key]);
-  if (lists && projects.length > 0 && [...lists.values()].every((l) => l === "off")) return <BoardsOff />;
   const shown = projects.flatMap((p) => {
     const l = lists?.get(p.id);
     return Array.isArray(l) && l.length > 0 ? [{ p, list: l }] : [];
@@ -188,7 +151,6 @@ function BoardList({ p }: { p: PlatformProject }) {
   const list = useBoards(p.id);
   const [title, setTitle] = useState("");
   const [q, setQ] = useState("");
-  if (list === "off") return <BoardsOff />;
   const make = async (e: Event) => {
     e.preventDefault();
     if (!title.trim()) return;
@@ -223,9 +185,7 @@ function BoardList({ p }: { p: PlatformProject }) {
 export function BoardPage({ project, board }: { project: string; board: string }) {
   useSubscribe((fn) => session.subscribe(fn));
   const p = session.project(project);
-  const list = useBoards(project);
   if (!p) return <Missing what="That project isn't one of yours (or it's gone)." />;
-  if (list === "off") return <BoardsOff />;
   const all = pathOf({ page: "boards", project }, names);
   return (
     <section class="platform-section" data-board-page={board}>
@@ -253,9 +213,9 @@ export function BoardPage({ project, board }: { project: string; board: string }
 
 /** The project home's list of boards (`list`, from `useBoards`): nothing
  * while the flag is off. */
-export function ProjectBoards({ p, list }: { p: PlatformProject; list: ProjectBoard[] | null | "off" }) {
+export function ProjectBoards({ p, list }: { p: PlatformProject; list: ProjectBoard[] | null }) {
   const [q, setQ] = useState("");
-  if (list === null || list === "off") return null;
+  if (list === null) return null;
   const all = pathOf({ page: "boards", project: p.id }, names);
   return (
     <>

@@ -127,7 +127,7 @@ test("a team with chat on, and a machine of Alice's", async ({ browser }) => {
   // Boards opens every project's boards (#339), not the project list.
   const [boards] = await Promise.all([alice.context().waitForEvent("page"), alice.locator(".ws-rail [data-open-boards]").click()]);
   await expect(boards).toHaveURL(`${app}/boards`, { timeout: 15_000 });
-  // This team has no board, and the page's own flag list may say boards are off: either way, it's the Boards page.
+  // This team has no board: it's still the Boards page.
   await expect(boards.getByRole("heading", { level: 1, name: "Boards" })).toBeVisible({ timeout: 15_000 });
   await boards.close();
 });

@@ -97,7 +97,6 @@ struct World {
 async fn world(hub: &Arc<TestHub>) -> World {
     let (fake, app, base) = serve(hub).await;
     hub.team("t1", &[("alice", TeamRole::Owner)]);
-    hub.flag_named("team:t1", crate::boards::FLAG, true);
     let project = crate::projects::team_project(&app, "t1").await.unwrap().unwrap();
     let (s, made) = connect_as(&base, "alice", &project, KEY, "ARUGU").await;
     assert_eq!(s, 200, "{made}");
@@ -236,8 +235,8 @@ async fn a_signed_webhook_updates_the_row_and_tells_the_boards() {
     assert_eq!(count(&w.app, "forge_items", "repo_id = ?1", params![w.mirror]), 2);
 }
 
-/// A connection that isn't there, is disconnected, kept no secret, or whose
-/// boards are off is a 404 whatever the signature; a delivery that can't be
+/// A connection that isn't there, is disconnected, or kept no secret
+/// is a 404 whatever the signature; a delivery that can't be
 /// applied is forgotten so Plane's retry is taken.
 #[tokio::test]
 async fn a_webhook_for_no_connection_is_a_404_and_a_failed_one_is_retried() {
@@ -259,14 +258,6 @@ async fn a_webhook_for_no_connection_is_a_404_and_a_failed_one_is_retried() {
     let (s, v) = signed(&w.base, &w.conn, "d1", "workitem.updated", &body).await;
     assert_eq!((s, v["changed"].as_u64()), (200, Some(1)), "{v}");
     assert_eq!(row(&w.app, w.mirror, "item-1").unwrap().0, "First, changed");
-
-    // Boards off for whoever connected it.
-    hub.flag_named("team:t1", crate::boards::FLAG, false);
-    w.app.cache.drop_all();
-    let (s, _) = signed(&w.base, &w.conn, "d5", "workitem.updated", &body).await;
-    assert_eq!(s, 404);
-    hub.flag_named("team:t1", crate::boards::FLAG, true);
-    w.app.cache.drop_all();
 
     // No secret kept: the same 404.
     keys::remove(&w.app.db, &w.project, &webhook_name(&w.conn)).unwrap();

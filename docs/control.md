@@ -1563,3 +1563,78 @@ project's (`app/<app>/<KEY>`), and the platform projects it into the
 operator's Infisical when the projection is on
 (`crates/platform-agents/src/infisical.rs`). The code is
 `crates/platform-agents/src/redone.rs` and `agent_mcp_redone.rs`.
+
+## Boards
+
+A project's work is managed on boards, and an epic is a board
+([aru-122](decisions/aru-122-boards-manage-a-project-s-issues-wherever-they-live.md)).
+They're control's, so they work with every machine asleep.
+
+**Grants.** Boards are on for everyone (they left Labs, native #191). An
+agent's machine needs the Boards grant over the project: *Settings → Agents*,
+Boards set to read, or to read and write, or `arugula grants add <machine>
+boards.read --project <prj_…>` (and `boards.write`, which reads too).
+
+**Running work on a board.**
+
+- Make a board on the project's Boards page, and zones on it. *+ Add PROOFS*
+  makes the zone for evidence; a row there counts as proven when it links
+  evidence (an https URL: a CI page, a report), points at a run that
+  succeeded or at a merged PR.
+- *+ Add row* in a zone picks from the project's issues, PRs and runs across
+  its linked repos, or a zone's menu has *New issue…*, which files one and
+  puts it there.
+- An issue or PR row reads as a card with its assignees.
+- **Triage** lists the project's open issues that are on no board. With
+  it takes Issues' place in the bar.
+
+**Epics.** Give a board a goal (*Add a goal*) and its progress reads "3 of 5
+issues done": only issue rows count, an issue is done when it's closed at its
+source, one issue counts once however many rows point at it, and a row the
+reader can't read counts toward neither number. *Close epic…* asks "What can
+a person now do?" and keeps the answer as the done note; *Reopen* keeps the
+note. A closed board's rows stay editable, and the lists fold closed epics
+under *Done (N)*. A team's owners and editors change things; viewers see
+everything.
+
+**Agents.** `board_read` lists a project's boards and reads one (zones, rows,
+ids and revs). `board_write` lands at once, labelled as the person's agent on
+that machine, never as them: a board it makes or closes says so, as a row it
+adds does. It may make a board (an epic, with a goal and its zones), set its
+title and goal, close it with a done note and open it again; make, rename,
+move and delete zones (PROOFS too); add rows, set any row's note and status,
+move rows, and remove or repoint a row it added. It may not delete a zone that
+holds a row someone else added, or remove or repoint such a row. The person's
+role is still the ceiling: a viewer's machine makes nothing, whatever it was
+granted. A note, a pointer or a zone's title names the `rev` that `board_read`
+showed, and one that moved on asks to read again. Agents are told to run work
+of more than one ticket on a board, keep its rows current and close it with a
+note (`BOARDS_STEERING`, `crates/proto/src/flags.rs`); the tools are in
+`crates/arugulad-control-tools/src/boards.rs`, the rules in
+`crates/platform/src/boards.rs` (aru-123).
+
+**Plane.** A project's owner or editor connects a Plane project in project
+settings (*Plane*, after *Linked repos*): its workspace slug, the project's id
+or identifier, and an API key, with an optional webhook secret. Control asks
+Plane for the project with the key first, and keeps nothing if Plane refuses
+it. The key and the secret are sealed in `project_secrets` and never read
+back; no machine or agent route touches them. A Plane project is connected to
+one project at a time. Its work items are read into the mirror (`forge_items`,
+`provider = 'plane'`), a completed or cancelled state as closed. The
+connection's *agent writes* is *Approve each write* (the default) or *Allow
+all writes*. *Disconnect* removes the secrets at once and the items after the
+grace period, as unlinking a repo does
+([aru-124](decisions/aru-124-plane-is-a-source-of-a-project-s-issues.md);
+`crates/platform/src/trackers/`).
+
+People and agents write back: create an item, comment, close (completed or
+cancelled), reopen, and edit its title or body. An owner's or editor's own
+write lands at once; *New issue in Plane…* in a zone's menu makes one there.
+An agent's needs `trackers.write` over the project (its `tracker_write` tool)
+and never goes past what its owner may do by hand. Under *Approve each write*
+it waits at the top of the project's Triage, where a person approves, edits or
+drops it; under *Allow all writes* it lands at once. Each body and comment ends
+with a line saying who it was for ("via Arugula, by ‹person›'s agent on
+‹machine›"), added as it's sent, so an edit can't take it off. Bodies and
+comments go to Plane as escaped HTML; titles as plain text
+(`crates/platform/src/trackers/writes.rs`).

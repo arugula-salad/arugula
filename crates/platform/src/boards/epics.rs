@@ -83,11 +83,6 @@ async fn run(app: &Platform, connection: &str, ids: Option<&[String]>) -> anyhow
     if !c.epics_as_boards {
         return Ok(());
     }
-    // Boards are off for whoever connected it: none are made.
-    let Some(who) = &c.linked_by else { return Ok(()) };
-    if !crate::chat::flag_on(app, who, super::FLAG).await? {
-        return Ok(());
-    }
     let nodes = app.db.tracker_nodes(&c.id, ids)?;
     let mut epics: Vec<Node> = vec![];
     if let Some(ids) = ids {
