@@ -47,7 +47,7 @@ pub fn every_description_and_the_instructions_fit_the_cut() {
     const CUT: usize = 2048;
     // Over the cut today, and filed as #607: each may only shrink, to the
     // longest it is in any variant. No tool is added here.
-    const OVER: [(&str, usize); 4] = [("board_write", 6113), ("list", 2961), ("forge_read", 2697), ("show", 3097)];
+    const OVER: [(&str, usize); 4] = [("board_write", 6111), ("list", 2961), ("forge_read", 2697), ("show", 3097)];
     let mut wrong = vec![];
     for scope in [Scope::Full, Scope::Read, Scope::Block(1)] {
         for labs in [true, false] {
