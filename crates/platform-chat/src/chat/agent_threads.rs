@@ -326,6 +326,20 @@ pub async fn machine_sessions(
     Ok(Json(AgentMachineSessions { machine_name: target.machine_name, offline, shared, sessions }))
 }
 
+/// `GET /api/daemon/chat/rooms/{id}/threads/{seq}/agents`: the agents in a
+/// thread, for an agent reading it (#649).
+pub async fn thread_agents(
+    State(app): State<Arc<Platform>>,
+    d: Machine,
+    Path((id, root)): Path<(String, i64)>,
+) -> J<arugula_control_wire::chat::ChatThreadAgents> {
+    gate(&app, &d.account).await?;
+    app.limits.check_daemon(AGENT_READS, &d.daemon)?;
+    let (room, from, _) = room_of(&app, &d, THREADS_READ, &id).await?;
+    let first = threads::parent_in(&app, &room, from, root)?;
+    Ok(Json(super::thread_agents::of_thread(&app, &room, root, first).await?))
+}
+
 /// `POST /api/daemon/chat/rooms/{id}/messages`: an agent's post
 /// (`threads.post`), as its owner's, labelled with the machine.
 pub async fn post(

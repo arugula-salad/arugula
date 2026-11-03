@@ -824,6 +824,33 @@ async fn the_composer_chooses_who_a_reply_wakes() {
     assert_eq!(asked("geek"), 2);
 }
 
+/// A session told of a reply hears who else is in the thread (#649).
+#[tokio::test]
+async fn a_mention_in_a_thread_says_who_else_is_there() {
+    let (hub, _app, base, t, _u) = seeded().await;
+    geek_in_t(&base, &t).await;
+    hub.daemon("mini", "a", Some("t"));
+    for power in [THREADS_POST, THREADS_READ] {
+        let (st, g) =
+            call(&base, "a", "POST", "/api/grants", give("mini", power, json!({ "kind": "project", "id": t }))).await;
+        assert_eq!(st, 200, "{g}");
+    }
+    hub.answers_ops("geek", OpAnswer::Done { url: None, routed: None });
+    let room = "/api/chat/rooms/ch_general/messages";
+    let (_, v) = call(&base, "b", "POST", room, say("a thread")).await;
+    let root = v["seq"].as_i64().unwrap();
+    agent_says(&base, "geek", "Alpha", "my view", Some(root)).await;
+    agent_says(&base, "mini", "wake", "mine too", Some(root)).await;
+    let (_, v) =
+        call(&base, "b", "POST", room, Some(json!({ "text": "@geek-box/alpha which?", "parent": root }))).await;
+    assert!(v["seq"].is_number(), "{v}");
+    let got = waits_for_told(&hub, 1).await;
+    assert_eq!(got.len(), 1);
+    let told = asked_of(&hub, "geek");
+    assert_eq!(told[0].others.len(), 1, "{:?}", told[0].others);
+    assert!(told[0].others[0].starts_with("wake ("), "{:?}", told[0].others);
+}
+
 /// A thread's agents (#645): each session that spoke in it, what its machine
 /// says it's doing, an offline machine as offline, and nothing for a thread
 /// with no agents. Whoever sees the room may ask; a stranger may not.

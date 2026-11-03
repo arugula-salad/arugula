@@ -352,6 +352,11 @@ pub struct AgentMention {
     /// daemon ignores it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub root_line: Option<String>,
+    /// With a reply (#649): the other agents in the thread, as people read
+    /// them ("wake (Aaron's, Mac mini)"), so a session can see who's here
+    /// before it starts on something. An older daemon ignores it.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub others: Vec<String>,
 }
 
 /// What a machine's session is doing (#645).

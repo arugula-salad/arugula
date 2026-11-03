@@ -22,8 +22,8 @@ use std::time::Duration;
 
 use arugula_control_wire::chat::{
     AGENT_REPLIES, AGENT_ROOMS, AGENT_SEARCH, ChatPin, ChatReaction, ChatSystem, MAX_FILE_BYTES, MAX_FILES, SYSTEM_VIA,
-    agent_files, agent_machine_sessions, agent_messages, agent_pin, agent_reactions, pins_line, reactions_line,
-    system_text,
+    agent_files, agent_machine_sessions, agent_messages, agent_pin, agent_reactions, agent_thread_agents, pins_line,
+    reactions_line, system_text,
 };
 use reqwest::Method;
 use rmcp::handler::server::common::schema_for_type;
@@ -435,6 +435,32 @@ async fn machine_sessions(c: &Call<'_>, room: &str, machine: &str) -> Out {
 }
 
 /// `read_thread`.
+/// The agents in a thread, for an agent reading it (#649): what each is on,
+/// so it can ask rather than start on something another has.
+fn agents_line(v: &Value) -> String {
+    let list: Vec<String> = v["agents"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter(|a| a["name"].as_str().is_some_and(|n| !n.is_empty()))
+        .map(|a| {
+            let state = a["state"].as_str().unwrap_or("unknown").replace('_', " ");
+            let on = a["working_on"].as_str().map_or(String::new(), |w| format!(", on {w}"));
+            let whose =
+                a["owner_name"].as_str().filter(|o| !o.is_empty()).map_or(String::new(), |o| format!("{o}'s, "));
+            format!(
+                "{} ({whose}{}): {state}{on}",
+                a["name"].as_str().unwrap_or(""),
+                a["machine_name"].as_str().unwrap_or("")
+            )
+        })
+        .collect();
+    if list.is_empty() {
+        return String::new();
+    }
+    format!("Agents in this thread: {}. If you'd start on something one of them has, ask here first.", list.join("; "))
+}
+
 pub(crate) async fn read_thread(c: &Call<'_>, a: ReadThreadArgs) -> Out {
     owners_agent(c, READ_TOOL).await?;
     if a.replies {
@@ -505,6 +531,16 @@ pub(crate) async fn read_thread(c: &Call<'_>, a: ReadThreadArgs) -> Out {
     }
     if !pins.is_empty() {
         about += &format!("\nPinned:\n{}", pins_line(&pins));
+    }
+    // In a thread, who else is here and what they're on (#649).
+    if let Some(root) = a.thread {
+        let at = agent_thread_agents(a.room.trim(), root);
+        if let Ok(who) = threads_call(c, Method::GET, &at, None).await {
+            let line = agents_line(&who);
+            if !line.is_empty() {
+                about += &format!("\n{line}");
+            }
+        }
     }
     let parent = (!v["parent"].is_null()).then(|| message(&v["parent"], &me));
     let summary = format!(

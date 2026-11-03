@@ -158,6 +158,21 @@ fn hosted_ids(messages: &[Message]) -> Vec<(String, i64)> {
     out
 }
 
+/// A thread's messages, and its personal agents as they tell it.
+pub(super) fn in_thread(
+    app: &Platform,
+    room: &Room,
+    root: i64,
+    first: Message,
+) -> anyhow::Result<(Vec<Message>, Vec<Seen>)> {
+    let (replies, _) = app.db.chat_thread_messages(&room.id, root, Page::Newest, ROSTER_REPLIES)?;
+    let mut messages = vec![first];
+    messages.extend(replies);
+    let statuses = app.db.chat_mention_statuses_of_thread(&room.id, root)?;
+    let seen = roster(&messages, &statuses);
+    Ok((messages, seen))
+}
+
 /// `GET /api/chat/rooms/{id}/threads/{seq}/agents`.
 pub async fn agents(
     State(app): State<Arc<Platform>>,
@@ -167,11 +182,17 @@ pub async fn agents(
     gate(&app, &s.account).await?;
     let (room, from, _) = room_for(&app, &s.account, &id).await?;
     let first = threads::parent_in(&app, &room, from, root)?;
-    let (replies, _) = app.db.chat_thread_messages(&room.id, root, Page::Newest, ROSTER_REPLIES)?;
-    let mut messages = vec![first];
-    messages.extend(replies);
-    let statuses = app.db.chat_mention_statuses_of_thread(&room.id, root)?;
-    let seen = roster(&messages, &statuses);
+    Ok(Json(of_thread(&app, &room, root, first).await?))
+}
+
+/// The agents in the thread of `root`, for whoever may read `room`.
+pub(super) async fn of_thread(
+    app: &Arc<Platform>,
+    room: &Room,
+    root: i64,
+    first: Message,
+) -> Result<ChatThreadAgents, ApiError> {
+    let (messages, seen) = in_thread(app, room, root, first)?;
 
     // Each machine once, for the sessions the thread knows on it.
     let mut wanted: HashMap<&str, Vec<String>> = HashMap::new();
@@ -191,7 +212,7 @@ pub async fn agents(
     let live: HashMap<String, Option<(bool, Vec<MachineSession>)>> = asks.join_all().await.into_iter().collect();
 
     let machines: Vec<String> = wanted.keys().map(|m| m.to_string()).collect();
-    let daemons = crate::grants::agent_names(&app, &machines).await?;
+    let daemons = crate::grants::agent_names(app, &machines).await?;
     let hosted: Vec<(Session, i64)> = hosted_ids(&messages)
         .into_iter()
         .filter_map(|(id, seq)| app.db.session(&id).ok().flatten().map(|s| (s, seq)))
@@ -262,7 +283,22 @@ pub async fn agents(
     if let Some(i) = lead {
         out[i].1.lead = true;
     }
-    Ok(Json(ChatThreadAgents { agents: out.into_iter().map(|(_, a)| a).collect() }))
+    Ok(ChatThreadAgents { agents: out.into_iter().map(|(_, a)| a).collect() })
+}
+
+/// The other agents in a thread, as people read them (#649): for telling
+/// `machine`'s `session` of a post there. What's in the thread alone, with no
+/// machine asked, since a post mustn't wait on one.
+pub(super) fn others_in(seen: &[Seen], agents: &[ChatRoomAgent], machine: &str, session: Option<&str>) -> Vec<String> {
+    let me = session.map(session_slug);
+    seen.iter()
+        .filter(|s| !s.session.is_empty())
+        .filter(|s| s.machine != machine || me.as_ref().is_some_and(|m| *m != session_slug(&s.session)))
+        .map(|s| match agents.iter().find(|a| a.machine == s.machine) {
+            Some(a) => format!("{} ({}'s, {})", s.session, a.owner_name, a.machine_name),
+            None => s.session.clone(),
+        })
+        .collect()
 }
 
 #[cfg(test)]
@@ -343,6 +379,29 @@ mod tests {
         assert_eq!((one.len(), one[0].waiting), (1, 1));
         let two = roster(&[agent(2, "geek", "a"), agent(3, "geek", "b")], &[told(4, "geek", None, "delivered")]);
         assert_eq!(two.len(), 3, "{two:?}");
+    }
+
+    /// The others are everyone but the session being told; with no session
+    /// named, everyone on other machines.
+    #[test]
+    fn the_others_in_a_thread_leave_out_who_is_being_told() {
+        let seen = roster(&[agent(2, "geek", "UX Work"), agent(3, "geek", "other"), agent(4, "mini", "wake")], &[]);
+        let room = |machine: &str, owner: &str, name: &str| ChatRoomAgent {
+            owner: owner.to_lowercase(),
+            owner_name: owner.into(),
+            machine: machine.into(),
+            machine_name: name.into(),
+            powers: vec![],
+            mentionable: true,
+            sessions: vec![],
+        };
+        let rooms = [room("geek", "Jake", "geek"), room("mini", "Aaron", "Mac mini")];
+        assert_eq!(
+            others_in(&seen, &rooms, "geek", Some("ux-work")),
+            ["other (Jake's, geek)", "wake (Aaron's, Mac mini)"]
+        );
+        assert_eq!(others_in(&seen, &rooms, "mini", Some("wake")), ["UX Work (Jake's, geek)", "other (Jake's, geek)"]);
+        assert_eq!(others_in(&seen, &rooms, "geek", None), ["wake (Aaron's, Mac mini)"]);
     }
 
     #[test]

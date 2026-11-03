@@ -69,6 +69,13 @@
             "null"
           ]
         },
+        "others": {
+          "description": "With a reply (#649): the other agents in the thread, as people read\nthem (\"wake (Aaron's, Mac mini)\"), so a session can see who's here\nbefore it starts on something. An older daemon ignores it.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
         "parent": {
           "description": "The message it replies under, when it's in a thread.",
           "format": "int64",
