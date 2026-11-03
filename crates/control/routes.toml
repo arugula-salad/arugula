@@ -1621,6 +1621,14 @@ process = "platform"
 auth = "daemon"
 clients = ["daemon"]
 
+[[route]]
+method = "PUT"
+path = "/api/daemon/chat/mention-state"  # wire::chat::MENTION_STATE
+process = "platform"
+auth = "daemon"
+clients = ["daemon"]
+note = "The receiving daemon says a mention's turn is working or read (#540); a status only moves forward, and answered never changes."
+
 # A machine's agents in conversations (M198): MCP's thread tools list,
 # read, search and post in the rooms its owner's grants reach (M197:
 # `threads.read`, `threads.post`), asked again on every call. `{id}` is a

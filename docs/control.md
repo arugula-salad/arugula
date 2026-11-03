@@ -844,17 +844,26 @@ After that, comments cross for that pair only, each once
 (`issue_github_comments`, by GitHub's comment id):
 - a person's new comment in the issue's thread (not a reply kept in a
   sub-thread) is a draft sent as them at once through one of their
-  machines; with none awake it waits in their drafts, and the post's answer
-  says so (`github` in `ChatPosted`). An agent's is a draft for its person;
+  machines; with none awake it waits in their drafts. The post answers once
+  the message is stored, with `github` in `ChatPosted` saying `sending`;
+  the send runs after, and how it ended (sent with its link, waiting in
+  their drafts, or why it stays here) comes to them alone on chat's live
+  stream as a `github` event (Arugula #584). An agent's is a draft for its
+  person;
 - a comment on the GitHub issue (its `issue_comment` webhook, or the
   poller's next turn over the issue when the webhook never came) lands in
   the thread with no author and `via: "github:<login>"`, shown as the
   login, *on GitHub*. Nobody is pushed for it. Only a public repo's: the
   thread is the whole project's, and a private repo's text reaches only
   those GitHub lets read it (aru-086), so its comments stay on GitHub;
-- GitHub's copy of a comment that went out isn't brought back, even when
-  its webhook comes before the send's answer (it's matched to its draft by
-  its text), and what came in is never sent. Edits, deletions and comments
+- GitHub's copy of a comment that went out isn't brought back: it's the
+  one the send's answer names. When its webhook comes first, a GitHub
+  comment with the text of one of ours being sent is held
+  (`issue_github_held`) until that send ends, since someone may have
+  written the same words meanwhile; the answer names ours, and the rest
+  come in, each once (Arugula #585). Only an answer that named no comment
+  leaves the text to say, and only within the send's two minutes. What
+  came in is never sent. Edits, deletions and comments
   from before the export don't cross.
 
 **Agents and deploys (M218).** `deploys.plan` over a project lets a

@@ -4,7 +4,9 @@ adapters.list GET /api/agents/adapters
 agent_can.get GET /api/agent-can
 agents.get GET /api/hosts/self/agents
 conversations.list GET /api/conversations
+doc.asset GET /api/docs/{id}/assets/{name}
 doc.preview GET /api/docs/{id}/preview
+doc.read GET /api/docs/{id}/content
 docs.list GET /api/docs
 flags.list GET /api/flags
 fs.list GET /api/fs/list

@@ -557,6 +557,28 @@ impl Doc {
     }
 }
 
+/// A Doc in the library, read from its files as the block reads them when
+/// it opens, and not shown anywhere: no block, no card, and nothing it
+/// writes. For `doc.read` and `doc.asset` (#608), which must not open it.
+fn kept(state_dir: &Path, id: &str) -> Result<Arc<Doc>, String> {
+    let dir = library::dir(state_dir, id)?;
+    let title = library::read_meta(&dir).map(|m| m.title).unwrap_or_default();
+    Ok(Doc::with_link(dir, title, true, Link::none(state_dir.to_owned(), id.to_owned()), Arc::new(|| {})))
+}
+
+/// The state a block of the Doc `id` would have now.
+pub async fn read(state_dir: PathBuf, id: String) -> Result<Value, String> {
+    crate::task::spawn_blocking(move || kept(&state_dir, &id).map(|d| d.state_json()))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+/// The picture `name` of the Doc `id`, as a block's `doc_asset` answers it.
+pub async fn read_asset(state_dir: PathBuf, id: String, name: String) -> Result<Value, String> {
+    let doc = crate::task::spawn_blocking(move || kept(&state_dir, &id)).await.map_err(|e| e.to_string())??;
+    doc.asset(&name).await
+}
+
 /// Write `name` in the Doc's folder, off the async threads.
 async fn write(dir: PathBuf, name: &str, bytes: Vec<u8>) -> Result<(), String> {
     let name = name.to_owned();

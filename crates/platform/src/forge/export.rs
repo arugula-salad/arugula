@@ -30,13 +30,22 @@
 //!   - **out** ([`posted`]): a person's comment in the thread (not a reply
 //!     kept in a sub-thread) is a draft (`native_seq`) sent as them at once
 //!     through one of their machines; with none awake it waits in their
-//!     drafts, and the post says so. An agent's is a draft its person
+//!     drafts. The post answers while the send is out (`sending`), and how
+//!     it ended (sent with its link, waiting in their drafts, or why it
+//!     stays here) comes to its author on the live stream
+//!     (`ChatLive::Github`, Arugula #584). An agent's is a draft its person
 //!     sends, and stays native until then;
 //!   - **never back:** each GitHub comment that crossed is a row of
 //!     `issue_github_comments`, by GitHub's id, either way. GitHub's copy of
-//!     a comment that went out (its webhook may come before the send's
-//!     answer) is matched to its draft by its text and kept out, and what
-//!     came in is posted as GitHub's, which [`posted`] never sends.
+//!     a comment that went out is the one the send's answer names
+//!     ([`sent`]). Its webhook may come first: then a GitHub comment with
+//!     the text of one of ours being sent is held (`issue_github_held`,
+//!     [`settle`]) until that send ends, since someone may have written the
+//!     same words meanwhile ("+1"); the one the answer names is ours, and
+//!     the rest come in as GitHub's (Arugula #585). Only when a send's
+//!     answer named no comment is the first with its text, within
+//!     [`SENDING_MS`] of the send, taken for its copy. What came in is
+//!     posted as GitHub's, which [`posted`] never sends.
 //!   - Edits and deletions don't cross, and comments from before the
 //!     export stay native.
 //!
@@ -44,7 +53,10 @@
 //! accounts.
 
 use arugula_control_common::{ApiError, err};
-use arugula_control_wire::{chat::ChatToGithub, projects as wire};
+use arugula_control_wire::{
+    chat::{ChatLive, ChatToGithub},
+    projects as wire,
+};
 use arugula_e2e::now_ms;
 use arugula_forge_github::Github;
 use axum::http::StatusCode;
@@ -62,13 +74,9 @@ use crate::{
     Platform,
     db::{
         forge::{DraftRow, LinkedRepo, NewDraftRow, SENDING_MS},
-        issues::{Actor, Crossed, GithubOrigin, Issue},
+        issues::{Actor, Crossed, GithubOrigin, Issue, Outgoing},
     },
 };
-
-/// How long after a comment went out a GitHub comment with its text is
-/// taken for its copy, when the send's answer named no comment.
-pub const ECHO_MS: u64 = 24 * 3_600_000;
 
 /// What an agent's comment on an exported issue does.
 pub const AGENT_WAITS: &str = "an agent's comment waits as a draft for its person to send to GitHub";
@@ -210,9 +218,20 @@ pub(super) fn before_send(app: &Platform, d: &DraftRow) -> Result<(), ApiError> 
     Ok(())
 }
 
+/// After a send of a native issue's draft ended, however it did: [`sent`]
+/// for one on GitHub now, then a comment's held look-alikes settled.
+pub(super) async fn ended(app: &Platform, d: &DraftRow) {
+    if d.state == "sent" {
+        sent(app, d).await;
+    }
+    if let (Some(native), "comment") = (d.native_issue.as_deref(), d.kind.as_str()) {
+        settle(app, native).await;
+    }
+}
+
 /// After a draft of a native issue's was sent (its `sent_url` GitHub's):
 /// the issue's origin and `exported`, or its comment's link.
-pub(super) async fn sent(app: &Platform, d: &DraftRow) {
+async fn sent(app: &Platform, d: &DraftRow) {
     let Some(native) = d.native_issue.as_deref() else { return };
     let Some(url) = d.sent_url.as_deref() else {
         return warn!(draft = d.id, issue = native, "a native issue's draft sent, and GitHub named nothing to link");
@@ -273,6 +292,24 @@ impl Theirs {
 fn same(a: &str, b: &str) -> bool {
     let norm = |s: &str| s.replace("\r\n", "\n").trim().to_owned();
     norm(a) == norm(b)
+}
+
+/// What a GitHub comment with `body` may be the copy of, among `out`.
+enum Echo {
+    /// One of ours with its text is being sent: its answer will say.
+    Sending,
+    /// `out[_]`, sent, whose answer named no comment: the oldest with its
+    /// text.
+    Sent(usize),
+    /// Nothing of ours.
+    Theirs,
+}
+
+fn echo_of(out: &[Outgoing], body: &str) -> Echo {
+    if out.iter().any(|o| o.sending && same(&o.body, body)) {
+        return Echo::Sending;
+    }
+    out.iter().position(|o| same(&o.body, body)).map_or(Echo::Theirs, Echo::Sent)
 }
 
 /// GitHub's `issue_comment` `created` on an exported issue's GitHub issue
@@ -341,68 +378,133 @@ pub async fn bring_in(p: &Platform, issue: &Issue, comments: &[Theirs]) {
         }
         Err(e) => return warn!(issue = issue.id, error = format!("{e:#}"), "an exported issue's repo"),
     }
+    // What a send that ended since left held.
+    settle(p, &issue.id).await;
     let now = now_ms();
-    let (crossed, mut out) = match (
+    let window = now.saturating_sub(SENDING_MS);
+    let (crossed, held, mut out) = match (
         p.db.github_comments(&issue.id),
-        p.db.outgoing_comments(&issue.id, now.saturating_sub(SENDING_MS), now.saturating_sub(ECHO_MS)),
+        p.db.held_github_comments(&issue.id),
+        p.db.outgoing_comments(&issue.id, window, window),
     ) {
-        (Ok(c), Ok(o)) => (c, o),
-        (Err(e), _) | (_, Err(e)) => {
+        (Ok(c), Ok(h), Ok(o)) => (c, h, o),
+        (Err(e), _, _) | (_, Err(e), _) | (_, _, Err(e)) => {
             return warn!(issue = issue.id, error = format!("{e:#}"), "an exported issue's comments");
         }
     };
+    let mut holding = false;
     for c in comments {
-        if crossed.contains_key(&c.id) || c.body.trim().is_empty() {
+        if crossed.contains_key(&c.id) || held.iter().any(|h| h.github_id == c.id) || c.body.trim().is_empty() {
             continue;
         }
-        // One of ours, back from GitHub: its draft's, and kept out.
-        if let Some(at) = out.iter().position(|o| same(&o.body, &c.body)) {
-            let o = out.remove(at);
-            if let Err(e) = p.db.claim_github_comment(c.id, &issue.id, Some(o.seq), Crossed::Out, now) {
-                warn!(issue = issue.id, comment = c.id, error = format!("{e:#}"), "linking a comment sent to GitHub");
-            }
-            continue;
-        }
-        match p.db.claim_github_comment(c.id, &issue.id, None, Crossed::In, now) {
-            Ok(true) => {}
-            Ok(false) => continue,
-            Err(e) => {
-                warn!(issue = issue.id, comment = c.id, error = format!("{e:#}"), "claiming a GitHub comment");
+        match echo_of(&out, &c.body) {
+            // Ours, or someone's who wrote the same words while ours is
+            // on its way: held until the send's answer says which.
+            Echo::Sending => {
+                match p.db.hold_github_comment(c.id, &issue.id, &c.login, &c.body, now) {
+                    Ok(_) => holding = true,
+                    Err(e) => warn!(issue = issue.id, comment = c.id, error = format!("{e:#}"), "holding a comment"),
+                }
                 continue;
             }
-        }
-        match crate::features::chat().github_comment(p, &issue.id, &c.login, &c.body).await {
-            Ok(seq) => {
-                if let Err(e) = p.db.github_comment_landed(c.id, seq) {
+            // Sent, and GitHub's answer named no comment: the first with
+            // its text, in the send's window, is its copy, and kept out.
+            Echo::Sent(at) => {
+                let o = out.remove(at);
+                if let Err(e) = p.db.claim_github_comment(c.id, &issue.id, Some(o.seq), Crossed::Out, now) {
                     warn!(
                         issue = issue.id,
                         comment = c.id,
                         error = format!("{e:#}"),
-                        "noting a GitHub comment's message"
+                        "linking a comment sent to GitHub"
                     );
                 }
-                info!(
-                    issue = issue.id,
-                    comment = c.id,
-                    seq,
-                    "a GitHub comment brought into an exported issue's thread"
-                );
+                continue;
             }
-            Err(e) => {
-                warn!(issue = issue.id, comment = c.id, error = format!("{e:#}"), "bringing a GitHub comment in");
-                let _ = p.db.unclaim_github_comment(c.id);
+            Echo::Theirs => {}
+        }
+        match p.db.claim_github_comment(c.id, &issue.id, None, Crossed::In, now) {
+            Ok(true) => {
+                land(p, &issue.id, c).await;
             }
+            Ok(false) => {}
+            Err(e) => warn!(issue = issue.id, comment = c.id, error = format!("{e:#}"), "claiming a GitHub comment"),
+        }
+    }
+    // A send that ended while these were held: its end may have settled
+    // before they were.
+    if holding {
+        settle(p, &issue.id).await;
+    }
+}
+
+/// `issue`'s held GitHub comments whose sends have ended (module docs):
+/// the one a send's answer named crossed out already, and stays out; the
+/// first with the text of a send whose answer named none is its copy; the
+/// rest are someone else's, and come in. One held for a send that's still
+/// out stays held. Each is settled once, whoever else settles at once.
+pub async fn settle(p: &Platform, issue: &str) {
+    let held = match p.db.held_github_comments(issue) {
+        Ok(h) if h.is_empty() => return,
+        Ok(h) => h,
+        Err(e) => return warn!(issue, error = format!("{e:#}"), "an exported issue's held comments"),
+    };
+    let now = now_ms();
+    let window = now.saturating_sub(SENDING_MS);
+    let mut out = match p.db.outgoing_comments(issue, window, window) {
+        Ok(o) => o,
+        Err(e) => return warn!(issue, error = format!("{e:#}"), "an exported issue's comments"),
+    };
+    for h in held {
+        let (seq, way) = match echo_of(&out, &h.body) {
+            Echo::Sending => continue,
+            Echo::Sent(at) => (Some(out.remove(at).seq), Crossed::Out),
+            Echo::Theirs => (None, Crossed::In),
+        };
+        match p.db.settle_held_comment(h.github_id, issue, seq, way, now) {
+            Ok(true) if way == Crossed::In => {
+                let c = Theirs { id: h.github_id, login: h.login, body: h.body };
+                if !land(p, issue, &c).await {
+                    // Held again, for the next webhook or poll to try.
+                    let _ = p.db.hold_github_comment(c.id, issue, &c.login, &c.body, now);
+                }
+            }
+            Ok(_) => {}
+            Err(e) => warn!(issue, comment = h.github_id, error = format!("{e:#}"), "settling a held comment"),
         }
     }
 }
 
-/// A comment posted in a native issue's thread (`issue`, message `seq`) by
-/// `author`, or their agent on `machine`: on an exported issue it goes to
-/// GitHub (module docs), and this says how far. `None` when the issue
-/// isn't on GitHub.
+/// GitHub's comment `c`, claimed as coming in, into `issue`'s thread as
+/// GitHub's; on failure the claim goes, so it's tried again. Whether it
+/// landed.
+async fn land(p: &Platform, issue: &str, c: &Theirs) -> bool {
+    match crate::features::chat().github_comment(p, issue, &c.login, &c.body).await {
+        Ok(seq) => {
+            if let Err(e) = p.db.github_comment_landed(c.id, seq) {
+                warn!(issue, comment = c.id, error = format!("{e:#}"), "noting a GitHub comment's message");
+            }
+            info!(issue, comment = c.id, seq, "a GitHub comment brought into an exported issue's thread");
+            true
+        }
+        Err(e) => {
+            warn!(issue, comment = c.id, error = format!("{e:#}"), "bringing a GitHub comment in");
+            let _ = p.db.unclaim_github_comment(c.id);
+            false
+        }
+    }
+}
+
+/// A comment posted in a native issue's thread (`issue`, message `seq` of
+/// `room`) by `author`, or their agent on `machine`: on an exported issue
+/// it goes to GitHub (module docs), and this says how far it got before the
+/// post answers. `None` when the issue isn't on GitHub. A person's is sent
+/// in the background (Arugula #584): this says `sending`, and the send's
+/// end goes to them as [`ChatLive::Github`].
 pub async fn posted(
     app: &Platform,
     issue: &str,
+    room: &str,
     author: &str,
     machine: Option<&str>,
     seq: i64,
@@ -455,10 +557,28 @@ pub async fn posted(
         info!(draft = row.id, issue, seq, "an agent's comment on an exported issue drafted");
         return Some(ChatToGithub { draft: row.id, why: Some(AGENT_WAITS.into()), ..Default::default() });
     }
-    match send::send(app, author, &row.id, How::Machine).await {
-        Ok(s) => Some(ChatToGithub { draft: row.id, sent: true, url: s.draft.sent_url, why: None }),
-        Err(e) => Some(ChatToGithub { draft: row.id, sent: false, url: None, why: Some(e.1) }),
-    }
+    let (room, author, draft) = (room.to_owned(), author.to_owned(), row.id.clone());
+    let Some(arc) = app.arc() else {
+        // No handle to the platform to send from later: now, then.
+        return Some(send_out(app, &room, seq, &author, &draft).await);
+    };
+    tokio::spawn(async move {
+        send_out(&arc, &room, seq, &author, &draft).await;
+    });
+    Some(ChatToGithub { draft: row.id, sending: true, ..Default::default() })
+}
+
+/// Send a person's comment draft `draft` (message `seq` of `room`) through
+/// one of their machines, and tell them how it ended on the live stream.
+async fn send_out(app: &Platform, room: &str, seq: i64, author: &str, draft: &str) -> ChatToGithub {
+    let github = match send::send(app, author, draft, How::Machine).await {
+        Ok(s) => ChatToGithub { draft: draft.to_owned(), sent: true, url: s.draft.sent_url, ..Default::default() },
+        Err(e) => ChatToGithub { draft: draft.to_owned(), why: Some(e.1), ..Default::default() },
+    };
+    info!(draft, room, seq, sent = github.sent, "a comment's send to GitHub ended");
+    let ev = ChatLive::Github { room: room.to_owned(), seq, github: github.clone() };
+    app.chat.publish(&app.db, ev, Some(author.to_owned()));
+    github
 }
 
 #[cfg(test)]

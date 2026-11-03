@@ -21,6 +21,8 @@ test("each route parses", () => {
   assert.equal(pathOf({ page: "inbox" }), "/inbox");
   assert.deepEqual(parse("/boards"), { page: "all-boards" });
   assert.equal(pathOf({ page: "all-boards" }), "/boards");
+  assert.deepEqual(parse("/docs"), { page: "docs" });
+  assert.equal(pathOf({ page: "docs" }), "/docs");
   assert.deepEqual(parse("/settings"), { page: "settings" });
   assert.deepEqual(parse(`/p/${P}-x/chat`), { page: "chat", project: P });
   assert.deepEqual(parse(`/p/${P}/chat/ch_0123456789abcdef-general`, "?msg=12"), { page: "chat", project: P, room: "ch_0123456789abcdef", msg: 12 });
@@ -85,6 +87,7 @@ test("every route starts with a segment in TOP, the server's 404 list (UI audit 
     { page: "installed" },
     { page: "inbox" },
     { page: "all-boards" },
+    { page: "docs" },
     { page: "settings" },
     { page: "deploy", deploy: `dep_${"0a".repeat(16)}` },
     { page: "find", what: "chat" },

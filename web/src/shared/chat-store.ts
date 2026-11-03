@@ -30,6 +30,7 @@ import type {
   ChatSaved,
   ChatSavedItem,
   ChatTargetKind,
+  ChatToGithub,
   NotifyLevel,
 } from "./proto";
 import { platformFetch, refusalOf } from "./maintenance";
@@ -130,6 +131,10 @@ export class ChatStore {
    * fetched: only what the stream said in the last few seconds. */
   private typers = new Map<string, { room: string; account: string; name: string; until: number }>();
   private typed = new Map<string, number>();
+  /** How my comments' sends to GitHub ended (M205, Arugula #584), by
+   * `room seq`: the post answers while the send is out, and its end comes
+   * on the stream. Only this page's posts are asked about. */
+  private toGithub = new Map<string, ChatToGithub>();
   private warming = new Warming();
   /** Saved for later (#116): null until control has said. */
   saved: ChatSavedItem[] | null = null;
@@ -392,6 +397,10 @@ export class ChatStore {
       case "saved":
         void this.loadSaved();
         return;
+      case "github":
+        this.toGithub.set(`${ev.room} ${ev.seq}`, ev.github);
+        this.emit();
+        return;
       case "typing":
         this.typers.set(`${ev.room} ${ev.account}`, { ...ev, until: Date.now() + TYPING_MS });
         this.emit();
@@ -470,6 +479,14 @@ export class ChatStore {
         // What changed meanwhile, from the page as it is now.
         if (again !== null) this.tellOpen(again);
       });
+  }
+
+  // ---- a comment's copy on GitHub (M205)
+
+  /** How the send of my message `seq` in `room` to GitHub ended, once the
+   * stream has said (Arugula #584). */
+  githubOf(room: string, seq: number): ChatToGithub | undefined {
+    return this.toGithub.get(`${room} ${seq}`);
   }
 
   // ---- typing (#111)

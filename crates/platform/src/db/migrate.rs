@@ -643,6 +643,12 @@ const SQLITE: &[Migration] = &[
         additive: true,
     },
     Migration {
+        version: 92,
+        name: "issue_github_held",
+        sql: include_str!("../../migrations/sqlite/0092_issue_github_held.sql"),
+        additive: true,
+    },
+    Migration {
         version: 93,
         name: "board_lead",
         sql: include_str!("../../migrations/sqlite/0093_board_lead.sql"),
@@ -1198,6 +1204,12 @@ const POSTGRES: &[Migration] = &[
         version: 91,
         name: "chat_mention_names",
         sql: include_str!("../../migrations/postgres/0091_chat_mention_names.sql"),
+        additive: true,
+    },
+    Migration {
+        version: 92,
+        name: "issue_github_held",
+        sql: include_str!("../../migrations/postgres/0092_issue_github_held.sql"),
         additive: true,
     },
     Migration {

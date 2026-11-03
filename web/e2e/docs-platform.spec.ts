@@ -58,6 +58,7 @@ test("an owner makes a Doc from the project's Docs and writes it", async ({ brow
   await expect(alice).toHaveURL(/\/p\/prj_[0-9a-f]+-acme\/docs$/);
   await expect(alice.locator("[data-docs-none]")).toBeVisible();
 
+  await alice.locator("[data-doc-new-open]").click();
   await alice.locator("[data-doc-new-title]").fill("Release plan");
   await alice.locator("[data-doc-new]").click();
   await expect(alice).toHaveURL(/\/p\/prj_[0-9a-f]+-acme\/docs\/pdc_[0-9a-f]{32}-release-plan$/, { timeout: 15_000 });
@@ -107,8 +108,8 @@ test("a viewer reads it on a phone, with no form, and has the next section live"
   await platform(bob, docPath.replace(/\/docs\/.*$/, ""));
   await expect(bob.locator("[data-project-docs] [data-doc-link]")).toHaveText(["Release plan"], { timeout: 15_000 });
   await platform(bob, docPath.replace(/\/docs\/.*$/, "/docs"));
-  await expect(bob.locator("[data-docs] [data-doc-link]")).toHaveText(["Release plan"], { timeout: 15_000 });
-  await expect(bob.locator("[data-doc-new]")).toHaveCount(0);
+  await expect(bob.locator("[data-docs-page] [data-doc-title]")).toHaveText(["Release plan"], { timeout: 15_000 });
+  await expect(bob.locator("[data-doc-new-open]")).toHaveCount(0);
 });
 
 // #506: a prototype on the platform page runs in a frame on the proto
@@ -143,4 +144,51 @@ test("an owner deletes it", async () => {
   await page.locator("[data-doc-confirm-delete]").click();
   await expect(alice).toHaveURL(/\/docs$/, { timeout: 15_000 });
   await expect(alice.locator("[data-docs-none]")).toBeVisible({ timeout: 15_000 });
+});
+
+// #418: /docs lists every Doc the reader can read, their own private ones
+// first; the preview draws the whole Doc. Alice makes a team Doc and a
+// private one from the list; Bob sees the team's and never hers.
+test("/docs puts a person's private Docs first, and keeps them from the team", async () => {
+  test.setTimeout(120_000);
+  await platform(alice, "/docs");
+  const make = async (title: string, where: string) => {
+    await alice.locator("[data-doc-new-open]").click();
+    await alice.locator("[data-doc-new-title]").fill(title);
+    await alice.locator("[data-doc-new-project]").selectOption({ label: where });
+    await alice.locator("[data-doc-new]").click();
+    const page = alice.locator("[data-doc-page]");
+    await expect(page.locator(".doc-title")).toHaveText(title, { timeout: 15_000 });
+    await page.locator("[data-doc-heading-input]").fill("Notes");
+    await page.locator("[data-doc-markdown-input]").fill(`${title} says **hello**.\n\n${CHART}`);
+    await page.locator("[data-doc-save]").click();
+    await expect(page.locator(".doc-section[data-section=s1] .chart-box svg")).toBeVisible();
+    await platform(alice, "/docs");
+  };
+  await make("Team roadmap", "Acme");
+  await make("Private notes", "Yours, private");
+
+  const groups = alice.locator("[data-list-rows] [role=group] .list-group");
+  await expect(groups).toHaveText([/^Yours, private\s*1$/, /^Acme\s*1$/], { timeout: 15_000 });
+  await expect(alice.locator("[data-list-rows] [data-doc]")).toHaveText([/Private notes/, /Team roadmap/]);
+  await expect(alice.locator("[data-list-count=private] b")).toHaveText("1");
+  await expect(alice.locator("[data-list-count=shared] b")).toHaveText("1");
+  // The first row is selected, and its whole Doc is on the right.
+  const preview = alice.locator("[data-list-preview]");
+  await expect(preview.locator(".doc-section[data-section=s1] .chart-box svg")).toBeVisible({ timeout: 15_000 });
+  await alice.locator("[data-list-count=shared]").click();
+  await expect(alice.locator("[data-list-rows] [data-doc]")).toHaveText([/Team roadmap/]);
+  await preview.locator("[data-open-doc]").click();
+  await expect(alice).toHaveURL(/\/p\/prj_[0-9a-f]+-acme\/docs\/pdc_[0-9a-f]{32}-team-roadmap$/);
+
+  // Bob reads the team's, and has no trace of hers.
+  await platform(bob, "/docs");
+  await expect(bob.locator("[data-list-rows] [data-doc]")).toHaveText([/Team roadmap/], { timeout: 15_000 });
+  await expect(bob.getByText("Private notes")).toHaveCount(0);
+  await expect(bob.locator("[data-list-rows] .list-group")).toHaveText([/^Acme\s*1$/]);
+  const wide = await bob.evaluate(() => {
+    const main = document.querySelector(".platform-main")!;
+    return main.scrollWidth - main.clientWidth;
+  });
+  expect(wide).toBeLessThanOrEqual(0);
 });

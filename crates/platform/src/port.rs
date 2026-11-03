@@ -5,7 +5,6 @@
 use futures_util::future::BoxFuture;
 
 use arugula_control_wire::{
-    forge::Standing,
     hosted::{SetupPlan, SetupReport},
     run_logs::{Upload, UploadGiven, Uploaded},
     transcripts::TranscriptPost,
@@ -32,7 +31,7 @@ pub use arugula_platform_api::port::{Archived, Deleted, PlatformPort, PublicPrev
 /// since Cloud's Managoat side went (M189, M190); chat (M138) `chat_on` and its part of
 /// `account_deleted`; projects and grants, the forge mirror (M162) and
 /// native issues (M194), their part of `account_deleted`; the GitHub App
-/// (M161) `forge_standing` and `github_token`; sends (M168) `send_draft`;
+/// (M161) `github_token`; sends (M168) `send_draft`;
 /// runs (M210), deploys (M217) and what starts runs (M214), their part of
 /// `account_deleted`; hosted workspaces (M182) `hosted_wake`; hosted
 /// inference (M185) `hosted_turn` and `hosted_turn_end`; hosted machines'
@@ -102,16 +101,6 @@ impl PlatformPort for Platform {
             billing::sync_seats(self, team).await;
             Ok(())
         })
-    }
-
-    fn forge_standing<'a>(
-        &'a self,
-        account: &'a str,
-        github: Option<&'a GithubUser>,
-        repos: &'a [String],
-        fresh: bool,
-    ) -> BoxFuture<'a, anyhow::Result<Vec<Standing>>> {
-        Box::pin(async move { Ok(forge::standing(self, account, github, repos, fresh).await) })
     }
 
     fn github_token<'a>(

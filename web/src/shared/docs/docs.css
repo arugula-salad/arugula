@@ -80,3 +80,32 @@
   border-radius: 6px;
   background: var(--surface);
 }
+
+/* The list's preview (platform/pages/docs.tsx) names the Doc above, with its
+   buttons; the sheet below it is only the sections. */
+.docs-preview .doc-title {
+  display: none;
+}
+
+/* The Docs list fills the page's frame, as the machine's page does. */
+.platform-main:has(> .docs-list) {
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+}
+
+.docs-list {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  background: var(--surface);
+}
+
+.docs-list .list-page {
+  height: 100%;
+}
+
+.docs-list .project-doc-form {
+  margin: var(--space-3) 0 0;
+}

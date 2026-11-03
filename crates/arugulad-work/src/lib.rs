@@ -34,7 +34,10 @@
 //!   ([`kill_all`]), so nothing carries into the next run.
 //! - **Agent runs** are Claude Code, headless, as the run user. On a
 //!   hosted box each is a turn the platform says may run (M185's gate),
-//!   with its placeholder key, ended with the run.
+//!   with its placeholder key, ended with the run. The daemon's own
+//!   binary follows it ([`agent_run`], Arugula #552): a run whose turn
+//!   ends with background work still running, its answer never given,
+//!   fails rather than succeeding.
 //! - **In a pane.** A run is its command in a new pane in the `runs`
 //!   session, which ends when the command does. Its live view is an
 //!   ordinary end-to-end pane, which the project's people watch as they
@@ -107,6 +110,7 @@ use crate::{
     work::{DIR, PROVIDER_PORTS, printable},
 };
 
+pub mod agent_run;
 mod deploy;
 mod run_logs;
 pub mod sessions;
@@ -222,6 +226,10 @@ pub struct Ledger {
     /// restart, as its driver went with the daemon.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub deploy: Option<String>,
+    /// An agent run's (Claude Code, followed by [`agent_run`]): its exit
+    /// [`agent_run::LEFT_WAITING`] says it ended waiting.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub agent: bool,
     #[serde(default)]
     pub events: Vec<Kept>,
     /// What's been sent of its log and artifacts (M213).
@@ -468,7 +476,10 @@ fn agent_login() -> Option<(&'static str, String)> {
 }
 
 /// What a run runs, in the shell's words, and its banner's second line.
-fn what(op: &Op, claude: Option<&Path>) -> Result<(String, String), Refused> {
+/// An agent's Claude Code runs under `follow`, this daemon's own binary
+/// ([`agent_run`]), told it's headless, saying what it does as
+/// `stream-json`.
+fn what(op: &Op, claude: Option<&Path>, follow: Option<&Path>) -> Result<(String, String), Refused> {
     match &op.instruction {
         None => {
             let cmd = command_line(&op.argv);
@@ -476,22 +487,30 @@ fn what(op: &Op, claude: Option<&Path>) -> Result<(String, String), Refused> {
         }
         Some(i) => {
             let claude = claude.ok_or_else(|| Refused("op_agent", "Claude Code isn't on this box".into()))?;
+            let follow = follow
+                .ok_or_else(|| Refused("op_agent", "the daemon can't find its own binary to follow it".into()))?;
             let cmd = format!(
-                "{} -p {} --output-format text --dangerously-skip-permissions",
+                "{} {} {} -p {} --append-system-prompt {} --output-format stream-json --verbose \
+                 --dangerously-skip-permissions",
+                quote(&follow.to_string_lossy()),
+                agent_run::NAME,
                 quote(&claude.to_string_lossy()),
-                quote(i)
+                quote(i),
+                quote(agent_run::HEADLESS)
             );
             Ok((cmd, format!("claude -p {}", quote(i))))
         }
     }
 }
 
-/// What an agent run is given: Claude Code's CLI; the daemon's login,
+/// What an agent run is given: Claude Code's CLI, and the daemon's own
+/// binary that follows it ([`agent_run`]); the daemon's login,
 /// from a file the pane's shell reads and removes (away from a hosted box);
 /// and its environment besides (M185's placeholder key, on one).
 #[derive(Debug, Clone, Copy, Default)]
 pub struct Agent<'a> {
     pub claude: Option<&'a Path>,
+    pub follow: Option<&'a Path>,
     pub login: Option<(&'a str, &'a Path)>,
     pub env: &'a [(String, String)],
 }
@@ -516,8 +535,8 @@ pub fn pane_command(
     agent: &Agent<'_>,
     artifacts: &Path,
 ) -> Result<String, Refused> {
-    let Agent { claude, login, env: env_extra } = *agent;
-    let (cmd, shown) = what(op, claude)?;
+    let Agent { claude, follow, login, env: env_extra } = *agent;
+    let (cmd, shown) = what(op, claude, follow)?;
     let banner = format!(
         r"printf '%s\n' {} {}",
         quote(&printable(&format!("arugula run {run} · operation sha256:{op_hash}"))),
@@ -877,6 +896,7 @@ async fn take(app: &Arc<App>, item: WorkItem) {
         grant: item.grant.clone(),
         turn: None,
         deploy: item.deploy.as_ref().map(|d| d.deploy.clone()),
+        agent: false,
         events: vec![],
         logs: Default::default(),
     };
@@ -929,6 +949,7 @@ async fn take(app: &Arc<App>, item: WorkItem) {
             return;
         }
     };
+    l.agent = op.instruction.is_some();
     // `running`, on disk, once, before anything starts.
     if !claim(&dir, &l) {
         return;
@@ -963,6 +984,7 @@ async fn take(app: &Arc<App>, item: WorkItem) {
         None => None,
     };
     let claude = claude_bin();
+    let follow = std::env::current_exe().ok();
     let artifacts = crate::run_logs::artifacts_dir(&dir, &item.run, as_.as_ref());
     let command = match pane_command(
         &item.run,
@@ -970,13 +992,13 @@ async fn take(app: &Arc<App>, item: WorkItem) {
         &op,
         src.as_deref(),
         as_.as_ref(),
-        &Agent { claude: claude.as_deref(), login, env: &env_extra },
+        &Agent { claude: claude.as_deref(), follow: follow.as_deref(), login, env: &env_extra },
         &artifacts,
     ) {
         Ok(c) => c,
         Err(Refused(code, why)) => return fail(l, format!("{code}: {why}")),
     };
-    let shown = what(&op, claude.as_deref()).map(|w| w.1).unwrap_or_default();
+    let shown = what(&op, claude.as_deref(), follow.as_deref()).map(|w| w.1).unwrap_or_default();
     let events = app.mux.events();
     let req = RunRequest {
         command: Some(command),
@@ -1085,6 +1107,13 @@ async fn watch(app: Arc<App>, l: Ledger, events: Option<tokio::sync::broadcast::
     // answers) stands.
     let ended = update(&dir, &l.run, |now| match end {
         Ok(0) => now.push(&keys, &me, State::Succeeded, serde_json::json!({ "exit": 0 })),
+        // An agent that ended its turn waiting on background work (#552).
+        Ok(code) if l.agent && code == agent_run::LEFT_WAITING => now.push(
+            &keys,
+            &me,
+            State::Failed,
+            serde_json::json!({ "exit": code, "reason": agent_run::LEFT_WAITING_WHY }),
+        ),
         Ok(code) => now.push(&keys, &me, State::Failed, serde_json::json!({ "exit": code })),
         Err(why) => now.push(&keys, &me, State::Failed, serde_json::json!({ "reason": why })),
     });
@@ -1319,6 +1348,8 @@ struct Engine;
 /// Puts the runs engine in the daemon. Call it before `arugulad_base::main`.
 pub fn register() {
     crate::work::install(Box::new(Engine));
+    // An agent run's Claude Code, followed, as the run user (#552).
+    arugulad_base::subcommands::register(agent_run::NAME, agent_run::cli);
 }
 
 impl crate::work::Work for Engine {
@@ -1438,20 +1469,37 @@ mod tests {
         let as_ = RunAs { user: "runner".into(), home: "/home/runner".into() };
         let file = Path::new("/state/work/run_1.login");
         let claude = Path::new("/usr/local/bin/claude");
-        let (cmd, shown) = what(&op, Some(claude)).unwrap();
+        let follow = Path::new("/usr/local/bin/arugulad");
+        let (cmd, shown) = what(&op, Some(claude), Some(follow)).unwrap();
+        // Followed by the daemon's own binary, told it's headless, saying
+        // what it does as it goes (#552).
         assert_eq!(
-            cmd,
-            "'/usr/local/bin/claude' -p 'fix the build' --output-format text --dangerously-skip-permissions"
+            sh(&format!("printf '%s\\n' {cmd}")),
+            [
+                "/usr/local/bin/arugulad",
+                "_agent-run",
+                "/usr/local/bin/claude",
+                "-p",
+                "fix the build",
+                "--append-system-prompt",
+                agent_run::HEADLESS,
+                "--output-format",
+                "stream-json",
+                "--verbose",
+                "--dangerously-skip-permissions\n",
+            ]
+            .join("\n")
         );
         assert_eq!(shown, "claude -p 'fix the build'");
-        assert_eq!(what(&op, None).unwrap_err().0, "op_agent");
+        assert_eq!(what(&op, None, Some(follow)).unwrap_err().0, "op_agent");
+        assert_eq!(what(&op, Some(claude), None).unwrap_err().0, "op_agent");
         let c = pane_command(
             "run_1",
             "abc",
             &op,
             None,
             Some(&as_),
-            &Agent { claude: Some(claude), login: Some(("ANTHROPIC_API_KEY", file)), env: &[] },
+            &Agent { claude: Some(claude), follow: Some(follow), login: Some(("ANTHROPIC_API_KEY", file)), env: &[] },
             Path::new("/home/runner/work/run_1/.arugula/artifacts"),
         )
         .unwrap();
@@ -1520,6 +1568,7 @@ mod tests {
             grant: None,
             turn: None,
             deploy: None,
+            agent: false,
             events: vec![],
             logs: Default::default(),
         }

@@ -23,6 +23,8 @@
 //   /p/:project/boards             its boards, when the
 //                                  `boards` Labs flag is on
 //   /p/:project/boards/:board      a board (`brd_…`)
+//   /docs                          every Doc the reader can read, their own
+//                                  private ones first (#418)
 //   /p/:project/docs               its Docs (aru-118)
 //   /p/:project/docs/:doc          a Doc (`pdc_…`)
 //   /p/:project/runs               its runs (M215): `?state=…`, `?trigger=…`,
@@ -66,7 +68,7 @@
  * #193): its copy is `PAGES` in crates/platform-api/src/page.rs, which a test
  * there checks against this list and `parse`. A new top-level route goes
  * in both. */
-export const TOP = ["p", "chat", "dm", "issues", "runs", "installed", "inbox", "settings", "deploys", "boards"] as const;
+export const TOP = ["p", "chat", "dm", "issues", "runs", "installed", "inbox", "settings", "deploys", "boards", "docs"] as const;
 
 export type Route =
   | { page: "home" }
@@ -77,7 +79,7 @@ export type Route =
   | { page: "triage"; project: string }
   | { page: "boards"; project: string }
   | { page: "board"; project: string; board: string }
-  | { page: "docs"; project: string }
+  | { page: "docs"; project?: string }
   | { page: "doc"; project: string; doc: string }
   | { page: "runs"; project: string; state?: string; trigger?: string; spec?: string }
   | { page: "run"; project: string; run: string; msg?: number }
@@ -170,6 +172,7 @@ export function parse(path: string, search = ""): Route {
   if (parts.length === 0) return { page: "home" };
   if (parts.length === 1 && parts[0] === "inbox") return { page: "inbox" };
   if (parts.length === 1 && parts[0] === "boards") return { page: "all-boards" };
+  if (parts.length === 1 && parts[0] === "docs") return { page: "docs" };
   if (parts.length === 1 && parts[0] === "settings") return { page: "settings" };
   if (parts[0] === "chat" && parts.length <= 2) {
     if (parts.length === 1) return { page: "find", what: "chat" };
@@ -329,7 +332,7 @@ export function pathOf(r: Route, names: Names = () => null): string {
     case "board":
       return `/p/${s(r.project)}/boards/${s(r.board)}`;
     case "docs":
-      return `/p/${s(r.project)}/docs`;
+      return r.project ? `/p/${s(r.project)}/docs` : "/docs";
     case "doc":
       return `/p/${s(r.project)}/docs/${s(r.doc)}`;
     case "runs": {

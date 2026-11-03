@@ -1540,8 +1540,10 @@ impl Live {
             | ChatLive::ThreadRead { room, .. }
             | ChatLive::Read { room, .. }
             | ChatLive::Object { room, .. }
-            | ChatLive::Session { room, .. } => self.rooms.contains(room),
-            // Sidebar and Saved are told to their account only (`out.to`).
+            | ChatLive::Session { room, .. }
+            | ChatLive::Github { room, .. } => self.rooms.contains(room),
+            // Sidebar and Saved (and Github, above) are told to their
+            // account only (`out.to`).
             ChatLive::Hello { .. }
             | ChatLive::Sidebar {}
             | ChatLive::Saved {}
@@ -2485,7 +2487,8 @@ pub(crate) async fn post_replied(
     let github = match room.target.as_deref().filter(|t| to_github && t.starts_with("iss_")) {
         Some(issue) => {
             let machine = agent.map(|a| a.machine.as_str());
-            crate::forge::export::posted(app, issue, &s.account, machine, seq, text).await
+            // Its send runs after this returns (Arugula #584).
+            crate::forge::export::posted(app, issue, &room.id, &s.account, machine, seq, text).await
         }
         None => None,
     };

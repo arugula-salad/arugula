@@ -66,8 +66,6 @@ struct State {
     pushes: Vec<(String, Value, PushOptions)>,
     /// Accounts signed in with GitHub, by account.
     github: BTreeMap<String, crate::forge::GithubUser>,
-    /// The forge pokes it was handed, to relay.
-    pokes: Vec<arugula_control_wire::forge::Poke>,
     /// What each machine answers an op (M168; else it's away), and the
     /// ops asked, in order.
     op_answers: BTreeMap<String, arugula_control_wire::forge::OpAnswer>,
@@ -253,11 +251,6 @@ impl TestHub {
     }
 
     /// The account signed in with GitHub as `login`, GitHub's user `id`.
-    /// The forge pokes it was handed.
-    pub fn pokes(&self) -> Vec<arugula_control_wire::forge::Poke> {
-        self.state.lock().unwrap().pokes.clone()
-    }
-
     /// A product's user linked to an account by GitHub id (M229).
     pub fn link_product(&self, client: &str, user: &str, account: &str, github_id: u64) {
         let mut s = self.state.lock().unwrap();
@@ -515,12 +508,6 @@ impl HubPort for TestHub {
         let there = self.state.lock().unwrap().teams.contains_key(team);
         done(there.then(|| format!("prj_{team}")))
     }
-    fn forge_pokes<'a>(&'a self, pokes: &'a [arugula_control_wire::forge::Poke]) -> BoxFuture<'a, HubResult<u32>> {
-        self.called("forge_pokes");
-        self.state.lock().unwrap().pokes.extend_from_slice(pokes);
-        done(pokes.len() as u32)
-    }
-
     fn linked_account<'a>(
         &'a self,
         client: &'a str,
