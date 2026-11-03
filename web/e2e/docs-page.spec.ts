@@ -503,6 +503,8 @@ test.describe("the page drawn", () => {
           // Nothing is wider than the phone, and every button is on it.
           const width = await page.evaluate(() => document.documentElement.clientWidth);
           expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
+          // The list isn't focused on a touch screen: no ring on its first row.
+          await expect(page.locator("[data-list-rows]")).not.toBeFocused();
           // A tap opens the preview in the list's place, and back returns.
           await page.locator("[data-doc]").first().tap();
           await expect(page.locator("[data-list-back]")).toBeVisible();
