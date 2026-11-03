@@ -16,7 +16,8 @@
         "operationId": "GET_api_boards_id",
         "x-arugula-clients": [
           "page",
-          "cli"
+          "cli",
+          "native"
         ],
         "security": [
           {
@@ -63,7 +64,8 @@
         "operationId": "PATCH_api_boards_id",
         "x-arugula-clients": [
           "page",
-          "cli"
+          "cli",
+          "native"
         ],
         "security": [
           {
@@ -122,7 +124,8 @@
         "operationId": "POST_api_boards_id_asks_ask_answer",
         "x-arugula-clients": [
           "page",
-          "cli"
+          "cli",
+          "native"
         ],
         "security": [
           {
@@ -189,7 +192,8 @@
         "operationId": "POST_api_boards_id_attachments",
         "x-arugula-clients": [
           "page",
-          "cli"
+          "cli",
+          "native"
         ],
         "security": [
           {
@@ -248,7 +252,8 @@
         "operationId": "DELETE_api_boards_id_attachments_attachment",
         "x-arugula-clients": [
           "page",
-          "cli"
+          "cli",
+          "native"
         ],
         "security": [
           {
@@ -305,7 +310,8 @@
         "operationId": "POST_api_boards_id_close",
         "x-arugula-clients": [
           "page",
-          "cli"
+          "cli",
+          "native"
         ],
         "security": [
           {
@@ -364,7 +370,8 @@
         "operationId": "POST_api_boards_id_docs",
         "x-arugula-clients": [
           "page",
-          "cli"
+          "cli",
+          "native"
         ],
         "security": [
           {
@@ -423,7 +430,8 @@
         "operationId": "DELETE_api_boards_id_docs_doc",
         "x-arugula-clients": [
           "page",
-          "cli"
+          "cli",
+          "native"
         ],
         "security": [
           {
@@ -480,7 +488,8 @@
         "operationId": "POST_api_boards_id_docs_doc_move",
         "x-arugula-clients": [
           "page",
-          "cli"
+          "cli",
+          "native"
         ],
         "security": [
           {
@@ -547,7 +556,8 @@
         "operationId": "PUT_api_boards_id_entries",
         "x-arugula-clients": [
           "page",
-          "cli"
+          "cli",
+          "native"
         ],
         "security": [
           {
@@ -606,7 +616,8 @@
         "operationId": "DELETE_api_boards_id_entries_entry",
         "x-arugula-clients": [
           "page",
-          "cli"
+          "cli",
+          "native"
         ],
         "security": [
           {
@@ -663,7 +674,8 @@
         "operationId": "POST_api_boards_id_entries_entry_move",
         "x-arugula-clients": [
           "page",
-          "cli"
+          "cli",
+          "native"
         ],
         "security": [
           {
@@ -730,7 +742,8 @@
         "operationId": "POST_api_boards_id_reopen",
         "x-arugula-clients": [
           "page",
-          "cli"
+          "cli",
+          "native"
         ],
         "security": [
           {
@@ -779,7 +792,8 @@
         "operationId": "POST_api_boards_id_rows_row_ask",
         "x-arugula-clients": [
           "page",
-          "cli"
+          "cli",
+          "native"
         ],
         "security": [
           {
@@ -845,7 +859,8 @@
       "put": {
         "operationId": "PUT_api_boards_id_rows_row_lane",
         "x-arugula-clients": [
-          "page"
+          "page",
+          "native"
         ],
         "security": [
           {
@@ -911,7 +926,8 @@
       "get": {
         "operationId": "GET_api_chat",
         "x-arugula-clients": [
-          "page"
+          "page",
+          "native"
         ],
         "security": [
           {
@@ -949,7 +965,8 @@
       "get": {
         "operationId": "GET_api_chat_avatar_account",
         "x-arugula-clients": [
-          "page"
+          "page",
+          "native"
         ],
         "security": [
           {
@@ -990,7 +1007,8 @@
       "get": {
         "operationId": "GET_api_chat_keywords",
         "x-arugula-clients": [
-          "page"
+          "page",
+          "native"
         ],
         "security": [
           {
@@ -1026,7 +1044,8 @@
       "put": {
         "operationId": "PUT_api_chat_keywords",
         "x-arugula-clients": [
-          "page"
+          "page",
+          "native"
         ],
         "security": [
           {
@@ -1074,7 +1093,8 @@
       "get": {
         "operationId": "GET_api_chat_live",
         "x-arugula-clients": [
-          "page"
+          "page",
+          "native"
         ],
         "security": [
           {
@@ -1112,7 +1132,8 @@
       "post": {
         "operationId": "POST_api_chat_live_open",
         "x-arugula-clients": [
-          "page"
+          "page",
+          "native"
         ],
         "security": [
           {
@@ -1160,7 +1181,8 @@
       "get": {
         "operationId": "GET_api_chat_previews_image",
         "x-arugula-clients": [
-          "page"
+          "page",
+          "native"
         ],
         "security": [
           {
@@ -1194,7 +1216,8 @@
       "get": {
         "operationId": "GET_api_chat_rooms_id",
         "x-arugula-clients": [
-          "page"
+          "page",
+          "native"
         ],
         "security": [
           {
@@ -1240,7 +1263,8 @@
       "patch": {
         "operationId": "PATCH_api_chat_rooms_id",
         "x-arugula-clients": [
-          "page"
+          "page",
+          "native"
         ],
         "security": [
           {
@@ -1298,7 +1322,8 @@
       "post": {
         "operationId": "POST_api_chat_rooms_id_files",
         "x-arugula-clients": [
-          "page"
+          "page",
+          "native"
         ],
         "security": [
           {
@@ -1355,7 +1380,8 @@
       "get": {
         "operationId": "GET_api_chat_rooms_id_files_file",
         "x-arugula-clients": [
-          "page"
+          "page",
+          "native"
         ],
         "security": [
           {
@@ -1407,7 +1433,8 @@
       "post": {
         "operationId": "POST_api_chat_rooms_id_grant_never",
         "x-arugula-clients": [
-          "page"
+          "page",
+          "native"
         ],
         "security": [
           {
@@ -1461,7 +1488,8 @@
       "post": {
         "operationId": "POST_api_chat_rooms_id_join",
         "x-arugula-clients": [
-          "page"
+          "page",
+          "native"
         ],
         "security": [
           {
@@ -1509,7 +1537,8 @@
       "post": {
         "operationId": "POST_api_chat_rooms_id_leave",
         "x-arugula-clients": [
-          "page"
+          "page",
+          "native"
         ],
         "security": [
           {
@@ -1550,7 +1579,8 @@
       "post": {
         "operationId": "POST_api_chat_rooms_id_level",
         "x-arugula-clients": [
-          "page"
+          "page",
+          "native"
         ],
         "security": [
           {
@@ -1608,7 +1638,8 @@
       "post": {
         "operationId": "POST_api_chat_rooms_id_members",
         "x-arugula-clients": [
-          "page"
+          "page",
+          "native"
         ],
         "security": [
           {
@@ -1666,7 +1697,8 @@
       "delete": {
         "operationId": "DELETE_api_chat_rooms_id_members_account",
         "x-arugula-clients": [
-          "page"
+          "page",
+          "native"
         ],
         "security": [
           {
@@ -1723,7 +1755,8 @@
         "operationId": "GET_api_chat_rooms_id_messages",
         "x-arugula-clients": [
           "page",
-          "cli"
+          "cli",
+          "native"
         ],
         "security": [
           {
@@ -1779,7 +1812,8 @@
         "operationId": "POST_api_chat_rooms_id_messages",
         "x-arugula-clients": [
           "page",
-          "cli"
+          "cli",
+          "native"
         ],
         "security": [
           {
@@ -1834,10 +1868,66 @@
       }
     },
     "/api/chat/rooms/{id}/messages/{seq}": {
+      "delete": {
+        "operationId": "DELETE_api_chat_rooms_id_messages_seq",
+        "x-arugula-clients": [
+          "page",
+          "native"
+        ],
+        "security": [
+          {
+            "deviceSignature": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "Refused",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Refusal"
+                }
+              }
+            }
+          },
+          "2XX": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatMessage"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "seq",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      },
       "patch": {
         "operationId": "PATCH_api_chat_rooms_id_messages_seq",
         "x-arugula-clients": [
-          "page"
+          "page",
+          "native"
         ],
         "security": [
           {
@@ -1897,67 +1987,14 @@
             }
           }
         }
-      },
-      "delete": {
-        "operationId": "DELETE_api_chat_rooms_id_messages_seq",
-        "x-arugula-clients": [
-          "page"
-        ],
-        "security": [
-          {
-            "deviceSignature": []
-          },
-          {
-            "sessionCookie": []
-          }
-        ],
-        "responses": {
-          "default": {
-            "description": "Refused",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Refusal"
-                }
-              }
-            }
-          },
-          "2XX": {
-            "description": "OK",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ChatMessage"
-                }
-              }
-            }
-          }
-        },
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "seq",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ]
       }
     },
     "/api/chat/rooms/{id}/messages/{seq}/pin": {
-      "put": {
-        "operationId": "PUT_api_chat_rooms_id_messages_seq_pin",
+      "delete": {
+        "operationId": "DELETE_api_chat_rooms_id_messages_seq_pin",
         "x-arugula-clients": [
-          "page"
+          "page",
+          "native"
         ],
         "security": [
           {
@@ -2008,10 +2045,11 @@
           }
         ]
       },
-      "delete": {
-        "operationId": "DELETE_api_chat_rooms_id_messages_seq_pin",
+      "put": {
+        "operationId": "PUT_api_chat_rooms_id_messages_seq_pin",
         "x-arugula-clients": [
-          "page"
+          "page",
+          "native"
         ],
         "security": [
           {
@@ -2067,7 +2105,8 @@
       "post": {
         "operationId": "POST_api_chat_rooms_id_messages_seq_previews",
         "x-arugula-clients": [
-          "page"
+          "page",
+          "native"
         ],
         "security": [
           {
@@ -2117,10 +2156,69 @@
       }
     },
     "/api/chat/rooms/{id}/messages/{seq}/reactions": {
+      "delete": {
+        "operationId": "DELETE_api_chat_rooms_id_messages_seq_reactions",
+        "x-arugula-clients": [
+          "page",
+          "native"
+        ],
+        "security": [
+          {
+            "deviceSignature": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "Refused",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Refusal"
+                }
+              }
+            }
+          },
+          "2XX": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatMessage"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "seq",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "x-arugula-untyped": [
+          "query: ChatReactQuery"
+        ]
+      },
       "post": {
         "operationId": "POST_api_chat_rooms_id_messages_seq_reactions",
         "x-arugula-clients": [
-          "page"
+          "page",
+          "native"
         ],
         "security": [
           {
@@ -2180,70 +2278,14 @@
             }
           }
         }
-      },
-      "delete": {
-        "operationId": "DELETE_api_chat_rooms_id_messages_seq_reactions",
-        "x-arugula-clients": [
-          "page"
-        ],
-        "security": [
-          {
-            "deviceSignature": []
-          },
-          {
-            "sessionCookie": []
-          }
-        ],
-        "responses": {
-          "default": {
-            "description": "Refused",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Refusal"
-                }
-              }
-            }
-          },
-          "2XX": {
-            "description": "OK",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ChatMessage"
-                }
-              }
-            }
-          }
-        },
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "seq",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "x-arugula-untyped": [
-          "query: ChatReactQuery"
-        ]
       }
     },
     "/api/chat/rooms/{id}/messages/{seq}/saved": {
-      "put": {
-        "operationId": "PUT_api_chat_rooms_id_messages_seq_saved",
+      "delete": {
+        "operationId": "DELETE_api_chat_rooms_id_messages_seq_saved",
         "x-arugula-clients": [
-          "page"
+          "page",
+          "native"
         ],
         "security": [
           {
@@ -2290,7 +2332,8 @@
       "patch": {
         "operationId": "PATCH_api_chat_rooms_id_messages_seq_saved",
         "x-arugula-clients": [
-          "page"
+          "page",
+          "native"
         ],
         "security": [
           {
@@ -2344,10 +2387,11 @@
           }
         }
       },
-      "delete": {
-        "operationId": "DELETE_api_chat_rooms_id_messages_seq_saved",
+      "put": {
+        "operationId": "PUT_api_chat_rooms_id_messages_seq_saved",
         "x-arugula-clients": [
-          "page"
+          "page",
+          "native"
         ],
         "security": [
           {
@@ -2396,7 +2440,8 @@
       "post": {
         "operationId": "POST_api_chat_rooms_id_mute",
         "x-arugula-clients": [
-          "page"
+          "page",
+          "native"
         ],
         "security": [
           {
@@ -2454,7 +2499,8 @@
       "get": {
         "operationId": "GET_api_chat_rooms_id_pins",
         "x-arugula-clients": [
-          "page"
+          "page",
+          "native"
         ],
         "security": [
           {
@@ -2502,7 +2548,8 @@
       "get": {
         "operationId": "GET_api_chat_rooms_id_previews",
         "x-arugula-clients": [
-          "page"
+          "page",
+          "native"
         ],
         "security": [
           {
@@ -2547,7 +2594,8 @@
       "post": {
         "operationId": "POST_api_chat_rooms_id_read",
         "x-arugula-clients": [
-          "page"
+          "page",
+          "native"
         ],
         "security": [
           {
@@ -2605,7 +2653,8 @@
       "post": {
         "operationId": "POST_api_chat_rooms_id_threads_seq_follow",
         "x-arugula-clients": [
-          "page"
+          "page",
+          "native"
         ],
         "security": [
           {
@@ -2671,7 +2720,8 @@
       "post": {
         "operationId": "POST_api_chat_rooms_id_threads_seq_read",
         "x-arugula-clients": [
-          "page"
+          "page",
+          "native"
         ],
         "security": [
           {
@@ -2737,7 +2787,8 @@
       "put": {
         "operationId": "PUT_api_chat_rooms_id_topic",
         "x-arugula-clients": [
-          "page"
+          "page",
+          "native"
         ],
         "security": [
           {
@@ -2795,7 +2846,8 @@
       "post": {
         "operationId": "POST_api_chat_rooms_id_typing",
         "x-arugula-clients": [
-          "page"
+          "page",
+          "native"
         ],
         "security": [
           {
@@ -2836,7 +2888,8 @@
       "post": {
         "operationId": "POST_api_chat_rooms_id_unread",
         "x-arugula-clients": [
-          "page"
+          "page",
+          "native"
         ],
         "security": [
           {
@@ -2894,7 +2947,8 @@
       "get": {
         "operationId": "GET_api_chat_rooms_room_asks_seq",
         "x-arugula-clients": [
-          "page"
+          "page",
+          "native"
         ],
         "security": [
           {
@@ -2948,7 +3002,8 @@
       "post": {
         "operationId": "POST_api_chat_rooms_room_asks_seq",
         "x-arugula-clients": [
-          "page"
+          "page",
+          "native"
         ],
         "security": [
           {
@@ -3014,7 +3069,8 @@
       "get": {
         "operationId": "GET_api_chat_saved",
         "x-arugula-clients": [
-          "page"
+          "page",
+          "native"
         ],
         "security": [
           {
@@ -3052,7 +3108,8 @@
       "get": {
         "operationId": "GET_api_chat_search",
         "x-arugula-clients": [
-          "page"
+          "page",
+          "native"
         ],
         "security": [
           {
@@ -3101,7 +3158,8 @@
       "get": {
         "operationId": "GET_api_chat_sidebar",
         "x-arugula-clients": [
-          "page"
+          "page",
+          "native"
         ],
         "security": [
           {
@@ -3137,7 +3195,8 @@
       "put": {
         "operationId": "PUT_api_chat_sidebar",
         "x-arugula-clients": [
-          "page"
+          "page",
+          "native"
         ],
         "security": [
           {
@@ -3186,7 +3245,8 @@
         "operationId": "POST_api_chat_targets",
         "x-arugula-clients": [
           "page",
-          "cli"
+          "cli",
+          "native"
         ],
         "security": [
           {
@@ -3234,7 +3294,8 @@
       "get": {
         "operationId": "GET_api_chat_teams_team_channels",
         "x-arugula-clients": [
-          "page"
+          "page",
+          "native"
         ],
         "security": [
           {
@@ -3283,7 +3344,8 @@
       "post": {
         "operationId": "POST_api_chat_teams_team_channels",
         "x-arugula-clients": [
-          "page"
+          "page",
+          "native"
         ],
         "security": [
           {
@@ -3341,7 +3403,8 @@
       "post": {
         "operationId": "POST_api_chat_teams_team_dms",
         "x-arugula-clients": [
-          "page"
+          "page",
+          "native"
         ],
         "security": [
           {
@@ -3399,7 +3462,8 @@
       "get": {
         "operationId": "GET_api_chat_threads",
         "x-arugula-clients": [
-          "page"
+          "page",
+          "native"
         ],
         "security": [
           {
@@ -3437,7 +3501,8 @@
       "get": {
         "operationId": "GET_api_deploys_waiting",
         "x-arugula-clients": [
-          "page"
+          "page",
+          "native"
         ],
         "security": [
           {
@@ -3472,7 +3537,8 @@
         "operationId": "GET_api_deploys_id",
         "x-arugula-clients": [
           "page",
-          "cli"
+          "cli",
+          "native"
         ],
         "security": [
           {
@@ -3516,7 +3582,8 @@
       "post": {
         "operationId": "POST_api_deploys_id_approve",
         "x-arugula-clients": [
-          "page"
+          "page",
+          "native"
         ],
         "security": [
           {
@@ -3561,7 +3628,8 @@
       "get": {
         "operationId": "GET_api_deploys_id_can_decide",
         "x-arugula-clients": [
-          "page"
+          "page",
+          "native"
         ],
         "security": [
           {
@@ -3605,7 +3673,8 @@
       "post": {
         "operationId": "POST_api_deploys_id_deny",
         "x-arugula-clients": [
-          "page"
+          "page",
+          "native"
         ],
         "security": [
           {
@@ -3646,12 +3715,121 @@
         ]
       }
     },
+    "/api/devices": {
+      "get": {
+        "operationId": "GET_api_devices",
+        "x-arugula-clients": [
+          "page",
+          "cli",
+          "native"
+        ],
+        "security": [
+          {
+            "deviceSignature": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "Refused",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Refusal"
+                }
+              }
+            }
+          },
+          "2XX": {
+            "description": "OK"
+          }
+        },
+        "x-arugula-untyped": [
+          "response: a JSON object built in place"
+        ]
+      }
+    },
+    "/api/directory": {
+      "get": {
+        "operationId": "GET_api_directory",
+        "x-arugula-clients": [
+          "page",
+          "daemon",
+          "cli",
+          "native"
+        ],
+        "security": [
+          {
+            "deviceSignature": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "Refused",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Refusal"
+                }
+              }
+            }
+          },
+          "2XX": {
+            "description": "OK"
+          }
+        },
+        "x-arugula-untyped": [
+          "response: a JSON object built in place"
+        ]
+      }
+    },
+    "/api/flags": {
+      "get": {
+        "operationId": "GET_api_flags",
+        "x-arugula-clients": [
+          "page",
+          "native"
+        ],
+        "security": [
+          {
+            "deviceSignature": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "Refused",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Refusal"
+                }
+              }
+            }
+          },
+          "2XX": {
+            "description": "OK"
+          }
+        },
+        "x-arugula-untyped": [
+          "response: a JSON object built in place"
+        ]
+      }
+    },
     "/api/inbox": {
       "get": {
         "operationId": "GET_api_inbox",
         "x-arugula-clients": [
           "page",
           "cli",
+          "native",
           "daemon"
         ],
         "security": [
@@ -3702,7 +3880,8 @@
         "operationId": "POST_api_inbox_item",
         "x-arugula-clients": [
           "page",
-          "cli"
+          "cli",
+          "native"
         ],
         "security": [
           {
@@ -3761,7 +3940,8 @@
         "operationId": "GET_api_issues_id",
         "x-arugula-clients": [
           "page",
-          "cli"
+          "cli",
+          "native"
         ],
         "security": [
           {
@@ -3808,7 +3988,8 @@
         "operationId": "PATCH_api_issues_id",
         "x-arugula-clients": [
           "page",
-          "cli"
+          "cli",
+          "native"
         ],
         "security": [
           {
@@ -3867,7 +4048,8 @@
         "operationId": "GET_api_issues_id_events",
         "x-arugula-clients": [
           "page",
-          "cli"
+          "cli",
+          "native"
         ],
         "security": [
           {
@@ -3915,7 +4097,8 @@
       "post": {
         "operationId": "POST_api_issues_issue_agent",
         "x-arugula-clients": [
-          "page"
+          "page",
+          "native"
         ],
         "security": [
           {
@@ -3959,12 +4142,99 @@
         ]
       }
     },
-    "/api/projects": {
+    "/api/join": {
+      "post": {
+        "operationId": "POST_api_join",
+        "x-arugula-clients": [
+          "daemon",
+          "cli",
+          "native"
+        ],
+        "security": [],
+        "responses": {
+          "default": {
+            "description": "Refused",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Refusal"
+                }
+              }
+            }
+          },
+          "2XX": {
+            "description": "OK"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/JoinRequest"
+              }
+            }
+          }
+        },
+        "x-arugula-untyped": [
+          "response: JoinAnswer or RemovedAnswer"
+        ]
+      }
+    },
+    "/api/join/{code}": {
       "get": {
-        "operationId": "GET_api_projects",
+        "operationId": "GET_api_join_code",
+        "x-arugula-clients": [
+          "daemon",
+          "cli",
+          "native"
+        ],
+        "security": [],
+        "responses": {
+          "default": {
+            "description": "Refused",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Refusal"
+                }
+              }
+            }
+          },
+          "2XX": {
+            "description": "OK"
+          }
+        },
+        "parameters": [
+          {
+            "name": "code",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "query",
+            "in": "query",
+            "style": "form",
+            "explode": true,
+            "schema": {
+              "$ref": "#/components/schemas/PollQuery"
+            }
+          }
+        ],
+        "x-arugula-untyped": [
+          "response: JoinPoll, through crate::reply"
+        ]
+      }
+    },
+    "/api/me": {
+      "get": {
+        "operationId": "GET_api_me",
         "x-arugula-clients": [
           "page",
-          "cli"
+          "native"
         ],
         "security": [
           {
@@ -3990,8 +4260,83 @@
           }
         },
         "x-arugula-untyped": [
-          "response: Answer<Value>"
+          "response: a JSON object built in place"
         ]
+      }
+    },
+    "/api/people": {
+      "get": {
+        "operationId": "GET_api_people",
+        "x-arugula-clients": [
+          "page",
+          "native"
+        ],
+        "security": [
+          {
+            "deviceSignature": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "Refused",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Refusal"
+                }
+              }
+            }
+          },
+          "2XX": {
+            "description": "OK"
+          }
+        },
+        "x-arugula-untyped": [
+          "query and response: local to the handler"
+        ]
+      }
+    },
+    "/api/projects": {
+      "get": {
+        "operationId": "GET_api_projects",
+        "x-arugula-clients": [
+          "page",
+          "cli",
+          "native"
+        ],
+        "security": [
+          {
+            "deviceSignature": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "Refused",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Refusal"
+                }
+              }
+            }
+          },
+          "2XX": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Projects"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/api/projects/{project}/boards": {
@@ -3999,7 +4344,8 @@
         "operationId": "GET_api_projects_project_boards",
         "x-arugula-clients": [
           "page",
-          "cli"
+          "cli",
+          "native"
         ],
         "security": [
           {
@@ -4046,7 +4392,8 @@
         "operationId": "POST_api_projects_project_boards",
         "x-arugula-clients": [
           "page",
-          "cli"
+          "cli",
+          "native"
         ],
         "security": [
           {
@@ -4104,7 +4451,8 @@
       "get": {
         "operationId": "GET_api_projects_project_docs",
         "x-arugula-clients": [
-          "page"
+          "page",
+          "native"
         ],
         "security": [
           {
@@ -4150,7 +4498,8 @@
       "post": {
         "operationId": "POST_api_projects_project_docs",
         "x-arugula-clients": [
-          "page"
+          "page",
+          "native"
         ],
         "security": [
           {
@@ -4208,7 +4557,8 @@
       "get": {
         "operationId": "GET_api_projects_project_docs_doc_boards",
         "x-arugula-clients": [
-          "page"
+          "page",
+          "native"
         ],
         "security": [
           {
@@ -4261,10 +4611,62 @@
       }
     },
     "/api/projects/{project}/docs/{id}": {
+      "delete": {
+        "operationId": "DELETE_api_projects_project_docs_id",
+        "x-arugula-clients": [
+          "page",
+          "native"
+        ],
+        "security": [
+          {
+            "deviceSignature": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "Refused",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Refusal"
+                }
+              }
+            }
+          },
+          "2XX": {
+            "description": "OK"
+          }
+        },
+        "parameters": [
+          {
+            "name": "project",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "x-arugula-untyped": [
+          "response: Value"
+        ]
+      },
       "get": {
         "operationId": "GET_api_projects_project_docs_id",
         "x-arugula-clients": [
-          "page"
+          "page",
+          "native"
         ],
         "security": [
           {
@@ -4318,7 +4720,8 @@
       "put": {
         "operationId": "PUT_api_projects_project_docs_id",
         "x-arugula-clients": [
-          "page"
+          "page",
+          "native"
         ],
         "security": [
           {
@@ -4378,63 +4781,14 @@
             }
           }
         }
-      },
-      "delete": {
-        "operationId": "DELETE_api_projects_project_docs_id",
-        "x-arugula-clients": [
-          "page"
-        ],
-        "security": [
-          {
-            "deviceSignature": []
-          },
-          {
-            "sessionCookie": []
-          }
-        ],
-        "responses": {
-          "default": {
-            "description": "Refused",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Refusal"
-                }
-              }
-            }
-          },
-          "2XX": {
-            "description": "OK"
-          }
-        },
-        "parameters": [
-          {
-            "name": "project",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "x-arugula-untyped": [
-          "response: Value"
-        ]
       }
     },
     "/api/projects/{project}/docs/{id}/assets/{name}": {
       "get": {
         "operationId": "GET_api_projects_project_docs_id_assets_name",
         "x-arugula-clients": [
-          "page"
+          "page",
+          "native"
         ],
         "security": [
           {
@@ -4491,7 +4845,8 @@
       "post": {
         "operationId": "POST_api_projects_project_docs_id_move",
         "x-arugula-clients": [
-          "page"
+          "page",
+          "native"
         ],
         "security": [
           {
@@ -4559,6 +4914,7 @@
         "x-arugula-clients": [
           "page",
           "cli",
+          "native",
           "daemon"
         ],
         "security": [
@@ -4611,7 +4967,8 @@
         "operationId": "GET_api_projects_project_issues",
         "x-arugula-clients": [
           "page",
-          "cli"
+          "cli",
+          "native"
         ],
         "security": [
           {
@@ -4667,7 +5024,8 @@
         "operationId": "POST_api_projects_project_issues",
         "x-arugula-clients": [
           "page",
-          "cli"
+          "cli",
+          "native"
         ],
         "security": [
           {
@@ -4726,7 +5084,8 @@
         "operationId": "GET_api_projects_project_issues_number",
         "x-arugula-clients": [
           "page",
-          "cli"
+          "cli",
+          "native"
         ],
         "security": [
           {
@@ -4784,6 +5143,7 @@
         "x-arugula-clients": [
           "page",
           "cli",
+          "native",
           "daemon"
         ],
         "security": [
@@ -4836,7 +5196,8 @@
         "operationId": "GET_api_projects_project_runs_grant",
         "x-arugula-clients": [
           "page",
-          "cli"
+          "cli",
+          "native"
         ],
         "security": [
           {
@@ -4878,7 +5239,8 @@
       "post": {
         "operationId": "POST_api_projects_project_runs_grant",
         "x-arugula-clients": [
-          "page"
+          "page",
+          "native"
         ],
         "security": [
           {
@@ -4923,7 +5285,8 @@
       "post": {
         "operationId": "POST_api_projects_project_runs_grant_revoke",
         "x-arugula-clients": [
-          "page"
+          "page",
+          "native"
         ],
         "security": [
           {
@@ -4977,7 +5340,8 @@
       "get": {
         "operationId": "GET_api_projects_project_sessions",
         "x-arugula-clients": [
-          "page"
+          "page",
+          "native"
         ],
         "security": [
           {
@@ -5034,7 +5398,8 @@
       "get": {
         "operationId": "GET_api_projects_project_work",
         "x-arugula-clients": [
-          "page"
+          "page",
+          "native"
         ],
         "security": [
           {
@@ -5087,12 +5452,89 @@
         ]
       }
     },
+    "/api/relay/c/{id}": {
+      "get": {
+        "operationId": "GET_api_relay_c_id",
+        "x-arugula-clients": [
+          "page",
+          "daemon",
+          "cli",
+          "native"
+        ],
+        "security": [
+          {
+            "deviceSignature": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "101": {
+            "description": "A WebSocket: Noise frames to and from the machine"
+          },
+          "default": {
+            "description": "Refused",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Refusal"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/api/relay/m": {
+      "get": {
+        "operationId": "GET_api_relay_m",
+        "x-arugula-clients": [
+          "page",
+          "native"
+        ],
+        "security": [
+          {
+            "deviceSignature": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "101": {
+            "description": "A WebSocket: Noise frames to and from the machine"
+          },
+          "default": {
+            "description": "Refused",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Refusal"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/runs/{run}": {
       "get": {
         "operationId": "GET_api_runs_run",
         "x-arugula-clients": [
           "page",
-          "cli"
+          "cli",
+          "native"
         ],
         "security": [
           {
@@ -5150,7 +5592,8 @@
         "operationId": "GET_api_runs_run_log",
         "x-arugula-clients": [
           "page",
-          "cli"
+          "cli",
+          "native"
         ],
         "security": [
           {
@@ -5207,7 +5650,8 @@
       "get": {
         "operationId": "GET_api_sessions_ses",
         "x-arugula-clients": [
-          "page"
+          "page",
+          "native"
         ],
         "security": [
           {
@@ -5255,7 +5699,8 @@
       "post": {
         "operationId": "POST_api_sessions_ses_actions",
         "x-arugula-clients": [
-          "page"
+          "page",
+          "native"
         ],
         "security": [
           {
@@ -5313,7 +5758,8 @@
       "post": {
         "operationId": "POST_api_sessions_ses_move",
         "x-arugula-clients": [
-          "page"
+          "page",
+          "native"
         ],
         "security": [
           {
@@ -5371,7 +5817,8 @@
       "post": {
         "operationId": "POST_api_sessions_ses_pick",
         "x-arugula-clients": [
-          "page"
+          "page",
+          "native"
         ],
         "security": [
           {
@@ -5429,7 +5876,8 @@
       "get": {
         "operationId": "GET_api_sessions_ses_pr",
         "x-arugula-clients": [
-          "page"
+          "page",
+          "native"
         ],
         "security": [
           {
@@ -5475,7 +5923,8 @@
       "put": {
         "operationId": "PUT_api_sessions_ses_pr",
         "x-arugula-clients": [
-          "page"
+          "page",
+          "native"
         ],
         "security": [
           {
@@ -5533,7 +5982,8 @@
       "post": {
         "operationId": "POST_api_sessions_ses_pr_send",
         "x-arugula-clients": [
-          "page"
+          "page",
+          "native"
         ],
         "security": [
           {
@@ -5581,7 +6031,8 @@
       "post": {
         "operationId": "POST_api_sessions_ses_stop",
         "x-arugula-clients": [
-          "page"
+          "page",
+          "native"
         ],
         "security": [
           {
@@ -5629,7 +6080,8 @@
       "post": {
         "operationId": "POST_api_sessions_ses_try",
         "x-arugula-clients": [
-          "page"
+          "page",
+          "native"
         ],
         "security": [
           {
@@ -5682,6 +6134,87 @@
           }
         }
       }
+    },
+    "/api/teams": {
+      "get": {
+        "operationId": "GET_api_teams",
+        "x-arugula-clients": [
+          "page",
+          "cli",
+          "native"
+        ],
+        "security": [
+          {
+            "deviceSignature": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "Refused",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Refusal"
+                }
+              }
+            }
+          },
+          "2XX": {
+            "description": "OK"
+          }
+        },
+        "x-arugula-untyped": [
+          "response: a JSON object built in place"
+        ]
+      }
+    },
+    "/api/teams/{id}/rosters": {
+      "get": {
+        "operationId": "GET_api_teams_id_rosters",
+        "x-arugula-clients": [
+          "page",
+          "native"
+        ],
+        "security": [
+          {
+            "deviceSignature": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "Refused",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Refusal"
+                }
+              }
+            }
+          },
+          "2XX": {
+            "description": "OK"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "x-arugula-untyped": [
+          "query and response: local to the handler"
+        ]
+      }
     }
   },
   "components": {
@@ -5690,7 +6223,7 @@
         "type": "apiKey",
         "in": "header",
         "name": "x-arugula-auth",
-        "description": "A device's signature over the request (crates/control/src/auth.rs). A browser-kind device's counts only on routes marked native (#600), which aren't yet."
+        "description": "A device's signature over the request (crates/control/src/auth.rs). A browser-kind device's counts only if it paired as a native app, on routes marked native, with control's --native-clients on (aru-131)."
       },
       "sessionCookie": {
         "type": "apiKey",
@@ -6401,6 +6934,61 @@
           "canceled"
         ],
         "type": "string"
+      },
+      "Cert": {
+        "properties": {
+          "account": {
+            "type": "string"
+          },
+          "approver": {
+            "description": "The device that signed this; the device itself for the root.",
+            "type": "string"
+          },
+          "created": {
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "device": {
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/Kind"
+          },
+          "name": {
+            "type": "string"
+          },
+          "noise": {
+            "description": "X25519 public key, hex (zeros for a recovery code).",
+            "type": "string"
+          },
+          "sig": {
+            "default": "",
+            "description": "Ed25519 signature by the approver over [`Cert::body`], hex; empty\nuntil approved.",
+            "type": "string"
+          },
+          "sign": {
+            "description": "Ed25519 public key, hex.",
+            "type": "string"
+          },
+          "v": {
+            "format": "uint32",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "v",
+          "account",
+          "device",
+          "kind",
+          "name",
+          "noise",
+          "sign",
+          "created",
+          "approver"
+        ],
+        "type": "object"
       },
       "ChatAddMembers": {
         "description": "`POST /api/chat/rooms/{id}/members`: a channel's creator or its team's\nowners add people of the team.",
@@ -10015,6 +10603,89 @@
         },
         "type": "object"
       },
+      "JoinProof": {
+        "properties": {
+          "ms": {
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "sig": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "ms",
+          "sig"
+        ],
+        "type": "object"
+      },
+      "JoinRequest": {
+        "description": "`POST /api/join`. The CLI joins the same way, with only `cert` and\n`proof`.",
+        "properties": {
+          "cert": {
+            "$ref": "#/components/schemas/Cert"
+          },
+          "features": {
+            "default": "",
+            "description": "What the daemon understands, comma-separated (older ones send none).",
+            "type": "string"
+          },
+          "proof": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/JoinProof"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Its signature with the key it asks with (0.17 and newer)."
+          },
+          "team": {
+            "default": null,
+            "description": "A machine that belongs to a team (M19), not a person.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "urls": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "cert"
+        ],
+        "type": "object"
+      },
+      "Kind": {
+        "oneOf": [
+          {
+            "enum": [
+              "browser",
+              "cli",
+              "daemon"
+            ],
+            "type": "string"
+          },
+          {
+            "const": "recovery",
+            "description": "A recovery code: approves a new device when every other is lost.",
+            "type": "string"
+          },
+          {
+            "const": "app",
+            "description": "The desktop app's window. Its keys reach it through whatever\nlistens on the computer's loopback port, so, like a CLI's, they may\nbe a program's on that computer, not the person's. It connects and\napproves machines, CLIs and other apps, but never a browser (see\n[`Kind::certifies`]). Older readers don't know this word: control\nleaves `app` certificates out of what it answers a client that\ndoesn't say it knows them (`app-devices`, see control's `compat.rs`).",
+            "type": "string"
+          }
+        ]
+      },
       "Lane": {
         "description": "Where a row is, worked out on every read from the live state of its\nitems and never stored (aru-125). Each is the furthest that applies, in\nthe order `done`, `review`, `doing`, `next`.",
         "oneOf": [
@@ -10324,6 +10995,29 @@
             "type": "object"
           }
         ]
+      },
+      "Me": {
+        "description": "The signed-in person, as the hub knows them.",
+        "properties": {
+          "account": {
+            "description": "Control's id for the account.",
+            "type": "string"
+          },
+          "login": {
+            "description": "Its sign-in login (GitHub's), or \"\".",
+            "type": "string"
+          },
+          "name": {
+            "description": "The name it chose, else its login, else \"\".",
+            "type": "string"
+          }
+        },
+        "required": [
+          "account",
+          "login",
+          "name"
+        ],
+        "type": "object"
       },
       "MoveDoc": {
         "description": "[`BOARD_DOC_MOVE`]'s body: the Doc it goes before, in the same strip or\nrow; none: last.",
@@ -10666,6 +11360,115 @@
             "type": "object"
           }
         ]
+      },
+      "PollQuery": {
+        "description": "The token the daemon polls with: `GET /api/join/{code}?poll=`.",
+        "properties": {
+          "poll": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "poll"
+        ],
+        "type": "object"
+      },
+      "Project": {
+        "properties": {
+          "id": {
+            "description": "`prj_` and 32 hex characters.",
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "team": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProjectTeam"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The team it's the default project of; `None` for the person's own."
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ],
+        "type": "object"
+      },
+      "ProjectMember": {
+        "properties": {
+          "account": {
+            "type": "string"
+          },
+          "name": {
+            "description": "What the roster calls them.",
+            "type": "string"
+          },
+          "role": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "account",
+          "name",
+          "role"
+        ],
+        "type": "object"
+      },
+      "ProjectTeam": {
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "members": {
+            "items": {
+              "$ref": "#/components/schemas/ProjectMember"
+            },
+            "type": "array"
+          },
+          "name": {
+            "type": "string"
+          },
+          "role": {
+            "description": "The reader's role in it: `owner`, `editor` or `viewer`.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "role",
+          "members"
+        ],
+        "type": "object"
+      },
+      "Projects": {
+        "properties": {
+          "hosted": {
+            "default": false,
+            "description": "Hosted workspaces are open to this person (M179's allowlist): only\nthen does the shell offer to delegate a project to control (M178).\nA platform from before leaves it out.",
+            "type": "boolean"
+          },
+          "me": {
+            "$ref": "#/components/schemas/Me"
+          },
+          "projects": {
+            "items": {
+              "$ref": "#/components/schemas/Project"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "me",
+          "projects"
+        ],
+        "type": "object"
       },
       "Proof": {
         "description": "The mark on a Done row that is proven. A Done row without one is not\nproven yet.",

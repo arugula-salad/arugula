@@ -233,6 +233,15 @@ with_account = "deleted"
 seen_by = ["litestream"]
 
 [[table]]
+name = "native_devices"
+plane = "machine"
+process = "hub"
+holds = "metadata"
+what = "Which browser-kind devices paired by code as native apps, whose signatures count (aru-131)."
+with_account = "deleted"
+seen_by = ["litestream"]
+
+[[table]]
 name = "turned_down"
 plane = "machine"
 process = "hub"

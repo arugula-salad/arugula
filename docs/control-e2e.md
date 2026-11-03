@@ -1979,9 +1979,9 @@ sleeps, and control pushes and searches them itself.
 
 <!-- Written by `just control-tables` from crates/control/tables.toml. Edit that, not this. -->
 
-Control's database has 167 tables in two planes ("Two planes, two trust rules"):
+Control's database has 168 tables in two planes ("Two planes, two trust rules"):
 
-- **The machine plane** (52 tables) is what control needs to route and check: ids, names, addresses, public keys and signed statements. What moves between a client and a machine stays end to end, and control can't read it.
+- **The machine plane** (53 tables) is what control needs to route and check: ids, names, addresses, public keys and signed statements. What moves between a client and a machine stays end to end, and control can't read it.
 - **The platform plane** (115 tables) is what has to exist while every machine is asleep: billing and usage, chat and the threads on objects, Shared Docs, Cloud workspaces, linked repos' PRs and issues, and projects' native issues, runs and deploys. Control reads most of it, and says so here.
 
 Every table is listed in `crates/control/tables.toml`, and a test fails when one isn't. **Holds** is what's in it: metadata (ids, names, addresses, times, counts, public keys, signed statements), ciphertext (encrypted to keys control never holds), or plaintext (what people or their agents wrote, or a secret control can read). **Gone with the account** is what deleting an account does to its rows.
@@ -2005,6 +2005,7 @@ Every table is listed in `crates/control/tables.toml`, and a test fails when one
 | `passkeys` | metadata | A passkey's public key, its sign count, what keeps it, the browser that added it (its User-Agent, the device its sign-in said it is, and that sign-in), whether it gives PRF, and the device its PRF keys are, once a browser holding it said (#641). | yes |  |
 | `passkey_before_log` | metadata | Accounts made before the passkey log began that signed in with a passkey then (DK10, #393): noted from the sessions still on record as the hub starts and before it prunes them, so an account whose passkeys were removed before the log still counts as having had one. The account and when it was noted. | yes |  |
 | `devices` | metadata | A device's or machine's certificate (public keys, signed by a device the account trusts), and its approval. | yes |  |
+| `native_devices` | metadata | Which browser-kind devices paired by code as native apps, whose signatures count (aru-131). | yes |  |
 | `turned_down` | metadata | Which device turned a waiting device down, and when. | yes |  |
 | `account_resets` | **plaintext** | An account's devices reset (aru-119): when, who ran it, the reason support wrote, and the certificates and revocations it archived. | yes |  |
 | `reset_requests` | metadata | A reset its person asked for (aru-119, #1582): of the account's devices, or (DK10, #393) of its passkeys alone (`kind`); whether a device reset takes the passkeys too (`with_passkeys`: its warning reached a settled verified address); when it started and is due, the sign-in that started it (its token's hash), and whether it was cancelled (by which device or passkey) or done. | yes |  |

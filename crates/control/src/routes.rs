@@ -66,6 +66,7 @@ enum Client {
     Page,
     Daemon,
     Cli,
+    Native,
     App,
     Browser,
     Github,

@@ -74,6 +74,11 @@ The first native app is the iPhone's, and it joins as a `browser`-kind device
   lists `native`, and only with the flag on. A route with no row takes none, and
   what the CLI and the `app` kind may do doesn't change. Browsers' pages keep
   using the cookie.
+- **Only a device paired as an app.** A browser's key is in a page, so it signs
+  nothing even with the flag on: otherwise a key taken from a page would work
+  from anywhere, on top of what it already reaches. Control records which
+  devices paired by code as apps (`native_devices`), and that's the only kind of
+  browser whose signature counts (`auth::native_cert`).
 - **The first scope.** Chat, projects, issues, boards, sessions and approvals.
   Billing and account security stay on the web.
 - **One API, one product.** The app sends everything to control's own site, and

@@ -716,6 +716,13 @@ pub async fn join(
         Kind::Cli => {
             return Err(err(StatusCode::BAD_REQUEST, "a CLI joins with its key's proof and nothing else"));
         }
+        // A native app (aru-131) pairs the CLI's way, as a `browser` device.
+        Kind::Browser
+            if app.cfg.native_clients
+                && !b.cert.from_app()
+                && b.urls.is_empty()
+                && b.team.is_none()
+                && b.proof.is_some() => {}
         _ => return Err(err(StatusCode::BAD_REQUEST, "a daemon certificate")),
     }
     check_urls(&b.urls)?;
@@ -878,16 +885,24 @@ pub async fn join_approve(
         return Err(err(StatusCode::BAD_REQUEST, "that's not the daemon that asked"));
     }
     approval_ok(&app, &s.account, &c, "join_approve")?;
-    // The CLI (M49): one of the account's devices from now on, like a
-    // browser it approved. The account's machines learn of it now.
-    if c.kind == Kind::Cli {
+    // The CLI (M49), or a native app (aru-131): one of the account's devices
+    // from now on, like a browser it approved. The account's machines learn
+    // of it now.
+    if matches!(c.kind, Kind::Cli | Kind::Browser) {
         if b.team.is_some() {
-            return Err(err(StatusCode::BAD_REQUEST, "a CLI joins your account, not a team"));
+            return Err(err(StatusCode::BAD_REQUEST, "a device joins your account, not a team"));
+        }
+        if c.kind == Kind::Browser && !app.cfg.native_clients {
+            return Err(err(StatusCode::BAD_REQUEST, "a daemon certificate"));
         }
         app.db.put_device(&c, true, now_ms())?;
+        if c.kind == Kind::Browser {
+            app.db.put_native_device(&s.account, &c.device, now_ms())?;
+        }
         app.db.approve_join(&code, &c, None, b.mac.as_deref())?;
         nudge(&app, &s.account);
-        app.analytics.capture(&s.account, "cli joined", json!({ "with_code": b.mac.is_some() }));
+        let event = if c.kind == Kind::Cli { "cli joined" } else { "native app joined" };
+        app.analytics.capture(&s.account, event, json!({ "with_code": b.mac.is_some() }));
         return Ok(Json(json!({ "approved": true, "device": c.device })));
     }
     let known = app.db.device_known(&c.device)?;
