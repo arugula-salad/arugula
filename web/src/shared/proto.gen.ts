@@ -3189,6 +3189,15 @@ runs_note: string | null,
  */
 ms: number | null, };
 
+/**
+ * `POST` [`PROJECT_DOC_MOVE`]: where the Doc goes.
+ */
+export type MoveProjectDoc = { 
+/**
+ * A project's id, or `personal` for the mover's own.
+ */
+to: string, };
+
 export type NativeIssue = { 
 /**
  * `iss_` and 32 hex characters.
@@ -3930,7 +3939,27 @@ sections: number, written: number,
 /**
  * Counts its changes.
  */
-rev: number, created_at: number, updated_at: number, };
+rev: number, created_at: number, updated_at: number, 
+/**
+ * The machine this Doc is a copy from, or null for one made here.
+ */
+machine: string | null, };
+
+/**
+ * One picture of a Doc, without its bytes: the shape a machine Doc's
+ * state gives (`DocState.assets`).
+ */
+export type ProjectDocAsset = { name: string, 
+/**
+ * `image/png`, `image/jpeg`, `image/gif` or `image/webp`: what the
+ * bytes say.
+ */
+mime: string, size: number, 
+/**
+ * Changes whenever the name is written with other bytes: clients cache
+ * a picture by `name/rev`.
+ */
+rev: number, };
 
 /**
  * `GET` [`PROJECT_DOCS`]: a project's Docs, the latest changed first.
@@ -3966,6 +3995,10 @@ rev: number, };
  * `GET` [`PROJECT_DOC`]: a Doc with its sections, in order.
  */
 export type ProjectDocView = { doc: ProjectDoc, sections: Array<ProjectDocSection>, 
+/**
+ * Its pictures, by name.
+ */
+assets: Array<ProjectDocAsset>, 
 /**
  * Whether the reader may write it.
  */
