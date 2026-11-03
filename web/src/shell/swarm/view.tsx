@@ -1,5 +1,5 @@
 // The swarm view (M26, `/#swarm`): every pane the page can see, on every
-// host (M25), as one field of tiles that cluster by project, machine, kind,
+// host (M25), as one field of tiles that cluster by repo, machine, kind,
 // session or person, with what needs you lifted out to a rail of cards
 // (M24's reasons, bundled by their bundle keys) that anyone who may answer
 // can act on: allow, deny, answer, dismiss, and send the agent a follow-up
@@ -679,8 +679,8 @@ const ARIA: Record<Theme, string> = {
 };
 
 /** What to do with each theme: [laptop, phone]. */
-/** #551: where a pane's project comes from. */
-const PROJECTS = "A pane's project is the git repository it's in; one outside a repository goes by its directory.";
+/** #551: where a pane's repo comes from. */
+const PROJECTS = "A pane's repo is the git repository it's in; one outside a repository goes by its directory.";
 
 
 /** The how-to tip, once put away. */
