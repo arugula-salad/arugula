@@ -11,7 +11,8 @@
 // for its owners the agent tokens over it
 // and its own secrets (M230), what its Claude calls cost (M231), and the
 // apps products keep in it (M236), and for a team's owners its chat's
-// owners-only switches (UI audit #168). Each part is a section
+// owners-only switches (UI audit #168), and first, for every member, who
+// can do what here (Access, Arugula #682, ../settings/access). Each part is a section
 // (shared/ui/settings-section), as /settings's are: a heading, one line, the rest
 // behind More, and on a wide screen an index of them beside the column.
 // The repos are a table, a row each with its switch. After them, the Plane
@@ -43,6 +44,7 @@ import { TeamChat } from "../settings/chat-alerts";
 import { PlaneConnections } from "../settings/plane";
 import { BoardSettings } from "../settings/board-settings";
 import { Section, SectionIndex } from "../../shared/ui/settings-section";
+import { Access } from "../settings/access";
 
 /** A call to the platform: its JSON, or the platform's `{error}` thrown
  * with the rest of the answer. */
@@ -126,6 +128,7 @@ export function ProjectSettings({ id, link }: { id: string; link?: string }) {
         <SectionIndex body={body} />
         <div class="settings-body" ref={body}>
           <PageHeader title="Project settings" back={{ href: home, label: p.name, onClick: (e) => follow(e, home) }} />
+          <Access p={p} />
           <Section
             id="repos"
             title="Linked repos"

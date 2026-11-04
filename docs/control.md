@@ -1215,6 +1215,7 @@ cache delay), grant or not.
 arugula grants add geek threads.read threads.post --project acme
 arugula grants add geek threads.read --dms
 arugula grants revoke geek threads.post --project acme
+arugula grants ls --project acme    # who can do what in acme: its Access view
 ```
 
 or a switch per machine and project (and one for your DMs) under Settings,
@@ -1236,6 +1237,23 @@ with a message naming the machine and how to grant it. What an agent posts
 is its owner's, labelled "Jake's agent on geek" wherever it shows, and stays
 labelled after a revoke. Every room an agent grant reaches says so to
 everyone in it: "Jake's agents on geek can read and post here".
+
+**A project's Access view (Arugula #682).** Any member of a project reads
+who can do what there in one place: `arugula grants ls --project acme`, or
+Access under the project's settings on the platform page, both from `GET
+/api/projects/{id}/grants`. It lists the project roles (the team's roster
+as control's copy stands; each machine checks the roster itself), the
+powers over the project (every live grant, machines' and agent tokens',
+whose each is and whether it reaches anything now: a grant whose giver
+left the project reaches nothing), what an owner allowed (the delegation
+for cloud workspaces on control, the standing run grant with its expiry,
+confirmed with a passkey) and the project's cloud workspaces, where an
+owner or editor has full use and a viewer watches. Each part says whose
+word it is. It's read-only and changes nothing of what's enforced; it
+never lists a grant over an account (`cloud.drive`, or a power over
+someone's DMs, which `arugula grants` shows their owner alone), a token, a
+signature or a secret. Someone who isn't in the project gets "no such
+project", as every project route answers them.
 
 Grants bound what a machine's own signature can do (its MCP calls), not
 what a shell on it can do with your CLI login. The CLI's device key lives

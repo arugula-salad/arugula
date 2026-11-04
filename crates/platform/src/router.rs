@@ -43,6 +43,8 @@ fn routes() -> Routes {
         .route("/api/notify/prefs", get(crate::notify::prefs).post(crate::notify::set_prefs))
         .route("/api/grants", get(grants::list).post(grants::give))
         .route("/api/grants/{id}/revoke", post(grants::revoke))
+        // A project's Access view (Arugula #682): who can do what here.
+        .route("/api/projects/{project}/grants", get(crate::project_grants::list))
         .route(arugula_control_wire::projects::PROJECTS, get(projects::list))
         .route(arugula_control_wire::projects::PROJECT_REPOS, get(forge::links::list).post(forge::links::link))
         .route(

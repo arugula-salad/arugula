@@ -11,7 +11,8 @@
 //! instruction of the agent's own (each start as yours, never past your
 //! role). Those are off until you `add` them, and only over what you can
 //! read yourself. Through control, as this CLI's account (`arugula
-//! login`).
+//! login`). `ls --project X` is a project's Access view (Arugula #682):
+//! who can do what there, for any of its members, read-only.
 
 use anyhow::bail;
 use serde_json::{Value, json};
@@ -70,8 +71,20 @@ pub struct Scope {
 
 #[derive(clap::Subcommand)]
 pub enum GrantsCmd {
-    /// Your machines' grants, live and revoked.
-    Ls,
+    /// Your machines' grants, live and revoked; or who can do what in a project.
+    ///
+    /// With --project, the project's Access view, for any of its members:
+    /// its team roles (the roster, as control's copy stands; each machine
+    /// checks the roster itself), the powers over it (every live grant,
+    /// whose machine or agent token holds it, and whether it reaches
+    /// anything now), what an owner allowed (the delegation for cloud
+    /// workspaces, the standing run grant and its expiry) and its cloud
+    /// workspaces, where an editor has full use. Read-only.
+    Ls {
+        /// A project, by its name or id: its Access view.
+        #[arg(long)]
+        project: Option<String>,
+    },
     /// Give a machine's agents a power over a project or your DMs.
     ///
     /// The powers are threads.read, threads.post or issues.write over a
@@ -135,11 +148,23 @@ pub fn run(cmd: Option<GrantsCmd>, json_out: bool) -> anyhow::Result<i32> {
 
 /// [`run`], as this enrolled CLI.
 fn run_with(e: &Enrolled, cmd: Option<GrantsCmd>, json_out: bool) -> anyhow::Result<i32> {
+    if let Some(GrantsCmd::Ls { project: Some(want) }) = &cmd {
+        let projects = e.api("GET", "/api/projects", None)?;
+        let id = project_id(&projects, want)?;
+        let (status, body) = e.api_raw("GET", &format!("/api/projects/{id}/grants"), None)?;
+        let view = project_access(status, body)?;
+        if json_out {
+            print_json(&view);
+        } else {
+            print!("{}", access_text(&view));
+        }
+        return Ok(0);
+    }
     let listed = e.api("GET", "/api/grants", None)?;
     let grants = listed["grants"].as_array().cloned().unwrap_or_default();
     let show = |g: &Value| if json_out { print_json(g) } else { println!("{}", line(g)) };
-    match cmd.unwrap_or(GrantsCmd::Ls) {
-        GrantsCmd::Ls => {
+    match cmd.unwrap_or(GrantsCmd::Ls { project: None }) {
+        GrantsCmd::Ls { .. } => {
             if json_out {
                 print_json(&listed);
             } else if grants.is_empty() {
@@ -213,6 +238,119 @@ fn run_with(e: &Enrolled, cmd: Option<GrantsCmd>, json_out: bool) -> anyhow::Res
         }
     }
     Ok(0)
+}
+
+/// `GET /api/projects/{id}/grants`' answer, or why not: a control from
+/// before the view answers 404 with no "no such project" in it, which
+/// is told apart from a project this account isn't in.
+fn project_access(status: u16, body: Vec<u8>) -> anyhow::Result<Value> {
+    let text = String::from_utf8_lossy(&body).into_owned();
+    let v: Value = serde_json::from_str(&text).unwrap_or(Value::Null);
+    let error = v.get("error").and_then(Value::as_str);
+    if status == 404 && error != Some("no such project") {
+        bail!("this control doesn't list a project's access yet: update it, then `arugula grants ls --project` again");
+    }
+    if !(200..300).contains(&status) {
+        bail!("{}", error.map(str::to_owned).unwrap_or(text));
+    }
+    Ok(v)
+}
+
+/// The Access view as text: one part per line of the question, each
+/// saying whose word it is.
+fn access_text(v: &Value) -> String {
+    let s = |x: &Value| x.as_str().unwrap_or_default().to_owned();
+    let name =
+        |who: &Value| who["name"].as_str().filter(|n| !n.is_empty()).map_or_else(|| s(&who["account"]), str::to_owned);
+    let mut out = String::new();
+    let project = &v["project"];
+    let kind = if project["owner"]["kind"] == "team" { "team project" } else { "personal project" };
+    out.push_str(&format!("{} ({kind}); you're its {}.\n", s(&project["name"]), s(&v["role"])));
+
+    out.push_str(&format!("\nProject roles, by {}:\n", s(&v["roles"]["says"])));
+    for m in v["roles"]["members"].as_array().into_iter().flatten() {
+        out.push_str(&format!("  {:<24} {}\n", s(&m["name"]), s(&m["role"])));
+    }
+    if project["owner"]["locked"] == true {
+        out.push_str("  (the team is locked: only its owners get in while it is)\n");
+    }
+
+    out.push_str(&format!("\nPowers over it, by {}:\n", s(&v["powers"]["says"])));
+    let grants = v["powers"]["grants"].as_array().cloned().unwrap_or_default();
+    if grants.is_empty() {
+        out.push_str("  none: no machine's or agent token's agents have a power here\n");
+    }
+    for g in &grants {
+        let subject = if g["subject"]["kind"] == "agent" {
+            format!("token \u{201c}{}\u{201d}", s(&g["subject"]["name"]).trim_end_matches(" (MCP)"))
+        } else {
+            g["subject"]["name"].as_str().map_or_else(|| s(&g["subject"]["id"]), str::to_owned)
+        };
+        let whose = format!("{subject} ({}'s)", name(&g["owner"]));
+        let state = if g["reaches"] == true {
+            format!("since {}", crate::hosts::ago(g["created_at"].as_u64().unwrap_or(0)))
+        } else {
+            match g["owner_role"].as_str() {
+                Some(_) => "reaches nothing: the machine isn't its giver's now".to_owned(),
+                None => "reaches nothing: its giver doesn't read the project".to_owned(),
+            }
+        };
+        out.push_str(&format!("  {whose:<34} {:<14} {state:<26} {}\n", s(&g["power"]), s(&g["id"])));
+    }
+
+    out.push_str(&format!("\nAllowed, {}:\n", s(&v["allow"]["says"])));
+    let d = &v["allow"]["delegation"];
+    out.push_str(&format!(
+        "  cloud workspaces: {}\n",
+        if d.is_null() {
+            "control couldn't say whether an owner allowed them".to_owned()
+        } else if d["live"] == true {
+            format!("allowed (delegation {})", s(&d["id"]))
+        } else {
+            "not allowed: no live delegation".to_owned()
+        }
+    ));
+    let rg = &v["allow"]["run_grant"];
+    out.push_str(&format!(
+        "  runs with every device asleep: {}\n",
+        if rg.is_null() {
+            "not allowed: no live standing grant".to_owned()
+        } else {
+            format!(
+                "allowed by {} {}, {}",
+                rg["account"].as_str().unwrap_or("an owner"),
+                crate::hosts::ago(rg["made"].as_u64().unwrap_or(0)),
+                match rg["expires"].as_u64() {
+                    Some(at) => format!("expires in {}", in_(at)),
+                    None => "until it's revoked".to_owned(),
+                }
+            )
+        }
+    ));
+
+    let list = v["workspaces"]["list"].as_array().cloned().unwrap_or_default();
+    out.push_str(&format!("\nCloud workspaces, by {}:\n", s(&v["workspaces"]["says"])));
+    if list.is_empty() {
+        out.push_str("  none\n");
+    }
+    for w in &list {
+        let by =
+            if w["created_by"].is_null() { String::new() } else { format!(", made by {}", name(&w["created_by"])) };
+        out.push_str(&format!("  {:<24} {:<10} {}{by}\n", s(&w["name"]), s(&w["state"]), s(&w["full_use"])));
+    }
+    out
+}
+
+/// How long until `ms`: `3d`, `5h`, `12m`, or `now` once passed.
+fn in_(ms: u64) -> String {
+    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_millis() as u64);
+    let secs = ms.saturating_sub(now) / 1000;
+    match secs {
+        0 => "now".to_owned(),
+        1..3600 => format!("{}m", secs.div_ceil(60)),
+        3600..86400 => format!("{}h", secs / 3600),
+        _ => format!("{}d", secs / 86400),
+    }
 }
 
 /// `POST /api/grants`'s body: an agent power needs a scope, cloud.drive
@@ -349,6 +487,69 @@ mod tests {
         assert!(crate::Cli::try_parse_from(["arugula", "grants", "revoke", "geek"]).is_ok());
         assert!(crate::Cli::try_parse_from(["arugula", "grants", "revoke", "grt_1"]).is_ok(), "one grant by its id");
         assert!(crate::Cli::try_parse_from(["arugula", "grants"]).is_ok());
+        assert!(crate::Cli::try_parse_from(["arugula", "grants", "ls", "--project", "acme"]).is_ok());
+    }
+
+    /// `ls --project`: the project's Access view as text, each part saying
+    /// whose word it is; a control from before the view is told apart
+    /// from a project this account isn't in.
+    #[test]
+    fn a_projects_access_view_reads_as_text_and_an_old_control_says_so() {
+        let old = project_access(404, br#"{"error":"not found"}"#.to_vec()).unwrap_err().to_string();
+        assert!(old.contains("doesn't list a project's access yet"), "{old}");
+        let html = project_access(404, b"<html>nope</html>".to_vec()).unwrap_err().to_string();
+        assert!(html.contains("update it"), "{html}");
+        let none = project_access(404, br#"{"error":"no such project"}"#.to_vec()).unwrap_err().to_string();
+        assert_eq!(none, "no such project");
+        assert!(project_access(403, br#"{"error":"refused"}"#.to_vec()).unwrap_err().to_string().contains("refused"));
+        let v = json!({
+            "project": { "id": "prj_1", "name": "Acme", "owner": { "kind": "team", "id": "t", "locked": false } },
+            "role": "viewer",
+            "roles": { "says": "the team's roster", "members": [
+                { "account": "a1", "name": "alice", "role": "owner" }, { "account": "b1", "name": "bob", "role": "editor" } ] },
+            "powers": { "says": "the platform's grants", "grants": [
+                { "id": "grt_1", "subject": { "kind": "daemon", "id": "d1", "name": "geek" }, "owner": { "account": "a1", "name": "alice" },
+                  "owner_role": "owner", "power": "issues.write", "created_at": 1, "reaches": true },
+                { "id": "grt_2", "subject": { "kind": "agent", "id": "agt_1", "name": "ci (MCP)" }, "owner": { "account": "b1", "name": "bob" },
+                  "owner_role": null, "power": "boards.write", "created_at": 1, "reaches": false } ] },
+            "allow": { "says": "signed by a project owner", "delegation": { "live": true, "id": "dlg_1" },
+                "run_grant": { "id": "pg_1", "made": 1, "expires": u64::MAX, "account": "alice", "created_at": 1 } },
+            "workspaces": { "says": "the platform's list", "full_use": "owners and editors have full use; viewers watch", "list": [
+                { "id": "hw_1", "name": "dev", "state": "ready", "created_by": { "account": "b1", "name": "bob" }, "created_at": 1,
+                  "full_use": "owners and editors have full use; viewers watch" } ] }
+        });
+        let text = access_text(&project_access(200, v.to_string().into_bytes()).unwrap());
+        for want in [
+            "Acme (team project); you're its viewer.",
+            "Project roles, by the team's roster:",
+            "alice                    owner",
+            "Powers over it, by the platform's grants:",
+            "geek (alice's)",
+            "issues.write",
+            "token \u{201c}ci\u{201d} (bob's)",
+            "reaches nothing: its giver doesn't read the project",
+            "cloud workspaces: allowed (delegation dlg_1)",
+            "runs with every device asleep: allowed by alice",
+            "dev                      ready      owners and editors have full use; viewers watch, made by bob",
+        ] {
+            assert!(text.contains(want), "{want:?} in:\n{text}");
+        }
+        assert!(!text.contains("agt_1") && !text.contains("(MCP)"), "{text}");
+        let empty = json!({ "project": { "name": "Personal", "owner": { "kind": "account", "id": "a1" } }, "role": "owner",
+            "roles": { "says": "this account's own project", "members": [{ "account": "a1", "name": "alice", "role": "owner" }] },
+            "powers": { "says": "the platform's grants", "grants": [] },
+            "allow": { "says": "signed by a project owner", "delegation": null, "run_grant": null },
+            "workspaces": { "says": "the platform's list", "list": [] } });
+        let text = access_text(&empty);
+        for want in [
+            "Personal (personal project)",
+            "none: no machine's",
+            "control couldn't say",
+            "no live standing grant",
+            "  none\n",
+        ] {
+            assert!(text.contains(want), "{want:?} in:\n{text}");
+        }
     }
 
     /// A revoked line says who, when it wasn't the giver; a live grant that

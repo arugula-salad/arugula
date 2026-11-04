@@ -399,7 +399,8 @@ enum Command {
     /// Cloud workspaces. `add` lets them read and post in a project's threads
     /// or your DMs, or write a project's issues (off until you do). `revoke`
     /// takes powers from one machine, `restore` gives `cloud.drive` back; `ls`
-    /// (the default) lists them. Needs `arugula login`.
+    /// (the default) lists them, and `ls --project X` is a project's Access
+    /// view: who can do what there. Needs `arugula login`.
     Grants {
         #[command(subcommand)]
         cmd: Option<cmd::grants::GrantsCmd>,

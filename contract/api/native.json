@@ -27,6 +27,10 @@
       "why": "Agent tokens stay on the web"
     },
     {
+      "match": "/projects/\\{project\\}/grants$",
+      "why": "A project's Access view is on the web and the CLI for now"
+    },
+    {
       "match": "/inference",
       "why": "Inference keys and spend are billing and account matters"
     },

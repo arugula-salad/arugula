@@ -630,6 +630,22 @@ impl Db {
         )
     }
 
+    /// Every live grant over one project, whoever gave it and whatever its
+    /// subject (a machine or an agent grant token) and power: the
+    /// project's Access view (Arugula #682). Only grants whose scope is the
+    /// project: never one over an account (`cloud.drive`, or a power over
+    /// the owner's DMs), which is its owner's alone to see.
+    pub fn grants_over_project(&self, project: &str) -> anyhow::Result<Vec<Grant>> {
+        self.c().query_map(
+            &format!(
+                "SELECT {GRANT_COLUMNS} FROM grants WHERE scope_kind = 'project' AND scope_id = ?1
+                 AND revoked_at IS NULL ORDER BY granted_by, subject_id, power, created_at, id"
+            ),
+            params![project],
+            grant_row,
+        )
+    }
+
     /// A machine's live agent grants (M197) that `by`, its owner, gave:
     /// what its agents reach (M198).
     pub fn agent_grants_of(&self, daemon: &str, by: &str) -> anyhow::Result<Vec<Grant>> {

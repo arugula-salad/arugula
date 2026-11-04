@@ -1779,6 +1779,14 @@ auth = "session"
 clients = ["page", "cli"]
 note = "By its giver, the account it's over, or an owner of the project it's over (Arugula #683): never one over an account, or another project."
 
+[[route]]
+method = "GET"
+path = "/api/projects/{project}/grants"
+process = "platform"
+auth = "session"
+clients = ["page", "cli"]
+note = "A project's Access view: its roster roles (through the platform's cache, as agent_may reads them), every live grant over the project (machines' and agent tokens', with whose each is and whether it reaches anything now), the delegation and the standing run grant with its expiry, and its cloud workspaces (owners and editors have full use). For any member; a stranger gets no such project. Never a grant over an account (cloud.drive, a power over someone's DMs), a token, a signature or a secret: who, what and when. Read-only, limited as GET /api/grants is."
+
 # ---- platform: agents with no machine (M230, platform step 8)
 # An owner mints a bearer agent grant token over projects they read, with an
 # agent's powers (and `secrets.write`), never `cloud.drive` and never an
