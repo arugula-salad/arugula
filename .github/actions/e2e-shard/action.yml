@@ -21,6 +21,10 @@ inputs:
   total:
     description: How many shards (strategy.job-total)
     required: true
+  only:
+    description: Spec files to deal out, separated by spaces (default every spec)
+    required: false
+    default: ""
 runs:
   using: composite
   steps:
@@ -37,12 +41,18 @@ runs:
         port=$(scripts/free-port)
         cd web
         mapfile -t files < <(node scripts/e2e-shard.mjs "$SHARD" "$TOTAL")
+        # A chosen set can leave a shard nothing to do (specs E2E_SET leaves out).
+        if [ ${#files[@]} -eq 0 ] && [ -n "$E2E_ONLY" ]; then
+          echo "shard $SHARD of $TOTAL has none of the chosen specs"
+          exit 0
+        fi
         # No files would run every spec in every shard.
         [ ${#files[@]} -gt 0 ] || { echo "e2e-shard listed nothing" >&2; exit 1; }
         E2E_PORT=$port pnpm exec playwright test "${files[@]}"
       env:
         SHARD: ${{ inputs.shard }}
         TOTAL: ${{ inputs.total }}
+        E2E_ONLY: ${{ inputs.only }}
         E2E_CHROMIUM: "1"
         E2E_SET: rest
         E2E_TIMINGS: ${{ runner.temp }}/e2e-timings.json

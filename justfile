@@ -924,6 +924,7 @@ macos cmd="tools" *args:
 test-scripts:
     scripts/tests/ci-red.sh
     scripts/tests/changed.sh
+    scripts/tests/pr-plan.sh
     scripts/tests/ci-nightly-red.sh
     scripts/tests/quarantine.sh
     scripts/tests/capabilities.sh
