@@ -11,6 +11,7 @@ import { PageHeader } from "../shared/ui/page-header";
 import { PlatformBar } from "./bar";
 import { WithRail } from "./rail";
 import { names, resolve, roomElsewhere } from "./links";
+import { slugIn } from "./paths";
 import { go, pathOf, useRoute, type Route } from "./router";
 import { controlOrigin, session } from "./session";
 import { signIn } from "./signin";
@@ -207,10 +208,13 @@ function useTitle(r: Route) {
 }
 
 /** Put the address's slugs right once the names are known: only the ids
- * are read, so an old slug lands, and the bar shows the current one. A
+ * are read, so an old slug lands, and the bar shows the current one. An id
+ * whose name isn't known yet (a Doc's, until it's read) keeps the slug it
+ * has, so loading a page doesn't take it off the address and put it back. A
  * room of another project's goes to its own (UI audit #169). */
 function useSlug(r: Route) {
-  const want = r.page === "missing" || r.page === "find" ? null : (roomElsewhere(r) ?? pathOf(r, names));
+  const known = (id: string) => names(id) ?? slugIn(location.pathname, id);
+  const want = r.page === "missing" || r.page === "find" ? null : (roomElsewhere(r) ?? pathOf(r, known));
   useEffect(() => {
     if (want && want !== location.pathname + location.search && session.state === "ready") go(want, true);
   }, [want, session.state]);

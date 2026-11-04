@@ -94,9 +94,22 @@ test("an owner makes a Doc from the project's Docs and writes it", async ({ brow
 test("a viewer reads it on a phone, with no form, and has the next section live", async () => {
   test.setTimeout(90_000);
   await home(bob);
+  // Loading a Doc by its address doesn't take the slug off the address and
+  // put it back: its title isn't known yet, and that's no reason to change it.
+  await bob.addInitScript(() => {
+    const seen: string[] = [];
+    (window as unknown as { addresses: string[] }).addresses = seen;
+    const replace = history.replaceState.bind(history);
+    history.replaceState = (state, unused, url) => {
+      seen.push(String(url));
+      replace(state, unused, url);
+    };
+  });
   await platform(bob, docPath);
   const page = bob.locator("[data-doc-page]");
   await expect(page.locator(".doc-title")).toHaveText("Release plan", { timeout: 15_000 });
+  const addresses = await bob.evaluate(() => (window as unknown as { addresses: string[] }).addresses);
+  expect(addresses.filter((a) => !a.endsWith("-release-plan"))).toEqual([]);
   await expect(page.locator(".doc-section[data-section=s1] .chart-box svg")).toBeVisible();
   await expect(page).toHaveAttribute("data-writer", "false");
   await expect(page.locator("[data-doc-writer]")).toHaveCount(0);
@@ -304,6 +317,8 @@ test("a page newer than the platform still writes a Doc made here", async () => 
     await expect(page.locator("[data-doc-copy]")).toHaveCount(0);
     await expect(page.locator("[data-doc-maker]")).toHaveText("made by you");
   } finally {
-    await alice.unroute("**/api/projects/*/docs/pdc_*", strip);
+    // Waits for a `strip` still running: this is the spec's last test, and its
+    // context closes next, which would dispose the response it's reading.
+    await alice.unrouteAll({ behavior: "wait" });
   }
 });

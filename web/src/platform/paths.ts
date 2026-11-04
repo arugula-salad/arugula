@@ -156,6 +156,12 @@ export function withSlug(id: string, name?: string | null): string {
   return slug ? `${id}-${slug}` : id;
 }
 
+/** The slug `path` has after `id`, if it has one. */
+export function slugIn(path: string, id: string): string | undefined {
+  const segment = path.split("/").find((s) => idOf(s) === id);
+  return segment?.slice(id.length + 1) || undefined;
+}
+
 /** The route a location names. */
 export function parse(path: string, search = ""): Route {
   const parts = path.split("/").filter(Boolean);
