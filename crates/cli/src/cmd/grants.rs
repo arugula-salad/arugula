@@ -95,11 +95,14 @@ pub enum GrantsCmd {
         scope: Scope,
     },
     /// Take a machine's grants back: all its live ones, or one power, over
-    /// one scope.
+    /// one scope. Or one grant by its id (grt_…): as an owner of the
+    /// project it's over, a teammate's machine's too.
     ///
     /// Its agents are refused from their next call.
     Revoke {
-        /// The machine: its name or id.
+        /// The machine: its name or id. Or a grant's id (grt_…), which a
+        /// project's owner may revoke whoever gave it: the project's
+        /// Access view lists them.
         machine: String,
         /// Only this power.
         power: Option<String>,
@@ -139,6 +142,15 @@ pub fn run(cmd: Option<GrantsCmd>, json_out: bool) -> anyhow::Result<i32> {
                 let body = give(&id, power, scope.as_ref())?;
                 show(&e.api("POST", "/api/grants", Some(&body))?);
             }
+        }
+        GrantsCmd::Revoke { machine, power, scope } if machine.starts_with("grt_") => {
+            // One grant by its id: as its giver, or as an owner of the
+            // project it's over (Arugula #683), so it needn't be in the
+            // list above.
+            if power.is_some() || scope.project.is_some() || scope.dms {
+                bail!("a grant's id names one grant: no power, --project or --dms with it");
+            }
+            show(&e.api("POST", &format!("/api/grants/{machine}/revoke"), None)?);
         }
         GrantsCmd::Revoke { machine, power, scope } => {
             let id = machine_id(&grants, &machine)?;
@@ -220,11 +232,22 @@ fn over(g: &Value, scope: &Value) -> bool {
     }
 }
 
-/// `geek  threads.post  project acme  live  grt_…`, or `revoked` and when.
+/// `geek  threads.post  project acme  live  grt_…`, or `revoked` and when
+/// (and by whom, when someone other than you did), or `idle` for a live
+/// one that does nothing (Arugula #683: a write power while you only view
+/// the project; `--json` says why).
 fn line(g: &Value) -> String {
     let name = g["subject"]["name"].as_str().or(g["subject"]["id"].as_str()).unwrap_or_default();
     let state = match g["revoked_at"].as_u64() {
-        Some(at) => format!("revoked {}", crate::hosts::ago(at)),
+        Some(at) => {
+            let by = &g["revoked_by"];
+            let giver = g["granted_by"].as_str().unwrap_or_default();
+            match by["account"].as_str().filter(|a| *a != giver) {
+                Some(a) => format!("revoked {} by {}", crate::hosts::ago(at), by["name"].as_str().unwrap_or(a)),
+                None => format!("revoked {}", crate::hosts::ago(at)),
+            }
+        }
+        None if g["idle"].is_string() => "idle".into(),
         None => "live".into(),
     };
     let scope = match (g["scope"]["kind"].as_str(), g["power"].as_str()) {
@@ -272,7 +295,27 @@ mod tests {
         assert!(machine_id(&grants, "box").unwrap_err().to_string().contains("d2, d3"));
         assert!(machine_id(&grants, "mini").is_err());
         assert!(crate::Cli::try_parse_from(["arugula", "grants", "revoke", "geek"]).is_ok());
+        assert!(crate::Cli::try_parse_from(["arugula", "grants", "revoke", "grt_1"]).is_ok(), "one grant by its id");
         assert!(crate::Cli::try_parse_from(["arugula", "grants"]).is_ok());
+    }
+
+    /// A revoked line says who, when it wasn't the giver; a live grant that
+    /// does nothing says idle (Arugula #683).
+    #[test]
+    fn a_line_says_who_revoked_and_what_is_idle() {
+        let g = |revoked_at: Option<u64>, by: Value, idle: Value| {
+            json!({ "subject": { "name": "geek" }, "power": "issues.write", "granted_by": "b",
+                "scope": { "kind": "project", "id": "prj_2", "name": "Acme" }, "id": "grt_1",
+                "revoked_at": revoked_at, "revoked_by": by, "idle": idle })
+        };
+        assert!(line(&g(None, Value::Null, Value::Null)).contains(" live "));
+        assert!(line(&g(None, Value::Null, json!("does nothing"))).contains(" idle "));
+        let own = line(&g(Some(1), json!({ "account": "b", "name": "Bea" }), Value::Null));
+        assert!(own.contains("revoked") && !own.contains(" by "), "{own}");
+        let owner = line(&g(Some(1), json!({ "account": "a", "name": "Ana" }), Value::Null));
+        assert!(owner.contains("by Ana"), "{owner}");
+        let unnamed = line(&g(Some(1), json!({ "account": "a", "name": null }), Value::Null));
+        assert!(unnamed.contains("by a"), "{unnamed}");
     }
 
     /// `add` takes one or more powers and one scope; an agent power needs

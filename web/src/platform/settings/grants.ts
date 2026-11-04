@@ -9,6 +9,9 @@ export interface Grant {
   power: string;
   scope: { kind: "project" | "account"; id: string; name?: string | null };
   live: boolean;
+  /** Why a live one does nothing now (Arugula #683): a write power while
+   * its giver only views the project. Older pages never see it. */
+  idle?: string | null;
 }
 
 /** Where a switch reaches: a project, or your DMs (`account`). */
@@ -157,22 +160,37 @@ export const COLUMNS: Column[] = ["threads", "runs", "commands", "deploys", "sta
 
 /** One switch: on while any of its grants is live, and `only` the powers it
  * holds when that's some but not all of what it gives (a partial grant,
- * shown as "only threads.read"). */
+ * shown as "only threads.read"). `idle`: why one of its live grants does
+ * nothing now (Arugula #683), said under it. */
 export interface Cell {
   on: boolean;
   only: string[] | null;
+  idle: string | null;
+}
+
+/** Why the first of these live grants that's idle is, or null. */
+export const idleOf = (live: Grant[]): string | null => live.find((g) => g.idle)?.idle ?? null;
+
+/** Why a machine's boards grant over a project is idle, if it is. */
+export function boardsIdle(grants: Grant[], machine: string, project: string): string | null {
+  return idleOf([BOARDS_WRITE, BOARDS_READ].flatMap((p) => singleGrant(grants, machine, project, p) ?? []));
 }
 
 /** What one machine's switch in one column over a scope reads of the
  * grants. Deploys, start and reply are one grant each, so never partial. */
 export function cellOf(grants: Grant[], machine: string, s: AgentScope, column: Column): Cell {
-  if (column === "boards") return { on: boardsLevel(grants, machine, s.id ?? "") !== "off", only: null };
+  if (column === "boards") {
+    return { on: boardsLevel(grants, machine, s.id ?? "") !== "off", only: null, idle: boardsIdle(grants, machine, s.id ?? "") };
+  }
   const single = SINGLE[column];
-  if (single) return { on: !!singleGrant(grants, machine, s.id ?? "", single), only: null };
+  if (single) {
+    const g = singleGrant(grants, machine, s.id ?? "", single);
+    return { on: !!g, only: null, idle: g ? idleOf([g]) : null };
+  }
   const powers = column === "runs" ? RUN_POWERS : column === "commands" ? COMMAND_POWERS : undefined;
   const live = liveOver(grants, machine, s, powers);
   const all = (powers ?? powersFor(s.kind)).every((p) => live.some((g) => g.power === p));
-  return { on: live.length > 0, only: live.length > 0 && !all ? live.map((g) => g.power) : null };
+  return { on: live.length > 0, only: live.length > 0 && !all ? live.map((g) => g.power) : null, idle: idleOf(live) };
 }
 
 /** A scope's matrix: a row per machine, a cell per column. */

@@ -19,6 +19,7 @@ import { useSubscribe } from "../../shared/ui/hooks";
 import { session } from "../session";
 import { toneClass } from "../swarm";
 import {
+  boardsIdle,
   boardsLevel,
   boardsMove,
   cellKey,
@@ -110,6 +111,17 @@ function BoardsLevelSelect({ level, label, k, busy, turn }: { level: BoardsLevel
   );
 }
 
+/** Under a switch whose grant does nothing now (Arugula #683): "idle",
+ * with why as its tooltip. The switch stays on: a role change brings the
+ * grant back, and off takes it away. */
+function Idle({ why, k }: { why: string | null; k: string }) {
+  return why ? (
+    <span class="agent-idle" title={why} data-agent-idle={k}>
+      idle
+    </span>
+  ) : null;
+}
+
 /** A switch in a matrix: on, off, or partly on (some of what it gives,
  * said in its title and under it), and busy while it's being turned. */
 function Switch({ cell, label, k, busy, turn }: { cell: Cell; label: string; k: string; busy: boolean; turn: (on: boolean) => void }) {
@@ -130,6 +142,7 @@ function Switch({ cell, label, k, busy, turn }: { cell: Cell; label: string; k: 
         onChange={(e) => turn((e.target as HTMLInputElement).checked)}
       />
       {only && <span class="agent-only">{only}</span>}
+      <Idle why={cell.idle} k={k} />
     </>
   );
 }
@@ -245,6 +258,7 @@ export function AgentGrants() {
                           busy={busy === k}
                           turn={(to) => void turnBoards(m.id, s, to)}
                         />
+                        <Idle why={boardsIdle(grants, m.id, s.id ?? "")} k={k} />
                       </td>
                     );
                   }
@@ -287,8 +301,10 @@ export function AgentGrants() {
             They never approve anything: an owner approves a deploy, on their phone or in a browser, with a passkey, and a session's
             permission waits on a person. A switch marked
             "only …" holds part of what it gives (from <code>arugula grants add</code>, say): turning it off takes that away, and on
-            again gives all of it.
+            again gives all of it. One marked "idle" does nothing now: you only view that project, so every write its agents try
+            there is refused. It stays, and works once an owner makes you an editor; a write can't be turned on while you only view.
           </p>
+          <p>A project's owners can also revoke any grant over it, whoever gave it: it shows here as revoked, by them.</p>
         </>
       }
     >

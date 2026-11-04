@@ -51,6 +51,8 @@ evidence:
     url: "https://github.com/arugula-salad/arugula/issues/1317"
   - title: "#1290"
     url: "https://github.com/arugula-salad/arugula/pull/1290"
+  - title: "Arugula #683"
+    url: "https://app.arugula.io/issues/iss_e180f5bf116b44cf72ece7553d962f71"
 decided_by: "jhgaylor"
 decided_on: "2026-10-20"
 reviews: []
@@ -115,5 +117,18 @@ its asker and its payer, the card saying it was their agent on that
 machine) and answer or prompt one in its thread. Off by default, given and
 revoked by the owner like the step 6 powers, never to an agent grant token,
 and never an approval: a session's permission waits on a person.
+**Owners revoke, and a viewer's write is refused** (amended, Jake,
+2026-11-03, Arugula #683, from the access design's Option B). A grant is
+revoked by its giver, or the account it's over, as above, and also by any
+owner of the project it's over, whoever gave it, as they already could a
+token's reach: the owner's reach is the project's grants only, never one
+over an account or another project, and the grant records who revoked it
+and when. A write power (`issues.write`, `boards.write`, `trackers.write`,
+`deploys.plan`, `runs.start`, `runs.command`, `sessions.start`, a token's
+`secrets.write`; the one list is `WRITE_POWERS`) is refused to a viewer's
+machine at `give`, and to a viewer's token at its mint, since every write
+it tried would be refused by the route's own role check. One that exists
+stays and lists as idle, so a role change brings it back. Both only narrow
+what's possible.
 Where: `crates/platform/src/db/projects.rs` (`grants`), `crates/platform/src/grants.rs`, `crates/platform/src/cloud/` (`CloudDriver`).
 From: #1094, #1122, M130 (#1126), #1263 (step 6), M193 (#1264), M197 (#1268), M175 (#1236), #1317 (step 7, planned in #1290).

@@ -316,7 +316,7 @@ async fn an_agent_with_only_a_token_files_runs_plans_and_never_approves() {
 /// call.
 #[tokio::test]
 async fn a_token_reaches_its_grants_and_its_owner_and_is_revoked() {
-    let (_hub, _app, base, t, u) = platform().await;
+    let (_hub, app, base, t, u) = platform().await;
     assert_eq!(mint(&base, "a", "x", &[&u], &["issues.write"]).await.0, 403, "u isn't a's");
     assert_eq!(mint(&base, "a", "x", &[&t], &["cloud.drive"]).await.0, 400);
     assert_eq!(mint(&base, "a", "x", &[&t], &["deploys.approve"]).await.0, 400);
@@ -341,13 +341,35 @@ async fn a_token_reaches_its_grants_and_its_owner_and_is_revoked() {
     );
     assert!(why.contains("deploys.plan"), "{why}");
 
-    // A viewer's token never does more than a viewer.
-    let (_, m) = mint(&base, "x", "viewer", &[&t], &["issues.write", "secrets.write"]).await;
-    let viewer = m["token"].as_str().unwrap().to_owned();
+    // A viewer's token never does more than a viewer: a write power isn't
+    // even minted (Arugula #683), since every write would be refused.
+    let (st, m) = mint(&base, "x", "viewer", &[&t], &["threads.read", "issues.write", "secrets.write"]).await;
+    assert_eq!((st, m["reason"].as_str()), (403, Some(crate::grants::VIEWER_WRITE)), "{m}");
+    assert!(m["error"].as_str().unwrap().contains("an agent token"), "{m}");
+    assert_eq!(app.db.live_agent_tokens("x").unwrap(), 0);
+    assert_eq!(mint(&base, "x", "viewer", &[&t], &["threads.read", "threads.post"]).await.0, 200);
+    // One minted before then, written as it was: still refused at every write.
+    let (id, viewer) = crate::db::agent_tokens::new_token();
+    let new = crate::db::agent_tokens::NewToken {
+        id,
+        account: "x".into(),
+        name: "older".into(),
+        token_hash: hash(&viewer),
+        minted_from: "a browser".into(),
+    };
+    app.db.mint_agent_token(&new, &[("issues.write", &t), ("secrets.write", &t)], 1).unwrap();
     let why = refused(&tool(&base, &viewer, "issue_write", json!({ "kind": "create", "title": "no" })).await);
     assert!(why.contains("viewer"), "{why}");
     let why = refused(&tool(&base, &viewer, "set_secret", json!({ "name": "A", "value": "b" })).await);
     assert!(why.contains("viewer"), "{why}");
+    // And a token's bearer never revokes a grant: only a person does.
+    let r = reqwest::Client::new()
+        .post(format!("{base}/api/grants/grt_x/revoke"))
+        .bearer_auth(&viewer)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status().as_u16(), 401);
 
     // Revoked: the next request is refused, before any tool.
     let (_, m) = mint(&base, "a", "gone", &[&t], &["issues.write"]).await;

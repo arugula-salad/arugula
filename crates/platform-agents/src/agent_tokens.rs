@@ -45,7 +45,7 @@ use crate::{
         agent_tokens::{AgentToken, MAX_LIVE, NewToken, hash, new_token},
         projects::Grant,
     },
-    grants::{AgentScope, is_token_power, owner_reads},
+    grants::{AgentScope, idle_for, is_token_power, owner_role, viewer_write},
 };
 
 pub use arugula_control_wire::agent_mcp::{AGENT_TOKEN_CALLS, AGENT_TOKEN_REVOKE, AGENT_TOKENS, MCP};
@@ -161,8 +161,14 @@ pub async fn mint(State(app): State<Arc<Platform>>, s: BrowserPerson, headers: H
     }
     for p in &projects {
         // Only over what the minter reads, on the hub's word.
-        if owner_reads(&app, &s.account, &AgentScope::Project(p.clone()), true).await?.is_none() {
+        let scope = AgentScope::Project(p.clone());
+        let Some((name, role)) = owner_role(&app, &s.account, &scope, true).await? else {
             return Err(err(StatusCode::FORBIDDEN, "you can only give an agent what you can read yourself"));
+        };
+        // And never a write power where the minter only views (Arugula
+        // #683): it could never work, as a machine's can't.
+        if let Some(w) = powers.iter().find(|w| idle_for(w, role, &scope, &name).is_some()) {
+            return Err(viewer_write(w, &name, "an agent token"));
         }
     }
     if app.db.live_agent_tokens(&s.account)? >= MAX_LIVE {

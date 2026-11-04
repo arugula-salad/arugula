@@ -40,7 +40,12 @@ arugula grants restore geek     # they can again (a new grant; the old one stays
 or through control's API, as a signed-in person or a CLI device (a
 machine's signature isn't accepted here): `GET /api/grants`,
 `POST /api/grants/{id}/revoke`, and `POST /api/grants
-{"daemon": "<machine id>", "power": "cloud.drive"}`. Grants are per machine,
+{"daemon": "<machine id>", "power": "cloud.drive"}`. A grant over a
+project is also revoked by any owner of that project, whoever gave it
+(Arugula #683): `arugula grants revoke grt_…` with the grant's id, or the
+same route; it reaches the project's grants only, never one over an
+account (a teammate's `cloud.drive`, their DMs) or another project's, and
+the grant says who revoked it. Grants are per machine,
 since the daemon signs every MCP call as itself; narrowing one to the
 owner's own agents is a later daemon change. A machine that's removed loses
 its grants, and one that joins again gets a new one. Grants live in
@@ -1209,7 +1214,12 @@ arugula grants revoke geek threads.post --project acme
 or a switch per machine and project (and one for your DMs) under Settings,
 Agents in conversations, on the platform page. Through the API it's `POST
 /api/grants {"daemon", "power", "scope": {"kind": "project", "id"}}` (or
-`{"kind": "account"}` for your DMs). Every call an agent makes asks for the
+`{"kind": "account"}` for your DMs). A write power (`issues.write`,
+`boards.write`, `trackers.write`, `deploys.plan`, `runs.start`,
+`runs.command`, `sessions.start`) is refused (403 `viewer_write`) while
+you only view the project, since every write would be refused anyway; one
+given before a demotion stays, lists as `idle` (with why in the JSON and
+under its switch), and works again once an owner makes you an editor. Every call an agent makes asks for the
 grant again (`grants::agent_may`), so a revoked one refuses the next call,
 with a message naming the machine and how to grant it. What an agent posts
 is its owner's, labelled "Jake's agent on geek" wherever it shows, and stays

@@ -51,6 +51,8 @@ pub mod drivers;
 pub mod features;
 pub mod forge;
 pub mod grants;
+#[cfg(test)]
+mod grants_tests;
 pub mod hosted;
 pub use arugula_platform_api::hub;
 pub mod in_process;

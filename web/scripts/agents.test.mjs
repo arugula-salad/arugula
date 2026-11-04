@@ -7,6 +7,7 @@ import { agentLines, agentOwners, authorLabel, chipLabel, githubLogin, isSystemL
 import {
   blindLine,
   blindMachines,
+  boardsIdle,
   boardsLevel,
   boardsMove,
   cellKey,
@@ -163,8 +164,8 @@ test("the boards column has three levels, and each move gives and revokes what i
   assert.deepEqual(move(write, "write"), { give: [], revoke: [] });
   assert.deepEqual(move(none, "off"), { give: [], revoke: [] });
 
-  assert.deepEqual(cellOf(read, "d1", p, "boards"), { on: true, only: null });
-  assert.deepEqual(cellOf(none, "d1", p, "boards"), { on: false, only: null });
+  assert.deepEqual(cellOf(read, "d1", p, "boards"), { on: true, only: null, idle: null });
+  assert.deepEqual(cellOf(none, "d1", p, "boards"), { on: false, only: null, idle: null });
   assert.equal(cellKey("d1", p, "boards"), "d1/prj_1/boards");
 });
 
@@ -192,17 +193,17 @@ test("a project's matrix on /settings: a row per machine, a switch per column, p
   const p = { kind: "project", id: "prj_1", name: "Acme" };
   assert.deepEqual(COLUMNS, ["threads", "runs", "commands", "deploys", "start", "reply", "boards", "plane"]);
   // All three conversation powers is on; one of the two runs powers is partial.
-  assert.deepEqual(cellOf(grants, "d1", p, "threads"), { on: true, only: null });
-  assert.deepEqual(cellOf(grants, "d1", p, "runs"), { on: true, only: ["runs.read"] });
-  assert.deepEqual(cellOf(grants, "d1", p, "commands"), { on: false, only: null });
-  assert.deepEqual(cellOf(grants, "d1", p, "deploys"), { on: true, only: null });
-  assert.deepEqual(cellOf(grants, "d2", p, "threads"), { on: true, only: ["threads.read"] });
-  assert.deepEqual(cellOf(grants, "d2", p, "runs"), { on: false, only: null }, "a revoked runs.start is off");
-  assert.deepEqual(cellOf(grants, "d2", p, "commands"), { on: true, only: null });
+  assert.deepEqual(cellOf(grants, "d1", p, "threads"), { on: true, only: null, idle: null });
+  assert.deepEqual(cellOf(grants, "d1", p, "runs"), { on: true, only: ["runs.read"], idle: null });
+  assert.deepEqual(cellOf(grants, "d1", p, "commands"), { on: false, only: null, idle: null });
+  assert.deepEqual(cellOf(grants, "d1", p, "deploys"), { on: true, only: null, idle: null });
+  assert.deepEqual(cellOf(grants, "d2", p, "threads"), { on: true, only: ["threads.read"], idle: null });
+  assert.deepEqual(cellOf(grants, "d2", p, "runs"), { on: false, only: null, idle: null }, "a revoked runs.start is off");
+  assert.deepEqual(cellOf(grants, "d2", p, "commands"), { on: true, only: null, idle: null });
   // Your DMs: read and post is all there is.
   const dms = { kind: "account", name: "Your DMs" };
-  assert.deepEqual(cellOf(grants, "d2", dms, "threads"), { on: true, only: null });
-  assert.deepEqual(cellOf(grants, "d3", dms, "threads"), { on: false, only: null }, "cloud.drive isn't a DM switch");
+  assert.deepEqual(cellOf(grants, "d2", dms, "threads"), { on: true, only: null, idle: null });
+  assert.deepEqual(cellOf(grants, "d3", dms, "threads"), { on: false, only: null, idle: null }, "cloud.drive isn't a DM switch");
 
   const machines = machinesOf(grants);
   const rows = matrixOf(grants, machines, p, COLUMNS);
@@ -220,6 +221,29 @@ test("a project's matrix on /settings: a row per machine, a switch per column, p
 
   assert.equal(cellKey("d1", p, "deploys"), "d1/prj_1/deploys");
   assert.equal(cellKey("d1", dms, "threads"), "d1/dms/threads");
+});
+
+test("a live grant that does nothing says so under its switch, and the switch stays on (Arugula #683)", () => {
+  const g = (id, power, idle = null, live = true) => ({
+    id,
+    subject: { kind: "daemon", id: "d1", name: "geek" },
+    power,
+    scope: { kind: "project", id: "prj_1" },
+    live,
+    idle,
+  });
+  const why = "issues.write does nothing on a viewer's";
+  const s = { kind: "project", id: "prj_1", name: "Acme" };
+  const grants = [g("g1", "threads.read"), g("g2", "threads.post"), g("g3", "issues.write", why), g("g4", "boards.write", why), g("g5", "deploys.plan", why, false)];
+  assert.deepEqual(cellOf(grants, "d1", s, "threads"), { on: true, only: null, idle: why });
+  assert.deepEqual(cellOf(grants, "d1", s, "boards"), { on: true, only: null, idle: why });
+  assert.equal(boardsIdle(grants, "d1", "prj_1"), why);
+  assert.deepEqual(cellOf(grants, "d1", s, "deploys"), { on: false, only: null, idle: null }, "a revoked one is off, not idle");
+  assert.deepEqual(cellOf(grants, "d1", s, "runs"), { on: false, only: null, idle: null });
+  // An older platform that says nothing about idle: never idle.
+  const older = grants.map(({ idle: _, ...g }) => g);
+  assert.equal(cellOf(older, "d1", s, "threads").idle, null);
+  assert.equal(boardsIdle(older, "d1", "prj_1"), null);
 });
 
 test("sessions.start and sessions.reply have a switch each (aru-121), never the conversation one's", () => {
@@ -241,12 +265,12 @@ test("sessions.start and sessions.reply have a switch each (aru-121), never the 
   // Turning conversations off leaves the session grants alone.
   assert.deepEqual(liveOver(grants, "d1", p).map((x) => x.id), ["g1"]);
   // trackers.write (#359) has its own switch too.
-  assert.deepEqual(cellOf(grants, "d1", p, "plane"), { on: true, only: null });
+  assert.deepEqual(cellOf(grants, "d1", p, "plane"), { on: true, only: null, idle: null });
   assert.equal(SINGLE.plane, "trackers.write");
   assert.ok(!powersFor("project").some((x) => x.startsWith("sessions.")), "conversations on doesn't start sessions");
-  assert.deepEqual(cellOf(grants, "d1", p, "start"), { on: true, only: null });
-  assert.deepEqual(cellOf(grants, "d1", p, "reply"), { on: false, only: null }, "a revoked sessions.reply is off");
-  assert.deepEqual(cellOf(grants, "d1", { kind: "project", id: "prj_2", name: "" }, "reply"), { on: true, only: null });
+  assert.deepEqual(cellOf(grants, "d1", p, "start"), { on: true, only: null, idle: null });
+  assert.deepEqual(cellOf(grants, "d1", p, "reply"), { on: false, only: null, idle: null }, "a revoked sessions.reply is off");
+  assert.deepEqual(cellOf(grants, "d1", { kind: "project", id: "prj_2", name: "" }, "reply"), { on: true, only: null, idle: null });
   assert.equal(SINGLE.start, "sessions.start");
   assert.equal(SINGLE.reply, "sessions.reply");
   assert.equal(singleGrant(grants, "d1", "prj_1", "sessions.start")?.id, "g2");

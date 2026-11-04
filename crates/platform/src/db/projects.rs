@@ -108,6 +108,27 @@ pub const SESSION_POWERS: [&str; 2] = [SESSIONS_START, SESSIONS_REPLY];
 /// is given it ([`crate::agent_tokens`]), never a machine.
 pub const SECRETS_WRITE: &str = "secrets.write";
 
+/// The powers that are writes on the project's objects: every use of one
+/// runs the route's own role check first, which refuses a viewer, so on a
+/// viewer's machine (or a viewer's token) one of these does nothing. The
+/// one list of them (Arugula #683): [`crate::grants::give`] and a token's
+/// mint refuse to give one to a viewer, and
+/// [`crate::grants::list`] marks one that exists as idle. Where each is
+/// refused: `issues.write` in `issues::place`, `boards.write` in
+/// `boards::place`, `trackers.write` in `trackers::writes`, `deploys.plan`
+/// in `project_roles::project_as`, `runs.start` and `runs.command` in
+/// `triggers::routes::changer`, `sessions.start` in `chat::sessions`
+/// (`Cannot::Viewer`), `secrets.write` in `agent_mcp::set_secret`. Not
+/// `threads.post` or `sessions.reply`: a viewer posts in a thread, so
+/// those still do something; not the reads.
+pub const WRITE_POWERS: [&str; 8] =
+    [ISSUES_WRITE, BOARDS_WRITE, TRACKERS_WRITE, DEPLOYS_PLAN, RUNS_START, RUNS_COMMAND, SESSIONS_START, SECRETS_WRITE];
+
+/// Whether `power` is one of [`WRITE_POWERS`].
+pub fn is_write_power(power: &str) -> bool {
+    WRITE_POWERS.contains(&power)
+}
+
 /// What a grant's subject is: a machine (`daemon`, its id 16 hex
 /// characters), or an agent with no machine (`agent`, M230: an agent grant
 /// token, `agt_…`). The hub signs only machines, so a machine's id is never
@@ -160,10 +181,21 @@ pub struct Grant {
     pub granted_by: String,
     pub created_at: u64,
     pub revoked_at: Option<u64>,
+    /// Who revoked it (Arugula #683): its giver, or an owner of the
+    /// project it's over. `None` on a live one, and on one revoked before
+    /// that was recorded, which its giver did.
+    pub revoked_by: Option<String>,
+    /// Their name in the hub's directory (the caller fills it in).
+    pub revoked_by_name: Option<String>,
+    /// Why a live one does nothing now (Arugula #683): a write power whose
+    /// giver only views the project. The caller fills it in
+    /// ([`crate::grants::list`]); it's never stored, since a role change
+    /// brings the grant back.
+    pub idle: Option<String>,
 }
 
 pub(super) const GRANT_COLUMNS: &str =
-    "id, subject_kind, subject_id, power, scope_kind, scope_id, granted_by, created_at, revoked_at";
+    "id, subject_kind, subject_id, power, scope_kind, scope_id, granted_by, created_at, revoked_at, revoked_by";
 
 pub(super) fn grant_row(r: &Row) -> anyhow::Result<Grant> {
     Ok(Grant {
@@ -178,6 +210,9 @@ pub(super) fn grant_row(r: &Row) -> anyhow::Result<Grant> {
         granted_by: r.get(6)?,
         created_at: r.get(7)?,
         revoked_at: r.get(8)?,
+        revoked_by: r.get(9)?,
+        revoked_by_name: None,
+        idle: None,
     })
 }
 
@@ -390,11 +425,46 @@ impl Db {
     pub fn revoke_grant(&self, account: &str, id: &str, now: u64) -> anyhow::Result<Option<Grant>> {
         let c = self.c();
         c.execute(
-            "UPDATE grants SET revoked_at = ?3 WHERE id = ?1
+            "UPDATE grants SET revoked_at = ?3, revoked_by = ?2 WHERE id = ?1
              AND ((scope_kind = 'account' AND scope_id = ?2) OR granted_by = ?2) AND revoked_at IS NULL",
             params![id, account, now],
         )?;
         Self::grant(&c, account, id)
+    }
+
+    /// The project a grant is over, by its id alone: `None` for no such
+    /// grant, or one over an account (never a project owner's to revoke,
+    /// Arugula #683). For [`crate::grants::revoke`] to know whose owners
+    /// to ask before anything is changed.
+    pub fn grant_project(&self, id: &str) -> anyhow::Result<Option<String>> {
+        self.c()
+            .query_row("SELECT scope_id FROM grants WHERE id = ?1 AND scope_kind = 'project'", params![id], |r| {
+                r.get(0)
+            })
+            .optional()
+    }
+
+    /// A project's owner revokes a grant over the project, whoever gave it
+    /// (Arugula #683, as [`revoke_agent_token_over`] does for a token's
+    /// reach): only a grant whose scope is this project, never one over an
+    /// account or another project. Revoking it again changes nothing.
+    /// `None`: no such grant over the project. The caller has checked that
+    /// `by` owns `project` now ([`crate::grants::revoke`]).
+    ///
+    /// [`revoke_agent_token_over`]: Db::revoke_agent_token_over
+    pub fn revoke_grant_over(&self, project: &str, id: &str, by: &str, now: u64) -> anyhow::Result<Option<Grant>> {
+        let c = self.c();
+        c.execute(
+            "UPDATE grants SET revoked_at = ?4, revoked_by = ?3 WHERE id = ?1
+             AND scope_kind = 'project' AND scope_id = ?2 AND revoked_at IS NULL",
+            params![id, project, by, now],
+        )?;
+        c.query_row(
+            &format!("SELECT {GRANT_COLUMNS} FROM grants WHERE id = ?1 AND scope_kind = 'project' AND scope_id = ?2"),
+            params![id, project],
+            grant_row,
+        )
+        .optional()
     }
 
     /// Give one of the account's own machines `cloud.drive` over it again,
@@ -784,6 +854,42 @@ mod tests {
             Some((Some("t1".into()), None, "one".into()))
         );
         assert_eq!(db.project_owner("prj_none").unwrap(), None);
+    }
+
+    /// A project owner's revoke (Arugula #683) reaches a grant over that
+    /// project, whoever gave it, and nothing else: not one over an account,
+    /// not one over another project. Who revoked it is kept, by either
+    /// path.
+    #[test]
+    fn an_owners_revoke_reaches_only_grants_over_the_project() {
+        use super::{ISSUES_WRITE, THREADS_READ};
+        let db = Db::test();
+        let t = db.team_project("t1", "one", 1).unwrap();
+        let u = db.team_project("t2", "two", 1).unwrap();
+        assert!(db.grant_on_join("bbox", "bob", 1).unwrap());
+        let g = db.give_grant("bbox", ISSUES_WRITE, ("project", &t), "bob", 10).unwrap();
+        let dms = db.give_grant("bbox", THREADS_READ, ("account", "bob"), "bob", 11).unwrap();
+        let other = db.give_grant("cbox", THREADS_READ, ("project", &u), "carol", 12).unwrap();
+        assert_eq!(db.grant_project(&g.id).unwrap().as_deref(), Some(t.as_str()));
+        assert_eq!(db.grant_project(&dms.id).unwrap(), None, "over an account: never a project owner's");
+        assert_eq!(db.grant_project("grt_none").unwrap(), None);
+
+        assert_eq!(db.revoke_grant_over(&u, &g.id, "alice", 20).unwrap(), None, "not over u");
+        assert_eq!(db.revoke_grant_over(&t, &dms.id, "alice", 20).unwrap(), None, "over bob's account");
+        assert_eq!(db.revoke_grant_over(&t, &other.id, "alice", 20).unwrap(), None, "over u");
+        let r = db.revoke_grant_over(&t, &g.id, "alice", 20).unwrap().unwrap();
+        assert_eq!((r.revoked_at, r.revoked_by.as_deref()), (Some(20), Some("alice")));
+        let again = db.revoke_grant_over(&t, &g.id, "alice", 21).unwrap().unwrap();
+        assert_eq!((again.revoked_at, again.revoked_by), (Some(20), Some("alice".into())), "again changes nothing");
+        assert_eq!(db.live_grant("bbox", ISSUES_WRITE, ("project", &t), "bob").unwrap(), None);
+        assert!(db.live_grant("bbox", THREADS_READ, ("account", "bob"), "bob").unwrap().is_some());
+        assert!(db.live_grant("cbox", THREADS_READ, ("project", &u), "carol").unwrap().is_some());
+        assert_eq!(db.cloud_drive("bbox", "bob").unwrap(), Some(true));
+
+        // The giver's own revoke says it was theirs.
+        let r = db.revoke_grant("bob", &dms.id, 30).unwrap().unwrap();
+        assert_eq!((r.revoked_at, r.revoked_by.as_deref()), (Some(30), Some("bob")));
+        assert_eq!(db.revoke_grant("alice", &other.id, 31).unwrap(), None, "not alice's to revoke this way");
     }
 
     /// Deleting an account takes its personal project, its place in teams'
