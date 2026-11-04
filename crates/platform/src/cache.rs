@@ -34,8 +34,9 @@
 //!   change names it. While the last feed read that worked began less than
 //!   [`GRACE`] ago, these are kept however old they are.
 //! - **What it doesn't** (billing's meters: the feed says nothing of
-//!   usage): at most [`CACHE_TICK`]. So is everything else while the feed
-//!   isn't being read.
+//!   usage; and whether a reader may reach a machine as a label asks it,
+//!   [`Cache::may_reach_label`], a "no" included): at most [`CACHE_TICK`].
+//!   So is everything else while the feed isn't being read.
 //!
 //! Each map holds at most [`CAP`] answers; past that the least recently
 //! used quarter goes.
@@ -239,6 +240,9 @@ pub struct Cache {
     machines_for: Map<String, Vec<String>>,
     /// (account, machine): whether control routes the account there.
     reach: Map<(String, String), bool>,
+    /// The same for a label ([`Cache::may_reach_label`]): a "no" is kept
+    /// too, for a tick.
+    reach_label: Map<(String, String), bool>,
     /// (account, the month's start): what it used, for billing's page. The
     /// feed says nothing of usage, so this is only ever a cache tick old.
     meters: Map<(String, u64), Meter>,
@@ -269,6 +273,7 @@ impl Cache {
             flags: Map::new(Kept::Feed, any),
             machines_for: Map::new(Kept::Feed, some),
             reach: Map::new(Kept::Feed, yes),
+            reach_label: Map::new(Kept::Tick, any),
             meters: Map::new(Kept::Tick, any),
         }
     }
@@ -482,6 +487,27 @@ impl Cache {
         self.may_reach_asked(hub, account, machines, true).await
     }
 
+    /// [`Cache::may_reach`] for a label, not a check: a "no" is kept too,
+    /// for a tick, so what a label hides from a reader costs one hub call a
+    /// tick, not one a read. A check stays with [`Cache::may_reach`], where
+    /// a "no" is asked again every time.
+    pub async fn may_reach_label(
+        &self,
+        hub: &dyn HubPort,
+        account: &str,
+        machines: &[String],
+    ) -> HubResult<HashSet<String>> {
+        let keys: Vec<(String, String)> = machines.iter().map(|m| (account.to_owned(), m.clone())).collect();
+        let got = self
+            .fill(&self.reach_label, &keys, false, |miss| async move {
+                let asked: Vec<String> = miss.iter().map(|(_, m)| m.clone()).collect();
+                let yes: HashSet<String> = hub.may_reach(account, &asked).await?.into_iter().collect();
+                Ok(miss.into_iter().map(|k| (k.clone(), yes.contains(&k.1))).collect())
+            })
+            .await?;
+        Ok(got.into_iter().filter(|(_, ok)| *ok).map(|((_, m), _)| m).collect())
+    }
+
     async fn may_reach_asked(
         &self,
         hub: &dyn HubPort,
@@ -548,6 +574,7 @@ impl Cache {
         self.flags.clear();
         self.machines_for.clear();
         self.reach.clear();
+        self.reach_label.clear();
         self.meters.clear();
     }
 
@@ -570,6 +597,7 @@ impl Cache {
                 self.daemons.forget(s);
                 self.machines_for.clear();
                 self.reach.clear();
+                self.reach_label.clear();
                 true
             }
             TeamRoster => {
@@ -578,12 +606,14 @@ impl Cache {
                 self.teams_of.clear();
                 self.machines_for.clear();
                 self.reach.clear();
+                self.reach_label.clear();
                 true
             }
             TeamLocked => {
                 self.dropped();
                 self.teams.forget(s);
                 self.reach.clear();
+                self.reach_label.clear();
                 true
             }
             DaemonJoined | DaemonMoved | DaemonLeft => {
@@ -591,12 +621,14 @@ impl Cache {
                 self.daemons.forget(s);
                 self.machines_for.clear();
                 self.reach.clear();
+                self.reach_label.clear();
                 true
             }
             DaemonAccess => {
                 self.dropped();
                 self.machines_for.clear();
                 self.reach.clear();
+                self.reach_label.clear();
                 true
             }
             LabsFlag => {

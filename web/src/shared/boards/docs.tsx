@@ -2,8 +2,10 @@
 // goal, and the Docs section of a row's drawer. A project Doc opens its page
 // on the platform page; a machine's Doc opens in the shell when the shell is
 // on that machine (`PlatformApi.machineDoc`), and elsewhere says which
-// machine has it. Writers link a project Doc from the picker and take one
-// off; machine Docs come in through agents (`board_write` `link_doc`).
+// machine has it, when the reader is told (the platform blanks the machine
+// otherwise: then the chip is plain). Writers link a project Doc from the
+// picker and take one off; machine Docs come in through agents
+// (`board_write` `link_doc`), or a person from a machine they reach.
 
 import { useEffect, useState } from "preact/hooks";
 import type { BoardPointer, ProjectDoc } from "../proto";
@@ -39,8 +41,8 @@ export function DocLink({ d, project, platform, remove }: { d: DocShown; project
     );
   } else if (p.kind === "machine_doc") {
     const machine = p.machine;
-    const here = api.machineDoc?.here(machine);
-    const control = api.controlHref?.(`machine=${machine}`);
+    const here = machine ? api.machineDoc?.here(machine) : undefined;
+    const control = machine ? api.controlHref?.(`machine=${machine}`) : undefined;
     if (here) {
       name = (
         <a class="board-ptr" href="#" data-board-doc-open onClick={(e) => (e.preventDefault(), api.machineDoc!.open(machine, p.doc))}>
@@ -56,7 +58,7 @@ export function DocLink({ d, project, platform, remove }: { d: DocShown; project
     } else {
       name = <span class="board-ptr">{d.title}</span>;
       // The shell, on another machine: where it is, not a way to open it from here.
-      if (api.machineDoc) tail = `${words}, open it there`;
+      if (api.machineDoc && machine) tail = `${words}, open it there`;
     }
   } else {
     name = <span class="board-ptr dim">{d.title}</span>;
