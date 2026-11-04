@@ -4,7 +4,7 @@
 use super::{AskReply, Daemon, Dirty, PaneView, SAVE_DEBOUNCE, Seen, Sent, TYPING, exec_tag, seed};
 use crate::{
     acl::Principal,
-    pane::{Start, ToClient, Want},
+    pane::{Start, Subscriber, ToClient, Want},
     store::{PaneLog, PaneMeta},
 };
 use arugula_core::{Effect, Intent, Role};
@@ -26,6 +26,13 @@ const URGENT: Duration = Duration::from_millis(40);
 /// Pane fields a summary leaves out (M23): a client that needs them reads
 /// the pane.
 const NOT_IN_SUMMARIES: &[&str] = &["epoch", "policy", "resumes", "integration"];
+
+/// A client's access is gone: it hears why, and is hung up on.
+pub(super) fn hang_up(sub: &Subscriber) {
+    let message = "your access was removed".to_owned();
+    let _ = sub.ctrl.send(ToClient::Msg(ServerMsg::Error { id: None, message }));
+    let _ = sub.ctrl.send(ToClient::Close);
+}
 
 impl Daemon {
     pub(super) fn message(&mut self, client: ClientId, msg: ClientMsg) {
@@ -866,9 +873,7 @@ impl Daemon {
         for id in gone {
             if let Some(sub) = self.clients.remove(&id) {
                 info!(client = id, who = sub.principal.id(), "access revoked: disconnecting");
-                let message = "your access was removed".to_owned();
-                let _ = sub.ctrl.send(ToClient::Msg(ServerMsg::Error { id: None, message }));
-                let _ = sub.ctrl.send(ToClient::Close);
+                hang_up(&sub);
             }
             self.focus.remove(&id);
             for p in self.panes.values() {

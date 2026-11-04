@@ -36,6 +36,8 @@ ide.mention POST /api/ide/mention Handler drives=false credential=false
 ide.set PUT /api/ide Owner drives=false credential=false
 invite.send POST /api/invite Owner drives=false credential=false
 link.mint POST /api/links Owner drives=false credential=false
+link.revoke DELETE /api/links/{id} Owner drives=false credential=false
+links.list GET /api/links Owner drives=false credential=false
 machine.reset POST /api/machines/{id}/reset Owner drives=false credential=false
 machines.list GET /api/machines Owner drives=false credential=false
 mcp_token.mint POST /api/mcp/tokens Owner drives=false credential=false
