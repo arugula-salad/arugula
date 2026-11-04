@@ -31,6 +31,16 @@
   font-size: 12px;
 }
 
+/* A copy of a machine's Doc (#678): read-only here, and said so above it. */
+.project-doc-copy {
+  max-width: 760px;
+  width: 100%;
+  margin: 0 auto 8px;
+  padding: 0 16px;
+  box-sizing: border-box;
+  font-size: 13px;
+}
+
 .project-doc-form {
   display: flex;
   flex-wrap: wrap;

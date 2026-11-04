@@ -170,6 +170,7 @@ Not here: what each milestone built (the archive), how to build and test
 - [aru-129](docs/decisions/aru-129-a-doc-s-prototype-runs-in-a-frame-on-control-s-proto-origin.md): A Doc's prototype runs in a frame on control's proto origin
 - [aru-130](docs/decisions/aru-130-an-issue-opened-on-github-stays-native-and-only-new-comments-cross.md): An issue opened on GitHub stays native, and only new comments cross
 - [aru-134](docs/decisions/aru-134-one-data-model-what-each-noun-means-and-where-its-truth-lives.md): One data model: what each noun means and where its truth lives
+- [aru-135](docs/decisions/aru-135-a-machine-s-doc-is-the-truth-its-platform-copy-is-read-only.md): A machine's Doc is the truth; its platform copy is read-only
 
 ## Build and release
 

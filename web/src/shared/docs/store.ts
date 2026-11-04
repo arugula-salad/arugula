@@ -4,7 +4,7 @@
 // shape (a title, then sections of Markdown, pending until written), so the
 // page draws it with the Doc block's renderer.
 
-import type { NewProjectDoc, ProjectDocList, ProjectDocView, ProjectDocWrite } from "../proto";
+import type { NewProjectDoc, ProjectDoc, ProjectDocList, ProjectDocView, ProjectDocWrite } from "../proto";
 import { chat } from "../chat-store";
 import { platformFetch, refusalOf } from "../maintenance";
 
@@ -36,29 +36,35 @@ const docPath = (project: string, id: string) => `/api/projects/${enc(project)}/
 /** The Docs' titles the page has read, for their links' slugs and tabs. */
 const titles = new Map<string, string>();
 
+/** A Doc as the page reads it: a platform before Arugula #678 sent no
+ * `machine_name` (and one before #418 no `machine`), so a row from one
+ * is a Doc made here, not a copy. */
+const doc = (d: ProjectDoc): ProjectDoc => ({ ...d, machine: d.machine ?? null, machine_name: d.machine_name ?? null });
+const view = (v: ProjectDocView): ProjectDocView => ({ ...v, doc: doc(v.doc) });
+
 export const projectDocs = {
   title: (id: string): string | undefined => titles.get(id),
   async list(project: string): Promise<ProjectDocList> {
     const l = await call<ProjectDocList>("GET", `/api/projects/${enc(project)}/docs`);
     for (const d of l.docs) titles.set(d.id, d.title);
-    return l;
+    return { ...l, docs: l.docs.map(doc) };
   },
-  async create(project: string, doc: NewProjectDoc): Promise<ProjectDocView> {
-    const v = await call<ProjectDocView>("POST", `/api/projects/${enc(project)}/docs`, doc);
+  async create(project: string, make: NewProjectDoc): Promise<ProjectDocView> {
+    const v = await call<ProjectDocView>("POST", `/api/projects/${enc(project)}/docs`, make);
     titles.set(v.doc.id, v.doc.title);
-    return v;
+    return view(v);
   },
   async get(project: string, id: string): Promise<ProjectDocView> {
     const v = await call<ProjectDocView>("GET", docPath(project, id));
     titles.set(id, v.doc.title);
-    return v;
+    return view(v);
   },
   /** Rename it, write a section, or add one (what isn't given stays). */
   async write(project: string, id: string, w: Partial<ProjectDocWrite>): Promise<ProjectDocView> {
     const full: ProjectDocWrite = { title: null, section: null, heading: null, intent: null, markdown: null, ...w };
     const v = await call<ProjectDocView>("PUT", docPath(project, id), full);
     titles.set(id, v.doc.title);
-    return v;
+    return view(v);
   },
   remove: (project: string, id: string) => call<{ deleted: string }>("DELETE", docPath(project, id)),
   /** The Doc's thread (made the first time someone opens it): the room the

@@ -258,3 +258,64 @@ async fn pictures_are_checked_by_their_bytes() {
     let (st, v) = put_png(&base, "a geek", "d1", "one-more.png", b"x").await;
     assert!(st == 400 && v["error"].as_str().unwrap().contains("at most 20"), "{v}");
 }
+
+/// The machine's library Doc is the truth and its copy here is read-only
+/// (Arugula #678): a person's write to it, a section or its title, is
+/// refused naming the machine, its view has no writer, and the machine's
+/// next put still lands. (Before: the write went through, and the next put
+/// silently put the edit back and dropped the added section.)
+#[tokio::test]
+async fn a_copy_is_read_only_and_the_machines_puts_still_land() {
+    let (_hub, _app, base, t, _u) = seeded().await;
+    let (_, p) = put_doc(&base, "a geek", "d1", "Plan", &[("s1", Some("v1")), ("s2", None)]).await;
+    let (id, personal) = (id_of(&p), p["project"].as_str().unwrap().to_owned());
+    let path = format!("/api/projects/{personal}/docs/{id}");
+
+    let (st, v) = call(&base, "a", "GET", &path, None).await;
+    assert_eq!(st, 200, "{v}");
+    assert_eq!(
+        (&v["writer"], &v["doc"]["machine"], &v["doc"]["machine_name"]),
+        (&json!(false), &json!("geek"), &json!("geek-box")),
+        "{v}"
+    );
+    let (_, l) = call(&base, "a", "GET", &format!("/api/projects/{personal}/docs"), None).await;
+    assert_eq!((&l["docs"][0]["machine_name"], &l["writer"]), (&json!("geek-box"), &json!(true)), "{l}");
+
+    for edit in [
+        json!({ "section": "s1", "markdown": "edited on the web" }),
+        json!({ "heading": "Added on the web", "markdown": "new" }),
+        json!({ "title": "Renamed on the web" }),
+    ] {
+        let (st, e) = call(&base, "a", "PUT", &path, Some(edit.clone())).await;
+        assert_eq!(st, 403, "{edit}: {e}");
+        let why = e["error"].as_str().unwrap();
+        assert!(why.contains("copy") && why.contains("geek-box"), "{why}");
+    }
+    let (_, v) = call(&base, "a", "GET", &path, None).await;
+    assert_eq!((&v["doc"]["title"], bodies_of(&v)), (&json!("Plan"), vec![json!("v1"), Value::Null]), "{v}");
+
+    // The machine's next put lands, as it did.
+    let (st, q) = put_doc(&base, "a geek", "d1", "Plan, v2", &[("s1", Some("v2"))]).await;
+    assert_eq!((st, &q["id"]), (200, &json!(id)), "{q}");
+    let (_, v) = call(&base, "a", "GET", &path, None).await;
+    assert_eq!(
+        (&v["doc"]["title"], bodies_of(&v), &v["writer"]),
+        (&json!("Plan, v2"), vec![json!("v2")], &json!(false))
+    );
+
+    // Moved into the team, it's a copy there too: an editor can't write it,
+    // and the machine's put still lands there.
+    let (st, m) = call(&base, "a", "POST", &format!("{path}/move"), Some(json!({ "to": t }))).await;
+    assert_eq!((st, &m["writer"], &m["doc"]["machine_name"]), (200, &json!(false), &json!("geek-box")), "{m}");
+    let team_path = format!("/api/projects/{t}/docs/{id}");
+    let (st, e) = call(&base, "b", "PUT", &team_path, Some(json!({ "section": "s1", "markdown": "b's" }))).await;
+    assert!(st == 403 && e["error"].as_str().unwrap().contains("geek-box"), "{st} {e}");
+    let (st, q) = put_doc(&base, "a geek", "d1", "Plan, v3", &[("s1", Some("v3"))]).await;
+    assert_eq!((st, &q["project"]), (200, &json!(t)), "{q}");
+    let (_, v) = call(&base, "b", "GET", &team_path, None).await;
+    assert_eq!((bodies_of(&v), &v["writer"]), (vec![json!("v3")], &json!(false)), "{v}");
+}
+
+fn bodies_of(v: &Value) -> Vec<Value> {
+    v["sections"].as_array().unwrap().iter().map(|s| s["body"].clone()).collect()
+}

@@ -24,6 +24,12 @@
 //! pictures and where it came from. A machine copies its Docs up to its
 //! owner's personal project in [`machine`](crate::project_docs_machine).
 //!
+//! **A copy is read-only** (Arugula #678): the machine's library Doc is the
+//! truth, and its next put replaces the copy whole, so a write to a copy
+//! here, by a person or a session, is refused naming the machine
+//! ([`copy_refused`]), and a copy's view has no writer. The machine's own
+//! puts, a move and a delete are as they were.
+//!
 //! **Live:** a write pushes an object change on the Doc's thread
 //! ([`changed`]), as a board's does, so pages showing it read it again.
 //!
@@ -150,6 +156,20 @@ fn may_write(by: By<'_>, place: &Place, doc: &db::Stored) -> Result<(), ApiError
     Ok(())
 }
 
+/// Why a copy isn't written here: the machine (by name, or its id once it
+/// left) holds the Doc.
+fn copy_refused(doc: &db::Stored, names: &Names) -> ApiError {
+    let machine = doc.machine.as_deref().unwrap_or_default();
+    let name = names.get(machine).filter(|n| !n.is_empty()).map_or(machine, String::as_str);
+    err(
+        StatusCode::FORBIDDEN,
+        &format!(
+            "this Doc is a copy of one in {name}'s library, and the copy is read-only: change it on {name}, and its \
+             next copy brings the change"
+        ),
+    )
+}
+
 pub(crate) fn refused(r: Refused) -> ApiError {
     match r {
         Refused::Missing(what) => err(StatusCode::NOT_FOUND, what),
@@ -191,7 +211,21 @@ fn id_ok(id: &str) -> Result<(), ApiError> {
     }
 }
 
-pub(crate) fn doc_wire(d: &db::Stored) -> wire::Doc {
+/// Machines' names by id, for the copies among some Docs.
+type Names = std::collections::HashMap<String, String>;
+
+/// The names of the machines these Docs are copies from (none for one
+/// control doesn't know any more).
+async fn machine_names<'a>(app: &Platform, docs: impl Iterator<Item = &'a db::Stored>) -> anyhow::Result<Names> {
+    let ids: Vec<String> =
+        docs.filter_map(|d| d.machine.clone()).collect::<std::collections::BTreeSet<_>>().into_iter().collect();
+    if ids.is_empty() {
+        return Ok(Names::new());
+    }
+    Ok(crate::grants::agent_names(app, &ids).await?.into_iter().map(|(id, d)| (id, d.name)).collect())
+}
+
+pub(crate) fn doc_wire(d: &db::Stored, names: &Names) -> wire::Doc {
     wire::Doc {
         id: d.id.clone(),
         project: d.project.clone(),
@@ -208,10 +242,12 @@ pub(crate) fn doc_wire(d: &db::Stored) -> wire::Doc {
         created_at: d.created_at,
         updated_at: d.updated_at,
         machine: d.machine.clone(),
+        machine_name: d.machine.as_ref().and_then(|m| names.get(m)).filter(|n| !n.is_empty()).cloned(),
     }
 }
 
-fn view(app: &Platform, by: By<'_>, place: &Place, d: &db::Stored) -> Result<wire::DocView, ApiError> {
+async fn view(app: &Platform, by: By<'_>, place: &Place, d: &db::Stored) -> Result<wire::DocView, ApiError> {
+    let names = machine_names(app, std::iter::once(d)).await?;
     let sections = app
         .db
         .project_doc_sections(&d.id)?
@@ -224,7 +260,9 @@ fn view(app: &Platform, by: By<'_>, place: &Place, d: &db::Stored) -> Result<wir
         .into_iter()
         .map(|a| wire::Asset { name: a.name, mime: a.mime, size: a.size, rev: a.rev })
         .collect();
-    Ok(wire::DocView { doc: doc_wire(d), sections, assets, writer: may_write(by, place, d).is_ok() })
+    // A copy is nobody's to write here (#678).
+    let writer = d.machine.is_none() && may_write(by, place, d).is_ok();
+    Ok(wire::DocView { doc: doc_wire(d, &names), sections, assets, writer })
 }
 
 /// The Doc `id`, in `project`, changed: pages showing it read it again,
@@ -248,7 +286,9 @@ pub fn link(app: &Platform, project: &str, id: &str) -> String {
 /// A project's Docs as `by` may read them, the latest changed first.
 pub async fn list(app: &Platform, by: By<'_>, project: &str) -> Result<wire::DocList, ApiError> {
     let place = place(app, by.account(), project, false).await?;
-    let docs = app.db.project_docs(&place.project)?.iter().map(doc_wire).collect();
+    let docs = app.db.project_docs(&place.project)?;
+    let names = machine_names(app, docs.iter()).await?;
+    let docs = docs.iter().map(|d| doc_wire(d, &names)).collect();
     Ok(wire::DocList { writer: place.role != TeamRole::Viewer, project: place.project, docs })
 }
 
@@ -268,14 +308,14 @@ pub async fn create(app: &Platform, by: By<'_>, project: &str, new: &wire::NewDo
     };
     let n = db::NewDoc { project: &place.project, title: &title, made_by, made_by_session, sections: &sections };
     let doc = app.db.create_project_doc(&n, now_ms(), wire::DOCS_MAX)?.map_err(refused)?;
-    view(app, by, &place, &doc)
+    view(app, by, &place, &doc).await
 }
 
 /// A Doc with its sections, as `by` may read it.
 pub async fn get(app: &Platform, by: By<'_>, project: &str, id: &str) -> Result<wire::DocView, ApiError> {
     id_ok(id)?;
     let (place, doc) = doc_in(app, by, project, id, false).await?;
-    view(app, by, &place, &doc)
+    view(app, by, &place, &doc).await
 }
 
 /// Change a Doc as `by` (see [`wire::DocWrite`]).
@@ -288,6 +328,9 @@ pub async fn write(
 ) -> Result<wire::DocView, ApiError> {
     id_ok(id)?;
     let (place, doc) = doc_in(app, by, project, id, true).await?;
+    if doc.machine.is_some() {
+        return Err(copy_refused(&doc, &machine_names(app, std::iter::once(&doc)).await?));
+    }
     may_write(by, &place, &doc)?;
     let title = w.title.as_deref().map(title_ok).transpose()?;
     let heading = w.heading.as_deref().map(heading_ok).transpose()?;
@@ -301,7 +344,7 @@ pub async fn write(
     };
     let doc = app.db.write_project_doc(id, &write, now_ms())?.map_err(refused)?;
     changed(app, &place.project, id);
-    view(app, by, &place, &doc)
+    view(app, by, &place, &doc).await
 }
 
 /// A picture of a Doc, its type and bytes, as `by` may read the Doc: 404
@@ -334,13 +377,13 @@ pub async fn move_doc(
     may_write(by, &from, &doc)?;
     let target = place(app, account, to, true).await?;
     if target.project == from.project {
-        return view(app, by, &from, &doc);
+        return view(app, by, &from, &doc).await;
     }
     let moved =
         app.db.move_project_doc(id, &from.project, &target.project, now_ms(), wire::DOCS_MAX)?.map_err(refused)?;
     changed(app, &from.project, id);
     changed(app, &target.project, id);
-    view(app, by, &target, &moved)
+    view(app, by, &target, &moved).await
 }
 
 /// Delete a Doc: owners and editors, never a session.

@@ -39,6 +39,8 @@ async fn members_read_a_doc_and_owners_and_editors_write_it() {
     let id = v["doc"]["id"].as_str().unwrap().to_owned();
     assert!(id.starts_with("pdc_") && id.len() == 36, "{id}");
     assert_eq!((&v["doc"]["author"], &v["doc"]["agent"], &v["writer"]), (&json!("a"), &Value::Null, &json!(true)));
+    // Made here, not a copy from a machine (#678): its people write it.
+    assert_eq!((&v["doc"]["machine"], &v["doc"]["machine_name"]), (&Value::Null, &Value::Null));
     assert_eq!((&v["doc"]["sections"], &v["doc"]["written"]), (&json!(2), &json!(1)));
     assert_eq!(bodies(&v), [json!("Ship **0.64**."), Value::Null]);
     assert_eq!((&v["sections"][1]["id"], &v["sections"][1]["intent"]), (&json!("s2"), &json!("what could go wrong")));
