@@ -934,6 +934,7 @@ test-scripts:
     scripts/tests/suite-lock.sh
     scripts/tests/release-bump.sh
     scripts/tests/hub-changed.sh
+    scripts/tests/ci-fly-rollback.sh
     scripts/tests/hosted-supervisor.sh
     scripts/tests/hosted-template.sh
     scripts/tests/hosted-tools.sh
