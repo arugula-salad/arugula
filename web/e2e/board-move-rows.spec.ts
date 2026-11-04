@@ -14,12 +14,14 @@ import { closeContexts } from "./helpers";
 import { TeamControl } from "./team-fixture";
 
 const t = new TeamControl("moverows");
+const g = new TeamControl("movegroups");
 
 test.use({ viewport: { width: 1280, height: 900 } });
 
 test.afterAll(async ({ browser }) => {
   await closeContexts({ browser });
   t.stop();
+  g.stop();
 });
 
 const SHOTS = `${process.env.TMPDIR ?? "/tmp"}/494-shots`;
@@ -129,4 +131,89 @@ test("a row is moved by dragging, from its menu and from the drawer", async ({ b
   await shot(alice, "390-board");
   await card(alice, titles[1]).locator(".board-sub").click({ position: { x: 4, y: 4 } });
   await shot(alice, "390-drawer");
+});
+
+// A row is dragged between groups (#664). The group under the card takes the
+// drop, outlined whole, and none of its lanes does; the row keeps its lane.
+// Within its own group a drag still picks a lane, and no group outlines.
+test("a row dragged onto another group moves into it, lane unchanged", async ({ browser }) => {
+  test.setTimeout(240_000);
+  await g.start(["--platform-host", "app.localhost"]);
+  const app = g.base.replace("//127.0.0.1", "//app.localhost");
+  const alice = await g.person(browser, "alice");
+  await alice.emulateMedia({ colorScheme: "dark" });
+  await alice.evaluate(() => window.__arugula.control!.createTeam("Acme"));
+  await alice.goto(`${app}/`);
+  await alice.locator("section[data-platform-home] [data-project]", { hasText: "Acme" }).click();
+  const project = /\/p\/(prj_[0-9a-f]+)/.exec(alice.url())![1];
+
+  const board = (await api(alice, "POST", `/api/projects/${project}/boards`, { title: "Phases" })).body!.board.id as string;
+  const entries = `/api/boards/${board}/entries`;
+  await api(alice, "PUT", entries, { entry: "zone", title: "Decide" });
+  const both = await api(alice, "PUT", entries, { entry: "zone", title: "Build" });
+  const [decide] = (both.body!.groups as { id: string }[]).map((x) => x.id);
+  let view: any;
+  for (const [note, zone] of [["Pick a name", decide], ["Wire it up", undefined], ["Loose end", undefined]] as const) {
+    view = (await api(alice, "PUT", entries, { entry: "row", note, zone })).body;
+  }
+  const rowOf = (note: string) => view.zones.flatMap((z: any) => z.rows).find((r: any) => r.note === note).id as string;
+  const card = (note: string) => alice.locator(`[data-board-row="${rowOf(note)}"]`);
+  const group = (id: string) => alice.locator(`[data-board-group="${id}"]`);
+  const laneOf = async (note: string) => card(note).getAttribute("data-lane");
+  const open = async () => {
+    await alice.goto(`${app}/p/${project}/boards/${board}`);
+    await expect(alice.locator("[data-board-row]")).toHaveCount(3);
+  };
+  await open();
+  const lane = await laneOf("Loose end");
+
+  // Mid-drag over Decide: the group outlines, and none of its lanes.
+  await alice.setViewportSize({ width: 1280, height: 1200 });
+  await card("Loose end").scrollIntoViewIfNeeded();
+  const from = (await card("Loose end").boundingBox())!;
+  await alice.mouse.move(from.x + from.width / 2, from.y + from.height / 2);
+  await alice.mouse.down();
+  await alice.mouse.move(from.x + from.width / 2 + 10, from.y + from.height / 2 + 10, { steps: 3 });
+  const head = (await group(decide).locator(".board-group-head").boundingBox())!;
+  await alice.mouse.move(head.x + 60, head.y + head.height / 2, { steps: 8 });
+  // Chromium delivers the first dragover only after a few moves inside the target.
+  await alice.mouse.move(head.x + 70, head.y + head.height / 2, { steps: 4 });
+  await alice.mouse.move(head.x + 80, head.y + head.height / 2, { steps: 4 });
+  await expect(group(decide)).toHaveAttribute("data-drop-over", "");
+  await expect(group(decide).locator("[data-board-zone][data-drop-over]")).toHaveCount(0);
+  // Over one of its lanes the group still takes it, and the lane doesn't.
+  const lanebox = (await group(decide).locator('[data-board-zone="lane_doing"]').boundingBox())!;
+  await alice.mouse.move(lanebox.x + 40, lanebox.y + 20, { steps: 6 });
+  await alice.mouse.move(lanebox.x + 50, lanebox.y + 22, { steps: 4 });
+  await expect(group(decide)).toHaveAttribute("data-drop-over", "");
+  await expect(group(decide).locator("[data-board-zone][data-drop-over]")).toHaveCount(0);
+  await shot(alice, "group-outline");
+  await alice.mouse.up();
+  await expect(group(decide).locator(`[data-board-row="${rowOf("Loose end")}"]`)).toHaveCount(1);
+  await open();
+  await expect(group(decide).locator(`[data-board-row="${rowOf("Loose end")}"]`)).toHaveCount(1);
+  expect(await laneOf("Loose end")).toBe(lane);
+  await expect(alice.locator("[data-drop-over]")).toHaveCount(0);
+
+  // Within its own group a lane is still the target, and the group is not.
+  const own = alice.locator(`[data-board-group="${decide}"] [data-board-zone="lane_doing"]`);
+  const src = (await card("Loose end").boundingBox())!;
+  await alice.mouse.move(src.x + src.width / 2, src.y + src.height / 2);
+  await alice.mouse.down();
+  await alice.mouse.move(src.x + src.width / 2 + 10, src.y + src.height / 2 + 10, { steps: 3 });
+  const dst = (await own.boundingBox())!;
+  await alice.mouse.move(dst.x + 40, dst.y + 20, { steps: 8 });
+  await alice.mouse.move(dst.x + 50, dst.y + 22, { steps: 4 });
+  await alice.mouse.move(dst.x + 60, dst.y + 24, { steps: 4 });
+  await expect(own).toHaveAttribute("data-drop-over", "");
+  await expect(group(decide)).not.toHaveAttribute("data-drop-over", "");
+  await alice.mouse.up();
+  await expect(group(decide).locator(`[data-board-zone="lane_doing"] [data-board-row="${rowOf("Loose end")}"]`)).toHaveCount(1);
+
+  // A grouped row onto "No group" lands there, in its lane.
+  const doing = await laneOf("Pick a name");
+  await card("Pick a name").dragTo(group("none").locator(".board-group-head"));
+  await open();
+  await expect(group("none").locator(`[data-board-row="${rowOf("Pick a name")}"]`)).toHaveCount(1);
+  expect(await laneOf("Pick a name")).toBe(doing);
 });

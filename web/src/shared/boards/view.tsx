@@ -46,6 +46,15 @@ const STALE_SAID = "That changed while you were editing, so the board is read ag
 
 /** What a card carries while it's dragged to another lane (#494). */
 const ROW_DRAG = "text/x-arugula-board-row";
+// The dragged row's group rides in the type's name, since a drop target can read only `types` while the drag is over it (types are lowercased).
+const ROW_GROUP = "text/x-arugula-board-row-group-";
+const dragGroupType = (group: string | null) => `${ROW_GROUP}${group ?? "none"}`.toLowerCase();
+/** Whether the drag is a board row from the group `group` (null: no group). Absent for any other drag. */
+const dragFrom = (e: DragEvent, group: string | null): boolean | undefined => {
+  const types = e.dataTransfer?.types;
+  if (!types?.includes(ROW_DRAG)) return undefined;
+  return types.includes(dragGroupType(group));
+};
 
 const menuAt = (e: MouseEvent, items: MenuItem[]) => {
   const at = (e.currentTarget as HTMLElement).getBoundingClientRect();
@@ -239,6 +248,11 @@ export function BoardPanel({
     if (to) void act(() => boards.move(id, g.id, g.rev, to));
   };
   const moveRow = (r: BoardRow, zone: string | null) => void act(() => boards.move(id, r.id, r.rev, { zone }));
+  /** A row dropped on a group (#664): it moves there with its lane unchanged. */
+  const dropRow = (row: string, group: string | null) => {
+    const r = view.zones.flatMap((z) => z.rows).find((x) => x.id === row);
+    if (r && (r.group ?? null) !== group) moveRow(r, group);
+  };
   /** Move a row to a lane by hand (#494). Done closes its native issue after a confirm; any other item is closed where it lives, and the row says so. */
   const moveLane = (row: string, lane: BoardLane) => {
     const r = view.zones.flatMap((z) => z.rows).find((x) => x.id === row);
@@ -338,7 +352,7 @@ export function BoardPanel({
               if (narrows && z.rows.length === 0) return null;
               const laneKey = grouped ? groupLaneFold(s.group?.id ?? null, z.id) : laneFold(z.id);
               return (
-              <Lane key={z.id} z={z} fold={{ key: laneKey, folded: !narrows && isFolded(folds, laneKey), toggle: () => toggleFold(laneKey) }} project={view.board.project} editing={editing} setEditing={setEditing} act={act} id={id} platform={platform} groups={write ? (view.groups ?? []) : []} moveRow={moveRow} moveLane={write ? moveLane : undefined} open={setDrawer} />
+              <Lane key={z.id} z={z} fold={{ key: laneKey, folded: !narrows && isFolded(folds, laneKey), toggle: () => toggleFold(laneKey) }} project={view.board.project} editing={editing} setEditing={setEditing} act={act} id={id} platform={platform} groups={write ? (view.groups ?? []) : []} group={s.group?.id ?? null} moveRow={moveRow} moveLane={write ? moveLane : undefined} open={setDrawer} />
               );
             })}
           </div>
@@ -348,7 +362,7 @@ export function BoardPanel({
         const title = s.group?.title ?? "No group";
         const rows = held;
         return (
-          <section class="board-group" key={s.group?.id ?? "none"} data-board-group={s.group?.id ?? "none"}>
+          <GroupDrop key={s.group?.id ?? "none"} group={s.group?.id ?? null} take={write ? dropRow : undefined}>
             <header class="board-group-head">
               <h2 data-board-group-title>
                 <button type="button" class="board-fold" aria-expanded={!folded} data-board-fold={key} onClick={() => toggleFold(key)}>
@@ -368,7 +382,7 @@ export function BoardPanel({
               )}
             </header>
             {!folded && lanes}
-          </section>
+          </GroupDrop>
         );
       })}
       {view.said && (
@@ -661,6 +675,35 @@ function Answered({ asked }: { asked: BoardAnsweredAsk[] }) {
   );
 }
 
+/** A group's section, which takes a row dragged from another group (#664). */
+function GroupDrop({ group, take, children }: { group: string | null; take?: (row: string, group: string | null) => void; children: preact.ComponentChildren }) {
+  const [over, setOver] = useState(false);
+  const takes = (e: DragEvent) => !!take && dragFrom(e, group) === false;
+  return (
+    <section
+      class={`board-group${over ? " drop-over" : ""}`}
+      data-board-group={group ?? "none"}
+      data-drop-over={over ? "" : undefined}
+      onDragOver={(e) => {
+        if (!takes(e)) return;
+        e.preventDefault();
+        if (e.dataTransfer) e.dataTransfer.dropEffect = "move";
+        setOver(true);
+      }}
+      onDragLeave={(e) => !e.currentTarget.contains(e.relatedTarget as Node | null) && setOver(false)}
+      onDrop={(e) => {
+        if (!takes(e)) return;
+        e.preventDefault();
+        setOver(false);
+        const row = e.dataTransfer?.getData(ROW_DRAG);
+        if (row) take!(row, group);
+      }}
+    >
+      {children}
+    </section>
+  );
+}
+
 function Lane({
   z,
   fold,
@@ -671,6 +714,7 @@ function Lane({
   id,
   platform,
   groups,
+  group,
   moveRow,
   moveLane,
   open,
@@ -686,16 +730,18 @@ function Lane({
   platform: (path: string) => string | undefined;
   /** The groups a row may move to; none for a reader who can't write. */
   groups: BoardGroup[];
+  /** The group this lane sits in (null: no group). */
+  group: string | null;
   moveRow: (r: BoardRow, zone: string | null) => void;
   /** Move a row to a lane by hand (#494); none for a reader who can't write. */
   moveLane?: (row: string, lane: BoardLane) => void;
   open: (row: string) => void;
 }) {
   const n = laneCount(z);
-  // A card dragged over the lane (#494): the lane takes it.
+  // A card dragged over the lane (#494): the lane takes it, unless it comes from another group, which takes it whole (#664).
   const [over, setOver] = useState(false);
   const lane = laneOfZone(z.id);
-  const takes = (e: DragEvent) => !!moveLane && !!lane && !!e.dataTransfer?.types.includes(ROW_DRAG);
+  const takes = (e: DragEvent) => !!moveLane && !!lane && dragFrom(e, group) === true;
   const drop = (e: DragEvent) => {
     if (!takes(e)) return;
     e.preventDefault();
@@ -929,7 +975,10 @@ function Row({
   const title = card ? r.live!.title : label || "Note";
   const external = r.pointer.kind === "forge_item" || r.pointer.kind === "link";
   return (
-    <li class={`board-card sw-card sw-${tone}`} data-board-row={r.id} data-lane={r.lane} data-status={r.status} data-tone={tone} data-needs-you={r.ask?.mine ? "" : undefined} data-lane-set={r.lane_set ? r.lane_set.lane : undefined} draggable={!!moveLane && !phone && !editing} onDragStart={(e) => e.dataTransfer?.setData(ROW_DRAG, r.id)} tabIndex={editing ? undefined : 0} onClick={editing ? undefined : body} onKeyDown={editing ? undefined : key}>
+    <li class={`board-card sw-card sw-${tone}`} data-board-row={r.id} data-lane={r.lane} data-status={r.status} data-tone={tone} data-needs-you={r.ask?.mine ? "" : undefined} data-lane-set={r.lane_set ? r.lane_set.lane : undefined} draggable={!!moveLane && !phone && !editing} onDragStart={(e) => {
+      e.dataTransfer?.setData(ROW_DRAG, r.id);
+      e.dataTransfer?.setData(dragGroupType(r.group ?? null), r.group ?? "none"); // a type with no data is dropped
+    }} tabIndex={editing ? undefined : 0} onClick={editing ? undefined : body} onKeyDown={editing ? undefined : key}>
       {editing ? (
         <RowForm
           project={project}
