@@ -29,6 +29,14 @@ function editable(t: EventTarget | null): boolean {
   return t instanceof HTMLElement && t.matches("textarea, input") && !t.closest(".xterm");
 }
 
+/** A link, or text the person has selected: what a long-press on a phone
+ * copies from, through the browser's own menu. */
+function copyable(t: EventTarget | null): boolean {
+  if (t instanceof Element && t.closest("a[href]")) return true;
+  const sel = window.getSelection();
+  return !!sel && !sel.isCollapsed && t instanceof Node && sel.containsNode(t, true);
+}
+
 export function PaneSlot({
   client,
   id,
@@ -123,6 +131,8 @@ export function PaneSlot({
     // A text box's own menu (an agent's composer): on a phone, its Paste
     // is the one that can paste an image (Chrome refuses ours).
     if (editable(e.target)) return;
+    // A link's, or selected text's: Copy link and Copy are the browser's.
+    if (copyable(e.target)) return;
     const items = () => paneItems(client, id, phone, isWorkspace ? workspaceDir : null);
     openFresh(client, e, items);
   };
