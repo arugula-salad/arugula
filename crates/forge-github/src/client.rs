@@ -9,6 +9,10 @@
 //!   status: three 304s when nothing moved. Reviews and the timeline are
 //!   read only when the caller asks ([`Github::rest`]), and those are
 //!   conditional too.
+//! - **The one GraphQL call: a merge queue.** REST can't enqueue. When
+//!   GitHub refuses [`Github::merge`] and the branch has a merge queue, the
+//!   pull request goes in the queue instead: "queued to merge", not merged,
+//!   until a later read says so.
 //! - **Rerun:** a failed check run from Actions names its workflow run;
 //!   [`Github::rerun_failed`] posts `actions/runs/ID/rerun-failed-jobs` for
 //!   each.
@@ -27,7 +31,7 @@ use arugula_proto::forge::{RateLimit, ReviewEvent};
 use serde_json::{Value, json};
 
 use crate::{
-    Error, Polled, Sent,
+    Error, Polled, QUEUED, Sent,
     model::{Check, Event, Item, Linked, Me, Review, Reviewer},
     parse::{checks, events, fingerprint, issue_item, item, linked, me, reviews},
     redact,
@@ -57,6 +61,24 @@ fn merge_method(style: Option<&str>) -> Result<&'static str, String> {
         "rebase" => Ok("rebase"),
         s => Err(format!("GitHub merges by merge, squash or rebase, not {s}")),
     }
+}
+
+/// GitHub's GraphQL endpoint for a REST `api`: `https://api.github.com/graphql`,
+/// or `https://HOST/api/graphql` beside Enterprise's `/api/v3`.
+fn graphql_url(api: &str) -> String {
+    format!("{}/graphql", api.strip_suffix("/v3").unwrap_or(api))
+}
+
+/// Whether a refusal names the merge queue.
+fn names_queue(e: &Error) -> bool {
+    matches!(e, Error::Http(m) | Error::Denied(m) if m.to_lowercase().contains("merge queue"))
+}
+
+/// Whether a refused merge may be down to a merge queue, so it's worth
+/// asking GitHub: GitHub's word on the branch decides, not this wording
+/// (a 405 is also a conflict, or a method the repository doesn't allow).
+fn may_want_queue(e: &Error) -> bool {
+    names_queue(e) || matches!(e, Error::Http(m) if m.starts_with("405 "))
 }
 
 /// A `Link` header's URL for `rel` (`last`, `next`).
@@ -310,6 +332,18 @@ impl<T: TokenSource> Github<T> {
         Ok(self.send(reqwest::Method::GET, repo, path, None).await?.0)
     }
 
+    /// One GraphQL request about `repo` (with a write's token): its `data`.
+    /// GitHub says no with a 200 and `errors`.
+    async fn graphql(&self, repo: &str, query: &str, variables: Value) -> Result<Value, Error> {
+        let body = json!({ "query": query, "variables": variables });
+        let (v, _) = self.send(reqwest::Method::POST, repo, &graphql_url(&self.api), Some(&body)).await?;
+        if let Some(errors) = v["errors"].as_array().filter(|e| !e.is_empty()) {
+            let said: Vec<&str> = errors.iter().filter_map(|e| e["message"].as_str()).collect();
+            return Err(Error::Http(said.join("; ")));
+        }
+        Ok(v["data"].clone())
+    }
+
     /// A list that's oldest first: the newest `keep` of it (its last page,
     /// and the one before when that's short).
     async fn newest(&self, repo: &str, path: &str, keep: usize) -> Result<Vec<Value>, Error> {
@@ -528,11 +562,50 @@ impl<T: TokenSource> Github<T> {
     }
 
     /// Merge a pull request: `merge` (the default), `squash` or `rebase`.
+    /// On a branch that requires a merge queue GitHub refuses that, so it
+    /// goes in the queue instead, and has not merged when this returns.
     pub async fn merge(&self, repo: &str, number: u64, style: Option<&str>) -> Result<Sent, Error> {
         let how = merge_method(style).map_err(Error::Http)?;
         let path = format!("repos/{repo}/pulls/{number}/merge");
-        self.send(reqwest::Method::PUT, repo, &path, Some(&json!({ "merge_method": how }))).await?;
-        Ok(Sent { url: None, said: format!("merged ({how})") })
+        match self.send(reqwest::Method::PUT, repo, &path, Some(&json!({ "merge_method": how }))).await {
+            Ok(_) => Ok(Sent { url: None, said: format!("merged ({how})") }),
+            Err(refused) if may_want_queue(&refused) => self.enqueue(repo, number, refused).await,
+            Err(e) => Err(e),
+        }
+    }
+
+    /// Put a pull request in its branch's merge queue, after GitHub refused
+    /// to merge it with `refused`, which stands if the branch has no queue.
+    /// The queue's rules pick the merge method, so the one asked for isn't
+    /// passed on.
+    async fn enqueue(&self, repo: &str, number: u64, refused: Error) -> Result<Sent, Error> {
+        const READ: &str = "query($owner: String!, $name: String!, $number: Int!) {
+            repository(owner: $owner, name: $name) {
+                pullRequest(number: $number) { id isInMergeQueue isMergeQueueEnabled }
+            }
+        }";
+        const ENQUEUE: &str = "mutation($id: ID!) {
+            enqueuePullRequest(input: { pullRequestId: $id }) { mergeQueueEntry { id } }
+        }";
+        let named = names_queue(&refused);
+        let (owner, name) = repo.split_once('/').unwrap_or((repo, ""));
+        let vars = json!({ "owner": owner, "name": name, "number": number });
+        let data = match self.graphql(repo, READ, vars).await {
+            Ok(d) => d,
+            Err(e) if named => return Err(Error::Http(format!("{refused} (and reading its merge queue failed: {e})"))),
+            Err(_) => return Err(refused),
+        };
+        let pr = &data["repository"]["pullRequest"];
+        if pr["isInMergeQueue"] == true {
+            return Ok(Sent { url: None, said: format!("already {QUEUED}") });
+        }
+        if pr["isMergeQueueEnabled"] != true && !named {
+            return Err(refused);
+        }
+        let id =
+            pr["id"].as_str().ok_or_else(|| Error::Http(format!("{refused} (and GitHub didn't say its node id)")))?;
+        self.graphql(repo, ENQUEUE, json!({ "id": id })).await?;
+        Ok(Sent { url: None, said: QUEUED.into() })
     }
 
     /// Rerun the failed jobs of each workflow run behind a pull request's
@@ -600,6 +673,15 @@ mod tests {
         assert_eq!(merge_method(None), Ok("merge"));
         assert_eq!(merge_method(Some("squash")), Ok("squash"));
         assert!(merge_method(Some("fast-forward-only")).is_err());
+        assert_eq!(graphql_url("https://api.github.com"), "https://api.github.com/graphql");
+        assert_eq!(graphql_url("https://ghe.example/api/v3"), "https://ghe.example/api/graphql");
+        let queue = Error::Http("405 Repository rule violations found: must be made through the Merge Queue".into());
+        assert!(names_queue(&queue) && may_want_queue(&queue));
+        let conflict = Error::Http("405 Pull Request is not mergeable".into());
+        assert!(!names_queue(&conflict) && may_want_queue(&conflict));
+        assert!(may_want_queue(&Error::Denied("403 use the merge queue".into())));
+        assert!(!may_want_queue(&Error::Denied("403 Resource not accessible".into())));
+        assert!(!may_want_queue(&Error::Http("422 no".into())));
         let link = r#"<https://api.github.com/repositories/1/issues/2/timeline?per_page=100&page=2>; rel="next", <https://api.github.com/repositories/1/issues/2/timeline?per_page=100&page=4>; rel="last""#;
         let last = link_last(link).unwrap();
         assert_eq!(page_of(&last), Some(4));
