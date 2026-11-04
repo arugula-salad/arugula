@@ -2161,6 +2161,12 @@ export type DocContentEntry = { id: string, heading: string, intent: string, bod
 export type DocLinkUrl = { url: string, };
 
 /**
+ * Where a Doc's copy on the platform is: the project it sits in now, its
+ * `pdc_` id there, and its page.
+ */
+export type DocOnPlatform = { project: string, id: string, link: string, };
+
+/**
  * `POST /api/docs/open` (#1493): a Doc from the library in a block. Exactly
  * one of `id` and `link` names it.
  */
@@ -2203,7 +2209,15 @@ summary: string,
 /**
  * Its sections, for the list's picture of its shape and its outline.
  */
-sections: Array<DocSectionShape>, };
+sections: Array<DocSectionShape>, 
+/**
+ * Its copy on the platform (#418), once this machine has copied it up:
+ * readable there with this machine asleep. Null until then, and again
+ * once the machine has left control; a daemon from before native #673
+ * sends none, and a team's other owner isn't sent it (the copy is in
+ * the owner's personal project, which they can't read).
+ */
+platform?: DocOnPlatform, };
 
 /**
  * One section of a Doc, as the Docs list shows it (#588). A fenced block is

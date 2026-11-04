@@ -282,4 +282,12 @@ fn a_machines_docs_are_copied_up_coalesced_kept_dirty_when_refused_and_drained_o
     d.wait_for("another refresh", || f.refreshes.load(Ordering::SeqCst) > refreshed);
     std::thread::sleep(Duration::from_secs(3));
     assert_eq!(f.puts_of(&old).len(), 1, "the old Doc was copied once");
+
+    // Left control: where each copy was is forgotten (native #673).
+    assert!(meta(&d, &plan)["platform"].is_object());
+    d.stop();
+    std::fs::remove_file(d.state.join("control.json")).unwrap();
+    d.start();
+    d.wait_for("the copies' places forgotten", || meta(&d, &plan).get("platform").is_none());
+    assert!(meta(&d, &old).get("platform").is_none());
 }

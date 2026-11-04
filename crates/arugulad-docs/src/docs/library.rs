@@ -8,7 +8,8 @@
 //!   moves on an outline, a fill and an asset, and `shape` ([`super::shape`],
 //!   what its row in the list shows) is worked out again then. A Doc from
 //!   before `shape` gets one the first time it's listed. `platform`, once
-//!   the Doc was copied up (#418, [`super::copies`]): where its copy is.
+//!   the Doc was copied up (#418, [`super::copies`]): where its copy is,
+//!   forgotten when the machine leaves control ([`forget_platform`]).
 //! - `doc.json`, `sN.md` and `assets/`: the Doc's files, as [`super`] says.
 //!
 //! Nothing here prunes: a Doc stays until the owner deletes it.
@@ -163,6 +164,21 @@ pub fn set_platform(dir: &Path, on: OnPlatform) {
     meta.platform = Some(on);
     if let Err(e) = write_meta(dir, &meta) {
         warn!(doc = meta.id, error = e, "can't keep where a Doc's copy is");
+    }
+}
+
+/// This machine left control: where each Doc's copy was no longer holds
+/// (the next control it joins puts them again, and notes where).
+pub fn forget_platform(state_dir: &Path) {
+    let _held = META_LOCK.lock().unwrap();
+    let Ok(entries) = std::fs::read_dir(root(state_dir)) else { return };
+    for dir in entries.flatten().map(|e| e.path()) {
+        let Some(mut meta) = read_meta(&dir) else { continue };
+        if meta.platform.take().is_some()
+            && let Err(e) = write_meta(&dir, &meta)
+        {
+            warn!(doc = meta.id, error = e, "can't forget where a Doc's copy was");
+        }
     }
 }
 

@@ -16,7 +16,10 @@ use std::{collections::HashMap, sync::Arc};
 use arugula_core::PaneId;
 use arugula_proto::{
     BlockType,
-    api::{DocAsset, DocContent, DocOpenRequest, DocOpened, DocPreview, DocRow, DocShared, Empty, OpenRequest},
+    api::{
+        DocAsset, DocContent, DocOnPlatform, DocOpenRequest, DocOpened, DocPreview, DocRow, DocShared, Empty,
+        OpenRequest,
+    },
     op::ops::{DocAssetGet, DocDelete, DocOpen, DocPreviewGet, DocRead, DocsList},
 };
 use axum::http::StatusCode;
@@ -88,6 +91,9 @@ impl Handle<Docs> for DocsList {
         let (metas, links) = crate::task::spawn_blocking(move || (library::list(&state), link::by_doc(&state)))
             .await
             .map_err(|e| OpError::Failed(e.to_string()))?;
+        // A copy is in the owner's personal project: a team's other owner
+        // (#935) can't read it there, so they aren't pointed at it.
+        let co_owner = cx.co_owner();
         Ok(metas
             .into_iter()
             .map(|m| {
@@ -106,6 +112,11 @@ impl Handle<Docs> for DocsList {
                     by: m.by,
                     summary: shape.summary,
                     sections: shape.sections,
+                    platform: m.platform.filter(|_| !co_owner).map(|p| DocOnPlatform {
+                        project: p.project,
+                        id: p.id,
+                        link: p.link,
+                    }),
                 }
             })
             .collect())
@@ -116,7 +127,7 @@ impl McpOp<Docs> for DocsList {
     const SURFACE: Surface = Surface::Kind {
         tool: "doc",
         kind: "list",
-        description: "The kept Docs, newest first: id, title, made, updated, author, the block showing it now (open), whether it is shared. Any earlier session's Doc is here; open shows one.",
+        description: "The kept Docs, newest first: id, title, made, updated, author, the block showing it (open), shared, platform (its copy's link). Any earlier session's Doc is here; open shows one.",
     };
     type Args = ListArgs;
     type Answer = serde_json::Value;
