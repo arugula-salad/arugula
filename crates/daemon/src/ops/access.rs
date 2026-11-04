@@ -586,9 +586,11 @@ mod tests {
         let v = compose(p);
         assert_eq!(v.guest_ssh, Some(false));
         assert!(by_kind(&v, "guest").is_empty());
-        let links: Vec<(Option<u32>, Option<u32>, Option<u64>, Option<u64>)> =
-            by_kind(&v, "link").iter().map(|r| (r.session, r.pane, r.from_ms, r.until_ms)).collect();
-        assert_eq!(links, [(Some(3), None, Some(5), Some(7_000)), (Some(3), Some(9), None, Some(8_000))]);
+        let links: Vec<[Option<u64>; 4]> = by_kind(&v, "link")
+            .iter()
+            .map(|r| [r.session.map(u64::from), r.pane.map(u64::from), r.from_ms, r.until_ms])
+            .collect();
+        assert_eq!(links, [[Some(3), None, Some(5), Some(7_000)], [Some(3), Some(9), None, Some(8_000)]]);
         assert_eq!(v.sessions.iter().map(|s| (s.id, s.name.as_str())).collect::<Vec<_>>(), [(3, "s3"), (4, "s4")]);
 
         let mut p = pieces(None);
