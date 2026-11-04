@@ -1979,8 +1979,9 @@ fn slow_git(dir: &Path) -> String {
 /// Whether process `pid`, kept in `file`, runs (a zombie doesn't).
 fn runs(file: &Path) -> bool {
     let pid = std::fs::read_to_string(file).unwrap();
-    let stat = std::fs::read_to_string(format!("/proc/{}/stat", pid.trim())).unwrap_or_default();
-    stat.rsplit(") ").next().is_some_and(|rest| !rest.is_empty() && !rest.starts_with('Z'))
+    let out = std::process::Command::new("ps").args(["-o", "stat=", "-p", pid.trim()]).output().unwrap();
+    let stat = String::from_utf8_lossy(&out.stdout);
+    !stat.trim().is_empty() && !stat.trim().starts_with('Z')
 }
 
 /// `running stop` while the daemon pushes: the push and what it started are

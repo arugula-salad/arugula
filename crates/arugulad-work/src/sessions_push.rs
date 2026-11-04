@@ -479,20 +479,29 @@ mod tests {
     }
 
     fn alive(pid: &str) -> bool {
-        let stat = std::fs::read_to_string(format!("/proc/{pid}/stat")).unwrap_or_default();
-        stat.rsplit(") ").next().is_some_and(|rest| !rest.is_empty() && !rest.starts_with('Z'))
+        let out = std::process::Command::new("ps").args(["-o", "stat=", "-p", pid]).output().unwrap();
+        let stat = String::from_utf8_lossy(&out.stdout);
+        !stat.trim().is_empty() && !stat.trim().starts_with('Z')
     }
 
-    fn pid_in(file: &std::path::Path) -> String {
-        for _ in 0..200 {
-            if let Ok(p) = std::fs::read_to_string(file)
-                && !p.trim().is_empty()
-            {
-                return p.trim().to_owned();
+    /// `script` runs until it has written its helper's pid to `file`, and for
+    /// `then` after, and is stopped (dropped): the pid.
+    async fn stopped_after(script: &str, file: &std::path::Path, then: Duration) -> String {
+        let written = async {
+            loop {
+                if let Ok(p) = std::fs::read_to_string(file)
+                    && p.ends_with('\n')
+                {
+                    tokio::time::sleep(then).await;
+                    return p.trim().to_owned();
+                }
+                tokio::time::sleep(Duration::from_millis(10)).await;
             }
-            std::thread::sleep(Duration::from_millis(10));
+        };
+        tokio::select! {
+            r = run(command(script), "run") => panic!("it runs until it's stopped: {r:?}"),
+            pid = written => pid,
         }
-        panic!("no pid in {}", file.display());
     }
 
     /// Stopped while its leader runs, the group goes, helper and all. Once the
@@ -506,23 +515,20 @@ mod tests {
 
         let helper = dir.join("running.pid");
         let script = format!("sleep 60 & echo $! > {}; wait", helper.display());
-        let got = tokio::time::timeout(Duration::from_millis(500), run(command(&script), "run")).await;
-        assert!(got.is_err(), "it runs until it's stopped");
-        let pid = pid_in(&helper);
-        for _ in 0..200 {
+        let pid = stopped_after(&script, &helper, Duration::ZERO).await;
+        for _ in 0..500 {
             if !alive(&pid) {
                 break;
             }
-            std::thread::sleep(Duration::from_millis(10));
+            tokio::time::sleep(Duration::from_millis(10)).await;
         }
         assert!(!alive(&pid), "the helper goes with its leader");
 
+        // Long enough for its leader, which exits at once, to be reaped.
         let helper = dir.join("reaped.pid");
         let script = format!("sleep 60 & echo $! > {}; exit 0", helper.display());
-        let got = tokio::time::timeout(Duration::from_millis(500), run(command(&script), "run")).await;
-        assert!(got.is_err(), "the helper holds its pipe, so the wait goes on");
-        let pid = pid_in(&helper);
-        std::thread::sleep(Duration::from_millis(100));
+        let pid = stopped_after(&script, &helper, Duration::from_secs(2)).await;
+        tokio::time::sleep(Duration::from_millis(100)).await;
         assert!(alive(&pid), "its leader was reaped: nothing was signalled");
         let _ = std::process::Command::new("kill").args(["-KILL", &pid]).status();
         let _ = std::fs::remove_dir_all(&dir);
