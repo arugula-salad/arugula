@@ -3,7 +3,7 @@
   "commit": "a9f2b3350d79eb80abedf36251ed8108f9a14e46",
   "branch": "main",
   "state": "pending",
-  "at": "2026-11-04T06:21:03Z",
+  "at": "2026-11-04T06:21:59Z",
   "phases": {
     "lint": {
       "verdict": "pass",
@@ -90,13 +90,13 @@
         {
           "name": "e2e (11)",
           "id": 126422906502,
-          "conclusion": null,
+          "conclusion": "success",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/41782493348/job/126422906502"
         },
         {
           "name": "e2e (12)",
           "id": 126422906588,
-          "conclusion": null,
+          "conclusion": "success",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/41782493348/job/126422906588"
         },
         {
@@ -108,7 +108,7 @@
         {
           "name": "e2e (3)",
           "id": 126422906598,
-          "conclusion": null,
+          "conclusion": "success",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/41782493348/job/126422906598"
         },
         {
@@ -126,19 +126,19 @@
         {
           "name": "e2e (6)",
           "id": 126422906581,
-          "conclusion": null,
+          "conclusion": "success",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/41782493348/job/126422906581"
         },
         {
           "name": "e2e (7)",
           "id": 126422906535,
-          "conclusion": null,
+          "conclusion": "success",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/41782493348/job/126422906535"
         },
         {
           "name": "e2e (8)",
           "id": 126422906499,
-          "conclusion": null,
+          "conclusion": "success",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/41782493348/job/126422906499"
         },
         {
@@ -150,13 +150,13 @@
       ]
     },
     "claims": {
-      "verdict": "pending",
+      "verdict": "pass",
       "build": "newest",
       "runs": [
         {
           "name": "desktop-xvfb",
           "id": 126421279540,
-          "conclusion": null,
+          "conclusion": "success",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/41782493348/job/126421279540"
         }
       ]
