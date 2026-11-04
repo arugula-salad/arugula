@@ -13,7 +13,7 @@ use std::{
     collections::BTreeMap,
     io::Write,
     path::{Path, PathBuf},
-    sync::RwLock,
+    sync::{RwLock, RwLockWriteGuard},
 };
 
 use arugula_core::{PaneId, Role, SessionId};
@@ -21,7 +21,7 @@ use arugula_proto::api::NotifyPref;
 use serde::{Deserialize, Serialize};
 use tracing::warn;
 
-use crate::store::{now_ms, write_atomic};
+use crate::store::{ReplaceError, now_ms, replace_atomic, write_atomic};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Principal {
@@ -86,6 +86,16 @@ pub struct Grant {
 #[derive(Default, Serialize, Deserialize)]
 struct File {
     grants: Vec<Grant>,
+}
+
+/// The grants in memory after a write: `before` if the file wasn't replaced,
+/// as they are if it was. Whether it was.
+fn settle(written: &Result<(), ReplaceError>, g: &mut Vec<Grant>, before: Vec<Grant>) -> bool {
+    if let Err(ReplaceError::NotReplaced(_)) = written {
+        *g = before;
+        return false;
+    }
+    true
 }
 
 #[derive(Debug)]
@@ -259,9 +269,8 @@ impl Acl {
             key: Some(key.to_owned()),
             expires: Some(expires),
         });
-        self.write_grants(&mut g, before)?;
-        drop(g);
-        self.log(serde_json::json!({ "at": now_ms(), "by": "owner", "action": "link", "session": session, "principal": id, "expires": expires }));
+        let entry = serde_json::json!({ "at": now_ms(), "by": "owner", "action": "link", "session": session, "principal": id, "expires": expires });
+        self.commit(g, before, entry)?;
         Ok(id)
     }
 
@@ -286,24 +295,33 @@ impl Acl {
         };
         let before = g.clone();
         g.retain(|x| x.principal != principal);
-        self.write_grants(&mut g, before)?;
-        drop(g);
-        self.log(serde_json::json!({
+        let entry = serde_json::json!({
             "at": now_ms(), "by": by, "action": "revoke",
             "session": gone.session, "principal": principal, "name": gone.name, "role": null,
-        }));
+        });
+        self.commit(g, before, entry)?;
         Ok(true)
     }
 
     /// Write the grants as `g` has them, with its lock held: every change
     /// and its write are one step, or one change's older copy could land on
-    /// top of another's. If it can't be written, it didn't happen.
-    fn write_grants(&self, g: &mut Vec<Grant>, before: Vec<Grant>) -> std::io::Result<()> {
-        if let Err(e) = write_atomic(&self.path, &serde_json::to_vec_pretty(&File { grants: g.clone() }).unwrap()) {
-            *g = before;
-            return Err(e);
+    /// top of another's. The grants in memory end up as the file has them,
+    /// and the log says what the file says. An error may mean it happened
+    /// all the same (the file changed, and that didn't reach the disk for
+    /// certain), so whoever gets one still tells the mux and control.
+    fn commit(
+        &self,
+        mut g: RwLockWriteGuard<'_, Vec<Grant>>,
+        before: Vec<Grant>,
+        entry: serde_json::Value,
+    ) -> std::io::Result<()> {
+        let written = replace_atomic(&self.path, &serde_json::to_vec_pretty(&File { grants: g.clone() }).unwrap());
+        let changed = settle(&written, &mut g, before);
+        drop(g);
+        if changed {
+            self.log(entry);
         }
-        Ok(())
+        written.map_err(std::io::Error::from)
     }
 
     /// Links that ran out go (true if any did).
@@ -423,13 +441,11 @@ impl Acl {
                 expires: None,
             });
         }
-        self.write_grants(&mut g, before)?;
-        drop(g);
-        self.log(serde_json::json!({
+        let entry = serde_json::json!({
             "at": now_ms(), "by": by, "action": if role.is_some() { "grant" } else { "revoke" },
             "session": session, "principal": principal, "name": name, "role": role,
-        }));
-        Ok(())
+        });
+        self.commit(g, before, entry)
     }
 
     /// A session closed: its grants go with it.
@@ -604,6 +620,80 @@ mod tests {
         assert!(again.link_by_key(&"a".repeat(64)).is_none());
         assert!(again.link_by_key(&"b".repeat(64)).is_some());
         assert!(again.knows(&Principal::tailnet("alice@example.com")));
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    fn grant_named(principal: &str) -> Grant {
+        Grant {
+            session: 3,
+            principal: principal.into(),
+            name: String::new(),
+            role: Role::Viewer,
+            by: "owner".into(),
+            at: 0,
+            from: None,
+            root: None,
+            key: None,
+            expires: None,
+        }
+    }
+
+    /// What's in memory after a write: back as it was only if the file is.
+    #[test]
+    fn memory_follows_whether_the_file_was_replaced() {
+        let failed = || std::io::Error::other("no");
+        let (before, after) = (vec![grant_named("old")], vec![grant_named("new")]);
+        for (written, changed, held) in [
+            (Ok(()), true, &after),
+            (Err(ReplaceError::NotSynced(failed())), true, &after),
+            (Err(ReplaceError::NotReplaced(failed())), false, &before),
+        ] {
+            let mut g = after.clone();
+            assert_eq!(settle(&written, &mut g, before.clone()), changed, "{written:?}");
+            assert_eq!(&g, held, "{written:?}");
+        }
+    }
+
+    /// The file is replaced and then the directory can't be synced (it can't
+    /// be opened, in a directory we may write to but not read): the change
+    /// stands in memory as it does on disk, in the log too, and the caller
+    /// hears of the error. Root reads any directory, so there's nothing to see.
+    #[cfg(unix)]
+    #[test]
+    fn a_change_that_replaced_the_file_stands_though_its_sync_failed() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = std::env::temp_dir().join(format!("arugula-acl-unsynced-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let acl = Acl::open(&dir);
+        let until = now_ms() + 60_000;
+        let (a, b) = ("a".repeat(64), "b".repeat(64));
+        let live = acl.add_link(3, &a, until, None).unwrap();
+        let mode = |m| std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(m)).unwrap();
+
+        mode(0o300);
+        if std::fs::File::open(&dir).is_ok() {
+            mode(0o700);
+            return eprintln!("skipped: this user reads every directory");
+        }
+        let made = acl.add_link(3, &b, until, None);
+        let revoked = acl.revoke_link(&live, "owner");
+        let shared = acl.set(3, "tailnet:alice@example.com", "alice", Some(Role::Viewer), "owner");
+        mode(0o700);
+        assert!(made.is_err() && revoked.is_err() && shared.is_err(), "each hears of it");
+
+        let check = |acl: &Acl| {
+            assert!(acl.link_by_key(&b).is_some(), "the link made");
+            assert!(acl.link_by_key(&a).is_none(), "the link revoked");
+            assert!(acl.knows(&Principal::tailnet("alice@example.com")), "the share");
+        };
+        check(&acl);
+        check(&Acl::open(&dir));
+        let log = acl.audit();
+        assert_eq!(
+            log.iter().map(|e| e["action"].as_str().unwrap()).collect::<Vec<_>>(),
+            ["link", "link", "revoke", "grant"]
+        );
         std::fs::remove_dir_all(dir).unwrap();
     }
 
