@@ -35,7 +35,7 @@ lists the differences.
 | Project grant | What a machine's agents may do in a project, like `boards.write` | Platform, `grt_` |
 | Standing run grant | Runs a project's owner has signed for | `run_grants`, signed with a passkey |
 
-Org isn't built. Billing keys on a project's owner.
+Org isn't built. Billing keys on an owner, with no org above it.
 
 ## Machines and compute
 
