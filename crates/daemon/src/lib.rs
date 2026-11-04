@@ -1141,7 +1141,7 @@ async fn run(mut args: RunArgs, mut kept: std::collections::HashMap<String, pane
         sessions: agent::sessions(),
         pane_gone,
         usage: Arc::new(telemetry::Hooks),
-        turns: Arc::new(agent_mentions::TurnReports(turns_tx)),
+        followups: Arc::new(agent_mentions::TurnReports(turns_tx)),
         at_exit: Some(mux::AtExit(Arc::new(|| lab_hooks::labs().at_exit()))),
     };
     // M101: counting starts with the mux; reports, once control is known.

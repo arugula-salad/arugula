@@ -54,12 +54,115 @@ use tracing::{debug, warn};
 
 use crate::{
     control::CloudRefused,
-    mux::{Api, DropWhy, MentionTag, MentionThread, Turn, Turns},
+    mux::{Api, DropWhy, Followups, Tag, Turn},
     server::App,
 };
 
 /// The most unread mentions kept; the oldest go first.
 const MAX_UNREAD: usize = 50;
+
+/// The mention a follow-up carries (#540): the message `seq` of `room` in
+/// Arugula control's chat. It rides on the follow-up as the mux's opaque
+/// [`Tag`] (#675, [`to_tag`](Self::to_tag)): the mux passes it along and
+/// gives it back with each turn report, and the rooms and threads in it
+/// are read here alone.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MentionTag {
+    pub room: String,
+    pub seq: i64,
+    /// What the card says while it is held for a session with no hooks
+    /// (#579). Empty for a mention that isn't held.
+    pub headline: String,
+    /// The thread it is in, when it may be merged with others of it (#580).
+    pub thread: Option<MentionThread>,
+}
+
+/// What it takes to put several mentions of one thread into one follow-up
+/// (#580).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MentionThread {
+    /// The thread's root message.
+    pub root: i64,
+    /// The line that names the thread, when several are merged.
+    pub head: String,
+    /// This message, as one reply in the merged text.
+    pub line: String,
+    /// What closes the merged text.
+    pub tail: String,
+}
+
+impl MentionTag {
+    /// As an agent block's `send` and its log carry it.
+    pub fn to_json(&self) -> serde_json::Value {
+        let mut v = serde_json::json!({ "room": self.room, "seq": self.seq });
+        if let Some(t) = &self.thread {
+            v["thread"] = serde_json::json!({ "root": t.root, "head": t.head, "line": t.line, "tail": t.tail });
+        }
+        v
+    }
+
+    /// The tag [`to_json`](Self::to_json) wrote.
+    pub fn from_json(v: &serde_json::Value) -> Option<MentionTag> {
+        let t = &v["thread"];
+        let thread = t["root"].as_i64().map(|root| MentionThread {
+            root,
+            head: t["head"].as_str().unwrap_or_default().to_owned(),
+            line: t["line"].as_str().unwrap_or_default().to_owned(),
+            tail: t["tail"].as_str().unwrap_or_default().to_owned(),
+        });
+        Some(MentionTag {
+            room: v["room"].as_str()?.to_owned(),
+            seq: v["seq"].as_i64()?,
+            headline: String::new(),
+            thread,
+        })
+    }
+
+    /// As the mux carries it on a follow-up (#675): [`to_json`](Self::to_json)
+    /// serialized, which the mux never reads, and the held card's words.
+    pub fn to_tag(&self) -> Tag {
+        Tag { data: self.to_json().to_string(), card: self.headline.clone() }
+    }
+
+    /// The mention [`to_tag`](Self::to_tag) made `tag` of.
+    pub fn from_tag(tag: &Tag) -> Option<MentionTag> {
+        let v: serde_json::Value = serde_json::from_str(&tag.data).ok()?;
+        let mut m = Self::from_json(&v)?;
+        m.headline = tag.card.clone();
+        Some(m)
+    }
+
+    /// Whether `other` is a message of the same thread: the same room and
+    /// root.
+    fn same_thread(&self, other: &MentionTag) -> bool {
+        match (&self.thread, &other.thread) {
+            (Some(a), Some(b)) => self.room == other.room && a.root == b.root,
+            _ => false,
+        }
+    }
+}
+
+/// Put `next` (a follow-up that carries `tag`) after `tags`' text, when it is
+/// in the same thread as they are (#580): `tags` all stay, so every one
+/// still reports its turn. False, and nothing changed, when it isn't.
+/// `text` is the follow-up of `tags` so far: the first one's own words, and
+/// from the second on, the merged text (oldest first).
+pub fn absorb(text: &mut String, tags: &mut Vec<MentionTag>, tag: &MentionTag) -> bool {
+    if !tags.first().is_some_and(|t| t.same_thread(tag)) {
+        return false;
+    }
+    tags.push(tag.clone());
+    *text = merged(tags);
+    true
+}
+
+/// The follow-up for several messages of one thread, oldest first.
+fn merged(tags: &[MentionTag]) -> String {
+    let threads: Vec<&MentionThread> = tags.iter().filter_map(|t| t.thread.as_ref()).collect();
+    let (Some(first), Some(last)) = (threads.first(), threads.last()) else { return String::new() };
+    let lines = threads.iter().map(|t| t.line.as_str()).collect::<Vec<_>>().join("\n");
+    format!("{}\n{lines}\n\n{}", first.head, last.tail)
+}
 
 /// The longest first line a card quotes (#551), in characters.
 const NOTICE_LINE: usize = 120;
@@ -463,14 +566,27 @@ fn thread_of(m: &AgentMention) -> MentionThread {
     }
 }
 
-/// Tells the task that reports ([`keep_telling`]) where a mention's turn is.
-/// The mux calls it on its own task, so it only queues.
+/// Tells the task that reports ([`keep_telling`]) where a mention's turn is,
+/// and says which mentions waiting on a pane go in as one (#580). The mux
+/// calls it on its own task, so it only queues and decides.
 #[derive(Debug)]
 pub struct TurnReports(pub tokio::sync::mpsc::UnboundedSender<(PaneId, MentionTag, Turn)>);
 
-impl Turns for TurnReports {
-    fn turn(&self, pane: PaneId, tag: &MentionTag, turn: Turn) {
-        let _ = self.0.send((pane, tag.clone(), turn));
+impl Followups for TurnReports {
+    fn turn(&self, pane: PaneId, tag: &Tag, turn: Turn) {
+        match MentionTag::from_tag(tag) {
+            Some(m) => {
+                let _ = self.0.send((pane, m, turn));
+            }
+            None => warn!(pane, ?turn, "a follow-up's tag isn't a mention's"),
+        }
+    }
+
+    fn joined(&self, tags: &[Tag], next: &Tag) -> Option<String> {
+        let mut tags: Vec<MentionTag> = tags.iter().map(MentionTag::from_tag).collect::<Option<_>>()?;
+        let next = MentionTag::from_tag(next)?;
+        let mut text = String::new();
+        absorb(&mut text, &mut tags, &next).then_some(text)
     }
 }
 
@@ -626,7 +742,7 @@ impl Daemon for App {
             let sent = b.call_by("send", args, name).await?;
             return Ok(sent["queued"].as_u64() == Some(0));
         }
-        match self.mux.api(|r| Api::FollowUp(pane, text, by, Some(tag), r)).await {
+        match self.mux.api(|r| Api::FollowUp(pane, text, by, Some(tag.to_tag()), r)).await {
             Some(r) => r,
             None => Err("daemon is shutting down".into()),
         }
@@ -1198,6 +1314,47 @@ mod tests {
         assert!(t.head.contains("\"first\""), "{}", t.head);
 
         assert!(tag_of(&m, &["(the session has ended)".into()]).thread.is_none());
+    }
+
+    /// Replies of one thread merge into one text, oldest first, the way
+    /// the mux asks through its tag (#580, #675): the head once, each
+    /// reply's line, the last one's tail; another room's or thread's, or a
+    /// mention with no thread, doesn't join. The tag round-trips through the
+    /// mux's opaque one, headline and all.
+    #[test]
+    fn replies_of_one_thread_merge_into_one_text_and_a_tag_round_trips() {
+        let reply = |room: &str, seq: i64, root: i64| MentionTag {
+            room: room.into(),
+            seq,
+            headline: format!("held {seq}"),
+            thread: Some(MentionThread {
+                root,
+                head: format!("Replies in {room} to \"root {root}\":"),
+                line: format!("ada: reply {seq}"),
+                tail: "(tail)".into(),
+            }),
+        };
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+        let reports = TurnReports(tx);
+        let first = reply("ch_x", 11, 10);
+        assert_eq!(MentionTag::from_tag(&first.to_tag()), Some(first.clone()));
+        let tags = [first.to_tag()];
+        assert_eq!(
+            reports.joined(&tags, &reply("ch_x", 12, 10).to_tag()).as_deref(),
+            Some("Replies in ch_x to \"root 10\":\nada: reply 11\nada: reply 12\n\n(tail)")
+        );
+        assert_eq!(reports.joined(&tags, &reply("ch_x", 21, 20).to_tag()), None, "another thread");
+        assert_eq!(reports.joined(&tags, &reply("ch_y", 13, 10).to_tag()), None, "another room");
+        let plain = MentionTag { room: "ch_x".into(), seq: 14, headline: String::new(), thread: None };
+        assert_eq!(reports.joined(&tags, &plain.to_tag()), None, "no thread");
+        assert_eq!(reports.joined(&[plain.to_tag()], &reply("ch_x", 12, 10).to_tag()), None);
+        // Three in a row: the merged text is rebuilt from every tag.
+        let mut text = "framed".to_owned();
+        let mut got = vec![first];
+        assert!(absorb(&mut text, &mut got, &reply("ch_x", 12, 10)));
+        assert!(absorb(&mut text, &mut got, &reply("ch_x", 15, 10)));
+        assert_eq!(text, "Replies in ch_x to \"root 10\":\nada: reply 11\nada: reply 12\nada: reply 15\n\n(tail)");
+        assert_eq!(got.len(), 3);
     }
 
     #[test]

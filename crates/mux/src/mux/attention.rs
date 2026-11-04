@@ -2,7 +2,7 @@
 //! that make a terminal wait, questions asked in a terminal, hooks and
 //! follow-ups.
 
-use super::{AskReply, Daemon, InboxReply, MentionTag, Replied, SAVE_DEBOUNCE, agent_in, plain_reason};
+use super::{AskReply, Daemon, InboxReply, Replied, SAVE_DEBOUNCE, Tag, agent_in, plain_reason};
 use crate::{acl::Principal, store::now_ms};
 use arugula_proto::{
     Action, AskRef, AskWhat, Attention, BlockType, Driver, EventKind, PaneId, Policy, Reason, ReasonKind,
@@ -207,7 +207,7 @@ impl Daemon {
         {
             return Some(r);
         }
-        // A mention held for a session with no hooks (#579) stays while the
+        // A follow-up held for a session with no hooks (#579) stays while the
         // screen says it's working.
         if let Some(r) = self.held.get(&pane) {
             return Some(r.clone());
@@ -763,7 +763,7 @@ impl Daemon {
             let kept = self.meta.get(&pane).and_then(|m| m.session.as_ref()).filter(|s| s.running);
             let sessions = self.config.sessions.clone();
             if let Some(id) = top_level(hook, kept.map(|s| s.id.as_str()), |id| sessions.nested(id)) {
-                self.mentions_told.insert(pane, id.to_owned());
+                self.midturn_told.insert(pane, id.to_owned());
             }
         }
         let event = hook["hook_event_name"].as_str().unwrap_or_default();
@@ -809,9 +809,10 @@ impl Daemon {
         if event == "UserPromptSubmit" && self.panes.contains_key(&pane) {
             self.emit(Some(pane), EventKind::Prompted);
         }
-        // #540: the turn a mention started ends with the pane's `Stop`.
+        // #540: the turn a tagged follow-up started ends with the pane's
+        // `Stop`.
         if event == "Stop" {
-            self.queued.stopped(pane, &*self.config.turns);
+            self.queued.stopped(pane, &*self.config.followups);
         }
         if event == "PreToolUse" {
             let pre = self.pre.entry(pane).or_default();
@@ -838,7 +839,7 @@ impl Daemon {
         let (tx, rx) = oneshot::channel();
         let token = self.next_ask;
         self.next_ask += 1;
-        if let Some((text, by)) = self.queued.take(pane, &*self.config.turns) {
+        if let Some((text, by)) = self.queued.take(pane, &*self.config.followups) {
             let _ = tx.send(InboxReply::FollowUp { text, by });
             self.emit(Some(pane), EventKind::Prompted);
             self.refresh_held(pane);
@@ -852,21 +853,21 @@ impl Daemon {
         Ok((token, rx))
     }
 
-    /// `arugula hook` on a tool call's end (#644): a mention waiting for
-    /// this pane goes in now, rather than at the end of the turn. Only into
-    /// the pane's own conversation: not a subagent's tool call, which would
-    /// take it to a conversation that ends with the subagent, and not a
-    /// `claude -p` run inside the pane.
-    pub(super) fn take_mention(&mut self, pane: PaneId, hook: &serde_json::Value) -> Option<(String, Driver)> {
+    /// `arugula hook` on a tool call's end (#644): a tagged follow-up
+    /// waiting for this pane goes in now, rather than at the end of the
+    /// turn. Only into the pane's own conversation: not a subagent's tool
+    /// call, which would take it to a conversation that ends with the
+    /// subagent, and not a `claude -p` run inside the pane.
+    pub(super) fn take_tagged(&mut self, pane: PaneId, hook: &serde_json::Value) -> Option<(String, Driver)> {
         let kept = self.meta.get(&pane).and_then(|m| m.session.as_ref()).filter(|s| s.running);
         let sessions = self.config.sessions.clone();
         let id = top_level(hook, kept.map(|s| s.id.as_str()), |id| sessions.nested(id))?;
         // A session that started before it was told how these arrive could
         // read one as injected text: it keeps getting them between turns.
-        if self.mentions_told.get(&pane).map(String::as_str) != Some(id) {
+        if self.midturn_told.get(&pane).map(String::as_str) != Some(id) {
             return None;
         }
-        let taken = self.queued.take_mention(pane, &*self.config.turns)?;
+        let taken = self.queued.take_tagged(pane, &*self.config.followups)?;
         self.refresh_held(pane);
         self.touch(pane);
         Some(taken)
@@ -879,17 +880,17 @@ impl Daemon {
         pane: PaneId,
         text: String,
         by: Driver,
-        tag: Option<MentionTag>,
+        tag: Option<Tag>,
     ) -> Result<bool, String> {
         let Some(p) = self.panes.get(&pane) else { return Err(format!("no terminal %{pane}")) };
         let text = text.trim().to_owned();
         if text.is_empty() {
             return Err("an empty follow-up".into());
         }
-        // The owner silenced this session (#579): no mention comes in, held
-        // or not. The daemon routes around it; this is the backstop.
-        if tag.is_some() && self.mentions_off.contains(&pane) {
-            return Err(format!("%{pane}'s owner silenced mentions for this session"));
+        // The owner silenced this session (#579): no tagged follow-up comes
+        // in, held or not. The binary routes around it; this is the backstop.
+        if tag.is_some() && self.tagged_off.contains(&pane) {
+            return Err(format!("%{pane}'s owner silenced teammates' follow-ups for this session"));
         }
         info!(pane, who = by.who, "follow-up");
         p.note(format!("follow-up: {text}"), by.name.clone(), HistoryKind::Answer);
@@ -900,7 +901,7 @@ impl Daemon {
             Some(w) => match w.reply.send(InboxReply::FollowUp { text: text.clone(), by: by.clone() }) {
                 Ok(()) => {
                     self.emit(Some(pane), EventKind::Prompted);
-                    self.queued.started(pane, tag, &*self.config.turns);
+                    self.queued.started(pane, tag, &*self.config.followups);
                     true
                 }
                 Err(InboxReply::FollowUp { text, by }) => {
@@ -922,11 +923,11 @@ impl Daemon {
         Ok(now)
     }
 
-    /// Keep the card for mentions held on `pane` true to its queue (#579).
-    /// A mention queued for a terminal whose hooks aren't listening is never
-    /// typed: it waits behind a card ("deliver" types it, "dismiss" drops
-    /// it). Once the hooks speak, the inbox hook takes it as for any
-    /// session, and the card goes.
+    /// Keep the card for follow-ups held on `pane` true to its queue
+    /// (#579). A tagged follow-up queued for a terminal whose hooks aren't
+    /// listening is never typed: it waits behind a card ("deliver" types
+    /// it, "dismiss" drops it). Once the hooks speak, the inbox hook takes
+    /// it as for any session, and the card goes.
     pub(super) fn refresh_held(&mut self, pane: PaneId) {
         let held = match self.panes.get(&pane) {
             Some(p) if self.pane_info(p).unhooked => self.queued.held(pane),
@@ -938,7 +939,7 @@ impl Daemon {
                 let mut reason = plain_reason(ReasonKind::Input, &format!("{headline}{more}"));
                 reason.actions = vec![Action::Deliver, Action::Dismiss];
                 // The card holds whatever the screen says next: a session
-                // mid-turn flips to working, and the mention is still held.
+                // mid-turn flips to working, and the follow-up is still held.
                 if self.held.insert(pane, reason.clone()).is_none() {
                     let why = reason.headline.clone();
                     self.set_attention_with(pane, Attention::NeedsInput, &why, Some(reason));
@@ -954,7 +955,7 @@ impl Daemon {
                 }
                 let stale = self.reasons.get(&pane).is_some_and(|r| r.actions.contains(&Action::Deliver));
                 if stale && self.attention.get(&pane) == Some(&Attention::NeedsInput) {
-                    self.set_attention(pane, Attention::Idle, "held mention gone");
+                    self.set_attention(pane, Attention::Idle, "held follow-up gone");
                 } else {
                     if stale {
                         self.reasons.remove(&pane);

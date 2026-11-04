@@ -214,7 +214,7 @@ machine, unread, and `threads.imported/` is left as it was.
 
 What the daemon still does for chat is say who may read each pane's and
 session's thread (`POST /api/daemon/chat/readers`, from
-`crates/mux/src/mux/chat_readers.rs`, sent by
+`crates/mux/src/mux/readers.rs`, sent by
 `crates/daemon/src/chat_readers.rs` while control has chat on for the
 machine's account or team): the same people as the pane or session, a
 private pane's only its owner, a "from now" share from when it was made.

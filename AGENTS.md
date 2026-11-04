@@ -190,13 +190,16 @@ nothing marked `mux:` names the edge or the block kinds.
 - **The mux:** `mux/` (`mux:`, with `block.rs`, `history.rs`
   and `agentenv.rs`): the task that owns the layout, the
   panes and every client (`mod.rs`), with one file per area: `attention.rs`,
-  `clients.rs`, `blocks.rs`, `api_calls.rs`, `who_may.rs`, `chat_readers.rs`,
+  `clients.rs`, `blocks.rs`, `api_calls.rs`, `who_may.rs`, `readers.rs`,
   `machines.rs`, `info.rs`, `config.rs`, and the traits it calls out
-  through, `outside.rs`. Chat is control's (M125): the mux only lists who
-  reads each pane's and session's thread (`chat_readers.rs`), and, in the
-  daemon,
-  gates waiting for a person (`gate.rs`), hands (`hand.rs`), Web Push
-  (`push.rs`).
+  through, `outside.rs`. Chat is control's (M125), and the mux names none
+  of it (#675): it lists who may read each pane and session (`readers.rs`),
+  which the daemon's `chat_readers.rs` tells control as thread readers, and
+  queues a follow-up for a pane with an opaque `Tag` it never reads
+  (`followups.rs`), reporting its turn through `Followups`; rooms, threads
+  and mention routing are the daemon's (`agent_mentions.rs`). In the
+  daemon too: gates waiting for a person (`gate.rs`), hands (`hand.rs`),
+  Web Push (`push.rs`).
 - **Panes** (`mux:`): a process on a PTY and its VT thread (`pane.rs`),
   Windows' pseudoconsole (`conpty.rs`), what survives a restart (`store.rs`),
   keeping terminals open across restarts (`holder.rs`, `shim.rs`, `sys.rs`),

@@ -75,7 +75,8 @@ use arugula_mux::{acl, block, mux, pane, paths, perm, procinfo, provider, shelle
 #[cfg(unix)]
 use arugulad_base::upload;
 use arugulad_base::{
-    agent, api, board_attach, features, lab_hooks, mcp, review, rules, server, task, telemetry, work, worktree,
+    agent, agent_mentions, agent_mentions::MentionTag, api, board_attach, features, lab_hooks, mcp, review, rules,
+    server, task, telemetry, work, worktree,
 };
 
 use std::{
@@ -311,7 +312,7 @@ pub struct Queued {
     pub text: String,
     pub images: Vec<String>,
     pub by: Option<String>,
-    pub mention: Vec<mux::MentionTag>,
+    pub mention: Vec<MentionTag>,
 }
 
 impl Queued {
@@ -402,7 +403,7 @@ struct Inner {
     background: background::Background,
     queue: VecDeque<Queued>,
     /// The mentions whose turn is running (#611), told `read` when it ends.
-    mention_turn: Vec<mux::MentionTag>,
+    mention_turn: Vec<MentionTag>,
     cost: Option<f64>,
     currency: Option<String>,
     turns: Vec<TurnStat>,
@@ -907,10 +908,9 @@ impl Inner {
                         // joins them, oldest first; both live and in a log's
                         // replay, so the queue comes out the same.
                         let joined = match (q.mention.as_slice(), q.images.is_empty()) {
-                            ([tag], true) => self
-                                .queue
-                                .iter_mut()
-                                .any(|w| w.images.is_empty() && mux::absorb(&mut w.text, &mut w.mention, tag)),
+                            ([tag], true) => self.queue.iter_mut().any(|w| {
+                                w.images.is_empty() && agent_mentions::absorb(&mut w.text, &mut w.mention, tag)
+                            }),
                             _ => false,
                         };
                         if !joined {
@@ -2410,7 +2410,7 @@ async fn run(agent: Agent, mut rx: mpsc::UnboundedReceiver<Msg>) {
                             // #613: a turn cut off by the exit never ends
                             // with `TurnEnded`: its mention is dropped.
                             for tag in std::mem::take(&mut g.mention_turn) {
-                                ctx.mention_turn(tag, mux::Turn::Dropped(mux::DropWhy::Exited));
+                                ctx.followup_turn(tag.to_tag(), mux::Turn::Dropped(mux::DropWhy::Exited));
                             }
                             info!(block = ctx.id, why, "agent server stopped");
                             g.note(json!({ "e": "exit", "why": why }));
@@ -2708,7 +2708,7 @@ fn act(ctx: &AgentCtx, g: &mut Inner, f: Effect) {
         Effect::TurnEnded => {
             end_hosted_turn(ctx, g);
             for tag in std::mem::take(&mut g.mention_turn) {
-                ctx.mention_turn(tag, mux::Turn::Ended);
+                ctx.followup_turn(tag.to_tag(), mux::Turn::Ended);
             }
             // In history as an entry of its own: the prompt. Not a command
             // and no exit code: a turn that stopped early isn't a failure of
@@ -3064,15 +3064,15 @@ fn send_next(ctx: &AgentCtx, g: &mut Inner) {
     g.send_prompt(&q, prompt);
     // #611: a mention's turn starts as it is sent, not as it is queued.
     for tag in &q.mention {
-        ctx.mention_turn(tag.clone(), mux::Turn::Started);
+        ctx.followup_turn(tag.to_tag(), mux::Turn::Started);
     }
     g.mention_turn = q.mention.clone();
     start_run(ctx, g, &q.text);
 }
 
 /// The mention a `send` or a logged queue entry carries (#611).
-fn mention_of(v: &Value) -> Option<mux::MentionTag> {
-    mux::MentionTag::from_json(v)
+fn mention_of(v: &Value) -> Option<MentionTag> {
+    MentionTag::from_json(v)
 }
 
 impl Agent {
@@ -3274,7 +3274,7 @@ impl Agent {
             // turn's own is not: it ends with `cancelled`, and `TurnEnded`
             // reports it `read`.
             for tag in g.queue.iter().flat_map(|q| q.mention.clone()) {
-                self.ctx.mention_turn(tag, mux::Turn::Dropped(mux::DropWhy::Stopped));
+                self.ctx.followup_turn(tag.to_tag(), mux::Turn::Dropped(mux::DropWhy::Stopped));
             }
             g.note(json!({ "e": "queue_clear" }));
         }

@@ -395,10 +395,10 @@ impl Daemon {
                     self.status_pushed.remove(&pane);
                     self.turn_typed.remove(&pane);
                     self.hooked.remove(&pane);
-                    self.mentions_off.remove(&pane);
+                    self.tagged_off.remove(&pane);
                     self.held.remove(&pane);
                     self.queued.gone(pane);
-                    self.mentions_told.remove(&pane);
+                    self.midturn_told.remove(&pane);
                     self.last_tools.remove(&pane);
                     self.live.remove(&pane);
                     self.live_pid.remove(&pane);

@@ -54,7 +54,12 @@ calls out to is a trait in `Config`, in `mux/outside.rs`, and `Config::at_exit`
 for the daemon's own cleanup), and features (`arugula-mux/labs`, which the
 daemon's `labs` forwards). `just mux-guard`, run by `just check` and
 `just check-core`, fails if `axum`, `hyper`, `reqwest`, `rmcp`, `rust-embed` or
-`russh` is in `cargo tree -p arugula-mux`, with or without `labs`.
+`russh` is in `cargo tree -p arugula-mux`, with or without `labs`. Control's
+chat is an integration too (native #675): the mux queues a follow-up for a
+pane with an opaque `Tag` it never reads and reports its turn through the
+`Followups` trait, while rooms, threads and mentions are the daemon's, and
+the guard also fails on a type named `Mention…`, `Chat…`, `Room…` or
+`Thread…` in the mux's code.
 Why: a core that can't reach an integration can't depend on one by accident, so
 it stays testable and movable without them, and the order of changes stays
 decided in one task.

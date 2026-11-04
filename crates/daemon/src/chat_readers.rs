@@ -23,7 +23,7 @@ use tracing::{info, warn};
 
 use crate::{
     control::{Answered, Control},
-    mux::{Api, ChatTarget},
+    mux::{Api, Readable},
     server::App,
 };
 
@@ -58,7 +58,7 @@ impl Sync {
             self.sent = None;
             return;
         }
-        let readers = readers(app.mux.api(Api::ChatReaders).await.unwrap_or_default(), &owner);
+        let readers = readers(app.mux.api(Api::Readers).await.unwrap_or_default(), &owner);
         if self.sent.as_ref() == Some(&readers) {
             return;
         }
@@ -101,16 +101,18 @@ fn account_of(who: &str, owner: &str) -> Option<String> {
     who.strip_prefix("account:").filter(|a| !a.is_empty()).map(str::to_owned)
 }
 
-fn kind_of(t: ChatTarget) -> (ChatTargetKind, String) {
+/// A pane or a session here as a thread's target in control's chat.
+fn kind_of(t: Readable) -> (ChatTargetKind, String) {
     match t {
-        ChatTarget::Pane(p) => (ChatTargetKind::Pane, p.to_string()),
-        ChatTarget::Session(s) => (ChatTargetKind::Session, s.to_string()),
+        Readable::Pane(p) => (ChatTargetKind::Pane, p.to_string()),
+        Readable::Session(s) => (ChatTargetKind::Session, s.to_string()),
     }
 }
 
-/// The mux's reader lists as control takes them: accounts only, the owner
-/// left out (control lets them read everything anyway).
-fn readers(lists: crate::mux::ChatReaders, owner: &str) -> Vec<ChatReaderList> {
+/// Who may read each pane and session, as the mux says it, as control's
+/// thread reader lists: accounts only, the owner left out (control lets
+/// them read everything anyway).
+fn readers(lists: crate::mux::Readers, owner: &str) -> Vec<ChatReaderList> {
     lists
         .into_iter()
         .map(|(t, people)| {
@@ -135,7 +137,7 @@ mod tests {
     fn reader_lists_name_accounts_but_not_the_owner() {
         let lists = vec![
             (
-                ChatTarget::Pane(2),
+                Readable::Pane(2),
                 vec![
                     ("account:a2".into(), 0, false),
                     ("tailnet:x".into(), 0, false),
@@ -143,7 +145,7 @@ mod tests {
                     ("account:a3".into(), 55, true),
                 ],
             ),
-            (ChatTarget::Session(1), vec![]),
+            (Readable::Session(1), vec![]),
         ];
         let got = readers(lists, "a1");
         assert_eq!(got.len(), 2);
