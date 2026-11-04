@@ -1,5 +1,5 @@
-//! `arugula grants`: what your machines may do with your things on Arugula
-//! control (M130). `cloud.drive`: the agents on a machine drive your Cloud
+//! `arugula grants`: the powers your machines' agents hold over your things
+//! on Arugula control (M130). `cloud.drive`: the agents on a machine drive your Cloud
 //! workspaces; every machine you join gets it, and you revoke it from one,
 //! and give it back, here. And (M197) what its agents may do in
 //! conversations: `threads.read` and `threads.post` in a project's threads
