@@ -24,7 +24,7 @@ import { toast } from "../toast";
 import { chat } from "../../shared/chat-store";
 import { mayWrite } from "./issues";
 import { Missing } from "./project";
-import { NotOnBoard, useUntriaged } from "./triage";
+import { NotOnBoard, dropOn, useTriage, useUntriaged, type Triage } from "./triage";
 
 /** The reads in flight, by project: the bar, the project's home and a page
  * all ask for the same list at once, and share the one request. */
@@ -182,6 +182,12 @@ function BoardList({ p, scroll }: { p: PlatformProject; scroll?: boolean }) {
   const list = useBoards(p.id);
   const [title, setTitle] = useState("");
   const [q, setQ] = useState("");
+  // The issues come with chat: only chat saying it's off takes them away.
+  const issues = chat.on !== false;
+  const tri = useTriage(p.id, issues, () => boardsChanged(p.id));
+  // On a phone the page is two tabs; `/triage` opens the second.
+  const [tab, setTab] = useState<"boards" | "loose">(scroll && issues ? "loose" : "boards");
+  const open = (list ?? []).filter((b) => b.closed_at == null);
   const make = async (e: Event) => {
     e.preventDefault();
     if (!title.trim()) return;
@@ -193,13 +199,22 @@ function BoardList({ p, scroll }: { p: PlatformProject; scroll?: boolean }) {
     }
   };
   return (
-    <section class="platform-section sw-page" data-boards-page>
+    <section class="platform-section sw-page" data-boards-page data-tab={tab}>
       <PageHeader title="Boards" stats={list && list.length > 0 && <BoardStats list={list} />} />
+      {issues && list && (
+        <div class="boards-tabs" role="tablist" aria-label="Boards page" data-boards-tabs>
+          <button type="button" role="tab" id="boards-tab-boards" aria-selected={tab === "boards"} data-tab="boards" onClick={() => setTab("boards")}>
+            Boards<span class="boards-tab-n">{open.length}</span>
+          </button>
+          <button type="button" role="tab" id="boards-tab-loose" aria-selected={tab === "loose"} data-tab="loose" onClick={() => setTab("loose")}>
+            Not on a board{tri.page && <span class="boards-tab-n">{tri.page.total.toLocaleString()}</span>}
+          </button>
+        </div>
+      )}
       {list === null && <p class="dim">Loading…</p>}
       {list?.length === 0 && <p class="dim">No boards yet.</p>}
       {list && list.length > 0 && <BoardFilter q={q} setQ={setQ} />}
-      {/* The issues come with chat: only chat saying it's off takes them away. */}
-      {list && <BoardItems p={p} list={list} data="data-boards" q={q} between={chat.on !== false && <NotOnBoard p={p} added={() => boardsChanged(p.id)} scroll={scroll} />} />}
+      {list && <BoardItems p={p} list={list} data="data-boards" q={q} drop={issues ? tri : undefined} between={issues && <NotOnBoard p={p} tri={tri} open={open} scroll={scroll} />} />}
       {mayWrite(p) && (
         <form class="board-form" onSubmit={(e) => void make(e)}>
           <input type="text" value={title} maxLength={120} placeholder="a new board's title" aria-label="New board's title" data-board-new-title onInput={(e) => setTitle(e.currentTarget.value)} />
@@ -275,14 +290,14 @@ function BoardStats({ list }: { list: ProjectBoard[] }) {
 }
 
 /** One board in a list, a card as an issue's is, its bar the board's state (open ok, closed muted): its title, the goal's first line (a closed board has the done note's instead), its progress and its state. */
-function BoardItem({ p, b, waiting }: { p: PlatformProject; b: ProjectBoard; waiting?: boolean }) {
+function BoardItem({ p, b, waiting, drop }: { p: PlatformProject; b: ProjectBoard; waiting?: boolean; drop?: Triage }) {
   const to = pathOf({ page: "board", project: p.id, board: b.id }, names);
   const closed = b.closed_at != null;
   const e = epicLine(b.progress);
   const line = firstLine(closed ? b.done_note : b.goal);
   const tone = closed ? "closed" : "open";
   return (
-    <li class={`board-card sw-card ${toneClass(issueTone(tone))}`}>
+    <li class={`board-card sw-card ${toneClass(issueTone(tone))}`} data-board-card={b.id} {...(drop && !closed ? dropOn(drop, b) : {})}>
       <div class="board-card-head">
         <a href={to} class="board-card-title" data-board-link={b.id} onClick={(ev) => follow(ev, to)}>
           {b.title}
@@ -309,8 +324,8 @@ function BoardItem({ p, b, waiting }: { p: PlatformProject; b: ProjectBoard; wai
   );
 }
 
-/** A project's boards: the ones people made, then the open ones that follow a Plane epic under "From Plane" (those whose epic is started first, the rest marked), and the closed ones folded under "Done (N)". `between` is drawn after the open ones and before the done. `data` is the attribute the open list carries. */
-function BoardItems({ p, list: all, data, q = "", between }: { p: PlatformProject; list: ProjectBoard[]; data: "data-boards" | "data-project-boards"; q?: string; between?: ComponentChildren }) {
+/** A project's boards: the ones people made, then the open ones that follow a Plane epic under "From Plane" (those whose epic is started first, the rest marked), and the closed ones folded under "Done (N)". `between` is drawn after the open ones and before the done; `drop` makes the open cards places to drop the section's rows on. `data` is the attribute the open list carries. */
+function BoardItems({ p, list: all, data, q = "", between, drop }: { p: PlatformProject; list: ProjectBoard[]; data: "data-boards" | "data-project-boards"; q?: string; between?: ComponentChildren; drop?: Triage }) {
   const list = all.filter((b) => boardMatches(b, q));
   const open = list.filter((b) => b.closed_at == null);
   const done = list.filter((b) => b.closed_at != null);
@@ -322,7 +337,7 @@ function BoardItems({ p, list: all, data, q = "", between }: { p: PlatformProjec
     <>
       <ul class="board-list sw-cards" {...{ [data]: true }}>
         {made.map((b) => (
-          <BoardItem key={b.id} p={p} b={b} />
+          <BoardItem key={b.id} p={p} b={b} drop={drop} />
         ))}
       </ul>
       {plane.length > 0 && (
@@ -330,10 +345,10 @@ function BoardItems({ p, list: all, data, q = "", between }: { p: PlatformProjec
           <h3 id={`plane-boards-${p.id}`}>From Plane</h3>
           <ul class="board-list sw-cards">
             {started.map((b) => (
-              <BoardItem key={b.id} p={p} b={b} />
+              <BoardItem key={b.id} p={p} b={b} drop={drop} />
             ))}
             {waiting.map((b) => (
-              <BoardItem key={b.id} p={p} b={b} waiting />
+              <BoardItem key={b.id} p={p} b={b} waiting drop={drop} />
             ))}
           </ul>
         </section>
