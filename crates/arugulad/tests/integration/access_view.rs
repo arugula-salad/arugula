@@ -14,7 +14,7 @@ const OWNER: &str = "me@example.com";
 const FRIEND: &str = "friend@example.com";
 
 fn tailnet_daemon() -> Daemon {
-    let args = ["--owner", OWNER, "--tailscale-socket", "/nonexistent/sock", "--wisp-token-file", "/nonexistent"];
+    let args = ["--owner", OWNER, "--tailscale-socket", "/nonexistent/sock"];
     Daemon::child_env(&args, &[("ARUGULA_TRUST_MINUTE_MS", "600000")])
 }
 
