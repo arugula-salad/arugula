@@ -1,13 +1,13 @@
 // A project's open issues on no board: every read of them and every add to a
-// board (#656). The one place that knows how the platform's work route pages
-// and how rows are put on a board, so the section and All boards ask here.
+// board (#656, #661). The one place that knows how the platform's work route
+// pages and filters, and how rows are put on a board many at a time, so the
+// section and All boards ask here.
 
-import type { BoardPointer, BoardWorkItem, BoardWorkItems } from "../../shared/proto";
-import { boards } from "../../shared/boards/store";
+import type { BoardAddedMany, BoardAddMany, BoardPointer, BoardWorkItem, BoardWorkItems } from "../../shared/proto";
 import { platformFetch, refusalOf } from "../../shared/maintenance";
 
-/** An untriaged item; `labels` come with the server's paging. */
-export type Untriaged = BoardWorkItem & { labels?: string[] };
+/** An untriaged item. */
+export type Untriaged = BoardWorkItem;
 
 /** One label of the facet and how many of the matches carry it. */
 export type LabelCount = { label: string; count: number };
@@ -15,39 +15,36 @@ export type LabelCount = { label: string; count: number };
 /** One page of the list: `next` is the cursor of the following page (null at the end), `total` counts every match, `labels` the facet. */
 export type UntriagedPage = { items: Untriaged[]; next: string | null; total: number; labels: LabelCount[] };
 
-export type UntriagedQuery = { q?: string; label?: string; order?: "newest" | "oldest"; cursor?: string | null };
+export type UntriagedQuery = { q?: string; label?: string; order?: "newest" | "oldest"; cursor?: string | null; limit?: number };
 
-/** The key a row, a selection and a drop know an item by. */
+/** The key a row, a selection and a drop know an item by; the pointer, as JSON. */
 export function keyOf(i: { pointer: BoardPointer }): string {
   return JSON.stringify(i.pointer);
 }
 
-/** Whether `i` is what the filter words ask for: a `#number` by its number's start, words in the title. */
-function matches(i: Untriaged, q: string): boolean {
-  const s = q.trim().toLowerCase().replace(/^#/, "");
-  if (!s) return true;
-  return i.title.toLowerCase().includes(s) || String(i.number ?? "").startsWith(s);
+/** The pointer a key stands for. */
+export function pointerOf(key: string): BoardPointer {
+  return JSON.parse(key) as BoardPointer;
 }
 
-/** The project's untriaged: the newest 100, narrowed and ordered here until the route pages. */
+/** The project's untriaged, a page at a time: `q`, `label` and `order` are the server's. */
 export async function readUntriaged(project: string, query: UntriagedQuery = {}): Promise<UntriagedPage> {
-  const res = await platformFetch(`/api/projects/${encodeURIComponent(project)}/work?untriaged=true&limit=100`, { credentials: "same-origin" });
+  const args = new URLSearchParams({ untriaged: "true", limit: String(query.limit ?? 100) });
+  if (query.q?.trim()) args.set("q", query.q.trim());
+  if (query.label) args.set("label", query.label);
+  if (query.order === "oldest") args.set("order", "old");
+  if (query.cursor) args.set("cursor", query.cursor);
+  const res = await platformFetch(`/api/projects/${encodeURIComponent(project)}/work?${args}`, { credentials: "same-origin" });
   const j = (await res.json().catch(() => ({}))) as BoardWorkItems & { error?: string };
   if (!res.ok) throw new Error(refusalOf(res.status, j, `HTTP ${res.status}`));
-  const words = (j.items as Untriaged[]).filter((i) => matches(i, query.q ?? ""));
-  const counts = new Map<string, number>();
-  for (const i of words) for (const l of i.labels ?? []) counts.set(l, (counts.get(l) ?? 0) + 1);
-  const labels = [...counts].map(([label, count]) => ({ label, count })).sort((a, b) => b.count - a.count || a.label.localeCompare(b.label));
-  let items = query.label ? words.filter((i) => i.labels?.includes(query.label!)) : words;
-  if (query.order === "oldest") items = [...items].reverse();
-  return { items, next: null, total: items.length, labels };
+  return { items: j.items, next: j.next ?? null, total: j.total ?? j.items.length, labels: (j.labels ?? []).map((l) => ({ label: l.name, count: l.count })) };
 }
 
 /** How many open issues sit on no board, for each of `projects`; one that can't be read counts none. */
 export async function countUntriaged(projects: readonly string[]): Promise<Map<string, number>> {
   const all = await Promise.all(
     projects.map((id) =>
-      readUntriaged(id).then(
+      readUntriaged(id, { limit: 1 }).then(
         (p): [string, number] => [id, p.total],
         (): [string, number] => [id, 0],
       ),
@@ -56,19 +53,19 @@ export async function countUntriaged(projects: readonly string[]): Promise<Map<s
   return new Map(all);
 }
 
-/** What an add did: the pointers that went on the board, and those that didn't, with why. */
-export type Added = { added: BoardPointer[]; failed: { pointer: BoardPointer; error: string }[] };
+/** What to put on a board: these pointers, or everything the query matches but `except`. */
+export type Chosen = { pointers: BoardPointer[] } | { query: { project: string; q?: string; label?: string }; except: BoardPointer[] };
 
-/** Puts `pointers` on `board`, each a row (its lane follows it). */
-export async function addUntriaged(board: string, pointers: readonly BoardPointer[]): Promise<Added> {
-  const out: Added = { added: [], failed: [] };
-  for (const pointer of pointers) {
-    try {
-      await boards.put(board, { entry: "row", pointer });
-      out.added.push(pointer);
-    } catch (e) {
-      out.failed.push({ pointer, error: (e as Error).message });
-    }
-  }
-  return out;
+/** Puts `chosen` on `board`, each a row (its lane follows it), in one call. Answers how many rows were made. */
+export async function addUntriaged(board: string, chosen: Chosen): Promise<number> {
+  const body: BoardAddMany = "pointers" in chosen ? { pointers: chosen.pointers } : { untriaged: chosen.query, except: chosen.except };
+  const res = await platformFetch(`/api/boards/${encodeURIComponent(board)}/entries/many`, {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  const j = (await res.json().catch(() => ({}))) as Partial<BoardAddedMany> & { error?: string };
+  if (!res.ok) throw new Error(refusalOf(res.status, j, `HTTP ${res.status}`));
+  return j.added ?? 0;
 }

@@ -258,12 +258,6 @@ test("/triage opens the Boards page scrolled to Not on a board, and /boards coun
   await link.click();
   await expect(alice).toHaveURL(/\/p\/prj_[0-9a-f]+-acme\/triage$/);
   await expect(alice.locator("[data-triage-row]")).toHaveCount(1);
-  if (SHOTS) {
-    await alice.emulateMedia({ colorScheme: "light" });
-    await platform(alice, `/p/${project}/boards`);
-    await expect(alice.locator("[data-boards-untriaged] h2")).toBeVisible({ timeout: 15_000 });
-    await alice.screenshot({ path: `${SHOTS}/boards-not-on-a-board-light.png`, animations: "disabled" });
-  }
 });
 
 test("Alice sets the board's goal, and it shows under the title with the issues' progress", async () => {
@@ -1078,8 +1072,11 @@ test("Not on a board: ＋, a multi-select, a drag and select-all each move the l
   // A multi-select goes with the bar's Add to board.
   await rows.nth(5).click({ position: { x: 300, y: 5 } });
   await rows.nth(8).click({ position: { x: 300, y: 5 }, modifiers: ["Shift"] });
+  const many = alice.waitForRequest((r) => r.url().includes("/entries/many"));
   await alice.locator("[data-triage-selbar] .untri-go").click();
   await alice.getByRole("menuitem", { name: "Bulk" }).click();
+  // An explicit selection is its pointers, in one call.
+  expect(JSON.parse((await many).postData()!).pointers).toHaveLength(4);
   await expect(count).toHaveText(String(n0 - 5));
   await expect(rows).toHaveCount(n0 - 5);
   await expect(progress).toContainText("0 of 5 done", { timeout: 15_000 });
@@ -1104,8 +1101,9 @@ test("on a phone the page is two tabs, /triage opens Not on a board, and the bar
   test.setTimeout(90_000);
   for (let n = 1; n <= 12; n++) await api(alice, "POST", `/api/projects/${project}/issues`, { title: `Phone ticket ${n}`, body: "", labels: [], assignees: [] });
   if (SHOTS) {
-    for (const scheme of ["dark", "light"] as const) {
-      await alice.emulateMedia({ colorScheme: scheme });
+    // The light look is the app's Latte palette, set as Settings does.
+    for (const scheme of ["light", "dark"] as const) {
+      await alice.evaluate((l) => (l ? localStorage.setItem("arugula-appearance", JSON.stringify({ palette: "latte", finish: "flat", corners: "soft" })) : localStorage.removeItem("arugula-appearance")), scheme === "light");
       await platform(alice, `/p/${project}/boards`);
       await expect(alice.locator("[data-triage-count]")).toBeVisible({ timeout: 15_000 });
       await alice.locator("#triage").scrollIntoViewIfNeeded();
@@ -1133,4 +1131,77 @@ test("on a phone the page is two tabs, /triage opens Not on a board, and the bar
   await expect(alice.locator("[data-platform-triage], [data-platform-issues]")).toHaveCount(0);
   if (SHOTS) await alice.screenshot({ path: `${SHOTS}/boards-not-on-a-board-390.png`, animations: "disabled" });
   await alice.setViewportSize({ width: 1280, height: 720 });
+});
+
+test("with more than 100 not on a board: the filter, order and labels are the server's, more loads at the foot of the box without moving it, and select-all takes the unloaded rows in one call (#656, #661)", async () => {
+  test.setTimeout(240_000);
+  await alice.setViewportSize({ width: 1280, height: 720 });
+  for (let n = 1; n <= 120; n++) {
+    const made = await api(alice, "POST", `/api/projects/${project}/issues`, { title: `Scale ticket ${String(n).padStart(3, "0")}`, body: "", labels: [n <= 30 ? "alpha" : "beta"], assignees: [] });
+    expect(made.status).toBe(200);
+  }
+  await platform(alice, `/p/${project}/boards`);
+  const count = alice.locator("[data-triage-count]");
+  await expect(count).toBeVisible({ timeout: 15_000 });
+  const total = Number(await count.textContent());
+  expect(total).toBeGreaterThan(120);
+  const rows = alice.locator("[data-triage-row]");
+  await expect(rows).toHaveCount(100);
+  // The facet is the server's: the chips carry the labels' counts.
+  const chip = (l: string) => alice.locator(`[data-triage-label="${l}"]`);
+  await expect(chip("alpha")).toContainText("30");
+  await expect(chip("beta")).toContainText("90");
+
+  // Near the foot of the box the next page loads, and the box stays where it was.
+  const box = alice.locator("[data-triage-box]");
+  await box.scrollIntoViewIfNeeded();
+  await box.evaluate((e) => (e.scrollTop = e.scrollHeight - e.clientHeight - 100));
+  const top = await box.evaluate((e) => e.scrollTop);
+  expect(top).toBeGreaterThan(1000);
+  await expect(rows).toHaveCount(total, { timeout: 15_000 });
+  expect(await box.evaluate((e) => e.scrollTop)).toBe(top);
+  // A row in view, by the mouse: a locator's click would scroll the box itself.
+  const at = (await box.boundingBox())!;
+  await alice.mouse.click(at.x + at.width / 2, at.y + at.height / 2);
+  await expect(alice.locator("[data-triage-selected]")).toHaveText("1 selected");
+  expect(await box.evaluate((e) => e.scrollTop)).toBe(top);
+  await alice.keyboard.press("Escape");
+
+  // Filtering and ordering are asked of the server, over all the matches.
+  await chip("alpha").click();
+  await expect(count).toHaveText("30");
+  await expect(rows).toHaveCount(30);
+  await expect(chip("beta")).toContainText("90");
+  await chip("alpha").click();
+  await expect(count).toHaveText(String(total));
+  await alice.locator("[data-triage-filter]").fill("Phone ticket");
+  await expect(count).toHaveText("12");
+  await alice.locator("[data-triage-order]").selectOption("oldest");
+  await expect(rows.first().locator(".untri-title")).toHaveText("Phone ticket 1");
+  await alice.locator("[data-triage-order]").selectOption("newest");
+  await alice.locator("[data-triage-filter]").fill("");
+  await expect(count).toHaveText(String(total));
+  await expect(rows).toHaveCount(100);
+
+  // Select-all covers the unloaded rows; one left out; one call by query with the exception.
+  const bulk = alice.locator(".board-card", { has: alice.locator("[data-board-link]", { hasText: "Bulk" }) });
+  const progress = bulk.locator("[data-board-progress]");
+  const before = Number(/of (\d+) done/.exec((await progress.textContent())!)![1]);
+  await alice.locator("[data-triage-all-box]").check();
+  await expect(alice.locator("[data-triage-selected]")).toHaveText(`${total} selected`);
+  await rows.nth(3).click({ position: { x: 300, y: 5 } });
+  await expect(alice.locator("[data-triage-selected]")).toHaveText(`${total - 1} selected`);
+  const posts: string[] = [];
+  alice.on("request", (r) => r.method() !== "GET" && r.url().includes("/entries") && posts.push(`${r.method()} ${r.url().replace(/.*\/api\//, "")}`));
+  const many = alice.waitForRequest((r) => r.url().includes("/entries/many"));
+  await alice.locator("[data-triage-selbar] .untri-go").click();
+  await alice.getByRole("menuitem", { name: "Bulk" }).click();
+  const body = JSON.parse((await many).postData()!);
+  expect(body.untriaged.project).toBe(project);
+  expect(body.except).toHaveLength(1);
+  await expect(count).toHaveText("1", { timeout: 15_000 });
+  await expect(rows).toHaveCount(1);
+  await expect(progress).toContainText(`0 of ${before + total - 1} done`, { timeout: 15_000 });
+  await expect(alice.locator("[data-platform-toast]").filter({ hasText: `${total - 1} issues are on Bulk, in Next` })).toBeVisible();
+  expect(posts.filter((p) => !p.includes("/entries/many"))).toEqual([]);
 });
