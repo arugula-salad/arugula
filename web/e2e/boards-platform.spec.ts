@@ -239,7 +239,7 @@ test("a viewer on a phone sees what is untriaged and the board's cards, with no 
 test("/triage opens the Boards page scrolled to Not on a board, and /boards counts it per project (#656)", async () => {
   test.setTimeout(90_000);
   // A window short enough that the section is below the fold on /boards.
-  await alice.setViewportSize({ width: 1100, height: 260 });
+  await alice.setViewportSize({ width: 1100, height: 200 });
   await platform(alice, `/p/${project}/boards`);
   const head = alice.locator("[data-boards-untriaged] h2");
   await expect(head).toHaveText("Not on a board1", { timeout: 15_000 });
@@ -397,8 +397,8 @@ test("/boards lists every project's boards by project, folded under Done the sam
     // Only Acme has boards: Alice's own project isn't listed.
     await expect(page.locator("[data-all-boards-project]")).toHaveCount(1);
     await expect(acme.locator("[data-boards-done] summary")).toHaveText("Done (1)");
-    // The counts over the page, and a board a card with its state.
-    await expect(page.locator("[data-boards-stats]")).toHaveText("0 open1 done");
+    // No counts over the page (#656), and a board a card with its state.
+    await expect(page.locator("[data-boards-stats]")).toHaveCount(0);
     await acme.locator("[data-boards-done] summary").click();
     await expect(acme.locator("[data-board-link]")).toContainText("Launch");
     // A board's title in a list is its link.
@@ -426,7 +426,7 @@ test("a board with a long title and goal wraps in a card on a phone, with no sid
     // The card's entry animation (swarm.css) settles: it isn't left at opacity 0.
     await expect.poll(() => card.evaluate((el) => getComputedStyle(el).opacity), { timeout: 5_000 }).toBe("1");
     await expect(card.locator("[data-board-progress]")).toHaveText("No work yet");
-    await expect(bob.locator("[data-boards-stats]")).toHaveText("1 open1 done");
+    await expect(bob.locator("[data-boards-stats]")).toHaveCount(0);
     expect(await bob.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
     if (process.env.BOARDS_SHOTS) await bob.screenshot({ path: `${process.env.BOARDS_SHOTS}/${path === "/boards" ? "all-boards" : "project-boards"}.png`, animations: "disabled" });
   }

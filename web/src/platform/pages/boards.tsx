@@ -134,7 +134,7 @@ export function AllBoardsPage() {
   const open = useUntriaged(counted);
   return (
     <section class="platform-section sw-page" data-all-boards-page>
-      <PageHeader title="Boards" stats={lists && shown.length > 0 && <BoardStats list={shown.flatMap((s) => s.list)} />} />
+      <PageHeader title="Boards" />
       {lists === null && <p class="dim">Loading…</p>}
       {lists && shown.length === 0 && <p class="dim">No boards yet. Make one on a project's Boards page.</p>}
       {shown.length > 0 && <BoardFilter q={q} setQ={setQ} />}
@@ -200,7 +200,7 @@ function BoardList({ p, scroll }: { p: PlatformProject; scroll?: boolean }) {
   };
   return (
     <section class="platform-section sw-page" data-boards-page data-tab={tab}>
-      <PageHeader title="Boards" stats={list && list.length > 0 && <BoardStats list={list} />} />
+      <PageHeader title="Boards" />
       {issues && list && (
         <div class="boards-tabs" role="tablist" aria-label="Boards page" data-boards-tabs>
           <button type="button" role="tab" id="boards-tab-boards" aria-selected={tab === "boards"} data-tab="boards" onClick={() => setTab("boards")}>
@@ -271,21 +271,6 @@ export function ProjectBoards({ p, list }: { p: PlatformProject; list: ProjectBo
       {list.length > 0 && <BoardFilter q={q} setQ={setQ} />}
       <BoardItems p={p} list={list} data="data-project-boards" q={q} />
     </>
-  );
-}
-
-/** What a list of boards holds, as the issues' list counts its issues: the open ones and the done. */
-function BoardStats({ list }: { list: ProjectBoard[] }) {
-  const done = list.filter((b) => b.closed_at != null).length;
-  return (
-    <div class="sw-stats" data-boards-stats>
-      <span>
-        <b>{list.length - done}</b> open
-      </span>
-      <span>
-        <b>{done}</b> done
-      </span>
-    </div>
   );
 }
 

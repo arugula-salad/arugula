@@ -297,8 +297,8 @@ export function NotOnBoard({ p, tri, open, scroll }: { p: PlatformProject; tri: 
         <>
           {tools && (
             <div class="untri-tools">
-              <input type="search" value={tri.q} placeholder="Filter by words or #number" aria-label="Filter issues not on a board" data-triage-filter autoComplete="off" onInput={(e) => tri.setQ(e.currentTarget.value)} />
-              <select value={tri.order} aria-label="Order" data-triage-order onChange={(e) => tri.setOrder(e.currentTarget.value as "newest" | "oldest")}>
+              <input type="search" class="issues-search" value={tri.q} placeholder="Filter by words or #number" aria-label="Filter issues not on a board" data-triage-filter autoComplete="off" onInput={(e) => tri.setQ(e.currentTarget.value)} />
+              <select class="issues-filter" value={tri.order} aria-label="Order" data-triage-order onChange={(e) => tri.setOrder(e.currentTarget.value as "newest" | "oldest")}>
                 <option value="newest">Newest first</option>
                 <option value="oldest">Oldest first</option>
               </select>
