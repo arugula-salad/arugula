@@ -2,8 +2,8 @@
   "schema": 1,
   "commit": "1ec9a56a228dde6981cd2cf36cb254360d74abb7",
   "branch": "main",
-  "state": "pending",
-  "at": "2026-11-04T08:26:59Z",
+  "state": "red",
+  "at": "2026-11-04T09:25:20Z",
   "phases": {
     "lint": {
       "verdict": "pass",
@@ -150,7 +150,7 @@
       ]
     },
     "claims": {
-      "verdict": "pending",
+      "verdict": "fail",
       "build": "newest",
       "runs": [
         {
@@ -159,8 +159,7 @@
           "conclusion": "failure",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/41796408391/job/126465161845"
         }
-      ],
-      "reason": "retrying"
+      ]
     },
     "macos": {
       "verdict": "pass",
@@ -203,6 +202,15 @@
           "url": "https://github.com/arugula-salad/arugula/actions/runs/41796408476/job/126462390460"
         }
       ]
+    }
+  },
+  "failure": {
+    "phase": "claims",
+    "run": {
+      "name": "desktop-xvfb",
+      "id": 126465161845,
+      "conclusion": "failure",
+      "url": "https://github.com/arugula-salad/arugula/actions/runs/41796408391/job/126465161845"
     }
   },
   "retried": {
