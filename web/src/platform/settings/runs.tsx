@@ -15,7 +15,7 @@ import { platformFetch } from "../../shared/maintenance";
 import { Time } from "../../shared/ui/time";
 import { controlOrigin } from "../session";
 import { toneClass } from "../swarm";
-import { Section } from "./section";
+import { Section } from "../../shared/ui/settings-section";
 
 interface Grant {
   id: string;

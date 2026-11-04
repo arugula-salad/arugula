@@ -14,7 +14,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "no
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test, type Page } from "@playwright/test";
-import { closeContexts, menuItem, menuItems, open, paneEl, ready } from "./helpers";
+import { closeContexts, closeSettingsPage, menuItem, menuItems, open, paneEl, ready, openSettingsPage, settingsRow } from "./helpers";
 import { ANY, daemonPort } from "./ports";
 
 const OWNER = "me@example.com";
@@ -105,12 +105,11 @@ async function start(page: Page) {
 
 const dialog = (page: Page) => page.getByRole("dialog", { name: "Developer settings" });
 
-test("a fresh daemon's machine menu offers Developer settings, and #developer opens them", async ({ page }) => {
+test("a fresh daemon's Settings offers Developer settings, and #developer opens them", async ({ page }) => {
   const pane = await start(page);
   expect(existsSync(join(state, "flags.json"))).toBe(false);
   expect(await shown(page, pane)).toEqual([]);
-  await page.locator(".ws-head [data-account-menu]").click();
-  await page.getByRole("menuitem", { name: "Developer settings…" }).click();
+  await settingsRow(page, "Developer settings…");
   await expect(dialog(page)).toBeVisible();
   await expect(dialog(page).locator("[data-flag]")).toHaveCount(FLAGS.length);
   await page.keyboard.press("Escape");
@@ -145,20 +144,19 @@ test("turning chant workspaces on in the dialog turns on them, and nothing else,
   await expect(page.locator("[data-theme-pick]")).toHaveCount(4);
 });
 
-test("with a flag on, the account menu still offers them; off takes chant workspaces away again", async ({ page }) => {
+test("with a flag on, Settings still offers them; off takes chant workspaces away again", async ({ page }) => {
   const pane = await start(page);
   expect(await workspacesFlag(page)).toBe(true);
-  await page.locator(".ws-head [data-account-menu]").click();
-  await page.getByRole("menuitem", { name: "Developer settings…" }).click();
+  await settingsRow(page, "Developer settings…");
   await expect(dialog(page).locator('[data-flag="chant-workspaces"] input')).toBeChecked();
   await dialog(page).locator('[data-flag="chant-workspaces"] input').uncheck();
   await expect.poll(() => workspacesFlag(page)).toBe(false);
   expect(onNow()).toEqual([]);
   await page.keyboard.press("Escape");
+  await closeSettingsPage(page);
   expect(await shown(page, pane)).toEqual([]);
   // Still offered, all off.
-  await page.locator(".ws-head [data-account-menu]").click();
-  await expect(page.getByRole("menuitem", { name: "Developer settings…" })).toBeVisible();
+  await expect((await openSettingsPage(page)).getByRole("button", { name: "Developer settings…" })).toBeVisible();
 });
 
 test("each flag turns on its own feature and no other", async ({ page }) => {
@@ -249,21 +247,20 @@ test("guest ssh is a sharing setting, off by default: the machine's settings tur
   expect(off.status).toBe(404);
   expect(off.text).toContain("`arugulad sharing guest-ssh on`");
 
-  await page.locator(".ws-head [data-account-menu]").click();
-  await page.getByRole("menuitem", { name: "Guest SSH access…" }).click();
+  await settingsRow(page, "Guest SSH access…");
   const sw = sharingDialog(page).getByRole("switch", { name: "Guest SSH access on this machine" });
   await expect(sw).not.toBeChecked();
   await sw.check();
   await expect.poll(() => page.evaluate(() => window.__arugula.client.guestSsh())).toBe(true);
   expect(JSON.parse(readFileSync(join(state, "sharing.json"), "utf8"))).toEqual({ guest_ssh: true });
   await sharingDialog(page).getByRole("button", { name: "Done", exact: true }).click();
+  await closeSettingsPage(page);
   expect(await shown(page, pane)).toEqual(["guest-ssh"]);
 });
 
 test("what a machine shares of its agent sessions is work by default, and the owner can turn it down", async ({ page }) => {
   await start(page);
-  await page.locator(".ws-head [data-account-menu]").click();
-  await page.getByRole("menuitem", { name: "Guest SSH access…" }).click();
+  await settingsRow(page, "Guest SSH access…");
   const menu = sharingDialog(page).locator("[data-sharing-agent-sessions]");
   await expect(menu).toHaveValue("work");
   await expect(menu).toBeEnabled();

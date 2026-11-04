@@ -397,7 +397,7 @@ function PermCard({ client, id, p, cwd, owner }: { client: Client; id: PaneId; p
               Cancel
             </button>
           </div>
-          <p class="hint">On this machine; forget it from the account menu, Permission rules…</p>
+          <p class="hint">On this machine; forget it from Settings, Permission rules…</p>
         </form>
       )}
     </div>

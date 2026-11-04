@@ -16,7 +16,7 @@ import { platformFetch } from "../../shared/maintenance";
 import { ConfirmRemove } from "../../shared/ui/confirm";
 import { Time } from "../../shared/ui/time";
 import { toneClass } from "../swarm";
-import { Section } from "./section";
+import { Section } from "../../shared/ui/settings-section";
 
 export type ProductLink = {
   client: string;

@@ -264,3 +264,22 @@ export async function sheetTab(page: Page, tab: "Here" | "Machines" | "More") {
   await button.click();
   await expect(button).toHaveAttribute("aria-selected", "true");
 }
+
+/** The Settings page, from the rail (Arugula #695); stays if it's open. */
+export async function openSettingsPage(page: Page) {
+  const settings = page.locator("[data-settings-page]");
+  if (!(await settings.isVisible())) await page.locator(".ws-rail [data-open-settings]").click();
+  await expect(settings).toBeVisible();
+  return settings;
+}
+
+/** A row of the Settings page that opens or does something: `Appearance…`. */
+export async function settingsRow(page: Page, name: string) {
+  await (await openSettingsPage(page)).getByRole("button", { name, exact: true }).click();
+}
+
+/** Back to the panes from the Settings page. */
+export async function closeSettingsPage(page: Page) {
+  await page.locator(".ws-rail [data-open-panes]").click();
+  await expect(page.locator("[data-settings-page]")).toHaveCount(0);
+}

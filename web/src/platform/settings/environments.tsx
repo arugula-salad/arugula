@@ -24,7 +24,7 @@ import { ENVIRONMENTS_MEAN } from "../pages/project";
 import { follow, pathOf } from "../router";
 import type { PlatformProject } from "../session";
 import { deployTone, toneClass } from "../swarm";
-import { Section } from "./section";
+import { Section } from "../../shared/ui/settings-section";
 
 async function call<T>(method: string, path: string, body?: unknown): Promise<T> {
   const r = await platformFetch(path, {

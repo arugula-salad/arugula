@@ -10,6 +10,7 @@
 // editors, studio apps) keep their keys: the chord works once focus is
 // back on the page.
 
+import { openSettings } from "./settings-route";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
 import { paneIds, tabLabel, type Client } from "../client";
 import type { PaneId } from "../../shared/proto";
@@ -370,6 +371,7 @@ function places(client: Client, phone: boolean): Command[] {
     go("team", "Go to Agents: Team", () => openAgentsPage("team"));
   }
   if (!client.state?.roles) go("docs", "Go to Docs", openDocsPage);
+  if (!phone) go("settings", "Go to Settings", () => openSettings());
   return out;
 }
 

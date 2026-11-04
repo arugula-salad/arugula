@@ -38,7 +38,7 @@ import {
   type Column,
   type Grant,
 } from "./grants";
-import { Section } from "./section";
+import { Section } from "../../shared/ui/settings-section";
 
 async function call<T>(path: string, body?: unknown): Promise<T> {
   const r = await platformFetch(path, {

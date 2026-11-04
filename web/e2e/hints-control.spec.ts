@@ -13,7 +13,7 @@ import { expect, test, type Page } from "@playwright/test";
 import { mkdirSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { closeContexts, menuItem, panes } from "./helpers";
+import { closeContexts, menuItem, panes, openSettingsPage, closeSettingsPage } from "./helpers";
 import { FakePush } from "./phones";
 import { TeamControl, home, show } from "./team-fixture";
 
@@ -55,8 +55,8 @@ test("push on through control: Choose what to be told about", async ({ browser }
   await alice.waitForTimeout(1000);
   await expect(toast).toHaveCount(0);
 
-  await alice.locator("[data-account-menu]").click();
-  await (await menuItem(alice, "Notify this device")).click();
+  await (await openSettingsPage(alice)).getByRole("switch", { name: "Notify this device" }).click();
+  await closeSettingsPage(alice);
   await expect(toast).toContainText("Choose what to be told about: chat, machines, projects");
   await toast.locator("[data-hint-act]").click();
   await expect(alice.getByRole("menu")).toContainText("Push: Chat");

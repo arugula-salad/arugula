@@ -10,7 +10,7 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { expect, test, type Page } from "@playwright/test";
-import { menuItem, open, reset } from "./helpers";
+import { menuItem, open, reset, settingsRow } from "./helpers";
 
 const panel = (page: Page) => page.locator("[data-whats-new]");
 /** This build's version, as web/vite.config.ts reads it. */
@@ -58,11 +58,10 @@ test("a first visit gets Getting started, not What's new too", async ({ page }) 
   await expect(panel(page)).toHaveCount(0);
 });
 
-test("the account menu's What's new; Try it opens the thing and closes it", async ({ page }) => {
+test("Settings' What's new; Try it opens the thing and closes it", async ({ page }) => {
   await reset(page);
   await expect(panel(page)).toHaveCount(0);
-  await page.locator("[data-account-menu]").first().click();
-  await (await menuItem(page, /^What's new/)).click();
+  await settingsRow(page, "What's new");
   await expect(panel(page)).toBeVisible();
   const tries = panel(page).locator("[data-whats-new-try]");
   if ((await tries.count()) === 0) return;

@@ -196,7 +196,7 @@ export function HostButton({ path = true }: { path?: boolean } = {}) {
     }
     // One description of the swarm, as the rail's (UI audit #176).
     items.push("separator", { label: "Go to Swarm", detail: SWARM_ABOUT, run: openSwarm });
-    // The shown machine's own settings: here, not in the account menu.
+    // The shown machine's own settings: a row to the Settings page, or (no rail) the rows.
     const mine = machineItems();
     // #778: what its place means is its row's tooltip (UI audit #175: the
     // paragraph here was the menu's longest line). M50: which way its

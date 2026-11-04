@@ -13,7 +13,7 @@
 //   pane (its pid), each tip once before any repeats, per account (the
 //   place in the list is the pref `nvim.tips.next`).
 // - nvim-help: the help card, a pane modal over the first nvim pane; the
-//   pane menu ("nvim help") and Help in the account menu open it again.
+//   pane menu ("nvim help") and Help in Settings open it again.
 
 import { paneIds, type Client } from "../client";
 import type { PaneId, PaneInfo } from "../../shared/proto";

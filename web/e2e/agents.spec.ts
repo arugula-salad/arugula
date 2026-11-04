@@ -8,7 +8,7 @@ import { rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { devices, expect, test, type Page } from "@playwright/test";
-import { menu, paneEl, panes, reset, text } from "./helpers";
+import { menu, paneEl, panes, reset, text, settingsRow, closeSettingsPage } from "./helpers";
 
 const fake = fileURLToPath(new URL("../../crates/daemon/tests/fake_acp.py", import.meta.url));
 
@@ -193,9 +193,8 @@ test("a standing rule outlives its block and is forgotten from the account menu"
   await expect(second.locator(".agent-msg")).toContainText("Ran it.");
   await expect(second.locator(".agent-note").filter({ hasText: /Allowed make test \(standing rule: Bash make… in / })).toBeVisible();
 
-  // The account menu lists it; Forget, and the next request asks again.
-  await page.locator(".ws-head [data-account-menu]").click();
-  await page.getByRole("menuitem", { name: "Permission rules…" }).click();
+  // Settings lists it; Forget, and the next request asks again.
+  await settingsRow(page, "Permission rules…");
   const dialog = page.getByRole("dialog", { name: "Permission rules" });
   await expect(dialog.locator("[data-rule]")).toHaveCount(1);
   await expect(dialog.locator("[data-rule=\"0\"] .rule-text")).toContainText("Bash commands starting “make” in ");
@@ -203,6 +202,7 @@ test("a standing rule outlives its block and is forgotten from the account menu"
   await expect(dialog.locator("[data-rule]")).toHaveCount(0);
   await expect(dialog).toContainText("No standing tool rules yet");
   await dialog.getByRole("button", { name: "Close" }).click();
+  await closeSettingsPage(page);
   await second.locator(".agent-composer textarea").fill("run make install");
   await second.getByRole("button", { name: "Send" }).click();
   await expect(second.getByRole("alertdialog", { name: "Allow make install?" })).toBeVisible();

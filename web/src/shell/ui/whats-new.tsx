@@ -8,7 +8,7 @@
 // browser), so after an update: the daemon's page reloads onto the new
 // build, control's page is deployed, and the desktop app's window shows
 // one of the two. It's seen when shown. The update chip's *What's new*
-// and the account menu's open it again. Items this person can't use are
+// and Settings' open it again. Items this person can't use are
 // left out (their `needs`).
 
 import { useEffect, useState } from "preact/hooks";
@@ -63,7 +63,7 @@ async function forThem(client: Client, releases: WhatsNewRelease[]): Promise<Wha
 }
 
 /** Open it with this build's newest releases (the update chip's
- * *What's new*, the account menu's). */
+ * *What's new*, in Settings). */
 export async function openWhatsNew(client: Client, newer?: Newer) {
   open = { client, releases: await forThem(client, upTo(RELEASES, BUILT)), newer };
   changed();

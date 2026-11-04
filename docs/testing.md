@@ -1607,7 +1607,7 @@ Only what no test can do:
   3. On the phone, change a section and **Update shared copy**; reload the
      laptop's window: the new text, at the same address. **Unshare**; reload:
      "This Doc isn't shared any more".
-  4. From the account menu, **Shared Docs…** lists it with its size and how
+  4. From the user menu or Settings, **Shared Docs…** lists it with its size and how
      often it was opened, **Copy link** while the machine is on, and **Unshare**.
   5. Keep the screenshots for the PR's description.
 

@@ -15,7 +15,7 @@ import { useSubscribe } from "../../shared/ui/hooks";
 import { openMenu, type MenuItem } from "../../shared/ui/menu";
 import { PageHeader } from "../../shared/ui/page-header";
 import { StateChip } from "../../shared/ui/state-chip";
-import { Section } from "../settings/section";
+import { Section } from "../../shared/ui/settings-section";
 import { IssueError, issues, type IssueFilter } from "../../shared/issues/store";
 import { githubNewIssue, rowLine, stateLabel } from "../../shared/issues/text";
 import { when } from "../../shared/time";

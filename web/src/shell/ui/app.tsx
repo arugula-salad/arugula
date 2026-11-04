@@ -13,6 +13,8 @@ import { ThreadLayer } from "./threads";
 import { InLabs } from "./in-labs";
 import { agentsRoute } from "./agents-route";
 import { docsRoute } from "./docs-route";
+import { SettingsPage } from "./settings-page";
+import { openSettings, settingsRoute } from "./settings-route";
 import { HostPicker, NewMachineNote, setMachineItems } from "./hosts";
 import { ControlRequests, ShareDialog } from "./people";
 import { directory } from "../hosts";
@@ -94,8 +96,6 @@ export function App({ client, cell }: { client: Client; cell: Cell }) {
   }, [client]);
 
   useHoverToSwitchTabs(client);
-  // The machine menu's "This machine" items are this client's.
-  useEffect(() => setMachineItems(() => machineSettingsItems(client)), [client]);
   useReportFocus(client, phone);
   useWorkspaceKeys(client, phone);
   useFirstRun(client);
@@ -103,6 +103,16 @@ export function App({ client, cell }: { client: Client; cell: Cell }) {
   // M113 (#1028): a computer draws the workspace once a machine is shown;
   // a phone keeps its own header.
   const ws = !phone && !!client.state;
+  // The machine menu's "This machine" items are this client's: one row to the
+  // Settings page where the rail has one (Arugula #695), else the rows.
+  useEffect(
+    () =>
+      setMachineItems(() => {
+        const mine = machineSettingsItems(client);
+        return ws && mine.length ? [{ label: "Machine settings…", run: () => openSettings("machine") }] : mine;
+      }),
+    [client, ws],
+  );
   // M111: `#overview` lies over the tabs and panes (not on a phone).
   const overview = useOverview();
   useLayoutEffect(() => {
@@ -134,6 +144,7 @@ export function App({ client, cell }: { client: Client; cell: Cell }) {
       <ThreadLayer phone={phone} client={client} />
       {state && <AgentsPageLayer client={client} />}
       {state && <DocsPageLayer client={client} />}
+      <SettingsPageLayer client={client} />
       <ConversationsLayer />
       <InLabs on={client.flag("studio")}>{(l) => <l.AppsLayer />}</InLabs>
       <InLabs on={client.flag("sandbox-providers")}>{(l) => <l.SandboxesLayer />}</InLabs>
@@ -227,6 +238,7 @@ export function App({ client, cell }: { client: Client; cell: Cell }) {
       <ThreadLayer phone={phone} client={client} />
       {state && <AgentsPageLayer client={client} />}
       {state && <DocsPageLayer client={client} />}
+      <SettingsPageLayer client={client} />
       <ConversationsLayer />
       <InLabs on={client.flag("studio")}>{(l) => <l.AppsLayer />}</InLabs>
       <InLabs on={client.flag("sandbox-providers")}>{(l) => <l.SandboxesLayer />}</InLabs>
@@ -329,6 +341,17 @@ function AgentsPageLayer({ client }: { client: Client }) {
   }, []);
   if (!agentsRoute()) return null;
   return <InLabs on={client.flag("agent-delegation")}>{(l) => <l.AgentsPage client={client} />}</InLabs>;
+}
+
+/** The Settings page (Arugula #695), while its route is up. */
+function SettingsPageLayer({ client }: { client: Client }) {
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    const fn = () => setTick((t) => t + 1);
+    window.addEventListener("hashchange", fn);
+    return () => window.removeEventListener("hashchange", fn);
+  }, []);
+  return settingsRoute() ? <SettingsPage client={client} /> : null;
 }
 
 /** The Docs page (#1494): a chunk of its own, fetched while its route is

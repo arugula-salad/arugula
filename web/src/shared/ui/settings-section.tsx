@@ -48,7 +48,20 @@ export function Section({
  * the page shows, read off it as each one loads (some show only when
  * there's something in them), the one you're in marked (UI audit #166):
  * the topmost of those on the screen. */
-export function SectionIndex({ body }: { body: RefObject<HTMLDivElement | null> }) {
+export function SectionIndex({
+  body,
+  anchor = (id) => `#${id}`,
+  opened: openedAt = () => decodeURIComponent(location.hash.slice(1)),
+  elsewhere,
+}: {
+  body: RefObject<HTMLDivElement | null>;
+  /** A section's address, where the hash isn't simply its id. */
+  anchor?: (id: string) => string;
+  /** The section the page was opened at. */
+  opened?: () => string | undefined;
+  /** The rest of Settings, on the other page (Arugula #695). */
+  elsewhere?: Elsewhere;
+}) {
   const [secs, setSecs] = useState<{ id: string; title: string }[]>([]);
   const [here, setHere] = useState("");
   useEffect(() => {
@@ -68,7 +81,7 @@ export function SectionIndex({ body }: { body: RefObject<HTMLDivElement | null> 
   // above it come in, for the page's first two seconds.
   const opened = useRef(Date.now());
   useEffect(() => {
-    const id = decodeURIComponent(location.hash.slice(1));
+    const id = openedAt();
     if (!id || Date.now() - opened.current > 2000 || !secs.some((s) => s.id === id)) return;
     document.getElementById(`${id}-h`)?.scrollIntoView({ block: "start" });
   }, [secs]);
@@ -101,12 +114,52 @@ export function SectionIndex({ body }: { body: RefObject<HTMLDivElement | null> 
       <ul>
         {secs.map((s) => (
           <li key={s.id}>
-            <a href={`#${s.id}`} aria-current={here === s.id ? "location" : undefined} onClick={(e) => go(e, s.id)}>
+            <a href={anchor(s.id)} aria-current={here === s.id ? "location" : undefined} onClick={(e) => go(e, s.id)}>
               {s.title}
             </a>
           </li>
         ))}
       </ul>
+      {elsewhere && elsewhere.links.length > 0 && (
+        <>
+          <p class="settings-index-head">{elsewhere.title}</p>
+          <ul data-settings-index-elsewhere>
+            {elsewhere.links.map((l) => (
+              <li key={l.href}>
+                <a href={l.href} onClick={l.onClick}>
+                  {l.title}
+                </a>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
     </nav>
+  );
+}
+
+/** The other page's sections, as links. */
+export interface Elsewhere {
+  title: string;
+  links: { title: string; href: string; onClick?: (e: MouseEvent) => void }[];
+}
+
+/** The same links in the column, where the index beside it isn't shown
+ * (a narrow window, a phone). */
+export function ElsewhereLinks({ elsewhere }: { elsewhere: Elsewhere }) {
+  if (elsewhere.links.length === 0) return null;
+  return (
+    <section class="settings-elsewhere" data-settings-elsewhere>
+      <h2>{elsewhere.title}</h2>
+      <ul class="settings-rows">
+        {elsewhere.links.map((l) => (
+          <li key={l.href}>
+            <a href={l.href} onClick={l.onClick}>
+              {l.title}
+            </a>
+          </li>
+        ))}
+      </ul>
+    </section>
   );
 }

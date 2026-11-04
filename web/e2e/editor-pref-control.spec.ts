@@ -3,7 +3,7 @@
 // it's what Settings shows on another.
 
 import { expect, test, type Browser, type Page } from "@playwright/test";
-import { closeContexts, menuItem } from "./helpers";
+import { closeContexts, menuItem, openSettingsPage } from "./helpers";
 import { TeamControl, home, show } from "./team-fixture";
 
 const t = new TeamControl("editor-pref-control");
@@ -29,10 +29,9 @@ async function signIn(browser: Browser): Promise<Page> {
   return page;
 }
 
-/** Settings › Editor's row for `label`, with the menu open. */
+/** Settings › Editor's choice `label`, with the page open. */
 async function editorRow(page: Page, label: string) {
-  await page.locator("[data-account-menu]").click();
-  return menuItem(page, label, { exact: true });
+  return (await openSettingsPage(page)).getByRole("radio", { name: label, exact: true });
 }
 
 const accountPref = (page: Page) => page.evaluate(() => fetch("/api/me/prefs").then((r) => r.json()).then((p) => p.editor ?? null));
@@ -49,8 +48,8 @@ test("Settings › Editor follows the account to another device", async ({ brows
   await t.addMachine(laptop, "editorbox");
   await home(laptop);
   await show(laptop, "editorbox");
-  await expect(await editorRow(laptop, "VS Code")).toHaveAttribute("aria-checked", "true");
-  await (await menuItem(laptop, "nvim", { exact: true })).click();
+  await expect(await editorRow(laptop, "VS Code")).toBeChecked();
+  await (await editorRow(laptop, "nvim")).click();
   await expect.poll(() => accountPref(laptop)).toBe("nvim");
   // The account's, not this browser's.
   expect(await laptop.evaluate(() => JSON.parse(localStorage.getItem("arugula.seen") ?? "{}").editor ?? null)).toBeNull();
@@ -62,7 +61,7 @@ test("Settings › Editor follows the account to another device", async ({ brows
   await phone.getByRole("button", { name: "Use it" }).click();
   await phone.waitForFunction(() => window.__arugula?.control?.phase === "ready", null, { timeout: 30_000 });
   await show(phone, "editorbox");
-  await expect(await editorRow(phone, "nvim")).toHaveAttribute("aria-checked", "true");
-  await (await menuItem(phone, "Ask each time", { exact: true })).click();
+  await expect(await editorRow(phone, "nvim")).toBeChecked();
+  await (await editorRow(phone, "Ask each time")).click();
   await expect.poll(() => accountPref(phone)).toBe("ask");
 });

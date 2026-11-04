@@ -12,8 +12,7 @@ import { useEffect, useState } from "preact/hooks";
 import type { Client } from "../../client";
 import { directory } from "../../hosts";
 import { SWARM_ABOUT, onSwarmRoute, openSwarm } from "../../swarm/route";
-import { settingsItems } from "../commands";
-import { openMenu } from "../../../shared/ui/menu";
+import { openSettings } from "../settings-route";
 import { Rail as SharedRail, type RailItem } from "../../../shared/ui/rail";
 import { openPlatform, platformHref } from "../../platform-links";
 import { chatUnread, closePlace, currentPlace, hasChat, openChat, openOverview, useChatTick, type Place } from "../places";
@@ -50,10 +49,9 @@ export function Rail({ client }: { client: Client }) {
     if (at !== "panes") closePlace(at);
     else client.viewOf(client.active() ?? -1)?.focus();
   };
-  const settings = (e: MouseEvent) => {
+  const settings = () => {
     countView("settings");
-    const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
-    openMenu({ clientX: r.right + 4, clientY: r.top, preventDefault: () => e.preventDefault() }, settingsItems(client, { machine: true }), e.currentTarget as HTMLElement);
+    openSettings();
   };
   const items: (RailItem | false)[] = [
     // Only where control has a platform page. Its own tab, or this window in
@@ -101,7 +99,7 @@ export function Rail({ client }: { client: Client }) {
     </button>
   );
   const bottom: RailItem[] = [
-    { label: "Settings", tip: "Appearance, notifications and this machine's settings", here: false, hook: "data-open-settings", icon: <SettingsIcon />, onClick: settings },
+    { label: "Settings", tip: "Settings: this device, this machine and your account", here: at === "settings", hook: "data-open-settings", icon: <SettingsIcon />, onClick: settings },
   ];
   return <SharedRail brand={brand} items={items.filter((i): i is RailItem => !!i)} bottom={bottom} />;
 }

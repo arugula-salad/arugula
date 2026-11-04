@@ -9,7 +9,7 @@
 import { useEffect, useState } from "preact/hooks";
 import { platformFetch } from "../../shared/maintenance";
 import type { PlatformProject } from "../session";
-import { Section } from "./section";
+import { Section } from "../../shared/ui/settings-section";
 
 /** A hosted workspace, as much of it as this needs. */
 interface Workspace {

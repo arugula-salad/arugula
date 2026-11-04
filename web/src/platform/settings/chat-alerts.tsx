@@ -10,7 +10,7 @@ import type { ChatTeamSettings } from "../../shared/proto";
 import { keywords, setKeywords, setTeamSettings, teamSettings } from "../../shared/chat/alerts";
 import { useSubscribe } from "../../shared/ui/hooks";
 import type { PlatformProject } from "../session";
-import { Section } from "./section";
+import { Section } from "../../shared/ui/settings-section";
 
 function Words({ words, setWords }: { words: string[]; setWords: (w: string[]) => void }) {
   const [draft, setDraft] = useState("");

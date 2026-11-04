@@ -23,7 +23,7 @@ Guest ssh (inviting someone with only OpenSSH to a pane, M65) was the
 `guest-ssh` flag until it left Labs (2026-10-26, native #205). It is a
 sharing setting now, **Guest SSH access**, off until the machine's owner
 turns it on: *Guest SSH access…* in the machine's settings (the machine
-menu, the account menu's *This machine*, the phone's sheet), or
+menu, Settings' *This machine*, the phone's sheet), or
 `arugulad sharing guest-ssh on` on the machine. It is kept in
 `sharing.json` in the state directory (`arugula_proto::sharing`), which
 control never writes, so no push turns it on, as the flag was local-only.

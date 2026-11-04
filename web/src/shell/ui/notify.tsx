@@ -187,16 +187,23 @@ function switchItems(client: Client): MenuItem[] {
   ];
 }
 
-export function notificationItems(client: Client): MenuItem[] {
+/** Notifications, split by what each row reaches: this device's switch, and
+ * what's pushed to (and the test sent to) every device that's on. */
+export function notificationParts(client: Client): { device: MenuItem[]; everywhere: MenuItem[] } {
   const blocked = notifyBlocker();
   // Plain http: the fix is Tailscale, a button in Getting started's phone step.
-  if (push === "insecure") return [{ label: `${blocked}…`, run: () => openGettingStarted("phone") }];
-  if (blocked) return [{ label: blocked, disabled: true, run: () => {} }, ...testItem(client)];
+  if (push === "insecure") return { device: [{ label: `${blocked}…`, run: () => openGettingStarted("phone") }], everywhere: [] };
+  if (blocked) return { device: [{ label: blocked, disabled: true, run: () => {} }], everywhere: testItem(client) };
   const [device, ...kinds] = switchItems(client);
   // #468: what's wrong with this device's, said plainly (on control).
   const health = canTestPush() ? notifyHealth() : null;
   const said: MenuItem[] = health ? [{ label: health, disabled: true, run: () => {} }] : [];
-  return [device, ...said, ...kinds, ...testItem(client)];
+  return { device: [device, ...said], everywhere: [...kinds, ...testItem(client)] };
+}
+
+export function notificationItems(client: Client): MenuItem[] {
+  const { device, everywhere } = notificationParts(client);
+  return [...device, ...everywhere];
 }
 
 /** M29: someone other than the owner chooses which agents they're told
