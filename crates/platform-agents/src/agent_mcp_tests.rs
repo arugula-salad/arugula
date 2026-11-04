@@ -401,8 +401,13 @@ async fn a_token_reaches_its_grants_and_its_owner_and_is_revoked() {
     assert_eq!((st, &r["live"], &r["revoked_by"]["account"]), (200, &json!(false), &json!("a")), "{r}");
     let (_, listed) = call(&base, "b", "GET", "/api/agent-tokens", None).await;
     let bobs = listed["tokens"].as_array().unwrap().iter().find(|t| t["name"] == "bobs").unwrap();
-    let live: Vec<&str> =
-        bobs["grants"].as_array().unwrap().iter().filter(|g| g["live"] == true).map(|g| g["power"].as_str().unwrap()).collect();
+    let live: Vec<&str> = bobs["grants"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|g| g["live"] == true)
+        .map(|g| g["power"].as_str().unwrap())
+        .collect();
     assert_eq!(live, ["threads.read"], "{bobs}");
 
     // Revoked: the next request is refused, before any tool.

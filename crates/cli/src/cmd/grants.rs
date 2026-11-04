@@ -101,11 +101,12 @@ pub enum GrantsCmd {
         #[command(flatten)]
         scope: Scope,
     },
-    /// Take a machine's grants back: all its live ones, or one power, over
-    /// one scope. Or one grant by its id (grt_…): as an owner of the
-    /// project it's over, a teammate's machine's or token's too; they're
-    /// told, and can give it again (an owner who means it takes them out
-    /// of the team).
+    /// Take a machine's grants back, or one grant by its id.
+    ///
+    /// All of a machine's live grants, or one power, over one scope. Or
+    /// one grant by its id (grt_…): as an owner of the project it's over,
+    /// a teammate's machine's or token's too; they're told, and can give
+    /// it again (an owner who means it takes them out of the team).
     ///
     /// Its agents are refused from their next call; a run, an agent
     /// session or an approval already under way carries on.
