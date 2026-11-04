@@ -65,4 +65,23 @@ Plane project's live there (phase 3).
   as a card a person approves (`approve`, the default) or lands at once
   (`allow`). Each write ends with a "via Arugula" line naming who it was for.
   GitHub stays draft-then-send (aru-041).
+  - **Amended (Arugula #423, 2026-10-31):** the connection's policy is now
+    per kind of write (`write_policy`,
+    `crates/platform/src/trackers/policy.rs`): a create, a comment, an edit
+    of title or body, a state change (close, reopen, a state named in an
+    edit) and a field change (module, parent, type, labels), each `allow`
+    or `approve`; an edit of several kinds goes at once only if every one
+    allows. Three presets: approve everything, allow comments and edits but
+    approve creates and closes (what a new connection gets), and allow
+    everything. A connection from before kept what it had, so the upgrade
+    loosened none; the `agent_writes` column stays, no longer read, and a
+    write that still sends it sets every kind. The footer is the
+    connection's choice too (`attribution`): full (person and machine),
+    short ("via Arugula", the default for a new connection) or none;
+    Arugula's own record of who wrote what doesn't change. Why: a team's
+    first use found approving every write too much (three writes, three
+    approvals, and they switched to allow-all), and the full footer showed
+    a person and their machine to the whole Plane workspace.
 - **Epics:** a Plane epic can be imported as a board, its children as rows.
+  Amended (Arugula #483): each open Plane epic has a board that follows it
+  while the connection's `epics_as_boards` switch is on, as it is by default.

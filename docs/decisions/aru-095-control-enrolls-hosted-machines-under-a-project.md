@@ -60,7 +60,11 @@ An unattended hosted machine has no device present to approve its join
 project P, until revoked" (Jake, 2026-10-21, #1235).
 
 - **Stored with the project's roster,** signed by an owner's device like the
-  roster itself.
+  roster itself. Amended: a project has no roster of its own. The hub keeps
+  the delegation and its revocation in `project_delegations`, keyed by the
+  project's owner (`team:<id>` or `account:<id>`), and checks them against
+  the owning team's roster, or the account, as a courtesy; clients check
+  again with the roster they hold (`crates/control/src/db/hosted.rs`).
 - **Enrollment.** At create, the platform records a one-time enrollment
   for the box, bound to the project and the workspace: a **ticket** the hub
   makes, for the box's env (boxes started fresh, loam, testnet), or, for a

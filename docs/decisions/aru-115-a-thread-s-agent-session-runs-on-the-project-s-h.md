@@ -83,6 +83,15 @@ agents draft while people send".
   are never woken by other people's mentions: on them, mentions are still
   read, not pushed. `@arugula` comes first; `@<recipe>` (a project recipe's
   agent) comes later.
+  - **Amended (Arugula #394, 2026-10-31):** on a personal machine a
+    mention is pushed too, but it dispatches nothing. `@machine`,
+    `@machine/session` or a reply under its agent's message reaches a
+    session the owner is already running, framed as a teammate's message,
+    and the owner turns it off per machine (`agent_mentions`); with no live
+    session it waits in the machine's inbox. What option (b) guarded
+    against stays refused: nobody's mention starts an agent on a
+    teammate's computer. "Agents are in conversations" (aru-091) and "A
+    thread shows its agents" (aru-133) say the same.
 - **Try 3 and `@codex review`** (M264). From a session's card, an owner or
   editor can run it two more ways at once: two siblings of it re-run its
   first prompt on the same box, each in a slot of its own, on Claude Code
@@ -123,6 +132,14 @@ agents draft while people send".
 - **On the box:** an ACP agent block, as its own Unix user, in a worktree of
   its own. How the user and the worktree are set up is the box's to settle
   (S42).
+  - **Settled as a clone, not a worktree** (M255, 2026-10-25,
+    `crates/arugulad-work/src/sessions.rs`). A worktree's metadata would
+    stay in the workspace's clone, which the session user can't write. So
+    the daemon's user clones the workspace's clone into a staging
+    directory, moves it to the repo's default branch as GitHub has it now
+    (Arugula #263: the box's clone is as old as its setup), hands it to the
+    session user, and everything after that (the session's branch, the
+    turn's work) runs as that user, never as the daemon's user or root.
 - **Three running, six held** (amended, Jake, 2026-10-27, Arugula #215).
   A box runs at most three sessions at once: a turn under way, or done
   less than 30 minutes ago, its agent still up for the next turn. Each

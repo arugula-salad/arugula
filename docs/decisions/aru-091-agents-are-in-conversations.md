@@ -104,11 +104,27 @@ grants ("Grants, not impersonation").
 - **Mentions are read, not pushed.** An `@` naming a machine or its agents is
   stored as a mention that `read_thread` returns over MCP. Nothing wakes or
   dispatches an agent in this step.
+  - **Amended (Arugula #394, 2026-10-31; #429, #575):** a mention now
+    reaches the agent too. When someone with `threads.post` names the
+    machine (`@geek`, `@geek/session`) or replies under one of its agents'
+    messages, control pushes it to the daemon over the relay (the
+    `agents.mention` op), and the daemon hands it to the session it names,
+    else the session that posted in that thread, else the one that last
+    posted in the room, else the machine's inbox
+    (`crates/daemon/src/agent_mentions.rs`). It starts no agent: it reaches
+    a session the owner is already running, as a teammate's message through
+    the hooks inbox, never as approval or a command. The owner turns it off
+    per machine (`sharing.json`'s `agent_mentions`). Why: an agent that
+    only read its mentions when its person ran it couldn't be talked to in
+    the thread about its work; the owner's switch keeps a person's machine
+    running what its person allows. "A thread shows its agents" (aru-133)
+    records the same.
 - **Amended for hosted boxes** (thread = session, Arugula #129): `@arugula`
   dispatches an agent session on the project's hosted box, and that
   session's status card is the one card kind a timeline shows ("A thread's
   agent session runs on the project's hosted box"). Agents on personal
-  machines are still never woken by other people's mentions.
+  machines were still never woken by other people's mentions; since
+  Arugula #394 a mention reaches a session the owner already runs (above).
 
 What stays removed (M121, M125, #1095): the daemon keeps no thread store, and
 MCP's thread and issue tools call the platform, signed by the machine (the
@@ -129,6 +145,8 @@ say "approve" in a thread it can post in, or call a tool, but that never
 approves a deploy, whatever grant it holds, the owner's own machine
 included. Only a project owner's device signature over the deploy's bytes
 does ("A deploy needs an owner device's approval, and agents never
-approve").
+approve"). Amended (Jake, 2026-10-30, aru-126): the proof is now a
+user-verified passkey assertion over the deploy's bytes, with no device-key
+signature; an agent holds no passkey, so it still can't make one.
 Where: `crates/platform/src/grants.rs`, `crates/platform-api/src/auth.rs` (`Machine`), `crates/platform-chat/src/chat.rs`, `crates/daemon/src/mcp/tools.rs` (M198, M200).
 From: #1263 (platform roadmap, step 6), M193 (#1264), M197 (#1268), M198 (#1269), M200 (#1271), M202 (#1273), #959 and #1002 (agent grants in teams), M121 and M125 (#1095), #1317 (platform step 7).

@@ -65,6 +65,20 @@ runs (aru-122, aru-123). This makes them follow those, not a hand.
 - **Nobody sets a lane.** A move to a lane, a lane as a row's place, or a
   status (but `needs_input`, until asks replace it) is refused: "lanes follow
   the work".
+  - **Amended: a person can move a row (Arugula #494, alecraso,
+    2026-11-02).** Rows stuck in Review whose work was finished (a PR
+    merged, the issue open, waiting on a release) had no way out but closing
+    the issue. So a person, never an agent, moves a row by dragging it, from
+    its menu or from its drawer. A move to Done closes a native issue (with
+    a reason), and a move out of Done reopens it; a GitHub or Plane item is
+    still closed or reopened at its source, and the move is refused and says
+    so. A move to Next, Doing or Review stores a lane (`lane_set`, with the
+    lane the work derived then, who and when, migration `0089`) that shows,
+    marked as set by hand, only while the work still derives what it did
+    when it was set; once the work changes, the row follows the work again
+    and the next read clears it. Lanes following the work stays the default:
+    this is the escape hatch, not a chore. Asks replaced `needs_input`
+    (Arugula #367).
 - **No duplicates.** A PR that names the issue of a row (`Arugula #N`,
   `Closes #N`, `(#N)`, a branch `feat/N-…`, `IDENT-N` for Plane) is attached to
   that row; an issue that PR rows name takes them in; an item already on the
