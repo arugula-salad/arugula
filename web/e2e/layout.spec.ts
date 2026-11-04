@@ -191,6 +191,9 @@ test("a second window sees layout changes live, and the same terminal", async ({
   const before = (await tab(a)).layout.panes[0][1].cols;
   await dragTo(b, divider, { x: box.x + 150, y: box.y + box.height / 2 });
   await expect.poll(async () => (await tab(a)).layout.panes[0][1].cols).toBeGreaterThan(before + 10);
+  // Left open, these windows follow the next test's reset() to its new tab
+  // and can take its size first; a window without the size can't set a focus.
+  await closeContexts({ browser });
 });
 
 // M110 (#1025): the header above each pane is its
