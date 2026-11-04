@@ -9486,7 +9486,15 @@
           },
           "machine": {
             "default": null,
-            "description": "The machine this Doc is a copy from, or null for one made here.",
+            "description": "The machine this Doc is a copy from, or null for one made here. A\ncopy is read-only here: the machine's Doc is the truth (#678).",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "machine_name": {
+            "default": null,
+            "description": "That machine's name, when control knows it: null for a Doc made\nhere, or once the machine left. Older pages don't read it.",
             "type": [
               "string",
               "null"
