@@ -1,0 +1,148 @@
+{
+  "schema": 1,
+  "commit": "5907849a3e90ca2c70a5918682d7822807fbade4",
+  "branch": "main",
+  "state": "pending",
+  "at": "2026-11-04T03:19:38Z",
+  "phases": {
+    "lint": {
+      "verdict": "pending",
+      "build": "newest",
+      "runs": [
+        {
+          "name": "lint",
+          "id": 126365355872,
+          "conclusion": null,
+          "url": "https://github.com/arugula-salad/arugula/actions/runs/41766299272/job/126365355872"
+        },
+        {
+          "name": "changes",
+          "id": 126365355615,
+          "conclusion": "cancelled",
+          "url": "https://github.com/arugula-salad/arugula/actions/runs/41766299272/job/126365355615"
+        },
+        {
+          "name": "suite-changed",
+          "id": 126365354763,
+          "conclusion": "cancelled",
+          "url": "https://github.com/arugula-salad/arugula/actions/runs/41766299319/job/126365354763"
+        }
+      ]
+    },
+    "build": {
+      "verdict": "unbuilt",
+      "build": "newest",
+      "runs": [
+        {
+          "name": "build",
+          "id": 126365677452,
+          "conclusion": "cancelled",
+          "url": "https://github.com/arugula-salad/arugula/actions/runs/41766299272/job/126365677452"
+        },
+        {
+          "name": "static",
+          "id": 126365677335,
+          "conclusion": "cancelled",
+          "url": "https://github.com/arugula-salad/arugula/actions/runs/41766299272/job/126365677335"
+        },
+        {
+          "name": "clippy",
+          "id": 126365677823,
+          "conclusion": "cancelled",
+          "url": "https://github.com/arugula-salad/arugula/actions/runs/41766299272/job/126365677823"
+        }
+      ],
+      "reason": "cancelled"
+    },
+    "test": {
+      "verdict": "unbuilt",
+      "build": "newest",
+      "runs": [
+        {
+          "name": "test",
+          "id": 126365677257,
+          "conclusion": "cancelled",
+          "url": "https://github.com/arugula-salad/arugula/actions/runs/41766299272/job/126365677257"
+        },
+        {
+          "name": "test-2",
+          "id": 126365677258,
+          "conclusion": "cancelled",
+          "url": "https://github.com/arugula-salad/arugula/actions/runs/41766299272/job/126365677258"
+        }
+      ],
+      "reason": "cancelled"
+    },
+    "e2e": {
+      "verdict": "unbuilt",
+      "build": "newest",
+      "runs": [
+        {
+          "name": "e2e",
+          "id": 126365677879,
+          "conclusion": "cancelled",
+          "url": "https://github.com/arugula-salad/arugula/actions/runs/41766299272/job/126365677879"
+        }
+      ],
+      "reason": "cancelled"
+    },
+    "claims": {
+      "verdict": "unbuilt",
+      "build": "newest",
+      "runs": [
+        {
+          "name": "desktop-xvfb",
+          "id": 126365678037,
+          "conclusion": "cancelled",
+          "url": "https://github.com/arugula-salad/arugula/actions/runs/41766299272/job/126365678037"
+        }
+      ],
+      "reason": "cancelled"
+    },
+    "macos": {
+      "verdict": "unbuilt",
+      "build": "newest",
+      "runs": [
+        {
+          "name": "macos (test)",
+          "id": 126365678002,
+          "conclusion": "cancelled",
+          "url": "https://github.com/arugula-salad/arugula/actions/runs/41766299272/job/126365678002"
+        }
+      ],
+      "reason": "cancelled"
+    },
+    "windows": {
+      "verdict": "unbuilt",
+      "build": "newest",
+      "runs": [
+        {
+          "name": "workspace",
+          "id": 126365639821,
+          "conclusion": "cancelled",
+          "url": "https://github.com/arugula-salad/arugula/actions/runs/41766299319/job/126365639821"
+        },
+        {
+          "name": "workspace-clippy",
+          "id": 126365639014,
+          "conclusion": "cancelled",
+          "url": "https://github.com/arugula-salad/arugula/actions/runs/41766299319/job/126365639014"
+        }
+      ],
+      "reason": "cancelled"
+    },
+    "windows-desktop": {
+      "verdict": "unbuilt",
+      "build": "newest",
+      "runs": [
+        {
+          "name": "desktop",
+          "id": 126365623807,
+          "conclusion": "cancelled",
+          "url": "https://github.com/arugula-salad/arugula/actions/runs/41766299351/job/126365623807"
+        }
+      ],
+      "reason": "cancelled"
+    }
+  }
+}
