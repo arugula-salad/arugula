@@ -316,7 +316,7 @@ fn check_apply_cases() -> Example {
         run_check_apply,
         "What a machine checks before it applies a deploy (M219; DK4, aru-126), from what it pinned rather than \
          the platform's word, in this order, the first failure being the refusal: the approval is well formed \
-         (approval_form; a v2, or a v1 made before DK4); for this deploy (approval_deploy); over exactly this \
+         (approval_form; a v2: a v1, from before DK4, applies no more since DK8); for this deploy (approval_deploy); over exactly this \
          operation's hash (approval_operation); once, not a deny (approval_denied); not expired, expires > now \
          (approval_expired); its account an owner of the project, as the machine knows them, its team's roster \
          or its own account (approval_not_an_owner); a passkey assertion with it (approval_passkey, with no \
@@ -328,8 +328,7 @@ fn check_apply_cases() -> Example {
          (approval_passkey_log), and only its removals after the pinned log, at or before now, count \
          (approval_passkey, not_live, for the key removed): a key it adds is never taken, since an added event \
          by sign-up or GitHub needs no proof. No device plays a \
-         part: which devices the owner has, and who certified them, is never looked at. A v1 is checked by its \
-         passkey alone, as a v2 is.",
+         part: which devices the owner has, and who certified them, is never looked at.",
         &[
             "arugula_e2e::deploy::check_apply",
             "arugula_e2e::deploy::Approval::passkey_checks",
@@ -566,19 +565,18 @@ fn check_apply_cases() -> Example {
     forged.signature = b64(&[0u8; 64]);
     let forged = assertion(&mut ex, "k2-forged", forged);
     add("a signature that isn't the passkey's", "by-alice", &account, &forged, json!({}), pk_no("signature"));
-    // A v1 from before DK4, by alice's CLI, applies by its passkey alone.
+    // A v1 from before DK4, by alice's CLI, applies no more (DK8).
     let v1 = Approval::v1(&cli, "dep_1", &o, "alice", Decision::Once, 90_000);
     ex.object("v1-by-alice-cli", &v1);
     let pv1 = assertion(&mut ex, "k2-over-v1-by-alice-cli", k2.over(&v1));
     add(
-        "a v1 made before DK4, by her CLI: its passkey alone counts",
+        "a v1 made before DK4, by her CLI, with her passkey's assertion over it: applied no more",
         "v1-by-alice-cli",
         &account,
         &pv1,
         json!({}),
-        ok.clone(),
+        no("approval_form"),
     );
-    add("a v1 with a v2's assertion", "v1-by-alice-cli", &account, &p, json!({}), pk_no("challenge"));
     add("a v2 with a v1's assertion", "by-alice", &account, &pv1, json!({}), pk_no("challenge"));
     let mut named = good.clone();
     named.by = cli.id();
