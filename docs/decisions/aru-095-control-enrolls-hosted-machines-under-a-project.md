@@ -83,7 +83,15 @@ project P, until revoked" (Jake, 2026-10-21, #1235).
   operator can read". That's true of any VM: whoever runs it can read its
   memory.
 - **Revoking** the delegation stops new enrollments. Existing hosted
-  machines are revoked as devices are today.
+  machines are revoked as devices are today. Amended: they aren't. A
+  device's removal is a signed statement clients keep; a hosted machine
+  is removed on control's word alone: control stops listing it, refuses
+  its signatures and drops it from the relay, and the workspace's delete
+  or rebuild deletes its sandbox (`DELETE /api/hosted/machines/{id}`,
+  `HubPort::hosted_gone`). A revocation reaches only certificates made
+  after it: one made before stays accepted until the machine is removed.
+  And a hosted machine is reached only through control's relay: control
+  keeps no direct URL for it, and clients try none.
 
 `docs/control-e2e.md` says what control can and can't do with a
 delegation.

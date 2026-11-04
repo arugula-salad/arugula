@@ -541,9 +541,10 @@ pub async fn dial(
 }
 
 /// A machine on the relay was heard from: a hosted one (M178) is kept
-/// apart from daemons.
+/// apart from daemons, and is reached only through the relay, so any
+/// direct URLs it sent aren't kept.
 fn seen(app: &App, id: &str, hosted: bool, urls: Option<&[String]>) -> anyhow::Result<()> {
-    if hosted { app.db.hosted_seen(id, urls, now_ms()) } else { app.db.seen(id, urls, now_ms()) }
+    if hosted { app.db.hosted_seen(id, now_ms()) } else { app.db.seen(id, urls, now_ms()) }
 }
 
 async fn daemon_socket(app: Arc<App>, id: String, hosted: bool, ws: WebSocket, ticket: Ticket) {

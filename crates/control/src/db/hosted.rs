@@ -48,7 +48,9 @@ CREATE TABLE IF NOT EXISTS hosted_enrollments (
 );
 CREATE INDEX IF NOT EXISTS hosted_enrollments_workspace ON hosted_enrollments (workspace);
 -- An enrolled hosted machine: its certificate (JSON), signed with
--- control's hosted key. One live machine per workspace.
+-- control's hosted key. One live machine per workspace. `urls` is never
+-- read: a hosted machine is reached only through the relay (the column
+-- stays, as a shipped migration can't change).
 CREATE TABLE IF NOT EXISTS hosted_machines (
     id TEXT PRIMARY KEY,
     project TEXT NOT NULL,
@@ -72,10 +74,11 @@ pub struct DelegationRow {
     pub revoke: Option<DelegationRevoke>,
 }
 
+/// A live hosted machine. It has no direct URLs: it's reached only
+/// through the relay, whatever its row holds.
 #[derive(Debug, Clone)]
 pub struct HostedRow {
     pub cert: HostedCert,
-    pub urls: Vec<String>,
     pub last_seen: Option<u64>,
     /// `deploy` for a box the platform made for one deploy's run (M219):
     /// nobody is routed to it, and it isn't listed. `None`: a people's
@@ -114,19 +117,9 @@ fn delegation_of(body: String, by_account: String, revoke: Option<String>) -> ru
     })
 }
 
-fn hosted_of(
-    cert: String,
-    urls: String,
-    last_seen: Option<u64>,
-    purpose: Option<String>,
-) -> rusqlite::Result<HostedRow> {
+fn hosted_of(cert: String, last_seen: Option<u64>, purpose: Option<String>) -> rusqlite::Result<HostedRow> {
     let json = |e: serde_json::Error| rusqlite::Error::ToSqlConversionFailure(Box::new(e));
-    Ok(HostedRow {
-        cert: serde_json::from_str(&cert).map_err(json)?,
-        urls: serde_json::from_str(&urls).unwrap_or_default(),
-        last_seen,
-        purpose,
-    })
+    Ok(HostedRow { cert: serde_json::from_str(&cert).map_err(json)?, last_seen, purpose })
 }
 
 impl Db {
@@ -353,9 +346,9 @@ impl Db {
         Ok(self
             .c()
             .query_row(
-                "SELECT cert, urls, last_seen, purpose FROM hosted_machines WHERE id = ?1 AND removed IS NULL",
+                "SELECT cert, last_seen, purpose FROM hosted_machines WHERE id = ?1 AND removed IS NULL",
                 params![id],
-                |r| hosted_of(r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?),
+                |r| hosted_of(r.get(0)?, r.get(1)?, r.get(2)?),
             )
             .optional()?)
     }
@@ -373,26 +366,29 @@ impl Db {
     pub fn hosted_of(&self, owners: &[String]) -> anyhow::Result<Vec<HostedRow>> {
         let c = self.c();
         let mut q = c.prepare(
-            "SELECT cert, urls, last_seen, purpose FROM hosted_machines WHERE owner = ?1 AND removed IS NULL ORDER BY created",
+            "SELECT cert, last_seen, purpose FROM hosted_machines WHERE owner = ?1 AND removed IS NULL ORDER BY created",
         )?;
         let mut out = Vec::new();
         for o in owners {
-            for row in q.query_map(params![o], |r| hosted_of(r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?))? {
+            for row in q.query_map(params![o], |r| hosted_of(r.get(0)?, r.get(1)?, r.get(2)?))? {
                 out.push(row?);
             }
         }
         Ok(out)
     }
 
-    pub fn hosted_seen(&self, id: &str, urls: Option<&[String]>, now: u64) -> anyhow::Result<()> {
-        let c = self.c();
-        match urls {
-            Some(u) => c.execute(
-                "UPDATE hosted_machines SET last_seen = ?2, urls = ?3 WHERE id = ?1",
-                params![id, now, serde_json::to_string(u)?],
-            )?,
-            None => c.execute("UPDATE hosted_machines SET last_seen = ?2 WHERE id = ?1", params![id, now])?,
-        };
+    /// A hosted machine was heard from on the relay. Nothing else is
+    /// kept of how it connected: it's reached only through the relay.
+    pub fn hosted_seen(&self, id: &str, now: u64) -> anyhow::Result<()> {
+        self.c().execute("UPDATE hosted_machines SET last_seen = ?2 WHERE id = ?1", params![id, now])?;
+        Ok(())
+    }
+
+    /// A row as an older control left it, with direct URLs in it.
+    #[cfg(test)]
+    pub(crate) fn put_hosted_urls(&self, id: &str, urls: &[String]) -> anyhow::Result<()> {
+        self.c()
+            .execute("UPDATE hosted_machines SET urls = ?2 WHERE id = ?1", params![id, serde_json::to_string(urls)?])?;
         Ok(())
     }
 

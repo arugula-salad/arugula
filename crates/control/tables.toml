@@ -409,7 +409,7 @@ name = "hosted_machines"
 plane = "machine"
 process = "hub"
 holds = "metadata"
-what = "A hosted machine (M178): its certificate (public keys, project, workspace, delegation, signed with control's hosted key), its addresses, when it was last seen and removed."
+what = "A hosted machine (M178): its certificate (public keys, project, workspace, delegation, signed with control's hosted key), when it was last seen and removed. Its `urls` column is never read: a hosted machine is reached only through the relay."
 with_account = "deleted"
 seen_by = ["litestream"]
 

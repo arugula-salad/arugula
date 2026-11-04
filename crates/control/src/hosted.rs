@@ -192,8 +192,10 @@ pub(crate) fn directory(app: &App, account: &str) -> anyhow::Result<Vec<Value>> 
             Some(Owner::Team(t)) => Some(t),
             _ => None,
         };
+        // Reached only through the relay: no direct URLs, whatever its row
+        // holds. The field stays, empty, for clients that expect it.
         out.push(json!({
-            "id": h.cert.device, "name": h.cert.name, "urls": h.urls, "last_seen": h.last_seen,
+            "id": h.cert.device, "name": h.cert.name, "urls": [], "last_seen": h.last_seen,
             "online": app.relay.online(&h.cert.device), "team": team,
             "hosted": { "cert": h.cert, "delegation": d.delegation, "revocations": revokes(&d) },
         }));
@@ -438,7 +440,7 @@ pub async fn enroll(
         app.db.set_hosted_purpose(&cert.device, p)?;
     }
     info!(project, workspace, device = cert.device, ?purpose, "a hosted machine enrolled");
-    let row = HostedRow { cert, urls: vec![], last_seen: None, purpose };
+    let row = HostedRow { cert, last_seen: None, purpose };
     crate::reply(&enrollment(&app, &row)?)
 }
 
@@ -591,8 +593,10 @@ pub async fn revoke(State(app): State<Arc<App>>, s: Session, Json(b): Json<Revok
 }
 
 /// `DELETE /api/hosted/machines/{id}`: a project owner removes a hosted
-/// machine, as a device is removed: it's hung up on, and its key signs
-/// nothing here again.
+/// machine. Unlike a device's removal, which is a signed statement clients
+/// keep, this is control's word alone: control stops listing it, refuses
+/// its signatures and hangs up on it; the workspace's delete or rebuild
+/// deletes its sandbox (`HubPort::hosted_gone`).
 pub async fn remove(State(app): State<Arc<App>>, s: Session, Path(id): Path<String>) -> R {
     let h = app.db.hosted(&id)?.ok_or_else(|| err(StatusCode::NOT_FOUND, "no such machine"))?;
     let owner = Owner::parse(&h.cert.owner).ok_or_else(|| err(StatusCode::NOT_FOUND, "no such machine"))?;
