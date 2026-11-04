@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use arugula_proto::{
     api::{AclSetRequest, LinkRequest},
-    op::ops::{AclGet, AclSet, LinkMint},
+    op::ops::{AccessGet, AclGet, AclSet, LinkMint},
 };
 use axum::{Router, http::StatusCode};
 use serde_json::{Value, json};
@@ -12,7 +12,7 @@ use serde_json::{Value, json};
 use crate::{api::ApiError, mux::Cmd, ops::OpRoutes, server::App};
 
 pub fn routes() -> Router<Arc<App>> {
-    Router::new().op::<AclGet>().op::<AclSet>().op::<LinkMint>()
+    Router::new().op::<AclGet>().op::<AclSet>().op::<LinkMint>().op::<AccessGet>()
 }
 
 fn refuse(status: StatusCode, why: impl Into<String>) -> ApiError {

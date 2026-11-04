@@ -144,6 +144,13 @@ pub trait Hooks: Send + Sync + 'static {
         false
     }
 
+    /// The owner's ssh invites that still work (Arugula #681: the access
+    /// view lists them as `GET /api/guests` does). `None` in a build
+    /// without guest ssh, or before its store is open.
+    fn guests(&self) -> Option<Vec<arugula_proto::api::GuestInvite>> {
+        None
+    }
+
     /// What Labs tells control on the link's text channel (guest routes).
     fn control_out(&self) -> Option<tokio::sync::watch::Receiver<Option<String>>> {
         None

@@ -21,6 +21,7 @@ import { openDeveloper } from "./developer";
 import { openMachineTelemetry } from "./machine-telemetry";
 import { openSharing } from "./sharing";
 import { openAgentGrants } from "./agent-grants";
+import { openAccess } from "./access";
 import { directory } from "../hosts";
 import { openRules } from "./rules";
 import { openAppearance } from "../../shared/ui/appearance";
@@ -457,13 +458,15 @@ function under(selector: string) {
   return { clientX: at ? at.left + 8 : innerWidth / 2, clientY: at ? at.bottom : innerHeight / 3, preventDefault() {} };
 }
 
-/** The shown machine's settings: its standing permission rules (#166), its
- * usage and crash reports (M103) and its Labs flags (#665), the owner's.
- * In the machine menu. Developer settings are there whether or not the
- * machine has a `flags.json` yet: the dialog is how a flag gets turned on. */
+/** The shown machine's settings: who can reach it (Arugula #681), its
+ * standing permission rules (#166), its usage and crash reports (M103) and
+ * its Labs flags (#665), the owner's. In the machine menu. Developer
+ * settings are there whether or not the machine has a `flags.json` yet: the
+ * dialog is how a flag gets turned on. */
 export function machineSettingsItems(client: Client): MenuItem[] {
   if (!client.state || client.state.roles) return [];
   return [
+    { label: "Access…", hint: "Who can reach this machine, and as what", run: () => openAccess(client) },
     { label: "Permission rules…", run: () => openRules(client) },
     { label: "Usage and crash reports…", run: () => openMachineTelemetry(client) },
     // Native #205: a sharing setting, which was the `guest-ssh` flag.

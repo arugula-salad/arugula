@@ -353,6 +353,7 @@ macro_rules! every_op {
         $m!($crate::op::ops::GuestRevoke);
         $m!($crate::op::ops::AclGet);
         $m!($crate::op::ops::AclSet);
+        $m!($crate::op::ops::AccessGet);
         $m!($crate::op::ops::LinkMint);
         $m!($crate::op::ops::InviteSend);
         $m!($crate::op::ops::TeamPinsGet);
@@ -380,7 +381,7 @@ pub mod ops {
     use crate::{
         Machine, PaneId,
         api::{
-            AclSetRequest, Adapters, AgentCan, AgentsInventory, AskAnswer, AskRequest, AttentionRequest,
+            AccessView, AclSetRequest, Adapters, AgentCan, AgentsInventory, AskAnswer, AskRequest, AttentionRequest,
             ConversationList, ConversationsQuery, DetectionAnswer, DocAsset, DocContent, DocLinkUrl, DocOpenRequest,
             DocOpened, DocPreview, DocRow, DriverEntry, Empty, FollowUpRequest, FollowedUp, FollowerLinkRequest,
             GuestInvite, GuestInviteRequest, IdeDiffs, IdeDiffsRequest, IdeInfo, IdeMentionRequest, IdeMentioned,
@@ -1658,6 +1659,22 @@ pub mod ops {
         type Path = ();
         type Req = AclSetRequest;
         type Res = serde_json::Value;
+    }
+
+    /// `GET /api/access` (Arugula #681): who can reach this machine and as
+    /// what, from what it holds (`arugula access`, the shell's *Access…*).
+    /// The owner's, and read-only: nothing an owner can't read from
+    /// `/api/acl`, `/api/shares`, `/api/guests` and the roster.
+    pub struct AccessGet;
+
+    impl Op for AccessGet {
+        const NAME: &'static str = "access.get";
+        const METHOD: Method = Method::Get;
+        const PATH: &'static str = "/api/access";
+        const ACCESS: Access = Access::Owner;
+        type Path = ();
+        type Req = Empty;
+        type Res = AccessView;
     }
 
     /// `POST /api/links` (M19): a read-only link to one session, for a

@@ -344,11 +344,14 @@ enum Command {
         #[command(subcommand)]
         cmd: Option<cmd::share::SharesCmd>,
     },
-    /// Who may watch or drive a session on this machine.
+    /// Who can reach this machine, and as what.
     ///
-    /// `access` lists grants, `access grant SESSION WHO ROLE`, `access revoke
-    /// SESSION WHO`, `access log`. WHO is a tailnet login (or `account:ID` from
-    /// control).
+    /// `access` shows it: the owner, the team's people by their role, each
+    /// session's shares, links, ssh guests and trust, each saying whose word
+    /// it is (this machine's, or the team's roster), then its agents' powers
+    /// on Arugula cloud. `access grant SESSION WHO ROLE` shares a session,
+    /// `access revoke SESSION WHO` ends that, `access log` lists every grant
+    /// and revoke. WHO is a tailnet login (or `account:ID` from control).
     Access {
         #[command(subcommand)]
         cmd: Option<cmd::access::AccessCmd>,

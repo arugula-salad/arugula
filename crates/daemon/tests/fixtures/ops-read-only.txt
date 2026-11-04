@@ -1,4 +1,5 @@
 # name method path
+access.get GET /api/access
 acl.get GET /api/acl
 adapters.list GET /api/agents/adapters
 agent_can.get GET /api/agent-can

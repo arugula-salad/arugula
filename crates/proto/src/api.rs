@@ -761,6 +761,109 @@ pub struct GuestInvite {
     pub jump: Option<String>,
 }
 
+/// `GET /api/access` (Arugula #681, the `access.get` operation): who can
+/// reach this machine, and as what, from what the machine holds: its owner,
+/// the roster it checked itself (team owners as owners, the others by their
+/// team role), the session shares in `acl.json` with their floors, links and
+/// when they end, ssh guests, and trust live now. The owner's, read-only, and
+/// nothing an owner can't read from `GET /api/acl`, `/api/shares`,
+/// `/api/guests` and the roster. Each row says whose word it is
+/// ([`AccessRow::word`]). This machine's agents' powers are control's word
+/// (`GET /api/grants`): the page and `arugula access` add them, labelled so.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[cfg_attr(feature = "ts", ts(optional_fields = nullable))]
+pub struct AccessView {
+    /// `local` (joined to no control), `personal`, `team` or `hosted`.
+    pub kind: String,
+    /// A hosted machine's purpose: `people` (a workspace), `deploy` (one
+    /// deploy's box: none of the project's people are admitted, and control
+    /// routes nobody to it), `snapshot` (a box building a snapshot: its
+    /// people are admitted, and control routes nobody to it) or `both`.
+    #[serde(default)]
+    pub purpose: Option<String>,
+    /// The machine's name, and (joined) its device id in control's
+    /// directory and that control's URL: what its agents' powers are
+    /// listed under there, and where.
+    pub name: String,
+    #[serde(default)]
+    pub machine: Option<String>,
+    #[serde(default)]
+    pub control: Option<String>,
+    /// A team machine's team, or a hosted machine's project's.
+    #[serde(default)]
+    pub team: Option<AccessTeam>,
+    /// Guest SSH access: the setting (`None`: this build has no guest ssh).
+    #[serde(default)]
+    pub guest_ssh: Option<bool>,
+    /// The sessions, so a row's session has a name.
+    #[serde(default)]
+    pub sessions: Vec<AccessSession>,
+    /// Who can reach it, the owner first.
+    #[serde(default)]
+    pub rows: Vec<AccessRow>,
+    /// What holds for the whole machine, in sentences: a locked team, a
+    /// hosted machine's editors having full use.
+    #[serde(default)]
+    pub notes: Vec<String>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct AccessTeam {
+    pub id: String,
+    pub name: String,
+    /// Locked: only its owners get in.
+    #[serde(default)]
+    pub locked: bool,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct AccessSession {
+    pub id: SessionId,
+    pub name: String,
+}
+
+/// One person, team, link or guest that reaches the machine, and as what.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[cfg_attr(feature = "ts", ts(optional_fields = nullable))]
+pub struct AccessRow {
+    /// `owner` (the machine's), `team_owner` (a team's other owner, an
+    /// owner here), `team_role` (a team member by the roster), `share` (a
+    /// session share), `team_share` (a member of a team a session was
+    /// shared with), `link` (a read-only link: to a session, or to one
+    /// pane), `guest` (an ssh invite), `trust` (minutes to type into one
+    /// pane).
+    pub kind: String,
+    /// Whose word: `this_machine` (its own files and memory) or `roster`
+    /// (the team's signed roster, checked by this machine).
+    pub word: String,
+    /// What to call them.
+    pub who: String,
+    /// Their principal id (`account:…`, `tailnet:…`, `team:…`, `link:…`),
+    /// where there is one.
+    #[serde(default)]
+    pub principal: Option<String>,
+    pub role: arugula_core::Role,
+    /// Where they reach: one session, one pane (in `session`), or every
+    /// session (neither).
+    #[serde(default)]
+    pub session: Option<SessionId>,
+    #[serde(default)]
+    pub pane: Option<PaneId>,
+    /// A "from now" share: since when (ms), and nothing before it.
+    #[serde(default)]
+    pub from_ms: Option<u64>,
+    /// When it ends (ms): a link, an invite, trust.
+    #[serde(default)]
+    pub until_ms: Option<u64>,
+    /// A word more: "full use, as an owner" on a hosted machine's editor,
+    /// how an invite may be used, which team a share came through.
+    #[serde(default)]
+    pub note: Option<String>,
+}
 /// `GET /api/doc-links/ID` (#1066): a shared Doc's URL, with its key.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]

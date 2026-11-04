@@ -9,6 +9,7 @@ mod replay;
 #[cfg(unix)]
 mod testnet;
 
+mod access_view;
 mod agent_screens;
 mod agents;
 mod agents_real;

@@ -207,6 +207,10 @@ impl Hooks for Labs {
         guest_ssh::guests().map(|g| g.routes_messages())
     }
 
+    fn guests(&self) -> Option<Vec<arugula_proto::api::GuestInvite>> {
+        guest_ssh::guests().map(|g| g.list())
+    }
+
     fn heard_from_control(&self, text: &str) -> bool {
         guest_ssh::guests().is_some_and(|g| g.heard_from_control(text))
     }
