@@ -260,9 +260,10 @@ alone: `main-full-run.yml` runs every job on main's head each night, which
 saves them and runs what groups skip by path.
 
 **Settings**, in the "binaries check" ruleset on the default branch:
-*Require merge queue* with squash; *Build concurrency* 5, since GitHub builds
-each queued pull request apart, and this caps throughput; *Maximum group size*
-5, *Minimum* 1, *Wait time* 0; *Only merge non-failing pull requests* off
+*Require merge queue* with squash; *Build concurrency* 3, since GitHub builds
+each queued pull request apart, so this caps throughput, and each build takes
+a Mac (there are three) and about 20 of the plan's 60 hosted jobs; *Maximum
+group size* 5, *Minimum* 1, *Wait time* 0; *Only merge non-failing pull requests* off
 (`HEADGREEN`), since a later group contains the ones ahead and its pass clears
 them, so a flake rarely ejects anyone while a real break still fails every
 later group; *Status check timeout* 45 minutes. *Require status checks to pass*
