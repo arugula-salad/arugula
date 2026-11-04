@@ -501,14 +501,37 @@ test("a read-only link works logged out, and dies at expiry", async ({ browser }
   const url = await alice.evaluate(
     ([s]) => {
       const c = window.__arugula.client;
-      return window.__arugula.control!.makeLink((m, p, b) => c.request(m, p, b), c.e2e!.daemon.id, s, 12, false);
+      return window.__arugula.control!.makeLink((m, p, b) => c.request(m, p, b), c.e2e!.daemon.id, s, 16, false);
     },
     [session] as const,
   );
   await new Promise((r) => setTimeout(r, 1500)); // control learns the daemon has a link
   const stranger = await (await browser.newContext()).newPage();
+  // Everything the page asks for that isn't a file of its own.
+  const asked: string[] = [];
+  stranger.on("request", (r) => {
+    if (["fetch", "xhr", "eventsource"].includes(r.resourceType()) || /\/api\/|control\.json/.test(r.url())) asked.push(r.url());
+  });
+  stranger.on("websocket", (w) => asked.push(w.url()));
   await stranger.goto(url);
+  // It says what it is and waits: nothing's fetched, nothing connects, and
+  // the page hasn't started.
+  const gate = stranger.locator("[data-link-gate]");
+  await expect(gate).toContainText("Read-only link");
+  await expect(gate).toContainText("The link ends");
+  await new Promise((r) => setTimeout(r, 1000));
+  expect(asked).toEqual([]);
+  expect(await stranger.evaluate(() => window.__arugula)).toBeUndefined();
+  // A script's click isn't someone's.
+  await stranger.locator("[data-link-open]").evaluate((b: HTMLElement) => b.click());
+  await new Promise((r) => setTimeout(r, 300));
+  expect(asked).toEqual([]);
+  await expect(gate).toBeVisible();
+  // Someone's is.
+  await stranger.locator("[data-link-open]").click();
+  await expect(gate).toHaveCount(0);
   await expect.poll(() => stranger.evaluate(() => window.__arugula?.client.connected), { timeout: 20_000 }).toBe(true);
+  expect(asked.some((u) => u.includes("/api/relay/link/"))).toBe(true);
   expect(await stranger.evaluate(() => window.__arugula.control)).toBeNull();
   await ready(stranger, pane);
   // It says what it is, and when it ends (UI audit #149).
@@ -525,6 +548,86 @@ test("a read-only link works logged out, and dies at expiry", async ({ browser }
   await expect.poll(() => stranger.evaluate(() => window.__arugula.client.connected), { timeout: 20_000 }).toBe(false);
   await new Promise((r) => setTimeout(r, 3000));
   expect(await stranger.evaluate(() => window.__arugula.client.connected)).toBe(false);
+  await expect(stranger.locator("[data-link-ended]")).toContainText("This link has ended");
+});
+
+test("a link that has run out says so, without connecting", async ({ browser }) => {
+  // The time it ends is in the link: this one's over, whatever the machine says.
+  const key = "ab".repeat(32);
+  const over = `/#link=ab.${key}.${key}.${key}.${Date.now() - 1000}`;
+  const stranger = await (await browser.newContext()).newPage();
+  const sockets: string[] = [];
+  stranger.on("websocket", (w) => sockets.push(w.url()));
+  await stranger.goto(`${base}${over}`);
+  await expect(stranger.locator("[data-link-ended]")).toContainText("This link has ended");
+  await expect(stranger.locator("[data-link-open]")).toHaveCount(0);
+  expect(sockets).toEqual([]);
+  await stranger.close();
+});
+
+test("Revoke in the Share dialog ends a link's live viewer", async ({ browser }) => {
+  const session = await alice.evaluate(() => window.__arugula.client.state!.sessions[0].id);
+  const daemon = await alice.evaluate(() => window.__arugula.client.e2e!.daemon.id);
+  // Control's relay answers a link's viewer, or it doesn't.
+  const relayLets = () =>
+    alice.evaluate(
+      (id) =>
+        new Promise<boolean>((done) => {
+          const w = new WebSocket(`${location.origin.replace(/^http/, "ws")}/api/relay/link/${id}`);
+          w.onopen = () => (w.close(), done(true));
+          w.onerror = () => done(false);
+        }),
+      daemon,
+    );
+  await alice.getByRole("button", { name: "Share session" }).click();
+  const dialog = alice.locator(`[data-share="${session}"]`);
+  await dialog.locator("[data-make-link]").click();
+  const row = dialog.locator('[data-share-live^="link:"]');
+  await expect(row).toHaveCount(1);
+  await expect(row).toContainText("Read-only link to this session");
+  await expect(row).toContainText(/ends in /);
+  // Its one place: not among the people, with a role it can't have.
+  await expect(dialog.locator('[data-grant^="link:"]')).toHaveCount(0);
+  const url = await dialog.locator("[data-link]").innerText();
+  await expect.poll(relayLets, { timeout: 10_000 }).toBe(true);
+
+  const stranger = await (await browser.newContext()).newPage();
+  await stranger.goto(url);
+  await stranger.locator("[data-link-open]").click();
+  await expect.poll(() => stranger.evaluate(() => window.__arugula?.client.connected), { timeout: 20_000 }).toBe(true);
+  await ready(stranger, pane);
+
+  // It goes at once: what the viewer saw, its row, and the link Alice was shown.
+  const t = Date.now();
+  await row.locator("[data-revoke]").click();
+  await expect.poll(() => stranger.evaluate(() => window.__arugula.client.connected), { timeout: 3000, intervals: [50] }).toBe(false);
+  expect(Date.now() - t).toBeLessThan(1500);
+  await expect(stranger.locator("[data-link-ended]")).toContainText("This link has ended");
+  await expect(stranger.locator(`[data-pane="${pane}"]`)).toHaveCount(0);
+  await expect(row).toHaveCount(0);
+  await expect(dialog.locator("[data-link]")).toHaveCount(0);
+  // It stops asking, too.
+  const sockets: string[] = [];
+  stranger.on("websocket", (w) => sockets.push(w.url()));
+  await new Promise((r) => setTimeout(r, 1500));
+  expect(sockets).toEqual([]);
+  // Nothing lingers on control: its relay turns a link's viewer away again.
+  await expect.poll(relayLets, { timeout: 10_000 }).toBe(false);
+  await stranger.close();
+
+  // With another link live the relay lets the old one through, and the
+  // machine says no: its page says it's over.
+  await dialog.locator("[data-make-link]").click();
+  await expect(row).toHaveCount(1);
+  await expect.poll(relayLets, { timeout: 10_000 }).toBe(true);
+  const again = await (await browser.newContext()).newPage();
+  await again.goto(url);
+  await again.locator("[data-link-open]").click();
+  await expect(again.locator("[data-link-ended]")).toContainText("This link has ended", { timeout: 20_000 });
+  await again.close();
+  await row.locator("[data-revoke]").click();
+  await expect(row).toHaveCount(0);
+  await dialog.getByRole("button", { name: "Done" }).click();
 });
 
 test("removing a member cuts them off within a second", async () => {

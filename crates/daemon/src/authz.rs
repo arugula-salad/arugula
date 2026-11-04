@@ -286,6 +286,8 @@ mod tests {
             (&g, "/api/acl"),
             (&p, "/api/acl"),
             (&p, "/api/links"),
+            (&g, "/api/links"),
+            (&d, "/api/links/0123456789ab"),
             (&p, "/api/invite"),
             (&g, "/api/team-pins"),
             (&p, "/api/team-pins"),

@@ -165,6 +165,7 @@ async function keyless(): Promise<boolean> {
 
 // The app waits for that answer, and doesn't start on its way out: its own
 // changes to the address (a hash, replaceState) would cancel the navigation.
-if (typeof window !== "undefined" && onLoopback(location) && install() && (await keyless())) {
+// A read-only link's page asks nothing until it's opened (`ui/link-note.tsx`).
+if (typeof window !== "undefined" && onLoopback(location) && install() && !location.hash.startsWith("#link=") && (await keyless())) {
   await new Promise(() => {});
 }

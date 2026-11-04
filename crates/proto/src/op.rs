@@ -136,6 +136,8 @@ impl Request for crate::api::WaitRequest {}
 
 impl Request for crate::api::PortsQuery {}
 
+impl Request for crate::api::LinksQuery {}
+
 impl Request for crate::api::SendRequest {}
 
 impl Request for crate::api::KeysRequest {}
@@ -356,6 +358,8 @@ macro_rules! every_op {
         $m!($crate::op::ops::AclGet);
         $m!($crate::op::ops::AclSet);
         $m!($crate::op::ops::LinkMint);
+        $m!($crate::op::ops::LinksList);
+        $m!($crate::op::ops::LinkRevoke);
         $m!($crate::op::ops::InviteSend);
         $m!($crate::op::ops::TeamPinsGet);
         $m!($crate::op::ops::TeamPinsSet);
@@ -389,14 +393,14 @@ pub mod ops {
             ConversationList, ConversationsQuery, DetectionAnswer, DocAsset, DocContent, DocLinkUrl, DocOpenRequest,
             DocOpened, DocPreview, DocRow, DriverEntry, Empty, FollowUpRequest, FollowedUp, FollowerLinkRequest,
             GuestInvite, GuestInviteRequest, IdeDiffs, IdeDiffsRequest, IdeInfo, IdeMentionRequest, IdeMentioned,
-            InboxAnswer, InstallAdapterRequest, InviteRequest, Invited, KeysRequest, LinkRequest, McpTokenRequest,
-            MentionsRequest, MouseRequest, NotifyPref, NotifyRequest, NvimBlockOpened, NvimBlockRequest,
-            NvimHelpRequest, NvimOpenRequest, NvimOpened, NvimPluginCopies, NvimPluginInstalled, NvimPluginRemoved,
-            NvimTheme, NvimThemed, OpenConversationRequest, OpenConversationResponse, PaneDiff, PaneSummary,
-            PermitAnswer, PermitRequest, Ports, PortsQuery, Process, PromptRequest, PromptResult, PushKey,
-            PushSubscriptions, Rules, RunResponse, SendRequest, Share, ShareRequest, ShellEnv, SigninLink, StudioApps,
-            StudioLoggedIn, StudioLoginRequest, StudioStatus, Subscription, SyncedHost, SyncedRotated, TeamPins,
-            TeamPinsRequest, TokenInfo, WaitRequest, WaitResult, WithdrawRequest,
+            InboxAnswer, InstallAdapterRequest, InviteRequest, Invited, KeysRequest, LinkRequest, LinksQuery,
+            McpTokenRequest, MentionsRequest, MouseRequest, NotifyPref, NotifyRequest, NvimBlockOpened,
+            NvimBlockRequest, NvimHelpRequest, NvimOpenRequest, NvimOpened, NvimPluginCopies, NvimPluginInstalled,
+            NvimPluginRemoved, NvimTheme, NvimThemed, OpenConversationRequest, OpenConversationResponse, PaneDiff,
+            PaneSummary, PermitAnswer, PermitRequest, Ports, PortsQuery, Process, PromptRequest, PromptResult, PushKey,
+            PushSubscriptions, Rules, RunResponse, SendRequest, SessionLink, Share, ShareRequest, ShellEnv, SigninLink,
+            StudioApps, StudioLoggedIn, StudioLoginRequest, StudioStatus, Subscription, SyncedHost, SyncedRotated,
+            TeamPins, TeamPinsRequest, TokenInfo, WaitRequest, WaitResult, WithdrawRequest,
         },
         flags::{FlagInfo, FlagSetRequest},
         hosts::SandboxList,
@@ -1706,6 +1710,36 @@ pub mod ops {
         type Path = ();
         type Req = LinkRequest;
         type Res = serde_json::Value;
+    }
+
+    /// `GET /api/links`: the read-only links to sessions that still work
+    /// (`arugula links`), or one session's with `?session=N`. No keys, so
+    /// not a credential: it says no more than `GET /api/acl` does.
+    pub struct LinksList;
+
+    impl Op for LinksList {
+        const NAME: &'static str = "links.list";
+        const METHOD: Method = Method::Get;
+        const PATH: &'static str = "/api/links";
+        const ACCESS: Access = Access::Owner;
+        type Path = ();
+        type Req = LinksQuery;
+        type Res = Vec<SessionLink>;
+    }
+
+    /// `DELETE /api/links/ID`: end a read-only link now (`arugula links
+    /// revoke`). Its viewers are cut off at once, and control stops letting
+    /// them through once no other link is live.
+    pub struct LinkRevoke;
+
+    impl Op for LinkRevoke {
+        const NAME: &'static str = "link.revoke";
+        const METHOD: Method = Method::Delete;
+        const PATH: &'static str = "/api/links/{id}";
+        const ACCESS: Access = Access::Owner;
+        type Path = String;
+        type Req = Empty;
+        type Res = Empty;
     }
 
     /// `POST /api/invite` (#233): share a session with someone and tell them

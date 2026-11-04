@@ -265,6 +265,27 @@ impl Acl {
         Ok(id)
     }
 
+    /// The read-only links that still work, oldest first.
+    pub fn links(&self) -> Vec<Grant> {
+        let now = now_ms();
+        self.grants
+            .read()
+            .unwrap()
+            .iter()
+            .filter(|g| g.key.is_some() && g.expires.is_some_and(|e| e > now))
+            .cloned()
+            .collect()
+    }
+
+    /// End the read-only link with this principal now, as `by` (false: no
+    /// such link). Anything else's grant isn't a link's, and stays.
+    pub fn revoke_link(&self, principal: &str, by: &str) -> std::io::Result<bool> {
+        let found = self.grants.read().unwrap().iter().find(|g| g.principal == principal && g.key.is_some()).cloned();
+        let Some(g) = found else { return Ok(false) };
+        self.set(g.session, &g.principal, &g.name, None, by)?;
+        Ok(true)
+    }
+
     /// Links that ran out go (true if any did).
     pub fn prune_links(&self) -> bool {
         let now = now_ms();
@@ -458,6 +479,48 @@ mod tests {
         assert!(!again.knows(&alice));
         let log = again.audit();
         assert_eq!(log.iter().map(|e| e["action"].as_str().unwrap()).collect::<Vec<_>>(), ["grant", "grant", "revoke"]);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn revoking_a_link_ends_that_link_and_nothing_else() {
+        let dir = std::env::temp_dir().join(format!("arugula-acl-link-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let acl = Acl::open(&dir);
+        let until = now_ms() + 60_000;
+        let (a, b) = ("a".repeat(64), "b".repeat(64));
+        let first = acl.add_link(3, &a, until + 1000, None).unwrap();
+        let second = acl.add_link(4, &b, until, None).unwrap();
+        acl.set(3, "tailnet:alice@example.com", "alice", Some(Role::Viewer), "owner").unwrap();
+        assert_eq!(acl.links().len(), 2);
+        assert_eq!(acl.links_until(), Some(until + 1000));
+
+        // Not a link: its grant stays, whatever the principal.
+        assert!(!acl.revoke_link("tailnet:alice@example.com", "owner").unwrap());
+        assert!(!acl.revoke_link("link:nothing", "owner").unwrap());
+
+        assert!(acl.revoke_link(&first, "owner").unwrap());
+        assert!(acl.link_by_key(&a).is_none());
+        assert!(acl.link_by_key(&b).is_some());
+        assert!(!acl.knows(&Principal::User { id: first.clone(), name: String::new(), pic: None }));
+        assert!(acl.knows(&Principal::tailnet("alice@example.com")));
+        // What control is told follows the links left, down to none.
+        assert_eq!(acl.links_until(), Some(until));
+        assert!(!acl.revoke_link(&first, "owner").unwrap());
+        assert!(acl.revoke_link(&second, "owner").unwrap());
+        assert_eq!(acl.links_until(), None);
+        assert!(acl.links().is_empty());
+        // It stays gone across a restart, and the log says so.
+        let again = Acl::open(&dir);
+        assert!(again.link_by_key(&a).is_none());
+        let log = again.audit();
+        assert_eq!(
+            log.iter()
+                .filter(|e| e["principal"] == first.as_str())
+                .map(|e| e["action"].as_str().unwrap())
+                .collect::<Vec<_>>(),
+            ["link", "revoke"]
+        );
         std::fs::remove_dir_all(dir).unwrap();
     }
 

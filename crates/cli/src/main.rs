@@ -368,6 +368,14 @@ enum Command {
         #[command(subcommand)]
         cmd: Option<cmd::share::SharesCmd>,
     },
+    /// Read-only links to a session that still work.
+    ///
+    /// Made in the Share dialog. `links revoke ID` ends one; anyone watching
+    /// is cut off.
+    Links {
+        #[command(subcommand)]
+        cmd: Option<cmd::share::LinksCmd>,
+    },
     /// History other hosts synced here (kept encrypted).
     Synced {
         #[command(subcommand)]
@@ -641,7 +649,7 @@ const GROUPS: &[(&str, &[&str])] = &[
         &["describe", "call", "open", "edit", "diff", "view", "chat", "pr", "issue", "editors", "workspace", "app"],
     ),
     ("Agents", &["agent", "claude", "attention", "rules", "ide", "shell-env", "agents"]),
-    ("Sharing", &["share", "shares", "invite", "access", "guests"]),
+    ("Sharing", &["share", "shares", "links", "invite", "access", "guests"]),
     (
         "Machines and control",
         &[
@@ -954,6 +962,7 @@ fn real_main(mut cli: Cli) -> anyhow::Result<i32> {
         Command::Access { cmd } => cmd::access::run(cmd, ctx),
         Command::Invite(args) => cmd::invite::run(args, ctx),
         Command::Shares { cmd } => cmd::share::shares(cmd, ctx),
+        Command::Links { cmd } => cmd::share::links(cmd, ctx),
         Command::Mcp(args) => cmd::mcp::run(args, ctx),
         Command::Synced { cmd } => cmd::synced::run(cmd, ctx),
         Command::Hosts { cmd } => {

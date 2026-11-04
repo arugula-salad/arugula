@@ -2,9 +2,10 @@
 
 use std::sync::Arc;
 
+use arugula_core::SessionId;
 use arugula_proto::{
-    api::{AclSetRequest, LinkRequest},
-    op::ops::{AclGet, AclSet, LinkMint},
+    api::{AclSetRequest, LinkRequest, SessionLink},
+    op::ops::{AclGet, AclSet, LinkMint, LinkRevoke, LinksList},
 };
 use axum::{Router, http::StatusCode};
 use serde_json::{Value, json};
@@ -12,7 +13,7 @@ use serde_json::{Value, json};
 use crate::{api::ApiError, mux::Cmd, ops::OpRoutes, server::App};
 
 pub fn routes() -> Router<Arc<App>> {
-    Router::new().op::<AclGet>().op::<AclSet>().op::<LinkMint>()
+    Router::new().op::<AclGet>().op::<AclSet>().op::<LinkMint>().op::<LinksList>().op::<LinkRevoke>()
 }
 
 fn refuse(status: StatusCode, why: impl Into<String>) -> ApiError {
@@ -44,6 +45,35 @@ pub(crate) async fn link(app: &App, b: LinkRequest) -> Result<Value, ApiError> {
     }
 }
 
+/// The read-only links that still work: `session`'s, or every session's.
+pub(crate) fn links(app: &App, session: Option<SessionId>) -> Vec<SessionLink> {
+    let links = app.acl.links().into_iter().filter(|g| session.is_none_or(|s| g.session == s));
+    links
+        .map(|g| SessionLink {
+            id: g.principal.strip_prefix("link:").unwrap_or(&g.principal).to_owned(),
+            session: g.session,
+            made_ms: g.at,
+            expires_ms: g.expires.unwrap_or_default(),
+        })
+        .collect()
+}
+
+/// End a read-only link now. Everyone who has nothing else here hangs up as
+/// when a grant goes (`AclChanged`), and control hears what's left, so with
+/// no other link live its relay stops letting strangers through to here.
+pub(crate) fn revoke_link(app: &App, id: &str) -> Result<(), ApiError> {
+    let principal = format!("link:{}", id.strip_prefix("link:").unwrap_or(id));
+    match app.acl.revoke_link(&principal, "owner") {
+        Ok(true) => {
+            app.mux.send(Cmd::AclChanged);
+            app.control.poke();
+            Ok(())
+        }
+        Ok(false) => Err(refuse(StatusCode::NOT_FOUND, format!("no read-only link {id}"))),
+        Err(e) => Err(refuse(StatusCode::INTERNAL_SERVER_ERROR, e.to_string())),
+    }
+}
+
 pub(crate) fn list(app: &App) -> Value {
     let audit = app.acl.audit();
     let recent = &audit[audit.len().saturating_sub(200)..];
@@ -59,6 +89,12 @@ pub(crate) fn list(app: &App) -> Value {
 }
 
 pub(crate) async fn set(app: &App, b: AclSetRequest) -> Result<Value, ApiError> {
+    if b.principal.starts_with("link:") {
+        return Err(refuse(
+            StatusCode::BAD_REQUEST,
+            "a read-only link is always a viewer; `arugula links revoke` ends one",
+        ));
+    }
     let ok_id = |rest: &str| !rest.is_empty() && rest.len() <= 200 && !rest.chars().any(char::is_control);
     let valid = b.principal.strip_prefix("tailnet:").is_some_and(ok_id)
         || b.principal.strip_prefix("account:").is_some_and(ok_id)
