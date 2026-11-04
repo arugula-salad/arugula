@@ -7,6 +7,7 @@ session/resume work from a new process.
 Prompts:
   hello          a reply, a usage_update (cost grows by 0.01 per turn)
   run CMD        a tool call that asks permission, then "prints" its output
+  plain CMD      run, but 40 lines of plain text with no escape codes
   perm TOOL      a tool call named TOOL (an MCP tool, say) that asks
                  permission; the reply says "Allowed." or "Not allowed."
   read PATH      a Read tool call with no command that fails (not a shell command)
@@ -584,8 +585,9 @@ def prompt(mid, p):
             update(sid, s, {"sessionUpdate": "tool_call_update", "toolCallId": tid, "status": "failed",
                             "rawOutput": "User refused permission to run tool"})
             msg("Not allowed.")
-    elif text.startswith("run "):
-        cmd = text[4:]
+    elif text.startswith("run ") or text.startswith("plain "):
+        plain = text.startswith("plain ")
+        cmd = text.split(" ", 1)[1]
         tid = f"tool{n}"
         update(sid, s, {"sessionUpdate": "tool_call", "toolCallId": tid, "title": "Terminal", "kind": "execute",
                         "status": "pending", "_meta": {"terminal_info": {"terminal_id": tid}}})
@@ -597,7 +599,7 @@ def prompt(mid, p):
             update(sid, s, {"sessionUpdate": "tool_call_update", "toolCallId": tid, "status": "in_progress"})
             update(sid, s, {"sessionUpdate": "tool_call_update", "toolCallId": tid,
                             "_meta": {"terminal_output": {"terminal_id": tid,
-                                                          "data": f"\x1b[32mran: {cmd}\x1b[0m\r\n"}}})
+                                                          "data": "".join(f"line {i}\n" for i in range(1, 41)) if plain else f"\x1b[32mran: {cmd}\x1b[0m\r\n"}}})
             update(sid, s, {"sessionUpdate": "tool_call_update", "toolCallId": tid, "status": "completed",
                             "_meta": {"terminal_exit": {"terminal_id": tid, "exit_code": 0}}})
             msg("Ran it.")

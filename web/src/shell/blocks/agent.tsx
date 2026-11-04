@@ -1,12 +1,13 @@
 import { AgentMessage } from "../../shared/agent-message";
 // Agent blocks (M6b): an agent run as messages, thoughts and tool-call
-// cards, with its commands' output in a read-only terminal, permission
+// cards, with its commands' output as text (in a read-only terminal if it
+// has colours or redraws its line), permission
 // requests as approve/deny cards, questions and forms as cards (M6c), and a
 // composer, which takes images and files pasted, dropped or picked (M71).
 // Works the same on a phone.
 
 import { render, type ComponentChildren } from "preact";
-import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import type { Client } from "../client";
@@ -205,6 +206,12 @@ const strip = (s: string) => s.replace(/\x1b\[[0-9;?]*[ -/]*[@-~]/g, "").replace
 /** Tool cards older than this many show plain text instead of a terminal. */
 const LIVE_TERMINALS = 30;
 
+/** Output only a terminal can draw: escape codes, or a carriage return that
+ * overwrites its line. Most has neither (Claude Code's never does), and a
+ * `<pre>` draws that for far less: each terminal adds `<style>` tags, which
+ * make the browser restyle the whole page, every other block's included. */
+const NEEDS_TERMINAL = /\x1b|\r(?!\n)/;
+
 export function money(n: number, currency: string | null) {
   const sym = !currency || currency === "USD" ? "$" : `${currency} `;
   return `${sym}${n < 0.01 ? n.toFixed(4) : n.toFixed(2)}`;
@@ -260,12 +267,25 @@ function Output({ data }: { data: string }) {
   return <div class="agent-output" ref={host} />;
 }
 
+/** A command's output with no terminal: scrolled to its end, as a terminal
+ * is, by the box's reversed column rather than by measuring it. */
+function PlainOutput({ data }: { data: string }) {
+  return (
+    <pre class="agent-tool-text agent-tool-tail">
+      <span>{data}</span>
+    </pre>
+  );
+}
+
 function ToolCard({ t, live, openAt }: { t: Tool; live: boolean; openAt?: (path: string) => void }) {
   const [open, setOpen] = useState(true);
   const icon = t.name === "AskUserQuestion" ? "?" : { execute: "$", edit: "✎", read: "◱", delete: "✕", move: "→", search: "⌕", fetch: "↓", think: "…" }[t.kind] ?? "⚙";
   const body = t.output || t.text;
+  // Every update draws every card: look through the output, or strip it, once.
+  const terminal = useMemo(() => NEEDS_TERMINAL.test(t.output), [t.output]);
+  const plain = useMemo(() => (terminal ? strip(t.output) : t.output), [terminal, t.output]);
   return (
-    <div class={`agent-tool ${t.status}`} data-tool={t.id}>
+    <div class={`agent-tool ${t.status}${live && terminal ? " agent-tool-term" : ""}`} data-tool={t.id}>
       <button class="agent-tool-head" onClick={() => setOpen(!open)} aria-expanded={open}>
         <span class="agent-tool-icon">{icon}</span>
         <span class="agent-tool-title">{t.title || t.kind || "tool"}</span>
@@ -292,7 +312,7 @@ function ToolCard({ t, live, openAt }: { t: Tool; live: boolean; openAt?: (path:
             </div>
           )}
           {t.output ? (
-            live ? <Output data={t.output} /> : <pre class="agent-tool-text">{strip(t.output)}</pre>
+            live && terminal ? <Output data={t.output} /> : <PlainOutput data={plain} />
           ) : body ? (
             <pre class="agent-tool-text">{body}</pre>
           ) : null}

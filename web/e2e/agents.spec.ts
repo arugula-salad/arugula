@@ -76,6 +76,36 @@ test.describe("desktop", () => {
   });
 });
 
+test("a command's plain output is text, ending at its last line; only colours get a terminal", async ({ page }) => {
+  await reset(page);
+  const [term] = await panes(page);
+  await menu(page, paneEl(page, term), "Start an agent…");
+  await startFake(page, "plain make");
+  await expect.poll(() => agentBlock(page)).not.toBeNull();
+  const block = paneEl(page, (await agentBlock(page))!);
+  await block.getByRole("button", { name: "Approve" }).click();
+  const tool = block.locator(".agent-tool").first();
+  await expect(tool.locator(".agent-tool-status")).toHaveText("completed");
+  await expect(tool.locator("pre.agent-tool-text")).toContainText("line 40");
+  // Each terminal restyles the whole page: plain text doesn't get one.
+  await expect(tool.locator(".xterm")).toHaveCount(0);
+  // Longer than its box, it shows the end, as a terminal does.
+  const shows = await tool.locator("pre.agent-tool-text").evaluate((pre) => {
+    const box = pre.getBoundingClientRect();
+    const text = document.createRange();
+    text.selectNodeContents(pre);
+    const rects = [...text.getClientRects()];
+    return { overflows: pre.scrollHeight > pre.clientHeight, end: rects[rects.length - 1].bottom <= box.bottom + 1, start: rects[0].top >= box.top };
+  });
+  expect(shows).toEqual({ overflows: true, end: true, start: false });
+
+  await block.locator(".agent-composer textarea").fill("run ls --color");
+  await block.getByRole("button", { name: "Send" }).click();
+  await block.getByRole("button", { name: "Approve" }).click();
+  await expect(block.locator(".agent-tool").last().locator(".xterm-rows")).toContainText("ran: ls --color");
+  await expect(block.locator(".agent-tool .xterm")).toHaveCount(1);
+});
+
 // M71: an image pasted into the composer goes with the prompt as an image
 // (the fake agent says it takes them), and the transcript shows it; one
 // dropped on the block waits beside it until it's removed.
