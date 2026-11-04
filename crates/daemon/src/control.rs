@@ -79,7 +79,11 @@ use crate::{
 
 pub const FILE: &str = "control.json";
 const PINS_FILE: &str = "team-pins.json";
-const INVITES_FILE: &str = "invites.json";
+/// The invites waiting for their person (#233). Before native #677 they
+/// were in [`OLD_INVITES_FILE`], the host list's file (`hosts.rs`), whose
+/// own format the list's saves replaced them with.
+const INVITES_FILE: &str = "person-invites.json";
+const OLD_INVITES_FILE: &str = "invites.json";
 pub const KEY_FILE: &str = "daemon.key";
 const REFRESH: Duration = Duration::from_secs(60);
 /// How long [`Control::refresh_now`] waits by default (#232).
@@ -858,7 +862,7 @@ pub struct Control {
     /// named; they let no one in.
     team_pins: RwLock<BTreeMap<String, String>>,
     /// Invites waiting for their person to be reachable (#233), in
-    /// `invites.json`: tried again after each refresh, for a day.
+    /// `person-invites.json`: tried again after each refresh, for a day.
     invites: std::sync::Mutex<Vec<Waiting>>,
     /// Held while they're tried: one try at a time, beside the refreshes.
     retrying: tokio::sync::Mutex<()>,
@@ -1007,6 +1011,31 @@ pub struct Waiting {
 /// How long an invite waits for its person (#233).
 const INVITE_WAIT_MS: u64 = 24 * 3600 * 1000;
 
+/// The waiting invites on disk: [`INVITES_FILE`], or, until it exists, a
+/// list left in [`OLD_INVITES_FILE`] by a daemon before native #677, moved
+/// into its own file at once so the host list's next save can't drop it.
+/// The host list's own format there (`{"invites": [...]}`) isn't a list and
+/// is left alone.
+fn load_waiting(state_dir: &Path) -> Vec<Waiting> {
+    if let Ok(bytes) = std::fs::read(state_dir.join(INVITES_FILE)) {
+        return serde_json::from_slice(&bytes).unwrap_or_default();
+    }
+    let Some(old) = std::fs::read(state_dir.join(OLD_INVITES_FILE))
+        .ok()
+        .and_then(|b| serde_json::from_slice::<Vec<Waiting>>(&b).ok())
+        .filter(|l| !l.is_empty())
+    else {
+        return Vec::new();
+    };
+    let r = serde_json::to_vec_pretty(&old)
+        .map_err(std::io::Error::other)
+        .and_then(|b| crate::store::write_atomic(&state_dir.join(INVITES_FILE), &b));
+    if let Err(e) = r {
+        warn!(error = %e, "can't move the waiting invites into their own file");
+    }
+    old
+}
+
 /// Someone a roster this daemon checked names (#233): its own team's, or
 /// a team's the owner pinned or shared with.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1103,12 +1132,7 @@ impl Control {
                     .and_then(|b| serde_json::from_slice(&b).ok())
                     .unwrap_or_default(),
             ),
-            invites: std::sync::Mutex::new(
-                std::fs::read(state_dir.join(INVITES_FILE))
-                    .ok()
-                    .and_then(|b| serde_json::from_slice(&b).ok())
-                    .unwrap_or_default(),
-            ),
+            invites: std::sync::Mutex::new(load_waiting(state_dir)),
             retrying: Default::default(),
             link: std::sync::Mutex::new(Link { dropped: read_dropped(state_dir), ..Default::default() }),
             doc_info: Default::default(),
@@ -4142,6 +4166,57 @@ pub(crate) mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
+    /// Native #677: the host list's one-time invite tokens and the invites
+    /// waiting for their person each have a file, so saving one keeps the
+    /// other. A waiting list a daemon before this one left in `invites.json`
+    /// (the host list's file now) is read once, so an upgrade loses none.
+    #[test]
+    fn host_invites_and_waiting_invites_keep_each_other() {
+        let dir = std::env::temp_dir().join(format!("arugula-invites-677-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let acl = Arc::new(Acl::open(&dir));
+        let w = |tag: &str| Waiting {
+            who: "account:b1".into(),
+            session: Some(1),
+            pane: 1,
+            title: "alex brought you into api".into(),
+            body: "b".into(),
+            extra: serde_json::json!({ "tag": tag }),
+            at: now_ms(),
+        };
+        // Before: a daemon that kept the waiting list in invites.json.
+        std::fs::write(dir.join("invites.json"), serde_json::to_vec(&[w("invite-old")]).unwrap()).unwrap();
+        let c = Control::new(&dir, vec![], String::new(), acl.clone(), false);
+        assert_eq!(c.invites.lock().unwrap().len(), 1, "the old file's waiting list is read once");
+
+        let hosts = crate::hosts::Hosts::open(&dir, "geek".into(), None);
+        let inv = hosts.invite(600);
+        c.wait_invite(w("invite-new"));
+        assert_eq!(c.invites.lock().unwrap().len(), 1, "a newer invite into the same session replaced it");
+        let more = hosts.invite(600);
+        drop((c, hosts));
+
+        let c = Control::new(&dir, vec![], String::new(), acl, false);
+        let tags: Vec<_> = c.invites.lock().unwrap().iter().map(|w| w.extra["tag"].clone()).collect();
+        assert_eq!(tags, ["invite-new"], "the waiting invite survives the host list's save");
+        let hosts = crate::hosts::Hosts::open(&dir, "geek".into(), None);
+        let req = |n: &str| arugula_proto::hosts::AddHost {
+            name: n.into(),
+            urls: vec![format!("https://{n}.example")],
+            transport: arugula_proto::hosts::Transport::Tailnet,
+            ssh: None,
+        };
+        assert!(
+            hosts.join(arugula_proto::hosts::JoinRequest { token: inv.token.clone(), host: req("box") }).is_ok(),
+            "the host invite survives the waiting invite's save"
+        );
+        assert!(
+            hosts.join(arugula_proto::hosts::JoinRequest { token: more.token.clone(), host: req("other") }).is_ok()
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     /// #232: someone just granted (whom control routes here) is reachable
     /// once the next refresh is through, not a minute later: the access
     /// list goes to control before the subscriptions are fetched.
@@ -4362,7 +4437,7 @@ pub(crate) mod tests {
         let left: Vec<_> = c.invites.lock().unwrap().iter().map(|w| w.extra["tag"].clone()).collect();
         assert_eq!(left, ["invite-new"], "the old one and the revoked one stopped waiting");
         let kept = Control::new(&r.dir, vec![], String::new(), r.acl.clone(), false);
-        assert_eq!(kept.invites.lock().unwrap().len(), 1, "kept in invites.json");
+        assert_eq!(kept.invites.lock().unwrap().len(), 1, "kept in person-invites.json");
 
         r.fake.lock().unwrap().routed = true;
         assert!(c.refresh_now(REFRESH_WAIT).await);
