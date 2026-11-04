@@ -1386,7 +1386,7 @@ owner must be one of the project's owners or editors on
 like any trigger's, or waits for an approval without one. No power is an
 approval of anything: a deploy's is an owner's passkey (M218, DK4). The MCP
 tools are `start_run` (a spec, a command or an instruction, on one of the
-project's hosted boxes), `read_run` (a run's state, timeline and a page of
+project's Cloud workspaces, `cloud_workspace`, which was `box`), `read_run` (a run's state, timeline and a page of
 its log by byte offset, or a project's latest runs) and `wait` with `run`
 (until it ends, then the log's tail). `start_run` is in the permission
 snippet's ask list, `read_run` in its allow list, and an agent a guest
@@ -1422,8 +1422,8 @@ A reply answers a question the session waits on (its ask then says
 prompt credited to the owner. Neither power approves anything: while a
 session waits on a permission, the reply is queued for after it, and a
 person allows or denies. The MCP tools are `session_start` (`issue` or
-`room`/`thread`, `prompt`, `project`) `session_reply` (`session`,
-`text`) and `session_stop` (`session`, `reason`: it ends the session now,
+`room`/`thread`, `prompt`, `project`) `session_reply` (`agent_session`,
+`text`) and `session_stop` (`agent_session`, `reason`: it ends the session now,
 cancelling the turn under way, as the card's Stop does, and the thread says
 "Stopped by <owner>'s agent on <machine>: <reason>"; only for a session the
 owner asked for, with either grant; a session that has ended is left as it is),
@@ -1437,7 +1437,7 @@ machine holds the grant.
 
 **Following a wave (Fleet 5).** A project's sessions are one list, a wave
 of them, on the platform page's Sessions (beside Runs, `GET
-/api/projects/{project}/sessions`): each one's state, box, branch and
+/api/projects/{project}/sessions`): each one's state, Cloud workspace, branch and
 HEAD, when it last pushed, who started it, and what waits on the reader
 (its question or a permission for owners and editors, CI that failed
 again, its PR to send for its asker). It narrows by its issue's label, by
@@ -1445,11 +1445,11 @@ a tracker issue (`tracker=N`: the issues its body names as `#N`, those
 whose body names it, and itself), by who asked and to the ones going,
 among the project's latest 500. A machine's agents read the same with
 `sessions.start`, `sessions.reply` or `threads.read` over the project (any
-of them): MCP's `list` kind `sessions` (`GET
+of them): MCP's `list` kind `agent_sessions` (`GET
 /api/daemon/projects/{project}/sessions`, `mine` for those its own agents
 started), `read_session` (`GET /api/daemon/sessions/{ses}`: the row, its
-latest turn, and its last answer whole as its box sent it, where the
-thread keeps only the end), and `wait` with `session` (`POST
+latest turn, and its last answer whole as its machine sent it, where the
+thread keeps only the end), and `wait` with `agent_session` (`POST
 /api/daemon/sessions/wait`, `until: done`): it answers once any of the
 sessions named has settled (its turn finished and no prompt queued for
 the next, or it waits on a person, or it ended), with each settled one

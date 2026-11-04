@@ -205,7 +205,7 @@ export function PlatformBar({ children }: { children?: ComponentChildren }) {
         )}
         {project && (
           <Place to={pathOf({ page: "sessions", project }, names)} here={here === "sessions"} data="sessions">
-            Agents
+            Agent sessions
           </Place>
         )}
         {/* Where the reader may have them (the beta's list), or is in one. */}

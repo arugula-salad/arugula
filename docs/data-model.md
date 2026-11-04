@@ -178,7 +178,7 @@ purpose, and the records say why:
 
 | Where the code differs | Tracked in |
 |---|---|
-| "Session" and "agent session" name other things in Rust types and some public names | #667, #668, #671 |
+| "Session" and "agent session" name other things in Rust types | #667, #671 |
 | A machine's kind is spread across optional fields and booleans in `control.json` | #672 |
 | A Doc's copy can be edited on the platform, and the machine's next change overwrites the edit | #678, #673 |
 | MCP and the UI say "thread" and "conversation" for any room | #667 |

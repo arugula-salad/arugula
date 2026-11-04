@@ -15,12 +15,16 @@
 //!
 //! An agent a guest stands behind may not use them: they act as the owner.
 //!
-//! **Following a wave** (Fleet 5): `list` kind `sessions` lists a project's
-//! sessions (state, box, branch, last push, what waits on its person),
-//! narrowed by an issue's label, a tracker issue or who started them;
-//! `read_session` reads one with its last answer whole (the thread has only
-//! its end); and `wait` with `session` holds until any of a wave's sessions
-//! finishes its turn, with its branch and head, so a lead doesn't poll.
+//! **Following a wave** (Fleet 5): `list` kind `agent_sessions` lists a
+//! project's sessions (state, Cloud workspace, branch, last push, what
+//! waits on its person), narrowed by an issue's label, a tracker issue or
+//! who started them; `read_session` reads one with its last answer whole
+//! (the thread has only its end); and `wait` with `agent_session` holds
+//! until any of a wave's sessions finishes its turn, with its branch and
+//! head, so a lead doesn't poll. The parameter that names one is
+//! `agent_session` (`ses_…`), since `session` means the group of tabs
+//! elsewhere; `session`, and the kind `sessions`, are its old names, read
+//! as the new (`arugulad-mcp`'s `ARG_ALIASES`, Arugula #668).
 //! Each with `sessions.start`, `sessions.reply` or `threads.read` over the
 //! project.
 
@@ -48,15 +52,15 @@ pub(crate) const READ_TOOL: &str = "read_session";
 
 /// `list`'s kind.
 pub(crate) const LIST: crate::mcp::tools::Kind = crate::mcp::tools::Kind {
-    name: "sessions",
-    description: "A project's agent sessions in Arugula control, a wave of them, newest first: each one's id, state, issue, box, branch and HEAD, when it last pushed, who started it, and what waits on your person (its question, a permission, CI that failed again, its PR to send). Narrow it with label (its issue's), tracker (an issue's number: the issues its body names as #N, and those naming it), asker (an account, or me), mine (only those this machine's agents started) and going. Needs your person's sessions.start, sessions.reply or threads.read grant over the project. wait with session waits for them; read_session reads one's whole answer.",
+    name: "agent_sessions",
+    description: "A project's agent sessions in Arugula control, a wave of them, newest first: each one's id, state, issue, Cloud workspace, branch and HEAD, when it last pushed, who started it, and what waits on your person (its question, a permission, CI that failed again, its PR to send). Narrow it with label (its issue's), tracker (an issue's number: the issues its body names as #N, and those naming it), asker (an account, or me), mine (only those this machine's agents started) and going. Needs your person's sessions.start, sessions.reply or threads.read grant over the project. wait with agent_session waits for them; read_session reads one whole.",
     schema: rmcp::handler::server::common::schema_for_type::<ListSessionsArgs>,
     flag: None,
 };
 
 pub(crate) const START_DESCRIPTION: &str = "Start an agent session in Arugula control as your person: @arugula on a native issue (issue: #N in the current project, or iss_…) or in a project's channel (room, and thread: a message's seq to ask in its thread). It runs on the project's cloud workspace, as your person (the asker, who pays for it), and its card says it was started by their agent on this machine. Needs their sessions.start grant over the project. prompt is what to ask (it may name the repo, owner/name, and a model); on an issue it defaults to working on it. Returns the session (ses_…), or what the platform said instead: why not, or which repo it asks (ask again there with the repo, owner/name, in prompt). session_reply answers it or prompts it after.";
 
-pub(crate) const READ_DESCRIPTION: &str = "Read an agent session in Arugula control (ses_…): its state, box, branch, HEAD and last push, what its latest turn left (commits, diffstat, its finish step), what it asks while it waits on a person, and its last answer whole, as its box sent it (the thread's copy keeps only its end). Needs your person's sessions.start, sessions.reply or threads.read grant over its project. wait with session waits for its turn to finish.";
+pub(crate) const READ_DESCRIPTION: &str = "Read an agent session in Arugula control (ses_…): its state, Cloud workspace, branch, HEAD and last push, what its latest turn left (commits, diffstat, its finish step), what it asks while it waits on a person, and its last answer whole, as its machine sent it (the thread's copy keeps only its end). Needs your person's sessions.start, sessions.reply or threads.read grant over its project. wait with agent_session waits for its turn to finish.";
 
 pub(crate) const REPLY_DESCRIPTION: &str = "Reply to an agent session in Arugula control as your person (ses_…, from session_start or the thread's card), in its thread: when it waits on a question, your text answers it; otherwise it's the session's next prompt (queued while a turn runs). Never an approval: a permission waits on a person, and your text is queued for after it. Needs your person's sessions.reply grant over its project. Says which it did.";
 
@@ -84,8 +88,9 @@ pub struct SessionStartArgs {
 
 #[derive(Deserialize, JsonSchema)]
 pub struct SessionReplyArgs {
-    /// The session: its id (ses_…).
-    pub session: String,
+    /// The agent session: its id (ses_…).
+    #[serde(alias = "session")]
+    pub agent_session: String,
     /// The answer or the prompt, in markdown.
     pub text: String,
 }
@@ -94,8 +99,9 @@ pub(crate) const STOP_DESCRIPTION: &str = "Stop an agent session in Arugula cont
 
 #[derive(Deserialize, JsonSchema)]
 pub struct SessionStopArgs {
-    /// The session: its id (ses_…).
-    pub session: String,
+    /// The agent session: its id (ses_…).
+    #[serde(alias = "session")]
+    pub agent_session: String,
     /// Why, in at most 280 characters: the thread's note says it.
     #[serde(default)]
     pub reason: Option<String>,
@@ -130,8 +136,9 @@ pub struct ListSessionsArgs {
 
 #[derive(Deserialize, JsonSchema)]
 pub struct ReadSessionArgs {
-    /// The session: its id (ses_…).
-    pub session: String,
+    /// The agent session: its id (ses_…).
+    #[serde(alias = "session")]
+    pub agent_session: String,
 }
 
 /// The sessions a `wait` names: ids (`ses_…`) separated by spaces or
@@ -140,14 +147,14 @@ pub(crate) fn session_ids(s: &str) -> Result<Vec<String>, String> {
     let mut out: Vec<String> = Vec::new();
     for id in s.split(|c: char| c == ',' || c.is_whitespace()).filter(|x| !x.is_empty()) {
         if !id.starts_with("ses_") {
-            return Err(format!("session: ids, ses_…, not {id:?}"));
+            return Err(format!("agent_session: ids, ses_…, not {id:?}"));
         }
         if !out.iter().any(|x| x == id) {
             out.push(id.to_owned());
         }
     }
     if out.is_empty() {
-        return Err("session: one or more ids, ses_…".into());
+        return Err("agent_session: one or more ids, ses_…".into());
     }
     Ok(out)
 }
@@ -216,7 +223,7 @@ pub(crate) fn read_text(v: &Value) -> String {
     }
     match v["answer"].as_object() {
         Some(a) => {
-            let cut = if a["cut"] == true { " (its box kept only its end)" } else { "" };
+            let cut = if a["cut"] == true { " (its machine kept only its end)" } else { "" };
             out += &format!(
                 "\n\nIts last answer, {}{cut}:\n{}",
                 a["at"].as_u64().map(crate::mcp::tools::ago).unwrap_or_default(),
@@ -311,9 +318,9 @@ pub(crate) async fn session_start(c: &Call<'_>, a: SessionStartArgs) -> Out {
 /// `session_reply`.
 pub(crate) async fn session_reply(c: &Call<'_>, a: SessionReplyArgs) -> Out {
     owners_sessions(c, REPLY_TOOL).await?;
-    let ses = a.session.trim();
+    let ses = a.agent_session.trim();
     if !ses.starts_with("ses_") {
-        return Err(format!("session: its id, ses_…, not {ses:?}"));
+        return Err(format!("agent_session: its id, ses_…, not {ses:?}"));
     }
     let v = sessions_call(c, &agent_session_reply(ses), json!({ "text": a.text })).await?;
     let s = match v["did"].as_str() {
@@ -338,9 +345,9 @@ pub(crate) async fn session_reply(c: &Call<'_>, a: SessionReplyArgs) -> Out {
 /// `session_stop`.
 pub(crate) async fn session_stop(c: &Call<'_>, a: SessionStopArgs) -> Out {
     owners_sessions(c, STOP_TOOL).await?;
-    let ses = a.session.trim();
+    let ses = a.agent_session.trim();
     if !ses.starts_with("ses_") {
-        return Err(format!("session: its id, ses_…, not {ses:?}"));
+        return Err(format!("agent_session: its id, ses_…, not {ses:?}"));
     }
     let reason = a.reason.as_deref().map(str::trim).filter(|r| !r.is_empty());
     if reason.is_some_and(|r| r.chars().count() > STOP_REASON_MAX) {
@@ -409,15 +416,15 @@ pub(crate) async fn list_sessions(c: &Call<'_>, a: ListSessionsArgs) -> Out {
 
 /// `read_session`.
 pub(crate) async fn read_session(c: &Call<'_>, a: ReadSessionArgs) -> Out {
-    let ses = a.session.trim();
+    let ses = a.agent_session.trim();
     if !ses.starts_with("ses_") {
-        return Err(format!("session: its id, ses_…, not {ses:?}"));
+        return Err(format!("agent_session: its id, ses_…, not {ses:?}"));
     }
     let v = sessions_get(c, &agent_session(ses)).await?;
     done(read_text(&v), v)
 }
 
-/// `wait` with `session`: until any of them settles (its turn
+/// `wait` with `agent_session`: until any of them settles (its turn
 /// finished, it waits on a person, or it ended), or `limit`. Each
 /// settled one comes back read whole.
 pub(crate) async fn wait_sessions(c: &Call<'_>, ids: &str, limit: Duration) -> Out {
@@ -448,7 +455,7 @@ pub(crate) async fn wait_sessions(c: &Call<'_>, ids: &str, limit: Duration) -> O
         let rows = v["sessions"].as_array().cloned().unwrap_or_default();
         return done(
             format!(
-                "None finished after {secs}s: call wait with session again.\n{}",
+                "None finished after {secs}s: call wait with agent_session again.\n{}",
                 rows.iter().map(row_line).collect::<Vec<_>>().join("\n")
             ),
             json!({ "state": "still running", "sessions": rows }),
@@ -469,7 +476,7 @@ pub(crate) async fn wait_sessions(c: &Call<'_>, ids: &str, limit: Duration) -> O
     if !going.is_empty() {
         let ids: Vec<&str> = going.iter().filter_map(|r| r["session"].as_str()).collect();
         s += &format!(
-            "\n\nStill going (wait with session \"{}\" for them):\n{}",
+            "\n\nStill going (wait with agent_session \"{}\" for them):\n{}",
             ids.join(" "),
             going.iter().map(|r| row_line(r)).collect::<Vec<_>>().join("\n")
         );
@@ -483,6 +490,22 @@ mod tests {
 
     fn args(v: Value) -> SessionStartArgs {
         serde_json::from_value(v).unwrap()
+    }
+
+    /// Each tool that names an agent session takes `agent_session`, and
+    /// `session`, its old name (Arugula #668).
+    #[test]
+    fn an_agent_session_is_named_by_its_new_name_or_its_old() {
+        for name in ["agent_session", "session"] {
+            let a: SessionReplyArgs = serde_json::from_value(json!({ name: "ses_1", "text": "go" })).unwrap();
+            assert_eq!(a.agent_session, "ses_1", "{name}");
+            let a: SessionStopArgs = serde_json::from_value(json!({ name: "ses_1" })).unwrap();
+            assert_eq!(a.agent_session, "ses_1", "{name}");
+            let a: ReadSessionArgs = serde_json::from_value(json!({ name: "ses_1" })).unwrap();
+            assert_eq!(a.agent_session, "ses_1", "{name}");
+        }
+        assert!(serde_json::from_value::<ReadSessionArgs>(json!({ "text": "x" })).is_err());
+        assert!(session_ids("x").unwrap_err().starts_with("agent_session:"));
     }
 
     #[test]

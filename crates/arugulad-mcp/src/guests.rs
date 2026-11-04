@@ -32,8 +32,8 @@ pub const TAB: &[Entry] = &[
     ("send_input", None),
     ("attach", None),
     ("read_output", None),
-    // With a pane; a run, agent sessions or a Cloud workspace's tab are
-    // the owner's ([`OWNERS_ARGS`]).
+    // With a pane; a run, agent sessions or a Cloud workspace's agent
+    // block are the owner's ([`OWNERS_ARGS`]).
     ("wait", None),
     ("close", None),
     ("history", None),
@@ -65,10 +65,10 @@ pub const OWNERS: &[Entry] = &[
     ("list", Some("devices")),
     ("list", Some("agents")),
     ("list", Some("cloud_workspaces")),
-    ("list", Some("cloud_tabs")),
+    ("list", Some("cloud_agents")),
     ("list", Some("linked_repos")),
     ("list", Some("threads")),
-    ("list", Some("sessions")),
+    ("list", Some("agent_sessions")),
     ("show", Some("chat")),
     ("show", Some("board")),
     ("doc", Some("list")),
@@ -104,8 +104,10 @@ pub const OWNERS: &[Entry] = &[
 
 /// Arguments that take a tab's tool past the tab, by tool (`*`: any):
 /// a Cloud workspace's machine, and `wait` on a run or agent sessions in
-/// control.
-pub const OWNERS_ARGS: &[(&str, &str)] = &[("*", hosted::ARG), ("wait", "run"), ("wait", "session")];
+/// control (`agent_session`, and `session`, its old name, which `route`
+/// reads as the new one first).
+pub const OWNERS_ARGS: &[(&str, &str)] =
+    &[("*", hosted::ARG), ("wait", "run"), ("wait", "agent_session"), ("wait", "session")];
 
 fn placed(list: &[Entry], tool: &str, kind: Option<&str>) -> bool {
     list.iter().any(|(t, k)| *t == tool && (k.is_none() || *k == kind))
@@ -192,7 +194,8 @@ mod tests {
 
     /// A machine tool's `cloud_workspace` runs it on that workspace's
     /// machine as the owner: refused before it's forwarded, for every
-    /// machine tool, and `wait` on a Cloud tab, a run or sessions too.
+    /// machine tool, and `wait` on a Cloud workspace's agent block, a run
+    /// or agent sessions too, under the new names and the old (#668).
     #[test]
     fn a_guests_agent_never_reaches_a_cloud_workspace_or_controls_waits() {
         for tool in hosted::TOOLS {
@@ -200,9 +203,13 @@ mod tests {
             let why = refusal(tool, &args, on()).unwrap_or_else(|| panic!("{tool} with cloud_workspace is refused"));
             assert!(why.contains("on a Cloud workspace"), "{why}");
         }
+        assert!(refusal("wait", &json!({ "cloud_workspace": "hw_abc", "agent": "4" }), on()).is_some());
         assert!(refusal("wait", &json!({ "cloud_workspace": "hw_abc", "tab": "4" }), on()).is_some());
         assert!(refusal("wait", &json!({ "run": "run_1" }), on()).unwrap().contains("wait with run"));
-        assert!(refusal("wait", &json!({ "session": "ses_1" }), on()).unwrap().contains("wait with session"));
+        let why = refusal("wait", &json!({ "agent_session": "ses_1" }), on()).unwrap();
+        assert!(why.contains("wait with agent_session"), "{why}");
+        let why = refusal("wait", &json!({ "session": "ses_1" }), on()).unwrap();
+        assert!(why.contains("wait with agent_session"), "the old name is read as the new one: {why}");
         // Null is as good as left out.
         assert_eq!(refusal("run", &json!({ "command": "ls", "cloud_workspace": null }), on()), None);
     }

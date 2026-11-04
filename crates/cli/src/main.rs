@@ -344,7 +344,7 @@ enum Command {
         #[command(subcommand)]
         cmd: Option<cmd::share::SharesCmd>,
     },
-    /// Who else can reach which sessions.
+    /// Who may watch or drive a session on this machine.
     ///
     /// `access` lists grants, `access grant SESSION WHO ROLE`, `access revoke
     /// SESSION WHO`, `access log`. WHO is a tailnet login (or `account:ID` from
@@ -397,7 +397,7 @@ enum Command {
     Login(cmd::login::Args),
     /// Forget this CLI's key for control (`arugula login` makes a new one).
     Logout,
-    /// What your machines' agents may do with your things on Arugula control.
+    /// What your machines' agents may do in a project on Arugula control.
     ///
     /// Every machine you join gets `cloud.drive`: the agents on it drive your
     /// Cloud workspaces. `add` lets them read and post in a project's threads
