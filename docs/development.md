@@ -266,7 +266,7 @@ The queue is off until Jake turns it on. In the repository's
 (or a new one targeting it):
 
 1. **Require merge queue**: the merge method main uses now; *Build
-   concurrency* 1 or 2 (each group takes a pod per job); *Minimum group
+   concurrency* 1 or 2 (each group takes three pods and a Mac); *Minimum group
    size* 1, *Maximum* 5, *Wait time* 0; *Only merge non-failing pull
    requests*; *Status check timeout* 90 minutes (a run is ~35 min, plus
    pods' queues).
@@ -644,12 +644,18 @@ the downloads the app's workflow makes, the ones `scripts/release`
 requires, the ones the chant members publish and the ones the site links
 drift apart.
 
-<a id="ci"></a>CI's Linux jobs run in two places. check.yml's (the push checks)
-run in the home cloud (`runs-on: arugula-amd64`): Actions Runner
+<a id="ci"></a>CI's Linux jobs run in two places. Most run on GitHub's runners
+(`ubuntu-24.04`, free for this public repository): check.yml's lint, `build`,
+`clippy`, `desktop-xvfb` and e2e, and the nightlies other than
+forges-nightly.yml's `forges` (since 2026-11-03, #2131). check.yml's `static`,
+`test` and `test-2` stayed behind: on GitHub's runners `test` and `test-2` took
+20-32 min against the pods' 9-11, and `static`, which they and `desktop-xvfb`
+wait for, up to 10.7 against the pods' 2-5. They run in the
+home cloud (`runs-on: arugula-amd64`): Actions Runner
 Controller starts a fresh pod for each job and deletes it after, from
 home-cloud's `platform/arc/runner-scale-set-arugula-amd64.yaml`, in the
-org's `illogical` runner group, which only this repo may use. A pod has
-nothing of its own: `.github/actions/setup` installs the toolchain (Rust
+org's `illogical` runner group, which only this repo may use. A job has
+nothing of its own on either: `.github/actions/setup` installs the toolchain (Rust
 from rust-toolchain.toml, mise's Zig and nextest, just, Node 24, pnpm 12),
 restores GitHub's caches in place of kept build directories (the
 Rust build per job, saved from main only; pnpm's store; Playwright's
@@ -661,12 +667,14 @@ systemd with a user manager for the runner (home-cloud's
 `images/gha-runner`, target `systemd`; #735), so the tests that start the
 daemon as a service run as they did on geek. check.yml's `test` and
 rare-nightly.yml's `core` set `ARUGULA_REQUIRE_SYSTEMD=1`, which fails those tests instead of
-skipping them if a pod ever comes up without one. Pods ask for 2.5 CPUs
+skipping them if a runner ever comes up without one (on GitHub's, the setup
+action's `user-manager` starts one for `core` and quarantine-nightly.yml). Pods ask for 2.5 CPUs
 and 3.5 GiB, and up to 24 run at once, on two amd64 nodes with about 85
 GiB between them for runners; a heavy job (a cargo build) uses 5 to 7 GB,
 more than it asks for, so the scheduler doesn't stop in time. On
 2026-10-27 four full runs at once put 23 builds there and the nodes lost
-pods with no logs (#1676). Two full runs is the most that fits, and since
+pods with no logs (#1676). Two full runs was the most that fit at six pods a
+run (it's three a run now), and since
 #1675 main has one at a time (chant's `"build": "newest"`), so it's
 release runs and dispatched branch runs on top of it that can get there.
 `scripts/ci-slot` doesn't help: it counts slots within a pod, not
@@ -675,7 +683,7 @@ jobs ran on eight host runners on geek, which kept builds warm on its
 disk but held up to 96 GB of a machine that is now also a cluster node.
 
 The release workflows' Linux jobs (release.yml's and app-release.yml's
-`linux` and `publish`) and forges-nightly.yml's run there too, on the same
+`linux` and `publish`) and forges-nightly.yml's `forges` run on the pods too, on the same
 pods and the same setup, plus `gh` for publishing. A tag's run can only
 read main's caches and its own, and main never saves release.yml's
 (`release-static`, at full opt-level, unlike check.yml's `static`), so

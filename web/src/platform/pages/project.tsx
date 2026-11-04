@@ -68,7 +68,7 @@ export function ProjectHome({ id }: { id: string }) {
         <div>
           <ProjectDrafts project={p.id} nameOf={nameOf} />
           <SectionHead title="Chat" all={chatPath} />
-          {chat.on === false && chat.signedOut && <p class="dim">You're signed out of Arugula control: reload the page to sign in again.</p>}
+          {chat.on === false && chat.signedOut && <p class="dim">You're signed out of Arugula cloud: reload the page to sign in again.</p>}
           {chat.on === false && !chat.signedOut && <ChatOff p={p} />}
           {chat.on && rooms.length === 0 && <p class="dim">No channels yet.</p>}
           <ul class="platform-list sw-rows" data-project-rooms>
@@ -115,16 +115,16 @@ function ChatOff({ p }: { p: PlatformProject }) {
   if (!p.team)
     return (
       <div class="platform-empty" data-chat-off>
-        <p class="dim">Chat comes with a team: its channels, direct messages and issues. Make a team, or turn chat on for one you own, under Teams on Control.</p>
+        <p class="dim">Chat comes with a team: its channels, direct messages and issues. Make a team, or turn chat on for one you own, under Teams on your machines page.</p>
         <a class="secondary" href={teams} data-chat-teams>
-          Teams on Control
+          Teams on your machines page
         </a>
       </div>
     );
   if (p.team.role === "owner")
     return (
       <div class="platform-empty" data-chat-off>
-        <p class="dim">Chat is off for {p.team.name}. Turned on, the team gets channels, direct messages and issues, here and on Control.</p>
+        <p class="dim">Chat is off for {p.team.name}. Turned on, the team gets channels, direct messages and issues, here and on your machines page.</p>
         <a class="primary" href={teams} data-chat-turn-on>
           Turn on chat
         </a>
@@ -132,7 +132,7 @@ function ChatOff({ p }: { p: PlatformProject }) {
     );
   const owners = p.team.members.filter((m) => m.role === "owner").map((m) => m.name);
   const ask = async () => {
-    const note = `Could you turn on chat for ${p.team!.name}? It's under Teams on Control: ${teams}`;
+    const note = `Could you turn on chat for ${p.team!.name}? It's under Teams on your machines page: ${teams}`;
     try {
       await navigator.clipboard.writeText(note);
       toast(`Copied a note asking for it: send it to ${owners[0] ?? "an owner"}.`);
@@ -300,7 +300,7 @@ function Members({ p }: { p: PlatformProject }) {
       <p class="dim">
         Team {t.name}. {t.role === "owner" ? "Add people, change roles and take people out" : "See who's in it"} on{" "}
         <a href={controlOrigin()} data-manage-team>
-          Control
+          your machines page
         </a>
         , under your account's Teams: a change to the team is signed by one of your devices there.
       </p>

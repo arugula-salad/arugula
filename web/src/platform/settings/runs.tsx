@@ -53,7 +53,7 @@ export function RunGrant({ project }: { project: string }) {
   const g = v.grant?.grant;
   const sign = (
     <a href={controlOrigin()} data-run-grant-sign>
-      Control
+      your machines page
     </a>
   );
   return (
@@ -63,12 +63,12 @@ export function RunGrant({ project }: { project: string }) {
       hooks={{ "data-run-grant": g ? "yes" : v.offer ? "offered" : "no" }}
       lede={
         g
-          ? "The platform may start runs on this project's cloud workspaces while every device sleeps."
+          ? "Arugula may start runs on this project's cloud workspaces while every device sleeps."
           : "No runs start here: nobody has allowed them, or the last grant expired or was revoked."
       }
       more={
         <p>
-          A standing grant lets the platform start runs and instruct them on every cloud workspace of this project, running whatever command
+          A standing grant lets Arugula start runs and instruct them on every cloud workspace of this project, running whatever command
           the project's runs start, with every device asleep, until it expires or is revoked. A project owner confirms it with a passkey, and each
           workspace checks that owner's passkey before it starts anything. Deploys still ask an owner every time.
         </p>

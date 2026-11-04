@@ -268,7 +268,7 @@ test("with every daemon stopped, they write in #general and a DM, from the web a
   await platform(aliceChat, `/chat/${general}`);
   const chip = page.locator("[data-room-view] .thread-quote").first();
   await chip.click();
-  await expect(aliceChat.locator("[data-platform-toast]")).toContainText("on Control");
+  await expect(aliceChat.locator("[data-platform-toast]")).toContainText("on your machines");
   await platform(aliceChat, `/dm/${dmId}`);
   await expect(dm.locator(".thread-msg").last()).toContainText("are you there?", { timeout: 15_000 });
 

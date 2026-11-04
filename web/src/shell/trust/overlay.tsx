@@ -176,7 +176,7 @@ export function ControlOverlay({ s }: { s: ControlSession }) {
 export function controlMenuItems(s: ControlSession): MenuItem[] {
   return [
     "separator",
-    ...(s.stale ? [{ header: "Control unreachable" } as MenuItem] : []),
+    ...(s.stale ? [{ header: "Arugula cloud unreachable" } as MenuItem] : []),
     { label: "Add a machine…", run: openPanel("add") },
   ];
 }

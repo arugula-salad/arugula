@@ -226,7 +226,7 @@ export function PlaneConnections({ p }: { p: PlatformProject }) {
       more={
         <>
           <p>
-            Connecting takes a Plane API key from the person who connects it. Control reads the project with it, keeps the key sealed, and never shows it again. Disconnecting stops
+            Connecting takes a Plane API key from the person who connects it. Arugula reads the project with it, keeps the key sealed, and never shows it again. Disconnecting stops
             reading the project at once and removes the key; what was read of it goes within a day.
           </p>
           <p>

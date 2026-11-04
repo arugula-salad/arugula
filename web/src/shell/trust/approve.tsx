@@ -296,7 +296,7 @@ export function JoinPrompt({ s, code: whole, from, device }: { s: ControlSession
               {team
                 ? `Everyone in ${team.roster.name} sees it and reaches it by their role: owners and editors drive its terminals, viewers watch. Its owners also see private panes, and can take it out of the team. It stays yours.`
                 : "Only your devices reach it, and they can drive its terminals. You're its only owner."}{" "}
-              Control relays the connection but can't read it.
+              Arugula cloud relays the connection but can't read it.
             </p>
           )}
         </>
@@ -510,7 +510,7 @@ function AppJoin({ s, j, cancel, refused, failed, sealed, secret, whole }: Devic
         </>
       )}
       {whole}
-      <p class="dim">It reaches your machines (directly or through control's relay, end-to-end encrypted), your chat, projects, issues and boards.</p>
+      <p class="dim">It reaches your machines (directly or through Arugula cloud's relay, end-to-end encrypted), your chat, projects, issues and boards.</p>
       <div class="prompt-buttons">
         <button class="secondary" data-cancel-join onClick={cancel}>
           {refused ? "Close" : "Cancel"}
@@ -575,7 +575,7 @@ function CliJoin({ s, j, cancel, refused, failed, sealed, secret, whole }: Devic
           . Once you approve, it shows its account's fingerprint: check it's this one there.
         </p>
       ) : null}
-      <p class="dim">It reaches your machines (directly or through control's relay, end-to-end encrypted) and can approve devices, as this one can.</p>
+      <p class="dim">It reaches your machines (directly or through Arugula cloud's relay, end-to-end encrypted) and can approve devices, as this one can.</p>
       <div class="prompt-buttons">
         <button class="secondary" data-cancel-join onClick={cancel}>
           {refused ? "Close" : "Cancel"}

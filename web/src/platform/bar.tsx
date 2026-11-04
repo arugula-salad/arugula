@@ -126,7 +126,7 @@ export function PlatformBar({ children }: { children?: ComponentChildren }) {
       // Who's around (#110): chat's people see this, and only they.
       ...presenceItems(liveItems()),
       // Control's one label (UI audit #184): it opens in this tab, so no ↗.
-      { label: "Open Control", run: () => location.assign(controlOrigin()) },
+      { label: "Open your machines", run: () => location.assign(controlOrigin()) },
       "separator",
       // This page only: the hub's session, on control's page, stays.
       { label: "Sign out of this page", run: () => void signOut().then(() => location.reload()) },
@@ -238,8 +238,8 @@ export function PlatformBar({ children }: { children?: ComponentChildren }) {
       {children}
       <div class="bar-fill" data-tauri-drag-region />
       {!rail && (
-        <a class="place platform-shell" href={controlOrigin()} title="Your machines, terminals, devices and teams, on Control" data-platform-shell>
-          Control
+        <a class="place platform-shell" href={controlOrigin()} title="Your machines, terminals, devices and teams" data-platform-shell>
+          Machines
         </a>
       )}
       {/* #341: live presence, beside the account, with its Labs flag. */}

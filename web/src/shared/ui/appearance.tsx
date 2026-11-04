@@ -48,7 +48,7 @@ function AppearanceDialog({ close }: { close: () => void }) {
         <h2>Appearance</h2>
         <p class="hint">On this device. The terminals follow the palette.</p>
         <button class="appearance-control-look" data-control-look onClick={() => setAppearance({ palette: "slate", finish: "flat", corners: "soft" })}>
-          <strong>Use Control look</strong>
+          <strong>Use the Slate look</strong>
           <span>Near-black Slate, cyan focus, soft pane corners</span>
         </button>
         <h3>Palette</h3>

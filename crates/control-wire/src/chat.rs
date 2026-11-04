@@ -123,6 +123,12 @@ pub struct ChatRoom {
     /// of those mention the reader.
     pub unread: u64,
     pub mentions: u64,
+    /// How much of `unread` wants the reader: what a count of it says. In
+    /// an object's thread, its mentions, and on an open native issue
+    /// assigned to the reader what isn't from their own agents; the rest
+    /// of `unread` is only a dot on its row. In any other room, `unread`.
+    #[serde(default)]
+    pub wants: u64,
     /// The reader turned its pushes off (`level` is `nothing`).
     pub muted: bool,
     /// What the reader is notified of here: their own choice for the room,

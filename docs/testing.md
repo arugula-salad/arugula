@@ -50,7 +50,8 @@ CI (`.github/workflows/check.yml`) runs on pushes, every job it can at
 once (#287); a new push to a branch cancels that branch's run:
 - **lint** (GitHub's runners): rustfmt (`just fmt-check`), shellcheck,
   `just test-scripts` and gitleaks (`scripts/ci-gitleaks`).
-- On the home cloud's runners (`arugula-amd64`, a fresh pod per job;
+- On GitHub's runners (`ubuntu-24.04`), except **static**, **test** and
+  **test-2**, on the home cloud's (`arugula-amd64`, a fresh pod per job;
   [development.md](development.md#ci)):
   - **build** and **static**: the debug binaries (with `--features
     debug-embed`, so they carry `web/dist`) and the box's static ones,
@@ -78,7 +79,7 @@ once (#287); a new push to a branch cancels that branch's run:
     Canvas 2D scene's work against the frame its rate allows, the city's
     draw calls and triangles (#278); the editors' times to a file are reported against
     their 3 s budget (`web/e2e/timing.ts`) in the job's summary, over
-    budget marked, and don't fail it (shared pods put them over with
+    budget marked, and don't fail it (shared pods once put them over with
     nothing broken: 10 red main runs in a week);
   - **desktop-xvfb**: `just desktop-xvfb` (`join`, `app`, `stale`, `platform`)
     in its container. It isn't named `desktop`, which is Windows'
@@ -1144,7 +1145,7 @@ tests](#the-ssh-tracks-tests).
 
 The Docker Hub images these pull come from a
 mirror on GHCR, `ghcr.io/arugula-salad/ci/<name>`, which is public, so a
-pull needs no credentials. CI's pods start with an empty Docker and pull
+pull needs no credentials. CI's runners start with an empty Docker and pull
 anonymously. Docker Hub's anonymous limit (429 `toomanyrequests`) once
 failed five of main's jobs in one run (2026-10-28).
 

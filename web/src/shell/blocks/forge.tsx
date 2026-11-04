@@ -357,7 +357,7 @@ function IssueBlock({ client, id, s }: { client: Client; id: PaneId; s: ForgeSta
  * it's read (what the old polls line said). */
 function issueSource(s: ForgeState, failed: boolean): ItemSource {
   const how = s.pin
-    ? `read through Arugula control${s.pin.stale ? ", can't reach it now: as it said last" : ""}`
+    ? `read through Arugula cloud${s.pin.stale ? ", can't reach it now: as it said last" : ""}`
     : s.live === "webhook"
       ? `live (${s.live_via === "github-app" ? "GitHub App" : "webhook"})`
       : s.live
@@ -829,7 +829,7 @@ function sourceTitle(s: ForgeState): string {
         : "";
   const live = s.live ? (s.live === "webhook" ? `live (${s.live_via === "github-app" ? "GitHub App" : "webhook"})` : "polling") : "";
   const read = s.pin
-    ? `read through Arugula control${s.pin.stale ? ", can't reach it now: as it said last" : ""}`
+    ? `read through Arugula cloud${s.pin.stale ? ", can't reach it now: as it said last" : ""}`
     : `${plural(s.polls, "poll")}, ${plural(s.reads, "full read")}`;
   return [`${s.repo}`, as, read, live, s.pin?.stale ?? s.live_why ?? ""].filter(Boolean).join("\n");
 }

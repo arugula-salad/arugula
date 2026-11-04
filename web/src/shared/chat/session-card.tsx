@@ -817,19 +817,19 @@ export function SessionCardView({ ses, large = false, onView }: { ses: string; l
             type="button"
             title={
               onControl
-                ? `Its agent block, live on its box, on Control (${onControl}), where your machines are. A browser is approved there once before it reaches them.`
+                ? `Its agent block, live on its box, on your machines (${onControl}). A browser is approved there once before it reaches them.`
                 : "Its agent block, live on its box"
             }
             data-session-open
             onClick={() => open(`pane=${c.machine}.${block}`, () => api.goToPane(c.machine!, block, null))}
           >
-            {onControl ? "Open on Control ↗" : "Open ↗"}
+            {onControl ? "Open on your machines ↗" : "Open ↗"}
           </button>
         )}
         {c.machine && port && (
           <button
             type="button"
-            title={port.url ? `Its dev server on :${port.port}, public` : `Its dev server on :${port.port}, on Control`}
+            title={port.url ? `Its dev server on :${port.port}, public` : `Its dev server on :${port.port}, on your machines`}
             data-session-preview
             onClick={() => (port.url ? window.open(port.url, "_blank", "noopener") : open(`machine=${c.machine}`, () => api.goToSession(c.machine!)))}
           >

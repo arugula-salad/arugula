@@ -843,8 +843,8 @@ const REFUSED: Record<string, string> = {
   recovery_for_machine: "A recovery code approves browsers and phones, not machines. Approve the machine from one of your devices.",
   needs_browser: "Only a browser or a phone approves a browser, a phone or recovery codes. The desktop app and the Arugula CLI approve machines, CLIs and apps: approve this one from a browser.",
   recovery_spent: "That recovery code let a device in already, and each one lets in one device. Use your other recovery code, or approve this browser from one of your devices.",
-  clock: "This device's clock is too far from control's for the approval to count. Check the clock, reload and approve again.",
-  no_chain: "Control's records for your account don't add up from here (the approval doesn't chain to your first device). Reload and try again; if it keeps happening, approve from another device.",
+  clock: "This device's clock is too far from Arugula cloud's for the approval to count. Check the clock, reload and approve again.",
+  no_chain: "Arugula cloud's records for your account don't add up from here (the approval doesn't chain to your first device). Reload and try again; if it keeps happening, approve from another device.",
   no_devices: "This account has no devices yet. Reload: this browser becomes its first.",
 };
 
@@ -1368,13 +1368,13 @@ export class ControlSession {
     const all = await api<{ trust: { account: string; root: string }; certs: Cert[]; revocations: Revocation[] }>("/api/devices");
     // #758: the app's window takes the root the browser that signed it
     // pinned, not control's word for it.
-    if (signed && all.trust.root !== signed.root) throw new Error("control says this account's root is a different device than the browser that signed this app in has: not trusting it");
+    if (signed && all.trust.root !== signed.root) throw new Error("Arugula cloud says this account's root is a different device than the browser that signed this app in has: not trusting it");
     // #761: the device that approved it answered its code, for this root.
     // A recovery code approves it without one (this browser holds that).
     if (secret && !this.usedRecovery && !(await this.vouched(secret, cert, all))) return;
     const trusted = await evaluate(all.trust, all.certs, all.revocations);
     const mine = trusted.get(k.id);
-    if (!mine) throw new Error("control approved this device, but the approval doesn't check out");
+    if (!mine) throw new Error("Arugula cloud approved this device, but the approval doesn't check out");
     this.enrollment = { control: location.origin, account: this.account, root: all.trust.root, cert: mine };
     await saveEnrollment(this.enrollment);
     dropDeviceSecret();
@@ -2128,7 +2128,7 @@ export class ControlSession {
   async changeTeam(team: string, change: (members: Roster["members"]) => Roster["members"], name?: string) {
     const t = this.teams.find((x) => x.team === team);
     if (!t) throw new Error("no such team");
-    if (t.rosterProblem) throw new Error("control's list of this team's members doesn't follow the one this browser last checked; changes wait until it does");
+    if (t.rosterProblem) throw new Error("Arugula cloud's list of this team's members doesn't follow the one this browser last checked; changes wait until it does");
     const prev = t.roster;
     // Used presigned invites stay listed until they'd have expired anyway,
     // so none works twice.
@@ -2292,7 +2292,7 @@ export class ControlSession {
   async lockTeam(team: string, locked: boolean) {
     const t = this.teams.find((x) => x.team === team);
     if (!t) throw new Error("no such team");
-    if (!locked && t.rosterProblem) throw new Error("control's list of this team's members doesn't check out here; unlocking waits until it does");
+    if (!locked && t.rosterProblem) throw new Error("Arugula cloud's list of this team's members doesn't check out here; unlocking waits until it does");
     // After the lock this page checked and holds (never dated far ahead).
     const lock = await signLock({ team, locked, version: t.roster.version, at: Math.max(Date.now(), (this.held.lock(team)?.at ?? 0) + 1) }, this.keys);
     await api(`/api/teams/${team}/lock`, { locked, lock });
@@ -2563,7 +2563,7 @@ export class ControlSession {
     const r = await api<{ redirect: string }>(`/api/app-login/${encodeURIComponent(id)}/allow`, {});
     const url = new URL(r.redirect);
     if (url.protocol !== "http:" || url.hostname !== "127.0.0.1" || url.pathname !== "/arugula-signin")
-      throw new Error("control sent the sign-in somewhere other than the app on this computer: not following it");
+      throw new Error("Arugula cloud sent the sign-in somewhere other than the app on this computer: not following it");
     if (a.device && this.signsApp(a)) {
       try {
         const cert: Cert = {

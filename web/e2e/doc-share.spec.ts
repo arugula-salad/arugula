@@ -394,6 +394,10 @@ test.describe("the owner's menus", () => {
     await page.getByRole("menuitem", { name: "Share link…" }).click();
     const dialog = page.locator("[data-doc-link-dialog]");
     await expect(dialog).toBeVisible();
+    // Arugula #650: the menu opens the dialog; the link is made on its confirm.
+    await expect(dialog).toHaveAttribute("data-doc-share-dialog", "unshared");
+    await dialog.locator("[data-doc-share-go]").click();
+    await expect(dialog).toHaveAttribute("data-doc-share-dialog", "shared");
     const url = (await dialog.locator("[data-doc-link-url]").textContent())!;
     expect(url).toMatch(new RegExp(`^${r.viewer}/[0-9a-f]{32}#k=[A-Za-z0-9_-]{43}$`));
     if (SHOTS) {
@@ -446,6 +450,99 @@ test.describe("the owner's menus", () => {
     await page.locator("[data-confirm-remove]").click();
     await expect.poll(async () => (await fetch(`${url.split("#")[0]}/data/meta`)).status).toBe(404);
     await menuHas(page, block, "Share link…");
+  });
+
+  test("a Doc's bar: link and share are icon buttons, and nothing makes a link until the dialog's confirm (Arugula #650)", async ({ page }) => {
+    const d = await doc(r);
+    const made: string[] = [];
+    page.on("request", (req) => req.url().endsWith("/call/doc_share") && made.push(req.url()));
+    await page.goto(r.mini);
+    const block = page.locator(`[data-doc-block="${d}"]`);
+    await expect(block.locator(".doc-title")).toBeVisible({ timeout: 20_000 });
+    // The bar is the block's header, beside it.
+    const bar = page.locator(`[data-doc-bar="${d}"]`);
+    const link = bar.locator("[data-doc-bar-link]");
+    const share = bar.locator("[data-doc-bar-share]");
+
+    // Icon only: a title and an aria-label each, no text, no ▾.
+    await expect(link).toHaveAttribute("title", "Copy link");
+    await expect(link).toHaveAttribute("aria-label", "Copy link");
+    await expect(share).toHaveAttribute("title", "Share…");
+    await expect(share).toHaveAttribute("aria-label", "Share…");
+    await expect(link).toHaveText("");
+    await expect(share).toHaveText("");
+    await expect(bar.locator("[data-copy-link-more]")).toHaveCount(0);
+    await expect(bar.locator("[data-doc-bar-shared]")).toHaveCount(0);
+
+    // Unshared, every way in opens the dialog and none makes a link.
+    const dialog = page.locator("[data-doc-share-dialog]");
+    const cancel = async () => {
+      await dialog.getByRole("button", { name: "Cancel" }).click();
+      await expect(dialog).toHaveCount(0);
+    };
+    const shot = async (name: string) => {
+      if (!SHOTS) return;
+      mkdirSync(SHOTS, { recursive: true });
+      await page.screenshot({ path: join(SHOTS, `${name}.png`) });
+    };
+    await shot("bar-unshared");
+    await link.click();
+    await expect(dialog).toHaveAttribute("data-doc-share-dialog", "unshared");
+    await expect(dialog).toContainText("Anyone with this link can open the Doc, with no account");
+    await shot("bar-dialog-unshared");
+    await expect(dialog.locator("[data-doc-link-url]")).toHaveCount(0);
+    await cancel();
+    await share.click();
+    await expect(dialog).toHaveAttribute("data-doc-share-dialog", "unshared");
+    await page.keyboard.press("Escape");
+    await expect(dialog).toHaveCount(0);
+    await link.focus();
+    await page.keyboard.press("Enter");
+    await expect(dialog).toHaveAttribute("data-doc-share-dialog", "unshared");
+    await cancel();
+    await menuHas(page, block, "Share link…");
+    await page.getByRole("menuitem", { name: "Share link…" }).click();
+    await expect(dialog).toHaveAttribute("data-doc-share-dialog", "unshared");
+    await cancel();
+    expect(made, "no doc_share call before the confirm").toEqual([]);
+    expect(((await (await fetch(`${r.mini}/api/docs`)).json()) as { id: string; shared?: object | null }[]).some((x) => x.shared)).toBe(false);
+
+    // The confirm makes the link, once.
+    await link.click();
+    await dialog.locator("[data-doc-share-go]").click();
+    await expect(dialog.locator("[data-doc-link-url]")).toBeVisible();
+    expect(made).toHaveLength(1);
+    const url = (await dialog.locator("[data-doc-link-url]").textContent())!;
+    await dialog.getByRole("button", { name: "Done" }).click();
+
+    // Shared: link copies in place; share shows the link and the rest.
+    await page.context().grantPermissions(["clipboard-read", "clipboard-write"], { origin: r.mini });
+        await expect.poll(() => page.evaluate((id) => JSON.stringify(window.__arugula.client.blocks.get(id)?.state), d)).toContain('"shared":{');
+    await link.click();
+    await expect(link).toContainText("Copied ✓");
+    await shot("bar-shared-copied");
+    await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(url);
+    await expect(dialog).toHaveCount(0);
+    await expect(link).not.toContainText("Copied", { timeout: 5_000 });
+    await share.click();
+    await expect(dialog).toHaveAttribute("data-doc-share-dialog", "shared");
+    await expect(dialog.locator("[data-doc-link-url]")).toHaveText(url);
+    await expect(dialog.getByRole("button", { name: "Update shared copy" })).toBeVisible();
+    await expect(dialog.getByRole("button", { name: "Unshare" })).toBeVisible();
+    await expect(dialog.locator("[data-doc-bar-older]")).toHaveCount(0);
+    await dialog.getByRole("button", { name: "Done" }).click();
+
+    // The copy goes older: a dot on Share, and the dialog says so.
+    await fill(r.post, d, "s3", `Bar older ${MARK}`);
+    await expect(share).toHaveAttribute("data-older", "");
+    await share.click();
+    await expect(dialog.locator("[data-doc-bar-older]")).toHaveText("Shared copy is older · Update");
+    await shot("bar-dialog-shared-older");
+    await page.setViewportSize({ width: 412, height: 915 });
+    await shot("bar-dialog-shared-phone");
+    await dialog.getByRole("button", { name: "Done" }).click();
+    await shot("bar-shared-older-phone");
+    expect(made).toHaveLength(1);
   });
 
   test("a shared Doc whose pane closed is on the Docs page and reopens with its share menu; Delete says its link stops working, unshares and removes it", async ({ page }) => {

@@ -292,11 +292,11 @@ export function DeployDecide({ d, onDecided }: { d: Deploy; onDecided: (after: D
           {folded}
           <div class="deploy-actions" data-deploy-decide="elsewhere">
             <a class="primary" href={href} onClick={(e) => toControl(e, href)} data-deploy-on-control>
-              Approve on Control
+              Approve on your machines page
             </a>
             <p class="dim deploy-why" data-deploy-why-elsewhere>
               {shown.why.charAt(0).toUpperCase() + shown.why.slice(1)}.{" "}
-              {app ? "This opens Control's page in your browser, where your passkey approves or denies it." : "Control's page asks for your passkey, and approves or denies it there."}
+              {app ? "This opens your machines page in your browser, where your passkey approves or denies it." : "Your machines page asks for your passkey, and approves or denies it there."}
             </p>
           </div>
         </>
@@ -313,7 +313,7 @@ export function DeployDecide({ d, onDecided }: { d: Deploy; onDecided: (after: D
           {d.subject || d.expected_version ? (
             // Not signed: beside the checked facts, never in place of them (#333).
             <p class="dim" data-deploy-reading>
-              The platform reads this as: {deployTitle(d)}
+              Arugula reads this as: {deployTitle(d)}
             </p>
           ) : null}
           {ok.plan.rollBack ? (
@@ -351,7 +351,7 @@ export function DeployDecide({ d, onDecided }: { d: Deploy; onDecided: (after: D
             <p class="dim deploy-why">
               Or{" "}
               <a href={href} onClick={(e) => toControl(e, href)} data-deploy-on-control>
-                approve on Control
+                approve on your machines page
               </a>
               , if your passkey isn't offered here.
             </p>

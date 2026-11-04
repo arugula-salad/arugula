@@ -97,20 +97,20 @@ export function BlockFrame(p: FrameProps) {
       <>
         {failed !== null && (
           <div class="block-note" data-block-fallback>
-            Via the machine's own block site: this browser couldn't open it through Arugula control ({failed}).
+            Via the machine's own block site: this browser couldn't open it through Arugula cloud ({failed}).
           </div>
         )}
         {frame(own)}
       </>
     );
   return failed !== null ? (
-    <BlockError data-block-nowhere title="This browser can't show this block through Arugula control" detail={failed}>
+    <BlockError data-block-nowhere title="This browser can't show this block through Arugula cloud" detail={failed}>
       <p class="block-error-detail">This machine has no block site of its own to fall back to. Try Chrome, or another browser.</p>
     </BlockError>
   ) : (
     <BlockEmpty data-block-nowhere>
-      <p>This block shows in Control</p>
-      <p>This machine has no block site of its own (--block-listen), so its ports and editors open from control.</p>
+      <p>This block shows in Arugula cloud</p>
+      <p>This machine has no block site of its own (--block-listen), so its ports and editors open from there.</p>
     </BlockEmpty>
   );
 }

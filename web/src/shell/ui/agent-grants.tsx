@@ -111,7 +111,7 @@ function AgentGrants({ close }: { close: () => void }) {
         if (!r.ok || !v?.grants) throw new Error(v?.error ?? `${r.status}`);
         if (live) setGrants(grantsOf(v.grants, { id, name }));
       })
-      .catch(() => live && setError("Control's page has them: open this machine through Control to see them here."));
+      .catch(() => live && setError("Arugula cloud has them: open this machine there to see them here."));
     return () => void (live = false);
   }, [id, name]);
   const settings = platformOrigin();
@@ -125,11 +125,11 @@ function AgentGrants({ close }: { close: () => void }) {
     <Modal close={close} label="Agents' grants" class="rules agent-grants">
       <h2>Agents' grants</h2>
       <p class="hint">
-        What the agents on {name} may do on Arugula control, as you: each one's work there is labelled as your agent's on this machine.
+        What the agents on {name} may do on Arugula cloud, as you: each one's work there is labelled as your agent's on this machine.
       </p>
       {error && <p class="hint" data-agent-grants-error>{error}</p>}
       {!error && grants === null && <p class="hint">Loading…</p>}
-      {grants && !powers.length && <p data-agent-grants-none>None: its agents can't do anything on control.</p>}
+      {grants && !powers.length && <p data-agent-grants-none>None: its agents can't do anything on Arugula cloud.</p>}
       {powers.length > 0 && (
         <ul class="agent-grants-list" data-agent-grants>
           {powers.map((p) => (
@@ -140,7 +140,7 @@ function AgentGrants({ close }: { close: () => void }) {
         </ul>
       )}
       <p class="hint">
-        {settings ? "Give or take them back in the platform's Settings, under Agents, or with " : "Give or take them back with "}
+        {settings ? "Give or take them back in Account settings, under Agents, or with " : "Give or take them back with "}
         <code>arugula grants</code>.
       </p>
       <div class="prompt-buttons">

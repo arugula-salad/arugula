@@ -8794,6 +8794,13 @@
             "minimum": 0,
             "type": "integer"
           },
+          "wants": {
+            "default": 0,
+            "description": "How much of `unread` wants the reader: what a count of it says. In\nan object's thread, its mentions, and on an open native issue\nassigned to the reader what isn't from their own agents; the rest\nof `unread` is only a dot on its row. In any other room, `unread`.",
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          },
           "with": {
             "anyOf": [
               {

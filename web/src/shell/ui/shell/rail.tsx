@@ -60,7 +60,7 @@ export function Rail({ client }: { client: Client }) {
     // the app (openPlatform); a modified click is the browser's.
     !!projects && {
       label: "Projects",
-      tip: "Projects: their issues, boards, runs, deploys and chat, on the platform page",
+      tip: "Projects: their issues, boards, runs, deploys and chat",
       here: false,
       hook: "data-open-projects",
       icon: <ProjectsIcon />,
@@ -81,7 +81,7 @@ export function Rail({ client }: { client: Client }) {
     threads && {
       label: "Chat",
       aria: n ? `Chat, ${n} unread${mention ? ", mentioning you" : ""}` : "Chat",
-      tip: "Chat: every thread, on every machine, on the platform page",
+      tip: "Chat: every thread, on every machine",
       here: false,
       hook: "data-open-chat",
       icon: <ChatIcon />,

@@ -149,7 +149,7 @@ export function QuotePicker({ close, take }: { close: () => void; take: (q: Pane
           {text === null && !err && <p class="chat-none">Reading it…</p>}
           {text !== null && (
             <>
-              <p class="dim">Keep the lines you want to share: only these go to control, in the message.</p>
+              <p class="dim">Keep the lines you want to share: only these go to Arugula cloud, in the message.</p>
               <textarea class="chat-quote-text" aria-label="Lines to quote" value={text} rows={8} onInput={(e) => setText((e.target as HTMLTextAreaElement).value)} />
             </>
           )}

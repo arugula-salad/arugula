@@ -199,7 +199,7 @@ export function AccountPanel({ s, close, linked, emailBack }: { s: ControlSessio
         ))}
       </ul>
       <p class="dim">
-        {others ? `${others} other session${others === 1 ? "" : "s"}${unnamed ? `, ${unnamed} of them from before control kept which browser` : ""}. ` : "Nowhere else. "}
+        {others ? `${others} other session${others === 1 ? "" : "s"}${unnamed ? `, ${unnamed} of them from before Arugula kept which browser` : ""}. ` : "Nowhere else. "}
         <button
           class={confirming === "all" ? "link danger" : "link"}
           data-end-all
@@ -380,7 +380,7 @@ export function AccountPanel({ s, close, linked, emailBack }: { s: ControlSessio
       <UsageReports telemetry={s.telemetry} setTelemetry={(on) => s.setTelemetry(on)} />
       <h3 class="control-group">Delete your account</h3>
       <p class="dim">
-        Removes your account from this control, with your devices, machines, sessions and passkeys.{" "}
+        Removes your account from this server, with your devices, machines, sessions and passkeys.{" "}
         <button
           class="link danger"
           data-delete-account
@@ -435,11 +435,11 @@ function DeleteAccount({ s, back }: { s: ControlSession; back: () => void }) {
       <h2>Delete your account</h2>
       {p ? (
         <>
-          <p>This can't be undone. Control forgets:</p>
+          <p>This can't be undone. Arugula cloud forgets:</p>
           <ul class="control-steps" data-delete-what>
             <li>your account, your passkeys, its link to your GitHub account, and every session;</li>
             <li>
-              your devices, and your {p.machines} machine{p.machines === 1 ? "" : "s"}: they stop reaching control (Arugula keeps running on them, reachable only locally);
+              your devices, and your {p.machines} machine{p.machines === 1 ? "" : "s"}: they stop reaching Arugula cloud (Arugula keeps running on them, reachable only locally);
             </li>
             {p.disband.map((t) => (
               <li key={t.team} data-disband={t.team}>

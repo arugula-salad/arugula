@@ -119,7 +119,7 @@ export interface CheckedPlan {
  * in `arugula deploy plan v1`'s shape: what it says, or why not. Read only
  * from the hashed text, never from what the platform says beside it. */
 export async function checkPlan(text: unknown, digest: string): Promise<CheckedPlan | string> {
-  if (typeof text !== "string" || !text) return "the platform didn't show its plan";
+  if (typeof text !== "string" || !text) return "Arugula didn't show its plan";
   if ((await sha256Hex(text)) !== digest) return "its plan's text isn't the plan you'd sign";
   const lines = text.split("\n");
   if (lines[0] !== "arugula deploy plan v1" || !lines[1]?.startsWith("driver ")) return "its plan's text can't be read";
@@ -263,7 +263,7 @@ export async function passkeyOver(a: Approval, rpId: string, allow: string[] = [
  * related origins; an error to show when the person turned it down; else
  * null (the browser's own error stands). */
 export function refusedHow(name: string | undefined, afterMs: number, same: boolean): Error | null {
-  if (name === "SecurityError") return new NotHere("this browser or password manager can't use Control's passkeys on this page");
+  if (name === "SecurityError") return new NotHere("this browser or password manager can't use your Arugula passkeys on this page");
   if (name === "NotAllowedError" && afterMs < NOBODY_ANSWERS_MS && !same) {
     return new NotHere("the passkey prompt was turned down before anyone could answer it, as a password manager without related origins does");
   }
@@ -280,6 +280,6 @@ export async function passkeysNotHere(rpId: string): Promise<string | null> {
   if (!P || !globalThis.navigator?.credentials?.get) return "this window has no passkeys (WebAuthn)";
   if (sameSite(rpId)) return null;
   const caps = await P.getClientCapabilities?.().catch(() => null);
-  if (caps && caps.relatedOrigins === false) return "this browser can't use Control's passkeys on this page (no related origins)";
+  if (caps && caps.relatedOrigins === false) return "this browser can't use your Arugula passkeys on this page (no related origins)";
   return null;
 }

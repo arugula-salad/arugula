@@ -49,7 +49,7 @@ export function DocLink({ d, project, platform, remove }: { d: DocShown; project
       );
     } else if (control) {
       name = (
-        <a class="board-ptr" href={control} target="_blank" rel="noopener noreferrer" title="Open its machine in control" data-board-doc-open>
+        <a class="board-ptr" href={control} target="_blank" rel="noopener noreferrer" title="Open its machine" data-board-doc-open>
           {d.title}
         </a>
       );
