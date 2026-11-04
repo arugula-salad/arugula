@@ -148,7 +148,7 @@ pub fn compose(p: Pieces) -> AccessView {
     if let Some(r) = roster.as_ref().filter(|r| r.nobody) {
         let what = if r.purpose.as_deref() == Some("both") { "a deploy and a snapshot" } else { "one deploy" };
         notes.push(format!(
-            "A box made for {what}: the project's people aren't admitted here, not even its owners, nor is anyone a session was shared with by account or team, and Arugula cloud routes nobody to it."
+            "A box made for {what}: the project's people aren't admitted here, not even its owners, nor is anyone a session was shared with by account or team, nor anyone holding a session's link, and Arugula cloud routes nobody to it."
         ));
     }
     if roster.as_ref().is_some_and(|r| r.purpose.as_deref() == Some("snapshot")) {
@@ -279,7 +279,11 @@ pub fn compose(p: Pieces) -> AccessView {
             x.session = Some(g.session);
             x.from_ms = g.from.as_ref().map(|_| g.at);
             x.until_ms = g.expires;
-            x.note = Some("a read-only link to the session".into());
+            x.note = Some(if nobody {
+                "a read-only link to the session, held: a deploy's box admits no link".into()
+            } else {
+                "a read-only link to the session".into()
+            });
             rows.push(x);
         } else {
             let who = if g.name.is_empty() {
@@ -569,19 +573,33 @@ mod tests {
             grant(3, "tailnet:friend@example.com", "friend@example.com", Role::Editor),
             grant(3, "account:z1", "zed", Role::Viewer),
             grant(3, "team:t9", "Nine", Role::Viewer),
+            Grant {
+                key: Some("ab".repeat(32)),
+                expires: Some(9_000),
+                ..grant(3, "link:abc", "someone with a link", Role::Viewer)
+            },
         ];
         p.shares = vec![Share { id: 1, pane: 9, created_ms: 1, expires_ms: 8_000, token: None, path: None, url: None }];
         p.trust = vec![(9, "tailnet:friend@example.com".into(), 99_999)];
         let v = compose(p);
         // The account's and the team's shares go through `build`, which
-        // admits no one here: not listed. The rest is checked elsewhere.
+        // admits no one here: not listed. A session's link is held and
+        // admits no one, and says so. The rest is checked elsewhere.
         let kinds: Vec<&str> = v.rows.iter().map(|r| r.kind.as_str()).collect();
-        assert_eq!(kinds, ["share", "link", "trust"]);
+        assert_eq!(kinds, ["share", "link", "link", "trust"]);
+        let session_link = v.rows.iter().find(|r| r.principal.as_deref() == Some("link:abc")).unwrap();
+        assert_eq!(
+            session_link.note.as_deref(),
+            Some("a read-only link to the session, held: a deploy's box admits no link")
+        );
         assert!(v.rows.iter().all(|r| r.principal.as_deref() != Some("account:z1")), "{:?}", v.rows);
         assert_eq!(v.purpose.as_deref(), Some("deploy"));
         let said = |what: &str| v.notes.iter().any(|n| n.contains(what));
         assert!(
-            said("A box made for one deploy") && said("aren't admitted here") && said("routes nobody"),
+            said("A box made for one deploy")
+                && said("aren't admitted here")
+                && said("a session's link")
+                && said("routes nobody"),
             "{:?}",
             v.notes
         );

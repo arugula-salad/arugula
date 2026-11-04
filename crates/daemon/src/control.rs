@@ -1199,6 +1199,15 @@ impl Enrolled {
         a.dedup();
         a
     }
+
+    /// Whether a read-only link's key gets in. A deploy's box admits no
+    /// one, as [`Enrolled::build`] admits no roster there, and that
+    /// includes a link: one made before the box was told it's a deploy's
+    /// stops working then (purposes only close). The link stays in
+    /// `acl.json`.
+    fn admits_links(&self) -> bool {
+        !self.saved.purpose().is_some_and(Purpose::deploys)
+    }
 }
 
 impl std::fmt::Debug for Control {
@@ -2222,7 +2231,11 @@ impl Control {
         if let Some(found) = e.agent_callers.iter().find(|(c, _)| c.noise == key) {
             return Some(found.clone());
         }
-        // A read-only link's key (M19): a viewer of one session, while it lasts.
+        // A read-only link's key (M19): a viewer of one session, while it
+        // lasts, except on a deploy's box.
+        if !e.admits_links() {
+            return None;
+        }
         let g = self.acl.link_by_key(&key)?;
         let cert = Cert {
             v: 1,
@@ -2883,7 +2896,7 @@ impl Control {
 
     /// Tell control which accounts get in (it routes them; we decide).
     async fn publish(&self, e: &Enrolled) {
-        let links = self.acl.links_until();
+        let links = if e.admits_links() { self.acl.links_until() } else { None };
         let body = wire::AccessList { accounts: e.accounts(), links_until: links, agents: e.agent_accounts() };
         if self.published.lock().unwrap().as_ref() == Some(&body) {
             return;
@@ -6730,6 +6743,51 @@ pub(crate) mod tests {
                 Err(_) => "err".to_owned(),
             })
             .collect()
+    }
+
+    /// A read-only link's key on each kind of hosted box: a workspace and a
+    /// snapshot's box let it in; a deploy's box, and one that is both,
+    /// don't. A link made while the box was a workspace stops working when
+    /// it's told it's a deploy's, and stays in `acl.json`.
+    #[test]
+    fn a_deploys_box_admits_no_links() {
+        let load = |name: &str| -> Saved {
+            let text = std::fs::read_to_string(Path::new(FIXTURES).join(format!("{name}.json"))).unwrap();
+            serde_json::from_str(&text).unwrap()
+        };
+        let noise = [7u8; 32];
+        let key = hex::encode(noise);
+        let admitted = |saved: &Saved, tag: &str| {
+            let dir = std::env::temp_dir().join(format!("arugula-deploy-links-{}-{tag}", std::process::id()));
+            let _ = std::fs::remove_dir_all(&dir);
+            std::fs::create_dir_all(&dir).unwrap();
+            let acl = Arc::new(Acl::open(&dir));
+            acl.add_link(1, &key, now_ms() + 600_000, None).unwrap();
+            let c = Control::new(&dir, vec![], String::new(), acl.clone(), false);
+            c.install(Some(Enrolled::build(saved.clone(), Arc::new(DeviceKeys::generate()), &acl, false)));
+            let got = c.device(&noise).map(|(_, p)| p.id().to_owned());
+            (c, acl, dir, got)
+        };
+        for (name, want) in
+            [("hosted-team", true), ("hosted-snapshot", true), ("hosted-deploy-team", false), ("hosted-both", false)]
+        {
+            let (_, _, dir, got) = admitted(&load(name), name);
+            assert_eq!(got.is_some(), want, "{name}: {got:?}");
+            if let Some(id) = got {
+                assert!(id.starts_with("link:"), "{name}: {id}");
+            }
+            let _ = std::fs::remove_dir_all(&dir);
+        }
+
+        // Made on a workspace, then the box is told it's a deploy's.
+        let mut saved = load("hosted-team");
+        let (c, acl, dir, before) = admitted(&saved, "switch");
+        assert!(before.is_some(), "a workspace lets the link in");
+        saved.hosted_mut().unwrap().purpose = saved.purpose().unwrap().or(Purpose::Deploy);
+        c.install(Some(Enrolled::build(saved, Arc::new(DeviceKeys::generate()), &acl, false)));
+        assert!(c.device(&noise).is_none(), "the same key, once it's a deploy's box");
+        assert!(acl.list().iter().any(|g| g.key.as_deref() == Some(key.as_str())), "the link stays in acl.json");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// The access view (Arugula #681) says exactly whom [`Enrolled::build`]
