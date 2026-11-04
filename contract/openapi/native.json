@@ -6814,6 +6814,13 @@
             ],
             "description": "The machine whose agent linked it, if one did."
           },
+          "copy": {
+            "description": "A machine Doc's copy on the platform (`pdc_…`), when it sits in this\nboard's project (native #673): the title and counts are then the\ncopy's, and the chip opens it while the machine is away. Older\nplatforms don't send it.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "created_at": {
             "format": "uint64",
             "minimum": 0,
@@ -11467,7 +11474,7 @@
             "type": "object"
           },
           {
-            "description": "A Doc block on a machine. `title` is a snapshot from when it was\nlinked, since the machine may be off.",
+            "description": "A Doc block on a machine. `title` is a snapshot from when it was\nlinked, since the machine may be off; a [`BoardDoc`] reads the\nmachine's copy instead when the copy sits in the board's project.",
             "properties": {
               "doc": {
                 "type": "string"

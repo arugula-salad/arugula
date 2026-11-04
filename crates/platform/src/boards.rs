@@ -886,6 +886,11 @@ async fn read(app: &Platform, account: &str, id: &str) -> Result<wire::BoardView
         }
     };
     let asks = asks::Asks::load(app, account, &project, id).await?;
+    let copies = if strip.iter().any(|d| matches!(d.pointer, wire::Pointer::MachineDoc { .. })) {
+        docs::copies_in(app, &stored.board.project)?
+    } else {
+        Default::default()
+    };
     let mut row_docs: HashMap<String, Vec<db_docs::Strip>> = HashMap::new();
     let mut strip_only = vec![];
     for d in strip {
@@ -973,7 +978,7 @@ async fn read(app: &Platform, account: &str, id: &str) -> Result<wire::BoardView
             lane: a.lane,
             lane_set: set.map(|s| wire::LaneSet { lane: s.lane, by: s.by.clone(), at: s.at }),
             attachments,
-            docs: docs::view(row_docs.remove(&e.id).unwrap_or_default(), &names, &named),
+            docs: docs::view(row_docs.remove(&e.id).unwrap_or_default(), &names, &named, &copies),
             proof: a.proof,
             group: e.zone.clone(),
             marks,
@@ -991,7 +996,8 @@ async fn read(app: &Platform, account: &str, id: &str) -> Result<wire::BoardView
             updated_at: e.updated_at,
         });
     }
-    Ok(wire::BoardView { board, zones, groups, docs: docs::view(strip_only, &names, &named), ready, said: None })
+    let docs = docs::view(strip_only, &names, &named, &copies);
+    Ok(wire::BoardView { board, zones, groups, docs, ready, said: None })
 }
 
 /// The board `id`, in `project`, changed: pages showing it read it again

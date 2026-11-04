@@ -3,11 +3,14 @@
 //! no lane and proves nothing, a Doc of another project refused, a deleted
 //! Doc read as missing, and what the Doc's page says of its boards.
 
-use arugula_control_wire::boards::{BOARD_DOCS_MAX, agent_board_doc, agent_board_docs};
+use arugula_control_wire::{
+    boards::{BOARD_DOCS_MAX, agent_board_doc, agent_board_docs},
+    project_docs::machine_doc,
+};
 use arugula_e2e::team::TeamRole;
 use serde_json::{Value, json};
 
-use super::tests::{attach, geek, grant_write, issue, lane, put, row_in, rows_in};
+use super::tests::{attach, geek, grant_write, issue, lane, put, row_in, rows_in, signed};
 use crate::{
     agents_tests::seeded,
     chat_tests::call,
@@ -646,4 +649,109 @@ async fn a_closed_boards_docs_stay_editable() {
     assert_eq!(st, 200);
     let (st, v) = link(&base, "a", &id, json!({ "kind": "doc", "id": d })).await;
     assert_eq!((st, titles(&v)), (200, vec!["The spike"]), "{v}");
+}
+
+/// A machine Doc's chip reads the machine's copy (#418) only where the copy
+/// sits, the board's own project (native #673): title and sections as the
+/// machine last put them, and the copy's id, which opens it while the
+/// machine is away. Anywhere else the chip keeps the title it was linked
+/// with: on the team's board, on a teammate's own board, and on the board
+/// of someone the team took out, who can still link the pointer they saw.
+#[tokio::test]
+async fn a_machine_docs_chip_reads_its_copy_only_in_the_copys_project() {
+    let (hub, _app, base, t, _u) = seeded().await;
+    let id = board(&base, &t).await;
+    grant_write(&base, "a", "geek", &t).await;
+    let mine = json!({ "kind": "machine_doc", "machine": "geek", "doc": "d7", "title": "Perf notes" });
+    let (st, v) = geek(&base, "POST", &agent_board_docs(&id), Some(json!({ "pointer": mine }))).await;
+    assert_eq!(st, 200, "{v}");
+    assert!(v["docs"][0].get("copy").is_none() && v["docs"][0].get("sections").is_none(), "no copy yet: {v}");
+
+    let put_doc = json!({
+        "title": "Perf notes, now private",
+        "sections": [{ "id": "s1", "heading": "Setup", "body": "x" }, { "id": "s2", "heading": "Numbers" }],
+    });
+    let (st, p) = signed(&base, "a geek", "PUT", &machine_doc("d7"), Some(put_doc)).await;
+    assert_eq!(st, 200, "{p}");
+    let pdc = p["id"].as_str().unwrap();
+    // The team's board: the copy is in a's personal project, so the chip
+    // keeps the title it was linked with.
+    let snapshot = |d: &Value| {
+        assert_eq!(d["title"], "Perf notes", "{d}");
+        assert!(d.get("sections").is_none() && d.get("written").is_none() && d.get("copy").is_none(), "{d}");
+    };
+    let (_, v) = call(&base, "a", "GET", &format!("/api/boards/{id}"), None).await;
+    snapshot(&v["docs"][0]);
+    assert_eq!(v["docs"][0]["machine_name"], "geek-box", "{v}");
+
+    // On a board of a's own project, where the copy is, the chip reads it.
+    let (st, b) = call(&base, "a", "POST", "/api/projects/personal/boards", Some(json!({ "title": "Mine" }))).await;
+    assert_eq!(st, 200, "{b}");
+    let own = b["board"]["id"].as_str().unwrap().to_owned();
+    let (st, v) = link(&base, "a", &own, mine.clone()).await;
+    assert_eq!(st, 200, "{v}");
+    let d = &v["docs"][0];
+    assert_eq!(
+        (&d["copy"], &d["title"], &d["sections"], &d["written"]),
+        (&json!(pdc), &json!("Perf notes, now private"), &json!(2), &json!(1)),
+        "{v}"
+    );
+    assert_eq!(d["pointer"]["title"], "Perf notes", "the pointer keeps its snapshot: {v}");
+    // On a row too.
+    let (_, v) = put(&base, "a", &own, json!({ "entry": "row", "note": "the numbers" })).await;
+    let row = v["zones"][0]["rows"][0]["id"].as_str().unwrap().to_owned();
+    let (st, v) = link_row(&base, "a", &own, &row, mine.clone()).await;
+    assert_eq!(st, 200, "{v}");
+    assert_eq!(row_in(&v, &row)["docs"][0]["copy"], json!(pdc), "{v}");
+
+    // A teammate links the pointer on a board of their own: the snapshot.
+    let (_, b) = call(&base, "b", "POST", "/api/projects/personal/boards", Some(json!({ "title": "B's" }))).await;
+    let bs = b["board"]["id"].as_str().unwrap().to_owned();
+    let (st, v) = link(&base, "b", &bs, mine.clone()).await;
+    assert_eq!(st, 200, "{v}");
+    snapshot(&v["docs"][0]);
+    // Taken out of the team, b still has the pointer, and still only that.
+    hub.team("t", &[("a", TeamRole::Owner), ("x", TeamRole::Viewer)]);
+    crate::cache::catch_up(&_app).await.unwrap();
+    let (_, v) = call(&base, "b", "GET", &format!("/api/boards/{bs}"), None).await;
+    snapshot(&v["docs"][0]);
+    assert_eq!(
+        call(&base, "b", "GET", &format!("/api/boards/{id}"), None).await.0,
+        404,
+        "the team's board is gone for b"
+    );
+}
+
+/// Native #673 with the machine's id blanked: a's own machine Doc, linked
+/// by a to the team's board, whose copy sits in the team's project (as a
+/// move left it). b, who doesn't reach a's machine, is told "a machine"
+/// with the id blanked, and still reads the copy, which sits where b may
+/// read: its title, its counts and its id. a reads the same, with the id.
+#[tokio::test]
+async fn a_reader_not_told_the_machine_still_reads_a_copy_in_the_boards_project() {
+    let (hub, app, base, t, _u) = seeded().await;
+    hub.daemon("apad", "a", None);
+    crate::cache::catch_up(&app).await.unwrap();
+    let id = board(&base, &t).await;
+    let put_doc = json!({ "title": "Pad notes, now", "sections": [{ "id": "s1", "heading": "One", "body": "x" }] });
+    let (st, p) = signed(&base, "a apad", "PUT", &machine_doc("d9"), Some(put_doc)).await;
+    assert_eq!(st, 200, "{p}");
+    let pdc = p["id"].as_str().unwrap().to_owned();
+    let n = app.db.c().execute("UPDATE project_docs SET project_id = ?1 WHERE id = ?2", params![t, pdc]).unwrap();
+    assert_eq!(n, 1);
+    let pointer = json!({ "kind": "machine_doc", "machine": "apad", "doc": "d9", "title": "Pad notes" });
+    let (st, v) = link(&base, "a", &id, pointer).await;
+    assert_eq!(st, 200, "{v}");
+
+    let (_, v) = call(&base, "b", "GET", &format!("/api/boards/{id}"), None).await;
+    let d = &v["docs"][0];
+    assert_eq!((&d["machine_name"], &d["pointer"]["machine"]), (&json!("a machine"), &json!("")), "blanked: {v}");
+    assert_eq!(
+        (&d["copy"], &d["title"], &d["sections"], &d["written"]),
+        (&json!(pdc), &json!("Pad notes, now"), &json!(1), &json!(1)),
+        "the copy still read: {v}"
+    );
+    let (_, v) = call(&base, "a", "GET", &format!("/api/boards/{id}"), None).await;
+    let d = &v["docs"][0];
+    assert_eq!((&d["pointer"]["machine"], &d["copy"]), (&json!("apad"), &json!(pdc)), "{v}");
 }

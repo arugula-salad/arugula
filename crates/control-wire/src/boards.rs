@@ -371,7 +371,8 @@ pub enum Pointer {
         id: String,
     },
     /// A Doc block on a machine. `title` is a snapshot from when it was
-    /// linked, since the machine may be off.
+    /// linked, since the machine may be off; a [`BoardDoc`] reads the
+    /// machine's copy instead when the copy sits in the board's project.
     MachineDoc {
         machine: String,
         doc: String,
@@ -563,6 +564,13 @@ pub struct BoardDoc {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "ts", ts(optional))]
     pub machine_name: Option<String>,
+    /// A machine Doc's copy on the platform (`pdc_…`), when it sits in this
+    /// board's project (native #673): the title and counts are then the
+    /// copy's, and the chip opens it while the machine is away. Older
+    /// platforms don't send it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub copy: Option<String>,
     /// The account that linked it (the owner, for an agent).
     pub added_by: String,
     /// The machine whose agent linked it, if one did.
