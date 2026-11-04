@@ -21,7 +21,7 @@
 //!   and agent grant tokens', with whose each is and, when it does less
 //!   than the power now, what (`limited`: a label and why): a write power
 //!   on a viewer's (the one definition the grants list uses,
-//!   [`crate::grants::idle_for`]), a giver who left the project or is
+//!   [`crate::grants::limited_for`]), a giver who left the project or is
 //!   locked out of it, a machine that isn't its giver's any more;
 //! - **allow:** what a project owner signed: the delegation for hosted
 //!   machines (control's) and the standing run grant with its expiry (the
@@ -62,7 +62,7 @@ use crate::{
     auth::Person,
     db::projects::{CLOUD_DRIVE, subject_kind},
     forge::links::membership,
-    grants::{AgentScope, agent_names, idle_for},
+    grants::{AgentScope, agent_names, limited_for},
 };
 
 type R = Result<Json<Value>, ApiError>;
@@ -92,7 +92,7 @@ pub const FULL_USE: &str = "owners and editors have full use; viewers watch";
 /// What a grant's row says of a giver who isn't in the project now.
 pub const FORMER_MEMBER: &str = "a former member";
 
-/// Why a grant does nothing now, beyond [`idle_for`]'s: its giver isn't
+/// Why a grant does nothing now, beyond [`limited_for`]'s: its giver isn't
 /// in the project, or is locked out of it, or the machine isn't the
 /// giver's any more.
 pub const IDLE_LEFT: &str =
@@ -279,14 +279,15 @@ pub async fn list(State(app): State<Arc<Platform>>, Person { account }: Person, 
             };
             let giver = standing(&g.granted_by);
             // What it does now, when less than the power: the label is
-            // the word a list shows ("idle"), `why` the sentence.
-            let limited = |why: String| json!({ "label": "idle", "why": why });
+            // the word a list shows ("idle"), `why` the sentence. A viewer's
+            // is the grants list's own definition (`limited_for`).
+            let idle = |why: &str| json!({ "label": "idle", "why": why });
             let limited = match giver {
-                Standing::Former => Some(limited(IDLE_LEFT.to_owned())),
-                Standing::LockedOut(_) => Some(limited(IDLE_LOCKED_OUT.to_owned())),
-                Standing::Member(_) if !theirs && token => Some(limited(IDLE_TOKEN_GONE.to_owned())),
-                Standing::Member(_) if !theirs => Some(limited(IDLE_NOT_THEIRS.to_owned())),
-                Standing::Member(role) => idle_for(&g.power, role, &scope, &owner.name).map(limited),
+                Standing::Former => Some(idle(IDLE_LEFT)),
+                Standing::LockedOut(_) => Some(idle(IDLE_LOCKED_OUT)),
+                Standing::Member(_) if !theirs && token => Some(idle(IDLE_TOKEN_GONE)),
+                Standing::Member(_) if !theirs => Some(idle(IDLE_NOT_THEIRS)),
+                Standing::Member(role) => limited_for(&g.power, role, &scope, &owner.name).map(|l| json!(l)),
             };
             // A former member's machine or token isn't named either: the
             // row says a former member's agents held the power, no more.

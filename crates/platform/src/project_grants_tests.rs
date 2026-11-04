@@ -219,7 +219,7 @@ async fn members_list_the_projects_grants_and_nobody_else_does() {
 /// then on; a locked team's editors and viewers are out while it's
 /// locked. A grant whose giver left does nothing and says so, with the
 /// giver a former member, unnamed; a demoted viewer's write power is
-/// idle by the one definition the grants list uses.
+/// limited by the one definition the grants list uses.
 #[tokio::test]
 async fn the_roster_comes_through_the_cache() {
     let (hub, app, base, t, _u) = seeded().await;
@@ -253,11 +253,11 @@ async fn the_roster_comes_through_the_cache() {
     let (_, v) = access(&base, "x", &t).await;
     let rows = powers(&v);
     assert_eq!((rows[0].2.as_str(), rows[1].2.as_str()), (ISSUES_WRITE, THREADS_POST), "{v}");
-    assert!(rows[0].3.contains("does nothing on a viewer's"), "{v}");
+    assert!(rows[0].3.contains("does nothing here: its giver only views"), "{v}");
     assert_eq!(rows[1].3, "", "{v}");
     let (_, mine) = call(&base, "b", "GET", "/api/grants", None).await;
     let theirs = mine["grants"].as_array().unwrap().iter().find(|g| g["power"] == ISSUES_WRITE).unwrap();
-    assert_eq!(theirs["idle"], v["powers"]["grants"][0]["limited"]["why"], "one definition");
+    assert_eq!(theirs["limited"], v["powers"]["grants"][0]["limited"], "one definition: the grants list's");
     assert_eq!(v["powers"]["grants"][0]["limited"]["label"], "idle");
     assert_eq!(v["powers"]["grants"][0]["owner_role"], "viewer");
 
