@@ -33,7 +33,7 @@ lists the differences.
 |---|---|---|
 | Session grant | A person's role on a session | `<state>/acl.json` |
 | Project grant | What a machine's agents may do in a project, like `boards.write` | Platform, `grt_` |
-| Standing run grant | Runs and agent sessions a project's owner has signed for | `run_grants`, signed with a passkey |
+| Standing run grant | Runs a project's owner has signed for | `run_grants`, signed with a passkey |
 
 Org isn't built. Billing keys on an owner, with no org above it.
 
