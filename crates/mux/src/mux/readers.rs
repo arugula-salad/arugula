@@ -12,21 +12,21 @@ impl Daemon {
     /// Who may read each pane and session here now, of the people who can
     /// reach this machine. The owner reads everything and isn't listed.
     ///
-    /// A team's other owners (#386) get in as the owner, so they read what
-    /// the owner reads: every pane, a private one included (native #684).
-    /// Each is listed by their own account, as the owner's role, from the
-    /// start.
+    /// A team's other owners (#386), and a hosted workspace's editors, get
+    /// in as the owner, so they read what the owner reads: every pane, a
+    /// private one included (native #684, #705). Each is listed by their
+    /// own account, as the owner's role, from the start.
     pub(super) fn readers(&self) -> Readers {
-        let co_owners: HashSet<String> =
-            self.config.people.co_owners().into_iter().map(|p| p.id().to_owned()).collect();
+        let as_owner: HashSet<String> = self.config.people.as_owner().into_iter().map(|p| p.id().to_owned()).collect();
         let people: Vec<(String, Principal)> = self
             .reachers()
             .into_iter()
             .filter(|p| !p.is_owner())
             .map(|p| {
                 let id = p.id().to_owned();
-                // As the machine admits them: a co-owner as the owner.
-                let as_who = if co_owners.contains(&id) { Principal::Owner } else { p };
+                // As the machine admits them: a co-owner, or a hosted
+                // workspace's editor, as the owner.
+                let as_who = if as_owner.contains(&id) { Principal::Owner } else { p };
                 (id, as_who)
             })
             .collect();
@@ -63,12 +63,13 @@ impl Daemon {
         Some((role, self.config.acl.share_at(who, session).unwrap_or(0)))
     }
 
-    /// Everyone who may reach this machine: the owner, the team's other
-    /// owners (#386), everyone shared with, team members (connected or
-    /// not), and whoever is connected.
+    /// Everyone who may reach this machine: the owner, whoever else gets
+    /// in as the owner (the team's other owners, #386; a hosted
+    /// workspace's editors, native #705), everyone shared with, team
+    /// members (connected or not), and whoever is connected.
     fn reachers(&self) -> Vec<Principal> {
         let mut out = vec![Principal::Owner];
-        out.extend(self.config.people.co_owners());
+        out.extend(self.config.people.as_owner());
         for g in self.config.acl.list() {
             out.push(Principal::User { id: g.principal.clone(), name: g.name.clone(), pic: None });
         }
