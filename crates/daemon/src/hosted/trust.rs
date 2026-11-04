@@ -69,8 +69,16 @@ pub fn saved_from(got: hosted::Enrollment, keys: &DeviceKeys, prev: Option<&Save
     // Removals once seen stay (a refresh adds, never takes away): control
     // leaving one out mustn't let a removed device count again.
     let revocations = kept(revocations, prev.and_then(|p| p.hosted()).map_or(&[][..], |h| h.revocations.as_slice()));
-    let mut closed = kept(closed, prev.and_then(|p| p.hosted()).map_or(&[][..], |h| h.closed.as_slice()));
-    closed.retain(|c| c.closes(&delegation));
+    // Control's word that the delegation ended: the earliest heard, held.
+    let held_closed = prev.and_then(|p| p.hosted()).map_or(&[][..], |h| h.closed.as_slice());
+    let closed: Vec<_> = closed
+        .iter()
+        .chain(held_closed)
+        .filter(|c| c.closes(&delegation))
+        .min_by_key(|c| c.at)
+        .cloned()
+        .into_iter()
+        .collect();
     // When this box first saw each certificate and removal it holds.
     let mut seen = prev.map(|p| p.seen.clone()).unwrap_or_default();
     let now = seen.next();
@@ -342,9 +350,8 @@ mod tests {
         (k, c)
     }
 
-    /// Control's word that the delegation ended is kept as a removal is: a
-    /// refresh adds to it, never takes from it. What doesn't check out isn't
-    /// kept at all.
+    /// Control's word that the delegation ended stays: the earliest heard,
+    /// whatever a refresh says. What doesn't check out isn't kept.
     #[test]
     fn a_delegations_end_stays_when_control_leaves_it_out() {
         let keys = DeviceKeys::generate();

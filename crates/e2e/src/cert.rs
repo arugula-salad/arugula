@@ -285,6 +285,9 @@ impl Checked {
 
 fn verify(key: &anyhow::Result<VerifyingKey>, msg: &[u8], sig_hex: &str) -> bool {
     let Ok(key) = key else { return false };
+    if !crate::keys::lower_hex(sig_hex) {
+        return false;
+    }
     let Ok(sig) = hex::decode(sig_hex) else { return false };
     let Ok(sig) = <[u8; 64]>::try_from(sig.as_slice()) else { return false };
     key.verify_strict(msg, &Signature::from_bytes(&sig)).is_ok()

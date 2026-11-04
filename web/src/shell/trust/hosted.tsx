@@ -15,7 +15,7 @@ import type { PlatformProjects } from "../../shared/proto.gen";
 
 interface Listed {
   key: string;
-  delegations: { id: string; delegation: Delegation; revoke: DelegationRevoke | null }[];
+  delegations: { id: string; delegation: Delegation; revoke: DelegationRevoke | null; ended?: boolean }[];
   projects: { id: string; name: string; owner: string }[];
   /** Hosted workspaces are open to this account: Allow is offered. */
   open: boolean;
@@ -36,7 +36,7 @@ export function HostedMachines({ s }: { s: ControlSession }) {
   useEffect(() => void load().catch((e: Error) => setErr(e.message)), []);
   const hosted = s.daemons.filter((d) => d.hosted);
   const live = (p: Listed["projects"][number]) =>
-    list?.delegations.find((x) => x.delegation.project === p.id && x.delegation.owner === p.owner && x.delegation.key === list.key && !x.revoke);
+    list?.delegations.find((x) => x.delegation.project === p.id && x.delegation.owner === p.owner && x.delegation.key === list.key && !x.revoke && !x.ended);
   // Where hosted workspaces are open, every project owned; elsewhere only
   // those already delegated, to stop.
   const projects = list ? list.projects.filter((p) => list.open || live(p)) : [];

@@ -16,9 +16,10 @@ use super::Db;
 pub(super) const SCHEMA: &str = "
 -- An owner's device's signed delegation (JSON), and its revocation.
 -- `owner` is `team:<id>` or `account:<id>`; `by_account` signed it.
--- `revoke` is the first revoke, `revoked` when it came (set once, and it
--- ends the delegation for good), and `more_revokes` (added since, a JSON
--- list) every other owner's device's.
+-- `revoked` is when it ended, set once, for good; `revoke` is the first
+-- revoke, and `more_revokes` (added since, a JSON list) the others, one per
+-- device up to `MAX_REVOKES`. Another delegation's revoke can end this one
+-- too: `revoked` set, and no revoke of its own.
 CREATE TABLE IF NOT EXISTS project_delegations (
     id TEXT PRIMARY KEY,
     project TEXT NOT NULL,
@@ -74,11 +75,10 @@ CREATE INDEX IF NOT EXISTS hosted_machines_workspace ON hosted_machines (workspa
 pub struct DelegationRow {
     pub delegation: Delegation,
     pub by_account: String,
-    /// The first revoke, and every one since, one per device. Each was
-    /// checked as it came, against who was an owner then.
+    /// The revokes kept, first first, one per device. Each was checked as it
+    /// came, against who was an owner then.
     pub revokes: Vec<DelegationRevoke>,
-    /// When control took the first revoke, by its own clock. Once set the
-    /// delegation is over, whatever becomes of whoever signed it.
+    /// When it ended, by control's clock. Once set it's over.
     pub revoked: Option<u64>,
 }
 
@@ -88,11 +88,10 @@ impl DelegationRow {
         self.revokes.first()
     }
 
-    /// When it ended: when control took the first revoke, or the earliest
-    /// revoke's own time if that's before it (within the slack control
-    /// allows a revoke's time). So what a client answers doesn't move when a
-    /// signer leaves and only control's word still counts. `None` while it
-    /// stands.
+    /// When it ended: `revoked`, or the earliest revoke's own time if that's
+    /// before it (within the slack control allows a revoke's time), so a
+    /// client's answer is the same whichever of them it can check. `None`
+    /// while it stands.
     pub fn ended(&self) -> Option<u64> {
         self.revoked.map(|at| self.revokes.iter().map(|r| r.at).fold(at, u64::min))
     }
@@ -103,9 +102,14 @@ impl DelegationRow {
 pub struct RevokeTaken {
     /// It's the one that ended the delegation.
     pub first: bool,
-    /// It's kept. Not, when this device's revoke of it was already.
+    /// It's kept. Not when this device's revoke of it was already, or
+    /// [`MAX_REVOKES`] are.
     pub kept: bool,
 }
+
+/// How many revokes of one delegation are kept. The first is what ends it, so
+/// the rest only tell clients from before more than they need.
+pub const MAX_REVOKES: usize = 32;
 
 /// A live hosted machine. It has no direct URLs: it's reached only
 /// through the relay, whatever its row holds.
@@ -169,14 +173,40 @@ fn hosted_of(cert: String, last_seen: Option<u64>, purpose: Option<String>) -> r
 }
 
 impl Db {
-    /// Keep a delegation an owner's device signed (again: nothing changes).
-    pub fn add_delegation(&self, d: &Delegation, by_account: &str, now: u64) -> anyhow::Result<()> {
-        self.c().execute(
+    /// Keep a delegation an owner's device signed (again: nothing changes),
+    /// unless another of its project and owner `stands`: one at a time. In
+    /// one transaction, so two at once get one answer each. Whether it's kept.
+    pub fn add_delegation(
+        &self,
+        d: &Delegation,
+        by_account: &str,
+        now: u64,
+        stands: impl Fn(&DelegationRow) -> bool,
+    ) -> anyhow::Result<bool> {
+        let mut c = self.c();
+        let tx = c.transaction()?;
+        let id = d.id();
+        let other = {
+            let mut q = tx.prepare(&format!(
+                "SELECT {DELEGATION_COLUMNS} FROM project_delegations WHERE project = ?1 AND owner = ?2 AND id != ?3"
+            ))?;
+            let rows = q.query_map(params![d.project, d.owner, id], delegation_of)?;
+            let mut found = false;
+            for row in rows {
+                found |= stands(&row?);
+            }
+            found
+        };
+        if other {
+            return Ok(false);
+        }
+        tx.execute(
             "INSERT OR IGNORE INTO project_delegations (id, project, owner, body, by_account, created)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-            params![d.id(), d.project, d.owner, serde_json::to_string(d)?, by_account, now],
+            params![id, d.project, d.owner, serde_json::to_string(d)?, by_account, now],
         )?;
-        Ok(())
+        tx.commit()?;
+        Ok(true)
     }
 
     pub fn delegation(&self, id: &str) -> anyhow::Result<Option<DelegationRow>> {
@@ -206,9 +236,9 @@ impl Db {
     }
 
     /// Take a delegation back. The first revoke ends it, and `revoked` is
-    /// set then, once. Each later one is kept beside it, one per device:
-    /// what a client from before this counts is the revokes whose signers
-    /// are still owners, so the more of them it hears the better.
+    /// set then, once. Later ones are kept beside it, one per device, up to
+    /// [`MAX_REVOKES`]. It ends any other of its project and owner too, so a
+    /// project that holds two from before the rule of one has none after.
     pub fn revoke_delegation(&self, r: &DelegationRevoke, now: u64) -> anyhow::Result<RevokeTaken> {
         let mut c = self.c();
         let tx = c.transaction()?;
@@ -226,9 +256,16 @@ impl Db {
                     "UPDATE project_delegations SET revoke = ?2, revoked = ?3 WHERE id = ?1",
                     params![r.delegation, serde_json::to_string(r)?, now],
                 )?;
+                tx.execute(
+                    "UPDATE project_delegations SET revoked = ?1
+                     WHERE project = ?2 AND owner = ?3 AND id != ?4 AND revoked IS NULL",
+                    params![now, row.delegation.project, row.delegation.owner, r.delegation],
+                )?;
                 RevokeTaken { first: true, kept: true }
             }
-            Some(row) if row.revokes.iter().any(|h| h.by == r.by) => RevokeTaken { first: false, kept: false },
+            Some(row) if row.revokes.len() >= MAX_REVOKES || row.revokes.iter().any(|h| h.by == r.by) => {
+                RevokeTaken { first: false, kept: false }
+            }
             Some(row) => {
                 let more: Vec<&DelegationRevoke> = row.revokes.iter().skip(1).chain([r]).collect();
                 tx.execute(

@@ -30,7 +30,7 @@ import {
   type Enrollment,
 } from "./e2e/keys.ts";
 import { newKeyPair } from "./e2e/noise.ts";
-import { acceptHosted, signDelegation, signRevoke, type Delegation, type DelegationRevoke, type HostedProof } from "./e2e/hosted.ts";
+import { acceptHostedHolding, signDelegation, signRevoke, type Delegation, type DelegationRevoke, type HostedProof } from "./e2e/hosted.ts";
 import { directUrls } from "../shared/hosted.ts";
 import { expiresIn, grantBody, grantRevokeBody, newGrant, newGrantRevoke, passkeyChallenge, type GrantRevoke, type PasskeyAssertion, type ProjectGrant } from "./e2e/run-grant.ts";
 import type { E2ETarget } from "./client";
@@ -64,7 +64,7 @@ import {
   type TeamPin,
   type TeamRole,
 } from "./e2e/team.ts";
-import { checkRoster, RosterStore, takeLock, TrustStore, withTimeout, type RootChange, type RosterProblem } from "./team-rosters.ts";
+import { checkRoster, ClosureStore, RosterStore, takeLock, TrustStore, withTimeout, type RootChange, type RosterProblem } from "./team-rosters.ts";
 
 export interface ControlInfo {
   control: true;
@@ -191,6 +191,7 @@ const ROSTERS_KEY = "arugula.control.rosters";
 /** Each account's certificates and removals as this page last held them,
  * and when it first saw each (`TrustStore`). */
 const HELD_CERTS_KEY = "arugula.control.held-certs";
+const CLOSURES_KEY = "arugula.control.delegations-ended";
 const ROOT_CHANGES_KEY = "arugula.control.root-changes";
 
 function readKey<T>(key: string, empty: T): T {
@@ -1839,6 +1840,8 @@ export class ControlSession {
   private rosters = new RosterStore(() => localStorage, ROSTERS_KEY, () => !!this.enrollment?.held);
   /** Each account's certificates and removals as last held (`TrustStore`). */
   private held = new TrustStore(() => localStorage, HELD_CERTS_KEY, () => !!this.enrollment?.held);
+  /** Control's word of delegations that ended, as heard (`ClosureStore`). */
+  private closures = new ClosureStore(() => localStorage, CLOSURES_KEY);
 
   async loadTeams() {
     let loaded = true;
@@ -1969,7 +1972,7 @@ export class ControlSession {
     const owners = team
       ? { team: team.roster, certs: team.certs }
       : { account: { account: e.account, root: e.root }, certs: devs.certs, revocations: devs.revocations };
-    const ok = await acceptHosted(e.account, proof, owners);
+    const ok = await acceptHostedHolding(e.account, proof, owners, this.closures);
     if (!ok.ok) return [];
     const c = proof.cert;
     // Its keys, to open a channel with; never in the account's trust.
@@ -1982,7 +1985,7 @@ export class ControlSession {
   // ---- project delegations (M178)
 
   /** Control's hosted key and the delegations of this account's projects. */
-  async delegations(): Promise<{ key: string; delegations: { id: string; delegation: Delegation; revoke: DelegationRevoke | null; by_account: string }[] }> {
+  async delegations(): Promise<{ key: string; delegations: { id: string; delegation: Delegation; revoke: DelegationRevoke | null; ended?: boolean; by_account: string }[] }> {
     return api("/api/hosted/delegations");
   }
 

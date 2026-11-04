@@ -655,7 +655,7 @@ async fn a_revoke_stays_when_its_owner_leaves() {
         now_ms(),
     );
     c.app.hosted_key.sign(&mut late_cert);
-    assert!(accept("c1", &late_cert, &d, &revs, &[], &owners).is_ok(), "gus's revoke alone doesn't count now");
+    assert!(accept("c1", &late_cert, &d, &revs, &[], &owners).is_ok(), "gus isn't an owner now");
     assert_eq!(accept("c1", &late_cert, &d, &revs, &closed, &owners), Err(HostedRefusal::Revoked));
     // So does its box, which takes it with its refresh, and keeps it.
     let pq = "/api/hosted/trust";
@@ -749,7 +749,7 @@ async fn a_revoke_stays_when_its_device_is_removed() {
         now_ms() + 1,
     );
     c.app.hosted_key.sign(&mut cert);
-    assert!(accept("m1", &cert, &d, &row.revokes, &[], &owners).is_ok(), "the phone's revoke alone doesn't count now");
+    assert!(accept("m1", &cert, &d, &row.revokes, &[], &owners).is_ok(), "the phone isn't the account's now");
     assert_eq!(accept("m1", &cert, &d, &row.revokes, &closed, &owners), Err(HostedRefusal::Revoked));
 }
 
@@ -824,4 +824,162 @@ fn device_of(c: &Control, of: &DeviceKeys, account: &str) -> DeviceKeys {
     cert.sign_with(of);
     c.app.db.put_device(&cert, true, now_ms()).unwrap();
     k
+}
+
+/// A project has one live delegation: a second waits for the first to end.
+/// The same one sent again is no second. One whose signer has left, or that
+/// names another key, has ended by itself, so changing owners or control's key
+/// needs no overlap. Someone else's for the same project id is no obstacle.
+#[tokio::test]
+async fn a_project_has_one_live_delegation() {
+    let (c, fran, gus, hal, cy, _) = three_owners().await;
+    let owner = format!("team:{TEAM}");
+    let post = |account: &'static str, d: Delegation| {
+        let c = &c;
+        async move {
+            c.as_person(&session(&c.app, account), "POST", "/api/hosted/delegations", Some(json!({ "delegation": d })))
+                .await
+                .0
+        }
+    };
+    let dated = |by: &DeviceKeys, ms: u64| {
+        let mut d = delegation(&c, &owner, by);
+        d.at += ms;
+        d.sign_with(by);
+        d
+    };
+    let d1 = dated(&fran, 0);
+    assert_eq!(post("f1", d1.clone()).await, 200);
+    assert_eq!(post("f1", d1.clone()).await, 200, "the same one again");
+    assert_eq!(post("h1", dated(&hal, 1)).await, 409, "another owner's");
+    assert_eq!(post("f1", dated(&fran, 2)).await, 409, "the same owner's");
+    assert_eq!(c.app.hub_port.live_delegation(PROJECT, &owner).await.unwrap(), Some(d1.id()));
+
+    // Someone else's account, for the same project id: theirs, not this one's.
+    let elsewhere = delegation(&c, "account:c1", &cy);
+    assert_eq!(post("c1", elsewhere).await, 200);
+
+    // Fran leaves: hers has ended by itself, so hal's is taken.
+    let members = vec![
+        member("f1", &fran, TeamRole::Editor),
+        member("g1", &gus, TeamRole::Owner),
+        member("h1", &hal, TeamRole::Owner),
+        member("c1", &cy, TeamRole::Editor),
+    ];
+    fran_sends(&c, &roster(TEAM, 2, members, &fran)).await;
+    assert_eq!(c.app.hub_port.live_delegation(PROJECT, &owner).await.unwrap(), None);
+    let d2 = dated(&hal, 3);
+    assert_eq!(post("h1", d2.clone()).await, 200);
+    assert_eq!(c.app.hub_port.live_delegation(PROJECT, &owner).await.unwrap(), Some(d2.id()));
+}
+
+/// A project that holds two live ones from before the rule of one: a revoke
+/// of either ends both, and control says so of each.
+#[tokio::test]
+async fn a_revoke_ends_every_delegation_of_its_project() {
+    let (c, fran, gus, _hal, _cy, _) = three_owners().await;
+    let owner = format!("team:{TEAM}");
+    let d1 = delegation(&c, &owner, &fran);
+    let mut d2 = delegation(&c, &owner, &gus);
+    d2.at += 1;
+    d2.sign_with(&gus);
+    for (d, by) in [(&d1, "f1"), (&d2, "g1")] {
+        assert!(c.app.db.add_delegation(d, by, now_ms(), |_| false).unwrap());
+    }
+    let EnrollGiven::Ready { ticket: Some(early), .. } =
+        c.app.hub_port.hosted_enrollment(&ask(&owner, "hw_early", None)).await.unwrap()
+    else {
+        panic!("no ticket")
+    };
+    let (st, v) = send_revoke(&c, "g1", &DelegationRevoke::new(&d2, now_ms(), &gus)).await;
+    assert_eq!((st, &v), (200, &json!({ "first": true, "kept": true })));
+    assert_eq!(c.app.hub_port.live_delegation(PROJECT, &owner).await.unwrap(), None);
+    assert_eq!(c.app.hub_port.hosted_enrollment(&ask(&owner, "hw_n", None)).await.unwrap(), EnrollGiven::NoDelegation);
+    let (st, e) = c.post("/api/hosted/enroll", &enroll_body(&DeviceKeys::generate(), Some(&early), None)).await;
+    assert_eq!(st, 403, "{e}");
+    let row = c.app.db.delegation(&d1.id()).unwrap().unwrap();
+    assert!(row.ended().is_some() && row.revokes.is_empty());
+    let (_, list) = c.as_person(&session(&c.app, "f1"), "GET", "/api/hosted/delegations", None).await;
+    assert!(list["delegations"].as_array().unwrap().iter().all(|d| d["ended"] == json!(true)), "{list}");
+    // Over: a new one is taken.
+    let mut d3 = delegation(&c, &owner, &fran);
+    d3.at += 2;
+    d3.sign_with(&fran);
+    let (st, _) =
+        c.as_person(&session(&c.app, "f1"), "POST", "/api/hosted/delegations", Some(json!({ "delegation": d3 }))).await;
+    assert_eq!(st, 200);
+}
+
+/// One delegation keeps so many revokes, and the answer says when it didn't.
+#[tokio::test]
+async fn a_delegations_revokes_are_bounded() {
+    let (c, fran, gus, ..) = three_owners().await;
+    let owner = format!("team:{TEAM}");
+    let d = delegation(&c, &owner, &fran);
+    assert!(c.app.db.add_delegation(&d, "f1", now_ms(), |_| false).unwrap());
+    let first = DelegationRevoke::new(&d, now_ms(), &gus);
+    assert!(c.app.db.revoke_delegation(&first, now_ms()).unwrap().first);
+    for _ in 1..crate::db::hosted::MAX_REVOKES {
+        let r = DelegationRevoke::new(&d, now_ms(), &DeviceKeys::generate());
+        assert!(c.app.db.revoke_delegation(&r, now_ms()).unwrap().kept);
+    }
+    let over = DelegationRevoke::new(&d, now_ms(), &DeviceKeys::generate());
+    let taken = c.app.db.revoke_delegation(&over, now_ms()).unwrap();
+    assert!(!taken.first && !taken.kept);
+    let row = c.app.db.delegation(&d.id()).unwrap().unwrap();
+    assert_eq!(row.revokes.len(), crate::db::hosted::MAX_REVOKES);
+    assert_eq!(row.revoke(), Some(&first));
+}
+
+/// Clients go by when a delegation ended, whenever the machine came to be
+/// listed: one enrolled after that time is refused, and one from before stays.
+#[tokio::test]
+async fn a_machine_made_after_the_end_is_refused_and_one_from_before_stays() {
+    let (c, fran, gus, hal, cy, _) = three_owners().await;
+    let owner = format!("team:{TEAM}");
+    let d = delegation(&c, &owner, &fran);
+    c.as_person(&session(&c.app, "f1"), "POST", "/api/hosted/delegations", Some(json!({ "delegation": d }))).await;
+    let EnrollGiven::Ready { ticket: Some(t), .. } =
+        c.app.hub_port.hosted_enrollment(&ask(&owner, "hw_before", None)).await.unwrap()
+    else {
+        panic!("no ticket")
+    };
+    let before = DeviceKeys::generate();
+    let (st, e) = c.post("/api/hosted/enroll", &enroll_body(&before, Some(&t), None)).await;
+    assert_eq!(st, 200, "{e}");
+    tokio::time::sleep(Duration::from_millis(5)).await;
+    let (st, v) = send_revoke(&c, "g1", &DelegationRevoke::new(&d, now_ms(), &gus)).await;
+    assert_eq!(st, 200, "{v}");
+    let members = vec![
+        member("f1", &fran, TeamRole::Owner),
+        member("h1", &hal, TeamRole::Owner),
+        member("c1", &cy, TeamRole::Editor),
+    ];
+    fran_sends(&c, &roster(TEAM, 2, members, &fran)).await;
+    // In the table already: a machine enrolled under the delegation since.
+    let late = DeviceKeys::generate();
+    let mut cert = HostedCert::new(
+        &d,
+        "hw_late",
+        "late",
+        &hex::encode(late.noise_public),
+        &hex::encode(late.sign_public()),
+        now_ms(),
+    );
+    c.app.hosted_key.sign(&mut cert);
+    c.app.db.add_hosted(&cert, now_ms()).unwrap();
+
+    let (_, dir) = c.as_person(&session(&c.app, "c1"), "GET", "/api/directory", None).await;
+    let (_, teams) = c.as_person(&session(&c.app, "c1"), "GET", "/api/teams", None).await;
+    let held: Roster = serde_json::from_value(teams["teams"][0]["roster"].clone()).unwrap();
+    let certs: AccountCerts = serde_json::from_value(teams["teams"][0]["certs"].clone()).unwrap();
+    let owners = Owners::Team { roster: &held, certs: &certs };
+    let answer = |id: String| {
+        let entry = dir["daemons"].as_array().unwrap().iter().find(|m| m["id"] == json!(id)).cloned().unwrap();
+        let (revs, closed) = ends_listed(&entry["hosted"]);
+        let cert: HostedCert = serde_json::from_value(entry["hosted"]["cert"].clone()).unwrap();
+        accept("c1", &cert, &d, &revs, &closed, &owners).map(|a| a.role)
+    };
+    assert_eq!(answer(before.id()), Ok(TeamRole::Editor));
+    assert_eq!(answer(late.id()), Err(HostedRefusal::Revoked));
 }

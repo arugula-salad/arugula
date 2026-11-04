@@ -92,42 +92,49 @@ project P, until revoked" (Jake, 2026-10-21, #1235).
   after it: one made before stays accepted until the machine is removed.
   And a hosted machine is reached only through control's relay: control
   keeps no direct URL for it, and clients try none.
-- **A revoked delegation stays revoked** (Jake, 2026-11-04). Amended: a
-  revoke used to be checked against the owners of the moment, so it stopped
-  counting when its signer left, and removing a lost phone could bring a
-  revoked delegation back; only the first revoke was kept, and a second
-  owner's got a plain 200. Now:
-  - Control judges a revoke once, as it arrives: signed by a device of
-    someone who's an owner now, sent from their own session, its time near
-    control's clock. The first ends the delegation for good, and control
-    doesn't ask again who signed it. Every owner's device's revoke is kept,
-    and the route says what became of each (`first`, `kept`).
-  - Control then says so itself to whoever checks (clients, the box): `arugula
+- **A revoked delegation stays revoked** (Jake, 2026-11-04). Amended:
+  - **One judgment.** Control judges a revoke once, as it arrives: signed by a
+    device of someone who's an owner now, sent from their own session, its
+    time near control's clock. The first ends the delegation for good. Every
+    owner's device's revoke is kept, up to 32 for a delegation, and the route
+    says what became of each (`first`, `kept`).
+  - **Control's word.** Control then says so to whoever checks: `arugula
     project delegation closed v1`, signed with the key the delegation names.
     It's the delegate giving up what it was given, so it needs nobody's
-    authority and doesn't depend on any person staying. Its time is control's
-    clock, or the earliest revoke's own time if that's before it. A client
-    refuses a certificate made at or after the earliest of that and any
-    revoke by an owner of the moment. Machines enrolled before stay.
-  - **Why not count a past owner's revoke at the clients?** No check can tell
-    a revoke signed while its signer was an owner from one signed since and
-    dated earlier, because `at` is the signer's own. A rule that takes a past
-    owner's signature gives everyone who ever left a revoke that never runs
-    out, and it needs each client to hold the team's whole roster history and
-    leavers' certificates, where most hold the latest. A rule that takes the
-    owners at the delegation's making doesn't help an owner added since. So
-    someone who's out has no new power here: control refuses them, and their
-    signature alone counts for nothing anywhere. A revoke they made while they
-    could still stands, which is the point; another owner signs a new
+    authority and can only make an answer a refusal, which control could
+    already give ("Control can refuse service but can't read", aru-055). Its
+    time is control's clock, or the earliest revoke's own time if that's
+    before it.
+  - **What a client goes by.** A delegation ended at the earliest of control's
+    word and any revoke by an owner of the moment; a certificate made at or
+    after that is refused, and one made before stays. That goes by the
+    certificate's time, not by when a machine was first seen: a machine
+    enrolled after a revoke, while control still took enrollments under that
+    delegation, is refused from when clients hear this word.
+  - **Clients keep it.** A client that has heard control's word keeps it, by
+    delegation, the earliest of each: a box and a daemon in their state
+    directories, the CLI beside its login, a browser in local storage. Each
+    keeps at most 512 (the earliest-ended go first), and only of a delegation
+    an owner signed.
+  - **One live delegation.** A project and owner have one at a time: another is
+    refused until the first ends. One that names a key control no longer has,
+    or whose signer isn't an owner's now, has ended by itself, so changing
+    either needs no overlap. A revoke also ends any other of its project and
+    owner, for projects that held two before this rule.
+  - **Why a past owner's signature doesn't count.** No check can tell a revoke
+    signed while its signer was an owner from one signed since and dated
+    earlier, because `at` is the signer's own. So someone who's out has no new
+    power: control refuses them, and their signature alone counts nowhere. A
+    revoke they made while they could still stands; another owner signs a new
     delegation to go on, and machines enrolled before aren't touched.
-  - **What this gives control:** nothing it didn't have. Its word only ever
-    makes the answer a refusal, and it can refuse service already
-    ("Control can refuse service but can't read", aru-055).
-  - **What's still a limit:** control can leave a revoke and its own word out,
-    and a client can't tell; and it writes a certificate's time. Clients and
-    boxes from before this still go by revokes alone, though each owner's now
-    reaches them, and control enrolls nothing under a revoked delegation
-    whichever client asks.
+  - **Limits.** Control can leave its word and the revokes out, and a client
+    that never heard them can't tell. Control writes a certificate's time, so
+    it can backdate one past the end. Control writes its word's time too, so a
+    word dated forward admits later certificates unless an owner's earlier
+    revoke is supplied. A client's memory goes with its local state: a browser
+    whose storage is cleared, or a CLI logged in again, has to hear it again.
+    Clients from before this go by revokes alone; control enrolls nothing
+    under an ended delegation whichever client asks.
 
 `docs/control-e2e.md` says what control can and can't do with a
 delegation.

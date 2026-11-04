@@ -305,7 +305,7 @@ pub(crate) mod tests {
     use super::*;
 
     /// Control's hosted key in [`machine`].
-    const MACHINE_KEY: [u8; 32] = [7; 32];
+    pub(crate) const MACHINE_KEY: [u8; 32] = [7; 32];
 
     /// A hosted machine of an account's project, enrolled under a
     /// delegation from the account's root device; and the account's phone,
@@ -485,9 +485,8 @@ pub(crate) mod tests {
         assert_eq!(check(&saved, &start(&g), &[], 40).unwrap_err().code, "delegation_revoked");
     }
 
-    /// A box that took a revoke from a device since taken off the account:
-    /// the signature alone stops counting, and control's word, which came
-    /// with it, doesn't.
+    /// A box that holds control's word stays stopped, by a revoke from a
+    /// device now off the account too.
     #[test]
     fn a_revoked_delegation_stays_revoked_when_its_signer_goes() {
         let (mut saved, d, root, phone) = machine();
@@ -495,7 +494,7 @@ pub(crate) mod tests {
         saved.hosted_mut().unwrap().revocations.push(DelegationRevoke::new(&d, 30, &phone));
         assert_eq!(check(&saved, &start(&g), &[], 40).unwrap_err().code, "delegation_revoked");
         saved.revocations.push(arugula_e2e::Revocation::new("acct1", &phone.id(), &root));
-        assert!(check(&saved, &start(&g), &[], 40).is_ok(), "the phone's signature alone doesn't count now");
+        assert!(check(&saved, &start(&g), &[], 40).is_ok());
         saved.hosted_mut().unwrap().closed.push(HostedKey::from_seed(&MACHINE_KEY).close(&d, 30));
         assert_eq!(check(&saved, &start(&g), &[], 40).unwrap_err().code, "delegation_revoked");
     }

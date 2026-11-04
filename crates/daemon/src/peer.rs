@@ -32,6 +32,8 @@ use serde::Deserialize;
 use tokio::sync::mpsc;
 use tokio_tungstenite::tungstenite::Message;
 
+use arugula_e2e::hosted::HeldClosures;
+
 use crate::control::{Control, Enrolled};
 
 /// How long one request to another machine may take, the handshake
@@ -66,13 +68,22 @@ pub async fn machines(control: &Control) -> anyhow::Result<Vec<Machine>> {
     let (e, v) = control.directory().await?;
     let own = e.saved.cert.account.clone();
     let mut out = Vec::new();
+    // What it's heard of delegations ending. Unreadable: no hosted machine
+    // this time, rather than forgetting.
+    let _writing = HELD.lock().unwrap_or_else(|e| e.into_inner());
+    let was =
+        read_held(control.state_dir()).map_err(|why| tracing::warn!(%why, "can't read the delegations held ended"));
+    let mut held = was.clone().unwrap_or_default();
     for d in v["daemons"].as_array().into_iter().flatten() {
         let Some(id) = d["id"].as_str() else { continue };
         if id == e.saved.cert.device {
             continue;
         }
         if !d["hosted"].is_null() {
-            match accept_hosted(&e, id, &d["hosted"]) {
+            if was.is_err() {
+                continue;
+            }
+            match accept_hosted(&e, id, &d["hosted"], &mut held) {
                 // M184: its project's machine, accepted for that project only.
                 Ok((project, cert)) => out.push(Machine {
                     id: id.to_owned(),
@@ -110,7 +121,32 @@ pub async fn machines(control: &Control) -> anyhow::Result<Vec<Machine>> {
             cert,
         });
     }
+    if let Ok(was) = &was
+        && *was != held
+        && let Err(why) = write_held(control.state_dir(), &held)
+    {
+        tracing::warn!(%why, "can't keep the delegations held ended");
+    }
     Ok(out)
+}
+
+/// Where this daemon keeps control's word of delegations that ended, read
+/// and written under [`HELD`]. Beside `control.json`, not in it: it says
+/// nothing of this machine, and holds across a leave and a join.
+pub(crate) const HELD_FILE: &str = "delegations-ended.json";
+static HELD: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+pub(crate) fn read_held(dir: &std::path::Path) -> anyhow::Result<HeldClosures> {
+    match std::fs::read(dir.join(HELD_FILE)) {
+        Ok(b) => Ok(serde_json::from_slice(&b)?),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(HeldClosures::default()),
+        Err(e) => Err(e.into()),
+    }
+}
+
+pub(crate) fn write_held(dir: &std::path::Path, held: &HeldClosures) -> anyhow::Result<()> {
+    crate::store::write_atomic(&dir.join(HELD_FILE), &serde_json::to_vec_pretty(held)?)?;
+    Ok(())
 }
 
 /// A hosted machine (M178), if this daemon accepts it: its project and the
@@ -120,8 +156,13 @@ pub async fn machines(control: &Control) -> anyhow::Result<Vec<Machine>> {
 /// own chain for a personal project; for a team's, a roster checked from
 /// its pin (this machine's own team's, or one the owner's browser pinned
 /// here, #233).
-pub(crate) fn accept_hosted(e: &Enrolled, id: &str, v: &serde_json::Value) -> anyhow::Result<(String, Cert)> {
-    use arugula_e2e::hosted::{Delegation, HostedCert, Owner, Owners, accept, ends_listed};
+pub(crate) fn accept_hosted(
+    e: &Enrolled,
+    id: &str,
+    v: &serde_json::Value,
+    held: &mut HeldClosures,
+) -> anyhow::Result<(String, Cert)> {
+    use arugula_e2e::hosted::{Delegation, HostedCert, Owner, Owners, accept_holding, ends_listed};
     let cert: HostedCert = serde_json::from_value(v["cert"].clone())?;
     let d: Delegation = serde_json::from_value(v["delegation"].clone())?;
     let (revokes, closed) = ends_listed(v);
@@ -137,15 +178,16 @@ pub(crate) fn accept_hosted(e: &Enrolled, id: &str, v: &serde_json::Value) -> an
                     "its team isn't one this machine knows: open Control in a browser of this account once, which pins your teams here"
                 ),
             };
-            accept(me, &cert, &d, &revokes, &closed, &Owners::Team { roster, certs })
+            accept_holding(me, &cert, &d, &revokes, &closed, &Owners::Team { roster, certs }, held)
         }
-        Owner::Account(_) => accept(
+        Owner::Account(_) => accept_holding(
             me,
             &cert,
             &d,
             &revokes,
             &closed,
             &Owners::Account { trust: &e.saved.trust, certs: &e.saved.certs, revocations: &e.saved.revocations },
+            held,
         ),
     }
     .map_err(|r| anyhow::anyhow!("refused: {}", r.code()))?;

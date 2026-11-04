@@ -6,7 +6,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { acceptHosted, closedBody, delegationId } from "../src/shell/e2e/hosted.ts";
+import { acceptHosted, acceptHostedHolding, closedBody, delegationId } from "../src/shell/e2e/hosted.ts";
+import { ClosureStore, HELD_CLOSURES } from "../src/shell/team-rosters.ts";
 import { directUrls } from "../src/shared/hosted.ts";
 
 const f = JSON.parse(readFileSync(new URL("./hosted.fixture.json", import.meta.url), "utf8"));
@@ -60,6 +61,50 @@ test("control's word that a delegation ended counts as Rust's does", async () =>
   assert.deepEqual(await acceptHosted("acct1", proof({ closed: [moved] }), mine), yes, "its signature doesn't cover its time");
   assert.deepEqual(await acceptHosted("acct1", proof({ closed: [{ ...f.closedEarly, sig: f.delegation.sig }] }), mine), yes, "an owner's signature isn't control's word");
   assert.deepEqual(await acceptHosted("acct1", proof({ closed: undefined }), mine), yes, "a control from before sends none");
+});
+
+const memory = () => {
+  const m = new Map();
+  return () => ({ getItem: (k) => m.get(k) ?? null, setItem: (k, v) => m.set(k, v) });
+};
+// Made at 3000: `closedEarly` (2500) is before it.
+const refused = { ok: false, why: "revoked" };
+const accepted = { ok: true, project: "prj_1", workspace: "hw_1", role: "owner" };
+
+test("this browser keeps control's word that a delegation ended", async () => {
+  const storage = memory();
+  const held = new ClosureStore(storage, "k");
+  assert.deepEqual(await acceptHostedHolding("acct1", proof(), mine, held), accepted, "it's heard nothing yet");
+  assert.deepEqual(await acceptHostedHolding("acct1", proof({ closed: [f.closedEarly, {}] }), mine, held), refused);
+  assert.deepEqual(await acceptHostedHolding("acct1", proof(), mine, held), refused, "control left it out");
+  // A new page reads it back.
+  assert.deepEqual(await acceptHostedHolding("acct1", proof(), mine, new ClosureStore(storage, "k")), refused);
+  // The earliest stays.
+  await acceptHostedHolding("acct1", proof({ closed: [f.closed] }), mine, held);
+  assert.equal(held.get(f.id).at, 2500);
+});
+
+test("nothing that doesn't check out is kept", async () => {
+  const held = new ClosureStore(memory(), "k");
+  await acceptHostedHolding("acct1", proof({ closed: [{ ...f.closedEarly, at: 2400 }, {}, null] }), mine, held);
+  assert.equal(held.get(f.id), undefined);
+  // Nor of a delegation no owner of these signed.
+  const other = { account: { account: "acct1", root: "0000000000000000" }, certs: [f.root], revocations: [] };
+  await acceptHostedHolding("acct1", proof({ closed: [f.closedEarly] }), other, held);
+  assert.equal(held.get(f.id), undefined);
+});
+
+test("storage that fails leaves memory, and what's kept is bounded", async () => {
+  const broken = () => ({ getItem: () => { throw new Error("no"); }, setItem: () => { throw new Error("no"); } });
+  const held = new ClosureStore(broken, "k");
+  assert.deepEqual(await acceptHostedHolding("acct1", proof({ closed: [f.closedEarly] }), mine, held), refused);
+  assert.deepEqual(await acceptHostedHolding("acct1", proof(), mine, held), refused);
+  const many = new ClosureStore(memory(), "k");
+  const one = (n) => ({ project: "p", delegation: `d${n}`, at: 100 + n, sig: "s" });
+  for (let n = 0; n < HELD_CLOSURES + 3; n++) many.take(one(n));
+  assert.equal(many.get("d0"), undefined, "the earliest-ended goes first");
+  assert.ok(many.get(`d${HELD_CLOSURES + 2}`));
+  assert.ok(many.get("d3"));
 });
 
 // Rust's example file (contract/examples/logic/hosted/accept.json, written by

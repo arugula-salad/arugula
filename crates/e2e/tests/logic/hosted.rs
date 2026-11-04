@@ -7,7 +7,8 @@
 use arugula_e2e::{
     DeviceKeys, Kind,
     hosted::{
-        Delegation, DelegationClosed, DelegationRevoke, HostedCert, HostedKey, Owner, accept, enroll_proof_body, live,
+        Delegation, DelegationClosed, DelegationRevoke, HostedCert, HostedKey, Owner, accept, ends_listed,
+        enroll_proof_body, live,
     },
     team::TeamRole,
 };
@@ -221,8 +222,10 @@ struct AcceptIn {
 fn run_accept(ctx: &Ctx, v: &Value) -> anyhow::Result<Value> {
     let i: AcceptIn = input(v)?;
     let owners = i.owners.load(ctx)?;
-    let revokes: Vec<DelegationRevoke> = ctx.all(&i.revokes)?;
-    let closed: Vec<DelegationClosed> = ctx.all(&i.closed)?;
+    // As a client reads a directory entry: each entry on its own.
+    let (revokes, closed) = ends_listed(&json!({
+        "revocations": ctx.all::<Value>(&i.revokes)?, "closed": ctx.all::<Value>(&i.closed)?,
+    }));
     Ok(match accept(&i.me, &ctx.get(&i.cert)?, &ctx.get(&i.delegation)?, &revokes, &closed, &owners.owners()) {
         Ok(a) => json!({ "accepted": {
             "project": a.project,
@@ -247,9 +250,10 @@ fn accepts() -> Example {
          project's owners, a browser, a CLI or the app (not a machine or a recovery code) (unsigned); the \
          certificate signed with the key the delegation names (bad_signature); made no earlier than the \
          delegation and before the earliest of any revoke that checks out (by any owner now, of this delegation) \
-         and any word from control that it ended, signed with the key the delegation names (closed: it holds when \
-         a revoke's signer has since left) (revoked). Either that doesn't check out is ignored. Accepted, it gives \
-         the client's role in the project.",
+         and any word from control that it ended, signed with the key the delegation names (closed) (revoked). \
+         Either that doesn't check out is ignored, each entry of a list on its own: one that doesn't read takes \
+         nothing else with it. Keys and signatures are lowercase hex. Accepted, it gives the client's role in the \
+         project.",
         &[
             "arugula_e2e::hosted::accept",
             "arugula_e2e::hosted::DelegationClosed::closes",
@@ -605,8 +609,7 @@ fn accepts() -> Example {
         yes("team:t1", "prj_2", "hw_2", "viewer"),
     );
 
-    // Control's word that a delegation ended: it holds when a revoke's signer
-    // has since left, by the same time rule.
+    // Control's word that a delegation ended, by the same time rule.
     for (l, at) in [("closed-at-4000", 4_000), ("closed-at-3000", 3_000), ("closed-at-2500", 2_500)] {
         ex.object(l, &key.close(&d, at));
     }
@@ -620,7 +623,8 @@ fn accepts() -> Example {
     ex.object("closed-by-an-owners-device", &by_owner);
     ex.object("team-closed-at-2500", &key.close(&td, 2_500));
     ex.object("revoke-by-removed-tablet", &DelegationRevoke::new(&d, 2_500, &gone));
-    ex.object("team-revoke-by-carol-later", &DelegationRevoke::new(&td, 2_600, &carol.keys));
+    ex.object("team-revoke-by-alice-later", &DelegationRevoke::new(&td, 2_700, ak));
+    ex.object("team-box-at-2600", &machine(&td, "hw_2", &boxk, 2_600, &key));
     // The team after carol, who revoked, left; and after she was made an editor.
     let (a_o, b_e, v_v) =
         (member(&alice, TeamRole::Owner), member(&bob, TeamRole::Editor), member(&vic, TeamRole::Viewer));
@@ -634,7 +638,7 @@ fn accepts() -> Example {
     let (carol_gone, carol_editor) = (team_at("roster-carol-gone"), team_at("roster-carol-editor"));
     let team_ok = yes("team:t1", "prj_2", "hw_2", "viewer");
     let mut closing = |about: &str, c: &str, dl: &str, revs: &[&str], closed: &[&str], owners: &Value, want: Value| {
-        let input = json!({ "me": if dl == "d" { "alice" } else { "vic" }, "cert": c, "delegation": dl,
+        let input = json!({ "me": if dl.starts_with("team") { "vic" } else { "alice" }, "cert": c, "delegation": dl,
                             "revokes": revs, "closed": closed, "owners": owners });
         cases.push((about.into(), input, want));
     };
@@ -659,7 +663,7 @@ fn accepts() -> Example {
         closing(about, "box", "d", &[], &[l], &mine, ok.clone());
     }
     closing(
-        "a revoke by a device since taken off the account, alone: it doesn't count now",
+        "a revoke by a device now off the account, alone: not an owner's now",
         "box",
         "d",
         &["revoke-by-removed-tablet"],
@@ -668,7 +672,7 @@ fn accepts() -> Example {
         ok.clone(),
     );
     closing(
-        "the same, with control's word: it stays revoked",
+        "the same, with control's word: revoked",
         "box",
         "d",
         &["revoke-by-removed-tablet"],
@@ -678,7 +682,7 @@ fn accepts() -> Example {
     );
     for (who, owners) in [("left the team", &carol_gone), ("is an editor now", &carol_editor)] {
         closing(
-            &format!("a revoke by an owner who {who}, alone: it doesn't count now"),
+            &format!("a revoke by someone who {who}, alone: not an owner's now"),
             "team-box",
             "team-d",
             &["team-revoke-by-carol"],
@@ -687,7 +691,7 @@ fn accepts() -> Example {
             team_ok.clone(),
         );
         closing(
-            &format!("the same owner who {who}, with control's word: it stays revoked"),
+            &format!("the same, by someone who {who}, with control's word: revoked"),
             "team-box",
             "team-d",
             &["team-revoke-by-carol"],
@@ -696,15 +700,106 @@ fn accepts() -> Example {
             no("revoked"),
         );
     }
+    let (both, gone_first) = (&["team-revoke-by-carol", "team-revoke-by-alice-later"], &carol_gone);
     closing(
-        "two owners' revokes, one still an owner: the one still an owner's counts",
+        "two owners' revokes, carol's earlier and carol gone: a box between them stays",
+        "team-box-at-2600",
+        "team-d",
+        both,
+        &[],
+        gone_first,
+        team_ok.clone(),
+    );
+    closing(
+        "two owners' revokes, carol's earlier and carol gone: a box after alice's is refused",
         "team-box",
         "team-d",
-        &["team-revoke-by-carol-later"],
+        both,
         &[],
-        &team,
+        gone_first,
         no("revoked"),
     );
+
+    // Each entry of a list reads on its own.
+    let at_text = |v: Value| {
+        let mut o = v;
+        o["at"] = json!(o["at"].to_string());
+        o
+    };
+    ex.object("not-one-empty", &json!({}));
+    ex.object("not-one-null", &Value::Null);
+    ex.object("not-one-number", &json!(7));
+    ex.object("closed-time-as-text", &at_text(json!(key.close(&d, 2_500))));
+    ex.object("revoke-time-as-text", &at_text(json!(DelegationRevoke::new(&d, 2_500, ak))));
+    closing(
+        "closed, and an entry that doesn't read: it counts",
+        "box",
+        "d",
+        &[],
+        &["closed-at-2500", "not-one-empty"],
+        &mine,
+        no("revoked"),
+    );
+    closing(
+        "closed between entries that don't read: it counts",
+        "box",
+        "d",
+        &[],
+        &["not-one-null", "closed-at-2500", "not-one-number"],
+        &mine,
+        no("revoked"),
+    );
+    closing("only an entry that doesn't read: ignored", "box", "d", &[], &["not-one-empty"], &mine, ok.clone());
+    closing("closed, its time as text: ignored", "box", "d", &[], &["closed-time-as-text"], &mine, ok.clone());
+    closing(
+        "revoked, and an entry that doesn't read: it counts",
+        "box",
+        "d",
+        &["revoke-at-2500", "not-one-empty"],
+        &[],
+        &mine,
+        no("revoked"),
+    );
+    closing(
+        "revoked between entries that don't read: it counts",
+        "box",
+        "d",
+        &["not-one-null", "revoke-at-2500", "not-one-number"],
+        &[],
+        &mine,
+        no("revoked"),
+    );
+    closing("only a revoke entry that doesn't read: ignored", "box", "d", &["not-one-empty"], &[], &mine, ok.clone());
+    closing("a revoke, its time as text: ignored", "box", "d", &["revoke-time-as-text"], &[], &mine, ok.clone());
+
+    // Keys and signatures have one spelling: lowercase hex.
+    let upper_sig = |v: Value| {
+        let mut o = v;
+        o["sig"] = json!(o["sig"].as_str().unwrap().to_uppercase());
+        o
+    };
+    ex.object("closed-upper-sig", &upper_sig(json!(key.close(&d, 2_500))));
+    ex.object("revoke-upper-sig", &upper_sig(json!(DelegationRevoke::new(&d, 2_500, ak))));
+    ex.object("box-upper-sig", &upper_sig(json!(machine(&d, "hw_1", &boxk, 3_000, &key))));
+    ex.object("d-upper-sig", &upper_sig(json!(d)));
+    let lettered = ex.key("box-with-letters", 0xab);
+    let mut upper_noise = machine(&d, "hw_1", &lettered, 3_000, &key);
+    upper_noise.noise = upper_noise.noise.to_uppercase();
+    key.sign(&mut upper_noise);
+    ex.object("box-upper-noise", &upper_noise);
+    let mut named_upper = Delegation { key: key.public().to_uppercase(), ..d.clone() };
+    named_upper.sign_with(ak);
+    ex.object("d-upper-key", &named_upper);
+    let mut under_upper = machine(&d, "hw_1", &boxk, 3_000, &key);
+    under_upper.delegation = named_upper.id();
+    key.sign(&mut under_upper);
+    ex.object("box-under-upper-key", &under_upper);
+    closing("closed, its signature in capitals: ignored", "box", "d", &[], &["closed-upper-sig"], &mine, ok.clone());
+    closing("a revoke, its signature in capitals: ignored", "box", "d", &["revoke-upper-sig"], &[], &mine, ok.clone());
+    closing("a certificate, its signature in capitals", "box-upper-sig", "d", &[], &[], &mine, no("bad_signature"));
+    closing("a delegation, its signature in capitals", "box", "d-upper-sig", &[], &[], &mine, no("unsigned"));
+    closing("a certificate, its key in capitals", "box-upper-noise", "d", &[], &[], &mine, no("form"));
+    closing("a delegation, its key in capitals", "box-under-upper-key", "d-upper-key", &[], &[], &mine, no("form"));
     for (about, input, want) in cases {
         ex.case(&about, input, want);
     }

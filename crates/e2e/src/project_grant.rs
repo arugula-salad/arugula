@@ -705,8 +705,7 @@ impl GrantRefusal {
 pub struct Revokes<'a> {
     /// Its delegation's revocations, as it pinned them.
     pub delegation: &'a [crate::hosted::DelegationRevoke],
-    /// Control's word that its delegation ended, as it pinned it: it holds
-    /// when a revoke's signer has since left.
+    /// Control's word that its delegation ended, as it pinned it.
     pub closed: &'a [crate::hosted::DelegationClosed],
     /// Revokes that came with the ask: they count only if one of the
     /// project's owners signed them, trusted now.
@@ -1096,8 +1095,7 @@ mod tests {
         let spite = [crate::hosted::DelegationRevoke::new(&d, 120, &w.editor.keys)];
         let revokes = Revokes { delegation: &spite, ..Default::default() };
         assert_eq!(check(&g, &d, revokes, &s1(&owners, NONE), None, "runs.start", 200), Ok(()));
-        // Control's word that it ended stops them too: it's what holds when
-        // a revoke's signer has left. Nobody else's word does.
+        // Control's word that it ended stops them too. Nobody else's does.
         let word = [HostedKey::from_seed(&[1; 32]).close(&d, 120)];
         let revokes = Revokes { closed: &word, ..Default::default() };
         assert_eq!(

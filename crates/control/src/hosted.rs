@@ -12,10 +12,10 @@
 //!   makes, or the box's sandbox id. The box enrolls once ([`enroll`]),
 //!   and the hub signs its [`HostedCert`] with the hosted key, under the
 //!   newest live delegation. Fail closed: a used enrollment is refused,
-//!   and so is one whose delegation was revoked since. The first revoke
-//!   that checks out ends the delegation for good ([`DelegationRow::ended`]):
-//!   control doesn't ask again who signed it, and says so itself, with the
-//!   hosted key ([`closed`]), to everyone who checks.
+//!   and so is one whose delegation was revoked since. A project has one
+//!   live delegation. The first revoke that checks out ends it for good
+//!   ([`DelegationRow::ended`]), and control says so itself, with the hosted
+//!   key ([`closed`]), to everyone who checks.
 //! - **Reaching.** A hosted machine is reached only by its project's
 //!   people ([`may_reach`]), listed only to them ([`directory`]), and
 //!   signs only its own routes and the relay (`auth::HostedAuth`).
@@ -145,9 +145,9 @@ fn closed(key: &HostedKey, row: &DelegationRow) -> Vec<DelegationClosed> {
     }
 }
 
-/// Control may enroll under this row: it's never been revoked, and it still
-/// checks out for the people `owners` says. A revoke isn't judged again here:
-/// it was when it came, so it stays in force when its signer leaves.
+/// Control may enroll under this row: it hasn't ended, and it still checks
+/// out for the people `owners` says. A revoke isn't judged again here: it was
+/// when it came.
 fn stands(row: &DelegationRow, owners: &Owners) -> bool {
     row.ended().is_none() && live(&row.delegation, &row.revokes, owners)
 }
@@ -558,7 +558,10 @@ pub async fn delegations(State(app): State<Arc<App>>, s: Session) -> R {
         .iter()
         .map(|r| {
             // `revoke` is the first, as a page from before reads it.
-            json!({ "id": r.delegation.id(), "delegation": r.delegation, "revoke": r.revoke(), "revokes": r.revokes, "by_account": r.by_account })
+            json!({
+                "id": r.delegation.id(), "delegation": r.delegation, "revoke": r.revoke(), "revokes": r.revokes,
+                "ended": r.ended().is_some(), "by_account": r.by_account,
+            })
         })
         .collect();
     Ok(Json(json!({ "key": app.hosted_key.public(), "delegations": list })))
@@ -581,17 +584,23 @@ pub async fn delegate(State(app): State<Arc<App>>, s: Session, Json(b): Json<Del
     if !d.signed_for(&p.owners()) {
         return Err(err(StatusCode::FORBIDDEN, "it isn't signed by a device of one of the project's owners"));
     }
-    app.db.add_delegation(&d, &s.account, now_ms())?;
+    // One live delegation per project: another owner's new one waits for the
+    // old to end. One that names an older key, or whose signer has left, has
+    // ended by itself, so changing either needs no overlap.
+    let (key, owners) = (app.hosted_key.public(), p.owners());
+    if !app.db.add_delegation(&d, &s.account, now_ms(), |row| row.delegation.key == key && stands(row, &owners))? {
+        return Err(err(StatusCode::CONFLICT, "this project has a live delegation already: revoke it first"));
+    }
     info!(project = d.project, owner = d.owner, "a project delegated to control");
     Ok(Json(json!({ "id": d.id() })))
 }
 
 /// `POST /api/hosted/delegations/revoke`: an owner's device takes a
-/// delegation back. Nothing more enrolls under it, whatever becomes of
-/// that owner or device; its machines stay until they're removed. This is
-/// the one place a revoke is judged, by who's an owner now and by control's
-/// clock. Answers `first` (it ended the delegation) and `kept` (it's kept:
-/// not when this device's was already).
+/// delegation back. Nothing more enrolls under it; its machines stay until
+/// they're removed. This is the one place a revoke is judged, by who's an
+/// owner now and by control's clock. Answers `first` (it ended the delegation)
+/// and `kept` (it's kept: not when this device's was already, or when as many
+/// as control keeps are).
 pub async fn revoke(State(app): State<Arc<App>>, s: Session, Json(b): Json<RevokePost>) -> R {
     let r = b.revoke;
     let row = app.db.delegation(&r.delegation)?.ok_or_else(|| err(StatusCode::NOT_FOUND, "no such delegation"))?;

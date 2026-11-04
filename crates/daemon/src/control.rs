@@ -300,8 +300,8 @@ pub struct HostedPin {
     pub cert: arugula_e2e::hosted::HostedCert,
     pub delegation: arugula_e2e::hosted::Delegation,
     pub revocations: Vec<arugula_e2e::hosted::DelegationRevoke>,
-    /// Control's word that the delegation ended, kept as revocations are:
-    /// what holds when a revoke's signer has since left.
+    /// Control's word that the delegation ended: the earliest it's heard. A
+    /// refresh never takes it away.
     pub closed: Vec<arugula_e2e::hosted::DelegationClosed>,
     pub purpose: Purpose,
     /// The project's team, when the delegation's owner is a team: its
@@ -6415,11 +6415,66 @@ pub(crate) mod tests {
             .as_array()
             .unwrap()
             .iter()
-            .map(|i| match crate::peer::accept_hosted(&e, i["id"].as_str().unwrap(), &i["hosted"]) {
-                Ok((project, _)) => format!("ok {project}"),
-                Err(_) => "err".to_owned(),
+            .map(|i| {
+                match crate::peer::accept_hosted(&e, i["id"].as_str().unwrap(), &i["hosted"], &mut Default::default()) {
+                    Ok((project, _)) => format!("ok {project}"),
+                    Err(_) => "err".to_owned(),
+                }
             })
             .collect()
+    }
+
+    /// This daemon keeps control's word that a delegation ended: a machine it
+    /// refused stays refused when control leaves the word out, across a
+    /// restart too, and one made before is accepted.
+    #[test]
+    fn a_daemon_keeps_a_delegations_end() {
+        use arugula_e2e::hosted::{HeldClosures, HostedCert, HostedKey};
+
+        use crate::{
+            hosted::runs::tests::{MACHINE_KEY, machine},
+            peer::{HELD_FILE, accept_hosted, read_held, write_held},
+        };
+        let (saved, d, _root, _phone) = machine();
+        let dir = std::env::temp_dir().join(format!("arugula-peer-held-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let acl = Acl::open(&dir);
+        let e = Enrolled::build(saved, Arc::new(DeviceKeys::generate()), &acl, true);
+        let key = HostedKey::from_seed(&MACHINE_KEY);
+        let entry = |created: u64, closed: serde_json::Value| {
+            let k = DeviceKeys::generate();
+            let mut cert = HostedCert::new(
+                &d,
+                "hw_2",
+                "box",
+                &hex::encode(k.noise_public),
+                &hex::encode(k.sign_public()),
+                created,
+            );
+            key.sign(&mut cert);
+            (
+                cert.device.clone(),
+                serde_json::json!({ "cert": cert, "delegation": d, "revocations": [], "closed": closed }),
+            )
+        };
+        let none = serde_json::json!([]);
+        let (before, after) = (entry(5, none.clone()), entry(40, none));
+        let (told_id, told) = entry(40, serde_json::json!([key.close(&d, 30), {}]));
+
+        let mut held = HeldClosures::default();
+        assert!(accept_hosted(&e, &after.0, &after.1, &mut held).is_ok(), "it's heard nothing yet");
+        assert!(accept_hosted(&e, &told_id, &told, &mut held).is_err());
+        assert!(accept_hosted(&e, &after.0, &after.1, &mut held).is_err(), "control left it out");
+        assert!(accept_hosted(&e, &before.0, &before.1, &mut held).is_ok());
+
+        write_held(&dir, &held).unwrap();
+        let mut back = read_held(&dir).unwrap();
+        assert_eq!(back, held);
+        assert!(accept_hosted(&e, &after.0, &after.1, &mut back).is_err(), "after a restart");
+        // A file that doesn't read is an error, never none.
+        std::fs::write(dir.join(HELD_FILE), b"{").unwrap();
+        assert!(read_held(&dir).is_err());
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// #672: `control.json` files written by the code before the kind was

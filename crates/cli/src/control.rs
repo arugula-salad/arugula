@@ -49,6 +49,7 @@ use arugula_e2e::{
     Cert, DeviceKeys, Kind, Revocation, Trust,
     cert::{join_proof_body, request_auth},
     channel::{Channel, Initiator, Msg, Refusal, RequestHead, prologue},
+    hosted::HeldClosures,
     keys::fingerprint,
     now_ms,
 };
@@ -78,6 +79,10 @@ struct Saved {
     /// as first seen.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pins: BTreeMap<String, String>,
+    /// Control's word of delegations that ended, as first heard: it stays
+    /// when control leaves it out.
+    #[serde(default, skip_serializing_if = "HeldClosures::is_empty")]
+    closed: HeldClosures,
 }
 
 impl Saved {
@@ -101,6 +106,7 @@ pub struct Enrolled {
     cert: Cert,
     trust: Trust,
     pins: BTreeMap<String, String>,
+    closed: HeldClosures,
     keys: DeviceKeys,
 }
 
@@ -120,7 +126,7 @@ impl Enrolled {
         if keys.id() != s.cert.device {
             bail!("{} and {} don't match: `arugula logout`, then log in again", KEY_FILE, STATE_FILE);
         }
-        Ok(Some(Self { url: s.url, cert: s.cert, trust: s.trust, pins: s.pins, keys }))
+        Ok(Some(Self { url: s.url, cert: s.cert, trust: s.trust, pins: s.pins, closed: s.closed, keys }))
     }
 
     fn url(&self) -> anyhow::Result<Url> {
@@ -246,6 +252,7 @@ impl Enrolled {
                 cert: self.cert.clone(),
                 trust: self.trust.clone(),
                 pins: self.pins.clone(),
+                closed: self.closed.clone(),
             };
             saved.write()?;
         }
@@ -258,13 +265,14 @@ impl Enrolled {
     /// sight, as the page does) or this account's own devices.
     fn accept_hosted(&mut self, v: &Value, teams: &mut Option<Vec<Value>>, pinned: &mut bool) -> anyhow::Result<Cert> {
         use arugula_e2e::{
-            hosted::{Delegation, HostedCert, Owner, Owners, accept, ends_listed},
+            hosted::{Delegation, HostedCert, Owner, Owners, accept_holding, ends_listed},
             team::{AccountCerts, Roster, TeamPin},
         };
         let cert: HostedCert = serde_json::from_value(v["cert"].clone())?;
         let d: Delegation = serde_json::from_value(v["delegation"].clone())?;
         let (revokes, closed) = ends_listed(v);
         let me = self.cert.account.clone();
+        let mut held = self.closed.clone();
         let ok = match d.owner().context("no owner")? {
             Owner::Team(id) => {
                 if teams.is_none() {
@@ -285,22 +293,35 @@ impl Enrolled {
                         *pinned = true;
                     }
                 }
-                accept(&me, &cert, &d, &revokes, &closed, &Owners::Team { roster: &roster, certs: &certs })
+                accept_holding(
+                    &me,
+                    &cert,
+                    &d,
+                    &revokes,
+                    &closed,
+                    &Owners::Team { roster: &roster, certs: &certs },
+                    &mut held,
+                )
             }
             Owner::Account(_) => {
                 let v = self.api("GET", "/api/devices", None)?;
                 let certs: Vec<Cert> = serde_json::from_value(v["certs"].clone()).unwrap_or_default();
                 let revs: Vec<Revocation> = serde_json::from_value(v["revocations"].clone()).unwrap_or_default();
-                accept(
+                accept_holding(
                     &me,
                     &cert,
                     &d,
                     &revokes,
                     &closed,
                     &Owners::Account { trust: &self.trust, certs: &certs, revocations: &revs },
+                    &mut held,
                 )
             }
         };
+        if held != self.closed {
+            self.closed = held;
+            *pinned = true;
+        }
         ok.map_err(|r| anyhow::anyhow!("refused: {}", r.code()))?;
         // Its keys, to open a channel with; never one of the account's.
         Ok(Cert {
@@ -591,7 +612,7 @@ pub fn login(url: &str, name: &str, account: Option<&str>) -> anyhow::Result<()>
     let dir = config_dir();
     fs::create_dir_all(&dir)?;
     keys.save(&dir.join(KEY_FILE))?;
-    Saved { url: url.clone(), cert, trust, pins: BTreeMap::new() }.write()?;
+    Saved { url: url.clone(), cert, trust, pins: BTreeMap::new(), closed: Default::default() }.write()?;
     println!();
     println!("  Logged in. This terminal is one of your devices, approved on \"{approver}\".");
     println!("  The account is {fp}. `arugula hosts` lists your machines; `--host NAME` reaches one.");
@@ -1124,6 +1145,7 @@ mod tests {
             cert: Cert::new(&keys, "a", Kind::Cli, "cli"),
             trust: Trust { account: "a".into(), root: String::new() },
             pins: BTreeMap::new(),
+            closed: Default::default(),
             keys,
         };
         let restore = json!({ "daemon": "d1", "power": "cloud.drive" });
@@ -1153,6 +1175,81 @@ mod tests {
         let (m, is_hosted) =
             listed(&json!({ "id": "d2", "name": "box", "urls": ["http://box:7681"], "hosted": null })).unwrap();
         assert!(!is_hosted && m.urls.len() == 1);
+    }
+
+    /// This CLI keeps control's word that a delegation ended: a machine it
+    /// refused stays refused when control leaves the word out, and the word
+    /// is in what it saves.
+    #[test]
+    fn the_cli_keeps_a_delegations_end() {
+        use arugula_e2e::hosted::{Delegation, HostedCert, HostedKey};
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let url = format!("http://{}", listener.local_addr().unwrap());
+        let keys = DeviceKeys::generate();
+        let mut me = Cert::new(&keys, "a", Kind::Browser, "laptop");
+        me.sign_with(&keys);
+        let devices = json!({ "certs": [me], "revocations": [] }).to_string();
+        let server = std::thread::spawn(move || {
+            use std::io::{BufRead, BufReader, Write};
+            for sock in listener.incoming().take(3) {
+                let mut r = BufReader::new(sock.unwrap());
+                let mut line = String::new();
+                loop {
+                    line.clear();
+                    r.read_line(&mut line).unwrap();
+                    if line == "\r\n" || line.is_empty() {
+                        break;
+                    }
+                }
+                let mut sock = r.into_inner();
+                write!(
+                    sock,
+                    "HTTP/1.1 200 OK\r\nConnection: close\r\nContent-Length: {}\r\n\r\n{devices}",
+                    devices.len()
+                )
+                .unwrap();
+            }
+        });
+        let key = HostedKey::from_seed(&[9; 32]);
+        let mut d = Delegation {
+            project: "prj_1".into(),
+            owner: "account:a".into(),
+            key: key.public(),
+            at: 1,
+            by: String::new(),
+            sig: String::new(),
+        };
+        d.sign_with(&keys);
+        let boxk = DeviceKeys::generate();
+        let as_cert = Cert::new(&boxk, "a", Kind::Daemon, "box");
+        let mut cert = HostedCert::new(&d, "hw_1", "box", &as_cert.noise, &as_cert.sign, 40);
+        key.sign(&mut cert);
+        let mut e = Enrolled {
+            url,
+            cert: me.clone(),
+            trust: Trust { account: "a".into(), root: me.device.clone() },
+            pins: BTreeMap::new(),
+            closed: Default::default(),
+            keys,
+        };
+        let plain = json!({ "cert": cert, "delegation": d, "revocations": [] });
+        let told = json!({ "cert": cert, "delegation": d, "revocations": [], "closed": [key.close(&d, 30), {}] });
+        let (mut teams, mut changed) = (None, false);
+        assert!(e.accept_hosted(&plain, &mut teams, &mut changed).is_ok(), "it's heard nothing yet");
+        assert!(!changed);
+        assert!(e.accept_hosted(&told, &mut teams, &mut changed).is_err());
+        assert!(changed, "there's something to save");
+        assert!(e.accept_hosted(&plain, &mut teams, &mut changed).is_err(), "control left it out");
+        server.join().unwrap();
+        let saved = Saved {
+            url: e.url.clone(),
+            cert: e.cert.clone(),
+            trust: e.trust.clone(),
+            pins: BTreeMap::new(),
+            closed: e.closed.clone(),
+        };
+        let back: Saved = serde_json::from_str(&serde_json::to_string(&saved).unwrap()).unwrap();
+        assert_eq!(back.closed, e.closed);
     }
 
     #[test]
