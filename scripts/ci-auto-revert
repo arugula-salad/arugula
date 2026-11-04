@@ -134,7 +134,14 @@ ${tell:+$tell }main went red after $short landed, so this takes it back out. It 
 To bring the change back, fix it and open a new pull request. To stop this revert, close this pull request. \`scripts/ci-auto-revert\` opened it, and setting the repository variable \`ARUGULA_AUTO_REVERT\` to \`off\` turns it off (docs/development.md, "When main goes red").
 BODY
 )
-pr=$(gh pr create -R "$repo" --head "$branch" --title "$title" --body "$body")
+if ! pr=$(gh pr create -R "$repo" --head "$branch" --title "$title" --body "$body"); then
+  # Not left behind: a run that finds the branch stays out, so nothing would ever
+  # try again.
+  git push -q origin --delete "$branch" || true
+  echo "::error::auto-revert couldn't open a pull request reverting $short ($subject). Does CI_GREEN_TOKEN have Pull requests: write? Revert it by hand."
+  if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then printf 'Could not open a pull request reverting %s: revert it by hand.\n' "$short" >>"$GITHUB_STEP_SUMMARY"; fi
+  exit 1
+fi
 echo "auto-revert: opened $pr for $short"
 gh pr merge "$pr" -R "$repo" --auto --squash || echo "auto-revert: $pr isn't queued: queue it by hand"
 if [ -n "$number" ]; then

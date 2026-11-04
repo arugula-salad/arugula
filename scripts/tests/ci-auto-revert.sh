@@ -19,7 +19,11 @@ cat >"$tmp/bin/gh" <<'GH'
 #!/usr/bin/env bash
 case "$1 $2" in
   "api repos/forge/arugula/commits/"*) echo "${FAKE_AUTHOR:-someone}" ;;
-  "pr create") printf '%s\n' "$*" >>"$FAKE/calls"; echo "https://forge/pull/99" ;;
+  "pr create")
+    if [ -n "${FAKE_PR_REFUSED:-}" ]; then echo "HTTP 403: Resource not accessible" >&2; exit 1; fi
+    printf '%s\n' "$*" >>"$FAKE/calls"
+    echo "https://forge/pull/99"
+    ;;
   "pr merge" | "pr comment") printf '%s\n' "$*" >>"$FAKE/calls" ;;
   *) echo "fake gh: $*" >&2; exit 1 ;;
 esac
@@ -113,6 +117,18 @@ record "$three" "$retried"
 listing "$three" red
 run 3
 leaves "two candidates: leaves it" "the bisect hasn't named a culprit"
+
+# The token may not open a pull request: red, says so, and leaves no branch behind
+# that would keep later runs out.
+listing "$three" red "$two"
+: >"$tmp/calls"
+git switch -q main
+code=0
+FAKE_PR_REFUSED=1 ARUGULA_RED_NOW=$((t0 + 3 * h)) "$script" >"$tmp/out" 2>&1 || code=$?
+if [ "$code" = 1 ] && grep -qF 'Revert it by hand' "$tmp/out"; then ok "a refused pull request: fails, and says to revert by hand"; else bad "exit $code: $(cat "$tmp/out")"; fi
+if git ls-remote --exit-code --heads origin "auto-revert-${two:0:12}" >/dev/null 2>&1; then bad "it left its branch on origin"; else ok "and leaves no branch behind"; fi
+git switch -q main
+git branch -qD "auto-revert-${two:0:12}"
 
 # The bisect names one: it's reverted, though newer work sits on top.
 listing "$three" red "$two"
