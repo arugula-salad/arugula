@@ -9,6 +9,7 @@ name: binaries
 # by the recipes check.yml runs.
 # desktop-xvfb: `just desktop-xvfb`, only for a pull request that changes
 # the desktop app or its Xvfb tests (#1677; #1616 broke it unseen).
+# notes: what the pull request means for people using Arugula (#722).
 on:
   pull_request:
   push:
@@ -54,6 +55,22 @@ jobs:
         run: cd web && pnpm install --frozen-lockfile
       - name: THIRD_PARTY.md is current
         run: just notices-check
+
+  # What the pull request means for people using Arugula: a note in docs/notes/, or
+  # a commit saying none is needed (#722; scripts/pr-notes-check). A release's notes
+  # are built from them.
+  notes:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The pull request's commits and where it left its base.
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: scripts/pr-notes-check "${{ github.event.pull_request.base.sha }}" "${{ github.event.pull_request.head.sha }}"
 
   # Whether the pull request touches the desktop app or its Xvfb tests: the
   # files list from the API, so no checkout. A pull request that doesn't
@@ -120,7 +137,7 @@ jobs:
   # The merge queue's check on a pull request (docs/development.md,
   # "Merging through the queue"): its ruleset requires `chant-verdict` by
   # name, on the pull request before it's queued and on its merge group
-  # after. Here it's binaries and quick; the group's is queue-verdict.yml's,
+  # after. Here it's binaries, quick and notes; the group's is queue-verdict.yml's,
   # which judges the group by ci.green's required phases, with one re-run of a
   # failed job. So this workflow has no merge_group trigger: its chant-verdict,
   # skipped on a group, would count as passed there.
@@ -129,7 +146,7 @@ jobs:
     # this, only a failed or cancelled one. desktop-changes is here too, so
     # its failing can't pass as desktop-xvfb skipped.
     if: github.event_name == 'pull_request' && !cancelled() && !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled')
-    needs: [binaries, quick, desktop-changes, desktop-xvfb]
+    needs: [binaries, quick, notes, desktop-changes, desktop-xvfb]
     runs-on: ubuntu-latest
     steps:
-      - run: echo "binaries and quick passed (and desktop-xvfb, when it ran); the merge queue runs check.yml on the group"
+      - run: echo "binaries, quick and notes passed (and desktop-xvfb, when it ran); the merge queue runs check.yml on the group"

@@ -928,6 +928,7 @@ test-scripts:
     scripts/tests/release-green.sh
     scripts/tests/suite-lock.sh
     scripts/tests/release-bump.sh
+    scripts/tests/release-notes.sh
     scripts/tests/hub-changed.sh
     scripts/tests/ci-fly-rollback.sh
     scripts/tests/hosted-supervisor.sh
