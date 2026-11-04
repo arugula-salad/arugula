@@ -18,17 +18,18 @@
 //! Native Docs come with chat, as native issues do (`chat_on`): their live
 //! updates are chat's.
 //!
-//! **Pictures and moves** (#418): members read a Doc's pictures
-//! ([`asset_route`]); a person who may write in two projects moves a Doc
-//! from one to the other ([`move_doc`], never a session), keeping its id,
-//! pictures and where it came from. A machine copies its Docs up to its
-//! owner's personal project in [`machine`](crate::project_docs_machine).
+//! **Pictures** (#418): members read a Doc's pictures ([`asset_route`]). A
+//! machine copies its Docs up to its owner's personal project in
+//! [`machine`](crate::project_docs_machine), and they stay there: the
+//! route that moved a Doc between projects went with native #673 (only
+//! tests called it). A copy moved before then sits where it was put, and
+//! the machine's puts keep landing there while its owner may write there.
 //!
 //! **A copy is read-only** (Arugula #678): the machine's library Doc is the
 //! truth, and its next put replaces the copy whole, so a write to a copy
 //! here, by a person or a session, is refused naming the machine
 //! ([`copy_refused`]), and a copy's view has no writer. The machine's own
-//! puts, a move and a delete are as they were.
+//! puts and a delete are as they were.
 //!
 //! **Live:** a write pushes an object change on the Doc's thread
 //! ([`changed`]), as a board's does, so pages showing it read it again.
@@ -361,31 +362,6 @@ pub async fn asset(
     app.db.project_doc_asset(&doc.id, name)?.ok_or_else(|| err(StatusCode::NOT_FOUND, "no such picture"))
 }
 
-/// Move a Doc to the project `to` names, for `account` who may write in
-/// both (a personal project counts). It keeps its id, sections, pictures
-/// and key, and pages on both projects read again. Never a session's.
-pub async fn move_doc(
-    app: &Platform,
-    account: &str,
-    project: &str,
-    id: &str,
-    to: &str,
-) -> Result<wire::DocView, ApiError> {
-    id_ok(id)?;
-    let by = By::Person(account);
-    let (from, doc) = doc_in(app, by, project, id, true).await?;
-    may_write(by, &from, &doc)?;
-    let target = place(app, account, to, true).await?;
-    if target.project == from.project {
-        return view(app, by, &from, &doc).await;
-    }
-    let moved =
-        app.db.move_project_doc(id, &from.project, &target.project, now_ms(), wire::DOCS_MAX)?.map_err(refused)?;
-    changed(app, &from.project, id);
-    changed(app, &target.project, id);
-    view(app, by, &target, &moved).await
-}
-
 /// Delete a Doc: owners and editors, never a session.
 pub async fn delete(app: &Platform, account: &str, project: &str, id: &str) -> Result<(), ApiError> {
     id_ok(id)?;
@@ -450,17 +426,6 @@ pub async fn asset_route(
     h.insert(header::CONTENT_SECURITY_POLICY, HeaderValue::from_static("default-src 'none'; sandbox"));
     h.insert("cross-origin-resource-policy", HeaderValue::from_static("same-origin"));
     Ok(r)
-}
-
-/// `POST /api/projects/{project}/docs/{id}/move`: to another project
-/// (owners and editors of both).
-pub async fn move_route(
-    State(app): State<Arc<Platform>>,
-    s: Person,
-    Path((project, id)): Path<(String, String)>,
-    Json(m): Json<wire::MoveProjectDoc>,
-) -> J<wire::DocView> {
-    Ok(Json(move_doc(&app, &s.account, &project, &id, &m.to).await?))
 }
 
 /// `DELETE /api/projects/{project}/docs/{id}` (owners and editors).

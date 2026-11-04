@@ -148,7 +148,6 @@ fn routes() -> Routes {
                 .delete(crate::project_docs::delete_route),
         )
         .route(project_docs::PROJECT_DOC_ASSET, get(crate::project_docs::asset_route))
-        .route(project_docs::PROJECT_DOC_MOVE, post(crate::project_docs::move_route))
         .route(
             project_docs::MACHINE_DOC,
             put(crate::project_docs_machine::put_route).delete(crate::project_docs_machine::delete_route),

@@ -374,7 +374,8 @@ async fn a_session_doesnt_write_a_machines_copy() {
     let (_hub, app, base, t, _u) = seeded().await;
     let ses = session(&app, &t, "hw_2", "a");
     let m = machine(&t, "hw_2", "box1");
-    // geek (a's machine) copies a Doc up, and a moves it into the team.
+    // geek (a's machine) copies a Doc up; the copy sits in the team's
+    // project, as a move left it before the move route went (native #673).
     let body = serde_json::to_vec(
         &json!({ "title": "From geek", "sections": [{ "id": "s1", "heading": "One", "body": "v1" }] }),
     )
@@ -390,9 +391,11 @@ async fn a_session_doesnt_write_a_machines_copy() {
     assert_eq!(r.status().as_u16(), 200);
     let placed: serde_json::Value = r.json().await.unwrap();
     let id = placed["id"].as_str().unwrap().to_owned();
-    let mv = format!("/api/projects/{}/docs/{id}/move", placed["project"].as_str().unwrap());
-    let (st, _) = call(&base, "a", "POST", &mv, Some(json!({ "to": t }))).await;
-    assert_eq!(st, 200);
+    {
+        use crate::db::sql::{Sql as _, params};
+        let n = app.db.c().execute("UPDATE project_docs SET project_id = ?1 WHERE id = ?2", params![t, id]).unwrap();
+        assert_eq!(n, 1);
+    }
 
     let Given::Doc { view, .. } = ask(&app, &m, &ses, Op::DocRead { id: Some(id.clone()) }).await else { panic!() };
     assert_eq!((view.writer, view.doc.machine_name.as_deref()), (false, Some("geek-box")));

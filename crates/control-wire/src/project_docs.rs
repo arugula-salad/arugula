@@ -23,8 +23,9 @@
 //! **A copy from a machine** (#418): a machine copies a Doc of its own up to
 //! its owner's personal project ([`MACHINE_DOC`]), keyed by the machine and
 //! its own Doc id, so the same machine Doc always lands on the same `pdc_`.
-//! Private until a person moves it into a team's project
-//! ([`PROJECT_DOC_MOVE`]). A machine can't reach another machine's copies.
+//! It stays private to the owner: the route that moved a Doc between
+//! projects is gone (native #673), and a Doc of a team's is made there. A
+//! machine can't reach another machine's copies.
 //! The machine's Doc is the truth and the copy is read-only (Arugula #678):
 //! a write to it over [`PROJECT_DOC`] is refused, by a person or an agent
 //! session, naming the machine; only the machine's own puts change it.
@@ -43,9 +44,6 @@ pub const PROJECT_DOC: &str = "/api/projects/{project}/docs/{id}";
 
 /// `GET`: one of a Doc's pictures, the bytes (any member).
 pub const PROJECT_DOC_ASSET: &str = "/api/projects/{project}/docs/{id}/assets/{name}";
-/// `POST` [`MoveProjectDoc`]: move a Doc to another project, [`DocView`] (a person
-/// who may write in both; never an agent session).
-pub const PROJECT_DOC_MOVE: &str = "/api/projects/{project}/docs/{id}/move";
 /// `PUT` [`MachineDoc`]: a machine copies one of its Docs up for its owner,
 /// answered [`MachineDocPlaced`]; `DELETE`: it takes its copy down.
 pub const MACHINE_DOC: &str = "/api/daemon/docs/{machine_doc}";
@@ -201,15 +199,6 @@ pub struct DocWrite {
     pub markdown: Option<String>,
 }
 
-/// `POST` [`PROJECT_DOC_MOVE`]: where the Doc goes.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
-pub struct MoveProjectDoc {
-    /// A project's id, or `personal` for the mover's own.
-    pub to: String,
-}
-
 /// A section of a machine's Doc, as it copies it up: the machine's own
 /// ids, and its body or null while it's pending.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -260,11 +249,6 @@ pub fn project_doc(project: &str, id: &str) -> String {
 /// [`PROJECT_DOC_ASSET`] for `name` of `id` in `project`.
 pub fn project_doc_asset(project: &str, id: &str, name: &str) -> String {
     format!("/api/projects/{project}/docs/{id}/assets/{name}")
-}
-
-/// [`PROJECT_DOC_MOVE`] for `id` in `project`.
-pub fn project_doc_move(project: &str, id: &str) -> String {
-    format!("/api/projects/{project}/docs/{id}/move")
 }
 
 /// [`MACHINE_DOC`] for the machine's Doc `machine_doc`.

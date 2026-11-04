@@ -3471,15 +3471,6 @@ runs_note: string | null,
  */
 ms: number | null, };
 
-/**
- * `POST` [`PROJECT_DOC_MOVE`]: where the Doc goes.
- */
-export type MoveProjectDoc = { 
-/**
- * A project's id, or `personal` for the mover's own.
- */
-to: string, };
-
 export type NativeIssue = { 
 /**
  * `iss_` and 32 hex characters.

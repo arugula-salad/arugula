@@ -2,10 +2,10 @@
 //! signs, acting for its owner's account. A copy is keyed by the machine and
 //! its own Doc id, so the same machine Doc always lands on the same `pdc_`;
 //! the first put makes it in the owner's personal project, which keeps it
-//! private to them until a person moves it into a team's
-//! ([`crate::project_docs::move_doc`]). Later puts write it wherever it is
-//! now, as long as the owner may still write there; if not, nothing changes
-//! and the machine is told why.
+//! private to them. Later puts write it wherever it is now (a copy moved
+//! into a team's project before the move route went, native #673, stays
+//! there), as long as the owner may still write there; if not, nothing
+//! changes and the machine is told why.
 //!
 //! No grant is checked: a machine copying into its own owner's personal
 //! project needs none. A machine reaches only copies it made, for the

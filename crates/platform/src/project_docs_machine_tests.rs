@@ -1,15 +1,20 @@
 //! A machine's Docs copied up (#418) over the platform's routes: the first
 //! put makes the copy in its owner's personal project, where no one else
 //! (a teammate included) can read it or its pictures; the machine is in the
-//! key, so no machine reaches another's; a move into a team's project keeps
-//! the id and the next put lands there; and a move needs the right to write
-//! in both projects. Run on Postgres too by `just test-platform-postgres`.
+//! key, so no machine reaches another's; a copy that sits in a team's
+//! project (moved there before the move route went, native #673) takes
+//! the next put there while its owner may write there, and is refused
+//! once they can't. Run on Postgres too by `just test-platform-postgres`.
 
 use arugula_control_wire::project_docs::{ASSETS_MAX, machine_doc, machine_doc_asset, project_doc_asset};
 use arugula_e2e::team::TeamRole;
 use serde_json::{Value, json};
 
-use crate::{agents_tests::seeded, chat_tests::call};
+use crate::{
+    agents_tests::seeded,
+    chat_tests::call,
+    db::sql::{Sql as _, params},
+};
 
 /// A call signed by `who`'s machine (`"<account> <machine>"`).
 async fn signed(base: &str, who: &str, method: &str, path: &str, body: Option<Vec<u8>>, json: bool) -> (u16, Value) {
@@ -138,89 +143,32 @@ async fn another_machine_with_the_same_doc_id_gets_its_own_doc() {
     assert_eq!(st, 404);
 }
 
-/// Sharing with the team moves the Doc: it keeps its id, key and pictures,
-/// the team reads it, and the machine's next put lands there, not in a new
-/// personal copy.
+/// A copy in a team's project (one moved there while the move route
+/// existed) takes the machine's next put there, with its owner's right to
+/// write there checked: the key and the pictures stay, no second copy is
+/// made at home, and once the owner may no longer write there the put is
+/// refused with a reason, and nothing changes.
 #[tokio::test]
-async fn after_a_move_the_machines_next_put_lands_in_the_team_project() {
-    let (_hub, _app, base, t, _u) = seeded().await;
-    let (_, p) = put_doc(&base, "a geek", "d1", "Plan", &[("s1", Some("v1"))]).await;
-    let id = id_of(&p);
-    put_png(&base, "a geek", "d1", "pic.png", b"one").await;
-
-    let mv = format!("/api/projects/personal/docs/{id}/move");
-    let (st, m) = call(&base, "a", "POST", &mv, Some(json!({ "to": t }))).await;
-    assert_eq!(st, 200, "{m}");
-    assert_eq!(
-        (&m["doc"]["id"], &m["doc"]["project"], &m["doc"]["machine"], &m["assets"][0]["name"]),
-        (&json!(id), &json!(t), &json!("geek"), &json!("pic.png"))
-    );
-    let (st, _) =
-        call(&base, "a", "GET", &format!("/api/projects/{}/docs/{id}", p["project"].as_str().unwrap()), None).await;
-    assert_eq!(st, 404, "gone from where it was");
-    // The team reads it, picture included.
-    let (st, _, bytes) = raw_get(&base, "x", &project_doc_asset(&t, &id, "pic.png")).await;
-    assert_eq!((st, bytes.len()), (200, 11));
-
-    let (st, q) = put_doc(&base, "a geek", "d1", "Plan", &[("s1", Some("v2"))]).await;
-    assert_eq!((st, id_of(&q), &q["project"]), (200, id.clone(), &json!(t)), "{q}");
-    let (st, _) = put_png(&base, "a geek", "d1", "more.png", b"two").await;
-    assert_eq!(st, 200);
-    let (_, v) = call(&base, "b", "GET", &format!("/api/projects/{t}/docs/{id}"), None).await;
-    assert_eq!((&v["sections"][0]["body"], v["assets"].as_array().unwrap().len()), (&json!("v2"), 2), "{v}");
-    let (_, l) = call(&base, "a", "GET", "/api/projects/personal/docs", None).await;
-    assert!(l["docs"].as_array().unwrap().is_empty(), "no second copy at home: {l}");
-}
-
-/// A move needs the right to write in both projects: a stranger's project is
-/// 404, a viewer's is 403, and the Doc stays where it was.
-#[tokio::test]
-async fn a_move_needs_write_in_both_projects() {
-    let (hub, _app, base, t, u) = seeded().await;
-    hub.flag("team:u", true);
-    let (_, p) = put_doc(&base, "a geek", "d1", "Plan", &[]).await;
-    let id = id_of(&p);
-    let mv = format!("/api/projects/personal/docs/{id}/move");
-    let (st, _) = call(&base, "a", "POST", &mv, Some(json!({ "to": u }))).await;
-    assert_eq!(st, 404, "not a member of u");
-
-    // x views t; x's own Doc doesn't go in.
-    let (_, mine) = call(&base, "x", "POST", "/api/projects/personal/docs", Some(json!({ "title": "x's" }))).await;
-    let (st, _) = call(
-        &base,
-        "x",
-        "POST",
-        &format!("/api/projects/personal/docs/{}/move", mine["doc"]["id"].as_str().unwrap()),
-        Some(json!({ "to": t })),
-    )
-    .await;
-    assert_eq!(st, 403, "a viewer doesn't write in t");
-
-    // A teammate can't move a Doc out of someone's personal project.
-    let (st, _) = call(
-        &base,
-        "b",
-        "POST",
-        &format!("/api/projects/{}/docs/{id}/move", p["project"].as_str().unwrap()),
-        Some(json!({ "to": t })),
-    )
-    .await;
-    assert_eq!(st, 404);
-    let (st, _) = call(&base, "a", "GET", &format!("/api/projects/personal/docs/{id}"), None).await;
-    assert_eq!(st, 200, "still at home");
-}
-
-/// A copy that sits where its owner may no longer write is refused with a
-/// reason, and nothing changes.
-#[tokio::test]
-async fn a_put_where_the_owner_can_no_longer_write_is_refused() {
-    let (hub, _app, base, t, _u) = seeded().await;
+async fn a_copy_in_a_team_project_takes_puts_while_its_owner_may_write_there() {
+    let (hub, app, base, t, _u) = seeded().await;
     hub.daemon("bgeek", "b", Some("t"));
     let (_, p) = put_doc(&base, "b bgeek", "d1", "Plan", &[("s1", Some("v1"))]).await;
     let id = id_of(&p);
-    let (st, _) =
-        call(&base, "b", "POST", &format!("/api/projects/personal/docs/{id}/move"), Some(json!({ "to": t }))).await;
+    put_png(&base, "b bgeek", "d1", "pic.png", b"one").await;
+    moved_before(&app, &id, &t);
+
+    // b is an editor of t: the put lands there, picture included, and
+    // nothing comes back to b's personal project.
+    let (st, q) = put_doc(&base, "b bgeek", "d1", "Plan", &[("s1", Some("v2"))]).await;
+    assert_eq!((st, id_of(&q), &q["project"]), (200, id.clone(), &json!(t)), "{q}");
+    let (st, _) = put_png(&base, "b bgeek", "d1", "more.png", b"two").await;
     assert_eq!(st, 200);
+    let (_, v) = call(&base, "a", "GET", &format!("/api/projects/{t}/docs/{id}"), None).await;
+    assert_eq!((&v["sections"][0]["body"], v["assets"].as_array().unwrap().len()), (&json!("v2"), 2), "{v}");
+    let (st, _, bytes) = raw_get(&base, "x", &project_doc_asset(&t, &id, "pic.png")).await;
+    assert_eq!((st, bytes.len()), (200, 11), "the team reads its pictures");
+    let (_, l) = call(&base, "b", "GET", "/api/projects/personal/docs", None).await;
+    assert!(l["docs"].as_array().unwrap().is_empty(), "no second copy at home: {l}");
 
     hub.team("t", &[("a", TeamRole::Owner), ("b", TeamRole::Viewer), ("x", TeamRole::Viewer)]);
     let (st, e) = put_doc(&base, "b bgeek", "d1", "Plan", &[("s1", Some("v2"))]).await;
@@ -228,7 +176,14 @@ async fn a_put_where_the_owner_can_no_longer_write_is_refused() {
     let (st, _) = put_png(&base, "b bgeek", "d1", "pic.png", b"x").await;
     assert_eq!(st, 403);
     let (_, v) = call(&base, "a", "GET", &format!("/api/projects/{t}/docs/{id}"), None).await;
-    assert_eq!((&v["sections"][0]["body"], v["assets"].as_array().unwrap().len()), (&json!("v1"), 0), "{v}");
+    assert_eq!((&v["sections"][0]["body"], v["assets"].as_array().unwrap().len()), (&json!("v2"), 2), "{v}");
+}
+
+/// A copy as the move route left it before it went (native #673): in
+/// another project, with its key.
+fn moved_before(app: &crate::Platform, id: &str, to: &str) {
+    let n = app.db.c().execute("UPDATE project_docs SET project_id = ?1 WHERE id = ?2", params![to, id]).unwrap();
+    assert_eq!(n, 1);
 }
 
 /// A picture is a PNG, JPEG, GIF or WebP by its bytes, named for what it
@@ -266,7 +221,7 @@ async fn pictures_are_checked_by_their_bytes() {
 /// silently put the edit back and dropped the added section.)
 #[tokio::test]
 async fn a_copy_is_read_only_and_the_machines_puts_still_land() {
-    let (_hub, _app, base, t, _u) = seeded().await;
+    let (_hub, app, base, t, _u) = seeded().await;
     let (_, p) = put_doc(&base, "a geek", "d1", "Plan", &[("s1", Some("v1")), ("s2", None)]).await;
     let (id, personal) = (id_of(&p), p["project"].as_str().unwrap().to_owned());
     let path = format!("/api/projects/{personal}/docs/{id}");
@@ -303,11 +258,13 @@ async fn a_copy_is_read_only_and_the_machines_puts_still_land() {
         (&json!("Plan, v2"), vec![json!("v2")], &json!(false))
     );
 
-    // Moved into the team, it's a copy there too: an editor can't write it,
-    // and the machine's put still lands there.
-    let (st, m) = call(&base, "a", "POST", &format!("{path}/move"), Some(json!({ "to": t }))).await;
-    assert_eq!((st, &m["writer"], &m["doc"]["machine_name"]), (200, &json!(false), &json!("geek-box")), "{m}");
+    // In the team's project (moved there before the move route went),
+    // it's a copy there too: an editor can't write it, and the machine's
+    // put still lands there.
+    moved_before(&app, &id, &t);
     let team_path = format!("/api/projects/{t}/docs/{id}");
+    let (st, m) = call(&base, "b", "GET", &team_path, None).await;
+    assert_eq!((st, &m["writer"], &m["doc"]["machine_name"]), (200, &json!(false), &json!("geek-box")), "{m}");
     let (st, e) = call(&base, "b", "PUT", &team_path, Some(json!({ "section": "s1", "markdown": "b's" }))).await;
     assert!(st == 403 && e["error"].as_str().unwrap().contains("geek-box"), "{st} {e}");
     let (st, q) = put_doc(&base, "a geek", "d1", "Plan, v3", &[("s1", Some("v3"))]).await;

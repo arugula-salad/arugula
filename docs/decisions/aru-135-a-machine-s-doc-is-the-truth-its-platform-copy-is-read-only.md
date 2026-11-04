@@ -10,7 +10,7 @@ question: "When a machine's Doc has a copy on the platform (#418) and someone ed
 options:
   - id: "a"
     label: "The machine's library Doc is the truth, and the copy is read-only"
-    how: "A copy keeps the machine it came from, and the platform refuses a write to it over the Doc routes, by a person or an agent session, naming the machine. Its view has no writer, and the page says it's a copy, from which machine, and when it last updated. The machine's own puts, a move into a team's project and a delete are as they were."
+    how: "A copy keeps the machine it came from, and the platform refuses a write to it over the Doc routes, by a person or an agent session, naming the machine. Its view has no writer, and the page says it's a copy, from which machine, and when it last updated. The machine's own puts and a delete are as they were; the copy stays in the owner's personal project, the move route having gone (amended for native #673)."
     tradeoff: "A teammate who wants to change a copy has to ask for the change on the machine, or make a Doc of the project's own."
   - id: "b"
     label: "Two-way: a web edit goes back to the machine's Doc"
@@ -65,10 +65,17 @@ it:
   `machine_name` beside `machine` on the wire, defaulted on the page for
   an older platform), and when it last updated; it has no form.
 - **What doesn't change:** the machine's own puts
-  (`crates/platform/src/project_docs_machine.rs`), a move into a team's
-  project, and deleting a copy from the platform. A Doc that has really
-  moved to a project may need rules of its own; that belongs to the
-  larger Docs work.
+  (`crates/platform/src/project_docs_machine.rs`) and deleting a copy from
+  the platform.
+- **A copy stays in its owner's personal project** (amended 2026-11-04 for
+  native #673): the route that moved a Doc into another project went, since
+  nothing but tests called it, and with it the one way a machine's puts
+  reached a team's project. A Doc for a team is made in the team's project.
+  A copy a move put in a team's project before then keeps working as it
+  did: the machine's puts land where the copy is, checked against its
+  owner's right to write there, and none is expected in production. A Doc
+  that should really move to a project may get rules of its own; that
+  belongs to the larger Docs work.
 - **Edits made to copies before this** can't be recovered: the machine's
   put replaced them.
 

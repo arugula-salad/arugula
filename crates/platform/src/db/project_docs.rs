@@ -554,49 +554,6 @@ impl Db {
         Ok(Ok((Asset { name: name.to_owned(), mime: mime.to_owned(), size: bytes.len() as u64, rev }, true)))
     }
 
-    /// Move Doc `id` from project `from` to `to`, with its sections,
-    /// pictures and key: it keeps its id. Counted against `to`'s `max` with
-    /// both projects' Docs held. The rights are the caller's.
-    pub fn move_project_doc(
-        &self,
-        id: &str,
-        from: &str,
-        to: &str,
-        at: u64,
-        max: u64,
-    ) -> Result<std::result::Result<Stored, Refused>> {
-        let mut c = self.c();
-        let tx = c.immediate()?;
-        let held: Option<String> = tx
-            .query_row(&format!("SELECT id FROM projects WHERE id = ?1{}", tx.for_update()), params![to], |r| r.get(0))
-            .optional()?;
-        if held.is_none() {
-            return Ok(Err(Refused::Missing("no such project")));
-        }
-        let at_from: Option<String> = tx
-            .query_row(
-                &format!("SELECT project_id FROM project_docs WHERE id = ?1{}", tx.for_update()),
-                params![id],
-                |r| r.get(0),
-            )
-            .optional()?;
-        if at_from.as_deref() != Some(from) {
-            return Ok(Err(Refused::Missing("no such Doc")));
-        }
-        let have: u64 =
-            tx.query_row("SELECT count(*) FROM project_docs WHERE project_id = ?1", params![to], |r| r.get(0))?;
-        if have >= max {
-            return Ok(Err(Refused::Bad(format!("a project has at most {max} Docs"))));
-        }
-        tx.execute(
-            "UPDATE project_docs SET project_id = ?2, rev = rev + 1, updated_at = ?3 WHERE id = ?1",
-            params![id, to, at],
-        )?;
-        let doc = tx.query_row(&format!("SELECT {COLS} FROM project_docs d WHERE d.id = ?1"), params![id], doc_row)?;
-        tx.commit()?;
-        Ok(Ok(doc))
-    }
-
     /// Each of these Docs' project and title, for their threads
     /// (`chat::objects`).
     pub fn project_doc_places(&self, ids: &[&str]) -> Result<Vec<(String, String, String)>> {
