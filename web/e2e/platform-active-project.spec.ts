@@ -27,10 +27,9 @@ test("a first visit: Projects lands on the list", async ({ browser }) => {
   app = t.base.replace("//127.0.0.1", "//app.localhost");
   alice = await t.person(browser, "alice");
   await alice.evaluate(() => window.__arugula.control!.createTeam("Acme"));
-  await alice.goto(`${app}/settings`);
-  await expect(alice.locator("[data-platform-bar]")).toBeVisible({ timeout: 30_000 });
+  // One visit: the first signs in by a hop through the hub, and a second so soon is refused.
   await alice.goto(`${app}/`);
-  await expect(alice.locator("section[data-platform-home] [data-project]")).toHaveCount(2);
+  await expect(alice.locator("section[data-platform-home] [data-project]")).toHaveCount(2, { timeout: 30_000 });
   await projects().click();
   await expect(alice).toHaveURL(`${app}/`);
   await expect(alice.locator("section[data-platform-home]")).toBeVisible();
